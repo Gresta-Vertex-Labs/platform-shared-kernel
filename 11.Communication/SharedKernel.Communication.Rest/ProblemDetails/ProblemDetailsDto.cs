@@ -1,23 +1,23 @@
 namespace SharedKernel.Communication.Rest.ProblemDetails;
 
 /// <summary>
-/// Internal DTO for deserializing RFC 9457 Problem Details JSON responses, including the extension
-/// members <c>14.Presentation</c>'s <c>ErrorProblemDetailsExtensions</c>/
-/// <c>ValidationProblemDetailsExtensions</c> add: <c>errorCode</c> (a copy of the originating
-/// <c>Error.Code</c> — <c>Title</c> already carries the same value, but <c>errorCode</c> is the more
-/// explicit source), and, only when the failure aggregates several field errors, <c>errors</c> and
-/// <c>errorCodes</c>. Both of those are keyed by field path, or by code for an error that names no
-/// field; <c>errors</c> holds the messages and <c>errorCodes</c> the codes of the same errors in the
-/// same order. All extension members are serialized as flat top-level JSON properties by ASP.NET
-/// Core's <c>ProblemDetails</c> converter, not nested under an <c>"extensions"</c> object.
+/// Internal DTO holding the members of an RFC 9457 Problem Details body that
+/// <see cref="ProblemDetailsDeserializer"/> reads: <c>detail</c> and the extension members
+/// <c>14.Presentation</c> adds. Those are <c>errorCode</c> (the originating <c>Error.Code</c>) and, when the
+/// failure lists field errors, <c>errors</c> and <c>errorCodes</c>. Both of those are keyed by field path, or by
+/// code for an error that names no field; <c>errors</c> holds the messages and <c>errorCodes</c> the codes of the
+/// same errors in the same order. ASP.NET Core's <c>ProblemDetails</c> converter writes extension members as flat
+/// top-level JSON properties, not nested under an <c>"extensions"</c> object.
 /// </summary>
+/// <remarks>
+/// The standard <c>type</c>, <c>title</c>, <c>status</c> and <c>instance</c> members are deliberately not bound,
+/// so nothing here can read them. <c>type</c> is a URI and <c>title</c> the status reason phrase (P-562), free
+/// text from a service outside the platform, so neither is ever the error code. The status comes from the
+/// response itself.
+/// </remarks>
 internal sealed class ProblemDetailsDto
 {
-    public string? Type { get; set; }
-    public string? Title { get; set; }
-    public int? Status { get; set; }
     public string? Detail { get; set; }
-    public string? Instance { get; set; }
     public string? ErrorCode { get; set; }
     public Dictionary<string, string[]>? Errors { get; set; }
     public Dictionary<string, string[]>? ErrorCodes { get; set; }

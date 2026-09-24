@@ -25,7 +25,10 @@ namespace SharedKernel.Communication.Rest.ProblemDetails;
 /// <para>
 /// It applies whether or not the response carries a ProblemDetails body: an HTML page or an empty body
 /// from a gateway or proxy gets the same <see cref="ErrorType"/> for its status, with the code
-/// <c>http.{status}</c> (see <see cref="ProblemDetailsDeserializer"/>).
+/// <c>http.{status}</c> (see <see cref="ProblemDetailsDeserializer"/>). A body changes the category in one
+/// case only: a 422 that lists field errors is read as a <see cref="ErrorType.Validation"/> failure,
+/// because many frameworks outside the platform answer validation with 422. The <c>errors</c> map of any
+/// status other than 400 and 422 is ignored.
 /// </para>
 /// <para>
 /// <b>Why this table is duplicated here instead of shared:</b> <c>11.Communication</c> may only

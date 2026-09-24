@@ -73,31 +73,42 @@ Result<OrderDto> order2 = await httpClient
     .Result.ReadResultAsync<OrderDto>(options: null, ct);
 ```
 
-Both paths map a non-2xx response to a `SharedKernel.Primitives.Error` via `ProblemDetailsDeserializer`,
-mirroring the real wire shape `SharedKernel.Presentation.WebApi` produces: `errorCode` (falling back to
-`title`) → `Error.Code` — never `type`, which is an RFC 9457 status URI such as
-`"https://httpstatuses.io/404"`, not a machine code — and `detail` → `Error.Message`. The response's
-HTTP status maps back to an `ErrorType` (400, 413, 415, 428 → Validation, 401 → Unauthorized,
-403 → Forbidden, 404 → NotFound, 409, 412 → Conflict, 422 → BusinessRule, 429, 503 → Unavailable,
-504 → Timeout, everything else → Unexpected) via `HttpStatusErrorTypeMap`, the reverse of
-`SharedKernel.Presentation.WebApi`'s `ErrorTypeStatusCodeMap.Resolve` plus the statuses an HTTP
-boundary answers outside it (a failed `If-Match`, a payload or media-type rejection, rate limiting) —
-duplicated here rather than shared, since `11.Communication` may never reference `14.Presentation`.
-A downstream outage therefore comes back as `Unavailable` or `Timeout` rather than as an `Unexpected`
-fault — with a ProblemDetails body or without one (see below). When the body carries the `errors` extension (a multi-field
-validation failure: keyed by field path, or by code for an error that names no field, each value an
-array of messages), every entry is rebuilt as its own `Error` and returned as one aggregate via
-`Error.Validation(IReadOnlyList<Error>)` — the same shape `ValidationException`/`Error.Details`
-produce on the server, round-tripping without losing any field. The parallel `errorCodes` extension
-supplies each entry's real code, index by index; when it names a code different from the key, the key
-is kept as the field path in `MessageArguments[ErrorArgumentNames.PropertyPath]`. A body from an
-older server without `errorCodes` is read as before, each key taken as the code. A non-JSON body, an
-empty body, or a body with none of these recognizable members — typically a gateway, load balancer or
-proxy answering with its own HTML page for a service that is down or slow — still takes its `ErrorType`
-from the status through the same `HttpStatusErrorTypeMap`, with the code `"http.{status}"` and the status
-line as the message: a bodiless 429 or 503 is `Unavailable`, a 504 `Timeout`, a 500 or 502 `Unexpected`,
-a 404 `NotFound` — never an unclassified, status-blind fallback. A 2xx response with an empty body, or
-one that deserializes to `null`, fails with the `http.empty-body` code.
+Both paths map a non-2xx response to a `SharedKernel.Primitives.Error` through `ProblemDetailsDeserializer`,
+which reads the wire shape `SharedKernel.Presentation.WebApi` writes:
+
+- **Code:** `errorCode`. A problem without one gets `"http.{status}"`, the code the server itself gives a
+  response the framework produced. The code is never `title`: since P-562 that is the status reason phrase
+  (`"Not Found"`), and from a service outside the platform it is free text, which your service would otherwise
+  adopt as its own error code and pass on to its own callers. Nor is it `type`, a URI such as
+  `"https://tools.ietf.org/html/rfc9110#section-15.5.5"`.
+- **Message:** `detail`, else `"HTTP {status} error"`.
+- **`ErrorType`:** from the response status, via `HttpStatusErrorTypeMap`: 400, 413, 415, 428 → Validation,
+  401 → Unauthorized, 403 → Forbidden, 404 → NotFound, 409, 412 → Conflict, 422 → BusinessRule,
+  429, 503 → Unavailable, 504 → Timeout, everything else → Unexpected. The map is the reverse of
+  `SharedKernel.Presentation.WebApi`'s `ErrorTypeStatusCodeMap.Resolve`, plus the statuses an HTTP boundary
+  answers outside it (a failed `If-Match`, a payload or media-type rejection, rate limiting). It is duplicated
+  here rather than shared, since `11.Communication` may never reference `14.Presentation`. A downstream outage
+  therefore comes back as `Unavailable` or `Timeout` rather than as an `Unexpected` fault, with a ProblemDetails
+  body or without one.
+- **Field errors:** read only from a 400 or a 422. 400 is the platform's validation status, and 422 is the one
+  many other frameworks use for the same failure. There the `errors` extension (keyed by field path, or by code
+  for an error that names no field, each value an array of messages) is rebuilt entry by entry and returned as
+  one aggregate via `Error.Validation(IReadOnlyList<Error>)`. That is the shape `ValidationException` and
+  `Error.Details` produce on the server, so no field is lost. A 422 with field errors is therefore `Validation`,
+  and a 422 without them `BusinessRule`. The parallel `errorCodes` extension supplies each entry's real code,
+  index by index; when it names a code different from the key, the key is kept as the field path in
+  `MessageArguments[ErrorArgumentNames.PropertyPath]`. Without `errorCodes`, each key is taken as the code.
+- **Field errors on any other status** are ignored, and the error keeps its status's category. `Error.Details`
+  exists only on the validation aggregate, and an `errors` map on a 401, a 409 or a 503 must not turn an
+  authentication failure, a conflict or a retryable outage into a validation failure.
+
+A response without a usable body still takes its `ErrorType` from the status through the same
+`HttpStatusErrorTypeMap`, with the code `"http.{status}"` and the status line as the message. That covers a
+non-JSON body, an empty body, and a body with none of the members above, such as
+`{"title":"Not Found","status":404}`: typically a gateway, load balancer or proxy answering with its own HTML
+page for a service that is down or slow. A bodiless 429 or 503 is `Unavailable`, a 504 `Timeout`, a 500 or 502
+`Unexpected` and a 404 `NotFound`, never an unclassified, status-blind fallback. A 2xx response with an empty
+body, or one that deserializes to `null`, fails with the `http.empty-body` code.
 
 This is the client half of the platform's error round trip: a handler returns `Result`/`Result<T>`,
 the HTTP boundary maps a failure to RFC 9457 ProblemDetails through `ResultHttpExtensions`
