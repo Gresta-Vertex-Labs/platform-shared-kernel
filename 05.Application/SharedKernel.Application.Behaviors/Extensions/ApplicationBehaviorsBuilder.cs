@@ -146,8 +146,10 @@ public sealed class ApplicationBehaviorsBuilder
     /// <returns>This builder, for chaining.</returns>
     /// <remarks>
     /// <see cref="Build"/> throws <see cref="InvalidOperationException"/> if
-    /// <see cref="IRequestIdempotencyStore"/> is not registered in the service collection when this
-    /// was called.
+    /// <see cref="IRequestIdempotencyStore"/> or <see cref="IRequestContext"/> is not registered in the
+    /// service collection when it runs. The behavior reserves every key per tenant and caller, so it needs
+    /// to know who is calling; a host with no caller identity registers
+    /// <see cref="AnonymousRequestContext.Instance"/> or a <see cref="SystemRequestContext"/> on purpose.
     /// </remarks>
     public ApplicationBehaviorsBuilder AddIdempotencyBehavior()
     {
@@ -267,6 +269,15 @@ public sealed class ApplicationBehaviorsBuilder
             throw new InvalidOperationException(
                 "AddIdempotencyBehavior() requires SharedKernel.Application.Behaviors.Idempotency.IRequestIdempotencyStore " +
                 "to be registered in the service collection. Register an implementation before calling Build().");
+        }
+
+        if (_idempotency && !IsRegistered(typeof(IRequestContext)))
+        {
+            throw new InvalidOperationException(
+                "AddIdempotencyBehavior() requires SharedKernel.Application.Context.IRequestContext " +
+                "to be registered in the service collection, because idempotency keys are reserved per tenant " +
+                "and caller. Register an implementation before calling Build() (AnonymousRequestContext.Instance " +
+                "or a SystemRequestContext for a host with no caller identity).");
         }
 
         if (_transaction && !IsRegistered(typeof(IUnitOfWork)))

@@ -20,7 +20,7 @@ correctness property: authorization has to precede validation, a commit has to p
 | Fail-closed authorization | A request that declares no permissions is denied, not waved through |
 | Commit only on success, only once | A handler that returns a failure persists nothing, and a nested command joins the outer transaction |
 | `ICommandScope.OnCompleted` | Work that must follow a commit — publish, evict, notify — runs after it, or not at all |
-| Idempotency with a request fingerprint | A retried submission replays its original response; the same key with a different body is rejected |
+| Idempotency per tenant and caller, with a request fingerprint | A retried submission replays its original response to the caller who sent it — never to another caller using the same key; the same key with a different body is rejected |
 | Error-aware telemetry | Spans, metrics and logs all carry the error type and code, so a dashboard can alert on *what* failed |
 | `AddBehavior(type, stage)` | Your own behavior lands in the canonical order instead of wherever it was registered |
 
@@ -249,7 +249,9 @@ per-field `errors` map; `11.Communication.Rest` rebuilds the same detail on the 
 ### `IdempotencyBehavior`
 
 Applies to commands implementing `IIdempotentRequest`. It reserves the key through `IRequestIdempotencyStore`
-before the handler runs, and settles it afterwards:
+before the handler runs, and settles it afterwards. An empty or whitespace key never reaches the store:
+it fails with `Error.Validation("idempotency.key_required")`, the code `14.Presentation` answers a missing
+`Idempotency-Key` header with.
 
 | `TryBeginAsync` returns | The behavior |
 | --- | --- |
@@ -257,6 +259,33 @@ before the handler runs, and settles it afterwards:
 | `Completed` | Returns the stored response — the original outcome, not a fresh conflict |
 | `InProgress` | `Error.Conflict("idempotency.in_progress")` |
 | `FingerprintMismatch` | `Error.Conflict("idempotency.key_reused")` |
+
+**A key is reserved per tenant and caller.** A client-chosen key is not a secret, so the store never sees the
+raw key: it gets a SHA-256 digest (64 lowercase hex characters) of the tenant, the caller and the key, read from
+`IRequestContext` — actor kind, subject (`UserId`), OAuth client and impersonator. Two callers who happen to use
+the same key each get their own execution, and a caller who learns someone else's key cannot be handed that
+caller's stored response. The same caller retrying gets the replay, even after signing in again: the session id
+is deliberately not part of the scope. This is why `AddIdempotencyBehavior()` needs `IRequestContext` as well as
+the store.
+
+| Who sends the same key again | Same body | Different body |
+| --- | --- | --- |
+| The same caller | the stored response | `idempotency.key_reused` |
+| Another user, service or system identity (same tenant) | its own execution | its own execution |
+| Anyone in another tenant | its own execution | its own execution |
+| Another **anonymous** caller of the same tenant | **the stored response** | `idempotency.key_reused` |
+
+**Anonymous callers share one scope per tenant.** Nothing identifies them, so the fingerprint is all that
+separates two of them — the last row above. On a command anonymous callers can send, use unguessable keys (a
+random UUID per operation), return nothing only the sender may see, and never give it an explicit `Fingerprint`
+coarser than the request. The same applies to callers whose context reports a kind but no identifier (for
+example a `12.Security` `SystemUserContext` with no subject): they share one scope per tenant and actor kind.
+
+**Upgrading from `1.0.0-alpha.0.1171` or earlier:** reservations stored before the upgrade were keyed by the raw
+key, so they are never found again. A retry of a request first sent before the deploy — or served by a pod
+still on the old version during a rolling deploy — runs the handler a second time instead of replaying. The old
+entries simply expire (Redis TTL; EF Core `expires_at_utc` and the cleanup job). Deploy when few commands are
+in flight, and keep the mixed-version window short.
 
 The fingerprint defaults to a SHA-256 hash of the serialized request. **Set `Fingerprint` explicitly on any
 command you expect to be retried across a deploy**, because the automatic hash changes the moment the command
@@ -352,7 +381,7 @@ Each is a small interface owned by `05.Application` and implemented by infrastru
 
 | Seam | Declared in | Needed by | Implemented by |
 | --- | --- | --- | --- |
-| `IRequestContext` | `SharedKernel.Application.Abstractions` | Authorization, caching, auditing | `13.ServiceDefaults.Security`'s `AddSharedKernelRequestContext()` (over `12.Security`), or the shipped `SystemRequestContext` |
+| `IRequestContext` | `SharedKernel.Application.Abstractions` | Authorization, idempotency (keys are reserved per tenant and caller), caching, auditing | `13.ServiceDefaults.Security`'s `AddSharedKernelRequestContext()` (over `12.Security`), or the shipped `SystemRequestContext` / `AnonymousRequestContext` |
 | `IUnitOfWork` | `SharedKernel.Application.Abstractions` | Transaction, auditing | `06.Persistence` (`AddSharedKernelPostgres`), directly — no adapter |
 | `IRequestIdempotencyStore` | this package | Idempotency | `18.Idempotency`'s Redis or EF Core store |
 | `IAuditTrailWriter` | `SharedKernel.Application.Abstractions` | Auditing | `06.Persistence.EfCore.Auditing` (`UseAuditTrail()`), directly |
@@ -455,6 +484,13 @@ accepted again. That is intentional: a rejected command should be correctable an
 **Letting the automatic fingerprint ride.** Adding a property to a command changes it, and every in-flight
 retry across the deploy comes back as `idempotency.key_reused`. Set `Fingerprint` on commands that matter.
 
+**Idempotent commands open to anonymous callers.** Anonymous callers of a tenant share one idempotency scope, so
+one of them who learns another's key and sends the same body is handed the stored response. Use random keys and
+keep anything only the sender may see out of such a command's response — or require authentication for it.
+
+**Looking for the raw key in the store.** The store holds a digest of tenant, caller and key, never the key you
+sent; a `FakeRequestIdempotencyStore`'s recorded calls show that digest too.
+
 **Calling `ICommandScope.OnCompleted` from a query handler.** It throws — no command is active. Post-commit
 work only makes sense where there is a commit.
 
@@ -498,7 +534,8 @@ Assert.Contains(harness.CapturedMeasurements, m => m.InstrumentName == "sharedke
 `AddFakeApplicationBehaviorServices()` registers `IRequestContext`, `IUnitOfWork` and
 `IRequestIdempotencyStore` fakes in one call. `FakeRequestIdempotencyStore` implements the real reservation
 protocol, including rejecting a stale token, so an idempotency test exercises the same states the Redis and
-EF Core stores produce.
+EF Core stores produce. It receives the same tenant- and caller-scoped key they do, so changing
+`FakeRequestContext.UserId` between two sends acts as a second caller with its own reservation.
 
 ## Package
 

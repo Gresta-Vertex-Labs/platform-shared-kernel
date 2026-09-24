@@ -66,7 +66,7 @@ SharedKernel.Application.Behaviors.Idempotency.IdempotencyBeginStatus.InProgress
 SharedKernel.Application.Behaviors.Idempotency.IdempotencyBeginStatus.Started = 0 -> SharedKernel.Application.Behaviors.Idempotency.IdempotencyBeginStatus
 SharedKernel.Application.Behaviors.Idempotency.IdempotencyBehavior<TRequest, TResponse>
 SharedKernel.Application.Behaviors.Idempotency.IdempotencyBehavior<TRequest, TResponse>.Handle(TRequest request, MediatR.RequestHandlerDelegate<TResponse>! next, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<TResponse>!
-SharedKernel.Application.Behaviors.Idempotency.IdempotencyBehavior<TRequest, TResponse>.IdempotencyBehavior(SharedKernel.Application.Behaviors.Idempotency.IRequestIdempotencyStore! store, SharedKernel.Application.Behaviors.Commands.ICommandScope! commandScope, Microsoft.Extensions.Logging.ILogger<SharedKernel.Application.Behaviors.Idempotency.IdempotencyBehavior<TRequest, TResponse>!>! logger) -> void
+SharedKernel.Application.Behaviors.Idempotency.IdempotencyBehavior<TRequest, TResponse>.IdempotencyBehavior(SharedKernel.Application.Behaviors.Idempotency.IRequestIdempotencyStore! store, SharedKernel.Application.Context.IRequestContext! requestContext, SharedKernel.Application.Behaviors.Commands.ICommandScope! commandScope, Microsoft.Extensions.Logging.ILogger<SharedKernel.Application.Behaviors.Idempotency.IdempotencyBehavior<TRequest, TResponse>!>! logger) -> void
 SharedKernel.Application.Behaviors.Logging.ApplicationLoggingOptions
 SharedKernel.Application.Behaviors.Logging.ApplicationLoggingOptions.ApplicationLoggingOptions() -> void
 SharedKernel.Application.Behaviors.Logging.ApplicationLoggingOptions.SlowRequestThreshold.get -> System.TimeSpan

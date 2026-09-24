@@ -106,7 +106,7 @@ services.AddSharedKernelApplicationBehaviors()
     .AddAuthorizationBehavior()      // requires IRequestContext
     .AddValidationBehavior()
     .AddCachingBehaviors()           // SharedKernel.Application.Behaviors.Caching — Query + Command stage
-    .AddIdempotencyBehavior()        // requires IRequestIdempotencyStore
+    .AddIdempotencyBehavior()        // requires IRequestIdempotencyStore + IRequestContext (keys are scoped per tenant and caller)
     .AddTransactionBehavior()        // requires IUnitOfWork
     .AddAuditingBehavior()           // requires IAuditTrailWriter; registers both auditing halves
     .Build();
@@ -180,7 +180,7 @@ seams and every bridge adapter were deleted.
 | `Authorization` | `AuthorizationBehavior<,>`; `IAuthorizeRequest` (`RequiredPermissions`, `PermissionMatch` defaulting to `All`); `PermissionMatch` enum (`All`/`Any`) |
 | `Validation` | `ValidationBehavior<,>` |
 | `Commands` | `ICommandScope` (`IsActive`, `IsNested`, `OnCompleted`); internal `CommandScope`; internal `CommandScopeBehavior<,>` |
-| `Idempotency` | `IIdempotentRequest` (`IdempotencyKey`, `Fingerprint` — optional, defaults to `null`); `IRequestIdempotencyStore` (`TryBeginAsync`/`CompleteAsync`/`ReleaseAsync`); `IdempotencyBeginResult`, `IdempotencyBeginStatus`; `IdempotencyBehavior<,>`; internal `IdempotencyResponseSerializer`, `RequestFingerprint` |
+| `Idempotency` | `IIdempotentRequest` (`IdempotencyKey`, `Fingerprint` — optional, defaults to `null`); `IRequestIdempotencyStore` (`TryBeginAsync`/`CompleteAsync`/`ReleaseAsync`); `IdempotencyBeginResult`, `IdempotencyBeginStatus`; `IdempotencyBehavior<,>` (ctor `store, requestContext, commandScope, logger`); internal `IdempotencyKeyScope` (the per-tenant-and-caller key digest, see "The idempotency store contract"), `IdempotencyResponseSerializer`, `RequestFingerprint` |
 | `Transaction` | `TransactionBehavior<,>` (over `Abstractions`' `IUnitOfWork`) |
 | `Auditing` | `IAuditableRequest<TResponse>` (`Action`, `ResourceType`, `ResourceId`, `BeforeSnapshot`, `GetAfterSnapshot`); `AuditingBehavior<,>` (outer half) and internal `AuditingCommitBehavior<,>` (inner half), both registered by `AddAuditingBehavior()`; internal `AuditEntries` builder |
 | `Extensions` | `ApplicationBehaviorsBuilder` (`.AddXBehavior()` methods, `AddBehavior`, `AddDefaultBehaviors`, `Build`); `ApplicationBehaviorsServiceCollectionExtensions.AddSharedKernelApplicationBehaviors()`; `PipelineStage` enum |
@@ -271,7 +271,7 @@ registered so a handler may inject it regardless.
 | `AuthorizationBehavior` | calls `next()` | short-circuits **before** `next()`: unauthenticated → `Error.Unauthorized`; empty `RequiredPermissions` → `Error.Forbidden("authorization.no_permissions_declared")`; permission denied → `Error.Forbidden(ErrorCodes.Forbidden.InsufficientPermission)` | never throws itself |
 | `ValidationBehavior` | calls `next()` when zero failures | short-circuits before `next()` with `Error.Validation(errors)`: each child coded by `failure.ErrorCode` with the field path in `MessageArguments[PropertyPath]` | never throws itself |
 | `CommandScopeBehavior` | runs queued `OnCompleted` callbacks (outermost frame only) after `next()` returns | discards the frame's callbacks | discards the frame's callbacks (depth reset in `finally` either way) |
-| `IdempotencyBehavior` | `CompleteAsync` (persists the serialized response, passing back the reservation token; a `false` result logs a `Warning` but still returns the response) | `ReleaseAsync` (never `CompleteAsync` — a failure must remain retryable) | `ReleaseAsync`, then rethrows |
+| `IdempotencyBehavior` | reserves `IdempotencyKeyScope.Create(requestContext, key)` — never the raw key — then `CompleteAsync` (persists the serialized response, passing back the reservation token; a `false` result logs a `Warning` but still returns the response); a blank key short-circuits with `Error.Validation("idempotency.key_required")` | `ReleaseAsync` (never `CompleteAsync` — a failure must remain retryable) | `ReleaseAsync`, then rethrows |
 | `TransactionBehavior` | runs the rest of the pipeline and the handler inside `IUnitOfWork.ExecuteInTransactionAsync` (outermost command; the strategy may replay it — handlers must be re-runnable; `OnCompleted` callbacks queued by a discarded attempt are dropped); saves, runs `OnBeforeCommit` callbacks, commits | rollback, nothing committed; a joined command's failure marks the outer transaction rollback-only | rollback, the exception propagates |
 | `AuditingBehavior` (outer, outside the transaction) + `AuditingCommitBehavior` (inner, inside it) | inner half queues `RecordAsync(Outcome = Succeeded, AfterSnapshot)` on `OnBeforeCommit` (written in the business transaction, commits with it; written directly when no transaction is active) | outer half, after rollback: `RecordAsync(Outcome = Failed, ErrorCode = Error.Code)` on the writer's own connection; a `RecordAsync` failure propagates | outer half, after rollback: `Failed` with `ErrorCode` = the exception type's full name — including a failure of the commit itself; a `RecordAsync` failure here is logged (EventId 5130), the **original** exception rethrows |
 | `CachingBehavior` (Query stage, `.Caching`) | runs the handler inside `GetOrSetAsync` (once per key across concurrent callers) and caches the response | returned to every waiting caller, never cached (`CacheFactoryContext.SkipCaching`) | propagates, nothing cached; the query policy's fail-safe may serve an expired entry instead |
@@ -339,6 +339,36 @@ implements both in one file for a service that needs both).
   `ReleaseAsync` needs no log — the reservation already being gone is exactly the outcome a release
   call wants.
 - The idempotency key itself is never echoed in any error message returned to the caller.
+
+### Keys are reserved per tenant and caller (P-562 X3)
+
+A client-chosen key is not a secret. When reservations were shared by every caller of a tenant, a caller who learned
+another's key and sent the same body was handed that caller's stored response, server-generated data included. So
+`IdempotencyBehavior` never passes the raw key: `IdempotencyKeyScope.Create(IRequestContext, key)` hands the store a
+SHA-256 digest, 64 lowercase hex characters.
+
+- **Scope fields, in order:** layout label `SharedKernel.Application.Behaviors.Idempotency.KeyScope.v1`, `TenantId`
+  (`"D"`), `ActorKind` (numeric), `UserId`, `ClientId`, `ImpersonatorId`, the raw key. Each field is `0x00` when
+  absent, else `0x01` + big-endian int32 UTF-16 length + UTF-16LE code units. The encoding is injective (every field
+  delimits itself, absent differs from `""`, code units survive unpaired surrogates), so plain concatenation's
+  separator-smuggling collisions cannot happen; SHA-256 makes digest collisions infeasible.
+- **`SessionId` is excluded on purpose.** It changes on re-login; including it would turn a retry after a fresh sign-in
+  into a second execution.
+- **Fixed length** fits every store (`18`'s EF Core `key` column is 512; a raw key longer than that now works) and keeps
+  the raw key and the caller's identifiers out of the store. The fingerprint check is unchanged.
+- **Anonymous callers share one scope per tenant** (so do callers with a kind but no identifiers, e.g. `12.Security`'s
+  `SystemUserContext` mapped with a null subject). Only the fingerprint separates them: the same key + same fingerprint
+  replays another anonymous sender's response; a different fingerprint gets `idempotency.key_reused` (which still
+  reveals the key is in use). Documented residual risk — mitigated by random keys and by not returning sender-only data
+  from anonymous commands. Pinned by `Handle_AnonymousCallersOfOneTenant_*` tests.
+- **`AddIdempotencyBehavior()` requires `IRequestContext` at `Build()`.** Falling back to anonymous would silently put
+  every caller back into one shared scope. A host with no identity registers `AnonymousRequestContext.Instance` or a
+  `SystemRequestContext` on purpose. (A service whose only registration is `06.Persistence`'s anonymous fallback passes
+  the guard but gets no per-caller separation — register `AddSharedKernelRequestContext()`.)
+- **The layout is a stored format.** Changing a field, the order or the encoding orphans every stored reservation (a
+  retry spanning the deploy runs again). A new layout needs a new label and an operational note. A golden-vector test
+  (`Handle_ScopedKey_MatchesThePublishedV1Layout`, value computed outside .NET) pins it.
+- **Blank key → `idempotency.key_required`** (renamed from `idempotency.key_missing` to match `14.Presentation`).
 
 ---
 
@@ -434,6 +464,7 @@ Rule: `TValue` must round-trip through `System.Text.Json`, and a service with a 
 | Tenant cache-key/tag scoping | The internal `CacheScope` helper over `CacheKeyFormat`: key `@{tenant}:{key}` (`BuildTenantTag`, tenant as `Guid` `"D"`), policy `ForTenant(tenant)`, tags `@{tenant}:{tag}`; without a tenant the key is used as is and one starting with `@` throws `ArgumentException` (P-547) | `02.Caching.Abstractions`'s `ITenantCacheService`/`ITenantCacheKeyProvider` (they take `(entity, id)`, not a free-form query key) | `.Caching` stays a consumer of the plain `ICacheService`, yet uses the same escaped tenant format, so no tenant can read another tenant's or a global entry, and `ITenantCacheService.RemoveTenantAsync` also removes the tenant's cached query results |
 | Pipeline extensibility | A five-value `PipelineStage` enum + `AddBehavior(openGenericType, stage, requiredServices)` | An unordered, purely additive registration list | A sibling package (`.Caching`) can slot precisely between Validation and the command stage without `SharedKernel.Application.Behaviors` knowing it exists |
 | Idempotency store naming | `IRequestIdempotencyStore` | Reusing `07.Messaging.Abstractions.IIdempotencyStore`'s name | Avoids a same-name collision — `18.Idempotency` implements both contracts in one file |
+| Idempotency reservation scope (P-562 X3) | The behavior scopes the key: SHA-256 over tenant + actor kind + subject + client + impersonator + raw key, always hashed; `IRequestContext` required at `Build()` | Tenant-only scoping (replays another caller's response); passing structured scope to the store (breaks the published store contract and both `18` providers); hashing only past a length limit (two key shapes); including `SessionId` (a retry after re-login would re-execute); an anonymous fallback when no context is registered | Stored keys are opaque digests; reservations made by 1.0.0-alpha.0.1171 or earlier are never found again after the upgrade; anonymous callers of a tenant still share a scope guarded only by the fingerprint |
 | AOT/trimming | Not a constraint (user ruling) | Reflection-free everywhere, at the cost of ceremony | Reflection used at the four documented sites, each cached once per closed type |
 | Response construction on short-circuit | `FailureResponse.Create<TResponse>` — a cached, reflection-resolved `Failure(Error)` delegate | A second, parallel non-`Result` failure shape | Every short-circuiting behavior (Authorization, Validation, Idempotency) shares one mechanism |
 | `ApplicationLoggingOptions` startup validation | `[Range]` DataAnnotation on `SlowRequestThreshold` + `.AddOptions<T>().ValidateDataAnnotations().ValidateOnStart()` (`Microsoft.Extensions.Options.DataAnnotations`) | `01.Core/SharedKernel.Configuration`'s `AddValidatedOptions<TOptions>`/`ISectionBoundOptions` | Adopting `SharedKernel.Configuration` would add a `01.Core` project reference this package doesn't otherwise need; `Microsoft.Extensions.Options.DataAnnotations` is a plain `Microsoft.Extensions.*` NuGet package, already within this package's allowed reference set. `ValidateOnStart()` registers an `IStartupValidator` a real host invokes at startup — an invalid threshold fails before the first request, not at `LoggingBehavior`'s first invocation |
@@ -448,6 +479,7 @@ Changes here that silently break another layer. Check the right column before me
 | --- | --- |
 | `Transactions.IUnitOfWork`'s shape or contract (retry, rollback-only, `OnBeforeCommit`) | `06.Persistence`'s `EfUnitOfWork`/`UnitOfWorkCoordinator`; both `FakeUnitOfWork`s (`16.Testing/SharedKernel.Persistence.Testing`, `Behaviors.Tests/Support`) |
 | `Idempotency.IRequestIdempotencyStore`'s contract | `18.Idempotency`'s store implementations; `16.Testing`'s fake (both migrated onto the stateless `reservationToken`/`bool`-returning shape, same day as `SK.05.P544`) |
+| `IdempotencyKeyScope`'s layout (fields, order, encoding, label) or its 64-character output | Every reservation already stored in `18.Idempotency`'s Redis/PostgreSQL stores becomes unreachable on deploy (write an operational note); `18`'s EF Core `key` column (512) must still fit; the golden-vector test; `16.Testing`'s harness self-tests assert the 64-hex shape |
 | `Auditing.IAuditTrailWriter`/`AuditEntry`'s shape | `06.Persistence.EfCore.Auditing`'s writer; `16.Testing`'s fakes |
 | `Context.IRequestContext`'s shape | `13.ServiceDefaults.Security`'s `SecurityRequestContext`; `06.Persistence` (actor, tenant, ledger identity); `16.Testing`'s `TestRequestContext` |
 | `ICacheableQuery<TValue>`/`IInvalidatesCache`/tag scoping | `02.Caching.Abstractions`'s `ICacheService`/`CachePolicy`/`CacheFactoryContext`/`CacheKeyFormat` tenant format |
@@ -469,7 +501,10 @@ Changes here that silently break another layer. Check the right column before me
 - The nested-command guard has dedicated coverage: a nested command's callbacks merging into the parent
   frame on success, discarding on failure/exception, and `OnCompleted` throwing when no command is active.
 - Idempotency coverage includes `Started`/`InProgress`/`Completed`/`FingerprintMismatch`, release-on-failure,
-  and release-on-exception.
+  and release-on-exception, plus per-caller scoping: two users of one tenant never replay each other; the same user
+  replays (also from a new session); anonymous callers replay on the same body and conflict on another; service,
+  system and user actors, tenants, clients and impersonators scope apart; the encoding's collision cases; the golden
+  vector.
 - `AddBehavior`'s stage ordering and required-service `Build()`-time guard both have dedicated tests.
 
 ---
@@ -538,3 +573,4 @@ Changes here that silently break another layer. Check the right column before me
   prior `AddLogging()` call would otherwise fail to resolve them at first dispatch instead of at this
   deterministic `Build()` call
 - [2026-09-21] P-558: `SharedKernel.Application.Abstractions` added (shared IRequestContext/IUnitOfWork/IAuditTrailWriter); TransactionBehavior runs the handler via ExecuteInTransactionAsync, auditing split in two halves, rollback-only joins (agent)
+- [2026-09-24] P-562 X3 (owner-approved security fix): idempotency keys are reserved per tenant **and caller**. `IdempotencyBehavior` takes `IRequestContext` (breaking ctor change) and hands the store a SHA-256 digest of tenant, actor kind, subject, client, impersonator and raw key (internal `IdempotencyKeyScope`, layout v1); `AddIdempotencyBehavior()` requires `IRequestContext` at `Build()`; `idempotency.key_missing` → `idempotency.key_required`. Anonymous callers keep sharing one scope per tenant (documented residual risk). No `18.Idempotency` code change (64 chars fits the 512 `key` column); stored reservations from 1.0.0-alpha.0.1171 or earlier are not found after the upgrade. Republish `SharedKernel.Application.Behaviors` (agent)

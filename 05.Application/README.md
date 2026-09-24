@@ -40,12 +40,13 @@ internal sealed class ApproveOrderHandler(IOrderRepository orders) : ICommandHan
 ```
 
 ```text
-unauthenticated caller        -> 401  Error.Unauthorized        handler never runs
-missing orders.approve        -> 403  Error.Forbidden           handler never runs
-validation failure            -> 400  Error.Validation(errors)  handler never runs
-same idempotency key, retried -> the first response, replayed   handler never runs
-handler returns a failure     -> no commit, no eviction, key released for a later retry
-handler succeeds              -> commit, then audit, then cache eviction, in that order
+unauthenticated caller         -> 401  Error.Unauthorized        handler never runs
+missing orders.approve         -> 403  Error.Forbidden           handler never runs
+validation failure             -> 400  Error.Validation(errors)  handler never runs
+same caller, same key, retried -> the first response, replayed   handler never runs
+another caller, same key       -> its own execution              keys are reserved per tenant and caller
+handler returns a failure      -> no commit, no eviction, key released for a later retry
+handler succeeds               -> commit, then audit, then cache eviction, in that order
 ```
 
 ## Contents
@@ -178,7 +179,7 @@ services.AddSharedKernelApplicationBehaviors()
     .AddDefaultBehaviors()        // Tracing, Logging, Metrics, Validation — no prerequisites
     .AddAuthorizationBehavior()   // needs IRequestContext
     .AddCachingBehaviors()        // needs ICacheService + ITenantCacheKeyProvider
-    .AddIdempotencyBehavior()     // needs IRequestIdempotencyStore
+    .AddIdempotencyBehavior()     // needs IRequestIdempotencyStore + IRequestContext
     .AddTransactionBehavior()     // needs IUnitOfWork
     .AddAuditingBehavior()        // needs IAuditTrailWriter
     .Build();                     // throws here, at startup, naming anything missing
@@ -331,6 +332,9 @@ public sealed record PlaceOrderCommand(Guid BasketId, string IdempotencyKey) : I
 // Same key + same fingerprint, already completed -> the stored response, handler never runs.
 // Same key + different fingerprint              -> Error.Conflict("idempotency.key_reused").
 // Still in flight                               -> Error.Conflict("idempotency.in_progress").
+// Blank key                                     -> Error.Validation("idempotency.key_required").
+// Keys are reserved per tenant AND caller: another caller using the same key gets its own execution,
+// never the stored response. Anonymous callers share one scope per tenant — only the fingerprint separates them.
 ```
 
 **Post-commit work: `ICommandScope` runs it once, and only on success.**
@@ -470,7 +474,9 @@ REGISTER    services.AddSharedKernelApplicationBehaviors()
                 .Build();                     // THROWS at startup naming any missing required service
             Build() is once-only. These packages NEVER call AddMediatR.
 MARKERS     IAuthorizeRequest (RequiredPermissions, PermissionMatch All|Any) — empty set = Forbidden, fail closed.
-            IIdempotentRequest (IdempotencyKey, Fingerprint?) — commands only.
+            IIdempotentRequest (IdempotencyKey, Fingerprint?) — commands only. Reserved per tenant + caller (the
+            store gets a SHA-256 digest, never the raw key); anonymous callers share one scope per tenant.
+            Blank key -> idempotency.key_required. AddIdempotencyBehavior() needs IRequestContext.
             IAuditableRequest<T> (Action, ResourceType, ResourceId, BeforeSnapshot, GetAfterSnapshot).
             ILoggableRequest<T> (self-supplied loggable fields; never reflection over the request).
             ICacheableQuery<T> (queries only, SK0017). IInvalidatesCache (commands only, SK0018).

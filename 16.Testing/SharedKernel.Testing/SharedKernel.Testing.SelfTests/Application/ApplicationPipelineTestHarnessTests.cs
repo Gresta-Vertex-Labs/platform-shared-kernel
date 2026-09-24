@@ -189,15 +189,28 @@ public sealed class ApplicationPipelineTestHarnessTests
         }
     }
 
+    /// <summary>
+    /// Composes a harness with <c>IdempotencyBehavior</c> over <see cref="FakeRequestIdempotencyStore"/> and
+    /// <paramref name="caller"/>, which the test may mutate between sends to act as another caller.
+    /// </summary>
+    private static ApplicationPipelineTestHarness IdempotencyHarness(
+        IdempotentTestCommandHandler handler,
+        FakeRequestContext caller,
+        FakeRequestIdempotencyStore? store = null)
+    {
+        var harness = new ApplicationPipelineTestHarness();
+        harness.Services.AddSingleton<IRequestHandler<IdempotentTestCommand, Result>>(handler);
+        harness.Services.AddSingleton<IRequestIdempotencyStore>(store ?? new FakeRequestIdempotencyStore());
+        harness.Services.AddSingleton<IRequestContext>(caller);
+        harness.AddBehaviors().AddIdempotencyBehavior().Build();
+        return harness.Build<ApplicationPipelineTestHarnessTests>();
+    }
+
     [Fact]
     public async Task SendAsync_IdempotencyBehavior_DuplicateKey_ReplaysStoredResponse_HandlerRunsOnce()
     {
-        using var harness = new ApplicationPipelineTestHarness();
         var handler = new IdempotentTestCommandHandler();
-        harness.Services.AddSingleton<IRequestHandler<IdempotentTestCommand, Result>>(handler);
-        harness.Services.AddSingleton<IRequestIdempotencyStore, FakeRequestIdempotencyStore>();
-        harness.AddBehaviors().AddIdempotencyBehavior().Build();
-        harness.Build<ApplicationPipelineTestHarnessTests>();
+        using var harness = IdempotencyHarness(handler, new FakeRequestContext());
 
         var first = await harness.SendAsync(new IdempotentTestCommand("key-1"));
         var second = await harness.SendAsync(new IdempotentTestCommand("key-1"));
@@ -207,15 +220,106 @@ public sealed class ApplicationPipelineTestHarnessTests
         Assert.Equal(1, handler.CallCount);
     }
 
+    /// <summary>
+    /// Keys are reserved per tenant and caller: a second user sending the same key and body gets their own
+    /// execution, never the first user's stored response. The first user's retry still replays.
+    /// </summary>
+    [Fact]
+    public async Task SendAsync_IdempotencyBehavior_TwoUsersSameKeyAndBody_EachRunsTheHandler()
+    {
+        var handler = new IdempotentTestCommandHandler();
+        var caller = new FakeRequestContext { UserId = "alice", TenantId = Guid.NewGuid() };
+        using var harness = IdempotencyHarness(handler, caller);
+
+        await harness.SendAsync(new IdempotentTestCommand("shared-key", "body"));
+        caller.UserId = "bob";
+        await harness.SendAsync(new IdempotentTestCommand("shared-key", "body"));
+        caller.UserId = "alice";
+        var aliceRetry = await harness.SendAsync(new IdempotentTestCommand("shared-key", "body"));
+
+        Assert.True(aliceRetry.IsSuccess);
+        Assert.Equal(2, handler.CallCount);
+    }
+
+    /// <summary>
+    /// The documented residual risk: anonymous callers of one tenant share one scope, where only the fingerprint
+    /// separates them, so the same key with the same body replays.
+    /// </summary>
+    [Fact]
+    public async Task SendAsync_IdempotencyBehavior_AnonymousCallersSameKeyAndBody_Replay()
+    {
+        var handler = new IdempotentTestCommandHandler();
+        using var harness = IdempotencyHarness(handler, new FakeRequestContext { IsAuthenticated = false, UserId = null });
+
+        await harness.SendAsync(new IdempotentTestCommand("anonymous-key", "body"));
+        var second = await harness.SendAsync(new IdempotentTestCommand("anonymous-key", "body"));
+
+        Assert.True(second.IsSuccess);
+        Assert.Equal(1, handler.CallCount);
+    }
+
+    [Fact]
+    public async Task SendAsync_IdempotencyBehavior_AnonymousCallersSameKeyDifferentBody_ReturnsKeyReused()
+    {
+        var handler = new IdempotentTestCommandHandler();
+        using var harness = IdempotencyHarness(handler, new FakeRequestContext { IsAuthenticated = false, UserId = null });
+
+        await harness.SendAsync(new IdempotentTestCommand("anonymous-key", "a"));
+        var second = await harness.SendAsync(new IdempotentTestCommand("anonymous-key", "b"));
+
+        Assert.True(second.IsFailure);
+        Assert.Equal("idempotency.key_reused", second.Error.Code);
+        Assert.Equal(1, handler.CallCount);
+    }
+
+    [Fact]
+    public async Task SendAsync_IdempotencyBehavior_EmptyKey_ReturnsKeyRequired()
+    {
+        var handler = new IdempotentTestCommandHandler();
+        using var harness = IdempotencyHarness(handler, new FakeRequestContext());
+
+        var result = await harness.SendAsync(new IdempotentTestCommand(" "));
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("idempotency.key_required", result.Error.Code);
+        Assert.Equal(0, handler.CallCount);
+    }
+
+    /// <summary>
+    /// The fake stores the key the behavior hands over — already scoped to the tenant and caller — exactly like the
+    /// Redis and EF Core stores, so <see cref="FakeRequestIdempotencyStore.Calls"/> never shows the raw key.
+    /// </summary>
+    [Fact]
+    public async Task SendAsync_IdempotencyBehavior_StoreReceivesTheScopedKey_NotTheRawKey()
+    {
+        var handler = new IdempotentTestCommandHandler();
+        var store = new FakeRequestIdempotencyStore();
+        using var harness = IdempotencyHarness(handler, new FakeRequestContext(), store);
+
+        await harness.SendAsync(new IdempotentTestCommand("order-42"));
+
+        var key = Assert.Single(store.Calls, call => call.Member == nameof(FakeRequestIdempotencyStore.TryBeginAsync)).Key;
+        Assert.Equal(64, key.Length);
+        Assert.Matches("^[0-9a-f]{64}$", key);
+        Assert.DoesNotContain("order-42", key, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AddIdempotencyBehavior_WithoutRequestContext_BuildThrows()
+    {
+        using var harness = new ApplicationPipelineTestHarness();
+        harness.Services.AddSingleton<IRequestIdempotencyStore, FakeRequestIdempotencyStore>();
+
+        var exception = Assert.Throws<InvalidOperationException>(() => harness.AddBehaviors().AddIdempotencyBehavior().Build());
+
+        Assert.Contains(nameof(IRequestContext), exception.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task SendAsync_IdempotencyBehavior_SameKeyDifferentPayload_ReturnsConflict()
     {
-        using var harness = new ApplicationPipelineTestHarness();
         var handler = new IdempotentTestCommandHandler();
-        harness.Services.AddSingleton<IRequestHandler<IdempotentTestCommand, Result>>(handler);
-        harness.Services.AddSingleton<IRequestIdempotencyStore, FakeRequestIdempotencyStore>();
-        harness.AddBehaviors().AddIdempotencyBehavior().Build();
-        harness.Build<ApplicationPipelineTestHarnessTests>();
+        using var harness = IdempotencyHarness(handler, new FakeRequestContext());
 
         await harness.SendAsync(new IdempotentTestCommand("key-1", "a"));
         var second = await harness.SendAsync(new IdempotentTestCommand("key-1", "b"));

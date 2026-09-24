@@ -1381,6 +1381,9 @@ FakeRequestContext  (sealed, : SharedKernel.Persistence.Testing.TestRequestConte
     Settable IsAuthenticated/UserId/TenantId/ActorKind/ClientId/SessionId/ImpersonatorId + permission set.
 FakeRequestIdempotencyStore  (: 05.Application.Behaviors' IRequestIdempotencyStore)
     Stateless reservation-token contract (Started/InProgress/Completed/FingerprintMismatch; Complete/Release → bool).
+    Stores keys verbatim and never scopes them itself: through IdempotencyBehavior it receives the tenant- and
+    caller-scoped digest (64 lowercase hex, P-562 X3), exactly like the 18.Idempotency stores, so Calls[i].Key is
+    that digest, never the raw key. AddIdempotencyBehavior() now also needs an IRequestContext registered.
 ApplicationPipelineTestHarness + AddFakeApplicationBehaviorServices()
     Registers the fakes (FakeUnitOfWork → IUnitOfWork, FakeRequestContext → IRequestContext, ...) and composes the
     real ApplicationBehaviorsBuilder pipeline so a consuming service can assert its own command/query composition.

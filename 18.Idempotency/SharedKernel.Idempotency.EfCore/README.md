@@ -33,7 +33,12 @@ Omitting the `ITenantContextAccessor` registration throws `InvalidOperationExcep
 ## Contract
 
 `IRequestIdempotencyStore.TryBeginAsync(key, requestFingerprint, ct)` atomically reserves a new key
-and records the caller's request fingerprint, or reports the key's existing state:
+and records the caller's request fingerprint, or reports the key's existing state. The key is stored in
+the `key` column (512 characters) exactly as given. Through `IdempotencyBehavior` it is never the
+command's raw key but a SHA-256 digest of tenant, caller and key — always 64 lowercase hex characters,
+whatever the raw key's length — so a reservation belongs to one caller of one tenant and another caller
+using the same key cannot be handed its stored response. The `tenant_id` column from
+`ITenantContextAccessor` stays on top of that.
 
 | Existing row | Same fingerprint | Different fingerprint |
 |---|---|---|

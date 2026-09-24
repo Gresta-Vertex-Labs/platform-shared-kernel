@@ -103,7 +103,7 @@ public sealed class UnitOfWork(Journal journal) : IUnitOfWork
 public sealed class RequestContext : IRequestContext
 {
     public bool IsAuthenticated { get; init; } = true;
-    public string? UserId => "user-1";
+    public string? UserId { get; set; } = "user-1";
     public Guid? TenantId => null;
     public HashSet<string> Permissions { get; } = ["orders.place"];
 
@@ -222,6 +222,34 @@ public sealed class ConsumerVerifyTests
         Assert.Equal(first.Value, replay.Value);
         Assert.Equal("idempotency.key_reused", reused.Error.Code);
         Assert.Equal(1, journal.HandlerCalls);
+    }
+
+    [Fact]
+    public async Task Command_SameKeyFromAnotherCaller_RunsItsOwnExecution_AndNeverReplaysTheFirstCallersResponse()
+    {
+        var (sender, journal, context) = Build();
+
+        var first = await sender.Send(new PlaceOrder("ada", 10m, "key-6"));
+        context.UserId = "user-2";
+        var otherCaller = await sender.Send(new PlaceOrder("ada", 10m, "key-6"));
+        context.UserId = "user-1";
+        var retry = await sender.Send(new PlaceOrder("ada", 10m, "key-6"));
+
+        Assert.NotEqual(first.Value, otherCaller.Value);
+        Assert.Equal(first.Value, retry.Value);
+        Assert.Equal(2, journal.HandlerCalls);
+    }
+
+    [Fact]
+    public async Task Command_BlankIdempotencyKey_IsKeyRequired()
+    {
+        var (sender, journal, _) = Build();
+
+        var result = await sender.Send(new PlaceOrder("ada", 10m, " "));
+
+        Assert.Equal(ErrorType.Validation, result.Error.Type);
+        Assert.Equal("idempotency.key_required", result.Error.Code);
+        Assert.Equal(0, journal.HandlerCalls);
     }
 
     private static (ISender Sender, Journal Journal, RequestContext Context) Build()
