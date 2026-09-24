@@ -24,7 +24,7 @@
       converts outcomes (Result, Error, exceptions) into HTTP responses; it never produces them,
       so it references no application or infrastructure layer. SharedKernel.Localization supplies
       the optional ILocalizationCatalog used to translate client messages; SharedKernel.Configuration
-      binds and validates WebApiOptions.
+      binds and validates SharedKernelWebApiOptions.
     -->
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
     <ProjectReference Include="..\..\01.Core\SharedKernel.Core\SharedKernel.Core.csproj" />

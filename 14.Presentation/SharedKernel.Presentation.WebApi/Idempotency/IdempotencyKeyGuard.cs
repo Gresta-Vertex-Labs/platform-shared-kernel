@@ -79,7 +79,8 @@ internal static partial class IdempotencyKeyGuard
     {
         key = null;
 
-        if (values.Count == 0 || (values.Count == 1 && string.IsNullOrEmpty(values[0])))
+        // A blank header is a missing one, as it is for If-Match (RequestFacts.HasValue).
+        if (!RequestFacts.HasValue(values))
         {
             return KeyState.Missing;
         }

@@ -343,7 +343,7 @@ Every refusal is logged at Warning (14002) with the endpoint and the code, never
 
 | The request sends | Required | Accepted |
 | --- | --- | --- |
-| No header (or an empty one) | 400 `idempotency.key_required` | Passes; the parameter is `null` |
+| No header (or a blank one) | 400 `idempotency.key_required` | Passes; the parameter is `null` |
 | 1 to 256 visible ASCII characters (0x21–0x7E), optionally in one pair of double quotes | Passes; the key without the quotes | Passes |
 | Anything else: too long, spaces, `""`, two header values | 400 `idempotency.key_invalid` | 400 `idempotency.key_invalid` |
 
@@ -389,7 +389,7 @@ orders.MapPut("/{id:guid}/address", (Guid id, ChangeAddressRequest body, IfMatch
 
 | `If-Match` sent (RFC 9110 section 13.1.1) | Required | Accepted |
 | --- | --- | --- |
-| None (or empty) | 428 `precondition.required` | Passes, unconditional; the parameter is `null` |
+| None (or blank) | 428 `precondition.required` | Passes, unconditional; the parameter is `null` |
 | `*` | 428 `precondition.required` | 400 `precondition.invalid` |
 | Malformed, or more than one entity tag | 400 `precondition.invalid` | 400 `precondition.invalid` |
 | A weak tag, `W/"7"` (`If-Match` compares strongly, so it never matches) | 412 `precondition.failed` | 412 `precondition.failed` |

@@ -29,7 +29,8 @@ namespace SharedKernel.Persistence.Abstractions.Repositories;
 /// plain number is not a version. Whether a well-formed token is a version of <em>the aggregate being changed</em> is
 /// decided when it is used (<c>UpdateAsync</c>/<c>DeleteAsync</c>): a token of another aggregate, an altered token or
 /// one sealed with a key the service does not know is treated as a stale version — a <c>ConflictException</c>
-/// (<c>persistence.concurrency_conflict</c>), answered with 412 on an endpoint that requires <c>If-Match</c>.
+/// (<c>persistence.concurrency_conflict</c>), which <c>14.Presentation</c> answers with 412 when the request carries
+/// <c>If-Match</c>.
 /// </para>
 /// <para>
 /// <strong>Deterministic:</strong> the same version of the same aggregate always yields the same token while the

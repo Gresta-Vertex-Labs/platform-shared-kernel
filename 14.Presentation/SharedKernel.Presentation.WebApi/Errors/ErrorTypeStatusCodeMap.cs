@@ -7,7 +7,8 @@ namespace SharedKernel.Presentation.WebApi.Errors;
 /// <remarks>
 /// Never duplicate this mapping in a switch of your own. Response writers call
 /// <see cref="ErrorPresentation.GetStatusCode"/>, which applies this map plus the one request-dependent rule: a
-/// <see cref="ErrorType.Conflict"/> on an endpoint that requires <c>If-Match</c> is 412.
+/// <see cref="ErrorType.Conflict"/> whose code is in <c>Problems:PreconditionFailedErrorCodes</c>, on a request that
+/// carries <c>If-Match</c> or <c>If-None-Match</c>, is 412.
 /// </remarks>
 public static class ErrorTypeStatusCodeMap
 {

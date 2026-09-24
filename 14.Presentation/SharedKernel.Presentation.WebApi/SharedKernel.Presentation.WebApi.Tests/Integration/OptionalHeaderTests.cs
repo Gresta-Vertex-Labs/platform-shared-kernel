@@ -105,6 +105,16 @@ public sealed class OptionalHeaderTests : IClassFixture<FullStackHost>
     }
 
     [Theory]
+    [MemberData(nameof(KeyEndpoints))]
+    public async Task BlankKey_IsMissing_AsIfMatch(string path)
+    {
+        using var response = await SendKeyAsync(path, "   ");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        (await BodyAsync(response)).Should().Be(HandlerCalls.None);
+    }
+
+    [Theory]
     [MemberData(nameof(ValidKeys))]
     public async Task ValidKey_ReachesTheHandler_WithoutQuotes(string path, string key)
     {

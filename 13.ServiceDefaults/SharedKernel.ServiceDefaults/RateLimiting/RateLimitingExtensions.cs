@@ -67,9 +67,9 @@ public static class RateLimitingExtensions
     /// </list>
     /// <para>
     /// The limiter must also be in the request pipeline. <c>UseSharedKernelWebApi()</c> adds
-    /// <c>UseRateLimiter()</c> itself whenever rate limiting is registered — after authentication and
-    /// authorization, so a policy can partition by the caller — so a service using it calls nothing
-    /// more. Without it, call <c>app.UseRateLimiter()</c> after <c>builder.Build()</c>, after
+    /// <c>UseRateLimiter()</c> itself whenever rate limiting is registered — after authentication, so a
+    /// policy can partition by the caller, and before authorization, so refused requests count too — so a
+    /// service using it calls nothing more. Without it, call <c>app.UseRateLimiter()</c> after <c>builder.Build()</c>, after
     /// <c>UseRouting()</c> when endpoints name a policy.
     /// </para>
     /// <para>

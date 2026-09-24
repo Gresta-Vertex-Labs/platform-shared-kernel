@@ -48,6 +48,15 @@ public sealed class IdempotencyKeyTests : IClassFixture<FullStackHost>
     }
 
     [Theory]
+    [MemberData(nameof(Endpoints))]
+    public async Task BlankKey_IsMissing_Is400_KeyRequired(string path)
+    {
+        using var response = await SendAsync(path, "   ");
+
+        await response.ShouldBeProblemAsync(StatusCodes.Status400BadRequest, PresentationErrorCodes.IdempotencyKeyRequired);
+    }
+
+    [Theory]
     [InlineData("/idempotent", "has space")]
     [InlineData("/idempotent", "\"\"")]
     [InlineData("/idempotent", "é-not-ascii")]
