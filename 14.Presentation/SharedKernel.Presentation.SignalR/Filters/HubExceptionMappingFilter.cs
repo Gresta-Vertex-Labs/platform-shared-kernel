@@ -33,6 +33,9 @@ namespace SharedKernel.Presentation.SignalR.Filters;
 ///   a <c>Result&lt;IAsyncEnumerable&lt;T&gt;&gt;</c> method is an ordinary invocation, and its stream as the value of
 ///   that invocation would close the connection (the JSON protocol cannot write it) or reach the client as a
 ///   meaningless object (a channel reader). The stream is not read.</item>
+///   <item>A <see cref="TimeoutException"/>, or an <see cref="OperationCanceledException"/> while the connection is
+///   open (a timeout inside the service), becomes <c>timeout.default: The operation did not complete in time.</c> and is
+///   logged at Error — the error an HTTP request gets for it (504).</item>
 ///   <item>Any other exception becomes <c>unexpected.exception: An unexpected error occurred.</c> (in Development, the
 ///   exception's message) and is logged at Error.</item>
 ///   <item>Cancellation because the connection closed is logged at Debug and rethrown: there is no client to answer.</item>
@@ -51,6 +54,8 @@ namespace SharedKernel.Presentation.SignalR.Filters;
 internal sealed partial class HubExceptionMappingFilter : IHubFilter
 {
     private const string UnexpectedMessage = "An unexpected error occurred.";
+
+    private const string TimeoutMessage = "The operation did not complete in time.";
 
     private readonly ILogger<HubExceptionMappingFilter> _logger;
 
@@ -105,6 +110,12 @@ internal sealed partial class HubExceptionMappingFilter : IHubFilter
         catch (SharedKernelException exception)
         {
             throw CreateException(invocationContext, exception.Error, exception);
+        }
+        catch (Exception exception) when (exception is TimeoutException or OperationCanceledException)
+        {
+            // Not the client: the connection is still open, so something inside the service ran out of time — the
+            // error an HTTP request gets for the same exception (504 timeout.default).
+            throw CreateException(invocationContext, Error.Timeout(ErrorCodes.Timeout.Default, TimeoutMessage), exception);
         }
         catch (Exception exception)
         {

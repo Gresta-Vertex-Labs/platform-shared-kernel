@@ -16,7 +16,8 @@ namespace SharedKernel.Presentation.WebApi;
 /// <remarks>
 /// <c>If-None-Match</c> uses the weak comparison of RFC 9110 section 13.1.2, so <c>W/"42"</c> matches <c>"42"</c>.
 /// For every other method the body is always sent: the request has already been carried out. OpenAPI documents the
-/// 200 body, and the 304 only for an endpoint that answers <c>GET</c> or <c>HEAD</c>.
+/// 200 body, and the 304 only for an endpoint that answers <c>GET</c> or <c>HEAD</c>; both with their <c>ETag</c>
+/// header (<see cref="IETagResponseMetadata"/>).
 /// </remarks>
 public sealed class OkWithETag<TValue> : IResult, IStatusCodeHttpResult, IValueHttpResult, IValueHttpResult<TValue>, IEndpointMetadataProvider
 {
@@ -81,6 +82,11 @@ public sealed class OkWithETag<TValue> : IResult, IStatusCodeHttpResult, IValueH
         if (methods is null || methods.Count == 0 || methods.Any(IsRead))
         {
             builder.Metadata.Add(new ProducesResponseTypeMetadata(StatusCodes.Status304NotModified, typeof(void)));
+            builder.Metadata.Add(new ETagResponseMetadata(StatusCodes.Status200OK, StatusCodes.Status304NotModified));
+        }
+        else
+        {
+            builder.Metadata.Add(new ETagResponseMetadata(StatusCodes.Status200OK));
         }
     }
 

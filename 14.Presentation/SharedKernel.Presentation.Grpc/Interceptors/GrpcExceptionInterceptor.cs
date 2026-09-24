@@ -42,6 +42,9 @@ namespace SharedKernel.Presentation.Grpc.Interceptors;
 ///   arrives: <c>SharedKernel.Core</c>'s <c>GetValueOrThrow()</c> and <c>ThrowIfFailure()</c> throw
 ///   <c>Error.ToException()</c> — the exception of the error's type, a <see cref="DomainException"/> for
 ///   <see cref="ErrorType.Unavailable"/> and <see cref="ErrorType.Timeout"/> — which carries the error unchanged.</item>
+///   <item>A <see cref="TimeoutException"/>, or an <see cref="OperationCanceledException"/> while the call is not
+///   cancelled (a timeout inside the service): <see cref="StatusCode.DeadlineExceeded"/> <c>timeout.default</c>, the
+///   status a returned <see cref="Error.Timeout"/> gets — as over HTTP, which answers these with 504.</item>
 ///   <item>Anything else: <see cref="StatusCode.Internal"/> <c>unexpected.exception</c> with a generic message; in
 ///   Development the exception message instead.</item>
 /// </list>
@@ -52,6 +55,8 @@ namespace SharedKernel.Presentation.Grpc.Interceptors;
 internal sealed partial class GrpcExceptionInterceptor : Interceptor
 {
     private const string UnexpectedMessage = "An unexpected error occurred.";
+
+    private const string TimeoutMessage = "The operation did not complete in time.";
 
     private const string CancelledMessage = "The call was cancelled.";
 
@@ -163,6 +168,14 @@ internal sealed partial class GrpcExceptionInterceptor : Interceptor
             case SharedKernelException sharedKernelException:
                 LogFailure(context, sharedKernelException.Error, exception);
                 return RpcStatusFactory.CreateException(sharedKernelException.Error, httpContext, domain);
+
+            case TimeoutException:
+            case OperationCanceledException:
+                // Not the client: the call is still open, so something inside the service ran out of time. The status
+                // of a returned Error.Timeout, as HTTP answers the same exception with 504 timeout.default.
+                var timeout = Error.Timeout(ErrorCodes.Timeout.Default, TimeoutMessage);
+                LogFailure(context, timeout, exception);
+                return RpcStatusFactory.CreateException(timeout, httpContext, domain);
 
             default:
                 Log.UnhandledException(_logger, context.Method, exception);

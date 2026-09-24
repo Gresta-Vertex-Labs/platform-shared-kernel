@@ -25,6 +25,8 @@ public sealed class ErrorMappingTests
 
     private const string GenericUnavailable = "The service is temporarily unavailable. Try again later.";
 
+    private const string GenericTimeout = "The operation did not complete in time.";
+
     private static readonly string MappingCategory = typeof(HubExceptionMappingFilter).FullName!;
 
     [Fact]
@@ -84,6 +86,26 @@ public sealed class ErrorMappingTests
         var error = await connection.InvokeExpectingErrorAsync(nameof(ErrorsHub.ThrowUnknown));
 
         error.Should().Be(new HubError(ErrorCodes.Unexpected.Default, HubMessages.Secret));
+    }
+
+    [Theory]
+    [InlineData(nameof(ErrorsHub.ThrowTimeout), typeof(TimeoutException))]
+    [InlineData(nameof(ErrorsHub.ThrowInternalCancellation), typeof(TaskCanceledException))]
+    public async Task TimeoutInsideTheService_IsTheTimeoutError_LoggedAsAServerError_AsOverHttp(string method, Type thrown)
+    {
+        // HTTP answers the same exceptions 504 timeout.default; the connection is open, so the client did not cause it.
+        var loggerFactory = new InMemoryLoggerFactory();
+        await using var app = await StartAsync(loggerFactory: loggerFactory);
+        await using var connection = await app.ConnectAsync(HubPaths.Errors);
+
+        var failure = await connection.InvokeExpectingFailureAsync(method);
+
+        SignalRTestHost.ReadCodedError(failure, method).Should().Be(new HubError(ErrorCodes.Timeout.Default, GenericTimeout));
+        failure.Message.Should().NotContain("search.internal");
+
+        var records = loggerFactory.GetLogger(MappingCategory).Records;
+        records.ShouldHaveLogged(new EventId(14103), LogLevel.Error).Exception.Should().BeOfType(thrown);
+        records.ShouldNotHaveLogged(new EventId(14100));
     }
 
     [Fact]

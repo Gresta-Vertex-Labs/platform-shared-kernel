@@ -57,6 +57,7 @@ Every error of a hub method becomes a `HubException` whose message is `{code}: {
 | --- | --- |
 | returns a failed `Result` or `Result<T>`, or throws a `SharedKernelException` | its `Error.Code` and client message: translated into the connection's culture, and for a server error (`Unexpected`, `Unavailable`, `Timeout`) replaced by a generic sentence outside Development — exactly like an HTTP problem response |
 | throws a `ValidationException` with several errors | `validation.failed: {n} validation errors occurred.` |
+| throws a `TimeoutException`, or an `OperationCanceledException` while the connection is open (a timeout inside the service) | `timeout.default: The operation did not complete in time.` — what HTTP answers with 504 |
 | throws any other exception | `unexpected.exception: An unexpected error occurred.` (in Development, the exception's message) |
 | throws a `HubException` itself | passes unchanged |
 

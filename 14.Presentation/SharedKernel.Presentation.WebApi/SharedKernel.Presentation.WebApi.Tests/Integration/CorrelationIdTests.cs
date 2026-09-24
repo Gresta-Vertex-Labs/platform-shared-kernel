@@ -32,7 +32,9 @@ public sealed class CorrelationIdTests
 
     private const string BaggageHeader = "baggage";
 
-    private const string ForgedKey = "tenant.id";
+    // A key 13's log processor copies: a caller's item under it would reach every log record of the request as if the
+    // platform had resolved it, which only the edge's removal prevents.
+    private const string ForgedKey = WellKnownBaggageKeys.TenantId;
 
     [Theory]
     [InlineData("abc-123")]
@@ -310,11 +312,19 @@ public sealed class CorrelationIdTests
     }
 
     /// <summary>
-    /// Mirrors the documented contract of 13.ServiceDefaults' <c>BaggageLogRecordProcessor</c> (baggage copied onto
-    /// log records), without referencing that package.
+    /// Mirrors 13.ServiceDefaults' <c>BaggageLogRecordProcessor</c> (P-562 X2) without referencing that package: copies
+    /// the two baggage items platform middleware writes, <c>correlation.id</c> and <c>TenantId</c>, onto log records —
+    /// never over an attribute already there, and never a value with a control or line-break character. Every other
+    /// baggage item is ignored.
     /// </summary>
     private sealed class BaggageToAttributesProcessor : BaseProcessor<OtelLogRecord>
     {
+        private const char LineSeparator = (char)0x2028;
+
+        private const char ParagraphSeparator = (char)0x2029;
+
+        private static readonly string[] PlatformKeys = [WellKnownBaggageKeys.CorrelationId, WellKnownBaggageKeys.TenantId];
+
         public override void OnEnd(OtelLogRecord data)
         {
             if (Activity.Current is not { } activity)
@@ -323,9 +333,9 @@ public sealed class CorrelationIdTests
             }
 
             var attributes = new List<KeyValuePair<string, object?>>(data.Attributes ?? []);
-            foreach (var (key, value) in activity.Baggage)
+            foreach (var key in PlatformKeys)
             {
-                if (attributes.All(attribute => attribute.Key != key))
+                if (activity.GetBaggageItem(key) is { } value && IsLoggable(value) && attributes.All(attribute => attribute.Key != key))
                 {
                     attributes.Add(new KeyValuePair<string, object?>(key, value));
                 }
@@ -333,6 +343,10 @@ public sealed class CorrelationIdTests
 
             data.Attributes = attributes;
         }
+
+        // A log viewer renders these as line breaks: C0, DEL and C1 controls, and the Unicode line and paragraph separators.
+        private static bool IsLoggable(string value) =>
+            !value.Any(character => char.IsControl(character) || character is LineSeparator or ParagraphSeparator);
     }
 
     private sealed class CapturingProcessor(List<IReadOnlyList<KeyValuePair<string, object?>>?> sink) : BaseProcessor<OtelLogRecord>

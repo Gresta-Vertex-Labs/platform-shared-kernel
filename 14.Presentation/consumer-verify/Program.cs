@@ -3,18 +3,22 @@
 // Grpc.Net.Client channel. Nothing is mocked; every check reads what a caller would read. Exits non-zero on the first
 // failed check.
 //   1. WebApi — AddSharedKernelWebApi/UseSharedKernelWebApi: typed results, the one application/problem+json error
-//      shape, native authorization (401/403), a required Idempotency-Key, ETag with 304, If-Match with 428/412, the
-//      exposed CORS headers, and the automatic 429 body for a limiter registered with AddRateLimiter.
+//      shape, native authorization (401/403), an Idempotency-Key required by an IdempotencyKey parameter, ETag with
+//      304, If-Match required by an IfMatch<long> parameter with 428/412 (the service's own version-conflict code
+//      added to Problems.PreconditionFailedErrorCodes), the exposed CORS headers, and the automatic 429 body for a
+//      limiter registered with AddRateLimiter.
 //   2. WebApi — settings that fail validation stop the host before it serves a request.
 //   3. OpenApi — AddSharedKernelOpenApi/MapSharedKernelOpenApi generate one document per API version, each carrying the
 //      ProblemDetails schema. Asp.Versioning.OpenApi reflects over Microsoft.AspNetCore.OpenApi internals, so a package
 //      upgrade that breaks that fails here instead of in a service.
 //   4. SignalR — AddSharedKernelSignalR: a hub method returning Result<T> returns its value; a failure reaches the
-//      client as a HubException "{code}: {message}", a server error redacted.
-//   5. gRPC — AddSharedKernelGrpc: GetValueOrThrow/ThrowIfFailure failures reach the client as a rich google.rpc.Status,
-//      read back with GetRpcStatus(): ErrorInfo (code, domain, trace and correlation ids) and BadRequest.
+//      client as a HubException "{code}: {message}", read back with HubErrorMessage.TryParse, a server error redacted.
+//   5. gRPC — AddSharedKernelGrpc: a failed result ended with SharedKernel.Core's GetValueOrThrow/ThrowIfFailure
+//      reaches the client as a rich google.rpc.Status, read back with GetRpcStatus(): ErrorInfo (code, domain, trace
+//      and correlation ids) and BadRequest.
 //   6. All four packages in one host: the registrations compose and every protocol answers.
 
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -41,6 +45,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using SharedKernel.Core.Extensions;
 using SharedKernel.Presentation.Grpc;
 using SharedKernel.Presentation.OpenApi;
 using SharedKernel.Presentation.SignalR;
@@ -100,7 +105,14 @@ static async Task VerifyAllSurfacesAsync()
 static async Task Surface1_WebApiOneCallSetup()
 {
     var builder = Hosts.CreateBuilder(Environments.Production);
-    builder.AddSharedKernelWebApi(options => options.Cors.AllowedOrigins.Add(Values.AllowedOrigin));
+    builder.AddSharedKernelWebApi(options =>
+    {
+        options.Cors.AllowedOrigins.Add(Values.AllowedOrigin);
+
+        // The service's own version-conflict code: a conditional request failing with it is answered 412, like the
+        // platform's persistence.concurrency_conflict. Every other conflict stays 409.
+        options.Problems.PreconditionFailedErrorCodes.Add(Values.DocumentVersionMismatch);
+    });
     builder.AddHeaderAuthentication();
 
     // No OnRejected: the WebApi core supplies the 429 problem body itself.
@@ -167,17 +179,18 @@ static async Task Surface1_WebApiOneCallSetup()
         Check.Status(allowed, HttpStatusCode.OK, "RequirePermission, permission held");
     }
 
-    // Required Idempotency-Key: missing → 400, malformed → 400, valid (quoted or not) → the handler reads it.
+    // An IdempotencyKey parameter requires the header: missing → 400, malformed → 400, valid (quoted or not) → the
+    // handler receives the key without quotes.
     using (var withoutKey = await client.PostAsync("/payments", content: null))
     {
-        (await Check.ProblemAsync(withoutKey, HttpStatusCode.BadRequest, PresentationErrorCodes.IdempotencyKeyRequired, "RequireIdempotencyKey, missing")).Dispose();
+        (await Check.ProblemAsync(withoutKey, HttpStatusCode.BadRequest, PresentationErrorCodes.IdempotencyKeyRequired, "IdempotencyKey parameter, missing")).Dispose();
     }
 
     using (var request = new HttpRequestMessage(HttpMethod.Post, "/payments"))
     {
         request.Headers.TryAddWithoutValidation(WellKnownHeaders.IdempotencyKey, "not a valid key");
         using var malformed = await client.SendAsync(request);
-        (await Check.ProblemAsync(malformed, HttpStatusCode.BadRequest, PresentationErrorCodes.IdempotencyKeyInvalid, "RequireIdempotencyKey, malformed")).Dispose();
+        (await Check.ProblemAsync(malformed, HttpStatusCode.BadRequest, PresentationErrorCodes.IdempotencyKeyInvalid, "IdempotencyKey parameter, malformed")).Dispose();
     }
 
     foreach (var sent in new[] { "pay-7f3a", "\"pay-7f3a\"" })
@@ -185,45 +198,54 @@ static async Task Surface1_WebApiOneCallSetup()
         using var request = new HttpRequestMessage(HttpMethod.Post, "/payments");
         request.Headers.TryAddWithoutValidation(WellKnownHeaders.IdempotencyKey, sent);
         using var accepted = await client.SendAsync(request);
-        Check.Status(accepted, HttpStatusCode.OK, $"RequireIdempotencyKey, key {sent}");
+        Check.Status(accepted, HttpStatusCode.OK, $"IdempotencyKey parameter, key {sent}");
         using var body = await Check.JsonAsync(accepted);
-        Check.That(body.RootElement.GetProperty("key").GetString() == "pay-7f3a", $"GetIdempotencyKey() returns the key sent as {sent}");
+        Check.That(body.RootElement.GetProperty("key").GetString() == "pay-7f3a", $"the IdempotencyKey parameter carries the key sent as {sent}");
     }
 
     // ETag and 304: ToOkWithETag answers a matching If-None-Match with 304 and no body.
     using (var document = await client.GetAsync("/documents/1"))
     {
         Check.Status(document, HttpStatusCode.OK, "GET /documents/1 (ToOkWithETag)");
-        Check.That(document.Headers.ETag?.Tag == $"\"{Values.CurrentDocumentVersion}\"", "ToOkWithETag writes the version as a quoted ETag");
+        Check.That(document.Headers.ETag?.Tag == Values.ETagOf(Values.CurrentDocumentVersion), "ToOkWithETag writes the version as a quoted ETag");
     }
 
     using (var request = new HttpRequestMessage(HttpMethod.Get, "/documents/1"))
     {
-        request.Headers.IfNoneMatch.Add(new EntityTagHeaderValue($"\"{Values.CurrentDocumentVersion}\""));
+        request.Headers.IfNoneMatch.Add(new EntityTagHeaderValue(Values.ETagOf(Values.CurrentDocumentVersion)));
         using var notModified = await client.SendAsync(request);
         Check.Status(notModified, HttpStatusCode.NotModified, "GET /documents/1 with a matching If-None-Match");
         Check.That(notModified.Headers.ETag is not null, "a 304 repeats the ETag");
         Check.That((await notModified.Content.ReadAsByteArrayAsync()).Length == 0, "a 304 has no body");
     }
 
-    // Required If-Match: missing → 428, stale (a Conflict from the handler) → 412 with the handler's code, current → 204.
+    // An IfMatch<long> parameter requires the header: missing → 428; a tag that is no version (not a long) → 412
+    // precondition.failed before the handler runs; a stale version → the handler's Conflict, 412 because its code is
+    // configured above; the current version → 204.
     using (var withoutIfMatch = await client.PutAsync("/documents/1", content: null))
     {
-        (await Check.ProblemAsync(withoutIfMatch, HttpStatusCode.PreconditionRequired, PresentationErrorCodes.PreconditionRequired, "RequireIfMatch, missing")).Dispose();
+        (await Check.ProblemAsync(withoutIfMatch, HttpStatusCode.PreconditionRequired, PresentationErrorCodes.PreconditionRequired, "IfMatch<long> parameter, missing")).Dispose();
     }
 
     using (var request = new HttpRequestMessage(HttpMethod.Put, "/documents/1"))
     {
         request.Headers.IfMatch.Add(new EntityTagHeaderValue("\"v6\""));
-        using var stale = await client.SendAsync(request);
-        (await Check.ProblemAsync(stale, HttpStatusCode.PreconditionFailed, "document.version_mismatch", "RequireIfMatch, stale version")).Dispose();
+        using var notAVersion = await client.SendAsync(request);
+        (await Check.ProblemAsync(notAVersion, HttpStatusCode.PreconditionFailed, PresentationErrorCodes.PreconditionFailed, "IfMatch<long> parameter, a tag that is no version")).Dispose();
     }
 
     using (var request = new HttpRequestMessage(HttpMethod.Put, "/documents/1"))
     {
-        request.Headers.IfMatch.Add(new EntityTagHeaderValue($"\"{Values.CurrentDocumentVersion}\""));
+        request.Headers.IfMatch.Add(new EntityTagHeaderValue(Values.ETagOf(Values.CurrentDocumentVersion - 1)));
+        using var stale = await client.SendAsync(request);
+        (await Check.ProblemAsync(stale, HttpStatusCode.PreconditionFailed, Values.DocumentVersionMismatch, "IfMatch<long> parameter, stale version")).Dispose();
+    }
+
+    using (var request = new HttpRequestMessage(HttpMethod.Put, "/documents/1"))
+    {
+        request.Headers.IfMatch.Add(new EntityTagHeaderValue(Values.ETagOf(Values.CurrentDocumentVersion)));
         using var updated = await client.SendAsync(request);
-        Check.Status(updated, HttpStatusCode.NoContent, "RequireIfMatch, current version");
+        Check.Status(updated, HttpStatusCode.NoContent, "IfMatch<long> parameter, current version");
     }
 
     // CORS from settings: the allowed origin gets the platform's exposed headers, another origin gets nothing.
@@ -384,13 +406,13 @@ static async Task Surface4_SignalRResultHubMethods()
     Check.That(order == new OrderDto(1, "open"), "a successful Result<T> returns its value to the client");
 
     var notFound = await Hubs.InvokeExpectingErrorAsync(connection, nameof(OrdersHub.GetOrder), 404);
-    Check.That(notFound == "order.not_found: Order 404 was not found.", $"a failed Result<T> arrives as \"{{code}}: {{message}}\" (got \"{notFound}\")");
+    Check.That(notFound == ("order.not_found", "Order 404 was not found."), $"a failed Result<T> arrives as its code and message (got {notFound})");
 
     var outage = await Hubs.InvokeExpectingErrorAsync(connection, nameof(OrdersHub.GetOrderDuringOutage), 1);
-    Check.That(outage.StartsWith("orders.store_unavailable: ", StringComparison.Ordinal), $"a server error keeps its code (got \"{outage}\")");
-    Check.That(!outage.Contains("db-7", StringComparison.Ordinal), "a server error's internal detail is redacted outside Development");
+    Check.That(outage.Code == "orders.store_unavailable", $"a server error keeps its code (got {outage})");
+    Check.That(!outage.Message.Contains("db-7", StringComparison.Ordinal), "a server error's internal detail is redacted outside Development");
 
-    Console.WriteLine("Surface 4 PASSED — SignalR: Result<T> values, code-prefixed HubException, server errors redacted");
+    Console.WriteLine("Surface 4 PASSED — SignalR: Result<T> values, coded HubException read with HubErrorMessage.TryParse, server errors redacted");
 }
 
 // -------------------------------------------------------------------------------------------------------------------
@@ -417,7 +439,7 @@ static async Task Surface5_GrpcRichStatus()
     using var channel = GrpcChannel.ForAddress(Hosts.AddressOf(grpcListener));
     await GrpcChecks.VerifyAsync(new OrderService.OrderServiceClient(channel), "gRPC host");
 
-    Console.WriteLine("Surface 5 PASSED — gRPC: GetValueOrThrow/ThrowIfFailure as google.rpc.Status with ErrorInfo and BadRequest");
+    Console.WriteLine("Surface 5 PASSED — gRPC: Core's GetValueOrThrow/ThrowIfFailure as google.rpc.Status with ErrorInfo and BadRequest");
 }
 
 // -------------------------------------------------------------------------------------------------------------------
@@ -495,7 +517,7 @@ static async Task Surface6_AllFourPackagesInOneHost()
 public sealed record OrderDto(int Id, string Status);
 
 /// <summary>A versioned document, returned with its version as an ETag.</summary>
-public sealed record DocumentDto(int Id, string Version);
+public sealed record DocumentDto(int Id, long Version);
 
 /// <summary>Values shared by the service and the checks.</summary>
 internal static class Values
@@ -506,9 +528,19 @@ internal static class Values
 
     public const string AuditPermission = "orders.audit";
 
-    public const string CurrentDocumentVersion = "v7";
+    /// <summary>The version every document is at.</summary>
+    public const long CurrentDocumentVersion = 7;
+
+    /// <summary>The service's own code for an update that names a version that is no longer current.</summary>
+    public const string DocumentVersionMismatch = "document.version_mismatch";
 
     public const string GrpcErrorDomain = "consumer-verify.example";
+
+    /// <summary>The ETag of a document version, as sent on the wire: <c>"7"</c>.</summary>
+    public static string ETagOf(long version) => $"\"{VersionText(version)}\"";
+
+    /// <summary>A document version as text, the value <c>ToOkWithETag</c> quotes.</summary>
+    public static string VersionText(long version) => version.ToString(CultureInfo.InvariantCulture);
 }
 
 /// <summary>The application layer: every operation returns a <see cref="Result"/>.</summary>
@@ -544,20 +576,23 @@ internal static class OrdersHttpApi
         app.MapPost("/orders", (OrderDto order) => Result<OrderDto>.Success(order).ToCreated(created => $"/orders/{created.Id}"));
         app.MapGet("/orders/{id:int}/audit", (int id) => OrderCatalog.Find(id).ToOk()).RequirePermission(Values.AuditPermission);
 
-        app.MapPost("/payments", (HttpContext context) => TypedResults.Ok(new { key = context.GetIdempotencyKey() }))
-            .RequireIdempotencyKey();
+        // Declaring the parameter requires, validates and documents the header; the handler always gets a valid key.
+        app.MapPost("/payments", (IdempotencyKey key) => TypedResults.Ok(new { key = key.Value }));
 
         app.MapGet("/documents/{id:int}", (int id) =>
-            Result<DocumentDto>.Success(new DocumentDto(id, Values.CurrentDocumentVersion)).ToOkWithETag(document => document.Version));
-        app.MapPut("/documents/{id:int}", (int id, HttpContext context) =>
-            {
-                var result = context.GetIfMatch() == Values.CurrentDocumentVersion
-                    ? Result.Success()
-                    : Result.Failure(Error.Conflict("document.version_mismatch", $"Document {id} was changed by someone else."));
+            Result<DocumentDto>.Success(new DocumentDto(id, Values.CurrentDocumentVersion))
+                .ToOkWithETag(document => Values.VersionText(document.Version)));
 
-                return result.ToNoContent();
-            })
-            .RequireIfMatch();
+        // Declaring the parameter requires If-Match with one strong tag that parses as a long; the handler gets the
+        // version and reports a stale one with the service's own conflict code.
+        app.MapPut("/documents/{id:int}", (int id, IfMatch<long> ifMatch) =>
+        {
+            var result = ifMatch.Version == Values.CurrentDocumentVersion
+                ? Result.Success()
+                : Result.Failure(Error.Conflict(Values.DocumentVersionMismatch, $"Document {id} was changed by someone else."));
+
+            return result.ToNoContent();
+        });
 
         app.MapGet("/limited", () => "ok").RequireRateLimiting(Values.OnePerWindowPolicy);
     }
@@ -587,7 +622,10 @@ public sealed class OrdersHub : Hub
         Error.Unavailable("orders.store_unavailable", $"Connection to db-7 refused while reading order {id}.");
 }
 
-/// <summary>The gRPC service: results become rich statuses through GetValueOrThrow and ThrowIfFailure.</summary>
+/// <summary>
+/// The gRPC service: a failed result ends the call through <c>SharedKernel.Core</c>'s <c>GetValueOrThrow</c> and
+/// <c>ThrowIfFailure</c>, whose exception the platform's interceptor turns into the rich status.
+/// </summary>
 internal sealed class OrderGrpcService : OrderService.OrderServiceBase
 {
     public override Task<OrderReply> GetOrder(GetOrderRequest request, ServerCallContext context)
@@ -704,8 +742,6 @@ internal static class HeaderAuthentication
 /// <summary>SignalR client helpers.</summary>
 internal static class Hubs
 {
-    private const string ServerMessageMarker = "HubException: ";
-
     public static async Task<HubConnection> ConnectAsync(Uri baseAddress)
     {
         var connection = new HubConnectionBuilder().WithUrl(new Uri(baseAddress, OrdersHub.Path)).Build();
@@ -724,17 +760,18 @@ internal static class Hubs
     }
 
     /// <summary>
-    /// Invokes a method expected to fail and returns the message the server sent. The client wraps it:
-    /// "An unexpected error occurred invoking '…' on the server. HubException: {server message}".
+    /// Invokes a method expected to fail and returns the error code and message the server sent, read with
+    /// <see cref="HubErrorMessage.TryParse"/>: the client receives them behind SignalR's own sentence.
     /// </summary>
-    public static async Task<string> InvokeExpectingErrorAsync(HubConnection connection, string method, params object?[] arguments)
+    public static async Task<(string Code, string Message)> InvokeExpectingErrorAsync(HubConnection connection, string method, params object?[] arguments)
     {
         var failure = await Check.CatchAsync<HubException>(() => connection.InvokeCoreAsync<object?>(method, arguments));
         Check.That(failure is not null, $"{method} fails with a HubException");
 
-        var index = failure!.Message.IndexOf(ServerMessageMarker, StringComparison.Ordinal);
-        Check.That(index >= 0, $"{method} fails with a HubException the server raised (got \"{failure.Message}\")");
-        return failure.Message[(index + ServerMessageMarker.Length)..];
+        Check.That(
+            HubErrorMessage.TryParse(failure!.Message, out var code, out var message),
+            $"{method} fails with a coded HubException (got \"{failure.Message}\")");
+        return (code!, message!);
     }
 }
 

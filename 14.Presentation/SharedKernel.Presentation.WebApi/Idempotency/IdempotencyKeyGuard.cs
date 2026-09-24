@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -16,12 +17,11 @@ namespace SharedKernel.Presentation.WebApi.Idempotency;
 /// </summary>
 internal static partial class IdempotencyKeyGuard
 {
-    /// <summary>The longest key accepted.</summary>
-    public const int MaxLength = 256;
-
     private const string RequiredMessage = "This request requires an Idempotency-Key header.";
 
-    private const string InvalidMessage = "The Idempotency-Key header must be 1 to 256 visible ASCII characters.";
+    private static readonly string InvalidMessage = string.Create(
+        CultureInfo.InvariantCulture,
+        $"The Idempotency-Key header must be 1 to {IdempotencyKey.MaxLength} visible ASCII characters.");
 
     private enum KeyState
     {
@@ -91,9 +91,12 @@ internal static partial class IdempotencyKeyGuard
         return KeyState.Valid;
     }
 
-    /// <summary>Returns <see langword="true"/> when <paramref name="key"/> is 1 to 256 visible ASCII characters (0x21–0x7E).</summary>
+    /// <summary>
+    /// Returns <see langword="true"/> when <paramref name="key"/> is 1 to <see cref="IdempotencyKey.MaxLength"/> visible
+    /// ASCII characters (0x21–0x7E).
+    /// </summary>
     public static bool IsValid(string? key) =>
-        key is { Length: > 0 and <= MaxLength } && !key.AsSpan().ContainsAnyExceptInRange('!', '~');
+        key is { Length: > 0 and <= IdempotencyKey.MaxLength } && !key.AsSpan().ContainsAnyExceptInRange('!', '~');
 
     private static partial class Log
     {
