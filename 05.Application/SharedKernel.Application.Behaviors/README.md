@@ -260,6 +260,9 @@ it fails with `Error.Validation("idempotency.key_required")`, the code `14.Prese
 | `InProgress` | `Error.Conflict("idempotency.in_progress")` |
 | `FingerprintMismatch` | `Error.Conflict("idempotency.key_reused")` |
 
+The three codes are constants on `IdempotencyErrorCodes` (`KeyRequired`, `InProgress`, `KeyReused`); branch on
+those rather than retyping the strings.
+
 **A key is reserved per tenant and caller.** A client-chosen key is not a secret, so the store never sees the
 raw key: it gets a SHA-256 digest (64 lowercase hex characters) of the tenant, the caller and the key, read from
 `IRequestContext` — actor kind, subject (`UserId`), OAuth client and impersonator. Two callers who happen to use

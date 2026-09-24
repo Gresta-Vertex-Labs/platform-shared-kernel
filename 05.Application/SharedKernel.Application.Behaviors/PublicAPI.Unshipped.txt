@@ -65,6 +65,7 @@ SharedKernel.Application.Behaviors.Idempotency.IdempotencyBeginStatus.Fingerprin
 SharedKernel.Application.Behaviors.Idempotency.IdempotencyBeginStatus.InProgress = 1 -> SharedKernel.Application.Behaviors.Idempotency.IdempotencyBeginStatus
 SharedKernel.Application.Behaviors.Idempotency.IdempotencyBeginStatus.Started = 0 -> SharedKernel.Application.Behaviors.Idempotency.IdempotencyBeginStatus
 SharedKernel.Application.Behaviors.Idempotency.IdempotencyBehavior<TRequest, TResponse>
+SharedKernel.Application.Behaviors.Idempotency.IdempotencyErrorCodes
 SharedKernel.Application.Behaviors.Idempotency.IdempotencyBehavior<TRequest, TResponse>.Handle(TRequest request, MediatR.RequestHandlerDelegate<TResponse>! next, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<TResponse>!
 SharedKernel.Application.Behaviors.Idempotency.IdempotencyBehavior<TRequest, TResponse>.IdempotencyBehavior(SharedKernel.Application.Behaviors.Idempotency.IRequestIdempotencyStore! store, SharedKernel.Application.Context.IRequestContext! requestContext, SharedKernel.Application.Behaviors.Commands.ICommandScope! commandScope, Microsoft.Extensions.Logging.ILogger<SharedKernel.Application.Behaviors.Idempotency.IdempotencyBehavior<TRequest, TResponse>!>! logger) -> void
 SharedKernel.Application.Behaviors.Logging.ApplicationLoggingOptions
@@ -86,6 +87,9 @@ SharedKernel.Application.Behaviors.Transaction.TransactionBehavior<TRequest, TRe
 SharedKernel.Application.Behaviors.Validation.ValidationBehavior<TRequest, TResponse>
 SharedKernel.Application.Behaviors.Validation.ValidationBehavior<TRequest, TResponse>.Handle(TRequest request, MediatR.RequestHandlerDelegate<TResponse>! next, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<TResponse>!
 SharedKernel.Application.Behaviors.Validation.ValidationBehavior<TRequest, TResponse>.ValidationBehavior(System.Collections.Generic.IEnumerable<FluentValidation.IValidator<TRequest>!>! validators) -> void
+const SharedKernel.Application.Behaviors.Idempotency.IdempotencyErrorCodes.InProgress = "idempotency.in_progress" -> string!
+const SharedKernel.Application.Behaviors.Idempotency.IdempotencyErrorCodes.KeyRequired = "idempotency.key_required" -> string!
+const SharedKernel.Application.Behaviors.Idempotency.IdempotencyErrorCodes.KeyReused = "idempotency.key_reused" -> string!
 override SharedKernel.Application.Behaviors.Idempotency.IdempotencyBeginResult.GetHashCode() -> int
 static SharedKernel.Application.Behaviors.Extensions.ApplicationBehaviorsServiceCollectionExtensions.AddSharedKernelApplicationBehaviors(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> SharedKernel.Application.Behaviors.Extensions.ApplicationBehaviorsBuilder!
 static SharedKernel.Application.Behaviors.Idempotency.IdempotencyBeginResult.Completed(string! storedResponse) -> SharedKernel.Application.Behaviors.Idempotency.IdempotencyBeginResult

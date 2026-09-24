@@ -23,8 +23,9 @@ namespace SharedKernel.Application.Behaviors.Idempotency;
 /// </para>
 /// <para>
 /// An empty or whitespace-only <see cref="IIdempotentRequest.IdempotencyKey"/> fails with
-/// <c>Error.Validation("idempotency.key_required", ...)</c>, the code <c>14.Presentation</c> answers a
-/// missing <c>Idempotency-Key</c> header with.
+/// <c>Error.Validation(</c><see cref="IdempotencyErrorCodes.KeyRequired"/><c>, ...)</c>
+/// (<c>idempotency.key_required</c>), the code <c>14.Presentation</c> answers a missing
+/// <c>Idempotency-Key</c> header with.
 /// </para>
 /// <para>
 /// <b>A reservation belongs to one caller of one tenant.</b> The key handed to the store is never the
@@ -59,9 +60,9 @@ namespace SharedKernel.Application.Behaviors.Idempotency;
 ///   released via <see cref="IRequestIdempotencyStore.ReleaseAsync"/> (never completed — a failed
 ///   attempt must remain retryable); on a thrown exception the reservation is likewise released and
 ///   the exception is rethrown unchanged.</description></item>
-///   <item><description><see cref="IdempotencyBeginStatus.InProgress"/> — <c>Error.Conflict("idempotency.in_progress", ...)</c>, without calling <c>next()</c>.</description></item>
+///   <item><description><see cref="IdempotencyBeginStatus.InProgress"/> — <c>Error.Conflict(</c><see cref="IdempotencyErrorCodes.InProgress"/><c>, ...)</c>, without calling <c>next()</c>.</description></item>
 ///   <item><description><see cref="IdempotencyBeginStatus.Completed"/> — the stored response is deserialized and returned directly, replaying the original outcome.</description></item>
-///   <item><description><see cref="IdempotencyBeginStatus.FingerprintMismatch"/> — <c>Error.Conflict("idempotency.key_reused", ...)</c>.</description></item>
+///   <item><description><see cref="IdempotencyBeginStatus.FingerprintMismatch"/> — <c>Error.Conflict(</c><see cref="IdempotencyErrorCodes.KeyReused"/><c>, ...)</c>.</description></item>
 /// </list>
 /// <para>
 /// A <see langword="false"/> result from <see cref="IRequestIdempotencyStore.CompleteAsync"/> means
@@ -97,7 +98,7 @@ public sealed partial class IdempotencyBehavior<TRequest, TResponse>(
         if (string.IsNullOrWhiteSpace(request.IdempotencyKey))
         {
             return FailureResponse.Create<TResponse>(
-                Error.Validation("idempotency.key_required", "An idempotency key is required."));
+                Error.Validation(IdempotencyErrorCodes.KeyRequired, "An idempotency key is required."));
         }
 
         var key = IdempotencyKeyScope.Create(requestContext, request.IdempotencyKey);
@@ -115,13 +116,13 @@ public sealed partial class IdempotencyBehavior<TRequest, TResponse>(
             case IdempotencyBeginStatus.InProgress:
                 return FailureResponse.Create<TResponse>(
                     Error.Conflict(
-                        "idempotency.in_progress",
+                        IdempotencyErrorCodes.InProgress,
                         "A request with this idempotency key is still being processed."));
 
             case IdempotencyBeginStatus.FingerprintMismatch:
                 return FailureResponse.Create<TResponse>(
                     Error.Conflict(
-                        "idempotency.key_reused",
+                        IdempotencyErrorCodes.KeyReused,
                         "The idempotency key was already used for a different request."));
 
             case IdempotencyBeginStatus.Started:
