@@ -1,258 +1,217 @@
 # SharedKernel.Presentation.SignalR
 
-`IHubFilter` implementations (tenant context attachment, exception-to-`HubException` mapping), a
-tenant-scoped SignalR group naming convention, and an opt-in Redis-backed scale-out backplane.
+SignalR on the platform's error contract. One call sets up a hub host that presents errors the way
+`SharedKernel.Presentation.WebApi` presents them over HTTP, enforces the WebApi authorization requirements on hubs
+and hub methods, and limits how often a connection may invoke hub methods.
 
-Like its `.WebApi` sibling, this package is framework-glue: it converts outcomes your hub methods
-already produce (or throw) into safe, client-facing SignalR responses. It never references
-`05.Application`, `06.Persistence`, `07.Messaging`, or `02.Caching.*` — see "Why the Redis
-backplane is distinct from `02.Caching.Redis.PubSub`" in `14.Presentation/CLAUDE.md`.
-
----
-
-## Installation
-
-```xml
-<ItemGroup>
-  <PackageReference Include="SharedKernel.Presentation.SignalR" Version="x.y.z" />
-</ItemGroup>
-```
-
-Brings in `Microsoft.AspNetCore.SignalR.StackExchangeRedis` as a transitive dependency (used only
-when `WithRedisBackplane` is called — otherwise SignalR stays fully in-memory).
+It builds on `SharedKernel.Presentation.WebApi` (error presentation, authorization, correlation id) and has no
+third-party dependencies.
 
 ---
 
-## Minimal setup — single replica, in-memory
+## Setup
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddSharedKernelSignalR();
+builder.AddSharedKernelWebApi();   // error presentation, authorization, correlation id, CORS
+builder.AddSharedKernelSignalR();  // SignalR, the hub filters, the authorization policies
 
 var app = builder.Build();
 
+app.UseSharedKernelWebApi();       // correlation id, routing, CORS, authentication, authorization
 app.MapHub<OrdersHub>("/hubs/orders");
 
 app.Run();
 ```
 
-`AddSharedKernelSignalR` registers SignalR plus two global hub filters — applied to **every** hub
-in the service automatically, with no `[HubFilter]` attributes needed:
+`AddSharedKernelSignalR()` calls `AddSignalR()` and returns SignalR's own `ISignalRServerBuilder`, so protocols and
+a scale-out backplane are added the usual way — for example `.AddStackExchangeRedis(connectionString)` from
+`Microsoft.AspNetCore.SignalR.StackExchangeRedis`.
 
-- **`TenantContextHubFilter`** — resolves `ITenantProvider` from the connecting client's
-  `HttpContext` and stores the tenant ID in `Context.Items["TenantId"]` for the life of the
-  connection. It never rejects a connection with no resolvable tenant — that policy decision
-  belongs to your Hub (via `[Authorize]` or an explicit check inside the hub method).
-- **`HubExceptionMappingFilter`** — wraps every hub method invocation. Known
-  `SharedKernelException` subtypes (`01.Core`) are rethrown as a `HubException` carrying the
-  `Error`'s message; any other exception is logged at `LogLevel.Error` and rethrown as a generic,
-  redacted `HubException("An unexpected error occurred.")`. No stack trace or internal type name
-  ever crosses the hub boundary.
+Settings bind from `SharedKernel:Presentation:SignalR` and are validated when the host starts; the `configure`
+callback runs after binding:
 
-Both filters are opt-out via the `configureHubOptions` callback if a consuming service needs
-different behavior:
-
-```csharp
-builder.Services.AddSharedKernelSignalR(options =>
+```json
 {
-    // e.g. remove the platform's exception filter and add a service-specific one instead.
-    options.HubFilters.RemoveAll(f => f.GetType() == typeof(HubExceptionMappingFilter));
-});
+  "SharedKernel": {
+    "Presentation": {
+      "SignalR": {
+        "InvocationRateLimit": { "PermitLimit": 20, "Window": "00:00:10" }
+      }
+    }
+  }
+}
 ```
 
-### Resource-exhaustion defaults
-
-`AddSharedKernelSignalR` also sets explicit, conservative defaults on four `HubOptions` members that
-control per-connection resource consumption on a long-lived WebSocket/SSE surface — pinned even
-where a value matches SignalR's own current framework default, so the platform's posture is
-documented and stable across future SignalR version bumps rather than implicit:
-
-| `HubOptions` member | Platform default | Why |
-| --- | --- | --- |
-| `MaximumReceiveMessageSize` | `32 * 1024` (32 KB) | Caps the size of a single inbound message from a client. With no ceiling, one misbehaving or hostile client can send an arbitrarily large message and consume disproportionate memory/CPU per connection — a real resource-exhaustion vector this domain previously left entirely to whatever SignalR's own current default happened to be. |
-| `MaximumParallelInvocationsPerClient` | `1` | Caps how many hub method invocations from the *same* client SignalR will run concurrently. Prevents one client from starving the server by firing many concurrent long-running invocations down a single connection. |
-| `ClientTimeoutInterval` | `30` seconds | How long the server waits for a client keep-alive before considering the connection dead and reclaiming its resources. |
-| `KeepAliveInterval` | `15` seconds | How often the server pings a connected client to keep the connection alive and detect drops promptly. |
-
-These defaults are applied **before** your `configureHubOptions` callback runs, so every one of them
-remains fully overridable (raise or lower) with no signature change:
-
-```csharp
-builder.Services.AddSharedKernelSignalR(options =>
-{
-    // Override the platform default for a hub that legitimately needs larger messages.
-    options.MaximumReceiveMessageSize = 128 * 1024;
-});
-```
-
-This is purely a `HubOptions` default-value change — it never alters
-`TenantContextHubFilter`/`HubExceptionMappingFilter`/`WithRedisBackplane` behavior.
+The hub filters are global and wrap the filters registered after this call: call it before adding hub filters of
+your own. Calling it twice registers everything once and applies each `configure`.
 
 ---
 
-## Scale-out setup — Redis backplane
+## Errors
 
-Omitting `WithRedisBackplane` is correct for local dev and single-replica deployments. Add it the
-moment a hub-hosting service runs more than one pod/instance behind a load balancer:
+Every error of a hub method becomes a `HubException` whose message is `{code}: {message}`:
+
+| The hub method… | The error |
+| --- | --- |
+| returns a failed `Result` or `Result<T>`, or throws a `SharedKernelException` | its `Error.Code` and client message: translated into the connection's culture, and for a server error (`Unexpected`, `Unavailable`, `Timeout`) replaced by a generic sentence outside Development — exactly like an HTTP problem response |
+| throws a `ValidationException` with several errors | `validation.failed: {n} validation errors occurred.` |
+| throws any other exception | `unexpected.exception: An unexpected error occurred.` (in Development, the exception's message) |
+| throws a `HubException` itself | passes unchanged |
+
+Server errors are logged at Error, client errors at Debug.
+
+### What a client receives
+
+SignalR puts its own sentence in front of the message, so a client never receives the bare `{code}: {message}`:
+
+| Case | Error text the client receives |
+| --- | --- |
+| An invocation fails; also a stream whose hub method fails before it returns the stream | `An unexpected error occurred invoking '{method}' on the server. HubException: {code}: {message}` |
+| A stream fails after it started | `An error occurred on the server while streaming results.` — no code |
+| Authorization refuses a hub method | `Failed to invoke '{method}' because user is unauthorized` — no code |
+
+`{method}` is the hub method's declared name (its `[HubMethodName]`, if it has one). Splitting the text at the first
+`": "` would cut SignalR's sentence; read it with `HubErrorMessage.TryParse`, which also reads the bare server-side
+text and returns `false` for every text without a code:
 
 ```csharp
-builder.Services
-    .AddSharedKernelSignalR()
-    .WithRedisBackplane(builder.Configuration.GetConnectionString("SignalRBackplane")!);
-
-// Optional: configure the underlying RedisOptions (e.g. channel prefix).
-builder.Services
-    .AddSharedKernelSignalR()
-    .WithRedisBackplane(connectionString, redisOptions =>
-    {
-        redisOptions.Configuration.ChannelPrefix = RedisChannel.Literal("orders-svc");
-    });
+try
+{
+    await connection.InvokeAsync("PlaceOrder", order);
+}
+catch (HubException exception) when (HubErrorMessage.TryParse(exception.Message, out var code, out var message))
+{
+    // code: "order.not_found", message: "Order 42 was not found."
+}
 ```
 
-`WithRedisBackplane` is a thin pass-through over
-`Microsoft.AspNetCore.SignalR.StackExchangeRedis`'s own `AddStackExchangeRedis` — it manages its
-own `IConnectionMultiplexer` lifecycle internally and **never** shares a connection with
-`02.Caching.Redis.Core`. A backplane outage and a cache-connection outage must never be conflated
-in health checks or logs; that is intentional isolation, not an oversight.
+A browser client reads the same text with the same pattern:
+
+```js
+const coded = /(?:^| HubException: )(?<code>[^\s:]+): (?<message>[\s\S]*)$/;
+
+try {
+  await connection.invoke("PlaceOrder", order);
+} catch (error) {
+  const match = coded.exec(error.message);
+  if (match?.groups.code === "order.not_found") {
+    showNotFound(match.groups.message);
+  }
+}
+```
 
 ---
 
-## Tenant-scoped group broadcast
-
-`HubGroupNaming` is the single source of truth for tenant-scoped group names — never format a
-group name string inline elsewhere.
+## Result hub methods
 
 ```csharp
+public sealed class OrdersHub(IOrderService orders) : Hub
+{
+    public Task<Result<OrderDto>> GetOrder(Guid id) => orders.GetAsync(id);   // success: the value
+    public Task<Result> Cancel(Guid id) => orders.CancelAsync(id);             // success: nothing
+}
+```
+
+A failure reaches the client as the coded error; a success returns the value (nothing for `Result`). A `Result` is
+read only as the hub method's own return value: inside a stream item or a collection it cannot be serialized.
+
+### Streams
+
+SignalR streams only a hub method **declared** to return `IAsyncEnumerable<T>` or `ChannelReader<T>` (optionally
+inside `Task` or `ValueTask`). A method returning `Result<IAsyncEnumerable<T>>` or `Result<ChannelReader<T>>` is an
+ordinary invocation that cannot stream: its failure is the coded error, and its success is refused as
+`unexpected.exception` — logged at Error (EventId 14107) with the fix, which the Development message shows too —
+instead of closing the connection.
+
+To stream with a failure that can happen before the first item, declare the stream type and throw the failure
+before returning the stream, with `SharedKernel.Core`'s `GetValueOrThrow()`:
+
+```csharp
+public IAsyncEnumerable<OrderDto> Orders(Guid customerId) =>
+    orders.Stream(customerId).GetValueOrThrow();   // orders.Stream returns Result<IAsyncEnumerable<OrderDto>>
+```
+
+A `StreamAsync` / `stream()` caller then gets the coded error or the items. An exception thrown while the stream is
+read — after the hub method returned it — reaches the client without a code, as
+`An error occurred on the server while streaming results.`: the error mapping wraps the hub method, not the reading
+of its stream. SignalR's `HubOptions.EnableDetailedErrors` appends that exception's type name and message,
+unredacted — keep it off outside Development.
+
+---
+
+## Authorization
+
+The WebApi requirement attributes are `[Authorize]` attributes, so they work on hubs natively:
+
+```csharp
+[RequirePermission("orders.read")]      // on the hub: checked when the connection opens
 public sealed class OrdersHub : Hub
 {
-    public override async Task OnConnectedAsync()
-    {
-        var tenantId = (Guid)Context.Items[TenantContextHubFilter.ItemsKey]!;
-        await Groups.AddToGroupAsync(Context.ConnectionId, HubGroupNaming.TenantGroup(tenantId));
-        await base.OnConnectedAsync();
-    }
+    [RequireFreshAuthentication(300)]   // on a hub method: checked by SignalR at every invocation
+    public Task<Result> Refund(Guid id) => ...;
 }
 
-// Elsewhere — e.g. from an application-layer notification handler holding an
-// IHubContext<OrdersHub> (composition root concern, not this package's):
-await hubContext.Clients
-    .Group(HubGroupNaming.TenantGroup(tenantId))
-    .SendAsync("OrderUpdated", orderId, cancellationToken);
+app.MapHub<SupportHub>("/hubs/support").RequirePermission("support.chat");
 ```
 
-`HubGroupNaming.TenantGroup(Guid)` always formats as `"tenant:{tenantId:D}"`.
+- On a hub class or a `MapHub<T>()` endpoint they guard the connection, which is refused with 401 or 403.
+- On a hub method SignalR checks them itself, before any hub filter runs. A refused invocation fails with SignalR's
+  own `Failed to invoke '{method}' because user is unauthorized`: it has no code, never reaches the method, and does
+  not count against the rate limit. When a client must tell refusals apart, refuse at connection level, or return
+  `Error.Forbidden(...)` from the method.
+- A hub method's requirements are checked against the principal the connection was opened with (`Context.User`),
+  at every invocation. That principal is never refreshed while the connection stays open, so a step-up lasts only
+  as long as it allows: `[RequireFreshAuthentication]` compares its authentication time with the current time and
+  lapses on an open connection once the maximum age has passed; `[RequireAuthenticationMethod]` without a maximum
+  age keeps passing for as long as the connection stays open, and a maximum age for the method, where the attribute
+  takes one, makes that step-up lapse on an open connection too.
+  `MapHub<T>(path, options => options.CloseOnAuthenticationExpiration = true)` closes a connection when its
+  authentication expires.
+
+The host needs `UseAuthentication()` and `UseAuthorization()`; `UseSharedKernelWebApi()` does both.
 
 ---
 
-## Hub invocation rate limiting & argument validation
+## Invocation rate limit
 
-`AddSharedKernelSignalR`'s `configureRateLimit` parameter adds a per-connection invocation rate limit
-and argument-payload shape check on top of the connection-level `HubOptions` defaults above. Those
-defaults cap resource use *per connection*; they do nothing to stop a single connection from firing
-an unbounded number of hub-method invocations. Real-time fintech workloads (live trading updates,
-payment status streams) are exactly the ones most likely to expose a hub method to high-frequency
-invocation.
+Off by default. With `InvocationRateLimit:PermitLimit` set, each connection gets a token bucket of that many
+invocations, refilled at that many per `Window` (default one second): a connection may burst up to the limit and
+then sustain it. A refused invocation never reaches the hub method, fails with
+`rate_limit.exceeded: Too many requests.` and is logged at Warning (EventId 14101). All buckets live in one
+partitioned limiter keyed by connection id, with one replenishment timer for the whole server.
+
+---
+
+## Tenant and correlation id
 
 ```csharp
-builder.Services.AddSharedKernelSignalR(configureRateLimit: o =>
+public override async Task OnConnectedAsync()
 {
-    o.PermitLimit = 20;
-    o.Window = TimeSpan.FromSeconds(10);      // 20 invocations per 10-second window, per connection
-    o.MaxStringArgumentLength = 4 * 1024;      // reject an oversized string argument before dispatch
-});
+    if (Context.GetTenantId() is { } tenantId)
+    {
+        await Groups.AddToGroupAsync(Context.ConnectionId, HubGroupNaming.TenantGroup(tenantId));
+    }
+
+    await base.OnConnectedAsync();
+}
+
+// Elsewhere, through IHubContext<OrdersHub>:
+await hubContext.Clients.Group(HubGroupNaming.TenantGroup(tenantId)).SendAsync("OrderUpdated", orderId);
 ```
 
-`HubInvocationRateLimitFilter` is always registered (like every other filter in this package), but
-every check inside `HubInvocationRateLimitOptions` defaults to disabled (`PermitLimit`/
-`MaxStringArgumentLength` both `null`, `ArgumentValidators` empty) — omitting `configureRateLimit`
-entirely is a genuine no-op, zero behavior change. Built on `System.Threading.RateLimiting`'s
-`TokenBucketRateLimiter`, created lazily per connection and disposed on disconnect — one client
-exceeding its limit never throttles any other connection on the same hub.
-
-A rejected invocation throws a `HubException` carrying a specific, caller-safe message (e.g. `"Too
-many requests. Please slow down."`) — **before** the target hub method body ever executes.
-
-### Hub-filter composition rule this depends on
-
-`HubExceptionMappingFilter`'s existing catch-all had no branch recognizing an already-thrown
-`HubException` as terminal before this capability shipped — without one, a `HubException` raised by
-`HubInvocationRateLimitFilter` (or any other filter) would fall into the "unknown exception" branch
-and be silently re-wrapped into the generic redacted `"An unexpected error occurred."` message,
-discarding the specific rate-limit text this filter exists to surface. `HubExceptionMappingFilter`
-now has a `catch (HubException) { throw; }` branch, checked **first**, so an already-well-formed
-`HubException` always passes through unchanged.
-
-> **Standing rule for any future hub filter you write that throws its own `HubException`:** never
-> assume `HubExceptionMappingFilter`'s existing catch-all already preserves it — verify explicitly
-> (as this capability's own tests do, with a real two-filter pipeline proving the specific message
-> survives). This branch happened to already exist in this package (present since the very first
-> WO-031 build-out), but that was confirmed only by checking `git log`, not assumed from reading the
-> code once.
+- `Context.GetTenantId()` asks the registered `ITenantProvider` about the caller that opened the connection. It is
+  `null`, never `Guid.Empty`, when there is no tenant, so tenantless connections never share a group.
+- `HubGroupNaming.TenantGroup(tenantId)` is `tenant:{tenantId:D}` and throws for `Guid.Empty`. Build every group name
+  there, never inline.
+- `Context.GetCorrelationId()` is the correlation id `UseSharedKernelWebApi()` resolved for the request that opened
+  the connection, or `null` without that middleware.
 
 ---
 
-## SignalR + CORS
+## CORS
 
-A service correctly applying deny-by-default CORS (`SharedKernel.Presentation.WebApi`'s
-`AddSharedKernelCors`) to its REST endpoints can still forget that a mapped SignalR hub is a
-**separate** ASP.NET Core endpoint requiring its own explicit CORS policy attachment — a
-well-documented real-world SignalR gotcha. This package never takes a `ProjectReference` on
-`SharedKernel.Presentation.WebApi` to close that gap (the two packages remain deliberately
-independent API surfaces — a pure real-time host must not be forced to pull in
-`Asp.Versioning`/`Microsoft.AspNetCore.OpenApi`/`Scalar.AspNetCore` transitively just to get a CORS
-integration point). Instead, `AddSharedKernelSignalR` registers a startup-time **diagnostic**
-(`SignalRCorsStartupDiagnostic`) that scans every mapped endpoint once the host has started and logs
-a `Warning` (`EventId` 14102) for any SignalR hub with no CORS policy attached — it never throws and
-never blocks startup.
-
-Worked example — a hub correctly wired for a credentialed cross-origin browser client, composing
-`SharedKernel.Presentation.WebApi`'s named policy **by reference/documentation only, with zero code
-coupling**:
-
-```csharp
-// Composition root — both packages present, referenced by name only:
-builder.Services.AddSharedKernelCors(o =>
-{
-    o.AllowedOrigins.Add("https://app.example.com");
-    o.AllowCredentials = true;
-});
-builder.Services.AddSharedKernelSignalR();
-
-var app = builder.Build();
-
-app.UseCors(CorsPolicyNames.Default);   // SharedKernel.Presentation.WebApi's own named policy
-
-app.MapHub<OrdersHub>("/hubs/orders")
-   .RequireCors(CorsPolicyNames.Default);   // <-- required; a hub is its own endpoint, CORS isn't inherited
-```
-
-Omitting `.RequireCors(...)` on a mapped hub does **not** fail the request outright — it triggers the
-startup `Warning` above so the gap is visible in logs/telemetry rather than silently causing
-inaccessible or (worse) accidentally-permissive hub connections discovered only in production.
-
-**Which shape ultimately shipped (T-66):** diagnostic-only, confirmed sufficient — no shared
-CORS-integration point (e.g. a negotiate-endpoint origin-policy bridge) was built or is needed. The
-real SignalR CORS-decision marker is `Microsoft.AspNetCore.Cors.Infrastructure.ICorsMetadata`
-(confirmed via reflection against the installed assemblies — **not** `ICorsPolicyMetadata`, a
-narrower interface `RequireCors`'s underlying `EnableCorsAttribute` does not implement in this
-ASP.NET Core version); each hub's `/negotiate` companion endpoint is skipped during the scan since it
-always carries identical CORS metadata to its primary hub endpoint.
-
----
-
-## What you get out of the box
-
-| Concern | Type |
-| --- | --- |
-| Tenant attachment at connect time | `TenantContextHubFilter` |
-| Exception-to-`HubException` redaction | `HubExceptionMappingFilter` |
-| Tenant-scoped group naming | `HubGroupNaming.TenantGroup` |
-| SignalR + global filter registration | `AddSharedKernelSignalR` |
-| Conservative resource-exhaustion `HubOptions` defaults | `AddSharedKernelSignalR` (see "Resource-exhaustion defaults" above) |
-| Per-connection invocation rate limit + argument validation | `HubInvocationRateLimitOptions` (via `AddSharedKernelSignalR`'s `configureRateLimit`) |
-| Startup diagnostic for a mapped hub with no CORS policy | `SignalRCorsStartupDiagnostic` (registered automatically by `AddSharedKernelSignalR`) |
-| Redis scale-out backplane | `WithRedisBackplane` |
-
-See the [Configuration Reference](../CONFIGURATION.md) for every DI extension method's options and
-defaults.
+Hubs are ordinary endpoints. The CORS policy of `SharedKernel:Presentation:WebApi:Cors`, applied by
+`UseSharedKernelWebApi()`, covers negotiate and the HTTP transports; and when origins are configured, a WebSocket
+from an origin outside the list is refused with 403, since browsers apply no CORS to WebSockets.

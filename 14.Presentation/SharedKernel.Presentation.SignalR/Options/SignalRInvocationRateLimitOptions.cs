@@ -8,10 +8,12 @@ namespace SharedKernel.Presentation.SignalR.Options;
 /// per <see cref="Window"/>. One connection exhausting its bucket never slows another.
 /// </para>
 /// <para>
-/// A refused invocation never reaches the hub method; the client receives a <c>HubException</c> with the message
-/// <c>rate_limit.exceeded: Too many requests.</c> and the refusal is logged at Warning. All buckets live in one
-/// partitioned limiter keyed by connection id, with one replenishment timer for the whole server; the bucket of a
-/// closed connection is dropped once it has refilled and stayed idle.
+/// A refused invocation never reaches the hub method. It fails with the error <c>rate_limit.exceeded: Too many
+/// requests.</c>, which a client receives behind SignalR's own sentence —
+/// <c>An unexpected error occurred invoking '{method}' on the server. HubException: rate_limit.exceeded: Too many
+/// requests.</c> — and reads with <see cref="HubErrorMessage.TryParse"/>; the refusal is logged at Warning. All buckets
+/// live in one partitioned limiter keyed by connection id, with one replenishment timer for the whole server; the
+/// bucket of a closed connection is dropped once it has refilled and stayed idle.
 /// </para>
 /// </remarks>
 public sealed class SignalRInvocationRateLimitOptions

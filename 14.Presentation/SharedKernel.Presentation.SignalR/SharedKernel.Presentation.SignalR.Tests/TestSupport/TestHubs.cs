@@ -1,8 +1,12 @@
+using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
+using System.Threading.Channels;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.SignalR;
 using SharedKernel.Core.Exceptions;
+using SharedKernel.Core.Extensions;
 using SharedKernel.Localization;
-using SharedKernel.Presentation.WebApi.Authorization;
+using SharedKernel.Presentation.WebApi;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 
@@ -14,6 +18,8 @@ internal static class HubPaths
     public const string Errors = "/hubs/errors";
 
     public const string Results = "/hubs/results";
+
+    public const string Streams = "/hubs/streams";
 
     public const string Context = "/hubs/context";
 
@@ -106,6 +112,104 @@ public sealed class ResultsHub : Hub
     public Result<int> Outage() => Error.Unavailable("search.unreachable", HubMessages.InternalDetail);
 
     public Result Uninitialized() => default;
+}
+
+/// <summary>
+/// Streams inside a <see cref="Result{T}"/>, which SignalR treats as ordinary invocations, and the streaming pattern:
+/// a method declared as a stream that throws its failure before returning the stream. Reading a stream counts, to prove
+/// a refused stream is never read.
+/// </summary>
+public sealed class StreamsHub(InvocationCounter counter) : Hub
+{
+    /// <summary>The items every successful stream yields.</summary>
+    public static readonly int[] Items = [1, 2, 3];
+
+    public Result<IAsyncEnumerable<int>> ResultOfStream(bool fail) =>
+        fail ? NotFound() : Result<IAsyncEnumerable<int>>.Success(CountedNumbers());
+
+    public async Task<Result<IAsyncEnumerable<int>>> ResultOfStreamAsync(bool fail)
+    {
+        await Task.Yield();
+        return ResultOfStream(fail);
+    }
+
+    public Result<ChannelReader<int>> ResultOfChannel(bool fail) =>
+        fail ? NotFound() : Result<ChannelReader<int>>.Success(CompletedChannel());
+
+    public IAsyncEnumerable<int> Stream(bool fail) => ResultOfStream(fail).GetValueOrThrow();
+
+    public ChannelReader<int> ChannelStream(bool fail) => ResultOfChannel(fail).GetValueOrThrow();
+
+    public async IAsyncEnumerable<int> StreamThenFail([EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        yield return Items[0];
+        await Task.Yield();
+        cancellationToken.ThrowIfCancellationRequested();
+        throw new NotFoundException(HubMessages.OrderNotFound.ToError(ErrorType.NotFound, 42));
+    }
+
+    public string Ping() => "pong";
+
+    /// <summary>The items as an async iterator.</summary>
+    public static async IAsyncEnumerable<int> Numbers()
+    {
+        foreach (var item in Items)
+        {
+            await Task.Yield();
+            yield return item;
+        }
+    }
+
+    private static Error NotFound() => HubMessages.OrderNotFound.ToError(ErrorType.NotFound, 42);
+
+    private async IAsyncEnumerable<int> CountedNumbers()
+    {
+        counter.Increment();
+
+        await foreach (var item in Numbers())
+        {
+            yield return item;
+        }
+    }
+
+    private ChannelReader<int> CompletedChannel()
+    {
+        var channel = Channel.CreateUnbounded<int>();
+        foreach (var item in Items)
+        {
+            channel.Writer.TryWrite(item);
+        }
+
+        channel.Writer.Complete();
+        return channel.Reader;
+    }
+}
+
+/// <summary>
+/// Records every <see cref="HubException"/> leaving the filters it wraps. Registered before
+/// <c>AddSharedKernelSignalR()</c>, it wraps the platform's error mapping and sees the server-side message before
+/// SignalR puts its own sentence in front of it.
+/// </summary>
+public sealed class RecordingHubFilter : IHubFilter
+{
+    private readonly ConcurrentQueue<HubException> _exceptions = new();
+
+    public IReadOnlyCollection<HubException> Exceptions => _exceptions;
+
+    public async ValueTask<object?> InvokeMethodAsync(
+        HubInvocationContext invocationContext,
+        Func<HubInvocationContext, ValueTask<object?>> next)
+    {
+        try
+        {
+            return await next(invocationContext);
+        }
+        catch (HubException exception)
+        {
+            _exceptions.Enqueue(exception);
+            throw;
+        }
+    }
 }
 
 /// <summary>Reads the connection's tenant and correlation id.</summary>
