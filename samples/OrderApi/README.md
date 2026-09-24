@@ -11,7 +11,7 @@ actually work for a consumer who only has the published artifacts?
 | Host | `SharedKernel.ServiceDefaults` | `AddServiceDefaults()` — OpenTelemetry and health wiring in one call; `MapDefaultHealthCheckEndpoints()`; the `StartupGate` readiness contract |
 | Presentation | `SharedKernel.Presentation.WebApi` | `AddSharedKernelWebApi()` + `UseSharedKernelWebApi()` — the whole HTTP boundary in two calls; `Result<T>` → typed results with `ToCreated()`/`ToOk()`; RFC 9457 error bodies on every path |
 | Presentation | `SharedKernel.Presentation.OpenApi` | `AddSharedKernelOpenApi()` + `MapSharedKernelOpenApi()` — a versioned API, one OpenAPI 3.1 document per version and a Scalar reference, in Development only |
-| Application | `SharedKernel.Application[.Behaviors]` | `ICommand<T>`/`IQuery<T>` handlers returning `Result<T>`; the `AddDefaultBehaviors().Build()` preset (tracing, logging, metrics, validation); a FluentValidation validator whose failures come back as a `Result`, not an exception |
+| Application | `SharedKernel.Application` | `AddSharedKernelApplication(typeof(Program).Assembly)` — one call registers MediatR with the handlers and validators of the assembly and the always-on behaviors (tracing, logging, metrics, validation); `ICommand<T>`/`IQuery<T>` handlers returning `Result<T>`; a FluentValidation validator whose failures come back as a `Result`, not an exception |
 | Domain | `SharedKernel.Domain` | `AggregateRoot<TId>`, `StronglyTypedId`, `ValueObject`, a domain event |
 | Core | `SharedKernel.Primitives` | `Result<T>`, `Error`, `IClock` |
 
@@ -49,8 +49,11 @@ the exception handler, problem bodies for the framework's own error statuses (an
 a wrong method), routing and authorization — in the order they must run.
 
 **Errors never choose a status code.** A handler returns `Error.NotFound(...)` or
-`Error.Validation(...)`; the endpoint maps the `Result` with one call and never inspects
-`IsSuccess` (`Api/OrderEndpoints.cs`):
+`Error.Validation(...)`; the endpoint sends the command or query through `ISender`, maps the `Result`
+with one call and never inspects `IsSuccess`. The endpoints live in an endpoint module
+(`Api/OrderEndpoints.cs`, an `IEndpointModule`), and `Program.cs` maps every module of the assembly
+with one generated call, `app.MapEndpoints()`; the use cases live in `Features/Orders/`, each command
+or query next to its handler and validator:
 
 ```csharp
 orders.MapPost("/", (PlaceOrderCommand command, ISender sender, CancellationToken ct) =>
@@ -106,10 +109,9 @@ platform-wide.
 
 No database (`IOrderRepository` is an in-memory dictionary), no cache, no messaging, no auth —
 so the OpenAPI document declares no security scheme (`Bearer = false`). Each would pull in
-infrastructure and obscure the composition. For the same reason the pipeline
-stops at the preset: `AddAuthorizationBehavior()`, `AddIdempotencyBehavior()`,
-`AddTransactionBehavior()`, `AddAuditingBehavior()` and `AddCachingBehaviors()` each need a seam
-(`IRequestContext`; `IRequestIdempotencyStore` and `IRequestContext`, since keys are reserved per
-tenant and caller; `IUnitOfWork`; `IAuditTrailWriter`; `ICacheService`) registered first, and
-`Build()` throws if it is missing. A real service swaps
+infrastructure and obscure the composition. For the same reason the pipeline keeps to the
+always-on behaviors: `WithAuthorization()`, `WithIdempotency()`, `WithTransactions()`,
+`WithAuditing()` and `WithCaching()` each need a seam (`IRequestContext`; `IRequestIdempotencyStore`
+and `IRequestContext`, since keys are reserved per tenant and caller; `IUnitOfWork`;
+`IAuditTrailWriter`; `ICacheService`), and the host refuses to start when one is missing. A real service swaps
 `InMemoryOrderRepository` for `SharedKernel.Persistence.EfCore`'s `EfRepository<Order, OrderId>`.

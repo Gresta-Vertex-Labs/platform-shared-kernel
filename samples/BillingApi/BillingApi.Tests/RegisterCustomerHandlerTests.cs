@@ -1,5 +1,6 @@
-using BillingApi.Application;
 using BillingApi.Domain;
+using BillingApi.Features;
+using BillingApi.Features.Customers;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Application.Transactions;

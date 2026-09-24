@@ -1,4 +1,5 @@
 using CatalogApi;
+using SharedKernel.Application;
 using SharedKernel.Presentation.WebApi;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Search.Abstractions.Constants;
@@ -110,6 +111,10 @@ builder.Services
     .AddSearchReadinessCheck(Catalog.ProductsIndex, providerKey: SearchWellKnown.MeilisearchProviderName)
     .AddSearchReadinessCheck(Catalog.OrderLinesRead, providerKey: SearchWellKnown.ElasticSearchProviderName);
 
+// 05.Application — MediatR with the handlers of this assembly (Features/) and the always-on behaviors (tracing,
+// logging, metrics, validation). The endpoints send commands and queries; only the handlers touch the engines.
+builder.Services.AddSharedKernelApplication(typeof(Program).Assembly);
+
 // 14.Presentation — the HTTP boundary in one call (SharedKernel:Presentation:WebApi). Every search failure is a
 // Result, and every Result failure an RFC 9457 problem: search.unreachable is 503, search.timeout and
 // search.write_timeout 504 — with the engine's own message, which names internal endpoints, shown only in Development.
@@ -133,9 +138,9 @@ _ = app.Services.GetRequiredService<TelemetryProbe>();
 app.Services.GetRequiredService<StartupGate>().MarkReady();
 
 app.MapDefaultHealthCheckEndpoints();
-app.MapStorefrontEndpoints();
-app.MapBackOfficeEndpoints();
-app.MapOperationsEndpoints();
+// Every IEndpointModule of this assembly (storefront, back office, operations), found at compile time by the
+// generator the WebApi package ships.
+app.MapEndpoints();
 
 await app.RunAsync();
 

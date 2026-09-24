@@ -21,24 +21,38 @@ public static class Stores
     /// Returns the named store, or for a tenant store the view of the request's tenant. Never lets a caller reach a
     /// tenant store without a tenant.
     /// </summary>
-    public static Result<IFileStorage> Resolve(IFileStorageFactory factory, string storeName, HttpContext http)
+    public static Result<IFileStorage> Resolve(IFileStorageFactory factory, StoreAddress store)
     {
-        if (!factory.StoreNames.Contains(storeName, StringComparer.OrdinalIgnoreCase))
+        if (!factory.StoreNames.Contains(store.Name, StringComparer.OrdinalIgnoreCase))
         {
-            return Error.NotFound("documents.unknown_store", $"Store '{storeName}' does not exist.");
+            return Error.NotFound("documents.unknown_store", $"Store '{store.Name}' does not exist.");
         }
 
-        if (!factory.IsTenantScoped(storeName))
+        if (!factory.IsTenantScoped(store.Name))
         {
-            return Result<IFileStorage>.Success(factory.GetStore(storeName));
+            return Result<IFileStorage>.Success(factory.GetStore(store.Name));
         }
 
-        string? tenantId = http.Request.Headers[TenantHeader];
-        if (string.IsNullOrEmpty(tenantId) || StorageValidation.ValidateTenantId(tenantId) is not null)
+        if (string.IsNullOrEmpty(store.TenantId) || StorageValidation.ValidateTenantId(store.TenantId) is not null)
         {
-            return Error.Validation("documents.tenant_required", $"Store '{storeName}' needs a valid {TenantHeader} header.");
+            return Error.Validation("documents.tenant_required", $"Store '{store.Name}' needs a valid {TenantHeader} header.");
         }
 
-        return Result<IFileStorage>.Success(factory.GetTenantStore(storeName).ForTenant(tenantId));
+        return Result<IFileStorage>.Success(factory.GetTenantStore(store.Name).ForTenant(store.TenantId));
     }
+}
+
+/// <summary>
+/// The store a command or query addresses: its name from the route and, for a tenant store, the tenant from the
+/// request's <see cref="Stores.TenantHeader"/> header. <see cref="Stores.Resolve"/> turns it into the store itself.
+/// </summary>
+/// <param name="Name">The store's name.</param>
+/// <param name="TenantId">The request's tenant, or <see langword="null"/> when it sent none.</param>
+public sealed record StoreAddress(string Name, string? TenantId)
+{
+    /// <summary>The store <paramref name="name"/>, for the tenant <paramref name="request"/> names.</summary>
+    /// <param name="name">The store's name.</param>
+    /// <param name="request">The HTTP request.</param>
+    /// <returns>The address.</returns>
+    public static StoreAddress For(string name, HttpRequest request) => new(name, request.Headers[Stores.TenantHeader]);
 }

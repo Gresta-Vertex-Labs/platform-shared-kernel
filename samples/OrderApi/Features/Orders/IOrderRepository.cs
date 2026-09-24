@@ -1,6 +1,6 @@
 using OrderApi.Domain;
 
-namespace OrderApi.Application;
+namespace OrderApi.Features.Orders;
 
 /// <summary>
 /// Local persistence seam. The sample deliberately declares its own narrow port rather than

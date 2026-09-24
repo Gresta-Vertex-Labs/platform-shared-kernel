@@ -8,7 +8,8 @@ artifacts against real engines — not to be copied wholesale, since most servic
 |---|---|
 | `09.Search` (all three packages) | Both providers side by side; the neutral contracts, plus each engine's exclusive ones |
 | `13.ServiceDefaults` (+ `.Search`) | OpenTelemetry, health endpoints, per-index readiness checks |
-| `14.Presentation` | `AddSharedKernelWebApi()` + `UseSharedKernelWebApi()`; `Result<T>` → typed results (`ToOk(…)`); every failure an RFC 9457 problem — an engine outage 503, a timeout 504 |
+| `05.Application` | `AddSharedKernelApplication(typeof(Program).Assembly)`: every endpoint sends a query or command through `ISender`, and only the handlers in `Features/` (`Storefront`, `BackOffice`, `Operations`) touch the engines; the two corpus walks are stream queries (`IStreamQuery<T>`, `ISender.CreateStream`) |
+| `14.Presentation` | `AddSharedKernelWebApi()` + `UseSharedKernelWebApi()`; three endpoint modules (`IEndpointModule`, mapped by the generated `app.MapEndpoints()`); `Result<T>` → typed results (`ToOk(…)`); every failure an RFC 9457 problem — an engine outage 503, a timeout 504 |
 
 ## Running it
 
@@ -70,7 +71,7 @@ curl -i localhost:5199/storefront/tenant-north/products?q=mouse
 #  "instance":"/storefront/tenant-north/products","errorCode":"search.unreachable","correlationId":"f800e48c…","traceId":"00-f800e48c…-01"}
 ```
 
-`search.unreachable` is an `ErrorType.Unavailable` error, so the endpoint — one `ToOk(…)` call, no
+`search.unreachable` is an `ErrorType.Unavailable` error, so the endpoint — `sender.Send(…).ToOk(…)`, no
 `IsSuccess` branch — answers 503; `search.timeout` and `search.write_timeout` are `ErrorType.Timeout`,
 answered 504. The engine's own message names internal endpoints (`Search provider 'meilisearch' at
 'http://localhost:7700' is unreachable.`), so it reaches the client only in Development; elsewhere the detail
@@ -147,8 +148,8 @@ forever — a symptom with no visible connection to its cause. That defect was f
 | `GET /ops/verify` · `GET /ops/probe/{provider}/{index}` | drift and readiness |
 | `GET /diagnostics/telemetry` | what the packages emitted |
 
-The Meilisearch-exclusive and ElasticSearch-exclusive endpoints take a compile-time dependency on their
-provider package. Swap this service to one engine and the other engine's endpoints become **build
+The handlers behind the Meilisearch-exclusive and ElasticSearch-exclusive endpoints take a compile-time dependency on their
+provider package. Swap this service to one engine and the other engine's handlers become **build
 errors naming themselves** — which is the point of declaring exclusive capabilities in the provider
 package instead of behind a runtime capability flag.
 

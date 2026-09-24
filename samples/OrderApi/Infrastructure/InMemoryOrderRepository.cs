@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
-using OrderApi.Application;
 using OrderApi.Domain;
+using OrderApi.Features.Orders;
 
 namespace OrderApi.Infrastructure;
 

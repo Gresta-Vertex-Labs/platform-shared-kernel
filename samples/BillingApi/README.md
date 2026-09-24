@@ -12,9 +12,9 @@ everything work together, through an HTTP API, the way a real service would use 
 | `SharedKernel.Persistence.Dapper` | a payment written by Dapper and an aggregate changed by EF Core **in one transaction**, a report with no tenant predicate (row-level security scopes it), a back-office report across tenants on the cross-tenant role |
 | `SharedKernel.Persistence.Npgsql` | one configuration shape (`ConnectionStrings:billing` + `SharedKernel:Persistence:billing`), the four canonical roles, TLS policy, the RLS privilege check |
 | `SharedKernel.Persistence.Testing` | the end-to-end tests run against `PostgresTestServer` (Testcontainers, the same role split); a handler unit test over `FakeRepository`/`FakeUnitOfWork` with `TransientFailures` |
-| `SharedKernel.Application[.Behaviors]` | MediatR pipeline with authorization, transaction and auditing behaviors |
+| `SharedKernel.Application` | one call, `AddSharedKernelApplication(typeof(Program).Assembly, app => app.WithAuthorization().WithTransactions().WithAuditing())`: the handlers and validators of the assembly, `[RequirePermission]` on every command and query, one retry-safe transaction per command, an audit record per auditable command |
 | `SharedKernel.ServiceDefaults[.Security, .Persistence]` | `AddSharedKernelRequestContext()` over `IUserContext`, persistence readiness checks, the startup gate |
-| `SharedKernel.Presentation.WebApi` | `AddSharedKernelWebApi()` + `UseSharedKernelWebApi()`; typed results (`ToOk`, `ToCreated`, `ToNoContent`, `ToOkWithETag`); an `IfMatch<EntityVersion>` handler parameter (`ETag`, 304, 428, 400, 412); `RequirePermission()` on the back office; every error an RFC 9457 problem |
+| `SharedKernel.Presentation.WebApi` | `AddSharedKernelWebApi()` + `UseSharedKernelWebApi()`; typed results (`ToOk`, `ToCreated`, `ToNoContent`, `ToOkWithETag`); an `IfMatch<EntityVersion>` handler parameter (`ETag`, 304, 428, 400, 412); endpoint modules (`IEndpointModule`, mapped by the generated `app.MapEndpoints()`); `Paging`/`CursorPaging` parameters; every error an RFC 9457 problem |
 
 ## Run it
 
@@ -75,13 +75,20 @@ curl -X DELETE localhost:8080/customers/{id} "${H[@]}" -H 'If-Match: "Ae0rT7…"
 | `POST /invoices/{id}/issue`, `POST /invoices/{id}/payments`, `POST /invoices/expire-drafts` | write | domain events, Dapper + EF Core in one transaction, bulk update |
 | `GET /reports/revenue` | read | Dapper under row-level security |
 | `GET /audit/{type}/{id}`, `GET /audit/{type}` | read | audit history, chain verification |
-| `GET /admin/reports/revenue-by-tenant`, `POST /admin/tenants/{id}/erase` | admin, on the route | cross-tenant role, crypto-shredding |
+| `GET /admin/reports/revenue-by-tenant`, `POST /admin/tenants/{id}/erase` | admin | cross-tenant role, crypto-shredding |
 | `GET /health/ready`, `GET /health/live` | — | readiness: migrations, key ring, audit sealer |
 
-Permissions are declared where the work is: each command and query states its own (`IAuthorizeRequest`), so they
-hold on every path a command can take, and the `/admin` group adds `RequirePermission("billing.admin")` — a native
-authorization policy over `IUserContext`, checked before any handler runs — because the erasure runs no command.
-Either way an anonymous caller gets 401 and a caller without the permission 403, both as problems:
+Permissions are declared once, where the work is: each command and query states its own with `[RequirePermission]`,
+and the pipeline's authorization behavior checks it before the handler runs — on every path the use case can take,
+HTTP or otherwise — so no endpoint repeats it. The tenant erasure is a command like any other (`EraseTenant`,
+`[RequirePermission(Permissions.Admin)]`). An anonymous caller gets 401 and a caller without the permission 403, both as
+problems:
+
+```csharp
+[RequirePermission(Permissions.Write)]
+public sealed record RegisterCustomer(CustomerId Id, string Name, string Email, string? TaxNumber)
+    : ICommand<CustomerId>, IAuditableRequest<Result<CustomerId>> { … }
+```
 
 ```json
 {"type":"https://tools.ietf.org/html/rfc9110#section-15.5.4","title":"Forbidden","status":403,
@@ -131,12 +138,14 @@ code, and the request named its version in `If-Match`, so it is answered 412, ke
 | File | What it shows |
 | --- | --- |
 | `Program.cs` | the whole composition, one registration per concern |
-| `Api/BillingEndpoints.cs` | the HTTP surface: typed results, `IfMatch<EntityVersion>` + `ToOkWithETag()`, the `/admin` group's `RequirePermission()` |
+| `Api/*Endpoints.cs` | the HTTP surface, one endpoint module per area (customers, invoices, reports and audit, administration): each endpoint sends a command or query through `ISender` and maps the `Result` with a typed result; `IfMatch<EntityVersion>` + `ToOkWithETag()`; `Paging`/`CursorPaging` |
+| `Features/<Area>/<UseCase>.cs` | one use case per file: the command or query with its `[RequirePermission]`, and its handler |
 | `Infrastructure/BillingDbContext.cs` | the context, the only configuration conventions cannot know, `BillingDatabase.Configure` shared by `Program.cs` and the design-time factory |
 | `Infrastructure/Migrations/*_Initial.cs` | the generated migration plus the platform objects: RLS for the whole model, a Dapper-only table with its own policy, the audit ledger with a sealer role, the tenant key table |
 | `docker/init-roles.sql` | the canonical role script, as-is |
-| `Application/Invoices.cs` | `PayInvoiceHandler`: a Dapper session joining the command's transaction |
-| `Application/Reports.cs` | SQL with no tenant predicate; the cross-tenant scope |
+| `Features/Invoices/PayInvoice.cs` | `PayInvoiceHandler`: a Dapper session joining the command's transaction |
+| `Features/Reports/GetRevenue.cs`, `GetRevenueByTenant.cs` | SQL with no tenant predicate; the cross-tenant scope |
+| `Features/Tenants/EraseTenant.cs` | crypto-shredding a tenant inside a cross-tenant scope |
 | `BillingApi.Tests/` | 16 end-to-end tests over HTTP in the Production environment, one unit test over the fakes |
 
 ## Adding a migration
