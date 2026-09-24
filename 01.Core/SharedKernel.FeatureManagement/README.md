@@ -157,7 +157,9 @@ public sealed class UserFeatureTargeting(IUserContext user) : IFeatureTargetingC
 }
 ```
 
-`IUserContext` is `SharedKernel.Security.Abstractions`; any identity source works.
+`IUserContext` is `SharedKernel.Security.Abstractions`; any authenticated identity source works (`IRequestContext`
+from `SharedKernel.Application.Abstractions` too). The package registers no accessor of its own: without this one,
+flags that target users, groups or tenants see an anonymous caller.
 
 **4. Evaluate.** `IFeatureClient` is scoped; inject it like any request service.
 
@@ -259,10 +261,14 @@ live under different root keys.
 | `TargetingKey` | `UserId`, or `TenantId` when there is no user |
 
 **Where it comes from.** The registered `IFeatureTargetingContextAccessor`, read once when a scope first resolves
-`IFeatureClient`. Register it with any lifetime, scoped included. Without one, the tenant comes from the `TenantId`
-`Activity` baggage item (`WellKnownBaggageKeys.TenantId`) and there is no user.
+`IFeatureClient`. Register it with any lifetime, scoped included, over your service's authenticated identity.
+Without one there is no targeting identity: every caller is anonymous to user, group and tenant targeting and shares
+one percentage bucket. The package never reads the caller from `Activity` baggage — a caller can send baggage
+itself (the W3C `baggage` header), so a tenant taken from it would let anyone choose another tenant's flags.
 
-**Evaluating for someone else.** Pass a context to the call; its values replace the caller's.
+**Evaluating for someone else, or with no request.** Pass a context to the call; its values replace the caller's.
+Work that has no caller of its own, such as a background job for one tenant, passes
+`FeatureTargetingContext.ForTenant(tenantId).ToEvaluationContext()` the same way.
 
 ```csharp
 bool on = await flags.IsEnabledAsync(Flags.NewCheckout, new FeatureTargetingContext("bob", "acme").ToEvaluationContext(), ct);
@@ -540,6 +546,9 @@ From OpenFeature: `IFeatureClient` (scoped), `EvaluationContext`, `FlagEvaluatio
 - **Injecting `Microsoft.FeatureManagement`'s `IFeatureManager` or `IVariantFeatureManager`.** It skips targeting,
   per-request consistency, fail-safe defaults and telemetry. SK0002 flags it.
 - **Relying on the default when a flag is missing.** Declare the flag in `ValidateOnStart`, so a typo fails startup.
+- **Expecting targeting without an accessor.** None is registered for you. Without your
+  `IFeatureTargetingContextAccessor`, every caller is anonymous: user, group and tenant targeting never match. The
+  tenant is never taken from `Activity` baggage, which the caller controls.
 - **Culture-formatted numbers.** `configuration_value` is read with the invariant culture: `"0.15"`, never `"0,15"`.
 - **A plain `ServiceProvider` in a test.** The provider is initialized when the host starts; otherwise call
   `IFeatureLifecycleManager.EnsureInitializedAsync()`, or every evaluation returns `ProviderNotReady`.
@@ -553,6 +562,7 @@ From OpenFeature: `IFeatureClient` (scoped), `EvaluationContext`, `FlagEvaluatio
 | Our own provider, not Microsoft's preview OpenFeature provider | It was a 0.1 preview; ours maps targeting both ways, reports reasons and never throws |
 | Typed `FeatureFlag<T>` constants | A key typed once, a default declared next to it, and a type the compiler checks |
 | An accessor for the caller, read once per scope | Targeting must not depend on every call site remembering to pass context. The former API's context never reached `Microsoft.Targeting`, so targeting was silently off |
+| No default accessor, and nothing read from baggage | A default read the tenant from the `TenantId` `Activity` baggage item until P-562 X2. Baggage arrives from the caller (the W3C `baggage` header), so an anonymous request could choose another tenant's flags. Only the service knows its authenticated caller |
 | Tenant added to the groups | `Microsoft.FeatureManagement` targets only users and groups; this makes tenants targetable with no schema change |
 | One answer per scope, capped at one minute | A flag must not change halfway through a request; a kill switch must still act within a minute |
 | Telemetry off at `Microsoft.FeatureManagement`, on through OpenFeature | Microsoft's own event records the user id; the OpenTelemetry event does not |
@@ -580,6 +590,7 @@ REGISTER    services.AddSharedKernelFeatureManagement(builder.Configuration /* R
                 .ConfigureOpenFeature(b => b.AddHook(...)));
             o.EvaluateOncePerScope = true (default); o.ScopeResultLifetime = 1 min; o.Telemetry = ConfiguredFlags|AllFlags|Off
             services.AddScoped<IFeatureTargetingContextAccessor, MyAccessor>();   // user, tenant, groups of the caller
+            No accessor -> anonymous caller (no default; never read from Activity baggage, which callers control).
 EVALUATE    inject OpenFeature.IFeatureClient (SCOPED). await client.IsEnabledAsync(Flags.X, ct);
             GetValueAsync(flag, ct); GetDetailsAsync(flag, ct) -> Value, Variant, Reason, ErrorType, ErrorMessage.
             Other target: pass new FeatureTargetingContext(userId, tenantId, groups).ToEvaluationContext() before ct.
