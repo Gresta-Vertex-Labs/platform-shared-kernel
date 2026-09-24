@@ -136,7 +136,7 @@ public sealed class ApplicationPipelineTestHarnessTests
         var result = await harness.SendAsync(new AuthorizedCommand());
 
         Assert.True(result.IsFailure);
-        Assert.Equal("authorization.unauthenticated", result.Error.Code);
+        Assert.Equal("unauthorized.default", result.Error.Code);
     }
 
     [Fact]

@@ -123,7 +123,7 @@ public sealed class BillingApiEndToEndTests(BillingApiFixture fixture)
 
         var anonymousQuery = await fixture.Anonymous().GetAsync("/admin/reports/revenue-by-tenant");
         anonymousQuery.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        (await anonymousQuery.ErrorCodeAsync()).Should().Be("authorization.unauthenticated");
+        (await anonymousQuery.ErrorCodeAsync()).Should().Be("unauthorized.default");
 
         var forbiddenQuery = await readOnly.GetAsync("/admin/reports/revenue-by-tenant");
         forbiddenQuery.StatusCode.Should().Be(HttpStatusCode.Forbidden);

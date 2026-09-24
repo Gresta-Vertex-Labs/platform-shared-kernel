@@ -1,4 +1,5 @@
 using System.Globalization;
+using SharedKernel.Primitives.Errors;
 
 namespace SharedKernel.Presentation.WebApi;
 
@@ -17,10 +18,10 @@ public static class PresentationErrorCodes
     public const string RequestTooLarge = "request.too_large";
 
     /// <summary><c>idempotency.key_required</c>: the endpoint requires an <c>Idempotency-Key</c> header and none was sent (400).</summary>
-    public const string IdempotencyKeyRequired = "idempotency.key_required";
+    public const string IdempotencyKeyRequired = ErrorCodes.Idempotency.KeyRequired;
 
     /// <summary><c>idempotency.key_invalid</c>: the <c>Idempotency-Key</c> header is not 1 to 256 visible ASCII characters (400).</summary>
-    public const string IdempotencyKeyInvalid = "idempotency.key_invalid";
+    public const string IdempotencyKeyInvalid = ErrorCodes.Idempotency.KeyInvalid;
 
     /// <summary>
     /// <c>precondition.required</c>: the endpoint requires an <c>If-Match</c> header naming the version it changes, and

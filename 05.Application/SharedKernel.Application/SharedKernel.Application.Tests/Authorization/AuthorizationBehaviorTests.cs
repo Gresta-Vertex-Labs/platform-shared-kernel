@@ -64,7 +64,7 @@ public sealed class AuthorizationBehaviorTests
         nextCalled.Should().BeFalse();
         result.IsFailure.Should().BeTrue();
         result.Error.Type.Should().Be(ErrorType.Unauthorized);
-        result.Error.Code.Should().Be("authorization.unauthenticated");
+        result.Error.Code.Should().Be("unauthorized.default");
     }
 
     [Fact]

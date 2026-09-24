@@ -20,7 +20,7 @@ namespace SharedKernel.Application.Pipeline;
 /// <para>
 /// A request without the attribute passes unchecked. Otherwise: not authenticated
 /// (<see cref="IRequestContext.IsAuthenticated"/> is <see langword="false"/>) →
-/// <c>Error.Unauthorized("authorization.unauthenticated", ...)</c>; one attribute whose values the
+/// <c>Error.Unauthorized(ErrorCodes.Unauthorized.Default, ...)</c>; one attribute whose values the
 /// caller holds none of → <c>Error.Forbidden(ErrorCodes.Forbidden.InsufficientPermission, ...)</c>,
 /// with a message that never names the permission. The values of one attribute are alternatives,
 /// several attributes all apply.
@@ -36,7 +36,7 @@ internal sealed class AuthorizationBehavior<TRequest, TResponse>(IRequestContext
     where TRequest : notnull
 {
     /// <summary>The error code for an unauthenticated caller of a protected request.</summary>
-    internal const string UnauthenticatedCode = "authorization.unauthenticated";
+    internal const string UnauthenticatedCode = ErrorCodes.Unauthorized.Default;
 
     /// <inheritdoc/>
     public async Task<TResponse> Handle(
