@@ -164,6 +164,11 @@ ErrorCodes  (static class — well-known string constants, organized as nested s
                                                               messaging.unavailable — P-562)
     ErrorCodes.Timeout.Default                             → "timeout.default"  (also the code 14.Presentation gives an unhandled
                                                               TimeoutException — P-562)
+    ErrorCodes.Idempotency.KeyRequired / .KeyInvalid / .InProgress / .KeyReused
+                                                           → "idempotency.key_required" / "idempotency.key_invalid" /
+                                                              "idempotency.in_progress" / "idempotency.key_reused"  (shared by
+                                                              14.Presentation's header check and 05.Application's idempotency
+                                                              behavior, so a client sees one code whichever layer refused — P-563)
     — consuming packages may define additional local constants; no enum versioning problem
 
 ValidationResult  (sealed record — multi-error aggregate, distinct from Result<T>)

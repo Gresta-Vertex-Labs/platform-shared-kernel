@@ -719,8 +719,8 @@ WithCachingTelemetry(this IHostApplicationBuilder builder)       → IHostApplic
 
 WithApplicationTelemetry(this IHostApplicationBuilder builder)  → IHostApplicationBuilder
     (P-247, WO-040). Wires the "SharedKernel.Application" ActivitySource (a static field on
-    05.Application.Behaviors' internal Tracing.ApplicationDiagnostics) and Meter (created from
-    IMeterFactory by its internal DI-singleton Metrics.ApplicationMetrics) into the host's
+    SharedKernel.Application's internal Pipeline.ApplicationDiagnostics) and Meter (created from
+    IMeterFactory by its internal DI-singleton Pipeline.ApplicationMetrics) into the host's
     TracerProvider/MeterProvider via WithTracing(t => t.AddSource("SharedKernel.Application")) and
     WithMetrics(m => m.AddMeter("SharedKernel.Application").AddView(...)), by string name only.
     Idempotent — calling more than once registers no duplicate instruments or metric streams,

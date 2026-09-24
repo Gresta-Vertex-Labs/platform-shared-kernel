@@ -142,7 +142,7 @@ CQRS pipeline wiring and outbound HTTP.
 | [`SK0016`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/README.md#sk0016-requesttypeshortnameusage) | `typeof(X).Name` used as a metric tag, log scope key or cache key | `typeof(X).FullName ?? typeof(X).Name` |
 | [`SK0017`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/README.md#sk0017-commandimplementscacheablequery) | A command implementing `ICacheableQuery<TResponse>` | Remove it — caching is queries-only |
 | [`SK0018`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/README.md#sk0018-queryimplementsinvalidatescache) | A query implementing `IInvalidatesCache` | Remove it — invalidation is commands-only |
-| [`SK0040`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/README.md#sk0040-pipelinemarkerresponseshapemismatch) | `IAuthorizeRequest`/`IIdempotentRequest` on a request whose MediatR response isn't `Result`/`Result<T>` | Declare the response as `Result`/`Result<T>` |
+| [`SK0040`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/README.md#sk0040-pipelinemarkerresponseshapemismatch) | `[RequirePermission]`/`IIdempotentRequest` on a request whose MediatR response isn't `Result`/`Result<T>` | Declare the response as `Result`/`Result<T>` |
 
 ### Logging authoring
 

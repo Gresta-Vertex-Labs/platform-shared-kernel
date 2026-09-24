@@ -3,7 +3,7 @@
 Atomic, tenant-scoped, PostgreSQL-backed implementation of the platform's two idempotency
 contracts:
 
-- `IRequestIdempotencyStore` (`SharedKernel.Application.Behaviors`) — `EfCoreRequestIdempotencyStore`.
+- `IRequestIdempotencyStore` (`SharedKernel.Application.Idempotency`, in `SharedKernel.Application`) — `EfCoreRequestIdempotencyStore`.
 - `IIdempotencyStore` (`SharedKernel.Messaging.Abstractions`) — `EfCoreIdempotencyMessageStore`.
 
 For services that run PostgreSQL and do not want to run Redis solely for deduplication. See the

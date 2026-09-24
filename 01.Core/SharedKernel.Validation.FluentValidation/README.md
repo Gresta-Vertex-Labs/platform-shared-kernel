@@ -113,7 +113,7 @@ Every code is listed in `ValidationErrorCodes`. Each has one message in `Validat
 
 With the platform's pipeline, nothing between the rule and the response needs code:
 
-1. `SharedKernel.Application.Behaviors`' `ValidationBehavior` turns each failure into an `Error`, keeping the code, the
+1. `SharedKernel.Application`'s validation behavior turns each failure into an `Error`, keeping the code, the
    message and the placeholder values. The field path goes into `MessageArguments["PropertyPath"]`.
 2. `SharedKernel.Presentation.WebApi` returns a ProblemDetails response:
    - `errors` holds the messages, keyed by field;

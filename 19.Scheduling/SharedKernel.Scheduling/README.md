@@ -62,7 +62,7 @@ Temporal activity input does. Internally, `ScheduledCommandJob<TCommand>` (a clo
 reflection — the scheduling-side counterpart to `17.Workflows`' `CommandActivity<TCommand>`) resolves
 `ISender` from a fresh DI scope created per execution and dispatches through the full MediatR pipeline.
 
-What that means for the `SharedKernel.Application.Behaviors` pipeline:
+What that means for the `SharedKernel.Application` pipeline:
 
 - **The command is an outermost command.** A fresh DI scope means a fresh `ICommandScope`, so
   `TransactionBehavior` commits the job's unit of work when the command succeeds, and
@@ -70,7 +70,7 @@ What that means for the `SharedKernel.Application.Behaviors` pipeline:
   from inside itself share that one commit.
 - **Failures come back as a `Result`.** Validation (`ErrorType.Validation`) and authorization
   (`ErrorType.Unauthorized`/`Forbidden`) failures are logged as a failed fire, never thrown.
-- **Authorization needs a system identity.** `AuthorizationBehavior` reads `IRequestContext`, and a
+- **Authorization needs a system identity.** The authorization behavior (`.WithAuthorization()`) reads `IRequestContext`, and a
   scheduled job has no caller. If the service opts into authorization, register
   `SharedKernel.Application.Context.SystemRequestContext` — naming the scheduler and listing exactly the
   permissions its jobs need — or every guarded command fails closed with `Error.Unauthorized`.

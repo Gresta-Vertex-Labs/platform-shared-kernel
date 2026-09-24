@@ -146,7 +146,7 @@ ProblemDetailsDeserializer  [internal static]
 
 HttpStatusErrorTypeMap  [internal static]  (P-544, P-562)
     // Resolve(int statusCode) → ErrorType
-    // The reverse of 14.Presentation's ErrorTypeStatusCodeMap.Resolve (400 → Validation,
+    // The reverse of 14.Presentation's (internal) ErrorTypeStatusCodeMap (400 → Validation,
     // 401 → Unauthorized, 403 → Forbidden, 404 → NotFound, 409 → Conflict, 422 → BusinessRule,
     // 503 → Unavailable, 504 → Timeout), plus the statuses an HTTP boundary answers outside it:
     // 412 → Conflict, 413/415/428 → Validation, 429 → Unavailable. Everything else → Unexpected.

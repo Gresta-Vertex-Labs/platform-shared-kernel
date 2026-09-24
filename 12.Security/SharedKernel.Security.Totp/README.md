@@ -312,7 +312,7 @@ public interface ITotpEnrollmentRepository
 ```csharp
 // Program.cs
 using System.Security.Cryptography;
-using SharedKernel.Presentation.WebApi.Errors;
+using SharedKernel.Presentation.WebApi;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Security.Abstractions;
 using SharedKernel.Security.Totp;
@@ -387,7 +387,7 @@ enrollment.MapPost("/confirm", async (
 One mapping from `TotpChallengeResult` to an HTTP response, shared by recipes 1, 3 and 4:
 
 ```csharp
-using SharedKernel.Presentation.WebApi.Errors;
+using SharedKernel.Presentation.WebApi;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Security.Totp;
 
@@ -465,7 +465,6 @@ package.
 // Program.cs
 using System.Security.Cryptography;
 using SharedKernel.Presentation.WebApi;
-using SharedKernel.Presentation.WebApi.Errors;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Security.Abstractions;
 using SharedKernel.Security.Totp;
@@ -1146,7 +1145,7 @@ as described in the [security policy](https://github.com/Gresta-Vertex-Labs/plat
 | --- | --- | --- |
 | Gate step-up endpoints with `[RequireFreshAuthentication]` | Use `[RequireAuthenticationMethod("otp")]` | The step-up never changes `AuthTime` |
 | Gate a SignalR hub method with `[RequireAuthenticationMethod("otp")]` alone | Add `MaxAgeSeconds`, no longer than `FreshnessWindow` | The connection keeps its principal; without a maximum age the step-up lasts as long as the connection |
-| Skip `builder.AddSharedKernelWebApi()` (or `services.AddSharedKernelAuthorization()` in a host without it) | Call it, and `app.UseSharedKernelWebApi()` before mapping endpoints | The attribute's policy name resolves only through the platform's policy provider |
+| Skip `builder.AddSharedKernelWebApi()` (or `AddSharedKernelSignalR()`/`AddSharedKernelGrpc()`, which register the same policies) | Call it, and `app.UseSharedKernelWebApi()` before mapping endpoints | The attribute's policy name resolves only through the platform's policy provider |
 | Register a claims transformation after `AddTotpStepUp` | Register it before | The last registration wins and replaces the step-up transformation |
 | Register `ITotpReplayGuard` as scoped | Register it as a singleton | `ITotpVerifier` is a singleton; scope validation fails |
 | Use in-memory stores with several replicas | Use Redis, SQL or another shared store | A step-up or used code on one replica is invisible to the others |

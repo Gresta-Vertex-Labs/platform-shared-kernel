@@ -208,7 +208,7 @@ The MediatR pipeline and outbound HTTP.
 | [SK0016](#sk0016-requesttypeshortnameusage) | `typeof(T).Name` used as a metric tag, log scope or cache key | `typeof(T).FullName ?? typeof(T).Name` |
 | [SK0017](#sk0017-commandimplementscacheablequery) | A command marked cacheable | Caching is for queries only |
 | [SK0018](#sk0018-queryimplementsinvalidatescache) | A query marked as invalidating the cache | Invalidation is for commands only |
-| [SK0040](#sk0040-pipelinemarkerresponseshapemismatch) | `IAuthorizeRequest`/`IIdempotentRequest` on a request whose MediatR response isn't `Result`/`Result<T>` | Declare the response as `Result`/`Result<T>` |
+| [SK0040](#sk0040-pipelinemarkerresponseshapemismatch) | `[RequirePermission]`/`IIdempotentRequest` on a request whose MediatR response isn't `Result`/`Result<T>` | Declare the response as `Result`/`Result<T>` |
 | [SK0041](#sk0041-duplicatecacheablequeryname) | Two cacheable queries sharing a simple type name | Rename one -- cache entries are namespaced by that name |
 
 #### Logging
@@ -1175,7 +1175,7 @@ Two request types with the same short name in different namespaces, for example 
 
 #### What it flags
 
-- A `typeof(X).Name` member access in a file whose namespace declaration starts with `SharedKernel.Application`. This covers `SharedKernel.Application`, `SharedKernel.Application.Behaviors`, and their sub-namespaces.
+- A `typeof(X).Name` member access in a file whose namespace declaration starts with `SharedKernel.Application`. This covers `SharedKernel.Application`, `SharedKernel.Application.Caching`, and their sub-namespaces such as `SharedKernel.Application.Pipeline`.
 - `typeof(A).FullName ?? typeof(B).Name` where `A` and `B` are not written identically.
 
 Unlike most rules, the namespace is a condition for firing, not an exemption. The rule targets the MediatR pipeline code that builds request-type tags and keys. Code in your own service namespaces is not checked.
@@ -1189,14 +1189,14 @@ Unlike most rules, the namespace is a condition for firing, not an exemption. Th
 #### Example
 
 ```csharp
-namespace SharedKernel.Application.Behaviors.Metrics;
+namespace SharedKernel.Application.Pipeline;
 
 // Flagged: SK0016
 var requestName = typeof(TRequest).Name;
 ```
 
 ```csharp
-namespace SharedKernel.Application.Behaviors.Metrics;
+namespace SharedKernel.Application.Pipeline;
 
 // Compliant
 var requestName = typeof(TRequest).FullName ?? typeof(TRequest).Name;
@@ -1246,8 +1246,8 @@ A command must not implement `ICacheableQuery<TResponse>`.
 #### Example
 
 ```csharp
-using SharedKernel.Application.Behaviors.Caching;
-using SharedKernel.Application.Messaging;
+using SharedKernel.Application;
+using SharedKernel.Application.Caching;
 using SharedKernel.Caching.Abstractions;
 
 // Flagged: SK0017
@@ -1259,7 +1259,7 @@ public sealed record CancelOrderCommand(Guid OrderId) : ICommand<Guid>, ICacheab
 ```
 
 ```csharp
-using SharedKernel.Application.Messaging;
+using SharedKernel.Application;
 
 // Compliant
 public sealed record CancelOrderCommand(Guid OrderId) : ICommand<Guid>;
@@ -1298,26 +1298,26 @@ A query should be free of side effects. A query that evicts cache entries makes 
 #### Example
 
 ```csharp
-using SharedKernel.Application.Behaviors.CacheInvalidation;
-using SharedKernel.Application.Messaging;
+using SharedKernel.Application;
+using SharedKernel.Application.Caching;
 
 // Flagged: SK0018
 public sealed record GetOrderQuery(Guid OrderId) : IQuery<OrderDto>, IInvalidatesCache
 {
-    public IReadOnlyCollection<string> CacheKeysToInvalidate => [$"orders:{OrderId}"];
+    public IReadOnlyCollection<CacheKeyRef> CacheKeysToInvalidate => [CacheKeyRef.For<GetOrderQuery>(OrderId.ToString())];
 }
 ```
 
 ```csharp
-using SharedKernel.Application.Behaviors.CacheInvalidation;
-using SharedKernel.Application.Messaging;
+using SharedKernel.Application;
+using SharedKernel.Application.Caching;
 
 // Compliant: the query only reads; the command that changes the order invalidates
 public sealed record GetOrderQuery(Guid OrderId) : IQuery<OrderDto>;
 
 public sealed record ShipOrderCommand(Guid OrderId) : ICommand<Guid>, IInvalidatesCache
 {
-    public IReadOnlyCollection<string> CacheKeysToInvalidate => [$"orders:{OrderId}"];
+    public IReadOnlyCollection<CacheKeyRef> CacheKeysToInvalidate => [CacheKeyRef.For<GetOrderQuery>(OrderId.ToString())];
 }
 ```
 
@@ -1334,23 +1334,23 @@ warning SK0018: 'GetOrderQuery' implements IQuery<TResponse> and IInvalidatesCac
 
 **Category:** Design · **Default severity:** Warning
 
-A request implementing `IAuthorizeRequest` or `IIdempotentRequest` must declare its MediatR response as `Result` or a closed `Result<T>`.
+A request that carries `SharedKernel.Application`'s `[RequirePermission]` attribute or implements `IIdempotentRequest` must declare its MediatR response as `Result` or a closed `Result<T>`.
 
 #### Why it matters
 
-`AuthorizationBehavior` and `IdempotencyBehavior` short-circuit through the internal `FailureResponse.Create<TResponse>()`, which binds to a public static `Failure(Error)` factory the first time a closed `TResponse` is used — `Result` takes a hardcoded fast path, and every other `TResponse` must expose that factory or the call throws `InvalidOperationException`. If a request implementing either marker declares a plain DTO as its response, nothing fails at compile time — the first authorization denial or duplicate submission throws in production. This rule moves that failure to compile time.
+The authorization and idempotency behaviors short-circuit through the internal `FailureResponse.Create<TResponse>()`, which binds to a public static `Failure(Error)` factory the first time a closed `TResponse` is used — `Result` takes a hardcoded fast path, and every other `TResponse` must expose that factory or the call throws `InvalidOperationException`. If a request carrying either marker declares a plain DTO as its response, nothing fails at compile time — the first authorization denial or duplicate submission throws in production. This rule moves that failure to compile time.
 
-Reading `FailureResponse.cs` and every behavior that calls it found exactly two callers: `AuthorizationBehavior` (gated by `IAuthorizeRequest`) and `IdempotencyBehavior` (gated by `IIdempotentRequest`). `AuditingBehavior` (`IAuditableRequest<TResponse>`) and `LoggingBehavior` (`ILoggableRequest<TResponse>`) never call it — both only forward the response `next()` already produced and read it through `ResponseOutcome.TryGetError`, which treats a non-`Result` response as a success rather than requiring a `Failure(Error)` factory. This rule does not check those two markers.
+Reading `FailureResponse.cs` and every behavior that calls it found exactly two callers gated by a marker: the authorization behavior (gated by `[RequirePermission]` on the request type or a base type) and the idempotency behavior (gated by `IIdempotentRequest`). The auditing behavior (`IAuditableRequest<TResponse>`) and the logging behavior (`ILoggableRequest<TResponse>`) never call it — both only forward the response `next()` already produced and read it through `ResponseOutcome.TryGetError`, which treats a non-`Result` response as a success rather than requiring a `Failure(Error)` factory. This rule does not check those two markers.
 
 #### What it flags
 
-- A non-abstract class, record, or struct implementing `IAuthorizeRequest` and/or `IIdempotentRequest`, and `MediatR.IRequest<TResponse>` (directly or transitively), whose resolved `TResponse` is not `Result` or a closed `Result<T>` (`SharedKernel.Primitives.Results`, arity 0 or 1).
+- A non-abstract class, record, or struct carrying `[RequirePermission]` declared in namespace `SharedKernel.Application` (the `SharedKernel.Presentation.WebApi` attribute of the same name is not matched) and/or implementing `IIdempotentRequest`, and `MediatR.IRequest<TResponse>` (directly or transitively), whose resolved `TResponse` is not `Result` or a closed `Result<T>` (`SharedKernel.Primitives.Results`, arity 0 or 1).
 - Reported on the type name, naming every matched marker and the actual response type.
 
 #### What it does not flag
 
 - `IAuditableRequest<TResponse>` and `ILoggableRequest<TResponse>` — neither behavior constructs a failure response.
-- A marker implemented with no `IRequest<TResponse>` at all — no behavior can ever resolve into that type's pipeline.
+- A marker on a type with no `IRequest<TResponse>` at all — no behavior can ever resolve into that type's pipeline.
 - A response type that is itself still an open type parameter (or unresolved) — the eventual closed shape cannot be determined at the declaration site.
 - A closed `Result<T>` whose own type argument `T` is an open type parameter — only the outer `Result`/`Result<T>` shape is checked.
 - Abstract types.
@@ -1359,31 +1359,25 @@ Reading `FailureResponse.cs` and every behavior that calls it found exactly two 
 
 ```csharp
 using MediatR;
-using SharedKernel.Application.Behaviors.Authorization;
+using SharedKernel.Application;
 
 // Flagged: SK0040 — OrderDto has no static Failure(Error) factory
-public sealed record ApproveOrderCommand(Guid OrderId) : IAuthorizeRequest, IRequest<OrderDto>
-{
-    public IReadOnlyCollection<string> RequiredPermissions => ["orders.approve"];
-}
+[RequirePermission("orders.approve")]
+public sealed record ApproveOrderCommand(Guid OrderId) : IRequest<OrderDto>;
 ```
 
 ```csharp
-using MediatR;
-using SharedKernel.Application.Behaviors.Authorization;
-using SharedKernel.Primitives.Results;
+using SharedKernel.Application;
 
 // Compliant
-public sealed record ApproveOrderCommand(Guid OrderId) : IAuthorizeRequest, IRequest<Result<OrderDto>>
-{
-    public IReadOnlyCollection<string> RequiredPermissions => ["orders.approve"];
-}
+[RequirePermission("orders.approve")]
+public sealed record ApproveOrderCommand(Guid OrderId) : ICommand<OrderDto>;
 ```
 
 #### Diagnostic
 
 ```text
-warning SK0040: 'ApproveOrderCommand' implements IAuthorizeRequest, which short-circuits with a failed response via FailureResponse.Create<TResponse> — but its MediatR response type is 'OrderDto', not Result or a closed Result<T>. This throws InvalidOperationException the first time the behavior short-circuits, at runtime. Declare the response as Result or Result<T>, or remove IAuthorizeRequest.
+warning SK0040: 'ApproveOrderCommand' declares [RequirePermission], which short-circuits with a failed response via FailureResponse.Create<TResponse> — but its MediatR response type is 'OrderDto', not Result or a closed Result<T>. This throws InvalidOperationException the first time the behavior short-circuits, at runtime. Declare the response as Result or Result<T>, or remove [RequirePermission].
 ```
 
 ---
@@ -1419,7 +1413,7 @@ The simple name is used rather than the full name deliberately: the entity segme
 #### Example
 
 ```csharp
-using SharedKernel.Application.Behaviors.Caching;
+using SharedKernel.Application.Caching;
 
 namespace Orders;
 
@@ -1432,7 +1426,7 @@ public sealed record GetSummaryQuery(Guid Id) : ICacheableQuery<OrderSummary>
 ```
 
 ```csharp
-using SharedKernel.Application.Behaviors.Caching;
+using SharedKernel.Application.Caching;
 
 namespace Orders;
 
