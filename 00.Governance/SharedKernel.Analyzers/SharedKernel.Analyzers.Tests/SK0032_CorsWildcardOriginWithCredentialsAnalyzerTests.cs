@@ -64,8 +64,8 @@ public class SK0032_CorsWildcardOriginWithCredentialsAnalyzerTests
 
     /// <summary>
     /// T-319: <c>policy.AllowAnyOrigin().AllowCredentials();</c>, called from inside an
-    /// <c>AddPolicy</c>-shaped configuration delegate (a lambda parameter, mirroring
-    /// <c>AddSharedKernelCors</c>'s own real shape), must trigger SK0032.
+    /// <c>AddPolicy</c>-shaped configuration delegate (a lambda parameter, the usual shape of a policy
+    /// registration; P-562 deleted <c>AddSharedKernelCors</c>, which this once mirrored), must trigger SK0032.
     /// </summary>
     [Fact]
     public async Task FirePath_SingleFluentChain_AllowAnyOrigin_ReportsDiagnostic()

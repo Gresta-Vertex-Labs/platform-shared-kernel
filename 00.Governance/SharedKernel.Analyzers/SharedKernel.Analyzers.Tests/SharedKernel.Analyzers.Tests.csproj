@@ -33,5 +33,11 @@
       Include="..\..\..\01.Core\SharedKernel.FeatureManagement\SharedKernel.FeatureManagement.csproj"
       PrivateAssets="all"
     />
+    <!-- Real-type name locks: SK0036's message names SharedKernel.Core's ThrowIfFailure()/GetValueOrThrow()
+         (P-562 R32 removed the gRPC package's own), and its test takes those names with nameof. -->
+    <ProjectReference
+      Include="..\..\..\01.Core\SharedKernel.Core\SharedKernel.Core.csproj"
+      PrivateAssets="all"
+    />
   </ItemGroup>
 </Project>

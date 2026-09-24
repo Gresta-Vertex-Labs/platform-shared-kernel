@@ -33,6 +33,12 @@ namespace SharedKernel.ArchitectureTests.Tests;
 /// all three sibling packages — <c>.OpenApi</c>, <c>.SignalR</c>, <c>.Grpc</c> — through the WebApi-exclusion rules
 /// (only <c>SharedKernel.Presentation.WebApi</c> is exempt) and lock the OpenAPI stack inside the add-on.
 /// </para>
+/// <para>
+/// <strong>P-562 final review.</strong> Stand-ins only prove that the predicate agrees with the fixture: after R21
+/// moved <c>ErrorHttpResult</c>, a fixture still declaring the old namespace kept passing. The inline-branch rule is
+/// therefore also proven against the shipped types, with fixtures compiled against the test host's real WebApi,
+/// Primitives and ASP.NET Core assemblies (<c>CompileAgainstRealAssemblies</c>).
+/// </para>
 /// </remarks>
 public class PresentationLayeringRulesTests
 {
@@ -423,8 +429,9 @@ public class PresentationLayeringRulesTests
     }
 
     /// <summary>
-    /// P-562: MVC's everyday action return type, <c>IActionResult</c>, is an HTTP result too (the core maps
-    /// <c>Result</c> to it with <c>ToActionResult</c>).
+    /// P-562: MVC's everyday action return type, <c>IActionResult</c>, is an HTTP result too. Since R19 removed
+    /// <c>ToActionResult</c>, a controller maps a <c>Result</c> with the same typed results as a minimal API, so an
+    /// action that returns <c>IActionResult</c> after reading <c>IsFailure</c> built its response by hand.
     /// </summary>
     [Fact]
     public void NoInlineResultBranchBeforeHttpResultOutsideWebApi_IActionResultReturn_RuleFails()
@@ -479,7 +486,8 @@ public class PresentationLayeringRulesTests
     /// <summary>
     /// P-562: a failure branch written out but routed through the core — <c>error.ToErrorResult()</c> or
     /// <c>new ErrorHttpResult(error)</c> — carries the platform's status, code, localization and redaction, so it
-    /// passes.
+    /// passes. The fixture declares <c>ErrorHttpResult</c> where R21 put it, the root namespace; the real-assembly
+    /// tests below prove the same against the shipped type.
     /// </summary>
     [Theory]
     [InlineData("result.Error.ToErrorResult()")]
@@ -505,18 +513,14 @@ public class PresentationLayeringRulesTests
                 public sealed class OkResult : IResult { }
             }
 
-            namespace SharedKernel.Presentation.WebApi.Errors
-            {
-                public sealed class ErrorHttpResult : Microsoft.AspNetCore.Http.IResult
-                {
-                    public ErrorHttpResult(SharedKernel.Primitives.Error error) { }
-                }
-            }
-
             namespace SharedKernel.Presentation.WebApi
             {
-                using SharedKernel.Presentation.WebApi.Errors;
                 using SharedKernel.Primitives;
+
+                public sealed class ErrorHttpResult : Microsoft.AspNetCore.Http.IResult
+                {
+                    public ErrorHttpResult(Error error) { }
+                }
 
                 public static class ResultHttpExtensions
                 {
@@ -528,7 +532,6 @@ public class PresentationLayeringRulesTests
             {
                 using Microsoft.AspNetCore.Http;
                 using SharedKernel.Presentation.WebApi;
-                using SharedKernel.Presentation.WebApi.Errors;
                 using SharedKernel.Primitives;
 
                 public static class OrderEndpoints
@@ -663,6 +666,82 @@ public class PresentationLayeringRulesTests
     }
 
     // ---------------------------------------------------------------------------
+    // P-562 final review — the inline-branch rule against the real WebApi types
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// The predicate names the WebApi mapping types and the typed-results namespace as strings, and a stale name
+    /// matches nothing: after R21 moved <c>ErrorHttpResult</c> to the root namespace, a compliant
+    /// <c>new ErrorHttpResult(error)</c> was flagged. These fixtures compile against the shipped WebApi, Primitives
+    /// and ASP.NET Core assemblies, so each mapping the core offers passes only while the predicate names the real
+    /// types, and a future move fails here.
+    /// </summary>
+    [Theory]
+    [InlineData("ErrorHttpResult", "if (result.IsFailure) { return new ErrorHttpResult(result.Error); } return TypedResults.Ok(result.Value);")]
+    [InlineData("ToErrorResult", "if (result.IsFailure) { return result.Error.ToErrorResult(); } return TypedResults.Ok(result.Value);")]
+    [InlineData("ToProblemDetails", "if (result.IsFailure) { return TypedResults.Problem(result.Error.ToProblemDetails(httpContext)); } return TypedResults.Ok(result.Value);")]
+    [InlineData("ToOk", "if (result.IsFailure) { httpContext.Items[\"failed\"] = true; } return result.ToOk();")]
+    public void NoInlineResultBranchBeforeHttpResultOutsideWebApi_RealCoreMapping_RulePasses(string mapping, string body)
+    {
+        var assembly = CompileAgainstRealAssemblies(
+            $"Fixture.InlineResultBranch.RealCore.{mapping}",
+            RealEndpointSource("IResult", body));
+
+        var result = PresentationLayeringRules
+            .NoInlineResultBranchBeforeHttpResultOutsideWebApi(assembly)
+            .GetResult();
+
+        result.IsSuccessful.Should().BeTrue(
+            because: $"Handle maps through the shipped WebApi core ({mapping}); failing types: " +
+                     string.Join(", ", result.FailingTypeNames ?? []));
+    }
+
+    /// <summary>
+    /// The fire path with the real types: a branch built by hand from <c>TypedResults</c> fails, whether the handler
+    /// returns <c>IResult</c> or a real typed-results union.
+    /// </summary>
+    [Theory]
+    [InlineData("IResult", "IResult")]
+    [InlineData("Union", "Results<Ok<int>, NotFound>")]
+    public void NoInlineResultBranchBeforeHttpResultOutsideWebApi_RealTypedResultsBuiltByHand_RuleFails(
+        string caseName,
+        string returnType)
+    {
+        var assembly = CompileAgainstRealAssemblies(
+            $"Fixture.InlineResultBranch.RealByHand.{caseName}",
+            RealEndpointSource(
+                returnType,
+                "if (result.IsFailure) { return TypedResults.NotFound(); } return TypedResults.Ok(result.Value);"));
+
+        var result = PresentationLayeringRules
+            .NoInlineResultBranchBeforeHttpResultOutsideWebApi(assembly)
+            .GetResult();
+
+        result.IsSuccessful.Should().BeFalse(
+            because: $"Handle reads Result<T>.IsFailure and returns {returnType} built from TypedResults by hand");
+        result.FailingTypeNames.Should().Contain("Application.Endpoints.OrderEndpoints");
+    }
+
+    private static string RealEndpointSource(string returnType, string body) => $$"""
+        using Microsoft.AspNetCore.Http;
+        using Microsoft.AspNetCore.Http.HttpResults;
+        using SharedKernel.Presentation.WebApi;
+        using SharedKernel.Presentation.WebApi.Errors;
+        using SharedKernel.Primitives.Results;
+
+        namespace Application.Endpoints
+        {
+            public static class OrderEndpoints
+            {
+                public static {{returnType}} Handle(Result<int> result, HttpContext httpContext)
+                {
+                    {{body}}
+                }
+            }
+        }
+        """;
+
+    // ---------------------------------------------------------------------------
     // T-360 — Fire path: contrived assembly shaped like SharedKernel.Presentation.Grpc
     // references SharedKernel.Contracts
     // ---------------------------------------------------------------------------
@@ -738,10 +817,8 @@ public class PresentationLayeringRulesTests
     [Fact]
     public void GrpcNeverReferencesContracts_RealGrpcAssembly_RulePasses()
     {
-        var grpcAssembly = typeof(SharedKernel.Presentation.Grpc.GrpcResultExtensions).Assembly;
-
         var result = PresentationLayeringRules
-            .GrpcNeverReferencesContracts(grpcAssembly)
+            .GrpcNeverReferencesContracts(GrpcAssembly)
             .GetResult();
 
         result.IsSuccessful.Should().BeTrue(
@@ -786,9 +863,10 @@ public class PresentationLayeringRulesTests
     }
 
     /// <summary>
-    /// P-562: SignalR's and gRPC's <c>Result</c> handling (hub method results, <c>ThrowIfFailure</c>,
-    /// <c>GetValueOrThrow</c>) returns no HTTP result type, and the add-on reads no <c>Result</c> — so the real
-    /// sibling assemblies pass the inline-branch rule unexempted.
+    /// P-562: SignalR's <c>Result</c> handling (hub method results) returns no HTTP result type, the gRPC package
+    /// maps exceptions rather than <c>Result</c>s (R32 removed its own result extensions; services end a failed
+    /// <c>Result</c> with <c>SharedKernel.Core</c>'s), and the add-on reads no <c>Result</c> — so the real sibling
+    /// assemblies pass the inline-branch rule unexempted.
     /// </summary>
     [Fact]
     public void NoInlineResultBranchBeforeHttpResultOutsideWebApi_RealOpenApiSignalRAndGrpcAssemblies_RulePasses()
@@ -814,10 +892,7 @@ public class PresentationLayeringRulesTests
     public void NoOpenApiStackDependencyOutsideOpenApiAddOn_RealWebApiSignalRAndGrpcAssemblies_RulePasses()
     {
         var result = PresentationLayeringRules
-            .NoOpenApiStackDependencyOutsideOpenApiAddOn(
-                WebApiAssembly,
-                typeof(SharedKernel.Presentation.SignalR.SignalRHostBuilderExtensions).Assembly,
-                typeof(SharedKernel.Presentation.Grpc.GrpcHostBuilderExtensions).Assembly)
+            .NoOpenApiStackDependencyOutsideOpenApiAddOn(WebApiAssembly, SignalRAssembly, GrpcAssembly)
             .GetResult();
 
         result.IsSuccessful.Should().BeTrue(
@@ -888,12 +963,20 @@ public class PresentationLayeringRulesTests
 
     private static Assembly OpenApiAssembly => typeof(SharedKernel.Presentation.OpenApi.OpenApiHostBuilderExtensions).Assembly;
 
+    private static Assembly SignalRAssembly => typeof(SharedKernel.Presentation.SignalR.SignalRHostBuilderExtensions).Assembly;
+
+    /// <summary>
+    /// Anchored on the package's setup entry point, its one root-namespace type. R32 removed the former anchor,
+    /// <c>GrpcResultExtensions</c>.
+    /// </summary>
+    private static Assembly GrpcAssembly => typeof(SharedKernel.Presentation.Grpc.GrpcHostBuilderExtensions).Assembly;
+
     /// <summary>The presentation packages that build on the WebApi core — every one checked, none exempt.</summary>
     private static Assembly[] PresentationSiblingAssemblies() =>
     [
         OpenApiAssembly,
-        typeof(SharedKernel.Presentation.SignalR.SignalRHostBuilderExtensions).Assembly,
-        typeof(SharedKernel.Presentation.Grpc.GrpcHostBuilderExtensions).Assembly,
+        SignalRAssembly,
+        GrpcAssembly,
     ];
 
     // ---------------------------------------------------------------------------
@@ -930,6 +1013,32 @@ public class PresentationLayeringRulesTests
             }
         }
 
+        return EmitAndLoad(assemblyName, syntaxTree, references);
+    }
+
+    /// <summary>
+    /// Compiles <paramref name="source"/> against every assembly the test host trusts: the .NET and ASP.NET Core
+    /// shared frameworks and this project's references, the real WebApi core and <c>SharedKernel.Primitives</c> among
+    /// them. A fixture then uses the shipped types, not stand-ins declared under the same names.
+    /// </summary>
+    private static Assembly CompileAgainstRealAssemblies(string assemblyName, string source)
+    {
+        var trustedPlatformAssemblies = AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") as string
+            ?? throw new InvalidOperationException("The test host lists no trusted platform assemblies.");
+
+        var references = trustedPlatformAssemblies
+            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
+            .Select(path => (MetadataReference)MetadataReference.CreateFromFile(path))
+            .ToList();
+
+        return EmitAndLoad(assemblyName, CSharpSyntaxTree.ParseText(source), references);
+    }
+
+    private static Assembly EmitAndLoad(
+        string assemblyName,
+        SyntaxTree syntaxTree,
+        IEnumerable<MetadataReference> references)
+    {
         var compilation = CSharpCompilation.Create(
             assemblyName,
             syntaxTrees: new[] { syntaxTree },
