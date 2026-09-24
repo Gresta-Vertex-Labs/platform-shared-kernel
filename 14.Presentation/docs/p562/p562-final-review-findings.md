@@ -82,6 +82,29 @@ Confirmed sound by the reviews:
 | X3 | adjacent | **Idempotency per caller.** 05's `IdempotencyBehavior` reserves keys per tenant **and caller** (actor kind + identity), so one caller can never replay another's stored response. For anonymous callers the request fingerprint must match (already the case); the residual risk is documented. 18's stores need no change unless a key length limit requires it. 05's `idempotency.key_missing` becomes `idempotency.key_required`, matching 14. |
 | X4 | S13 | **Opaque ETags.** The version that reaches the wire is no longer the raw `xmin`. It is a deterministic, keyed encoding: stable for the same version (so `If-None-Match` works), bound to its entity, and meaningless without the service's key. It decodes back to the expected version for the concurrency check, and a token for another entity or a tampered one never parses. The safe path must be the default path (a service cannot put the raw number on the wire by accident). The key comes from existing key infrastructure (01.Cryptography, a dedicated purpose), and key rotation is supported (an old token is a stale version at worst). Every existing ETag value changes. |
 
+All four shipped (merges `1cdfc1ba`, `7e82d802`, `0ae0249f`, `c759839e`). Details beyond the decisions:
+
+- X1: the claim is `amr_time` (`"{method} {unix-seconds}"`, `AuthenticationMethodTimeClaim`). A gRPC stream is
+  authorized once, when it opens.
+- X2: 13 also decorates OpenTelemetry's default propagator, so an incoming request's `baggage` header never fills
+  `Baggage.Current`, which the HttpClient and gRPC client instrumentations would otherwise forward downstream.
+- X3: the store key is a SHA-256 digest of tenant, actor kind, subject, client, impersonator and key (the session is
+  left out, so a retry after signing in again still replays). Anonymous callers of one tenant share a scope; only the
+  fingerprint separates them. The three codes are constants on `IdempotencyErrorCodes`, and a 00.Governance test pins
+  `idempotency.key_required` to 14's `PresentationErrorCodes.IdempotencyKeyRequired`.
+- X4: a version is a 21-byte token, one AES-256 block (`xmin` plus a 96-bit binding to the aggregate) under an HKDF
+  subkey of the service's key provider. With an asynchronous-only provider (a KMS) the key is loaded by a hosted
+  service before the host takes traffic; readiness does not wait for it.
+
+## Integration round 2 (R37 and what it found)
+
+| Item | Decision |
+| --- | --- |
+| R37 | Samples, consumer-verify and 00.Governance follow the final API. A governance predicate matching `ErrorHttpResult` by its old namespace flagged compliant code; it now matches the real type, and tests compile fixtures against the real WebApi assembly so the next move fails a test. |
+| Timeout parity | gRPC and SignalR map a `TimeoutException`, or a cancellation while the call is still open, to `timeout.default` (`DeadlineExceeded`, a coded `HubException`), as HTTP answers 504. |
+| OpenAPI | `OkWithETag` adds `IETagResponseMetadata`, and the add-on documents the `ETag` response header. The `Idempotency-Key` schema admits exactly what the server accepts (a quoted key is 258 characters), from `IdempotencyKey.MaxLength`. |
+| Optional headers | Only required `If-Match`/`Idempotency-Key` headers were validated: on an endpoint where either is optional, `GetIfMatch()`/`GetIdempotencyKey()` returned null for a malformed header as for a missing one, turning a conditional write into an unconditional one, or dropping idempotency. Endpoints can now accept a header (validated when sent, answered 400/412 otherwise) as well as require it. |
+
 ## Follow-ups outside this pass
 
 | Item | Source | Owner |
@@ -90,3 +113,8 @@ Confirmed sound by the reviews:
 | A `ValidationResult<T>` → `Result<T>` bridge, and naming the field of a hand-made validation error. | D14 | 01.Core |
 | `SecureDefaultsAssertion.AssertMethodBodyInvokesMethod` never matches methods on nested types. | wave 4 | 00.Governance |
 | Remaining outage errors that are still `Unexpected`: 10.Intelligence, 17's `workflow.service_unavailable`/`timed_out`, 06's statement timeouts, ElasticSearch 504 → `search.unreachable`. | wave 1 | 06, 09, 10, 17 |
+| MinIO ignores `If-Match` on DELETE (a stale conditional delete returns 204 and removes the object; PUT is refused correctly), yet `S3Compatibility` has one `ConditionalWrites` flag for writes and deletes. A separate flag is needed, and AWS general-purpose buckets must be checked the same way. | samples (I2) | 08.Storage |
+| During a key service outage, every request that issues or checks an ETag retries the blocking key load in turn; a cooldown after a failed load would bound it. The warm-up timeout (10 s) is not configurable. | I4 | 06.Persistence |
+| Audit records store the `correlation.id` baggage item, which carries the same caveat as log records: a caller's value survives where nothing overwrites it. | X2 | 06.Persistence |
+| SK0032 would flag 14's own `CorsPolicyConfiguration.Configure` (both calls in one `AddPolicy` lambda, a combination startup validation forbids); no effect while analyzers do not run on the repo's own code. SK0002's test compares strings although its project comment claims a compiled-type lock. | I3 | 00.Governance |
+| `.claude/agents/application-phase-implementer.md` still names `idempotency.key_missing`. | X3 | owner (agent configuration) |

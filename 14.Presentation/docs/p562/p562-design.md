@@ -319,10 +319,15 @@ R17), and one (14012) when exception details are enabled outside Development (R2
   (root namespace, metadata only — on an MVC action or controller, or on a minimal-API lambda), the
   `RequireIdempotencyKey()` convention (metadata only), or an `IdempotencyKey` parameter. The endpoint filter and the
   attribute's action-filter implementation are deleted. A gRPC request gets the status without a body.
-- R18: `IdempotencyKey` (public `readonly record struct`, root namespace) is a bindable minimal-API parameter:
+- R18: `IdempotencyKey` (public `sealed record`, root namespace) is a bindable minimal-API parameter:
   static `BindAsync(HttpContext)` and `IEndpointParameterMetadataProvider` adding the requirement metadata, so
   declaring the parameter requires, validates and documents the header. `new IdempotencyKey("…")` validates the same
   rule, for unit tests.
+- Integration round 2 (J1): an endpoint may also **accept** the header — `[AcceptIdempotencyKey]`,
+  `AcceptIdempotencyKey()` or a nullable `IdempotencyKey?` parameter (`IIdempotencyKeyAcceptedMetadata`). A missing
+  accepted key passes; a sent one is validated like a required one, so an invalid key is refused (400
+  `idempotency.key_invalid`) rather than read as missing. Required wins when both are declared. `IdempotencyKey` became
+  a class for this: minimal APIs read no parameter metadata from `Nullable<T>`.
 - Valid key: after removing one pair of surrounding double quotes (the IETF draft sends a quoted structured-field
   string), 1–256 characters of visible ASCII (0x21–0x7E). Missing → 400 `idempotency.key_required`; malformed →
   400 `idempotency.key_invalid` (the only two codes). Warning log (EventId 14003) without the value.
@@ -338,15 +343,20 @@ R17), and one (14012) when exception details are enabled outside Development (R2
   missing or `*` → 428 `precondition.required` (a specific tag is required); malformed, or more than one tag → 400
   `precondition.invalid`; a weak tag → 412 `precondition.failed` (strong comparison never matches it). The endpoint
   filter and the attribute's action-filter implementation are deleted.
-- `HttpContext.GetIfMatch()` → the first entity tag with quotes and `W/` removed, `*`, or null (unchanged; on a
-  requiring endpoint it is the one strong tag). R8: `HttpContext.GetIfMatchTags()` →
+- `HttpContext.GetIfMatch()` → the one strong entity tag without quotes, `*`, or null (J1 made it strict: it never
+  returns the first of several tags or a weak one). R8: `HttpContext.GetIfMatchTags()` →
   `IReadOnlyList<EntityTagHeaderValue>` of every listed tag, parsed strictly (empty when missing or malformed), so a
   handler can see several tags and their weakness.
-- R18: `IfMatch<TVersion>` (public `readonly record struct`, root namespace, `TVersion : IParsable<TVersion>`) is a
+- R18: `IfMatch<TVersion>` (public `sealed record`, root namespace, `TVersion : IParsable<TVersion>`) is a
   bindable minimal-API parameter: static `BindAsync(HttpContext)` parses the one strong tag as `TVersion`, and
   `IEndpointParameterMetadataProvider` adds the requirement metadata together with an internal validator, so a
   well-formed tag that does not parse as `TVersion` — and can therefore never be current — is answered 412
   `precondition.failed` by the middleware before binding. `new IfMatch<TVersion>(version)` for unit tests.
+- Integration round 2 (J1): an endpoint may also **accept** `If-Match` — `[AcceptIfMatch]`, `AcceptIfMatch()` or a
+  nullable `IfMatch<TVersion>?` parameter (`IIfMatchAcceptedMetadata`). A request without it is unconditional; a sent
+  one is validated like a required one — malformed, several tags or `*` → 400 `precondition.invalid` (an endpoint that
+  takes a specific tag does not support `*`, and reading it as missing would let a replace-only write create); weak or
+  not a `TVersion` → 412 `precondition.failed`; no 428. Required wins when both are declared.
 - R7: 412 is decided from the **error**, not the endpoint: a `Conflict` whose code is in
   `Problems:PreconditionFailedErrorCodes` (default `persistence.concurrency_conflict`, `storage.precondition_failed`,
   `storage.already_exists` — literals here, pinned to the owning 06/08 constants by a 00.Governance test), in a
