@@ -1,5 +1,4 @@
-using OrderApi.Api;
-using OrderApi.Application;
+using OrderApi.Features.Orders;
 using OrderApi.Infrastructure;
 using SharedKernel.Application;
 using SharedKernel.Presentation.OpenApi;
@@ -23,7 +22,7 @@ builder.Services.AddSingleton<IClock, SystemClock>();
 // IRequestIdempotencyStore and IRequestContext, WithTransactions over IUnitOfWork, WithAuditing over IAuditTrailWriter,
 // WithCaching from SharedKernel.Application.Caching) are explicit opt-ins; a missing seam fails the host start. This
 // API authenticates nobody, so it opts into none of them.
-builder.Services.AddSharedKernelApplication(typeof(PlaceOrderCommand).Assembly);
+builder.Services.AddSharedKernelApplication(typeof(Program).Assembly);
 
 // 14.Presentation — the HTTP boundary in one call, configured from SharedKernel:Presentation:WebApi. Every error
 // response — a failed Result, a thrown exception, the framework's own 404/405/415 — is RFC 9457
@@ -58,7 +57,8 @@ app.MapDefaultHealthCheckEndpoints();
 // immediately. Omitting this call leaves /health/ready at 503 forever.
 app.Services.GetRequiredService<StartupGate>().MarkReady();
 
-app.MapOrderEndpoints();
+// Every IEndpointModule of this assembly (Api/), found at compile time by the generator the WebApi package ships.
+app.MapEndpoints();
 
 // /openapi/v1.json and the Scalar reference at /scalar in Development; outside it, nothing is mapped.
 app.MapSharedKernelOpenApi();

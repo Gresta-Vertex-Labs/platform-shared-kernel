@@ -130,8 +130,8 @@ public sealed class BillingApiEndToEndTests(BillingApiFixture fixture)
         forbiddenQuery.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
         (await forbiddenQuery.ErrorCodeAsync()).Should().Be(ErrorCodes.Forbidden.InsufficientPermission);
 
-        // An endpoint that sends no command declares its permission on the route (RequirePermission), checked before
-        // the endpoint runs — same answers, as problems.
+        // A command answers the same way: the tenant erasure declares billing.admin with [RequirePermission], and the
+        // pipeline refuses the caller before the handler runs — same answers, as problems.
         var erase = $"/admin/tenants/{Guid.NewGuid()}/erase";
         var anonymous = await fixture.Anonymous().PostAsync(erase, content: null);
         anonymous.StatusCode.Should().Be(HttpStatusCode.Unauthorized);

@@ -26,7 +26,8 @@ GET  /health/live /health/ready        → the bus-backed readiness probe
 | Retry, then a fault you can see | `WithRetry()` + `AddFaultConsumer<FailingShipmentCheck, ShipmentCheckFaultConsumer>()` |
 | Transport-native deferred delivery | `WithDelayedDelivery()` → `IMessageScheduler.ScheduleAsync` |
 | Readiness that actually gates traffic | `AddMessagingReadinessCheck()` |
-| `Result` at the HTTP boundary | `AddSharedKernelWebApi()` + `UseSharedKernelWebApi()`; `bus.SendAsync(…).ToAccepted($"/shipments/{id}")` — 202 with a `Location` to watch (`ToHttpResult(() => TypedResults.Accepted(location, body))` where the 202 carries a body, as `POST /shipments` does), or an RFC 9457 problem (`messaging.unavailable` is 503); a missing shipment is a `shipment.not_found` 404 problem |
+| Commands and queries behind every endpoint | `AddSharedKernelApplication(typeof(Program).Assembly)`; `ShipmentEndpoints` is an endpoint module (`IEndpointModule`, mapped by `app.MapEndpoints()`) whose endpoints only send through `ISender`; the handlers in `Features/Shipments/` publish, send and schedule |
+| `Result` at the HTTP boundary | `AddSharedKernelWebApi()` + `UseSharedKernelWebApi()`; `sender.Send(new PutShipmentOnHold(id, reason), ct).ToAccepted($"/shipments/{id}")` — 202 with a `Location` to watch (`ToHttpResult(id => TypedResults.Accepted(location, body))` where the 202 carries a body, as `POST /shipments` does), or an RFC 9457 problem (`messaging.unavailable` is 503); a missing shipment is a `shipment.not_found` 404 problem |
 
 The consumer is the point of the whole sample:
 

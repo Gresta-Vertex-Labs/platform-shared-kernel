@@ -1,5 +1,4 @@
-using BillingApi.Api;
-using BillingApi.Application;
+using BillingApi.Features.Customers;
 using BillingApi.Infrastructure;
 using BillingApi.Security;
 using SharedKernel.Application;
@@ -76,8 +75,8 @@ builder.Services.AddHealthChecks()
 builder.Services.AddHostedService<StartupGateRelease>();
 
 // 14.Presentation — the HTTP boundary in one call (SharedKernel:Presentation:WebApi): every error — a failed Result,
-// an exception that escapes a handler, a rejected caller — is an RFC 9457 problem; authorization policies over
-// IUserContext for RequirePermission(); correlation ids, security headers and request limits.
+// an exception that escapes a handler, a caller the pipeline refuses — is an RFC 9457 problem; correlation ids,
+// security headers and request limits.
 builder.AddSharedKernelWebApi();
 
 var app = builder.Build();
@@ -87,7 +86,8 @@ var app = builder.Build();
 app.UseSharedKernelWebApi();
 
 app.MapDefaultHealthCheckEndpoints();
-app.MapBillingEndpoints();
+// Every IEndpointModule of this assembly (Api/), found at compile time by the generator the WebApi package ships.
+app.MapEndpoints();
 
 await app.RunAsync();
 

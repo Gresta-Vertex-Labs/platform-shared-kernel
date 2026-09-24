@@ -1,5 +1,5 @@
 using MediatR;
-using OrderApi.Application;
+using OrderApi.Features.Orders;
 using SharedKernel.Presentation.WebApi;
 
 namespace OrderApi.Api;
@@ -9,16 +9,15 @@ namespace OrderApi.Api;
 public sealed record OrderPlaced(Guid Id);
 
 /// <summary>
-/// Version 1.0 of the orders API. Each endpoint turns the request into a command or query and the
-/// <see cref="SharedKernel.Primitives.Results.Result{T}"/> it gets back into a typed result; none of them inspects
-/// <c>IsSuccess</c> or chooses a status code for a failure.
+/// Version 1.0 of the orders API. Each endpoint turns the request into a command or query, sends it through
+/// <see cref="ISender"/>, and maps the <see cref="SharedKernel.Primitives.Results.Result{T}"/> it gets back to a typed
+/// result; none of them inspects <c>IsSuccess</c> or chooses a status code for a failure.
 /// </summary>
-public static class OrderEndpoints
+public sealed class OrderEndpoints : IEndpointModule
 {
-    /// <summary>Maps the orders API.</summary>
+    /// <summary>Maps the orders API; called by the generated <c>app.MapEndpoints()</c>.</summary>
     /// <param name="app">The route builder.</param>
-    /// <returns>The same <paramref name="app"/>, for chaining.</returns>
-    public static IEndpointRouteBuilder MapOrderEndpoints(this IEndpointRouteBuilder app)
+    public static void Map(IEndpointRouteBuilder app)
     {
         // A versioned API: every endpoint of the group belongs to version 1.0. A request that names no version is
         // served the default (1.0), so plain /orders keeps working; X-Api-Version: 1.0 selects it explicitly, and
@@ -36,7 +35,5 @@ public static class OrderEndpoints
                 sender.Send(new GetOrderQuery(id), ct).ToOk())
             .WithName("GetOrder")
             .WithSummary("Returns an order.");
-
-        return app;
     }
 }

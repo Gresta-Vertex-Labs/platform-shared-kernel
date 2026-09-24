@@ -1,4 +1,5 @@
 using DocumentsApi;
+using SharedKernel.Application;
 using SharedKernel.Presentation.WebApi;
 using SharedKernel.ServiceDefaults.Extensions;
 using SharedKernel.ServiceDefaults.HealthChecks;
@@ -28,6 +29,10 @@ builder.Services.AddHealthChecks()
     .AddStorageReadinessCheck(Stores.Documents, "storage-documents")
     .AddStorageReadinessCheck(Stores.Archive, "storage-archive");
 
+// 05.Application — MediatR with the handlers of this assembly (Features/) and the always-on behaviors (tracing,
+// logging, metrics, validation). The endpoints send commands and queries; only the handlers touch the stores.
+builder.Services.AddSharedKernelApplication(typeof(Program).Assembly);
+
 // 14.Presentation — the HTTP boundary in one call (SharedKernel:Presentation:WebApi). Every storage.* failure becomes
 // an RFC 9457 problem with its code — an outage (storage.unavailable) a 503 — and request bodies are capped at 4 MiB
 // except where an endpoint lifts the limit for itself (the upload endpoint, see FileEndpoints.MaxUploadBytes).
@@ -41,8 +46,9 @@ app.UseSharedKernelWebApi();
 app.MapDefaultHealthCheckEndpoints();
 app.Services.GetRequiredService<StartupGate>().MarkReady();
 
-app.MapFileEndpoints();
-app.MapLinkEndpoints();
+// Every IEndpointModule of this assembly (FileEndpoints, LinkEndpoints), found at compile time by the generator the
+// WebApi package ships.
+app.MapEndpoints();
 
 await app.RunAsync();
 

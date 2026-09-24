@@ -18,7 +18,7 @@ public static class DemoAuthentication
 
     public static IServiceCollection AddDemoAuthentication(this IServiceCollection services)
     {
-        // Authentication only: authorization — the policies behind RequirePermission() — comes with AddSharedKernelWebApi().
+        // Authentication only: the pipeline authorizes each command and query against the IRequestContext built from it.
         services.AddAuthentication(Scheme).AddScheme<AuthenticationSchemeOptions, DemoAuthenticationHandler>(Scheme, _ => { });
         services.AddHttpContextAccessor();
 

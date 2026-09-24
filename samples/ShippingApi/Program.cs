@@ -1,3 +1,4 @@
+using SharedKernel.Application;
 using SharedKernel.Application.Context;
 using SharedKernel.Messaging.Abstractions.Idempotency;
 using SharedKernel.Messaging.MassTransit.Extensions;
@@ -25,6 +26,10 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddSingleton<ShipmentProjection>();
 builder.Services.AddSingleton<FaultLog>();
 builder.Services.AddScoped<IRequestContext, HeaderRequestContext>();
+
+// 05.Application — MediatR with the handlers of this assembly (Features/) and the always-on behaviors (tracing,
+// logging, metrics, validation). The endpoints send commands and queries; the handlers publish, send and schedule.
+builder.Services.AddSharedKernelApplication(typeof(Program).Assembly);
 
 // The idempotency store WithIdempotency() requires. In this process only — see the type's remarks.
 builder.Services.AddSingleton<IIdempotencyStore, InMemoryIdempotencyStore>();
@@ -75,7 +80,8 @@ app.UseSharedKernelWebApi();
 app.MapDefaultHealthCheckEndpoints();
 app.Services.GetRequiredService<StartupGate>().MarkReady();
 
-app.MapShipmentEndpoints();
+// Every IEndpointModule of this assembly, found at compile time by the generator the WebApi package ships.
+app.MapEndpoints();
 
 await app.RunAsync();
 

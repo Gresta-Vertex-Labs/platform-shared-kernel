@@ -81,7 +81,7 @@ call GET "/customers/$CUSTOMER" "${A[@]}";                                  expe
 ETAG=$(grep -i '^etag:' <<<"$HEADERS" | cut -d' ' -f2 | tr -d '\r')
 call DELETE "/customers/$CUSTOMER" "${A[@]}" -H "If-Match: $ETAG";          expect 204 "soft delete with If-Match"
 call GET "/customers/$CUSTOMER" "${A[@]}";                                  expect 404 "soft-deleted customer hidden"
-call POST "/admin/tenants/$TENANT_A/erase" "${A[@]}";                       expect 403 "erasure needs billing.admin (route policy)"
+call POST "/admin/tenants/$TENANT_A/erase" "${A[@]}";                       expect 403 "erasure needs billing.admin ([RequirePermission] on the command)"
 call POST "/admin/tenants/$TENANT_A/erase" "${ADMIN[@]}";                   contains '"isComplete":true' "tenant crypto-shredded"
 call POST /customers "${A[@]}" "${JSON[@]}" -d '{"name":"Back","email":"back@example.com"}'
 expect 404 "erased tenant cannot write encrypted data"

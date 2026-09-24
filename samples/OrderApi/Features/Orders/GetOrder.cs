@@ -3,7 +3,7 @@ using SharedKernel.Application;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 
-namespace OrderApi.Application;
+namespace OrderApi.Features.Orders;
 
 public sealed record OrderDto(Guid Id, string Customer, decimal Amount, string Currency, IReadOnlyList<string> Lines);
 

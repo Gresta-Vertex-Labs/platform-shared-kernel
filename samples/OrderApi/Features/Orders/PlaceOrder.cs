@@ -5,7 +5,7 @@ using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 
-namespace OrderApi.Application;
+namespace OrderApi.Features.Orders;
 
 public sealed record PlaceOrderCommand(string Customer, decimal Amount, string Currency, List<string> Lines)
     : ICommand<Guid>;

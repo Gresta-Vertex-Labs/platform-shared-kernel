@@ -1,24 +1,11 @@
-using BillingApi.Application;
 using BillingApi.Domain;
-using Microsoft.EntityFrameworkCore;
+using BillingApi.Infrastructure;
 using SharedKernel.Application;
 using SharedKernel.Persistence.Abstractions.Repositories;
-using SharedKernel.Persistence.EfCore;
 using SharedKernel.Persistence.EfCore.Concurrency;
 using SharedKernel.Primitives.Results;
 
-namespace BillingApi.Infrastructure;
-
-/// <summary>
-/// Equality lookup on an encrypted column: <c>WhereEncryptedEquals</c> hashes the input with the column's blind-index
-/// key (after the column's normalization) and filters on the index. Any other LINQ use of <c>Email</c> is refused
-/// before the query runs.
-/// </summary>
-public sealed class CustomerDirectory(BillingDbContext db) : ICustomerDirectory
-{
-    public Task<Customer?> FindByEmailAsync(string email, CancellationToken cancellationToken) =>
-        db.Customers.WhereEncryptedEquals(c => c.Email, email).SingleOrDefaultAsync(cancellationToken);
-}
+namespace BillingApi.Features.Customers;
 
 /// <summary>A customer with its version, sent as the ETag.</summary>
 public sealed record VersionedCustomer(CustomerView Customer, EntityVersion Version);

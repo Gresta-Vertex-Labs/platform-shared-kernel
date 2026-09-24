@@ -43,15 +43,29 @@ the authenticated principal, never from a header the caller controls.
 
 ## The HTTP boundary
 
-`builder.AddSharedKernelWebApi()` and `app.UseSharedKernelWebApi()` make the API's errors one shape. Every endpoint
-resolves the store, binds the storage call to it and maps the `Result` with one call — no `IsSuccess` branch:
+`builder.AddSharedKernelWebApi()` and `app.UseSharedKernelWebApi()` make the API's errors one shape. The endpoints
+live in two endpoint modules, `FileEndpoints` and `LinkEndpoints` (`IEndpointModule`, mapped by the generated
+`app.MapEndpoints()`). Each reads what it needs from the request — the store and key from the route, the tenant,
+preconditions, range and metadata from headers — into a command or query, sends it through `ISender`
+(`builder.Services.AddSharedKernelApplication(typeof(Program).Assembly)`) and maps the `Result` with one call, no
+`IsSuccess` branch. Only the handlers in `Features/Files/` and `Features/Links/` touch the stores:
 
 ```csharp
-app.MapGet("/properties/{store}/{**key}", (string store, string key, HttpContext http, IFileStorageFactory factory, CancellationToken ct) =>
-    Stores.Resolve(factory, store, http)                 // documents.unknown_store (404), documents.tenant_required (400)
-        .Bind(files => files.GetPropertiesAsync(key, ct))
-        .ToOk());
+// FileEndpoints
+app.MapGet("/properties/{store}/{**key}", (string store, string key, HttpRequest request, ISender sender, CancellationToken ct) =>
+    sender.Send(new GetFileProperties(StoreAddress.For(store, request), key), ct).ToOk());
+
+// Features/Files/GetFileProperties.cs
+public sealed class GetFilePropertiesHandler(IFileStorageFactory factory) : IQueryHandler<GetFileProperties, FileProperties>
+{
+    public Task<Result<FileProperties>> Handle(GetFileProperties query, CancellationToken cancellationToken) =>
+        Stores.Resolve(factory, query.Store)     // documents.unknown_store (404), documents.tenant_required (400)
+            .Bind(files => files.GetPropertiesAsync(query.Key, cancellationToken));
+}
 ```
+
+A download is a query too: it returns the open `FileDownload`, and the endpoint streams it to the response
+(`ToHttpResult(download => new FileDownloadResult(download))`), so nothing is buffered.
 
 So an unknown store, a missing tenant and every `storage.*` failure reach the client as the same RFC 9457
 `application/problem+json` body with its `errorCode`: `storage.not_found` 404, `storage.checksum_mismatch` 400,

@@ -20,6 +20,8 @@
     <!-- 13.ServiceDefaults: host, search telemetry, one readiness check per index -->
     <PackageReference Include="SharedKernel.ServiceDefaults" />
     <PackageReference Include="SharedKernel.ServiceDefaults.Search" />
+    <!-- 05.Application: the endpoints send commands and queries through MediatR -->
+    <PackageReference Include="SharedKernel.Application" />
     <!-- 14.Presentation: Result -> ProblemDetails -->
     <PackageReference Include="SharedKernel.Presentation.WebApi" />
   </ItemGroup>
