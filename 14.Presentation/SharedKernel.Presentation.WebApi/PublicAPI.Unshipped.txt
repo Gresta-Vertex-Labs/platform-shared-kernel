@@ -1,4 +1,8 @@
 #nullable enable
+SharedKernel.Presentation.WebApi.AcceptIdempotencyKeyAttribute
+SharedKernel.Presentation.WebApi.AcceptIdempotencyKeyAttribute.AcceptIdempotencyKeyAttribute() -> void
+SharedKernel.Presentation.WebApi.AcceptIfMatchAttribute
+SharedKernel.Presentation.WebApi.AcceptIfMatchAttribute.AcceptIfMatchAttribute() -> void
 SharedKernel.Presentation.WebApi.AuthorizationConventionExtensions
 SharedKernel.Presentation.WebApi.ConditionalRequestExtensions
 SharedKernel.Presentation.WebApi.ContentSecurityPolicyExtensions
@@ -16,17 +20,19 @@ SharedKernel.Presentation.WebApi.Errors.PresentationErrorCodes
 SharedKernel.Presentation.WebApi.Errors.ProblemDetailsExtensionNames
 SharedKernel.Presentation.WebApi.Http.IETagResponseMetadata
 SharedKernel.Presentation.WebApi.Http.IETagResponseMetadata.StatusCodes.get -> System.Collections.Generic.IReadOnlyList<int>!
+SharedKernel.Presentation.WebApi.Http.IIfMatchAcceptedMetadata
 SharedKernel.Presentation.WebApi.Http.IIfMatchRequiredMetadata
+SharedKernel.Presentation.WebApi.Idempotency.IIdempotencyKeyAcceptedMetadata
 SharedKernel.Presentation.WebApi.Idempotency.IIdempotencyKeyRequiredMetadata
 SharedKernel.Presentation.WebApi.IdempotencyKey
-SharedKernel.Presentation.WebApi.IdempotencyKey.Equals(SharedKernel.Presentation.WebApi.IdempotencyKey other) -> bool
-SharedKernel.Presentation.WebApi.IdempotencyKey.IdempotencyKey() -> void
+SharedKernel.Presentation.WebApi.IdempotencyKey.<Clone>$() -> SharedKernel.Presentation.WebApi.IdempotencyKey!
+SharedKernel.Presentation.WebApi.IdempotencyKey.Equals(SharedKernel.Presentation.WebApi.IdempotencyKey? other) -> bool
 SharedKernel.Presentation.WebApi.IdempotencyKey.IdempotencyKey(string! value) -> void
 SharedKernel.Presentation.WebApi.IdempotencyKey.Value.get -> string!
 SharedKernel.Presentation.WebApi.IdempotencyKeyExtensions
 SharedKernel.Presentation.WebApi.IfMatch<TVersion>
-SharedKernel.Presentation.WebApi.IfMatch<TVersion>.Equals(SharedKernel.Presentation.WebApi.IfMatch<TVersion> other) -> bool
-SharedKernel.Presentation.WebApi.IfMatch<TVersion>.IfMatch() -> void
+SharedKernel.Presentation.WebApi.IfMatch<TVersion>.<Clone>$() -> SharedKernel.Presentation.WebApi.IfMatch<TVersion>!
+SharedKernel.Presentation.WebApi.IfMatch<TVersion>.Equals(SharedKernel.Presentation.WebApi.IfMatch<TVersion>? other) -> bool
 SharedKernel.Presentation.WebApi.IfMatch<TVersion>.IfMatch(TVersion version) -> void
 SharedKernel.Presentation.WebApi.IfMatch<TVersion>.Version.get -> TVersion
 SharedKernel.Presentation.WebApi.OkWithETag<TValue>
@@ -155,8 +161,10 @@ const SharedKernel.Presentation.WebApi.Errors.ProblemDetailsExtensionNames.Excep
 const SharedKernel.Presentation.WebApi.Errors.ProblemDetailsExtensionNames.TraceId = "traceId" -> string!
 const SharedKernel.Presentation.WebApi.IdempotencyKey.MaxLength = 256 -> int
 const SharedKernel.Presentation.WebApi.Options.WebApiCorrelationIdOptions.DefaultAllowedCharacterPattern = "^[A-Za-z0-9\\-_:.]+$" -> string!
+override SharedKernel.Presentation.WebApi.IdempotencyKey.Equals(object? obj) -> bool
 override SharedKernel.Presentation.WebApi.IdempotencyKey.GetHashCode() -> int
 override SharedKernel.Presentation.WebApi.IdempotencyKey.ToString() -> string!
+override SharedKernel.Presentation.WebApi.IfMatch<TVersion>.Equals(object? obj) -> bool
 override SharedKernel.Presentation.WebApi.IfMatch<TVersion>.GetHashCode() -> int
 override SharedKernel.Presentation.WebApi.IfMatch<TVersion>.ToString() -> string!
 static SharedKernel.Presentation.WebApi.AuthorizationConventionExtensions.RequireAuthenticationMethod<TBuilder>(this TBuilder builder, System.TimeSpan maxAge, params string![]! methods) -> TBuilder
@@ -165,6 +173,7 @@ static SharedKernel.Presentation.WebApi.AuthorizationConventionExtensions.Requir
 static SharedKernel.Presentation.WebApi.AuthorizationConventionExtensions.RequireFreshAuthentication<TBuilder>(this TBuilder builder, int maxAgeSeconds) -> TBuilder
 static SharedKernel.Presentation.WebApi.AuthorizationConventionExtensions.RequirePermission<TBuilder>(this TBuilder builder, params string![]! permissions) -> TBuilder
 static SharedKernel.Presentation.WebApi.AuthorizationConventionExtensions.RequireRole<TBuilder>(this TBuilder builder, params string![]! roles) -> TBuilder
+static SharedKernel.Presentation.WebApi.ConditionalRequestExtensions.AcceptIfMatch<TBuilder>(this TBuilder builder) -> TBuilder
 static SharedKernel.Presentation.WebApi.ConditionalRequestExtensions.GetIfMatch(this Microsoft.AspNetCore.Http.HttpContext! httpContext) -> string?
 static SharedKernel.Presentation.WebApi.ConditionalRequestExtensions.GetIfMatchTags(this Microsoft.AspNetCore.Http.HttpContext! httpContext) -> System.Collections.Generic.IReadOnlyList<Microsoft.Net.Http.Headers.EntityTagHeaderValue!>!
 static SharedKernel.Presentation.WebApi.ConditionalRequestExtensions.RequireIfMatch<TBuilder>(this TBuilder builder) -> TBuilder
@@ -178,13 +187,14 @@ static SharedKernel.Presentation.WebApi.Errors.ErrorProblemDetailsExtensions.ToP
 static SharedKernel.Presentation.WebApi.Errors.ErrorTypeStatusCodeMap.Resolve(SharedKernel.Primitives.Errors.ErrorType type) -> int
 static SharedKernel.Presentation.WebApi.Errors.PresentationErrorCodes.ForStatus(int statusCode) -> string!
 static SharedKernel.Presentation.WebApi.IdempotencyKey.BindAsync(Microsoft.AspNetCore.Http.HttpContext! context) -> System.Threading.Tasks.ValueTask<SharedKernel.Presentation.WebApi.IdempotencyKey?>
-static SharedKernel.Presentation.WebApi.IdempotencyKey.operator !=(SharedKernel.Presentation.WebApi.IdempotencyKey left, SharedKernel.Presentation.WebApi.IdempotencyKey right) -> bool
-static SharedKernel.Presentation.WebApi.IdempotencyKey.operator ==(SharedKernel.Presentation.WebApi.IdempotencyKey left, SharedKernel.Presentation.WebApi.IdempotencyKey right) -> bool
+static SharedKernel.Presentation.WebApi.IdempotencyKey.operator !=(SharedKernel.Presentation.WebApi.IdempotencyKey? left, SharedKernel.Presentation.WebApi.IdempotencyKey? right) -> bool
+static SharedKernel.Presentation.WebApi.IdempotencyKey.operator ==(SharedKernel.Presentation.WebApi.IdempotencyKey? left, SharedKernel.Presentation.WebApi.IdempotencyKey? right) -> bool
+static SharedKernel.Presentation.WebApi.IdempotencyKeyExtensions.AcceptIdempotencyKey<TBuilder>(this TBuilder builder) -> TBuilder
 static SharedKernel.Presentation.WebApi.IdempotencyKeyExtensions.GetIdempotencyKey(this Microsoft.AspNetCore.Http.HttpContext! httpContext) -> string?
 static SharedKernel.Presentation.WebApi.IdempotencyKeyExtensions.RequireIdempotencyKey<TBuilder>(this TBuilder builder) -> TBuilder
 static SharedKernel.Presentation.WebApi.IfMatch<TVersion>.BindAsync(Microsoft.AspNetCore.Http.HttpContext! context) -> System.Threading.Tasks.ValueTask<SharedKernel.Presentation.WebApi.IfMatch<TVersion>?>
-static SharedKernel.Presentation.WebApi.IfMatch<TVersion>.operator !=(SharedKernel.Presentation.WebApi.IfMatch<TVersion> left, SharedKernel.Presentation.WebApi.IfMatch<TVersion> right) -> bool
-static SharedKernel.Presentation.WebApi.IfMatch<TVersion>.operator ==(SharedKernel.Presentation.WebApi.IfMatch<TVersion> left, SharedKernel.Presentation.WebApi.IfMatch<TVersion> right) -> bool
+static SharedKernel.Presentation.WebApi.IfMatch<TVersion>.operator !=(SharedKernel.Presentation.WebApi.IfMatch<TVersion>? left, SharedKernel.Presentation.WebApi.IfMatch<TVersion>? right) -> bool
+static SharedKernel.Presentation.WebApi.IfMatch<TVersion>.operator ==(SharedKernel.Presentation.WebApi.IfMatch<TVersion>? left, SharedKernel.Presentation.WebApi.IfMatch<TVersion>? right) -> bool
 static SharedKernel.Presentation.WebApi.Options.SharedKernelWebApiOptions.SectionName.get -> string!
 static SharedKernel.Presentation.WebApi.RequestSizeLimitExtensions.DisableRequestSizeLimit<TBuilder>(this TBuilder builder) -> TBuilder
 static SharedKernel.Presentation.WebApi.RequestSizeLimitExtensions.WithRequestSizeLimit<TBuilder>(this TBuilder builder, long bytes) -> TBuilder
@@ -218,5 +228,3 @@ static SharedKernel.Presentation.WebApi.ResultHttpExtensions.ToOkWithETag<T>(thi
 static SharedKernel.Presentation.WebApi.SharedKernelAuthorizationExtensions.AddSharedKernelAuthorization(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 static SharedKernel.Presentation.WebApi.WebApiApplicationBuilderExtensions.UseSharedKernelWebApi(this Microsoft.AspNetCore.Builder.IApplicationBuilder! app, System.Action<SharedKernel.Presentation.WebApi.WebApiPipeline!>? configure = null) -> Microsoft.AspNetCore.Builder.IApplicationBuilder!
 static SharedKernel.Presentation.WebApi.WebApiHostBuilderExtensions.AddSharedKernelWebApi(this Microsoft.Extensions.Hosting.IHostApplicationBuilder! builder, System.Action<SharedKernel.Presentation.WebApi.Options.SharedKernelWebApiOptions!>? configure = null) -> Microsoft.Extensions.Hosting.IHostApplicationBuilder!
-~override SharedKernel.Presentation.WebApi.IdempotencyKey.Equals(object obj) -> bool
-~override SharedKernel.Presentation.WebApi.IfMatch<TVersion>.Equals(object obj) -> bool

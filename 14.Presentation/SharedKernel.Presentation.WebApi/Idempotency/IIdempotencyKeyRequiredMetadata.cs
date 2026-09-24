@@ -6,7 +6,8 @@ namespace SharedKernel.Presentation.WebApi.Idempotency;
 /// tooling such as the OpenAPI add-on reads it to document the header.
 /// </summary>
 /// <remarks>
-/// Added by <see cref="RequireIdempotencyKeyAttribute"/>, the <c>RequireIdempotencyKey()</c> convention and an
-/// <see cref="IdempotencyKey"/> parameter.
+/// Added by <see cref="RequireIdempotencyKeyAttribute"/>, the <c>RequireIdempotencyKey()</c> convention and a not-null
+/// <see cref="IdempotencyKey"/> parameter. It wins over <see cref="IIdempotencyKeyAcceptedMetadata"/> on the same
+/// endpoint.
 /// </remarks>
 public interface IIdempotencyKeyRequiredMetadata;

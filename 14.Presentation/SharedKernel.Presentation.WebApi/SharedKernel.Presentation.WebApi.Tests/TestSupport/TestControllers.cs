@@ -90,6 +90,16 @@ public sealed class ApiTestController : ControllerBase
     [RequireIfMatch]
     public IActionResult VersionedThrow() => throw new ConflictException(TestErrors.StaleVersion);
 
+    [HttpPost("idempotent-optional")]
+    [AcceptIdempotencyKey]
+    public string IdempotentOptional([FromServices] HandlerCalls calls) =>
+        calls.Record("/mvc-api/idempotent-optional", HttpContext.GetIdempotencyKey());
+
+    [HttpPut("versioned-optional")]
+    [AcceptIfMatch]
+    public string VersionedOptional([FromServices] HandlerCalls calls) =>
+        calls.Record("/mvc-api/versioned-optional", HttpContext.GetIfMatch());
+
     [HttpPost("customers")]
     public Results<Ok<string>, ErrorHttpResult> CreateCustomer([FromBody] CustomerRequest request) =>
         Result<string>.Success(request.Name!).ToOk();

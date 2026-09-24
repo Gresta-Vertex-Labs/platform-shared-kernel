@@ -6,7 +6,7 @@ namespace SharedKernel.Presentation.WebApi.Http;
 /// endpoint runs); tooling such as the OpenAPI add-on reads it to document the header and those responses.
 /// </summary>
 /// <remarks>
-/// Added by <see cref="RequireIfMatchAttribute"/>, the <c>RequireIfMatch()</c> convention and an
-/// <see cref="IfMatch{TVersion}"/> parameter.
+/// Added by <see cref="RequireIfMatchAttribute"/>, the <c>RequireIfMatch()</c> convention and a not-null
+/// <see cref="IfMatch{TVersion}"/> parameter. It wins over <see cref="IIfMatchAcceptedMetadata"/> on the same endpoint.
 /// </remarks>
 public interface IIfMatchRequiredMetadata;

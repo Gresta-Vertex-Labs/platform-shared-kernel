@@ -1,9 +1,6 @@
-using Microsoft.Extensions.Primitives;
 using Microsoft.Net.Http.Headers;
 using SharedKernel.Core.Extensions;
 using SharedKernel.Presentation.WebApi;
-using SharedKernel.Presentation.WebApi.Errors;
-using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Storage;
 
@@ -16,11 +13,21 @@ namespace DocumentsApi;
 /// reach the client as the same RFC 9457 problem.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Preconditions come from the request: an upload takes <c>If-None-Match: *</c> (create only), and uploads, downloads
-/// and deletes take <c>If-Match</c> with an ETag the client read. When the store refuses one — the object exists, or no
-/// longer has that ETag — the error is a conflict (<c>storage.already_exists</c>, <c>storage.precondition_failed</c>),
-/// and because the client sent the precondition in a header the answer is 412 Precondition Failed. The same errors
-/// without a precondition header, such as a create-only copy that asks in its body, stay 409.
+/// and deletes take an optional <c>If-Match</c> with an ETag the client read. When the store refuses one — the object
+/// exists, or no longer has that ETag — the error is a conflict (<c>storage.already_exists</c>,
+/// <c>storage.precondition_failed</c>), and because the client sent the precondition in a header the answer is 412
+/// Precondition Failed. The same errors without a precondition header, such as a create-only copy that asks in its body,
+/// stay 409.
+/// </para>
+/// <para>
+/// <c>If-Match</c> is a nullable <c>IfMatch&lt;string&gt;</c> parameter, which accepts the header without requiring it.
+/// The platform refuses a header that does not name one strong entity tag before the endpoint runs — 400
+/// <c>precondition.invalid</c>, or 412 <c>precondition.failed</c> for a weak tag — so the endpoint gets
+/// <see langword="null"/> only when the client sent no <c>If-Match</c>, and never turns a conditional request into an
+/// unconditional one.
+/// </para>
 /// </remarks>
 public static class FileEndpoints
 {
@@ -41,20 +48,18 @@ public static class FileEndpoints
     public static void MapFileEndpoints(this IEndpointRouteBuilder app)
     {
         // Upload: the request body is streamed straight into the store (never buffered).
-        // If-None-Match: * → create only; If-Match: "etag" → replace only that version.
-        app.MapPut("/files/{store}/{**key}", (string store, string key, HttpContext http, IFileStorageFactory factory, CancellationToken ct) =>
+        // If-None-Match: * → create only; If-Match: "etag" → replace only that version; neither → overwrite.
+        app.MapPut("/files/{store}/{**key}", (string store, string key, IfMatch<string>? ifMatch, HttpContext http, IFileStorageFactory factory, CancellationToken ct) =>
                 Stores.Resolve(factory, store, http)
-                    .Bind(files => IfMatchETag(http)
-                        .Bind(ifMatch => files.UploadAsync(key, http.Request.Body, UploadOptions(http.Request, ifMatch), ct)))
+                    .Bind(files => files.UploadAsync(key, http.Request.Body, UploadOptions(http.Request, ETagOf(ifMatch)), ct))
                     .ToCreated(_ => $"/files/{store}/{key}"))
             .WithRequestSizeLimit(MaxUploadBytes);
 
         // Download: streamed back; a single Range header returns 206 with Content-Range. If-Match pins the version, so
         // range reads of one file cannot mix two versions of it.
-        app.MapGet("/files/{store}/{**key}", (string store, string key, HttpContext http, IFileStorageFactory factory, CancellationToken ct) =>
+        app.MapGet("/files/{store}/{**key}", (string store, string key, IfMatch<string>? ifMatch, HttpContext http, IFileStorageFactory factory, CancellationToken ct) =>
             Stores.Resolve(factory, store, http)
-                .Bind(files => IfMatchETag(http)
-                    .Bind(ifMatch => files.DownloadAsync(key, DownloadOptions(http.Request, ifMatch), ct)))
+                .Bind(files => files.DownloadAsync(key, DownloadOptions(http.Request, ETagOf(ifMatch)), ct))
                 .ToHttpResult(download => new FileDownloadResult(download)));
 
         app.MapGet("/properties/{store}/{**key}", (string store, string key, HttpContext http, IFileStorageFactory factory, CancellationToken ct) =>
@@ -62,10 +67,9 @@ public static class FileEndpoints
                 .Bind(files => files.GetPropertiesAsync(key, ct))
                 .ToOk());
 
-        app.MapDelete("/files/{store}/{**key}", (string store, string key, HttpContext http, IFileStorageFactory factory, CancellationToken ct) =>
+        app.MapDelete("/files/{store}/{**key}", (string store, string key, IfMatch<string>? ifMatch, HttpContext http, IFileStorageFactory factory, CancellationToken ct) =>
             Stores.Resolve(factory, store, http)
-                .Bind(files => IfMatchETag(http)
-                    .Bind(ifMatch => files.DeleteAsync(key, new FileDeleteOptions { IfMatch = ifMatch }, ct)))
+                .Bind(files => files.DeleteAsync(key, new FileDeleteOptions { IfMatch = ETagOf(ifMatch) }, ct))
                 .ToNoContent());
 
         app.MapPost("/delete-many/{store}", (string store, string[] keys, HttpContext http, IFileStorageFactory factory, CancellationToken ct) =>
@@ -100,26 +104,10 @@ public static class FileEndpoints
     }
 
     /// <summary>
-    /// The entity tag the request's <c>If-Match</c> names, or <see langword="null"/> when it sends none. The header is
-    /// read with <c>GetIfMatchTags()</c>, which parses it strictly, and must name one strong entity tag: the ETag of
-    /// the file as the client read it (the stores take it with its quotes).
+    /// The ETag the request's <c>If-Match</c> names, with its quotes as the client sent it — the form the stores return
+    /// (<see cref="FileProperties.ETag"/>) — or <see langword="null"/> when the client sent no <c>If-Match</c>.
     /// </summary>
-    /// <remarks>
-    /// Any other <c>If-Match</c> is refused with 400 <c>precondition.invalid</c>, the code the platform uses where the
-    /// header is required. Ignoring a header the service cannot read would turn the client's conditional request into an
-    /// unconditional one, and an unconditional write overwrites whatever another client saved in between.
-    /// </remarks>
-    private static Result<string?> IfMatchETag(HttpContext http)
-    {
-        if (StringValues.IsNullOrEmpty(http.Request.Headers.IfMatch))
-        {
-            return Result<string?>.Success(null);
-        }
-
-        return http.GetIfMatchTags() is [{ IsWeak: false } tag] && !tag.Equals(EntityTagHeaderValue.Any)
-            ? tag.Tag.ToString()
-            : Error.Validation(PresentationErrorCodes.PreconditionInvalid, "If-Match must name one entity tag: the ETag of the file as it was read.");
-    }
+    private static string? ETagOf(IfMatch<string>? ifMatch) => ifMatch is null ? null : $"\"{ifMatch.Version}\"";
 
     private static FileUploadOptions UploadOptions(HttpRequest request, string? ifMatch)
     {

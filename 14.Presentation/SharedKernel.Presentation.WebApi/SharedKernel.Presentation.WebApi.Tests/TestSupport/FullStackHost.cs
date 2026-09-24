@@ -17,7 +17,7 @@ namespace SharedKernel.Presentation.WebApi.Tests.TestSupport;
 
 /// <summary>
 /// One host with every error source a service can produce, shared by the tests of a class: minimal APIs, MVC
-/// controllers, authentication, a clock, rate limiting and required headers.
+/// controllers, authentication, a clock, rate limiting and required and accepted headers.
 /// </summary>
 public sealed class FullStackHost : IAsyncLifetime
 {
@@ -37,6 +37,9 @@ public sealed class FullStackHost : IAsyncLifetime
 
     public WebApplication App => _app!;
 
+    /// <summary>The runs of the handlers that record them: the endpoints that accept a header, and the oblivious ones.</summary>
+    public HandlerCalls Calls => App.Services.GetRequiredService<HandlerCalls>();
+
     public async Task InitializeAsync()
     {
         _app = await WebApiTestHost.StartAsync(
@@ -45,6 +48,7 @@ public sealed class FullStackHost : IAsyncLifetime
             {
                 builder.AddTestAuthentication();
                 builder.Services.AddSingleton<IClock>(Clock);
+                builder.Services.AddSingleton<HandlerCalls>();
                 builder.Services.AddControllers().AddApplicationPart(typeof(FullStackHost).Assembly);
                 builder.Services.AddRateLimiter(options => options.AddPolicy(
                     RateLimitPolicy,
@@ -135,6 +139,31 @@ public sealed class FullStackHost : IAsyncLifetime
         app.MapPost("/idempotent-parameter", (IdempotencyKey key) => key.Value);
         app.MapPost("/idempotent-and-versioned", () => "ok").RequireIdempotencyKey().RequireIfMatch();
         app.MapPost("/idempotent-protected", () => "ok").RequirePermission("orders.write").RequireIdempotencyKey();
+
+        // Accepted headers: optional, but refused when sent and unusable. Each handler records what it saw.
+        app.MapPost("/idempotent-optional", (HttpContext context, HandlerCalls calls) =>
+                calls.Record("/idempotent-optional", context.GetIdempotencyKey()))
+            .AcceptIdempotencyKey();
+        app.MapPost("/idempotent-optional-attribute", [AcceptIdempotencyKey] (HttpContext context, HandlerCalls calls) =>
+            calls.Record("/idempotent-optional-attribute", context.GetIdempotencyKey()));
+        app.MapPost("/idempotent-optional-parameter", (IdempotencyKey? key, HandlerCalls calls) =>
+            calls.Record("/idempotent-optional-parameter", key?.Value));
+        app.MapPost("/idempotent-required-wins", (IdempotencyKey? key, HandlerCalls calls) =>
+                calls.Record("/idempotent-required-wins", key?.Value))
+            .RequireIdempotencyKey();
+
+        app.MapPut("/versioned-optional", (HttpContext context, HandlerCalls calls) =>
+                calls.Record("/versioned-optional", context.GetIfMatch()))
+            .AcceptIfMatch();
+        app.MapPut("/versioned-optional-attribute", [AcceptIfMatch] (HttpContext context, HandlerCalls calls) =>
+            calls.Record("/versioned-optional-attribute", context.GetIfMatch()));
+        app.MapPut("/versioned-optional-parameter", (IfMatch<EntityVersion>? ifMatch, HandlerCalls calls) =>
+            calls.Record("/versioned-optional-parameter", ifMatch?.Version.ToString()));
+        app.MapPut("/versioned-required-wins", (IfMatch<EntityVersion>? ifMatch, HandlerCalls calls) =>
+                calls.Record("/versioned-required-wins", ifMatch?.Version.ToString()))
+            .RequireIfMatch();
+
+        ObliviousEndpoints.Map(app);
 
         app.MapGet("/limited", () => "ok").RequireRateLimiting(RateLimitPolicy);
         app.MapGet("/limited-protected", () => "ok").RequirePermission("orders.read").RequireRateLimiting(RateLimitPolicy);

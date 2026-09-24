@@ -78,11 +78,14 @@ the status comes from the error and the request.
 | `PUT` with `If-None-Match: *`, and the file exists | `storage.already_exists` | 412 |
 | `PUT` or `GET` with the `If-Match` of an older version | `storage.precondition_failed` | 412 |
 | `POST /copy` with `"createOnly": true`, and the destination exists (the condition is in the body) | `storage.already_exists` | 409 |
-| an `If-Match` that is not one strong entity tag: an ETag without its quotes, `*`, a list | `precondition.invalid` | 400 |
+| an `If-Match` that is not one entity tag: an ETag without its quotes, `*`, a list | `precondition.invalid` | 400 |
+| a weak `If-Match` (`W/"…"`), which never matches: `If-Match` compares strongly | `precondition.failed` | 412 |
 
-The endpoints read `If-Match` with the presentation package's `GetIfMatchTags()` and refuse a header that does not name
-exactly one strong entity tag rather than ignore it: ignoring it would turn the client's conditional write into an
-unconditional one. A store that cannot honor a precondition refuses it too: OBS answers `storage.not_supported`. One
+`If-Match` is optional on these endpoints: each declares it as a nullable `IfMatch<string>` parameter. The presentation
+package then refuses a header that does not name exactly one strong entity tag before the endpoint runs, rather than
+ignore it: ignoring it would turn the client's conditional write into an unconditional one. The endpoint gets `null`
+only when the client sent no `If-Match`, and otherwise passes the ETag, with its quotes, to the store. A store that
+cannot honor a precondition refuses it too: OBS answers `storage.not_supported`. One
 gap is not the sample's to close: **MinIO ignores `If-Match` on deletes** (`RELEASE.2025-09-07`, the image the tests
 use), so a delete pinned to an older version removes the current file. The tests pin conditional reads and writes only.
 

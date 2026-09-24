@@ -35,13 +35,26 @@ internal static partial class IdempotencyKeyGuard
         Parse(httpContext.Request.Headers[WellKnownHeaders.IdempotencyKey], out var key) == KeyState.Valid ? key : null;
 
     /// <summary>
-    /// Returns <see langword="null"/> when the request carries a valid key; otherwise logs the rejection (never the
-    /// value) and returns the 400 response to send.
+    /// Returns the key of the request, or <see langword="null"/> when it sends none; throws a 400
+    /// <see cref="BadHttpRequestException"/> for an invalid key, so that it never binds as a missing one.
     /// </summary>
-    public static IResult? Check(HttpContext httpContext)
+    public static string? BindKey(HttpContext httpContext) =>
+        Parse(httpContext.Request.Headers[WellKnownHeaders.IdempotencyKey], out var key) switch
+        {
+            KeyState.Valid => key,
+            KeyState.Missing => null,
+            _ => throw new BadHttpRequestException(InvalidMessage, StatusCodes.Status400BadRequest),
+        };
+
+    /// <summary>
+    /// Returns <see langword="null"/> when the request carries a valid key, or carries none and the key is not
+    /// <paramref name="required"/>; otherwise logs the rejection (never the value) and returns the 400 response to
+    /// send.
+    /// </summary>
+    public static IResult? Check(HttpContext httpContext, bool required)
     {
         var state = Parse(httpContext.Request.Headers[WellKnownHeaders.IdempotencyKey], out _);
-        if (state == KeyState.Valid)
+        if (state == KeyState.Valid || (state == KeyState.Missing && !required))
         {
             return null;
         }

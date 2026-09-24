@@ -11,7 +11,8 @@ namespace SharedKernel.Presentation.WebApi;
 
 /// <summary>
 /// The version a request's <c>If-Match</c> header names, parsed as <typeparamref name="TVersion"/>, as a minimal-API
-/// handler parameter: declaring it requires the header, validates it and documents it, with nothing else to register.
+/// handler parameter: declaring it validates and documents the header, with nothing else to register. Declared
+/// not-null it requires the header; declared nullable (<c>IfMatch&lt;TVersion&gt;?</c>) it accepts one.
 /// </summary>
 /// <typeparam name="TVersion">
 /// The version type, parsed from the entity tag's text without quotes — typically <c>EntityVersion</c> from the
@@ -28,17 +29,27 @@ namespace SharedKernel.Presentation.WebApi;
 /// <c>persistence.concurrency_conflict</c> — the answer is 412 with that code.
 /// </para>
 /// <para>
-/// Minimal APIs only; MVC actions use <see cref="RequireIfMatchAttribute"/> and <c>HttpContext.GetIfMatch()</c>. In a
-/// unit test, construct one directly: <c>new IfMatch&lt;EntityVersion&gt;(version)</c>.
+/// Declared nullable — <c>IfMatch&lt;EntityVersion&gt;? ifMatch</c> — it adds <see cref="IIfMatchAcceptedMetadata"/>
+/// instead: a request without the header reaches the handler with <see langword="null"/>, to be served
+/// unconditionally, and a header it sends is held to the same rules, except that <c>*</c> is 400
+/// <c>precondition.invalid</c>. The handler receives <see langword="null"/> only when the request sent no
+/// <c>If-Match</c>. In code compiled without nullable annotations the parameter requires the header.
+/// </para>
+/// <para>
+/// Minimal APIs only; MVC actions use <see cref="RequireIfMatchAttribute"/> or <see cref="AcceptIfMatchAttribute"/> and
+/// <c>HttpContext.GetIfMatch()</c>. In a unit test, construct one directly: <c>new IfMatch&lt;EntityVersion&gt;(version)</c>.
 /// </para>
 /// </remarks>
-public readonly record struct IfMatch<TVersion> : IEndpointParameterMetadataProvider
+public sealed record IfMatch<TVersion> : IEndpointParameterMetadataProvider
     where TVersion : IParsable<TVersion>
 {
-    /// <summary>Initializes a new instance of the <see cref="IfMatch{TVersion}"/> struct.</summary>
+    /// <summary>Initializes a new instance of the <see cref="IfMatch{TVersion}"/> class.</summary>
     /// <param name="version">The version the request names.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="version"/> is <see langword="null"/>.</exception>
     public IfMatch(TVersion version)
     {
+        ArgumentNullException.ThrowIfNull(version);
+
         Version = version;
     }
 
@@ -48,42 +59,62 @@ public readonly record struct IfMatch<TVersion> : IEndpointParameterMetadataProv
     /// <summary>Binds the parameter from the request's <c>If-Match</c> header.</summary>
     /// <param name="context">The current request.</param>
     /// <returns>
-    /// The version, or <see langword="null"/> when the header does not name exactly one strong entity tag that parses
-    /// as <typeparamref name="TVersion"/> — which happens only when <c>UseSharedKernelWebApi()</c> is not in the
-    /// pipeline to refuse such a request first; the framework then answers 400.
+    /// The version, or <see langword="null"/> when the request sends no <c>If-Match</c> — which the framework answers
+    /// with 400 when the parameter is not nullable.
     /// </returns>
+    /// <exception cref="BadHttpRequestException">
+    /// The header does not name exactly one strong entity tag that parses as <typeparamref name="TVersion"/> (status
+    /// 400), so that such a header never binds as a missing one. This happens only when <c>UseSharedKernelWebApi()</c>
+    /// is not in the pipeline to refuse the request first.
+    /// </exception>
     public static ValueTask<IfMatch<TVersion>?> BindAsync(HttpContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        var tags = EntityTags.GetIfMatchTags(context.Request);
-        var version = tags.Count == 1 && !tags[0].IsWeak && !tags[0].Equals(EntityTagHeaderValue.Any)
-            && TryParse(EntityTags.GetOpaqueTag(tags[0]), out var parsed)
-                ? new IfMatch<TVersion>(parsed)
-                : (IfMatch<TVersion>?)null;
+        if (!RequestFacts.HasValue(context.Request.Headers.IfMatch))
+        {
+            return ValueTask.FromResult<IfMatch<TVersion>?>(null);
+        }
 
-        return ValueTask.FromResult(version);
+        return EntityTags.GetIfMatchTags(context.Request) is [var tag]
+            && !tag.IsWeak
+            && !tag.Equals(EntityTagHeaderValue.Any)
+            && TryParse(EntityTags.GetOpaqueTag(tag), out var version)
+                ? ValueTask.FromResult<IfMatch<TVersion>?>(new IfMatch<TVersion>(version))
+                : throw EntityTags.UnusableIfMatch();
     }
 
     /// <summary>Returns the version as text.</summary>
-    /// <returns>The version's <see cref="object.ToString"/>, or an empty string for a default instance.</returns>
-    public override string ToString() => Version?.ToString() ?? string.Empty;
+    /// <returns>The version's <see cref="object.ToString"/>.</returns>
+    public override string ToString() => Version.ToString() ?? string.Empty;
 
     /// <inheritdoc />
     static void IEndpointParameterMetadataProvider.PopulateMetadata(ParameterInfo parameter, EndpointBuilder builder)
     {
+        ArgumentNullException.ThrowIfNull(parameter);
         ArgumentNullException.ThrowIfNull(builder);
 
-        builder.Metadata.Add(VersionRequirement.Instance);
+        builder.Metadata.Add(HeaderParameter.IsOptional(parameter) ? AcceptedVersion.Instance : RequiredVersion.Instance);
     }
 
     private static bool TryParse(string tag, [MaybeNullWhen(false)] out TVersion version) =>
         TVersion.TryParse(tag, CultureInfo.InvariantCulture, out version);
 
     /// <summary>The requirement metadata: an <c>If-Match</c> whose tag must parse as <typeparamref name="TVersion"/>.</summary>
-    private sealed class VersionRequirement : IIfMatchRequiredMetadata, IEntityTagValidator
+    private sealed class RequiredVersion : IIfMatchRequiredMetadata, IEntityTagValidator
     {
-        public static readonly VersionRequirement Instance = new();
+        public static readonly RequiredVersion Instance = new();
+
+        public bool IsValid(string opaqueTag) => TryParse(opaqueTag, out _);
+    }
+
+    /// <summary>
+    /// The acceptance metadata: an optional <c>If-Match</c> whose tag, when sent, must parse as
+    /// <typeparamref name="TVersion"/>.
+    /// </summary>
+    private sealed class AcceptedVersion : IIfMatchAcceptedMetadata, IEntityTagValidator
+    {
+        public static readonly AcceptedVersion Instance = new();
 
         public bool IsValid(string opaqueTag) => TryParse(opaqueTag, out _);
     }

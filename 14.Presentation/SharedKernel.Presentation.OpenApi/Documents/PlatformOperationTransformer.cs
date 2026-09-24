@@ -17,17 +17,19 @@ namespace SharedKernel.Presentation.OpenApi.Documents;
 /// <summary>
 /// Documents on every operation what the WebApi core enforces for its endpoint: the problem response of any error,
 /// the security requirement and 401/403 of a protected endpoint, the <c>Idempotency-Key</c> and <c>If-Match</c>
-/// headers it requires, with the responses that refuse a request without them, and the <c>ETag</c> header of the
+/// headers it requires or accepts, with the responses that refuse a request for them, and the <c>ETag</c> header of the
 /// responses that carry one.
 /// </summary>
 /// <remarks>
 /// <para>
 /// The header requirements are read from the endpoint's metadata, which the core adds alike for a convention
 /// (<c>RequireIdempotencyKey()</c>, <c>RequireIfMatch()</c>), an attribute and an <c>IdempotencyKey</c> or
-/// <c>IfMatch&lt;TVersion&gt;</c> handler parameter, so all of them are documented alike. The API Explorer does not
-/// describe such a parameter itself: a type bound by <c>BindAsync</c> is neither a body nor a query value. The
-/// responses that carry an <c>ETag</c> are read from the <see cref="IETagResponseMetadata"/> an
-/// <c>OkWithETag&lt;T&gt;</c> result adds.
+/// <c>IfMatch&lt;TVersion&gt;</c> handler parameter, so all of them are documented alike; the same holds for a header
+/// the endpoint accepts without requiring it (<c>AcceptIdempotencyKey()</c>, <c>AcceptIfMatch()</c>, their attributes,
+/// a nullable parameter), documented as an optional parameter with its 400 (and 412 for <c>If-Match</c>), never 428.
+/// When both are declared, the requirement wins, as in the core. The API Explorer does not describe such a parameter
+/// itself: a type bound by <c>BindAsync</c> is neither a body nor a query value. The responses that carry an
+/// <c>ETag</c> are read from the <see cref="IETagResponseMetadata"/> an <c>OkWithETag&lt;T&gt;</c> result adds.
 /// </para>
 /// <para>Only adds: a response, parameter, header or security requirement the operation already declares is kept.</para>
 /// </remarks>
@@ -40,12 +42,19 @@ internal sealed class PlatformOperationTransformer : IOpenApiOperationTransforme
         "The entity tag of the version this request changes, as the ETag of a read returned it: exactly one strong "
         + "entity tag, such as \"42\".";
 
+    private const string OptionalIfMatchDescription =
+        IfMatchDescription + " Optional: without it the request is unconditional.";
+
     private const string ETagDescription =
         "The version of the resource, as a strong entity tag such as \"42\". Send it in If-None-Match to have a read of "
         + "the unchanged resource answered 304, or in If-Match to change this version.";
 
     private const string IfMatchMalformed =
         $"The If-Match header is malformed or names more than one entity tag ({PresentationErrorCodes.PreconditionInvalid}).";
+
+    private const string OptionalIfMatchMalformed =
+        $"The If-Match header is malformed, names more than one entity tag, or is * "
+        + $"({PresentationErrorCodes.PreconditionInvalid}).";
 
     private const string IfMatchNotCurrent =
         $"The entity tag in If-Match is not the current version: it is weak or not a version of this resource "
@@ -73,16 +82,35 @@ internal sealed class PlatformOperationTransformer : IOpenApiOperationTransforme
         $"Identifies this request, so that a retry of it is recognized: 1 to {IdempotencyKey.MaxLength} visible ASCII "
         + $"characters, optionally enclosed in double quotes. A request without a valid key is answered 400.");
 
+    private static readonly string OptionalIdempotencyKeyDescription = string.Create(
+        CultureInfo.InvariantCulture,
+        $"Identifies this request, so that a retry of it is recognized: 1 to {IdempotencyKey.MaxLength} visible ASCII "
+        + $"characters, optionally enclosed in double quotes. Optional: a request may leave it out, but a key that is "
+        + $"not valid is answered 400.");
+
     private static readonly string IdempotencyKeyRefused = string.Create(
         CultureInfo.InvariantCulture,
         $"The Idempotency-Key header is missing ({PresentationErrorCodes.IdempotencyKeyRequired}) or is not 1 to "
         + $"{IdempotencyKey.MaxLength} visible ASCII characters ({PresentationErrorCodes.IdempotencyKeyInvalid}).");
+
+    private static readonly string OptionalIdempotencyKeyRefused = string.Create(
+        CultureInfo.InvariantCulture,
+        $"The Idempotency-Key header is sent but is not 1 to {IdempotencyKey.MaxLength} visible ASCII characters "
+        + $"({PresentationErrorCodes.IdempotencyKeyInvalid}).");
 
     private readonly SecuritySchemeSet _schemes;
 
     public PlatformOperationTransformer(SecuritySchemeSet schemes)
     {
         _schemes = schemes;
+    }
+
+    /// <summary>How an endpoint takes a header, as its metadata declares it.</summary>
+    private enum HeaderUse
+    {
+        None,
+        Accepted,
+        Required,
     }
 
     /// <inheritdoc />
@@ -94,29 +122,35 @@ internal sealed class PlatformOperationTransformer : IOpenApiOperationTransforme
 
         var document = context.Document;
         var responses = operation.Responses ??= new OpenApiResponses();
-        var requiresIdempotencyKey = metadata.OfType<IIdempotencyKeyRequiredMetadata>().Any();
-        var requiresIfMatch = metadata.OfType<IIfMatchRequiredMetadata>().Any();
+        var idempotencyKey = GetUse<IIdempotencyKeyRequiredMetadata, IIdempotencyKeyAcceptedMetadata>(metadata);
+        var ifMatch = GetUse<IIfMatchRequiredMetadata, IIfMatchAcceptedMetadata>(metadata);
 
-        if (requiresIdempotencyKey)
+        if (idempotencyKey != HeaderUse.None)
         {
-            RequireHeader(
+            AddHeader(
                 operation,
                 WellKnownHeaders.IdempotencyKey,
-                IdempotencyKeyDescription,
+                idempotencyKey == HeaderUse.Required,
+                idempotencyKey == HeaderUse.Required ? IdempotencyKeyDescription : OptionalIdempotencyKeyDescription,
                 new OpenApiSchema { Type = JsonSchemaType.String, Pattern = IdempotencyKeyPattern });
         }
 
-        if (requiresIfMatch)
+        if (ifMatch != HeaderUse.None)
         {
-            RequireHeader(operation, HeaderNames.IfMatch, IfMatchDescription, new OpenApiSchema { Type = JsonSchemaType.String });
+            AddHeader(
+                operation,
+                HeaderNames.IfMatch,
+                ifMatch == HeaderUse.Required,
+                ifMatch == HeaderUse.Required ? IfMatchDescription : OptionalIfMatchDescription,
+                new OpenApiSchema { Type = JsonSchemaType.String });
         }
 
         // The platform's responses follow the operation's own, in status order.
-        if (requiresIdempotencyKey || requiresIfMatch)
+        if (idempotencyKey != HeaderUse.None || ifMatch != HeaderUse.None)
         {
             responses.TryAdd(
                 Key(StatusCodes.Status400BadRequest),
-                ProblemResponse(document, DescribeRefusedHeaders(requiresIdempotencyKey, requiresIfMatch)));
+                ProblemResponse(document, DescribeRefusedHeaders(idempotencyKey, ifMatch)));
         }
 
         if (EndpointAuthorization.IsAuthorized(metadata, services))
@@ -131,9 +165,14 @@ internal sealed class PlatformOperationTransformer : IOpenApiOperationTransforme
                 ProblemResponse(document, "Authenticated, but not allowed to perform this operation."));
         }
 
-        if (requiresIfMatch)
+        if (ifMatch != HeaderUse.None)
         {
             responses.TryAdd(Key(StatusCodes.Status412PreconditionFailed), ProblemResponse(document, IfMatchNotCurrent));
+        }
+
+        // Only a required If-Match is refused for being missing; an accepted one may be left out.
+        if (ifMatch == HeaderUse.Required)
+        {
             responses.TryAdd(Key(StatusCodes.Status428PreconditionRequired), ProblemResponse(document, IfMatchMissing));
         }
 
@@ -145,6 +184,17 @@ internal sealed class PlatformOperationTransformer : IOpenApiOperationTransforme
         responses.TryAdd(DefaultResponseKey, ProblemResponse(document, "An error, described as RFC 9457 problem details."));
 
         return Task.CompletedTask;
+    }
+
+    /// <summary>Reads how an endpoint takes a header: a requirement wins over an acceptance, as in the core.</summary>
+    private static HeaderUse GetUse<TRequired, TAccepted>(IEnumerable<object> metadata)
+    {
+        if (metadata.OfType<TRequired>().Any())
+        {
+            return HeaderUse.Required;
+        }
+
+        return metadata.OfType<TAccepted>().Any() ? HeaderUse.Accepted : HeaderUse.None;
     }
 
     /// <summary>Declares the <c>ETag</c> header on the response of <paramref name="statusCode"/>, when the operation documents one.</summary>
@@ -165,13 +215,23 @@ internal sealed class PlatformOperationTransformer : IOpenApiOperationTransforme
         });
     }
 
-    /// <summary>Describes the 400 the core answers when a required header is missing or malformed.</summary>
-    private static string DescribeRefusedHeaders(bool idempotencyKey, bool ifMatch) => (idempotencyKey, ifMatch) switch
+    /// <summary>Describes the 400 the core answers when a required or accepted header is missing or malformed.</summary>
+    private static string DescribeRefusedHeaders(HeaderUse idempotencyKey, HeaderUse ifMatch)
     {
-        (true, true) => IdempotencyKeyRefused + " " + IfMatchMalformed,
-        (true, false) => IdempotencyKeyRefused,
-        _ => IfMatchMalformed,
-    };
+        List<string> refusals = new(2);
+
+        if (idempotencyKey != HeaderUse.None)
+        {
+            refusals.Add(idempotencyKey == HeaderUse.Required ? IdempotencyKeyRefused : OptionalIdempotencyKeyRefused);
+        }
+
+        if (ifMatch != HeaderUse.None)
+        {
+            refusals.Add(ifMatch == HeaderUse.Required ? IfMatchMalformed : OptionalIfMatchMalformed);
+        }
+
+        return string.Join(' ', refusals);
+    }
 
     private void AddSecurityRequirements(OpenApiOperation operation, OpenApiDocument? document)
     {
@@ -190,7 +250,7 @@ internal sealed class PlatformOperationTransformer : IOpenApiOperationTransforme
         ];
     }
 
-    private static void RequireHeader(OpenApiOperation operation, string name, string description, OpenApiSchema schema)
+    private static void AddHeader(OpenApiOperation operation, string name, bool required, string description, OpenApiSchema schema)
     {
         var parameters = operation.Parameters ??= [];
 
@@ -198,10 +258,10 @@ internal sealed class PlatformOperationTransformer : IOpenApiOperationTransforme
         {
             if (existing.In == ParameterLocation.Header && string.Equals(existing.Name, name, StringComparison.OrdinalIgnoreCase))
             {
-                // The endpoint binds the header itself; keep its description but state that it is required.
+                // The endpoint binds the header itself; keep its description, and state that it is required when it is.
                 if (existing is OpenApiParameter parameter)
                 {
-                    parameter.Required = true;
+                    parameter.Required |= required;
                     parameter.Description ??= description;
                 }
 
@@ -213,7 +273,7 @@ internal sealed class PlatformOperationTransformer : IOpenApiOperationTransforme
         {
             Name = name,
             In = ParameterLocation.Header,
-            Required = true,
+            Required = required,
             Description = description,
             Schema = schema,
         });
