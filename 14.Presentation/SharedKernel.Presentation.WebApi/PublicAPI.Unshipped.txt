@@ -234,3 +234,5 @@ static SharedKernel.Presentation.WebApi.ResultHttpExtensions.ToOkWithETag<T>(thi
 static SharedKernel.Presentation.WebApi.SharedKernelWebApiOptions.SectionName.get -> string!
 static SharedKernel.Presentation.WebApi.WebApiApplicationBuilderExtensions.UseSharedKernelWebApi(this Microsoft.AspNetCore.Builder.IApplicationBuilder! app, System.Action<SharedKernel.Presentation.WebApi.WebApiPipeline!>? configure = null) -> Microsoft.AspNetCore.Builder.IApplicationBuilder!
 static SharedKernel.Presentation.WebApi.WebApiHostBuilderExtensions.AddSharedKernelWebApi(this Microsoft.Extensions.Hosting.IHostApplicationBuilder! builder, System.Action<SharedKernel.Presentation.WebApi.SharedKernelWebApiOptions!>? configure = null) -> Microsoft.Extensions.Hosting.IHostApplicationBuilder!
+SharedKernel.Presentation.WebApi.IEndpointModule
+SharedKernel.Presentation.WebApi.IEndpointModule.Map(Microsoft.AspNetCore.Routing.IEndpointRouteBuilder! app) -> void

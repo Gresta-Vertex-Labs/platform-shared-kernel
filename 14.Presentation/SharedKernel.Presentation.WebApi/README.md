@@ -16,6 +16,7 @@ packages build on it.
 
 - [Install](#install)
 - [Setup](#setup)
+- [Endpoint modules](#endpoint-modules)
 - [From Result to HTTP](#from-result-to-http)
 - [The error shape](#the-error-shape)
 - [Authorization](#authorization)
@@ -114,6 +115,44 @@ Startup behaviour:
 - `AddSharedKernelWebApi()` without `UseSharedKernelWebApi()` logs warning 14011 when the host starts.
 - Invalid settings throw `OptionsValidationException` the first time they are read: with Kestrel at `builder.Build()`,
   with `TestServer` at `UseSharedKernelWebApi()`, and at the latest when the host starts. The message names the key.
+
+## Endpoint modules
+
+Group the endpoints of a resource or feature in a module: a type that implements `IEndpointModule` with one static
+`Map`. The group, its requirements, its version and its tags are declared inside it.
+
+```csharp
+public sealed class InvoiceEndpoints : IEndpointModule
+{
+    public static void Map(IEndpointRouteBuilder app)
+    {
+        var invoices = app.MapGroup("/invoices").WithTags("Invoices");
+
+        invoices.MapGet("/{id:guid}", (Guid id, ISender sender, CancellationToken ct) =>
+            sender.Send(new GetInvoice(id), ct).ToOk());
+    }
+}
+
+app.UseSharedKernelWebApi();
+app.MapEndpoints();
+```
+
+`MapEndpoints()` is generated at compile time by the source generator this package carries (`analyzers/dotnet/cs`):
+an `internal` extension in the namespace `SharedKernel.Presentation.WebApi` that calls `Map` on every module of the
+assembly, in the ordinal order of their full names. There is no reflection and no instance. It exists only in an
+assembly that declares at least one module, and it maps that assembly's modules only.
+
+The generator refuses a module it cannot call:
+
+| Id | Severity | Module |
+| --- | --- | --- |
+| `SKEP001` | Error | Abstract |
+| `SKEP002` | Error | Generic, or nested in a generic type |
+| `SKEP003` | Error | Not reachable from the assembly: private, protected, private protected or file-local, or nested in such a type |
+| `SKEP004` | Warning | Inherits `Map` from another module instead of declaring its own; it is not mapped a second time |
+
+A module may implement `Map` explicitly (`static void IEndpointModule.Map(...)`); the generated code calls it through
+the interface.
 
 ## From Result to HTTP
 

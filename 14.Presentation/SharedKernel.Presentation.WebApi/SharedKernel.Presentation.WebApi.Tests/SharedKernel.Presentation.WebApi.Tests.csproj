@@ -7,6 +7,10 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Presentation.WebApi.csproj" />
+    <!-- The endpoint-module generator, which the WebApi package carries and a project reference does not (P-563 P2). -->
+    <ProjectReference Include="..\..\SharedKernel.Presentation.WebApi.Generators\SharedKernel.Presentation.WebApi.Generators.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\..\..\01.Core\SharedKernel.Localization\SharedKernel.Localization.csproj" />
     <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
   </ItemGroup>

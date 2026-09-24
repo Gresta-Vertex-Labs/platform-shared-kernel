@@ -140,6 +140,8 @@
       "14.Presentation/SharedKernel.Presentation.SignalR/SharedKernel.Presentation.SignalR.csproj",
       "14.Presentation/SharedKernel.Presentation.WebApi/SharedKernel.Presentation.WebApi.Tests/SharedKernel.Presentation.WebApi.Tests.csproj",
       "14.Presentation/SharedKernel.Presentation.WebApi/SharedKernel.Presentation.WebApi.csproj",
+      "14.Presentation/SharedKernel.Presentation.WebApi.Generators/SharedKernel.Presentation.WebApi.Generators.Tests/SharedKernel.Presentation.WebApi.Generators.Tests.csproj",
+      "14.Presentation/SharedKernel.Presentation.WebApi.Generators/SharedKernel.Presentation.WebApi.Generators.csproj",
       "14.Presentation/consumer-verify/consumer-verify.csproj",
       "15.Integration/SharedKernel.Integration.Notifications.Abstractions/SharedKernel.Integration.Notifications.Abstractions.Tests/SharedKernel.Integration.Notifications.Abstractions.Tests.csproj",
       "15.Integration/SharedKernel.Integration.Notifications.Abstractions/SharedKernel.Integration.Notifications.Abstractions.csproj",

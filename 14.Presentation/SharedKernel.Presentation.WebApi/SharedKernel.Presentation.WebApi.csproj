@@ -35,6 +35,32 @@
     <ProjectReference Include="..\..\12.Security\SharedKernel.Security.Abstractions\SharedKernel.Security.Abstractions.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <!--
+      The endpoint-module source generator (P-563 P2) ships inside this package, under analyzers/dotnet/cs, so a
+      service that references WebApi gets app.MapEndpoints() with no second reference. Built first, never referenced
+      as an assembly and never a package dependency (PrivateAssets). This project does not run it on itself: it
+      declares IEndpointModule, not modules. In-repo projects that reference WebApi by ProjectReference add the
+      generator themselves (OutputItemType="Analyzer"), since a project reference does not carry analyzers.
+    -->
+    <ProjectReference Include="..\SharedKernel.Presentation.WebApi.Generators\SharedKernel.Presentation.WebApi.Generators.csproj"
+                      ReferenceOutputAssembly="false"
+                      PrivateAssets="all" />
+  </ItemGroup>
+  <PropertyGroup>
+    <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);_PackEndpointModuleGenerator</TargetsForTfmSpecificContentInPackage>
+  </PropertyGroup>
+  <Target Name="_PackEndpointModuleGenerator">
+    <MSBuild Projects="..\SharedKernel.Presentation.WebApi.Generators\SharedKernel.Presentation.WebApi.Generators.csproj"
+             Targets="GetTargetPath"
+             Properties="Configuration=$(Configuration)"
+             RemoveProperties="TargetFramework;RuntimeIdentifier;SelfContained">
+      <Output TaskParameter="TargetOutputs" ItemName="_EndpointModuleGeneratorAssembly" />
+    </MSBuild>
+    <ItemGroup>
+      <TfmSpecificPackageFile Include="@(_EndpointModuleGeneratorAssembly)" PackagePath="analyzers/dotnet/cs" />
+    </ItemGroup>
+  </Target>
+  <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
     <AdditionalFiles Include="PublicAPI.Shipped.txt" />
     <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
