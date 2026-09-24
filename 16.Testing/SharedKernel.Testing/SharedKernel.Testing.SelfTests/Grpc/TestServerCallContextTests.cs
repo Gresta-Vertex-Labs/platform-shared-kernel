@@ -1,8 +1,8 @@
-using Google.Rpc;
 using Grpc.Core;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
-using SharedKernel.Presentation.Grpc;
+using SharedKernel.Core.Exceptions;
+using SharedKernel.Core.Extensions;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Propagation;
 using SharedKernel.Primitives.Results;
@@ -15,9 +15,10 @@ namespace SharedKernel.Testing.SelfTests.Grpc;
 /// <summary>
 /// Proves <see cref="CallContext"/> gives a service method or a service's own interceptor, run without a
 /// <c>Grpc.AspNetCore</c> host, what ASP.NET Core hosting would: inbound metadata, the <see cref="HttpContext"/>
-/// through <c>GetHttpContext()</c> with its services and endpoint metadata, and the call options — and that it
-/// composes with <c>SharedKernel.Presentation.Grpc</c>'s result extensions. Since P-562 that package has no public
-/// interceptors to drive (correlation, tenant and authorization run in the HTTP pipeline), so these self-tests are the
+/// through <c>GetHttpContext()</c> with its services and endpoint metadata, and the call options — and that a service
+/// method ending its results with <c>SharedKernel.Core</c>'s <c>GetValueOrThrow()</c> can be unit-tested with it. Since
+/// P-562 <c>SharedKernel.Presentation.Grpc</c> has no public interceptors to drive (correlation, tenant and
+/// authorization run in the HTTP pipeline) and no result extensions of its own (R32), so these self-tests are the
 /// behavioral proof of the harness itself, per the SelfTests routing rule.
 /// </summary>
 public sealed class TestServerCallContextTests
@@ -94,16 +95,16 @@ public sealed class TestServerCallContextTests
     }
 
     [Fact]
-    public async Task ServiceMethod_UsingGetValueOrThrow_FailsWithTheRichStatus()
+    public async Task ServiceMethod_UsingGetValueOrThrow_ThrowsTheExceptionOfItsError()
     {
+        // Unit-tested without a host, a failed result is the exception of its error (Error.ToException()); in a host,
+        // the interceptor of SharedKernel.Presentation.Grpc turns that same exception into the rich google.rpc.Status.
         var context = CallContext.Create(correlationId: "corr-7");
 
-        var exception = await Assert.ThrowsAsync<RpcException>(() => OrdersService.GetAsync("42", context));
+        var exception = await Assert.ThrowsAsync<NotFoundException>(() => OrdersService.GetAsync("42", context));
 
-        Assert.Equal(StatusCode.NotFound, exception.StatusCode);
-        var errorInfo = exception.GetRpcStatus()?.GetDetail<ErrorInfo>();
-        Assert.NotNull(errorInfo);
-        Assert.Equal("order.not_found", errorInfo.Reason);
+        Assert.Equal("order.not_found", exception.Error.Code);
+        Assert.Equal(ErrorType.NotFound, exception.Error.Type);
     }
 
     [Fact]

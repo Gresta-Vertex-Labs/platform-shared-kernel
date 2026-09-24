@@ -30,9 +30,14 @@ public static class GrpcHostBuilderExtensions
     ///   HTTP client would get (translated, server errors redacted outside Development), an <c>ErrorInfo</c> detail
     ///   (<c>reason</c> = the error code, <c>domain</c> = <see cref="SharedKernelGrpcOptions.ErrorDomain"/>,
     ///   <c>metadata</c> = <c>traceId</c> and <c>correlationId</c>) and, for field errors, a <c>BadRequest</c> detail
-    ///   with every violation. Clients read it with <c>RpcException.GetRpcStatus()</c>. Server errors are logged at
-    ///   Error, client errors at Debug; a call the client cancelled ends as <c>Cancelled</c> and is not logged as an
-    ///   error. Map results with <see cref="GrpcResultExtensions"/>.</item>
+    ///   with the field violations (at most 50, the rest summed up by a last one coded
+    ///   <see cref="Errors.GrpcErrorCodes.MoreFieldViolations"/>). Clients read it with
+    ///   <c>RpcException.GetRpcStatus()</c>. A method ends a failed <c>Result</c> with <c>SharedKernel.Core</c>'s
+    ///   <c>GetValueOrThrow()</c> or <c>ThrowIfFailure()</c> (<c>SharedKernel.Core.Extensions</c>), whose exception
+    ///   gets the same status. An <c>RpcException</c> the method throws itself, or receives from another service, keeps
+    ///   its code but none of its trailers, and gets this service's <c>ErrorInfo</c>. Server errors are logged at
+    ///   Error, client errors at Debug; any exception once the call is cancelled ends as <c>Cancelled</c>, logged at
+    ///   Debug.</item>
     ///   <item><see cref="SharedKernelAuthorizationExtensions.AddSharedKernelAuthorization"/>, so
     ///   <c>[RequirePermission]</c>, <c>[RequireRole]</c>, <c>[RequireFreshAuthentication]</c> and
     ///   <c>[RequireAuthenticationMethod]</c> work on a service class or method, and the same requirements as

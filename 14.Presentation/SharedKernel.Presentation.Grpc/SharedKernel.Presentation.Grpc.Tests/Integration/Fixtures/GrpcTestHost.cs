@@ -1,6 +1,10 @@
 using Grpc.Net.Client;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.AspNetCore.Hosting.Server.Features;
+using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -22,6 +26,13 @@ internal static class GrpcTestHost
 
     public const string Development = "Development";
 
+    private const string LoopbackUrl = "http://127.0.0.1:0";
+
+    /// <summary>
+    /// Starts a host on the in-memory test server, or with <paramref name="overSockets"/> on Kestrel at a loopback port
+    /// over real HTTP/2 (h2c), for what only a real connection enforces, such as a client's limit on the size of headers
+    /// and trailers (call <see cref="CreateSocketClient"/> for such a host).
+    /// </summary>
     public static async Task<WebApplication> StartAsync(
         string environment = Production,
         Action<SharedKernelGrpcOptions>? configureGrpc = null,
@@ -30,11 +41,21 @@ internal static class GrpcTestHost
         Action<GrpcServiceEndpointConventionBuilder>? configureService = null,
         IReadOnlyDictionary<string, string?>? configuration = null,
         InMemoryLoggerFactory? loggerFactory = null,
-        bool useWebApi = true)
+        bool useWebApi = true,
+        bool overSockets = false)
     {
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = environment });
-        builder.WebHost.UseTestServer();
         builder.Logging.ClearProviders();
+
+        if (overSockets)
+        {
+            builder.WebHost.UseUrls(LoopbackUrl);
+            builder.WebHost.ConfigureKestrel(kestrel => kestrel.ConfigureEndpointDefaults(listen => listen.Protocols = HttpProtocols.Http2));
+        }
+        else
+        {
+            builder.WebHost.UseTestServer();
+        }
 
         if (configuration is not null)
         {
@@ -86,6 +107,25 @@ internal static class GrpcTestHost
         var channel = GrpcChannel.ForAddress(
             server.BaseAddress,
             new GrpcChannelOptions { HttpHandler = new ResponseVersionHandler { InnerHandler = server.CreateHandler() } });
+
+        return new TestService.TestServiceClient(channel);
+    }
+
+    /// <summary>
+    /// Creates a client that calls a host started with <c>overSockets</c> over a real HTTP/2 connection, and — as a
+    /// gRPC client with that limit does — fails a call whose response headers and trailers together exceed
+    /// <paramref name="maxResponseHeadersKilobytes"/>.
+    /// </summary>
+    public static TestService.TestServiceClient CreateSocketClient(this WebApplication app, int maxResponseHeadersKilobytes)
+    {
+        var address = app.Services.GetRequiredService<IServer>().Features.GetRequiredFeature<IServerAddressesFeature>().Addresses.Single();
+        var channel = GrpcChannel.ForAddress(
+            address,
+            new GrpcChannelOptions
+            {
+                HttpHandler = new SocketsHttpHandler { MaxResponseHeadersLength = maxResponseHeadersKilobytes },
+                DisposeHttpClient = true,
+            });
 
         return new TestService.TestServiceClient(channel);
     }

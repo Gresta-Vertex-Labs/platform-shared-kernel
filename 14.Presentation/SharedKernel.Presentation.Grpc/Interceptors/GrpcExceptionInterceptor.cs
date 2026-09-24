@@ -20,21 +20,34 @@ namespace SharedKernel.Presentation.Grpc.Interceptors;
 /// </summary>
 /// <remarks>
 /// <list type="bullet">
-///   <item>An <see cref="RpcException"/> the service built itself passes through unchanged.</item>
-///   <item>A failed result thrown by <see cref="GrpcResultExtensions"/> gets its status rebuilt with the call's
-///   request and error domain. It is an expected outcome and is not logged, like a result returned over HTTP.</item>
-///   <item>An <see cref="OperationCanceledException"/> after the client cancelled the call (or its deadline passed)
-///   ends as <see cref="StatusCode.Cancelled"/>, logged at Debug: nobody is left to read the answer, and it is not a
-///   failure of the service.</item>
-///   <item><see cref="ValidationException"/>: <see cref="StatusCode.InvalidArgument"/> with every field error as a
-///   field violation.</item>
-///   <item>Any other <see cref="SharedKernelException"/>: its <see cref="Error"/>.</item>
+///   <item>Any exception once the call is cancelled — the client cancelled it, or its deadline passed — ends as
+///   <see cref="StatusCode.Cancelled"/>, logged at Debug, whatever its type: an <see cref="OperationCanceledException"/>,
+///   the <see cref="IOException"/> of an aborted stream, the <see cref="InvalidOperationException"/> of a write to a
+///   completed call, the failure of a downstream call cancelled with it. Nobody is left to read the answer, and it is
+///   not a failure of the service.</item>
+///   <item>An <see cref="RpcException"/> — thrown by the service's own code, or by a gRPC call it made to another
+///   service — is rebuilt without any of its trailers, so another service's <c>ErrorInfo</c>, field violations, trace
+///   ids and error domain never reach this service's caller. Its status code is kept, with this service's
+///   <c>ErrorInfo</c>: <c>reason</c> = <see cref="GrpcErrorCodes.ForStatus"/>, this error domain, this call's trace
+///   and correlation ids. Its detail is kept for a client category; for a server category
+///   (<see cref="StatusCode.Unknown"/>, <see cref="StatusCode.Internal"/>, <see cref="StatusCode.DataLoss"/>,
+///   <see cref="StatusCode.Unavailable"/>, <see cref="StatusCode.DeadlineExceeded"/>) it is replaced outside
+///   Development by the generic sentence of the matching error type. A thrown <see cref="StatusCode.OK"/> is no
+///   answer and becomes <see cref="StatusCode.Unknown"/>. A service sends trailers of its own through
+///   <see cref="ServerCallContext.ResponseTrailers"/>.</item>
+///   <item><see cref="ValidationException"/>: <see cref="StatusCode.InvalidArgument"/> with exactly the status a
+///   returned error of the same field errors gets, as over HTTP — one error is itself, several are
+///   <c>Error.Validation(errors)</c>, whose field errors become the field violations.</item>
+///   <item>Any other <see cref="SharedKernelException"/>: its <see cref="Error"/>. This is also how a failed result
+///   arrives: <c>SharedKernel.Core</c>'s <c>GetValueOrThrow()</c> and <c>ThrowIfFailure()</c> throw
+///   <c>Error.ToException()</c> — the exception of the error's type, a <see cref="DomainException"/> for
+///   <see cref="ErrorType.Unavailable"/> and <see cref="ErrorType.Timeout"/> — which carries the error unchanged.</item>
 ///   <item>Anything else: <see cref="StatusCode.Internal"/> <c>unexpected.exception</c> with a generic message; in
 ///   Development the exception message instead.</item>
 /// </list>
-/// Server errors (<see cref="ErrorPresentation.IsServerError"/>) are logged at Error with the exception, client
-/// errors at Debug. The status message is the one an HTTP client would get (translated, server errors redacted
-/// outside Development), and nothing about the exception reaches the client outside Development.
+/// Server categories are logged at Error with the exception, client categories at Debug. The status message is the
+/// one an HTTP client would get (translated, server errors redacted outside Development), and nothing about the
+/// exception reaches the client outside Development.
 /// </remarks>
 internal sealed partial class GrpcExceptionInterceptor : Interceptor
 {
@@ -66,7 +79,7 @@ internal sealed partial class GrpcExceptionInterceptor : Interceptor
         {
             return await continuation(request, context).ConfigureAwait(false);
         }
-        catch (Exception exception) when (IsMapped(exception))
+        catch (Exception exception)
         {
             throw Map(exception, context);
         }
@@ -82,7 +95,7 @@ internal sealed partial class GrpcExceptionInterceptor : Interceptor
         {
             return await continuation(requestStream, context).ConfigureAwait(false);
         }
-        catch (Exception exception) when (IsMapped(exception))
+        catch (Exception exception)
         {
             throw Map(exception, context);
         }
@@ -99,7 +112,7 @@ internal sealed partial class GrpcExceptionInterceptor : Interceptor
         {
             await continuation(request, responseStream, context).ConfigureAwait(false);
         }
-        catch (Exception exception) when (IsMapped(exception))
+        catch (Exception exception)
         {
             throw Map(exception, context);
         }
@@ -116,37 +129,36 @@ internal sealed partial class GrpcExceptionInterceptor : Interceptor
         {
             await continuation(requestStream, responseStream, context).ConfigureAwait(false);
         }
-        catch (Exception exception) when (IsMapped(exception))
+        catch (Exception exception)
         {
             throw Map(exception, context);
         }
     }
 
-    // An RpcException the service built itself is its deliberate answer and keeps its stack trace: it is never caught.
-    private static bool IsMapped(Exception exception) =>
-        exception is not RpcException rpcException || ResultFailures.TryGetError(rpcException, out _);
-
+    // Every exception is mapped: this interceptor is the outermost, so the only RpcException it ever sees is one it
+    // did not build — the service's own, or another service's.
     private RpcException Map(Exception exception, ServerCallContext context)
     {
+        if (context.CancellationToken.IsCancellationRequested)
+        {
+            Log.CallCancelled(_logger, context.Method, exception);
+            return new RpcException(new Status(StatusCode.Cancelled, CancelledMessage));
+        }
+
         var httpContext = FindHttpContext(context);
         var domain = _options.Value.ErrorDomain;
 
         switch (exception)
         {
-            case RpcException rpcException when ResultFailures.TryGetError(rpcException, out var resultError):
-                return RpcStatusFactory.CreateException(resultError, httpContext, domain);
-
-            case OperationCanceledException when context.CancellationToken.IsCancellationRequested:
-                Log.CallCancelled(_logger, context.Method, exception);
-                return new RpcException(new Status(StatusCode.Cancelled, CancelledMessage));
+            case RpcException rpcException:
+                return Rebuild(rpcException, context, httpContext, domain);
 
             case ValidationException validation:
-                // One field error keeps its own code and message; several are reported like a result carrying
-                // Error.Validation(errors). Either way every field error becomes a field violation — as over HTTP.
+                // Exactly what a returned error produces, as over HTTP: one error is itself, several are
+                // Error.Validation(errors); the field violations are the error's Details.
                 var error = validation.Errors.Count == 1 ? validation.Errors[0] : Error.Validation(validation.Errors);
-                var fieldErrors = error.Details.Count > 0 ? error.Details : validation.Errors;
                 Log.ClientError(_logger, context.Method, StatusCode.InvalidArgument, error.Code, exception);
-                return RpcStatusFactory.CreateException(error, httpContext, domain, fieldErrors, StatusCode.InvalidArgument);
+                return RpcStatusFactory.CreateException(error, httpContext, domain, StatusCode.InvalidArgument);
 
             case SharedKernelException sharedKernelException:
                 LogFailure(context, sharedKernelException.Error, exception);
@@ -161,6 +173,37 @@ internal sealed partial class GrpcExceptionInterceptor : Interceptor
                     clientMessage: _environment.IsDevelopment() ? exception.Message : null);
         }
     }
+
+    // The status of an RpcException this service did not build from an error, rebuilt as its own: the code, the
+    // detail where it may be shown, this service's ErrorInfo — and nothing from the original trailers.
+    private RpcException Rebuild(RpcException exception, ServerCallContext context, HttpContext? httpContext, string domain)
+    {
+        var statusCode = exception.StatusCode == StatusCode.OK ? StatusCode.Unknown : exception.StatusCode;
+        var code = GrpcErrorCodes.ForStatus(statusCode);
+        var detail = exception.Status.Detail;
+
+        if (ServerErrorType(statusCode) is not { } serverErrorType)
+        {
+            Log.ClientError(_logger, context.Method, statusCode, code, exception);
+            return RpcStatusFactory.CreateExceptionForStatus(statusCode, detail, httpContext, domain);
+        }
+
+        Log.ServerError(_logger, context.Method, statusCode, code, exception);
+
+        // Presented like an error of the same category: the generic sentence outside Development, the detail in it.
+        var message = ErrorPresentation.GetClientMessage(new Error(code, detail, serverErrorType), httpContext);
+        return RpcStatusFactory.CreateExceptionForStatus(statusCode, message, httpContext, domain);
+    }
+
+    // The error type a status of a server category is presented as; null for a client category, whose detail is the
+    // service's (or another service's) deliberate answer and is shown.
+    private static ErrorType? ServerErrorType(StatusCode statusCode) => statusCode switch
+    {
+        StatusCode.Unknown or StatusCode.Internal or StatusCode.DataLoss => ErrorType.Unexpected,
+        StatusCode.Unavailable => ErrorType.Unavailable,
+        StatusCode.DeadlineExceeded => ErrorType.Timeout,
+        _ => null,
+    };
 
     private void LogFailure(ServerCallContext context, Error error, Exception exception)
     {
@@ -215,7 +258,7 @@ internal sealed partial class GrpcExceptionInterceptor : Interceptor
         [LoggerMessage(
             EventId = LoggingEventIdRanges.Presentation + 204,
             Level = LogLevel.Debug,
-            Message = "The client cancelled the call to gRPC method {GrpcMethod} before it completed.")]
+            Message = "The call to gRPC method {GrpcMethod} was cancelled before it completed.")]
         public static partial void CallCancelled(ILogger logger, string grpcMethod, Exception exception);
     }
 }
