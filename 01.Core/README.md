@@ -252,14 +252,14 @@ before the first release.
 | Package | Latest version | Review |
 | --- | --- | --- |
 | FeatureManagement | `1.0.0-alpha.0.1112` | P-555: OpenFeature, working targeting, one answer per request |
-| Primitives | `1.0.0-alpha.0.1112` | republished with each review |
+| Primitives | `1.0.0-alpha.0.1171` | republished with each review (last with 07.Messaging's first publish); P-563 added `ErrorCodes.Idempotency` (republish pending) |
 | DataPrivacy | `1.0.0-alpha.0.1106` | P-554: Microsoft compliance model, GDPR/KVKK taxonomy |
 | Validation, Validation.FluentValidation | `1.0.0-alpha.0.1100` | P-553: value types, full SWIFT registry, translatable errors |
 | Localization | `1.0.0-alpha.0.1100` | P-552: typed messages, validated catalogs |
-| Core | `1.0.0-alpha.0.1100` | republished with P-553 |
-| Compression | `1.0.0-alpha.0.1088` | P-551: truncation-detecting frame, decompression cap |
-| Configuration | `1.0.0-alpha.0.1088` | republished with P-551 |
-| Cryptography | `1.0.0-alpha.0.1066` | P-545: FIPS-approved defaults, async and synchronous services |
+| Core | `1.0.0-alpha.0.1171` | republished with P-553 and with 07.Messaging's first publish |
+| Compression | `1.0.0-alpha.0.1171` | P-551: truncation-detecting frame, decompression cap; republished with 07.Messaging's first publish |
+| Configuration | `1.0.0-alpha.0.1171` | republished with P-551 and with 07.Messaging's first publish |
+| Cryptography | `1.0.0-alpha.0.1171` | P-545: FIPS-approved defaults, async and synchronous services; republished with 07.Messaging's first publish |
 | Cryptography.Argon2, Cryptography.KeyVault.Azure | `1.0.0-alpha.0.998` | P-545 |
 
 Versions come from one repository-wide counter (MinVer), so a higher number always contains every earlier change. They

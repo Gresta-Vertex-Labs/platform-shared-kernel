@@ -2,7 +2,7 @@
 
 Atomic, tenant-scoped, Redis-backed implementation of the platform's two idempotency contracts:
 
-- `IRequestIdempotencyStore` (`SharedKernel.Application.Behaviors`) — `RedisRequestIdempotencyStore`.
+- `IRequestIdempotencyStore` (`SharedKernel.Application.Idempotency`, in `SharedKernel.Application`) — `RedisRequestIdempotencyStore`.
 - `IIdempotencyStore` (`SharedKernel.Messaging.Abstractions`) — `RedisIdempotencyMessageStore`.
 
 This package ships no new interface — it implements two other domains' existing contracts. See the

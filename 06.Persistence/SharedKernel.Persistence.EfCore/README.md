@@ -53,7 +53,7 @@ dotnet add package Microsoft.EntityFrameworkCore.Design   # for dotnet ef, with 
 | [`SharedKernel.Persistence.EfCore.Encryption`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/06.Persistence/SharedKernel.Persistence.EfCore.Encryption) | `.UseFieldEncryption()`: encrypted columns, blind indexes, key rotation, per-tenant crypto-shredding |
 | [`SharedKernel.Persistence.EfCore.Auditing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/06.Persistence/SharedKernel.Persistence.EfCore.Auditing) | `.UseAuditTrail()`: a tamper-evident audit ledger |
 | [`SharedKernel.Persistence.Dapper`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/06.Persistence/SharedKernel.Persistence.Dapper) | Hand-written SQL that joins the same transaction |
-| [`SharedKernel.Application.Behaviors`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/05.Application/SharedKernel.Application.Behaviors) | `TransactionBehavior`/`AuditingBehavior`: one transaction per MediatR command |
+| [`SharedKernel.Application`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/05.Application/SharedKernel.Application) | `.WithTransactions()`/`.WithAuditing()` on `AddSharedKernelApplication`: one transaction per MediatR command |
 | [`SharedKernel.ServiceDefaults.Persistence`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/13.ServiceDefaults/SharedKernel.ServiceDefaults.Persistence) | Readiness checks |
 | [`SharedKernel.Persistence.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/16.Testing/SharedKernel.Persistence.Testing) | Fakes and a PostgreSQL fixture with the production role split, for test projects |
 

@@ -605,7 +605,7 @@ total.ToString("N2", CultureInfo.GetCultureInfo("tr-TR"));  // "59,97 USD"
 | Assume `IncludeSoftDeleted()` widens the tenant too | Enter a cross-tenant scope when a query must see other tenants | It lifts only the soft-delete filter; the persistence tenant filter (and row-level security) still apply |
 | Put ordering on more than one operand of `And`/`Or`/`Not`, or paging on any | Order at most one operand; page at the repository call site | Composites carry the one ordering and throw `InvalidOperationException` for two orderings or any paging |
 | Remove an aggregate through the repository when others must react | Call a domain method such as `Close()` that raises an event | Repository deletion soft-deletes without a domain event |
-| Rely on events being published without a dispatcher | Register an `IDomainEventDispatcher` (for example `AddSharedKernelApplication()`) | Persistence discards undispatched events at the save (with a warning) |
+| Rely on events being published without a dispatcher | Register an `IDomainEventDispatcher` (for example `05.Application`'s `AddSharedKernelApplication(typeof(Program).Assembly)`) | Persistence discards undispatched events at the save (with a warning) |
 | Compare or add `Money` of possibly different currencies | Check `Currency` first, or convert with `ConvertAsync` | Mismatches throw `BusinessRuleViolationException` |
 | Call `.Sum()` on a possibly empty list of `Money` | Call `.Sum(currency)` | An empty sequence has no currency to return |
 | Read `result.Value` without checking | Check `result.IsValid` first | `Value` on an invalid result throws |

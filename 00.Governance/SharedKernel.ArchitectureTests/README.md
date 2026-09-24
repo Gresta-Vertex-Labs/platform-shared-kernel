@@ -204,8 +204,8 @@ building one outside `EventEnvelope.Wrap` no longer compiles.
 |---|---|
 | `ApplicationPipelineRules.BehaviorsNeverReferenceConcreteInfrastructure` | Named pipeline behaviors depend on abstractions only |
 | `ApplicationPipelineRules.NoExistingBehaviorMatchesStreamRequestConstraint` | No behavior's generic constraint accidentally captures stream requests |
-| `SharedKernelLayeringRules.ApplicationBehaviorsNeverReferencesCachingPollyHostingOrCore` | `SharedKernel.Application.Behaviors` carries no cache, Polly, hosting or `SharedKernel.Core` dependency |
-| `SharedKernelLayeringRules.ApplicationBehaviorsCachingNeverReferencesConcreteInfrastructure` | The caching behaviors reach `SharedKernel.Caching.Abstractions`, never a cache provider |
+| `SharedKernelLayeringRules.ApplicationNeverReferencesCachingPollyHostingOrCore` | `SharedKernel.Application` carries no cache, Polly, hosting or `SharedKernel.Core` dependency |
+| `SharedKernelLayeringRules.ApplicationCachingNeverReferencesConcreteInfrastructure` | `SharedKernel.Application.Caching` reaches `SharedKernel.Caching.Abstractions`, never a cache provider |
 | `UnitOfWorkSeamRules.SharedContractsAreNotRedeclared` | `IUnitOfWork`, `IRequestContext` and `IAuditTrailWriter` are declared only in `SharedKernel.Application.Abstractions` — no second copy (nor the deleted `ITransactionalUnitOfWork`/`IPersistenceTransaction`/`ICurrentActorContext`/`ICurrentTenantContext`) anywhere else |
 | `MetricsInstrumentationRules.RequestDurationRecordsIncludeOutcomeTag` | Every duration histogram carries an `outcome` tag, so failures stay separable |
 

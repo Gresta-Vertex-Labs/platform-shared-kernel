@@ -85,7 +85,7 @@ which reads the wire shape `SharedKernel.Presentation.WebApi` writes:
 - **`ErrorType`:** from the response status, via `HttpStatusErrorTypeMap`: 400, 413, 415, 428 → Validation,
   401 → Unauthorized, 403 → Forbidden, 404 → NotFound, 409, 412 → Conflict, 422 → BusinessRule,
   429, 503 → Unavailable, 504 → Timeout, everything else → Unexpected. The map is the reverse of
-  `SharedKernel.Presentation.WebApi`'s `ErrorTypeStatusCodeMap.Resolve`, plus the statuses an HTTP boundary
+  the status map `SharedKernel.Presentation.WebApi` answers with (its internal `ErrorTypeStatusCodeMap`), plus the statuses an HTTP boundary
   answers outside it (a failed `If-Match`, a payload or media-type rejection, rate limiting). It is duplicated
   here rather than shared, since `11.Communication` may never reference `14.Presentation`. A downstream outage
   therefore comes back as `Unavailable` or `Timeout` rather than as an `Unexpected` fault, with a ProblemDetails

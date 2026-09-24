@@ -547,8 +547,8 @@ builder.AddSharedKernelPostgres<OrderDbContext>("orders", p => p     // Connecti
     .UseFieldEncryption(k => k.UseTenantDataKeys())                 // SharedKernel:Persistence:Encryption
     .MigrateOnStartup());
 
-builder.Services.AddSharedKernelApplicationBehaviors()              // 05: no adapters, persistence implements the contracts
-    .AddDefaultBehaviors().AddTransactionBehavior().AddAuditingBehavior().Build();
+builder.Services.AddSharedKernelApplication(typeof(Program).Assembly, app => app  // 05: no adapters, persistence implements the contracts
+    .WithTransactions().WithAuditing());
 
 builder.Services.AddSharedKernelDapper(builder.Configuration, d => d.AddStronglyTypedId<OrderId, Guid>());  // optional
 
