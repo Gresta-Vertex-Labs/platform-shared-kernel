@@ -234,28 +234,34 @@ Resolved as an **optional** DI service — `null` means "not registered," and th
 `builder.AddServiceDefaults()` (via `AddSharedKernelTelemetry`) automatically exports every
 `[LoggerMessage]`-authored log record through the same OTLP pipeline as traces and metrics —
 `IncludeScopes` and `IncludeFormattedMessage` are both enabled, and a `BaggageLogRecordProcessor`
-copies every `System.Diagnostics.Activity` baggage entry from `Activity.Current` onto each log
-record's attributes at export time. No application-code call-site changes are needed to get this.
+copies the platform's two `System.Diagnostics.Activity` baggage items onto each log record's
+attributes at export time. No application-code call-site changes are needed to get this.
 
-`BaggageLogRecordProcessor` is a **generic** mechanism — it carries no hardcoded baggage key
-names. This is what makes it automatically pick up:
+| Log attribute | Written by |
+| --- | --- |
+| `correlation.id` | `14.Presentation`'s correlation-id middleware: the caller's `X-Correlation-Id` when valid, otherwise a new id — with **zero** `ProjectReference` from `13.ServiceDefaults` to `14.Presentation` |
+| `TenantId` | `SharedKernel.MultiTenancy`'s `TenantResolutionMiddleware` (with `AddSharedKernelMultiTenancy()`): the resolved tenant, or `Guid.Empty` when none resolves, so log aggregation can tell "no tenant resolved" from "enrichment never wired" |
 
-- `14.Presentation`'s correlation-id middleware, which sets its own `Activity` baggage key directly
-  against the BCL (WO-031) — with **zero** `ProjectReference` from `13.ServiceDefaults` to
-  `14.Presentation`.
-- `SharedKernel.MultiTenancy`'s `TenantResolutionMiddleware`, which — when
-  `AddSharedKernelMultiTenancy()` is used — sets `TenantBaggageKeys.TenantId` as `Activity` baggage
-  immediately after resolving (or confirming `Guid.Empty` for) the current request's tenant. The
-  baggage value is set even when no tenant resolves, so log aggregation can distinguish "no tenant
-  resolved for this request" from "TenantId enrichment was never wired."
+**Nothing else is copied (P-562 X2).** Baggage also comes from outside: a caller's W3C `baggage`
+header, and message headers, which MassTransit copies onto the consuming activity. Copying every item
+would let an anonymous caller put any property — a forged `SubjectId`, another tenant's `TenantId` — on
+every log record of its request. Both middlewares *replace* their key, and a value containing a
+control character (CR, LF and the rest) or a Unicode line separator is never copied. Any other value
+you want on a log record belongs in the log statement itself.
 
-Any future domain that sets its own `Activity` baggage key gets the same free ambient-log
-enrichment — no `13.ServiceDefaults` change required.
+**A caller's baggage never reaches OpenTelemetry's baggage store either.** OpenTelemetry's ASP.NET Core
+instrumentation used to read the request's `baggage` header into `Baggage.Current`, and the HttpClient and
+gRPC client instrumentations then sent it to every downstream service. `AddSharedKernelTelemetry`
+decorates the default propagator so a request's baggage is dropped there; trace context is still read,
+and baggage your service sets itself (`Baggage.SetBaggage`, or `Activity` baggage such as the correlation
+id) still leaves with outgoing calls. The request's `Activity` is the other store: `14.Presentation`'s
+WebApi core clears the caller's items there (`TrustInboundBaggage`, off by default). A service serving
+HTTP without that package keeps the framework default, so a caller's `TenantId` or `correlation.id`
+item stays on the activity unless the middleware above replaces it.
 
-**Scope boundary:** this enrichment mechanism covers the HTTP-request path only, via whatever sets
-`Activity` baggage during that request. A message-consumption-scope equivalent (e.g. a MassTransit
-consumer filter setting the same baggage keys from propagated message headers) is **not**
-implemented here — it would be a future `07.Messaging`-owned follow-up, outside this domain's
-jurisdiction to dispatch.
+**Messages:** a consumer's log records carry the publisher's `correlation.id` and `TenantId`, which
+MassTransit carries across in its own header, and nothing else from that header. The tenant a consumer
+acts on comes from dedicated message headers (`07.Messaging`'s `WithInboundRequestContext()`), never from
+baggage.
 
 See `13.ServiceDefaults/CLAUDE.md` for the full interface contracts, tag taxonomy, and implementation rules.

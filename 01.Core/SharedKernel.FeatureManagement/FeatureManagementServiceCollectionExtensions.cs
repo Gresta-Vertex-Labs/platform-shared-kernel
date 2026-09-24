@@ -30,6 +30,12 @@ public static class FeatureManagementServiceCollectionExtensions
     /// in a test), call <c>IFeatureLifecycleManager.EnsureInitializedAsync()</c> first; until then every
     /// evaluation returns its default with <c>ErrorType.ProviderNotReady</c>.
     /// </para>
+    /// <para>
+    /// Targeting needs the service's own <see cref="IFeatureTargetingContextAccessor"/>, registered before or after
+    /// this call. None is registered here: without one, evaluation has no targeting identity, so every caller is
+    /// anonymous to user, group and tenant targeting and shares one percentage bucket. The caller is never read from
+    /// <see cref="System.Diagnostics.Activity"/> baggage, which the caller itself can set.
+    /// </para>
     /// </remarks>
     /// <param name="services">The service collection.</param>
     /// <param name="configuration">The application's root configuration.</param>
@@ -64,8 +70,9 @@ public static class FeatureManagementServiceCollectionExtensions
 
         HideTelemetryFromTheEvaluator(services);
 
+        // No default IFeatureTargetingContextAccessor: without the service's own, evaluation is anonymous. The caller is
+        // never taken from Activity baggage, which the caller itself can set (P-562 X2).
         services.TryAddSingleton(TimeProvider.System);
-        services.TryAddSingleton<IFeatureTargetingContextAccessor, BaggageTenantTargetingContextAccessor>();
         services.TryAddSingleton<MicrosoftFeatureManagementProvider>();
 
         services.AddOpenFeature(builder =>

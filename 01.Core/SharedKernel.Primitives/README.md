@@ -274,7 +274,9 @@ Three compile-time constant registries, so two packages cannot independently har
 
 **Pick the registry matching your call-site shape.** Tags are span-local attributes. Baggage propagates across process boundaries and rides on every outbound call, so keep that registry small. They are not interchangeable, and two of them holding the same literal for the same concept does not make them so.
 
-> The tenant **baggage** key is `"TenantId"` while the tenant **tag** key is `"tenant.id"`. That asymmetry is deliberate and pinned by a test: `13.ServiceDefaults`' `BaggageLogRecordProcessor` copies baggage onto log records *generically*, so a baggage key string becomes the emitted log property name. Renaming it would silently rename a field that deployed dashboards and alert rules filter on.
+> The tenant **baggage** key is `"TenantId"` while the tenant **tag** key is `"tenant.id"`. That asymmetry is deliberate and pinned by a test: `13.ServiceDefaults`' `BaggageLogRecordProcessor` copies these baggage items onto log records under their own keys, so a baggage key string becomes the emitted log property name. Renaming it would silently rename a field that deployed dashboards and alert rules filter on.
+
+> **Baggage is caller input.** A caller can send W3C `baggage` with any key, these two included. Never read a caller's identity from baggage. `BaggageLogRecordProcessor` copies exactly the keys of `WellKnownBaggageKeys` (pinned by a test) and nothing else, and relies on platform middleware *replacing* each one (P-562 X2), so a key added here reaches log records only once `13.ServiceDefaults` adds it too.
 
 **`LoggingEventIdRanges`** reserves a 1000-wide `EventId` block per capability domain (`{domain number} * 1000`), subdivided into 100-wide per-package sub-blocks. Derive every `[LoggerMessage]` EventId from it as an expression, so the number stays traceable to the domain that owns it:
 
