@@ -86,7 +86,7 @@ public sealed class SignalRSetupTests
         (await connection.InvokeAsync<string>(nameof(RateLimitedHub.Ping))).Should().Be("pong");
         (await connection.InvokeAsync<string>(nameof(RateLimitedHub.Ping))).Should().Be("pong");
         (await connection.InvokeExpectingErrorAsync(nameof(RateLimitedHub.Ping)))
-            .Should().Be($"{PresentationErrorCodes.RateLimitExceeded}: Too many requests.");
+            .Should().Be(new HubError(PresentationErrorCodes.RateLimitExceeded, "Too many requests."));
 
         var options = app.Services.GetRequiredService<IOptions<SharedKernelSignalROptions>>().Value;
         options.InvocationRateLimit.Window.Should().Be(TimeSpan.FromMinutes(1));

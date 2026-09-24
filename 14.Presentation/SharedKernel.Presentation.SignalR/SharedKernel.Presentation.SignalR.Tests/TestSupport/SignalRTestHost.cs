@@ -27,6 +27,12 @@ internal static class SignalRTestHost
     public const string Development = "Development";
 
     /// <summary>
+    /// The text a client receives when the stream of a streaming hub method fails after it started, and the exception
+    /// is not a <see cref="HubException"/> (ASP.NET Core 10.0.11, <c>DefaultHubDispatcher</c>, detailed errors off).
+    /// </summary>
+    public const string StreamFailure = "An error occurred on the server while streaming results.";
+
+    /// <summary>
     /// Starts a <see cref="TestServer"/> host: test authentication, <c>AddSharedKernelWebApi</c> (unless
     /// <paramref name="withWebApi"/> is false), <c>AddSharedKernelSignalR</c> (unless
     /// <paramref name="withSharedKernelSignalR"/> is false, when <paramref name="configureBuilder"/> registers SignalR
@@ -150,26 +156,71 @@ internal static class SignalRTestHost
     }
 
     /// <summary>
-    /// Returns the message the server put in its <see cref="HubException"/>. SignalR prefixes it on the wire with
-    /// "An unexpected error occurred invoking '…' on the server. HubException: ".
+    /// The text a client receives when hub method <paramref name="method"/> fails with a <see cref="HubException"/>
+    /// whose message is <paramref name="serverMessage"/> (ASP.NET Core 10.0.11, <c>DefaultHubDispatcher</c>): SignalR's
+    /// own sentence, then the server's message.
     /// </summary>
-    public static string ServerMessage(this HubException exception)
+    public static string InvocationFailure(string method, string serverMessage) =>
+        $"An unexpected error occurred invoking '{method}' on the server. HubException: {serverMessage}";
+
+    /// <summary>
+    /// Invokes <paramref name="method"/> expecting a coded error and returns its code and message, read with
+    /// <see cref="HubErrorMessage.TryParse"/> from the text the client received — which must be exactly SignalR's
+    /// sentence followed by <c>{code}: {message}</c>.
+    /// </summary>
+    public static async Task<HubError> InvokeExpectingErrorAsync(this HubConnection connection, string method, params object?[] arguments)
     {
-        const string Marker = "HubException: ";
+        var exception = await connection.InvokeExpectingFailureAsync(method, arguments);
 
-        var index = exception.Message.IndexOf(Marker, StringComparison.Ordinal);
-        index.Should().BeGreaterThanOrEqualTo(0, "the server answered with a HubException, but the message was: {0}", exception.Message);
-
-        return exception.Message[(index + Marker.Length)..];
+        return ReadCodedError(exception, method);
     }
 
-    /// <summary>Invokes <paramref name="method"/> expecting a failure and returns the message the server sent.</summary>
-    public static async Task<string> InvokeExpectingErrorAsync(this HubConnection connection, string method, params object?[] arguments)
+    /// <summary>Invokes <paramref name="method"/> expecting a failure and returns the exception exactly as the client received it.</summary>
+    public static async Task<HubException> InvokeExpectingFailureAsync(this HubConnection connection, string method, params object?[] arguments)
     {
         var act = () => connection.InvokeCoreAsync<object?>(method, arguments);
 
         var exception = await act.Should().ThrowAsync<HubException>();
-        return exception.Which.ServerMessage();
+        return exception.Which;
+    }
+
+    /// <summary>
+    /// Reads the code and message of a coded error with <see cref="HubErrorMessage.TryParse"/>, asserting that the text
+    /// is exactly SignalR's failed-invocation sentence for <paramref name="method"/> followed by <c>{code}: {message}</c>.
+    /// </summary>
+    public static HubError ReadCodedError(HubException exception, string method)
+    {
+        HubErrorMessage.TryParse(exception.Message, out var code, out var message)
+            .Should().BeTrue("the server answered with a coded HubException, but the client received: {0}", exception.Message);
+        exception.Message.Should().Be(InvocationFailure(method, $"{code}: {message}"));
+
+        return new HubError(code!, message!);
+    }
+
+    /// <summary>
+    /// Reads a stream to its end or to its first failure, returning the items received and the failure, if any, as
+    /// the client received it.
+    /// </summary>
+    public static async Task<(IReadOnlyList<T> Items, HubException? Failure)> ReadStreamAsync<T>(
+        this HubConnection connection,
+        string method,
+        params object?[] arguments)
+    {
+        var items = new List<T>();
+
+        try
+        {
+            await foreach (var item in connection.StreamAsyncCore<T>(method, arguments))
+            {
+                items.Add(item);
+            }
+        }
+        catch (HubException failure)
+        {
+            return (items, failure);
+        }
+
+        return (items, null);
     }
 
     /// <summary>
@@ -181,15 +232,15 @@ internal static class SignalRTestHost
 
     /// <summary>
     /// Invokes <paramref name="method"/> expecting SignalR to refuse it for authorization, and returns the message of
-    /// the <see cref="HubException"/> the call failed with, as SignalR sent it.
+    /// the <see cref="HubException"/> the call failed with, as SignalR sent it. The refusal carries no error code.
     /// </summary>
     public static async Task<string> InvokeExpectingRefusalAsync(this HubConnection connection, string method)
     {
-        var act = () => connection.InvokeCoreAsync<object?>(method, []);
+        var exception = await connection.InvokeExpectingFailureAsync(method);
 
-        var exception = await act.Should().ThrowAsync<HubException>();
-        exception.Which.Message.Should().Be(UnauthorizedMessage(method));
-        return exception.Which.Message;
+        exception.Message.Should().Be(UnauthorizedMessage(method));
+        HubErrorMessage.TryParse(exception.Message, out _, out _).Should().BeFalse("SignalR's own refusal has no error code");
+        return exception.Message;
     }
 
     /// <summary>Waits until <paramref name="condition"/> holds, for things the server does after answering.</summary>

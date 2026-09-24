@@ -1,5 +1,6 @@
 #nullable enable
 SharedKernel.Presentation.SignalR.HubCallerContextExtensions
+SharedKernel.Presentation.SignalR.HubErrorMessage
 SharedKernel.Presentation.SignalR.HubGroupNaming
 SharedKernel.Presentation.SignalR.Options.SharedKernelSignalROptions
 SharedKernel.Presentation.SignalR.Options.SharedKernelSignalROptions.InvocationRateLimit.get -> SharedKernel.Presentation.SignalR.Options.SignalRInvocationRateLimitOptions!
@@ -13,6 +14,7 @@ SharedKernel.Presentation.SignalR.Options.SignalRInvocationRateLimitOptions.Wind
 SharedKernel.Presentation.SignalR.SignalRHostBuilderExtensions
 static SharedKernel.Presentation.SignalR.HubCallerContextExtensions.GetCorrelationId(this Microsoft.AspNetCore.SignalR.HubCallerContext! context) -> string?
 static SharedKernel.Presentation.SignalR.HubCallerContextExtensions.GetTenantId(this Microsoft.AspNetCore.SignalR.HubCallerContext! context) -> System.Guid?
+static SharedKernel.Presentation.SignalR.HubErrorMessage.TryParse(string? errorMessage, out string? code, out string? message) -> bool
 static SharedKernel.Presentation.SignalR.HubGroupNaming.TenantGroup(System.Guid tenantId) -> string!
 static SharedKernel.Presentation.SignalR.Options.SharedKernelSignalROptions.SectionName.get -> string!
 static SharedKernel.Presentation.SignalR.SignalRHostBuilderExtensions.AddSharedKernelSignalR(this Microsoft.Extensions.Hosting.IHostApplicationBuilder! builder, System.Action<SharedKernel.Presentation.SignalR.Options.SharedKernelSignalROptions!>? configure = null) -> Microsoft.AspNetCore.SignalR.ISignalRServerBuilder!

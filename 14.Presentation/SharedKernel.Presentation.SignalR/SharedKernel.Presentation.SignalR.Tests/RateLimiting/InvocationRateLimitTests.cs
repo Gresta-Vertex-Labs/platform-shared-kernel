@@ -19,7 +19,7 @@ namespace SharedKernel.Presentation.SignalR.Tests.RateLimiting;
 /// </summary>
 public sealed class InvocationRateLimitTests
 {
-    private const string Refusal = $"{PresentationErrorCodes.RateLimitExceeded}: Too many requests.";
+    private static readonly HubError Refusal = new(PresentationErrorCodes.RateLimitExceeded, "Too many requests.");
 
     [Fact]
     public async Task InvocationBeyondThePermitLimit_IsRefused_ForThatConnectionOnly()

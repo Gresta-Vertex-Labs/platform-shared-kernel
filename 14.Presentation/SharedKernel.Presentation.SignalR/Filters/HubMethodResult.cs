@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Linq.Expressions;
+using System.Threading.Channels;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 
@@ -15,6 +16,18 @@ namespace SharedKernel.Presentation.SignalR.Filters;
 internal static class HubMethodResult
 {
     private static readonly ConcurrentDictionary<Type, Accessors> Cache = new();
+
+    private static readonly ConcurrentDictionary<Type, bool> StreamTypes = new();
+
+    /// <summary>
+    /// Returns <see langword="true"/> when <paramref name="value"/> is a stream: an <see cref="IAsyncEnumerable{T}"/> or
+    /// a <see cref="ChannelReader{T}"/>, the two types SignalR streams — and only as the declared return type of a hub
+    /// method, never as a value inside one.
+    /// </summary>
+    /// <param name="value">The success value of a <see cref="Result{T}"/> a hub method returned.</param>
+    /// <remarks>Classifies the runtime type the way SignalR classifies a declared one, once per type.</remarks>
+    public static bool IsStream(object? value) =>
+        value is not null && StreamTypes.GetOrAdd(value.GetType(), IsStreamType);
 
     /// <summary>
     /// Returns <see langword="true"/> when <paramref name="returned"/> is a <see cref="Result"/> or a
@@ -58,6 +71,28 @@ internal static class HubMethodResult
 
     private static bool IsResultOfT(Type type) =>
         type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Result<>);
+
+    // SignalR's own test for a streaming return type: it implements IAsyncEnumerable<T>, or derives from ChannelReader<T>.
+    private static bool IsStreamType(Type type)
+    {
+        foreach (var implemented in type.GetInterfaces())
+        {
+            if (implemented.IsGenericType && implemented.GetGenericTypeDefinition() == typeof(IAsyncEnumerable<>))
+            {
+                return true;
+            }
+        }
+
+        for (var current = type; current is not null; current = current.BaseType)
+        {
+            if (current.IsGenericType && current.GetGenericTypeDefinition() == typeof(ChannelReader<>))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     /// <summary>The compiled readers of one closed <see cref="Result{T}"/>.</summary>
     private sealed class Accessors

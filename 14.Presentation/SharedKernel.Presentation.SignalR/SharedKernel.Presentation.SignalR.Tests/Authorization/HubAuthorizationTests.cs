@@ -8,6 +8,8 @@ using SharedKernel.Presentation.SignalR.Options;
 using SharedKernel.Presentation.SignalR.Tests.TestSupport;
 using SharedKernel.Presentation.WebApi;
 using SharedKernel.Presentation.WebApi.Errors;
+using SharedKernel.Primitives.Clocks;
+using SharedKernel.Testing.Clocks;
 using Xunit;
 
 namespace SharedKernel.Presentation.SignalR.Tests.Authorization;
@@ -17,7 +19,9 @@ namespace SharedKernel.Presentation.SignalR.Tests.Authorization;
 /// attributes are <c>[Authorize]</c> attributes, and SignalR authorizes a hub method only through those, so it
 /// enforces them itself — before any hub filter runs, with its own refusal — even in a host that never registers this
 /// package. A <c>[RequirePermission]</c> that is not an <c>[Authorize]</c> would let every connected caller through
-/// (the B1 fail-open class, on hubs), which the WebApi attribute tests pin at the source.
+/// (the B1 fail-open class, on hubs), which the WebApi attribute tests pin at the source. Every invocation is checked
+/// against the connection's principal, which is never refreshed while the connection stays open: freshness lapses,
+/// an authentication method without a maximum age holds (P-562 final review, S3).
 /// </summary>
 public sealed class HubAuthorizationTests
 {
@@ -109,6 +113,42 @@ public sealed class HubAuthorizationTests
         (await connection.InvokeAsync<string>(nameof(MethodAuthorizationHub.Transfer))).Should().Be("transferred");
     }
 
+    [Fact]
+    public async Task HubMethod_FreshAuthentication_LapsesOnAnOpenConnection()
+    {
+        // Every invocation is checked against the principal the connection was opened with, at the time of the
+        // invocation: the step-up that admitted the first call no longer admits one after the maximum age (300 s).
+        var clock = new FakeClock(DateTimeOffset.UtcNow);
+        await using var app = await StartAsync(configureBuilder: builder => builder.Services.AddSingleton<IClock>(clock));
+        await using var connection = await app.ConnectAsync(
+            HubPaths.MethodAuthorization,
+            TestAuthentication.SignedIn(authTime: clock.UtcNow));
+
+        (await connection.InvokeAsync<string>(nameof(MethodAuthorizationHub.Transfer))).Should().Be("transferred");
+
+        clock.Advance(TimeSpan.FromSeconds(301));
+
+        await connection.InvokeExpectingRefusalAsync(nameof(MethodAuthorizationHub.Transfer));
+        InvocationCount(app).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task HubMethod_AuthenticationMethod_WithoutAMaximumAge_HoldsForTheLifeOfTheConnection()
+    {
+        // The connection's principal is never refreshed, and it still names the method hours later.
+        var clock = new FakeClock(DateTimeOffset.UtcNow);
+        await using var app = await StartAsync(configureBuilder: builder => builder.Services.AddSingleton<IClock>(clock));
+        await using var connection = await app.ConnectAsync(
+            HubPaths.MethodAuthorization,
+            TestAuthentication.SignedIn(methods: "pwd,mfa", authTime: clock.UtcNow));
+
+        (await connection.InvokeAsync<string>(nameof(MethodAuthorizationHub.ChangePassword))).Should().Be("changed");
+
+        clock.Advance(TimeSpan.FromHours(8));
+
+        (await connection.InvokeAsync<string>(nameof(MethodAuthorizationHub.ChangePassword))).Should().Be("changed");
+    }
+
     [Theory]
     [InlineData("pwd", false)]
     [InlineData("pwd,mfa", true)]
@@ -159,7 +199,7 @@ public sealed class HubAuthorizationTests
 
         (await connection.InvokeAsync<string>(nameof(MethodAuthorizationHub.Open))).Should().Be("open");
         (await connection.InvokeExpectingErrorAsync(nameof(MethodAuthorizationHub.Open)))
-            .Should().Be($"{PresentationErrorCodes.RateLimitExceeded}: Too many requests.");
+            .Should().Be(new HubError(PresentationErrorCodes.RateLimitExceeded, "Too many requests."));
     }
 
     [Fact]

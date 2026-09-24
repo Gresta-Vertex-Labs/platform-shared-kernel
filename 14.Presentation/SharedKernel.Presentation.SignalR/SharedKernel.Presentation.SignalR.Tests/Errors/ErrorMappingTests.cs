@@ -15,8 +15,9 @@ using Xunit;
 namespace SharedKernel.Presentation.SignalR.Tests.Errors;
 
 /// <summary>
-/// Design D12: every error of a hub method reaches the client as a HubException "{code}: {client message}", with the
-/// same localization and server-error redaction as an HTTP problem response, over a live connection.
+/// Design D12: every error of a hub method becomes a HubException "{code}: {client message}", with the same
+/// localization and server-error redaction as an HTTP problem response, over a live connection. The client receives
+/// it behind SignalR's own sentence and reads it back with <see cref="HubErrorMessage.TryParse"/> (R34).
 /// </summary>
 public sealed class ErrorMappingTests
 {
@@ -32,9 +33,9 @@ public sealed class ErrorMappingTests
         await using var app = await StartAsync();
         await using var connection = await app.ConnectAsync(HubPaths.Errors);
 
-        var message = await connection.InvokeExpectingErrorAsync(nameof(ErrorsHub.ThrowNotFound));
+        var error = await connection.InvokeExpectingErrorAsync(nameof(ErrorsHub.ThrowNotFound));
 
-        message.Should().Be("order.not_found: Order 42 was not found.");
+        error.Should().Be(new HubError("order.not_found", "Order 42 was not found."));
     }
 
     [Fact]
@@ -43,10 +44,11 @@ public sealed class ErrorMappingTests
         await using var app = await StartAsync();
         await using var connection = await app.ConnectAsync(HubPaths.Errors);
 
-        var message = await connection.InvokeExpectingErrorAsync(nameof(ErrorsHub.ThrowUnavailable));
+        var failure = await connection.InvokeExpectingFailureAsync(nameof(ErrorsHub.ThrowUnavailable));
 
-        message.Should().Be($"search.unreachable: {GenericUnavailable}");
-        message.Should().NotContain("search.internal");
+        SignalRTestHost.ReadCodedError(failure, nameof(ErrorsHub.ThrowUnavailable))
+            .Should().Be(new HubError("search.unreachable", GenericUnavailable));
+        failure.Message.Should().NotContain("search.internal");
     }
 
     [Fact]
@@ -55,9 +57,9 @@ public sealed class ErrorMappingTests
         await using var app = await StartAsync(SignalRTestHost.Development);
         await using var connection = await app.ConnectAsync(HubPaths.Errors);
 
-        var message = await connection.InvokeExpectingErrorAsync(nameof(ErrorsHub.ThrowUnavailable));
+        var error = await connection.InvokeExpectingErrorAsync(nameof(ErrorsHub.ThrowUnavailable));
 
-        message.Should().Be($"search.unreachable: {HubMessages.InternalDetail}");
+        error.Should().Be(new HubError("search.unreachable", HubMessages.InternalDetail));
     }
 
     [Fact]
@@ -66,10 +68,11 @@ public sealed class ErrorMappingTests
         await using var app = await StartAsync();
         await using var connection = await app.ConnectAsync(HubPaths.Errors);
 
-        var message = await connection.InvokeExpectingErrorAsync(nameof(ErrorsHub.ThrowUnknown));
+        var failure = await connection.InvokeExpectingFailureAsync(nameof(ErrorsHub.ThrowUnknown));
 
-        message.Should().Be($"{ErrorCodes.Unexpected.Default}: {GenericUnexpected}");
-        message.Should().NotContain("db.internal").And.NotContain("secret");
+        SignalRTestHost.ReadCodedError(failure, nameof(ErrorsHub.ThrowUnknown))
+            .Should().Be(new HubError(ErrorCodes.Unexpected.Default, GenericUnexpected));
+        failure.Message.Should().NotContain("db.internal").And.NotContain("secret");
     }
 
     [Fact]
@@ -78,20 +81,21 @@ public sealed class ErrorMappingTests
         await using var app = await StartAsync(SignalRTestHost.Development);
         await using var connection = await app.ConnectAsync(HubPaths.Errors);
 
-        var message = await connection.InvokeExpectingErrorAsync(nameof(ErrorsHub.ThrowUnknown));
+        var error = await connection.InvokeExpectingErrorAsync(nameof(ErrorsHub.ThrowUnknown));
 
-        message.Should().Be($"{ErrorCodes.Unexpected.Default}: {HubMessages.Secret}");
+        error.Should().Be(new HubError(ErrorCodes.Unexpected.Default, HubMessages.Secret));
     }
 
     [Fact]
-    public async Task HubException_ThrownByTheHub_PassesUnchanged()
+    public async Task HubException_ThrownByTheHub_PassesUnchanged_AndHasNoCode()
     {
         await using var app = await StartAsync();
         await using var connection = await app.ConnectAsync(HubPaths.Errors);
 
-        var message = await connection.InvokeExpectingErrorAsync(nameof(ErrorsHub.ThrowHubException));
+        var failure = await connection.InvokeExpectingFailureAsync(nameof(ErrorsHub.ThrowHubException));
 
-        message.Should().Be("kept exactly as thrown");
+        failure.Message.Should().Be(SignalRTestHost.InvocationFailure(nameof(ErrorsHub.ThrowHubException), "kept exactly as thrown"));
+        HubErrorMessage.TryParse(failure.Message, out _, out _).Should().BeFalse();
     }
 
     [Fact]
@@ -100,9 +104,9 @@ public sealed class ErrorMappingTests
         await using var app = await StartAsync();
         await using var connection = await app.ConnectAsync(HubPaths.Errors);
 
-        var message = await connection.InvokeExpectingErrorAsync(nameof(ErrorsHub.ThrowValidation));
+        var error = await connection.InvokeExpectingErrorAsync(nameof(ErrorsHub.ThrowValidation));
 
-        message.Should().Be($"{ErrorCodes.Validation.Failed}: 2 validation errors occurred.");
+        error.Should().Be(new HubError(ErrorCodes.Validation.Failed, "2 validation errors occurred."));
     }
 
     [Fact]
@@ -111,9 +115,9 @@ public sealed class ErrorMappingTests
         await using var app = await StartAsync();
         await using var connection = await app.ConnectAsync(HubPaths.Errors);
 
-        var message = await connection.InvokeExpectingErrorAsync(nameof(ErrorsHub.ThrowSingleValidation));
+        var error = await connection.InvokeExpectingErrorAsync(nameof(ErrorsHub.ThrowSingleValidation));
 
-        message.Should().Be("name.required: Name is required.");
+        error.Should().Be(new HubError("name.required", "Name is required."));
     }
 
     [Fact]
@@ -152,9 +156,9 @@ public sealed class ErrorMappingTests
             HubPaths.Errors,
             new Dictionary<string, string> { [HeaderNames.AcceptLanguage] = "tr-TR" });
 
-        var message = await connection.InvokeExpectingErrorAsync(nameof(ErrorsHub.ThrowNotFound));
+        var error = await connection.InvokeExpectingErrorAsync(nameof(ErrorsHub.ThrowNotFound));
 
-        message.Should().Be("order.not_found: 42 numaralı sipariş bulunamadı.");
+        error.Should().Be(new HubError("order.not_found", "42 numaralı sipariş bulunamadı."));
     }
 
     [Fact]
@@ -165,9 +169,9 @@ public sealed class ErrorMappingTests
             HubPaths.Errors,
             new Dictionary<string, string> { [HeaderNames.AcceptLanguage] = "en-US" });
 
-        var message = await connection.InvokeExpectingErrorAsync(nameof(ErrorsHub.ThrowNotFound));
+        var error = await connection.InvokeExpectingErrorAsync(nameof(ErrorsHub.ThrowNotFound));
 
-        message.Should().Be("order.not_found: Order 42 was not found.");
+        error.Should().Be(new HubError("order.not_found", "Order 42 was not found."));
     }
 
     [Fact]

@@ -42,9 +42,9 @@ public sealed class ResultHubMethodTests : IAsyncLifetime
     [Fact]
     public async Task FailedResult_ReachesTheClient_AsItsCodeAndMessage()
     {
-        var message = await _connection.InvokeExpectingErrorAsync(nameof(ResultsHub.Fail));
+        var error = await _connection.InvokeExpectingErrorAsync(nameof(ResultsHub.Fail));
 
-        message.Should().Be("order.already_paid: The order is already paid.");
+        error.Should().Be(new HubError("order.already_paid", "The order is already paid."));
     }
 
     [Fact]
@@ -78,25 +78,25 @@ public sealed class ResultHubMethodTests : IAsyncLifetime
     [Fact]
     public async Task FailedResultOfValueType_ReachesTheClient_AsItsCodeAndMessage()
     {
-        var message = await _connection.InvokeExpectingErrorAsync(nameof(ResultsHub.NumberNotFound));
+        var error = await _connection.InvokeExpectingErrorAsync(nameof(ResultsHub.NumberNotFound));
 
-        message.Should().Be("order.not_found: Order 42 was not found.");
+        error.Should().Be(new HubError("order.not_found", "Order 42 was not found."));
     }
 
     [Fact]
     public async Task FailedResultOfServerErrorType_IsRedactedOutsideDevelopment()
     {
-        var message = await _connection.InvokeExpectingErrorAsync(nameof(ResultsHub.Outage));
+        var error = await _connection.InvokeExpectingErrorAsync(nameof(ResultsHub.Outage));
 
-        message.Should().Be("search.unreachable: The service is temporarily unavailable. Try again later.");
+        error.Should().Be(new HubError("search.unreachable", "The service is temporarily unavailable. Try again later."));
     }
 
     [Fact]
     public async Task UninitializedResult_IsAnUnexpectedError()
     {
-        var message = await _connection.InvokeExpectingErrorAsync(nameof(ResultsHub.Uninitialized));
+        var error = await _connection.InvokeExpectingErrorAsync(nameof(ResultsHub.Uninitialized));
 
-        message.Should().Be($"{ErrorCodes.Unexpected.Default}: An unexpected error occurred.");
+        error.Should().Be(new HubError(ErrorCodes.Unexpected.Default, "An unexpected error occurred."));
     }
 
     [Fact]
@@ -119,5 +119,17 @@ public sealed class ResultHubMethodTests : IAsyncLifetime
         number.Should().Be(1);
         amount.Should().Be(2.5m);
         error!.Code.Should().Be("clock.timeout");
+    }
+
+    [Fact]
+    public void StreamTest_MatchesWhatSignalRStreams_AsyncEnumerablesAndChannelReaders()
+    {
+        HubMethodResult.IsStream(StreamsHub.Numbers()).Should().BeTrue("an async iterator implements IAsyncEnumerable<T>");
+        HubMethodResult.IsStream(System.Threading.Channels.Channel.CreateUnbounded<int>().Reader)
+            .Should().BeTrue("a channel's reader derives from ChannelReader<T>");
+
+        HubMethodResult.IsStream(new List<int> { 1 }).Should().BeFalse("SignalR sends a list as one value");
+        HubMethodResult.IsStream("text").Should().BeFalse();
+        HubMethodResult.IsStream(null).Should().BeFalse();
     }
 }
