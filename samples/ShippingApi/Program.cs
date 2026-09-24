@@ -28,7 +28,7 @@ builder.Services.AddSingleton<FaultLog>();
 builder.Services.AddScoped<IRequestContext, HeaderRequestContext>();
 
 // 05.Application — MediatR with the handlers of this assembly (Features/) and the always-on behaviors (tracing,
-// logging, metrics, validation). The endpoints send commands and queries; the handlers publish, send and schedule.
+// logging, metrics, authorization, validation). The endpoints send commands and queries; the handlers publish, send and schedule.
 builder.Services.AddSharedKernelApplication(typeof(Program).Assembly);
 
 // The idempotency store WithIdempotency() requires. In this process only — see the type's remarks.

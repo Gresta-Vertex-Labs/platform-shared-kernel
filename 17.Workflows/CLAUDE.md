@@ -290,9 +290,10 @@ CommandActivity<TCommand, TResult>     where TCommand : ICommand<TResult>
           success, and ICommandScope.OnCompleted callbacks run before ExecuteAsync returns (a callback
           that throws is logged by the pipeline and never fails the activity). Validation and
           authorization failures come back as a failed Result (Validation/Unauthorized/Forbidden), so
-          WorkflowFailureMapper makes them non-retryable. A worker has no HTTP caller: a service that
-          turns on .WithAuthorization() must register an IRequestContext representing the worker's
-          system identity, or every guarded command fails closed. A retried activity re-sends the
+          WorkflowFailureMapper makes them non-retryable. A worker has no HTTP caller: a service whose
+          commands carry [RequirePermission] must register an IRequestContext representing the worker's
+          system identity (authorization is always on; the host start fails without one), and a
+          permission it lacks fails the command closed. A retried activity re-sends the
           command — a command with side effects outside its unit of work implements IIdempotentRequest
           with a key derived from the workflow id.
 ```

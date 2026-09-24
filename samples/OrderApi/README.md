@@ -11,7 +11,7 @@ actually work for a consumer who only has the published artifacts?
 | Host | `SharedKernel.ServiceDefaults` | `AddServiceDefaults()` — OpenTelemetry and health wiring in one call; `MapDefaultHealthCheckEndpoints()`; the `StartupGate` readiness contract |
 | Presentation | `SharedKernel.Presentation.WebApi` | `AddSharedKernelWebApi()` + `UseSharedKernelWebApi()` — the whole HTTP boundary in two calls; `Result<T>` → typed results with `ToCreated()`/`ToOk()`; RFC 9457 error bodies on every path |
 | Presentation | `SharedKernel.Presentation.OpenApi` | `AddSharedKernelOpenApi()` + `MapSharedKernelOpenApi()` — a versioned API, one OpenAPI 3.1 document per version and a Scalar reference, in Development only |
-| Application | `SharedKernel.Application` | `AddSharedKernelApplication(typeof(Program).Assembly)` — one call registers MediatR with the handlers and validators of the assembly and the always-on behaviors (tracing, logging, metrics, validation); `ICommand<T>`/`IQuery<T>` handlers returning `Result<T>`; a FluentValidation validator whose failures come back as a `Result`, not an exception |
+| Application | `SharedKernel.Application` | `AddSharedKernelApplication(typeof(Program).Assembly)` — one call registers MediatR with the handlers and validators of the assembly and the always-on behaviors (tracing, logging, metrics, authorization, validation); `ICommand<T>`/`IQuery<T>` handlers returning `Result<T>`; a FluentValidation validator whose failures come back as a `Result`, not an exception |
 | Domain | `SharedKernel.Domain` | `AggregateRoot<TId>`, `StronglyTypedId`, `ValueObject`, a domain event |
 | Core | `SharedKernel.Primitives` | `Result<T>`, `Error`, `IClock` |
 
@@ -110,8 +110,8 @@ platform-wide.
 No database (`IOrderRepository` is an in-memory dictionary), no cache, no messaging, no auth —
 so the OpenAPI document declares no security scheme (`Bearer = false`). Each would pull in
 infrastructure and obscure the composition. For the same reason the pipeline keeps to the
-always-on behaviors: `WithAuthorization()`, `WithIdempotency()`, `WithTransactions()`,
-`WithAuditing()` and `WithCaching()` each need a seam (`IRequestContext`; `IRequestIdempotencyStore`
-and `IRequestContext`, since keys are reserved per tenant and caller; `IUnitOfWork`;
+always-on behaviors, and no use case declares `[RequirePermission]`, so the always-on authorization needs no
+`IRequestContext`. `WithIdempotency()`, `WithTransactions()`, `WithAuditing()` and `WithCaching()` each need a seam
+(`IRequestIdempotencyStore` and `IRequestContext`, since keys are reserved per tenant and caller; `IUnitOfWork`;
 `IAuditTrailWriter`; `ICacheService`), and the host refuses to start when one is missing. A real service swaps
 `InMemoryOrderRepository` for `SharedKernel.Persistence.EfCore`'s `EfRepository<Order, OrderId>`.

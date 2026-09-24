@@ -17,9 +17,10 @@ builder.AddServiceDefaults();
 builder.Services.AddSingleton<IClock, SystemClock>();
 
 // 05.Application — one call: MediatR with the handlers and FluentValidation validators of this assembly, the
-// domain-event dispatcher, and the always-on behaviors (tracing, logging, metrics, validation) in the fixed pipeline
-// order. The behaviors that need an infrastructure seam (WithAuthorization over IRequestContext, WithIdempotency over
-// IRequestIdempotencyStore and IRequestContext, WithTransactions over IUnitOfWork, WithAuditing over IAuditTrailWriter,
+// domain-event dispatcher, and the always-on behaviors (tracing, logging, metrics, authorization, validation) in the
+// fixed pipeline order. Authorization needs an IRequestContext only when a use case declares [RequirePermission]; none
+// here does. The behaviors that need an infrastructure seam (WithIdempotency over IRequestIdempotencyStore and
+// IRequestContext, WithTransactions over IUnitOfWork, WithAuditing over IAuditTrailWriter,
 // WithCaching from SharedKernel.Application.Caching) are explicit opt-ins; a missing seam fails the host start. This
 // API authenticates nobody, so it opts into none of them.
 builder.Services.AddSharedKernelApplication(typeof(Program).Assembly);

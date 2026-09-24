@@ -17,7 +17,7 @@ public static class ApplicationServiceCollectionExtensions
 {
     /// <summary>
     /// Registers the application layer with the always-on behaviors only (tracing, logging, metrics,
-    /// validation).
+    /// authorization, validation).
     /// </summary>
     /// <param name="services">The service collection to register against.</param>
     /// <param name="assemblies">
@@ -36,7 +36,7 @@ public static class ApplicationServiceCollectionExtensions
     /// </summary>
     /// <param name="services">The service collection to register against.</param>
     /// <param name="assembly">The assembly holding the service's handlers and FluentValidation validators.</param>
-    /// <param name="configure">Chooses the opt-in behaviors: <c>app => app.WithAuthorization().WithTransactions()</c>.</param>
+    /// <param name="configure">Chooses the opt-in behaviors: <c>app => app.WithTransactions().WithAuditing()</c>.</param>
     /// <returns>The same <see cref="IServiceCollection"/>, for chaining.</returns>
     /// <inheritdoc cref="AddSharedKernelApplication(IServiceCollection, Assembly[], Action{ApplicationPipelineBuilder})" path="/exception"/>
     public static IServiceCollection AddSharedKernelApplication(
@@ -56,7 +56,7 @@ public static class ApplicationServiceCollectionExtensions
     /// <param name="assemblies">
     /// The assemblies holding the service's handlers and FluentValidation validators; at least one.
     /// </param>
-    /// <param name="configure">Chooses the opt-in behaviors: <c>app => app.WithAuthorization().WithTransactions()</c>.</param>
+    /// <param name="configure">Chooses the opt-in behaviors: <c>app => app.WithTransactions().WithAuditing()</c>.</param>
     /// <returns>The same <see cref="IServiceCollection"/>, for chaining.</returns>
     /// <exception cref="ArgumentException"><paramref name="assemblies"/> is empty or contains <see langword="null"/>.</exception>
     /// <exception cref="InvalidOperationException">
@@ -67,11 +67,18 @@ public static class ApplicationServiceCollectionExtensions
     /// Always registers: MediatR with the handlers of <paramref name="assemblies"/>; their
     /// FluentValidation validators (scoped, public and internal); the domain-event bridge
     /// (<see cref="IDomainEventDispatcher"/> over MediatR); <see cref="ICommandScope"/>; and the
-    /// tracing, logging, metrics and validation behaviors. Everything else is opted into on the
-    /// builder, and lands in the canonical order whatever order the calls are made in.
+    /// tracing, logging, metrics, authorization and validation behaviors. Everything else is opted
+    /// into on the builder, and lands in the canonical order whatever order the calls are made in.
     /// </para>
     /// <para>
-    /// A service an opted-in behavior needs — <c>IRequestContext</c>, <c>IUnitOfWork</c>, … — is
+    /// Authorization cannot be switched off: every request carrying
+    /// <see cref="RequirePermissionAttribute"/> is checked against <c>IRequestContext</c>, on every
+    /// path. When a request type of <paramref name="assemblies"/> carries the attribute, the host
+    /// start demands an <c>IRequestContext</c> (naming the request types); a service that declares no
+    /// permission needs none.
+    /// </para>
+    /// <para>
+    /// A service a behavior needs — <c>IRequestContext</c>, <c>IUnitOfWork</c>, … — is
     /// checked when the host starts, not here, so it may be registered before or after this call. A
     /// missing one fails the start (<see cref="Microsoft.Extensions.Options.OptionsValidationException"/>)
     /// with one message naming every missing service.
@@ -123,6 +130,7 @@ public static class ApplicationServiceCollectionExtensions
 
         services.AddScoped<IDomainEventDispatcher, MediatRDomainEventDispatcher>();
 
+        builder.RequireRequestContextForDeclaredPermissions(distinct);
         builder.Register();
         return services;
     }

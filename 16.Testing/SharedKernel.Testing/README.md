@@ -84,7 +84,7 @@ using var harness = new ApplicationPipelineTestHarness();
 
 harness.Services.AddSingleton<IRequestContext>(new FakeRequestContext { Permissions = ["orders.place"] });
 harness.Services.AddScoped<IUnitOfWork, FakeUnitOfWork>();
-harness.Configure(app => app.WithAuthorization().WithTransactions());
+harness.Configure(app => app.WithTransactions());   // authorization is always on
 harness.Build<PlaceOrderCommand>();
 
 var result = await harness.SendAsync(new PlaceOrderCommand("ada", 10m));

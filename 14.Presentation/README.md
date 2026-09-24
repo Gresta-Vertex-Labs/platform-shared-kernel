@@ -36,8 +36,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOidcAuthentication(builder.Configuration);    // who is calling (12.Security)
 builder.Services.AddSharedKernelRequestContext();                 // the caller, for the use cases (13.ServiceDefaults)
-builder.Services.AddSharedKernelApplication(typeof(Program).Assembly, app => app
-    .WithAuthorization());                                        // [RequirePermission] on commands and queries (05)
+builder.Services.AddSharedKernelApplication(typeof(Program).Assembly);  // handlers + pipeline; [RequirePermission] always enforced (05)
 builder.AddSharedKernelWebApi();                                  // the HTTP boundary
 
 var app = builder.Build();

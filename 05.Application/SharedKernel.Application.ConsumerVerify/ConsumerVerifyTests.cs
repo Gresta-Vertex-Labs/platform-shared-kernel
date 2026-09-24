@@ -255,7 +255,6 @@ public sealed class ConsumerVerifyTests
         // One call: handlers and the validator are found in this assembly. The seams follow it,
         // because they are checked when the host starts, not here.
         services.AddSharedKernelApplication(typeof(PlaceOrderHandler).Assembly, app => app
-            .WithAuthorization()
             .WithIdempotency()
             .WithTransactions());
         services.AddSingleton(journal);

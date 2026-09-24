@@ -37,7 +37,6 @@ Owner decisions, 2026-09-24. Nothing is in production; breaking changes are expe
 
 ```csharp
 builder.Services.AddSharedKernelApplication(typeof(Program).Assembly, app => app
-    .WithAuthorization()      // needs IRequestContext
     .WithIdempotency()        // needs IRequestIdempotencyStore + IRequestContext
     .WithTransactions()       // needs IUnitOfWork
     .WithAuditing()           // needs IAuditTrailWriter
@@ -47,7 +46,11 @@ builder.Services.AddSharedKernelApplication(typeof(Program).Assembly, app => app
 
 - Always registered: MediatR with the handlers of the given assemblies (`params Assembly[]`), the FluentValidation
   validators of the same assemblies (FluentValidation's own `AssemblyScanner`; no new package), the domain-event
-  bridge, `ICommandScope`, and the Tracing, Logging, Metrics and Validation behaviors.
+  bridge, `ICommandScope`, and the Tracing, Logging, Metrics, Authorization and Validation behaviors.
+- Authorization is always on (security fix, 2026-09-24, amending the first draft's opt-in `.WithAuthorization()`): a
+  service that marked its use cases and forgot the call ran them unchecked. The behavior resolves `IRequestContext`
+  only for a `[RequirePermission]` request and throws when none is registered; a marked request type in a scanned
+  assembly adds `IRequestContext` to the start-time check.
 - The `With*` behaviors are opt-in, as before, and always land in the canonical order.
 - A missing seam is reported at host start (options `ValidateOnStart`), naming every missing service at once. The
   seam may be registered before or after `AddSharedKernelApplication`; nothing throws at registration time.

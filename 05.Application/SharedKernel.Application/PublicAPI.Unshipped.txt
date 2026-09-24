@@ -6,7 +6,6 @@ SharedKernel.Application.ApplicationLoggingOptions.SlowRequestThreshold.set -> v
 SharedKernel.Application.ApplicationPipelineBuilder
 SharedKernel.Application.ApplicationPipelineBuilder.Services.get -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 SharedKernel.Application.ApplicationPipelineBuilder.WithAuditing() -> SharedKernel.Application.ApplicationPipelineBuilder!
-SharedKernel.Application.ApplicationPipelineBuilder.WithAuthorization() -> SharedKernel.Application.ApplicationPipelineBuilder!
 SharedKernel.Application.ApplicationPipelineBuilder.WithBehavior(System.Type! openGenericBehaviorType, SharedKernel.Application.PipelineStage stage, params System.Type![]! requiredServices) -> SharedKernel.Application.ApplicationPipelineBuilder!
 SharedKernel.Application.ApplicationPipelineBuilder.WithIdempotency() -> SharedKernel.Application.ApplicationPipelineBuilder!
 SharedKernel.Application.ApplicationPipelineBuilder.WithTransactions() -> SharedKernel.Application.ApplicationPipelineBuilder!

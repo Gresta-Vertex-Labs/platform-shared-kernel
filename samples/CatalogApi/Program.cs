@@ -112,7 +112,7 @@ builder.Services
     .AddSearchReadinessCheck(Catalog.OrderLinesRead, providerKey: SearchWellKnown.ElasticSearchProviderName);
 
 // 05.Application — MediatR with the handlers of this assembly (Features/) and the always-on behaviors (tracing,
-// logging, metrics, validation). The endpoints send commands and queries; only the handlers touch the engines.
+// logging, metrics, authorization, validation). The endpoints send commands and queries; only the handlers touch the engines.
 builder.Services.AddSharedKernelApplication(typeof(Program).Assembly);
 
 // 14.Presentation — the HTTP boundary in one call (SharedKernel:Presentation:WebApi). Every search failure is a

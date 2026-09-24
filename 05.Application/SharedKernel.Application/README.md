@@ -35,12 +35,11 @@ dotnet add package SharedKernel.Application
 ```csharp
 using SharedKernel.Application;
 
-// The always-on behaviors only: tracing, logging, metrics, validation.
+// The always-on behaviors only: tracing, logging, metrics, authorization, validation.
 builder.Services.AddSharedKernelApplication(typeof(Program).Assembly);
 
 // Or with opt-ins (one call per service collection; pass every assembly here):
 builder.Services.AddSharedKernelApplication(typeof(Program).Assembly, app => app
-    .WithAuthorization()
     .WithIdempotency()
     .WithTransactions()
     .WithAuditing());
@@ -53,10 +52,13 @@ builder.Services.AddSharedKernelApplication(typeof(Program).Assembly, app => app
 | `IDomainEventDispatcher` | the domain-event bridge to MediatR notifications |
 | `ICommandScope` | injectable by any handler |
 | Tracing, Logging, Metrics, Validation | the four behaviors that need nothing else |
+| Authorization | enforces `[RequirePermission]`; needs `IRequestContext` only when a request declares a permission |
 
 An overload takes `Assembly[]` for handlers spread over several assemblies. The seams the opt-ins need are checked when
 the host starts (`ValidateOnStart`), so they may be registered before or after this call; a missing one fails the start
-with an `OptionsValidationException` naming every missing service and the `With…` call that needs it. A second call
+with an `OptionsValidationException` naming every missing service and the `With…` call that needs it. When a request
+type of the assemblies you pass carries `[RequirePermission]`, `IRequestContext` is one of those services: the message
+names the request types and `AddSharedKernelRequestContext()`. A second call
 throws `InvalidOperationException`: it would register every behavior twice.
 
 ## Commands and queries
@@ -165,9 +167,10 @@ One measurement per request on the histogram `sharedkernel.application.request.d
 `SharedKernel.Application`: tags `request.type`, `request.kind`, `outcome` (`success`, `failure`, `exception`) and
 `error.type` when not successful. Recorded in a `finally`, so a throw is measured too.
 
-### Authorization (`WithAuthorization()`)
+### Authorization (always on)
 
-Checks `[RequirePermission]` against `IRequestContext`:
+Checks `[RequirePermission]` against `IRequestContext`. There is nothing to opt into, so a marked request can never run
+unchecked:
 
 ```csharp
 [RequirePermission("invoices.pay", "invoices.admin")]   // either one
@@ -177,7 +180,8 @@ public sealed record PayInvoice(Guid InvoiceId, decimal Amount) : ICommand;
 
 | Situation | Result |
 | --- | --- |
-| No `[RequirePermission]` on the request | not checked |
+| No `[RequirePermission]` on the request | not checked; `IRequestContext` is not resolved, so none needs to be registered |
+| `[RequirePermission]` and no `IRequestContext` registered | the host start fails if the request's assembly was scanned; otherwise the send throws `InvalidOperationException` naming the request and `AddSharedKernelRequestContext()`, and the handler never runs |
 | `IRequestContext.IsAuthenticated` is false | `Error.Unauthorized("unauthorized.default")`: 401 at the HTTP edge |
 | One attribute none of whose values the caller holds | `Error.Forbidden("forbidden.insufficient_permission")`: 403; the message never names the permission |
 | Every attribute satisfied | the request continues |
@@ -320,7 +324,6 @@ after behaviors added to it earlier:
 
 ```csharp
 builder.Services.AddSharedKernelApplication(typeof(Program).Assembly, app => app
-    .WithAuthorization()
     .WithBehavior(typeof(FeatureGateBehavior<,>), PipelineStage.Authorization, typeof(IFeatureGate)));
 ```
 
@@ -352,8 +355,9 @@ its `Services` property, as `SharedKernel.Application.Caching`'s `WithCaching()`
 
 ## Pitfalls
 
-- **`[RequirePermission]` without `WithAuthorization()`.** Nothing enforces the attribute then: the request runs for
-  every caller. Every service whose use cases declare permissions opts into authorization.
+- **`[RequirePermission]` without an `IRequestContext`.** The host start fails, naming the request types. A request type
+  from an assembly not passed to `AddSharedKernelApplication` escapes that check, but its send throws instead of running
+  unchecked. Register `AddSharedKernelRequestContext()` (or a `SystemRequestContext` in a worker).
 - **A permission repeated on the endpoint.** `[RequireEndpointPermission]` on an endpoint that sends a command
   duplicates the command's `[RequirePermission]` and drifts from it; keep the permission on the use case only.
 - **A response type that is not `Result`/`Result<T>`** on a request with `[RequirePermission]` or `IIdempotentRequest`
@@ -371,7 +375,7 @@ A handler is a class returning a `Result`: test it directly. To test the compose
 
 ```csharp
 using var harness = new ApplicationPipelineTestHarness()
-    .Configure(app => app.WithAuthorization().WithTransactions());
+    .Configure(app => app.WithTransactions());
 
 var unitOfWork = new FakeUnitOfWork();
 harness.Services.AddSingleton<IRequestContext>(new FakeRequestContext { Permissions = ["invoices.pay"] });

@@ -128,7 +128,6 @@ public sealed class PipelineOrderTests
             .WithBehavior(typeof(QueryMarker<,>), PipelineStage.Query)
             .WithIdempotency()
             .WithBehavior(typeof(ValidationMarker<,>), PipelineStage.Validation)
-            .WithAuthorization()
             .WithBehavior(typeof(AuthorizationMarker<,>), PipelineStage.Authorization)
             .WithBehavior(typeof(ObservabilityMarker<,>), PipelineStage.Observability));
 
@@ -183,7 +182,7 @@ public sealed class PipelineOrderTests
         services.AddSingleton(sequence);
         services.AddSingleton<IUnitOfWork>(new FakeUnitOfWork(sequence));
         services.AddSingleton<IRequestIdempotencyStore>(new FakeIdempotencyStore(sequence));
-        services.AddSingleton<IRequestContext>(new FakeRequestContext(isAuthenticated: true));
+        services.AddSingleton<IRequestContext>(new FakeRequestContext(isAuthenticated: true, new HashSet<string> { "test.permission" }));
 
         // Deliberately no services.AddLogging() call anywhere above — the registration call must add it itself.
         services.AddSharedKernelApplication(typeof(PipelineOrderTests).Assembly, app => app
@@ -198,5 +197,54 @@ public sealed class PipelineOrderTests
         result.IsSuccess.Should().BeTrue();
         sequence.Should().Contain("idempotency.complete");
         sequence.Should().Contain("transaction.commit");
+    }
+
+    private static List<Type> RegisteredBehaviors(IServiceCollection services)
+        => services
+            .Where(descriptor => descriptor.ServiceType == typeof(IPipelineBehavior<,>))
+            .Select(descriptor => descriptor.ImplementationType!)
+            .ToList();
+
+    /// <summary>
+    /// Authorization is always on: with no opt-in at all, it sits between the observability
+    /// behaviors and validation, so a <see cref="RequirePermissionAttribute"/> can never go
+    /// unenforced because a registration call was forgotten.
+    /// </summary>
+    [Fact]
+    public void Register_NoOptIns_AuthorizationIsAlwaysRegisteredBetweenObservabilityAndValidation()
+    {
+        var services = new ServiceCollection();
+        services.AddSharedKernelApplication(typeof(PipelineOrderTests).Assembly);
+
+        RegisteredBehaviors(services).Should().Equal(
+            typeof(TracingBehavior<,>),
+            typeof(LoggingBehavior<,>),
+            typeof(MetricsBehavior<,>),
+            typeof(AuthorizationBehavior<,>),
+            typeof(ValidationBehavior<,>));
+    }
+
+    [Fact]
+    public void Register_EveryOptIn_AuthorizationKeepsItsCanonicalPositionOnce()
+    {
+        var services = new ServiceCollection();
+        services.AddSharedKernelApplication(typeof(PipelineOrderTests).Assembly, app => app
+            .WithAuditing()
+            .WithTransactions()
+            .WithIdempotency()
+            .WithBehavior(typeof(AuthorizationMarker<,>), PipelineStage.Authorization));
+
+        RegisteredBehaviors(services).Should().Equal(
+            typeof(TracingBehavior<,>),
+            typeof(LoggingBehavior<,>),
+            typeof(MetricsBehavior<,>),
+            typeof(AuthorizationBehavior<,>),
+            typeof(AuthorizationMarker<,>),
+            typeof(ValidationBehavior<,>),
+            typeof(CommandScopeBehavior<,>),
+            typeof(IdempotencyBehavior<,>),
+            typeof(AuditingBehavior<,>),
+            typeof(TransactionBehavior<,>),
+            typeof(AuditingCommitBehavior<,>));
     }
 }

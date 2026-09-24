@@ -23,8 +23,8 @@ public static class RequestContextServiceCollectionExtensions
     /// <see cref="IUserContext"/> registration (e.g. from <c>AddOidcAuthentication(...)</c>).
     /// </para>
     /// <para>
-    /// Satisfies the host-start check of <c>AddSharedKernelApplication</c>'s <c>WithAuthorization()</c> and
-    /// <c>WithIdempotency()</c>; it may be called before or after that registration.
+    /// Satisfies the host-start checks of <c>AddSharedKernelApplication</c> for <c>[RequirePermission]</c> use
+    /// cases and <c>WithIdempotency()</c>; it may be called before or after that registration.
     /// </para>
     /// </remarks>
     public static IServiceCollection AddSharedKernelRequestContext(this IServiceCollection services)

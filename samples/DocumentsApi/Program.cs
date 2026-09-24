@@ -30,7 +30,7 @@ builder.Services.AddHealthChecks()
     .AddStorageReadinessCheck(Stores.Archive, "storage-archive");
 
 // 05.Application — MediatR with the handlers of this assembly (Features/) and the always-on behaviors (tracing,
-// logging, metrics, validation). The endpoints send commands and queries; only the handlers touch the stores.
+// logging, metrics, authorization, validation). The endpoints send commands and queries; only the handlers touch the stores.
 builder.Services.AddSharedKernelApplication(typeof(Program).Assembly);
 
 // 14.Presentation — the HTTP boundary in one call (SharedKernel:Presentation:WebApi). Every storage.* failure becomes

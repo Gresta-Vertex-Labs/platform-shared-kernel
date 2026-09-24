@@ -13,10 +13,12 @@ namespace SharedKernel.Application;
 /// <c>SharedKernel.Presentation.WebApi</c>.
 /// </para>
 /// <para>
-/// Enforced by the pipeline when <c>WithAuthorization()</c> is enabled, on every path a request is
+/// Always enforced by the pipeline <c>AddSharedKernelApplication</c> registers, on every path a request is
 /// sent from (HTTP, messages, jobs, workflows): an unauthenticated caller gets
 /// <c>Error.Unauthorized</c>, a caller without the permission <c>Error.Forbidden</c> whose message
-/// names no permission. A request without this attribute is not checked. The request must return
+/// names no permission. The caller is read from a registered <c>IRequestContext</c>; when a scanned
+/// request carries this attribute and none is registered, the host start fails. A request without this
+/// attribute is not checked. The request must return
 /// <c>Result</c> or <c>Result&lt;T&gt;</c>, because the denial is returned as a failed result
 /// (<c>SK0040</c> flags any other response type).
 /// </para>

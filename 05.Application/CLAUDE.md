@@ -78,7 +78,7 @@ Registration order is execution order (outermost first). It is fixed in `Applica
 
 ```text
 Observability   Tracing, Logging, Metrics, [custom]
-Authorization   AuthorizationBehavior (WithAuthorization), [custom]
+Authorization   AuthorizationBehavior (always), [custom]
 Validation      ValidationBehavior, [custom]
 Query           [custom — CachingBehavior]
 Command         CommandScopeBehavior (only when a command-stage behavior is on)
@@ -113,9 +113,18 @@ handler
   the codes the HTTP edge answers with; keep them identical.
 - **A request without the attribute is not checked.** There is no "declared nothing" denial any more (the old
   `authorization.no_permissions_declared` belonged to `IAuthorizeRequest`).
-- **Known gap:** nothing detects a request carrying `[RequirePermission]` in a service that never called
-  `WithAuthorization()`; such a request runs unchecked. Documented as a pitfall; a start-time check is a candidate
-  follow-up.
+- **Authorization fails closed and cannot be switched off.** `AuthorizationBehavior` is always registered; there is no
+  `WithAuthorization()` (removed in P-563: a service that marked its commands but forgot the call ran them unchecked).
+  Three layers, keep all three:
+  1. An unmarked request passes without resolving `IRequestContext` (the behavior takes `IServiceProvider` and resolves
+     the context only for a marked request), so a service that declares no permission needs no caller identity.
+  2. At registration, `PermissionRequirementScan` finds the concrete `IBaseRequest` types of the scanned assemblies
+     that carry the attribute (`IsDefined(..., inherit: true)`, the way the behavior reads it; never constructs an
+     attribute; `ReflectionTypeLoadException` → loadable types). Any found → `IRequestContext` joins the start-time
+     seam check, the message naming up to three types (`and N more`) and the fix (`AddSharedKernelRequestContext()`).
+  3. A marked request with no `IRequestContext` at send time (its type lives in an assembly that was not scanned)
+     throws `InvalidOperationException` naming the type and the fix; the handler never runs. A throw, not a `Result`:
+     this is host misconfiguration, not a caller error, and it must surface as a 500.
 - **Edge vs use case.** Permissions go on the use case, with `[RequirePermission]`. `14.Presentation`'s
   `[RequireEndpointPermission]` is only for what sends no command (hubs, gRPC services and methods, endpoints that call
   nothing through `ISender`); its step-up attributes (`RequireFreshAuthentication`, `RequireAuthenticationMethod`) stay
@@ -193,6 +202,7 @@ Every site is cached once per closed type or runtime `Type`:
 | `Shared/FailureResponse.cs` | `TResponse.GetMethod("Failure")` + `CreateDelegate` | a behavior builds a failed `Result`/`Result<T>` knowing only `TResponse` |
 | `Shared/ResponseOutcome.cs` | `TResponse.GetProperty("Error")` + `CreateDelegate` | read the error of any failed response |
 | `Authorization/AuthorizationBehavior.cs` | `GetCustomAttributes<RequirePermissionAttribute>(inherit: true)` in `PermissionRequirements<TRequest>` | the attributes of a request type |
+| `Authorization/AuthorizationBehavior.cs` | `Assembly.GetTypes()` + `IsDefined(typeof(RequirePermissionAttribute), inherit: true)` in `PermissionRequirementScan` | once per registration call: does a scanned request need `IRequestContext` at start |
 | `DomainEvents/MediatRDomainEventDispatcher.cs` | `MakeGenericType` + a compiled `Expression`, in a `ConcurrentDictionary<Type, …>` | the event type is known only at runtime; no `MakeGenericMethod`, so `ReflectionExemptionRegistry` needs no entry |
 | `Idempotency/IdempotencyResponseSerializer.cs` | two `JsonConverter`s and a factory for `Result`/`Result<T>` | `Result` does not round-trip through STJ's default contract |
 | `Extensions/ApplicationPipelineBuilder.cs` | `IsGenericTypeDefinition`, `GetInterfaces()` | validates `WithBehavior`'s type once, at registration |
@@ -262,3 +272,7 @@ Every site is cached once per closed type or runtime `Type`:
   `IAuthorizeRequest`/`PermissionMatch`; the pipeline's 401 is `unauthorized.default`. Behaviors internal in
   `SharedKernel.Application.Pipeline`; type forwarders to `.Abstractions` removed; `IdempotencyErrorCodes` replaced by
   `01.Core`'s `ErrorCodes.Idempotency`. Brain rewritten to rules; the previous one archived. Republish needed (breaking)
+- [2026-09-24] **P-563 security fix — authorization always on.** `WithAuthorization()` removed; `AuthorizationBehavior`
+  is always registered, resolves `IRequestContext` only for a `[RequirePermission]` request and throws when none is
+  registered; a marked request in a scanned assembly adds `IRequestContext` to the start-time seam check. A service that
+  marked its commands but forgot the opt-in used to run them unchecked.

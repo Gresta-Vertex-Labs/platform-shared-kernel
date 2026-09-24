@@ -17,7 +17,8 @@ namespace SharedKernel.Application;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Tracing, logging, metrics and validation are always on. The <c>With…</c> methods add the rest,
+/// Tracing, logging, metrics, authorization and validation are always on. The <c>With…</c> methods
+/// add the rest,
 /// and every behavior lands in the canonical order (Observability → Authorization → Validation →
 /// Query → Command) whatever order the calls are made in.
 /// </para>
@@ -41,7 +42,6 @@ public sealed class ApplicationPipelineBuilder
 
     private readonly List<PipelineRequirement> _requirements = [];
 
-    private bool _authorization;
     private bool _idempotency;
     private bool _transactions;
     private bool _auditing;
@@ -57,22 +57,6 @@ public sealed class ApplicationPipelineBuilder
     /// options).
     /// </summary>
     public IServiceCollection Services { get; }
-
-    /// <summary>
-    /// Enforces <see cref="RequirePermissionAttribute"/> on every command and query. Needs
-    /// <see cref="IRequestContext"/>.
-    /// </summary>
-    /// <returns>This builder, for chaining.</returns>
-    public ApplicationPipelineBuilder WithAuthorization()
-    {
-        if (!_authorization)
-        {
-            _authorization = true;
-            Require(nameof(WithAuthorization) + "()", typeof(IRequestContext));
-        }
-
-        return this;
-    }
 
     /// <summary>
     /// Deduplicates commands that implement <see cref="IIdempotentRequest"/>, reserving each key per
@@ -213,9 +197,9 @@ public sealed class ApplicationPipelineBuilder
         AddBehavior(typeof(MetricsBehavior<,>));
         AddCustom(PipelineStage.Observability);
 
-        // ---- Authorization stage. ----
-        if (_authorization)
-            AddBehavior(typeof(AuthorizationBehavior<,>));
+        // ---- Authorization stage: always on, so [RequirePermission] can never go unenforced. It
+        // resolves IRequestContext only for a request that declares a permission. ----
+        AddBehavior(typeof(AuthorizationBehavior<,>));
 
         AddCustom(PipelineStage.Authorization);
 
@@ -255,6 +239,18 @@ public sealed class ApplicationPipelineBuilder
         Services.AddSingleton(new PipelineRequirements(_requirements));
         Services.AddSingleton<IValidateOptions<PipelineRequirementsOptions>, PipelineRequirementsValidator>();
         Services.AddOptions<PipelineRequirementsOptions>().ValidateOnStart();
+    }
+
+    /// <summary>
+    /// Demands <see cref="IRequestContext"/> at host start when a request type of
+    /// <paramref name="assemblies"/> declares <see cref="RequirePermissionAttribute"/>.
+    /// </summary>
+    /// <param name="assemblies">The assemblies passed to the registration call.</param>
+    internal void RequireRequestContextForDeclaredPermissions(IReadOnlyList<System.Reflection.Assembly> assemblies)
+    {
+        var marked = PermissionRequirementScan.FindMarkedRequestTypes(assemblies);
+        if (marked.Count > 0)
+            Require(PermissionRequirementScan.Describe(marked), typeof(IRequestContext));
     }
 
     private void Require(string feature, Type service) => _requirements.Add(new PipelineRequirement(feature, service));

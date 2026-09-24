@@ -29,7 +29,7 @@ public sealed class PlaceOrderCommandValidator : AbstractValidator<PlaceOrderCom
 
 /// <summary>
 /// Returns <see cref="Result{T}"/> and never throws for an expected failure. The pipeline
-/// behaviors registered in Program.cs (tracing, logging, metrics, validation) wrap this
+/// behaviors registered in Program.cs (tracing, logging, metrics, authorization, validation) wrap this
 /// automatically — the handler itself stays free of cross-cutting concerns.
 /// </summary>
 public sealed class PlaceOrderHandler(IOrderRepository repository, IClock clock)

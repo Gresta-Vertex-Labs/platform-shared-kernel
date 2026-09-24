@@ -1410,7 +1410,7 @@ FakeRequestIdempotencyStore  (: SharedKernel.Application.Idempotency.IRequestIde
     that digest, never the raw key. .WithIdempotency() also needs an IRequestContext registered.
 ApplicationPipelineTestHarness + AddFakeApplicationBehaviorServices()
     Registers the fakes (FakeUnitOfWork → IUnitOfWork, FakeRequestContext → IRequestContext, ...). The harness takes
-    .Configure(app => app.WithAuthorization()…) — the same ApplicationPipelineBuilder a service passes to
+    .Configure(app => app.WithTransactions()…) — the same ApplicationPipelineBuilder a service passes to
     AddSharedKernelApplication — and .Build<TMarker>() runs the real registration and its host-start seam checks, so a
     consuming service can assert its own command/query composition (P-563; ApplicationBehaviorsBuilder before).
 ```
@@ -3004,7 +3004,7 @@ services.AddSingleton<ITenantCacheKeyProvider>(new FakeTenantCacheKeyProvider("o
 services.AddFakeDomainServices();
 
 // Application seam doubles — one call satisfies AddSharedKernelApplication's host-start seam checks
-// for .WithTransactions()/.WithAuthorization()/.WithIdempotency() (WO-040, redesigned P-544, P-563)
+// for .WithTransactions()/.WithIdempotency() and [RequirePermission] use cases (WO-040, redesigned P-544, P-563)
 services.AddFakeApplicationBehaviorServices();
 
 // Object storage — in-memory stores behind the real store registry, registered like a provider (P-559)

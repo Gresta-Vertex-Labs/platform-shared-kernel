@@ -257,10 +257,10 @@ public sealed class OrderFulfilmentWorkflow : WorkflowBase
   returns. A callback that throws is logged and never fails the activity.
 - **Failures come back as a `Result`.** Validation and authorization failures (`ErrorType.Validation`,
   `Unauthorized`, `Forbidden`) are returned, not thrown, so they become non-retryable Temporal failures.
-- **Authorization needs a system identity.** A worker has no HTTP caller. If the service turns on
-  `.WithAuthorization()`, register `SharedKernel.Application.Context.SystemRequestContext` — naming the
-  worker and listing exactly the permissions its activities need — or every guarded command fails closed
-  with `Error.Unauthorized`.
+- **Authorization needs a system identity.** A worker has no HTTP caller. Authorization is always on, so when the
+  service's commands carry `[RequirePermission]`, register `SharedKernel.Application.Context.SystemRequestContext`
+  — naming the worker and listing exactly the permissions its activities need. Without an `IRequestContext` the host
+  start fails; with one lacking a permission, the guarded command fails closed with `Error.Forbidden`.
 - **Retries re-send the command.** A command with side effects outside its unit of work should
   implement `IIdempotentRequest` with a key derived from the workflow id.
 

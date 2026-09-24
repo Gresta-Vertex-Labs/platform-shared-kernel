@@ -58,10 +58,10 @@ builder.Services.AddSharedKernelDapper(builder.Configuration);
 builder.Services.AddSharedKernelNpgsql(builder.Configuration.GetSection("SharedKernel:Persistence:audit-sealer"), "audit-sealer");
 
 // 05.Application — MediatR with the platform pipeline, in one call: the handlers and validators of this assembly,
-// [RequirePermission] on every command and query, one retry-safe transaction per command, and an audit record —
+// [RequirePermission] on every command and query (always enforced; IRequestContext comes from
+// AddSharedKernelRequestContext() above), one retry-safe transaction per command, and an audit record —
 // Succeeded inside the transaction, Failed after a rollback.
 builder.Services.AddSharedKernelApplication(typeof(Program).Assembly, app => app
-    .WithAuthorization()
     .WithTransactions()
     .WithAuditing());
 

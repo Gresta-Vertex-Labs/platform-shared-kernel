@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using SharedKernel.Application.Context;
 
 namespace SharedKernel.Application.Tests.Logging;
 
@@ -18,6 +19,7 @@ public sealed class ApplicationLoggingOptionsValidationTests
     {
         var services = new ServiceCollection();
         services.AddSharedKernelApplication(typeof(ApplicationLoggingOptionsValidationTests).Assembly);
+        services.AddSingleton<IRequestContext>(AnonymousRequestContext.Instance); // this assembly declares [RequirePermission] requests
         services.Configure<ApplicationLoggingOptions>(o => o.SlowRequestThreshold = TimeSpan.Zero);
 
         using var provider = services.BuildServiceProvider();
@@ -33,6 +35,7 @@ public sealed class ApplicationLoggingOptionsValidationTests
     {
         var services = new ServiceCollection();
         services.AddSharedKernelApplication(typeof(ApplicationLoggingOptionsValidationTests).Assembly);
+        services.AddSingleton<IRequestContext>(AnonymousRequestContext.Instance); // this assembly declares [RequirePermission] requests
         services.Configure<ApplicationLoggingOptions>(o => o.SlowRequestThreshold = TimeSpan.FromSeconds(-1));
 
         using var provider = services.BuildServiceProvider();
@@ -48,6 +51,7 @@ public sealed class ApplicationLoggingOptionsValidationTests
     {
         var services = new ServiceCollection();
         services.AddSharedKernelApplication(typeof(ApplicationLoggingOptionsValidationTests).Assembly);
+        services.AddSingleton<IRequestContext>(AnonymousRequestContext.Instance); // this assembly declares [RequirePermission] requests
 
         using var provider = services.BuildServiceProvider();
         var validator = provider.GetRequiredService<IStartupValidator>();

@@ -36,7 +36,6 @@ public sealed class ApplicationPipelineBuilderTests
         var services = new ServiceCollection();
 
         var act = () => services.AddSharedKernelApplication(TestAssembly, app => app
-            .WithAuthorization()
             .WithIdempotency()
             .WithTransactions()
             .WithAuditing());
@@ -49,7 +48,6 @@ public sealed class ApplicationPipelineBuilderTests
     {
         var services = new ServiceCollection();
         services.AddSharedKernelApplication(TestAssembly, app => app
-            .WithAuthorization()
             .WithIdempotency()
             .WithTransactions()
             .WithAuditing());
@@ -62,7 +60,7 @@ public sealed class ApplicationPipelineBuilderTests
             .And.Contain(typeof(IRequestIdempotencyStore).FullName)
             .And.Contain(typeof(IUnitOfWork).FullName)
             .And.Contain(typeof(IAuditTrailWriter).FullName)
-            .And.Contain("WithAuthorization()")
+            .And.Contain("[RequirePermission] on ")
             .And.Contain("WithIdempotency()")
             .And.Contain("WithTransactions()")
             .And.Contain("WithAuditing()");
@@ -73,7 +71,7 @@ public sealed class ApplicationPipelineBuilderTests
     {
         var services = new ServiceCollection();
         services.AddSingleton<IRequestContext>(AnonymousRequestContext.Instance);
-        services.AddSharedKernelApplication(TestAssembly, app => app.WithAuthorization().WithTransactions());
+        services.AddSharedKernelApplication(TestAssembly, app => app.WithTransactions());
         using var provider = services.BuildServiceProvider();
 
         var act = () => ValidateOnStart(provider);
@@ -87,7 +85,6 @@ public sealed class ApplicationPipelineBuilderTests
     {
         var services = new ServiceCollection();
         services.AddSharedKernelApplication(TestAssembly, app => app
-            .WithAuthorization()
             .WithIdempotency()
             .WithTransactions()
             .WithAuditing());
@@ -113,7 +110,6 @@ public sealed class ApplicationPipelineBuilderTests
         services.AddSingleton<IRequestIdempotencyStore>(new FakeIdempotencyStore());
         services.AddSingleton<IAuditTrailWriter>(new FakeAuditTrailWriter());
         services.AddSharedKernelApplication(TestAssembly, app => app
-            .WithAuthorization()
             .WithIdempotency()
             .WithTransactions()
             .WithAuditing());
@@ -145,6 +141,8 @@ public sealed class ApplicationPipelineBuilderTests
     public void Start_NoOptInBehaviors_Succeeds()
     {
         var services = new ServiceCollection();
+        // This assembly declares [RequirePermission] requests, which always need a caller identity.
+        services.AddSingleton<IRequestContext>(AnonymousRequestContext.Instance);
         services.AddSharedKernelApplication(TestAssembly);
         using var provider = services.BuildServiceProvider();
 
@@ -197,6 +195,7 @@ public sealed class ApplicationPipelineBuilderTests
             typeof(TracingBehavior<,>),
             typeof(LoggingBehavior<,>),
             typeof(MetricsBehavior<,>),
+            typeof(AuthorizationBehavior<,>),
             typeof(ValidationBehavior<,>));
     }
 
@@ -351,6 +350,7 @@ public sealed class ApplicationPipelineBuilderTests
             TestAssembly,
             app => app.WithBehavior(typeof(RequiresMarkerServiceBehavior<,>), PipelineStage.Command, typeof(MarkerService)));
         services.AddSingleton<MarkerService>();
+        services.AddSingleton<IRequestContext>(AnonymousRequestContext.Instance);
         using var provider = services.BuildServiceProvider();
 
         var act = () => ValidateOnStart(provider);

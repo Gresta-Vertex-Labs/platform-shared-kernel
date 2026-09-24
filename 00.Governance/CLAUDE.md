@@ -501,22 +501,21 @@ SK0015  StreamPipelineBehaviorMisregistration
                 is the open generic MediatR.IPipelineBehavior<,> (arity 2) and a second type
                 argument whose resolved ITypeSymbol.AllInterfaces includes an entry whose
                 OriginalDefinition matches MediatR.IStreamPipelineBehavior<,> (arity 2) —
-                found anywhere EXCEPT inside a MethodDeclarationSyntax whose Identifier.Text is
-                exactly "AddStreamingBehaviors". Requires SemanticModel.GetSymbolInfo on both
+                found anywhere; no call site is exempt (P-563 removed the method-name exemption
+                for "AddStreamingBehaviors"). Requires SemanticModel.GetSymbolInfo on both
                 type-argument syntax nodes to resolve interface implementation — the second SK
                 rule in this domain (after SK0011) requiring semantic model resolution.
     Fix       : Register the streaming behavior against MediatR.IStreamPipelineBehavior<,> instead
-                (a service helper method named AddStreamingBehaviors keeps the exemption;
-                SharedKernel.Application ships no streaming behaviors since P-544).
+                (SharedKernel.Application ships no streaming behaviors since P-544).
                 MediatR dispatches IStreamRequest<TResponse> through IStreamPipelineBehavior<,>,
                 never through IPipelineBehavior<,> — a streaming behavior registered against the
                 wrong interface is silently never invoked.
     Suppress  : Per-call-site via #pragma warning disable SK0015 only for a deliberate hybrid
                 unary/streaming behavior type; document why the type intentionally implements
                 both interfaces.
-    Note      : Introduced WO-038 P-235. The self-exemption is method-name-scoped
-                ("AddStreamingBehaviors"), not namespace-scoped — the canonical builder method
-                is the single sanctioned call site for streaming-behavior registration.
+    Note      : Introduced WO-038 P-235. Its method-name exemption ("AddStreamingBehaviors") was
+                removed in P-563: the registration never runs wherever it is made, and the
+                05.Application helper the exemption was for no longer exists.
 
 SK0016  RequestTypeShortNameUsage
     Category  : Design

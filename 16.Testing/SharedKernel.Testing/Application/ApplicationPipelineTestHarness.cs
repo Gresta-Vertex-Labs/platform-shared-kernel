@@ -17,9 +17,8 @@ namespace SharedKernel.Testing.Application;
 /// recorded tracing spans.
 /// </summary>
 /// <remarks>
-/// Public promotion of the internal-only <c>PipelineTestHarness</c> already proven in
-/// <c>SharedKernel.Application.Tests</c> — same design,
-/// renamed to avoid ambiguity with <c>07.Messaging</c>'s <c>TestHarnessFactory</c>/MassTransit
+/// <para>
+/// Named to avoid ambiguity with <c>07.Messaging</c>'s <c>TestHarnessFactory</c>/MassTransit
 /// <c>ITestHarness</c> in the sibling <c>Messaging/</c> folder. Implements its OWN local
 /// <see cref="ActivityListener"/>/<see cref="MeterListener"/> wiring (self-contained BCL
 /// <c>System.Diagnostics</c> code), filtered by the literal string <c>"SharedKernel.Application"</c>,
@@ -29,17 +28,14 @@ namespace SharedKernel.Testing.Application;
 /// pair (<c>ApplicationDiagnostics</c> in <c>SharedKernel.Application</c>) is declared
 /// <see langword="internal"/> to that assembly, so this harness cannot reference the instrument
 /// instances directly — it filters by the well-known name/version instead, exactly mirroring the
-/// internal harness's own approach.
-/// </remarks>
-/// <remarks>
-/// Outstanding cross-domain follow-up (tracked, not performed by this package): the original
-/// <c>internal sealed class PipelineTestHarness</c> at
-/// <c>05.Application</c>'s test project still exists unchanged.
-/// A future <c>05.Application</c> implementer pass should repoint that project's call sites to this
-/// public <see cref="ApplicationPipelineTestHarness"/> and then retire (or thin-wrap) the internal
-/// type. <c>16.Testing</c> never edits another domain's <c>.Tests</c> project, so this package's
-/// obligation is satisfied by shipping this type with zero duplicated wiring logic versus the
-/// internal harness's already-proven shape — not by performing that repointing itself.
+/// approach a consuming service's own test suite would take.
+/// </para>
+/// <para>
+/// Authorization is always part of the pipeline. When the assembly passed to
+/// <see cref="Build{TMarker}"/> declares a <c>[RequirePermission]</c> request, register an
+/// <c>IRequestContext</c> (for example <see cref="FakeRequestContext"/>) before building, or the start
+/// check fails, exactly as it would in the host.
+/// </para>
 /// </remarks>
 public sealed class ApplicationPipelineTestHarness : IDisposable
 {
@@ -77,8 +73,9 @@ public sealed class ApplicationPipelineTestHarness : IDisposable
     public ServiceCollection Services => _services;
 
     /// <summary>
-    /// Chooses the opt-in behaviors (<c>WithAuthorization()</c>, <c>WithIdempotency()</c>, …) that
-    /// <see cref="Build{TMarker}"/> registers; tracing, logging, metrics and validation are always on.
+    /// Chooses the opt-in behaviors (<c>WithIdempotency()</c>, <c>WithTransactions()</c>, …) that
+    /// <see cref="Build{TMarker}"/> registers; tracing, logging, metrics, authorization and validation
+    /// are always on.
     /// </summary>
     /// <param name="configure">The opt-in choice, as passed to <c>AddSharedKernelApplication</c>.</param>
     /// <returns>This instance, for fluent chaining.</returns>

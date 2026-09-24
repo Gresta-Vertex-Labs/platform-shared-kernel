@@ -70,10 +70,11 @@ What that means for the `SharedKernel.Application` pipeline:
   from inside itself share that one commit.
 - **Failures come back as a `Result`.** Validation (`ErrorType.Validation`) and authorization
   (`ErrorType.Unauthorized`/`Forbidden`) failures are logged as a failed fire, never thrown.
-- **Authorization needs a system identity.** The authorization behavior (`.WithAuthorization()`) reads `IRequestContext`, and a
-  scheduled job has no caller. If the service opts into authorization, register
+- **Authorization needs a system identity.** The authorization behavior is always on and reads `IRequestContext`,
+  and a scheduled job has no caller. When the service's commands carry `[RequirePermission]`, register
   `SharedKernel.Application.Context.SystemRequestContext` — naming the scheduler and listing exactly the
-  permissions its jobs need — or every guarded command fails closed with `Error.Unauthorized`.
+  permissions its jobs need. Without an `IRequestContext` the host start fails; with one lacking a permission, the
+  guarded command fails closed with `Error.Forbidden`.
 
 ## Cross-replica single execution — and the single-replica caveat
 

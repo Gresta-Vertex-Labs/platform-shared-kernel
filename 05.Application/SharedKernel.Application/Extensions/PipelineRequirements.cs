@@ -45,7 +45,7 @@ internal sealed class PipelineRequirementsValidator(
         return ValidateOptionsResult.Fail(
             "AddSharedKernelApplication: the pipeline needs services that are not registered: " +
             string.Join("; ", missing) +
-            ". Register them (before or after AddSharedKernelApplication), or remove the With… call " +
-            "that needs them.");
+            ". Register them (before or after AddSharedKernelApplication), or remove what needs them " +
+            "(a With… call, or [RequirePermission]).");
     }
 }

@@ -17,7 +17,7 @@ namespace SharedKernel.Analyzers.Diagnostics;
 /// <remarks>
 /// <para>
 /// <strong>The gap.</strong> <c>FailureResponse.Create&lt;TResponse&gt;</c>
-/// (<c>SharedKernel.Application/Shared/FailureResponse.cs</c>) binds to a public static
+/// (<c>SharedKernel.Application/Shared/FailureResponse.cs</c>, namespace <c>SharedKernel.Application.Pipeline</c>) binds to a public static
 /// <c>Failure(Error)</c> factory resolved via reflection the first time a closed
 /// <c>TResponse</c> is used. <c>Result</c> takes a hardcoded fast path; every other
 /// <c>TResponse</c> must expose that factory or the call throws
@@ -28,13 +28,14 @@ namespace SharedKernel.Analyzers.Diagnostics;
 /// <para>
 /// <strong>Only the markers whose behavior genuinely calls <c>FailureResponse.Create</c> are
 /// checked.</strong> Reading <c>FailureResponse.cs</c> and every behavior that references it
-/// found exactly two: <c>AuthorizationBehavior{TRequest,TResponse}</c> (gated by
-/// <c>[RequirePermission]</c> on the request type or a base type) and <c>Idempotency.IdempotencyBehavior{TRequest,TResponse}</c>
-/// (gated by <c>Idempotency.IIdempotentRequest</c>). <c>Auditing.AuditingBehavior{TRequest,TResponse}</c>
-/// (gated by <c>Auditing.IAuditableRequest{TResponse}</c>) and <c>Logging.LoggingBehavior{TRequest,TResponse}</c>
-/// (gated by <c>Logging.ILoggableRequest{TResponse}</c>) never call it — both only ever forward
+/// found exactly two marker-gated ones, both internal to <c>SharedKernel.Application.Pipeline</c>:
+/// <c>AuthorizationBehavior{TRequest,TResponse}</c> (gated by <c>SharedKernel.Application.RequirePermissionAttribute</c>
+/// on the request type or a base type; always registered) and <c>IdempotencyBehavior{TRequest,TResponse}</c>
+/// (gated by <c>SharedKernel.Application.IIdempotentRequest</c>). <c>AuditingBehavior{TRequest,TResponse}</c>
+/// (gated by <c>SharedKernel.Application.IAuditableRequest{TResponse}</c>) and <c>LoggingBehavior{TRequest,TResponse}</c>
+/// (gated by <c>SharedKernel.Application.ILoggableRequest{TResponse}</c>) never call it — both only ever forward
 /// the response <c>next()</c> already produced and read it through
-/// <c>Shared.ResponseOutcome.TryGetError</c>, which degrades gracefully (treats a non-<c>Result</c>
+/// <c>ResponseOutcome.TryGetError</c>, which degrades gracefully (treats a non-<c>Result</c>
 /// response as a success) rather than requiring a <c>Failure(Error)</c> factory. Implementing
 /// either of those two markers on a plain-DTO-response request compiles and runs without ever
 /// throwing — so this rule deliberately does not check them. <c>ValidationBehavior</c> also calls

@@ -21,7 +21,7 @@ public static class ApplicationServiceCollectionExtensions
     /// <remarks>
     /// Mirrors <c>AddFakeCachingServices()</c>'s one-call bundling pattern. This call satisfies the
     /// host-start seam check of <c>AddSharedKernelApplication</c> for <c>WithTransactions()</c>,
-    /// <c>WithAuthorization()</c> and <c>WithIdempotency()</c> in one step, before or after that call.
+    /// <c>WithIdempotency()</c> and <c>[RequirePermission]</c> requests in one step, before or after that call.
     /// </remarks>
     /// <remarks>
     /// Local-seam-only scope: every fake registered here implements one of <c>05.Application</c>'s

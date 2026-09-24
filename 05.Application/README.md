@@ -37,14 +37,15 @@ builder.Services.AddSharedKernelRequestContext();   // IRequestContext over 12.S
 // builder.AddSharedKernelPostgres<OrdersDbContext>("orders", …) registers IUnitOfWork and IAuditTrailWriter
 
 builder.Services.AddSharedKernelApplication(typeof(Program).Assembly, app => app
-    .WithAuthorization()     // [RequirePermission] on every command and query
     .WithTransactions()      // one retry-safe transaction per command
     .WithAuditing());        // an audit record for IAuditableRequest<T> commands
 ```
 
 `AddSharedKernelApplication` registers MediatR with the handlers of the assemblies you pass, their FluentValidation
-validators, the domain-event bridge, `ICommandScope`, and the tracing, logging, metrics and validation behaviors. The
-`With…` calls add the rest. Neither the call order nor registering a seam before or after this call matters: every
+validators, the domain-event bridge, `ICommandScope`, and the tracing, logging, metrics, authorization and validation
+behaviors. The `With…` calls add the rest. Authorization cannot be switched off: every `[RequirePermission]` request is
+checked against the registered `IRequestContext`, and when the assemblies you pass declare one, the host start fails
+without an `IRequestContext` (naming the request types). A service that declares no permission needs none. Neither the call order nor registering a seam before or after this call matters: every
 service an opted-in behavior needs is checked when the host starts, and a missing one fails the start with one message
 naming each service. Calling `AddSharedKernelApplication` twice throws; pass every assembly to the one call.
 
@@ -126,7 +127,7 @@ stage; only a command (`ICommand`, `ICommand<T>`) enters the command stage.
 | Stage | Behavior | Applies to | Registered by |
 | --- | --- | --- | --- |
 | Observability | Tracing, Logging, Metrics | every request | always |
-| Authorization | Authorization | requests with `[RequirePermission]` | `WithAuthorization()` |
+| Authorization | Authorization | requests with `[RequirePermission]` | always |
 | Validation | Validation | requests with a FluentValidation validator | always |
 | Query | Caching | queries implementing `ICacheableQuery<T>` | `WithCaching()` |
 | Command | Command scope | commands | automatic with any command-stage behavior |
@@ -143,12 +144,16 @@ rules, and a validator may query the database.
 
 | Call | Needs a registered | Usually from |
 | --- | --- | --- |
-| `WithAuthorization()` | `IRequestContext` | `13.ServiceDefaults`' `AddSharedKernelRequestContext()`; a `SystemRequestContext` for a worker |
 | `WithIdempotency()` | `IRequestIdempotencyStore`, `IRequestContext` | `18.Idempotency`'s Redis or EF Core store |
 | `WithTransactions()` | `IUnitOfWork` | `06.Persistence`'s `AddSharedKernelPostgres` |
 | `WithAuditing()` | `IAuditTrailWriter` | `06.Persistence`'s `UseAuditTrail()` |
 | `WithCaching()` (`SharedKernel.Application.Caching`) | `ICacheService`, `ITenantCacheKeyProvider` | `02.Caching`'s `AddSharedKernelCaching()` |
 | `WithBehavior(typeof(MyBehavior<,>), stage, services…)` | the services you list | your own behavior, placed in a stage |
+
+Authorization needs no call. A `[RequirePermission]` request needs a registered `IRequestContext`, usually
+`13.ServiceDefaults`' `AddSharedKernelRequestContext()`, or a `SystemRequestContext` for a worker. Without one the host
+start fails when a scanned assembly declares such a request, and sending one from any other assembly throws
+`InvalidOperationException` without running the handler.
 
 ### Commands, transactions and the command scope
 
@@ -211,6 +216,7 @@ builder.Services.AddScoped<IRequestContext>(_ => new SystemRequestContext(
 | `SharedKernel.Application.Behaviors.Caching` | `SharedKernel.Application.Caching`, opted into with `WithCaching()` |
 | `AddSharedKernelApplicationBehaviors()…Build()`, `AddMediatR`, `AddValidatorsFromAssembly…`, `AddCachingBehaviors()` | One `AddSharedKernelApplication(assembly, app => …)` |
 | `IAuthorizeRequest`, `PermissionMatch` | `[RequirePermission]` on the command or query |
+| `WithAuthorization()` | Nothing: authorization is always on |
 | `IdempotencyErrorCodes` | `ErrorCodes.Idempotency` (`01.Core`): `KeyRequired`, `KeyInvalid`, `InProgress`, `KeyReused` |
 | Type forwarders from `SharedKernel.Application` to `.Abstractions` | Nothing: the namespaces (`SharedKernel.Application.Context`, `.Transactions`, `.Auditing`) are unchanged |
 | The pipeline's `authorization.unauthenticated` and `authorization.no_permissions_declared` | `unauthorized.default`, as at the HTTP edge; a request without the attribute is not checked |

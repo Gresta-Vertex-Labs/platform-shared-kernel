@@ -1127,7 +1127,6 @@ MediatR sends streaming requests (`IStreamRequest<TResponse>`, including `IStrea
 
 #### What it does not flag
 
-- Any registration inside a method named `AddStreamingBehaviors` — the conventional name for a service's own streaming-behavior composition helper. The exemption matches the method name only, not the containing type.
 - Generic registration overloads such as `AddTransient<IPipelineBehavior<TReq, TRes>, TImpl>()`, `TryAdd*` calls, `ServiceDescriptor` construction, and MediatR's own `AddOpenBehavior(...)` configuration.
 - Implementation types that implement only `IPipelineBehavior<,>`.
 
