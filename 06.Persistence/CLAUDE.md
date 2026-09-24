@@ -78,7 +78,7 @@ No `*.Extensions` namespace exists in this domain.
 | Crypto | `01.Core` `SharedKernel.Cryptography` (`IEncryptionKeyProvider`, `IEnvelopeEncryptionProvider`, `IHmacSigner`) + BCL `AesGcm`/HKDF |
 | Vectors | `Pgvector` / `Pgvector.EntityFrameworkCore` (opt-in `UseVector`) |
 | Telemetry | `ActivitySource`/`Meter` `"SharedKernel.Persistence"`, `"SharedKernel.Persistence.EfCore.Auditing"` (both), `Meter` `"SharedKernel.Persistence.EfCore.Encryption"`, Npgsql's own `"Npgsql"`; wired by `13.ServiceDefaults`' `WithPersistenceTelemetry()` by string name. Dapper emits no spans (Npgsql traces every command) |
-| Logging | `[LoggerMessage]`, `LoggingEventIdRanges.Persistence` + offset: EfCore 6000–6099 (context/UoW 6014–6021, entity versions 6022–6024), Abstractions `CrossTenantScope` 6150, E2 range 6200–6299 reserved, Npgsql 6300–6399, EF RLS 6350–6351, Dapper 6400–6499, Encryption 6500–6699, Auditing 6700–6899 |
+| Logging | `[LoggerMessage]`, `LoggingEventIdRanges.Persistence` + offset: EfCore 6000–6099 (context/UoW 6014–6021, entity versions 6022–6026), Abstractions `CrossTenantScope` 6150, E2 range 6200–6299 reserved, Npgsql 6300–6399, EF RLS 6350–6351, Dapper 6400–6499, Encryption 6500–6699, Auditing 6700–6899 |
 
 ---
 
@@ -157,7 +157,8 @@ aggregate's context is found by probing the registered models once; ambiguity or
 registrations win); the migration/seed hosted service when requested; `ValidateOnStart` model validation
 (`PersistenceStartupValidator`). Shared, once: the PostgreSQL classifier (first), `PersistenceServiceOptions`
 (`SharedKernel:Persistence`, `ServiceName`), `IClock`, `ICrossTenantScope` + anonymous `IRequestContext`,
-`PersistenceContextDependencies`, `IAmbientDbTransaction`, `UnitOfWorkCoordinator`, `ISpecificationEvaluator<>`.
+`PersistenceContextDependencies`, the entity-version codec and its key warm-up (`EntityVersionKeyWarmUp`, a hosted
+service), `IAmbientDbTransaction`, `UnitOfWorkCoordinator`, `ISpecificationEvaluator<>`.
 Data source per connection name (`PostgresDataSources`): the first name is the unkeyed default, further names are
 keyed by name; contexts with the same name share it.
 
@@ -226,11 +227,24 @@ transaction counter shared by the whole database, so it never leaves `Concurrenc
 - *Keys* — `K` = HKDF-SHA256 subkey (`SubkeyDerivation`, purpose `"SharedKernel.Persistence.EntityVersion"` — what
   `provider.ForPurpose(...)` returns) of the service's root key provider: the `ISynchronousEncryptionKeyProvider` in the
   container, else the `IEncryptionKeyProvider` (used synchronously when it is also in-memory, e.g.
-  `StaticEncryptionKeyProvider`; otherwise bridged: current key loaded on first use, refreshed in the background every
-  5 min, a failed refresh keeps the key and logs 6023). The check value is a separate HKDF output (purpose `….KeyCheck`).
+  `StaticEncryptionKeyProvider`; otherwise bridged, see *Warm-up*; refreshed in the background every 5 min, a failed
+  refresh keeps the key and logs 6023). The check value is a separate HKDF output (purpose `….KeyCheck`).
   Root keys ≥ 32 bytes. One `EntityVersionCodec` singleton per service provider, attached to every context through
   `PersistenceContextDependencies.EntityVersions`; `PersistenceContextDependencies.Create(..., entityVersionKeys:)` for
   hand-built contexts.
+- *Warm-up (asynchronous-only providers, `EntityVersionKeyWarmUp`)* — a hosted service registered once by
+  `AddSharedKernelPostgres` loads the current key in `StartAsync`, before the host takes traffic, with no thread
+  blocked: `EntityVersionKeyRing.WarmUpAsync` runs the provider call on the thread pool and waits at most
+  `WarmUpTimeout` (10 s); after a timeout the load goes on and publishes the key when the provider answers. A failure
+  (6025) or a timeout (6026) is logged and never fails startup. Once the key is loaded, request threads never call the
+  provider (the background refresh does). **Fallback:** when no key is loaded — no host (a hand-built context, a tool),
+  or the warm-up failed or has not finished — the first request that needs a version loads it on its own thread,
+  blocking it under a lock (X4's original path). A no-op for in-memory providers and without a provider.
+  **Readiness does not wait for the key** (decision, P-562 I4): persistence works without it — only issuing and
+  checking versions needs it — so a key service outage must not take every endpoint out of rotation, and after a
+  successful warm-up no traffic arrives before the key anyway. A service whose readiness should follow its key service
+  adds 13's `AddKeyVaultKeyProviderReadinessCheck()`. `IPersistenceStartup` (schema readiness) never waits for it
+  either.
 - *Rotation* — sealed with the current key; opened with any key that was current earlier **in this process** (the 64
   most recent). Keys are never looked up by anything a client sends. A token under an unknown key (e.g. issued before a
   restart that rotated the key) is a stale version: `ConflictException` → 412 on an `If-Match` endpoint, never a 500.
@@ -284,7 +298,8 @@ registers with the coordinator; every `EfUnitOfWork<TContext>` delegates to it.
 order on every replica); seeders run as `SystemRequestContext("seeder:{Type}")` and, on a `TenantedDbContext`, inside
 the context's cross-tenant scope — under RLS on `UseCrossTenantConnection()` (needs `CrossTenantConnectionString`); a
 pooled context whose connection is swapped gets an unpooled copy. Order at host start: `ValidateOnStart` (options,
-model) → hosted `StartAsync` (Npgsql RLS privilege check, migrations/seeders, encryption key-ring load) → `StartedAsync`
+model) → hosted `StartAsync` (entity-version key warm-up, Npgsql RLS privilege check, migrations/seeders, encryption
+key-ring load) → `StartedAsync`
 (RLS coverage check, audit self-check — both after `IPersistenceStartup.WaitAsync`) → background sealer (waits too).
 `AddDatabaseReadinessCheck<T>` is Unhealthy until `IPersistenceStartup.IsCompleted`.
 
@@ -484,6 +499,9 @@ anonymous `IRequestContext` and `ICrossTenantScope`, so a Dapper-only service wo
 - **The raw `xmin` never leaves `ConcurrencyVersion`** (P-562 X4). No public API creates an `EntityVersion` from a number
   or reads one out of it; a new producer of versions (a projection, a Dapper read model) goes through the codec with the
   same binding, never around it. Key lookups are never driven by client input (only keys the process made current).
+- **A request thread does not call an asynchronous key provider** (P-562 I4). `EntityVersionKeyWarmUp` loads the version
+  key before traffic; the blocking load in `EntityVersionKeyRing` is only the fallback (no host, failed or unfinished
+  warm-up). Never make it the normal path again, and never make the warm-up fatal or a readiness condition.
 
 **Hard violations:**
 
@@ -575,7 +593,10 @@ are pure `Span<byte>` code; model-build-time scans are the accepted startup-only
   construction in isolation — including a known-answer test that re-derives the token from the documented layout and
   locks the version-1 wire format — and `EfCore.Integration.Tests/Postgres/EntityVersionPostgresTests` proves it end to
   end (two rows sharing one `xmin`, tampering, rotation across a restart, no key provider). A wire-format change is a new
-  format byte, never a silent edit of the known answer.
+  format byte, never a silent edit of the known answer. The key warm-up is proven in the same two classes: after it the
+  first version — and `ConcurrencyVersion.Get` through the real registration — calls no provider; a failure or a timeout
+  is logged, not thrown, and the fallback still issues versions; a load that outlives the timeout still publishes the
+  key; an in-memory provider is never called; and end to end with a KMS-style provider over PostgreSQL.
 - README samples are compiled by tests: `PersistenceReadmeSampleTests` (domain README), `Encryption.Tests/Unit/ReadmeSampleTests`,
   `Auditing.Tests/Registration/ReadmeSampleTests`; `AuditFormatVectorTests` parses the packed `AUDIT-FORMAT.md`.
 - `SharedKernel.Persistence.ConsumerVerify` runs against the **packed** packages (not in CI yet — see the handoff):
@@ -617,7 +638,9 @@ are pure `Span<byte>` code; model-build-time scans are the accepted startup-only
   `ConcurrencyVersion` (no public codec for projections or Dapper read models yet). The single-block AES call lives in
   EfCore, a direct BCL `Aes` use outside `SharedKernel.Cryptography` like the encryption package's `AesGcm` —
   `CryptoIsolationRules.NoRawSymmetricCipherOutsideCryptography` is not run against 06 assemblies; if it ever is, both
-  move behind a `SharedKernel.Cryptography` primitive.
+  move behind a `SharedKernel.Cryptography` primitive. With an asynchronous-only provider, the fallback load (no host,
+  or a failed or unfinished warm-up) blocks the calling thread on the provider under a lock, and only a successful load
+  is kept: during a key service outage every request that needs a version tries again in turn.
 
 ---
 
@@ -628,3 +651,4 @@ are pure `Span<byte>` code; model-build-time scans are the accepted startup-only
 - [2026-09-21] P-558 persistence gold-standard pass 2 — brain rewritten: PostgreSQL-only (`.PostgreSQL` merged into `.EfCore`), shared 05 contracts, one entry point, one transaction per scope, transaction-local RLS, encryption v3, audit ledger v3 with async sealer, `SharedKernel.Persistence.Testing` (agent)
 - [2026-09-22] P-558 verification via `samples/BillingApi`: design-time `ConfigurePersistence`; `SharedKernel:Persistence:Tenant` annotation so `EnableTenantRowLevelSecurityForModel(TargetModel)` works on real migrations (throws on zero tables); `ConcurrencyVersion.Get` refuses untracked entities; GSS encryption off unless configured; Testing fakes roll back repository writes. Record: `P-558-SESSION-HANDOFF.md` §7
 - [2026-09-24] P-562 X4 (owner-approved, from review finding S13): opaque ETags. `EntityVersion` holds only a sealed token (28-char Base64Url, never a number; JSON converter); `FromRowVersion`/`ToRowVersion` removed; EfCore seals `xmin` ‖ aggregate binding as one AES-256 block under an HKDF subkey of the service's key provider (new `SharedKernel.Cryptography` reference), opens it in `SetExpected`/`UpdateAsync`/`DeleteAsync` before attaching, treats foreign/altered/unknown-key tokens as stale (409/412), seals the conflict's current version; `PersistenceContextDependencies.Create(entityVersionKeys:)`; EventIds 6022–6024. **Breaking: every ETag value changes; services must register a key provider** (agent)
+- [2026-09-24] P-562 integration stream I4: entity-version key warm-up. With an asynchronous-only key provider (a KMS), the internal hosted service `EntityVersionKeyWarmUp` (registered once by `AddSharedKernelPostgres`) loads the version key before the host takes traffic — provider call on the thread pool, at most 10 s, then it keeps loading in the background — so request threads no longer block on the provider; failure/timeout logged (6025/6026), never fatal; the first-use blocking load stays only as the documented fallback. Readiness does not wait for the key (decision recorded under *Opaque versions*). No public API change (agent)

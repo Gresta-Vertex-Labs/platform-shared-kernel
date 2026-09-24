@@ -83,7 +83,8 @@ public sealed class PersistenceContextDependencies
     /// <param name="entityVersionKeys">
     /// The root keys entity versions (ETags) are sealed with — the subkey for <c>"SharedKernel.Persistence.EntityVersion"</c>
     /// is derived from them, as for a registered context. Without them <c>ConcurrencyVersion.Get</c> and an
-    /// expected-version update throw.
+    /// expected-version update throw. An asynchronous-only provider (a KMS) is asked for its key by the first version,
+    /// which blocks that caller once: without a host, nothing loads the key ahead of time.
     /// </param>
     /// <returns>The dependencies to pass to the context's constructor.</returns>
     /// <remarks>

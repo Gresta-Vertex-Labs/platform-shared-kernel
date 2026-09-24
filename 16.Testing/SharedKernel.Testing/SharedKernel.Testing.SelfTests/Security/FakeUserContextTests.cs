@@ -240,4 +240,111 @@ public sealed class FakeUserContextTests
 
         Assert.Equal(real.IsAuthenticationFresherThan(maxAge, Now), fake.IsAuthenticationFresherThan(maxAge, Now));
     }
+
+    // ---- X1: when each authentication method was verified ----
+
+    [Fact]
+    public void AuthenticationMethodTimes_DefaultsToEmpty()
+    {
+        Assert.Empty(new FakeUserContext().AuthenticationMethodTimes);
+    }
+
+    [Fact]
+    public void GetAuthenticationMethodTime_ListedMethodWithATime_ReturnsItsTime()
+    {
+        var context = new FakeUserContext { AuthenticationMethods = ["pwd", "otp"], AuthTime = Now.AddHours(-1) }
+            .WithAuthenticationMethodTime("otp", Now.AddMinutes(-2));
+
+        Assert.Equal(Now.AddMinutes(-2), context.GetAuthenticationMethodTime("otp"));
+    }
+
+    [Fact]
+    public void GetAuthenticationMethodTime_ListedMethodWithoutATime_ReturnsAuthTime()
+    {
+        var context = new FakeUserContext { AuthenticationMethods = ["pwd", "otp"], AuthTime = Now.AddHours(-1) }
+            .WithAuthenticationMethodTime("otp", Now.AddMinutes(-2));
+
+        Assert.Equal(Now.AddHours(-1), context.GetAuthenticationMethodTime("pwd"));
+    }
+
+    [Fact]
+    public void GetAuthenticationMethodTime_MethodNotListed_ReturnsNull_EvenWithATime()
+    {
+        var context = new FakeUserContext { AuthenticationMethods = ["pwd"], AuthTime = Now }
+            .WithAuthenticationMethodTime("otp", Now);
+
+        Assert.Null(context.GetAuthenticationMethodTime("otp"));
+    }
+
+    [Fact]
+    public void GetAuthenticationMethodTime_ComparesOrdinally_WhateverTheDictionaryComparer()
+    {
+        var context = new FakeUserContext
+        {
+            AuthenticationMethods = ["otp", "OTP"],
+            AuthenticationMethodTimes = new Dictionary<string, DateTimeOffset>(StringComparer.OrdinalIgnoreCase) { ["otp"] = Now },
+            AuthTime = Now.AddHours(-1),
+        };
+
+        Assert.Equal(Now, context.GetAuthenticationMethodTime("otp"));
+        Assert.Equal(Now.AddHours(-1), context.GetAuthenticationMethodTime("OTP"));
+    }
+
+    [Fact]
+    public void GetAuthenticationMethodTime_NullMethod_ThrowsArgumentNull()
+    {
+        Assert.Throws<ArgumentNullException>(() => new FakeUserContext().GetAuthenticationMethodTime(null!));
+    }
+
+    [Fact]
+    public void GetAuthenticationMethodTime_ThroughTheInterface_UsesTheFakesAnswer()
+    {
+        IUserContext context = new FakeUserContext { AuthenticationMethods = ["otp"] }.WithAuthenticationMethodTime("otp", Now);
+
+        Assert.Equal(Now, context.GetAuthenticationMethodTime("otp"));
+    }
+
+    [Fact]
+    public void WithAuthenticationMethodTime_ReplacesTheMethodsTime_KeepsOthers_AndReturnsTheSameContext()
+    {
+        var supplied = new Dictionary<string, DateTimeOffset> { ["hwk"] = Now.AddDays(-1) };
+        var context = new FakeUserContext { AuthenticationMethodTimes = supplied };
+
+        var returned = context
+            .WithAuthenticationMethodTime("otp", Now.AddMinutes(-9))
+            .WithAuthenticationMethodTime("otp", Now.AddMinutes(-1));
+
+        Assert.Same(context, returned);
+        Assert.Equal(Now.AddMinutes(-1), context.AuthenticationMethodTimes["otp"]);
+        Assert.Equal(Now.AddDays(-1), context.AuthenticationMethodTimes["hwk"]);
+        Assert.Single(supplied);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("  ")]
+    public void WithAuthenticationMethodTime_NullOrWhitespaceMethod_Throws(string? method)
+    {
+        Assert.ThrowsAny<ArgumentException>(() => new FakeUserContext().WithAuthenticationMethodTime(method!, Now));
+    }
+
+    [Theory]
+    [InlineData("otp")]
+    [InlineData("pwd")]
+    [InlineData("hwk")]
+    [InlineData("OTP")]
+    public void GetAuthenticationMethodTime_SameInputs_MatchesRealUserContext(string method)
+    {
+        var times = new Dictionary<string, DateTimeOffset> { ["otp"] = Now.AddMinutes(-2), ["hwk"] = Now.AddMinutes(-7) };
+        var fake = new FakeUserContext { AuthenticationMethods = ["pwd", "otp"], AuthenticationMethodTimes = times, AuthTime = Now.AddHours(-1) };
+        var real = new UserContext(IdentityKind.User, FakeUserContext.DefaultSubjectId)
+        {
+            AuthenticationMethods = ["pwd", "otp"],
+            AuthenticationMethodTimes = times,
+            AuthTime = Now.AddHours(-1),
+        };
+
+        Assert.Equal(real.GetAuthenticationMethodTime(method), fake.GetAuthenticationMethodTime(method));
+    }
 }

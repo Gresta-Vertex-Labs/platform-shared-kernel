@@ -124,6 +124,7 @@ That is the whole setup. Everything below is detail.
 | `ICrossTenantScope`, `IPersistenceStartup` | scoped / singleton |
 | A fail-closed anonymous `IRequestContext` and `IClock`, when none is registered | — |
 | Startup validation of the options and the model (`ValidateOnStart`) | — |
+| A hosted service that loads the ETag key from an asynchronous key provider (a KMS) before the host takes traffic | singleton |
 
 **Conventions**, applied to every context, overridable by explicit configuration:
 
@@ -156,6 +157,12 @@ builder.AddSharedKernelKeyVaultKeyProvider();                       // productio
 builder.Services.AddSingleton<ISynchronousEncryptionKeyProvider>(new StaticEncryptionKeyProvider("k1", [new("k1", key32)]));
 ```
 
+A KMS is asked for the key at startup, before the host takes traffic (at most 10 seconds; a slower answer is still
+used when it arrives), and again in the background every 5 minutes, so no request waits for the key service. If the
+key cannot be loaded at startup, a warning is logged (6025, 6026), the service starts anyway, and the first request
+that needs a version loads the key itself. Readiness does not wait for it: persistence works without the key, only
+ETags need it.
+
 Read the version from a **tracked** instance:
 
 ```csharp
@@ -181,7 +188,8 @@ requires `If-Match`, never a 500. A running process keeps opening the tokens of 
 `ConcurrencyVersion.Get` throws for an entity the context does not track rather than inventing a version, and throws
 when no key provider is registered. A detached aggregate (deserialized, or loaded in another scope) must use
 `UpdateAsync(aggregate, expectedVersion)` / `DeleteAsync(aggregate, expectedVersion)`. A context built by hand passes
-its keys to `PersistenceContextDependencies.Create(..., entityVersionKeys: provider)`.
+its keys to `PersistenceContextDependencies.Create(..., entityVersionKeys: provider)`; it has no host, so with a KMS its
+first version loads the key.
 
 ### 2. Queries, paging and projections
 
@@ -367,6 +375,7 @@ databases.
 | ETag is `"0"` / every `If-Match` fails | The entity was read untracked. Read the version from `IRepository`, not `IReadRepository` — `ConcurrencyVersion.Get` now throws instead |
 | `InvalidOperationException` "no key provider is registered" from `ConcurrencyVersion.Get` | Versions are sealed with a subkey of the service's key provider. Register an `ISynchronousEncryptionKeyProvider` or `IEncryptionKeyProvider` (for example `AddSharedKernelKeyVaultKeyProvider()`) |
 | Every `If-Match` is 412 right after a deploy | The version key rotated: ETags issued before the restart are stale. Clients re-read and retry once |
+| Warning 6025 or 6026 at startup: the key that seals entity versions was not loaded | The KMS failed or was slow at startup. The service still runs; the first request that issues or checks an ETag loads the key, blocking once. Check the key service and its credentials |
 | `dotnet ef migrations add` refuses an encrypted model | The design-time factory lacks `ConfigurePersistence` with `UseFieldEncryption()` |
 | Startup fails: "tenant tables are not protected" | A migration lacks `EnableTenantRowLevelSecurityForModel(TargetModel!)`, or a table was added later without `EnableTenantRowLevelSecurity("table")` |
 | Startup fails: runtime role can bypass row-level security | Connecting as a superuser or table owner. Use the role script; in local development set `RowLevelSecurity:PrivilegeCheck` to `Warn` |

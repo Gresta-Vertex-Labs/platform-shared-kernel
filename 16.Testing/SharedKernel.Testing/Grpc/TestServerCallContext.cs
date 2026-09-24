@@ -44,10 +44,11 @@ namespace SharedKernel.Testing.Grpc;
 /// <para>
 /// After running a service method or an interceptor handler (any of the four call shapes — the returned
 /// <see cref="ServerCallContext"/> is shape-agnostic) against the constructed context, inspect
-/// <see cref="ServerCallContext.ResponseTrailers"/>/<see cref="ServerCallContext.Status"/>, or catch the thrown
-/// <see cref="RpcException"/> directly — <c>GetValueOrThrow()</c>/<c>ThrowIfFailure()</c> of
-/// <c>SharedKernel.Presentation.Grpc</c> throw one carrying a <c>google.rpc.Status</c>, readable with
-/// <c>GetRpcStatus()</c>.
+/// <see cref="ServerCallContext.ResponseTrailers"/>/<see cref="ServerCallContext.Status"/>, or catch what the method
+/// throws. A failed <c>Result</c> ended with <c>SharedKernel.Core</c>'s <c>GetValueOrThrow()</c>/<c>ThrowIfFailure()</c>
+/// throws <c>Error.ToException()</c>, the <c>SharedKernelException</c> of the error's type: assert on its
+/// <c>Error</c>. Only the exception interceptor of <c>SharedKernel.Presentation.Grpc</c>, in a host, turns it into an
+/// <see cref="RpcException"/> with a <c>google.rpc.Status</c>; a hand-built context never passes through it.
 /// </para>
 /// </remarks>
 public static class TestServerCallContext

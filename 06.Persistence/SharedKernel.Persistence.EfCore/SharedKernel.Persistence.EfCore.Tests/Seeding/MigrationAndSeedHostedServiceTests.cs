@@ -62,11 +62,15 @@ public sealed class MigrationAndSeedHostedServiceTests
     {
         var services = BuildSeedServices<SeedTestSeeder>();
 
-        var hostedServiceDescriptor = services.Any(sd =>
-            sd.ServiceType == typeof(IHostedService));
-
-        hostedServiceDescriptor.Should().BeTrue(
+        MigrationServices(services).Should().ContainSingle(
             "AddSeeder must register MigrationAndSeedHostedService<TContext> as IHostedService");
+    }
+
+    // The registered hosted services that migrate or seed; every registration also adds the entity-version key warm-up.
+    private static List<IHostedService> MigrationServices(IServiceCollection services)
+    {
+        using var provider = services.BuildServiceProvider();
+        return [.. provider.GetServices<IHostedService>().Where(service => service is MigrationAndSeedHostedService<SeedTestDbContext>)];
     }
 
     [Fact]
@@ -175,7 +179,7 @@ public sealed class MigrationAndSeedHostedServiceTests
     // -------------------------------------------------------------------------
 
     [Fact]
-    public void OmittingMigrationsAndSeeders_NoHostedServiceRegistered()
+    public void OmittingMigrationsAndSeeders_NoMigrationHostedServiceRegistered()
     {
         var services = new ServiceCollection();
         services
@@ -183,12 +187,14 @@ public sealed class MigrationAndSeedHostedServiceTests
                 opts.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
                     .Build(); // no.WithMigrationsOnStartup() or.AddSeeder<T>()
 
-        var hostedServiceDescriptor = services.Any(sd =>
-            sd.ServiceType == typeof(IHostedService));
-
-        hostedServiceDescriptor.Should().BeFalse(
-            "no IHostedService must be registered when neither WithMigrationsOnStartup() " +
+        MigrationServices(services).Should().BeEmpty(
+            "no migration or seed hosted service must be registered when neither WithMigrationsOnStartup() " +
             "nor AddSeeder<T>() was called — fully opt-in, zero overhead");
+
+        using var provider = services.BuildServiceProvider();
+        provider.GetServices<IHostedService>().Should().ContainSingle()
+            .Which.Should().BeOfType<SharedKernel.Persistence.EfCore.Concurrency.EntityVersionKeyWarmUp>(
+                "the only hosted service is the entity-version key warm-up, which does nothing without an asynchronous key provider");
     }
 
     [Fact]
@@ -201,10 +207,7 @@ public sealed class MigrationAndSeedHostedServiceTests
                     .WithMigrationsOnStartup()
                         .Build();
 
-        var hostedServiceDescriptor = services.Any(sd =>
-            sd.ServiceType == typeof(IHostedService));
-
-        hostedServiceDescriptor.Should().BeTrue(
+        MigrationServices(services).Should().ContainSingle(
             "WithMigrationsOnStartup() alone must register the hosted service");
     }
 

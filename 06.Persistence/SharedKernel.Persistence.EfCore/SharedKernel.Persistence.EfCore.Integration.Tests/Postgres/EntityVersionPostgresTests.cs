@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Npgsql;
 using SharedKernel.Application.Transactions;
 using SharedKernel.Core.Exceptions;
@@ -280,6 +281,64 @@ public sealed class EntityVersionPostgresTests(PostgreSqlContainerFixture fixtur
         var conflict = (await FluentActions.Awaiting(() => second.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync())
             .Should().ThrowAsync<ConflictException>()).Which;
         ConcurrencyVersion.TryGetCurrentVersion(conflict, out _).Should().BeFalse("there is no key to seal it with");
+    }
+
+    [Fact]
+    public async Task X4_WithAKmsKeyProvider_TheWarmUpLoadsTheKeyBeforeTraffic_SoNoRequestCallsTheKeyService()
+    {
+        var kms = new KeyServiceProvider(Key1);
+        await using var provider = await OrdersAsync(NewDatabase(), s => s.AddSingleton<IEncryptionKeyProvider>(kms));
+
+        foreach (var hosted in provider.GetServices<IHostedService>())
+            await hosted.StartAsync(CancellationToken.None);
+
+        kms.Calls.Should().Be(1, "the warm-up loaded the key at startup");
+        kms.Failure = new InvalidOperationException("A request called the key service.");
+
+        var id = (await InsertAsync(provider, "v1"))[0];
+        var etag = await ETagAsync(provider, id);
+        await RenameAsync(provider, id, etag, "v2");
+
+        (await NameAsync(provider, id)).Should().Be("v2");
+        kms.Calls.Should().Be(1, "issuing and checking the ETag used the key loaded at startup");
+    }
+
+    [Fact]
+    public async Task X4_AFailedWarmUp_IsNotFatal_AndTheFirstETagLoadsTheKey()
+    {
+        var kms = new KeyServiceProvider(Key1) { Failure = new InvalidOperationException("The key service is unreachable.") };
+        await using var provider = await OrdersAsync(NewDatabase(), s => s.AddSingleton<IEncryptionKeyProvider>(kms));
+
+        foreach (var hosted in provider.GetServices<IHostedService>())
+            await hosted.StartAsync(CancellationToken.None);
+
+        var id = (await InsertAsync(provider, "v1"))[0];
+        kms.Failure = null;
+        var etag = await ETagAsync(provider, id);
+
+        kms.Calls.Should().Be(2, "the first ETag loaded the key the warm-up could not");
+        await RenameAsync(provider, id, etag, "v2");
+        (await NameAsync(provider, id)).Should().Be("v2");
+    }
+
+    /// <summary>An asynchronous-only key provider, as a KMS registers (13's <c>AddSharedKernelKeyVaultKeyProvider()</c>).</summary>
+    private sealed class KeyServiceProvider(CryptographicKey current) : IEncryptionKeyProvider
+    {
+        private int _calls;
+
+        public Exception? Failure { get; set; }
+
+        public int Calls => Volatile.Read(ref _calls);
+
+        public async ValueTask<CryptographicKey> GetCurrentKeyAsync(CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref _calls);
+            await Task.Yield();
+            return Failure is { } failure ? throw failure : current;
+        }
+
+        public ValueTask<CryptographicKey?> GetKeyAsync(string keyId, CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("Entity versions never look a key up by id.");
     }
 
     private sealed class RotatingKeyProvider(CryptographicKey current) : ISynchronousEncryptionKeyProvider

@@ -3,12 +3,15 @@ using System.Buffers.Text;
 using System.Globalization;
 using System.Security.Cryptography;
 using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using SharedKernel.Cryptography.KeyDerivation;
 using SharedKernel.Cryptography.Symmetric;
 using SharedKernel.Persistence.Abstractions.Repositories;
 using SharedKernel.Persistence.EfCore.Concurrency;
 using SharedKernel.Persistence.EfCore.Tests.Repositories;
+using SharedKernel.Persistence.EfCore.Tests.Specifications;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Testing.Logging;
 
@@ -284,6 +287,164 @@ public sealed class EntityVersionCodecTests : IDisposable
         logger.Records.ShouldHaveLogged(new Microsoft.Extensions.Logging.EventId(6023));
     }
 
+    // ---- warm-up: an asynchronous-only provider is loaded before traffic ----
+
+    [Fact]
+    public async Task X4_AfterTheWarmUp_TheFirstVersionCallsNoProvider()
+    {
+        var provider = new AsynchronousOnlyKeyProvider(Key1);
+        var ring = EntityVersionKeyRing.ForProvider(provider, new ManualTimeProvider());
+        var codec = new EntityVersionCodec(ring);
+        var order = Order();
+
+        await ring.WarmUpAsync(CancellationToken.None);
+        provider.Calls.Should().Be(1);
+
+        // A request that reached the provider now would fail: the key must already be loaded.
+        provider.Failure = new InvalidOperationException("A request called the key provider.");
+        var version = codec.Seal(order, 9u);
+
+        provider.Calls.Should().Be(1, "the first version uses the key the warm-up loaded");
+        codec.TryOpen(version, order, out var rowVersion).Should().Be(EntityVersionOpenResult.Opened);
+        rowVersion.Should().Be(9u);
+    }
+
+    [Fact]
+    public async Task X4_AFailedWarmUp_IsLoggedNotThrown_AndTheFirstVersionLoadsTheKeyItself()
+    {
+        var provider = new AsynchronousOnlyKeyProvider(Key1) { Failure = new InvalidOperationException("The key vault is unreachable.") };
+        var logger = new InMemoryLogger();
+        var ring = EntityVersionKeyRing.ForProvider(provider, new ManualTimeProvider(), logger);
+        var codec = new EntityVersionCodec(ring);
+
+        await FluentActions.Awaiting(() => ring.WarmUpAsync(CancellationToken.None)).Should().NotThrowAsync();
+
+        logger.Records.ShouldHaveLogged(new Microsoft.Extensions.Logging.EventId(6025), Microsoft.Extensions.Logging.LogLevel.Warning);
+        ring.Known.Should().BeEmpty();
+
+        // The fallback: the first version loads the key on its own call.
+        provider.Failure = null;
+        var order = Order();
+        var version = codec.Seal(order, 9u);
+
+        provider.Calls.Should().Be(2);
+        codec.TryOpen(version, order, out _).Should().Be(EntityVersionOpenResult.Opened);
+    }
+
+    [Fact]
+    public async Task X4_ASlowProvider_StopsHoldingStartupAfterTheTimeout_AndItsKeyIsStillLoadedBeforeTheFirstVersion()
+    {
+        var time = new ManualTimeProvider();
+        var answer = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var provider = new AsynchronousOnlyKeyProvider(Key1) { Gate = answer.Task };
+        var logger = new InMemoryLogger();
+        var ring = EntityVersionKeyRing.ForProvider(provider, time, logger);
+        var codec = new EntityVersionCodec(ring);
+
+        var warmUp = ring.WarmUpAsync(CancellationToken.None);
+        time.Advance(EntityVersionKeyRing.WarmUpTimeout);
+        await warmUp;
+
+        logger.Records.ShouldHaveLogged(new Microsoft.Extensions.Logging.EventId(6026), Microsoft.Extensions.Logging.LogLevel.Warning);
+
+        // The provider answers after host start: the load goes on and publishes the key.
+        answer.SetResult();
+        await ring.LastWarmUp;
+        provider.Failure = new InvalidOperationException("A request called the key provider.");
+
+        _ = codec.Seal(Order(), 9u);
+
+        provider.Calls.Should().Be(1);
+        logger.Records.ShouldNotHaveLogged(new Microsoft.Extensions.Logging.EventId(6025));
+    }
+
+    [Fact]
+    public async Task X4_ASlowProviderThatFailsAfterTheTimeout_IsLogged_AndLeavesTheFallback()
+    {
+        var time = new ManualTimeProvider();
+        var answer = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var provider = new AsynchronousOnlyKeyProvider(Key1) { Gate = answer.Task };
+        var logger = new InMemoryLogger();
+        var ring = EntityVersionKeyRing.ForProvider(provider, time, logger);
+        var codec = new EntityVersionCodec(ring);
+
+        var warmUp = ring.WarmUpAsync(CancellationToken.None);
+        time.Advance(EntityVersionKeyRing.WarmUpTimeout);
+        await warmUp;
+
+        provider.Failure = new InvalidOperationException("The key vault is unreachable.");
+        answer.SetResult();
+        await ring.LastWarmUp;
+
+        logger.Records.ShouldHaveLogged(new Microsoft.Extensions.Logging.EventId(6025), Microsoft.Extensions.Logging.LogLevel.Warning);
+        ring.Known.Should().BeEmpty();
+
+        provider.Failure = null;
+        _ = codec.Seal(Order(), 9u);
+        provider.Calls.Should().Be(2, "the first version loaded the key itself");
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task X4_NoWarmUp_ForAnInMemoryProvider(bool registeredAsSynchronous)
+    {
+        var provider = new CountingInMemoryKeyProvider(Key1);
+        var services = new ServiceCollection();
+        if (registeredAsSynchronous)
+            services.AddSingleton<ISynchronousEncryptionKeyProvider>(provider);
+        else
+            services.AddSingleton<IEncryptionKeyProvider>(provider);
+
+        await using var root = services.BuildServiceProvider();
+        var ring = new EntityVersionKeyRing(root);
+
+        await ring.WarmUpAsync(CancellationToken.None);
+
+        provider.Calls.Should().Be(0, "keys already in memory need no warm-up");
+        ring.Known.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task X4_NoWarmUp_WithoutAKeyProvider()
+    {
+        await FluentActions.Awaiting(() => EntityVersionKeyRing.Unconfigured.WarmUpAsync(CancellationToken.None)).Should().NotThrowAsync();
+
+        EntityVersionKeyRing.Unconfigured.IsConfigured.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task X4_TheRegistration_WarmsUpOnce_SoConcurrencyVersionGetCallsNoProvider()
+    {
+        var provider = new AsynchronousOnlyKeyProvider(Key1);
+        var services = new ServiceCollection();
+        services.AddSingleton<IEncryptionKeyProvider>(provider);
+        services.AddSharedKernelEfCore<VersionedTestDbContext>(Sqlite).Build();
+        services.AddSharedKernelEfCore<StringIncludeDbContext>(Sqlite).Build();
+        await using var root = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
+
+        var warmUp = root.GetServices<IHostedService>().OfType<EntityVersionKeyWarmUp>()
+            .Should().ContainSingle("one warm-up serves every context").Subject;
+        await warmUp.StartAsync(CancellationToken.None);
+        provider.Calls.Should().Be(1);
+        provider.Failure = new InvalidOperationException("A request called the key provider.");
+
+        await using var scope = root.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<VersionedTestDbContext>();
+        var aggregate = new TestAggregate(TestId.New(), "loaded", new SystemClock());
+        db.Attach(aggregate);
+        db.Entry(aggregate).Property<uint>(ConcurrencyVersion.XminColumn).OriginalValue = 7u;
+
+        var version = ConcurrencyVersion.Get(db, aggregate);
+
+        version.Should().NotBe(EntityVersion.None);
+        provider.Calls.Should().Be(1, "the request path read the key the warm-up loaded");
+
+        static void Sqlite(DbContextOptionsBuilder options) =>
+            options.UseSqlite("DataSource=:memory:")
+                .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning));
+    }
+
     // ---- configuration ----
 
     [Fact]
@@ -361,16 +522,65 @@ public sealed class EntityVersionCodecTests : IDisposable
 
         public Exception? Failure { get; set; }
 
+        /// <summary>When set, every call answers only once this task completes (a slow key service).</summary>
+        public Task? Gate { get; set; }
+
         public int Calls => Volatile.Read(ref _calls);
 
         public async ValueTask<CryptographicKey> GetCurrentKeyAsync(CancellationToken cancellationToken = default)
         {
             Interlocked.Increment(ref _calls);
+            await (Gate ?? Task.CompletedTask);
             await Task.Yield();
             return Failure is { } failure ? throw failure : Current;
         }
 
         public ValueTask<CryptographicKey?> GetKeyAsync(string keyId, CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("Entity versions never look a key up by id.");
+    }
+
+    /// <summary>Keys in memory, served both ways like <see cref="StaticEncryptionKeyProvider"/>, counting every call.</summary>
+    private sealed class CountingInMemoryKeyProvider(CryptographicKey current) : ISynchronousEncryptionKeyProvider, IEncryptionKeyProvider
+    {
+        private int _calls;
+
+        public int Calls => Volatile.Read(ref _calls);
+
+        public CryptographicKey GetCurrentKey()
+        {
+            Interlocked.Increment(ref _calls);
+            return current;
+        }
+
+        public CryptographicKey? GetKey(string keyId)
+        {
+            Interlocked.Increment(ref _calls);
+            return keyId == current.Id ? current : null;
+        }
+
+        public ValueTask<CryptographicKey> GetCurrentKeyAsync(CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(GetCurrentKey());
+
+        public ValueTask<CryptographicKey?> GetKeyAsync(string keyId, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(GetKey(keyId));
+    }
+}
+
+/// <summary>
+/// A SQLite context whose aggregate carries the <c>xmin</c> token PostgreSQL's convention adds, so
+/// <see cref="ConcurrencyVersion.Get"/> runs in the unit lane.
+/// </summary>
+public sealed class VersionedTestDbContext(DbContextOptions<VersionedTestDbContext> options, SharedKernel.Persistence.EfCore.Context.PersistenceContextDependencies dependencies)
+    : SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext(options, dependencies)
+{
+    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+    {
+        base.ConfigureConventions(configurationBuilder);
+    }
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.ApplyConfiguration(new TestAggregateConfig());
+        modelBuilder.Entity<TestAggregate>().Property<uint>(ConcurrencyVersion.XminColumn).IsConcurrencyToken();
     }
 }

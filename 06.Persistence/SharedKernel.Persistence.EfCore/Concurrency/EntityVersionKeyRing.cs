@@ -43,9 +43,12 @@ internal sealed class EntityVersionKey
 /// <para>
 /// <strong>Which provider.</strong> An <see cref="ISynchronousEncryptionKeyProvider"/> is used directly (an
 /// <see cref="IEncryptionKeyProvider"/> that is also one counts, like <see cref="StaticEncryptionKeyProvider"/>). An
-/// asynchronous-only provider — a KMS such as Azure Key Vault — is bridged: the current key is loaded on first use
-/// (one call, blocking that caller once) and refreshed in the background every <see cref="RefreshInterval"/>, so a
-/// rotation is picked up without a restart; a failed refresh keeps the previous key and is logged. Without either
+/// asynchronous-only provider — a KMS such as Azure Key Vault — is bridged: <see cref="EntityVersionKeyWarmUp"/> loads
+/// the current key before the host takes traffic (<see cref="WarmUpAsync"/>), and it is refreshed in the background
+/// every <see cref="RefreshInterval"/>, so a rotation is picked up without a restart; a failed refresh keeps the
+/// previous key and is logged. A request thread never calls the provider once the key is loaded. Only when the
+/// warm-up did not load it — no host (a context built by hand, a tool), or the provider failed or had not answered
+/// yet — does the first version load the key itself, blocking that caller once: the fallback. Without either
 /// provider, versions cannot be issued: <see cref="GetCurrentKey"/> throws with the fix.
 /// </para>
 /// <para>
@@ -69,6 +72,12 @@ internal sealed class EntityVersionKeyRing
 
     /// <summary>How often an asynchronous-only provider is asked for its current key again.</summary>
     internal static readonly TimeSpan RefreshInterval = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// How long <see cref="WarmUpAsync"/> holds host start for an asynchronous-only provider. A slower provider keeps
+    /// loading in the background.
+    /// </summary>
+    internal static readonly TimeSpan WarmUpTimeout = TimeSpan.FromSeconds(10);
 
     private readonly Lazy<Source> _source;
     private readonly TimeProvider _time;
@@ -108,6 +117,9 @@ internal sealed class EntityVersionKeyRing
     /// <summary>The refresh started by the last <see cref="GetCurrentKey"/>, for tests.</summary>
     internal Task LastRefresh { get; private set; } = Task.CompletedTask;
 
+    /// <summary>The load started by the last <see cref="WarmUpAsync"/>, for tests. Never faults.</summary>
+    internal Task LastWarmUp { get; private set; } = Task.CompletedTask;
+
     /// <summary>
     /// A ring over an explicit provider — for a context built by hand — with the same rule as the container's: an
     /// in-memory provider is used directly, an asynchronous-only one is bridged.
@@ -139,6 +151,49 @@ internal sealed class EntityVersionKeyRing
             SourceKind.Asynchronous => CurrentFromAsynchronous(source.AsynchronousProvider!),
             _ => throw NotConfigured(),
         };
+    }
+
+    /// <summary>
+    /// Loads the current key of an asynchronous-only provider without blocking a thread, so that no request has to
+    /// load it synchronously. Does nothing for a synchronous provider, without a provider, or when the key is loaded.
+    /// </summary>
+    /// <param name="cancellationToken">Stops waiting (the host is stopping); the load itself goes on.</param>
+    /// <returns>
+    /// A task that completes when the key is loaded, when loading it failed, or after <see cref="WarmUpTimeout"/>,
+    /// whichever comes first. A failure and a timeout are logged, never thrown: the first version then loads the key
+    /// itself (the fallback). After a timeout the load goes on and publishes the key when the provider answers.
+    /// </returns>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
+    internal async Task WarmUpAsync(CancellationToken cancellationToken)
+    {
+        IEncryptionKeyProvider provider;
+        try
+        {
+            var source = _source.Value;
+            if (source.Kind != SourceKind.Asynchronous || _asyncCurrent is not null)
+                return;
+
+            provider = source.AsynchronousProvider!;
+        }
+        catch (Exception exception)
+        {
+            // The provider could not even be resolved; the first version tries again.
+            PersistenceLog.EntityVersionKeyWarmUpFailed(_logger, exception);
+            return;
+        }
+
+        // On the thread pool: a provider that blocks before its first await cannot hold host start past the timeout.
+        var load = Task.Run(() => LoadCurrentKeyAsync(provider), CancellationToken.None);
+        LastWarmUp = load;
+
+        try
+        {
+            await load.WaitAsync(WarmUpTimeout, _time, cancellationToken).ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            PersistenceLog.EntityVersionKeyWarmUpTimedOut(_logger, WarmUpTimeout);
+        }
     }
 
     /// <summary>The error for a service that issues versions without a key provider.</summary>
@@ -175,8 +230,8 @@ internal sealed class EntityVersionKeyRing
                 snapshot = _asyncCurrent;
                 if (snapshot is null)
                 {
-                    // The first version this process issues or opens: load the current key once, blocking this caller.
-                    // Every later load is a background refresh.
+                    // The fallback: the warm-up did not load the key (no host, or the provider failed or has not
+                    // answered yet), so this caller loads it, blocking once. Every later load is a background refresh.
                     var root = Task.Run(() => provider.GetCurrentKeyAsync().AsTask()).GetAwaiter().GetResult();
                     snapshot = new Snapshot(Remember(root), _time.GetUtcNow());
                     _asyncCurrent = snapshot;
@@ -189,6 +244,23 @@ internal sealed class EntityVersionKeyRing
         }
 
         return snapshot.Key;
+    }
+
+    // The warm-up's load: publishes the key unless a request loaded it first (the fallback), and logs a failure. Never
+    // faults, so a load that outlives the warm-up's wait leaves no unobserved exception behind.
+    private async Task LoadCurrentKeyAsync(IEncryptionKeyProvider provider)
+    {
+        try
+        {
+            var root = await provider.GetCurrentKeyAsync().ConfigureAwait(false);
+            var loaded = new Snapshot(Remember(root), _time.GetUtcNow());
+            lock (_loadGate)
+                _asyncCurrent ??= loaded;
+        }
+        catch (Exception exception)
+        {
+            PersistenceLog.EntityVersionKeyWarmUpFailed(_logger, exception);
+        }
     }
 
     private async Task RefreshAsync(IEncryptionKeyProvider provider, Snapshot stale)
