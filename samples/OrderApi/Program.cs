@@ -24,7 +24,8 @@ builder.Services.AddSingleton<IClock, SystemClock>();
 // zero-prerequisite behavior preset (tracing, logging, metrics, validation). Build() registers
 // them in the fixed pipeline order; nothing is registered without it. The behaviors that need
 // an infrastructure seam (authorization over IRequestContext, idempotency over
-// IRequestIdempotencyStore, transaction over IUnitOfWork, auditing over IAuditTrailWriter, and
+// IRequestIdempotencyStore and IRequestContext — keys are reserved per tenant and caller —,
+// transaction over IUnitOfWork, auditing over IAuditTrailWriter, and
 // caching from SharedKernel.Application.Behaviors.Caching) are deliberately not in the preset —
 // each is an explicit opt-in, and Build() throws if its seam is not registered.
 builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(PlaceOrderCommand).Assembly));

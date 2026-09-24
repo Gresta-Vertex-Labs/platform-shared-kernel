@@ -14,9 +14,13 @@ internal sealed class FakeIdempotencyStore(List<string>? sequence = null) : IReq
     public int CompleteCallCount { get; private set; }
     public int ReleaseCallCount { get; private set; }
 
+    /// <summary>Every key <see cref="TryBeginAsync"/> was called with, in call order.</summary>
+    public List<string> BegunKeys { get; } = [];
+
     public Task<IdempotencyBeginResult> TryBeginAsync(string key, string requestFingerprint, CancellationToken cancellationToken)
     {
         BeginCallCount++;
+        BegunKeys.Add(key);
 
         if (_entries.TryGetValue(key, out var existing))
         {

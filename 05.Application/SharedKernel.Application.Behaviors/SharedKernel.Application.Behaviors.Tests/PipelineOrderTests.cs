@@ -208,6 +208,7 @@ public sealed class PipelineOrderTests
         services.AddSingleton(sequence);
         services.AddSingleton<IUnitOfWork>(new FakeUnitOfWork(sequence));
         services.AddSingleton<IRequestIdempotencyStore>(new FakeIdempotencyStore(sequence));
+        services.AddSingleton<IRequestContext>(new FakeRequestContext(isAuthenticated: true));
 
         services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblyContaining<PipelineOrderTests>());
 

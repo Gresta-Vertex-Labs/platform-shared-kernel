@@ -51,6 +51,34 @@ public sealed class ApplicationBehaviorsBuilderTests
         act.Should().Throw<InvalidOperationException>().WithMessage("*IRequestIdempotencyStore*");
     }
 
+    /// <summary>
+    /// Reservations are scoped per tenant and caller, so the behavior cannot run without knowing who is calling —
+    /// falling back to "everyone is anonymous" would silently put every caller back into one shared scope.
+    /// </summary>
+    [Fact]
+    public void Build_AddIdempotencyBehaviorWithStoreButWithoutIRequestContext_Throws()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IRequestIdempotencyStore>(new FakeIdempotencyStore());
+        var builder = services.AddSharedKernelApplicationBehaviors().AddIdempotencyBehavior();
+
+        var act = () => builder.Build();
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*IRequestContext*per tenant and caller*");
+    }
+
+    [Fact]
+    public void Build_AddIdempotencyBehaviorWithStoreAndIRequestContext_DoesNotThrow()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IRequestIdempotencyStore>(new FakeIdempotencyStore());
+        services.AddSingleton<IRequestContext>(AnonymousRequestContext.Instance);
+
+        var act = () => services.AddSharedKernelApplicationBehaviors().AddIdempotencyBehavior().Build();
+
+        act.Should().NotThrow();
+    }
+
     [Fact]
     public void Build_AddAuditingBehaviorWithoutWriter_Throws()
     {

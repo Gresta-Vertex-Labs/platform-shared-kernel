@@ -14,8 +14,12 @@ namespace SharedKernel.Application.Behaviors.Idempotency;
 /// the composition root. This package ships only the interface — no implementation.
 /// </para>
 /// <para>
-/// <b>Key scoping.</b> The key itself is opaque to this contract; scoping it by tenant, if needed,
-/// is the store implementation's responsibility.
+/// <b>Key scoping.</b> <see cref="IdempotencyBehavior{TRequest,TResponse}"/> never hands a store the
+/// command's raw key. It passes a digest of the tenant, the caller and the raw key — always 64 lowercase
+/// hexadecimal characters — so a reservation, and the response stored with it, belongs to one caller of
+/// one tenant (see that behavior's remarks). A store treats the key as opaque and stores it verbatim; it
+/// may partition further (the <c>18.Idempotency</c> stores also key by their own tenant accessor), which
+/// only narrows the scope. The fingerprint is compared separately, as described below.
 /// </para>
 /// <para>
 /// <b>Contract.</b> <see cref="TryBeginAsync"/> atomically reserves a new key and records the
@@ -44,7 +48,10 @@ public interface IRequestIdempotencyStore
     /// Attempts to atomically reserve <paramref name="key"/> for a new execution, or reports its
     /// existing state.
     /// </summary>
-    /// <param name="key">The idempotency key supplied by the command instance.</param>
+    /// <param name="key">
+    /// The key to reserve. From <see cref="IdempotencyBehavior{TRequest,TResponse}"/> it is the command's
+    /// idempotency key already scoped to the tenant and the caller, never the raw key.
+    /// </param>
     /// <param name="requestFingerprint">
     /// A fingerprint of the request payload, used to detect the key being reused for a genuinely
     /// different request.
