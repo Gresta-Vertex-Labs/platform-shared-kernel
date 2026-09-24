@@ -7,6 +7,7 @@ decision. IDs below prefixed R are the remediation items. "Follow-up" items are 
 and need an owner decision.
 
 Confirmed sound by the reviews:
+
 - Authorization fails closed everywhere:
   - An unmapped principal is refused with 403.
   - A pipeline without `UseAuthorization` throws.
@@ -72,14 +73,19 @@ Confirmed sound by the reviews:
 - The unknown OpenAPI document 404 is plain text (C21).
 - gRPC authorization refusals carry no rich status.
 
-## Follow-ups outside this pass (owner decision)
+## Cross-domain security fixes (owner-approved 2026-09-24, streams X1–X4)
+
+| X | Source | Decision |
+| --- | --- | --- |
+| X1 | S3 | **Step-up expires on long-lived connections.** 12.Security records when each authentication method was verified. `SecurityClaimTypes` gains a claim type for it. `IUserContext` gains a default-implemented `GetAuthenticationMethodTime(string method)` (null when unknown, non-breaking), filled by the mappers. The TOTP step-up transformation stamps the verification time next to `amr=otp`. 14's `RequireAuthenticationMethodAttribute` gains an optional max age (encoded into its policy name), with a matching convention overload. With a max age, the requirement holds only while the method's verification time is within it (`IClock`), so an open SignalR connection or gRPC stream loses the step-up when the window ends. The RFC 9470 challenge carries `max_age`. |
+| X2 | S1 | **No trust in inbound baggage beyond the edge.** 13's `BaggageLogRecordProcessor` copies only an allow-list of platform-owned baggage keys. OpenTelemetry's own baggage store is not filled from an untrusted inbound header, while the service's own outbound propagation stays intact. 01's default feature-targeting accessor no longer takes the tenant or the user from baggage: without a registered accessor, evaluation has no targeting identity. Message consumers are checked for the same path. |
+| X3 | adjacent | **Idempotency per caller.** 05's `IdempotencyBehavior` reserves keys per tenant **and caller** (actor kind + identity), so one caller can never replay another's stored response. For anonymous callers the request fingerprint must match (already the case); the residual risk is documented. 18's stores need no change unless a key length limit requires it. 05's `idempotency.key_missing` becomes `idempotency.key_required`, matching 14. |
+| X4 | S13 | **Opaque ETags.** The version that reaches the wire is no longer the raw `xmin`. It is a deterministic, keyed encoding: stable for the same version (so `If-None-Match` works), bound to its entity, and meaningless without the service's key. It decodes back to the expected version for the concurrency check, and a token for another entity or a tampered one never parses. The safe path must be the default path (a service cannot put the raw number on the wire by accident). The key comes from existing key infrastructure (01.Cryptography, a dedicated purpose), and key rotation is supported (an old token is a stale version at worst). Every existing ETag value changes. |
+
+## Follow-ups outside this pass
 
 | Item | Source | Owner |
 | --- | --- | --- |
-| Step-up on long-lived SignalR connections and gRPC streams: the TOTP step-up claim (`amr=otp`) carries no verification time, so a connection keeps it after the window. Needs 12.Security to stamp the step-up time, plus an optional max age on `[RequireAuthenticationMethod]`. | S3 | 12.Security + 14 |
-| `BaggageLogRecordProcessor` copies every baggage item onto every log record (allow-list needed); the default feature-management accessor takes the tenant from baggage. R3 closes the HTTP edge only. | S1 | 13.ServiceDefaults, 01.Core |
-| Idempotency keys are reserved per tenant, not per caller: a user who knows another user's key can replay that user's stored response. | S (adjacent) | 05.Application, 18.Idempotency |
-| ETags are the raw PostgreSQL `xmin`, which reveals transaction volume across tenants. | S13 | 06.Persistence |
 | The refusal log (14002) records no caller identity. | S14 | 14 (needs a privacy decision) |
 | A `ValidationResult<T>` → `Result<T>` bridge, and naming the field of a hand-made validation error. | D14 | 01.Core |
 | `SecureDefaultsAssertion.AssertMethodBodyInvokesMethod` never matches methods on nested types. | wave 4 | 00.Governance |
