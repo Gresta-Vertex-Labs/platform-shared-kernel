@@ -32,7 +32,7 @@ namespace SharedKernel.ArchitectureTests;
 /// rewrote the dispatcher's runtime-type-dispatch technique from a cached
 /// <c>MethodInfo.MakeGenericMethod</c> delegate to <see cref="Type.MakeGenericType"/> +
 /// <see cref="Activator.CreateInstance(Type, object?[])"/> (see <c>DispatchAsync</c>/
-/// <c>BuildNotification</c> in the current source) — a technique <see cref="Predicates.NoMakeGenericMethodReflectionPredicate"/>
+/// <c>BuildNotification</c> in that source; the dispatcher itself was deleted in WO-086/P-567) — a technique <see cref="Predicates.NoMakeGenericMethodReflectionPredicate"/>
 /// does not match at all (it looks only for a call named exactly <c>"MakeGenericMethod"</c>), so
 /// no exemption is needed for the current implementation. The "Closure-free static-lambda naming"
 /// note below is kept as a reusable implementation note for the NEXT exemption request, not
@@ -46,7 +46,7 @@ namespace SharedKernel.ArchitectureTests;
 /// singleton "display class" nested type — conventionally named <c>&lt;&gt;c</c> — nested
 /// inside the declaring type. Mono.Cecil's <c>TypeDefinition.FullName</c> reports the nesting
 /// separator as <c>/</c> (not <c>.</c>), e.g.
-/// <c>SharedKernel.Application.DomainEvents.MediatRDomainEventDispatcher/&lt;&gt;c</c>. The
+/// <c>Contoso.Orders.OrderDispatcher/&lt;&gt;c</c>. The
 /// synthesized method itself is named <c>&lt;{EnclosingMethodName}&gt;b__{classToken}_{ordinal}</c>
 /// — the ordinal is assigned by the compiler and is NOT derivable from source alone; it must be
 /// read from the actual compiled IL (e.g. via a throwaway Mono.Cecil scan, or by reading the

@@ -16,9 +16,8 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// <see cref="Rules.ApplicationPipelineRules.BehaviorsNeverReferenceConcreteInfrastructure"/>
 /// to enforce that the named pipeline behaviors (<c>TracingBehavior</c>,
 /// <c>CacheInvalidationBehavior</c>) reference only abstraction
-/// packages, mirroring the existing platform-wide
-/// <see cref="Rules.SharedKernelLayeringRules.ApplicationNeverReferencesConcreteInfrastructure"/>
-/// guarantee, made explicit and behavior-scoped.
+/// packages. The pipeline packages are Host tier, which the tier matrix allows to reference adapters,
+/// so this is the only thing keeping these two behaviors provider-neutral.
 /// </para>
 /// <para>
 /// <strong>Construction:</strong> both the behavior-name set and the forbidden-namespace-prefix

@@ -23,13 +23,13 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// </para>
 /// <list type="bullet">
 ///   <item><description>
-///     Rule 1 — <see cref="DomainNeverReferencesTenantProvider"/>: mechanizes "Domain code
-///     (<c>03.Domain</c>) must never reference <c>ITenantProvider</c> — it receives tenantId as a
+///     Rule 1 — <see cref="DomainNeverReferencesRequestContext"/>: mechanizes "Domain code
+///     (<c>03.Domain</c>) must never reference <c>IRequestContext</c> — it receives the tenant as a
 ///     primitive."
 ///   </description></item>
 ///   <item><description>
 ///     Rule 2 — <see cref="NoSingletonRegistrationOfSecurityContextTypes"/>: mechanizes
-///     "<c>IUserContext</c> and <c>ITenantProvider</c> are scoped — one instance per HTTP request.
+///     "<c>IUserContext</c> and <c>IRequestContext</c> are request-scoped — one instance per request.
 ///     Never register as singleton."
 ///   </description></item>
 ///   <item><description>
@@ -45,7 +45,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// </list>
 /// <para>
 /// The third documented hard rule — "Application-layer and domain-adjacent code must inject
-/// <c>IUserContext</c>/<c>ITenantProvider</c> — never <c>IHttpContextAccessor</c>,
+/// <c>IUserContext</c>/<c>IRequestContext</c> — never <c>IHttpContextAccessor</c>,
 /// <c>ClaimsPrincipal</c>, or <c>HttpContext</c> directly" — is mechanized separately as SK0031
 /// (<c>Diagnostics.RawSecurityContextConstructorInjectionAnalyzer</c>), a Roslyn analyzer,
 /// not an architecture test — it is a per-call-site syntax pattern, not an assembly-dependency
@@ -66,34 +66,34 @@ public static class SecurityArchitectureRules
     /// <summary>
     /// Returns a <see cref="ConditionList"/> asserting that no type in the supplied
     /// <c>03.Domain</c> assembly references
-    /// <c>SharedKernel.Security.Abstractions.ITenantProvider</c> via a field type,
+    /// <c>SharedKernel.Execution.Context.IRequestContext</c> via a field type,
     /// constructor/method parameter type, or method-call instruction operand.
     /// </summary>
     /// <remarks>
     /// <para>
     /// <c>03.Domain</c>'s aggregates and domain services must never depend on the request-scoped
-    /// <c>ITenantProvider</c> abstraction directly — the application layer resolves
-    /// <c>ITenantProvider.TenantId</c> and passes it as a <see cref="System.Guid"/> primitive to
-    /// domain constructors and methods. <c>ITenantProvider</c> reaching into <c>03.Domain</c>
+    /// <c>IRequestContext</c> abstraction directly — the application layer resolves
+    /// <c>IRequestContext.TenantId</c> and passes it as a <c>TenantId</c> value to
+    /// domain constructors and methods. <c>IRequestContext</c> reaching into <c>03.Domain</c>
     /// would reintroduce exactly the infrastructure-in-domain coupling the platform's
     /// <see cref="DomainLayerPurityRules"/>/<see cref="PersistenceLayerProtectionRules"/> precedent
     /// already forecloses for persistence.
     /// </para>
     /// <para>
-    /// See <see cref="NoTenantProviderReferenceInDomainPredicate"/> for the full three-surface
+    /// See <see cref="NoRequestContextReferenceInDomainPredicate"/> for the full three-surface
     /// detection technique — no exemption is applied; <c>03.Domain</c> must never reference
-    /// <c>ITenantProvider</c> under any circumstance.
+    /// <c>IRequestContext</c> under any circumstance.
     /// </para>
     /// <para>
     /// <strong>Offending pattern:</strong>
-    /// <code>class PricingPolicy(ITenantProvider tenantProvider) : DomainService { ... }</code>
+    /// <code>class PricingPolicy(IRequestContext requestContext) : DomainService { ... }</code>
     /// </para>
     /// <para>
     /// <strong>Compliant pattern:</strong>
     /// <code>
     /// class PricingPolicy : DomainService
     /// {
-    ///     public Result&lt;Money&gt; Reprice(Guid tenantId, ...) { ... }
+    ///     public Result&lt;Money&gt; Reprice(TenantId tenantId, ...) { ... }
     /// }
     /// </code>
     /// </para>
@@ -103,26 +103,26 @@ public static class SecurityArchitectureRules
     /// </param>
     /// <returns>
     /// A <see cref="ConditionList"/> asserting no type references
-    /// <c>ITenantProvider</c> in the supplied domain assembly.
+    /// <c>IRequestContext</c> in the supplied domain assembly.
     /// </returns>
-    public static ConditionList DomainNeverReferencesTenantProvider(Assembly domainAssembly) =>
+    public static ConditionList DomainNeverReferencesRequestContext(Assembly domainAssembly) =>
         Types
             .InAssembly(domainAssembly)
             .That()
             .HaveNameStartingWith(string.Empty)
             .Should()
-            .MeetCustomRule(new NoTenantProviderReferenceInDomainPredicate());
+            .MeetCustomRule(new NoRequestContextReferenceInDomainPredicate());
 
     /// <summary>
     /// Returns a <see cref="ConditionList"/> asserting that no method body in the supplied
     /// assemblies contains a closed-generic <c>AddSingleton</c> registration call whose generic
     /// arguments include
     /// <c>SharedKernel.Security.Abstractions.IUserContext</c> or
-    /// <c>SharedKernel.Security.Abstractions.ITenantProvider</c>.
+    /// <c>SharedKernel.Execution.Context.IRequestContext</c>.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <c>IUserContext</c>/<c>ITenantProvider</c> are documented as request-scoped — one instance
+    /// <c>IUserContext</c>/<c>IRequestContext</c> are documented as request-scoped — one instance
     /// per HTTP request, resolved from <c>IHttpContextAccessor</c> at construction time. A
     /// singleton registration would capture the FIRST resolved request's identity/tenant context
     /// and silently leak it across every subsequent request on the same process — a severe
@@ -144,11 +144,11 @@ public static class SecurityArchitectureRules
     /// </remarks>
     /// <param name="assemblies">
     /// The assemblies to evaluate — typically <c>SharedKernel.Security.Oidc</c> and any other
-    /// package that registers <c>IUserContext</c>/<c>ITenantProvider</c>.
+    /// package that registers <c>IUserContext</c>/<c>IRequestContext</c>.
     /// </param>
     /// <returns>
     /// A <see cref="ConditionList"/> asserting no supplied assembly registers
-    /// <c>IUserContext</c>/<c>ITenantProvider</c> as singleton.
+    /// <c>IUserContext</c>/<c>IRequestContext</c> as singleton.
     /// </returns>
     public static ConditionList NoSingletonRegistrationOfSecurityContextTypes(
         params Assembly[] assemblies) =>

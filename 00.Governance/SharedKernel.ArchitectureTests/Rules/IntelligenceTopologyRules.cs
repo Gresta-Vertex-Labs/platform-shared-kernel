@@ -47,7 +47,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// </para>
 /// <para>
 /// <strong>Permitted exemption list</strong> (caller-controlled — carries no internal namespace
-/// guard, consistent with <c>PresentationLayeringRules</c>/<c>CompositionRootExclusivityRules</c>/
+/// guard, consistent with <c>PresentationLayeringRules</c>/
 /// <c>StorageTopologyRules</c>/<c>SearchTopologyRules</c>): none. Any future exemption must be
 /// documented in <c>00.Governance/CLAUDE.md</c> before it is applied in code.
 /// </para>

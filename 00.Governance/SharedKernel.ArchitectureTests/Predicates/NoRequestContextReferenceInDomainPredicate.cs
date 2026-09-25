@@ -12,8 +12,8 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Used by <see cref="Rules.SecurityArchitectureRules.DomainNeverReferencesTenantProvider"/> to
-/// mechanize <c>12.Security/CLAUDE.md</c>'s documented hard rule verbatim: "Domain code
+/// Used by <see cref="Rules.SecurityArchitectureRules.DomainNeverReferencesRequestContext"/> to
+/// mechanize the documented hard rule: "Domain code
 /// (<c>03.Domain</c>) must never reference <c>IRequestContext</c> — it receives tenantId as a
 /// primitive." Reuses <see cref="NoDbContextTransactionInApplicationPredicate"/>'s established
 /// three-surface (fields, constructor/method parameters, instruction-operand types) inspection
@@ -26,13 +26,13 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// <strong>No exemption.</strong> Unlike <see cref="NoDbContextTransactionInApplicationPredicate"/>,
 /// this predicate carries no namespace exemption guard — <c>03.Domain</c> must never reference
 /// <c>IRequestContext</c> under any circumstance; there is no legitimate in-domain construction
-/// site for it (the abstraction's own home, <c>SharedKernel.Security.Abstractions</c>, is never a
+/// site for it (the abstraction's own home, <c>SharedKernel.Execution</c>, is never a
 /// <c>03.Domain</c> assembly and is never passed to this rule as the assembly under test).
 /// </para>
 /// <para>
 /// <strong>Offending pattern:</strong>
 /// <code>
-/// class PricingPolicy(IRequestContext tenantProvider) : DomainService { ... }
+/// class PricingPolicy(IRequestContext requestContext) : DomainService { ... }
 /// </code>
 /// </para>
 /// <para>
@@ -47,7 +47,7 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// </code>
 /// </para>
 /// </remarks>
-public sealed class NoTenantProviderReferenceInDomainPredicate : ICustomRule
+public sealed class NoRequestContextReferenceInDomainPredicate : ICustomRule
 {
     private const string RequestContextFullName =
         "SharedKernel.Execution.Context.IRequestContext";

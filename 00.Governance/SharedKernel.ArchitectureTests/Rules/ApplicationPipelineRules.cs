@@ -13,14 +13,8 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// <remarks>
 /// <para>
 /// All factory methods accept <see cref="Assembly"/> (or <c>params Assembly[]</c>) and return
-/// <see cref="ConditionList"/>. Predicates are designed and tested here against contrived
-/// in-memory fixture assemblies — <c>00.Governance</c> never references
-/// <c>05.Application</c>/<c>05.Application.Pipeline</c> directly (layering: <c>00.Governance</c>
-/// references nothing). The owning domain (<c>05.Application</c>) is responsible for invoking
-/// the existing cross-domain consumption pattern already established for
-/// <see cref="CachingAbstractionRules"/>/<see cref="RedisTopologyRules"/> (consumed by
-/// 02.Caching's own test suites) and <see cref="PersistenceLayerProtectionRules"/> (consumed by
-/// 06.Persistence's own test suites).
+/// <see cref="ConditionList"/>. Each is tested here against contrived in-memory fixture assemblies and
+/// against the real <c>SharedKernel.Application.Pipeline</c>/<c>.Pipeline.Caching</c> assemblies.
 /// </para>
 /// </remarks>
 public static class ApplicationPipelineRules
@@ -47,9 +41,8 @@ public static class ApplicationPipelineRules
     /// the forbidden namespace referenced.
     /// </returns>
     /// <remarks>
-    /// Mirrors the existing, already-enforced
-    /// <see cref="SharedKernelLayeringRules.ApplicationNeverReferencesConcreteInfrastructure"/>
-    /// guarantee, made explicit and behavior-scoped for the two behaviors — the
+    /// The pipeline packages are Host tier, which the tier matrix allows to reference adapters; this rule
+    /// keeps the two named behaviors provider-neutral anyway, made explicit and behavior-scoped — the
     /// same purity expectation <c>CachingBehavior</c> (<c>SharedKernel.Caching.Abstractions</c>
     /// only) already satisfies by construction. Abstractions-only references remain permitted;
     /// only concrete provider packages are forbidden.
@@ -115,4 +108,53 @@ public static class ApplicationPipelineRules
             .HaveNameStartingWith(string.Empty)
             .Should()
             .MeetCustomRule(new NoGenericConstraintMatchesStreamRequestPredicate());
+
+    /// <summary>
+    /// <c>SharedKernel.Application.Pipeline</c> must never reference <c>SharedKernel.Caching</c> (bare prefix, including
+    /// <c>.Abstractions</c>: that reference belongs to the sibling <c>SharedKernel.Application.Pipeline.Caching</c>
+    /// package, P-544), Polly, <c>Microsoft.Extensions.Hosting</c>, or <c>SharedKernel.Core</c>.
+    /// </summary>
+    /// <remarks>
+    /// The pipeline is Host tier, so the tier matrix would allow every one of these references. This rule keeps the
+    /// core pipeline free of optional dependencies, so a service that does not cache pays for no cache package.
+    /// </remarks>
+    /// <param name="assembly">The <c>SharedKernel.Application.Pipeline</c> assembly to evaluate.</param>
+    /// <returns>A <see cref="ConditionList"/> asserting the pipeline package stays free of these four dependencies.</returns>
+    public static ConditionList PipelineNeverReferencesCachingPollyHostingOrCore(Assembly assembly) =>
+        Types
+            .InAssembly(assembly)
+            .That()
+            .HaveNameStartingWith(string.Empty)
+            .Should()
+            .NotHaveDependencyOn("SharedKernel.Caching")
+            .And()
+            .NotHaveDependencyOn("Polly")
+            .And()
+            .NotHaveDependencyOn("Microsoft.Extensions.Hosting")
+            .And()
+            .NotHaveDependencyOn("SharedKernel.Core");
+
+    /// <summary>
+    /// <c>SharedKernel.Application.Pipeline.Caching</c> may reach <c>SharedKernel.Caching.Abstractions</c> but never a
+    /// concrete persistence, messaging or caching-provider package (P-544).
+    /// </summary>
+    /// <remarks>
+    /// The caching pipeline is Host tier, so the tier matrix would allow a provider reference; this rule keeps the
+    /// caching behaviors provider-neutral.
+    /// </remarks>
+    /// <param name="assembly">The <c>SharedKernel.Application.Pipeline.Caching</c> assembly to evaluate.</param>
+    /// <returns>A <see cref="ConditionList"/> asserting the caching pipeline never references concrete infrastructure.</returns>
+    public static ConditionList PipelineCachingNeverReferencesConcreteInfrastructure(Assembly assembly) =>
+        Types
+            .InAssembly(assembly)
+            .That()
+            .HaveNameStartingWith(string.Empty)
+            .Should()
+            .NotHaveDependencyOn("SharedKernel.Persistence")
+            .And()
+            .NotHaveDependencyOn("SharedKernel.Messaging")
+            .And()
+            .NotHaveDependencyOn("SharedKernel.Caching.Redis")
+            .And()
+            .NotHaveDependencyOn("SharedKernel.Caching.FusionCache");
 }

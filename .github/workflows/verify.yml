@@ -59,16 +59,17 @@ env:
 
 jobs:
   # ---------------------------------------------------------------------------------------------
-  # Fails while eng/tier-baseline.txt lists any known tier violation. Entries there are downgraded
-  # from errors to warnings by eng/SharedKernelTiers.targets, so a non-empty file means the build
-  # is tolerating a dependency the tier matrix forbids. The file is empty since P-568; this job
-  # keeps it that way. A missing file passes (nothing is being downgraded).
+  # Proves the tier check still rejects a violation (P-574). Every SKTIER diagnostic is an error, so
+  # the full build in unit-test shows the repository has none; this job shows a NEW one would fail
+  # the build: two throw-away probe projects (a Model -> Abstractions reference, an Adapter taking
+  # ASP.NET Core) must each fail with SKTIER001 / SKTIER006. It catches a downgrade to a warning or a
+  # tier target that silently stopped running.
   # ---------------------------------------------------------------------------------------------
   tier-check:
-    name: Tier baseline is empty
+    name: Tier violations fail the build
     if: inputs.unit
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
@@ -76,22 +77,15 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
 
-      - name: Assert eng/tier-baseline.txt has no entries
-        run: |
-          set -euo pipefail
-          baseline=eng/tier-baseline.txt
-          if [ ! -f "$baseline" ]; then
-            echo "OK: $baseline does not exist, so no tier violation is downgraded."
-            exit 0
-          fi
-          entries=$(grep -cvE '^[[:space:]]*$' "$baseline" || true)
-          if [ "$entries" -ne 0 ]; then
-            echo "::error::$baseline lists $entries tier violation(s). Each is a dependency the tier matrix forbids, tolerated as a warning. Fix the reference and delete its line; the baseline only ever shrinks."
-            grep -vE '^[[:space:]]*$' "$baseline" | sed 's/^/  /'
-            exit 1
-          fi
-          echo "OK: $baseline is empty."
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      - name: Build the tier probes and assert they fail
+        run: bash eng/verify-tier-errors.sh
 
   # ---------------------------------------------------------------------------------------------
   # Builds the WHOLE solution but only runs the container-free projects (Unit filter), plus every

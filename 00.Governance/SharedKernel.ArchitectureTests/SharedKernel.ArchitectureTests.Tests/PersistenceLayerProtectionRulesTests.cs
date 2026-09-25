@@ -86,7 +86,7 @@ public class PersistenceLayerProtectionRulesTests
         const string source = """
             using System.Threading.Tasks;
 
-            namespace Application.Abstractions
+            namespace Application.Transactions
             {
                 public interface IUnitOfWork
                 {
@@ -98,8 +98,8 @@ public class PersistenceLayerProtectionRulesTests
             {
                 public class OrderService
                 {
-                    private readonly Application.Abstractions.IUnitOfWork _unitOfWork;
-                    public OrderService(Application.Abstractions.IUnitOfWork unitOfWork)
+                    private readonly Application.Transactions.IUnitOfWork _unitOfWork;
+                    public OrderService(Application.Transactions.IUnitOfWork unitOfWork)
                     {
                         _unitOfWork = unitOfWork;
                     }

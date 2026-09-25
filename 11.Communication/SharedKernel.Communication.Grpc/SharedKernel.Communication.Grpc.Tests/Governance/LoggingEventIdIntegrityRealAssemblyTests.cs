@@ -49,7 +49,7 @@ public sealed class LoggingEventIdIntegrityRealAssemblyTests
         // clause of T-28. Lives in Grpc.Tests (not Internal.Tests) because SharedKernel.Communication.Grpc's
         // production .csproj already legitimately references SharedKernel.Communication.Internal (G-09
         // service-discovery integration) — the reverse direction is a layering violation
-        // (CommunicationLayeringRules.CommunicationInternalNeverReferencesOtherCommunicationPackages).
+        // (an undeclared Adapter -> Adapter edge, SKTIER002, and a reference cycle).
         var grpcAssembly = typeof(CorrelationTracingInterceptor).Assembly;
         var internalAssembly = typeof(IServiceEndpointResolver).Assembly;
 

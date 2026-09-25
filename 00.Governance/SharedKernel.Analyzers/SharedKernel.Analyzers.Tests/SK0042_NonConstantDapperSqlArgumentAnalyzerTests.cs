@@ -8,9 +8,14 @@ namespace SharedKernel.Analyzers.Tests;
 /// <summary>Tests for SK0042 <see cref="NonConstantDapperSqlArgumentAnalyzer"/>.</summary>
 /// <remarks>
 /// Fire path — an interpolated string, a concatenation, or a non-const local passed as the `sql`
-/// argument of a matched method.
+/// argument of a matched method: <c>IDbSession.Command</c>, a method on a type implementing
+/// <c>IDbSession</c>, or Dapper's own <c>SqlMapper</c> extensions.
 /// Pass path — a literal, a `const` field, or a concatenation of only constants; an unrelated method
 /// with a coincidentally-named `sql` parameter; every non-`sql` argument.
+/// The stubs mirror the shipped shape of <c>SharedKernel.Persistence.Dapper.Sessions</c>
+/// (<c>IDbSessionFactory</c> opens an <c>IDbSession</c>, whose <c>Command</c> builds a Dapper
+/// <c>CommandDefinition</c>); <c>RealKernelTypeNameTests</c> runs the same rule against the compiled
+/// package.
 /// </remarks>
 public class SK0042_NonConstantDapperSqlArgumentAnalyzerTests
 {
@@ -22,121 +27,92 @@ public class SK0042_NonConstantDapperSqlArgumentAnalyzerTests
             using System.Data;
             using System.Threading.Tasks;
 
+            public readonly struct CommandDefinition
+            {
+            }
+
             public static class SqlMapper
             {
                 public static Task<IEnumerable<T>> QueryAsync<T>(this IDbConnection cnn, string sql, object? param = null) =>
                     throw new NotImplementedException();
-            }
-        }
 
-        namespace SharedKernel.Persistence.Abstractions.Connections
-        {
-            using System.Data.Common;
-            using System.Threading;
-            using System.Threading.Tasks;
-
-            public interface IDbConnectionFactory
-            {
-                Task<DbConnection> CreateConnectionAsync(CancellationToken ct = default);
+                public static Task<IEnumerable<T>> QueryAsync<T>(this IDbConnection cnn, CommandDefinition command) =>
+                    throw new NotImplementedException();
             }
         }
 
         namespace SharedKernel.Persistence.Dapper.Sessions
         {
+            using System.Data.Common;
             using System.Threading;
+            using System.Threading.Tasks;
+            using global::Dapper;
 
             public interface IDbSession
             {
-                object Command(string sql, object? parameters = null, CancellationToken cancellationToken = default);
+                DbConnection Connection { get; }
+
+                CommandDefinition Command(string sql, object? parameters = null, CancellationToken cancellationToken = default);
+            }
+
+            public interface IDbSessionFactory
+            {
+                Task<IDbSession> OpenAsync(CancellationToken cancellationToken = default);
+
+                Task<IDbSession> OpenReadOnlyAsync(CancellationToken cancellationToken = default);
             }
         }
 
-        // Consumer-written helpers over a session: every method with a 'sql' parameter on a type that implements
-        // IDbSession is a matched call site (the former DapperReadService/DapperCommandService were deleted).
-        namespace SharedKernel.Persistence.Dapper.ReadModels
+        """;
+
+    /// <summary>
+    /// A consumer-written query object over <c>IDbSessionFactory</c>, as the persistence README shows
+    /// it; <paramref name="members"/> supplies the query methods.
+    /// </summary>
+    private static string OrderQueries(string members) => DapperStubs + $$"""
+        namespace Fixture
         {
             using System.Collections.Generic;
-            using System.Threading;
             using System.Threading.Tasks;
-            using SharedKernel.Persistence.Abstractions.Connections;
+            using Dapper;
+            using SharedKernel.Persistence.Dapper.Sessions;
 
-            public abstract class DapperReadService : SharedKernel.Persistence.Dapper.Sessions.IDbSession
+            public sealed class OrderQueries
             {
-                protected DapperReadService(IDbConnectionFactory factory) { }
+                private readonly IDbSessionFactory _sessions;
 
-                public object Command(string sql, object? parameters = null, CancellationToken cancellationToken = default) =>
-                    throw new System.NotImplementedException();
+                public OrderQueries(IDbSessionFactory sessions) => _sessions = sessions;
 
-                protected Task<IReadOnlyList<TResult>> QueryAsync<TResult>(
-                    string sql, object? parameters, int? commandTimeout = null, CancellationToken ct = default) =>
-                    throw new System.NotImplementedException();
-            }
-
-            public abstract class DapperCommandService : SharedKernel.Persistence.Dapper.Sessions.IDbSession
-            {
-                protected DapperCommandService(IDbConnectionFactory factory) { }
-
-                public object Command(string sql, object? parameters = null, CancellationToken cancellationToken = default) =>
-                    throw new System.NotImplementedException();
-
-                protected Task<int> ExecuteAsync(
-                    string sql, object? parameters, int? commandTimeout = null, CancellationToken ct = default) =>
-                    throw new System.NotImplementedException();
+        {{members}}
             }
         }
-
         """;
 
     // ---------------------------------------------------------------------------
     // Fire path
     // ---------------------------------------------------------------------------
 
-    /// <summary>An interpolated string sql argument is always flagged.</summary>
-    [Fact]
-    public async Task FirePath_InterpolatedStringSql_Reports()
-    {
-        var test = new CSharpAnalyzerTest<NonConstantDapperSqlArgumentAnalyzer, DefaultVerifier>
-        {
-            TestCode = DapperStubs + """
-                namespace Fixture
-                {
-                    using SharedKernel.Persistence.Abstractions.Connections;
-                    using SharedKernel.Persistence.Dapper.ReadModels;
-
-                    public sealed class OrderReadService : DapperReadService
-                    {
-                        public OrderReadService(IDbConnectionFactory factory) : base(factory) { }
-
-                        public System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<int>> FindAsync(string status) =>
-                            QueryAsync<int>({|SK0042:$"SELECT id FROM orders WHERE status = '{status}'"|}, null);
-                    }
-                }
-                """,
-        };
-        await test.RunAsync();
-    }
-
-    /// <summary>A non-constant sql passed to <c>IDbSession.Command</c> is flagged.</summary>
+    /// <summary>An interpolated string passed to <c>IDbSession.Command</c> is always flagged.</summary>
     [Fact]
     public async Task FirePath_DbSessionCommand_InterpolatedSql_Reports()
     {
         var test = new CSharpAnalyzerTest<NonConstantDapperSqlArgumentAnalyzer, DefaultVerifier>
         {
-            TestCode = DapperStubs + """
-                namespace Fixture
-                {
-                    using SharedKernel.Persistence.Dapper.Sessions;
+            TestCode = OrderQueries("""
+                        public async Task<IEnumerable<int>> FindAsync(string status)
+                        {
+                            var session = await _sessions.OpenReadOnlyAsync();
+                            return await session.Connection.QueryAsync<int>(
+                                session.Command({|SK0042:$"SELECT id FROM orders WHERE status = '{status}'"|}));
+                        }
 
-                    public sealed class OrderQueries
-                    {
-                        public object Find(IDbSession session, string status) =>
-                            session.Command({|SK0042:$"SELECT id FROM orders WHERE status = '{status}'"|});
-
-                        public object FindSafely(IDbSession session, string status) =>
-                            session.Command("SELECT id FROM orders WHERE status = @status", new { status });
-                    }
-                }
-                """,
+                        public async Task<IEnumerable<int>> FindSafelyAsync(string status)
+                        {
+                            var session = await _sessions.OpenReadOnlyAsync();
+                            return await session.Connection.QueryAsync<int>(
+                                session.Command("SELECT id FROM orders WHERE status = @status", new { status }));
+                        }
+                """),
         };
         await test.RunAsync();
     }
@@ -147,21 +123,14 @@ public class SK0042_NonConstantDapperSqlArgumentAnalyzerTests
     {
         var test = new CSharpAnalyzerTest<NonConstantDapperSqlArgumentAnalyzer, DefaultVerifier>
         {
-            TestCode = DapperStubs + """
-                namespace Fixture
-                {
-                    using SharedKernel.Persistence.Abstractions.Connections;
-                    using SharedKernel.Persistence.Dapper.ReadModels;
-
-                    public sealed class OrderReadService : DapperReadService
-                    {
-                        public OrderReadService(IDbConnectionFactory factory) : base(factory) { }
-
-                        public System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<int>> FindAsync(string status) =>
-                            QueryAsync<int>({|SK0042:"SELECT id FROM orders WHERE status = '" + status + "'"|}, null);
-                    }
-                }
-                """,
+            TestCode = OrderQueries("""
+                        public async Task<IEnumerable<int>> FindAsync(string status)
+                        {
+                            var session = await _sessions.OpenReadOnlyAsync();
+                            return await session.Connection.QueryAsync<int>(
+                                session.Command({|SK0042:"SELECT id FROM orders WHERE status = '" + status + "'"|}));
+                        }
+                """),
         };
         await test.RunAsync();
     }
@@ -172,21 +141,71 @@ public class SK0042_NonConstantDapperSqlArgumentAnalyzerTests
     {
         var test = new CSharpAnalyzerTest<NonConstantDapperSqlArgumentAnalyzer, DefaultVerifier>
         {
+            TestCode = OrderQueries("""
+                        public async Task<IEnumerable<int>> FindAsync(string status)
+                        {
+                            string sql = "SELECT id FROM orders WHERE status = '" + status + "'";
+                            var session = await _sessions.OpenReadOnlyAsync();
+                            return await session.Connection.QueryAsync<int>(session.Command({|SK0042:sql|}));
+                        }
+                """),
+        };
+        await test.RunAsync();
+    }
+
+    /// <summary>A named <c>sql:</c> argument out of positional order is still found and flagged.</summary>
+    [Fact]
+    public async Task FirePath_NamedSqlArgument_Reports()
+    {
+        var test = new CSharpAnalyzerTest<NonConstantDapperSqlArgumentAnalyzer, DefaultVerifier>
+        {
+            TestCode = OrderQueries("""
+                        public async Task<IEnumerable<int>> FindAsync(string table)
+                        {
+                            var session = await _sessions.OpenReadOnlyAsync();
+                            return await session.Connection.QueryAsync<int>(
+                                session.Command(parameters: null, sql: {|SK0042:$"SELECT id FROM {table}"|}));
+                        }
+                """),
+        };
+        await test.RunAsync();
+    }
+
+    /// <summary>
+    /// A method with a <c>sql</c> parameter on a consumer type implementing <c>IDbSession</c> (a
+    /// decorator) is a matched call site too. The decorator's own forwarding call passes its
+    /// <c>sql</c> parameter, which is not a constant either, so it is flagged as well: a decorator
+    /// suppresses SK0042 on that one line.
+    /// </summary>
+    [Fact]
+    public async Task FirePath_MethodOnTypeImplementingDbSession_Reports()
+    {
+        var test = new CSharpAnalyzerTest<NonConstantDapperSqlArgumentAnalyzer, DefaultVerifier>
+        {
             TestCode = DapperStubs + """
                 namespace Fixture
                 {
-                    using SharedKernel.Persistence.Abstractions.Connections;
-                    using SharedKernel.Persistence.Dapper.ReadModels;
+                    using System.Data.Common;
+                    using System.Threading;
+                    using Dapper;
+                    using SharedKernel.Persistence.Dapper.Sessions;
 
-                    public sealed class OrderReadService : DapperReadService
+                    public sealed class TimedDbSession : IDbSession
                     {
-                        public OrderReadService(IDbConnectionFactory factory) : base(factory) { }
+                        private readonly IDbSession _inner;
 
-                        public System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<int>> FindAsync(string status)
-                        {
-                            string sql = "SELECT id FROM orders WHERE status = '" + status + "'";
-                            return QueryAsync<int>({|SK0042:sql|}, null);
-                        }
+                        public TimedDbSession(IDbSession inner) => _inner = inner;
+
+                        public DbConnection Connection => _inner.Connection;
+
+                        public CommandDefinition Command(string sql, object? parameters = null, CancellationToken cancellationToken = default) =>
+                            _inner.Command({|SK0042:sql|}, parameters, cancellationToken);
+                    }
+
+                    public static class Usage
+                    {
+                        public static CommandDefinition Build(TimedDbSession session, string table) =>
+                            session.Command({|SK0042:$"SELECT id FROM {table}"|});
                     }
                 }
                 """,
@@ -227,21 +246,14 @@ public class SK0042_NonConstantDapperSqlArgumentAnalyzerTests
     {
         var test = new CSharpAnalyzerTest<NonConstantDapperSqlArgumentAnalyzer, DefaultVerifier>
         {
-            TestCode = DapperStubs + """
-                namespace Fixture
-                {
-                    using SharedKernel.Persistence.Abstractions.Connections;
-                    using SharedKernel.Persistence.Dapper.ReadModels;
-
-                    public sealed class OrderReadService : DapperReadService
-                    {
-                        public OrderReadService(IDbConnectionFactory factory) : base(factory) { }
-
-                        public System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<int>> FindAsync(string status) =>
-                            QueryAsync<int>("SELECT id FROM orders WHERE status = @status", new { status });
-                    }
-                }
-                """,
+            TestCode = OrderQueries("""
+                        public async Task<IEnumerable<int>> FindAsync(string status)
+                        {
+                            var session = await _sessions.OpenReadOnlyAsync();
+                            return await session.Connection.QueryAsync<int>(
+                                session.Command("SELECT id FROM orders WHERE status = @status", new { status }));
+                        }
+                """),
         };
         await test.RunAsync();
     }
@@ -252,23 +264,15 @@ public class SK0042_NonConstantDapperSqlArgumentAnalyzerTests
     {
         var test = new CSharpAnalyzerTest<NonConstantDapperSqlArgumentAnalyzer, DefaultVerifier>
         {
-            TestCode = DapperStubs + """
-                namespace Fixture
-                {
-                    using SharedKernel.Persistence.Abstractions.Connections;
-                    using SharedKernel.Persistence.Dapper.ReadModels;
-
-                    public sealed class OrderReadService : DapperReadService
-                    {
+            TestCode = OrderQueries("""
                         private const string Sql = "SELECT id FROM orders WHERE status = @status";
 
-                        public OrderReadService(IDbConnectionFactory factory) : base(factory) { }
-
-                        public System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<int>> FindAsync(string status) =>
-                            QueryAsync<int>(Sql, new { status });
-                    }
-                }
-                """,
+                        public async Task<IEnumerable<int>> FindAsync(string status)
+                        {
+                            var session = await _sessions.OpenReadOnlyAsync();
+                            return await session.Connection.QueryAsync<int>(session.Command(Sql, new { status }));
+                        }
+                """),
         };
         await test.RunAsync();
     }
@@ -279,28 +283,21 @@ public class SK0042_NonConstantDapperSqlArgumentAnalyzerTests
     {
         var test = new CSharpAnalyzerTest<NonConstantDapperSqlArgumentAnalyzer, DefaultVerifier>
         {
-            TestCode = DapperStubs + """
-                namespace Fixture
-                {
-                    using SharedKernel.Persistence.Abstractions.Connections;
-                    using SharedKernel.Persistence.Dapper.ReadModels;
-
-                    public sealed class OrderReadService : DapperReadService
-                    {
-                        public OrderReadService(IDbConnectionFactory factory) : base(factory) { }
-
-                        public System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<int>> FindAsync(string status) =>
-                            QueryAsync<int>("SELECT id " + "FROM orders WHERE status = @status", new { status });
-                    }
-                }
-                """,
+            TestCode = OrderQueries("""
+                        public async Task<IEnumerable<int>> FindAsync(string status)
+                        {
+                            var session = await _sessions.OpenReadOnlyAsync();
+                            return await session.Connection.QueryAsync<int>(
+                                session.Command("SELECT id " + "FROM orders WHERE status = @status", new { status }));
+                        }
+                """),
         };
         await test.RunAsync();
     }
 
     /// <summary>
-    /// A non-constant 'sql'-named argument on an unrelated method (not DapperReadService/
-    /// DapperCommandService/SqlMapper) is not flagged.
+    /// A non-constant 'sql'-named argument on an unrelated method (not <c>IDbSession</c>, a type
+    /// implementing it, or <c>SqlMapper</c>) is not flagged.
     /// </summary>
     [Fact]
     public async Task PassPath_UnrelatedMethodWithSqlParameter_ReportsNothing()
@@ -331,21 +328,14 @@ public class SK0042_NonConstantDapperSqlArgumentAnalyzerTests
     {
         var test = new CSharpAnalyzerTest<NonConstantDapperSqlArgumentAnalyzer, DefaultVerifier>
         {
-            TestCode = DapperStubs + """
-                namespace Fixture
-                {
-                    using SharedKernel.Persistence.Abstractions.Connections;
-                    using SharedKernel.Persistence.Dapper.ReadModels;
-
-                    public sealed class OrderReadService : DapperReadService
-                    {
-                        public OrderReadService(IDbConnectionFactory factory) : base(factory) { }
-
-                        public System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<int>> FindAsync(object parameters) =>
-                            QueryAsync<int>("SELECT id FROM orders WHERE status = @status", parameters);
-                    }
-                }
-                """,
+            TestCode = OrderQueries("""
+                        public async Task<IEnumerable<int>> FindAsync(object parameters)
+                        {
+                            var session = await _sessions.OpenReadOnlyAsync();
+                            return await session.Connection.QueryAsync<int>(
+                                session.Command("SELECT id FROM orders WHERE status = @status", parameters));
+                        }
+                """),
         };
         await test.RunAsync();
     }

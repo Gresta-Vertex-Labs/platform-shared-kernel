@@ -17,8 +17,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// diagnostic ID is introduced by this class — both rules are pure NetArchTest
 /// <see cref="ConditionList"/> predicates over Mono.Cecil IL inspection, following the same
 /// "boundary-mapping prohibition via architecture test, not Roslyn analyzer" precedent already
-/// established for SK-less rules in this domain (<see cref="RedisTopologyRules"/>,
-/// <see cref="CompositionRootExclusivityRules"/>, and
+/// established for SK-less rules in this domain (<see cref="RedisTopologyRules"/> and
 /// <see cref="CommunicationLayeringRules"/>'s gRPC/Contracts rule).
 /// </para>
 /// <para>

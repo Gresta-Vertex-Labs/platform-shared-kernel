@@ -16,10 +16,14 @@ namespace SharedKernel.Analyzers.Tests;
 public class SK0017_CommandImplementsCacheableQueryAnalyzerTests
 {
     private const string MarkerStubs = """
-        namespace SharedKernel.Application
+        namespace SharedKernel.Application.Messaging
         {
             public interface ICommandBase { }
             public interface ICommand<TResponse> : ICommandBase { }
+        }
+
+        namespace SharedKernel.Application.Caching
+        {
             public interface ICacheableQuery<TResponse> { }
         }
 
@@ -41,7 +45,8 @@ public class SK0017_CommandImplementsCacheableQueryAnalyzerTests
             TestCode = MarkerStubs + """
                 namespace Fixture.Requests
                 {
-                    using SharedKernel.Application;
+                    using SharedKernel.Application.Caching;
+                    using SharedKernel.Application.Messaging;
 
                     public sealed class {|SK0017:BadDirectCommand|} : ICommandBase, ICacheableQuery<int>
                     {
@@ -65,7 +70,8 @@ public class SK0017_CommandImplementsCacheableQueryAnalyzerTests
             TestCode = MarkerStubs + """
                 namespace Fixture.Requests
                 {
-                    using SharedKernel.Application;
+                    using SharedKernel.Application.Caching;
+                    using SharedKernel.Application.Messaging;
 
                     public sealed class {|SK0017:BadTransitiveCommand|} : ICommand<int>, ICacheableQuery<int>
                     {
@@ -91,7 +97,8 @@ public class SK0017_CommandImplementsCacheableQueryAnalyzerTests
             TestCode = MarkerStubs + """
                 namespace Fixture.Requests
                 {
-                    using SharedKernel.Application;
+                    using SharedKernel.Application.Caching;
+                    using SharedKernel.Application.Messaging;
 
                     public sealed class GoodCommand : ICommandBase
                     {
@@ -114,7 +121,8 @@ public class SK0017_CommandImplementsCacheableQueryAnalyzerTests
             TestCode = MarkerStubs + """
                 namespace Fixture.Requests
                 {
-                    using SharedKernel.Application;
+                    using SharedKernel.Application.Caching;
+                    using SharedKernel.Application.Messaging;
 
                     public sealed class GoodQuery : ICacheableQuery<int>
                     {

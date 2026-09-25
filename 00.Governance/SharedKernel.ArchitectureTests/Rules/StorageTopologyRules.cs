@@ -47,7 +47,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// </para>
 /// <para>
 /// <strong>Permitted exemption list</strong> (caller-controlled — carries no internal namespace
-/// guard, consistent with <c>PresentationLayeringRules</c>/<c>CompositionRootExclusivityRules</c>):
+/// guard, consistent with <c>PresentationLayeringRules</c>):
 /// </para>
 /// <list type="bullet">
 ///   <item><description>
@@ -232,9 +232,7 @@ public static class StorageTopologyRules
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The structural sibling of
-    /// <see cref="CompositionRootExclusivityRules.OnlyAllowedAssembliesMayReferenceConcreteProviders"/>
-    /// and <see cref="CachingAbstractionRules.OnlyAllowedAssembliesMayReferenceConcreteCaching"/>.
+    /// Complements the tier check, which cannot see a direct AWS SDK reference from an Adapter or Host package.
     /// Single <c>NotHaveDependencyOn("Amazon.S3")</c> call across every supplied assembly.
     /// </para>
     /// <para>

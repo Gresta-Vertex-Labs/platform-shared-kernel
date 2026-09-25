@@ -8,7 +8,8 @@ namespace SharedKernel.ArchitectureTests.Tests;
 /// <summary>
 /// Repository-wide view of the package tiers (WO-086 / P-563). The build enforces the same matrix per project in
 /// <c>eng/SharedKernelTiers.targets</c>; these tests check what a single project build cannot see: every packable project
-/// declares a tier, the whole reference graph has no cycles, and <c>eng/tier-baseline.txt</c> lists only edges that still exist.
+/// declares a tier, the whole reference graph has no cycles, and ASP.NET Core stays in the Host tier. Every tier diagnostic is
+/// an error since P-574; there is no baseline of tolerated violations.
 /// </summary>
 public sealed partial class DependencyGraphRulesTests
 {
@@ -43,24 +44,34 @@ public sealed partial class DependencyGraphRulesTests
     }
 
     [Fact]
-    public void EveryDirectReference_RespectsTheTierMatrix_OrIsBaselined()
+    public void EveryDirectReference_RespectsTheTierMatrix()
     {
         var graph = Graph.Value;
-        var violations = graph.Violations().Where(v => !graph.Baseline.Contains(v.Key)).Select(v => v.Description);
+        var violations = graph.Violations().Select(v => v.Description);
 
         violations.Should().BeEmpty("a tier may reference only the tiers listed in eng/SharedKernelTiers.targets");
     }
 
+
+    /// <summary>
+    /// P-574: ASP.NET Core is a Host concern. A package below the Host tier that takes the <c>Microsoft.AspNetCore.App</c>
+    /// shared framework or a <c>Microsoft.AspNetCore.*</c> package forces a web stack on every worker and job that uses it.
+    /// The build enforces the same rule per project as SKTIER006 (which also sees framework references that arrive
+    /// transitively through a package); this test checks the direct references across the whole repository.
+    /// </summary>
     [Fact]
-    public void Baseline_ListsOnlyEdgesThatStillBreakTheMatrix()
+    public void AspNetCore_IsReferencedOnlyByHostAndTestingProjects()
     {
         var graph = Graph.Value;
-        var live = graph.Violations().Select(v => v.Key).ToHashSet(StringComparer.Ordinal);
+        graph.Projects.Should().Contain(p => p.Name == "SharedKernel.Presentation.WebApi" && p.AspNetCoreReferences.Count > 0,
+            "the Host-tier web packages reference ASP.NET Core, so the parser must find it");
 
-        graph.Baseline.Where(entry => !live.Contains(entry)).Should().BeEmpty(
-            "a fixed edge must be removed from eng/tier-baseline.txt in the same change, so the baseline only ever shrinks");
+        var offenders = graph.Projects
+            .Where(p => p.Tier is not null and not "Host" and not "Testing")
+            .SelectMany(p => p.AspNetCoreReferences.Select(reference => $"{p.RelativePath} ({p.Tier}) -> {reference}"));
+
+        offenders.Should().BeEmpty("ASP.NET Core may be referenced only by Host and Testing packages (SKTIER006)");
     }
-
     [Fact]
     public void TestingPackages_AreReferencedOnlyByTestingProjectsOrTests()
     {
@@ -132,7 +143,8 @@ public sealed partial class DependencyGraphRulesTests
         bool IsProduction,
         IReadOnlyList<string> ProjectReferences,
         IReadOnlyList<string> AllowedAdapters,
-        IReadOnlyList<string> RuntimePackages);
+        IReadOnlyList<string> RuntimePackages,
+        IReadOnlyList<string> AspNetCoreReferences);
 
     private sealed record Violation(string Key, string Description);
 
@@ -140,16 +152,13 @@ public sealed partial class DependencyGraphRulesTests
     {
         private readonly Dictionary<string, ProjectNode> _byName;
 
-        private RepositoryGraph(IReadOnlyList<ProjectNode> projects, IReadOnlySet<string> baseline)
+        private RepositoryGraph(IReadOnlyList<ProjectNode> projects)
         {
             Projects = projects;
-            Baseline = baseline;
             _byName = projects.GroupBy(p => p.Name, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
         }
 
         public IReadOnlyList<ProjectNode> Projects { get; }
-
-        public IReadOnlySet<string> Baseline { get; }
 
         public ProjectNode? Find(string name) => _byName.GetValueOrDefault(name);
 
@@ -185,13 +194,7 @@ public sealed partial class DependencyGraphRulesTests
                 .Select(p => Parse(root, p))
                 .ToList();
 
-            var baselineFile = Path.Combine(root.FullName, "eng", "tier-baseline.txt");
-            var baseline = File.Exists(baselineFile)
-                ? File.ReadAllLines(baselineFile).Select(l => l.Replace(" ", string.Empty, StringComparison.Ordinal))
-                    .Where(l => l.Length > 0 && !l.StartsWith('#')).ToHashSet(StringComparer.Ordinal)
-                : new HashSet<string>(StringComparer.Ordinal);
-
-            return new RepositoryGraph(projects, baseline);
+            return new RepositoryGraph(projects);
         }
 
         private static ProjectNode Parse(DirectoryInfo root, string path)
@@ -217,7 +220,13 @@ public sealed partial class DependencyGraphRulesTests
             var adapters = (Property("SharedKernelAllowedAdapterReferences") ?? string.Empty)
                 .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-            return new ProjectNode(name, Path.GetRelativePath(root.FullName, path), Property("SharedKernelTier"), isProduction, references, adapters, packages);
+            var aspNetCore = document.Descendants()
+                .Where(e => e.Name.LocalName is "FrameworkReference" or "PackageReference")
+                .Select(e => e.Attribute("Include")?.Value ?? string.Empty)
+                .Where(n => n == "Microsoft.AspNetCore.App" || n.StartsWith("Microsoft.AspNetCore.", StringComparison.Ordinal))
+                .ToList();
+
+            return new ProjectNode(name, Path.GetRelativePath(root.FullName, path), Property("SharedKernelTier"), isProduction, references, adapters, packages, aspNetCore);
         }
 
         private static DirectoryInfo FindRepositoryRoot()

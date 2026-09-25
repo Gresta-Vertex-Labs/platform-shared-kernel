@@ -15,7 +15,7 @@ namespace SharedKernel.Analyzers.Tests;
 /// fires SK0031.
 /// T-284: Pass path — the identical <c>IHttpContextAccessor</c> constructor shape inside a
 /// <c>SharedKernel.Security.Oidc</c>-namespaced type does NOT fire.
-/// T-285: Pass path — a constructor injecting <c>IUserContext</c>/<c>ITenantProvider</c> instead
+/// T-285: Pass path — a constructor injecting <c>IUserContext</c>/<c>IRequestContext</c> instead
 /// does NOT fire.
 /// </remarks>
 public class SK0031_RawSecurityContextConstructorInjectionAnalyzerTests
@@ -116,7 +116,7 @@ public class SK0031_RawSecurityContextConstructorInjectionAnalyzerTests
     /// <summary>
     /// T-284: A class inside the <c>SharedKernel.Security.Oidc</c> namespace with an
     /// <c>IHttpContextAccessor</c> constructor parameter must NOT trigger SK0031 — the OIDC
-    /// implementation package legitimately constructs <c>IUserContext</c>/<c>ITenantProvider</c>
+    /// implementation package legitimately constructs <c>IUserContext</c>
     /// from raw <c>HttpContext</c>-family types.
     /// </summary>
     [Fact]
@@ -165,27 +165,37 @@ public class SK0031_RawSecurityContextConstructorInjectionAnalyzerTests
     }
 
     // ---------------------------------------------------------------------------
-    // T-285 — Pass path: compliant alternative — IUserContext/ITenantProvider injection
+    // T-285 — Pass path: compliant alternative — IUserContext/IRequestContext injection
     // ---------------------------------------------------------------------------
 
     /// <summary>
-    /// T-285: A constructor injecting <c>IUserContext</c>/<c>ITenantProvider</c> instead of a raw
+    /// T-285: A constructor injecting <c>IUserContext</c>/<c>IRequestContext</c> instead of a raw
     /// <c>HttpContext</c>-family type must NOT trigger SK0031.
     /// </summary>
     [Fact]
-    public async Task PassPath_UserContextAndTenantProviderParameters_NoDiagnostic()
+    public async Task PassPath_UserContextAndRequestContextParameters_NoDiagnostic()
     {
         var test = new CSharpAnalyzerTest<RawSecurityContextConstructorInjectionAnalyzer, DefaultVerifier>
         {
             TestCode = """
-                public interface IUserContext { }
-                public interface ITenantProvider { }
+                namespace SharedKernel.Security.Abstractions
+                {
+                    public interface IUserContext { }
+                }
+
+                namespace SharedKernel.Execution.Context
+                {
+                    public interface IRequestContext { }
+                }
 
                 namespace Application.Handlers
                 {
+                    using SharedKernel.Execution.Context;
+                    using SharedKernel.Security.Abstractions;
+
                     public class CreateOrderHandler
                     {
-                        public CreateOrderHandler(IUserContext userContext, ITenantProvider tenantProvider) { }
+                        public CreateOrderHandler(IUserContext userContext, IRequestContext requestContext) { }
                     }
                 }
                 """,

@@ -25,16 +25,16 @@
       SKTIER003  Model/Abstractions project takes a runtime NuGet package outside the allow-list
       SKTIER004  a tiered project references a project that declares no tier
       SKTIER005  a packable library declares no tier
+      SKTIER006  a project below the Host tier references ASP.NET Core (Microsoft.AspNetCore.App or Microsoft.AspNetCore.*)
 
-    Edges listed in eng/tier-baseline.txt ("From->To", or "From->package:Id") are reported as warnings
-    instead of errors. The baseline only ever shrinks; WO-086 P-574 empties it and removes this downgrade.
+    Every diagnostic is an error. WO-086 started with a baseline file that downgraded known violations
+    to warnings; P-574 emptied it and removed the downgrade.
 
     Test projects, consumer-verify harnesses and samples declare no tier and are not checked: they are
     consumers, and may reference anything.
   -->
 
   <PropertyGroup>
-    <_SkTierBaselineFile>$(MSBuildThisFileDirectory)tier-baseline.txt</_SkTierBaselineFile>
     <_SkAbstractionsPackageAllowList>^Microsoft\.Extensions\.[A-Za-z.]*Abstractions$</_SkAbstractionsPackageAllowList>
   </PropertyGroup>
 
@@ -81,9 +81,6 @@
       <Output TaskParameter="TargetOutputs" ItemName="_SkReferencedTier" />
     </MSBuild>
 
-    <ReadLinesFromFile File="$(_SkTierBaselineFile)" Condition="Exists('$(_SkTierBaselineFile)')">
-      <Output TaskParameter="Lines" ItemName="_SkBaselineLine" />
-    </ReadLinesFromFile>
 
     <PropertyGroup>
       <_SkAllowedTiers Condition="'$(SharedKernelTier)' == 'Foundation'">;Foundation;</_SkAllowedTiers>
@@ -94,7 +91,6 @@
       <_SkAllowedTiers Condition="'$(SharedKernelTier)' == 'Testing'">;Foundation;Model;Abstractions;Adapter;Host;Testing;</_SkAllowedTiers>
       <_SkAllowedTiers Condition="'$(SharedKernelTier)' == 'Tooling'">;</_SkAllowedTiers>
       <_SkAllowedAdapters>;$(SharedKernelAllowedAdapterReferences.Replace(' ', ''));</_SkAllowedAdapters>
-      <_SkBaseline>;@(_SkBaselineLine);</_SkBaseline>
     </PropertyGroup>
 
     <ItemGroup>
@@ -111,25 +107,31 @@
                   Condition="('$(SharedKernelTier)' == 'Model' or '$(SharedKernelTier)' == 'Abstractions') and '%(PackageReference.PrivateAssets)' != 'all' and !$([System.Text.RegularExpressions.Regex]::IsMatch('%(PackageReference.Identity)', '$(_SkAbstractionsPackageAllowList)'))" />
     </ItemGroup>
 
-    <ItemGroup>
-      <_SkEdgeNew Include="@(_SkEdge)" Condition="!$([System.String]::Copy('$(_SkBaseline)').Contains(';$(MSBuildProjectName)->%(_SkEdge.Identity);'))" />
-      <_SkEdgeKnown Include="@(_SkEdge)" Condition="$([System.String]::Copy('$(_SkBaseline)').Contains(';$(MSBuildProjectName)->%(_SkEdge.Identity);'))" />
-      <_SkPackageNew Include="@(_SkPackage)" Condition="!$([System.String]::Copy('$(_SkBaseline)').Contains(';$(MSBuildProjectName)->package:%(_SkPackage.Identity);'))" />
-      <_SkPackageKnown Include="@(_SkPackage)" Condition="$([System.String]::Copy('$(_SkBaseline)').Contains(';$(MSBuildProjectName)->package:%(_SkPackage.Identity);'))" />
-    </ItemGroup>
+    <Error Code="%(_SkEdge.Code)" Condition="'@(_SkEdge)' != ''"
+           Text="%(_SkEdge.Code): $(MSBuildProjectName) ($(SharedKernelTier)) may not reference %(_SkEdge.Identity) (%(_SkEdge.Tier)). $(SharedKernelTier) may reference the tiers [$(_SkAllowedTiers)]. An Adapter may reference another Adapter only when it is named in &lt;SharedKernelAllowedAdapterReferences&gt;." />
 
-    <Error Code="%(_SkEdgeNew.Code)" Condition="'@(_SkEdgeNew)' != ''"
-           Text="%(_SkEdgeNew.Code): $(MSBuildProjectName) ($(SharedKernelTier)) may not reference %(_SkEdgeNew.Identity) (%(_SkEdgeNew.Tier)). $(SharedKernelTier) may reference the tiers [$(_SkAllowedTiers)]. An Adapter may reference another Adapter only when it is named in &lt;SharedKernelAllowedAdapterReferences&gt;." />
-    <Warning Code="%(_SkEdgeKnown.Code)" Condition="'@(_SkEdgeKnown)' != ''"
-             Text="%(_SkEdgeKnown.Code) (baselined, WO-086): $(MSBuildProjectName) ($(SharedKernelTier)) -> %(_SkEdgeKnown.Identity) (%(_SkEdgeKnown.Tier)) breaks the tier matrix." />
-
-    <Error Code="SKTIER003" Condition="'@(_SkPackageNew)' != ''"
-           Text="SKTIER003: $(MSBuildProjectName) ($(SharedKernelTier)) references NuGet package %(_SkPackageNew.Identity). Model and Abstractions packages may only take Microsoft.Extensions.*.Abstractions at runtime; move the dependency to an Adapter or Host package." />
-    <Warning Code="SKTIER003" Condition="'@(_SkPackageKnown)' != ''"
-             Text="SKTIER003 (baselined, WO-086): $(MSBuildProjectName) ($(SharedKernelTier)) references NuGet package %(_SkPackageKnown.Identity)." />
+    <Error Code="SKTIER003" Condition="'@(_SkPackage)' != ''"
+           Text="SKTIER003: $(MSBuildProjectName) ($(SharedKernelTier)) references NuGet package %(_SkPackage.Identity). Model and Abstractions packages may only take Microsoft.Extensions.*.Abstractions at runtime; move the dependency to an Adapter or Host package." />
 
     <Error Code="SKTIER004" Condition="'@(_SkUntiered)' != ''"
            Text="SKTIER004: $(MSBuildProjectName) ($(SharedKernelTier)) references %(_SkUntiered.Identity), which declares no &lt;SharedKernelTier&gt;." />
+
+    <!--
+      SKTIER006: ASP.NET Core belongs to the Host tier (P-574). An Adapter or lower package that takes the
+      Microsoft.AspNetCore.App shared framework (directly, or transitively through a package such as
+      Microsoft.AspNetCore.Authentication.JwtBearer) or any Microsoft.AspNetCore.* package would force a web
+      stack on every worker, job and console app that uses it.
+    -->
+    <ItemGroup Condition="'$(SharedKernelTier)' != 'Host' and '$(SharedKernelTier)' != 'Testing'">
+      <_SkAspNetCore Include="@(FrameworkReference)" Condition="'%(FrameworkReference.Identity)' == 'Microsoft.AspNetCore.App'" />
+      <_SkAspNetCore Include="@(TransitiveFrameworkReference)" Condition="'%(TransitiveFrameworkReference.Identity)' == 'Microsoft.AspNetCore.App'" />
+      <_SkAspNetCore Include="@(PackageReference)" Condition="$([System.String]::Copy('%(PackageReference.Identity)').StartsWith('Microsoft.AspNetCore.'))" />
+    </ItemGroup>
+    <RemoveDuplicates Inputs="@(_SkAspNetCore)">
+      <Output TaskParameter="Filtered" ItemName="_SkAspNetCoreDistinct" />
+    </RemoveDuplicates>
+    <Error Code="SKTIER006" Condition="'@(_SkAspNetCoreDistinct)' != ''"
+           Text="SKTIER006: $(MSBuildProjectName) ($(SharedKernelTier)) references %(_SkAspNetCoreDistinct.Identity). ASP.NET Core may be referenced only by Host and Testing packages; move the ASP.NET Core-dependent code to a Host package." />
   </Target>
 
 </Project>

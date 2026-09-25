@@ -19,7 +19,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// <c>AbstractionsHasNoThirdPartyDependencies</c>/<c>ProviderPackagesNeverReferenceEachOther</c> pair.
 /// Do not add either shape to this class unless <c>SharedKernel.Workflows.Temporal</c> is ever split
 /// into an <c>.Abstractions</c> + <c>.Temporal</c> pair — until then, third-party-dependency purity
-/// for this package is <see cref="SharedKernelLayeringRules.WorkflowsReferencesOnlyCoreContractsAndApplication"/>'s
+/// for this package is the tier check's
 /// job (capability-domain terms) plus <see cref="NoHealthChecksDependencyInWorkflows"/> (the one
 /// specific third-party-package prohibition <c>17.Workflows/CLAUDE.md</c> names explicitly).
 /// </para>

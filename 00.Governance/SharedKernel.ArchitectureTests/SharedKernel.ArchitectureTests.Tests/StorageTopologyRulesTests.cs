@@ -438,7 +438,7 @@ public class StorageTopologyRulesTests
     /// <see cref="MetadataReference"/>s from their in-memory image
     /// (<see cref="MetadataReference.CreateFromImage(System.Collections.Immutable.ImmutableArray{byte})"/>)
     /// rather than from <see cref="Assembly.Location"/> — the same technique documented for
-    /// <c>RedisTopologyRulesTests</c>/<c>CompositionRootExclusivityRulesTests</c>, avoiding CS0234
+    /// <c>RedisTopologyRulesTests</c>, avoiding CS0234
     /// failures when chaining fixtures compiled in the same test run.
     /// </remarks>
     private static Assembly CompileInMemory(

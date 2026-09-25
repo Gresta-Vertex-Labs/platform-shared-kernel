@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <SharedKernelTier>Adapter</SharedKernelTier>
+    <SharedKernelTier>Host</SharedKernelTier>
     <!-- NuGet packaging metadata -->
     <Description>JWT bearer authentication for access tokens from any OpenID Connect provider (Microsoft Entra ID, Auth0, Okta, Keycloak and others), mapped to SharedKernel's IUserContext with configurable claims and service-principal detection. Asymmetric algorithm allow-list, optional token type check, DPoP sender-constrained tokens (RFC 9449) with replay protection and server nonces, certificate-bound tokens (RFC 8705), and a token revocation check with caching. Sender-constraint and revocation checks run inside the authentication handler, so event configuration cannot bypass them.</Description>
     <PackageReleaseNotes>First release.</PackageReleaseNotes>

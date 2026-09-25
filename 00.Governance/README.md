@@ -198,17 +198,17 @@ Primitives, domain modelling and error handling.
 
 #### Application and communication
 
-The MediatR pipeline and outbound HTTP.
+The kernel's CQRS pipeline (`SharedKernel.Application`, `SharedKernel.Application.Pipeline`) and outbound HTTP.
 
 | Rule | Flags | Do this instead |
 |---|---|---|
 | [SK0013](#sk0013-rawhttpclientconstructorinjection) | `HttpClient` injected into a constructor | A typed client via `AddRestClient<TClient>()` |
 | [SK0014](#sk0014-closedgenericresiliencepipelineregistration) | A closed-generic `ResiliencePipeline<T>` registration | The string-keyed, non-generic `ResiliencePipeline` |
-| [SK0015](#sk0015-streampipelinebehaviormisregistration) | A stream behavior registered as a request behavior | Register it against `IStreamPipelineBehavior<,>` |
+| [SK0015](#sk0015-streampipelinebehaviormisregistration) | **Removed** (WO-086/P-567) -- streams have their own kernel `IStreamPipelineBehavior<,>` contract and no mediator registration | -- |
 | [SK0016](#sk0016-requesttypeshortnameusage) | `typeof(T).Name` used as a metric tag, log scope or cache key | `typeof(T).FullName ?? typeof(T).Name` |
 | [SK0017](#sk0017-commandimplementscacheablequery) | A command marked cacheable | Caching is for queries only |
 | [SK0018](#sk0018-queryimplementsinvalidatescache) | A query marked as invalidating the cache | Invalidation is for commands only |
-| [SK0040](#sk0040-pipelinemarkerresponseshapemismatch) | `IAuthorizeRequest`/`IIdempotentRequest` on a request whose MediatR response isn't `Result`/`Result<T>` | Declare the response as `Result`/`Result<T>` |
+| [SK0040](#sk0040-pipelinemarkerresponseshapemismatch) | `IAuthorizeRequest`/`IIdempotentRequest` on a request whose `IRequest<T>` response isn't `Result`/`Result<T>` | Declare the response as `Result`/`Result<T>` |
 | [SK0041](#sk0041-duplicatecacheablequeryname) | Two cacheable queries sharing a simple type name | Rename one -- cache entries are namespaced by that name |
 
 #### Logging
@@ -233,7 +233,7 @@ How every production log statement is written.
 | [SK0028](#sk0028-nondeterministicapiusageinsideworkflow) | A non-deterministic API inside a Temporal workflow | The deterministic `Workflow.*` equivalent |
 | [SK0029](#sk0029-rawtemporalclientconstructorinjection) | A raw Temporal client injected | `IWorkflowDispatcher` or `IWorkflowHandle` |
 | [SK0030](#sk0030-resultoutcomediscarded) | A `Result` returned and never inspected | Check, return or pass it, or discard with `_ =` |
-| [SK0031](#sk0031-rawsecuritycontextconstructorinjection) | `IHttpContextAccessor`, `HttpContext` or `ClaimsPrincipal` injected | `IUserContext` or `ITenantProvider` |
+| [SK0031](#sk0031-rawsecuritycontextconstructorinjection) | `IHttpContextAccessor`, `HttpContext` or `ClaimsPrincipal` injected | `IUserContext` or `IRequestContext` |
 | [SK0032](#sk0032-corswildcardoriginwithcredentials) | CORS credentials allowed with a wildcard origin | Name the allowed origins |
 | [SK0033](#sk0033-reflectionbasedobjectmapperusage) | AutoMapper, or Mapster's runtime adapter | A Mapperly `[Mapper]` class, or hand-written mapping |
 | [SK0034](#sk0034-amountcurrencypaircoupling) | A `decimal` amount paired with a `string` currency code | Consider `Money` (advisory) |
@@ -1110,55 +1110,11 @@ var handler = new VendorRetryHandler(typedPipeline);
 <a id="sk0015-streampipelinebehaviormisregistration"></a>
 ### SK0015 — StreamPipelineBehaviorMisregistration
 
-**Category:** Usage · **Default severity:** Warning
+**Status:** Removed (WO-086/P-567). The rule no longer ships in `SharedKernel.Analyzers`; this section is kept so existing links and `#pragma` references still resolve.
 
-Register streaming behaviors against `IStreamPipelineBehavior<,>`, not `IPipelineBehavior<,>`.
+The rule caught a MediatR registration mistake: a streaming behavior registered as `MediatR.IPipelineBehavior<,>` was never invoked, silently. That mistake can no longer be made. Streams now have their own kernel contract, `SharedKernel.Application.Streaming.IStreamPipelineBehavior<,>`, which only stream queries run, and no behavior is registered with a mediator: `SharedKernel.Application.Mediator.MediatR` runs the kernel pipeline itself and leaves MediatR's own pipeline empty.
 
-#### Why it matters
-
-MediatR sends streaming requests (`IStreamRequest<TResponse>`, including `IStreamQuery<TResponse>`) through `IStreamPipelineBehavior<,>` only. A streaming behavior registered as `IPipelineBehavior<,>` is never invoked. There is no exception and no warning: your logging, metrics, or authorization step simply does not run for streams.
-
-#### What it flags
-
-- A call to `AddTransient`, `AddScoped`, or `AddSingleton` with exactly two arguments, both `typeof(...)` expressions, where:
-  - the first (service) type resolves to `MediatR.IPipelineBehavior<,>` (open or closed), and
-  - the second (implementation) type implements `MediatR.IStreamPipelineBehavior<,>`, directly or through a base type.
-- Interfaces are resolved with the semantic model, so the check does not depend on a `Stream*` naming convention.
-
-#### What it does not flag
-
-- Any registration inside a method named `AddStreamingBehaviors` — the conventional name for a service's own streaming-behavior composition helper. The exemption matches the method name only, not the containing type.
-- Generic registration overloads such as `AddTransient<IPipelineBehavior<TReq, TRes>, TImpl>()`, `TryAdd*` calls, `ServiceDescriptor` construction, and MediatR's own `AddOpenBehavior(...)` configuration.
-- Implementation types that implement only `IPipelineBehavior<,>`.
-
-#### Example
-
-```csharp
-// Flagged: SK0015
-services.AddTransient(typeof(IPipelineBehavior<,>), typeof(StreamAuditBehavior<,>));
-```
-
-```csharp
-// Compliant: a custom streaming behavior registered against the streaming interface
-services.AddTransient(typeof(IStreamPipelineBehavior<,>), typeof(StreamAuditBehavior<,>));
-```
-
-#### Diagnostic
-
-```text
-warning SK0015: 'StreamAuditBehavior' implements IStreamPipelineBehavior<,> but is registered against IPipelineBehavior<,>. MediatR dispatches streaming requests through IStreamPipelineBehavior<,> only — this registration is silently never invoked. Register it against IStreamPipelineBehavior<,> instead.
-```
-
-#### Suppressing
-
-A hybrid type that deliberately implements both interfaces is flagged when registered for its unary role. Suppress that registration and register the streaming role separately.
-
-```csharp
-#pragma warning disable SK0015 // AuditBehavior implements both interfaces; this line registers its unary role
-services.AddTransient(typeof(IPipelineBehavior<,>), typeof(AuditBehavior<,>));
-#pragma warning restore SK0015
-services.AddTransient(typeof(IStreamPipelineBehavior<,>), typeof(AuditBehavior<,>));
-```
+Delete any `#pragma warning disable SK0015` and any `SK0015` entry in `.editorconfig`; they now refer to nothing.
 
 ---
 
@@ -1175,10 +1131,10 @@ Two request types with the same short name in different namespaces, for example 
 
 #### What it flags
 
-- A `typeof(X).Name` member access in a file whose namespace declaration starts with `SharedKernel.Application`. This covers `SharedKernel.Application`, `SharedKernel.Application.Behaviors`, and their sub-namespaces.
+- A `typeof(X).Name` member access in a file whose namespace declaration starts with `SharedKernel.Application`. This covers `SharedKernel.Application`, `SharedKernel.Application.Pipeline`, `SharedKernel.Application.Pipeline.Caching`, `SharedKernel.Application.Mediator.MediatR`, and their sub-namespaces.
 - `typeof(A).FullName ?? typeof(B).Name` where `A` and `B` are not written identically.
 
-Unlike most rules, the namespace is a condition for firing, not an exemption. The rule targets the MediatR pipeline code that builds request-type tags and keys. Code in your own service namespaces is not checked.
+Unlike most rules, the namespace is a condition for firing, not an exemption. The rule targets the kernel pipeline code that builds request-type tags and keys. Code in your own service namespaces is not checked.
 
 #### What it does not flag
 
@@ -1189,14 +1145,14 @@ Unlike most rules, the namespace is a condition for firing, not an exemption. Th
 #### Example
 
 ```csharp
-namespace SharedKernel.Application.Behaviors.Metrics;
+namespace SharedKernel.Application.Pipeline.Metrics;
 
 // Flagged: SK0016
 var requestName = typeof(TRequest).Name;
 ```
 
 ```csharp
-namespace SharedKernel.Application.Behaviors.Metrics;
+namespace SharedKernel.Application.Pipeline.Metrics;
 
 // Compliant
 var requestName = typeof(TRequest).FullName ?? typeof(TRequest).Name;
@@ -1246,7 +1202,7 @@ A command must not implement `ICacheableQuery<TResponse>`.
 #### Example
 
 ```csharp
-using SharedKernel.Application.Behaviors.Caching;
+using SharedKernel.Application.Caching;
 using SharedKernel.Application.Messaging;
 using SharedKernel.Caching.Abstractions;
 
@@ -1298,18 +1254,18 @@ A query should be free of side effects. A query that evicts cache entries makes 
 #### Example
 
 ```csharp
-using SharedKernel.Application.Behaviors.CacheInvalidation;
+using SharedKernel.Application.Caching;
 using SharedKernel.Application.Messaging;
 
 // Flagged: SK0018
 public sealed record GetOrderQuery(Guid OrderId) : IQuery<OrderDto>, IInvalidatesCache
 {
-    public IReadOnlyCollection<string> CacheKeysToInvalidate => [$"orders:{OrderId}"];
+    public IReadOnlyCollection<CacheKeyRef> CacheKeysToInvalidate => [CacheKeyRef.For<GetOrderQuery>($"orders:{OrderId}")];
 }
 ```
 
 ```csharp
-using SharedKernel.Application.Behaviors.CacheInvalidation;
+using SharedKernel.Application.Caching;
 using SharedKernel.Application.Messaging;
 
 // Compliant: the query only reads; the command that changes the order invalidates
@@ -1317,7 +1273,7 @@ public sealed record GetOrderQuery(Guid OrderId) : IQuery<OrderDto>;
 
 public sealed record ShipOrderCommand(Guid OrderId) : ICommand<Guid>, IInvalidatesCache
 {
-    public IReadOnlyCollection<string> CacheKeysToInvalidate => [$"orders:{OrderId}"];
+    public IReadOnlyCollection<CacheKeyRef> CacheKeysToInvalidate => [CacheKeyRef.For<GetOrderQuery>($"orders:{OrderId}")];
 }
 ```
 
@@ -1334,7 +1290,7 @@ warning SK0018: 'GetOrderQuery' implements IQuery<TResponse> and IInvalidatesCac
 
 **Category:** Design · **Default severity:** Warning
 
-A request implementing `IAuthorizeRequest` or `IIdempotentRequest` must declare its MediatR response as `Result` or a closed `Result<T>`.
+A request implementing `IAuthorizeRequest` or `IIdempotentRequest` must declare its `IRequest<TResponse>` response as `Result` or a closed `Result<T>`.
 
 #### Why it matters
 
@@ -1344,7 +1300,7 @@ Reading `FailureResponse.cs` and every behavior that calls it found exactly two 
 
 #### What it flags
 
-- A non-abstract class, record, or struct implementing `IAuthorizeRequest` and/or `IIdempotentRequest`, and `MediatR.IRequest<TResponse>` (directly or transitively), whose resolved `TResponse` is not `Result` or a closed `Result<T>` (`SharedKernel.Primitives.Results`, arity 0 or 1).
+- A non-abstract class, record, or struct implementing `IAuthorizeRequest` and/or `IIdempotentRequest`, and `SharedKernel.Application.Messaging.IRequest<TResponse>` (directly or transitively), whose resolved `TResponse` is not `Result` or a closed `Result<T>` (`SharedKernel.Primitives.Results`, arity 0 or 1).
 - Reported on the type name, naming every matched marker and the actual response type.
 
 #### What it does not flag
@@ -1358,8 +1314,8 @@ Reading `FailureResponse.cs` and every behavior that calls it found exactly two 
 #### Example
 
 ```csharp
-using MediatR;
-using SharedKernel.Application.Behaviors.Authorization;
+using SharedKernel.Application.Messaging;
+using SharedKernel.Application.Authorization;
 
 // Flagged: SK0040 — OrderDto has no static Failure(Error) factory
 public sealed record ApproveOrderCommand(Guid OrderId) : IAuthorizeRequest, IRequest<OrderDto>
@@ -1369,8 +1325,8 @@ public sealed record ApproveOrderCommand(Guid OrderId) : IAuthorizeRequest, IReq
 ```
 
 ```csharp
-using MediatR;
-using SharedKernel.Application.Behaviors.Authorization;
+using SharedKernel.Application.Messaging;
+using SharedKernel.Application.Authorization;
 using SharedKernel.Primitives.Results;
 
 // Compliant
@@ -1383,7 +1339,7 @@ public sealed record ApproveOrderCommand(Guid OrderId) : IAuthorizeRequest, IReq
 #### Diagnostic
 
 ```text
-warning SK0040: 'ApproveOrderCommand' implements IAuthorizeRequest, which short-circuits with a failed response via FailureResponse.Create<TResponse> — but its MediatR response type is 'OrderDto', not Result or a closed Result<T>. This throws InvalidOperationException the first time the behavior short-circuits, at runtime. Declare the response as Result or Result<T>, or remove IAuthorizeRequest.
+warning SK0040: 'ApproveOrderCommand' implements IAuthorizeRequest, which short-circuits with a failed response via FailureResponse.Create<TResponse> — but its request response type is 'OrderDto', not Result or a closed Result<T>. This throws InvalidOperationException the first time the behavior short-circuits, at runtime. Declare the response as Result or Result<T>, or remove IAuthorizeRequest.
 ```
 
 ---
@@ -1419,7 +1375,8 @@ The simple name is used rather than the full name deliberately: the entity segme
 #### Example
 
 ```csharp
-using SharedKernel.Application.Behaviors.Caching;
+using SharedKernel.Application.Caching;
+using SharedKernel.Caching.Abstractions;
 
 namespace Orders;
 
@@ -1432,7 +1389,8 @@ public sealed record GetSummaryQuery(Guid Id) : ICacheableQuery<OrderSummary>
 ```
 
 ```csharp
-using SharedKernel.Application.Behaviors.Caching;
+using SharedKernel.Application.Caching;
+using SharedKernel.Caching.Abstractions;
 
 namespace Orders;
 
@@ -2161,11 +2119,11 @@ _ = cacheWarmer.Warm(tenantId);
 
 **Category:** Usage · **Default severity:** Warning
 
-Inject `IUserContext` or `ITenantProvider` instead of `IHttpContextAccessor`, `ClaimsPrincipal`, or `HttpContext`.
+Inject `IUserContext` (`SharedKernel.Security.Abstractions`) or `IRequestContext` (`SharedKernel.Execution.Context`) instead of `IHttpContextAccessor`, `ClaimsPrincipal`, or `HttpContext`.
 
 #### Why it matters
 
-`IUserContext` and `ITenantProvider` apply the platform's claim mapping, identity kinds (user, service principal, system), and tenant resolution consistently. Code that reads `ClaimsPrincipal` or `HttpContext` directly re-implements that logic, usually with the wrong claim type names. It also breaks outside an HTTP request: in a message consumer, a scheduled job, or a Temporal activity, `IHttpContextAccessor.HttpContext` is `null`, while `IUserContext` can be bound to `SystemUserContext` there.
+`IUserContext` applies the platform's claim mapping and identity kinds (user, service principal, system), and `IRequestContext` carries the resolved caller and tenant that the application pipeline and persistence act on. Code that reads `ClaimsPrincipal` or `HttpContext` directly re-implements that logic, usually with the wrong claim type names. It also breaks outside an HTTP request: in a message consumer, a scheduled job, or a Temporal activity, `IHttpContextAccessor.HttpContext` is `null`, while `IRequestContext` can be a `SystemRequestContext` or `AnonymousRequestContext` there, and a consumer can rebuild the publisher's from message headers.
 
 #### What it flags
 
@@ -2197,18 +2155,19 @@ public sealed class OrderService
 // Compliant
 namespace Orders.Application;
 
+using SharedKernel.Execution.Context;
 using SharedKernel.Security.Abstractions;
 
 public sealed class OrderService
 {
-    public OrderService(IUserContext userContext, ITenantProvider tenantProvider) { }
+    public OrderService(IUserContext userContext, IRequestContext requestContext) { }
 }
 ```
 
 #### Diagnostic
 
 ```text
-warning SK0031: Constructor parameter 'httpContextAccessor' is typed as 'IHttpContextAccessor' directly. Inject SharedKernel.Security.Abstractions.IUserContext (for identity) or ITenantProvider (for tenant identity) instead of a raw HttpContext-family type. Application-layer and domain-adjacent code must never reach past the platform's identity/tenant abstraction into ASP.NET Core hosting internals.
+warning SK0031: Constructor parameter 'httpContextAccessor' is typed as 'IHttpContextAccessor' directly. Inject SharedKernel.Security.Abstractions.IUserContext (for identity) or SharedKernel.Execution.Context.IRequestContext (for tenant identity) instead of a raw HttpContext-family type. Application-layer and domain-adjacent code must never reach past the platform's identity/tenant abstraction into ASP.NET Core hosting internals.
 ```
 
 #### Suppressing
@@ -2473,7 +2432,7 @@ logger.WelcomeEmailSent(PiiMasking.Email(customer.Email));
 #### Diagnostic
 
 ```text
-warning SK0035: 'Customer.Email' carries [EmailAddressData] and is passed to [LoggerMessage] parameter 'email', which is not classified. Mark the parameter with the same classification attribute so log redaction masks it, or mask it with SharedKernel.DataPrivacy.PiiMasking first.
+warning SK0035: 'Customer.Email' carries [EmailAddressData] and is passed to [LoggerMessage] parameter 'email', which is not classified. Mark the parameter with the same classification attribute so log redaction masks it, or mask it with SharedKernel.DataPrivacy.Masking.PiiMasking first.
 ```
 
 ---
@@ -3046,7 +3005,7 @@ public sealed class ArchitectureTests : ArchitectureRuleBase
 
     [Fact]
     public void Domain_does_not_reference_persistence() =>
-        AssertRule(SharedKernelLayeringRules.DomainNeverReferencesPersistence(Domain));
+        AssertRule(PersistenceLayerProtectionRules.DomainAssembliesNeverReferencePersistenceStack(Domain));
 }
 ```
 
@@ -3054,12 +3013,12 @@ A violation fails the test and names every offending type. Every rule is also an
 
 | Rule family | What it protects |
 |---|---|
-| Layering | Dependencies flow downward only: the domain never reaches persistence or messaging, the application layer depends on abstractions |
+| Tier purity | Which kernel package may reference which is enforced by the build (`SKTIER*` errors); the rules add what tiers cannot express: contracts and domain never reference each other and stay logging-free, test helpers never reach production |
 | Domain and contracts purity | No infrastructure, clock access or event handlers in the domain; contracts stay behaviour-free DTOs |
 | Persistence | `SaveChanges` is called in one place, repositories never expose `IQueryable`, read repositories never track, the shared unit-of-work/caller/audit contracts exist once, persistence namespaces stay consolidated |
 | Provider topology | Abstractions stay free of vendor SDKs, and sibling provider packages (S3 and OBS, Meilisearch and ElasticSearch) never reference each other |
 | Security and cryptography | No per-request identity captured in a singleton, no raw cipher outside the cryptography package |
-| Host composition and health checks | Dependency checks gate readiness rather than liveness, and upward layering exceptions stay confined to their readiness probes |
+| Host composition and health checks | Dependency checks gate readiness rather than liveness |
 | IL assertions | Logging `EventId` values are unique and in range, secure option defaults stay secure, registrations happen in the required order |
 
 > [!IMPORTANT]

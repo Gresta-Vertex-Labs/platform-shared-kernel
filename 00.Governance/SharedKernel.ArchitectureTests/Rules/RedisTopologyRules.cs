@@ -17,7 +17,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// <see cref="ConditionList"/> (or one per assembly) — consistent with the established
 /// <see cref="Helpers.ArchitectureRuleBase"/> API. The dependency checks use
 /// <c>.Should().NotHaveDependencyOn(...)</c>, in the same style as
-/// <see cref="CachingAbstractionRules"/>; <see cref="CachingAbstractionsDeclaresNoProviderSpecificTypes"/>
+/// the other topology rules; <see cref="CachingAbstractionsDeclaresNoProviderSpecificTypes"/>
 /// matches type names, and <see cref="CachingAbstractionsReferencesOnlyDependencyInjectionAbstractions"/>
 /// reads the compiled assembly references through
 /// <see cref="Predicates.AssemblyReferenceAllowListPredicate"/>. No SK diagnostic IDs are
@@ -402,7 +402,7 @@ public static class RedisTopologyRules
     /// <strong>Rationale:</strong> the abstractions package is the provider-neutral contract every
     /// provider implements. A dependency on any provider — or on a library only a provider needs —
     /// drags that provider into every consumer and lets provider concepts leak into the contract.
-    /// Same shape as <see cref="SharedKernelLayeringRules.CoreReferencesNothing"/>, scoped to
+    /// A purity rule inside one tier (Abstractions), which the tier check cannot express, scoped to
     /// <c>SharedKernel.Caching.Abstractions</c>.
     /// </para>
     /// <para>

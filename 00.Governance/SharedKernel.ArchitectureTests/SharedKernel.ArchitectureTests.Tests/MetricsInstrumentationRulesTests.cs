@@ -51,7 +51,7 @@ public class MetricsInstrumentationRulesTests
                 }
             }
 
-            namespace Fixture.Application.Behaviors
+            namespace Fixture.Application.Pipeline
             {
                 using System.Diagnostics.Metrics;
 
@@ -77,7 +77,7 @@ public class MetricsInstrumentationRulesTests
             because: "Handle records RequestDuration with a \"status\" tag but no \"outcome\" tag");
 
         result.FailingTypeNames.Should().Contain(
-            "Fixture.Application.Behaviors.MetricsBehavior",
+            "Fixture.Application.Pipeline.MetricsBehavior",
             because: "the failure must name the offending type");
     }
 
@@ -103,7 +103,7 @@ public class MetricsInstrumentationRulesTests
                 }
             }
 
-            namespace Fixture.Application.Behaviors
+            namespace Fixture.Application.Pipeline
             {
                 using System.Diagnostics.Metrics;
 

@@ -21,9 +21,9 @@ namespace SharedKernel.ArchitectureTests.Rules;
 ///     not be declared outside <c>SharedKernel.Security.Abstractions</c>.
 ///   </description></item>
 ///   <item><description>
-///     <see cref="TenantIdentityInterfacesDeclaredOnlyInSecurityAbstractions"/> —
-///     <c>ITenantProvider</c> and <c>ICurrentTenantService</c> must not be re-declared
-///     outside <c>SharedKernel.Security.Abstractions</c>.
+///     <see cref="TenantIdentityInterfacesAreNeverRedeclared"/> —
+///     <c>ITenantProvider</c>, <c>ICurrentTenantService</c> and <c>ITenantContextAccessor</c> are never
+///     re-declared: the tenant is <c>IRequestContext.TenantId</c>.
 ///   </description></item>
 ///   <item><description>
 ///     <see cref="IReadRepositoryMustNotExposeIQueryable"/> — types implementing an
@@ -83,16 +83,15 @@ public static class PersistenceInterfaceOwnershipRules
     }
 
     /// <summary>
-    /// Returns a <see cref="ConditionList"/> asserting that no type named
-    /// <c>ITenantProvider</c> or <c>ICurrentTenantService</c> is declared in any of the
-    /// supplied assemblies.
+    /// Returns a <see cref="ConditionList"/> asserting that no type named <c>ITenantProvider</c>,
+    /// <c>ICurrentTenantService</c> or <c>ITenantContextAccessor</c> is declared in any of the supplied assemblies.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Tenant-identity contracts belong exclusively in <c>SharedKernel.Security.Abstractions</c>.
-    /// Duplicates in other layers (e.g., a local <c>ICurrentTenantService</c> in
-    /// <c>SharedKernel.Persistence.EfCore</c>) cause silent mismatches when the owner interface
-    /// evolves.
+    /// The caller's tenant is <c>IRequestContext.TenantId</c> (<c>SharedKernel.Execution.Context</c>). WO-086/P-565
+    /// deleted every second tenant-identity interface (<c>ITenantProvider</c>, Messaging's
+    /// <c>ITenantContextAccessor</c>, the persistence-local tenant services); a re-declared one splits the source of
+    /// truth again and silently disagrees with the one persistence filters by.
     /// </para>
     /// <para>
     /// <strong>Offending pattern:</strong>
@@ -100,23 +99,20 @@ public static class PersistenceInterfaceOwnershipRules
     /// </para>
     /// <para>
     /// <strong>Compliant pattern:</strong>
-    /// <code>// Reference SharedKernel.Security.Abstractions.ICurrentTenantService</code>
+    /// <code>// Inject SharedKernel.Execution.Context.IRequestContext and read TenantId</code>
     /// </para>
     /// </remarks>
-    /// <param name="assemblies">
-    /// The assemblies to check for erroneous tenant-identity interface declarations.
-    /// Do <em>not</em> include <c>SharedKernel.Security.Abstractions</c>.
-    /// </param>
+    /// <param name="assemblies">The assemblies to check for re-declared tenant-identity interfaces.</param>
     /// <returns>
-    /// A <see cref="ConditionList"/> asserting no type named <c>ITenantProvider</c> or
-    /// <c>ICurrentTenantService</c> exists in the supplied assemblies.
+    /// A <see cref="ConditionList"/> asserting none of the three names is declared in the supplied assemblies.
     /// </returns>
-    public static ConditionList TenantIdentityInterfacesDeclaredOnlyInSecurityAbstractions(
+    public static ConditionList TenantIdentityInterfacesAreNeverRedeclared(
         params Assembly[] assemblies)
     {
         var predicate = new InterfaceDeclarationOwnershipPredicate(
             "ITenantProvider",
-            "ICurrentTenantService");
+            "ICurrentTenantService",
+            "ITenantContextAccessor");
         return BuildMultiAssemblyRule(assemblies, predicate);
     }
 
