@@ -32,7 +32,7 @@ public sealed class PublishContext
 
     /// <summary>
     /// Gets the explicit correlation identifier to embed in the published envelope.
-    /// <c>null</c> instructs the publisher to auto-populate from <c>Activity.Current?.TraceId</c>.
+    /// <c>null</c> instructs the publisher to use the ambient caller's correlation id (<c>X-Correlation-Id</c>).
     /// </summary>
     public Guid? CorrelationId { get; private set; }
 
@@ -93,7 +93,7 @@ public sealed class PublishContext
     public IReadOnlyDictionary<string, string> Headers => _headers;
 
     /// <summary>
-    /// Sets the correlation identifier, overriding the ambient <c>Activity.Current?.TraceId</c>.
+    /// Sets the correlation identifier, overriding the ambient caller's correlation id.
     /// </summary>
     /// <param name="correlationId">The correlation identifier to embed.</param>
     /// <returns>This <see cref="PublishContext"/> instance for fluent chaining.</returns>

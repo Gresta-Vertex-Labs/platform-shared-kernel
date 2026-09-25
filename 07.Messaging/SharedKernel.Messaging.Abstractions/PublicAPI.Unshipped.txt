@@ -1,7 +1,4 @@
 #nullable enable
-const SharedKernel.Messaging.Abstractions.Context.MessageContextHeaders.ActorId = "x-sk-actor-id" -> string!
-const SharedKernel.Messaging.Abstractions.Context.MessageContextHeaders.ActorKind = "x-sk-actor-kind" -> string!
-const SharedKernel.Messaging.Abstractions.Context.MessageContextHeaders.ClientId = "x-sk-client-id" -> string!
 const SharedKernel.Messaging.Abstractions.Errors.MessagingErrorCodes.ContractViolation = "messaging.contract_violation" -> string!
 const SharedKernel.Messaging.Abstractions.Errors.MessagingErrorCodes.EndpointNotFound = "messaging.endpoint_not_found" -> string!
 const SharedKernel.Messaging.Abstractions.Errors.MessagingErrorCodes.InvalidMessage = "messaging.invalid_message" -> string!
@@ -16,13 +13,6 @@ override SharedKernel.Messaging.Abstractions.Faults.FaultExceptionInfo.ToString(
 override SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation.GetHashCode() -> int
 SharedKernel.Messaging.Abstractions.Context.IInboundMessageContextAccessor
 SharedKernel.Messaging.Abstractions.Context.IInboundMessageContextAccessor.Current.get -> SharedKernel.Execution.Context.IRequestContext?
-SharedKernel.Messaging.Abstractions.Context.MessageContextHeaders
-SharedKernel.Messaging.Abstractions.Context.MessageRequestContext
-SharedKernel.Messaging.Abstractions.Context.MessageRequestContext.ActorKind.get -> SharedKernel.Execution.Context.ActorKind
-SharedKernel.Messaging.Abstractions.Context.MessageRequestContext.ClientId.get -> string?
-SharedKernel.Messaging.Abstractions.Context.MessageRequestContext.HasPermissionAsync(string! permission, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<bool>
-SharedKernel.Messaging.Abstractions.Context.MessageRequestContext.IsAuthenticated.get -> bool
-SharedKernel.Messaging.Abstractions.Context.MessageRequestContext.UserId.get -> string?
 SharedKernel.Messaging.Abstractions.Errors.MessagingErrorCodes
 SharedKernel.Messaging.Abstractions.Errors.MessagingErrors
 SharedKernel.Messaging.Abstractions.EventPublisher.IEventPublisher
@@ -106,7 +96,5 @@ static SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation.op
 static SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation.Started(string! reservationToken) -> SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation
 ~override SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation.Equals(object obj) -> bool
 ~override SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation.ToString() -> string
-SharedKernel.Messaging.Abstractions.Context.MessageRequestContext.MessageRequestContext(SharedKernel.Execution.Tenancy.TenantId? tenantId, string? userId = null, SharedKernel.Execution.Context.ActorKind actorKind = SharedKernel.Execution.Context.ActorKind.Anonymous, string? clientId = null) -> void
-SharedKernel.Messaging.Abstractions.Context.MessageRequestContext.TenantId.get -> SharedKernel.Execution.Tenancy.TenantId?
 SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext.TenantId.get -> SharedKernel.Execution.Tenancy.TenantId?
 SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext.WithTenantId(SharedKernel.Execution.Tenancy.TenantId tenantId) -> SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext!

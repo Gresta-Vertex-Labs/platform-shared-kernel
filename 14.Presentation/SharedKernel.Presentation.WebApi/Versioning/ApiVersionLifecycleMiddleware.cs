@@ -19,7 +19,7 @@ namespace SharedKernel.Presentation.WebApi.Versioning;
 /// Registered automatically via <see cref="ApiVersionLifecycleStartupFilter"/> — there is no
 /// companion <c>Use...</c> method; this component self-inserts into the pipeline like every other
 /// no-op-when-inapplicable filter/middleware in this domain. Headers are written from an
-/// <see cref="HttpResponse.OnStarting(Func{Task})"/> callback (mirroring <c>CorrelationIdMiddleware</c>/
+/// <see cref="HttpResponse.OnStarting(Func{Task})"/> callback (mirroring
 /// <c>SecurityHeadersMiddleware</c>) so the resolved API version and endpoint metadata — populated
 /// during routing/endpoint selection — are reliably available by the time this callback runs,
 /// regardless of where in the pipeline this middleware itself executes.

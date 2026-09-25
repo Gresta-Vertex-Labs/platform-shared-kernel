@@ -4,6 +4,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharedKernel.Caching.Abstractions;
+using SharedKernel.Execution.Context;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Scheduling.Diagnostics;
@@ -419,6 +420,16 @@ internal sealed class SchedulingHostedService : BackgroundService
                 FencingToken = fencingToken,
             };
 
+            // The job runs as a system actor for its configured tenant, under a new correlation id, made ambient so
+            // every outbound call, message or workflow the job starts carries the same tenant and correlation id.
+            // Holds no permissions: a job that sends authorization-gated commands registers its own identity.
+            var jobCaller = new SystemRequestContext(
+                [],
+                identity: definition.JobName,
+                tenantId: definition.Options.TenantScope.Tenant,
+                correlationId: CorrelationIds.New());
+
+            using IDisposable callerScope = RequestContextScope.Begin(jobCaller);
             await using AsyncServiceScope scope = _scopeFactory.CreateAsyncScope();
             Result result = await definition.ExecuteAsync(scope.ServiceProvider, context, stoppingToken).ConfigureAwait(false);
 

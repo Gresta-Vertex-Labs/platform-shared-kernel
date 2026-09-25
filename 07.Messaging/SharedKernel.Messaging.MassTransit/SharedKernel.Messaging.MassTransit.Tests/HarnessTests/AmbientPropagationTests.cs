@@ -28,7 +28,7 @@ public sealed class AmbientPropagationTests
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task PublishAsync_WithAmbientCorrelationPropagation_PopulatesCorrelationIdFromActivityTraceId()
+    public async Task PublishAsync_WithAmbientCorrelationPropagation_PopulatesCorrelationIdFromTheAmbientCaller()
     {
         // Arrange
         ApPublishCorrelationCaptureStore.Reset();
@@ -54,24 +54,26 @@ public sealed class AmbientPropagationTests
         await using var scope = provider.CreateAsyncScope();
         var bus = scope.ServiceProvider.GetRequiredService<IMessageBus>();
 
-        // Act: publish with an ambient Activity in scope.
+        // Act: publish with an ambient Activity AND an ambient caller whose correlation id differs from it.
         using var activity = new Activity("ap-publish-test").Start();
-        var expectedCorrelationId = Guid.Parse(activity.TraceId.ToString());
+        var expectedCorrelationId = Guid.NewGuid();
 
-        await bus.PublishAsync(new ApPublishTestMessage("payload"), CancellationToken.None);
+        using (RequestContextScope.Begin(new SystemRequestContext([], correlationId: expectedCorrelationId.ToString("N"))))
+        {
+            await bus.PublishAsync(new ApPublishTestMessage("payload"), CancellationToken.None);
+        }
 
         (await harness.Consumed.Any<ApPublishTestMessage>()).Should().BeTrue();
 
         // Assert
         ApPublishCorrelationCaptureStore.CapturedCorrelationId.Should().Be(expectedCorrelationId,
-            "AmbientCorrelationHeaderPropagator must populate CorrelationId from Activity.Current.TraceId " +
-            "on PublishAsync");
+            "the transport correlation id must be the ambient caller's correlation id, never Activity.Current's trace id (P-566)");
 
         await harness.Stop();
     }
 
     [Fact]
-    public async Task SendAsync_WithAmbientCorrelationPropagation_PopulatesCorrelationIdFromActivityTraceId()
+    public async Task SendAsync_WithAmbientCorrelationPropagation_PopulatesCorrelationIdFromTheAmbientCaller()
     {
         // Arrange
         ApSendCorrelationCaptureStore.Reset();
@@ -104,16 +106,18 @@ public sealed class AmbientPropagationTests
 
         // Act
         using var activity = new Activity("ap-send-test").Start();
-        var expectedCorrelationId = Guid.Parse(activity.TraceId.ToString());
+        var expectedCorrelationId = Guid.NewGuid();
 
-        await bus.SendAsync(new ApSendTestCommand("payload"), CancellationToken.None);
+        using (RequestContextScope.Begin(new SystemRequestContext([], correlationId: expectedCorrelationId.ToString("N"))))
+        {
+            await bus.SendAsync(new ApSendTestCommand("payload"), CancellationToken.None);
+        }
 
         (await harness.Consumed.Any<ApSendTestCommand>()).Should().BeTrue();
 
         // Assert
         ApSendCorrelationCaptureStore.CapturedCorrelationId.Should().Be(expectedCorrelationId,
-            "AmbientCorrelationHeaderPropagator must populate CorrelationId from Activity.Current.TraceId " +
-            "on SendAsync, identically to PublishAsync");
+            "SendAsync must carry the ambient caller's correlation id, identically to PublishAsync");
 
         await harness.Stop();
     }

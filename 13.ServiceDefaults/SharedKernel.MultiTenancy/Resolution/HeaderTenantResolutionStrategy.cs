@@ -19,7 +19,7 @@ public sealed class HeaderTenantResolutionStrategy(string headerName = HeaderTen
     /// The default HTTP request header name probed when no header name is supplied — sourced from
     /// <c>01.Core</c>'s <see cref="WellKnownHeaders.TenantId"/> so this header name cannot drift
     /// independently from the identical literal used by
-    /// <c>11.Communication.Rest.TenantIdDelegatingHandler</c> and
+    /// <c>11.Communication.Rest.RequestContextDelegatingHandler</c> and
     /// <c>11.Communication.Grpc.TenantIdInterceptor</c>.
     /// </summary>
     public const string DefaultHeaderName = WellKnownHeaders.TenantId;

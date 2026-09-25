@@ -58,4 +58,43 @@ public static class WellKnownHeaders
     /// <c>[Claim, Header, Database]</c> for that reason.
     /// </remarks>
     public const string TenantId = "X-Tenant-Id";
+
+    /// <summary>
+    /// Header carrying the client-generated key that makes a retried request safe to repeat
+    /// (<c>"Idempotency-Key"</c>, the name the IETF <c>httpapi-idempotency-key-header</c> draft defines).
+    /// </summary>
+    /// <remarks>
+    /// Outbound clients send it under this name and inbound endpoints read it under this name. The two
+    /// sides once disagreed (<c>x-idempotency-key</c> out, <c>Idempotency-Key</c> in), so a retried call
+    /// arrived with no key at all and was processed twice.
+    /// </remarks>
+    public const string IdempotencyKey = "Idempotency-Key";
+
+    /// <summary>
+    /// Header carrying the subject id of the caller on whose behalf a call or message is made
+    /// (<c>"x-sk-actor-id"</c>). Omitted when the caller is unauthenticated.
+    /// </summary>
+    /// <remarks>
+    /// <b>Attribution, never authentication.</b> A receiver records it (audit columns, logs) but never grants
+    /// anything on the strength of it: any caller able to reach the receiver can set it. The <c>x-sk-</c> prefix
+    /// is what messaging consumers lift into their log scope, so the value keeps the name messages already
+    /// carry.
+    /// </remarks>
+    public const string ActorId = "x-sk-actor-id";
+
+    /// <summary>
+    /// Header carrying the caller's <c>ActorKind</c> as the enum member name — <c>User</c>, <c>Service</c>,
+    /// <c>System</c> or <c>Anonymous</c> (<c>"x-sk-actor-kind"</c>).
+    /// </summary>
+    /// <remarks>
+    /// The name, not the number, so a value in flight is readable without the enum at hand and inserting a
+    /// member can never reinterpret it. Attribution only, like <see cref="ActorId"/>.
+    /// </remarks>
+    public const string ActorKind = "x-sk-actor-kind";
+
+    /// <summary>
+    /// Header carrying the OAuth2 client id the caller authenticated through (<c>"x-sk-client-id"</c>),
+    /// omitted when unknown. Attribution only, like <see cref="ActorId"/>.
+    /// </summary>
+    public const string ClientId = "x-sk-client-id";
 }

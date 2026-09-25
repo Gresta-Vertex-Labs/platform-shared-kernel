@@ -38,8 +38,7 @@ using SharedKernel.Presentation.WebApi.Versioning;
 
     builder.Services.AddProblemDetails();
     builder.Services.AddExceptionHandler<SharedKernelExceptionHandler>();
-    builder.Services.AddSharedKernelCorrelationId();
-    Console.WriteLine("Surface 1 PASS: AddProblemDetails / AddExceptionHandler<SharedKernelExceptionHandler> / AddSharedKernelCorrelationId");
+    Console.WriteLine("Surface 1 PASS: AddProblemDetails / AddExceptionHandler<SharedKernelExceptionHandler>");
 
     // ── Surface 2: API versioning + OpenAPI + Scalar composed alongside it ──
     builder.Services.AddSharedKernelApiVersioning();
@@ -61,10 +60,9 @@ using SharedKernel.Presentation.WebApi.Versioning;
     Console.WriteLine("Surface 3 PASS: WebApi core services resolve (IExceptionHandler, IApiVersionDescriptionProvider)");
 
     // ── Surface 4: pipeline + endpoint mapping construct without exception ──
-    app.UseSharedKernelCorrelationId();
     app.UseExceptionHandler();
     app.MapSharedKernelOpenApi();
-    Console.WriteLine("Surface 4 PASS: UseSharedKernelCorrelationId / UseExceptionHandler / MapSharedKernelOpenApi pipeline construction");
+    Console.WriteLine("Surface 4 PASS: UseExceptionHandler / MapSharedKernelOpenApi pipeline construction");
 }
 
 // ── Surface 5: AddSharedKernelSignalR — in-memory, no backplane ─────────────
@@ -112,7 +110,6 @@ Console.WriteLine("Surface 6 PASS: AddSharedKernelSignalR().WithRedisBackplane(.
 
     builder.Services.AddProblemDetails();
     builder.Services.AddExceptionHandler<SharedKernelExceptionHandler>();
-    builder.Services.AddSharedKernelCorrelationId();
     builder.Services.AddSharedKernelApiVersioning();
     builder.Services.AddSharedKernelOpenApi(title: "Consumer Verify API (Authorization)");
     builder.Services.AddSharedKernelAuthorizationFilters();
@@ -125,7 +122,6 @@ Console.WriteLine("Surface 6 PASS: AddSharedKernelSignalR().WithRedisBackplane(.
         Verify(authorizationFilter is not null, "AuthorizationRequirementEndpointFilter resolves as a registered singleton alongside the full WebApi stack");
     }
 
-    app.UseSharedKernelCorrelationId();
     app.UseExceptionHandler();
     app.MapSharedKernelOpenApi();
 
@@ -158,7 +154,6 @@ Console.WriteLine("Surface 6 PASS: AddSharedKernelSignalR().WithRedisBackplane(.
 
     builder.Services.AddProblemDetails();
     builder.Services.AddExceptionHandler<SharedKernelExceptionHandler>();
-    builder.Services.AddSharedKernelCorrelationId();
     builder.Services.AddSharedKernelCors(o =>
     {
         o.AllowedOrigins.Add("https://app.example.com");
@@ -176,7 +171,6 @@ Console.WriteLine("Surface 6 PASS: AddSharedKernelSignalR().WithRedisBackplane(.
         Verify(corsOptions.AllowedOrigins.Count == 1 && corsOptions.AllowCredentials, "CorsPolicyOptions resolves and passes CorsPolicyOptionsValidator with zero exception for a valid configuration");
     }
 
-    app.UseSharedKernelCorrelationId();
     app.UseSharedKernelSecurityHeaders();
     app.UseCors(CorsPolicyNames.Default);
     app.UseExceptionHandler();
@@ -210,7 +204,6 @@ Console.WriteLine("Surface 6 PASS: AddSharedKernelSignalR().WithRedisBackplane(.
 
     builder.Services.AddProblemDetails();
     builder.Services.AddExceptionHandler<SharedKernelExceptionHandler>();
-    builder.Services.AddSharedKernelCorrelationId();
     builder.Services.AddSharedKernelIdempotencyFilters();
 
     var app = builder.Build();
@@ -221,7 +214,6 @@ Console.WriteLine("Surface 6 PASS: AddSharedKernelSignalR().WithRedisBackplane(.
         Verify(idempotencyFilter is not null, "IdempotencyKeyRequirementEndpointFilter resolves as a registered singleton");
     }
 
-    app.UseSharedKernelCorrelationId();
     app.UseExceptionHandler();
 
     var payments = app
@@ -274,7 +266,6 @@ Console.WriteLine("Surface 6 PASS: AddSharedKernelSignalR().WithRedisBackplane(.
 
     builder.Services.AddProblemDetails();
     builder.Services.AddExceptionHandler<SharedKernelExceptionHandler>();
-    builder.Services.AddSharedKernelCorrelationId();
     builder.Services.AddSharedKernelApiVersioning();
     builder.Services.AddSharedKernelOpenApi(
         title: "Consumer Verify API (Security Schemes)",
@@ -286,7 +277,6 @@ Console.WriteLine("Surface 6 PASS: AddSharedKernelSignalR().WithRedisBackplane(.
         });
 
     var app = builder.Build();
-    app.UseSharedKernelCorrelationId();
     app.UseExceptionHandler();
     app.MapSharedKernelOpenApi();
 
@@ -323,7 +313,6 @@ Console.WriteLine("Surface 6 PASS: AddSharedKernelSignalR().WithRedisBackplane(.
 
     builder.Services.AddProblemDetails();
     builder.Services.AddExceptionHandler<SharedKernelExceptionHandler>();
-    builder.Services.AddSharedKernelCorrelationId();
     builder.Services.AddSharedKernelUploadValidation(o =>
     {
         o.MaxSizeBytes = 5 * 1024 * 1024;
@@ -338,7 +327,6 @@ Console.WriteLine("Surface 6 PASS: AddSharedKernelSignalR().WithRedisBackplane(.
         Verify(uploadFilter is not null, "UploadValidationEndpointFilter resolves as a registered singleton");
     }
 
-    app.UseSharedKernelCorrelationId();
     app.UseExceptionHandler();
 
     var documents = app

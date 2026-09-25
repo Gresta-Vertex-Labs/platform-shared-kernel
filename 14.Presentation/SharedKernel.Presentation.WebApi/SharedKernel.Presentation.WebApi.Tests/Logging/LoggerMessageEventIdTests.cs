@@ -2,7 +2,6 @@ using System.Reflection;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Presentation.WebApi.ExceptionHandling;
-using SharedKernel.Presentation.WebApi.Middleware;
 using SharedKernel.Primitives.Logging;
 using Xunit;
 
@@ -17,14 +16,8 @@ namespace SharedKernel.Presentation.WebApi.Tests.Logging;
 /// </summary>
 public class LoggerMessageEventIdTests
 {
-    [Fact]
-    public void CorrelationIdMiddleware_CorrelationIdGenerated_HasAssignedEventId()
-    {
-        var attribute = GetLoggerMessageAttribute(typeof(CorrelationIdMiddleware), "CorrelationIdGenerated");
-
-        attribute.EventId.Should().Be(LoggingEventIdRanges.Presentation + 0);
-        attribute.EventId.Should().Be(14000);
-    }
+    // 14000/14006 belonged to CorrelationIdMiddleware, folded into SharedKernel.ServiceDefaults.Security's
+    // request-context middleware by P-566 (13006/13007). They stay retired, never reused.
 
     [Fact]
     public void SharedKernelExceptionHandler_UnhandledException_HasAssignedEventId()

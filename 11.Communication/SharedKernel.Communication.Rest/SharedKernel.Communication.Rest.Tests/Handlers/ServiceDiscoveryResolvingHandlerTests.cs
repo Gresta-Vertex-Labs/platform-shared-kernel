@@ -1,5 +1,4 @@
 using System.Net;
-using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Communication.Internal.Resolvers;
 using SharedKernel.Communication.Rest.Extensions;
@@ -30,7 +29,6 @@ public sealed class ServiceDiscoveryResolvingHandlerTests
         });
 
         var services = new ServiceCollection();
-        services.AddSingleton<IHttpContextAccessor, HttpContextAccessor>();
         services.AddSingleton<IServiceEndpointResolver>(resolver);
 
         services.AddSharedKernelRestCommunication()
@@ -81,7 +79,6 @@ public sealed class ServiceDiscoveryResolvingHandlerTests
         });
 
         var services = new ServiceCollection();
-        services.AddSingleton<IHttpContextAccessor, HttpContextAccessor>();
         services.AddSingleton<IServiceEndpointResolver>(resolver);
 
         services.AddSharedKernelRestCommunication()

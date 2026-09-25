@@ -32,7 +32,7 @@ public sealed class RestClientOptions
     public RestResilienceOptions Resilience { get; set; } = new();
 
     /// <summary>
-    /// When <c>true</c>, attaches a stable <c>x-idempotency-key</c> header to every outgoing request
+    /// When <c>true</c>, attaches a stable <c>Idempotency-Key</c> header to every outgoing request
     /// via the opt-in <c>IdempotencyKeyDelegatingHandler</c>, generated once per logical call and
     /// preserved unchanged across every Polly-driven retry. Default: <c>false</c>.
     /// Enable for typed clients issuing non-idempotent verbs (POST/PATCH/DELETE) that a downstream

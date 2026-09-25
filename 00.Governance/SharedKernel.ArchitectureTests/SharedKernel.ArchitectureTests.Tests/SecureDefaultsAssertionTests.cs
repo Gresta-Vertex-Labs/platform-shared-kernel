@@ -1314,18 +1314,21 @@ public class SecureDefaultsAssertionTests
     /// </para>
     /// </remarks>
     [Fact]
-    public void AssertMethodBodyInvokesMethod_RealCorrelationIdMiddleware_ValidationCallSiteHolds()
+    public void AssertMethodBodyInvokesMethod_RealRequestContextMiddleware_ValidationCallSiteHolds()
     {
-        var declaringType = typeof(SharedKernel.Presentation.WebApi.Middleware.CorrelationIdMiddleware);
+        // P-566 folded CorrelationIdMiddleware into SharedKernel.ServiceDefaults.Security's (internal)
+        // RequestContextMiddleware, and the shape check moved to SharedKernel.Execution's CorrelationIds.IsValid,
+        // shared by every inbound channel. The lock follows the call site.
+        var declaringType = typeof(SharedKernel.ServiceDefaults.Security.RequestContextApplicationBuilderExtensions)
+            .Assembly.GetType("SharedKernel.ServiceDefaults.Security.RequestContextMiddleware", throwOnError: true)!;
 
         var act = () =>
             SecureDefaultsAssertion.AssertMethodBodyInvokesMethod(
-                declaringType, "ResolveCorrelationId", declaringType, "IsValidFormat");
+                declaringType, "ResolveCorrelationId", typeof(SharedKernel.Execution.Context.CorrelationIds), "IsValid");
 
         act.Should().NotThrow(
-            because: "the real, shipped CorrelationIdMiddleware.ResolveCorrelationId still calls " +
-                     "its own private IsValidFormat format-validation helper before preserving a " +
-                     "caller-supplied value (WO-063, C-65)");
+            because: "the real, shipped request-context middleware still validates a caller-supplied " +
+                     "correlation id with CorrelationIds.IsValid before preserving it (WO-063, C-65; P-566)");
     }
 
     // ---------------------------------------------------------------------------

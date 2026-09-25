@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Grpc.Core;
 using Grpc.Core.Interceptors;
 using Microsoft.Extensions.Logging;
+using SharedKernel.Execution.Context;
 using SharedKernel.Primitives.Propagation;
 
 namespace SharedKernel.Communication.Grpc.Interceptors;
@@ -9,13 +10,17 @@ namespace SharedKernel.Communication.Grpc.Interceptors;
 /// <summary>
 /// Injects W3C <c>traceparent</c>, <c>tracestate</c>, and <c>x-correlation-id</c> metadata
 /// into every outgoing gRPC call.
-/// Reads <see cref="Activity.Current"/> at the moment of the call (not at DI registration time).
-/// Never overwrites a caller-supplied <c>x-correlation-id</c> metadata entry.
+/// Reads <see cref="Activity.Current"/> (trace context) and <see cref="IRequestContextAccessor"/> (correlation id)
+/// at the moment of the call, not at DI registration time. The correlation id is the ambient caller's, never
+/// <see cref="Activity.Id"/>. Never overwrites a caller-supplied <c>x-correlation-id</c> metadata entry.
 /// Catches all exceptions, logs at <see cref="LogLevel.Error"/>, and continues — never propagates
 /// into the gRPC call pipeline.
 /// </summary>
-internal sealed partial class CorrelationTracingInterceptor(ILogger<CorrelationTracingInterceptor> logger) : Interceptor
+internal sealed partial class CorrelationTracingInterceptor(
+    IRequestContextAccessor accessor,
+    ILogger<CorrelationTracingInterceptor> logger) : Interceptor
 {
+    private readonly IRequestContextAccessor _accessor = accessor;
     private readonly ILogger<CorrelationTracingInterceptor> _logger = logger;
 
     // Thin value-forwarding alias of 01.Core's WellKnownHeaders.CorrelationId (P-259/P-260) — retained
@@ -90,10 +95,12 @@ internal sealed partial class CorrelationTracingInterceptor(ILogger<CorrelationT
                 headers = GrpcMetadataHelper.CloneAndAdd(headers, TraceStateKey, activity.TraceStateString);
             }
 
-            // Inject x-correlation-id — do not overwrite if caller set it
+            // Inject X-Correlation-Id — the ambient caller's id, never Activity.Id, which changes at every new
+            // trace (defect 4, P-566); a new id only when this call starts a new operation. Never overwrites a
+            // caller-supplied value.
             if (!GrpcMetadataHelper.HasMetadataEntry(headers, CorrelationIdKey))
             {
-                var correlationId = activity?.Id ?? Guid.NewGuid().ToString();
+                var correlationId = CorrelationIds.Current(_accessor.Current) ?? CorrelationIds.New();
                 headers = GrpcMetadataHelper.CloneAndAdd(headers, CorrelationIdKey, correlationId);
             }
 

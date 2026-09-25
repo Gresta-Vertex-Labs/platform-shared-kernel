@@ -43,7 +43,8 @@ public static class WellKnownBaggageKeys
     /// (<c>"correlation.id"</c>).
     /// </summary>
     /// <remarks>
-    /// Written by <c>14.Presentation.CorrelationIdMiddleware</c> and read by
+    /// Written by the inbound adapters (<c>13.ServiceDefaults.Security</c>'s request-context middleware, the gRPC server
+    /// interceptor) and read by
     /// <c>13.ServiceDefaults.BaggageLogRecordProcessor</c> — this constant is the single shared
     /// source of truth reconciling both sides of that contract.
     /// </remarks>

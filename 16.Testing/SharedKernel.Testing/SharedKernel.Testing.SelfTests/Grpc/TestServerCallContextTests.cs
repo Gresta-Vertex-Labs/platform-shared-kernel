@@ -66,7 +66,7 @@ public sealed class TestServerCallContextTests
     }
 
     [Fact]
-    public async Task GrpcTenantContextInterceptor_NoRequestContextRegistered_OpensNoScope_NeverRejects()
+    public async Task GrpcTenantContextInterceptor_NoRequestContextRegistered_RunsAnonymousWithACorrelationId_NeverRejects()
     {
         var context = SharedKernel.Testing.Grpc.TestServerCallContext.Create();
         var interceptor = new GrpcTenantContextInterceptor(new RequestContextAccessor());
@@ -78,7 +78,11 @@ public sealed class TestServerCallContextTests
             return Task.FromResult("ok");
         });
 
-        Assert.Null(observed);
+        // P-566: the call always runs inside a scope, anonymous here, so it still carries a correlation id.
+        Assert.NotNull(observed);
+        Assert.False(observed!.IsAuthenticated);
+        Assert.Null(observed.TenantId);
+        Assert.True(CorrelationIds.IsValid(observed.CorrelationId));
         Assert.Equal("ok", result);
     }
 

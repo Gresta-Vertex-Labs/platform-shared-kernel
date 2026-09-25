@@ -3,7 +3,7 @@
     <SharedKernelTier>Adapter</SharedKernelTier>
     <SharedKernelAllowedAdapterReferences>SharedKernel.Communication.Internal</SharedKernelAllowedAdapterReferences>
     <!-- NuGet packaging metadata -->
-    <Description>gRPC channel factory via Grpc.Net.ClientFactory, CorrelationTracingInterceptor (W3C OTel + x-correlation-id), TenantIdInterceptor (x-tenant-id), MoneyProtoExtensions (Money &lt;-&gt; decimal), TimestampProtoExtensions (Timestamp &lt;-&gt; DateTimeOffset), and fluent IGrpcCommunicationBuilder DI entry point.</Description>
+    <Description>gRPC channel factory via Grpc.Net.ClientFactory, CorrelationTracingInterceptor (W3C OTel + x-correlation-id), TenantIdInterceptor (x-tenant-id plus actor/client), both reading the ambient caller from IRequestContextAccessor with no ASP.NET Core dependency, MoneyProtoExtensions (Money &lt;-&gt; decimal), TimestampProtoExtensions (Timestamp &lt;-&gt; DateTimeOffset), and fluent IGrpcCommunicationBuilder DI entry point.</Description>
     <PackageTags>grpc;channel-factory;otel;tracing;correlation-id;tenant-id;protobuf;shared-kernel</PackageTags>
     <!--
       NU5104: a stable package must not depend on a prerelease package. Suppressed deliberately —
@@ -38,8 +38,6 @@
         Money and Timestamp are Google Protobuf well-known types — pure static conversion, no reflection.
       OpenTelemetry.Instrumentation.GrpcNetClient 1.15.1-beta.1: OTel gRPC instrumentation.
         Still in beta but the only available option for net10.0; interceptors wrap it in try/catch.
-      Microsoft.AspNetCore.Http.Abstractions 2.3.11: IHttpContextAccessor for TenantIdInterceptor
-        request-scope IUserContext resolution.
     -->
     <PackageReference Include="Grpc.Net.Client" />
     <PackageReference Include="Grpc.Net.ClientFactory" />
@@ -50,11 +48,6 @@
     -->
     <PackageReference Include="Google.Api.CommonProtos" />
     <PackageReference Include="OpenTelemetry.Instrumentation.GrpcNetClient" />
-    <!--
-      Microsoft.AspNetCore.Http: provides IHttpContextAccessor (abstractions) and HttpContextAccessor
-      (concrete impl) for TenantIdInterceptor request-scope tenant resolution.
-    -->
-    <PackageReference Include="Microsoft.AspNetCore.Http" />
   </ItemGroup>
   <ItemGroup>
     <!-- Allow test project to access internal types (CorrelationTracingInterceptor, TenantIdInterceptor) -->

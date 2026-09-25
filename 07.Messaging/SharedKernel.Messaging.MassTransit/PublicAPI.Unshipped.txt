@@ -52,11 +52,11 @@ SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.WithSendEndpoi
 SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.WithVersionTranslator<TOld, TNew, TTranslator>() -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
 SharedKernel.Messaging.MassTransit.Extensions.ServiceCollectionExtensions
 SharedKernel.Messaging.MassTransit.HeaderPropagation.AmbientCorrelationHeaderPropagator
-SharedKernel.Messaging.MassTransit.HeaderPropagation.AmbientCorrelationHeaderPropagator.AmbientCorrelationHeaderPropagator() -> void
+SharedKernel.Messaging.MassTransit.HeaderPropagation.AmbientCorrelationHeaderPropagator.AmbientCorrelationHeaderPropagator(SharedKernel.Execution.Context.IRequestContextAccessor? accessor = null) -> void
 SharedKernel.Messaging.MassTransit.HeaderPropagation.AmbientCorrelationHeaderPropagator.Propagate(SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext! context) -> void
 SharedKernel.Messaging.MassTransit.HeaderPropagation.RequestContextHeaderPropagator
 SharedKernel.Messaging.MassTransit.HeaderPropagation.RequestContextHeaderPropagator.Propagate(SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext! context) -> void
-SharedKernel.Messaging.MassTransit.HeaderPropagation.RequestContextHeaderPropagator.RequestContextHeaderPropagator(SharedKernel.Execution.Context.IRequestContext? requestContext = null) -> void
+SharedKernel.Messaging.MassTransit.HeaderPropagation.RequestContextHeaderPropagator.RequestContextHeaderPropagator(SharedKernel.Execution.Context.IRequestContextAccessor? accessor = null, SharedKernel.Execution.Context.IRequestContext? requestContext = null) -> void
 SharedKernel.Messaging.MassTransit.HeaderPropagation.TenantHeaderPropagator
 SharedKernel.Messaging.MassTransit.HeaderPropagation.TenantHeaderPropagator.Propagate(SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext! context) -> void
 SharedKernel.Messaging.MassTransit.Options.AzureServiceBusOptions

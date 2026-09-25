@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Http;
+using SharedKernel.Primitives.Propagation;
 
 namespace SharedKernel.Presentation.WebApi.Idempotency;
 
@@ -15,15 +16,12 @@ public static class HttpContextIdempotencyExtensions
     /// (<c>"Idempotency-Key"</c>).
     /// </summary>
     /// <remarks>
-    /// Domain-local for now — mirrors <c>CorrelationIdMiddleware.HeaderName</c>'s pre-WO-042 shape,
-    /// before <c>01.Core</c>'s <c>WellKnownHeaders</c> existed. <c>01.Core</c>'s
-    /// <c>WellKnownHeaders</c> has no <c>IdempotencyKey</c> member as of this writing, and this
-    /// capability does not block on one being added. A future forwarding-alias promotion
-    /// (mirroring <c>CorrelationIdMiddleware.HeaderName</c>'s precedent) is a natural follow-up
-    /// only if/when <c>11.Communication.Rest</c>'s outbound idempotency-key propagation ships and
-    /// both domains want the byte-identical literal.
+    /// Forwards <c>01.Core</c>'s <see cref="WellKnownHeaders.IdempotencyKey"/>, the name
+    /// <c>11.Communication.Rest</c> sends the key under (P-566). The two sides used to disagree
+    /// (<c>x-idempotency-key</c> out, <c>Idempotency-Key</c> in), so a retried outbound call arrived here
+    /// with no key at all.
     /// </remarks>
-    public const string IdempotencyKeyHeader = "Idempotency-Key";
+    public const string IdempotencyKeyHeader = WellKnownHeaders.IdempotencyKey;
 
     /// <summary>
     /// Attempts to read and format-validate the <see cref="IdempotencyKeyHeader"/> header from

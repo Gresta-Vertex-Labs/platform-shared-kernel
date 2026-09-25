@@ -1,5 +1,5 @@
 using System.Net;
-using Microsoft.AspNetCore.Http;
+using SharedKernel.Execution.Context;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using SharedKernel.Communication.Rest.Builders;
@@ -26,7 +26,7 @@ public sealed class RestCommunicationBuilderTests
     }
 
     [Fact]
-    public void AddSharedKernelRestCommunication_RegistersCorrelationHandlerAsTransient()
+    public void AddSharedKernelRestCommunication_RegistersRequestContextHandlerAsTransient()
     {
         // Arrange
         var services = new ServiceCollection();
@@ -36,13 +36,13 @@ public sealed class RestCommunicationBuilderTests
 
         // Assert
         var descriptor = services.FirstOrDefault(
-            d => d.ServiceType == typeof(CorrelationIdDelegatingHandler));
+            d => d.ServiceType == typeof(RequestContextDelegatingHandler));
         descriptor.Should().NotBeNull();
         descriptor!.Lifetime.Should().Be(ServiceLifetime.Transient);
     }
 
     [Fact]
-    public void AddSharedKernelRestCommunication_RegistersTenantHandlerAsTransient()
+    public void AddSharedKernelRestCommunication_RegistersRequestContextAccessor_AndNoHttpContextAccessor()
     {
         // Arrange
         var services = new ServiceCollection();
@@ -50,25 +50,9 @@ public sealed class RestCommunicationBuilderTests
         // Act
         services.AddSharedKernelRestCommunication();
 
-        // Assert
-        var descriptor = services.FirstOrDefault(
-            d => d.ServiceType == typeof(TenantIdDelegatingHandler));
-        descriptor.Should().NotBeNull();
-        descriptor!.Lifetime.Should().Be(ServiceLifetime.Transient);
-    }
-
-    [Fact]
-    public void AddSharedKernelRestCommunication_RegistersIHttpContextAccessor()
-    {
-        // Arrange
-        var services = new ServiceCollection();
-
-        // Act
-        services.AddSharedKernelRestCommunication();
-
-        // Assert
-        services.Any(d => d.ServiceType == typeof(IHttpContextAccessor))
-            .Should().BeTrue("IHttpContextAccessor must be registered for TenantIdDelegatingHandler");
+        // Assert — P-566: the client reads the ambient context, never the inbound HttpContext.
+        services.Should().Contain(d => d.ServiceType == typeof(IRequestContextAccessor));
+        services.Should().NotContain(d => d.ServiceType.Name == "IHttpContextAccessor");
     }
 
     [Fact]

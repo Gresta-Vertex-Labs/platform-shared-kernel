@@ -66,6 +66,9 @@ internal sealed class MessageAwareRequestContext : IRequestContext
     public string? ImpersonatorId => Current.ImpersonatorId;
 
     /// <inheritdoc />
+    public string? CorrelationId => Current.CorrelationId;
+
+    /// <inheritdoc />
     public ValueTask<bool> HasPermissionAsync(string permission, CancellationToken cancellationToken)
         => Current.HasPermissionAsync(permission, cancellationToken);
 }

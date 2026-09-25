@@ -30,7 +30,7 @@ public interface IInboundMessageContextAccessor
     /// <remarks>
     /// Non-<see langword="null"/> for every message consumed once the feature is enabled, including
     /// one that carried no identity headers at all — in that case it is a
-    /// <see cref="MessageRequestContext"/> with no tenant and no user, which is meaningfully
+    /// <see cref="PropagatedRequestContext"/> with no tenant and no user, which is meaningfully
     /// different from "not consuming".
     /// </remarks>
     IRequestContext? Current { get; }

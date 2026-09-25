@@ -172,6 +172,8 @@
          secure-defaults test inspects the real assembly, so it
          references the package that now holds those types. -->
     <ProjectReference Include="..\..\..\13.ServiceDefaults\SharedKernel.ServiceDefaults.Security.Mtls\SharedKernel.ServiceDefaults.Security.Mtls.csproj" PrivateAssets="all" />
+    <!-- P-566: the real request-context middleware, for the correlation-id validation call-site lock. -->
+    <ProjectReference Include="..\..\..\13.ServiceDefaults\SharedKernel.ServiceDefaults.Security\SharedKernel.ServiceDefaults.Security.csproj" PrivateAssets="all" />
     <!-- Required to resolve the real SharedKernel.Presentation.WebApi assembly in
          SecureDefaultsAssertionTests (WO-062 P-410, SK.00.CorsWildcardCredentialsGuard) — verified
          on disk that 14.Presentation shipped its full P-404 scope (CorsPolicyOptions,

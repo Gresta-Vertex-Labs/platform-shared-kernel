@@ -23,10 +23,12 @@ public static class RequestContextServiceCollectionExtensions
     /// <see cref="IUserContext"/> registration (e.g. from <c>AddOidcAuthentication(...)</c>).
     /// </para>
     /// <para>
-    /// The ambient context wins so that an inbound adapter can refine the caller for the rest of the request — for
-    /// example <c>SharedKernel.MultiTenancy</c>'s <c>TenantResolutionMiddleware</c>, which opens a scope carrying the
-    /// tenant it resolved from the claim, header or tenant directory. <see cref="IRequestContext"/> is therefore
-    /// registered as transient; the <see cref="SecurityRequestContext"/> behind it is scoped.
+    /// The ambient context wins because the inbound adapters own it: in an HTTP request it is the scope
+    /// <see cref="RequestContextApplicationBuilderExtensions.UseSharedKernelRequestContext"/> opens (the caller plus
+    /// the request's correlation id), refined by <c>SharedKernel.MultiTenancy</c>'s <c>TenantResolutionMiddleware</c>
+    /// when that is used; in a message consumer, workflow activity or scheduled job it is the scope that adapter
+    /// opens. <see cref="IRequestContext"/> is therefore registered as transient; the
+    /// <see cref="SecurityRequestContext"/> behind it is scoped.
     /// </para>
     /// <para>
     /// Satisfies <c>AddAuthorizationBehavior()</c>'s <c>Build()</c>-time check, so call it before the

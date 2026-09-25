@@ -41,9 +41,6 @@ public class GrpcCorrelationTenantRoundTripTests
         using var server = CreateServerWithHeaderTenantProvider();
         var expectedTenantId = new TenantId(Guid.NewGuid());
 
-        // Client-side: a fake inbound HttpContext carrying an IRequestContext, exactly what
-        // TenantIdInterceptor resolves from via IHttpContextAccessor in a real service that is
-        // itself forwarding an inbound request's tenant identity to a downstream gRPC call.
         var clientServices = new ServiceCollection();
         clientServices.AddSharedKernelGrpcCommunication()
             .AddGrpcClient<TestService.TestServiceClient>("http://localhost");
@@ -55,24 +52,25 @@ public class GrpcCorrelationTenantRoundTripTests
             .ConfigurePrimaryHttpMessageHandler(() => server.Customized.Server.CreateHandler());
 
         await using var clientProvider = clientServices.BuildServiceProvider();
-
-        var httpContextAccessor = clientProvider.GetRequiredService<IHttpContextAccessor>();
-        var tenantServices = new ServiceCollection();
-        tenantServices.AddSingleton<IRequestContext>(new SystemRequestContext([], "caller", expectedTenantId));
-        httpContextAccessor.HttpContext = new DefaultHttpContext { RequestServices = tenantServices.BuildServiceProvider() };
-
         var client = clientProvider.GetRequiredService<TestService.TestServiceClient>();
 
-        var reply = await client.GetContextAsync(new EchoRequest { Value = "x" });
+        // Client side: the caller is ambient, exactly as an inbound adapter (HTTP middleware, consume filter,
+        // scheduler) leaves it — the client interceptors read IRequestContextAccessor, not an HttpContext (P-566).
+        ContextReply reply;
+        using (RequestContextScope.Begin(new SystemRequestContext([], "caller", expectedTenantId, "corr-grpc-roundtrip")))
+        {
+            reply = await client.GetContextAsync(new EchoRequest { Value = "x" });
+        }
 
-        reply.CorrelationId.Should().NotBeNullOrWhiteSpace();
+        reply.CorrelationId.Should().Be("corr-grpc-roundtrip",
+            "the server must restore the caller's correlation id, not create a new one");
         reply.TenantId.Should().Be(expectedTenantId.ToString());
     }
 
     [Fact]
-    public async Task RealClientInterceptors_NoInboundHttpContext_TenantIdIsEmpty()
+    public async Task RealClientInterceptors_NoAmbientCaller_TenantIdIsEmpty()
     {
-        // TenantIdInterceptor no-ops (silent) when IHttpContextAccessor.HttpContext is null — the
+        // TenantIdInterceptor no-ops (silent) when no request context is ambient — the
         // documented "background/non-request-scoped caller" case, so no x-tenant-id metadata is
         // ever sent. GrpcTenantContextInterceptor + HeaderRequestContext must then resolve no
         // tenant (null) end-to-end.

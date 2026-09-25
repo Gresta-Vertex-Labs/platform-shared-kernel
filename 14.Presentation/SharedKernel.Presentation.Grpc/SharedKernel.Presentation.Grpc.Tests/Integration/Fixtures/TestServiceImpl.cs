@@ -31,9 +31,8 @@ internal sealed class TestServiceImpl : TestService.TestServiceBase
 
     public override Task<ContextReply> GetContext(EchoRequest request, ServerCallContext context)
     {
-        var correlationId = context.UserState.TryGetValue(GrpcCorrelationInterceptor.ItemsKey, out var correlationValue)
-            ? correlationValue?.ToString() ?? string.Empty
-            : string.Empty;
+        // Read from the call's ambient request context, which is what outbound clients inside the method see.
+        var correlationId = RequestContextScope.Current?.CorrelationId ?? string.Empty;
 
         var tenantId = RequestContextScope.Current?.TenantId?.ToString() ?? string.Empty;
 

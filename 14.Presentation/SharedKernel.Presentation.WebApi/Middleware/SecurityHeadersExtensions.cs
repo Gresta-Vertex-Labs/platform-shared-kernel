@@ -17,7 +17,7 @@ public static class SecurityHeadersExtensions
     /// </param>
     /// <returns>The same <paramref name="app"/> instance, for chaining.</returns>
     /// <remarks>
-    /// Must be registered immediately after <c>UseSharedKernelCorrelationId()</c> and before
+    /// Must be registered immediately after <c>UseSharedKernelRequestContext()</c> (<c>SharedKernel.ServiceDefaults.Security</c>) and before
     /// <c>UseExceptionHandler()</c>/error-handling middleware.
     /// <para>
     /// <b>HSTS IS ENABLED BY DEFAULT.</b> IT MUST BE DISABLED OR GIVEN A SHORT

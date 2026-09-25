@@ -13,8 +13,8 @@ public interface IRestCommunicationBuilder
     IServiceCollection Services { get; }
 
     /// <summary>
-    /// Registers a typed REST client with StandardResilienceHandler, CorrelationIdDelegatingHandler,
-    /// and TenantIdDelegatingHandler already wired in the correct pipeline order.
+    /// Registers a typed REST client with StandardResilienceHandler and RequestContextDelegatingHandler
+    /// (correlation id, tenant, actor and client headers) already wired in the correct pipeline order.
     /// </summary>
     /// <typeparam name="TClient">The typed client interface or class.</typeparam>
     /// <param name="name">Logical name used for service-discovery resolution when BaseAddress is omitted.</param>

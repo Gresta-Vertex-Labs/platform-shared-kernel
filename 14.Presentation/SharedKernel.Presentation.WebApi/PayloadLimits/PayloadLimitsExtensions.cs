@@ -60,8 +60,7 @@ public static class PayloadLimitsExtensions
     /// guarded by <see cref="IHttpMaxRequestBodySizeFeature.IsReadOnly"/> — the feature throws
     /// <see cref="InvalidOperationException"/> once body reading has started, or is unavailable when
     /// unsupported by the current server, so this middleware checks first rather than crashing the
-    /// pipeline. Two-part registration mirrors
-    /// <c>AddSharedKernelCorrelationId</c>/<c>UseSharedKernelCorrelationId</c>.
+    /// pipeline.
     /// </remarks>
     public static IApplicationBuilder UseSharedKernelPayloadLimits(
         this IApplicationBuilder app,

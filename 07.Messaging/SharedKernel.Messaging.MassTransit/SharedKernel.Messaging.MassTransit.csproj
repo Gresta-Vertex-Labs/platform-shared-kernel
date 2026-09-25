@@ -98,6 +98,13 @@
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
       <_Parameter1>SharedKernel.Messaging.MassTransit.Tests</_Parameter1>
     </AssemblyAttribute>
+    <!--
+      P-566: the cross-transport propagation tests host the consume filter and the bus on MassTransit's in-memory
+      transport, which the public builder (RabbitMQ / Azure Service Bus only) does not offer.
+    -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>SharedKernel.ServiceDefaults.Security.Tests</_Parameter1>
+    </AssemblyAttribute>
   </ItemGroup>
   <ItemGroup>
     <!--

@@ -17,7 +17,13 @@ namespace SharedKernel.Presentation.Grpc.Interceptors;
 /// registered in the call's <see cref="Microsoft.AspNetCore.Http.HttpContext.RequestServices"/> — obtained via
 /// <see cref="ServerCallContextExtensions.GetHttpContext"/>, ASP.NET Core gRPC hosting's documented bridge from
 /// <see cref="ServerCallContext"/> to the underlying <see cref="Microsoft.AspNetCore.Http.HttpContext"/> — and opens a
-/// <see cref="RequestContextScope"/> with it for the duration of the call.
+/// <see cref="RequestContextScope"/> with it for the duration of the call. When neither exists, the call runs as
+/// <see cref="AnonymousRequestContext"/>.
+/// </para>
+/// <para>
+/// The scope always carries the call's correlation id, as resolved by <see cref="GrpcCorrelationInterceptor"/>
+/// (the ambient one, else the caller's metadata, else a new one), so an outbound REST or gRPC call, message or
+/// workflow started by the service method forwards the caller's id unchanged.
 /// </para>
 /// <para>
 /// Does not reject calls with no resolvable tenant — mirrors
@@ -85,11 +91,16 @@ public sealed class GrpcTenantContextInterceptor : Interceptor
         await continuation(requestStream, responseStream, context).ConfigureAwait(false);
     }
 
-    private IDisposable? Begin(ServerCallContext context)
+    private IDisposable Begin(ServerCallContext context)
     {
         var requestContext = _accessor.Current
-            ?? context.GetHttpContext()?.RequestServices.GetService<IRequestContext>();
+            ?? context.GetHttpContext()?.RequestServices.GetService<IRequestContext>()
+            ?? AnonymousRequestContext.Instance;
 
-        return requestContext is null ? null : RequestContextScope.Begin(requestContext);
+        var correlationId = GrpcCorrelationInterceptor.Resolve(context);
+        if (!string.Equals(requestContext.CorrelationId, correlationId, StringComparison.Ordinal))
+            requestContext = requestContext.WithCorrelationId(correlationId);
+
+        return RequestContextScope.Begin(requestContext);
     }
 }

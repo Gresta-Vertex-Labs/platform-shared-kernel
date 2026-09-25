@@ -28,6 +28,14 @@ namespace SharedKernel.MultiTenancy.Middleware;
 /// rather than risking a cross-tenant data leak.
 /// </para>
 /// <para>
+/// <b>Ownership.</b> <c>SharedKernel.ServiceDefaults.Security</c>'s <c>UseSharedKernelRequestContext()</c>, placed
+/// first in the pipeline, owns the request's scope and its correlation id. This middleware then opens a second,
+/// inner scope over that one which replaces only the tenant, so the caller and the correlation id stay those of the
+/// outer scope. The nesting is intentional: one scope per concern, both disposed when the request ends. Without
+/// <c>UseSharedKernelRequestContext()</c> this middleware still works; its scope then wraps the DI-registered
+/// caller and carries no correlation id.
+/// </para>
+/// <para>
 /// Must be registered <b>after</b> <c>UseAuthentication()</c> in the request pipeline, via
 /// <c>app.UseMiddleware&lt;TenantResolutionMiddleware&gt;()</c>, so that
 /// <c>ClaimTenantResolutionStrategy</c> has access to a populated <see cref="HttpContext.User"/>.
@@ -127,8 +135,10 @@ public sealed class TenantResolutionMiddleware(
             Activity.Current?.SetBaggage(WellKnownBaggageKeys.TenantId, tenant.ToString());
         }
 
-        var inner = context.RequestServices?.GetService<IRequestContext>() ?? AnonymousRequestContext.Instance;
-        using (RequestContextScope.Begin(new ResolvedTenantRequestContext(inner, resolvedTenantId)))
+        var inner = RequestContextScope.Current
+            ?? context.RequestServices?.GetService<IRequestContext>()
+            ?? AnonymousRequestContext.Instance;
+        using (RequestContextScope.Begin(inner.WithTenant(resolvedTenantId)))
         {
             await next(context).ConfigureAwait(false);
         }

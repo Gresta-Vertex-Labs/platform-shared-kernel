@@ -24,12 +24,5 @@
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="NSubstitute" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
-    <!--
-      Test-only reference used solely by the correlation-on-log-record integration test (WO-041,
-      P-256, T-13) to build a test-local minimal BaseProcessor<LogRecord> mirroring
-      13.ServiceDefaults's documented BaggageLogRecordProcessor contract, without a ProjectReference
-      to SharedKernel.ServiceDefaults. Version pinned to match 13.ServiceDefaults's existing pin.
-    -->
-    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
   </ItemGroup>
 </Project>

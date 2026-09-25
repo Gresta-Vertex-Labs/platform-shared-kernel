@@ -49,7 +49,6 @@ SharedKernel.Execution.Context.SystemRequestContext
 SharedKernel.Execution.Context.SystemRequestContext.ActorKind.get -> SharedKernel.Execution.Context.ActorKind
 SharedKernel.Execution.Context.SystemRequestContext.HasPermissionAsync(string! permission, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<bool>
 SharedKernel.Execution.Context.SystemRequestContext.IsAuthenticated.get -> bool
-SharedKernel.Execution.Context.SystemRequestContext.SystemRequestContext(System.Collections.Generic.IEnumerable<string!>! permissions, string! identity = "system", SharedKernel.Execution.Tenancy.TenantId? tenantId = null) -> void
 SharedKernel.Execution.Context.SystemRequestContext.TenantId.get -> SharedKernel.Execution.Tenancy.TenantId?
 SharedKernel.Execution.Context.SystemRequestContext.UserId.get -> string?
 SharedKernel.Execution.Transactions.IUnitOfWork
@@ -116,3 +115,27 @@ static SharedKernel.Execution.Tenancy.TenantScope.FromNullable(SharedKernel.Exec
 static SharedKernel.Execution.Tenancy.TenantScope.Global.get -> SharedKernel.Execution.Tenancy.TenantScope
 static SharedKernel.Execution.Tenancy.TenantScope.operator !=(SharedKernel.Execution.Tenancy.TenantScope left, SharedKernel.Execution.Tenancy.TenantScope right) -> bool
 static SharedKernel.Execution.Tenancy.TenantScope.operator ==(SharedKernel.Execution.Tenancy.TenantScope left, SharedKernel.Execution.Tenancy.TenantScope right) -> bool
+SharedKernel.Execution.Context.CorrelationIds
+SharedKernel.Execution.Context.PropagatedRequestContext
+SharedKernel.Execution.Context.PropagatedRequestContext.ActorKind.get -> SharedKernel.Execution.Context.ActorKind
+SharedKernel.Execution.Context.PropagatedRequestContext.ClientId.get -> string?
+SharedKernel.Execution.Context.PropagatedRequestContext.CorrelationId.get -> string?
+SharedKernel.Execution.Context.PropagatedRequestContext.HasPermissionAsync(string! permission, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<bool>
+SharedKernel.Execution.Context.PropagatedRequestContext.IsAuthenticated.get -> bool
+SharedKernel.Execution.Context.PropagatedRequestContext.PropagatedRequestContext(SharedKernel.Execution.Tenancy.TenantId? tenantId, string? userId = null, SharedKernel.Execution.Context.ActorKind actorKind = SharedKernel.Execution.Context.ActorKind.Anonymous, string? clientId = null, string? correlationId = null) -> void
+SharedKernel.Execution.Context.PropagatedRequestContext.TenantId.get -> SharedKernel.Execution.Tenancy.TenantId?
+SharedKernel.Execution.Context.PropagatedRequestContext.UserId.get -> string?
+SharedKernel.Execution.Context.RequestContextExtensions
+SharedKernel.Execution.Context.RequestContextPropagation
+SharedKernel.Execution.Context.SystemRequestContext.CorrelationId.get -> string?
+SharedKernel.Execution.Context.SystemRequestContext.SystemRequestContext(System.Collections.Generic.IEnumerable<string!>! permissions, string! identity = "system", SharedKernel.Execution.Tenancy.TenantId? tenantId = null, string? correlationId = null) -> void
+const SharedKernel.Execution.Context.CorrelationIds.MaxLength = 128 -> int
+static SharedKernel.Execution.Context.CorrelationIds.AcceptOrCreate(string? candidate) -> string!
+static SharedKernel.Execution.Context.CorrelationIds.Current(SharedKernel.Execution.Context.IRequestContext? context) -> string?
+static SharedKernel.Execution.Context.CorrelationIds.IsValid(string? value) -> bool
+static SharedKernel.Execution.Context.CorrelationIds.New() -> string!
+static SharedKernel.Execution.Context.RequestContextExtensions.WithCorrelationId(this SharedKernel.Execution.Context.IRequestContext! context, string! correlationId) -> SharedKernel.Execution.Context.IRequestContext!
+static SharedKernel.Execution.Context.RequestContextExtensions.WithTenant(this SharedKernel.Execution.Context.IRequestContext! context, SharedKernel.Execution.Tenancy.TenantId? tenantId) -> SharedKernel.Execution.Context.IRequestContext!
+static SharedKernel.Execution.Context.RequestContextPropagation.ParseActorKind(string? value) -> SharedKernel.Execution.Context.ActorKind
+static SharedKernel.Execution.Context.RequestContextPropagation.ReadHeaders<TCarrier>(TCarrier carrier, System.Func<TCarrier, string!, string?>! getHeader, bool createCorrelationId = true) -> SharedKernel.Execution.Context.PropagatedRequestContext!
+static SharedKernel.Execution.Context.RequestContextPropagation.WriteHeaders<TCarrier>(SharedKernel.Execution.Context.IRequestContext? context, TCarrier carrier, System.Action<TCarrier, string!, string!>! setHeader, string? correlationId = null) -> void

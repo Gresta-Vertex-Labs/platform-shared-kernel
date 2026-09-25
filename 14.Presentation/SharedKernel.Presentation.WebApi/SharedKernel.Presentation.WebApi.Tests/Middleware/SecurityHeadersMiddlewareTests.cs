@@ -107,7 +107,7 @@ public class SecurityHeadersMiddlewareTests
     /// <summary>
     /// <see cref="DefaultHttpContext"/>'s default <see cref="IHttpResponseFeature"/> records
     /// <c>OnStarting</c> callbacks but never fires them outside a real server pipeline
-    /// (Kestrel/TestServer). Mirrors <c>CorrelationIdMiddlewareTests</c>'s identical helper.
+    /// (Kestrel/TestServer). Test-local helper.
     /// </summary>
     private sealed class FiringHttpResponseFeature : HttpResponseFeature
     {

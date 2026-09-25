@@ -603,16 +603,18 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
     /// </summary>
     /// <returns>This builder for fluent chaining.</returns>
     /// <remarks>
-    /// Populates <see cref="SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext.CorrelationId"/>
-    /// from the ambient <see cref="System.Diagnostics.Activity.Current"/> on every dispatch verb
-    /// (<c>PublishAsync</c>, <c>SendAsync</c>, and <c>IEventPublisher.PublishAsync</c>).
-    /// Distributed-trace correlation identity needs no consuming-service-supplied dependency — it
+    /// Writes the ambient caller's correlation id (<see cref="IRequestContextAccessor"/>) as the
+    /// <c>X-Correlation-Id</c> header on every dispatch verb (<c>PublishAsync</c>, <c>SendAsync</c>, and
+    /// <c>IEventPublisher.PublishAsync</c>), and registers <see cref="IRequestContextAccessor"/> unless one is
+    /// registered. The value is the caller's id, never an <c>Activity</c> id (P-566). The ambient context needs
+    /// no consuming-service-supplied dependency — it
     /// is one of three named, documented exceptions to "never implement
     /// <see cref="IMessageHeaderPropagator"/> inside SharedKernel" (P-345/WO-054; the others are
     /// <see cref="TenantHeaderPropagator"/> and <see cref="RequestContextHeaderPropagator"/>).
     /// </remarks>
     public MessagingBusBuilder WithAmbientCorrelationPropagation()
     {
+        Services.TryAddSingleton<IRequestContextAccessor, RequestContextAccessor>();
         Services.AddScoped<IMessageHeaderPropagator, AmbientCorrelationHeaderPropagator>();
         return this;
     }
@@ -661,9 +663,10 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
     /// </para>
     /// <para>
     /// <strong>What it registers.</strong> Outbound, a
-    /// <see cref="RequestContextHeaderPropagator"/> writing the tenant
-    /// (<c>01.Core</c>'s <c>WellKnownHeaders.TenantId</c>) and the actor
-    /// (<c>MessageContextHeaders</c>). Inbound, a consume filter that reads them back and a
+    /// <see cref="RequestContextHeaderPropagator"/> writing the correlation id, tenant, actor and client under
+    /// <c>01.Core</c>'s <c>WellKnownHeaders</c>. Inbound, a consume filter that reads them back, runs the
+    /// consumer inside a <see cref="RequestContextScope"/> carrying them (so outbound calls made by the consumer
+    /// forward the same tenant and correlation id), and a
     /// message-aware <c>IRequestContext</c> that answers from the message inside a consume and from
     /// the service's own registration everywhere else — so one handler serves both paths without
     /// branching.
@@ -677,7 +680,7 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
     /// <para>
     /// <strong>Attribution, not authorization.</strong> A permission check inside a consume always
     /// answers <see langword="false"/>, and the values are only as trustworthy as who can reach the
-    /// broker. See <see cref="MessageRequestContext"/> for the full trust boundary.
+    /// broker. See <see cref="PropagatedRequestContext"/> for the full trust boundary.
     /// </para>
     /// <example>
     /// <code>
@@ -696,6 +699,7 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
             return this;
 
         _withInboundRequestContext = true;
+        Services.TryAddSingleton<IRequestContextAccessor, RequestContextAccessor>();
 
         // One holder per MassTransit delivery scope. Registered concretely as well as behind the
         // interface so the consume filter can write to the very instance consumers read from.

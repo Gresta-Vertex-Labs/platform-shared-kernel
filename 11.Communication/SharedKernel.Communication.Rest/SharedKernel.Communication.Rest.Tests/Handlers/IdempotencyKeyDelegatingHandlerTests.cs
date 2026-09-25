@@ -2,6 +2,7 @@ using System.Net;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Communication.Rest.Extensions;
 using SharedKernel.Communication.Rest.Handlers;
+using SharedKernel.Primitives.Propagation;
 
 namespace SharedKernel.Communication.Rest.Tests.Handlers;
 
@@ -11,7 +12,7 @@ namespace SharedKernel.Communication.Rest.Tests.Handlers;
 /// </summary>
 public sealed class IdempotencyKeyDelegatingHandlerTests
 {
-    private const string HeaderName = IdempotencyHeaders.IdempotencyKey;
+    private const string HeaderName = WellKnownHeaders.IdempotencyKey;
 
     private static HttpClient BuildClient(HttpMessageHandler stub)
     {
@@ -168,4 +169,19 @@ public sealed class IdempotencyKeyDelegatingHandlerTests
 internal sealed class IdempotencyTestTypedClient(HttpClient httpClient)
 {
     public HttpClient Http { get; } = httpClient;
+}
+
+/// <summary>Test double that captures a single header value and returns 200 OK.</summary>
+internal sealed class CaptureHeaderHandler(string headerName, Action<string> capture) : HttpMessageHandler
+{
+    protected override Task<HttpResponseMessage> SendAsync(
+        HttpRequestMessage request,
+        CancellationToken cancellationToken)
+    {
+        if (request.Headers.TryGetValues(headerName, out var values))
+        {
+            capture(values.First());
+        }
+        return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
+    }
 }

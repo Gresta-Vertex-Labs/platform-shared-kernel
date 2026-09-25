@@ -31,3 +31,7 @@ override SharedKernel.Primitives.Health.ReadinessReport.Equals(object? obj) -> b
 override SharedKernel.Primitives.Health.ReadinessReport.ToString() -> string!
 static SharedKernel.Primitives.Health.ReadinessReport.operator !=(SharedKernel.Primitives.Health.ReadinessReport? left, SharedKernel.Primitives.Health.ReadinessReport? right) -> bool
 static SharedKernel.Primitives.Health.ReadinessReport.operator ==(SharedKernel.Primitives.Health.ReadinessReport? left, SharedKernel.Primitives.Health.ReadinessReport? right) -> bool
+const SharedKernel.Primitives.Propagation.WellKnownHeaders.ActorId = "x-sk-actor-id" -> string!
+const SharedKernel.Primitives.Propagation.WellKnownHeaders.ActorKind = "x-sk-actor-kind" -> string!
+const SharedKernel.Primitives.Propagation.WellKnownHeaders.ClientId = "x-sk-client-id" -> string!
+const SharedKernel.Primitives.Propagation.WellKnownHeaders.IdempotencyKey = "Idempotency-Key" -> string!

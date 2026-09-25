@@ -50,7 +50,7 @@ public interface IEventPublisher
     /// <see cref="EventEnvelope{TEvent}.DataVersion"/> come from the event's <see cref="IntegrationEventAttribute"/>;
     /// <see cref="EventEnvelope{TEvent}.Id"/> and <see cref="EventEnvelope{TEvent}.Time"/> come from the event
     /// itself. <see cref="EventEnvelope{TEvent}.CorrelationId"/> is taken from
-    /// <see cref="PublishContext.CorrelationId"/> when set, otherwise from <c>Activity.Current?.TraceId</c> when
+    /// <see cref="PublishContext.CorrelationId"/> when set, otherwise from a propagated <c>X-Correlation-Id</c> header or the ambient caller's correlation id (never an <c>Activity</c> id) when
     /// available, otherwise a new identifier. <see cref="EventEnvelope{TEvent}.Source"/> is sourced from
     /// <c>MessagingOptions.ServiceName</c>. <see cref="EventEnvelope{TEvent}.TenantId"/>,
     /// <see cref="EventEnvelope{TEvent}.CausationId"/> and <see cref="EventEnvelope{TEvent}.Subject"/> are sourced

@@ -12,7 +12,7 @@ namespace SharedKernel.Presentation.WebApi.Middleware;
 /// inner middleware/endpoint's more-specific header value always wins; this middleware never
 /// overwrites an already-set header. Register via
 /// <see cref="SecurityHeadersExtensions.UseSharedKernelSecurityHeaders"/> immediately after
-/// <c>UseSharedKernelCorrelationId()</c> and before <c>UseExceptionHandler()</c>.
+/// <c>UseSharedKernelRequestContext()</c> (<c>SharedKernel.ServiceDefaults.Security</c>) and before <c>UseExceptionHandler()</c>.
 /// </remarks>
 public sealed class SecurityHeadersMiddleware
 {
@@ -46,7 +46,7 @@ public sealed class SecurityHeadersMiddleware
     public Task InvokeAsync(HttpContext context)
     {
         // Registered before next(): OnStarting fires even when downstream middleware
-        // short-circuits the pipeline, mirroring CorrelationIdMiddleware's own discipline.
+        // short-circuits the pipeline, mirroring the request-context middleware's own discipline.
         context.Response.OnStarting(() =>
         {
             ApplyHeaders(context);

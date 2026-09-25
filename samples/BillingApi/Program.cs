@@ -71,6 +71,9 @@ builder.Services.AddExceptionHandler<SharedKernelExceptionHandler>();
 
 var app = builder.Build();
 
+// First in the pipeline: the request's X-Correlation-Id and its request context, so every log line, audit record
+// and outbound call of the request carries one correlation id and one caller.
+app.UseSharedKernelRequestContext();
 app.UseExceptionHandler();
 app.UseAuthentication();
 app.UseAuthorization();

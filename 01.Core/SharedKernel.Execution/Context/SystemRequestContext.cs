@@ -34,10 +34,15 @@ public sealed class SystemRequestContext : IRequestContext
     /// The tenant this execution is scoped to, or <see langword="null"/> when the work is not
     /// tenant-scoped.
     /// </param>
+    /// <param name="correlationId">
+    /// The correlation id of this unit of work, forwarded by every outbound call made inside it, or
+    /// <see langword="null"/> when there is none. A background job typically passes <see cref="CorrelationIds.New"/>.
+    /// </param>
     public SystemRequestContext(
         IEnumerable<string> permissions,
         string identity = "system",
-        TenantId? tenantId = null)
+        TenantId? tenantId = null,
+        string? correlationId = null)
     {
         ArgumentNullException.ThrowIfNull(permissions);
         ArgumentException.ThrowIfNullOrWhiteSpace(identity);
@@ -45,6 +50,7 @@ public sealed class SystemRequestContext : IRequestContext
         _permissions = permissions.ToHashSet(StringComparer.Ordinal);
         UserId = identity;
         TenantId = tenantId;
+        CorrelationId = correlationId;
     }
 
     /// <inheritdoc/>
@@ -59,6 +65,9 @@ public sealed class SystemRequestContext : IRequestContext
     /// <inheritdoc/>
     /// <remarks>Always <see cref="Context.ActorKind.System"/>.</remarks>
     public ActorKind ActorKind => ActorKind.System;
+
+    /// <inheritdoc/>
+    public string? CorrelationId { get; }
 
     /// <inheritdoc/>
     public ValueTask<bool> HasPermissionAsync(string permission, CancellationToken cancellationToken)

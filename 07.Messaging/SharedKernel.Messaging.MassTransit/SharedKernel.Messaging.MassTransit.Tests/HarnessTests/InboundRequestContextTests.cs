@@ -97,6 +97,39 @@ public sealed class InboundRequestContextTests
     }
 
     /// <summary>
+    /// P-566, defect 3: the consume filter makes the rebuilt caller <em>ambient</em>, so code with no DI scope — an
+    /// outbound REST client, a workflow dispatch — sees the publisher's tenant and its original correlation id.
+    /// </summary>
+    [Fact]
+    public async Task PublishFromAmbientCaller_ConsumerRunsInsideAScopeWithTheSameTenantAndCorrelationId()
+    {
+        IrcCaptureStore.Reset();
+        var tenantId = new TenantId(Guid.NewGuid());
+        const string correlationId = "http-request-7f3a";
+
+        await using var provider = BuildHarness(hostContext: null);
+        var harness = provider.GetRequiredService<ITestHarness>();
+        await harness.Start();
+
+        await using (var scope = provider.CreateAsyncScope())
+        using (RequestContextScope.Begin(new PropagatedRequestContext(tenantId, "user-9", ActorKind.User, correlationId: correlationId)))
+        {
+            var bus = scope.ServiceProvider.GetRequiredService<IMessageBus>();
+            (await bus.PublishAsync(new IrcTestMessage("payload"), CancellationToken.None))
+                .IsSuccess.Should().BeTrue();
+        }
+
+        (await harness.Consumed.Any<IrcTestMessage>()).Should().BeTrue();
+
+        IrcCaptureStore.AmbientTenantId.Should().Be(tenantId);
+        IrcCaptureStore.AmbientCorrelationId.Should().Be(correlationId,
+            "the consumer must continue the publisher's correlation id, not start a new one");
+        IrcCaptureStore.TenantId.Should().Be(tenantId);
+
+        await harness.Stop();
+    }
+
+    /// <summary>
     /// An unauthenticated publisher produces a consumer context with nothing in it, rather than a
     /// context that inherits the consuming service's own host identity.
     /// </summary>
@@ -209,7 +242,7 @@ public sealed class InboundRequestContextTests
         await harness.Bus.Publish(new IrcTestMessage("payload"), p =>
         {
             p.Headers.Set(WellKnownHeaders.TenantId, "not-a-guid");
-            p.Headers.Set(MessageContextHeaders.ActorKind, "Sovereign");
+            p.Headers.Set(WellKnownHeaders.ActorKind, "Sovereign");
         });
 
         (await harness.Consumed.Any<IrcTestMessage>()).Should().BeTrue();
@@ -236,7 +269,7 @@ public sealed class InboundRequestContextTests
         await harness.Start();
 
         await harness.Bus.Publish(new IrcTestMessage("payload"), p =>
-            p.Headers.Set(MessageContextHeaders.ActorKind, "7"));
+            p.Headers.Set(WellKnownHeaders.ActorKind, "7"));
 
         (await harness.Consumed.Any<IrcTestMessage>()).Should().BeTrue();
 
@@ -373,6 +406,10 @@ internal static class IrcCaptureStore
 
     public static int ConsumeCount { get; set; }
 
+    public static TenantId? AmbientTenantId { get; set; }
+
+    public static string? AmbientCorrelationId { get; set; }
+
     public static void Reset()
     {
         TenantId = null;
@@ -382,6 +419,8 @@ internal static class IrcCaptureStore
         IsAuthenticated = false;
         RawActorKindHeader = null;
         ConsumeCount = 0;
+        AmbientTenantId = null;
+        AmbientCorrelationId = null;
     }
 }
 
@@ -401,13 +440,15 @@ internal sealed class IrcCapturingConsumer : IConsumer<IrcTestMessage>
     public Task Consume(ConsumeContext<IrcTestMessage> context)
     {
         IrcCaptureStore.ConsumeCount++;
+        IrcCaptureStore.AmbientTenantId = RequestContextScope.Current?.TenantId;
+        IrcCaptureStore.AmbientCorrelationId = RequestContextScope.Current?.CorrelationId;
         IrcCaptureStore.TenantId = _requestContext.TenantId;
         IrcCaptureStore.UserId = _requestContext.UserId;
         IrcCaptureStore.ActorKind = _requestContext.ActorKind;
         IrcCaptureStore.ClientId = _requestContext.ClientId;
         IrcCaptureStore.IsAuthenticated = _requestContext.IsAuthenticated;
         IrcCaptureStore.RawActorKindHeader =
-            context.Headers.Get<string>(MessageContextHeaders.ActorKind);
+            context.Headers.Get<string>(WellKnownHeaders.ActorKind);
 
         return Task.CompletedTask;
     }
