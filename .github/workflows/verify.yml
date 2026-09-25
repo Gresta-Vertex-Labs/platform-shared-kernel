@@ -1,0 +1,492 @@
+name: Verify
+
+# Reusable workflow: every gate a change must pass, in one place, so the pull-request lane (ci.yml)
+# and the release train (release.yml) can never drift apart. ci.yml calls it without the
+# Integration suite on pull requests and with it on main; release.yml calls it with everything and
+# publishes only the exact package files this workflow packed and verified.
+#
+# Standing design decisions (see PLATFORM.md "CI topology" and "Release train"):
+#   - ubuntu-latest only: Testcontainers needs a Linux Docker daemon.
+#   - Every third-party action is pinned to a full 40-character commit SHA with a `# vX.Y.Z`
+#     comment, and every container image to a digest. Re-resolve and re-pin on every bump.
+#   - permissions: {} at the root, widened per job to the least each job needs.
+#   - fetch-depth: 0 wherever dotnet runs: MinVer needs the tag history, and with a shallow clone it
+#     silently stamps the 1.0.0-alpha floor instead of failing.
+#   - Build covers the whole solution; only test EXECUTION is split into the two solution filters
+#     (Unit = no Docker; Integration = Testcontainers, parallelism capped by
+#     eng/testsettings/integration.runsettings). eng/verify-solution-filters.sh keeps every test
+#     project in exactly one lane.
+#   - Lists of projects are derived from the repository, never hand-kept: the expected package set
+#     (eng/PackageInventory.proj), the in-solution consumer-verify harnesses (their path in the
+#     .slnx), and the packed-package consumers (every csproj NOT in the .slnx: the PackageReference
+#     harnesses and samples/). A new harness, sample or sample project is picked up automatically.
+
+on:
+  workflow_call:
+    inputs:
+      unit:
+        description: Run the tier check, the solution-filter check, the full build and the Unit suite.
+        type: boolean
+        default: true
+      integration:
+        description: Run the Testcontainers-backed Integration suite.
+        type: boolean
+        default: false
+      packaging:
+        description: Pack every package, verify the set, and run every packed-package consumer and sample.
+        type: boolean
+        default: true
+      upload-packages:
+        description: Upload the verified .nupkg set (plus the expected-package list) as the "packages" artifact.
+        type: boolean
+        default: false
+      expected-version:
+        description: When set (a v-prefixed tag is accepted), the packed version must equal it.
+        type: string
+        default: ''
+    outputs:
+      version:
+        description: The single version every package was packed at.
+        value: ${{ jobs.packaging-verify.outputs.version }}
+
+permissions: {}
+
+env:
+  DOTNET_CLI_UI_LANGUAGE: en
+  DOTNET_NOLOGO: 'true'
+  DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 'true'
+
+jobs:
+  # ---------------------------------------------------------------------------------------------
+  # Fails while eng/tier-baseline.txt lists any known tier violation. Entries there are downgraded
+  # from errors to warnings by eng/SharedKernelTiers.targets, so a non-empty file means the build
+  # is tolerating a dependency the tier matrix forbids. The file is empty since P-568; this job
+  # keeps it that way. A missing file passes (nothing is being downgraded).
+  # ---------------------------------------------------------------------------------------------
+  tier-check:
+    name: Tier baseline is empty
+    if: inputs.unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Assert eng/tier-baseline.txt has no entries
+        run: |
+          set -euo pipefail
+          baseline=eng/tier-baseline.txt
+          if [ ! -f "$baseline" ]; then
+            echo "OK: $baseline does not exist, so no tier violation is downgraded."
+            exit 0
+          fi
+          entries=$(grep -cvE '^[[:space:]]*$' "$baseline" || true)
+          if [ "$entries" -ne 0 ]; then
+            echo "::error::$baseline lists $entries tier violation(s). Each is a dependency the tier matrix forbids, tolerated as a warning. Fix the reference and delete its line; the baseline only ever shrinks."
+            grep -vE '^[[:space:]]*$' "$baseline" | sed 's/^/  /'
+            exit 1
+          fi
+          echo "OK: $baseline is empty."
+
+  # ---------------------------------------------------------------------------------------------
+  # Builds the WHOLE solution but only runs the container-free projects (Unit filter), plus every
+  # in-solution consumer-verify harness. No Docker daemon needed.
+  # ---------------------------------------------------------------------------------------------
+  unit-test:
+    name: Build & Unit Test
+    if: inputs.unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      # The stock image leaves too little disk to build ~220 projects in Release ("No space left on
+      # device" mid-build on the first runs). Reclaim toolchains this repo never uses.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/local/.ghcup \
+                      /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/share/powershell
+          df -h /
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      - name: Cache NuGet packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          # CPM concentrates every version in Directory.Packages.props, so it (plus global.json for
+          # the SDK band) is a near-perfect key. Not setup-dotnet's cache: true, which needs lock files.
+          key: nuget-${{ runner.os }}-${{ hashFiles('Directory.Packages.props', 'global.json') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      # Build-free, so it fails in seconds: every test project in exactly one lane, every production
+      # project in the Unit lane, every project in the right solution folder.
+      - name: Check solution filters and folders
+        run: bash eng/verify-solution-filters.sh
+
+      # MinVer overwrites $(Version) unconditionally, so a hand-written <Version> is dead XML that
+      # disagrees with the packed artifact. Versions come from the v* tag only.
+      - name: Assert no project declares its own version
+        run: |
+          set -e
+          if git grep -n -E '<(Version|VersionPrefix)>' -- '*.csproj'; then
+            echo "::error::A csproj declares <Version>/<VersionPrefix>. Versions come from MinVer and git tags only (see Directory.Build.props 'Versioning'). Delete the element."
+            exit 1
+          fi
+          echo "OK: no csproj declares its own version."
+
+      - name: Restore
+        run: dotnet restore Platform.SharedKernel.slnx
+
+      # Directory.Build.props demotes NU1901-NU1904 to warnings locally so a newly disclosed
+      # transitive CVE cannot break every developer's build; CI restores the hard failure.
+      - name: NuGet audit (escalated to error in CI only)
+        run: dotnet restore Platform.SharedKernel.slnx -warnaserror:NU1901,NU1902,NU1903,NU1904
+
+      - name: Build
+        run: dotnet build Platform.SharedKernel.slnx --no-restore --configuration Release
+
+      # No fixed LogFileName: one VSTest host runs per project, and a fixed trx name would make each
+      # project overwrite the previous one's results.
+      - name: Unit test (no Docker dependency)
+        run: dotnet test Platform.SharedKernel.Unit.slnf --no-build --configuration Release --logger "trx" --results-directory ./TestResults
+
+      # A consumer-verify harness is an Exe, not a test project, so the Unit filter builds it and
+      # never runs it. Each asserts what only a real generic host shows (a bad ServiceName fails
+      # StartAsync, the injectable surface resolves from one registration chain, an unmet
+      # prerequisite refuses to build) and exits non-zero on the first failed check. Discovered from
+      # the .slnx, so the harness a new package or satellite adds is run without editing this file.
+      - name: Run in-solution consumer-verify harnesses
+        run: |
+          set -euo pipefail
+          mapfile -t harnesses < <(grep -oE 'Path="[^"]*/consumer-verify/[^"]*\.csproj"' Platform.SharedKernel.slnx \
+            | sed -E 's/^Path="//; s/"$//' | sort)
+          if [ "${#harnesses[@]}" -eq 0 ]; then
+            echo "::error::No consumer-verify harness found in Platform.SharedKernel.slnx."
+            exit 1
+          fi
+          for proj in "${harnesses[@]}"; do
+            echo "::group::run $proj"
+            dotnet run --project "$proj" --no-build --configuration Release
+            echo "::endgroup::"
+          done
+          echo "OK: ${#harnesses[@]} consumer-verify harnesses passed."
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: unit-test-results
+          path: TestResults/**/*.trx
+          retention-days: 14
+
+  # ---------------------------------------------------------------------------------------------
+  # The Testcontainers-backed projects (Redis, PostgreSQL, RabbitMQ, MinIO, Meilisearch,
+  # Elasticsearch, Qdrant, ...). Running them all inline with the Unit suite on a 2-core runner
+  # failed a different container suite on every run (resource contention, not defects), hence the
+  # separate lane with capped parallelism. ci.yml keeps it out of the merge gate; release.yml does not.
+  # ---------------------------------------------------------------------------------------------
+  integration-test:
+    name: Integration Test (Testcontainers)
+    if: inputs.integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/local/.ghcup \
+                      /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/share/powershell
+          df -h /
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      - name: Cache NuGet packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('Directory.Packages.props', 'global.json') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Restore
+        run: dotnet restore Platform.SharedKernel.Integration.slnf
+
+      - name: Build
+        run: dotnet build Platform.SharedKernel.Integration.slnf --no-restore --configuration Release
+
+      # Console output is teed (pipefail keeps a test failure failing the step) so the summary below
+      # can name the failing projects.
+      - name: Integration test (Testcontainers, capped parallelism)
+        run: |
+          set -o pipefail
+          dotnet test Platform.SharedKernel.Integration.slnf --no-build --configuration Release -s eng/testsettings/integration.runsettings --logger "trx" --results-directory ./TestResults 2>&1 | tee test-console.log
+
+      # Best effort: the VSTest summary wording is console text, not a contract. If it stops
+      # matching, this degrades to the generic message; it never gates the job.
+      - name: Summarize integration test results
+        if: always()
+        run: |
+          {
+            echo "## Integration Test (Testcontainers) Summary"
+            echo ""
+            if [ -f test-console.log ] && grep -q '^Failed!' test-console.log; then
+              echo "### Failing test projects"
+              echo ""
+              grep '^Failed!' test-console.log | awk -F' - ' '{print "- " $NF}'
+            elif [ -f test-console.log ]; then
+              echo "All test projects in Platform.SharedKernel.Integration.slnf passed."
+            else
+              echo "No console log was captured (the run likely failed before the test step started). See the job logs."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: integration-test-results
+          path: |
+            TestResults/**/*.trx
+            test-console.log
+          retention-days: 14
+
+  # ---------------------------------------------------------------------------------------------
+  # Proves the packed .nupkg files are complete and work for a consumer, not just that the source
+  # compiles. Packs every package, checks the set against the repository (eng/verify-packages.sh),
+  # then restores, builds and runs every project that consumes SharedKernel through
+  # PackageReference against that feed: the harnesses kept out of the .slnx on purpose, and every
+  # sample. Needs Docker for the Testcontainers-backed consumers and the CatalogApi engines.
+  # ---------------------------------------------------------------------------------------------
+  packaging-verify:
+    name: Packaging & Consumer-Verify
+    if: inputs.packaging
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.package-set.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/local/.ghcup \
+                      /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/share/powershell
+          df -h /
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      - name: Cache NuGet packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('Directory.Packages.props', 'global.json') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Restore
+        run: dotnet restore Platform.SharedKernel.slnx
+
+      # Every packable project, into ./nupkgs (PackageOutputPath). SKPKG001-004 in
+      # Directory.Build.targets fail the pack on a missing Description/PackageTags/README.md or on
+      # anything named *.Tests.
+      - name: Pack every package
+        run: dotnet pack Platform.SharedKernel.slnx --no-restore --configuration Release
+
+      # The complete set (derived by asking every csproj whether it packs), one version, the tag's
+      # version when one is expected, and Directory.Packages.props pinning exactly that set.
+      # Exports SK_VERSION for the steps below, so they consume the bits this run packed.
+      - name: Verify the package set
+        id: package-set
+        env:
+          EXPECTED_VERSION: ${{ inputs.expected-version }}
+          WRITE_EXPECTED_TO: nupkgs/expected-packages.txt
+        run: |
+          set -euo pipefail
+          bash eng/verify-packages.sh nupkgs "$EXPECTED_VERSION"
+          echo "version=$SK_VERSION" >> "$GITHUB_OUTPUT"
+
+      # Every csproj outside the .slnx consumes SharedKernel through PackageReference: the
+      # consumer-verify harnesses and samples/. Listed once here for the steps below.
+      - name: Discover packed-package consumers
+        run: |
+          set -euo pipefail
+          grep -oE 'Path="[^"]*\.csproj"' Platform.SharedKernel.slnx | sed -E 's/^Path="//; s/"$//' | sort > "$RUNNER_TEMP/solution.txt"
+          git ls-files '*.csproj' | sort | comm -23 - "$RUNNER_TEMP/solution.txt" > "$RUNNER_TEMP/consumers.txt"
+          xargs grep -l 'Microsoft.NET.Test.Sdk' < "$RUNNER_TEMP/consumers.txt" | sort > "$RUNNER_TEMP/consumer-tests.txt" || true
+          echo "Packed-package consumers:"; sed 's/^/  /' "$RUNNER_TEMP/consumers.txt"
+          echo "Of which test projects:"; sed 's/^/  /' "$RUNNER_TEMP/consumer-tests.txt"
+
+      - name: Restore and build every packed-package consumer
+        run: |
+          set -euo pipefail
+          while IFS= read -r proj; do
+            echo "::group::build $proj"
+            dotnet restore "$proj" --force -p:SharedKernelPackageVersion="$SK_VERSION"
+            dotnet build "$proj" --no-restore --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION"
+            echo "::endgroup::"
+          done < "$RUNNER_TEMP/consumers.txt"
+
+      # AnalyzerConsumer exists to prove a DIAGNOSTIC fires from the packed analyzer, so a green
+      # build alone proves nothing: grep the bare diagnostic id (never the localized word "warning").
+      - name: Assert SK0001 fires from the packed analyzer
+        run: |
+          set -e
+          proj="00.Governance/_verification/AnalyzerConsumer/AnalyzerConsumer.csproj"
+          dotnet build "$proj" --no-restore --no-incremental --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION" 2>&1 | tee analyzer-consumer-build.log
+          if ! grep -q 'SK0001' analyzer-consumer-build.log; then
+            echo "::error::SK0001 did not fire while building AnalyzerConsumer against the packed SharedKernel.Analyzers ($SK_VERSION). Its absence means the packed analyzer enforces nothing: check the analyzers/dotnet/cs PackagePath and the netstandard2.0 target."
+            exit 1
+          fi
+          echo "OK: SK0001 present in AnalyzerConsumer's build output."
+
+      # The Exe harnesses. The Caching one starts its own Testcontainers Redis.
+      - name: Run the Exe consumer-verify harnesses
+        run: |
+          set -euo pipefail
+          for proj in \
+            "00.Governance/_verification/AnalyzerConsumer/AnalyzerConsumer.csproj" \
+            "00.Governance/_verification/ArchTestConsumer/ArchTestConsumer.csproj" \
+            "00.Governance/_verification/LinterConsumer/LinterConsumer.csproj" \
+            "02.Caching/consumer-verify/SharedKernel.Caching.ConsumerVerify/SharedKernel.Caching.ConsumerVerify.csproj" \
+            ; do
+            echo "::group::run $proj"
+            dotnet run --project "$proj" --no-build --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION"
+            echo "::endgroup::"
+          done
+
+      # Every consumer that is a test project: the 01/03/04/05/06 consumer suites and every
+      # samples/**/*.Tests project. The sample suites are end to end through HTTP against real
+      # infrastructure (Testcontainers PostgreSQL with the production role split for BillingApi,
+      # MinIO for DocumentsApi, RabbitMQ with the delayed-message plugin for ShippingApi).
+      - name: Test every packed-package consumer test project
+        run: |
+          set -euo pipefail
+          while IFS= read -r proj; do
+            echo "::group::test $proj"
+            dotnet test "$proj" --no-build --no-restore --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION"
+            echo "::endgroup::"
+          done < "$RUNNER_TEMP/consumer-tests.txt"
+
+      # The web host is found rather than named, so this survives OrderApi being split into
+      # Domain/Application/Infrastructure/Api projects: exactly one Web-SDK project under
+      # samples/OrderApi that is not a test project.
+      - name: Smoke-test the OrderApi sample
+        env:
+          ASPNETCORE_URLS: http://localhost:5199
+        run: |
+          set -euo pipefail
+          mapfile -t hosts < <(git ls-files 'samples/OrderApi/*.csproj' | grep -v '\.Tests\.csproj$' | xargs grep -l 'Sdk="Microsoft.NET.Sdk.Web"' || true)
+          if [ "${#hosts[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one web host project under samples/OrderApi, found ${#hosts[@]}: ${hosts[*]:-none}"
+            exit 1
+          fi
+          echo "OrderApi host: ${hosts[0]}"
+          dotnet run --project "${hosts[0]}" --no-build --no-restore --no-launch-profile --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION" &
+          pid=$!
+          trap 'kill $pid 2>/dev/null || true' EXIT
+          for _ in $(seq 1 60); do
+            curl -sf http://localhost:5199/health/ready >/dev/null 2>&1 && break
+            sleep 1
+          done
+          curl -sf http://localhost:5199/health/live  | grep -q Healthy
+          curl -sf http://localhost:5199/health/ready | grep -q Healthy
+          id=$(curl -sf -X POST http://localhost:5199/orders -H 'Content-Type: application/json' -d '{"customer":"CI","amount":10.00,"currency":"eur","lines":["item"]}' | sed 's/.*"id":"//;s/".*//')
+          test -n "$id"
+          curl -sf "http://localhost:5199/orders/$id" | grep -q '"currency":"EUR"'
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:5199/orders/01999999-0000-7000-8000-000000000000)" = 404
+          echo "OrderApi sample smoke test passed"
+
+      # CatalogApi runs both search engines at once, so it needs both: started here as plain
+      # containers pinned by digest (the same images as the sample README), then provisioned,
+      # seeded and queried on both providers, with /ops/verify proving the live indexes match the
+      # definitions this build declares.
+      - name: Smoke-test the CatalogApi sample (Meilisearch + Elasticsearch)
+        env:
+          ASPNETCORE_URLS: http://localhost:5198
+          # Catalog.TenantNorth in samples/CatalogApi/Catalog.cs.
+          NORTH: 6f1c2a4e-0b7d-4c3e-9a51-3d2e8f7b1a01
+          MEILI_IMAGE: getmeili/meilisearch:v1.20.0@sha256:90e5fe0d0bd83fea01120870bf6e01507097c706e1583fad1d56ef0cc6c41af8
+          ES_IMAGE: docker.elastic.co/elasticsearch/elasticsearch:9.4.2@sha256:be5f49784ff5ec8a5b5d7ba17f944d9d6b10c067f596ee93e6b6cb82d2dd874c
+        run: |
+          set -euo pipefail
+          docker run -d --name sk-catalog-meili -p 7700:7700 \
+            -e MEILI_MASTER_KEY=sk-sample-master-key -e MEILI_NO_ANALYTICS=true "$MEILI_IMAGE"
+          docker run -d --name sk-catalog-es -p 9200:9200 \
+            -e discovery.type=single-node -e xpack.security.enabled=false \
+            -e "ES_JAVA_OPTS=-Xms1g -Xmx1g" "$ES_IMAGE"
+          pid=""
+          cleanup() {
+            if [ -n "$pid" ]; then kill "$pid" 2>/dev/null || true; fi
+            docker rm -f sk-catalog-meili sk-catalog-es >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          for _ in $(seq 1 120); do
+            curl -sf http://localhost:7700/health >/dev/null 2>&1 \
+              && curl -sf 'http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=1s' >/dev/null 2>&1 \
+              && break
+            sleep 1
+          done
+          curl -sf http://localhost:7700/health >/dev/null
+          curl -sf 'http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s' >/dev/null
+
+          dotnet run --project samples/CatalogApi/CatalogApi.csproj --no-build --no-restore --no-launch-profile --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION" &
+          pid=$!
+          for _ in $(seq 1 60); do
+            curl -sf http://localhost:5198/health/live >/dev/null 2>&1 && break
+            sleep 1
+          done
+          curl -sf http://localhost:5198/health/live | grep -q Healthy
+          curl -sf -X POST http://localhost:5198/ops/provision >/dev/null
+          curl -sf -X POST http://localhost:5198/ops/seed >/dev/null
+          curl -sf http://localhost:5198/ops/verify >/dev/null
+          curl -sf http://localhost:5198/health/ready | grep -q Healthy
+          curl -sf "http://localhost:5198/storefront/$NORTH/products?q=mouse" | grep -q 'Wireless Mouse'
+          curl -sf "http://localhost:5198/storefront/$NORTH/products/count" | grep -q '"accuracy"'
+          curl -sf "http://localhost:5198/back-office/$NORTH/order-lines/count" | grep -q '"isExact":true'
+          echo "CatalogApi sample smoke test passed"
+
+      - name: Upload the verified packages
+        if: inputs.upload-packages
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: packages
+          path: |
+            nupkgs/*.nupkg
+            nupkgs/expected-packages.txt
+          if-no-files-found: error
+          retention-days: 30

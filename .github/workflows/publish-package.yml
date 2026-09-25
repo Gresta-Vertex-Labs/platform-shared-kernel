@@ -1,110 +1,60 @@
-name: Publish Single Package
+name: Package Dry Run
 
-# Manual, on-demand publish of ONE package to GitHub Packages — no tag required.
+# Manual, on-demand DRY RUN for ONE package: restore, build, run its nested test project, pack, and
+# check its dependencies against GitHub Packages. It never publishes anything.
 #
-# Why this exists instead of using release.yml: release.yml triggers only on a `v*` tag and packs
-# the WHOLE solution, pushing all ~67 packable projects at once (see PLATFORM.md "Versioning" —
-# MinVer lockstep, one tag -> one version for every package). We want SharedKernel.Analyzers
-# published now, while the other ~66 packages have not yet had their own production-readiness
-# pass. That is safe to do OUTSIDE the tag-triggered, whole-solution path specifically because
-# SharedKernel.Analyzers declares ZERO package dependencies (confirmed by inspecting its packed
-# .nuspec — no <dependencies> element at all: IncludeBuildOutput=false, DevelopmentDependency=true,
-# SuppressDependenciesWhenPacking=true). The `ProjectReference` -> `PackageReference`
-# version-resolution hazard that motivates repo-wide lockstep (packing a package while one of its
-# OWN dependencies sits at an untagged prerelease emits a dependency on a version that was never
-# published) simply does not apply when a package has no SharedKernel dependencies to mis-resolve.
+# Publishing happens only through the release train (release.yml): one `v*` tag packs and publishes
+# every package at one version after the full CI gate set has passed (WO-086 / P-572). The earlier
+# single-package publish path, and the "publish each dependency first, in dependency order"
+# republish procedure it required, were removed with it. MinVer derives a prerelease version from
+# commit height, so a package published on its own declares its SharedKernel.* dependencies at the
+# height of THAT build, not at the height they were published at, and every publish of a package
+# with dependencies meant republishing its whole dependency closure first. The release train makes
+# that problem impossible instead of managing it.
 #
-# THIS IS STILL NOT A GENERAL ESCAPE FROM LOCKSTEP, but the condition it enforces is now the real
-# one rather than a proxy for it. A package may be published through this path exactly when every
-# SharedKernel.* dependency in its packed .nuspec is ALREADY ON THE FEED at a version satisfying
-# the declared range. That is what makes publishing one package at a time, in dependency order,
-# safe — and it is checked mechanically by the "Assert every SharedKernel.* dependency already
-# exists on the feed" step below, which runs a real `dotnet restore` against those dependencies
-# and fails the run before the push if any of them cannot be resolved.
+# What a dry run is still good for:
+#   - proving one package restores, builds, tests and packs on a clean runner, from a branch, with
+#     no tag;
+#   - reading its packed .nuspec (the job log prints every declared dependency);
+#   - the dependency gate: whether every SharedKernel.* dependency it declares already resolves from
+#     GitHub Packages. On a branch this normally fails (NU1102: the feed has the last release, the
+#     branch packs a newer height), which is expected and exactly why packages are released together.
+#   - for SharedKernel.Analyzers/.ArchitectureTests/.Linter, their packed-artifact harness.
 #
-# WHAT THAT REPLACED, AND WHY. The earlier gate refused any package declaring a SharedKernel.*
-# dependency at all, on the reasoning that such a package would emit dependencies on versions
-# that were never published. The reasoning was sound but the rule was broader than the hazard:
-# it was correct while every package published this way had no SharedKernel dependencies
-# whatsoever (the three 00.Governance packages, then SharedKernel.Primitives), and it blocked
-# SharedKernel.Core/.Configuration/.FeatureManagement/.Compression outright even though
-# publishing them in dependency order is perfectly sound. The hazard itself is real and
-# unchanged: MinVer derives the version from commit HEIGHT, so a dependency is stamped at the
-# height of THIS build, not the height at which that dependency was published — publish
-# SharedKernel.Primitives at .886, commit twice, publish SharedKernel.Core, and Core declares
-# SharedKernel.Primitives >= 1.0.0-alpha.0.888, which nobody can restore.
-#
-# Packages published through this path so far: SharedKernel.Analyzers (no <dependencies> element
-# at all — IncludeBuildOutput=false, DevelopmentDependency=true,
-# SuppressDependenciesWhenPacking=true), SharedKernel.ArchitectureTests (three third-party
-# dependencies — NetArchTest.Rules, Mono.Cecil,
-# Microsoft.Extensions.DependencyInjection.Abstractions — and no SharedKernel.* dependency, since
-# its three rules that need SharedKernel anchor types take them from the caller), and
-# SharedKernel.Linter. All three went out at floating MinVer heights
-# (1.0.0-alpha.0.882/.884/.886), which was safe precisely because none of them declares a
-# SharedKernel.* dependency to mis-resolve.
-#
-# Standing hygiene identical to ci.yml/release.yml: permissions:{} at root widened per job, every
-# action pinned to a full 40-char SHA, fetch-depth: 0 (MinVer needs full tag history even for the
-# MinVer-derived default path), persist-credentials: false, timeout-minutes set.
-#
-# Gating that is NOT yet fully in place (same two admin-side gaps release.yml already documents —
-# see the hand-off in the run report that shipped this file):
-#   1. `environment: nuget-publish` requires a GitHub Environment of that exact name to exist with
-#      required-reviewer protection configured in repo Settings. This workflow reads the name, it
-#      does not create the environment. Until it exists, dispatching this workflow runs to
-#      completion unattended.
-#   2. No tag-creation ruleset is relevant here (this workflow never creates or reads a tag), but
-#      the same admin gap that leaves release.yml's `nuget-publish` environment toothless applies
-#      here identically — see PLATFORM.md "DevOps Work Log" -> Deferred/Blocked.
-#
-# dry_run defaults to TRUE — a safe rehearsal that proves every step short of the actual push.
-# A dry run and a real publish are told apart by which of the two mutually exclusive final steps
-# appears: "Push to GitHub Packages" or "Dry-run notice (nothing pushed)". Exactly one must run.
-# If NEITHER appears in a run, the gating condition is broken — see those steps' own comments.
-#
-# Note where the package lands: pushing with GITHUB_TOKEN publishes to
-# nuget.pkg.github.com/{owner}, which is OWNER-scoped, not repo-scoped. A published package shows
-# up under the organization's Packages page; it appears in this repository's sidebar only via the
-# <repository> element SourceLink stamps into the .nuspec. Seeing nothing in the repo sidebar is
-# therefore not by itself evidence that a push failed — check the org's package list too.
+# Standing hygiene identical to ci.yml/release.yml: permissions: {} at the root widened per job,
+# every action pinned to a full 40-character SHA, fetch-depth: 0 (MinVer needs the tag history),
+# persist-credentials: false, timeout-minutes set. packages: read only, for the dependency gate.
 
 on:
   workflow_dispatch:
     inputs:
       project:
-        description: 'Path to the .csproj to pack and publish. Every SharedKernel.* dependency it declares must already be on the feed at a satisfying version (asserted by a real restore against the packed .nuspec, before any push) — so publish in dependency order, lowest layer first.'
+        description: 'Path to the .csproj to dry-run (restore, build, test, pack, dependency gate). Nothing is published; releases go through release.yml.'
         type: string
         default: '00.Governance/SharedKernel.ArchitectureTests/SharedKernel.ArchitectureTests.csproj'
       version:
-        description: 'Optional exact version (e.g. 1.2.3). Empty = MinVer-derived version (currently a 1.0.0-alpha.0.<height> prerelease — this repo has no v* tag yet).'
+        description: 'Optional exact version to stamp (e.g. 1.2.3). Empty = MinVer-derived version.'
         type: string
         default: ''
-      dry_run:
-        description: 'Dry run: verify everything (build, test, pack, consumer-verify) but skip the actual push'
-        type: boolean
-        default: true
 
 permissions: {}
 
 jobs:
-  publish:
-    name: Pack & Publish (single package)
+  dry-run:
+    name: Pack & dependency gate (dry run, single package)
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    environment: nuget-publish
     permissions:
       contents: read
-      packages: write
+      packages: read
     env:
       DOTNET_CLI_UI_LANGUAGE: en
       DOTNET_NOLOGO: 'true'
       DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
       DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 'true'
-      # Inputs are copied into env here, once, rather than interpolated with ${{ }} directly into
-      # run: blocks below — a workflow_dispatch input is caller-supplied text and splicing it
-      # straight into a shell script is a script-injection surface even for a repo-internal
-      # manual trigger. Every step below reads these as ordinary shell variables instead.
+      # Inputs are copied into env once rather than interpolated with ${{ }} into run: blocks: a
+      # workflow_dispatch input is caller-supplied text, and splicing it into a shell script is a
+      # script-injection surface even for a repo-internal manual trigger.
       INPUT_PROJECT: ${{ inputs.project }}
       INPUT_VERSION: ${{ inputs.version }}
     steps:
@@ -187,12 +137,12 @@ jobs:
             echo "Found nested test project: $test_project"
           else
             echo "TEST_PROJECT=" >> "$GITHUB_ENV"
-            echo "No nested test project at $test_project — nothing to run, publish is not gated on a test suite for this project."
+            echo "No nested test project at $test_project — nothing to run for this project."
           fi
 
       # A failing suite here fails the job outright (no continue-on-error) — every step after this
       # one, including Pack, never runs.
-      - name: Run nested test project (blocks publish on failure)
+      - name: Run nested test project (fails the dry run on failure)
         if: env.TEST_PROJECT != ''
         run: dotnet test "$TEST_PROJECT" --configuration Release
 
@@ -213,7 +163,7 @@ jobs:
           echo "Found $count .nupkg file(s) in nupkgs/:"
           find nupkgs -maxdepth 1 -name "*.nupkg" -exec basename {} \; || true
           if [ "$count" -ne 1 ]; then
-            echo "::error::Expected exactly 1 .nupkg, found $count. A single-package publish run must produce exactly one artifact — refusing to guess which one to push."
+            echo "::error::Expected exactly 1 .nupkg, found $count. A single-package dry run must produce exactly one artifact."
             exit 1
           fi
 
@@ -232,25 +182,17 @@ jobs:
           } >> "$GITHUB_ENV"
           echo "Packed: $package_id @ $packed_version"
 
-      # The lockstep precondition this whole workflow rests on, enforced mechanically instead of by
-      # the human discipline the header describes.
+      # The dependency gate: would this package restore for a consumer if it were the only one
+      # published? Each SharedKernel.* dependency in the packed .nuspec must already be on the feed
+      # at a version satisfying the declared range.
       #
-      # WHAT THE REAL HAZARD IS. MinVer derives the version from commit HEIGHT, so with no v* tag
-      # reachable every pack produces 1.0.0-alpha.0.<height> and that number moves with every
-      # commit. Pack a package with a SharedKernel.* dependency and the dependency is stamped at
-      # the height of THIS build, not at the height its dependency was actually published at. Ship
-      # SharedKernel.Primitives at .886, commit twice, publish SharedKernel.Core, and Core declares
-      # a dependency on SharedKernel.Primitives >= 1.0.0-alpha.0.888 — a version that was never
-      # pushed. Nothing in the producing build notices; the failure lands on a consumer's restore.
-      #
-      # WHY THIS IS NOT THE OLDER "ZERO SharedKernel.* DEPENDENCIES" CHECK. That check blocked the
-      # hazard by blocking the entire class, which was right while every package published this way
-      # had no SharedKernel dependencies at all (the three 00.Governance packages, then
-      # SharedKernel.Primitives). It is too strict from SharedKernel.Core onward: publishing one
-      # package at a time in dependency order is genuinely safe, and the thing that makes it safe
-      # is not the ABSENCE of dependencies but whether each declared dependency is ALREADY ON THE
-      # FEED at a version that satisfies the declared range. So check that, rather than a proxy
-      # for it.
+      # WHY IT USUALLY FAILS ON A BRANCH. MinVer derives the version from commit HEIGHT, so every
+      # pack stamps its SharedKernel.* dependencies at the height of THIS build. The feed holds the
+      # last release, so a branch build of a package with dependencies declares versions that were
+      # never pushed (NU1102). That is the hazard the release train (release.yml) exists to remove:
+      # all packages are published together at one version, so their dependency versions always
+      # exist. A pass here means the package has no SharedKernel.* dependencies, or its
+      # dependencies are unchanged since a published version that satisfies the range.
       #
       # HOW IT CHECKS. By running a real `dotnet restore` against a throwaway project that
       # PackageReferences each SharedKernel.* dependency at exactly the version the packed .nuspec
@@ -260,7 +202,7 @@ jobs:
       #
       # THE VERSIONS ARE DELIBERATELY NOT PINNED WITH [brackets]. A .nuspec dependency version is a
       # MINIMUM, not an equality, so a bare Version="X" reproduces consumer semantics exactly. An
-      # exact pin would fail a publish that is actually safe: if .891 was packed but only .895 ever
+      # exact pin would fail a dependency that actually resolves: if .891 was packed but only .895 ever
       # reached the feed, every consumer resolves .895 and works, while `[.891]` would refuse.
       - name: Assert every SharedKernel.* dependency already exists on the feed
         env:
@@ -304,7 +246,7 @@ jobs:
             > "$deps" || true
 
           if [ ! -s "$deps" ]; then
-            echo "OK: $PACKAGE_ID declares no SharedKernel.* dependencies, so nothing it ships can point at an unpublished version. Safe to publish out of band."
+            echo "OK: $PACKAGE_ID declares no SharedKernel.* dependencies, so nothing it ships can point at an unpublished version."
             exit 0
           fi
 
@@ -384,11 +326,11 @@ jobs:
             echo "::group::restore log"
             cat "$probe/restore.log"
             echo "::endgroup::"
-            echo "OK: every SharedKernel.* dependency $PACKAGE_ID declares resolves from the feed. Publishing it out of band cannot emit a dependency on a version that was never published."
+            echo "OK: every SharedKernel.* dependency $PACKAGE_ID declares resolves from the feed."
             exit 0
           fi
 
-          echo "::error::$PACKAGE_ID declares one or more SharedKernel.* dependencies that do NOT resolve from GitHub Packages, so publishing it would ship a dependency on a version no consumer can restore. Publish the missing dependency FIRST (this workflow, one package at a time, in dependency order), then re-run this one. Reading the diagnostic printed below, each code measured by running this probe against a feed in that state: NU1101 means the dependency id is absent from the feed entirely — it has never been published. NU1102/NU1103 mean the id IS on the feed but no published version satisfies the declared minimum; that is the MinVer-height mismatch this gate exists for, where the dependency was published at an earlier commit height than the height this build stamped into the .nuspec. NU1100 means resolution was blocked rather than unsatisfied — typically the feed was unreachable or the credentials failed — which is an infrastructure problem, NOT evidence that the dependency is unpublished, so do not respond to it by republishing anything."
+          echo "::error::$PACKAGE_ID declares one or more SharedKernel.* dependencies that do NOT resolve from GitHub Packages, so publishing this package on its own would ship a dependency on a version no consumer can restore. Release it with the rest of the set instead (a v* tag, release.yml). Reading the diagnostic printed below, each code measured by running this probe against a feed in that state: NU1101 means the dependency id is absent from the feed entirely — it has never been published. NU1102/NU1103 mean the id IS on the feed but no published version satisfies the declared minimum; that is the MinVer-height mismatch this gate exists for, where the dependency was published at an earlier commit height than the height this build stamped into the .nuspec. NU1100 means resolution was blocked rather than unsatisfied — typically the feed was unreachable or the credentials failed — which is an infrastructure problem, NOT evidence that the dependency is unpublished."
           # NuGet emits one diagnostic per unresolvable package, so these lines name every missing
           # dependency rather than only the first. NU1100 is matched alongside the others because
           # it is what appears when the feed itself cannot be consulted; it is a different
@@ -453,62 +395,18 @@ jobs:
 
       - name: No package-specific consumer-verify for this package
         if: env.PACKAGE_ID != 'SharedKernel.Analyzers' && env.PACKAGE_ID != 'SharedKernel.ArchitectureTests' && env.PACKAGE_ID != 'SharedKernel.Linter'
-        run: echo "Packed package is '$PACKAGE_ID' — no package-specific consumability harness exists for it yet. Skipping. Its nested test suite and the dependency assertion above still gate this publish."
-
-      # GitHub Packages' NuGet registry has no symbol-server endpoint — only *.nupkg is pushed,
-      # identical to release.yml. --skip-duplicate makes a re-run idempotent.
-      - name: Push to GitHub Packages
-        # `!inputs.dry_run`, never `inputs.dry_run == false`. A workflow_dispatch boolean input can
-        # reach the expression evaluator as the STRING "false", and `'false' == false` coerces both
-        # sides to numbers — NaN vs 0 — so it never evaluates true. With the old form, an operator
-        # who correctly unchecked dry_run got a fully green run in which BOTH this step and the
-        # dry-run notice below were skipped, and no package was pushed or reported as skipped.
-        # The unary form applies GitHub's own falsiness rules and is correct for both the boolean
-        # and the string shape.
-        if: ${{ !inputs.dry_run }}
-        env:
-          NUGET_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -e
-          dotnet nuget push "$NUPKG_PATH" \
-            --source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" \
-            --api-key "$NUGET_AUTH_TOKEN" \
-            --skip-duplicate
-          echo "PUSHED=true" >> "$GITHUB_ENV"
-          echo "Pushed $PACKAGE_ID $PACKED_VERSION to GitHub Packages."
-
-      - name: Dry-run notice (nothing pushed)
-        # See the Push step's comment — same coercion hazard, same unary fix. These two steps are
-        # mutually exclusive by construction, so exactly one of them must appear in every run;
-        # if neither does, the condition is broken, not the inputs.
-        if: ${{ inputs.dry_run }}
-        run: |
-          echo "DRY RUN — the actual push was skipped. This run would have executed:"
-          echo ""
-          echo "  dotnet nuget push \"$NUPKG_PATH\" \\"
-          echo "    --source \"https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json\" \\"
-          echo "    --api-key <GITHUB_TOKEN> \\"
-          echo "    --skip-duplicate"
-          echo "PUSHED=false" >> "$GITHUB_ENV"
+        run: echo "Packed package is '$PACKAGE_ID' — no package-specific consumability harness exists for it yet. Skipping. Its nested test suite and the dependency assertion above still ran."
 
       - name: Job summary
         if: always()
         run: |
           {
-            echo "## Publish: ${PACKAGE_ID:-<not reached>}"
+            echo "## Dry run: ${PACKAGE_ID:-<not reached>}"
             echo ""
             echo "| Field | Value |"
             echo "|---|---|"
             echo "| Project | \`$INPUT_PROJECT\` |"
             echo "| Package ID | \`${PACKAGE_ID:-<not reached>}\` |"
             echo "| Version | \`${PACKED_VERSION:-<not reached>}\` |"
-            echo "| Dry run | \`${{ inputs.dry_run }}\` |"
-            echo "| Pushed | \`${PUSHED:-false}\` |"
-            echo ""
-            if [ -n "${PACKAGE_ID:-}" ] && [ -n "${PACKED_VERSION:-}" ]; then
-              echo "### Install"
-              echo '```xml'
-              echo "<PackageReference Include=\"$PACKAGE_ID\" Version=\"$PACKED_VERSION\" />"
-              echo '```'
-            fi
+            echo "| Published | no (dry run only; releases go through release.yml) |"
           } >> "$GITHUB_STEP_SUMMARY"

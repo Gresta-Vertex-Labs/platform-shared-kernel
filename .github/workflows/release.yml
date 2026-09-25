@@ -1,41 +1,38 @@
 name: Release
 
-# Tag-triggered publish of every shipping package to GitHub Packages (the org-scoped, NuGet-
-# compatible registry). See PLATFORM.md "Feeds & Publishing" for the full rationale.
+# The release train (WO-086 / P-572). Pushing one `v*` tag publishes EVERY package in this
+# repository to GitHub Packages at that one version, after the full set of gates has passed. There
+# is no other way to publish: publish-package.yml is a dry run only, and no per-package or
+# "republish closure" procedure exists any more.
 #
-# Why GitHub Packages and not nuget.org: PLATFORM.md's Open Questions #1-#3 (is there a confirmed
-# registry target, is this repo public, is nuget.org Trusted Publishing even visible yet in the
-# Gresta-Vertex-Labs account) are genuine unknowns only the user can resolve — this workflow does
-# not guess at them. GitHub Packages needs none of those answers: it is already inside org
-# control, authenticates with the workflow's own ambient GITHUB_TOKEN (no new secret to create or
-# store), and unblocks "nothing published, nothing installable by any consumer" today. nuget.org
-# publishing via OIDC Trusted Publishing remains a PROPOSED, documented follow-on once the Open
-# Questions are answered — adding it later is an additional push step, not a redesign of this one.
+#   tag-guard  the tag is well formed and points at a commit on main
+#   verify     .github/workflows/verify.yml with everything on: tier check, solution-filter check,
+#              full build, the Unit suite and every consumer-verify harness, the Integration suite
+#              (Testcontainers), and packaging-verify, which packs every package, checks the set
+#              (eng/verify-packages.sh: complete, one version, equal to the tag), then restores,
+#              builds, tests and smoke-runs every packed-package consumer and sample against it.
+#              The verified .nupkg files are uploaded as the "packages" artifact.
+#   publish    downloads exactly those files, re-checks the set against the expected-package list
+#              the verified run produced (so a partial download can never be published), and pushes.
 #
-# Trigger: a `v*` tag push. MinVer (Directory.Build.props, GlobalPackageReference) reads that tag
-# and stamps ALL ~50+ packages at the same version — see the "Versioning" DECIDED standard in
-# PLATFORM.md. This workflow never creates the tag itself: per devops-lead's Rule 1
-# destructive-and-irreversible carve-out, cutting the first (or any) `v*` tag is the user's own,
-# explicit, manual decision — see the hand-off in the run report that shipped this file.
+# The expected set is derived from the repository, not kept by hand: eng/PackageInventory.proj asks
+# every csproj on disk whether it packs (its evaluated IsPackable/PackageId). A packable project
+# that fell out of the solution, a pack that silently skipped a project, or a stale extra file all
+# fail the run before anything is pushed.
 #
-# Standing hygiene identical to ci.yml: permissions:{} at root widened per job, every action
-# pinned to a full 40-char SHA, fetch-depth: 0 (MANDATORY for MinVer, same reason as ci.yml),
-# persist-credentials: false, timeout-minutes set.
+# Versioning: MinVer (Directory.Build.props) stamps every package from the tag; fetch-depth: 0 is
+# mandatory wherever dotnet runs (verify.yml). This workflow never creates a tag. Cutting one is the
+# user's own, explicit decision (see PLATFORM.md "Release train").
 #
-# Gating that is NOT yet fully in place — see the hand-off in the run report:
-#   1. `environment: nuget-publish` below requires a GitHub Environment of that exact name to
-#      exist with protection rules (required reviewers) configured in repo Settings — this
-#      workflow reads the name, it does not create the environment. Until it exists, the job
-#      also has no environment secrets/vars scoped to it (there happen to be none needed here,
-#      since GITHUB_TOKEN is ambient, but the required-reviewer gate itself needs the environment
-#      to exist to have any effect).
-#   2. `.github/rulesets/tag-protection.json` is authored (restricts `v*` tag creation to admins,
-#      forbids tag deletion/update) but NOT YET APPLIED — importing a ruleset requires the GitHub
-#      UI (Settings → Rules → Rulesets → Import a ruleset) or the REST API with an admin token,
-#      neither of which this environment has (`gh` is not installed here). Until it is imported
-#      and set to `active`, any contributor with push access can trigger a real publish by
-#      pushing a `v*` tag — the environment's required-reviewer gate (once configured) is the
-#      only backstop in the meantime.
+# Why GitHub Packages, not nuget.org: it needs no new secret (the ambient GITHUB_TOKEN with
+# packages: write), no external account and no public-registry commitment. nuget.org via Trusted
+# Publishing remains PROPOSED in PLATFORM.md; it would be one more push step in the publish job.
+#
+# Gating that is authored but NOT active until a repository admin acts (PLATFORM.md, Deferred):
+#   1. `environment: nuget-publish` needs a GitHub Environment of that name with required
+#      reviewers. Until it exists the publish job runs unattended once verify passes.
+#   2. .github/rulesets/tag-protection.json (only admins may create/update/delete v* tags) is not
+#      imported yet, so anyone with push access can start a release by pushing a tag.
 
 on:
   push:
@@ -44,90 +41,124 @@ on:
 
 permissions: {}
 
+# One release per tag at a time, and never cancelled mid-flight: a cancelled push can leave part
+# of the package set published.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
-  publish:
-    name: Pack & Publish
+  tag-guard:
+    name: Tag is well formed and on main
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    environment: nuget-publish
+    timeout-minutes: 5
     permissions:
       contents: read
-      packages: write
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          # MANDATORY for MinVer — see ci.yml's identical comment. A shallow clone here would
-          # silently stamp the MinVerMinimumMajorMinor floor instead of reading the pushed tag,
-          # and this job would then publish every package at the wrong version.
           fetch-depth: 0
 
-      - name: Free disk space
+      # SemVer 2.0 (MinVer's own grammar), and only commits already reviewed into main are
+      # released: a tag on a feature branch would publish code no pull request approved.
+      - name: Check the tag
         run: |
-          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/local/.ghcup \
-                      /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/share/powershell
-          df -h /
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          if ! printf '%s' "$tag" | grep -qE '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'; then
+            echo "::error::Tag '$tag' is not v<major>.<minor>.<patch>[-prerelease]."
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Tag '$tag' points at $GITHUB_SHA, which is not on main. Release only from main."
+            exit 1
+          fi
+          echo "OK: $tag ($GITHUB_SHA) is well formed and on main."
 
+  verify:
+    name: Verify
+    needs: [tag-guard]
+    uses: ./.github/workflows/verify.yml
+    permissions:
+      contents: read
+    with:
+      unit: true
+      integration: true
+      packaging: true
+      upload-packages: true
+      expected-version: ${{ github.ref_name }}
+
+  publish:
+    name: Publish every package
+    needs: [verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: nuget-publish
+    permissions:
+      contents: read
+      packages: write
+    env:
+      DOTNET_CLI_UI_LANGUAGE: en
+      DOTNET_NOLOGO: 'true'
+      DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # global.json pins the SDK band, and dotnet refuses to run inside the repo without it.
       - name: Setup .NET
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           global-json-file: global.json
 
-      - name: Cache NuGet packages
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Download the verified packages
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          path: ~/.nuget/packages
-          key: nuget-${{ runner.os }}-${{ hashFiles('Directory.Packages.props', 'global.json') }}
-          restore-keys: |
-            nuget-${{ runner.os }}-
+          name: packages
+          path: release-packages
 
-      - name: Restore
-        run: dotnet restore Platform.SharedKernel.slnx
-
-      - name: Build
-        run: dotnet build Platform.SharedKernel.slnx --no-restore --configuration Release
-
-      # Every real shipping package. Same command ci.yml's packaging-verify job already proved
-      # works; SKPKG001-004 in Directory.Build.targets still fail loudly on a packable project
-      # missing Description/PackageTags/README.md, or on anything named *.Tests.
-      - name: Pack every shipping package
-        run: dotnet pack Platform.SharedKernel.slnx --no-restore --configuration Release
-
-      # Hard backstop before anything is pushed: every packed artifact must carry exactly one
-      # version, AND that version must be byte-identical to the pushed tag (with its leading `v`
-      # stripped). A mismatch means MinVer resolved something other than the tag that triggered
-      # this run (e.g. fetch-depth silently regressed) — refuse to publish rather than guess.
-      - name: Verify packed version matches the pushed tag
+      # Same check packaging-verify ran, against the downloaded files and the expected list that
+      # run derived: the complete set, one version, equal to the tag.
+      - name: Re-verify the package set
+        env:
+          EXPECTED_PACKAGES_FILE: release-packages/expected-packages.txt
+          VERIFIED_VERSION: ${{ needs.verify.outputs.version }}
         run: |
-          set -e
-          versions=$(for f in nupkgs/*.nupkg; do
-            basename "$f" .nupkg | grep -oE '[0-9]+[.][0-9]+[.][0-9]+(-[0-9A-Za-z.-]+)?$'
-          done | sort -u)
-          count=$(echo "$versions" | wc -l)
-          packed=$(find nupkgs -name "*.nupkg" | wc -l)
-          echo "Packed $packed package(s) carrying $count distinct version(s): $versions"
-          if [ "$count" -ne 1 ]; then
-            echo "::error::Version lockstep broken - refusing to publish $count distinct versions."
+          set -euo pipefail
+          bash eng/verify-packages.sh release-packages "$GITHUB_REF_NAME"
+          if [ "$SK_VERSION" != "$VERIFIED_VERSION" ]; then
+            echo "::error::Downloaded packages are $SK_VERSION but verify packed $VERIFIED_VERSION."
             exit 1
           fi
-          tag_version="${GITHUB_REF_NAME#v}"
-          if [ "$versions" != "$tag_version" ]; then
-            echo "::error::Packed version ($versions) does not match pushed tag $GITHUB_REF_NAME (expected $tag_version). Refusing to publish."
-            exit 1
-          fi
-          echo "Verified: all $packed packages match tag $GITHUB_REF_NAME exactly ($versions)."
 
-      # GitHub Packages' NuGet registry has no symbol-server endpoint: pushing a .snupkg is
-      # rejected outright (a real 'version conflict' error, not a silent no-op), so only *.nupkg
-      # is pushed. --skip-duplicate makes a re-run of this job idempotent rather than failing on
-      # an artifact already published by a previous attempt at the same tag.
+      # Only *.nupkg: GitHub Packages has no symbol-server endpoint and rejects a .snupkg push.
+      # --skip-duplicate makes a re-run of a partly failed publish idempotent.
       - name: Push to GitHub Packages
         env:
           NUGET_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FEED_URL: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
         run: |
-          set -e
-          dotnet nuget push "nupkgs/*.nupkg" \
-            --source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" \
+          set -euo pipefail
+          dotnet nuget push "release-packages/*.nupkg" \
+            --source "$FEED_URL" \
             --api-key "$NUGET_AUTH_TOKEN" \
             --skip-duplicate
+
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "## Release ${GITHUB_REF_NAME}"
+            echo ""
+            if [ -f release-packages/expected-packages.txt ]; then
+              echo "$(grep -c . release-packages/expected-packages.txt) packages at \`${SK_VERSION:-<not verified>}\`:"
+              echo ""
+              sed 's/^/- /' release-packages/expected-packages.txt
+            else
+              echo "The verified package set was not downloaded; nothing was pushed."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

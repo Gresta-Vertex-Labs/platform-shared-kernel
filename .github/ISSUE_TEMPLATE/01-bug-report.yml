@@ -30,24 +30,24 @@ body:
       description: The numbered folder the package lives in. Used to route the issue automatically.
       options:
         - 00.Governance — analyzers, architecture tests
-        - 01.Core — primitives, Result, configuration, cryptography, validation
+        - 01.Core — primitives, execution context, Result, configuration, cryptography, validation
         - 02.Caching — FusionCache, Redis
         - 03.Domain — DDD building blocks, Money
         - 04.Contracts — integration events, paging
-        - 05.Application — MediatR commands, queries, pipeline behaviors
+        - 05.Application — request contracts, pipeline, mediator adapter
         - 06.Persistence — EF Core, PostgreSQL, Dapper
         - 07.Messaging — MassTransit
         - 08.Storage — S3, MinIO, Huawei OBS
         - 09.Search — Meilisearch, Elasticsearch
         - 10.Intelligence — embeddings, Qdrant, Semantic Kernel
-        - 11.Communication — REST, gRPC, GraphQL
+        - 11.Communication — REST, gRPC clients, service discovery
         - 12.Security — OIDC, API keys, mTLS, TOTP
         - 13.ServiceDefaults — OpenTelemetry, health checks, multi-tenancy
-        - 14.Presentation — Web API, SignalR
+        - 14.Presentation — Web API, gRPC server, SignalR, GraphQL
         - 15.Integration — webhooks, email, SMS
-        - 16.Testing — fakes, Testcontainers fixtures
+        - 16.Testing — test packages, fakes, Testcontainers fixtures
         - 17.Workflows — Temporal
-        - 18.Idempotency — Redis and EF Core stores
+        - 18.Idempotency — idempotency contract, Redis and EF Core stores
         - 19.Scheduling — recurring and deferred jobs
         - 20.Reporting — CSV, spreadsheet, PDF exports
         - Build, CI or packaging
