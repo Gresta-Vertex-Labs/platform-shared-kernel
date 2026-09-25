@@ -1,0 +1,238 @@
+#nullable enable
+SharedKernel.Presentation.WebApi.AcceptIdempotencyKeyAttribute
+SharedKernel.Presentation.WebApi.AcceptIdempotencyKeyAttribute.AcceptIdempotencyKeyAttribute() -> void
+SharedKernel.Presentation.WebApi.AcceptIfMatchAttribute
+SharedKernel.Presentation.WebApi.AcceptIfMatchAttribute.AcceptIfMatchAttribute() -> void
+SharedKernel.Presentation.WebApi.AuthorizationConventionExtensions
+SharedKernel.Presentation.WebApi.ConditionalRequestExtensions
+SharedKernel.Presentation.WebApi.ContentSecurityPolicyExtensions
+SharedKernel.Presentation.WebApi.CorrelationIdHttpContextExtensions
+SharedKernel.Presentation.WebApi.CursorPaging
+SharedKernel.Presentation.WebApi.CursorPaging.<Clone>$() -> SharedKernel.Presentation.WebApi.CursorPaging!
+SharedKernel.Presentation.WebApi.CursorPaging.CursorPaging(SharedKernel.Contracts.Pagination.CursorPageRequest! request) -> void
+SharedKernel.Presentation.WebApi.CursorPaging.Equals(SharedKernel.Presentation.WebApi.CursorPaging? other) -> bool
+SharedKernel.Presentation.WebApi.CursorPaging.Request.get -> SharedKernel.Contracts.Pagination.CursorPageRequest!
+SharedKernel.Presentation.WebApi.ErrorHttpResult
+SharedKernel.Presentation.WebApi.ErrorHttpResult.ContentType.get -> string!
+SharedKernel.Presentation.WebApi.ErrorHttpResult.Error.get -> SharedKernel.Primitives.Errors.Error!
+SharedKernel.Presentation.WebApi.ErrorHttpResult.ErrorHttpResult(SharedKernel.Primitives.Errors.Error! error) -> void
+SharedKernel.Presentation.WebApi.ErrorHttpResult.ExecuteAsync(Microsoft.AspNetCore.Http.HttpContext! httpContext) -> System.Threading.Tasks.Task!
+SharedKernel.Presentation.WebApi.ErrorHttpResult.StatusCode.get -> int
+SharedKernel.Presentation.WebApi.ErrorProblemDetailsExtensions
+SharedKernel.Presentation.WebApi.IdempotencyKey
+SharedKernel.Presentation.WebApi.IdempotencyKey.<Clone>$() -> SharedKernel.Presentation.WebApi.IdempotencyKey!
+SharedKernel.Presentation.WebApi.IdempotencyKey.Equals(SharedKernel.Presentation.WebApi.IdempotencyKey? other) -> bool
+SharedKernel.Presentation.WebApi.IdempotencyKey.IdempotencyKey(string! value) -> void
+SharedKernel.Presentation.WebApi.IdempotencyKey.Value.get -> string!
+SharedKernel.Presentation.WebApi.IdempotencyKeyExtensions
+SharedKernel.Presentation.WebApi.IfMatch<TVersion>
+SharedKernel.Presentation.WebApi.IfMatch<TVersion>.<Clone>$() -> SharedKernel.Presentation.WebApi.IfMatch<TVersion>!
+SharedKernel.Presentation.WebApi.IfMatch<TVersion>.Equals(SharedKernel.Presentation.WebApi.IfMatch<TVersion>? other) -> bool
+SharedKernel.Presentation.WebApi.IfMatch<TVersion>.IfMatch(TVersion version) -> void
+SharedKernel.Presentation.WebApi.IfMatch<TVersion>.Version.get -> TVersion
+SharedKernel.Presentation.WebApi.OkWithETag<TValue>
+SharedKernel.Presentation.WebApi.OkWithETag<TValue>.ExecuteAsync(Microsoft.AspNetCore.Http.HttpContext! httpContext) -> System.Threading.Tasks.Task!
+SharedKernel.Presentation.WebApi.OkWithETag<TValue>.OkWithETag(TValue? value, string! version) -> void
+SharedKernel.Presentation.WebApi.OkWithETag<TValue>.StatusCode.get -> int
+SharedKernel.Presentation.WebApi.OkWithETag<TValue>.Value.get -> TValue?
+SharedKernel.Presentation.WebApi.OkWithETag<TValue>.Version.get -> string!
+SharedKernel.Presentation.WebApi.Paging
+SharedKernel.Presentation.WebApi.Paging.<Clone>$() -> SharedKernel.Presentation.WebApi.Paging!
+SharedKernel.Presentation.WebApi.Paging.Equals(SharedKernel.Presentation.WebApi.Paging? other) -> bool
+SharedKernel.Presentation.WebApi.Paging.Paging(SharedKernel.Contracts.Pagination.PageRequest! request) -> void
+SharedKernel.Presentation.WebApi.Paging.Request.get -> SharedKernel.Contracts.Pagination.PageRequest!
+SharedKernel.Presentation.WebApi.PresentationErrorCodes
+SharedKernel.Presentation.WebApi.ProblemDetailsExtensionNames
+SharedKernel.Presentation.WebApi.RequestSizeLimitExtensions
+SharedKernel.Presentation.WebApi.RequireAuthenticationMethodAttribute
+SharedKernel.Presentation.WebApi.RequireAuthenticationMethodAttribute.MaxAgeSeconds.get -> int
+SharedKernel.Presentation.WebApi.RequireAuthenticationMethodAttribute.MaxAgeSeconds.set -> void
+SharedKernel.Presentation.WebApi.RequireAuthenticationMethodAttribute.Methods.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
+SharedKernel.Presentation.WebApi.RequireAuthenticationMethodAttribute.Policy.get -> string!
+SharedKernel.Presentation.WebApi.RequireAuthenticationMethodAttribute.RequireAuthenticationMethodAttribute(params string![]! methods) -> void
+SharedKernel.Presentation.WebApi.RequireAuthenticationMethodAttribute.Roles.get -> string?
+SharedKernel.Presentation.WebApi.RequireFreshAuthenticationAttribute
+SharedKernel.Presentation.WebApi.RequireFreshAuthenticationAttribute.MaxAge.get -> System.TimeSpan
+SharedKernel.Presentation.WebApi.RequireFreshAuthenticationAttribute.Policy.get -> string!
+SharedKernel.Presentation.WebApi.RequireFreshAuthenticationAttribute.RequireFreshAuthenticationAttribute(int maxAgeSeconds) -> void
+SharedKernel.Presentation.WebApi.RequireFreshAuthenticationAttribute.Roles.get -> string?
+SharedKernel.Presentation.WebApi.RequireIdempotencyKeyAttribute
+SharedKernel.Presentation.WebApi.RequireIdempotencyKeyAttribute.RequireIdempotencyKeyAttribute() -> void
+SharedKernel.Presentation.WebApi.RequireIfMatchAttribute
+SharedKernel.Presentation.WebApi.RequireIfMatchAttribute.RequireIfMatchAttribute() -> void
+SharedKernel.Presentation.WebApi.RequireEndpointPermissionAttribute
+SharedKernel.Presentation.WebApi.RequireEndpointPermissionAttribute.Permissions.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
+SharedKernel.Presentation.WebApi.RequireEndpointPermissionAttribute.Policy.get -> string!
+SharedKernel.Presentation.WebApi.RequireEndpointPermissionAttribute.RequireEndpointPermissionAttribute(params string![]! permissions) -> void
+SharedKernel.Presentation.WebApi.RequireEndpointPermissionAttribute.Roles.get -> string?
+SharedKernel.Presentation.WebApi.RequireRoleAttribute
+SharedKernel.Presentation.WebApi.RequireRoleAttribute.Policy.get -> string!
+SharedKernel.Presentation.WebApi.RequireRoleAttribute.RequireRoleAttribute(params string![]! roles) -> void
+SharedKernel.Presentation.WebApi.RequireRoleAttribute.Roles.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
+SharedKernel.Presentation.WebApi.ResultHttpExtensions
+SharedKernel.Presentation.WebApi.SharedKernelWebApiOptions
+SharedKernel.Presentation.WebApi.SharedKernelWebApiOptions.CorrelationId.get -> SharedKernel.Presentation.WebApi.WebApiCorrelationIdOptions!
+SharedKernel.Presentation.WebApi.SharedKernelWebApiOptions.Cors.get -> SharedKernel.Presentation.WebApi.WebApiCorsOptions!
+SharedKernel.Presentation.WebApi.SharedKernelWebApiOptions.Limits.get -> SharedKernel.Presentation.WebApi.WebApiLimitsOptions!
+SharedKernel.Presentation.WebApi.SharedKernelWebApiOptions.Problems.get -> SharedKernel.Presentation.WebApi.WebApiProblemsOptions!
+SharedKernel.Presentation.WebApi.SharedKernelWebApiOptions.RemoveServerHeader.get -> bool
+SharedKernel.Presentation.WebApi.SharedKernelWebApiOptions.RemoveServerHeader.set -> void
+SharedKernel.Presentation.WebApi.SharedKernelWebApiOptions.SecurityHeaders.get -> SharedKernel.Presentation.WebApi.WebApiSecurityHeadersOptions!
+SharedKernel.Presentation.WebApi.SharedKernelWebApiOptions.SharedKernelWebApiOptions() -> void
+SharedKernel.Presentation.WebApi.SharedKernelWebApiOptions.TrustInboundBaggage.get -> bool
+SharedKernel.Presentation.WebApi.SharedKernelWebApiOptions.TrustInboundBaggage.set -> void
+SharedKernel.Presentation.WebApi.WebApiApplicationBuilderExtensions
+SharedKernel.Presentation.WebApi.WebApiCorrelationIdOptions
+SharedKernel.Presentation.WebApi.WebApiCorrelationIdOptions.AllowedCharacterPattern.get -> string!
+SharedKernel.Presentation.WebApi.WebApiCorrelationIdOptions.AllowedCharacterPattern.set -> void
+SharedKernel.Presentation.WebApi.WebApiCorrelationIdOptions.Enabled.get -> bool
+SharedKernel.Presentation.WebApi.WebApiCorrelationIdOptions.Enabled.set -> void
+SharedKernel.Presentation.WebApi.WebApiCorrelationIdOptions.MaxLength.get -> int
+SharedKernel.Presentation.WebApi.WebApiCorrelationIdOptions.MaxLength.set -> void
+SharedKernel.Presentation.WebApi.WebApiCorrelationIdOptions.WebApiCorrelationIdOptions() -> void
+SharedKernel.Presentation.WebApi.WebApiCorsOptions
+SharedKernel.Presentation.WebApi.WebApiCorsOptions.AllowCredentials.get -> bool
+SharedKernel.Presentation.WebApi.WebApiCorsOptions.AllowCredentials.set -> void
+SharedKernel.Presentation.WebApi.WebApiCorsOptions.AllowedHeaders.get -> System.Collections.Generic.IList<string!>!
+SharedKernel.Presentation.WebApi.WebApiCorsOptions.AllowedMethods.get -> System.Collections.Generic.IList<string!>!
+SharedKernel.Presentation.WebApi.WebApiCorsOptions.AllowedOrigins.get -> System.Collections.Generic.IList<string!>!
+SharedKernel.Presentation.WebApi.WebApiCorsOptions.ExposedHeaders.get -> System.Collections.Generic.IList<string!>!
+SharedKernel.Presentation.WebApi.WebApiCorsOptions.PreflightMaxAge.get -> System.TimeSpan
+SharedKernel.Presentation.WebApi.WebApiCorsOptions.PreflightMaxAge.set -> void
+SharedKernel.Presentation.WebApi.WebApiCorsOptions.WebApiCorsOptions() -> void
+SharedKernel.Presentation.WebApi.WebApiHostBuilderExtensions
+SharedKernel.Presentation.WebApi.WebApiLimitsOptions
+SharedKernel.Presentation.WebApi.WebApiLimitsOptions.MaxJsonDepth.get -> int?
+SharedKernel.Presentation.WebApi.WebApiLimitsOptions.MaxJsonDepth.set -> void
+SharedKernel.Presentation.WebApi.WebApiLimitsOptions.MaxRequestBodySize.get -> long?
+SharedKernel.Presentation.WebApi.WebApiLimitsOptions.MaxRequestBodySize.set -> void
+SharedKernel.Presentation.WebApi.WebApiLimitsOptions.WebApiLimitsOptions() -> void
+SharedKernel.Presentation.WebApi.WebApiPipeline
+SharedKernel.Presentation.WebApi.WebApiPipeline.AtStart(System.Action<Microsoft.AspNetCore.Builder.IApplicationBuilder!>! configure) -> SharedKernel.Presentation.WebApi.WebApiPipeline!
+SharedKernel.Presentation.WebApi.WebApiPipeline.BeforeAuthentication(System.Action<Microsoft.AspNetCore.Builder.IApplicationBuilder!>! configure) -> SharedKernel.Presentation.WebApi.WebApiPipeline!
+SharedKernel.Presentation.WebApi.WebApiPipeline.BeforeAuthorization(System.Action<Microsoft.AspNetCore.Builder.IApplicationBuilder!>! configure) -> SharedKernel.Presentation.WebApi.WebApiPipeline!
+SharedKernel.Presentation.WebApi.WebApiProblemsOptions
+SharedKernel.Presentation.WebApi.WebApiProblemsOptions.IncludeExceptionDetails.get -> bool?
+SharedKernel.Presentation.WebApi.WebApiProblemsOptions.IncludeExceptionDetails.set -> void
+SharedKernel.Presentation.WebApi.WebApiProblemsOptions.PreconditionFailedErrorCodes.get -> System.Collections.Generic.IList<string!>!
+SharedKernel.Presentation.WebApi.WebApiProblemsOptions.TypeBaseUri.get -> System.Uri?
+SharedKernel.Presentation.WebApi.WebApiProblemsOptions.TypeBaseUri.set -> void
+SharedKernel.Presentation.WebApi.WebApiProblemsOptions.UnavailableRetryAfter.get -> System.TimeSpan?
+SharedKernel.Presentation.WebApi.WebApiProblemsOptions.UnavailableRetryAfter.set -> void
+SharedKernel.Presentation.WebApi.WebApiProblemsOptions.WebApiProblemsOptions() -> void
+SharedKernel.Presentation.WebApi.WebApiSecurityHeadersOptions
+SharedKernel.Presentation.WebApi.WebApiSecurityHeadersOptions.CacheControl.get -> string?
+SharedKernel.Presentation.WebApi.WebApiSecurityHeadersOptions.CacheControl.set -> void
+SharedKernel.Presentation.WebApi.WebApiSecurityHeadersOptions.ContentSecurityPolicy.get -> string?
+SharedKernel.Presentation.WebApi.WebApiSecurityHeadersOptions.ContentSecurityPolicy.set -> void
+SharedKernel.Presentation.WebApi.WebApiSecurityHeadersOptions.ContentTypeOptions.get -> string?
+SharedKernel.Presentation.WebApi.WebApiSecurityHeadersOptions.ContentTypeOptions.set -> void
+SharedKernel.Presentation.WebApi.WebApiSecurityHeadersOptions.Enabled.get -> bool
+SharedKernel.Presentation.WebApi.WebApiSecurityHeadersOptions.Enabled.set -> void
+SharedKernel.Presentation.WebApi.WebApiSecurityHeadersOptions.FrameOptions.get -> string?
+SharedKernel.Presentation.WebApi.WebApiSecurityHeadersOptions.FrameOptions.set -> void
+SharedKernel.Presentation.WebApi.WebApiSecurityHeadersOptions.Hsts.get -> bool
+SharedKernel.Presentation.WebApi.WebApiSecurityHeadersOptions.Hsts.set -> void
+SharedKernel.Presentation.WebApi.WebApiSecurityHeadersOptions.HstsIncludeSubDomains.get -> bool
+SharedKernel.Presentation.WebApi.WebApiSecurityHeadersOptions.HstsIncludeSubDomains.set -> void
+SharedKernel.Presentation.WebApi.WebApiSecurityHeadersOptions.HstsMaxAge.get -> System.TimeSpan
+SharedKernel.Presentation.WebApi.WebApiSecurityHeadersOptions.HstsMaxAge.set -> void
+SharedKernel.Presentation.WebApi.WebApiSecurityHeadersOptions.HstsPreload.get -> bool
+SharedKernel.Presentation.WebApi.WebApiSecurityHeadersOptions.HstsPreload.set -> void
+SharedKernel.Presentation.WebApi.WebApiSecurityHeadersOptions.PermissionsPolicy.get -> string?
+SharedKernel.Presentation.WebApi.WebApiSecurityHeadersOptions.PermissionsPolicy.set -> void
+SharedKernel.Presentation.WebApi.WebApiSecurityHeadersOptions.ReferrerPolicy.get -> string?
+SharedKernel.Presentation.WebApi.WebApiSecurityHeadersOptions.ReferrerPolicy.set -> void
+SharedKernel.Presentation.WebApi.WebApiSecurityHeadersOptions.WebApiSecurityHeadersOptions() -> void
+const SharedKernel.Presentation.WebApi.IdempotencyKey.MaxLength = 256 -> int
+const SharedKernel.Presentation.WebApi.PresentationErrorCodes.IdempotencyKeyInvalid = "idempotency.key_invalid" -> string!
+const SharedKernel.Presentation.WebApi.PresentationErrorCodes.IdempotencyKeyRequired = "idempotency.key_required" -> string!
+const SharedKernel.Presentation.WebApi.PresentationErrorCodes.InvalidValue = "validation.invalid_value" -> string!
+const SharedKernel.Presentation.WebApi.PresentationErrorCodes.OriginNotAllowed = "forbidden.origin_not_allowed" -> string!
+const SharedKernel.Presentation.WebApi.PresentationErrorCodes.PreconditionFailed = "precondition.failed" -> string!
+const SharedKernel.Presentation.WebApi.PresentationErrorCodes.PreconditionInvalid = "precondition.invalid" -> string!
+const SharedKernel.Presentation.WebApi.PresentationErrorCodes.PreconditionRequired = "precondition.required" -> string!
+const SharedKernel.Presentation.WebApi.PresentationErrorCodes.RateLimitExceeded = "rate_limit.exceeded" -> string!
+const SharedKernel.Presentation.WebApi.PresentationErrorCodes.RequestTooLarge = "request.too_large" -> string!
+const SharedKernel.Presentation.WebApi.PresentationErrorCodes.StepUpRequired = "unauthorized.step_up_required" -> string!
+const SharedKernel.Presentation.WebApi.ProblemDetailsExtensionNames.CorrelationId = "correlationId" -> string!
+const SharedKernel.Presentation.WebApi.ProblemDetailsExtensionNames.ErrorCode = "errorCode" -> string!
+const SharedKernel.Presentation.WebApi.ProblemDetailsExtensionNames.ErrorCodes = "errorCodes" -> string!
+const SharedKernel.Presentation.WebApi.ProblemDetailsExtensionNames.Errors = "errors" -> string!
+const SharedKernel.Presentation.WebApi.ProblemDetailsExtensionNames.Exception = "exception" -> string!
+const SharedKernel.Presentation.WebApi.ProblemDetailsExtensionNames.TraceId = "traceId" -> string!
+const SharedKernel.Presentation.WebApi.WebApiCorrelationIdOptions.DefaultAllowedCharacterPattern = "^[A-Za-z0-9\\-_:.]+$" -> string!
+override SharedKernel.Presentation.WebApi.CursorPaging.Equals(object? obj) -> bool
+override SharedKernel.Presentation.WebApi.CursorPaging.GetHashCode() -> int
+override SharedKernel.Presentation.WebApi.CursorPaging.ToString() -> string!
+override SharedKernel.Presentation.WebApi.IdempotencyKey.Equals(object? obj) -> bool
+override SharedKernel.Presentation.WebApi.IdempotencyKey.GetHashCode() -> int
+override SharedKernel.Presentation.WebApi.IdempotencyKey.ToString() -> string!
+override SharedKernel.Presentation.WebApi.IfMatch<TVersion>.Equals(object? obj) -> bool
+override SharedKernel.Presentation.WebApi.IfMatch<TVersion>.GetHashCode() -> int
+override SharedKernel.Presentation.WebApi.IfMatch<TVersion>.ToString() -> string!
+override SharedKernel.Presentation.WebApi.Paging.Equals(object? obj) -> bool
+override SharedKernel.Presentation.WebApi.Paging.GetHashCode() -> int
+override SharedKernel.Presentation.WebApi.Paging.ToString() -> string!
+static SharedKernel.Presentation.WebApi.AuthorizationConventionExtensions.RequireAuthenticationMethod<TBuilder>(this TBuilder builder, System.TimeSpan maxAge, params string![]! methods) -> TBuilder
+static SharedKernel.Presentation.WebApi.AuthorizationConventionExtensions.RequireAuthenticationMethod<TBuilder>(this TBuilder builder, params string![]! methods) -> TBuilder
+static SharedKernel.Presentation.WebApi.AuthorizationConventionExtensions.RequireFreshAuthentication<TBuilder>(this TBuilder builder, System.TimeSpan maxAge) -> TBuilder
+static SharedKernel.Presentation.WebApi.AuthorizationConventionExtensions.RequireFreshAuthentication<TBuilder>(this TBuilder builder, int maxAgeSeconds) -> TBuilder
+static SharedKernel.Presentation.WebApi.AuthorizationConventionExtensions.RequireEndpointPermission<TBuilder>(this TBuilder builder, params string![]! permissions) -> TBuilder
+static SharedKernel.Presentation.WebApi.AuthorizationConventionExtensions.RequireRole<TBuilder>(this TBuilder builder, params string![]! roles) -> TBuilder
+static SharedKernel.Presentation.WebApi.ConditionalRequestExtensions.AcceptIfMatch<TBuilder>(this TBuilder builder) -> TBuilder
+static SharedKernel.Presentation.WebApi.ConditionalRequestExtensions.GetIfMatch(this Microsoft.AspNetCore.Http.HttpContext! httpContext) -> string?
+static SharedKernel.Presentation.WebApi.ConditionalRequestExtensions.RequireIfMatch<TBuilder>(this TBuilder builder) -> TBuilder
+static SharedKernel.Presentation.WebApi.ConditionalRequestExtensions.SetETag(this Microsoft.AspNetCore.Http.HttpResponse! response, string! version) -> void
+static SharedKernel.Presentation.WebApi.ContentSecurityPolicyExtensions.WithContentSecurityPolicy<TBuilder>(this TBuilder builder, string? policy) -> TBuilder
+static SharedKernel.Presentation.WebApi.CorrelationIdHttpContextExtensions.GetCorrelationId(this Microsoft.AspNetCore.Http.HttpContext! httpContext) -> string?
+static SharedKernel.Presentation.WebApi.CursorPaging.BindAsync(Microsoft.AspNetCore.Http.HttpContext! context) -> System.Threading.Tasks.ValueTask<SharedKernel.Presentation.WebApi.CursorPaging?>
+static SharedKernel.Presentation.WebApi.CursorPaging.operator !=(SharedKernel.Presentation.WebApi.CursorPaging? left, SharedKernel.Presentation.WebApi.CursorPaging? right) -> bool
+static SharedKernel.Presentation.WebApi.CursorPaging.operator ==(SharedKernel.Presentation.WebApi.CursorPaging? left, SharedKernel.Presentation.WebApi.CursorPaging? right) -> bool
+static SharedKernel.Presentation.WebApi.ErrorProblemDetailsExtensions.ToProblemDetails(this SharedKernel.Primitives.Errors.Error! error, Microsoft.AspNetCore.Http.HttpContext! httpContext) -> Microsoft.AspNetCore.Mvc.ProblemDetails!
+static SharedKernel.Presentation.WebApi.IdempotencyKey.BindAsync(Microsoft.AspNetCore.Http.HttpContext! context) -> System.Threading.Tasks.ValueTask<SharedKernel.Presentation.WebApi.IdempotencyKey?>
+static SharedKernel.Presentation.WebApi.IdempotencyKey.operator !=(SharedKernel.Presentation.WebApi.IdempotencyKey? left, SharedKernel.Presentation.WebApi.IdempotencyKey? right) -> bool
+static SharedKernel.Presentation.WebApi.IdempotencyKey.operator ==(SharedKernel.Presentation.WebApi.IdempotencyKey? left, SharedKernel.Presentation.WebApi.IdempotencyKey? right) -> bool
+static SharedKernel.Presentation.WebApi.IdempotencyKeyExtensions.AcceptIdempotencyKey<TBuilder>(this TBuilder builder) -> TBuilder
+static SharedKernel.Presentation.WebApi.IdempotencyKeyExtensions.GetIdempotencyKey(this Microsoft.AspNetCore.Http.HttpContext! httpContext) -> string?
+static SharedKernel.Presentation.WebApi.IdempotencyKeyExtensions.RequireIdempotencyKey<TBuilder>(this TBuilder builder) -> TBuilder
+static SharedKernel.Presentation.WebApi.IfMatch<TVersion>.BindAsync(Microsoft.AspNetCore.Http.HttpContext! context) -> System.Threading.Tasks.ValueTask<SharedKernel.Presentation.WebApi.IfMatch<TVersion>?>
+static SharedKernel.Presentation.WebApi.IfMatch<TVersion>.operator !=(SharedKernel.Presentation.WebApi.IfMatch<TVersion>? left, SharedKernel.Presentation.WebApi.IfMatch<TVersion>? right) -> bool
+static SharedKernel.Presentation.WebApi.IfMatch<TVersion>.operator ==(SharedKernel.Presentation.WebApi.IfMatch<TVersion>? left, SharedKernel.Presentation.WebApi.IfMatch<TVersion>? right) -> bool
+static SharedKernel.Presentation.WebApi.Paging.BindAsync(Microsoft.AspNetCore.Http.HttpContext! context) -> System.Threading.Tasks.ValueTask<SharedKernel.Presentation.WebApi.Paging?>
+static SharedKernel.Presentation.WebApi.Paging.operator !=(SharedKernel.Presentation.WebApi.Paging? left, SharedKernel.Presentation.WebApi.Paging? right) -> bool
+static SharedKernel.Presentation.WebApi.Paging.operator ==(SharedKernel.Presentation.WebApi.Paging? left, SharedKernel.Presentation.WebApi.Paging? right) -> bool
+static SharedKernel.Presentation.WebApi.RequestSizeLimitExtensions.DisableRequestSizeLimit<TBuilder>(this TBuilder builder) -> TBuilder
+static SharedKernel.Presentation.WebApi.RequestSizeLimitExtensions.WithRequestSizeLimit<TBuilder>(this TBuilder builder, long bytes) -> TBuilder
+static SharedKernel.Presentation.WebApi.ResultHttpExtensions.ToAccepted(this SharedKernel.Primitives.Results.Result result, string? location = null) -> Microsoft.AspNetCore.Http.HttpResults.Results<Microsoft.AspNetCore.Http.HttpResults.Accepted!, SharedKernel.Presentation.WebApi.ErrorHttpResult!>!
+static SharedKernel.Presentation.WebApi.ResultHttpExtensions.ToAccepted(this System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>! result, string? location = null) -> System.Threading.Tasks.Task<Microsoft.AspNetCore.Http.HttpResults.Results<Microsoft.AspNetCore.Http.HttpResults.Accepted!, SharedKernel.Presentation.WebApi.ErrorHttpResult!>!>!
+static SharedKernel.Presentation.WebApi.ResultHttpExtensions.ToAccepted<T>(this SharedKernel.Primitives.Results.Result<T>! result, System.Func<T, string!>? location = null) -> Microsoft.AspNetCore.Http.HttpResults.Results<Microsoft.AspNetCore.Http.HttpResults.Accepted<T>!, SharedKernel.Presentation.WebApi.ErrorHttpResult!>!
+static SharedKernel.Presentation.WebApi.ResultHttpExtensions.ToAccepted<T>(this System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<T>!>! result, System.Func<T, string!>? location = null) -> System.Threading.Tasks.Task<Microsoft.AspNetCore.Http.HttpResults.Results<Microsoft.AspNetCore.Http.HttpResults.Accepted<T>!, SharedKernel.Presentation.WebApi.ErrorHttpResult!>!>!
+static SharedKernel.Presentation.WebApi.ResultHttpExtensions.ToCreated(this SharedKernel.Primitives.Results.Result result, string! location) -> Microsoft.AspNetCore.Http.HttpResults.Results<Microsoft.AspNetCore.Http.HttpResults.Created!, SharedKernel.Presentation.WebApi.ErrorHttpResult!>!
+static SharedKernel.Presentation.WebApi.ResultHttpExtensions.ToCreated(this System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>! result, string! location) -> System.Threading.Tasks.Task<Microsoft.AspNetCore.Http.HttpResults.Results<Microsoft.AspNetCore.Http.HttpResults.Created!, SharedKernel.Presentation.WebApi.ErrorHttpResult!>!>!
+static SharedKernel.Presentation.WebApi.ResultHttpExtensions.ToCreated<T, TOut>(this SharedKernel.Primitives.Results.Result<T>! result, System.Func<T, string!>! location, System.Func<T, TOut>! map) -> Microsoft.AspNetCore.Http.HttpResults.Results<Microsoft.AspNetCore.Http.HttpResults.Created<TOut>!, SharedKernel.Presentation.WebApi.ErrorHttpResult!>!
+static SharedKernel.Presentation.WebApi.ResultHttpExtensions.ToCreated<T, TOut>(this System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<T>!>! result, System.Func<T, string!>! location, System.Func<T, TOut>! map) -> System.Threading.Tasks.Task<Microsoft.AspNetCore.Http.HttpResults.Results<Microsoft.AspNetCore.Http.HttpResults.Created<TOut>!, SharedKernel.Presentation.WebApi.ErrorHttpResult!>!>!
+static SharedKernel.Presentation.WebApi.ResultHttpExtensions.ToCreated<T>(this SharedKernel.Primitives.Results.Result<T>! result, System.Func<T, string!>! location) -> Microsoft.AspNetCore.Http.HttpResults.Results<Microsoft.AspNetCore.Http.HttpResults.Created<T>!, SharedKernel.Presentation.WebApi.ErrorHttpResult!>!
+static SharedKernel.Presentation.WebApi.ResultHttpExtensions.ToCreated<T>(this System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<T>!>! result, System.Func<T, string!>! location) -> System.Threading.Tasks.Task<Microsoft.AspNetCore.Http.HttpResults.Results<Microsoft.AspNetCore.Http.HttpResults.Created<T>!, SharedKernel.Presentation.WebApi.ErrorHttpResult!>!>!
+static SharedKernel.Presentation.WebApi.ResultHttpExtensions.ToErrorResult(this SharedKernel.Primitives.Errors.Error! error) -> SharedKernel.Presentation.WebApi.ErrorHttpResult!
+static SharedKernel.Presentation.WebApi.ResultHttpExtensions.ToHttpResult<T, TSuccess>(this SharedKernel.Primitives.Results.Result<T>! result, System.Func<T, TSuccess>! onSuccess) -> Microsoft.AspNetCore.Http.HttpResults.Results<TSuccess, SharedKernel.Presentation.WebApi.ErrorHttpResult!>!
+static SharedKernel.Presentation.WebApi.ResultHttpExtensions.ToHttpResult<T, TSuccess>(this System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<T>!>! result, System.Func<T, TSuccess>! onSuccess) -> System.Threading.Tasks.Task<Microsoft.AspNetCore.Http.HttpResults.Results<TSuccess, SharedKernel.Presentation.WebApi.ErrorHttpResult!>!>!
+static SharedKernel.Presentation.WebApi.ResultHttpExtensions.ToHttpResult<TSuccess>(this SharedKernel.Primitives.Results.Result result, System.Func<TSuccess>! onSuccess) -> Microsoft.AspNetCore.Http.HttpResults.Results<TSuccess, SharedKernel.Presentation.WebApi.ErrorHttpResult!>!
+static SharedKernel.Presentation.WebApi.ResultHttpExtensions.ToHttpResult<TSuccess>(this System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>! result, System.Func<TSuccess>! onSuccess) -> System.Threading.Tasks.Task<Microsoft.AspNetCore.Http.HttpResults.Results<TSuccess, SharedKernel.Presentation.WebApi.ErrorHttpResult!>!>!
+static SharedKernel.Presentation.WebApi.ResultHttpExtensions.ToNoContent(this SharedKernel.Primitives.Results.Result result) -> Microsoft.AspNetCore.Http.HttpResults.Results<Microsoft.AspNetCore.Http.HttpResults.NoContent!, SharedKernel.Presentation.WebApi.ErrorHttpResult!>!
+static SharedKernel.Presentation.WebApi.ResultHttpExtensions.ToNoContent(this System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>! result) -> System.Threading.Tasks.Task<Microsoft.AspNetCore.Http.HttpResults.Results<Microsoft.AspNetCore.Http.HttpResults.NoContent!, SharedKernel.Presentation.WebApi.ErrorHttpResult!>!>!
+static SharedKernel.Presentation.WebApi.ResultHttpExtensions.ToNoContent<T>(this SharedKernel.Primitives.Results.Result<T>! result) -> Microsoft.AspNetCore.Http.HttpResults.Results<Microsoft.AspNetCore.Http.HttpResults.NoContent!, SharedKernel.Presentation.WebApi.ErrorHttpResult!>!
+static SharedKernel.Presentation.WebApi.ResultHttpExtensions.ToNoContent<T>(this System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<T>!>! result) -> System.Threading.Tasks.Task<Microsoft.AspNetCore.Http.HttpResults.Results<Microsoft.AspNetCore.Http.HttpResults.NoContent!, SharedKernel.Presentation.WebApi.ErrorHttpResult!>!>!
+static SharedKernel.Presentation.WebApi.ResultHttpExtensions.ToOk<T, TOut>(this SharedKernel.Primitives.Results.Result<T>! result, System.Func<T, TOut>! map) -> Microsoft.AspNetCore.Http.HttpResults.Results<Microsoft.AspNetCore.Http.HttpResults.Ok<TOut>!, SharedKernel.Presentation.WebApi.ErrorHttpResult!>!
+static SharedKernel.Presentation.WebApi.ResultHttpExtensions.ToOk<T, TOut>(this System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<T>!>! result, System.Func<T, TOut>! map) -> System.Threading.Tasks.Task<Microsoft.AspNetCore.Http.HttpResults.Results<Microsoft.AspNetCore.Http.HttpResults.Ok<TOut>!, SharedKernel.Presentation.WebApi.ErrorHttpResult!>!>!
+static SharedKernel.Presentation.WebApi.ResultHttpExtensions.ToOk<T>(this SharedKernel.Primitives.Results.Result<T>! result) -> Microsoft.AspNetCore.Http.HttpResults.Results<Microsoft.AspNetCore.Http.HttpResults.Ok<T>!, SharedKernel.Presentation.WebApi.ErrorHttpResult!>!
+static SharedKernel.Presentation.WebApi.ResultHttpExtensions.ToOk<T>(this System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<T>!>! result) -> System.Threading.Tasks.Task<Microsoft.AspNetCore.Http.HttpResults.Results<Microsoft.AspNetCore.Http.HttpResults.Ok<T>!, SharedKernel.Presentation.WebApi.ErrorHttpResult!>!>!
+static SharedKernel.Presentation.WebApi.ResultHttpExtensions.ToOkWithETag<T, TOut>(this SharedKernel.Primitives.Results.Result<T>! result, System.Func<T, string!>! version, System.Func<T, TOut>! map) -> Microsoft.AspNetCore.Http.HttpResults.Results<SharedKernel.Presentation.WebApi.OkWithETag<TOut>!, SharedKernel.Presentation.WebApi.ErrorHttpResult!>!
+static SharedKernel.Presentation.WebApi.ResultHttpExtensions.ToOkWithETag<T, TOut>(this System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<T>!>! result, System.Func<T, string!>! version, System.Func<T, TOut>! map) -> System.Threading.Tasks.Task<Microsoft.AspNetCore.Http.HttpResults.Results<SharedKernel.Presentation.WebApi.OkWithETag<TOut>!, SharedKernel.Presentation.WebApi.ErrorHttpResult!>!>!
+static SharedKernel.Presentation.WebApi.ResultHttpExtensions.ToOkWithETag<T>(this SharedKernel.Primitives.Results.Result<T>! result, System.Func<T, string!>! version) -> Microsoft.AspNetCore.Http.HttpResults.Results<SharedKernel.Presentation.WebApi.OkWithETag<T>!, SharedKernel.Presentation.WebApi.ErrorHttpResult!>!
+static SharedKernel.Presentation.WebApi.ResultHttpExtensions.ToOkWithETag<T>(this System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<T>!>! result, System.Func<T, string!>! version) -> System.Threading.Tasks.Task<Microsoft.AspNetCore.Http.HttpResults.Results<SharedKernel.Presentation.WebApi.OkWithETag<T>!, SharedKernel.Presentation.WebApi.ErrorHttpResult!>!>!
+static SharedKernel.Presentation.WebApi.SharedKernelWebApiOptions.SectionName.get -> string!
+static SharedKernel.Presentation.WebApi.WebApiApplicationBuilderExtensions.UseSharedKernelWebApi(this Microsoft.AspNetCore.Builder.IApplicationBuilder! app, System.Action<SharedKernel.Presentation.WebApi.WebApiPipeline!>? configure = null) -> Microsoft.AspNetCore.Builder.IApplicationBuilder!
+static SharedKernel.Presentation.WebApi.WebApiHostBuilderExtensions.AddSharedKernelWebApi(this Microsoft.Extensions.Hosting.IHostApplicationBuilder! builder, System.Action<SharedKernel.Presentation.WebApi.SharedKernelWebApiOptions!>? configure = null) -> Microsoft.Extensions.Hosting.IHostApplicationBuilder!
+SharedKernel.Presentation.WebApi.IEndpointModule
+SharedKernel.Presentation.WebApi.IEndpointModule.Map(Microsoft.AspNetCore.Routing.IEndpointRouteBuilder! app) -> void

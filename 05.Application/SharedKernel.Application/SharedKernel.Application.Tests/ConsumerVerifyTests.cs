@@ -1,9 +1,6 @@
 using FluentAssertions;
 using MediatR;
 using Microsoft.Extensions.DependencyInjection;
-using SharedKernel.Application.DomainEvents;
-using SharedKernel.Application.Extensions;
-using SharedKernel.Application.Messaging;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Domain.Events;
 using SharedKernel.Primitives.Results;
@@ -12,8 +9,8 @@ namespace SharedKernel.Application.Tests;
 
 /// <summary>
 /// Consumer-verify tests for <c>SharedKernel.Application</c> in isolation. Proves the full DI
-/// registration chain a real consuming service would wire up — <c>AddMediatR</c> +
-/// <c>AddSharedKernelApplication()</c> + <c>AddDomainEventHandler&lt;,&gt;</c> — resolves and
+/// registration chain a real consuming service would wire up — <c>AddSharedKernelApplication(assembly)</c> +
+/// <c>AddDomainEventHandler&lt;,&gt;</c> — resolves and
 /// executes with zero exceptions, end to end, mirroring the pattern established by
 /// <c>07.Messaging</c>'s <c>ConsumerVerifyTests</c>.
 /// </summary>
@@ -49,16 +46,14 @@ public sealed class ConsumerVerifyTests
 
     /// <summary>
     /// Builds a service collection exactly as documented in <c>CLAUDE.md</c>'s "DI Registration"
-    /// section — the consuming service owns <c>AddMediatR</c>; this package only adds the
-    /// dispatcher bridge and the domain-event-handler registration.
+    /// section — one registration call, plus one call per domain-event handler.
     /// </summary>
     private static ServiceProvider BuildConsumerProvider(TaskCompletionSource<WidgetCreatedDomainEvent> tcs)
     {
         var services = new ServiceCollection();
         services.AddSingleton(tcs);
 
-        services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblyContaining<ConsumerVerifyTests>());
-        services.AddSharedKernelApplication();
+        services.AddSharedKernelApplication(typeof(ConsumerVerifyTests).Assembly);
         services.AddDomainEventHandler<WidgetCreatedDomainEvent, WidgetCreatedDomainEventHandler>();
 
         return services.BuildServiceProvider();

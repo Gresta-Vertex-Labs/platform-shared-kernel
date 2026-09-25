@@ -1,6 +1,6 @@
 # SharedKernel.Search.ElasticSearch
 
-ElasticSearch (analytics/heavy) implementation of [`SharedKernel.Search.Abstractions`](../SharedKernel.Search.Abstractions/README.md). Provides `ElasticSearchIndex<TDocument>` (`ISearchIndex<TDocument>`, alias-based read/write split), `ElasticSearchIndexProvisioner` (atomic alias cutover), `ElasticSearchProviderDescriptor`, `ElasticSearchFilterCompiler`, plus the ElasticSearch-exclusive `IAnalyticsSearch<TDocument>` (terms/cardinality/stats/date-histogram/range aggregations) and `ICursorSearch<TDocument>` (point-in-time + `search_after` deep pagination). Backed by `Elastic.Clients.Elasticsearch`.
+ElasticSearch (analytics/heavy) implementation of [`SharedKernel.Search.Abstractions`](../SharedKernel.Search.Abstractions/README.md). Provides `ElasticSearchIndex<TDocument>` (`ISearchIndex<TDocument>`, alias-based read/write split), `ElasticSearchIndexProvisioner` (atomic alias cutover), `ElasticSearchProviderDescriptor`, `ElasticSearchFilterCompiler`, plus the ElasticSearch-exclusive `IAnalyticsSearch<TDocument>` (terms/cardinality/stats/date-histogram/range aggregations), `ISuggestSearch<TDocument>` (completion-suggester type-ahead) and `ICursorSearch<TDocument>` (point-in-time + `search_after` deep pagination). Backed by `Elastic.Clients.Elasticsearch`.
 
 ## Included Types
 
@@ -10,6 +10,7 @@ ElasticSearch (analytics/heavy) implementation of [`SharedKernel.Search.Abstract
 - `IAnalyticsSearch<TDocument>` / `ElasticSearchAnalytics<TDocument>` — ElasticSearch-exclusive structured aggregations (`Terms`, `Cardinality`, `Stats`, `DateHistogram`, `Range`)
 - `ICursorSearch<TDocument>` / `ElasticSearchCursorSearch<TDocument>` — ElasticSearch-exclusive relevance-ordered deep pagination (point-in-time + `search_after`), including a resumable Open/Read/Close cursor triple
 - `IElasticSearchRawClientAccessor` — the last-resort raw-client escape hatch, registered only via `.AllowRawClientAccess()`
+- `ISuggestSearch<TDocument>` / `SearchSuggestion` — the ElasticSearch-exclusive completion suggester (declared here, never in `.Abstractions`)
 - `ElasticSearchOptions` — Options-pattern configuration, validated at startup
 - `ElasticSearchErrors` — ElasticSearch-specific `Error` factory (`InvalidCursor`, `CursorExpired`, `AggregationFailed`, `SourceSerializerContextMissing`)
 - `AddSharedKernelElasticSearchSearch(IConfiguration)` — DI registration entry point returning the fluent `ElasticSearchBuilder`
@@ -71,7 +72,6 @@ Binds from the `Search:ElasticSearch` section (`ElasticSearchOptions.SectionName
 | `NumberOfShards` | `int` | No | `1` | Primary shard count applied when provisioning a new index, `[1, 100]`. |
 | `NumberOfReplicas` | `int` | No | `1` | Replica count applied when provisioning a new index, `[0, 10]`. |
 | `RefreshIntervalSeconds` | `int` | No | `1` | Refresh interval applied when provisioning a new index, `[-1, 3600]`. |
-| `ValidateEngineVersionOnStart` | `bool` | No | `true` | Verifies the connected engine's version (must be 9.x or 10.x) at startup. |
 
 ```json
 {
@@ -84,6 +84,18 @@ Binds from the `Search:ElasticSearch` section (`ElasticSearchOptions.SectionName
   }
 }
 ```
+
+## Verifying the engine version and the live indexes
+
+```csharp
+// From a startup task or a deployment smoke test — never implicitly at first resolve.
+Result version = await host.Services.VerifyElasticSearchEngineVersionAsync(ct);
+Result indexes = await provisioner.VerifyRegisteredIndexesAsync(ct);
+```
+
+`VerifyElasticSearchEngineVersionAsync` checks the connected cluster is 9.x or 10.x, returning `search.engine_version_unsupported` for a reachable cluster on the wrong version and `search.unreachable` for one that does not answer. It is an explicit asynchronous call because the alternative was worse than useless: this check previously ran inside the `ElasticsearchClient` DI factory as a blocking `InfoAsync().GetAwaiter().GetResult()` gated by a `ValidateEngineVersionOnStart` flag, which ran at *first resolution* of the client — typically inside the first request, not at startup — blocked a thread pool thread on a network round trip to do it, and only logged, so an unsupported cluster served traffic anyway.
+
+`VerifyRegisteredIndexesAsync` (on the neutral `ISearchIndexProvisioner`) checks every registered index exists, is addressable with this service's credentials, and matches its declared schema fingerprint — catching the quiet failure where code ships declaring a field, synonym or stop word the live index was never rebuilt for.
 
 ## The `JsonSerializerContext` requirement for trimmed/AOT consumers
 
@@ -119,6 +131,40 @@ if (result.IsSuccess && result.Value.TryGetTerms("byRegion", out var byRegion))
 ```
 
 `AggregateAsync` and its closed `AggregationRequest`/`AggregationResult` hierarchies are the hardest wall in this domain: Meilisearch offers only facet-count distributions and numeric min/max, with no sum, average, cardinality, percentiles, date-histogram, or nested/pipeline aggregations. This is declared here — never in `SharedKernel.Search.Abstractions` — precisely so a call site that references it takes a compile-time dependency on ElasticSearch: a provider swap away from ElasticSearch surfaces as a **build error** enumerating every aggregation call site, not a runtime capability check.
+
+## The read alias, the write alias, and a silent failure worth knowing about
+
+`AddIndex<TDocument>(readAlias, writeAlias, …)` addresses reads and writes separately, because during a
+rebuild `CutoverAsync` repoints the read alias at a freshly-built staging index while writes continue
+elsewhere. **That split is not the starting configuration:** a service starts with both names equal to
+the concrete index `EnsureIndexAsync` creates.
+
+If you do split them, make sure the write alias actually resolves. ElasticSearch **auto-creates an index
+on write**, so a write alias pointing at nothing does not fail — every write lands in a brand-new,
+mapping-less, analysis-less index that no read ever touches. The bulk call reports success, the counts
+look plausible, and the data is simply not where the service is looking.
+
+`VerifyRegisteredIndexesAsync` checks for exactly this: that the write alias resolves *and* carries the
+schema fingerprint `EnsureIndexAsync` writes, which an implicitly-created index never has. Call it from
+a startup task or a deployment smoke test and the misconfiguration is loud instead of invisible.
+
+## Completion suggestions (type-ahead)
+
+```csharp
+builder.Services
+    .AddSharedKernelElasticSearchSearch(builder.Configuration)
+    .AddIndex<ProductSearchDocument>("products-read", "products-write", index => index /* ... */)
+    .WithCompletionField<ProductSearchDocument>("products-read", "nameSuggest")
+    .Build();
+
+// then, in application code:
+Result<IReadOnlyList<SearchSuggestion>> suggestions = await suggest.SuggestAsync(
+    "nameSuggest", prefix: "wirel", TenantScope.Of(tenantId), size: 10, fuzzy: false, ct);
+```
+
+`ISuggestSearch<TDocument>` exposes ElasticSearch's completion suggester — a purpose-built in-memory FST that answers prefix queries in roughly constant time and returns **suggestion strings with weights**, not documents. Meilisearch has no such structure and no such field type; its type-ahead story is ordinary prefix matching over the regular index, exposed as `IInstantSearch<TDocument>` in that package. The two solve the same product problem with different data structures and different result shapes, which is why each is declared in its own provider package rather than neutralised.
+
+A completion field must exist in the mapping **before** documents are indexed, so `WithCompletionField` is a provisioning-time declaration, not a query option — adding one to a populated index needs a staging rebuild and a cutover for existing documents to become suggestable. Your document type populates the field itself. On a tenanted index the tenant field is registered as a **category context** on the completion mapping: the suggester ignores query filters entirely, so a context is the only mechanism that can scope a suggestion, and without it one tenant's product names would complete another tenant's typing. `TenantScope` is mandatory and fails closed, exactly as on the neutral read path.
 
 ## Cursor-based deep pagination
 

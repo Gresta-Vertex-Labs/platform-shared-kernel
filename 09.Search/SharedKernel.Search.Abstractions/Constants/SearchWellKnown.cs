@@ -64,4 +64,25 @@ public static class SearchWellKnown
 
     /// <summary>The OpenTelemetry tag key carrying the active index name (<c>search.index</c>).</summary>
     public const string IndexTagName = "search.index";
+
+    /// <summary>
+    /// The OpenTelemetry tag key carrying the logical operation name (<c>search.operation</c>) — the
+    /// contract member being executed (<c>index</c>, <c>search</c>, <c>count</c>, …), never the
+    /// engine's own endpoint path.
+    /// </summary>
+    public const string OperationTagName = "search.operation";
+
+    /// <summary>
+    /// The name of the operation-duration histogram both providers record
+    /// (<c>search.client.operation.duration</c>, in seconds), mirroring
+    /// <c>storage.client.operation.duration</c> in <c>08.Storage</c>.
+    /// </summary>
+    public const string OperationDurationMetricName = "search.client.operation.duration";
+
+    /// <summary>
+    /// The name of the document-throughput counter both providers record
+    /// (<c>search.client.documents</c>), incremented by write and delete operations with the number of
+    /// documents the call was asked to affect.
+    /// </summary>
+    public const string DocumentsMetricName = "search.client.documents";
 }

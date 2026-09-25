@@ -1,6 +1,6 @@
 using MediatR;
 using Microsoft.Extensions.Logging;
-using SharedKernel.Application.Messaging;
+using SharedKernel.Application;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Scheduling.Diagnostics;
@@ -16,7 +16,7 @@ namespace SharedKernel.Scheduling.Jobs;
 /// <typeparam name="TCommand">The void-returning command type to dispatch.</typeparam>
 /// <remarks>
 /// <para>
-/// <b>Pipeline semantics.</b> Whatever <c>SharedKernel.Application.Behaviors</c> stages the service
+/// <b>Pipeline semantics.</b> Whatever <c>SharedKernel.Application</c> pipeline stages the service
 /// registered apply unchanged. Validation and authorization failures arrive as a failed
 /// <see cref="Result"/> (<c>ErrorType.Validation</c>, <c>ErrorType.Unauthorized</c>,
 /// <c>ErrorType.Forbidden</c>) and are logged as a failed fire, never thrown. Authorization reads

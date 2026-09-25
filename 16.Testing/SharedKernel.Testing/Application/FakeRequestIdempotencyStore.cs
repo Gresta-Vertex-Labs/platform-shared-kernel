@@ -1,11 +1,12 @@
 using System.Collections.Concurrent;
-using SharedKernel.Application.Behaviors.Idempotency;
+using SharedKernel.Application;
+using SharedKernel.Application.Idempotency;
 
 namespace SharedKernel.Testing.Application;
 
 /// <summary>
 /// In-memory, thread-safe fake implementation of <see cref="IRequestIdempotencyStore"/>
-/// (<c>05.Application.Behaviors</c>) for use in unit tests.
+/// (<c>SharedKernel.Application</c>) for use in unit tests.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -42,7 +43,14 @@ namespace SharedKernel.Testing.Application;
 /// clock seam to drive that expiry deterministically.
 /// </para>
 /// <para>
-/// Local-seam-only scope: fakes <c>05.Application.Behaviors</c>' own <see cref="IRequestIdempotencyStore"/>
+/// <b>Keys are stored exactly as given, never scoped here.</b> Through <see cref="IdempotencyBehavior{TRequest,TResponse}"/>
+/// the store receives the command's key already scoped to the tenant and the caller (a 64-character lowercase
+/// hexadecimal digest), the same key the Redis and EF Core stores receive, so a pipeline test sees the same
+/// per-caller separation production does: two callers using one key each get their own reservation. Consequently
+/// <see cref="Calls"/> records that scoped key, not the command's raw <see cref="IIdempotentRequest.IdempotencyKey"/>.
+/// </para>
+/// <para>
+/// Local-seam-only scope: fakes <c>SharedKernel.Application</c>' own <see cref="IRequestIdempotencyStore"/>
 /// exclusively and never references <c>18.Idempotency</c> or <c>07.Messaging.Abstractions.IIdempotencyStore</c>
 /// (consumer-side message deduplication, an unrelated contract that merely shares a naming pattern).
 /// </para>
@@ -58,7 +66,10 @@ public sealed class FakeRequestIdempotencyStore : IRequestIdempotencyStore
 
     /// <summary>One call recorded against this store, in the order it happened.</summary>
     /// <param name="Member">The member invoked: <c>TryBeginAsync</c>, <c>CompleteAsync</c>, or <c>ReleaseAsync</c>.</param>
-    /// <param name="Key">The idempotency key the call was made against.</param>
+    /// <param name="Key">
+    /// The key the call was made against. Through <see cref="IdempotencyBehavior{TRequest,TResponse}"/> this is the
+    /// tenant- and caller-scoped digest, not the command's raw idempotency key.
+    /// </param>
     public readonly record struct RecordedCall(string Member, string Key);
 
     /// <summary>Gets every call made against this store so far, in call order, for test assertions.</summary>

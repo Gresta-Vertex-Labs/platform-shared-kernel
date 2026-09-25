@@ -6,8 +6,8 @@ namespace SharedKernel.Messaging.Abstractions.Errors;
 /// </summary>
 /// <remarks>
 /// <para>
-/// These codes are a wire-visible contract: they reach callers, logs, dashboards and — through
-/// <c>14.Presentation</c>'s <c>Error.ToProblemDetails()</c> — HTTP responses. Treat a rename as a
+/// These codes are a wire-visible contract: they reach callers, logs, dashboards and — as the
+/// <c>errorCode</c> of <c>14.Presentation</c>'s problem responses — HTTP responses. Treat a rename as a
 /// breaking change; add a new member instead.
 /// </para>
 /// <para>
@@ -21,7 +21,8 @@ public static class MessagingErrorCodes
 {
     /// <summary>
     /// The broker could not be reached, timed out, or refused the operation for a transient reason.
-    /// Retryable: the same call may succeed later with no change to the message.
+    /// Retryable: the same call may succeed later with no change to the message. Carried by an
+    /// <see cref="SharedKernel.Primitives.Errors.ErrorType.Unavailable"/> error (HTTP 503).
     /// </summary>
     public const string Unavailable = "messaging.unavailable";
 

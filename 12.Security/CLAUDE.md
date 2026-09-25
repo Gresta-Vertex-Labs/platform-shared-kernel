@@ -37,6 +37,17 @@ as errors) and fails the build on an undocumented public member.
 - `TenantId` is `Guid?` from the credential; `UserContextTenantProvider` turns `null` into `Guid.Empty`, the
   platform's no-tenant sentinel (a tenant filter over `Guid.Empty` returns no rows).
 - `FindClaim`/`FindClaims` replace the old first-value-wins dictionary, which hid multi-valued claims.
+- **Method times** (P-562 X1). `GetAuthenticationMethodTime(method)` is non-null only when `WasAuthenticatedWith(method)`:
+  the latest `amr_time` claim for it (`SecurityClaimTypes.AuthenticationMethodTime`, value `{method} {unix seconds}`,
+  written and read only through `AuthenticationMethodTimeClaim`), else `AuthTime` (a method the credential carried was
+  verified at sign-in). Every mapper sets `UserContext.AuthenticationMethodTimes` from `AuthenticationMethodTimeClaim.Read`;
+  ApiKey and Mtls also map `amr`, which their handlers never issue but a claims transformation may add. The interface
+  member is default-implemented (`null`), so an older implementation compiles and fails closed under a maximum age.
+  This is the only thing that bounds a step-up on a SignalR connection, whose principal outlives its request: through
+  `14.Presentation`'s `[RequireAuthenticationMethod(…, MaxAgeSeconds = n)]` on the hub method, checked on every call (on
+  the hub class or `MapHub<T>()` only when the connection opens). A gRPC streaming call is authorized once, when it
+  starts, so a stream checks `GetAuthenticationMethodTime` itself. Code that adds an `amr`
+  value after sign-in must add its `amr_time` too, or the method is dated from `AuthTime`.
 
 ## Composition rules (the traps)
 
@@ -127,6 +138,11 @@ as errors) and fails the build on an undocumented public member.
   `sid` the step-up ends when the access token is refreshed. Replay protection and throttling stay keyed by subject.
   A step-up never changes `AuthTime`. `IsAuthenticationFresherThan` rejects an `AuthTime` more than
   `UserContext.MaxFutureAuthTime` (5 minutes) ahead of `now`; `UserContext` copies collections set through `init`.
+  The transformation stamps the step-up's `verifiedAt` (whole seconds, rounded down) as `amr_time` next to `amr=otp`,
+  and when the credential already carries the method it stamps only a step-up newer than what the identity reports
+  (latest `amr_time`, else `AuthTime`) — so the store is read on every request of a user with a session, `otp` in
+  the token or not. On HTTP the method disappears after `FreshnessWindow`; on a SignalR connection it does not, and
+  only a requirement with a maximum age on the hub method ends it.
 - **Recovery codes** are hashed with `IOneWayHasher` and stored with a two-character lookup so redemption verifies
   only matching hashes; `TryMarkUsedAsync` must be atomic.
 - **Tenant trust boundary.** A signed `tenant_id` proves the provider issued that value, not that the subject
@@ -162,7 +178,11 @@ as errors) and fails the build on an undocumented public member.
 - `13.ServiceDefaults`: `SharedKernel.MultiTenancy`'s claim strategy resolves the tenant through the registered mappers
   (no Oidc reference); `ServiceDefaults.Security.Mtls` calls `IMtlsCertificateValidator` during the TLS handshake
   (synchronously — a known limitation there) and forwards certificates, which Oidc's RFC 8705 check reads.
-- `14.Presentation` attributes read `IUserContext` (`HasRole`, `HasPermission`, `WasAuthenticatedWith`, `AuthTime`).
+- `14.Presentation`'s requirements (native authorization policies since P-562) resolve an `IUserContext` from the
+  principal being authorized through the registered mappers (`UserContextResolver.Resolve`), never the scoped
+  registration, and read `HasRole`, `HasPermission`, `WasAuthenticatedWith`, `IsAuthenticationFresherThan` and, for a
+  method with a maximum age, `GetAuthenticationMethodTime` bounded by `UserContext.MaxFutureAuthTime`. A signed-in
+  principal no mapper understands is refused (403, logged); a scheme without a mapper is named in a startup warning.
 - `16.Testing`: `FakeUserContext`, `SecurityTestContextBuilder`, `DpopTestProofBuilder`, `InMemoryApiKeyStore`,
   `InMemoryDpopReplayCache`, `InMemoryTotpStepUpStore`, `InMemoryRecoveryCodeStore`.
 - `00.Governance`: DPoP parsing only in `SharedKernel.Security.Oidc`; `ConnectionInfo.ClientCertificate` getter only
@@ -200,3 +220,12 @@ as errors) and fails the build on an undocumented public member.
   caught that `/issuer` parses as an absolute `file://` URI there; the authority must now be an absolute http or https
   URL. Publishing a package whose SharedKernel dependencies were last published at a lower commit height needs
   those dependencies republished from the same commit first (the workflow's feed dependency gate enforces it).
+- [2026-09-24] **P-562 X1 (security review S3) — step-up expires on long-lived connections.** A SignalR connection
+  kept `amr=otp` from connect time, so `[RequireAuthenticationMethod("otp")]` passed long after the step-up window.
+  Additive API: `SecurityClaimTypes.AuthenticationMethodTime` (`amr_time`), `AuthenticationMethodTimeClaim`
+  (`Create`/`Read`), `IUserContext.GetAuthenticationMethodTime` (default-implemented), `UserContext.AuthenticationMethodTimes`
+  and the member on the anonymous/system contexts. Every mapper maps the times (ApiKey/Mtls now also map `amr`);
+  `TotpStepUpClaimsTransformation` stamps the verification time and, when `otp` is already present, dates it with a
+  newer step-up instead of returning early. `14.Presentation.WebApi` gained `RequireAuthenticationMethodAttribute.MaxAgeSeconds`
+  and a `RequireAuthenticationMethod(TimeSpan, …)` convention. All five packages need a republish (Abstractions,
+  Oidc, ApiKey, Mtls, Totp).

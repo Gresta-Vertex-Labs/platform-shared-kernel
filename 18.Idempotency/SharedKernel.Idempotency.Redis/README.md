@@ -2,7 +2,7 @@
 
 Atomic, tenant-scoped, Redis-backed implementation of the platform's two idempotency contracts:
 
-- `IRequestIdempotencyStore` (`SharedKernel.Application.Behaviors`) — `RedisRequestIdempotencyStore`.
+- `IRequestIdempotencyStore` (`SharedKernel.Application.Idempotency`, in `SharedKernel.Application`) — `RedisRequestIdempotencyStore`.
 - `IIdempotencyStore` (`SharedKernel.Messaging.Abstractions`) — `RedisIdempotencyMessageStore`.
 
 This package ships no new interface — it implements two other domains' existing contracts. See the
@@ -60,7 +60,11 @@ crashed caller can never permanently wedge a key.
 ## Storage shape and atomicity
 
 Each entry is a single Redis hash (`status`, `fingerprint`, `token`, and — once completed —
-`response`), keyed as `sk:idempotency:{tenant}:key:{rawKey}`. `TryBeginAsync`, `CompleteAsync` and
+`response`), keyed as `sk:idempotency:{tenant}:key:{key}`, where `{key}` is the key passed to
+`TryBeginAsync` exactly as given. Through `IdempotencyBehavior` that is never the command's raw key but a
+SHA-256 digest of tenant, caller and key (64 lowercase hex characters), so a reservation belongs to one
+caller of one tenant and another caller using the same key cannot be handed its stored response. The
+`{tenant}` segment from `ITenantContextAccessor` stays on top of that. `TryBeginAsync`, `CompleteAsync` and
 `ReleaseAsync` are each a single Lua script — one atomic Redis round trip, comparing fingerprint/
 token/status and mutating the hash in the same call. No `WATCH`/`MULTI` retry loop and no
 check-then-act window ever exists.

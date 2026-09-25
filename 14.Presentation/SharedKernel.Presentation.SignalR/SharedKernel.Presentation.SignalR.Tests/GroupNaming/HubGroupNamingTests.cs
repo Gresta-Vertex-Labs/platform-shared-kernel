@@ -1,26 +1,24 @@
 using FluentAssertions;
-using SharedKernel.Presentation.SignalR.GroupNaming;
 using Xunit;
 
 namespace SharedKernel.Presentation.SignalR.Tests.GroupNaming;
 
-public class HubGroupNamingTests
+/// <summary>Design D12: tenant group names, and the B12 guard against one group for every tenantless connection.</summary>
+public sealed class HubGroupNamingTests
 {
     [Fact]
-    public void TenantGroup_FormatsAsTenantPrefixWithDFormatGuid()
+    public void TenantGroup_IsTheTenantPrefixAndTheDashedTenantId()
     {
         var tenantId = Guid.Parse("11111111-2222-3333-4444-555555555555");
 
-        var groupName = HubGroupNaming.TenantGroup(tenantId);
-
-        groupName.Should().Be("tenant:11111111-2222-3333-4444-555555555555");
+        HubGroupNaming.TenantGroup(tenantId).Should().Be("tenant:11111111-2222-3333-4444-555555555555");
     }
 
     [Fact]
-    public void TenantGroup_EmptyGuid_StillFormatsConsistently()
+    public void B12_TenantGroup_RefusesGuidEmpty()
     {
-        var groupName = HubGroupNaming.TenantGroup(Guid.Empty);
+        var build = () => HubGroupNaming.TenantGroup(Guid.Empty);
 
-        groupName.Should().Be("tenant:00000000-0000-0000-0000-000000000000");
+        build.Should().Throw<ArgumentException>().Which.ParamName.Should().Be("tenantId");
     }
 }

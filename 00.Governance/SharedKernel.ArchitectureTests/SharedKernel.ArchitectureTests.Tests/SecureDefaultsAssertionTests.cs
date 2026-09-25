@@ -56,15 +56,17 @@ namespace SharedKernel.ArchitectureTests.Tests;
 /// <c>CorsPolicyOptionsValidator.Validate</c> — the real, shipped guard is validator-based
 /// (<c>IValidateOptions&lt;CorsPolicyOptions&gt;</c> returning <c>ValidateOptionsResult.Fail</c>),
 /// never a direct <c>throw</c> inside this assembly's own IL; see that test's own remarks for the
-/// full design/reality-mismatch reasoning.
+/// full design/reality-mismatch reasoning. Since P-562 the guard lives in <c>WebApiOptionsValidator</c>
+/// (<c>AddSharedKernelCors</c> and <c>CorsPolicyOptionsValidator</c> were deleted), and T-328 follows it there.
 /// </para>
 /// <para>
 /// T-329/T-330 (<c>SK.00.CorrelationIdValidationGuard</c>/WO-063/P-415):
 /// <see cref="SecureDefaultsAssertion.AssertMethodBodyInvokesMethod"/> against contrived pass/
 /// fail-path fixtures shaped after <c>CorrelationIdMiddleware.ResolveCorrelationId</c>'s real
 /// check-then-substitute pattern. T-331: real-assembly, GATING verification re-points the same,
-/// already-shipped technique at the real <c>CorrelationIdMiddleware.ResolveCorrelationId</c> and
-/// its real private <c>IsValidFormat</c> callee — the first phase in this "lock a not-yet-shipped
+/// already-shipped technique at the real <c>CorrelationIdMiddleware</c> and its private validation
+/// callee — <c>ResolveCorrelationId</c>/<c>IsValidFormat</c> until P-562, <c>Resolve</c>/<c>IsValid</c> on the
+/// now-internal middleware since — the first phase in this "lock a not-yet-shipped
 /// hardened guard" family to require zero new production code in
 /// <see cref="SecureDefaultsAssertion"/>, since the real shipped shape matched this phase's design
 /// exactly (a conditional invocation, never a throw), unlike
@@ -1123,9 +1125,10 @@ public class SecureDefaultsAssertionTests
     /// </para>
     /// <para>
     /// <strong>Resolution.</strong> Per this phase's own explicit guidance to use judgment rather
-    /// than force-fit a mismatched technique or silently skip verification: this test re-points the
+    /// than force-fit a mismatched technique or silently skip verification: this test re-pointed the
     /// ALREADY-SHIPPED <see cref="SecureDefaultsAssertion.AssertMethodBodyInvokesMethod"/> (from
-    /// <c>SK.00.TenantAndMtlsBoundaryLock</c>/P-401) at <c>CorsPolicyOptionsValidator.Validate</c>,
+    /// <c>SK.00.TenantAndMtlsBoundaryLock</c>/P-401) at <c>CorsPolicyOptionsValidator.Validate</c> (the validator
+    /// P-562 later folded into <c>WebApiOptionsValidator</c> — see below),
     /// asserting it genuinely calls <c>ValidateOptionsResult.Fail</c> — an invocation-presence
     /// assertion matching the guard's REAL shape, reusing existing, already-proven infrastructure
     /// instead of adding a narrowly-motivated seventh method to <see cref="SecureDefaultsAssertion"/>
@@ -1136,7 +1139,23 @@ public class SecureDefaultsAssertionTests
     /// of this class's other methods were built for).
     /// </para>
     /// <para>
-    /// <strong>Non-vacuous.</strong> <c>CorsPolicyOptionsValidator</c> is <c>internal</c> — no
+    /// <strong>Re-pointed for P-562.</strong> The presentation redesign deleted <c>AddSharedKernelCors</c>,
+    /// <c>CorsPolicyOptions</c>, <c>CorsPolicyNames</c> and <c>CorsPolicyOptionsValidator</c>. CORS became
+    /// <c>SharedKernelWebApiOptions.Cors</c> (<c>WebApiOptions</c> until the final review's R22 renamed it; the
+    /// validator kept its name), validated together with every other WebApi setting by the internal
+    /// <c>WebApiOptionsValidator</c>, which <c>AddSharedKernelWebApi</c> registers through
+    /// <c>SharedKernel.Configuration</c>'s <c>AddValidatedOptions</c> (bind + <c>ValidateOnStart</c>). The guard
+    /// itself is unchanged — <c>AllowCredentials</c> with no explicit origin, or with <c>*</c>, fails at startup — so
+    /// the lock follows it to its new home, as one chain of three call sites:
+    /// <c>AddSharedKernelWebApi</c> → <c>OptionsExtensions.AddValidatedOptions</c> (the settings are validated when
+    /// the host starts); <c>WebApiOptionsValidator.Validate</c> → <c>ValidateCors</c> (the CORS rules are part of that
+    /// validation); <c>WebApiOptionsValidator.Validate</c> → <c>ValidateOptionsResult.Fail</c> (a failure stops the
+    /// host). The dangerous-combination branch inside <c>ValidateCors</c> is proven behaviorally by
+    /// <c>14.Presentation</c>'s <c>CorsTests.CredentialsWithoutExplicitOrigins_FailAtStartup</c> and by its
+    /// <c>consumer-verify</c> harness; this test locks that the guard stays wired into startup validation.
+    /// </para>
+    /// <para>
+    /// <strong>Non-vacuous.</strong> <c>WebApiOptionsValidator</c> is <c>internal</c> — no
     /// <c>InternalsVisibleTo</c> grant exists (or should exist) to this governance test project, so
     /// <c>typeof(...)</c> cannot name it directly. <c>Assembly.GetType(string)</c> resolves a
     /// <see cref="Type"/> object by name regardless of accessibility, mirroring T-318's identical
@@ -1144,32 +1163,47 @@ public class SecureDefaultsAssertionTests
     /// <see cref="System.Reflection.MemberInfo.Name"/>/declaring-type
     /// <c>FullName</c>, never invokes a member through it. T-315/T-316's contrived fixtures already
     /// prove <see cref="SecureDefaultsAssertion.AssertMethodBodyInvokesMethod"/> correctly fires
-    /// when the expected call site is ABSENT — this test proves the real type's actual call site is
+    /// when the expected call site is ABSENT — this test proves the real type's actual call sites are
     /// PRESENT, not merely that the scan runs without error.
     /// </para>
     /// </remarks>
     [Fact]
-    public void AssertMethodBodyInvokesMethod_RealCorsPolicyOptionsValidator_CallsValidateOptionsResultFail()
+    public void AssertMethodBodyInvokesMethod_RealWebApiOptionsValidator_CorsGuardIsWiredIntoStartupValidation()
     {
-        var webApiAssembly = typeof(SharedKernel.Presentation.WebApi.Cors.CorsPolicyNames).Assembly;
+        var hostBuilderExtensions = typeof(SharedKernel.Presentation.WebApi.WebApiHostBuilderExtensions);
 
-        var declaringType =
-            webApiAssembly.GetType("SharedKernel.Presentation.WebApi.Cors.CorsPolicyOptionsValidator")
+        var validatorType =
+            hostBuilderExtensions.Assembly.GetType("SharedKernel.Presentation.WebApi.WebApiOptionsValidator")
             ?? throw new InvalidOperationException(
-                "Could not resolve SharedKernel.Presentation.WebApi.Cors.CorsPolicyOptionsValidator " +
+                "Could not resolve SharedKernel.Presentation.WebApi.WebApiOptionsValidator " +
                 "via Assembly.GetType — has it been renamed or moved?");
 
-        var act = () =>
+        var registeredForStartupValidation = () =>
             SecureDefaultsAssertion.AssertMethodBodyInvokesMethod(
-                declaringType,
+                hostBuilderExtensions,
+                "AddSharedKernelWebApi",
+                typeof(SharedKernel.Configuration.Extensions.OptionsExtensions),
+                "AddValidatedOptions");
+
+        var validatesCors = () =>
+            SecureDefaultsAssertion.AssertMethodBodyInvokesMethod(validatorType, "Validate", validatorType, "ValidateCors");
+
+        var failsStartup = () =>
+            SecureDefaultsAssertion.AssertMethodBodyInvokesMethod(
+                validatorType,
                 "Validate",
                 typeof(Microsoft.Extensions.Options.ValidateOptionsResult),
                 "Fail");
 
-        act.Should().NotThrow(
-            because: "the real, shipped CorsPolicyOptionsValidator.Validate calls " +
-                     "ValidateOptionsResult.Fail(...) on the dangerous AllowCredentials + " +
-                     "empty/wildcard AllowedOrigins combination (WO-062, P-404)");
+        registeredForStartupValidation.Should().NotThrow(
+            because: "AddSharedKernelWebApi registers SharedKernelWebApiOptions through AddValidatedOptions, which " +
+                     "arms ValidateOnStart (P-562 D4)");
+        validatesCors.Should().NotThrow(
+            because: "WebApiOptionsValidator.Validate runs the CORS rules, where AllowCredentials without an " +
+                     "explicit origin is refused (WO-062 P-404; P-562 D7)");
+        failsStartup.Should().NotThrow(
+            because: "WebApiOptionsValidator.Validate reports its failures through ValidateOptionsResult.Fail(...), " +
+                     "which stops the host at startup");
     }
 
     // ---------------------------------------------------------------------------
@@ -1276,8 +1310,9 @@ public class SecureDefaultsAssertionTests
     /// <summary>
     /// T-331 (<c>SK.00.CorrelationIdValidationGuard</c>/WO-063/P-415): Re-points
     /// <see cref="SecureDefaultsAssertion.AssertMethodBodyInvokesMethod"/> at the real, shipped
-    /// <c>CorrelationIdMiddleware.ResolveCorrelationId</c> and confirms it still calls its own
-    /// private <c>IsValidFormat</c> format-validation helper.
+    /// <c>CorrelationIdMiddleware.Resolve</c> and confirms it still calls its own private
+    /// <c>IsValid</c> format-validation helper (named <c>ResolveCorrelationId</c>/<c>IsValidFormat</c>
+    /// before P-562; see the remarks).
     /// </summary>
     /// <remarks>
     /// <para>
@@ -1310,22 +1345,34 @@ public class SecureDefaultsAssertionTests
     /// callee is a private instance method on the SAME type, not a different one — and the call
     /// site lives directly in <c>ResolveCorrelationId</c>'s own IL body, not inside a lambda
     /// closure, so no closure-scanning extension is exercised by this particular call site (that
-    /// extension remains proven by T-318/T-328's own real-assembly call sites).
+    /// extension remains proven by T-318's own real-assembly call site).
+    /// </para>
+    /// <para>
+    /// <strong>Re-pointed for P-562.</strong> The redesign made the middleware <c>internal</c> (applied by
+    /// <c>UseSharedKernelWebApi()</c>), moved it from the deleted <c>…WebApi.Middleware</c> namespace to
+    /// <c>…WebApi.Correlation</c>, and renamed the pair to <c>Resolve</c>/<c>IsValid</c>; a missing or invalid value is
+    /// now replaced by the trace id rather than a new identifier, but a caller-supplied value is still kept only when
+    /// it passes validation (length bound, no control characters, allowed-character pattern). The type is resolved
+    /// with <c>Assembly.GetType(string)</c>, T-318's technique for internal types.
     /// </para>
     /// </remarks>
     [Fact]
     public void AssertMethodBodyInvokesMethod_RealCorrelationIdMiddleware_ValidationCallSiteHolds()
     {
-        var declaringType = typeof(SharedKernel.Presentation.WebApi.Middleware.CorrelationIdMiddleware);
+        var declaringType =
+            typeof(SharedKernel.Presentation.WebApi.WebApiApplicationBuilderExtensions).Assembly
+                .GetType("SharedKernel.Presentation.WebApi.Correlation.CorrelationIdMiddleware")
+            ?? throw new InvalidOperationException(
+                "Could not resolve SharedKernel.Presentation.WebApi.Correlation.CorrelationIdMiddleware " +
+                "via Assembly.GetType — has it been renamed or moved?");
 
         var act = () =>
             SecureDefaultsAssertion.AssertMethodBodyInvokesMethod(
-                declaringType, "ResolveCorrelationId", declaringType, "IsValidFormat");
+                declaringType, "Resolve", declaringType, "IsValid");
 
         act.Should().NotThrow(
-            because: "the real, shipped CorrelationIdMiddleware.ResolveCorrelationId still calls " +
-                     "its own private IsValidFormat format-validation helper before preserving a " +
-                     "caller-supplied value (WO-063, C-65)");
+            because: "the real, shipped CorrelationIdMiddleware.Resolve still calls its own private " +
+                     "IsValid validation before keeping a caller-supplied value (WO-063, C-65; P-562 D5)");
     }
 
     // ---------------------------------------------------------------------------

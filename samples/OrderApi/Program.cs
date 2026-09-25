@@ -1,10 +1,8 @@
-using FluentValidation;
-using MediatR;
-using OrderApi.Application;
+using OrderApi.Features.Orders;
 using OrderApi.Infrastructure;
-using SharedKernel.Application.Behaviors.Extensions;
-using SharedKernel.Application.Extensions;
-using SharedKernel.Presentation.WebApi.Results;
+using SharedKernel.Application;
+using SharedKernel.Presentation.OpenApi;
+using SharedKernel.Presentation.WebApi;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.ServiceDefaults.Extensions;
 using SharedKernel.ServiceDefaults.HealthChecks;
@@ -18,26 +16,38 @@ builder.AddServiceDefaults();
 // 01.Core — IClock is the only sanctioned time source; analyzer SK0001 forbids DateTime.UtcNow.
 builder.Services.AddSingleton<IClock, SystemClock>();
 
-// 05.Application — MediatR handler discovery, the domain-event dispatcher, and the
-// zero-prerequisite behavior preset (tracing, logging, metrics, validation). Build() registers
-// them in the fixed pipeline order; nothing is registered without it. The behaviors that need
-// an infrastructure seam (authorization over IRequestContext, idempotency over
-// IRequestIdempotencyStore, transaction over IUnitOfWork, auditing over IAuditTrailWriter, and
-// caching from SharedKernel.Application.Behaviors.Caching) are deliberately not in the preset —
-// each is an explicit opt-in, and Build() throws if its seam is not registered.
-builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(PlaceOrderCommand).Assembly));
-builder.Services.AddSharedKernelApplication();
-builder.Services.AddScoped<IValidator<PlaceOrderCommand>, PlaceOrderCommandValidator>();
-builder.Services.AddSharedKernelApplicationBehaviors().AddDefaultBehaviors().Build();
+// 05.Application — one call: MediatR with the handlers and FluentValidation validators of this assembly, the
+// domain-event dispatcher, and the always-on behaviors (tracing, logging, metrics, authorization, validation) in the
+// fixed pipeline order. Authorization needs an IRequestContext only when a use case declares [RequirePermission]; none
+// here does. The behaviors that need an infrastructure seam (WithIdempotency over IRequestIdempotencyStore and
+// IRequestContext, WithTransactions over IUnitOfWork, WithAuditing over IAuditTrailWriter,
+// WithCaching from SharedKernel.Application.Caching) are explicit opt-ins; a missing seam fails the host start. This
+// API authenticates nobody, so it opts into none of them.
+builder.Services.AddSharedKernelApplication(typeof(Program).Assembly);
 
-// 14.Presentation — RFC 9457 ProblemDetails for unhandled exceptions.
-builder.Services.AddProblemDetails();
+// 14.Presentation — the HTTP boundary in one call, configured from SharedKernel:Presentation:WebApi. Every error
+// response — a failed Result, a thrown exception, the framework's own 404/405/415 — is RFC 9457
+// application/problem+json with errorCode, traceId and correlationId; plus correlation ids, security headers,
+// request limits and authorization.
+builder.AddSharedKernelWebApi();
+
+// API versioning and one OpenAPI document per API version with a Scalar reference, configured from
+// SharedKernel:Presentation:OpenApi. The documents are served in Development only; ExposeInProduction publishes
+// them elsewhere, by decision rather than by default. This API authenticates nobody, so it declares no bearer
+// scheme; a protected operation would document its security requirement and 401/403 by itself.
+builder.AddSharedKernelOpenApi(options =>
+{
+    options.Title = "Orders API";
+    options.Bearer = false;
+});
 
 builder.Services.AddSingleton<IOrderRepository, InMemoryOrderRepository>();
 
 var app = builder.Build();
 
-app.UseExceptionHandler();
+// First, before any endpoint: correlation id, security headers, the exception handler, problem bodies for bodiless
+// error statuses, routing, authentication and authorization — in the order they must run.
+app.UseSharedKernelWebApi();
 
 // K8s liveness/readiness endpoints from 13.ServiceDefaults.
 app.MapDefaultHealthCheckEndpoints();
@@ -48,20 +58,11 @@ app.MapDefaultHealthCheckEndpoints();
 // immediately. Omitting this call leaves /health/ready at 503 forever.
 app.Services.GetRequiredService<StartupGate>().MarkReady();
 
-// Result<T> -> HTTP is a single call. The endpoint never inspects IsSuccess and never
-// chooses a status code: Error.Validation becomes 400, Error.NotFound becomes 404, and
-// the body is RFC 9457 ProblemDetails in every failure case.
-app.MapPost("/orders", async (PlaceOrderCommand command, ISender sender, CancellationToken ct) =>
-{
-    var result = await sender.Send(command, ct);
-    return result.ToProblemDetailsResult(id => Results.Created($"/orders/{id}", new { id }));
-});
+// Every IEndpointModule of this assembly (Api/), found at compile time by the generator the WebApi package ships.
+app.MapEndpoints();
 
-app.MapGet("/orders/{id:guid}", async (Guid id, ISender sender, CancellationToken ct) =>
-{
-    var result = await sender.Send(new GetOrderQuery(id), ct);
-    return result.ToProblemDetailsResult();
-});
+// /openapi/v1.json and the Scalar reference at /scalar in Development; outside it, nothing is mapped.
+app.MapSharedKernelOpenApi();
 
 await app.RunAsync();
 

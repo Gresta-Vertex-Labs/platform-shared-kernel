@@ -2,6 +2,7 @@ using System.Net;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Communication.Rest.Extensions;
 using SharedKernel.Communication.Rest.Handlers;
+using SharedKernel.Primitives.Propagation;
 
 namespace SharedKernel.Communication.Rest.Tests.Handlers;
 
@@ -37,6 +38,22 @@ public sealed class IdempotencyKeyDelegatingHandlerTests
         captured.Should().NotBeNullOrEmpty();
         Guid.TryParseExact(captured, "D", out _).Should().BeTrue(
             "the generated idempotency key must be the canonical hyphenated GUID format");
+    }
+
+    [Fact]
+    public async Task SendAsync_WritesTheWellKnownIdempotencyKeyHeader_TheNameTheInboundBoundaryReads()
+    {
+        // P-562: the header was a domain-local "x-idempotency-key", which the receiving service's
+        // 14.Presentation boundary ([RequireIdempotencyKey], reading "Idempotency-Key") never saw.
+        // Both sides now name 01.Core's WellKnownHeaders.IdempotencyKey.
+        var stub = new CaptureAllHeadersHandler();
+        var client = BuildClient(stub);
+
+        await client.PostAsync("/test", content: null);
+
+        HeaderName.Should().Be(WellKnownHeaders.IdempotencyKey).And.Be("Idempotency-Key");
+        stub.Headers.Should().ContainKey(WellKnownHeaders.IdempotencyKey);
+        stub.Headers.Should().NotContainKey("x-idempotency-key", "the old domain-local name must no longer reach the wire");
     }
 
     [Fact]
@@ -168,4 +185,22 @@ public sealed class IdempotencyKeyDelegatingHandlerTests
 internal sealed class IdempotencyTestTypedClient(HttpClient httpClient)
 {
     public HttpClient Http { get; } = httpClient;
+}
+
+/// <summary>Terminal handler recording every request header, keyed case-insensitively as on the wire.</summary>
+internal sealed class CaptureAllHeadersHandler : HttpMessageHandler
+{
+    public Dictionary<string, string> Headers { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    protected override Task<HttpResponseMessage> SendAsync(
+        HttpRequestMessage request,
+        CancellationToken cancellationToken)
+    {
+        foreach (var header in request.Headers)
+        {
+            Headers[header.Key] = header.Value.First();
+        }
+
+        return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
+    }
 }

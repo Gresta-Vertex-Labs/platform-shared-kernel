@@ -147,12 +147,22 @@ public sealed class InMemorySearchIndexProvisioner : ISearchIndexProvisioner
             DocumentCount = 0,
             PendingWriteCount = 0,
             EngineVersion = "in-memory-fake",
-            SchemaFingerprint = definition.Fingerprint,
+            SchemaFingerprint = definition.ComputeFingerprint(),
             Latency = TimeSpan.Zero,
         };
 
         return Task.FromResult(SharedKernel.Primitives.Results.Result<SearchIndexHealth>.Success(health));
     }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Always succeeds once every index has been provisioned through <see cref="EnsureIndexAsync"/>,
+    /// because this fake stores the definition it was given and therefore cannot drift from it. Its
+    /// value in a consuming service's tests is proving that the verification call is wired into that
+    /// service's startup path at all — real drift is only observable against a real engine.
+    /// </remarks>
+    public Task<Result> VerifyRegisteredIndexesAsync(CancellationToken cancellationToken = default)
+        => Task.FromResult(Result.Success());
 
     /// <summary>Clears every registered index definition.</summary>
     public void Reset() => _indexes.Clear();

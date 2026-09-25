@@ -14,6 +14,7 @@ using SharedKernel.Domain.Abstractions;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.Abstractions.Coordination;
 using SharedKernel.Persistence.EfCore;
+using SharedKernel.Persistence.EfCore.Concurrency;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Exceptions;
 using SharedKernel.Persistence.EfCore.Extensibility;
@@ -337,6 +338,14 @@ public sealed class EfCorePersistenceBuilder<TContext>
             services.TryAddSingleton<ClientKeyGenerationMarker>();
         }
 
+        // Entity versions (ETags) are sealed with a subkey of the service's own key provider, resolved on first use:
+        // one codec per service provider, shared by every context, so a version issued through one context opens in another.
+        services.TryAddSingleton(sp => new EntityVersionCodec(new EntityVersionKeyRing(sp)));
+
+        // An asynchronous-only key provider (a KMS) gets its version key loaded before the host takes traffic, so no
+        // request blocks a thread on the provider. Does nothing otherwise, and readiness never waits for it.
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, EntityVersionKeyWarmUp>());
+
         services.TryAddSingleton(sp => new PersistenceContextDependencies(
             sp.GetRequiredService<IClock>(),
             AnonymousRequestContext.Instance,
@@ -348,7 +357,8 @@ public sealed class EfCorePersistenceBuilder<TContext>
             sp.GetServices<IPersistenceOptionsExtension>(),
             sp.GetServices<IDbUpdateExceptionClassifier>(),
             sp.GetService<ClientKeyGenerationMarker>() is null ? null : sp.GetRequiredService<IIdGenerator>(),
-            sp.GetService<ILoggerFactory>()));
+            sp.GetService<ILoggerFactory>(),
+            sp.GetRequiredService<EntityVersionCodec>()));
 
         services.TryAddScoped<AmbientDbTransactionAccessor>();
         services.TryAddScoped<UnitOfWorkCoordinator>();

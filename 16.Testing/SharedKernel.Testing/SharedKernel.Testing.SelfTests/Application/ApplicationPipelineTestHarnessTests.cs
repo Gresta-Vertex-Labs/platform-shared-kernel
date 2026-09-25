@@ -1,10 +1,10 @@
 using System.Linq;
 using MediatR;
 using Microsoft.Extensions.DependencyInjection;
-using SharedKernel.Application.Behaviors.Authorization;
-using SharedKernel.Application.Behaviors.Idempotency;
+using Microsoft.Extensions.Options;
+using SharedKernel.Application;
+using SharedKernel.Application.Idempotency;
 using SharedKernel.Application.Context;
-using SharedKernel.Application.Messaging;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Testing.Application;
@@ -38,12 +38,23 @@ public sealed class ApplicationPipelineTestHarnessTests
             => throw new InvalidOperationException("boom");
     }
 
+    /// <summary>
+    /// A harness with a caller registered: this assembly declares a <c>[RequirePermission]</c> request
+    /// (<see cref="AuthorizedCommand"/>), so the always-on authorization needs an <see cref="IRequestContext"/>
+    /// at start, even for tests that never send it.
+    /// </summary>
+    private static ApplicationPipelineTestHarness NewHarness()
+    {
+        var harness = new ApplicationPipelineTestHarness();
+        harness.Services.AddSingleton<IRequestContext>(new FakeRequestContext());
+        return harness;
+    }
+
     [Fact]
     public async Task SendAsync_ReturnsExpectedResponse_ThroughComposedBehaviors()
     {
-        using var harness = new ApplicationPipelineTestHarness();
+        using var harness = NewHarness();
         harness.Services.AddSingleton<IRequestHandler<SucceedingCommand, Result>, SucceedingCommandHandler>();
-        harness.AddBehaviors().AddLoggingBehavior().AddMetricsBehavior().Build();
         harness.Build<ApplicationPipelineTestHarnessTests>();
 
         var result = await harness.SendAsync(new SucceedingCommand());
@@ -54,9 +65,8 @@ public sealed class ApplicationPipelineTestHarnessTests
     [Fact]
     public async Task SendAsync_ReturnsFailureResponse_ThroughComposedBehaviors()
     {
-        using var harness = new ApplicationPipelineTestHarness();
+        using var harness = NewHarness();
         harness.Services.AddSingleton<IRequestHandler<FailingResultCommand, Result>, FailingResultCommandHandler>();
-        harness.AddBehaviors().AddLoggingBehavior().Build();
         harness.Build<ApplicationPipelineTestHarnessTests>();
 
         var result = await harness.SendAsync(new FailingResultCommand());
@@ -67,9 +77,8 @@ public sealed class ApplicationPipelineTestHarnessTests
     [Fact]
     public async Task SendAsync_ThrownHandlerException_PropagatesUnchanged()
     {
-        using var harness = new ApplicationPipelineTestHarness();
+        using var harness = NewHarness();
         harness.Services.AddSingleton<IRequestHandler<ThrowingCommand, Result>, ThrowingCommandHandler>();
-        harness.AddBehaviors().AddLoggingBehavior().Build();
         harness.Build<ApplicationPipelineTestHarnessTests>();
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(
@@ -81,9 +90,8 @@ public sealed class ApplicationPipelineTestHarnessTests
     [Fact]
     public async Task WithActivityCapture_AddTracingBehavior_RecordsSpanTaggedWithRequestType()
     {
-        using var harness = new ApplicationPipelineTestHarness().WithActivityCapture();
+        using var harness = NewHarness().WithActivityCapture();
         harness.Services.AddSingleton<IRequestHandler<SucceedingCommand, Result>, SucceedingCommandHandler>();
-        harness.AddBehaviors().AddTracingBehavior().Build();
         harness.Build<ApplicationPipelineTestHarnessTests>();
 
         await harness.SendAsync(new SucceedingCommand());
@@ -98,9 +106,8 @@ public sealed class ApplicationPipelineTestHarnessTests
     [Fact]
     public async Task CapturedMeasurements_AddMetricsBehavior_RecordsRequestDurationEntry()
     {
-        using var harness = new ApplicationPipelineTestHarness();
+        using var harness = NewHarness();
         harness.Services.AddSingleton<IRequestHandler<SucceedingCommand, Result>, SucceedingCommandHandler>();
-        harness.AddBehaviors().AddMetricsBehavior().Build();
         harness.Build<ApplicationPipelineTestHarnessTests>();
 
         await harness.SendAsync(new SucceedingCommand());
@@ -113,18 +120,15 @@ public sealed class ApplicationPipelineTestHarnessTests
     [Fact]
     public async Task SendAsync_BeforeBuild_ThrowsInvalidOperationException()
     {
-        using var harness = new ApplicationPipelineTestHarness();
+        using var harness = NewHarness();
         harness.Services.AddSingleton<IRequestHandler<SucceedingCommand, Result>, SucceedingCommandHandler>();
-        harness.AddBehaviors().Build();
 
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => harness.SendAsync(new SucceedingCommand()));
     }
 
-    private sealed record AuthorizedCommand(string Permission) : ICommand, IAuthorizeRequest
-    {
-        public IReadOnlyCollection<string> RequiredPermissions => [Permission];
-    }
+    [RequirePermission("orders:create")]
+    private sealed record AuthorizedCommand : ICommand;
 
     private sealed class AuthorizedCommandHandler : IRequestHandler<AuthorizedCommand, Result>
     {
@@ -138,13 +142,12 @@ public sealed class ApplicationPipelineTestHarnessTests
         using var harness = new ApplicationPipelineTestHarness();
         harness.Services.AddSingleton<IRequestContext>(new FakeRequestContext { IsAuthenticated = false });
         harness.Services.AddSingleton<IRequestHandler<AuthorizedCommand, Result>, AuthorizedCommandHandler>();
-        harness.AddBehaviors().AddAuthorizationBehavior().Build();
         harness.Build<ApplicationPipelineTestHarnessTests>();
 
-        var result = await harness.SendAsync(new AuthorizedCommand("orders:create"));
+        var result = await harness.SendAsync(new AuthorizedCommand());
 
         Assert.True(result.IsFailure);
-        Assert.Equal("authorization.unauthenticated", result.Error.Code);
+        Assert.Equal("unauthorized.default", result.Error.Code);
     }
 
     [Fact]
@@ -153,13 +156,24 @@ public sealed class ApplicationPipelineTestHarnessTests
         using var harness = new ApplicationPipelineTestHarness();
         harness.Services.AddSingleton<IRequestContext>(new FakeRequestContext());
         harness.Services.AddSingleton<IRequestHandler<AuthorizedCommand, Result>, AuthorizedCommandHandler>();
-        harness.AddBehaviors().AddAuthorizationBehavior().Build();
         harness.Build<ApplicationPipelineTestHarnessTests>();
 
-        var result = await harness.SendAsync(new AuthorizedCommand("orders:create"));
+        var result = await harness.SendAsync(new AuthorizedCommand());
 
         Assert.True(result.IsFailure);
         Assert.Equal(ErrorType.Forbidden, result.Error.Type);
+    }
+
+    [Fact]
+    public void Build_RequirePermissionRequestWithoutRequestContext_FailsTheStartCheckNamingTheRequest()
+    {
+        using var harness = new ApplicationPipelineTestHarness();
+
+        var exception = Assert.Throws<OptionsValidationException>(
+            () => harness.Build<ApplicationPipelineTestHarnessTests>());
+
+        Assert.Contains(nameof(IRequestContext), exception.Message, StringComparison.Ordinal);
+        Assert.Contains(typeof(AuthorizedCommand).FullName!, exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -168,10 +182,9 @@ public sealed class ApplicationPipelineTestHarnessTests
         using var harness = new ApplicationPipelineTestHarness();
         harness.Services.AddSingleton<IRequestContext>(new FakeRequestContext { Permissions = ["orders:create"] });
         harness.Services.AddSingleton<IRequestHandler<AuthorizedCommand, Result>, AuthorizedCommandHandler>();
-        harness.AddBehaviors().AddAuthorizationBehavior().Build();
         harness.Build<ApplicationPipelineTestHarnessTests>();
 
-        var result = await harness.SendAsync(new AuthorizedCommand("orders:create"));
+        var result = await harness.SendAsync(new AuthorizedCommand());
 
         Assert.True(result.IsSuccess);
     }
@@ -189,15 +202,28 @@ public sealed class ApplicationPipelineTestHarnessTests
         }
     }
 
+    /// <summary>
+    /// Composes a harness with <c>IdempotencyBehavior</c> over <see cref="FakeRequestIdempotencyStore"/> and
+    /// <paramref name="caller"/>, which the test may mutate between sends to act as another caller.
+    /// </summary>
+    private static ApplicationPipelineTestHarness IdempotencyHarness(
+        IdempotentTestCommandHandler handler,
+        FakeRequestContext caller,
+        FakeRequestIdempotencyStore? store = null)
+    {
+        var harness = new ApplicationPipelineTestHarness();
+        harness.Services.AddSingleton<IRequestHandler<IdempotentTestCommand, Result>>(handler);
+        harness.Services.AddSingleton<IRequestIdempotencyStore>(store ?? new FakeRequestIdempotencyStore());
+        harness.Services.AddSingleton<IRequestContext>(caller);
+        harness.Configure(app => app.WithIdempotency());
+        return harness.Build<ApplicationPipelineTestHarnessTests>();
+    }
+
     [Fact]
     public async Task SendAsync_IdempotencyBehavior_DuplicateKey_ReplaysStoredResponse_HandlerRunsOnce()
     {
-        using var harness = new ApplicationPipelineTestHarness();
         var handler = new IdempotentTestCommandHandler();
-        harness.Services.AddSingleton<IRequestHandler<IdempotentTestCommand, Result>>(handler);
-        harness.Services.AddSingleton<IRequestIdempotencyStore, FakeRequestIdempotencyStore>();
-        harness.AddBehaviors().AddIdempotencyBehavior().Build();
-        harness.Build<ApplicationPipelineTestHarnessTests>();
+        using var harness = IdempotencyHarness(handler, new FakeRequestContext());
 
         var first = await harness.SendAsync(new IdempotentTestCommand("key-1"));
         var second = await harness.SendAsync(new IdempotentTestCommand("key-1"));
@@ -207,15 +233,107 @@ public sealed class ApplicationPipelineTestHarnessTests
         Assert.Equal(1, handler.CallCount);
     }
 
+    /// <summary>
+    /// Keys are reserved per tenant and caller: a second user sending the same key and body gets their own
+    /// execution, never the first user's stored response. The first user's retry still replays.
+    /// </summary>
+    [Fact]
+    public async Task SendAsync_IdempotencyBehavior_TwoUsersSameKeyAndBody_EachRunsTheHandler()
+    {
+        var handler = new IdempotentTestCommandHandler();
+        var caller = new FakeRequestContext { UserId = "alice", TenantId = Guid.NewGuid() };
+        using var harness = IdempotencyHarness(handler, caller);
+
+        await harness.SendAsync(new IdempotentTestCommand("shared-key", "body"));
+        caller.UserId = "bob";
+        await harness.SendAsync(new IdempotentTestCommand("shared-key", "body"));
+        caller.UserId = "alice";
+        var aliceRetry = await harness.SendAsync(new IdempotentTestCommand("shared-key", "body"));
+
+        Assert.True(aliceRetry.IsSuccess);
+        Assert.Equal(2, handler.CallCount);
+    }
+
+    /// <summary>
+    /// The documented residual risk: anonymous callers of one tenant share one scope, where only the fingerprint
+    /// separates them, so the same key with the same body replays.
+    /// </summary>
+    [Fact]
+    public async Task SendAsync_IdempotencyBehavior_AnonymousCallersSameKeyAndBody_Replay()
+    {
+        var handler = new IdempotentTestCommandHandler();
+        using var harness = IdempotencyHarness(handler, new FakeRequestContext { IsAuthenticated = false, UserId = null });
+
+        await harness.SendAsync(new IdempotentTestCommand("anonymous-key", "body"));
+        var second = await harness.SendAsync(new IdempotentTestCommand("anonymous-key", "body"));
+
+        Assert.True(second.IsSuccess);
+        Assert.Equal(1, handler.CallCount);
+    }
+
+    [Fact]
+    public async Task SendAsync_IdempotencyBehavior_AnonymousCallersSameKeyDifferentBody_ReturnsKeyReused()
+    {
+        var handler = new IdempotentTestCommandHandler();
+        using var harness = IdempotencyHarness(handler, new FakeRequestContext { IsAuthenticated = false, UserId = null });
+
+        await harness.SendAsync(new IdempotentTestCommand("anonymous-key", "a"));
+        var second = await harness.SendAsync(new IdempotentTestCommand("anonymous-key", "b"));
+
+        Assert.True(second.IsFailure);
+        Assert.Equal("idempotency.key_reused", second.Error.Code);
+        Assert.Equal(1, handler.CallCount);
+    }
+
+    [Fact]
+    public async Task SendAsync_IdempotencyBehavior_EmptyKey_ReturnsKeyRequired()
+    {
+        var handler = new IdempotentTestCommandHandler();
+        using var harness = IdempotencyHarness(handler, new FakeRequestContext());
+
+        var result = await harness.SendAsync(new IdempotentTestCommand(" "));
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("idempotency.key_required", result.Error.Code);
+        Assert.Equal(0, handler.CallCount);
+    }
+
+    /// <summary>
+    /// The fake stores the key the behavior hands over — already scoped to the tenant and caller — exactly like the
+    /// Redis and EF Core stores, so <see cref="FakeRequestIdempotencyStore.Calls"/> never shows the raw key.
+    /// </summary>
+    [Fact]
+    public async Task SendAsync_IdempotencyBehavior_StoreReceivesTheScopedKey_NotTheRawKey()
+    {
+        var handler = new IdempotentTestCommandHandler();
+        var store = new FakeRequestIdempotencyStore();
+        using var harness = IdempotencyHarness(handler, new FakeRequestContext(), store);
+
+        await harness.SendAsync(new IdempotentTestCommand("order-42"));
+
+        var key = Assert.Single(store.Calls, call => call.Member == nameof(FakeRequestIdempotencyStore.TryBeginAsync)).Key;
+        Assert.Equal(64, key.Length);
+        Assert.Matches("^[0-9a-f]{64}$", key);
+        Assert.DoesNotContain("order-42", key, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void WithIdempotency_WithoutRequestContext_BuildFailsTheStartCheck()
+    {
+        using var harness = new ApplicationPipelineTestHarness();
+        harness.Services.AddSingleton<IRequestIdempotencyStore, FakeRequestIdempotencyStore>();
+
+        var exception = Assert.Throws<OptionsValidationException>(
+            () => harness.Configure(app => app.WithIdempotency()).Build<ApplicationPipelineTestHarnessTests>());
+
+        Assert.Contains(nameof(IRequestContext), exception.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task SendAsync_IdempotencyBehavior_SameKeyDifferentPayload_ReturnsConflict()
     {
-        using var harness = new ApplicationPipelineTestHarness();
         var handler = new IdempotentTestCommandHandler();
-        harness.Services.AddSingleton<IRequestHandler<IdempotentTestCommand, Result>>(handler);
-        harness.Services.AddSingleton<IRequestIdempotencyStore, FakeRequestIdempotencyStore>();
-        harness.AddBehaviors().AddIdempotencyBehavior().Build();
-        harness.Build<ApplicationPipelineTestHarnessTests>();
+        using var harness = IdempotencyHarness(handler, new FakeRequestContext());
 
         await harness.SendAsync(new IdempotentTestCommand("key-1", "a"));
         var second = await harness.SendAsync(new IdempotentTestCommand("key-1", "b"));

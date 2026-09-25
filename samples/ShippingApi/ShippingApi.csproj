@@ -18,8 +18,9 @@
     <PackageReference Include="SharedKernel.Messaging.MassTransit" />
     <!-- 04.Contracts: IIntegrationEvent and the CloudEvents envelope every published event is wrapped in. -->
     <PackageReference Include="SharedKernel.Contracts" />
-    <!-- 05.Application.Abstractions: IRequestContext, which the tenant/actor propagation rides on. -->
-    <PackageReference Include="SharedKernel.Application.Abstractions" />
+    <!-- 05.Application: the endpoints send commands and queries through MediatR; its .Abstractions (arriving
+         transitively) carries IRequestContext, which the tenant/actor propagation rides on. -->
+    <PackageReference Include="SharedKernel.Application" />
     <!-- 13.ServiceDefaults: host, messaging telemetry, the bus readiness check. -->
     <PackageReference Include="SharedKernel.ServiceDefaults" />
     <PackageReference Include="SharedKernel.ServiceDefaults.Messaging" />

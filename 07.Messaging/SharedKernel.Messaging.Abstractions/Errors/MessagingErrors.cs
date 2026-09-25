@@ -14,9 +14,16 @@ public static class MessagingErrors
 {
     /// <summary>The broker was unreachable or the operation timed out; the caller may retry.</summary>
     /// <param name="operation">The dispatch verb that failed, e.g. <c>"publish"</c> or <c>"send"</c>.</param>
-    /// <returns>An <see cref="ErrorType.Unexpected"/> error carrying <see cref="MessagingErrorCodes.Unavailable"/>.</returns>
+    /// <returns>An <see cref="ErrorType.Unavailable"/> error carrying <see cref="MessagingErrorCodes.Unavailable"/>.</returns>
+    /// <remarks>
+    /// <see cref="ErrorType.Unavailable"/>, so the HTTP boundary answers 503 rather than 500: a broker
+    /// outage is an operational condition the caller can retry, not a defect. A dispatch that timed
+    /// out waiting for the broker returns this error too, not an <see cref="ErrorType.Timeout"/>
+    /// one; whether that message reached the broker is unknown, so retry only what the consumer can
+    /// deduplicate.
+    /// </remarks>
     public static Error Unavailable(string operation) =>
-        Error.Unexpected(
+        Error.Unavailable(
             MessagingErrorCodes.Unavailable,
             $"The message broker is unavailable; the {operation} can be retried later.");
 

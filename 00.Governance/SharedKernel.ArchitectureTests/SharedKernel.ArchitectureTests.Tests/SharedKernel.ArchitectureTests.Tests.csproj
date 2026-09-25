@@ -12,7 +12,7 @@
     <PackageReference Include="Mono.Cecil" />
     <!-- Roslyn CSharpCompilation for in-memory fixture assembly generation in T-12 -->
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
-    <!-- MediatR pinned to match 05.Application/SharedKernel.Application.Behaviors's own pin
+    <!-- MediatR pinned to match 05.Application/SharedKernel.Application's own pin
          (see that project's version-pin note) — needed to reference MediatR.IStreamRequest<>/
          IPipelineBehavior<,> as extraReferences when compiling WO-036 P-225 fixture assemblies
          in ApplicationPipelineRulesTests. NuGet-only; 00.Governance never references
@@ -65,23 +65,17 @@
          compiled IL rather than a contrived fixture. Test-project-only ProjectReference — does not
          violate the "00.Governance references nothing" layering rule (production references only). -->
     <ProjectReference Include="..\..\..\05.Application\SharedKernel.Application\SharedKernel.Application.csproj" PrivateAssets="all" />
-    <!-- Test-only reference to the REAL compiled SharedKernel.Application.Behaviors assembly,
-         required by root Phase Backlog P-489/WO-080 (mirrors SK.00.CacheEncryptionAndRedisValidationLock's
-         T-337 "Technique A" — a genuinely EXECUTED real-composed-pipeline test, not an IL-only
-         structural check) to build the real ApplicationBehaviorsBuilder pipeline and prove
-         CacheInvalidationBehavior's eviction observably follows TransactionBehavior's commit. This
-         is an INDEPENDENT, cross-domain lock on top of 05.Application's own in-domain regression
-         test (CacheInvalidationTransactionOrderingTests, WO-080/P-488) — the whole point of P-489 is
-         that a future well-intentioned reorder inside ApplicationBehaviorsBuilder must fail a build
-         even if that domain's own tests were ever weakened or deleted. Test-project-only
-         ProjectReference — does not violate the "00.Governance references nothing" layering rule
-         (production references only). -->
-    <ProjectReference Include="..\..\..\05.Application\SharedKernel.Application.Behaviors\SharedKernel.Application.Behaviors.csproj" PrivateAssets="all" />
-    <!-- P-544: CacheInvalidationBehavior/CachingBehavior/IInvalidatesCache/ICacheableQuery moved
-         out of SharedKernel.Application.Behaviors into this sibling package. Required so
-         ApplicationBehaviorsCacheInvalidationOrderingLockTests can call the real
-         AddCachingBehaviors() against the real compiled assembly. -->
-    <ProjectReference Include="..\..\..\05.Application\SharedKernel.Application.Behaviors.Caching\SharedKernel.Application.Behaviors.Caching.csproj" PrivateAssets="all" />
+    <!-- Test-only reference to the REAL compiled SharedKernel.Application.Caching assembly (it brings
+         SharedKernel.Application, which carries the pipeline since P-563), required by root Phase
+         Backlog P-489/WO-080 (mirrors SK.00.CacheEncryptionAndRedisValidationLock's T-337
+         "Technique A" — a genuinely EXECUTED real-composed-pipeline test, not an IL-only structural
+         check) to build the real pipeline with WithCaching() and prove CacheInvalidationBehavior's
+         eviction observably follows TransactionBehavior's commit. An INDEPENDENT, cross-domain lock
+         on top of 05.Application's own in-domain regression test: a future well-intentioned reorder
+         inside the registration must fail a build even if that domain's own tests were ever weakened
+         or deleted. Test-project-only ProjectReference — does not violate the "00.Governance
+         references nothing" layering rule (production references only). -->
+    <ProjectReference Include="..\..\..\05.Application\SharedKernel.Application.Caching\SharedKernel.Application.Caching.csproj" PrivateAssets="all" />
     <!-- Required to resolve the real SharedKernel.Storage.Abstractions/.S3/.Obs assemblies in
          StorageTopologyRulesTests (WO-043 P-271) — 08.Storage reached Published (P-265/P-266/
          P-267 all shipped) before this phase's implementation session, so real-assembly
@@ -175,22 +169,20 @@
     <ProjectReference Include="..\..\..\13.ServiceDefaults\SharedKernel.ServiceDefaults.Scheduling\SharedKernel.ServiceDefaults.Scheduling.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\..\..\13.ServiceDefaults\SharedKernel.ServiceDefaults.Security.Mtls\SharedKernel.ServiceDefaults.Security.Mtls.csproj" PrivateAssets="all" />
     <!-- Required to resolve the real SharedKernel.Presentation.WebApi assembly in
-         SecureDefaultsAssertionTests (WO-062 P-410, SK.00.CorsWildcardCredentialsGuard) — verified
-         on disk that 14.Presentation shipped its full P-404 scope (CorsPolicyOptions,
-         CorsPolicyOptionsValidator, AddSharedKernelCors, SharedKernel.Presentation.WebApi packed at
-         1.2.0) before this phase's implementation session, so the T-328 real-assembly
-         re-verification test originally tracked as a Cross-Domain Dependency is wired directly
-         here rather than deferred, mirroring the SecurityArchitectureRulesTests/
-         SecureDefaultsAssertionTests (WO-061) precedent. NOTE: the real AddSharedKernelCors does
-         NOT construct-and-throw a named exception directly — it registers CorsPolicyOptionsValidator
-         (an IValidateOptions<CorsPolicyOptions> returning ValidateOptionsResult.Fail(...)) via
-         ValidateOnStart(), so the actual throw (a framework-owned OptionsValidationException) never
-         appears in this assembly's own IL. AssertMethodBodyThrowsExceptionType itself therefore has
-         no real call site to prove against here (see the SecureDefaultsAssertionTests T-328 remarks
-         for the full reasoning) — this reference exists so T-328 can instead re-point the ALREADY-
-         SHIPPED AssertMethodBodyInvokesMethod at CorsPolicyOptionsValidator.Validate, proving it
-         genuinely calls ValidateOptionsResult.Fail, a technique matching the guard's REAL shape. -->
+         SecureDefaultsAssertionTests (WO-062 P-410, SK.00.CorsWildcardCredentialsGuard; WO-063
+         P-415, SK.00.CorrelationIdValidationGuard) and PresentationLayeringRulesTests. The CORS
+         guard is validator-based, never a direct throw in this assembly's IL: since P-562 it lives
+         in WebApiOptionsValidator (Validate → ValidateCors, ValidateOptionsResult.Fail), registered
+         by AddSharedKernelWebApi through AddValidatedOptions, so T-328 re-points the ALREADY-SHIPPED
+         AssertMethodBodyInvokesMethod at that validator — see the T-328 remarks for the full
+         reasoning. T-331 locks the correlation-id validation in CorrelationIdMiddleware. -->
     <ProjectReference Include="..\..\..\14.Presentation\SharedKernel.Presentation.WebApi\SharedKernel.Presentation.WebApi.csproj" PrivateAssets="all" />
+    <!-- P-562: the OpenAPI add-on and the SignalR package, so PresentationLayeringRulesTests can
+         prove against the real assemblies that only the WebApi core is exempt from the
+         ProblemDetails and Result-branch rules, and that the versioning/OpenAPI/Scalar stack stays
+         inside SharedKernel.Presentation.OpenApi (NoOpenApiStackDependencyOutsideOpenApiAddOn). -->
+    <ProjectReference Include="..\..\..\14.Presentation\SharedKernel.Presentation.OpenApi\SharedKernel.Presentation.OpenApi.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\14.Presentation\SharedKernel.Presentation.SignalR\SharedKernel.Presentation.SignalR.csproj" PrivateAssets="all" />
     <!-- Required to resolve the real SharedKernel.Integration.Webhooks assembly in
          SecureDefaultsAssertionTests (WO-064 P-432, SK.00.WebhookSsrfGuardLock) — verified on disk
          that 15.Integration shipped IWebhookUrlValidator/PrivateNetworkWebhookUrlValidator and
@@ -223,9 +215,8 @@
          (SharedKernel.Presentation.Grpc, real package on disk) before this phase's implementation
          session, mirroring the CommunicationLayeringRulesTests.GrpcNeverReferencesContracts_
          RealGrpcAssembly_RulePasses (T-128) precedent for the sibling 11.Communication package.
-         Not yet registered in Platform.SharedKernel.slnx as of this reference (the coordinator is
-         registering it centrally) — an unregistered project still builds and resolves fine via a
-         direct ProjectReference by path. -->
+         Since P-562 it is also one of the real sibling assemblies PresentationLayeringRulesTests
+         passes through the WebApi-exclusion and OpenAPI-stack rules. -->
     <ProjectReference Include="..\..\..\14.Presentation\SharedKernel.Presentation.Grpc\SharedKernel.Presentation.Grpc.csproj" PrivateAssets="all" />
     <!-- Required for CoreArchitectureRulesTests' real-assembly verification (P-523/WO-083,
          SK.00.CoreDiRegistrationConventionLock) — every 01.Core package that owns its own DI

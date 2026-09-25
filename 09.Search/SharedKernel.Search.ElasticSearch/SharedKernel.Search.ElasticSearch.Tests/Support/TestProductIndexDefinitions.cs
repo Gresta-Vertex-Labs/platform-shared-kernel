@@ -18,6 +18,24 @@ internal static class TestProductIndexDefinitions
     public static SearchIndexDefinition WithMaxTotalHits(string indexName, int maxTotalHits) =>
         Configure(new SearchIndexDefinitionBuilder(indexName)).MaxTotalHits(maxTotalHits).Build().Value;
 
+    /// <summary>
+    /// The standard field shape with caller-supplied index-level text analysis — the neutral synonym and
+    /// stop-word declarations.
+    /// </summary>
+    public static SearchIndexDefinition WithTextAnalysis(
+        string indexName,
+        IReadOnlyDictionary<string, IReadOnlyList<string>> synonyms,
+        IReadOnlyList<string> stopWords)
+    {
+        var builder = Configure(new SearchIndexDefinitionBuilder(indexName));
+        foreach (var (term, replacements) in synonyms)
+        {
+            builder.Synonym(term, replacements.ToArray());
+        }
+
+        return builder.StopWords(stopWords.ToArray()).Build().Value;
+    }
+
     /// <summary>The standard field shape with a caller-supplied <see cref="SearchIndexDefinition.MaxFacetValues"/> cap.</summary>
     public static SearchIndexDefinition WithMaxFacetValues(string indexName, int maxFacetValues) =>
         Configure(new SearchIndexDefinitionBuilder(indexName)).MaxFacetValues(maxFacetValues).Build().Value;

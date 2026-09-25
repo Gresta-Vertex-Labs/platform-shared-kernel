@@ -33,7 +33,7 @@ public sealed class HttpResponseMessageExtensionsTests
     [InlineData(HttpStatusCode.InternalServerError)]
     public async Task EnsureSuccessOrErrorAsync_OnNon2xxResponse_ReturnsFailure(HttpStatusCode statusCode)
     {
-        // Arrange
+        // Arrange — a problem without "errorCode": neither its code-shaped "type" nor its "title" is the code.
         var body = $@"{{""type"":""http.{(int)statusCode}"",""title"":""Error"",""status"":{(int)statusCode}}}";
         var content = new StringContent(body, Encoding.UTF8);
         content.Headers.ContentType = new MediaTypeHeaderValue(ProblemDetailsDeserializer.ProblemDetailsContentType);
@@ -44,15 +44,15 @@ public sealed class HttpResponseMessageExtensionsTests
 
         // Assert
         result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().NotBeNullOrEmpty();
+        result.Error.Code.Should().Be($"http.{(int)statusCode}");
     }
 
     [Fact]
     public async Task EnsureSuccessOrErrorAsync_OnProblemJsonResponse_MapsErrorFields()
     {
-        // Arrange — the real 14.Presentation shape: "type" is an RFC 9457 status URI, "title" and
-        // "errorCode" both carry Error.Code, "detail" carries Error.Message.
-        var body = """{"type":"https://httpstatuses.io/422","title":"validation.required","errorCode":"validation.required","detail":"Name is required","status":422}""";
+        // Arrange — the P-562 platform shape: "errorCode" carries Error.Code and "detail" Error.Message;
+        // "title" is the status reason phrase and "type" a URI, neither of them the code.
+        var body = """{"type":"https://tools.ietf.org/html/rfc4918#section-11.2","title":"Unprocessable Entity","errorCode":"validation.required","detail":"Name is required","status":422}""";
         var content = new StringContent(body, Encoding.UTF8);
         content.Headers.ContentType = new MediaTypeHeaderValue(ProblemDetailsDeserializer.ProblemDetailsContentType);
         var response = new HttpResponseMessage(HttpStatusCode.UnprocessableEntity) { Content = content };
@@ -64,6 +64,21 @@ public sealed class HttpResponseMessageExtensionsTests
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("validation.required");
         result.Error.Message.Should().Be("Name is required");
+    }
+
+    [Fact]
+    public async Task EnsureSuccessOrErrorAsync_OnBodilessGatewayTimeout_FailsAsATimeout()
+    {
+        // Arrange — a proxy that gave up waiting: 504 with no body at all.
+        var response = new HttpResponseMessage(HttpStatusCode.GatewayTimeout) { Content = new StringContent(string.Empty) };
+
+        // Act
+        var result = await response.EnsureSuccessOrErrorAsync();
+
+        // Assert — a retryable timeout (P-562), not an Unexpected defect.
+        result.IsFailure.Should().BeTrue();
+        result.Error.Type.Should().Be(SharedKernel.Primitives.Errors.ErrorType.Timeout);
+        result.Error.Code.Should().Be("http.504");
     }
 
     /// <summary>

@@ -20,6 +20,8 @@
     <!-- 13.ServiceDefaults: host, storage telemetry, one readiness check per store -->
     <PackageReference Include="SharedKernel.ServiceDefaults" />
     <PackageReference Include="SharedKernel.ServiceDefaults.Storage" />
+    <!-- 05.Application: the endpoints send commands and queries through MediatR -->
+    <PackageReference Include="SharedKernel.Application" />
     <!-- 14.Presentation: Result -> ProblemDetails -->
     <PackageReference Include="SharedKernel.Presentation.WebApi" />
   </ItemGroup>

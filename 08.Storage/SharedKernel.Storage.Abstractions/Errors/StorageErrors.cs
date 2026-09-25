@@ -127,9 +127,9 @@ public static class StorageErrors
     /// </summary>
     /// <param name="store">The store name.</param>
     /// <param name="operation">The operation, e.g. <c>upload</c>; the message says it can be retried later.</param>
-    /// <returns>An <see cref="ErrorType.Unexpected"/> error.</returns>
+    /// <returns>An <see cref="ErrorType.Unavailable"/> error, so the HTTP boundary answers 503 rather than 500.</returns>
     public static Error Unavailable(string store, string operation) =>
-        Error.Unexpected(
+        Error.Unavailable(
             StorageErrorCodes.Unavailable,
             $"Store '{store}' is unavailable; the {operation} can be retried later.");
 

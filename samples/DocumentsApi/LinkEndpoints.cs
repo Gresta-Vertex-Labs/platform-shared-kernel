@@ -1,62 +1,73 @@
-using SharedKernel.Presentation.WebApi.Results;
+using DocumentsApi.Features.Links;
+using MediatR;
+using SharedKernel.Presentation.WebApi;
 using SharedKernel.Storage;
 
 namespace DocumentsApi;
 
 /// <summary>
-/// Presigned transfers: the service only signs, and the client moves the bytes directly with the provider. Every
-/// expiry is capped by the store's MaxPresignExpiry.
+/// Presigned transfers: the service only signs, and the client moves the bytes directly with the provider. Each endpoint
+/// sends a command (<c>Features/Links</c>); every expiry is capped by the store's MaxPresignExpiry.
 /// </summary>
-public static class LinkEndpoints
+public sealed class LinkEndpoints : IEndpointModule
 {
-    public static void MapLinkEndpoints(this IEndpointRouteBuilder app)
+    public static void Map(IEndpointRouteBuilder app)
     {
-        app.MapPost("/links/{store}/download", (string store, DownloadLinkRequest request, HttpContext http, IFileStorageFactory factory, CancellationToken ct) =>
-            FileEndpoints.WithStore(factory, store, http, async files =>
-                (await files.CreateDownloadUrlAsync(request.Key, new PresignedDownloadOptions
-                {
-                    Expiry = TimeSpan.FromSeconds(request.ExpirySeconds),
-                    ContentDisposition = request.FileName is null ? null : $"attachment; filename=\"{request.FileName}\"",
-                }, ct)).ToProblemDetailsResult()));
+        app.MapPost("/links/{store}/download", (string store, DownloadLinkRequest body, HttpRequest request, ISender sender, CancellationToken ct) =>
+            sender.Send(
+                    new CreateDownloadLink(
+                        StoreAddress.For(store, request),
+                        body.Key,
+                        new PresignedDownloadOptions
+                        {
+                            Expiry = TimeSpan.FromSeconds(body.ExpirySeconds),
+                            ContentDisposition = body.FileName is null ? null : $"attachment; filename=\"{body.FileName}\"",
+                        }),
+                    ct)
+                .ToOk());
 
         // One known file: the client PUTs it with every returned header.
-        app.MapPost("/links/{store}/upload", (string store, UploadLinkRequest request, HttpContext http, IFileStorageFactory factory, CancellationToken ct) =>
-            FileEndpoints.WithStore(factory, store, http, async files =>
-                (await files.CreateUploadUrlAsync(request.Key, new PresignedUploadOptions
-                {
-                    Expiry = TimeSpan.FromSeconds(request.ExpirySeconds),
-                    ContentType = request.ContentType,
-                    CreateOnly = request.CreateOnly,
-                }, ct)).ToProblemDetailsResult()));
+        app.MapPost("/links/{store}/upload", (string store, UploadLinkRequest body, HttpRequest request, ISender sender, CancellationToken ct) =>
+            sender.Send(
+                    new CreateUploadLink(
+                        StoreAddress.For(store, request),
+                        body.Key,
+                        new PresignedUploadOptions
+                        {
+                            Expiry = TimeSpan.FromSeconds(body.ExpirySeconds),
+                            ContentType = body.ContentType,
+                            CreateOnly = body.CreateOnly,
+                        }),
+                    ct)
+                .ToOk());
 
         // A browser form: the provider enforces the size range and content type.
-        app.MapPost("/links/{store}/form", (string store, UploadFormRequest request, HttpContext http, IFileStorageFactory factory, CancellationToken ct) =>
-            FileEndpoints.WithStore(factory, store, http, async files =>
-                (await files.CreateUploadFormAsync(request.Key, new PresignedPostOptions
-                {
-                    Expiry = TimeSpan.FromSeconds(request.ExpirySeconds),
-                    MaxSize = request.MaxSize,
-                    ContentType = request.ContentType,
-                }, ct)).ToProblemDetailsResult()));
+        app.MapPost("/links/{store}/form", (string store, UploadFormRequest body, HttpRequest request, ISender sender, CancellationToken ct) =>
+            sender.Send(
+                    new CreateUploadForm(
+                        StoreAddress.For(store, request),
+                        body.Key,
+                        new PresignedPostOptions
+                        {
+                            Expiry = TimeSpan.FromSeconds(body.ExpirySeconds),
+                            MaxSize = body.MaxSize,
+                            ContentType = body.ContentType,
+                        }),
+                    ct)
+                .ToOk());
 
         // Very large files: start, one URL per part, complete (or abort).
-        app.MapPost("/multipart/{store}/start", (string store, StartMultipartRequest request, HttpContext http, IFileStorageFactory factory, CancellationToken ct) =>
-            FileEndpoints.WithStore(factory, store, http, async files =>
-                (await files.StartMultipartUploadAsync(request.Key, new MultipartUploadOptions { ContentType = request.ContentType }, ct))
-                    .ToProblemDetailsResult()));
+        app.MapPost("/multipart/{store}/start", (string store, StartMultipartRequest body, HttpRequest request, ISender sender, CancellationToken ct) =>
+            sender.Send(new StartMultipartUpload(StoreAddress.For(store, request), body.Key, body.ContentType), ct).ToOk());
 
-        app.MapPost("/multipart/{store}/part-url", (string store, PartUrlRequest request, HttpContext http, IFileStorageFactory factory, CancellationToken ct) =>
-            FileEndpoints.WithStore(factory, store, http, async files =>
-                (await files.CreateUploadPartUrlAsync(request.Upload, request.PartNumber, TimeSpan.FromSeconds(request.ExpirySeconds), ct))
-                    .ToProblemDetailsResult()));
+        app.MapPost("/multipart/{store}/part-url", (string store, PartUrlRequest body, HttpRequest request, ISender sender, CancellationToken ct) =>
+            sender.Send(new CreatePartUploadLink(StoreAddress.For(store, request), body.Upload, body.PartNumber, TimeSpan.FromSeconds(body.ExpirySeconds)), ct).ToOk());
 
-        app.MapPost("/multipart/{store}/complete", (string store, CompleteMultipartRequest request, HttpContext http, IFileStorageFactory factory, CancellationToken ct) =>
-            FileEndpoints.WithStore(factory, store, http, async files =>
-                (await files.CompleteMultipartUploadAsync(request.Upload, request.Parts, cancellationToken: ct)).ToProblemDetailsResult()));
+        app.MapPost("/multipart/{store}/complete", (string store, CompleteMultipartRequest body, HttpRequest request, ISender sender, CancellationToken ct) =>
+            sender.Send(new CompleteMultipartUpload(StoreAddress.For(store, request), body.Upload, body.Parts), ct).ToOk());
 
-        app.MapPost("/multipart/{store}/abort", (string store, MultipartUpload upload, HttpContext http, IFileStorageFactory factory, CancellationToken ct) =>
-            FileEndpoints.WithStore(factory, store, http, async files =>
-                (await files.AbortMultipartUploadAsync(upload, ct)).ToProblemDetailsResult()));
+        app.MapPost("/multipart/{store}/abort", (string store, MultipartUpload upload, HttpRequest request, ISender sender, CancellationToken ct) =>
+            sender.Send(new AbortMultipartUpload(StoreAddress.For(store, request), upload), ct).ToNoContent());
     }
 }
 

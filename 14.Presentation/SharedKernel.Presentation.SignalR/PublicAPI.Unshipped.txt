@@ -1,0 +1,20 @@
+#nullable enable
+SharedKernel.Presentation.SignalR.HubCallerContextExtensions
+SharedKernel.Presentation.SignalR.HubErrorMessage
+SharedKernel.Presentation.SignalR.HubGroupNaming
+SharedKernel.Presentation.SignalR.SharedKernelSignalROptions
+SharedKernel.Presentation.SignalR.SharedKernelSignalROptions.InvocationRateLimit.get -> SharedKernel.Presentation.SignalR.SignalRInvocationRateLimitOptions!
+SharedKernel.Presentation.SignalR.SharedKernelSignalROptions.SharedKernelSignalROptions() -> void
+SharedKernel.Presentation.SignalR.SignalRHostBuilderExtensions
+SharedKernel.Presentation.SignalR.SignalRInvocationRateLimitOptions
+SharedKernel.Presentation.SignalR.SignalRInvocationRateLimitOptions.PermitLimit.get -> int?
+SharedKernel.Presentation.SignalR.SignalRInvocationRateLimitOptions.PermitLimit.set -> void
+SharedKernel.Presentation.SignalR.SignalRInvocationRateLimitOptions.SignalRInvocationRateLimitOptions() -> void
+SharedKernel.Presentation.SignalR.SignalRInvocationRateLimitOptions.Window.get -> System.TimeSpan
+SharedKernel.Presentation.SignalR.SignalRInvocationRateLimitOptions.Window.set -> void
+static SharedKernel.Presentation.SignalR.HubCallerContextExtensions.GetCorrelationId(this Microsoft.AspNetCore.SignalR.HubCallerContext! context) -> string?
+static SharedKernel.Presentation.SignalR.HubCallerContextExtensions.GetTenantId(this Microsoft.AspNetCore.SignalR.HubCallerContext! context) -> System.Guid?
+static SharedKernel.Presentation.SignalR.HubErrorMessage.TryParse(string? errorMessage, out string? code, out string? message) -> bool
+static SharedKernel.Presentation.SignalR.HubGroupNaming.TenantGroup(System.Guid tenantId) -> string!
+static SharedKernel.Presentation.SignalR.SharedKernelSignalROptions.SectionName.get -> string!
+static SharedKernel.Presentation.SignalR.SignalRHostBuilderExtensions.AddSharedKernelSignalR(this Microsoft.Extensions.Hosting.IHostApplicationBuilder! builder, System.Action<SharedKernel.Presentation.SignalR.SharedKernelSignalROptions!>? configure = null) -> Microsoft.AspNetCore.SignalR.ISignalRServerBuilder!

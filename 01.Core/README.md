@@ -57,7 +57,7 @@ public async Task<Result<Guid>> HandleAsync(CreatePayout command, CancellationTo
 | [**Validation.FluentValidation**](SharedKernel.Validation.FluentValidation/README.md) | A rule for every Validation type: `MustBeValidIban()`, `MustBeValidVatNumber(x => x.Country)` … | FluentValidation |
 | [**DataPrivacy**](SharedKernel.DataPrivacy/README.md) | 23 kinds of personal data, including every GDPR and KVKK special category, as attributes that mask values in logs; masking helpers, HMAC pseudonymization, idempotent data-subject export and erasure | — |
 | [**Localization**](SharedKernel.Localization/README.md) | Typed message definitions whose errors carry their values, named placeholders, one immutable catalog from JSON or `.resx`, validated at startup | — |
-| [**FeatureManagement**](SharedKernel.FeatureManagement/README.md) | Feature flags on OpenFeature's `IFeatureClient`: typed `FeatureFlag<T>`, the caller's user and tenant applied to every evaluation, one answer per request, never throws, checked at startup | OpenFeature, Microsoft.FeatureManagement |
+| [**FeatureManagement**](SharedKernel.FeatureManagement/README.md) | Feature flags on OpenFeature's `IFeatureClient`: typed `FeatureFlag<T>`, the caller's user and tenant (from the accessor your service registers) applied to every evaluation, one answer per request, never throws, checked at startup | OpenFeature, Microsoft.FeatureManagement |
 
 Every package targets `net10.0`. A dash means the package needs nothing beyond the .NET runtime and
 `Microsoft.Extensions.*` abstractions.
@@ -220,7 +220,7 @@ return OrderMessages.NotFound.ToError(ErrorType.NotFound, orderId);   // tr-TR c
 ```csharp
 public static readonly FeatureFlag<bool> NewCheckout = FeatureFlag.Boolean("NewCheckout");
 
-if (await flags.IsEnabledAsync(NewCheckout, ct)) { ... }   // targets the current user and tenant; never throws
+if (await flags.IsEnabledAsync(NewCheckout, ct)) { ... }   // targets the user and tenant your accessor reports; never throws
 ```
 
 **Compression: a cut-off payload is an error, not a shorter result.**
@@ -252,14 +252,14 @@ before the first release.
 | Package | Latest version | Review |
 | --- | --- | --- |
 | FeatureManagement | `1.0.0-alpha.0.1112` | P-555: OpenFeature, working targeting, one answer per request |
-| Primitives | `1.0.0-alpha.0.1112` | republished with each review |
+| Primitives | `1.0.0-alpha.0.1171` | republished with each review (last with 07.Messaging's first publish); P-563 added `ErrorCodes.Idempotency` (republish pending) |
 | DataPrivacy | `1.0.0-alpha.0.1106` | P-554: Microsoft compliance model, GDPR/KVKK taxonomy |
 | Validation, Validation.FluentValidation | `1.0.0-alpha.0.1100` | P-553: value types, full SWIFT registry, translatable errors |
 | Localization | `1.0.0-alpha.0.1100` | P-552: typed messages, validated catalogs |
-| Core | `1.0.0-alpha.0.1100` | republished with P-553 |
-| Compression | `1.0.0-alpha.0.1088` | P-551: truncation-detecting frame, decompression cap |
-| Configuration | `1.0.0-alpha.0.1088` | republished with P-551 |
-| Cryptography | `1.0.0-alpha.0.1066` | P-545: FIPS-approved defaults, async and synchronous services |
+| Core | `1.0.0-alpha.0.1171` | republished with P-553 and with 07.Messaging's first publish |
+| Compression | `1.0.0-alpha.0.1171` | P-551: truncation-detecting frame, decompression cap; republished with 07.Messaging's first publish |
+| Configuration | `1.0.0-alpha.0.1171` | republished with P-551 and with 07.Messaging's first publish |
+| Cryptography | `1.0.0-alpha.0.1171` | P-545: FIPS-approved defaults, async and synchronous services; republished with 07.Messaging's first publish |
 | Cryptography.Argon2, Cryptography.KeyVault.Azure | `1.0.0-alpha.0.998` | P-545 |
 
 Versions come from one repository-wide counter (MinVer), so a higher number always contains every earlier change. They
@@ -294,8 +294,9 @@ these packages:
 ```text
 LAYER       01.Core references nothing else in the platform; every other domain may reference it. net10.0.
 RESULTS     Result<T> / Result / ValidationResult (Primitives). Error(Code, Message, Type): Error.Validation | NotFound |
-            Conflict | Unauthorized | Forbidden | BusinessRule | Unexpected. Codes dot.separated.lowercase, stable, never
-            interpolated; check ErrorCodes first. Error.None, never null. Value on a failure throws.
+            Conflict | Unauthorized | Forbidden | BusinessRule | Unexpected | Unavailable (503) | Timeout (504). Codes
+            dot.separated.lowercase, stable, never interpolated; check ErrorCodes first. Error.None, never null. Value on a
+            failure throws.
 CHAINING    Core: Map Bind Ensure Tap Match (sync, Task, ValueTask); ResultTry.Try/TryAsync; ResultCombine.Combine;
             Guard.Against.X(value) -> Error? (null = passed); Guard.Throw.X(value) throws DomainException.
 TIME / IDS  inject IClock (SK0001); IIdGenerator / UuidV7IdGenerator; LoggingEventIdRanges.Core = 1000.
@@ -315,7 +316,8 @@ LOCALIZE    LocalizedMessage.Define<T..>(code, "text {name}", "name").ToError(ty
             AddLocalizationCatalog(c => c.AddJsonDirectory(path)), once.
 FLAGS       FeatureFlag.Boolean / String / Integer / Double / Object<T>; inject OpenFeature IFeatureClient (scoped);
             IsEnabledAsync / GetValueAsync / GetDetailsAsync;
-            AddSharedKernelFeatureManagement(rootConfiguration, o => o.ValidateOnStart(...)).
+            AddSharedKernelFeatureManagement(rootConfiguration, o => o.ValidateOnStart(...)); register your own
+            IFeatureTargetingContextAccessor for targeting (none by default; never read from baggage).
 DI          TryAdd everywhere: register overrides BEFORE the package call. AddLocalizationCatalog and
             AddSharedKernelFeatureManagement throw on a second call.
 FORBIDDEN   DateTime.UtcNow; throwing for expected failures; interpolated error codes; secrets in messages;

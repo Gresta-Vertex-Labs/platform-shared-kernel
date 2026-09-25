@@ -58,4 +58,17 @@ public static class WellKnownHeaders
     /// <c>[Claim, Header, Database]</c> for that reason.
     /// </remarks>
     public const string TenantId = "X-Tenant-Id";
+
+    /// <summary>
+    /// Header carrying the key that identifies one logical operation across retries, so the
+    /// receiver can perform it at most once (<c>"Idempotency-Key"</c>).
+    /// </summary>
+    /// <remarks>
+    /// Read inbound at the API boundary by <c>14.Presentation</c> (<c>[RequireIdempotencyKey]</c>),
+    /// and written outbound by <c>11.Communication.Rest</c>'s opt-in idempotency-key propagation,
+    /// which keeps one value across every retry of a call. Both sides must name the same header, or
+    /// the key a client sends is never read. The name is the one the IETF HTTPAPI
+    /// <c>Idempotency-Key</c> header draft defines.
+    /// </remarks>
+    public const string IdempotencyKey = "Idempotency-Key";
 }

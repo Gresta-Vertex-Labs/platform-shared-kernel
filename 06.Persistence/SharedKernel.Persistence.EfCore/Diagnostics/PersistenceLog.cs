@@ -156,4 +156,48 @@ internal static partial class PersistenceLog
         Level = LogLevel.Warning,
         Message = "The transaction of '{ContextType}' was rolled back: work that joined it failed.")]
     internal static partial void RolledBackAfterJoinedFailure(ILogger logger, string contextType);
+
+    /// <summary>
+    /// An expected version (an <c>If-Match</c>) did not open for the aggregate it was used with, so it was treated as
+    /// stale. Carries the aggregate type and why, never the token.
+    /// </summary>
+    [LoggerMessage(
+        EventId = LoggingEventIdRanges.Persistence + 22,
+        Level = LogLevel.Debug,
+        Message = "An expected version of '{EntityType}' was treated as stale: {Reason}.")]
+    internal static partial void EntityVersionRejected(ILogger logger, string entityType, string reason);
+
+    /// <summary>The asynchronous key provider could not be asked for its current key; the key already loaded stays in use.</summary>
+    [LoggerMessage(
+        EventId = LoggingEventIdRanges.Persistence + 23,
+        Level = LogLevel.Warning,
+        Message = "The key that seals entity versions could not be refreshed; the current key stays in use and is asked for again later.")]
+    internal static partial void EntityVersionKeyRefreshFailed(ILogger logger, Exception exception);
+
+    /// <summary>The current version of a conflicting row could not be sealed, so the conflict carries no version.</summary>
+    [LoggerMessage(
+        EventId = LoggingEventIdRanges.Persistence + 24,
+        Level = LogLevel.Warning,
+        Message = "The current version of '{EntityType}' could not be sealed; the conflict is reported without it.")]
+    internal static partial void EntityVersionNotSealed(ILogger logger, Exception exception, string entityType);
+
+    /// <summary>
+    /// The startup warm-up could not load the key that seals entity versions from the asynchronous key provider. Not
+    /// fatal: the first request that issues or checks a version loads it instead.
+    /// </summary>
+    [LoggerMessage(
+        EventId = LoggingEventIdRanges.Persistence + 25,
+        Level = LogLevel.Warning,
+        Message = "The key that seals entity versions could not be loaded at startup; the first request that issues or checks a version loads it instead.")]
+    internal static partial void EntityVersionKeyWarmUpFailed(ILogger logger, Exception exception);
+
+    /// <summary>
+    /// The asynchronous key provider did not answer the startup warm-up in time. Host start goes on; the key is still
+    /// loaded in the background, and a request that needs a version before then loads it itself.
+    /// </summary>
+    [LoggerMessage(
+        EventId = LoggingEventIdRanges.Persistence + 26,
+        Level = LogLevel.Warning,
+        Message = "The key that seals entity versions was not loaded within {Timeout} at startup; it keeps loading in the background, and a request that needs a version before then loads it itself.")]
+    internal static partial void EntityVersionKeyWarmUpTimedOut(ILogger logger, TimeSpan timeout);
 }

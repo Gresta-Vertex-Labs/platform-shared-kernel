@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
-using SharedKernel.Application.Behaviors.Idempotency;
+using SharedKernel.Application;
+using SharedKernel.Application.Idempotency;
 using SharedKernel.Application.Transactions;
 using SharedKernel.Application.Context;
 using SharedKernel.Persistence.Testing;
@@ -18,10 +19,9 @@ public static class ApplicationServiceCollectionExtensions
     /// as singletons.
     /// </summary>
     /// <remarks>
-    /// Mirrors <c>AddFakeCachingServices()</c>'s one-call bundling pattern. This call satisfies
-    /// <c>ApplicationBehaviorsBuilder</c>'s <c>Build()</c>-time missing-dependency guards for
-    /// <c>AddTransactionBehavior()</c>/<c>AddAuthorizationBehavior()</c>/<c>AddIdempotencyBehavior()</c>
-    /// in one step.
+    /// Mirrors <c>AddFakeCachingServices()</c>'s one-call bundling pattern. This call satisfies the
+    /// host-start seam check of <c>AddSharedKernelApplication</c> for <c>WithTransactions()</c>,
+    /// <c>WithIdempotency()</c> and <c>[RequirePermission]</c> requests in one step, before or after that call.
     /// </remarks>
     /// <remarks>
     /// Local-seam-only scope: every fake registered here implements one of <c>05.Application</c>'s

@@ -3,7 +3,9 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using SharedKernel.Application.Context;
+using SharedKernel.Cryptography.Symmetric;
 using SharedKernel.Domain.Abstractions;
+using SharedKernel.Persistence.EfCore.Concurrency;
 using SharedKernel.Persistence.EfCore.Exceptions;
 using SharedKernel.Persistence.EfCore.Extensibility;
 using SharedKernel.Persistence.EfCore.Interceptors;
@@ -42,12 +44,14 @@ public sealed class PersistenceContextDependencies
         IEnumerable<IPersistenceOptionsExtension>? optionsExtensions,
         IEnumerable<IDbUpdateExceptionClassifier>? exceptionClassifiers,
         IIdGenerator? keyGenerator,
-        ILoggerFactory? loggerFactory)
+        ILoggerFactory? loggerFactory,
+        EntityVersionCodec? entityVersions = null)
     {
         ArgumentNullException.ThrowIfNull(clock);
         ArgumentNullException.ThrowIfNull(initialRequestContext);
         ArgumentException.ThrowIfNullOrWhiteSpace(serviceName);
 
+        EntityVersions = entityVersions ?? EntityVersionCodec.Unconfigured;
         Clock = clock;
         InitialRequestContext = initialRequestContext;
         ServiceName = serviceName;
@@ -76,6 +80,12 @@ public sealed class PersistenceContextDependencies
     /// <param name="serviceName">The actor recorded when the caller has no user id. Defaults to <c>"system"</c>.</param>
     /// <param name="additionalInterceptors">Extra interceptors to add to every context built with the result.</param>
     /// <param name="loggerFactory">Optional logger factory for the context's own diagnostics.</param>
+    /// <param name="entityVersionKeys">
+    /// The root keys entity versions (ETags) are sealed with — the subkey for <c>"SharedKernel.Persistence.EntityVersion"</c>
+    /// is derived from them, as for a registered context. Without them <c>ConcurrencyVersion.Get</c> and an
+    /// expected-version update throw. An asynchronous-only provider (a KMS) is asked for its key by the first version,
+    /// which blocks that caller once: without a host, nothing loads the key ahead of time.
+    /// </param>
     /// <returns>The dependencies to pass to the context's constructor.</returns>
     /// <remarks>
     /// The PostgreSQL SQLSTATE classifier is always included. Capability packages that contribute through
@@ -89,7 +99,8 @@ public sealed class PersistenceContextDependencies
         IDomainEventDispatcher? domainEventDispatcher = null,
         string serviceName = PersistenceDefaults.ServiceName,
         IEnumerable<IInterceptor>? additionalInterceptors = null,
-        ILoggerFactory? loggerFactory = null)
+        ILoggerFactory? loggerFactory = null,
+        IEncryptionKeyProvider? entityVersionKeys = null)
 #pragma warning restore RS0026
         => new(
             clock ?? new SystemClock(),
@@ -102,7 +113,8 @@ public sealed class PersistenceContextDependencies
             optionsExtensions: null,
             exceptionClassifiers: [new PostgresDbUpdateExceptionClassifier()],
             keyGenerator: null,
-            loggerFactory);
+            loggerFactory,
+            entityVersionKeys is null ? null : new EntityVersionCodec(EntityVersionKeyRing.For(entityVersionKeys, loggerFactory)));
 
     /// <summary>The clock for audit stamps and for aggregates the context materializes.</summary>
     internal IClock Clock { get; }
@@ -136,6 +148,13 @@ public sealed class PersistenceContextDependencies
 
     /// <summary>Creates the context's own loggers.</summary>
     internal ILoggerFactory LoggerFactory { get; }
+
+    /// <summary>
+    /// Seals row versions into opaque <c>EntityVersion</c> tokens and opens them, with the service's keys; without a
+    /// registered key provider (or, for a context built with <see cref="Create"/>, without <c>entityVersionKeys</c>)
+    /// every use throws.
+    /// </summary>
+    internal EntityVersionCodec EntityVersions { get; }
 
     /// <summary>
     /// Adds the platform interceptors, every additional interceptor and every

@@ -501,21 +501,21 @@ SK0015  StreamPipelineBehaviorMisregistration
                 is the open generic MediatR.IPipelineBehavior<,> (arity 2) and a second type
                 argument whose resolved ITypeSymbol.AllInterfaces includes an entry whose
                 OriginalDefinition matches MediatR.IStreamPipelineBehavior<,> (arity 2) —
-                found anywhere EXCEPT inside a MethodDeclarationSyntax whose Identifier.Text is
-                exactly "AddStreamingBehaviors". Requires SemanticModel.GetSymbolInfo on both
+                found anywhere; no call site is exempt (P-563 removed the method-name exemption
+                for "AddStreamingBehaviors"). Requires SemanticModel.GetSymbolInfo on both
                 type-argument syntax nodes to resolve interface implementation — the second SK
                 rule in this domain (after SK0011) requiring semantic model resolution.
-    Fix       : Remove the ad-hoc IPipelineBehavior<,> registration for the streaming behavior
-                type and call ApplicationBehaviorsBuilder.AddStreamingBehaviors() instead.
+    Fix       : Register the streaming behavior against MediatR.IStreamPipelineBehavior<,> instead
+                (SharedKernel.Application ships no streaming behaviors since P-544).
                 MediatR dispatches IStreamRequest<TResponse> through IStreamPipelineBehavior<,>,
                 never through IPipelineBehavior<,> — a streaming behavior registered against the
                 wrong interface is silently never invoked.
     Suppress  : Per-call-site via #pragma warning disable SK0015 only for a deliberate hybrid
                 unary/streaming behavior type; document why the type intentionally implements
                 both interfaces.
-    Note      : Introduced WO-038 P-235. The self-exemption is method-name-scoped
-                ("AddStreamingBehaviors"), not namespace-scoped — the canonical builder method
-                is the single sanctioned call site for streaming-behavior registration.
+    Note      : Introduced WO-038 P-235. Its method-name exemption ("AddStreamingBehaviors") was
+                removed in P-563: the registration never runs wherever it is made, and the
+                05.Application helper the exemption was for no longer exists.
 
 SK0016  RequestTypeShortNameUsage
     Category  : Design
@@ -524,7 +524,7 @@ SK0016  RequestTypeShortNameUsage
                 TypeOfExpressionSyntax (i.e. typeof(X).Name), found inside a file whose
                 namespace declaration (NamespaceDeclarationSyntax or
                 FileScopedNamespaceDeclarationSyntax) starts with "SharedKernel.Application"
-                (covers both SharedKernel.Application and SharedKernel.Application.Behaviors),
+                (covers SharedKernel.Application, .Application.Caching and .Application.Pipeline),
                 UNLESS the member access is the right-hand operand of a coalesce expression (??)
                 whose left-hand operand is typeof(X).FullName for the syntactically-identical X
                 (same TypeArgumentSyntax/TypeSyntax text). Syntax-only; no SemanticModel
@@ -566,7 +566,7 @@ SK0017  CommandImplementsCacheableQuery
                 Hard Violations section. Third SK analyzer in this domain requiring a semantic
                 interface-closure check, after SK0011 and SK0015. Runs inside a CONSUMING
                 microservice's own compilation — the violation is a command/query type
-                declaration, which never occurs inside SharedKernel.Application.Behaviors itself.
+                declaration, which never occurs inside SharedKernel.Application itself.
 
 SK0018  QueryImplementsInvalidatesCache
     Category  : Design
@@ -1279,8 +1279,13 @@ SK0032  CorsWildcardOriginWithCredentials
                 ASP.NET Core's CorsService only rejects it at request-handling time, so a
                 misconfigured policy fails silently per-request instead of failing fast at
                 startup.
-    Suppress  : Per-call-site via #pragma warning disable SK0032; no legitimate production case
-                is known — document the rationale inline if ever suppressed.
+    Suppress  : Per-call-site via #pragma warning disable SK0032 — document the rationale inline.
+                One known false positive (P-562 follow-up): 14.Presentation's internal
+                CorsPolicyConfiguration.Configure calls AllowAnyOrigin() and AllowCredentials() in one
+                AddPolicy lambda, a combination startup validation of SharedKernelWebApiOptions.Cors
+                makes impossible at runtime; no effect while analyzers do not run on the repo's own
+                code. Since P-562, CORS is configuration (SharedKernelWebApiOptions.Cors), validated at
+                startup by 14.Presentation's internal WebApiOptionsValidator; AddSharedKernelCors is gone.
     Limitation: The "unconditionally true" lambda-body detection is a SYNTACTIC pattern check
                 only (literal `true` / `return true;`), not full data-flow or constant-propagation
                 analysis — an indirect always-true path (e.g. a local `const bool always = true;
@@ -1456,10 +1461,17 @@ SK0036  RawRpcExceptionConstruction
                 anywhere outside the `SharedKernel.Presentation.Grpc` namespace (single shared
                 exemption prefix, mirroring SK0029's one-owning-package shape, not SK0026's
                 per-client-type mapping).
-    Fix       : Route the failure through `SharedKernel.Presentation.Grpc`'s sanctioned
-                `Result<T>`-to-`RpcException` extension (`GrpcResultExtensions`, backed by
-                `GrpcStatusCodeMap.Resolve`) instead of constructing `RpcException`/`Status`
-                directly at a service-method call site.
+    Fix       : Return a `Result` and end it with `SharedKernel.Core.Extensions`' `ThrowIfFailure()` /
+                `GetValueOrThrow()`, which throw `Error.ToException()`; `SharedKernel.Presentation.Grpc`'s
+                exception interceptor maps that exception to the rich `google.rpc.Status` (status from
+                the package's internal `GrpcStatusCodeMap`, `ErrorInfo` with the error code, `BadRequest` with the field
+                errors). A hand-built `RpcException` keeps only its status code (and, for a client
+                category, its message): the interceptor rebuilds it with reason `grpc.{status}` and drops
+                its trailers (P-562 R30). History: until P-562 the
+                package's own `…Grpc.Results.GrpcResultExtensions.ToGrpcResult()`; the redesign renamed it
+                `ThrowIfFailure()`/`GetValueOrThrow()` in the root namespace; the final review (R32)
+                removed those and the `ResultFailures` handoff (same signatures as Core's, CS0121). Each
+                step changed only the message; the rule and its exemption prefix did not.
     Suppress  : Per-call-site via #pragma warning disable SK0036; no legitimate production case
                 outside `SharedKernel.Presentation.Grpc` itself is known — document the rationale
                 inline if ever suppressed.
@@ -1530,9 +1542,10 @@ SK0039  InvalidIntegrationEventAttribute
 SK0040  PipelineMarkerResponseShapeMismatch
     Category  : Design
     Severity  : Warning
-    Trigger   : A non-abstract class, record, or struct implementing
-                SharedKernel.Application.Behaviors.Authorization.IAuthorizeRequest and/or
-                SharedKernel.Application.Behaviors.Idempotency.IIdempotentRequest (resolved through
+    Trigger   : A non-abstract class, record, or struct carrying SharedKernel.Application's
+                [RequirePermission] attribute (RequirePermissionAttribute, on the type or a base type,
+                namespace exactly SharedKernel.Application, so WebApi's namesake never matches; P-563)
+                and/or implementing IIdempotentRequest (resolved through
                 the full interface closure via SemanticModel.GetDeclaredSymbol +
                 INamedTypeSymbol.AllInterfaces, the same technique SK0017–SK0019 established), that
                 also implements MediatR.IRequest<TResponse> (directly or transitively, e.g. through
@@ -1542,7 +1555,7 @@ SK0040  PipelineMarkerResponseShapeMismatch
                 "SharedKernel.Primitives.Results"). Reported on the type name, naming every matched
                 marker and the actual resolved response type.
     Fix       : Declare the request's response as Result or a closed Result<T>, or remove the
-                marker interface if the request genuinely needs neither authorization nor
+                marker if the request genuinely needs neither authorization nor
                 idempotency short-circuiting.
     Exempt    : (1) A type implementing IAuditableRequest<TResponse> or ILoggableRequest<TResponse>
                 — READING FailureResponse.cs and both AuditingBehavior and LoggingBehavior found
@@ -1567,7 +1580,7 @@ SK0040  PipelineMarkerResponseShapeMismatch
                 rationale; fires globally, no suppression namespace.
     Note      : Introduced as a governance companion to 05.Application's P-544 pre-publish
                 redesign. Motivating gap: FailureResponse.Create<TResponse>
-                (SharedKernel.Application.Behaviors/Shared/FailureResponse.cs) binds to a public
+                (SharedKernel.Application/Shared/FailureResponse.cs) binds to a public
                 static Failure(Error) factory resolved via reflection per closed TResponse —
                 Result takes a hardcoded fast path, every other TResponse must expose that factory
                 or the call throws InvalidOperationException, at runtime, on the first
@@ -1611,6 +1624,12 @@ SharedKernelLayeringRules  (static class — pre-built predicates)
     .DomainNeverReferencesPersistence(Assembly)     → ConditionList  (hard rule)
     .DomainNeverReferencesMessaging(Assembly)       → ConditionList  (hard rule)
     .ApplicationNeverReferencesConcreteInfrastructure(Assembly) → ConditionList  (hard rule)
+    .ApplicationNeverReferencesCachingPollyHostingOrCore(Assembly) → ConditionList  (P-544, renamed P-563)
+        SharedKernel.Application (the pipeline since P-563) never references SharedKernel.Caching*, Polly,
+        Microsoft.Extensions.Hosting or SharedKernel.Core.
+    .ApplicationCachingNeverReferencesConcreteInfrastructure(Assembly) → ConditionList  (P-544, renamed P-563)
+        SharedKernel.Application.Caching reaches SharedKernel.Caching.Abstractions, never a cache provider,
+        persistence or messaging package.
     .TestingNeverReferencedByProduction(Assembly)   → ConditionList  (hard rule)
         P-558: also forbids SharedKernel.Persistence.Testing (the one published 16.Testing package);
         TestingPackagesNeverReferencedByProductionTests scans every production csproj plus the IL of the
@@ -1618,7 +1637,8 @@ SharedKernelLayeringRules  (static class — pre-built predicates)
     .PersistenceNeverReferencesApplicationOrSecurity(Assembly) → ConditionList  (P-557, REWRITTEN P-558)
         06.Persistence may reach 05.Application only through SharedKernel.Application.Abstractions
         (ApplicationAbstractionsNamespaces allow-list) — never MediatR, SharedKernel.Application's
-        MediatR-bearing namespaces (Behaviors, Messaging, DomainEvents, Extensions, Streaming) or
+        MediatR-bearing namespaces (Pipeline, Idempotency, Caching since P-563; the root namespace via the
+        assembly-reference check) or
         SharedKernel.Security. Paired with .PersistenceForbiddenAssemblyReferences(Assembly) →
         IReadOnlyList<string> (assembly-reference level) and a Roslyn source scan of 06.Persistence.
         PersistenceLayeringRulesTests also locks: EfCore IS the PostgreSQL provider, Dapper and Npgsql
@@ -3146,11 +3166,13 @@ PresentationLayeringRules  (static class — 14.Presentation Result/HTTP boundar
         sibling rules where the in-package exemption is also available, except here it is
         caller-controlled rather than predicate-internal because there is no single discriminating
         namespace prefix shared by every legitimate construction site inside the WebApi package
-        (ErrorProblemDetailsExtensions, the global IExceptionHandler, and any future ProblemDetails
-        factory all legitimately construct the type).
+        (its problem factory, the exception handler — the fallback ExceptionHandlerOptions.ExceptionHandler
+        since P-562 R5, no longer an IExceptionHandler — and any future ProblemDetails factory all
+        legitimately construct the type).
         Failure message: "{TypeDefinition.FullName}.{method} directly constructs {ProblemDetails |
-        HttpValidationProblemDetails}. Use Error.ToProblemDetails() / ResultHttpExtensions from
-        SharedKernel.Presentation.WebApi instead."
+        HttpValidationProblemDetails}." The fix (P-562 API): return a typed result (result.ToOk(), …)
+        or error.ToErrorResult(); when the object itself is needed, error.ToProblemDetails(httpContext)
+        — all from SharedKernel.Presentation.WebApi.
         Rationale: hand-rolled ProblemDetails construction outside the WebApi package bypasses the
         platform's single error-shape mapping (ErrorTypeStatusCodeMap, traceId population,
         Detail-suppression-outside-Development) and reintroduces the inconsistent error-body problem
@@ -3158,18 +3180,35 @@ PresentationLayeringRules  (static class — 14.Presentation Result/HTTP boundar
         mechanical enforcement, not documentation-only guidance.
         Offending pattern: return Results.Problem(new ProblemDetails { Title = "Bad request",
             Status = 400 }); inside a microservice endpoint
-        Compliant pattern: return error.ToProblemDetails() routed through Results.Problem(...), or
-            simply result.ToProblemDetailsResult() via ResultHttpExtensions
+        Compliant pattern (P-562): a typed result from the WebApi core — result.ToOk(),
+            error.ToErrorResult() — or, when a ProblemDetails object itself is needed,
+            error.ToProblemDetails(httpContext). (ToProblemDetailsResult was deleted by P-562.)
+        P-562: SharedKernel.Presentation.OpenApi/.SignalR/.Grpc are NOT exempt and pass unexempted —
+            SignalR and gRPC present errors through the core's ErrorPresentation (HubException
+            message, google.rpc.Status), the OpenAPI add-on describes the problem shape with
+            OpenApiSchema objects (ProblemDetailsSchema), never a ProblemDetails instance. Proven
+            against the real assemblies; a control test proves the real WebApi assembly FAILS the
+            rule (its problem factory news up ProblemDetails) — the reason it is the one exclusion.
 
     .NoInlineResultBranchBeforeHttpResultOutsideWebApi(params Assembly[] assemblies) → ConditionList
         Asserts that no method body in the supplied assemblies reads Result/Result<T>.IsSuccess or
-        .IsFailure and, within the same method, also constructs/returns a value typed
-        Microsoft.AspNetCore.Http.IResult, Microsoft.AspNetCore.Mvc.ActionResult, or
-        Microsoft.AspNetCore.Mvc.ActionResult<T> — without that same method also containing a call
-        to a member named "ToProblemDetailsResult" (the ResultHttpExtensions entry point). Uses
+        .IsFailure and, within the same method, also constructs/returns a value of an HTTP response
+        type — Microsoft.AspNetCore.Http.IResult, a typed-results union
+        (Microsoft.AspNetCore.Http.HttpResults.Results`2..`6, P-562), Microsoft.AspNetCore.Mvc.IActionResult
+        (P-562), ActionResult, or ActionResult<T> — without that same method also mapping through the
+        WebApi core: a call to any member of SharedKernel.Presentation.WebApi.ResultHttpExtensions /
+        .Errors.ErrorProblemDetailsExtensions, or a newobj of SharedKernel.Presentation.WebApi.ErrorHttpResult
+        (P-562; matched by declaring type, so a service's own same-named ToOk does not count — until P-562
+        the escape hatch was a member named "ToProblemDetailsResult", which that redesign deleted; its
+        final review moved ErrorHttpResult out of .Errors (R21) and deleted ResultActionResultExtensions/
+        ToActionResult (R19), and a stale ErrorHttpResult name had flagged a compliant
+        `new ErrorHttpResult(error)`). The names are strings (this package references no runtime
+        package), so PresentationLayeringRulesTests also compiles fixtures against the real WebApi,
+        Primitives and ASP.NET Core assemblies of the test host: every mapping name and the typed-results
+        namespace is pinned by a real-type test. Uses
         NoInlineResultBranchBeforeHttpResultPredicate (ICustomRule — see below). This is a coarser,
-        method-level co-occurrence check (IsSuccess/IsFailure callsite + IResult/ActionResult return
-        type + absence of ToProblemDetailsResult callsite, all within one MethodDefinition) — not a
+        method-level co-occurrence check (IsSuccess/IsFailure callsite + HTTP-result return/local
+        type + absence of a core mapping callsite, all within one MethodDefinition) — not a
         full control-flow analysis of "immediately before returning." A method containing all three
         signals is flagged regardless of statement ordering; this is a deliberate over-approximation
         favoring detection over precision, consistent with the documented limitation already
@@ -3177,19 +3216,35 @@ PresentationLayeringRules  (static class — 14.Presentation Result/HTTP boundar
         analysis).
         Caller supplies every assembly to be checked EXCEPT SharedKernel.Presentation.WebApi itself —
         same caller-controlled exclusion convention as the sibling rule above (ResultHttpExtensions's
-        own implementation legitimately reads IsSuccess/IsFailure and returns IResult/ActionResult).
-        Failure message: "{TypeDefinition.FullName}.{method} branches on Result.IsSuccess/IsFailure
-        and returns {IResult | ActionResult | ActionResult<T>} without routing through
-        ResultHttpExtensions.ToProblemDetailsResult(). Use result.ToProblemDetailsResult() instead of
-        inline IsSuccess/IsFailure branching before an HTTP response."
+        own implementation legitimately reads IsSuccess/IsFailure and returns typed results).
+        Failure: NetArchTest reports the offending type in FailingTypeNames.
         Rationale: inline "if (result.IsSuccess) ... else ..." branching immediately before
         returning an HTTP response type duplicates the platform's Result→HTTP mapping logic at every
         call site. Implemented as a NetArchTest rule rather than a Roslyn analyzer because the
         detection surface is IL-level method-body co-occurrence, consistent with how SK0301-style
-        domain/application misuse rules are implemented.
-        Offending pattern: if (result.IsSuccess) return Results.Ok(result.Value); else return
-            Results.Problem(...); inside a Minimal API endpoint delegate or controller action
-        Compliant pattern: return result.ToProblemDetailsResult(value => Results.Ok(value));
+        domain/application misuse rules are implemented. Limitation: an async handler's body lives in
+        its void-returning state machine, so it is flagged only when the machine keeps the HTTP result
+        in a local.
+        Offending pattern: if (result.IsSuccess) return TypedResults.Ok(result.Value); return
+            TypedResults.Problem(statusCode: 404); inside a Minimal API endpoint delegate or controller action
+        Compliant pattern: return result.ToOk(); — or a written-out failure branch that routes through
+            the core: if (result.IsFailure) return result.Error.ToErrorResult();
+
+    .NoOpenApiStackDependencyOutsideOpenApiAddOn(params Assembly[] assemblies) → ConditionList   (P-562)
+        Asserts that no type in the supplied assemblies depends on "Asp.Versioning",
+        "Microsoft.AspNetCore.OpenApi", "Microsoft.OpenApi" or "Scalar.AspNetCore" (the third-party
+        stack of SharedKernel.Presentation.OpenApi). Types.InAssemblies(...).Should()
+        .NotHaveDependencyOn(term).And()... — the same multi-term shape as
+        CryptoIsolationRules.CryptographyCoreHasNoThirdPartyDependencies and
+        RedisTopologyRules.CachingAbstractionsHasNoInfrastructureDependencies.
+        Rationale: P-562's package layout (D0) puts every third-party dependency of the HTTP boundary
+        in the OpenAPI add-on, so the WebApi core every HTTP service references stays dependency-free
+        and SignalR/gRPC never pull in a document generator; it is also the domain's most fragile
+        coupling (Asp.Versioning.OpenApi reflects over Microsoft.AspNetCore.OpenApi internals).
+        Caller passes SharedKernel.Presentation.WebApi, .SignalR and .Grpc — never .OpenApi (caller-
+        controlled exclusion). A consuming service's own assemblies are out of scope (a service may
+        reference Asp.Versioning to declare [ApiVersion]). Proven against the real assemblies, plus a
+        control proving the real add-on FAILS (non-vacuous) and a contrived Asp.Versioning fire path.
 
     .GrpcNeverReferencesContracts(Assembly grpcAssembly) → ConditionList
         Asserts that no type in SharedKernel.Presentation.Grpc has any dependency on the
@@ -3199,13 +3254,13 @@ PresentationLayeringRules  (static class — 14.Presentation Result/HTTP boundar
         gRPC package.
         Rationale: mechanizes the root CLAUDE.md Hard rule "SharedKernel.Presentation.Grpc must
         never reference 04.Contracts." SharedKernel.Presentation.Grpc takes a deliberate
-        ProjectReference on SharedKernel.Presentation.WebApi (to reuse RequireRoleAttribute/
-        RequirePermissionAttribute/RequireFreshAuthenticationAttribute/
-        RequireAuthenticationMethodAttribute verbatim, D-73/D-74). SharedKernel.Presentation.WebApi
-        no longer references 04.Contracts (the reference was unused and has been removed), so
-        SharedKernel.Contracts.dll is no longer in SharedKernel.Presentation.Grpc's reference
-        closure through WebApi at all; this rule now guards against a direct or transitive
-        reference being reintroduced and used. NotHaveDependencyOn is the correct, sufficient
+        ProjectReference on SharedKernel.Presentation.WebApi (since P-562 for everything the
+        protocols on the shared pipeline must agree on: the internal ErrorPresentation and authorization
+        registration behind RequirePermission and its siblings, the correlation id). SharedKernel.Presentation.WebApi
+        references 04.Contracts again since P-563 (its Paging/CursorPaging parameters bind PageRequest/CursorPageRequest;
+        between P-562 and P-563 the unused reference was removed), so SharedKernel.Contracts.dll is in
+        SharedKernel.Presentation.Grpc's reference closure through WebApi; this rule guards against a Grpc type
+        actually using it. NotHaveDependencyOn is the correct, sufficient
         mechanism either way: it inspects each scanned type's ACTUAL Mono.Cecil-observed dependency
         namespaces, never the assembly-level reference list a ProjectReference populates — a type
         merely being reachable via the reference closure does not fail this check, only an actual
@@ -3225,19 +3280,29 @@ PresentationLayeringRules  (static class — 14.Presentation Result/HTTP boundar
         entry for this addition's own record.
 
     Permitted exemption list:
-        - SharedKernel.Presentation.WebApi — never passed to either factory method by the caller;
-          there is no internal namespace-prefix exemption inside either predicate. Any future
-          legitimate exception (e.g., a second presentation package that must also construct
+        - SharedKernel.Presentation.WebApi — never passed to the two WebApi-exclusion factory methods
+          by the caller; there is no internal namespace-prefix exemption inside either predicate. Any
+          future legitimate exception (e.g., a second presentation package that must also construct
           ProblemDetails directly) must be documented here before being added to either predicate
           as an internal exemption — until then, exclusion is achieved exclusively by caller choice
           of which assemblies to pass, identical in spirit to RedisTopologyRules's caller-supplied
-          assembly lists.
+          assembly lists. After P-562 the three sibling packages (.OpenApi, .SignalR, .Grpc) are
+          checked, not exempt.
+        - SharedKernel.Presentation.OpenApi — never passed to NoOpenApiStackDependencyOutsideOpenApiAddOn
+          (it owns that stack).
 
-    Note: Introduced in WO-031 P-199. No new SK diagnostic ID assigned — both rules are pure
+    Note: Introduced in WO-031 P-199. No new SK diagnostic ID assigned — the class's rules are pure
     NetArchTest ConditionList predicates over Mono.Cecil IL inspection, following the same
     "boundary-mapping prohibition via architecture test, not Roslyn analyzer" precedent already
     established for SK-less rules in this domain (RedisTopologyRules, CompositionRootExclusivityRules,
     GrpcNeverReferencesContracts). Lives in SharedKernel.ArchitectureTests/Rules/PresentationLayeringRules.cs.
+    Since P-562 the class holds four rules: the two above (custom ICustomRule predicates, the caller
+    never passing SharedKernel.Presentation.WebApi), GrpcNeverReferencesContracts, and
+    NoOpenApiStackDependencyOutsideOpenApiAddOn (NotHaveDependencyOn Asp.Versioning,
+    Microsoft.AspNetCore.OpenApi, Microsoft.OpenApi, Scalar.AspNetCore; the caller passes WebApi,
+    SignalR and Grpc, never SharedKernel.Presentation.OpenApi). PresentationIdempotencyCodesTests and
+    PresentationPreconditionCodesTests pin 14's idempotency and precondition codes to 05's, 06's and
+    08's constants.
 
 NoDirectProblemDetailsConstructionPredicate  (class : ICustomRule — internal predicate)
     For each type (no namespace exemption — see PresentationLayeringRules note above), walks
@@ -3258,13 +3323,18 @@ NoInlineResultBranchBeforeHttpResultPredicate  (class : ICustomRule — internal
       (1) IsSuccess/IsFailure signal: a Call or Callvirt instruction whose MethodReference.Name is
           "get_IsSuccess" or "get_IsFailure" and whose MethodReference.DeclaringType.Name is
           "Result" or starts with "Result`1" (covers both Result and Result<T> IL representations)
-      (2) HTTP-result-type signal: MethodDefinition.ReturnType.Name is "IResult", "ActionResult", or
-          ReturnType.Name starts with "ActionResult`1" — OR any local variable
-          (MethodDefinition.Body.Variables) typed identically, to also catch the "build a local,
-          return it later" shape
-      (3) Escape-hatch signal: a Call or Callvirt instruction whose MethodReference.Name is
-          "ToProblemDetailsResult" anywhere in the method body — presence of this signal suppresses
-          the violation regardless of signals (1) and (2)
+      (2) HTTP-result-type signal: MethodDefinition.ReturnType.Name is "IResult", "IActionResult"
+          (P-562), "ActionResult", or starts with "ActionResult`1", or the type is a typed-results
+          union — Namespace "Microsoft.AspNetCore.Http.HttpResults" and Name starting "Results`"
+          (P-562) — OR any local variable (MethodDefinition.Body.Variables) typed identically, to also
+          catch the "build a local, return it later" shape
+      (3) Escape-hatch signal (P-562): a Call or Callvirt whose MethodReference.DeclaringType.FullName
+          is SharedKernel.Presentation.WebApi.ResultHttpExtensions or
+          .Errors.ErrorProblemDetailsExtensions, or a Newobj of
+          SharedKernel.Presentation.WebApi.ErrorHttpResult (root namespace since P-562 R21; R19 deleted
+          ResultActionResultExtensions, formerly also listed), anywhere in the method body —
+          presence of this signal suppresses the violation regardless of signals (1) and (2). Before
+          P-562: a member named "ToProblemDetailsResult" (deleted by that redesign).
     Returns false (rule violated) only when signals (1) AND (2) are both present AND signal (3) is
     absent. Failure message includes the declaring type name, method name, and which HTTP result
     type was detected. This is a method-level co-occurrence check, not a statement-order or
@@ -3276,7 +3346,7 @@ NoInlineResultBranchBeforeHttpResultPredicate  (class : ICustomRule — internal
 ApplicationPipelineRules  (static class — 05.Application extended-pipeline enforcement predicates; WO-036 P-225)
     All factory methods accept Assembly (or params Assembly[]) and return ConditionList.
     Predicates are designed and tested here against contrived in-memory fixture assemblies —
-    00.Governance never references 05.Application/05.Application.Behaviors directly (layering:
+    00.Governance never references 05.Application directly (layering:
     00.Governance references nothing). The owning domain (05.Application) is responsible for
     invoking these factory methods against its own real assembly once WO-036's Core phase ships,
     mirroring the existing cross-domain consumption pattern already established for
@@ -3294,8 +3364,8 @@ ApplicationPipelineRules  (static class — 05.Application extended-pipeline enf
         "SharedKernel.Messaging.Abstractions"). Uses
         NoConcreteInfrastructureReferenceOnNamedBehaviorsPredicate (ICustomRule — see below).
         Failure message names the offending behavior type and the forbidden namespace referenced.
-        As of P-544, CacheInvalidationBehavior lives in the sibling
-        SharedKernel.Application.Behaviors.Caching package, not SharedKernel.Application.Behaviors
+        CacheInvalidationBehavior lives in SharedKernel.Application.Caching (P-563; the sibling
+        SharedKernel.Application.Behaviors.Caching from P-544), TracingBehavior in SharedKernel.Application
         itself — callers pass both assemblies.
         Rationale: mirrors the existing, already-enforced
         SharedKernelLayeringRules.ApplicationNeverReferencesConcreteInfrastructure guarantee, made
@@ -3328,7 +3398,7 @@ ApplicationPipelineRules  (static class — 05.Application extended-pipeline enf
             where TRequest : IBaseRequest (a common ancestor MediatR gives both unary and
             streaming requests) — would structurally start matching IStreamRequest<TResponse>
         Compliant pattern: every behavior constrains TRequest to IRequest<TResponse> or a
-            subtype (ICommandBase, ICacheableQuery<TResponse>, IAuthorizeRequest, etc.) — never
+            subtype (ICommandBase, ICacheableQuery<TResponse>, IIdempotentRequest, etc.) — never
             the shared IBaseRequest ancestor
 
     P-544 REMOVAL NOTE: .NoHandRolledRetryLoopOutsideResilienceBehavior and its backing
@@ -3349,11 +3419,11 @@ ApplicationPipelineRules  (static class — 05.Application extended-pipeline enf
             ServiceDescriptor list is sufficient and avoids the cost/side-effects of a full container
             build. Throws an assertion failure (test-framework-agnostic exception) naming the
             expected vs. actual sequence on mismatch.
-        Rationale: ApplicationBehaviorsBuilder.Build() registers behaviors in a fixed,
+        Rationale: AddSharedKernelApplication (P-563; ApplicationBehaviorsBuilder.Build() before) registers behaviors in a fixed,
         non-negotiable order (the ten-named-slot canonical sequence documented in
-        05.Application/CLAUDE.md) regardless of .AddXBehavior() call order. Without a mechanical
-        assertion, a future edit to Build() can silently reorder the sequence — this helper is the
-        primitive 05.Application.Behaviors.Tests uses to pin that order permanently. Lives in
+        05.Application/CLAUDE.md) regardless of .WithX() call order. Without a mechanical
+        assertion, a future edit to the registration can silently reorder the sequence — this helper is the
+        primitive SharedKernel.Application.Tests uses to pin that order permanently. Lives in
         SharedKernel.ArchitectureTests (not 16.Testing) because it asserts an *architectural*
         invariant (fixed pipeline composition order), not a general test fixture — the same
         rationale that places ArchitectureRuleBase and the ICustomRule predicates in this package
@@ -3362,7 +3432,7 @@ ApplicationPipelineRules  (static class — 05.Application extended-pipeline enf
         no "fire on a contrived violating assembly" shape, since its input is an IServiceCollection
         instance, not a compiled Assembly. Its own correctness (passing case + failing case) is
         proven by a governance-owned unit test (T-153), distinct from 05.Application's own future
-        consumption of it against the real ApplicationBehaviorsBuilder.Build() output.
+        consumption of it against the real AddSharedKernelApplication output.
 
 NoConcreteInfrastructureReferenceOnNamedBehaviorsPredicate  (class : ICustomRule — internal predicate)
     Constructed with (HashSet<string> behaviorTypeNames, HashSet<string> forbiddenNamespacePrefixes) —
@@ -3408,7 +3478,7 @@ MetricsInstrumentationRules  (static class — Histogram outcome-tag completenes
         sharedkernel.application.request.duration with no outcome tag, making it impossible to
         distinguish success/failure/exception/cached/duplicate/unauthorized outcomes in
         dashboards. This rule mechanically closes the gap so no future Histogram<T>.Record call
-        site in 05.Application/05.Application.Behaviors can regress to a bare, outcome-less
+        site in 05.Application can regress to a bare, outcome-less
         measurement.
         Offending pattern: ApplicationDiagnostics.RequestDuration.Record(elapsedMs,
             new KeyValuePair<string, object?>("request.name", requestName));
@@ -4258,7 +4328,8 @@ invariant helper, not ConditionList/ICustomRule; WO-060 P-390)
         Throws the same single aggregate assertion-exception shape as the class's other five
         methods — naming the method, whether a matching Newobj-then-Throw sequence was found,
         and the expected exception type.
-        Caller-supplied everything, same discipline as the rest of this class: the consuming
+        [Original design, superseded by the two notes below — AddSharedKernelCors no longer exists,
+        and no real call site of this method exists.] Caller-supplied everything, same discipline as the rest of this class: the consuming
         test project supplies declaringType via the real AddSharedKernelCors-owning type
         (test-only ProjectReference, PrivateAssets="all", to SharedKernel.Presentation.WebApi)
         and expectedExceptionType from 14.Presentation's real, shipped guard-exception type — the
@@ -4302,6 +4373,19 @@ invariant helper, not ConditionList/ICustomRule; WO-060 P-390)
         remains proven only via T-326/T-327's contrived fixtures — no real call site for it exists
         on this platform as of this phase — and remains available as a generically useful technique
         for a future guard that genuinely throws directly from its own method body.
+        P-562 RE-POINT (2026-09-23): 14.Presentation's redesign deleted AddSharedKernelCors,
+        CorsPolicyOptions, CorsPolicyNames and CorsPolicyOptionsValidator; CORS became
+        SharedKernelWebApiOptions.Cors (WebApiOptions until R22 renamed it; the validator kept its
+        name), validated by the internal WebApiOptionsValidator that
+        AddSharedKernelWebApi registers through SharedKernel.Configuration's AddValidatedOptions (bind +
+        ValidateOnStart). Same guard, same validator-based shape, so T-328 follows it with the same
+        technique as a three-call-site chain: AddSharedKernelWebApi → OptionsExtensions.AddValidatedOptions;
+        WebApiOptionsValidator.Validate → ValidateCors (same-type sibling); Validate →
+        ValidateOptionsResult.Fail. The dangerous-combination branch inside ValidateCors is proven
+        behaviorally by 14.Presentation's CorsTests and consumer-verify (Surface 2). The nested
+        Log.CorsConfigurationInvalid call could not be locked: AssertMethodBodyInvokesMethod compares
+        a nested callee's reflection FullName ('+') with Mono.Cecil's ('/'), so nested callee types
+        never match — a known limitation of that method, not worked around here.
 
     Seventh real-world application, added by WO-063/P-420 (SK.00.CorrelationIdValidationGuard) —
     introduces NO new method on this class, CONFIRMED at implementation time (2026-08-21):
@@ -4326,7 +4410,7 @@ invariant helper, not ConditionList/ICustomRule; WO-060 P-390)
     hardened guard" family to genuinely add zero new production code to this class. The call site
     lives directly in ResolveCorrelationId's own IL body, not inside a lambda closure, so the
     closure-scanning extension is not exercised by this particular real call site (it remains
-    proven by T-318's/T-328's own real call sites).
+    proven by T-318's real call site; T-328's call sites are direct since the P-562 re-point).
 
     Real-assembly status: IMPLEMENTED (not deferred) — wired directly in SecureDefaultsAssertionTests
     as a GATING test (T-331) alongside contrived fire/pass-path fixture tests (T-329/T-330), rather
@@ -4334,6 +4418,11 @@ invariant helper, not ConditionList/ICustomRule; WO-060 P-390)
     sanity-check test (a deliberately-wrong callee method name, "IsValidFormatXyzSanityCheck",
     confirmed to fail with the same message shape T-330's contrived fixture produces, then reverted
     before commit).
+    P-562 RE-POINT (2026-09-23): the middleware became internal
+    (SharedKernel.Presentation.WebApi.Correlation.CorrelationIdMiddleware, applied by
+    UseSharedKernelWebApi(); the …WebApi.Middleware namespace is gone) and the pair was renamed
+    Resolve/IsValid; an invalid or missing value is now replaced by the trace id. T-331 resolves the
+    type with Assembly.GetType(string) (T-318's technique) and asserts Resolve → IsValid.
 
     Eighth real-world application, added by WO-064/P-432 (SK.00.WebhookSsrfGuardLock) — applies the
     "a hardened default documented only in prose eventually drifts" lesson to 15.Integration's new
@@ -4355,7 +4444,7 @@ invariant helper, not ConditionList/ICustomRule; WO-060 P-390)
         declaringType's TypeDefinition, locates the single method matching methodName (throws a
         distinct setup exception, never a silent false pass/fail, on zero or more than one match),
         and scans its instruction body — plus, reusing AssertMethodBodyInvokesMethod's proven
-        closure-scanning extension (T-318/T-328), every method on every nested type whose name
+        closure-scanning extension (proven by T-318), every method on every nested type whose name
         starts with "<{methodName}>b__" — for a Call/Callvirt instruction whose resolved
         MethodReference.Name == "AddSingleton" and whose GenericInstanceMethod.GenericArguments
         equal [serviceType, implementationType] in that order. Fails if no matching instruction is
@@ -4393,7 +4482,7 @@ invariant helper, not ConditionList/ICustomRule; WO-060 P-390)
         call site (services.TryAddSingleton<IWebhookUrlValidator, PrivateNetworkWebhookUrlValidator>())
         lives directly in AddSharedKernelWebhooks's own IL body, not inside a lambda closure, so no
         closure-scanning extension is exercised by this particular call site (that extension remains
-        proven by T-318/T-328/T-331's own real call sites).
+        proven by T-318's real call site).
 
     Technique B (the fail-closed IP-range-behavior half of this phase's acceptance criterion) is
     DELIBERATELY NOT a method on this class. Every method above proves a STRUCTURAL fact (a
@@ -4667,22 +4756,22 @@ invariant helper, not ConditionList/ICustomRule; WO-060 P-390)
 ApplicationBehaviorsCacheInvalidationOrderingLockTests  (test class, no production Rules/Predicates class — root Phase Backlog P-489/WO-080, last phase in WO-080)
     Third genuinely EXECUTED real-composed-pipeline test in this project (Technique A shape,
     after T-336/SK.00.WebhookSsrfGuardLock and T-337/SK.00.CacheEncryptionAndRedisValidationLock)
-    — proves, against the REAL, compiled SharedKernel.Application.Behaviors.dll, that
+    — proves, against the REAL, compiled SharedKernel.Application(.Caching).dll (SharedKernel.Application.Behaviors(.Caching).dll until P-563), that
     CacheInvalidationBehavior's eviction observably follows TransactionBehavior's commit, and
     (in a second test) that AuditingBehavior's write still lands inside that same commit at the
     same time — both invariants proven simultaneously, since they pull in opposite registration
     directions relative to TransactionBehavior and a lock proving only one could pass while
     silently breaking the other.
-    Builds a real IServiceCollection, calls the real AddSharedKernelApplicationBehaviors()
-    .AddXBehavior()...Build() chain, registers the real MediatR pipeline, and dispatches a real
+    Builds a real IServiceCollection, calls the real AddSharedKernelApplication(assembly,
+    app => app.WithCaching().WithTransactions()) (the AddSharedKernelApplicationBehaviors()...Build() chain until P-563), and dispatches a real
     command through it end to end via ISender — never a hand-rolled substitute pipeline, and
     never a static Mono.Cecil IL walk (this ordering is an emergent runtime property of MediatR's
-    onion-wrapping, not visible in ApplicationBehaviorsBuilder.Build's own method-body IL).
+    onion-wrapping, not visible in any registration method's own method-body IL).
     DELIBERATE, INDEPENDENT DUPLICATE of 05.Application's own in-domain regression test
     (CacheInvalidationTransactionOrderingTests.cs, P-488) — the whole point of P-489 is that this
     lock survives even a future edit that weakens or deletes that domain's own test, since it is
     owned by 00.Governance and consumes the real compiled binary via a new test-only
-    ProjectReference (SharedKernel.Application.Behaviors.csproj, PrivateAssets="all") rather than
+    ProjectReference (SharedKernel.Application.Caching.csproj since P-563, PrivateAssets="all") rather than
     depending on 05.Application's own test project.
     Verified non-vacuous: ApplicationBehaviorsBuilder.cs's registration order was temporarily
     reverted in-session to the pre-fix defect (CacheInvalidationBehavior registered AFTER
@@ -5382,11 +5471,12 @@ Consuming projects add `<PackageReference Include="SharedKernel.Linter" PrivateA
 - `NoBareHealthCheckLiteralWhereConstantsExistPredicate` and `HealthCheckConstantsUsageRules` must **never** contain a concrete constants-class name (e.g. `"HealthCheckTags"`, `"HealthCheckNames"`) as a string literal anywhere in the implementation. This is the acceptance-critical generality requirement from WO-028 P-178 — the rule must generalize unmodified to any future domain's constants class. Code review must reject any PR that adds a name-specific check to this rule; if a domain needs name-specific enforcement, that belongs in a new, separately-scoped rule, not a special case bolted onto this one.
 - **Confirmed declaring-type names** (verified by direct Mono.Cecil inspection of the .NET 10 `Microsoft.AspNetCore.App.Ref` reference assemblies, package `Microsoft.Extensions.Diagnostics.HealthChecks` / `.Abstractions`): `Add(HealthCheckRegistration)` is declared on both the interface `Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder` and the concrete `Microsoft.Extensions.DependencyInjection.HealthChecksBuilder`. `AddCheck` overloads are declared across two extension-method host classes — `Microsoft.Extensions.DependencyInjection.HealthChecksBuilderAddCheckExtensions` and `Microsoft.Extensions.DependencyInjection.HealthChecksBuilderDelegateExtensions` — both matched by `NoBareHealthCheckLiteralWhereConstantsExistPredicate` via a `declaringTypeName.StartsWith("HealthChecksBuilder")` check rather than an exact-name list, so it also covers any future extension-method host class following the same naming convention. The `HealthCheckRegistration` constructor is `Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckRegistration::.ctor`. Verified against package version shipped with the .NET 10 SDK (`Microsoft.AspNetCore.App.Ref` 10.0.7) — re-verify if the platform ever pins an explicit `Microsoft.Extensions.Diagnostics.HealthChecks` NuGet version that diverges from the SDK-bundled one.
 - `StringConstantsClassDetector` resolves literal *values*, not names — the predicate compares the bare literal's string value against the resolved constant value set, never against a field or class name. This is the design choice that lets the rule fire correctly regardless of what the constants class or its fields are named, and is what makes the rule catch the exact P-177 incident shape (a literal that happens to equal an existing constant's value) without requiring any naming convention from the consuming domain.
-- `PresentationLayeringRules` introduces zero new SK diagnostic IDs — both rules are pure NetArchTest `ConditionList` predicates over Mono.Cecil IL inspection, mirroring the existing precedent that boundary-mapping prohibitions (raw `HttpClient`, `Result`↔HTTP and `ProblemDetails` construction) are enforced via this domain's `ICustomRule` predicates rather than always minting a new Roslyn analyzer. Neither predicate carries an internal namespace exemption — exclusion of `SharedKernel.Presentation.WebApi` is achieved entirely by the consuming test project never passing that assembly to either factory method. Document any future internal exemption here before adding one to either predicate.
+- `PresentationLayeringRules` introduces zero new SK diagnostic IDs — its four rules are pure NetArchTest `ConditionList` predicates over Mono.Cecil IL inspection, mirroring the existing precedent that boundary-mapping prohibitions (raw `HttpClient`, `Result`↔HTTP and `ProblemDetails` construction) are enforced via this domain's `ICustomRule` predicates rather than always minting a new Roslyn analyzer. The two `ICustomRule` predicates carry no internal namespace exemption — exclusion of `SharedKernel.Presentation.WebApi` is achieved entirely by the consuming test project never passing that assembly to either factory method. `NoOpenApiStackDependencyOutsideOpenApiAddOn` (P-562) excludes `SharedKernel.Presentation.OpenApi` the same way, and `GrpcNeverReferencesContracts` takes only the gRPC assembly. Document any future internal exemption here before adding one to any of them.
 - `NoDirectProblemDetailsConstructionPredicate` matches on `MethodReference.DeclaringType.FullName` exact string equality against `"Microsoft.AspNetCore.Mvc.ProblemDetails"` and `"Microsoft.AspNetCore.Http.HttpValidationProblemDetails"` — both are concrete framework types, so a `newobj` opcode is always the construction site (no factory-method indirection to account for, unlike `EncryptedValueConverter<T>`). Reuses the `Newobj`-walk pattern from `NoDirectEncryptedValueConverterInstantiationPredicate` — no new NuGet dependency.
-- `NoInlineResultBranchBeforeHttpResultPredicate` is a **method-level co-occurrence check, not a control-flow analysis**. It does not verify that the `IsSuccess`/`IsFailure` read occurs immediately before the `IResult`/`ActionResult` return — it only verifies that both signals appear somewhere in the same method body and that no `ToProblemDetailsResult` call also appears in that body. This is a deliberate over-approximation (same documented-limitation philosophy as `HealthCheckTagIntegrityRules`'s literal-collection technique) — a method that reads `IsSuccess` for an unrelated logging decision and separately returns an `IResult` for an unrelated reason would also be flagged. If this produces real false positives in practice, narrow the check to control-flow adjacency in a follow-up phase; do not narrow it speculatively now.
+- `NoInlineResultBranchBeforeHttpResultPredicate` is a **method-level co-occurrence check, not a control-flow analysis**. It does not verify that the `IsSuccess`/`IsFailure` read occurs immediately before the HTTP result return — it only verifies that both signals appear somewhere in the same method body and that the body never maps through the WebApi core (a `ResultHttpExtensions`/`ErrorProblemDetailsExtensions` call or a `new ErrorHttpResult`; the `ToProblemDetailsResult` escape hatch was deleted by P-562). This is a deliberate over-approximation (same documented-limitation philosophy as `HealthCheckTagIntegrityRules`'s literal-collection technique) — a method that reads `IsSuccess` for an unrelated logging decision and separately returns an `IResult` for an unrelated reason would also be flagged. If this produces real false positives in practice, narrow the check to control-flow adjacency in a follow-up phase; do not narrow it speculatively now.
 - `NoInlineResultBranchBeforeHttpResultPredicate`'s `Result`/`Result<T>` type-name match (`"Result"` exact or `"Result\`1"` prefix for the IL generic-arity-suffixed name) targets `SharedKernel.Primitives.Result`/`Result<T>` specifically. If a consuming assembly defines an unrelated type also named `Result` with its own `IsSuccess`/`IsFailure` properties, this predicate cannot distinguish them without a `DeclaringType.Namespace` check — add a namespace guard (`"SharedKernel.Primitives"`) if this false-positive risk is ever confirmed in practice; it is not added pre-emptively because no such collision is known to exist in this platform's codebase today.
-- `PresentationLayeringRules.NoDirectProblemDetailsConstructionOutsideWebApi` and `.NoInlineResultBranchBeforeHttpResultOutsideWebApi` both accept `params Assembly[]` — the caller is responsible for never including `SharedKernel.Presentation.WebApi` in the supplied list. Unlike most prior `ICustomRule` predicates in this domain, there is no internal `TypeDefinition.Namespace.StartsWith(...)` guard inside either predicate; this is a deliberate design choice because no single namespace prefix covers every legitimate in-package construction site (`ErrorProblemDetailsExtensions`, the global `IExceptionHandler`, `ResultHttpExtensions` itself, and any future factory all legitimately trigger both signals).
+- `PresentationLayeringRules.NoDirectProblemDetailsConstructionOutsideWebApi` and `.NoInlineResultBranchBeforeHttpResultOutsideWebApi` both accept `params Assembly[]` — the caller is responsible for never including `SharedKernel.Presentation.WebApi` in the supplied list. Unlike most prior `ICustomRule` predicates in this domain, there is no internal `TypeDefinition.Namespace.StartsWith(...)` guard inside either predicate; this is a deliberate design choice because no single namespace prefix covers every legitimate in-package construction site (the problem factory, the exception handler, `ResultHttpExtensions` itself, and any future factory all legitimately trigger both signals).
+- `NoInlineResultBranchBeforeHttpResultPredicate` matches the WebApi mapping types (`ResultHttpExtensions`, `Errors.ErrorProblemDetailsExtensions`, `ErrorHttpResult`) and the typed-results namespace by string, because `SharedKernel.ArchitectureTests` references no runtime package. A stale name matches nothing, and a stand-in fixture declaring the same stale name keeps passing (P-562 R21 moved `ErrorHttpResult` to the root namespace; the rule then flagged a compliant `new ErrorHttpResult(error)` while its fixture test stayed green). Every such name must stay pinned by a test that compiles against the real assembly (`PresentationLayeringRulesTests.CompileAgainstRealAssemblies`); when a WebApi mapping type moves or a new one is added, update the predicate and those tests together.
 - `PresentationLayeringRules` lives in `SharedKernel.ArchitectureTests/Rules/PresentationLayeringRules.cs`; its two `ICustomRule` predicates live in `Predicates/`. Both reuse the existing `Mono.Cecil >= 0.11.5` reference — no new NuGet dependency introduced by this phase.
 - **`const string` vs `static readonly string` produce different IL at the *consuming* call site** — this matters for any future test fixture or predicate reasoning about field-reference detection. The C# compiler const-folds every `const string` field reference into a bare `Ldstr` literal at each call site (no `Ldsfld`, no trace that a constant was referenced at all); only `static readonly string` field references compile to `Ldsfld`. `StringConstantsClassDetector.ResolveStringConstants` correctly resolves the *declaring* type's own value for both field kinds (via `FieldDefinition.Constant` for `const`, via a `.cctor` `Ldstr`→`Stsfld` walk for `static readonly`), but `NoBareHealthCheckLiteralWhereConstantsExistPredicate`'s pass-path (field access instead of literal) only holds for `static readonly string` constants classes — a `const string` constants class can never produce a passing fixture for the "field access, not literal" scenario, because Roslyn erases the field reference before Mono.Cecil ever sees the consuming method's IL. Discovered while building the T-140 pass-path fixture for `SK.00.HealthCheckConstantsGuard` (WO-028 P-178); document this if a future domain's constants-class convention is ever questioned for using `const` instead of `static readonly`.
 - `ApplicationPipelineRules` introduces zero new SK diagnostic IDs — its remaining checks are pure Mono.Cecil `ICustomRule` predicates, mirroring the established precedent (`RedisTopologyRules`, `CompositionRootExclusivityRules`, `GrpcNeverReferencesContracts`, `PresentationLayeringRules`) that boundary-mapping and structural-purity prohibitions do not always require minting a new Roslyn analyzer. `00.Governance` never references `05.Application`/`05.Application.Behaviors` directly (layering: `00.Governance` references nothing) — both predicates and `PipelineOrderAssertion` are designed and tested here against contrived in-memory fixture assemblies; `05.Application` is responsible for invoking them against its own real assembly. P-544 retracted the third check, `.NoHandRolledRetryLoopOutsideResilienceBehavior` (and its backing `NoTaskDelayOutsideResilienceBehaviorPredicate`), when 05.Application's redesign dropped `ResilienceBehavior`/`IRetryableRequest` entirely — see the "P-544 REMOVAL NOTE" in the Architecture Test Contracts entry above.
@@ -5395,11 +5485,11 @@ Consuming projects add `<PackageReference Include="SharedKernel.Linter" PrivateA
 - `PipelineOrderAssertion` is the first artifact in `SharedKernel.ArchitectureTests` that is **not** a `ConditionList`/`ICustomRule` — it is a plain public reflection helper operating on an unbuilt `IServiceCollection`'s `ServiceDescriptor` entries, never calling `BuildServiceProvider()`. It exists in this package (not `16.Testing`) because it asserts an architectural invariant (fixed `IPipelineBehavior<,>` registration order), the same rationale that already places `ArchitectureRuleBase` and every `ICustomRule` predicate here rather than in shared test infrastructure. `05.Application.Behaviors.Tests` is the intended consumer — see `05.Application/state-map.md` T-17/T-18 (WO-036).
 - SK0014 `ClosedGenericResiliencePipelineRegistrationAnalyzer`, SK0015 `StreamPipelineBehaviorMisregistrationAnalyzer`, and SK0016 `RequestTypeShortNameUsageAnalyzer` (WO-038 P-235) are the next three sequential IDs in the SK0001–SK00N general-purpose block (SK0012, SK0013 were the prior two). All three target `netstandard2.0` and pin `Microsoft.CodeAnalysis.CSharp 4.14.0`, same as every prior SK analyzer.
 - SK0015 `StreamPipelineBehaviorMisregistrationAnalyzer` is the second SK analyzer in this domain (after SK0011) that requires `SemanticModel.GetSymbolInfo` — resolving whether a DI-registration type argument implements `MediatR.IStreamPipelineBehavior<,>` cannot be done from syntax alone (unlike SK0703/SK0705/SK0708's naming-heuristic approach), because the five known streaming behavior names are an enumerable convention, not a structural guarantee; using the interface-implementation check instead avoids a `"Stream"`-prefix naming-heuristic false-negative risk. The self-exemption check (`AddStreamingBehaviors` method name) remains syntax-only — it is evaluated on the enclosing `MethodDeclarationSyntax` before the semantic-model call is made, to short-circuit the more expensive symbol resolution inside the one sanctioned call site.
-- SK0016 `RequestTypeShortNameUsageAnalyzer`'s namespace scope (`SharedKernel.Application`/`SharedKernel.Application.Behaviors`) is a trigger-IN scope, not a trigger-OUTSIDE-with-exemption scope — this is the inverse of the pattern used by SK0001/SK0007/SK0013 (which fire everywhere except a named namespace). The inversion is deliberate: the `typeof(TRequest).Name` collision risk is intrinsic to MediatR pipeline-behavior tag/key construction, which lives exclusively in this domain, so scoping the rule to fire only inside it avoids false positives from unrelated `typeof(X).Name` usage elsewhere in the platform (e.g. legitimate short-name display strings).
+- SK0016 `RequestTypeShortNameUsageAnalyzer`'s namespace scope (`SharedKernel.Application*` — since P-563 `SharedKernel.Application`, `.Application.Caching`, `.Application.Pipeline`; `SharedKernel.Application.Behaviors` before) is a trigger-IN scope, not a trigger-OUTSIDE-with-exemption scope — this is the inverse of the pattern used by SK0001/SK0007/SK0013 (which fire everywhere except a named namespace). The inversion is deliberate: the `typeof(TRequest).Name` collision risk is intrinsic to MediatR pipeline-behavior tag/key construction, which lives exclusively in this domain, so scoping the rule to fire only inside it avoids false positives from unrelated `typeof(X).Name` usage elsewhere in the platform (e.g. legitimate short-name display strings).
 - `MetricsInstrumentationRules.RequestDurationRecordsIncludeOutcomeTag` (WO-038 P-235) reuses the `Ldstr` literal-collection technique from `HealthCheckTagIntegrityRules` (WO-027 P-173) — no new Mono.Cecil technique is introduced, only a new call-site search target (`Histogram<T>.Record`). This rule is designed and tested against CONTRIVED in-memory fixtures only — real-assembly verification against `05.Application`'s own `MetricsBehavior<,>` (which, as of P-544, resolves its `ApplicationMetrics` histogram through `IMeterFactory` and records duration in seconds, not milliseconds) is `05.Application`'s responsibility, outside this domain's jurisdiction (`00.Governance` references nothing and writes no implementation files for other domains).
 - `ClosedGenericResiliencePipelineRegistrationAnalyzer` (SK0014) fires globally with no suppression namespace, unlike most namespace-scoped SK analyzers — `ResiliencePipeline<T>` (arity 1) is unsafe as a DI-registered or injected type in any assembly, not only `SharedKernel.Application`. Suppression is per-site only (`#pragma warning disable SK0014`).
 - SK0017 `CommandImplementsCacheableQueryAnalyzer`, SK0018 `QueryImplementsInvalidatesCacheAnalyzer`, and SK0019 `RetryableRequestWithoutIdempotencyAnalyzer` are the domain's third, fourth, and fifth analyzers requiring a `SemanticModel`-resolved interface closure (`INamedTypeSymbol.AllInterfaces`), after SK0011 and SK0015. A `BaseList` simple-name check is insufficient for these three rules because `ICommandBase`/`IQuery<TResponse>` are typically implemented transitively (e.g. through `ICommand<TResponse> : ICommandBase`), not declared directly on the command/query type.
-- All three interface matches (SK0017–SK0019) use `OriginalDefinition` + `ContainingNamespace` prefix check (`"SharedKernel.Application"`, covering both `SharedKernel.Application` and `SharedKernel.Application.Behaviors`) rather than exact-assembly `INamedTypeSymbol` identity — this is deliberate so analyzer test fixtures stay self-contained: a fixture-local interface declared inside a matching-namespace code block in the SAME test compilation satisfies the check, with no `ProjectReference` to the real `SharedKernel.Application`/`SharedKernel.Application.Behaviors` assemblies required for fire/pass-path tests.
+- All three interface matches (SK0017–SK0019) use `OriginalDefinition` + `ContainingNamespace` prefix check (`"SharedKernel.Application"`, covering `SharedKernel.Application` and `SharedKernel.Application.Caching` — `.Application.Behaviors` before P-563) rather than exact-assembly `INamedTypeSymbol` identity — this is deliberate so analyzer test fixtures stay self-contained: a fixture-local interface declared inside a matching-namespace code block in the SAME test compilation satisfies the check, with no `ProjectReference` to the real `SharedKernel.Application`/`SharedKernel.Application.Caching` assemblies required for fire/pass-path tests.
 - SK0017/SK0018/SK0019 all exclude types carrying the `abstract` modifier (`Modifiers.Any(SyntaxKind.AbstractKeyword)`) — the same exemption already established by SK0009 — so a generic abstract request base class spanning multiple marker-interface families behind a type parameter is not prematurely flagged; concrete (non-abstract) types further down the same inheritance chain are still checked via the full `AllInterfaces` closure.
 - SK0017/SK0018/SK0019 fire globally with no namespace-scoped trigger condition — unlike SK0016's trigger-IN scope, these three are explicitly consumer-side rules: the violation (a command/query type implementing an incompatible marker-interface combination) occurs in a CONSUMING microservice's own type declarations, never inside `SharedKernel.Application`/`SharedKernel.Application.Behaviors` itself, which declares no command or query types at all (only the generic pipeline-behavior classes that consume them). This is why the zero-false-positive requirement against this domain's own shipped source is a structural argument (verifiable by inspection), not a real-assembly architecture test the way NetArchTest `ICustomRule` phases require.
 - SK0017, SK0018, and SK0019 are the next three sequential IDs in the SK0001–SK00N general-purpose block (SK0016 was the prior ID). They introduce zero new `SharedKernel.ArchitectureTests` artifacts — pure Roslyn analyzers, `netstandard2.0`, `Microsoft.CodeAnalysis.CSharp` 4.14.0, matching every prior SK analyzer.
@@ -5472,7 +5562,7 @@ Consuming projects add `<PackageReference Include="SharedKernel.Linter" PrivateA
 ### Cross-Service DTO Boundary Mapping
 
 - **There is no response-wrapper DTO.** `04.Contracts` ships no success/error envelope for HTTP or service-to-service results. An HTTP success body is the value itself; an HTTP failure body is always RFC 9457 `ProblemDetails`. A `Result<T>` never crosses a process boundary as a serialized object — `ContractsPurityRules.ContractsAssembliesHaveNoResultTypeOnPublicSurface` keeps it off every public property and field of a contracts assembly.
-- **Inbound (producing service):** `Result<T>` → HTTP goes through `14.Presentation`'s `ResultHttpExtensions` (`ToProblemDetailsResult`/`ToActionResult`) only. Inline `IsSuccess`/`IsFailure` branching before returning an HTTP result type outside `SharedKernel.Presentation.WebApi` is a platform violation, mechanically enforced by `PresentationLayeringRules.NoInlineResultBranchBeforeHttpResultOutsideWebApi`; hand-rolled `ProblemDetails` construction is caught by `PresentationLayeringRules.NoDirectProblemDetailsConstructionOutsideWebApi`.
+- **Inbound (producing service):** `Result<T>` → HTTP goes through `14.Presentation`'s typed results only — `ResultHttpExtensions` (`ToOk`, `ToCreated`, `ToOkWithETag`, `ToNoContent`, `ToErrorResult`, …), for minimal APIs and MVC controllers alike (P-562; `ToProblemDetailsResult` was deleted, and the final review's R19 deleted the MVC `ToActionResult` family). Inline `IsSuccess`/`IsFailure` branching before returning an HTTP result type outside `SharedKernel.Presentation.WebApi` is a platform violation, mechanically enforced by `PresentationLayeringRules.NoInlineResultBranchBeforeHttpResultOutsideWebApi`; hand-rolled `ProblemDetails` construction is caught by `PresentationLayeringRules.NoDirectProblemDetailsConstructionOutsideWebApi`.
 - **Outbound (calling service):** a response is mapped back to `Result<T>` through `11.Communication.Rest`'s `ReadResultAsync<T>`, which reads the value on success and the `ProblemDetails` body on failure. Never deserialize a response into an ad hoc `{ isSuccess, value, error }` shape — a second format would break `ReadResultAsync<T>` for every other caller.
 - **Integration events:** the one cross-service event wire format is `04.Contracts`' `EventEnvelope<TEvent>` (CloudEvents 1.0), created only through `EventEnvelope.Wrap(...)` — it has no public constructor or setter, so the compiler enforces this and no architecture test is needed. Each concrete event carries `[IntegrationEvent("name", Version = n)]`, checked at compile time by SK0038/SK0039.
 
@@ -5628,3 +5718,5 @@ N/A — `00.Governance` is tooling-only. No runtime DI registration.
 - [2026-09-18] P-554: SK0035 retargeted to Microsoft's compliance model after `SharedKernel.DataPrivacy`'s redesign — classified = any `Microsoft.Extensions.Compliance.Classification.DataClassificationAttribute`-derived attribute except `NoDataClassificationAttribute`; a classified parameter (and `[LogProperties]` for whole objects) is safe; `Pseudonymizer` calls exempt alongside `PiiMasking`; Restricted-tier/`SensitiveDataCategory` checks removed; message now names the attribute and suggests classifying the parameter (agent)
 - [2026-09-21] P-558: UnitOfWorkSeamRules.SharedContractsAreNotRedeclared, ReadOnlyRepositoriesNeverTrack, PersistenceNamespaceConventionRules, Persistence.Testing guard; SK0201 base-call only (agent)
 - [2026-09-22] Docs updated for `08.Storage`'s P-559 redesign: `StorageTopologyRules` contract block rewritten (`ProviderPackagesNeverReferenceEachOther` removed; `S3NeverReferencesObs`, `S3ForbiddenAssemblyReferences`, `AbstractionsForbiddenAssemblyReferences` documented; `.Obs` → `.S3` allowed); SK0023 note corrected (providers no longer register `IAmazonS3`) (coordinator)
+- [2026-09-23] P-562 (`14.Presentation` redesign), wave 4: `PresentationLayeringRules` adjusted — `NoInlineResultBranchBeforeHttpResultPredicate`'s escape hatch is now the WebApi core's typed-result mapping surface matched by declaring type (`ResultHttpExtensions`/`ResultActionResultExtensions`/`ErrorProblemDetailsExtensions`, `new ErrorHttpResult`) instead of the deleted `ToProblemDetailsResult`, and its HTTP signal gains typed-results unions (`Results<…>`) and `IActionResult`; new `NoOpenApiStackDependencyOutsideOpenApiAddOn` keeps `Asp.Versioning`/`Microsoft.AspNetCore.OpenApi`/`Microsoft.OpenApi`/`Scalar.AspNetCore` inside `SharedKernel.Presentation.OpenApi`; real-assembly tests prove `.OpenApi`/`.SignalR`/`.Grpc` pass the WebApi-exclusion rules unexempted (with a real-WebApi control that fails). SK0036's message/docs/tests name `ThrowIfFailure()`/`GetValueOrThrow()` (rule unchanged). `SecureDefaultsAssertionTests` T-328 re-pointed at `WebApiOptionsValidator` (the deleted `CorsPolicyOptionsValidator`'s successor; chain `AddSharedKernelWebApi → AddValidatedOptions`, `Validate → ValidateCors`, `Validate → ValidateOptionsResult.Fail`) and T-331 at the now-internal `Correlation.CorrelationIdMiddleware.Resolve → IsValid` (agent)
+- [2026-09-24] P-562 final review, integration stream I3: `NoInlineResultBranchBeforeHttpResultPredicate` follows R21/R19 — `ErrorHttpResult` is matched in the WebApi root namespace (the stale `…Errors.ErrorHttpResult` name flagged a compliant `new ErrorHttpResult(error)` while the stand-in fixture stayed green) and `ResultActionResultExtensions` is dropped; new tests compile fixtures against the test host's real WebApi, Primitives and ASP.NET Core assemblies, pinning every mapping name and the typed-results namespace (each verified by a deliberately stale name, reverted). `PresentationLayeringRulesTests` anchors the gRPC assembly on `GrpcHostBuilderExtensions` (R32 removed `GrpcResultExtensions`; the test project had stopped compiling). SK0036's message, docs and tests name `SharedKernel.Core.Extensions`' `ThrowIfFailure()`/`GetValueOrThrow()` (R32 removed the gRPC package's own; rule and exemption prefix unchanged). Doc-only: `WebApiOptions` → `SharedKernelWebApiOptions` (R22), the fallback exception handler instead of `IExceptionHandler` (R5), no MVC `ToActionResult` (R19). `PresentationPreconditionCodesTests` (R7) re-verified against `ConcurrencyVersion.ConflictErrorCode` and `StorageErrorCodes` after X4 (agent)

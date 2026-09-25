@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsPublishable>true</IsPublishable>
+    <!-- Sample code is held to the same bar as shipped code. -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <!--
+    Deliberately PackageReference, not ProjectReference: this service proves the *packed* search
+    packages work for an outside consumer. Excluded from Platform.SharedKernel.slnx and built after
+    `dotnet pack` (see samples/README.md).
+  -->
+  <ItemGroup>
+    <!-- 09.Search: both providers side by side, against different document types -->
+    <PackageReference Include="SharedKernel.Search.Meilisearch" />
+    <PackageReference Include="SharedKernel.Search.ElasticSearch" />
+    <!-- 13.ServiceDefaults: host, search telemetry, one readiness check per index -->
+    <PackageReference Include="SharedKernel.ServiceDefaults" />
+    <PackageReference Include="SharedKernel.ServiceDefaults.Search" />
+    <!-- 05.Application: the endpoints send commands and queries through MediatR -->
+    <PackageReference Include="SharedKernel.Application" />
+    <!-- 14.Presentation: Result -> ProblemDetails -->
+    <PackageReference Include="SharedKernel.Presentation.WebApi" />
+  </ItemGroup>
+
+</Project>

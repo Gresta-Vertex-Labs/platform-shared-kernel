@@ -8,7 +8,7 @@ namespace SharedKernel.Testing.SelfTests.Localization;
 /// Proves <see cref="CultureScope"/> composes with <c>01.Core/SharedKernel.Localization</c>'s own
 /// <see cref="InMemoryLocalizationCatalog"/> with zero code changes on either side (D-235's audit
 /// finding, P-485/WO-078) — the "translation found" and "falls back to original message" cases a
-/// consuming service's own test suite needs to prove <c>Error.ToProblemDetails()</c> localization
+/// consuming service's own test suite needs to prove that its problem responses are localized
 /// (P-484) without any real resx resources.
 /// </summary>
 public sealed class CultureScopeLocalizationCatalogInteropTests

@@ -24,7 +24,7 @@ namespace SharedKernel.Testing.Caching;
 /// waiter re-checks the entry after acquiring it. A waiter is therefore served the stored value when
 /// the first factory run wrote one, and runs the factory itself when that run called
 /// <see cref="CacheFactoryContext.SkipCaching"/> and stored nothing -- the same split the real cache
-/// produces, and the one <c>SharedKernel.Application.Behaviors.Caching</c> relies on to carry a
+/// produces, and the one <c>SharedKernel.Application.Caching</c> relies on to carry a
 /// failed result out of its factory. A fake that ran the factory on every concurrent miss makes both
 /// paths look identical and cannot fail on a regression in either.
 /// </para>

@@ -13,9 +13,15 @@ namespace SharedKernel.Analyzers.Tests;
 /// T-357: Fire path — a bare, not-immediately-wrapped <c>new Status(...)</c> outside the exempt
 /// namespace.
 /// T-358: Pass path — the identical construction inside a fixture-local
-/// <c>SharedKernel.Presentation.Grpc</c> namespace (exemption proof).
-/// T-359: Pass path — a plain sanctioned-extension-shaped method invocation, no direct
-/// construction.
+/// <c>SharedKernel.Presentation.Grpc</c> namespace or one of its sub-namespaces (exemption proof).
+/// T-359: Pass path — the sanctioned path, no direct construction.
+/// <para>
+/// The fixtures follow the gRPC layout after the P-562 final review (R32): the package constructs statuses only in
+/// its rich-status factory (<c>…Grpc.Errors</c>) and its exception interceptor (<c>…Grpc.Interceptors</c>), and a
+/// service ends a failed <c>Result</c> with <c>SharedKernel.Core.Extensions</c>' <c>ThrowIfFailure()</c>/
+/// <c>GetValueOrThrow()</c>. The package's own extensions of those names (and before them <c>ToGrpcResult()</c>) are
+/// gone. The rule itself is unchanged.
+/// </para>
 /// <para>
 /// Every test references the REAL <c>Grpc.Core.Api</c> package (via this test project's own
 /// compile-time <c>PackageReference</c>) — SK0036's own design requires exact type resolution to
@@ -84,6 +90,10 @@ public class SK0036_RawRpcExceptionConstructionAnalyzerTests
     // T-358 — Pass path: identical construction inside the exempt namespace
     // ---------------------------------------------------------------------------
 
+    /// <summary>
+    /// T-358: the prefix itself exempts the package's root namespace. Since R32 no shipped root-namespace type
+    /// constructs a status, so the fixture type is neutral.
+    /// </summary>
     [Fact]
     public async Task PassPath_InsideSharedKernelPresentationGrpcNamespace_NoDiagnostic()
     {
@@ -91,13 +101,99 @@ public class SK0036_RawRpcExceptionConstructionAnalyzerTests
             """
             using Grpc.Core;
 
-            namespace SharedKernel.Presentation.Grpc.Results
+            namespace SharedKernel.Presentation.Grpc
             {
-                public static class GrpcResultExtensions
+                internal static class RootNamespaceStatusBuilder
                 {
-                    public static void ToGrpcResult()
+                    public static RpcException NotFound() =>
+                        new RpcException(new Status(StatusCode.NotFound, "not found"));
+                }
+            }
+            """
+        );
+        await test.RunAsync();
+    }
+
+    [Fact]
+    public async Task PassPath_InsideASharedKernelPresentationGrpcSubNamespace_NoDiagnostic()
+    {
+        var test = CreateTest(
+            """
+            using Grpc.Core;
+
+            namespace SharedKernel.Presentation.Grpc.Errors
+            {
+                internal static class RpcStatusFactory
+                {
+                    public static RpcException CreateException(StatusCode code, string message) =>
+                        new RpcException(new Status(code, message));
+                }
+            }
+            """
+        );
+        await test.RunAsync();
+    }
+
+    // ---------------------------------------------------------------------------
+    // T-359 — Pass path: the sanctioned path, SharedKernel.Core's result extensions
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-359: a service that ends failed results with <c>SharedKernel.Core.Extensions</c>' <c>GetValueOrThrow()</c>/
+    /// <c>ThrowIfFailure()</c> constructs no status and is not flagged. The stubs keep Core's signatures and, like
+    /// Core, throw the error's exception rather than an <c>RpcException</c>.
+    /// </summary>
+    [Fact]
+    public async Task PassPath_CoreResultExtensions_NoDiagnostic()
+    {
+        var test = CreateTest(
+            """
+            using System;
+            using System.Threading.Tasks;
+            using Grpc.Core;
+            using SharedKernel.Core.Extensions;
+            using SharedKernel.Primitives.Results;
+
+            namespace SharedKernel.Primitives.Results
+            {
+                public readonly struct Result
+                {
+                    public bool IsFailure { get; }
+                }
+
+                public sealed class Result<T>
+                {
+                    public bool IsFailure { get; set; }
+                    public T Value { get; set; }
+                }
+            }
+
+            namespace SharedKernel.Core.Extensions
+            {
+                public static class ResultExtensions
+                {
+                    public static void ThrowIfFailure(this Result result)
                     {
-                        throw new RpcException(new Status(StatusCode.NotFound, "not found"));
+                        if (result.IsFailure)
+                            throw new InvalidOperationException("The error's exception.");
+                    }
+
+                    public static T GetValueOrThrow<T>(this Result<T> result) =>
+                        result.IsFailure ? throw new InvalidOperationException("The error's exception.") : result.Value;
+                }
+            }
+
+            namespace Fixture
+            {
+                public sealed class OrdersService
+                {
+                    public Task<int> GetOrder(Result<int> found, ServerCallContext context) =>
+                        Task.FromResult(found.GetValueOrThrow());
+
+                    public Task CancelOrder(Result cancelled, ServerCallContext context)
+                    {
+                        cancelled.ThrowIfFailure();
+                        return Task.CompletedTask;
                     }
                 }
             }
@@ -107,36 +203,26 @@ public class SK0036_RawRpcExceptionConstructionAnalyzerTests
     }
 
     // ---------------------------------------------------------------------------
-    // T-359 — Pass path: plain sanctioned-extension-shaped method invocation
+    // The message points at the path that exists (P-562 R32)
     // ---------------------------------------------------------------------------
 
+    /// <summary>
+    /// The diagnostic tells the developer what to call instead, so it must name <c>SharedKernel.Core</c>'s
+    /// <c>ThrowIfFailure()</c>/<c>GetValueOrThrow()</c> — never the gRPC package's <c>GrpcResultExtensions</c>, which
+    /// R32 removed, nor its earlier <c>ToGrpcResult()</c> in <c>…Grpc.Results</c>. The expected names come from the
+    /// compiled type, so a rename in <c>SharedKernel.Core</c> breaks this test instead of leaving the message stale.
+    /// </summary>
     [Fact]
-    public async Task PassPath_SanctionedExtensionInvocation_NoDiagnostic()
+    public void Message_NamesTheCurrentResultMapping()
     {
-        var test = CreateTest(
-            """
-            using Grpc.Core;
+        var message = RawRpcExceptionConstructionAnalyzer.Rule.MessageFormat.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
-            namespace Fixture
-            {
-                public static class GrpcResultExtensions
-                {
-                    public static void ToGrpcResult(object result)
-                    {
-                    }
-                }
-
-                public class OrderService
-                {
-                    public void Handle(object result)
-                    {
-                        GrpcResultExtensions.ToGrpcResult(result);
-                    }
-                }
-            }
-            """
-        );
-        await test.RunAsync();
+        Assert.Contains(typeof(SharedKernel.Core.Extensions.ResultExtensions).Namespace!, message, StringComparison.Ordinal);
+        Assert.Contains($"{nameof(SharedKernel.Core.Extensions.ResultExtensions.ThrowIfFailure)}()", message, StringComparison.Ordinal);
+        Assert.Contains($"{nameof(SharedKernel.Core.Extensions.ResultExtensions.GetValueOrThrow)}()", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("GrpcResultExtensions", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("ToGrpcResult", message, StringComparison.Ordinal);
+        Assert.DoesNotContain(".Results.", message, StringComparison.Ordinal);
     }
 
     // ---------------------------------------------------------------------------

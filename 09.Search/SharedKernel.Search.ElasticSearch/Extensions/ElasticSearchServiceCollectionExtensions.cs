@@ -6,8 +6,12 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharedKernel.Configuration.Extensions;
+using SharedKernel.Primitives.Results;
+using SharedKernel.Search.Abstractions.Constants;
+using SharedKernel.Search.Abstractions.Errors;
 using SharedKernel.Search.ElasticSearch.Logging;
 using SharedKernel.Search.ElasticSearch.Options;
+using Result = SharedKernel.Primitives.Results.Result;
 
 namespace SharedKernel.Search.ElasticSearch.Extensions;
 
@@ -62,7 +66,7 @@ public static class ElasticSearchServiceCollectionExtensions
             }
             else
             {
-                logger.ElasticSearchSourceSerializerContextMissing(typeof(object).Name);
+                logger.ElasticSearchSourceSerializerContextMissing(builder.RegisteredIndexCount);
                 settings = new ElasticsearchClientSettings(nodePool);
             }
 
@@ -94,39 +98,63 @@ public static class ElasticSearchServiceCollectionExtensions
 
             logger.ElasticSearchClientConfigured(options.Nodes.Length, builder.RegisteredIndexCount);
 
-            if (options.ValidateEngineVersionOnStart)
-            {
-                ValidateEngineVersion(client, logger);
-            }
-
             return client;
         });
 
         return builder;
     }
 
-    private static void ValidateEngineVersion(ElasticsearchClient client, ILogger logger)
+    /// <summary>
+    /// Verifies that the connected cluster's version is one this client supports (9.x or 10.x),
+    /// returning a failed <see cref="Result"/> naming the actual version when it is not.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Asynchronous and explicitly invoked, because the alternative was worse than useless.</b> This
+    /// check previously ran inside the <c>ElasticsearchClient</c> DI factory as
+    /// <c>client.InfoAsync().GetAwaiter().GetResult()</c>, gated by a
+    /// <c>ValidateEngineVersionOnStart</c> flag. That had three defects at once: the factory runs at
+    /// <em>first resolution</em> of the client, not at startup — and because the index services are
+    /// scoped, that is typically inside the first request, not during boot; it blocked a thread pool
+    /// thread on a network round trip to do it; and it only logged, so an unsupported cluster started
+    /// and served traffic anyway. An option named "validate on start" that neither runs on start nor
+    /// validates is worse than no option, because it is believed.
+    /// </para>
+    /// <para>
+    /// Call it from a startup task or a deployment smoke test, alongside
+    /// <c>ISearchIndexProvisioner.VerifyRegisteredIndexesAsync</c>. An unreachable cluster is reported
+    /// as <see cref="SearchErrors.Unreachable"/>, distinct from a reachable cluster running an
+    /// unsupported version.
+    /// </para>
+    /// </remarks>
+    public static async Task<Result> VerifyElasticSearchEngineVersionAsync(
+        this IServiceProvider services, CancellationToken cancellationToken = default)
     {
-        try
+        ArgumentNullException.ThrowIfNull(services);
+
+        var client = services.GetRequiredService<ElasticsearchClient>();
+        var options = services.GetRequiredService<IOptions<ElasticSearchOptions>>().Value;
+        var logger = services.GetRequiredService<ILogger<ElasticsearchClient>>();
+
+        var info = await client.InfoAsync(cancellationToken).ConfigureAwait(false);
+        if (!info.IsValidResponse)
         {
-            // A synchronous, blocking startup check — the DI factory this runs inside is itself
-            // synchronous, mirroring the "fail at composition time, not query time" philosophy for an
-            // unsupported engine/client version pairing.
-            var info = client.InfoAsync().GetAwaiter().GetResult();
-            if (info.IsValidResponse && IsSupportedVersion(info.Version.Number))
-            {
-                logger.ElasticSearchEngineVersionVerified(info.Version.Number);
-            }
-            else
-            {
-                logger.ElasticSearchEngineVersionUnsupported(info.IsValidResponse ? info.Version.Number : "unknown", "9.x or 10.x");
-            }
+            logger.ElasticSearchEngineVersionUnsupported("unknown", SupportedVersionRange);
+            return Result.Failure(SearchErrors.Unreachable(
+                SearchWellKnown.ElasticSearchProviderName, string.Join(",", options.Nodes)));
         }
-        catch (Exception)
+
+        if (!IsSupportedVersion(info.Version.Number))
         {
-            logger.ElasticSearchEngineVersionUnsupported("unknown", "9.x or 10.x");
+            logger.ElasticSearchEngineVersionUnsupported(info.Version.Number, SupportedVersionRange);
+            return Result.Failure(SearchErrors.EngineVersionUnsupported(info.Version.Number, SupportedVersionRange));
         }
+
+        logger.ElasticSearchEngineVersionVerified(info.Version.Number);
+        return Result.Success();
     }
+
+    private const string SupportedVersionRange = "9.x or 10.x";
 
     private static bool IsSupportedVersion(string version)
         => int.TryParse(version.Split('.')[0], out var major) && major is 9 or 10;

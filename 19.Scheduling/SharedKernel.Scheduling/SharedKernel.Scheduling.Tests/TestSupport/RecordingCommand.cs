@@ -1,5 +1,5 @@
 using MediatR;
-using SharedKernel.Application.Messaging;
+using SharedKernel.Application;
 using SharedKernel.Primitives.Results;
 
 namespace SharedKernel.Scheduling.Tests.TestSupport;

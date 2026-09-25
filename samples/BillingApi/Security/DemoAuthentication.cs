@@ -18,8 +18,8 @@ public static class DemoAuthentication
 
     public static IServiceCollection AddDemoAuthentication(this IServiceCollection services)
     {
+        // Authentication only: the pipeline authorizes each command and query against the IRequestContext built from it.
         services.AddAuthentication(Scheme).AddScheme<AuthenticationSchemeOptions, DemoAuthenticationHandler>(Scheme, _ => { });
-        services.AddAuthorization();
         services.AddHttpContextAccessor();
 
         // What an authentication package of 12.Security registers: its mapper and a scoped IUserContext.

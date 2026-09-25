@@ -10,6 +10,7 @@ using SharedKernel.Search.ElasticSearch.Cursors;
 using SharedKernel.Search.ElasticSearch.Index;
 using SharedKernel.Search.ElasticSearch.Options;
 using SharedKernel.Search.ElasticSearch.Provisioning;
+using SharedKernel.Search.ElasticSearch.Suggest;
 using SharedKernel.Testing.Clocks;
 using SharedKernel.Testing.Containers;
 
@@ -73,8 +74,37 @@ internal static class ElasticsearchProviderFactory
 
     /// <summary>Creates an <see cref="ElasticSearchIndexProvisioner"/> against <paramref name="client"/>.</summary>
     public static ElasticSearchIndexProvisioner CreateProvisioner(
-        ElasticsearchClient client, ElasticSearchOptions? options = null, ILogger<ElasticSearchIndexProvisioner>? logger = null)
-        => new(client, options ?? CreateOptions(), logger ?? NullLogger<ElasticSearchIndexProvisioner>.Instance);
+        ElasticsearchClient client,
+        ElasticSearchOptions? options = null,
+        ILogger<ElasticSearchIndexProvisioner>? logger = null,
+        IReadOnlyDictionary<string, SearchIndexDefinition>? registeredDefinitions = null,
+        IReadOnlyDictionary<string, IReadOnlyList<string>>? completionFields = null,
+        IReadOnlyDictionary<string, string>? writeAliases = null)
+        => new(
+            client,
+            options ?? CreateOptions(),
+            registeredDefinitions ?? new Dictionary<string, SearchIndexDefinition>(StringComparer.Ordinal),
+            completionFields ?? new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal),
+            writeAliases ?? new Dictionary<string, string>(StringComparer.Ordinal),
+            logger ?? NullLogger<ElasticSearchIndexProvisioner>.Instance);
+
+    /// <summary>
+    /// Creates an <see cref="ElasticSearchSuggestSearch{TDocument}"/> against <paramref name="client"/>,
+    /// mirroring what <c>ElasticSearchBuilder.WithCompletionField</c> wires at a real composition root.
+    /// </summary>
+    public static ElasticSearchSuggestSearch<TDocument> CreateSuggestSearch<TDocument>(
+        ElasticsearchClient client,
+        SearchIndexDefinition definition,
+        IReadOnlyCollection<string> completionFields,
+        ElasticSearchOptions? options = null,
+        ILogger<ElasticSearchSuggestSearch<TDocument>>? logger = null)
+        where TDocument : class, ISearchDocument
+        => new(
+            client,
+            definition,
+            completionFields,
+            options ?? CreateOptions(),
+            logger ?? NullLogger<ElasticSearchSuggestSearch<TDocument>>.Instance);
 
     /// <summary>Creates an <see cref="ElasticSearchAnalytics{TDocument}"/> against <paramref name="client"/>.</summary>
     public static ElasticSearchAnalytics<TDocument> CreateAnalytics<TDocument>(

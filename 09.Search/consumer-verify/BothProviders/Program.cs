@@ -37,7 +37,6 @@ static async Task Surface_BothProvidersAgainstSameTDocumentLastRegistrationWins(
         [$"{MeilisearchOptions.SectionName}:Url"] = "http://localhost:7700",
         [$"{MeilisearchOptions.SectionName}:ApiKey"] = "development-master-key",
         [$"{ElasticSearchOptions.SectionName}:Nodes:0"] = "http://localhost:9200",
-        [$"{ElasticSearchOptions.SectionName}:ValidateEngineVersionOnStart"] = "false",
     });
 
     // AddSharedKernelXxxSearch() deliberately does NOT self-register IClock — registration is
@@ -80,12 +79,30 @@ static async Task Surface_BothProvidersAgainstSameTDocumentLastRegistrationWins(
         "ISearchProviderDescriptor also collapses to the LAST-registered provider (ElasticSearch) — "
         + "provisioning/pre-flight-validation calls silently target the wrong engine too");
 
+    // The keyed resolution is what a two-provider host must use for the two non-generic contracts. Both
+    // provider packages register them keyed by provider name as well as unkeyed, and both resolutions
+    // return the same instance.
+    var meilisearchDescriptor = host.Services.GetRequiredKeyedService<ISearchProviderDescriptor>(
+        SearchWellKnown.MeilisearchProviderName);
+    var elasticSearchDescriptor = host.Services.GetRequiredKeyedService<ISearchProviderDescriptor>(
+        SearchWellKnown.ElasticSearchProviderName);
+
+    Verify(
+        meilisearchDescriptor.ProviderName == SearchWellKnown.MeilisearchProviderName
+        && elasticSearchDescriptor.ProviderName == SearchWellKnown.ElasticSearchProviderName,
+        "each provider's descriptor IS reachable, unambiguously, under its own provider-name key — "
+        + "which is how a host that genuinely runs both engines addresses them");
+
     await host.StopAsync();
     Console.WriteLine(
-        "Surface PASS (documenting a violation, not a supported pattern): registering both providers "
-        + "against the same TDocument makes the LAST unkeyed registration win for every neutral "
-        + "interface — ISearchIndex<TDocument>, ISearchIndexProvisioner, and ISearchProviderDescriptor "
-        + "alike. Never do this in real composition; use a distinct TDocument (and index) per provider.");
+        "Surface PASS: registering both providers against the SAME TDocument makes the last unkeyed "
+        + "registration win for ISearchIndex<TDocument> — never do that; give each provider its own "
+        + "document type. The two NON-GENERIC contracts (ISearchIndexProvisioner, "
+        + "ISearchProviderDescriptor) have no type parameter to tell them apart, so a distinct TDocument "
+        + "does NOT disambiguate them and their unkeyed resolution collapses to the last provider "
+        + "registered in ANY two-provider host. Resolve those two by provider-name key instead — "
+        + "GetRequiredKeyedService<T>(SearchWellKnown.MeilisearchProviderName) — and pass the same key to "
+        + "13.ServiceDefaults' AddSearchReadinessCheck(providerKey:). Verified above, both ways.");
 }
 
 static void Verify(bool condition, string label)

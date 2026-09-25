@@ -1,0 +1,594 @@
+#nullable enable
+SharedKernel.Search.Abstractions.Abstractions.ISearchDocument
+SharedKernel.Search.Abstractions.Abstractions.ISearchDocument.DocumentId.get -> string!
+SharedKernel.Search.Abstractions.Abstractions.ISearchIndex<TDocument>
+SharedKernel.Search.Abstractions.Abstractions.ISearchIndex<TDocument>.ClearAsync(SharedKernel.Search.Abstractions.Models.SearchWriteConsistency consistency, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
+SharedKernel.Search.Abstractions.Abstractions.ISearchIndex<TDocument>.CountAsync(SharedKernel.Search.Abstractions.Models.SearchFilter? filter, SharedKernel.Search.Abstractions.Models.TenantScope tenantScope, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Search.Abstractions.Models.SearchCount>!>!
+SharedKernel.Search.Abstractions.Abstractions.ISearchIndex<TDocument>.DeleteAsync(string! documentId, SharedKernel.Search.Abstractions.Models.SearchWriteConsistency consistency, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Search.Abstractions.Models.SearchWriteReceipt!>!>!
+SharedKernel.Search.Abstractions.Abstractions.ISearchIndex<TDocument>.DeleteByFilterAsync(SharedKernel.Search.Abstractions.Models.SearchFilter! filter, SharedKernel.Search.Abstractions.Models.TenantScope tenantScope, SharedKernel.Search.Abstractions.Models.SearchWriteConsistency consistency, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Search.Abstractions.Models.SearchWriteReceipt!>!>!
+SharedKernel.Search.Abstractions.Abstractions.ISearchIndex<TDocument>.DeleteManyAsync(System.Collections.Generic.IReadOnlyCollection<string!>! documentIds, SharedKernel.Search.Abstractions.Models.SearchWriteConsistency consistency, SharedKernel.Search.Abstractions.Models.SearchBulkWriteOptions! bulkOptions, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Search.Abstractions.Models.SearchBulkReceipt!>!>!
+SharedKernel.Search.Abstractions.Abstractions.ISearchIndex<TDocument>.DeleteManyAsync(System.Collections.Generic.IReadOnlyCollection<string!>! documentIds, SharedKernel.Search.Abstractions.Models.SearchWriteConsistency consistency, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Search.Abstractions.Models.SearchBulkReceipt!>!>!
+SharedKernel.Search.Abstractions.Abstractions.ISearchIndex<TDocument>.EnumerateAsync(SharedKernel.Search.Abstractions.Models.SearchFilter? filter, SharedKernel.Search.Abstractions.Models.TenantScope tenantScope, int batchSize, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<TDocument!>!
+SharedKernel.Search.Abstractions.Abstractions.ISearchIndex<TDocument>.GetAsync(string! documentId, SharedKernel.Search.Abstractions.Models.TenantScope tenantScope, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<TDocument!>!>!
+SharedKernel.Search.Abstractions.Abstractions.ISearchIndex<TDocument>.IndexAsync(TDocument! document, SharedKernel.Search.Abstractions.Models.SearchWriteConsistency consistency, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Search.Abstractions.Models.SearchWriteReceipt!>!>!
+SharedKernel.Search.Abstractions.Abstractions.ISearchIndex<TDocument>.IndexManyAsync(System.Collections.Generic.IReadOnlyCollection<TDocument!>! documents, SharedKernel.Search.Abstractions.Models.SearchWriteConsistency consistency, SharedKernel.Search.Abstractions.Models.SearchBulkWriteOptions! bulkOptions, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Search.Abstractions.Models.SearchBulkReceipt!>!>!
+SharedKernel.Search.Abstractions.Abstractions.ISearchIndex<TDocument>.IndexManyAsync(System.Collections.Generic.IReadOnlyCollection<TDocument!>! documents, SharedKernel.Search.Abstractions.Models.SearchWriteConsistency consistency, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Search.Abstractions.Models.SearchBulkReceipt!>!>!
+SharedKernel.Search.Abstractions.Abstractions.ISearchIndex<TDocument>.IndexName.get -> string!
+SharedKernel.Search.Abstractions.Abstractions.ISearchIndex<TDocument>.SearchAsync(SharedKernel.Search.Abstractions.Models.SearchRequest! request, SharedKernel.Search.Abstractions.Models.TenantScope tenantScope, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Search.Abstractions.Models.SearchResults<TDocument!>!>!>!
+SharedKernel.Search.Abstractions.Abstractions.ISearchIndex<TDocument>.WaitUntilSearchableAsync(SharedKernel.Search.Abstractions.Models.SearchWriteReceipt! receipt, System.TimeSpan timeout, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
+SharedKernel.Search.Abstractions.Abstractions.ISearchIndexProvisioner
+SharedKernel.Search.Abstractions.Abstractions.ISearchIndexProvisioner.CutoverAsync(SharedKernel.Search.Abstractions.Models.IndexCutoverRequest! request, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
+SharedKernel.Search.Abstractions.Abstractions.ISearchIndexProvisioner.DeleteIndexAsync(string! indexName, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
+SharedKernel.Search.Abstractions.Abstractions.ISearchIndexProvisioner.EnsureIndexAsync(SharedKernel.Search.Abstractions.Models.SearchIndexDefinition! definition, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
+SharedKernel.Search.Abstractions.Abstractions.ISearchIndexProvisioner.IndexExistsAsync(string! indexName, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<bool>!>!
+SharedKernel.Search.Abstractions.Abstractions.ISearchIndexProvisioner.ProbeAsync(string! indexName, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Search.Abstractions.Models.SearchIndexHealth!>!>!
+SharedKernel.Search.Abstractions.Abstractions.ISearchIndexProvisioner.VerifyRegisteredIndexesAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
+SharedKernel.Search.Abstractions.Abstractions.ISearchProviderDescriptor
+SharedKernel.Search.Abstractions.Abstractions.ISearchProviderDescriptor.MaxFacetValues.get -> int
+SharedKernel.Search.Abstractions.Abstractions.ISearchProviderDescriptor.MaxTotalHits.get -> int
+SharedKernel.Search.Abstractions.Abstractions.ISearchProviderDescriptor.ProviderName.get -> string!
+SharedKernel.Search.Abstractions.Abstractions.ISearchProviderDescriptor.RegisteredIndexes.get -> System.Collections.Generic.IReadOnlyList<string!>!
+SharedKernel.Search.Abstractions.Abstractions.ISearchProviderDescriptor.Validate(string! indexName, SharedKernel.Search.Abstractions.Models.SearchRequest! request) -> SharedKernel.Primitives.Results.Result
+SharedKernel.Search.Abstractions.Constants.SearchWellKnown
+SharedKernel.Search.Abstractions.Errors.SearchErrors
+SharedKernel.Search.Abstractions.Exceptions.SearchStreamException
+SharedKernel.Search.Abstractions.Exceptions.SearchStreamException.Error.get -> SharedKernel.Primitives.Errors.Error!
+SharedKernel.Search.Abstractions.Exceptions.SearchStreamException.SearchStreamException(SharedKernel.Primitives.Errors.Error! error) -> void
+SharedKernel.Search.Abstractions.Exceptions.SearchStreamException.SearchStreamException(SharedKernel.Primitives.Errors.Error! error, System.Exception! innerException) -> void
+SharedKernel.Search.Abstractions.Models.AndFilter
+SharedKernel.Search.Abstractions.Models.AndFilter.Equals(SharedKernel.Search.Abstractions.Models.AndFilter? other) -> bool
+SharedKernel.Search.Abstractions.Models.AndFilter.Operands.get -> System.Collections.Generic.IReadOnlyList<SharedKernel.Search.Abstractions.Models.SearchFilter!>!
+SharedKernel.Search.Abstractions.Models.EqualFilter
+SharedKernel.Search.Abstractions.Models.EqualFilter.Equals(SharedKernel.Search.Abstractions.Models.EqualFilter? other) -> bool
+SharedKernel.Search.Abstractions.Models.EqualFilter.Field.get -> string!
+SharedKernel.Search.Abstractions.Models.EqualFilter.Value.get -> SharedKernel.Search.Abstractions.Models.SearchValue
+SharedKernel.Search.Abstractions.Models.ExistsFilter
+SharedKernel.Search.Abstractions.Models.ExistsFilter.Equals(SharedKernel.Search.Abstractions.Models.ExistsFilter? other) -> bool
+SharedKernel.Search.Abstractions.Models.ExistsFilter.Field.get -> string!
+SharedKernel.Search.Abstractions.Models.FacetNumericStats
+SharedKernel.Search.Abstractions.Models.FacetNumericStats.Equals(SharedKernel.Search.Abstractions.Models.FacetNumericStats other) -> bool
+SharedKernel.Search.Abstractions.Models.FacetNumericStats.FacetNumericStats() -> void
+SharedKernel.Search.Abstractions.Models.FacetNumericStats.FacetNumericStats(double min, double max) -> void
+SharedKernel.Search.Abstractions.Models.FacetNumericStats.Max.get -> double
+SharedKernel.Search.Abstractions.Models.FacetNumericStats.Min.get -> double
+SharedKernel.Search.Abstractions.Models.FacetResult
+SharedKernel.Search.Abstractions.Models.FacetResult.<Clone>$() -> SharedKernel.Search.Abstractions.Models.FacetResult!
+SharedKernel.Search.Abstractions.Models.FacetResult.Equals(SharedKernel.Search.Abstractions.Models.FacetResult? other) -> bool
+SharedKernel.Search.Abstractions.Models.FacetResult.FacetResult() -> void
+SharedKernel.Search.Abstractions.Models.FacetResult.Field.get -> string!
+SharedKernel.Search.Abstractions.Models.FacetResult.Field.init -> void
+SharedKernel.Search.Abstractions.Models.FacetResult.Stats.get -> SharedKernel.Search.Abstractions.Models.FacetNumericStats?
+SharedKernel.Search.Abstractions.Models.FacetResult.Stats.init -> void
+SharedKernel.Search.Abstractions.Models.FacetResult.Truncated.get -> bool
+SharedKernel.Search.Abstractions.Models.FacetResult.Truncated.init -> void
+SharedKernel.Search.Abstractions.Models.FacetResult.Values.get -> System.Collections.Generic.IReadOnlyList<SharedKernel.Search.Abstractions.Models.FacetValue>!
+SharedKernel.Search.Abstractions.Models.FacetResult.Values.init -> void
+SharedKernel.Search.Abstractions.Models.FacetValue
+SharedKernel.Search.Abstractions.Models.FacetValue.Count.get -> long
+SharedKernel.Search.Abstractions.Models.FacetValue.Equals(SharedKernel.Search.Abstractions.Models.FacetValue other) -> bool
+SharedKernel.Search.Abstractions.Models.FacetValue.FacetValue() -> void
+SharedKernel.Search.Abstractions.Models.FacetValue.FacetValue(string! value, long count) -> void
+SharedKernel.Search.Abstractions.Models.FacetValue.Value.get -> string!
+SharedKernel.Search.Abstractions.Models.HighlightRequest
+SharedKernel.Search.Abstractions.Models.HighlightRequest.<Clone>$() -> SharedKernel.Search.Abstractions.Models.HighlightRequest!
+SharedKernel.Search.Abstractions.Models.HighlightRequest.Equals(SharedKernel.Search.Abstractions.Models.HighlightRequest? other) -> bool
+SharedKernel.Search.Abstractions.Models.HighlightRequest.Fields.get -> System.Collections.Generic.IReadOnlyList<string!>!
+SharedKernel.Search.Abstractions.Models.HighlightRequest.Fields.init -> void
+SharedKernel.Search.Abstractions.Models.HighlightRequest.FragmentSize.get -> int?
+SharedKernel.Search.Abstractions.Models.HighlightRequest.FragmentSize.init -> void
+SharedKernel.Search.Abstractions.Models.HighlightRequest.HighlightRequest() -> void
+SharedKernel.Search.Abstractions.Models.HighlightRequest.MaxFragments.get -> int?
+SharedKernel.Search.Abstractions.Models.HighlightRequest.MaxFragments.init -> void
+SharedKernel.Search.Abstractions.Models.HighlightRequest.PostTag.get -> string!
+SharedKernel.Search.Abstractions.Models.HighlightRequest.PostTag.init -> void
+SharedKernel.Search.Abstractions.Models.HighlightRequest.PreTag.get -> string!
+SharedKernel.Search.Abstractions.Models.HighlightRequest.PreTag.init -> void
+SharedKernel.Search.Abstractions.Models.InFilter
+SharedKernel.Search.Abstractions.Models.InFilter.Equals(SharedKernel.Search.Abstractions.Models.InFilter? other) -> bool
+SharedKernel.Search.Abstractions.Models.InFilter.Field.get -> string!
+SharedKernel.Search.Abstractions.Models.InFilter.Values.get -> System.Collections.Generic.IReadOnlyList<SharedKernel.Search.Abstractions.Models.SearchValue>!
+SharedKernel.Search.Abstractions.Models.IndexCutoverRequest
+SharedKernel.Search.Abstractions.Models.IndexCutoverRequest.<Clone>$() -> SharedKernel.Search.Abstractions.Models.IndexCutoverRequest!
+SharedKernel.Search.Abstractions.Models.IndexCutoverRequest.DeleteStagingAfterCutover.get -> bool
+SharedKernel.Search.Abstractions.Models.IndexCutoverRequest.DeleteStagingAfterCutover.init -> void
+SharedKernel.Search.Abstractions.Models.IndexCutoverRequest.Equals(SharedKernel.Search.Abstractions.Models.IndexCutoverRequest? other) -> bool
+SharedKernel.Search.Abstractions.Models.IndexCutoverRequest.IndexCutoverRequest() -> void
+SharedKernel.Search.Abstractions.Models.IndexCutoverRequest.LiveIndexName.get -> string!
+SharedKernel.Search.Abstractions.Models.IndexCutoverRequest.LiveIndexName.init -> void
+SharedKernel.Search.Abstractions.Models.IndexCutoverRequest.StagingIndexName.get -> string!
+SharedKernel.Search.Abstractions.Models.IndexCutoverRequest.StagingIndexName.init -> void
+SharedKernel.Search.Abstractions.Models.NotEqualFilter
+SharedKernel.Search.Abstractions.Models.NotEqualFilter.Equals(SharedKernel.Search.Abstractions.Models.NotEqualFilter? other) -> bool
+SharedKernel.Search.Abstractions.Models.NotEqualFilter.Field.get -> string!
+SharedKernel.Search.Abstractions.Models.NotEqualFilter.Value.get -> SharedKernel.Search.Abstractions.Models.SearchValue
+SharedKernel.Search.Abstractions.Models.NotFilter
+SharedKernel.Search.Abstractions.Models.NotFilter.Equals(SharedKernel.Search.Abstractions.Models.NotFilter? other) -> bool
+SharedKernel.Search.Abstractions.Models.NotFilter.Operand.get -> SharedKernel.Search.Abstractions.Models.SearchFilter!
+SharedKernel.Search.Abstractions.Models.OrFilter
+SharedKernel.Search.Abstractions.Models.OrFilter.Equals(SharedKernel.Search.Abstractions.Models.OrFilter? other) -> bool
+SharedKernel.Search.Abstractions.Models.OrFilter.Operands.get -> System.Collections.Generic.IReadOnlyList<SharedKernel.Search.Abstractions.Models.SearchFilter!>!
+SharedKernel.Search.Abstractions.Models.RangeFilter
+SharedKernel.Search.Abstractions.Models.RangeFilter.Equals(SharedKernel.Search.Abstractions.Models.RangeFilter? other) -> bool
+SharedKernel.Search.Abstractions.Models.RangeFilter.Field.get -> string!
+SharedKernel.Search.Abstractions.Models.RangeFilter.From.get -> SharedKernel.Search.Abstractions.Models.SearchValue?
+SharedKernel.Search.Abstractions.Models.RangeFilter.FromInclusive.get -> bool
+SharedKernel.Search.Abstractions.Models.RangeFilter.To.get -> SharedKernel.Search.Abstractions.Models.SearchValue?
+SharedKernel.Search.Abstractions.Models.RangeFilter.ToInclusive.get -> bool
+SharedKernel.Search.Abstractions.Models.SearchBulkReceipt
+SharedKernel.Search.Abstractions.Models.SearchBulkReceipt.<Clone>$() -> SharedKernel.Search.Abstractions.Models.SearchBulkReceipt!
+SharedKernel.Search.Abstractions.Models.SearchBulkReceipt.Equals(SharedKernel.Search.Abstractions.Models.SearchBulkReceipt? other) -> bool
+SharedKernel.Search.Abstractions.Models.SearchBulkReceipt.Failures.get -> System.Collections.Generic.IReadOnlyList<SharedKernel.Search.Abstractions.Models.SearchItemFailure!>!
+SharedKernel.Search.Abstractions.Models.SearchBulkReceipt.Failures.init -> void
+SharedKernel.Search.Abstractions.Models.SearchBulkReceipt.HasFailures.get -> bool
+SharedKernel.Search.Abstractions.Models.SearchBulkReceipt.Receipt.get -> SharedKernel.Search.Abstractions.Models.SearchWriteReceipt!
+SharedKernel.Search.Abstractions.Models.SearchBulkReceipt.Receipt.init -> void
+SharedKernel.Search.Abstractions.Models.SearchBulkReceipt.SearchBulkReceipt() -> void
+SharedKernel.Search.Abstractions.Models.SearchBulkReceipt.SucceededCount.get -> int
+SharedKernel.Search.Abstractions.Models.SearchBulkReceipt.SucceededCount.init -> void
+SharedKernel.Search.Abstractions.Models.SearchBulkWriteOptions
+SharedKernel.Search.Abstractions.Models.SearchBulkWriteOptions.<Clone>$() -> SharedKernel.Search.Abstractions.Models.SearchBulkWriteOptions!
+SharedKernel.Search.Abstractions.Models.SearchBulkWriteOptions.Equals(SharedKernel.Search.Abstractions.Models.SearchBulkWriteOptions? other) -> bool
+SharedKernel.Search.Abstractions.Models.SearchBulkWriteOptions.MaxBatchesPerSecond.get -> double?
+SharedKernel.Search.Abstractions.Models.SearchBulkWriteOptions.MaxBatchesPerSecond.init -> void
+SharedKernel.Search.Abstractions.Models.SearchBulkWriteOptions.SearchBulkWriteOptions() -> void
+SharedKernel.Search.Abstractions.Models.SearchCount
+SharedKernel.Search.Abstractions.Models.SearchCount.Accuracy.get -> SharedKernel.Search.Abstractions.Models.TotalHitsAccuracy
+SharedKernel.Search.Abstractions.Models.SearchCount.Equals(SharedKernel.Search.Abstractions.Models.SearchCount other) -> bool
+SharedKernel.Search.Abstractions.Models.SearchCount.IsExact.get -> bool
+SharedKernel.Search.Abstractions.Models.SearchCount.SearchCount() -> void
+SharedKernel.Search.Abstractions.Models.SearchCount.Value.get -> long
+SharedKernel.Search.Abstractions.Models.SearchFieldDefinition
+SharedKernel.Search.Abstractions.Models.SearchFieldDefinition.<Clone>$() -> SharedKernel.Search.Abstractions.Models.SearchFieldDefinition!
+SharedKernel.Search.Abstractions.Models.SearchFieldDefinition.Equals(SharedKernel.Search.Abstractions.Models.SearchFieldDefinition? other) -> bool
+SharedKernel.Search.Abstractions.Models.SearchFieldDefinition.Facetable.get -> bool
+SharedKernel.Search.Abstractions.Models.SearchFieldDefinition.Facetable.init -> void
+SharedKernel.Search.Abstractions.Models.SearchFieldDefinition.Filterable.get -> bool
+SharedKernel.Search.Abstractions.Models.SearchFieldDefinition.Filterable.init -> void
+SharedKernel.Search.Abstractions.Models.SearchFieldDefinition.Kind.get -> SharedKernel.Search.Abstractions.Models.SearchFieldKind
+SharedKernel.Search.Abstractions.Models.SearchFieldDefinition.Kind.init -> void
+SharedKernel.Search.Abstractions.Models.SearchFieldDefinition.Name.get -> string!
+SharedKernel.Search.Abstractions.Models.SearchFieldDefinition.Name.init -> void
+SharedKernel.Search.Abstractions.Models.SearchFieldDefinition.SearchFieldDefinition() -> void
+SharedKernel.Search.Abstractions.Models.SearchFieldDefinition.Searchable.get -> bool
+SharedKernel.Search.Abstractions.Models.SearchFieldDefinition.Searchable.init -> void
+SharedKernel.Search.Abstractions.Models.SearchFieldDefinition.Sortable.get -> bool
+SharedKernel.Search.Abstractions.Models.SearchFieldDefinition.Sortable.init -> void
+SharedKernel.Search.Abstractions.Models.SearchFieldKind
+SharedKernel.Search.Abstractions.Models.SearchFieldKind.Boolean = 4 -> SharedKernel.Search.Abstractions.Models.SearchFieldKind
+SharedKernel.Search.Abstractions.Models.SearchFieldKind.DateTimeOffset = 5 -> SharedKernel.Search.Abstractions.Models.SearchFieldKind
+SharedKernel.Search.Abstractions.Models.SearchFieldKind.Decimal = 3 -> SharedKernel.Search.Abstractions.Models.SearchFieldKind
+SharedKernel.Search.Abstractions.Models.SearchFieldKind.Integer = 2 -> SharedKernel.Search.Abstractions.Models.SearchFieldKind
+SharedKernel.Search.Abstractions.Models.SearchFieldKind.Keyword = 1 -> SharedKernel.Search.Abstractions.Models.SearchFieldKind
+SharedKernel.Search.Abstractions.Models.SearchFieldKind.Text = 0 -> SharedKernel.Search.Abstractions.Models.SearchFieldKind
+SharedKernel.Search.Abstractions.Models.SearchFilter
+SharedKernel.Search.Abstractions.Models.SearchFilter.SearchFilter(SharedKernel.Search.Abstractions.Models.SearchFilter! original) -> void
+SharedKernel.Search.Abstractions.Models.SearchHit<TDocument>
+SharedKernel.Search.Abstractions.Models.SearchHit<TDocument>.Document.get -> TDocument!
+SharedKernel.Search.Abstractions.Models.SearchHit<TDocument>.Document.init -> void
+SharedKernel.Search.Abstractions.Models.SearchHit<TDocument>.Highlights.get -> System.Collections.Generic.IReadOnlyDictionary<string!, System.Collections.Generic.IReadOnlyList<string!>!>!
+SharedKernel.Search.Abstractions.Models.SearchHit<TDocument>.Highlights.init -> void
+SharedKernel.Search.Abstractions.Models.SearchHit<TDocument>.Rank.get -> int
+SharedKernel.Search.Abstractions.Models.SearchHit<TDocument>.Rank.init -> void
+SharedKernel.Search.Abstractions.Models.SearchHit<TDocument>.SearchHit() -> void
+SharedKernel.Search.Abstractions.Models.SearchIndexDefinition
+SharedKernel.Search.Abstractions.Models.SearchIndexDefinition.<Clone>$() -> SharedKernel.Search.Abstractions.Models.SearchIndexDefinition!
+SharedKernel.Search.Abstractions.Models.SearchIndexDefinition.ComputeFingerprint() -> string!
+SharedKernel.Search.Abstractions.Models.SearchIndexDefinition.Equals(SharedKernel.Search.Abstractions.Models.SearchIndexDefinition? other) -> bool
+SharedKernel.Search.Abstractions.Models.SearchIndexDefinition.Fields.get -> System.Collections.Generic.IReadOnlyList<SharedKernel.Search.Abstractions.Models.SearchFieldDefinition!>!
+SharedKernel.Search.Abstractions.Models.SearchIndexDefinition.Fields.init -> void
+SharedKernel.Search.Abstractions.Models.SearchIndexDefinition.MaxFacetValues.get -> int
+SharedKernel.Search.Abstractions.Models.SearchIndexDefinition.MaxFacetValues.init -> void
+SharedKernel.Search.Abstractions.Models.SearchIndexDefinition.MaxTotalHits.get -> int
+SharedKernel.Search.Abstractions.Models.SearchIndexDefinition.MaxTotalHits.init -> void
+SharedKernel.Search.Abstractions.Models.SearchIndexDefinition.Name.get -> string!
+SharedKernel.Search.Abstractions.Models.SearchIndexDefinition.Name.init -> void
+SharedKernel.Search.Abstractions.Models.SearchIndexDefinition.PrimaryKeyField.get -> string!
+SharedKernel.Search.Abstractions.Models.SearchIndexDefinition.PrimaryKeyField.init -> void
+SharedKernel.Search.Abstractions.Models.SearchIndexDefinition.SearchIndexDefinition() -> void
+SharedKernel.Search.Abstractions.Models.SearchIndexDefinition.StopWords.get -> System.Collections.Generic.IReadOnlyList<string!>!
+SharedKernel.Search.Abstractions.Models.SearchIndexDefinition.StopWords.init -> void
+SharedKernel.Search.Abstractions.Models.SearchIndexDefinition.Synonyms.get -> System.Collections.Generic.IReadOnlyDictionary<string!, System.Collections.Generic.IReadOnlyList<string!>!>!
+SharedKernel.Search.Abstractions.Models.SearchIndexDefinition.Synonyms.init -> void
+SharedKernel.Search.Abstractions.Models.SearchIndexDefinition.TenantField.get -> string?
+SharedKernel.Search.Abstractions.Models.SearchIndexDefinition.TenantField.init -> void
+SharedKernel.Search.Abstractions.Models.SearchIndexDefinitionBuilder
+SharedKernel.Search.Abstractions.Models.SearchIndexDefinitionBuilder.Build() -> SharedKernel.Primitives.Results.Result<SharedKernel.Search.Abstractions.Models.SearchIndexDefinition!>!
+SharedKernel.Search.Abstractions.Models.SearchIndexDefinitionBuilder.Field(string! name, SharedKernel.Search.Abstractions.Models.SearchFieldKind kind, bool searchable = false, bool filterable = false, bool sortable = false, bool facetable = false) -> SharedKernel.Search.Abstractions.Models.SearchIndexDefinitionBuilder!
+SharedKernel.Search.Abstractions.Models.SearchIndexDefinitionBuilder.MaxFacetValues(int value) -> SharedKernel.Search.Abstractions.Models.SearchIndexDefinitionBuilder!
+SharedKernel.Search.Abstractions.Models.SearchIndexDefinitionBuilder.MaxTotalHits(int value) -> SharedKernel.Search.Abstractions.Models.SearchIndexDefinitionBuilder!
+SharedKernel.Search.Abstractions.Models.SearchIndexDefinitionBuilder.PrimaryKey(string! field) -> SharedKernel.Search.Abstractions.Models.SearchIndexDefinitionBuilder!
+SharedKernel.Search.Abstractions.Models.SearchIndexDefinitionBuilder.SearchIndexDefinitionBuilder(string! name) -> void
+SharedKernel.Search.Abstractions.Models.SearchIndexDefinitionBuilder.StopWords(params string![]! stopWords) -> SharedKernel.Search.Abstractions.Models.SearchIndexDefinitionBuilder!
+SharedKernel.Search.Abstractions.Models.SearchIndexDefinitionBuilder.Synonym(string! term, params string![]! replacements) -> SharedKernel.Search.Abstractions.Models.SearchIndexDefinitionBuilder!
+SharedKernel.Search.Abstractions.Models.SearchIndexDefinitionBuilder.TenantField(string! field) -> SharedKernel.Search.Abstractions.Models.SearchIndexDefinitionBuilder!
+SharedKernel.Search.Abstractions.Models.SearchIndexHealth
+SharedKernel.Search.Abstractions.Models.SearchIndexHealth.<Clone>$() -> SharedKernel.Search.Abstractions.Models.SearchIndexHealth!
+SharedKernel.Search.Abstractions.Models.SearchIndexHealth.DocumentCount.get -> long
+SharedKernel.Search.Abstractions.Models.SearchIndexHealth.DocumentCount.init -> void
+SharedKernel.Search.Abstractions.Models.SearchIndexHealth.EngineVersion.get -> string!
+SharedKernel.Search.Abstractions.Models.SearchIndexHealth.EngineVersion.init -> void
+SharedKernel.Search.Abstractions.Models.SearchIndexHealth.Equals(SharedKernel.Search.Abstractions.Models.SearchIndexHealth? other) -> bool
+SharedKernel.Search.Abstractions.Models.SearchIndexHealth.IndexAddressable.get -> bool
+SharedKernel.Search.Abstractions.Models.SearchIndexHealth.IndexAddressable.init -> void
+SharedKernel.Search.Abstractions.Models.SearchIndexHealth.Latency.get -> System.TimeSpan
+SharedKernel.Search.Abstractions.Models.SearchIndexHealth.Latency.init -> void
+SharedKernel.Search.Abstractions.Models.SearchIndexHealth.PendingWriteCount.get -> long?
+SharedKernel.Search.Abstractions.Models.SearchIndexHealth.PendingWriteCount.init -> void
+SharedKernel.Search.Abstractions.Models.SearchIndexHealth.Reachable.get -> bool
+SharedKernel.Search.Abstractions.Models.SearchIndexHealth.Reachable.init -> void
+SharedKernel.Search.Abstractions.Models.SearchIndexHealth.SchemaFingerprint.get -> string?
+SharedKernel.Search.Abstractions.Models.SearchIndexHealth.SchemaFingerprint.init -> void
+SharedKernel.Search.Abstractions.Models.SearchIndexHealth.SearchIndexHealth() -> void
+SharedKernel.Search.Abstractions.Models.SearchIndexHealth.Searchable.get -> bool
+SharedKernel.Search.Abstractions.Models.SearchIndexHealth.Searchable.init -> void
+SharedKernel.Search.Abstractions.Models.SearchItemFailure
+SharedKernel.Search.Abstractions.Models.SearchItemFailure.<Clone>$() -> SharedKernel.Search.Abstractions.Models.SearchItemFailure!
+SharedKernel.Search.Abstractions.Models.SearchItemFailure.DocumentId.get -> string!
+SharedKernel.Search.Abstractions.Models.SearchItemFailure.DocumentId.init -> void
+SharedKernel.Search.Abstractions.Models.SearchItemFailure.Equals(SharedKernel.Search.Abstractions.Models.SearchItemFailure? other) -> bool
+SharedKernel.Search.Abstractions.Models.SearchItemFailure.Error.get -> SharedKernel.Primitives.Errors.Error!
+SharedKernel.Search.Abstractions.Models.SearchItemFailure.Error.init -> void
+SharedKernel.Search.Abstractions.Models.SearchItemFailure.SearchItemFailure() -> void
+SharedKernel.Search.Abstractions.Models.SearchRequest
+SharedKernel.Search.Abstractions.Models.SearchRequest.<Clone>$() -> SharedKernel.Search.Abstractions.Models.SearchRequest!
+SharedKernel.Search.Abstractions.Models.SearchRequest.Equals(SharedKernel.Search.Abstractions.Models.SearchRequest? other) -> bool
+SharedKernel.Search.Abstractions.Models.SearchRequest.Facets.get -> System.Collections.Generic.IReadOnlyList<string!>!
+SharedKernel.Search.Abstractions.Models.SearchRequest.Facets.init -> void
+SharedKernel.Search.Abstractions.Models.SearchRequest.Filter.get -> SharedKernel.Search.Abstractions.Models.SearchFilter?
+SharedKernel.Search.Abstractions.Models.SearchRequest.Filter.init -> void
+SharedKernel.Search.Abstractions.Models.SearchRequest.FreeText.get -> string?
+SharedKernel.Search.Abstractions.Models.SearchRequest.FreeText.init -> void
+SharedKernel.Search.Abstractions.Models.SearchRequest.Highlight.get -> SharedKernel.Search.Abstractions.Models.HighlightRequest?
+SharedKernel.Search.Abstractions.Models.SearchRequest.Highlight.init -> void
+SharedKernel.Search.Abstractions.Models.SearchRequest.MatchAllTerms.get -> bool
+SharedKernel.Search.Abstractions.Models.SearchRequest.MatchAllTerms.init -> void
+SharedKernel.Search.Abstractions.Models.SearchRequest.NumericFacetStats.get -> System.Collections.Generic.IReadOnlyList<string!>!
+SharedKernel.Search.Abstractions.Models.SearchRequest.NumericFacetStats.init -> void
+SharedKernel.Search.Abstractions.Models.SearchRequest.Page.get -> int
+SharedKernel.Search.Abstractions.Models.SearchRequest.Page.init -> void
+SharedKernel.Search.Abstractions.Models.SearchRequest.PageSize.get -> int
+SharedKernel.Search.Abstractions.Models.SearchRequest.PageSize.init -> void
+SharedKernel.Search.Abstractions.Models.SearchRequest.RequireExactTotalHits.get -> bool
+SharedKernel.Search.Abstractions.Models.SearchRequest.RequireExactTotalHits.init -> void
+SharedKernel.Search.Abstractions.Models.SearchRequest.ReturnFields.get -> System.Collections.Generic.IReadOnlyList<string!>!
+SharedKernel.Search.Abstractions.Models.SearchRequest.ReturnFields.init -> void
+SharedKernel.Search.Abstractions.Models.SearchRequest.SearchFields.get -> System.Collections.Generic.IReadOnlyList<string!>!
+SharedKernel.Search.Abstractions.Models.SearchRequest.SearchFields.init -> void
+SharedKernel.Search.Abstractions.Models.SearchRequest.SearchRequest() -> void
+SharedKernel.Search.Abstractions.Models.SearchRequest.Sort.get -> System.Collections.Generic.IReadOnlyList<SharedKernel.Search.Abstractions.Models.SearchSort>!
+SharedKernel.Search.Abstractions.Models.SearchRequest.Sort.init -> void
+SharedKernel.Search.Abstractions.Models.SearchResults<TDocument>
+SharedKernel.Search.Abstractions.Models.SearchResults<TDocument>.Accuracy.get -> SharedKernel.Search.Abstractions.Models.TotalHitsAccuracy
+SharedKernel.Search.Abstractions.Models.SearchResults<TDocument>.Accuracy.init -> void
+SharedKernel.Search.Abstractions.Models.SearchResults<TDocument>.Duration.get -> System.TimeSpan
+SharedKernel.Search.Abstractions.Models.SearchResults<TDocument>.Duration.init -> void
+SharedKernel.Search.Abstractions.Models.SearchResults<TDocument>.Facets.get -> System.Collections.Generic.IReadOnlyDictionary<string!, SharedKernel.Search.Abstractions.Models.FacetResult!>!
+SharedKernel.Search.Abstractions.Models.SearchResults<TDocument>.Facets.init -> void
+SharedKernel.Search.Abstractions.Models.SearchResults<TDocument>.Hits.get -> System.Collections.Generic.IReadOnlyList<SharedKernel.Search.Abstractions.Models.SearchHit<TDocument!>!>!
+SharedKernel.Search.Abstractions.Models.SearchResults<TDocument>.Hits.init -> void
+SharedKernel.Search.Abstractions.Models.SearchResults<TDocument>.Page.get -> int
+SharedKernel.Search.Abstractions.Models.SearchResults<TDocument>.Page.init -> void
+SharedKernel.Search.Abstractions.Models.SearchResults<TDocument>.PageSize.get -> int
+SharedKernel.Search.Abstractions.Models.SearchResults<TDocument>.PageSize.init -> void
+SharedKernel.Search.Abstractions.Models.SearchResults<TDocument>.SearchResults() -> void
+SharedKernel.Search.Abstractions.Models.SearchResults<TDocument>.ToPagedList() -> SharedKernel.Primitives.Results.Result<SharedKernel.Contracts.Pagination.PagedList<TDocument!>!>!
+SharedKernel.Search.Abstractions.Models.SearchResults<TDocument>.TotalHits.get -> long
+SharedKernel.Search.Abstractions.Models.SearchResults<TDocument>.TotalHits.init -> void
+SharedKernel.Search.Abstractions.Models.SearchSort
+SharedKernel.Search.Abstractions.Models.SearchSort.Direction.get -> SharedKernel.Search.Abstractions.Models.SortDirection
+SharedKernel.Search.Abstractions.Models.SearchSort.Equals(SharedKernel.Search.Abstractions.Models.SearchSort other) -> bool
+SharedKernel.Search.Abstractions.Models.SearchSort.Field.get -> string!
+SharedKernel.Search.Abstractions.Models.SearchSort.SearchSort() -> void
+SharedKernel.Search.Abstractions.Models.SearchValue
+SharedKernel.Search.Abstractions.Models.SearchValue.AsBoolean.get -> bool
+SharedKernel.Search.Abstractions.Models.SearchValue.AsDateTimeOffset.get -> System.DateTimeOffset
+SharedKernel.Search.Abstractions.Models.SearchValue.AsDouble.get -> double
+SharedKernel.Search.Abstractions.Models.SearchValue.AsInt64.get -> long
+SharedKernel.Search.Abstractions.Models.SearchValue.AsString.get -> string!
+SharedKernel.Search.Abstractions.Models.SearchValue.Equals(SharedKernel.Search.Abstractions.Models.SearchValue other) -> bool
+SharedKernel.Search.Abstractions.Models.SearchValue.Kind.get -> SharedKernel.Search.Abstractions.Models.SearchValueKind
+SharedKernel.Search.Abstractions.Models.SearchValue.SearchValue() -> void
+SharedKernel.Search.Abstractions.Models.SearchValueKind
+SharedKernel.Search.Abstractions.Models.SearchValueKind.Boolean = 3 -> SharedKernel.Search.Abstractions.Models.SearchValueKind
+SharedKernel.Search.Abstractions.Models.SearchValueKind.DateTimeOffset = 4 -> SharedKernel.Search.Abstractions.Models.SearchValueKind
+SharedKernel.Search.Abstractions.Models.SearchValueKind.Double = 2 -> SharedKernel.Search.Abstractions.Models.SearchValueKind
+SharedKernel.Search.Abstractions.Models.SearchValueKind.Int64 = 1 -> SharedKernel.Search.Abstractions.Models.SearchValueKind
+SharedKernel.Search.Abstractions.Models.SearchValueKind.String = 0 -> SharedKernel.Search.Abstractions.Models.SearchValueKind
+SharedKernel.Search.Abstractions.Models.SearchWriteConsistency
+SharedKernel.Search.Abstractions.Models.SearchWriteConsistency.Accepted = 0 -> SharedKernel.Search.Abstractions.Models.SearchWriteConsistency
+SharedKernel.Search.Abstractions.Models.SearchWriteConsistency.Searchable = 1 -> SharedKernel.Search.Abstractions.Models.SearchWriteConsistency
+SharedKernel.Search.Abstractions.Models.SearchWriteReceipt
+SharedKernel.Search.Abstractions.Models.SearchWriteReceipt.<Clone>$() -> SharedKernel.Search.Abstractions.Models.SearchWriteReceipt!
+SharedKernel.Search.Abstractions.Models.SearchWriteReceipt.AcceptedAt.get -> System.DateTimeOffset
+SharedKernel.Search.Abstractions.Models.SearchWriteReceipt.AcceptedAt.init -> void
+SharedKernel.Search.Abstractions.Models.SearchWriteReceipt.AffectedCount.get -> int
+SharedKernel.Search.Abstractions.Models.SearchWriteReceipt.AffectedCount.init -> void
+SharedKernel.Search.Abstractions.Models.SearchWriteReceipt.Equals(SharedKernel.Search.Abstractions.Models.SearchWriteReceipt? other) -> bool
+SharedKernel.Search.Abstractions.Models.SearchWriteReceipt.IndexName.get -> string!
+SharedKernel.Search.Abstractions.Models.SearchWriteReceipt.IndexName.init -> void
+SharedKernel.Search.Abstractions.Models.SearchWriteReceipt.ProviderToken.get -> string!
+SharedKernel.Search.Abstractions.Models.SearchWriteReceipt.ProviderToken.init -> void
+SharedKernel.Search.Abstractions.Models.SearchWriteReceipt.RequestedConsistency.get -> SharedKernel.Search.Abstractions.Models.SearchWriteConsistency
+SharedKernel.Search.Abstractions.Models.SearchWriteReceipt.RequestedConsistency.init -> void
+SharedKernel.Search.Abstractions.Models.SearchWriteReceipt.SearchWriteReceipt() -> void
+SharedKernel.Search.Abstractions.Models.SortDirection
+SharedKernel.Search.Abstractions.Models.SortDirection.Ascending = 0 -> SharedKernel.Search.Abstractions.Models.SortDirection
+SharedKernel.Search.Abstractions.Models.SortDirection.Descending = 1 -> SharedKernel.Search.Abstractions.Models.SortDirection
+SharedKernel.Search.Abstractions.Models.TenantScope
+SharedKernel.Search.Abstractions.Models.TenantScope.Equals(SharedKernel.Search.Abstractions.Models.TenantScope other) -> bool
+SharedKernel.Search.Abstractions.Models.TenantScope.TenantScope() -> void
+SharedKernel.Search.Abstractions.Models.TenantScope.Value.get -> string!
+SharedKernel.Search.Abstractions.Models.TotalHitsAccuracy
+SharedKernel.Search.Abstractions.Models.TotalHitsAccuracy.Estimated = 2 -> SharedKernel.Search.Abstractions.Models.TotalHitsAccuracy
+SharedKernel.Search.Abstractions.Models.TotalHitsAccuracy.Exact = 0 -> SharedKernel.Search.Abstractions.Models.TotalHitsAccuracy
+SharedKernel.Search.Abstractions.Models.TotalHitsAccuracy.LowerBound = 1 -> SharedKernel.Search.Abstractions.Models.TotalHitsAccuracy
+SharedKernel.Search.Abstractions.Querying.IQueryBuilder
+SharedKernel.Search.Abstractions.Querying.IQueryBuilder.Build() -> SharedKernel.Primitives.Results.Result<SharedKernel.Search.Abstractions.Models.SearchRequest!>!
+SharedKernel.Search.Abstractions.Querying.IQueryBuilder.Faceting(params string![]! facetFields) -> SharedKernel.Search.Abstractions.Querying.IQueryBuilder!
+SharedKernel.Search.Abstractions.Querying.IQueryBuilder.Highlighting(SharedKernel.Search.Abstractions.Models.HighlightRequest! highlight) -> SharedKernel.Search.Abstractions.Querying.IQueryBuilder!
+SharedKernel.Search.Abstractions.Querying.IQueryBuilder.MatchAllTerms(bool matchAll) -> SharedKernel.Search.Abstractions.Querying.IQueryBuilder!
+SharedKernel.Search.Abstractions.Querying.IQueryBuilder.Matching(string? freeText) -> SharedKernel.Search.Abstractions.Querying.IQueryBuilder!
+SharedKernel.Search.Abstractions.Querying.IQueryBuilder.OrderBy(string! field) -> SharedKernel.Search.Abstractions.Querying.IQueryBuilder!
+SharedKernel.Search.Abstractions.Querying.IQueryBuilder.OrderByDescending(string! field) -> SharedKernel.Search.Abstractions.Querying.IQueryBuilder!
+SharedKernel.Search.Abstractions.Querying.IQueryBuilder.Page(int page, int pageSize) -> SharedKernel.Search.Abstractions.Querying.IQueryBuilder!
+SharedKernel.Search.Abstractions.Querying.IQueryBuilder.RequireExactTotalHits() -> SharedKernel.Search.Abstractions.Querying.IQueryBuilder!
+SharedKernel.Search.Abstractions.Querying.IQueryBuilder.Returning(params string![]! fields) -> SharedKernel.Search.Abstractions.Querying.IQueryBuilder!
+SharedKernel.Search.Abstractions.Querying.IQueryBuilder.SearchingIn(params string![]! fields) -> SharedKernel.Search.Abstractions.Querying.IQueryBuilder!
+SharedKernel.Search.Abstractions.Querying.IQueryBuilder.Where(SharedKernel.Search.Abstractions.Models.SearchFilter! filter) -> SharedKernel.Search.Abstractions.Querying.IQueryBuilder!
+SharedKernel.Search.Abstractions.Querying.IQueryBuilder.WithNumericFacetStats(params string![]! facetFields) -> SharedKernel.Search.Abstractions.Querying.IQueryBuilder!
+SharedKernel.Search.Abstractions.Querying.SearchQuery
+SharedKernel.Search.Abstractions.Querying.SearchQueryBuilder
+SharedKernel.Search.Abstractions.Querying.SearchQueryBuilder.Build() -> SharedKernel.Primitives.Results.Result<SharedKernel.Search.Abstractions.Models.SearchRequest!>!
+SharedKernel.Search.Abstractions.Querying.SearchQueryBuilder.Faceting(params string![]! facetFields) -> SharedKernel.Search.Abstractions.Querying.IQueryBuilder!
+SharedKernel.Search.Abstractions.Querying.SearchQueryBuilder.Highlighting(SharedKernel.Search.Abstractions.Models.HighlightRequest! highlight) -> SharedKernel.Search.Abstractions.Querying.IQueryBuilder!
+SharedKernel.Search.Abstractions.Querying.SearchQueryBuilder.MatchAllTerms(bool matchAll) -> SharedKernel.Search.Abstractions.Querying.IQueryBuilder!
+SharedKernel.Search.Abstractions.Querying.SearchQueryBuilder.Matching(string? freeText) -> SharedKernel.Search.Abstractions.Querying.IQueryBuilder!
+SharedKernel.Search.Abstractions.Querying.SearchQueryBuilder.OrderBy(string! field) -> SharedKernel.Search.Abstractions.Querying.IQueryBuilder!
+SharedKernel.Search.Abstractions.Querying.SearchQueryBuilder.OrderByDescending(string! field) -> SharedKernel.Search.Abstractions.Querying.IQueryBuilder!
+SharedKernel.Search.Abstractions.Querying.SearchQueryBuilder.Page(int page, int pageSize) -> SharedKernel.Search.Abstractions.Querying.IQueryBuilder!
+SharedKernel.Search.Abstractions.Querying.SearchQueryBuilder.RequireExactTotalHits() -> SharedKernel.Search.Abstractions.Querying.IQueryBuilder!
+SharedKernel.Search.Abstractions.Querying.SearchQueryBuilder.Returning(params string![]! fields) -> SharedKernel.Search.Abstractions.Querying.IQueryBuilder!
+SharedKernel.Search.Abstractions.Querying.SearchQueryBuilder.SearchQueryBuilder() -> void
+SharedKernel.Search.Abstractions.Querying.SearchQueryBuilder.SearchingIn(params string![]! fields) -> SharedKernel.Search.Abstractions.Querying.IQueryBuilder!
+SharedKernel.Search.Abstractions.Querying.SearchQueryBuilder.Where(SharedKernel.Search.Abstractions.Models.SearchFilter! filter) -> SharedKernel.Search.Abstractions.Querying.IQueryBuilder!
+SharedKernel.Search.Abstractions.Querying.SearchQueryBuilder.WithNumericFacetStats(params string![]! facetFields) -> SharedKernel.Search.Abstractions.Querying.IQueryBuilder!
+abstract SharedKernel.Search.Abstractions.Models.SearchFilter.<Clone>$() -> SharedKernel.Search.Abstractions.Models.SearchFilter!
+const SharedKernel.Search.Abstractions.Constants.SearchWellKnown.ActivitySourceName = "SharedKernel.Search" -> string!
+const SharedKernel.Search.Abstractions.Constants.SearchWellKnown.DefaultHighlightPostTag = "</em>" -> string!
+const SharedKernel.Search.Abstractions.Constants.SearchWellKnown.DefaultHighlightPreTag = "<em>" -> string!
+const SharedKernel.Search.Abstractions.Constants.SearchWellKnown.DefaultMaxFacetValues = 100 -> int
+const SharedKernel.Search.Abstractions.Constants.SearchWellKnown.DefaultMaxTotalHits = 1000 -> int
+const SharedKernel.Search.Abstractions.Constants.SearchWellKnown.DefaultPageSize = 20 -> int
+const SharedKernel.Search.Abstractions.Constants.SearchWellKnown.DefaultPrimaryKeyField = "documentId" -> string!
+const SharedKernel.Search.Abstractions.Constants.SearchWellKnown.DocumentsMetricName = "search.client.documents" -> string!
+const SharedKernel.Search.Abstractions.Constants.SearchWellKnown.ElasticSearchProviderName = "elasticsearch" -> string!
+const SharedKernel.Search.Abstractions.Constants.SearchWellKnown.IndexTagName = "search.index" -> string!
+const SharedKernel.Search.Abstractions.Constants.SearchWellKnown.MaxPageSize = 1000 -> int
+const SharedKernel.Search.Abstractions.Constants.SearchWellKnown.MeilisearchProviderName = "meilisearch" -> string!
+const SharedKernel.Search.Abstractions.Constants.SearchWellKnown.MeterName = "SharedKernel.Search" -> string!
+const SharedKernel.Search.Abstractions.Constants.SearchWellKnown.OperationDurationMetricName = "search.client.operation.duration" -> string!
+const SharedKernel.Search.Abstractions.Constants.SearchWellKnown.OperationTagName = "search.operation" -> string!
+const SharedKernel.Search.Abstractions.Constants.SearchWellKnown.ProviderTagName = "search.provider" -> string!
+override SharedKernel.Search.Abstractions.Models.AndFilter.<Clone>$() -> SharedKernel.Search.Abstractions.Models.AndFilter!
+override SharedKernel.Search.Abstractions.Models.AndFilter.Equals(object? obj) -> bool
+override SharedKernel.Search.Abstractions.Models.AndFilter.GetHashCode() -> int
+override SharedKernel.Search.Abstractions.Models.AndFilter.ToString() -> string!
+override SharedKernel.Search.Abstractions.Models.EqualFilter.<Clone>$() -> SharedKernel.Search.Abstractions.Models.EqualFilter!
+override SharedKernel.Search.Abstractions.Models.EqualFilter.Equals(object? obj) -> bool
+override SharedKernel.Search.Abstractions.Models.EqualFilter.GetHashCode() -> int
+override SharedKernel.Search.Abstractions.Models.EqualFilter.ToString() -> string!
+override SharedKernel.Search.Abstractions.Models.ExistsFilter.<Clone>$() -> SharedKernel.Search.Abstractions.Models.ExistsFilter!
+override SharedKernel.Search.Abstractions.Models.ExistsFilter.Equals(object? obj) -> bool
+override SharedKernel.Search.Abstractions.Models.ExistsFilter.GetHashCode() -> int
+override SharedKernel.Search.Abstractions.Models.ExistsFilter.ToString() -> string!
+override SharedKernel.Search.Abstractions.Models.FacetNumericStats.GetHashCode() -> int
+override SharedKernel.Search.Abstractions.Models.FacetResult.Equals(object? obj) -> bool
+override SharedKernel.Search.Abstractions.Models.FacetResult.GetHashCode() -> int
+override SharedKernel.Search.Abstractions.Models.FacetResult.ToString() -> string!
+override SharedKernel.Search.Abstractions.Models.FacetValue.GetHashCode() -> int
+override SharedKernel.Search.Abstractions.Models.HighlightRequest.Equals(object? obj) -> bool
+override SharedKernel.Search.Abstractions.Models.HighlightRequest.GetHashCode() -> int
+override SharedKernel.Search.Abstractions.Models.HighlightRequest.ToString() -> string!
+override SharedKernel.Search.Abstractions.Models.InFilter.<Clone>$() -> SharedKernel.Search.Abstractions.Models.InFilter!
+override SharedKernel.Search.Abstractions.Models.InFilter.Equals(object? obj) -> bool
+override SharedKernel.Search.Abstractions.Models.InFilter.GetHashCode() -> int
+override SharedKernel.Search.Abstractions.Models.InFilter.ToString() -> string!
+override SharedKernel.Search.Abstractions.Models.IndexCutoverRequest.Equals(object? obj) -> bool
+override SharedKernel.Search.Abstractions.Models.IndexCutoverRequest.GetHashCode() -> int
+override SharedKernel.Search.Abstractions.Models.IndexCutoverRequest.ToString() -> string!
+override SharedKernel.Search.Abstractions.Models.NotEqualFilter.<Clone>$() -> SharedKernel.Search.Abstractions.Models.NotEqualFilter!
+override SharedKernel.Search.Abstractions.Models.NotEqualFilter.Equals(object? obj) -> bool
+override SharedKernel.Search.Abstractions.Models.NotEqualFilter.GetHashCode() -> int
+override SharedKernel.Search.Abstractions.Models.NotEqualFilter.ToString() -> string!
+override SharedKernel.Search.Abstractions.Models.NotFilter.<Clone>$() -> SharedKernel.Search.Abstractions.Models.NotFilter!
+override SharedKernel.Search.Abstractions.Models.NotFilter.Equals(object? obj) -> bool
+override SharedKernel.Search.Abstractions.Models.NotFilter.GetHashCode() -> int
+override SharedKernel.Search.Abstractions.Models.NotFilter.ToString() -> string!
+override SharedKernel.Search.Abstractions.Models.OrFilter.<Clone>$() -> SharedKernel.Search.Abstractions.Models.OrFilter!
+override SharedKernel.Search.Abstractions.Models.OrFilter.Equals(object? obj) -> bool
+override SharedKernel.Search.Abstractions.Models.OrFilter.GetHashCode() -> int
+override SharedKernel.Search.Abstractions.Models.OrFilter.ToString() -> string!
+override SharedKernel.Search.Abstractions.Models.RangeFilter.<Clone>$() -> SharedKernel.Search.Abstractions.Models.RangeFilter!
+override SharedKernel.Search.Abstractions.Models.RangeFilter.Equals(object? obj) -> bool
+override SharedKernel.Search.Abstractions.Models.RangeFilter.GetHashCode() -> int
+override SharedKernel.Search.Abstractions.Models.RangeFilter.ToString() -> string!
+override SharedKernel.Search.Abstractions.Models.SearchBulkReceipt.Equals(object? obj) -> bool
+override SharedKernel.Search.Abstractions.Models.SearchBulkReceipt.GetHashCode() -> int
+override SharedKernel.Search.Abstractions.Models.SearchBulkReceipt.ToString() -> string!
+override SharedKernel.Search.Abstractions.Models.SearchBulkWriteOptions.Equals(object? obj) -> bool
+override SharedKernel.Search.Abstractions.Models.SearchBulkWriteOptions.GetHashCode() -> int
+override SharedKernel.Search.Abstractions.Models.SearchBulkWriteOptions.ToString() -> string!
+override SharedKernel.Search.Abstractions.Models.SearchCount.GetHashCode() -> int
+override SharedKernel.Search.Abstractions.Models.SearchCount.ToString() -> string!
+override SharedKernel.Search.Abstractions.Models.SearchFieldDefinition.Equals(object? obj) -> bool
+override SharedKernel.Search.Abstractions.Models.SearchFieldDefinition.GetHashCode() -> int
+override SharedKernel.Search.Abstractions.Models.SearchFieldDefinition.ToString() -> string!
+override SharedKernel.Search.Abstractions.Models.SearchFilter.Equals(object? obj) -> bool
+override SharedKernel.Search.Abstractions.Models.SearchFilter.GetHashCode() -> int
+override SharedKernel.Search.Abstractions.Models.SearchFilter.ToString() -> string!
+override SharedKernel.Search.Abstractions.Models.SearchHit<TDocument>.Equals(object? obj) -> bool
+override SharedKernel.Search.Abstractions.Models.SearchHit<TDocument>.GetHashCode() -> int
+override SharedKernel.Search.Abstractions.Models.SearchHit<TDocument>.ToString() -> string!
+override SharedKernel.Search.Abstractions.Models.SearchIndexDefinition.Equals(object? obj) -> bool
+override SharedKernel.Search.Abstractions.Models.SearchIndexDefinition.GetHashCode() -> int
+override SharedKernel.Search.Abstractions.Models.SearchIndexDefinition.ToString() -> string!
+override SharedKernel.Search.Abstractions.Models.SearchIndexHealth.Equals(object? obj) -> bool
+override SharedKernel.Search.Abstractions.Models.SearchIndexHealth.GetHashCode() -> int
+override SharedKernel.Search.Abstractions.Models.SearchIndexHealth.ToString() -> string!
+override SharedKernel.Search.Abstractions.Models.SearchItemFailure.Equals(object? obj) -> bool
+override SharedKernel.Search.Abstractions.Models.SearchItemFailure.GetHashCode() -> int
+override SharedKernel.Search.Abstractions.Models.SearchItemFailure.ToString() -> string!
+override SharedKernel.Search.Abstractions.Models.SearchRequest.Equals(object? obj) -> bool
+override SharedKernel.Search.Abstractions.Models.SearchRequest.GetHashCode() -> int
+override SharedKernel.Search.Abstractions.Models.SearchRequest.ToString() -> string!
+override SharedKernel.Search.Abstractions.Models.SearchResults<TDocument>.Equals(object? obj) -> bool
+override SharedKernel.Search.Abstractions.Models.SearchResults<TDocument>.GetHashCode() -> int
+override SharedKernel.Search.Abstractions.Models.SearchResults<TDocument>.ToString() -> string!
+override SharedKernel.Search.Abstractions.Models.SearchSort.GetHashCode() -> int
+override SharedKernel.Search.Abstractions.Models.SearchValue.GetHashCode() -> int
+override SharedKernel.Search.Abstractions.Models.SearchValue.ToString() -> string!
+override SharedKernel.Search.Abstractions.Models.SearchWriteReceipt.Equals(object? obj) -> bool
+override SharedKernel.Search.Abstractions.Models.SearchWriteReceipt.GetHashCode() -> int
+override SharedKernel.Search.Abstractions.Models.SearchWriteReceipt.ToString() -> string!
+override SharedKernel.Search.Abstractions.Models.TenantScope.GetHashCode() -> int
+override sealed SharedKernel.Search.Abstractions.Models.AndFilter.Equals(SharedKernel.Search.Abstractions.Models.SearchFilter? other) -> bool
+override sealed SharedKernel.Search.Abstractions.Models.EqualFilter.Equals(SharedKernel.Search.Abstractions.Models.SearchFilter? other) -> bool
+override sealed SharedKernel.Search.Abstractions.Models.ExistsFilter.Equals(SharedKernel.Search.Abstractions.Models.SearchFilter? other) -> bool
+override sealed SharedKernel.Search.Abstractions.Models.InFilter.Equals(SharedKernel.Search.Abstractions.Models.SearchFilter? other) -> bool
+override sealed SharedKernel.Search.Abstractions.Models.NotEqualFilter.Equals(SharedKernel.Search.Abstractions.Models.SearchFilter? other) -> bool
+override sealed SharedKernel.Search.Abstractions.Models.NotFilter.Equals(SharedKernel.Search.Abstractions.Models.SearchFilter? other) -> bool
+override sealed SharedKernel.Search.Abstractions.Models.OrFilter.Equals(SharedKernel.Search.Abstractions.Models.SearchFilter? other) -> bool
+override sealed SharedKernel.Search.Abstractions.Models.RangeFilter.Equals(SharedKernel.Search.Abstractions.Models.SearchFilter? other) -> bool
+static SharedKernel.Search.Abstractions.Errors.SearchErrors.BulkPartiallyFailed(int failedCount, int totalCount) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Search.Abstractions.Errors.SearchErrors.CutoverFailed(string! stagingIndexName, string! liveIndexName, string! reason) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Search.Abstractions.Errors.SearchErrors.DocumentNotFound(string! indexName, string! documentId) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Search.Abstractions.Errors.SearchErrors.EngineFault(string! providerName, string! operation, string! detail) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Search.Abstractions.Errors.SearchErrors.EngineVersionUnsupported(string! actual, string! supportedRange) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Search.Abstractions.Errors.SearchErrors.FacetLimitExceeded(int requested, int ceiling) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Search.Abstractions.Errors.SearchErrors.FieldNotFacetable(string! indexName, string! field) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Search.Abstractions.Errors.SearchErrors.FieldNotFilterable(string! indexName, string! field) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Search.Abstractions.Errors.SearchErrors.FieldNotSearchable(string! indexName, string! field) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Search.Abstractions.Errors.SearchErrors.FieldNotSortable(string! indexName, string! field) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Search.Abstractions.Errors.SearchErrors.IndexAlreadyExists(string! indexName) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Search.Abstractions.Errors.SearchErrors.IndexDefinitionConflict(string! indexName, string! field) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Search.Abstractions.Errors.SearchErrors.IndexNotFound(string! indexName) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Search.Abstractions.Errors.SearchErrors.InvalidDocumentId(string! documentId) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Search.Abstractions.Errors.SearchErrors.InvalidFilter(string! reason) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Search.Abstractions.Errors.SearchErrors.InvalidIndexDefinition(string! reason) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Search.Abstractions.Errors.SearchErrors.InvalidSearchRequest(string! reason) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Search.Abstractions.Errors.SearchErrors.PaginationLimitExceeded(int page, int pageSize, int ceiling, string! providerName) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Search.Abstractions.Errors.SearchErrors.ProbeFailed(string! indexName, string! reason) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Search.Abstractions.Errors.SearchErrors.SchemaFingerprintMismatch(string! indexName, string! expected, string! actual) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Search.Abstractions.Errors.SearchErrors.TenantScopeMissing(string! indexName) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Search.Abstractions.Errors.SearchErrors.Timeout(string! operation, System.TimeSpan elapsed) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Search.Abstractions.Errors.SearchErrors.TotalHitsNotExact() -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Search.Abstractions.Errors.SearchErrors.Unauthorized(string! indexName, string! operation) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Search.Abstractions.Errors.SearchErrors.Unreachable(string! providerName, string! endpoint) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Search.Abstractions.Errors.SearchErrors.UnsupportedCapability(string! capability, string! providerName) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Search.Abstractions.Errors.SearchErrors.WriteRejected(string! indexName, string! reason) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Search.Abstractions.Errors.SearchErrors.WriteTimeout(string! indexName, System.TimeSpan elapsed) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Search.Abstractions.Models.AndFilter.operator !=(SharedKernel.Search.Abstractions.Models.AndFilter? left, SharedKernel.Search.Abstractions.Models.AndFilter? right) -> bool
+static SharedKernel.Search.Abstractions.Models.AndFilter.operator ==(SharedKernel.Search.Abstractions.Models.AndFilter? left, SharedKernel.Search.Abstractions.Models.AndFilter? right) -> bool
+static SharedKernel.Search.Abstractions.Models.EqualFilter.operator !=(SharedKernel.Search.Abstractions.Models.EqualFilter? left, SharedKernel.Search.Abstractions.Models.EqualFilter? right) -> bool
+static SharedKernel.Search.Abstractions.Models.EqualFilter.operator ==(SharedKernel.Search.Abstractions.Models.EqualFilter? left, SharedKernel.Search.Abstractions.Models.EqualFilter? right) -> bool
+static SharedKernel.Search.Abstractions.Models.ExistsFilter.operator !=(SharedKernel.Search.Abstractions.Models.ExistsFilter? left, SharedKernel.Search.Abstractions.Models.ExistsFilter? right) -> bool
+static SharedKernel.Search.Abstractions.Models.ExistsFilter.operator ==(SharedKernel.Search.Abstractions.Models.ExistsFilter? left, SharedKernel.Search.Abstractions.Models.ExistsFilter? right) -> bool
+static SharedKernel.Search.Abstractions.Models.FacetNumericStats.operator !=(SharedKernel.Search.Abstractions.Models.FacetNumericStats left, SharedKernel.Search.Abstractions.Models.FacetNumericStats right) -> bool
+static SharedKernel.Search.Abstractions.Models.FacetNumericStats.operator ==(SharedKernel.Search.Abstractions.Models.FacetNumericStats left, SharedKernel.Search.Abstractions.Models.FacetNumericStats right) -> bool
+static SharedKernel.Search.Abstractions.Models.FacetResult.operator !=(SharedKernel.Search.Abstractions.Models.FacetResult? left, SharedKernel.Search.Abstractions.Models.FacetResult? right) -> bool
+static SharedKernel.Search.Abstractions.Models.FacetResult.operator ==(SharedKernel.Search.Abstractions.Models.FacetResult? left, SharedKernel.Search.Abstractions.Models.FacetResult? right) -> bool
+static SharedKernel.Search.Abstractions.Models.FacetValue.operator !=(SharedKernel.Search.Abstractions.Models.FacetValue left, SharedKernel.Search.Abstractions.Models.FacetValue right) -> bool
+static SharedKernel.Search.Abstractions.Models.FacetValue.operator ==(SharedKernel.Search.Abstractions.Models.FacetValue left, SharedKernel.Search.Abstractions.Models.FacetValue right) -> bool
+static SharedKernel.Search.Abstractions.Models.HighlightRequest.operator !=(SharedKernel.Search.Abstractions.Models.HighlightRequest? left, SharedKernel.Search.Abstractions.Models.HighlightRequest? right) -> bool
+static SharedKernel.Search.Abstractions.Models.HighlightRequest.operator ==(SharedKernel.Search.Abstractions.Models.HighlightRequest? left, SharedKernel.Search.Abstractions.Models.HighlightRequest? right) -> bool
+static SharedKernel.Search.Abstractions.Models.InFilter.operator !=(SharedKernel.Search.Abstractions.Models.InFilter? left, SharedKernel.Search.Abstractions.Models.InFilter? right) -> bool
+static SharedKernel.Search.Abstractions.Models.InFilter.operator ==(SharedKernel.Search.Abstractions.Models.InFilter? left, SharedKernel.Search.Abstractions.Models.InFilter? right) -> bool
+static SharedKernel.Search.Abstractions.Models.IndexCutoverRequest.operator !=(SharedKernel.Search.Abstractions.Models.IndexCutoverRequest? left, SharedKernel.Search.Abstractions.Models.IndexCutoverRequest? right) -> bool
+static SharedKernel.Search.Abstractions.Models.IndexCutoverRequest.operator ==(SharedKernel.Search.Abstractions.Models.IndexCutoverRequest? left, SharedKernel.Search.Abstractions.Models.IndexCutoverRequest? right) -> bool
+static SharedKernel.Search.Abstractions.Models.NotEqualFilter.operator !=(SharedKernel.Search.Abstractions.Models.NotEqualFilter? left, SharedKernel.Search.Abstractions.Models.NotEqualFilter? right) -> bool
+static SharedKernel.Search.Abstractions.Models.NotEqualFilter.operator ==(SharedKernel.Search.Abstractions.Models.NotEqualFilter? left, SharedKernel.Search.Abstractions.Models.NotEqualFilter? right) -> bool
+static SharedKernel.Search.Abstractions.Models.NotFilter.operator !=(SharedKernel.Search.Abstractions.Models.NotFilter? left, SharedKernel.Search.Abstractions.Models.NotFilter? right) -> bool
+static SharedKernel.Search.Abstractions.Models.NotFilter.operator ==(SharedKernel.Search.Abstractions.Models.NotFilter? left, SharedKernel.Search.Abstractions.Models.NotFilter? right) -> bool
+static SharedKernel.Search.Abstractions.Models.OrFilter.operator !=(SharedKernel.Search.Abstractions.Models.OrFilter? left, SharedKernel.Search.Abstractions.Models.OrFilter? right) -> bool
+static SharedKernel.Search.Abstractions.Models.OrFilter.operator ==(SharedKernel.Search.Abstractions.Models.OrFilter? left, SharedKernel.Search.Abstractions.Models.OrFilter? right) -> bool
+static SharedKernel.Search.Abstractions.Models.RangeFilter.operator !=(SharedKernel.Search.Abstractions.Models.RangeFilter? left, SharedKernel.Search.Abstractions.Models.RangeFilter? right) -> bool
+static SharedKernel.Search.Abstractions.Models.RangeFilter.operator ==(SharedKernel.Search.Abstractions.Models.RangeFilter? left, SharedKernel.Search.Abstractions.Models.RangeFilter? right) -> bool
+static SharedKernel.Search.Abstractions.Models.SearchBulkReceipt.operator !=(SharedKernel.Search.Abstractions.Models.SearchBulkReceipt? left, SharedKernel.Search.Abstractions.Models.SearchBulkReceipt? right) -> bool
+static SharedKernel.Search.Abstractions.Models.SearchBulkReceipt.operator ==(SharedKernel.Search.Abstractions.Models.SearchBulkReceipt? left, SharedKernel.Search.Abstractions.Models.SearchBulkReceipt? right) -> bool
+static SharedKernel.Search.Abstractions.Models.SearchBulkWriteOptions.Default.get -> SharedKernel.Search.Abstractions.Models.SearchBulkWriteOptions!
+static SharedKernel.Search.Abstractions.Models.SearchBulkWriteOptions.operator !=(SharedKernel.Search.Abstractions.Models.SearchBulkWriteOptions? left, SharedKernel.Search.Abstractions.Models.SearchBulkWriteOptions? right) -> bool
+static SharedKernel.Search.Abstractions.Models.SearchBulkWriteOptions.operator ==(SharedKernel.Search.Abstractions.Models.SearchBulkWriteOptions? left, SharedKernel.Search.Abstractions.Models.SearchBulkWriteOptions? right) -> bool
+static SharedKernel.Search.Abstractions.Models.SearchCount.AtLeast(long value) -> SharedKernel.Search.Abstractions.Models.SearchCount
+static SharedKernel.Search.Abstractions.Models.SearchCount.Exact(long value) -> SharedKernel.Search.Abstractions.Models.SearchCount
+static SharedKernel.Search.Abstractions.Models.SearchCount.operator !=(SharedKernel.Search.Abstractions.Models.SearchCount left, SharedKernel.Search.Abstractions.Models.SearchCount right) -> bool
+static SharedKernel.Search.Abstractions.Models.SearchCount.operator ==(SharedKernel.Search.Abstractions.Models.SearchCount left, SharedKernel.Search.Abstractions.Models.SearchCount right) -> bool
+static SharedKernel.Search.Abstractions.Models.SearchFieldDefinition.operator !=(SharedKernel.Search.Abstractions.Models.SearchFieldDefinition? left, SharedKernel.Search.Abstractions.Models.SearchFieldDefinition? right) -> bool
+static SharedKernel.Search.Abstractions.Models.SearchFieldDefinition.operator ==(SharedKernel.Search.Abstractions.Models.SearchFieldDefinition? left, SharedKernel.Search.Abstractions.Models.SearchFieldDefinition? right) -> bool
+static SharedKernel.Search.Abstractions.Models.SearchFilter.All(params SharedKernel.Search.Abstractions.Models.SearchFilter![]! operands) -> SharedKernel.Search.Abstractions.Models.SearchFilter!
+static SharedKernel.Search.Abstractions.Models.SearchFilter.Any(params SharedKernel.Search.Abstractions.Models.SearchFilter![]! operands) -> SharedKernel.Search.Abstractions.Models.SearchFilter!
+static SharedKernel.Search.Abstractions.Models.SearchFilter.Between(string! field, SharedKernel.Search.Abstractions.Models.SearchValue? from, SharedKernel.Search.Abstractions.Models.SearchValue? to, bool fromInclusive = true, bool toInclusive = true) -> SharedKernel.Search.Abstractions.Models.SearchFilter!
+static SharedKernel.Search.Abstractions.Models.SearchFilter.Eq(string! field, SharedKernel.Search.Abstractions.Models.SearchValue value) -> SharedKernel.Search.Abstractions.Models.SearchFilter!
+static SharedKernel.Search.Abstractions.Models.SearchFilter.Exists(string! field) -> SharedKernel.Search.Abstractions.Models.SearchFilter!
+static SharedKernel.Search.Abstractions.Models.SearchFilter.In(string! field, params SharedKernel.Search.Abstractions.Models.SearchValue[]! values) -> SharedKernel.Search.Abstractions.Models.SearchFilter!
+static SharedKernel.Search.Abstractions.Models.SearchFilter.Ne(string! field, SharedKernel.Search.Abstractions.Models.SearchValue value) -> SharedKernel.Search.Abstractions.Models.SearchFilter!
+static SharedKernel.Search.Abstractions.Models.SearchFilter.Negate(SharedKernel.Search.Abstractions.Models.SearchFilter! operand) -> SharedKernel.Search.Abstractions.Models.SearchFilter!
+static SharedKernel.Search.Abstractions.Models.SearchFilter.operator !=(SharedKernel.Search.Abstractions.Models.SearchFilter? left, SharedKernel.Search.Abstractions.Models.SearchFilter? right) -> bool
+static SharedKernel.Search.Abstractions.Models.SearchFilter.operator ==(SharedKernel.Search.Abstractions.Models.SearchFilter? left, SharedKernel.Search.Abstractions.Models.SearchFilter? right) -> bool
+static SharedKernel.Search.Abstractions.Models.SearchIndexDefinition.Create(string! name, System.Collections.Generic.IReadOnlyList<SharedKernel.Search.Abstractions.Models.SearchFieldDefinition!>! fields) -> SharedKernel.Primitives.Results.Result<SharedKernel.Search.Abstractions.Models.SearchIndexDefinition!>!
+static SharedKernel.Search.Abstractions.Models.SearchIndexDefinition.operator !=(SharedKernel.Search.Abstractions.Models.SearchIndexDefinition? left, SharedKernel.Search.Abstractions.Models.SearchIndexDefinition? right) -> bool
+static SharedKernel.Search.Abstractions.Models.SearchIndexDefinition.operator ==(SharedKernel.Search.Abstractions.Models.SearchIndexDefinition? left, SharedKernel.Search.Abstractions.Models.SearchIndexDefinition? right) -> bool
+static SharedKernel.Search.Abstractions.Models.SearchIndexHealth.operator !=(SharedKernel.Search.Abstractions.Models.SearchIndexHealth? left, SharedKernel.Search.Abstractions.Models.SearchIndexHealth? right) -> bool
+static SharedKernel.Search.Abstractions.Models.SearchIndexHealth.operator ==(SharedKernel.Search.Abstractions.Models.SearchIndexHealth? left, SharedKernel.Search.Abstractions.Models.SearchIndexHealth? right) -> bool
+static SharedKernel.Search.Abstractions.Models.SearchItemFailure.operator !=(SharedKernel.Search.Abstractions.Models.SearchItemFailure? left, SharedKernel.Search.Abstractions.Models.SearchItemFailure? right) -> bool
+static SharedKernel.Search.Abstractions.Models.SearchItemFailure.operator ==(SharedKernel.Search.Abstractions.Models.SearchItemFailure? left, SharedKernel.Search.Abstractions.Models.SearchItemFailure? right) -> bool
+static SharedKernel.Search.Abstractions.Models.SearchRequest.Default.get -> SharedKernel.Search.Abstractions.Models.SearchRequest!
+static SharedKernel.Search.Abstractions.Models.SearchRequest.operator !=(SharedKernel.Search.Abstractions.Models.SearchRequest? left, SharedKernel.Search.Abstractions.Models.SearchRequest? right) -> bool
+static SharedKernel.Search.Abstractions.Models.SearchRequest.operator ==(SharedKernel.Search.Abstractions.Models.SearchRequest? left, SharedKernel.Search.Abstractions.Models.SearchRequest? right) -> bool
+static SharedKernel.Search.Abstractions.Models.SearchResults<TDocument>.Empty.get -> SharedKernel.Search.Abstractions.Models.SearchResults<TDocument!>!
+static SharedKernel.Search.Abstractions.Models.SearchSort.Ascending(string! field) -> SharedKernel.Search.Abstractions.Models.SearchSort
+static SharedKernel.Search.Abstractions.Models.SearchSort.Descending(string! field) -> SharedKernel.Search.Abstractions.Models.SearchSort
+static SharedKernel.Search.Abstractions.Models.SearchSort.operator !=(SharedKernel.Search.Abstractions.Models.SearchSort left, SharedKernel.Search.Abstractions.Models.SearchSort right) -> bool
+static SharedKernel.Search.Abstractions.Models.SearchSort.operator ==(SharedKernel.Search.Abstractions.Models.SearchSort left, SharedKernel.Search.Abstractions.Models.SearchSort right) -> bool
+static SharedKernel.Search.Abstractions.Models.SearchValue.From(System.DateTimeOffset value) -> SharedKernel.Search.Abstractions.Models.SearchValue
+static SharedKernel.Search.Abstractions.Models.SearchValue.From(System.Guid value) -> SharedKernel.Search.Abstractions.Models.SearchValue
+static SharedKernel.Search.Abstractions.Models.SearchValue.From(bool value) -> SharedKernel.Search.Abstractions.Models.SearchValue
+static SharedKernel.Search.Abstractions.Models.SearchValue.From(double value) -> SharedKernel.Search.Abstractions.Models.SearchValue
+static SharedKernel.Search.Abstractions.Models.SearchValue.From(long value) -> SharedKernel.Search.Abstractions.Models.SearchValue
+static SharedKernel.Search.Abstractions.Models.SearchValue.From(string! value) -> SharedKernel.Search.Abstractions.Models.SearchValue
+static SharedKernel.Search.Abstractions.Models.SearchValue.implicit operator SharedKernel.Search.Abstractions.Models.SearchValue(System.DateTimeOffset value) -> SharedKernel.Search.Abstractions.Models.SearchValue
+static SharedKernel.Search.Abstractions.Models.SearchValue.implicit operator SharedKernel.Search.Abstractions.Models.SearchValue(System.Guid value) -> SharedKernel.Search.Abstractions.Models.SearchValue
+static SharedKernel.Search.Abstractions.Models.SearchValue.implicit operator SharedKernel.Search.Abstractions.Models.SearchValue(bool value) -> SharedKernel.Search.Abstractions.Models.SearchValue
+static SharedKernel.Search.Abstractions.Models.SearchValue.implicit operator SharedKernel.Search.Abstractions.Models.SearchValue(double value) -> SharedKernel.Search.Abstractions.Models.SearchValue
+static SharedKernel.Search.Abstractions.Models.SearchValue.implicit operator SharedKernel.Search.Abstractions.Models.SearchValue(int value) -> SharedKernel.Search.Abstractions.Models.SearchValue
+static SharedKernel.Search.Abstractions.Models.SearchValue.implicit operator SharedKernel.Search.Abstractions.Models.SearchValue(long value) -> SharedKernel.Search.Abstractions.Models.SearchValue
+static SharedKernel.Search.Abstractions.Models.SearchValue.implicit operator SharedKernel.Search.Abstractions.Models.SearchValue(string! value) -> SharedKernel.Search.Abstractions.Models.SearchValue
+static SharedKernel.Search.Abstractions.Models.SearchValue.operator !=(SharedKernel.Search.Abstractions.Models.SearchValue left, SharedKernel.Search.Abstractions.Models.SearchValue right) -> bool
+static SharedKernel.Search.Abstractions.Models.SearchValue.operator ==(SharedKernel.Search.Abstractions.Models.SearchValue left, SharedKernel.Search.Abstractions.Models.SearchValue right) -> bool
+static SharedKernel.Search.Abstractions.Models.SearchWriteReceipt.operator !=(SharedKernel.Search.Abstractions.Models.SearchWriteReceipt? left, SharedKernel.Search.Abstractions.Models.SearchWriteReceipt? right) -> bool
+static SharedKernel.Search.Abstractions.Models.SearchWriteReceipt.operator ==(SharedKernel.Search.Abstractions.Models.SearchWriteReceipt? left, SharedKernel.Search.Abstractions.Models.SearchWriteReceipt? right) -> bool
+static SharedKernel.Search.Abstractions.Models.TenantScope.None.get -> SharedKernel.Search.Abstractions.Models.TenantScope
+static SharedKernel.Search.Abstractions.Models.TenantScope.Of(string! value) -> SharedKernel.Search.Abstractions.Models.TenantScope
+static SharedKernel.Search.Abstractions.Models.TenantScope.operator !=(SharedKernel.Search.Abstractions.Models.TenantScope left, SharedKernel.Search.Abstractions.Models.TenantScope right) -> bool
+static SharedKernel.Search.Abstractions.Models.TenantScope.operator ==(SharedKernel.Search.Abstractions.Models.TenantScope left, SharedKernel.Search.Abstractions.Models.TenantScope right) -> bool
+static SharedKernel.Search.Abstractions.Querying.SearchQuery.New() -> SharedKernel.Search.Abstractions.Querying.IQueryBuilder!
+virtual SharedKernel.Search.Abstractions.Models.SearchFilter.EqualityContract.get -> System.Type!
+virtual SharedKernel.Search.Abstractions.Models.SearchFilter.Equals(SharedKernel.Search.Abstractions.Models.SearchFilter? other) -> bool
+virtual SharedKernel.Search.Abstractions.Models.SearchFilter.PrintMembers(System.Text.StringBuilder! builder) -> bool
+~SharedKernel.Search.Abstractions.Models.SearchHit<TDocument>.<Clone>$() -> SharedKernel.Search.Abstractions.Models.SearchHit<TDocument>!
+~SharedKernel.Search.Abstractions.Models.SearchHit<TDocument>.Equals(SharedKernel.Search.Abstractions.Models.SearchHit<TDocument>? other) -> bool
+~SharedKernel.Search.Abstractions.Models.SearchResults<TDocument>.<Clone>$() -> SharedKernel.Search.Abstractions.Models.SearchResults<TDocument>!
+~SharedKernel.Search.Abstractions.Models.SearchResults<TDocument>.Equals(SharedKernel.Search.Abstractions.Models.SearchResults<TDocument>? other) -> bool
+~override SharedKernel.Search.Abstractions.Models.FacetNumericStats.Equals(object obj) -> bool
+~override SharedKernel.Search.Abstractions.Models.FacetNumericStats.ToString() -> string
+~override SharedKernel.Search.Abstractions.Models.FacetValue.Equals(object obj) -> bool
+~override SharedKernel.Search.Abstractions.Models.FacetValue.ToString() -> string
+~override SharedKernel.Search.Abstractions.Models.SearchCount.Equals(object obj) -> bool
+~override SharedKernel.Search.Abstractions.Models.SearchSort.Equals(object obj) -> bool
+~override SharedKernel.Search.Abstractions.Models.SearchSort.ToString() -> string
+~override SharedKernel.Search.Abstractions.Models.SearchValue.Equals(object obj) -> bool
+~override SharedKernel.Search.Abstractions.Models.TenantScope.Equals(object obj) -> bool
+~override SharedKernel.Search.Abstractions.Models.TenantScope.ToString() -> string
+~static SharedKernel.Search.Abstractions.Models.SearchHit<TDocument>.operator !=(SharedKernel.Search.Abstractions.Models.SearchHit<TDocument>? left, SharedKernel.Search.Abstractions.Models.SearchHit<TDocument>? right) -> bool
+~static SharedKernel.Search.Abstractions.Models.SearchHit<TDocument>.operator ==(SharedKernel.Search.Abstractions.Models.SearchHit<TDocument>? left, SharedKernel.Search.Abstractions.Models.SearchHit<TDocument>? right) -> bool
+~static SharedKernel.Search.Abstractions.Models.SearchResults<TDocument>.operator !=(SharedKernel.Search.Abstractions.Models.SearchResults<TDocument>? left, SharedKernel.Search.Abstractions.Models.SearchResults<TDocument>? right) -> bool
+~static SharedKernel.Search.Abstractions.Models.SearchResults<TDocument>.operator ==(SharedKernel.Search.Abstractions.Models.SearchResults<TDocument>? left, SharedKernel.Search.Abstractions.Models.SearchResults<TDocument>? right) -> bool

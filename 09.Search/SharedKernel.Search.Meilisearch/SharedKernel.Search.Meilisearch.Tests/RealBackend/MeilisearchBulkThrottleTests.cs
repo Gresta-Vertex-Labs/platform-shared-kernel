@@ -189,10 +189,12 @@ public sealed class MeilisearchBulkThrottleTests : IAsyncLifetime
             // identity for THIS index is the "sku" field, not our own DocumentId.
             var tenantACount = await index.CountAsync(filter: null, TenantScope.Of("tenant-a"));
             tenantACount.IsSuccess.Should().BeTrue();
-            tenantACount.Value.Should().Be(2);
+            tenantACount.Value.IsExact.Should().BeTrue();
+            tenantACount.Value.Value.Should().Be(2);
             var tenantBCount = await index.CountAsync(filter: null, TenantScope.Of("tenant-b"));
             tenantBCount.IsSuccess.Should().BeTrue();
-            tenantBCount.Value.Should().Be(0, "the one tenant-b document failed to index and must not silently appear");
+            tenantBCount.Value.IsExact.Should().BeTrue();
+            tenantBCount.Value.Value.Should().Be(0, "the one tenant-b document failed to index and must not silently appear");
         }
         finally
         {

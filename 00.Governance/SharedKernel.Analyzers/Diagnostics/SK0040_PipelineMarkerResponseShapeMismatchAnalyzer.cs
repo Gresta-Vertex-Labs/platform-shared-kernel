@@ -7,8 +7,8 @@ using Microsoft.CodeAnalysis.Diagnostics;
 namespace SharedKernel.Analyzers.Diagnostics;
 
 /// <summary>
-/// SK0040 — Fires when a non-abstract class, record, or struct implements a
-/// <c>SharedKernel.Application.Behaviors</c> marker interface whose owning behavior
+/// SK0040 — Fires when a non-abstract class, record, or struct carries <c>SharedKernel.Application</c>'s
+/// <c>[RequirePermission]</c> attribute or implements its <c>IIdempotentRequest</c> marker — whose owning behavior
 /// short-circuits by constructing a failed response through the internal
 /// <c>FailureResponse.Create&lt;TResponse&gt;</c> helper, while also implementing
 /// <c>MediatR.IRequest&lt;TResponse&gt;</c> with a <c>TResponse</c> that is neither the
@@ -17,7 +17,7 @@ namespace SharedKernel.Analyzers.Diagnostics;
 /// <remarks>
 /// <para>
 /// <strong>The gap.</strong> <c>FailureResponse.Create&lt;TResponse&gt;</c>
-/// (<c>SharedKernel.Application.Behaviors/Shared/FailureResponse.cs</c>) binds to a public static
+/// (<c>SharedKernel.Application/Shared/FailureResponse.cs</c>, namespace <c>SharedKernel.Application.Pipeline</c>) binds to a public static
 /// <c>Failure(Error)</c> factory resolved via reflection the first time a closed
 /// <c>TResponse</c> is used. <c>Result</c> takes a hardcoded fast path; every other
 /// <c>TResponse</c> must expose that factory or the call throws
@@ -28,13 +28,14 @@ namespace SharedKernel.Analyzers.Diagnostics;
 /// <para>
 /// <strong>Only the markers whose behavior genuinely calls <c>FailureResponse.Create</c> are
 /// checked.</strong> Reading <c>FailureResponse.cs</c> and every behavior that references it
-/// found exactly two: <c>Authorization.AuthorizationBehavior{TRequest,TResponse}</c> (gated by
-/// <c>Authorization.IAuthorizeRequest</c>) and <c>Idempotency.IdempotencyBehavior{TRequest,TResponse}</c>
-/// (gated by <c>Idempotency.IIdempotentRequest</c>). <c>Auditing.AuditingBehavior{TRequest,TResponse}</c>
-/// (gated by <c>Auditing.IAuditableRequest{TResponse}</c>) and <c>Logging.LoggingBehavior{TRequest,TResponse}</c>
-/// (gated by <c>Logging.ILoggableRequest{TResponse}</c>) never call it — both only ever forward
+/// found exactly two marker-gated ones, both internal to <c>SharedKernel.Application.Pipeline</c>:
+/// <c>AuthorizationBehavior{TRequest,TResponse}</c> (gated by <c>SharedKernel.Application.RequirePermissionAttribute</c>
+/// on the request type or a base type; always registered) and <c>IdempotencyBehavior{TRequest,TResponse}</c>
+/// (gated by <c>SharedKernel.Application.IIdempotentRequest</c>). <c>AuditingBehavior{TRequest,TResponse}</c>
+/// (gated by <c>SharedKernel.Application.IAuditableRequest{TResponse}</c>) and <c>LoggingBehavior{TRequest,TResponse}</c>
+/// (gated by <c>SharedKernel.Application.ILoggableRequest{TResponse}</c>) never call it — both only ever forward
 /// the response <c>next()</c> already produced and read it through
-/// <c>Shared.ResponseOutcome.TryGetError</c>, which degrades gracefully (treats a non-<c>Result</c>
+/// <c>ResponseOutcome.TryGetError</c>, which degrades gracefully (treats a non-<c>Result</c>
 /// response as a success) rather than requiring a <c>Failure(Error)</c> factory. Implementing
 /// either of those two markers on a plain-DTO-response request compiles and runs without ever
 /// throwing — so this rule deliberately does not check them. <c>ValidationBehavior</c> also calls
@@ -92,10 +93,11 @@ public sealed class PipelineMarkerResponseShapeMismatchAnalyzer : AnalyzerBase
     private const string MediatRNamespace = "MediatR";
     private const string RequestSimpleName = "IRequest";
     private const string ResultSimpleName = "Result";
+    private const string RequirePermissionAttributeName = "RequirePermissionAttribute";
+    private const string RequirePermissionLabel = "[RequirePermission]";
 
     private static readonly (string SimpleName, int Arity)[] FailureConstructingMarkers =
     [
-        ("IAuthorizeRequest", 0),
         ("IIdempotentRequest", 0),
     ];
 
@@ -103,7 +105,7 @@ public sealed class PipelineMarkerResponseShapeMismatchAnalyzer : AnalyzerBase
     public static readonly DiagnosticDescriptor Rule = CreateDescriptor(
         id: DiagnosticId,
         title: "Pipeline marker interface requires a Result-shaped response",
-        messageFormat: "'{0}' implements {1}, which short-circuits with a failed response via "
+        messageFormat: "'{0}' declares {1}, which short-circuits with a failed response via "
             + "FailureResponse.Create<TResponse> — but its MediatR response type is '{2}', not "
             + "Result or a closed Result<T>. This throws InvalidOperationException the first time "
             + "the behavior short-circuits, at runtime. Declare the response as Result or "
@@ -171,7 +173,10 @@ public sealed class PipelineMarkerResponseShapeMismatchAnalyzer : AnalyzerBase
 
     private static List<string> CollectMatchedMarkers(INamedTypeSymbol symbol)
     {
-        var matched = new List<string>(FailureConstructingMarkers.Length);
+        var matched = new List<string>(FailureConstructingMarkers.Length + 1);
+
+        if (HasRequirePermission(symbol))
+            matched.Add(RequirePermissionLabel);
 
         foreach (var (simpleName, arity) in FailureConstructingMarkers)
         {
@@ -180,6 +185,26 @@ public sealed class PipelineMarkerResponseShapeMismatchAnalyzer : AnalyzerBase
         }
 
         return matched;
+    }
+
+    // The attribute is inherited (AttributeUsage Inherited = true), so a base type carrying it counts.
+    private static bool HasRequirePermission(INamedTypeSymbol symbol)
+    {
+        for (var type = symbol; type is not null; type = type.BaseType)
+        {
+            foreach (var attribute in type.GetAttributes())
+            {
+                var attributeClass = attribute.AttributeClass;
+                if (attributeClass is null || attributeClass.Name != RequirePermissionAttributeName)
+                    continue;
+
+                var ns = attributeClass.ContainingNamespace;
+                if (ns is not null && !ns.IsGlobalNamespace && ns.ToDisplayString() == NamespacePrefix)
+                    return true;
+            }
+        }
+
+        return false;
     }
 
     private static ITypeSymbol? TryGetMediatRResponseType(INamedTypeSymbol symbol)

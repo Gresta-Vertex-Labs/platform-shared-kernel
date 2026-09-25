@@ -1,0 +1,328 @@
+#nullable enable
+SharedKernel.Search.ElasticSearch.Analytics.AggregationBucketRange
+SharedKernel.Search.ElasticSearch.Analytics.AggregationBucketRange.AggregationBucketRange() -> void
+SharedKernel.Search.ElasticSearch.Analytics.AggregationBucketRange.AggregationBucketRange(string! key, double? from, double? to) -> void
+SharedKernel.Search.ElasticSearch.Analytics.AggregationBucketRange.Equals(SharedKernel.Search.ElasticSearch.Analytics.AggregationBucketRange other) -> bool
+SharedKernel.Search.ElasticSearch.Analytics.AggregationBucketRange.From.get -> double?
+SharedKernel.Search.ElasticSearch.Analytics.AggregationBucketRange.Key.get -> string!
+SharedKernel.Search.ElasticSearch.Analytics.AggregationBucketRange.To.get -> double?
+SharedKernel.Search.ElasticSearch.Analytics.AggregationRequest
+SharedKernel.Search.ElasticSearch.Analytics.AggregationRequest.AggregationRequest(SharedKernel.Search.ElasticSearch.Analytics.AggregationRequest! original) -> void
+SharedKernel.Search.ElasticSearch.Analytics.AggregationResult
+SharedKernel.Search.ElasticSearch.Analytics.AggregationResult.AggregationResult(SharedKernel.Search.ElasticSearch.Analytics.AggregationResult! original) -> void
+SharedKernel.Search.ElasticSearch.Analytics.AggregationResultSet
+SharedKernel.Search.ElasticSearch.Analytics.AggregationResultSet.<Clone>$() -> SharedKernel.Search.ElasticSearch.Analytics.AggregationResultSet!
+SharedKernel.Search.ElasticSearch.Analytics.AggregationResultSet.AggregationResultSet() -> void
+SharedKernel.Search.ElasticSearch.Analytics.AggregationResultSet.Equals(SharedKernel.Search.ElasticSearch.Analytics.AggregationResultSet? other) -> bool
+SharedKernel.Search.ElasticSearch.Analytics.AggregationResultSet.Results.get -> System.Collections.Generic.IReadOnlyDictionary<string!, SharedKernel.Search.ElasticSearch.Analytics.AggregationResult!>!
+SharedKernel.Search.ElasticSearch.Analytics.AggregationResultSet.Results.init -> void
+SharedKernel.Search.ElasticSearch.Analytics.AggregationResultSet.TryGetCardinality(string! name, out SharedKernel.Search.ElasticSearch.Analytics.CardinalityResult? result) -> bool
+SharedKernel.Search.ElasticSearch.Analytics.AggregationResultSet.TryGetDateHistogram(string! name, out SharedKernel.Search.ElasticSearch.Analytics.DateHistogramResult? result) -> bool
+SharedKernel.Search.ElasticSearch.Analytics.AggregationResultSet.TryGetRange(string! name, out SharedKernel.Search.ElasticSearch.Analytics.RangeResult? result) -> bool
+SharedKernel.Search.ElasticSearch.Analytics.AggregationResultSet.TryGetStats(string! name, out SharedKernel.Search.ElasticSearch.Analytics.StatsResult? result) -> bool
+SharedKernel.Search.ElasticSearch.Analytics.AggregationResultSet.TryGetTerms(string! name, out SharedKernel.Search.ElasticSearch.Analytics.TermsResult? result) -> bool
+SharedKernel.Search.ElasticSearch.Analytics.CardinalityAggregation
+SharedKernel.Search.ElasticSearch.Analytics.CardinalityAggregation.Equals(SharedKernel.Search.ElasticSearch.Analytics.CardinalityAggregation? other) -> bool
+SharedKernel.Search.ElasticSearch.Analytics.CardinalityAggregation.Field.get -> string!
+SharedKernel.Search.ElasticSearch.Analytics.CardinalityAggregation.Name.get -> string!
+SharedKernel.Search.ElasticSearch.Analytics.CardinalityResult
+SharedKernel.Search.ElasticSearch.Analytics.CardinalityResult.Equals(SharedKernel.Search.ElasticSearch.Analytics.CardinalityResult? other) -> bool
+SharedKernel.Search.ElasticSearch.Analytics.CardinalityResult.Name.get -> string!
+SharedKernel.Search.ElasticSearch.Analytics.CardinalityResult.Value.get -> long
+SharedKernel.Search.ElasticSearch.Analytics.DateHistogramAggregation
+SharedKernel.Search.ElasticSearch.Analytics.DateHistogramAggregation.Equals(SharedKernel.Search.ElasticSearch.Analytics.DateHistogramAggregation? other) -> bool
+SharedKernel.Search.ElasticSearch.Analytics.DateHistogramAggregation.Field.get -> string!
+SharedKernel.Search.ElasticSearch.Analytics.DateHistogramAggregation.Interval.get -> SharedKernel.Search.ElasticSearch.Analytics.DateHistogramInterval
+SharedKernel.Search.ElasticSearch.Analytics.DateHistogramAggregation.Name.get -> string!
+SharedKernel.Search.ElasticSearch.Analytics.DateHistogramAggregation.SubAggregations.get -> System.Collections.Generic.IReadOnlyList<SharedKernel.Search.ElasticSearch.Analytics.AggregationRequest!>!
+SharedKernel.Search.ElasticSearch.Analytics.DateHistogramBucket
+SharedKernel.Search.ElasticSearch.Analytics.DateHistogramBucket.<Clone>$() -> SharedKernel.Search.ElasticSearch.Analytics.DateHistogramBucket!
+SharedKernel.Search.ElasticSearch.Analytics.DateHistogramBucket.DateHistogramBucket() -> void
+SharedKernel.Search.ElasticSearch.Analytics.DateHistogramBucket.DocCount.get -> long
+SharedKernel.Search.ElasticSearch.Analytics.DateHistogramBucket.DocCount.init -> void
+SharedKernel.Search.ElasticSearch.Analytics.DateHistogramBucket.Equals(SharedKernel.Search.ElasticSearch.Analytics.DateHistogramBucket? other) -> bool
+SharedKernel.Search.ElasticSearch.Analytics.DateHistogramBucket.Key.get -> System.DateTimeOffset
+SharedKernel.Search.ElasticSearch.Analytics.DateHistogramBucket.Key.init -> void
+SharedKernel.Search.ElasticSearch.Analytics.DateHistogramBucket.SubAggregations.get -> SharedKernel.Search.ElasticSearch.Analytics.AggregationResultSet!
+SharedKernel.Search.ElasticSearch.Analytics.DateHistogramBucket.SubAggregations.init -> void
+SharedKernel.Search.ElasticSearch.Analytics.DateHistogramInterval
+SharedKernel.Search.ElasticSearch.Analytics.DateHistogramInterval.Day = 2 -> SharedKernel.Search.ElasticSearch.Analytics.DateHistogramInterval
+SharedKernel.Search.ElasticSearch.Analytics.DateHistogramInterval.Hour = 1 -> SharedKernel.Search.ElasticSearch.Analytics.DateHistogramInterval
+SharedKernel.Search.ElasticSearch.Analytics.DateHistogramInterval.Minute = 0 -> SharedKernel.Search.ElasticSearch.Analytics.DateHistogramInterval
+SharedKernel.Search.ElasticSearch.Analytics.DateHistogramInterval.Month = 4 -> SharedKernel.Search.ElasticSearch.Analytics.DateHistogramInterval
+SharedKernel.Search.ElasticSearch.Analytics.DateHistogramInterval.Quarter = 5 -> SharedKernel.Search.ElasticSearch.Analytics.DateHistogramInterval
+SharedKernel.Search.ElasticSearch.Analytics.DateHistogramInterval.Week = 3 -> SharedKernel.Search.ElasticSearch.Analytics.DateHistogramInterval
+SharedKernel.Search.ElasticSearch.Analytics.DateHistogramInterval.Year = 6 -> SharedKernel.Search.ElasticSearch.Analytics.DateHistogramInterval
+SharedKernel.Search.ElasticSearch.Analytics.DateHistogramResult
+SharedKernel.Search.ElasticSearch.Analytics.DateHistogramResult.Buckets.get -> System.Collections.Generic.IReadOnlyList<SharedKernel.Search.ElasticSearch.Analytics.DateHistogramBucket!>!
+SharedKernel.Search.ElasticSearch.Analytics.DateHistogramResult.Equals(SharedKernel.Search.ElasticSearch.Analytics.DateHistogramResult? other) -> bool
+SharedKernel.Search.ElasticSearch.Analytics.DateHistogramResult.Name.get -> string!
+SharedKernel.Search.ElasticSearch.Analytics.IAnalyticsSearch<TDocument>
+SharedKernel.Search.ElasticSearch.Analytics.IAnalyticsSearch<TDocument>.AggregateAsync(SharedKernel.Search.Abstractions.Models.SearchFilter? filter, System.Collections.Generic.IReadOnlyCollection<SharedKernel.Search.ElasticSearch.Analytics.AggregationRequest!>! aggregations, SharedKernel.Search.Abstractions.Models.TenantScope tenantScope, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Search.ElasticSearch.Analytics.AggregationResultSet!>!>!
+SharedKernel.Search.ElasticSearch.Analytics.RangeAggregation
+SharedKernel.Search.ElasticSearch.Analytics.RangeAggregation.Equals(SharedKernel.Search.ElasticSearch.Analytics.RangeAggregation? other) -> bool
+SharedKernel.Search.ElasticSearch.Analytics.RangeAggregation.Field.get -> string!
+SharedKernel.Search.ElasticSearch.Analytics.RangeAggregation.Name.get -> string!
+SharedKernel.Search.ElasticSearch.Analytics.RangeAggregation.Ranges.get -> System.Collections.Generic.IReadOnlyList<SharedKernel.Search.ElasticSearch.Analytics.AggregationBucketRange>!
+SharedKernel.Search.ElasticSearch.Analytics.RangeBucket
+SharedKernel.Search.ElasticSearch.Analytics.RangeBucket.DocCount.get -> long
+SharedKernel.Search.ElasticSearch.Analytics.RangeBucket.Equals(SharedKernel.Search.ElasticSearch.Analytics.RangeBucket other) -> bool
+SharedKernel.Search.ElasticSearch.Analytics.RangeBucket.Key.get -> string!
+SharedKernel.Search.ElasticSearch.Analytics.RangeBucket.RangeBucket() -> void
+SharedKernel.Search.ElasticSearch.Analytics.RangeBucket.RangeBucket(string! key, long docCount) -> void
+SharedKernel.Search.ElasticSearch.Analytics.RangeResult
+SharedKernel.Search.ElasticSearch.Analytics.RangeResult.Buckets.get -> System.Collections.Generic.IReadOnlyList<SharedKernel.Search.ElasticSearch.Analytics.RangeBucket>!
+SharedKernel.Search.ElasticSearch.Analytics.RangeResult.Equals(SharedKernel.Search.ElasticSearch.Analytics.RangeResult? other) -> bool
+SharedKernel.Search.ElasticSearch.Analytics.RangeResult.Name.get -> string!
+SharedKernel.Search.ElasticSearch.Analytics.StatsAggregation
+SharedKernel.Search.ElasticSearch.Analytics.StatsAggregation.Equals(SharedKernel.Search.ElasticSearch.Analytics.StatsAggregation? other) -> bool
+SharedKernel.Search.ElasticSearch.Analytics.StatsAggregation.Field.get -> string!
+SharedKernel.Search.ElasticSearch.Analytics.StatsAggregation.Name.get -> string!
+SharedKernel.Search.ElasticSearch.Analytics.StatsResult
+SharedKernel.Search.ElasticSearch.Analytics.StatsResult.Average.get -> double
+SharedKernel.Search.ElasticSearch.Analytics.StatsResult.Count.get -> long
+SharedKernel.Search.ElasticSearch.Analytics.StatsResult.Equals(SharedKernel.Search.ElasticSearch.Analytics.StatsResult? other) -> bool
+SharedKernel.Search.ElasticSearch.Analytics.StatsResult.Max.get -> double
+SharedKernel.Search.ElasticSearch.Analytics.StatsResult.Min.get -> double
+SharedKernel.Search.ElasticSearch.Analytics.StatsResult.Name.get -> string!
+SharedKernel.Search.ElasticSearch.Analytics.StatsResult.Sum.get -> double
+SharedKernel.Search.ElasticSearch.Analytics.TermsAggregation
+SharedKernel.Search.ElasticSearch.Analytics.TermsAggregation.Equals(SharedKernel.Search.ElasticSearch.Analytics.TermsAggregation? other) -> bool
+SharedKernel.Search.ElasticSearch.Analytics.TermsAggregation.Field.get -> string!
+SharedKernel.Search.ElasticSearch.Analytics.TermsAggregation.Name.get -> string!
+SharedKernel.Search.ElasticSearch.Analytics.TermsAggregation.Size.get -> int
+SharedKernel.Search.ElasticSearch.Analytics.TermsAggregation.SubAggregations.get -> System.Collections.Generic.IReadOnlyList<SharedKernel.Search.ElasticSearch.Analytics.AggregationRequest!>!
+SharedKernel.Search.ElasticSearch.Analytics.TermsBucket
+SharedKernel.Search.ElasticSearch.Analytics.TermsBucket.<Clone>$() -> SharedKernel.Search.ElasticSearch.Analytics.TermsBucket!
+SharedKernel.Search.ElasticSearch.Analytics.TermsBucket.DocCount.get -> long
+SharedKernel.Search.ElasticSearch.Analytics.TermsBucket.DocCount.init -> void
+SharedKernel.Search.ElasticSearch.Analytics.TermsBucket.Equals(SharedKernel.Search.ElasticSearch.Analytics.TermsBucket? other) -> bool
+SharedKernel.Search.ElasticSearch.Analytics.TermsBucket.Key.get -> string!
+SharedKernel.Search.ElasticSearch.Analytics.TermsBucket.Key.init -> void
+SharedKernel.Search.ElasticSearch.Analytics.TermsBucket.SubAggregations.get -> SharedKernel.Search.ElasticSearch.Analytics.AggregationResultSet!
+SharedKernel.Search.ElasticSearch.Analytics.TermsBucket.SubAggregations.init -> void
+SharedKernel.Search.ElasticSearch.Analytics.TermsBucket.TermsBucket() -> void
+SharedKernel.Search.ElasticSearch.Analytics.TermsResult
+SharedKernel.Search.ElasticSearch.Analytics.TermsResult.Buckets.get -> System.Collections.Generic.IReadOnlyList<SharedKernel.Search.ElasticSearch.Analytics.TermsBucket!>!
+SharedKernel.Search.ElasticSearch.Analytics.TermsResult.Equals(SharedKernel.Search.ElasticSearch.Analytics.TermsResult? other) -> bool
+SharedKernel.Search.ElasticSearch.Analytics.TermsResult.Name.get -> string!
+SharedKernel.Search.ElasticSearch.Analytics.TermsResult.OtherDocCount.get -> long
+SharedKernel.Search.ElasticSearch.Cursors.CursorPage<TDocument>
+SharedKernel.Search.ElasticSearch.Cursors.CursorPage<TDocument>.CursorPage() -> void
+SharedKernel.Search.ElasticSearch.Cursors.CursorPage<TDocument>.Hits.get -> System.Collections.Generic.IReadOnlyList<SharedKernel.Search.Abstractions.Models.SearchHit<TDocument!>!>!
+SharedKernel.Search.ElasticSearch.Cursors.CursorPage<TDocument>.Hits.init -> void
+SharedKernel.Search.ElasticSearch.Cursors.CursorPage<TDocument>.IsExhausted.get -> bool
+SharedKernel.Search.ElasticSearch.Cursors.CursorPage<TDocument>.NextCursor.get -> SharedKernel.Search.ElasticSearch.Cursors.SearchCursor?
+SharedKernel.Search.ElasticSearch.Cursors.CursorPage<TDocument>.NextCursor.init -> void
+SharedKernel.Search.ElasticSearch.Cursors.ICursorSearch<TDocument>
+SharedKernel.Search.ElasticSearch.Cursors.ICursorSearch<TDocument>.CloseCursorAsync(SharedKernel.Search.ElasticSearch.Cursors.SearchCursor cursor, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
+SharedKernel.Search.ElasticSearch.Cursors.ICursorSearch<TDocument>.OpenCursorAsync(SharedKernel.Search.Abstractions.Models.SearchRequest! request, SharedKernel.Search.Abstractions.Models.TenantScope tenantScope, System.TimeSpan keepAlive, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Search.ElasticSearch.Cursors.SearchCursor>!>!
+SharedKernel.Search.ElasticSearch.Cursors.ICursorSearch<TDocument>.ReadCursorAsync(SharedKernel.Search.ElasticSearch.Cursors.SearchCursor cursor, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Search.ElasticSearch.Cursors.CursorPage<TDocument!>!>!>!
+SharedKernel.Search.ElasticSearch.Cursors.ICursorSearch<TDocument>.StreamAsync(SharedKernel.Search.Abstractions.Models.SearchRequest! request, SharedKernel.Search.Abstractions.Models.TenantScope tenantScope, System.TimeSpan keepAlive, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<SharedKernel.Search.Abstractions.Models.SearchHit<TDocument!>!>!
+SharedKernel.Search.ElasticSearch.Cursors.SearchCursor
+SharedKernel.Search.ElasticSearch.Cursors.SearchCursor.Equals(SharedKernel.Search.ElasticSearch.Cursors.SearchCursor other) -> bool
+SharedKernel.Search.ElasticSearch.Cursors.SearchCursor.ExpiresAt.get -> System.DateTimeOffset
+SharedKernel.Search.ElasticSearch.Cursors.SearchCursor.SearchCursor() -> void
+SharedKernel.Search.ElasticSearch.Cursors.SearchCursor.SearchCursor(string! token, System.DateTimeOffset expiresAt) -> void
+SharedKernel.Search.ElasticSearch.Cursors.SearchCursor.Token.get -> string!
+SharedKernel.Search.ElasticSearch.Errors.ElasticSearchErrors
+SharedKernel.Search.ElasticSearch.Extensions.ElasticSearchBuilder
+SharedKernel.Search.ElasticSearch.Extensions.ElasticSearchBuilder.AddIndex<TDocument>(string! readAlias, string! writeAlias, System.Action<SharedKernel.Search.Abstractions.Models.SearchIndexDefinitionBuilder!>! configure) -> SharedKernel.Search.ElasticSearch.Extensions.ElasticSearchBuilder!
+SharedKernel.Search.ElasticSearch.Extensions.ElasticSearchBuilder.AllowRawClientAccess() -> SharedKernel.Search.ElasticSearch.Extensions.ElasticSearchBuilder!
+SharedKernel.Search.ElasticSearch.Extensions.ElasticSearchBuilder.Build() -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+SharedKernel.Search.ElasticSearch.Extensions.ElasticSearchBuilder.WithCompletionField<TDocument>(string! indexName, string! suggestField) -> SharedKernel.Search.ElasticSearch.Extensions.ElasticSearchBuilder!
+SharedKernel.Search.ElasticSearch.Extensions.ElasticSearchBuilder.WithSourceSerializerContext(System.Text.Json.Serialization.JsonSerializerContext! context) -> SharedKernel.Search.ElasticSearch.Extensions.ElasticSearchBuilder!
+SharedKernel.Search.ElasticSearch.Extensions.ElasticSearchServiceCollectionExtensions
+SharedKernel.Search.ElasticSearch.Options.ElasticSearchOptions
+SharedKernel.Search.ElasticSearch.Options.ElasticSearchOptions.AllowInvalidCertificates.get -> bool
+SharedKernel.Search.ElasticSearch.Options.ElasticSearchOptions.AllowInvalidCertificates.set -> void
+SharedKernel.Search.ElasticSearch.Options.ElasticSearchOptions.ApiKey.get -> string?
+SharedKernel.Search.ElasticSearch.Options.ElasticSearchOptions.ApiKey.set -> void
+SharedKernel.Search.ElasticSearch.Options.ElasticSearchOptions.BulkMaxBytes.get -> int
+SharedKernel.Search.ElasticSearch.Options.ElasticSearchOptions.BulkMaxBytes.set -> void
+SharedKernel.Search.ElasticSearch.Options.ElasticSearchOptions.BulkMaxDocuments.get -> int
+SharedKernel.Search.ElasticSearch.Options.ElasticSearchOptions.BulkMaxDocuments.set -> void
+SharedKernel.Search.ElasticSearch.Options.ElasticSearchOptions.CertificateFingerprint.get -> string?
+SharedKernel.Search.ElasticSearch.Options.ElasticSearchOptions.CertificateFingerprint.set -> void
+SharedKernel.Search.ElasticSearch.Options.ElasticSearchOptions.ElasticSearchOptions() -> void
+SharedKernel.Search.ElasticSearch.Options.ElasticSearchOptions.MaxFacetValues.get -> int
+SharedKernel.Search.ElasticSearch.Options.ElasticSearchOptions.MaxFacetValues.set -> void
+SharedKernel.Search.ElasticSearch.Options.ElasticSearchOptions.MaxTotalHits.get -> int
+SharedKernel.Search.ElasticSearch.Options.ElasticSearchOptions.MaxTotalHits.set -> void
+SharedKernel.Search.ElasticSearch.Options.ElasticSearchOptions.Nodes.get -> string![]!
+SharedKernel.Search.ElasticSearch.Options.ElasticSearchOptions.Nodes.set -> void
+SharedKernel.Search.ElasticSearch.Options.ElasticSearchOptions.NumberOfReplicas.get -> int
+SharedKernel.Search.ElasticSearch.Options.ElasticSearchOptions.NumberOfReplicas.set -> void
+SharedKernel.Search.ElasticSearch.Options.ElasticSearchOptions.NumberOfShards.get -> int
+SharedKernel.Search.ElasticSearch.Options.ElasticSearchOptions.NumberOfShards.set -> void
+SharedKernel.Search.ElasticSearch.Options.ElasticSearchOptions.Password.get -> string?
+SharedKernel.Search.ElasticSearch.Options.ElasticSearchOptions.Password.set -> void
+SharedKernel.Search.ElasticSearch.Options.ElasticSearchOptions.PingTimeoutSeconds.get -> int
+SharedKernel.Search.ElasticSearch.Options.ElasticSearchOptions.PingTimeoutSeconds.set -> void
+SharedKernel.Search.ElasticSearch.Options.ElasticSearchOptions.PointInTimeKeepAliveSeconds.get -> int
+SharedKernel.Search.ElasticSearch.Options.ElasticSearchOptions.PointInTimeKeepAliveSeconds.set -> void
+SharedKernel.Search.ElasticSearch.Options.ElasticSearchOptions.ProbeCacheSeconds.get -> int
+SharedKernel.Search.ElasticSearch.Options.ElasticSearchOptions.ProbeCacheSeconds.set -> void
+SharedKernel.Search.ElasticSearch.Options.ElasticSearchOptions.RefreshIntervalSeconds.get -> int
+SharedKernel.Search.ElasticSearch.Options.ElasticSearchOptions.RefreshIntervalSeconds.set -> void
+SharedKernel.Search.ElasticSearch.Options.ElasticSearchOptions.RequestTimeoutSeconds.get -> int
+SharedKernel.Search.ElasticSearch.Options.ElasticSearchOptions.RequestTimeoutSeconds.set -> void
+SharedKernel.Search.ElasticSearch.Options.ElasticSearchOptions.Username.get -> string?
+SharedKernel.Search.ElasticSearch.Options.ElasticSearchOptions.Username.set -> void
+SharedKernel.Search.ElasticSearch.Raw.IElasticSearchRawClientAccessor
+SharedKernel.Search.ElasticSearch.Raw.IElasticSearchRawClientAccessor.Client.get -> Elastic.Clients.Elasticsearch.ElasticsearchClient!
+SharedKernel.Search.ElasticSearch.Suggest.ISuggestSearch<TDocument>
+SharedKernel.Search.ElasticSearch.Suggest.ISuggestSearch<TDocument>.SuggestAsync(string! suggestField, string! prefix, SharedKernel.Search.Abstractions.Models.TenantScope tenantScope, int size = 10, bool fuzzy = false, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<System.Collections.Generic.IReadOnlyList<SharedKernel.Search.ElasticSearch.Suggest.SearchSuggestion!>!>!>!
+SharedKernel.Search.ElasticSearch.Suggest.SearchSuggestion
+SharedKernel.Search.ElasticSearch.Suggest.SearchSuggestion.<Clone>$() -> SharedKernel.Search.ElasticSearch.Suggest.SearchSuggestion!
+SharedKernel.Search.ElasticSearch.Suggest.SearchSuggestion.DocumentId.get -> string!
+SharedKernel.Search.ElasticSearch.Suggest.SearchSuggestion.DocumentId.init -> void
+SharedKernel.Search.ElasticSearch.Suggest.SearchSuggestion.Equals(SharedKernel.Search.ElasticSearch.Suggest.SearchSuggestion? other) -> bool
+SharedKernel.Search.ElasticSearch.Suggest.SearchSuggestion.Score.get -> double
+SharedKernel.Search.ElasticSearch.Suggest.SearchSuggestion.Score.init -> void
+SharedKernel.Search.ElasticSearch.Suggest.SearchSuggestion.SearchSuggestion() -> void
+SharedKernel.Search.ElasticSearch.Suggest.SearchSuggestion.Text.get -> string!
+SharedKernel.Search.ElasticSearch.Suggest.SearchSuggestion.Text.init -> void
+abstract SharedKernel.Search.ElasticSearch.Analytics.AggregationRequest.<Clone>$() -> SharedKernel.Search.ElasticSearch.Analytics.AggregationRequest!
+abstract SharedKernel.Search.ElasticSearch.Analytics.AggregationResult.<Clone>$() -> SharedKernel.Search.ElasticSearch.Analytics.AggregationResult!
+const SharedKernel.Search.ElasticSearch.Options.ElasticSearchOptions.SectionName = "Search:ElasticSearch" -> string!
+override SharedKernel.Search.ElasticSearch.Analytics.AggregationBucketRange.GetHashCode() -> int
+override SharedKernel.Search.ElasticSearch.Analytics.AggregationRequest.Equals(object? obj) -> bool
+override SharedKernel.Search.ElasticSearch.Analytics.AggregationRequest.GetHashCode() -> int
+override SharedKernel.Search.ElasticSearch.Analytics.AggregationRequest.ToString() -> string!
+override SharedKernel.Search.ElasticSearch.Analytics.AggregationResult.Equals(object? obj) -> bool
+override SharedKernel.Search.ElasticSearch.Analytics.AggregationResult.GetHashCode() -> int
+override SharedKernel.Search.ElasticSearch.Analytics.AggregationResult.ToString() -> string!
+override SharedKernel.Search.ElasticSearch.Analytics.AggregationResultSet.Equals(object? obj) -> bool
+override SharedKernel.Search.ElasticSearch.Analytics.AggregationResultSet.GetHashCode() -> int
+override SharedKernel.Search.ElasticSearch.Analytics.AggregationResultSet.ToString() -> string!
+override SharedKernel.Search.ElasticSearch.Analytics.CardinalityAggregation.<Clone>$() -> SharedKernel.Search.ElasticSearch.Analytics.CardinalityAggregation!
+override SharedKernel.Search.ElasticSearch.Analytics.CardinalityAggregation.Equals(object? obj) -> bool
+override SharedKernel.Search.ElasticSearch.Analytics.CardinalityAggregation.GetHashCode() -> int
+override SharedKernel.Search.ElasticSearch.Analytics.CardinalityAggregation.ToString() -> string!
+override SharedKernel.Search.ElasticSearch.Analytics.CardinalityResult.<Clone>$() -> SharedKernel.Search.ElasticSearch.Analytics.CardinalityResult!
+override SharedKernel.Search.ElasticSearch.Analytics.CardinalityResult.Equals(object? obj) -> bool
+override SharedKernel.Search.ElasticSearch.Analytics.CardinalityResult.GetHashCode() -> int
+override SharedKernel.Search.ElasticSearch.Analytics.CardinalityResult.ToString() -> string!
+override SharedKernel.Search.ElasticSearch.Analytics.DateHistogramAggregation.<Clone>$() -> SharedKernel.Search.ElasticSearch.Analytics.DateHistogramAggregation!
+override SharedKernel.Search.ElasticSearch.Analytics.DateHistogramAggregation.Equals(object? obj) -> bool
+override SharedKernel.Search.ElasticSearch.Analytics.DateHistogramAggregation.GetHashCode() -> int
+override SharedKernel.Search.ElasticSearch.Analytics.DateHistogramAggregation.ToString() -> string!
+override SharedKernel.Search.ElasticSearch.Analytics.DateHistogramBucket.Equals(object? obj) -> bool
+override SharedKernel.Search.ElasticSearch.Analytics.DateHistogramBucket.GetHashCode() -> int
+override SharedKernel.Search.ElasticSearch.Analytics.DateHistogramBucket.ToString() -> string!
+override SharedKernel.Search.ElasticSearch.Analytics.DateHistogramResult.<Clone>$() -> SharedKernel.Search.ElasticSearch.Analytics.DateHistogramResult!
+override SharedKernel.Search.ElasticSearch.Analytics.DateHistogramResult.Equals(object? obj) -> bool
+override SharedKernel.Search.ElasticSearch.Analytics.DateHistogramResult.GetHashCode() -> int
+override SharedKernel.Search.ElasticSearch.Analytics.DateHistogramResult.ToString() -> string!
+override SharedKernel.Search.ElasticSearch.Analytics.RangeAggregation.<Clone>$() -> SharedKernel.Search.ElasticSearch.Analytics.RangeAggregation!
+override SharedKernel.Search.ElasticSearch.Analytics.RangeAggregation.Equals(object? obj) -> bool
+override SharedKernel.Search.ElasticSearch.Analytics.RangeAggregation.GetHashCode() -> int
+override SharedKernel.Search.ElasticSearch.Analytics.RangeAggregation.ToString() -> string!
+override SharedKernel.Search.ElasticSearch.Analytics.RangeBucket.GetHashCode() -> int
+override SharedKernel.Search.ElasticSearch.Analytics.RangeResult.<Clone>$() -> SharedKernel.Search.ElasticSearch.Analytics.RangeResult!
+override SharedKernel.Search.ElasticSearch.Analytics.RangeResult.Equals(object? obj) -> bool
+override SharedKernel.Search.ElasticSearch.Analytics.RangeResult.GetHashCode() -> int
+override SharedKernel.Search.ElasticSearch.Analytics.RangeResult.ToString() -> string!
+override SharedKernel.Search.ElasticSearch.Analytics.StatsAggregation.<Clone>$() -> SharedKernel.Search.ElasticSearch.Analytics.StatsAggregation!
+override SharedKernel.Search.ElasticSearch.Analytics.StatsAggregation.Equals(object? obj) -> bool
+override SharedKernel.Search.ElasticSearch.Analytics.StatsAggregation.GetHashCode() -> int
+override SharedKernel.Search.ElasticSearch.Analytics.StatsAggregation.ToString() -> string!
+override SharedKernel.Search.ElasticSearch.Analytics.StatsResult.<Clone>$() -> SharedKernel.Search.ElasticSearch.Analytics.StatsResult!
+override SharedKernel.Search.ElasticSearch.Analytics.StatsResult.Equals(object? obj) -> bool
+override SharedKernel.Search.ElasticSearch.Analytics.StatsResult.GetHashCode() -> int
+override SharedKernel.Search.ElasticSearch.Analytics.StatsResult.ToString() -> string!
+override SharedKernel.Search.ElasticSearch.Analytics.TermsAggregation.<Clone>$() -> SharedKernel.Search.ElasticSearch.Analytics.TermsAggregation!
+override SharedKernel.Search.ElasticSearch.Analytics.TermsAggregation.Equals(object? obj) -> bool
+override SharedKernel.Search.ElasticSearch.Analytics.TermsAggregation.GetHashCode() -> int
+override SharedKernel.Search.ElasticSearch.Analytics.TermsAggregation.ToString() -> string!
+override SharedKernel.Search.ElasticSearch.Analytics.TermsBucket.Equals(object? obj) -> bool
+override SharedKernel.Search.ElasticSearch.Analytics.TermsBucket.GetHashCode() -> int
+override SharedKernel.Search.ElasticSearch.Analytics.TermsBucket.ToString() -> string!
+override SharedKernel.Search.ElasticSearch.Analytics.TermsResult.<Clone>$() -> SharedKernel.Search.ElasticSearch.Analytics.TermsResult!
+override SharedKernel.Search.ElasticSearch.Analytics.TermsResult.Equals(object? obj) -> bool
+override SharedKernel.Search.ElasticSearch.Analytics.TermsResult.GetHashCode() -> int
+override SharedKernel.Search.ElasticSearch.Analytics.TermsResult.ToString() -> string!
+override SharedKernel.Search.ElasticSearch.Cursors.CursorPage<TDocument>.Equals(object? obj) -> bool
+override SharedKernel.Search.ElasticSearch.Cursors.CursorPage<TDocument>.GetHashCode() -> int
+override SharedKernel.Search.ElasticSearch.Cursors.CursorPage<TDocument>.ToString() -> string!
+override SharedKernel.Search.ElasticSearch.Cursors.SearchCursor.GetHashCode() -> int
+override SharedKernel.Search.ElasticSearch.Suggest.SearchSuggestion.Equals(object? obj) -> bool
+override SharedKernel.Search.ElasticSearch.Suggest.SearchSuggestion.GetHashCode() -> int
+override SharedKernel.Search.ElasticSearch.Suggest.SearchSuggestion.ToString() -> string!
+override sealed SharedKernel.Search.ElasticSearch.Analytics.CardinalityAggregation.Equals(SharedKernel.Search.ElasticSearch.Analytics.AggregationRequest? other) -> bool
+override sealed SharedKernel.Search.ElasticSearch.Analytics.CardinalityResult.Equals(SharedKernel.Search.ElasticSearch.Analytics.AggregationResult? other) -> bool
+override sealed SharedKernel.Search.ElasticSearch.Analytics.DateHistogramAggregation.Equals(SharedKernel.Search.ElasticSearch.Analytics.AggregationRequest? other) -> bool
+override sealed SharedKernel.Search.ElasticSearch.Analytics.DateHistogramResult.Equals(SharedKernel.Search.ElasticSearch.Analytics.AggregationResult? other) -> bool
+override sealed SharedKernel.Search.ElasticSearch.Analytics.RangeAggregation.Equals(SharedKernel.Search.ElasticSearch.Analytics.AggregationRequest? other) -> bool
+override sealed SharedKernel.Search.ElasticSearch.Analytics.RangeResult.Equals(SharedKernel.Search.ElasticSearch.Analytics.AggregationResult? other) -> bool
+override sealed SharedKernel.Search.ElasticSearch.Analytics.StatsAggregation.Equals(SharedKernel.Search.ElasticSearch.Analytics.AggregationRequest? other) -> bool
+override sealed SharedKernel.Search.ElasticSearch.Analytics.StatsResult.Equals(SharedKernel.Search.ElasticSearch.Analytics.AggregationResult? other) -> bool
+override sealed SharedKernel.Search.ElasticSearch.Analytics.TermsAggregation.Equals(SharedKernel.Search.ElasticSearch.Analytics.AggregationRequest? other) -> bool
+override sealed SharedKernel.Search.ElasticSearch.Analytics.TermsResult.Equals(SharedKernel.Search.ElasticSearch.Analytics.AggregationResult? other) -> bool
+static SharedKernel.Search.ElasticSearch.Analytics.AggregationBucketRange.operator !=(SharedKernel.Search.ElasticSearch.Analytics.AggregationBucketRange left, SharedKernel.Search.ElasticSearch.Analytics.AggregationBucketRange right) -> bool
+static SharedKernel.Search.ElasticSearch.Analytics.AggregationBucketRange.operator ==(SharedKernel.Search.ElasticSearch.Analytics.AggregationBucketRange left, SharedKernel.Search.ElasticSearch.Analytics.AggregationBucketRange right) -> bool
+static SharedKernel.Search.ElasticSearch.Analytics.AggregationRequest.Cardinality(string! name, string! field) -> SharedKernel.Search.ElasticSearch.Analytics.AggregationRequest!
+static SharedKernel.Search.ElasticSearch.Analytics.AggregationRequest.DateHistogram(string! name, string! field, SharedKernel.Search.ElasticSearch.Analytics.DateHistogramInterval interval, System.Collections.Generic.IReadOnlyList<SharedKernel.Search.ElasticSearch.Analytics.AggregationRequest!>? subAggregations = null) -> SharedKernel.Search.ElasticSearch.Analytics.AggregationRequest!
+static SharedKernel.Search.ElasticSearch.Analytics.AggregationRequest.Range(string! name, string! field, System.Collections.Generic.IReadOnlyList<SharedKernel.Search.ElasticSearch.Analytics.AggregationBucketRange>! ranges) -> SharedKernel.Search.ElasticSearch.Analytics.AggregationRequest!
+static SharedKernel.Search.ElasticSearch.Analytics.AggregationRequest.Stats(string! name, string! field) -> SharedKernel.Search.ElasticSearch.Analytics.AggregationRequest!
+static SharedKernel.Search.ElasticSearch.Analytics.AggregationRequest.Terms(string! name, string! field, int size, System.Collections.Generic.IReadOnlyList<SharedKernel.Search.ElasticSearch.Analytics.AggregationRequest!>? subAggregations = null) -> SharedKernel.Search.ElasticSearch.Analytics.AggregationRequest!
+static SharedKernel.Search.ElasticSearch.Analytics.AggregationRequest.operator !=(SharedKernel.Search.ElasticSearch.Analytics.AggregationRequest? left, SharedKernel.Search.ElasticSearch.Analytics.AggregationRequest? right) -> bool
+static SharedKernel.Search.ElasticSearch.Analytics.AggregationRequest.operator ==(SharedKernel.Search.ElasticSearch.Analytics.AggregationRequest? left, SharedKernel.Search.ElasticSearch.Analytics.AggregationRequest? right) -> bool
+static SharedKernel.Search.ElasticSearch.Analytics.AggregationResult.operator !=(SharedKernel.Search.ElasticSearch.Analytics.AggregationResult? left, SharedKernel.Search.ElasticSearch.Analytics.AggregationResult? right) -> bool
+static SharedKernel.Search.ElasticSearch.Analytics.AggregationResult.operator ==(SharedKernel.Search.ElasticSearch.Analytics.AggregationResult? left, SharedKernel.Search.ElasticSearch.Analytics.AggregationResult? right) -> bool
+static SharedKernel.Search.ElasticSearch.Analytics.AggregationResultSet.operator !=(SharedKernel.Search.ElasticSearch.Analytics.AggregationResultSet? left, SharedKernel.Search.ElasticSearch.Analytics.AggregationResultSet? right) -> bool
+static SharedKernel.Search.ElasticSearch.Analytics.AggregationResultSet.operator ==(SharedKernel.Search.ElasticSearch.Analytics.AggregationResultSet? left, SharedKernel.Search.ElasticSearch.Analytics.AggregationResultSet? right) -> bool
+static SharedKernel.Search.ElasticSearch.Analytics.CardinalityAggregation.operator !=(SharedKernel.Search.ElasticSearch.Analytics.CardinalityAggregation? left, SharedKernel.Search.ElasticSearch.Analytics.CardinalityAggregation? right) -> bool
+static SharedKernel.Search.ElasticSearch.Analytics.CardinalityAggregation.operator ==(SharedKernel.Search.ElasticSearch.Analytics.CardinalityAggregation? left, SharedKernel.Search.ElasticSearch.Analytics.CardinalityAggregation? right) -> bool
+static SharedKernel.Search.ElasticSearch.Analytics.CardinalityResult.operator !=(SharedKernel.Search.ElasticSearch.Analytics.CardinalityResult? left, SharedKernel.Search.ElasticSearch.Analytics.CardinalityResult? right) -> bool
+static SharedKernel.Search.ElasticSearch.Analytics.CardinalityResult.operator ==(SharedKernel.Search.ElasticSearch.Analytics.CardinalityResult? left, SharedKernel.Search.ElasticSearch.Analytics.CardinalityResult? right) -> bool
+static SharedKernel.Search.ElasticSearch.Analytics.DateHistogramAggregation.operator !=(SharedKernel.Search.ElasticSearch.Analytics.DateHistogramAggregation? left, SharedKernel.Search.ElasticSearch.Analytics.DateHistogramAggregation? right) -> bool
+static SharedKernel.Search.ElasticSearch.Analytics.DateHistogramAggregation.operator ==(SharedKernel.Search.ElasticSearch.Analytics.DateHistogramAggregation? left, SharedKernel.Search.ElasticSearch.Analytics.DateHistogramAggregation? right) -> bool
+static SharedKernel.Search.ElasticSearch.Analytics.DateHistogramBucket.operator !=(SharedKernel.Search.ElasticSearch.Analytics.DateHistogramBucket? left, SharedKernel.Search.ElasticSearch.Analytics.DateHistogramBucket? right) -> bool
+static SharedKernel.Search.ElasticSearch.Analytics.DateHistogramBucket.operator ==(SharedKernel.Search.ElasticSearch.Analytics.DateHistogramBucket? left, SharedKernel.Search.ElasticSearch.Analytics.DateHistogramBucket? right) -> bool
+static SharedKernel.Search.ElasticSearch.Analytics.DateHistogramResult.operator !=(SharedKernel.Search.ElasticSearch.Analytics.DateHistogramResult? left, SharedKernel.Search.ElasticSearch.Analytics.DateHistogramResult? right) -> bool
+static SharedKernel.Search.ElasticSearch.Analytics.DateHistogramResult.operator ==(SharedKernel.Search.ElasticSearch.Analytics.DateHistogramResult? left, SharedKernel.Search.ElasticSearch.Analytics.DateHistogramResult? right) -> bool
+static SharedKernel.Search.ElasticSearch.Analytics.RangeAggregation.operator !=(SharedKernel.Search.ElasticSearch.Analytics.RangeAggregation? left, SharedKernel.Search.ElasticSearch.Analytics.RangeAggregation? right) -> bool
+static SharedKernel.Search.ElasticSearch.Analytics.RangeAggregation.operator ==(SharedKernel.Search.ElasticSearch.Analytics.RangeAggregation? left, SharedKernel.Search.ElasticSearch.Analytics.RangeAggregation? right) -> bool
+static SharedKernel.Search.ElasticSearch.Analytics.RangeBucket.operator !=(SharedKernel.Search.ElasticSearch.Analytics.RangeBucket left, SharedKernel.Search.ElasticSearch.Analytics.RangeBucket right) -> bool
+static SharedKernel.Search.ElasticSearch.Analytics.RangeBucket.operator ==(SharedKernel.Search.ElasticSearch.Analytics.RangeBucket left, SharedKernel.Search.ElasticSearch.Analytics.RangeBucket right) -> bool
+static SharedKernel.Search.ElasticSearch.Analytics.RangeResult.operator !=(SharedKernel.Search.ElasticSearch.Analytics.RangeResult? left, SharedKernel.Search.ElasticSearch.Analytics.RangeResult? right) -> bool
+static SharedKernel.Search.ElasticSearch.Analytics.RangeResult.operator ==(SharedKernel.Search.ElasticSearch.Analytics.RangeResult? left, SharedKernel.Search.ElasticSearch.Analytics.RangeResult? right) -> bool
+static SharedKernel.Search.ElasticSearch.Analytics.StatsAggregation.operator !=(SharedKernel.Search.ElasticSearch.Analytics.StatsAggregation? left, SharedKernel.Search.ElasticSearch.Analytics.StatsAggregation? right) -> bool
+static SharedKernel.Search.ElasticSearch.Analytics.StatsAggregation.operator ==(SharedKernel.Search.ElasticSearch.Analytics.StatsAggregation? left, SharedKernel.Search.ElasticSearch.Analytics.StatsAggregation? right) -> bool
+static SharedKernel.Search.ElasticSearch.Analytics.StatsResult.operator !=(SharedKernel.Search.ElasticSearch.Analytics.StatsResult? left, SharedKernel.Search.ElasticSearch.Analytics.StatsResult? right) -> bool
+static SharedKernel.Search.ElasticSearch.Analytics.StatsResult.operator ==(SharedKernel.Search.ElasticSearch.Analytics.StatsResult? left, SharedKernel.Search.ElasticSearch.Analytics.StatsResult? right) -> bool
+static SharedKernel.Search.ElasticSearch.Analytics.TermsAggregation.operator !=(SharedKernel.Search.ElasticSearch.Analytics.TermsAggregation? left, SharedKernel.Search.ElasticSearch.Analytics.TermsAggregation? right) -> bool
+static SharedKernel.Search.ElasticSearch.Analytics.TermsAggregation.operator ==(SharedKernel.Search.ElasticSearch.Analytics.TermsAggregation? left, SharedKernel.Search.ElasticSearch.Analytics.TermsAggregation? right) -> bool
+static SharedKernel.Search.ElasticSearch.Analytics.TermsBucket.operator !=(SharedKernel.Search.ElasticSearch.Analytics.TermsBucket? left, SharedKernel.Search.ElasticSearch.Analytics.TermsBucket? right) -> bool
+static SharedKernel.Search.ElasticSearch.Analytics.TermsBucket.operator ==(SharedKernel.Search.ElasticSearch.Analytics.TermsBucket? left, SharedKernel.Search.ElasticSearch.Analytics.TermsBucket? right) -> bool
+static SharedKernel.Search.ElasticSearch.Analytics.TermsResult.operator !=(SharedKernel.Search.ElasticSearch.Analytics.TermsResult? left, SharedKernel.Search.ElasticSearch.Analytics.TermsResult? right) -> bool
+static SharedKernel.Search.ElasticSearch.Analytics.TermsResult.operator ==(SharedKernel.Search.ElasticSearch.Analytics.TermsResult? left, SharedKernel.Search.ElasticSearch.Analytics.TermsResult? right) -> bool
+static SharedKernel.Search.ElasticSearch.Cursors.SearchCursor.operator !=(SharedKernel.Search.ElasticSearch.Cursors.SearchCursor left, SharedKernel.Search.ElasticSearch.Cursors.SearchCursor right) -> bool
+static SharedKernel.Search.ElasticSearch.Cursors.SearchCursor.operator ==(SharedKernel.Search.ElasticSearch.Cursors.SearchCursor left, SharedKernel.Search.ElasticSearch.Cursors.SearchCursor right) -> bool
+static SharedKernel.Search.ElasticSearch.Errors.ElasticSearchErrors.AggregationFailed(string! aggregationName, string! reason) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Search.ElasticSearch.Errors.ElasticSearchErrors.CursorExpired(System.DateTimeOffset expiredAt) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Search.ElasticSearch.Errors.ElasticSearchErrors.InvalidCursor(string! reason) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Search.ElasticSearch.Errors.ElasticSearchErrors.SourceSerializerContextMissing(string! documentTypeName) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Search.ElasticSearch.Extensions.ElasticSearchServiceCollectionExtensions.AddSharedKernelElasticSearchSearch(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfiguration! configuration) -> SharedKernel.Search.ElasticSearch.Extensions.ElasticSearchBuilder!
+static SharedKernel.Search.ElasticSearch.Extensions.ElasticSearchServiceCollectionExtensions.AddSharedKernelElasticSearchSearch(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfigurationSection! section) -> SharedKernel.Search.ElasticSearch.Extensions.ElasticSearchBuilder!
+static SharedKernel.Search.ElasticSearch.Extensions.ElasticSearchServiceCollectionExtensions.VerifyElasticSearchEngineVersionAsync(this System.IServiceProvider! services, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
+static SharedKernel.Search.ElasticSearch.Suggest.SearchSuggestion.operator !=(SharedKernel.Search.ElasticSearch.Suggest.SearchSuggestion? left, SharedKernel.Search.ElasticSearch.Suggest.SearchSuggestion? right) -> bool
+static SharedKernel.Search.ElasticSearch.Suggest.SearchSuggestion.operator ==(SharedKernel.Search.ElasticSearch.Suggest.SearchSuggestion? left, SharedKernel.Search.ElasticSearch.Suggest.SearchSuggestion? right) -> bool
+virtual SharedKernel.Search.ElasticSearch.Analytics.AggregationRequest.EqualityContract.get -> System.Type!
+virtual SharedKernel.Search.ElasticSearch.Analytics.AggregationRequest.Equals(SharedKernel.Search.ElasticSearch.Analytics.AggregationRequest? other) -> bool
+virtual SharedKernel.Search.ElasticSearch.Analytics.AggregationRequest.PrintMembers(System.Text.StringBuilder! builder) -> bool
+virtual SharedKernel.Search.ElasticSearch.Analytics.AggregationResult.EqualityContract.get -> System.Type!
+virtual SharedKernel.Search.ElasticSearch.Analytics.AggregationResult.Equals(SharedKernel.Search.ElasticSearch.Analytics.AggregationResult? other) -> bool
+virtual SharedKernel.Search.ElasticSearch.Analytics.AggregationResult.PrintMembers(System.Text.StringBuilder! builder) -> bool
+~SharedKernel.Search.ElasticSearch.Cursors.CursorPage<TDocument>.<Clone>$() -> SharedKernel.Search.ElasticSearch.Cursors.CursorPage<TDocument>!
+~SharedKernel.Search.ElasticSearch.Cursors.CursorPage<TDocument>.Equals(SharedKernel.Search.ElasticSearch.Cursors.CursorPage<TDocument>? other) -> bool
+~override SharedKernel.Search.ElasticSearch.Analytics.AggregationBucketRange.Equals(object obj) -> bool
+~override SharedKernel.Search.ElasticSearch.Analytics.AggregationBucketRange.ToString() -> string
+~override SharedKernel.Search.ElasticSearch.Analytics.RangeBucket.Equals(object obj) -> bool
+~override SharedKernel.Search.ElasticSearch.Analytics.RangeBucket.ToString() -> string
+~override SharedKernel.Search.ElasticSearch.Cursors.SearchCursor.Equals(object obj) -> bool
+~override SharedKernel.Search.ElasticSearch.Cursors.SearchCursor.ToString() -> string
+~static SharedKernel.Search.ElasticSearch.Cursors.CursorPage<TDocument>.operator !=(SharedKernel.Search.ElasticSearch.Cursors.CursorPage<TDocument>? left, SharedKernel.Search.ElasticSearch.Cursors.CursorPage<TDocument>? right) -> bool
+~static SharedKernel.Search.ElasticSearch.Cursors.CursorPage<TDocument>.operator ==(SharedKernel.Search.ElasticSearch.Cursors.CursorPage<TDocument>? left, SharedKernel.Search.ElasticSearch.Cursors.CursorPage<TDocument>? right) -> bool

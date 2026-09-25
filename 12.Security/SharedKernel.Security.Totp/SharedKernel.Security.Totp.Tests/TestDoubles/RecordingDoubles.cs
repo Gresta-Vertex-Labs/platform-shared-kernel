@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
 using SharedKernel.Cryptography.Hashing;
@@ -133,6 +134,10 @@ internal sealed class TestUserContextMapper(string authenticationType = "Bearer"
         {
             SessionId = identity.FindFirst(SecurityClaimTypes.SessionId)?.Value,
             AuthenticationMethods = [.. identity.FindAll(SecurityClaimTypes.AuthenticationMethod).Select(claim => claim.Value)],
+            AuthenticationMethodTimes = AuthenticationMethodTimeClaim.Read(identity.Claims),
+            AuthTime = long.TryParse(identity.FindFirst(SecurityClaimTypes.AuthTime)?.Value, NumberStyles.None, CultureInfo.InvariantCulture, out long seconds)
+                ? DateTimeOffset.FromUnixTimeSeconds(seconds)
+                : null,
         };
     }
 }

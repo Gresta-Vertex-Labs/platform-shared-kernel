@@ -6,6 +6,7 @@ Meilisearch (BFF/fast) implementation of [`SharedKernel.Search.Abstractions`](..
 
 - `MeilisearchIndex<TDocument>` — sealed `ISearchIndex<TDocument>` implementation, scoped
 - `MeilisearchIndexProvisioner` — sealed `ISearchIndexProvisioner` implementation, singleton
+- `MeilisearchRankingRule` — the typed, Meilisearch-exclusive relevance ordering rules applied via `WithRankingRules`
 - `MeilisearchProviderDescriptor` — sealed `ISearchProviderDescriptor` implementation, singleton
 - `IInstantSearch<TDocument>` / `MeilisearchInstantSearch<TDocument>` — Meilisearch-exclusive typo-tolerant/prefix instant search and facet-value type-ahead
 - `ITenantSearchTokenIssuer` / `MeilisearchTenantTokenIssuer` — Meilisearch-exclusive engine-enforced per-tenant search tokens, registered only via `.WithTenantTokens()`
@@ -65,7 +66,7 @@ Binds from the `Search:Meilisearch` section (`MeilisearchOptions.SectionName`):
 | `MaxFacetValues` | `int` | No | `100` | Per-facet value-count cap applied to every registered index, `[1, 10000]`. |
 | `DefaultBatchSize` | `int` | No | `1000` | Default batch size used by bulk write operations, `[1, 100000]`. |
 | `TenantTokenMaxTtlMinutes` | `int` | No | `15` | Maximum TTL, in minutes, a tenant search token may be issued for, `[1, 60]`. |
-| `ValidateIndexSettingsOnStart` | `bool` | No | `true` | Whether index settings are verified against the registered index definition at startup. |
+| `PooledConnectionLifetimeMinutes` | `int` | No | `5` | How long a pooled HTTP connection to Meilisearch is reused before it is recycled, `[1, 60]`. The `MeilisearchClient` is a singleton, so `IHttpClientFactory` can never rotate its handler — without this, a Meilisearch pod rescheduled onto a new address would stay unreachable until the service restarted. Not a request timeout. |
 
 ```json
 {
@@ -122,6 +123,28 @@ Every write on a Meilisearch instance — across **every index** on that instanc
 2. **`SearchIndexHealth.PendingWriteCount` is instance-wide, not index-scoped.** `ProbeAsync`'s reported pending-write count reflects the entire instance's task queue depth, not the depth for the specific index being probed. A healthy-looking probe for index A can still be sitting behind a deep backlog caused entirely by index B — the count does not isolate by index because Meilisearch's own task-listing API does not either.
 
 Neither of these is visible from this package's types alone — `ISearchIndex<TDocument>`/`MeilisearchOptions` say nothing about instance topology, because instance topology is a deployment decision, not an API concern. It is deliberately called out here rather than left as a surprise.
+
+## Ranking rules — Meilisearch-exclusive relevance ordering
+
+```csharp
+builder.Services
+    .AddSharedKernelMeilisearchSearch(builder.Configuration)
+    .AddIndex<ProductSearchDocument>("products", index => index /* ... */)
+    .WithRankingRules(
+        "products",
+        MeilisearchRankingRule.Words,
+        MeilisearchRankingRule.Typo,
+        MeilisearchRankingRule.Proximity,
+        MeilisearchRankingRule.Attribute,
+        MeilisearchRankingRule.Sort,
+        MeilisearchRankingRule.Exactness,
+        MeilisearchRankingRule.Descending("price"))
+    .Build();
+```
+
+Ranking rules are an ordered list of tie-breakers Meilisearch applies in sequence to decide relevance order. **ElasticSearch has no counterpart** — its ordering comes from BM25 plus per-query boosts and `function_score`, a different mechanism applied at a different time — so this lives here rather than on the neutral `SearchIndexDefinition`. A call site that configures ranking rules takes a compile-time dependency on this package, so a provider swap surfaces as a build error naming every non-portable site.
+
+Order is meaning: the rules apply in the sequence given, and supplying a list **replaces** the engine default sequence entirely rather than adding to it — include every rule you still want. `MeilisearchRankingRule` is typed rather than raw strings because a misspelled rule is accepted by the settings endpoint in some engine versions and silently changes relevance, a failure mode whose only symptom is "search results feel wrong". Custom `Ascending`/`Descending` rules must name a field declared sortable on the index definition.
 
 ## Pacing a large reindex — `SearchBulkWriteOptions`
 

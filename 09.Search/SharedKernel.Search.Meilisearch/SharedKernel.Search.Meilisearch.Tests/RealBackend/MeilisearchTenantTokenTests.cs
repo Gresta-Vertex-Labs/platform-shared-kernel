@@ -156,4 +156,62 @@ public sealed class MeilisearchTenantTokenTests : IAsyncLifetime
             "— proven here by the document never actually landing, since the SDK's own AddDocumentsAsync " +
             "return value/exception behavior for this failure is unreliable (see remarks)");
     }
+
+    [Fact]
+    public async Task IssueAsync_WithTenantScopeNone_FailsClosed_AndMintsNoToken()
+    {
+        // The highest-consequence guard in this file. A tenant token is handed to an untrusted client —
+        // a browser — and the filter baked into it is the ONLY tenant restriction that will ever apply
+        // to searches made with it. TenantScope.None would compile to `tenantId = ""`, which is not a
+        // tenant restriction at all but a filter for documents whose tenant is the empty string: a token
+        // that looks scoped, reads as scoped in a code review, and restricts nothing meaningful. Before
+        // the pre-publish pass this call succeeded and returned a signed token.
+        var issuer = MeilisearchProviderFactory.CreateTenantTokenIssuer(_fixture, _signingApiKey, _apiKeyUid);
+
+        var issueResult = await issuer.IssueAsync(
+            TenantScope.None, TestProductFields.TenantId, [IndexName], TimeSpan.FromMinutes(5));
+
+        issueResult.IsFailure.Should().BeTrue();
+        issueResult.Error.Code.Should().Be("search.tenant_scope_missing");
+    }
+
+    [Fact]
+    public async Task IssueAsync_WithNoIndexesNamed_FailsClosed()
+    {
+        // A token scoped to zero indexes grants nothing, so issuing one silently hands the caller a
+        // credential that will fail every search it is used for — with no indication why.
+        var issuer = MeilisearchProviderFactory.CreateTenantTokenIssuer(_fixture, _signingApiKey, _apiKeyUid);
+
+        var issueResult = await issuer.IssueAsync(
+            TenantScope.Of(TestProductCorpus.TenantA), TestProductFields.TenantId, [], TimeSpan.FromMinutes(5));
+
+        issueResult.IsFailure.Should().BeTrue();
+        issueResult.Error.Code.Should().Be("search.meilisearch.tenant_token_issuance_failed");
+    }
+
+    [Fact]
+    public async Task IssueAsync_WithBlankTenantField_FailsClosed()
+    {
+        var issuer = MeilisearchProviderFactory.CreateTenantTokenIssuer(_fixture, _signingApiKey, _apiKeyUid);
+
+        var issueResult = await issuer.IssueAsync(
+            TenantScope.Of(TestProductCorpus.TenantA), "   ", [IndexName], TimeSpan.FromMinutes(5));
+
+        issueResult.IsFailure.Should().BeTrue();
+        issueResult.Error.Code.Should().Be("search.meilisearch.tenant_token_issuance_failed");
+    }
+
+    [Fact]
+    public async Task IssueAsync_WithNonPositiveTtl_FailsClosed()
+    {
+        // A zero or negative TTL would mint a token that is already expired — the SDK rejects it with an
+        // opaque message, and the caller's real mistake is not recoverable from that.
+        var issuer = MeilisearchProviderFactory.CreateTenantTokenIssuer(_fixture, _signingApiKey, _apiKeyUid);
+
+        var issueResult = await issuer.IssueAsync(
+            TenantScope.Of(TestProductCorpus.TenantA), TestProductFields.TenantId, [IndexName], TimeSpan.Zero);
+
+        issueResult.IsFailure.Should().BeTrue();
+        issueResult.Error.Code.Should().Be("search.meilisearch.tenant_token_ttl_out_of_range");
+    }
 }

@@ -100,7 +100,8 @@ REMOVED BEFORE FIRST PUBLISH (P-560):
 > can act on — not defects. They arrive as a `messaging.*` error code the caller can branch on,
 > not as a `RabbitMqConnectionException` the caller has to know to catch. Anything the classifier
 > does **not** recognise as a transport fault is rethrown, so a genuine bug is never laundered
-> into a failed `Result`. See `MessagingErrorCodes` for the six codes.
+> into a failed `Result`. See `MessagingErrorCodes` for the six codes. Since P-562 an unreachable broker
+> (`messaging.unavailable`) is `ErrorType.Unavailable`, which `14.Presentation` answers 503, not 500.
 
 #### Integration event publisher (`EventPublisher/`)
 
@@ -309,6 +310,8 @@ IMessageHeaderPropagator  (interface)
     .Propagate(PublishContext context)  → void
         Reads values from ambient scope (IHttpContextAccessor, Activity.Current.Baggage,
         IOptions<T>, etc.) and populates PublishContext headers via context.WithHeader().
+        Never takes a caller's identity (tenant, user) from baggage, which a caller can set
+        (P-562 X2): identity comes from IRequestContext (WithInboundRequestContext()).
         Invoked automatically before dispatch for every IMessageBus.PublishAsync,
         IMessageBus.SendAsync and IEventPublisher.PublishAsync call when one or more
         propagators are registered (P-341/WO-054 — SendAsync previously skipped propagator

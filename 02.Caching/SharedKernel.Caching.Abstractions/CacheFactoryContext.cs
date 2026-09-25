@@ -12,7 +12,7 @@ namespace SharedKernel.Caching.Abstractions;
 /// factory itself.
 /// </para>
 /// <para>
-/// That distinction is load-bearing, not incidental. <c>SharedKernel.Application.Behaviors.Caching</c>
+/// That distinction is load-bearing, not incidental. <c>SharedKernel.Application.Caching</c>
 /// carries a failed <c>Result</c> out of its factory in a local captured by the factory closure,
 /// which is only correct because a skipped value is not broadcast to waiters; were it broadcast,
 /// every waiting caller would come out holding a default value with no failure recorded in its own

@@ -1,5 +1,4 @@
 using SharedKernel.Primitives.Results;
-using SharedKernel.Search.Abstractions.Abstractions;
 using SharedKernel.Search.Abstractions.Constants;
 using SharedKernel.Search.Abstractions.Errors;
 using SharedKernel.Search.Abstractions.Models;
@@ -7,12 +6,10 @@ using SharedKernel.Search.Abstractions.Models;
 namespace SharedKernel.Search.Abstractions.Querying;
 
 /// <summary>
-/// The sealed, immutable implementation of <see cref="IQueryBuilder{TDocument}"/> shipped in
+/// The sealed, immutable implementation of <see cref="IQueryBuilder"/> shipped in
 /// <c>SharedKernel.Search.Abstractions</c> — the only provider-free query builder in this domain.
 /// </summary>
-/// <typeparam name="TDocument">The search document type.</typeparam>
-public sealed class SearchQueryBuilder<TDocument> : IQueryBuilder<TDocument>
-    where TDocument : class, ISearchDocument
+public sealed class SearchQueryBuilder : IQueryBuilder
 {
     private readonly string? _freeText;
     private readonly bool _matchAllTerms;
@@ -27,7 +24,7 @@ public sealed class SearchQueryBuilder<TDocument> : IQueryBuilder<TDocument>
     private readonly IReadOnlyList<string> _returnFields;
     private readonly bool _requireExactTotalHits;
 
-    /// <summary>Initializes a new, empty <see cref="SearchQueryBuilder{TDocument}"/>.</summary>
+    /// <summary>Initializes a new, empty <see cref="SearchQueryBuilder"/>.</summary>
     public SearchQueryBuilder()
         : this(
             freeText: null,
@@ -74,94 +71,94 @@ public sealed class SearchQueryBuilder<TDocument> : IQueryBuilder<TDocument>
     }
 
     /// <inheritdoc />
-    public IQueryBuilder<TDocument> Matching(string? freeText) => new SearchQueryBuilder<TDocument>(
+    public IQueryBuilder Matching(string? freeText) => new SearchQueryBuilder(
         freeText, _matchAllTerms, _searchFields, _filter, _sort, _page, _pageSize,
         _facets, _numericFacetStats, _highlight, _returnFields, _requireExactTotalHits);
 
     /// <inheritdoc />
-    public IQueryBuilder<TDocument> MatchAllTerms(bool matchAll) => new SearchQueryBuilder<TDocument>(
+    public IQueryBuilder MatchAllTerms(bool matchAll) => new SearchQueryBuilder(
         _freeText, matchAll, _searchFields, _filter, _sort, _page, _pageSize,
         _facets, _numericFacetStats, _highlight, _returnFields, _requireExactTotalHits);
 
     /// <inheritdoc />
-    public IQueryBuilder<TDocument> SearchingIn(params string[] fields)
+    public IQueryBuilder SearchingIn(params string[] fields)
     {
         ArgumentNullException.ThrowIfNull(fields);
-        return new SearchQueryBuilder<TDocument>(
+        return new SearchQueryBuilder(
             _freeText, _matchAllTerms, fields.ToArray(), _filter, _sort, _page, _pageSize,
             _facets, _numericFacetStats, _highlight, _returnFields, _requireExactTotalHits);
     }
 
     /// <inheritdoc />
-    public IQueryBuilder<TDocument> Where(SearchFilter filter)
+    public IQueryBuilder Where(SearchFilter filter)
     {
         ArgumentNullException.ThrowIfNull(filter);
         var combined = _filter is null ? filter : SearchFilter.All(_filter, filter);
-        return new SearchQueryBuilder<TDocument>(
+        return new SearchQueryBuilder(
             _freeText, _matchAllTerms, _searchFields, combined, _sort, _page, _pageSize,
             _facets, _numericFacetStats, _highlight, _returnFields, _requireExactTotalHits);
     }
 
     /// <inheritdoc />
-    public IQueryBuilder<TDocument> OrderBy(string field)
+    public IQueryBuilder OrderBy(string field)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(field);
-        return new SearchQueryBuilder<TDocument>(
+        return new SearchQueryBuilder(
             _freeText, _matchAllTerms, _searchFields, _filter, Append(_sort, SearchSort.Ascending(field)),
             _page, _pageSize, _facets, _numericFacetStats, _highlight, _returnFields, _requireExactTotalHits);
     }
 
     /// <inheritdoc />
-    public IQueryBuilder<TDocument> OrderByDescending(string field)
+    public IQueryBuilder OrderByDescending(string field)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(field);
-        return new SearchQueryBuilder<TDocument>(
+        return new SearchQueryBuilder(
             _freeText, _matchAllTerms, _searchFields, _filter, Append(_sort, SearchSort.Descending(field)),
             _page, _pageSize, _facets, _numericFacetStats, _highlight, _returnFields, _requireExactTotalHits);
     }
 
     /// <inheritdoc />
-    public IQueryBuilder<TDocument> Page(int page, int pageSize) => new SearchQueryBuilder<TDocument>(
+    public IQueryBuilder Page(int page, int pageSize) => new SearchQueryBuilder(
         _freeText, _matchAllTerms, _searchFields, _filter, _sort, page, pageSize,
         _facets, _numericFacetStats, _highlight, _returnFields, _requireExactTotalHits);
 
     /// <inheritdoc />
-    public IQueryBuilder<TDocument> RequireExactTotalHits() => new SearchQueryBuilder<TDocument>(
+    public IQueryBuilder RequireExactTotalHits() => new SearchQueryBuilder(
         _freeText, _matchAllTerms, _searchFields, _filter, _sort, _page, _pageSize,
         _facets, _numericFacetStats, _highlight, _returnFields, requireExactTotalHits: true);
 
     /// <inheritdoc />
-    public IQueryBuilder<TDocument> Faceting(params string[] facetFields)
+    public IQueryBuilder Faceting(params string[] facetFields)
     {
         ArgumentNullException.ThrowIfNull(facetFields);
-        return new SearchQueryBuilder<TDocument>(
+        return new SearchQueryBuilder(
             _freeText, _matchAllTerms, _searchFields, _filter, _sort, _page, _pageSize,
             facetFields.ToArray(), _numericFacetStats, _highlight, _returnFields, _requireExactTotalHits);
     }
 
     /// <inheritdoc />
-    public IQueryBuilder<TDocument> WithNumericFacetStats(params string[] facetFields)
+    public IQueryBuilder WithNumericFacetStats(params string[] facetFields)
     {
         ArgumentNullException.ThrowIfNull(facetFields);
-        return new SearchQueryBuilder<TDocument>(
+        return new SearchQueryBuilder(
             _freeText, _matchAllTerms, _searchFields, _filter, _sort, _page, _pageSize,
             _facets, facetFields.ToArray(), _highlight, _returnFields, _requireExactTotalHits);
     }
 
     /// <inheritdoc />
-    public IQueryBuilder<TDocument> Highlighting(HighlightRequest highlight)
+    public IQueryBuilder Highlighting(HighlightRequest highlight)
     {
         ArgumentNullException.ThrowIfNull(highlight);
-        return new SearchQueryBuilder<TDocument>(
+        return new SearchQueryBuilder(
             _freeText, _matchAllTerms, _searchFields, _filter, _sort, _page, _pageSize,
             _facets, _numericFacetStats, highlight, _returnFields, _requireExactTotalHits);
     }
 
     /// <inheritdoc />
-    public IQueryBuilder<TDocument> Returning(params string[] fields)
+    public IQueryBuilder Returning(params string[] fields)
     {
         ArgumentNullException.ThrowIfNull(fields);
-        return new SearchQueryBuilder<TDocument>(
+        return new SearchQueryBuilder(
             _freeText, _matchAllTerms, _searchFields, _filter, _sort, _page, _pageSize,
             _facets, _numericFacetStats, _highlight, fields.ToArray(), _requireExactTotalHits);
     }

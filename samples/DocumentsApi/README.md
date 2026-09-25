@@ -27,10 +27,10 @@ Buckets, key prefixes, encryption and link limits are in `appsettings.json`; cre
 
 | Endpoint | Storage call |
 | --- | --- |
-| `PUT /files/{store}/{**key}` | `UploadAsync` — the request body streamed straight in; `If-None-Match: *` = create only, `If-Match` = replace that version, `X-Checksum-Sha256` verified by the provider, `X-Meta-*` stored as metadata |
-| `GET /files/{store}/{**key}` | `DownloadAsync` — streamed back; a `Range` header returns 206 |
+| `PUT /files/{store}/{**key}` | `UploadAsync` — the request body streamed straight in, up to 1 GiB; `If-None-Match: *` = create only, `If-Match` = replace that version, `X-Checksum-Sha256` verified by the provider, `X-Meta-*` stored as metadata |
+| `GET /files/{store}/{**key}` | `DownloadAsync` — streamed back; a `Range` header returns 206; `If-Match` pins the version |
 | `GET /properties/{store}/{**key}` | `GetPropertiesAsync` |
-| `DELETE /files/{store}/{**key}` | `DeleteAsync` |
+| `DELETE /files/{store}/{**key}` | `DeleteAsync`; `If-Match` asks for a conditional delete (MinIO ignores it, see below) |
 | `POST /delete-many/{store}` | `DeleteManyAsync` |
 | `GET /list/{store}?prefix=&recursive=&pageSize=&continuationToken=` | `ListPageAsync` |
 | `POST /copy` | `CopyToAsync` — within a store, across stores and across providers |
@@ -40,6 +40,68 @@ Buckets, key prefixes, encryption and link limits are in `appsettings.json`; cre
 
 The tenant comes from an `X-Tenant-Id` header so the tests can act as several tenants. A real service takes it from
 the authenticated principal, never from a header the caller controls.
+
+## The HTTP boundary
+
+`builder.AddSharedKernelWebApi()` and `app.UseSharedKernelWebApi()` make the API's errors one shape. The endpoints
+live in two endpoint modules, `FileEndpoints` and `LinkEndpoints` (`IEndpointModule`, mapped by the generated
+`app.MapEndpoints()`). Each reads what it needs from the request — the store and key from the route, the tenant,
+preconditions, range and metadata from headers — into a command or query, sends it through `ISender`
+(`builder.Services.AddSharedKernelApplication(typeof(Program).Assembly)`) and maps the `Result` with one call, no
+`IsSuccess` branch. Only the handlers in `Features/Files/` and `Features/Links/` touch the stores:
+
+```csharp
+// FileEndpoints
+app.MapGet("/properties/{store}/{**key}", (string store, string key, HttpRequest request, ISender sender, CancellationToken ct) =>
+    sender.Send(new GetFileProperties(StoreAddress.For(store, request), key), ct).ToOk());
+
+// Features/Files/GetFileProperties.cs
+public sealed class GetFilePropertiesHandler(IFileStorageFactory factory) : IQueryHandler<GetFileProperties, FileProperties>
+{
+    public Task<Result<FileProperties>> Handle(GetFileProperties query, CancellationToken cancellationToken) =>
+        Stores.Resolve(factory, query.Store)     // documents.unknown_store (404), documents.tenant_required (400)
+            .Bind(files => files.GetPropertiesAsync(query.Key, cancellationToken));
+}
+```
+
+A download is a query too: it returns the open `FileDownload`, and the endpoint streams it to the response
+(`ToHttpResult(download => new FileDownloadResult(download))`), so nothing is buffered.
+
+So an unknown store, a missing tenant and every `storage.*` failure reach the client as the same RFC 9457
+`application/problem+json` body with its `errorCode`: `storage.not_found` 404, `storage.checksum_mismatch` 400,
+`storage.unavailable` 503 (throttling or an outage), `storage.not_supported` 500 (OBS refusing a conditional write).
+The two conflicts, `storage.already_exists` and `storage.precondition_failed`, are 412 or 409 depending on the request
+(below).
+
+Request bodies are capped at 4 MiB platform-wide (`SharedKernel:Presentation:WebApi:Limits:MaxRequestBodySize`).
+The upload endpoint lifts the cap for itself with `.WithRequestSizeLimit(FileEndpoints.MaxUploadBytes)` (1 GiB):
+its body streams into the store, so the limit bounds the object, not memory. Anything larger goes straight to the
+provider through the presigned multipart endpoints. Kestrel enforces the limits, which the in-memory test server
+does not run, so `FileScenarios.Only_the_upload_endpoint_lifts_the_request_body_limit` pins the override by its
+endpoint metadata.
+
+## Preconditions: 412 or 409
+
+`storage.already_exists` and `storage.precondition_failed` are conflicts. When the client sent the condition in a
+request header, the failure is exactly what 412 Precondition Failed means — the precondition it sent is false — so that
+is the answer; without such a header the same error is an ordinary 409. The endpoints never choose between the two:
+the status comes from the error and the request.
+
+| Request | Error | Answer |
+| --- | --- | --- |
+| `PUT` with `If-None-Match: *`, and the file exists | `storage.already_exists` | 412 |
+| `PUT` or `GET` with the `If-Match` of an older version | `storage.precondition_failed` | 412 |
+| `POST /copy` with `"createOnly": true`, and the destination exists (the condition is in the body) | `storage.already_exists` | 409 |
+| an `If-Match` that is not one entity tag: an ETag without its quotes, `*`, a list | `precondition.invalid` | 400 |
+| a weak `If-Match` (`W/"…"`), which never matches: `If-Match` compares strongly | `precondition.failed` | 412 |
+
+`If-Match` is optional on these endpoints: each declares it as a nullable `IfMatch<string>` parameter. The presentation
+package then refuses a header that does not name exactly one strong entity tag before the endpoint runs, rather than
+ignore it: ignoring it would turn the client's conditional write into an unconditional one. The endpoint gets `null`
+only when the client sent no `If-Match`, and otherwise passes the ETag, with its quotes, to the store. A store that
+cannot honor a precondition refuses it too: OBS answers `storage.not_supported`. One
+gap is not the sample's to close: **MinIO ignores `If-Match` on deletes** (`RELEASE.2025-09-07`, the image the tests
+use), so a delete pinned to an older version removes the current file. The tests pin conditional reads and writes only.
 
 ## Run the tests
 

@@ -1,13 +1,12 @@
 using FluentAssertions;
 using MediatR;
-using SharedKernel.Application.Messaging;
 using SharedKernel.Primitives.Results;
 
 namespace SharedKernel.Application.Tests.Messaging;
 
 /// <summary>
 /// Verifies the exact contract shapes of the command/query vocabulary in
-/// <c>SharedKernel.Application.Messaging</c>.
+/// <c>SharedKernel.Application</c>.
 /// </summary>
 public sealed class ContractShapeTests
 {

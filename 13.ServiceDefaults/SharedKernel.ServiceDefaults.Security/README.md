@@ -7,7 +7,7 @@ builder.Services.AddOidcAuthentication(builder.Configuration);   // registers IU
 builder.Services.AddSharedKernelRequestContext();                // IRequestContext over IUserContext + ITenantProvider
 ```
 
-The registered `IRequestContext` is what `05.Application`'s `AuthorizationBehavior` checks permissions against,
+The registered `IRequestContext` is what `05.Application`'s pipeline checks `[RequirePermission]` against (always; the host start fails without one when a use case declares a permission),
 what the caching behaviors scope keys by, and what `06.Persistence` attributes audit columns, filters
 tenant rows and writes audit records with. There is no separate persistence or pipeline bridge.
 

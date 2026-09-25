@@ -17,7 +17,7 @@ public sealed class HealthCheckTagTests
         services.AddHealthChecks().AddSearchReadinessCheck("products");
 
         var registrations = GetRegistrations(services);
-        var registration = Assert.Single(registrations, r => r.Name == HealthCheckNames.Search);
+        var registration = Assert.Single(registrations, r => r.Name == $"{HealthCheckNames.Search}-products");
 
         Assert.Contains(HealthCheckTags.Ready, registration.Tags);
         Assert.Contains(HealthCheckTags.Search, registration.Tags);

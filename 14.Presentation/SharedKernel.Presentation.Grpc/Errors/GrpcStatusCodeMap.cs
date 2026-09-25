@@ -4,46 +4,44 @@ using SharedKernel.Primitives.Errors;
 namespace SharedKernel.Presentation.Grpc.Errors;
 
 /// <summary>
-/// Single source of truth for mapping an <see cref="ErrorType"/> to a gRPC <see cref="StatusCode"/>.
+/// Maps an <see cref="ErrorType"/> to the gRPC <see cref="StatusCode"/> a failed call ends with.
 /// </summary>
 /// <remarks>
 /// <para>
-/// A sibling to, never a merge with,
-/// <c>SharedKernel.Presentation.WebApi.Errors.ErrorTypeStatusCodeMap</c>. HTTP status codes and
-/// gRPC <see cref="StatusCode"/> are different target enums with no clean 1:1 correspondence — HTTP's
-/// 422 has no gRPC analogue, and gRPC's <see cref="StatusCode.Aborted"/>/<see cref="StatusCode.FailedPrecondition"/>
-/// cover ground HTTP splits across 409/412/422. Both maps key off the same <c>01.Core</c>
-/// <see cref="ErrorType"/> enum — that shared vocabulary is the generalization point; merging the
-/// two value tables would force a false equivalence between two genuinely different protocols.
+/// The gRPC counterpart of <c>SharedKernel.Presentation.WebApi.ErrorTypeStatusCodeMap</c>, never a merge with
+/// it: both key off the same <see cref="ErrorType"/>, but HTTP and gRPC status codes do not correspond one to one
+/// (gRPC's <see cref="StatusCode.Aborted"/> and <see cref="StatusCode.FailedPrecondition"/> cover ground HTTP splits
+/// across 409, 412 and 422).
 /// </para>
 /// <para>
-/// Any inline switch statement duplicating this mapping anywhere else in a consuming service is a
-/// platform violation — always call <see cref="Resolve"/> (directly, or indirectly via
-/// <see cref="Results.GrpcResultExtensions"/>/<c>Interceptors.GrpcExceptionInterceptor</c>) instead.
+/// Every error the interceptor of <c>AddSharedKernelGrpc()</c> maps takes its code from here — thrown, or a failed
+/// result ended with <c>SharedKernel.Core</c>'s <c>GetValueOrThrow()</c>/<c>ThrowIfFailure()</c>; never switch on
+/// <see cref="ErrorType"/> by hand. An <c>RpcException</c> the service throws itself, or receives from another
+/// service, keeps its own code.
 /// </para>
 /// </remarks>
-public static class GrpcStatusCodeMap
+internal static class GrpcStatusCodeMap
 {
-    /// <summary>
-    /// Resolves the gRPC <see cref="StatusCode"/> that corresponds to the specified
-    /// <paramref name="type"/>.
-    /// </summary>
-    /// <param name="type">The error type to resolve.</param>
+    /// <summary>Returns the gRPC status code for <paramref name="type"/>.</summary>
+    /// <param name="type">The error type.</param>
     /// <returns>
-    /// The mapped <see cref="StatusCode"/>: <see cref="ErrorType.Validation"/> →
-    /// <see cref="StatusCode.InvalidArgument"/>, <see cref="ErrorType.Unauthorized"/> →
-    /// <see cref="StatusCode.Unauthenticated"/>, <see cref="ErrorType.Forbidden"/> →
-    /// <see cref="StatusCode.PermissionDenied"/>, <see cref="ErrorType.NotFound"/> →
-    /// <see cref="StatusCode.NotFound"/>, <see cref="ErrorType.Conflict"/> →
-    /// <see cref="StatusCode.Aborted"/> (gRPC's own <c>Aborted</c> status is documented for "a
-    /// concurrency issue such as a sequencer check failure or transaction abort" — a closer
-    /// semantic fit for <see cref="ErrorType.Conflict"/> than <see cref="StatusCode.AlreadyExists"/>),
-    /// <see cref="ErrorType.BusinessRule"/> → <see cref="StatusCode.FailedPrecondition"/> (the
-    /// closest gRPC analogue to HTTP 422 — "the system is not in a state required for the
-    /// operation's execution"), <see cref="ErrorType.Unexpected"/> → <see cref="StatusCode.Internal"/>.
-    /// Any <see cref="ErrorType"/> not explicitly mapped (including <see cref="ErrorType.None"/>)
-    /// falls back to <see cref="StatusCode.Unknown"/> — gRPC's own "no more specific error is
-    /// applicable" status, the protocol-native analogue of the HTTP map's 500 fallback.
+    /// <list type="table">
+    ///   <item><term><see cref="ErrorType.Validation"/></term><description><see cref="StatusCode.InvalidArgument"/></description></item>
+    ///   <item><term><see cref="ErrorType.Unauthorized"/></term><description><see cref="StatusCode.Unauthenticated"/></description></item>
+    ///   <item><term><see cref="ErrorType.Forbidden"/></term><description><see cref="StatusCode.PermissionDenied"/></description></item>
+    ///   <item><term><see cref="ErrorType.NotFound"/></term><description><see cref="StatusCode.NotFound"/></description></item>
+    ///   <item><term><see cref="ErrorType.Conflict"/></term><description><see cref="StatusCode.Aborted"/>: gRPC documents
+    ///   it for concurrency conflicts such as a failed version check.</description></item>
+    ///   <item><term><see cref="ErrorType.BusinessRule"/></term><description><see cref="StatusCode.FailedPrecondition"/>:
+    ///   the system is not in the state the operation requires.</description></item>
+    ///   <item><term><see cref="ErrorType.Unexpected"/></term><description><see cref="StatusCode.Internal"/></description></item>
+    ///   <item><term><see cref="ErrorType.Unavailable"/></term><description><see cref="StatusCode.Unavailable"/>: a
+    ///   dependency is down or throttling; the client may retry later.</description></item>
+    ///   <item><term><see cref="ErrorType.Timeout"/></term><description><see cref="StatusCode.DeadlineExceeded"/>: the
+    ///   operation did not complete in time.</description></item>
+    ///   <item><term>Anything else, <see cref="ErrorType.None"/> included</term><description><see cref="StatusCode.Unknown"/>,
+    ///   gRPC's status for an error no other code describes.</description></item>
+    /// </list>
     /// </returns>
     public static StatusCode Resolve(ErrorType type) => type switch
     {
@@ -54,6 +52,8 @@ public static class GrpcStatusCodeMap
         ErrorType.Conflict => StatusCode.Aborted,
         ErrorType.BusinessRule => StatusCode.FailedPrecondition,
         ErrorType.Unexpected => StatusCode.Internal,
+        ErrorType.Unavailable => StatusCode.Unavailable,
+        ErrorType.Timeout => StatusCode.DeadlineExceeded,
         _ => StatusCode.Unknown,
     };
 }

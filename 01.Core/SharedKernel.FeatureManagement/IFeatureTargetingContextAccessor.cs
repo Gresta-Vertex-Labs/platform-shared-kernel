@@ -6,13 +6,18 @@ namespace SharedKernel.FeatureManagement;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Implement this once per service over its own identity source (for example <c>IUserContext</c> and
-/// <c>ITenantProvider</c> from <c>SharedKernel.Security.Abstractions</c>) and register it; any lifetime works,
-/// because it is resolved from the scope that creates the <c>IFeatureClient</c>. It is read once per scope.
+/// Implement this once per service over its own authenticated identity — for example <c>IUserContext</c> and
+/// <c>ITenantProvider</c> from <c>SharedKernel.Security.Abstractions</c>, or <c>IRequestContext</c> from
+/// <c>SharedKernel.Application.Abstractions</c>, which this package cannot reference — and register it; any lifetime
+/// works, because it is resolved from the scope that creates the <c>IFeatureClient</c>. It is read once per scope.
+/// Return <see langword="null"/> for an anonymous caller.
 /// </para>
 /// <para>
-/// Without a registration, the tenant is read from the <c>TenantId</c> <see cref="System.Diagnostics.Activity"/>
-/// baggage item (<c>WellKnownBaggageKeys.TenantId</c>) and there is no user.
+/// <b>Without a registration there is no targeting identity</b>: every caller is anonymous to user, group and tenant
+/// targeting and shares one percentage bucket. Nothing is read from <see cref="System.Diagnostics.Activity"/>
+/// baggage: a caller can send baggage itself, and a tenant taken from it would let anyone choose another tenant's
+/// flags (P-562 X2). Work without a request, such as a background job, passes its caller to the call instead, for
+/// example <c>FeatureTargetingContext.ForTenant(tenantId).ToEvaluationContext()</c>.
 /// </para>
 /// </remarks>
 public interface IFeatureTargetingContextAccessor

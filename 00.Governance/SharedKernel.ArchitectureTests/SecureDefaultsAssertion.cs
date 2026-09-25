@@ -662,8 +662,8 @@ public static class SecureDefaultsAssertion
     /// <paramref name="expectedExceptionType"/>.
     /// </summary>
     /// <param name="declaringType">
-    /// The type declaring the method to inspect (e.g. the real, shipped
-    /// <c>AddSharedKernelCors</c>-owning type).
+    /// The type declaring the method to inspect (e.g. the type whose registration method guards a
+    /// dangerous configuration by throwing).
     /// </param>
     /// <param name="methodName">
     /// The name of the method to inspect. Must resolve to exactly one method on

@@ -50,7 +50,7 @@ dotnet add package SharedKernel.Security.ApiKey
 | --- | --- |
 | [`SharedKernel.Security.Oidc`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/12.Security/SharedKernel.Security.Oidc) | JWT bearer tokens from an OpenID Connect provider, accepted on the same endpoints as API keys |
 | [`SharedKernel.Security.Mtls`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/12.Security/SharedKernel.Security.Mtls) | Client certificate authentication for partners that must use mutual TLS |
-| [`SharedKernel.Presentation.WebApi`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/14.Presentation/SharedKernel.Presentation.WebApi) | `[RequireRole]` and `[RequirePermission]` checks against `IUserContext`, with ProblemDetails responses |
+| [`SharedKernel.Presentation.WebApi`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/14.Presentation/SharedKernel.Presentation.WebApi) | `[RequireRole]` and `[RequireEndpointPermission]` checks against `IUserContext`, with ProblemDetails responses |
 | [`SharedKernel.MultiTenancy`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/13.ServiceDefaults/SharedKernel.MultiTenancy) | Tenant resolution that reads the tenant of an API key caller through the registered mapper |
 
 ## Quick start
@@ -463,25 +463,27 @@ app.MapGet("/orders", async (IUserContext caller, ITenantProvider tenant, AppDbC
     .RequireAuthorization();
 ```
 
-Or declare the requirement on the route with `SharedKernel.Presentation.WebApi`, which answers with a ProblemDetails
-`403`:
+Or declare the requirement on the route with `SharedKernel.Presentation.WebApi`, which answers 401
+`unauthorized.default` without a valid credential and 403 `forbidden.insufficient_permission` without the permission,
+both as problem responses:
 
 ```csharp
-using SharedKernel.Presentation.WebApi.Authorization;
+using SharedKernel.Presentation.WebApi;
 
-builder.Services.AddSharedKernelAuthorizationFilters();
+builder.AddSharedKernelWebApi();
+// ...after builder.Build(): app.UseSharedKernelWebApi() before mapping, instead of UseAuthentication/UseAuthorization
 
-RouteGroupBuilder orders = app.MapGroup("/orders")
-    .RequireAuthorization()                                        // 401 without a valid credential
-    .AddEndpointFilter<AuthorizationRequirementEndpointFilter>();  // evaluates the requirements below
+RouteGroupBuilder orders = app.MapGroup("/orders");
 
-orders.MapGet("/", ListOrders).RequirePermission("orders:read");     // ListOrders, CreateOrder: your handlers
-orders.MapPost("/", CreateOrder).RequirePermission("orders:write");
+orders.MapGet("/", ListOrders).RequireEndpointPermission("orders:read");     // ListOrders, CreateOrder: your handlers
+orders.MapPost("/", CreateOrder).RequireEndpointPermission("orders:write");
 ```
 
 Permissions and roles compare ordinally: `Orders:Read` does not grant `orders:read`. An API key caller has no
-authentication methods and no authentication time, so `[RequireFreshAuthentication]` and
-`[RequireAuthenticationMethod]` never pass for it.
+authentication time and, unless a claims transformation of yours adds an `amr` claim, no authentication methods. So
+`[RequireFreshAuthentication]` never passes for it, and `[RequireAuthenticationMethod]` passes only for a method such a
+transformation added; with `MaxAgeSeconds`, only while that method also carries a recent `amr_time`. A refusal is a
+401 step-up challenge that a key client cannot answer.
 
 ### 6. Accept bearer tokens and API keys on the same endpoints
 
@@ -855,7 +857,8 @@ characters). `GeneratedApiKey.ToString()` returns only the key id.
 
 Surrounding whitespace is trimmed before validation. A failure's message is never sent to the client: the
 challenge is a bare `401` from the `ApiKey` scheme, or the previous default scheme's challenge when the request has
-no key.
+no key. With `SharedKernel.Presentation.WebApi`, that 401 gets the problem body `unauthorized.default`, still without
+the reason.
 
 ### Caller identity
 
@@ -871,7 +874,7 @@ no key.
 | `Permissions` | `Permissions` (`scope` claims) |
 | `FindClaim("api_key_id")` | `KeyId`, when the validator set one (always for managed keys) |
 | `Name`, `Email`, `SessionId`, `AuthTime` | `null` |
-| `AuthenticationMethods` | empty |
+| `AuthenticationMethods` | empty, unless a claims transformation adds `amr` claims (dated by `amr_time`) |
 
 The `ClaimsIdentity` uses `sub` as its name claim and `roles` as its role claim, so `User.IsInRole` and
 `RequireRole` policies work.

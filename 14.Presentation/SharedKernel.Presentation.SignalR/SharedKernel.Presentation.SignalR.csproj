@@ -1,28 +1,40 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <Description>Real-time SignalR conventions for SharedKernel microservices: tenant-context hub filter (TenantContextHubFilter), exception-to-HubException mapping filter (HubExceptionMappingFilter), per-connection hub-method invocation rate limiting and argument-payload validation (HubInvocationRateLimitFilter, HubInvocationRateLimitOptions), tenant-scoped group naming convention (HubGroupNaming), global filter registration with conservative resource-exhaustion HubOptions defaults (AddSharedKernelSignalR), a startup-time diagnostic flagging hubs mapped without a CORS policy, and an opt-in Redis-backed scale-out backplane (WithRedisBackplane) isolated from 02.Caching.Redis.Core.</Description>
-    <PackageTags>shared-kernel;signalr;realtime;hub-filter;rate-limiting;redis;multi-tenant;aspnetcore</PackageTags>
+    <Description>SignalR for SharedKernel services, on the SharedKernel.Presentation.WebApi error contract: one call to set up (AddSharedKernelSignalR, bound from SharedKernel:Presentation:SignalR and validated at startup). Hub errors become HubException messages "{code}: {message}", localized and with server errors redacted outside Development exactly like HTTP problem responses; clients receive them behind SignalR's own sentence ("An unexpected error occurred invoking '…' on the server. HubException: {code}: {message}") and read the code with HubErrorMessage.TryParse. Hub methods may return Result or Result&lt;T&gt; (a failure becomes that HubException, a success returns the value; a stream inside a Result is refused, since SignalR streams only methods declared as IAsyncEnumerable&lt;T&gt; or ChannelReader&lt;T&gt;). The WebApi permission, role, fresh-authentication and authentication-method requirements work on hubs, hub methods and MapHub endpoints; a per-connection invocation rate limit runs on one partitioned token-bucket limiter; HubCallerContext gains GetTenantId and GetCorrelationId; HubGroupNaming names tenant groups. No third-party dependencies.</Description>
+    <PackageTags>shared-kernel;signalr;realtime;aspnetcore;hub-filter;hubexception;result;authorization;rate-limiting;multi-tenant;correlation-id</PackageTags>
+    <!--
+      Set per-project, not inherited: the SDK assigns GenerateDocumentationFile=false before
+      Directory.Build.targets' '== empty'-guarded default is evaluated. CS1591 below makes an
+      undocumented public member a build error.
+    -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Public API tracking: an addition, removal or signature change fails the build until PublicAPI.*.txt is updated. -->
+    <WarningsAsErrors>$(WarningsAsErrors);nullable;CS1591;RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
   <ItemGroup>
     <!--
-      Layering: 14.Presentation may reference 01.Core, 04.Contracts, 12.Security, and
-      13.ServiceDefaults only. SharedKernel.Contracts is not needed by this package — hub filters
-      operate on Error/SharedKernelException (01.Core) and ITenantProvider (12.Security), never on
-      wire DTOs.
+      Layering: 14.Presentation may reference 01.Core, 04.Contracts and 12.Security. SignalR builds on the WebApi
+      core (P-562, D0): it presents errors through ErrorPresentation, authorizes through AddSharedKernelAuthorization
+      and reads the correlation id the core's middleware resolves. The other references are the packages whose types
+      this one uses directly: Error, Result and the EventId registry (Primitives), SharedKernelException (Core),
+      ISectionBoundOptions and AddValidatedOptions (Configuration), ITenantProvider (Security.Abstractions).
     -->
+    <ProjectReference Include="..\SharedKernel.Presentation.WebApi\SharedKernel.Presentation.WebApi.csproj" />
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
     <ProjectReference Include="..\..\01.Core\SharedKernel.Core\SharedKernel.Core.csproj" />
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Configuration\SharedKernel.Configuration.csproj" />
     <ProjectReference Include="..\..\12.Security\SharedKernel.Security.Abstractions\SharedKernel.Security.Abstractions.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <!--
-      Redis-backed SignalR scale-out backplane, isolated behind WithRedisBackplane — must never
-      share an IConnectionMultiplexer with 02.Caching.Redis.Core. See 14.Presentation/CLAUDE.md.
-    -->
-    <PackageReference Include="Microsoft.AspNetCore.SignalR.StackExchangeRedis" />
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="SharedKernel.Presentation.SignalR.Tests" />
   </ItemGroup>
 </Project>

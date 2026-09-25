@@ -17,8 +17,15 @@ public static class ErrorExceptionExtensions
     ///   <item><term><see cref="ErrorType.Conflict"/></term><description><see cref="ConflictException"/></description></item>
     ///   <item><term><see cref="ErrorType.Unauthorized"/></term><description><see cref="UnauthorizedException"/></description></item>
     ///   <item><term><see cref="ErrorType.Forbidden"/></term><description><see cref="ForbiddenException"/></description></item>
-    ///   <item><term><see cref="ErrorType.BusinessRule"/>, <see cref="ErrorType.Unexpected"/>, and any future type</term><description><see cref="DomainException"/></description></item>
+    ///   <item><term><see cref="ErrorType.BusinessRule"/>, <see cref="ErrorType.Unexpected"/>, <see cref="ErrorType.Unavailable"/>, <see cref="ErrorType.Timeout"/>, and any future type</term><description><see cref="DomainException"/></description></item>
     /// </list>
+    /// <para>
+    /// No dedicated exception exists for <see cref="ErrorType.Unavailable"/> or
+    /// <see cref="ErrorType.Timeout"/>. The <see cref="DomainException"/> carries the error
+    /// unchanged, and a presentation layer maps an exception by its
+    /// <see cref="SharedKernelException.Error"/>'s type rather than by its class, so the HTTP status
+    /// stays 503 or 504.
+    /// </para>
     /// </remarks>
     /// <param name="error">The error to wrap.</param>
     /// <returns>A new exception carrying <paramref name="error"/>. The method creates it; it does not throw it.</returns>

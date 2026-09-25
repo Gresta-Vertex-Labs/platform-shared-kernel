@@ -27,12 +27,13 @@ namespace SharedKernel.ArchitectureTests;
 /// </para>
 /// <para>
 /// <strong>The registry is currently empty.</strong> Its one-time entry for
-/// <c>SharedKernel.Application.DomainEvents.MediatRDomainEventDispatcher</c>'s former
+/// <c>SharedKernel.Application.MediatRDomainEventDispatcher</c>'s former
 /// <c>PublishSingle</c> method (WO-039/P-240) was retired at P-544: 05.Application's redesign
-/// rewrote the dispatcher's runtime-type-dispatch technique from a cached
-/// <c>MethodInfo.MakeGenericMethod</c> delegate to <see cref="Type.MakeGenericType"/> +
-/// <see cref="Activator.CreateInstance(Type, object?[])"/> (see <c>DispatchAsync</c>/
-/// <c>BuildNotification</c> in the current source) — a technique <see cref="Predicates.NoMakeGenericMethodReflectionPredicate"/>
+/// rewrote the dispatcher's runtime-type-dispatch technique away from a cached
+/// <c>MethodInfo.MakeGenericMethod</c> delegate. The current source (<c>BuildNotification</c>/
+/// <c>CompileFactory</c>) builds <c>DomainEventNotification&lt;TEvent&gt;</c> with
+/// <see cref="Type.MakeGenericType"/> and a compiled expression tree calling its constructor, cached
+/// per concrete event type — no <see cref="Activator"/> call — a technique <see cref="Predicates.NoMakeGenericMethodReflectionPredicate"/>
 /// does not match at all (it looks only for a call named exactly <c>"MakeGenericMethod"</c>), so
 /// no exemption is needed for the current implementation. The "Closure-free static-lambda naming"
 /// note below is kept as a reusable implementation note for the NEXT exemption request, not
@@ -46,7 +47,7 @@ namespace SharedKernel.ArchitectureTests;
 /// singleton "display class" nested type — conventionally named <c>&lt;&gt;c</c> — nested
 /// inside the declaring type. Mono.Cecil's <c>TypeDefinition.FullName</c> reports the nesting
 /// separator as <c>/</c> (not <c>.</c>), e.g.
-/// <c>SharedKernel.Application.DomainEvents.MediatRDomainEventDispatcher/&lt;&gt;c</c>. The
+/// <c>SharedKernel.Application.MediatRDomainEventDispatcher/&lt;&gt;c</c>. The
 /// synthesized method itself is named <c>&lt;{EnclosingMethodName}&gt;b__{classToken}_{ordinal}</c>
 /// — the ordinal is assigned by the compiler and is NOT derivable from source alone; it must be
 /// read from the actual compiled IL (e.g. via a throwaway Mono.Cecil scan, or by reading the
@@ -113,7 +114,7 @@ public static class ReflectionExemptionRegistry
     private static readonly HashSet<(string TypeFullName, string MethodName)> AllowList = new()
     {
         // No entries currently registered. The former WO-039/P-240 entry for
-        // SharedKernel.Application.DomainEvents.MediatRDomainEventDispatcher's PublishSingle
+        // SharedKernel.Application.MediatRDomainEventDispatcher's PublishSingle
         // method was retired at P-544 — the dispatcher no longer calls MakeGenericMethod at all
         // (see this file's class-level remarks). Add a new entry here, with the full governance
         // rationale documented per the "How to request an exception" steps above, the next time a

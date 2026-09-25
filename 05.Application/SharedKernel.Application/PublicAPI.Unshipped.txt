@@ -1,54 +1,94 @@
 #nullable enable
-SharedKernel.Application.Context.AnonymousRequestContext (forwarded, contained in SharedKernel.Application.Abstractions)
-SharedKernel.Application.Context.AnonymousRequestContext.ActorKind.get -> SharedKernel.Application.Context.ActorKind (forwarded, contained in SharedKernel.Application.Abstractions)
-SharedKernel.Application.Context.AnonymousRequestContext.HasPermissionAsync(string! permission, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<bool> (forwarded, contained in SharedKernel.Application.Abstractions)
-SharedKernel.Application.Context.AnonymousRequestContext.IsAuthenticated.get -> bool (forwarded, contained in SharedKernel.Application.Abstractions)
-SharedKernel.Application.Context.AnonymousRequestContext.TenantId.get -> System.Guid? (forwarded, contained in SharedKernel.Application.Abstractions)
-SharedKernel.Application.Context.AnonymousRequestContext.UserId.get -> string? (forwarded, contained in SharedKernel.Application.Abstractions)
-SharedKernel.Application.Context.IRequestContext (forwarded, contained in SharedKernel.Application.Abstractions)
-SharedKernel.Application.Context.IRequestContext.ActorKind.get -> SharedKernel.Application.Context.ActorKind (forwarded, contained in SharedKernel.Application.Abstractions)
-SharedKernel.Application.Context.IRequestContext.ClientId.get -> string? (forwarded, contained in SharedKernel.Application.Abstractions)
-SharedKernel.Application.Context.IRequestContext.HasPermissionAsync(string! permission, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<bool> (forwarded, contained in SharedKernel.Application.Abstractions)
-SharedKernel.Application.Context.IRequestContext.ImpersonatorId.get -> string? (forwarded, contained in SharedKernel.Application.Abstractions)
-SharedKernel.Application.Context.IRequestContext.IsAuthenticated.get -> bool (forwarded, contained in SharedKernel.Application.Abstractions)
-SharedKernel.Application.Context.IRequestContext.SessionId.get -> string? (forwarded, contained in SharedKernel.Application.Abstractions)
-SharedKernel.Application.Context.IRequestContext.TenantId.get -> System.Guid? (forwarded, contained in SharedKernel.Application.Abstractions)
-SharedKernel.Application.Context.IRequestContext.UserId.get -> string? (forwarded, contained in SharedKernel.Application.Abstractions)
-SharedKernel.Application.Context.SystemRequestContext (forwarded, contained in SharedKernel.Application.Abstractions)
-SharedKernel.Application.Context.SystemRequestContext.ActorKind.get -> SharedKernel.Application.Context.ActorKind (forwarded, contained in SharedKernel.Application.Abstractions)
-SharedKernel.Application.Context.SystemRequestContext.HasPermissionAsync(string! permission, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<bool> (forwarded, contained in SharedKernel.Application.Abstractions)
-SharedKernel.Application.Context.SystemRequestContext.IsAuthenticated.get -> bool (forwarded, contained in SharedKernel.Application.Abstractions)
-SharedKernel.Application.Context.SystemRequestContext.SystemRequestContext(System.Collections.Generic.IEnumerable<string!>! permissions, string! identity = "system", System.Guid? tenantId = null) -> void (forwarded, contained in SharedKernel.Application.Abstractions)
-SharedKernel.Application.Context.SystemRequestContext.TenantId.get -> System.Guid? (forwarded, contained in SharedKernel.Application.Abstractions)
-SharedKernel.Application.Context.SystemRequestContext.UserId.get -> string? (forwarded, contained in SharedKernel.Application.Abstractions)
-SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>
-SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>.<Clone>$() -> SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>!
-SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>.Deconstruct(out TDomainEvent DomainEvent) -> void
-SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>.DomainEvent.get -> TDomainEvent
-SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>.DomainEvent.init -> void
-SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>.DomainEventNotification(TDomainEvent DomainEvent) -> void
-SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>.Equals(SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>? other) -> bool
-SharedKernel.Application.DomainEvents.IDomainEventHandler<TDomainEvent>
-SharedKernel.Application.DomainEvents.IDomainEventHandler<TDomainEvent>.Handle(TDomainEvent domainEvent, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
-SharedKernel.Application.DomainEvents.MediatRDomainEventDispatcher
-SharedKernel.Application.DomainEvents.MediatRDomainEventDispatcher.DispatchAsync(System.Collections.Generic.IReadOnlyList<SharedKernel.Domain.Events.IDomainEvent!>! events, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
-SharedKernel.Application.DomainEvents.MediatRDomainEventDispatcher.MediatRDomainEventDispatcher(MediatR.IPublisher! publisher) -> void
-SharedKernel.Application.Extensions.ApplicationServiceCollectionExtensions
-SharedKernel.Application.Messaging.ICommand
-SharedKernel.Application.Messaging.ICommand<TResponse>
-SharedKernel.Application.Messaging.ICommandBase
-SharedKernel.Application.Messaging.ICommandHandler<TCommand, TResponse>
-SharedKernel.Application.Messaging.ICommandHandler<TCommand>
-SharedKernel.Application.Messaging.IQuery<TResponse>
-SharedKernel.Application.Messaging.IQueryBase
-SharedKernel.Application.Messaging.IQueryHandler<TQuery, TResponse>
-SharedKernel.Application.Streaming.IStreamQuery<TResponse>
-SharedKernel.Application.Streaming.IStreamQueryHandler<TQuery, TResponse>
-override SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>.Equals(object? obj) -> bool
-override SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>.GetHashCode() -> int
-override SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>.ToString() -> string!
-static SharedKernel.Application.Context.AnonymousRequestContext.Instance.get -> SharedKernel.Application.Context.AnonymousRequestContext! (forwarded, contained in SharedKernel.Application.Abstractions)
-static SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>.operator !=(SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>? left, SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>? right) -> bool
-static SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>.operator ==(SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>? left, SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>? right) -> bool
-static SharedKernel.Application.Extensions.ApplicationServiceCollectionExtensions.AddDomainEventHandler<TDomainEvent, THandler>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
-static SharedKernel.Application.Extensions.ApplicationServiceCollectionExtensions.AddSharedKernelApplication(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+SharedKernel.Application.ApplicationLoggingOptions
+SharedKernel.Application.ApplicationLoggingOptions.ApplicationLoggingOptions() -> void
+SharedKernel.Application.ApplicationLoggingOptions.SlowRequestThreshold.get -> System.TimeSpan
+SharedKernel.Application.ApplicationLoggingOptions.SlowRequestThreshold.set -> void
+SharedKernel.Application.ApplicationPipelineBuilder
+SharedKernel.Application.ApplicationPipelineBuilder.Services.get -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+SharedKernel.Application.ApplicationPipelineBuilder.WithAuditing() -> SharedKernel.Application.ApplicationPipelineBuilder!
+SharedKernel.Application.ApplicationPipelineBuilder.WithBehavior(System.Type! openGenericBehaviorType, SharedKernel.Application.PipelineStage stage, params System.Type![]! requiredServices) -> SharedKernel.Application.ApplicationPipelineBuilder!
+SharedKernel.Application.ApplicationPipelineBuilder.WithIdempotency() -> SharedKernel.Application.ApplicationPipelineBuilder!
+SharedKernel.Application.ApplicationPipelineBuilder.WithTransactions() -> SharedKernel.Application.ApplicationPipelineBuilder!
+SharedKernel.Application.ApplicationServiceCollectionExtensions
+SharedKernel.Application.DomainEventNotification<TDomainEvent>
+SharedKernel.Application.DomainEventNotification<TDomainEvent>.<Clone>$() -> SharedKernel.Application.DomainEventNotification<TDomainEvent>!
+SharedKernel.Application.DomainEventNotification<TDomainEvent>.Deconstruct(out TDomainEvent DomainEvent) -> void
+SharedKernel.Application.DomainEventNotification<TDomainEvent>.DomainEvent.get -> TDomainEvent
+SharedKernel.Application.DomainEventNotification<TDomainEvent>.DomainEvent.init -> void
+SharedKernel.Application.DomainEventNotification<TDomainEvent>.DomainEventNotification(TDomainEvent DomainEvent) -> void
+SharedKernel.Application.DomainEventNotification<TDomainEvent>.Equals(SharedKernel.Application.DomainEventNotification<TDomainEvent>? other) -> bool
+SharedKernel.Application.IAuditableRequest<TResponse>
+SharedKernel.Application.IAuditableRequest<TResponse>.Action.get -> string!
+SharedKernel.Application.IAuditableRequest<TResponse>.BeforeSnapshot.get -> string?
+SharedKernel.Application.IAuditableRequest<TResponse>.GetAfterSnapshot(TResponse response) -> string?
+SharedKernel.Application.IAuditableRequest<TResponse>.ResourceId.get -> string!
+SharedKernel.Application.IAuditableRequest<TResponse>.ResourceType.get -> string!
+SharedKernel.Application.ICommand
+SharedKernel.Application.ICommand<TResponse>
+SharedKernel.Application.ICommandBase
+SharedKernel.Application.ICommandHandler<TCommand, TResponse>
+SharedKernel.Application.ICommandHandler<TCommand>
+SharedKernel.Application.ICommandScope
+SharedKernel.Application.ICommandScope.IsActive.get -> bool
+SharedKernel.Application.ICommandScope.IsNested.get -> bool
+SharedKernel.Application.ICommandScope.OnCompleted(System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task!>! callback) -> void
+SharedKernel.Application.IDomainEventHandler<TDomainEvent>
+SharedKernel.Application.IDomainEventHandler<TDomainEvent>.Handle(TDomainEvent domainEvent, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
+SharedKernel.Application.IIdempotentRequest
+SharedKernel.Application.IIdempotentRequest.Fingerprint.get -> string?
+SharedKernel.Application.IIdempotentRequest.IdempotencyKey.get -> string!
+SharedKernel.Application.ILoggableRequest<TResponse>
+SharedKernel.Application.ILoggableRequest<TResponse>.GetLoggableResponseFields(TResponse response) -> System.Collections.Generic.IReadOnlyDictionary<string!, object?>?
+SharedKernel.Application.ILoggableRequest<TResponse>.LoggableRequestFields.get -> System.Collections.Generic.IReadOnlyDictionary<string!, object?>!
+SharedKernel.Application.IQuery<TResponse>
+SharedKernel.Application.IQueryBase
+SharedKernel.Application.IQueryHandler<TQuery, TResponse>
+SharedKernel.Application.IStreamQuery<TResponse>
+SharedKernel.Application.IStreamQueryHandler<TQuery, TResponse>
+SharedKernel.Application.Idempotency.IRequestIdempotencyStore
+SharedKernel.Application.Idempotency.IRequestIdempotencyStore.CompleteAsync(string! key, string! reservationToken, string! serializedResponse, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<bool>!
+SharedKernel.Application.Idempotency.IRequestIdempotencyStore.ReleaseAsync(string! key, string! reservationToken, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<bool>!
+SharedKernel.Application.Idempotency.IRequestIdempotencyStore.TryBeginAsync(string! key, string! requestFingerprint, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<SharedKernel.Application.Idempotency.IdempotencyBeginResult>!
+SharedKernel.Application.Idempotency.IdempotencyBeginResult
+SharedKernel.Application.Idempotency.IdempotencyBeginResult.Deconstruct(out SharedKernel.Application.Idempotency.IdempotencyBeginStatus Status, out string? StoredResponse, out string? ReservationToken) -> void
+SharedKernel.Application.Idempotency.IdempotencyBeginResult.Equals(SharedKernel.Application.Idempotency.IdempotencyBeginResult other) -> bool
+SharedKernel.Application.Idempotency.IdempotencyBeginResult.IdempotencyBeginResult() -> void
+SharedKernel.Application.Idempotency.IdempotencyBeginResult.IdempotencyBeginResult(SharedKernel.Application.Idempotency.IdempotencyBeginStatus Status, string? StoredResponse, string? ReservationToken) -> void
+SharedKernel.Application.Idempotency.IdempotencyBeginResult.ReservationToken.get -> string?
+SharedKernel.Application.Idempotency.IdempotencyBeginResult.ReservationToken.init -> void
+SharedKernel.Application.Idempotency.IdempotencyBeginResult.Status.get -> SharedKernel.Application.Idempotency.IdempotencyBeginStatus
+SharedKernel.Application.Idempotency.IdempotencyBeginResult.Status.init -> void
+SharedKernel.Application.Idempotency.IdempotencyBeginResult.StoredResponse.get -> string?
+SharedKernel.Application.Idempotency.IdempotencyBeginResult.StoredResponse.init -> void
+SharedKernel.Application.Idempotency.IdempotencyBeginStatus
+SharedKernel.Application.Idempotency.IdempotencyBeginStatus.Completed = 2 -> SharedKernel.Application.Idempotency.IdempotencyBeginStatus
+SharedKernel.Application.Idempotency.IdempotencyBeginStatus.FingerprintMismatch = 3 -> SharedKernel.Application.Idempotency.IdempotencyBeginStatus
+SharedKernel.Application.Idempotency.IdempotencyBeginStatus.InProgress = 1 -> SharedKernel.Application.Idempotency.IdempotencyBeginStatus
+SharedKernel.Application.Idempotency.IdempotencyBeginStatus.Started = 0 -> SharedKernel.Application.Idempotency.IdempotencyBeginStatus
+SharedKernel.Application.PipelineStage
+SharedKernel.Application.PipelineStage.Authorization = 1 -> SharedKernel.Application.PipelineStage
+SharedKernel.Application.PipelineStage.Command = 4 -> SharedKernel.Application.PipelineStage
+SharedKernel.Application.PipelineStage.Observability = 0 -> SharedKernel.Application.PipelineStage
+SharedKernel.Application.PipelineStage.Query = 3 -> SharedKernel.Application.PipelineStage
+SharedKernel.Application.PipelineStage.Validation = 2 -> SharedKernel.Application.PipelineStage
+SharedKernel.Application.RequirePermissionAttribute
+SharedKernel.Application.RequirePermissionAttribute.Permissions.get -> System.Collections.Generic.IReadOnlyList<string!>!
+SharedKernel.Application.RequirePermissionAttribute.RequirePermissionAttribute(params string![]! permissions) -> void
+override SharedKernel.Application.DomainEventNotification<TDomainEvent>.Equals(object? obj) -> bool
+override SharedKernel.Application.DomainEventNotification<TDomainEvent>.GetHashCode() -> int
+override SharedKernel.Application.DomainEventNotification<TDomainEvent>.ToString() -> string!
+override SharedKernel.Application.Idempotency.IdempotencyBeginResult.GetHashCode() -> int
+static SharedKernel.Application.ApplicationServiceCollectionExtensions.AddDomainEventHandler<TDomainEvent, THandler>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SharedKernel.Application.ApplicationServiceCollectionExtensions.AddSharedKernelApplication(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Reflection.Assembly! assembly, System.Action<SharedKernel.Application.ApplicationPipelineBuilder!>! configure) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SharedKernel.Application.ApplicationServiceCollectionExtensions.AddSharedKernelApplication(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Reflection.Assembly![]! assemblies, System.Action<SharedKernel.Application.ApplicationPipelineBuilder!>! configure) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SharedKernel.Application.ApplicationServiceCollectionExtensions.AddSharedKernelApplication(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, params System.Reflection.Assembly![]! assemblies) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SharedKernel.Application.DomainEventNotification<TDomainEvent>.operator !=(SharedKernel.Application.DomainEventNotification<TDomainEvent>? left, SharedKernel.Application.DomainEventNotification<TDomainEvent>? right) -> bool
+static SharedKernel.Application.DomainEventNotification<TDomainEvent>.operator ==(SharedKernel.Application.DomainEventNotification<TDomainEvent>? left, SharedKernel.Application.DomainEventNotification<TDomainEvent>? right) -> bool
+static SharedKernel.Application.Idempotency.IdempotencyBeginResult.Completed(string! storedResponse) -> SharedKernel.Application.Idempotency.IdempotencyBeginResult
+static SharedKernel.Application.Idempotency.IdempotencyBeginResult.FingerprintMismatch() -> SharedKernel.Application.Idempotency.IdempotencyBeginResult
+static SharedKernel.Application.Idempotency.IdempotencyBeginResult.InProgress() -> SharedKernel.Application.Idempotency.IdempotencyBeginResult
+static SharedKernel.Application.Idempotency.IdempotencyBeginResult.Started(string! reservationToken) -> SharedKernel.Application.Idempotency.IdempotencyBeginResult
+static SharedKernel.Application.Idempotency.IdempotencyBeginResult.operator !=(SharedKernel.Application.Idempotency.IdempotencyBeginResult left, SharedKernel.Application.Idempotency.IdempotencyBeginResult right) -> bool
+static SharedKernel.Application.Idempotency.IdempotencyBeginResult.operator ==(SharedKernel.Application.Idempotency.IdempotencyBeginResult left, SharedKernel.Application.Idempotency.IdempotencyBeginResult right) -> bool
+~override SharedKernel.Application.Idempotency.IdempotencyBeginResult.Equals(object obj) -> bool
+~override SharedKernel.Application.Idempotency.IdempotencyBeginResult.ToString() -> string

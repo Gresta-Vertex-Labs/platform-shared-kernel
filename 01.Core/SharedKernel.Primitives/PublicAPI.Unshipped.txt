@@ -1,1 +1,15 @@
 #nullable enable
+const SharedKernel.Primitives.Errors.ErrorCodes.Timeout.Default = "timeout.default" -> string!
+const SharedKernel.Primitives.Errors.ErrorCodes.Unavailable.Default = "unavailable.default" -> string!
+const SharedKernel.Primitives.Propagation.WellKnownHeaders.IdempotencyKey = "Idempotency-Key" -> string!
+SharedKernel.Primitives.Errors.ErrorCodes.Timeout
+SharedKernel.Primitives.Errors.ErrorCodes.Unavailable
+SharedKernel.Primitives.Errors.ErrorType.Timeout = 9 -> SharedKernel.Primitives.Errors.ErrorType
+SharedKernel.Primitives.Errors.ErrorType.Unavailable = 8 -> SharedKernel.Primitives.Errors.ErrorType
+static SharedKernel.Primitives.Errors.Error.Timeout(string! code, string! message) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Primitives.Errors.Error.Unavailable(string! code, string! message) -> SharedKernel.Primitives.Errors.Error!
+const SharedKernel.Primitives.Errors.ErrorCodes.Idempotency.InProgress = "idempotency.in_progress" -> string!
+const SharedKernel.Primitives.Errors.ErrorCodes.Idempotency.KeyInvalid = "idempotency.key_invalid" -> string!
+const SharedKernel.Primitives.Errors.ErrorCodes.Idempotency.KeyRequired = "idempotency.key_required" -> string!
+const SharedKernel.Primitives.Errors.ErrorCodes.Idempotency.KeyReused = "idempotency.key_reused" -> string!
+SharedKernel.Primitives.Errors.ErrorCodes.Idempotency

@@ -1,106 +1,47 @@
-using SharedKernel.Messaging.Abstractions.EventPublisher;
-using SharedKernel.Messaging.Abstractions.MessageBus;
-using SharedKernel.Messaging.Abstractions.Scheduling;
-using SharedKernel.Presentation.WebApi.Results;
-using SharedKernel.Primitives.Results;
+using MediatR;
+using SharedKernel.Presentation.WebApi;
+using ShippingApi.Features.Shipments;
 
 namespace ShippingApi;
 
-/// <summary>The queue names this service routes commands to.</summary>
-/// <remarks>
-/// Named constants because a queue name is a wire contract: the sender and the receiving endpoint
-/// must agree byte for byte, and a typo produces a queue nobody reads rather than an error.
-/// </remarks>
-public static class Queues
-{
-    /// <summary>The endpoint <see cref="HoldShipment"/> is sent to.</summary>
-    public const string Hold = "shipping-api-hold-shipment";
-}
-
 /// <summary>The HTTP surface of the sample.</summary>
-public static class ShipmentEndpoints
+/// <remarks>
+/// Each endpoint sends a command or query (<c>Features/Shipments</c>) and maps the <c>Result</c> with one call:
+/// <c>ToAccepted(location)</c>, <c>ToOk()</c>, or <c>ToHttpResult(…)</c> when the 202 carries a body. Every messaging verb
+/// returns a <c>Result</c> — an unreachable broker is <c>messaging.unavailable</c>, not an exception — so success is 202
+/// Accepted with a <c>Location</c> to watch and failure an RFC 9457 problem (503 for the outage). No endpoint branches on
+/// <c>IsSuccess</c>.
+/// </remarks>
+public sealed class ShipmentEndpoints : IEndpointModule
 {
-    /// <summary>Maps every shipment endpoint.</summary>
+    /// <summary>Maps every shipment endpoint; called by the generated <c>app.MapEndpoints()</c>.</summary>
     /// <param name="app">The route builder.</param>
-    /// <returns>The same <paramref name="app"/>, for chaining.</returns>
-    public static IEndpointRouteBuilder MapShipmentEndpoints(this IEndpointRouteBuilder app)
+    public static void Map(IEndpointRouteBuilder app)
     {
-        // Publish: broadcast a fact. Every subscriber gets it; nobody is named.
-        app.MapPost("/shipments", async (
-            DispatchRequest request,
-            IEventPublisher publisher,
-            CancellationToken ct) =>
-        {
-            var shipmentId = Guid.CreateVersion7();
+        var shipments = app.MapGroup("/shipments");
 
-            var dispatched = new ShipmentDispatched(
-                EventId: Guid.CreateVersion7(),
-                OccurredOn: DateTimeOffset.UtcNow,
-                ShipmentId: shipmentId,
-                Carrier: request.Carrier,
-                TrackingNumber: request.TrackingNumber);
+        // 202, not 201: the shipment exists once a consumer has recorded it, at the Location returned.
+        shipments.MapPost("/", (DispatchRequest request, ISender sender, CancellationToken ct) =>
+            sender.Send(new DispatchShipment(request.Carrier, request.TrackingNumber), ct)
+                .ToHttpResult(id => TypedResults.Accepted($"/shipments/{id}", new ShipmentAccepted(id))));
 
-            // The tenant and actor are NOT passed here. They are read from IRequestContext by the
-            // propagator and put on the message, which is what lets the consumer rebuild them.
-            Result published = await publisher.PublishAsync(dispatched, ct);
+        // 404 until the consumer has run.
+        shipments.MapGet("/{id:guid}", (Guid id, ISender sender, CancellationToken ct) =>
+            sender.Send(new GetShipment(id), ct).ToOk());
 
-            return published.IsSuccess
-                ? Results.Accepted($"/shipments/{shipmentId}", new { shipmentId })
-                : published.ToProblemDetailsResult();
-        });
+        shipments.MapPost("/{id:guid}/hold", (Guid id, HoldRequest request, ISender sender, CancellationToken ct) =>
+            sender.Send(new PutShipmentOnHold(id, request.Reason), ct).ToAccepted($"/shipments/{id}"));
 
-        // Read the projection a consumer wrote. 404 until the consumer has run — the honest answer
-        // for an asynchronous write, and what makes the round trip observable from outside.
-        app.MapGet("/shipments/{id:guid}", (Guid id, ShipmentProjection projection) =>
-        {
-            ShipmentView? view = projection.Find(id);
-            return view is null ? Results.NotFound() : Results.Ok(view);
-        });
+        shipments.MapPost("/{id:guid}/chase", (Guid id, ChaseRequest request, ISender sender, CancellationToken ct) =>
+            sender.Send(new ScheduleChase(id, request.DelayMilliseconds), ct)
+                .ToHttpResult(token => TypedResults.Accepted($"/shipments/{id}", new ChaseScheduled(token))));
 
-        // Send: address one endpoint. Exactly one consumer holds a shipment, however many replicas run.
-        app.MapPost("/shipments/{id:guid}/hold", async (
-            Guid id,
-            HoldRequest request,
-            IMessageBus bus,
-            CancellationToken ct) =>
-        {
-            Result sent = await bus.SendAsync(new HoldShipment(id, request.Reason), ct);
-            return sent.IsSuccess ? Results.Accepted() : sent.ToProblemDetailsResult();
-        });
+        // Fail on purpose: the fault shows up at the Location once retries are exhausted.
+        shipments.MapPost("/{id:guid}/check", (Guid id, ISender sender, CancellationToken ct) =>
+            sender.Send(new CheckShipment(id), ct).ToAccepted($"/shipments/{id}/fault"));
 
-        // Schedule: the broker holds the message until its time, so it survives this process exiting.
-        app.MapPost("/shipments/{id:guid}/chase", async (
-            Guid id,
-            ChaseRequest request,
-            IMessageScheduler scheduler,
-            CancellationToken ct) =>
-        {
-            Guid token = await scheduler.ScheduleAsync(
-                new ChaseShipment(id),
-                DateTimeOffset.UtcNow.AddMilliseconds(request.DelayMilliseconds),
-                ct);
-
-            return Results.Accepted(value: new { scheduleToken = token });
-        });
-
-        // Fail on purpose: exercises retry, then the fault consumer, against a real broker.
-        app.MapPost("/shipments/{id:guid}/check", async (
-            Guid id,
-            IMessageBus bus,
-            CancellationToken ct) =>
-        {
-            Result published = await bus.PublishAsync(new FailingShipmentCheck(id), ct);
-            return published.IsSuccess ? Results.Accepted() : published.ToProblemDetailsResult();
-        });
-
-        // What the fault consumer observed once retries were exhausted.
-        app.MapGet("/shipments/{id:guid}/fault", (Guid id, FaultLog faults) =>
-        {
-            string? fault = faults.Find(id);
-            return fault is null ? Results.NotFound() : Results.Ok(new { message = fault });
-        });
-
-        return app;
+        shipments.MapGet("/{id:guid}/fault", (Guid id, ISender sender, CancellationToken ct) =>
+            sender.Send(new GetShipmentFault(id), ct).ToOk());
     }
 }
 
@@ -109,6 +50,10 @@ public static class ShipmentEndpoints
 /// <param name="TrackingNumber">The carrier's tracking number.</param>
 public sealed record DispatchRequest(string Carrier, string TrackingNumber);
 
+/// <summary>Body of the 202 answer to <c>POST /shipments</c>.</summary>
+/// <param name="ShipmentId">The shipment, readable at the <c>Location</c> once a consumer has recorded it.</param>
+public sealed record ShipmentAccepted(Guid ShipmentId);
+
 /// <summary>Body of <c>POST /shipments/{id}/hold</c>.</summary>
 /// <param name="Reason">Why the shipment is being held.</param>
 public sealed record HoldRequest(string Reason);
@@ -116,3 +61,7 @@ public sealed record HoldRequest(string Reason);
 /// <summary>Body of <c>POST /shipments/{id}/chase</c>.</summary>
 /// <param name="DelayMilliseconds">How long the broker should hold the reminder.</param>
 public sealed record ChaseRequest(int DelayMilliseconds);
+
+/// <summary>Body of the 202 answer to <c>POST /shipments/{id}/chase</c>.</summary>
+/// <param name="ScheduleToken">The broker's token for the scheduled message.</param>
+public sealed record ChaseScheduled(Guid ScheduleToken);

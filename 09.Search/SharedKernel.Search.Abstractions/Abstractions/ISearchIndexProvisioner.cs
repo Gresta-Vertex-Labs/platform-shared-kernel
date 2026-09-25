@@ -53,4 +53,36 @@ public interface ISearchIndexProvisioner
 
     /// <summary>Probes the readiness of the index named <paramref name="indexName"/>.</summary>
     Task<Result<SearchIndexHealth>> ProbeAsync(string indexName, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Verifies every index registered with this provider against the live engine: that it exists, is
+    /// addressable with this service's credentials, and carries the schema fingerprint of the
+    /// <see cref="SearchIndexDefinition"/> the composition root declared for it.
+    /// </summary>
+    /// <returns>
+    /// A successful <see cref="Result"/> when every registered index matches; otherwise a failed
+    /// <see cref="Result"/> whose <see cref="Primitives.Errors.Error"/> names every index that is
+    /// missing, unreachable, or drifted.
+    /// </returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The deployment check this domain previously only claimed to have.</b> The failure it catches
+    /// is a real and quiet one: code ships declaring a field, a synonym list or a stop-word list that
+    /// the live index was never rebuilt for, so filters silently match nothing and relevance silently
+    /// changes. <see cref="EnsureIndexAsync"/> catches it only if something calls it, and
+    /// <see cref="ProbeAsync"/> catches it only for one index at a time and only if the caller already
+    /// knows the expected fingerprint — this member needs neither, because the provider already holds
+    /// every registered definition.
+    /// </para>
+    /// <para>
+    /// <b>Asynchronous and explicitly invoked, never a hidden startup side effect.</b> It is a real
+    /// network round trip per index, so it is called deliberately — from a startup task, a readiness
+    /// check wired by <c>13.ServiceDefaults</c>, or a deployment smoke test — rather than fired
+    /// implicitly from a DI factory, which would block a thread on I/O at first resolution and could
+    /// land mid-request. It replaces the former <c>MeilisearchOptions.ValidateIndexSettingsOnStart</c>
+    /// flag, which was declared, defaulted to <see langword="true"/>, documented as doing exactly this,
+    /// and read by nothing.
+    /// </para>
+    /// </remarks>
+    Task<Result> VerifyRegisteredIndexesAsync(CancellationToken cancellationToken = default);
 }

@@ -56,7 +56,7 @@ Reference this package from application code. Reference an authentication packag
 | [`SharedKernel.Security.ApiKey`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/12.Security/SharedKernel.Security.ApiKey) | API key clients, as `ServicePrincipal` contexts |
 | [`SharedKernel.Security.Mtls`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/12.Security/SharedKernel.Security.Mtls) | Client certificate clients, as `ServicePrincipal` contexts |
 | [`SharedKernel.Security.Totp`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/12.Security/SharedKernel.Security.Totp) | Session step-up that adds `otp` to `AuthenticationMethods` |
-| [`SharedKernel.Presentation.WebApi`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/14.Presentation/SharedKernel.Presentation.WebApi) | `[RequireRole]`, `[RequirePermission]`, `[RequireFreshAuthentication]`, `[RequireAuthenticationMethod]` endpoint attributes over `IUserContext` |
+| [`SharedKernel.Presentation.WebApi`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/14.Presentation/SharedKernel.Presentation.WebApi) | `[RequireRole]`, `[RequireEndpointPermission]`, `[RequireFreshAuthentication]`, `[RequireAuthenticationMethod]` endpoint attributes over `IUserContext` |
 | [`SharedKernel.MultiTenancy`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/13.ServiceDefaults/SharedKernel.MultiTenancy) | Tenant resolution from claims, headers or a database, as its own `ITenantProvider` |
 
 ## Quick start
@@ -111,6 +111,7 @@ builder.Services.AddScoped<ITenantProvider, UserContextTenantProvider>();
 | Know who is calling and treat people, integrations and jobs differently | `IUserContext.IdentityKind` | [Read the caller](#1-read-the-caller-in-a-handler) |
 | Allow an action by permission (OAuth scope) or role | `HasPermission`, `HasRole` | [Permissions and roles](#2-check-permissions-and-roles) |
 | Require a recent, strong sign-in for a payment or settings change | `WasAuthenticatedWith`, `IsAuthenticationFresherThan` | [Step-up checks](#3-require-a-recent-strong-sign-in) |
+| Require a step-up that is still recent, also on a SignalR connection | `GetAuthenticationMethodTime` | [Step-up checks](#3-require-a-recent-strong-sign-in) |
 | Run a background job under a trusted identity | `SystemUserContext` | [Background workers](#4-run-background-work-as-the-system) |
 | Get the tenant of the current operation | `ITenantProvider` | [Read the caller](#1-read-the-caller-in-a-handler) |
 | Support an authentication scheme no package covers | `IUserContextMapper`, `UserContextResolver` | [Custom scheme](#5-map-a-custom-authentication-scheme) |
@@ -255,6 +256,9 @@ public sealed class PlaceOrderHandler(IUserContext caller, ITenantProvider tenan
 ```
 
 `Error.Unauthorized` maps to HTTP 401 and `Error.Forbidden` to 403. Use 401 only when there is no authenticated caller.
+The one exception is at the HTTP boundary: `SharedKernel.Presentation.WebApi`'s step-up requirements
+(`[RequireAuthenticationMethod]`, `[RequireFreshAuthentication]`) answer an authenticated caller who must authenticate
+again with 401 `unauthorized.step_up_required` and an RFC 9470 challenge, which tells the client what to do.
 
 ### 2. Check permissions and roles
 
@@ -294,7 +298,7 @@ public sealed class RefundPolicy(IUserContext caller)
 ```
 
 The checks read the mapped `Permissions` and `Roles`, never raw claims: a `roles` claim the mapper did not map grants
-nothing. For HTTP endpoints, `[RequirePermission]` and `[RequireRole]` from `SharedKernel.Presentation.WebApi` run the
+nothing. For HTTP endpoints, `[RequireEndpointPermission]` and `[RequireRole]` from `SharedKernel.Presentation.WebApi` run the
 same checks declaratively. For a service-specific claim, read it with `FindClaim` or `FindClaims`:
 
 ```csharp
@@ -350,8 +354,38 @@ public sealed class PayoutStepUpPolicy(IUserContext caller, IClock clock)
 
 `AuthTime` is when the user signed in at the identity provider; a refreshed token keeps the original value. To force a
 fresh sign-in, have the client request re-authentication from the provider (for example `max_age` or `prompt=login`).
-A session step-up with `SharedKernel.Security.Totp` adds `otp` to `AuthenticationMethods` for its own freshness window
-and does not change `AuthTime`, so gate on `WasAuthenticatedWith("otp")` when that is the mechanism you use.
+A session step-up with `SharedKernel.Security.Totp` adds `otp` to `AuthenticationMethods` for its own freshness window,
+together with the time it was verified (an `amr_time` claim), and does not change `AuthTime`. Gate on
+`WasAuthenticatedWith("otp")` when that is the mechanism you use, and, when the step-up must also be recent, on
+`GetAuthenticationMethodTime("otp")` against your clock:
+
+```csharp
+private static readonly TimeSpan MaxStepUpAge = TimeSpan.FromMinutes(5);
+
+// ...
+DateTimeOffset now = clock.UtcNow;
+if (caller.GetAuthenticationMethodTime("otp") is not { } verifiedAt
+    || verifiedAt - now > UserContext.MaxFutureAuthTime   // a far-future time is forged or badly skewed
+    || now - verifiedAt > MaxStepUpAge)
+{
+    return Error.Forbidden("payouts.step_up_required", "Confirm with a one-time code to continue.");
+}
+```
+
+The time check is what ends a step-up on a long-lived connection. A SignalR connection keeps the principal it opened
+with, and a gRPC streaming call the principal it started with, so `otp` stays on them after the freshness window;
+its time does not move. `[RequireAuthenticationMethod("otp", MaxAgeSeconds = 300)]` from
+`SharedKernel.Presentation.WebApi` makes the same check, with the same five-minute tolerance for a time ahead of the
+clock, on every call of a hub method it is on (on the hub class or on `MapHub<T>()` it is checked once, when the
+connection opens); a gRPC streaming call is authorized only when it starts, so a stream that must stop with the
+step-up checks the time itself.
+
+| Situation | `GetAuthenticationMethodTime(method)` |
+| --- | --- |
+| `WasAuthenticatedWith(method)` is `false` | `null`, even if a time was recorded |
+| An `amr_time` claim dates the method (a step-up added it) | That time; the latest when there are several |
+| The credential carried the method, without an `amr_time` | `AuthTime`: the method was verified at sign-in; `null` when that is unknown too |
+| An `IUserContext` implementation that does not override it | `null`, the default interface implementation |
 
 ### 4. Run background work as the system
 
@@ -523,8 +557,11 @@ to anonymous.
 ### 6. Bridge to the application pipeline
 
 [`SharedKernel.Application`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/05.Application/SharedKernel.Application)
-authorizes and caches through its own `IRequestContext`, which does not reference this package. Implement it once at
-the composition root.
+authorizes and caches through its own `IRequestContext`, which does not reference this package. A web host normally
+registers it with `SharedKernel.ServiceDefaults.Security`'s `services.AddSharedKernelRequestContext()`, which also
+reports the actor kind, client and session that `05.Application` uses, for example to scope idempotency keys per caller.
+The hand-written bridge below leaves those at their defaults: every authenticated caller is `ActorKind.User`, with no
+client.
 
 ```csharp
 using SharedKernel.Application.Context;
@@ -639,6 +676,7 @@ handler wiring or claim renaming, so also cover the scheme end to end with a tes
 | `ITenantProvider` | Interface | `Guid TenantId`; `Guid.Empty` when the operation has no tenant |
 | `UserContextTenantProvider` | Sealed class | `ITenantProvider` returning `IUserContext.TenantId ?? Guid.Empty`, read on every access |
 | `SecurityClaimTypes` | Static class | Short claim type names |
+| `AuthenticationMethodTimeClaim` | Static class | `Create(method, verifiedAt)` and `Read(claims)` for `amr_time` claims: when a method was verified |
 
 ### `IUserContext`
 
@@ -664,6 +702,7 @@ handler wiring or claim renaming, so also cover the scheme end to end with a tes
 | `HasPermission(permission)` | `bool` | `Permissions` contains `permission`, ordinal |
 | `WasAuthenticatedWith(method)` | `bool` | `AuthenticationMethods` contains `method`, ordinal |
 | `IsAuthenticationFresherThan(maxAge, now)` | `bool` | `AuthTime` is known and no older than `maxAge` at `now` |
+| `GetAuthenticationMethodTime(method)` | `DateTimeOffset?` | When `method` was verified: its `amr_time`, else `AuthTime`; `null` when the caller lacks the method or the time is unknown. Default-implemented (`null`), so existing implementations keep compiling |
 
 ### `UserContext`
 
@@ -678,6 +717,7 @@ var context = new UserContext(IdentityKind.User, subjectId: "auth0|5f7c1e", clai
     Roles = ["Customer"],
     Permissions = ["orders:read", "orders:write"],
     AuthenticationMethods = ["pwd", "mfa"],
+    AuthenticationMethodTimes = AuthenticationMethodTimeClaim.Read(identity.Claims),
     AuthContextClassReference = "urn:example:acr:high",
     AuthTime = authTime,
     IsSenderConstrained = false,
@@ -689,7 +729,7 @@ var context = new UserContext(IdentityKind.User, subjectId: "auth0|5f7c1e", clai
 | Constructor | `UserContext(IdentityKind identityKind, string subjectId, IEnumerable<Claim>? claims = null)` |
 | Allowed kinds | `User` and `ServicePrincipal` only; use the singletons for `System` and `Anonymous` |
 | Immutability | Every optional member is `init`-only |
-| Copies | `claims`, `Roles`, `Permissions` and `AuthenticationMethods` are copied when set; later changes to the source do not affect the context |
+| Copies | `claims`, `Roles`, `Permissions`, `AuthenticationMethods` and `AuthenticationMethodTimes` (keyed ordinally) are copied when set; later changes to the source do not affect the context |
 | Duplicates | Kept as given; mappers normalize |
 | Claims | `FindClaim`/`FindClaims` search the `claims` argument; role, permission and method checks read only the mapped collections |
 | `MaxFutureAuthTime` | Static, 5 minutes: how far `AuthTime` may lie after `now` and still count as fresh |
@@ -727,6 +767,7 @@ claims, so these are the names on the `ClaimsPrincipal`.
 | `AuthorizedParty` | `azp` | OIDC Core |
 | `Confirmation` | `cnf` | RFC 7800 |
 | `TenantId` | `tenant_id` | Tenant claim used by SharedKernel services |
+| `AuthenticationMethodTime` | `amr_time` | When a method was verified, `{method} {seconds since the Unix epoch}`; added by SharedKernel step-ups |
 
 ### Exceptions
 
@@ -734,8 +775,10 @@ claims, so these are the names on the `ClaimsPrincipal`.
 | --- | --- | --- |
 | `new UserContext(...)` | `ArgumentOutOfRangeException` | `identityKind` is not `User` or `ServicePrincipal` (checked first) |
 | `new UserContext(...)` | `ArgumentException` (`ArgumentNullException` for `null`) | `subjectId` is null, empty or whitespace |
-| `UserContext` `Roles`/`Permissions`/`AuthenticationMethods` `init` | `ArgumentNullException` | Set to `null` |
-| `UserContext.FindClaim`, `FindClaims`, `HasRole`, `HasPermission`, `WasAuthenticatedWith` | `ArgumentNullException` | Argument is `null` |
+| `UserContext` `Roles`/`Permissions`/`AuthenticationMethods`/`AuthenticationMethodTimes` `init` | `ArgumentNullException` | Set to `null` |
+| `UserContext.FindClaim`, `FindClaims`, `HasRole`, `HasPermission`, `WasAuthenticatedWith`, `GetAuthenticationMethodTime` | `ArgumentNullException` | Argument is `null` |
+| `AuthenticationMethodTimeClaim.Create` | `ArgumentException` / `ArgumentOutOfRangeException` | `method` is null, empty or whitespace / `verifiedAt` is before the Unix epoch |
+| `AuthenticationMethodTimeClaim.Read` | `ArgumentNullException` | `claims` is `null`; malformed values are skipped, never thrown |
 | `UserContextResolver.Resolve` | `ArgumentNullException` | `mappers` is `null` |
 | `new UserContextTenantProvider(null)` | `ArgumentNullException` | Always |
 
@@ -756,6 +799,8 @@ This package writes no logs and returns no `Result` values.
 | A caller's rights changing mid-request through a shared list | Collections and claims are copied at construction |
 | A forged or far-future `auth_time` passing step-up checks for ever | `AuthTime` more than 5 minutes ahead of `now` is not fresh |
 | An unknown sign-in time treated as fresh | A missing `AuthTime` is never fresh |
+| A step-up method staying on a long-lived connection's principal for ever | The method carries its verification time (`amr_time`), which a check with a maximum age compares with the clock on every call |
+| A recorded time standing in for a method the caller does not have | `GetAuthenticationMethodTime` answers only for methods in `AuthenticationMethods` |
 | Background jobs inheriting privileges | `SystemUserContext` holds no roles or permissions |
 | Code without a tenant reading another tenant's data | `ITenantProvider` returns `Guid.Empty`, which matches no real tenant |
 
@@ -818,14 +863,22 @@ CHECKS       HasPermission(scope), HasRole(role), WasAuthenticatedWith(amr): ord
              FindClaim(type) first value; FindClaims(type) all values. Use SecurityClaimTypes constants.
 STEP-UP      caller.WasAuthenticatedWith("mfa") && caller.IsAuthenticationFresherThan(maxAge, clock.UtcNow).
              Null AuthTime -> false; AuthTime > now + 5 min (UserContext.MaxFutureAuthTime) -> false.
+RECENT AMR   caller.GetAuthenticationMethodTime("otp") is { } at && at - now <= UserContext.MaxFutureAuthTime
+             && now - at <= maxAge: the method's own time (amr_time, else AuthTime). Needed wherever the principal
+             outlives the step-up (SignalR, gRPC streams). At the HTTP boundary:
+             [RequireAuthenticationMethod("otp", MaxAgeSeconds = n)] (SharedKernel.Presentation.WebApi), on hub methods.
+             Mappers set AuthenticationMethodTimes = AuthenticationMethodTimeClaim.Read(identity.Claims); code that adds
+             an amr value after sign-in adds AuthenticationMethodTimeClaim.Create(method, verifiedAt) with it.
 ERRORS       No caller -> Error.Unauthorized (401). Authenticated but not allowed -> Error.Forbidden (403).
+             (14.Presentation's step-up requirements answer an authenticated caller 401 unauthorized.step_up_required.)
 MAPPER       class : IUserContextMapper { AuthenticationType => scheme name; Map(identity) returns
              new UserContext(IdentityKind.User|ServicePrincipal, subjectId, identity.Claims) { ... }
              or AnonymousUserContext.Instance when the subject is missing }.
              Register: TryAddEnumerable(ServiceDescriptor.Singleton<IUserContextMapper, TMapper>()).
              Handler identity: new ClaimsIdentity(claims, Scheme.Name).
 RESOLVE      UserContextResolver.Resolve(httpContext?.User, services.GetServices<IUserContextMapper>()).
-BRIDGE       IRequestContext (SharedKernel.Application.Context): IsAuthenticated, UserId = SubjectId,
+BRIDGE       Prefer services.AddSharedKernelRequestContext() (SharedKernel.ServiceDefaults.Security). By hand:
+             IRequestContext (SharedKernel.Application.Context): IsAuthenticated, UserId = SubjectId,
              TenantId from ITenantProvider (Guid.Empty -> null), HasPermissionAsync -> HasPermission.
 TESTS        new UserContext(IdentityKind.User, "subject") { Roles = [...], Permissions = [...], AuthTime = ... };
              AnonymousUserContext.Instance; SystemUserContext.Instance; new UserContextTenantProvider(context).

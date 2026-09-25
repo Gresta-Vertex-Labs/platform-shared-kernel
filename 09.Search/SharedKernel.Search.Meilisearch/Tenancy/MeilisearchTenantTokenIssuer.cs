@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Results;
+using SharedKernel.Search.Abstractions.Errors;
 using SharedKernel.Search.Abstractions.Models;
 using SharedKernel.Search.Meilisearch.Errors;
 using SharedKernel.Search.Meilisearch.Logging;
@@ -37,6 +38,39 @@ internal sealed class MeilisearchTenantTokenIssuer : ITenantSearchTokenIssuer
         TimeSpan ttl,
         CancellationToken cancellationToken = default)
     {
+        // Fail closed on TenantScope.None, exactly as every read path does. This token is handed to an
+        // untrusted client — a browser — and carries the only tenant predicate that will ever be applied
+        // to the searches made with it. TenantScope.None would compile the filter `tenantField = ""`,
+        // which is not a tenant restriction but a filter for documents whose tenant is the empty string:
+        // a token that looks scoped, reads as scoped in a code review, and restricts nothing meaningful.
+        // The one legitimate use of TenantScope.None is a global, single-tenant index, and such an index
+        // has no tenant field to scope a token by in the first place.
+        if (string.IsNullOrEmpty(tenantScope.Value))
+        {
+            return Task.FromResult(Result<TenantSearchToken>.Failure(
+                SearchErrors.TenantScopeMissing(indexNames.Count == 1 ? indexNames.First() : "(multiple)")));
+        }
+
+        if (string.IsNullOrWhiteSpace(tenantField))
+        {
+            return Task.FromResult(Result<TenantSearchToken>.Failure(
+                MeilisearchErrors.TenantTokenIssuanceFailed(
+                    "A tenant field is required; issue a token only for an index that declares one.")));
+        }
+
+        if (indexNames.Count == 0)
+        {
+            return Task.FromResult(Result<TenantSearchToken>.Failure(
+                MeilisearchErrors.TenantTokenIssuanceFailed(
+                    "At least one index must be named; a token scoped to no index grants nothing and hides the mistake.")));
+        }
+
+        if (ttl <= TimeSpan.Zero)
+        {
+            return Task.FromResult(Result<TenantSearchToken>.Failure(
+                MeilisearchErrors.TenantTokenTtlOutOfRange(ttl, _options.TenantTokenMaxTtlMinutes)));
+        }
+
         if (ttl > TimeSpan.FromMinutes(_options.TenantTokenMaxTtlMinutes))
         {
             return Task.FromResult(Result<TenantSearchToken>.Failure(

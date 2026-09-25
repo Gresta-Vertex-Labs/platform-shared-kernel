@@ -6,6 +6,8 @@ The full-text search abstraction and provider-wiring layer. Downstream microserv
 
 Philosophy: **Intersection-only. Fail-loud. Typed escape at the package seam. No silent degradation.**
 
+> **Pre-publish gold-standard pass (2026-09-23).** The domain shipped its Design/Core/Tests/Docs phases against this philosophy and then, on a full pre-publish review, was found to be violating it in three places the original phases never examined — the failure path, the observability surface, and one silently-truncated read. See the Changelog for the full list and the reasoning; the short version is that `CountAsync` used to publish a Meilisearch-truncated total as fact, an unreachable engine escaped as a thrown exception on one provider and a failed `Result` on the other, and the `ActivitySource`/`Meter` both providers declared were never called by anything. The interface contracts below are post-pass.
+
 > `09.Search` may only reference `01.Core` and `04.Contracts`. It must never reference `03.Domain`, `05.Application`, `06.Persistence`, `07.Messaging`, `12.Security`, or any other capability domain. `SharedKernel.Search.Abstractions` contains **no type that either provider cannot implement completely and correctly** — if implementing a member would require one adapter to throw, degrade, approximate, or no-op, that member does not belong in `.Abstractions`. That single rule is the whole design and it is mechanically checkable in review.
 
 ---
@@ -14,11 +16,11 @@ Philosophy: **Intersection-only. Fail-loud. Typed escape at the package seam. No
 
 | Package | Role | References |
 | --- | --- | --- |
-| `SharedKernel.Search.Abstractions` | `ISearchDocument`, `ISearchIndex<TDocument>`, `ISearchIndexProvisioner`, `ISearchProviderDescriptor`, `IQueryBuilder<TDocument>` + the concrete `SearchQueryBuilder<TDocument>`, the closed 8-node `SearchFilter` AST, `SearchRequest`/`SearchResults<TDocument>`/`SearchHit<TDocument>`, `SearchIndexDefinition` + `SearchIndexDefinitionBuilder`, `SearchWellKnown`, `SearchErrors`, `SearchStreamException` — the only types application code should ever inject or construct. Ships **no** DI extension, **no** `ActivitySource`, **no** `[LoggerMessage]`, **no** `IHealthCheck` | `SharedKernel.Primitives` (01.Core), `SharedKernel.Contracts` (04.Contracts — for the guarded `ToPagedList()` bridge only) |
-| `SharedKernel.Search.Meilisearch` *(BFF/fast)* | Concrete Meilisearch implementation of the three neutral contracts: `MeilisearchIndex<TDocument>`, `MeilisearchIndexProvisioner`, `MeilisearchProviderDescriptor`, `MeilisearchFilterCompiler`, `MeilisearchOptions`, `MeilisearchErrors`, `AddSharedKernelMeilisearchSearch()` DI extension. Additionally **declares** the Meilisearch-exclusive contracts `IInstantSearch<TDocument>`, `ITenantSearchTokenIssuer`, `IMeilisearchRawClientAccessor` | `SharedKernel.Search.Abstractions`, `SharedKernel.Primitives`, `SharedKernel.Configuration` (01.Core), `MeiliSearch`, `Microsoft.Extensions.DependencyInjection.Abstractions`, `Microsoft.Extensions.Options`, `Microsoft.Extensions.Logging.Abstractions`, `Microsoft.Extensions.Http` |
-| `SharedKernel.Search.ElasticSearch` *(analytics/heavy)* | Concrete ElasticSearch implementation of the same three neutral contracts: `ElasticSearchIndex<TDocument>`, `ElasticSearchIndexProvisioner`, `ElasticSearchProviderDescriptor`, `ElasticSearchFilterCompiler`, `ElasticSearchOptions`, `ElasticSearchErrors`, `AddSharedKernelElasticSearchSearch()` DI extension. Additionally **declares** the ElasticSearch-exclusive contracts `IAnalyticsSearch<TDocument>`, `ICursorSearch<TDocument>`, `IElasticSearchRawClientAccessor` | `SharedKernel.Search.Abstractions`, `SharedKernel.Primitives`, `SharedKernel.Configuration` (01.Core), `Elastic.Clients.Elasticsearch`, `Microsoft.Extensions.DependencyInjection.Abstractions`, `Microsoft.Extensions.Options`, `Microsoft.Extensions.Logging.Abstractions` |
+| `SharedKernel.Search.Abstractions` | `ISearchDocument`, `ISearchIndex<TDocument>`, `ISearchIndexProvisioner`, `ISearchProviderDescriptor`, `IQueryBuilder` + the concrete `SearchQueryBuilder`, the closed 8-node `SearchFilter` AST, `SearchRequest`/`SearchResults<TDocument>`/`SearchHit<TDocument>`, `SearchIndexDefinition` (incl. index-level `Synonyms`/`StopWords`) + `SearchIndexDefinitionBuilder`, `SearchCount`, `SearchWellKnown`, `SearchErrors`, `SearchStreamException` — the only types application code should ever inject or construct. Ships **no** DI extension, **no** `ActivitySource` *instance* (it owns the NAMES both providers instantiate under), **no** `[LoggerMessage]`, **no** `IHealthCheck` | `SharedKernel.Primitives` (01.Core), `SharedKernel.Contracts` (04.Contracts — for the guarded `ToPagedList()` bridge only) |
+| `SharedKernel.Search.Meilisearch` *(BFF/fast)* | Concrete Meilisearch implementation of the three neutral contracts: `MeilisearchIndex<TDocument>`, `MeilisearchIndexProvisioner`, `MeilisearchProviderDescriptor`, `MeilisearchFilterCompiler`, `MeilisearchOptions`, `MeilisearchErrors`, `AddSharedKernelMeilisearchSearch()` DI extension. Additionally **declares** the Meilisearch-exclusive contracts `IInstantSearch<TDocument>`, `ITenantSearchTokenIssuer`, `IMeilisearchRawClientAccessor`, and the typed `MeilisearchRankingRule` relevance-ordering surface applied via `WithRankingRules` | `SharedKernel.Search.Abstractions`, `SharedKernel.Primitives`, `SharedKernel.Configuration` (01.Core), `MeiliSearch`, `Microsoft.Extensions.DependencyInjection.Abstractions`, `Microsoft.Extensions.Options`, `Microsoft.Extensions.Logging.Abstractions`, `Microsoft.Extensions.Http` |
+| `SharedKernel.Search.ElasticSearch` *(analytics/heavy)* | Concrete ElasticSearch implementation of the same three neutral contracts: `ElasticSearchIndex<TDocument>`, `ElasticSearchIndexProvisioner`, `ElasticSearchProviderDescriptor`, `ElasticSearchFilterCompiler`, `ElasticSearchOptions`, `ElasticSearchErrors`, `AddSharedKernelElasticSearchSearch()` DI extension. Additionally **declares** the ElasticSearch-exclusive contracts `IAnalyticsSearch<TDocument>`, `ICursorSearch<TDocument>`, `ISuggestSearch<TDocument>` (completion suggester, wired by `WithCompletionField`), `IElasticSearchRawClientAccessor` | `SharedKernel.Search.Abstractions`, `SharedKernel.Primitives`, `SharedKernel.Configuration` (01.Core), `Elastic.Clients.Elasticsearch`, `Microsoft.Extensions.DependencyInjection.Abstractions`, `Microsoft.Extensions.Options`, `Microsoft.Extensions.Logging.Abstractions` |
 
-All packages target `net10.0`, `ImplicitUsings` enabled, `Nullable` enabled. Test sub-folders live inside each project folder (never in a top-level `tests/`). `SharedKernel.Search.Abstractions` has **zero `PackageReference` entries of any kind** — not even `Microsoft.Extensions.DependencyInjection.Abstractions`, because no DI extension lives there; `System.Security.Cryptography` (SHA-256 for `SearchIndexDefinition.Fingerprint`) and `System.Text.Json` are in-box on `net10.0` and add no dependency. The four `Microsoft.Extensions.*` packages on each provider package (`DependencyInjection.Abstractions`, `Options`, `Logging.Abstractions`, plus `Http` on `.Meilisearch` only) are pinned at **`10.0.9`** — confirmed at Scaffold-phase implementation time (2026-07-19) to match the version already pinned by the most recently-implemented sibling capability packages (`08.Storage`'s `Logging.Abstractions`, `11.Communication.Rest`'s `Http`, `16.Testing`'s `Http`/`Logging.Abstractions`) rather than floating to the newer `10.0.10` available on nuget.org at the same date — deliberate version-skew avoidance across the repo, not an oversight.
+All packages target `net10.0`, `ImplicitUsings` enabled, `Nullable` enabled. Test sub-folders live inside each project folder (never in a top-level `tests/`). `SharedKernel.Search.Abstractions` has **zero `PackageReference` entries of any kind** — not even `Microsoft.Extensions.DependencyInjection.Abstractions`, because no DI extension lives there; `System.Security.Cryptography` (SHA-256 for `SearchIndexDefinition.ComputeFingerprint()`) and `System.Text.Json` are in-box on `net10.0` and add no dependency. The four `Microsoft.Extensions.*` packages on each provider package (`DependencyInjection.Abstractions`, `Options`, `Logging.Abstractions`, plus `Http` on `.Meilisearch` only) are pinned at **`10.0.9`** — confirmed at Scaffold-phase implementation time (2026-07-19) to match the version already pinned by the most recently-implemented sibling capability packages (`08.Storage`'s `Logging.Abstractions`, `11.Communication.Rest`'s `Http`, `16.Testing`'s `Http`/`Logging.Abstractions`) rather than floating to the newer `10.0.10` available on nuget.org at the same date — deliberate version-skew avoidance across the repo, not an oversight.
 
 > **Provider role note:** `SharedKernel.Search.Meilisearch` and `SharedKernel.Search.ElasticSearch` are sibling `.{Provider}` packages, not a `.{Provider}.Core` / `.{Provider}.{Role}` split, and they must never reference each other. Shared implementation shape — the options-validation flow, the `SearchFilter` walker skeleton, receipt mapping, probe sequencing — is **duplicated deliberately**. (The original `08.Storage` `.S3`/`.Obs` precedent no longer applies: P-559 made `.Obs` build on `.S3`, because OBS is served through its S3-compatible API — the same technology, which is exactly where sharing is right. Meilisearch and ElasticSearch are two different technologies.) A `SharedKernel.Search.Core` was considered and rejected: the `.{Provider}.Core` pattern exists for one technology serving multiple roles (`02.Caching`'s Redis five-package split), not two technologies serving one role. A Meilisearch filter-string emitter and an ElasticSearch `BoolQuery` builder share nothing beyond the `SearchFilter` walk shape, which already lives in `.Abstractions`.
 
@@ -43,7 +45,7 @@ All packages target `net10.0`, `ImplicitUsings` enabled, `Nullable` enabled. Tes
 | Test mocking | `NSubstitute` `5.3.0` and `FluentAssertions` `8.4.0`, added directly by each `.Tests` project (never by a production package); mocking is confined to engine status-code error-mapping and DI-shape assertions — behavioural coverage runs against real containers |
 | XML doc enforcement / NuGet packaging | `<GenerateDocumentationFile>true</GenerateDocumentationFile>` + `<TreatWarningsAsErrors>true</TreatWarningsAsErrors>` + a full NuGet metadata block (`PackageId`/`Version`/`Authors`/`Company`/`Product`/`Description`/`PackageTags`/`PackageLicenseExpression`/`RepositoryType`/`RepositoryUrl`/`PackageProjectUrl`/`Copyright`/`IncludeSymbols`/`SymbolPackageFormat=snupkg`) on all three production `.csproj` files. **`<PackageReadmeFile>README.md</PackageReadmeFile>` + `<None Include="README.md" Pack="true" PackagePath="\" />` must be added in the same edit** — `08.Storage` omitted this pair at Docs phase and paid for it with an `NU5039` pack warning at Published phase |
 
-> **Why `Elastic.Clients.Elasticsearch` 9.4.2 (not NEST, not the 8.x maintenance line):** NEST is EOL — deprecated on nuget.org, feature-frozen since client 8.13, support window closed at end-2025 — so it is not a candidate. The remaining choice is the 8.19.x maintenance line versus 9.4.2. 9.4.2 is chosen because it ships a first-class `net10.0` target and an affirmative AOT position (`IsAotCompatible` for net8+, reflection-based STJ disabled by default, a documented `JsonSerializerContext` seam). The trade-off is real and must be respected: the 9.x client **does not support an 8.x server**, and Elastic explicitly states the client does not strictly follow semantic versioning — breaking changes can land in a minor or patch release. Consequently `ValidateEngineVersionOnStart` defaults to `true`, `SearchErrors.EngineVersionUnsupported` exists as a startup guard, and the version is pinned exactly rather than floated.
+> **Why `Elastic.Clients.Elasticsearch` 9.4.2 (not NEST, not the 8.x maintenance line):** NEST is EOL — deprecated on nuget.org, feature-frozen since client 8.13, support window closed at end-2025 — so it is not a candidate. The remaining choice is the 8.19.x maintenance line versus 9.4.2. 9.4.2 is chosen because it ships a first-class `net10.0` target and an affirmative AOT position (`IsAotCompatible` for net8+, reflection-based STJ disabled by default, a documented `JsonSerializerContext` seam). The trade-off is real and must be respected: the 9.x client **does not support an 8.x server**, and Elastic explicitly states the client does not strictly follow semantic versioning — breaking changes can land in a minor or patch release. Consequently `VerifyElasticSearchEngineVersionAsync` exists as an explicit deploy-time guard returning `SearchErrors.EngineVersionUnsupported`, and the version is pinned exactly rather than floated. (It replaced a `ValidateEngineVersionOnStart` flag that ran inside the `ElasticsearchClient` DI factory — at first resolution rather than at startup, blocking a thread pool thread on network I/O, and only logging: see the pre-publish changelog entry.)
 
 > **Why `MaxTotalHits` defaults to 1000 on *both* providers:** Meilisearch's `maxTotalHits` ceiling defaults to 1000 and hard-caps `limit + offset`; ElasticSearch's `index.max_result_window` defaults to 10 000. This design deliberately hobbles the stronger engine to the weaker engine's ceiling and has `EnsureIndexAsync` push `index.max_result_window` down to the same value, so a query proven legal on one provider is guaranteed legal on the other. The alternative — letting ElasticSearch accept queries Meilisearch would reject — converts every provider swap into a bug hunt whose failure surfaces at page 51 in production. The ceiling is per-index configurable via `SearchIndexDefinition.MaxTotalHits` for services that will never swap. This is the decision most likely to generate "the abstraction broke my search" friction, and it is taken deliberately.
 
@@ -123,7 +125,7 @@ ISearchIndex<TDocument>   where TDocument : class, ISearchDocument
                  CancellationToken ct)                                         → Task<Result<SearchResults<TDocument>>>
     .GetAsync(string documentId, TenantScope tenantScope, CancellationToken ct) → Task<Result<TDocument>>
     .CountAsync(SearchFilter? filter, TenantScope tenantScope,
-                CancellationToken ct)                                          → Task<Result<long>>
+                CancellationToken ct)                                          → Task<Result<SearchCount>>
 
     — corpus walk —
     .EnumerateAsync(SearchFilter? filter, TenantScope tenantScope, int batchSize,
@@ -221,10 +223,23 @@ ISearchIndex<TDocument>   where TDocument : class, ISearchDocument
           search, not a raw get, whenever the index definition declares a TenantField. A missing
           document returns SearchErrors.DocumentNotFound — never null, never a thrown exception.
 
-    NOTE (CountAsync IS EXACT ON BOTH ENGINES): implemented as ES _count and as a Meilisearch
-          page/hitsPerPage search reading the exact totalHits. It exists separately from
-          SearchResults.TotalHits precisely because that value carries an accuracy qualifier and this
-          one does not.
+    NOTE (CountAsync IS NOT EXACT ON BOTH ENGINES — corrected in the pre-publish pass, and the piece of
+          domain history most worth not repeating): this member used to return a bare Task<Result<long>>
+          on the stated premise that both engines could count exactly. ElasticSearch can — it answers
+          from the real _count API, uncapped. Meilisearch cannot: it has NO count endpoint at all, so
+          the only available total is totalHits read off a paginated search, and the engine caps that
+          value at the index's own pagination.maxTotalHits — which this platform provisions from
+          SearchIndexDefinition.MaxTotalHits, default 1000. An index with 50,000 matching documents
+          therefore answered 50000 on ElasticSearch and 1000 on Meilisearch, silently, under an XML doc
+          promising "the exact count". Every existing test used a corpus far below the ceiling, so
+          nothing caught it. It now returns Task<Result<SearchCount>>, pairing the figure with the
+          TotalHitsAccuracy vocabulary SearchResults already uses: ElasticSearch always Exact;
+          Meilisearch Exact below the ceiling and LowerBound at it. A true count landing exactly on the
+          ceiling is reported as a lower bound too — "at least N" is still true of exactly N, and erring
+          the other way would publish a truncated number as fact. SearchCount.ToString() renders a lower
+          bound as ">=N" so a truncated figure cannot be mistaken for an exact one in a log line. Do not
+          "simplify" this back to a long; the regression is silent and the tests that would catch it
+          (MeilisearchCountAccuracyTests) deliberately provision a tiny ceiling to make it cheap to prove.
 
     NOTE (EnumerateAsync IS NOT Result-WRAPPED — the one documented exception in this domain): follows
           the established streaming precedent, 06.Persistence P-149 and 08.Storage P-265. A transport
@@ -263,6 +278,24 @@ ISearchIndexProvisioner   (non-generic — exactly one registration per provider
     .DeleteIndexAsync(string indexName, CancellationToken ct)                  → Task<Result>
     .CutoverAsync(IndexCutoverRequest request, CancellationToken ct)           → Task<Result>
     .ProbeAsync(string indexName, CancellationToken ct)                        → Task<Result<SearchIndexHealth>>
+    .VerifyRegisteredIndexesAsync(CancellationToken ct)                        → Task<Result>
+
+    NOTE (VerifyRegisteredIndexesAsync — added in the pre-publish pass, replacing a flag that lied):
+          walks every index the composition root registered and checks it exists, is addressable with
+          this service's own credentials, and carries the schema fingerprint of the definition the code
+          declares. The failure it catches is real and quiet: code ships declaring a field, a synonym or
+          a stop-word list the live index was never rebuilt for, so filters silently match nothing and
+          relevance silently changes while the index itself looks perfectly healthy. EnsureIndexAsync
+          catches that only if something calls it; ProbeAsync catches it only one index at a time and
+          only if the caller already knows the expected fingerprint — this member needs neither, because
+          the provider already holds every registered definition (both are constructed with it by their
+          own builder's Build()).
+          It is asynchronous and explicitly invoked, never a hidden startup side effect: it costs one
+          round trip per index, so it belongs in a startup task, a 13.ServiceDefaults readiness check,
+          or a deployment smoke test. It REPLACES MeilisearchOptions.ValidateIndexSettingsOnStart, which
+          was declared, defaulted to true, documented as doing exactly this, and read by nothing — the
+          same dead-configuration-knob defect class WO-054 (07.Messaging), WO-061 (13.ServiceDefaults)
+          and WO-064 (15.Integration) each found in their own domains.
 
     NOTE (WHY INDEX FIELD DECLARATIONS ARE ON THE NEUTRAL SURFACE AT ALL — the one place the "thin
           abstraction" premise is compromised, and it is unavoidable): Meilisearch REJECTS a filter on
@@ -344,37 +377,45 @@ ISearchProviderDescriptor   (singleton, zero I/O)
 #### Query builder (`Querying/`)
 
 ```text
-IQueryBuilder<TDocument>   where TDocument : class, ISearchDocument
-    .Matching(string? freeText)                                                → IQueryBuilder<TDocument>
-    .MatchAllTerms(bool matchAll)                                              → IQueryBuilder<TDocument>
-    .SearchingIn(params string[] fields)                                       → IQueryBuilder<TDocument>
-    .Where(SearchFilter filter)                                                → IQueryBuilder<TDocument>
-    .OrderBy(string field)                                                     → IQueryBuilder<TDocument>
-    .OrderByDescending(string field)                                           → IQueryBuilder<TDocument>
-    .Page(int page, int pageSize)                                              → IQueryBuilder<TDocument>
-    .RequireExactTotalHits()                                                   → IQueryBuilder<TDocument>
-    .Faceting(params string[] facetFields)                                     → IQueryBuilder<TDocument>
-    .WithNumericFacetStats(params string[] facetFields)                        → IQueryBuilder<TDocument>
-    .Highlighting(HighlightRequest highlight)                                  → IQueryBuilder<TDocument>
-    .Returning(params string[] fields)                                         → IQueryBuilder<TDocument>
+IQueryBuilder
+    .Matching(string? freeText)                                                → IQueryBuilder
+    .MatchAllTerms(bool matchAll)                                              → IQueryBuilder
+    .SearchingIn(params string[] fields)                                       → IQueryBuilder
+    .Where(SearchFilter filter)                                                → IQueryBuilder
+    .OrderBy(string field)                                                     → IQueryBuilder
+    .OrderByDescending(string field)                                           → IQueryBuilder
+    .Page(int page, int pageSize)                                              → IQueryBuilder
+    .RequireExactTotalHits()                                                   → IQueryBuilder
+    .Faceting(params string[] facetFields)                                     → IQueryBuilder
+    .WithNumericFacetStats(params string[] facetFields)                        → IQueryBuilder
+    .Highlighting(HighlightRequest highlight)                                  → IQueryBuilder
+    .Returning(params string[] fields)                                         → IQueryBuilder
     .Build()                                                                   → Result<SearchRequest>
 
 SearchQuery   (static entry point)
-    .For<TDocument>()                                                          → IQueryBuilder<TDocument>
-    where TDocument : class, ISearchDocument
+    .New()                                                                     → IQueryBuilder
 
     NOTE (ROOT-BRAIN FIDELITY): the root brain names ISearchIndex and IQueryBuilder. BOTH names survive
-          verbatim, generic-ised. The only deviation is that IQueryBuilder<TDocument> is NOT a
-          DI-registered service and has exactly one provider-free implementation, the sealed
-          SearchQueryBuilder<TDocument> shipped in .Abstractions. A per-provider builder resolved from
-          DI was considered and rejected: it would let application code construct a query shaped by the
-          engine it happens to run against, reintroducing at the call site the exact coupling the
-          abstraction exists to remove — and the coupling would be invisible until a swap.
+          verbatim. IQueryBuilder is NOT a DI-registered service and has exactly one provider-free
+          implementation, the sealed SearchQueryBuilder shipped in .Abstractions. A per-provider builder
+          resolved from DI was considered and rejected: it would let application code construct a query
+          shaped by the engine it happens to run against, reintroducing at the call site the exact
+          coupling the abstraction exists to remove — and the coupling would be invisible until a swap.
 
-    NOTE (IMMUTABLE — enforced, not merely asserted): every method returns a NEW
-          SearchQueryBuilder<TDocument> instance. A partially-built query may be safely shared, cached,
-          fanned out, or used as a template. The implementation holds only readonly fields; there is no
-          mutable accumulation and no thread-safety caveat.
+    NOTE (NON-GENERIC, AND IT MUST STAY THAT WAY — changed in the pre-publish pass): this type carried a
+          TDocument parameter and SearchQuery.For<TDocument>() was the entry point. It read as type
+          safety and delivered none. Because fields are strings by the deliberate no-expression-trees
+          decision below, TDocument appeared in no parameter, no field, and nowhere in the built
+          SearchRequest — it only parameterised the twelve fluent return types. It was a phantom type
+          parameter that forced every caller to name a type for nothing and emitted a separate generic
+          instantiation of all twelve methods per document type. Do not reintroduce it: a type parameter
+          that constrains nothing advertises a guarantee this builder cannot make. The document type
+          enters at execution, on ISearchIndex<TDocument>.SearchAsync, where it is load-bearing.
+
+    NOTE (IMMUTABLE — enforced, not merely asserted): every method returns a NEW SearchQueryBuilder
+          instance. A partially-built query may be safely shared, cached, fanned out, or used as a
+          template. The implementation holds only readonly fields; there is no mutable accumulation and
+          no thread-safety caveat.
 
     NOTE (REPEATED Where(...) CALLS AND TOGETHER — the single most important ergonomic decision here):
           the alternative, last-call-wins, is exactly the silent-clause-dropping defect class that leaks
@@ -608,6 +649,26 @@ TotalHitsAccuracy   (enum)
           be a small lie — the estimate can be over OR under, so it is neither exact nor a bound.
           Estimated is its own value.
 
+SearchCount   (readonly record struct)
+    .Value                                                                      → long { get; }
+    .Accuracy                                                       → TotalHitsAccuracy { get; }
+    .IsExact                                                                    → bool { get; }
+    .Exact(long value)                                                        → SearchCount   (static)
+    .AtLeast(long value)                                                      → SearchCount   (static)
+    .ToString()      → "N" when Exact; ">=N" when LowerBound
+
+    NOTE (WHY THIS EXISTS — see CountAsync's own note for the full history): a bare long return published
+          a Meilisearch-truncated total as fact on one provider and the truth on the other. Reusing
+          TotalHitsAccuracy rather than declaring a second accuracy vocabulary is deliberate: a count and
+          a result-set total are the same question asked two ways, so one enum keeps a consumer's
+          handling of both identical. Only Exact and LowerBound are ever produced here — a count is never
+          Estimated, because neither engine offers an estimate-shaped count.
+
+    NOTE (ToString IS OVERRIDDEN FOR A REASON): a truncated count rendered as "1000" in a log line, a
+          dashboard or an assertion-failure message reads as fact. ">=1000" cannot be misread. Equality
+          distinguishes accuracy as well as value, so Exact(1000) != AtLeast(1000) — otherwise a
+          consuming service's caching or change-detection would treat a truncation as a real total.
+
 SearchHit<TDocument>   (sealed record)  where TDocument : class, ISearchDocument
     .Document                                                              → TDocument { get; init; }
     .Rank                                                                        → int { get; init; }
@@ -775,9 +836,37 @@ SearchIndexDefinition   (sealed record)
     .Fields                                    → IReadOnlyList<SearchFieldDefinition> { get; init; }
     .MaxTotalHits             → int { get; init; }       (default SearchWellKnown.DefaultMaxTotalHits)
     .MaxFacetValues           → int { get; init; }       (default SearchWellKnown.DefaultMaxFacetValues)
+    .Synonyms   → IReadOnlyDictionary<string, IReadOnlyList<string>> { get; init; }   (default empty)
+    .StopWords                       → IReadOnlyList<string> { get; init; }   (default empty)
     .Create(string name, IReadOnlyList<SearchFieldDefinition> fields)
                                                               → Result<SearchIndexDefinition>
-    .Fingerprint                                                              → string { get; }
+    .ComputeFingerprint()                                                     → string
+
+    NOTE (Synonyms/StopWords — INDEX-LEVEL, NEVER FIELD-LEVEL, added in the pre-publish pass): this is
+          NOT the analyzer/tokenizer/normalizer knob SearchFieldDefinition permanently refuses; that
+          refusal stands, and the note above it is still the rule. A per-FIELD analyzer is where a
+          neutral mapping DSL lies, because the two engines' analysis chains do not correspond. A
+          whole-INDEX synonym list and stop-word list do correspond, exactly, and both providers apply
+          them to every searchable field uniformly.
+          SYNONYMS ARE ONE-WAY, because that is the shape both engines share. Meilisearch's synonyms
+          setting is natively one-way per key; ElasticSearch's two-way synonym_graph equivalence syntax
+          ("tv, television") has no Meilisearch counterpart, so .ElasticSearch emits the explicit-mapping
+          form ("tv => tv, television") instead — one-way, and byte-for-byte equivalent to what
+          Meilisearch does. The original term is repeated on the right-hand side because an explicit
+          mapping REPLACES the matched token; omitting it would stop the document matching the very word
+          the caller typed. Declare both directions explicitly for symmetry.
+          APPLIED AT CREATE, REFUSED ON A LIVE INDEX, ON BOTH PROVIDERS. ElasticSearch cannot change an
+          open index's analysis settings at all. Meilisearch WOULD happily rewrite them — and refuses
+          anyway, returning IndexDefinitionConflict, because honouring the change on one engine while
+          the sibling rejects it reintroduces exactly the cross-provider divergence this domain exists
+          to prevent. The remedy is the one an incompatible field mapping already has: staging index,
+          bulk-load, CutoverAsync.
+
+    NOTE (ComputeFingerprint IS A METHOD, NOT A PROPERTY — changed in the pre-publish pass): it
+          allocates a canonical string and runs SHA-256 on every call, which is far more than a caller
+          may reasonably assume a property getter costs. Caching it in a field is not an option either:
+          this is a record, so a `with` expression copies private fields verbatim and would carry a stale
+          hash onto a modified definition. Callers that need it more than once hold the returned string.
 
     NOTE (TenantField LIVES HERE, not in provider options): a service may legitimately have one tenanted
           index and one global one. Per-index placement is what lets the fail-closed TenantScopeMissing
@@ -793,6 +882,9 @@ SearchIndexDefinition   (sealed record)
               MaxFacetValues          (invariant culture)
               then, for each field sorted by Name using StringComparer.Ordinal:
               Name|{(int)Kind}|{Searchable:0|1}|{Filterable:0|1}|{Sortable:0|1}|{Facetable:0|1}
+              then, for each synonym sorted by key using StringComparer.Ordinal:
+              {term}=>{replacement},{replacement},...   (replacements themselves ordinal-sorted)
+              then each stop word, ordinal-sorted, one per line
           Ordinal sorting makes the value independent of declaration order; explicit ints make it
           independent of enum member renames. Uses System.Security.Cryptography — in-box on net10.0, so
           .Abstractions keeps its zero-PackageReference guarantee. An undefined canonicalisation would
@@ -806,6 +898,8 @@ SearchIndexDefinitionBuilder   (sealed class)
            bool sortable = false, bool facetable = false)         → SearchIndexDefinitionBuilder
     .MaxTotalHits(int value)                                      → SearchIndexDefinitionBuilder
     .MaxFacetValues(int value)                                    → SearchIndexDefinitionBuilder
+    .Synonym(string term, params string[] replacements)           → SearchIndexDefinitionBuilder
+    .StopWords(params string[] stopWords)                         → SearchIndexDefinitionBuilder
     .Build()                                                      → Result<SearchIndexDefinition>
 
 IndexCutoverRequest   (sealed record)
@@ -904,23 +998,28 @@ SearchErrors   (public static class — canonical Error factory; provider implem
     .Unauthorized(indexName, operation)                  "search.unauthorized"
     .TenantScopeMissing(indexName)                       "search.tenant_scope_missing"
 
-    — Error.Unexpected —
+    — Error.Unavailable (P-562; HTTP 503) —
     .Unreachable(providerName, endpoint)                 "search.unreachable"
+
+    — Error.Timeout (P-562; HTTP 504) —
     .Timeout(operation, elapsed)                         "search.timeout"
-    .WriteRejected(indexName, reason)                    "search.write_rejected"
     .WriteTimeout(indexName, elapsed)                    "search.write_timeout"
+
+    — Error.Unexpected —
+    .WriteRejected(indexName, reason)                    "search.write_rejected"
     .BulkPartiallyFailed(failedCount, totalCount)        "search.bulk_partially_failed"
     .ProbeFailed(indexName, reason)                      "search.probe_failed"
     .EngineVersionUnsupported(actual, supportedRange)    "search.engine_version_unsupported"
     .EngineFault(providerName, operation, detail)        "search.engine_fault"
 
-    NOTE (ONLY THE SIX REAL Error FACTORIES ARE USED): SharedKernel.Primitives' Error exposes exactly
-          Unexpected, Validation, NotFound, Conflict, Unauthorized, and BusinessRule — each
-          (string code, string message) — plus the Error.None sentinel field. There is NO Error.Failure,
-          no Error.Forbidden, no single-argument overload, and no exception-accepting overload. Wherever
-          a generic "the operation failed" is meant, Error.Unexpected is used, matching
-          ErrorCodes.Unexpected.Default. Every code literal is a private const string on the holder
-          class — never retyped at a call site (SK0022).
+    NOTE (THE Error FACTORIES): SharedKernel.Primitives' Error exposes Unexpected, Validation,
+          NotFound, Conflict, Unauthorized, Forbidden, BusinessRule, Unavailable and Timeout — each
+          (string code, string message) — plus the Validation(IReadOnlyList<Error>) aggregate and the
+          Error.None sentinel field. There is NO Error.Failure and no exception-accepting overload. This
+          domain uses Unavailable for an engine that is down or overloaded and Timeout for one that ran
+          out of time (P-562), never Forbidden or BusinessRule. Wherever a generic "the operation failed"
+          is meant, Error.Unexpected is used, matching ErrorCodes.Unexpected.Default. Every code literal is
+          a private const string on the holder class — never retyped at a call site (SK0022).
 
     NOTE (Error.BusinessRule IS USED ZERO TIMES IN THIS DOMAIN, deliberately): per ErrorType's own XML
           doc it maps to HTTP 422 Unprocessable Entity and denotes a DOMAIN-RULE violation; nothing in a
@@ -1208,7 +1307,9 @@ MeilisearchOptions   (sealed class — Options-pattern, validated at startup)
     .MaxFacetValues               int      ([Range(1,10000)],  default 100)
     .DefaultBatchSize             int      ([Range(1,100000)], default 1000)
     .TenantTokenMaxTtlMinutes     int      ([Range(1,60)],     default 15)
-    .ValidateIndexSettingsOnStart bool     (default true)
+    .PooledConnectionLifetimeMinutes int   ([Range(1,60)],     default 5)
+    REMOVED in the pre-publish pass: ValidateIndexSettingsOnStart, declared and read by nothing —
+          replaced by ISearchIndexProvisioner.VerifyRegisteredIndexesAsync.
     NOTE: SectionName is the single source for the config path — never a bare "Search:Meilisearch"
           literal at a GetSection call site (SK0022).
 
@@ -1546,10 +1647,13 @@ ElasticSearchOptions   (sealed class — Options-pattern, validated at startup)
     .NumberOfShards               int      ([Range(1,100)],            default 1)
     .NumberOfReplicas             int      ([Range(0,10)],             default 1)
     .RefreshIntervalSeconds       int      ([Range(-1,3600)],          default 1)
-    .ValidateEngineVersionOnStart bool     (default true)
+    REMOVED in the pre-publish pass: ValidateEngineVersionOnStart, which ran inside the client DI
+          factory at first resolution and only logged — replaced by the explicit async
+          IServiceProvider.VerifyElasticSearchEngineVersionAsync().
 
 AddSharedKernelElasticSearchSearch(IConfiguration configuration)   → ElasticSearchBuilder
 AddSharedKernelElasticSearchSearch(IConfigurationSection section)  → ElasticSearchBuilder
+IServiceProvider.VerifyElasticSearchEngineVersionAsync(CancellationToken ct)        → Task<Result>
     .AddIndex<TDocument>(string readAlias, string writeAlias,
                          Action<SearchIndexDefinitionBuilder> configure)  → ElasticSearchBuilder
     .WithSourceSerializerContext(JsonSerializerContext context)           → ElasticSearchBuilder
@@ -1618,7 +1722,7 @@ ElasticSearchLog   (internal static partial class — [LoggerMessage], EventId s
 - Using `EnumerateAsync`'s ordering as a correctness assumption, or building a resumable export on positional state. Ordering is **unspecified** until a Tests-phase task verifies it against a real container on both engines.
 - Adding a nested / object-array path filter node to `SearchFilter`. The portable technique is flattening into a precomputed composite filterable field at document-mapping time; a neutral nested node is silently wrong on one engine.
 - Adding a string- or boolean-bounded range. `Between` accepts `Int64`, `Double`, and `DateTimeOffset` bounds only and throws `ArgumentException` otherwise.
-- Constructing an ad-hoc `Error` inline in either provider — all errors come from `SearchErrors`, `MeilisearchErrors`, or `ElasticSearchErrors`. Naming a non-existent factory (`Error.Failure`, `Error.Forbidden`) or returning `Error.None` from any method are both violations.
+- Constructing an ad-hoc `Error` inline in either provider — all errors come from `SearchErrors`, `MeilisearchErrors`, or `ElasticSearchErrors`. Naming a non-existent factory (`Error.Failure`) or returning `Error.None` from any method are both violations. An outage is `Error.Unavailable` and a timeout `Error.Timeout` (P-562), never `Error.Unexpected`.
 - Using `Error.BusinessRule` anywhere in this domain — it maps to HTTP 422 and denotes a domain-rule violation; nothing in a capability package is a domain rule.
 - Implementing `IHealthCheck`, or referencing `Microsoft.Extensions.Diagnostics.HealthChecks`, anywhere in `09.Search`. `ProbeAsync` returning `Result<SearchIndexHealth>` is the primitive; the adapter is `13.ServiceDefaults`'s responsibility.
 - `13.ServiceDefaults`'s eventual adapter treating `SearchIndexHealth.PendingWriteCount == null` as unhealthy, or failing readiness on a deep write backlog. A deep backlog means results are **stale**, not **unavailable**.
@@ -1695,7 +1799,7 @@ services
 //   ISearchIndex<TDocument>      → index / delete / bulk / search / get / count / enumerate
 //   ISearchIndexProvisioner      → ensure / exists / delete / cutover / probe
 //   ISearchProviderDescriptor    → ceilings + zero-I/O SearchRequest pre-flight validation
-//   SearchQuery.For<TDocument>() → build a SearchRequest (static, not DI-registered)
+//   SearchQuery.New()            → build a SearchRequest (static, not DI-registered, non-generic)
 
 // Provider-exclusive capabilities are injected by their PROVIDER-PACKAGE-DECLARED contract.
 // Referencing one of these takes a compile-time dependency on that provider package — which is the
@@ -1710,7 +1814,25 @@ services
 
 **GOTCHA (VERIFIED Tests-phase — was a real Core-phase DI-wiring bug, now fixed): `MeilisearchIndexProvisioner`, `ElasticSearchIndexProvisioner`, and `MeilisearchTenantTokenIssuer` all take a raw `TOptions` constructor parameter, not `IOptions<TOptions>`.** `AddValidatedOptions` only ever registers `IOptions<TOptions>` in the container, never the unwrapped type — so registering these three via the plain `services.AddSingleton<TInterface, TImplementation>()` shorthand fails to resolve `ISearchIndexProvisioner`/`ITenantSearchTokenIssuer` in **every** consuming service, not just tests. Both provider builders' `Build()` methods now register these three via an explicit factory lambda that unwraps `sp.GetRequiredService<IOptions<TOptions>>().Value` — the same pattern `AddIndex<TDocument>()` already used correctly. Any future type in either provider package whose constructor takes a raw options type must be registered the same way; the open-generic shorthand is only safe for types that accept `IOptions<TOptions>` directly.
 
-A service may register **both** providers, but only against **different `TDocument` types** — e.g. Meilisearch for the customer-facing catalogue index and ElasticSearch for the reporting index. Registering both providers for the **same** `TDocument` is a hard violation: `ISearchIndex<TDocument>` is an unkeyed registration, so the second call silently wins and the first provider becomes unreachable. **CONFIRMED against real compiled code at Published phase (`consumer-verify.BothProviders`):** the collision is not limited to `ISearchIndex<TDocument>` — the non-generic `ISearchIndexProvisioner`/`ISearchProviderDescriptor` singletons collide too, independent of `TDocument`, so provisioning and pre-flight-validation calls silently target the last-registered provider as well. **Neither `MeilisearchSearchBuilder` nor `ElasticSearchBuilder` offers a keyed-registration overload** (unlike `08.Storage`, whose stores are named: each `AddStore(name)` registers a keyed `IFileStorage`, so S3 and OBS stores coexist) — there is currently no supported side-by-side path for two providers against one `TDocument`; the only safe pattern is one `TDocument` (and index) per provider.
+A service may register **both** providers, but only against **different `TDocument` types** — e.g. Meilisearch for the customer-facing catalogue index and ElasticSearch for the reporting index. Registering both providers for the **same** `TDocument` is a hard violation: `ISearchIndex<TDocument>` is an unkeyed registration, so the second call silently wins and the first provider becomes unreachable.
+
+**The two non-generic contracts need a key, and the distinct-`TDocument` rule does not help them.** `ISearchIndexProvisioner` and `ISearchProviderDescriptor` have no type parameter to tell two providers apart, so in *any* two-provider host their unkeyed resolution collapses to whichever provider was registered last — `TDocument` is irrelevant to it. Both provider packages therefore register those two **keyed by provider name** (`SearchWellKnown.MeilisearchProviderName` / `SearchWellKnown.ElasticSearchProviderName`) as well as unkeyed, with the unkeyed registration resolving the keyed one so there is exactly one instance either way (the provisioners hold per-index state and, on ElasticSearch, a probe cache — two instances would mean two caches that can disagree):
+
+```csharp
+// Single-provider service: resolve unkeyed, as before. Nothing changes.
+var provisioner = services.GetRequiredService<ISearchIndexProvisioner>();
+
+// Two-provider host: address each engine explicitly.
+var meili = services.GetRequiredKeyedService<ISearchIndexProvisioner>(SearchWellKnown.MeilisearchProviderName);
+var elastic = services.GetRequiredKeyedService<ISearchIndexProvisioner>(SearchWellKnown.ElasticSearchProviderName);
+
+// 13.ServiceDefaults takes the same key:
+services.AddHealthChecks()
+    .AddSearchReadinessCheck("products", providerKey: SearchWellKnown.MeilisearchProviderName)
+    .AddSearchReadinessCheck("orders",   providerKey: SearchWellKnown.ElasticSearchProviderName);
+```
+
+**Why this was added rather than documented away (found by `samples/CatalogApi`, 2026-09-23):** without the key, `AddSearchReadinessCheck("products")` in a two-engine host resolved the ElasticSearch provisioner, probed it for a Meilisearch index, got "not addressable", and reported a perfectly healthy service permanently unready. The symptom had no visible connection to its cause, and the previously-recorded remedy — "use a distinct `TDocument` per provider" — does not touch it. The keyed path is the supported side-by-side registration this section previously said did not exist; it mirrors `08.Storage`, whose named stores each register a keyed `IFileStorage` so S3 and OBS coexist. `ISearchIndex<TDocument>` is deliberately **not** keyed: distinct document types already disambiguate it, and keying it would make same-`TDocument` dual registration look supported when it is not.
 
 `IMeilisearchRawClientAccessor` / `IElasticSearchRawClientAccessor` are registered **only** when the composition root calls `.AllowRawClientAccess()`, which logs a startup `Warning`. Neither is registered by default.
 
@@ -1718,7 +1840,7 @@ A service may register **both** providers, but only against **different `TDocume
 
 ## AOT Compatibility
 
-- `ISearchDocument`, `ISearchIndex<TDocument>`, `ISearchIndexProvisioner`, `ISearchProviderDescriptor`, and `IQueryBuilder<TDocument>` are interfaces — AOT-safe by definition.
+- `ISearchDocument`, `ISearchIndex<TDocument>`, `ISearchIndexProvisioner`, `ISearchProviderDescriptor`, and `IQueryBuilder` are interfaces — AOT-safe by definition.
 - All `Models/` types are `sealed record` / `readonly record struct` over BCL primitives — AOT-safe.
 - `SearchFilter`'s closed hierarchy is walked by exhaustive C# pattern matching resolved entirely at compile time — no visitor registry, no `dynamic`, no reflection, no `NotSupportedException` path.
 - `SearchValue`'s closed five-kind union replaces the `object`/`dynamic` filter-value shape the Meilisearch SDK itself uses — no boxing-plus-runtime-type-switch, no `Microsoft.CSharp` binder machinery.
@@ -1788,3 +1910,17 @@ A service may register **both** providers, but only against **different `TDocume
 - [2026-08-11] SK.09.Published WO-055 sub-pass complete (P-09/P-10, 2/2) — the domain's final 2 tasks, closing WO-055 (27/27) and the domain (158/158) end to end. **Version-bump decision, recorded explicitly rather than silently collapsed** (per this phase's own instruction): P-09 calls for a PATCH bump on the two provider packages (P-353's internal-only fixes) and P-10 calls for a MINOR bump on all three packages (P-354's additive `SearchBulkWriteOptions` overloads); both land in the same WO-055 delivery with no intervening published release that would ever consume a standalone PATCH artifact — packing a real `1.0.1` immediately followed by `1.1.0` in the same session produces a version nobody could ever depend on. Both bumps were therefore folded into **one MINOR pack per package**: all three packages went `1.0.0` → `1.1.0` in a single `dotnet pack` pass, `SharedKernel.Search.Meilisearch`/`.ElasticSearch` each carrying both their P-353 fix and P-354 overloads in that one release. The decision is recorded in three places, never silently: the `09.Search/state-map.md` P-09 task row's Decision note, a dedicated XML comment block in both provider `.csproj` `<Version>`/`<PackageVersion>` properties, and this changelog entry. `dotnet pack -c Release` on all three produced `.nupkg`+`.snupkg` at `1.1.0` with zero `NU5039`/`NU5128` (0/2/3 CS8509/CS8524 downgraded-warning counts matching the documented totals exactly). All three `consumer-verify` harnesses (`Meilisearch`, `ElasticSearch`, `BothProviders`) re-run via `dotnet run --configuration Release` against the freshly rebuilt `1.1.0` assemblies — all 10 surfaces PASS with zero DI exceptions, confirming no pre-existing call site broke and the two new overloads did not disturb DI composition. Full regression suite re-run against real Docker containers: 371/371 passing (172 Abstractions + 96 Meilisearch + 103 ElasticSearch), exactly matching the prior session's baseline with zero regressions from the re-pack. No production `.cs` file changed — pure packaging/versioning/verification, matching the phase's own charter. **The 09.Search domain is now complete end to end: all six phases (Design/Scaffold/Core/Tests/Docs/Published) `●` for all three `SharedKernel.Search.*` packages, WO-044 (131 tasks) and WO-055 (27 tasks) both fully shipped, 158/158 tasks `●`.** Propagated to root; root Phase Backlog entries P-353/P-354 closed to `●` Complete. No further `search-phase-implementer` work is expected on this domain unless a new work order lands (search-phase-implementer)
 - [2026-09-15] Contracts redesign: with `PagedList<T>.TotalCount` now `long`, `SearchResults.ToPagedList()` dropped its int-overflow guard and `SearchErrors.TotalHitsOverflow`/`search.total_hits_overflow`, returning `InvalidSearchRequest` instead for a negative total or more hits than `PageSize` (coordinator)
 - [2026-09-22] Cross-references to `08.Storage` updated for its P-559 redesign (named, keyed stores; `.Obs` now builds on `.S3`; `BatchDeleteResult`) (coordinator)
+- [2026-09-23] **Pre-publish gold-standard pass — the whole domain, before the first feed push.** A full review found the design itself sound (the intersection-only seam rule, the closed 8-node `SearchFilter` AST, the mandatory non-defaulted `TenantScope`, and the provider-package-declared exclusive contracts were all kept unchanged) but found the philosophy unenforced in three areas the Design/Core/Tests/Docs phases never examined. Breaking changes were taken deliberately: nothing was on the feed yet, so this was the last moment they were free.
+  **Correctness.** (1) `CountAsync` silently truncated on Meilisearch. It returned a bare `long` read from a paginated search's `totalHits`, which the engine caps at the index's `pagination.maxTotalHits` — so an index with 50,000 matching documents answered `50000` on ElasticSearch and `1000` on Meilisearch, with no error, under an XML doc promising "the exact count". Every existing test used a corpus far below the ceiling, so nothing caught it. Now `Task<Result<SearchCount>>`, pairing the figure with the existing `TotalHitsAccuracy` vocabulary; `MeilisearchCountAccuracyTests` provisions a deliberately tiny ceiling so the regression stays cheap to catch against a real engine. (2) **Exceptions escaped `Result`-returning members.** The Meilisearch SDK throws on connection failure, auth failure and every 4xx/5xx; eight `ISearchIndex` members had no `catch`, so an unreachable instance propagated an exception out of a `Task<Result<T>>` — while the ElasticSearch sibling, whose client returns an invalid response instead, returned a failed `Result` for the identical condition. Two providers behaving differently on "the search engine is down" is exactly what the intersection rule exists to prevent; it had simply never been applied to the failure path. New `MeilisearchFaultMapper`/`ElasticSearchFaultMapper` classify each SDK's own shape onto one vocabulary, distinguishing the retryable-transport class (`unreachable`, `timeout`) from the permanent-request class (`unauthorized`, `index_not_found`, `invalid_filter`). (3) Two further defects were found *by the new tests*, not by reading: an `HttpClient` timeout raises `TaskCanceledException`, which fell through to a generic `engine_fault` — and in `EnumerateAsync` escaped the walk entirely as a raw `TaskCanceledException` instead of the promised `SearchStreamException`, because the rethrow guard keyed on the exception type rather than on whether the caller's token was actually cancelled. (4) `GetAsync` absorbed *any* `MeilisearchApiError` into `DocumentNotFound`, so a rejected API key told the caller its document was gone; only the genuinely not-found shapes are absorbed now. (5) `MeilisearchTenantTokenIssuer` issued a signed, browser-delivered token for `TenantScope.None`, compiling to `tenantField = ""` — a token that looks scoped, reads as scoped in review, and restricts nothing meaningful; it now fails closed, as do a blank tenant field, an empty index list and a non-positive TTL.
+  **Dead code.** (6) **The domain emitted no telemetry at all.** Both providers declared a `SearchDiagnostics` `ActivitySource` and `Meter` and never called either — zero `StartActivity`, zero instruments, domain-wide — while `13.ServiceDefaults` shipped a `WithSearchTelemetry()` wiring both by name. The cross-domain contract was documented, wired, and completely inert. Every verb on both providers now opens a `search {operation}` client span and records `search.client.operation.duration` (seconds) and `search.client.documents`, tagged `search.index`/`search.operation`/`search.provider` and, on failure, `error.type` — mirroring `08.Storage`'s `storage.client.*` shape. Query text, filter values and document ids are never recorded. (7) `MeilisearchOptions.ValidateIndexSettingsOnStart` was declared, defaulted `true`, documented as verifying settings at startup, and **read by nothing** — the dead-configuration-knob defect class WO-054/WO-061/WO-064 each found in their own domains. Deleted, and replaced by the real capability it claimed: `ISearchIndexProvisioner.VerifyRegisteredIndexesAsync`. (8) Six `SearchErrors` factories (`Unreachable`, `ProbeFailed`, `IndexAlreadyExists`, `UnsupportedCapability`, `EngineVersionUnsupported`, `BulkPartiallyFailed`) were never returned by production code; the taxonomy was aspirational. All but `UnsupportedCapability` (reserved by construction, as its own doc says) are now wired.
+  **Startup and lifetime.** (9) ElasticSearch's engine-version check was three defects in twenty lines: `client.InfoAsync().GetAwaiter().GetResult()` inside the `ElasticsearchClient` DI factory, so it ran at *first resolution* — typically inside the first request, not at startup — blocked a thread-pool thread on network I/O to do it, swallowed every exception, and only logged, so an unsupported cluster started and served traffic anyway. An option named `ValidateEngineVersionOnStart` that neither runs on start nor validates is worse than no option, because it is believed. Replaced by the explicit async `VerifyElasticSearchEngineVersionAsync`. (10) The Meilisearch singleton captured an `IHttpClientFactory` client forever, pinning one handler past its rotation window and caching a resolved address for the life of the process — a rescheduled Meilisearch pod would have stayed unreachable until the service restarted. Fixed with an explicit `PooledConnectionLifetime` (`PooledConnectionLifetimeMinutes`, default 5). (11) A startup warning logged `typeof(object).Name` — the literal string `"Object"` — as its document-type parameter.
+  **API cleanup.** (12) `IQueryBuilder<TDocument>`'s type parameter was phantom: because fields are strings by deliberate design, `TDocument` appeared in no parameter, no field and nowhere in the built `SearchRequest`, only parameterising twelve return types. Now non-generic, entry point `SearchQuery.New()`. (13) `SearchIndexDefinition.Fingerprint` became `ComputeFingerprint()` — a property that allocates and runs SHA-256 costs far more than a property getter implies, and it cannot be cached in a `record` without a `with` expression carrying a stale hash forward.
+  **New capability.** (14) Index-level `Synonyms` and `StopWords` on `SearchIndexDefinition` — the one text-analysis surface both engines implement identically (Meilisearch's `synonyms`/`stopWords` settings; an ElasticSearch custom analyzer with `synonym`/`stop` token filters assigned to every text field). One-way synonyms, because that is Meilisearch's native shape and ElasticSearch's explicit-mapping form matches it exactly; two-way equivalence would have diverged per engine. Both providers refuse an in-place change on a live index and point at the staging-to-cutover remedy, even though Meilisearch's own engine would allow the rewrite — parity beats convenience here. The per-field analyzer knob `SearchFieldDefinition` permanently refuses is still refused. (15) `MeilisearchRankingRule` + `WithRankingRules` — Meilisearch-exclusive, declared in the provider package, because ElasticSearch has no ordered tie-breaker list. (16) `ISuggestSearch<TDocument>` + `WithCompletionField` — the ElasticSearch completion suggester, the deliberate counterpart to Meilisearch's `IInstantSearch<TDocument>`; the tenant travels as a **category context** on the completion mapping, because the suggester ignores query filters entirely and without a context there would be no way to stop one tenant's content completing another tenant's typing.
+  **Process.** (17) Public API tracking adopted on all three packages (`Microsoft.CodeAnalysis.PublicApiAnalyzers` + `PublicAPI.{Shipped,Unshipped}.txt`, RS0016/17/22/24/25/36/37 as errors), matching what `07.Messaging` established in its own pre-publish pass — an addition, removal or signature change now fails the build until the diff is reviewed. (18) `09.Search/README.md` was 0 bytes; written.
+  **Verification.** 194 Abstractions + 122 Meilisearch + 117 ElasticSearch tests green, the provider suites against real Meilisearch and Elasticsearch containers; all three `consumer-verify` harnesses pass through a real `IHost.StartAsync()`; all three packages pack clean with zero `NU5039`/`NU5128`. `16.Testing`'s `InMemorySearchIndex`/`InMemorySearchIndexProvisioner` were updated to the new contract in the same pass (search domain pre-publish pass, user request)
+- [2026-09-23] **`samples/CatalogApi` built and run against real engines — four further defects found and fixed, three of them only findable from a composed host.** The pre-publish pass above was verified from unit and real-backend test suites; this entry records what a *service* found that a test suite could not, because the defects live in composition rather than in any one package's behaviour. CatalogApi consumes the **packed** packages (`PackageReference`, never `ProjectReference`) and runs Meilisearch for a storefront and ElasticSearch for a back office in one host.
+  **(1) `AddSearchReadinessCheck` crashed the host at startup when called once per index.** `13.ServiceDefaults.Search` registered every check under the bare `HealthCheckNames.Search` constant, so the second call threw `ArgumentException: Duplicate health checks were registered with the name(s): search` from `MapDefaultHealthCheckEndpoints()` — naming the framework, not the call that caused it. Calling it once per index is exactly what the `indexName` parameter invites. The default is now `search-{indexName}`, which is also what an operator wants in the health response body: `search-products` says which index is unhealthy, `search` does not. The published `AddStorageReadinessCheck` in `13.ServiceDefaults.Storage` has the identical shape and the identical trap — `samples/DocumentsApi` only works because it passes explicit names — left alone here because that package is already on the feed; raised separately.
+  **(2) The two non-generic contracts could not be addressed in a two-provider host, and the recorded remedy did not help.** `ISearchIndexProvisioner` and `ISearchProviderDescriptor` have no type parameter, so the second provider's registration shadows the first and an unkeyed resolution silently returns whichever was registered last. The domain's own note said to "use a distinct `TDocument` per provider" — which disambiguates `ISearchIndex<TDocument>` and nothing else. Proved live: `AddSearchReadinessCheck("products")` resolved the *ElasticSearch* provisioner, probed it for a *Meilisearch* index, and reported a healthy service permanently unready. Both provider packages now register those two **keyed by provider name** as well as unkeyed, with the unkeyed registration resolving the keyed one so there is exactly one instance either way — the provisioners hold per-index state and, on ElasticSearch, a probe cache, so two instances could disagree about readiness. `AddSearchReadinessCheck` gained an optional `providerKey`. `ISearchIndex<TDocument>` is deliberately **not** keyed: distinct document types already disambiguate it, and keying it would make same-`TDocument` dual registration look supported when it is not. `consumer-verify.BothProviders` now asserts the keyed resolution as well as documenting the unkeyed collapse, and its closing message — which recorded the incomplete remedy — was corrected.
+  **(3) A write alias that resolves to nothing let every write succeed into an index nobody reads.** ElasticSearch auto-creates an index on write, so `AddIndex<T>(readAlias: "a", writeAlias: "b")` with only `a` provisioned sent the whole seed into a brand-new, mapping-less, analysis-less `b`: the bulk call reported 12 of 12 succeeded and every read returned nothing. Nothing in the domain noticed — `ProbeAsync` and `VerifyRegisteredIndexesAsync` both looked only at the read path. `VerifyRegisteredIndexesAsync` now also checks the write alias resolves *and* carries the `sk_schema_fingerprint` mapping metadata `EnsureIndexAsync` writes, which an implicitly-created index never has; the read==write case (what a service starts with) is a no-op because the read-path fingerprint check already proved it. Both branches verified against a real cluster: a dangling alias and an auto-created one each produce a distinct, actionable drift message and a 503 from the sample's `/ops/verify`.
+  **(4) The ElasticSearch suggester reported every suggestion's score as 0.** The client models the completion response's two score fields as separate properties — `Score0` carries `_score`, which is the field a completion suggester actually populates, and `Score` carries a plain `score` this response shape never emits. Reading only `Score` silently discarded the ranking that is the entire reason to use a completion suggester over a prefix query. Now `Score0 ?? Score ?? 0`; verified as the engine's real `1.0` against a live cluster. Also fixed: the ElasticSearch analysis-conflict error rendered a whole sentence into `SearchErrors.IndexDefinitionConflict`'s field slot, producing `Field 'the declared synonyms or stop words differ from…' on index 'x'` in a message a consumer reads.
+  **What the sample confirmed already worked**, end to end against Meilisearch 1.20.0 and Elasticsearch 9.4.2 through packed artifacts: the qualified `SearchCount` (10 documents against a `MaxTotalHits(8)` index reported `>=8`/`LowerBound` on Meilisearch and an exact 8 from ElasticSearch's `_count` in the same breath); a stopped Meilisearch container surfacing as a `search.unreachable` ProblemDetails rather than a thrown exception, with ElasticSearch unaffected and the storefront recovering on restart with no intervention; spans and `search.client.operation.duration` measurements from **both** engines through the real `WithSearchTelemetry()`, carrying `error.type` on the failures; one-way synonyms and stop words on both engines; both providers refusing an in-place text-analysis change with `index_definition_conflict`; tenant isolation on get, enumerate and — through the completion category context — the suggester; aggregations, cursor, stream, instant search, the pagination ceiling, and per-index readiness. `samples/CatalogApi/README.md` documents each of these as a command to run (search domain post-pass sample verification, user request)

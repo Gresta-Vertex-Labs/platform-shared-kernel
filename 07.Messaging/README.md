@@ -110,11 +110,14 @@ public sealed record OrderPlaced(Guid EventId, DateTimeOffset OccurredOn, Guid O
 **3 — Publish it.** No tenant, no correlation id, no headers at the call site — those arrive on their own.
 
 ```csharp
-Result published = await eventPublisher.PublishAsync(
-    new OrderPlaced(Guid.CreateVersion7(), DateTimeOffset.UtcNow, order.Id, order.Total), ct);
-
-if (published.IsFailure) return published.ToProblemDetailsResult();
+// In an endpoint, with SharedKernel.Presentation.WebApi: 202, or a problem response (messaging.unavailable is 503).
+return eventPublisher.PublishAsync(
+        new OrderPlaced(Guid.CreateVersion7(), clock.UtcNow, order.Id, order.Total), ct)
+    .ToAccepted($"/orders/{order.Id}");
 ```
+
+When the handler goes on after publishing, return the failure through the same boundary:
+`if (published.IsFailure) return published.Error.ToErrorResult();`
 
 **4 — Consume it**, as in the snippet at the top of this page.
 
@@ -148,14 +151,16 @@ the original caller is carried onward, so a chain of consumers keeps attributing
 A broker being unreachable is an operational condition a caller can act on, not a defect. Every dispatch verb
 returns `Result`:
 
-| Code | When |
-| --- | --- |
-| `messaging.unavailable` | The transport is unreachable or the connection dropped |
-| `messaging.endpoint_not_found` | A send addressed a queue that does not exist |
-| `messaging.serialization_failed` | The payload could not be serialized |
-| `messaging.publish_rejected` | The broker refused the message |
-| `messaging.invalid_message` | The event failed validation before dispatch (unset `EventId`, wrong declared type) |
-| `messaging.contract_violation` | The event type has no valid `[IntegrationEvent]` attribute |
+| Code | `ErrorType` (HTTP) | When |
+| --- | --- | --- |
+| `messaging.unavailable` | Unavailable (503) | The transport is unreachable or the connection dropped |
+| `messaging.endpoint_not_found` | NotFound (404) | A send addressed a queue that does not exist |
+| `messaging.serialization_failed` | Unexpected (500) | The payload could not be serialized |
+| `messaging.publish_rejected` | Unexpected (500) | The broker refused the message |
+| `messaging.invalid_message` | Validation (400) | The event failed validation before dispatch (unset `EventId`, wrong declared type) |
+| `messaging.contract_violation` | Validation (400) | The event type has no valid `[IntegrationEvent]` attribute |
+
+`messaging.unavailable` is `ErrorType.Unavailable` since P-562 (it was `Unexpected`, so an outage answered 500).
 
 Anything the classifier does **not** recognise as a transport fault is rethrown unchanged, so a genuine bug in
 your code is never laundered into a failed `Result`.

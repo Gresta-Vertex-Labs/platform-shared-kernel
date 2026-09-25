@@ -19,7 +19,7 @@ error's `Message` still reads naturally in logs, and the HTTP boundary can rende
 | --- | --- |
 | `LocalizedMessage.Define<T1…T4>(code, text, argumentNames…)` | Every call site is checked for argument count and types, and a definition whose names don't match its text fails when the type loads |
 | Named placeholders with .NET formats (`{amount:N2}`, `{date:d}`) | Translators can reorder values, and numbers and dates are formatted for the caller's culture (`1,500.50` or `1.500,50`) |
-| `Error.MessageArguments` filled by `ToError(...)` | `14.Presentation` translates the `detail` of a ProblemDetails response *with* the values, with no extra code in your handler |
+| `Error.MessageArguments` filled by `ToError(...)` | `14.Presentation` translates the `detail` of a ProblemDetails response (and a SignalR or gRPC error message) *with* the values, with no extra code in your handler. Outside Development a server error (500, 503, 504) shows a generic sentence instead, translatable under `unexpected.exception`, `unavailable.default` and `timeout.default` |
 | JSON translation files, from disk or embedded in an assembly | Translations live next to the service or ship inside a library, one file per culture |
 | Validation when the catalog is built | A malformed template, a duplicate key or a bad file name stops startup, instead of reaching a user |
 | Fallback to the original message, always | A missing translation, a translation that needs a value the error doesn't have, or a bad format never produces a blank or a raw `{placeholder}` |
@@ -122,8 +122,8 @@ builder.Services.AddLocalizationCatalog(catalog =>
 ```
 
 **5. That's all the HTTP side needs.** `SharedKernel.Presentation.WebApi` resolves the catalog when it turns an error
-into a ProblemDetails response, and translates the `detail` into `CultureInfo.CurrentUICulture`. That culture is set
-from the request by ASP.NET Core's request localization; see [recipe 1](#1-choose-the-culture-for-each-request).
+into a ProblemDetails response, and translates the `detail` into the culture ASP.NET Core's request localization chose
+for the request (else `CultureInfo.CurrentUICulture`); see [recipe 1](#1-choose-the-culture-for-each-request).
 A caller with `Accept-Language: tr-TR` gets, abridged:
 
 ```json
@@ -230,13 +230,15 @@ anything touches the class, including any test that uses one of its messages.
 
 ### 1. Choose the culture for each request
 
-ProblemDetails translation reads `CultureInfo.CurrentUICulture`. ASP.NET Core's request localization sets it from the
-request, **but only to a culture in its supported list**. Anything else stays at the default, so pass the catalog's
-cultures:
+ProblemDetails translation reads the culture ASP.NET Core's request localization chose for the request. It chooses
+**only a culture in its supported list**; anything else stays at the default, so pass the catalog's cultures. With
+`SharedKernel.Presentation.WebApi`, add it in `UseSharedKernelWebApi()`'s `BeforeAuthorization` hook, so the 401, 403
+and 429 answers of authorization and rate limiting are translated too:
 
 ```csharp
 using Microsoft.AspNetCore.Builder;
 using SharedKernel.Localization;
+using SharedKernel.Presentation.WebApi;
 
 var app = builder.Build();
 
@@ -245,10 +247,12 @@ string[] cultures = [.. app.Services.GetRequiredService<InMemoryLocalizationCata
     .Prepend("en")
     .Distinct()];
 
-app.UseRequestLocalization(options => options
+app.UseSharedKernelWebApi(pipeline => pipeline.BeforeAuthorization(web => web.UseRequestLocalization(options => options
     .SetDefaultCulture("en")
     .AddSupportedCultures(cultures)
-    .AddSupportedUICultures(cultures));
+    .AddSupportedUICultures(cultures))));
+
+// Without SharedKernel.Presentation.WebApi: app.UseRequestLocalization(options => ...) with the same options.
 ```
 
 `Accept-Language: tr-TR` then resolves to `tr`, because `FallBackToParentUICultures` is on by default.
@@ -401,8 +405,11 @@ JSON        One file per culture (tr.json, de-DE.json). {"order":{"not_found":"{
             Validated at registration: bad JSON/template/duplicate/empty/culture name -> exception at startup.
 SYNTAX      {name} {name:N2} {date:d} {{ }}. Positional {0} rejected. Names case-sensitive.
 FALLBACK    tr-TR -> tr -> invariant. Missing translation, missing argument or bad format -> original message.
-HTTP        SharedKernel.Presentation.WebApi translates ProblemDetails.detail with CultureInfo.CurrentUICulture.
-            Configure UseRequestLocalization with SupportedUICultures = catalog.Cultures, or nothing is translated.
+HTTP        SharedKernel.Presentation.WebApi translates ProblemDetails.detail (and SignalR/gRPC error messages) with the
+            request culture (IRequestCultureFeature, else CultureInfo.CurrentUICulture). Configure UseRequestLocalization
+            with SupportedUICultures = catalog.Cultures, or nothing is translated; with UseSharedKernelWebApi() put it in
+            the BeforeAuthorization hook. Outside Development 500/503/504 show a generic sentence (codes
+            unexpected.exception, unavailable.default, timeout.default).
 FORBIDDEN   Interpolating values into Error codes or messages you want translated; {0}; two catalogs; InvariantGlobalization.
 ```
 

@@ -16,6 +16,8 @@ public class GrpcStatusCodeMapTests
     [InlineData(ErrorType.Conflict, StatusCode.Aborted)]
     [InlineData(ErrorType.BusinessRule, StatusCode.FailedPrecondition)]
     [InlineData(ErrorType.Unexpected, StatusCode.Internal)]
+    [InlineData(ErrorType.Unavailable, StatusCode.Unavailable)]
+    [InlineData(ErrorType.Timeout, StatusCode.DeadlineExceeded)]
     public void Resolve_MapsEveryExplicitlyHandledErrorType(ErrorType errorType, StatusCode expected)
     {
         GrpcStatusCodeMap.Resolve(errorType).Should().Be(expected);

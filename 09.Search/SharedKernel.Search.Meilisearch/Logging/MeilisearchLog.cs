@@ -152,4 +152,48 @@ internal static partial class MeilisearchLog
         Level = LogLevel.Debug,
         Message = "Bulk operation on index '{IndexName}' throttled: waiting {DelayMs}ms before the next batch.")]
     public static partial void MeilisearchBulkThrottled(this ILogger logger, string indexName, double delayMs);
+
+    [LoggerMessage(
+        EventId = LoggingEventIdRanges.Search + 122,
+        Level = LogLevel.Debug,
+        Message = "CountAsync on index '{IndexName}' reached the engine's maxTotalHits ceiling of " +
+                  "{Ceiling}; the count is reported as a lower bound, not an exact figure.")]
+    public static partial void MeilisearchCountReachedCeiling(this ILogger logger, string indexName, int ceiling);
+
+    [LoggerMessage(
+        EventId = LoggingEventIdRanges.Search + 123,
+        Level = LogLevel.Warning,
+        Message = "Meilisearch operation '{Operation}' on index '{IndexName}' faulted and was mapped to " +
+                  "error code '{ErrorCode}'.")]
+    public static partial void MeilisearchOperationFaulted(
+        this ILogger logger, string operation, string indexName, string errorCode);
+
+    [LoggerMessage(
+        EventId = LoggingEventIdRanges.Search + 124,
+        Level = LogLevel.Information,
+        Message = "Meilisearch index '{IndexName}' text analysis applied: {SynonymCount} synonym term(s), " +
+                  "{StopWordCount} stop word(s).")]
+    public static partial void MeilisearchTextAnalysisApplied(
+        this ILogger logger, string indexName, int synonymCount, int stopWordCount);
+
+    [LoggerMessage(
+        EventId = LoggingEventIdRanges.Search + 125,
+        Level = LogLevel.Warning,
+        Message = "Meilisearch index '{IndexName}' settings drifted from the registered definition at startup: " +
+                  "{Detail}")]
+    public static partial void MeilisearchIndexSettingsDrifted(
+        this ILogger logger, string indexName, string detail);
+
+    [LoggerMessage(
+        EventId = LoggingEventIdRanges.Search + 126,
+        Level = LogLevel.Information,
+        Message = "Meilisearch index '{IndexName}' settings verified against the registered definition at startup.")]
+    public static partial void MeilisearchIndexSettingsVerified(this ILogger logger, string indexName);
+
+    [LoggerMessage(
+        EventId = LoggingEventIdRanges.Search + 127,
+        Level = LogLevel.Information,
+        Message = "Meilisearch index '{IndexName}' ranking rules applied: {RankingRuleCount} rule(s).")]
+    public static partial void MeilisearchRankingRulesApplied(
+        this ILogger logger, string indexName, int rankingRuleCount);
 }

@@ -1,5 +1,4 @@
 using SharedKernel.Primitives.Results;
-using SharedKernel.Search.Abstractions.Abstractions;
 using SharedKernel.Search.Abstractions.Models;
 
 namespace SharedKernel.Search.Abstractions.Querying;
@@ -8,11 +7,10 @@ namespace SharedKernel.Search.Abstractions.Querying;
 /// A fluent, immutable builder for a <see cref="SearchRequest"/> — optional sugar over constructing
 /// a <see cref="SearchRequest"/> directly.
 /// </summary>
-/// <typeparam name="TDocument">The search document type.</typeparam>
 /// <remarks>
 /// <para>
 /// <b>Immutable — enforced, not merely asserted:</b> every method returns a <em>new</em>
-/// <see cref="SearchQueryBuilder{TDocument}"/> instance. A partially-built query may be safely shared,
+/// <see cref="SearchQueryBuilder"/> instance. A partially-built query may be safely shared,
 /// cached, fanned out, or used as a template.
 /// </para>
 /// <para>
@@ -33,47 +31,56 @@ namespace SharedKernel.Search.Abstractions.Querying;
 /// <c>Expression&lt;Func&lt;TDocument, object&gt;&gt;</c>. An <c>IQueryable</c> surface promises a
 /// completeness no search engine delivers and lands its failures at runtime.
 /// </para>
+/// <para>
+/// <b>Non-generic, and it must stay that way.</b> This type carried a <c>TDocument</c> parameter until
+/// the pre-publish pass, which read as type safety and delivered none: because fields are strings by
+/// the deliberate decision above, <c>TDocument</c> appeared in no parameter, no field, and nowhere in
+/// the built <see cref="SearchRequest"/> — it only parameterised the fluent return types. It was a
+/// phantom parameter that forced callers to name a type for nothing and emitted a separate generic
+/// instantiation of all twelve methods per document type. Do not reintroduce it: a type parameter that
+/// constrains nothing advertises a guarantee this builder cannot make. The document type enters at
+/// execution, on <c>ISearchIndex&lt;TDocument&gt;.SearchAsync</c>, where it is genuinely load-bearing.
+/// </para>
 /// </remarks>
-public interface IQueryBuilder<TDocument>
-    where TDocument : class, ISearchDocument
+public interface IQueryBuilder
 {
     /// <summary>Sets the free-text query.</summary>
-    IQueryBuilder<TDocument> Matching(string? freeText);
+    IQueryBuilder Matching(string? freeText);
 
     /// <summary>Sets whether every free-text term must match (AND) rather than any (OR).</summary>
-    IQueryBuilder<TDocument> MatchAllTerms(bool matchAll);
+    IQueryBuilder MatchAllTerms(bool matchAll);
 
     /// <summary>Restricts which fields free text is matched against.</summary>
-    IQueryBuilder<TDocument> SearchingIn(params string[] fields);
+    IQueryBuilder SearchingIn(params string[] fields);
 
     /// <summary>
     /// Adds a filter predicate. Repeated calls AND together — they never replace a prior call.
     /// </summary>
-    IQueryBuilder<TDocument> Where(SearchFilter filter);
+    IQueryBuilder Where(SearchFilter filter);
 
     /// <summary>Adds an ascending sort on <paramref name="field"/>.</summary>
-    IQueryBuilder<TDocument> OrderBy(string field);
+    IQueryBuilder OrderBy(string field);
 
     /// <summary>Adds a descending sort on <paramref name="field"/>.</summary>
-    IQueryBuilder<TDocument> OrderByDescending(string field);
+    IQueryBuilder OrderByDescending(string field);
 
     /// <summary>Sets the 1-based page number and page size.</summary>
-    IQueryBuilder<TDocument> Page(int page, int pageSize);
+    IQueryBuilder Page(int page, int pageSize);
 
-    /// <summary>Requires an exact <see cref="SearchResults{TDocument}.TotalHits"/>.</summary>
-    IQueryBuilder<TDocument> RequireExactTotalHits();
+    /// <summary>Requires an exact <c>SearchResults&lt;TDocument&gt;.TotalHits</c>.</summary>
+    IQueryBuilder RequireExactTotalHits();
 
     /// <summary>Requests facet value/count distributions for <paramref name="facetFields"/>.</summary>
-    IQueryBuilder<TDocument> Faceting(params string[] facetFields);
+    IQueryBuilder Faceting(params string[] facetFields);
 
     /// <summary>Requests numeric min/max facet statistics for <paramref name="facetFields"/>.</summary>
-    IQueryBuilder<TDocument> WithNumericFacetStats(params string[] facetFields);
+    IQueryBuilder WithNumericFacetStats(params string[] facetFields);
 
     /// <summary>Sets the highlight request.</summary>
-    IQueryBuilder<TDocument> Highlighting(HighlightRequest highlight);
+    IQueryBuilder Highlighting(HighlightRequest highlight);
 
     /// <summary>Restricts which fields are returned on each hit.</summary>
-    IQueryBuilder<TDocument> Returning(params string[] fields);
+    IQueryBuilder Returning(params string[] fields);
 
     /// <summary>Builds the <see cref="SearchRequest"/>, validating provider-independent invariants.</summary>
     Result<SearchRequest> Build();

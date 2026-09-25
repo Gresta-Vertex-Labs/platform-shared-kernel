@@ -72,7 +72,7 @@ app.Run();
 
 | Member | Purpose |
 | --- | --- |
-| `AddServiceDefaults()` | OpenTelemetry traces, metrics, and logs — with ambient `TenantId`/`CorrelationId` log enrichment — plus the base health checks |
+| `AddServiceDefaults()` | OpenTelemetry traces, metrics, and logs — with ambient `correlation.id`/`TenantId` log enrichment — plus the base health checks. A caller's `baggage` header never fills OpenTelemetry's baggage store, and only the platform's two keys reach log records (see below) |
 | `MapDefaultHealthCheckEndpoints(requireAuthorization)` | Maps `/health/live` (`live`-tagged checks only) and `/health/ready` (`ready`-tagged checks only) |
 | `StartupGate` | Keeps `/health/ready` unhealthy until you call `MarkReady()` |
 | `HealthCheckNames`, `HealthCheckTags` | The shared names and tags every integration package uses |
@@ -88,6 +88,26 @@ instruments **by name** and references nothing — so none of them adds a depend
 default buckets assume milliseconds, so without the view every request would land in the first bucket.
 Calling it twice exports one metric stream, not two. A dashboard or alert built against the earlier
 millisecond values needs retuning.
+
+## Baggage a caller sends
+
+W3C `baggage` is a request header like any other: an anonymous caller can send
+`baggage: TenantId=<another tenant>,SubjectId=admin`. Since P-562 X2 this package trusts none of it:
+
+- **Log records** get two baggage items only, `correlation.id` and `TenantId`, the ones platform middleware
+  writes (and replaces). A value containing a control character or a Unicode line separator is never
+  copied. Anything else you want on a log record belongs in the log statement.
+- **OpenTelemetry's `Baggage.Current`** is never filled from an incoming request, so the HttpClient and gRPC
+  client instrumentations cannot forward a caller's items downstream. Trace context is still read.
+  Baggage your service sets itself still leaves with outgoing calls: `Baggage.SetBaggage(...)` items and,
+  while `Baggage.Current` is empty, `Activity` baggage such as the correlation id.
+
+The request's `Activity` is cleared of the caller's items by `14.Presentation`'s WebApi core
+(`TrustInboundBaggage`, off by default); this package does not read that setting. Without that package, the
+caller's items stay on the activity — .NET sends them with outgoing HTTP calls, and a caller's `TenantId` or
+`correlation.id` item is logged unless tenant resolution or the correlation middleware replaces it. A propagator you set
+with `Sdk.SetDefaultTextMapPropagator` before the host starts is wrapped, not replaced; one set after
+start removes the protection.
 
 ## Migrating from before the split
 
@@ -105,10 +125,12 @@ cannot present credentials, and readiness output can disclose your dependency to
 
 ## Rate limiting and ProblemDetails
 
-`AddSharedKernelRateLimiting()` leaves `OnRejected` at the ASP.NET Core bare-429 default and takes **no**
-reference to `14.Presentation`. For an RFC 9457 body, attach your own handler through the `configure`
-parameter and call `14.Presentation`'s `RateLimitRejectionProblemDetails.Create(...)`. That keeps the two
-packages independently referenceable.
+`AddSharedKernelRateLimiting()` leaves `OnRejected` unset and takes **no** reference to `14.Presentation`.
+On its own, a rejection is ASP.NET Core's bare 429. Together with `14.Presentation`'s
+`AddSharedKernelWebApi()`/`UseSharedKernelWebApi()` it is the platform's RFC 9457 body with nothing to write:
+429 `application/problem+json` with `errorCode` `rate_limit.exceeded` and `Retry-After`, and
+`UseSharedKernelWebApi()` adds `UseRateLimiter()` itself. An `OnRejected` you set through `configure` wins
+over both. The two packages stay independently referenceable.
 
 ## Why the base references nothing
 

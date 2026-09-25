@@ -6,6 +6,7 @@ using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using SharedKernel.Communication.Rest.Extensions;
 using SharedKernel.Communication.Rest.ProblemDetails;
+using SharedKernel.Primitives.Errors;
 
 namespace SharedKernel.Communication.Rest.Tests.Extensions;
 
@@ -78,8 +79,8 @@ public sealed class ReadResultAsyncTests
     [Fact]
     public async Task ReadResultAsync_TypeInfo_Non2xxWithProblemJson_ReturnsFailure_WithProblemCode()
     {
-        // "type" is an RFC 9457 status URI, not the code — "title"/"errorCode" carry Error.Code.
-        var body = """{"type":"https://httpstatuses.io/422","title":"validation.required","errorCode":"validation.required","detail":"Id is required","status":422}""";
+        // "errorCode" carries Error.Code; "title" is the status reason phrase and "type" a URI (P-562).
+        var body = """{"type":"https://tools.ietf.org/html/rfc4918#section-11.2","title":"Unprocessable Entity","errorCode":"validation.required","detail":"Id is required","status":422}""";
         var response = BuildProblemDetailsResponse(HttpStatusCode.UnprocessableEntity, body);
 
         var result = await response.ReadResultAsync(OrderDtoTypeInfo);
@@ -87,6 +88,61 @@ public sealed class ReadResultAsyncTests
         result.IsSuccess.Should().BeFalse();
         result.Error.Code.Should().Be("validation.required");
         result.Error.Message.Should().Be("Id is required");
+    }
+
+    [Fact]
+    public async Task ReadResultAsync_TypeInfo_Non2xxWithTitleButNoErrorCode_FailsWithTheStatusCode()
+    {
+        // ASP.NET Core's default problem from a service outside the platform: the reason phrase in "title" is
+        // never adopted as the caller's error code.
+        var body = """{"type":"https://tools.ietf.org/html/rfc9110#section-15.5.5","title":"Not Found","status":404,"detail":"No order 42."}""";
+        var response = BuildProblemDetailsResponse(HttpStatusCode.NotFound, body);
+
+        var result = await response.ReadResultAsync(OrderDtoTypeInfo);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().Be(Error.NotFound("http.404", "No order 42."));
+    }
+
+    [Fact]
+    public async Task ReadResultAsync_TypeInfo_PlatformValidationProblem_FailsWithEveryFieldError()
+    {
+        // The body a platform service writes for Error.Validation of two field errors.
+        var body = """
+            {
+              "type": "https://tools.ietf.org/html/rfc9110#section-15.5.1",
+              "title": "Bad Request",
+              "status": 400,
+              "detail": "2 validation errors occurred.",
+              "instance": "/orders",
+              "errorCode": "validation.failed",
+              "errors": { "Id": ["Id is required."], "Amount": ["Amount must be positive."] },
+              "errorCodes": { "Id": ["validation.required"], "Amount": ["validation.out_of_range"] }
+            }
+            """;
+        var response = BuildProblemDetailsResponse(HttpStatusCode.BadRequest, body);
+
+        var result = await response.ReadResultAsync(OrderDtoTypeInfo);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Type.Should().Be(ErrorType.Validation);
+        result.Error.Code.Should().Be(ErrorCodes.Validation.Failed);
+        result.Error.Details.Select(d => d.Code).Should().Equal("validation.required", "validation.out_of_range");
+        result.Error.Details.Select(d => d.MessageArguments[ErrorArgumentNames.PropertyPath]).Should().Equal("Id", "Amount");
+    }
+
+    [Fact]
+    public async Task ReadResultAsync_TypeInfo_FieldErrorsOnAServiceUnavailable_StayARetryableOutage()
+    {
+        // An "errors" map on a 503 must not turn a retryable outage into a validation failure.
+        var body = """{"title":"Service Unavailable","status":503,"detail":"Try again later.","errorCode":"storage.unavailable","errors":{"Id":["Id is required."]}}""";
+        var response = BuildProblemDetailsResponse(HttpStatusCode.ServiceUnavailable, body);
+
+        var result = await response.ReadResultAsync(OrderDtoTypeInfo);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().Be(Error.Unavailable("storage.unavailable", "Try again later."));
+        result.Error.Details.Should().BeEmpty();
     }
 
     [Fact]
@@ -101,6 +157,27 @@ public sealed class ReadResultAsyncTests
 
         result.IsSuccess.Should().BeFalse();
         result.Error.Code.Should().NotBeNullOrEmpty();
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.ServiceUnavailable, SharedKernel.Primitives.Errors.ErrorType.Unavailable)]
+    [InlineData(HttpStatusCode.GatewayTimeout, SharedKernel.Primitives.Errors.ErrorType.Timeout)]
+    public async Task ReadResultAsync_TypeInfo_GatewayOutageWithHtmlBody_FailsAsARetryableOutage(
+        HttpStatusCode statusCode,
+        SharedKernel.Primitives.Errors.ErrorType expectedType)
+    {
+        // A gateway answering for a down or slow service with its own HTML page: the typed client's caller sees
+        // an outage it can retry (P-562), not an Unexpected defect.
+        var response = new HttpResponseMessage(statusCode)
+        {
+            Content = new StringContent("<html><body>Try again later</body></html>", Encoding.UTF8, "text/html")
+        };
+
+        var result = await response.ReadResultAsync(OrderDtoTypeInfo);
+
+        result.IsSuccess.Should().BeFalse();
+        result.Error.Type.Should().Be(expectedType);
+        result.Error.Code.Should().Be($"http.{(int)statusCode}");
     }
 
     // -----------------------------------------------------------------------
@@ -135,8 +212,8 @@ public sealed class ReadResultAsyncTests
     [Fact]
     public async Task ReadResultAsync_Options_Non2xxWithProblemJson_ReturnsFailure_WithProblemCode()
     {
-        // "type" is an RFC 9457 status URI, not the code — "title"/"errorCode" carry Error.Code.
-        var body = """{"type":"https://httpstatuses.io/404","title":"not.found","errorCode":"not.found","detail":"Order does not exist","status":404}""";
+        // "errorCode" carries Error.Code; "title" is the status reason phrase and "type" a URI (P-562).
+        var body = """{"type":"https://tools.ietf.org/html/rfc9110#section-15.5.5","title":"Not Found","errorCode":"not.found","detail":"Order does not exist","status":404}""";
         var response = BuildProblemDetailsResponse(HttpStatusCode.NotFound, body);
 
         var result = await response.ReadResultAsync<OrderDto>(options: null);

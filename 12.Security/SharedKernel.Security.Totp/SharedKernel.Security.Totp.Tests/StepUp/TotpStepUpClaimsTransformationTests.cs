@@ -50,12 +50,30 @@ public sealed class TotpStepUpClaimsTransformationTests
         Assert.NotSame(original, identity);
         Assert.Equal(originalClaimCount, original.Claims.Count());
         Assert.False(original.HasClaim("amr", "otp"));
+        Assert.Null(original.FindFirst(SecurityClaimTypes.AuthenticationMethodTime));
         Assert.True(identity.IsAuthenticated);
         Assert.Equal(original.AuthenticationType, identity.AuthenticationType);
         Assert.Equal(original.NameClaimType, identity.NameClaimType);
         Assert.Equal(original.RoleClaimType, identity.RoleClaimType);
-        Assert.Equal(originalClaimCount + 1, identity.Claims.Count());
+        Assert.Equal(originalClaimCount + 2, identity.Claims.Count());
         Assert.Equal(Subject, identity.FindFirst(SecurityClaimTypes.Subject)?.Value);
+    }
+
+    [Fact]
+    public async Task TransformAsync_SteppedUp_DatesTheMethodWithTheStepUpTime_InWholeSeconds()
+    {
+        // X1: the time travels with the method, so a long-lived connection's principal still knows how old it is.
+        DateTimeOffset verifiedAt = _clock.UtcNow.AddMinutes(-5).AddMilliseconds(-250);
+        DateTimeOffset recorded = DateTimeOffset.FromUnixTimeSeconds(verifiedAt.ToUnixTimeSeconds());
+        await StepUpAsync(Subject, Session, verifiedAt);
+
+        ClaimsPrincipal result = await CreateTransformation().TransformAsync(BuildPrincipal());
+
+        Claim time = Assert.Single(result.FindAll(SecurityClaimTypes.AuthenticationMethodTime));
+        Assert.Equal(AuthenticationMethodTimeClaim.Create("otp", verifiedAt).Value, time.Value);
+        IUserContext user = UserContextResolver.Resolve(result, _mappers);
+        Assert.Equal(recorded, user.GetAuthenticationMethodTime("otp"));
+        Assert.True(recorded <= verifiedAt, "Rounding down never makes the step-up look more recent.");
     }
 
     [Fact]
@@ -215,22 +233,76 @@ public sealed class TotpStepUpClaimsTransformationTests
     }
 
     [Fact]
-    public async Task TransformAsync_OtpClaimAlreadyPresent_ReturnsSamePrincipalWithoutReadingStore()
+    public async Task TransformAsync_OtpFromCredentialAtLeastAsRecentAsStepUp_ReturnsSamePrincipal()
+    {
+        // The credential's otp dates from the sign-in, one minute ago; the step-up is older and adds nothing.
+        await StepUpAsync(Subject, Session, _clock.UtcNow.AddMinutes(-5));
+        ClaimsPrincipal principal = BuildPrincipal(methods: ["pwd", "otp"], authTime: _clock.UtcNow.AddMinutes(-1));
+
+        ClaimsPrincipal result = await CreateTransformation().TransformAsync(principal);
+
+        Assert.Same(principal, result);
+        Assert.Single(result.FindAll("amr"), claim => claim.Value == "otp");
+        Assert.Empty(result.FindAll(SecurityClaimTypes.AuthenticationMethodTime));
+        Assert.Equal(1, _store.Reads);
+    }
+
+    [Fact]
+    public async Task TransformAsync_OtpFromCredential_NewerStepUp_DatesTheMethodWithoutRepeatingIt()
+    {
+        // Signed in with otp two hours ago, stepped up in this session a minute ago: the method is as recent as the step-up.
+        DateTimeOffset verifiedAt = _clock.UtcNow.AddMinutes(-1);
+        await StepUpAsync(Subject, Session, verifiedAt);
+        ClaimsPrincipal principal = BuildPrincipal(methods: ["pwd", "otp"], authTime: _clock.UtcNow.AddHours(-2));
+
+        ClaimsPrincipal result = await CreateTransformation().TransformAsync(principal);
+
+        Assert.Single(result.FindAll("amr"), claim => claim.Value == "otp");
+        Assert.Single(result.FindAll(SecurityClaimTypes.AuthenticationMethodTime));
+        Assert.Equal(verifiedAt, UserContextResolver.Resolve(result, _mappers).GetAuthenticationMethodTime("otp"));
+    }
+
+    [Fact]
+    public async Task TransformAsync_OtpFromCredentialWithoutAnyTime_StepUpDatesIt()
     {
         await StepUpAsync(Subject, Session, _clock.UtcNow);
         ClaimsPrincipal principal = BuildPrincipal(methods: ["pwd", "otp"]);
 
         ClaimsPrincipal result = await CreateTransformation().TransformAsync(principal);
 
-        Assert.Same(principal, result);
         Assert.Single(result.FindAll("amr"), claim => claim.Value == "otp");
-        Assert.Equal(0, _store.Reads);
+        Assert.Equal(_clock.UtcNow, UserContextResolver.Resolve(result, _mappers).GetAuthenticationMethodTime("otp"));
+    }
+
+    [Fact]
+    public async Task TransformAsync_OlderRecordedTime_NewerStepUpIsAddedAndWins()
+    {
+        await StepUpAsync(Subject, Session, _clock.UtcNow.AddMinutes(-1));
+        ClaimsPrincipal principal = BuildPrincipal(
+            methods: ["pwd", "otp"],
+            extraClaims: [AuthenticationMethodTimeClaim.Create("otp", _clock.UtcNow.AddMinutes(-10))]);
+
+        ClaimsPrincipal result = await CreateTransformation().TransformAsync(principal);
+
+        Assert.Equal(2, result.FindAll(SecurityClaimTypes.AuthenticationMethodTime).Count());
+        Assert.Equal(_clock.UtcNow.AddMinutes(-1), UserContextResolver.Resolve(result, _mappers).GetAuthenticationMethodTime("otp"));
+    }
+
+    [Fact]
+    public async Task TransformAsync_OtpFromCredential_NoStepUp_ReturnsSamePrincipal()
+    {
+        ClaimsPrincipal principal = BuildPrincipal(methods: ["pwd", "otp"], authTime: _clock.UtcNow.AddHours(-2));
+
+        ClaimsPrincipal result = await CreateTransformation().TransformAsync(principal);
+
+        Assert.Same(principal, result);
+        Assert.Equal(_clock.UtcNow.AddHours(-2), UserContextResolver.Resolve(result, _mappers).GetAuthenticationMethodTime("otp"));
     }
 
     [Fact]
     public async Task TransformAsync_AppliedTwice_AddsOtpMethodOnce()
     {
-        await StepUpAsync(Subject, Session, _clock.UtcNow);
+        await StepUpAsync(Subject, Session, _clock.UtcNow.AddMilliseconds(-400));
         TotpStepUpClaimsTransformation transformation = CreateTransformation();
 
         ClaimsPrincipal once = await transformation.TransformAsync(BuildPrincipal());
@@ -238,6 +310,7 @@ public sealed class TotpStepUpClaimsTransformationTests
 
         Assert.Same(once, twice);
         Assert.Single(twice.FindAll("amr"), claim => claim.Value == "otp");
+        Assert.Single(twice.FindAll(SecurityClaimTypes.AuthenticationMethodTime));
     }
 
     [Fact]
@@ -314,6 +387,7 @@ public sealed class TotpStepUpClaimsTransformationTests
 
         Assert.True(result.HasClaim("methods", "totp"));
         Assert.False(result.HasClaim("amr", "otp"));
+        Assert.True(result.HasClaim(SecurityClaimTypes.AuthenticationMethodTime, AuthenticationMethodTimeClaim.Create("totp", _clock.UtcNow).Value));
         Assert.Same(result, again);
     }
 
@@ -351,11 +425,24 @@ public sealed class TotpStepUpClaimsTransformationTests
     private ValueTask StepUpAsync(string subjectId, string sessionId, DateTimeOffset verifiedAt) =>
         _inner.RecordAsync(subjectId, sessionId, verifiedAt, verifiedAt + _options.FreshnessWindow, CancellationToken.None);
 
-    private static ClaimsPrincipal BuildPrincipal(string? sessionId = Session, string[]? methods = null) =>
-        new SecurityTestContextBuilder()
+    private static ClaimsPrincipal BuildPrincipal(
+        string? sessionId = Session,
+        string[]? methods = null,
+        DateTimeOffset? authTime = null,
+        Claim[]? extraClaims = null)
+    {
+        SecurityTestContextBuilder builder = new SecurityTestContextBuilder()
             .WithSessionId(sessionId)
             .WithAuthenticationMethods(methods ?? ["pwd"])
-            .Build();
+            .WithAuthTime(authTime);
+
+        foreach (Claim claim in extraClaims ?? [])
+        {
+            builder.WithClaim(claim.Type, claim.Value);
+        }
+
+        return builder.Build();
+    }
 
     private static bool HasOtp(ClaimsPrincipal principal) => principal.HasClaim("amr", "otp");
 

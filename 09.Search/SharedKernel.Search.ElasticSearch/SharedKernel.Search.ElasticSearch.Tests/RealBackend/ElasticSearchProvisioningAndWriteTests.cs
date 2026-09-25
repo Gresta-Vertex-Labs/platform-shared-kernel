@@ -181,7 +181,8 @@ public sealed class ElasticSearchProvisioningAndWriteTests : IAsyncLifetime
 
         var countResult = await _index.CountAsync(filter: null, TenantScope.Of(TestProductCorpus.TenantA));
         countResult.IsSuccess.Should().BeTrue();
-        countResult.Value.Should().Be(TestProductCorpus.ForTenant(TestProductCorpus.TenantA).Count);
+        countResult.Value.IsExact.Should().BeTrue();
+        countResult.Value.Value.Should().Be(TestProductCorpus.ForTenant(TestProductCorpus.TenantA).Count);
     }
 
     private static TestProduct NewProduct(string documentId) => new()

@@ -1,19 +1,19 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <Description>Atomic, tenant-scoped, PostgreSQL-backed implementation of SharedKernel.Application.Behaviors' IRequestIdempotencyStore and SharedKernel.Messaging.Abstractions' IIdempotencyStore. Atomicity via INSERT ... ON CONFLICT DO UPDATE ... RETURNING on a unique (TenantId, Key)/(TenantId, MessageId) constraint, with a per-reservation token guarding confirm/release against a reclaimed row; fail-closed on store unavailability by default. Ships its own minimal IdempotencyDbContext, deliberately not SharedKernelDbContext.</Description>
+    <Description>Atomic, tenant-scoped, PostgreSQL-backed implementation of SharedKernel.Application's IRequestIdempotencyStore and SharedKernel.Messaging.Abstractions' IIdempotencyStore. Atomicity via INSERT ... ON CONFLICT DO UPDATE ... RETURNING on a unique (TenantId, Key)/(TenantId, MessageId) constraint, with a per-reservation token guarding confirm/release against a reclaimed row; fail-closed on store unavailability by default. Ships its own minimal IdempotencyDbContext, deliberately not SharedKernelDbContext.</Description>
     <PackageTags>idempotency;efcore;postgresql;deduplication;shared-kernel</PackageTags>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
     <!--
       18.Idempotency layering (root CLAUDE.md / 18.Idempotency/CLAUDE.md): SharedKernel.Idempotency.EfCore
-      may reference 01.Core, 06.Persistence.EfCore only, 05.Application.Behaviors,
+      may reference 01.Core, 06.Persistence.EfCore only, 05.Application (SharedKernel.Application),
       07.Messaging.Abstractions. Never 02.Caching — anything.
     -->
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
     <ProjectReference Include="..\..\01.Core\SharedKernel.Configuration\SharedKernel.Configuration.csproj" />
     <ProjectReference Include="..\..\06.Persistence\SharedKernel.Persistence.EfCore\SharedKernel.Persistence.EfCore.csproj" />
-    <ProjectReference Include="..\..\05.Application\SharedKernel.Application.Behaviors\SharedKernel.Application.Behaviors.csproj" />
+    <ProjectReference Include="..\..\05.Application\SharedKernel.Application\SharedKernel.Application.csproj" />
     <ProjectReference Include="..\..\07.Messaging\SharedKernel.Messaging.Abstractions\SharedKernel.Messaging.Abstractions.csproj" />
   </ItemGroup>
   <ItemGroup>

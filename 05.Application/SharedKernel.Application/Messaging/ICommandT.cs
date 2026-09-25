@@ -1,7 +1,7 @@
 using MediatR;
 using SharedKernel.Primitives.Results;
 
-namespace SharedKernel.Application.Messaging;
+namespace SharedKernel.Application;
 
 /// <summary>
 /// Represents a value-returning command — a request that mutates state and reports a payload of

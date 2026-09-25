@@ -204,8 +204,8 @@ building one outside `EventEnvelope.Wrap` no longer compiles.
 |---|---|
 | `ApplicationPipelineRules.BehaviorsNeverReferenceConcreteInfrastructure` | Named pipeline behaviors depend on abstractions only |
 | `ApplicationPipelineRules.NoExistingBehaviorMatchesStreamRequestConstraint` | No behavior's generic constraint accidentally captures stream requests |
-| `SharedKernelLayeringRules.ApplicationBehaviorsNeverReferencesCachingPollyHostingOrCore` | `SharedKernel.Application.Behaviors` carries no cache, Polly, hosting or `SharedKernel.Core` dependency |
-| `SharedKernelLayeringRules.ApplicationBehaviorsCachingNeverReferencesConcreteInfrastructure` | The caching behaviors reach `SharedKernel.Caching.Abstractions`, never a cache provider |
+| `SharedKernelLayeringRules.ApplicationNeverReferencesCachingPollyHostingOrCore` | `SharedKernel.Application` carries no cache, Polly, hosting or `SharedKernel.Core` dependency |
+| `SharedKernelLayeringRules.ApplicationCachingNeverReferencesConcreteInfrastructure` | `SharedKernel.Application.Caching` reaches `SharedKernel.Caching.Abstractions`, never a cache provider |
 | `UnitOfWorkSeamRules.SharedContractsAreNotRedeclared` | `IUnitOfWork`, `IRequestContext` and `IAuditTrailWriter` are declared only in `SharedKernel.Application.Abstractions` — no second copy (nor the deleted `ITransactionalUnitOfWork`/`IPersistenceTransaction`/`ICurrentActorContext`/`ICurrentTenantContext`) anywhere else |
 | `MetricsInstrumentationRules.RequestDurationRecordsIncludeOutcomeTag` | Every duration histogram carries an `outcome` tag, so failures stay separable |
 
@@ -281,7 +281,8 @@ siblings never see each other. Storage is the one exception: `SharedKernel.Stora
 | `CommunicationLayeringRules.NoDirectHotChocolateFilterSortInheritanceOutsideGraphQL` | Filters/sorts extend the platform base, not HotChocolate directly |
 | `PresentationLayeringRules.GrpcNeverReferencesContracts` | Same contract rule, server side |
 | `PresentationLayeringRules.NoDirectProblemDetailsConstructionOutsideWebApi` | `ProblemDetails` is shaped in one place |
-| `PresentationLayeringRules.NoInlineResultBranchBeforeHttpResultOutsideWebApi` | No hand-rolled `IsSuccess` branch at an HTTP boundary |
+| `PresentationLayeringRules.NoInlineResultBranchBeforeHttpResultOutsideWebApi` | No hand-rolled `IsSuccess` branch at an HTTP boundary; map with the typed results (`ToOk`, `ToErrorResult`, …) |
+| `PresentationLayeringRules.NoOpenApiStackDependencyOutsideOpenApiAddOn` | API versioning, OpenAPI and Scalar stay in `SharedKernel.Presentation.OpenApi` |
 
 ### Security
 

@@ -10,7 +10,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// <remarks>
 /// <para>
 /// <c>IUnitOfWork</c>, <c>IRequestContext</c> and <c>IAuditTrailWriter</c> are declared exactly once,
-/// in <c>SharedKernel.Application.Abstractions</c>; <c>SharedKernel.Application.Behaviors</c>
+/// in <c>SharedKernel.Application.Abstractions</c>; <c>SharedKernel.Application</c>
 /// consumes them and <c>SharedKernel.Persistence.EfCore</c> implements them directly. This replaces
 /// the former <c>UnitOfWorkInterfacesRemainDistinct</c> rule, which guarded the opposite design — two
 /// same-named interfaces in 05 and 06, bridged by composition-root adapters in 13 — that P-558

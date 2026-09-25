@@ -8,55 +8,53 @@ using Xunit;
 namespace SharedKernel.Presentation.Grpc.Tests.Interceptors;
 
 /// <summary>
-/// Regression pins for every <c>[LoggerMessage]</c>-attributed method's explicit
-/// <see cref="EventId"/> within this package's <c>14200</c>-<c>14299</c> sub-block (D-77).
-/// Reads the compiled <see cref="LoggerMessageAttribute"/> via reflection rather than triggering
-/// the log call, mirroring <c>SharedKernel.Presentation.WebApi.Tests.Logging.LoggerMessageEventIdTests</c>'
-/// established technique (T-11).
+/// Pins every <c>[LoggerMessage]</c> of this package to an explicit <see cref="EventId"/> in its 14200–14299 sub-block
+/// (design D0), reading the compiled attributes by reflection. 14200 is kept from before P-562; 14201 (the deleted
+/// authorization interceptor's refusal log) is retired, not reused.
 /// </summary>
-public class LoggerMessageEventIdTests
+public sealed class LoggerMessageEventIdTests
 {
-    [Fact]
-    public void GrpcExceptionInterceptor_UnhandledGrpcException_HasAssignedEventId()
+    [Theory]
+    [InlineData("UnhandledException", 200, LogLevel.Error)]
+    [InlineData("ServerError", 202, LogLevel.Error)]
+    [InlineData("ClientError", 203, LogLevel.Debug)]
+    [InlineData("CallCancelled", 204, LogLevel.Debug)]
+    public void EveryLogMessage_HasItsAssignedEventIdAndLevel(string method, int offset, LogLevel level)
     {
-        var attribute = GetLoggerMessageAttribute(typeof(GrpcExceptionInterceptor), "UnhandledGrpcException");
+        var attribute = GetLoggerMessageAttribute(method);
 
-        attribute.EventId.Should().Be(LoggingEventIdRanges.Presentation + 200);
-        attribute.EventId.Should().Be(14200);
+        attribute.EventId.Should().Be(LoggingEventIdRanges.Presentation + offset);
+        attribute.Level.Should().Be(level);
     }
 
     [Fact]
-    public void GrpcAuthorizationInterceptor_AuthorizationRequirementRejected_HasAssignedEventId()
+    public void EveryEventIdInThisPackage_FallsWithinTheReserved14200To14299SubBlock_AndIsUnique()
     {
-        var attribute = GetLoggerMessageAttribute(typeof(GrpcAuthorizationInterceptor), "AuthorizationRequirementRejected");
+        var eventIds = LogType()
+            .GetMethods(BindingFlags.Public | BindingFlags.Static)
+            .Select(method => method.GetCustomAttribute<LoggerMessageAttribute>())
+            .OfType<LoggerMessageAttribute>()
+            .Select(attribute => attribute.EventId)
+            .ToArray();
 
-        attribute.EventId.Should().Be(LoggingEventIdRanges.Presentation + 201);
-        attribute.EventId.Should().Be(14201);
+        eventIds.Should().HaveCount(4).And.OnlyHaveUniqueItems().And.OnlyContain(id => id >= 14200 && id <= 14299);
+        eventIds.Should().NotContain(14201, "14201 belonged to the deleted authorization interceptor");
     }
 
-    [Fact]
-    public void EveryEventIdInThisPackage_FallsWithinTheReserved14200To14299SubBlock()
+    private static LoggerMessageAttribute GetLoggerMessageAttribute(string methodName)
     {
-        var eventIds = new[]
-        {
-            GetLoggerMessageAttribute(typeof(GrpcExceptionInterceptor), "UnhandledGrpcException").EventId,
-            GetLoggerMessageAttribute(typeof(GrpcAuthorizationInterceptor), "AuthorizationRequirementRejected").EventId,
-        };
-
-        eventIds.Should().OnlyContain(id => id >= 14200 && id <= 14299);
-    }
-
-    private static LoggerMessageAttribute GetLoggerMessageAttribute(Type containingType, string methodName)
-    {
-        var logType = containingType.GetNestedType("Log", BindingFlags.NonPublic | BindingFlags.Static);
-        logType.Should().NotBeNull($"{containingType.Name} is expected to declare a nested Log class.");
-
-        var method = logType!.GetMethod(methodName, BindingFlags.Public | BindingFlags.Static);
-        method.Should().NotBeNull($"{containingType.Name}.Log.{methodName} is expected to exist.");
+        var method = LogType().GetMethod(methodName, BindingFlags.Public | BindingFlags.Static);
+        method.Should().NotBeNull($"GrpcExceptionInterceptor.Log.{methodName} is expected to exist.");
 
         var attribute = method!.GetCustomAttribute<LoggerMessageAttribute>();
-        attribute.Should().NotBeNull($"{containingType.Name}.Log.{methodName} is expected to carry [LoggerMessage].");
-
+        attribute.Should().NotBeNull($"GrpcExceptionInterceptor.Log.{methodName} is expected to carry [LoggerMessage].");
         return attribute!;
+    }
+
+    private static Type LogType()
+    {
+        var logType = typeof(GrpcExceptionInterceptor).GetNestedType("Log", BindingFlags.NonPublic | BindingFlags.Static);
+        logType.Should().NotBeNull("GrpcExceptionInterceptor is expected to declare a nested Log class.");
+        return logType!;
     }
 }

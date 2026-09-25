@@ -112,7 +112,8 @@ IdempotencyKeyDelegatingHandler  [internal sealed — transient]  (P-364/WO-056)
     // Opt-in only — added to the handler pipeline solely when
     // RestClientOptions.EnableIdempotencyKeyPropagation is true (default false).
     // Generates a hyphenated Guid.NewGuid().ToString() idempotency-key value and injects it
-    // under IdempotencyHeaders.IdempotencyKey ("x-idempotency-key") only when the header is
+    // under IdempotencyHeaders.IdempotencyKey ("Idempotency-Key" = 01.Core's
+    // WellKnownHeaders.IdempotencyKey, the name 14.Presentation reads; "x-idempotency-key" until P-562) only when the header is
     // not already present on the outgoing HttpRequestMessage. Never overwrites a
     // caller-supplied key.
     // StandardResilienceHandler retries re-send the SAME HttpRequestMessage instance, so the
@@ -123,25 +124,33 @@ ProblemDetailsDeserializer  [internal static]
     // Deserializes application/problem+json response bodies on non-2xx responses.
     // Uses STJ source-generated ProblemDetailsJsonContext (AOT path).
     // Falls back to static readonly reflection-based JsonSerializerOptions (initialized once at class load).
-    // CORRECTED (P-544): mirrors the real 14.Presentation wire shape — errorCode (falling back to
-    // title) → Error.Code (never type, which is an RFC 9457 status URI, e.g.
-    // "https://httpstatuses.io/404" — the original deserializer wrongly read this as the code);
-    // detail → Error.Message, falling back to a status-aware "HTTP {status} error" (never title,
-    // which now correctly carries the code, not a message). The response status maps back to an
-    // ErrorType via HttpStatusErrorTypeMap (below) — previously every non-2xx response arrived as
-    // Error.Unexpected regardless of status, discarding the server's ErrorType entirely. When the
-    // body carries the errors extension (LocalizedDetailResolver.AddErrorsExtensions's shape —
-    // keyed by field path or code, with a parallel errorCodes map), every field is rebuilt as its own Error and
-    // returned as one aggregate via Error.Validation(IReadOnlyList<Error>) — previously every field
-    // detail was silently discarded. A non-JSON body, an empty body, or a body with none of these
-    // recognizable members (errorCode/title/detail/errors) still yields Error.Unexpected carrying the
-    // response status in its code ("http.{status}") — never an unclassified, status-blind fallback.
+    // Reads 14.Presentation's P-562 wire shape (design D1):
+    //   Code     ← errorCode, else "http.{status}". Never title (the status reason phrase since P-562,
+    //              free text from a non-platform upstream) and never type (a URI). (P-544, P-562 R38)
+    //   Message  ← detail, else "HTTP {status} error". Never title.
+    //   ErrorType ← the response status via HttpStatusErrorTypeMap (below).
+    //   Field errors, only on a 400 or a 422 (the platform's validation status, and the one many
+    //     other frameworks use): the errors map (keyed by field path, or by code for an error that
+    //     names no field) with its index-aligned errorCodes map is rebuilt into one
+    //     Error.Validation(IReadOnlyList<Error>) aggregate, each errorCodes code taking the key as its
+    //     PropertyPath. So a 422 with field errors is Validation, a 422 without them BusinessRule.
+    //   On any other status both maps are ignored and the status keeps its category: Error.Details
+    //     exists only on the validation aggregate, and a 401/409/503 re-read as Validation would hide
+    //     an auth failure, a conflict or a retryable outage. (P-562 R38)
+    // ProblemDetailsDto binds only detail, errorCode, errors and errorCodes; type, title, status and
+    // instance are deliberately not bound, so nothing can read them.
+    // No usable body (non-JSON, empty, or none of the members above, e.g. a bare
+    // {"title":"Not Found","status":404}) → the status's ErrorType via the same HttpStatusErrorTypeMap,
+    // code "http.{status}", message "HTTP {status} {reason}" (a bodiless 503/429 is Unavailable, a 504
+    // Timeout, a 404 NotFound, a 500/502 Unexpected). Never throws.
 
-HttpStatusErrorTypeMap  [internal static]  (P-544)
+HttpStatusErrorTypeMap  [internal static]  (P-544, P-562)
     // Resolve(int statusCode) → ErrorType
-    // The exact reverse of 14.Presentation's ErrorTypeStatusCodeMap.Resolve: 400 → Validation,
+    // The reverse of 14.Presentation's (internal) ErrorTypeStatusCodeMap (400 → Validation,
     // 401 → Unauthorized, 403 → Forbidden, 404 → NotFound, 409 → Conflict, 422 → BusinessRule,
-    // everything else → Unexpected. Duplicated here (not shared) because 11.Communication may never
+    // 503 → Unavailable, 504 → Timeout), plus the statuses an HTTP boundary answers outside it:
+    // 412 → Conflict, 413/415/428 → Validation, 429 → Unavailable. Everything else → Unexpected.
+    // Used with or without a body. Duplicated here (not shared) because 11.Communication may never
     // reference 14.Presentation — this is the one named place the reverse table lives; a future
     // change to ErrorTypeStatusCodeMap's mapping must be mirrored here by hand.
 
@@ -376,7 +385,7 @@ AddStaticServiceDiscovery(this IServiceCollection, Dictionary<string, Uri> endpo
 - `TenantIdDelegatingHandler` must resolve `ITenantProvider` from the **request scope** via `IHttpContextAccessor.HttpContext.RequestServices` — injecting `ITenantProvider` directly into the handler constructor would capture the wrong scope. Note: `IUserContext` (which carries user identity) does not expose `TenantId`; use `ITenantProvider` for tenant resolution in both REST and gRPC.
 - `BaseAddress` on `RestClientOptions` is the only allowed way to set the base URI — callers must never hardcode URIs inside typed client methods.
 - ProblemDetails deserialization uses STJ source-generated `ProblemDetailsJsonContext` in the primary path; reflection-based STJ is the fallback only.
-- **ProblemDetails field mapping (P-544):** the wire body's `type` member is an RFC 9457 status URI (e.g. `"https://httpstatuses.io/404"`) and must never be read as `Error.Code` — `errorCode` (falling back to `title`, which `14.Presentation` always sets to `Error.Code`) is the code source. `HttpStatusErrorTypeMap.Resolve(statusCode)` — the hand-maintained reverse of `14.Presentation`'s `ErrorTypeStatusCodeMap.Resolve` — supplies the `ErrorType`, never a hardcoded `Error.Unexpected` regardless of status. A body carrying the `errors` extension (keyed by field path or code, each value an array of messages, with a parallel index-aligned `errorCodes` map supplying real codes) is rebuilt field-by-field into `Error.Validation(IReadOnlyList<Error>)`, never collapsed into one opaque failure.
+- **ProblemDetails field mapping (P-544, P-562 R38):** `Error.Code` comes from `errorCode`, else `"http.{status}"`. It is never read from `title` (the status reason phrase since P-562, and free text from a non-platform upstream, which the caller would otherwise adopt and re-send as its own `errorCode`) nor from `type` (a URI). `HttpStatusErrorTypeMap.Resolve(statusCode)` — the hand-maintained reverse of `14.Presentation`'s `ErrorTypeStatusCodeMap.Resolve` — supplies the `ErrorType` for every response, with a body or without one, never a hardcoded `Error.Unexpected`. A response without a usable body gets the code `"http.{status}"` and the category of its status. The `errors` extension (keyed by field path or code, each value an array of messages, with a parallel index-aligned `errorCodes` map supplying real codes) is read **only on a 400 or a 422** and rebuilt field-by-field into `Error.Validation(IReadOnlyList<Error>)`, never collapsed into one opaque failure. On every other status both maps are ignored and the status keeps its category, because `Error.Details` exists only on that validation aggregate.
 - The reflection-based STJ fallback in `ProblemDetailsDeserializer` uses a **`static readonly JsonSerializerOptions`** field initialized once at class load — never allocate `new JsonSerializerOptions()` per call (hot-path GC violation).
 - The handler pipeline order is fixed: `CorrelationIdDelegatingHandler` → `TenantIdDelegatingHandler` → `IdempotencyKeyDelegatingHandler` (conditional — only when `EnableIdempotencyKeyPropagation = true`, P-364/WO-056) → `StandardResilienceHandler` → transport. The idempotency handler must run **before** `StandardResilienceHandler` so the key is set once, before the first attempt, and survives unchanged through every retry.
 - `TimeoutSeconds` is applied as a per-request timeout via `StandardResilienceHandler`, not as a global `HttpClient.Timeout`.
@@ -411,7 +420,7 @@ AddStaticServiceDiscovery(this IServiceCollection, Dictionary<string, Uri> endpo
 - `AddSharedKernelGraphQL` must be called **before** any service-specific `AddGraphQL()` / `AddTypes()` calls — it establishes the base convention all types inherit.
 - `AllowIntrospection` must be `false` in non-development environments — consuming services are responsible for environment-gating this flag in their `Program.cs`.
 - `FilterBase<T>` and `SortBase<T>` are mandatory base classes. Direct registration of `FilterInputType<T>` or `SortInputType<T>` without the base wrapper is a platform violation.
-- GraphQL error responses must map to the same `ProblemDetails` shape as REST responses — `SharedKernelErrorFilter` handles this automatically when registered via `AddSharedKernelGraphQL`.
+- GraphQL errors get ProblemDetails-style extensions (`status`, `title`, `detail`, `type`) from `SharedKernelErrorFilter`, registered via `AddSharedKernelGraphQL`. This is not `14.Presentation`'s P-562 REST shape: `title` is the error message rather than the reason phrase, there is no `errorCode`, `detail` is the exception message in every environment (never redacted), and 412/429/503/504 fall back to the 500 `type`. Aligning the two is an open follow-up, not a guarantee.
 - `MaxPageSize` default is 100. Hard cap is 500 — `GraphQLOptions` validator rejects values above 500. Any override beyond 500 requires documented justification in the consuming service.
 - `AddSharedKernelGraphQL` is idempotent — calling it twice does not double-register conventions, error filters, or pagination settings.
 - **`GraphQLOptions` validation must run against the exact instance applied to HotChocolate (P-358/WO-056 correction):** `AddSharedKernelGraphQL` constructs `GraphQLOptions` locally and applies it directly to `ModifyPagingOptions`/`DisableIntrospection` — never via `IOptions<T>.Value` — so `GraphQLOptionsValidator`'s DI registration alone cannot fire. Call `GraphQLOptionsValidator`'s `Validate(name: null, options)` directly against the locally-constructed instance, immediately after `configure?.Invoke(options)` and before any HotChocolate configuration reads its values, throwing `OptionsValidationException` synchronously on failure. Same structural root cause and same fix pattern as `.Rest`'s `RestClientOptionsValidator`.
@@ -464,7 +473,8 @@ The following are unconditional violations that must be caught at design review:
 | `<IsAotCompatible>true</IsAotCompatible>` on `.GraphQL` project | Hard violation — HotChocolate v16 not AOT-safe |
 | `MaxPageSize` set above 500 without documented justification | Violation |
 | Reflection-based STJ used as primary ProblemDetails deserialization path (not as fallback) | Violation |
-| `ProblemDetailsDeserializer` reads the wire body's `type` member as `Error.Code` (P-544) | Hard violation — `type` is an RFC 9457 status URI, never a machine code; use `errorCode`/`title` |
+| `ProblemDetailsDeserializer` reads the wire body's `type` or `title` member as `Error.Code` (P-544, P-562 R38) | Hard violation — `type` is a URI and `title` the status reason phrase (free text from a non-platform upstream), never a machine code; use `errorCode`, else `"http.{status}"` |
+| `ProblemDetailsDeserializer` turns an `errors` map into `Error.Validation` on a status other than 400 or 422 (P-562 R38) | Hard violation — a 401/403/409/5xx must keep its status category; the map is ignored there |
 | `.Rest` takes a `ProjectReference` on `14.Presentation` to share `ErrorTypeStatusCodeMap` instead of `HttpStatusErrorTypeMap`'s own hand-maintained reverse table (P-544) | Hard layering violation — `11.Communication` may only reference `01.Core`, `04.Contracts`, `12.Security` abstractions |
 | `new JsonSerializerOptions()` allocated per call inside `ProblemDetailsDeserializer` | Violation — must be `static readonly` |
 | `RestClientOptionsValidator`/`GraphQLOptionsValidator`/`GrpcClientOptionsValidator` not registered, **or** registered but never invoked against the actual instance applied to the client/schema (P-358/WO-056) | Hard violation — options validation silently absent or structurally dead; validation must run synchronously at the point of consumption, immediately after `configure?.Invoke(options)` |
@@ -473,7 +483,8 @@ The following are unconditional violations that must be caught at design review:
 | Correlation-ID fallback (`.Rest` or `.Grpc`) synthesized via `Guid.NewGuid().ToString("N")` instead of `Guid.NewGuid().ToString()` (P-356/WO-056) | Hard violation — SK0011 non-canonical GUID format |
 | Direct `DateTime.UtcNow`/`DateTimeOffset.UtcNow` call anywhere in `.Internal` or `.Grpc` production code (e.g. computing a gRPC deadline instant) | Hard violation — SK0001; always inject `IClock` (P-357/P-359/WO-056) |
 | A generic `EnsureSuccessOrErrorAsync<T>`-shaped method reintroduced that returns a default/unpopulated value on success | Hard violation — P-361/WO-056 retired exactly this shape; use `ReadResultAsync<T>` for a deserialized payload, the non-generic `EnsureSuccessOrErrorAsync` for a status-check-only outcome |
-| `IdempotencyKeyDelegatingHandler` regenerates its key value on a Polly retry, or overwrites a caller-supplied `x-idempotency-key` header | Hard violation — P-364/WO-056; the same value must survive every retry of one logical call |
+| `IdempotencyKeyDelegatingHandler` regenerates its key value on a Polly retry, or overwrites a caller-supplied `Idempotency-Key` header | Hard violation — P-364/WO-056; the same value must survive every retry of one logical call |
+| The outbound idempotency header name retyped as a literal, or anything other than `WellKnownHeaders.IdempotencyKey` (`"Idempotency-Key"`) | Hard violation — P-562; `14.Presentation` reads only that name, so a key sent under another (the old `x-idempotency-key`) is never seen |
 | `Services.Any(d => ...)` called inside `AddRestClient` or `AddGrpcClient` per-registration (O(n) probe) | Violation — resolver presence captured once at builder construction |
 | `ServiceDiscoveryResolvingHandler` registered as a shared DI type when multiple clients need distinct service names | Hard violation — per-client closure factory required |
 | `SharedKernel.Contracts` project reference in `SharedKernel.Communication.Grpc.csproj` | Violation — gRPC package must not reference 04.Contracts |
@@ -600,7 +611,7 @@ services.AddSharedKernelRestCommunication()
 // On 2xx: Result<OrderDto>.Success(dto); on non-2xx: Result<OrderDto>.Failure(error from ProblemDetails)
 
 // REST client with opt-in idempotency-key propagation (P-364/WO-056) — attaches a stable
-// x-idempotency-key header before the first Polly attempt and reuses it across every retry
+// Idempotency-Key header (WellKnownHeaders.IdempotencyKey, P-562) before the first Polly attempt and reuses it across every retry
 services.AddSharedKernelRestCommunication()
         .AddRestClient<IPaymentServiceClient>(options => {
             options.BaseAddress = "http://payment-service";
@@ -684,3 +695,4 @@ services.AddSharedKernelRestCommunication()
 - [2026-08-12] PB-06 (first-ever NuGet publish of all four packages) retracted by explicit user decision — not deferred, not blocked. Archived `—` (N/A / Skipped) in `state-map.md` rather than left `○` so it stops surfacing to `/implement-next-phase`/`/dispatch-phase`, mirroring `13.ServiceDefaults`'s handling of its permanently-retracted `AddOrchestrationReadinessCheck` tasks (WO-047/P-291); root Phase Backlog P-363 recorded `⊘` Retracted with its three delivered acceptance criteria ticked and only the publish criterion struck through. `SK.11.Published` consequently closes to `●`, making all nine `SK.11.*` phase keys `●` — this domain is complete at source level. Nothing was un-built: PB-01–PB-05/PB-07/PB-08 remain `●`, so the packages keep full NuGet metadata, embedded READMEs, and a clean `dotnet pack`; they are release-ready but deliberately undistributed, and in-repo `ProjectReference` consumption is unaffected. This file's Current Phase section updated accordingly (its prior "only publish remains" framing is now false); the Changelog entries above it are append-only history and were left untouched. No production code, tests, or `.csproj` files were touched by this change (sync-brain, user decision)
 - [2026-09-15] Contracts redesign: `.Rest` replaced `ReadEnvelopeAsync<T>` with `ReadResultAsync<T>` returning `Result<T>` (same success/empty-body/ProblemDetails semantics) and dropped its `SharedKernel.Contracts` reference, and `.GraphQL`'s `PagedResponseType<T>.TotalCount` became `long` (GraphQL `Long`) with `From(items, long)` (coordinator)
 - [2026-09-16] P-544 (fidelity fix, pre-publish, `.Rest`) — `ProblemDetailsDeserializer` mapped every non-2xx response to `Error.Unexpected`, discarding the server's real `ErrorType` and every per-field validation detail; it also read the wire body's `type` member (an RFC 9457 status URI) as `Error.Code`, a mapping disagreement with the real `14.Presentation` shape that was never `type` — `errorCode`/`title` carry the code. Fixed: new internal `HttpStatusErrorTypeMap.Resolve(statusCode)` — the hand-maintained reverse of `14.Presentation`'s `ErrorTypeStatusCodeMap.Resolve` (400→Validation, 401→Unauthorized, 403→Forbidden, 404→NotFound, 409→Conflict, 422→BusinessRule, else→Unexpected), duplicated here rather than shared because `11.Communication` may never reference `14.Presentation`; `ProblemDetailsDto` gained `ErrorCode`/`Errors` members (the two extension fields `ErrorProblemDetailsExtensions`/`ValidationProblemDetailsExtensions` always add, serialized flat at the top level, never nested under an `"extensions"` object); code now resolves from `errorCode` → `title` → `"http.{status}"`, message from `detail` → `"HTTP {status} error"` (never `title`, which now correctly reads as the code, not a message — the old `title`-as-message-fallback path is gone); a populated `errors` map rebuilds every field into its own `Error.Validation(fieldCode, fieldMessage)` and returns one aggregate via `Error.Validation(IReadOnlyList<Error>)`, matching the same shape the server-side `Error.Details`/`ValidationException.Errors` paths already produce. Non-JSON/empty/no-recognizable-member bodies still never throw and now consistently return a status-aware `Error.Unexpected("http.{status}", ...)` on every path (previously the `application/problem+json`-typed-but-null-or-malformed-body case fell through to a non-status-aware generic error while the non-problem-json path was already status-aware — an inconsistency also closed by this fix). 22 tests in `ProblemDetailsDeserializerTests.cs` (was 6) plus three pre-existing tests in `HttpResponseMessageExtensionsTests.cs`/`ReadResultAsyncTests.cs` corrected to stop asserting the old `type`-as-code behavior against bodies that never matched the real server shape in the first place. Edited: `ProblemDetails/HttpStatusErrorTypeMap.cs` (new), `ProblemDetails/ProblemDetailsDto.cs`, `ProblemDetails/ProblemDetailsDeserializer.cs`, both READMEs/this file (communication-phase-implementer)
+- [2026-09-23] P-562 R38 (`.Rest`, remediation stream C) — `ProblemDetailsDeserializer` no longer reads `title` as `Error.Code`. Since P-562 it is the status reason phrase, and from a non-platform upstream free text the caller would adopt and re-send as its own `errorCode`. The code is `errorCode`, else `"http.{status}"`. The `errors`/`errorCodes` maps become an `Error.Validation` aggregate only on a 400 or a 422; on any other status they are ignored and the status keeps its category (`Error.Details` exists only on the validation aggregate). `ProblemDetailsDto` now binds only `detail`/`errorCode`/`errors`/`errorCodes`, and a body with none of them usable (e.g. a bare `title`) falls back to the status-only error. Also corrected this file's stale statement that the bodiless fallback is always `Unexpected` (it has taken the status's category since P-562 wave 4) and the reverse-map rows (wave 1). Tests 155 → 175 (coordinator)

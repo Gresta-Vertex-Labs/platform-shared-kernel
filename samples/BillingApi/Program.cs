@@ -1,13 +1,14 @@
-using BillingApi.Api;
-using BillingApi.Application;
+using BillingApi.Features.Customers;
 using BillingApi.Infrastructure;
 using BillingApi.Security;
-using SharedKernel.Application.Behaviors.Extensions;
-using SharedKernel.Application.Extensions;
+using SharedKernel.Application;
+using Microsoft.Extensions.Options;
 using SharedKernel.Cryptography.Envelope;
 using SharedKernel.Cryptography.Extensions;
+using SharedKernel.Cryptography.Symmetric;
 using SharedKernel.Persistence;
-using SharedKernel.Presentation.WebApi.ExceptionHandling;
+using SharedKernel.Persistence.EfCore.Encryption;
+using SharedKernel.Presentation.WebApi;
 using SharedKernel.ServiceDefaults.Extensions;
 using SharedKernel.ServiceDefaults.HealthChecks;
 using SharedKernel.ServiceDefaults.Security;
@@ -32,6 +33,16 @@ builder.Services.AddOptions<LocalMasterKeyOptions>()
     .ValidateOnStart();
 builder.Services.AddSingleton<IEnvelopeEncryptionProvider, LocalMasterKeyEnvelopeProvider>();
 
+// The service's root key provider. 06.Persistence seals every entity version (the ETag) with a subkey it derives from
+// it, so an ETag never shows PostgreSQL's xmin. Here: the root keys field encryption reads — every capability derives
+// its own subkey, so sharing the root key is safe. In production, a KMS: 13.ServiceDefaults' AddSharedKernelKeyVaultKeyProvider().
+builder.Services.AddSingleton<ISynchronousEncryptionKeyProvider>(sp =>
+{
+    var keys = sp.GetRequiredService<IOptions<EncryptionOptions>>().Value.Keys;
+    return new StaticEncryptionKeyProvider(
+        keys.CurrentKeyId!, keys.Keys.Select(key => new CryptographicKey(key.Key, Convert.FromBase64String(key.Value))));
+});
+
 // 06.Persistence — the whole stack in one registration. Reads ConnectionStrings:billing and
 // SharedKernel:Persistence:billing (migration role, cross-tenant role, row-level security settings).
 // The capabilities live in BillingDatabase.Configure, shared with the design-time factory that `dotnet ef` uses.
@@ -46,16 +57,13 @@ builder.Services.AddSharedKernelDapper(builder.Configuration);
 // The audit sealer writes chain links as its own role (app_audit_sealer), so the application role cannot forge them.
 builder.Services.AddSharedKernelNpgsql(builder.Configuration.GetSection("SharedKernel:Persistence:audit-sealer"), "audit-sealer");
 
-// 05.Application — MediatR with the platform pipeline. TransactionBehavior runs every command in one retry-safe
-// transaction; AuditingBehavior records Succeeded inside it and Failed after a rollback.
-builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblyContaining<Program>());
-builder.Services.AddSharedKernelApplication();
-builder.Services.AddSharedKernelApplicationBehaviors()
-    .AddDefaultBehaviors()
-    .AddAuthorizationBehavior()
-    .AddTransactionBehavior()
-    .AddAuditingBehavior()
-    .Build();
+// 05.Application — MediatR with the platform pipeline, in one call: the handlers and validators of this assembly,
+// [RequirePermission] on every command and query (always enforced; IRequestContext comes from
+// AddSharedKernelRequestContext() above), one retry-safe transaction per command, and an audit record —
+// Succeeded inside the transaction, Failed after a rollback.
+builder.Services.AddSharedKernelApplication(typeof(Program).Assembly, app => app
+    .WithTransactions()
+    .WithAuditing());
 
 builder.Services.AddScoped<ICustomerDirectory, CustomerDirectory>();
 
@@ -66,18 +74,20 @@ builder.Services.AddHealthChecks()
     .AddAuditSealingReadinessCheck();
 builder.Services.AddHostedService<StartupGateRelease>();
 
-// 14.Presentation — RFC 9457 ProblemDetails for everything that escapes a handler (e.g. a concurrency conflict).
-builder.Services.AddProblemDetails();
-builder.Services.AddExceptionHandler<SharedKernelExceptionHandler>();
+// 14.Presentation — the HTTP boundary in one call (SharedKernel:Presentation:WebApi): every error — a failed Result,
+// an exception that escapes a handler, a caller the pipeline refuses — is an RFC 9457 problem; correlation ids,
+// security headers and request limits.
+builder.AddSharedKernelWebApi();
 
 var app = builder.Build();
 
-app.UseExceptionHandler();
-app.UseAuthentication();
-app.UseAuthorization();
+// Before any endpoint: correlation id, security headers, the exception handler, routing, authentication (the demo
+// scheme above) and authorization, in that order.
+app.UseSharedKernelWebApi();
 
 app.MapDefaultHealthCheckEndpoints();
-app.MapBillingEndpoints();
+// Every IEndpointModule of this assembly (Api/), found at compile time by the generator the WebApi package ships.
+app.MapEndpoints();
 
 await app.RunAsync();
 

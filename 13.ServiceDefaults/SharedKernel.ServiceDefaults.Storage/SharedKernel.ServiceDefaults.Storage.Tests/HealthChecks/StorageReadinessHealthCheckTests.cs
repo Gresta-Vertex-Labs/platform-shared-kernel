@@ -51,7 +51,7 @@ public sealed class StorageReadinessHealthCheckTests
         var probed = new List<string>();
         services.AddSharedKernelStorage()
             .AddStore(ProbeOnlyStore("invoices", probed, Result.Success()))
-            .AddStore(ProbeOnlyStore("archive", probed, Result.Failure(Error.Unexpected(StorageErrorCodes.Unavailable, "down"))));
+            .AddStore(ProbeOnlyStore("archive", probed, Result.Failure(Error.Unavailable(StorageErrorCodes.Unavailable, "down"))));
         services.AddHealthChecks()
             .AddStorageReadinessCheck("invoices", "storage-invoices")
             .AddStorageReadinessCheck("archive", "storage-archive");

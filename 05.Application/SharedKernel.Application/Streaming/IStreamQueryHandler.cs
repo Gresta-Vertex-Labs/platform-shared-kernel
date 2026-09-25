@@ -1,6 +1,6 @@
 using MediatR;
 
-namespace SharedKernel.Application.Streaming;
+namespace SharedKernel.Application;
 
 /// <summary>
 /// Handles a streaming query of type <typeparamref name="TQuery"/>.

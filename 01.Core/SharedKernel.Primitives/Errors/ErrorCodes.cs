@@ -127,6 +127,80 @@ public static class ErrorCodes
     }
 
     /// <summary>
+    /// Codes for failures where a dependency, or the service itself, is temporarily unable to serve
+    /// the request.
+    /// </summary>
+    /// <remarks>
+    /// Use these constants as the <see cref="Error.Code"/> value when raising
+    /// <see cref="ErrorType.Unavailable"/> errors, which map to HTTP 503 at the presentation layer.
+    /// A capability package usually has its own, more specific code — <c>storage.unavailable</c>,
+    /// <c>messaging.unavailable</c> — and this is the general-purpose fallback.
+    /// </remarks>
+    public static class Unavailable
+    {
+        /// <summary>
+        /// A dependency, or the service itself, is temporarily unable to serve the request; retrying
+        /// later may succeed. The general-purpose code for any
+        /// <see cref="Error.Unavailable(string, string)"/> call site that has no more specific code of
+        /// its own.
+        /// </summary>
+        public const string Default = "unavailable.default";
+    }
+
+    /// <summary>Codes for failures where an operation exceeded its time budget.</summary>
+    /// <remarks>
+    /// Use these constants as the <see cref="Error.Code"/> value when raising
+    /// <see cref="ErrorType.Timeout"/> errors, which map to HTTP 504 at the presentation layer.
+    /// </remarks>
+    public static class Timeout
+    {
+        /// <summary>
+        /// The operation exceeded its time budget and its outcome may be unknown. The
+        /// general-purpose code for any <see cref="Error.Timeout(string, string)"/> call site that
+        /// has no more specific code of its own.
+        /// </summary>
+        public const string Default = "timeout.default";
+    }
+
+    /// <summary>
+    /// Codes for failures of an idempotent request: one that carries an idempotency key so a retry
+    /// is answered with the first attempt's outcome instead of running again.
+    /// </summary>
+    /// <remarks>
+    /// Shared by every layer that handles the key, so a client sees one code whichever layer refused
+    /// it: <c>SharedKernel.Presentation.WebApi</c> checks the <c>Idempotency-Key</c> header
+    /// (<see cref="KeyRequired"/>, <see cref="KeyInvalid"/>) and <c>SharedKernel.Application</c>'s
+    /// idempotency behavior reserves the key (<see cref="KeyRequired"/>, <see cref="InProgress"/>,
+    /// <see cref="KeyReused"/>).
+    /// </remarks>
+    public static class Idempotency
+    {
+        /// <summary>
+        /// The request must carry an idempotency key and carries none, or a blank one. Raised as
+        /// <see cref="ErrorType.Validation"/>.
+        /// </summary>
+        public const string KeyRequired = "idempotency.key_required";
+
+        /// <summary>
+        /// The idempotency key is present but malformed (for example too long, or with characters
+        /// outside visible ASCII). Raised as <see cref="ErrorType.Validation"/>.
+        /// </summary>
+        public const string KeyInvalid = "idempotency.key_invalid";
+
+        /// <summary>
+        /// A request with the same key is still running; retry once it has finished. Raised as
+        /// <see cref="ErrorType.Conflict"/>.
+        /// </summary>
+        public const string InProgress = "idempotency.in_progress";
+
+        /// <summary>
+        /// The key was already used for a request with a different body. Raised as
+        /// <see cref="ErrorType.Conflict"/>.
+        /// </summary>
+        public const string KeyReused = "idempotency.key_reused";
+    }
+
+    /// <summary>
     /// Codes for domain invariant and business rule violations.
     /// </summary>
     /// <remarks>

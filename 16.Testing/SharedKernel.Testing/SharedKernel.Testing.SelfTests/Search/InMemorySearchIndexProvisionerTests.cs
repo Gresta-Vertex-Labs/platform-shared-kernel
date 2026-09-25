@@ -48,7 +48,7 @@ public sealed class InMemorySearchIndexProvisionerTests
         Assert.True(result.IsSuccess);
         var probe = await provisioner.ProbeAsync("products", CancellationToken.None);
         Assert.True(probe.IsSuccess);
-        Assert.Equal(withExtraField.Fingerprint, probe.Value.SchemaFingerprint);
+        Assert.Equal(withExtraField.ComputeFingerprint(), probe.Value.SchemaFingerprint);
     }
 
     [Fact]
@@ -208,7 +208,7 @@ public sealed class InMemorySearchIndexProvisionerTests
         Assert.Equal(0, result.Value.DocumentCount);
         Assert.Equal(0, result.Value.PendingWriteCount);
         Assert.Equal("in-memory-fake", result.Value.EngineVersion);
-        Assert.Equal(definition.Fingerprint, result.Value.SchemaFingerprint);
+        Assert.Equal(definition.ComputeFingerprint(), result.Value.SchemaFingerprint);
         Assert.Equal(TimeSpan.Zero, result.Value.Latency);
     }
 

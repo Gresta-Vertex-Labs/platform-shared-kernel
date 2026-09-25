@@ -10,8 +10,7 @@ namespace SharedKernel.Analyzers.Diagnostics;
 /// SK0015 — Fires when a type-based DI registration call (<c>AddTransient</c>, <c>AddScoped</c>,
 /// or <c>AddSingleton</c>) registers a service type resolving to the open generic
 /// <c>MediatR.IPipelineBehavior&lt;,&gt;</c> against an implementation type that itself implements
-/// <c>MediatR.IStreamPipelineBehavior&lt;,&gt;</c>, outside a method named
-/// <c>AddStreamingBehaviors</c>.
+/// <c>MediatR.IStreamPipelineBehavior&lt;,&gt;</c>, wherever the call is made.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -31,16 +30,14 @@ namespace SharedKernel.Analyzers.Diagnostics;
 /// domain (after SK0011) to require semantic model resolution.
 /// </para>
 /// <para>
-/// <strong>Self-exemption.</strong> The <c>AddStreamingBehaviors</c> method-name check is
-/// syntax-only and short-circuits before the semantic-model call — the conventional name for a
-/// service's own streaming-behavior composition helper, which registers these deliberately.
-/// `05.Application` ships no such method: it removed its streaming behaviors before its first
-/// publish, so every streaming behavior on the platform now belongs to a consuming service.
+/// <strong>No exemption.</strong> Such a registration never runs, whatever method it is made in, so no
+/// call site is exempt. Earlier versions exempted a method named <c>AddStreamingBehaviors</c>, after a
+/// 05.Application helper removed before its first publish (P-544); the name-based exemption went in P-563.
 /// </para>
 /// <para>
 /// <b>Covered form:</b>
 /// <c>services.AddTransient(typeof(IPipelineBehavior&lt;,&gt;), typeof(StreamMetricsBehavior&lt;,&gt;))</c>
-/// called outside <c>AddStreamingBehaviors</c>.
+/// anywhere.
 /// </para>
 /// <para>
 /// <b>Suppression:</b> use <c>#pragma warning disable SK0015</c> at the call site only for a
@@ -53,7 +50,6 @@ namespace SharedKernel.Analyzers.Diagnostics;
 public sealed class StreamPipelineBehaviorMisregistrationAnalyzer : AnalyzerBase
 {
     private const string DiagnosticId = "SK0015";
-    private const string SelfExemptMethodName = "AddStreamingBehaviors";
     private const string PipelineBehaviorSimpleName = "IPipelineBehavior";
     private const string StreamPipelineBehaviorSimpleName = "IStreamPipelineBehavior";
     private const string MediatRNamespace = "MediatR";
@@ -96,10 +92,6 @@ public sealed class StreamPipelineBehaviorMisregistrationAnalyzer : AnalyzerBase
 
         var methodName = GetInvokedMethodName(invocation);
         if (methodName is null || !RegistrationMethodNames.Contains(methodName))
-            return;
-
-        // Self-exemption: syntax-only, short-circuits before any semantic model call.
-        if (IsInsideAddStreamingBehaviorsMethod(invocation))
             return;
 
         var arguments = invocation.ArgumentList.Arguments;
@@ -148,24 +140,6 @@ public sealed class StreamPipelineBehaviorMisregistrationAnalyzer : AnalyzerBase
                 => gn.Identifier.Text,
             _ => null,
         };
-
-    /// <summary>
-    /// Walks up to the nearest enclosing <see cref="MethodDeclarationSyntax"/> and returns
-    /// <see langword="true"/> when its identifier is exactly <see cref="SelfExemptMethodName"/>.
-    /// </summary>
-    private static bool IsInsideAddStreamingBehaviorsMethod(SyntaxNode node)
-    {
-        var current = node.Parent;
-        while (current is not null)
-        {
-            if (current is MethodDeclarationSyntax methodDecl)
-                return methodDecl.Identifier.Text == SelfExemptMethodName;
-
-            current = current.Parent;
-        }
-
-        return false;
-    }
 
     private static bool IsMediatRInterface(INamedTypeSymbol symbol, string simpleName)
     {

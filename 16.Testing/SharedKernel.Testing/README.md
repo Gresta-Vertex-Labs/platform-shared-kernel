@@ -59,8 +59,8 @@ bus.ShouldNotHavePublished<OrderCancelled>();
 ```
 
 `ShouldHavePublished<T>()`, `ShouldHaveSent<T>()`, `ShouldHavePublishedOnce<T>()` and
-`ShouldNotHavePublished<T>()` fail with the recorded messages in the failure text. `SetResponseHandler` scripts
-a reply for `RequestAsync`. `InMemoryEventPublisher` does the same for `IEventPublisher`.
+`ShouldNotHavePublished<T>()` fail with the recorded messages in the failure text. `InMemoryEventPublisher` does
+the same for `IEventPublisher`.
 
 ### Asserting what was logged
 
@@ -84,7 +84,7 @@ using var harness = new ApplicationPipelineTestHarness();
 
 harness.Services.AddSingleton<IRequestContext>(new FakeRequestContext { Permissions = ["orders.place"] });
 harness.Services.AddScoped<IUnitOfWork, FakeUnitOfWork>();
-harness.AddBehaviors().AddDefaultBehaviors().AddAuthorizationBehavior().AddTransactionBehavior().Build();
+harness.Configure(app => app.WithTransactions());   // authorization is always on
 harness.Build<PlaceOrderCommand>();
 
 var result = await harness.SendAsync(new PlaceOrderCommand("ada", 10m));
@@ -95,6 +95,23 @@ Assert.True(result.IsSuccess);
 `WithActivityCapture()` additionally records the spans and metric measurements the pipeline emitted, exposed
 as `CapturedActivities` and `CapturedMeasurements`. `AddFakeApplicationBehaviorServices()` registers the
 whole seam set (`IRequestContext`, `IUnitOfWork`, `IRequestIdempotencyStore`) in one call.
+
+### A step-up of a given age
+
+```csharp
+var clock = new FakeClock(new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero));
+
+var fresh = new FakeUserContext { AuthenticationMethods = ["pwd", "otp"] }
+    .WithAuthenticationMethodTime("otp", clock.UtcNow.AddMinutes(-2));
+var expired = new FakeUserContext { AuthenticationMethods = ["pwd", "otp"] }
+    .WithAuthenticationMethodTime("otp", clock.UtcNow.AddMinutes(-6));
+```
+
+`GetAuthenticationMethodTime("otp")` then answers as a real context does: with `clock` as the service's `IClock`,
+an endpoint marked `[RequireAuthenticationMethod("otp", MaxAgeSeconds = 300)]` accepts `fresh` and refuses
+`expired`. A time only dates a method, so list the method in `AuthenticationMethods` too. For a principal,
+`SecurityTestContextBuilder.WithAuthenticationMethodTime` emits the `amr_time` claim through
+`AuthenticationMethodTimeClaim`.
 
 ### A real dependency, in a container
 
@@ -164,7 +181,8 @@ this package references.
 | `DataPrivacy/` | `PiiMaskingAssertions`, `RecordingDataSubjectRequestHandler` |
 | `Domain/` | `DomainEventAssertions`, `BusinessRuleAssertions`, `DomainVersionAssertions`, `SpecificationAssert`, `SpecificationTestBuilder<T>`, `MoneyFaker`, `FakeExchangeRateProvider` |
 | `Fakers/` | `FakerSeeding`, `EntityFaker<TEntity,TId>`, `SingleValueObjectFaker<TValueObject,TValue>` |
-| `FeatureManagement/` | `FakeFeatureManager`, `AddFakeFeatureManagement()` |
+| `FeatureManagement/` | `FakeFeatureClient` (an OpenFeature `IFeatureClient`), `AddFakeFeatureFlags()` |
+| `Grpc/` | `TestServerCallContext` — a `ServerCallContext` with a controllable `HttpContext`, for a gRPC service's own methods and interceptors |
 | `Integration/` | `InMemoryWebhookDispatcher`, `InMemoryWebhookDeliveryObserver` |
 | `Intelligence/` | `InMemoryEmbeddingGenerator` (deterministic, hash-derived vectors), `InMemoryVectorCollection<TRecord>`, `InMemorySemanticKernel`, provisioners and descriptors |
 | `Localization/` | `CultureScope` |

@@ -73,8 +73,8 @@ public class UnitOfWorkSeamRulesTests
 
     public static IEnumerable<object[]> RealAssembliesThatMustNotRedeclare()
     {
-        yield return [typeof(SharedKernel.Application.Messaging.ICommand).Assembly];
-        yield return [typeof(SharedKernel.Application.Behaviors.Extensions.ApplicationBehaviorsBuilder).Assembly];
+        yield return [typeof(SharedKernel.Application.ICommand).Assembly];
+        yield return [typeof(SharedKernel.Application.Caching.ICacheableQuery).Assembly];
         yield return [typeof(SharedKernel.Persistence.Abstractions.Context.ICrossTenantScope).Assembly];
         yield return [typeof(SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext).Assembly];
         yield return [typeof(SharedKernel.Persistence.EfCorePersistenceBuilderAuditingExtensions).Assembly];

@@ -21,16 +21,34 @@ internal sealed class MeilisearchIndexProvisioner : ISearchIndexProvisioner
 
     private readonly global::Meilisearch.MeilisearchClient _client;
     private readonly MeilisearchOptions _options;
+    private readonly IReadOnlyDictionary<string, SearchIndexDefinition> _registeredDefinitions;
+    private readonly IReadOnlyDictionary<string, IReadOnlyList<string>> _rankingRules;
     private readonly ILogger<MeilisearchIndexProvisioner> _logger;
 
     /// <summary>Initializes a new <see cref="MeilisearchIndexProvisioner"/>.</summary>
+    /// <param name="client">The shared Meilisearch client.</param>
+    /// <param name="options">The validated provider options.</param>
+    /// <param name="registeredDefinitions">
+    /// Every index definition the composition root registered, keyed by index name — the input to
+    /// <see cref="VerifyRegisteredIndexesAsync"/>.
+    /// </param>
+    /// <param name="rankingRules">
+    /// The Meilisearch-exclusive ranking rules declared per index via
+    /// <c>MeilisearchSearchBuilder.WithRankingRules</c>, keyed by index name. An index absent from this
+    /// map keeps the engine's default ranking-rule sequence.
+    /// </param>
+    /// <param name="logger">The logger.</param>
     public MeilisearchIndexProvisioner(
         global::Meilisearch.MeilisearchClient client,
         MeilisearchOptions options,
+        IReadOnlyDictionary<string, SearchIndexDefinition> registeredDefinitions,
+        IReadOnlyDictionary<string, IReadOnlyList<string>> rankingRules,
         ILogger<MeilisearchIndexProvisioner> logger)
     {
         _client = client;
         _options = options;
+        _registeredDefinitions = registeredDefinitions;
+        _rankingRules = rankingRules;
         _logger = logger;
     }
 
@@ -68,6 +86,19 @@ internal sealed class MeilisearchIndexProvisioner : ISearchIndexProvisioner
                 .Select(name => name!)
                 .ToArray();
             existingSortable = (currentSettings.SortableAttributes ?? []).ToArray();
+
+            // Text analysis is NOT unioned the way the attribute-role lists above are. Meilisearch would
+            // happily rewrite synonyms and stop words on a live index, but ElasticSearch cannot change an
+            // index's analysis settings in place at all — so honouring a changed list here while the
+            // sibling provider rejects it would reintroduce exactly the cross-provider divergence this
+            // domain exists to prevent. Both providers therefore refuse, and the documented remedy is the
+            // same one an incompatible field mapping already has: provision a staging index, bulk-load it,
+            // then CutoverAsync.
+            var textAnalysisConflict = DetectTextAnalysisConflict(definition, currentSettings);
+            if (textAnalysisConflict is not null)
+            {
+                return Result.Failure(textAnalysisConflict);
+            }
         }
 
         // Additive-only: the applied settings are the UNION of whatever is already live and what this
@@ -107,8 +138,18 @@ internal sealed class MeilisearchIndexProvisioner : ISearchIndexProvisioner
             SortableAttributes = sortableAttributes,
             Pagination = new global::Meilisearch.Pagination { MaxTotalHits = definition.MaxTotalHits },
             Faceting = new global::Meilisearch.Faceting { MaxValuesPerFacet = definition.MaxFacetValues },
-            Dictionary = [BuildFingerprintDictionaryEntry(definition.Fingerprint)],
+            Dictionary = [BuildFingerprintDictionaryEntry(definition.ComputeFingerprint())],
+            Synonyms = definition.Synonyms.ToDictionary(
+                entry => entry.Key,
+                entry => (IEnumerable<string>)entry.Value.ToArray(),
+                StringComparer.Ordinal),
+            StopWords = definition.StopWords.ToArray(),
         };
+
+        if (_rankingRules.TryGetValue(definition.Name, out var rankingRules))
+        {
+            settings.RankingRules = rankingRules;
+        }
 
         var updateTask = await index.UpdateSettingsAsync(settings, cancellationToken).ConfigureAwait(false);
         var updateWait = await WaitAsync(updateTask.TaskUid, cancellationToken).ConfigureAwait(false);
@@ -124,7 +165,57 @@ internal sealed class MeilisearchIndexProvisioner : ISearchIndexProvisioner
             sortableAttributes.Length,
             definition.Fields.Count(f => f.Facetable));
 
+        if (definition.Synonyms.Count > 0 || definition.StopWords.Count > 0)
+        {
+            _logger.MeilisearchTextAnalysisApplied(
+                definition.Name, definition.Synonyms.Count, definition.StopWords.Count);
+        }
+
+        if (rankingRules is not null)
+        {
+            _logger.MeilisearchRankingRulesApplied(definition.Name, rankingRules.Count);
+        }
+
         return Result.Success();
+    }
+
+    /// <summary>
+    /// Compares the live index's synonym and stop-word settings against
+    /// <paramref name="definition"/>'s, returning <see cref="SearchErrors.IndexDefinitionConflict"/>
+    /// when they differ and <see langword="null"/> when they match.
+    /// </summary>
+    private static Primitives.Errors.Error? DetectTextAnalysisConflict(
+        SearchIndexDefinition definition, global::Meilisearch.Settings currentSettings)
+    {
+        var liveStopWords = (currentSettings.StopWords ?? []).OrderBy(w => w, StringComparer.Ordinal).ToArray();
+        var declaredStopWords = definition.StopWords.OrderBy(w => w, StringComparer.Ordinal).ToArray();
+        if (!liveStopWords.SequenceEqual(declaredStopWords, StringComparer.Ordinal))
+        {
+            return SearchErrors.IndexDefinitionConflict(definition.Name, "stopWords");
+        }
+
+        var liveSynonyms = currentSettings.Synonyms ?? [];
+        if (liveSynonyms.Count != definition.Synonyms.Count)
+        {
+            return SearchErrors.IndexDefinitionConflict(definition.Name, "synonyms");
+        }
+
+        foreach (var (term, declaredReplacements) in definition.Synonyms)
+        {
+            if (!liveSynonyms.TryGetValue(term, out var liveReplacements))
+            {
+                return SearchErrors.IndexDefinitionConflict(definition.Name, $"synonyms.{term}");
+            }
+
+            var live = liveReplacements.OrderBy(v => v, StringComparer.Ordinal).ToArray();
+            var declared = declaredReplacements.OrderBy(v => v, StringComparer.Ordinal).ToArray();
+            if (!live.SequenceEqual(declared, StringComparer.Ordinal))
+            {
+                return SearchErrors.IndexDefinitionConflict(definition.Name, $"synonyms.{term}");
+            }
+        }
+
+        return null;
     }
 
     /// <inheritdoc />
@@ -384,5 +475,68 @@ internal sealed class MeilisearchIndexProvisioner : ISearchIndexProvisioner
             return Result.Failure(SearchErrors.Timeout(
                 "Provisioning", TimeSpan.FromSeconds(_options.TaskWaitTimeoutSeconds)));
         }
+    }
+
+    /// <inheritdoc />
+    public async Task<Result> VerifyRegisteredIndexesAsync(CancellationToken cancellationToken = default)
+    {
+        if (_registeredDefinitions.Count == 0)
+        {
+            return Result.Success();
+        }
+
+        var drifted = new List<string>();
+
+        foreach (var (indexName, definition) in _registeredDefinitions)
+        {
+            var probeResult = await ProbeAsync(indexName, cancellationToken).ConfigureAwait(false);
+            if (probeResult.IsFailure)
+            {
+                drifted.Add($"{indexName}: probe failed ({probeResult.Error.Code})");
+                continue;
+            }
+
+            var health = probeResult.Value;
+            if (!health.Reachable)
+            {
+                drifted.Add($"{indexName}: engine unreachable");
+                continue;
+            }
+
+            if (!health.IndexAddressable)
+            {
+                drifted.Add($"{indexName}: not addressable with this service's API key");
+                continue;
+            }
+
+            var expectedFingerprint = definition.ComputeFingerprint();
+            if (health.SchemaFingerprint is null)
+            {
+                drifted.Add($"{indexName}: no schema fingerprint recorded — the index was never provisioned by EnsureIndexAsync");
+                continue;
+            }
+
+            if (!string.Equals(health.SchemaFingerprint, expectedFingerprint, StringComparison.Ordinal))
+            {
+                drifted.Add(
+                    $"{indexName}: schema fingerprint '{health.SchemaFingerprint}' does not match the registered definition's '{expectedFingerprint}'");
+            }
+        }
+
+        if (drifted.Count == 0)
+        {
+            foreach (var indexName in _registeredDefinitions.Keys)
+            {
+                _logger.MeilisearchIndexSettingsVerified(indexName);
+            }
+
+            return Result.Success();
+        }
+
+        var detail = string.Join("; ", drifted);
+        _logger.MeilisearchIndexSettingsDrifted(string.Join(", ", _registeredDefinitions.Keys), detail);
+        return Result.Failure(SearchErrors.ProbeFailed(
+            string.Join(", ", _registeredDefinitions.Keys),
+            $"{drifted.Count} of {_registeredDefinitions.Count} registered index(es) did not match: {detail}"));
     }
 }

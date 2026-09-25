@@ -1,12 +1,36 @@
+using DocumentsApi.Features.Files;
+using MediatR;
 using Microsoft.Net.Http.Headers;
-using SharedKernel.Presentation.WebApi.Results;
-using SharedKernel.Primitives.Results;
+using SharedKernel.Presentation.WebApi;
 using SharedKernel.Storage;
 
 namespace DocumentsApi;
 
-/// <summary>Server-side file operations: the bytes flow through the service, streamed in both directions.</summary>
-public static class FileEndpoints
+/// <summary>
+/// Server-side file operations: the bytes flow through the service, streamed in both directions. Every endpoint reads
+/// what it needs from the request — the store and key from the route, the tenant, preconditions, range and metadata from
+/// headers — into a command or query (<c>Features/Files</c>), sends it, and maps the <see cref="SharedKernel.Primitives.Results.Result{T}"/>
+/// to a typed result, so an unknown store, a missing tenant and every <c>storage.*</c> failure reach the client as the
+/// same RFC 9457 problem.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Preconditions come from the request: an upload takes <c>If-None-Match: *</c> (create only), and uploads, downloads
+/// and deletes take an optional <c>If-Match</c> with an ETag the client read. When the store refuses one — the object
+/// exists, or no longer has that ETag — the error is a conflict (<c>storage.already_exists</c>,
+/// <c>storage.precondition_failed</c>), and because the client sent the precondition in a header the answer is 412
+/// Precondition Failed. The same errors without a precondition header, such as a create-only copy that asks in its body,
+/// stay 409.
+/// </para>
+/// <para>
+/// <c>If-Match</c> is a nullable <c>IfMatch&lt;string&gt;</c> parameter, which accepts the header without requiring it.
+/// The platform refuses a header that does not name one strong entity tag before the endpoint runs — 400
+/// <c>precondition.invalid</c>, or 412 <c>precondition.failed</c> for a weak tag — so the endpoint gets
+/// <see langword="null"/> only when the client sent no <c>If-Match</c>, and never turns a conditional request into an
+/// unconditional one.
+/// </para>
+/// </remarks>
+public sealed class FileEndpoints : IEndpointModule
 {
     /// <summary>Request header carrying the expected base64 SHA-256 of an upload.</summary>
     public const string ChecksumHeader = "X-Checksum-Sha256";
@@ -14,78 +38,73 @@ public static class FileEndpoints
     /// <summary>Prefix of request headers stored as user metadata, e.g. <c>X-Meta-Order-Id</c>.</summary>
     public const string MetadataHeaderPrefix = "X-Meta-";
 
-    public static void MapFileEndpoints(this IEndpointRouteBuilder app)
+    /// <summary>
+    /// The largest file <c>PUT /files/…</c> accepts, 1 GiB. The platform caps every request body at 4 MiB
+    /// (<c>SharedKernel:Presentation:WebApi:Limits:MaxRequestBodySize</c>); the upload endpoint lifts that for itself
+    /// only. Its body streams straight into the store, so the limit caps the object, not memory. Larger files go
+    /// directly to the provider through the presigned multipart endpoints.
+    /// </summary>
+    public const long MaxUploadBytes = 1024L * 1024 * 1024;
+
+    public static void Map(IEndpointRouteBuilder app)
     {
         // Upload: the request body is streamed straight into the store (never buffered).
-        // If-None-Match: * → create only; If-Match: "etag" → replace only that version.
-        app.MapPut("/files/{store}/{**key}", (string store, string key, HttpContext http, IFileStorageFactory factory, CancellationToken ct) =>
-            WithStore(factory, store, http, async files =>
-            {
-                Result<FileReference> uploaded = await files.UploadAsync(key, http.Request.Body, UploadOptions(http.Request), ct);
-                return uploaded.ToProblemDetailsResult(reference => Results.Created($"/files/{store}/{key}", reference));
-            }));
+        // If-None-Match: * → create only; If-Match: "etag" → replace only that version; neither → overwrite.
+        app.MapPut("/files/{store}/{**key}", (string store, string key, IfMatch<string>? ifMatch, HttpRequest request, ISender sender, CancellationToken ct) =>
+                sender.Send(new UploadFile(StoreAddress.For(store, request), key, request.Body, UploadOptions(request, ETagOf(ifMatch))), ct)
+                    .ToCreated(_ => $"/files/{store}/{key}"))
+            .WithRequestSizeLimit(MaxUploadBytes);
 
-        // Download: streamed back; a single Range header returns 206 with Content-Range.
-        app.MapGet("/files/{store}/{**key}", (string store, string key, HttpContext http, IFileStorageFactory factory, CancellationToken ct) =>
-            WithStore(factory, store, http, async files =>
-            {
-                var options = new FileDownloadOptions
-                {
-                    Range = ParseRange(http.Request.Headers.Range),
-                    IfMatch = http.Request.Headers.IfMatch.FirstOrDefault(),
-                };
-                Result<FileDownload> download = await files.DownloadAsync(key, options, ct);
-                return download.ToProblemDetailsResult(file => new FileDownloadResult(file));
-            }));
+        // Download: streamed back; a single Range header returns 206 with Content-Range. If-Match pins the version, so
+        // range reads of one file cannot mix two versions of it.
+        app.MapGet("/files/{store}/{**key}", (string store, string key, IfMatch<string>? ifMatch, HttpRequest request, ISender sender, CancellationToken ct) =>
+            sender.Send(new DownloadFile(StoreAddress.For(store, request), key, DownloadOptions(request, ETagOf(ifMatch))), ct)
+                .ToHttpResult(download => new FileDownloadResult(download)));
 
-        app.MapGet("/properties/{store}/{**key}", (string store, string key, HttpContext http, IFileStorageFactory factory, CancellationToken ct) =>
-            WithStore(factory, store, http, async files => (await files.GetPropertiesAsync(key, ct)).ToProblemDetailsResult()));
+        app.MapGet("/properties/{store}/{**key}", (string store, string key, HttpRequest request, ISender sender, CancellationToken ct) =>
+            sender.Send(new GetFileProperties(StoreAddress.For(store, request), key), ct).ToOk());
 
-        app.MapDelete("/files/{store}/{**key}", (string store, string key, HttpContext http, IFileStorageFactory factory, CancellationToken ct) =>
-            WithStore(factory, store, http, async files =>
-                (await files.DeleteAsync(key, new FileDeleteOptions { IfMatch = http.Request.Headers.IfMatch.FirstOrDefault() }, ct))
-                    .ToProblemDetailsResult()));
+        app.MapDelete("/files/{store}/{**key}", (string store, string key, IfMatch<string>? ifMatch, HttpRequest request, ISender sender, CancellationToken ct) =>
+            sender.Send(new DeleteFile(StoreAddress.For(store, request), key, ETagOf(ifMatch)), ct).ToNoContent());
 
-        app.MapPost("/delete-many/{store}", (string store, string[] keys, HttpContext http, IFileStorageFactory factory, CancellationToken ct) =>
-            WithStore(factory, store, http, async files => (await files.DeleteManyAsync(keys, ct)).ToProblemDetailsResult()));
+        app.MapPost("/delete-many/{store}", (string store, string[] keys, HttpRequest request, ISender sender, CancellationToken ct) =>
+            sender.Send(new DeleteFiles(StoreAddress.For(store, request), keys), ct).ToOk());
 
-        app.MapGet("/list/{store}", (string store, string? prefix, bool? recursive, int? pageSize, string? continuationToken, HttpContext http, IFileStorageFactory factory, CancellationToken ct) =>
-            WithStore(factory, store, http, async files =>
-            {
-                var request = new FileListRequest
-                {
-                    Prefix = prefix ?? string.Empty,
-                    Recursive = recursive ?? true,
-                    PageSize = pageSize ?? FileListRequest.MaxPageSize,
-                    ContinuationToken = continuationToken,
-                };
-                return (await files.ListPageAsync(request, ct)).ToProblemDetailsResult();
-            }));
+        app.MapGet("/list/{store}", (string store, string? prefix, bool? recursive, int? pageSize, string? continuationToken, HttpRequest request, ISender sender, CancellationToken ct) =>
+            sender.Send(
+                    new ListFiles(
+                        StoreAddress.For(store, request),
+                        new FileListRequest
+                        {
+                            Prefix = prefix ?? string.Empty,
+                            Recursive = recursive ?? true,
+                            PageSize = pageSize ?? FileListRequest.MaxPageSize,
+                            ContinuationToken = continuationToken,
+                        }),
+                    ct)
+                .ToOk());
 
         // Copy within a store or into another one (server-side when both share a connection).
-        app.MapPost("/copy", (CopyRequest request, HttpContext http, IFileStorageFactory factory, CancellationToken ct) =>
-            WithStore(factory, request.FromStore, http, source => WithStore(factory, request.ToStore, http, async destination =>
-            {
-                var options = new FileCopyOptions { Condition = request.CreateOnly ? WriteCondition.IfNotExists : null };
-                Result<FileReference> copied = await source.CopyToAsync(request.FromKey, destination, request.ToKey, options, ct);
-                return copied.ToProblemDetailsResult();
-            })));
+        app.MapPost("/copy", (CopyRequest body, HttpRequest request, ISender sender, CancellationToken ct) =>
+            sender.Send(
+                    new CopyFile(
+                        StoreAddress.For(body.FromStore, request),
+                        body.FromKey,
+                        StoreAddress.For(body.ToStore, request),
+                        body.ToKey,
+                        body.CreateOnly),
+                    ct)
+                .ToOk());
     }
 
-    internal static async Task<IResult> WithStore(
-        IFileStorageFactory factory,
-        string storeName,
-        HttpContext http,
-        Func<IFileStorage, Task<IResult>> action)
-    {
-        Result<IFileStorage> store = Stores.Resolve(factory, storeName, http);
-        return store.IsSuccess ? await action(store.Value) : store.ToProblemDetailsResult();
-    }
+    /// <summary>
+    /// The ETag the request's <c>If-Match</c> names, with its quotes as the client sent it — the form the stores return
+    /// (<see cref="FileProperties.ETag"/>) — or <see langword="null"/> when the client sent no <c>If-Match</c>.
+    /// </summary>
+    private static string? ETagOf(IfMatch<string>? ifMatch) => ifMatch is null ? null : $"\"{ifMatch.Version}\"";
 
-    private static FileUploadOptions UploadOptions(HttpRequest request)
+    private static FileUploadOptions UploadOptions(HttpRequest request, string? ifMatch)
     {
-        string? ifNoneMatch = request.Headers.IfNoneMatch.FirstOrDefault();
-        string? ifMatch = request.Headers.IfMatch.FirstOrDefault();
         var metadata = request.Headers
             .Where(h => h.Key.StartsWith(MetadataHeaderPrefix, StringComparison.OrdinalIgnoreCase))
             .ToDictionary(h => h.Key[MetadataHeaderPrefix.Length..], h => h.Value.ToString(), StringComparer.OrdinalIgnoreCase);
@@ -98,11 +117,17 @@ public static class FileEndpoints
             ContentDisposition = request.Headers.ContentDisposition.FirstOrDefault(),
             Metadata = metadata.Count > 0 ? metadata : null,
             ChecksumSha256 = request.Headers[ChecksumHeader].FirstOrDefault(),
-            Condition = ifNoneMatch == "*" ? WriteCondition.IfNotExists
+            Condition = request.Headers.IfNoneMatch == "*" ? WriteCondition.IfNotExists
                 : ifMatch is not null ? WriteCondition.IfMatch(ifMatch)
                 : null,
         };
     }
+
+    private static FileDownloadOptions DownloadOptions(HttpRequest request, string? ifMatch) => new()
+    {
+        Range = ParseRange(request.Headers.Range),
+        IfMatch = ifMatch,
+    };
 
     private static ByteRange? ParseRange(string? header)
     {

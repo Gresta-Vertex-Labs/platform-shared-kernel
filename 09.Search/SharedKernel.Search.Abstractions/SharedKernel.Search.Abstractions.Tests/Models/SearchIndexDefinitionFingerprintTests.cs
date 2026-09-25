@@ -4,7 +4,7 @@ using SharedKernel.Search.Abstractions.Models;
 namespace SharedKernel.Search.Abstractions.Tests.Models;
 
 /// <summary>
-/// T-06: <see cref="SearchIndexDefinition.Fingerprint"/> canonicalisation tests — declaration-order
+/// T-06: <see cref="SearchIndexDefinition.ComputeFingerprint()"/> canonicalisation tests — declaration-order
 /// independence (ordinal field sort), sensitivity to every individual role/kind/name/tenant-field/
 /// ceiling change, output shape (64 lowercase hex characters), and a pinned golden-value test locking
 /// the exact canonical-string format so a future refactor cannot silently change it.
@@ -36,13 +36,13 @@ public sealed class SearchIndexDefinitionFingerprintTests
     [Fact]
     public void GoldenValue_MatchesThePinnedCanonicalFormat()
     {
-        BaselineDefinition().Fingerprint.Should().Be(GoldenFingerprint);
+        BaselineDefinition().ComputeFingerprint().Should().Be(GoldenFingerprint);
     }
 
     [Fact]
     public void Fingerprint_Is64LowercaseHexCharacters()
     {
-        var fingerprint = BaselineDefinition().Fingerprint;
+        var fingerprint = BaselineDefinition().ComputeFingerprint();
 
         fingerprint.Should().HaveLength(64);
         fingerprint.Should().MatchRegex("^[0-9a-f]{64}$");
@@ -65,8 +65,8 @@ public sealed class SearchIndexDefinitionFingerprintTests
             new SearchFieldDefinition { Name = "name", Kind = SearchFieldKind.Text, Searchable = true },
         ]);
 
-        declaredNameFirst.Fingerprint.Should().Be(declaredTenantFirst.Fingerprint);
-        declaredNameFirst.Fingerprint.Should().Be(GoldenFingerprint);
+        declaredNameFirst.ComputeFingerprint().Should().Be(declaredTenantFirst.ComputeFingerprint());
+        declaredNameFirst.ComputeFingerprint().Should().Be(GoldenFingerprint);
     }
 
     [Fact]
@@ -87,7 +87,7 @@ public sealed class SearchIndexDefinitionFingerprintTests
             ],
         };
 
-        withSearchable.Fingerprint.Should().NotBe(withoutFilterable.Fingerprint);
+        withSearchable.ComputeFingerprint().Should().NotBe(withoutFilterable.ComputeFingerprint());
     }
 
     [Fact]
@@ -102,7 +102,7 @@ public sealed class SearchIndexDefinitionFingerprintTests
             Fields = [new SearchFieldDefinition { Name = "f", Kind = SearchFieldKind.Keyword }],
         };
 
-        asText.Fingerprint.Should().NotBe(asKeyword.Fingerprint);
+        asText.ComputeFingerprint().Should().NotBe(asKeyword.ComputeFingerprint());
     }
 
     [Fact]
@@ -117,7 +117,7 @@ public sealed class SearchIndexDefinitionFingerprintTests
             Fields = [new SearchFieldDefinition { Name = "b", Kind = SearchFieldKind.Text }],
         };
 
-        fieldA.Fingerprint.Should().NotBe(fieldB.Fingerprint);
+        fieldA.ComputeFingerprint().Should().NotBe(fieldB.ComputeFingerprint());
     }
 
     [Fact]
@@ -127,8 +127,8 @@ public sealed class SearchIndexDefinitionFingerprintTests
         var withoutTenant = BaselineDefinition() with { TenantField = null };
         var differentTenant = BaselineDefinition() with { TenantField = "orgId" };
 
-        withTenant.Fingerprint.Should().NotBe(withoutTenant.Fingerprint);
-        withTenant.Fingerprint.Should().NotBe(differentTenant.Fingerprint);
+        withTenant.ComputeFingerprint().Should().NotBe(withoutTenant.ComputeFingerprint());
+        withTenant.ComputeFingerprint().Should().NotBe(differentTenant.ComputeFingerprint());
     }
 
     [Fact]
@@ -137,7 +137,7 @@ public sealed class SearchIndexDefinitionFingerprintTests
         var default1000 = BaselineDefinition() with { MaxTotalHits = 1000 };
         var custom5000 = BaselineDefinition() with { MaxTotalHits = 5000 };
 
-        default1000.Fingerprint.Should().NotBe(custom5000.Fingerprint);
+        default1000.ComputeFingerprint().Should().NotBe(custom5000.ComputeFingerprint());
     }
 
     [Fact]
@@ -146,7 +146,7 @@ public sealed class SearchIndexDefinitionFingerprintTests
         var default100 = BaselineDefinition() with { MaxFacetValues = 100 };
         var custom50 = BaselineDefinition() with { MaxFacetValues = 50 };
 
-        default100.Fingerprint.Should().NotBe(custom50.Fingerprint);
+        default100.ComputeFingerprint().Should().NotBe(custom50.ComputeFingerprint());
     }
 
     [Fact]
@@ -155,7 +155,7 @@ public sealed class SearchIndexDefinitionFingerprintTests
         var productsIndex = BaselineDefinition() with { Name = "products" };
         var ordersIndex = BaselineDefinition() with { Name = "orders" };
 
-        productsIndex.Fingerprint.Should().NotBe(ordersIndex.Fingerprint);
+        productsIndex.ComputeFingerprint().Should().NotBe(ordersIndex.ComputeFingerprint());
     }
 
     [Fact]
@@ -164,6 +164,6 @@ public sealed class SearchIndexDefinitionFingerprintTests
         var defaultKey = BaselineDefinition() with { PrimaryKeyField = "documentId" };
         var customKey = BaselineDefinition() with { PrimaryKeyField = "sku" };
 
-        defaultKey.Fingerprint.Should().NotBe(customKey.Fingerprint);
+        defaultKey.ComputeFingerprint().Should().NotBe(customKey.ComputeFingerprint());
     }
 }

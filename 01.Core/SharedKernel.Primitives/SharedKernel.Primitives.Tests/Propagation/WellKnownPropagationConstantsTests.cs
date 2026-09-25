@@ -21,6 +21,23 @@ public sealed class WellKnownPropagationConstantsTests
     }
 
     [Fact]
+    public void WellKnownHeaders_IdempotencyKey_EqualsExpectedLiteral()
+    {
+        // The IETF HTTPAPI draft's name, with no "X-" prefix. 14.Presentation reads it inbound and
+        // 11.Communication.Rest writes it outbound; the two must agree or a sent key is never read.
+        Assert.Equal("Idempotency-Key", WellKnownHeaders.IdempotencyKey);
+    }
+
+    [Fact]
+    public void WellKnownHeaders_AreDistinct()
+    {
+        var headers = new[] { WellKnownHeaders.CorrelationId, WellKnownHeaders.TenantId, WellKnownHeaders.IdempotencyKey };
+
+        // Header names are case-insensitive on the wire, so compare them that way.
+        Assert.Equal(headers.Length, headers.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+    }
+
+    [Fact]
     public void WellKnownBaggageKeys_CorrelationId_EqualsExpectedLiteral()
     {
         Assert.Equal("correlation.id", WellKnownBaggageKeys.CorrelationId);

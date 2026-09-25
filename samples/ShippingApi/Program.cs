@@ -1,6 +1,9 @@
+using SharedKernel.Application;
 using SharedKernel.Application.Context;
 using SharedKernel.Messaging.Abstractions.Idempotency;
 using SharedKernel.Messaging.MassTransit.Extensions;
+using SharedKernel.Presentation.WebApi;
+using SharedKernel.Primitives.Clocks;
 using SharedKernel.ServiceDefaults.Extensions;
 using SharedKernel.ServiceDefaults.HealthChecks;
 using SharedKernel.ServiceDefaults.Probes;
@@ -13,6 +16,9 @@ var builder = WebApplication.CreateBuilder(args);
 builder.AddServiceDefaults();
 builder.WithMessagingTelemetry();
 
+// 01.Core — IClock is the only sanctioned time source; analyzer SK0001 forbids DateTime.UtcNow.
+builder.Services.AddSingleton<IClock, SystemClock>();
+
 // The sample's own state and its stand-in for an identity provider. The request context is
 // registered BEFORE the bus: WithInboundRequestContext() shadows whatever IRequestContext is
 // already registered, and the container resolves the last one registered.
@@ -20,6 +26,10 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddSingleton<ShipmentProjection>();
 builder.Services.AddSingleton<FaultLog>();
 builder.Services.AddScoped<IRequestContext, HeaderRequestContext>();
+
+// 05.Application — MediatR with the handlers of this assembly (Features/) and the always-on behaviors (tracing,
+// logging, metrics, authorization, validation). The endpoints send commands and queries; the handlers publish, send and schedule.
+builder.Services.AddSharedKernelApplication(typeof(Program).Assembly);
 
 // The idempotency store WithIdempotency() requires. In this process only — see the type's remarks.
 builder.Services.AddSingleton<IIdempotencyStore, InMemoryIdempotencyStore>();
@@ -58,15 +68,20 @@ builder.Services
 // Readiness fails while the bus is not connected, so a replica is not sent traffic it cannot serve.
 builder.Services.AddHealthChecks().AddMessagingReadinessCheck();
 
-builder.Services.AddProblemDetails();
+// 14.Presentation — the HTTP boundary in one call (SharedKernel:Presentation:WebApi): every failed Result and every
+// exception becomes an RFC 9457 problem (messaging.unavailable a 503); correlation ids, security headers, limits.
+builder.AddSharedKernelWebApi();
 
 var app = builder.Build();
 
-app.UseExceptionHandler();
+// Before any endpoint: correlation id, security headers, the exception handler, problem bodies and routing.
+app.UseSharedKernelWebApi();
+
 app.MapDefaultHealthCheckEndpoints();
 app.Services.GetRequiredService<StartupGate>().MarkReady();
 
-app.MapShipmentEndpoints();
+// Every IEndpointModule of this assembly, found at compile time by the generator the WebApi package ships.
+app.MapEndpoints();
 
 await app.RunAsync();
 

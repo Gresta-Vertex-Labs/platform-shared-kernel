@@ -27,6 +27,16 @@
       reference; only this SelfTests project does, for this one interop proof.
     -->
     <ProjectReference Include="..\..\..\01.Core\SharedKernel.Localization\SharedKernel.Localization.csproj" />
+    <!--
+      P-562: test-only proof dependency mirroring the two precedents above. It brings the gRPC hosting stack and
+      SharedKernel.Presentation.WebApi, so the self-tests prove Grpc/TestServerCallContext with the real
+      GetHttpContext() over the constructed request (a service method ending its results with SharedKernel.Core's
+      GetValueOrThrow() throws the exception of its error; only a host's interceptor turns it into a rich status), and
+      prove FakeUserContext's per-method verification times against WebApi's own
+      [RequireAuthenticationMethod(..., MaxAgeSeconds = ...)] requirement (X1). SharedKernel.Testing itself dropped its
+      reference to SharedKernel.Presentation.Grpc in P-562; only this SelfTests project takes it.
+    -->
+    <ProjectReference Include="..\..\..\14.Presentation\SharedKernel.Presentation.Grpc\SharedKernel.Presentation.Grpc.csproj" />
   </ItemGroup>
   <ItemGroup>
     <!-- Standard Test Package Set — direct package references; must never leak into SharedKernel.Testing.csproj itself. -->

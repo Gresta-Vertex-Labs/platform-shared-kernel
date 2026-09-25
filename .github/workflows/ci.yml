@@ -37,7 +37,7 @@ name: CI
 #     production libraries built through references; counts as of P-558, 2026-09-21). Every
 #     *.Tests/*SelfTests project lands in exactly one of the two filters. A verification step below (in unit-test) now fails the build if that identity ever drifts,
 #     so a new *.Tests/*SelfTests project added to the .slnx cannot silently miss both filters
-#     the way SharedKernel.Application.Behaviors.Caching(.Tests) did (found 2026-09-17, fixed
+#     the way SharedKernel.Application.Caching(.Tests), then named .Behaviors.Caching, did (found 2026-09-17, fixed
 #     alongside this comment).
 
 on:
@@ -146,7 +146,7 @@ jobs:
 
       # Cheap, build-free static check: every *.Tests/*SelfTests project declared in the .slnx
       # must appear in at least one of the two solution filters, or its tests silently never run
-      # anywhere in CI. This is exactly how SharedKernel.Application.Behaviors.Caching(.Tests)
+      # anywhere in CI. This is exactly how SharedKernel.Application.Caching(.Tests) (then .Behaviors.Caching)
       # went unexecuted for six days after commit 89b9056 added it to the .slnx but not to either
       # .slnf (found and fixed 2026-09-17) — this step exists so that class of gap fails loudly
       # the next time, instead of silently, on the very next push that adds a project.
@@ -193,6 +193,15 @@ jobs:
       # Docker daemon, so it belongs in the required lane rather than the container one.
       - name: Run 07.Messaging consumer-verify
         run: dotnet run --project "07.Messaging/consumer-verify/consumer-verify.csproj" --no-build --configuration Release
+
+      # Composes all four 14.Presentation packages as a service does and drives them over real loopback
+      # connections — HttpClient, a SignalR HubConnection and a Grpc.Net.Client channel against Kestrel —
+      # asserting the one problem+json shape, authorization, the required headers, CORS, the 429 body, the
+      # hub and gRPC error contracts. It also generates two versioned OpenAPI documents: Asp.Versioning.OpenApi
+      # reflects over Microsoft.AspNetCore.OpenApi internals, so an upgrade of either that breaks it fails here.
+      # No Docker daemon, so it belongs in the required lane.
+      - name: Run 14.Presentation consumer-verify
+        run: dotnet run --project "14.Presentation/consumer-verify/consumer-verify.csproj" --no-build --configuration Release
 
       - name: Upload test results
         if: always()
@@ -500,6 +509,7 @@ jobs:
             "05.Application/SharedKernel.Application.ConsumerVerify/SharedKernel.Application.ConsumerVerify.csproj" \
             "06.Persistence/SharedKernel.Persistence.ConsumerVerify/SharedKernel.Persistence.ConsumerVerify.csproj" \
             "samples/OrderApi/OrderApi.csproj" \
+            "samples/CatalogApi/CatalogApi.csproj" \
             "samples/BillingApi/BillingApi.Tests/BillingApi.Tests.csproj" \
             "samples/DocumentsApi/DocumentsApi.Tests/DocumentsApi.Tests.csproj" \
             "samples/ShippingApi/ShippingApi.Tests/ShippingApi.Tests.csproj" \
@@ -561,6 +571,7 @@ jobs:
       - name: Build samples against packed packages
         run: |
           dotnet build "samples/OrderApi/OrderApi.csproj" --no-restore --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION"
+          dotnet build "samples/CatalogApi/CatalogApi.csproj" --no-restore --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION"
           dotnet build "samples/BillingApi/BillingApi.Tests/BillingApi.Tests.csproj" --no-restore --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION"
           dotnet build "samples/DocumentsApi/DocumentsApi.Tests/DocumentsApi.Tests.csproj" --no-restore --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION"
           dotnet build "samples/ShippingApi/ShippingApi.Tests/ShippingApi.Tests.csproj" --no-restore --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION"
@@ -601,6 +612,8 @@ jobs:
           test -n "$id"
           curl -sf "http://localhost:5199/orders/$id" | grep -q '"currency":"EUR"'
           test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:5199/orders/01999999-0000-7000-8000-000000000000)" = 404
+          # No launch profile, so this runs in Production: the API documents must not be published by default.
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:5199/openapi/v1.json)" = 404
           echo "OrderApi sample smoke test passed"
 
       # SharedKernel.Caching.ConsumerVerify is a Testcontainers-backed 5-surface harness

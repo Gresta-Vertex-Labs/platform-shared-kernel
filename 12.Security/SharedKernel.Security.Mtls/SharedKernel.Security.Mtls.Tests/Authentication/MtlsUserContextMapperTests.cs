@@ -85,4 +85,35 @@ public sealed class MtlsUserContextMapperTests
     {
         Assert.Throws<ArgumentNullException>(() => _mapper.Map(null!));
     }
+
+    [Fact]
+    public void Map_NoAuthenticationMethod_HasNoMethodTime()
+    {
+        var identity = new ClaimsIdentity([new Claim(SecurityClaimTypes.Subject, "tpp-42")], MtlsAuthenticationDefaults.AuthenticationScheme);
+
+        IUserContext context = _mapper.Map(identity);
+
+        Assert.Empty(context.AuthenticationMethods);
+        Assert.Null(context.GetAuthenticationMethodTime("hwk"));
+    }
+
+    [Fact]
+    public void Map_MethodAddedAfterAuthentication_IsMappedWithItsTime()
+    {
+        // The handler issues no authentication method; a claims transformation may add one, with its time.
+        DateTimeOffset verifiedAt = DateTimeOffset.FromUnixTimeSeconds(1_790_000_000);
+        var identity = new ClaimsIdentity(
+            [
+                new Claim(SecurityClaimTypes.Subject, "tpp-42"),
+                new Claim(SecurityClaimTypes.AuthenticationMethod, "hwk"),
+                AuthenticationMethodTimeClaim.Create("hwk", verifiedAt.AddMinutes(-5)),
+                AuthenticationMethodTimeClaim.Create("hwk", verifiedAt),
+            ],
+            MtlsAuthenticationDefaults.AuthenticationScheme);
+
+        IUserContext context = _mapper.Map(identity);
+
+        Assert.Equal(["hwk"], context.AuthenticationMethods);
+        Assert.Equal(verifiedAt, context.GetAuthenticationMethodTime("hwk"));
+    }
 }
