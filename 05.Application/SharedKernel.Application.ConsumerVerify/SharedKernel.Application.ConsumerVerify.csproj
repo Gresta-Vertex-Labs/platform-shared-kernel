@@ -12,6 +12,7 @@
     <PackageReference Include="SharedKernel.Application" />
     <PackageReference Include="SharedKernel.Application.Pipeline" />
     <PackageReference Include="SharedKernel.Application.Mediator.MediatR" />
+    <PackageReference Include="SharedKernel.Idempotency.Abstractions" />
     <PackageReference Include="SharedKernel.Validation.FluentValidation" />
   </ItemGroup>
   <ItemGroup>

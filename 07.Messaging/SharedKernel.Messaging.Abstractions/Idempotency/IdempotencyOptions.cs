@@ -1,43 +1,35 @@
 namespace SharedKernel.Messaging.Abstractions.Idempotency;
 
 /// <summary>
-/// Configuration options for the consumer-side idempotency deduplication mechanism.
+/// How long consumer-side idempotency holds a message id while its consumer runs, and how long a consumed id keeps
+/// deduplicating redeliveries.
 /// </summary>
 /// <remarks>
-/// <para>
-/// Bound from DI options section <c>"SharedKernel:Messaging:Idempotency"</c>.
-/// Configure via <c>MessagingBusBuilder.WithIdempotency(o =&gt; o.ExpiryWindow = ...)</c>.
-/// </para>
-/// <para>
-/// These options are available to the consuming service's <see cref="IIdempotencyStore"/>
-/// implementation via <c>IOptions&lt;IdempotencyOptions&gt;</c>. SharedKernel does not enforce
-/// the expiry window — the implementing service decides how to use it.
-/// </para>
+/// Configure via <c>MessagingBusBuilder.WithIdempotency(o =&gt; o.ExpiryWindow = ...)</c>. Both values are passed to the
+/// <c>SharedKernel.Idempotency.Abstractions.IIdempotencyStore</c> registered for <c>IdempotencyPurpose.Message</c> on
+/// every call, so the store needs no retention settings of its own.
 /// </remarks>
 public sealed class IdempotencyOptions
 {
-    /// <summary>
-    /// The DI options section name for <see cref="IdempotencyOptions"/>.
-    /// </summary>
+    /// <summary>The DI options section name for <see cref="IdempotencyOptions"/>.</summary>
     public const string SectionName = "SharedKernel:Messaging:Idempotency";
 
     /// <summary>
-    /// Gets or sets the advisory expiry window for time-windowed
-    /// <see cref="IIdempotencyStore"/> implementations.
-    /// Defaults to <c>24 hours</c>.
+    /// How long a message id is held while its consumer runs. Defaults to 30 seconds.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// <strong>Advisory only.</strong> This value is a hint for time-windowed store implementations
-    /// (e.g., a Redis store with TTL). SharedKernel does not prune expired records itself —
-    /// the consuming service's <see cref="IIdempotencyStore"/> implementation decides whether
-    /// and how to apply this window.
-    /// </para>
-    /// <para>
-    /// Setting this value to a window shorter than the maximum message re-delivery delay for
-    /// the configured transport introduces the risk of duplicate processing. Set it to be at
-    /// least as long as the transport's dead-letter retry budget.
-    /// </para>
+    /// Must outlast the slowest consumer: once the lease expires mid-consume, a redelivery can reserve the same id and
+    /// run the consumer a second time. A consumer that crashes without releasing the id blocks redeliveries for at most
+    /// this long.
+    /// </remarks>
+    public TimeSpan LeaseDuration { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// How long a consumed message id keeps deduplicating redeliveries. Defaults to 24 hours.
+    /// </summary>
+    /// <remarks>
+    /// A window shorter than the transport's maximum redelivery delay lets a late redelivery run the consumer again. Set
+    /// it to at least the dead-letter retry budget.
     /// </remarks>
     public TimeSpan ExpiryWindow { get; set; } = TimeSpan.FromHours(24);
 }

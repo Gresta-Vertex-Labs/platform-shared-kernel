@@ -22,6 +22,8 @@
     <PackageReference Include="SharedKernel.Contracts" />
     <!-- 05.Application.Abstractions: IRequestContext, which the tenant/actor propagation rides on. -->
     <PackageReference Include="SharedKernel.Execution" />
+    <!-- 18.Idempotency: IIdempotencyStore, which InMemoryIdempotencyStore implements for IdempotencyPurpose.Message. -->
+    <PackageReference Include="SharedKernel.Idempotency.Abstractions" />
     <!-- 13.ServiceDefaults: host, messaging telemetry, and AddSharedKernelReadiness (the bus probe). -->
     <PackageReference Include="SharedKernel.ServiceDefaults" />
     <!-- 14.Presentation: Result -> ProblemDetails at the HTTP boundary. -->

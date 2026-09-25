@@ -10,7 +10,6 @@ const SharedKernel.Messaging.Abstractions.Options.MessagingOptions.SectionName =
 override SharedKernel.Messaging.Abstractions.Faults.FaultExceptionInfo.Equals(object? obj) -> bool
 override SharedKernel.Messaging.Abstractions.Faults.FaultExceptionInfo.GetHashCode() -> int
 override SharedKernel.Messaging.Abstractions.Faults.FaultExceptionInfo.ToString() -> string!
-override SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation.GetHashCode() -> int
 SharedKernel.Messaging.Abstractions.Context.IInboundMessageContextAccessor
 SharedKernel.Messaging.Abstractions.Context.IInboundMessageContextAccessor.Current.get -> SharedKernel.Execution.Context.IRequestContext?
 SharedKernel.Messaging.Abstractions.Errors.MessagingErrorCodes
@@ -49,23 +48,6 @@ SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyOptions
 SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyOptions.ExpiryWindow.get -> System.TimeSpan
 SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyOptions.ExpiryWindow.set -> void
 SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyOptions.IdempotencyOptions() -> void
-SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation
-SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation.Deconstruct(out SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservationStatus Status, out string? ReservationToken) -> void
-SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation.Equals(SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation other) -> bool
-SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation.IdempotencyReservation() -> void
-SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation.IdempotencyReservation(SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservationStatus Status, string? ReservationToken) -> void
-SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation.ReservationToken.get -> string?
-SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation.ReservationToken.init -> void
-SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation.Status.get -> SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservationStatus
-SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation.Status.init -> void
-SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservationStatus
-SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservationStatus.AlreadyProcessed = 2 -> SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservationStatus
-SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservationStatus.InProgress = 1 -> SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservationStatus
-SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservationStatus.Started = 0 -> SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservationStatus
-SharedKernel.Messaging.Abstractions.Idempotency.IIdempotencyStore
-SharedKernel.Messaging.Abstractions.Idempotency.IIdempotencyStore.CompleteAsync(System.Guid messageId, string! reservationToken, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task!
-SharedKernel.Messaging.Abstractions.Idempotency.IIdempotencyStore.ReleaseAsync(System.Guid messageId, string! reservationToken, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task!
-SharedKernel.Messaging.Abstractions.Idempotency.IIdempotencyStore.TryBeginAsync(System.Guid messageId, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation>!
 SharedKernel.Messaging.Abstractions.MessageBus.IMessageBus
 SharedKernel.Messaging.Abstractions.MessageBus.IMessageBus.PublishAsync<T>(T! message, System.Action<SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext!>! configure, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
 SharedKernel.Messaging.Abstractions.MessageBus.IMessageBus.PublishAsync<T>(T! message, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
@@ -89,12 +71,7 @@ static SharedKernel.Messaging.Abstractions.Errors.MessagingErrors.SerializationF
 static SharedKernel.Messaging.Abstractions.Errors.MessagingErrors.Unavailable(string! operation) -> SharedKernel.Primitives.Errors.Error!
 static SharedKernel.Messaging.Abstractions.Faults.FaultExceptionInfo.operator !=(SharedKernel.Messaging.Abstractions.Faults.FaultExceptionInfo? left, SharedKernel.Messaging.Abstractions.Faults.FaultExceptionInfo? right) -> bool
 static SharedKernel.Messaging.Abstractions.Faults.FaultExceptionInfo.operator ==(SharedKernel.Messaging.Abstractions.Faults.FaultExceptionInfo? left, SharedKernel.Messaging.Abstractions.Faults.FaultExceptionInfo? right) -> bool
-static SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation.AlreadyProcessed() -> SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation
-static SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation.InProgress() -> SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation
-static SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation.operator !=(SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation left, SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation right) -> bool
-static SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation.operator ==(SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation left, SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation right) -> bool
-static SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation.Started(string! reservationToken) -> SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation
-~override SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation.Equals(object obj) -> bool
-~override SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation.ToString() -> string
 SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext.TenantId.get -> SharedKernel.Execution.Tenancy.TenantId?
 SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext.WithTenantId(SharedKernel.Execution.Tenancy.TenantId tenantId) -> SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext!
+SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyOptions.LeaseDuration.get -> System.TimeSpan
+SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyOptions.LeaseDuration.set -> void

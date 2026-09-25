@@ -1,5 +1,5 @@
 using SharedKernel.Execution.Context;
-using SharedKernel.Messaging.Abstractions.Idempotency;
+using SharedKernel.Idempotency.Abstractions;
 using SharedKernel.Messaging.MassTransit.Extensions;
 using SharedKernel.ServiceDefaults.Extensions;
 using SharedKernel.ServiceDefaults.HealthChecks;
@@ -22,7 +22,7 @@ builder.Services.AddSingleton<FaultLog>();
 builder.Services.AddScoped<IRequestContext, HeaderRequestContext>();
 
 // The idempotency store WithIdempotency() requires. In this process only — see the type's remarks.
-builder.Services.AddSingleton<IIdempotencyStore, InMemoryIdempotencyStore>();
+builder.Services.AddIdempotencyStore<InMemoryIdempotencyStore>(IdempotencyPurpose.Message, ServiceLifetime.Singleton);
 
 // 07.Messaging — one chain from configuration to a running bus.
 //   ServiceName comes from SharedKernel:Messaging, and prefixes every queue this service declares.

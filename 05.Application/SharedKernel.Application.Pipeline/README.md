@@ -70,7 +70,7 @@ Everything else is a deliberate opt-in, because each one needs a seam you have t
 ```csharp
 builder.Services.AddSharedKernelRequestContext();                        // IRequestContext (13.ServiceDefaults.Security)
 builder.AddSharedKernelPostgres<OrderDbContext>("orders", p => p.UseAuditTrail()); // IUnitOfWork + IAuditTrailWriter (06.Persistence)
-builder.Services.AddScoped<IRequestIdempotencyStore, RedisRequestIdempotencyStore>();
+builder.Services.AddRedisIdempotency(p => p.ForRequests());                 // IIdempotencyStore for requests (18.Idempotency)
 
 builder.Services.AddSharedKernelApplicationBehaviors()
     .AddDefaultBehaviors()
@@ -248,12 +248,12 @@ per-field `errors` map; `11.Communication.Rest` rebuilds the same detail on the 
 
 ### `IdempotencyBehavior`
 
-Applies to commands implementing `IIdempotentRequest`. It reserves the key through `IRequestIdempotencyStore`
+Applies to commands implementing `IIdempotentRequest`. It reserves the key through the `IIdempotencyStore` registered for `IdempotencyPurpose.Request`
 before the handler runs, and settles it afterwards:
 
 | `TryBeginAsync` returns | The behavior |
 | --- | --- |
-| `Started` | Runs the handler. On success: `CompleteAsync` with the serialized response. On a failed `Result`: `ReleaseAsync`, so the caller may retry with the same key. On an exception: `ReleaseAsync`, then rethrows |
+| `Started` | Runs the handler. On success: `CompleteAsync` with the serialized response, retained for `IdempotencyBehaviorOptions.RetentionWindow` (the reservation itself holds for `LeaseDuration`). On a failed `Result`: `ReleaseAsync`, so the caller may retry with the same key. On an exception: `ReleaseAsync`, then rethrows |
 | `Completed` | Returns the stored response — the original outcome, not a fresh conflict |
 | `InProgress` | `Error.Conflict("idempotency.in_progress")` |
 | `FingerprintMismatch` | `Error.Conflict("idempotency.key_reused")` |
@@ -354,7 +354,7 @@ Each is a small interface owned by `05.Application` and implemented by infrastru
 | --- | --- | --- | --- |
 | `IRequestContext` | `SharedKernel.Application.Abstractions` | Authorization, caching, auditing | `13.ServiceDefaults.Security`'s `AddSharedKernelRequestContext()` (over `12.Security`), or the shipped `SystemRequestContext` |
 | `IUnitOfWork` | `SharedKernel.Application.Abstractions` | Transaction, auditing | `06.Persistence` (`AddSharedKernelPostgres`), directly — no adapter |
-| `IRequestIdempotencyStore` | this package | Idempotency | `18.Idempotency`'s Redis or EF Core store |
+| `IIdempotencyStore` (keyed by `IdempotencyPurpose.Request`) | `SharedKernel.Idempotency.Abstractions` | Idempotency | `18.Idempotency`'s `AddRedisIdempotency`/`AddEfCoreIdempotency` |
 | `IAuditTrailWriter` | `SharedKernel.Application.Abstractions` | Auditing | `06.Persistence.EfCore.Auditing` (`UseAuditTrail()`), directly |
 
 `06.Persistence` implements the same `IUnitOfWork`/`IAuditTrailWriter`/`IRequestContext` the behaviors consume;
@@ -496,7 +496,7 @@ Assert.Contains(harness.CapturedMeasurements, m => m.InstrumentName == "sharedke
 ```
 
 `AddFakeApplicationBehaviorServices()` registers `IRequestContext`, `IUnitOfWork` and
-`IRequestIdempotencyStore` fakes in one call. `FakeRequestIdempotencyStore` implements the real reservation
+`IIdempotencyStore` (request purpose) fakes in one call. `FakeIdempotencyStore` implements the real reservation
 protocol, including rejecting a stale token, so an idempotency test exercises the same states the Redis and
 EF Core stores produce.
 

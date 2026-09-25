@@ -3,7 +3,8 @@ using System.Linq;
 using SharedKernel.Application.Messaging;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Application.Authorization;
-using SharedKernel.Application.Pipeline.Idempotency;
+using SharedKernel.Idempotency.Abstractions;
+using SharedKernel.Testing.Idempotency;
 using SharedKernel.Execution.Context;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
@@ -222,7 +223,7 @@ public sealed class ApplicationPipelineTestHarnessTests
         using var harness = new ApplicationPipelineTestHarness();
         var handler = new IdempotentTestCommandHandler();
         harness.Services.AddSingleton<IRequestHandler<IdempotentTestCommand, Result>>(handler);
-        harness.Services.AddSingleton<IRequestIdempotencyStore, FakeRequestIdempotencyStore>();
+        harness.Services.AddFakeIdempotencyStore(IdempotencyPurpose.Request);
         harness.AddBehaviors().AddIdempotencyBehavior().Build();
         harness.Build<ApplicationPipelineTestHarnessTests>();
 
@@ -240,7 +241,7 @@ public sealed class ApplicationPipelineTestHarnessTests
         using var harness = new ApplicationPipelineTestHarness();
         var handler = new IdempotentTestCommandHandler();
         harness.Services.AddSingleton<IRequestHandler<IdempotentTestCommand, Result>>(handler);
-        harness.Services.AddSingleton<IRequestIdempotencyStore, FakeRequestIdempotencyStore>();
+        harness.Services.AddFakeIdempotencyStore(IdempotencyPurpose.Request);
         harness.AddBehaviors().AddIdempotencyBehavior().Build();
         harness.Build<ApplicationPipelineTestHarnessTests>();
 

@@ -204,6 +204,8 @@
     <Project Path="17.Workflows/consumer-verify/consumer-verify.csproj" />
   </Folder>
   <Folder Name="/18.Idempotency/">
+    <Project Path="18.Idempotency/SharedKernel.Idempotency.Abstractions/SharedKernel.Idempotency.Abstractions.csproj" />
+    <Project Path="18.Idempotency/SharedKernel.Idempotency.Abstractions/SharedKernel.Idempotency.Abstractions.Tests/SharedKernel.Idempotency.Abstractions.Tests.csproj" />
     <Project Path="18.Idempotency/SharedKernel.Idempotency.Redis/SharedKernel.Idempotency.Redis.csproj" />
     <Project Path="18.Idempotency/SharedKernel.Idempotency.Redis/SharedKernel.Idempotency.Redis.Tests/SharedKernel.Idempotency.Redis.Tests.csproj" />
     <Project Path="18.Idempotency/SharedKernel.Idempotency.EfCore/SharedKernel.Idempotency.EfCore.csproj" />

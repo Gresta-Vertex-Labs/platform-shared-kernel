@@ -1,25 +1,43 @@
 using MassTransit;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using SharedKernel.Idempotency.Abstractions;
 using SharedKernel.Messaging.Abstractions.Idempotency;
 
 namespace SharedKernel.Messaging.MassTransit.Consumers;
 
 /// <summary>
-/// Consume filter enforcing at-most-once consumption of a message id through an
-/// <see cref="IIdempotencyStore"/> reservation.
+/// Consume filter enforcing at-most-once consumption of a message id through the <see cref="IIdempotencyStore"/>
+/// registered for <see cref="IdempotencyPurpose.Message"/>.
 /// </summary>
 /// <remarks>
-/// Rewritten by P-560 onto the atomic reserve/complete/release contract. The previous
-/// check-then-act version let two concurrent deliveries of the same id both run the consumer, and
-/// never released the reservation when the consumer failed.
+/// <para>
+/// The message id (<c>ConsumeContext.MessageId</c>, "D" form) is the key, and the fingerprint is fixed: an id already
+/// identifies one message, so there is no body to compare. The lease and retention come from
+/// <see cref="IdempotencyOptions"/>. The key is scoped by the tenant of the ambient request context, which
+/// <c>WithInboundRequestContext()</c> sets before this filter runs.
+/// </para>
+/// <para>
+/// A completed id is acknowledged without running the consumer. An id another delivery holds throws
+/// <see cref="ConcurrentMessageDeliveryException"/>, leaving the message unacknowledged so it is still processed if the
+/// running attempt fails. A consumer that throws releases the id at once, so the redelivery is not discarded.
+/// </para>
 /// </remarks>
 internal sealed class IdempotentConsumerBehavior<TMessage> : IFilter<ConsumeContext<TMessage>>
     where TMessage : class
 {
-    private readonly IIdempotencyStore _store;
+    /// <summary>The fingerprint every message reservation carries.</summary>
+    internal const string MessageFingerprint = "message";
 
-    public IdempotentConsumerBehavior(IIdempotencyStore store)
+    private readonly IIdempotencyStore _store;
+    private readonly IOptions<IdempotencyOptions> _options;
+
+    public IdempotentConsumerBehavior(
+        [FromKeyedServices(IdempotencyPurpose.Message)] IIdempotencyStore store,
+        IOptions<IdempotencyOptions> options)
     {
         _store = store;
+        _options = options;
     }
 
     public void Probe(ProbeContext context)
@@ -36,11 +54,16 @@ internal sealed class IdempotentConsumerBehavior<TMessage> : IFilter<ConsumeCont
         }
 
         var messageId = context.MessageId.Value;
-        var reservation = await _store.TryBeginAsync(messageId, context.CancellationToken).ConfigureAwait(false);
+        var key = messageId.ToString("D");
+        var options = _options.Value;
+
+        var reservation = await _store
+            .TryBeginAsync(IdempotencyPurpose.Message, key, MessageFingerprint, options.LeaseDuration, context.CancellationToken)
+            .ConfigureAwait(false);
 
         switch (reservation.Status)
         {
-            case IdempotencyReservationStatus.AlreadyProcessed:
+            case IdempotencyReservationStatus.Completed:
                 // A true duplicate: the original delivery ran the consumer to completion. Return
                 // without invoking it, which acknowledges the message.
                 return;
@@ -57,11 +80,12 @@ internal sealed class IdempotentConsumerBehavior<TMessage> : IFilter<ConsumeCont
 
             default:
                 throw new InvalidOperationException(
-                    $"Unknown {nameof(IdempotencyReservationStatus)} '{reservation.Status}' returned by " +
-                    $"{_store.GetType().Name}.{nameof(IIdempotencyStore.TryBeginAsync)}.");
+                    $"{_store.GetType().Name}.{nameof(IIdempotencyStore.TryBeginAsync)} returned " +
+                    $"{nameof(IdempotencyReservationStatus)}.{reservation.Status} for a message reservation, whose " +
+                    "fingerprint is fixed.");
         }
 
-        var token = reservation.ReservationToken
+        var token = reservation.Token
             ?? throw new InvalidOperationException(
                 $"{_store.GetType().Name}.{nameof(IIdempotencyStore.TryBeginAsync)} returned " +
                 $"{nameof(IdempotencyReservationStatus.Started)} without a reservation token. A started " +
@@ -77,13 +101,15 @@ internal sealed class IdempotentConsumerBehavior<TMessage> : IFilter<ConsumeCont
             // re-acquire the id immediately instead of waiting out the lease.
             // CancellationToken.None: a cancelled release would strand the id for the whole lease
             // window, which is exactly the failure mode this call exists to prevent.
-            await _store.ReleaseAsync(messageId, token, CancellationToken.None).ConfigureAwait(false);
+            await _store.ReleaseAsync(IdempotencyPurpose.Message, key, token, CancellationToken.None).ConfigureAwait(false);
             throw;
         }
 
         // Reached only when the consumer returned without throwing. CancellationToken.None because
         // the consumer's side effects are already durable: cancelling this write would leave
         // completed work recorded as unprocessed and run it again on the next delivery.
-        await _store.CompleteAsync(messageId, token, CancellationToken.None).ConfigureAwait(false);
+        await _store
+            .CompleteAsync(IdempotencyPurpose.Message, key, token, response: null, options.ExpiryWindow, CancellationToken.None)
+            .ConfigureAwait(false);
     }
 }

@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Execution.Context;
+using SharedKernel.Idempotency.Abstractions;
 using SharedKernel.Compression;
 using SharedKernel.Cryptography.Symmetric;
 using SharedKernel.Messaging.Abstractions.Context;
@@ -400,25 +401,20 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
 
     /// <summary>
     /// Registers <c>IdempotentConsumerBehavior&lt;TMessage&gt;</c> as a global MassTransit
-    /// consume pipeline filter applied to all consumers.
+    /// consume pipeline filter applied to all consumers, with the default <see cref="IdempotencyOptions"/>.
     /// </summary>
     /// <returns>This builder for fluent chaining.</returns>
     /// <remarks>
     /// <para>
-    /// The consuming service must register a concrete <see cref="IIdempotencyStore"/>
-    /// implementation before calling this method. Calling <see cref="Build"/> without
-    /// a registered <see cref="IIdempotencyStore"/> throws <see cref="InvalidOperationException"/>
-    /// with a diagnostic message.
+    /// Register an <see cref="IIdempotencyStore"/> for <see cref="IdempotencyPurpose.Message"/> first — for example
+    /// <c>AddRedisIdempotency(p =&gt; p.ForMessages())</c> (<c>SharedKernel.Idempotency.Redis</c>),
+    /// <c>AddEfCoreIdempotency(..., p =&gt; p.ForMessages())</c> (<c>SharedKernel.Idempotency.EfCore</c>) or
+    /// <c>AddIdempotencyStore&lt;TStore&gt;(IdempotencyPurpose.Message)</c>. <see cref="Build"/> throws
+    /// <see cref="InvalidOperationException"/> when none is registered.
     /// </para>
     /// <para>
-    /// SharedKernel does not provide an <see cref="IIdempotencyStore"/> implementation —
-    /// the consuming service bridges to its own persistence layer
-    /// (e.g., <c>RedisIdempotencyStore</c>, <c>EfCoreIdempotencyStore</c>).
-    /// </para>
-    /// <para>
-    /// To configure <see cref="IdempotencyOptions"/> (e.g., <c>ExpiryWindow</c>) in addition to
-    /// registering the behavior, use
-    /// <see cref="WithIdempotency(Action{IdempotencyOptions})"/> instead.
+    /// Call <c>WithInboundRequestContext()</c> as well in a multi-tenant service: the store scopes every message id by
+    /// the tenant of the ambient request context, which that filter sets before this one runs.
     /// </para>
     /// </remarks>
     public MessagingBusBuilder WithIdempotency()
@@ -432,22 +428,13 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
     /// consume pipeline filter and configures <see cref="IdempotencyOptions"/>.
     /// </summary>
     /// <param name="configure">
-    /// Action to configure <see cref="IdempotencyOptions"/> (e.g., set
+    /// Action to configure <see cref="IdempotencyOptions"/> (<see cref="IdempotencyOptions.LeaseDuration"/>,
     /// <see cref="IdempotencyOptions.ExpiryWindow"/>).
     /// </param>
     /// <returns>This builder for fluent chaining.</returns>
     /// <remarks>
-    /// <para>
-    /// <see cref="IdempotencyOptions"/> is available to the consuming service's
-    /// <see cref="IIdempotencyStore"/> implementation via
-    /// <c>IOptions&lt;IdempotencyOptions&gt;</c>.
-    /// </para>
-    /// <para>
-    /// The consuming service must register a concrete <see cref="IIdempotencyStore"/>
-    /// implementation before calling this method. Calling <see cref="Build"/> without
-    /// a registered <see cref="IIdempotencyStore"/> throws <see cref="InvalidOperationException"/>
-    /// with a diagnostic message.
-    /// </para>
+    /// The same store requirement as <see cref="WithIdempotency()"/> applies. <see cref="Build"/> throws
+    /// <see cref="InvalidOperationException"/> unless the lease is positive and shorter than the expiry window.
     /// </remarks>
     public MessagingBusBuilder WithIdempotency(Action<IdempotencyOptions> configure)
     {
@@ -838,16 +825,20 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
             "No transport configured. Call UseRabbitMq() (SharedKernel.Messaging.MassTransit.RabbitMq) or " +
             "UseAzureServiceBus() (SharedKernel.Messaging.MassTransit.AzureServiceBus) before Build().");
 
-        // ID-04 / P-134: Guard — WithIdempotency() requires IIdempotencyStore to be registered.
+        // ID-04 / P-134: Guard — WithIdempotency() requires an IIdempotencyStore for IdempotencyPurpose.Message.
         if (_withIdempotency)
         {
-            var storeDescriptor = Services.FirstOrDefault(
-                d => d.ServiceType == typeof(IIdempotencyStore));
-
-            if (storeDescriptor is null)
+            if (!Services.HasIdempotencyStore(IdempotencyPurpose.Message))
                 throw new InvalidOperationException(
-                    "IIdempotencyStore is not registered. " +
-                    "Call services.AddScoped<IIdempotencyStore, YourImplementation>() before calling WithIdempotency().");
+                    "No IIdempotencyStore is registered for IdempotencyPurpose.Message. Register one before calling " +
+                    "WithIdempotency(), for example AddRedisIdempotency(p => p.ForMessages()) or " +
+                    "AddIdempotencyStore<TStore>(IdempotencyPurpose.Message).");
+
+            var configured = _idempotencyOptions ?? new IdempotencyOptions();
+            if (configured.LeaseDuration <= TimeSpan.Zero || configured.LeaseDuration >= configured.ExpiryWindow)
+                throw new InvalidOperationException(
+                    $"IdempotencyOptions.LeaseDuration ({configured.LeaseDuration}) must be greater than zero and " +
+                    $"shorter than IdempotencyOptions.ExpiryWindow ({configured.ExpiryWindow}).");
         }
 
         // PT-04 / P-346: Guard — WithPayloadTransform() requires the matching 01.Core primitive to
@@ -911,11 +902,19 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
             sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<MessagingOptions>>().Value.ServiceName,
             includeNamespace: false));
 
-        // ID-05 / P-134: Register IdempotencyOptions if WithIdempotency(Action<>) overload was used.
-        if (_withIdempotency && _idempotencyOptions is not null)
+        // ID-05 / P-134: Register IdempotencyOptions; the consumer filter reads the lease and retention from it.
+        if (_withIdempotency)
         {
             var idempotencyOpts = _idempotencyOptions;
-            Services.Configure<IdempotencyOptions>(o => o.ExpiryWindow = idempotencyOpts.ExpiryWindow);
+            var optionsBuilder = Services.AddOptions<IdempotencyOptions>();
+            if (idempotencyOpts is not null)
+            {
+                optionsBuilder.Configure(o =>
+                {
+                    o.LeaseDuration = idempotencyOpts.LeaseDuration;
+                    o.ExpiryWindow = idempotencyOpts.ExpiryWindow;
+                });
+            }
         }
 
         // ID-03 / P-134: Register IdempotentConsumerBehavior as scoped so DI can inject IIdempotencyStore.

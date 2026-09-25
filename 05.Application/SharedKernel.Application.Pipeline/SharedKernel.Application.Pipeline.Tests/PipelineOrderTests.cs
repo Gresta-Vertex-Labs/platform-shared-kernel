@@ -13,6 +13,7 @@ using SharedKernel.Application.Pipeline.Authorization;
 using SharedKernel.Application.Pipeline.Commands;
 using SharedKernel.Application.Pipeline.Extensions;
 using SharedKernel.Application.Pipeline.Idempotency;
+using SharedKernel.Idempotency.Abstractions;
 using SharedKernel.Application.Pipeline.Tests.Support;
 using SharedKernel.Application.Pipeline.Transaction;
 using SharedKernel.Execution.Context;
@@ -127,7 +128,7 @@ public sealed class PipelineOrderTests
         services.AddLogging();
         services.AddSingleton(sequence);
         services.AddSingleton<IUnitOfWork>(new FakeUnitOfWork(sequence));
-        services.AddSingleton<IRequestIdempotencyStore>(new FakeIdempotencyStore(sequence));
+        services.AddKeyedSingleton<IIdempotencyStore>(IdempotencyPurpose.Request, new FakeIdempotencyStore(sequence));
         services.AddSingleton<IAuditTrailWriter>(new FakeAuditTrailWriter(sequence));
         services.AddSingleton<IRequestContext>(new FakeRequestContext(isAuthenticated: true, new HashSet<string> { "test.permission" }));
 
@@ -210,7 +211,7 @@ public sealed class PipelineOrderTests
         var sequence = new List<string>();
         services.AddSingleton(sequence);
         services.AddSingleton<IUnitOfWork>(new FakeUnitOfWork(sequence));
-        services.AddSingleton<IRequestIdempotencyStore>(new FakeIdempotencyStore(sequence));
+        services.AddKeyedSingleton<IIdempotencyStore>(IdempotencyPurpose.Request, new FakeIdempotencyStore(sequence));
 
         services.AddSharedKernelMediatR(typeof(PipelineOrderTests).Assembly);
 

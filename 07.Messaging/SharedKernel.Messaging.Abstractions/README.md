@@ -23,7 +23,7 @@ for RabbitMQ and Azure Service Bus.
 | You get | So that |
 | --- | --- |
 | `IMessageBus` / `IEventPublisher`, every verb returning `Result` | An unreachable broker is a value you handle, not an exception you must know to catch |
-| `IIdempotencyStore`'s reserve / complete / release | A duplicate delivery is refused atomically; "in flight" and "already done" are different answers |
+| Consumer idempotency options (the store is `SharedKernel.Idempotency.Abstractions`' `IIdempotencyStore`) | A duplicate delivery is refused atomically; "in flight" and "already done" are different answers |
 | `MessageRequestContext` + `MessageContextHeaders` | A consumer knows which tenant and which actor caused the message |
 | `PublishContext` | Correlation, causation, tenant, subject, partition key and headers, per dispatch |
 | `IMessageHeaderPropagator` | Ambient values reach every message without a line at each call site |
@@ -84,7 +84,7 @@ public sealed class HoldShipmentHandler(IMessageBus bus)
 | Ask exactly one consumer to do something | `IMessageBus.SendAsync` |
 | Attach a tenant, correlation id, partition key or header to one dispatch | The `Action<PublishContext>` overload |
 | Deliver a message later | `IMessageScheduler.ScheduleAsync` |
-| Stop a duplicate delivery from running the consumer twice | Implement `IIdempotencyStore` — or use a ready-made store (below) |
+| Stop a duplicate delivery from running the consumer twice | Register an `IIdempotencyStore` for `IdempotencyPurpose.Message` — a ready-made store (below) or your own |
 | Push an ambient value onto every outgoing message | Implement `IMessageHeaderPropagator` |
 | See what failed after its retries ran out | Implement `IFaultConsumer<TMessage>` |
 | Report bus health to Kubernetes | `IMessageBusProbe` |
@@ -120,20 +120,23 @@ you never have to disable a propagator to override it once.
 
 ## Idempotency
 
-Brokers deliver at least once. `IIdempotencyStore` is how a consumer refuses the second delivery — and the
-contract is deliberately a *reservation*, not a check followed by a write:
+Brokers deliver at least once. The consumer filter refuses the second delivery through
+`SharedKernel.Idempotency.Abstractions`' `IIdempotencyStore`, registered for `IdempotencyPurpose.Message` (since
+P-568 the same contract also guards the application pipeline's commands). It is deliberately a *reservation*, not a
+check followed by a write; the message id ("D" form) is the key, the fingerprint is fixed, and this package's
+`IdempotencyOptions` supplies the lease (`LeaseDuration`) and the retention (`ExpiryWindow`):
 
 ```csharp
-Task<IdempotencyReservation> TryBeginAsync(Guid messageId, CancellationToken ct);
-Task CompleteAsync(Guid messageId, string reservationToken, CancellationToken ct);
-Task ReleaseAsync(Guid messageId, string reservationToken, CancellationToken ct);
+Task<IdempotencyReservation> TryBeginAsync(IdempotencyPurpose purpose, string key, string fingerprint, TimeSpan ttl, CancellationToken ct);
+Task<bool> CompleteAsync(IdempotencyPurpose purpose, string key, string token, string? response, TimeSpan retention, CancellationToken ct);
+Task<bool> ReleaseAsync(IdempotencyPurpose purpose, string key, string token, CancellationToken ct);
 ```
 
 | `Status` | Meaning | What the filter does |
 | --- | --- | --- |
 | `Started` | This delivery now holds the reservation | Runs the consumer, then completes — or releases if it throws |
 | `InProgress` | Another delivery holds it right now | Leaves the message unacknowledged so the broker redelivers it |
-| `AlreadyProcessed` | A previous delivery consumed it to completion | Returns without running the consumer, acknowledging the message |
+| `Completed` | A previous delivery consumed it to completion | Returns without running the consumer, acknowledging the message |
 
 > **`TryBeginAsync` must be one conditional write** — a Redis `SET NX`, an `INSERT … ON CONFLICT DO NOTHING` —
 > never a read followed by a write. No caller can make a check-then-act pair atomic from outside.

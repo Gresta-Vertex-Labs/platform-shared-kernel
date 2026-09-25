@@ -257,7 +257,7 @@ licensing decision.
 | Request/response with an answer | `11.Communication` (HTTP or gRPC) |
 | Sagas, routing slips, multi-step orchestration | `17.Workflows` |
 | Recurring or cron jobs | `19.Scheduling` |
-| An `IIdempotencyStore` implementation | `18.Idempotency` |
+| An `IIdempotencyStore` for `IdempotencyPurpose.Message` | `18.Idempotency` (`AddRedisIdempotency(p => p.ForMessages())`, `AddEfCoreIdempotency(...)`) |
 | Cache invalidation signalling | `02.Caching`'s Redis Pub/Sub — no delivery guarantee needed, and none given |
 
 ---

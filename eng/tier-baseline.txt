@@ -1,2 +1,0 @@
-SharedKernel.Idempotency.EfCore->SharedKernel.Application.Pipeline
-SharedKernel.Idempotency.Redis->SharedKernel.Application.Pipeline

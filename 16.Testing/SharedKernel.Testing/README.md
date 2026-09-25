@@ -94,7 +94,7 @@ Assert.True(result.IsSuccess);
 
 `WithActivityCapture()` additionally records the spans and metric measurements the pipeline emitted, exposed
 as `CapturedActivities` and `CapturedMeasurements`. `AddFakeApplicationBehaviorServices()` registers the
-whole seam set (`IRequestContext`, `IUnitOfWork`, `IRequestIdempotencyStore`) in one call.
+whole seam set (`IRequestContext`, `IUnitOfWork`, the request-purpose `IIdempotencyStore`) in one call.
 
 ### A real dependency, in a container
 
@@ -154,7 +154,7 @@ this package references.
 
 | Area | Types |
 | --- | --- |
-| `Application/` | `FakeRequestContext` (a `TestRequestContext`), `FakeRequestIdempotencyStore`, `ApplicationPipelineTestHarness`, `AddFakeApplicationBehaviorServices()` |
+| `Application/` | `FakeRequestContext` (a `TestRequestContext`), `ApplicationPipelineTestHarness`, `AddFakeApplicationBehaviorServices()` |
 | `Caching/` | `FakeCacheService`, `FakeTenantCacheService`, `FakeDistributedLockService`, `FakeDistributedLock`, `FakeRedisChannelService`, `FakeRedisHashService`, `FakeTypedHashStore<T>`, `FakeCacheWarmupStrategy`, `FakeTenantCacheKeyProvider` |
 | `Clocks/` | `FakeClock` |
 | `Communication/` | `FakeHttpMessageHandler`, `HttpClientHandlerTestFactory`, `MockServiceEndpointResolver`, `ActivityRecorder`, `AmbientActivityTestHelper`, `GraphQLTestExecutorFactory`, `FakeHttpContextAccessor` |
@@ -162,6 +162,7 @@ this package references.
 | `Contracts/` | `IntegrationEventFaker<TEvent>`, `EventEnvelopeBuilder<TEvent>`, `PagedListBuilder<T>`, `PagedListAssertions` |
 | `Cryptography/` | Fakes for every `SharedKernel.Cryptography` contract — hashing, symmetric and asymmetric encryption, signing, key providers, envelope encryption, secure random, TOTP replay — plus `AddFakeCryptography()` |
 | `DataPrivacy/` | `PiiMaskingAssertions`, `RecordingDataSubjectRequestHandler` |
+| `Idempotency/` | `FakeIdempotencyStore` (both purposes, tenant-scoped, `Expire` to model a TTL running out), `AddFakeIdempotencyStore(params IdempotencyPurpose[])` |
 | `Domain/` | `DomainEventAssertions`, `BusinessRuleAssertions`, `DomainVersionAssertions`, `SpecificationAssert`, `SpecificationTestBuilder<T>`, `MoneyFaker`, `FakeExchangeRateProvider` |
 | `Fakers/` | `FakerSeeding`, `EntityFaker<TEntity,TId>`, `SingleValueObjectFaker<TValueObject,TValue>` |
 | `FeatureManagement/` | `FakeFeatureManager`, `AddFakeFeatureManagement()` |
@@ -193,7 +194,7 @@ the real store registry (validation, tenant prefixes) sits in front of the fake:
   SharedKernel abstraction.
 - **No provider dependency ever leaks in.** A fake references only the abstraction package it implements.
 - **Behaviour matches the contract, including its failure modes.** `FakeRepository` evaluates a real
-  `ISpecification<T>`; `FakeRequestIdempotencyStore` reserves a key atomically and rejects a stale
+  `ISpecification<T>`; `FakeIdempotencyStore` (`Idempotency/`, both purposes, `AddFakeIdempotencyStore()`) reserves a key atomically and rejects a stale
   reservation token, exactly as the Redis and EF Core stores do.
 - **Deterministic by construction.** Fakers are seeded, the embedding generator derives vectors from a hash,
   and the clock only moves when a test moves it.

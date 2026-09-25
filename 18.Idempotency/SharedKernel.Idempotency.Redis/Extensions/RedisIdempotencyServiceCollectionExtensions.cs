@@ -1,81 +1,57 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Hosting;
-using SharedKernel.Application.Pipeline.Idempotency;
 using SharedKernel.Caching.Redis.Core.Extensions;
-using SharedKernel.Idempotency.Redis.KeyStore;
-using SharedKernel.Idempotency.Redis.MessageStore;
-using SharedKernel.Idempotency.Redis.Options;
-using SharedKernel.Messaging.Abstractions.Idempotency;
 using SharedKernel.Execution.Context;
+using SharedKernel.Idempotency.Abstractions;
+using SharedKernel.Idempotency.Redis.Options;
+using SharedKernel.Idempotency.Redis.Store;
 
 namespace SharedKernel.Idempotency.Redis.Extensions;
 
-/// <summary>
-/// <see cref="IServiceCollection"/> extension methods for registering the Redis-backed
-/// idempotency stores.
-/// </summary>
+/// <summary><see cref="IServiceCollection"/> extension methods for registering the Redis idempotency store.</summary>
 public static class RedisIdempotencyServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers <see cref="RedisRequestIdempotencyStore"/> as <see cref="IRequestIdempotencyStore"/>,
-    /// and <see cref="RedisIdempotencyMessageStore"/> as <see cref="IIdempotencyStore"/>.
+    /// Registers <see cref="RedisIdempotencyStore"/> as the <see cref="IIdempotencyStore"/> for every purpose
+    /// <paramref name="purposes"/> selects, keyed by purpose.
     /// </summary>
     /// <param name="services">The service collection.</param>
-    /// <param name="configure">
-    /// Optional delegate to customise <see cref="RedisIdempotencyOptions"/>. When
-    /// <see langword="null"/> the defaults are used.
-    /// </param>
+    /// <param name="purposes">Selects the purposes, for example <c>p =&gt; p.ForRequests().ForMessages()</c>.</param>
+    /// <param name="configure">Optional delegate to customise <see cref="RedisIdempotencyOptions"/>.</param>
     /// <returns>The same <paramref name="services"/> for fluent chaining.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="services"/> is <see langword="null"/>.</exception>
-    /// <exception cref="InvalidOperationException"><c>AddRedisConnection</c> has not been called.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="services"/> or <paramref name="purposes"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// <c>AddRedisConnection</c> has not been called, no purpose was selected, or a store is already registered for a
+    /// selected purpose.
+    /// </exception>
     /// <remarks>
     /// <para>
-    /// Resolves the shared <see cref="StackExchange.Redis.IConnectionMultiplexer"/> registered by
-    /// <c>02.Caching.Redis.Core</c>'s <c>AddRedisConnection(IConfiguration)</c> or
-    /// <c>AddRedisConnection(Action&lt;RedisConnectionOptions&gt;)</c> — call it once, before this method,
-    /// or this method throws <see cref="InvalidOperationException"/>. This package never constructs its
-    /// own multiplexer, so TLS, timeouts and the <c>IRedisConnectionProbe</c> readiness check are the
-    /// shared connection's.
+    /// Uses the shared <see cref="StackExchange.Redis.IConnectionMultiplexer"/> registered by <c>02.Caching.Redis.Core</c>'s
+    /// <c>AddRedisConnection</c> — call it first. This package never constructs its own connection, so TLS, timeouts and
+    /// the Redis readiness probe are the shared connection's.
     /// </para>
     /// <para>
-    /// Registers <see cref="IRequestContextAccessor"/> unless one is already registered: the stores scope every key
-    /// by the tenant of the ambient request context (<see cref="IRequestContextAccessor.Current"/>), which the
-    /// service's inbound adapters set, and use the shared non-tenant scope when no context or tenant is present.
-    /// </para>
-    /// <para>
-    /// Also registers <see cref="IdempotencyOptions"/> (<c>07.Messaging.Abstractions</c>) via
-    /// <see cref="Microsoft.Extensions.DependencyInjection.OptionsServiceCollectionExtensions.AddOptions{TOptions}(IServiceCollection)"/>
-    /// with defaults if not already registered — <see cref="RedisIdempotencyMessageStore"/> reads
-    /// <see cref="IdempotencyOptions.ExpiryWindow"/> as its full-retention value (D-08). If the
-    /// consuming service already registers <see cref="IdempotencyOptions"/> itself (e.g. via
-    /// <c>MessagingBusBuilder.WithIdempotency(...)</c>), that registration is left untouched —
-    /// <see cref="ServiceCollectionDescriptorExtensions.TryAddSingleton{TService}(IServiceCollection, TService)"/>-style
-    /// first-registration-wins semantics are honored through <c>AddOptions</c>'s own idempotent
-    /// registration behavior.
+    /// Registers <see cref="IRequestContextAccessor"/> unless one is already registered: every key is scoped by the
+    /// tenant of the ambient request context, which the service's inbound adapters set.
     /// </para>
     /// </remarks>
-    public static IServiceCollection AddSharedKernelRedisIdempotency(
+    public static IServiceCollection AddRedisIdempotency(
         this IServiceCollection services,
+        Action<IdempotencyPurposeSelection> purposes,
         Action<RedisIdempotencyOptions>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(services);
-        services.EnsureRedisConnectionRegistered(nameof(AddSharedKernelRedisIdempotency));
+        ArgumentNullException.ThrowIfNull(purposes);
+        services.EnsureRedisConnectionRegistered(nameof(AddRedisIdempotency));
+
+        var selected = IdempotencyServiceCollectionExtensions.SelectPurposes(purposes);
 
         services
             .AddOptions<RedisIdempotencyOptions>()
-            .Configure(o => configure?.Invoke(o))
-            .ValidateDataAnnotations()
-            .ValidateOnStart();
+            .Configure(o => configure?.Invoke(o));
 
-        // Ensures IOptions<IdempotencyOptions> resolves even when the consuming service never
-        // called 07.Messaging's MessagingBusBuilder.WithIdempotency(...) — AddOptions is
-        // idempotent, so a prior registration (with the consumer's own configured ExpiryWindow)
-        // is left untouched.
-        services.AddOptions<IdempotencyOptions>();
-
-        services.AddScoped<IRequestIdempotencyStore, RedisRequestIdempotencyStore>();
-        services.AddScoped<IIdempotencyStore, RedisIdempotencyMessageStore>();
+        foreach (var purpose in selected)
+            services.AddIdempotencyStore<RedisIdempotencyStore>(purpose);
 
         services.TryAddSingleton<IRequestContextAccessor, RequestContextAccessor>();
 

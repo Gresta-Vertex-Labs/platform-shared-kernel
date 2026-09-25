@@ -6,7 +6,7 @@ using SharedKernel.Application.Authorization;
 using SharedKernel.Application.Commands;
 using SharedKernel.Application.Pipeline.Extensions;
 using SharedKernel.Application.Idempotency;
-using SharedKernel.Application.Pipeline.Idempotency;
+using SharedKernel.Idempotency.Abstractions;
 using SharedKernel.Validation.FluentValidation;
 using SharedKernel.Execution.Transactions;
 using SharedKernel.Execution.Context;
@@ -112,37 +112,39 @@ public sealed class RequestContext : IRequestContext
         => ValueTask.FromResult(Permissions.Contains(permission));
 }
 
-public sealed class IdempotencyStore : IRequestIdempotencyStore
+public sealed class IdempotencyStore : IIdempotencyStore
 {
-    private readonly ConcurrentDictionary<string, (string Fingerprint, string Token, string? Response)> _entries = new();
+    private readonly ConcurrentDictionary<(IdempotencyPurpose, string), (string Fingerprint, string Token, bool Completed, string? Response)> _entries = new();
 
-    public Task<IdempotencyBeginResult> TryBeginAsync(string key, string requestFingerprint, CancellationToken cancellationToken)
+    public Task<IdempotencyReservation> TryBeginAsync(
+        IdempotencyPurpose purpose, string key, string fingerprint, TimeSpan ttl, CancellationToken cancellationToken)
     {
         var token = Guid.NewGuid().ToString("N");
-        var entry = _entries.GetOrAdd(key, (requestFingerprint, token, null));
+        var entry = _entries.GetOrAdd((purpose, key), (fingerprint, token, false, null));
 
-        if (entry.Fingerprint != requestFingerprint)
-            return Task.FromResult(IdempotencyBeginResult.FingerprintMismatch());
+        if (entry.Fingerprint != fingerprint)
+            return Task.FromResult(IdempotencyReservation.FingerprintMismatch());
         if (entry.Token == token)
-            return Task.FromResult(IdempotencyBeginResult.Started(token));
+            return Task.FromResult(IdempotencyReservation.Started(token));
 
-        return Task.FromResult(entry.Response is null
-            ? IdempotencyBeginResult.InProgress()
-            : IdempotencyBeginResult.Completed(entry.Response));
+        return Task.FromResult(entry.Completed
+            ? IdempotencyReservation.Completed(entry.Response)
+            : IdempotencyReservation.InProgress());
     }
 
-    public Task<bool> CompleteAsync(string key, string reservationToken, string serializedResponse, CancellationToken cancellationToken)
+    public Task<bool> CompleteAsync(
+        IdempotencyPurpose purpose, string key, string token, string? response, TimeSpan retention, CancellationToken cancellationToken)
     {
-        if (!_entries.TryGetValue(key, out var entry) || entry.Token != reservationToken)
+        if (!_entries.TryGetValue((purpose, key), out var entry) || entry.Token != token || entry.Completed)
             return Task.FromResult(false);
 
-        _entries[key] = entry with { Response = serializedResponse };
+        _entries[(purpose, key)] = entry with { Completed = true, Response = response };
         return Task.FromResult(true);
     }
 
-    public Task<bool> ReleaseAsync(string key, string reservationToken, CancellationToken cancellationToken)
-        => Task.FromResult(_entries.TryGetValue(key, out var entry) && entry.Token == reservationToken
-            && _entries.TryRemove(key, out _));
+    public Task<bool> ReleaseAsync(IdempotencyPurpose purpose, string key, string token, CancellationToken cancellationToken)
+        => Task.FromResult(_entries.TryGetValue((purpose, key), out var entry) && entry.Token == token && !entry.Completed
+            && _entries.TryRemove((purpose, key), out _));
 }
 
 /// <summary>Exercises the packed public API of SharedKernel.Application, .Pipeline and .Mediator.MediatR the way a consuming service would.</summary>
@@ -239,7 +241,7 @@ public sealed class ConsumerVerifyTests
         services.AddFluentValidationRequestValidators();
         services.AddSingleton(journal);
         services.AddSingleton<IRequestContext>(context);
-        services.AddSingleton<IRequestIdempotencyStore, IdempotencyStore>();
+        services.AddIdempotencyStore<IdempotencyStore>(IdempotencyPurpose.Request);
         services.AddScoped<IUnitOfWork, UnitOfWork>();
         services.AddSharedKernelApplicationBehaviors()
             .AddDefaultBehaviors()

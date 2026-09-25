@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
 using SharedKernel.Execution.Context;
 using SharedKernel.Execution.Tenancy;
-using SharedKernel.Messaging.Abstractions.Idempotency;
+using SharedKernel.Idempotency.Abstractions;
 
 namespace ShippingApi;
 
@@ -21,19 +21,23 @@ namespace ShippingApi;
 /// The reservation protocol itself is implemented faithfully, because a store that only pretended
 /// to would make the sample misleading: a started reservation issues a token, a second attempt on
 /// an in-flight id reports <see cref="IdempotencyReservationStatus.InProgress"/>, a completed one
-/// reports <see cref="IdempotencyReservationStatus.AlreadyProcessed"/>, and a release makes the id
-/// available again so a failed consume can be retried.
+/// reports <see cref="IdempotencyReservationStatus.Completed"/>, and a release makes the id
+/// available again so a failed consume can be retried. Keys are scoped by purpose and by the tenant
+/// of the ambient request context, as the real stores scope them. Time is not modelled: a
+/// reservation never expires.
 /// </para>
 /// </remarks>
 public sealed class InMemoryIdempotencyStore : IIdempotencyStore
 {
-    private readonly ConcurrentDictionary<Guid, Entry> _entries = new();
+    private readonly IRequestContextAccessor _requestContextAccessor = new RequestContextAccessor();
+    private readonly ConcurrentDictionary<(string Scope, IdempotencyPurpose Purpose, string Key), Entry> _entries = new();
 
     /// <inheritdoc />
-    public Task<IdempotencyReservation> TryBeginAsync(Guid messageId, CancellationToken ct)
+    public Task<IdempotencyReservation> TryBeginAsync(
+        IdempotencyPurpose purpose, string key, string fingerprint, TimeSpan ttl, CancellationToken cancellationToken)
     {
         var token = Guid.NewGuid().ToString("N");
-        Entry entry = _entries.GetOrAdd(messageId, _ => new Entry(token, Completed: false));
+        Entry entry = _entries.GetOrAdd(Id(purpose, key), _ => new Entry(token, fingerprint, Completed: false, Response: null));
 
         // GetOrAdd returns what is in the map: our own entry when this call won the race, someone
         // else's when it did not. The token identifies which, and only the winner may consume.
@@ -42,31 +46,46 @@ public sealed class InMemoryIdempotencyStore : IIdempotencyStore
             return Task.FromResult(IdempotencyReservation.Started(token));
         }
 
+        if (entry.Fingerprint != fingerprint)
+        {
+            return Task.FromResult(IdempotencyReservation.FingerprintMismatch());
+        }
+
         return Task.FromResult(entry.Completed
-            ? IdempotencyReservation.AlreadyProcessed()
+            ? IdempotencyReservation.Completed(entry.Response)
             : IdempotencyReservation.InProgress());
     }
 
     /// <inheritdoc />
-    public Task CompleteAsync(Guid messageId, string reservationToken, CancellationToken ct)
+    public Task<bool> CompleteAsync(
+        IdempotencyPurpose purpose, string key, string token, string? response, TimeSpan retention, CancellationToken cancellationToken)
     {
-        _entries.TryUpdate(
-            messageId,
-            new Entry(reservationToken, Completed: true),
-            new Entry(reservationToken, Completed: false));
+        var id = Id(purpose, key);
+        var completed = _entries.TryGetValue(id, out var entry)
+            && entry.Token == token
+            && !entry.Completed
+            && _entries.TryUpdate(id, entry with { Completed = true, Response = response }, entry);
 
-        return Task.CompletedTask;
+        return Task.FromResult(completed);
     }
 
     /// <inheritdoc />
-    public Task ReleaseAsync(Guid messageId, string reservationToken, CancellationToken ct)
+    public Task<bool> ReleaseAsync(IdempotencyPurpose purpose, string key, string token, CancellationToken cancellationToken)
     {
         // Conditional on the token: a release must never drop a reservation another delivery holds.
-        _entries.TryRemove(new KeyValuePair<Guid, Entry>(messageId, new Entry(reservationToken, Completed: false)));
-        return Task.CompletedTask;
+        var id = Id(purpose, key);
+        var released = _entries.TryGetValue(id, out var entry)
+            && entry.Token == token
+            && !entry.Completed
+            && _entries.TryRemove(new KeyValuePair<(string, IdempotencyPurpose, string), Entry>(id, entry));
+
+        return Task.FromResult(released);
     }
 
-    private sealed record Entry(string Token, bool Completed);
+    private (string, IdempotencyPurpose, string) Id(IdempotencyPurpose purpose, string key) =>
+        (IdempotencyTenantScope.Current(_requestContextAccessor), purpose, key);
+
+    private sealed record Entry(string Token, string Fingerprint, bool Completed, string? Response);
 }
 
 /// <summary>

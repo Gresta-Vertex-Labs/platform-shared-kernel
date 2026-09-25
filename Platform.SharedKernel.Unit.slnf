@@ -146,6 +146,8 @@
       "17.Workflows/SharedKernel.Workflows.Temporal/SharedKernel.Workflows.Temporal.Tests/SharedKernel.Workflows.Temporal.Tests.csproj",
       "17.Workflows/SharedKernel.Workflows.Temporal/SharedKernel.Workflows.Temporal.csproj",
       "17.Workflows/consumer-verify/consumer-verify.csproj",
+      "18.Idempotency/SharedKernel.Idempotency.Abstractions/SharedKernel.Idempotency.Abstractions.Tests/SharedKernel.Idempotency.Abstractions.Tests.csproj",
+      "18.Idempotency/SharedKernel.Idempotency.Abstractions/SharedKernel.Idempotency.Abstractions.csproj",
       "18.Idempotency/SharedKernel.Idempotency.EfCore/SharedKernel.Idempotency.EfCore.csproj",
       "18.Idempotency/SharedKernel.Idempotency.Redis/SharedKernel.Idempotency.Redis.csproj",
       "19.Scheduling/SharedKernel.Scheduling/SharedKernel.Scheduling.csproj",

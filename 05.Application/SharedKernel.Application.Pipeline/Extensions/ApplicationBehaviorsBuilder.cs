@@ -14,6 +14,7 @@ using SharedKernel.Application.Pipeline.Transaction;
 using SharedKernel.Application.Pipeline.Validation;
 using SharedKernel.Execution.Context;
 using SharedKernel.Execution.Transactions;
+using SharedKernel.Idempotency.Abstractions;
 
 namespace SharedKernel.Application.Pipeline.Extensions;
 
@@ -55,6 +56,7 @@ public sealed class ApplicationBehaviorsBuilder
     private bool _authorization;
     private bool _validation;
     private bool _idempotency;
+    private Action<IdempotencyBehaviorOptions>? _configureIdempotency;
     private bool _transaction;
     private bool _auditing;
     private bool _built;
@@ -144,15 +146,21 @@ public sealed class ApplicationBehaviorsBuilder
     }
 
     /// <summary>Opts in to <c>IdempotencyBehavior</c>.</summary>
+    /// <param name="configure">
+    /// Optional delegate to set <see cref="IdempotencyBehaviorOptions"/> (reservation lease and retention window);
+    /// validated when the host starts.
+    /// </param>
     /// <returns>This builder, for chaining.</returns>
     /// <remarks>
-    /// <see cref="Build"/> throws <see cref="InvalidOperationException"/> if
-    /// <see cref="IRequestIdempotencyStore"/> is not registered in the service collection when this
-    /// was called.
+    /// <see cref="Build"/> throws <see cref="InvalidOperationException"/> if no
+    /// <see cref="SharedKernel.Idempotency.Abstractions.IIdempotencyStore"/> is registered for
+    /// <see cref="SharedKernel.Idempotency.Abstractions.IdempotencyPurpose.Request"/> — for example with
+    /// <c>AddRedisIdempotency(p =&gt; p.ForRequests())</c> or <c>AddEfCoreIdempotency(..., p =&gt; p.ForRequests())</c>.
     /// </remarks>
-    public ApplicationBehaviorsBuilder AddIdempotencyBehavior()
+    public ApplicationBehaviorsBuilder AddIdempotencyBehavior(Action<IdempotencyBehaviorOptions>? configure = null)
     {
         _idempotency = true;
+        _configureIdempotency = configure;
         return this;
     }
 
@@ -265,11 +273,12 @@ public sealed class ApplicationBehaviorsBuilder
                 "to be registered in the service collection. Register an implementation before calling Build().");
         }
 
-        if (_idempotency && !IsRegistered(typeof(IRequestIdempotencyStore)))
+        if (_idempotency && !_services.HasIdempotencyStore(IdempotencyPurpose.Request))
         {
             throw new InvalidOperationException(
-                "AddIdempotencyBehavior() requires SharedKernel.Application.Pipeline.Idempotency.IRequestIdempotencyStore " +
-                "to be registered in the service collection. Register an implementation before calling Build().");
+                "AddIdempotencyBehavior() requires a SharedKernel.Idempotency.Abstractions.IIdempotencyStore " +
+                "registered for IdempotencyPurpose.Request. Register one before calling Build(), for example " +
+                "AddRedisIdempotency(p => p.ForRequests()) or AddIdempotencyStore<TStore>(IdempotencyPurpose.Request).");
         }
 
         if (_transaction && !IsRegistered(typeof(IUnitOfWork)))
@@ -345,7 +354,14 @@ public sealed class ApplicationBehaviorsBuilder
             _services.AddTransient(typeof(IPipelineBehavior<,>), typeof(CommandScopeBehavior<,>));
 
         if (_idempotency)
+        {
+            var configureIdempotency = _configureIdempotency;
+            _services.AddOptions<IdempotencyBehaviorOptions>()
+                .Configure(o => configureIdempotency?.Invoke(o))
+                .ValidateDataAnnotations()
+                .ValidateOnStart();
             _services.AddTransient(typeof(IPipelineBehavior<,>), typeof(IdempotencyBehavior<,>));
+        }
 
         if (_auditing)
             _services.AddTransient(typeof(IPipelineBehavior<,>), typeof(AuditingBehavior<,>));

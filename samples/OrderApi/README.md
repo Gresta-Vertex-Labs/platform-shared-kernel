@@ -74,6 +74,6 @@ No database (`IOrderRepository` is an in-memory dictionary), no cache, no messag
 Each would pull in infrastructure and obscure the composition. For the same reason the pipeline
 stops at the preset: `AddAuthorizationBehavior()`, `AddIdempotencyBehavior()`,
 `AddTransactionBehavior()`, `AddAuditingBehavior()` and `AddCachingBehaviors()` each need a seam
-(`IRequestContext`, `IRequestIdempotencyStore`, `IUnitOfWork`, `IAuditTrailWriter`,
+(`IRequestContext`, `IIdempotencyStore` for `IdempotencyPurpose.Request`, `IUnitOfWork`, `IAuditTrailWriter`,
 `ICacheService`) registered first, and `Build()` throws if it is missing. A real service swaps
 `InMemoryOrderRepository` for `SharedKernel.Persistence.EfCore`'s `EfRepository<Order, OrderId>`.

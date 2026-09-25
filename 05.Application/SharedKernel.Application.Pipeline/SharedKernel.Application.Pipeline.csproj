@@ -8,13 +8,13 @@ A handler decides business outcomes; everything around that decision lives here,
 
 Expected failures are Result values, never exceptions. Authorization fails closed — a request declaring no permissions is denied. Only a successful outcome persists anything: a failed Result commits nothing, caches nothing, and releases its idempotency key. Only the outermost command commits, so a nested command joins the outer transaction, and ICommandScope.OnCompleted runs work strictly after that commit. Idempotency reserves a key with a request fingerprint, replays the original response for a completed duplicate, and rejects the same key sent with a different body.
 
-Depends on SharedKernel.Application, SharedKernel.Execution, SharedKernel.Primitives and first-party Microsoft.Extensions packages — no mediator, no validator library, no cache, no Polly, no hosting, enforced by an architecture test. Caching behaviors ship separately as SharedKernel.Application.Pipeline.Caching; the mediator adapter is SharedKernel.Application.Mediator.MediatR.</Description>
+Depends on SharedKernel.Application, SharedKernel.Execution, SharedKernel.Idempotency.Abstractions, SharedKernel.Primitives and first-party Microsoft.Extensions packages — no mediator, no validator library, no cache, no Polly, no hosting, enforced by an architecture test. Caching behaviors ship separately as SharedKernel.Application.Pipeline.Caching; the mediator adapter is SharedKernel.Application.Mediator.MediatR.</Description>
     <PackageReleaseNotes>First release.
 
 WHAT IS IN IT
 - Eight behaviors across five stages: TracingBehavior, LoggingBehavior, MetricsBehavior (Observability), AuthorizationBehavior (Authorization), ValidationBehavior (Validation), then a command scope, IdempotencyBehavior, TransactionBehavior and AuditingBehavior (Command). The Query and Command stages also accept your own behaviors.
 - ApplicationBehaviorsBuilder: AddDefaultBehaviors() turns on the four that need no infrastructure; every other behavior is an individual opt-in whose seam Build() verifies at startup. AddBehavior(type, PipelineStage, requiredServices) places a service-specific behavior in the canonical order.
-- Four local seams, bridged at your composition root: IRequestContext (in SharedKernel.Execution), IUnitOfWork, IRequestIdempotencyStore and IAuditTrailWriter. That is what keeps this package free of persistence, security and cache dependencies.
+- Four seams, bridged at your composition root: IRequestContext, IUnitOfWork and IAuditTrailWriter (in SharedKernel.Execution) and IIdempotencyStore (in SharedKernel.Idempotency.Abstractions, registered for IdempotencyPurpose.Request). That is what keeps this package free of persistence, security and cache dependencies.
 - RequestPipeline&lt;TRequest, TResponse&gt; and StreamRequestPipeline&lt;TRequest, TResponse&gt;: compose the behaviors and the handler for one request, independent of any mediator. DomainEventDispatcher runs IDomainEventHandler&lt;T&gt; registrations natively.
 - The request markers (IAuthorizeRequest, IIdempotentRequest, IAuditableRequest&lt;TResponse&gt;, ILoggableRequest&lt;TResponse&gt;) and the validation port IRequestValidator&lt;T&gt; live in SharedKernel.Application.
 - ICommandScope (declared in SharedKernel.Application): nested-command detection plus OnCompleted, for work that must follow the commit.
@@ -44,6 +44,8 @@ See the package README for the pipeline diagram, the failure matrix and the full
          06.Persistence implements directly, so no composition-root adapter is needed. -->
     <ProjectReference Include="..\..\01.Core\SharedKernel.Execution\SharedKernel.Execution.csproj" />
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+    <!-- IIdempotencyStore (keyed by IdempotencyPurpose.Request), consumed by IdempotencyBehavior. -->
+    <ProjectReference Include="..\..\18.Idempotency\SharedKernel.Idempotency.Abstractions\SharedKernel.Idempotency.Abstractions.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />

@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
-using SharedKernel.Application.Pipeline.Idempotency;
+using SharedKernel.Idempotency.Abstractions;
+using SharedKernel.Testing.Idempotency;
 using SharedKernel.Execution.Transactions;
 using SharedKernel.Execution.Context;
 using SharedKernel.Testing.Application;
@@ -27,11 +28,11 @@ public sealed class AddFakeApplicationBehaviorServicesTests
     }
 
     [Fact]
-    public void AddFakeApplicationBehaviorServices_RegistersFakeRequestIdempotencyStore()
+    public void AddFakeApplicationBehaviorServices_RegistersFakeIdempotencyStoreForRequests()
     {
         var provider = BuildProvider();
 
-        Assert.IsType<FakeRequestIdempotencyStore>(provider.GetRequiredService<IRequestIdempotencyStore>());
+        Assert.IsType<FakeIdempotencyStore>(provider.GetRequiredIdempotencyStore(IdempotencyPurpose.Request));
     }
 
     [Fact]
@@ -42,8 +43,8 @@ public sealed class AddFakeApplicationBehaviorServicesTests
         Assert.Same(provider.GetRequiredService<IUnitOfWork>(), provider.GetRequiredService<IUnitOfWork>());
         Assert.Same(provider.GetRequiredService<IRequestContext>(), provider.GetRequiredService<IRequestContext>());
         Assert.Same(
-            provider.GetRequiredService<IRequestIdempotencyStore>(),
-            provider.GetRequiredService<IRequestIdempotencyStore>());
+            provider.GetRequiredIdempotencyStore(IdempotencyPurpose.Request),
+            provider.GetRequiredIdempotencyStore(IdempotencyPurpose.Request));
     }
 
     [Fact]

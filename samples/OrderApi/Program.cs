@@ -23,7 +23,7 @@ builder.Services.AddSingleton<IClock, SystemClock>();
 // FluentValidation bridge, and the zero-prerequisite behavior preset (tracing, logging, metrics, validation). Build() registers
 // them in the fixed pipeline order; nothing is registered without it. The behaviors that need
 // an infrastructure seam (authorization over IRequestContext, idempotency over
-// IRequestIdempotencyStore, transaction over IUnitOfWork, auditing over IAuditTrailWriter, and
+// IIdempotencyStore (IdempotencyPurpose.Request), transaction over IUnitOfWork, auditing over IAuditTrailWriter, and
 // caching from SharedKernel.Application.Pipeline.Caching) are deliberately not in the preset —
 // each is an explicit opt-in, and Build() throws if its seam is not registered.
 builder.Services.AddSharedKernelMediatR(typeof(PlaceOrderCommand).Assembly);

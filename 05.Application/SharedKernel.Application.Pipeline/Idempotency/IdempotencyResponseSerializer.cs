@@ -7,7 +7,7 @@ namespace SharedKernel.Application.Pipeline.Idempotency;
 
 /// <summary>
 /// Serializes and deserializes pipeline responses (<see cref="Result"/> / <see cref="Result{T}"/>)
-/// for <see cref="IRequestIdempotencyStore"/>-backed response replay.
+/// for <see cref="SharedKernel.Idempotency.Abstractions.IIdempotencyStore"/>-backed response replay.
 /// </summary>
 /// <remarks>
 /// This class owns the (de)serialization; a store persists whatever opaque string it is handed and

@@ -7,6 +7,7 @@ using SharedKernel.Application.Pipeline.Auditing;
 using SharedKernel.Execution.Transactions;
 using SharedKernel.Application.Pipeline.Extensions;
 using SharedKernel.Application.Pipeline.Idempotency;
+using SharedKernel.Idempotency.Abstractions;
 using SharedKernel.Application.Pipeline.Tests.Support;
 using SharedKernel.Application.Pipeline.Transaction;
 using SharedKernel.Execution.Context;
@@ -48,7 +49,7 @@ public sealed class ApplicationBehaviorsBuilderTests
 
         var act = () => builder.Build();
 
-        act.Should().Throw<InvalidOperationException>().WithMessage("*IRequestIdempotencyStore*");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*IdempotencyPurpose.Request*");
     }
 
     [Fact]
@@ -68,7 +69,7 @@ public sealed class ApplicationBehaviorsBuilderTests
         var services = new ServiceCollection();
         services.AddSingleton<IUnitOfWork>(new FakeUnitOfWork());
         services.AddSingleton<IRequestContext>(new FakeRequestContext(true, new HashSet<string> { "p" }));
-        services.AddSingleton<IRequestIdempotencyStore>(new FakeIdempotencyStore());
+        services.AddKeyedSingleton<IIdempotencyStore>(IdempotencyPurpose.Request, new FakeIdempotencyStore());
         services.AddSingleton<IAuditTrailWriter>(new FakeAuditTrailWriter());
 
         var act = () => services.AddSharedKernelApplicationBehaviors()

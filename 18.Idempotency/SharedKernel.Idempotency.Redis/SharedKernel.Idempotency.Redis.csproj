@@ -2,27 +2,24 @@
   <PropertyGroup>
     <SharedKernelTier>Adapter</SharedKernelTier>
     <SharedKernelAllowedAdapterReferences>SharedKernel.Caching.Redis.Core</SharedKernelAllowedAdapterReferences>
-    <Description>Atomic, tenant-scoped, Redis-backed implementation of SharedKernel.Application.Pipeline's IRequestIdempotencyStore and SharedKernel.Messaging.Abstractions' IIdempotencyStore. Atomicity via single-round-trip Lua scripts over a per-key Redis hash (status/fingerprint/token/response); fail-closed on store unavailability by default. Built on SharedKernel.Caching.Redis.Core's shared IConnectionMultiplexer.</Description>
+    <Description>Atomic, tenant-scoped, Redis-backed implementation of SharedKernel.Idempotency.Abstractions' IIdempotencyStore, registered keyed by purpose (AddRedisIdempotency(p => p.ForRequests().ForMessages())). Atomicity via single-round-trip Lua scripts over a per-key Redis hash (status/fingerprint/token/response); fail-closed on store unavailability by default. Built on SharedKernel.Caching.Redis.Core's shared IConnectionMultiplexer.</Description>
     <PackageTags>idempotency;redis;deduplication;shared-kernel</PackageTags>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
     <!--
       18.Idempotency layering (root CLAUDE.md / 18.Idempotency/CLAUDE.md): SharedKernel.Idempotency.Redis
-      may reference 01.Core, 02.Caching.Redis.Core only, 05.Application.Pipeline,
-      07.Messaging.Abstractions. Never 06.Persistence — anything.
+      may reference Foundation packages, SharedKernel.Idempotency.Abstractions and, among adapters,
+      SharedKernel.Caching.Redis.Core only. Never the application pipeline, messaging or 06.Persistence.
     -->
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
-    <ProjectReference Include="..\..\01.Core\SharedKernel.Configuration\SharedKernel.Configuration.csproj" />
     <ProjectReference Include="..\..\02.Caching\SharedKernel.Caching.Redis.Core\SharedKernel.Caching.Redis.Core.csproj" />
-    <ProjectReference Include="..\..\05.Application\SharedKernel.Application.Pipeline\SharedKernel.Application.Pipeline.csproj" />
-    <ProjectReference Include="..\..\07.Messaging\SharedKernel.Messaging.Abstractions\SharedKernel.Messaging.Abstractions.csproj" />
+    <ProjectReference Include="..\SharedKernel.Idempotency.Abstractions\SharedKernel.Idempotency.Abstractions.csproj" />
   </ItemGroup>
   <ItemGroup>
     <!-- No direct PackageReference to StackExchange.Redis: it flows transitively via
          SharedKernel.Caching.Redis.Core, which owns IConnectionMultiplexer construction (S-07). -->
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
-    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Options" />
   </ItemGroup>

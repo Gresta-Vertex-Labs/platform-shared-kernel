@@ -6,6 +6,8 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Application.Pipeline.Commands;
 using SharedKernel.Application.Pipeline.Idempotency;
+using SharedKernel.Idempotency.Abstractions;
+using MsOptions = Microsoft.Extensions.Options.Options;
 using SharedKernel.Application.Pipeline.Tests.Support;
 using SharedKernel.Application.Messaging;
 using SharedKernel.Primitives.Errors;
@@ -18,25 +20,69 @@ public sealed class IdempotencyBehaviorTests
     private sealed record TestCommand(string IdempotencyKey, string Payload) : ICommand<string>, IIdempotentRequest;
 
     private static IdempotencyBehavior<TestCommand, Result<string>> CreateBehavior(
-        IRequestIdempotencyStore store,
+        IIdempotencyStore store,
         ICommandScope? scope = null,
         ILogger<IdempotencyBehavior<TestCommand, Result<string>>>? logger = null)
-        => new(store, scope ?? new FakeCommandScope(), logger ?? new FakeLogger<IdempotencyBehavior<TestCommand, Result<string>>>());
+        => new(store, scope ?? new FakeCommandScope(), DefaultOptions, logger ?? new FakeLogger<IdempotencyBehavior<TestCommand, Result<string>>>());
 
-    /// <summary>Wraps a <see cref="FakeIdempotencyStore"/> and forces <see cref="CompleteAsync"/> to report a lost reservation.</summary>
-    private sealed class LostReservationOnCompleteStore(IRequestIdempotencyStore inner) : IRequestIdempotencyStore
+    private static readonly Microsoft.Extensions.Options.IOptions<IdempotencyBehaviorOptions> DefaultOptions =
+        MsOptions.Create(new IdempotencyBehaviorOptions());
+
+    /// <summary>Wraps a <see cref="FakeIdempotencyStore"/> and forces <c>CompleteAsync</c> to report a lost reservation.</summary>
+    private sealed class LostReservationOnCompleteStore(IIdempotencyStore inner) : IIdempotencyStore
     {
-        public Task<IdempotencyBeginResult> TryBeginAsync(string key, string requestFingerprint, CancellationToken cancellationToken)
-            => inner.TryBeginAsync(key, requestFingerprint, cancellationToken);
+        public Task<IdempotencyReservation> TryBeginAsync(
+            IdempotencyPurpose purpose, string key, string fingerprint, TimeSpan ttl, CancellationToken cancellationToken)
+            => inner.TryBeginAsync(purpose, key, fingerprint, ttl, cancellationToken);
 
-        public async Task<bool> CompleteAsync(string key, string reservationToken, string serializedResponse, CancellationToken cancellationToken)
+        public async Task<bool> CompleteAsync(
+            IdempotencyPurpose purpose, string key, string token, string? response, TimeSpan retention, CancellationToken cancellationToken)
         {
-            await inner.CompleteAsync(key, reservationToken, serializedResponse, cancellationToken);
+            await inner.CompleteAsync(purpose, key, token, response, retention, cancellationToken);
             return false;
         }
 
-        public Task<bool> ReleaseAsync(string key, string reservationToken, CancellationToken cancellationToken)
-            => inner.ReleaseAsync(key, reservationToken, cancellationToken);
+        public Task<bool> ReleaseAsync(IdempotencyPurpose purpose, string key, string token, CancellationToken cancellationToken)
+            => inner.ReleaseAsync(purpose, key, token, cancellationToken);
+    }
+
+    [Fact]
+    public async Task Handle_UsesTheRequestPurpose_AndTheConfiguredLeaseAndRetention()
+    {
+        var store = new FakeIdempotencyStore();
+        var options = MsOptions.Create(new IdempotencyBehaviorOptions
+        {
+            LeaseDuration = TimeSpan.FromSeconds(7),
+            RetentionWindow = TimeSpan.FromMinutes(9),
+        });
+        var behavior = new IdempotencyBehavior<TestCommand, Result<string>>(
+            store, new FakeCommandScope(), options, new FakeLogger<IdempotencyBehavior<TestCommand, Result<string>>>());
+
+        await behavior.Handle(
+            new TestCommand("key-1", "payload"),
+            () => Task.FromResult(Result<string>.Success("ok")),
+            CancellationToken.None);
+
+        store.Purposes.Should().OnlyContain(p => p == IdempotencyPurpose.Request);
+        store.LastTtl.Should().Be(TimeSpan.FromSeconds(7));
+        store.LastRetention.Should().Be(TimeSpan.FromMinutes(9));
+    }
+
+    [Fact]
+    public void Options_LeaseNotShorterThanRetention_FailsValidation()
+    {
+        var options = new IdempotencyBehaviorOptions
+        {
+            LeaseDuration = TimeSpan.FromHours(2),
+            RetentionWindow = TimeSpan.FromHours(1),
+        };
+
+        var results = new List<System.ComponentModel.DataAnnotations.ValidationResult>();
+        var valid = System.ComponentModel.DataAnnotations.Validator.TryValidateObject(
+            options, new System.ComponentModel.DataAnnotations.ValidationContext(options), results, validateAllProperties: true);
+
+        valid.Should().BeFalse();
+        results.Should().ContainSingle(r => r.MemberNames.Contains(nameof(IdempotencyBehaviorOptions.LeaseDuration)));
     }
 
     [Fact]
@@ -124,7 +170,7 @@ public sealed class IdempotencyBehaviorTests
         var store = new FakeIdempotencyStore();
         var scope = new FakeCommandScope();
         var behavior = CreateBehavior(store, scope);
-        await store.TryBeginAsync("key-1", RequestFingerprintFor(new TestCommand("key-1", "payload")), CancellationToken.None);
+        await store.TryBeginAsync(IdempotencyPurpose.Request, "key-1", RequestFingerprintFor(new TestCommand("key-1", "payload")), TimeSpan.FromSeconds(30), CancellationToken.None);
 
         var nextCalled = false;
         var result = await behavior.Handle(new TestCommand("key-1", "payload"), () =>
@@ -181,7 +227,7 @@ public sealed class IdempotencyBehaviorTests
         var scope = new FakeCommandScope();
         var behavior = CreateBehavior(store, scope);
         const string secretKey = "super-secret-idempotency-key-12345";
-        await store.TryBeginAsync(secretKey, RequestFingerprintFor(new TestCommand(secretKey, "payload")), CancellationToken.None);
+        await store.TryBeginAsync(IdempotencyPurpose.Request, secretKey, RequestFingerprintFor(new TestCommand(secretKey, "payload")), TimeSpan.FromSeconds(30), CancellationToken.None);
 
         var result = await behavior.Handle(new TestCommand(secretKey, "payload"), () => Task.FromResult(Result<string>.Success("ok")), CancellationToken.None);
 
@@ -238,8 +284,8 @@ public sealed class IdempotencyBehaviorTests
     private sealed record FingerprintCommand(string IdempotencyKey, string Payload, string? Fingerprint)
         : ICommand<string>, IIdempotentRequest;
 
-    private static IdempotencyBehavior<FingerprintCommand, Result<string>> CreateFingerprintBehavior(IRequestIdempotencyStore store)
-        => new(store, new FakeCommandScope(), new FakeLogger<IdempotencyBehavior<FingerprintCommand, Result<string>>>());
+    private static IdempotencyBehavior<FingerprintCommand, Result<string>> CreateFingerprintBehavior(IIdempotencyStore store)
+        => new(store, new FakeCommandScope(), DefaultOptions, new FakeLogger<IdempotencyBehavior<FingerprintCommand, Result<string>>>());
 
     [Fact]
     public async Task Handle_CallerSuppliedFingerprint_TakesPrecedenceOverAutomaticHash_SoAPayloadChangeStillReplays()
@@ -324,7 +370,7 @@ public sealed class IdempotencyBehaviorTests
     {
         var store = new FakeIdempotencyStore();
         var behavior = new IdempotencyBehavior<CyclicCommand, Result<string>>(
-            store, new FakeCommandScope(), new FakeLogger<IdempotencyBehavior<CyclicCommand, Result<string>>>());
+            store, new FakeCommandScope(), DefaultOptions, new FakeLogger<IdempotencyBehavior<CyclicCommand, Result<string>>>());
         var command = new CyclicCommand();
         command.Self = command;
 

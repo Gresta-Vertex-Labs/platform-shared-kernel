@@ -83,11 +83,13 @@
     <ProjectReference Include="..\..\11.Communication\SharedKernel.Communication.Internal\SharedKernel.Communication.Internal.csproj" />
     <!--
       Application behavior local-seam fakes + pipeline test harness (S-16, P-244/P-245/WO-040):
-      FakeUnitOfWork, FakeAuthorizationContext, FakeIdempotencyKeyStore, FakeIdempotencyResponseStore,
+      FakeUnitOfWork, FakeAuthorizationContext, FakeIdempotencyStore (Idempotency/, P-568),
       AddFakeApplicationBehaviorServices(), ApplicationPipelineTestHarness (all Application/). First
       ProjectReference from 16.Testing to 05.Application.
     -->
     <ProjectReference Include="..\..\05.Application\SharedKernel.Application.Pipeline\SharedKernel.Application.Pipeline.csproj" />
+    <!-- FakeIdempotencyStore (Idempotency/) implements SharedKernel.Idempotency.Abstractions' IIdempotencyStore (P-568). -->
+    <ProjectReference Include="..\..\18.Idempotency\SharedKernel.Idempotency.Abstractions\SharedKernel.Idempotency.Abstractions.csproj" />
     <!--
       Storage in-memory doubles (S-23, P-269/WO-043; redesigned with 08.Storage's named-store API):
       InMemoryFileStorage (a raw IFileStorage provider store) + AddInMemoryStore/AddInMemoryTenantStore. Mechanically safe to add even while 08.Storage

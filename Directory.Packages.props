@@ -296,6 +296,9 @@
     <PackageVersion Include="SharedKernel.DataPrivacy" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Domain" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.FeatureManagement" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Idempotency.Abstractions" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Idempotency.EfCore" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Idempotency.Redis" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Linter" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Localization" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Messaging.Abstractions" Version="$(SharedKernelPackageVersion)" />

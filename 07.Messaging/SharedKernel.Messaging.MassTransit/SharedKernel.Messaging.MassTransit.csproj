@@ -29,6 +29,8 @@
       those live in the .RabbitMq, .AzureServiceBus and .EfCore satellite packages (P-570).
     -->
     <ProjectReference Include="..\SharedKernel.Messaging.Abstractions\SharedKernel.Messaging.Abstractions.csproj" />
+    <!-- IIdempotencyStore (keyed by IdempotencyPurpose.Message), consumed by IdempotentConsumerBehavior. -->
+    <ProjectReference Include="..\..\18.Idempotency\SharedKernel.Idempotency.Abstractions\SharedKernel.Idempotency.Abstractions.csproj" />
     <ProjectReference Include="..\..\04.Contracts\SharedKernel.Contracts\SharedKernel.Contracts.csproj" />
     <ProjectReference Include="..\..\01.Core\SharedKernel.Compression\SharedKernel.Compression.csproj" />
     <ProjectReference Include="..\..\01.Core\SharedKernel.Cryptography\SharedKernel.Cryptography.csproj" />
