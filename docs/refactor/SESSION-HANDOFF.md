@@ -1,7 +1,7 @@
 # WO-086 Foundation Refactor — Session Handoff
 
 > **For the next Claude session.** Read this file first, then follow "How to resume". Everything you need is
-> linked from here. Last updated: 2026-09-25, after P-565 (`8e64d774`) and P-569 (`1064694a`) were committed.
+> linked from here. Last updated: 2026-09-25, after P-566 (`5edb87cd`) was committed.
 
 ## 1. Where the plan lives
 
@@ -36,9 +36,9 @@
 | P-564 | 2 — `SharedKernel.Execution`; `Application.Abstractions` deleted | ● done (`053e5612`) |
 | P-565 | 3 — Tenant and caller unification | ● done (`8e64d774`) |
 | P-569 | 7 — `IReadinessProbe` contract, collapse probe-only ServiceDefaults packages | ● done (`1064694a`) |
-| P-566 | 4 — Correlation and context propagation (fixes defects 1, 3, 4) | ○ **next** |
-| P-567 | 5 — Application contracts and mediator abstraction | ○ |
-| P-570 | 8 — Optional-dependency satellites | ○ (parallel with P-567) |
+| P-566 | 4 — Correlation and context propagation (fixes defects 1, 3, 4) | ● done (`5edb87cd`) |
+| P-567 | 5 — Application contracts and mediator abstraction | ○ **next** |
+| P-570 | 8 — Optional-dependency satellites | ○ **next** (parallel with P-567) |
 | P-568 | 6 — Unified idempotency abstractions | ○ |
 | P-571 | 9 — Per-capability `*.Testing` packages | ○ |
 | P-572 | 10 — Release train and CI | ○ |
@@ -68,6 +68,14 @@
 - **Design decision to review:** `AddSharedKernelRequestContext()` registers `IRequestContext` as **transient** = `RequestContextScope.Current ?? scoped SecurityRequestContext`, plus `IRequestContextAccessor`. MultiTenancy middleware, the SignalR hub filter and the gRPC tenant interceptor open a `RequestContextScope`.
 - Deliberately left: `04.Contracts` `EventEnvelope.TenantId` stays `Guid?` (wire contract, Primitives-only); `DataPrivacy` `DataSubjectRequest.TenantId` stays `string?`; governance names/docs mentioning `ITenantProvider` → P-574; Communication Rest/Grpc still use `IHttpContextAccessor` → P-566. Until P-566, an HTTP request without the MultiTenancy middleware gives the idempotency stores no tenant.
 
+**P-566 — context propagation (defects 1, 3, 4 fixed):**
+- HTTP: `app.UseSharedKernelRequestContext()` (ServiceDefaults.Security) goes **first**, before `UseExceptionHandler()`. It owns the correlation id (reads/creates/echoes `X-Correlation-Id`, one fixed rule: ≤128 chars, `[A-Za-z0-9-_:.]`) and the request's `RequestContextScope`, reading the caller lazily. `TenantResolutionMiddleware` (after `UseAuthentication()`) opens a deliberate inner scope that replaces only the tenant. WebApi's `CorrelationIdMiddleware`/`CorrelationIdOptions`/`AddSharedKernelCorrelationId` are deleted.
+- Inbound scopes: gRPC server interceptor, MassTransit consume filter, Temporal activity interceptor, scheduler job runner (`SystemRequestContext(..., tenantId: job scope, correlationId: new)`).
+- Outbound: one mapping, `SharedKernel.Execution`'s `RequestContextPropagation`, used by REST (`RequestContextDelegatingHandler` replaced the two old handlers), gRPC client, MassTransit and Temporal. Webhooks send only the correlation id (a subscriber is outside the trust boundary). Nothing reads `Activity.Id`/`TraceId` for correlation any more. Communication.Rest/.Grpc have no ASP.NET Core reference.
+- New in Execution: `CorrelationIds` (`New()` = "D" GUID), `RequestContextPropagation`, `PropagatedRequestContext` (was Messaging's `MessageRequestContext`), `WithCorrelationId`/`WithTenant`. `WellKnownHeaders` gained `IdempotencyKey = "Idempotency-Key"`, `ActorId`, `ActorKind`, `ClientId` plus the former `MessageContextHeaders` constants (same `x-sk-*` values). Communication's `IdempotencyHeaders` is deleted.
+- Proof: `ServiceDefaults.Security.Tests/Propagation/EndToEndPropagationTests` (HTTP→REST, HTTP→gRPC, HTTP→bus→consumer→REST, job→REST; in-process, no Docker).
+- Open for P-574: Security.Oidc/.ApiKey/.Mtls/.Totp (Adapter tier) still reference ASP.NET Core, which conflicts with the "no `Microsoft.AspNetCore.Http` outside Host" definition of done. The SignalR hub filter does not set a correlation id yet.
+
 **P-569 — readiness probes:**
 - `SharedKernel.Primitives.Health`: `IReadinessProbe`, `ReadinessReport`, `ReadinessStatus`, `AddReadinessProbe<T>()` / `AddReadinessProbe(factory)` (one per target), `GetRequiredReadinessProbe(name)`. Probe constructors must be cheap; resolve clients inside `ProbeAsync`.
 - Probes: `messaging`, `redis`, `cache`, `encryption-key-provider`, `field-encryption`, `audit-sealing`, `storage-{store}`, `search-{provider}-{index}`, `vector-store-{provider}-{collection}`, `workflows`, `scheduler`. The old probe interfaces and `*ReadinessHealthCheck` adapters are gone. Audit lag limit is now `AuditSealerOptions.MaxReadyLag`.
@@ -91,7 +99,7 @@ SharedKernel.Idempotency.Redis->SharedKernel.Application.Behaviors  ← removed 
 
 1. `git checkout refactor/wo-086-foundation` and `git log --oneline -5`. The newest commit should be `053e5612` (or later).
 2. Read [`FOUNDATION-PLAN.md`](FOUNDATION-PLAN.md): the "Target architecture" section plus the section for the step you're about to do.
-3. Start **P-566** (Step 4). Then P-567 and P-570 can run in parallel. Each step's full task list is in FOUNDATION-PLAN.md. Parallel phases worked well in `C:\wt\<phase>` worktrees on `wo086/<phase>` branches, rebased onto each other afterwards; the only conflicts were additive `PublicAPI.Unshipped.txt` hunks (keep both sides).
+3. Start **P-567** (Step 5) and **P-570** (Step 8) in parallel. Each step's full task list is in FOUNDATION-PLAN.md. Parallel phases worked well in `C:\wt\<phase>` worktrees on `wo086/<phase>` branches, rebased onto each other afterwards; the only conflicts were additive `PublicAPI.Unshipped.txt` hunks (keep both sides).
 4. For each step:
    1. Implement it directly, or with `general-purpose` agents given the plan as the spec. **Do not use the domain `*-phase-implementer` agents or domain brains yet**: they still describe the old numbered-layer rules until P-576.
    2. Delete any `eng/tier-baseline.txt` entries the step fixes.
@@ -111,11 +119,11 @@ dotnet test  Platform.SharedKernel.Unit.slnf -c Release --no-build
 dotnet test  Platform.SharedKernel.Integration.slnf -c Release --no-build   # Docker; for persistence/messaging/caching/idempotency steps
 ```
 
-Counts after P-565 + P-569 (use these to spot regressions):
+Counts after P-566 (use these to spot regressions):
 - **Build:** 0 errors, 38 warnings (same codes as the baseline).
-- **Unit:** 57 assemblies / 7,488 tests (9 assemblies left with the deleted ServiceDefaults packages).
+- **Unit:** 57 assemblies / 7,510 tests (9 assemblies left with the deleted ServiceDefaults packages in P-569).
 - **Architecture:** 364 tests.
-- **Integration:** 21 assemblies / 2,907 tests.
+- **Integration:** 22 assemblies / 2,908 tests.
 - **Known flakes under full-suite load** (re-run alone before treating as a regression): `MeilisearchContainerFixtureTests`, `CacheLevelMetricsTests.SecondReadOnTheSameNode_IsAnL1Hit`, Redis socket errors in `Idempotency.Redis.Tests`, two `Messaging.MassTransit.Tests`, one `Testing.SelfTests`.
 - **Docker** must be running for Integration and for `ServiceDefaults.Persistence.Tests`. Start Docker Desktop first; it was down at the start of the 2026-09-25 session.
 
