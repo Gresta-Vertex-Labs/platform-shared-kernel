@@ -1,7 +1,7 @@
 # WO-086 Foundation Refactor — Session Handoff
 
 > **For the next Claude session.** Read this file first, then follow "How to resume". Everything you need is
-> linked from here. Last updated: 2026-09-25, after P-564 was committed (`053e5612`).
+> linked from here. Last updated: 2026-09-25, after P-565 (`8e64d774`) and P-569 (`1064694a`) were committed.
 
 ## 1. Where the plan lives
 
@@ -34,9 +34,9 @@
 | P-562 | 0 — Preparation (branch, plan, baseline) | ● done |
 | P-563 | 1 — Tier enforcement infrastructure | ● done (`9f508d8f`) |
 | P-564 | 2 — `SharedKernel.Execution`; `Application.Abstractions` deleted | ● done (`053e5612`) |
-| P-565 | 3 — Tenant and caller unification | ○ **next** |
-| P-569 | 7 — `IReadinessProbe` contract, collapse probe-only ServiceDefaults packages | ○ **next** (parallel with P-565) |
-| P-566 | 4 — Correlation and context propagation (fixes defects 1, 3, 4) | ○ |
+| P-565 | 3 — Tenant and caller unification | ● done (`8e64d774`) |
+| P-569 | 7 — `IReadinessProbe` contract, collapse probe-only ServiceDefaults packages | ● done (`1064694a`) |
+| P-566 | 4 — Correlation and context propagation (fixes defects 1, 3, 4) | ○ **next** |
 | P-567 | 5 — Application contracts and mediator abstraction | ○ |
 | P-570 | 8 — Optional-dependency satellites | ○ (parallel with P-567) |
 | P-568 | 6 — Unified idempotency abstractions | ○ |
@@ -61,12 +61,24 @@
 - `SharedKernel.Execution.Auditing`: `IAuditTrailWriter`, `AuditEntry`, `AuditOutcome`.
 - `SharedKernel.Execution.Tenancy`: `TenantId` (rejects `Guid.Empty`, "D" string form, JSON converter), `TenantScope` (`Global` = default, `For`, `FromNullable`).
 
-`IRequestContext.TenantId` is **still `Guid?`**. Changing it to `TenantId?` is part of P-565.
+### What P-565 and P-569 added (2026-09-25)
+**P-565 — tenant and caller unification:**
+- `IRequestContext.TenantId` is `TenantId?`. `IUserContext` uses `ActorKind` and `TenantId?`. `IdentityKind`, `ITenantProvider`, `UserContextTenantProvider`, `AmbientTenantProvider`, Messaging's `ITenantContextAccessor`, `TenantBaggageKeys`, the four local `TenantScope` copies, `FakeTenantProvider`/`StaticTenantProvider` and the idempotency stores' accessor startup validator are deleted (defect 2 fixed by construction).
+- `IHasTenant`/`Tenanted*` use `TenantId`. EF maps it with a value converter; Dapper has `TenantIdTypeHandler`. Stored formats (RLS setting, encryption key ids and associated data) are byte-identical.
+- **Design decision to review:** `AddSharedKernelRequestContext()` registers `IRequestContext` as **transient** = `RequestContextScope.Current ?? scoped SecurityRequestContext`, plus `IRequestContextAccessor`. MultiTenancy middleware, the SignalR hub filter and the gRPC tenant interceptor open a `RequestContextScope`.
+- Deliberately left: `04.Contracts` `EventEnvelope.TenantId` stays `Guid?` (wire contract, Primitives-only); `DataPrivacy` `DataSubjectRequest.TenantId` stays `string?`; governance names/docs mentioning `ITenantProvider` → P-574; Communication Rest/Grpc still use `IHttpContextAccessor` → P-566. Until P-566, an HTTP request without the MultiTenancy middleware gives the idempotency stores no tenant.
+
+**P-569 — readiness probes:**
+- `SharedKernel.Primitives.Health`: `IReadinessProbe`, `ReadinessReport`, `ReadinessStatus`, `AddReadinessProbe<T>()` / `AddReadinessProbe(factory)` (one per target), `GetRequiredReadinessProbe(name)`. Probe constructors must be cheap; resolve clients inside `ProbeAsync`.
+- Probes: `messaging`, `redis`, `cache`, `encryption-key-provider`, `field-encryption`, `audit-sealing`, `storage-{store}`, `search-{provider}-{index}`, `vector-store-{provider}-{collection}`, `workflows`, `scheduler`. The old probe interfaces and `*ReadinessHealthCheck` adapters are gone. Audit lag limit is now `AuditSealerOptions.MaxReadyLag`.
+- `healthChecks.AddSharedKernelReadiness()` in the ServiceDefaults base maps every probe to a `ready` check. The base now references Foundation-tier packages only (`CompositionBaseIsolationTests`).
+- Deleted packages: `ServiceDefaults.{AI, Caching, Caching.Redis, Messaging, Scheduling, Search, Storage, Workflows.Temporal, Cryptography.KeyVault}`. Kept: `.Persistence`, `.Security`, `.Security.Mtls`, `.Configuration.KeyVault`, `.Localization`. The 13→17/13→19 grants and their rules are gone.
 
 ### Known leftovers deliberately deferred to P-575 (docs)
 - Domain `CLAUDE.md`/README text still mentions `SharedKernel.Application.Abstractions`: `05.Application/CLAUDE.md`, `00.Governance/CLAUDE.md`, the root `CLAUDE.md` Folder Map row 05, and the Hard rule about the 07→Application.Abstractions grant.
 - A comment in `samples/ShippingApi/ShippingApi.csproj` still names Application.Abstractions.
 - An empty folder `05.Application/SharedKernel.Application.Abstractions` may remain on disk (locked by the OS). Git ignores it, so it is harmless; delete it if possible.
+- READMEs/CLAUDE.md still naming the deleted ServiceDefaults packages, `Add*ReadinessCheck` methods, probe interfaces, `ITenantProvider`, `IdentityKind` or the local `TenantScope` copies (13.ServiceDefaults, 08.Storage, 09.Search, 06 Auditing/Encryption, CatalogApi, 12.Security …).
 
 ### Remaining tier-baseline entries (`eng/tier-baseline.txt`)
 ```
@@ -79,7 +91,7 @@ SharedKernel.Idempotency.Redis->SharedKernel.Application.Behaviors  ← removed 
 
 1. `git checkout refactor/wo-086-foundation` and `git log --oneline -5`. The newest commit should be `053e5612` (or later).
 2. Read [`FOUNDATION-PLAN.md`](FOUNDATION-PLAN.md): the "Target architecture" section plus the section for the step you're about to do.
-3. Start **P-565** (Step 3) and **P-569** (Step 7). Each step's full task list is in FOUNDATION-PLAN.md.
+3. Start **P-566** (Step 4). Then P-567 and P-570 can run in parallel. Each step's full task list is in FOUNDATION-PLAN.md. Parallel phases worked well in `C:\wt\<phase>` worktrees on `wo086/<phase>` branches, rebased onto each other afterwards; the only conflicts were additive `PublicAPI.Unshipped.txt` hunks (keep both sides).
 4. For each step:
    1. Implement it directly, or with `general-purpose` agents given the plan as the spec. **Do not use the domain `*-phase-implementer` agents or domain brains yet**: they still describe the old numbered-layer rules until P-576.
    2. Delete any `eng/tier-baseline.txt` entries the step fixes.
@@ -99,10 +111,13 @@ dotnet test  Platform.SharedKernel.Unit.slnf -c Release --no-build
 dotnet test  Platform.SharedKernel.Integration.slnf -c Release --no-build   # Docker; for persistence/messaging/caching/idempotency steps
 ```
 
-Counts after P-564 (use these to spot regressions):
-- **Unit:** 66 assemblies / 7,588 tests.
-- **Architecture:** 372 tests.
-- **Integration:** 22 assemblies. `MeilisearchContainerFixtureTests` can flake under load; re-run it on its own before treating it as a regression.
+Counts after P-565 + P-569 (use these to spot regressions):
+- **Build:** 0 errors, 38 warnings (same codes as the baseline).
+- **Unit:** 57 assemblies / 7,488 tests (9 assemblies left with the deleted ServiceDefaults packages).
+- **Architecture:** 364 tests.
+- **Integration:** 21 assemblies / 2,907 tests.
+- **Known flakes under full-suite load** (re-run alone before treating as a regression): `MeilisearchContainerFixtureTests`, `CacheLevelMetricsTests.SecondReadOnTheSameNode_IsAnL1Hit`, Redis socket errors in `Idempotency.Redis.Tests`, two `Messaging.MassTransit.Tests`, one `Testing.SelfTests`.
+- **Docker** must be running for Integration and for `ServiceDefaults.Persistence.Tests`. Start Docker Desktop first; it was down at the start of the 2026-09-25 session.
 
 Packaging-verify is for steps that change packages (see FOUNDATION-PLAN.md "Verification"):
 1. Run `dotnet pack` to a local folder with a temporary `NUGET_PACKAGES`.
