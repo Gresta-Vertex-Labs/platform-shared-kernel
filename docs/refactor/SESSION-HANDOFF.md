@@ -1,7 +1,7 @@
 # WO-086 Foundation Refactor — Session Handoff
 
 > **For the next Claude session.** Read this file first, then follow "How to resume". Everything you need is
-> linked from here. Last updated: 2026-09-26, after P-572 (`b0fb8e41`) was committed.
+> linked from here. Last updated: 2026-09-26, after P-573 (`c7070aab`) was committed.
 
 ## 1. Where the plan lives
 
@@ -42,8 +42,8 @@
 | P-568 | 6 — Unified idempotency abstractions | ● done (`350a7bbb`) |
 | P-571 | 9 — Per-capability `*.Testing` packages | ● done (`4cd3ee45`) |
 | P-572 | 10 — Release train and CI | ● done (`b0fb8e41`) — not yet run on a real runner |
-| P-573 | 11 — Samples as the reference architecture | ○ **next** |
-| P-574 | 12 — Governance cleanup (tier baseline empty, SKTIER becomes an error) | ○ |
+| P-573 | 11 — Samples as the reference architecture | ● done (`c7070aab`) |
+| P-574 | 12 — Governance cleanup (tier baseline empty, SKTIER becomes an error) | ○ **next** |
 | P-575 | 13 — Documentation (root/domain CLAUDE.md, READMEs, PLATFORM.md, MIGRATION.md) | ○ |
 | P-576 | 14 — Agents (`.claude/agents/*`) and commands (`.claude/commands/*`) | ○ |
 | P-577 | 15a — First release train (**ask the user for the tag**) | ○ |
@@ -90,6 +90,11 @@
 - `eng/tier-baseline.txt` is **empty**; making SKTIER an error is P-574.
 - **Known pre-existing gap, not fixed:** consumer idempotency keys only by MessageId, so two receive endpoints (or polymorphic consumers) in one service receiving the same message → the second is skipped as a duplicate. Fix = add consumer/endpoint to the key. Decide in P-574 or a follow-up.
 
+**P-573 — reference samples:**
+- `samples/OrderApi` is four projects + tests: `OrderApi.Domain` (SharedKernel.Domain), `.Application` (SharedKernel.Application, FluentValidation), `.Infrastructure` (Validation.FluentValidation adapter, an `order-store` readiness probe), `.Api` (ServiceDefaults, ServiceDefaults.Security, Application.Pipeline, Application.Mediator.MediatR, Presentation.WebApi), `OrderApi.Tests` (26 tests incl. `ArchitectureTests`, which checks each project's transitive kernel closure against a tier table from `deps.json`).
+- Canonical order: `UseSharedKernelRequestContext()` → `UseSharedKernelSecurityHeaders()` → `UseExceptionHandler()` → endpoints. ShippingApi, DocumentsApi and CatalogApi now use the request-context middleware; ShippingApi proves correlation reaches the consumer through RabbitMQ.
+- `samples/README.md` is the "how to consume the kernel" guide. GraphQL surfaces moved from 11's to 14's consumer-verify.
+
 **P-572 — release train and CI:**
 - New reusable `.github/workflows/verify.yml` (tier check, solution-filter check, no-`<Version>` check, build + Unit, in-solution harnesses, optional Integration, pack + package-set check, every packed-package consumer and sample). `ci.yml` calls it twice (`verify` gates PRs via "CI Gate"; `integration` on main/nightly/manual). `release.yml`: `tag-guard` (tag format, commit on `origin/main`) → `verify` (everything, Integration required) → `publish` (environment `nuget-publish`, re-checks the uploaded artifact, pushes every package). `publish-package.yml` is a dry run with no push.
 - Expected package set = every packable csproj on disk, via `eng/PackageInventory.proj` + the `GetSharedKernelPackageIdentity` target; `eng/verify-packages.sh <dir> [version]` enforces it and that `Directory.Packages.props` pins exactly that set (103 packages). `eng/verify-solution-filters.sh` checks lanes and solution folders.
@@ -128,7 +133,7 @@ None — the file is empty since P-568.
 
 1. `git checkout refactor/wo-086-foundation` and `git log --oneline -5`. The newest commit should be `053e5612` (or later).
 2. Read [`FOUNDATION-PLAN.md`](FOUNDATION-PLAN.md): the "Target architecture" section plus the section for the step you're about to do.
-3. Start **P-573** (Step 11), then P-574. Each step's full task list is in FOUNDATION-PLAN.md. Parallel phases worked well in `C:\wt\<phase>` worktrees on `wo086/<phase>` branches, rebased onto each other afterwards; the only conflicts were additive `PublicAPI.Unshipped.txt` hunks (keep both sides).
+3. Start **P-574** (Step 12), then P-575. Each step's full task list is in FOUNDATION-PLAN.md. Parallel phases worked well in `C:\wt\<phase>` worktrees on `wo086/<phase>` branches, rebased onto each other afterwards; the only conflicts were additive `PublicAPI.Unshipped.txt` hunks (keep both sides).
 4. For each step:
    1. Implement it directly, or with `general-purpose` agents given the plan as the spec. **Do not use the domain `*-phase-implementer` agents or domain brains yet**: they still describe the old numbered-layer rules until P-576.
    2. Delete any `eng/tier-baseline.txt` entries the step fixes.

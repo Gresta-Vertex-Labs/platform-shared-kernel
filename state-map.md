@@ -3477,7 +3477,7 @@ times across this pass's build waves, to be pre-existing and unrelated to any fi
 | P-570 | Optional-dependency satellites (MassTransit transports/outbox, `Presentation.Core`, SignalR.Redis, GraphQL move) | `●` (`79a5840d`) |
 | P-571 | Per-capability packable `*.Testing` packages | `●` (`4cd3ee45`) |
 | P-572 | Release train and CI | `●` (`b0fb8e41`) |
-| P-573 | Samples as the reference architecture | `○` |
+| P-573 | Samples as the reference architecture | `●` (`c7070aab`) |
 | P-574 | Governance cleanup (tier baseline empty; `SKTIER` becomes an error) | `○` |
 | P-575 | Documentation | `○` |
 | P-576 | Agents and commands | `○` |
