@@ -1,7 +1,7 @@
 # WO-086 Foundation Refactor — Session Handoff
 
 > **For the next Claude session.** Read this file first, then follow "How to resume". Everything you need is
-> linked from here. Last updated: 2026-09-25, after P-567 (`941fe578`) and P-570 (`79a5840d`) were committed.
+> linked from here. Last updated: 2026-09-25, after P-568 (`350a7bbb`) was committed.
 
 ## 1. Where the plan lives
 
@@ -39,8 +39,8 @@
 | P-566 | 4 — Correlation and context propagation (fixes defects 1, 3, 4) | ● done (`5edb87cd`) |
 | P-567 | 5 — Application contracts and mediator abstraction | ● done (`941fe578`) |
 | P-570 | 8 — Optional-dependency satellites | ● done (`79a5840d`) |
-| P-568 | 6 — Unified idempotency abstractions | ○ **next** |
-| P-571 | 9 — Per-capability `*.Testing` packages | ○ |
+| P-568 | 6 — Unified idempotency abstractions | ● done (`350a7bbb`) |
+| P-571 | 9 — Per-capability `*.Testing` packages | ○ **next** |
 | P-572 | 10 — Release train and CI | ○ |
 | P-573 | 11 — Samples as the reference architecture | ○ |
 | P-574 | 12 — Governance cleanup (tier baseline empty, SKTIER becomes an error) | ○ |
@@ -83,6 +83,13 @@
 - `Validation.FluentValidation`: `AddFluentValidationRequestValidators()`. SK0015 deleted. `ApplicationPipelineTestHarness.Build()` needs no mediator.
 - Still in `Application.Pipeline.Idempotency` for P-568: `IRequestIdempotencyStore`, `IdempotencyBeginResult`, `IdempotencyBeginStatus`.
 
+**P-568 — unified idempotency:**
+- `18.Idempotency/SharedKernel.Idempotency.Abstractions` (Abstractions; references Execution + DI.Abstractions): `IIdempotencyStore` (`TryBeginAsync(purpose, key, fingerprint, ttl)`, `CompleteAsync(purpose, key, token, response, retention)`, `ReleaseAsync(purpose, key, token)` — both conditional on an in-flight reservation owned by the token), `IdempotencyReservation`/`IdempotencyReservationStatus` (Started/InProgress/Completed/FingerprintMismatch), `IdempotencyPurpose` (Request/Message), `IdempotencyTenantScope` (tenant "D" string or `"no-tenant"`), `AddIdempotencyStore<T>(purpose)`, `HasIdempotencyStore`/`GetRequiredIdempotencyStore`. Stores are keyed by purpose; callers own lease and retention.
+- `AddRedisIdempotency(p => p.ForRequests().ForMessages(), o => …)` / `AddEfCoreIdempotency(db => …, p => …, o => …)`; one store class per backend. Atomic Lua / `ON CONFLICT` kept. Persisted formats changed (Redis message entries are now hashes; EF table keyed `(tenant_scope, purpose, key)`, `idempotency_messages` dropped) — documented in the provider READMEs.
+- `IdempotencyBehavior` uses `IdempotencyBehaviorOptions.LeaseDuration`/`RetentionWindow`; MassTransit uses `IdempotencyOptions.LeaseDuration`/`ExpiryWindow`. 16.Testing: `FakeIdempotencyStore` + `AddFakeIdempotencyStore(purposes)`.
+- `eng/tier-baseline.txt` is **empty**; making SKTIER an error is P-574.
+- **Known pre-existing gap, not fixed:** consumer idempotency keys only by MessageId, so two receive endpoints (or polymorphic consumers) in one service receiving the same message → the second is skipped as a duplicate. Fix = add consumer/endpoint to the key. Decide in P-574 or a follow-up.
+
 **P-570 — satellites:**
 - `Messaging.MassTransit.RabbitMq` / `.AzureServiceBus` / `.EfCore` (Adapter; extension methods on the core builder via the new `MessagingTransport` extension point — the fluent chain and usings are unchanged). The core has no RabbitMQ/Azure/EF Core dependency.
 - `Presentation.Core` (Host; `Require*` attributes in `SharedKernel.Presentation.Authorization`, `ErrorTypeStatusCodeMap`/`GrpcStatusCodeMap` in `SharedKernel.Presentation.Errors` — new namespaces). Grpc no longer references WebApi. Trade-off: WebApi hosts get `Grpc.Core.Api` transitively; move `GrpcStatusCodeMap` back to Grpc if that matters.
@@ -102,16 +109,13 @@
 - READMEs/CLAUDE.md still naming the deleted ServiceDefaults packages, `Add*ReadinessCheck` methods, probe interfaces, `ITenantProvider`, `IdentityKind` or the local `TenantScope` copies (13.ServiceDefaults, 08.Storage, 09.Search, 06 Auditing/Encryption, CatalogApi, 12.Security …).
 
 ### Remaining tier-baseline entries (`eng/tier-baseline.txt`)
-```
-SharedKernel.Idempotency.EfCore->SharedKernel.Application.Pipeline ← removed by P-568
-SharedKernel.Idempotency.Redis->SharedKernel.Application.Pipeline  ← removed by P-568
-```
+None — the file is empty since P-568.
 
 ## 4. How to resume
 
 1. `git checkout refactor/wo-086-foundation` and `git log --oneline -5`. The newest commit should be `053e5612` (or later).
 2. Read [`FOUNDATION-PLAN.md`](FOUNDATION-PLAN.md): the "Target architecture" section plus the section for the step you're about to do.
-3. Start **P-568** (Step 6), then P-571. Each step's full task list is in FOUNDATION-PLAN.md. Parallel phases worked well in `C:\wt\<phase>` worktrees on `wo086/<phase>` branches, rebased onto each other afterwards; the only conflicts were additive `PublicAPI.Unshipped.txt` hunks (keep both sides).
+3. Start **P-571** (Step 9), then P-572. Each step's full task list is in FOUNDATION-PLAN.md. Parallel phases worked well in `C:\wt\<phase>` worktrees on `wo086/<phase>` branches, rebased onto each other afterwards; the only conflicts were additive `PublicAPI.Unshipped.txt` hunks (keep both sides).
 4. For each step:
    1. Implement it directly, or with `general-purpose` agents given the plan as the spec. **Do not use the domain `*-phase-implementer` agents or domain brains yet**: they still describe the old numbered-layer rules until P-576.
    2. Delete any `eng/tier-baseline.txt` entries the step fixes.
@@ -131,11 +135,11 @@ dotnet test  Platform.SharedKernel.Unit.slnf -c Release --no-build
 dotnet test  Platform.SharedKernel.Integration.slnf -c Release --no-build   # Docker; for persistence/messaging/caching/idempotency steps
 ```
 
-Counts after P-567 + P-570 (use these to spot regressions):
-- **Build:** 0 errors, 37 warnings (SKTIER003 for MediatR is gone).
-- **Unit:** 61 assemblies / 7,542 tests.
+Counts after P-568 (use these to spot regressions):
+- **Build:** 0 errors, 35 warnings (no SKTIER warnings left).
+- **Unit:** 62 assemblies / 7,566 tests.
 - **Architecture:** 377 tests.
-- **Integration:** 24 assemblies / 2,894 tests (16 Azure Service Bus/outbox tests moved to Unit in P-570).
+- **Integration:** 24 assemblies / 2,908 tests.
 - **Known flakes under full-suite load** (re-run alone before treating as a regression): `MeilisearchContainerFixtureTests`, `CacheLevelMetricsTests.SecondReadOnTheSameNode_IsAnL1Hit`, Redis socket errors in `Idempotency.Redis.Tests`, two `Messaging.MassTransit.Tests`, one `Testing.SelfTests`.
 - **Docker** must be running for Integration and for `ServiceDefaults.Persistence.Tests`. Start Docker Desktop first; it was down at the start of the 2026-09-25 session.
 
