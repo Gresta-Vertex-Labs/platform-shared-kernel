@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using SharedKernel.Application.Behaviors.CacheInvalidation;
 using SharedKernel.Application.Behaviors.Caching.Shared;
 using SharedKernel.Application.Behaviors.Commands;
-using SharedKernel.Application.Context;
+using SharedKernel.Execution.Context;
 using SharedKernel.Application.Messaging;
 
 namespace SharedKernel.Application.Behaviors.Caching.Tests.Support;

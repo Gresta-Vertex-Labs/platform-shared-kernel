@@ -1,8 +1,8 @@
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using SharedKernel.Application.Auditing;
-using SharedKernel.Application.Context;
+using SharedKernel.Execution.Auditing;
+using SharedKernel.Execution.Context;
 using SharedKernel.Persistence.Abstractions.Connections;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.Abstractions.Coordination;

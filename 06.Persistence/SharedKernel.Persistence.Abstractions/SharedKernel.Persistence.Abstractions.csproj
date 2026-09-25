@@ -22,7 +22,7 @@
       MediatR-free by design; the ONLY 05.Application package 06.Persistence may reference (never
       SharedKernel.Application, .Behaviors or MediatR — locked by 00.Governance).
     -->
-    <ProjectReference Include="..\..\05.Application\SharedKernel.Application.Abstractions\SharedKernel.Application.Abstractions.csproj" />
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Execution\SharedKernel.Execution.csproj" />
   </ItemGroup>
   <ItemGroup>
     <!-- P-558/W2: the default ICrossTenantScope (scoped, logged) and its registration helper live here, so a

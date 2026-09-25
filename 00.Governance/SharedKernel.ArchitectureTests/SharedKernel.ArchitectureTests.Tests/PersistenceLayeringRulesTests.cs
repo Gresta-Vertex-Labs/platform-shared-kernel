@@ -100,20 +100,20 @@ public sealed class PersistenceLayeringRulesTests
     [Fact]
     public void PersistenceNeverReferencesApplicationOrSecurity_ApplicationAbstractionsDependency_RulePasses()
     {
-        // P-558: the shared contracts in SharedKernel.Application.Abstractions (namespaces .Context,
+        // P-558: the shared contracts in SharedKernel.Execution (namespaces .Context,
         // .Transactions, .Auditing) are the one part of 05.Application persistence may depend on.
         const string cleanSource = """
-            namespace SharedKernel.Application.Context
+            namespace SharedKernel.Execution.Context
             {
                 public interface IRequestContext { string? UserId { get; } }
             }
 
-            namespace SharedKernel.Application.Transactions
+            namespace SharedKernel.Execution.Transactions
             {
                 public interface IUnitOfWork { }
             }
 
-            namespace SharedKernel.Application.Auditing
+            namespace SharedKernel.Execution.Auditing
             {
                 public interface IAuditTrailWriter { }
             }
@@ -123,9 +123,9 @@ public sealed class PersistenceLayeringRulesTests
                 public sealed class SharedContractConsumer
                 {
                     public SharedContractConsumer(
-                        SharedKernel.Application.Context.IRequestContext context,
-                        SharedKernel.Application.Transactions.IUnitOfWork unitOfWork,
-                        SharedKernel.Application.Auditing.IAuditTrailWriter writer) { }
+                        SharedKernel.Execution.Context.IRequestContext context,
+                        SharedKernel.Execution.Transactions.IUnitOfWork unitOfWork,
+                        SharedKernel.Execution.Auditing.IAuditTrailWriter writer) { }
                 }
             }
             """;
@@ -137,7 +137,7 @@ public sealed class PersistenceLayeringRulesTests
             .GetResult();
 
         result.IsSuccessful.Should().BeTrue(
-            because: "SharedContractConsumer depends only on SharedKernel.Application.Abstractions' namespaces");
+            because: "SharedContractConsumer depends only on SharedKernel.Execution' namespaces");
     }
 
     [Fact]
@@ -172,7 +172,7 @@ public sealed class PersistenceLayeringRulesTests
     public void PersistenceForbiddenAssemblyReferences_RealProductionAssembly_IsEmpty(Assembly assembly)
     {
         SharedKernelLayeringRules.PersistenceForbiddenAssemblyReferences(assembly).Should().BeEmpty(
-            because: $"'{assembly.GetName().Name}' may reference SharedKernel.Application.Abstractions only");
+            because: $"'{assembly.GetName().Name}' may reference SharedKernel.Execution only");
     }
 
     [Fact]
@@ -218,7 +218,7 @@ public sealed class PersistenceLayeringRulesTests
         typeof(SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext).Assembly
             .GetReferencedAssemblies()
             .Select(a => a.Name)
-            .Should().Contain("SharedKernel.Application.Abstractions");
+            .Should().Contain("SharedKernel.Execution");
     }
 
     // ---------------------------------------------------------------------------
@@ -299,14 +299,12 @@ public sealed class PersistenceLayeringRulesTests
         }
 
         offendingFiles.Should().BeEmpty(
-            "no .cs file under 06.Persistence (production or test) may reference 05.Application beyond " +
-                "SharedKernel.Application.Abstractions, MediatR, or SharedKernel.Security");
+            "no .cs file under 06.Persistence (production or test) may reference 05.Application " +
+                "(SharedKernel.Application*), MediatR, or SharedKernel.Security");
     }
 
     private static bool IsForbiddenNamespaceReference(string nodeText) =>
-        (nodeText.StartsWith("SharedKernel.Application", StringComparison.Ordinal)
-            && !SharedKernelLayeringRules.ApplicationAbstractionsNamespaces.Any(allowed =>
-                nodeText == allowed || nodeText.StartsWith(allowed + ".", StringComparison.Ordinal)))
+        nodeText.StartsWith("SharedKernel.Application", StringComparison.Ordinal)
             || nodeText.StartsWith("MediatR", StringComparison.Ordinal)
             || nodeText.StartsWith("SharedKernel.Security", StringComparison.Ordinal);
 

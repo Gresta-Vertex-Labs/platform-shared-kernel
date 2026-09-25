@@ -1,6 +1,6 @@
 using MediatR;
 using Microsoft.Extensions.Logging;
-using SharedKernel.Application.Auditing;
+using SharedKernel.Execution.Auditing;
 using SharedKernel.Application.Behaviors.Shared;
 using SharedKernel.Application.Messaging;
 

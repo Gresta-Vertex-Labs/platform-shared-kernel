@@ -1,6 +1,6 @@
 using System.Data;
 using Microsoft.Extensions.Logging;
-using SharedKernel.Application.Auditing;
+using SharedKernel.Execution.Auditing;
 using SharedKernel.Persistence.Abstractions.Connections;
 using SharedKernel.Persistence.EfCore.Auditing.Checkpoints;
 using SharedKernel.Persistence.EfCore.Auditing.Diagnostics;

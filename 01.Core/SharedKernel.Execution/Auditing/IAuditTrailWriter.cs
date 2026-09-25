@@ -1,4 +1,4 @@
-namespace SharedKernel.Application.Auditing;
+namespace SharedKernel.Execution.Auditing;
 
 /// <summary>
 /// Appends an entry to the service's append-only audit trail.

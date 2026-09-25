@@ -4,7 +4,7 @@ using FluentAssertions;
 using MassTransit;
 using MassTransit.Testing;
 using Microsoft.Extensions.DependencyInjection;
-using SharedKernel.Application.Context;
+using SharedKernel.Execution.Context;
 using SharedKernel.Messaging.Abstractions.Context;
 using SharedKernel.Messaging.Abstractions.MessageBus;
 using SharedKernel.Messaging.MassTransit.Context;

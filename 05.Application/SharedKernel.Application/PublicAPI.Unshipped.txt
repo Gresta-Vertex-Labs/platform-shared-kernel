@@ -1,26 +1,4 @@
 #nullable enable
-SharedKernel.Application.Context.AnonymousRequestContext (forwarded, contained in SharedKernel.Application.Abstractions)
-SharedKernel.Application.Context.AnonymousRequestContext.ActorKind.get -> SharedKernel.Application.Context.ActorKind (forwarded, contained in SharedKernel.Application.Abstractions)
-SharedKernel.Application.Context.AnonymousRequestContext.HasPermissionAsync(string! permission, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<bool> (forwarded, contained in SharedKernel.Application.Abstractions)
-SharedKernel.Application.Context.AnonymousRequestContext.IsAuthenticated.get -> bool (forwarded, contained in SharedKernel.Application.Abstractions)
-SharedKernel.Application.Context.AnonymousRequestContext.TenantId.get -> System.Guid? (forwarded, contained in SharedKernel.Application.Abstractions)
-SharedKernel.Application.Context.AnonymousRequestContext.UserId.get -> string? (forwarded, contained in SharedKernel.Application.Abstractions)
-SharedKernel.Application.Context.IRequestContext (forwarded, contained in SharedKernel.Application.Abstractions)
-SharedKernel.Application.Context.IRequestContext.ActorKind.get -> SharedKernel.Application.Context.ActorKind (forwarded, contained in SharedKernel.Application.Abstractions)
-SharedKernel.Application.Context.IRequestContext.ClientId.get -> string? (forwarded, contained in SharedKernel.Application.Abstractions)
-SharedKernel.Application.Context.IRequestContext.HasPermissionAsync(string! permission, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<bool> (forwarded, contained in SharedKernel.Application.Abstractions)
-SharedKernel.Application.Context.IRequestContext.ImpersonatorId.get -> string? (forwarded, contained in SharedKernel.Application.Abstractions)
-SharedKernel.Application.Context.IRequestContext.IsAuthenticated.get -> bool (forwarded, contained in SharedKernel.Application.Abstractions)
-SharedKernel.Application.Context.IRequestContext.SessionId.get -> string? (forwarded, contained in SharedKernel.Application.Abstractions)
-SharedKernel.Application.Context.IRequestContext.TenantId.get -> System.Guid? (forwarded, contained in SharedKernel.Application.Abstractions)
-SharedKernel.Application.Context.IRequestContext.UserId.get -> string? (forwarded, contained in SharedKernel.Application.Abstractions)
-SharedKernel.Application.Context.SystemRequestContext (forwarded, contained in SharedKernel.Application.Abstractions)
-SharedKernel.Application.Context.SystemRequestContext.ActorKind.get -> SharedKernel.Application.Context.ActorKind (forwarded, contained in SharedKernel.Application.Abstractions)
-SharedKernel.Application.Context.SystemRequestContext.HasPermissionAsync(string! permission, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<bool> (forwarded, contained in SharedKernel.Application.Abstractions)
-SharedKernel.Application.Context.SystemRequestContext.IsAuthenticated.get -> bool (forwarded, contained in SharedKernel.Application.Abstractions)
-SharedKernel.Application.Context.SystemRequestContext.SystemRequestContext(System.Collections.Generic.IEnumerable<string!>! permissions, string! identity = "system", System.Guid? tenantId = null) -> void (forwarded, contained in SharedKernel.Application.Abstractions)
-SharedKernel.Application.Context.SystemRequestContext.TenantId.get -> System.Guid? (forwarded, contained in SharedKernel.Application.Abstractions)
-SharedKernel.Application.Context.SystemRequestContext.UserId.get -> string? (forwarded, contained in SharedKernel.Application.Abstractions)
 SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>
 SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>.<Clone>$() -> SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>!
 SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>.Deconstruct(out TDomainEvent DomainEvent) -> void
@@ -47,7 +25,6 @@ SharedKernel.Application.Streaming.IStreamQueryHandler<TQuery, TResponse>
 override SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>.Equals(object? obj) -> bool
 override SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>.GetHashCode() -> int
 override SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>.ToString() -> string!
-static SharedKernel.Application.Context.AnonymousRequestContext.Instance.get -> SharedKernel.Application.Context.AnonymousRequestContext! (forwarded, contained in SharedKernel.Application.Abstractions)
 static SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>.operator !=(SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>? left, SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>? right) -> bool
 static SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>.operator ==(SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>? left, SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>? right) -> bool
 static SharedKernel.Application.Extensions.ApplicationServiceCollectionExtensions.AddDomainEventHandler<TDomainEvent, THandler>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!

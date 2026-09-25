@@ -175,35 +175,21 @@ public static class SharedKernelLayeringRules
             .And()
             .NotHaveDependencyOn("SharedKernel.Search.ElasticSearch");
 
-    /// <summary>
-    /// The namespaces of <c>SharedKernel.Application.Abstractions</c> — the one <c>05.Application</c>
-    /// package <c>06.Persistence</c> may reference (P-558).
-    /// </summary>
-    public static readonly IReadOnlyList<string> ApplicationAbstractionsNamespaces =
-    [
-        "SharedKernel.Application.Context",
-        "SharedKernel.Application.Transactions",
-        "SharedKernel.Application.Auditing",
-    ];
-
-    // Every namespace of SharedKernel.Application and SharedKernel.Application.Behaviors(.Caching) —
-    // everything under SharedKernel.Application except the abstractions' three namespaces above.
+    // Every namespace of 05.Application (SharedKernel.Application and .Behaviors(.Caching)), MediatR and
+    // 12.Security. Since WO-086/P-564 the shared contracts live in the Foundation package
+    // SharedKernel.Execution, so no SharedKernel.Application namespace is allowed any more.
     private static readonly string[] PersistenceForbiddenNamespaces =
     [
-        "SharedKernel.Application.Behaviors",
-        "SharedKernel.Application.Messaging",
-        "SharedKernel.Application.DomainEvents",
-        "SharedKernel.Application.Extensions",
-        "SharedKernel.Application.Streaming",
+        "SharedKernel.Application",
         "MediatR",
         "SharedKernel.Security",
     ];
 
     /// <summary>
-    /// 06.Persistence may reference <c>SharedKernel.Application.Abstractions</c> (the shared
-    /// <c>IUnitOfWork</c>, <c>IRequestContext</c> and <c>IAuditTrailWriter</c>) and nothing else from
-    /// <c>05.Application</c> — never <c>SharedKernel.Application</c>, <c>.Behaviors</c>, MediatR, or
-    /// <c>12.Security</c>.
+    /// 06.Persistence reaches the shared <c>IUnitOfWork</c>, <c>IRequestContext</c> and
+    /// <c>IAuditTrailWriter</c> through the Foundation package <c>SharedKernel.Execution</c> and must
+    /// never reference <c>05.Application</c> (<c>SharedKernel.Application</c>, <c>.Behaviors</c>),
+    /// MediatR, or <c>12.Security</c>.
     /// </summary>
     /// <param name="assembly">Any <c>SharedKernel.Persistence.*</c> assembly to evaluate.</param>
     /// <returns>
@@ -214,9 +200,9 @@ public static class SharedKernelLayeringRules
     /// P-558 merged the former duplicate contracts (05's local <c>IUnitOfWork</c>/<c>IAuditTrailWriter</c>
     /// seams, 06's <c>IUnitOfWork</c>/<c>ITransactionalUnitOfWork</c>/<c>IAuditTrailWriter</c> and its
     /// <c>ICurrentActorContext</c>/<c>ICurrentTenantContext</c>) into the MediatR-free
-    /// <c>SharedKernel.Application.Abstractions</c>, which 06 implements directly (06 may reference
-    /// 01-05). Everything else in <c>05.Application</c> carries MediatR and the pipeline, which
-    /// persistence must never depend on; <c>12.Security</c> stays out entirely — identity reaches
+    /// <c>SharedKernel.Application.Abstractions</c>, which WO-086/P-564 moved to the Foundation package
+    /// <c>SharedKernel.Execution</c>; 06 implements them directly. <c>05.Application</c> carries MediatR
+    /// and the pipeline, which persistence must never depend on; <c>12.Security</c> stays out entirely — identity reaches
     /// persistence only through <c>IRequestContext</c>.
     /// </para>
     /// <para>
@@ -235,8 +221,8 @@ public static class SharedKernelLayeringRules
 
     /// <summary>
     /// Returns the names of every assembly <paramref name="assembly"/> references that 06.Persistence
-    /// must not: <c>SharedKernel.Application</c>, <c>SharedKernel.Application.Behaviors*</c>,
-    /// <c>MediatR</c> and any <c>SharedKernel.Security*</c>. Empty when compliant.
+    /// must not: any <c>SharedKernel.Application*</c>, <c>MediatR</c> and any
+    /// <c>SharedKernel.Security*</c>. Empty when compliant.
     /// </summary>
     /// <param name="assembly">Any <c>SharedKernel.Persistence.*</c> assembly to evaluate.</param>
     /// <returns>The offending referenced assembly names.</returns>
@@ -247,8 +233,8 @@ public static class SharedKernelLayeringRules
         return assembly.GetReferencedAssemblies()
             .Select(reference => reference.Name ?? string.Empty)
             .Where(name =>
-                name is "SharedKernel.Application" or "MediatR"
-                || name.StartsWith("SharedKernel.Application.Behaviors", StringComparison.Ordinal)
+                name is "MediatR"
+                || name.StartsWith("SharedKernel.Application", StringComparison.Ordinal)
                 || name.StartsWith("SharedKernel.Security", StringComparison.Ordinal))
             .ToList();
     }

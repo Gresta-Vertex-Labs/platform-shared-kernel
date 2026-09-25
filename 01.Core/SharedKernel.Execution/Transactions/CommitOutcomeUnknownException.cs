@@ -1,4 +1,4 @@
-namespace SharedKernel.Application.Transactions;
+namespace SharedKernel.Execution.Transactions;
 
 /// <summary>
 /// The <c>COMMIT</c> of a unit of work failed in a way that leaves its outcome unknown: the connection broke,

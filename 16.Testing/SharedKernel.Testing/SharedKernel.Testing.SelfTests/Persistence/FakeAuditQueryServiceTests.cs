@@ -1,5 +1,5 @@
 using FluentAssertions;
-using SharedKernel.Application.Auditing;
+using SharedKernel.Execution.Auditing;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.EfCore.Auditing;
 using SharedKernel.Testing.Persistence;

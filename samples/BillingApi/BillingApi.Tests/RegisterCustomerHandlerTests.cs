@@ -2,7 +2,7 @@ using BillingApi.Application;
 using BillingApi.Domain;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
-using SharedKernel.Application.Transactions;
+using SharedKernel.Execution.Transactions;
 using SharedKernel.Persistence.Testing;
 using SharedKernel.Primitives.Clocks;
 using Xunit;

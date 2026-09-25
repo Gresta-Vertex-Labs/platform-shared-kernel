@@ -38,7 +38,7 @@
     -->
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
     <!--
-      SharedKernel.Application.Abstractions — IRequestContext and ActorKind, rebuilt on the consumer
+      SharedKernel.Execution — IRequestContext and ActorKind, rebuilt on the consumer
       from the identity headers a message arrived with (P-561).
 
       This is a NAMED layering grant, recorded in the root CLAUDE.md Hard rules and mechanically
@@ -47,11 +47,11 @@
       and a messaging-local copy of it would mean 06.Persistence could not read what a consumer
       resolved — which is the entire point of carrying the identity across the bus.
 
-      It reaches SharedKernel.Application.Abstractions ONLY — never MediatR, SharedKernel.Application
+      It reaches SharedKernel.Execution ONLY — never MediatR, SharedKernel.Application
       or .Behaviors — and within it only the Context types. That package itself references nothing but
       SharedKernel.Primitives, which this package already had, so the dependency graph does not grow.
     -->
-    <ProjectReference Include="..\..\05.Application\SharedKernel.Application.Abstractions\SharedKernel.Application.Abstractions.csproj" />
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Execution\SharedKernel.Execution.csproj" />
   </ItemGroup>
   <ItemGroup>
     <!--

@@ -1,6 +1,6 @@
 using System.Data;
 
-namespace SharedKernel.Application.Transactions;
+namespace SharedKernel.Execution.Transactions;
 
 /// <summary>
 /// The single commit boundary of a service: saves staged changes, and runs a whole unit of work

@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
-using SharedKernel.Application.Transactions;
+using SharedKernel.Execution.Transactions;
 using SharedKernel.Domain.Aggregates;
 using SharedKernel.Persistence.Abstractions.Repositories;
 using SharedKernel.Persistence.EfCore.Context;

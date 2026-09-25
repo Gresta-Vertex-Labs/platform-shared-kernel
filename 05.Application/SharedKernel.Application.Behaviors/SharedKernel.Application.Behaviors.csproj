@@ -41,7 +41,7 @@ See the package README for the pipeline diagram, the failure matrix and the full
     <ProjectReference Include="..\SharedKernel.Application\SharedKernel.Application.csproj" />
     <!-- IUnitOfWork, IAuditTrailWriter/AuditEntry/AuditOutcome and IRequestContext — the contracts
          06.Persistence implements directly, so no composition-root adapter is needed. -->
-    <ProjectReference Include="..\SharedKernel.Application.Abstractions\SharedKernel.Application.Abstractions.csproj" />
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Execution\SharedKernel.Execution.csproj" />
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
   </ItemGroup>
   <ItemGroup>

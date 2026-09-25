@@ -1,4 +1,4 @@
-namespace SharedKernel.Application.Transactions;
+namespace SharedKernel.Execution.Transactions;
 
 /// <summary>
 /// A unit of work was rolled back although its outermost operation completed successfully, because work that

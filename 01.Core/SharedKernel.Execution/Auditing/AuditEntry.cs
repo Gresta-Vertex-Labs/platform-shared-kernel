@@ -1,4 +1,4 @@
-namespace SharedKernel.Application.Auditing;
+namespace SharedKernel.Execution.Auditing;
 
 /// <summary>
 /// What the caller knows about an audited action, passed to <see cref="IAuditTrailWriter.RecordAsync"/>.

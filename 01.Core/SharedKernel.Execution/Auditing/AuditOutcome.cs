@@ -1,4 +1,4 @@
-namespace SharedKernel.Application.Auditing;
+namespace SharedKernel.Execution.Auditing;
 
 /// <summary>The outcome of the action an <see cref="AuditEntry"/> describes.</summary>
 public enum AuditOutcome

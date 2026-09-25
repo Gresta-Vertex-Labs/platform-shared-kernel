@@ -1,6 +1,6 @@
 using MediatR;
 using SharedKernel.Application.Behaviors.Shared;
-using SharedKernel.Application.Context;
+using SharedKernel.Execution.Context;
 using SharedKernel.Primitives.Errors;
 
 namespace SharedKernel.Application.Behaviors.Authorization;

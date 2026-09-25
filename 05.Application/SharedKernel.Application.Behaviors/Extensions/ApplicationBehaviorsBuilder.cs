@@ -8,11 +8,11 @@ using SharedKernel.Application.Behaviors.Commands;
 using SharedKernel.Application.Behaviors.Idempotency;
 using SharedKernel.Application.Behaviors.Logging;
 using SharedKernel.Application.Behaviors.Metrics;
-using SharedKernel.Application.Auditing;
+using SharedKernel.Execution.Auditing;
 using SharedKernel.Application.Behaviors.Transaction;
 using SharedKernel.Application.Behaviors.Validation;
-using SharedKernel.Application.Context;
-using SharedKernel.Application.Transactions;
+using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Transactions;
 
 namespace SharedKernel.Application.Behaviors.Extensions;
 
@@ -258,7 +258,7 @@ public sealed class ApplicationBehaviorsBuilder
         if (_authorization && !IsRegistered(typeof(IRequestContext)))
         {
             throw new InvalidOperationException(
-                "AddAuthorizationBehavior() requires SharedKernel.Application.Context.IRequestContext " +
+                "AddAuthorizationBehavior() requires SharedKernel.Execution.Context.IRequestContext " +
                 "to be registered in the service collection. Register an implementation before calling Build().");
         }
 
@@ -272,14 +272,14 @@ public sealed class ApplicationBehaviorsBuilder
         if (_transaction && !IsRegistered(typeof(IUnitOfWork)))
         {
             throw new InvalidOperationException(
-                "AddTransactionBehavior() requires SharedKernel.Application.Transactions.IUnitOfWork " +
+                "AddTransactionBehavior() requires SharedKernel.Execution.Transactions.IUnitOfWork " +
                 "to be registered in the service collection. Register an implementation before calling Build().");
         }
 
         if (_auditing && !IsRegistered(typeof(IAuditTrailWriter)))
         {
             throw new InvalidOperationException(
-                "AddAuditingBehavior() requires SharedKernel.Application.Auditing.IAuditTrailWriter " +
+                "AddAuditingBehavior() requires SharedKernel.Execution.Auditing.IAuditTrailWriter " +
                 "to be registered in the service collection. Register an implementation before calling Build().");
         }
 

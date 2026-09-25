@@ -1,5 +1,5 @@
 using FluentAssertions;
-using SharedKernel.Application.Auditing;
+using SharedKernel.Execution.Auditing;
 using SharedKernel.Testing.Clocks;
 using SharedKernel.Testing.Persistence;
 

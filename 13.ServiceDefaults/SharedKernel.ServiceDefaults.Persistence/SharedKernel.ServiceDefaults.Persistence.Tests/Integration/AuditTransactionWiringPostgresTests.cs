@@ -5,10 +5,10 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
-using SharedKernel.Application.Auditing;
+using SharedKernel.Execution.Auditing;
 using SharedKernel.Application.Behaviors.Auditing;
 using SharedKernel.Application.Behaviors.Extensions;
-using SharedKernel.Application.Context;
+using SharedKernel.Execution.Context;
 using SharedKernel.Application.Messaging;
 using SharedKernel.Cryptography.Signing;
 using SharedKernel.Persistence;
@@ -97,7 +97,7 @@ public sealed class AuditTransactionWiringPostgresTests
             .UseAuditTrail());
 
         // No bridge: EfUnitOfWork and EfAuditTrailWriter implement the shared IUnitOfWork and
-        // IAuditTrailWriter (SharedKernel.Application.Abstractions) the behaviors consume directly.
+        // IAuditTrailWriter (SharedKernel.Execution) the behaviors consume directly.
 
         services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblyContaining<AuditTransactionWiringPostgresTests>());
 

@@ -21,6 +21,8 @@
     <Project Path="01.Core/SharedKernel.Cryptography.Argon2/SharedKernel.Cryptography.Argon2.Tests/SharedKernel.Cryptography.Argon2.Tests.csproj" />
     <Project Path="01.Core/SharedKernel.Cryptography.KeyVault.Azure/SharedKernel.Cryptography.KeyVault.Azure.csproj" />
     <Project Path="01.Core/SharedKernel.Cryptography.KeyVault.Azure/SharedKernel.Cryptography.KeyVault.Azure.Tests/SharedKernel.Cryptography.KeyVault.Azure.Tests.csproj" />
+    <Project Path="01.Core/SharedKernel.Execution/SharedKernel.Execution.csproj" />
+    <Project Path="01.Core/SharedKernel.Execution/SharedKernel.Execution.Tests/SharedKernel.Execution.Tests.csproj" />
     <Project Path="01.Core/SharedKernel.DataPrivacy/SharedKernel.DataPrivacy.csproj" />
     <Project Path="01.Core/SharedKernel.DataPrivacy/SharedKernel.DataPrivacy.Tests/SharedKernel.DataPrivacy.Tests.csproj" />
     <Project Path="01.Core/SharedKernel.FeatureManagement/SharedKernel.FeatureManagement.csproj" />
@@ -59,8 +61,6 @@
     <Project Path="04.Contracts/SharedKernel.Contracts/SharedKernel.Contracts.Tests/SharedKernel.Contracts.Tests.csproj" />
   </Folder>
   <Folder Name="/05.Application/">
-    <Project Path="05.Application/SharedKernel.Application.Abstractions/SharedKernel.Application.Abstractions.csproj" />
-    <Project Path="05.Application/SharedKernel.Application.Abstractions/SharedKernel.Application.Abstractions.Tests/SharedKernel.Application.Abstractions.Tests.csproj" />
     <Project Path="05.Application/SharedKernel.Application.Behaviors.Caching/SharedKernel.Application.Behaviors.Caching.csproj" />
     <Project Path="05.Application/SharedKernel.Application.Behaviors.Caching/SharedKernel.Application.Behaviors.Caching.Tests/SharedKernel.Application.Behaviors.Caching.Tests.csproj" />
     <Project Path="05.Application/SharedKernel.Application.Behaviors/SharedKernel.Application.Behaviors.csproj" />

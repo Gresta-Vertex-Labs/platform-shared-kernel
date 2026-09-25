@@ -1,4 +1,4 @@
-namespace SharedKernel.Application.Context;
+namespace SharedKernel.Execution.Context;
 
 /// <summary>
 /// Classifies the kind of actor a request, a persisted change or an audit record is attributed to.

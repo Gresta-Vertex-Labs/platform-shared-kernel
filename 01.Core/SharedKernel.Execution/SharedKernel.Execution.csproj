@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <SharedKernelTier>Foundation</SharedKernelTier>
+    <!-- NuGet packaging metadata -->
+    <Description>The execution context every layer of a service shares, with no MediatR and no ORM: who is calling and for which tenant (IRequestContext, TenantId, TenantScope), how work commits (IUnitOfWork), and how an audited action is recorded (IAuditTrailWriter).
+
+The application pipeline consumes these contracts, persistence implements the unit of work and the audit writer, and the host builds the request context once per inbound call. Because this package sits in the foundation tier, every package that needs to know the caller or the transaction references it directly instead of reaching into the application layer.
+
+IRequestContextAccessor carries the current context across async calls, so an outbound HTTP client, a message publisher or a background job reads the same tenant and correlation id the inbound call established.
+
+Depends only on SharedKernel.Primitives.</Description>
+    <PackageReleaseNotes>First release.
+
+WHAT IS IN IT
+- The caller: IRequestContext (identity, tenant, actor kind, client/session/impersonator, correlation id, permission check), ActorKind, SystemRequestContext and AnonymousRequestContext.
+- The tenant: TenantId (a Guid-backed value type) and TenantScope (an explicit tenant or the global scope).
+- The ambient context: IRequestContextAccessor, RequestContextAccessor and RequestContextScope.
+- The unit of work: IUnitOfWork — SaveChangesAsync, retry-safe ExecuteInTransactionAsync overloads with an optional isolation level, IsTransactionActive and OnBeforeCommit.
+- The audit writer: IAuditTrailWriter, AuditEntry, AuditOutcome.
+
+THINGS WORTH KNOWING BEFORE YOU ADOPT IT
+- The operation passed to ExecuteInTransactionAsync may run more than once under a retrying execution strategy. Load what it needs inside the delegate.
+- A Result/Result&lt;T&gt; failure returned from ExecuteInTransactionAsync&lt;TResult&gt; commits nothing.
+- A Succeeded audit entry is written inside the business transaction; a Failed one is written on its own.</PackageReleaseNotes>
+    <PackageTags>execution-context;request-context;tenant;unit-of-work;transaction;auditing;shared-kernel</PackageTags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <WarningsAsErrors>$(WarningsAsErrors);nullable;CS1591;RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <!--
+      Foundation tier: every package that needs the caller, the tenant or the unit of work references this
+      one, so anything added here is inherited by all of them. References only SharedKernel.Primitives
+      (IHasSuccessFlag, used to roll back a failed Result).
+    -->
+    <ProjectReference Include="..\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+</Project>

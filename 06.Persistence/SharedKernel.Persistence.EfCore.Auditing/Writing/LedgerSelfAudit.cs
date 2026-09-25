@@ -1,6 +1,6 @@
 using System.Data.Common;
 using System.Text.Json;
-using SharedKernel.Application.Auditing;
+using SharedKernel.Execution.Auditing;
 using SharedKernel.Persistence.Abstractions.Connections;
 using SharedKernel.Persistence.EfCore.Auditing.Storage;
 

@@ -16,7 +16,7 @@ namespace SharedKernel.Application.Behaviors.Auditing;
 /// </para>
 /// <para>
 /// All values are opaque, caller-pre-serialized strings — <see cref="AuditingBehavior{TRequest,TResponse}"/>
-/// and the injected <see cref="SharedKernel.Application.Auditing.IAuditTrailWriter"/> never parse or diff them. Never derived via a
+/// and the injected <see cref="SharedKernel.Execution.Auditing.IAuditTrailWriter"/> never parse or diff them. Never derived via a
 /// reflection-based property walk over an arbitrary <c>TRequest</c>/<c>TResponse</c>.
 /// </para>
 /// <para>

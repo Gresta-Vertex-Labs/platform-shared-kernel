@@ -3,7 +3,7 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\SharedKernel.Application.Abstractions.csproj" />
+    <ProjectReference Include="..\SharedKernel.Execution.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="xunit" />

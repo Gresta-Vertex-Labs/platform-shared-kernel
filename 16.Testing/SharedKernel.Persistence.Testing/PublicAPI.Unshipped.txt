@@ -1,10 +1,10 @@
 #nullable enable
 SharedKernel.Persistence.Testing.FakeAuditTrailWriter
 SharedKernel.Persistence.Testing.FakeAuditTrailWriter.FakeAuditTrailWriter() -> void
-SharedKernel.Persistence.Testing.FakeAuditTrailWriter.RecordAsync(SharedKernel.Application.Auditing.AuditEntry! entry, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-SharedKernel.Persistence.Testing.FakeAuditTrailWriter.Recorded.get -> System.Collections.Generic.IReadOnlyList<SharedKernel.Application.Auditing.AuditEntry!>!
+SharedKernel.Persistence.Testing.FakeAuditTrailWriter.RecordAsync(SharedKernel.Execution.Auditing.AuditEntry! entry, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SharedKernel.Persistence.Testing.FakeAuditTrailWriter.Recorded.get -> System.Collections.Generic.IReadOnlyList<SharedKernel.Execution.Auditing.AuditEntry!>!
 SharedKernel.Persistence.Testing.FakeAuditTrailWriter.Reset() -> void
-SharedKernel.Persistence.Testing.FakeAuditTrailWriter.ShouldHaveAudited(string! action, string! resourceType, string! resourceId) -> SharedKernel.Application.Auditing.AuditEntry!
+SharedKernel.Persistence.Testing.FakeAuditTrailWriter.ShouldHaveAudited(string! action, string! resourceType, string! resourceId) -> SharedKernel.Execution.Auditing.AuditEntry!
 SharedKernel.Persistence.Testing.FakeAuditTrailWriter.SimulateFailure.get -> bool
 SharedKernel.Persistence.Testing.FakeAuditTrailWriter.SimulateFailure.set -> void
 SharedKernel.Persistence.Testing.FakeCrossTenantScope
@@ -96,7 +96,7 @@ SharedKernel.Persistence.Testing.PostgresTestServer.AdminConnectionString.get ->
 SharedKernel.Persistence.Testing.PostgresTestServer.CreateDatabaseAsync(string? name = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Persistence.Testing.PostgresTestDatabase!>!
 SharedKernel.Persistence.Testing.PostgresTestServer.DisposeAsync() -> System.Threading.Tasks.ValueTask
 SharedKernel.Persistence.Testing.TestRequestContext
-SharedKernel.Persistence.Testing.TestRequestContext.ActorKind.get -> SharedKernel.Application.Context.ActorKind
+SharedKernel.Persistence.Testing.TestRequestContext.ActorKind.get -> SharedKernel.Execution.Context.ActorKind
 SharedKernel.Persistence.Testing.TestRequestContext.ActorKind.set -> void
 SharedKernel.Persistence.Testing.TestRequestContext.ClientId.get -> string?
 SharedKernel.Persistence.Testing.TestRequestContext.ClientId.set -> void

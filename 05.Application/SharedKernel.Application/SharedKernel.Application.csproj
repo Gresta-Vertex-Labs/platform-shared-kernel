@@ -4,14 +4,13 @@
     <!-- NuGet packaging metadata -->
     <Description>The CQRS vocabulary a .NET service speaks over MediatR: commands, queries, their handlers, the caller behind a request, and the bridge that turns a domain event into a MediatR notification.
 
-Every handler returns Result or Result&lt;T&gt;, so an expected failure is a value the caller must handle rather than an exception thrown past it. ICommandBase and IQueryBase let a pipeline behavior constrain to "any command" or "any query" once, so behaviors that must not touch reads are never resolved for them. IRequestContext exposes who is calling (authenticated, user, tenant, permission check) without this layer knowing anything about HTTP or JWTs — SystemRequestContext and AnonymousRequestContext ship for callers with no HTTP request, such as a workflow activity or a scheduled job.
+Every handler returns Result or Result&lt;T&gt;, so an expected failure is a value the caller must handle rather than an exception thrown past it. ICommandBase and IQueryBase let a pipeline behavior constrain to "any command" or "any query" once, so behaviors that must not touch reads are never resolved for them. The caller behind a request (IRequestContext) lives in SharedKernel.Execution, which every layer shares.
 
 This package declares shapes and performs no I/O. The behaviors that log, authorize, validate, commit and audit those requests live in SharedKernel.Application.Behaviors. Depends only on SharedKernel.Primitives, SharedKernel.Domain and MediatR 12.4.1 (the last MIT-licensed release, pinned deliberately).</Description>
     <PackageReleaseNotes>First release.
 
 WHAT IS IN IT
 - Commands and queries: ICommandBase, ICommand, ICommand&lt;TResponse&gt;, IQueryBase, IQuery&lt;TResponse&gt;, and the handler aliases ICommandHandler&lt;&gt;/ICommandHandler&lt;,&gt;/IQueryHandler&lt;,&gt;. The aliases add no members — they exist so a handler class states its role instead of reading as IRequestHandler&lt;PlaceOrder, Result&lt;Guid&gt;&gt;.
-- The caller: IRequestContext, plus SystemRequestContext (a named identity with an explicit permission set) and AnonymousRequestContext.
 - Streaming reads: IStreamQuery&lt;TResponse&gt; and IStreamQueryHandler&lt;,&gt;.
 - Domain events: IDomainEventHandler&lt;TDomainEvent&gt;, DomainEventNotification&lt;TDomainEvent&gt; and MediatRDomainEventDispatcher, registered by AddSharedKernelApplication()/AddDomainEventHandler&lt;,&gt;().
 
@@ -20,7 +19,6 @@ THINGS WORTH KNOWING BEFORE YOU ADOPT IT
 - AddSharedKernelApplication() registers the domain-event dispatcher and nothing else. It never calls AddMediatR — your service owns which assemblies are scanned — and it registers no pipeline behavior.
 - Streaming queries get no pipeline behaviors at all. MediatR routes streams through a separate interface, and this platform registers nothing there, so logging, validation and authorization for a stream are the handler's own job. Stream items are deliberately not wrapped in Result&lt;T&gt;.
 - Domain events dispatch serially, after the database write. 06.Persistence's EfUnitOfWork saves first, then dispatches, so a handler that throws fails the request without undoing the row that was already committed. Work that must not be able to fail the request belongs behind an integration event.
-- SystemRequestContext takes an explicit permission list. There is no "system bypasses authorization" mode.
 
 See the package README for the decision guide, the walkthrough and the full reference.</PackageReleaseNotes>
     <PackageTags>cqrs;mediatr;application;command;query;streaming;domain-events;shared-kernel</PackageTags>
@@ -35,12 +33,6 @@ See the package README for the decision guide, the walkthrough and the full refe
     -->
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
     <ProjectReference Include="..\..\03.Domain\SharedKernel.Domain\SharedKernel.Domain.csproj" />
-    <!--
-      IRequestContext and its two implementations live in SharedKernel.Application.Abstractions
-      (MediatR-free, shared with 06.Persistence) and are type-forwarded from this assembly — see
-      Context/TypeForwards.cs.
-    -->
-    <ProjectReference Include="..\SharedKernel.Application.Abstractions\SharedKernel.Application.Abstractions.csproj" />
   </ItemGroup>
   <ItemGroup>
     <!--

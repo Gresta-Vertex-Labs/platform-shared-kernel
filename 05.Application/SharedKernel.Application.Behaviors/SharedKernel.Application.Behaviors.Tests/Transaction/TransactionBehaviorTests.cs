@@ -145,7 +145,7 @@ public sealed class TransactionBehaviorTests
             return Result.Success(); // the outer handler ignores the nested failure
         }, CancellationToken.None);
 
-        await act.Should().ThrowAsync<SharedKernel.Application.Transactions.TransactionRolledBackException>();
+        await act.Should().ThrowAsync<SharedKernel.Execution.Transactions.TransactionRolledBackException>();
         unitOfWork.CommitCount.Should().Be(0);
         sequence.Should().Equal("transaction.begin", "transaction.rollback");
     }

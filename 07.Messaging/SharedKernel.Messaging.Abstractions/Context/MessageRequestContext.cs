@@ -1,4 +1,4 @@
-using SharedKernel.Application.Context;
+using SharedKernel.Execution.Context;
 
 namespace SharedKernel.Messaging.Abstractions.Context;
 
@@ -43,15 +43,15 @@ public sealed class MessageRequestContext : IRequestContext
     /// </param>
     /// <param name="userId">The publishing caller's subject id, or <see langword="null"/>.</param>
     /// <param name="actorKind">
-    /// The kind of actor that published. Defaults to <see cref="Application.Context.ActorKind.Anonymous"/> so an
+    /// The kind of actor that published. Defaults to <see cref="Execution.Context.ActorKind.Anonymous"/> so an
     /// absent or unparsable header degrades to the least-privileged answer rather than to
-    /// <see cref="Application.Context.ActorKind.User"/>.
+    /// <see cref="Execution.Context.ActorKind.User"/>.
     /// </param>
     /// <param name="clientId">The OAuth2 client id the publisher authenticated through, if known.</param>
     public MessageRequestContext(
         Guid? tenantId,
         string? userId = null,
-        ActorKind actorKind = Application.Context.ActorKind.Anonymous,
+        ActorKind actorKind = Execution.Context.ActorKind.Anonymous,
         string? clientId = null)
     {
         TenantId = tenantId;

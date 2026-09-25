@@ -10,7 +10,7 @@
   </PropertyGroup>
   <ItemGroup>
     <!-- IRepository/IReadRepository, IDbConnectionFactory, ICrossTenantScope; IUnitOfWork, IRequestContext and
-         IAuditTrailWriter arrive through SharedKernel.Application.Abstractions. -->
+         IAuditTrailWriter arrive through SharedKernel.Execution. -->
     <ProjectReference Include="..\..\06.Persistence\SharedKernel.Persistence.Abstractions\SharedKernel.Persistence.Abstractions.csproj" />
     <!-- PostgresTestDatabase: the migration helpers it applies (row-level security, audit ledger, tenant keys) and
          the EF Core SQL generator that turns them into statements. -->

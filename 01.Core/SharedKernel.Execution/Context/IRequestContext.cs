@@ -1,4 +1,4 @@
-namespace SharedKernel.Application.Context;
+namespace SharedKernel.Execution.Context;
 
 /// <summary>
 /// The identity of the caller currently executing a request: who it is, which tenant it acts for,
@@ -19,13 +19,14 @@ namespace SharedKernel.Application.Context;
 /// <see cref="TenantId"/> matches no tenant-scoped row and rejects every tenant-scoped write.
 /// </para>
 /// <para>
-/// Correlation id is deliberately <b>not</b> exposed here — it flows ambiently through
-/// <see cref="System.Diagnostics.Activity"/> baggage.
+/// Inbound adapters (the HTTP middleware, the message consume filter, the workflow interceptor, the
+/// scheduler) make the context ambient with <see cref="RequestContextScope.Begin"/>, so code without a DI
+/// scope reads it through <see cref="IRequestContextAccessor"/>.
 /// </para>
 /// <para>
-/// <see cref="ActorKind"/>, <see cref="ClientId"/>, <see cref="SessionId"/> and
-/// <see cref="ImpersonatorId"/> have default implementations, so an implementation written before
-/// they existed keeps compiling; override them wherever the identity source knows the answer.
+/// <see cref="ActorKind"/>, <see cref="ClientId"/>, <see cref="SessionId"/>, <see cref="ImpersonatorId"/>
+/// and <see cref="CorrelationId"/> have default implementations, so an implementation written before they
+/// existed keeps compiling; override them wherever the identity source knows the answer.
 /// </para>
 /// </remarks>
 public interface IRequestContext
@@ -70,6 +71,17 @@ public interface IRequestContext
     /// or <see langword="null"/> when the caller acts as itself.
     /// </summary>
     string? ImpersonatorId => null;
+
+    /// <summary>
+    /// Gets the correlation id of the call, as received from the caller or created when the call entered
+    /// the system, or <see langword="null"/> when the call has none.
+    /// </summary>
+    /// <remarks>
+    /// Outbound clients forward this value unchanged, so one id follows a request across every service it
+    /// reaches. It is not the trace id: a trace id is replaced at every process boundary that starts a new
+    /// trace, a correlation id is not.
+    /// </remarks>
+    string? CorrelationId => null;
 
     /// <summary>
     /// Determines whether the current caller holds <paramref name="permission"/>.

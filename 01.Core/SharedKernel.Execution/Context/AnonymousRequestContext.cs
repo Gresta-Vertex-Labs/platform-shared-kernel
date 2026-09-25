@@ -1,4 +1,4 @@
-namespace SharedKernel.Application.Context;
+namespace SharedKernel.Execution.Context;
 
 /// <summary>
 /// An <see cref="IRequestContext"/> for a command or query dispatched with no caller identity at

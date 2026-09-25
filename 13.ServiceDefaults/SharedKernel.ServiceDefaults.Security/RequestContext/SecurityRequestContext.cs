@@ -1,4 +1,4 @@
-using SharedKernel.Application.Context;
+using SharedKernel.Execution.Context;
 using SharedKernel.Security.Abstractions;
 
 namespace SharedKernel.ServiceDefaults.Security;
@@ -19,10 +19,10 @@ namespace SharedKernel.ServiceDefaults.Security;
 /// a client-credentials caller without one) and <see langword="null"/> when unauthenticated.
 /// <see cref="TenantId"/> maps <see cref="ITenantProvider"/>'s <see cref="Guid.Empty"/> "no tenant"
 /// sentinel to <see langword="null"/>, which fails closed. <see cref="ActorKind"/> maps
-/// <see cref="IdentityKind.User"/> to <see cref="Application.Context.ActorKind.User"/>,
-/// <see cref="IdentityKind.ServicePrincipal"/> to <see cref="Application.Context.ActorKind.Service"/>,
-/// an authenticated <see cref="IdentityKind.System"/> identity to <see cref="Application.Context.ActorKind.System"/>,
-/// and every unauthenticated caller to <see cref="Application.Context.ActorKind.Anonymous"/> — never to
+/// <see cref="IdentityKind.User"/> to <see cref="Execution.Context.ActorKind.User"/>,
+/// <see cref="IdentityKind.ServicePrincipal"/> to <see cref="Execution.Context.ActorKind.Service"/>,
+/// an authenticated <see cref="IdentityKind.System"/> identity to <see cref="Execution.Context.ActorKind.System"/>,
+/// and every unauthenticated caller to <see cref="Execution.Context.ActorKind.Anonymous"/> — never to
 /// <c>System</c>, so an audit trail cannot mistake an anonymous request for the platform's own background work.
 /// Permissions are checked with <see cref="IUserContext.HasPermission"/> (ordinal).
 /// </para>

@@ -1,16 +1,16 @@
 using FluentAssertions;
 using MediatR;
 using Microsoft.Extensions.DependencyInjection;
-using SharedKernel.Application.Auditing;
+using SharedKernel.Execution.Auditing;
 using SharedKernel.Application.Behaviors.Auditing;
-using SharedKernel.Application.Transactions;
+using SharedKernel.Execution.Transactions;
 using SharedKernel.Application.Behaviors.Authorization;
 using SharedKernel.Application.Behaviors.Commands;
 using SharedKernel.Application.Behaviors.Extensions;
 using SharedKernel.Application.Behaviors.Idempotency;
 using SharedKernel.Application.Behaviors.Tests.Support;
 using SharedKernel.Application.Behaviors.Transaction;
-using SharedKernel.Application.Context;
+using SharedKernel.Execution.Context;
 using SharedKernel.Application.Messaging;
 using SharedKernel.Primitives.Results;
 

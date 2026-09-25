@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <SharedKernelTier>Host</SharedKernelTier>
-    <Description>Connects 12.Security's caller identity to the shared request context for Platform.SharedKernel microservices: AddSharedKernelRequestContext() registers an IRequestContext (SharedKernel.Application.Abstractions) over IUserContext/ITenantProvider, so the MediatR authorization behavior, persistence audit columns, tenant filters and the audit trail all read the same authenticated caller. One implementation, no per-layer bridges.</Description>
+    <Description>Connects 12.Security's caller identity to the shared request context for Platform.SharedKernel microservices: AddSharedKernelRequestContext() registers an IRequestContext (SharedKernel.Execution) over IUserContext/ITenantProvider, so the MediatR authorization behavior, persistence audit columns, tenant filters and the audit trail all read the same authenticated caller. One implementation, no per-layer bridges.</Description>
     <PackageTags>shared-kernel;service-defaults;security;request-context;identity;multi-tenancy</PackageTags>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <!-- Per-project: the SDK assigns false before the Directory.Build.targets default is evaluated. -->
@@ -14,7 +14,7 @@
     -->
     <ProjectReference Include="..\SharedKernel.ServiceDefaults\SharedKernel.ServiceDefaults.csproj" />
     <ProjectReference Include="..\..\12.Security\SharedKernel.Security.Abstractions\SharedKernel.Security.Abstractions.csproj" />
-    <ProjectReference Include="..\..\05.Application\SharedKernel.Application.Abstractions\SharedKernel.Application.Abstractions.csproj" />
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Execution\SharedKernel.Execution.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />

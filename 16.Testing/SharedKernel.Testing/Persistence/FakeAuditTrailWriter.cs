@@ -1,6 +1,6 @@
 using System.Diagnostics;
-using SharedKernel.Application.Auditing;
-using SharedKernel.Application.Context;
+using SharedKernel.Execution.Auditing;
+using SharedKernel.Execution.Context;
 using SharedKernel.Persistence.EfCore.Auditing;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Propagation;

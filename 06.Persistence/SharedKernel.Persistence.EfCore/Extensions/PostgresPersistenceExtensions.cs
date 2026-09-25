@@ -170,7 +170,7 @@ internal sealed class PersistenceStartupValidator<TContext>(IServiceProvider ser
         try
         {
             var factory = services.GetRequiredService<ICallerDbContextFactory<TContext>>();
-            using var context = factory.CreateDbContextAsync(Application.Context.AnonymousRequestContext.Instance).GetAwaiter().GetResult();
+            using var context = factory.CreateDbContextAsync(Execution.Context.AnonymousRequestContext.Instance).GetAwaiter().GetResult();
             var entityTypeCount = context.Model.GetEntityTypes().Count();
             PersistenceContextLog.ModelValidated(logger, typeof(TContext).Name, entityTypeCount);
             return ValidateOptionsResult.Success;

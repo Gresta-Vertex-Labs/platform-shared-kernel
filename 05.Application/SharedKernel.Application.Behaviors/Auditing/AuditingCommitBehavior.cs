@@ -1,8 +1,8 @@
 using MediatR;
-using SharedKernel.Application.Auditing;
+using SharedKernel.Execution.Auditing;
 using SharedKernel.Application.Behaviors.Shared;
 using SharedKernel.Application.Messaging;
-using SharedKernel.Application.Transactions;
+using SharedKernel.Execution.Transactions;
 
 namespace SharedKernel.Application.Behaviors.Auditing;
 

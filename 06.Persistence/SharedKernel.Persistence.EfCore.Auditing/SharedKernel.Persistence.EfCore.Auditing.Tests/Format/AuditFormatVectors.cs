@@ -1,5 +1,5 @@
-using SharedKernel.Application.Auditing;
-using SharedKernel.Application.Context;
+using SharedKernel.Execution.Auditing;
+using SharedKernel.Execution.Context;
 using SharedKernel.Persistence.EfCore.Auditing.Format;
 
 namespace SharedKernel.Persistence.EfCore.Auditing.Tests.Format;

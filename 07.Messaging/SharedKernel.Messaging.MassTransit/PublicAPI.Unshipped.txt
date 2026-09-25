@@ -57,7 +57,7 @@ SharedKernel.Messaging.MassTransit.HeaderPropagation.AmbientCorrelationHeaderPro
 SharedKernel.Messaging.MassTransit.HeaderPropagation.AmbientCorrelationHeaderPropagator.Propagate(SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext! context) -> void
 SharedKernel.Messaging.MassTransit.HeaderPropagation.RequestContextHeaderPropagator
 SharedKernel.Messaging.MassTransit.HeaderPropagation.RequestContextHeaderPropagator.Propagate(SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext! context) -> void
-SharedKernel.Messaging.MassTransit.HeaderPropagation.RequestContextHeaderPropagator.RequestContextHeaderPropagator(SharedKernel.Application.Context.IRequestContext? requestContext = null) -> void
+SharedKernel.Messaging.MassTransit.HeaderPropagation.RequestContextHeaderPropagator.RequestContextHeaderPropagator(SharedKernel.Execution.Context.IRequestContext? requestContext = null) -> void
 SharedKernel.Messaging.MassTransit.HeaderPropagation.TenantHeaderPropagator
 SharedKernel.Messaging.MassTransit.HeaderPropagation.TenantHeaderPropagator.Propagate(SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext! context) -> void
 SharedKernel.Messaging.MassTransit.HeaderPropagation.TenantHeaderPropagator.TenantHeaderPropagator(SharedKernel.Messaging.Abstractions.TenantContext.ITenantContextAccessor? tenantContextAccessor = null) -> void

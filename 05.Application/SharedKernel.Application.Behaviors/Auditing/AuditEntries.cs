@@ -1,4 +1,4 @@
-using SharedKernel.Application.Auditing;
+using SharedKernel.Execution.Auditing;
 
 namespace SharedKernel.Application.Behaviors.Auditing;
 

@@ -2,8 +2,8 @@ using System.Buffers;
 using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
-using SharedKernel.Application.Auditing;
-using SharedKernel.Application.Context;
+using SharedKernel.Execution.Auditing;
+using SharedKernel.Execution.Context;
 
 namespace SharedKernel.Persistence.EfCore.Auditing.Format;
 

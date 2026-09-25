@@ -18,14 +18,14 @@ override SharedKernel.Messaging.Abstractions.MessageBus.MessageBusHealth.Equals(
 override SharedKernel.Messaging.Abstractions.MessageBus.MessageBusHealth.GetHashCode() -> int
 override SharedKernel.Messaging.Abstractions.MessageBus.MessageBusHealth.ToString() -> string!
 SharedKernel.Messaging.Abstractions.Context.IInboundMessageContextAccessor
-SharedKernel.Messaging.Abstractions.Context.IInboundMessageContextAccessor.Current.get -> SharedKernel.Application.Context.IRequestContext?
+SharedKernel.Messaging.Abstractions.Context.IInboundMessageContextAccessor.Current.get -> SharedKernel.Execution.Context.IRequestContext?
 SharedKernel.Messaging.Abstractions.Context.MessageContextHeaders
 SharedKernel.Messaging.Abstractions.Context.MessageRequestContext
-SharedKernel.Messaging.Abstractions.Context.MessageRequestContext.ActorKind.get -> SharedKernel.Application.Context.ActorKind
+SharedKernel.Messaging.Abstractions.Context.MessageRequestContext.ActorKind.get -> SharedKernel.Execution.Context.ActorKind
 SharedKernel.Messaging.Abstractions.Context.MessageRequestContext.ClientId.get -> string?
 SharedKernel.Messaging.Abstractions.Context.MessageRequestContext.HasPermissionAsync(string! permission, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<bool>
 SharedKernel.Messaging.Abstractions.Context.MessageRequestContext.IsAuthenticated.get -> bool
-SharedKernel.Messaging.Abstractions.Context.MessageRequestContext.MessageRequestContext(System.Guid? tenantId, string? userId = null, SharedKernel.Application.Context.ActorKind actorKind = SharedKernel.Application.Context.ActorKind.Anonymous, string? clientId = null) -> void
+SharedKernel.Messaging.Abstractions.Context.MessageRequestContext.MessageRequestContext(System.Guid? tenantId, string? userId = null, SharedKernel.Execution.Context.ActorKind actorKind = SharedKernel.Execution.Context.ActorKind.Anonymous, string? clientId = null) -> void
 SharedKernel.Messaging.Abstractions.Context.MessageRequestContext.TenantId.get -> System.Guid?
 SharedKernel.Messaging.Abstractions.Context.MessageRequestContext.UserId.get -> string?
 SharedKernel.Messaging.Abstractions.Errors.MessagingErrorCodes

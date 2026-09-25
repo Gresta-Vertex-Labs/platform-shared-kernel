@@ -1,6 +1,6 @@
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
-using SharedKernel.Application.Auditing;
+using SharedKernel.Execution.Auditing;
 using SharedKernel.Application.Behaviors.Auditing;
 using SharedKernel.Application.Behaviors.Tests.Support;
 using SharedKernel.Application.Messaging;

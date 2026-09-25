@@ -2,7 +2,7 @@ using System.Security.Cryptography;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
-using SharedKernel.Application.Auditing;
+using SharedKernel.Execution.Auditing;
 using SharedKernel.Cryptography.Signing;
 using SharedKernel.Persistence.EfCore.Auditing.Format;
 using SharedKernel.Persistence.EfCore.Auditing.Storage;
@@ -203,7 +203,7 @@ public sealed class TamperDetectionTests(PostgreSqlContainerFixture fixture)
             Action = "OrderApproved",
             Outcome = AuditOutcome.Succeeded,
             ActorId = "attacker",
-            ActorKind = SharedKernel.Application.Context.ActorKind.User,
+            ActorKind = SharedKernel.Execution.Context.ActorKind.User,
             SourceService = "system",
             OccurredOn = AuditTimestamp.Truncate(DateTimeOffset.UtcNow),
             PayloadHash = AuditV3Format.ComputePayloadCommitment(salt, null, null),

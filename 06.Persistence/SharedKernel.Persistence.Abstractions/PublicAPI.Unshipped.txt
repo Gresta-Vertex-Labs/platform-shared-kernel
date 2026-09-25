@@ -2,7 +2,7 @@
 SharedKernel.Persistence.Abstractions.Connections.IDbConnectionFactory
 SharedKernel.Persistence.Abstractions.Connections.IDbConnectionFactory.CreateConnectionAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Data.Common.DbConnection!>!
 SharedKernel.Persistence.Abstractions.Context.CrossTenantScope
-SharedKernel.Persistence.Abstractions.Context.CrossTenantScope.CrossTenantScope(SharedKernel.Application.Context.IRequestContext! requestContext, Microsoft.Extensions.Logging.ILogger<SharedKernel.Persistence.Abstractions.Context.CrossTenantScope!>? logger = null) -> void
+SharedKernel.Persistence.Abstractions.Context.CrossTenantScope.CrossTenantScope(SharedKernel.Execution.Context.IRequestContext! requestContext, Microsoft.Extensions.Logging.ILogger<SharedKernel.Persistence.Abstractions.Context.CrossTenantScope!>? logger = null) -> void
 SharedKernel.Persistence.Abstractions.Context.CrossTenantScope.Enter(string! reason) -> System.IDisposable!
 SharedKernel.Persistence.Abstractions.Context.CrossTenantScope.IsActive.get -> bool
 SharedKernel.Persistence.CrossTenantScopeServiceCollectionExtensions

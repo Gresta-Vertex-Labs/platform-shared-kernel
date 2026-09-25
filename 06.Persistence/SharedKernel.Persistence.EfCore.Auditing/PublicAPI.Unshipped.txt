@@ -82,7 +82,7 @@ SharedKernel.Persistence.EfCore.Auditing.AuditRecord.Action.get -> string!
 SharedKernel.Persistence.EfCore.Auditing.AuditRecord.Action.init -> void
 SharedKernel.Persistence.EfCore.Auditing.AuditRecord.ActorId.get -> string!
 SharedKernel.Persistence.EfCore.Auditing.AuditRecord.ActorId.init -> void
-SharedKernel.Persistence.EfCore.Auditing.AuditRecord.ActorKind.get -> SharedKernel.Application.Context.ActorKind
+SharedKernel.Persistence.EfCore.Auditing.AuditRecord.ActorKind.get -> SharedKernel.Execution.Context.ActorKind
 SharedKernel.Persistence.EfCore.Auditing.AuditRecord.ActorKind.init -> void
 SharedKernel.Persistence.EfCore.Auditing.AuditRecord.AfterSnapshot.get -> string?
 SharedKernel.Persistence.EfCore.Auditing.AuditRecord.AfterSnapshot.init -> void
@@ -109,7 +109,7 @@ SharedKernel.Persistence.EfCore.Auditing.AuditRecord.KeyId.get -> string?
 SharedKernel.Persistence.EfCore.Auditing.AuditRecord.KeyId.init -> void
 SharedKernel.Persistence.EfCore.Auditing.AuditRecord.OccurredOn.get -> System.DateTimeOffset
 SharedKernel.Persistence.EfCore.Auditing.AuditRecord.OccurredOn.init -> void
-SharedKernel.Persistence.EfCore.Auditing.AuditRecord.Outcome.get -> SharedKernel.Application.Auditing.AuditOutcome
+SharedKernel.Persistence.EfCore.Auditing.AuditRecord.Outcome.get -> SharedKernel.Execution.Auditing.AuditOutcome
 SharedKernel.Persistence.EfCore.Auditing.AuditRecord.Outcome.init -> void
 SharedKernel.Persistence.EfCore.Auditing.AuditRecord.PayloadErased.get -> bool
 SharedKernel.Persistence.EfCore.Auditing.AuditRecord.PayloadErased.init -> void

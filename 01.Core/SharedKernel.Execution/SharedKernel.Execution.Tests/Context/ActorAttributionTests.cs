@@ -1,7 +1,7 @@
 using FluentAssertions;
-using SharedKernel.Application.Context;
+using SharedKernel.Execution.Context;
 
-namespace SharedKernel.Application.Abstractions.Tests.Context;
+namespace SharedKernel.Execution.Tests.Context;
 
 /// <summary>
 /// The attribution members persistence reads off <see cref="IRequestContext"/>: an implementation

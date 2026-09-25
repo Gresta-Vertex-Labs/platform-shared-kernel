@@ -1,8 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using SharedKernel.Application.Auditing;
-using SharedKernel.Application.Context;
-using SharedKernel.Application.Transactions;
+using SharedKernel.Execution.Auditing;
+using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Transactions;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.Abstractions.Repositories;
