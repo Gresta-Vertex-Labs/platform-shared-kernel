@@ -3471,10 +3471,10 @@ times across this pass's build waves, to be pre-existing and unrelated to any fi
 | P-564 | `SharedKernel.Execution` (context, `TenantId`, accessor, unit of work, audit); delete `Application.Abstractions` | `●` |
 | P-565 | Tenant and caller unification (`TenantId`/`TenantScope`/`ActorKind` everywhere) | `●` (`8e64d774`) |
 | P-566 | Correlation and context propagation; fixes three of the four defects | `●` (`5edb87cd`) |
-| P-567 | Application contracts and kernel mediator abstraction; `Application.Pipeline`; `Application.Mediator.MediatR` | `○` |
+| P-567 | Application contracts and kernel mediator abstraction; `Application.Pipeline`; `Application.Mediator.MediatR` | `●` (`941fe578`) |
 | P-568 | Unified `SharedKernel.Idempotency.Abstractions` | `○` |
 | P-569 | `IReadinessProbe` contract; collapse probe-only ServiceDefaults packages; delete the 13→17/19 grants | `●` (`1064694a`) |
-| P-570 | Optional-dependency satellites (MassTransit transports/outbox, `Presentation.Core`, SignalR.Redis, GraphQL move) | `○` |
+| P-570 | Optional-dependency satellites (MassTransit transports/outbox, `Presentation.Core`, SignalR.Redis, GraphQL move) | `●` (`79a5840d`) |
 | P-571 | Per-capability packable `*.Testing` packages | `○` |
 | P-572 | Release train and CI | `○` |
 | P-573 | Samples as the reference architecture | `○` |

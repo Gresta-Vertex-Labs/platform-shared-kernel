@@ -1,7 +1,7 @@
 # WO-086 Foundation Refactor — Session Handoff
 
 > **For the next Claude session.** Read this file first, then follow "How to resume". Everything you need is
-> linked from here. Last updated: 2026-09-25, after P-566 (`5edb87cd`) was committed.
+> linked from here. Last updated: 2026-09-25, after P-567 (`941fe578`) and P-570 (`79a5840d`) were committed.
 
 ## 1. Where the plan lives
 
@@ -37,9 +37,9 @@
 | P-565 | 3 — Tenant and caller unification | ● done (`8e64d774`) |
 | P-569 | 7 — `IReadinessProbe` contract, collapse probe-only ServiceDefaults packages | ● done (`1064694a`) |
 | P-566 | 4 — Correlation and context propagation (fixes defects 1, 3, 4) | ● done (`5edb87cd`) |
-| P-567 | 5 — Application contracts and mediator abstraction | ○ **next** |
-| P-570 | 8 — Optional-dependency satellites | ○ **next** (parallel with P-567) |
-| P-568 | 6 — Unified idempotency abstractions | ○ |
+| P-567 | 5 — Application contracts and mediator abstraction | ● done (`941fe578`) |
+| P-570 | 8 — Optional-dependency satellites | ● done (`79a5840d`) |
+| P-568 | 6 — Unified idempotency abstractions | ○ **next** |
 | P-571 | 9 — Per-capability `*.Testing` packages | ○ |
 | P-572 | 10 — Release train and CI | ○ |
 | P-573 | 11 — Samples as the reference architecture | ○ |
@@ -76,6 +76,19 @@
 - Proof: `ServiceDefaults.Security.Tests/Propagation/EndToEndPropagationTests` (HTTP→REST, HTTP→gRPC, HTTP→bus→consumer→REST, job→REST; in-process, no Docker).
 - Open for P-574: Security.Oidc/.ApiKey/.Mtls/.Totp (Adapter tier) still reference ASP.NET Core, which conflicts with the "no `Microsoft.AspNetCore.Http` outside Host" definition of done. The SignalR hub filter does not set a correlation id yet.
 
+**P-567 — kernel mediator:**
+- `SharedKernel.Application` (Abstractions tier, no MediatR; references Primitives, Domain, Caching.Abstractions): `IRequest<T>`, `IRequestHandler<,>`, `ISender` (`Send`, `CreateStream`), `IPipelineBehavior<,>` + argument-less `RequestHandlerContinuation<T>` (MediatR-shaped, so `next()` call sites are unchanged), `IStreamQuery<T>`/`IStreamQueryHandler<,>`/`IStreamPipelineBehavior<,>`, `IRequestValidator<T>`, `IDomainEventHandler<T>`. Markers in `.Authorization`, `.Idempotency`, `.Auditing`, `.Logging`, `.Caching`, `.Commands`, `.Validation`.
+- `SharedKernel.Application.Pipeline` (was Behaviors; Host): `RequestPipeline<,>`/`StreamRequestPipeline<,>` (first registered = outermost), native `DomainEventDispatcher` via `AddSharedKernelDomainEvents()`; no FluentValidation. `.Pipeline.Caching` (was Behaviors.Caching). `AddSharedKernelApplication()` and `MediatRDomainEventDispatcher` are gone.
+- `SharedKernel.Application.Mediator.MediatR` (Host) — the only MediatR reference (locked by `DependencyGraphRulesTests.MediatR_IsReferencedOnlyByTheMediatorAdapter`): `AddSharedKernelMediatR(params Assembly[])`.
+- `Validation.FluentValidation`: `AddFluentValidationRequestValidators()`. SK0015 deleted. `ApplicationPipelineTestHarness.Build()` needs no mediator.
+- Still in `Application.Pipeline.Idempotency` for P-568: `IRequestIdempotencyStore`, `IdempotencyBeginResult`, `IdempotencyBeginStatus`.
+
+**P-570 — satellites:**
+- `Messaging.MassTransit.RabbitMq` / `.AzureServiceBus` / `.EfCore` (Adapter; extension methods on the core builder via the new `MessagingTransport` extension point — the fluent chain and usings are unchanged). The core has no RabbitMQ/Azure/EF Core dependency.
+- `Presentation.Core` (Host; `Require*` attributes in `SharedKernel.Presentation.Authorization`, `ErrorTypeStatusCodeMap`/`GrpcStatusCodeMap` in `SharedKernel.Presentation.Errors` — new namespaces). Grpc no longer references WebApi. Trade-off: WebApi hosts get `Grpc.Core.Api` transitively; move `GrpcStatusCodeMap` back to Grpc if that matters.
+- `Presentation.SignalR.Redis` (`WithRedisBackplane`); `Presentation.GraphQL` (moved from `Communication.GraphQL`). Locked by `OptionalDependencySatelliteRulesTests`.
+- For P-573: the GraphQL surfaces still live in 11's consumer-verify. Placeholder READMEs for the five new packages need writing in P-575.
+
 **P-569 — readiness probes:**
 - `SharedKernel.Primitives.Health`: `IReadinessProbe`, `ReadinessReport`, `ReadinessStatus`, `AddReadinessProbe<T>()` / `AddReadinessProbe(factory)` (one per target), `GetRequiredReadinessProbe(name)`. Probe constructors must be cheap; resolve clients inside `ProbeAsync`.
 - Probes: `messaging`, `redis`, `cache`, `encryption-key-provider`, `field-encryption`, `audit-sealing`, `storage-{store}`, `search-{provider}-{index}`, `vector-store-{provider}-{collection}`, `workflows`, `scheduler`. The old probe interfaces and `*ReadinessHealthCheck` adapters are gone. Audit lag limit is now `AuditSealerOptions.MaxReadyLag`.
@@ -90,16 +103,15 @@
 
 ### Remaining tier-baseline entries (`eng/tier-baseline.txt`)
 ```
-SharedKernel.Application->package:MediatR                          ← removed by P-567
-SharedKernel.Idempotency.EfCore->SharedKernel.Application.Behaviors ← removed by P-568
-SharedKernel.Idempotency.Redis->SharedKernel.Application.Behaviors  ← removed by P-568
+SharedKernel.Idempotency.EfCore->SharedKernel.Application.Pipeline ← removed by P-568
+SharedKernel.Idempotency.Redis->SharedKernel.Application.Pipeline  ← removed by P-568
 ```
 
 ## 4. How to resume
 
 1. `git checkout refactor/wo-086-foundation` and `git log --oneline -5`. The newest commit should be `053e5612` (or later).
 2. Read [`FOUNDATION-PLAN.md`](FOUNDATION-PLAN.md): the "Target architecture" section plus the section for the step you're about to do.
-3. Start **P-567** (Step 5) and **P-570** (Step 8) in parallel. Each step's full task list is in FOUNDATION-PLAN.md. Parallel phases worked well in `C:\wt\<phase>` worktrees on `wo086/<phase>` branches, rebased onto each other afterwards; the only conflicts were additive `PublicAPI.Unshipped.txt` hunks (keep both sides).
+3. Start **P-568** (Step 6), then P-571. Each step's full task list is in FOUNDATION-PLAN.md. Parallel phases worked well in `C:\wt\<phase>` worktrees on `wo086/<phase>` branches, rebased onto each other afterwards; the only conflicts were additive `PublicAPI.Unshipped.txt` hunks (keep both sides).
 4. For each step:
    1. Implement it directly, or with `general-purpose` agents given the plan as the spec. **Do not use the domain `*-phase-implementer` agents or domain brains yet**: they still describe the old numbered-layer rules until P-576.
    2. Delete any `eng/tier-baseline.txt` entries the step fixes.
@@ -119,11 +131,11 @@ dotnet test  Platform.SharedKernel.Unit.slnf -c Release --no-build
 dotnet test  Platform.SharedKernel.Integration.slnf -c Release --no-build   # Docker; for persistence/messaging/caching/idempotency steps
 ```
 
-Counts after P-566 (use these to spot regressions):
-- **Build:** 0 errors, 38 warnings (same codes as the baseline).
-- **Unit:** 57 assemblies / 7,510 tests (9 assemblies left with the deleted ServiceDefaults packages in P-569).
-- **Architecture:** 364 tests.
-- **Integration:** 22 assemblies / 2,908 tests.
+Counts after P-567 + P-570 (use these to spot regressions):
+- **Build:** 0 errors, 37 warnings (SKTIER003 for MediatR is gone).
+- **Unit:** 61 assemblies / 7,542 tests.
+- **Architecture:** 377 tests.
+- **Integration:** 24 assemblies / 2,894 tests (16 Azure Service Bus/outbox tests moved to Unit in P-570).
 - **Known flakes under full-suite load** (re-run alone before treating as a regression): `MeilisearchContainerFixtureTests`, `CacheLevelMetricsTests.SecondReadOnTheSameNode_IsAnL1Hit`, Redis socket errors in `Idempotency.Redis.Tests`, two `Messaging.MassTransit.Tests`, one `Testing.SelfTests`.
 - **Docker** must be running for Integration and for `ServiceDefaults.Persistence.Tests`. Start Docker Desktop first; it was down at the start of the 2026-09-25 session.
 
