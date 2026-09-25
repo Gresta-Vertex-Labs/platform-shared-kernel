@@ -1,5 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Host</SharedKernelTier>
     <Description>Search-index readiness health check for Platform.SharedKernel microservices: AddSearchReadinessCheck(indexName), probing SharedKernel.Search.Abstractions ISearchIndexProvisioner. Registered on /health/ready only. Split out of SharedKernel.ServiceDefaults (WO-084).</Description>
     <PackageTags>shared-kernel;service-defaults;health-checks;readiness;search</PackageTags>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>

@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Abstractions</SharedKernelTier>
     <!-- NuGet packaging metadata -->
     <Description>The contracts shared by the application pipeline and the persistence layer, with no MediatR and no ORM: who is calling (IRequestContext), how work commits (IUnitOfWork), and how an audited action is recorded (IAuditTrailWriter).
 

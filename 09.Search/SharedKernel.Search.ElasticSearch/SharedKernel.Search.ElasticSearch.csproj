@@ -1,5 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Adapter</SharedKernelTier>
     <!--
       Root policy: <IsAotCompatible>true</IsAotCompatible> is never added to any 09.Search .csproj —
       the tag activates trim/AOT analyzers globally and forces AOT compliance on the entire project,

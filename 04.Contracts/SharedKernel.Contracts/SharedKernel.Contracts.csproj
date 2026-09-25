@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Model</SharedKernelTier>
     <!-- NuGet packaging metadata -->
     <Description>Cross-service wire contracts for .NET services: integration events carried in a CloudEvents 1.0 JSON envelope with stable, attribute-declared event names and versions; offset-paged and cursor-paged result lists; validated page and cursor requests; and an opaque keyset cursor codec. Depends only on SharedKernel.Primitives.</Description>
     <PackageReleaseNotes>First release.</PackageReleaseNotes>

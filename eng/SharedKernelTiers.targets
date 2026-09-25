@@ -1,0 +1,135 @@
+<Project>
+
+  <!--
+    Package tiers (WO-086 / P-563). Replaces the numbered-layer rules with a dependency matrix that the
+    build enforces. The spec is docs/refactor/FOUNDATION-PLAN.md, "Tiers".
+
+    Every packable project declares <SharedKernelTier> in its own csproj. The tier says which project
+    inside a consuming service is expected to reference the package, and so what it may reference:
+
+      Foundation    Foundation
+      Model         Foundation, Model
+      Abstractions  Foundation, Model, Abstractions
+      Adapter       Foundation, Model, Abstractions, plus the adapters named in
+                    <SharedKernelAllowedAdapterReferences> (a provider's own base, e.g. Obs -> S3)
+      Host          Foundation, Model, Abstractions, Adapter, Host
+      Testing       everything except Tooling
+      Tooling       nothing
+
+    Model and Abstractions packages may additionally take only Microsoft.Extensions.*.Abstractions
+    NuGet packages at runtime; analyzer/build-only references (PrivateAssets="all") are exempt.
+
+    Diagnostics:
+      SKTIER001  ProjectReference to a tier this project's tier may not reference
+      SKTIER002  Adapter -> Adapter reference not declared in SharedKernelAllowedAdapterReferences
+      SKTIER003  Model/Abstractions project takes a runtime NuGet package outside the allow-list
+      SKTIER004  a tiered project references a project that declares no tier
+      SKTIER005  a packable library declares no tier
+
+    Edges listed in eng/tier-baseline.txt ("From->To", or "From->package:Id") are reported as warnings
+    instead of errors. The baseline only ever shrinks; WO-086 P-574 empties it and removes this downgrade.
+
+    Test projects, consumer-verify harnesses and samples declare no tier and are not checked: they are
+    consumers, and may reference anything.
+  -->
+
+  <PropertyGroup>
+    <_SkTierBaselineFile>$(MSBuildThisFileDirectory)tier-baseline.txt</_SkTierBaselineFile>
+    <_SkAbstractionsPackageAllowList>^Microsoft\.Extensions\.[A-Za-z.]*Abstractions$</_SkAbstractionsPackageAllowList>
+  </PropertyGroup>
+
+  <!--
+    Direct references only. Captured at evaluation time, because before CoreCompile the SDK's
+    IncludeTransitiveProjectReferences appends the whole transitive closure to @(ProjectReference).
+    The matrix governs what a csproj declares; a chain of allowed edges (Auditing -> EfCore -> Npgsql)
+    must not be reported as the shortcut edge (Auditing -> Npgsql).
+  -->
+  <ItemGroup>
+    <_SkDirectProjectReference Include="@(ProjectReference)" />
+  </ItemGroup>
+
+  <!-- Queried by referencing projects. Evaluation-only: builds nothing. -->
+  <Target Name="GetSharedKernelTier" Returns="@(_SkTierInfo)">
+    <ItemGroup>
+      <_SkTierInfo Include="$(MSBuildProjectName)" Tier="$(SharedKernelTier)" />
+    </ItemGroup>
+  </Target>
+
+  <Target Name="ValidateSharedKernelTier"
+          BeforeTargets="CoreCompile"
+          DependsOnTargets="_SkRequireTier;_SkValidateTierEdges"
+          Condition="'$(DesignTimeBuild)' != 'true' and '$(IsTestProject)' != 'true'" />
+
+  <!-- SKTIER005: a packable library must say which tier it belongs to. -->
+  <Target Name="_SkRequireTier">
+    <Error Code="SKTIER005"
+           Condition="'$(SharedKernelTier)' == '' and '$(IsPackable)' != 'false' and '$(OutputType)' != 'Exe'"
+           Text="SKTIER005: $(MSBuildProjectName) is packable but declares no &lt;SharedKernelTier&gt;. Add one of Foundation, Model, Abstractions, Adapter, Host, Testing, Tooling (see eng/SharedKernelTiers.targets)." />
+  </Target>
+
+  <Target Name="_SkValidateTierEdges" Condition="'$(SharedKernelTier)' != ''">
+    <Error Code="SKTIER000"
+           Condition="'$(SharedKernelTier)' != 'Foundation' and '$(SharedKernelTier)' != 'Model' and '$(SharedKernelTier)' != 'Abstractions' and '$(SharedKernelTier)' != 'Adapter' and '$(SharedKernelTier)' != 'Host' and '$(SharedKernelTier)' != 'Testing' and '$(SharedKernelTier)' != 'Tooling'"
+           Text="SKTIER000: $(MSBuildProjectName) declares unknown tier '$(SharedKernelTier)'." />
+
+    <MSBuild Projects="@(_SkDirectProjectReference)"
+             Targets="GetSharedKernelTier"
+             BuildInParallel="$(BuildInParallel)"
+             SkipNonexistentProjects="true"
+             RemoveProperties="TargetFramework;RuntimeIdentifier;SelfContained"
+             Condition="'@(_SkDirectProjectReference)' != ''">
+      <Output TaskParameter="TargetOutputs" ItemName="_SkReferencedTier" />
+    </MSBuild>
+
+    <ReadLinesFromFile File="$(_SkTierBaselineFile)" Condition="Exists('$(_SkTierBaselineFile)')">
+      <Output TaskParameter="Lines" ItemName="_SkBaselineLine" />
+    </ReadLinesFromFile>
+
+    <PropertyGroup>
+      <_SkAllowedTiers Condition="'$(SharedKernelTier)' == 'Foundation'">;Foundation;</_SkAllowedTiers>
+      <_SkAllowedTiers Condition="'$(SharedKernelTier)' == 'Model'">;Foundation;Model;</_SkAllowedTiers>
+      <_SkAllowedTiers Condition="'$(SharedKernelTier)' == 'Abstractions'">;Foundation;Model;Abstractions;</_SkAllowedTiers>
+      <_SkAllowedTiers Condition="'$(SharedKernelTier)' == 'Adapter'">;Foundation;Model;Abstractions;</_SkAllowedTiers>
+      <_SkAllowedTiers Condition="'$(SharedKernelTier)' == 'Host'">;Foundation;Model;Abstractions;Adapter;Host;</_SkAllowedTiers>
+      <_SkAllowedTiers Condition="'$(SharedKernelTier)' == 'Testing'">;Foundation;Model;Abstractions;Adapter;Host;Testing;</_SkAllowedTiers>
+      <_SkAllowedTiers Condition="'$(SharedKernelTier)' == 'Tooling'">;</_SkAllowedTiers>
+      <_SkAllowedAdapters>;$(SharedKernelAllowedAdapterReferences.Replace(' ', ''));</_SkAllowedAdapters>
+      <_SkBaseline>;@(_SkBaselineLine);</_SkBaseline>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <_SkUntiered Include="@(_SkReferencedTier)" Condition="'%(_SkReferencedTier.Tier)' == ''" />
+
+      <_SkForbidden Include="@(_SkReferencedTier)"
+                    Condition="'%(_SkReferencedTier.Tier)' != '' and !$([System.String]::Copy('$(_SkAllowedTiers)').Contains(';%(_SkReferencedTier.Tier);')) and !$([System.String]::Copy('$(_SkAllowedAdapters)').Contains(';%(_SkReferencedTier.Identity);'))" />
+      <_SkEdge Include="@(_SkForbidden)" Code="SKTIER002"
+               Condition="'%(_SkForbidden.Tier)' == 'Adapter' and '$(SharedKernelTier)' == 'Adapter'" />
+      <_SkEdge Include="@(_SkForbidden)" Code="SKTIER001"
+               Condition="!('%(_SkForbidden.Tier)' == 'Adapter' and '$(SharedKernelTier)' == 'Adapter')" />
+
+      <_SkPackage Include="@(PackageReference)"
+                  Condition="('$(SharedKernelTier)' == 'Model' or '$(SharedKernelTier)' == 'Abstractions') and '%(PackageReference.PrivateAssets)' != 'all' and !$([System.Text.RegularExpressions.Regex]::IsMatch('%(PackageReference.Identity)', '$(_SkAbstractionsPackageAllowList)'))" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <_SkEdgeNew Include="@(_SkEdge)" Condition="!$([System.String]::Copy('$(_SkBaseline)').Contains(';$(MSBuildProjectName)->%(_SkEdge.Identity);'))" />
+      <_SkEdgeKnown Include="@(_SkEdge)" Condition="$([System.String]::Copy('$(_SkBaseline)').Contains(';$(MSBuildProjectName)->%(_SkEdge.Identity);'))" />
+      <_SkPackageNew Include="@(_SkPackage)" Condition="!$([System.String]::Copy('$(_SkBaseline)').Contains(';$(MSBuildProjectName)->package:%(_SkPackage.Identity);'))" />
+      <_SkPackageKnown Include="@(_SkPackage)" Condition="$([System.String]::Copy('$(_SkBaseline)').Contains(';$(MSBuildProjectName)->package:%(_SkPackage.Identity);'))" />
+    </ItemGroup>
+
+    <Error Code="%(_SkEdgeNew.Code)" Condition="'@(_SkEdgeNew)' != ''"
+           Text="%(_SkEdgeNew.Code): $(MSBuildProjectName) ($(SharedKernelTier)) may not reference %(_SkEdgeNew.Identity) (%(_SkEdgeNew.Tier)). $(SharedKernelTier) may reference the tiers [$(_SkAllowedTiers)]. An Adapter may reference another Adapter only when it is named in &lt;SharedKernelAllowedAdapterReferences&gt;." />
+    <Warning Code="%(_SkEdgeKnown.Code)" Condition="'@(_SkEdgeKnown)' != ''"
+             Text="%(_SkEdgeKnown.Code) (baselined, WO-086): $(MSBuildProjectName) ($(SharedKernelTier)) -> %(_SkEdgeKnown.Identity) (%(_SkEdgeKnown.Tier)) breaks the tier matrix." />
+
+    <Error Code="SKTIER003" Condition="'@(_SkPackageNew)' != ''"
+           Text="SKTIER003: $(MSBuildProjectName) ($(SharedKernelTier)) references NuGet package %(_SkPackageNew.Identity). Model and Abstractions packages may only take Microsoft.Extensions.*.Abstractions at runtime; move the dependency to an Adapter or Host package." />
+    <Warning Code="SKTIER003" Condition="'@(_SkPackageKnown)' != ''"
+             Text="SKTIER003 (baselined, WO-086): $(MSBuildProjectName) ($(SharedKernelTier)) references NuGet package %(_SkPackageKnown.Identity)." />
+
+    <Error Code="SKTIER004" Condition="'@(_SkUntiered)' != ''"
+           Text="SKTIER004: $(MSBuildProjectName) ($(SharedKernelTier)) references %(_SkUntiered.Identity), which declares no &lt;SharedKernelTier&gt;." />
+  </Target>
+
+</Project>

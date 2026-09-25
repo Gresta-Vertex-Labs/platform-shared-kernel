@@ -1,5 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Host</SharedKernelTier>
     <Description>Temporal workflow readiness health check for Platform.SharedKernel microservices: AddWorkflowReadinessCheck, probing IWorkflowServiceProbe. Registered on /health/ready only. Holds the WO-047 13-to-17 layering grant, which permits reaching IWorkflowServiceProbe and WorkflowServiceHealth and no other SharedKernel.Workflows.Temporal type. Split out of SharedKernel.ServiceDefaults (WO-084) so a service with no workflows does not restore Temporalio.</Description>
     <PackageTags>shared-kernel;service-defaults;health-checks;readiness;temporal;workflows</PackageTags>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>

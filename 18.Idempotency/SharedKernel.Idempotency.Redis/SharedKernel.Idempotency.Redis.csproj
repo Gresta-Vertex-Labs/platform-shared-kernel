@@ -1,5 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Adapter</SharedKernelTier>
+    <SharedKernelAllowedAdapterReferences>SharedKernel.Caching.Redis.Core</SharedKernelAllowedAdapterReferences>
     <Description>Atomic, tenant-scoped, Redis-backed implementation of SharedKernel.Application.Behaviors' IRequestIdempotencyStore and SharedKernel.Messaging.Abstractions' IIdempotencyStore. Atomicity via single-round-trip Lua scripts over a per-key Redis hash (status/fingerprint/token/response); fail-closed on store unavailability by default. Built on SharedKernel.Caching.Redis.Core's shared IConnectionMultiplexer.</Description>
     <PackageTags>idempotency;redis;deduplication;shared-kernel</PackageTags>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>

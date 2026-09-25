@@ -36,6 +36,9 @@
            Text="SKPKG003: $(MSBuildProjectName) is packable but has no adjacent README.md. PackageReadmeFile is centrally set and will fail Pack without one." />
   </Target>
 
+  <!-- Package tiers and their dependency matrix (WO-086 / P-563). -->
+  <Import Project="$(MSBuildThisFileDirectory)eng/SharedKernelTiers.targets" />
+
   <Target Name="SKPKG004_TestsNeverPack" BeforeTargets="Pack" Condition="$(MSBuildProjectName.EndsWith('.Tests'))">
     <Error Condition="'$(IsPackable)' == 'true'"
            Text="SKPKG004: $(MSBuildProjectName) ends in .Tests and must never be packable, even if IsPackable=true was set by hand." />

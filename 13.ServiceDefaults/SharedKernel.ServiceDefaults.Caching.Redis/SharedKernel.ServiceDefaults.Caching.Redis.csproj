@@ -1,5 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Host</SharedKernelTier>
     <Description>Redis readiness health check for Platform.SharedKernel microservices: AddRedisHealthCheck, which pings the shared connection registered by SharedKernel.Caching.Redis.Core's AddRedisConnection through IRedisConnectionProbe and opens no connection of its own. Registered on /health/ready only. Kept apart from SharedKernel.ServiceDefaults.Caching because it alone brings the Redis client, which a service using only an in-memory cache must not restore. Split out of SharedKernel.ServiceDefaults (WO-084).</Description>
     <PackageTags>shared-kernel;service-defaults;health-checks;readiness;redis</PackageTags>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>

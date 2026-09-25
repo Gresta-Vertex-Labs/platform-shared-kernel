@@ -1,5 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Abstractions</SharedKernelTier>
     <!-- NuGet packaging metadata -->
     <Description>The CQRS vocabulary a .NET service speaks over MediatR: commands, queries, their handlers, the caller behind a request, and the bridge that turns a domain event into a MediatR notification.
 

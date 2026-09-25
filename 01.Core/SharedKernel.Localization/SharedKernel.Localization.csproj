@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Foundation</SharedKernelTier>
     <!-- NuGet packaging metadata -->
     <Description>Translated error messages and user-facing texts for .NET services. Define a message once with typed arguments (LocalizedMessage.Define&lt;Guid&gt;("order.not_found", "Order {orderId} was not found.", "orderId")) and every call site is checked by the compiler. Translations are loaded from JSON files, embedded JSON resources or .resx files, validated at startup, and filled with named placeholders formatted for the caller's culture. Errors built from a message carry their arguments, so the HTTP boundary can show "3f2a… numaralı sipariş bulunamadı." to a Turkish caller and the original English text to everyone else. A missing or broken translation always falls back to the original message, never to a blank or a raw placeholder.</Description>
     <PackageReleaseNotes>First release.</PackageReleaseNotes>

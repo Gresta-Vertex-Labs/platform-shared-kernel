@@ -1,5 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Abstractions</SharedKernelTier>
     <Description>ORM-free persistence contracts for SharedKernel services: IRepository (always tracks) and IReadRepository (never tracks) over domain specifications with offset, keyset and projected paging; EntityVersion for ETag/If-Match optimistic concurrency; set-based bulk updates and deletes; ICrossTenantScope for explicit, logged cross-tenant work; IDbConnectionFactory. No EF Core, Npgsql or Dapper dependency. Implemented by SharedKernel.Persistence.EfCore.</Description>
     <PackageTags>persistence;repository;specification;optimistic-concurrency;etag;multi-tenancy;abstractions;shared-kernel</PackageTags>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>

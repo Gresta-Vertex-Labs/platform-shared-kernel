@@ -1,5 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Adapter</SharedKernelTier>
+    <SharedKernelAllowedAdapterReferences>SharedKernel.Storage.S3</SharedKernelAllowedAdapterReferences>
     <!-- NuGet packaging metadata -->
     <Description>Huawei Cloud OBS for SharedKernel.Storage.Abstractions, over OBS's S3-compatible API and the SharedKernel.Storage.S3 implementation. Adds OBS endpoint, region and AK/SK configuration and a compatibility profile verified against a live OBS region: conditional writes and SHA-256 checksums, which OBS silently ignores, are refused with storage.not_supported instead of overwriting data or storing unchecked bytes, and downloads of encrypted objects work despite OBS ETags that are not content MD5s. Register with AddSharedKernelStorage().AddObs(configuration).AddStore("name").</Description>
     <PackageReleaseNotes>First release.</PackageReleaseNotes>

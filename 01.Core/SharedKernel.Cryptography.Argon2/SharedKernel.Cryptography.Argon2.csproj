@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Adapter</SharedKernelTier>
     <!-- NuGet packaging metadata -->
     <Description>Argon2id (RFC 9106) for SharedKernel.Cryptography's IOneWayHasher. Adds an argon2id hash algorithm that writes standard PHC strings ($argon2id$v=19$m=...,t=...,p=...$salt$hash), so hashes interoperate with other Argon2 libraries. Select it with OneWayHashing:Algorithm; existing PBKDF2 hashes keep verifying and are upgraded as users sign in. Stored costs are bounded before any work is done, so a hash written by an attacker cannot exhaust memory or CPU. Uses Konscious.Security.Cryptography.Argon2, a managed implementation with no native code. Argon2id is not FIPS 140-3 approved; keep PBKDF2 where FIPS compliance is required.</Description>
     <PackageReleaseNotes>First release.</PackageReleaseNotes>

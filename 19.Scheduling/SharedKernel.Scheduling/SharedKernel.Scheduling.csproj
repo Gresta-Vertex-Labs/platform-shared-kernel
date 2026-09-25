@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Adapter</SharedKernelTier>
     <!-- NuGet packaging metadata -->
     <Description>Lightweight cron/recurring and one-shot deferred background job dispatch for Platform.SharedKernel microservices: IScheduledJobRegistry (startup-time registration surface), ScheduledCommandJob&lt;TCommand&gt; (the sole 05.Application MediatR bridge, mirroring 17.Workflows' CommandActivity&lt;TCommand&gt;), MisfirePolicy/OverlapPolicy (mandatory, non-defaulted registration parameters), IDistributedLockService-lease-guarded (optional) cross-replica single execution, and ISchedulerServiceProbe (a zero-I/O readiness-probe primitive). Cron parsing goes exclusively through Quartz's standalone CronExpression class — never Quartz's IScheduler/JobStore machinery. A deliberate single package: no SharedKernel.Scheduling.Abstractions split exists, matching the single-provider convention already used by SharedKernel.Cryptography/.Compression/.Guards.</Description>
     <PackageTags>scheduling;cron;background-jobs;recurring;quartz;shared-kernel</PackageTags>

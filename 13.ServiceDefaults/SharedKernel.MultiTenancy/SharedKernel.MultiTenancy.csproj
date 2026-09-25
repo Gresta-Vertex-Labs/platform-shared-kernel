@@ -1,5 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Host</SharedKernelTier>
     <!-- NuGet packaging metadata -->
     <Description>Concrete multi-tenant resolution strategies for Platform.SharedKernel microservices: HTTP header, credential tenant claim, and database tenant-directory isolation, composed via TenantResolutionMiddleware and AmbientTenantProvider.</Description>
     <PackageTags>shared-kernel;multi-tenancy;tenant-resolution;middleware</PackageTags>

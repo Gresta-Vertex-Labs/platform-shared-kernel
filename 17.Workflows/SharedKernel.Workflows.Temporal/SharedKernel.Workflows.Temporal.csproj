@@ -1,5 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Adapter</SharedKernelTier>
     <!-- NuGet packaging metadata -->
     <Description>Durable Temporal workflow orchestration for Platform.SharedKernel microservices: IWorkflowDispatcher/IWorkflowHandle/IWorkflowHandle&lt;TResult&gt;/IWorkflowIdFactory (tenant-scoped durable dispatch), WorkflowBase/ActivityBase/CommandActivity&lt;TCommand&gt; (deterministic workflow authoring plus the sole 05.Application MediatR bridge), ITemporalWorkflowsBuilder (worker hosting), Result&lt;T&gt;-to-Temporal-failure mapping, AES-256-GCM payload encryption, tenant/correlation header propagation, and a readiness-probe primitive — all over the official Temporalio .NET SDK. A deliberate single package: no SharedKernel.Workflows.Abstractions split exists, because durable execution's determinism/replay/versioning programming model IS the abstraction.</Description>
     <PackageTags>workflows;temporal;durable-execution;orchestration;shared-kernel</PackageTags>

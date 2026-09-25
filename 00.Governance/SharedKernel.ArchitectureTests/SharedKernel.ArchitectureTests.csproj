@@ -1,5 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Tooling</SharedKernelTier>
     <IsPackable>true</IsPackable>
     <!-- Test-only infrastructure: NuGet marks the package so it never flows transitively
          into a consumer's production dependency graph. This makes the README's

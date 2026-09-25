@@ -1,5 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Abstractions</SharedKernelTier>
     <!-- NuGet packaging metadata -->
     <Description>Streaming, memory-bounded report/data export contracts for Platform.SharedKernel microservices: IReportExporter&lt;TRow&gt; (IAsyncEnumerable&lt;TRow&gt;-only, storage-delivered + direct-stream convenience), the ReportColumn/ReportDefinition/ReportDestination/ReportExportOutcome model, the culture-aware ReportValueFormatting default formatter, and StorageStreamingWriter — the Pipe-based delivery primitive that streams encoded bytes to IFileStorage as they are produced. Zero third-party NuGet dependencies — references only SharedKernel.Primitives and SharedKernel.Storage.Abstractions. Implemented by SharedKernel.Reporting.Csv, .Spreadsheet, and .Pdf.</Description>
     <PackageTags>reporting;export;csv;streaming;shared-kernel</PackageTags>

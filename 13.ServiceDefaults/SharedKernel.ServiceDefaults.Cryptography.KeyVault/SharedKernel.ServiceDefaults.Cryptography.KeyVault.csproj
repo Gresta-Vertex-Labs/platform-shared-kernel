@@ -1,5 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Host</SharedKernelTier>
     <Description>Azure Key Vault encryption-key-provider composition for Platform.SharedKernel microservices: AddSharedKernelKeyVaultKeyProvider registers SharedKernel.Cryptography.KeyVault.Azure as the IEncryptionKeyProvider, and AddKeyVaultKeyProviderReadinessCheck probes vault reachability with a cheap, non-cryptographic metadata read. Distinct from SharedKernel.ServiceDefaults.Configuration.KeyVault, which uses Key Vault as a configuration source. Split out of SharedKernel.ServiceDefaults (WO-084).</Description>
     <PackageTags>shared-kernel;service-defaults;azure-key-vault;kms;encryption;health-checks</PackageTags>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>

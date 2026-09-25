@@ -1,5 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Adapter</SharedKernelTier>
     <!-- NuGet packaging metadata -->
     <Description>ClosedXML-backed .xlsx spreadsheet report/data export for Platform.SharedKernel microservices. SpreadsheetReportExporter&lt;TRow&gt; writes the header row and one row per streamed TRow directly into worksheet cells as the IAsyncEnumerable&lt;TRow&gt; source is enumerated — never buffers rows into a List&lt;TRow&gt; first. IMPORTANT: ClosedXML itself exposes NO incremental/streaming write path — XLWorkbook.SaveAs materializes the full workbook object graph in memory before writing a byte to the destination. This provider is therefore NOT memory-bounded, a documented, permanent characteristic of the ClosedXML dependency (see this package's README) — use SharedKernel.Reporting.Csv for genuinely large row counts. Register via AddSpreadsheetReportExporter&lt;TRow&gt;(IConfiguration).</Description>
     <PackageTags>reporting;export;spreadsheet;excel;xlsx;closedxml;shared-kernel</PackageTags>

@@ -1,5 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Host</SharedKernelTier>
     <Description>Scheduler readiness health check for Platform.SharedKernel microservices: AddSchedulerReadinessCheck, probing ISchedulerServiceProbe. Registered on /health/ready only. Holds the P-466 13-to-19 layering grant, which permits reaching ISchedulerServiceProbe and SchedulerServiceHealth and no other SharedKernel.Scheduling type. Split out of SharedKernel.ServiceDefaults (WO-084) so a service with no scheduled jobs does not restore Quartz.</Description>
     <PackageTags>shared-kernel;service-defaults;health-checks;readiness;scheduling</PackageTags>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>

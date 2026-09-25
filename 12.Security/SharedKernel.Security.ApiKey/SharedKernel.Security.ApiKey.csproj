@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Adapter</SharedKernelTier>
     <!-- NuGet packaging metadata -->
     <Description>API key authentication for machine clients in ASP.NET Core, mapped to SharedKernel's IUserContext. Managed keys have a recognizable format (prefix, key id, 190-bit secret, checksum) that secret scanners can detect, are generated from a cryptographic random source, stored only as a SHA-256 hash, and checked for expiry and revocation; a custom IApiKeyValidator can replace the managed store. Composes with a bearer token scheme as the default authentication scheme.</Description>
     <PackageReleaseNotes>First release.</PackageReleaseNotes>

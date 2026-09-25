@@ -1,5 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Host</SharedKernelTier>
     <Description>Vector-store readiness health check for Platform.SharedKernel microservices: AddVectorStoreReadinessCheck(collectionName), probing SharedKernel.AI.Abstractions IVectorCollectionProvisioner. Registered on /health/ready only. There is deliberately no LLM-orchestration readiness check: the only honest reachability signal for a model endpoint is a billed completion call (WO-047/P-291). Split out of SharedKernel.ServiceDefaults (WO-084).</Description>
     <PackageTags>shared-kernel;service-defaults;health-checks;readiness;vector-store;ai</PackageTags>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>

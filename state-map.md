@@ -3466,8 +3466,8 @@ times across this pass's build waves, to be pre-existing and unrelated to any fi
 #### Phases
 | Phase | Step | Status |
 |---|---|---|
-| P-562 | Preparation (branch, plan, baseline) | `◐` |
-| P-563 | Tier enforcement (`SharedKernelTier`, `SKTIER001-003`, `DependencyGraphRules`, baseline) | `○` |
+| P-562 | Preparation (branch, plan, baseline) | `●` |
+| P-563 | Tier enforcement (`SharedKernelTier`, `SKTIER000-005`, `DependencyGraphRulesTests`, baseline of 3 edges) | `●` |
 | P-564 | `SharedKernel.Execution` (context, `TenantId`, accessor, unit of work, audit); delete `Application.Abstractions` | `○` |
 | P-565 | Tenant and caller unification (`TenantId`/`TenantScope`/`ActorKind` everywhere) | `○` |
 | P-566 | Correlation and context propagation; fixes three of the four defects | `○` |

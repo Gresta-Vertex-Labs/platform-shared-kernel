@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Host</SharedKernelTier>
     <!-- NuGet packaging metadata -->
     <Description>Two pipeline behaviors that put a cache around a query and evict it after the command that changed the data commits.
 

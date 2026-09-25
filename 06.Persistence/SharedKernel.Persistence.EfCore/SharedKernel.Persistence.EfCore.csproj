@@ -1,5 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Adapter</SharedKernelTier>
+    <SharedKernelAllowedAdapterReferences>SharedKernel.Persistence.Npgsql</SharedKernelAllowedAdapterReferences>
     <Description>EF Core 10 on PostgreSQL for multi-tenant services, registered with one call: builder.AddSharedKernelPostgres&lt;TContext&gt;("orders"). Conventions for snake_case, strongly-typed ids, Money, audit and soft-delete columns and xmin optimistic concurrency; open-generic repositories; a retry-safe unit of work with one transaction per scope; domain events on every save; tenant isolation by query filter, write guard and transaction-local row-level security; migrations and seeding across replicas; startup validation; JSONB and pgvector helpers.</Description>
     <PackageTags>persistence;efcore;entity-framework-core;postgresql;npgsql;multi-tenancy;row-level-security;unit-of-work;repository;optimistic-concurrency;pgvector;shared-kernel</PackageTags>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>

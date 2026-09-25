@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Adapter</SharedKernelTier>
     <!-- NuGet packaging metadata -->
     <Description>FluentValidation rules for the SharedKernel.Validation identifier types: MustBeValidIban, MustBeValidCardNumber, MustBeValidVatNumber, MustBeValidNationalId and more, plus MustBeValid&lt;T, TValue&gt; for any identifier. Each failure carries the identifier's specific error code, its translatable message values and the field path, never the rejected value, so card and national ID numbers stay out of validation results and logs. A separate package so code that does not use FluentValidation never depends on it.</Description>
     <PackageReleaseNotes>First release.</PackageReleaseNotes>

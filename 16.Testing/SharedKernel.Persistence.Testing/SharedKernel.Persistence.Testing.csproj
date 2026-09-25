@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Testing</SharedKernelTier>
     <Description>Test helpers for services built on the SharedKernel persistence packages — reference from test projects only. In-memory fakes that follow the production rules (specification evaluation, paging and cursors, a unit of work that rolls back and replays like the retrying strategy), a test IRequestContext, and a Testcontainers PostgreSQL fixture that provisions the production database roles and applies the row-level security, audit-ledger and encryption migration helpers.</Description>
     <PackageTags>persistence;testing;test-doubles;fakes;testcontainers;postgresql;integration-testing;shared-kernel</PackageTags>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>

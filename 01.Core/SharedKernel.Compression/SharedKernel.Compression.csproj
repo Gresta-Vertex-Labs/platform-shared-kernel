@@ -1,5 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Foundation</SharedKernelTier>
     <!-- NuGet packaging metadata -->
     <Description>Brotli and gzip compression for byte arrays, spans and streams, behind one IPayloadCompressor interface. A cut-short payload fails to decompress instead of silently returning part of the data, decompression stops at a configurable size limit so a small malicious payload cannot exhaust memory, and a corrupt payload returns a failed Result rather than throwing. A raw mode produces plain Brotli or gzip bytes for systems outside the platform. No third-party dependencies.</Description>
     <PackageReleaseNotes>First release.</PackageReleaseNotes>

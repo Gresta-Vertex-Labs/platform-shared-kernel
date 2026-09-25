@@ -1,5 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Host</SharedKernelTier>
     <!-- NuGet packaging metadata -->
     <Description>Server-side gRPC API surface conventions for SharedKernel microservices, the inbound counterpart to SharedKernel.Presentation.WebApi: a GrpcStatusCodeMap (ErrorType to Grpc.Core.StatusCode, a sibling to ErrorTypeStatusCodeMap, never a merge), Result&lt;T&gt; to RpcException-throwing extensions (GrpcResultExtensions), a global exception-to-RpcException mapping interceptor (GrpcExceptionInterceptor, the gRPC counterpart to IExceptionHandler), inbound correlation-id/tenant-id metadata extraction interceptors (GrpcCorrelationInterceptor, GrpcTenantContextInterceptor), declarative role/permission/step-up authorization reused verbatim from SharedKernel.Presentation.WebApi (GrpcAuthorizationInterceptor), and a single AddSharedKernelGrpc DI entry point registering every interceptor globally with a conservative inbound message-size default.</Description>
     <PackageTags>shared-kernel;grpc;rpcexception;statuscode;correlation-id;authorization;aspnetcore</PackageTags>

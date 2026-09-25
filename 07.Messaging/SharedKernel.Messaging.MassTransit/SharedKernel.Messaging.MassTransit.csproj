@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Adapter</SharedKernelTier>
     <!-- NuGet packaging metadata -->
     <Description>MassTransit 8.5.x wiring for Platform.SharedKernel microservices: MassTransitMessageBus, MassTransitEventPublisher, ConsumerBase, MessagingBusBuilder, RabbitMQ, Azure Service Bus, configurable retry, transport-native delayed delivery, atomic consumer idempotency, and transactional EF Core outbox integration. CloudEvents-compliant envelope publishing; dispatch failures are returned as messaging.* Result codes. Pinned to the 8.5.x line because that is the last Apache-2.0 MassTransit release.</Description>
     <PackageTags>messaging;masstransit;rabbitmq;azure-service-bus;outbox;cloud-events;consumer-base;shared-kernel</PackageTags>

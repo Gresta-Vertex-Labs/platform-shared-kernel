@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Host</SharedKernelTier>
     <!-- NuGet packaging metadata -->
     <Description>The cross-cutting half of a request: tracing, logging, metrics, authorization, validation, idempotency, transactions and auditing, composed in one fixed order and each opted into explicitly.
 

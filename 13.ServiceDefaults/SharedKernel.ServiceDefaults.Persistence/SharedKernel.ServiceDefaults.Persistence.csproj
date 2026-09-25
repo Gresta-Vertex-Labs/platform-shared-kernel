@@ -1,5 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Host</SharedKernelTier>
     <Description>Database readiness health checks for Platform.SharedKernel microservices: AddDatabaseReadinessCheck&lt;TContext&gt; for EF Core (via SharedKernel.Persistence.EfCore) and AddDapperDatabaseReadinessCheck for connection-factory based access (via SharedKernel.Persistence.Abstractions). Registered on /health/ready only, never /health/live. Split out of SharedKernel.ServiceDefaults (WO-084) so a service without a database does not restore the persistence stack.</Description>
     <PackageTags>shared-kernel;service-defaults;health-checks;readiness;persistence;efcore;dapper</PackageTags>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>

@@ -1,5 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Adapter</SharedKernelTier>
+    <SharedKernelAllowedAdapterReferences>SharedKernel.Caching.Redis.Core</SharedKernelAllowedAdapterReferences>
     <!-- NuGet packaging metadata -->
     <Description>Redis Pub/Sub over the shared connection from SharedKernel.Caching.Redis.Core, for loss-tolerant signals: text or JSON messages, several independent subscriptions per channel that handle messages one at a time in delivery order and end when disposed, and subscriptions restored automatically after a reconnect. At most once and not durable; not a substitute for SharedKernel.Messaging.</Description>
     <PackageReleaseNotes>First release.</PackageReleaseNotes>

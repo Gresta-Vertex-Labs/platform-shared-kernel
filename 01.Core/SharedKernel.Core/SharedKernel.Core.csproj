@@ -1,5 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Foundation</SharedKernelTier>
     <!-- NuGet packaging metadata -->
     <Description>Core building blocks for .NET services built on SharedKernel.Primitives: railway extensions for Result and Result&lt;T&gt; (Map, Bind, Ensure, Tap, Match, with Task and ValueTask overloads), exception boundaries (ResultTry), multi-result aggregation (ResultCombine), a base exception hierarchy that always carries a structured Error, and two-path guard clauses (Guard.Against returns an Error, Guard.Throw throws). No third-party dependencies.</Description>
     <PackageReleaseNotes>First release.</PackageReleaseNotes>

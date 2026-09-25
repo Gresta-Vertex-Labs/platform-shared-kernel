@@ -1,5 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Host</SharedKernelTier>
     <Description>Cache readiness health check for Platform.SharedKernel microservices: AddCacheReadinessCheck, probing the registered SharedKernel.Caching.Abstractions ICacheService. Registered on /health/ready only. Carries no Redis client; for a Redis connectivity check add SharedKernel.ServiceDefaults.Caching.Redis. Split out of SharedKernel.ServiceDefaults (WO-084).</Description>
     <PackageTags>shared-kernel;service-defaults;health-checks;readiness;caching</PackageTags>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>

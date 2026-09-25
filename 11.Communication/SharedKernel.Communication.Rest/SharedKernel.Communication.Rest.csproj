@@ -1,5 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Adapter</SharedKernelTier>
+    <SharedKernelAllowedAdapterReferences>SharedKernel.Communication.Internal</SharedKernelAllowedAdapterReferences>
     <!-- NuGet packaging metadata -->
     <Description>Typed HttpClient factory with Polly v8 resilience (StandardResilienceHandler: retry, circuit-breaker, timeout), CorrelationIdDelegatingHandler, TenantIdDelegatingHandler, ProblemDetails deserialization to Error, and fluent IRestCommunicationBuilder DI entry point.</Description>
     <PackageTags>http-client;rest;polly;resilience;correlation-id;tenant-id;problem-details;shared-kernel</PackageTags>

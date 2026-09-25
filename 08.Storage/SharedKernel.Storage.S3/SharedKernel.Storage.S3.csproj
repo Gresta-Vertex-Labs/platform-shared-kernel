@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Adapter</SharedKernelTier>
     <!-- NuGet packaging metadata -->
     <Description>Amazon S3, MinIO and S3-compatible storage for SharedKernel.Storage.Abstractions. Named stores over buckets and key prefixes; IAM roles through the default AWS credential chain (IRSA, EKS Pod Identity) or keys; named connections for buckets with different credentials; SSE-S3 and SSE-KMS; ExpectedBucketOwner; streaming multipart uploads; create-only and If-Match writes; SHA-256 checksums; presigned URLs, forms and multipart; feature flags that refuse what an S3-compatible service does not support; OpenTelemetry traces and metrics that never record object keys; startup validation. Verified against Amazon S3 and MinIO. Register with AddSharedKernelStorage().AddS3(configuration).AddStore("name").</Description>
     <PackageReleaseNotes>First release.</PackageReleaseNotes>

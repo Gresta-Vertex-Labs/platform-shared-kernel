@@ -1,5 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Adapter</SharedKernelTier>
+    <SharedKernelAllowedAdapterReferences>SharedKernel.Caching.Redis.Core</SharedKernelAllowedAdapterReferences>
     <!-- NuGet packaging metadata -->
     <Description>Redis hashes over the shared connection from SharedKernel.Caching.Redis.Core: read and write individual fields as JSON through IRedisHashService or a per-type ITypedHashStore&lt;T&gt;, with multi-field reads and writes, atomic counters, key expiry set atomically with each write, key deletion, and lookups that tell a missing field from a default value. For sessions, settings snapshots and counters.</Description>
     <PackageReleaseNotes>First release.</PackageReleaseNotes>

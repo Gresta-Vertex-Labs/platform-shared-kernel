@@ -1,5 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Adapter</SharedKernelTier>
     <!--
       QdrantFilterCompiler.CompileNode switches over the closed 8-node VectorFilter hierarchy with no
       discard arm (per this domain's hard rule). The C# compiler cannot perform closed-world

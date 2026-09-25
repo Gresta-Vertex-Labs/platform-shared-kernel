@@ -1,5 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Host</SharedKernelTier>
     <!--
       IMPORTANT: <IsAotCompatible>true</IsAotCompatible> must NEVER be added here.
       HotChocolate v16 (14.x architecture) is NOT AOT-safe. Adding this flag is a hard violation.

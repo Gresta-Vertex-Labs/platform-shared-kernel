@@ -1,5 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Tooling</SharedKernelTier>
     <!-- Roslyn analyzers MUST target netstandard2.0 — the compiler will not load any other TFM.
          This deliberately overrides Directory.Build.props' net10.0 default. Do not remove. -->
     <TargetFramework>netstandard2.0</TargetFramework>

@@ -1,5 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Foundation</SharedKernelTier>
     <!--
       Ship the XML documentation alongside the assembly. This is NOT redundant with
       Directory.Build.targets' own default: the .NET SDK assigns GenerateDocumentationFile=false

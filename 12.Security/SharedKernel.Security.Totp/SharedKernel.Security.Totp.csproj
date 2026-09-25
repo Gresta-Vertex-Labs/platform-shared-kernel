@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Adapter</SharedKernelTier>
     <!-- NuGet packaging metadata -->
     <Description>TOTP second factor and step-up authentication for ASP.NET Core on SharedKernel.Cryptography: enrollment with confirmation of the first code, recovery codes hashed at rest and redeemed once, attempt throttling, and a claims transformation that adds the otp authentication method to the caller's sign-in session for a configurable window, so IUserContext.WasAuthenticatedWith("otp") and step-up authorization attributes see it. A step-up applies to the session it was completed in, never to the user's other sessions or tokens.</Description>
     <PackageReleaseNotes>First release.</PackageReleaseNotes>

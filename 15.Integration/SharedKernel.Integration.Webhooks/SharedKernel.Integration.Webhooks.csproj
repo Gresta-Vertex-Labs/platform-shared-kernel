@@ -1,5 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Adapter</SharedKernelTier>
     <!-- NuGet packaging metadata -->
     <Description>Outbound webhook delivery for SharedKernel microservices: signed, retried, fan-out-safe dispatch of platform integration events to externally-configured HTTP subscribers (IWebhookDispatcher, WebhookDispatcher), HMAC-SHA256 request signing with replay-resistant verification (WebhookSignatureProvider, WebhookSignatureVerifier), the subscription and delivery-observation seams implemented by the consuming service (IWebhookSubscriptionStore, IWebhookDeliveryObserver), the delivery-exhausted integration event (WebhookDeliveryExhaustedEvent), and DI registration (AddSharedKernelWebhooks/WithDeliveryObserver). P-500/WO-081: the opt-in EncryptPayload path now calls SharedKernel.Cryptography's async EncryptToStringAsync with a required associated-data (AAD) argument, via the new public WebhookPayloadAssociatedData.Build(subscriptionId, deliveryId) helper — requires SharedKernel.Cryptography's P-491 AAD-bearing ISymmetricEncryptionService floor.</Description>
     <PackageTags>shared-kernel;webhooks;outbound-integration;hmac;signing;resilience;retry;httpclientfactory</PackageTags>

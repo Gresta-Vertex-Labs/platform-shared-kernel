@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Tooling</SharedKernelTier>
     <!-- Ships no assembly: this package exists only to deliver MSBuild logic and one config file.
          NU5128 is the "no lib/ref assemblies for the declared framework" warning, which is the
          intended shape here. -->

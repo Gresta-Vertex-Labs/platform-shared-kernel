@@ -1,5 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Adapter</SharedKernelTier>
     <!-- NuGet packaging metadata -->
     <Description>PdfSharp/MigraDoc-backed PDF report/data export for Platform.SharedKernel microservices, scoped to simple tabular/statement layouts only (no multi-section documents, images, charts, or headers/footers beyond one optional title). PdfReportExporter&lt;TRow&gt; builds a single MigraDoc table row-by-row from the streamed IAsyncEnumerable&lt;TRow&gt; source and renders it via PdfDocumentRenderer; MigraDoc's own table renderer paginates automatically across page breaks. IMPORTANT: MigraDoc/PdfSharp materialize the full document object model in memory before rendering — this provider is NOT memory-bounded, mitigated by its deliberately narrow scope rather than by any streaming capability (see this package's README). Register via AddPdfReportExporter&lt;TRow&gt;(IConfiguration).</Description>
     <PackageTags>reporting;export;pdf;pdfsharp;migradoc;shared-kernel</PackageTags>

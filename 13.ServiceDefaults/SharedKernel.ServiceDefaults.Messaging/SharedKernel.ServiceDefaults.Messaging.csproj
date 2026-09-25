@@ -1,5 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Host</SharedKernelTier>
     <Description>Message-bus readiness health check for Platform.SharedKernel microservices: AddMessagingReadinessCheck, probing SharedKernel.Messaging.Abstractions IMessageBusProbe against the real, already-configured bus. Registered on /health/ready only. References the messaging abstraction only, never MassTransit. Split out of SharedKernel.ServiceDefaults (WO-084).</Description>
     <PackageTags>shared-kernel;service-defaults;health-checks;readiness;messaging</PackageTags>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>

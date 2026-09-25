@@ -1,5 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Abstractions</SharedKernelTier>
     <!-- NuGet packaging metadata -->
     <Description>Provider-neutral human-facing notification delivery contracts for SharedKernel microservices: NotificationChannel, NotificationMessage&lt;TTemplateModel&gt;, NotificationAttachment (an object-storage FileReference, never inline bytes), INotificationSender (keyed-DI resolved, no router type), NotificationDeliveryResult, the delivery-observation and per-tenant sender-identity seams (INotificationDeliveryObserver, INotificationSenderIdentityResolver) implemented by the consuming service, NotificationDeliveryOptions (shared across every provider package), and DI registration (AddSharedKernelNotifications/WithNotificationDeliveryObserver). Zero I/O, zero concrete sender — implemented by SharedKernel.Integration.Notifications.Email.SendGrid and .Sms.Twilio.</Description>
     <PackageTags>shared-kernel;notifications;email;sms;outbound-integration;abstractions</PackageTags>

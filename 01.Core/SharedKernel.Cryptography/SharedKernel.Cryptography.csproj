@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Foundation</SharedKernelTier>
     <!-- NuGet packaging metadata -->
     <Description>Cryptographic building blocks on the .NET base class library, with no third-party dependencies. AES-256-GCM authenticated encryption behind a key provider (async for a KMS, synchronous for keys already in memory), key rotation helpers, envelope encryption and HKDF subkey derivation. Asymmetric signing where each key carries its algorithm (PS256–PS512, RS256–RS512, ES256–ES512). Password and secret hashing in the PHC string format with PBKDF2-SHA256, an optional pepper, and rehash-on-verify migration between algorithms. HMAC-SHA256, SHA-256 content hashing, fixed-time comparison, secure random values, and RFC 4226/6238 HOTP/TOTP with replay protection and recovery codes.</Description>
     <PackageReleaseNotes>First release.</PackageReleaseNotes>

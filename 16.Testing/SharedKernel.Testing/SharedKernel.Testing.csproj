@@ -1,5 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Testing</SharedKernelTier>
     <!--
       Never packed/published as a .nupkg (SK.16.Published P-01): consumption is ProjectReference-only
       within this mono-repo per root CLAUDE.md Test Project Rules. Packing remains a future work order

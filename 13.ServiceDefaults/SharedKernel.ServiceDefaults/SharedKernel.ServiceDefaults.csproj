@@ -1,5 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Host</SharedKernelTier>
     <!-- NuGet packaging metadata -->
     <Description>Composition base for Platform.SharedKernel microservices: AddServiceDefaults (OpenTelemetry traces, metrics, and logs with ambient CorrelationId/TenantId log enrichment, plus the startup readiness gate), liveness and readiness endpoint mapping, StartupGate, the With*Telemetry family for every SharedKernel domain, HealthCheckNames/HealthCheckTags, and opt-in rate limiting. References no other SharedKernel package. Dependency-specific readiness checks, mutual TLS, Azure Key Vault, and localization live in the SharedKernel.ServiceDefaults.* integration packages, so a service restores only the integrations it actually uses.</Description>
     <PackageTags>shared-kernel;service-defaults;opentelemetry;health-checks;kubernetes;observability</PackageTags>
