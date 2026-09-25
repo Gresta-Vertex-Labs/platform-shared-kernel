@@ -11,5 +11,9 @@
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Presentation.WebApi\SharedKernel.Presentation.WebApi.csproj" />
     <ProjectReference Include="..\SharedKernel.Presentation.SignalR\SharedKernel.Presentation.SignalR.csproj" />
+    <!-- WithRedisBackplane is its own package since P-570. -->
+    <ProjectReference Include="..\SharedKernel.Presentation.SignalR.Redis\SharedKernel.Presentation.SignalR.Redis.csproj" />
+    <!-- Grpc no longer references WebApi (P-570); the harness proves the gRPC host composes on its own. -->
+    <ProjectReference Include="..\SharedKernel.Presentation.Grpc\SharedKernel.Presentation.Grpc.csproj" />
   </ItemGroup>
 </Project>

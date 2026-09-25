@@ -6,7 +6,8 @@
 // P-402–P-408), payload/JSON-depth limits, non-default OpenAPI security schemes, RFC 8594
 // Sunset/Deprecation headers, structured security-audit logging, correlation-id format validation,
 // upload validation (WO-063, P-411–P-416), and AddSharedKernelSignalR with and without
-// WithRedisBackplane plus hub-invocation rate limiting (WO-063, P-417), confirming every surface
+// WithRedisBackplane (SharedKernel.Presentation.SignalR.Redis) plus hub-invocation rate limiting (WO-063, P-417),
+// and a gRPC host on SharedKernel.Presentation.Grpc without WebApi (P-570), confirming every surface
 // composes into a resolvable DI container / request pipeline with zero DI exceptions.
 
 using System.Net.Http;
@@ -19,6 +20,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using SharedKernel.Presentation.Grpc.Extensions;
 using SharedKernel.Presentation.SignalR.Extensions;
 using SharedKernel.Presentation.SignalR.Filters;
 using SharedKernel.Presentation.WebApi.Authorization;
@@ -337,6 +339,29 @@ Console.WriteLine("Surface 6 PASS: AddSharedKernelSignalR().WithRedisBackplane(.
         .RequireValidatedUpload(allowedContentTypes: ["application/pdf"]);
 
     Console.WriteLine("Surface 12 PASS: AddSharedKernelUploadValidation + .AddEndpointFilter<UploadValidationEndpointFilter>() + .RequireValidatedUpload() compose alongside the WebApi stack with zero DI exceptions");
+}
+
+// ── Surface 13: gRPC host on SharedKernel.Presentation.Grpc alone (P-570) ─────
+{
+    var services = new ServiceCollection();
+    services.AddLogging();
+    services.AddSharedKernelGrpc();
+
+    using var provider = services.BuildServiceProvider();
+    var interceptor = provider.GetRequiredService<SharedKernel.Presentation.Grpc.Interceptors.GrpcAuthorizationInterceptor>();
+    Verify(interceptor is not null, "GrpcAuthorizationInterceptor resolves from AddSharedKernelGrpc()");
+
+    var grpcReferences = typeof(SharedKernel.Presentation.Grpc.Interceptors.GrpcAuthorizationInterceptor).Assembly
+        .GetReferencedAssemblies()
+        .Select(a => a.Name)
+        .ToArray();
+    Verify(!grpcReferences.Contains("SharedKernel.Presentation.WebApi"), "SharedKernel.Presentation.Grpc does not reference SharedKernel.Presentation.WebApi");
+    Verify(grpcReferences.Contains("SharedKernel.Presentation.Core"), "SharedKernel.Presentation.Grpc takes the shared attributes and status map from SharedKernel.Presentation.Core");
+    Verify(
+        SharedKernel.Presentation.Errors.GrpcStatusCodeMap.Resolve(SharedKernel.Primitives.Errors.ErrorType.Forbidden) == Grpc.Core.StatusCode.PermissionDenied,
+        "GrpcStatusCodeMap maps Forbidden to PermissionDenied");
+
+    Console.WriteLine("Surface 13 PASS: AddSharedKernelGrpc() composes without SharedKernel.Presentation.WebApi");
 }
 
 Console.WriteLine();

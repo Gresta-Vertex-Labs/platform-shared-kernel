@@ -90,6 +90,12 @@
     <Project Path="07.Messaging/SharedKernel.Messaging.Abstractions/SharedKernel.Messaging.Abstractions.Tests/SharedKernel.Messaging.Abstractions.Tests.csproj" />
     <Project Path="07.Messaging/SharedKernel.Messaging.MassTransit/SharedKernel.Messaging.MassTransit.csproj" />
     <Project Path="07.Messaging/SharedKernel.Messaging.MassTransit/SharedKernel.Messaging.MassTransit.Tests/SharedKernel.Messaging.MassTransit.Tests.csproj" />
+    <Project Path="07.Messaging/SharedKernel.Messaging.MassTransit.AzureServiceBus/SharedKernel.Messaging.MassTransit.AzureServiceBus.csproj" />
+    <Project Path="07.Messaging/SharedKernel.Messaging.MassTransit.AzureServiceBus/SharedKernel.Messaging.MassTransit.AzureServiceBus.Tests/SharedKernel.Messaging.MassTransit.AzureServiceBus.Tests.csproj" />
+    <Project Path="07.Messaging/SharedKernel.Messaging.MassTransit.EfCore/SharedKernel.Messaging.MassTransit.EfCore.csproj" />
+    <Project Path="07.Messaging/SharedKernel.Messaging.MassTransit.EfCore/SharedKernel.Messaging.MassTransit.EfCore.Tests/SharedKernel.Messaging.MassTransit.EfCore.Tests.csproj" />
+    <Project Path="07.Messaging/SharedKernel.Messaging.MassTransit.RabbitMq/SharedKernel.Messaging.MassTransit.RabbitMq.csproj" />
+    <Project Path="07.Messaging/SharedKernel.Messaging.MassTransit.RabbitMq/SharedKernel.Messaging.MassTransit.RabbitMq.Tests/SharedKernel.Messaging.MassTransit.RabbitMq.Tests.csproj" />
     <Project Path="07.Messaging/consumer-verify/consumer-verify.csproj" />
   </Folder>
   <Folder Name="/08.Storage/">
@@ -123,8 +129,6 @@
     <Project Path="10.Intelligence/consumer-verify/SemanticKernel/consumer-verify.SemanticKernel.csproj" />
   </Folder>
   <Folder Name="/11.Communication/">
-    <Project Path="11.Communication/SharedKernel.Communication.GraphQL/SharedKernel.Communication.GraphQL.csproj" />
-    <Project Path="11.Communication/SharedKernel.Communication.GraphQL/SharedKernel.Communication.GraphQL.Tests/SharedKernel.Communication.GraphQL.Tests.csproj" />
     <Project Path="11.Communication/SharedKernel.Communication.Grpc/SharedKernel.Communication.Grpc.csproj" />
     <Project Path="11.Communication/SharedKernel.Communication.Grpc/SharedKernel.Communication.Grpc.Tests/SharedKernel.Communication.Grpc.Tests.csproj" />
     <Project Path="11.Communication/SharedKernel.Communication.Internal/SharedKernel.Communication.Internal.csproj" />
@@ -165,6 +169,12 @@
   <Folder Name="/14.Presentation/">
     <Project Path="14.Presentation/SharedKernel.Presentation.SignalR/SharedKernel.Presentation.SignalR.csproj" />
     <Project Path="14.Presentation/SharedKernel.Presentation.SignalR/SharedKernel.Presentation.SignalR.Tests/SharedKernel.Presentation.SignalR.Tests.csproj" />
+    <Project Path="14.Presentation/SharedKernel.Presentation.SignalR.Redis/SharedKernel.Presentation.SignalR.Redis.csproj" />
+    <Project Path="14.Presentation/SharedKernel.Presentation.SignalR.Redis/SharedKernel.Presentation.SignalR.Redis.Tests/SharedKernel.Presentation.SignalR.Redis.Tests.csproj" />
+    <Project Path="14.Presentation/SharedKernel.Presentation.Core/SharedKernel.Presentation.Core.csproj" />
+    <Project Path="14.Presentation/SharedKernel.Presentation.Core/SharedKernel.Presentation.Core.Tests/SharedKernel.Presentation.Core.Tests.csproj" />
+    <Project Path="14.Presentation/SharedKernel.Presentation.GraphQL/SharedKernel.Presentation.GraphQL.csproj" />
+    <Project Path="14.Presentation/SharedKernel.Presentation.GraphQL/SharedKernel.Presentation.GraphQL.Tests/SharedKernel.Presentation.GraphQL.Tests.csproj" />
     <Project Path="14.Presentation/SharedKernel.Presentation.Grpc/SharedKernel.Presentation.Grpc.csproj" />
     <Project Path="14.Presentation/SharedKernel.Presentation.Grpc/SharedKernel.Presentation.Grpc.Tests/SharedKernel.Presentation.Grpc.Tests.csproj" />
     <Project Path="14.Presentation/SharedKernel.Presentation.WebApi/SharedKernel.Presentation.WebApi.csproj" />

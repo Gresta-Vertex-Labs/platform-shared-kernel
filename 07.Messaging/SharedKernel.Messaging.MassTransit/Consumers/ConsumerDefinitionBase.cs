@@ -79,8 +79,8 @@ public abstract class ConsumerDefinitionBase<TConsumer> : ConsumerDefinition<TCo
     /// <summary>
     /// Gets the maximum number of messages processed concurrently on this consumer's receive endpoint.
     /// When <see langword="null"/> (the default), the transport-level default applies — see
-    /// <see cref="SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.ConcurrentMessageLimit"/>
-    /// or <see cref="SharedKernel.Messaging.MassTransit.Options.AzureServiceBusOptions.MaxConcurrentCalls"/>.
+    /// <c>RabbitMqBusOptions.ConcurrentMessageLimit</c> (<c>SharedKernel.Messaging.MassTransit.RabbitMq</c>)
+    /// or <c>AzureServiceBusOptions.MaxConcurrentCalls</c> (<c>SharedKernel.Messaging.MassTransit.AzureServiceBus</c>).
     /// </summary>
     /// <remarks>
     /// <para>

@@ -1,5 +1,5 @@
 using Grpc.Core;
-using SharedKernel.Presentation.Grpc.Errors;
+using SharedKernel.Presentation.Errors;
 using SharedKernel.Primitives.Results;
 
 namespace SharedKernel.Presentation.Grpc.Results;

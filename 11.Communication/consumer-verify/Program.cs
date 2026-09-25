@@ -29,7 +29,7 @@ using Grpc.Core;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
-using SharedKernel.Communication.GraphQL.Extensions;
+using SharedKernel.Presentation.GraphQL.Extensions;
 using SharedKernel.Communication.Grpc.Extensions;
 using SharedKernel.Communication.Internal.Extensions;
 using SharedKernel.Communication.Internal.Resolvers;

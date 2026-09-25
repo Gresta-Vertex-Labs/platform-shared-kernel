@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Net.Http.Headers;
+using SharedKernel.Presentation.Errors;
 using SharedKernel.Presentation.WebApi.Concurrency;
 using SharedKernel.Presentation.WebApi.Errors;
 using SharedKernel.Primitives.Errors;

@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Headers;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Net.Http.Headers;
+using SharedKernel.Presentation.Errors;
 using SharedKernel.Presentation.WebApi.Http;
 
 namespace SharedKernel.Presentation.WebApi.Concurrency;

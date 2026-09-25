@@ -4,6 +4,7 @@ using Grpc.Core;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using SharedKernel.Presentation.Authorization;
 using SharedKernel.Presentation.Grpc.Tests.Integration.Fixtures;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Security.Abstractions;

@@ -1,8 +1,8 @@
 using Grpc.Core;
 using SharedKernel.Execution.Context;
 using SharedKernel.Core.Exceptions;
+using SharedKernel.Presentation.Authorization;
 using SharedKernel.Presentation.Grpc.Interceptors;
-using SharedKernel.Presentation.WebApi.Authorization;
 using SharedKernel.Primitives.Errors;
 
 namespace SharedKernel.Presentation.Grpc.Tests.Integration.Fixtures;

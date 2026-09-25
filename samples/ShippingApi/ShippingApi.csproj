@@ -16,6 +16,8 @@
   <ItemGroup>
     <!-- 07.Messaging: the bus itself. Abstractions arrives transitively, as it would for any consumer. -->
     <PackageReference Include="SharedKernel.Messaging.MassTransit" />
+    <!-- 07.Messaging: the RabbitMQ transport (UseRabbitMq), its own package since P-570. -->
+    <PackageReference Include="SharedKernel.Messaging.MassTransit.RabbitMq" />
     <!-- 04.Contracts: IIntegrationEvent and the CloudEvents envelope every published event is wrapped in. -->
     <PackageReference Include="SharedKernel.Contracts" />
     <!-- 05.Application.Abstractions: IRequestContext, which the tenant/actor propagation rides on. -->

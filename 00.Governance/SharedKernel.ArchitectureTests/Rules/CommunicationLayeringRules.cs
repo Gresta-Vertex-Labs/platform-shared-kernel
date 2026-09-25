@@ -38,7 +38,7 @@ public static class CommunicationLayeringRules
     [
         "SharedKernel.Communication.Rest",
         "SharedKernel.Communication.Grpc",
-        "SharedKernel.Communication.GraphQL",
+        "SharedKernel.Presentation.GraphQL",
     ];
 
     /// <summary>
@@ -88,7 +88,7 @@ public static class CommunicationLayeringRules
     /// Returns one <see cref="ConditionList"/> per forbidden sibling term, asserting that no type
     /// in <c>SharedKernel.Communication.Internal</c> has a dependency on
     /// <c>"SharedKernel.Communication.Rest"</c>, <c>"SharedKernel.Communication.Grpc"</c>, or
-    /// <c>"SharedKernel.Communication.GraphQL"</c>.
+    /// <c>"SharedKernel.Presentation.GraphQL"</c>.
     /// </summary>
     /// <param name="internalAssembly">
     /// The <c>SharedKernel.Communication.Internal</c> assembly. Do not pass sibling communication
@@ -169,7 +169,7 @@ public static class CommunicationLayeringRules
     /// </summary>
     /// <param name="assembly">
     /// Any assembly that references <c>HotChocolate.Data</c> but is NOT
-    /// <c>SharedKernel.Communication.GraphQL</c> itself. Passing <c>Communication.GraphQL</c>
+    /// <c>SharedKernel.Presentation.GraphQL</c> itself. Passing <c>Presentation.GraphQL</c>
     /// is not useful since the namespace exemption inside the predicate passes all its types
     /// unconditionally.
     /// </param>

@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using SharedKernel.Presentation.Errors;
 using SharedKernel.Presentation.WebApi.Http;
 using SharedKernel.Primitives.Errors;
 

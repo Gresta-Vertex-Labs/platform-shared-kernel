@@ -1,6 +1,6 @@
 using FluentAssertions;
 using Grpc.Core;
-using SharedKernel.Presentation.Grpc.Errors;
+using SharedKernel.Presentation.Errors;
 using SharedKernel.Presentation.Grpc.Results;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;

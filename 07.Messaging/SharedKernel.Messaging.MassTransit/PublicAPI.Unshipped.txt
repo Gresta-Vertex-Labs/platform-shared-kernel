@@ -2,12 +2,10 @@
 abstract SharedKernel.Messaging.MassTransit.Consumers.BatchConsumerBase<TMessage>.ConsumeAsync(System.Collections.Generic.IReadOnlyList<TMessage!>! messages, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task!
 abstract SharedKernel.Messaging.MassTransit.Consumers.ConsumerBase<TMessage>.ConsumeAsync(TMessage! message, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task!
 abstract SharedKernel.Messaging.MassTransit.Consumers.ConsumerDefinitionBase<TConsumer>.ConfigureConsumer(MassTransit.IReceiveEndpointConfigurator! endpointConfigurator, MassTransit.IConsumerConfigurator<TConsumer!>! consumerConfigurator, MassTransit.IBusRegistrationContext! context) -> void
-const SharedKernel.Messaging.MassTransit.Options.AzureServiceBusOptions.SectionName = "SharedKernel:Messaging:AzureServiceBus" -> string!
 const SharedKernel.Messaging.MassTransit.Options.BatchOptions.SectionName = "SharedKernel:Messaging:Batch" -> string!
 const SharedKernel.Messaging.MassTransit.Options.CircuitBreakerOptions.SectionName = "SharedKernel:Messaging:CircuitBreaker" -> string!
 const SharedKernel.Messaging.MassTransit.Options.DeadLetterOptions.SectionName = "SharedKernel:Messaging:DeadLetter" -> string!
 const SharedKernel.Messaging.MassTransit.Options.PayloadTransformOptions.SectionName = "SharedKernel:Messaging:PayloadTransform" -> string!
-const SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.SectionName = "SharedKernel:Messaging:RabbitMq" -> string!
 override sealed SharedKernel.Messaging.MassTransit.Consumers.ConsumerDefinitionBase<TConsumer>.ConfigureConsumer(MassTransit.IReceiveEndpointConfigurator! endpointConfigurator, MassTransit.IConsumerConfigurator<TConsumer!>! consumerConfigurator, MassTransit.IRegistrationContext! context) -> void
 SharedKernel.Messaging.MassTransit.Consumers.BatchConsumerBase<TMessage>
 SharedKernel.Messaging.MassTransit.Consumers.BatchConsumerBase<TMessage>.BatchConsumerBase(Microsoft.Extensions.Logging.ILogger! logger) -> void
@@ -33,15 +31,10 @@ SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.AddConsumer<TC
 SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.AddFaultConsumer<TMessage, TFaultConsumer>() -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
 SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.Build() -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.Services.get -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
-SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.UseAzureServiceBus(string! connectionString) -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
-SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.UseAzureServiceBus(System.Action<SharedKernel.Messaging.MassTransit.Options.AzureServiceBusOptions!>! configure) -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
-SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.UseRabbitMq(string! connectionString) -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
-SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.UseRabbitMq(System.Action<SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions!>! configure) -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
 SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.WithAmbientCorrelationPropagation() -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
 SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.WithCircuitBreaker(System.Action<SharedKernel.Messaging.MassTransit.Options.CircuitBreakerOptions!>? configure = null) -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
 SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.WithDeadLetterPolicy(System.Action<SharedKernel.Messaging.MassTransit.Options.DeadLetterOptions!>? configure = null) -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
 SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.WithDelayedDelivery() -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
-SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.WithEntityFrameworkOutbox<TDbContext>(System.Action<SharedKernel.Messaging.MassTransit.Options.OutboxOptions!>? configure = null) -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
 SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.WithHeaderPropagator<T>() -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
 SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.WithIdempotency() -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
 SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.WithIdempotency(System.Action<SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyOptions!>! configure) -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
@@ -59,16 +52,6 @@ SharedKernel.Messaging.MassTransit.HeaderPropagation.RequestContextHeaderPropaga
 SharedKernel.Messaging.MassTransit.HeaderPropagation.RequestContextHeaderPropagator.RequestContextHeaderPropagator(SharedKernel.Execution.Context.IRequestContextAccessor? accessor = null, SharedKernel.Execution.Context.IRequestContext? requestContext = null) -> void
 SharedKernel.Messaging.MassTransit.HeaderPropagation.TenantHeaderPropagator
 SharedKernel.Messaging.MassTransit.HeaderPropagation.TenantHeaderPropagator.Propagate(SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext! context) -> void
-SharedKernel.Messaging.MassTransit.Options.AzureServiceBusOptions
-SharedKernel.Messaging.MassTransit.Options.AzureServiceBusOptions.AzureServiceBusOptions() -> void
-SharedKernel.Messaging.MassTransit.Options.AzureServiceBusOptions.ConnectionString.get -> string?
-SharedKernel.Messaging.MassTransit.Options.AzureServiceBusOptions.ConnectionString.set -> void
-SharedKernel.Messaging.MassTransit.Options.AzureServiceBusOptions.FullyQualifiedNamespace.get -> string?
-SharedKernel.Messaging.MassTransit.Options.AzureServiceBusOptions.FullyQualifiedNamespace.set -> void
-SharedKernel.Messaging.MassTransit.Options.AzureServiceBusOptions.MaxConcurrentCalls.get -> int
-SharedKernel.Messaging.MassTransit.Options.AzureServiceBusOptions.MaxConcurrentCalls.set -> void
-SharedKernel.Messaging.MassTransit.Options.AzureServiceBusOptions.TransportType.get -> Azure.Messaging.ServiceBus.ServiceBusTransportType
-SharedKernel.Messaging.MassTransit.Options.AzureServiceBusOptions.TransportType.set -> void
 SharedKernel.Messaging.MassTransit.Options.BatchOptions
 SharedKernel.Messaging.MassTransit.Options.BatchOptions.BatchOptions() -> void
 SharedKernel.Messaging.MassTransit.Options.BatchOptions.ConcurrencyLimit.get -> int
@@ -93,36 +76,12 @@ SharedKernel.Messaging.MassTransit.Options.DeadLetterOptions.MessageTimeToLive.g
 SharedKernel.Messaging.MassTransit.Options.DeadLetterOptions.MessageTimeToLive.set -> void
 SharedKernel.Messaging.MassTransit.Options.DeadLetterOptions.QueueNameSuffix.get -> string!
 SharedKernel.Messaging.MassTransit.Options.DeadLetterOptions.QueueNameSuffix.set -> void
-SharedKernel.Messaging.MassTransit.Options.OutboxOptions
-SharedKernel.Messaging.MassTransit.Options.OutboxOptions.BatchSize.get -> int
-SharedKernel.Messaging.MassTransit.Options.OutboxOptions.BatchSize.set -> void
-SharedKernel.Messaging.MassTransit.Options.OutboxOptions.DuplicateDetectionWindow.get -> System.TimeSpan
-SharedKernel.Messaging.MassTransit.Options.OutboxOptions.DuplicateDetectionWindow.set -> void
-SharedKernel.Messaging.MassTransit.Options.OutboxOptions.OutboxOptions() -> void
-SharedKernel.Messaging.MassTransit.Options.OutboxOptions.QueryDelay.get -> System.TimeSpan
-SharedKernel.Messaging.MassTransit.Options.OutboxOptions.QueryDelay.set -> void
 SharedKernel.Messaging.MassTransit.Options.PayloadTransformOptions
 SharedKernel.Messaging.MassTransit.Options.PayloadTransformOptions.EnableCompression.get -> bool
 SharedKernel.Messaging.MassTransit.Options.PayloadTransformOptions.EnableCompression.set -> void
 SharedKernel.Messaging.MassTransit.Options.PayloadTransformOptions.EnableEncryption.get -> bool
 SharedKernel.Messaging.MassTransit.Options.PayloadTransformOptions.EnableEncryption.set -> void
 SharedKernel.Messaging.MassTransit.Options.PayloadTransformOptions.PayloadTransformOptions() -> void
-SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions
-SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.ConcurrentMessageLimit.get -> int?
-SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.ConcurrentMessageLimit.set -> void
-SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.Host.get -> string!
-SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.Host.set -> void
-SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.Password.get -> string!
-SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.Password.set -> void
-SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.Prefetch.get -> ushort
-SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.Prefetch.set -> void
-SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.RabbitMqBusOptions() -> void
-SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.RequestedHeartbeat.get -> System.TimeSpan
-SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.RequestedHeartbeat.set -> void
-SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.Username.get -> string!
-SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.Username.set -> void
-SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.VirtualHost.get -> string!
-SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.VirtualHost.set -> void
 SharedKernel.Messaging.MassTransit.Options.RetryOptions
 SharedKernel.Messaging.MassTransit.Options.RetryOptions.Attempts.get -> int
 SharedKernel.Messaging.MassTransit.Options.RetryOptions.Attempts.set -> void
@@ -147,3 +106,15 @@ SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.WithTenantCont
 SharedKernel.Messaging.MassTransit.HeaderPropagation.TenantHeaderPropagator.TenantHeaderPropagator(SharedKernel.Execution.Context.IRequestContextAccessor! accessor) -> void
 SharedKernel.Messaging.MassTransit.MessageBus.MessagingReadinessProbeNames
 const SharedKernel.Messaging.MassTransit.MessageBus.MessagingReadinessProbeNames.Bus = "messaging" -> string!
+SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.ConfigureMassTransit(System.Action<MassTransit.IBusRegistrationConfigurator!>! configure) -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
+SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.UseTransport(SharedKernel.Messaging.MassTransit.Transports.MessagingTransport! transport) -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
+SharedKernel.Messaging.MassTransit.Transports.MessagingTransport
+SharedKernel.Messaging.MassTransit.Transports.MessagingTransport.MessagingTransport(string! name) -> void
+SharedKernel.Messaging.MassTransit.Transports.MessagingTransport.Name.get -> string!
+abstract SharedKernel.Messaging.MassTransit.Transports.MessagingTransport.Configure(MassTransit.IBusRegistrationConfigurator! configurator, SharedKernel.Messaging.MassTransit.Transports.MessagingTransportSettings! settings) -> void
+virtual SharedKernel.Messaging.MassTransit.Transports.MessagingTransport.ConfigureServices(Microsoft.Extensions.DependencyInjection.IServiceCollection! services, SharedKernel.Messaging.MassTransit.Transports.MessagingTransportSettings! settings) -> void
+virtual SharedKernel.Messaging.MassTransit.Transports.MessagingTransport.ApplyPartitionKey(MassTransit.SendContext! context, string! partitionKey) -> void
+SharedKernel.Messaging.MassTransit.Transports.MessagingTransportSettings
+SharedKernel.Messaging.MassTransit.Transports.MessagingTransportSettings.ConfigureBus<TEndpointConfigurator>(MassTransit.IBusRegistrationContext! context, MassTransit.IBusFactoryConfigurator<TEndpointConfigurator>! bus) -> void
+SharedKernel.Messaging.MassTransit.Transports.MessagingTransportSettings.DeadLetterPolicy.get -> SharedKernel.Messaging.MassTransit.Options.DeadLetterOptions?
+SharedKernel.Messaging.MassTransit.Transports.MessagingTransportSettings.DelayedDelivery.get -> bool

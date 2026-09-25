@@ -1,0 +1,15 @@
+#nullable enable
+const SharedKernel.Messaging.MassTransit.Options.AzureServiceBusOptions.SectionName = "SharedKernel:Messaging:AzureServiceBus" -> string!
+SharedKernel.Messaging.MassTransit.Options.AzureServiceBusOptions
+SharedKernel.Messaging.MassTransit.Options.AzureServiceBusOptions.AzureServiceBusOptions() -> void
+SharedKernel.Messaging.MassTransit.Options.AzureServiceBusOptions.ConnectionString.get -> string?
+SharedKernel.Messaging.MassTransit.Options.AzureServiceBusOptions.ConnectionString.set -> void
+SharedKernel.Messaging.MassTransit.Options.AzureServiceBusOptions.FullyQualifiedNamespace.get -> string?
+SharedKernel.Messaging.MassTransit.Options.AzureServiceBusOptions.FullyQualifiedNamespace.set -> void
+SharedKernel.Messaging.MassTransit.Options.AzureServiceBusOptions.MaxConcurrentCalls.get -> int
+SharedKernel.Messaging.MassTransit.Options.AzureServiceBusOptions.MaxConcurrentCalls.set -> void
+SharedKernel.Messaging.MassTransit.Options.AzureServiceBusOptions.TransportType.get -> Azure.Messaging.ServiceBus.ServiceBusTransportType
+SharedKernel.Messaging.MassTransit.Options.AzureServiceBusOptions.TransportType.set -> void
+SharedKernel.Messaging.MassTransit.Extensions.AzureServiceBusMessagingBusBuilderExtensions
+static SharedKernel.Messaging.MassTransit.Extensions.AzureServiceBusMessagingBusBuilderExtensions.UseAzureServiceBus(this SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder! builder, string! connectionString) -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
+static SharedKernel.Messaging.MassTransit.Extensions.AzureServiceBusMessagingBusBuilderExtensions.UseAzureServiceBus(this SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder! builder, System.Action<SharedKernel.Messaging.MassTransit.Options.AzureServiceBusOptions!>! configure) -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!

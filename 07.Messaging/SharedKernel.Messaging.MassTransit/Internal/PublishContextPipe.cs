@@ -1,6 +1,7 @@
 using MassTransit;
 using SharedKernel.Execution.Context;
 using SharedKernel.Messaging.MassTransit.MessageBus;
+using SharedKernel.Messaging.MassTransit.Transports;
 using SharedKernel.Primitives.Propagation;
 
 using MessagingPublishContext = SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext;
@@ -43,11 +44,16 @@ internal static class PublishContextPipe
     /// (<see cref="CorrelationIds.Current"/>). The header carries the caller's value unchanged — never an
     /// <see cref="System.Diagnostics.Activity"/> id — so the consumer restores the same id (defect 4, P-566).
     /// </param>
+    /// <param name="transport">
+    /// The configured transport, which maps the partition key to its ordered-delivery mechanism, or
+    /// <see langword="null"/> to set only the routing key.
+    /// </param>
     public static void Apply(
         SendContext pipe,
         MessagingPublishContext context,
         Guid? transportCorrelationId,
-        string? correlationId = null)
+        string? correlationId = null,
+        MessagingTransport? transport = null)
     {
         correlationId ??= context.Headers.TryGetValue(WellKnownHeaders.CorrelationId, out var propagated)
             && CorrelationIds.IsValid(propagated)
@@ -75,6 +81,6 @@ internal static class PublishContextPipe
         }
 
         // P-344/WO-054: maps to RabbitMQ routing-key affinity / Azure Service Bus session identity.
-        pipe.ApplyPartitionKey(context.PartitionKey);
+        pipe.ApplyPartitionKey(context.PartitionKey, transport);
     }
 }

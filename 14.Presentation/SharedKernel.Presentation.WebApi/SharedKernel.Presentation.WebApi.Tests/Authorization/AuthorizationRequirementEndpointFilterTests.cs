@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Logging.Abstractions;
+using SharedKernel.Presentation.Authorization;
 using SharedKernel.Presentation.WebApi.Authorization;
 using SharedKernel.Testing.Security;
 using Xunit;

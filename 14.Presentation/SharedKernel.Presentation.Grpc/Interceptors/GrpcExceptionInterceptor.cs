@@ -3,7 +3,7 @@ using Grpc.Core.Interceptors;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Core.Exceptions;
-using SharedKernel.Presentation.Grpc.Errors;
+using SharedKernel.Presentation.Errors;
 using SharedKernel.Primitives.Logging;
 
 namespace SharedKernel.Presentation.Grpc.Interceptors;

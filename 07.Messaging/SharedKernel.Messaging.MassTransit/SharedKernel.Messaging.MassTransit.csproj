@@ -2,8 +2,8 @@
   <PropertyGroup>
     <SharedKernelTier>Adapter</SharedKernelTier>
     <!-- NuGet packaging metadata -->
-    <Description>MassTransit 8.5.x wiring for Platform.SharedKernel microservices: MassTransitMessageBus, MassTransitEventPublisher, ConsumerBase, MessagingBusBuilder, RabbitMQ, Azure Service Bus, configurable retry, transport-native delayed delivery, atomic consumer idempotency, and transactional EF Core outbox integration. CloudEvents-compliant envelope publishing; dispatch failures are returned as messaging.* Result codes. Pinned to the 8.5.x line because that is the last Apache-2.0 MassTransit release.</Description>
-    <PackageTags>messaging;masstransit;rabbitmq;azure-service-bus;outbox;cloud-events;consumer-base;shared-kernel</PackageTags>
+    <Description>MassTransit 8.5.x wiring for Platform.SharedKernel microservices: MassTransitMessageBus, MassTransitEventPublisher, ConsumerBase, MessagingBusBuilder, configurable retry and circuit breaker, transport-native delayed delivery, atomic consumer idempotency and payload compression/encryption. Transports (RabbitMQ, Azure Service Bus) and the EF Core outbox are separate packages. CloudEvents-compliant envelope publishing; dispatch failures are returned as messaging.* Result codes. Pinned to the 8.5.x line because that is the last Apache-2.0 MassTransit release.</Description>
+    <PackageTags>messaging;masstransit;cloud-events;consumer-base;shared-kernel</PackageTags>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <!--
       Set per-project, not inherited: the SDK assigns GenerateDocumentationFile=false before
@@ -25,8 +25,8 @@
         SharedKernel.Cryptography          — ISynchronousSymmetricEncryptionService, used by WithPayloadTransform() (P-346)
       Both SharedKernel.Compression and SharedKernel.Cryptography are 01.Core packages, already
       permitted by the root layering rule ("07.Messaging may reference 01-04").
-      NO reference to any 06.Persistence.* package is permitted.
-      The EF Core outbox is wired via generic TDbContext type parameter only.
+      NO reference to any 06.Persistence.* package is permitted, and no broker client or EF Core:
+      those live in the .RabbitMq, .AzureServiceBus and .EfCore satellite packages (P-570).
     -->
     <ProjectReference Include="..\SharedKernel.Messaging.Abstractions\SharedKernel.Messaging.Abstractions.csproj" />
     <ProjectReference Include="..\..\04.Contracts\SharedKernel.Contracts\SharedKernel.Contracts.csproj" />
@@ -45,33 +45,16 @@
   </ItemGroup>
   <ItemGroup>
     <!--
-      MassTransit transports and integrations, pinned to the 8.5.x line in
-      Directory.Packages.props because it is the last Apache-2.0 release; 9.x is commercially
-      licensed (P-560). Do not bump without a recorded licensing decision.
+      MassTransit core only, pinned to the 8.5.x line in Directory.Packages.props because it is the
+      last Apache-2.0 release; 9.x is commercially licensed (P-560). Do not bump without a recorded
+      licensing decision.
+
+      No transport and no EF Core (P-570): RabbitMQ is SharedKernel.Messaging.MassTransit.RabbitMq,
+      Azure Service Bus (with Azure.Identity) is SharedKernel.Messaging.MassTransit.AzureServiceBus and the
+      EF Core outbox is SharedKernel.Messaging.MassTransit.EfCore. Each plugs into MessagingBusBuilder
+      (UseTransport / ConfigureMassTransit), so a service pulls only the broker it runs on.
     -->
     <PackageReference Include="MassTransit" />
-    <PackageReference Include="MassTransit.RabbitMQ" />
-    <PackageReference Include="MassTransit.Azure.ServiceBus.Core" />
-    <!--
-      Azure.Identity — DefaultAzureCredential, used directly by UseAzureServiceBus(...) to
-      authenticate a fully-qualified namespace with a managed identity instead of a connection
-      string. Declared explicitly (P-560): this package compiles against the type at a real call
-      site, so relying on it arriving transitively through MassTransit.Azure.ServiceBus.Core would
-      make the build depend on that package's private dependency graph, and a future MassTransit
-      bump that drops or retargets the reference would break this package with no local signal.
-    -->
-    <PackageReference Include="Azure.Identity" />
-    <!--
-      MassTransit.EntityFrameworkCore — EF Core outbox and saga persistence.
-      Used via generic TDbContext type parameter in WithEntityFrameworkOutbox<TDbContext>().
-      No 06.Persistence.* reference is introduced.
-    -->
-    <PackageReference Include="MassTransit.EntityFrameworkCore" />
-    <!--
-      Microsoft.EntityFrameworkCore — for the TDbContext : DbContext generic constraint in
-      WithEntityFrameworkOutbox<TDbContext>(). No 06.Persistence.* reference is introduced.
-    -->
-    <PackageReference Include="Microsoft.EntityFrameworkCore" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <!--
       MassTransit.Quartz was removed by P-560. Deferred delivery now runs entirely on the
@@ -97,6 +80,10 @@
     <!-- Allow test project to access internal types (MassTransitMessageBus, MassTransitEventPublisher) -->
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
       <_Parameter1>SharedKernel.Messaging.MassTransit.Tests</_Parameter1>
+    </AssemblyAttribute>
+    <!-- P-570: the outbox round-trip tests moved with the outbox and publish through MassTransitEventPublisher. -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>SharedKernel.Messaging.MassTransit.EfCore.Tests</_Parameter1>
     </AssemblyAttribute>
     <!--
       P-566: the cross-transport propagation tests host the consume filter and the bus on MassTransit's in-memory

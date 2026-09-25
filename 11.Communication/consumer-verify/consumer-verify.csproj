@@ -8,7 +8,8 @@
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Communication.Rest\SharedKernel.Communication.Rest.csproj" />
     <ProjectReference Include="..\SharedKernel.Communication.Grpc\SharedKernel.Communication.Grpc.csproj" />
-    <ProjectReference Include="..\SharedKernel.Communication.GraphQL\SharedKernel.Communication.GraphQL.csproj" />
+    <!-- Moved to 14.Presentation as SharedKernel.Presentation.GraphQL (P-570); its surfaces stay in this harness until P-573. -->
+    <ProjectReference Include="..\..\14.Presentation\SharedKernel.Presentation.GraphQL\SharedKernel.Presentation.GraphQL.csproj" />
     <ProjectReference Include="..\SharedKernel.Communication.Internal\SharedKernel.Communication.Internal.csproj" />
   </ItemGroup>
   <ItemGroup>

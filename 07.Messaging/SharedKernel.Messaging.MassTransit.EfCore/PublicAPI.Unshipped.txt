@@ -1,0 +1,11 @@
+#nullable enable
+SharedKernel.Messaging.MassTransit.Options.OutboxOptions
+SharedKernel.Messaging.MassTransit.Options.OutboxOptions.BatchSize.get -> int
+SharedKernel.Messaging.MassTransit.Options.OutboxOptions.BatchSize.set -> void
+SharedKernel.Messaging.MassTransit.Options.OutboxOptions.DuplicateDetectionWindow.get -> System.TimeSpan
+SharedKernel.Messaging.MassTransit.Options.OutboxOptions.DuplicateDetectionWindow.set -> void
+SharedKernel.Messaging.MassTransit.Options.OutboxOptions.OutboxOptions() -> void
+SharedKernel.Messaging.MassTransit.Options.OutboxOptions.QueryDelay.get -> System.TimeSpan
+SharedKernel.Messaging.MassTransit.Options.OutboxOptions.QueryDelay.set -> void
+SharedKernel.Messaging.MassTransit.Extensions.EntityFrameworkOutboxMessagingBusBuilderExtensions
+static SharedKernel.Messaging.MassTransit.Extensions.EntityFrameworkOutboxMessagingBusBuilderExtensions.WithEntityFrameworkOutbox<TDbContext>(this SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder! builder, System.Action<SharedKernel.Messaging.MassTransit.Options.OutboxOptions!>? configure = null) -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!

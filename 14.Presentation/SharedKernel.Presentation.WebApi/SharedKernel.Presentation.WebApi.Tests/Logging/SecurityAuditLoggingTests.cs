@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using SharedKernel.Presentation.Authorization;
 using SharedKernel.Presentation.WebApi.Authorization;
 using SharedKernel.Presentation.WebApi.Cors;
 using SharedKernel.Presentation.WebApi.Idempotency;

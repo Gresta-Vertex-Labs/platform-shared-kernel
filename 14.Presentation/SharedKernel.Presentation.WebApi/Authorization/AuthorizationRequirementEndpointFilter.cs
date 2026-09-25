@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using SharedKernel.Presentation.Authorization;
 using SharedKernel.Presentation.WebApi.Errors;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Errors;

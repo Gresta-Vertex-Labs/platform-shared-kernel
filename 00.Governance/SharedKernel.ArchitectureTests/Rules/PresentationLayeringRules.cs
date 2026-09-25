@@ -172,15 +172,12 @@ public static class PresentationLayeringRules
     /// </para>
     /// <para>
     /// <strong>Why a rule and not just the project graph.</strong>
-    /// <c>SharedKernel.Presentation.Grpc</c> takes a deliberate <c>ProjectReference</c> on
-    /// <c>SharedKernel.Presentation.WebApi</c> (to reuse
-    /// <c>RequireRoleAttribute</c>/<c>RequirePermissionAttribute</c>/
-    /// <c>RequireFreshAuthenticationAttribute</c>/<c>RequireAuthenticationMethodAttribute</c>
-    /// verbatim — see <c>14.Presentation/CLAUDE.md</c>, "Why .Grpc references .WebApi"). Today
-    /// neither package references <c>04.Contracts</c>, so no Contracts type is reachable, but any
-    /// future reference added to <c>SharedKernel.Presentation.WebApi</c> would flow transitively into
-    /// the gRPC package and a <c>using SharedKernel.Contracts;</c> inside a gRPC service method would
-    /// compile. The Hard rule ("never reference <c>04.Contracts</c>") must hold at the type-use level,
+    /// <c>SharedKernel.Presentation.Grpc</c> no longer references <c>SharedKernel.Presentation.WebApi</c>
+    /// (P-570): the authorization attributes and <c>GrpcStatusCodeMap</c> it shares with the HTTP boundary live in
+    /// <c>SharedKernel.Presentation.Core</c>. Today neither package references <c>04.Contracts</c>, so no Contracts
+    /// type is reachable, but any future reference added to a package in its closure would flow transitively into
+    /// the gRPC package and a <c>using SharedKernel.Contracts;</c> inside a gRPC service method would compile. The
+    /// Hard rule ("never reference <c>04.Contracts</c>") must hold at the type-use level,
     /// not only at the direct-<c>ProjectReference</c> level.
     /// </para>
     /// <para>
@@ -189,7 +186,7 @@ public static class PresentationLayeringRules
     /// scanned type's ACTUAL Mono.Cecil-observed dependency namespaces (fields, method
     /// parameters/return types/bodies) — never the assembly-level reference list a
     /// <c>ProjectReference</c> populates. A type merely being reachable via the reference closure
-    /// (because the compiler needs <c>SharedKernel.Presentation.WebApi</c>'s own transitive
+    /// (because the compiler needs a referenced package's own transitive
     /// dependencies resolvable) does not, by itself, fail this check — only an actual
     /// <c>SharedKernel.Contracts.*</c> type USE inside a <c>SharedKernel.Presentation.Grpc</c> type
     /// does. This is confirmed empirically by <c>GrpcNeverReferencesContracts_RealGrpcAssembly_RulePasses</c>

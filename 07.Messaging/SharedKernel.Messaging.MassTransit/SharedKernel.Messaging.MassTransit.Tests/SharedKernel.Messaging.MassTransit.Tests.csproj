@@ -4,12 +4,13 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Messaging.MassTransit.csproj" />
+    <!-- A transport, so Build() succeeds; the builder tests never connect to a broker (P-570). -->
+    <ProjectReference Include="..\..\SharedKernel.Messaging.MassTransit.RabbitMq\SharedKernel.Messaging.MassTransit.RabbitMq.csproj" />
     <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
     <ProjectReference Include="..\..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
     <ProjectReference Include="..\..\..\00.Governance\SharedKernel.ArchitectureTests\SharedKernel.ArchitectureTests.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Testcontainers.RabbitMq" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
@@ -24,6 +25,5 @@
     <PackageReference Include="NSubstitute" />
     <!-- MassTransit.TestFramework includes the in-memory TestHarness for integration tests -->
     <PackageReference Include="MassTransit.TestFramework" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
   </ItemGroup>
 </Project>

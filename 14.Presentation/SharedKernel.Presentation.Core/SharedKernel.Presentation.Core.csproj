@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <SharedKernelTier>Host</SharedKernelTier>
+    <!-- NuGet packaging metadata -->
+    <Description>The inbound API-boundary vocabulary shared by SharedKernel.Presentation.WebApi and SharedKernel.Presentation.Grpc: the declarative authorization attributes (RequireRoleAttribute, RequirePermissionAttribute, RequireFreshAuthenticationAttribute, RequireAuthenticationMethodAttribute) and the ErrorType status maps (ErrorTypeStatusCodeMap for HTTP, GrpcStatusCodeMap for gRPC). No ASP.NET Core reference, so a gRPC host does not pull the HTTP API stack.</Description>
+    <PackageTags>shared-kernel;presentation;authorization;problemdetails;grpc;statuscode</PackageTags>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- ErrorType, the vocabulary both maps key off. -->
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Grpc.Core.StatusCode for GrpcStatusCodeMap: the API-only package, no server or transport. -->
+    <PackageReference Include="Grpc.Core.Api" />
+  </ItemGroup>
+</Project>

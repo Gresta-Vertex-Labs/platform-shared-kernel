@@ -10,6 +10,7 @@ using SharedKernel.Messaging.MassTransit.Diagnostics;
 using SharedKernel.Messaging.Abstractions.Errors;
 using SharedKernel.Messaging.MassTransit.Internal;
 using SharedKernel.Messaging.MassTransit.MessageBus;
+using SharedKernel.Messaging.MassTransit.Transports;
 using SharedKernel.Primitives.Propagation;
 using SharedKernel.Primitives.Results;
 
@@ -32,15 +33,18 @@ internal sealed class MassTransitEventPublisher : IEventPublisher
     private readonly IPublishEndpoint _publishEndpoint;
     private readonly MessagingOptions _messagingOptions;
     private readonly IReadOnlyList<IMessageHeaderPropagator> _propagators;
+    private readonly MessagingTransport? _transport;
 
     public MassTransitEventPublisher(
         IPublishEndpoint publishEndpoint,
         IOptions<MessagingOptions> messagingOptions,
-        IEnumerable<IMessageHeaderPropagator> propagators)
+        IEnumerable<IMessageHeaderPropagator> propagators,
+        MessagingTransport? transport = null)
     {
         _publishEndpoint = publishEndpoint;
         _messagingOptions = messagingOptions.Value;
         _propagators = [.. propagators];
+        _transport = transport;
     }
 
     /// <inheritdoc />
@@ -159,7 +163,7 @@ internal sealed class MassTransitEventPublisher : IEventPublisher
             // header and the transport correlation id on the ordinary publish — the common case.
             await _publishEndpoint.Publish(
                 envelope,
-                pipe => PublishContextPipe.Apply(pipe, ctx, transportCorrelationId, correlationId),
+                pipe => PublishContextPipe.Apply(pipe, ctx, transportCorrelationId, correlationId, _transport),
                 ct).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

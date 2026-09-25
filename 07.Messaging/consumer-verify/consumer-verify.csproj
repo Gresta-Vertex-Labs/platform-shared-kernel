@@ -8,6 +8,8 @@
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Messaging.Abstractions\SharedKernel.Messaging.Abstractions.csproj" />
     <ProjectReference Include="..\SharedKernel.Messaging.MassTransit\SharedKernel.Messaging.MassTransit.csproj" />
+    <!-- The transport is its own package since P-570; the fluent chain reads the same. -->
+    <ProjectReference Include="..\SharedKernel.Messaging.MassTransit.RabbitMq\SharedKernel.Messaging.MassTransit.RabbitMq.csproj" />
   </ItemGroup>
   <ItemGroup>
     <!--

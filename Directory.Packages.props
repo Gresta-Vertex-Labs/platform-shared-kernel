@@ -300,6 +300,9 @@
     <PackageVersion Include="SharedKernel.Localization" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Messaging.Abstractions" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Messaging.MassTransit" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Messaging.MassTransit.AzureServiceBus" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Messaging.MassTransit.EfCore" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Messaging.MassTransit.RabbitMq" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Persistence.Abstractions" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Persistence.Dapper" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Persistence.EfCore" Version="$(SharedKernelPackageVersion)" />

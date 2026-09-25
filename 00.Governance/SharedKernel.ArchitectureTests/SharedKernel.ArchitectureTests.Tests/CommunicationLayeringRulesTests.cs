@@ -293,7 +293,7 @@ public class CommunicationLayeringRulesTests
     /// <summary>
     /// T-122: A contrived assembly containing a class that directly inherits
     /// <c>FilterInputType&lt;T&gt;</c> (HotChocolate) without <c>FilterBase&lt;T&gt;</c>
-    /// in the base type chain, and is NOT in <c>SharedKernel.Communication.GraphQL</c>,
+    /// in the base type chain, and is NOT in <c>SharedKernel.Presentation.GraphQL</c>,
     /// must fail
     /// <see cref="CommunicationLayeringRules.NoDirectHotChocolateFilterSortInheritanceOutsideGraphQL"/>.
     /// </summary>
@@ -347,7 +347,7 @@ public class CommunicationLayeringRulesTests
                 public abstract class FilterInputType<T> { }
             }
 
-            namespace SharedKernel.Communication.GraphQL
+            namespace SharedKernel.Presentation.GraphQL
             {
                 // Platform wrapper that legitimately inherits from FilterInputType<T>
                 public abstract class FilterBase<T> : HotChocolate.Data.Filters.FilterInputType<T> { }
@@ -355,7 +355,7 @@ public class CommunicationLayeringRulesTests
 
             namespace Application.GraphQL
             {
-                using SharedKernel.Communication.GraphQL;
+                using SharedKernel.Presentation.GraphQL;
 
                 // Compliant: inherits from FilterBase<T> (platform wrapper)
                 public class OrderFilterType : FilterBase<object> { }

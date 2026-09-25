@@ -4,8 +4,8 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using SharedKernel.Presentation.Grpc.Errors;
-using SharedKernel.Presentation.WebApi.Authorization;
+using SharedKernel.Presentation.Authorization;
+using SharedKernel.Presentation.Errors;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Logging;
@@ -18,7 +18,7 @@ namespace SharedKernel.Presentation.Grpc.Interceptors;
 /// <see cref="RequireRoleAttribute"/>/<see cref="RequirePermissionAttribute"/>/
 /// <see cref="RequireFreshAuthenticationAttribute"/>/<see cref="RequireAuthenticationMethodAttribute"/>
 /// metadata attached to a gRPC service method — reused VERBATIM from
-/// <c>SharedKernel.Presentation.WebApi.Authorization</c>, the platform's one declarative
+/// <c>SharedKernel.Presentation.Authorization</c> (<c>SharedKernel.Presentation.Core</c>), the platform's one declarative
 /// authorization dialect across both HTTP and gRPC (D-73/D-74).
 /// </summary>
 /// <remarks>
