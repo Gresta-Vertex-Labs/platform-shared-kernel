@@ -46,6 +46,8 @@ Each numbered folder is a capability domain. Each owns a `CLAUDE.md` with its in
 
 ## Layering Rules (Dependency Direction)
 
+> **WO-086 foundation refactor in progress.** [`docs/refactor/FOUNDATION-PLAN.md`](docs/refactor/FOUNDATION-PLAN.md) supersedes this section. It replaces numbered layering with build-enforced tiers (Foundation, Model, Abstractions, Adapter, Host, Testing, Tooling), moves `IRequestContext`/`IUnitOfWork`/`IAuditTrailWriter` into `SharedKernel.Execution`, and puts MediatR behind `SharedKernel.Application.Mediator.MediatR`. Where this section and the plan disagree, follow the plan. P-575 rewrites this section.
+
 Dependencies flow **downward only** (lower number = more foundational). A package may only reference packages in layers with a **lower number** than its own. No circular references. No skipping layers without justification.
 
 ```

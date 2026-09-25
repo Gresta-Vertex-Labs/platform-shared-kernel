@@ -3440,6 +3440,52 @@ MSB3030 (`obj\Release\net10.0\*.Tests.dll` not produced — a Windows path-lengt
 particular clone root) that P-556's own entry above already recorded. Confirmed independently, multiple
 times across this pass's build waves, to be pre-existing and unrelated to any file this pass touched.
 
+---
+### WO-086 — Foundation Refactor: Tiered Packages, Execution Context, Mediator Abstraction (BREAKING, cross-domain)
+
+**Status:** `◐` In progress
+**Work Order:** WO-086
+**Domain:** cross-domain (every domain except 04.Contracts is touched)
+**Spec:** [`docs/refactor/FOUNDATION-PLAN.md`](docs/refactor/FOUNDATION-PLAN.md) — authoritative for the whole work order; it supersedes the root `CLAUDE.md` Layering Rules section until P-575 rewrites that section.
+
+#### Why
+- **Numbered folders are used as dependency layers**, which forced four named layering grants.
+- **`IRequestContext`/`IUnitOfWork`/`IAuditTrailWriter` are filed under `05.Application`**, so Persistence and Messaging appear to depend upward.
+- **Pipeline markers live in the MediatR-dependent `Behaviors` package.**
+- **MediatR appears in every public contract.**
+- **Duplicated concepts:** the tenant has about 12 representations, correlation is lost at the first hop, there are about 12 probe contracts and two idempotency contracts.
+- **Optional dependencies are mandatory:** transports, outbox and backplane ship in the core packages.
+- **`SharedKernel.Testing`** is documented for consumers but is not packable.
+- **Publishing needs manual republish closures.**
+- **Four live defects:**
+  - the idempotency header name differs between outbound and inbound;
+  - no `ITenantContextAccessor` implementation exists;
+  - consumers have no tenant for outbound calls;
+  - the correlation id is replaced.
+
+#### Phases
+| Phase | Step | Status |
+|---|---|---|
+| P-562 | Preparation (branch, plan, baseline) | `◐` |
+| P-563 | Tier enforcement (`SharedKernelTier`, `SKTIER001-003`, `DependencyGraphRules`, baseline) | `○` |
+| P-564 | `SharedKernel.Execution` (context, `TenantId`, accessor, unit of work, audit); delete `Application.Abstractions` | `○` |
+| P-565 | Tenant and caller unification (`TenantId`/`TenantScope`/`ActorKind` everywhere) | `○` |
+| P-566 | Correlation and context propagation; fixes three of the four defects | `○` |
+| P-567 | Application contracts and kernel mediator abstraction; `Application.Pipeline`; `Application.Mediator.MediatR` | `○` |
+| P-568 | Unified `SharedKernel.Idempotency.Abstractions` | `○` |
+| P-569 | `IReadinessProbe` contract; collapse probe-only ServiceDefaults packages; delete the 13→17/19 grants | `○` |
+| P-570 | Optional-dependency satellites (MassTransit transports/outbox, `Presentation.Core`, SignalR.Redis, GraphQL move) | `○` |
+| P-571 | Per-capability packable `*.Testing` packages | `○` |
+| P-572 | Release train and CI | `○` |
+| P-573 | Samples as the reference architecture | `○` |
+| P-574 | Governance cleanup (tier baseline empty; `SKTIER` becomes an error) | `○` |
+| P-575 | Documentation | `○` |
+| P-576 | Agents and commands | `○` |
+| P-577 | First release train | `○` |
+| P-578 | Retire old package IDs (ask the user first) | `○` |
+
+Order: P-562 → P-563 → P-564 → {P-565, P-569} → P-566 → {P-567, P-570} → P-568 → P-571 → P-572 … P-578.
+
 ## Changelog
 
 > One line per session. Format: `[YYYY-MM-DD] {what changed} ({domain(s) affected}) — {trigger}`.
