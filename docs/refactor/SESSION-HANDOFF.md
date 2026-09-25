@@ -1,7 +1,7 @@
 # WO-086 Foundation Refactor — Session Handoff
 
 > **For the next Claude session.** Read this file first, then follow "How to resume". Everything you need is
-> linked from here. Last updated: 2026-09-26, after P-571 (`4cd3ee45`) was committed.
+> linked from here. Last updated: 2026-09-26, after P-572 (`b0fb8e41`) was committed.
 
 ## 1. Where the plan lives
 
@@ -41,8 +41,8 @@
 | P-570 | 8 — Optional-dependency satellites | ● done (`79a5840d`) |
 | P-568 | 6 — Unified idempotency abstractions | ● done (`350a7bbb`) |
 | P-571 | 9 — Per-capability `*.Testing` packages | ● done (`4cd3ee45`) |
-| P-572 | 10 — Release train and CI | ○ **next** |
-| P-573 | 11 — Samples as the reference architecture | ○ |
+| P-572 | 10 — Release train and CI | ● done (`b0fb8e41`) — not yet run on a real runner |
+| P-573 | 11 — Samples as the reference architecture | ○ **next** |
 | P-574 | 12 — Governance cleanup (tier baseline empty, SKTIER becomes an error) | ○ |
 | P-575 | 13 — Documentation (root/domain CLAUDE.md, READMEs, PLATFORM.md, MIGRATION.md) | ○ |
 | P-576 | 14 — Agents (`.claude/agents/*`) and commands (`.claude/commands/*`) | ○ |
@@ -90,6 +90,13 @@
 - `eng/tier-baseline.txt` is **empty**; making SKTIER an error is P-574.
 - **Known pre-existing gap, not fixed:** consumer idempotency keys only by MessageId, so two receive endpoints (or polymorphic consumers) in one service receiving the same message → the second is skipped as a duplicate. Fix = add consumer/endpoint to the key. Decide in P-574 or a follow-up.
 
+**P-572 — release train and CI:**
+- New reusable `.github/workflows/verify.yml` (tier check, solution-filter check, no-`<Version>` check, build + Unit, in-solution harnesses, optional Integration, pack + package-set check, every packed-package consumer and sample). `ci.yml` calls it twice (`verify` gates PRs via "CI Gate"; `integration` on main/nightly/manual). `release.yml`: `tag-guard` (tag format, commit on `origin/main`) → `verify` (everything, Integration required) → `publish` (environment `nuget-publish`, re-checks the uploaded artifact, pushes every package). `publish-package.yml` is a dry run with no push.
+- Expected package set = every packable csproj on disk, via `eng/PackageInventory.proj` + the `GetSharedKernelPackageIdentity` target; `eng/verify-packages.sh <dir> [version]` enforces it and that `Directory.Packages.props` pins exactly that set (103 packages). `eng/verify-solution-filters.sh` checks lanes and solution folders.
+- Consumers: one `SharedKernelVersion` property (PLATFORM.md "Consuming the kernel", root README).
+- **Not verified on GitHub:** artifact hand-off between jobs, `tag-guard`'s `origin/main` check, the push itself, Elasticsearch memory on hosted runners, the dry-run feed gate (needs a token). A repo admin must create the `nuget-publish` environment and the tag-protection ruleset before P-577.
+- For P-573: `samples/CatalogApi/README.md` curl examples still use `tenant-north`; tenants are GUIDs now.
+
 **P-571 — testing packages:**
 - 20 packable Testing-tier packages in `16.Testing/`: core `SharedKernel.Testing` (Primitives, Execution, DataPrivacy, Validation, Domain, Contracts, Bogus, M.E.Logging/DI.Abstractions only — locked by `CoreTestingPackage_DependsOnlyOnFoundationAndModelPackages`), `.Application/.Caching/.Caching.Redis/.Cryptography/.FeatureManagement/.Messaging/.Storage/.Search/.AI/.Security/.Workflows/.Scheduling/.Integration/.Reporting/.Idempotency/.Communication/.Presentation/.ServiceDefaults.Testing`, plus `Persistence.Testing` (now references the core). Non-packable `SharedKernel.Testing.Internal`: Testcontainers fixtures, EF Core/Npgsql/audit helpers, MassTransit `TestHarnessFactory`.
 - `TestRequestContext` moved to the core (`SharedKernel.Testing.Execution`). `AddFakeCachingServices()` no longer registers the Redis fakes (`AddFakeRedisServices()`).
@@ -121,7 +128,7 @@ None — the file is empty since P-568.
 
 1. `git checkout refactor/wo-086-foundation` and `git log --oneline -5`. The newest commit should be `053e5612` (or later).
 2. Read [`FOUNDATION-PLAN.md`](FOUNDATION-PLAN.md): the "Target architecture" section plus the section for the step you're about to do.
-3. Start **P-572** (Step 10), then P-573. Each step's full task list is in FOUNDATION-PLAN.md. Parallel phases worked well in `C:\wt\<phase>` worktrees on `wo086/<phase>` branches, rebased onto each other afterwards; the only conflicts were additive `PublicAPI.Unshipped.txt` hunks (keep both sides).
+3. Start **P-573** (Step 11), then P-574. Each step's full task list is in FOUNDATION-PLAN.md. Parallel phases worked well in `C:\wt\<phase>` worktrees on `wo086/<phase>` branches, rebased onto each other afterwards; the only conflicts were additive `PublicAPI.Unshipped.txt` hunks (keep both sides).
 4. For each step:
    1. Implement it directly, or with `general-purpose` agents given the plan as the spec. **Do not use the domain `*-phase-implementer` agents or domain brains yet**: they still describe the old numbered-layer rules until P-576.
    2. Delete any `eng/tier-baseline.txt` entries the step fixes.
