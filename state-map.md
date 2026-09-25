@@ -3475,7 +3475,7 @@ times across this pass's build waves, to be pre-existing and unrelated to any fi
 | P-568 | Unified `SharedKernel.Idempotency.Abstractions` | `●` (`350a7bbb`) |
 | P-569 | `IReadinessProbe` contract; collapse probe-only ServiceDefaults packages; delete the 13→17/19 grants | `●` (`1064694a`) |
 | P-570 | Optional-dependency satellites (MassTransit transports/outbox, `Presentation.Core`, SignalR.Redis, GraphQL move) | `●` (`79a5840d`) |
-| P-571 | Per-capability packable `*.Testing` packages | `○` |
+| P-571 | Per-capability packable `*.Testing` packages | `●` (`4cd3ee45`) |
 | P-572 | Release train and CI | `○` |
 | P-573 | Samples as the reference architecture | `○` |
 | P-574 | Governance cleanup (tier baseline empty; `SKTIER` becomes an error) | `○` |

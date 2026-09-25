@@ -1,7 +1,7 @@
 # WO-086 Foundation Refactor — Session Handoff
 
 > **For the next Claude session.** Read this file first, then follow "How to resume". Everything you need is
-> linked from here. Last updated: 2026-09-25, after P-568 (`350a7bbb`) was committed.
+> linked from here. Last updated: 2026-09-26, after P-571 (`4cd3ee45`) was committed.
 
 ## 1. Where the plan lives
 
@@ -40,8 +40,8 @@
 | P-567 | 5 — Application contracts and mediator abstraction | ● done (`941fe578`) |
 | P-570 | 8 — Optional-dependency satellites | ● done (`79a5840d`) |
 | P-568 | 6 — Unified idempotency abstractions | ● done (`350a7bbb`) |
-| P-571 | 9 — Per-capability `*.Testing` packages | ○ **next** |
-| P-572 | 10 — Release train and CI | ○ |
+| P-571 | 9 — Per-capability `*.Testing` packages | ● done (`4cd3ee45`) |
+| P-572 | 10 — Release train and CI | ○ **next** |
 | P-573 | 11 — Samples as the reference architecture | ○ |
 | P-574 | 12 — Governance cleanup (tier baseline empty, SKTIER becomes an error) | ○ |
 | P-575 | 13 — Documentation (root/domain CLAUDE.md, READMEs, PLATFORM.md, MIGRATION.md) | ○ |
@@ -90,6 +90,12 @@
 - `eng/tier-baseline.txt` is **empty**; making SKTIER an error is P-574.
 - **Known pre-existing gap, not fixed:** consumer idempotency keys only by MessageId, so two receive endpoints (or polymorphic consumers) in one service receiving the same message → the second is skipped as a duplicate. Fix = add consumer/endpoint to the key. Decide in P-574 or a follow-up.
 
+**P-571 — testing packages:**
+- 20 packable Testing-tier packages in `16.Testing/`: core `SharedKernel.Testing` (Primitives, Execution, DataPrivacy, Validation, Domain, Contracts, Bogus, M.E.Logging/DI.Abstractions only — locked by `CoreTestingPackage_DependsOnlyOnFoundationAndModelPackages`), `.Application/.Caching/.Caching.Redis/.Cryptography/.FeatureManagement/.Messaging/.Storage/.Search/.AI/.Security/.Workflows/.Scheduling/.Integration/.Reporting/.Idempotency/.Communication/.Presentation/.ServiceDefaults.Testing`, plus `Persistence.Testing` (now references the core). Non-packable `SharedKernel.Testing.Internal`: Testcontainers fixtures, EF Core/Npgsql/audit helpers, MassTransit `TestHarnessFactory`.
+- `TestRequestContext` moved to the core (`SharedKernel.Testing.Execution`). `AddFakeCachingServices()` no longer registers the Redis fakes (`AddFakeRedisServices()`).
+- Each package has its own `{Name}.Tests`; `SharedKernel.Testing.Internal.Tests` runs in the Integration lane. `TestingPackagesNeverReferencedByProductionTests` matches by tier or name pattern.
+- For P-575: `16.Testing/CLAUDE.md` and the root CLAUDE.md still call SharedKernel.Testing "internal, not packable"; the 18 generated package READMEs are minimal.
+
 **P-570 — satellites:**
 - `Messaging.MassTransit.RabbitMq` / `.AzureServiceBus` / `.EfCore` (Adapter; extension methods on the core builder via the new `MessagingTransport` extension point — the fluent chain and usings are unchanged). The core has no RabbitMQ/Azure/EF Core dependency.
 - `Presentation.Core` (Host; `Require*` attributes in `SharedKernel.Presentation.Authorization`, `ErrorTypeStatusCodeMap`/`GrpcStatusCodeMap` in `SharedKernel.Presentation.Errors` — new namespaces). Grpc no longer references WebApi. Trade-off: WebApi hosts get `Grpc.Core.Api` transitively; move `GrpcStatusCodeMap` back to Grpc if that matters.
@@ -115,7 +121,7 @@ None — the file is empty since P-568.
 
 1. `git checkout refactor/wo-086-foundation` and `git log --oneline -5`. The newest commit should be `053e5612` (or later).
 2. Read [`FOUNDATION-PLAN.md`](FOUNDATION-PLAN.md): the "Target architecture" section plus the section for the step you're about to do.
-3. Start **P-571** (Step 9), then P-572. Each step's full task list is in FOUNDATION-PLAN.md. Parallel phases worked well in `C:\wt\<phase>` worktrees on `wo086/<phase>` branches, rebased onto each other afterwards; the only conflicts were additive `PublicAPI.Unshipped.txt` hunks (keep both sides).
+3. Start **P-572** (Step 10), then P-573. Each step's full task list is in FOUNDATION-PLAN.md. Parallel phases worked well in `C:\wt\<phase>` worktrees on `wo086/<phase>` branches, rebased onto each other afterwards; the only conflicts were additive `PublicAPI.Unshipped.txt` hunks (keep both sides).
 4. For each step:
    1. Implement it directly, or with `general-purpose` agents given the plan as the spec. **Do not use the domain `*-phase-implementer` agents or domain brains yet**: they still describe the old numbered-layer rules until P-576.
    2. Delete any `eng/tier-baseline.txt` entries the step fixes.
@@ -135,11 +141,11 @@ dotnet test  Platform.SharedKernel.Unit.slnf -c Release --no-build
 dotnet test  Platform.SharedKernel.Integration.slnf -c Release --no-build   # Docker; for persistence/messaging/caching/idempotency steps
 ```
 
-Counts after P-568 (use these to spot regressions):
+Counts after P-571 (use these to spot regressions):
 - **Build:** 0 errors, 35 warnings (no SKTIER warnings left).
-- **Unit:** 62 assemblies / 7,566 tests.
-- **Architecture:** 377 tests.
-- **Integration:** 24 assemblies / 2,908 tests.
+- **Unit:** 81 assemblies / 8,839 tests (1,273 self-tests moved in from Integration).
+- **Architecture:** 378 tests.
+- **Integration:** 24 assemblies / 1,635 tests.
 - **Known flakes under full-suite load** (re-run alone before treating as a regression): `MeilisearchContainerFixtureTests`, `CacheLevelMetricsTests.SecondReadOnTheSameNode_IsAnL1Hit`, Redis socket errors in `Idempotency.Redis.Tests`, two `Messaging.MassTransit.Tests`, one `Testing.SelfTests`.
 - **Docker** must be running for Integration and for `ServiceDefaults.Persistence.Tests`. Start Docker Desktop first; it was down at the start of the 2026-09-25 session.
 
