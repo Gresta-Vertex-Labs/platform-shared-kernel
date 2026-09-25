@@ -6,6 +6,7 @@ using Elastic.Clients.Elasticsearch.Core.Search;
 using Elastic.Clients.Elasticsearch.QueryDsl;
 using Elastic.Transport;
 using Microsoft.Extensions.Logging;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Search.Abstractions.Abstractions;
@@ -560,7 +561,7 @@ internal sealed class ElasticSearchIndex<TDocument> : ISearchIndex<TDocument>
     private async Task<Result<TDocument>> GetCoreAsync(
         string documentId, TenantScope tenantScope, CancellationToken cancellationToken = default)
     {
-        if (_definition.TenantField is not null && string.IsNullOrEmpty(tenantScope.Value))
+        if (_definition.TenantField is not null && tenantScope.IsGlobal)
         {
             _logger.ElasticSearchTenantScopeMissing(_definition.Name);
             return Result<TDocument>.Failure(SearchErrors.TenantScopeMissing(_definition.Name));

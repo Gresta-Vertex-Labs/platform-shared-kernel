@@ -1,6 +1,8 @@
 using Grpc.Core;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Core.Exceptions;
+using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Presentation.Grpc.Interceptors;
 using SharedKernel.Presentation.WebApi.Authorization;
 using SharedKernel.Primitives.Clocks;
@@ -48,25 +50,36 @@ public sealed class TestServerCallContextTests
     [Fact]
     public async Task GrpcTenantContextInterceptor_ResolvesTenantIdFromRequestServices()
     {
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
         var context = SharedKernel.Testing.Grpc.TestServerCallContext.Create(
-            configureServices: services => services.AddSingleton<ITenantProvider>(new FakeTenantProvider(tenantId)));
-        var interceptor = new GrpcTenantContextInterceptor();
+            configureServices: services => services.AddSingleton<IRequestContext>(new SystemRequestContext([], "caller", tenantId)));
+        var interceptor = new GrpcTenantContextInterceptor(new RequestContextAccessor());
 
-        await interceptor.UnaryServerHandler<string, string>("req", context, (_, c) => Task.FromResult("ok"));
+        TenantId? observed = null;
+        await interceptor.UnaryServerHandler<string, string>("req", context, (_, c) =>
+        {
+            observed = RequestContextScope.Current?.TenantId;
+            return Task.FromResult("ok");
+        });
 
-        Assert.Equal(tenantId, context.UserState[GrpcTenantContextInterceptor.ItemsKey]);
+        Assert.Equal(tenantId, observed);
     }
 
     [Fact]
-    public async Task GrpcTenantContextInterceptor_NoTenantProviderRegistered_DefaultsToEmptyGuid_NeverRejects()
+    public async Task GrpcTenantContextInterceptor_NoRequestContextRegistered_OpensNoScope_NeverRejects()
     {
         var context = SharedKernel.Testing.Grpc.TestServerCallContext.Create();
-        var interceptor = new GrpcTenantContextInterceptor();
+        var interceptor = new GrpcTenantContextInterceptor(new RequestContextAccessor());
 
-        await interceptor.UnaryServerHandler<string, string>("req", context, (_, c) => Task.FromResult("ok"));
+        IRequestContext? observed = null;
+        var result = await interceptor.UnaryServerHandler<string, string>("req", context, (_, c) =>
+        {
+            observed = RequestContextScope.Current;
+            return Task.FromResult("ok");
+        });
 
-        Assert.Equal(Guid.Empty, context.UserState[GrpcTenantContextInterceptor.ItemsKey]);
+        Assert.Null(observed);
+        Assert.Equal("ok", result);
     }
 
     [Fact]
@@ -178,22 +191,27 @@ public sealed class TestServerCallContextTests
     [Fact]
     public async Task Create_CorrelationIdAndTenantAndAuthorization_AllComposeTogether()
     {
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
         var context = SharedKernel.Testing.Grpc.TestServerCallContext.Create(
             correlationId: "corr-xyz",
             configureServices: services =>
             {
-                services.AddSingleton<ITenantProvider>(new FakeTenantProvider(tenantId));
+                services.AddSingleton<IRequestContext>(new SystemRequestContext([], "caller", tenantId));
                 services.AddSingleton<IUserContext>(new FakeUserContext { Roles = ["Admin"] });
             },
             endpointMetadata: [new RequireRoleAttribute("Admin")]);
 
         await new GrpcCorrelationInterceptor().UnaryServerHandler<string, string>("req", context, (_, c) => Task.FromResult("ok"));
-        await new GrpcTenantContextInterceptor().UnaryServerHandler<string, string>("req", context, (_, c) => Task.FromResult("ok"));
+        TenantId? observedTenant = null;
+        await new GrpcTenantContextInterceptor(new RequestContextAccessor()).UnaryServerHandler<string, string>("req", context, (_, c) =>
+        {
+            observedTenant = RequestContextScope.Current?.TenantId;
+            return Task.FromResult("ok");
+        });
         var result = await new GrpcAuthorizationInterceptor().UnaryServerHandler<string, string>("req", context, (_, c) => Task.FromResult("ok"));
 
         Assert.Equal("corr-xyz", context.UserState[GrpcCorrelationInterceptor.ItemsKey]);
-        Assert.Equal(tenantId, context.UserState[GrpcTenantContextInterceptor.ItemsKey]);
+        Assert.Equal(tenantId, observedTenant);
         Assert.Equal("ok", result);
     }
 

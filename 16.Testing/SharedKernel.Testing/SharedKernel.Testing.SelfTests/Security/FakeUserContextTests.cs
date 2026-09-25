@@ -1,3 +1,5 @@
+using SharedKernel.Execution.Tenancy;
+using SharedKernel.Execution.Context;
 using SharedKernel.Security.Abstractions;
 using SharedKernel.Testing.Security;
 using Xunit;
@@ -13,7 +15,7 @@ public sealed class FakeUserContextTests
     {
         var context = new FakeUserContext();
 
-        Assert.Equal(IdentityKind.User, context.IdentityKind);
+        Assert.Equal(ActorKind.User, context.ActorKind);
         Assert.True(context.IsAuthenticated);
         Assert.Equal(FakeUserContext.DefaultSubjectId, context.SubjectId);
         Assert.Equal("11111111-1111-1111-1111-111111111111", FakeUserContext.DefaultSubjectId);
@@ -39,13 +41,13 @@ public sealed class FakeUserContextTests
     }
 
     [Theory]
-    [InlineData(IdentityKind.Anonymous, false)]
-    [InlineData(IdentityKind.User, true)]
-    [InlineData(IdentityKind.ServicePrincipal, true)]
-    [InlineData(IdentityKind.System, true)]
-    public void IsAuthenticated_FollowsIdentityKind(IdentityKind kind, bool expected)
+    [InlineData(ActorKind.Anonymous, false)]
+    [InlineData(ActorKind.User, true)]
+    [InlineData(ActorKind.Service, true)]
+    [InlineData(ActorKind.System, true)]
+    public void IsAuthenticated_FollowsIdentityKind(ActorKind kind, bool expected)
     {
-        var context = new FakeUserContext { IdentityKind = kind };
+        var context = new FakeUserContext { ActorKind = kind };
 
         Assert.Equal(expected, context.IsAuthenticated);
     }
@@ -53,17 +55,17 @@ public sealed class FakeUserContextTests
     [Fact]
     public void IsAuthenticated_MatchesRealAnonymousAndSystemContexts()
     {
-        Assert.Equal(AnonymousUserContext.Instance.IsAuthenticated, new FakeUserContext { IdentityKind = IdentityKind.Anonymous }.IsAuthenticated);
-        Assert.Equal(SystemUserContext.Instance.IsAuthenticated, new FakeUserContext { IdentityKind = IdentityKind.System }.IsAuthenticated);
+        Assert.Equal(AnonymousUserContext.Instance.IsAuthenticated, new FakeUserContext { ActorKind = ActorKind.Anonymous }.IsAuthenticated);
+        Assert.Equal(SystemUserContext.Instance.IsAuthenticated, new FakeUserContext { ActorKind = ActorKind.System }.IsAuthenticated);
     }
 
     [Fact]
     public void Properties_WhenSet_ReturnSetValues()
     {
-        var tenantId = Guid.Parse("6a3b1f0e-9c2d-4e7a-8b5f-1d2c3e4f5a6b");
+        TenantId tenantId = new TenantId(Guid.Parse("6a3b1f0e-9c2d-4e7a-8b5f-1d2c3e4f5a6b"));
         var context = new FakeUserContext
         {
-            IdentityKind = IdentityKind.ServicePrincipal,
+            ActorKind = ActorKind.Service,
             SubjectId = "svc-orders",
             ClientId = "orders-client",
             TenantId = tenantId,
@@ -78,7 +80,7 @@ public sealed class FakeUserContextTests
             IsSenderConstrained = true,
         };
 
-        Assert.Equal(IdentityKind.ServicePrincipal, context.IdentityKind);
+        Assert.Equal(ActorKind.Service, context.ActorKind);
         Assert.Equal("svc-orders", context.SubjectId);
         Assert.Equal("orders-client", context.ClientId);
         Assert.Equal(tenantId, context.TenantId);
@@ -236,7 +238,7 @@ public sealed class FakeUserContextTests
         var authTime = Now.AddSeconds(authOffsetSeconds);
         var maxAge = TimeSpan.FromSeconds(maxAgeSeconds);
         var fake = new FakeUserContext { AuthTime = authTime };
-        var real = new UserContext(IdentityKind.User, FakeUserContext.DefaultSubjectId) { AuthTime = authTime };
+        var real = new UserContext(ActorKind.User, FakeUserContext.DefaultSubjectId) { AuthTime = authTime };
 
         Assert.Equal(real.IsAuthenticationFresherThan(maxAge, Now), fake.IsAuthenticationFresherThan(maxAge, Now));
     }

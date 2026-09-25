@@ -33,7 +33,7 @@ namespace SharedKernel.Analyzers.Diagnostics;
 /// </para>
 /// <para>
 /// <strong>Fix:</strong> inject <c>SharedKernel.Security.Abstractions.IUserContext</c> (for
-/// identity) or <c>ITenantProvider</c> (for tenant identity) instead of a raw
+/// identity) or <c>SharedKernel.Execution.Context.IRequestContext</c> (for tenant identity) instead of a raw
 /// <c>HttpContext</c>-family type. Application-layer and domain-adjacent code must never reach
 /// past the platform's identity/tenant abstraction into ASP.NET Core hosting internals.
 /// </para>
@@ -60,7 +60,7 @@ public sealed class RawSecurityContextConstructorInjectionAnalyzer : AnalyzerBas
 
     /// <summary>
     /// The namespace prefixes that suppress this diagnostic — types inside either package
-    /// legitimately construct <c>IUserContext</c>/<c>ITenantProvider</c> implementations from raw
+    /// legitimately construct <c>IUserContext</c>/<c>IRequestContext</c> implementations from raw
     /// <c>HttpContext</c>-family types.
     /// </summary>
     private static readonly ImmutableArray<string> ExemptedNamespacePrefixes = ImmutableArray.Create(
@@ -74,7 +74,7 @@ public sealed class RawSecurityContextConstructorInjectionAnalyzer : AnalyzerBas
         title: "Raw security-context constructor injection",
         messageFormat: "Constructor parameter '{0}' is typed as '{1}' directly. " +
                        "Inject SharedKernel.Security.Abstractions.IUserContext (for identity) or " +
-                       "ITenantProvider (for tenant identity) instead of a raw HttpContext-family " +
+                       "SharedKernel.Execution.Context.IRequestContext (for tenant identity) instead of a raw HttpContext-family " +
                        "type. Application-layer and domain-adjacent code must never reach past the " +
                        "platform's identity/tenant abstraction into ASP.NET Core hosting internals.",
         category: Usage,

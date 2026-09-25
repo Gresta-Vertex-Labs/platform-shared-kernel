@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.EfCore.Context;
@@ -85,7 +86,7 @@ internal sealed class ActorWithTenantContext(IRequestContext actor, IRequestCont
 {
     public bool IsAuthenticated => actor.IsAuthenticated;
     public string? UserId => actor.UserId;
-    public Guid? TenantId => tenant.TenantId;
+    public TenantId? TenantId => tenant.TenantId;
     public ActorKind ActorKind => actor.ActorKind;
 
     public ValueTask<bool> HasPermissionAsync(string permission, CancellationToken cancellationToken) =>

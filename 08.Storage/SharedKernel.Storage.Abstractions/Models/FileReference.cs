@@ -1,3 +1,5 @@
+using SharedKernel.Execution.Tenancy;
+
 namespace SharedKernel.Storage;
 
 /// <summary>
@@ -18,7 +20,7 @@ public sealed record FileReference
     public required string Store { get; init; }
 
     /// <summary>Gets the tenant of a tenant-scoped store, or <see langword="null"/> for a shared store.</summary>
-    public string? TenantId { get; init; }
+    public TenantId? TenantId { get; init; }
 
     /// <summary>Gets the object key, relative to the store and tenant.</summary>
     public required string Key { get; init; }

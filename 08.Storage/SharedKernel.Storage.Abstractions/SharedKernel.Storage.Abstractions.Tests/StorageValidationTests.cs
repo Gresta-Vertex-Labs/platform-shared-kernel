@@ -40,29 +40,6 @@ public sealed class StorageValidationTests
             .Should().Be((null, StorageErrorCodes.InvalidKey));
 
     [Theory]
-    [InlineData("tenant-1")]
-    [InlineData("3f2504e0-4f89-11d3-9a0c-0305e82c3301")]
-    [InlineData("Acme_Corp.eu")]
-    public void ValidateTenantId_accepts_identifier_characters(string tenantId) =>
-        StorageValidation.ValidateTenantId(tenantId).Should().BeNull();
-
-    [Theory]
-    [InlineData(null)]
-    [InlineData("")]
-    [InlineData(".")]
-    [InlineData("..")]
-    [InlineData("a/b")]
-    [InlineData("a b")]
-    [InlineData("tenant%2F")]
-    public void ValidateTenantId_rejects_anything_that_could_alter_the_prefix(string? tenantId) =>
-        StorageValidation.ValidateTenantId(tenantId)!.Code.Should().Be(StorageErrorCodes.InvalidTenant);
-
-    [Fact]
-    public void ValidateTenantId_rejects_ids_longer_than_the_limit() =>
-        StorageValidation.ValidateTenantId(new string('t', StorageValidation.MaxTenantIdLength + 1))!.Code
-            .Should().Be(StorageErrorCodes.InvalidTenant);
-
-    [Theory]
     [InlineData("bad key")]
     [InlineData("bad.key")]
     [InlineData("")]

@@ -1,5 +1,6 @@
 using Elastic.Clients.Elasticsearch;
 using FluentAssertions;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Search.Abstractions.Models;
 using SharedKernel.Search.ElasticSearch.Index;
 using SharedKernel.Search.ElasticSearch.Provisioning;
@@ -81,7 +82,7 @@ public sealed class ElasticSearchProvisioningAndWriteTests : IAsyncLifetime
         var writeResult = await _index.IndexAsync(document, SearchWriteConsistency.Searchable);
         writeResult.IsSuccess.Should().BeTrue();
 
-        var getResult = await _index.GetAsync(document.DocumentId, TenantScope.Of(TestProductCorpus.TenantA));
+        var getResult = await _index.GetAsync(document.DocumentId, TenantScope.For(TestProductCorpus.TenantA));
         getResult.IsSuccess.Should().BeTrue();
         getResult.Value.DocumentId.Should().Be(document.DocumentId);
     }
@@ -102,7 +103,7 @@ public sealed class ElasticSearchProvisioningAndWriteTests : IAsyncLifetime
         var waitResult = await _index.WaitUntilSearchableAsync(writeResult.Value, TimeSpan.FromSeconds(10));
         waitResult.IsSuccess.Should().BeTrue();
 
-        var getResult = await _index.GetAsync(document.DocumentId, TenantScope.Of(TestProductCorpus.TenantA));
+        var getResult = await _index.GetAsync(document.DocumentId, TenantScope.For(TestProductCorpus.TenantA));
         getResult.IsSuccess.Should().BeTrue();
         getResult.Value.DocumentId.Should().Be(document.DocumentId);
     }
@@ -164,7 +165,7 @@ public sealed class ElasticSearchProvisioningAndWriteTests : IAsyncLifetime
 
         // No-I/O proof: the charset check runs over the WHOLE collection before any request is issued,
         // so even the VALID sibling documents in the same batch must be unaffected.
-        var siblingResult = await _index.GetAsync("prod-bulk-mixed-001", TenantScope.Of(TestProductCorpus.TenantA));
+        var siblingResult = await _index.GetAsync("prod-bulk-mixed-001", TenantScope.For(TestProductCorpus.TenantA));
         siblingResult.IsFailure.Should().BeTrue();
         siblingResult.Error.Code.Should().Be("search.document_not_found");
     }
@@ -179,7 +180,7 @@ public sealed class ElasticSearchProvisioningAndWriteTests : IAsyncLifetime
         writeResult.IsFailure.Should().BeTrue();
         writeResult.Error.Code.Should().Be("search.invalid_document_id");
 
-        var countResult = await _index.CountAsync(filter: null, TenantScope.Of(TestProductCorpus.TenantA));
+        var countResult = await _index.CountAsync(filter: null, TenantScope.For(TestProductCorpus.TenantA));
         countResult.IsSuccess.Should().BeTrue();
         countResult.Value.IsExact.Should().BeTrue();
         countResult.Value.Value.Should().Be(TestProductCorpus.ForTenant(TestProductCorpus.TenantA).Count);
@@ -188,7 +189,7 @@ public sealed class ElasticSearchProvisioningAndWriteTests : IAsyncLifetime
     private static TestProduct NewProduct(string documentId) => new()
     {
         DocumentId = documentId,
-        TenantId = TestProductCorpus.TenantA,
+        TenantId = TestProductCorpus.TenantA.ToString(),
         Name = "Write Test Product",
         Description = "A product created directly by a T-21 write test.",
         Status = "active",

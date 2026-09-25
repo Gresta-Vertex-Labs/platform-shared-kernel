@@ -2,6 +2,7 @@ using SharedKernel.AI.Abstractions.Abstractions;
 using SharedKernel.AI.Abstractions.Errors;
 using SharedKernel.AI.Abstractions.Exceptions;
 using SharedKernel.AI.Abstractions.Models;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Testing.Intelligence;
 
 namespace SharedKernel.Testing.SelfTests.Intelligence;
@@ -35,7 +36,7 @@ public sealed class InMemoryVectorCollectionTests
     {
         var collection = new InMemoryVectorCollection<TestVectorRecord>(TenantedDefinition());
 
-        var result = await collection.UpsertAsync(Rec("rec-1", [1f, 0f], tenantId: "tenant-a"), TenantScope.Of("tenant-a"), CancellationToken.None);
+        var result = await collection.UpsertAsync(Rec("rec-1", [1f, 0f], tenantId: VectorTestTenants.TenantA.ToString()), TenantScope.For(VectorTestTenants.TenantA), CancellationToken.None);
 
         Assert.True(result.IsSuccess);
         Assert.Equal(collection.CollectionName, result.Value.CollectionName);
@@ -52,7 +53,7 @@ public sealed class InMemoryVectorCollectionTests
     {
         var collection = new InMemoryVectorCollection<TestVectorRecord>(TenantedDefinition());
 
-        var result = await collection.UpsertAsync(Rec("   ", [1f, 0f], tenantId: "tenant-a"), TenantScope.Of("tenant-a"), CancellationToken.None);
+        var result = await collection.UpsertAsync(Rec("   ", [1f, 0f], tenantId: VectorTestTenants.TenantA.ToString()), TenantScope.For(VectorTestTenants.TenantA), CancellationToken.None);
 
         Assert.Equal(IntelligenceErrors.InvalidRecordId("   "), result.Error);
         Assert.False(collection.IsQueryable("   "));
@@ -62,9 +63,9 @@ public sealed class InMemoryVectorCollectionTests
     public async Task UpsertAsync_ModelIdMismatch_ReturnsEmbeddingModelMismatch_AndDoesNotStore()
     {
         var collection = new InMemoryVectorCollection<TestVectorRecord>(TenantedDefinition());
-        var record = Rec("rec-1", [1f, 0f], tenantId: "tenant-a") with { ModelId = "wrong-model" };
+        var record = Rec("rec-1", [1f, 0f], tenantId: VectorTestTenants.TenantA.ToString()) with { ModelId = "wrong-model" };
 
-        var result = await collection.UpsertAsync(record, TenantScope.Of("tenant-a"), CancellationToken.None);
+        var result = await collection.UpsertAsync(record, TenantScope.For(VectorTestTenants.TenantA), CancellationToken.None);
 
         Assert.Equal(IntelligenceErrors.EmbeddingModelMismatch(collection.CollectionName, ModelId, "wrong-model"), result.Error);
         Assert.False(collection.IsQueryable("rec-1"));
@@ -75,7 +76,7 @@ public sealed class InMemoryVectorCollectionTests
     {
         var collection = new InMemoryVectorCollection<TestVectorRecord>(TenantedDefinition());
 
-        var result = await collection.UpsertAsync(Rec("rec-1", [1f, 0f, 0f], tenantId: "tenant-a"), TenantScope.Of("tenant-a"), CancellationToken.None);
+        var result = await collection.UpsertAsync(Rec("rec-1", [1f, 0f, 0f], tenantId: VectorTestTenants.TenantA.ToString()), TenantScope.For(VectorTestTenants.TenantA), CancellationToken.None);
 
         Assert.Equal(IntelligenceErrors.DimensionMismatch(collection.CollectionName, 2, 3), result.Error);
         Assert.False(collection.IsQueryable("rec-1"));
@@ -86,7 +87,7 @@ public sealed class InMemoryVectorCollectionTests
     {
         var collection = new InMemoryVectorCollection<TestVectorRecord>(TenantedDefinition()) { SimulateFailure = true };
 
-        var result = await collection.UpsertAsync(Rec("rec-1", [1f, 0f], tenantId: "tenant-a"), TenantScope.Of("tenant-a"), CancellationToken.None);
+        var result = await collection.UpsertAsync(Rec("rec-1", [1f, 0f], tenantId: VectorTestTenants.TenantA.ToString()), TenantScope.For(VectorTestTenants.TenantA), CancellationToken.None);
 
         Assert.True(result.IsFailure);
         Assert.False(collection.IsQueryable("rec-1"));
@@ -98,11 +99,11 @@ public sealed class InMemoryVectorCollectionTests
         var collection = new InMemoryVectorCollection<TestVectorRecord>(TenantedDefinition());
         TestVectorRecord[] records =
         [
-            Rec("rec-1", [1f, 0f], tenantId: "tenant-a"),
-            Rec("   ", [1f, 0f], tenantId: "tenant-a"),
+            Rec("rec-1", [1f, 0f], tenantId: VectorTestTenants.TenantA.ToString()),
+            Rec("   ", [1f, 0f], tenantId: VectorTestTenants.TenantA.ToString()),
         ];
 
-        var result = await collection.UpsertManyAsync(records, TenantScope.Of("tenant-a"), CancellationToken.None);
+        var result = await collection.UpsertManyAsync(records, TenantScope.For(VectorTestTenants.TenantA), CancellationToken.None);
 
         Assert.True(result.IsSuccess);
         Assert.Equal(1, result.Value.SucceededCount);
@@ -116,7 +117,7 @@ public sealed class InMemoryVectorCollectionTests
     {
         var collection = new InMemoryVectorCollection<TestVectorRecord>(TenantedDefinition()) { SimulateFailure = true };
 
-        var result = await collection.UpsertManyAsync([Rec("rec-1", [1f, 0f], tenantId: "tenant-a")], TenantScope.Of("tenant-a"), CancellationToken.None);
+        var result = await collection.UpsertManyAsync([Rec("rec-1", [1f, 0f], tenantId: VectorTestTenants.TenantA.ToString())], TenantScope.For(VectorTestTenants.TenantA), CancellationToken.None);
 
         Assert.True(result.IsFailure);
     }
@@ -128,7 +129,7 @@ public sealed class InMemoryVectorCollectionTests
     {
         var collection = new InMemoryVectorCollection<TestVectorRecord>(TenantedDefinition());
 
-        var result = await collection.DeleteAsync("never-existed", TenantScope.Of("tenant-a"), CancellationToken.None);
+        var result = await collection.DeleteAsync("never-existed", TenantScope.For(VectorTestTenants.TenantA), CancellationToken.None);
 
         Assert.True(result.IsSuccess);
         Assert.Equal(0, result.Value.AffectedCount);
@@ -139,9 +140,9 @@ public sealed class InMemoryVectorCollectionTests
     public async Task DeleteAsync_ExistingId_Removes_AndRecordsDeletion()
     {
         var collection = new InMemoryVectorCollection<TestVectorRecord>(TenantedDefinition());
-        await collection.UpsertAsync(Rec("rec-1", [1f, 0f], tenantId: "tenant-a"), TenantScope.Of("tenant-a"), CancellationToken.None);
+        await collection.UpsertAsync(Rec("rec-1", [1f, 0f], tenantId: VectorTestTenants.TenantA.ToString()), TenantScope.For(VectorTestTenants.TenantA), CancellationToken.None);
 
-        var result = await collection.DeleteAsync("rec-1", TenantScope.Of("tenant-a"), CancellationToken.None);
+        var result = await collection.DeleteAsync("rec-1", TenantScope.For(VectorTestTenants.TenantA), CancellationToken.None);
 
         Assert.True(result.IsSuccess);
         Assert.Equal(1, result.Value.AffectedCount);
@@ -153,10 +154,10 @@ public sealed class InMemoryVectorCollectionTests
     public async Task DeleteAsync_SimulateFailure_ReturnsFailure_AndDoesNotDelete()
     {
         var collection = new InMemoryVectorCollection<TestVectorRecord>(TenantedDefinition());
-        await collection.UpsertAsync(Rec("rec-1", [1f, 0f], tenantId: "tenant-a"), TenantScope.Of("tenant-a"), CancellationToken.None);
+        await collection.UpsertAsync(Rec("rec-1", [1f, 0f], tenantId: VectorTestTenants.TenantA.ToString()), TenantScope.For(VectorTestTenants.TenantA), CancellationToken.None);
         collection.SimulateFailure = true;
 
-        var result = await collection.DeleteAsync("rec-1", TenantScope.Of("tenant-a"), CancellationToken.None);
+        var result = await collection.DeleteAsync("rec-1", TenantScope.For(VectorTestTenants.TenantA), CancellationToken.None);
 
         Assert.True(result.IsFailure);
         Assert.True(collection.IsQueryable("rec-1"));
@@ -166,9 +167,9 @@ public sealed class InMemoryVectorCollectionTests
     public async Task DeleteManyAsync_MixedPresence_CountsEveryRequestedIdAsSucceeded()
     {
         var collection = new InMemoryVectorCollection<TestVectorRecord>(TenantedDefinition());
-        await collection.UpsertAsync(Rec("rec-1", [1f, 0f], tenantId: "tenant-a"), TenantScope.Of("tenant-a"), CancellationToken.None);
+        await collection.UpsertAsync(Rec("rec-1", [1f, 0f], tenantId: VectorTestTenants.TenantA.ToString()), TenantScope.For(VectorTestTenants.TenantA), CancellationToken.None);
 
-        var result = await collection.DeleteManyAsync(["rec-1", "never-existed"], TenantScope.Of("tenant-a"), CancellationToken.None);
+        var result = await collection.DeleteManyAsync(["rec-1", "never-existed"], TenantScope.For(VectorTestTenants.TenantA), CancellationToken.None);
 
         Assert.True(result.IsSuccess);
         Assert.Equal(2, result.Value.SucceededCount);
@@ -181,7 +182,7 @@ public sealed class InMemoryVectorCollectionTests
     {
         var collection = new InMemoryVectorCollection<TestVectorRecord>(TenantedDefinition());
 
-        var result = await collection.DeleteByFilterAsync(VectorFilter.Eq("Status", "active"), TenantScope.None, CancellationToken.None);
+        var result = await collection.DeleteByFilterAsync(VectorFilter.Eq("Status", "active"), TenantScope.Global, CancellationToken.None);
 
         Assert.Equal(IntelligenceErrors.TenantScopeMissing(collection.CollectionName), result.Error);
     }
@@ -190,10 +191,10 @@ public sealed class InMemoryVectorCollectionTests
     public async Task DeleteByFilterAsync_InjectsOuterTenantAnd_OnlyDeletesMatchingTenantRecords()
     {
         var collection = new InMemoryVectorCollection<TestVectorRecord>(TenantedDefinition());
-        await collection.UpsertAsync(Rec("rec-a", [1f, 0f], tenantId: "tenant-a", status: "active"), TenantScope.Of("tenant-a"), CancellationToken.None);
-        await collection.UpsertAsync(Rec("rec-b", [1f, 0f], tenantId: "tenant-b", status: "active"), TenantScope.Of("tenant-b"), CancellationToken.None);
+        await collection.UpsertAsync(Rec("rec-a", [1f, 0f], tenantId: VectorTestTenants.TenantA.ToString(), status: "active"), TenantScope.For(VectorTestTenants.TenantA), CancellationToken.None);
+        await collection.UpsertAsync(Rec("rec-b", [1f, 0f], tenantId: VectorTestTenants.TenantB.ToString(), status: "active"), TenantScope.For(VectorTestTenants.TenantB), CancellationToken.None);
 
-        var result = await collection.DeleteByFilterAsync(VectorFilter.Eq("Status", "active"), TenantScope.Of("tenant-a"), CancellationToken.None);
+        var result = await collection.DeleteByFilterAsync(VectorFilter.Eq("Status", "active"), TenantScope.For(VectorTestTenants.TenantA), CancellationToken.None);
 
         Assert.True(result.IsSuccess);
         Assert.Equal(1, result.Value.AffectedCount);
@@ -207,7 +208,7 @@ public sealed class InMemoryVectorCollectionTests
     {
         var collection = new InMemoryVectorCollection<TestVectorRecord>(TenantedDefinition()) { SimulateFailure = true };
 
-        var result = await collection.DeleteByFilterAsync(VectorFilter.Eq("Status", "active"), TenantScope.Of("tenant-a"), CancellationToken.None);
+        var result = await collection.DeleteByFilterAsync(VectorFilter.Eq("Status", "active"), TenantScope.For(VectorTestTenants.TenantA), CancellationToken.None);
 
         Assert.True(result.IsFailure);
     }
@@ -227,7 +228,7 @@ public sealed class InMemoryVectorCollectionTests
     public async Task WaitUntilQueryableAsync_AlwaysSucceeds_EveryFakeWriteIsImmediatelyQueryable()
     {
         var collection = new InMemoryVectorCollection<TestVectorRecord>(TenantedDefinition());
-        var receipt = (await collection.UpsertAsync(Rec("rec-1", [1f, 0f], tenantId: "tenant-a"), TenantScope.Of("tenant-a"), CancellationToken.None)).Value;
+        var receipt = (await collection.UpsertAsync(Rec("rec-1", [1f, 0f], tenantId: VectorTestTenants.TenantA.ToString()), TenantScope.For(VectorTestTenants.TenantA), CancellationToken.None)).Value;
 
         var result = await collection.WaitUntilQueryableAsync(receipt, TimeSpan.FromSeconds(1), CancellationToken.None);
 
@@ -238,7 +239,7 @@ public sealed class InMemoryVectorCollectionTests
     public async Task WaitUntilQueryableAsync_UnaffectedBySimulateFailure()
     {
         var collection = new InMemoryVectorCollection<TestVectorRecord>(TenantedDefinition());
-        var receipt = (await collection.UpsertAsync(Rec("rec-1", [1f, 0f], tenantId: "tenant-a"), TenantScope.Of("tenant-a"), CancellationToken.None)).Value;
+        var receipt = (await collection.UpsertAsync(Rec("rec-1", [1f, 0f], tenantId: VectorTestTenants.TenantA.ToString()), TenantScope.For(VectorTestTenants.TenantA), CancellationToken.None)).Value;
         collection.SimulateFailure = true;
 
         var result = await collection.WaitUntilQueryableAsync(receipt, TimeSpan.FromSeconds(1), CancellationToken.None);
@@ -254,7 +255,7 @@ public sealed class InMemoryVectorCollectionTests
         var collection = new InMemoryVectorCollection<TestVectorRecord>(TenantedDefinition());
 
         var query = new VectorQuery { Vector = new[] { 1f, 0f }, ModelId = "wrong-model" };
-        var result = await collection.QueryAsync(query, TenantScope.Of("tenant-a"), CancellationToken.None);
+        var result = await collection.QueryAsync(query, TenantScope.For(VectorTestTenants.TenantA), CancellationToken.None);
 
         Assert.Equal(IntelligenceErrors.EmbeddingModelMismatch(collection.CollectionName, ModelId, "wrong-model"), result.Error);
         Assert.Empty(collection.QueriedVectors);
@@ -266,7 +267,7 @@ public sealed class InMemoryVectorCollectionTests
         var collection = new InMemoryVectorCollection<TestVectorRecord>(TenantedDefinition());
 
         var query = new VectorQuery { Vector = new[] { 1f, 0f, 0f }, ModelId = ModelId };
-        var result = await collection.QueryAsync(query, TenantScope.Of("tenant-a"), CancellationToken.None);
+        var result = await collection.QueryAsync(query, TenantScope.For(VectorTestTenants.TenantA), CancellationToken.None);
 
         Assert.Equal(IntelligenceErrors.DimensionMismatch(collection.CollectionName, 2, 3), result.Error);
         Assert.Empty(collection.QueriedVectors);
@@ -278,7 +279,7 @@ public sealed class InMemoryVectorCollectionTests
         var collection = new InMemoryVectorCollection<TestVectorRecord>(TenantedDefinition());
 
         var query = new VectorQuery { Vector = new[] { 1f, 0f }, ModelId = ModelId };
-        var result = await collection.QueryAsync(query, TenantScope.None, CancellationToken.None);
+        var result = await collection.QueryAsync(query, TenantScope.Global, CancellationToken.None);
 
         Assert.Equal(IntelligenceErrors.TenantScopeMissing(collection.CollectionName), result.Error);
         Assert.Empty(collection.QueriedVectors);
@@ -288,10 +289,10 @@ public sealed class InMemoryVectorCollectionTests
     public async Task QueryAsync_ValidQuery_RecordsQueriedVectors()
     {
         var collection = new InMemoryVectorCollection<TestVectorRecord>(TenantedDefinition());
-        await collection.UpsertAsync(Rec("rec-1", [1f, 0f], tenantId: "tenant-a"), TenantScope.Of("tenant-a"), CancellationToken.None);
+        await collection.UpsertAsync(Rec("rec-1", [1f, 0f], tenantId: VectorTestTenants.TenantA.ToString()), TenantScope.For(VectorTestTenants.TenantA), CancellationToken.None);
 
         var query = new VectorQuery { Vector = new[] { 1f, 0f }, ModelId = ModelId };
-        var result = await collection.QueryAsync(query, TenantScope.Of("tenant-a"), CancellationToken.None);
+        var result = await collection.QueryAsync(query, TenantScope.For(VectorTestTenants.TenantA), CancellationToken.None);
 
         Assert.True(result.IsSuccess);
         Assert.Single(collection.QueriedVectors);
@@ -310,7 +311,7 @@ public sealed class InMemoryVectorCollectionTests
                 Rec("rec-2", [1f, 0f], status: "retired", price: 20.0),
                 Rec("rec-3", [1f, 0f], status: "active", price: 30.0),
             ],
-            TenantScope.None,
+            TenantScope.Global,
             CancellationToken.None);
 
         Assert.Equal(["rec-1", "rec-3"], await Ids(collection, VectorFilter.Eq("Status", "active")));
@@ -326,7 +327,7 @@ public sealed class InMemoryVectorCollectionTests
     private static async Task<string[]> Ids(InMemoryVectorCollection<TestVectorRecord> collection, VectorFilter filter)
     {
         var ids = new List<string>();
-        await foreach (var record in collection.ScrollAsync(filter, TenantScope.None, batchSize: 10, CancellationToken.None))
+        await foreach (var record in collection.ScrollAsync(filter, TenantScope.Global, batchSize: 10, CancellationToken.None))
         {
             ids.Add(record.Id);
         }
@@ -339,7 +340,7 @@ public sealed class InMemoryVectorCollectionTests
     {
         var collection = new InMemoryVectorCollection<TestVectorRecord>(TenantedDefinition());
 
-        var result = await collection.CountAsync(null, TenantScope.None, CancellationToken.None);
+        var result = await collection.CountAsync(null, TenantScope.Global, CancellationToken.None);
 
         Assert.Equal(IntelligenceErrors.TenantScopeMissing(collection.CollectionName), result.Error);
     }
@@ -350,14 +351,14 @@ public sealed class InMemoryVectorCollectionTests
         var collection = new InMemoryVectorCollection<TestVectorRecord>(TenantedDefinition());
         await collection.UpsertManyAsync(
             [
-                Rec("rec-1", [1f, 0f], tenantId: "tenant-a", status: "active"),
-                Rec("rec-2", [1f, 0f], tenantId: "tenant-a", status: "retired"),
-                Rec("rec-3", [1f, 0f], tenantId: "tenant-b", status: "active"),
+                Rec("rec-1", [1f, 0f], tenantId: VectorTestTenants.TenantA.ToString(), status: "active"),
+                Rec("rec-2", [1f, 0f], tenantId: VectorTestTenants.TenantA.ToString(), status: "retired"),
+                Rec("rec-3", [1f, 0f], tenantId: VectorTestTenants.TenantB.ToString(), status: "active"),
             ],
-            TenantScope.Of("tenant-a"),
+            TenantScope.For(VectorTestTenants.TenantA),
             CancellationToken.None);
 
-        var result = await collection.CountAsync(VectorFilter.Eq("Status", "active"), TenantScope.Of("tenant-a"), CancellationToken.None);
+        var result = await collection.CountAsync(VectorFilter.Eq("Status", "active"), TenantScope.For(VectorTestTenants.TenantA), CancellationToken.None);
 
         Assert.True(result.IsSuccess);
         Assert.Equal(1, result.Value);
@@ -369,9 +370,9 @@ public sealed class InMemoryVectorCollectionTests
     public async Task GetAsync_CorrectTenant_ReturnsRecord()
     {
         var collection = new InMemoryVectorCollection<TestVectorRecord>(TenantedDefinition());
-        await collection.UpsertAsync(Rec("rec-1", [1f, 0f], tenantId: "tenant-a"), TenantScope.Of("tenant-a"), CancellationToken.None);
+        await collection.UpsertAsync(Rec("rec-1", [1f, 0f], tenantId: VectorTestTenants.TenantA.ToString()), TenantScope.For(VectorTestTenants.TenantA), CancellationToken.None);
 
-        var result = await collection.GetAsync("rec-1", TenantScope.Of("tenant-a"), CancellationToken.None);
+        var result = await collection.GetAsync("rec-1", TenantScope.For(VectorTestTenants.TenantA), CancellationToken.None);
 
         Assert.True(result.IsSuccess);
         Assert.Equal("rec-1", result.Value.Id);
@@ -381,9 +382,9 @@ public sealed class InMemoryVectorCollectionTests
     public async Task GetAsync_WrongTenant_ReturnsRecordNotFound_NeverACrossTenantLeak()
     {
         var collection = new InMemoryVectorCollection<TestVectorRecord>(TenantedDefinition());
-        await collection.UpsertAsync(Rec("rec-1", [1f, 0f], tenantId: "tenant-a"), TenantScope.Of("tenant-a"), CancellationToken.None);
+        await collection.UpsertAsync(Rec("rec-1", [1f, 0f], tenantId: VectorTestTenants.TenantA.ToString()), TenantScope.For(VectorTestTenants.TenantA), CancellationToken.None);
 
-        var result = await collection.GetAsync("rec-1", TenantScope.Of("tenant-b"), CancellationToken.None);
+        var result = await collection.GetAsync("rec-1", TenantScope.For(VectorTestTenants.TenantB), CancellationToken.None);
 
         Assert.Equal(IntelligenceErrors.RecordNotFound(collection.CollectionName, "rec-1"), result.Error);
     }
@@ -393,7 +394,7 @@ public sealed class InMemoryVectorCollectionTests
     {
         var collection = new InMemoryVectorCollection<TestVectorRecord>(TenantedDefinition());
 
-        var result = await collection.GetAsync("never-existed", TenantScope.Of("tenant-a"), CancellationToken.None);
+        var result = await collection.GetAsync("never-existed", TenantScope.For(VectorTestTenants.TenantA), CancellationToken.None);
 
         Assert.Equal(IntelligenceErrors.RecordNotFound(collection.CollectionName, "never-existed"), result.Error);
     }
@@ -402,12 +403,12 @@ public sealed class InMemoryVectorCollectionTests
     public async Task GetAsync_NoTenantScopeOnTenantedCollection_HasNoUpfrontGuard_ReturnsRecordNotFound()
     {
         // GetAsync deliberately carries no upfront TenantScopeMissing check, unlike
-        // Count/DeleteByFilter/Scroll -- a mismatch (including TenantScope.None) folds into
+        // Count/DeleteByFilter/Scroll -- a mismatch (including TenantScope.Global) folds into
         // RecordNotFound identically to a genuinely missing id.
         var collection = new InMemoryVectorCollection<TestVectorRecord>(TenantedDefinition());
-        await collection.UpsertAsync(Rec("rec-1", [1f, 0f], tenantId: "tenant-a"), TenantScope.Of("tenant-a"), CancellationToken.None);
+        await collection.UpsertAsync(Rec("rec-1", [1f, 0f], tenantId: VectorTestTenants.TenantA.ToString()), TenantScope.For(VectorTestTenants.TenantA), CancellationToken.None);
 
-        var result = await collection.GetAsync("rec-1", TenantScope.None, CancellationToken.None);
+        var result = await collection.GetAsync("rec-1", TenantScope.Global, CancellationToken.None);
 
         Assert.Equal(IntelligenceErrors.RecordNotFound(collection.CollectionName, "rec-1"), result.Error);
     }
@@ -421,7 +422,7 @@ public sealed class InMemoryVectorCollectionTests
 
         await Assert.ThrowsAsync<IntelligenceStreamException>(async () =>
         {
-            await foreach (var _ in collection.ScrollAsync(null, TenantScope.None, batchSize: 10, CancellationToken.None))
+            await foreach (var _ in collection.ScrollAsync(null, TenantScope.Global, batchSize: 10, CancellationToken.None))
             {
             }
         });
@@ -433,15 +434,15 @@ public sealed class InMemoryVectorCollectionTests
         var collection = new InMemoryVectorCollection<TestVectorRecord>(TenantedDefinition());
         await collection.UpsertManyAsync(
             [
-                Rec("rec-1", [1f, 0f], tenantId: "tenant-a"),
-                Rec("rec-2", [1f, 0f], tenantId: "tenant-a"),
-                Rec("rec-3", [1f, 0f], tenantId: "tenant-b"),
+                Rec("rec-1", [1f, 0f], tenantId: VectorTestTenants.TenantA.ToString()),
+                Rec("rec-2", [1f, 0f], tenantId: VectorTestTenants.TenantA.ToString()),
+                Rec("rec-3", [1f, 0f], tenantId: VectorTestTenants.TenantB.ToString()),
             ],
-            TenantScope.Of("tenant-a"),
+            TenantScope.For(VectorTestTenants.TenantA),
             CancellationToken.None);
 
         var ids = new List<string>();
-        await foreach (var record in collection.ScrollAsync(null, TenantScope.Of("tenant-a"), batchSize: 10, CancellationToken.None))
+        await foreach (var record in collection.ScrollAsync(null, TenantScope.For(VectorTestTenants.TenantA), batchSize: 10, CancellationToken.None))
         {
             ids.Add(record.Id);
         }
@@ -455,7 +456,7 @@ public sealed class InMemoryVectorCollectionTests
         var collection = new InMemoryVectorCollection<TestVectorRecord>(TenantedDefinition());
         for (var i = 0; i < 5; i++)
         {
-            await collection.UpsertAsync(Rec($"rec-{i}", [1f, 0f], tenantId: "tenant-a"), TenantScope.Of("tenant-a"), CancellationToken.None);
+            await collection.UpsertAsync(Rec($"rec-{i}", [1f, 0f], tenantId: VectorTestTenants.TenantA.ToString()), TenantScope.For(VectorTestTenants.TenantA), CancellationToken.None);
         }
 
         using var cts = new CancellationTokenSource();
@@ -463,7 +464,7 @@ public sealed class InMemoryVectorCollectionTests
 
         await Assert.ThrowsAsync<OperationCanceledException>(async () =>
         {
-            await foreach (var record in collection.ScrollAsync(null, TenantScope.Of("tenant-a"), batchSize: 10, cts.Token))
+            await foreach (var record in collection.ScrollAsync(null, TenantScope.For(VectorTestTenants.TenantA), batchSize: 10, cts.Token))
             {
                 seen.Add(record.Id);
                 if (seen.Count == 1)
@@ -482,10 +483,10 @@ public sealed class InMemoryVectorCollectionTests
     public async Task QueryAsync_CosineMetric_RanksDescending_HigherSimilarityFirst()
     {
         var collection = new InMemoryVectorCollection<TestVectorRecord>(GlobalDefinition(VectorDistanceMetric.Cosine));
-        await collection.UpsertAsync(Rec("y", [1f, 0f]), TenantScope.None, CancellationToken.None);
-        await collection.UpsertAsync(Rec("z", [2f, 2f]), TenantScope.None, CancellationToken.None);
+        await collection.UpsertAsync(Rec("y", [1f, 0f]), TenantScope.Global, CancellationToken.None);
+        await collection.UpsertAsync(Rec("z", [2f, 2f]), TenantScope.Global, CancellationToken.None);
 
-        var result = await collection.QueryAsync(new VectorQuery { Vector = new[] { 1f, 0f }, ModelId = ModelId }, TenantScope.None, CancellationToken.None);
+        var result = await collection.QueryAsync(new VectorQuery { Vector = new[] { 1f, 0f }, ModelId = ModelId }, TenantScope.Global, CancellationToken.None);
 
         Assert.True(result.IsSuccess);
         Assert.Equal(["y", "z"], result.Value.Hits.Select(h => h.Record.Id));
@@ -499,10 +500,10 @@ public sealed class InMemoryVectorCollectionTests
     public async Task QueryAsync_DotProductMetric_RanksDescending_ByMagnitudeSensitiveScore()
     {
         var collection = new InMemoryVectorCollection<TestVectorRecord>(GlobalDefinition(VectorDistanceMetric.DotProduct));
-        await collection.UpsertAsync(Rec("y", [1f, 0f]), TenantScope.None, CancellationToken.None);
-        await collection.UpsertAsync(Rec("z", [2f, 2f]), TenantScope.None, CancellationToken.None);
+        await collection.UpsertAsync(Rec("y", [1f, 0f]), TenantScope.Global, CancellationToken.None);
+        await collection.UpsertAsync(Rec("z", [2f, 2f]), TenantScope.Global, CancellationToken.None);
 
-        var result = await collection.QueryAsync(new VectorQuery { Vector = new[] { 1f, 0f }, ModelId = ModelId }, TenantScope.None, CancellationToken.None);
+        var result = await collection.QueryAsync(new VectorQuery { Vector = new[] { 1f, 0f }, ModelId = ModelId }, TenantScope.Global, CancellationToken.None);
 
         // Dot product is magnitude-sensitive -- z (dot=2) ranks ABOVE y (dot=1), the opposite order
         // from cosine similarity for this same pair, proving the two metrics are not interchangeable.
@@ -516,10 +517,10 @@ public sealed class InMemoryVectorCollectionTests
     public async Task QueryAsync_EuclideanMetric_RanksAscending_SmallerDistanceFirst()
     {
         var collection = new InMemoryVectorCollection<TestVectorRecord>(GlobalDefinition(VectorDistanceMetric.Euclidean));
-        await collection.UpsertAsync(Rec("y", [1f, 0f]), TenantScope.None, CancellationToken.None);
-        await collection.UpsertAsync(Rec("z", [2f, 2f]), TenantScope.None, CancellationToken.None);
+        await collection.UpsertAsync(Rec("y", [1f, 0f]), TenantScope.Global, CancellationToken.None);
+        await collection.UpsertAsync(Rec("z", [2f, 2f]), TenantScope.Global, CancellationToken.None);
 
-        var result = await collection.QueryAsync(new VectorQuery { Vector = new[] { 1f, 0f }, ModelId = ModelId }, TenantScope.None, CancellationToken.None);
+        var result = await collection.QueryAsync(new VectorQuery { Vector = new[] { 1f, 0f }, ModelId = ModelId }, TenantScope.Global, CancellationToken.None);
 
         Assert.True(result.IsSuccess);
         Assert.Equal(["y", "z"], result.Value.Hits.Select(h => h.Record.Id));
@@ -531,12 +532,12 @@ public sealed class InMemoryVectorCollectionTests
     public async Task QueryAsync_MinScore_Cosine_FiltersBelowThreshold()
     {
         var collection = new InMemoryVectorCollection<TestVectorRecord>(GlobalDefinition(VectorDistanceMetric.Cosine));
-        await collection.UpsertAsync(Rec("y", [1f, 0f]), TenantScope.None, CancellationToken.None);
-        await collection.UpsertAsync(Rec("z", [2f, 2f]), TenantScope.None, CancellationToken.None);
+        await collection.UpsertAsync(Rec("y", [1f, 0f]), TenantScope.Global, CancellationToken.None);
+        await collection.UpsertAsync(Rec("z", [2f, 2f]), TenantScope.Global, CancellationToken.None);
 
         var result = await collection.QueryAsync(
             new VectorQuery { Vector = new[] { 1f, 0f }, ModelId = ModelId, MinScore = 0.9f },
-            TenantScope.None,
+            TenantScope.Global,
             CancellationToken.None);
 
         Assert.True(result.IsSuccess);
@@ -547,12 +548,12 @@ public sealed class InMemoryVectorCollectionTests
     public async Task QueryAsync_MinScore_Euclidean_FiltersAboveThreshold()
     {
         var collection = new InMemoryVectorCollection<TestVectorRecord>(GlobalDefinition(VectorDistanceMetric.Euclidean));
-        await collection.UpsertAsync(Rec("y", [1f, 0f]), TenantScope.None, CancellationToken.None);
-        await collection.UpsertAsync(Rec("z", [2f, 2f]), TenantScope.None, CancellationToken.None);
+        await collection.UpsertAsync(Rec("y", [1f, 0f]), TenantScope.Global, CancellationToken.None);
+        await collection.UpsertAsync(Rec("z", [2f, 2f]), TenantScope.Global, CancellationToken.None);
 
         var result = await collection.QueryAsync(
             new VectorQuery { Vector = new[] { 1f, 0f }, ModelId = ModelId, MinScore = 1.0f },
-            TenantScope.None,
+            TenantScope.Global,
             CancellationToken.None);
 
         Assert.True(result.IsSuccess);
@@ -565,12 +566,12 @@ public sealed class InMemoryVectorCollectionTests
         var collection = new InMemoryVectorCollection<TestVectorRecord>(GlobalDefinition());
         for (var i = 0; i < 5; i++)
         {
-            await collection.UpsertAsync(Rec($"rec-{i}", [1f, 0f]), TenantScope.None, CancellationToken.None);
+            await collection.UpsertAsync(Rec($"rec-{i}", [1f, 0f]), TenantScope.Global, CancellationToken.None);
         }
 
         var result = await collection.QueryAsync(
             new VectorQuery { Vector = new[] { 1f, 0f }, ModelId = ModelId, Limit = 2 },
-            TenantScope.None,
+            TenantScope.Global,
             CancellationToken.None);
 
         Assert.True(result.IsSuccess);
@@ -583,13 +584,13 @@ public sealed class InMemoryVectorCollectionTests
     public async Task SimulateFailure_OnlyAffectsWritePath_ReadPathAndWaitUntilQueryableUnaffected()
     {
         var collection = new InMemoryVectorCollection<TestVectorRecord>(TenantedDefinition());
-        var upsertResult = await collection.UpsertAsync(Rec("rec-1", [1f, 0f], tenantId: "tenant-a"), TenantScope.Of("tenant-a"), CancellationToken.None);
+        var upsertResult = await collection.UpsertAsync(Rec("rec-1", [1f, 0f], tenantId: VectorTestTenants.TenantA.ToString()), TenantScope.For(VectorTestTenants.TenantA), CancellationToken.None);
         collection.SimulateFailure = true;
 
         var query = new VectorQuery { Vector = new[] { 1f, 0f }, ModelId = ModelId };
-        Assert.True((await collection.QueryAsync(query, TenantScope.Of("tenant-a"), CancellationToken.None)).IsSuccess);
-        Assert.True((await collection.GetAsync("rec-1", TenantScope.Of("tenant-a"), CancellationToken.None)).IsSuccess);
-        Assert.True((await collection.CountAsync(null, TenantScope.Of("tenant-a"), CancellationToken.None)).IsSuccess);
+        Assert.True((await collection.QueryAsync(query, TenantScope.For(VectorTestTenants.TenantA), CancellationToken.None)).IsSuccess);
+        Assert.True((await collection.GetAsync("rec-1", TenantScope.For(VectorTestTenants.TenantA), CancellationToken.None)).IsSuccess);
+        Assert.True((await collection.CountAsync(null, TenantScope.For(VectorTestTenants.TenantA), CancellationToken.None)).IsSuccess);
         Assert.True((await collection.WaitUntilQueryableAsync(upsertResult.Value, TimeSpan.FromSeconds(1), CancellationToken.None)).IsSuccess);
     }
 
@@ -598,7 +599,7 @@ public sealed class InMemoryVectorCollectionTests
     {
         var collection = new InMemoryVectorCollection<TestVectorRecord>(TenantedDefinition());
 
-        collection.Seed(Rec("rec-1", [1f, 0f], tenantId: "tenant-a"));
+        collection.Seed(Rec("rec-1", [1f, 0f], tenantId: VectorTestTenants.TenantA.ToString()));
 
         Assert.True(collection.IsQueryable("rec-1"));
         Assert.False(collection.WasUpserted("rec-1"));
@@ -607,15 +608,15 @@ public sealed class InMemoryVectorCollectionTests
     [Fact]
     public void Seed_WhitespaceId_ThrowsArgumentException() =>
         Assert.Throws<ArgumentException>(() =>
-            new InMemoryVectorCollection<TestVectorRecord>(TenantedDefinition()).Seed(Rec("   ", [1f, 0f], tenantId: "tenant-a")));
+            new InMemoryVectorCollection<TestVectorRecord>(TenantedDefinition()).Seed(Rec("   ", [1f, 0f], tenantId: VectorTestTenants.TenantA.ToString())));
 
     [Fact]
     public async Task Reset_ClearsStoreHistoryAndQueriedVectors()
     {
         var collection = new InMemoryVectorCollection<TestVectorRecord>(TenantedDefinition());
-        await collection.UpsertAsync(Rec("rec-1", [1f, 0f], tenantId: "tenant-a"), TenantScope.Of("tenant-a"), CancellationToken.None);
-        await collection.DeleteAsync("rec-1", TenantScope.Of("tenant-a"), CancellationToken.None);
-        await collection.QueryAsync(new VectorQuery { Vector = new[] { 1f, 0f }, ModelId = ModelId }, TenantScope.Of("tenant-a"), CancellationToken.None);
+        await collection.UpsertAsync(Rec("rec-1", [1f, 0f], tenantId: VectorTestTenants.TenantA.ToString()), TenantScope.For(VectorTestTenants.TenantA), CancellationToken.None);
+        await collection.DeleteAsync("rec-1", TenantScope.For(VectorTestTenants.TenantA), CancellationToken.None);
+        await collection.QueryAsync(new VectorQuery { Vector = new[] { 1f, 0f }, ModelId = ModelId }, TenantScope.For(VectorTestTenants.TenantA), CancellationToken.None);
 
         collection.Reset();
 

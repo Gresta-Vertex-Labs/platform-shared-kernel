@@ -1,6 +1,7 @@
 using Elastic.Clients.Elasticsearch;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Search.Abstractions.Exceptions;
 using SharedKernel.Search.Abstractions.Models;
 using SharedKernel.Search.ElasticSearch.Cursors;
@@ -59,13 +60,13 @@ public sealed class ElasticSearchEnumerateAndCursorTests : IAsyncLifetime
     public async Task EnumerateAsync_YieldsFullTenantCorpus_PastMaxTotalHitsCeiling()
     {
         var tenantADocs = new List<TestProduct>();
-        await foreach (var document in _index.EnumerateAsync(filter: null, TenantScope.Of(TestProductCorpus.TenantA), batchSize: 3))
+        await foreach (var document in _index.EnumerateAsync(filter: null, TenantScope.For(TestProductCorpus.TenantA), batchSize: 3))
         {
             tenantADocs.Add(document);
         }
 
         var tenantBDocs = new List<TestProduct>();
-        await foreach (var document in _index.EnumerateAsync(filter: null, TenantScope.Of(TestProductCorpus.TenantB), batchSize: 3))
+        await foreach (var document in _index.EnumerateAsync(filter: null, TenantScope.For(TestProductCorpus.TenantB), batchSize: 3))
         {
             tenantBDocs.Add(document);
         }
@@ -89,7 +90,7 @@ public sealed class ElasticSearchEnumerateAndCursorTests : IAsyncLifetime
         var request = new SearchRequest { PageSize = 3 };
 
         var hits = new List<SearchHit<TestProduct>>();
-        await foreach (var hit in cursorSearch.StreamAsync(request, TenantScope.Of(TestProductCorpus.TenantA), TimeSpan.FromSeconds(30)))
+        await foreach (var hit in cursorSearch.StreamAsync(request, TenantScope.For(TestProductCorpus.TenantA), TimeSpan.FromSeconds(30)))
         {
             hits.Add(hit);
         }
@@ -109,7 +110,7 @@ public sealed class ElasticSearchEnumerateAndCursorTests : IAsyncLifetime
 
         var act = async () =>
         {
-            await foreach (var _ in cursorSearch.StreamAsync(request, TenantScope.Of(TestProductCorpus.TenantA), TimeSpan.FromSeconds(30)))
+            await foreach (var _ in cursorSearch.StreamAsync(request, TenantScope.For(TestProductCorpus.TenantA), TimeSpan.FromSeconds(30)))
             {
             }
         };
@@ -124,7 +125,7 @@ public sealed class ElasticSearchEnumerateAndCursorTests : IAsyncLifetime
         var cursorSearch = ElasticsearchProviderFactory.CreateCursorSearch<TestProduct>(_client, _definition);
         var request = new SearchRequest { Page = 2 };
 
-        var result = await cursorSearch.OpenCursorAsync(request, TenantScope.Of(TestProductCorpus.TenantA), TimeSpan.FromSeconds(30));
+        var result = await cursorSearch.OpenCursorAsync(request, TenantScope.For(TestProductCorpus.TenantA), TimeSpan.FromSeconds(30));
 
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("search.invalid_request");
@@ -139,7 +140,7 @@ public sealed class ElasticSearchEnumerateAndCursorTests : IAsyncLifetime
         var request = new SearchRequest { PageSize = 3 };
 
         var received = 0;
-        await foreach (var _ in cursorSearch.StreamAsync(request, TenantScope.Of(TestProductCorpus.TenantA), TimeSpan.FromSeconds(30)))
+        await foreach (var _ in cursorSearch.StreamAsync(request, TenantScope.For(TestProductCorpus.TenantA), TimeSpan.FromSeconds(30)))
         {
             received++;
             if (received == 2)
@@ -160,7 +161,7 @@ public sealed class ElasticSearchEnumerateAndCursorTests : IAsyncLifetime
         var cursorSearch = ElasticsearchProviderFactory.CreateCursorSearch<TestProduct>(_client, _definition);
         var request = new SearchRequest { PageSize = 3 };
 
-        var openResult = await cursorSearch.OpenCursorAsync(request, TenantScope.Of(TestProductCorpus.TenantA), TimeSpan.FromMinutes(2));
+        var openResult = await cursorSearch.OpenCursorAsync(request, TenantScope.For(TestProductCorpus.TenantA), TimeSpan.FromMinutes(2));
         openResult.IsSuccess.Should().BeTrue();
 
         var allHits = new List<SearchHit<TestProduct>>();
@@ -201,7 +202,7 @@ public sealed class ElasticSearchEnumerateAndCursorTests : IAsyncLifetime
         var request = new SearchRequest { PageSize = 3 };
         var shortKeepAlive = TimeSpan.FromSeconds(2);
 
-        var openResult = await cursorSearch.OpenCursorAsync(request, TenantScope.Of(TestProductCorpus.TenantA), shortKeepAlive);
+        var openResult = await cursorSearch.OpenCursorAsync(request, TenantScope.For(TestProductCorpus.TenantA), shortKeepAlive);
         openResult.IsSuccess.Should().BeTrue();
 
         // A genuine, deliberate wait for the real ElasticSearch-side point-in-time to lapse — the one

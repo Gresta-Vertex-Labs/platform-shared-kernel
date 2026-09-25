@@ -1,3 +1,5 @@
+using SharedKernel.Execution.Tenancy;
+
 namespace CatalogApi;
 
 /// <summary>The index names and the two tenants this sample serves.</summary>
@@ -21,8 +23,11 @@ public static class Catalog
     /// <summary>The completion field <c>ISuggestSearch</c> answers from.</summary>
     public const string OrderLineSuggestField = OrderLineFields.ProductNameSuggest;
 
-    public const string TenantNorth = "tenant-north";
-    public const string TenantSouth = "tenant-south";
+    /// <summary>The first tenant. Its string form is the value every one of its documents holds in the tenant field.</summary>
+    public static readonly TenantId TenantNorth = new(Guid.Parse("6f1c2a4e-0b7d-4c3e-9a51-3d2e8f7b1a01"));
+
+    /// <summary>The second tenant.</summary>
+    public static readonly TenantId TenantSouth = new(Guid.Parse("6f1c2a4e-0b7d-4c3e-9a51-3d2e8f7b1a02"));
 }
 
 /// <summary>The fixed corpus this sample seeds, so every endpoint has known data to answer from.</summary>
@@ -71,11 +76,11 @@ public static class SeedData
     ];
 
     private static ProductDocument Product(
-        string id, string tenant, string name, string description, string brand,
+        string id, TenantId tenant, string name, string description, string brand,
         string category, double price, bool inStock, double rating, int dayOffset) => new()
     {
         DocumentId = id,
-        TenantId = tenant,
+        TenantId = tenant.ToString(),
         Name = name,
         Description = description,
         Brand = brand,
@@ -87,11 +92,11 @@ public static class SeedData
     };
 
     private static OrderLineDocument OrderLine(
-        string id, string tenant, string productName, string category,
+        string id, TenantId tenant, string productName, string category,
         string region, long quantity, double revenue, int dayOffset) => new()
     {
         DocumentId = id,
-        TenantId = tenant,
+        TenantId = tenant.ToString(),
         ProductName = productName,
         ProductNameSuggest = productName,
         Category = category,

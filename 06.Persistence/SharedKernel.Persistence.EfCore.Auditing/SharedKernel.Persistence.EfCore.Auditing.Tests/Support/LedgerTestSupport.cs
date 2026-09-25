@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using Npgsql;
 using SharedKernel.Execution.Context;
 using SharedKernel.Cryptography.Signing;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence;
 using SharedKernel.Persistence.Abstractions.Connections;
 using SharedKernel.Persistence.Abstractions.Context;
@@ -22,12 +23,12 @@ public sealed class AuditPostgresCollection : ICollectionFixture<PostgreSqlConta
 /// <summary>A settable request context, local to these tests.</summary>
 public sealed class TestRequestContext : IRequestContext
 {
-    public static readonly Guid TenantA = new("aaaaaaaa-0000-0000-0000-000000000001");
-    public static readonly Guid TenantB = new("bbbbbbbb-0000-0000-0000-000000000002");
+    public static readonly TenantId TenantA = new(new Guid("aaaaaaaa-0000-0000-0000-000000000001"));
+    public static readonly TenantId TenantB = new(new Guid("bbbbbbbb-0000-0000-0000-000000000002"));
 
     public bool IsAuthenticated { get; set; } = true;
     public string? UserId { get; set; } = "user-1";
-    public Guid? TenantId { get; set; } = TenantA;
+    public TenantId? TenantId { get; set; } = TenantA;
     public ActorKind ActorKind { get; set; } = ActorKind.User;
     public string? ClientId { get; set; }
     public string? SessionId { get; set; }

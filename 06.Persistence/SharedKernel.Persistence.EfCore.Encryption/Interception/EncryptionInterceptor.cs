@@ -106,7 +106,7 @@ internal sealed class EncryptionInterceptor(FieldEncryptionRuntime runtime, ILog
         if (members.Count == 0)
             return entity;
 
-        var tenantId = entity is IHasTenant tenanted ? tenanted.TenantId : (Guid?)null;
+        var tenantId = entity is IHasTenant tenanted ? tenanted.TenantId.Value : (Guid?)null;
         byte[]? primaryKey = null;
 
         foreach (var member in members)
@@ -174,7 +174,7 @@ internal sealed class EncryptionInterceptor(FieldEncryptionRuntime runtime, ILog
                 && entry.Entity is IHasTenant tenanted
                 && metadata.GetMembers(entry.Metadata).Count > 0)
             {
-                (tenants ??= []).Add(tenanted.TenantId);
+                (tenants ??= []).Add(tenanted.TenantId.Value);
             }
         }
 
@@ -219,7 +219,7 @@ internal sealed class EncryptionInterceptor(FieldEncryptionRuntime runtime, ILog
 
     private void EncryptEntry(DbContext context, EntityEntry entry, IReadOnlyList<EncryptedMember> members, ref List<PendingRestore>? pending)
     {
-        var tenantId = entry.Entity is IHasTenant tenanted ? tenanted.TenantId : (Guid?)null;
+        var tenantId = entry.Entity is IHasTenant tenanted ? tenanted.TenantId.Value : (Guid?)null;
         byte[]? primaryKey = null;
 
         foreach (var member in members)

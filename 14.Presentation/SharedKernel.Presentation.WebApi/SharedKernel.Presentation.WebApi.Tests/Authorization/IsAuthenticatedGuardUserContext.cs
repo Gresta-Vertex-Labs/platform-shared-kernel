@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Context;
 using SharedKernel.Security.Abstractions;
 
 namespace SharedKernel.Presentation.WebApi.Tests.Authorization;
@@ -22,7 +23,7 @@ internal sealed class IsAuthenticatedGuardUserContext : IUserContext
 
     public string? ClientId => null;
 
-    public Guid? TenantId => null;
+    public SharedKernel.Execution.Tenancy.TenantId? TenantId => null;
 
     public string? SessionId => null;
 
@@ -43,7 +44,7 @@ internal sealed class IsAuthenticatedGuardUserContext : IUserContext
             "AuthorizationRequirementEndpointFilter must never read IsAuthenticated — rejection of an " +
             "unauthenticated-shaped caller must flow through the ordinary HasRole/HasPermission false-path only.");
 
-    public IdentityKind IdentityKind => IdentityKind.Anonymous;
+    public ActorKind ActorKind => ActorKind.Anonymous;
 
     public IReadOnlyCollection<string> AuthenticationMethods => [];
 

@@ -2,6 +2,7 @@ using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Execution.Auditing;
 using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Execution.Transactions;
 using SharedKernel.Domain.Aggregates;
 using SharedKernel.Persistence.Abstractions.Context;
@@ -22,13 +23,13 @@ public sealed class TestRequestContextTests
     [Fact]
     public void Factories_ReportTheExpectedActor()
     {
-        var tenant = Guid.NewGuid();
+        var tenant = new TenantId(Guid.NewGuid());
 
-        TestRequestContext.ForUser().Should().BeEquivalentTo(new { IsAuthenticated = true, UserId = "test-user", TenantId = (Guid?)null, ActorKind = ActorKind.User });
-        TestRequestContext.ForTenant(tenant, "ann").Should().BeEquivalentTo(new { UserId = "ann", TenantId = (Guid?)tenant, ActorKind = ActorKind.User });
+        TestRequestContext.ForUser().Should().BeEquivalentTo(new { IsAuthenticated = true, UserId = "test-user", TenantId = (TenantId?)null, ActorKind = ActorKind.User });
+        TestRequestContext.ForTenant(tenant, "ann").Should().BeEquivalentTo(new { UserId = "ann", TenantId = (TenantId?)tenant, ActorKind = ActorKind.User });
         TestRequestContext.Service("billing-worker", tenant).Should().BeEquivalentTo(new { UserId = "billing-worker", ClientId = "billing-worker", ActorKind = ActorKind.Service });
         TestRequestContext.System("nightly-job").Should().BeEquivalentTo(new { IsAuthenticated = true, UserId = "nightly-job", ActorKind = ActorKind.System });
-        TestRequestContext.Anonymous(tenant).Should().BeEquivalentTo(new { IsAuthenticated = false, UserId = (string?)null, TenantId = (Guid?)tenant, ActorKind = ActorKind.Anonymous });
+        TestRequestContext.Anonymous(tenant).Should().BeEquivalentTo(new { IsAuthenticated = false, UserId = (string?)null, TenantId = (TenantId?)tenant, ActorKind = ActorKind.Anonymous });
     }
 
     [Fact]
@@ -37,7 +38,7 @@ public sealed class TestRequestContextTests
         var context = TestRequestContext.ForUser();
         (await context.HasPermissionAsync("orders.read", CancellationToken.None)).Should().BeFalse();
 
-        context.WithPermissions("orders.read").WithSession("s-1").WithImpersonator("support").WithTenant(Guid.Empty);
+        context.WithPermissions("orders.read").WithSession("s-1").WithImpersonator("support").WithTenant(null);
 
         (await context.HasPermissionAsync("orders.read", CancellationToken.None)).Should().BeTrue();
         (await context.HasPermissionAsync("ORDERS.READ", CancellationToken.None)).Should().BeFalse();
@@ -106,7 +107,7 @@ public sealed class PersistenceTestingServiceCollectionExtensionsTests
 
         var repository = services.AddFakeRepository<Widget, Guid>([new Widget(Guid.NewGuid(), "seeded")]);
         var unitOfWork = services.AddFakeUnitOfWork();
-        var caller = services.AddTestRequestContext(TestRequestContext.ForTenant(Guid.NewGuid()));
+        var caller = services.AddTestRequestContext(TestRequestContext.ForTenant(new TenantId(Guid.NewGuid())));
         var scope = services.AddFakeCrossTenantScope();
         var audit = services.AddFakeAuditTrailWriter();
         await using var provider = services.BuildServiceProvider();

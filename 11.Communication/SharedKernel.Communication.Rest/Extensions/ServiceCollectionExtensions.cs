@@ -27,12 +27,12 @@ public static class ServiceCollectionExtensions
     public static IRestCommunicationBuilder AddSharedKernelRestCommunication(
         this IServiceCollection services)
     {
-        // IHttpContextAccessor is required by TenantIdDelegatingHandler to resolve ITenantProvider
+        // IHttpContextAccessor is required by TenantIdDelegatingHandler to resolve IRequestContext
         // from the current request scope. TryAdd avoids double-registration in multi-call scenarios.
         services.TryAddSingleton<IHttpContextAccessor, HttpContextAccessor>();
 
         // All three delegation handlers registered as transient — they must never hold cross-request
-        // state. TenantIdDelegatingHandler resolves ITenantProvider from request scope at call time via
+        // state. TenantIdDelegatingHandler resolves IRequestContext from request scope at call time via
         // IHttpContextAccessor, so it is safe to register as transient here. IdempotencyKeyDelegatingHandler
         // is registered unconditionally but only actually added to a given client's handler pipeline when
         // that client opts in via RestClientOptions.EnableIdempotencyKeyPropagation (P-364/WO-056).

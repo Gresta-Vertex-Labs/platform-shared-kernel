@@ -2,6 +2,7 @@ using FluentAssertions;
 using Qdrant.Client.Grpc;
 using SharedKernel.AI.Abstractions.Models;
 using SharedKernel.AI.Qdrant.Querying;
+using SharedKernel.Execution.Tenancy;
 
 namespace SharedKernel.AI.Qdrant.Tests.Querying;
 
@@ -12,7 +13,7 @@ public sealed class QdrantFilterCompilerTests
     {
         var filter = VectorFilter.Eq("status", VectorValue.From("active"));
 
-        var compiled = QdrantFilterCompiler.Compile(filter, tenantField: null, TenantScope.None);
+        var compiled = QdrantFilterCompiler.Compile(filter, tenantField: null, TenantScope.Global);
 
         compiled.Must.Should().HaveCount(1);
         var condition = compiled.Must[0];
@@ -25,7 +26,7 @@ public sealed class QdrantFilterCompilerTests
     {
         var filter = VectorFilter.Eq("price", VectorValue.From(9.99));
 
-        var compiled = QdrantFilterCompiler.Compile(filter, tenantField: null, TenantScope.None);
+        var compiled = QdrantFilterCompiler.Compile(filter, tenantField: null, TenantScope.Global);
 
         var condition = compiled.Must[0];
         condition.Field.Range.Gte.Should().Be(9.99);
@@ -37,7 +38,7 @@ public sealed class QdrantFilterCompilerTests
     {
         var filter = VectorFilter.Ne("status", VectorValue.From("archived"));
 
-        var compiled = QdrantFilterCompiler.Compile(filter, tenantField: null, TenantScope.None);
+        var compiled = QdrantFilterCompiler.Compile(filter, tenantField: null, TenantScope.Global);
 
         var wrapper = compiled.Must[0];
         wrapper.Filter.MustNot.Should().HaveCount(1);
@@ -49,7 +50,7 @@ public sealed class QdrantFilterCompilerTests
     {
         var filter = VectorFilter.In("category", VectorValue.From("a"), VectorValue.From("b"));
 
-        var compiled = QdrantFilterCompiler.Compile(filter, tenantField: null, TenantScope.None);
+        var compiled = QdrantFilterCompiler.Compile(filter, tenantField: null, TenantScope.Global);
 
         var condition = compiled.Must[0];
         condition.Field.Match.Keywords.Strings.Should().BeEquivalentTo(["a", "b"]);
@@ -60,7 +61,7 @@ public sealed class QdrantFilterCompilerTests
     {
         var filter = VectorFilter.In("flag", VectorValue.From(true), VectorValue.From(1L));
 
-        var compiled = QdrantFilterCompiler.Compile(filter, tenantField: null, TenantScope.None);
+        var compiled = QdrantFilterCompiler.Compile(filter, tenantField: null, TenantScope.Global);
 
         var wrapper = compiled.Must[0];
         wrapper.Filter.Should.Should().HaveCount(2);
@@ -71,7 +72,7 @@ public sealed class QdrantFilterCompilerTests
     {
         var filter = VectorFilter.Between("price", VectorValue.From(1.0), VectorValue.From(10.0));
 
-        var compiled = QdrantFilterCompiler.Compile(filter, tenantField: null, TenantScope.None);
+        var compiled = QdrantFilterCompiler.Compile(filter, tenantField: null, TenantScope.Global);
 
         var condition = compiled.Must[0];
         condition.Field.Range.Gte.Should().Be(1.0);
@@ -83,7 +84,7 @@ public sealed class QdrantFilterCompilerTests
     {
         var filter = VectorFilter.Between("price", VectorValue.From(1.0), VectorValue.From(10.0), fromInclusive: false, toInclusive: false);
 
-        var compiled = QdrantFilterCompiler.Compile(filter, tenantField: null, TenantScope.None);
+        var compiled = QdrantFilterCompiler.Compile(filter, tenantField: null, TenantScope.Global);
 
         var condition = compiled.Must[0];
         condition.Field.Range.Gt.Should().Be(1.0);
@@ -97,7 +98,7 @@ public sealed class QdrantFilterCompilerTests
         var to = new DateTimeOffset(2026, 12, 31, 0, 0, 0, TimeSpan.Zero);
         var filter = VectorFilter.Between("createdOn", VectorValue.From(from), VectorValue.From(to));
 
-        var compiled = QdrantFilterCompiler.Compile(filter, tenantField: null, TenantScope.None);
+        var compiled = QdrantFilterCompiler.Compile(filter, tenantField: null, TenantScope.Global);
 
         var condition = compiled.Must[0];
         condition.Field.DatetimeRange.Should().NotBeNull();
@@ -114,7 +115,7 @@ public sealed class QdrantFilterCompilerTests
         // IsEmptyCondition's negation is the correct "field genuinely present with a value" semantics.
         var filter = VectorFilter.Exists("tags");
 
-        var compiled = QdrantFilterCompiler.Compile(filter, tenantField: null, TenantScope.None);
+        var compiled = QdrantFilterCompiler.Compile(filter, tenantField: null, TenantScope.Global);
 
         var wrapper = compiled.Must[0];
         wrapper.Filter.MustNot.Should().HaveCount(1);
@@ -128,7 +129,7 @@ public sealed class QdrantFilterCompilerTests
             VectorFilter.Eq("a", VectorValue.From("1")),
             VectorFilter.Eq("b", VectorValue.From("2")));
 
-        var compiled = QdrantFilterCompiler.Compile(filter, tenantField: null, TenantScope.None);
+        var compiled = QdrantFilterCompiler.Compile(filter, tenantField: null, TenantScope.Global);
 
         var wrapper = compiled.Must[0];
         wrapper.Filter.Must.Should().HaveCount(2);
@@ -141,7 +142,7 @@ public sealed class QdrantFilterCompilerTests
             VectorFilter.Eq("a", VectorValue.From("1")),
             VectorFilter.Eq("b", VectorValue.From("2")));
 
-        var compiled = QdrantFilterCompiler.Compile(filter, tenantField: null, TenantScope.None);
+        var compiled = QdrantFilterCompiler.Compile(filter, tenantField: null, TenantScope.Global);
 
         var wrapper = compiled.Must[0];
         wrapper.Filter.Should.Should().HaveCount(2);
@@ -152,7 +153,7 @@ public sealed class QdrantFilterCompilerTests
     {
         var filter = VectorFilter.Negate(VectorFilter.Eq("a", VectorValue.From("1")));
 
-        var compiled = QdrantFilterCompiler.Compile(filter, tenantField: null, TenantScope.None);
+        var compiled = QdrantFilterCompiler.Compile(filter, tenantField: null, TenantScope.Global);
 
         var wrapper = compiled.Must[0];
         wrapper.Filter.MustNot.Should().HaveCount(1);
@@ -161,11 +162,11 @@ public sealed class QdrantFilterCompilerTests
     [Fact]
     public void Compile_NullFilter_WithTenantField_InjectsOnlyTenantClause()
     {
-        var compiled = QdrantFilterCompiler.Compile(null, "tenantId", TenantScope.Of("tenant-a"));
+        var compiled = QdrantFilterCompiler.Compile(null, "tenantId", TenantScope.For(TestTenants.TenantA));
 
         compiled.Must.Should().HaveCount(1);
         compiled.Must[0].Field.Key.Should().Be("tenantId");
-        compiled.Must[0].Field.Match.Keyword.Should().Be("tenant-a");
+        compiled.Must[0].Field.Match.Keyword.Should().Be(TestTenants.TenantA.ToString());
     }
 
     [Fact]
@@ -173,18 +174,18 @@ public sealed class QdrantFilterCompilerTests
     {
         var filter = VectorFilter.Eq("status", VectorValue.From("active"));
 
-        var compiled = QdrantFilterCompiler.Compile(filter, "tenantId", TenantScope.Of("tenant-a"));
+        var compiled = QdrantFilterCompiler.Compile(filter, "tenantId", TenantScope.For(TestTenants.TenantA));
 
         compiled.Must.Should().HaveCount(2);
         compiled.Must[0].Field.Key.Should().Be("status");
         compiled.Must[1].Field.Key.Should().Be("tenantId");
-        compiled.Must[1].Field.Match.Keyword.Should().Be("tenant-a");
+        compiled.Must[1].Field.Match.Keyword.Should().Be(TestTenants.TenantA.ToString());
     }
 
     [Fact]
-    public void Compile_TenantScopeNone_WithNoTenantField_DoesNotInjectTenantClause()
+    public void Compile_TenantScopeGlobal_WithNoTenantField_DoesNotInjectTenantClause()
     {
-        var compiled = QdrantFilterCompiler.Compile(null, tenantField: null, TenantScope.None);
+        var compiled = QdrantFilterCompiler.Compile(null, tenantField: null, TenantScope.Global);
 
         compiled.Must.Should().BeEmpty();
     }

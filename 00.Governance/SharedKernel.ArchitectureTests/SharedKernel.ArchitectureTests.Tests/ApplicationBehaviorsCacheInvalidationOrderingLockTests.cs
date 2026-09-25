@@ -254,7 +254,7 @@ public sealed class ApplicationBehaviorsCacheInvalidationOrderingLockTests
         public string BuildKey(string entity, string id, params string[] segments)
             => CacheKeyFormat.BuildKey("governance-lock", entity, id, segments);
 
-        public string BuildTenantKey(string tenantId, string entity, string id, params string[] segments)
+        public string BuildTenantKey(SharedKernel.Execution.Tenancy.TenantId tenantId, string entity, string id, params string[] segments)
             => CacheKeyFormat.BuildTenantKey("governance-lock", tenantId, entity, id, segments);
     }
 

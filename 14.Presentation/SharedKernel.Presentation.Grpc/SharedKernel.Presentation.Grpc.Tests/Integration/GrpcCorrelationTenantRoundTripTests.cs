@@ -4,8 +4,8 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Communication.Grpc.Extensions;
 using SharedKernel.Presentation.Grpc.Tests.Integration.Fixtures;
-using SharedKernel.Security.Abstractions;
-using SharedKernel.Testing.Security;
+using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
 using Xunit;
 
 namespace SharedKernel.Presentation.Grpc.Tests.Integration;
@@ -13,8 +13,8 @@ namespace SharedKernel.Presentation.Grpc.Tests.Integration;
 /// <summary>
 /// Round-trip test proving <c>GrpcCorrelationInterceptor</c> reads the identical gRPC metadata
 /// key <c>SharedKernel.Communication.Grpc</c>'s real client-side <c>CorrelationTracingInterceptor</c>
-/// writes, and that <c>GrpcTenantContextInterceptor</c>'s <see cref="ITenantProvider"/>-resolution
-/// contract (D-72) composes correctly with a tenant provider fed by the identical <c>x-tenant-id</c>
+/// writes, and that <c>GrpcTenantContextInterceptor</c>'s <see cref="IRequestContext"/>-resolution
+/// contract composes correctly with a request context fed by the identical <c>x-tenant-id</c>
 /// metadata key the real client-side <c>TenantIdInterceptor</c> writes — using the real client
 /// interceptor types via <c>AddSharedKernelGrpcCommunication().AddGrpcClient&lt;TClient&gt;()</c>,
 /// never a hand-rolled metadata stand-in (T-71, WO-074/P-468).
@@ -27,9 +27,9 @@ public class GrpcCorrelationTenantRoundTripTests
         var customized = factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
         {
             services.AddHttpContextAccessor();
-            // Overrides the base Startup's default FakeTenantProvider singleton — last
+            // Overrides the base Startup's default IRequestContext singleton — last
             // registration wins for single-instance DI resolution.
-            services.AddSingleton<ITenantProvider, HeaderTenantProvider>();
+            services.AddSingleton<IRequestContext, HeaderRequestContext>();
         }));
 
         return new WebApplicationFactoryWrapper(factory, customized);
@@ -39,9 +39,9 @@ public class GrpcCorrelationTenantRoundTripTests
     public async Task RealClientInterceptors_PropagateCorrelationAndTenantId_ReadByServerInterceptors()
     {
         using var server = CreateServerWithHeaderTenantProvider();
-        var expectedTenantId = Guid.NewGuid();
+        var expectedTenantId = new TenantId(Guid.NewGuid());
 
-        // Client-side: a fake inbound HttpContext carrying an ITenantProvider, exactly what
+        // Client-side: a fake inbound HttpContext carrying an IRequestContext, exactly what
         // TenantIdInterceptor resolves from via IHttpContextAccessor in a real service that is
         // itself forwarding an inbound request's tenant identity to a downstream gRPC call.
         var clientServices = new ServiceCollection();
@@ -58,7 +58,7 @@ public class GrpcCorrelationTenantRoundTripTests
 
         var httpContextAccessor = clientProvider.GetRequiredService<IHttpContextAccessor>();
         var tenantServices = new ServiceCollection();
-        tenantServices.AddSingleton<ITenantProvider>(new FakeTenantProvider(expectedTenantId));
+        tenantServices.AddSingleton<IRequestContext>(new SystemRequestContext([], "caller", expectedTenantId));
         httpContextAccessor.HttpContext = new DefaultHttpContext { RequestServices = tenantServices.BuildServiceProvider() };
 
         var client = clientProvider.GetRequiredService<TestService.TestServiceClient>();
@@ -70,12 +70,12 @@ public class GrpcCorrelationTenantRoundTripTests
     }
 
     [Fact]
-    public async Task RealClientInterceptors_NoInboundHttpContext_TenantIdIsEmptyGuid()
+    public async Task RealClientInterceptors_NoInboundHttpContext_TenantIdIsEmpty()
     {
         // TenantIdInterceptor no-ops (silent) when IHttpContextAccessor.HttpContext is null — the
         // documented "background/non-request-scoped caller" case, so no x-tenant-id metadata is
-        // ever sent. GrpcTenantContextInterceptor + HeaderTenantProvider must then resolve no
-        // tenant, matching ITenantProvider's own Guid.Empty convention end-to-end.
+        // ever sent. GrpcTenantContextInterceptor + HeaderRequestContext must then resolve no
+        // tenant (null) end-to-end.
         using var server = CreateServerWithHeaderTenantProvider();
 
         var clientServices = new ServiceCollection();
@@ -91,7 +91,7 @@ public class GrpcCorrelationTenantRoundTripTests
 
         var reply = await client.GetContextAsync(new EchoRequest { Value = "x" });
 
-        reply.TenantId.Should().Be(Guid.Empty.ToString());
+        reply.TenantId.Should().BeEmpty();
         reply.CorrelationId.Should().NotBeNullOrWhiteSpace();
     }
 

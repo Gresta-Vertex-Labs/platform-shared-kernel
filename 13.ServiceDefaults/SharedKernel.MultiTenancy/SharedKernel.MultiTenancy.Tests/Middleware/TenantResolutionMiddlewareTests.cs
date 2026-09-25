@@ -3,8 +3,11 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.MultiTenancy.Middleware;
 using SharedKernel.MultiTenancy.Resolution;
+using SharedKernel.Primitives.Propagation;
 
 namespace SharedKernel.MultiTenancy.Tests.Middleware;
 
@@ -30,10 +33,11 @@ public sealed class TenantResolutionMiddlewareTests
         });
 
         var nextCalled = false;
-        RequestDelegate next = _ =>
+        var capture = new TenantCapture();
+        RequestDelegate next = ctx =>
         {
             nextCalled = true;
-            return Task.CompletedTask;
+            return capture.Next(ctx);
         };
 
         var middleware = new TenantResolutionMiddleware(
@@ -41,45 +45,44 @@ public sealed class TenantResolutionMiddlewareTests
             [new HeaderTenantResolutionStrategy(), claim],
             Options("Header", "Claim"),
             Logger());
-        var provider = new AmbientTenantProvider();
 
-        await middleware.InvokeAsync(context, provider);
+        await middleware.InvokeAsync(context);
 
-        Assert.Equal(expectedTenantId, provider.TenantId);
+        Assert.Equal(expectedTenantId, capture.TenantId?.Value);
         Assert.False(claimInvoked);
         Assert.True(nextCalled);
     }
 
     [Fact]
-    public async Task InvokeAsync_NoStrategyResolves_LeavesTenantIdEmpty()
+    public async Task InvokeAsync_NoStrategyResolves_LeavesTenantIdNull()
     {
         var context = new DefaultHttpContext();
-        RequestDelegate next = _ => Task.CompletedTask;
+        var capture = new TenantCapture();
+        RequestDelegate next = capture.Next;
 
         var middleware = new TenantResolutionMiddleware(
             next,
             [new HeaderTenantResolutionStrategy()],
             Options("Header"),
             Logger());
-        var provider = new AmbientTenantProvider();
 
-        await middleware.InvokeAsync(context, provider);
+        await middleware.InvokeAsync(context);
 
-        Assert.Equal(Guid.Empty, provider.TenantId);
+        Assert.Null(capture.TenantId);
     }
 
     [Fact]
     public async Task InvokeAsync_ZeroStrategiesConfigured_DoesNotThrow()
     {
         var context = new DefaultHttpContext();
-        RequestDelegate next = _ => Task.CompletedTask;
+        var capture = new TenantCapture();
+        RequestDelegate next = capture.Next;
 
         var middleware = new TenantResolutionMiddleware(next, [], Options(), Logger());
-        var provider = new AmbientTenantProvider();
 
-        await middleware.InvokeAsync(context, provider);
+        await middleware.InvokeAsync(context);
 
-        Assert.Equal(Guid.Empty, provider.TenantId);
+        Assert.Null(capture.TenantId);
     }
 
     [Fact]
@@ -93,7 +96,8 @@ public sealed class TenantResolutionMiddlewareTests
             return null;
         });
 
-        RequestDelegate next = _ => Task.CompletedTask;
+        var capture = new TenantCapture();
+        RequestDelegate next = capture.Next;
 
         // "Database" strategy is registered but not present in StrategyOrder — this is a real,
         // named, registered strategy (not a structurally-unreachable test double), so the
@@ -104,9 +108,8 @@ public sealed class TenantResolutionMiddlewareTests
             [new HeaderTenantResolutionStrategy(), database],
             Options("Header"),
             Logger());
-        var provider = new AmbientTenantProvider();
 
-        await middleware.InvokeAsync(context, provider);
+        await middleware.InvokeAsync(context);
 
         Assert.False(databaseInvoked);
     }
@@ -120,18 +123,18 @@ public sealed class TenantResolutionMiddlewareTests
         var context = new DefaultHttpContext();
         var custom = new RecordingStrategy("Gateway", _ => expectedTenantId);
 
-        RequestDelegate next = _ => Task.CompletedTask;
+        var capture = new TenantCapture();
+        RequestDelegate next = capture.Next;
 
         var middleware = new TenantResolutionMiddleware(
             next,
             [custom],
             Options("Gateway"),
             Logger());
-        var provider = new AmbientTenantProvider();
 
-        await middleware.InvokeAsync(context, provider);
+        await middleware.InvokeAsync(context);
 
-        Assert.Equal(expectedTenantId, provider.TenantId);
+        Assert.Equal(expectedTenantId, capture.TenantId?.Value);
     }
 
     [Fact]
@@ -143,39 +146,38 @@ public sealed class TenantResolutionMiddlewareTests
         var context = new DefaultHttpContext();
         context.Request.Headers["X-Tenant-Id"] = expectedTenantId.ToString();
 
-        RequestDelegate next = _ => Task.CompletedTask;
+        var capture = new TenantCapture();
+        RequestDelegate next = capture.Next;
         var middleware = new TenantResolutionMiddleware(
             next,
             [new HeaderTenantResolutionStrategy()],
             Options("Header"),
             Logger());
-        var provider = new AmbientTenantProvider();
 
-        await middleware.InvokeAsync(context, provider);
+        await middleware.InvokeAsync(context);
 
-        Assert.Equal(expectedTenantId.ToString(), Activity.Current!.GetBaggageItem(TenantBaggageKeys.TenantId));
+        Assert.Equal(expectedTenantId.ToString(), Activity.Current!.GetBaggageItem(WellKnownBaggageKeys.TenantId));
     }
 
     [Fact]
-    public async Task InvokeAsync_NoStrategyResolves_SetsActivityBaggageToGuidEmptySentinel()
+    public async Task InvokeAsync_NoStrategyResolves_SetsNoTenantBaggage()
     {
         using var activity = new Activity("test-activity").Start();
 
         var context = new DefaultHttpContext();
-        RequestDelegate next = _ => Task.CompletedTask;
+        var capture = new TenantCapture();
+        RequestDelegate next = capture.Next;
 
         var middleware = new TenantResolutionMiddleware(
             next,
             [new HeaderTenantResolutionStrategy()],
             Options("Header"),
             Logger());
-        var provider = new AmbientTenantProvider();
 
-        await middleware.InvokeAsync(context, provider);
+        await middleware.InvokeAsync(context);
 
-        // An explicit Guid.Empty sentinel value must be set — not merely absent — so log
-        // aggregation can distinguish "no tenant resolved" from "enrichment was never wired".
-        Assert.Equal(Guid.Empty.ToString(), Activity.Current!.GetBaggageItem(TenantBaggageKeys.TenantId));
+        // No tenant is never written as a Guid.Empty sentinel.
+        Assert.Null(Activity.Current!.GetBaggageItem(WellKnownBaggageKeys.TenantId));
     }
 
     [Fact]
@@ -185,16 +187,16 @@ public sealed class TenantResolutionMiddlewareTests
 
         var context = new DefaultHttpContext();
         context.Request.Headers["X-Tenant-Id"] = Guid.NewGuid().ToString();
-        RequestDelegate next = _ => Task.CompletedTask;
+        var capture = new TenantCapture();
+        RequestDelegate next = capture.Next;
 
         var middleware = new TenantResolutionMiddleware(
             next,
             [new HeaderTenantResolutionStrategy()],
             Options("Header"),
             Logger());
-        var provider = new AmbientTenantProvider();
 
-        var exception = await Record.ExceptionAsync(() => middleware.InvokeAsync(context, provider));
+        var exception = await Record.ExceptionAsync(() => middleware.InvokeAsync(context));
 
         Assert.Null(exception);
     }
@@ -215,17 +217,17 @@ public sealed class TenantResolutionMiddlewareTests
         var claim = new RecordingStrategy(TenantResolutionStrategyNames.Claim, _ => claimTenantId);
         var header = new HeaderTenantResolutionStrategy();
 
-        RequestDelegate next = _ => Task.CompletedTask;
+        var capture = new TenantCapture();
+        RequestDelegate next = capture.Next;
         var middleware = new TenantResolutionMiddleware(
             next,
             [claim, header],
             Options(TenantResolutionStrategyNames.Claim, TenantResolutionStrategyNames.Header),
             Logger());
-        var provider = new AmbientTenantProvider();
 
-        await middleware.InvokeAsync(context, provider);
+        await middleware.InvokeAsync(context);
 
-        Assert.Equal(claimTenantId, provider.TenantId);
+        Assert.Equal(claimTenantId, capture.TenantId?.Value);
     }
 
     [Fact]
@@ -241,17 +243,17 @@ public sealed class TenantResolutionMiddlewareTests
         var claim = new RecordingStrategy(TenantResolutionStrategyNames.Claim, _ => null);
         var header = new HeaderTenantResolutionStrategy();
 
-        RequestDelegate next = _ => Task.CompletedTask;
+        var capture = new TenantCapture();
+        RequestDelegate next = capture.Next;
         var middleware = new TenantResolutionMiddleware(
             next,
             [claim, header],
             Options(TenantResolutionStrategyNames.Claim, TenantResolutionStrategyNames.Header),
             Logger());
-        var provider = new AmbientTenantProvider();
 
-        await middleware.InvokeAsync(context, provider);
+        await middleware.InvokeAsync(context);
 
-        Assert.Equal(expectedTenantId, provider.TenantId);
+        Assert.Equal(expectedTenantId, capture.TenantId?.Value);
     }
 
     [Fact]
@@ -264,17 +266,17 @@ public sealed class TenantResolutionMiddlewareTests
         };
         context.Request.Headers["X-Tenant-Id"] = expectedTenantId.ToString();
 
-        RequestDelegate next = _ => Task.CompletedTask;
+        var capture = new TenantCapture();
+        RequestDelegate next = capture.Next;
         var middleware = new TenantResolutionMiddleware(
             next,
             [new HeaderTenantResolutionStrategy()],
             Options("Header"),
             Logger());
-        var provider = new AmbientTenantProvider();
 
-        await middleware.InvokeAsync(context, provider);
+        await middleware.InvokeAsync(context);
 
-        Assert.Equal(expectedTenantId, provider.TenantId);
+        Assert.Equal(expectedTenantId, capture.TenantId?.Value);
     }
 
     [Fact]
@@ -286,45 +288,45 @@ public sealed class TenantResolutionMiddlewareTests
         var context = new DefaultHttpContext { RequestServices = services.BuildServiceProvider() };
         context.Request.Headers["X-Tenant-Id"] = expectedTenantId.ToString();
 
-        RequestDelegate next = _ => Task.CompletedTask;
+        var capture = new TenantCapture();
+        RequestDelegate next = capture.Next;
         var middleware = new TenantResolutionMiddleware(
             next,
             [new HeaderTenantResolutionStrategy()],
             Options("Header"),
             Logger());
-        var provider = new AmbientTenantProvider();
 
-        await middleware.InvokeAsync(context, provider);
+        await middleware.InvokeAsync(context);
 
-        Assert.Equal(expectedTenantId, provider.TenantId);
+        Assert.Equal(expectedTenantId, capture.TenantId?.Value);
     }
 
     [Fact]
-    public async Task InvokeAsync_TenantStatusValidatorReturnsFalse_FailsClosedToGuidEmpty()
+    public async Task InvokeAsync_TenantStatusValidatorReturnsFalse_FailsClosedToNoTenant()
     {
         // Acceptance criterion: a registered validator returning false for a
-        // syntactically-resolved tenant ID must still result in Guid.Empty/no-tenant behavior —
+        // syntactically-resolved tenant ID must still result in no-tenant behavior —
         // the same fail-closed path as "no strategy resolved", never a distinct outcome.
         var services = new ServiceCollection();
         services.AddSingleton<ITenantStatusValidator>(new StubTenantStatusValidator(isActive: false));
         var context = new DefaultHttpContext { RequestServices = services.BuildServiceProvider() };
         context.Request.Headers["X-Tenant-Id"] = Guid.NewGuid().ToString();
 
-        RequestDelegate next = _ => Task.CompletedTask;
+        var capture = new TenantCapture();
+        RequestDelegate next = capture.Next;
         var middleware = new TenantResolutionMiddleware(
             next,
             [new HeaderTenantResolutionStrategy()],
             Options("Header"),
             Logger());
-        var provider = new AmbientTenantProvider();
 
-        await middleware.InvokeAsync(context, provider);
+        await middleware.InvokeAsync(context);
 
-        Assert.Equal(Guid.Empty, provider.TenantId);
+        Assert.Null(capture.TenantId);
     }
 
     [Fact]
-    public async Task InvokeAsync_TenantStatusValidatorReturnsFalse_SetsActivityBaggageToGuidEmptySentinel()
+    public async Task InvokeAsync_TenantStatusValidatorReturnsFalse_SetsNoTenantBaggage()
     {
         using var activity = new Activity("test-activity").Start();
 
@@ -333,17 +335,17 @@ public sealed class TenantResolutionMiddlewareTests
         var context = new DefaultHttpContext { RequestServices = services.BuildServiceProvider() };
         context.Request.Headers["X-Tenant-Id"] = Guid.NewGuid().ToString();
 
-        RequestDelegate next = _ => Task.CompletedTask;
+        var capture = new TenantCapture();
+        RequestDelegate next = capture.Next;
         var middleware = new TenantResolutionMiddleware(
             next,
             [new HeaderTenantResolutionStrategy()],
             Options("Header"),
             Logger());
-        var provider = new AmbientTenantProvider();
 
-        await middleware.InvokeAsync(context, provider);
+        await middleware.InvokeAsync(context);
 
-        Assert.Equal(Guid.Empty.ToString(), Activity.Current!.GetBaggageItem(TenantBaggageKeys.TenantId));
+        Assert.Null(Activity.Current!.GetBaggageItem(WellKnownBaggageKeys.TenantId));
     }
 
     /// <summary>Minimal recording test double carrying an explicit, caller-supplied
@@ -354,13 +356,25 @@ public sealed class TenantResolutionMiddlewareTests
     {
         public string StrategyName => strategyName;
 
-        public Task<Guid?> TryResolveAsync(HttpContext context, CancellationToken cancellationToken) =>
-            Task.FromResult(resolve(context));
+        public Task<TenantId?> TryResolveAsync(HttpContext context, CancellationToken cancellationToken) =>
+            Task.FromResult(TenantId.FromNullable(resolve(context)));
+    }
+
+    /// <summary>Records the tenant of the request context the middleware opened for the rest of the pipeline.</summary>
+    private sealed class TenantCapture
+    {
+        public TenantId? TenantId { get; private set; }
+
+        public Task Next(HttpContext context)
+        {
+            TenantId = RequestContextScope.Current?.TenantId;
+            return Task.CompletedTask;
+        }
     }
 
     /// <summary>Minimal <see cref="ITenantStatusValidator"/> test double returning a fixed result.</summary>
     private sealed class StubTenantStatusValidator(bool isActive) : ITenantStatusValidator
     {
-        public Task<bool> IsActiveAsync(Guid tenantId, CancellationToken ct) => Task.FromResult(isActive);
+        public Task<bool> IsActiveAsync(TenantId tenantId, CancellationToken ct) => Task.FromResult(isActive);
     }
 }

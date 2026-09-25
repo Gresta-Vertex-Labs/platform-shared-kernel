@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text.Json.Serialization;
 using Elastic.Clients.Elasticsearch;
 using FluentAssertions;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Search.Abstractions.Abstractions;
 using SharedKernel.Search.Abstractions.Models;
 using SharedKernel.Search.ElasticSearch.Index;
@@ -142,9 +143,9 @@ public sealed class ElasticSearchBulkThrottleTests : IAsyncLifetime
 
             var documents = new[]
             {
-                new ThrottleFailureDocument { DocumentId = "tenant-a-valid-1", TenantId = "tenant-a", Stock = 10L },
-                new ThrottleFailureDocument { DocumentId = "tenant-b-invalid-1", TenantId = "tenant-b", Stock = "not-a-number" },
-                new ThrottleFailureDocument { DocumentId = "tenant-a-valid-2", TenantId = "tenant-a", Stock = 20L },
+                new ThrottleFailureDocument { DocumentId = "tenant-a-valid-1", TenantId = TestTenants.TenantA.ToString(), Stock = 10L },
+                new ThrottleFailureDocument { DocumentId = "tenant-b-invalid-1", TenantId = TestTenants.TenantB.ToString(), Stock = "not-a-number" },
+                new ThrottleFailureDocument { DocumentId = "tenant-a-valid-2", TenantId = TestTenants.TenantA.ToString(), Stock = 20L },
             };
             // Throttled — 3 documents, 1 per batch, so the pacing delay fires twice across this call.
             var bulkOptions = new SearchBulkWriteOptions { MaxBatchesPerSecond = 10 };
@@ -158,8 +159,8 @@ public sealed class ElasticSearchBulkThrottleTests : IAsyncLifetime
             result.Value.Failures[0].DocumentId.Should().Be("tenant-b-invalid-1");
 
             // The two valid, differently-tenanted siblings were never dropped by the pacing logic.
-            (await index.GetAsync("tenant-a-valid-1", TenantScope.Of("tenant-a"))).IsSuccess.Should().BeTrue();
-            (await index.GetAsync("tenant-a-valid-2", TenantScope.Of("tenant-a"))).IsSuccess.Should().BeTrue();
+            (await index.GetAsync("tenant-a-valid-1", TenantScope.For(TestTenants.TenantA))).IsSuccess.Should().BeTrue();
+            (await index.GetAsync("tenant-a-valid-2", TenantScope.For(TestTenants.TenantA))).IsSuccess.Should().BeTrue();
         }
         finally
         {

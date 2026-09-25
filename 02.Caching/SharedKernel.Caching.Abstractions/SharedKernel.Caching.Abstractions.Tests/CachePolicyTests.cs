@@ -1,9 +1,13 @@
+using SharedKernel.Execution.Tenancy;
 using Xunit;
 
 namespace SharedKernel.Caching.Abstractions.Tests;
 
 public sealed class CachePolicyTests
 {
+    private static readonly TenantId TenantA = new(Guid.Parse("0f8fad5b-d9cb-469f-a165-70867728950e"));
+    private static readonly TenantId TenantB = new(Guid.Parse("7c9e6679-7425-40de-944b-e07fc1f90ae7"));
+
     [Fact]
     public void Default_HasDocumentedSettings()
     {
@@ -88,23 +92,27 @@ public sealed class CachePolicyTests
     [Fact]
     public void ForTenant_ScopesTagsAndAddsTenantWideTag()
     {
-        CachePolicy policy = CachePolicy.Default.WithTags("orders").ForTenant("tenant-a");
+        CachePolicy policy = CachePolicy.Default.WithTags("orders").ForTenant(TenantA);
 
         Assert.True(policy.IsTenantScoped);
-        Assert.Equal(["@tenant-a:orders", "@tenant-a"], policy.Tags);
+        Assert.Equal([$"@{TenantA}:orders", $"@{TenantA}"], policy.Tags);
     }
 
     [Fact]
     public void ForTenant_WithoutTags_AddsOnlyTenantWideTag() =>
-        Assert.Equal(["@tenant-a"], CachePolicy.Default.ForTenant("tenant-a").Tags);
+        Assert.Equal([$"@{TenantA}"], CachePolicy.Default.ForTenant(TenantA).Tags);
+
+    [Fact]
+    public void ForTenant_DefaultTenant_Throws() =>
+        Assert.Throws<ArgumentException>(() => CachePolicy.Default.ForTenant(default));
 
     [Fact]
     public void ForTenant_Twice_Throws() =>
-        Assert.Throws<InvalidOperationException>(() => CachePolicy.Default.ForTenant("a").ForTenant("b"));
+        Assert.Throws<InvalidOperationException>(() => CachePolicy.Default.ForTenant(TenantA).ForTenant(TenantB));
 
     [Fact]
     public void WithTags_AfterForTenant_Throws() =>
-        Assert.Throws<InvalidOperationException>(() => CachePolicy.Default.ForTenant("a").WithTags("orders"));
+        Assert.Throws<InvalidOperationException>(() => CachePolicy.Default.ForTenant(TenantA).WithTags("orders"));
 
     [Fact]
     public void WithFailSafe_EnablesWithMaxDuration()

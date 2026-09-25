@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Context;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
@@ -71,7 +72,7 @@ public sealed class TotpStepUpClaimsTransformation : IClaimsTransformation
         }
 
         IUserContext user = UserContextResolver.Resolve(new ClaimsPrincipal(identity), mappers);
-        if (user.IdentityKind != IdentityKind.User || user.SubjectId is not { } subjectId || user.SessionId is not { } sessionId)
+        if (user.ActorKind != ActorKind.User || user.SubjectId is not { } subjectId || user.SessionId is not { } sessionId)
         {
             return principal;
         }

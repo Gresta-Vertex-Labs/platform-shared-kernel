@@ -1,6 +1,7 @@
 using System.Data.Common;
 using Dapper;
 using Microsoft.Extensions.Logging;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence.Dapper.Diagnostics;
 
 namespace SharedKernel.Persistence.Dapper.Sessions;
@@ -11,7 +12,7 @@ internal sealed class DbSession(
     DbTransaction transaction,
     bool owned,
     bool readOnly,
-    Guid? tenantId,
+    TenantId? tenantId,
     int? commandTimeoutSeconds,
     ILogger logger) : IDbSession
 {
@@ -26,9 +27,9 @@ internal sealed class DbSession(
 
     public bool IsReadOnly => readOnly;
 
-    public Guid? TenantId => tenantId;
+    public TenantId? TenantId => tenantId;
 
-    public Guid RequireTenantId() =>
+    public TenantId RequireTenantId() =>
         tenantId ?? throw new InvalidOperationException("No tenant is resolved for the current caller.");
 
     public CommandDefinition Command(string sql, object? parameters = null, CancellationToken cancellationToken = default)

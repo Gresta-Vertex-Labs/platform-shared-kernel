@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Messaging.Abstractions.EventPublisher;
 using SharedKernel.Messaging.Abstractions.HeaderPropagation;
 using SharedKernel.Testing.Messaging;
@@ -53,7 +54,7 @@ public sealed class InMemoryMessageBusTests
     /// Used to prove TenantId round-trips through the captured context identically across every
     /// dispatch shape (T-74/P-352/WO-054).
     /// </summary>
-    private sealed class TenantPropagator(Guid tenantId) : IMessageHeaderPropagator
+    private sealed class TenantPropagator(TenantId tenantId) : IMessageHeaderPropagator
     {
         public void Propagate(PublishContext context) => context.WithTenantId(tenantId);
     }
@@ -295,7 +296,7 @@ public sealed class InMemoryMessageBusTests
     [Fact]
     public async Task PublishAsync_NoConfigure_TenantPropagator_RoundTripsTenantIdThroughCapturedContext()
     {
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
         var bus = new InMemoryMessageBus([new TenantPropagator(tenantId)]);
 
         await bus.PublishAsync(new TestEvent("a"), CancellationToken.None);
@@ -307,7 +308,7 @@ public sealed class InMemoryMessageBusTests
     [Fact]
     public async Task PublishAsync_WithConfigure_TenantPropagator_RoundTripsTenantIdThroughCapturedContext()
     {
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
         var bus = new InMemoryMessageBus([new TenantPropagator(tenantId)]);
 
         await bus.PublishAsync(new TestEvent("a"), ctx => ctx.WithHeader("k", "v"), CancellationToken.None);
@@ -320,7 +321,7 @@ public sealed class InMemoryMessageBusTests
     [Fact]
     public async Task SendAsync_TenantPropagator_RoundTripsTenantIdThroughCapturedContext()
     {
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
         var bus = new InMemoryMessageBus([new TenantPropagator(tenantId)]);
 
         await bus.SendAsync(new TestCommand("do-it"), CancellationToken.None);
@@ -332,8 +333,8 @@ public sealed class InMemoryMessageBusTests
     [Fact]
     public async Task PublishAsync_WithConfigure_ExplicitTenantIdWinsOverPropagatorTenantId()
     {
-        var propagatorTenantId = Guid.NewGuid();
-        var explicitTenantId = Guid.NewGuid();
+        var propagatorTenantId = new TenantId(Guid.NewGuid());
+        var explicitTenantId = new TenantId(Guid.NewGuid());
         var bus = new InMemoryMessageBus([new TenantPropagator(propagatorTenantId)]);
 
         await bus.PublishAsync(
@@ -399,7 +400,7 @@ public sealed class InMemoryMessageBusTests
     public async Task PublishAsync_NoPropagatorsRegistered_ConfigureCallbackAlone_PopulatesTenantIdAndPartitionKey()
     {
         var bus = new InMemoryMessageBus(); // default ctor — zero propagators
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
 
         await bus.PublishAsync(
             new TestEvent("a"),

@@ -6,6 +6,8 @@ using SharedKernel.Testing.Clocks;
 using SharedKernel.Testing.Storage;
 using Xunit;
 
+using SharedKernel.Execution.Tenancy;
+
 namespace SharedKernel.Testing.SelfTests.Storage;
 
 /// <summary>
@@ -15,6 +17,8 @@ namespace SharedKernel.Testing.SelfTests.Storage;
 /// </summary>
 public sealed class InMemoryFileStorageTests
 {
+    private static readonly TenantId TenantA = new(Guid.Parse("0f8fad5b-d9cb-469f-a165-70867728950e"));
+
     private static readonly byte[] Payload = Encoding.UTF8.GetBytes("hello world");
 
     [Fact]
@@ -534,7 +538,7 @@ public sealed class InMemoryFileStorageTests
 
     [Fact]
     public void TenantKey_BuildsTheTenantViewPrefix() =>
-        Assert.Equal("tenants/t1/a.txt", InMemoryFileStorage.TenantKey("t1", "a.txt"));
+        Assert.Equal($"tenants/{TenantA}/a.txt", InMemoryFileStorage.TenantKey(TenantA, "a.txt"));
 
     private sealed class NonSeekableStream(byte[] content) : MemoryStream(content)
     {
@@ -556,7 +560,7 @@ public sealed class InMemoryFileStorageTests
 
         public string StoreName => inner.StoreName;
 
-        public string? TenantId => null;
+        public TenantId? TenantId => null;
 
         public Task<SharedKernel.Primitives.Results.Result<FileReference>> UploadAsync(string key, Stream content, FileUploadOptions? options = null, CancellationToken cancellationToken = default)
         {

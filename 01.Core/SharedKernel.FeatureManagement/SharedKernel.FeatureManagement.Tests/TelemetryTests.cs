@@ -118,9 +118,9 @@ public sealed class TelemetryTests : IDisposable
         await using var provider = await FeatureTestHost.StartAsync(FeatureTestHost.Json(Configuration));
 
         using Activity request = _source.StartActivity("request")!;
-        await provider.NewScopeClient().GetValueAsync(Measured, new FeatureTargetingContext("user-4711", "tenant-9").ToEvaluationContext());
+        await provider.NewScopeClient().GetValueAsync(Measured, new FeatureTargetingContext("user-4711", TestTenants.Other).ToEvaluationContext());
 
         ActivityEvent evaluation = Assert.Single(request.Events);
-        Assert.DoesNotContain(evaluation.Tags, t => t.Value is string s && (s.Contains("user-4711", StringComparison.Ordinal) || s.Contains("tenant-9", StringComparison.Ordinal)));
+        Assert.DoesNotContain(evaluation.Tags, t => t.Value is string s && (s.Contains("user-4711", StringComparison.Ordinal) || s.Contains(TestTenants.OtherText, StringComparison.Ordinal)));
     }
 }

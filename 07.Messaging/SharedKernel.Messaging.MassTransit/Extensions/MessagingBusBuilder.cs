@@ -2,6 +2,7 @@ using Azure.Identity;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Execution.Context;
@@ -15,7 +16,6 @@ using SharedKernel.Messaging.Abstractions.Idempotency;
 using SharedKernel.Messaging.Abstractions.Options;
 using SharedKernel.Messaging.Abstractions.Scheduling;
 using SharedKernel.Messaging.Abstractions.SchemaEvolution;
-using SharedKernel.Messaging.Abstractions.TenantContext;
 using SharedKernel.Messaging.MassTransit.Consumers;
 using SharedKernel.Messaging.MassTransit.Context;
 using SharedKernel.Messaging.MassTransit.DeadLetter;
@@ -617,19 +617,15 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
     }
 
     /// <summary>
-    /// Registers <typeparamref name="TAccessor"/> as a scoped <see cref="ITenantContextAccessor"/>
-    /// and registers the built-in <see cref="TenantHeaderPropagator"/> as a scoped
-    /// <see cref="IMessageHeaderPropagator"/>, in one call.
+    /// Registers the built-in <see cref="TenantHeaderPropagator"/> as a scoped
+    /// <see cref="IMessageHeaderPropagator"/>, so every outgoing message carries the tenant of the ambient
+    /// request context, and <see cref="IRequestContextAccessor"/> unless one is already registered.
     /// </summary>
-    /// <typeparam name="TAccessor">
-    /// The consuming service's <see cref="ITenantContextAccessor"/> implementation, bridging its
-    /// real tenant-identity source (e.g. <c>ITenantProvider</c> from <c>12.Security</c>).
-    /// </typeparam>
     /// <returns>This builder for fluent chaining.</returns>
     /// <remarks>
     /// <para>
-    /// The consuming service only writes the <see cref="ITenantContextAccessor"/> implementation
-    /// bridging its real tenant source — it never writes a propagator by hand, mirroring
+    /// The tenant comes from <see cref="IRequestContextAccessor.Current"/>, which every inbound adapter sets —
+    /// the consuming service writes no class at all, mirroring
     /// <see cref="WithAmbientCorrelationPropagation"/>'s zero-consumer-boilerplate shape.
     /// </para>
     /// <para>
@@ -640,10 +636,9 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
     /// call or another registered <see cref="WithHeaderPropagator{T}"/> propagator.
     /// </para>
     /// </remarks>
-    public MessagingBusBuilder WithTenantContext<TAccessor>()
-        where TAccessor : class, ITenantContextAccessor
+    public MessagingBusBuilder WithTenantContext()
     {
-        Services.AddScoped<ITenantContextAccessor, TAccessor>();
+        Services.TryAddSingleton<IRequestContextAccessor, RequestContextAccessor>();
         Services.AddScoped<IMessageHeaderPropagator, TenantHeaderPropagator>();
         return this;
     }

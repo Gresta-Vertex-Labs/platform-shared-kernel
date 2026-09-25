@@ -116,7 +116,6 @@ public sealed class OidcServiceCollectionExtensionsTests
         await using AsyncServiceScope scope = provider.CreateAsyncScope();
 
         Assert.Same(AnonymousUserContext.Instance, scope.ServiceProvider.GetRequiredService<IUserContext>());
-        Assert.Equal(Guid.Empty, scope.ServiceProvider.GetRequiredService<ITenantProvider>().TenantId);
     }
 
     [Fact]
@@ -129,10 +128,7 @@ public sealed class OidcServiceCollectionExtensionsTests
 
         Assert.Single(services, d => d.ServiceType == typeof(IUserContextMapper));
         ServiceDescriptor userContext = Assert.Single(services, d => d.ServiceType == typeof(IUserContext));
-        ServiceDescriptor tenant = Assert.Single(services, d => d.ServiceType == typeof(ITenantProvider));
         Assert.Equal(ServiceLifetime.Scoped, userContext.Lifetime);
-        Assert.Equal(ServiceLifetime.Scoped, tenant.Lifetime);
-        Assert.Equal(typeof(UserContextTenantProvider), tenant.ImplementationType);
     }
 
     [Fact]
@@ -176,7 +172,7 @@ public sealed class OidcServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public async Task ITenantProvider_InRequest_ReturnsTokenTenantOrEmpty()
+    public async Task IUserContext_InRequest_ReturnsTokenTenantOrNull()
     {
         await using OidcTestHost host = await OidcTestHost.StartAsync();
         Guid tenant = Guid.NewGuid();
@@ -184,8 +180,8 @@ public sealed class OidcServiceCollectionExtensionsTests
         UserResponse withTenant = await host.GetUserAsync(TestTokens.Create().WithClaim("tenant_id", tenant.ToString()).Build());
         UserResponse withoutTenant = await host.GetUserAsync(TestTokens.Create().Build());
 
-        Assert.Equal(tenant, withTenant.TenantProviderTenantId);
-        Assert.Equal(Guid.Empty, withoutTenant.TenantProviderTenantId);
+        Assert.Equal(tenant, withTenant.TenantId);
+        Assert.Null(withoutTenant.TenantId);
     }
 
     [Fact]

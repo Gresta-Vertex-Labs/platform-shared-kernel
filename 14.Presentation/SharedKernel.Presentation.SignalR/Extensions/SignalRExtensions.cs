@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using SharedKernel.Execution.Context;
 using SharedKernel.Presentation.SignalR.Filters;
 
 namespace SharedKernel.Presentation.SignalR.Extensions;
@@ -53,6 +55,7 @@ public static class SignalRExtensions
         Action<HubOptions>? configureHubOptions = null,
         Action<HubInvocationRateLimitOptions>? configureRateLimit = null)
     {
+        services.TryAddSingleton<IRequestContextAccessor, RequestContextAccessor>();
         services.AddSingleton<TenantContextHubFilter>();
         services.AddSingleton<HubExceptionMappingFilter>();
 

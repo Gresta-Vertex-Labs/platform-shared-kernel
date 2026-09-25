@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Execution.Context;
 
 namespace SharedKernel.Messaging.Abstractions.Context;
@@ -49,7 +50,7 @@ public sealed class MessageRequestContext : IRequestContext
     /// </param>
     /// <param name="clientId">The OAuth2 client id the publisher authenticated through, if known.</param>
     public MessageRequestContext(
-        Guid? tenantId,
+        TenantId? tenantId,
         string? userId = null,
         ActorKind actorKind = Execution.Context.ActorKind.Anonymous,
         string? clientId = null)
@@ -79,7 +80,7 @@ public sealed class MessageRequestContext : IRequestContext
     public string? UserId { get; }
 
     /// <summary>Gets the tenant the message was published for, or <see langword="null"/>.</summary>
-    public Guid? TenantId { get; }
+    public TenantId? TenantId { get; }
 
     /// <summary>Gets the kind of actor that published the message.</summary>
     public ActorKind ActorKind { get; }

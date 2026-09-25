@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Options;
 using SharedKernel.Caching.Abstractions;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Caching.FusionCache.Extensions;
 
 namespace SharedKernel.Caching.FusionCache.Implementations;
@@ -21,6 +22,6 @@ internal sealed class CacheKeyProvider : ITenantCacheKeyProvider
     public string BuildKey(string entity, string id, params string[] segments) =>
         CacheKeyFormat.BuildKey(_serviceName, entity, id, segments);
 
-    public string BuildTenantKey(string tenantId, string entity, string id, params string[] segments) =>
+    public string BuildTenantKey(TenantId tenantId, string entity, string id, params string[] segments) =>
         CacheKeyFormat.BuildTenantKey(_serviceName, tenantId, entity, id, segments);
 }

@@ -11,6 +11,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Execution.Transactions;
 using SharedKernel.Core.Exceptions;
 using SharedKernel.Domain.Aggregates;
@@ -125,7 +126,7 @@ public sealed class R1Full : FullAuditableAggregateRoot<Guid>
 
 public sealed class R1TBase : TenantedAggregateRoot<Guid>
 {
-    public R1TBase(Guid id, Guid tenant, IClock clock) : base(id, tenant, clock) { }
+    public R1TBase(Guid id, TenantId tenant, IClock clock) : base(id, tenant, clock) { }
 
     private R1TBase() { }
 
@@ -134,7 +135,7 @@ public sealed class R1TBase : TenantedAggregateRoot<Guid>
 
 public sealed class R1TAuditable : TenantedAuditableAggregateRoot<Guid>
 {
-    public R1TAuditable(Guid id, Guid tenant, IClock clock) : base(id, tenant, clock) { }
+    public R1TAuditable(Guid id, TenantId tenant, IClock clock) : base(id, tenant, clock) { }
 
     private R1TAuditable() { }
 
@@ -143,7 +144,7 @@ public sealed class R1TAuditable : TenantedAuditableAggregateRoot<Guid>
 
 public sealed class R1TSoft : TenantedSoftDeletableAggregateRoot<Guid>
 {
-    public R1TSoft(Guid id, Guid tenant, IClock clock) : base(id, tenant, clock) { }
+    public R1TSoft(Guid id, TenantId tenant, IClock clock) : base(id, tenant, clock) { }
 
     private R1TSoft() { }
 
@@ -152,7 +153,7 @@ public sealed class R1TSoft : TenantedSoftDeletableAggregateRoot<Guid>
 
 public sealed class R1TAuditSoft : TenantedAuditableSoftDeletableAggregateRoot<Guid>
 {
-    public R1TAuditSoft(Guid id, Guid tenant, IClock clock) : base(id, tenant, clock) { }
+    public R1TAuditSoft(Guid id, TenantId tenant, IClock clock) : base(id, tenant, clock) { }
 
     private R1TAuditSoft() { }
 
@@ -161,7 +162,7 @@ public sealed class R1TAuditSoft : TenantedAuditableSoftDeletableAggregateRoot<G
 
 public sealed class R1TFull : TenantedFullAuditableAggregateRoot<Guid>
 {
-    public R1TFull(Guid id, Guid tenant, IClock clock) : base(id, tenant, clock) { }
+    public R1TFull(Guid id, TenantId tenant, IClock clock) : base(id, tenant, clock) { }
 
     private R1TFull() { }
 
@@ -250,7 +251,7 @@ public sealed class R1GraphContext(DbContextOptions<R1GraphContext> o, Persisten
 
 public sealed class R1RlsOrder : TenantedAggregateRoot<Guid>
 {
-    public R1RlsOrder(Guid id, Guid tenant, IClock clock) : base(id, tenant, clock) { }
+    public R1RlsOrder(Guid id, TenantId tenant, IClock clock) : base(id, tenant, clock) { }
 
     private R1RlsOrder() { }
 
@@ -265,7 +266,7 @@ public sealed class R1RlsLine : Entity<Guid>, SharedKernel.Domain.Abstractions.I
 
     public Guid R1RlsOrderId { get; set; }
 
-    public Guid TenantId { get; set; }
+    public TenantId TenantId { get; set; }
 }
 
 public sealed class R1RlsContext(DbContextOptions<R1RlsContext> o, PersistenceContextDependencies d) : TenantedDbContext(o, d)
@@ -629,7 +630,7 @@ public sealed class R1RemediationPostgresTests(PostgreSqlContainerFixture fixtur
         await DetachedWritesAsync<R1BasesContext, R1AuditSoft>(plain, () => new R1AuditSoft(Guid.NewGuid(), Clock), versionOnTheObject: false);
         await DetachedWritesAsync<R1BasesContext, R1Full>(plain, () => new R1Full(Guid.NewGuid(), Clock), versionOnTheObject: true);
 
-        var tenant = Guid.NewGuid();
+        var tenant = new TenantId(Guid.NewGuid());
         await using var tenanted = await SingleAsync<R1TenantedBasesContext>(new FakeAuditActorContext("actor", tenant));
         await DetachedWritesAsync<R1TenantedBasesContext, R1TBase>(tenanted, () => new R1TBase(Guid.NewGuid(), tenant, Clock), versionOnTheObject: false);
         await DetachedWritesAsync<R1TenantedBasesContext, R1TAuditable>(tenanted, () => new R1TAuditable(Guid.NewGuid(), tenant, Clock), versionOnTheObject: false);
@@ -677,7 +678,7 @@ public sealed class R1RemediationPostgresTests(PostgreSqlContainerFixture fixtur
     [Fact]
     public async Task S4_CoverageCheck_ReportsEveryUnprotectedTenantTable_AndPassesOnceTheModelHelperRan()
     {
-        var tenant = Guid.NewGuid();
+        var tenant = new TenantId(Guid.NewGuid());
         await using var provider = await SingleAsync<R1RlsContext>(new FakeAuditActorContext("actor", tenant));
 
         var findings = await RowLevelSecurityCoverageCheck<R1RlsContext>.FindUnprotectedTablesAsync(provider, CancellationToken.None);

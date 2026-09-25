@@ -1,4 +1,5 @@
 #pragma warning disable CS8602 // MassTransit harness IPublishedMessage/IReceivedMessage nullable context
+using SharedKernel.Execution.Tenancy;
 using System.Collections.ObjectModel;
 using FluentAssertions;
 using MassTransit;
@@ -69,7 +70,7 @@ public sealed class InboundRequestContextTests
     public async Task PublishFromTenantedCaller_ConsumerResolvesSameTenantAndActor()
     {
         IrcCaptureStore.Reset();
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
         var host = new IrcFakeRequestContext(tenantId, "user-77", ActorKind.User, "checkout-spa");
 
         await using var provider = BuildHarness(host);
@@ -132,7 +133,7 @@ public sealed class InboundRequestContextTests
     public async Task PublishFromServiceActor_ActorKindSurvivesAsName()
     {
         IrcCaptureStore.Reset();
-        var host = new IrcFakeRequestContext(Guid.NewGuid(), "svc-billing", ActorKind.Service);
+        var host = new IrcFakeRequestContext(new TenantId(Guid.NewGuid()), "svc-billing", ActorKind.Service);
 
         await using var provider = BuildHarness(host);
         var harness = provider.GetRequiredService<ITestHarness>();
@@ -162,8 +163,8 @@ public sealed class InboundRequestContextTests
     public async Task ExplicitTenantOnPublish_WinsOverAmbientCallerTenant()
     {
         IrcCaptureStore.Reset();
-        var ambientTenant = Guid.NewGuid();
-        var explicitTenant = Guid.NewGuid();
+        var ambientTenant = new TenantId(Guid.NewGuid());
+        var explicitTenant = new TenantId(Guid.NewGuid());
         var host = new IrcFakeRequestContext(ambientTenant, "user-77", ActorKind.User);
 
         await using var provider = BuildHarness(host);
@@ -255,7 +256,7 @@ public sealed class InboundRequestContextTests
     [Fact]
     public async Task OutsideConsume_RequestContextFallsBackToTheServiceOwnContext()
     {
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
         var host = new IrcFakeRequestContext(tenantId, "user-77", ActorKind.User);
 
         await using var provider = BuildHarness(host);
@@ -333,7 +334,7 @@ public sealed record IrcTestMessage(string Text);
 /// <summary>A stand-in for a service's own HTTP-backed request context.</summary>
 internal sealed class IrcFakeRequestContext : IRequestContext
 {
-    public IrcFakeRequestContext(Guid? tenantId, string? userId, ActorKind actorKind, string? clientId = null)
+    public IrcFakeRequestContext(TenantId? tenantId, string? userId, ActorKind actorKind, string? clientId = null)
     {
         TenantId = tenantId;
         UserId = userId;
@@ -345,7 +346,7 @@ internal sealed class IrcFakeRequestContext : IRequestContext
 
     public string? UserId { get; }
 
-    public Guid? TenantId { get; }
+    public TenantId? TenantId { get; }
 
     public ActorKind ActorKind { get; }
 
@@ -358,7 +359,7 @@ internal sealed class IrcFakeRequestContext : IRequestContext
 /// <summary>Records what the consumer's request context reported, for the assertions above.</summary>
 internal static class IrcCaptureStore
 {
-    public static Guid? TenantId { get; set; }
+    public static TenantId? TenantId { get; set; }
 
     public static string? UserId { get; set; }
 

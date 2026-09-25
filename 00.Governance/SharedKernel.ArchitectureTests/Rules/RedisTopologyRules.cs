@@ -149,7 +149,13 @@ public static class RedisTopologyRules
     ];
 
     /// <summary>
-    /// The only non-BCL assembly <c>SharedKernel.Caching.Abstractions</c> may reference —
+    /// The foundation assembly that owns <c>TenantId</c>, which every tenant-scoped key, tag and
+    /// <c>ITenantCacheService</c> member takes (P-565). Dependency-free apart from <c>SharedKernel.Primitives</c>.
+    /// </summary>
+    private const string ExecutionAssemblyName = "SharedKernel.Execution";
+
+    /// <summary>
+    /// One of the two non-BCL assemblies <c>SharedKernel.Caching.Abstractions</c> may reference —
     /// <c>ICachingBuilder</c> exposes <c>IServiceCollection</c> so provider packages can chain
     /// registrations.
     /// </summary>
@@ -494,7 +500,7 @@ public static class RedisTopologyRules
             .That()
             .HaveNameStartingWith(string.Empty)
             .Should()
-            .MeetCustomRule(new AssemblyReferenceAllowListPredicate(DependencyInjectionAbstractionsAssemblyName));
+            .MeetCustomRule(new AssemblyReferenceAllowListPredicate(DependencyInjectionAbstractionsAssemblyName, ExecutionAssemblyName));
 
     /// <summary>
     /// Returns a <see cref="ConditionList"/> asserting that <c>SharedKernel.Caching.Abstractions</c>

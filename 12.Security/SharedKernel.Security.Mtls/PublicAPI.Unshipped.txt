@@ -24,9 +24,9 @@ SharedKernel.Security.Mtls.Validation.MtlsValidationResult.FailureReason.get -> 
 SharedKernel.Security.Mtls.Validation.MtlsValidationResult.IsValid.get -> bool
 SharedKernel.Security.Mtls.Validation.MtlsValidationResult.Permissions.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
 SharedKernel.Security.Mtls.Validation.MtlsValidationResult.Roles.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
-SharedKernel.Security.Mtls.Validation.MtlsValidationResult.TenantId.get -> System.Guid?
 const SharedKernel.Security.Mtls.MtlsAuthenticationDefaults.AuthenticationScheme = "Certificate" -> string!
 const SharedKernel.Security.Mtls.MtlsAuthenticationDefaults.CertificateThumbprintClaimType = "x5t#S256" -> string!
 static SharedKernel.Security.Mtls.Extensions.MtlsServiceCollectionExtensions.AddMtlsAuthentication<TValidator>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<SharedKernel.Security.Mtls.Options.MtlsAuthenticationOptions!>? configure = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 static SharedKernel.Security.Mtls.Validation.MtlsValidationResult.Failure(string! reason = "Rejected") -> SharedKernel.Security.Mtls.Validation.MtlsValidationResult!
-static SharedKernel.Security.Mtls.Validation.MtlsValidationResult.Success(string! clientId, System.Guid? tenantId = null, System.Collections.Generic.IReadOnlyCollection<string!>? roles = null, System.Collections.Generic.IReadOnlyCollection<string!>? permissions = null) -> SharedKernel.Security.Mtls.Validation.MtlsValidationResult!
+SharedKernel.Security.Mtls.Validation.MtlsValidationResult.TenantId.get -> SharedKernel.Execution.Tenancy.TenantId?
+static SharedKernel.Security.Mtls.Validation.MtlsValidationResult.Success(string! clientId, SharedKernel.Execution.Tenancy.TenantId? tenantId = null, System.Collections.Generic.IReadOnlyCollection<string!>? roles = null, System.Collections.Generic.IReadOnlyCollection<string!>? permissions = null) -> SharedKernel.Security.Mtls.Validation.MtlsValidationResult!

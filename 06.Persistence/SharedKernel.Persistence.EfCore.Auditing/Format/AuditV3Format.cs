@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using SharedKernel.Execution.Auditing;
 using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
 
 namespace SharedKernel.Persistence.EfCore.Auditing.Format;
 
@@ -11,7 +12,7 @@ namespace SharedKernel.Persistence.EfCore.Auditing.Format;
 internal sealed record LedgerRecordFields
 {
     public required Guid Id { get; init; }
-    public Guid? TenantId { get; init; }
+    public TenantId? TenantId { get; init; }
     public required string ResourceType { get; init; }
     public required string ResourceId { get; init; }
     public required string Action { get; init; }
@@ -67,7 +68,7 @@ internal static class AuditV3Format
         w.WriteInt32(record.FormatVersion);
         w.WriteString(algorithm);
         w.WriteString(keyId);
-        w.WriteOptionalGuid(record.TenantId);
+        w.WriteOptionalGuid(record.TenantId?.Value);
         w.WriteString(record.ResourceType);
         w.WriteInt64(sequence);
         w.WritePresence(hasPreviousMac);
@@ -116,7 +117,7 @@ internal static class AuditV3Format
     /// <summary>Encodes the message a checkpoint signature is computed over.</summary>
     public static byte[] EncodeCheckpoint(
         Guid id,
-        Guid? tenantId,
+        TenantId? tenantId,
         string resourceType,
         long sequence,
         ReadOnlySpan<byte> headMac,
@@ -127,7 +128,7 @@ internal static class AuditV3Format
         w.WriteBytes(CheckpointDomain);
         w.WriteInt32(Version);
         w.WriteGuid(id);
-        w.WriteOptionalGuid(tenantId);
+        w.WriteOptionalGuid(tenantId?.Value);
         w.WriteString(resourceType);
         w.WriteInt64(sequence);
         w.WriteBytes(headMac);

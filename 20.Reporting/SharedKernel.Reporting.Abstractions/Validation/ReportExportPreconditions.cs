@@ -51,10 +51,9 @@ public static class ReportExportPreconditions
             return Result.Failure(ReportingErrors.InvalidDestination("Key is required."));
         }
 
-        if (destination.TenantId is not null && StorageValidation.ValidateTenantId(destination.TenantId) is not null)
+        if (destination.TenantId is { IsDefault: true })
         {
-            return Result.Failure(ReportingErrors.InvalidDestination(
-                $"TenantId '{destination.TenantId}' is invalid: use 1 to {StorageValidation.MaxTenantIdLength} characters from A-Z, a-z, 0-9, '.', '_' and '-'."));
+            return Result.Failure(ReportingErrors.InvalidDestination("TenantId must not be default(TenantId); use null for a shared store."));
         }
 
         return Result.Success();

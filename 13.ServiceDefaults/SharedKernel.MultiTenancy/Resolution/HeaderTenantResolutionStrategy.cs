@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using Microsoft.AspNetCore.Http;
 using SharedKernel.Primitives.Propagation;
 
@@ -27,19 +28,19 @@ public sealed class HeaderTenantResolutionStrategy(string headerName = HeaderTen
     public string StrategyName => TenantResolutionStrategyNames.Header;
 
     /// <inheritdoc/>
-    public Task<Guid?> TryResolveAsync(HttpContext context, CancellationToken cancellationToken)
+    public Task<TenantId?> TryResolveAsync(HttpContext context, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
 
         if (!context.Request.Headers.TryGetValue(headerName, out var headerValues))
         {
-            return Task.FromResult<Guid?>(null);
+            return Task.FromResult<TenantId?>(null);
         }
 
         var rawValue = headerValues.ToString();
 
-        return Task.FromResult(Guid.TryParse(rawValue, out var tenantId)
+        return Task.FromResult(TenantId.TryParse(rawValue, out var tenantId)
             ? tenantId
-            : (Guid?)null);
+            : (TenantId?)null);
     }
 }

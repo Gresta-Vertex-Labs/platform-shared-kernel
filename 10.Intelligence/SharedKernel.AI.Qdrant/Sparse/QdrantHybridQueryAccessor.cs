@@ -8,6 +8,7 @@ using SharedKernel.AI.Abstractions.Models;
 using SharedKernel.AI.Qdrant.Collections;
 using SharedKernel.AI.Qdrant.Errors;
 using SharedKernel.AI.Qdrant.Querying;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
@@ -53,7 +54,7 @@ internal sealed class QdrantHybridQueryAccessor<TRecord> : IQdrantHybridQueryAcc
         ArgumentException.ThrowIfNullOrWhiteSpace(sparseVectorName);
         ArgumentNullException.ThrowIfNull(sparseQueryVector);
 
-        if (_definition.TenantField is not null && tenantScope.Value.Length == 0)
+        if (_definition.TenantField is not null && tenantScope.IsGlobal)
         {
             return Result<VectorQueryResults<TRecord>>.Failure(IntelligenceErrors.TenantScopeMissing(_definition.Name));
         }

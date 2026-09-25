@@ -13,7 +13,7 @@ public sealed class ActorAttributionTests
     {
         public bool IsAuthenticated => isAuthenticated;
         public string? UserId => isAuthenticated ? "user-1" : null;
-        public Guid? TenantId => null;
+        public TenantId? TenantId => null;
 
         public ValueTask<bool> HasPermissionAsync(string permission, CancellationToken cancellationToken)
             => ValueTask.FromResult(false);

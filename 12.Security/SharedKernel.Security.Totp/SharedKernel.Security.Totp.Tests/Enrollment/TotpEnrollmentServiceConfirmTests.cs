@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Context;
 using SharedKernel.Cryptography.Totp;
 using SharedKernel.Security.Abstractions;
 using SharedKernel.Security.Totp.Tests.TestDoubles;
@@ -179,7 +180,7 @@ public sealed class TotpEnrollmentServiceConfirmTests
 
     private static IUserContext CreateCaller(string caller) => caller switch
     {
-        "ServicePrincipal" => new FakeUserContext { IdentityKind = IdentityKind.ServicePrincipal, SessionId = "session-1" },
+        "ServicePrincipal" => new FakeUserContext { ActorKind = ActorKind.Service, SessionId = "session-1" },
         "Anonymous" => AnonymousUserContext.Instance,
         "System" => SystemUserContext.Instance,
         _ => new FakeUserContext { SubjectId = null, SessionId = "session-1" },

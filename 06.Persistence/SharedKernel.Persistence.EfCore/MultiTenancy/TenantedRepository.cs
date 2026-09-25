@@ -1,6 +1,7 @@
 using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 using SharedKernel.Domain.Abstractions;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Diagnostics;
@@ -98,7 +99,7 @@ public abstract class TenantedRepository<TAggregate, TId> : EfRepository<TAggreg
     /// </exception>
     public virtual async Task<TAggregate?> GetByIdForTenantAsync(
         TId id,
-        Guid tenantId,
+        TenantId tenantId,
         CancellationToken cancellationToken = default)
     {
         RequireActiveCrossTenantScope(nameof(GetByIdForTenantAsync));
@@ -157,7 +158,7 @@ public abstract class TenantedRepository<TAggregate, TId> : EfRepository<TAggreg
     /// </exception>
     public virtual async Task<TAggregate?> GetByIdForTenantIncludingDeletedAsync(
         TId id,
-        Guid tenantId,
+        TenantId tenantId,
         CancellationToken cancellationToken = default)
     {
         RequireActiveCrossTenantScope(nameof(GetByIdForTenantIncludingDeletedAsync));
@@ -194,7 +195,7 @@ public abstract class TenantedRepository<TAggregate, TId> : EfRepository<TAggreg
         return Expression.Lambda<Func<TAggregate, bool>>(equals, param);
     }
 
-    private static Expression<Func<TAggregate, bool>> BuildTenantEqualsPredicate(Guid tenantId)
+    private static Expression<Func<TAggregate, bool>> BuildTenantEqualsPredicate(TenantId tenantId)
     {
         var holder = new TenantHolder(tenantId);
         var param = Expression.Parameter(typeof(TAggregate), "e");
@@ -209,8 +210,8 @@ public abstract class TenantedRepository<TAggregate, TId> : EfRepository<TAggreg
         public readonly TId Id = id;
     }
 
-    private sealed class TenantHolder(Guid tenantId)
+    private sealed class TenantHolder(TenantId tenantId)
     {
-        public readonly Guid TenantId = tenantId;
+        public readonly TenantId TenantId = tenantId;
     }
 }

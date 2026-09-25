@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Testing.Workflows;
@@ -19,7 +20,7 @@ public sealed class InMemoryWorkflowHandleOfTTests
         InMemoryWorkflowDispatcher dispatcher, string businessKey = "k1")
     {
         Result<IWorkflowHandle<TResult>> result = await dispatcher.StartAsync<SampleWorkflow, string, TResult>(
-            "input", WorkflowsTestFixtures.ValidOptions(businessKey), TenantScope.Of("tenant-a"));
+            "input", WorkflowsTestFixtures.ValidOptions(businessKey), TenantScope.For(WorkflowsTestFixtures.TenantA));
         Assert.True(result.IsSuccess);
         return (InMemoryWorkflowHandle<TResult>)result.Value;
     }
@@ -68,7 +69,7 @@ public sealed class InMemoryWorkflowHandleOfTTests
     public async Task GetResultAsync_NoBackingExecution_ReturnsNotFound_NeverThrows()
     {
         var dispatcher = new InMemoryWorkflowDispatcher();
-        IWorkflowHandle<string> handle = dispatcher.GetHandle<string>("no-such-id", runId: null, TenantScope.Of("tenant-a"));
+        IWorkflowHandle<string> handle = dispatcher.GetHandle<string>("no-such-id", runId: null, TenantScope.For(WorkflowsTestFixtures.TenantA));
 
         Result<string> result = await handle.GetResultAsync();
 

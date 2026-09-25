@@ -12,7 +12,7 @@ internal sealed class RecordingFileStorage(string storeName) : IFileStorage
 {
     public string StoreName { get; } = storeName;
 
-    public string? TenantId => null;
+    public TenantId? TenantId => null;
 
     public List<string> Keys { get; } = [];
 

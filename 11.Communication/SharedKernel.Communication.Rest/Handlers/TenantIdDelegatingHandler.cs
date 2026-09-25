@@ -1,15 +1,15 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Primitives.Propagation;
-using SharedKernel.Security.Abstractions;
+using SharedKernel.Execution.Context;
 
 namespace SharedKernel.Communication.Rest.Handlers;
 
 /// <summary>
 /// Injects the <c>x-tenant-id</c> header into outgoing HTTP requests by resolving
-/// <c>ITenantProvider</c> from the current request scope via <see cref="IHttpContextAccessor"/>.
-/// Silent no-op when <see cref="IHttpContextAccessor.HttpContext"/> is null,
-/// when <c>ITenantProvider</c> is not registered, or when <c>TenantId</c> is <see cref="Guid.Empty"/>.
+/// the tenant of the ambient <see cref="RequestContextScope.Current"/>, or else of the <see cref="IRequestContext"/>
+/// registered in the current request scope (via <see cref="IHttpContextAccessor"/>).
+/// Silent no-op when neither is available or the context has no tenant.
 /// Never throws. Registered as transient to avoid cross-request state capture.
 /// </summary>
 internal sealed class TenantIdDelegatingHandler(IHttpContextAccessor httpContextAccessor) : DelegatingHandler
@@ -25,16 +25,11 @@ internal sealed class TenantIdDelegatingHandler(IHttpContextAccessor httpContext
         {
             try
             {
-                var httpContext = httpContextAccessor.HttpContext;
-                if (httpContext is not null)
+                var tenantId = RequestContextScope.Current?.TenantId
+                    ?? httpContextAccessor.HttpContext?.RequestServices.GetService<IRequestContext>()?.TenantId;
+                if (tenantId is { } tenant)
                 {
-                    var tenantProvider = httpContext.RequestServices.GetService<ITenantProvider>();
-                    if (tenantProvider is not null && tenantProvider.TenantId != Guid.Empty)
-                    {
-                        request.Headers.TryAddWithoutValidation(
-                            HeaderName,
-                            tenantProvider.TenantId.ToString());
-                    }
+                    request.Headers.TryAddWithoutValidation(HeaderName, tenant.ToString());
                 }
             }
             catch

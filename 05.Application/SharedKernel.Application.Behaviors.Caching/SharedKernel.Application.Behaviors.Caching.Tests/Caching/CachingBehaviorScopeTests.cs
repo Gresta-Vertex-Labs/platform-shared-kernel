@@ -111,7 +111,7 @@ public sealed class CachingBehaviorScopeTests
     public async Task Handle_UserScope_PartitionsByCaller()
     {
         var cache = new FakeCacheService();
-        var tenant = Guid.NewGuid();
+        var tenant = new TenantId(Guid.NewGuid());
         var alice = TestPipeline.Caching<UserScopedQuery, Result<string>>(cache, new FakeRequestContext(tenant, "alice"));
         var bob = TestPipeline.Caching<UserScopedQuery, Result<string>>(cache, new FakeRequestContext(tenant, "bob"));
 
@@ -138,7 +138,7 @@ public sealed class CachingBehaviorScopeTests
     {
         var cache = new FakeCacheService();
         var behavior = TestPipeline.Caching<UserScopedQuery, Result<string>>(
-            cache, new FakeRequestContext(Guid.NewGuid(), userId: null));
+            cache, new FakeRequestContext(new TenantId(Guid.NewGuid()), userId: null));
 
         await behavior.Handle(new UserScopedQuery(), () => Task.FromResult(Result<string>.Success("v")), CancellationToken.None);
 
@@ -162,7 +162,7 @@ public sealed class CachingBehaviorScopeTests
     public async Task Handle_SameTenantSameUser_ReadsItsOwnEntry()
     {
         var cache = new FakeCacheService();
-        var tenant = Guid.NewGuid();
+        var tenant = new TenantId(Guid.NewGuid());
         var first = TestPipeline.Caching<UserScopedQuery, Result<string>>(cache, new FakeRequestContext(tenant, "alice"));
         var second = TestPipeline.Caching<UserScopedQuery, Result<string>>(cache, new FakeRequestContext(tenant, "alice"));
 

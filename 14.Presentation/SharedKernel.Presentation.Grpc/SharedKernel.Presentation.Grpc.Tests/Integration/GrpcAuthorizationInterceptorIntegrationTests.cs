@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Context;
 using FluentAssertions;
 using Grpc.Core;
 using Microsoft.AspNetCore.TestHost;
@@ -55,7 +56,7 @@ public class GrpcAuthorizationInterceptorIntegrationTests
     {
         await using var factory = new GrpcTestWebApplicationFactory();
         await using var anonymous = factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
-            services.AddSingleton<IUserContext>(new FakeUserContext { IdentityKind = IdentityKind.Anonymous, SubjectId = null, Roles = [] })));
+            services.AddSingleton<IUserContext>(new FakeUserContext { ActorKind = ActorKind.Anonymous, SubjectId = null, Roles = [] })));
 
         var client = GrpcClientHelper.CreateClient(anonymous);
 

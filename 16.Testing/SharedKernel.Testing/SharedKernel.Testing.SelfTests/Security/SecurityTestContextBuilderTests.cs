@@ -1,3 +1,5 @@
+using SharedKernel.Execution.Tenancy;
+using SharedKernel.Execution.Context;
 using System.Globalization;
 using System.Security.Claims;
 using SharedKernel.Security.Abstractions;
@@ -8,7 +10,7 @@ namespace SharedKernel.Testing.SelfTests.Security;
 
 public sealed class SecurityTestContextBuilderTests
 {
-    private static readonly Guid TenantId = Guid.Parse("3f2504e0-4f89-41d3-9a0c-0305e82c3301");
+    private static readonly TenantId TenantId = new TenantId(Guid.Parse("3f2504e0-4f89-41d3-9a0c-0305e82c3301"));
     private static readonly DateTimeOffset AuthTime = new(2026, 1, 1, 12, 0, 0, TimeSpan.Zero);
 
     [Fact]
@@ -53,9 +55,9 @@ public sealed class SecurityTestContextBuilderTests
     }
 
     [Fact]
-    public void Build_WithIdentityKindAnonymous_SameAsUnauthenticated()
+    public void Build_WithActorKindAnonymous_SameAsUnauthenticated()
     {
-        var principal = new SecurityTestContextBuilder().WithIdentityKind(IdentityKind.Anonymous).Build();
+        var principal = new SecurityTestContextBuilder().WithActorKind(ActorKind.Anonymous).Build();
 
         Assert.False(principal.Identity!.IsAuthenticated);
     }
@@ -154,18 +156,18 @@ public sealed class SecurityTestContextBuilderTests
     [Fact]
     public void Build_ServicePrincipal_EmitsIdtypApp()
     {
-        var principal = new SecurityTestContextBuilder().WithIdentityKind(IdentityKind.ServicePrincipal).Build();
+        var principal = new SecurityTestContextBuilder().WithActorKind(ActorKind.Service).Build();
 
         Assert.True(principal.HasClaim("idtyp", "app"));
         Assert.True(principal.Identity!.IsAuthenticated);
     }
 
     [Theory]
-    [InlineData(IdentityKind.User)]
-    [InlineData(IdentityKind.Anonymous)]
-    public void Build_NotServicePrincipal_EmitsNoIdtyp(IdentityKind kind)
+    [InlineData(ActorKind.User)]
+    [InlineData(ActorKind.Anonymous)]
+    public void Build_NotServicePrincipal_EmitsNoIdtyp(ActorKind kind)
     {
-        var principal = new SecurityTestContextBuilder().WithIdentityKind(kind).Build();
+        var principal = new SecurityTestContextBuilder().WithActorKind(kind).Build();
 
         Assert.Empty(principal.FindAll("idtyp"));
     }
@@ -193,7 +195,7 @@ public sealed class SecurityTestContextBuilderTests
     {
         var context = new SecurityTestContextBuilder().BuildUserContext();
 
-        Assert.Equal(IdentityKind.User, context.IdentityKind);
+        Assert.Equal(ActorKind.User, context.ActorKind);
         Assert.True(context.IsAuthenticated);
         Assert.Equal(FakeUserContext.DefaultSubjectId, context.SubjectId);
         Assert.Null(context.ClientId);
@@ -237,13 +239,13 @@ public sealed class SecurityTestContextBuilderTests
     }
 
     [Theory]
-    [InlineData(IdentityKind.Anonymous, false)]
-    [InlineData(IdentityKind.System, true)]
-    public void BuildUserContext_KindWithoutSubject_SubjectIdNull(IdentityKind kind, bool authenticated)
+    [InlineData(ActorKind.Anonymous, false)]
+    [InlineData(ActorKind.System, true)]
+    public void BuildUserContext_KindWithoutSubject_SubjectIdNull(ActorKind kind, bool authenticated)
     {
-        var context = new SecurityTestContextBuilder().WithSubjectId("user-42").WithIdentityKind(kind).BuildUserContext();
+        var context = new SecurityTestContextBuilder().WithSubjectId("user-42").WithActorKind(kind).BuildUserContext();
 
-        Assert.Equal(kind, context.IdentityKind);
+        Assert.Equal(kind, context.ActorKind);
         Assert.Equal(authenticated, context.IsAuthenticated);
         Assert.Null(context.SubjectId);
     }
@@ -253,10 +255,10 @@ public sealed class SecurityTestContextBuilderTests
     {
         var context = new SecurityTestContextBuilder()
             .WithSubjectId("svc-1")
-            .WithIdentityKind(IdentityKind.ServicePrincipal)
+            .WithActorKind(ActorKind.Service)
             .BuildUserContext();
 
-        Assert.Equal(IdentityKind.ServicePrincipal, context.IdentityKind);
+        Assert.Equal(ActorKind.Service, context.ActorKind);
         Assert.Equal("svc-1", context.SubjectId);
     }
 
@@ -296,12 +298,12 @@ public sealed class SecurityTestContextBuilderTests
     // Mirrors SharedKernel.Security.Oidc's default claim mapping (sub, azp, tenant_id, sid, name, email, roles,
     // space-delimited scope, amr, acr, auth_time, idtyp=app), which this project cannot reference directly.
     [Theory]
-    [InlineData(IdentityKind.User)]
-    [InlineData(IdentityKind.ServicePrincipal)]
-    public void Build_MappedLikeOidcDefaults_MatchesBuildUserContext(IdentityKind kind)
+    [InlineData(ActorKind.User)]
+    [InlineData(ActorKind.Service)]
+    public void Build_MappedLikeOidcDefaults_MatchesBuildUserContext(ActorKind kind)
     {
         var builder = new SecurityTestContextBuilder()
-            .WithIdentityKind(kind)
+            .WithActorKind(kind)
             .WithSubjectId("subject-42")
             .WithClientId("client-9")
             .WithTenantId(TenantId)
@@ -319,10 +321,10 @@ public sealed class SecurityTestContextBuilderTests
 
         Assert.True(identity.IsAuthenticated);
         Assert.Equal("Bearer", identity.AuthenticationType);
-        Assert.Equal(expected.IdentityKind == IdentityKind.ServicePrincipal, identity.HasClaim("idtyp", "app"));
+        Assert.Equal(expected.ActorKind == ActorKind.Service, identity.HasClaim("idtyp", "app"));
         Assert.Equal(expected.SubjectId, identity.FindFirst(SecurityClaimTypes.Subject)?.Value);
         Assert.Equal(expected.ClientId, identity.FindFirst(SecurityClaimTypes.AuthorizedParty)?.Value);
-        Assert.Equal(expected.TenantId, Guid.Parse(identity.FindFirst(SecurityClaimTypes.TenantId)!.Value));
+        Assert.Equal(expected.TenantId, TenantId.Parse(identity.FindFirst(SecurityClaimTypes.TenantId)!.Value));
         Assert.Equal(expected.SessionId, identity.FindFirst(SecurityClaimTypes.SessionId)?.Value);
         Assert.Equal(expected.Name, identity.FindFirst(SecurityClaimTypes.Name)?.Value);
         Assert.Equal(expected.Email, identity.FindFirst(SecurityClaimTypes.Email)?.Value);

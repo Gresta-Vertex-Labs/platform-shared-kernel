@@ -17,6 +17,6 @@ internal sealed class FakeCacheKeyProvider : ITenantCacheKeyProvider
     public string BuildKey(string entity, string id, params string[] segments)
         => CacheKeyFormat.BuildKey(ServiceName, entity, id, segments);
 
-    public string BuildTenantKey(string tenantId, string entity, string id, params string[] segments)
+    public string BuildTenantKey(TenantId tenantId, string entity, string id, params string[] segments)
         => CacheKeyFormat.BuildTenantKey(ServiceName, tenantId, entity, id, segments);
 }

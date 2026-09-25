@@ -6,6 +6,9 @@ namespace SharedKernel.Storage.Abstractions.Tests;
 
 public sealed class TenantIsolationTests : IDisposable
 {
+    private static readonly TenantId TenantA = new(Guid.Parse("0f8fad5b-d9cb-469f-a165-70867728950e"));
+    private static readonly TenantId TenantB = new(Guid.Parse("7c9e6679-7425-40de-944b-e07fc1f90ae7"));
+
     private readonly RecordingFileStorage _raw = new("documents");
     private readonly RecordingFileStorage _otherRaw = new("archive");
     private readonly ServiceProvider _provider;
@@ -16,8 +19,8 @@ public sealed class TenantIsolationTests : IDisposable
     {
         _provider = StoreRegistryTests.Build(("documents", true, _raw), ("archive", true, _otherRaw));
         ITenantFileStorage store = _provider.GetRequiredKeyedService<ITenantFileStorage>("documents");
-        _tenantA = store.ForTenant("tenant-a");
-        _tenantB = store.ForTenant("tenant-b");
+        _tenantA = store.ForTenant(TenantA);
+        _tenantB = store.ForTenant(TenantB);
     }
 
     public void Dispose() => _provider.Dispose();
@@ -27,8 +30,8 @@ public sealed class TenantIsolationTests : IDisposable
     {
         Result<FileReference> uploaded = await _tenantA.UploadAsync("reports/q3.pdf", new MemoryStream([1]));
 
-        _raw.Keys.Should().Equal("tenants/tenant-a/reports/q3.pdf");
-        uploaded.Value.Should().Be(new FileReference { Store = "documents", TenantId = "tenant-a", Key = "reports/q3.pdf", ETag = "\"e\"" });
+        _raw.Keys.Should().Equal($"tenants/{TenantA}/reports/q3.pdf");
+        uploaded.Value.Should().Be(new FileReference { Store = "documents", TenantId = TenantA, Key = "reports/q3.pdf", ETag = "\"e\"" });
     }
 
     [Fact]
@@ -41,13 +44,13 @@ public sealed class TenantIsolationTests : IDisposable
         file.Properties.Key.Should().Be("a.txt");
         file.Length.Should().Be(3);
         properties.Value.Key.Should().Be("a.txt");
-        _raw.Keys.Should().Equal("tenants/tenant-a/a.txt", "tenants/tenant-a/a.txt");
+        _raw.Keys.Should().Equal($"tenants/{TenantA}/a.txt", $"tenants/{TenantA}/a.txt");
     }
 
     [Fact]
     public async Task Errors_name_the_key_the_caller_passed_not_the_tenant_prefix()
     {
-        _raw.FailWith = StorageErrors.NotFound("documents", "tenants/tenant-a/missing.txt");
+        _raw.FailWith = StorageErrors.NotFound("documents", $"tenants/{TenantA}/missing.txt");
 
         Result<FileProperties> result = await _tenantA.GetPropertiesAsync("missing.txt");
 
@@ -58,8 +61,8 @@ public sealed class TenantIsolationTests : IDisposable
     [Fact]
     public async Task Invalid_keys_are_rejected_before_the_provider_is_called()
     {
-        Result<FileReference> traversal = await _tenantA.UploadAsync("../tenant-b/x", new MemoryStream());
-        Result<bool> absolute = await _tenantA.ExistsAsync("/tenants/tenant-b/x");
+        Result<FileReference> traversal = await _tenantA.UploadAsync($"../{TenantB}/x", new MemoryStream());
+        Result<bool> absolute = await _tenantA.ExistsAsync($"/tenants/{TenantB}/x");
 
         traversal.Error.Code.Should().Be(StorageErrorCodes.InvalidKey);
         absolute.Error.Code.Should().Be(StorageErrorCodes.InvalidKey);
@@ -69,7 +72,7 @@ public sealed class TenantIsolationTests : IDisposable
     [Fact]
     public async Task Listing_is_confined_to_the_tenant_and_strips_the_prefix()
     {
-        _raw.StoredKeys.AddRange(["tenants/tenant-a/x/1", "tenants/tenant-a/x/2", "tenants/tenant-b/x/3"]);
+        _raw.StoredKeys.AddRange([$"tenants/{TenantA}/x/1", $"tenants/{TenantA}/x/2", $"tenants/{TenantB}/x/3"]);
 
         List<string> streamed = [];
         await foreach (FileListItem item in _tenantA.ListAsync("x/"))
@@ -103,7 +106,7 @@ public sealed class TenantIsolationTests : IDisposable
 
         invalid.Error.Code.Should().Be(StorageErrorCodes.InvalidKey);
         empty.Value.IsComplete.Should().BeTrue();
-        _raw.Keys.Should().Equal("tenants/tenant-a/a", "tenants/tenant-a/b");
+        _raw.Keys.Should().Equal($"tenants/{TenantA}/a", $"tenants/{TenantA}/b");
         result.Value.Deleted.Should().Equal("a");
         result.Value.Failed.Should().ContainSingle().Which.Key.Should().Be("b");
         result.Value.Failed[0].Error.Message.Should().Contain("'b'").And.NotContain("tenants/");
@@ -112,14 +115,14 @@ public sealed class TenantIsolationTests : IDisposable
     [Fact]
     public async Task Copies_between_views_reach_the_provider_stores_with_both_prefixes()
     {
-        IFileStorage archiveB = _provider.GetRequiredKeyedService<ITenantFileStorage>("archive").ForTenant("tenant-b");
+        IFileStorage archiveB = _provider.GetRequiredKeyedService<ITenantFileStorage>("archive").ForTenant(TenantB);
 
         Result<FileReference> copied = await _tenantA.CopyToAsync("a.txt", archiveB, "copy.txt");
 
         _raw.LastCopyTarget!.Value.Destination.Should().BeSameAs(_otherRaw);
-        _raw.LastCopyTarget!.Value.DestinationKey.Should().Be("tenants/tenant-b/copy.txt");
-        _raw.Keys.Should().StartWith("tenants/tenant-a/a.txt");
-        copied.Value.Should().Be(new FileReference { Store = "archive", TenantId = "tenant-b", Key = "copy.txt" });
+        _raw.LastCopyTarget!.Value.DestinationKey.Should().Be($"tenants/{TenantB}/copy.txt");
+        _raw.Keys.Should().StartWith($"tenants/{TenantA}/a.txt");
+        copied.Value.Should().Be(new FileReference { Store = "archive", TenantId = TenantB, Key = "copy.txt" });
     }
 
     [Fact]
@@ -133,16 +136,13 @@ public sealed class TenantIsolationTests : IDisposable
         upload.Should().Be(new MultipartUpload("big.bin", "upload-1"));
         completed.Value.Key.Should().Be("big.bin");
         duplicateParts.Error.Code.Should().Be(StorageErrorCodes.InvalidRequest);
-        _raw.Keys.Should().Equal("tenants/tenant-a/big.bin", "tenants/tenant-a/big.bin");
+        _raw.Keys.Should().Equal($"tenants/{TenantA}/big.bin", $"tenants/{TenantA}/big.bin");
     }
 
-    [Theory]
-    [InlineData("")]
-    [InlineData("a/b")]
-    [InlineData("..")]
-    public void Invalid_tenant_ids_are_refused(string tenantId)
+    [Fact]
+    public void The_default_tenant_id_is_refused()
     {
-        Action view = () => _provider.GetRequiredKeyedService<ITenantFileStorage>("documents").ForTenant(tenantId);
+        Action view = () => _provider.GetRequiredKeyedService<ITenantFileStorage>("documents").ForTenant(default);
 
         view.Should().Throw<ArgumentException>();
     }

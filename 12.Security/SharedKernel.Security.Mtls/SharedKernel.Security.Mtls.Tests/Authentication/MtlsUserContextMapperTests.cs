@@ -1,3 +1,5 @@
+using SharedKernel.Execution.Tenancy;
+using SharedKernel.Execution.Context;
 using System.Security.Claims;
 using SharedKernel.Security.Abstractions;
 using SharedKernel.Security.Mtls.Authentication;
@@ -18,13 +20,13 @@ public sealed class MtlsUserContextMapperTests
     [Fact]
     public void Map_IdentityWithSubject_ReturnsServicePrincipal()
     {
-        var tenantId = Guid.NewGuid();
+        TenantId tenantId = new TenantId(Guid.NewGuid());
         var identity = new ClaimsIdentity(
             [
                 new Claim(SecurityClaimTypes.Subject, "tpp-42"),
                 new Claim(SecurityClaimTypes.ClientId, "tpp-42"),
                 new Claim(MtlsAuthenticationDefaults.CertificateThumbprintClaimType, "thumb"),
-                new Claim(SecurityClaimTypes.TenantId, tenantId.ToString("D")),
+                new Claim(SecurityClaimTypes.TenantId, tenantId.ToString()),
                 new Claim(SecurityClaimTypes.Roles, "psp"),
                 new Claim(SecurityClaimTypes.Scope, "payments:initiate"),
                 new Claim(SecurityClaimTypes.Scope, "accounts:read"),
@@ -33,7 +35,7 @@ public sealed class MtlsUserContextMapperTests
 
         IUserContext context = _mapper.Map(identity);
 
-        Assert.Equal(IdentityKind.ServicePrincipal, context.IdentityKind);
+        Assert.Equal(ActorKind.Service, context.ActorKind);
         Assert.True(context.IsAuthenticated);
         Assert.Equal("tpp-42", context.SubjectId);
         Assert.Equal("tpp-42", context.ClientId);

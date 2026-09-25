@@ -197,7 +197,7 @@ internal sealed class RecordingFileStorage : IFileStorage
 
     public string StoreName => Name;
 
-    public string? TenantId => null;
+    public SharedKernel.Execution.Tenancy.TenantId? TenantId => null;
 
     /// <summary>Builds the registry the exporters resolve their store through.</summary>
     public IFileStorageFactory CreateFactory()

@@ -1,25 +1,23 @@
 using Grpc.Core;
 using Grpc.Core.Interceptors;
 using Microsoft.Extensions.DependencyInjection;
-using SharedKernel.Security.Abstractions;
+using SharedKernel.Execution.Context;
 
 namespace SharedKernel.Presentation.Grpc.Interceptors;
 
 /// <summary>
-/// Global server interceptor that attaches the resolved tenant identifier to every gRPC call —
-/// the gRPC counterpart to
+/// Global server interceptor that runs every gRPC call inside the caller's <see cref="IRequestContext"/> — user and
+/// tenant — so the service method reads it through <see cref="IRequestContextAccessor"/>. The gRPC counterpart to
 /// <c>SharedKernel.Presentation.SignalR.Filters.TenantContextHubFilter</c>.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Resolves <see cref="ITenantProvider"/> (<c>12.Security.Abstractions</c>) from the call's
-/// <see cref="Microsoft.AspNetCore.Http.HttpContext"/> — obtained via
-/// <see cref="ServerCallContextExtensions.GetHttpContext"/>, ASP.NET Core gRPC hosting's
-/// documented bridge from <see cref="ServerCallContext"/> to the underlying
-/// <see cref="Microsoft.AspNetCore.Http.HttpContext"/> — and stores the resolved
-/// <see cref="ITenantProvider.TenantId"/> in <see cref="ServerCallContext.UserState"/> under
-/// <see cref="ItemsKey"/> for the call's lifetime, the gRPC per-call analogue of
-/// <c>Context.Items</c>/<c>HttpContext.Items</c>.
+/// Takes the ambient context (<see cref="IRequestContextAccessor.Current"/>, set by an inbound adapter such as
+/// <c>SharedKernel.MultiTenancy</c>'s tenant resolution) or, when none is open, the <see cref="IRequestContext"/>
+/// registered in the call's <see cref="Microsoft.AspNetCore.Http.HttpContext.RequestServices"/> — obtained via
+/// <see cref="ServerCallContextExtensions.GetHttpContext"/>, ASP.NET Core gRPC hosting's documented bridge from
+/// <see cref="ServerCallContext"/> to the underlying <see cref="Microsoft.AspNetCore.Http.HttpContext"/> — and opens a
+/// <see cref="RequestContextScope"/> with it for the duration of the call.
 /// </para>
 /// <para>
 /// Does not reject calls with no resolvable tenant — mirrors
@@ -29,64 +27,69 @@ namespace SharedKernel.Presentation.Grpc.Interceptors;
 /// </para>
 /// <para>
 /// Overrides all four server interceptor methods, since gRPC has three streaming call shapes in
-/// addition to unary that equally need tenant-context attachment. Unlike SignalR's
-/// connection-scoped <c>OnConnectedAsync</c>, gRPC has no persistent per-connection hook at this
-/// abstraction level — each call (unary or streaming) gets its own <see cref="ServerCallContext"/>
-/// and is enriched independently.
+/// addition to unary that equally need the context. Each call (unary or streaming) gets its own
+/// <see cref="ServerCallContext"/> and its own scope.
 /// </para>
 /// </remarks>
 public sealed class GrpcTenantContextInterceptor : Interceptor
 {
-    /// <summary>The <see cref="ServerCallContext.UserState"/> key the resolved tenant identifier is stored under.</summary>
-    public const string ItemsKey = "TenantId";
+    private readonly IRequestContextAccessor _accessor;
+
+    /// <summary>Initialises a new <see cref="GrpcTenantContextInterceptor"/>.</summary>
+    /// <param name="accessor">Reads the ambient request context.</param>
+    public GrpcTenantContextInterceptor(IRequestContextAccessor accessor)
+    {
+        ArgumentNullException.ThrowIfNull(accessor);
+        _accessor = accessor;
+    }
 
     /// <inheritdoc />
-    public override Task<TResponse> UnaryServerHandler<TRequest, TResponse>(
+    public override async Task<TResponse> UnaryServerHandler<TRequest, TResponse>(
         TRequest request,
         ServerCallContext context,
         UnaryServerMethod<TRequest, TResponse> continuation)
     {
-        Enrich(context);
-        return continuation(request, context);
+        using var scope = Begin(context);
+        return await continuation(request, context).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
-    public override Task<TResponse> ClientStreamingServerHandler<TRequest, TResponse>(
+    public override async Task<TResponse> ClientStreamingServerHandler<TRequest, TResponse>(
         IAsyncStreamReader<TRequest> requestStream,
         ServerCallContext context,
         ClientStreamingServerMethod<TRequest, TResponse> continuation)
     {
-        Enrich(context);
-        return continuation(requestStream, context);
+        using var scope = Begin(context);
+        return await continuation(requestStream, context).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
-    public override Task ServerStreamingServerHandler<TRequest, TResponse>(
+    public override async Task ServerStreamingServerHandler<TRequest, TResponse>(
         TRequest request,
         IServerStreamWriter<TResponse> responseStream,
         ServerCallContext context,
         ServerStreamingServerMethod<TRequest, TResponse> continuation)
     {
-        Enrich(context);
-        return continuation(request, responseStream, context);
+        using var scope = Begin(context);
+        await continuation(request, responseStream, context).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
-    public override Task DuplexStreamingServerHandler<TRequest, TResponse>(
+    public override async Task DuplexStreamingServerHandler<TRequest, TResponse>(
         IAsyncStreamReader<TRequest> requestStream,
         IServerStreamWriter<TResponse> responseStream,
         ServerCallContext context,
         DuplexStreamingServerMethod<TRequest, TResponse> continuation)
     {
-        Enrich(context);
-        return continuation(requestStream, responseStream, context);
+        using var scope = Begin(context);
+        await continuation(requestStream, responseStream, context).ConfigureAwait(false);
     }
 
-    private static void Enrich(ServerCallContext context)
+    private IDisposable? Begin(ServerCallContext context)
     {
-        var httpContext = context.GetHttpContext();
-        var tenantProvider = httpContext?.RequestServices.GetService<ITenantProvider>();
+        var requestContext = _accessor.Current
+            ?? context.GetHttpContext()?.RequestServices.GetService<IRequestContext>();
 
-        context.UserState[ItemsKey] = tenantProvider?.TenantId ?? Guid.Empty;
+        return requestContext is null ? null : RequestContextScope.Begin(requestContext);
     }
 }

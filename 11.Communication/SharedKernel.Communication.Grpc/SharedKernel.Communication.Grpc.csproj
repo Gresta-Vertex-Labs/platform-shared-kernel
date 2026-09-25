@@ -23,7 +23,7 @@
       References to 02.Caching, 05.Application, 06.Persistence, 07.Messaging are hard violations.
     -->
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
-    <ProjectReference Include="..\..\12.Security\SharedKernel.Security.Abstractions\SharedKernel.Security.Abstractions.csproj" />
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Execution\SharedKernel.Execution.csproj" />
     <!--
       Intra-domain reference: .Internal is the foundational service-discovery package within 11.Communication.
       Used for optional IServiceEndpointResolver integration in AddGrpcClient<TClient> (G-09).

@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Cryptography.Random;
 using SharedKernel.Security.ApiKey.Keys;
 using SharedKernel.Security.ApiKey.Options;
@@ -11,7 +12,7 @@ namespace SharedKernel.Security.ApiKey.Tests.Keys;
 public sealed class ManagedApiKeyValidatorTests
 {
     private static readonly DateTimeOffset Now = new(2026, 3, 1, 12, 0, 0, TimeSpan.Zero);
-    private static readonly Guid TenantId = Guid.Parse("5b0e7a51-3f7c-4f55-9d3a-6f1f2a9c8e11");
+    private static readonly TenantId TenantId = new TenantId(Guid.Parse("5b0e7a51-3f7c-4f55-9d3a-6f1f2a9c8e11"));
 
     private readonly InMemoryApiKeyStore _store = new();
     private readonly FakeClock _clock = new(Now);
@@ -58,7 +59,7 @@ public sealed class ManagedApiKeyValidatorTests
     public async Task ValidateAsync_RecordWithEmptyTenant_HasNoTenant()
     {
         GeneratedApiKey key = _generator.Generate();
-        _store.Add(new ApiKeyRecord(key.KeyId, key.KeyHash, "reporting") { TenantId = Guid.Empty });
+        _store.Add(new ApiKeyRecord(key.KeyId, key.KeyHash, "reporting") { TenantId = default(TenantId) });
 
         ApiKeyValidationResult result = await CreateValidator().ValidateAsync(key.Key, CancellationToken.None);
 

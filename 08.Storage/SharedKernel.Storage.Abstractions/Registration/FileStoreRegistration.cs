@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Results;
 
 namespace SharedKernel.Storage;
@@ -14,7 +15,7 @@ namespace SharedKernel.Storage;
 /// <see cref="IFileStorage.TenantId"/> must be <see langword="null"/>, otherwise resolving the store throws
 /// <see cref="InvalidOperationException"/>. The raw store is never handed out: the registry wraps it in a view
 /// that validates every request before it reaches the provider, and for a <see cref="TenantScoped"/> store
-/// callers only reach it through <see cref="ITenantFileStorage.ForTenant(string)"/>, which prefixes every key
+/// callers only reach it through <see cref="ITenantFileStorage.ForTenant(TenantId)"/>, which prefixes every key
 /// with <c>tenants/{tenantId}/</c>.
 /// </para>
 /// <para>

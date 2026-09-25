@@ -1,3 +1,5 @@
+using SharedKernel.Execution.Tenancy;
+
 namespace SharedKernel.Workflows.Temporal.Dispatch;
 
 /// <summary>
@@ -24,11 +26,11 @@ public interface IWorkflowIdFactory
     /// produce the same id — an unstable id silently defeats the durable idempotency guarantee a
     /// workflow id provides.
     /// </param>
-    /// <param name="tenantScope">The caller's tenant scope. Must not be <see cref="TenantScope.None"/>.</param>
+    /// <param name="tenantScope">The caller's tenant scope. Must not be <see cref="TenantScope.Global"/>.</param>
     /// <returns>The composed workflow id.</returns>
     /// <exception cref="ArgumentException">
     /// <paramref name="businessKey"/> is null/whitespace, or <paramref name="tenantScope"/> is
-    /// <see cref="TenantScope.None"/>.
+    /// <see cref="TenantScope.Global"/>.
     /// </exception>
     string Create(string workflowTypeName, string businessKey, TenantScope tenantScope);
 }

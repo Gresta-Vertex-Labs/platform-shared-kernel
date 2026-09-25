@@ -2,6 +2,7 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Cryptography.Symmetric;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.EfCore.Encryption.Maintenance;
 using SharedKernel.Persistence.EfCore.Encryption.Tests.Fixtures;
@@ -14,15 +15,15 @@ namespace SharedKernel.Persistence.EfCore.Encryption.Tests.Integration;
 [Collection("EncryptionPostgres")]
 public sealed class TenantKeyTests(PostgreSqlContainerFixture fixture)
 {
-    private readonly Guid _tenantA = Guid.NewGuid();
-    private readonly Guid _tenantB = Guid.NewGuid();
+    private readonly TenantId _tenantA = new TenantId(Guid.NewGuid());
+    private readonly TenantId _tenantB = new TenantId(Guid.NewGuid());
 
     private string Cs(string db) => EncryptionHost.Database(fixture.ConnectionString, db);
 
     private static ServiceProvider TenantKeyHost(string cs, TestRequestContext request) =>
         EncryptionHost.Build<CustomerDbContext>(cs, request, configure: k => k.UseTenantDataKeys<TestEnvelopeProvider>());
 
-    private static Customer NewCustomer(Guid tenant, string email) => new()
+    private static Customer NewCustomer(TenantId tenant, string email) => new()
     {
         TenantId = tenant,
         Name = "n",
@@ -37,7 +38,7 @@ public sealed class TenantKeyTests(PostgreSqlContainerFixture fixture)
         await EncryptionHost.ExecuteAsync(cs, TenantKeyStore.CreateTableSql(schema: null));
     }
 
-    private static async Task AddAsync(ServiceProvider sp, TestRequestContext request, Guid tenant, string email)
+    private static async Task AddAsync(ServiceProvider sp, TestRequestContext request, TenantId tenant, string email)
     {
         request.TenantId = tenant;
         await using var scope = sp.CreateAsyncScope();
@@ -46,14 +47,14 @@ public sealed class TenantKeyTests(PostgreSqlContainerFixture fixture)
         await context.SaveChangesAsync();
     }
 
-    private static async Task<List<Customer>> ReadAsync(ServiceProvider sp, TestRequestContext request, Guid tenant)
+    private static async Task<List<Customer>> ReadAsync(ServiceProvider sp, TestRequestContext request, TenantId tenant)
     {
         request.TenantId = tenant;
         await using var scope = sp.CreateAsyncScope();
         return await scope.ServiceProvider.GetRequiredService<CustomerDbContext>().Customers.AsNoTracking().ToListAsync();
     }
 
-    private static async Task<Customer> ReadOneAsync(ServiceProvider sp, TestRequestContext request, Guid tenant, Guid id)
+    private static async Task<Customer> ReadOneAsync(ServiceProvider sp, TestRequestContext request, TenantId tenant, Guid id)
     {
         request.TenantId = tenant;
         await using var scope = sp.CreateAsyncScope();
@@ -61,7 +62,7 @@ public sealed class TenantKeyTests(PostgreSqlContainerFixture fixture)
     }
 
     /// <summary>Shreds inside a cross-tenant scope entered by the caller, as the API requires.</summary>
-    private static async Task<TenantShredResult> ShredAsync(ServiceProvider sp, Guid tenant, TenantShredOptions? options = null)
+    private static async Task<TenantShredResult> ShredAsync(ServiceProvider sp, TenantId tenant, TenantShredOptions? options = null)
     {
         await using var scope = sp.CreateAsyncScope();
         using var crossTenant = scope.ServiceProvider.GetRequiredService<ICrossTenantScope>().Enter("test: erase tenant");

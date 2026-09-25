@@ -1,6 +1,6 @@
 using System.Diagnostics;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Workflows.Temporal.Constants;
-using SharedKernel.Workflows.Temporal.Dispatch;
 using SharedKernel.Workflows.Temporal.Logging;
 using Temporalio.Api.Common.V1;
 using Temporalio.Client.Interceptors;
@@ -46,9 +46,9 @@ internal sealed class WorkflowPropagationInterceptor : IClientInterceptor, IWork
     private static void WriteHeaders(IDictionary<string, Payload> headers)
     {
         TenantScope tenantScope = DispatchPropagationContext.CurrentTenantScope;
-        if (tenantScope != TenantScope.None)
+        if (tenantScope.Tenant is { } tenant)
         {
-            headers[WorkflowWellKnown.TenantHeaderKey] = ToPayload(tenantScope.Value);
+            headers[WorkflowWellKnown.TenantHeaderKey] = ToPayload(tenant.ToString());
         }
 
         string? correlationId = Activity.Current?.Id;
@@ -93,7 +93,7 @@ internal sealed class WorkflowPropagationInterceptor : IClientInterceptor, IWork
         /// <c>ScheduleActivityInput</c>/<c>StartChildWorkflowInput</c> each carry their own, independent
         /// <c>Headers</c> dictionary that starts EMPTY unless something populates it. Without this
         /// override, an activity or child workflow invoked from within a workflow would observe
-        /// <see cref="Dispatch.TenantScope.None"/> even though the workflow itself was correctly
+        /// <see cref="TenantScope.Global"/> even though the workflow itself was correctly
         /// tenant-scoped — silently defeating the propagation guarantee at the first hop past the
         /// workflow boundary.
         /// </summary>
@@ -146,15 +146,15 @@ internal sealed class WorkflowPropagationInterceptor : IClientInterceptor, IWork
     {
         public override Task<object?> ExecuteActivityAsync(ExecuteActivityInput input)
         {
-            TenantScope tenantScope = TenantScope.None;
+            TenantScope tenantScope = TenantScope.Global;
             string correlationId = string.Empty;
 
             if (input.Headers is { } headers)
             {
                 if (headers.TryGetValue(WorkflowWellKnown.TenantHeaderKey, out var tenantPayload)
-                    && FromPayload(tenantPayload) is { Length: > 0 } tenantValue)
+                    && TenantId.TryParse(FromPayload(tenantPayload), out TenantId tenant))
                 {
-                    tenantScope = TenantScope.Of(tenantValue);
+                    tenantScope = TenantScope.For(tenant);
                 }
 
                 if (headers.TryGetValue(WorkflowWellKnown.CorrelationHeaderKey, out var correlationPayload)

@@ -6,6 +6,7 @@ using SharedKernel.AI.Abstractions.Models;
 using SharedKernel.AI.Qdrant.Collections;
 using SharedKernel.AI.Qdrant.Provisioning;
 using SharedKernel.AI.Qdrant.Tests.TestSupport;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Testing.Clocks;
 using SharedKernel.Testing.Containers;
 
@@ -76,7 +77,7 @@ public sealed class QdrantCutoverConformanceTests : IAsyncLifetime
         var collectionV1 = new QdrantVectorCollection<TestVectorRecord>(
             _client, definitionV1, new FakeClock(), NullLogger<QdrantVectorCollection<TestVectorRecord>>.Instance);
         var recordV1 = new TestVectorRecord { Id = "1", Vector = new float[] { 1, 0 }, ModelId = ModelId };
-        (await collectionV1.UpsertAsync(recordV1, TenantScope.None)).IsSuccess.Should().BeTrue();
+        (await collectionV1.UpsertAsync(recordV1, TenantScope.Global)).IsSuccess.Should().BeTrue();
 
         // First cutover: staging v1 -> live alias, retaining the staging collection.
         var firstCutover = await _provisioner.CutoverAsync(new VectorCollectionCutoverRequest
@@ -91,7 +92,7 @@ public sealed class QdrantCutoverConformanceTests : IAsyncLifetime
         var liveCollection = new QdrantVectorCollection<TestVectorRecord>(
             _client, liveDefinition, new FakeClock(), NullLogger<QdrantVectorCollection<TestVectorRecord>>.Instance);
 
-        (await liveCollection.GetAsync("1", TenantScope.None)).IsSuccess.Should().BeTrue(
+        (await liveCollection.GetAsync("1", TenantScope.Global)).IsSuccess.Should().BeTrue(
             "the alias must now resolve reads through to the staging v1 collection");
         (await _provisioner.CollectionExistsAsync(_stagingV1)).Value.Should().BeTrue(
             "DeleteStagingAfterCutover was false — the staging collection must still exist");
@@ -107,7 +108,7 @@ public sealed class QdrantCutoverConformanceTests : IAsyncLifetime
         var collectionV2 = new QdrantVectorCollection<TestVectorRecord>(
             _client, definitionV2, new FakeClock(), NullLogger<QdrantVectorCollection<TestVectorRecord>>.Instance);
         var recordV2 = new TestVectorRecord { Id = "2", Vector = new float[] { 0, 1 }, ModelId = ModelId };
-        (await collectionV2.UpsertAsync(recordV2, TenantScope.None)).IsSuccess.Should().BeTrue();
+        (await collectionV2.UpsertAsync(recordV2, TenantScope.Global)).IsSuccess.Should().BeTrue();
 
         var secondCutover = await _provisioner.CutoverAsync(new VectorCollectionCutoverRequest
         {
@@ -117,9 +118,9 @@ public sealed class QdrantCutoverConformanceTests : IAsyncLifetime
         });
         secondCutover.IsSuccess.Should().BeTrue();
 
-        (await liveCollection.GetAsync("2", TenantScope.None)).IsSuccess.Should().BeTrue(
+        (await liveCollection.GetAsync("2", TenantScope.Global)).IsSuccess.Should().BeTrue(
             "the alias must now resolve reads through to the staging v2 collection");
-        (await liveCollection.GetAsync("1", TenantScope.None)).IsFailure.Should().BeTrue(
+        (await liveCollection.GetAsync("1", TenantScope.Global)).IsFailure.Should().BeTrue(
             "the live alias now points at v2, which never had v1's record");
         (await _provisioner.CollectionExistsAsync(_stagingV1)).Value.Should().BeFalse(
             "the orphaned v1 collection must be deleted once DeleteStagingAfterCutover is honored on the second cutover");

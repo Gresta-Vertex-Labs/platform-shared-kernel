@@ -23,7 +23,7 @@ SharedKernel.Domain.Abstractions.IHasDomainEvents
 SharedKernel.Domain.Abstractions.IHasDomainEvents.ClearDomainEvents() -> void
 SharedKernel.Domain.Abstractions.IHasDomainEvents.DomainEvents.get -> System.Collections.Generic.IReadOnlyCollection<SharedKernel.Domain.Events.IDomainEvent!>!
 SharedKernel.Domain.Abstractions.IHasTenant
-SharedKernel.Domain.Abstractions.IHasTenant.TenantId.get -> System.Guid
+SharedKernel.Domain.Abstractions.IHasTenant.TenantId.get -> SharedKernel.Execution.Tenancy.TenantId
 SharedKernel.Domain.Abstractions.IHasVersion
 SharedKernel.Domain.Abstractions.IHasVersion.Version.get -> int
 SharedKernel.Domain.Abstractions.ISoftDeletable
@@ -77,25 +77,25 @@ SharedKernel.Domain.Aggregates.SoftDeletableAggregateRoot<TId>.Restore() -> void
 SharedKernel.Domain.Aggregates.SoftDeletableAggregateRoot<TId>.SoftDeletableAggregateRoot() -> void
 SharedKernel.Domain.Aggregates.SoftDeletableAggregateRoot<TId>.SoftDeletableAggregateRoot(TId id, SharedKernel.Primitives.Clocks.IClock! clock) -> void
 SharedKernel.Domain.Aggregates.TenantedAggregateRoot<TId>
-SharedKernel.Domain.Aggregates.TenantedAggregateRoot<TId>.TenantId.get -> System.Guid
+SharedKernel.Domain.Aggregates.TenantedAggregateRoot<TId>.TenantId.get -> SharedKernel.Execution.Tenancy.TenantId
 SharedKernel.Domain.Aggregates.TenantedAggregateRoot<TId>.TenantedAggregateRoot() -> void
-SharedKernel.Domain.Aggregates.TenantedAggregateRoot<TId>.TenantedAggregateRoot(TId id, System.Guid tenantId, SharedKernel.Primitives.Clocks.IClock! clock) -> void
+SharedKernel.Domain.Aggregates.TenantedAggregateRoot<TId>.TenantedAggregateRoot(TId id, SharedKernel.Execution.Tenancy.TenantId tenantId, SharedKernel.Primitives.Clocks.IClock! clock) -> void
 SharedKernel.Domain.Aggregates.TenantedAuditableAggregateRoot<TId>
-SharedKernel.Domain.Aggregates.TenantedAuditableAggregateRoot<TId>.TenantId.get -> System.Guid
+SharedKernel.Domain.Aggregates.TenantedAuditableAggregateRoot<TId>.TenantId.get -> SharedKernel.Execution.Tenancy.TenantId
 SharedKernel.Domain.Aggregates.TenantedAuditableAggregateRoot<TId>.TenantedAuditableAggregateRoot() -> void
-SharedKernel.Domain.Aggregates.TenantedAuditableAggregateRoot<TId>.TenantedAuditableAggregateRoot(TId id, System.Guid tenantId, SharedKernel.Primitives.Clocks.IClock! clock) -> void
+SharedKernel.Domain.Aggregates.TenantedAuditableAggregateRoot<TId>.TenantedAuditableAggregateRoot(TId id, SharedKernel.Execution.Tenancy.TenantId tenantId, SharedKernel.Primitives.Clocks.IClock! clock) -> void
 SharedKernel.Domain.Aggregates.TenantedAuditableSoftDeletableAggregateRoot<TId>
-SharedKernel.Domain.Aggregates.TenantedAuditableSoftDeletableAggregateRoot<TId>.TenantId.get -> System.Guid
+SharedKernel.Domain.Aggregates.TenantedAuditableSoftDeletableAggregateRoot<TId>.TenantId.get -> SharedKernel.Execution.Tenancy.TenantId
 SharedKernel.Domain.Aggregates.TenantedAuditableSoftDeletableAggregateRoot<TId>.TenantedAuditableSoftDeletableAggregateRoot() -> void
-SharedKernel.Domain.Aggregates.TenantedAuditableSoftDeletableAggregateRoot<TId>.TenantedAuditableSoftDeletableAggregateRoot(TId id, System.Guid tenantId, SharedKernel.Primitives.Clocks.IClock! clock) -> void
+SharedKernel.Domain.Aggregates.TenantedAuditableSoftDeletableAggregateRoot<TId>.TenantedAuditableSoftDeletableAggregateRoot(TId id, SharedKernel.Execution.Tenancy.TenantId tenantId, SharedKernel.Primitives.Clocks.IClock! clock) -> void
 SharedKernel.Domain.Aggregates.TenantedFullAuditableAggregateRoot<TId>
-SharedKernel.Domain.Aggregates.TenantedFullAuditableAggregateRoot<TId>.TenantId.get -> System.Guid
+SharedKernel.Domain.Aggregates.TenantedFullAuditableAggregateRoot<TId>.TenantId.get -> SharedKernel.Execution.Tenancy.TenantId
 SharedKernel.Domain.Aggregates.TenantedFullAuditableAggregateRoot<TId>.TenantedFullAuditableAggregateRoot() -> void
-SharedKernel.Domain.Aggregates.TenantedFullAuditableAggregateRoot<TId>.TenantedFullAuditableAggregateRoot(TId id, System.Guid tenantId, SharedKernel.Primitives.Clocks.IClock! clock) -> void
+SharedKernel.Domain.Aggregates.TenantedFullAuditableAggregateRoot<TId>.TenantedFullAuditableAggregateRoot(TId id, SharedKernel.Execution.Tenancy.TenantId tenantId, SharedKernel.Primitives.Clocks.IClock! clock) -> void
 SharedKernel.Domain.Aggregates.TenantedSoftDeletableAggregateRoot<TId>
-SharedKernel.Domain.Aggregates.TenantedSoftDeletableAggregateRoot<TId>.TenantId.get -> System.Guid
+SharedKernel.Domain.Aggregates.TenantedSoftDeletableAggregateRoot<TId>.TenantId.get -> SharedKernel.Execution.Tenancy.TenantId
 SharedKernel.Domain.Aggregates.TenantedSoftDeletableAggregateRoot<TId>.TenantedSoftDeletableAggregateRoot() -> void
-SharedKernel.Domain.Aggregates.TenantedSoftDeletableAggregateRoot<TId>.TenantedSoftDeletableAggregateRoot(TId id, System.Guid tenantId, SharedKernel.Primitives.Clocks.IClock! clock) -> void
+SharedKernel.Domain.Aggregates.TenantedSoftDeletableAggregateRoot<TId>.TenantedSoftDeletableAggregateRoot(TId id, SharedKernel.Execution.Tenancy.TenantId tenantId, SharedKernel.Primitives.Clocks.IClock! clock) -> void
 SharedKernel.Domain.BusinessRules.AndBusinessRule
 SharedKernel.Domain.BusinessRules.AndBusinessRule.AndBusinessRule(SharedKernel.Domain.BusinessRules.IBusinessRule! left, SharedKernel.Domain.BusinessRules.IBusinessRule! right) -> void
 SharedKernel.Domain.BusinessRules.AndBusinessRule.Code.get -> string!

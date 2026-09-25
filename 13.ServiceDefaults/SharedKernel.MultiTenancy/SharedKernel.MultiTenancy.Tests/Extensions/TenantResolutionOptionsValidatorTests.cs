@@ -101,7 +101,7 @@ public sealed class TenantResolutionOptionsValidatorTests
     {
         public string StrategyName => strategyName;
 
-        public Task<Guid?> TryResolveAsync(Microsoft.AspNetCore.Http.HttpContext context, CancellationToken cancellationToken) =>
-            Task.FromResult<Guid?>(null);
+        public Task<TenantId?> TryResolveAsync(Microsoft.AspNetCore.Http.HttpContext context, CancellationToken cancellationToken) =>
+            Task.FromResult<TenantId?>(null);
     }
 }

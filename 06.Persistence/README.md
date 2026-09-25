@@ -207,7 +207,7 @@ public sealed record OrderId(Guid Value) : StronglyTypedId<Guid>(Value)
 
 public sealed class Order : TenantedAuditableAggregateRoot<OrderId>
 {
-    public Order(OrderId id, Guid tenantId, string customer, Money total, IClock clock)
+    public Order(OrderId id, TenantId tenantId, string customer, Money total, IClock clock)
         : base(id, tenantId, clock)
     {
         Customer = customer;

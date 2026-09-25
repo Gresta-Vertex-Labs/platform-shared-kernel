@@ -5,7 +5,7 @@ using SharedKernel.Idempotency.Redis.Internal;
 using SharedKernel.Idempotency.Redis.Logging;
 using SharedKernel.Idempotency.Redis.Options;
 using SharedKernel.Messaging.Abstractions.Idempotency;
-using SharedKernel.Messaging.Abstractions.TenantContext;
+using SharedKernel.Execution.Context;
 using StackExchange.Redis;
 
 namespace SharedKernel.Idempotency.Redis.MessageStore;
@@ -28,32 +28,32 @@ namespace SharedKernel.Idempotency.Redis.MessageStore;
 public sealed class RedisIdempotencyMessageStore : IIdempotencyStore
 {
     private readonly IConnectionMultiplexer _connectionMultiplexer;
-    private readonly ITenantContextAccessor _tenantContextAccessor;
+    private readonly IRequestContextAccessor _requestContextAccessor;
     private readonly IOptions<RedisIdempotencyOptions> _redisOptions;
     private readonly IOptions<IdempotencyOptions> _messagingOptions;
     private readonly ILogger<RedisIdempotencyMessageStore> _logger;
 
     /// <summary>Creates the store.</summary>
     /// <param name="connectionMultiplexer">The shared Redis connection.</param>
-    /// <param name="tenantContextAccessor">Supplies the ambient tenant for key scoping.</param>
+    /// <param name="requestContextAccessor">Supplies the ambient tenant for key scoping.</param>
     /// <param name="redisOptions">Redis-specific options, including the in-flight lease.</param>
     /// <param name="messagingOptions">Messaging options supplying the completed-record retention window.</param>
     /// <param name="logger">Logger for fail-open diagnostics.</param>
     public RedisIdempotencyMessageStore(
         IConnectionMultiplexer connectionMultiplexer,
-        ITenantContextAccessor tenantContextAccessor,
+        IRequestContextAccessor requestContextAccessor,
         IOptions<RedisIdempotencyOptions> redisOptions,
         IOptions<IdempotencyOptions> messagingOptions,
         ILogger<RedisIdempotencyMessageStore> logger)
     {
         ArgumentNullException.ThrowIfNull(connectionMultiplexer);
-        ArgumentNullException.ThrowIfNull(tenantContextAccessor);
+        ArgumentNullException.ThrowIfNull(requestContextAccessor);
         ArgumentNullException.ThrowIfNull(redisOptions);
         ArgumentNullException.ThrowIfNull(messagingOptions);
         ArgumentNullException.ThrowIfNull(logger);
 
         _connectionMultiplexer = connectionMultiplexer;
-        _tenantContextAccessor = tenantContextAccessor;
+        _requestContextAccessor = requestContextAccessor;
         _redisOptions = redisOptions;
         _messagingOptions = messagingOptions;
         _logger = logger;
@@ -62,7 +62,7 @@ public sealed class RedisIdempotencyMessageStore : IIdempotencyStore
     /// <inheritdoc />
     public async Task<IdempotencyReservation> TryBeginAsync(Guid messageId, CancellationToken ct)
     {
-        var redisKey = RedisIdempotencyKeyBuilder.BuildMessageStoreKey(_tenantContextAccessor.TenantId, messageId);
+        var redisKey = RedisIdempotencyKeyBuilder.BuildMessageStoreKey(_requestContextAccessor.Current?.TenantId?.Value, messageId);
         var options = _redisOptions.Value;
         var token = Guid.NewGuid().ToString("N");
 
@@ -100,7 +100,7 @@ public sealed class RedisIdempotencyMessageStore : IIdempotencyStore
     {
         ArgumentException.ThrowIfNullOrEmpty(reservationToken);
 
-        var redisKey = RedisIdempotencyKeyBuilder.BuildMessageStoreKey(_tenantContextAccessor.TenantId, messageId);
+        var redisKey = RedisIdempotencyKeyBuilder.BuildMessageStoreKey(_requestContextAccessor.Current?.TenantId?.Value, messageId);
         var options = _redisOptions.Value;
 
         try
@@ -127,7 +127,7 @@ public sealed class RedisIdempotencyMessageStore : IIdempotencyStore
     {
         ArgumentException.ThrowIfNullOrEmpty(reservationToken);
 
-        var redisKey = RedisIdempotencyKeyBuilder.BuildMessageStoreKey(_tenantContextAccessor.TenantId, messageId);
+        var redisKey = RedisIdempotencyKeyBuilder.BuildMessageStoreKey(_requestContextAccessor.Current?.TenantId?.Value, messageId);
         var options = _redisOptions.Value;
 
         try

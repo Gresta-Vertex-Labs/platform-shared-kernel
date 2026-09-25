@@ -227,7 +227,7 @@ public sealed class CloudEventsEnvelopeTests
         var evt = OrderPlacedEvent.Create();
         var tenantId = Guid.NewGuid();
 
-        await publisher.PublishAsync(evt, ctx => ctx.WithTenantId(tenantId), CancellationToken.None);
+        await publisher.PublishAsync(evt, ctx => ctx.WithTenantId(new SharedKernel.Execution.Tenancy.TenantId(tenantId)), CancellationToken.None);
 
         (await harness.Published.Any<EventEnvelope<OrderPlacedEvent>>()).Should().BeTrue();
         var envelope = harness.Published.Select<EventEnvelope<OrderPlacedEvent>>().First();
@@ -328,7 +328,7 @@ public sealed class CloudEventsEnvelopeTests
             ctx => ctx
                 .WithCorrelationId(correlationId)
                 .WithCausationId(causationId)
-                .WithTenantId(tenantId)
+                .WithTenantId(new SharedKernel.Execution.Tenancy.TenantId(tenantId))
                 .WithSubject(subject),
             CancellationToken.None);
 

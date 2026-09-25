@@ -64,7 +64,7 @@ public sealed class AmbientTargetingTests
         await using var provider = await FeatureTestHost.StartAsync(FeatureTestHost.Json(BooleanFlagTests.Configuration));
 
         using var activity = new Activity("request").Start();
-        activity.SetBaggage(WellKnownBaggageKeys.TenantId, "tenant-acme");
+        activity.SetBaggage(WellKnownBaggageKeys.TenantId, TestTenants.AcmeText);
 
         Assert.True(await provider.NewScopeClient().IsEnabledAsync(Beta));
     }

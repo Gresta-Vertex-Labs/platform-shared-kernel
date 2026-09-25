@@ -39,7 +39,7 @@ namespace SharedKernel.Testing.Grpc;
 /// metadata for role/permission/step-up requirements at all; it reads endpoint metadata
 /// (<c>RequireRoleAttribute</c> etc., attached to <see cref="HttpContext.GetEndpoint"/>) plus
 /// <c>IUserContext</c> resolved from <see cref="HttpContext.RequestServices"/>.
-/// <c>GrpcTenantContextInterceptor</c> similarly resolves <c>ITenantProvider</c> from
+/// <c>GrpcTenantContextInterceptor</c> similarly resolves <c>IRequestContext</c> from
 /// <c>RequestServices</c>, never from metadata. Only the correlation-id is genuinely metadata-driven
 /// (<c>GrpcCorrelationInterceptor</c> reads <see cref="ServerCallContext.RequestHeaders"/> directly).
 /// <see cref="Create"/> is corrected to match: <paramref name="configureServices"/>/
@@ -47,8 +47,8 @@ namespace SharedKernel.Testing.Grpc;
 /// metadata entry.
 /// </para>
 /// <para>
-/// <b>SCOPE LOCK:</b> deliberately does NOT default <c>IUserContext</c>/<c>ITenantProvider</c> to
-/// <c>Security/FakeUserContext</c>/<c>FakeTenantProvider</c> — unlike <c>Clocks/FakeClock</c> (an
+/// <b>SCOPE LOCK:</b> deliberately does NOT default <c>IUserContext</c>/<c>IRequestContext</c> to
+/// <c>Security/FakeUserContext</c>/<c>Application/FakeRequestContext</c> — unlike <c>Clocks/FakeClock</c> (an
 /// established, repo-wide cross-folder exception since the original P-035/WO-008 phase),
 /// <c>Security/</c> fakes have no such precedent anywhere else in this package. A consuming test
 /// supplies its own <c>Security/</c> fake via <paramref name="configureServices"/> — the CONSUMING

@@ -5,7 +5,7 @@ using SharedKernel.Idempotency.Redis.KeyStore;
 using SharedKernel.Idempotency.Redis.MessageStore;
 using SharedKernel.Idempotency.Redis.Options;
 using SharedKernel.Messaging.Abstractions.Idempotency;
-using SharedKernel.Messaging.Abstractions.TenantContext;
+using SharedKernel.Execution.Context;
 using SharedKernel.Testing.Containers;
 using SharedKernel.Testing.Logging;
 using StackExchange.Redis;
@@ -26,9 +26,10 @@ namespace SharedKernel.Idempotency.Redis.Tests.Concurrency;
 [Collection("RedisContainer")]
 public sealed class RedisIdempotencyConcurrencyTests(RedisContainerFixture fixture)
 {
-    private sealed class FixedTenantAccessor(Guid? tenantId) : ITenantContextAccessor
+    private sealed class FixedTenantAccessor(Guid? tenantId) : IRequestContextAccessor
     {
-        public Guid? TenantId { get; } = tenantId;
+        public IRequestContext? Current { get; } =
+            new SystemRequestContext([], "test", SharedKernel.Execution.Tenancy.TenantId.FromNullable(tenantId));
     }
 
     private static IConnectionMultiplexer CreateMultiplexer(string connectionString) =>

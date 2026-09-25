@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Globalization;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Search.Abstractions.Abstractions;
@@ -342,7 +343,7 @@ public sealed class InMemorySearchIndex<TDocument> : ISearchIndex<TDocument>
                 SearchErrors.WriteRejected(IndexName, "SimulateFailure enabled")));
         }
 
-        if (_definition.TenantField is not null && string.IsNullOrEmpty(tenantScope.Value))
+        if (_definition.TenantField is not null && tenantScope.IsGlobal)
         {
             return Task.FromResult(SharedKernel.Primitives.Results.Result<SearchWriteReceipt>.Failure(SearchErrors.TenantScopeMissing(IndexName)));
         }
@@ -465,7 +466,7 @@ public sealed class InMemorySearchIndex<TDocument> : ISearchIndex<TDocument>
         if (_definition.TenantField is { } tenantField)
         {
             var actualTenant = GetPropertyRawValue(tenantField, document);
-            if (actualTenant is not string tenantValue || !string.Equals(tenantValue, tenantScope.Value, StringComparison.Ordinal))
+            if (actualTenant is not string tenantValue || !string.Equals(tenantValue, tenantScope.Tenant?.ToString(), StringComparison.Ordinal))
             {
                 return Task.FromResult(SharedKernel.Primitives.Results.Result<TDocument>.Failure(SearchErrors.DocumentNotFound(IndexName, documentId)));
             }
@@ -489,7 +490,7 @@ public sealed class InMemorySearchIndex<TDocument> : ISearchIndex<TDocument>
         // Mirrors both real provider adapters' own CountAsync, which shares the identical
         // tenant-scope-missing fail-closed check as SearchAsync (confirmed directly against
         // MeilisearchIndex<TDocument>.CountAsync and the ElasticSearch equivalent).
-        if (_definition.TenantField is not null && string.IsNullOrEmpty(tenantScope.Value))
+        if (_definition.TenantField is not null && tenantScope.IsGlobal)
         {
             return Task.FromResult(
                 SharedKernel.Primitives.Results.Result<SearchCount>.Failure(SearchErrors.TenantScopeMissing(IndexName)));
@@ -508,7 +509,7 @@ public sealed class InMemorySearchIndex<TDocument> : ISearchIndex<TDocument>
         int batchSize,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        if (_definition.TenantField is not null && string.IsNullOrEmpty(tenantScope.Value))
+        if (_definition.TenantField is not null && tenantScope.IsGlobal)
         {
             throw new SearchStreamException(SearchErrors.TenantScopeMissing(IndexName));
         }
@@ -595,7 +596,7 @@ public sealed class InMemorySearchIndex<TDocument> : ISearchIndex<TDocument>
             return filter;
         }
 
-        SearchFilter tenantClause = SearchFilter.Eq(tenantField, tenantScope.Value);
+        SearchFilter tenantClause = SearchFilter.Eq(tenantField, tenantScope.Tenant!.Value.ToString());
         return filter is null ? tenantClause : SearchFilter.All(tenantClause, filter);
     }
 
@@ -639,7 +640,7 @@ public sealed class InMemorySearchIndex<TDocument> : ISearchIndex<TDocument>
             return SearchErrors.PaginationLimitExceeded(request.Page, request.PageSize, _definition.MaxTotalHits, FakeProviderName);
         }
 
-        if (_definition.TenantField is not null && string.IsNullOrEmpty(tenantScope.Value))
+        if (_definition.TenantField is not null && tenantScope.IsGlobal)
         {
             return SearchErrors.TenantScopeMissing(IndexName);
         }

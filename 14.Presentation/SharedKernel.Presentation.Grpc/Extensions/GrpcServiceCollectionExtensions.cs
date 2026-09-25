@@ -1,5 +1,7 @@
 using Grpc.AspNetCore.Server;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using SharedKernel.Execution.Context;
 using SharedKernel.Presentation.Grpc.Interceptors;
 
 namespace SharedKernel.Presentation.Grpc.Extensions;
@@ -63,6 +65,7 @@ public static class GrpcServiceCollectionExtensions
     {
         services.AddSingleton<GrpcExceptionInterceptor>();
         services.AddSingleton<GrpcCorrelationInterceptor>();
+        services.TryAddSingleton<IRequestContextAccessor, RequestContextAccessor>();
         services.AddSingleton<GrpcTenantContextInterceptor>();
         services.AddSingleton<GrpcAuthorizationInterceptor>();
 

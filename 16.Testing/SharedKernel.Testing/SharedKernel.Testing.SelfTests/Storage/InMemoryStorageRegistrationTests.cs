@@ -3,6 +3,8 @@ using SharedKernel.Storage;
 using SharedKernel.Testing.Storage;
 using Xunit;
 
+using SharedKernel.Execution.Tenancy;
+
 namespace SharedKernel.Testing.SelfTests.Storage;
 
 /// <summary>
@@ -12,6 +14,9 @@ namespace SharedKernel.Testing.SelfTests.Storage;
 /// </summary>
 public sealed class InMemoryStorageRegistrationTests
 {
+    private static readonly TenantId TenantA = new(Guid.Parse("0f8fad5b-d9cb-469f-a165-70867728950e"));
+    private static readonly TenantId TenantB = new(Guid.Parse("7c9e6679-7425-40de-944b-e07fc1f90ae7"));
+
     private static readonly byte[] Payload = "payload"u8.ToArray();
 
     [Fact]
@@ -38,19 +43,19 @@ public sealed class InMemoryStorageRegistrationTests
     {
         using var provider = BuildProvider(b => b.AddInMemoryTenantStore("documents"));
         var store = provider.GetRequiredKeyedService<ITenantFileStorage>("documents");
-        var tenantA = store.ForTenant("tenant-a");
-        var tenantB = store.ForTenant("tenant-b");
+        var tenantA = store.ForTenant(TenantA);
+        var tenantB = store.ForTenant(TenantB);
 
         var upload = await tenantA.UploadAsync("secret.txt", new MemoryStream(Payload));
 
         Assert.True(upload.IsSuccess);
-        Assert.Equal("tenant-a", upload.Value.TenantId);
+        Assert.Equal(TenantA, upload.Value.TenantId);
         Assert.Equal("secret.txt", upload.Value.Key);
-        Assert.Equal([InMemoryFileStorage.TenantKey("tenant-a", "secret.txt")], provider.GetInMemoryStore("documents").Keys);
+        Assert.Equal([InMemoryFileStorage.TenantKey(TenantA, "secret.txt")], provider.GetInMemoryStore("documents").Keys);
 
         Assert.False((await tenantB.ExistsAsync("secret.txt")).Value);
         Assert.Equal(StorageErrorCodes.NotFound, (await tenantB.DownloadAsync("secret.txt")).Error.Code);
-        Assert.Equal(StorageErrorCodes.InvalidKey, (await tenantB.DownloadAsync("../tenant-a/secret.txt")).Error.Code);
+        Assert.Equal(StorageErrorCodes.InvalidKey, (await tenantB.DownloadAsync($"../{TenantA}/secret.txt")).Error.Code);
 
         var listed = new List<string>();
         await foreach (var item in tenantB.ListAsync())
@@ -75,12 +80,12 @@ public sealed class InMemoryStorageRegistrationTests
     public async Task AddInMemoryTenantStore_FactoryOpensAReferenceInItsTenantView()
     {
         using var provider = BuildProvider(b => b.AddInMemoryTenantStore("documents"));
-        var tenantA = provider.GetRequiredService<ITenantFileStorage>().ForTenant("tenant-a");
+        var tenantA = provider.GetRequiredService<ITenantFileStorage>().ForTenant(TenantA);
         var reference = (await tenantA.UploadAsync("a.txt", new MemoryStream(Payload))).Value;
 
         var opened = provider.GetRequiredService<IFileStorageFactory>().Open(reference);
 
-        Assert.Equal("tenant-a", opened.TenantId);
+        Assert.Equal(TenantA, opened.TenantId);
         Assert.True((await opened.ExistsAsync(reference.Key)).Value);
         Assert.Throws<InvalidOperationException>(() => provider.GetRequiredService<IFileStorageFactory>().GetStore("documents"));
     }
@@ -90,16 +95,16 @@ public sealed class InMemoryStorageRegistrationTests
     {
         using var provider = BuildProvider(b => b.AddInMemoryStore("quarantine").AddInMemoryTenantStore("documents"));
         var quarantine = provider.GetRequiredKeyedService<IFileStorage>("quarantine");
-        var documents = provider.GetRequiredKeyedService<ITenantFileStorage>("documents").ForTenant("tenant-a");
+        var documents = provider.GetRequiredKeyedService<ITenantFileStorage>("documents").ForTenant(TenantA);
         await quarantine.UploadAsync("in.pdf", new MemoryStream(Payload));
 
         var copy = await quarantine.CopyToAsync("in.pdf", documents, "final.pdf");
 
         Assert.True(copy.IsSuccess);
         Assert.Equal("documents", copy.Value.Store);
-        Assert.Equal("tenant-a", copy.Value.TenantId);
+        Assert.Equal(TenantA, copy.Value.TenantId);
         Assert.Equal("final.pdf", copy.Value.Key);
-        Assert.Equal(Payload, provider.GetInMemoryStore("documents").GetContent(InMemoryFileStorage.TenantKey("tenant-a", "final.pdf")));
+        Assert.Equal(Payload, provider.GetInMemoryStore("documents").GetContent(InMemoryFileStorage.TenantKey(TenantA, "final.pdf")));
     }
 
     [Fact]

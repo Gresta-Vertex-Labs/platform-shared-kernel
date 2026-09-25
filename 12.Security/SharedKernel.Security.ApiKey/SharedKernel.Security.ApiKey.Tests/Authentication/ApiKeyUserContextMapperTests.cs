@@ -1,3 +1,5 @@
+using SharedKernel.Execution.Tenancy;
+using SharedKernel.Execution.Context;
 using System.Security.Claims;
 using SharedKernel.Security.Abstractions;
 using SharedKernel.Security.ApiKey.Authentication;
@@ -18,12 +20,12 @@ public sealed class ApiKeyUserContextMapperTests
     [Fact]
     public void Map_IdentityWithSubject_ReturnsServicePrincipal()
     {
-        var tenantId = Guid.NewGuid();
+        TenantId tenantId = new TenantId(Guid.NewGuid());
         var identity = new ClaimsIdentity(
             [
                 new Claim(SecurityClaimTypes.Subject, "billing-service"),
                 new Claim(SecurityClaimTypes.ClientId, "billing-service"),
-                new Claim(SecurityClaimTypes.TenantId, tenantId.ToString("D")),
+                new Claim(SecurityClaimTypes.TenantId, tenantId.ToString()),
                 new Claim(SecurityClaimTypes.Roles, "admin"),
                 new Claim(SecurityClaimTypes.Roles, "auditor"),
                 new Claim(SecurityClaimTypes.Scope, "orders:read"),
@@ -33,7 +35,7 @@ public sealed class ApiKeyUserContextMapperTests
 
         IUserContext context = _mapper.Map(identity);
 
-        Assert.Equal(IdentityKind.ServicePrincipal, context.IdentityKind);
+        Assert.Equal(ActorKind.Service, context.ActorKind);
         Assert.True(context.IsAuthenticated);
         Assert.Equal("billing-service", context.SubjectId);
         Assert.Equal("billing-service", context.ClientId);

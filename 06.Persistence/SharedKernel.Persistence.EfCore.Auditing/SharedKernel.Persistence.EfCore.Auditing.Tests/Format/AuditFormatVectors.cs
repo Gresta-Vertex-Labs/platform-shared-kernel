@@ -1,5 +1,6 @@
 using SharedKernel.Execution.Auditing;
 using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence.EfCore.Auditing.Format;
 
 namespace SharedKernel.Persistence.EfCore.Auditing.Tests.Format;
@@ -17,7 +18,7 @@ internal static class AuditFormatVectors
     public static readonly LedgerRecordFields Record1 = new()
     {
         Id = new Guid("0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b"),
-        TenantId = new Guid("11111111-2222-3333-4444-555555555555"),
+        TenantId = new TenantId(new Guid("11111111-2222-3333-4444-555555555555")),
         ResourceType = "Order",
         ResourceId = "order-42",
         Action = "OrderApproved",

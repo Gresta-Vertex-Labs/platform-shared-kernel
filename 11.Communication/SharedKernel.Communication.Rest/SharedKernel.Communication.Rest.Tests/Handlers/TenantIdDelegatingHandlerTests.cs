@@ -3,7 +3,8 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Communication.Rest.Handlers;
 using SharedKernel.Primitives.Propagation;
-using SharedKernel.Security.Abstractions;
+using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
 
 namespace SharedKernel.Communication.Rest.Tests.Handlers;
 
@@ -67,9 +68,9 @@ public sealed class TenantIdDelegatingHandlerTests
     }
 
     [Fact]
-    public async Task SendAsync_WhenITenantProviderNotRegistered_DoesNotInjectHeader()
+    public async Task SendAsync_WhenIRequestContextNotRegistered_DoesNotInjectHeader()
     {
-        // Arrange — HttpContext present but ITenantProvider not in DI
+        // Arrange — HttpContext present but IRequestContext not in DI
         var services = new ServiceCollection();
         var sp = services.BuildServiceProvider();
 
@@ -83,7 +84,7 @@ public sealed class TenantIdDelegatingHandlerTests
         await client.GetAsync("/test");
 
         // Assert
-        stub.CapturedValue.Should().BeNull("missing ITenantProvider means no tenant header");
+        stub.CapturedValue.Should().BeNull("missing IRequestContext means no tenant header");
     }
 
     [Fact]
@@ -129,11 +130,8 @@ public sealed class TenantIdDelegatingHandlerTests
 
     private static IHttpContextAccessor BuildAccessorWithTenant(Guid tenantId)
     {
-        var tenantProvider = Substitute.For<ITenantProvider>();
-        tenantProvider.TenantId.Returns(tenantId);
-
         var services = new ServiceCollection();
-        services.AddSingleton(tenantProvider);
+        services.AddSingleton<IRequestContext>(new SystemRequestContext([], "test", TenantId.FromNullable(tenantId)));
         var sp = services.BuildServiceProvider();
 
         var httpContext = new DefaultHttpContext { RequestServices = sp };

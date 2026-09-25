@@ -221,7 +221,7 @@ public sealed class TamperDetectionTests(PostgreSqlContainerFixture fixture)
             VALUES (@id, @t, 'Order', @s, @p, @m, @k, 'HMAC-SHA256', 3, (SELECT insert_xid FROM {AuditLedgerSchema.RecordsTable} WHERE id = @id), now())
             """, connection);
         link.Parameters.AddWithValue("id", fields.Id);
-        link.Parameters.AddWithValue("t", TestRequestContext.TenantA);
+        link.Parameters.AddWithValue("t", TestRequestContext.TenantA.Value);
         link.Parameters.AddWithValue("s", sequence);
         link.Parameters.AddWithValue("p", previous);
         link.Parameters.AddWithValue("m", mac);

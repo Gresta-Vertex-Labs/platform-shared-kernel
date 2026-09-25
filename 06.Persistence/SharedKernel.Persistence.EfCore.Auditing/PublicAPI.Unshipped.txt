@@ -17,12 +17,9 @@ SharedKernel.Persistence.EfCore.Auditing.AuditChainCheckpoint.Signature.get -> b
 SharedKernel.Persistence.EfCore.Auditing.AuditChainCheckpoint.Signature.init -> void
 SharedKernel.Persistence.EfCore.Auditing.AuditChainCheckpoint.SigningKeyId.get -> string!
 SharedKernel.Persistence.EfCore.Auditing.AuditChainCheckpoint.SigningKeyId.init -> void
-SharedKernel.Persistence.EfCore.Auditing.AuditChainCheckpoint.TenantId.get -> System.Guid?
 SharedKernel.Persistence.EfCore.Auditing.AuditChainCheckpoint.TenantId.init -> void
 SharedKernel.Persistence.EfCore.Auditing.AuditChainIntegrityException
-SharedKernel.Persistence.EfCore.Auditing.AuditChainIntegrityException.AuditChainIntegrityException(System.Guid? tenantId, string! resourceType, SharedKernel.Persistence.EfCore.Auditing.AuditChainVerificationResult! verification) -> void
 SharedKernel.Persistence.EfCore.Auditing.AuditChainIntegrityException.ResourceType.get -> string!
-SharedKernel.Persistence.EfCore.Auditing.AuditChainIntegrityException.TenantId.get -> System.Guid?
 SharedKernel.Persistence.EfCore.Auditing.AuditChainIntegrityException.Verification.get -> SharedKernel.Persistence.EfCore.Auditing.AuditChainVerificationResult!
 SharedKernel.Persistence.EfCore.Auditing.AuditChainVerificationResult
 SharedKernel.Persistence.EfCore.Auditing.AuditChainVerificationResult.<Clone>$() -> SharedKernel.Persistence.EfCore.Auditing.AuditChainVerificationResult!
@@ -125,7 +122,6 @@ SharedKernel.Persistence.EfCore.Auditing.AuditRecord.SessionId.get -> string?
 SharedKernel.Persistence.EfCore.Auditing.AuditRecord.SessionId.init -> void
 SharedKernel.Persistence.EfCore.Auditing.AuditRecord.SourceService.get -> string!
 SharedKernel.Persistence.EfCore.Auditing.AuditRecord.SourceService.init -> void
-SharedKernel.Persistence.EfCore.Auditing.AuditRecord.TenantId.get -> System.Guid?
 SharedKernel.Persistence.EfCore.Auditing.AuditRecord.TenantId.init -> void
 SharedKernel.Persistence.EfCore.Auditing.AuditRecord.TraceId.get -> string?
 SharedKernel.Persistence.EfCore.Auditing.AuditRecord.TraceId.init -> void
@@ -231,10 +227,8 @@ SharedKernel.Persistence.AuditLedgerServiceCollectionExtensions
 SharedKernel.Persistence.EfCorePersistenceBuilderAuditingExtensions
 SharedKernel.Persistence.EfCore.Auditing.IAuditCheckpointService
 SharedKernel.Persistence.EfCore.Auditing.IAuditCheckpointService.CreateCheckpointAsync(string! resourceType, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Persistence.EfCore.Auditing.AuditChainCheckpoint!>!
-SharedKernel.Persistence.EfCore.Auditing.IAuditCheckpointService.CreateCheckpointForChainAsync(System.Guid? tenantId, string! resourceType, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Persistence.EfCore.Auditing.AuditChainCheckpoint!>!
 SharedKernel.Persistence.EfCore.Auditing.IAuditCheckpointSink
 SharedKernel.Persistence.EfCore.Auditing.IAuditCheckpointSink.AppendAsync(SharedKernel.Persistence.EfCore.Auditing.AuditChainCheckpoint! checkpoint, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-SharedKernel.Persistence.EfCore.Auditing.IAuditCheckpointSink.GetLatestAsync(System.Guid? tenantId, string! resourceType, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Persistence.EfCore.Auditing.AuditChainCheckpoint?>!
 SharedKernel.Persistence.EfCore.Auditing.IAuditLedgerMaintenance
 SharedKernel.Persistence.EfCore.Auditing.IAuditLedgerMaintenance.ErasePayloadAsync(System.Guid recordId, string! reason, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
 SharedKernel.Persistence.EfCore.Auditing.IAuditLedgerMaintenance.EraseResourcePayloadsAsync(string! resourceType, string! resourceId, string! reason, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
@@ -329,3 +323,9 @@ static SharedKernel.Persistence.EfCore.AuditImmutabilityMigrationBuilderExtensio
 static SharedKernel.Persistence.EfCore.AuditImmutabilityMigrationBuilderExtensions.DropImmutabilityTrigger(this Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder! migrationBuilder, string! table, string? schema = null) -> Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder!
 ~override SharedKernel.Persistence.EfCore.Auditing.AuditKeyDescriptor.Equals(object obj) -> bool
 ~override SharedKernel.Persistence.EfCore.Auditing.AuditKeyDescriptor.ToString() -> string
+SharedKernel.Persistence.EfCore.Auditing.AuditChainCheckpoint.TenantId.get -> SharedKernel.Execution.Tenancy.TenantId?
+SharedKernel.Persistence.EfCore.Auditing.AuditChainIntegrityException.AuditChainIntegrityException(SharedKernel.Execution.Tenancy.TenantId? tenantId, string! resourceType, SharedKernel.Persistence.EfCore.Auditing.AuditChainVerificationResult! verification) -> void
+SharedKernel.Persistence.EfCore.Auditing.AuditChainIntegrityException.TenantId.get -> SharedKernel.Execution.Tenancy.TenantId?
+SharedKernel.Persistence.EfCore.Auditing.AuditRecord.TenantId.get -> SharedKernel.Execution.Tenancy.TenantId?
+SharedKernel.Persistence.EfCore.Auditing.IAuditCheckpointService.CreateCheckpointForChainAsync(SharedKernel.Execution.Tenancy.TenantId? tenantId, string! resourceType, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Persistence.EfCore.Auditing.AuditChainCheckpoint!>!
+SharedKernel.Persistence.EfCore.Auditing.IAuditCheckpointSink.GetLatestAsync(SharedKernel.Execution.Tenancy.TenantId? tenantId, string! resourceType, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Persistence.EfCore.Auditing.AuditChainCheckpoint?>!

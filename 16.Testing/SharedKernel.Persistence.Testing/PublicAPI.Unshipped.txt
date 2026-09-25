@@ -109,7 +109,6 @@ SharedKernel.Persistence.Testing.TestRequestContext.Permissions.get -> System.Co
 SharedKernel.Persistence.Testing.TestRequestContext.Permissions.set -> void
 SharedKernel.Persistence.Testing.TestRequestContext.SessionId.get -> string?
 SharedKernel.Persistence.Testing.TestRequestContext.SessionId.set -> void
-SharedKernel.Persistence.Testing.TestRequestContext.TenantId.get -> System.Guid?
 SharedKernel.Persistence.Testing.TestRequestContext.TenantId.set -> void
 SharedKernel.Persistence.Testing.TestRequestContext.TestRequestContext() -> void
 SharedKernel.Persistence.Testing.TestRequestContext.UserId.get -> string?
@@ -117,7 +116,6 @@ SharedKernel.Persistence.Testing.TestRequestContext.UserId.set -> void
 SharedKernel.Persistence.Testing.TestRequestContext.WithImpersonator(string? impersonatorId) -> SharedKernel.Persistence.Testing.TestRequestContext!
 SharedKernel.Persistence.Testing.TestRequestContext.WithPermissions(params string![]! permissions) -> SharedKernel.Persistence.Testing.TestRequestContext!
 SharedKernel.Persistence.Testing.TestRequestContext.WithSession(string? sessionId) -> SharedKernel.Persistence.Testing.TestRequestContext!
-SharedKernel.Persistence.Testing.TestRequestContext.WithTenant(System.Guid? tenantId) -> SharedKernel.Persistence.Testing.TestRequestContext!
 const SharedKernel.Persistence.Testing.PostgresTestDatabase.AuditSealerDataSourceName = "audit-sealer" -> string!
 const SharedKernel.Persistence.Testing.PostgresTestRoles.AuditSealer = "app_audit_sealer" -> string!
 const SharedKernel.Persistence.Testing.PostgresTestRoles.CrossTenant = "app_cross_tenant" -> string!
@@ -132,9 +130,11 @@ static SharedKernel.Persistence.Testing.PersistenceTestingServiceCollectionExten
 static SharedKernel.Persistence.Testing.PersistenceTestingServiceCollectionExtensions.AddTestRequestContext(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, SharedKernel.Persistence.Testing.TestRequestContext? context = null) -> SharedKernel.Persistence.Testing.TestRequestContext!
 static SharedKernel.Persistence.Testing.PostgresTestServer.FromExistingServer(string! adminConnectionString) -> SharedKernel.Persistence.Testing.PostgresTestServer!
 static SharedKernel.Persistence.Testing.PostgresTestServer.StartAsync(string! image = "postgres:16.4", System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Persistence.Testing.PostgresTestServer!>!
-static SharedKernel.Persistence.Testing.TestRequestContext.Anonymous(System.Guid? tenantId = null) -> SharedKernel.Persistence.Testing.TestRequestContext!
-static SharedKernel.Persistence.Testing.TestRequestContext.ForTenant(System.Guid tenantId, string! userId = "test-user") -> SharedKernel.Persistence.Testing.TestRequestContext!
-static SharedKernel.Persistence.Testing.TestRequestContext.ForUser(string! userId = "test-user", System.Guid? tenantId = null) -> SharedKernel.Persistence.Testing.TestRequestContext!
-static SharedKernel.Persistence.Testing.TestRequestContext.Service(string! clientId, System.Guid? tenantId = null) -> SharedKernel.Persistence.Testing.TestRequestContext!
-static SharedKernel.Persistence.Testing.TestRequestContext.System(string! identity = "system", System.Guid? tenantId = null) -> SharedKernel.Persistence.Testing.TestRequestContext!
 virtual SharedKernel.Persistence.Testing.TestRequestContext.HasPermission(string! permission) -> bool
+SharedKernel.Persistence.Testing.TestRequestContext.TenantId.get -> SharedKernel.Execution.Tenancy.TenantId?
+SharedKernel.Persistence.Testing.TestRequestContext.WithTenant(SharedKernel.Execution.Tenancy.TenantId? tenantId) -> SharedKernel.Persistence.Testing.TestRequestContext!
+static SharedKernel.Persistence.Testing.TestRequestContext.Anonymous(SharedKernel.Execution.Tenancy.TenantId? tenantId = null) -> SharedKernel.Persistence.Testing.TestRequestContext!
+static SharedKernel.Persistence.Testing.TestRequestContext.ForTenant(SharedKernel.Execution.Tenancy.TenantId tenantId, string! userId = "test-user") -> SharedKernel.Persistence.Testing.TestRequestContext!
+static SharedKernel.Persistence.Testing.TestRequestContext.ForUser(string! userId = "test-user", SharedKernel.Execution.Tenancy.TenantId? tenantId = null) -> SharedKernel.Persistence.Testing.TestRequestContext!
+static SharedKernel.Persistence.Testing.TestRequestContext.Service(string! clientId, SharedKernel.Execution.Tenancy.TenantId? tenantId = null) -> SharedKernel.Persistence.Testing.TestRequestContext!
+static SharedKernel.Persistence.Testing.TestRequestContext.System(string! identity = "system", SharedKernel.Execution.Tenancy.TenantId? tenantId = null) -> SharedKernel.Persistence.Testing.TestRequestContext!

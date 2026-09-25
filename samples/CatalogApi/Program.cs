@@ -44,7 +44,7 @@ builder.Services
         .Field(ProductFields.Rating, SearchFieldKind.Decimal, filterable: true, sortable: true)
         .Field(ProductFields.ReleasedOn, SearchFieldKind.DateTimeOffset, filterable: true, sortable: true)
         // Deliberately low, so this sample can SHOW what a real ceiling does rather than describe it:
-        // tenant-north holds 10 products, so /storefront/tenant-north/products/count crosses it and
+        // TenantNorth holds 10 products, so /storefront/{TenantNorth}/products/count crosses it and
         // Meilisearch reports a LOWER BOUND instead of a figure it cannot actually vouch for. It also
         // makes page 2 at pageSize 5 exceed the pagination ceiling, which is a real, reachable error.
         // A real storefront leaves this at the 1000 default.

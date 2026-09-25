@@ -7,7 +7,7 @@ using SharedKernel.Idempotency.EfCore.KeyStore;
 using SharedKernel.Idempotency.EfCore.MessageStore;
 using SharedKernel.Idempotency.EfCore.Options;
 using SharedKernel.Messaging.Abstractions.Idempotency;
-using SharedKernel.Messaging.Abstractions.TenantContext;
+using SharedKernel.Execution.Context;
 using SharedKernel.Persistence;
 using SharedKernel.Testing.Clocks;
 using SharedKernel.Testing.Containers;
@@ -52,9 +52,10 @@ public sealed class EfCoreIdempotencyConcurrencyTests : IAsyncLifetime
         return new IdempotencyDbContext(optionsBuilder.Options);
     }
 
-    private sealed class FixedTenantAccessor(Guid tenantId) : ITenantContextAccessor
+    private sealed class FixedTenantAccessor(Guid tenantId) : IRequestContextAccessor
     {
-        public Guid? TenantId { get; } = tenantId;
+        public IRequestContext? Current { get; } =
+            new SystemRequestContext([], "test", SharedKernel.Execution.Tenancy.TenantId.FromNullable(tenantId));
     }
 
     private EfCoreRequestIdempotencyStore CreateStore(Guid tenantId, FakeClock clock, EfCoreIdempotencyOptions? options = null) =>

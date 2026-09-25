@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Security.Cryptography;
 using SharedKernel.Execution.Auditing;
 using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence.EfCore.Auditing.Format;
 using SharedKernel.Persistence.EfCore.Auditing.Storage;
 using SharedKernel.Primitives.Clocks;
@@ -25,7 +26,7 @@ internal sealed class AuditRecordFactory(
 
     /// <summary>Builds the record for <paramref name="entry"/> in the chain of <paramref name="tenantId"/>.</summary>
     /// <exception cref="ArgumentException">A field is empty or longer than its <see cref="AuditFieldLimits"/> limit.</exception>
-    public PendingLedgerRecord Create(AuditEntry entry, Guid? tenantId)
+    public PendingLedgerRecord Create(AuditEntry entry, TenantId? tenantId)
     {
         ArgumentNullException.ThrowIfNull(entry);
 

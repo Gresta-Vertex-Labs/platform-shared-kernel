@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.MultiTenancy.Catalog;
 using SharedKernel.Testing.ServiceDefaults;
 
@@ -14,13 +15,13 @@ namespace SharedKernel.Testing.SelfTests.ServiceDefaults;
 public sealed class InMemoryTenantCatalogTests
 {
     private static TenantDescriptor CreateDescriptor(
-        Guid? tenantId = null,
+        TenantId? tenantId = null,
         string displayName = "Acme Corp",
         TenantStatus status = TenantStatus.Active,
         TenantIsolationMode isolationMode = TenantIsolationMode.Shared,
         string? defaultCulture = null) =>
         new(
-            tenantId ?? Guid.NewGuid(),
+            tenantId ?? new TenantId(Guid.NewGuid()),
             displayName,
             status,
             isolationMode,
@@ -44,7 +45,7 @@ public sealed class InMemoryTenantCatalogTests
     {
         var catalog = new InMemoryTenantCatalog();
 
-        var result = await catalog.GetByIdAsync(Guid.NewGuid(), CancellationToken.None);
+        var result = await catalog.GetByIdAsync(new TenantId(Guid.NewGuid()), CancellationToken.None);
 
         Assert.Null(result);
     }
@@ -105,7 +106,7 @@ public sealed class InMemoryTenantCatalogTests
     {
         var catalog = new InMemoryTenantCatalog();
 
-        var exception = Record.Exception(() => catalog.MutateStatus(Guid.NewGuid(), TenantStatus.Offboarded));
+        var exception = Record.Exception(() => catalog.MutateStatus(new TenantId(Guid.NewGuid()), TenantStatus.Offboarded));
 
         Assert.Null(exception);
     }
@@ -186,7 +187,7 @@ public sealed class InMemoryTenantCatalogTests
         var catalog = new InMemoryTenantCatalog();
         var validator = new CatalogTenantStatusValidator(catalog);
 
-        var isActive = await validator.IsActiveAsync(Guid.NewGuid(), CancellationToken.None);
+        var isActive = await validator.IsActiveAsync(new TenantId(Guid.NewGuid()), CancellationToken.None);
 
         Assert.False(isActive);
     }
@@ -210,7 +211,7 @@ public sealed class InMemoryTenantCatalogTests
     public async Task SeedTenant_ReSeedingSameTenantId_OverwritesPreviousDescriptor()
     {
         var catalog = new InMemoryTenantCatalog();
-        var tenantId = Guid.NewGuid();
+        TenantId tenantId = new TenantId(Guid.NewGuid());
         catalog.SeedTenant(CreateDescriptor(tenantId, displayName: "Original"));
         catalog.SeedTenant(CreateDescriptor(tenantId, displayName: "Renamed"));
 

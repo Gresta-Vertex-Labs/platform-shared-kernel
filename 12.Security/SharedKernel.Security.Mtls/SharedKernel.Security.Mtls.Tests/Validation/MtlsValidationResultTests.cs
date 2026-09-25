@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Security.Mtls.Validation;
 using Xunit;
 
@@ -8,7 +9,7 @@ public sealed class MtlsValidationResultTests
     [Fact]
     public void Success_AllValues_ArePreserved()
     {
-        var tenantId = Guid.NewGuid();
+        TenantId tenantId = new TenantId(Guid.NewGuid());
 
         MtlsValidationResult result = MtlsValidationResult.Success("client", tenantId, ["admin"], ["payments:initiate"]);
 
@@ -41,7 +42,7 @@ public sealed class MtlsValidationResultTests
     [Fact]
     public void Success_EmptyTenantId_Throws()
     {
-        ArgumentException exception = Assert.Throws<ArgumentException>(() => MtlsValidationResult.Success("client", Guid.Empty));
+        ArgumentException exception = Assert.Throws<ArgumentException>(() => MtlsValidationResult.Success("client", default(TenantId)));
 
         Assert.Equal("tenantId", exception.ParamName);
     }

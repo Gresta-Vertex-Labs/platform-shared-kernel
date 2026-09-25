@@ -34,7 +34,7 @@ SharedKernel.Execution.Context.AnonymousRequestContext
 SharedKernel.Execution.Context.AnonymousRequestContext.ActorKind.get -> SharedKernel.Execution.Context.ActorKind
 SharedKernel.Execution.Context.AnonymousRequestContext.HasPermissionAsync(string! permission, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<bool>
 SharedKernel.Execution.Context.AnonymousRequestContext.IsAuthenticated.get -> bool
-SharedKernel.Execution.Context.AnonymousRequestContext.TenantId.get -> System.Guid?
+SharedKernel.Execution.Context.AnonymousRequestContext.TenantId.get -> SharedKernel.Execution.Tenancy.TenantId?
 SharedKernel.Execution.Context.AnonymousRequestContext.UserId.get -> string?
 SharedKernel.Execution.Context.IRequestContext
 SharedKernel.Execution.Context.IRequestContext.ActorKind.get -> SharedKernel.Execution.Context.ActorKind
@@ -43,14 +43,14 @@ SharedKernel.Execution.Context.IRequestContext.HasPermissionAsync(string! permis
 SharedKernel.Execution.Context.IRequestContext.ImpersonatorId.get -> string?
 SharedKernel.Execution.Context.IRequestContext.IsAuthenticated.get -> bool
 SharedKernel.Execution.Context.IRequestContext.SessionId.get -> string?
-SharedKernel.Execution.Context.IRequestContext.TenantId.get -> System.Guid?
+SharedKernel.Execution.Context.IRequestContext.TenantId.get -> SharedKernel.Execution.Tenancy.TenantId?
 SharedKernel.Execution.Context.IRequestContext.UserId.get -> string?
 SharedKernel.Execution.Context.SystemRequestContext
 SharedKernel.Execution.Context.SystemRequestContext.ActorKind.get -> SharedKernel.Execution.Context.ActorKind
 SharedKernel.Execution.Context.SystemRequestContext.HasPermissionAsync(string! permission, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<bool>
 SharedKernel.Execution.Context.SystemRequestContext.IsAuthenticated.get -> bool
-SharedKernel.Execution.Context.SystemRequestContext.SystemRequestContext(System.Collections.Generic.IEnumerable<string!>! permissions, string! identity = "system", System.Guid? tenantId = null) -> void
-SharedKernel.Execution.Context.SystemRequestContext.TenantId.get -> System.Guid?
+SharedKernel.Execution.Context.SystemRequestContext.SystemRequestContext(System.Collections.Generic.IEnumerable<string!>! permissions, string! identity = "system", SharedKernel.Execution.Tenancy.TenantId? tenantId = null) -> void
+SharedKernel.Execution.Context.SystemRequestContext.TenantId.get -> SharedKernel.Execution.Tenancy.TenantId?
 SharedKernel.Execution.Context.SystemRequestContext.UserId.get -> string?
 SharedKernel.Execution.Transactions.IUnitOfWork
 SharedKernel.Execution.Transactions.IUnitOfWork.ExecuteInTransactionAsync(System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task!>! operation, System.Data.IsolationLevel? isolationLevel, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!

@@ -5,7 +5,7 @@ namespace SharedKernel.Storage;
 
 /// <summary>
 /// The request rules every store enforces before any I/O, identically for every provider. Stores apply them
-/// already; call them yourself to validate user input early (for example a key or tenant id taken from a route),
+/// already; call them yourself to validate user input early (for example a key taken from a route),
 /// or when implementing a provider or test double.
 /// </summary>
 /// <remarks>
@@ -28,9 +28,6 @@ public static class StorageValidation
     /// store key prefix and the <c>tenants/{id}/</c> prefix, so the usable length of a tenant key is shorter.
     /// </summary>
     public const int MaxKeyBytes = 1024;
-
-    /// <summary>The longest tenant id, in characters: 128.</summary>
-    public const int MaxTenantIdLength = 128;
 
     /// <summary>The largest total length of user metadata keys and values: 2048 bytes (2 KiB), the S3 limit.</summary>
     public const int MaxMetadataBytes = 2048;
@@ -114,33 +111,6 @@ public static class StorageValidation
         prefix is null ? StorageErrors.InvalidKey(prefix, "it is null.")
         : prefix.Length == 0 ? null
         : ValidateKey(prefix);
-
-    /// <summary>
-    /// Validates a tenant id for use as a key prefix. The id is used as it is — never escaped or case-folded — so
-    /// every valid id maps to its own prefix. A GUID in its default format is valid.
-    /// </summary>
-    /// <param name="tenantId">The tenant id, or <see langword="null"/>.</param>
-    /// <returns>
-    /// <see langword="null"/>, or <see cref="StorageErrorCodes.InvalidTenant"/> unless it has 1 to
-    /// <see cref="MaxTenantIdLength"/> characters from <c>A-Z a-z 0-9 . _ -</c> and is not <c>.</c> or <c>..</c>.
-    /// </returns>
-    public static Error? ValidateTenantId(string? tenantId)
-    {
-        if (string.IsNullOrEmpty(tenantId) || tenantId.Length > MaxTenantIdLength || tenantId is "." or "..")
-        {
-            return StorageErrors.InvalidTenant(tenantId);
-        }
-
-        foreach (char c in tenantId)
-        {
-            if (!char.IsAsciiLetterOrDigit(c) && c is not ('.' or '_' or '-'))
-            {
-                return StorageErrors.InvalidTenant(tenantId);
-            }
-        }
-
-        return null;
-    }
 
     /// <summary>
     /// Validates upload options: content type, header values, metadata, tags, tier, checksum format and a

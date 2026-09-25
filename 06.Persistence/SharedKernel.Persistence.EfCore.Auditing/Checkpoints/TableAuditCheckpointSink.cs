@@ -1,4 +1,5 @@
 using System.Data;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence.Abstractions.Connections;
 using SharedKernel.Persistence.EfCore.Auditing.Format;
 using SharedKernel.Persistence.EfCore.Auditing.Storage;
@@ -41,7 +42,7 @@ internal sealed class TableAuditCheckpointSink : IAuditCheckpointSink
                 VALUES (@id, @tenant_id, @resource_type, @sequence, @head_mac, @created_on, @signing_key_id, @signature, @format_version)
                 """);
             LedgerDb.Add(command, "@id", checkpoint.Id, DbType.Guid);
-            LedgerDb.Add(command, "@tenant_id", checkpoint.TenantId, DbType.Guid);
+            LedgerDb.AddTenant(command, "@tenant_id", checkpoint.TenantId);
             LedgerDb.Add(command, "@resource_type", checkpoint.ResourceType, DbType.String);
             LedgerDb.Add(command, "@sequence", checkpoint.Sequence, DbType.Int64);
             LedgerDb.Add(command, "@head_mac", checkpoint.HeadMac, DbType.Binary);
@@ -54,7 +55,7 @@ internal sealed class TableAuditCheckpointSink : IAuditCheckpointSink
     }
 
     /// <inheritdoc />
-    public async Task<AuditChainCheckpoint?> GetLatestAsync(Guid? tenantId, string resourceType, CancellationToken cancellationToken = default)
+    public async Task<AuditChainCheckpoint?> GetLatestAsync(TenantId? tenantId, string resourceType, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(resourceType);
 
@@ -80,7 +81,7 @@ internal sealed class TableAuditCheckpointSink : IAuditCheckpointSink
             return new AuditChainCheckpoint
             {
                 Id = reader.GetGuid(0),
-                TenantId = reader.IsDBNull(1) ? null : reader.GetGuid(1),
+                TenantId = LedgerDb.ReadTenant(reader, 1),
                 ResourceType = reader.GetString(2),
                 Sequence = reader.GetInt64(3),
                 HeadMac = reader.GetFieldValue<byte[]>(4),

@@ -1,5 +1,6 @@
 using Elastic.Clients.Elasticsearch;
 using FluentAssertions;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Search.Abstractions.Models;
 using SharedKernel.Search.ElasticSearch.Tests.Containers;
 using SharedKernel.Search.ElasticSearch.Tests.Support;
@@ -65,7 +66,7 @@ public sealed class ElasticSearchTextAnalysisTests : IAsyncLifetime
 
         var result = await index.SearchAsync(
             SearchRequest.Default with { FreeText = "rodent", PageSize = 20 },
-            TenantScope.Of(TestProductCorpus.TenantA));
+            TenantScope.For(TestProductCorpus.TenantA));
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Hits.Should().Contain(
@@ -82,7 +83,7 @@ public sealed class ElasticSearchTextAnalysisTests : IAsyncLifetime
 
         var result = await index.SearchAsync(
             SearchRequest.Default with { FreeText = "the", PageSize = 20 },
-            TenantScope.Of(TestProductCorpus.TenantA));
+            TenantScope.For(TestProductCorpus.TenantA));
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Hits.Should().BeEmpty("every term in the query was removed by the stop filter");

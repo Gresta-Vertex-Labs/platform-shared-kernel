@@ -5,7 +5,7 @@ using SharedKernel.Application.Behaviors.Idempotency;
 using SharedKernel.Idempotency.Redis.Internal;
 using SharedKernel.Idempotency.Redis.Logging;
 using SharedKernel.Idempotency.Redis.Options;
-using SharedKernel.Messaging.Abstractions.TenantContext;
+using SharedKernel.Execution.Context;
 using StackExchange.Redis;
 
 namespace SharedKernel.Idempotency.Redis.KeyStore;
@@ -39,7 +39,7 @@ namespace SharedKernel.Idempotency.Redis.KeyStore;
 /// of the new owner's row.
 /// </para>
 /// <para>
-/// Registered <c>Scoped</c>, not singleton: <see cref="ITenantContextAccessor"/> implementations are
+/// Registered <c>Scoped</c>, not singleton: <see cref="IRequestContextAccessor"/> implementations are
 /// conventionally registered <c>Scoped</c> in this platform (mirroring
 /// <c>SharedKernel.Messaging.MassTransit.MessagingBusBuilder.WithTenantContext</c>), and a singleton
 /// cannot safely consume a scoped dependency under a DI container built with
@@ -106,24 +106,24 @@ public sealed class RedisRequestIdempotencyStore : IRequestIdempotencyStore
         """;
 
     private readonly IConnectionMultiplexer _connectionMultiplexer;
-    private readonly ITenantContextAccessor _tenantContextAccessor;
+    private readonly IRequestContextAccessor _requestContextAccessor;
     private readonly IOptions<RedisIdempotencyOptions> _options;
     private readonly ILogger<RedisRequestIdempotencyStore> _logger;
 
     /// <summary>Initializes a new instance of <see cref="RedisRequestIdempotencyStore"/>.</summary>
     public RedisRequestIdempotencyStore(
         IConnectionMultiplexer connectionMultiplexer,
-        ITenantContextAccessor tenantContextAccessor,
+        IRequestContextAccessor requestContextAccessor,
         IOptions<RedisIdempotencyOptions> options,
         ILogger<RedisRequestIdempotencyStore> logger)
     {
         ArgumentNullException.ThrowIfNull(connectionMultiplexer);
-        ArgumentNullException.ThrowIfNull(tenantContextAccessor);
+        ArgumentNullException.ThrowIfNull(requestContextAccessor);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(logger);
 
         _connectionMultiplexer = connectionMultiplexer;
-        _tenantContextAccessor = tenantContextAccessor;
+        _requestContextAccessor = requestContextAccessor;
         _options = options;
         _logger = logger;
     }
@@ -134,7 +134,7 @@ public sealed class RedisRequestIdempotencyStore : IRequestIdempotencyStore
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
         ArgumentException.ThrowIfNullOrWhiteSpace(requestFingerprint);
 
-        var redisKey = RedisIdempotencyKeyBuilder.BuildKeyStoreKey(_tenantContextAccessor.TenantId, key);
+        var redisKey = RedisIdempotencyKeyBuilder.BuildKeyStoreKey(_requestContextAccessor.Current?.TenantId?.Value, key);
         var options = _options.Value;
         var token = Guid.NewGuid().ToString("N");
 
@@ -173,7 +173,7 @@ public sealed class RedisRequestIdempotencyStore : IRequestIdempotencyStore
         ArgumentNullException.ThrowIfNull(serializedResponse);
 
         var options = _options.Value;
-        var redisKey = RedisIdempotencyKeyBuilder.BuildKeyStoreKey(_tenantContextAccessor.TenantId, key);
+        var redisKey = RedisIdempotencyKeyBuilder.BuildKeyStoreKey(_requestContextAccessor.Current?.TenantId?.Value, key);
 
         try
         {
@@ -196,7 +196,7 @@ public sealed class RedisRequestIdempotencyStore : IRequestIdempotencyStore
         ArgumentException.ThrowIfNullOrWhiteSpace(reservationToken);
 
         var options = _options.Value;
-        var redisKey = RedisIdempotencyKeyBuilder.BuildKeyStoreKey(_tenantContextAccessor.TenantId, key);
+        var redisKey = RedisIdempotencyKeyBuilder.BuildKeyStoreKey(_requestContextAccessor.Current?.TenantId?.Value, key);
 
         try
         {

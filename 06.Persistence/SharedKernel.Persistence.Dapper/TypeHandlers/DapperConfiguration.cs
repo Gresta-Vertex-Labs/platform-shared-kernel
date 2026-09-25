@@ -18,7 +18,8 @@ namespace SharedKernel.Persistence.Dapper.TypeHandlers;
 /// </para>
 /// <para>
 /// Always registered: pass-through handlers for pgvector's <see cref="Vector"/>, <see cref="HalfVector"/>
-/// and <see cref="SparseVector"/>.
+/// and <see cref="SparseVector"/>, and a <c>uuid</c> handler for
+/// <see cref="SharedKernel.Execution.Tenancy.TenantId"/>.
 /// </para>
 /// </remarks>
 public static class DapperConfiguration
@@ -39,6 +40,7 @@ public static class DapperConfiguration
             SqlMapper.AddTypeHandler(new PassThroughTypeHandler<Vector>());
             SqlMapper.AddTypeHandler(new PassThroughTypeHandler<HalfVector>());
             SqlMapper.AddTypeHandler(new PassThroughTypeHandler<SparseVector>());
+            SqlMapper.AddTypeHandler(new TenantIdTypeHandler());
 
             foreach (var register in builder.Registrations)
                 register();

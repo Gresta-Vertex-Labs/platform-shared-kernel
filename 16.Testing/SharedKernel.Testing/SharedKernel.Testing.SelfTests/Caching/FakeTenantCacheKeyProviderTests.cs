@@ -2,6 +2,8 @@ using SharedKernel.Caching.Abstractions;
 using SharedKernel.Testing.Caching;
 using Xunit;
 
+using SharedKernel.Execution.Tenancy;
+
 namespace SharedKernel.Testing.SelfTests.Caching;
 
 /// <summary>
@@ -10,6 +12,8 @@ namespace SharedKernel.Testing.SelfTests.Caching;
 /// </summary>
 public sealed class FakeTenantCacheKeyProviderTests
 {
+    private static readonly TenantId TenantA = new(Guid.Parse("0f8fad5b-d9cb-469f-a165-70867728950e"));
+
     [Fact]
     public void DefaultConstructor_UsesTestServiceName()
     {
@@ -24,10 +28,10 @@ public sealed class FakeTenantCacheKeyProviderTests
     {
         var provider = new FakeTenantCacheKeyProvider();
 
-        var key = provider.BuildTenantKey("tenant-1", "order", "42");
+        var key = provider.BuildTenantKey(TenantA, "order", "42");
 
-        Assert.Equal("test-svc:@tenant-1:order:42", key);
-        Assert.Equal(CacheKeyFormat.BuildTenantKey("test-svc", "tenant-1", "order", "42"), key);
+        Assert.Equal($"test-svc:@{TenantA}:order:42", key);
+        Assert.Equal(CacheKeyFormat.BuildTenantKey("test-svc", TenantA, "order", "42"), key);
     }
 
     [Fact]
@@ -35,9 +39,9 @@ public sealed class FakeTenantCacheKeyProviderTests
     {
         var provider = new FakeTenantCacheKeyProvider();
 
-        var key = provider.BuildTenantKey("tenant-1", "order", "42", "v2", "summary");
+        var key = provider.BuildTenantKey(TenantA, "order", "42", "v2", "summary");
 
-        Assert.Equal("test-svc:@tenant-1:order:42:v2:summary", key);
+        Assert.Equal($"test-svc:@{TenantA}:order:42:v2:summary", key);
     }
 
     [Fact]
@@ -70,9 +74,9 @@ public sealed class FakeTenantCacheKeyProviderTests
         Assert.Throws<ArgumentException>(() => new FakeTenantCacheKeyProvider(serviceName));
 
     [Fact]
-    public void BuildTenantKey_NullOrWhitespaceTenantId_Throws()
+    public void BuildTenantKey_DefaultTenantId_Throws()
     {
         var provider = new FakeTenantCacheKeyProvider();
-        Assert.Throws<ArgumentException>(() => provider.BuildTenantKey(" ", "order", "42"));
+        Assert.Throws<ArgumentException>(() => provider.BuildTenantKey(default, "order", "42"));
     }
 }

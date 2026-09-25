@@ -182,7 +182,7 @@ public sealed class NamedConnectionTests(MinioFixture minio)
         IFileStorage assets = host.GetRequiredKeyedService<IFileStorage>("public-assets");
         (await assets.UploadAsync(TestData.UniqueKey(), new MemoryStream([1]))).IsSuccess.Should().BeTrue();
 
-        Action privateStore = () => host.GetRequiredKeyedService<ITenantFileStorage>("private-docs").ForTenant("t").ExistsAsync("a");
+        Action privateStore = () => host.GetRequiredKeyedService<ITenantFileStorage>("private-docs").ForTenant(new TenantId(Guid.NewGuid())).ExistsAsync("a");
         privateStore.Should().Throw<OptionsValidationException>().WithMessage("*S3 connection 'Private'*SecretAccessKey*");
     }
 }

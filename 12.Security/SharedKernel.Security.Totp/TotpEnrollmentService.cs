@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Context;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Cryptography.Hashing;
 using SharedKernel.Cryptography.Random;
@@ -112,7 +113,7 @@ public sealed class TotpEnrollmentService
         ArgumentNullException.ThrowIfNull(code);
 
         TotpChallengeResult result;
-        if (user.IdentityKind != IdentityKind.User || user.SubjectId is not { } subjectId)
+        if (user.ActorKind != ActorKind.User || user.SubjectId is not { } subjectId)
         {
             result = TotpChallengeResult.NoSession;
         }

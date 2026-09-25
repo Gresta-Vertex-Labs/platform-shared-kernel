@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using SharedKernel.Caching.Abstractions;
 using SharedKernel.Caching.FusionCache.Extensions;
 using SharedKernel.Caching.FusionCache.Implementations;
+using SharedKernel.Execution.Tenancy;
 using Xunit;
 
 namespace SharedKernel.Caching.FusionCache.Tests.Telemetry;
@@ -14,7 +15,8 @@ namespace SharedKernel.Caching.FusionCache.Tests.Telemetry;
 /// </summary>
 public sealed class TelemetryRedactionTests
 {
-    private const string TenantId = "tenant-secret-7";
+    private const string TenantText = "5d8e1f2a-3b4c-4d5e-8f60-718293a4b5c6";
+    private static readonly TenantId Tenant = TenantId.Parse(TenantText);
     private const string EntityId = "id-secret-42";
 
     // -------------------------------------------------------------------------
@@ -32,27 +34,26 @@ public sealed class TelemetryRedactionTests
         Assert.Equal(expected, FusionCacheService.ExtractKeyPrefix(key));
 
     [Theory]
-    [InlineData("svc:@tenant-secret-7:orders:id-secret-42", "svc:orders")]
-    [InlineData("svc:@tenant-secret-7:orders:id-secret-42:lines:3", "svc:orders")]
-    [InlineData("svc:@tenant-secret-7:orders", "svc:orders")]
-    [InlineData("svc:@tenant-secret-7", "svc")]
+    [InlineData("svc:@5d8e1f2a-3b4c-4d5e-8f60-718293a4b5c6:orders:id-secret-42", "svc:orders")]
+    [InlineData("svc:@5d8e1f2a-3b4c-4d5e-8f60-718293a4b5c6:orders:id-secret-42:lines:3", "svc:orders")]
+    [InlineData("svc:@5d8e1f2a-3b4c-4d5e-8f60-718293a4b5c6:orders", "svc:orders")]
+    [InlineData("svc:@5d8e1f2a-3b4c-4d5e-8f60-718293a4b5c6", "svc")]
     public void ExtractKeyPrefix_TenantKeys_DropTheTenantAndTheId(string key, string expected)
     {
         var prefix = FusionCacheService.ExtractKeyPrefix(key);
 
         Assert.Equal(expected, prefix);
-        Assert.DoesNotContain(TenantId, prefix, StringComparison.Ordinal);
+        Assert.DoesNotContain(TenantText, prefix, StringComparison.Ordinal);
         Assert.DoesNotContain(EntityId, prefix, StringComparison.Ordinal);
     }
 
     [Fact]
     public void ExtractKeyPrefix_KeysBuiltByCacheKeyFormat_NeverContainTheTenantOrTheId()
     {
-        // Escaped parts (':' and '@' inside an id or tenant) must not shift the segments.
-        const string trickyTenant = "t:@x";
+        // Escaped parts (':' and '@' inside an id) must not shift the segments.
         const string trickyId = "a:b@c";
 
-        var tenantKey = CacheKeyFormat.BuildTenantKey("orders-api", trickyTenant, "invoice", trickyId, "v2");
+        var tenantKey = CacheKeyFormat.BuildTenantKey("orders-api", Tenant, "invoice", trickyId, "v2");
         var globalKey = CacheKeyFormat.BuildKey("orders-api", "invoice", trickyId, "v2");
 
         Assert.Equal("orders-api:invoice", FusionCacheService.ExtractKeyPrefix(tenantKey));
@@ -64,9 +65,9 @@ public sealed class TelemetryRedactionTests
     // -------------------------------------------------------------------------
 
     [Theory]
-    [InlineData("@tenant-secret-7:orders", "@tenant:orders")]
-    [InlineData("@tenant-secret-7:orders:open", "@tenant:orders:open")]
-    [InlineData("@tenant-secret-7", "@tenant")]
+    [InlineData("@5d8e1f2a-3b4c-4d5e-8f60-718293a4b5c6:orders", "@tenant:orders")]
+    [InlineData("@5d8e1f2a-3b4c-4d5e-8f60-718293a4b5c6:orders:open", "@tenant:orders:open")]
+    [InlineData("@5d8e1f2a-3b4c-4d5e-8f60-718293a4b5c6", "@tenant")]
     [InlineData("orders", "orders")]
     [InlineData("orders:open", "orders:open")]
     [InlineData("", "")]
@@ -76,9 +77,9 @@ public sealed class TelemetryRedactionTests
     [Fact]
     public void DescribeTag_TagsBuiltByCacheKeyFormat_NeverContainTheTenant()
     {
-        Assert.Equal("@tenant:orders", FusionCacheService.DescribeTag(CacheKeyFormat.BuildTenantTag(TenantId, "orders")));
-        Assert.Equal("@tenant", FusionCacheService.DescribeTag(CacheKeyFormat.BuildTenantWideTag(TenantId)));
-        Assert.Equal("@tenant:orders", FusionCacheService.DescribeTag(CacheKeyFormat.BuildTenantTag("a:b", "orders")));
+        Assert.Equal("@tenant:orders", FusionCacheService.DescribeTag(CacheKeyFormat.BuildTenantTag(Tenant, "orders")));
+        Assert.Equal("@tenant", FusionCacheService.DescribeTag(CacheKeyFormat.BuildTenantWideTag(Tenant)));
+        Assert.Equal("@tenant:a%3Ab", FusionCacheService.DescribeTag(CacheKeyFormat.BuildTenantTag(Tenant, "a:b")));
     }
 
     // -------------------------------------------------------------------------
@@ -96,9 +97,9 @@ public sealed class TelemetryRedactionTests
 
         var cache = provider.GetRequiredService<ICacheService>();
         var tenantCache = provider.GetRequiredService<ITenantCacheService>();
-        var key = CacheKeyFormat.BuildTenantKey("svc", TenantId, "orders", EntityId);
-        var otherKey = CacheKeyFormat.BuildTenantKey("svc", TenantId, "orders", EntityId + "-b");
-        var tagged = CachePolicy.Default.WithTags("open").ForTenant(TenantId);
+        var key = CacheKeyFormat.BuildTenantKey("svc", Tenant, "orders", EntityId);
+        var otherKey = CacheKeyFormat.BuildTenantKey("svc", Tenant, "orders", EntityId + "-b");
+        var tagged = CachePolicy.Default.WithTags("open").ForTenant(Tenant);
 
         using var metrics = new MetricRecorder();
         using var spans = new ActivityRecorder();
@@ -111,11 +112,11 @@ public sealed class TelemetryRedactionTests
         await cache.SetManyAsync(new Dictionary<string, string> { [otherKey] = "m" }, tagged);
         await cache.ExpireAsync(key);
         await cache.RemoveAsync(otherKey);
-        await cache.RemoveByTagAsync(CacheKeyFormat.BuildTenantTag(TenantId, "open"));
-        await cache.RemoveByTagsAsync([CacheKeyFormat.BuildTenantWideTag(TenantId)]);
-        await tenantCache.RemoveTenantAsync(TenantId);
+        await cache.RemoveByTagAsync(CacheKeyFormat.BuildTenantTag(Tenant, "open"));
+        await cache.RemoveByTagsAsync([CacheKeyFormat.BuildTenantWideTag(Tenant)]);
+        await tenantCache.RemoveTenantAsync(Tenant);
         await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-            await cache.GetOrSetAsync<string>(key + ":boom", _ => throw new InvalidOperationException($"{TenantId} {EntityId}"), tagged));
+            await cache.GetOrSetAsync<string>(key + ":boom", _ => throw new InvalidOperationException($"{TenantText} {EntityId}"), tagged));
 
         Assert.True(await Eventually.HoldsAsync(() => metrics.Sum("cache.hits", "svc:orders", "l1") >= 2));
 
@@ -174,7 +175,7 @@ public sealed class TelemetryRedactionTests
         if (text is null)
             return;
 
-        Assert.DoesNotContain(TenantId, text, StringComparison.Ordinal);
+        Assert.DoesNotContain(TenantText, text, StringComparison.Ordinal);
         Assert.DoesNotContain(EntityId, text, StringComparison.Ordinal);
     }
 }

@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using MassTransit;
 using SharedKernel.Execution.Context;
 using SharedKernel.Messaging.Abstractions.Context;
@@ -51,8 +52,8 @@ internal sealed class InboundRequestContextFilter<TMessage> : IFilter<ConsumeCon
         return next.Send(context);
     }
 
-    private static Guid? ReadTenantId(ConsumeContext context)
-        => Guid.TryParse(context.Headers.Get<string>(WellKnownHeaders.TenantId), out var tenantId)
+    private static TenantId? ReadTenantId(ConsumeContext context)
+        => TenantId.TryParse(context.Headers.Get<string>(WellKnownHeaders.TenantId), out var tenantId)
             ? tenantId
             : null;
 

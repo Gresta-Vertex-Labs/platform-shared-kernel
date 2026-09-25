@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Globalization;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Workflows.Temporal.Authoring;
 using SharedKernel.Workflows.Temporal.Constants;
 using SharedKernel.Workflows.Temporal.Dispatch;
@@ -100,9 +101,9 @@ public sealed class InMemoryWorkflowDispatcher : IWorkflowDispatcher
     public IWorkflowHandle GetHandle(string workflowId, string? runId, TenantScope tenantScope)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(workflowId);
-        if (tenantScope == TenantScope.None)
+        if (tenantScope.IsGlobal)
         {
-            throw new ArgumentException("TenantScope.None is not permitted.", nameof(tenantScope));
+            throw new ArgumentException("TenantScope.Global is not permitted.", nameof(tenantScope));
         }
 
         // Never round-trips -- constructs unconditionally regardless of whether a backing execution
@@ -124,7 +125,7 @@ public sealed class InMemoryWorkflowDispatcher : IWorkflowDispatcher
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(workflowId);
 
-        if (tenantScope == TenantScope.None)
+        if (tenantScope.IsGlobal)
         {
             return Task.FromResult(SharedKernel.Primitives.Results.Result<WorkflowExecutionDescription>.Failure(
                 WorkflowErrors.TenantScopeMissing()));
@@ -270,7 +271,7 @@ public sealed class InMemoryWorkflowDispatcher : IWorkflowDispatcher
         // MORE load-bearing here per the real IWorkflowDispatcher's own XML docs (a workflow id is a
         // flat, caller-addressable keyspace with no per-declaration tenant-field toggle to condition
         // the check on).
-        if (tenantScope == TenantScope.None)
+        if (tenantScope.IsGlobal)
         {
             return SharedKernel.Primitives.Results.Result<IWorkflowHandle>.Failure(WorkflowErrors.TenantScopeMissing());
         }
@@ -320,7 +321,7 @@ public sealed class InMemoryWorkflowDispatcher : IWorkflowDispatcher
     private string ComposeWorkflowId(string workflowTypeName, string businessKey, TenantScope tenantScope) =>
         _workflowIdFactory is not null
             ? _workflowIdFactory.Create(workflowTypeName, businessKey, tenantScope)
-            : string.Join(WorkflowWellKnown.IdSeparator, tenantScope.Value, workflowTypeName, businessKey);
+            : string.Join(WorkflowWellKnown.IdSeparator, tenantScope.ToString(), workflowTypeName, businessKey);
 
     private InMemoryWorkflowExecution RequireExecution(string workflowId) =>
         _executions.TryGetValue(workflowId, out var execution)

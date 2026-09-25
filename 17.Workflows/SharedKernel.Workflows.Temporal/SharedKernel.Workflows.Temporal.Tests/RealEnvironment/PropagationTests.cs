@@ -44,7 +44,7 @@ public sealed class PropagationTests(TemporalTestFixture fixture)
             .StartAsync<PropagationParentWorkflow, string, PropagationResult>(
                 "propagation-input",
                 Options($"propagation-{Guid.NewGuid():N}"),
-                TenantScope.Of("tenant-propagation"));
+                TenantScope.For(TestTenants.Propagation));
 
         startResult.IsSuccess.Should().BeTrue();
 
@@ -53,12 +53,12 @@ public sealed class PropagationTests(TemporalTestFixture fixture)
         result.IsSuccess.Should().BeTrue();
         PropagationResult propagation = result.Value;
 
-        propagation.TenantScope.Should().Be("tenant-propagation", because: "the workflow must observe the tenant scope set at dispatch time");
+        propagation.TenantScope.Should().Be(TestTenants.Propagation.ToString(), because: "the workflow must observe the tenant scope set at dispatch time");
         propagation.CorrelationId.Should().Be(expectedCorrelationId, because: "the workflow must observe the ambient correlation id set at dispatch time");
-        propagation.ActivityTenantScope.Should().Be("tenant-propagation", because: "an activity invoked by the workflow must observe the same tenant scope");
+        propagation.ActivityTenantScope.Should().Be(TestTenants.Propagation.ToString(), because: "an activity invoked by the workflow must observe the same tenant scope");
 
-        propagation.Child.TenantScope.Should().Be("tenant-propagation", because: "tenant scope must propagate across a child-workflow hop");
+        propagation.Child.TenantScope.Should().Be(TestTenants.Propagation.ToString(), because: "tenant scope must propagate across a child-workflow hop");
         propagation.Child.CorrelationId.Should().Be(expectedCorrelationId, because: "correlation id must propagate across a child-workflow hop");
-        propagation.Child.ActivityTenantScope.Should().Be("tenant-propagation", because: "an activity invoked by the CHILD workflow must also observe the propagated tenant scope");
+        propagation.Child.ActivityTenantScope.Should().Be(TestTenants.Propagation.ToString(), because: "an activity invoked by the CHILD workflow must also observe the propagated tenant scope");
     }
 }

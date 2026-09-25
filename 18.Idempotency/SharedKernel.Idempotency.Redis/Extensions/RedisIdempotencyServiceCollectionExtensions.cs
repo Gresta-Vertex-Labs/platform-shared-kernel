@@ -6,9 +6,8 @@ using SharedKernel.Caching.Redis.Core.Extensions;
 using SharedKernel.Idempotency.Redis.KeyStore;
 using SharedKernel.Idempotency.Redis.MessageStore;
 using SharedKernel.Idempotency.Redis.Options;
-using SharedKernel.Idempotency.Redis.Startup;
 using SharedKernel.Messaging.Abstractions.Idempotency;
-using SharedKernel.Messaging.Abstractions.TenantContext;
+using SharedKernel.Execution.Context;
 
 namespace SharedKernel.Idempotency.Redis.Extensions;
 
@@ -40,10 +39,9 @@ public static class RedisIdempotencyServiceCollectionExtensions
     /// shared connection's.
     /// </para>
     /// <para>
-    /// Registers a startup-time <see cref="Microsoft.Extensions.Hosting.IHostedService"/>
-    /// (<see cref="IdempotencyTenantAccessorStartupValidator"/>) that throws
-    /// <see cref="InvalidOperationException"/> at <c>IHost.StartAsync()</c> if no
-    /// <see cref="ITenantContextAccessor"/> has been registered — fail-fast, not first-use.
+    /// Registers <see cref="IRequestContextAccessor"/> unless one is already registered: the stores scope every key
+    /// by the tenant of the ambient request context (<see cref="IRequestContextAccessor.Current"/>), which the
+    /// service's inbound adapters set, and use the shared non-tenant scope when no context or tenant is present.
     /// </para>
     /// <para>
     /// Also registers <see cref="IdempotencyOptions"/> (<c>07.Messaging.Abstractions</c>) via
@@ -79,8 +77,7 @@ public static class RedisIdempotencyServiceCollectionExtensions
         services.AddScoped<IRequestIdempotencyStore, RedisRequestIdempotencyStore>();
         services.AddScoped<IIdempotencyStore, RedisIdempotencyMessageStore>();
 
-        services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IHostedService, IdempotencyTenantAccessorStartupValidator>());
+        services.TryAddSingleton<IRequestContextAccessor, RequestContextAccessor>();
 
         return services;
     }

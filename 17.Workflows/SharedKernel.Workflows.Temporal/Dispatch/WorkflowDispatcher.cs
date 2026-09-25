@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Workflows.Temporal.Authoring;
 using SharedKernel.Workflows.Temporal.Errors;
@@ -69,7 +70,7 @@ internal sealed class WorkflowDispatcher : IWorkflowDispatcher
         where TWorkflow : WorkflowBase
     {
         // Fail-closed tenant guard — runs before the id is composed and before the client is touched.
-        if (tenantScope == TenantScope.None)
+        if (tenantScope.IsGlobal)
         {
             WorkflowLog.TenantScopeMissingOnDispatch(_logger, typeof(TWorkflow).Name);
             return Result<IWorkflowHandle>.Failure(WorkflowErrors.TenantScopeMissing());
@@ -125,7 +126,7 @@ internal sealed class WorkflowDispatcher : IWorkflowDispatcher
     public IWorkflowHandle GetHandle(string workflowId, string? runId, TenantScope tenantScope)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(workflowId);
-        if (tenantScope == TenantScope.None)
+        if (tenantScope.IsGlobal)
         {
             throw new ArgumentException("A tenant scope is required to attach to a workflow handle.", nameof(tenantScope));
         }
@@ -138,7 +139,7 @@ internal sealed class WorkflowDispatcher : IWorkflowDispatcher
     public IWorkflowHandle<TResult> GetHandle<TResult>(string workflowId, string? runId, TenantScope tenantScope)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(workflowId);
-        if (tenantScope == TenantScope.None)
+        if (tenantScope.IsGlobal)
         {
             throw new ArgumentException("A tenant scope is required to attach to a workflow handle.", nameof(tenantScope));
         }
@@ -153,7 +154,7 @@ internal sealed class WorkflowDispatcher : IWorkflowDispatcher
         TenantScope tenantScope,
         CancellationToken cancellationToken = default)
     {
-        if (tenantScope == TenantScope.None)
+        if (tenantScope.IsGlobal)
         {
             return Result<WorkflowExecutionDescription>.Failure(WorkflowErrors.TenantScopeMissing());
         }

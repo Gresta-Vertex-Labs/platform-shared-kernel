@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using SharedKernel.Execution.Tenancy;
 
 namespace SharedKernel.MultiTenancy.Logging;
 
@@ -30,7 +31,7 @@ internal static partial class MultiTenancyLog
         EventId = 13100,
         Level = LogLevel.Debug,
         Message = "Tenant {TenantId} resolved via strategy '{StrategyName}'.")]
-    public static partial void TenantResolved(ILogger logger, Guid tenantId, string strategyName);
+    public static partial void TenantResolved(ILogger logger, TenantId tenantId, string strategyName);
 
     /// <summary>
     /// Logged when no configured strategy resolves a tenant for the current request — including

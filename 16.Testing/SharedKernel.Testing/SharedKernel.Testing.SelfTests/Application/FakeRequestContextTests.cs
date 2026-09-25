@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Testing.Application;
 
 namespace SharedKernel.Testing.SelfTests.Application;
@@ -31,7 +32,7 @@ public sealed class FakeRequestContextTests
     [Fact]
     public void TenantId_Settable()
     {
-        var tenantId = Guid.NewGuid();
+        TenantId tenantId = new TenantId(Guid.NewGuid());
         var context = new FakeRequestContext { TenantId = tenantId };
 
         Assert.Equal(tenantId, context.TenantId);

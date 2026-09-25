@@ -1,3 +1,5 @@
+using SharedKernel.Execution.Tenancy;
+
 namespace SharedKernel.Security.ApiKey.Validation;
 
 /// <summary>The outcome of validating an API key.</summary>
@@ -6,7 +8,7 @@ public sealed class ApiKeyValidationResult
     private ApiKeyValidationResult(
         bool isValid,
         string? clientId,
-        Guid? tenantId,
+        TenantId? tenantId,
         IReadOnlyCollection<string> roles,
         IReadOnlyCollection<string> permissions,
         string? keyId,
@@ -28,7 +30,7 @@ public sealed class ApiKeyValidationResult
     public string? ClientId { get; }
 
     /// <summary>Gets the tenant the key is limited to, or <see langword="null"/>.</summary>
-    public Guid? TenantId { get; }
+    public TenantId? TenantId { get; }
 
     /// <summary>Gets the roles granted to the key.</summary>
     public IReadOnlyCollection<string> Roles { get; }
@@ -44,23 +46,23 @@ public sealed class ApiKeyValidationResult
 
     /// <summary>Creates a successful result.</summary>
     /// <param name="clientId">The client the key belongs to. Must not be empty.</param>
-    /// <param name="tenantId">The tenant the key is limited to, if any. Must not be <see cref="Guid.Empty"/>.</param>
+    /// <param name="tenantId">The tenant the key is limited to, if any. Must not be <c>default(TenantId)</c>.</param>
     /// <param name="roles">The roles granted to the key.</param>
     /// <param name="permissions">The permissions granted to the key.</param>
     /// <param name="keyId">The non-secret key id, if any.</param>
     /// <returns>The result.</returns>
-    /// <exception cref="ArgumentException"><paramref name="clientId"/> is empty or <paramref name="tenantId"/> is <see cref="Guid.Empty"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="clientId"/> is empty or <paramref name="tenantId"/> is <c>default(TenantId)</c>.</exception>
     public static ApiKeyValidationResult Success(
         string clientId,
-        Guid? tenantId = null,
+        TenantId? tenantId = null,
         IReadOnlyCollection<string>? roles = null,
         IReadOnlyCollection<string>? permissions = null,
         string? keyId = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(clientId);
-        if (tenantId == Guid.Empty)
+        if (tenantId is { IsDefault: true })
         {
-            throw new ArgumentException("A tenant id must not be Guid.Empty; pass null for no tenant.", nameof(tenantId));
+            throw new ArgumentException("A tenant id must not be default(TenantId); pass null for no tenant.", nameof(tenantId));
         }
 
         return new ApiKeyValidationResult(true, clientId, tenantId, roles ?? [], permissions ?? [], keyId, null);

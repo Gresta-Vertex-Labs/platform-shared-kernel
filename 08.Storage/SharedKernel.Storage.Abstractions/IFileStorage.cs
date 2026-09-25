@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Results;
 
 namespace SharedKernel.Storage;
@@ -14,7 +15,7 @@ namespace SharedKernel.Storage;
 /// when exactly one shared store is registered; with none or several, resolving it throws
 /// <see cref="InvalidOperationException"/> naming the stores. For a store named in data use
 /// <see cref="IFileStorageFactory"/>. A store registered as tenant-scoped is never an <see cref="IFileStorage"/>
-/// directly: resolve <see cref="ITenantFileStorage"/> and call <see cref="ITenantFileStorage.ForTenant(string)"/>.
+/// directly: resolve <see cref="ITenantFileStorage"/> and call <see cref="ITenantFileStorage.ForTenant(TenantId)"/>.
 /// Instances are safe for concurrent use.
 /// </para>
 /// <para>
@@ -77,10 +78,10 @@ public interface IFileStorage
 
     /// <summary>Gets the tenant this view is bound to.</summary>
     /// <value>
-    /// The tenant id passed to <see cref="ITenantFileStorage.ForTenant(string)"/>, or <see langword="null"/> for a
+    /// The tenant id passed to <see cref="ITenantFileStorage.ForTenant(TenantId)"/>, or <see langword="null"/> for a
     /// store shared by all tenants.
     /// </value>
-    string? TenantId { get; }
+    TenantId? TenantId { get; }
 
     /// <summary>
     /// Uploads <paramref name="content"/> to <paramref name="key"/>, replacing an existing object unless

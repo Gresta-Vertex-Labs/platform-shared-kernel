@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Testing.Workflows;
@@ -21,7 +22,7 @@ public sealed class InMemoryWorkflowDispatcherTests
         var dispatcher = new InMemoryWorkflowDispatcher();
 
         Result<IWorkflowHandle> result = await dispatcher.StartAsync<SampleWorkflow>(
-            WorkflowsTestFixtures.ValidOptions(), TenantScope.Of("tenant-a"));
+            WorkflowsTestFixtures.ValidOptions(), TenantScope.For(WorkflowsTestFixtures.TenantA));
 
         Assert.True(result.IsSuccess);
         Assert.NotNull(result.Value.WorkflowId);
@@ -30,7 +31,7 @@ public sealed class InMemoryWorkflowDispatcherTests
         var record = Assert.Single(dispatcher.StartedWorkflows);
         Assert.Equal(nameof(SampleWorkflow), record.WorkflowTypeName);
         Assert.Equal(result.Value.WorkflowId, record.WorkflowId);
-        Assert.Equal(TenantScope.Of("tenant-a"), record.TenantScope);
+        Assert.Equal(TenantScope.For(WorkflowsTestFixtures.TenantA), record.TenantScope);
         Assert.Null(record.Args);
     }
 
@@ -40,7 +41,7 @@ public sealed class InMemoryWorkflowDispatcherTests
         var dispatcher = new InMemoryWorkflowDispatcher();
 
         Result<IWorkflowHandle> result = await dispatcher.StartAsync<SampleWorkflow>(
-            WorkflowsTestFixtures.ValidOptions(), TenantScope.None);
+            WorkflowsTestFixtures.ValidOptions(), TenantScope.Global);
 
         Assert.True(result.IsFailure);
         Assert.Equal(WorkflowErrors.TenantScopeMissing(), result.Error);
@@ -55,7 +56,7 @@ public sealed class InMemoryWorkflowDispatcherTests
         var dispatcher = new InMemoryWorkflowDispatcher();
 
         Result<IWorkflowHandle> result = await dispatcher.StartAsync<SampleWorkflow, string>(
-            "hello", WorkflowsTestFixtures.ValidOptions(), TenantScope.Of("tenant-a"));
+            "hello", WorkflowsTestFixtures.ValidOptions(), TenantScope.For(WorkflowsTestFixtures.TenantA));
 
         Assert.True(result.IsSuccess);
         var record = Assert.Single(dispatcher.StartedWorkflows);
@@ -68,7 +69,7 @@ public sealed class InMemoryWorkflowDispatcherTests
         var dispatcher = new InMemoryWorkflowDispatcher();
 
         Result<IWorkflowHandle> result = await dispatcher.StartAsync<SampleWorkflow, string>(
-            "hello", WorkflowsTestFixtures.ValidOptions(), TenantScope.None);
+            "hello", WorkflowsTestFixtures.ValidOptions(), TenantScope.Global);
 
         Assert.True(result.IsFailure);
         Assert.Equal(WorkflowErrors.TenantScopeMissing(), result.Error);
@@ -83,7 +84,7 @@ public sealed class InMemoryWorkflowDispatcherTests
         var dispatcher = new InMemoryWorkflowDispatcher();
 
         Result<IWorkflowHandle<string>> result = await dispatcher.StartAsync<SampleWorkflow, string, string>(
-            "hello", WorkflowsTestFixtures.ValidOptions(), TenantScope.Of("tenant-a"));
+            "hello", WorkflowsTestFixtures.ValidOptions(), TenantScope.For(WorkflowsTestFixtures.TenantA));
 
         Assert.True(result.IsSuccess);
         Assert.IsType<InMemoryWorkflowHandle<string>>(result.Value);
@@ -96,7 +97,7 @@ public sealed class InMemoryWorkflowDispatcherTests
         var dispatcher = new InMemoryWorkflowDispatcher();
 
         Result<IWorkflowHandle<string>> result = await dispatcher.StartAsync<SampleWorkflow, string, string>(
-            "hello", WorkflowsTestFixtures.ValidOptions(), TenantScope.None);
+            "hello", WorkflowsTestFixtures.ValidOptions(), TenantScope.Global);
 
         Assert.True(result.IsFailure);
         Assert.Equal(WorkflowErrors.TenantScopeMissing(), result.Error);
@@ -111,10 +112,10 @@ public sealed class InMemoryWorkflowDispatcherTests
         var dispatcher = new InMemoryWorkflowDispatcher();
         var options = WorkflowsTestFixtures.ValidOptions(businessKey: "order-1");
 
-        Result<IWorkflowHandle> first = await dispatcher.StartAsync<SampleWorkflow>(options, TenantScope.Of("tenant-a"));
+        Result<IWorkflowHandle> first = await dispatcher.StartAsync<SampleWorkflow>(options, TenantScope.For(WorkflowsTestFixtures.TenantA));
         Assert.True(first.IsSuccess);
 
-        Result<IWorkflowHandle> second = await dispatcher.StartAsync<SampleWorkflow>(options, TenantScope.Of("tenant-a"));
+        Result<IWorkflowHandle> second = await dispatcher.StartAsync<SampleWorkflow>(options, TenantScope.For(WorkflowsTestFixtures.TenantA));
 
         Assert.True(second.IsFailure);
         Assert.Equal(WorkflowErrors.AlreadyStarted(first.Value.WorkflowId), second.Error);
@@ -127,8 +128,8 @@ public sealed class InMemoryWorkflowDispatcherTests
         var dispatcher = new InMemoryWorkflowDispatcher();
         var options = WorkflowsTestFixtures.ValidOptions(businessKey: "order-1");
 
-        Result<IWorkflowHandle> tenantA = await dispatcher.StartAsync<SampleWorkflow>(options, TenantScope.Of("tenant-a"));
-        Result<IWorkflowHandle> tenantB = await dispatcher.StartAsync<SampleWorkflow>(options, TenantScope.Of("tenant-b"));
+        Result<IWorkflowHandle> tenantA = await dispatcher.StartAsync<SampleWorkflow>(options, TenantScope.For(WorkflowsTestFixtures.TenantA));
+        Result<IWorkflowHandle> tenantB = await dispatcher.StartAsync<SampleWorkflow>(options, TenantScope.For(WorkflowsTestFixtures.TenantB));
 
         Assert.True(tenantA.IsSuccess);
         Assert.True(tenantB.IsSuccess);
@@ -142,10 +143,10 @@ public sealed class InMemoryWorkflowDispatcherTests
         var dispatcher = new InMemoryWorkflowDispatcher();
         var options = WorkflowsTestFixtures.ValidOptions(businessKey: "order-1");
 
-        Result<IWorkflowHandle> first = await dispatcher.StartAsync<SampleWorkflow>(options, TenantScope.Of("tenant-a"));
+        Result<IWorkflowHandle> first = await dispatcher.StartAsync<SampleWorkflow>(options, TenantScope.For(WorkflowsTestFixtures.TenantA));
         await first.Value.TerminateAsync("test cleanup");
 
-        Result<IWorkflowHandle> second = await dispatcher.StartAsync<SampleWorkflow>(options, TenantScope.Of("tenant-a"));
+        Result<IWorkflowHandle> second = await dispatcher.StartAsync<SampleWorkflow>(options, TenantScope.For(WorkflowsTestFixtures.TenantA));
 
         Assert.True(second.IsSuccess);
         Assert.Equal(2, dispatcher.StartedWorkflows.Count);
@@ -159,7 +160,7 @@ public sealed class InMemoryWorkflowDispatcherTests
         var dispatcher = new InMemoryWorkflowDispatcher { SimulateFailure = true };
 
         Result<IWorkflowHandle> result = await dispatcher.StartAsync<SampleWorkflow>(
-            WorkflowsTestFixtures.ValidOptions(), TenantScope.Of("tenant-a"));
+            WorkflowsTestFixtures.ValidOptions(), TenantScope.For(WorkflowsTestFixtures.TenantA));
 
         Assert.True(result.IsFailure);
         Assert.Equal(ErrorType.Unexpected, result.Error.Type);
@@ -171,11 +172,11 @@ public sealed class InMemoryWorkflowDispatcherTests
     {
         var dispatcher = new InMemoryWorkflowDispatcher { SimulateFailure = true };
         Result<IWorkflowHandle> started = await dispatcher.StartAsync<SampleWorkflow>(
-            WorkflowsTestFixtures.ValidOptions(), TenantScope.Of("tenant-a"));
+            WorkflowsTestFixtures.ValidOptions(), TenantScope.For(WorkflowsTestFixtures.TenantA));
 
         dispatcher.SimulateFailure = true;
         Result<WorkflowExecutionDescription> result = await dispatcher.DescribeAsync(
-            started.IsSuccess ? started.Value.WorkflowId : "irrelevant", TenantScope.Of("tenant-a"));
+            started.IsSuccess ? started.Value.WorkflowId : "irrelevant", TenantScope.For(WorkflowsTestFixtures.TenantA));
 
         Assert.True(result.IsFailure);
     }
@@ -187,7 +188,7 @@ public sealed class InMemoryWorkflowDispatcherTests
     {
         var dispatcher = new InMemoryWorkflowDispatcher();
 
-        IWorkflowHandle handle = dispatcher.GetHandle("no-such-id", runId: null, TenantScope.Of("tenant-a"));
+        IWorkflowHandle handle = dispatcher.GetHandle("no-such-id", runId: null, TenantScope.For(WorkflowsTestFixtures.TenantA));
 
         Assert.Equal("no-such-id", handle.WorkflowId);
         Assert.Null(handle.RunId);
@@ -198,9 +199,9 @@ public sealed class InMemoryWorkflowDispatcherTests
     {
         var dispatcher = new InMemoryWorkflowDispatcher();
         Result<IWorkflowHandle> started = await dispatcher.StartAsync<SampleWorkflow>(
-            WorkflowsTestFixtures.ValidOptions(), TenantScope.Of("tenant-a"));
+            WorkflowsTestFixtures.ValidOptions(), TenantScope.For(WorkflowsTestFixtures.TenantA));
 
-        IWorkflowHandle attached = dispatcher.GetHandle(started.Value.WorkflowId, runId: null, TenantScope.Of("tenant-a"));
+        IWorkflowHandle attached = dispatcher.GetHandle(started.Value.WorkflowId, runId: null, TenantScope.For(WorkflowsTestFixtures.TenantA));
         await attached.SignalAsync("go", "payload");
 
         // The originally-returned handle is a thin view over the SAME backing execution.
@@ -217,7 +218,7 @@ public sealed class InMemoryWorkflowDispatcherTests
         // null argument specifically (ArgumentException itself for empty/whitespace) -- both satisfy
         // the real IWorkflowDispatcher.GetHandle's documented "throws ArgumentException" contract,
         // since ArgumentNullException IS an ArgumentException.
-        Assert.Throws<ArgumentNullException>(() => dispatcher.GetHandle(null!, runId: null, TenantScope.Of("tenant-a")));
+        Assert.Throws<ArgumentNullException>(() => dispatcher.GetHandle(null!, runId: null, TenantScope.For(WorkflowsTestFixtures.TenantA)));
     }
 
     [Fact]
@@ -225,7 +226,7 @@ public sealed class InMemoryWorkflowDispatcherTests
     {
         var dispatcher = new InMemoryWorkflowDispatcher();
 
-        Assert.Throws<ArgumentException>(() => dispatcher.GetHandle("   ", runId: null, TenantScope.Of("tenant-a")));
+        Assert.Throws<ArgumentException>(() => dispatcher.GetHandle("   ", runId: null, TenantScope.For(WorkflowsTestFixtures.TenantA)));
     }
 
     [Fact]
@@ -233,7 +234,7 @@ public sealed class InMemoryWorkflowDispatcherTests
     {
         var dispatcher = new InMemoryWorkflowDispatcher();
 
-        Assert.Throws<ArgumentException>(() => dispatcher.GetHandle("some-id", runId: null, TenantScope.None));
+        Assert.Throws<ArgumentException>(() => dispatcher.GetHandle("some-id", runId: null, TenantScope.Global));
     }
 
     // --- GetHandle<TResult> ---
@@ -243,7 +244,7 @@ public sealed class InMemoryWorkflowDispatcherTests
     {
         var dispatcher = new InMemoryWorkflowDispatcher();
 
-        IWorkflowHandle<string> handle = dispatcher.GetHandle<string>("no-such-id", runId: null, TenantScope.Of("tenant-a"));
+        IWorkflowHandle<string> handle = dispatcher.GetHandle<string>("no-such-id", runId: null, TenantScope.For(WorkflowsTestFixtures.TenantA));
 
         Assert.Equal("no-such-id", handle.WorkflowId);
     }
@@ -253,7 +254,7 @@ public sealed class InMemoryWorkflowDispatcherTests
     {
         var dispatcher = new InMemoryWorkflowDispatcher();
 
-        Assert.Throws<ArgumentException>(() => dispatcher.GetHandle<string>("some-id", runId: null, TenantScope.None));
+        Assert.Throws<ArgumentException>(() => dispatcher.GetHandle<string>("some-id", runId: null, TenantScope.Global));
     }
 
     [Fact]
@@ -261,7 +262,7 @@ public sealed class InMemoryWorkflowDispatcherTests
     {
         var dispatcher = new InMemoryWorkflowDispatcher();
 
-        Assert.Throws<ArgumentNullException>(() => dispatcher.GetHandle<string>(null!, runId: null, TenantScope.Of("tenant-a")));
+        Assert.Throws<ArgumentNullException>(() => dispatcher.GetHandle<string>(null!, runId: null, TenantScope.For(WorkflowsTestFixtures.TenantA)));
     }
 
     // --- DescribeAsync ---
@@ -271,9 +272,9 @@ public sealed class InMemoryWorkflowDispatcherTests
     {
         var dispatcher = new InMemoryWorkflowDispatcher();
         Result<IWorkflowHandle> started = await dispatcher.StartAsync<SampleWorkflow>(
-            WorkflowsTestFixtures.ValidOptions(taskQueue: "queue-x"), TenantScope.Of("tenant-a"));
+            WorkflowsTestFixtures.ValidOptions(taskQueue: "queue-x"), TenantScope.For(WorkflowsTestFixtures.TenantA));
 
-        Result<WorkflowExecutionDescription> result = await dispatcher.DescribeAsync(started.Value.WorkflowId, TenantScope.Of("tenant-a"));
+        Result<WorkflowExecutionDescription> result = await dispatcher.DescribeAsync(started.Value.WorkflowId, TenantScope.For(WorkflowsTestFixtures.TenantA));
 
         Assert.True(result.IsSuccess);
         Assert.Equal(started.Value.WorkflowId, result.Value.Id);
@@ -288,10 +289,10 @@ public sealed class InMemoryWorkflowDispatcherTests
     {
         var dispatcher = new InMemoryWorkflowDispatcher();
         Result<IWorkflowHandle> started = await dispatcher.StartAsync<SampleWorkflow>(
-            WorkflowsTestFixtures.ValidOptions(), TenantScope.Of("tenant-a"));
+            WorkflowsTestFixtures.ValidOptions(), TenantScope.For(WorkflowsTestFixtures.TenantA));
         await started.Value.TerminateAsync("done");
 
-        Result<WorkflowExecutionDescription> result = await dispatcher.DescribeAsync(started.Value.WorkflowId, TenantScope.Of("tenant-a"));
+        Result<WorkflowExecutionDescription> result = await dispatcher.DescribeAsync(started.Value.WorkflowId, TenantScope.For(WorkflowsTestFixtures.TenantA));
 
         Assert.True(result.IsSuccess);
         Assert.NotNull(result.Value.CloseTime);
@@ -302,7 +303,7 @@ public sealed class InMemoryWorkflowDispatcherTests
     {
         var dispatcher = new InMemoryWorkflowDispatcher();
 
-        Result<WorkflowExecutionDescription> result = await dispatcher.DescribeAsync("no-such-id", TenantScope.Of("tenant-a"));
+        Result<WorkflowExecutionDescription> result = await dispatcher.DescribeAsync("no-such-id", TenantScope.For(WorkflowsTestFixtures.TenantA));
 
         Assert.True(result.IsFailure);
         Assert.Equal(WorkflowErrors.NotFound("no-such-id"), result.Error);
@@ -313,7 +314,7 @@ public sealed class InMemoryWorkflowDispatcherTests
     {
         var dispatcher = new InMemoryWorkflowDispatcher();
 
-        Result<WorkflowExecutionDescription> result = await dispatcher.DescribeAsync("some-id", TenantScope.None);
+        Result<WorkflowExecutionDescription> result = await dispatcher.DescribeAsync("some-id", TenantScope.Global);
 
         Assert.True(result.IsFailure);
         Assert.Equal(WorkflowErrors.TenantScopeMissing(), result.Error);
@@ -335,7 +336,7 @@ public sealed class InMemoryWorkflowDispatcherTests
     {
         var dispatcher = new InMemoryWorkflowDispatcher();
         Result<IWorkflowHandle> started = await dispatcher.StartAsync<SampleWorkflow>(
-            WorkflowsTestFixtures.ValidOptions(), TenantScope.Of("tenant-a"));
+            WorkflowsTestFixtures.ValidOptions(), TenantScope.For(WorkflowsTestFixtures.TenantA));
         dispatcher.ConfigureQueryHandler(started.Value.WorkflowId, "status", () => "running-nicely");
 
         Result<string> result = await started.Value.QueryAsync<string>("status");
@@ -366,7 +367,7 @@ public sealed class InMemoryWorkflowDispatcherTests
     {
         var dispatcher = new InMemoryWorkflowDispatcher();
         Result<IWorkflowHandle<string>> started = await dispatcher.StartAsync<SampleWorkflow, string, string>(
-            "in", WorkflowsTestFixtures.ValidOptions(), TenantScope.Of("tenant-a"));
+            "in", WorkflowsTestFixtures.ValidOptions(), TenantScope.For(WorkflowsTestFixtures.TenantA));
 
         dispatcher.CompleteWorkflow(started.Value.WorkflowId, "out");
 
@@ -378,7 +379,7 @@ public sealed class InMemoryWorkflowDispatcherTests
     {
         var dispatcher = new InMemoryWorkflowDispatcher();
         Result<IWorkflowHandle<string>> started = await dispatcher.StartAsync<SampleWorkflow, string, string>(
-            "in", WorkflowsTestFixtures.ValidOptions(), TenantScope.Of("tenant-a"));
+            "in", WorkflowsTestFixtures.ValidOptions(), TenantScope.For(WorkflowsTestFixtures.TenantA));
 
         dispatcher.FailWorkflow(started.Value.WorkflowId, Error.Unexpected("boom", "it broke"));
 
@@ -391,7 +392,7 @@ public sealed class InMemoryWorkflowDispatcherTests
     public async Task ShouldHaveStarted_MatchingType_ReturnsRecord()
     {
         var dispatcher = new InMemoryWorkflowDispatcher();
-        await dispatcher.StartAsync<SampleWorkflow>(WorkflowsTestFixtures.ValidOptions(), TenantScope.Of("tenant-a"));
+        await dispatcher.StartAsync<SampleWorkflow>(WorkflowsTestFixtures.ValidOptions(), TenantScope.For(WorkflowsTestFixtures.TenantA));
 
         var record = dispatcher.ShouldHaveStarted<SampleWorkflow>();
 
@@ -410,7 +411,7 @@ public sealed class InMemoryWorkflowDispatcherTests
     public async Task ShouldHaveStartedOnce_ExactlyOne_ReturnsRecord()
     {
         var dispatcher = new InMemoryWorkflowDispatcher();
-        await dispatcher.StartAsync<SampleWorkflow>(WorkflowsTestFixtures.ValidOptions(), TenantScope.Of("tenant-a"));
+        await dispatcher.StartAsync<SampleWorkflow>(WorkflowsTestFixtures.ValidOptions(), TenantScope.For(WorkflowsTestFixtures.TenantA));
 
         var record = dispatcher.ShouldHaveStartedOnce<SampleWorkflow>();
 
@@ -421,8 +422,8 @@ public sealed class InMemoryWorkflowDispatcherTests
     public async Task ShouldHaveStartedOnce_MoreThanOne_Throws()
     {
         var dispatcher = new InMemoryWorkflowDispatcher();
-        await dispatcher.StartAsync<SampleWorkflow>(WorkflowsTestFixtures.ValidOptions(businessKey: "k1"), TenantScope.Of("tenant-a"));
-        await dispatcher.StartAsync<SampleWorkflow>(WorkflowsTestFixtures.ValidOptions(businessKey: "k2"), TenantScope.Of("tenant-a"));
+        await dispatcher.StartAsync<SampleWorkflow>(WorkflowsTestFixtures.ValidOptions(businessKey: "k1"), TenantScope.For(WorkflowsTestFixtures.TenantA));
+        await dispatcher.StartAsync<SampleWorkflow>(WorkflowsTestFixtures.ValidOptions(businessKey: "k2"), TenantScope.For(WorkflowsTestFixtures.TenantA));
 
         Assert.Throws<InvalidOperationException>(() => dispatcher.ShouldHaveStartedOnce<SampleWorkflow>());
     }
@@ -447,7 +448,7 @@ public sealed class InMemoryWorkflowDispatcherTests
     public async Task ShouldNotHaveStarted_Match_Throws()
     {
         var dispatcher = new InMemoryWorkflowDispatcher();
-        await dispatcher.StartAsync<SampleWorkflow>(WorkflowsTestFixtures.ValidOptions(), TenantScope.Of("tenant-a"));
+        await dispatcher.StartAsync<SampleWorkflow>(WorkflowsTestFixtures.ValidOptions(), TenantScope.For(WorkflowsTestFixtures.TenantA));
 
         Assert.Throws<InvalidOperationException>(() => dispatcher.ShouldNotHaveStarted<SampleWorkflow>());
     }
@@ -456,7 +457,7 @@ public sealed class InMemoryWorkflowDispatcherTests
     public async Task ShouldHaveStarted_DistinguishesBetweenWorkflowTypes()
     {
         var dispatcher = new InMemoryWorkflowDispatcher();
-        await dispatcher.StartAsync<SampleWorkflow>(WorkflowsTestFixtures.ValidOptions(), TenantScope.Of("tenant-a"));
+        await dispatcher.StartAsync<SampleWorkflow>(WorkflowsTestFixtures.ValidOptions(), TenantScope.For(WorkflowsTestFixtures.TenantA));
 
         dispatcher.ShouldNotHaveStarted<OtherWorkflow>();
         Assert.Throws<InvalidOperationException>(() => dispatcher.ShouldHaveStarted<OtherWorkflow>());
@@ -469,12 +470,12 @@ public sealed class InMemoryWorkflowDispatcherTests
     {
         var dispatcher = new InMemoryWorkflowDispatcher();
         Result<IWorkflowHandle> started = await dispatcher.StartAsync<SampleWorkflow>(
-            WorkflowsTestFixtures.ValidOptions(), TenantScope.Of("tenant-a"));
+            WorkflowsTestFixtures.ValidOptions(), TenantScope.For(WorkflowsTestFixtures.TenantA));
 
         dispatcher.Reset();
 
         Assert.Empty(dispatcher.StartedWorkflows);
-        Result<WorkflowExecutionDescription> result = await dispatcher.DescribeAsync(started.Value.WorkflowId, TenantScope.Of("tenant-a"));
+        Result<WorkflowExecutionDescription> result = await dispatcher.DescribeAsync(started.Value.WorkflowId, TenantScope.For(WorkflowsTestFixtures.TenantA));
         Assert.True(result.IsFailure);
         Assert.Equal(WorkflowErrors.NotFound(started.Value.WorkflowId), result.Error);
     }
@@ -488,7 +489,7 @@ public sealed class InMemoryWorkflowDispatcherTests
         var dispatcher = new InMemoryWorkflowDispatcher(factory);
 
         Result<IWorkflowHandle> result = await dispatcher.StartAsync<SampleWorkflow>(
-            WorkflowsTestFixtures.ValidOptions(), TenantScope.Of("tenant-a"));
+            WorkflowsTestFixtures.ValidOptions(), TenantScope.For(WorkflowsTestFixtures.TenantA));
 
         Assert.True(result.IsSuccess);
         Assert.Equal("custom-id-123", result.Value.WorkflowId);

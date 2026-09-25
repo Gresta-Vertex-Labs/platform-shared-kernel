@@ -1,4 +1,5 @@
 using FluentAssertions;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Messaging.Abstractions.EventPublisher;
 
 namespace SharedKernel.Messaging.Abstractions.Tests;
@@ -31,7 +32,7 @@ public sealed class PublishContextTests
     [Fact]
     public void WithTenantId_SetsTenantId()
     {
-        var id = Guid.NewGuid();
+        var id = new TenantId(Guid.NewGuid());
         var ctx = new PublishContext().WithTenantId(id);
 
         ctx.TenantId.Should().Be(id);
@@ -137,7 +138,7 @@ public sealed class PublishContextTests
     {
         var id = Guid.NewGuid();
         var causationId = Guid.NewGuid();
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
         var ctx = new PublishContext();
 
         var returned = ctx

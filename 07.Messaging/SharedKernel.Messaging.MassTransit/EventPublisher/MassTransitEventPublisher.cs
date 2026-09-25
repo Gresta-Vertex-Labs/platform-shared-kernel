@@ -119,7 +119,7 @@ internal sealed class MassTransitEventPublisher : IEventPublisher
             : null;
 
         // Resolve TenantId: explicit override only, no ambient fallback (P-340/WO-054).
-        Guid? tenantId = ctx.TenantId;
+        Guid? tenantId = ctx.TenantId?.Value;
 
         // Build the CloudEvents-compliant envelope exclusively via EventEnvelope.Wrap<TEvent>()
         // (04.Contracts's mandated factory) — never a raw object-initializer construction

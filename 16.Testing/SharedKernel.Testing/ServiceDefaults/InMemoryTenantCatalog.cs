@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.MultiTenancy.Catalog;
 
 namespace SharedKernel.Testing.ServiceDefaults;
@@ -10,12 +11,12 @@ namespace SharedKernel.Testing.ServiceDefaults;
 /// <para>
 /// <b>SCOPE-LOCK REVISION (P-473/WO-075), not silently overridden:</b> this domain's existing
 /// scope lock (P-187/WO-029) forbids this package from ever referencing
-/// <c>SharedKernel.ServiceDefaults</c>/<c>SharedKernel.MultiTenancy</c> — <c>StaticTenantProvider</c>/
+/// <c>SharedKernel.ServiceDefaults</c>/<c>SharedKernel.MultiTenancy</c> — 
 /// <c>FakeTenantResolutionStrategy</c> in this same folder are deliberately duck-typed/reference-free
 /// against that package. <see cref="InMemoryTenantCatalog"/> is the ONE named exception: it takes a
 /// genuine <c>ProjectReference</c> to <c>SharedKernel.MultiTenancy</c> because <see cref="ITenantCatalog"/>
 /// must be a real interface implementation, not a duck-typed stand-in, per this phase's own
-/// acceptance criteria. <c>StaticTenantProvider</c>/<c>FakeTenantResolutionStrategy</c> are
+/// acceptance criteria. <c>FakeTenantResolutionStrategy</c> are
 /// unaffected and remain reference-free.
 /// </para>
 /// <para>
@@ -41,8 +42,8 @@ namespace SharedKernel.Testing.ServiceDefaults;
 /// </remarks>
 public sealed class InMemoryTenantCatalog : ITenantCatalog
 {
-    private readonly ConcurrentDictionary<Guid, TenantDescriptor> _byId = new();
-    private readonly ConcurrentDictionary<string, Guid> _byResolutionKey = new();
+    private readonly ConcurrentDictionary<TenantId, TenantDescriptor> _byId = new();
+    private readonly ConcurrentDictionary<string, TenantId> _byResolutionKey = new();
 
     /// <summary>
     /// Seeds <paramref name="descriptor"/> into the catalog, optionally indexing it under
@@ -72,7 +73,7 @@ public sealed class InMemoryTenantCatalog : ITenantCatalog
     /// <param name="tenantId">The tenant to mutate.</param>
     /// <param name="status">The new status.</param>
     /// <remarks>A no-op when <paramref name="tenantId"/> was never seeded.</remarks>
-    public void MutateStatus(Guid tenantId, TenantStatus status)
+    public void MutateStatus(TenantId tenantId, TenantStatus status)
     {
         if (_byId.TryGetValue(tenantId, out var existing))
         {
@@ -81,7 +82,7 @@ public sealed class InMemoryTenantCatalog : ITenantCatalog
     }
 
     /// <inheritdoc />
-    public Task<TenantDescriptor?> GetByIdAsync(Guid tenantId, CancellationToken ct) =>
+    public Task<TenantDescriptor?> GetByIdAsync(TenantId tenantId, CancellationToken ct) =>
         Task.FromResult(_byId.TryGetValue(tenantId, out var descriptor) ? descriptor : null);
 
     /// <inheritdoc />

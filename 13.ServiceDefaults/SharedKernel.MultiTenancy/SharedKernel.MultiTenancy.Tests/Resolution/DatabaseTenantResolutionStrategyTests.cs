@@ -26,7 +26,7 @@ public sealed class DatabaseTenantResolutionStrategyTests
 
         var result = await strategy.TryResolveAsync(context, CancellationToken.None);
 
-        Assert.Equal(tenantId, result);
+        Assert.Equal(tenantId, result?.Value);
     }
 
     [Fact]
@@ -88,7 +88,7 @@ public sealed class DatabaseTenantResolutionStrategyTests
 
         var result = await strategy.TryResolveAsync(context, CancellationToken.None);
 
-        Assert.Equal(tenantId, result);
+        Assert.Equal(tenantId, result?.Value);
         Assert.True(command.AsyncPathInvoked);
         Assert.False(command.SyncPathInvoked);
     }

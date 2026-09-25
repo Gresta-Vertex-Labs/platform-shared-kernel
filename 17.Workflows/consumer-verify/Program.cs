@@ -28,6 +28,7 @@ using Microsoft.Extensions.Options;
 using Google.Protobuf;
 using SharedKernel.Cryptography.Extensions;
 using SharedKernel.Cryptography.Symmetric;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Workflows.Temporal.Authoring;
@@ -145,7 +146,7 @@ static async Task Surface2_WorkerHostingRoundTripAgainstWorkflowEnvironment()
         Result<IWorkflowHandle<string>> startResult = await dispatcher.StartAsync<ConsumerVerifyEchoWorkflow, string, string>(
             "hello from consumer-verify",
             startOptions,
-            TenantScope.Of("consumer-verify-tenant"));
+            TenantScope.For(new TenantId(Guid.NewGuid())));
 
         Verify(
             startResult.IsSuccess,
@@ -327,7 +328,7 @@ static async Task Surface5_PayloadEncryptionOpacityAndCrossWorkflowIdRejection()
                 IdReusePolicy = WorkflowIdReusePolicy.RejectDuplicate,
                 IdConflictPolicy = WorkflowIdConflictPolicy.Fail,
             },
-            TenantScope.Of("consumer-verify-encrypted-tenant"));
+            TenantScope.For(new TenantId(Guid.NewGuid())));
     }
 
     Verify(startResult.IsSuccess, "an encrypted workflow starts successfully through the public IWorkflowDispatcher surface");

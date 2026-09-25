@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Core.Exceptions;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Guards;
@@ -18,7 +19,7 @@ namespace SharedKernel.Domain.Aggregates;
 /// </para>
 /// <para>
 /// <b>Persistence.</b> The ORM-materialization constructor leaves <see cref="TenantId"/> as
-/// <see cref="Guid.Empty"/> until the ORM populates it.
+/// <c>default(TenantId)</c> until the ORM populates it.
 /// </para>
 /// </remarks>
 public abstract class TenantedFullAuditableAggregateRoot<TId> : FullAuditableAggregateRoot<TId>, IHasTenant
@@ -26,17 +27,17 @@ public abstract class TenantedFullAuditableAggregateRoot<TId> : FullAuditableAgg
 {
     /// <summary>Initializes a new aggregate with its identity key, owning tenant and clock.</summary>
     /// <param name="id">The identity key; <c>default(TId)</c> makes the aggregate transient.</param>
-    /// <param name="tenantId">The identifier of the owning tenant. Must not be <see cref="Guid.Empty"/>.</param>
+    /// <param name="tenantId">The identifier of the owning tenant. Must not be <c>default(TenantId)</c>.</param>
     /// <param name="clock">
     /// The clock that timestamps events and time-dependent state. Must not be <see langword="null"/>.
     /// </param>
     /// <exception cref="DomainException">
     /// <paramref name="clock"/> is <see langword="null"/>, or <paramref name="tenantId"/> is
-    /// <see cref="Guid.Empty"/>.
+    /// <c>default(TenantId)</c>.
     /// </exception>
-    protected TenantedFullAuditableAggregateRoot(TId id, Guid tenantId, IClock clock) : base(id, clock)
+    protected TenantedFullAuditableAggregateRoot(TId id, TenantId tenantId, IClock clock) : base(id, clock)
     {
-        Guard.Throw.InvalidGuid(tenantId);
+        Guard.Throw.InvalidGuid(tenantId.Value, nameof(tenantId));
         TenantId = tenantId;
     }
 
@@ -47,5 +48,5 @@ public abstract class TenantedFullAuditableAggregateRoot<TId> : FullAuditableAgg
     protected TenantedFullAuditableAggregateRoot() { }
 
     /// <inheritdoc/>
-    public Guid TenantId { get; private set; }
+    public TenantId TenantId { get; private set; }
 }

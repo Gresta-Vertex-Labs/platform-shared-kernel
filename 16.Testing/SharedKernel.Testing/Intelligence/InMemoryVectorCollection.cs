@@ -5,6 +5,7 @@ using SharedKernel.AI.Abstractions.Abstractions;
 using SharedKernel.AI.Abstractions.Errors;
 using SharedKernel.AI.Abstractions.Exceptions;
 using SharedKernel.AI.Abstractions.Models;
+using SharedKernel.Execution.Tenancy;
 
 namespace SharedKernel.Testing.Intelligence;
 
@@ -234,7 +235,7 @@ public sealed class InMemoryVectorCollection<TRecord> : IVectorCollection<TRecor
                 IntelligenceErrors.WriteRejected(CollectionName, "SimulateFailure enabled")));
         }
 
-        if (_definition.TenantField is not null && tenantScope == TenantScope.None)
+        if (_definition.TenantField is not null && tenantScope.IsGlobal)
         {
             return Task.FromResult(SharedKernel.Primitives.Results.Result<VectorWriteReceipt>.Failure(
                 IntelligenceErrors.TenantScopeMissing(CollectionName)));
@@ -285,7 +286,7 @@ public sealed class InMemoryVectorCollection<TRecord> : IVectorCollection<TRecor
                 IntelligenceErrors.DimensionMismatch(CollectionName, _definition.Dimension, query.Vector.Length)));
         }
 
-        if (_definition.TenantField is not null && tenantScope == TenantScope.None)
+        if (_definition.TenantField is not null && tenantScope.IsGlobal)
         {
             return Task.FromResult(SharedKernel.Primitives.Results.Result<VectorQueryResults<TRecord>>.Failure(
                 IntelligenceErrors.TenantScopeMissing(CollectionName)));
@@ -329,7 +330,7 @@ public sealed class InMemoryVectorCollection<TRecord> : IVectorCollection<TRecor
         ArgumentNullException.ThrowIfNull(id);
 
         // A direct dictionary lookup followed by a tenant-field comparison, rather than routing
-        // through the shared filter evaluator -- a tenant mismatch (including TenantScope.None on a
+        // through the shared filter evaluator -- a tenant mismatch (including TenantScope.Global on a
         // tenant-declaring collection) folds into RecordNotFound identically to a genuinely missing
         // id, never a cross-tenant leak, never a thrown exception.
         if (!_store.TryGetValue(id, out var record))
@@ -342,7 +343,7 @@ public sealed class InMemoryVectorCollection<TRecord> : IVectorCollection<TRecor
         {
             if (!record.Metadata.TryGetValue(tenantField, out var actualTenant)
                 || actualTenant.Kind != VectorValueKind.String
-                || !string.Equals(actualTenant.AsString, tenantScope.Value, StringComparison.Ordinal))
+                || !string.Equals(actualTenant.AsString, tenantScope.Tenant?.ToString(), StringComparison.Ordinal))
             {
                 return Task.FromResult(SharedKernel.Primitives.Results.Result<TRecord>.Failure(
                     IntelligenceErrors.RecordNotFound(CollectionName, id)));
@@ -356,7 +357,7 @@ public sealed class InMemoryVectorCollection<TRecord> : IVectorCollection<TRecor
     public Task<SharedKernel.Primitives.Results.Result<long>> CountAsync(
         VectorFilter? filter, TenantScope tenantScope, CancellationToken cancellationToken = default)
     {
-        if (_definition.TenantField is not null && tenantScope == TenantScope.None)
+        if (_definition.TenantField is not null && tenantScope.IsGlobal)
         {
             return Task.FromResult(SharedKernel.Primitives.Results.Result<long>.Failure(
                 IntelligenceErrors.TenantScopeMissing(CollectionName)));
@@ -371,7 +372,7 @@ public sealed class InMemoryVectorCollection<TRecord> : IVectorCollection<TRecor
     public async IAsyncEnumerable<TRecord> ScrollAsync(
         VectorFilter? filter, TenantScope tenantScope, int batchSize, [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        if (_definition.TenantField is not null && tenantScope == TenantScope.None)
+        if (_definition.TenantField is not null && tenantScope.IsGlobal)
         {
             throw new IntelligenceStreamException(IntelligenceErrors.TenantScopeMissing(CollectionName));
         }
@@ -468,7 +469,7 @@ public sealed class InMemoryVectorCollection<TRecord> : IVectorCollection<TRecor
             return filter;
         }
 
-        VectorFilter tenantClause = VectorFilter.Eq(tenantField, tenantScope.Value);
+        VectorFilter tenantClause = VectorFilter.Eq(tenantField, tenantScope.Tenant!.Value.ToString());
         return filter is null ? tenantClause : VectorFilter.All(tenantClause, filter);
     }
 

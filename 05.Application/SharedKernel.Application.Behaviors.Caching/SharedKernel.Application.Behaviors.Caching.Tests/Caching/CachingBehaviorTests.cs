@@ -189,7 +189,7 @@ public sealed class CachingBehaviorTests
     public async Task Handle_GlobalScope_UsesUnscopedKeyAndTagsEvenWithATenantPresent()
     {
         var cache = new FakeCacheService();
-        var behavior = TestPipeline.Caching<TaggedGlobalQuery, Result<string>>(cache, new FakeRequestContext(Guid.NewGuid()));
+        var behavior = TestPipeline.Caching<TaggedGlobalQuery, Result<string>>(cache, new FakeRequestContext(new TenantId(Guid.NewGuid())));
 
         await behavior.Handle(new TaggedGlobalQuery(), () => Task.FromResult(Result<string>.Success("v")), CancellationToken.None);
 
@@ -203,8 +203,8 @@ public sealed class CachingBehaviorTests
     public async Task Handle_TenantScoped_KeyAndPolicyUseTenantFormat()
     {
         var cache = new FakeCacheService();
-        var tenant = Guid.NewGuid();
-        var tenantId = tenant.ToString("D");
+        var tenant = new TenantId(Guid.NewGuid());
+        var tenantId = tenant;
         var behavior = TestPipeline.Caching<TaggedTenantQuery, Result<string>>(cache, new FakeRequestContext(tenant));
 
         await behavior.Handle(new TaggedTenantQuery(), () => Task.FromResult(Result<string>.Success("v")), CancellationToken.None);
@@ -221,8 +221,8 @@ public sealed class CachingBehaviorTests
     public async Task Handle_DifferentTenants_ProduceDifferentCacheKeys_NeitherReadsTheOthers()
     {
         var cache = new FakeCacheService();
-        var tenantA = Guid.NewGuid();
-        var tenantB = Guid.NewGuid();
+        var tenantA = new TenantId(Guid.NewGuid());
+        var tenantB = new TenantId(Guid.NewGuid());
         var behaviorA = TestPipeline.Caching<TenantQuery, Result<string>>(cache, new FakeRequestContext(tenantA));
         var behaviorB = TestPipeline.Caching<TenantQuery, Result<string>>(cache, new FakeRequestContext(tenantB));
 
@@ -249,8 +249,8 @@ public sealed class CachingBehaviorTests
     public async Task Handle_TenantScopedTagEviction_RemovesOnlyThatTenantsEntry()
     {
         var cache = new FakeCacheService();
-        var tenantA = Guid.NewGuid();
-        var tenantB = Guid.NewGuid();
+        var tenantA = new TenantId(Guid.NewGuid());
+        var tenantB = new TenantId(Guid.NewGuid());
         var behaviorA = TestPipeline.Caching<TaggedTenantQuery, Result<string>>(cache, new FakeRequestContext(tenantA));
         var behaviorB = TestPipeline.Caching<TaggedTenantQuery, Result<string>>(cache, new FakeRequestContext(tenantB));
 

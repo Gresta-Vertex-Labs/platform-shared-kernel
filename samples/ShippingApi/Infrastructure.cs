@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Messaging.Abstractions.Idempotency;
 
 namespace ShippingApi;
@@ -107,7 +108,7 @@ public sealed class HeaderRequestContext : IRequestContext
     public string? UserId => Header(ActorHeader);
 
     /// <inheritdoc />
-    public Guid? TenantId => Guid.TryParse(Header(TenantHeader), out Guid tenantId) ? tenantId : null;
+    public TenantId? TenantId => SharedKernel.Execution.Tenancy.TenantId.TryParse(Header(TenantHeader), out var tenantId) ? tenantId : null;
 
     /// <inheritdoc />
     public ActorKind ActorKind => IsAuthenticated ? ActorKind.User : ActorKind.Anonymous;

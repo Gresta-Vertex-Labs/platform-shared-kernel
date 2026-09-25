@@ -8,6 +8,8 @@ namespace SharedKernel.Storage.S3.Tests;
 [Collection(MinioCollection.Name)]
 public sealed class ObjectOperationTests : IDisposable
 {
+    private static readonly TenantId Acme = new(Guid.NewGuid());
+
     private readonly ServiceProvider _host;
     private readonly IFileStorage _files;
 
@@ -249,16 +251,16 @@ public sealed class ObjectOperationTests : IDisposable
         string source = TestData.UniqueKey("scan.pdf");
         await _files.UploadAsync(source, new MemoryStream([9, 9]), new FileUploadOptions { ContentType = "application/pdf" });
         IFileStorage archive = _host.GetRequiredKeyedService<IFileStorage>("archive");
-        IFileStorage tenantDocs = _host.GetRequiredKeyedService<ITenantFileStorage>("docs").ForTenant("acme");
+        IFileStorage tenantDocs = _host.GetRequiredKeyedService<ITenantFileStorage>("docs").ForTenant(Acme);
         IFileStorage bucketB = _host.GetRequiredKeyedService<IFileStorage>("b-root");
 
         FileReference archived = (await _files.CopyToAsync(source, archive, "2026/scan.pdf")).Ok();
         FileReference filed = (await _files.CopyToAsync(source, tenantDocs, "inbox/scan.pdf")).Ok();
 
-        archived.Should().BeEquivalentTo(new { Store = "archive", TenantId = (string?)null, Key = "2026/scan.pdf" });
-        filed.Should().BeEquivalentTo(new { Store = "docs", TenantId = "acme", Key = "inbox/scan.pdf" });
+        archived.Should().BeEquivalentTo(new { Store = "archive", TenantId = (TenantId?)null, Key = "2026/scan.pdf" });
+        filed.Should().BeEquivalentTo(new { Store = "docs", TenantId = (TenantId?)Acme, Key = "inbox/scan.pdf" });
         (await bucketB.GetPropertiesAsync("archive/2026/scan.pdf")).Ok().ContentType.Should().Be("application/pdf");
-        (await TestData.ReadAllAsync(bucketB, "tenants/acme/inbox/scan.pdf")).Should().Equal(9, 9);
+        (await TestData.ReadAllAsync(bucketB, $"tenants/{Acme}/inbox/scan.pdf")).Should().Equal(9, 9);
     }
 
     [Fact]

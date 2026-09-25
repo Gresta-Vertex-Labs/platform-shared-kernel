@@ -152,7 +152,7 @@ public sealed class UserFeatureTargeting(IUserContext user) : IFeatureTargetingC
 {
     public FeatureTargetingContext? GetTargetingContext() =>
         user.IsAuthenticated
-            ? new FeatureTargetingContext(user.SubjectId, user.TenantId?.ToString(), user.Roles)
+            ? new FeatureTargetingContext(user.SubjectId, user.TenantId, user.Roles)
             : null;
 }
 ```

@@ -54,11 +54,10 @@ public sealed class AmbientLoggingEnrichmentAcceptanceTests
             [new HeaderTenantResolutionStrategy()],
             options,
             NullLogger<TenantResolutionMiddleware>.Instance);
-        var tenantProvider = new AmbientTenantProvider();
 
-        // Runs the real TenantResolutionMiddleware, which sets TenantBaggageKeys.TenantId on
+        // Runs the real TenantResolutionMiddleware, which sets WellKnownBaggageKeys.TenantId on
         // Activity.Current as a side effect of resolving the tenant (WO-041/P-251, C-33).
-        await middleware.InvokeAsync(context, tenantProvider);
+        await middleware.InvokeAsync(context);
 
         // Simulates 14.Presentation's independent correlation-id enrichment on the same Activity.
         activity.SetBaggage(WellKnownBaggageKeys.CorrelationId, "corr-e2e-002");
@@ -67,7 +66,7 @@ public sealed class AmbientLoggingEnrichmentAcceptanceTests
 
         Assert.Contains(
             captured,
-            kv => kv.Key == TenantBaggageKeys.TenantId && Equals(kv.Value, expectedTenantId.ToString()));
+            kv => kv.Key == WellKnownBaggageKeys.TenantId && Equals(kv.Value, expectedTenantId.ToString()));
         Assert.Contains(captured, kv => kv.Key == WellKnownBaggageKeys.CorrelationId && Equals(kv.Value, "corr-e2e-002"));
     }
 

@@ -40,7 +40,7 @@ public sealed class SystemRequestContextTests
     [Fact]
     public void TenantId_UsesCallerSuppliedValue()
     {
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
         var context = new SystemRequestContext([], tenantId: tenantId);
 
         context.TenantId.Should().Be(tenantId);

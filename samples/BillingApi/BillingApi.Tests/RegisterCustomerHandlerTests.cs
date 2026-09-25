@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using BillingApi.Application;
 using BillingApi.Domain;
 using FluentAssertions;
@@ -22,7 +23,7 @@ public sealed class RegisterCustomerHandlerTests
     [Fact]
     public async Task TheHandler_IsReRunnable_UnderTheRetryingUnitOfWork()
     {
-        var tenant = Guid.NewGuid();
+        var tenant = new TenantId(Guid.NewGuid());
         var services = new ServiceCollection();
         var customers = services.AddFakeRepository<Customer, CustomerId>();
         var unitOfWork = services.AddFakeUnitOfWork();

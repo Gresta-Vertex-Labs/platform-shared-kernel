@@ -32,7 +32,7 @@ public sealed class SignalQueryCancelTerminateTests(TemporalTestFixture fixture)
         Result<IWorkflowHandle> startResult = await dispatcher.StartAsync<CompensatingWorkflow, string>(
             $"signal-query-{Guid.NewGuid():N}",
             Options($"signal-query-{Guid.NewGuid():N}"),
-            TenantScope.Of("tenant-sigqry"));
+            TenantScope.For(TestTenants.Sigqry));
         startResult.IsSuccess.Should().BeTrue();
         IWorkflowHandle handle = startResult.Value;
 
@@ -58,13 +58,13 @@ public sealed class SignalQueryCancelTerminateTests(TemporalTestFixture fixture)
         Result<IWorkflowHandle> startResult = await dispatcher.StartAsync<CompensatingWorkflow, string>(
             compensationKey,
             Options($"cancel-{Guid.NewGuid():N}"),
-            TenantScope.Of("tenant-sigqry"));
+            TenantScope.For(TestTenants.Sigqry));
         startResult.IsSuccess.Should().BeTrue();
 
         Result cancelResult = await startResult.Value.CancelAsync();
         cancelResult.IsSuccess.Should().BeTrue();
 
-        var handle = dispatcher.GetHandle<string>(startResult.Value.WorkflowId, runId: null, TenantScope.Of("tenant-sigqry"));
+        var handle = dispatcher.GetHandle<string>(startResult.Value.WorkflowId, runId: null, TenantScope.For(TestTenants.Sigqry));
         Result<string> result = await handle.GetResultAsync();
 
         result.IsFailure.Should().BeTrue(because: "a cancelled workflow completes as a failure, not a success");
@@ -82,13 +82,13 @@ public sealed class SignalQueryCancelTerminateTests(TemporalTestFixture fixture)
         Result<IWorkflowHandle> startResult = await dispatcher.StartAsync<CompensatingWorkflow, string>(
             compensationKey,
             Options($"terminate-{Guid.NewGuid():N}"),
-            TenantScope.Of("tenant-sigqry"));
+            TenantScope.For(TestTenants.Sigqry));
         startResult.IsSuccess.Should().BeTrue();
 
         Result terminateResult = await startResult.Value.TerminateAsync("test-driven termination — no compensation expected");
         terminateResult.IsSuccess.Should().BeTrue();
 
-        var handle = dispatcher.GetHandle<string>(startResult.Value.WorkflowId, runId: null, TenantScope.Of("tenant-sigqry"));
+        var handle = dispatcher.GetHandle<string>(startResult.Value.WorkflowId, runId: null, TenantScope.For(TestTenants.Sigqry));
         Result<string> result = await handle.GetResultAsync();
 
         result.IsFailure.Should().BeTrue(because: "a terminated workflow completes as a failure, not a success");
@@ -105,15 +105,15 @@ public sealed class SignalQueryCancelTerminateTests(TemporalTestFixture fixture)
         string terminateCompensationKey = $"diff-terminate-{Guid.NewGuid():N}";
 
         Result<IWorkflowHandle> cancelStart = await dispatcher.StartAsync<CompensatingWorkflow, string>(
-            cancelCompensationKey, Options($"diff-cancel-wf-{Guid.NewGuid():N}"), TenantScope.Of("tenant-sigqry"));
+            cancelCompensationKey, Options($"diff-cancel-wf-{Guid.NewGuid():N}"), TenantScope.For(TestTenants.Sigqry));
         Result<IWorkflowHandle> terminateStart = await dispatcher.StartAsync<CompensatingWorkflow, string>(
-            terminateCompensationKey, Options($"diff-terminate-wf-{Guid.NewGuid():N}"), TenantScope.Of("tenant-sigqry"));
+            terminateCompensationKey, Options($"diff-terminate-wf-{Guid.NewGuid():N}"), TenantScope.For(TestTenants.Sigqry));
 
         await cancelStart.Value.CancelAsync();
         await terminateStart.Value.TerminateAsync("comparison termination");
 
-        var cancelHandle = dispatcher.GetHandle<string>(cancelStart.Value.WorkflowId, runId: null, TenantScope.Of("tenant-sigqry"));
-        var terminateHandle = dispatcher.GetHandle<string>(terminateStart.Value.WorkflowId, runId: null, TenantScope.Of("tenant-sigqry"));
+        var cancelHandle = dispatcher.GetHandle<string>(cancelStart.Value.WorkflowId, runId: null, TenantScope.For(TestTenants.Sigqry));
+        var terminateHandle = dispatcher.GetHandle<string>(terminateStart.Value.WorkflowId, runId: null, TenantScope.For(TestTenants.Sigqry));
 
         await cancelHandle.GetResultAsync();
         await terminateHandle.GetResultAsync();

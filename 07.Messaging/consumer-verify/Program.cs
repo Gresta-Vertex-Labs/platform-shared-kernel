@@ -17,6 +17,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Messaging.Abstractions.Context;
 using SharedKernel.Messaging.Abstractions.EventPublisher;
 using SharedKernel.Messaging.Abstractions.MessageBus;
@@ -134,7 +135,7 @@ static async Task Surface3_InvalidServiceNameFailsAtStartup()
 static async Task Surface4_InboundRequestContextIsMessageAware()
 {
     HostApplicationBuilder builder = Host.CreateApplicationBuilder();
-    var tenantId = Guid.NewGuid();
+    var tenantId = new TenantId(Guid.NewGuid());
 
     // The service's own request context, registered first — the documented order.
     builder.Services.AddScoped<IRequestContext>(_ => new VerifyHostRequestContext(tenantId));
@@ -238,13 +239,13 @@ internal sealed record VerifyMessage(string Text);
 /// <summary>Stands in for the request context a real service registers at its composition root.</summary>
 internal sealed class VerifyHostRequestContext : IRequestContext
 {
-    public VerifyHostRequestContext(Guid tenantId) => TenantId = tenantId;
+    public VerifyHostRequestContext(TenantId tenantId) => TenantId = tenantId;
 
     public bool IsAuthenticated => true;
 
     public string? UserId => "host-user";
 
-    public Guid? TenantId { get; }
+    public TenantId? TenantId { get; }
 
     public ActorKind ActorKind => ActorKind.User;
 

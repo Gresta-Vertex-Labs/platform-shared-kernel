@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Search.Abstractions.Constants;
 
 namespace SharedKernel.Search.Abstractions.Models;

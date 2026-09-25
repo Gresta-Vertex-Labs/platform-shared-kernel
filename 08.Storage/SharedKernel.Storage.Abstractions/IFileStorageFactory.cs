@@ -1,3 +1,5 @@
+using SharedKernel.Execution.Tenancy;
+
 namespace SharedKernel.Storage;
 
 /// <summary>Resolves registered stores by name, for code that picks its store at run time.</summary>
@@ -47,7 +49,7 @@ public interface IFileStorageFactory
 
     /// <summary>Returns the tenant-scoped store named <paramref name="storeName"/>.</summary>
     /// <param name="storeName">The store name, compared ignoring case.</param>
-    /// <returns>The store; call <see cref="ITenantFileStorage.ForTenant(string)"/> on it.</returns>
+    /// <returns>The store; call <see cref="ITenantFileStorage.ForTenant(TenantId)"/> on it.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="storeName"/> is <see langword="null"/>.</exception>
     /// <exception cref="InvalidOperationException">No store has that name, or it is shared by all tenants.</exception>
     ITenantFileStorage GetTenantStore(string storeName);
@@ -65,6 +67,6 @@ public interface IFileStorageFactory
     /// <exception cref="InvalidOperationException">
     /// The store is unknown, or the reference has no tenant for a tenant store (or a tenant for a shared one).
     /// </exception>
-    /// <exception cref="ArgumentException">The reference's tenant id is not a valid tenant id.</exception>
+    /// <exception cref="ArgumentException">The reference's tenant id is <see langword="default"/>.</exception>
     IFileStorage Open(FileReference reference);
 }

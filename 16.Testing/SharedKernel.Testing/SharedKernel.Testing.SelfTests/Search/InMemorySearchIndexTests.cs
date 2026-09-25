@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Search.Abstractions.Errors;
 using SharedKernel.Search.Abstractions.Exceptions;
@@ -31,7 +32,7 @@ public sealed class InMemorySearchIndexTests
     {
         var index = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());
 
-        var result = await index.IndexAsync(Doc("prod-1", "Widget", "active", 9.99, "tenant-a"), SearchWriteConsistency.Accepted, CancellationToken.None);
+        var result = await index.IndexAsync(Doc("prod-1", "Widget", "active", 9.99, SearchTestTenants.TenantA.ToString()), SearchWriteConsistency.Accepted, CancellationToken.None);
 
         Assert.True(result.IsSuccess);
         Assert.Equal(index.IndexName, result.Value.IndexName);
@@ -48,7 +49,7 @@ public sealed class InMemorySearchIndexTests
     {
         var index = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());
 
-        var result = await index.IndexAsync(Doc("bad id!", "Widget", "active", 9.99, "tenant-a"), SearchWriteConsistency.Accepted, CancellationToken.None);
+        var result = await index.IndexAsync(Doc("bad id!", "Widget", "active", 9.99, SearchTestTenants.TenantA.ToString()), SearchWriteConsistency.Accepted, CancellationToken.None);
 
         Assert.Equal(SearchErrors.InvalidDocumentId("bad id!"), result.Error);
         Assert.False(index.IsSearchable("bad id!"));
@@ -60,7 +61,7 @@ public sealed class InMemorySearchIndexTests
     {
         var index = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition()) { SimulateFailure = true };
 
-        var result = await index.IndexAsync(Doc("prod-1", "Widget", "active", 9.99, "tenant-a"), SearchWriteConsistency.Accepted, CancellationToken.None);
+        var result = await index.IndexAsync(Doc("prod-1", "Widget", "active", 9.99, SearchTestTenants.TenantA.ToString()), SearchWriteConsistency.Accepted, CancellationToken.None);
 
         Assert.True(result.IsFailure);
         Assert.Equal(ErrorType.Unexpected, result.Error.Type);
@@ -73,8 +74,8 @@ public sealed class InMemorySearchIndexTests
         var index = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());
         TestProductDocument[] docs =
         [
-            Doc("prod-1", "Widget", "active", 9.99, "tenant-a"),
-            Doc("bad id!", "Broken", "active", 1.0, "tenant-a"),
+            Doc("prod-1", "Widget", "active", 9.99, SearchTestTenants.TenantA.ToString()),
+            Doc("bad id!", "Broken", "active", 1.0, SearchTestTenants.TenantA.ToString()),
         ];
 
         var result = await index.IndexManyAsync(docs, SearchWriteConsistency.Accepted, CancellationToken.None);
@@ -92,7 +93,7 @@ public sealed class InMemorySearchIndexTests
     {
         var index = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition()) { SimulateFailure = true };
 
-        var result = await index.IndexManyAsync([Doc("prod-1", "Widget", "active", 9.99, "tenant-a")], SearchWriteConsistency.Accepted, CancellationToken.None);
+        var result = await index.IndexManyAsync([Doc("prod-1", "Widget", "active", 9.99, SearchTestTenants.TenantA.ToString())], SearchWriteConsistency.Accepted, CancellationToken.None);
 
         Assert.True(result.IsFailure);
     }
@@ -113,7 +114,7 @@ public sealed class InMemorySearchIndexTests
     public async Task DeleteAsync_ExistingId_RemovesDocument_AndRecordsDeletion()
     {
         var index = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());
-        await index.IndexAsync(Doc("prod-1", "Widget", "active", 9.99, "tenant-a"), SearchWriteConsistency.Accepted, CancellationToken.None);
+        await index.IndexAsync(Doc("prod-1", "Widget", "active", 9.99, SearchTestTenants.TenantA.ToString()), SearchWriteConsistency.Accepted, CancellationToken.None);
 
         var result = await index.DeleteAsync("prod-1", SearchWriteConsistency.Accepted, CancellationToken.None);
 
@@ -127,7 +128,7 @@ public sealed class InMemorySearchIndexTests
     public async Task DeleteAsync_SimulateFailure_ReturnsFailure_AndDoesNotDelete()
     {
         var index = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());
-        await index.IndexAsync(Doc("prod-1", "Widget", "active", 9.99, "tenant-a"), SearchWriteConsistency.Accepted, CancellationToken.None);
+        await index.IndexAsync(Doc("prod-1", "Widget", "active", 9.99, SearchTestTenants.TenantA.ToString()), SearchWriteConsistency.Accepted, CancellationToken.None);
         index.SimulateFailure = true;
 
         var result = await index.DeleteAsync("prod-1", SearchWriteConsistency.Accepted, CancellationToken.None);
@@ -140,7 +141,7 @@ public sealed class InMemorySearchIndexTests
     public async Task DeleteManyAsync_MixedPresence_CountsEveryRequestedIdAsSucceeded()
     {
         var index = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());
-        await index.IndexAsync(Doc("prod-1", "Widget", "active", 9.99, "tenant-a"), SearchWriteConsistency.Accepted, CancellationToken.None);
+        await index.IndexAsync(Doc("prod-1", "Widget", "active", 9.99, SearchTestTenants.TenantA.ToString()), SearchWriteConsistency.Accepted, CancellationToken.None);
 
         var result = await index.DeleteManyAsync(["prod-1", "never-existed"], SearchWriteConsistency.Accepted, CancellationToken.None);
 
@@ -155,7 +156,7 @@ public sealed class InMemorySearchIndexTests
     {
         var index = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());
 
-        var result = await index.DeleteByFilterAsync(SearchFilter.Eq("Status", "active"), TenantScope.None, SearchWriteConsistency.Accepted, CancellationToken.None);
+        var result = await index.DeleteByFilterAsync(SearchFilter.Eq("Status", "active"), TenantScope.Global, SearchWriteConsistency.Accepted, CancellationToken.None);
 
         Assert.Equal(SearchErrors.TenantScopeMissing(index.IndexName), result.Error);
     }
@@ -164,10 +165,10 @@ public sealed class InMemorySearchIndexTests
     public async Task DeleteByFilterAsync_InjectsOuterTenantAnd_OnlyDeletesMatchingTenantDocuments()
     {
         var index = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());
-        await index.IndexAsync(Doc("prod-a", "Widget", "active", 9.99, "tenant-a"), SearchWriteConsistency.Accepted, CancellationToken.None);
-        await index.IndexAsync(Doc("prod-b", "Widget", "active", 9.99, "tenant-b"), SearchWriteConsistency.Accepted, CancellationToken.None);
+        await index.IndexAsync(Doc("prod-a", "Widget", "active", 9.99, SearchTestTenants.TenantA.ToString()), SearchWriteConsistency.Accepted, CancellationToken.None);
+        await index.IndexAsync(Doc("prod-b", "Widget", "active", 9.99, SearchTestTenants.TenantB.ToString()), SearchWriteConsistency.Accepted, CancellationToken.None);
 
-        var result = await index.DeleteByFilterAsync(SearchFilter.Eq("Status", "active"), TenantScope.Of("tenant-a"), SearchWriteConsistency.Accepted, CancellationToken.None);
+        var result = await index.DeleteByFilterAsync(SearchFilter.Eq("Status", "active"), TenantScope.For(SearchTestTenants.TenantA), SearchWriteConsistency.Accepted, CancellationToken.None);
 
         Assert.True(result.IsSuccess);
         Assert.Equal(1, result.Value.AffectedCount);
@@ -181,7 +182,7 @@ public sealed class InMemorySearchIndexTests
     {
         var index = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition()) { SimulateFailure = true };
 
-        var result = await index.DeleteByFilterAsync(SearchFilter.Eq("Status", "active"), TenantScope.Of("tenant-a"), SearchWriteConsistency.Accepted, CancellationToken.None);
+        var result = await index.DeleteByFilterAsync(SearchFilter.Eq("Status", "active"), TenantScope.For(SearchTestTenants.TenantA), SearchWriteConsistency.Accepted, CancellationToken.None);
 
         Assert.True(result.IsFailure);
     }
@@ -190,7 +191,7 @@ public sealed class InMemorySearchIndexTests
     public async Task ClearAsync_EmptiesStore()
     {
         var index = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());
-        await index.IndexAsync(Doc("prod-1", "Widget", "active", 9.99, "tenant-a"), SearchWriteConsistency.Accepted, CancellationToken.None);
+        await index.IndexAsync(Doc("prod-1", "Widget", "active", 9.99, SearchTestTenants.TenantA.ToString()), SearchWriteConsistency.Accepted, CancellationToken.None);
 
         var result = await index.ClearAsync(SearchWriteConsistency.Accepted, CancellationToken.None);
 
@@ -202,7 +203,7 @@ public sealed class InMemorySearchIndexTests
     public async Task ClearAsync_SimulateFailure_ReturnsFailure_AndDoesNotClear()
     {
         var index = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());
-        await index.IndexAsync(Doc("prod-1", "Widget", "active", 9.99, "tenant-a"), SearchWriteConsistency.Accepted, CancellationToken.None);
+        await index.IndexAsync(Doc("prod-1", "Widget", "active", 9.99, SearchTestTenants.TenantA.ToString()), SearchWriteConsistency.Accepted, CancellationToken.None);
         index.SimulateFailure = true;
 
         var result = await index.ClearAsync(SearchWriteConsistency.Accepted, CancellationToken.None);
@@ -215,7 +216,7 @@ public sealed class InMemorySearchIndexTests
     public async Task WaitUntilSearchableAsync_KnownToken_ReturnsSuccess()
     {
         var index = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());
-        var indexResult = await index.IndexAsync(Doc("prod-1", "Widget", "active", 9.99, "tenant-a"), SearchWriteConsistency.Accepted, CancellationToken.None);
+        var indexResult = await index.IndexAsync(Doc("prod-1", "Widget", "active", 9.99, SearchTestTenants.TenantA.ToString()), SearchWriteConsistency.Accepted, CancellationToken.None);
 
         var result = await index.WaitUntilSearchableAsync(indexResult.Value, TimeSpan.FromSeconds(1), CancellationToken.None);
 
@@ -245,7 +246,7 @@ public sealed class InMemorySearchIndexTests
     public async Task WaitUntilSearchableAsync_UnaffectedBySimulateFailure()
     {
         var index = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());
-        var indexResult = await index.IndexAsync(Doc("prod-1", "Widget", "active", 9.99, "tenant-a"), SearchWriteConsistency.Accepted, CancellationToken.None);
+        var indexResult = await index.IndexAsync(Doc("prod-1", "Widget", "active", 9.99, SearchTestTenants.TenantA.ToString()), SearchWriteConsistency.Accepted, CancellationToken.None);
         index.SimulateFailure = true;
 
         var result = await index.WaitUntilSearchableAsync(indexResult.Value, TimeSpan.FromSeconds(1), CancellationToken.None);
@@ -259,7 +260,7 @@ public sealed class InMemorySearchIndexTests
         var index = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());
 
         var request = SearchRequest.Default with { Sort = [SearchSort.Ascending("Name")] };
-        var result = await index.SearchAsync(request, TenantScope.Of("tenant-a"), CancellationToken.None);
+        var result = await index.SearchAsync(request, TenantScope.For(SearchTestTenants.TenantA), CancellationToken.None);
 
         Assert.Equal(SearchErrors.FieldNotSortable(index.IndexName, "Name"), result.Error);
     }
@@ -270,7 +271,7 @@ public sealed class InMemorySearchIndexTests
         var index = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());
 
         var request = SearchRequest.Default with { Filter = SearchFilter.Eq("Name", "Widget") };
-        var result = await index.SearchAsync(request, TenantScope.Of("tenant-a"), CancellationToken.None);
+        var result = await index.SearchAsync(request, TenantScope.For(SearchTestTenants.TenantA), CancellationToken.None);
 
         Assert.Equal(SearchErrors.FieldNotFilterable(index.IndexName, "Name"), result.Error);
     }
@@ -281,7 +282,7 @@ public sealed class InMemorySearchIndexTests
         var index = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());
 
         var request = SearchRequest.Default with { Facets = ["Name"] };
-        var result = await index.SearchAsync(request, TenantScope.Of("tenant-a"), CancellationToken.None);
+        var result = await index.SearchAsync(request, TenantScope.For(SearchTestTenants.TenantA), CancellationToken.None);
 
         Assert.Equal(SearchErrors.FieldNotFacetable(index.IndexName, "Name"), result.Error);
     }
@@ -292,7 +293,7 @@ public sealed class InMemorySearchIndexTests
         var index = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());
 
         var request = SearchRequest.Default with { NumericFacetStats = ["CreatedAt"] };
-        var result = await index.SearchAsync(request, TenantScope.Of("tenant-a"), CancellationToken.None);
+        var result = await index.SearchAsync(request, TenantScope.For(SearchTestTenants.TenantA), CancellationToken.None);
 
         Assert.Equal(SearchErrors.FieldNotFacetable(index.IndexName, "CreatedAt"), result.Error);
     }
@@ -303,7 +304,7 @@ public sealed class InMemorySearchIndexTests
         var index = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition(maxTotalHits: 5));
 
         var request = SearchRequest.Default with { Page = 10, PageSize = 5 };
-        var result = await index.SearchAsync(request, TenantScope.Of("tenant-a"), CancellationToken.None);
+        var result = await index.SearchAsync(request, TenantScope.For(SearchTestTenants.TenantA), CancellationToken.None);
 
         Assert.True(result.IsFailure);
         Assert.Equal("search.pagination_limit_exceeded", result.Error.Code);
@@ -315,7 +316,7 @@ public sealed class InMemorySearchIndexTests
     {
         var index = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());
 
-        var result = await index.SearchAsync(SearchRequest.Default, TenantScope.None, CancellationToken.None);
+        var result = await index.SearchAsync(SearchRequest.Default, TenantScope.Global, CancellationToken.None);
 
         Assert.Equal(SearchErrors.TenantScopeMissing(index.IndexName), result.Error);
     }
@@ -336,7 +337,7 @@ public sealed class InMemorySearchIndexTests
             PageSize = 5,
         };
 
-        var result = await index.SearchAsync(request, TenantScope.None, CancellationToken.None);
+        var result = await index.SearchAsync(request, TenantScope.Global, CancellationToken.None);
 
         Assert.Equal(SearchErrors.FieldNotSortable(index.IndexName, "Name"), result.Error);
     }
@@ -347,10 +348,10 @@ public sealed class InMemorySearchIndexTests
         var index = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());
         await index.IndexManyAsync(
             [
-                Doc("prod-1", "Alpha Widget", "active", 10.0, "tenant-a"),
-                Doc("prod-2", "Beta Widget", "active", 20.0, "tenant-a"),
-                Doc("prod-3", "Gamma Gadget", "retired", 5.0, "tenant-a"),
-                Doc("prod-4", "Delta Widget", "active", 30.0, "tenant-b"),
+                Doc("prod-1", "Alpha Widget", "active", 10.0, SearchTestTenants.TenantA.ToString()),
+                Doc("prod-2", "Beta Widget", "active", 20.0, SearchTestTenants.TenantA.ToString()),
+                Doc("prod-3", "Gamma Gadget", "retired", 5.0, SearchTestTenants.TenantA.ToString()),
+                Doc("prod-4", "Delta Widget", "active", 30.0, SearchTestTenants.TenantB.ToString()),
             ],
             SearchWriteConsistency.Accepted,
             CancellationToken.None);
@@ -363,7 +364,7 @@ public sealed class InMemorySearchIndexTests
             Facets = ["Status"],
         };
 
-        var result = await index.SearchAsync(request, TenantScope.Of("tenant-a"), CancellationToken.None);
+        var result = await index.SearchAsync(request, TenantScope.For(SearchTestTenants.TenantA), CancellationToken.None);
 
         Assert.True(result.IsSuccess);
         Assert.Equal(2, result.Value.TotalHits);
@@ -388,7 +389,7 @@ public sealed class InMemorySearchIndexTests
 
         async Task AssertMatches(SearchFilter filter, string[] expectedIds)
         {
-            var result = await index.SearchAsync(SearchRequest.Default with { Filter = filter }, TenantScope.None, CancellationToken.None);
+            var result = await index.SearchAsync(SearchRequest.Default with { Filter = filter }, TenantScope.Global, CancellationToken.None);
             Assert.True(result.IsSuccess);
             Assert.Equal(
                 expectedIds.OrderBy(id => id, StringComparer.Ordinal),
@@ -409,9 +410,9 @@ public sealed class InMemorySearchIndexTests
     public async Task GetAsync_CorrectTenant_ReturnsDocument()
     {
         var index = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());
-        await index.IndexAsync(Doc("prod-1", "Widget", "active", 9.99, "tenant-a"), SearchWriteConsistency.Accepted, CancellationToken.None);
+        await index.IndexAsync(Doc("prod-1", "Widget", "active", 9.99, SearchTestTenants.TenantA.ToString()), SearchWriteConsistency.Accepted, CancellationToken.None);
 
-        var result = await index.GetAsync("prod-1", TenantScope.Of("tenant-a"), CancellationToken.None);
+        var result = await index.GetAsync("prod-1", TenantScope.For(SearchTestTenants.TenantA), CancellationToken.None);
 
         Assert.True(result.IsSuccess);
         Assert.Equal("prod-1", result.Value.DocumentId);
@@ -421,9 +422,9 @@ public sealed class InMemorySearchIndexTests
     public async Task GetAsync_WrongTenant_ReturnsDocumentNotFound_NeverACrossTenantLeak()
     {
         var index = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());
-        await index.IndexAsync(Doc("prod-1", "Widget", "active", 9.99, "tenant-a"), SearchWriteConsistency.Accepted, CancellationToken.None);
+        await index.IndexAsync(Doc("prod-1", "Widget", "active", 9.99, SearchTestTenants.TenantA.ToString()), SearchWriteConsistency.Accepted, CancellationToken.None);
 
-        var result = await index.GetAsync("prod-1", TenantScope.Of("tenant-b"), CancellationToken.None);
+        var result = await index.GetAsync("prod-1", TenantScope.For(SearchTestTenants.TenantB), CancellationToken.None);
 
         Assert.Equal(SearchErrors.DocumentNotFound(index.IndexName, "prod-1"), result.Error);
     }
@@ -433,7 +434,7 @@ public sealed class InMemorySearchIndexTests
     {
         var index = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());
 
-        var result = await index.GetAsync("never-existed", TenantScope.Of("tenant-a"), CancellationToken.None);
+        var result = await index.GetAsync("never-existed", TenantScope.For(SearchTestTenants.TenantA), CancellationToken.None);
 
         Assert.Equal(SearchErrors.DocumentNotFound(index.IndexName, "never-existed"), result.Error);
     }
@@ -442,12 +443,12 @@ public sealed class InMemorySearchIndexTests
     public async Task GetAsync_NoTenantScopeOnTenantedIndex_HasNoUpfrontGuard_ReturnsDocumentNotFound()
     {
         // GetAsync deliberately carries no upfront TenantScopeMissing check, unlike
-        // Search/Count/Enumerate/DeleteByFilter -- a mismatch (including TenantScope.None) folds
+        // Search/Count/Enumerate/DeleteByFilter -- a mismatch (including TenantScope.Global) folds
         // into DocumentNotFound identically to a genuinely missing id.
         var index = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());
-        await index.IndexAsync(Doc("prod-1", "Widget", "active", 9.99, "tenant-a"), SearchWriteConsistency.Accepted, CancellationToken.None);
+        await index.IndexAsync(Doc("prod-1", "Widget", "active", 9.99, SearchTestTenants.TenantA.ToString()), SearchWriteConsistency.Accepted, CancellationToken.None);
 
-        var result = await index.GetAsync("prod-1", TenantScope.None, CancellationToken.None);
+        var result = await index.GetAsync("prod-1", TenantScope.Global, CancellationToken.None);
 
         Assert.Equal(SearchErrors.DocumentNotFound(index.IndexName, "prod-1"), result.Error);
     }
@@ -457,7 +458,7 @@ public sealed class InMemorySearchIndexTests
     {
         var index = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());
 
-        var result = await index.CountAsync(null, TenantScope.None, CancellationToken.None);
+        var result = await index.CountAsync(null, TenantScope.Global, CancellationToken.None);
 
         Assert.Equal(SearchErrors.TenantScopeMissing(index.IndexName), result.Error);
     }
@@ -468,14 +469,14 @@ public sealed class InMemorySearchIndexTests
         var index = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());
         await index.IndexManyAsync(
             [
-                Doc("prod-1", "Widget", "active", 10.0, "tenant-a"),
-                Doc("prod-2", "Widget", "retired", 20.0, "tenant-a"),
-                Doc("prod-3", "Widget", "active", 30.0, "tenant-b"),
+                Doc("prod-1", "Widget", "active", 10.0, SearchTestTenants.TenantA.ToString()),
+                Doc("prod-2", "Widget", "retired", 20.0, SearchTestTenants.TenantA.ToString()),
+                Doc("prod-3", "Widget", "active", 30.0, SearchTestTenants.TenantB.ToString()),
             ],
             SearchWriteConsistency.Accepted,
             CancellationToken.None);
 
-        var result = await index.CountAsync(SearchFilter.Eq("Status", "active"), TenantScope.Of("tenant-a"), CancellationToken.None);
+        var result = await index.CountAsync(SearchFilter.Eq("Status", "active"), TenantScope.For(SearchTestTenants.TenantA), CancellationToken.None);
 
         Assert.True(result.IsSuccess);
         Assert.True(result.Value.IsExact);
@@ -489,7 +490,7 @@ public sealed class InMemorySearchIndexTests
 
         await Assert.ThrowsAsync<SearchStreamException>(async () =>
         {
-            await foreach (var _ in index.EnumerateAsync(null, TenantScope.None, batchSize: 10, CancellationToken.None))
+            await foreach (var _ in index.EnumerateAsync(null, TenantScope.Global, batchSize: 10, CancellationToken.None))
             {
             }
         });
@@ -501,15 +502,15 @@ public sealed class InMemorySearchIndexTests
         var index = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());
         await index.IndexManyAsync(
             [
-                Doc("prod-1", "Widget", "active", 10.0, "tenant-a"),
-                Doc("prod-2", "Widget", "active", 20.0, "tenant-a"),
-                Doc("prod-3", "Widget", "active", 30.0, "tenant-b"),
+                Doc("prod-1", "Widget", "active", 10.0, SearchTestTenants.TenantA.ToString()),
+                Doc("prod-2", "Widget", "active", 20.0, SearchTestTenants.TenantA.ToString()),
+                Doc("prod-3", "Widget", "active", 30.0, SearchTestTenants.TenantB.ToString()),
             ],
             SearchWriteConsistency.Accepted,
             CancellationToken.None);
 
         var ids = new List<string>();
-        await foreach (var document in index.EnumerateAsync(null, TenantScope.Of("tenant-a"), batchSize: 10, CancellationToken.None))
+        await foreach (var document in index.EnumerateAsync(null, TenantScope.For(SearchTestTenants.TenantA), batchSize: 10, CancellationToken.None))
         {
             ids.Add(document.DocumentId);
         }
@@ -523,7 +524,7 @@ public sealed class InMemorySearchIndexTests
         var index = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());
         for (var i = 0; i < 5; i++)
         {
-            await index.IndexAsync(Doc($"prod-{i}", "Widget", "active", i, "tenant-a"), SearchWriteConsistency.Accepted, CancellationToken.None);
+            await index.IndexAsync(Doc($"prod-{i}", "Widget", "active", i, SearchTestTenants.TenantA.ToString()), SearchWriteConsistency.Accepted, CancellationToken.None);
         }
 
         using var cts = new CancellationTokenSource();
@@ -531,7 +532,7 @@ public sealed class InMemorySearchIndexTests
 
         await Assert.ThrowsAsync<OperationCanceledException>(async () =>
         {
-            await foreach (var document in index.EnumerateAsync(null, TenantScope.Of("tenant-a"), batchSize: 10, cts.Token))
+            await foreach (var document in index.EnumerateAsync(null, TenantScope.For(SearchTestTenants.TenantA), batchSize: 10, cts.Token))
             {
                 seen.Add(document.DocumentId);
                 if (seen.Count == 1)
@@ -548,12 +549,12 @@ public sealed class InMemorySearchIndexTests
     public async Task SimulateFailure_OnlyAffectsWritePath_ReadPathAndWaitUntilSearchableUnaffected()
     {
         var index = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());
-        var indexResult = await index.IndexAsync(Doc("prod-1", "Widget", "active", 9.99, "tenant-a"), SearchWriteConsistency.Accepted, CancellationToken.None);
+        var indexResult = await index.IndexAsync(Doc("prod-1", "Widget", "active", 9.99, SearchTestTenants.TenantA.ToString()), SearchWriteConsistency.Accepted, CancellationToken.None);
         index.SimulateFailure = true;
 
-        Assert.True((await index.SearchAsync(SearchRequest.Default, TenantScope.Of("tenant-a"), CancellationToken.None)).IsSuccess);
-        Assert.True((await index.GetAsync("prod-1", TenantScope.Of("tenant-a"), CancellationToken.None)).IsSuccess);
-        Assert.True((await index.CountAsync(null, TenantScope.Of("tenant-a"), CancellationToken.None)).IsSuccess);
+        Assert.True((await index.SearchAsync(SearchRequest.Default, TenantScope.For(SearchTestTenants.TenantA), CancellationToken.None)).IsSuccess);
+        Assert.True((await index.GetAsync("prod-1", TenantScope.For(SearchTestTenants.TenantA), CancellationToken.None)).IsSuccess);
+        Assert.True((await index.CountAsync(null, TenantScope.For(SearchTestTenants.TenantA), CancellationToken.None)).IsSuccess);
         Assert.True((await index.WaitUntilSearchableAsync(indexResult.Value, TimeSpan.FromSeconds(1), CancellationToken.None)).IsSuccess);
     }
 
@@ -562,7 +563,7 @@ public sealed class InMemorySearchIndexTests
     {
         var index = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());
 
-        index.Seed(Doc("prod-1", "Widget", "active", 9.99, "tenant-a"));
+        index.Seed(Doc("prod-1", "Widget", "active", 9.99, SearchTestTenants.TenantA.ToString()));
 
         Assert.True(index.IsSearchable("prod-1"));
         Assert.False(index.WasIndexed("prod-1"));
@@ -571,13 +572,13 @@ public sealed class InMemorySearchIndexTests
     [Fact]
     public void Seed_InvalidDocumentIdCharset_ThrowsArgumentException() =>
         Assert.Throws<ArgumentException>(() =>
-            new InMemorySearchIndex<TestProductDocument>(TenantedDefinition()).Seed(Doc("bad id!", "Widget", "active", 9.99, "tenant-a")));
+            new InMemorySearchIndex<TestProductDocument>(TenantedDefinition()).Seed(Doc("bad id!", "Widget", "active", 9.99, SearchTestTenants.TenantA.ToString())));
 
     [Fact]
     public async Task Reset_ClearsStoreHistoryAndIssuedTokens()
     {
         var index = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());
-        var indexResult = await index.IndexAsync(Doc("prod-1", "Widget", "active", 9.99, "tenant-a"), SearchWriteConsistency.Accepted, CancellationToken.None);
+        var indexResult = await index.IndexAsync(Doc("prod-1", "Widget", "active", 9.99, SearchTestTenants.TenantA.ToString()), SearchWriteConsistency.Accepted, CancellationToken.None);
         await index.DeleteAsync("prod-1", SearchWriteConsistency.Accepted, CancellationToken.None);
 
         index.Reset();
@@ -600,8 +601,8 @@ public sealed class InMemorySearchIndexTests
         var fourArgIndex = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());
         TestProductDocument[] Docs() =>
         [
-            Doc("prod-1", "Widget", "active", 9.99, "tenant-a"),
-            Doc("bad id!", "Broken", "active", 1.0, "tenant-a"),
+            Doc("prod-1", "Widget", "active", 9.99, SearchTestTenants.TenantA.ToString()),
+            Doc("bad id!", "Broken", "active", 1.0, SearchTestTenants.TenantA.ToString()),
         ];
 
         var threeArgResult = await threeArgIndex.IndexManyAsync(Docs(), SearchWriteConsistency.Accepted, CancellationToken.None);
@@ -623,8 +624,8 @@ public sealed class InMemorySearchIndexTests
         // path on a separate, otherwise-identical fake instance.
         var threeArgIndex = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());
         var fourArgIndex = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());
-        await threeArgIndex.IndexAsync(Doc("prod-1", "Widget", "active", 9.99, "tenant-a"), SearchWriteConsistency.Accepted, CancellationToken.None);
-        await fourArgIndex.IndexAsync(Doc("prod-1", "Widget", "active", 9.99, "tenant-a"), SearchWriteConsistency.Accepted, CancellationToken.None);
+        await threeArgIndex.IndexAsync(Doc("prod-1", "Widget", "active", 9.99, SearchTestTenants.TenantA.ToString()), SearchWriteConsistency.Accepted, CancellationToken.None);
+        await fourArgIndex.IndexAsync(Doc("prod-1", "Widget", "active", 9.99, SearchTestTenants.TenantA.ToString()), SearchWriteConsistency.Accepted, CancellationToken.None);
 
         var threeArgResult = await threeArgIndex.DeleteManyAsync(["prod-1", "never-existed"], SearchWriteConsistency.Accepted, CancellationToken.None);
         var fourArgResult = await fourArgIndex.DeleteManyAsync(
@@ -652,7 +653,7 @@ public sealed class InMemorySearchIndexTests
         var index = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());
         var throttle = new SearchBulkWriteOptions { MaxBatchesPerSecond = 5 };
 
-        await index.IndexManyAsync([Doc("prod-1", "Widget", "active", 9.99, "tenant-a")], SearchWriteConsistency.Accepted, throttle, CancellationToken.None);
+        await index.IndexManyAsync([Doc("prod-1", "Widget", "active", 9.99, SearchTestTenants.TenantA.ToString())], SearchWriteConsistency.Accepted, throttle, CancellationToken.None);
 
         Assert.Same(throttle, index.LastBulkWriteOptions);
         Assert.Equal(5, index.LastBulkWriteOptions!.MaxBatchesPerSecond);
@@ -662,7 +663,7 @@ public sealed class InMemorySearchIndexTests
     public async Task LastBulkWriteOptions_ReflectsCallerSuppliedThrottle_AfterExplicitFourArgDeleteManyCall()
     {
         var index = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());
-        await index.IndexAsync(Doc("prod-1", "Widget", "active", 9.99, "tenant-a"), SearchWriteConsistency.Accepted, CancellationToken.None);
+        await index.IndexAsync(Doc("prod-1", "Widget", "active", 9.99, SearchTestTenants.TenantA.ToString()), SearchWriteConsistency.Accepted, CancellationToken.None);
         var throttle = new SearchBulkWriteOptions { MaxBatchesPerSecond = 2.5 };
 
         await index.DeleteManyAsync(["prod-1"], SearchWriteConsistency.Accepted, throttle, CancellationToken.None);
@@ -679,13 +680,13 @@ public sealed class InMemorySearchIndexTests
         // real throttle must be overwritten by a SUBSEQUENT 3-arg call reverting to Default.
         var index = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());
         await index.IndexManyAsync(
-            [Doc("prod-1", "Widget", "active", 9.99, "tenant-a")],
+            [Doc("prod-1", "Widget", "active", 9.99, SearchTestTenants.TenantA.ToString())],
             SearchWriteConsistency.Accepted,
             new SearchBulkWriteOptions { MaxBatchesPerSecond = 5 },
             CancellationToken.None);
         Assert.Equal(5, index.LastBulkWriteOptions!.MaxBatchesPerSecond);
 
-        await index.IndexManyAsync([Doc("prod-2", "Gadget", "active", 4.99, "tenant-a")], SearchWriteConsistency.Accepted, CancellationToken.None);
+        await index.IndexManyAsync([Doc("prod-2", "Gadget", "active", 4.99, SearchTestTenants.TenantA.ToString())], SearchWriteConsistency.Accepted, CancellationToken.None);
 
         Assert.Same(SearchBulkWriteOptions.Default, index.LastBulkWriteOptions);
         Assert.Null(index.LastBulkWriteOptions.MaxBatchesPerSecond);
@@ -698,9 +699,9 @@ public sealed class InMemorySearchIndexTests
         // call must revert LastBulkWriteOptions to Default even though the most recent throttle came from
         // an IndexManyAsync call, proving the two members are not tracked independently.
         var index = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());
-        await index.IndexAsync(Doc("prod-1", "Widget", "active", 9.99, "tenant-a"), SearchWriteConsistency.Accepted, CancellationToken.None);
+        await index.IndexAsync(Doc("prod-1", "Widget", "active", 9.99, SearchTestTenants.TenantA.ToString()), SearchWriteConsistency.Accepted, CancellationToken.None);
         await index.IndexManyAsync(
-            [Doc("prod-2", "Gadget", "active", 4.99, "tenant-a")],
+            [Doc("prod-2", "Gadget", "active", 4.99, SearchTestTenants.TenantA.ToString())],
             SearchWriteConsistency.Accepted,
             new SearchBulkWriteOptions { MaxBatchesPerSecond = 5 },
             CancellationToken.None);
@@ -719,7 +720,7 @@ public sealed class InMemorySearchIndexTests
         // multi-batch write to take whole seconds -- the in-memory dictionary write must remain instant.
         var index = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());
         var documents = Enumerable.Range(0, 50)
-            .Select(i => Doc($"prod-{i}", "Widget", "active", i, "tenant-a"))
+            .Select(i => Doc($"prod-{i}", "Widget", "active", i, SearchTestTenants.TenantA.ToString()))
             .ToArray();
         var throttle = new SearchBulkWriteOptions { MaxBatchesPerSecond = 1 };
 

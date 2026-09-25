@@ -49,7 +49,6 @@ SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.WithInboundReq
 SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.WithPayloadTransform(System.Action<SharedKernel.Messaging.MassTransit.Options.PayloadTransformOptions!>? configure = null) -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
 SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.WithRetry(System.Action<SharedKernel.Messaging.MassTransit.Options.RetryOptions!>? configure = null) -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
 SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.WithSendEndpointRoute<T>(string! queueName) -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
-SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.WithTenantContext<TAccessor>() -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
 SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.WithVersionTranslator<TOld, TNew, TTranslator>() -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
 SharedKernel.Messaging.MassTransit.Extensions.ServiceCollectionExtensions
 SharedKernel.Messaging.MassTransit.HeaderPropagation.AmbientCorrelationHeaderPropagator
@@ -60,7 +59,6 @@ SharedKernel.Messaging.MassTransit.HeaderPropagation.RequestContextHeaderPropaga
 SharedKernel.Messaging.MassTransit.HeaderPropagation.RequestContextHeaderPropagator.RequestContextHeaderPropagator(SharedKernel.Execution.Context.IRequestContext? requestContext = null) -> void
 SharedKernel.Messaging.MassTransit.HeaderPropagation.TenantHeaderPropagator
 SharedKernel.Messaging.MassTransit.HeaderPropagation.TenantHeaderPropagator.Propagate(SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext! context) -> void
-SharedKernel.Messaging.MassTransit.HeaderPropagation.TenantHeaderPropagator.TenantHeaderPropagator(SharedKernel.Messaging.Abstractions.TenantContext.ITenantContextAccessor? tenantContextAccessor = null) -> void
 SharedKernel.Messaging.MassTransit.Options.AzureServiceBusOptions
 SharedKernel.Messaging.MassTransit.Options.AzureServiceBusOptions.AzureServiceBusOptions() -> void
 SharedKernel.Messaging.MassTransit.Options.AzureServiceBusOptions.ConnectionString.get -> string?
@@ -145,3 +143,5 @@ virtual SharedKernel.Messaging.MassTransit.Consumers.ConsumerDefinitionBase<TCon
 virtual SharedKernel.Messaging.MassTransit.Consumers.ConsumerDefinitionBase<TConsumer>.EndpointName.get -> string?
 virtual SharedKernel.Messaging.MassTransit.Consumers.ConsumerDefinitionBase<TConsumer>.NonRetryableExceptions.get -> System.Collections.Generic.IReadOnlyList<System.Type!>!
 virtual SharedKernel.Messaging.MassTransit.Consumers.ConsumerDefinitionBase<TConsumer>.PrefetchCount.get -> int?
+SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.WithTenantContext() -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
+SharedKernel.Messaging.MassTransit.HeaderPropagation.TenantHeaderPropagator.TenantHeaderPropagator(SharedKernel.Execution.Context.IRequestContextAccessor! accessor) -> void

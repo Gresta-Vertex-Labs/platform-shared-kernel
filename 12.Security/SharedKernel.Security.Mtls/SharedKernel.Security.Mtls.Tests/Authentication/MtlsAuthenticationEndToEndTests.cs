@@ -1,3 +1,5 @@
+using SharedKernel.Execution.Tenancy;
+using SharedKernel.Execution.Context;
 using System.Buffers.Text;
 using System.Net;
 using System.Security.Claims;
@@ -23,7 +25,7 @@ namespace SharedKernel.Security.Mtls.Tests.Authentication;
 // cannot be prompted for one inside the request.
 public sealed class MtlsAuthenticationEndToEndTests : IDisposable
 {
-    private static readonly Guid TenantId = Guid.Parse("c7b1f1a2-5a0d-4c3e-8f6b-2d9e4a7c1b30");
+    private static readonly TenantId TenantId = new TenantId(Guid.Parse("c7b1f1a2-5a0d-4c3e-8f6b-2d9e4a7c1b30"));
 
     private readonly TestCertificateAuthority _ca = TestCertificateAuthority.Create();
 
@@ -39,11 +41,10 @@ public sealed class MtlsAuthenticationEndToEndTests : IDisposable
         CallerSnapshot caller = await host.GetCallerAsync("/certificate", certificate);
 
         Assert.True(caller.IsAuthenticated);
-        Assert.Equal(IdentityKind.ServicePrincipal, caller.IdentityKind);
+        Assert.Equal(ActorKind.Service, caller.ActorKind);
         Assert.Equal("tpp-42", caller.SubjectId);
         Assert.Equal("tpp-42", caller.ClientId);
-        Assert.Equal(TenantId, caller.TenantId);
-        Assert.Equal(TenantId, caller.ProviderTenantId);
+        Assert.Equal(TenantId.Value, caller.TenantId);
         Assert.Equal(["psp"], caller.Roles);
         Assert.Equal(["payments:initiate"], caller.Permissions);
         Assert.Equal(Base64Url.EncodeToString(SHA256.HashData(certificate.RawData)), caller.Thumbprint);
@@ -106,7 +107,7 @@ public sealed class MtlsAuthenticationEndToEndTests : IDisposable
         CallerSnapshot caller = await host.GetCallerAsync("/default", certificate);
 
         Assert.False(caller.IsAuthenticated);
-        Assert.Equal(IdentityKind.Anonymous, caller.IdentityKind);
+        Assert.Equal(ActorKind.Anonymous, caller.ActorKind);
     }
 
     [Fact]

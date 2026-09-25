@@ -8,7 +8,8 @@ using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Contracts.Events;
 using SharedKernel.Messaging.Abstractions.EventPublisher;
 using SharedKernel.Messaging.Abstractions.MessageBus;
-using SharedKernel.Messaging.Abstractions.TenantContext;
+using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Messaging.MassTransit.EventPublisher;
 using SharedKernel.Messaging.MassTransit.Extensions;
 using SharedKernel.Messaging.MassTransit.MessageBus;
@@ -17,7 +18,7 @@ namespace SharedKernel.Messaging.MassTransit.Tests.HarnessTests;
 
 /// <summary>
 /// SK.07.AmbientPropagation / P-345: <c>MessagingBusBuilder.WithAmbientCorrelationPropagation()</c>
-/// and <c>MessagingBusBuilder.WithTenantContext&lt;TAccessor&gt;()</c> exercised through the real
+/// and <c>MessagingBusBuilder.WithTenantContext()</c> exercised through the real
 /// builder API (not manual DI wiring), using <c>MassTransit.Testing.TestHarness</c> for message flow.
 /// </summary>
 public sealed class AmbientPropagationTests
@@ -122,7 +123,7 @@ public sealed class AmbientPropagationTests
     {
         var services = new ServiceCollection();
         services.AddSharedKernelMessaging(o => o.ServiceName = "ap-tenant-service")
-            .WithTenantContext<ApFakeTenantContextAccessor>();
+            .WithTenantContext();
 
         services.AddMassTransitTestHarness();
         services.AddScoped<IEventPublisher, MassTransitEventPublisher>();
@@ -135,14 +136,17 @@ public sealed class AmbientPropagationTests
         var publisher = scope.ServiceProvider.GetRequiredService<IEventPublisher>();
         var evt = new ApIntegrationTestEvent(Guid.NewGuid(), DateTimeOffset.UtcNow);
 
-        await publisher.PublishAsync(evt, CancellationToken.None);
+        using (RequestContextScope.Begin(new SystemRequestContext([], "ap-caller", ApAmbientTenant.Fixed)))
+        {
+            await publisher.PublishAsync(evt, CancellationToken.None);
+        }
 
         (await harness.Published.Any<EventEnvelope<ApIntegrationTestEvent>>()).Should().BeTrue();
         var envelope = harness.Published.Select<EventEnvelope<ApIntegrationTestEvent>>().First();
 
-        envelope.Context.Message.TenantId.Should().Be(ApFakeTenantContextAccessor.FixedTenantId,
-            "TenantHeaderPropagator must populate PublishContext.TenantId from the registered " +
-            "ITenantContextAccessor, flowing through into EventEnvelope<TEvent>.TenantId");
+        envelope.Context.Message.TenantId.Should().Be(ApAmbientTenant.Fixed.Value,
+            "TenantHeaderPropagator must populate PublishContext.TenantId from the ambient request " +
+            "context, flowing through into EventEnvelope<TEvent>.TenantId");
 
         await harness.Stop();
     }
@@ -152,7 +156,7 @@ public sealed class AmbientPropagationTests
     {
         var services = new ServiceCollection();
 
-        // WithTenantContext<T>() deliberately NOT called — ITenantContextAccessor is never registered.
+        // WithTenantContext() deliberately NOT called — TenantHeaderPropagator is never registered.
         services.AddSharedKernelMessaging(o => o.ServiceName = "ap-no-tenant-service");
 
         services.AddMassTransitTestHarness();
@@ -166,7 +170,7 @@ public sealed class AmbientPropagationTests
         var publisher = scope.ServiceProvider.GetRequiredService<IEventPublisher>();
         var evt = new ApIntegrationTestEvent(Guid.NewGuid(), DateTimeOffset.UtcNow);
 
-        // Act: must not throw, even though no ITenantContextAccessor/propagator is registered.
+        // Act: must not throw, even though no tenant propagator is registered.
         var act = async () => await publisher.PublishAsync(evt, CancellationToken.None);
         await act.Should().NotThrowAsync();
 
@@ -174,8 +178,8 @@ public sealed class AmbientPropagationTests
         var envelope = harness.Published.Select<EventEnvelope<ApIntegrationTestEvent>>().First();
 
         envelope.Context.Message.TenantId.Should().BeNull(
-            "with no ITenantContextAccessor registered, TenantHeaderPropagator is never registered " +
-            "either (WithTenantContext<T>() was not called), so TenantId stays unset — a provable no-op");
+            "WithTenantContext() was not called, so TenantHeaderPropagator is never registered " +
+            "and TenantId stays unset — a provable no-op");
 
         await harness.Stop();
     }
@@ -190,7 +194,7 @@ public sealed class AmbientPropagationTests
         var services = new ServiceCollection();
         services.AddSharedKernelMessaging(o => o.ServiceName = "ap-override-service")
             .WithAmbientCorrelationPropagation()
-            .WithTenantContext<ApFakeTenantContextAccessor>();
+            .WithTenantContext();
 
         services.AddMassTransitTestHarness();
         services.AddScoped<IEventPublisher, MassTransitEventPublisher>();
@@ -210,10 +214,13 @@ public sealed class AmbientPropagationTests
         // would otherwise drive TenantId — the explicit callback must win on both.
         using var activity = new Activity("ap-override-test").Start();
 
-        await publisher.PublishAsync(
-            evt,
-            ctx => ctx.WithCorrelationId(explicitCorrelationId).WithTenantId(explicitTenantId),
-            CancellationToken.None);
+        using (RequestContextScope.Begin(new SystemRequestContext([], "ap-caller", ApAmbientTenant.Fixed)))
+        {
+            await publisher.PublishAsync(
+                evt,
+                ctx => ctx.WithCorrelationId(explicitCorrelationId).WithTenantId(new TenantId(explicitTenantId)),
+                CancellationToken.None);
+        }
 
         (await harness.Published.Any<EventEnvelope<ApIntegrationTestEvent>>()).Should().BeTrue();
         var envelope = harness.Published.Select<EventEnvelope<ApIntegrationTestEvent>>().First();
@@ -222,7 +229,7 @@ public sealed class AmbientPropagationTests
             "an explicit WithCorrelationId callback must win over AmbientCorrelationHeaderPropagator");
         envelope.Context.Message.TenantId.Should().Be(explicitTenantId,
             "an explicit WithTenantId callback must win over TenantHeaderPropagator");
-        envelope.Context.Message.TenantId.Should().NotBe(ApFakeTenantContextAccessor.FixedTenantId);
+        envelope.Context.Message.TenantId.Should().NotBe(ApAmbientTenant.Fixed.Value);
 
         await harness.Stop();
     }
@@ -259,11 +266,9 @@ internal static class ApSendCorrelationCaptureStore
 }
 
 
-internal sealed class ApFakeTenantContextAccessor : ITenantContextAccessor
+internal static class ApAmbientTenant
 {
-    public static readonly Guid FixedTenantId = Guid.NewGuid();
-
-    public Guid? TenantId => FixedTenantId;
+    public static readonly TenantId Fixed = new(Guid.NewGuid());
 }
 
 // ---------------------------------------------------------------------------

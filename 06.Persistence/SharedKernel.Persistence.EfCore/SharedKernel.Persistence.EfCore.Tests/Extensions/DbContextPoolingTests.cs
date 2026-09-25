@@ -3,6 +3,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.EfCore.Context;
@@ -39,7 +40,7 @@ internal sealed class MutableTestActorContext : IRequestContext
     public ActorKind ActorKind { get; set; } = ActorKind.User;
     public bool IsAuthenticated => true;
     public string? UserId => ActorId;
-    public Guid? TenantId { get; set; }
+    public TenantId? TenantId { get; set; }
 
     public ValueTask<bool> HasPermissionAsync(string permission, CancellationToken cancellationToken) =>
         ValueTask.FromResult(false);
@@ -48,7 +49,7 @@ internal sealed class MutableTestActorContext : IRequestContext
 /// <summary>Mutable, scoped-DI-friendly tenant fake for pooling tests.</summary>
 internal sealed class MutableTestTenantContext : IRequestContext
 {
-    public Guid? TenantId { get; set; }
+    public TenantId? TenantId { get; set; }
     public bool IsAuthenticated => true;
     public string? UserId => "tenant-test";
 
@@ -230,8 +231,8 @@ public sealed class DbContextPoolingTests
                 .Database.EnsureCreatedAsync();
         }
 
-        var tenantAId = Guid.NewGuid();
-        var tenantBId = Guid.NewGuid();
+        var tenantAId = new TenantId(Guid.NewGuid());
+        var tenantBId = new TenantId(Guid.NewGuid());
 
         TenantedTestDbContext requestAInstance;
 
@@ -294,8 +295,8 @@ public sealed class DbContextPoolingTests
             .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
             .Options;
 
-        var tenantAId = Guid.NewGuid();
-        var tenantBId = Guid.NewGuid();
+        var tenantAId = new TenantId(Guid.NewGuid());
+        var tenantBId = new TenantId(Guid.NewGuid());
 
         // First instance — actor context bound to Tenant A. Constructing and using it populates
         // EF Core's process-wide model cache for SoftDeletableTenantedDbContext.

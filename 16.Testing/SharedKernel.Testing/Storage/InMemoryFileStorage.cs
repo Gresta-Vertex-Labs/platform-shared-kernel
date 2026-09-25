@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Storage;
 
@@ -106,7 +107,7 @@ public sealed class InMemoryFileStorage : IFileStorage
 
     /// <inheritdoc />
     /// <remarks>Always <see langword="null"/>: this is the whole store; tenant views are applied by the registry.</remarks>
-    public string? TenantId => null;
+    public TenantId? TenantId => null;
 
     /// <summary>
     /// Gets or sets a value indicating whether write operations simulate an unavailable provider. When
@@ -153,12 +154,16 @@ public sealed class InMemoryFileStorage : IFileStorage
     private DateTimeOffset Now => _clock?.UtcNow ?? FixedNow;
 
     /// <summary>Returns the store key a tenant view writes <paramref name="key"/> to: <c>tenants/{tenantId}/{key}</c>.</summary>
-    /// <param name="tenantId">The tenant id.</param>
+    /// <param name="tenantId">The tenant. Must not be <see langword="default"/>.</param>
     /// <param name="key">The key relative to the tenant.</param>
     /// <returns>The store key, for the inspection helpers.</returns>
-    public static string TenantKey(string tenantId, string key)
+    public static string TenantKey(TenantId tenantId, string key)
     {
-        ArgumentException.ThrowIfNullOrEmpty(tenantId);
+        if (tenantId.IsDefault)
+        {
+            throw new ArgumentException("The tenant identifier must not be default(TenantId).", nameof(tenantId));
+        }
+
         ArgumentNullException.ThrowIfNull(key);
         return $"{TenantsFolder}{tenantId}/{key}";
     }

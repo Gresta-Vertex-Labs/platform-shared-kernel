@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
-using SharedKernel.Security.Abstractions;
+using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Testing.Communication;
 using Xunit;
 
@@ -17,12 +18,12 @@ public sealed class FakeHttpContextAccessorTests
     [Fact]
     public void WithTenant_ExposesConfiguredTenantId_ViaRequestServices()
     {
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
         var accessor = FakeHttpContextAccessor.WithTenant(tenantId);
 
-        var tenantProvider = accessor.HttpContext!.RequestServices.GetRequiredService<ITenantProvider>();
+        var requestContext = accessor.HttpContext!.RequestServices.GetRequiredService<IRequestContext>();
 
-        Assert.Equal(tenantId, tenantProvider.TenantId);
+        Assert.Equal(tenantId, requestContext.TenantId);
     }
 
     [Fact]

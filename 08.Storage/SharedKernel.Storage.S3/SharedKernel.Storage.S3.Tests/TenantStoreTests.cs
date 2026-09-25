@@ -21,14 +21,14 @@ public sealed class TenantStoreTests : IDisposable
     [Fact]
     public async Task Tenants_cannot_read_list_or_delete_each_others_objects()
     {
-        string tenantA = $"a{Guid.NewGuid():N}";
-        string tenantB = $"b{Guid.NewGuid():N}";
+        TenantId tenantA = new(Guid.NewGuid());
+        TenantId tenantB = new(Guid.NewGuid());
         IFileStorage a = _docs.ForTenant(tenantA);
         IFileStorage b = _docs.ForTenant(tenantB);
 
         FileReference reference = (await a.UploadAsync("contracts/nda.pdf", new MemoryStream([1]))).Ok();
 
-        reference.Should().BeEquivalentTo(new { Store = "docs", TenantId = tenantA, Key = "contracts/nda.pdf" });
+        reference.Should().BeEquivalentTo(new { Store = "docs", TenantId = (TenantId?)tenantA, Key = "contracts/nda.pdf" });
         (await b.ExistsAsync("contracts/nda.pdf")).Ok().Should().BeFalse();
         (await b.DownloadAsync("contracts/nda.pdf")).Error.Code.Should().Be(StorageErrorCodes.NotFound);
         (await b.DeleteAsync("contracts/nda.pdf")).IsSuccess.Should().BeTrue();
@@ -47,7 +47,7 @@ public sealed class TenantStoreTests : IDisposable
     [Fact]
     public async Task Tenant_objects_live_under_the_tenant_prefix_in_the_bucket()
     {
-        string tenant = $"t{Guid.NewGuid():N}";
+        TenantId tenant = new(Guid.NewGuid());
         await _docs.ForTenant(tenant).UploadAsync("x.txt", new MemoryStream([7]));
 
         IFileStorage bucket = _host.GetRequiredKeyedService<IFileStorage>("b-root");
@@ -58,7 +58,7 @@ public sealed class TenantStoreTests : IDisposable
     [Fact]
     public async Task A_reference_reopens_the_same_tenant_view()
     {
-        string tenant = $"t{Guid.NewGuid():N}";
+        TenantId tenant = new(Guid.NewGuid());
         FileReference reference = (await _docs.ForTenant(tenant).UploadAsync("y.txt", new MemoryStream([8]))).Ok();
 
         IFileStorage reopened = _host.GetRequiredService<IFileStorageFactory>().Open(reference);
@@ -70,7 +70,7 @@ public sealed class TenantStoreTests : IDisposable
     [Fact]
     public async Task Errors_from_a_tenant_view_do_not_reveal_the_tenant_prefix()
     {
-        string tenant = $"t{Guid.NewGuid():N}";
+        TenantId tenant = new(Guid.NewGuid());
 
         var result = await _docs.ForTenant(tenant).GetPropertiesAsync("missing.txt");
 

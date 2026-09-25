@@ -2,7 +2,8 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using SharedKernel.Communication.Grpc.Interceptors;
-using SharedKernel.Security.Abstractions;
+using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
 
 namespace SharedKernel.Communication.Grpc.Tests.Interceptors;
 
@@ -248,11 +249,8 @@ public sealed class TenantIdInterceptorTests
 
     private static TenantIdInterceptor CreateInterceptorWithTenant(Guid tenantId)
     {
-        var tenantProvider = Substitute.For<ITenantProvider>();
-        tenantProvider.TenantId.Returns(tenantId);
-
         var services = new ServiceCollection();
-        services.AddSingleton(tenantProvider);
+        services.AddSingleton<IRequestContext>(new SystemRequestContext([], "test", TenantId.FromNullable(tenantId)));
         var sp = services.BuildServiceProvider();
 
         var httpContext = new DefaultHttpContext { RequestServices = sp };

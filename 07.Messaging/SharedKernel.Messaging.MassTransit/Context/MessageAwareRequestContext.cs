@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Execution.Context;
 using SharedKernel.Messaging.Abstractions.Context;
 
@@ -50,7 +51,7 @@ internal sealed class MessageAwareRequestContext : IRequestContext
     public string? UserId => Current.UserId;
 
     /// <inheritdoc />
-    public Guid? TenantId => Current.TenantId;
+    public TenantId? TenantId => Current.TenantId;
 
     /// <inheritdoc />
     public ActorKind ActorKind => Current.ActorKind;

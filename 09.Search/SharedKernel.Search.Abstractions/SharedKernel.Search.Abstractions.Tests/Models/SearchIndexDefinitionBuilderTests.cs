@@ -27,7 +27,7 @@ public sealed class SearchIndexDefinitionBuilderTests
     public void Build_WithEmptyFieldName_ThrowsArgumentException()
     {
         // SearchIndexDefinitionBuilder.Field guards its own name parameter eagerly with
-        // ArgumentException.ThrowIfNullOrWhiteSpace, mirroring TenantScope.Of —
+        // ArgumentException.ThrowIfNullOrWhiteSpace, mirroring TenantScope.For —
         // this is a programming error caught at first test run, not a Result-valued expected failure.
         var builder = new SearchIndexDefinitionBuilder("products");
 

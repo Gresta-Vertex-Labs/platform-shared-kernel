@@ -82,5 +82,5 @@ public sealed class PropagationActivity : ActivityBase
     }
 
     [Activity(nameof(PropagationActivity))]
-    public Task<string> RunAsync(string input) => Task.FromResult(TenantScope.Value);
+    public Task<string> RunAsync(string input) => Task.FromResult(TenantScope.ToString());
 }

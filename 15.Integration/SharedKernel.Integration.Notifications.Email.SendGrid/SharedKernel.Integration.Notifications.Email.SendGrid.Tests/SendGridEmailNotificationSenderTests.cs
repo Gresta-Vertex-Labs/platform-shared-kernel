@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Integration.Notifications.Abstractions.Notifications;
 using SharedKernel.Integration.Notifications.Email.SendGrid.Tests.TestSupport;
 using SharedKernel.Primitives.Logging;
@@ -12,6 +13,9 @@ namespace SharedKernel.Integration.Notifications.Email.SendGrid.Tests;
 
 public sealed class SendGridEmailNotificationSenderTests
 {
+    private static readonly TenantId TenantA = new(Guid.Parse("a3a3a3a3-0000-4000-8000-000000000001"));
+    private static readonly TenantId TenantB = new(Guid.Parse("b4b4b4b4-0000-4000-8000-000000000002"));
+
     private sealed record TestTemplateModel(string OrderNumber, string SecretPin);
 
     private const string RecipientEmail = "customer@example.test";
@@ -150,16 +154,16 @@ public sealed class SendGridEmailNotificationSenderTests
             return new HttpResponseMessage(HttpStatusCode.Accepted);
         });
         using var harness = new SendGridTestHarness(handler);
-        harness.TenantFileStorage.Seed(InMemoryFileStorage.TenantKey("tenant-a", "statement.pdf"), tenantBytes, "application/pdf");
+        harness.TenantFileStorage.Seed(InMemoryFileStorage.TenantKey(TenantA, "statement.pdf"), tenantBytes, "application/pdf");
 
         var attachment = new NotificationAttachment
         {
-            FileReference = new FileReference { Store = "documents", TenantId = "tenant-a", Key = "statement.pdf" },
+            FileReference = new FileReference { Store = "documents", TenantId = TenantA, Key = "statement.pdf" },
             FileName = "statement.pdf",
         };
         var otherTenant = attachment with
         {
-            FileReference = attachment.FileReference with { TenantId = "tenant-b" },
+            FileReference = attachment.FileReference with { TenantId = TenantB },
         };
 
         var result = await harness.Sender.SendAsync(Message(attachments: [attachment]), CancellationToken.None);
@@ -175,7 +179,7 @@ public sealed class SendGridEmailNotificationSenderTests
     [Theory]
     [InlineData("unregistered", null)]
     [InlineData("documents", null)]
-    [InlineData("invoices", "tenant-a")]
+    [InlineData("invoices", "a3a3a3a3-0000-4000-8000-000000000001")]
     public async Task SendAsync_AttachmentInUnknownStoreOrWrongTenancy_ReturnsFailureWithoutThrowing(string store, string? tenantId)
     {
         using var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.Accepted));
@@ -183,7 +187,7 @@ public sealed class SendGridEmailNotificationSenderTests
 
         var attachment = new NotificationAttachment
         {
-            FileReference = new FileReference { Store = store, TenantId = tenantId, Key = "invoice.pdf" },
+            FileReference = new FileReference { Store = store, TenantId = tenantId is null ? null : TenantId.Parse(tenantId), Key = "invoice.pdf" },
             FileName = "invoice.pdf",
         };
 

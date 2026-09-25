@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Errors;
 
 namespace SharedKernel.Workflows.Temporal.Errors;
@@ -75,7 +76,7 @@ public static class WorkflowErrors
         $"Temporal namespace '{@namespace}' could not be addressed.");
 
     /// <summary>
-    /// A dispatch call was made with <see cref="Dispatch.TenantScope.None"/> against a
+    /// A dispatch call was made with <see cref="TenantScope.Global"/> against a
     /// tenant-scoped operation. A missing tenant scope on a cross-tenant-addressable keyspace is an
     /// authorization failure, not a validation failure — presenting it as a 422 would frame a
     /// would-be cross-tenant signal as a merely-unprocessable business request.

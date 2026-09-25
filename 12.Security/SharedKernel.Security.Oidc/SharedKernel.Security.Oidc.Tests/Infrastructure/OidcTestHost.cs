@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Context;
 using System.Net.Http.Headers;
 using System.Security.Claims;
 using System.Text.Json;
@@ -184,14 +185,13 @@ internal sealed class OidcTestHost : IAsyncDisposable
         return ValueTask.CompletedTask;
     }
 
-    private static IResult Describe(HttpContext context, IUserContext user, ITenantProvider tenant) =>
+    private static IResult Describe(HttpContext context, IUserContext user) =>
         Results.Json(new UserResponse(
-            user.IdentityKind.ToString(),
+            user.ActorKind.ToString(),
             user.IsAuthenticated,
             user.SubjectId,
             user.ClientId,
-            user.TenantId,
-            tenant.TenantId,
+            user.TenantId?.Value,
             user.SessionId,
             user.Name,
             user.Email,
@@ -212,7 +212,6 @@ internal sealed record UserResponse(
     string? SubjectId,
     string? ClientId,
     Guid? TenantId,
-    Guid TenantProviderTenantId,
     string? SessionId,
     string? Name,
     string? Email,

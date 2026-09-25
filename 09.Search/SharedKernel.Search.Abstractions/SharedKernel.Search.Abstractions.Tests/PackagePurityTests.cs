@@ -28,9 +28,10 @@ public sealed class PackagePurityTests
                 || name.StartsWith("netstandard", StringComparison.Ordinal)
                 || name.StartsWith("mscorlib", StringComparison.Ordinal)
                 || name == "SharedKernel.Primitives"
-                || name == "SharedKernel.Contracts",
+                || name == "SharedKernel.Contracts"
+                || name == "SharedKernel.Execution",
             "SharedKernel.Search.Abstractions must reference only the BCL plus SharedKernel.Primitives " +
-            "and SharedKernel.Contracts — zero third-party NuGet dependencies, no Microsoft.Extensions.*, " +
+            "and SharedKernel.Contracts and SharedKernel.Execution — zero third-party NuGet dependencies, no Microsoft.Extensions.*, " +
             "no MeiliSearch, no Elastic.*");
     }
 

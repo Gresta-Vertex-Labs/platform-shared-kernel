@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Context;
 using System.Net;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Authentication;
@@ -31,7 +32,7 @@ public sealed class ApiKeyForwardingSchemeTests
         CallerSnapshot caller = await host.GetCallerAsync(host.Get("/caller", key.Key));
 
         Assert.Equal(ApiKeyAuthenticationDefaults.AuthenticationScheme, caller.AuthenticationType);
-        Assert.Equal(IdentityKind.ServicePrincipal, caller.IdentityKind);
+        Assert.Equal(ActorKind.Service, caller.ActorKind);
         Assert.Equal("billing-service", caller.SubjectId);
     }
 
@@ -47,7 +48,7 @@ public sealed class ApiKeyForwardingSchemeTests
 
         Assert.Equal(FakeBearerHandler.SchemeName, caller.AuthenticationType);
         // No mapper handles the fake Bearer scheme, so the resolver treats it as anonymous.
-        Assert.Equal(IdentityKind.Anonymous, caller.IdentityKind);
+        Assert.Equal(ActorKind.Anonymous, caller.ActorKind);
     }
 
     [Theory]

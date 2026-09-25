@@ -2,6 +2,7 @@ using System.Net;
 using DocumentsApi.Tests.Infrastructure;
 using FluentAssertions;
 using SharedKernel.Storage;
+using static DocumentsApi.Tests.Infrastructure.SampleHost;
 using Xunit.Abstractions;
 
 namespace DocumentsApi.Tests;
@@ -13,13 +14,13 @@ public sealed class TenantAndHealthScenarios(Backends backends, ITestOutputHelpe
     [MemberData(nameof(Backends.AllBackends), MemberType = typeof(Backends))]
     public async Task One_tenant_can_never_reach_another_tenants_documents(string backend)
     {
-        using HttpClient acme = backends[backend].Api("acme");
-        using HttpClient globex = backends[backend].Api("globex");
+        using HttpClient acme = backends[backend].Api(Acme);
+        using HttpClient globex = backends[backend].Api(Globex);
         string key = SampleHost.NewKey("contract.pdf");
         (await acme.PutAsync($"/files/{Stores.Documents}/{key}", new ByteArrayContent([4, 2]))).EnsureSuccessStatusCode();
 
         using HttpResponseMessage read = await globex.GetAsync($"/files/{Stores.Documents}/{key}");
-        using HttpResponseMessage traversal = await globex.GetAsync($"/files/{Stores.Documents}/..%2Facme%2F{key}");
+        using HttpResponseMessage traversal = await globex.GetAsync($"/files/{Stores.Documents}/..%2F{Acme}%2F{key}");
         FileListPage listed = await SampleHost.ReadAsync<FileListPage>(await globex.GetAsync($"/list/{Stores.Documents}"));
         using HttpResponseMessage delete = await globex.DeleteAsync($"/files/{Stores.Documents}/{key}");
 
@@ -34,14 +35,14 @@ public sealed class TenantAndHealthScenarios(Backends backends, ITestOutputHelpe
     [MemberData(nameof(Backends.AllBackends), MemberType = typeof(Backends))]
     public async Task Tenant_objects_live_under_the_tenant_prefix_of_the_bucket(string backend)
     {
-        using HttpClient acme = backends[backend].Api("acme");
+        using HttpClient acme = backends[backend].Api(Acme);
         string key = SampleHost.NewKey();
         (await acme.PutAsync($"/files/{Stores.Documents}/{key}", new ByteArrayContent([1]))).EnsureSuccessStatusCode();
 
         PresignedRequest link = await SampleHost.ReadAsync<PresignedRequest>(
             await acme.PostAsJsonAsync($"/links/{Stores.Documents}/download", new DownloadLinkRequest(key, 60)));
 
-        link.Url.AbsolutePath.Should().Contain($"sharedkernel-samples/{Backends.RunId}/documents/tenants/acme/{key}");
+        link.Url.AbsolutePath.Should().Contain($"sharedkernel-samples/{Backends.RunId}/documents/tenants/{Acme}/{key}");
     }
 
     [Fact]

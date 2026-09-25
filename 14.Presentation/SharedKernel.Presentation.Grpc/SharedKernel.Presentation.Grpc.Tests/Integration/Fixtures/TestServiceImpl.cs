@@ -1,4 +1,5 @@
 using Grpc.Core;
+using SharedKernel.Execution.Context;
 using SharedKernel.Core.Exceptions;
 using SharedKernel.Presentation.Grpc.Interceptors;
 using SharedKernel.Presentation.WebApi.Authorization;
@@ -34,9 +35,7 @@ internal sealed class TestServiceImpl : TestService.TestServiceBase
             ? correlationValue?.ToString() ?? string.Empty
             : string.Empty;
 
-        var tenantId = context.UserState.TryGetValue(GrpcTenantContextInterceptor.ItemsKey, out var tenantValue)
-            ? tenantValue?.ToString() ?? string.Empty
-            : string.Empty;
+        var tenantId = RequestContextScope.Current?.TenantId?.ToString() ?? string.Empty;
 
         return Task.FromResult(new ContextReply { CorrelationId = correlationId, TenantId = tenantId });
     }

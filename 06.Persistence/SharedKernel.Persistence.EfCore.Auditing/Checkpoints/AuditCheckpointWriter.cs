@@ -159,7 +159,7 @@ internal sealed class AuditCheckpointWriter
                     LedgerDb.Add(command, "@since", since.ToUniversalTime(), DbType.DateTimeOffset);
                     await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
                     while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-                        chains.Add(new ChainId(reader.IsDBNull(0) ? null : reader.GetGuid(0), reader.GetString(1)));
+                        chains.Add(new ChainId(LedgerDb.ReadTenant(reader, 0), reader.GetString(1)));
                 }
 
                 var emitted = 0;

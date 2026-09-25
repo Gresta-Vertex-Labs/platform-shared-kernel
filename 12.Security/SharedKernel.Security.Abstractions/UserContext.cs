@@ -1,3 +1,5 @@
+using SharedKernel.Execution.Tenancy;
+using SharedKernel.Execution.Context;
 using System.Security.Claims;
 
 namespace SharedKernel.Security.Abstractions;
@@ -11,33 +13,33 @@ public sealed class UserContext : IUserContext
     private readonly IReadOnlyList<Claim> _claims;
 
     /// <summary>Creates a context for an authenticated caller.</summary>
-    /// <param name="identityKind">
-    /// <see cref="Abstractions.IdentityKind.User"/> or <see cref="Abstractions.IdentityKind.ServicePrincipal"/>.
+    /// <param name="actorKind">
+    /// <see cref="ActorKind.User"/> or <see cref="ActorKind.Service"/>.
     /// Use <see cref="AnonymousUserContext"/> and <see cref="SystemUserContext"/> for the other kinds.
     /// </param>
     /// <param name="subjectId">The subject identifier. Must not be empty.</param>
     /// <param name="claims">The claims <see cref="FindClaim"/> and <see cref="FindClaims"/> search.</param>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="identityKind"/> is not User or ServicePrincipal.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="actorKind"/> is not User or ServicePrincipal.</exception>
     /// <exception cref="ArgumentException"><paramref name="subjectId"/> is null, empty or whitespace.</exception>
-    public UserContext(IdentityKind identityKind, string subjectId, IEnumerable<Claim>? claims = null)
+    public UserContext(ActorKind actorKind, string subjectId, IEnumerable<Claim>? claims = null)
     {
-        if (identityKind is not (IdentityKind.User or IdentityKind.ServicePrincipal))
+        if (actorKind is not (ActorKind.User or ActorKind.Service))
         {
             throw new ArgumentOutOfRangeException(
-                nameof(identityKind),
-                identityKind,
+                nameof(actorKind),
+                actorKind,
                 "Only User and ServicePrincipal contexts carry a subject; use AnonymousUserContext or SystemUserContext.");
         }
 
         ArgumentException.ThrowIfNullOrWhiteSpace(subjectId);
 
-        IdentityKind = identityKind;
+        ActorKind = actorKind;
         SubjectId = subjectId;
         _claims = claims is null ? [] : [.. claims];
     }
 
     /// <inheritdoc/>
-    public IdentityKind IdentityKind { get; }
+    public ActorKind ActorKind { get; }
 
     /// <inheritdoc/>
     public bool IsAuthenticated => true;
@@ -49,7 +51,7 @@ public sealed class UserContext : IUserContext
     public string? ClientId { get; init; }
 
     /// <inheritdoc/>
-    public Guid? TenantId { get; init; }
+    public TenantId? TenantId { get; init; }
 
     /// <inheritdoc/>
     public string? SessionId { get; init; }

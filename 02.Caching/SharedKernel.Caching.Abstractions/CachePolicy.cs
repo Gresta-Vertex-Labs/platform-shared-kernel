@@ -1,3 +1,5 @@
+using SharedKernel.Execution.Tenancy;
+
 namespace SharedKernel.Caching.Abstractions;
 
 /// <summary>
@@ -209,17 +211,21 @@ public sealed record CachePolicy
     /// </remarks>
     /// <example>
     /// <code>
-    /// CachePolicy.Default.WithTags("orders").ForTenant("tenant-a").Tags  // ["@tenant-a:orders", "@tenant-a"]
+    /// CachePolicy.Default.WithTags("orders").ForTenant(tenantId).Tags  // ["@{tenantId}:orders", "@{tenantId}"]
     /// </code>
     /// </example>
     /// <remarks><see cref="ITenantCacheService"/> applies this automatically.</remarks>
     /// <param name="tenantId">The tenant identifier.</param>
     /// <returns>A new, tenant-scoped policy.</returns>
-    /// <exception cref="ArgumentException"><paramref name="tenantId"/> is null or whitespace.</exception>
+    /// <exception cref="ArgumentException"><paramref name="tenantId"/> is <see langword="default"/>.</exception>
     /// <exception cref="InvalidOperationException">The policy is already tenant-scoped.</exception>
-    public CachePolicy ForTenant(string tenantId)
+    public CachePolicy ForTenant(TenantId tenantId)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(tenantId);
+        if (tenantId.IsDefault)
+        {
+            throw new ArgumentException("The tenant identifier must not be default(TenantId).", nameof(tenantId));
+        }
+
         EnsureNotTenantScoped();
 
         var scoped = new string[_tags.Count + 1];

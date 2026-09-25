@@ -104,7 +104,7 @@ public sealed class RequestContext : IRequestContext
 {
     public bool IsAuthenticated { get; init; } = true;
     public string? UserId => "user-1";
-    public Guid? TenantId => null;
+    public SharedKernel.Execution.Tenancy.TenantId? TenantId => null;
     public HashSet<string> Permissions { get; } = ["orders.place"];
 
     public ValueTask<bool> HasPermissionAsync(string permission, CancellationToken cancellationToken)

@@ -1,4 +1,5 @@
 using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
 
 namespace SharedKernel.Persistence.Testing;
 
@@ -37,7 +38,7 @@ public class TestRequestContext : IRequestContext
     public string? UserId { get; set; } = DefaultUserId;
 
     /// <summary>Gets or sets the caller's tenant. Defaults to <see langword="null"/> (no tenant: tenant data is hidden).</summary>
-    public Guid? TenantId { get; set; }
+    public TenantId? TenantId { get; set; }
 
     /// <summary>
     /// Gets or sets the kind of actor. Until set: <see cref="ActorKind.User"/> when authenticated, otherwise
@@ -65,21 +66,21 @@ public class TestRequestContext : IRequestContext
     /// <param name="userId">The subject id.</param>
     /// <param name="tenantId">The tenant, or <see langword="null"/>.</param>
     /// <returns>A new context.</returns>
-    public static TestRequestContext ForUser(string userId = DefaultUserId, Guid? tenantId = null) =>
+    public static TestRequestContext ForUser(string userId = DefaultUserId, TenantId? tenantId = null) =>
         new() { UserId = userId, TenantId = tenantId };
 
     /// <summary>An authenticated user of <paramref name="tenantId"/>.</summary>
     /// <param name="tenantId">The tenant.</param>
     /// <param name="userId">The subject id.</param>
     /// <returns>A new context.</returns>
-    public static TestRequestContext ForTenant(Guid tenantId, string userId = DefaultUserId) =>
+    public static TestRequestContext ForTenant(TenantId tenantId, string userId = DefaultUserId) =>
         new() { UserId = userId, TenantId = tenantId };
 
     /// <summary>A machine client (client-credentials token): <see cref="ActorKind.Service"/>.</summary>
     /// <param name="clientId">The client id, also reported as the subject.</param>
     /// <param name="tenantId">The tenant, or <see langword="null"/>.</param>
     /// <returns>A new context.</returns>
-    public static TestRequestContext Service(string clientId, Guid? tenantId = null) =>
+    public static TestRequestContext Service(string clientId, TenantId? tenantId = null) =>
         new() { UserId = clientId, ClientId = clientId, TenantId = tenantId, ActorKind = ActorKind.Service };
 
     /// <summary>
@@ -89,19 +90,19 @@ public class TestRequestContext : IRequestContext
     /// <param name="identity">The system identity.</param>
     /// <param name="tenantId">The tenant, or <see langword="null"/>.</param>
     /// <returns>A new context.</returns>
-    public static TestRequestContext System(string identity = "system", Guid? tenantId = null) =>
+    public static TestRequestContext System(string identity = "system", TenantId? tenantId = null) =>
         new() { UserId = identity, TenantId = tenantId, ActorKind = ActorKind.System };
 
     /// <summary>An unauthenticated caller: <see cref="ActorKind.Anonymous"/>, no subject.</summary>
     /// <param name="tenantId">A tenant resolved without authentication (e.g. from the host), or <see langword="null"/>.</param>
     /// <returns>A new context.</returns>
-    public static TestRequestContext Anonymous(Guid? tenantId = null) =>
+    public static TestRequestContext Anonymous(TenantId? tenantId = null) =>
         new() { IsAuthenticated = false, UserId = null, TenantId = tenantId };
 
     /// <summary>Sets <see cref="TenantId"/>.</summary>
     /// <param name="tenantId">The tenant, or <see langword="null"/>.</param>
     /// <returns>This context.</returns>
-    public TestRequestContext WithTenant(Guid? tenantId)
+    public TestRequestContext WithTenant(TenantId? tenantId)
     {
         TenantId = tenantId;
         return this;

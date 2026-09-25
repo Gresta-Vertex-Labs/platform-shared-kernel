@@ -5,7 +5,7 @@ using SharedKernel.Application.Behaviors.Idempotency;
 using SharedKernel.Caching.Redis.Core.Extensions;
 using SharedKernel.Idempotency.Redis.Extensions;
 using SharedKernel.Messaging.Abstractions.Idempotency;
-using SharedKernel.Messaging.Abstractions.TenantContext;
+using SharedKernel.Execution.Context;
 using Xunit;
 
 namespace SharedKernel.Idempotency.Redis.Tests.Extensions;
@@ -18,20 +18,14 @@ public sealed class RedisIdempotencyServiceCollectionExtensionsTests
     // never issue a real Redis command.
     private const string ConnectionString = "localhost:6379";
 
-    private sealed class TestTenantContextAccessor : ITenantContextAccessor
-    {
-        public Guid? TenantId => Guid.NewGuid();
-    }
-
     [Fact]
-    public async Task Host_WithTenantContextAccessorRegistered_StartsSuccessfullyAndResolvesBothContracts()
+    public async Task Host_StartsSuccessfullyAndResolvesBothContracts()
     {
         using var host = Host.CreateDefaultBuilder()
             .ConfigureServices(services =>
             {
                 services.AddRedisConnection(o => o.ConnectionString = ConnectionString);
                 services.AddSharedKernelRedisIdempotency();
-                services.AddSingleton<ITenantContextAccessor, TestTenantContextAccessor>();
             })
             .Build();
 
@@ -48,18 +42,18 @@ public sealed class RedisIdempotencyServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public async Task Host_WithoutTenantContextAccessorRegistered_ThrowsAtStartAsync()
+    public void Host_RegistersTheAmbientRequestContextAccessor()
     {
         using var host = Host.CreateDefaultBuilder()
             .ConfigureServices(services =>
             {
                 services.AddRedisConnection(o => o.ConnectionString = ConnectionString);
                 services.AddSharedKernelRedisIdempotency();
-                // Deliberately no ITenantContextAccessor registration.
+                // No accessor registered by the test: the extension adds the ambient one.
             })
             .Build();
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => host.StartAsync());
+        Assert.IsType<RequestContextAccessor>(host.Services.GetRequiredService<IRequestContextAccessor>());
     }
 
     [Fact]
@@ -73,7 +67,6 @@ public sealed class RedisIdempotencyServiceCollectionExtensionsTests
             o.RetentionWindow = TimeSpan.FromMinutes(10);
             o.AllowExecutionOnStoreUnavailable = true;
         });
-        services.AddSingleton<ITenantContextAccessor, TestTenantContextAccessor>();
 
         using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<
@@ -105,7 +98,6 @@ public sealed class RedisIdempotencyServiceCollectionExtensionsTests
         services.AddLogging();
         services.AddRedisConnection(configuration);
         services.AddSharedKernelRedisIdempotency();
-        services.AddSingleton<ITenantContextAccessor, TestTenantContextAccessor>();
 
         using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         using var scope = provider.CreateScope();

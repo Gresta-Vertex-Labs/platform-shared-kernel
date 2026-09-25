@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Presentation.WebApi.Results;
 using SharedKernel.Search.Abstractions.Abstractions;
 using SharedKernel.Search.Abstractions.Models;
@@ -19,7 +20,7 @@ public static class StorefrontEndpoints
 
         // Free text + filters + sort + facets + highlighting + paging, all through the neutral builder.
         storefront.MapGet("/products", async (
-            string tenantId,
+            TenantId tenantId,
             ISearchIndex<ProductDocument> index,
             string? q,
             string? category,
@@ -63,7 +64,7 @@ public static class StorefrontEndpoints
                 return request.ToProblemDetailsResult(_ => Results.Empty);
             }
 
-            var results = await index.SearchAsync(request.Value, TenantScope.Of(tenantId), ct);
+            var results = await index.SearchAsync(request.Value, TenantScope.For(tenantId), ct);
             return results.ToProblemDetailsResult(r => Results.Ok(new
             {
                 total = r.TotalHits,
@@ -90,7 +91,7 @@ public static class StorefrontEndpoints
 
         // The headline of the pre-publish pass: a count now says how much it can be trusted.
         storefront.MapGet("/products/count", async (
-            string tenantId,
+            TenantId tenantId,
             ISearchIndex<ProductDocument> index,
             string? category,
             CancellationToken ct) =>
@@ -99,7 +100,7 @@ public static class StorefrontEndpoints
                 ? null
                 : SearchFilter.Eq(ProductFields.Category, SearchValue.From(category));
 
-            var count = await index.CountAsync(filter, TenantScope.Of(tenantId), ct);
+            var count = await index.CountAsync(filter, TenantScope.For(tenantId), ct);
             return count.ToProblemDetailsResult(c => Results.Ok(new
             {
                 value = c.Value,
@@ -111,26 +112,26 @@ public static class StorefrontEndpoints
 
         // Tenant-checked: a get-by-id for another tenant's document is NotFound, not a leak.
         storefront.MapGet("/products/{documentId}", async (
-            string tenantId,
+            TenantId tenantId,
             string documentId,
             ISearchIndex<ProductDocument> index,
             CancellationToken ct) =>
         {
-            var product = await index.GetAsync(documentId, TenantScope.Of(tenantId), ct);
+            var product = await index.GetAsync(documentId, TenantScope.For(tenantId), ct);
             return product.ToProblemDetailsResult(p => Results.Ok(p));
         });
 
         // The corpus walk. Not Result-wrapped — the domain's one documented exception to the
         // Result-first rule, following the 06.Persistence/08.Storage streaming precedent.
         storefront.MapGet("/products/export", (
-            string tenantId,
+            TenantId tenantId,
             ISearchIndex<ProductDocument> index,
             CancellationToken ct) =>
         {
             async IAsyncEnumerable<object> WalkAsync()
             {
                 await foreach (var product in index.EnumerateAsync(
-                    filter: null, TenantScope.Of(tenantId), batchSize: 4, ct))
+                    filter: null, TenantScope.For(tenantId), batchSize: 4, ct))
                 {
                     yield return new { product.DocumentId, product.Name, product.Price };
                 }
@@ -147,13 +148,13 @@ public static class StorefrontEndpoints
         // exclusive capabilities in its own package rather than behind a runtime capability flag.
 
         storefront.MapGet("/products/instant", async (
-            string tenantId,
+            TenantId tenantId,
             IInstantSearch<ProductDocument> instant,
             string q,
             CancellationToken ct) =>
         {
             var results = await instant.InstantAsync(
-                new InstantSearchRequest { FreeText = q, Limit = 5 }, TenantScope.Of(tenantId), ct);
+                new InstantSearchRequest { FreeText = q, Limit = 5 }, TenantScope.For(tenantId), ct);
 
             return results.ToProblemDetailsResult(r => Results.Ok(
                 r.Hits.Select(h => new { h.Document.DocumentId, h.Document.Name })));
@@ -162,12 +163,12 @@ public static class StorefrontEndpoints
         // A signed, expiring token a browser holds. The tenant filter inside it is enforced by the
         // ENGINE, not by this service — so a compromised front end still cannot read another tenant.
         storefront.MapPost("/products/search-token", async (
-            string tenantId,
+            TenantId tenantId,
             ITenantSearchTokenIssuer issuer,
             CancellationToken ct) =>
         {
             var token = await issuer.IssueAsync(
-                TenantScope.Of(tenantId),
+                TenantScope.For(tenantId),
                 ProductFields.TenantId,
                 [Catalog.ProductsIndex],
                 TimeSpan.FromMinutes(5),

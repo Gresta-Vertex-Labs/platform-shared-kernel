@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Testing.Persistence;
 
 namespace SharedKernel.Testing.SelfTests.Persistence;
@@ -11,13 +12,13 @@ public sealed class FakeAuditActorContextTests
         var context = new FakeAuditActorContext();
 
         Assert.False(string.IsNullOrWhiteSpace(context.ActorId));
-        Assert.NotEqual(Guid.Empty, context.TenantId);
+        Assert.NotNull(context.TenantId);
     }
 
     [Fact]
     public void Constructor_ExplicitValues_AreUsed()
     {
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
 
         var context = new FakeAuditActorContext("actor-42", tenantId);
 
@@ -28,9 +29,9 @@ public sealed class FakeAuditActorContextTests
     [Fact]
     public void Properties_AreSettable()
     {
-        var context = new FakeAuditActorContext { ActorId = "changed", TenantId = Guid.Empty };
+        var context = new FakeAuditActorContext { ActorId = "changed", TenantId = null };
 
         Assert.Equal("changed", context.ActorId);
-        Assert.Equal(Guid.Empty, context.TenantId);
+        Assert.Null(context.TenantId);
     }
 }

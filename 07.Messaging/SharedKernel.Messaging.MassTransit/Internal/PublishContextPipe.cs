@@ -46,7 +46,7 @@ internal static class PublishContextPipe
         // 01.Core's WellKnownHeaders — the same name 11.Communication, 13.ServiceDefaults and
         // 14.Presentation propagate a tenant under, so a message and an HTTP call agree.
         if (context.TenantId.HasValue)
-            pipe.Headers.Set(WellKnownHeaders.TenantId, context.TenantId.Value.ToString("D"));
+            pipe.Headers.Set(WellKnownHeaders.TenantId, context.TenantId.Value.ToString());
 
         // Caller-supplied headers last, so an explicit header always wins over a derived one.
         foreach (var (key, value) in context.Headers)

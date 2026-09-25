@@ -9,7 +9,7 @@ using SharedKernel.Idempotency.EfCore.Entities;
 using SharedKernel.Idempotency.EfCore.Internal;
 using SharedKernel.Idempotency.EfCore.Logging;
 using SharedKernel.Idempotency.EfCore.Options;
-using SharedKernel.Messaging.Abstractions.TenantContext;
+using SharedKernel.Execution.Context;
 using SharedKernel.Primitives.Clocks;
 
 namespace SharedKernel.Idempotency.EfCore.KeyStore;
@@ -66,7 +66,7 @@ public sealed class EfCoreRequestIdempotencyStore : IRequestIdempotencyStore
         """;
 
     private readonly IdempotencyDbContext _context;
-    private readonly ITenantContextAccessor _tenantContextAccessor;
+    private readonly IRequestContextAccessor _requestContextAccessor;
     private readonly IClock _clock;
     private readonly IOptions<EfCoreIdempotencyOptions> _options;
     private readonly ILogger<EfCoreRequestIdempotencyStore> _logger;
@@ -74,19 +74,19 @@ public sealed class EfCoreRequestIdempotencyStore : IRequestIdempotencyStore
     /// <summary>Initializes a new instance of <see cref="EfCoreRequestIdempotencyStore"/>.</summary>
     public EfCoreRequestIdempotencyStore(
         IdempotencyDbContext context,
-        ITenantContextAccessor tenantContextAccessor,
+        IRequestContextAccessor requestContextAccessor,
         IClock clock,
         IOptions<EfCoreIdempotencyOptions> options,
         ILogger<EfCoreRequestIdempotencyStore> logger)
     {
         ArgumentNullException.ThrowIfNull(context);
-        ArgumentNullException.ThrowIfNull(tenantContextAccessor);
+        ArgumentNullException.ThrowIfNull(requestContextAccessor);
         ArgumentNullException.ThrowIfNull(clock);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(logger);
 
         _context = context;
-        _tenantContextAccessor = tenantContextAccessor;
+        _requestContextAccessor = requestContextAccessor;
         _clock = clock;
         _options = options;
         _logger = logger;
@@ -98,7 +98,7 @@ public sealed class EfCoreRequestIdempotencyStore : IRequestIdempotencyStore
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
         ArgumentException.ThrowIfNullOrWhiteSpace(requestFingerprint);
 
-        var tenantId = EfCoreTenantScope.Resolve(_tenantContextAccessor.TenantId);
+        var tenantId = EfCoreTenantScope.Resolve(_requestContextAccessor.Current?.TenantId?.Value);
         var options = _options.Value;
         var now = _clock.UtcNow;
         var expiresAt = now + options.InFlightTtl;
@@ -178,7 +178,7 @@ public sealed class EfCoreRequestIdempotencyStore : IRequestIdempotencyStore
         if (!Guid.TryParse(reservationToken, out var token))
             return false;
 
-        var tenantId = EfCoreTenantScope.Resolve(_tenantContextAccessor.TenantId);
+        var tenantId = EfCoreTenantScope.Resolve(_requestContextAccessor.Current?.TenantId?.Value);
         var expiresAt = _clock.UtcNow + options.RetentionWindow;
 
         try
@@ -216,7 +216,7 @@ public sealed class EfCoreRequestIdempotencyStore : IRequestIdempotencyStore
         if (!Guid.TryParse(reservationToken, out var token))
             return false;
 
-        var tenantId = EfCoreTenantScope.Resolve(_tenantContextAccessor.TenantId);
+        var tenantId = EfCoreTenantScope.Resolve(_requestContextAccessor.Current?.TenantId?.Value);
 
         try
         {

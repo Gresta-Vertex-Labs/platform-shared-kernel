@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Storage;
@@ -33,8 +34,7 @@ public static class Stores
             return Result<IFileStorage>.Success(factory.GetStore(storeName));
         }
 
-        string? tenantId = http.Request.Headers[TenantHeader];
-        if (string.IsNullOrEmpty(tenantId) || StorageValidation.ValidateTenantId(tenantId) is not null)
+        if (!TenantId.TryParse(http.Request.Headers[TenantHeader].ToString(), out TenantId tenantId))
         {
             return Error.Validation("documents.tenant_required", $"Store '{storeName}' needs a valid {TenantHeader} header.");
         }

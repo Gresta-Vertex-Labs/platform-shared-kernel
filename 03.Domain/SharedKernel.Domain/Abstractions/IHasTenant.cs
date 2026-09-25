@@ -1,3 +1,5 @@
+using SharedKernel.Execution.Tenancy;
+
 namespace SharedKernel.Domain.Abstractions;
 
 /// <summary>
@@ -11,5 +13,5 @@ namespace SharedKernel.Domain.Abstractions;
 public interface IHasTenant
 {
     /// <summary>Gets the identifier of the tenant that owns the record.</summary>
-    Guid TenantId { get; }
+    TenantId TenantId { get; }
 }

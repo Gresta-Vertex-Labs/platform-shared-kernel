@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using FluentAssertions;
 using SharedKernel.Core.Exceptions;
 using SharedKernel.Domain.Aggregates;
@@ -28,17 +29,17 @@ public class GuardClauseAdoptionTests
 
     private sealed class TenantOrder : TenantedAggregateRoot<Guid>
     {
-        public TenantOrder(Guid id, Guid tenantId, IClock clock) : base(id, tenantId, clock) { }
+        public TenantOrder(Guid id, TenantId tenantId, IClock clock) : base(id, tenantId, clock) { }
     }
 
     private sealed class TenantAuditableOrder : TenantedAuditableAggregateRoot<Guid>
     {
-        public TenantAuditableOrder(Guid id, Guid tenantId, IClock clock) : base(id, tenantId, clock) { }
+        public TenantAuditableOrder(Guid id, TenantId tenantId, IClock clock) : base(id, tenantId, clock) { }
     }
 
     private sealed class TenantFullOrder : TenantedFullAuditableAggregateRoot<Guid>
     {
-        public TenantFullOrder(Guid id, Guid tenantId, IClock clock) : base(id, tenantId, clock) { }
+        public TenantFullOrder(Guid id, TenantId tenantId, IClock clock) : base(id, tenantId, clock) { }
 
         protected override void OnDelete() { }
     }
@@ -74,7 +75,7 @@ public class GuardClauseAdoptionTests
     [Fact]
     public void TenantedAggregateRoot_NullClock_ThrowsDomainException()
     {
-        var act = () => new TenantOrder(Guid.NewGuid(), Guid.NewGuid(), null!);
+        var act = () => new TenantOrder(Guid.NewGuid(), new TenantId(Guid.NewGuid()), null!);
 
         act.Should().Throw<DomainException>();
     }
@@ -82,7 +83,7 @@ public class GuardClauseAdoptionTests
     [Fact]
     public void TenantedAuditableAggregateRoot_NullClock_ThrowsDomainException()
     {
-        var act = () => new TenantAuditableOrder(Guid.NewGuid(), Guid.NewGuid(), null!);
+        var act = () => new TenantAuditableOrder(Guid.NewGuid(), new TenantId(Guid.NewGuid()), null!);
 
         act.Should().Throw<DomainException>();
     }
@@ -90,7 +91,7 @@ public class GuardClauseAdoptionTests
     [Fact]
     public void TenantedFullAuditableAggregateRoot_NullClock_ThrowsDomainException()
     {
-        var act = () => new TenantFullOrder(Guid.NewGuid(), Guid.NewGuid(), null!);
+        var act = () => new TenantFullOrder(Guid.NewGuid(), new TenantId(Guid.NewGuid()), null!);
 
         act.Should().Throw<DomainException>();
     }

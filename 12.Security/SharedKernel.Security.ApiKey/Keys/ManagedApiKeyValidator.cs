@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using Microsoft.Extensions.Options;
 using SharedKernel.Cryptography;
 using SharedKernel.Primitives.Clocks;
@@ -43,8 +44,8 @@ internal sealed class ManagedApiKeyValidator(IApiKeyStore store, IClock clock, I
             return ApiKeyValidationResult.Failure("Expired", keyId);
         }
 
-        // A record with an empty tenant id has no tenant; Success rejects Guid.Empty.
-        Guid? tenantId = record.TenantId == Guid.Empty ? null : record.TenantId;
+        // default(TenantId) names no tenant; Success rejects it.
+        TenantId? tenantId = record.TenantId is { IsDefault: true } ? null : record.TenantId;
         return ApiKeyValidationResult.Success(record.ClientId, tenantId, record.Roles, record.Permissions, record.KeyId);
     }
 }

@@ -56,6 +56,9 @@ public sealed class MinioFixture : IAsyncLifetime
 
 public sealed class ObsStorageTests(MinioFixture minio) : IClassFixture<MinioFixture>
 {
+    private static readonly TenantId TenantA = new(Guid.Parse("0f8fad5b-d9cb-469f-a165-70867728950e"));
+    private static readonly TenantId TenantB = new(Guid.Parse("7c9e6679-7425-40de-944b-e07fc1f90ae7"));
+
     [Fact]
     public async Task Objects_round_trip_through_the_obs_connection()
     {
@@ -102,10 +105,10 @@ public sealed class ObsStorageTests(MinioFixture minio) : IClassFixture<MinioFix
         using ServiceProvider host = minio.CreateHost();
         ITenantFileStorage tenants = host.GetRequiredKeyedService<ITenantFileStorage>("tenant-archive");
 
-        await tenants.ForTenant("a").UploadAsync("x.txt", new MemoryStream([1]));
+        await tenants.ForTenant(TenantA).UploadAsync("x.txt", new MemoryStream([1]));
 
-        (await tenants.ForTenant("a").ExistsAsync("x.txt")).Value.Should().BeTrue();
-        (await tenants.ForTenant("b").ExistsAsync("x.txt")).Value.Should().BeFalse();
+        (await tenants.ForTenant(TenantA).ExistsAsync("x.txt")).Value.Should().BeTrue();
+        (await tenants.ForTenant(TenantB).ExistsAsync("x.txt")).Value.Should().BeFalse();
     }
 
     [Fact]

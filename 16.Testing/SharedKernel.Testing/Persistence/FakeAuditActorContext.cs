@@ -1,4 +1,5 @@
 using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence.Testing;
 
 namespace SharedKernel.Testing.Persistence;
@@ -10,16 +11,16 @@ namespace SharedKernel.Testing.Persistence;
 /// </summary>
 public sealed class FakeAuditActorContext : TestRequestContext
 {
-    private static readonly Guid DefaultTenantId = new("22222222-2222-2222-2222-222222222222");
+    private static readonly TenantId DefaultTenantId = new(new Guid("22222222-2222-2222-2222-222222222222"));
 
     /// <summary>Initialises a new <see cref="FakeAuditActorContext"/>.</summary>
     /// <param name="actorId">The actor identifier to use. Defaults to <c>"test-actor"</c> when omitted.</param>
     /// <param name="tenantId">
-    /// The tenant id to use. Defaults to a fixed, non-empty test <see cref="Guid"/> when omitted. Set
+    /// The tenant id to use. Defaults to a fixed test <see cref="SharedKernel.Execution.Tenancy.TenantId"/> when omitted. Set
     /// <see cref="TestRequestContext.TenantId"/> to <see langword="null"/> after construction to simulate "no tenant resolved".
     /// </param>
     /// <param name="actorKind">The actor kind to use. Defaults to <see cref="ActorKind.User"/>.</param>
-    public FakeAuditActorContext(string? actorId = null, Guid? tenantId = null, ActorKind actorKind = ActorKind.User)
+    public FakeAuditActorContext(string? actorId = null, TenantId? tenantId = null, ActorKind actorKind = ActorKind.User)
     {
         UserId = actorId ?? "test-actor";
         TenantId = tenantId ?? DefaultTenantId;

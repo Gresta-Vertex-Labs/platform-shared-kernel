@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Context;
 using System.Net.Http.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication;
@@ -98,17 +99,15 @@ internal sealed class ApiKeyTestHost : IAsyncDisposable
     private static CallerSnapshot Describe(HttpContext context)
     {
         IUserContext user = context.RequestServices.GetRequiredService<IUserContext>();
-        ITenantProvider tenant = context.RequestServices.GetRequiredService<ITenantProvider>();
         return new CallerSnapshot(
-            user.IdentityKind,
+            user.ActorKind,
             user.IsAuthenticated,
             user.SubjectId,
             user.ClientId,
-            user.TenantId,
+            user.TenantId?.Value,
             [.. user.Roles],
             [.. user.Permissions],
             user.FindClaim(ApiKeyAuthenticationDefaults.KeyIdClaimType),
-            tenant.TenantId,
             context.User.Identity?.AuthenticationType,
             context.User.IsInRole("admin"));
     }
@@ -117,7 +116,7 @@ internal sealed class ApiKeyTestHost : IAsyncDisposable
 internal sealed record AuthenticateSnapshot(bool Succeeded, bool None, bool Failed, string? Scheme);
 
 internal sealed record CallerSnapshot(
-    [property: JsonConverter(typeof(JsonStringEnumConverter<IdentityKind>))] IdentityKind IdentityKind,
+    [property: JsonConverter(typeof(JsonStringEnumConverter<ActorKind>))] ActorKind ActorKind,
     bool IsAuthenticated,
     string? SubjectId,
     string? ClientId,
@@ -125,6 +124,5 @@ internal sealed record CallerSnapshot(
     string[] Roles,
     string[] Permissions,
     string? KeyId,
-    Guid ProviderTenantId,
     string? AuthenticationType,
     bool IsInAdminRole);

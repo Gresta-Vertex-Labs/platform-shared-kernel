@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Contracts.Events;
 using SharedKernel.Messaging.Abstractions.EventPublisher;
 using SharedKernel.Messaging.Abstractions.HeaderPropagation;
@@ -53,7 +54,7 @@ public sealed class InMemoryEventPublisherTests
     /// populates only <see cref="PublishContext.TenantId"/> via <see cref="PublishContext.WithTenantId"/>.
     /// Mirrors <c>InMemoryMessageBusTests.TenantPropagator</c> (T-74/P-352/WO-054).
     /// </summary>
-    private sealed class TenantPropagator(Guid tenantId) : IMessageHeaderPropagator
+    private sealed class TenantPropagator(TenantId tenantId) : IMessageHeaderPropagator
     {
         public void Propagate(PublishContext context) => context.WithTenantId(tenantId);
     }
@@ -298,7 +299,7 @@ public sealed class InMemoryEventPublisherTests
     [Fact]
     public async Task PublishAsync_NoConfigure_TenantPropagator_RoundTripsTenantIdThroughCapturedContext()
     {
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
         var publisher = new InMemoryEventPublisher([new TenantPropagator(tenantId)]);
 
         await publisher.PublishAsync(new TestIntegrationEvent("a"), CancellationToken.None);
@@ -310,7 +311,7 @@ public sealed class InMemoryEventPublisherTests
     [Fact]
     public async Task PublishAsync_WithConfigure_TenantPropagator_RoundTripsTenantIdThroughCapturedContext()
     {
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
         var publisher = new InMemoryEventPublisher([new TenantPropagator(tenantId)]);
 
         await publisher.PublishAsync(
@@ -324,8 +325,8 @@ public sealed class InMemoryEventPublisherTests
     [Fact]
     public async Task PublishAsync_WithConfigure_ExplicitTenantIdWinsOverPropagatorTenantId()
     {
-        var propagatorTenantId = Guid.NewGuid();
-        var explicitTenantId = Guid.NewGuid();
+        var propagatorTenantId = new TenantId(Guid.NewGuid());
+        var explicitTenantId = new TenantId(Guid.NewGuid());
         var publisher = new InMemoryEventPublisher([new TenantPropagator(propagatorTenantId)]);
 
         await publisher.PublishAsync(
@@ -362,7 +363,7 @@ public sealed class InMemoryEventPublisherTests
     public async Task PublishAsync_NoPropagatorsRegistered_ConfigureCallbackAlone_PopulatesTenantIdAndPartitionKey()
     {
         var publisher = new InMemoryEventPublisher(); // default ctor — zero propagators
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
 
         await publisher.PublishAsync(
             new TestIntegrationEvent("a"),

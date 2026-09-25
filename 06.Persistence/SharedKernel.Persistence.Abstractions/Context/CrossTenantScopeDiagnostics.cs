@@ -1,6 +1,7 @@
 using System.Diagnostics.Metrics;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Logging;
 
 namespace SharedKernel.Persistence.Abstractions.Context;
@@ -45,6 +46,6 @@ internal static partial class CrossTenantScopeLog
         ILogger logger,
         string actorId,
         ActorKind actorKind,
-        Guid? actorTenantId,
+        TenantId? actorTenantId,
         string reason);
 }

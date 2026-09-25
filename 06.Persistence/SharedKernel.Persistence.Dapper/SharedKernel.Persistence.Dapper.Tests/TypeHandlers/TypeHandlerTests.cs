@@ -5,6 +5,7 @@ using Npgsql;
 using NpgsqlTypes;
 using NSubstitute;
 using SharedKernel.Domain.StronglyTypedIds;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence.Dapper.TypeHandlers;
 using SharedKernel.Primitives.Enums;
 
@@ -86,6 +87,24 @@ public sealed class TypeHandlerTests
 
         var act = () => handler.Parse(99);
         act.Should().Throw<InvalidOperationException>().WithMessage("*TestStatus*99*");
+    }
+
+    [Fact]
+    public void TenantId_BindsAsAUuid_AndAnUnsetTenantAsNull()
+    {
+        var handler = new TenantIdTypeHandler();
+        var tenant = new TenantId(Guid.NewGuid());
+        var parameter = new NpgsqlParameter();
+
+        handler.SetValue(parameter, tenant);
+        parameter.DbType.Should().Be(DbType.Guid);
+        parameter.Value.Should().Be(tenant.Value);
+
+        handler.SetValue(parameter, default);
+        parameter.Value.Should().Be(DBNull.Value, "an unset tenant must never match a row");
+
+        handler.Parse(tenant.Value).Should().Be(tenant);
+        handler.Parse(Guid.Empty).IsDefault.Should().BeTrue();
     }
 
     [Fact]

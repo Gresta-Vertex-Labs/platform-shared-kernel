@@ -4,15 +4,15 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Primitives.Propagation;
-using SharedKernel.Security.Abstractions;
+using SharedKernel.Execution.Context;
 
 namespace SharedKernel.Communication.Grpc.Interceptors;
 
 /// <summary>
 /// Injects <c>x-tenant-id</c> metadata into every outgoing gRPC call by resolving
-/// <c>ITenantProvider</c> from the current request scope via <see cref="IHttpContextAccessor"/>.
-/// Silent no-op when <see cref="IHttpContextAccessor.HttpContext"/> is null,
-/// when <c>ITenantProvider</c> is not registered, or when <c>TenantId</c> is <see cref="Guid.Empty"/>.
+/// the tenant of the ambient <see cref="RequestContextScope.Current"/>, or else of the <see cref="IRequestContext"/>
+/// registered in the current request scope (via <see cref="IHttpContextAccessor"/>).
+/// Silent no-op when neither is available or the context has no tenant.
 /// Catches all exceptions, logs at <see cref="LogLevel.Error"/>, and continues — never propagates.
 /// </summary>
 internal sealed partial class TenantIdInterceptor(
@@ -79,15 +79,12 @@ internal sealed partial class TenantIdInterceptor(
             if (GrpcMetadataHelper.HasMetadataEntry(headers, TenantIdKey))
                 return context;
 
-            var httpContext = _httpContextAccessor.HttpContext;
-            if (httpContext is null)
+            var tenantId = RequestContextScope.Current?.TenantId
+                ?? _httpContextAccessor.HttpContext?.RequestServices.GetService<IRequestContext>()?.TenantId;
+            if (tenantId is not { } tenant)
                 return context;
 
-            var tenantProvider = httpContext.RequestServices.GetService<ITenantProvider>();
-            if (tenantProvider is null || tenantProvider.TenantId == Guid.Empty)
-                return context;
-
-            headers = GrpcMetadataHelper.CloneAndAdd(headers, TenantIdKey, tenantProvider.TenantId.ToString());
+            headers = GrpcMetadataHelper.CloneAndAdd(headers, TenantIdKey, tenant.ToString());
 
             var newOptions = context.Options.WithHeaders(headers);
             return new ClientInterceptorContext<TRequest, TResponse>(

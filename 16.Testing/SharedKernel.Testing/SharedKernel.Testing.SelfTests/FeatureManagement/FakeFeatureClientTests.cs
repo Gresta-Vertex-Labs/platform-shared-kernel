@@ -7,11 +7,16 @@ using SharedKernel.FeatureManagement;
 using SharedKernel.Testing.FeatureManagement;
 using Xunit;
 
+using SharedKernel.Execution.Tenancy;
+
 namespace SharedKernel.Testing.SelfTests.FeatureManagement;
 
 /// <summary>Proves <see cref="FakeFeatureClient"/> honours the real client's contract.</summary>
 public sealed partial class FakeFeatureClientTests
 {
+    private static readonly TenantId Acme = new(Guid.Parse("0f8fad5b-d9cb-469f-a165-70867728950e"));
+    private static readonly TenantId Other = new(Guid.Parse("7c9e6679-7425-40de-944b-e07fc1f90ae7"));
+
     private static readonly FeatureFlag<bool> NewCheckout = FeatureFlag.Boolean("NewCheckout");
     private static readonly FeatureFlag<string> Theme = FeatureFlag.String("Theme", "classic");
     private static readonly FeatureFlag<int> PageSize = FeatureFlag.Integer("PageSize", 20);
@@ -55,12 +60,12 @@ public sealed partial class FakeFeatureClientTests
     public async Task ARule_SeesTheExplicitAndTheClientContext()
     {
         var fake = new FakeFeatureClient()
-            .Set(NewCheckout, ctx => ctx.GetValue(FeatureContextKeys.TenantId)?.AsString == "acme");
+            .Set(NewCheckout, ctx => ctx.GetValue(FeatureContextKeys.TenantId)?.AsString == Acme.ToString());
 
-        Assert.True(await fake.IsEnabledAsync(NewCheckout, FeatureTargetingContext.ForTenant("acme").ToEvaluationContext()));
-        Assert.False(await fake.IsEnabledAsync(NewCheckout, FeatureTargetingContext.ForTenant("other").ToEvaluationContext()));
+        Assert.True(await fake.IsEnabledAsync(NewCheckout, FeatureTargetingContext.ForTenant(Acme).ToEvaluationContext()));
+        Assert.False(await fake.IsEnabledAsync(NewCheckout, FeatureTargetingContext.ForTenant(Other).ToEvaluationContext()));
 
-        fake.SetContext(FeatureTargetingContext.ForTenant("acme").ToEvaluationContext());
+        fake.SetContext(FeatureTargetingContext.ForTenant(Acme).ToEvaluationContext());
         Assert.True(await fake.IsEnabledAsync(NewCheckout));
     }
 
@@ -133,12 +138,12 @@ public sealed partial class FakeFeatureClientTests
         var flags = new FakeFeatureClient()
             .SetEnabled(Flags.NewCheckout)
             .Set(Flags.CheckoutTheme, "dark")
-            .Set(Flags.Exports, ctx => ctx.GetValue(FeatureContextKeys.TenantId)?.AsString == "acme");
+            .Set(Flags.Exports, ctx => ctx.GetValue(FeatureContextKeys.TenantId)?.AsString == Acme.ToString());
 
         var endpoint = new CheckoutEndpoint(flags);
         Assert.Equal("new-checkout/dark", await endpoint.GetLayoutAsync(CancellationToken.None));
         Assert.True(flags.WasEvaluated(Flags.NewCheckout));
-        Assert.True(await flags.IsEnabledAsync(Flags.Exports, FeatureTargetingContext.ForTenant("acme").ToEvaluationContext()));
+        Assert.True(await flags.IsEnabledAsync(Flags.Exports, FeatureTargetingContext.ForTenant(Acme).ToEvaluationContext()));
     }
 
     [Fact]

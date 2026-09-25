@@ -5,22 +5,85 @@ using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
+using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Presentation.SignalR.Filters;
-using SharedKernel.Security.Abstractions;
-using SharedKernel.Testing.Security;
 using Xunit;
 
 namespace SharedKernel.Presentation.SignalR.Tests.Filters;
 
 public class TenantContextHubFilterTests
 {
+    private static readonly TenantId Tenant = new(Guid.Parse("7b0c7f5e-2d41-4c55-9a55-0f6b1e0f3a11"));
+
     [Fact]
-    public async Task OnConnectedAsync_TenantProviderResolvable_AttachesTenantIdToItems()
+    public async Task OnConnectedAsync_RequestContextResolvable_RunsConnectInsideIt()
     {
-        var tenantId = Guid.NewGuid();
-        var tenantProvider = new FakeTenantProvider(tenantId);
-        var lifetimeContext = CreateLifetimeContext(tenantProvider);
-        var filter = new TenantContextHubFilter();
+        var requestContext = new SystemRequestContext([], "caller", Tenant);
+        var lifetimeContext = CreateLifetimeContext(requestContext);
+        var filter = new TenantContextHubFilter(new RequestContextAccessor());
+        IRequestContext? observed = null;
+
+        await filter.OnConnectedAsync(lifetimeContext, _ =>
+        {
+            observed = RequestContextScope.Current;
+            return Task.CompletedTask;
+        });
+
+        observed.Should().BeSameAs(requestContext);
+        RequestContextScope.Current.Should().BeNull("the scope must not leak past the connect pipeline");
+    }
+
+    [Fact]
+    public async Task InvokeMethodAsync_AfterConnect_RunsTheHubMethodInsideTheConnectionsContext()
+    {
+        var requestContext = new SystemRequestContext([], "caller", Tenant);
+        var lifetimeContext = CreateLifetimeContext(requestContext);
+        var filter = new TenantContextHubFilter(new RequestContextAccessor());
+        await filter.OnConnectedAsync(lifetimeContext, _ => Task.CompletedTask);
+
+        var invocationContext = new HubInvocationContext(
+            lifetimeContext.Context,
+            lifetimeContext.ServiceProvider,
+            lifetimeContext.Hub,
+            typeof(TenantContextHubFilterTests).GetMethod(nameof(InvokeMethodAsync_AfterConnect_RunsTheHubMethodInsideTheConnectionsContext))!,
+            []);
+        TenantId? observedTenant = null;
+
+        await filter.InvokeMethodAsync(invocationContext, _ =>
+        {
+            observedTenant = new RequestContextAccessor().Current?.TenantId;
+            return ValueTask.FromResult<object?>(null);
+        });
+
+        observedTenant.Should().Be(Tenant);
+    }
+
+    [Fact]
+    public async Task OnConnectedAsync_PrefersTheAmbientContext()
+    {
+        var ambient = new SystemRequestContext([], "ambient", Tenant);
+        var lifetimeContext = CreateLifetimeContext(new SystemRequestContext([], "registered"));
+        var filter = new TenantContextHubFilter(new RequestContextAccessor());
+        IRequestContext? observed = null;
+
+        using (RequestContextScope.Begin(ambient))
+        {
+            await filter.OnConnectedAsync(lifetimeContext, _ =>
+            {
+                observed = RequestContextScope.Current;
+                return Task.CompletedTask;
+            });
+        }
+
+        observed.Should().BeSameAs(ambient);
+    }
+
+    [Fact]
+    public async Task OnConnectedAsync_NoRequestContextRegistered_DoesNotReject()
+    {
+        var lifetimeContext = CreateLifetimeContext(requestContext: null);
+        var filter = new TenantContextHubFilter(new RequestContextAccessor());
         var nextInvoked = false;
 
         await filter.OnConnectedAsync(lifetimeContext, _ =>
@@ -30,28 +93,10 @@ public class TenantContextHubFilterTests
         });
 
         nextInvoked.Should().BeTrue();
-        lifetimeContext.Context.Items[TenantContextHubFilter.ItemsKey].Should().Be(tenantId);
     }
 
     [Fact]
-    public async Task OnConnectedAsync_NoTenantProviderRegistered_AttachesEmptyGuidAndDoesNotReject()
-    {
-        var lifetimeContext = CreateLifetimeContext(tenantProvider: null);
-        var filter = new TenantContextHubFilter();
-        var nextInvoked = false;
-
-        await filter.OnConnectedAsync(lifetimeContext, _ =>
-        {
-            nextInvoked = true;
-            return Task.CompletedTask;
-        });
-
-        nextInvoked.Should().BeTrue();
-        lifetimeContext.Context.Items[TenantContextHubFilter.ItemsKey].Should().Be(Guid.Empty);
-    }
-
-    [Fact]
-    public async Task OnConnectedAsync_NoHttpContextAvailable_AttachesEmptyGuidAndDoesNotReject()
+    public async Task OnConnectedAsync_NoHttpContextAvailable_DoesNotReject()
     {
         var hubCallerContext = Substitute.For<HubCallerContext>();
         hubCallerContext.Items.Returns(new Dictionary<object, object?>());
@@ -62,7 +107,7 @@ public class TenantContextHubFilterTests
             Substitute.For<IServiceProvider>(),
             Substitute.For<Hub>());
 
-        var filter = new TenantContextHubFilter();
+        var filter = new TenantContextHubFilter(new RequestContextAccessor());
         var nextInvoked = false;
 
         await filter.OnConnectedAsync(lifetimeContext, _ =>
@@ -72,14 +117,13 @@ public class TenantContextHubFilterTests
         });
 
         nextInvoked.Should().BeTrue();
-        lifetimeContext.Context.Items[TenantContextHubFilter.ItemsKey].Should().Be(Guid.Empty);
     }
 
-    private static HubLifetimeContext CreateLifetimeContext(ITenantProvider? tenantProvider)
+    private static HubLifetimeContext CreateLifetimeContext(IRequestContext? requestContext)
     {
         var services = new ServiceCollection();
-        if (tenantProvider is not null)
-            services.AddSingleton(tenantProvider);
+        if (requestContext is not null)
+            services.AddSingleton(requestContext);
         var serviceProvider = services.BuildServiceProvider();
 
         var httpContext = new DefaultHttpContext

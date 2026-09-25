@@ -1,5 +1,6 @@
 using Elastic.Clients.Elasticsearch;
 using FluentAssertions;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Search.Abstractions.Models;
 using SharedKernel.Search.ElasticSearch.Analytics;
 using SharedKernel.Search.ElasticSearch.Index;
@@ -65,7 +66,7 @@ public sealed class ElasticSearchAggregationsAndCutoverTests : IAsyncLifetime
                 subAggregations: [AggregationRequest.Stats("avgPrice", TestProductFields.Price)]),
         };
 
-        var result = await _analytics.AggregateAsync(filter: null, aggregations, TenantScope.Of(TestProductCorpus.TenantA));
+        var result = await _analytics.AggregateAsync(filter: null, aggregations, TenantScope.For(TestProductCorpus.TenantA));
 
         result.IsSuccess.Should().BeTrue();
         result.Value.TryGetTerms("byCategory", out var terms).Should().BeTrue();
@@ -86,7 +87,7 @@ public sealed class ElasticSearchAggregationsAndCutoverTests : IAsyncLifetime
     {
         var aggregations = new[] { AggregationRequest.Cardinality("distinctCategories", TestProductFields.Category) };
 
-        var result = await _analytics.AggregateAsync(filter: null, aggregations, TenantScope.Of(TestProductCorpus.TenantA));
+        var result = await _analytics.AggregateAsync(filter: null, aggregations, TenantScope.For(TestProductCorpus.TenantA));
 
         result.IsSuccess.Should().BeTrue();
         result.Value.TryGetCardinality("distinctCategories", out var cardinality).Should().BeTrue();
@@ -98,7 +99,7 @@ public sealed class ElasticSearchAggregationsAndCutoverTests : IAsyncLifetime
     {
         var aggregations = new[] { AggregationRequest.Stats("priceStats", TestProductFields.Price) };
 
-        var result = await _analytics.AggregateAsync(filter: null, aggregations, TenantScope.Of(TestProductCorpus.TenantA));
+        var result = await _analytics.AggregateAsync(filter: null, aggregations, TenantScope.For(TestProductCorpus.TenantA));
 
         result.IsSuccess.Should().BeTrue();
         result.Value.TryGetStats("priceStats", out var stats).Should().BeTrue();
@@ -119,7 +120,7 @@ public sealed class ElasticSearchAggregationsAndCutoverTests : IAsyncLifetime
             AggregationRequest.DateHistogram("byMonth", TestProductFields.CreatedAt, DateHistogramInterval.Month),
         };
 
-        var result = await _analytics.AggregateAsync(filter: null, aggregations, TenantScope.Of(TestProductCorpus.TenantA));
+        var result = await _analytics.AggregateAsync(filter: null, aggregations, TenantScope.For(TestProductCorpus.TenantA));
 
         result.IsSuccess.Should().BeTrue();
         result.Value.TryGetDateHistogram("byMonth", out var histogram).Should().BeTrue();
@@ -146,7 +147,7 @@ public sealed class ElasticSearchAggregationsAndCutoverTests : IAsyncLifetime
         };
         var aggregations = new[] { AggregationRequest.Range("priceRanges", TestProductFields.Price, ranges) };
 
-        var result = await _analytics.AggregateAsync(filter: null, aggregations, TenantScope.Of(TestProductCorpus.TenantA));
+        var result = await _analytics.AggregateAsync(filter: null, aggregations, TenantScope.For(TestProductCorpus.TenantA));
 
         result.IsSuccess.Should().BeTrue();
         result.Value.TryGetRange("priceRanges", out var rangeResult).Should().BeTrue();
@@ -164,7 +165,7 @@ public sealed class ElasticSearchAggregationsAndCutoverTests : IAsyncLifetime
     {
         var aggregations = new[] { AggregationRequest.Terms("byCategory", TestProductFields.Category, size: 10) };
 
-        var result = await _analytics.AggregateAsync(filter: null, aggregations, TenantScope.Of(TestProductCorpus.TenantA));
+        var result = await _analytics.AggregateAsync(filter: null, aggregations, TenantScope.For(TestProductCorpus.TenantA));
 
         result.IsSuccess.Should().BeTrue();
         result.Value.TryGetCardinality("byCategory", out var mismatched).Should().BeFalse();
@@ -180,7 +181,7 @@ public sealed class ElasticSearchAggregationsAndCutoverTests : IAsyncLifetime
             AggregationRequest.Cardinality("distinctCategories", TestProductFields.Category),
         };
 
-        var result = await _analytics.AggregateAsync(filter: null, aggregations, TenantScope.Of(TestProductCorpus.TenantA));
+        var result = await _analytics.AggregateAsync(filter: null, aggregations, TenantScope.For(TestProductCorpus.TenantA));
 
         result.IsSuccess.Should().BeTrue();
 
@@ -221,11 +222,11 @@ public sealed class ElasticSearchAggregationsAndCutoverTests : IAsyncLifetime
         var liveDefinition = TestProductIndexDefinitions.Standard(CutoverLiveAliasName);
         var liveIndex = ElasticsearchProviderFactory.CreateIndex<TestProduct>(_client, liveDefinition);
 
-        var searchResult = await liveIndex.SearchAsync(SearchRequest.Default, TenantScope.Of(TestProductCorpus.TenantA));
+        var searchResult = await liveIndex.SearchAsync(SearchRequest.Default, TenantScope.For(TestProductCorpus.TenantA));
         searchResult.IsSuccess.Should().BeTrue();
         searchResult.Value.TotalHits.Should().Be(TestProductCorpus.ForTenant(TestProductCorpus.TenantA).Count);
 
-        var getResult = await liveIndex.GetAsync("prod-001", TenantScope.Of(TestProductCorpus.TenantA));
+        var getResult = await liveIndex.GetAsync("prod-001", TenantScope.For(TestProductCorpus.TenantA));
         getResult.IsSuccess.Should().BeTrue();
     }
 }

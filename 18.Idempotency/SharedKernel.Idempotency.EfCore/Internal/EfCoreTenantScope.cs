@@ -2,7 +2,7 @@ namespace SharedKernel.Idempotency.EfCore.Internal;
 
 /// <summary>
 /// Resolves the mandatory <c>TenantId</c> column value for a store row from the ambient
-/// <see cref="SharedKernel.Messaging.Abstractions.TenantContext.ITenantContextAccessor"/> (D-02).
+/// <see cref="SharedKernel.Execution.Context.IRequestContextAccessor"/> (D-02).
 /// </summary>
 /// <remarks>
 /// Not shared with <c>SharedKernel.Idempotency.Redis</c> — this domain deliberately has no shared

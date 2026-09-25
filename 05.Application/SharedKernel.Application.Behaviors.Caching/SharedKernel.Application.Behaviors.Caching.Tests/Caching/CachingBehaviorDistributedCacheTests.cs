@@ -90,8 +90,8 @@ public sealed class CachingBehaviorDistributedCacheTests
         var distributed = NewDistributedCache();
         await using var writer = BuildProvider(distributed);
         await using var reader = BuildProvider(distributed);
-        var tenantA = Guid.NewGuid();
-        var tenantB = Guid.NewGuid();
+        var tenantA = new TenantId(Guid.NewGuid());
+        var tenantB = new TenantId(Guid.NewGuid());
         var widget = new WidgetDto("3", 7, ["blue"]);
 
         await TenantBehavior(writer, tenantA).Handle(
@@ -127,7 +127,7 @@ public sealed class CachingBehaviorDistributedCacheTests
             TestPipeline.Metrics(),
             NullLogger<CachingBehavior<WidgetQuery, Result<WidgetDto>>>.Instance);
 
-    private static CachingBehavior<TenantWidgetQuery, Result<WidgetDto>> TenantBehavior(IServiceProvider provider, Guid tenantId) =>
+    private static CachingBehavior<TenantWidgetQuery, Result<WidgetDto>> TenantBehavior(IServiceProvider provider, TenantId tenantId) =>
         new(
             provider.GetRequiredService<ICacheService>(),
             provider.GetRequiredService<ITenantCacheKeyProvider>(),

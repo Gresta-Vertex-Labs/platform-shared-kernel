@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
 using SharedKernel.Contracts.Pagination;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence.Abstractions.Connections;
 using SharedKernel.Persistence.EfCore.Auditing.Checkpoints;
 using SharedKernel.Persistence.EfCore.Auditing.Storage;
@@ -154,7 +155,7 @@ internal sealed class EfAuditQueryService(
     private async Task<CursorPagedList<AuditRecord>> PageAsync(
         AuditRecordQuery query,
         bool tenantFilter,
-        Guid? tenantId,
+        TenantId? tenantId,
         CancellationToken cancellationToken)
     {
         var connection = await connectionFactory.CreateConnectionAsync(cancellationToken).ConfigureAwait(false);

@@ -6,6 +6,7 @@ using Npgsql;
 using SharedKernel.Execution.Context;
 using SharedKernel.Cryptography.Envelope;
 using SharedKernel.Cryptography.Symmetric;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Encryption.BlindIndex;
@@ -30,7 +31,7 @@ public static class TestKeys
 /// <summary>A caller identity whose tenant a test can change.</summary>
 public sealed class TestRequestContext : IRequestContext
 {
-    public Guid? TenantId { get; set; }
+    public TenantId? TenantId { get; set; }
 
     public bool IsAuthenticated => true;
 

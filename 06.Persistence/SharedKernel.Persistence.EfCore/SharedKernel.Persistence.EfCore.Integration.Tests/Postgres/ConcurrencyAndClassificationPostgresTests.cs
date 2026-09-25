@@ -2,6 +2,7 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using SharedKernel.Core.Exceptions;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence.EfCore.Extensibility;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Testing.Containers;
@@ -58,7 +59,7 @@ public sealed class ConcurrencyAndClassificationPostgresTests
     private string ConnectionString =>
         new NpgsqlConnectionStringBuilder(_fixture.ConnectionString) { Database = DatabaseName }.ConnectionString;
 
-    private PgTestDbContext CreateContext(Guid tenantId, IDbUpdateExceptionClassifier? classifier = null) =>
+    private PgTestDbContext CreateContext(TenantId tenantId, IDbUpdateExceptionClassifier? classifier = null) =>
         PgTestDbContextFactory.Create(
             ConnectionString,
             new FakeAuditActorContext("actor"),
@@ -68,7 +69,7 @@ public sealed class ConcurrencyAndClassificationPostgresTests
     [Fact]
     public async Task AggregateRootTouchInterceptor_ConcurrentChildOnlyEdit_ConflictsWithRootEdit()
     {
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
         var orderId = PgOrderId.New();
         Guid lineId;
 
@@ -113,7 +114,7 @@ public sealed class ConcurrencyAndClassificationPostgresTests
     [Fact]
     public async Task UniqueViolation_WithClassifierRegistered_TranslatesToTypedException()
     {
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
         var sharedCode = $"unique-classified-{Guid.NewGuid():N}";
 
         await using var setup = CreateContext(tenantId);
@@ -134,7 +135,7 @@ public sealed class ConcurrencyAndClassificationPostgresTests
     [Fact]
     public async Task ForeignKeyViolation_WithClassifierRegistered_TranslatesToTypedException()
     {
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
 
         await using var setup = CreateContext(tenantId);
         await setup.Database.EnsureCreatedAsync();

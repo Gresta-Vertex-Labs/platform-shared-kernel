@@ -4,9 +4,12 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Presentation.Grpc.Extensions;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Security.Abstractions;
+using SharedKernel.Testing.Application;
 using SharedKernel.Testing.Clocks;
 using SharedKernel.Testing.Security;
 
@@ -17,7 +20,7 @@ namespace SharedKernel.Presentation.Grpc.Tests.Integration.Fixtures;
 /// in-memory <c>TestServer</c>, never a real Kestrel socket — hosting the test-only
 /// <see cref="TestServiceImpl"/> behind <c>AddSharedKernelGrpc()</c>. Mirrors
 /// <c>SharedKernel.ServiceDefaults.Tests</c>'s <c>GrpcTestWebApplicationFactory</c> (T-43/WO-056)
-/// exactly, extended with default <see cref="IUserContext"/>/<see cref="ITenantProvider"/>/
+/// exactly, extended with default <see cref="IUserContext"/>/<see cref="IRequestContext"/>/
 /// <see cref="IClock"/> fakes each test can override per-scenario via
 /// <see cref="WebApplicationFactory{TEntryPoint}.WithWebHostBuilder"/> +
 /// <c>ConfigureTestServices</c> (last registration wins for single-instance DI resolution).
@@ -56,7 +59,7 @@ internal sealed class GrpcTestWebApplicationFactory : WebApplicationFactory<Grpc
             // deterministic fixed clock. Individual tests override any of these via
             // WithWebHostBuilder(...).ConfigureTestServices(...) — the last registration wins.
             services.AddSingleton<IUserContext>(new FakeUserContext());
-            services.AddSingleton<ITenantProvider>(new FakeTenantProvider());
+            services.AddSingleton<IRequestContext>(new FakeRequestContext { TenantId = new TenantId(Guid.Parse("22222222-2222-2222-2222-222222222222")) });
             services.AddSingleton<IClock>(new FakeClock());
         }
 

@@ -26,6 +26,7 @@
       (SHA-256 for SearchIndexDefinition.Fingerprint) and System.Text.Json are in-box on net10.0.
     -->
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Execution\SharedKernel.Execution.csproj" />
     <ProjectReference Include="..\..\04.Contracts\SharedKernel.Contracts\SharedKernel.Contracts.csproj" />
   </ItemGroup>
   <ItemGroup>

@@ -2,6 +2,7 @@ using System.Data;
 using System.Data.Common;
 using SharedKernel.Execution.Auditing;
 using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence.EfCore.Auditing.Format;
 
 namespace SharedKernel.Persistence.EfCore.Auditing.Storage;
@@ -10,9 +11,9 @@ namespace SharedKernel.Persistence.EfCore.Auditing.Storage;
 internal sealed record PendingLedgerRecord(LedgerRecordFields Fields, byte[] Salt, string? BeforeSnapshot, string? AfterSnapshot);
 
 /// <summary>The chain identity <c>(TenantId, ResourceType)</c>.</summary>
-internal readonly record struct ChainId(Guid? TenantId, string ResourceType)
+internal readonly record struct ChainId(TenantId? TenantId, string ResourceType)
 {
-    public string TenantLabel => TenantId?.ToString("D") ?? "system";
+    public string TenantLabel => TenantId?.ToString() ?? "system";
 }
 
 /// <summary>
@@ -51,13 +52,21 @@ internal static class LedgerDb
         return parameter;
     }
 
+    /// <summary>Adds a nullable <c>uuid</c> tenant parameter (<see langword="null"/> is the system chain).</summary>
+    public static DbParameter AddTenant(DbCommand command, string name, TenantId? tenantId) =>
+        Add(command, name, tenantId?.Value, DbType.Guid);
+
+    /// <summary>Reads a nullable <c>uuid</c> tenant column (<see langword="null"/> is the system chain).</summary>
+    public static TenantId? ReadTenant(DbDataReader reader, int ordinal) =>
+        reader.IsDBNull(ordinal) ? null : TenantId.FromNullable(reader.GetGuid(ordinal));
+
     /// <summary>Returns <c>{column} = @name</c> (binding <paramref name="tenantId"/>) or <c>{column} IS NULL</c>.</summary>
-    public static string TenantPredicate(DbCommand command, string column, Guid? tenantId, string parameterName = "@tenant")
+    public static string TenantPredicate(DbCommand command, string column, TenantId? tenantId, string parameterName = "@tenant")
     {
         if (tenantId is not { } id)
             return $"{column} IS NULL";
 
-        Add(command, parameterName, id, DbType.Guid);
+        Add(command, parameterName, id.Value, DbType.Guid);
         return $"{column} = {parameterName}";
     }
 
@@ -72,7 +81,7 @@ internal static class LedgerDb
     public static LedgerRecordFields ReadFields(DbDataReader reader) => new()
     {
         Id = reader.GetGuid(0),
-        TenantId = reader.IsDBNull(1) ? null : reader.GetGuid(1),
+        TenantId = ReadTenant(reader, 1),
         ResourceType = reader.GetString(2),
         ResourceId = reader.GetString(3),
         Action = reader.GetString(4),
@@ -166,7 +175,7 @@ internal static class LedgerDb
             """);
 
         Add(command, "@id", r.Id, DbType.Guid);
-        Add(command, "@tenant_id", r.TenantId, DbType.Guid);
+        AddTenant(command, "@tenant_id", r.TenantId);
         Add(command, "@resource_type", r.ResourceType, DbType.String);
         Add(command, "@resource_id", r.ResourceId, DbType.String);
         Add(command, "@action", r.Action, DbType.String);

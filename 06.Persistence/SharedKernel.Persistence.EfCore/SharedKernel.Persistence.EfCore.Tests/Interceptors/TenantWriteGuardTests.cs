@@ -2,6 +2,7 @@ using FluentAssertions;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using SharedKernel.Core.Exceptions;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.EfCore.Concurrency;
 using SharedKernel.Persistence.EfCore.Context;
@@ -24,7 +25,7 @@ namespace SharedKernel.Persistence.EfCore.Tests.Interceptors;
 public sealed class TenantWriteGuardTests
 {
     private static TenantedTestDbContext CreateContext(
-        SqliteConnection connection, Guid tenantId, out ICrossTenantScope crossTenantScope)
+        SqliteConnection connection, TenantId tenantId, out ICrossTenantScope crossTenantScope)
     {
         var options = new DbContextOptionsBuilder<TenantedTestDbContext>()
             .UseSqlite(connection)
@@ -49,7 +50,7 @@ public sealed class TenantWriteGuardTests
         using var connection = new SqliteConnection("DataSource=:memory:");
         connection.Open();
 
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
         using var ctx = CreateContext(connection, tenantId, out _);
         await ctx.Database.EnsureCreatedAsync();
 
@@ -59,7 +60,7 @@ public sealed class TenantWriteGuardTests
 
         ctx.ChangeTracker.Clear();
         var reloaded = await ctx.TenantedAggregates.FirstAsync(e => e.Id == entity.Id);
-        ctx.Entry(reloaded).Property(nameof(SharedKernel.Domain.Abstractions.IHasTenant.TenantId)).CurrentValue = Guid.NewGuid();
+        ctx.Entry(reloaded).Property(nameof(SharedKernel.Domain.Abstractions.IHasTenant.TenantId)).CurrentValue = new TenantId(Guid.NewGuid());
 
         var act = () => ctx.SaveChangesAsync();
         await act.Should().ThrowAsync<ForbiddenException>(
@@ -81,7 +82,7 @@ public sealed class TenantWriteGuardTests
             .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
             .Options;
 
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
         var actorContext = TestDbContextFactory.CreateAuthenticatedActorContext(Guid.NewGuid(), tenantId);
 
         using var ctx = new SoftDeletableTenantedDbContext(
@@ -117,8 +118,8 @@ public sealed class TenantWriteGuardTests
         using var connection = new SqliteConnection("DataSource=:memory:");
         connection.Open();
 
-        var attackerTenant = Guid.NewGuid();
-        var victimTenant = Guid.NewGuid();
+        var attackerTenant = new TenantId(Guid.NewGuid());
+        var victimTenant = new TenantId(Guid.NewGuid());
 
         using var ctxVictim = CreateContext(connection, victimTenant, out _);
         await ctxVictim.Database.EnsureCreatedAsync();
@@ -150,8 +151,8 @@ public sealed class TenantWriteGuardTests
         using var connection = new SqliteConnection("DataSource=:memory:");
         connection.Open();
 
-        var attackerTenant = Guid.NewGuid();
-        var victimTenant = Guid.NewGuid();
+        var attackerTenant = new TenantId(Guid.NewGuid());
+        var victimTenant = new TenantId(Guid.NewGuid());
 
         using var ctxVictim = CreateContext(connection, victimTenant, out _);
         await ctxVictim.Database.EnsureCreatedAsync();
@@ -181,8 +182,8 @@ public sealed class TenantWriteGuardTests
         using var connection = new SqliteConnection("DataSource=:memory:");
         connection.Open();
 
-        var tenantA = Guid.NewGuid();
-        var tenantB = Guid.NewGuid();
+        var tenantA = new TenantId(Guid.NewGuid());
+        var tenantB = new TenantId(Guid.NewGuid());
         using var ctx = CreateContext(connection, tenantA, out var crossTenantScope);
         await ctx.Database.EnsureCreatedAsync();
 

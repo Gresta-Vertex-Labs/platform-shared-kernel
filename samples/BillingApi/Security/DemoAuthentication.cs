@@ -1,3 +1,5 @@
+using SharedKernel.Execution.Tenancy;
+using SharedKernel.Execution.Context;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
@@ -84,9 +86,9 @@ internal sealed class DemoUserContextMapper : IUserContextMapper
         if (string.IsNullOrWhiteSpace(subject))
             return AnonymousUserContext.Instance;
 
-        return new UserContext(IdentityKind.User, subject, identity.Claims)
+        return new UserContext(ActorKind.User, subject, identity.Claims)
         {
-            TenantId = Guid.TryParse(identity.FindFirst(DemoClaimTypes.Tenant)?.Value, out var tenant) ? tenant : null,
+            TenantId = TenantId.TryParse(identity.FindFirst(DemoClaimTypes.Tenant)?.Value, out var tenant) ? tenant : null,
             Permissions = [.. identity.FindAll(DemoClaimTypes.Permission).Select(c => c.Value)],
         };
     }

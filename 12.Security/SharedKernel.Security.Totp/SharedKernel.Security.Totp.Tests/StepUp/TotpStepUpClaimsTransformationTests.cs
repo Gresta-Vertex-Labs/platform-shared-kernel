@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Context;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
@@ -130,7 +131,7 @@ public sealed class TotpStepUpClaimsTransformationTests
     {
         await StepUpAsync(Subject, Session, _clock.UtcNow);
         ClaimsPrincipal principal = new SecurityTestContextBuilder()
-            .WithIdentityKind(IdentityKind.ServicePrincipal)
+            .WithActorKind(ActorKind.Service)
             .WithSessionId(Session)
             .Build();
 
@@ -265,7 +266,7 @@ public sealed class TotpStepUpClaimsTransformationTests
     public async Task TransformAsync_FirstMappedIdentityIsServicePrincipal_DoesNotStepUpLaterUserIdentity()
     {
         await StepUpAsync(Subject, Session, _clock.UtcNow);
-        ClaimsIdentity app = new SecurityTestContextBuilder().WithSubjectId("app-1").WithIdentityKind(IdentityKind.ServicePrincipal).Build().Identities.Single();
+        ClaimsIdentity app = new SecurityTestContextBuilder().WithSubjectId("app-1").WithActorKind(ActorKind.Service).Build().Identities.Single();
         ClaimsIdentity user = BuildPrincipal().Identities.Single();
 
         ClaimsPrincipal result = await CreateTransformation().TransformAsync(new ClaimsPrincipal([app, user]));

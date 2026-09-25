@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Search.Abstractions.Abstractions;
@@ -445,7 +446,7 @@ internal sealed class MeilisearchIndex<TDocument> : ISearchIndex<TDocument>
     public Task<Result<TDocument>> GetAsync(
         string documentId, TenantScope tenantScope, CancellationToken cancellationToken = default)
     {
-        if (_definition.TenantField is not null && string.IsNullOrEmpty(tenantScope.Value))
+        if (_definition.TenantField is not null && tenantScope.IsGlobal)
         {
             _logger.MeilisearchTenantScopeMissing(_definition.Name);
             return Task.FromResult(Result<TDocument>.Failure(SearchErrors.TenantScopeMissing(_definition.Name)));
@@ -487,7 +488,7 @@ internal sealed class MeilisearchIndex<TDocument> : ISearchIndex<TDocument>
             {
                 if (!TryGetPropertyCaseInsensitive(raw, tenantField, out var tenantValue)
                     || tenantValue.ValueKind != JsonValueKind.String
-                    || !string.Equals(tenantValue.GetString(), tenantScope.Value, StringComparison.Ordinal))
+                    || !string.Equals(tenantValue.GetString(), tenantScope.Tenant?.ToString(), StringComparison.Ordinal))
                 {
                     return Result<TDocument>.Failure(SearchErrors.DocumentNotFound(_definition.Name, documentId));
                 }

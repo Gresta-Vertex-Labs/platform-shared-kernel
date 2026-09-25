@@ -4,7 +4,7 @@ using Microsoft.Extensions.Hosting;
 using SharedKernel.Application.Behaviors.Idempotency;
 using SharedKernel.Idempotency.EfCore.Extensions;
 using SharedKernel.Messaging.Abstractions.Idempotency;
-using SharedKernel.Messaging.Abstractions.TenantContext;
+using SharedKernel.Execution.Context;
 using SharedKernel.Persistence;
 using SharedKernel.Primitives.Clocks;
 using Xunit;
@@ -19,20 +19,14 @@ public sealed class EfCoreIdempotencyServiceCollectionExtensionsTests
     private const string ConnectionString =
         "Host=localhost;Port=5432;Database=sk_idempotency_test;Username=sk;Password=sk;Timeout=1";
 
-    private sealed class TestTenantContextAccessor : ITenantContextAccessor
-    {
-        public Guid? TenantId => Guid.NewGuid();
-    }
-
     [Fact]
-    public async Task Host_WithTenantContextAccessorRegistered_StartsSuccessfullyAndResolvesBothContracts()
+    public async Task Host_StartsSuccessfullyAndResolvesBothContracts()
     {
         using var host = Host.CreateDefaultBuilder()
             .ConfigureServices(services =>
             {
                 services.AddClock();
                 services.AddSharedKernelEfCoreIdempotency(options => options.UseNpgsql(ConnectionString));
-                services.AddSingleton<ITenantContextAccessor, TestTenantContextAccessor>();
             })
             .Build();
 
@@ -49,18 +43,18 @@ public sealed class EfCoreIdempotencyServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public async Task Host_WithoutTenantContextAccessorRegistered_ThrowsAtStartAsync()
+    public void Host_RegistersTheAmbientRequestContextAccessor()
     {
         using var host = Host.CreateDefaultBuilder()
             .ConfigureServices(services =>
             {
                 services.AddClock();
                 services.AddSharedKernelEfCoreIdempotency(options => options.UseNpgsql(ConnectionString));
-                // Deliberately no ITenantContextAccessor registration.
+                // No accessor registered by the test: the extension adds the ambient one.
             })
             .Build();
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => host.StartAsync());
+        Assert.IsType<RequestContextAccessor>(host.Services.GetRequiredService<IRequestContextAccessor>());
     }
     [Fact]
     public void AddSharedKernelEfCoreIdempotency_RunsTheStoreWithoutRetry_EvenOverTheRetryingPlatformDefault()
@@ -71,7 +65,6 @@ public sealed class EfCoreIdempotencyServiceCollectionExtensionsTests
         services.AddClock();
         services.AddSharedKernelEfCoreIdempotency(options => options.UsePostgres(
             SharedKernel.Testing.Persistence.TestNpgsqlDataSources.Get(ConnectionString)));
-        services.AddSingleton<ITenantContextAccessor, TestTenantContextAccessor>();
 
         using var provider = services.BuildServiceProvider();
         using var scope = provider.CreateScope();
@@ -94,7 +87,6 @@ public sealed class EfCoreIdempotencyServiceCollectionExtensionsTests
                 o.RetentionWindow = TimeSpan.FromMinutes(10);
                 o.AllowExecutionOnStoreUnavailable = true;
             });
-        services.AddSingleton<ITenantContextAccessor, TestTenantContextAccessor>();
 
         using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<

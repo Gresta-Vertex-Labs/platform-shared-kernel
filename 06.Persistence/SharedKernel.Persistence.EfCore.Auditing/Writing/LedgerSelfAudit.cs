@@ -1,6 +1,7 @@
 using System.Data.Common;
 using System.Text.Json;
 using SharedKernel.Execution.Auditing;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence.Abstractions.Connections;
 using SharedKernel.Persistence.EfCore.Auditing.Storage;
 
@@ -17,7 +18,7 @@ internal sealed class LedgerSelfAudit(AuditRecordFactory factory, IDbConnectionF
 
     /// <summary>Records <paramref name="action"/> in the chain of <paramref name="tenantId"/>.</summary>
     public async Task<AuditRecord> RecordAsync(
-        Guid? tenantId,
+        TenantId? tenantId,
         string resourceType,
         string resourceId,
         string action,

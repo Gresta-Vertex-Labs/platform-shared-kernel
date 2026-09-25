@@ -1,8 +1,8 @@
 using Microsoft.Extensions.Logging;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
-using SharedKernel.Workflows.Temporal.Dispatch;
 using SharedKernel.Workflows.Temporal.Failures;
 using SharedKernel.Workflows.Temporal.Interception;
 using SharedKernel.Workflows.Temporal.Logging;
@@ -41,7 +41,7 @@ public abstract class ActivityBase
 
     /// <summary>
     /// Gets the tenant scope propagated from the dispatching workflow's headers, or
-    /// <see cref="TenantScope.None"/> if none was propagated.
+    /// <see cref="TenantScope.Global"/> if none was propagated.
     /// </summary>
     protected TenantScope TenantScope => ActivityPropagationContext.CurrentTenantScope;
 

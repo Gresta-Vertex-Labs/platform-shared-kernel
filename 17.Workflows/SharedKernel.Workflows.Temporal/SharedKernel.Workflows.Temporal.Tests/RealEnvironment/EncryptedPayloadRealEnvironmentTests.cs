@@ -132,7 +132,7 @@ public sealed class EncryptedPayloadRealEnvironmentTests(TemporalTestFixture fix
         Result<IWorkflowHandle<string>> startResult = await dispatcher.StartAsync<EchoWorkflow, string, string>(
             secretMarker,
             Options(EncryptedTaskQueue, $"encrypted-{Guid.NewGuid():N}"),
-            TenantScope.Of("tenant-encrypted"));
+            TenantScope.For(TestTenants.Encrypted));
         startResult.IsSuccess.Should().BeTrue();
         await startResult.Value.GetResultAsync();
 
@@ -157,7 +157,7 @@ public sealed class EncryptedPayloadRealEnvironmentTests(TemporalTestFixture fix
         Result<IWorkflowHandle<string>> startResult = await dispatcher.StartAsync<EchoWorkflow, string, string>(
             controlMarker,
             Options(PlainTaskQueue, $"plain-{Guid.NewGuid():N}"),
-            TenantScope.Of("tenant-plain"));
+            TenantScope.For(TestTenants.Plain));
         startResult.IsSuccess.Should().BeTrue();
         await startResult.Value.GetResultAsync();
 

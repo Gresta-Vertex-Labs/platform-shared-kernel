@@ -3,6 +3,7 @@ using System.Diagnostics.Metrics;
 using System.Net.Http;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Search.Abstractions.Abstractions;
 using SharedKernel.Search.Abstractions.Constants;
 using SharedKernel.Search.Abstractions.Models;
@@ -85,7 +86,7 @@ public sealed class MeilisearchTelemetryTests
         Activity.Current = null;
 
         var index = CreateIndex(indexName);
-        await index.SearchAsync(SearchRequest.Default, TenantScope.None);
+        await index.SearchAsync(SearchRequest.Default, TenantScope.Global);
 
         var activity = activities
             .Where(a => (string?)a.GetTagItem(SearchWellKnown.IndexTagName) == indexName)
@@ -118,7 +119,7 @@ public sealed class MeilisearchTelemetryTests
         Activity.Current = null;
 
         var index = CreateIndex(indexName);
-        var result = await index.SearchAsync(SearchRequest.Default, TenantScope.None);
+        var result = await index.SearchAsync(SearchRequest.Default, TenantScope.Global);
         result.IsFailure.Should().BeTrue("this index points at an unreachable instance");
 
         var activity = activities
@@ -174,7 +175,7 @@ public sealed class MeilisearchTelemetryTests
         listener.Start();
 
         var index = CreateIndex(indexName);
-        await index.SearchAsync(SearchRequest.Default, TenantScope.None);
+        await index.SearchAsync(SearchRequest.Default, TenantScope.Global);
 
         var measurement = measurements.Where(m => m.Index == indexName).Should().ContainSingle().Subject;
         measurement.Value.Should().BeGreaterThan(0, "the histogram records elapsed seconds");

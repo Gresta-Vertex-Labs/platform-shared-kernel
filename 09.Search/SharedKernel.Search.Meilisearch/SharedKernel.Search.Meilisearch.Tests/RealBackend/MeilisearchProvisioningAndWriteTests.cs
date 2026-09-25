@@ -1,4 +1,5 @@
 using FluentAssertions;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Search.Abstractions.Models;
 using SharedKernel.Search.Meilisearch.Tests.Containers;
 using SharedKernel.Search.Meilisearch.Tests.Support;
@@ -63,7 +64,7 @@ public sealed class MeilisearchProvisioningAndWriteTests : IAsyncLifetime
         var writeResult = await index.IndexAsync(doc, SearchWriteConsistency.Searchable);
 
         writeResult.IsSuccess.Should().BeTrue();
-        var getResult = await index.GetAsync(doc.DocumentId, TenantScope.Of(doc.TenantId));
+        var getResult = await index.GetAsync(doc.DocumentId, TenantScope.For(TenantId.Parse(doc.TenantId)));
         getResult.IsSuccess.Should().BeTrue();
         getResult.Value.Name.Should().Be(doc.Name);
     }
@@ -81,7 +82,7 @@ public sealed class MeilisearchProvisioningAndWriteTests : IAsyncLifetime
         var waitResult = await index.WaitUntilSearchableAsync(writeResult.Value, TimeSpan.FromSeconds(30));
         waitResult.IsSuccess.Should().BeTrue();
 
-        var getResult = await index.GetAsync(doc.DocumentId, TenantScope.Of(doc.TenantId));
+        var getResult = await index.GetAsync(doc.DocumentId, TenantScope.For(TenantId.Parse(doc.TenantId)));
         getResult.IsSuccess.Should().BeTrue();
     }
 
@@ -97,17 +98,17 @@ public sealed class MeilisearchProvisioningAndWriteTests : IAsyncLifetime
         var id = $"upsert-{Guid.NewGuid():N}";
         var first = TestProductCorpus.All[2] with { DocumentId = id, Name = "First Version" };
         var second = first with { Name = "Second Version" };
-        var beforeCount = (await index.CountAsync(null, TenantScope.Of(first.TenantId))).Value;
+        var beforeCount = (await index.CountAsync(null, TenantScope.For(TenantId.Parse(first.TenantId)))).Value;
         beforeCount.IsExact.Should().BeTrue("the test corpus is far below the index maxTotalHits ceiling");
 
         await index.IndexAsync(first, SearchWriteConsistency.Searchable);
         await index.IndexAsync(second, SearchWriteConsistency.Searchable);
 
-        var getResult = await index.GetAsync(id, TenantScope.Of(first.TenantId));
+        var getResult = await index.GetAsync(id, TenantScope.For(TenantId.Parse(first.TenantId)));
         getResult.IsSuccess.Should().BeTrue();
         getResult.Value.Name.Should().Be("Second Version");
 
-        var afterCount = (await index.CountAsync(null, TenantScope.Of(first.TenantId))).Value;
+        var afterCount = (await index.CountAsync(null, TenantScope.For(TenantId.Parse(first.TenantId)))).Value;
         afterCount.IsExact.Should().BeTrue();
         afterCount.Value.Should().Be(beforeCount.Value + 1);
     }
@@ -122,7 +123,7 @@ public sealed class MeilisearchProvisioningAndWriteTests : IAsyncLifetime
         var deleteResult = await index.DeleteAsync(doc.DocumentId, SearchWriteConsistency.Searchable);
 
         deleteResult.IsSuccess.Should().BeTrue();
-        (await index.GetAsync(doc.DocumentId, TenantScope.Of(doc.TenantId))).IsFailure.Should().BeTrue();
+        (await index.GetAsync(doc.DocumentId, TenantScope.For(TenantId.Parse(doc.TenantId)))).IsFailure.Should().BeTrue();
     }
 
     [Fact]
@@ -142,7 +143,7 @@ public sealed class MeilisearchProvisioningAndWriteTests : IAsyncLifetime
         deleteResult.IsSuccess.Should().BeTrue();
         foreach (var doc in docs)
         {
-            (await index.GetAsync(doc.DocumentId, TenantScope.Of(doc.TenantId))).IsFailure.Should().BeTrue();
+            (await index.GetAsync(doc.DocumentId, TenantScope.For(TenantId.Parse(doc.TenantId)))).IsFailure.Should().BeTrue();
         }
     }
 
@@ -157,12 +158,12 @@ public sealed class MeilisearchProvisioningAndWriteTests : IAsyncLifetime
 
         var deleteResult = await index.DeleteByFilterAsync(
             SearchFilter.Eq(TestProductFields.Status, SearchValue.From("to-be-deleted")),
-            TenantScope.Of(matching.TenantId),
+            TenantScope.For(TenantId.Parse(matching.TenantId)),
             SearchWriteConsistency.Searchable);
 
         deleteResult.IsSuccess.Should().BeTrue();
-        (await index.GetAsync(matching.DocumentId, TenantScope.Of(matching.TenantId))).IsFailure.Should().BeTrue();
-        (await index.GetAsync(nonMatching.DocumentId, TenantScope.Of(nonMatching.TenantId))).IsSuccess.Should().BeTrue();
+        (await index.GetAsync(matching.DocumentId, TenantScope.For(TenantId.Parse(matching.TenantId)))).IsFailure.Should().BeTrue();
+        (await index.GetAsync(nonMatching.DocumentId, TenantScope.For(TenantId.Parse(nonMatching.TenantId)))).IsSuccess.Should().BeTrue();
     }
 
     [Fact]
@@ -180,7 +181,7 @@ public sealed class MeilisearchProvisioningAndWriteTests : IAsyncLifetime
             var clearResult = await index.ClearAsync(SearchWriteConsistency.Searchable);
 
             clearResult.IsSuccess.Should().BeTrue();
-            var countResult = await index.CountAsync(filter: null, TenantScope.Of(TestProductCorpus.TenantA));
+            var countResult = await index.CountAsync(filter: null, TenantScope.For(TestProductCorpus.TenantA));
             countResult.Value.Value.Should().Be(0);
         }
         finally
@@ -196,14 +197,14 @@ public sealed class MeilisearchProvisioningAndWriteTests : IAsyncLifetime
         // against a null client in the container-free MeilisearchPreflightValidationTests). This
         // confirms the SAME guard still fires end-to-end against a live client.
         var index = MeilisearchProviderFactory.CreateIndex<TestProduct>(_fixture, _definition);
-        var beforeCount = (await index.CountAsync(null, TenantScope.Of(TestProductCorpus.TenantA))).Value;
+        var beforeCount = (await index.CountAsync(null, TenantScope.For(TestProductCorpus.TenantA))).Value;
         var invalidDoc = TestProductCorpus.All[8] with { DocumentId = "invalid id with spaces" };
 
         var result = await index.IndexAsync(invalidDoc, SearchWriteConsistency.Searchable);
 
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("search.invalid_document_id");
-        var afterCount = (await index.CountAsync(null, TenantScope.Of(TestProductCorpus.TenantA))).Value;
+        var afterCount = (await index.CountAsync(null, TenantScope.For(TestProductCorpus.TenantA))).Value;
         afterCount.Value.Should().Be(beforeCount.Value);
     }
 }

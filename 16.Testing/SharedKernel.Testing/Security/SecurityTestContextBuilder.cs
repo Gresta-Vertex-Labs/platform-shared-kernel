@@ -1,3 +1,5 @@
+using SharedKernel.Execution.Tenancy;
+using SharedKernel.Execution.Context;
 using System.Globalization;
 using System.Security.Claims;
 using SharedKernel.Security.Abstractions;
@@ -23,11 +25,11 @@ public sealed class SecurityTestContextBuilder
 
     private string _subjectId = FakeUserContext.DefaultSubjectId;
     private string? _clientId;
-    private Guid? _tenantId;
+    private TenantId? _tenantId;
     private string? _sessionId;
     private string? _name;
     private string? _email;
-    private IdentityKind _identityKind = IdentityKind.User;
+    private ActorKind _identityKind = ActorKind.User;
     private string? _authContextClassReference;
     private DateTimeOffset? _authTime;
 
@@ -53,7 +55,7 @@ public sealed class SecurityTestContextBuilder
     /// <summary>Sets the tenant (<c>tenant_id</c>).</summary>
     /// <param name="tenantId">The tenant id, or <see langword="null"/>.</param>
     /// <returns>The same builder.</returns>
-    public SecurityTestContextBuilder WithTenantId(Guid? tenantId)
+    public SecurityTestContextBuilder WithTenantId(TenantId? tenantId)
     {
         _tenantId = tenantId;
         return this;
@@ -137,18 +139,18 @@ public sealed class SecurityTestContextBuilder
         return this;
     }
 
-    /// <summary>Sets the identity kind. Defaults to <see cref="IdentityKind.User"/>.</summary>
-    /// <param name="identityKind">The identity kind.</param>
+    /// <summary>Sets the identity kind. Defaults to <see cref="ActorKind.User"/>.</summary>
+    /// <param name="actorKind">The identity kind.</param>
     /// <returns>The same builder.</returns>
-    public SecurityTestContextBuilder WithIdentityKind(IdentityKind identityKind)
+    public SecurityTestContextBuilder WithActorKind(ActorKind actorKind)
     {
-        _identityKind = identityKind;
+        _identityKind = actorKind;
         return this;
     }
 
     /// <summary>Makes the caller unauthenticated.</summary>
     /// <returns>The same builder.</returns>
-    public SecurityTestContextBuilder Unauthenticated() => WithIdentityKind(IdentityKind.Anonymous);
+    public SecurityTestContextBuilder Unauthenticated() => WithActorKind(ActorKind.Anonymous);
 
     /// <summary>Adds a claim.</summary>
     /// <param name="type">The claim type.</param>
@@ -172,7 +174,7 @@ public sealed class SecurityTestContextBuilder
         var claims = new List<Claim> { new(SecurityClaimTypes.Subject, _subjectId) };
 
         AddIfPresent(claims, SecurityClaimTypes.AuthorizedParty, _clientId);
-        AddIfPresent(claims, SecurityClaimTypes.TenantId, _tenantId?.ToString("D"));
+        AddIfPresent(claims, SecurityClaimTypes.TenantId, _tenantId?.ToString());
         AddIfPresent(claims, SecurityClaimTypes.SessionId, _sessionId);
         AddIfPresent(claims, SecurityClaimTypes.Name, _name);
         AddIfPresent(claims, SecurityClaimTypes.Email, _email);
@@ -183,7 +185,7 @@ public sealed class SecurityTestContextBuilder
         claims.AddRange(_roles.Select(role => new Claim(SecurityClaimTypes.Roles, role)));
         claims.AddRange(_authenticationMethods.Select(method => new Claim(SecurityClaimTypes.AuthenticationMethod, method)));
 
-        if (_identityKind == IdentityKind.ServicePrincipal)
+        if (_identityKind == ActorKind.Service)
         {
             claims.Add(new Claim("idtyp", "app"));
         }
@@ -192,7 +194,7 @@ public sealed class SecurityTestContextBuilder
 
         var identity = new ClaimsIdentity(
             claims,
-            _identityKind == IdentityKind.Anonymous ? null : AuthenticationType,
+            _identityKind == ActorKind.Anonymous ? null : AuthenticationType,
             SecurityClaimTypes.Name,
             SecurityClaimTypes.Roles);
         return new ClaimsPrincipal(identity);
@@ -205,10 +207,10 @@ public sealed class SecurityTestContextBuilder
     /// <returns>The context.</returns>
     public FakeUserContext BuildUserContext()
     {
-        bool hasSubject = _identityKind is IdentityKind.User or IdentityKind.ServicePrincipal;
+        bool hasSubject = _identityKind is ActorKind.User or ActorKind.Service;
         return new FakeUserContext
         {
-            IdentityKind = _identityKind,
+            ActorKind = _identityKind,
             SubjectId = hasSubject ? _subjectId : null,
             ClientId = _clientId,
             TenantId = _tenantId,

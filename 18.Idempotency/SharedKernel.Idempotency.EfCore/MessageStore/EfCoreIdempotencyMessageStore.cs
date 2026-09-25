@@ -7,7 +7,7 @@ using SharedKernel.Idempotency.EfCore.Internal;
 using SharedKernel.Idempotency.EfCore.Logging;
 using SharedKernel.Idempotency.EfCore.Options;
 using SharedKernel.Messaging.Abstractions.Idempotency;
-using SharedKernel.Messaging.Abstractions.TenantContext;
+using SharedKernel.Execution.Context;
 using SharedKernel.Primitives.Clocks;
 
 namespace SharedKernel.Idempotency.EfCore.MessageStore;
@@ -38,7 +38,7 @@ namespace SharedKernel.Idempotency.EfCore.MessageStore;
 public sealed class EfCoreIdempotencyMessageStore : IIdempotencyStore
 {
     private readonly IdempotencyDbContext _context;
-    private readonly ITenantContextAccessor _tenantContextAccessor;
+    private readonly IRequestContextAccessor _requestContextAccessor;
     private readonly IClock _clock;
     private readonly IOptions<EfCoreIdempotencyOptions> _efCoreOptions;
     private readonly IOptions<IdempotencyOptions> _messagingOptions;
@@ -47,21 +47,21 @@ public sealed class EfCoreIdempotencyMessageStore : IIdempotencyStore
     /// <summary>Initializes a new instance of <see cref="EfCoreIdempotencyMessageStore"/>.</summary>
     public EfCoreIdempotencyMessageStore(
         IdempotencyDbContext context,
-        ITenantContextAccessor tenantContextAccessor,
+        IRequestContextAccessor requestContextAccessor,
         IClock clock,
         IOptions<EfCoreIdempotencyOptions> efCoreOptions,
         IOptions<IdempotencyOptions> messagingOptions,
         ILogger<EfCoreIdempotencyMessageStore> logger)
     {
         ArgumentNullException.ThrowIfNull(context);
-        ArgumentNullException.ThrowIfNull(tenantContextAccessor);
+        ArgumentNullException.ThrowIfNull(requestContextAccessor);
         ArgumentNullException.ThrowIfNull(clock);
         ArgumentNullException.ThrowIfNull(efCoreOptions);
         ArgumentNullException.ThrowIfNull(messagingOptions);
         ArgumentNullException.ThrowIfNull(logger);
 
         _context = context;
-        _tenantContextAccessor = tenantContextAccessor;
+        _requestContextAccessor = requestContextAccessor;
         _clock = clock;
         _efCoreOptions = efCoreOptions;
         _messagingOptions = messagingOptions;
@@ -72,7 +72,7 @@ public sealed class EfCoreIdempotencyMessageStore : IIdempotencyStore
     /// <inheritdoc />
     public async Task<IdempotencyReservation> TryBeginAsync(Guid messageId, CancellationToken ct)
     {
-        var tenantId = EfCoreTenantScope.Resolve(_tenantContextAccessor.TenantId);
+        var tenantId = EfCoreTenantScope.Resolve(_requestContextAccessor.Current?.TenantId?.Value);
         var options = _efCoreOptions.Value;
         var now = _clock.UtcNow;
         var expiresAt = now + options.InFlightTtl;
@@ -128,7 +128,7 @@ public sealed class EfCoreIdempotencyMessageStore : IIdempotencyStore
     {
         ArgumentException.ThrowIfNullOrEmpty(reservationToken);
 
-        var tenantId = EfCoreTenantScope.Resolve(_tenantContextAccessor.TenantId);
+        var tenantId = EfCoreTenantScope.Resolve(_requestContextAccessor.Current?.TenantId?.Value);
         var options = _efCoreOptions.Value;
         var now = _clock.UtcNow;
         var expiresAt = now + _messagingOptions.Value.ExpiryWindow;
@@ -159,7 +159,7 @@ public sealed class EfCoreIdempotencyMessageStore : IIdempotencyStore
     {
         ArgumentException.ThrowIfNullOrEmpty(reservationToken);
 
-        var tenantId = EfCoreTenantScope.Resolve(_tenantContextAccessor.TenantId);
+        var tenantId = EfCoreTenantScope.Resolve(_requestContextAccessor.Current?.TenantId?.Value);
         var options = _efCoreOptions.Value;
 
         try

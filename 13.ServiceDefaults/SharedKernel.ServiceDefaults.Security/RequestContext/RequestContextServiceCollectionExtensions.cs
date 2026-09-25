@@ -9,9 +9,9 @@ namespace SharedKernel.ServiceDefaults.Security;
 public static class RequestContextServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers <see cref="SecurityRequestContext"/> as the scoped <see cref="IRequestContext"/>, and
-    /// <see cref="UserContextTenantProvider"/> as <see cref="ITenantProvider"/> unless one is already
-    /// registered.
+    /// Registers <see cref="IRequestContext"/>: the ambient <see cref="RequestContextScope.Current"/> when an inbound
+    /// adapter opened one, otherwise the scope's <see cref="SecurityRequestContext"/> over <see cref="IUserContext"/>.
+    /// Also registers <see cref="IRequestContextAccessor"/> unless one is already registered.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <returns>The same <paramref name="services"/> for chaining.</returns>
@@ -23,6 +23,12 @@ public static class RequestContextServiceCollectionExtensions
     /// <see cref="IUserContext"/> registration (e.g. from <c>AddOidcAuthentication(...)</c>).
     /// </para>
     /// <para>
+    /// The ambient context wins so that an inbound adapter can refine the caller for the rest of the request — for
+    /// example <c>SharedKernel.MultiTenancy</c>'s <c>TenantResolutionMiddleware</c>, which opens a scope carrying the
+    /// tenant it resolved from the claim, header or tenant directory. <see cref="IRequestContext"/> is therefore
+    /// registered as transient; the <see cref="SecurityRequestContext"/> behind it is scoped.
+    /// </para>
+    /// <para>
     /// Satisfies <c>AddAuthorizationBehavior()</c>'s <c>Build()</c>-time check, so call it before the
     /// application behaviors' <c>Build()</c>.
     /// </para>
@@ -31,8 +37,10 @@ public static class RequestContextServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        services.TryAddScoped<ITenantProvider, UserContextTenantProvider>();
-        services.AddScoped<IRequestContext, SecurityRequestContext>();
+        services.TryAddSingleton<IRequestContextAccessor, RequestContextAccessor>();
+        services.TryAddScoped<SecurityRequestContext>();
+        services.AddTransient<IRequestContext>(static provider =>
+            RequestContextScope.Current ?? provider.GetRequiredService<SecurityRequestContext>());
 
         return services;
     }

@@ -1,5 +1,6 @@
 using FluentAssertions;
 using SharedKernel.Execution.Auditing;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.EfCore.Auditing;
 using SharedKernel.Testing.Persistence;
@@ -8,8 +9,8 @@ namespace SharedKernel.Testing.SelfTests.Persistence;
 
 public sealed class FakeAuditQueryServiceTests
 {
-    private static readonly Guid TenantA = Guid.NewGuid();
-    private static readonly Guid TenantB = Guid.NewGuid();
+    private static readonly TenantId TenantA = new(Guid.NewGuid());
+    private static readonly TenantId TenantB = new(Guid.NewGuid());
 
     private static async Task<FakeAuditTrailWriter> SeedAsync(FakeAuditActorContext context, params string[] resourceIds)
     {

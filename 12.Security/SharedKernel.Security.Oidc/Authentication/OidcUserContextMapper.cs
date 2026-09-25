@@ -1,3 +1,5 @@
+using SharedKernel.Execution.Tenancy;
+using SharedKernel.Execution.Context;
 using System.Security.Claims;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -34,7 +36,7 @@ internal sealed class OidcUserContextMapper(
             return AnonymousUserContext.Instance;
         }
 
-        return new UserContext(applicationToken ? IdentityKind.ServicePrincipal : IdentityKind.User, subjectId, identity.Claims)
+        return new UserContext(applicationToken ? ActorKind.Service : ActorKind.User, subjectId, identity.Claims)
         {
             ClientId = clientId,
             TenantId = ReadTenant(identity, claims.TenantClaimType),
@@ -50,7 +52,7 @@ internal sealed class OidcUserContextMapper(
         };
     }
 
-    private Guid? ReadTenant(ClaimsIdentity identity, string claimType)
+    private TenantId? ReadTenant(ClaimsIdentity identity, string claimType)
     {
         string? value = First(identity, claimType);
         if (value is null)
@@ -58,7 +60,7 @@ internal sealed class OidcUserContextMapper(
             return null;
         }
 
-        if (Guid.TryParse(value, out Guid tenantId) && tenantId != Guid.Empty)
+        if (TenantId.TryParse(value, out TenantId tenantId))
         {
             return tenantId;
         }

@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using BillingApi.Application;
 using BillingApi.Domain;
 using BillingApi.Infrastructure;
@@ -65,7 +66,7 @@ public static class BillingEndpoints
 
             using (crossTenant.Enter($"tenant erasure request for {tenantId}"))
             {
-                var result = await keys.ShredTenantAsync(tenantId, cancellationToken: ct);
+                var result = await keys.ShredTenantAsync(new TenantId(tenantId), cancellationToken: ct);
                 return Results.Ok(new { result.TenantId, result.IsComplete, result.BlindIndexValuesCleared });
             }
         });

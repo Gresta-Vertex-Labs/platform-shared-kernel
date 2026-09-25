@@ -1,12 +1,14 @@
+using SharedKernel.Execution.Tenancy;
+using SharedKernel.Execution.Context;
 using SharedKernel.Security.Abstractions;
 
 namespace SharedKernel.Testing.Security;
 
 /// <summary>A settable <see cref="IUserContext"/> for unit tests.</summary>
 /// <remarks>
-/// Defaults to an authenticated <see cref="IdentityKind.User"/> with <see cref="DefaultSubjectId"/>, so most tests
-/// need no setup. <see cref="IsAuthenticated"/> follows <see cref="IdentityKind"/>, as on every real context; set
-/// <see cref="IdentityKind"/> to <see cref="IdentityKind.Anonymous"/> for an unauthenticated caller.
+/// Defaults to an authenticated <see cref="ActorKind.User"/> with <see cref="DefaultSubjectId"/>, so most tests
+/// need no setup. <see cref="IsAuthenticated"/> follows <see cref="ActorKind"/>, as on every real context; set
+/// <see cref="ActorKind"/> to <see cref="ActorKind.Anonymous"/> for an unauthenticated caller.
 /// </remarks>
 public sealed class FakeUserContext : IUserContext
 {
@@ -14,10 +16,10 @@ public sealed class FakeUserContext : IUserContext
     public const string DefaultSubjectId = "11111111-1111-1111-1111-111111111111";
 
     /// <inheritdoc/>
-    public IdentityKind IdentityKind { get; set; } = IdentityKind.User;
+    public ActorKind ActorKind { get; set; } = ActorKind.User;
 
     /// <inheritdoc/>
-    public bool IsAuthenticated => IdentityKind != IdentityKind.Anonymous;
+    public bool IsAuthenticated => ActorKind != ActorKind.Anonymous;
 
     /// <inheritdoc/>
     /// <remarks>Defaults to <see cref="DefaultSubjectId"/>.</remarks>
@@ -27,7 +29,7 @@ public sealed class FakeUserContext : IUserContext
     public string? ClientId { get; set; }
 
     /// <inheritdoc/>
-    public Guid? TenantId { get; set; }
+    public TenantId? TenantId { get; set; }
 
     /// <inheritdoc/>
     public string? SessionId { get; set; }

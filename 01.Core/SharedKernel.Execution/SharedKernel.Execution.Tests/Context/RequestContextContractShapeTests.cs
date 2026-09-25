@@ -8,12 +8,12 @@ namespace SharedKernel.Execution.Tests.Context;
 /// </summary>
 public sealed class RequestContextContractShapeTests
 {
-    private sealed class TestRequestContext(bool isAuthenticated, string? userId, Guid? tenantId, bool hasPermission)
+    private sealed class TestRequestContext(bool isAuthenticated, string? userId, TenantId? tenantId, bool hasPermission)
         : IRequestContext
     {
         public bool IsAuthenticated => isAuthenticated;
         public string? UserId => userId;
-        public Guid? TenantId => tenantId;
+        public TenantId? TenantId => tenantId;
 
         public ValueTask<bool> HasPermissionAsync(string permission, CancellationToken cancellationToken)
             => ValueTask.FromResult(hasPermission);
@@ -31,7 +31,7 @@ public sealed class RequestContextContractShapeTests
     [Fact]
     public async Task HasPermissionAsync_ReturnsImplementationSuppliedValue()
     {
-        IRequestContext context = new TestRequestContext(true, "user-1", Guid.NewGuid(), hasPermission: true);
+        IRequestContext context = new TestRequestContext(true, "user-1", new TenantId(Guid.NewGuid()), hasPermission: true);
 
         var result = await context.HasPermissionAsync("orders.read", CancellationToken.None);
 

@@ -5,14 +5,13 @@ using SharedKernel.MultiTenancy.Extensions;
 using SharedKernel.MultiTenancy.Middleware;
 using SharedKernel.MultiTenancy.Resolution;
 using SharedKernel.Persistence.Abstractions.Connections;
-using SharedKernel.Security.Abstractions;
 
 namespace SharedKernel.MultiTenancy.Tests.Extensions;
 
 public sealed class MultiTenancyExtensionsTests
 {
     [Fact]
-    public void AddSharedKernelMultiTenancy_RegistersAmbientTenantProviderAsScopedTenantProvider()
+    public void AddSharedKernelMultiTenancy_RegistersTheAmbientRequestContextAccessor()
     {
         var services = new ServiceCollection();
         services.AddSingleton(Substitute.For<IDbConnectionFactory>());
@@ -22,8 +21,8 @@ public sealed class MultiTenancyExtensionsTests
         using var provider = services.BuildServiceProvider();
         using var scope = provider.CreateScope();
 
-        var tenantProvider = scope.ServiceProvider.GetRequiredService<ITenantProvider>();
-        Assert.IsType<AmbientTenantProvider>(tenantProvider);
+        var accessor = scope.ServiceProvider.GetRequiredService<SharedKernel.Execution.Context.IRequestContextAccessor>();
+        Assert.IsType<SharedKernel.Execution.Context.RequestContextAccessor>(accessor);
     }
 
     [Fact]

@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Execution.Context;
 using SharedKernel.Core.Exceptions;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Testing.Persistence;
@@ -17,8 +18,8 @@ namespace SharedKernel.Persistence.EfCore.Tests.MultiTenancy;
 /// </summary>
 public sealed class CrossTenantScopeFlowTests : IDisposable
 {
-    private static readonly Guid CallerTenant = Guid.NewGuid();
-    private static readonly Guid OtherTenant = Guid.NewGuid();
+    private static readonly TenantId CallerTenant = new TenantId(Guid.NewGuid());
+    private static readonly TenantId OtherTenant = new TenantId(Guid.NewGuid());
 
     private readonly SqliteConnection _connection = new("DataSource=:memory:");
     private readonly ServiceProvider _provider;
@@ -94,6 +95,6 @@ public sealed class CrossTenantScopeFlowTests : IDisposable
         return services.GetRequiredService<ICrossTenantScope>().Enter(reason);
     }
 
-    private static TenantedTestAggregate NewAggregateOf(Guid tenant) =>
+    private static TenantedTestAggregate NewAggregateOf(TenantId tenant) =>
         new(TenantedTestId.New(), "row", tenant, new SystemClock());
 }

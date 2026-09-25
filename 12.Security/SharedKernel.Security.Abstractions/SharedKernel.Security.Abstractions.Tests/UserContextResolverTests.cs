@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Context;
 using System.Security.Claims;
 using Xunit;
 
@@ -204,7 +205,7 @@ public sealed class UserContextResolverTests
     {
         public List<ClaimsIdentity> Mapped { get; } = [];
 
-        public IUserContext Result { get; } = result ?? new UserContext(IdentityKind.User, "mapped-" + authenticationType);
+        public IUserContext Result { get; } = result ?? new UserContext(ActorKind.User, "mapped-" + authenticationType);
 
         public string AuthenticationType => authenticationType;
 

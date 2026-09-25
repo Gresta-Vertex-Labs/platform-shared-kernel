@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence.EfCore.Encryption.Tests.Fixtures;
 using SharedKernel.Testing.Containers;
 
@@ -10,7 +11,7 @@ namespace SharedKernel.Persistence.EfCore.Encryption.Tests.Integration;
 [Collection("EncryptionPostgres")]
 public sealed class QueryTests(PostgreSqlContainerFixture fixture) : IAsyncLifetime
 {
-    private readonly Guid _tenant = Guid.NewGuid();
+    private readonly TenantId _tenant = new TenantId(Guid.NewGuid());
     private readonly TestRequestContext _request = new();
     private ServiceProvider _services = null!;
     private string _cs = null!;
@@ -120,7 +121,7 @@ public sealed class QueryTests(PostgreSqlContainerFixture fixture) : IAsyncLifet
         await using var scope = _services.CreateAsyncScope();
         var context = scope.ServiceProvider.GetRequiredService<CustomerDbContext>();
 
-        var query = context.Customers.IgnoreQueryFilters().WhereEncryptedEquals(context, x => x.Email, "bob@example.com", tenantId: Guid.NewGuid());
+        var query = context.Customers.IgnoreQueryFilters().WhereEncryptedEquals(context, x => x.Email, "bob@example.com", tenantId: new TenantId(Guid.NewGuid()));
         (await query.ToListAsync()).Should().BeEmpty();
         // ToQueryString prints parameter values as "-- @p=..." comments; the statement itself holds only the parameter.
         var sql = string.Join('\n', query.ToQueryString().Split('\n').Where(line => !line.StartsWith("--", StringComparison.Ordinal)));

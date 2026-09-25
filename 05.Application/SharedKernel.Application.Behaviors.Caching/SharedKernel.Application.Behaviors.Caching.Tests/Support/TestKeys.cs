@@ -8,14 +8,14 @@ internal static class TestKeys
     internal static string Global(string queryType, string id) =>
         CacheKeyFormat.BuildKey(FakeCacheKeyProvider.ServiceName, queryType, id);
 
-    internal static string Tenant(Guid tenantId, string queryType, string id) =>
-        CacheKeyFormat.BuildTenantKey(FakeCacheKeyProvider.ServiceName, tenantId.ToString("D"), queryType, id);
+    internal static string Tenant(TenantId tenantId, string queryType, string id) =>
+        CacheKeyFormat.BuildTenantKey(FakeCacheKeyProvider.ServiceName, tenantId, queryType, id);
 
-    internal static string User(Guid? tenantId, string userId, string queryType, string id) =>
+    internal static string User(TenantId? tenantId, string userId, string queryType, string id) =>
         tenantId is { } tenant
-            ? CacheKeyFormat.BuildTenantKey(FakeCacheKeyProvider.ServiceName, tenant.ToString("D"), queryType, id, "u", userId)
+            ? CacheKeyFormat.BuildTenantKey(FakeCacheKeyProvider.ServiceName, tenant, queryType, id, "u", userId)
             : CacheKeyFormat.BuildKey(FakeCacheKeyProvider.ServiceName, queryType, id, "u", userId);
 
-    internal static string TenantTag(Guid tenantId, string tag) =>
-        CacheKeyFormat.BuildTenantTag(tenantId.ToString("D"), tag);
+    internal static string TenantTag(TenantId tenantId, string tag) =>
+        CacheKeyFormat.BuildTenantTag(tenantId, tag);
 }

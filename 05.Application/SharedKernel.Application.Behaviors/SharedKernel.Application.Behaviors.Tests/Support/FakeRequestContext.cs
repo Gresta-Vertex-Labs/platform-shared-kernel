@@ -11,7 +11,7 @@ internal sealed class FakeRequestContext(
 
     public string? UserId => isAuthenticated ? "user-1" : null;
 
-    public Guid? TenantId { get; set; }
+    public SharedKernel.Execution.Tenancy.TenantId? TenantId { get; set; }
 
     public ValueTask<bool> HasPermissionAsync(string permission, CancellationToken cancellationToken)
         => ValueTask.FromResult(grantedPermissions?.Contains(permission) ?? false);

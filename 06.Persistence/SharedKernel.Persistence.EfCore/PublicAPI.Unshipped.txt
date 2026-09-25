@@ -36,7 +36,6 @@ SharedKernel.Persistence.RowLevelSecurityCheckMode.Warn = 1 -> SharedKernel.Pers
 SharedKernel.Persistence.EfCore.RowLevelSecurityDatabaseFacadeExtensions
 SharedKernel.Persistence.EfCore.TenantSharedEntityTypeBuilderExtensions
 SharedKernel.Persistence.EfCore.Context.TenantedDbContext
-SharedKernel.Persistence.EfCore.Context.TenantedDbContext.CurrentTenantId.get -> System.Guid?
 SharedKernel.Persistence.EfCore.Context.TenantedDbContext.TenantedDbContext(Microsoft.EntityFrameworkCore.DbContextOptions! options, SharedKernel.Persistence.EfCore.Context.PersistenceContextDependencies! dependencies) -> void
 SharedKernel.Persistence.EfCore.MultiTenancy.TenantedRepository<TAggregate, TId>
 SharedKernel.Persistence.EfCore.MultiTenancy.TenantedRepository<TAggregate, TId>.TenantedRepository(SharedKernel.Persistence.EfCore.Context.TenantedDbContext! dbContext) -> void
@@ -109,8 +108,6 @@ static SharedKernel.Persistence.EfCore.VectorOrderingExpressions.ByDistance<TAgg
 virtual SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext.ShouldApplyConfiguration(System.Type! configurationType) -> bool
 virtual SharedKernel.Persistence.EfCore.Migrations.PostgresDesignTimeDbContextFactory<TContext>.ConfigureProvider(SharedKernel.Persistence.EfCore.Options.PostgresProviderOptions! options) -> void
 virtual SharedKernel.Persistence.EfCore.Migrations.PostgresDesignTimeDbContextFactory<TContext>.ConfigurePersistence(SharedKernel.Persistence.EfCorePersistenceBuilder<TContext!>! persistence) -> void
-virtual SharedKernel.Persistence.EfCore.MultiTenancy.TenantedRepository<TAggregate, TId>.GetByIdForTenantAsync(TId id, System.Guid tenantId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TAggregate?>!
-virtual SharedKernel.Persistence.EfCore.MultiTenancy.TenantedRepository<TAggregate, TId>.GetByIdForTenantIncludingDeletedAsync(TId id, System.Guid tenantId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TAggregate?>!
 virtual SharedKernel.Persistence.EfCore.Repositories.EfReadRepository<TAggregate, TId>.AggregateQuery() -> System.Linq.IQueryable<TAggregate!>!
 virtual SharedKernel.Persistence.EfCore.Repositories.EfReadRepository<TAggregate, TId>.AnyAsync(SharedKernel.Domain.Specifications.ISpecification<TAggregate!>! spec, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
 virtual SharedKernel.Persistence.EfCore.Repositories.EfReadRepository<TAggregate, TId>.CountAsync(SharedKernel.Domain.Specifications.ISpecification<TAggregate!>! spec, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<long>!
@@ -142,3 +139,6 @@ virtual SharedKernel.Persistence.EfCore.Repositories.EfRepository<TAggregate, TI
 virtual SharedKernel.Persistence.EfCore.Repositories.EfRepository<TAggregate, TId>.UpdateAsync(TAggregate! aggregate, SharedKernel.Persistence.Abstractions.Repositories.EntityVersion expectedVersion, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 virtual SharedKernel.Persistence.EfCore.Repositories.EfRepository<TAggregate, TId>.UpdateAsync(TAggregate! aggregate, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 virtual SharedKernel.Persistence.EfCore.Repositories.EfRepository<TAggregate, TId>.UpdateRangeAsync(System.Collections.Generic.IEnumerable<TAggregate!>! aggregates, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SharedKernel.Persistence.EfCore.Context.TenantedDbContext.CurrentTenantId.get -> SharedKernel.Execution.Tenancy.TenantId?
+virtual SharedKernel.Persistence.EfCore.MultiTenancy.TenantedRepository<TAggregate, TId>.GetByIdForTenantAsync(TId id, SharedKernel.Execution.Tenancy.TenantId tenantId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TAggregate?>!
+virtual SharedKernel.Persistence.EfCore.MultiTenancy.TenantedRepository<TAggregate, TId>.GetByIdForTenantIncludingDeletedAsync(TId id, SharedKernel.Execution.Tenancy.TenantId tenantId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TAggregate?>!

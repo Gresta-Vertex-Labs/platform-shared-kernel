@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Errors;
 
 namespace SharedKernel.Search.Abstractions.Errors;
@@ -160,13 +161,13 @@ public static class SearchErrors
             $"Not authorized to perform '{operation}' on index '{indexName}'.");
 
     /// <summary>
-    /// The index declares a tenant field but the caller supplied <c>TenantScope.None</c> — an
+    /// The index declares a tenant field but the caller supplied <c>TenantScope.Global</c> — an
     /// isolation failure, fail-closed before any I/O.
     /// </summary>
     public static Error TenantScopeMissing(string indexName) =>
         Error.Unauthorized(
             TenantScopeMissingCode,
-            $"Index '{indexName}' declares a TenantField; TenantScope.None is not permitted.");
+            $"Index '{indexName}' declares a TenantField; TenantScope.Global is not permitted.");
 
     /// <summary>The search provider could not be reached.</summary>
     public static Error Unreachable(string providerName, string endpoint) =>

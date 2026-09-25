@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Workflows.Temporal.Constants;
 
 namespace SharedKernel.Workflows.Temporal.Dispatch;
@@ -13,16 +14,16 @@ internal sealed class WorkflowIdFactory : IWorkflowIdFactory
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(workflowTypeName);
         ArgumentException.ThrowIfNullOrWhiteSpace(businessKey);
-        if (tenantScope == TenantScope.None)
+        if (tenantScope.Tenant is not { } tenant)
         {
             throw new ArgumentException(
-                "A workflow id cannot be composed for TenantScope.None.",
+                "A workflow id cannot be composed for TenantScope.Global.",
                 nameof(tenantScope));
         }
 
         return string.Join(
             WorkflowWellKnown.IdSeparator,
-            tenantScope.Value,
+            tenant.ToString(),
             workflowTypeName,
             businessKey);
     }

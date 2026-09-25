@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Search.Abstractions.Abstractions;
 using SharedKernel.Search.Abstractions.Models;
 using SharedKernel.Search.ElasticSearch.Index;
@@ -71,7 +72,7 @@ public sealed class ElasticSearchPreflightValidationTests
         var index = CreateIndexWithNoIoCapableClient(Definition());
         var request = SearchRequest.Default with { Filter = SearchFilter.Eq("undeclared", SearchValue.From("x")) };
 
-        var act = async () => await index.SearchAsync(request, TenantScope.None);
+        var act = async () => await index.SearchAsync(request, TenantScope.Global);
 
         var result = await act.Should().NotThrowAsync("validation must reject before any client dereference");
         result.Subject.IsFailure.Should().BeTrue();
@@ -84,7 +85,7 @@ public sealed class ElasticSearchPreflightValidationTests
         var index = CreateIndexWithNoIoCapableClient(Definition());
         var request = SearchRequest.Default with { Sort = [SearchSort.Ascending("name")] };
 
-        var act = async () => await index.SearchAsync(request, TenantScope.None);
+        var act = async () => await index.SearchAsync(request, TenantScope.Global);
 
         var result = await act.Should().NotThrowAsync();
         result.Subject.IsFailure.Should().BeTrue();
@@ -97,7 +98,7 @@ public sealed class ElasticSearchPreflightValidationTests
         var index = CreateIndexWithNoIoCapableClient(Definition());
         var request = SearchRequest.Default with { Facets = ["status"] };
 
-        var act = async () => await index.SearchAsync(request, TenantScope.None);
+        var act = async () => await index.SearchAsync(request, TenantScope.Global);
 
         var result = await act.Should().NotThrowAsync();
         result.Subject.IsFailure.Should().BeTrue();
@@ -114,7 +115,7 @@ public sealed class ElasticSearchPreflightValidationTests
         var index = CreateIndexWithNoIoCapableClient(Definition());
         var request = SearchRequest.Default with { Page = 6, PageSize = 20 }; // 120 > MaxTotalHits(100)
 
-        var act = async () => await index.SearchAsync(request, TenantScope.None);
+        var act = async () => await index.SearchAsync(request, TenantScope.Global);
 
         var result = await act.Should().NotThrowAsync();
         result.Subject.IsFailure.Should().BeTrue();
@@ -131,7 +132,7 @@ public sealed class ElasticSearchPreflightValidationTests
             NumericFacetStats = ["f1", "f2", "f3", "f4", "f5"],
         };
 
-        var act = async () => await index.SearchAsync(request, TenantScope.None);
+        var act = async () => await index.SearchAsync(request, TenantScope.Global);
 
         var result = await act.Should().NotThrowAsync();
         result.Subject.IsFailure.Should().BeTrue();
@@ -139,12 +140,12 @@ public sealed class ElasticSearchPreflightValidationTests
     }
 
     [Fact]
-    public async Task TenantedIndex_WithTenantScopeNone_ReturnsTenantScopeMissing_WithNoIoAttempted()
+    public async Task TenantedIndex_WithTenantScopeGlobal_ReturnsTenantScopeMissing_WithNoIoAttempted()
     {
         var index = CreateIndexWithNoIoCapableClient(TenantedDefinition());
         var request = SearchRequest.Default;
 
-        var act = async () => await index.SearchAsync(request, TenantScope.None);
+        var act = async () => await index.SearchAsync(request, TenantScope.Global);
 
         var result = await act.Should().NotThrowAsync();
         result.Subject.IsFailure.Should().BeTrue();
@@ -156,7 +157,7 @@ public sealed class ElasticSearchPreflightValidationTests
     {
         // Two assertions in one, and the second is the point of the pre-publish Result-discipline fix.
         //
-        // (1) The guard is genuinely conditional on TenantScope.None rather than always failing: the
+        // (1) The guard is genuinely conditional on TenantScope.Global rather than always failing: the
         //     executor proceeds past it and reaches the unusable client. The distinguishing evidence is
         //     the error CODE — engine_fault, not tenant_scope_missing.
         //
@@ -169,7 +170,7 @@ public sealed class ElasticSearchPreflightValidationTests
         var index = CreateIndexWithNoIoCapableClient(TenantedDefinition());
         var request = SearchRequest.Default;
 
-        var act = async () => await index.SearchAsync(request, TenantScope.Of("tenant-a"));
+        var act = async () => await index.SearchAsync(request, TenantScope.For(TestTenants.TenantA));
 
         var result = await act.Should().NotThrowAsync(
             "every fault on a Result-returning member is classified and returned, never thrown");

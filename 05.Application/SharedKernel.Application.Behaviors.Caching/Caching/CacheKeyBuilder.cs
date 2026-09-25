@@ -1,4 +1,5 @@
 using SharedKernel.Caching.Abstractions;
+using SharedKernel.Execution.Tenancy;
 
 namespace SharedKernel.Application.Behaviors.Caching;
 
@@ -30,7 +31,7 @@ internal static class CacheKeyBuilder
         CacheScope scope,
         string entity,
         string id,
-        Guid? tenantId,
+        TenantId? tenantId,
         string? userId,
         out string key)
     {
@@ -45,12 +46,12 @@ internal static class CacheKeyBuilder
                 return true;
 
             case CacheScope.Tenant when tenantId is { } tenant:
-                key = keys.BuildTenantKey(TenantSegment(tenant), entity, id);
+                key = keys.BuildTenantKey(tenant, entity, id);
                 return true;
 
             case CacheScope.User when !string.IsNullOrWhiteSpace(userId):
                 key = tenantId is { } userTenant
-                    ? keys.BuildTenantKey(TenantSegment(userTenant), entity, id, UserSegmentMarker, userId)
+                    ? keys.BuildTenantKey(userTenant, entity, id, UserSegmentMarker, userId)
                     : keys.BuildKey(entity, id, UserSegmentMarker, userId);
                 return true;
 
@@ -77,7 +78,7 @@ internal static class CacheKeyBuilder
     internal static bool TryBuildTag(
         CacheScope scope,
         string tag,
-        Guid? tenantId,
+        TenantId? tenantId,
         string? userId,
         out string scopedTag)
     {
@@ -95,13 +96,13 @@ internal static class CacheKeyBuilder
                 return true;
 
             case CacheScope.Tenant when tenantId is { } tenant:
-                scopedTag = CacheKeyFormat.BuildTenantTag(TenantSegment(tenant), tag);
+                scopedTag = CacheKeyFormat.BuildTenantTag(tenant, tag);
                 return true;
 
             // A user-scoped command still evicts at tenant granularity: a tag names a set of entries,
             // and the set a command invalidates is not narrowed by which caller issued it.
             case CacheScope.User when tenantId is { } userTenant:
-                scopedTag = CacheKeyFormat.BuildTenantTag(TenantSegment(userTenant), tag);
+                scopedTag = CacheKeyFormat.BuildTenantTag(userTenant, tag);
                 return true;
 
             case CacheScope.User when !string.IsNullOrWhiteSpace(userId):
@@ -123,16 +124,14 @@ internal static class CacheKeyBuilder
     }
 
     /// <summary>Applies the tenant to the policy, so the entry also carries the tenant-wide tag.</summary>
-    internal static CachePolicy Policy(CacheScope scope, CachePolicy policy, Guid? tenantId)
+    internal static CachePolicy Policy(CacheScope scope, CachePolicy policy, TenantId? tenantId)
     {
         ArgumentNullException.ThrowIfNull(policy);
 
         return scope is not CacheScope.Global && tenantId is { } tenant
-            ? policy.ForTenant(TenantSegment(tenant))
+            ? policy.ForTenant(tenant)
             : policy;
     }
 
     private const string UserSegmentMarker = "u";
-
-    private static string TenantSegment(Guid tenantId) => tenantId.ToString("D");
 }

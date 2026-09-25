@@ -1,5 +1,6 @@
 using FluentAssertions;
 using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Messaging.Abstractions.Context;
 
 namespace SharedKernel.Messaging.Abstractions.Tests;
@@ -13,7 +14,7 @@ public sealed class MessageRequestContextTests
     [Fact]
     public void Constructor_WithTenantAndUser_ExposesBothAndReportsAuthenticated()
     {
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
 
         var context = new MessageRequestContext(tenantId, "user-42", ActorKind.User, "web-client");
 
@@ -27,7 +28,7 @@ public sealed class MessageRequestContextTests
     [Fact]
     public void Constructor_WithNoUser_ReportsNotAuthenticated()
     {
-        var context = new MessageRequestContext(Guid.NewGuid());
+        var context = new MessageRequestContext(new TenantId(Guid.NewGuid()));
 
         context.IsAuthenticated.Should().BeFalse();
         context.UserId.Should().BeNull();
@@ -40,7 +41,7 @@ public sealed class MessageRequestContextTests
     [Fact]
     public void Constructor_WithoutActorKind_DefaultsToAnonymousNotUser()
     {
-        var context = new MessageRequestContext(Guid.NewGuid(), "user-42");
+        var context = new MessageRequestContext(new TenantId(Guid.NewGuid()), "user-42");
 
         context.ActorKind.Should().Be(ActorKind.Anonymous);
         ActorKind.User.Should().Be(default(ActorKind),
@@ -68,7 +69,7 @@ public sealed class MessageRequestContextTests
     [InlineData("*")]
     public async Task HasPermissionAsync_AnyPermission_AlwaysFalse(string permission)
     {
-        var context = new MessageRequestContext(Guid.NewGuid(), "user-42", ActorKind.User);
+        var context = new MessageRequestContext(new TenantId(Guid.NewGuid()), "user-42", ActorKind.User);
 
         var granted = await context.HasPermissionAsync(permission, CancellationToken.None);
 
@@ -83,7 +84,7 @@ public sealed class MessageRequestContextTests
     [Fact]
     public void UncarriedMembers_KeepInterfaceDefaults()
     {
-        IRequestContext context = new MessageRequestContext(Guid.NewGuid(), "user-42", ActorKind.User);
+        IRequestContext context = new MessageRequestContext(new TenantId(Guid.NewGuid()), "user-42", ActorKind.User);
 
         context.SessionId.Should().BeNull();
         context.ImpersonatorId.Should().BeNull();

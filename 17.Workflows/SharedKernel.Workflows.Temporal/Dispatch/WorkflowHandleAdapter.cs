@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Workflows.Temporal.Failures;
 using SharedKernel.Workflows.Temporal.Interception;

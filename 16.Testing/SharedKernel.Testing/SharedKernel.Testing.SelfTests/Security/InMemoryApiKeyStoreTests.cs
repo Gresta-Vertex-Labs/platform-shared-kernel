@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using Microsoft.Extensions.Options;
 using SharedKernel.Cryptography.Random;
 using SharedKernel.Security.ApiKey.Keys;
@@ -10,7 +11,7 @@ namespace SharedKernel.Testing.SelfTests.Security;
 public sealed class InMemoryApiKeyStoreTests
 {
     private static readonly DateTimeOffset Now = new(2026, 9, 16, 12, 0, 0, TimeSpan.Zero);
-    private static readonly Guid TenantId = Guid.Parse("9a1c7e52-0d3b-4f6a-8e2d-5b4c3a2f1e0d");
+    private static readonly TenantId TenantId = new TenantId(Guid.Parse("9a1c7e52-0d3b-4f6a-8e2d-5b4c3a2f1e0d"));
 
     [Fact]
     public async Task FindAsync_UnknownKeyId_ReturnsNull()

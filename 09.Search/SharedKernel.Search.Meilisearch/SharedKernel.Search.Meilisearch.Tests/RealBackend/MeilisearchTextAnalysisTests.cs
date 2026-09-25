@@ -1,4 +1,5 @@
 using FluentAssertions;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Search.Abstractions.Models;
 using SharedKernel.Search.Meilisearch.Provisioning;
 using SharedKernel.Search.Meilisearch.Tests.Containers;
@@ -61,7 +62,7 @@ public sealed class MeilisearchTextAnalysisTests : IAsyncLifetime
 
         var result = await index.SearchAsync(
             SearchRequest.Default with { FreeText = "rodent", PageSize = 20 },
-            TenantScope.Of(TestProductCorpus.TenantA));
+            TenantScope.For(TestProductCorpus.TenantA));
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Hits.Should().Contain(
@@ -80,7 +81,7 @@ public sealed class MeilisearchTextAnalysisTests : IAsyncLifetime
 
         var result = await index.SearchAsync(
             SearchRequest.Default with { FreeText = "mouse", PageSize = 20 },
-            TenantScope.Of(TestProductCorpus.TenantA));
+            TenantScope.For(TestProductCorpus.TenantA));
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Hits.Should().NotBeEmpty("the literal term still matches");

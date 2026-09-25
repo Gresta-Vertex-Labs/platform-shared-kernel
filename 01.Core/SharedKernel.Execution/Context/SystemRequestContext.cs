@@ -1,3 +1,5 @@
+using SharedKernel.Execution.Tenancy;
+
 namespace SharedKernel.Execution.Context;
 
 /// <summary>
@@ -35,7 +37,7 @@ public sealed class SystemRequestContext : IRequestContext
     public SystemRequestContext(
         IEnumerable<string> permissions,
         string identity = "system",
-        Guid? tenantId = null)
+        TenantId? tenantId = null)
     {
         ArgumentNullException.ThrowIfNull(permissions);
         ArgumentException.ThrowIfNullOrWhiteSpace(identity);
@@ -52,7 +54,7 @@ public sealed class SystemRequestContext : IRequestContext
     public string? UserId { get; }
 
     /// <inheritdoc/>
-    public Guid? TenantId { get; }
+    public TenantId? TenantId { get; }
 
     /// <inheritdoc/>
     /// <remarks>Always <see cref="Context.ActorKind.System"/>.</remarks>

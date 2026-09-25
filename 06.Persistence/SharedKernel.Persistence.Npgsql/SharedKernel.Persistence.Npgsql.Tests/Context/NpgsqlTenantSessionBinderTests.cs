@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Npgsql;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence.Npgsql.Context;
 using SharedKernel.Persistence.Npgsql.RowLevelSecurity;
 using SharedKernel.Testing.Containers;
@@ -35,7 +36,7 @@ public sealed class NpgsqlTenantSessionBinderTests : IAsyncLifetime
     [Fact]
     public async Task BindAsync_SetsTheTenant_ReadableWithinTheSameTransaction()
     {
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
 
         await using var connection = await _dataSource!.OpenConnectionAsync();
         await using var transaction = await connection.BeginTransactionAsync();
@@ -55,7 +56,7 @@ public sealed class NpgsqlTenantSessionBinderTests : IAsyncLifetime
 
         await using (var transaction = await connection.BeginTransactionAsync())
         {
-            await new NpgsqlTenantSessionBinder().BindAsync(connection, transaction, Guid.NewGuid());
+            await new NpgsqlTenantSessionBinder().BindAsync(connection, transaction, new TenantId(Guid.NewGuid()));
             if (commit)
                 await transaction.CommitAsync();
             else
@@ -81,7 +82,7 @@ public sealed class NpgsqlTenantSessionBinderTests : IAsyncLifetime
     [Fact]
     public async Task BindStatement_PrefixedOutsideATransaction_BindsForThatCommandOnly_AndKeepsItsResult()
     {
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
         await using var connection = await _dataSource!.OpenConnectionAsync();
 
         await using (var command = connection.CreateCommand())
@@ -100,7 +101,7 @@ public sealed class NpgsqlTenantSessionBinderTests : IAsyncLifetime
     {
         await using var connection = await _dataSource!.OpenConnectionAsync();
         await using var command = connection.CreateCommand();
-        command.CommandText = TenantSessionSql.BindStatement(Guid.NewGuid()) + "SELECT g FROM generate_series(1, 3) g";
+        command.CommandText = TenantSessionSql.BindStatement(new TenantId(Guid.NewGuid())) + "SELECT g FROM generate_series(1, 3) g";
 
         var values = new List<int>();
         await using (var reader = await command.ExecuteReaderAsync())
@@ -125,7 +126,7 @@ public sealed class NpgsqlTenantSessionBinderTests : IAsyncLifetime
         }
 
         await using var insert = connection.CreateCommand();
-        insert.CommandText = TenantSessionSql.BindStatement(Guid.NewGuid()) + "INSERT INTO binder_rows SELECT generate_series(1, 4)";
+        insert.CommandText = TenantSessionSql.BindStatement(new TenantId(Guid.NewGuid())) + "INSERT INTO binder_rows SELECT generate_series(1, 4)";
 
         (await insert.ExecuteNonQueryAsync()).Should().Be(4);
     }
@@ -133,7 +134,7 @@ public sealed class NpgsqlTenantSessionBinderTests : IAsyncLifetime
     [Fact]
     public void BindStatement_InlinesOnlyTheGuid()
     {
-        var tenantId = Guid.Parse("0b9a5c35-58e1-4f5c-a0d8-000000000001");
+        var tenantId = TenantId.Parse("0b9a5c35-58e1-4f5c-a0d8-000000000001");
 
         TenantSessionSql.BindStatement(tenantId).Should().Be(
             "DO $sk_rls$BEGIN PERFORM set_config('app.tenant_id', '0b9a5c35-58e1-4f5c-a0d8-000000000001', true); END$sk_rls$;");

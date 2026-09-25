@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Presentation.WebApi.Results;
 using SharedKernel.Search.Abstractions.Abstractions;
 using SharedKernel.Search.Abstractions.Models;
@@ -20,7 +21,7 @@ public static class BackOfficeEndpoints
 
         // The same neutral contract the storefront uses, against a different engine and document type.
         backOffice.MapGet("/order-lines/count", async (
-            string tenantId,
+            TenantId tenantId,
             ISearchIndex<OrderLineDocument> index,
             string? region,
             CancellationToken ct) =>
@@ -29,7 +30,7 @@ public static class BackOfficeEndpoints
                 ? null
                 : SearchFilter.Eq(OrderLineFields.Region, SearchValue.From(region));
 
-            var count = await index.CountAsync(filter, TenantScope.Of(tenantId), ct);
+            var count = await index.CountAsync(filter, TenantScope.For(tenantId), ct);
             return count.ToProblemDetailsResult(c => Results.Ok(new
             {
                 value = c.Value,
@@ -45,7 +46,7 @@ public static class BackOfficeEndpoints
         // else — the gap is absence, not degree, which is why this contract lives in the provider
         // package rather than being watered down into the neutral surface.
         backOffice.MapGet("/order-lines/revenue-by-region", async (
-            string tenantId,
+            TenantId tenantId,
             IAnalyticsSearch<OrderLineDocument> analytics,
             CancellationToken ct) =>
         {
@@ -60,7 +61,7 @@ public static class BackOfficeEndpoints
             };
 
             var result = await analytics.AggregateAsync(
-                filter: null, aggregations, TenantScope.Of(tenantId), ct);
+                filter: null, aggregations, TenantScope.For(tenantId), ct);
 
             return result.ToProblemDetailsResult(set =>
             {
@@ -84,7 +85,7 @@ public static class BackOfficeEndpoints
         // export that must checkpoint its cursor across process restarts, which IAsyncEnumerable cannot
         // express; this endpoint uses it because a stateless HTTP endpoint is exactly that case.
         backOffice.MapGet("/order-lines/cursor", async (
-            string tenantId,
+            TenantId tenantId,
             ICursorSearch<OrderLineDocument> cursor,
             int size,
             CancellationToken ct) =>
@@ -92,7 +93,7 @@ public static class BackOfficeEndpoints
             var keepAlive = TimeSpan.FromMinutes(1);
             var opened = await cursor.OpenCursorAsync(
                 new SearchRequest { PageSize = size <= 0 ? 5 : size },
-                TenantScope.Of(tenantId),
+                TenantScope.For(tenantId),
                 keepAlive,
                 ct);
 
@@ -124,7 +125,7 @@ public static class BackOfficeEndpoints
 
         // The streaming shape, for comparison — no cursor bookkeeping at the call site at all.
         backOffice.MapGet("/order-lines/stream", (
-            string tenantId,
+            TenantId tenantId,
             ICursorSearch<OrderLineDocument> cursor,
             CancellationToken ct) =>
         {
@@ -132,7 +133,7 @@ public static class BackOfficeEndpoints
             {
                 await foreach (var hit in cursor.StreamAsync(
                     new SearchRequest { PageSize = 4 },
-                    TenantScope.Of(tenantId),
+                    TenantScope.For(tenantId),
                     TimeSpan.FromMinutes(1),
                     ct))
                 {
@@ -147,14 +148,14 @@ public static class BackOfficeEndpoints
         // different data structure and a different result shape from Meilisearch's instant search,
         // which is exactly why neither was neutralised into a shared "type-ahead" contract.
         backOffice.MapGet("/order-lines/suggest", async (
-            string tenantId,
+            TenantId tenantId,
             ISuggestSearch<OrderLineDocument> suggest,
             string prefix,
             CancellationToken ct,
             bool fuzzy = false) =>
         {
             var suggestions = await suggest.SuggestAsync(
-                Catalog.OrderLineSuggestField, prefix, TenantScope.Of(tenantId), size: 5, fuzzy: fuzzy, ct);
+                Catalog.OrderLineSuggestField, prefix, TenantScope.For(tenantId), size: 5, fuzzy: fuzzy, ct);
 
             return suggestions.ToProblemDetailsResult(list => Results.Ok(
                 list.Select(s => new { s.Text, s.DocumentId, s.Score })));

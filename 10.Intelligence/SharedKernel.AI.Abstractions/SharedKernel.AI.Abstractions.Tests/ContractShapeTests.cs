@@ -2,6 +2,7 @@ using System.Reflection;
 using FluentAssertions;
 using SharedKernel.AI.Abstractions.Abstractions;
 using SharedKernel.AI.Abstractions.Models;
+using SharedKernel.Execution.Tenancy;
 
 namespace SharedKernel.AI.Abstractions.Tests;
 

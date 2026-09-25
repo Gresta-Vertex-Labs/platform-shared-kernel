@@ -1,9 +1,13 @@
+using SharedKernel.Execution.Tenancy;
 using Xunit;
 
 namespace SharedKernel.Caching.Abstractions.Tests;
 
 public sealed class CacheKeyFormatTests
 {
+    private static readonly TenantId TenantA = new(Guid.Parse("0f8fad5b-d9cb-469f-a165-70867728950e"));
+    private static readonly TenantId TenantB = new(Guid.Parse("7c9e6679-7425-40de-944b-e07fc1f90ae7"));
+
     [Theory]
     [InlineData("order-svc")]
     [InlineData("a")]
@@ -52,7 +56,11 @@ public sealed class CacheKeyFormatTests
 
     [Fact]
     public void BuildTenantKey_FormatsWithTenantMarker() =>
-        Assert.Equal("order-svc:@tenant-a:invoice:42", CacheKeyFormat.BuildTenantKey("order-svc", "tenant-a", "invoice", "42"));
+        Assert.Equal($"order-svc:@{TenantA}:invoice:42", CacheKeyFormat.BuildTenantKey("order-svc", TenantA, "invoice", "42"));
+
+    [Fact]
+    public void BuildTenantKey_DefaultTenant_Throws() =>
+        Assert.Throws<ArgumentException>(() => CacheKeyFormat.BuildTenantKey("svc", default, "invoice", "42"));
 
     [Fact]
     public void BuildKey_InvalidServiceName_Throws() =>
@@ -65,8 +73,8 @@ public sealed class CacheKeyFormatTests
     [Fact]
     public void GlobalKey_NeverEqualsTenantKeyWithSameParts()
     {
-        string global = CacheKeyFormat.BuildKey("svc", "tenant-a", "invoice", "42");
-        string tenant = CacheKeyFormat.BuildTenantKey("svc", "tenant-a", "invoice", "42");
+        string global = CacheKeyFormat.BuildKey("svc", TenantA.ToString(), "invoice", "42");
+        string tenant = CacheKeyFormat.BuildTenantKey("svc", TenantA, "invoice", "42");
 
         Assert.NotEqual(global, tenant);
     }
@@ -74,8 +82,8 @@ public sealed class CacheKeyFormatTests
     [Fact]
     public void GlobalKey_CannotForgeTenantMarker()
     {
-        string forged = CacheKeyFormat.BuildKey("svc", "@tenant-a", "invoice", "42");
-        string tenant = CacheKeyFormat.BuildTenantKey("svc", "tenant-a", "invoice", "42");
+        string forged = CacheKeyFormat.BuildKey("svc", "@" + TenantA, "invoice", "42");
+        string tenant = CacheKeyFormat.BuildTenantKey("svc", TenantA, "invoice", "42");
 
         Assert.NotEqual(tenant, forged);
     }
@@ -87,26 +95,37 @@ public sealed class CacheKeyFormatTests
             CacheKeyFormat.BuildKey("svc", "a:b", "c"),
             CacheKeyFormat.BuildKey("svc", "a", "b:c"));
         Assert.NotEqual(
-            CacheKeyFormat.BuildTenantKey("svc", "a:b", "c", "d"),
-            CacheKeyFormat.BuildTenantKey("svc", "a", "b:c", "d"));
+            CacheKeyFormat.BuildTenantKey("svc", TenantA, "a:b", "c"),
+            CacheKeyFormat.BuildTenantKey("svc", TenantA, "a", "b:c"));
     }
 
     [Fact]
-    public void TenantTags_SeparatorInsideParts_DoNotCollide() =>
+    public void TenantKeys_DifferentTenants_DoNotCollide() =>
         Assert.NotEqual(
-            CacheKeyFormat.BuildTenantTag("a", "b:x"),
-            CacheKeyFormat.BuildTenantTag("a:b", "x"));
+            CacheKeyFormat.BuildTenantKey("svc", TenantA, "invoice", "42"),
+            CacheKeyFormat.BuildTenantKey("svc", TenantB, "invoice", "42"));
+
+    [Fact]
+    public void TenantTags_SeparatorInsideTag_IsEscaped() =>
+        Assert.Equal($"@{TenantA}:b%3Ax", CacheKeyFormat.BuildTenantTag(TenantA, "b:x"));
 
     [Fact]
     public void TenantTag_FormatsWithMarker()
     {
-        Assert.Equal("@tenant-a:orders", CacheKeyFormat.BuildTenantTag("tenant-a", "orders"));
-        Assert.Equal("@tenant-a", CacheKeyFormat.BuildTenantWideTag("tenant-a"));
+        Assert.Equal($"@{TenantA}:orders", CacheKeyFormat.BuildTenantTag(TenantA, "orders"));
+        Assert.Equal($"@{TenantA}", CacheKeyFormat.BuildTenantWideTag(TenantA));
+    }
+
+    [Fact]
+    public void TenantTag_DefaultTenant_Throws()
+    {
+        Assert.Throws<ArgumentException>(() => CacheKeyFormat.BuildTenantTag(default, "orders"));
+        Assert.Throws<ArgumentException>(() => CacheKeyFormat.BuildTenantWideTag(default));
     }
 
     [Fact]
     public void TenantWideTag_NeverEqualsAnotherTenantsTag() =>
         Assert.NotEqual(
-            CacheKeyFormat.BuildTenantWideTag("a:b"),
-            CacheKeyFormat.BuildTenantTag("a", "b"));
+            CacheKeyFormat.BuildTenantWideTag(TenantB),
+            CacheKeyFormat.BuildTenantTag(TenantA, "b"));
 }

@@ -1,5 +1,6 @@
 using FluentAssertions;
 using SharedKernel.Execution.Auditing;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Testing.Clocks;
 using SharedKernel.Testing.Persistence;
 
@@ -19,7 +20,7 @@ public sealed class FakeAuditTrailWriterTests
     [Fact]
     public async Task RecordAsync_ResolvesIdentityAndTenantFromContext()
     {
-        var tenant = Guid.NewGuid();
+        var tenant = new TenantId(Guid.NewGuid());
         var writer = new FakeAuditTrailWriter(new FakeAuditActorContext("alice", tenant) { SessionId = "s-1" });
 
         var record = await writer.RecordAsync(Entry());

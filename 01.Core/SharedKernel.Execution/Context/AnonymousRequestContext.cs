@@ -1,3 +1,5 @@
+using SharedKernel.Execution.Tenancy;
+
 namespace SharedKernel.Execution.Context;
 
 /// <summary>
@@ -24,7 +26,7 @@ public sealed class AnonymousRequestContext : IRequestContext
     public string? UserId => null;
 
     /// <inheritdoc/>
-    public Guid? TenantId => null;
+    public TenantId? TenantId => null;
 
     /// <inheritdoc/>
     /// <remarks>

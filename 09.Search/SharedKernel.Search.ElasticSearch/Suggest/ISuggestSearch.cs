@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Search.Abstractions.Abstractions;
 using SharedKernel.Search.Abstractions.Models;
@@ -56,7 +57,7 @@ public interface ISuggestSearch<TDocument>
     /// <param name="tenantScope">
     /// The tenant to restrict suggestions to — mandatory, and rejected as
     /// <see cref="Abstractions.Errors.SearchErrors.TenantScopeMissing"/> when the index declares a
-    /// tenant field and <see cref="TenantScope.None"/> is passed.
+    /// tenant field and <see cref="TenantScope.Global"/> is passed.
     /// </param>
     /// <param name="size">The maximum number of suggestions to return.</param>
     /// <param name="fuzzy">

@@ -51,7 +51,7 @@ public static class WellKnownBaggageKeys
 
     /// <summary>
     /// The <see cref="System.Diagnostics.Activity"/> baggage key carrying the resolved tenant
-    /// identifier (or the <see cref="System.Guid.Empty"/> no-tenant sentinel) in its string form
+    /// identifier in its <c>TenantId.ToString()</c> string form
     /// (<c>"TenantId"</c>).
     /// </summary>
     /// <remarks>
@@ -69,13 +69,6 @@ public static class WellKnownBaggageKeys
     /// on. That is an operational breaking change for consumers, decided by whoever owns their log
     /// pipeline, not something to fold into a constants registry. This constant therefore records
     /// the value already on the wire.
-    /// </para>
-    /// <para>
-    /// <c>SharedKernel.MultiTenancy</c> still declares its own local <c>TenantBaggageKeys.TenantId</c>
-    /// holding this same literal. Re-pointing it at this constant is a pure, behaviour-identical
-    /// refactor precisely because the value here matches, but it belongs to that package and has
-    /// not been made yet — this registry entry exists so the next writer or reader of tenant
-    /// baggage has a single authoritative place to find the value.
     /// </para>
     /// </remarks>
     public const string TenantId = "TenantId";

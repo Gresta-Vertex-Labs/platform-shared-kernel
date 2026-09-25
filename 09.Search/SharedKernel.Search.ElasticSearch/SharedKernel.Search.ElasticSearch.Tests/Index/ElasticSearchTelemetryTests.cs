@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Search.Abstractions.Abstractions;
 using SharedKernel.Search.Abstractions.Constants;
 using SharedKernel.Search.Abstractions.Models;
@@ -82,7 +83,7 @@ public sealed class ElasticSearchTelemetryTests
         Activity.Current = null;
 
         var index = CreateIndexWithNoIoCapableClient(indexName);
-        await index.SearchAsync(SearchRequest.Default, TenantScope.None);
+        await index.SearchAsync(SearchRequest.Default, TenantScope.Global);
 
         var activity = activities
             .Where(a => (string?)a.GetTagItem(SearchWellKnown.IndexTagName) == indexName)
@@ -129,7 +130,7 @@ public sealed class ElasticSearchTelemetryTests
         listener.Start();
 
         var index = CreateIndexWithNoIoCapableClient(indexName);
-        await index.SearchAsync(SearchRequest.Default, TenantScope.None);
+        await index.SearchAsync(SearchRequest.Default, TenantScope.Global);
 
         values.Should().ContainSingle().Which.Should().BeGreaterThan(0, "the histogram records elapsed seconds");
     }

@@ -33,7 +33,7 @@ public sealed class IdempotencyTests(TemporalTestFixture fixture)
     // therefore goes through DescribeAsync rather than trusting the handle returned by StartAsync.
     private async Task<string> DescribedRunIdAsync(IWorkflowDispatcher dispatcher, string workflowId)
     {
-        Result<WorkflowExecutionDescription> description = await dispatcher.DescribeAsync(workflowId, TenantScope.Of("tenant-idem"));
+        Result<WorkflowExecutionDescription> description = await dispatcher.DescribeAsync(workflowId, TenantScope.For(TestTenants.Idem));
         description.IsSuccess.Should().BeTrue();
         return description.Value.RunId;
     }
@@ -47,13 +47,13 @@ public sealed class IdempotencyTests(TemporalTestFixture fixture)
 
         Result<IWorkflowHandle> first = await dispatcher.StartAsync<DelayWorkflow>(
             Options(businessKey, WorkflowIdReusePolicy.RejectDuplicate, WorkflowIdConflictPolicy.Fail),
-            TenantScope.Of("tenant-idem"));
+            TenantScope.For(TestTenants.Idem));
         first.IsSuccess.Should().BeTrue();
         string originalRunId = await DescribedRunIdAsync(dispatcher, first.Value.WorkflowId);
 
         Result<IWorkflowHandle> second = await dispatcher.StartAsync<DelayWorkflow>(
             Options(businessKey, WorkflowIdReusePolicy.RejectDuplicate, WorkflowIdConflictPolicy.Fail),
-            TenantScope.Of("tenant-idem"));
+            TenantScope.For(TestTenants.Idem));
 
         second.IsFailure.Should().BeTrue();
         second.Error.Code.Should().Be(WorkflowErrors.AlreadyStarted(first.Value.WorkflowId).Code);
@@ -72,13 +72,13 @@ public sealed class IdempotencyTests(TemporalTestFixture fixture)
 
         Result<IWorkflowHandle> first = await dispatcher.StartAsync<DelayWorkflow>(
             Options(businessKey, WorkflowIdReusePolicy.RejectDuplicate, WorkflowIdConflictPolicy.UseExisting),
-            TenantScope.Of("tenant-idem"));
+            TenantScope.For(TestTenants.Idem));
         first.IsSuccess.Should().BeTrue();
         string firstRunId = await DescribedRunIdAsync(dispatcher, first.Value.WorkflowId);
 
         Result<IWorkflowHandle> second = await dispatcher.StartAsync<DelayWorkflow>(
             Options(businessKey, WorkflowIdReusePolicy.RejectDuplicate, WorkflowIdConflictPolicy.UseExisting),
-            TenantScope.Of("tenant-idem"));
+            TenantScope.For(TestTenants.Idem));
 
         second.IsSuccess.Should().BeTrue(because: "UseExisting must attach to the running execution rather than fail");
         second.Value.WorkflowId.Should().Be(first.Value.WorkflowId);
@@ -95,17 +95,17 @@ public sealed class IdempotencyTests(TemporalTestFixture fixture)
 
         Result<IWorkflowHandle> first = await dispatcher.StartAsync<DelayWorkflow>(
             Options(businessKey, WorkflowIdReusePolicy.AllowDuplicate, WorkflowIdConflictPolicy.Fail),
-            TenantScope.Of("tenant-idem"));
+            TenantScope.For(TestTenants.Idem));
         first.IsSuccess.Should().BeTrue();
         string firstRunId = await DescribedRunIdAsync(dispatcher, first.Value.WorkflowId);
 
         await first.Value.CancelAsync();
-        var firstHandle = dispatcher.GetHandle<string>(first.Value.WorkflowId, runId: firstRunId, TenantScope.Of("tenant-idem"));
+        var firstHandle = dispatcher.GetHandle<string>(first.Value.WorkflowId, runId: firstRunId, TenantScope.For(TestTenants.Idem));
         await firstHandle.GetResultAsync();
 
         Result<IWorkflowHandle> second = await dispatcher.StartAsync<DelayWorkflow>(
             Options(businessKey, WorkflowIdReusePolicy.AllowDuplicate, WorkflowIdConflictPolicy.Fail),
-            TenantScope.Of("tenant-idem"));
+            TenantScope.For(TestTenants.Idem));
 
         second.IsSuccess.Should().BeTrue(because: "AllowDuplicate permits restarting under the same id once the prior execution has closed");
         second.Value.WorkflowId.Should().Be(first.Value.WorkflowId);
@@ -122,16 +122,16 @@ public sealed class IdempotencyTests(TemporalTestFixture fixture)
 
         Result<IWorkflowHandle> first = await dispatcher.StartAsync<DelayWorkflow>(
             Options(businessKey, WorkflowIdReusePolicy.AllowDuplicate, WorkflowIdConflictPolicy.Fail),
-            TenantScope.Of("tenant-idem"));
+            TenantScope.For(TestTenants.Idem));
         first.IsSuccess.Should().BeTrue();
 
         await first.Value.CancelAsync();
-        var firstHandle = dispatcher.GetHandle<string>(first.Value.WorkflowId, runId: null, TenantScope.Of("tenant-idem"));
+        var firstHandle = dispatcher.GetHandle<string>(first.Value.WorkflowId, runId: null, TenantScope.For(TestTenants.Idem));
         await firstHandle.GetResultAsync();
 
         Result<IWorkflowHandle> second = await dispatcher.StartAsync<DelayWorkflow>(
             Options(businessKey, WorkflowIdReusePolicy.RejectDuplicate, WorkflowIdConflictPolicy.Fail),
-            TenantScope.Of("tenant-idem"));
+            TenantScope.For(TestTenants.Idem));
 
         second.IsFailure.Should().BeTrue(because: "RejectDuplicate never reuses the id regardless of the previous execution's closed state");
         second.Error.Code.Should().Be(WorkflowErrors.AlreadyStarted(first.Value.WorkflowId).Code);

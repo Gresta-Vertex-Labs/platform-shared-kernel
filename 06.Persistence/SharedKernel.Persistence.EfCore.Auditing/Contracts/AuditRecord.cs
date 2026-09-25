@@ -1,5 +1,6 @@
 using SharedKernel.Execution.Auditing;
 using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
 
 namespace SharedKernel.Persistence.EfCore.Auditing;
 
@@ -31,7 +32,7 @@ public sealed record AuditRecord
     /// Gets the tenant whose chain holds this record, or <see langword="null"/> for the system chain
     /// (written only under an explicit system identity or cross-tenant scope).
     /// </summary>
-    public Guid? TenantId { get; init; }
+    public TenantId? TenantId { get; init; }
 
     /// <summary>Gets the resource type — the second half of the chain key.</summary>
     public required string ResourceType { get; init; }

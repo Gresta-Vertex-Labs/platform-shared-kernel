@@ -48,8 +48,8 @@ public sealed class AbstractionsPurityTests
         // Layering (20.Reporting/CLAUDE.md): this domain may reference only 01.Core and
         // SharedKernel.Storage.Abstractions.
         sharedKernelReferences.Should().OnlyContain(
-            name => name == "SharedKernel.Primitives" || name == "SharedKernel.Storage.Abstractions",
-            "SharedKernel.Reporting.Abstractions may reference only SharedKernel.Primitives and SharedKernel.Storage.Abstractions");
+            name => name == "SharedKernel.Primitives" || name == "SharedKernel.Execution" || name == "SharedKernel.Storage.Abstractions",
+            "SharedKernel.Reporting.Abstractions may reference only SharedKernel.Primitives, SharedKernel.Execution and SharedKernel.Storage.Abstractions");
     }
 
     [Fact]

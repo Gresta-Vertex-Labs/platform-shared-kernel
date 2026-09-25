@@ -1,3 +1,5 @@
+using SharedKernel.Execution.Tenancy;
+
 namespace SharedKernel.Execution.Context;
 
 /// <summary>
@@ -10,7 +12,7 @@ namespace SharedKernel.Execution.Context;
 /// against it and scopes caches by it; <c>06.Persistence</c> stamps audit columns and audit records
 /// from it and filters tenant data by <see cref="TenantId"/>. A service implements it once, at its
 /// composition root, over its real identity source — typically <c>12.Security</c>'s
-/// <c>IUserContext</c>/<c>ITenantProvider</c>, for which <c>13.ServiceDefaults</c> ships a ready-made
+/// <c>IUserContext</c>, for which <c>13.ServiceDefaults</c> ships a ready-made
 /// implementation. This package itself references neither.
 /// </para>
 /// <para>
@@ -49,7 +51,7 @@ public interface IRequestContext
     /// Gets the tenant identifier associated with the current request, or <see langword="null"/>
     /// when the request has no tenant.
     /// </summary>
-    Guid? TenantId { get; }
+    TenantId? TenantId { get; }
 
     /// <summary>Gets the kind of actor the current caller is.</summary>
     /// <remarks>

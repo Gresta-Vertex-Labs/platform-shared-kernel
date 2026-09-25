@@ -3,22 +3,29 @@ using System.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.MultiTenancy.Logging;
 using SharedKernel.MultiTenancy.Resolution;
+using SharedKernel.Primitives.Propagation;
 
 namespace SharedKernel.MultiTenancy.Middleware;
 
 /// <summary>
-/// Resolves the current request's tenant identifier by running the configured
+/// Resolves the current request's tenant by running the configured
 /// <see cref="ITenantResolutionStrategy"/> set, in <see cref="TenantResolutionOptions.StrategyOrder"/>,
-/// and populating <see cref="AmbientTenantProvider"/> with the first non-null result.
+/// and runs the rest of the request inside a <see cref="RequestContextScope"/> whose
+/// <see cref="IRequestContext.TenantId"/> is the first non-null result.
 /// </summary>
 /// <remarks>
 /// <para>
-/// If no strategy resolves a tenant, <see cref="AmbientTenantProvider.TenantId"/> remains
-/// <see cref="Guid.Empty"/> — consistent with the <see cref="Guid.Empty"/> no-tenant sentinel rule
-/// shared with <c>06.Persistence</c>: a tenanted <c>DbContext</c>'s global filter then matches
-/// zero rows rather than risking a cross-tenant data leak.
+/// The scope wraps the request's registered <see cref="IRequestContext"/> (or
+/// <see cref="AnonymousRequestContext"/> when none is registered) and replaces only its tenant, so every
+/// component that reads <see cref="IRequestContextAccessor"/> — or <see cref="IRequestContext"/> registered by
+/// <c>SharedKernel.ServiceDefaults.Security</c>'s <c>AddSharedKernelRequestContext()</c>, which prefers the ambient
+/// context — sees the resolved tenant. If no strategy resolves a tenant, the tenant is <see langword="null"/>, even
+/// when the caller's credential asserts one: a tenanted <c>DbContext</c>'s global filter then matches zero rows
+/// rather than risking a cross-tenant data leak.
 /// </para>
 /// <para>
 /// Must be registered <b>after</b> <c>UseAuthentication()</c> in the request pipeline, via
@@ -26,13 +33,11 @@ namespace SharedKernel.MultiTenancy.Middleware;
 /// <c>ClaimTenantResolutionStrategy</c> has access to a populated <see cref="HttpContext.User"/>.
 /// </para>
 /// <para>
-/// <b>Opt-in tenant-status gate:</b> after a strategy resolves a non-<see cref="Guid.Empty"/>
-/// tenant, an <see cref="ITenantStatusValidator"/> is resolved from
-/// <see cref="HttpContext.RequestServices"/> via <c>GetService</c> — never <c>GetRequiredService</c>,
-/// since it is genuinely optional. When registered, a <see langword="false"/> result from
-/// <see cref="ITenantStatusValidator.IsActiveAsync"/> routes through the exact same
-/// <see cref="Guid.Empty"/> fail-closed path as "no strategy resolved," reusing
-/// <see cref="MultiTenancyLog.TenantNotResolved"/> rather than a distinct log message.
+/// <b>Opt-in tenant-status gate:</b> after a strategy resolves a tenant, an <see cref="ITenantStatusValidator"/> is
+/// resolved from <see cref="HttpContext.RequestServices"/> via <c>GetService</c> — never
+/// <c>GetRequiredService</c>, since it is genuinely optional. When registered, a <see langword="false"/> result from
+/// <see cref="ITenantStatusValidator.IsActiveAsync"/> routes through the exact same fail-closed path as "no strategy
+/// resolved," reusing <see cref="MultiTenancyLog.TenantNotResolved"/> rather than a distinct log message.
 /// </para>
 /// </remarks>
 public sealed class TenantResolutionMiddleware(
@@ -54,17 +59,16 @@ public sealed class TenantResolutionMiddleware(
 
     /// <summary>
     /// Resolves the tenant for the current request and invokes the next middleware in the
-    /// pipeline. Never throws when zero strategies resolve a tenant, or when zero strategies are
-    /// configured.
+    /// pipeline inside a request-context scope carrying it. Never throws when zero strategies resolve a
+    /// tenant, or when zero strategies are configured.
     /// </summary>
     /// <param name="context">The current HTTP context.</param>
-    /// <param name="tenantProvider">The scoped <see cref="AmbientTenantProvider"/> to populate.</param>
-    public async Task InvokeAsync(HttpContext context, AmbientTenantProvider tenantProvider)
+    /// <returns>A task that completes when the rest of the pipeline has run.</returns>
+    public async Task InvokeAsync(HttpContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
-        ArgumentNullException.ThrowIfNull(tenantProvider);
 
-        var resolvedTenantId = Guid.Empty;
+        TenantId? resolvedTenantId = null;
         string? resolvedStrategyName = null;
 
         foreach (var strategyName in options.Value.EffectiveStrategyOrder)
@@ -86,7 +90,7 @@ public sealed class TenantResolutionMiddleware(
             }
         }
 
-        if (resolvedStrategyName is not null)
+        if (resolvedTenantId is { } candidate && resolvedStrategyName is not null)
         {
             // Optional gate: "not registered" (null) always passes through
             // unchanged — only a registered validator returning false fails closed. Null-safe on
@@ -96,19 +100,18 @@ public sealed class TenantResolutionMiddleware(
             var statusValidator = context.RequestServices?.GetService<ITenantStatusValidator>();
             var isActive = statusValidator is null
                 || await statusValidator
-                    .IsActiveAsync(resolvedTenantId, context.RequestAborted)
+                    .IsActiveAsync(candidate, context.RequestAborted)
                     .ConfigureAwait(false);
 
             if (isActive)
             {
-                tenantProvider.SetTenantId(resolvedTenantId);
-                MultiTenancyLog.TenantResolved(logger, resolvedTenantId, resolvedStrategyName);
+                MultiTenancyLog.TenantResolved(logger, candidate, resolvedStrategyName);
             }
             else
             {
                 // Fail-closed: an inactive/suspended tenant is treated identically to "no tenant
-                // resolved" — same Guid.Empty sentinel, same log call site, no distinct signal.
-                resolvedTenantId = Guid.Empty;
+                // resolved" — same null tenant, same log call site, no distinct signal.
+                resolvedTenantId = null;
                 MultiTenancyLog.TenantNotResolved(logger);
             }
         }
@@ -119,10 +122,15 @@ public sealed class TenantResolutionMiddleware(
 
         // Ambient enrichment: make TenantId available to every log record produced for the
         // remainder of the request via SharedKernel.ServiceDefaults's BaggageLogRecordProcessor.
-        // Set unconditionally — including the Guid.Empty no-tenant sentinel — so log aggregation
-        // can distinguish "no tenant resolved for this request" from "enrichment was never wired".
-        Activity.Current?.SetBaggage(TenantBaggageKeys.TenantId, resolvedTenantId.ToString());
+        if (resolvedTenantId is { } tenant)
+        {
+            Activity.Current?.SetBaggage(WellKnownBaggageKeys.TenantId, tenant.ToString());
+        }
 
-        await next(context).ConfigureAwait(false);
+        var inner = context.RequestServices?.GetService<IRequestContext>() ?? AnonymousRequestContext.Instance;
+        using (RequestContextScope.Begin(new ResolvedTenantRequestContext(inner, resolvedTenantId)))
+        {
+            await next(context).ConfigureAwait(false);
+        }
     }
 }

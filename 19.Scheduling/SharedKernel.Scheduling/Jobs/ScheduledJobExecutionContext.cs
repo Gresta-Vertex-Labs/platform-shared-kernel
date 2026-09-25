@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Scheduling.Registry;
 
 namespace SharedKernel.Scheduling.Jobs;
@@ -32,10 +33,10 @@ public sealed record ScheduledJobExecutionContext
 
     /// <summary>
     /// Gets the optional, purely informational tenant label carried from the job's
-    /// <see cref="ScheduledJobOptions.TenantScope"/>. See that member's remarks for why this carries no
-    /// isolation enforcement.
+    /// <see cref="ScheduledJobOptions.TenantScope"/>; <see cref="TenantScope.Global"/> for a
+    /// system-level job. See that member's remarks for why this carries no isolation enforcement.
     /// </summary>
-    public TenantScope? TenantScope { get; init; }
+    public TenantScope TenantScope { get; init; }
 
     /// <summary>
     /// Gets the fencing token of this occurrence's distributed lease, if any.

@@ -1,3 +1,5 @@
+using SharedKernel.Execution.Tenancy;
+
 namespace SharedKernel.Persistence.EfCore.Encryption.TenantKeys;
 
 /// <summary>
@@ -22,7 +24,7 @@ public interface ITenantEncryptionKeyManager
     /// <param name="tenantId">The tenant.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <exception cref="TenantKeyShreddedException">The tenant was shredded; a shredded tenant never gets a new key.</exception>
-    Task EnsureTenantKeyAsync(Guid tenantId, CancellationToken cancellationToken = default);
+    Task EnsureTenantKeyAsync(TenantId tenantId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Permanently destroys the tenant's data key and clears the tenant's blind indexes, making every value of the
@@ -70,7 +72,7 @@ public interface ITenantEncryptionKeyManager
     /// </para>
     /// </remarks>
     Task<TenantShredResult> ShredTenantAsync(
-        Guid tenantId,
+        TenantId tenantId,
         TenantShredOptions? options = null,
         CancellationToken cancellationToken = default);
 }
@@ -94,7 +96,7 @@ public sealed record TenantShredOptions
 /// Encrypted values of the tenant under a root key instead of the tenant's data key: not erased by the shred.
 /// </param>
 /// <param name="PlaintextValues">Values of the tenant's encrypted columns stored as plaintext: not erased by the shred.</param>
-public sealed record TenantShredResult(Guid TenantId, long BlindIndexValuesCleared, long RootKeyValues, long PlaintextValues)
+public sealed record TenantShredResult(TenantId TenantId, long BlindIndexValuesCleared, long RootKeyValues, long PlaintextValues)
 {
     /// <summary>
     /// Whether every encrypted value of the tenant was under its data key, so destroying the key erased all of them.

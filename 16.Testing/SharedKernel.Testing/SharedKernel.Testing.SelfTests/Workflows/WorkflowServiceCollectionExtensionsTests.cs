@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Testing.Workflows;
 using SharedKernel.Workflows.Temporal.Dispatch;
 
@@ -83,7 +84,7 @@ public sealed class WorkflowServiceCollectionExtensionsTests
         using (var scope = provider.CreateScope())
         {
             var dispatcher = (InMemoryWorkflowDispatcher)scope.ServiceProvider.GetRequiredService<IWorkflowDispatcher>();
-            await dispatcher.StartAsync<SampleWorkflow>(WorkflowsTestFixtures.ValidOptions(), TenantScope.Of("tenant-a"));
+            await dispatcher.StartAsync<SampleWorkflow>(WorkflowsTestFixtures.ValidOptions(), TenantScope.For(WorkflowsTestFixtures.TenantA));
         }
 
         var afterScope = (InMemoryWorkflowDispatcher)provider.GetRequiredService<IWorkflowDispatcher>();

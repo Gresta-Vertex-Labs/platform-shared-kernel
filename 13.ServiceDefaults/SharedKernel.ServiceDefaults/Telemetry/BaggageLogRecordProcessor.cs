@@ -16,7 +16,7 @@ namespace SharedKernel.ServiceDefaults.Telemetry;
 /// uniformly for any domain that sets <see cref="Activity"/> baggage — for example,
 /// <c>14.Presentation</c>'s correlation-id middleware (which owns its own <see cref="Activity"/>
 /// baggage key directly against the BCL, per WO-031) and <c>SharedKernel.MultiTenancy</c>'s
-/// <c>TenantResolutionMiddleware</c> (which sets <c>TenantBaggageKeys.TenantId</c>) — without
+/// <c>TenantResolutionMiddleware</c> (which sets <c>WellKnownBaggageKeys.TenantId</c>) — without
 /// <c>SharedKernel.ServiceDefaults</c> ever needing a <c>ProjectReference</c> to either domain or
 /// knowing either concept by name.
 /// </para>

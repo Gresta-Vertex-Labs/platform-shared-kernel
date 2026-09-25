@@ -11,6 +11,7 @@ using SharedKernel.AI.Abstractions.Models;
 using SharedKernel.AI.Qdrant.Errors;
 using SharedKernel.AI.Qdrant.Logging;
 using SharedKernel.AI.Qdrant.Querying;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
@@ -35,7 +36,7 @@ namespace SharedKernel.AI.Qdrant.Collections;
 /// </para>
 /// <para>
 /// <b>Tenant scope is fail-closed on every member</b> when the collection declares a
-/// <see cref="VectorCollectionDefinition.TenantField"/>: a caller-supplied <see cref="TenantScope.None"/>
+/// <see cref="VectorCollectionDefinition.TenantField"/>: a caller-supplied <see cref="TenantScope.Global"/>
 /// returns <c>IntelligenceErrors.TenantScopeMissing</c> before any I/O, uniformly across
 /// reads/writes/deletes/scans. Writes stamp the tenant value from the caller-supplied
 /// <c>tenantScope</c> parameter itself — never trusting the caller's own <see cref="IVectorRecord.Metadata"/> — and
@@ -621,7 +622,7 @@ internal sealed class QdrantVectorCollection<TRecord> : IVectorCollection<TRecor
 
     private Error? ValidateTenantScope(TenantScope tenantScope)
     {
-        if (_definition.TenantField is not null && tenantScope.Value.Length == 0)
+        if (_definition.TenantField is not null && tenantScope.IsGlobal)
         {
             _logger.QdrantTenantScopeMissing(CollectionName);
             return IntelligenceErrors.TenantScopeMissing(CollectionName);

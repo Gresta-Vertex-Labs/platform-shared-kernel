@@ -1,3 +1,5 @@
+using SharedKernel.Execution.Tenancy;
+
 namespace SharedKernel.MultiTenancy.Catalog;
 
 /// <summary>
@@ -13,8 +15,8 @@ namespace SharedKernel.MultiTenancy.Catalog;
 /// <para>
 /// <b>Reconciliation, not a fifth unrelated contract.</b> This platform already has three other
 /// tenant-adjacent seams, all confirmed unchanged by <see cref="TenantDescriptor"/>'s existence —
-/// none of the three needs the full descriptor, all three operate on a bare <see cref="Guid"/>
-/// tenant id: <c>ITenantProvider</c> (<c>12.Security.Abstractions</c>, resolves the current
+/// none of the three needs the full descriptor, all three operate on a bare <see cref="TenantId"/>
+/// tenant id: <c>IRequestContext.TenantId</c> (<c>SharedKernel.Execution</c>, the current
 /// request's tenant <i>identity</i>), <c>ICurrentTenantService</c> (a <c>06.Persistence</c>-local
 /// seam), and <c>ITenantCacheService</c> (<c>02.Caching.Abstractions</c>).
 /// </para>
@@ -34,7 +36,7 @@ namespace SharedKernel.MultiTenancy.Catalog;
 /// dictionary when the tenant has no custom settings.
 /// </param>
 public sealed record TenantDescriptor(
-    Guid TenantId,
+    TenantId TenantId,
     string DisplayName,
     TenantStatus Status,
     TenantIsolationMode IsolationMode,

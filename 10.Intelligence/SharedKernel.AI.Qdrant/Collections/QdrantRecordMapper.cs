@@ -6,6 +6,7 @@ using SharedKernel.AI.Abstractions.Errors;
 using SharedKernel.AI.Abstractions.Models;
 using SharedKernel.AI.Qdrant.Constants;
 using SharedKernel.AI.Qdrant.Json;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Results;
 
 namespace SharedKernel.AI.Qdrant.Collections;
@@ -87,9 +88,9 @@ internal static class QdrantRecordMapper
             point.Payload[key] = ToPayloadValue(value);
         }
 
-        if (definition.TenantField is { } tenantField && tenantScope.Value.Length > 0)
+        if (definition.TenantField is { } tenantField && !tenantScope.IsGlobal)
         {
-            point.Payload[tenantField] = tenantScope.Value;
+            point.Payload[tenantField] = tenantScope.Tenant!.Value.ToString();
         }
 
         return Result<PointStruct>.Success(point);

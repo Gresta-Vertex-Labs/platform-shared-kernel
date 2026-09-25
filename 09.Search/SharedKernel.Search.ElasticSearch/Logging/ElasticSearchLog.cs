@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Logging;
 
 namespace SharedKernel.Search.ElasticSearch.Logging;
@@ -78,7 +79,7 @@ internal static partial class ElasticSearchLog
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Search + 210,
         Level = LogLevel.Warning,
-        Message = "Index '{IndexName}' declares a TenantField but the caller supplied TenantScope.None.")]
+        Message = "Index '{IndexName}' declares a TenantField but the caller supplied TenantScope.Global.")]
     public static partial void ElasticSearchTenantScopeMissing(this ILogger logger, string indexName);
 
     [LoggerMessage(

@@ -10,6 +10,8 @@ namespace SharedKernel.Reporting.Abstractions.Tests.Delivery;
 
 public sealed class StorageStreamingWriterTests
 {
+    private static readonly TenantId TenantA = new(Guid.Parse("0f8fad5b-d9cb-469f-a165-70867728950e"));
+
     private static readonly ReportDestination Destination = new() { Store = "reports", Key = "export.csv" };
 
     [Fact]
@@ -110,7 +112,7 @@ public sealed class StorageStreamingWriterTests
         var fileStorage = new InMemoryFileStorage("documents");
         var factory = InMemoryStorage.CreateFactory(b => b.AddInMemoryTenantStore(fileStorage));
         var writer = new StorageStreamingWriter(factory, NullLogger<StorageStreamingWriter>.Instance);
-        var destination = new ReportDestination { Store = "documents", TenantId = "tenant-a", Key = "exports/export.csv" };
+        var destination = new ReportDestination { Store = "documents", TenantId = TenantA, Key = "exports/export.csv" };
 
         var result = await writer.WriteAsync(
             destination,
@@ -124,9 +126,9 @@ public sealed class StorageStreamingWriterTests
 
         result.IsSuccess.Should().BeTrue();
         result.Value.StoredFile.Store.Should().Be("documents");
-        result.Value.StoredFile.TenantId.Should().Be("tenant-a");
+        result.Value.StoredFile.TenantId.Should().Be(TenantA);
         result.Value.StoredFile.Key.Should().Be("exports/export.csv");
-        fileStorage.Keys.Should().Equal(InMemoryFileStorage.TenantKey("tenant-a", "exports/export.csv"));
+        fileStorage.Keys.Should().Equal(InMemoryFileStorage.TenantKey(TenantA, "exports/export.csv"));
         (await factory.Open(result.Value.StoredFile).ExistsAsync(result.Value.StoredFile.Key)).Value.Should().BeTrue();
     }
 
@@ -272,7 +274,7 @@ public sealed class StorageStreamingWriterTests
             NullLogger<StorageStreamingWriter>.Instance);
 
         var act = async () => await writer.WriteAsync(
-            Destination with { TenantId = "tenant-a" },
+            Destination with { TenantId = TenantA },
             "text/csv",
             (_, _) => Task.FromResult(0L),
             CancellationToken.None);
@@ -307,7 +309,7 @@ public sealed class StorageStreamingWriterTests
 
         public string StoreName => inner.StoreName;
 
-        public string? TenantId => null;
+        public TenantId? TenantId => null;
 
         public async Task<Result<FileReference>> UploadAsync(string key, Stream content, FileUploadOptions? options = null, CancellationToken cancellationToken = default)
         {

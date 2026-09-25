@@ -1,4 +1,5 @@
 using SharedKernel.Domain.Aggregates;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Testing.Clocks;
 using SharedKernel.Testing.Persistence;
 using Xunit;
@@ -9,7 +10,7 @@ public sealed class AggregateRootFakerTests
 {
     private sealed class TestTenantedOrder : TenantedAggregateRoot<Guid>
     {
-        public TestTenantedOrder(Guid id, Guid tenantId, decimal total, SharedKernel.Primitives.Clocks.IClock clock)
+        public TestTenantedOrder(Guid id, TenantId tenantId, decimal total, SharedKernel.Primitives.Clocks.IClock clock)
             : base(id, tenantId, clock) => Total = total;
 
         public decimal Total { get; }
@@ -20,7 +21,7 @@ public sealed class AggregateRootFakerTests
         public TestTenantedOrderFaker()
         {
             CustomInstantiator(f => new TestTenantedOrder(
-                f.Random.Guid(), f.Random.Guid(), f.Random.Decimal(1, 100), new FakeClock()));
+                f.Random.Guid(), new TenantId(f.Random.Guid()), f.Random.Decimal(1, 100), new FakeClock()));
         }
     }
 
@@ -39,7 +40,7 @@ public sealed class AggregateRootFakerTests
         var faker = new TestTenantedOrderFaker();
         var order = faker.Generate();
 
-        Assert.NotEqual(Guid.Empty, order.TenantId);
+        Assert.False(order.TenantId.IsDefault);
     }
 
     [Fact]

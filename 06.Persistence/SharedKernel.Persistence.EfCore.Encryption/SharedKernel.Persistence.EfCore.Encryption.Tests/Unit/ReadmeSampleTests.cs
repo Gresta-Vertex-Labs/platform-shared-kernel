@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.EfCore.Context;
@@ -37,7 +38,7 @@ public sealed class ReadmeSampleTests
         }
     }
 
-    private static async Task<TenantShredResult> ShredAsync(ICrossTenantScope crossTenantScope, ITenantEncryptionKeyManager keys, Guid tenantId, CancellationToken ct)
+    private static async Task<TenantShredResult> ShredAsync(ICrossTenantScope crossTenantScope, ITenantEncryptionKeyManager keys, TenantId tenantId, CancellationToken ct)
     {
         using (crossTenantScope.Enter("GDPR erasure request 2026-114"))
             return await keys.ShredTenantAsync(tenantId, cancellationToken: ct);
@@ -70,7 +71,7 @@ public sealed class ReadmeSampleTests
         _ = (Func<Task<TenantShredResult>>)(() => ShredAsync(
             scope.ServiceProvider.GetRequiredService<ICrossTenantScope>(),
             scope.ServiceProvider.GetRequiredService<ITenantEncryptionKeyManager>(),
-            Guid.NewGuid(),
+            new TenantId(Guid.NewGuid()),
             CancellationToken.None));
     }
 }

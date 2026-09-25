@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using System.Collections.Concurrent;
 using SharedKernel.Security.ApiKey.Keys;
 
@@ -26,7 +27,7 @@ public sealed class InMemoryApiKeyStore : IApiKeyStore
     public ApiKeyRecord Add(
         GeneratedApiKey key,
         string clientId,
-        Guid? tenantId = null,
+        TenantId? tenantId = null,
         IReadOnlyCollection<string>? permissions = null,
         DateTimeOffset? expiresAt = null)
     {

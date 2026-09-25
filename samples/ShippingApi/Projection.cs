@@ -52,7 +52,7 @@ public sealed class ShipmentProjection
                 shipmentId,
                 carrier,
                 trackingNumber,
-                caller.TenantId,
+                caller.TenantId?.Value,
                 caller.UserId,
                 caller.ActorKind,
                 Deliveries: 1,

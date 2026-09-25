@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Context;
 using System.Reflection;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
@@ -306,7 +307,7 @@ public sealed class TotpServiceCollectionExtensionsTests
             .TransformAsync(new SecurityTestContextBuilder().WithSessionId(Session).WithAuthenticationMethods("pwd").Build());
 
         IUserContext user = UserContextResolver.Resolve(result, scope.ServiceProvider.GetServices<IUserContextMapper>());
-        Assert.Equal(IdentityKind.User, user.IdentityKind);
+        Assert.Equal(ActorKind.User, user.ActorKind);
         Assert.True(user.WasAuthenticatedWith("otp"));
         Assert.True(user.WasAuthenticatedWith("pwd"));
     }

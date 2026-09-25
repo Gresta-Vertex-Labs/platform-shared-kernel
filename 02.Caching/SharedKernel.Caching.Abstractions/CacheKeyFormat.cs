@@ -1,4 +1,5 @@
 using System.Text;
+using SharedKernel.Execution.Tenancy;
 
 namespace SharedKernel.Caching.Abstractions;
 
@@ -17,7 +18,8 @@ namespace SharedKernel.Caching.Abstractions;
 /// </list>
 /// </para>
 /// <para>
-/// Every caller-supplied part is escaped: <c>%</c>, <c>:</c> and <c>@</c> become <c>%25</c>,
+/// The tenant is a <see cref="TenantId"/>, written once as <see cref="TenantId.ToString()"/> (a lowercase
+/// GUID), which never contains a separator or the tenant marker. Every other caller-supplied part is escaped: <c>%</c>, <c>:</c> and <c>@</c> become <c>%25</c>,
 /// <c>%3A</c> and <c>%40</c>. A part can therefore never introduce a separator or the tenant
 /// marker, so two different inputs never produce the same key or tag, a global key never equals a
 /// tenant key, and one tenant's tag never equals another tenant's tag or a global tag. Global tags
@@ -32,9 +34,9 @@ namespace SharedKernel.Caching.Abstractions;
 /// <example>
 /// <code>
 /// CacheKeyFormat.BuildKey("orders", "invoice", "42")                     // "orders:invoice:42"
-/// CacheKeyFormat.BuildTenantKey("orders", "tenant-a", "invoice", "42")   // "orders:@tenant-a:invoice:42"
+/// CacheKeyFormat.BuildTenantKey("orders", tenantId, "invoice", "42")      // "orders:@{tenantId}:invoice:42"
 /// CacheKeyFormat.BuildKey("orders", "report", "2026:Q3")                 // "orders:report:2026%3AQ3"
-/// CacheKeyFormat.BuildTenantTag("tenant-a", "invoices")                  // "@tenant-a:invoices"
+/// CacheKeyFormat.BuildTenantTag(tenantId, "invoices")                     // "@{tenantId}:invoices"
 /// </code>
 /// </example>
 public static class CacheKeyFormat
@@ -122,10 +124,10 @@ public static class CacheKeyFormat
     /// <param name="id">The entity identifier.</param>
     /// <param name="segments">Optional extra parts, such as a locale.</param>
     /// <returns>The tenant key.</returns>
-    /// <exception cref="ArgumentException">The service name is invalid, or a part is null or whitespace.</exception>
+    /// <exception cref="ArgumentException">The service name is invalid, <paramref name="tenantId"/> is <see langword="default"/>, or a part is null or whitespace.</exception>
     public static string BuildTenantKey(
         string serviceName,
-        string tenantId,
+        TenantId tenantId,
         string entity,
         string id,
         params ReadOnlySpan<string> segments)
@@ -135,7 +137,7 @@ public static class CacheKeyFormat
         var builder = new StringBuilder(serviceName)
             .Append(Separator)
             .Append(TenantMarker)
-            .Append(Escape(tenantId));
+            .Append(FormatTenant(tenantId));
         AppendParts(builder, entity, id, segments);
         return builder.ToString();
     }
@@ -144,9 +146,9 @@ public static class CacheKeyFormat
     /// <param name="tenantId">The tenant identifier.</param>
     /// <param name="tag">The tag name.</param>
     /// <returns>The tenant tag.</returns>
-    /// <exception cref="ArgumentException">A part is null or whitespace.</exception>
-    public static string BuildTenantTag(string tenantId, string tag) =>
-        string.Concat(TenantMarker.ToString(), Escape(tenantId), Separator.ToString(), Escape(tag));
+    /// <exception cref="ArgumentException"><paramref name="tenantId"/> is <see langword="default"/>, or <paramref name="tag"/> is null or whitespace.</exception>
+    public static string BuildTenantTag(TenantId tenantId, string tag) =>
+        string.Concat(TenantMarker.ToString(), FormatTenant(tenantId), Separator.ToString(), Escape(tag));
 
     /// <summary>
     /// Builds the tag every tenant entry carries, in the format <c>@{tenant}</c>. Removing it removes
@@ -154,8 +156,18 @@ public static class CacheKeyFormat
     /// </summary>
     /// <param name="tenantId">The tenant identifier.</param>
     /// <returns>The tenant-wide tag.</returns>
-    /// <exception cref="ArgumentException"><paramref name="tenantId"/> is null or whitespace.</exception>
-    public static string BuildTenantWideTag(string tenantId) => TenantMarker + Escape(tenantId);
+    /// <exception cref="ArgumentException"><paramref name="tenantId"/> is <see langword="default"/>.</exception>
+    public static string BuildTenantWideTag(TenantId tenantId) => TenantMarker + FormatTenant(tenantId);
+
+    private static string FormatTenant(TenantId tenantId)
+    {
+        if (tenantId.IsDefault)
+        {
+            throw new ArgumentException("The tenant identifier must not be default(TenantId).", nameof(tenantId));
+        }
+
+        return tenantId.ToString();
+    }
 
     private static void AppendParts(StringBuilder builder, string entity, string id, ReadOnlySpan<string> segments)
     {

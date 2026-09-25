@@ -1,12 +1,14 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
-using SharedKernel.Security.Abstractions;
+using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
 
 namespace SharedKernel.Testing.Communication;
 
 /// <summary>
 /// In-memory test double for <see cref="IHttpContextAccessor"/> holding a fixed (or null)
-/// <see cref="HttpContext"/> with a configurable <see cref="ITenantProvider"/>.
+/// <see cref="HttpContext"/> whose request services resolve an <see cref="IRequestContext"/> with a
+/// configurable tenant.
 /// </summary>
 /// <remarks>
 /// Consolidates ad-hoc duplicate fakes previously hand-rolled in
@@ -27,23 +29,18 @@ public sealed class FakeHttpContextAccessor : IHttpContextAccessor
     public HttpContext? HttpContext { get; set; }
 
     /// <summary>
-    /// Builds a <see cref="FakeHttpContextAccessor"/> whose <see cref="HttpContext"/> resolves a
-    /// fixed <see cref="ITenantProvider"/> from its <see cref="HttpContext.RequestServices"/>.
+    /// Builds a <see cref="FakeHttpContextAccessor"/> whose <see cref="HttpContext"/> resolves an
+    /// <see cref="IRequestContext"/> for <paramref name="tenantId"/> from its <see cref="HttpContext.RequestServices"/>.
     /// </summary>
-    /// <param name="tenantId">The tenant id the backing <see cref="ITenantProvider"/> returns.</param>
+    /// <param name="tenantId">The tenant the request context reports, or <see langword="null"/> for none.</param>
     /// <returns>A new <see cref="FakeHttpContextAccessor"/>.</returns>
-    public static FakeHttpContextAccessor WithTenant(Guid tenantId)
+    public static FakeHttpContextAccessor WithTenant(TenantId? tenantId)
     {
         var services = new ServiceCollection();
-        services.AddSingleton<ITenantProvider>(new FixedTenantProvider(tenantId));
+        services.AddSingleton<IRequestContext>(new SystemRequestContext([], "test", tenantId));
         var provider = services.BuildServiceProvider();
 
         var context = new DefaultHttpContext { RequestServices = provider };
         return new FakeHttpContextAccessor(context);
-    }
-
-    private sealed class FixedTenantProvider(Guid tenantId) : ITenantProvider
-    {
-        public Guid TenantId => tenantId;
     }
 }

@@ -49,7 +49,7 @@ internal static partial class WorkflowLog
     [LoggerMessage(
         EventId = 17005,
         Level = LogLevel.Warning,
-        Message = "No tenant header was present on workflow {WorkflowId} — surfacing TenantScope.None")]
+        Message = "No tenant header was present on workflow {WorkflowId} — surfacing TenantScope.Global")]
     public static partial void TenantHeaderMissingOnWorkflow(ILogger logger, string workflowId);
 
     [LoggerMessage(

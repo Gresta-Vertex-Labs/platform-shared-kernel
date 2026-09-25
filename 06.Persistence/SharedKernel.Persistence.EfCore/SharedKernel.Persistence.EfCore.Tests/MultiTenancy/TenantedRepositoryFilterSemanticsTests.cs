@@ -1,5 +1,6 @@
 using FluentAssertions;
 using SharedKernel.Domain.Abstractions;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.EfCore.MultiTenancy;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
@@ -28,7 +29,7 @@ public sealed class TenantedRepositoryFilterSemanticsTests
     public async Task GetByIdForTenantAsync_ReturnsNull_ForSoftDeletedEntity()
     {
         // Arrange
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
         using var ctx = TestDbContextFactory.CreateSoftDeletableTenantedDbContext(tenantId);
         var crossTenantScope = ctx.CrossTenantScope;
         var repo = new SdTenantedRepo(ctx);
@@ -60,7 +61,7 @@ public sealed class TenantedRepositoryFilterSemanticsTests
     [Fact]
     public async Task GetByIdForTenantIncludingDeletedAsync_Returns_SoftDeletedEntity()
     {
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
         using var ctx = TestDbContextFactory.CreateSoftDeletableTenantedDbContext(tenantId);
         var crossTenantScope = ctx.CrossTenantScope;
         var repo = new SdTenantedRepo(ctx);
@@ -91,8 +92,8 @@ public sealed class TenantedRepositoryFilterSemanticsTests
     [Fact]
     public async Task GetByIdForTenantAsync_Returns_LiveEntity_ForCorrectTenant()
     {
-        var tenantA = Guid.NewGuid();
-        var tenantB = Guid.NewGuid();
+        var tenantA = new TenantId(Guid.NewGuid());
+        var tenantB = new TenantId(Guid.NewGuid());
 
         using var ctx = TestDbContextFactory.CreateSoftDeletableTenantedDbContext(tenantA);
         var crossTenantScope = ctx.CrossTenantScope;

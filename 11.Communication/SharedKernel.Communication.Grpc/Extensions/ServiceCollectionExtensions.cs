@@ -31,7 +31,7 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<IHttpContextAccessor, HttpContextAccessor>();
 
         // Interceptors registered as singletons — they hold no request-level state.
-        // TenantIdInterceptor resolves ITenantProvider from request scope at call time via
+        // TenantIdInterceptor resolves IRequestContext from request scope at call time via
         // IHttpContextAccessor, so singleton lifetime is correct.
         services.TryAddSingleton<CorrelationTracingInterceptor>();
         services.TryAddSingleton<TenantIdInterceptor>();

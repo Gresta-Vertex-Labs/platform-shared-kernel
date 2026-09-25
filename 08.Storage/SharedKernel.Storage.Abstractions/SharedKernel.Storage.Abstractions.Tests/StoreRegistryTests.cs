@@ -6,6 +6,8 @@ namespace SharedKernel.Storage.Abstractions.Tests;
 
 public sealed class StoreRegistryTests
 {
+    private static readonly TenantId T1 = new(Guid.Parse("0f8fad5b-d9cb-469f-a165-70867728950e"));
+
     [Fact]
     public void A_single_shared_store_resolves_keyed_unkeyed_and_by_name()
     {
@@ -62,7 +64,7 @@ public sealed class StoreRegistryTests
 
         ITenantFileStorage tenantStore = provider.GetRequiredKeyedService<ITenantFileStorage>("documents");
         tenantStore.Should().BeSameAs(provider.GetRequiredService<ITenantFileStorage>());
-        tenantStore.ForTenant("t1").TenantId.Should().Be("t1");
+        tenantStore.ForTenant(T1).TenantId.Should().Be(T1);
     }
 
     [Fact]
@@ -121,14 +123,14 @@ public sealed class StoreRegistryTests
         IFileStorageFactory factory = provider.GetRequiredService<IFileStorageFactory>();
 
         factory.Open(new FileReference { Store = "invoices", Key = "a" }).TenantId.Should().BeNull();
-        factory.Open(new FileReference { Store = "documents", TenantId = "t1", Key = "a" }).TenantId.Should().Be("t1");
+        factory.Open(new FileReference { Store = "documents", TenantId = T1, Key = "a" }).TenantId.Should().Be(T1);
 
         Action missingTenant = () => factory.Open(new FileReference { Store = "documents", Key = "a" });
-        Action unexpectedTenant = () => factory.Open(new FileReference { Store = "invoices", TenantId = "t1", Key = "a" });
-        Action invalidTenant = () => factory.Open(new FileReference { Store = "documents", TenantId = "../t2", Key = "a" });
+        Action unexpectedTenant = () => factory.Open(new FileReference { Store = "invoices", TenantId = T1, Key = "a" });
+        Action defaultTenant = () => factory.Open(new FileReference { Store = "documents", TenantId = default(TenantId), Key = "a" });
         missingTenant.Should().Throw<InvalidOperationException>();
         unexpectedTenant.Should().Throw<InvalidOperationException>();
-        invalidTenant.Should().Throw<ArgumentException>();
+        defaultTenant.Should().Throw<ArgumentException>();
     }
 
     [Fact]

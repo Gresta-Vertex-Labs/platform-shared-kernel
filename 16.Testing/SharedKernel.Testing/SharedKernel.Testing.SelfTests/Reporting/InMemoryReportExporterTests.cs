@@ -2,6 +2,8 @@ using SharedKernel.Reporting.Abstractions.Models;
 using SharedKernel.Testing.Clocks;
 using SharedKernel.Testing.Reporting;
 
+using SharedKernel.Execution.Tenancy;
+
 namespace SharedKernel.Testing.SelfTests.Reporting;
 
 /// <summary>
@@ -16,6 +18,8 @@ namespace SharedKernel.Testing.SelfTests.Reporting;
 /// </summary>
 public sealed class InMemoryReportExporterTests
 {
+    private static readonly TenantId TenantA = new(Guid.Parse("0f8fad5b-d9cb-469f-a165-70867728950e"));
+
     private sealed record TestRow(int Id, string Name);
 
     private static async IAsyncEnumerable<TestRow> RowsAsync(params TestRow[] rows)
@@ -38,7 +42,7 @@ public sealed class InMemoryReportExporterTests
         };
 
     private static ReportDestination CreateDestination(TimeSpan? presignedExpiry = null) =>
-        new() { Store = "reports", TenantId = "tenant-a", Key = "export.csv", PresignedDownloadUrlExpiry = presignedExpiry };
+        new() { Store = "reports", TenantId = TenantA, Key = "export.csv", PresignedDownloadUrlExpiry = presignedExpiry };
 
     [Fact]
     public async Task ExportAsync_DrainsAllRows_MakesThemAvailableViaLastRows()

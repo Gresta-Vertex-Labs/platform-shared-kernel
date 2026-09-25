@@ -220,7 +220,7 @@ public sealed class FileScenarios(Backends backends)
             await api.PostAsJsonAsync("/copy", new CopyRequest(Stores.Assets, source, Stores.Archive, $"archived/{source}")));
 
         sameStore.Should().BeEquivalentTo(new { Store = Stores.Assets, Key = $"copies/{source}" });
-        toTenant.Should().BeEquivalentTo(new { Store = Stores.Documents, TenantId = "acme", Key = $"inbox/{source}" });
+        toTenant.Should().BeEquivalentTo(new { Store = Stores.Documents, TenantId = (SharedKernel.Execution.Tenancy.TenantId?)SampleHost.Acme, Key = $"inbox/{source}" });
         toObs.Should().BeEquivalentTo(new { Store = Stores.Archive, Key = $"archived/{source}" });
         (await api.GetByteArrayAsync($"/files/{Stores.Documents}/inbox/{source}")).Should().Equal(content);
         FileProperties archived = await SampleHost.ReadAsync<FileProperties>(await api.GetAsync($"/properties/{Stores.Archive}/archived/{source}"));

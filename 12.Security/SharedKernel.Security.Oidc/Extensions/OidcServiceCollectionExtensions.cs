@@ -18,8 +18,8 @@ namespace SharedKernel.Security.Oidc.Extensions;
 public static class OidcServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers the <c>Bearer</c> authentication scheme as the default scheme, <see cref="IUserContext"/> and
-    /// <see cref="ITenantProvider"/> (scoped), and an <see cref="IClock"/> when none is registered.
+    /// Registers the <c>Bearer</c> authentication scheme as the default scheme, <see cref="IUserContext"/> (scoped),
+    /// and an <see cref="IClock"/> when none is registered.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <param name="configuration">The configuration root; settings bind from <c>SharedKernel:Security:Oidc</c>.</param>
@@ -31,7 +31,7 @@ public static class OidcServiceCollectionExtensions
     /// Claims keep the names the provider issued.
     /// </para>
     /// <para>
-    /// <see cref="IUserContext"/> and <see cref="ITenantProvider"/> are added only when not already registered, so a
+    /// <see cref="IUserContext"/> is added only when not already registered, so a
     /// worker host can register <see cref="SystemUserContext"/> first.
     /// </para>
     /// </remarks>
@@ -61,7 +61,6 @@ public static class OidcServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IUserContextMapper, OidcUserContextMapper>());
         RemoveAnonymousPlaceholder(services);
         services.TryAddScoped<IUserContext>(ResolveUserContext);
-        services.TryAddScoped<ITenantProvider, UserContextTenantProvider>();
 
         return new OidcAuthenticationBuilder(services);
     }

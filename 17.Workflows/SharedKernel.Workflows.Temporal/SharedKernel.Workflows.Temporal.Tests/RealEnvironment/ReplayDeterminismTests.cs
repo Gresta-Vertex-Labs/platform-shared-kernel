@@ -34,7 +34,7 @@ public sealed class ReplayDeterminismTests(TemporalTestFixture fixture)
         Result<IWorkflowHandle<string>> startResult = await dispatcher.StartAsync<EchoWorkflow, string, string>(
             "replay-target-input",
             Options($"replay-{Guid.NewGuid():N}"),
-            TenantScope.Of("tenant-replay"));
+            TenantScope.For(TestTenants.Replay));
         startResult.IsSuccess.Should().BeTrue();
         await startResult.Value.GetResultAsync();
 

@@ -45,12 +45,12 @@ public sealed class MultiTenancyLogWiringTests
             Options(TenantResolutionStrategyNames.Header),
             logger);
 
-        await middleware.InvokeAsync(context, new AmbientTenantProvider());
+        await middleware.InvokeAsync(context);
 
         var inMemoryLogger = factory.GetLogger(typeof(TenantResolutionMiddleware).FullName!);
         var record = inMemoryLogger.Records.ShouldHaveLogged(13100, LogLevel.Debug);
         record.TryGetProperty("TenantId", out var tenantId).Should().BeTrue();
-        tenantId.Should().Be(expectedTenantId);
+        tenantId.Should().Be(new TenantId(expectedTenantId));
         record.TryGetProperty("StrategyName", out var strategyName).Should().BeTrue();
         strategyName.Should().Be(TenantResolutionStrategyNames.Header);
     }
@@ -67,7 +67,7 @@ public sealed class MultiTenancyLogWiringTests
             Options(TenantResolutionStrategyNames.Header),
             logger);
 
-        await middleware.InvokeAsync(context, new AmbientTenantProvider());
+        await middleware.InvokeAsync(context);
 
         var inMemoryLogger = factory.GetLogger(typeof(TenantResolutionMiddleware).FullName!);
         inMemoryLogger.Records.ShouldHaveLogged(13101, LogLevel.Trace);
@@ -91,7 +91,7 @@ public sealed class MultiTenancyLogWiringTests
             Options(TenantResolutionStrategyNames.Header),
             logger);
 
-        await middleware.InvokeAsync(context, new AmbientTenantProvider());
+        await middleware.InvokeAsync(context);
 
         var inMemoryLogger = factory.GetLogger(typeof(TenantResolutionMiddleware).FullName!);
         inMemoryLogger.Records.ShouldHaveLogged(13101, LogLevel.Trace);
@@ -100,6 +100,6 @@ public sealed class MultiTenancyLogWiringTests
 
     private sealed class RejectingTenantStatusValidator : ITenantStatusValidator
     {
-        public Task<bool> IsActiveAsync(Guid tenantId, CancellationToken ct) => Task.FromResult(false);
+        public Task<bool> IsActiveAsync(TenantId tenantId, CancellationToken ct) => Task.FromResult(false);
     }
 }

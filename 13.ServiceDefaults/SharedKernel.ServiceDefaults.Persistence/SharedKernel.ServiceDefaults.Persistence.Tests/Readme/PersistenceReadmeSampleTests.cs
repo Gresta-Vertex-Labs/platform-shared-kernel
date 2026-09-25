@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using FluentAssertions;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -42,7 +43,7 @@ public sealed record OrderId(Guid Value) : StronglyTypedId<Guid>(Value)
 
 public sealed class Order : TenantedAuditableAggregateRoot<OrderId>
 {
-    public Order(OrderId id, Guid tenantId, string customer, Money total, IClock clock)
+    public Order(OrderId id, TenantId tenantId, string customer, Money total, IClock clock)
         : base(id, tenantId, clock)
     {
         Customer = customer;
@@ -146,7 +147,7 @@ public sealed class PersistenceReadmeSampleTests(PostgreSqlContainerFixture fixt
     {
         await using var database = await fixture.Server.CreateDatabaseAsync();
         var configuration = database.BuildConfiguration("orders", AuditKeys);
-        var tenantA = Guid.NewGuid();
+        var tenantA = new TenantId(Guid.NewGuid());
         var caller = TestRequestContext.ForTenant(tenantA);
 
         await using var provider = BuildServices(configuration, caller);
@@ -178,7 +179,7 @@ public sealed class PersistenceReadmeSampleTests(PostgreSqlContainerFixture fixt
             audit.Items.Should().ContainSingle();
         }
 
-        caller.TenantId = Guid.NewGuid(); // another tenant: neither the EF filter nor the RLS policy shows the row
+        caller.TenantId = new TenantId(Guid.NewGuid()); // another tenant: neither the EF filter nor the RLS policy shows the row
         await using (var scope = provider.CreateAsyncScope())
         {
             (await scope.ServiceProvider.GetRequiredService<IReadRepository<Order, OrderId>>().GetByIdAsync(id))
@@ -201,7 +202,7 @@ public sealed class PersistenceReadmeSampleTests(PostgreSqlContainerFixture fixt
         var services = new ServiceCollection();
         var orders = services.AddFakeRepository<Order, OrderId>();
         var unitOfWork = services.AddFakeUnitOfWork();
-        var caller = services.AddTestRequestContext(TestRequestContext.ForTenant(Guid.NewGuid()));
+        var caller = services.AddTestRequestContext(TestRequestContext.ForTenant(new TenantId(Guid.NewGuid())));
         services.AddSingleton<IClock, SystemClock>();
         services.AddScoped<PlaceOrderHandler>();
         await using var provider = services.BuildServiceProvider();

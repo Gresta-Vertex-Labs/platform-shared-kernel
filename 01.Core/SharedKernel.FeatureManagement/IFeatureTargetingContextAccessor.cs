@@ -6,13 +6,13 @@ namespace SharedKernel.FeatureManagement;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Implement this once per service over its own identity source (for example <c>IUserContext</c> and
-/// <c>ITenantProvider</c> from <c>SharedKernel.Security.Abstractions</c>) and register it; any lifetime works,
+/// Implement this once per service over its own identity source (for example <c>IRequestContext</c> from
+/// <c>SharedKernel.Execution</c>, whose <c>UserId</c> and <c>TenantId</c> it maps) and register it; any lifetime works,
 /// because it is resolved from the scope that creates the <c>IFeatureClient</c>. It is read once per scope.
 /// </para>
 /// <para>
 /// Without a registration, the tenant is read from the <c>TenantId</c> <see cref="System.Diagnostics.Activity"/>
-/// baggage item (<c>WellKnownBaggageKeys.TenantId</c>) and there is no user.
+/// baggage item (<c>WellKnownBaggageKeys.TenantId</c>) when it parses as a <c>TenantId</c>, and there is no user.
 /// </para>
 /// </remarks>
 public interface IFeatureTargetingContextAccessor

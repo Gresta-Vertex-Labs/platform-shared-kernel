@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Results;
 
 namespace SharedKernel.Workflows.Temporal.Dispatch;
@@ -27,7 +28,7 @@ public interface IWorkflowDispatcher
     /// <summary>Starts a new no-argument workflow execution.</summary>
     /// <typeparam name="TWorkflow">The workflow type to start.</typeparam>
     /// <param name="options">Start options, including the business key and id policies.</param>
-    /// <param name="tenantScope">The caller's tenant scope. Must not be <see cref="TenantScope.None"/>.</param>
+    /// <param name="tenantScope">The caller's tenant scope. Must not be <see cref="TenantScope.Global"/>.</param>
     /// <param name="cancellationToken">A token to cancel the dispatch call.</param>
     Task<Result<IWorkflowHandle>> StartAsync<TWorkflow>(
         WorkflowStartOptions options,
@@ -40,7 +41,7 @@ public interface IWorkflowDispatcher
     /// <typeparam name="TArgs">The workflow's argument type.</typeparam>
     /// <param name="args">The workflow argument.</param>
     /// <param name="options">Start options, including the business key and id policies.</param>
-    /// <param name="tenantScope">The caller's tenant scope. Must not be <see cref="TenantScope.None"/>.</param>
+    /// <param name="tenantScope">The caller's tenant scope. Must not be <see cref="TenantScope.Global"/>.</param>
     /// <param name="cancellationToken">A token to cancel the dispatch call.</param>
     Task<Result<IWorkflowHandle>> StartAsync<TWorkflow, TArgs>(
         TArgs args,
@@ -55,7 +56,7 @@ public interface IWorkflowDispatcher
     /// <typeparam name="TResult">The workflow's result type.</typeparam>
     /// <param name="args">The workflow argument.</param>
     /// <param name="options">Start options, including the business key and id policies.</param>
-    /// <param name="tenantScope">The caller's tenant scope. Must not be <see cref="TenantScope.None"/>.</param>
+    /// <param name="tenantScope">The caller's tenant scope. Must not be <see cref="TenantScope.Global"/>.</param>
     /// <param name="cancellationToken">A token to cancel the dispatch call.</param>
     Task<Result<IWorkflowHandle<TResult>>> StartAsync<TWorkflow, TArgs, TResult>(
         TArgs args,
@@ -69,8 +70,8 @@ public interface IWorkflowDispatcher
     /// </summary>
     /// <param name="workflowId">The full, already-composed workflow id.</param>
     /// <param name="runId">An optional specific run id. <see langword="null"/> targets the latest run.</param>
-    /// <param name="tenantScope">The caller's tenant scope. Must not be <see cref="TenantScope.None"/>.</param>
-    /// <exception cref="ArgumentException"><paramref name="workflowId"/> is null/whitespace, or <paramref name="tenantScope"/> is <see cref="TenantScope.None"/>.</exception>
+    /// <param name="tenantScope">The caller's tenant scope. Must not be <see cref="TenantScope.Global"/>.</param>
+    /// <exception cref="ArgumentException"><paramref name="workflowId"/> is null/whitespace, or <paramref name="tenantScope"/> is <see cref="TenantScope.Global"/>.</exception>
     IWorkflowHandle GetHandle(string workflowId, string? runId, TenantScope tenantScope);
 
     /// <summary>
@@ -80,13 +81,13 @@ public interface IWorkflowDispatcher
     /// <typeparam name="TResult">The workflow's result type.</typeparam>
     /// <param name="workflowId">The full, already-composed workflow id.</param>
     /// <param name="runId">An optional specific run id. <see langword="null"/> targets the latest run.</param>
-    /// <param name="tenantScope">The caller's tenant scope. Must not be <see cref="TenantScope.None"/>.</param>
-    /// <exception cref="ArgumentException"><paramref name="workflowId"/> is null/whitespace, or <paramref name="tenantScope"/> is <see cref="TenantScope.None"/>.</exception>
+    /// <param name="tenantScope">The caller's tenant scope. Must not be <see cref="TenantScope.Global"/>.</param>
+    /// <exception cref="ArgumentException"><paramref name="workflowId"/> is null/whitespace, or <paramref name="tenantScope"/> is <see cref="TenantScope.Global"/>.</exception>
     IWorkflowHandle<TResult> GetHandle<TResult>(string workflowId, string? runId, TenantScope tenantScope);
 
     /// <summary>Describes a single workflow execution by id. The only read offered against arbitrary executions.</summary>
     /// <param name="workflowId">The full, already-composed workflow id.</param>
-    /// <param name="tenantScope">The caller's tenant scope. Must not be <see cref="TenantScope.None"/>.</param>
+    /// <param name="tenantScope">The caller's tenant scope. Must not be <see cref="TenantScope.Global"/>.</param>
     /// <param name="cancellationToken">A token to cancel the dispatch call.</param>
     Task<Result<WorkflowExecutionDescription>> DescribeAsync(
         string workflowId,

@@ -8,9 +8,8 @@ using SharedKernel.Idempotency.EfCore.Internal;
 using SharedKernel.Idempotency.EfCore.KeyStore;
 using SharedKernel.Idempotency.EfCore.MessageStore;
 using SharedKernel.Idempotency.EfCore.Options;
-using SharedKernel.Idempotency.EfCore.Startup;
 using SharedKernel.Messaging.Abstractions.Idempotency;
-using SharedKernel.Messaging.Abstractions.TenantContext;
+using SharedKernel.Execution.Context;
 using SharedKernel.Primitives.Clocks;
 
 namespace SharedKernel.Idempotency.EfCore.Extensions;
@@ -45,10 +44,9 @@ public static class EfCoreIdempotencyServiceCollectionExtensions
     /// never <see cref="DateTime.UtcNow"/>.
     /// </para>
     /// <para>
-    /// Registers a startup-time <see cref="IHostedService"/>
-    /// (<see cref="IdempotencyTenantAccessorStartupValidator"/>) that throws
-    /// <see cref="InvalidOperationException"/> at <c>IHost.StartAsync()</c> if no
-    /// <see cref="ITenantContextAccessor"/> has been registered — fail-fast, not first-use.
+    /// Registers <see cref="IRequestContextAccessor"/> unless one is already registered: the stores scope every key
+    /// by the tenant of the ambient request context (<see cref="IRequestContextAccessor.Current"/>), which the
+    /// service's inbound adapters set, and use the shared non-tenant scope when no context or tenant is present.
     /// </para>
     /// <para>
     /// This package ships no EF Core migrations. See <c>README.md</c> for the design-time-factory
@@ -85,8 +83,7 @@ public static class EfCoreIdempotencyServiceCollectionExtensions
         services.AddScoped<IRequestIdempotencyStore, EfCoreRequestIdempotencyStore>();
         services.AddScoped<IIdempotencyStore, EfCoreIdempotencyMessageStore>();
 
-        services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IHostedService, IdempotencyTenantAccessorStartupValidator>());
+        services.TryAddSingleton<IRequestContextAccessor, RequestContextAccessor>();
 
         return services;
     }

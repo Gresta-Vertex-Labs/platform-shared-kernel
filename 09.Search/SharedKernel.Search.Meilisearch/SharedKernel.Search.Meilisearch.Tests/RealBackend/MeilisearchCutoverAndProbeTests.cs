@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Search.Abstractions.Errors;
 using SharedKernel.Search.Abstractions.Models;
 using SharedKernel.Search.Meilisearch.Provisioning;
@@ -48,7 +49,7 @@ public sealed class MeilisearchCutoverAndProbeTests
 
             var liveDefinition = stagingDefinition with { Name = live };
             var liveIndex = MeilisearchProviderFactory.CreateIndex<TestProduct>(_fixture, liveDefinition);
-            var getResult = await liveIndex.GetAsync(stagingOnlyDoc.DocumentId, TenantScope.Of(stagingOnlyDoc.TenantId));
+            var getResult = await liveIndex.GetAsync(stagingOnlyDoc.DocumentId, TenantScope.For(TenantId.Parse(stagingOnlyDoc.TenantId)));
             getResult.IsSuccess.Should().BeTrue("the live-named index must now serve the staged data after cutover");
 
             (await provisioner.IndexExistsAsync(staging)).Value.Should().BeFalse("the staging index is deleted by default after cutover");

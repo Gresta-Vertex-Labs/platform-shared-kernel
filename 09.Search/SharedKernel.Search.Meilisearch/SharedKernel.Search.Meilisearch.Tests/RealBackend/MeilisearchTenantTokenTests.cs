@@ -1,4 +1,5 @@
 using FluentAssertions;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Search.Abstractions.Models;
 using SharedKernel.Search.Meilisearch.Tests.Containers;
@@ -67,7 +68,7 @@ public sealed class MeilisearchTenantTokenTests : IAsyncLifetime
         var issuer = MeilisearchProviderFactory.CreateTenantTokenIssuer(_fixture, _signingApiKey, _apiKeyUid);
 
         var issueResult = await issuer.IssueAsync(
-            TenantScope.Of(TestProductCorpus.TenantA), TestProductFields.TenantId, [IndexName], TimeSpan.FromMinutes(5));
+            TenantScope.For(TestProductCorpus.TenantA), TestProductFields.TenantId, [IndexName], TimeSpan.FromMinutes(5));
 
         issueResult.IsSuccess.Should().BeTrue();
         issueResult.Value.Value.Should().NotBeNullOrEmpty();
@@ -80,7 +81,7 @@ public sealed class MeilisearchTenantTokenTests : IAsyncLifetime
             .SearchAsync<TestProduct>(string.Empty, new global::Meilisearch.SearchQuery { Limit = 50 });
 
         searchResult.Hits.Should().HaveCount(TestProductCorpus.ForTenant(TestProductCorpus.TenantA).Count);
-        searchResult.Hits.Should().OnlyContain(p => p.TenantId == TestProductCorpus.TenantA);
+        searchResult.Hits.Should().OnlyContain(p => p.TenantId == TestProductCorpus.TenantA.ToString());
     }
 
     [Fact]
@@ -90,7 +91,7 @@ public sealed class MeilisearchTenantTokenTests : IAsyncLifetime
 
         // Default MeilisearchOptions.TenantTokenMaxTtlMinutes is 15; 60 exceeds it.
         var issueResult = await issuer.IssueAsync(
-            TenantScope.Of(TestProductCorpus.TenantA), TestProductFields.TenantId, [IndexName], TimeSpan.FromMinutes(60));
+            TenantScope.For(TestProductCorpus.TenantA), TestProductFields.TenantId, [IndexName], TimeSpan.FromMinutes(60));
 
         issueResult.IsFailure.Should().BeTrue();
         issueResult.Error.Code.Should().Be("search.meilisearch.tenant_token_ttl_out_of_range");
@@ -127,7 +128,7 @@ public sealed class MeilisearchTenantTokenTests : IAsyncLifetime
     {
         var issuer = MeilisearchProviderFactory.CreateTenantTokenIssuer(_fixture, _signingApiKey, _apiKeyUid);
         var issueResult = await issuer.IssueAsync(
-            TenantScope.Of(TestProductCorpus.TenantA), TestProductFields.TenantId, [IndexName], TimeSpan.FromMinutes(5));
+            TenantScope.For(TestProductCorpus.TenantA), TestProductFields.TenantId, [IndexName], TimeSpan.FromMinutes(5));
         issueResult.IsSuccess.Should().BeTrue();
         var tokenClient = MeilisearchProviderFactory.CreateClient(_fixture, issueResult.Value.Value);
         var rejectedDocId = $"token-write-attempt-{Guid.NewGuid():N}";
@@ -150,7 +151,7 @@ public sealed class MeilisearchTenantTokenTests : IAsyncLifetime
         // Decisive proof, independent of whatever the SDK's write call returned or threw: query the
         // document by id through the unrestricted MASTER client and confirm it was never indexed.
         var masterIndex = MeilisearchProviderFactory.CreateIndex<TestProduct>(_fixture, _definition);
-        var getResult = await masterIndex.GetAsync(rejectedDocId, TenantScope.Of(TestProductCorpus.TenantA));
+        var getResult = await masterIndex.GetAsync(rejectedDocId, TenantScope.For(TestProductCorpus.TenantA));
         getResult.IsFailure.Should().BeTrue(
             "a search-scoped tenant token carries no write-capable action, so the engine must reject the write " +
             "— proven here by the document never actually landing, since the SDK's own AddDocumentsAsync " +
@@ -158,18 +159,16 @@ public sealed class MeilisearchTenantTokenTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task IssueAsync_WithTenantScopeNone_FailsClosed_AndMintsNoToken()
+    public async Task IssueAsync_WithTenantScopeGlobal_FailsClosed_AndMintsNoToken()
     {
         // The highest-consequence guard in this file. A tenant token is handed to an untrusted client —
         // a browser — and the filter baked into it is the ONLY tenant restriction that will ever apply
-        // to searches made with it. TenantScope.None would compile to `tenantId = ""`, which is not a
-        // tenant restriction at all but a filter for documents whose tenant is the empty string: a token
-        // that looks scoped, reads as scoped in a code review, and restricts nothing meaningful. Before
-        // the pre-publish pass this call succeeded and returned a signed token.
+        // to searches made with it. A token issued for TenantScope.Global would carry no tenant
+        // restriction at all: it would read as scoped in a code review and grant every tenant's documents.
         var issuer = MeilisearchProviderFactory.CreateTenantTokenIssuer(_fixture, _signingApiKey, _apiKeyUid);
 
         var issueResult = await issuer.IssueAsync(
-            TenantScope.None, TestProductFields.TenantId, [IndexName], TimeSpan.FromMinutes(5));
+            TenantScope.Global, TestProductFields.TenantId, [IndexName], TimeSpan.FromMinutes(5));
 
         issueResult.IsFailure.Should().BeTrue();
         issueResult.Error.Code.Should().Be("search.tenant_scope_missing");
@@ -183,7 +182,7 @@ public sealed class MeilisearchTenantTokenTests : IAsyncLifetime
         var issuer = MeilisearchProviderFactory.CreateTenantTokenIssuer(_fixture, _signingApiKey, _apiKeyUid);
 
         var issueResult = await issuer.IssueAsync(
-            TenantScope.Of(TestProductCorpus.TenantA), TestProductFields.TenantId, [], TimeSpan.FromMinutes(5));
+            TenantScope.For(TestProductCorpus.TenantA), TestProductFields.TenantId, [], TimeSpan.FromMinutes(5));
 
         issueResult.IsFailure.Should().BeTrue();
         issueResult.Error.Code.Should().Be("search.meilisearch.tenant_token_issuance_failed");
@@ -195,7 +194,7 @@ public sealed class MeilisearchTenantTokenTests : IAsyncLifetime
         var issuer = MeilisearchProviderFactory.CreateTenantTokenIssuer(_fixture, _signingApiKey, _apiKeyUid);
 
         var issueResult = await issuer.IssueAsync(
-            TenantScope.Of(TestProductCorpus.TenantA), "   ", [IndexName], TimeSpan.FromMinutes(5));
+            TenantScope.For(TestProductCorpus.TenantA), "   ", [IndexName], TimeSpan.FromMinutes(5));
 
         issueResult.IsFailure.Should().BeTrue();
         issueResult.Error.Code.Should().Be("search.meilisearch.tenant_token_issuance_failed");
@@ -209,7 +208,7 @@ public sealed class MeilisearchTenantTokenTests : IAsyncLifetime
         var issuer = MeilisearchProviderFactory.CreateTenantTokenIssuer(_fixture, _signingApiKey, _apiKeyUid);
 
         var issueResult = await issuer.IssueAsync(
-            TenantScope.Of(TestProductCorpus.TenantA), TestProductFields.TenantId, [IndexName], TimeSpan.Zero);
+            TenantScope.For(TestProductCorpus.TenantA), TestProductFields.TenantId, [IndexName], TimeSpan.Zero);
 
         issueResult.IsFailure.Should().BeTrue();
         issueResult.Error.Code.Should().Be("search.meilisearch.tenant_token_ttl_out_of_range");

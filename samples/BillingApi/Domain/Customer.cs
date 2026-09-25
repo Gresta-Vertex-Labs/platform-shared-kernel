@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Domain.Aggregates;
 using SharedKernel.Domain.Events;
 using SharedKernel.Primitives.Clocks;
@@ -12,7 +13,7 @@ namespace BillingApi.Domain;
 /// </summary>
 public sealed class Customer : TenantedAuditableSoftDeletableAggregateRoot<CustomerId>
 {
-    private Customer(CustomerId id, Guid tenantId, IClock clock) : base(id, tenantId, clock) { }
+    private Customer(CustomerId id, TenantId tenantId, IClock clock) : base(id, tenantId, clock) { }
 
     private Customer() { } // EF Core materialization
 
@@ -24,7 +25,7 @@ public sealed class Customer : TenantedAuditableSoftDeletableAggregateRoot<Custo
 
     public int InvoiceCount { get; private set; }
 
-    public static Result<Customer> Register(CustomerId id, Guid tenantId, string name, string email, string? taxNumber, IClock clock)
+    public static Result<Customer> Register(CustomerId id, TenantId tenantId, string name, string email, string? taxNumber, IClock clock)
     {
         if (string.IsNullOrWhiteSpace(name))
             return Result<Customer>.Failure(Error.Validation("customer.name.required", "A customer needs a name."));

@@ -1,4 +1,5 @@
 using SharedKernel.Caching.Abstractions;
+using SharedKernel.Execution.Tenancy;
 
 namespace SharedKernel.Testing.Caching;
 
@@ -36,6 +37,6 @@ public sealed class FakeTenantCacheKeyProvider : ITenantCacheKeyProvider
         CacheKeyFormat.BuildKey(ServiceName, entity, id, segments);
 
     /// <inheritdoc />
-    public string BuildTenantKey(string tenantId, string entity, string id, params string[] segments) =>
+    public string BuildTenantKey(TenantId tenantId, string entity, string id, params string[] segments) =>
         CacheKeyFormat.BuildTenantKey(ServiceName, tenantId, entity, id, segments);
 }

@@ -1,3 +1,5 @@
+using SharedKernel.Execution.Tenancy;
+
 namespace SharedKernel.Reporting.Abstractions.Models;
 
 /// <summary>
@@ -18,7 +20,7 @@ public sealed record ReportDestination
     /// that tenant's view, under the tenant's own key prefix. Take it from the request's authenticated
     /// tenant, never from input the caller controls.
     /// </summary>
-    public string? TenantId { get; init; }
+    public TenantId? TenantId { get; init; }
 
     /// <summary>The destination object's key, relative to the store (and tenant). Required, non-empty.</summary>
     public required string Key { get; init; }

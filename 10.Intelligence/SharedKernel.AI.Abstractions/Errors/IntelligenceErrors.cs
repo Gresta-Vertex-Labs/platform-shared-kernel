@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Errors;
 
 namespace SharedKernel.AI.Abstractions.Errors;
@@ -167,13 +168,13 @@ public static class IntelligenceErrors
             $"Not authorized to perform '{operation}' on collection '{collectionName}'.");
 
     /// <summary>
-    /// The collection declares a tenant field but the caller supplied <c>TenantScope.None</c> — an
+    /// The collection declares a tenant field but the caller supplied <c>TenantScope.Global</c> — an
     /// isolation failure, fail-closed before any I/O.
     /// </summary>
     public static Error TenantScopeMissing(string collectionName) =>
         Error.Unauthorized(
             TenantScopeMissingCode,
-            $"Collection '{collectionName}' declares a TenantField; TenantScope.None is not permitted.");
+            $"Collection '{collectionName}' declares a TenantField; TenantScope.Global is not permitted.");
 
     /// <summary>The vector or completion provider could not be reached.</summary>
     public static Error Unreachable(string providerName, string endpoint) =>

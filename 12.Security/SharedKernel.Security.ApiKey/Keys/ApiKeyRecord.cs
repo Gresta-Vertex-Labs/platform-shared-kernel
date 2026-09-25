@@ -1,3 +1,5 @@
+using SharedKernel.Execution.Tenancy;
+
 namespace SharedKernel.Security.ApiKey.Keys;
 
 /// <summary>A stored managed API key.</summary>
@@ -28,7 +30,7 @@ public sealed class ApiKeyRecord
     public string ClientId { get; }
 
     /// <summary>Gets the tenant the key is limited to, or <see langword="null"/>.</summary>
-    public Guid? TenantId { get; init; }
+    public TenantId? TenantId { get; init; }
 
     /// <summary>Gets the roles granted to the key.</summary>
     public IReadOnlyCollection<string> Roles { get; init; } = [];
