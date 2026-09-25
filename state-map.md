@@ -3478,7 +3478,7 @@ times across this pass's build waves, to be pre-existing and unrelated to any fi
 | P-571 | Per-capability packable `*.Testing` packages | `●` (`4cd3ee45`) |
 | P-572 | Release train and CI | `●` (`b0fb8e41`) |
 | P-573 | Samples as the reference architecture | `●` (`c7070aab`) |
-| P-574 | Governance cleanup (tier baseline empty; `SKTIER` becomes an error) | `○` |
+| P-574 | Governance cleanup (tier baseline empty; `SKTIER` becomes an error) | `●` (`dc1a22ef`) |
 | P-575 | Documentation | `○` |
 | P-576 | Agents and commands | `○` |
 | P-577 | First release train | `○` |

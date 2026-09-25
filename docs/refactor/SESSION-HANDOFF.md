@@ -1,7 +1,7 @@
 # WO-086 Foundation Refactor — Session Handoff
 
 > **For the next Claude session.** Read this file first, then follow "How to resume". Everything you need is
-> linked from here. Last updated: 2026-09-26, after P-573 (`c7070aab`) was committed.
+> linked from here. Last updated: 2026-09-26, after P-574 (`dc1a22ef`) was committed.
 
 ## 1. Where the plan lives
 
@@ -43,9 +43,9 @@
 | P-571 | 9 — Per-capability `*.Testing` packages | ● done (`4cd3ee45`) |
 | P-572 | 10 — Release train and CI | ● done (`b0fb8e41`) — not yet run on a real runner |
 | P-573 | 11 — Samples as the reference architecture | ● done (`c7070aab`) |
-| P-574 | 12 — Governance cleanup (tier baseline empty, SKTIER becomes an error) | ○ **next** |
-| P-575 | 13 — Documentation (root/domain CLAUDE.md, READMEs, PLATFORM.md, MIGRATION.md) | ○ |
-| P-576 | 14 — Agents (`.claude/agents/*`) and commands (`.claude/commands/*`) | ○ |
+| P-574 | 12 — Governance cleanup (tier baseline empty, SKTIER becomes an error) | ● done (`dc1a22ef`) |
+| P-575 | 13 — Documentation (root/domain CLAUDE.md, READMEs, PLATFORM.md, MIGRATION.md) | ○ **next** |
+| P-576 | 14 — Agents (`.claude/agents/*`) and commands (`.claude/commands/*`) | ○ **next** (parallel with P-575) |
 | P-577 | 15a — First release train (**ask the user for the tag**) | ○ |
 | P-578 | 15b — Retire old package IDs (**ask the user first**) | ○ |
 
@@ -90,6 +90,13 @@
 - `eng/tier-baseline.txt` is **empty**; making SKTIER an error is P-574.
 - **Known pre-existing gap, not fixed:** consumer idempotency keys only by MessageId, so two receive endpoints (or polymorphic consumers) in one service receiving the same message → the second is skipped as a duplicate. Fix = add consumer/endpoint to the key. Decide in P-574 or a follow-up.
 
+**P-574 — governance cleanup:**
+- `eng/tier-baseline.txt` and the downgrade logic are deleted; **SKTIER diagnostics are build errors**. New **SKTIER006**: any ASP.NET Core reference (framework or `Microsoft.AspNetCore.*` package, incl. transitive) below the Host/Testing tiers. `verify.yml`'s `tier-check` runs `eng/verify-tier-errors.sh` (two probe projects that must fail with SKTIER001/006).
+- `Security.Oidc/.ApiKey/.Mtls/.Totp` are now **Host** tier.
+- Numbered-layer rules deleted (tier check covers them); kept purity rules: `ContractsNeverReferencesDomain`, `DomainNeverReferencesContracts`, `ModelNeverReferencesLogging`, `TestingNeverReferencedByProduction`, Grpc↛Contracts, Redis siblings, 07↛Caching, MediatR-only-in-adapter, topology/crypto/persistence/health rules. `RuleExecutionCoverageTests` fails if any public rule method has no test calling it.
+- Analyzers: `RealKernelTypeNameTests` (26) compiles fixtures against the real kernel assemblies.
+- Not done: the P-571 `.Testing` namespace-rule note; the consumer-idempotency MessageId-only key (P-568 note); CS1574 in `AuditingBehavior.cs` (unresolved cref to `OnBeforeCommit`).
+
 **P-573 — reference samples:**
 - `samples/OrderApi` is four projects + tests: `OrderApi.Domain` (SharedKernel.Domain), `.Application` (SharedKernel.Application, FluentValidation), `.Infrastructure` (Validation.FluentValidation adapter, an `order-store` readiness probe), `.Api` (ServiceDefaults, ServiceDefaults.Security, Application.Pipeline, Application.Mediator.MediatR, Presentation.WebApi), `OrderApi.Tests` (26 tests incl. `ArchitectureTests`, which checks each project's transitive kernel closure against a tier table from `deps.json`).
 - Canonical order: `UseSharedKernelRequestContext()` → `UseSharedKernelSecurityHeaders()` → `UseExceptionHandler()` → endpoints. ShippingApi, DocumentsApi and CatalogApi now use the request-context middleware; ShippingApi proves correlation reaches the consumer through RabbitMQ.
@@ -133,7 +140,7 @@ None — the file is empty since P-568.
 
 1. `git checkout refactor/wo-086-foundation` and `git log --oneline -5`. The newest commit should be `053e5612` (or later).
 2. Read [`FOUNDATION-PLAN.md`](FOUNDATION-PLAN.md): the "Target architecture" section plus the section for the step you're about to do.
-3. Start **P-574** (Step 12), then P-575. Each step's full task list is in FOUNDATION-PLAN.md. Parallel phases worked well in `C:\wt\<phase>` worktrees on `wo086/<phase>` branches, rebased onto each other afterwards; the only conflicts were additive `PublicAPI.Unshipped.txt` hunks (keep both sides).
+3. Start **P-575** (Step 13) and **P-576** (Step 14) in parallel (docs vs `.claude/`). Each step's full task list is in FOUNDATION-PLAN.md. Parallel phases worked well in `C:\wt\<phase>` worktrees on `wo086/<phase>` branches, rebased onto each other afterwards; the only conflicts were additive `PublicAPI.Unshipped.txt` hunks (keep both sides).
 4. For each step:
    1. Implement it directly, or with `general-purpose` agents given the plan as the spec. **Do not use the domain `*-phase-implementer` agents or domain brains yet**: they still describe the old numbered-layer rules until P-576.
    2. Delete any `eng/tier-baseline.txt` entries the step fixes.
@@ -153,10 +160,10 @@ dotnet test  Platform.SharedKernel.Unit.slnf -c Release --no-build
 dotnet test  Platform.SharedKernel.Integration.slnf -c Release --no-build   # Docker; for persistence/messaging/caching/idempotency steps
 ```
 
-Counts after P-571 (use these to spot regressions):
-- **Build:** 0 errors, 35 warnings (no SKTIER warnings left).
-- **Unit:** 81 assemblies / 8,839 tests (1,273 self-tests moved in from Integration).
-- **Architecture:** 378 tests.
+Counts after P-574 (use these to spot regressions):
+- **Build:** 0 errors, 35 warnings; SKTIER are errors.
+- **Unit:** 81 assemblies / 8,835 tests.
+- **Architecture:** 346 tests (deleted numbered-layer rules took theirs). Analyzers: 386.
 - **Integration:** 24 assemblies / 1,635 tests.
 - **Known flakes under full-suite load** (re-run alone before treating as a regression): `MeilisearchContainerFixtureTests`, `CacheLevelMetricsTests.SecondReadOnTheSameNode_IsAnL1Hit`, Redis socket errors in `Idempotency.Redis.Tests`, two `Messaging.MassTransit.Tests`, one `Testing.SelfTests`.
 - **Docker** must be running for Integration and for `ServiceDefaults.Persistence.Tests`. Start Docker Desktop first; it was down at the start of the 2026-09-25 session.
