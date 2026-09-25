@@ -22,10 +22,11 @@ GET  /health/live /health/ready        → the bus-backed readiness probe
 | CloudEvents publish and consume | `POST /shipments` → `ShipmentDispatchedConsumer` |
 | Point-to-point send with an explicit route | `WithSendEndpointRoute<HoldShipment>` → `HoldShipmentConsumer` |
 | **The publisher's tenant and actor on the consumer** | `WithInboundRequestContext()`; the consumer injects `IRequestContext` and reads it like an HTTP handler would |
+| **The request's correlation id on the consumer** | `UseSharedKernelRequestContext()` owns `X-Correlation-Id`; `WithAmbientCorrelationPropagation()` carries it across the broker (`RequestCorrelationId_ReachesTheConsumer`) |
 | At-most-once consumption | `WithIdempotency()` over `InMemoryIdempotencyStore` |
 | Retry, then a fault you can see | `WithRetry()` + `AddFaultConsumer<FailingShipmentCheck, ShipmentCheckFaultConsumer>()` |
 | Transport-native deferred delivery | `WithDelayedDelivery()` → `IMessageScheduler.ScheduleAsync` |
-| Readiness that actually gates traffic | `AddMessagingReadinessCheck()` |
+| Readiness that actually gates traffic | the bus probe `Build()` registers, mapped by `AddSharedKernelReadiness()` |
 | `Result` at the HTTP boundary | `published.ToProblemDetailsResult()` |
 
 The consumer is the point of the whole sample:
@@ -124,7 +125,7 @@ artifacts — a project reference would bypass exactly the thing under test. See
 
 | Here | In production |
 | --- | --- |
-| `HeaderRequestContext` reads the tenant and actor from two request headers | `13.ServiceDefaults`' `AddSharedKernelRequestContext()` over the authenticated principal |
+| `AddDemoIdentity()` builds the `IUserContext` from two request headers | An authentication package (`AddOidcAuthentication(...)`) builds it from a token; `AddSharedKernelRequestContext()` and everything after it are unchanged |
 | `InMemoryIdempotencyStore` deduplicates within one process | `SharedKernel.Idempotency.Redis` or `.EfCore`, which reserve atomically across replicas |
 | `ShipmentProjection` is a dictionary | A real read model written through `06.Persistence` inside the consumer's transaction |
 

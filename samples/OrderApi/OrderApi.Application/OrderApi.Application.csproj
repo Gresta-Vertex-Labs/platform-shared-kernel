@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <!-- Sample code is held to the same bar as shipped code. -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <!--
+    Application: commands, queries, their handlers and validators, and the ports the handlers need
+    (IOrderRepository). It references the kernel's application CONTRACTS only —
+    SharedKernel.Application (Abstractions tier: ICommand/IQuery, handlers, ISender, the pipeline
+    markers). Never the pipeline implementation (SharedKernel.Application.Pipeline), never a mediator
+    (MediatR lives only in SharedKernel.Application.Mediator.MediatR, referenced by the Api), never an
+    adapter or a host package. A service that uses the idempotency or caching markers adds
+    SharedKernel.Idempotency.Abstractions / SharedKernel.Caching.Abstractions here, nothing more.
+
+    FluentValidation is the validation LIBRARY the validators are written in; the kernel's bridge from
+    it to IRequestValidator<T> (SharedKernel.Validation.FluentValidation, an Adapter) is wired by
+    OrderApi.Infrastructure.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\OrderApi.Domain\OrderApi.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SharedKernel.Application" />
+    <PackageReference Include="FluentValidation" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+  </ItemGroup>
+
+</Project>

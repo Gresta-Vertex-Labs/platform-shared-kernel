@@ -19,6 +19,8 @@
     <PackageReference Include="SharedKernel.Storage.Obs" />
     <!-- 13.ServiceDefaults: host, storage telemetry, and AddSharedKernelReadiness (one probe per store) -->
     <PackageReference Include="SharedKernel.ServiceDefaults" />
+    <!-- 13.ServiceDefaults.Security: UseSharedKernelRequestContext() - the request context and its X-Correlation-Id -->
+    <PackageReference Include="SharedKernel.ServiceDefaults.Security" />
     <!-- 14.Presentation: Result -> ProblemDetails -->
     <PackageReference Include="SharedKernel.Presentation.WebApi" />
   </ItemGroup>

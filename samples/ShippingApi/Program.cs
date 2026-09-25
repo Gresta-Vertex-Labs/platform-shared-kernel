@@ -1,9 +1,9 @@
-using SharedKernel.Execution.Context;
 using SharedKernel.Idempotency.Abstractions;
 using SharedKernel.Messaging.MassTransit.Extensions;
 using SharedKernel.ServiceDefaults.Extensions;
 using SharedKernel.ServiceDefaults.HealthChecks;
 using SharedKernel.ServiceDefaults.Probes;
+using SharedKernel.ServiceDefaults.Security;
 using SharedKernel.ServiceDefaults.Telemetry;
 using ShippingApi;
 
@@ -13,13 +13,16 @@ var builder = WebApplication.CreateBuilder(args);
 builder.AddServiceDefaults();
 builder.WithMessagingTelemetry();
 
-// The sample's own state and its stand-in for an identity provider. The request context is
-// registered BEFORE the bus: WithInboundRequestContext() shadows whatever IRequestContext is
-// already registered, and the container resolves the last one registered.
-builder.Services.AddHttpContextAccessor();
+// The sample's own state.
 builder.Services.AddSingleton<ShipmentProjection>();
 builder.Services.AddSingleton<FaultLog>();
-builder.Services.AddScoped<IRequestContext, HeaderRequestContext>();
+
+// Who is calling: the development-only header identity stands in for AddOidcAuthentication(...), and
+// AddSharedKernelRequestContext() turns it into the one IRequestContext. Registered BEFORE the bus:
+// WithInboundRequestContext() shadows whatever IRequestContext is already registered, and the container
+// resolves the last one registered.
+builder.Services.AddDemoIdentity();
+builder.Services.AddSharedKernelRequestContext();
 
 // The idempotency store WithIdempotency() requires. In this process only — see the type's remarks.
 builder.Services.AddIdempotencyStore<InMemoryIdempotencyStore>(IdempotencyPurpose.Message, ServiceLifetime.Singleton);
@@ -44,7 +47,8 @@ builder.Services
     .WithIdempotency()
     // The publisher's tenant and actor travel with the message and are rebuilt on the consumer.
     .WithInboundRequestContext()
-    // Correlation id flows from the ambient Activity with no per-publish code.
+    // The request's correlation id (X-Correlation-Id, owned by UseSharedKernelRequestContext()) travels with
+    // every publish and send, with no per-publish code.
     .WithAmbientCorrelationPropagation()
     .AddConsumer<ShipmentDispatchedConsumer>()
     .AddConsumer<HoldShipmentConsumer>()
@@ -63,6 +67,9 @@ builder.Services.AddProblemDetails();
 
 var app = builder.Build();
 
+// First in the pipeline: the request's X-Correlation-Id and its request context, so the caller and the
+// correlation id are in scope for every later middleware, every publish and every response.
+app.UseSharedKernelRequestContext();
 app.UseExceptionHandler();
 app.MapDefaultHealthCheckEndpoints();
 app.Services.GetRequiredService<StartupGate>().MarkReady();

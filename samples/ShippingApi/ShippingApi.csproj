@@ -20,12 +20,14 @@
     <PackageReference Include="SharedKernel.Messaging.MassTransit.RabbitMq" />
     <!-- 04.Contracts: IIntegrationEvent and the CloudEvents envelope every published event is wrapped in. -->
     <PackageReference Include="SharedKernel.Contracts" />
-    <!-- 05.Application.Abstractions: IRequestContext, which the tenant/actor propagation rides on. -->
+    <!-- Execution: IRequestContext and TenantId, which the tenant/actor/correlation propagation rides on. -->
     <PackageReference Include="SharedKernel.Execution" />
     <!-- 18.Idempotency: IIdempotencyStore, which InMemoryIdempotencyStore implements for IdempotencyPurpose.Message. -->
     <PackageReference Include="SharedKernel.Idempotency.Abstractions" />
     <!-- 13.ServiceDefaults: host, messaging telemetry, and AddSharedKernelReadiness (the bus probe). -->
     <PackageReference Include="SharedKernel.ServiceDefaults" />
+    <!-- 13.ServiceDefaults.Security: AddSharedKernelRequestContext() / UseSharedKernelRequestContext() - the caller and the correlation id. -->
+    <PackageReference Include="SharedKernel.ServiceDefaults.Security" />
     <!-- 14.Presentation: Result -> ProblemDetails at the HTTP boundary. -->
     <PackageReference Include="SharedKernel.Presentation.WebApi" />
   </ItemGroup>

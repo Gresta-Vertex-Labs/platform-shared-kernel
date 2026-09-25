@@ -15,5 +15,7 @@
     <ProjectReference Include="..\SharedKernel.Presentation.SignalR.Redis\SharedKernel.Presentation.SignalR.Redis.csproj" />
     <!-- Grpc no longer references WebApi (P-570); the harness proves the gRPC host composes on its own. -->
     <ProjectReference Include="..\SharedKernel.Presentation.Grpc\SharedKernel.Presentation.Grpc.csproj" />
+    <!-- Moved here from 11.Communication/consumer-verify with the package (Communication.GraphQL became Presentation.GraphQL, P-570/P-573). -->
+    <ProjectReference Include="..\SharedKernel.Presentation.GraphQL\SharedKernel.Presentation.GraphQL.csproj" />
   </ItemGroup>
 </Project>

@@ -15,10 +15,9 @@ storage.AddS3(builder.Configuration, "Public").AddStore("assets");
 storage.AddS3(builder.Configuration, "Private").AddTenantStore("documents");
 storage.AddObs(builder.Configuration).AddStore("archive");
 
-builder.Services.AddHealthChecks()
-    .AddStorageReadinessCheck("assets", "storage-assets")
-    .AddStorageReadinessCheck("documents", "storage-documents")
-    .AddStorageReadinessCheck("archive", "storage-archive");
+// Every AddStore/AddTenantStore registered a readiness probe (storage-assets, storage-documents,
+// storage-archive); one call maps them all.
+builder.Services.AddHealthChecks().AddSharedKernelReadiness();
 ```
 
 Buckets, key prefixes, encryption and link limits are in `appsettings.json`; credentials never are.

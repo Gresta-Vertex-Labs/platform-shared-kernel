@@ -1,7 +1,9 @@
 using DocumentsApi;
 using SharedKernel.ServiceDefaults.Extensions;
 using SharedKernel.ServiceDefaults.HealthChecks;
+using SharedKernel.Security.Abstractions;
 using SharedKernel.ServiceDefaults.Probes;
+using SharedKernel.ServiceDefaults.Security;
 using SharedKernel.ServiceDefaults.Telemetry;
 using SharedKernel.Storage;
 
@@ -26,10 +28,18 @@ storage.AddObs(builder.Configuration).AddStore(Stores.Archive);
 builder.Services.AddHealthChecks()
     .AddSharedKernelReadiness();
 
+// The request context. The sample has no authentication, so the caller is anonymous and the tenant of a tenant
+// store comes from a header (see Stores.cs); a real service registers AddOidcAuthentication(...) and reads the
+// tenant from IRequestContext.TenantId.
+builder.Services.AddSingleton<IUserContext>(AnonymousUserContext.Instance);
+builder.Services.AddSharedKernelRequestContext();
+
 builder.Services.AddProblemDetails();
 
 var app = builder.Build();
 
+// First in the pipeline: the request's X-Correlation-Id and request context, on every response.
+app.UseSharedKernelRequestContext();
 app.UseExceptionHandler();
 app.MapDefaultHealthCheckEndpoints();
 app.Services.GetRequiredService<StartupGate>().MarkReady();

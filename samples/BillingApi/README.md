@@ -12,8 +12,8 @@ everything work together, through an HTTP API, the way a real service would use 
 | `SharedKernel.Persistence.Dapper` | a payment written by Dapper and an aggregate changed by EF Core **in one transaction**, a report with no tenant predicate (row-level security scopes it), a back-office report across tenants on the cross-tenant role |
 | `SharedKernel.Persistence.Npgsql` | one configuration shape (`ConnectionStrings:billing` + `SharedKernel:Persistence:billing`), the four canonical roles, TLS policy, the RLS privilege check |
 | `SharedKernel.Persistence.Testing` | the end-to-end tests run against `PostgresTestServer` (Testcontainers, the same role split); a handler unit test over `FakeRepository`/`FakeUnitOfWork` with `TransientFailures` |
-| `SharedKernel.Application[.Behaviors]` | MediatR pipeline with authorization, transaction and auditing behaviors |
-| `SharedKernel.ServiceDefaults[.Security, .Persistence]` | `AddSharedKernelRequestContext()` over `IUserContext`, persistence readiness checks, the startup gate |
+| `SharedKernel.Application[.Pipeline, .Mediator.MediatR]` | the kernel pipeline (MediatR behind `ISender`, `AddSharedKernelMediatR`) with authorization, transaction and auditing behaviors |
+| `SharedKernel.ServiceDefaults[.Security, .Persistence]` | `AddSharedKernelRequestContext()` over `IUserContext`, `UseSharedKernelRequestContext()` first in the pipeline (correlation id), the database readiness check plus `AddSharedKernelReadiness()` for every provider probe, the startup gate |
 | `SharedKernel.Presentation.WebApi` | `Result` → RFC 9457 ProblemDetails, the exception handler |
 
 ## Run it

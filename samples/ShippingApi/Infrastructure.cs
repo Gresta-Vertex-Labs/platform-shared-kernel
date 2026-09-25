@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using SharedKernel.Execution.Context;
 using SharedKernel.Execution.Tenancy;
 using SharedKernel.Idempotency.Abstractions;
+using SharedKernel.Security.Abstractions;
 
 namespace ShippingApi;
 
@@ -93,17 +94,15 @@ public sealed class InMemoryIdempotencyStore : IIdempotencyStore
 /// </summary>
 /// <remarks>
 /// <para>
-/// A real service registers <c>13.ServiceDefaults</c>' <c>AddSharedKernelRequestContext()</c>, which
-/// builds this from the authenticated principal. Headers stand in for that here so the sample needs
-/// no identity provider — and so a test can act as two different tenants in one process.
-/// </para>
-/// <para>
-/// It is registered <em>before</em> the messaging builder, which is the order
-/// <c>WithInboundRequestContext()</c> requires: the container resolves the last
-/// <c>IRequestContext</c> registered, and the message-aware one has to be that.
+/// DEVELOPMENT-ONLY. It produces the <see cref="IUserContext"/> an authentication package of
+/// <c>12.Security</c> would produce — a real service calls <c>AddOidcAuthentication(configuration)</c>
+/// instead — so everything downstream is the production path: <c>AddSharedKernelRequestContext()</c> turns it
+/// into the one <see cref="IRequestContext"/>, <c>UseSharedKernelRequestContext()</c> puts it (and the request's
+/// <c>X-Correlation-Id</c>) in scope for the request, and the bus carries both to the consumer. Headers stand in
+/// for a token so the sample needs no identity provider, and so a test can act as two tenants in one process.
 /// </para>
 /// </remarks>
-public sealed class HeaderRequestContext : IRequestContext
+public static class DemoIdentity
 {
     /// <summary>The header carrying the tenant this request acts for.</summary>
     public const string TenantHeader = "X-Demo-Tenant";
@@ -111,34 +110,33 @@ public sealed class HeaderRequestContext : IRequestContext
     /// <summary>The header carrying the subject id this request acts as.</summary>
     public const string ActorHeader = "X-Demo-Actor";
 
-    private readonly IHttpContextAccessor _httpContextAccessor;
-
-    /// <summary>Initialises the context.</summary>
-    /// <param name="httpContextAccessor">Access to the current request, if there is one.</param>
-    public HeaderRequestContext(IHttpContextAccessor httpContextAccessor)
+    /// <summary>Registers a scoped <see cref="IUserContext"/> read from <see cref="TenantHeader"/> and <see cref="ActorHeader"/>.</summary>
+    /// <param name="services">The service collection.</param>
+    /// <returns>The same <paramref name="services"/>, for chaining.</returns>
+    public static IServiceCollection AddDemoIdentity(this IServiceCollection services)
     {
-        _httpContextAccessor = httpContextAccessor;
+        services.AddHttpContextAccessor();
+        services.AddScoped<IUserContext>(sp => FromHeaders(sp.GetRequiredService<IHttpContextAccessor>().HttpContext));
+        return services;
     }
 
-    /// <inheritdoc />
-    public bool IsAuthenticated => UserId is not null;
-
-    /// <inheritdoc />
-    public string? UserId => Header(ActorHeader);
-
-    /// <inheritdoc />
-    public TenantId? TenantId => SharedKernel.Execution.Tenancy.TenantId.TryParse(Header(TenantHeader), out var tenantId) ? tenantId : null;
-
-    /// <inheritdoc />
-    public ActorKind ActorKind => IsAuthenticated ? ActorKind.User : ActorKind.Anonymous;
-
-    /// <inheritdoc />
-    public ValueTask<bool> HasPermissionAsync(string permission, CancellationToken cancellationToken)
-        => ValueTask.FromResult(IsAuthenticated);
-
-    private string? Header(string name)
+    private static IUserContext FromHeaders(HttpContext? http)
     {
-        string? value = _httpContextAccessor.HttpContext?.Request.Headers[name].ToString();
+        string? actor = Header(http, ActorHeader);
+        if (actor is null)
+        {
+            return AnonymousUserContext.Instance;
+        }
+
+        return new UserContext(ActorKind.User, actor)
+        {
+            TenantId = TenantId.TryParse(Header(http, TenantHeader), out var tenantId) ? tenantId : null,
+        };
+    }
+
+    private static string? Header(HttpContext? http, string name)
+    {
+        string? value = http?.Request.Headers[name].ToString();
         return string.IsNullOrWhiteSpace(value) ? null : value;
     }
 }

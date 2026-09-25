@@ -124,6 +124,25 @@ public sealed class ShipmentScenarios
         view.ActorKind.Should().Be(ActorKind.Anonymous);
     }
 
+    /// <summary>
+    /// The HTTP request's correlation id — the caller's <c>X-Correlation-Id</c>, owned by
+    /// <c>UseSharedKernelRequestContext()</c> — reaches the consumer through the broker, so one id ties the request
+    /// and everything it caused together.
+    /// </summary>
+    [Fact]
+    public async Task RequestCorrelationId_ReachesTheConsumer()
+    {
+        const string correlationId = "shipping-e2e-7f3a";
+        HttpClient api = _host.Api(Guid.NewGuid(), "operator-7");
+        api.DefaultRequestHeaders.Add("X-Correlation-Id", correlationId);
+
+        Guid shipmentId = await SampleHost.DispatchAsync(api);
+        ShipmentView? view = await ReadAsync(api, shipmentId);
+
+        view.Should().NotBeNull();
+        view!.CorrelationId.Should().Be(correlationId);
+    }
+
     // -----------------------------------------------------------------------------------------
     // Send: one endpoint, not a broadcast
     // -----------------------------------------------------------------------------------------

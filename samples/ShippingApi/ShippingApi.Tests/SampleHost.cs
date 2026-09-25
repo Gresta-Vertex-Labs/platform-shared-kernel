@@ -91,12 +91,12 @@ public sealed class SampleHost : WebApplicationFactory<Program>, IAsyncLifetime
 
         if (tenantId is { } tenant)
         {
-            client.DefaultRequestHeaders.Add(HeaderRequestContext.TenantHeader, tenant.ToString("D"));
+            client.DefaultRequestHeaders.Add(DemoIdentity.TenantHeader, tenant.ToString("D"));
         }
 
         if (actorId is not null)
         {
-            client.DefaultRequestHeaders.Add(HeaderRequestContext.ActorHeader, actorId);
+            client.DefaultRequestHeaders.Add(DemoIdentity.ActorHeader, actorId);
         }
 
         return client;

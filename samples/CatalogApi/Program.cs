@@ -6,7 +6,9 @@ using SharedKernel.Search.Meilisearch.Extensions;
 using SharedKernel.Search.Meilisearch.Provisioning;
 using SharedKernel.ServiceDefaults.Extensions;
 using SharedKernel.ServiceDefaults.HealthChecks;
+using SharedKernel.Security.Abstractions;
 using SharedKernel.ServiceDefaults.Probes;
+using SharedKernel.ServiceDefaults.Security;
 using SharedKernel.ServiceDefaults.Telemetry;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -21,6 +23,12 @@ builder.WithSearchTelemetry();
 // the same precedent as ILogger<T>.
 builder.Services.AddSingleton<IClock, SystemClock>();
 builder.Services.AddSingleton<TelemetryProbe>();
+
+// The request context. No authentication here: the caller is anonymous and the tenant is a route value, a
+// sample shortcut. A real storefront authenticates (AddOidcAuthentication(...)) and takes the tenant from
+// IRequestContext.TenantId.
+builder.Services.AddSingleton<IUserContext>(AnonymousUserContext.Instance);
+builder.Services.AddSharedKernelRequestContext();
 
 // ── Meilisearch: the storefront (BFF/fast) ────────────────────────────────────────────────────────
 //
@@ -119,6 +127,9 @@ _ = app.Services.GetRequiredService<TelemetryProbe>();
 // startup work — here that would be provisioning the indexes; this sample exposes provisioning as an
 // explicit /ops/provision call instead, so there is nothing to wait for.
 app.Services.GetRequiredService<StartupGate>().MarkReady();
+
+// First in the pipeline: the request's X-Correlation-Id and request context, on every response.
+app.UseSharedKernelRequestContext();
 
 app.MapDefaultHealthCheckEndpoints();
 app.MapStorefrontEndpoints();

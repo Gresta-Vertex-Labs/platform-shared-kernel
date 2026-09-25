@@ -19,6 +19,8 @@
     <PackageReference Include="SharedKernel.Search.ElasticSearch" />
     <!-- 13.ServiceDefaults: host, search telemetry, and AddSharedKernelReadiness (one probe per index) -->
     <PackageReference Include="SharedKernel.ServiceDefaults" />
+    <!-- 13.ServiceDefaults.Security: UseSharedKernelRequestContext() - the request context and its X-Correlation-Id -->
+    <PackageReference Include="SharedKernel.ServiceDefaults.Security" />
     <!-- 14.Presentation: Result -> ProblemDetails -->
     <PackageReference Include="SharedKernel.Presentation.WebApi" />
   </ItemGroup>

@@ -7,7 +7,7 @@ artifacts against real engines — not to be copied wholesale, since most servic
 | Domain | What this sample uses it for |
 |---|---|
 | `09.Search` (all three packages) | Both providers side by side; the neutral contracts, plus each engine's exclusive ones |
-| `13.ServiceDefaults` (+ `.Search`) | OpenTelemetry, health endpoints, per-index readiness checks |
+| `13.ServiceDefaults` | OpenTelemetry, health endpoints, `AddSharedKernelReadiness()` over the per-index probes each provider registers, `UseSharedKernelRequestContext()` (correlation id) |
 | `14.Presentation` | `Result<T>` → RFC 9457 ProblemDetails |
 
 ## Running it
@@ -23,7 +23,7 @@ docker run -d --name sk-search-es -p 9200:9200 \
   docker.elastic.co/elasticsearch/elasticsearch:9.4.2
 
 dotnet pack Platform.SharedKernel.slnx -c Release
-dotnet run --project samples/CatalogApi -p:SharedKernelPackageVersion=<the packed version>
+dotnet run --project samples/CatalogApi --urls http://localhost:5199 -p:SharedKernelPackageVersion=<the packed version>
 ```
 
 Then provision and seed, in that order:
@@ -40,16 +40,21 @@ curl -X POST localhost:5199/ops/seed
 ## What to look at
 
 **The count tells you how much it can be trusted.** The products index is provisioned with
-`MaxTotalHits(8)` deliberately, and tenant-north holds ten products:
+`MaxTotalHits(8)` deliberately, and the north tenant holds ten products. Tenants are GUIDs (`TenantId`,
+never a slug); the two seeded ones are `Catalog.TenantNorth` and `Catalog.TenantSouth`, and a route
+value that is not a GUID is a 400:
 
 ```bash
-curl localhost:5199/storefront/tenant-north/products/count
+NORTH=6f1c2a4e-0b7d-4c3e-9a51-3d2e8f7b1a01   # Catalog.TenantNorth
+SOUTH=6f1c2a4e-0b7d-4c3e-9a51-3d2e8f7b1a02   # Catalog.TenantSouth
+
+curl localhost:5199/storefront/$NORTH/products/count
 # {"value":8,"accuracy":"LowerBound","isExact":false,"display":">=8"}
 
-curl localhost:5199/storefront/tenant-north/products/count?category=stationery
+curl localhost:5199/storefront/$NORTH/products/count?category=stationery
 # {"value":3,"accuracy":"Exact","isExact":true,"display":"3"}
 
-curl localhost:5199/back-office/tenant-north/order-lines/count
+curl localhost:5199/back-office/$NORTH/order-lines/count
 # {"value":8,"accuracy":"Exact","isExact":true,"display":"8"}
 ```
 
@@ -61,7 +66,7 @@ ElasticSearch answers from `_count` and is always exact. Both are honest about w
 
 ```bash
 docker stop sk-search-meili
-curl -i localhost:5199/storefront/tenant-north/products?q=mouse
+curl -i localhost:5199/storefront/$NORTH/products?q=mouse
 # HTTP 500 — {"title":"search.unreachable","errorCode":"search.unreachable", …}
 ```
 
@@ -88,8 +93,8 @@ this build declares, and returns 503 with the specific drift when they differ.
 filters entirely, so the tenant travels as a completion category context declared at provisioning time:
 
 ```bash
-curl "localhost:5199/back-office/tenant-north/order-lines/suggest?prefix=Gaming"   # []
-curl "localhost:5199/back-office/tenant-south/order-lines/suggest?prefix=Gaming"   # Gaming Monitor
+curl "localhost:5199/back-office/$NORTH/order-lines/suggest?prefix=Gaming"   # []
+curl "localhost:5199/back-office/$SOUTH/order-lines/suggest?prefix=Gaming"   # Gaming Monitor
 ```
 
 ## Why both engines in one host
@@ -101,17 +106,19 @@ they serve **different document types** — `ISearchIndex<ProductDocument>` and
 The two non-generic contracts do collide, though: `ISearchIndexProvisioner` and
 `ISearchProviderDescriptor` have no type parameter to tell them apart, so an unkeyed resolution returns
 whichever provider was registered last. Each provider package therefore also registers them **keyed by
-provider name**, and this sample addresses them that way:
+provider name**, and this sample addresses them that way (`/ops/probe/{provider}/{index}`).
+
+Readiness needs no key at all. Each provider registers one `IReadinessProbe` per index it was given,
+named after the provider and the index, and the host maps every probe in one call:
 
 ```csharp
-builder.Services.AddHealthChecks()
-    .AddSearchReadinessCheck(Catalog.ProductsIndex,   providerKey: SearchWellKnown.MeilisearchProviderName)
-    .AddSearchReadinessCheck(Catalog.OrderLinesRead, providerKey: SearchWellKnown.ElasticSearchProviderName);
+builder.Services.AddHealthChecks().AddSharedKernelReadiness();
+// ready checks: search-meilisearch-products, search-elasticsearch-order-lines
 ```
 
-A single-provider service omits `providerKey` entirely. Without the key here, the readiness check asks
-ElasticSearch about a Meilisearch index, gets "not addressable", and reports a healthy service unready
-forever — a symptom with no visible connection to its cause. That defect was found by this sample.
+Because the provider registered its own probe, it can never ask ElasticSearch about a Meilisearch index —
+the defect this sample found in the earlier design, where the host named the index and had to pass the
+right provider key or report a healthy service unready forever.
 
 ## Endpoints
 

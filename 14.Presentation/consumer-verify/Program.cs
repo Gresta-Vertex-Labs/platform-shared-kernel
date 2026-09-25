@@ -7,7 +7,8 @@
 // Sunset/Deprecation headers, structured security-audit logging, correlation-id format validation,
 // upload validation (WO-063, P-411–P-416), and AddSharedKernelSignalR with and without
 // WithRedisBackplane (SharedKernel.Presentation.SignalR.Redis) plus hub-invocation rate limiting (WO-063, P-417),
-// and a gRPC host on SharedKernel.Presentation.Grpc without WebApi (P-570), confirming every surface
+// a gRPC host on SharedKernel.Presentation.Grpc without WebApi (P-570), and the GraphQL server
+// conventions of SharedKernel.Presentation.GraphQL (moved from 11.Communication, P-573), confirming every surface
 // composes into a resolvable DI container / request pipeline with zero DI exceptions.
 
 using System.Net.Http;
@@ -19,7 +20,9 @@ using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using SharedKernel.Presentation.GraphQL.Extensions;
 using SharedKernel.Presentation.Grpc.Extensions;
 using SharedKernel.Presentation.SignalR.Extensions;
 using SharedKernel.Presentation.SignalR.Filters;
@@ -362,6 +365,41 @@ Console.WriteLine("Surface 6 PASS: AddSharedKernelSignalR().WithRedisBackplane(.
         "GrpcStatusCodeMap maps Forbidden to PermissionDenied");
 
     Console.WriteLine("Surface 13 PASS: AddSharedKernelGrpc() composes without SharedKernel.Presentation.WebApi");
+}
+
+// ── Surface 14: AddSharedKernelGraphQL composes in a real host (moved from 11.Communication, P-573) ──
+{
+    HostApplicationBuilder builder = Host.CreateApplicationBuilder();
+    var graphQlBuilder = builder.Services.AddSharedKernelGraphQL();
+    Verify(graphQlBuilder is not null, "AddSharedKernelGraphQL() returns a non-null IRequestExecutorBuilder");
+
+    using IHost host = builder.Build();
+    await host.StartAsync();
+    await host.StopAsync();
+
+    Console.WriteLine("Surface 14 PASS: AddSharedKernelGraphQL() resolves cleanly through a real IHost.StartAsync() with zero DI exceptions");
+}
+
+// ── Surface 15: invalid GraphQLOptions fail at registration time — P-358/GQ-10 ──
+{
+    var services = new ServiceCollection();
+
+    OptionsValidationException? caught = null;
+    try
+    {
+        services.AddSharedKernelGraphQL(options => options.MaxPageSize = 501);
+    }
+    catch (OptionsValidationException ex)
+    {
+        caught = ex;
+    }
+
+    Verify(caught is not null, "AddSharedKernelGraphQL throws OptionsValidationException synchronously at registration time for MaxPageSize = 501");
+    Verify(
+        caught!.Failures.Any(failure => failure.Contains("MaxPageSize", StringComparison.Ordinal)),
+        "the OptionsValidationException names the invalid MaxPageSize property");
+
+    Console.WriteLine("Surface 15 PASS: an invalid GraphQLOptions instance fails AddSharedKernelGraphQL loudly at registration time — before any HotChocolate schema is built");
 }
 
 Console.WriteLine();

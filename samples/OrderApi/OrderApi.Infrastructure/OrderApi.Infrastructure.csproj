@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <!-- Sample code is held to the same bar as shipped code. -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <!--
+    Infrastructure: implementations of the Application's ports, and the kernel ADAPTERS they are
+    built on. Here that is SharedKernel.Validation.FluentValidation (the FluentValidation ->
+    IRequestValidator<T> bridge) and an in-memory repository with its readiness probe. A real service
+    adds SharedKernel.Persistence.EfCore, SharedKernel.Messaging.MassTransit.RabbitMq,
+    SharedKernel.Storage.S3, ... here. Never a host package (ServiceDefaults, Presentation,
+    Application.Pipeline, Application.Mediator.*): composing the process is the Api's job.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\OrderApi.Application\OrderApi.Application.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SharedKernel.Validation.FluentValidation" />
+  </ItemGroup>
+
+</Project>
