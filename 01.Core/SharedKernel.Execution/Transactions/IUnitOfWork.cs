@@ -8,7 +8,7 @@ namespace SharedKernel.Execution.Transactions;
 /// </summary>
 /// <remarks>
 /// <para>
-/// One contract for both layers. <c>SharedKernel.Application.Behaviors</c>' <c>TransactionBehavior</c>
+/// One contract for both layers. <c>SharedKernel.Application.Pipeline</c>' <c>TransactionBehavior</c>
 /// runs every outermost command through <see cref="ExecuteInTransactionAsync{TResult}(Func{CancellationToken,Task{TResult}},CancellationToken)"/>;
 /// <c>SharedKernel.Persistence.EfCore</c> implements it (<c>EfUnitOfWork</c>). There is no second,
 /// "transactional" variant and no handle-based <c>BeginTransactionAsync</c>: a caller-held transaction
@@ -20,7 +20,7 @@ namespace SharedKernel.Execution.Transactions;
 /// what the operation needs inside the delegate; never close over an entity loaded outside it.
 /// Side effects outside the database (HTTP calls, messages) do not belong inside the delegate —
 /// queue them for after the commit instead (<c>ICommandScope.OnCompleted</c> in
-/// <c>SharedKernel.Application.Behaviors</c>).
+/// <c>SharedKernel.Application.Pipeline</c>).
 /// </para>
 /// <para>
 /// <strong>Nesting.</strong> Calling an <c>ExecuteInTransactionAsync</c> overload while a transaction

@@ -75,6 +75,26 @@ public sealed partial class DependencyGraphRulesTests
         offenders.Should().BeEmpty("test-helper packages are referenced by test projects only");
     }
 
+    /// <summary>
+    /// WO-086 / P-567: the kernel owns the mediator contracts (<c>SharedKernel.Application</c>), and MediatR is an
+    /// implementation detail of one adapter. Any other shipped project taking a MediatR reference would put MediatR
+    /// types back into a public contract, which is what the abstraction exists to prevent.
+    /// </summary>
+    [Fact]
+    public void MediatR_IsReferencedOnlyByTheMediatorAdapter()
+    {
+        const string adapter = "SharedKernel.Application.Mediator.MediatR";
+        var graph = Graph.Value;
+        graph.Projects.Should().Contain(p => p.Name == adapter && p.RuntimePackages.Contains("MediatR"), "the adapter is the one project that references MediatR");
+
+        var offenders = graph.Projects
+            .Where(p => p.Tier is not null && p.Name != adapter)
+            .Where(p => p.RuntimePackages.Any(static package => package is "MediatR" or "MediatR.Contracts"))
+            .Select(p => p.RelativePath);
+
+        offenders.Should().BeEmpty($"MediatR is referenced only by {adapter}; everything else depends on SharedKernel.Application's ISender");
+    }
+
     [Fact]
     public void ProjectReferenceGraph_HasNoCycles()
     {

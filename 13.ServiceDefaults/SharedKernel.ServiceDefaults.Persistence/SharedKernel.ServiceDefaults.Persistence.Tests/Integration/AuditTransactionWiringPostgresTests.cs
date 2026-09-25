@@ -1,15 +1,15 @@
+using SharedKernel.Application.Mediator.MediatR;
 using FluentAssertions;
-using MediatR;
+using SharedKernel.Application.Messaging;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using SharedKernel.Execution.Auditing;
-using SharedKernel.Application.Behaviors.Auditing;
-using SharedKernel.Application.Behaviors.Extensions;
+using SharedKernel.Application.Auditing;
+using SharedKernel.Application.Pipeline.Extensions;
 using SharedKernel.Execution.Context;
-using SharedKernel.Application.Messaging;
 using SharedKernel.Cryptography.Signing;
 using SharedKernel.Persistence;
 using SharedKernel.Persistence.EfCore.Auditing;
@@ -99,7 +99,7 @@ public sealed class AuditTransactionWiringPostgresTests
         // No bridge: EfUnitOfWork and EfAuditTrailWriter implement the shared IUnitOfWork and
         // IAuditTrailWriter (SharedKernel.Execution) the behaviors consume directly.
 
-        services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblyContaining<AuditTransactionWiringPostgresTests>());
+        services.AddSharedKernelMediatR(typeof(AuditTransactionWiringPostgresTests).Assembly);
 
         // The documented composition named in this wave's brief — nothing else.
         services.AddSharedKernelApplicationBehaviors()

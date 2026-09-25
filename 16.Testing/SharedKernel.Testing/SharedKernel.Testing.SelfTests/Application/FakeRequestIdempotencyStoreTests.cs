@@ -1,4 +1,4 @@
-using SharedKernel.Application.Behaviors.Idempotency;
+using SharedKernel.Application.Pipeline.Idempotency;
 using SharedKernel.Testing.Application;
 
 namespace SharedKernel.Testing.SelfTests.Application;

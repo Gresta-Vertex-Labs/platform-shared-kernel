@@ -1,7 +1,7 @@
 using BillingApi.Application;
 using BillingApi.Domain;
 using Microsoft.EntityFrameworkCore;
-using SharedKernel.Application.Behaviors.Authorization;
+using SharedKernel.Application.Authorization;
 using SharedKernel.Application.Messaging;
 using SharedKernel.Persistence.Abstractions.Repositories;
 using SharedKernel.Persistence.EfCore;

@@ -1,4 +1,3 @@
-using MediatR;
 using SharedKernel.Primitives.Results;
 
 namespace SharedKernel.Application.Messaging;

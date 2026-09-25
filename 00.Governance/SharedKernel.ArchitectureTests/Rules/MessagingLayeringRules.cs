@@ -23,12 +23,13 @@ public static class MessagingLayeringRules
     private const string MediatRAssemblyName = "MediatR";
     private const string MediatRContractsAssemblyName = "MediatR.Contracts";
     private const string ApplicationAssemblyName = "SharedKernel.Application";
-    private const string ApplicationBehaviorsAssemblyName = "SharedKernel.Application.Behaviors";
+    private const string ApplicationPipelineAssemblyName = "SharedKernel.Application.Pipeline";
+    private const string MediatorAdapterAssemblyName = "SharedKernel.Application.Mediator.MediatR";
 
     /// <summary>
     /// Returns a <see cref="ConditionList"/> asserting that the supplied
-    /// <c>SharedKernel.Messaging.*</c> assembly references neither MediatR nor the two
-    /// MediatR-bearing <c>05.Application</c> packages.
+    /// <c>SharedKernel.Messaging.*</c> assembly references neither MediatR nor the
+    /// <c>05.Application</c> packages (contracts, pipeline, mediator adapter).
     /// </summary>
     /// <param name="messagingAssembly">
     /// A <c>SharedKernel.Messaging.Abstractions</c> or <c>SharedKernel.Messaging.MassTransit</c>
@@ -59,5 +60,6 @@ public static class MessagingLayeringRules
                 MediatRAssemblyName,
                 MediatRContractsAssemblyName,
                 ApplicationAssemblyName,
-                ApplicationBehaviorsAssemblyName));
+                ApplicationPipelineAssemblyName,
+                MediatorAdapterAssemblyName));
 }

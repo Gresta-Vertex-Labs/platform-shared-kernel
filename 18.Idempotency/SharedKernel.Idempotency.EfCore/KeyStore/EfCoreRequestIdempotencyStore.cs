@@ -3,7 +3,7 @@ using System.Runtime.ExceptionServices;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using SharedKernel.Application.Behaviors.Idempotency;
+using SharedKernel.Application.Pipeline.Idempotency;
 using SharedKernel.Idempotency.EfCore.Context;
 using SharedKernel.Idempotency.EfCore.Entities;
 using SharedKernel.Idempotency.EfCore.Internal;

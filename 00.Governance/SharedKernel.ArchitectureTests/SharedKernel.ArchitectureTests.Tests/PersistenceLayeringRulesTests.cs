@@ -43,7 +43,7 @@ public sealed class PersistenceLayeringRulesTests
     public void PersistenceNeverReferencesApplicationOrSecurity_ApplicationDependency_RuleFails()
     {
         const string violationSource = """
-            namespace SharedKernel.Application.Behaviors.Transaction
+            namespace SharedKernel.Application.Pipeline.Transaction
             {
                 public interface IUnitOfWork { }
             }
@@ -52,8 +52,8 @@ public sealed class PersistenceLayeringRulesTests
             {
                 public sealed class RogueBridge
                 {
-                    private readonly SharedKernel.Application.Behaviors.Transaction.IUnitOfWork _uow;
-                    public RogueBridge(SharedKernel.Application.Behaviors.Transaction.IUnitOfWork uow) { _uow = uow; }
+                    private readonly SharedKernel.Application.Pipeline.Transaction.IUnitOfWork _uow;
+                    public RogueBridge(SharedKernel.Application.Pipeline.Transaction.IUnitOfWork uow) { _uow = uow; }
                 }
             }
             """;
@@ -65,7 +65,7 @@ public sealed class PersistenceLayeringRulesTests
             .GetResult();
 
         result.IsSuccessful.Should().BeFalse(
-            because: "RogueBridge depends on SharedKernel.Application.Behaviors — the MediatR pipeline persistence must never reference");
+            because: "RogueBridge depends on SharedKernel.Application.Pipeline — the MediatR pipeline persistence must never reference");
     }
 
     [Fact]

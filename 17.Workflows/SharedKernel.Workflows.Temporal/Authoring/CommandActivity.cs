@@ -1,6 +1,5 @@
-using MediatR;
-using Microsoft.Extensions.Logging;
 using SharedKernel.Application.Messaging;
+using Microsoft.Extensions.Logging;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Results;
 
@@ -9,13 +8,13 @@ namespace SharedKernel.Workflows.Temporal.Authoring;
 /// <summary>
 /// The sole <c>05.Application</c> bridge: a closed-generic activity base that resolves
 /// <see cref="ISender"/>, sends <typeparamref name="TCommand"/> through the consuming service's
-/// MediatR pipeline, and maps the resulting <see cref="Result"/> through
+/// application pipeline, and maps the resulting <see cref="Result"/> through
 /// <see cref="Failures.WorkflowFailureMapper"/>.
 /// </summary>
 /// <typeparam name="TCommand">The void-returning command type to dispatch.</typeparam>
 /// <remarks>
 /// <para>
-/// <b>Pipeline semantics.</b> Whatever <c>SharedKernel.Application.Behaviors</c> stages the service
+/// <b>Pipeline semantics.</b> Whatever <c>SharedKernel.Application.Pipeline</c> stages the service
 /// registered apply unchanged. Validation and authorization failures arrive as a failed
 /// <see cref="Result"/> (<c>ErrorType.Validation</c>, <c>ErrorType.Unauthorized</c>,
 /// <c>ErrorType.Forbidden</c>), never as a thrown exception, so they map to non-retryable Temporal
@@ -70,7 +69,7 @@ public abstract class CommandActivity<TCommand> : ActivityBase
 {
     private readonly ISender _sender;
 
-    /// <summary>Initializes the activity with the MediatR sender and ordinary DI dependencies.</summary>
+    /// <summary>Initializes the activity with the kernel sender and ordinary DI dependencies.</summary>
     protected CommandActivity(ISender sender, ILogger logger, IClock clock)
         : base(logger, clock)
     {
@@ -78,7 +77,7 @@ public abstract class CommandActivity<TCommand> : ActivityBase
     }
 
     /// <summary>
-    /// Sends <paramref name="command"/> through the MediatR pipeline and throws the mapped Temporal
+    /// Sends <paramref name="command"/> through the application pipeline and throws the mapped Temporal
     /// failure if it fails. A <see cref="Result"/> never reaches the end of this method unmapped.
     /// </summary>
     public virtual async Task ExecuteAsync(TCommand command, CancellationToken cancellationToken = default)
@@ -103,7 +102,7 @@ public abstract class CommandActivity<TCommand, TResult> : ActivityBase
 {
     private readonly ISender _sender;
 
-    /// <summary>Initializes the activity with the MediatR sender and ordinary DI dependencies.</summary>
+    /// <summary>Initializes the activity with the kernel sender and ordinary DI dependencies.</summary>
     protected CommandActivity(ISender sender, ILogger logger, IClock clock)
         : base(logger, clock)
     {
@@ -111,7 +110,7 @@ public abstract class CommandActivity<TCommand, TResult> : ActivityBase
     }
 
     /// <summary>
-    /// Sends <paramref name="command"/> through the MediatR pipeline, returning the unwrapped result
+    /// Sends <paramref name="command"/> through the application pipeline, returning the unwrapped result
     /// on success or throwing the mapped Temporal failure on failure. A <see cref="Result{T}"/>
     /// never reaches the end of this method unmapped.
     /// </summary>

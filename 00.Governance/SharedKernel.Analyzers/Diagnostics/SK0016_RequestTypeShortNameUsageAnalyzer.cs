@@ -9,7 +9,7 @@ namespace SharedKernel.Analyzers.Diagnostics;
 /// <summary>
 /// SK0016 — Fires on a standalone <c>typeof(X).Name</c> member access found inside a file whose
 /// namespace declaration starts with <c>SharedKernel.Application</c> (covers both
-/// <c>SharedKernel.Application</c> and <c>SharedKernel.Application.Behaviors</c>), unless the
+/// <c>SharedKernel.Application</c> and <c>SharedKernel.Application.Pipeline</c>), unless the
 /// member access is the right-hand operand of a <c>??</c> coalesce expression whose left-hand
 /// operand is <c>typeof(X).FullName</c> for the syntactically-identical <c>X</c>.
 /// </summary>
@@ -24,7 +24,7 @@ namespace SharedKernel.Analyzers.Diagnostics;
 /// <strong>Trigger shape (inverse of the usual exemption).</strong> Unlike SK0001/SK0007/SK0013,
 /// which trigger everywhere except inside a documented exemption namespace, SK0016 is
 /// namespace-scoped as a trigger-<em>IN</em> condition — the collision risk this rule targets is
-/// intrinsic to MediatR request-type tag/key construction, which lives exclusively in
+/// intrinsic to request-type tag/key construction, which lives exclusively in
 /// <c>SharedKernel.Application</c>*.
 /// </para>
 /// <para>

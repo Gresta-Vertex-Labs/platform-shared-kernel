@@ -12,13 +12,13 @@
 //      MisfirePolicy/OverlapPolicy are left unset.
 //   4. The probe reports IsRunning/RegisteredJobCount correctly through the real host.
 
-using MediatR;
+using SharedKernel.Application.Mediator.MediatR;
+using SharedKernel.Application.Messaging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using SharedKernel.Primitives.Health;
-using SharedKernel.Application.Messaging;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Scheduling.Extensions;
@@ -40,7 +40,7 @@ static async Task Surface1And4_RegistrationResolvesAndProbeReportsThroughRealHos
     HostApplicationBuilder builder = Host.CreateApplicationBuilder();
     builder.Services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
     builder.Services.AddSingleton<IClock, SystemClock>();
-    builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblyContaining<ConsumerVerifyPingCommand>());
+    builder.Services.AddSharedKernelMediatR(typeof(ConsumerVerifyPingCommand).Assembly);
 
     ISchedulingBuilder schedulingBuilder = builder.Services.AddSharedKernelScheduling();
     schedulingBuilder.AddRecurring<ConsumerVerifyPingCommand>(
@@ -82,7 +82,7 @@ static async Task Surface2_DeferredJobFiresEndToEndThroughMediatR()
     HostApplicationBuilder builder = Host.CreateApplicationBuilder();
     builder.Services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
     builder.Services.AddSingleton<IClock, SystemClock>();
-    builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblyContaining<ConsumerVerifyPingCommand>());
+    builder.Services.AddSharedKernelMediatR(typeof(ConsumerVerifyPingCommand).Assembly);
     builder.Services.AddSingleton<ConsumerVerifyPingRecorder>();
 
     ISchedulingBuilder schedulingBuilder = builder.Services.AddSharedKernelScheduling(

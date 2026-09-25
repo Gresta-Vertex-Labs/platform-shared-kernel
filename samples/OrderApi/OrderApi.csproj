@@ -18,13 +18,14 @@
     <PackageReference Include="SharedKernel.Primitives" />
     <PackageReference Include="SharedKernel.Domain" />
     <PackageReference Include="SharedKernel.Application" />
-    <PackageReference Include="SharedKernel.Application.Behaviors" />
+    <PackageReference Include="SharedKernel.Application.Pipeline" />
+    <PackageReference Include="SharedKernel.Application.Mediator.MediatR" />
+    <PackageReference Include="SharedKernel.Validation.FluentValidation" />
     <PackageReference Include="SharedKernel.Presentation.WebApi" />
     <PackageReference Include="SharedKernel.ServiceDefaults" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="MediatR" />
     <PackageReference Include="FluentValidation" />
   </ItemGroup>
 

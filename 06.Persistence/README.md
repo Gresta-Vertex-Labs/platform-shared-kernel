@@ -148,7 +148,8 @@ below is compiled and run against PostgreSQL by
 ```shell
 dotnet add package SharedKernel.Persistence.EfCore
 dotnet add package SharedKernel.Persistence.EfCore.Auditing
-dotnet add package SharedKernel.Application.Behaviors            # MediatR pipeline: transaction + auditing
+dotnet add package SharedKernel.Application.Pipeline             # request pipeline: transaction + auditing
+dotnet add package SharedKernel.Application.Mediator.MediatR     # ISender, with MediatR as the transport
 dotnet add package SharedKernel.ServiceDefaults.Security         # IRequestContext over the authenticated user
 dotnet add package SharedKernel.ServiceDefaults.Persistence      # readiness checks
 dotnet add package Microsoft.EntityFrameworkCore.Design          # dotnet ef (PrivateAssets="all")
@@ -250,8 +251,7 @@ builder.AddSharedKernelPostgres<OrderDbContext>("orders", p => p
     .UseAuditTrail()                           // IAuditTrailWriter, sealer, self-check
     .MigrateOnStartup());                      // migrations + seeders, one replica at a time
 
-builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblyContaining<Program>());
-builder.Services.AddSharedKernelApplication();                        // domain events -> MediatR
+builder.Services.AddSharedKernelMediatR(typeof(Program).Assembly);    // handlers + domain-event dispatcher
 builder.Services.AddSharedKernelApplicationBehaviors()
     .AddDefaultBehaviors()
     .AddTransactionBehavior()                  // one retry-safe transaction per command

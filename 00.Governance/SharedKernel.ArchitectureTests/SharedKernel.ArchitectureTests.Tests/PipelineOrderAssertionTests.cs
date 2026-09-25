@@ -12,30 +12,30 @@ public class PipelineOrderAssertionTests
 {
     private interface IMarkerRequest;
 
-    private sealed class FirstBehavior<TRequest, TResponse> : MediatR.IPipelineBehavior<TRequest, TResponse>
-        where TRequest : notnull, MediatR.IRequest<TResponse>
+    private sealed class FirstBehavior<TRequest, TResponse> : SharedKernel.Application.Messaging.IPipelineBehavior<TRequest, TResponse>
+        where TRequest : notnull, SharedKernel.Application.Messaging.IRequest<TResponse>
     {
         public Task<TResponse> Handle(
             TRequest request,
-            MediatR.RequestHandlerDelegate<TResponse> next,
+            SharedKernel.Application.Messaging.RequestHandlerContinuation<TResponse> next,
             CancellationToken cancellationToken) => next();
     }
 
-    private sealed class SecondBehavior<TRequest, TResponse> : MediatR.IPipelineBehavior<TRequest, TResponse>
-        where TRequest : notnull, MediatR.IRequest<TResponse>
+    private sealed class SecondBehavior<TRequest, TResponse> : SharedKernel.Application.Messaging.IPipelineBehavior<TRequest, TResponse>
+        where TRequest : notnull, SharedKernel.Application.Messaging.IRequest<TResponse>
     {
         public Task<TResponse> Handle(
             TRequest request,
-            MediatR.RequestHandlerDelegate<TResponse> next,
+            SharedKernel.Application.Messaging.RequestHandlerContinuation<TResponse> next,
             CancellationToken cancellationToken) => next();
     }
 
-    private sealed class ThirdBehavior<TRequest, TResponse> : MediatR.IPipelineBehavior<TRequest, TResponse>
-        where TRequest : notnull, MediatR.IRequest<TResponse>
+    private sealed class ThirdBehavior<TRequest, TResponse> : SharedKernel.Application.Messaging.IPipelineBehavior<TRequest, TResponse>
+        where TRequest : notnull, SharedKernel.Application.Messaging.IRequest<TResponse>
     {
         public Task<TResponse> Handle(
             TRequest request,
-            MediatR.RequestHandlerDelegate<TResponse> next,
+            SharedKernel.Application.Messaging.RequestHandlerContinuation<TResponse> next,
             CancellationToken cancellationToken) => next();
     }
 
@@ -52,9 +52,9 @@ public class PipelineOrderAssertionTests
     public void AssertRegistrationOrder_MatchingOrder_DoesNotThrow()
     {
         var services = new ServiceCollection();
-        services.AddTransient(typeof(MediatR.IPipelineBehavior<,>), typeof(FirstBehavior<,>));
-        services.AddTransient(typeof(MediatR.IPipelineBehavior<,>), typeof(SecondBehavior<,>));
-        services.AddTransient(typeof(MediatR.IPipelineBehavior<,>), typeof(ThirdBehavior<,>));
+        services.AddTransient(typeof(SharedKernel.Application.Messaging.IPipelineBehavior<,>), typeof(FirstBehavior<,>));
+        services.AddTransient(typeof(SharedKernel.Application.Messaging.IPipelineBehavior<,>), typeof(SecondBehavior<,>));
+        services.AddTransient(typeof(SharedKernel.Application.Messaging.IPipelineBehavior<,>), typeof(ThirdBehavior<,>));
 
         var act = () => PipelineOrderAssertion.AssertRegistrationOrder(
             services,
@@ -80,9 +80,9 @@ public class PipelineOrderAssertionTests
     public void AssertRegistrationOrder_OutOfOrder_ThrowsInvalidOperationException()
     {
         var services = new ServiceCollection();
-        services.AddTransient(typeof(MediatR.IPipelineBehavior<,>), typeof(SecondBehavior<,>));
-        services.AddTransient(typeof(MediatR.IPipelineBehavior<,>), typeof(FirstBehavior<,>));
-        services.AddTransient(typeof(MediatR.IPipelineBehavior<,>), typeof(ThirdBehavior<,>));
+        services.AddTransient(typeof(SharedKernel.Application.Messaging.IPipelineBehavior<,>), typeof(SecondBehavior<,>));
+        services.AddTransient(typeof(SharedKernel.Application.Messaging.IPipelineBehavior<,>), typeof(FirstBehavior<,>));
+        services.AddTransient(typeof(SharedKernel.Application.Messaging.IPipelineBehavior<,>), typeof(ThirdBehavior<,>));
 
         var act = () => PipelineOrderAssertion.AssertRegistrationOrder(
             services,

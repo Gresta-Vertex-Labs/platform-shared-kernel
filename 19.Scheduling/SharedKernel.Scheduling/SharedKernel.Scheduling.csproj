@@ -2,7 +2,7 @@
   <PropertyGroup>
     <SharedKernelTier>Adapter</SharedKernelTier>
     <!-- NuGet packaging metadata -->
-    <Description>Lightweight cron/recurring and one-shot deferred background job dispatch for Platform.SharedKernel microservices: IScheduledJobRegistry (startup-time registration surface), ScheduledCommandJob&lt;TCommand&gt; (the sole 05.Application MediatR bridge, mirroring 17.Workflows' CommandActivity&lt;TCommand&gt;), MisfirePolicy/OverlapPolicy (mandatory, non-defaulted registration parameters), IDistributedLockService-lease-guarded (optional) cross-replica single execution, and ISchedulerServiceProbe (a zero-I/O readiness-probe primitive). Cron parsing goes exclusively through Quartz's standalone CronExpression class — never Quartz's IScheduler/JobStore machinery. A deliberate single package: no SharedKernel.Scheduling.Abstractions split exists, matching the single-provider convention already used by SharedKernel.Cryptography/.Compression/.Guards.</Description>
+    <Description>Lightweight cron/recurring and one-shot deferred background job dispatch for Platform.SharedKernel microservices: IScheduledJobRegistry (startup-time registration surface), ScheduledCommandJob&lt;TCommand&gt; (the sole 05.Application ISender bridge, mirroring 17.Workflows' CommandActivity&lt;TCommand&gt;), MisfirePolicy/OverlapPolicy (mandatory, non-defaulted registration parameters), IDistributedLockService-lease-guarded (optional) cross-replica single execution, and ISchedulerServiceProbe (a zero-I/O readiness-probe primitive). Cron parsing goes exclusively through Quartz's standalone CronExpression class — never Quartz's IScheduler/JobStore machinery. A deliberate single package: no SharedKernel.Scheduling.Abstractions split exists, matching the single-provider convention already used by SharedKernel.Cryptography/.Compression/.Guards.</Description>
     <PackageTags>scheduling;cron;background-jobs;recurring;quartz;shared-kernel</PackageTags>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
@@ -25,7 +25,7 @@
     <ProjectReference Include="..\..\02.Caching\SharedKernel.Caching.Abstractions\SharedKernel.Caching.Abstractions.csproj" />
     <!--
       SharedKernel.Application is the SOLE justification for this reference — it exists only so
-      ScheduledCommandJob<TCommand> can resolve MediatR's ISender and constrain against ICommand.
+      ScheduledCommandJob<TCommand> can resolve the kernel ISender (SharedKernel.Application) and constrain against ICommand.
       Mirrors 17.Workflows' CommandActivity<TCommand> reference-justification comment verbatim.
     -->
     <ProjectReference Include="..\..\05.Application\SharedKernel.Application\SharedKernel.Application.csproj" />

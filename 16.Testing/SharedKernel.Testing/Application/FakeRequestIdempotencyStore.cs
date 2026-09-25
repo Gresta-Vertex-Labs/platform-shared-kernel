@@ -1,11 +1,11 @@
 using System.Collections.Concurrent;
-using SharedKernel.Application.Behaviors.Idempotency;
+using SharedKernel.Application.Pipeline.Idempotency;
 
 namespace SharedKernel.Testing.Application;
 
 /// <summary>
 /// In-memory, thread-safe fake implementation of <see cref="IRequestIdempotencyStore"/>
-/// (<c>05.Application.Behaviors</c>) for use in unit tests.
+/// (<c>05.Application.Pipeline</c>) for use in unit tests.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -42,7 +42,7 @@ namespace SharedKernel.Testing.Application;
 /// clock seam to drive that expiry deterministically.
 /// </para>
 /// <para>
-/// Local-seam-only scope: fakes <c>05.Application.Behaviors</c>' own <see cref="IRequestIdempotencyStore"/>
+/// Local-seam-only scope: fakes <c>05.Application.Pipeline</c>' own <see cref="IRequestIdempotencyStore"/>
 /// exclusively and never references <c>18.Idempotency</c> or <c>07.Messaging.Abstractions.IIdempotencyStore</c>
 /// (consumer-side message deduplication, an unrelated contract that merely shares a naming pattern).
 /// </para>

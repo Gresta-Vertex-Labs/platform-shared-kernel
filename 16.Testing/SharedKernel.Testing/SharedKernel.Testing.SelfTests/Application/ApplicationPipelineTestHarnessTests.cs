@@ -1,10 +1,10 @@
+using SharedKernel.Application.Idempotency;
 using System.Linq;
-using MediatR;
-using Microsoft.Extensions.DependencyInjection;
-using SharedKernel.Application.Behaviors.Authorization;
-using SharedKernel.Application.Behaviors.Idempotency;
-using SharedKernel.Execution.Context;
 using SharedKernel.Application.Messaging;
+using Microsoft.Extensions.DependencyInjection;
+using SharedKernel.Application.Authorization;
+using SharedKernel.Application.Pipeline.Idempotency;
+using SharedKernel.Execution.Context;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Testing.Application;
@@ -116,6 +116,33 @@ public sealed class ApplicationPipelineTestHarnessTests
         using var harness = new ApplicationPipelineTestHarness();
         harness.Services.AddSingleton<IRequestHandler<SucceedingCommand, Result>, SucceedingCommandHandler>();
         harness.AddBehaviors().Build();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => harness.SendAsync(new SucceedingCommand()));
+    }
+
+    [Fact]
+    public async Task SendThroughPipelineAsync_WithoutAMediator_RunsTheBehaviorsAndTheHandler()
+    {
+        using var harness = new ApplicationPipelineTestHarness();
+        harness.Services.AddSingleton<IRequestHandler<FailingResultCommand, Result>, FailingResultCommandHandler>();
+        harness.AddBehaviors().AddMetricsBehavior().Build();
+        harness.Build();
+
+        var result = await harness.SendThroughPipelineAsync<FailingResultCommand, Result>(new FailingResultCommand());
+
+        Assert.True(result.IsFailure);
+        Assert.Contains(
+            harness.CapturedMeasurements,
+            measurement => measurement.InstrumentName == "sharedkernel.application.request.duration");
+    }
+
+    [Fact]
+    public async Task SendAsync_AfterBuildWithoutAMediator_ThrowsInvalidOperationException()
+    {
+        using var harness = new ApplicationPipelineTestHarness();
+        harness.Services.AddSingleton<IRequestHandler<SucceedingCommand, Result>, SucceedingCommandHandler>();
+        harness.Build();
 
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => harness.SendAsync(new SucceedingCommand()));

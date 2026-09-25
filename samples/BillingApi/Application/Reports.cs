@@ -1,6 +1,6 @@
 using BillingApi.Domain;
 using Dapper;
-using SharedKernel.Application.Behaviors.Authorization;
+using SharedKernel.Application.Authorization;
 using SharedKernel.Application.Messaging;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.Dapper.Sessions;

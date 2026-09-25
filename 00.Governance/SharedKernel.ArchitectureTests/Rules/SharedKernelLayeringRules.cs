@@ -175,7 +175,7 @@ public static class SharedKernelLayeringRules
             .And()
             .NotHaveDependencyOn("SharedKernel.Search.ElasticSearch");
 
-    // Every namespace of 05.Application (SharedKernel.Application and .Behaviors(.Caching)), MediatR and
+    // Every namespace of 05.Application (SharedKernel.Application, .Pipeline(.Caching) and .Mediator.MediatR), MediatR and
     // 12.Security. Since WO-086/P-564 the shared contracts live in the Foundation package
     // SharedKernel.Execution, so no SharedKernel.Application namespace is allowed any more.
     private static readonly string[] PersistenceForbiddenNamespaces =
@@ -188,7 +188,7 @@ public static class SharedKernelLayeringRules
     /// <summary>
     /// 06.Persistence reaches the shared <c>IUnitOfWork</c>, <c>IRequestContext</c> and
     /// <c>IAuditTrailWriter</c> through the Foundation package <c>SharedKernel.Execution</c> and must
-    /// never reference <c>05.Application</c> (<c>SharedKernel.Application</c>, <c>.Behaviors</c>),
+    /// never reference <c>05.Application</c> (<c>SharedKernel.Application</c>, <c>.Pipeline</c>),
     /// MediatR, or <c>12.Security</c>.
     /// </summary>
     /// <param name="assembly">Any <c>SharedKernel.Persistence.*</c> assembly to evaluate.</param>
@@ -201,7 +201,7 @@ public static class SharedKernelLayeringRules
     /// seams, 06's <c>IUnitOfWork</c>/<c>ITransactionalUnitOfWork</c>/<c>IAuditTrailWriter</c> and its
     /// <c>ICurrentActorContext</c>/<c>ICurrentTenantContext</c>) into the MediatR-free
     /// <c>SharedKernel.Application.Abstractions</c>, which WO-086/P-564 moved to the Foundation package
-    /// <c>SharedKernel.Execution</c>; 06 implements them directly. <c>05.Application</c> carries MediatR
+    /// <c>SharedKernel.Execution</c>; 06 implements them directly. <c>05.Application</c> carries the mediator adapter
     /// and the pipeline, which persistence must never depend on; <c>12.Security</c> stays out entirely — identity reaches
     /// persistence only through <c>IRequestContext</c>.
     /// </para>
@@ -240,16 +240,16 @@ public static class SharedKernelLayeringRules
     }
 
     /// <summary>
-    /// Hard rule (P-544): <c>SharedKernel.Application.Behaviors</c> must never reference
+    /// Hard rule (P-544): <c>SharedKernel.Application.Pipeline</c> must never reference
     /// <c>SharedKernel.Caching</c> (bare prefix — including <c>.Abstractions</c>; that reference
-    /// belongs exclusively to the sibling <c>SharedKernel.Application.Behaviors.Caching</c>
+    /// belongs exclusively to the sibling <c>SharedKernel.Application.Pipeline.Caching</c>
     /// package), Polly, <c>Microsoft.Extensions.Hosting</c>, or <c>SharedKernel.Core</c> (the
     /// guard-clause package, merged from the standalone <c>SharedKernel.Guards</c> by
     /// WO-082/P-505).
     /// </summary>
-    /// <param name="assembly">The <c>SharedKernel.Application.Behaviors</c> assembly to evaluate.</param>
+    /// <param name="assembly">The <c>SharedKernel.Application.Pipeline</c> assembly to evaluate.</param>
     /// <returns>
-    /// A <see cref="ConditionList"/> asserting the Behaviors package stays free of these four
+    /// A <see cref="ConditionList"/> asserting the Pipeline package stays free of these four
     /// dependencies.
     /// </returns>
     public static ConditionList ApplicationBehaviorsNeverReferencesCachingPollyHostingOrCore(Assembly assembly) =>
@@ -267,12 +267,12 @@ public static class SharedKernelLayeringRules
             .NotHaveDependencyOn("SharedKernel.Core");
 
     /// <summary>
-    /// P-544: <c>SharedKernel.Application.Behaviors.Caching</c> — the sole package in
+    /// P-544: <c>SharedKernel.Application.Pipeline.Caching</c> — the sole package in
     /// <c>05.Application</c> permitted to reference <c>SharedKernel.Caching.Abstractions</c> — may
-    /// reference <c>SharedKernel.Application.Behaviors</c> and <c>SharedKernel.Caching.Abstractions</c>
+    /// reference <c>SharedKernel.Application.Pipeline</c> and <c>SharedKernel.Caching.Abstractions</c>
     /// only; it must never reach a concrete persistence, messaging, or caching-provider package.
     /// </summary>
-    /// <param name="assembly">The <c>SharedKernel.Application.Behaviors.Caching</c> assembly to evaluate.</param>
+    /// <param name="assembly">The <c>SharedKernel.Application.Pipeline.Caching</c> assembly to evaluate.</param>
     /// <returns>
     /// A <see cref="ConditionList"/> asserting the Caching package never references concrete
     /// infrastructure.

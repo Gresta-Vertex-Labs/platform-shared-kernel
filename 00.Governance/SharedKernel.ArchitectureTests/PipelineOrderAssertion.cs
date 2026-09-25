@@ -3,7 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace SharedKernel.ArchitectureTests;
 
 /// <summary>
-/// Reflection-based helper that asserts MediatR <c>IPipelineBehavior&lt;,&gt;</c> registrations
+/// Reflection-based helper that asserts kernel <c>IPipelineBehavior&lt;,&gt;</c> registrations
 /// in an unbuilt <see cref="IServiceCollection"/> appear in a specific, expected order.
 /// </summary>
 /// <remarks>
@@ -12,7 +12,7 @@ namespace SharedKernel.ArchitectureTests;
 /// in a fixed, non-negotiable order (the ten-named-slot canonical sequence documented in
 /// <c>05.Application/CLAUDE.md</c>) regardless of <c>.AddXBehavior()</c> call order. Without a
 /// mechanical assertion, a future edit to <c>Build()</c> can silently reorder the sequence —
-/// this helper is the primitive <c>SharedKernel.Application.Behaviors.Tests</c> uses to pin
+/// this helper is the primitive <c>SharedKernel.Application.Pipeline.Tests</c> uses to pin
 /// that order permanently.
 /// </para>
 /// <para>
@@ -31,17 +31,21 @@ public static class PipelineOrderAssertion
 {
     private const string OpenGenericPipelineBehaviorTypeName = "IPipelineBehavior`2";
 
+    // The kernel-owned contract (SharedKernel.Application); matched by name because this package references
+    // no SharedKernel package. A mediator library's own IPipelineBehavior is never a kernel registration.
+    private const string PipelineBehaviorNamespace = "SharedKernel.Application.Messaging";
+
     /// <summary>
     /// Walks the <see cref="ServiceDescriptor"/> entries in <paramref name="services"/> whose
     /// <see cref="ServiceDescriptor.ServiceType"/> is the open generic
-    /// <c>IPipelineBehavior&lt;,&gt;</c>, in registration order, and asserts their
+    /// <c>SharedKernel.Application.Messaging.IPipelineBehavior&lt;,&gt;</c>, in registration order, and asserts their
     /// implementation-type open-generic-definition sequence exactly matches
     /// <paramref name="expectedBehaviorTypesInOrder"/>.
     /// </summary>
     /// <param name="services">
     /// The (unbuilt) <see cref="IServiceCollection"/> to inspect. This method deliberately does
     /// NOT call <c>BuildServiceProvider()</c>
-    /// — MediatR resolves <c>IPipelineBehavior&lt;,&gt;</c> instances in registration order, so
+    /// — <c>RequestPipeline</c> resolves <c>IPipelineBehavior&lt;,&gt;</c> instances in registration order, so
     /// inspecting the unbuilt <see cref="ServiceDescriptor"/> list is sufficient and avoids the
     /// cost/side-effects of a full container build.
     /// </param>
@@ -62,7 +66,8 @@ public static class PipelineOrderAssertion
         var actualBehaviorTypesInOrder = services
             .Where(descriptor =>
                 descriptor.ServiceType.IsGenericType
-                && descriptor.ServiceType.Name == OpenGenericPipelineBehaviorTypeName)
+                && descriptor.ServiceType.Name == OpenGenericPipelineBehaviorTypeName
+                && descriptor.ServiceType.Namespace == PipelineBehaviorNamespace)
             .Select(GetImplementationOpenGenericDefinition)
             .ToList();
 

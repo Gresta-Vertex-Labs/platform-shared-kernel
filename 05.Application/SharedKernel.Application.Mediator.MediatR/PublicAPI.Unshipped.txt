@@ -1,0 +1,3 @@
+#nullable enable
+SharedKernel.Application.Mediator.MediatR.MediatRServiceCollectionExtensions
+static SharedKernel.Application.Mediator.MediatR.MediatRServiceCollectionExtensions.AddSharedKernelMediatR(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, params System.Reflection.Assembly![]! assemblies) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!

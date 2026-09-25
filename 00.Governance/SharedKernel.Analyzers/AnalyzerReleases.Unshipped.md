@@ -16,4 +16,5 @@ SK0042 | Security | Warning | NonConstantDapperSqlArgument
 
 Rule ID | Category | Severity | Notes
 --------|----------|----------|-------
+SK0015 | Usage | Warning | StreamPipelineBehaviorMisregistration — no longer applies: streams have their own kernel IStreamPipelineBehavior contract and no mediator registration (WO-086/P-567)
 SK0019 | Design | Warning | RetryableRequestWithoutIdempotency — target type (IRetryableRequest) removed from SharedKernel.Application.Behaviors (P-544)

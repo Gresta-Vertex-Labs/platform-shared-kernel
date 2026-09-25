@@ -1,14 +1,15 @@
 using System.Collections.Concurrent;
 using FluentValidation;
-using MediatR;
+using SharedKernel.Application.Mediator.MediatR;
 using Microsoft.Extensions.DependencyInjection;
-using SharedKernel.Application.Behaviors.Authorization;
-using SharedKernel.Application.Behaviors.Commands;
-using SharedKernel.Application.Behaviors.Extensions;
-using SharedKernel.Application.Behaviors.Idempotency;
+using SharedKernel.Application.Authorization;
+using SharedKernel.Application.Commands;
+using SharedKernel.Application.Pipeline.Extensions;
+using SharedKernel.Application.Idempotency;
+using SharedKernel.Application.Pipeline.Idempotency;
+using SharedKernel.Validation.FluentValidation;
 using SharedKernel.Execution.Transactions;
 using SharedKernel.Execution.Context;
-using SharedKernel.Application.Extensions;
 using SharedKernel.Application.Messaging;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
@@ -144,11 +145,11 @@ public sealed class IdempotencyStore : IRequestIdempotencyStore
             && _entries.TryRemove(key, out _));
 }
 
-/// <summary>Exercises the packed public API of SharedKernel.Application and .Behaviors the way a consuming service would.</summary>
+/// <summary>Exercises the packed public API of SharedKernel.Application, .Pipeline and .Mediator.MediatR the way a consuming service would.</summary>
 public sealed class ConsumerVerifyTests
 {
     [Fact]
-    public void Behaviors_PackageCarriesNoInfrastructureDependency()
+    public void Pipeline_PackageCarriesNoInfrastructureOrMediatorDependency()
     {
         var references = typeof(ApplicationBehaviorsBuilder).Assembly.GetReferencedAssemblies()
             .Select(assembly => assembly.Name!)
@@ -158,7 +159,10 @@ public sealed class ConsumerVerifyTests
         Assert.DoesNotContain(references, name => name.StartsWith("Polly", StringComparison.Ordinal)
             || name.StartsWith("SharedKernel.Caching", StringComparison.Ordinal)
             || name == "SharedKernel.Core"
-            || name == "Microsoft.Extensions.Hosting.Abstractions");
+            || name == "Microsoft.Extensions.Hosting.Abstractions"
+            || name.StartsWith("MediatR", StringComparison.Ordinal)
+            || name.StartsWith("FluentValidation", StringComparison.Ordinal));
+        Assert.DoesNotContain(typeof(ICommand).Assembly.GetReferencedAssemblies(), assembly => assembly.Name!.StartsWith("MediatR", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -230,13 +234,13 @@ public sealed class ConsumerVerifyTests
         var context = new RequestContext();
         var services = new ServiceCollection();
 
-        services.AddMediatR(configuration => configuration.RegisterServicesFromAssemblyContaining<PlaceOrderHandler>());
+        services.AddSharedKernelMediatR(typeof(PlaceOrderHandler).Assembly);
         services.AddScoped<IValidator<PlaceOrder>, PlaceOrderValidator>();
+        services.AddFluentValidationRequestValidators();
         services.AddSingleton(journal);
         services.AddSingleton<IRequestContext>(context);
         services.AddSingleton<IRequestIdempotencyStore, IdempotencyStore>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
-        services.AddSharedKernelApplication();
         services.AddSharedKernelApplicationBehaviors()
             .AddDefaultBehaviors()
             .AddAuthorizationBehavior()

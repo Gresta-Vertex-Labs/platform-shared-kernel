@@ -7,7 +7,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// <summary>
 /// Pre-built NetArchTest predicate that enforces the platform's <c>outcome</c>-tag completeness
 /// contract for <c>RequestDuration</c> histogram recordings inside
-/// <c>SharedKernel.Application.Behaviors</c>.
+/// <c>SharedKernel.Application.Pipeline</c>.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -17,7 +17,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// </para>
 /// <para>
 /// <strong>Designed and tested against contrived in-memory fixtures.</strong> Real-assembly
-/// verification against <c>SharedKernel.Application.Behaviors</c>'s own
+/// verification against <c>SharedKernel.Application.Pipeline</c>'s own
 /// <c>MetricsBehavior&lt;,&gt;</c> is <c>05.Application</c>'s responsibility — this domain writes
 /// no implementation files for other domains.
 /// </para>
@@ -30,7 +30,7 @@ public static class MetricsInstrumentationRules
     /// the same method body.
     /// </summary>
     /// <param name="assembly">
-    /// The assembly to evaluate — typically <c>SharedKernel.Application.Behaviors</c> (or a
+    /// The assembly to evaluate — typically <c>SharedKernel.Application.Pipeline</c> (or a
     /// fixture shaped like it). Supply via <c>typeof(SomeBehavior).Assembly</c>.
     /// </param>
     /// <returns>

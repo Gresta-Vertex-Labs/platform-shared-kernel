@@ -2,7 +2,7 @@ using SharedKernel.Execution.Tenancy;
 using BillingApi.Application;
 using BillingApi.Domain;
 using BillingApi.Infrastructure;
-using MediatR;
+using SharedKernel.Application.Messaging;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Net.Http.Headers;
 using SharedKernel.Execution.Context;

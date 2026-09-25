@@ -1,0 +1,60 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <SharedKernelTier>Host</SharedKernelTier>
+    <!-- NuGet packaging metadata -->
+    <Description>Two pipeline behaviors that put a cache around a query and evict it after the command that changed the data commits.
+
+A query implementing ICacheableQuery&lt;TValue&gt; supplies its own key, scope and policy, and is served from cache without the handler knowing a cache exists. Keys are namespaced by query type and by the declared scope (Tenant, User or Global) through the registered ICacheKeyProvider, so two queries cannot read each other's entries and one tenant or caller cannot read another's. A scope whose identity is missing on the request skips the cache rather than falling back to a wider key. Only the value of a successful Result&lt;TValue&gt; is cached, so entries round-trip through the distributed cache's JSON serializer; a failed Result is never cached, so a transient NotFound is not pinned for the whole expiry window.
+
+A command implementing IInvalidatesCache names the queries it makes stale through CacheKeyRef.For&lt;TQuery&gt;, so a renamed query is a compile error rather than a missed eviction. Eviction is deferred through ICommandScope until the outermost command's transaction has committed, runs uncancellable so a client disconnect cannot leave the cache stale, and isolates each key so one failure does not abandon the rest.
+
+The markers (ICacheableQuery&lt;TValue&gt;, IInvalidatesCache, CacheScope, CacheKeyRef) live in SharedKernel.Application, so an Application project declares them without this package. These behaviors are a separate package because SharedKernel.Application.Pipeline will not take a cache dependency on behalf of services that never cache anything. Register them into the same pipeline with AddCachingBehaviors(). Depends on SharedKernel.Application.Pipeline and SharedKernel.Caching.Abstractions.Abstractions.</Description>
+    <PackageReleaseNotes>First release.
+
+WHAT IS IN IT
+- The caching behavior for ICacheableQuery&lt;TValue&gt; (declared in SharedKernel.Application), cached in the Query stage. Supplies CacheKey, CachePolicy, Scope, RefreshCache and ShouldCache.
+- The invalidation behavior for IInvalidatesCache (declared in SharedKernel.Application), evicted in the Command stage after commit. Supplies CacheKeysToInvalidate (CacheKeyRef), CacheTagsToInvalidate and Scope.
+- CacheScope (declared in SharedKernel.Application): Tenant (default), User, Global.
+- AddCachingBehaviors(), which registers both in their correct stages and makes Build() fail at startup when ICacheService or ITenantCacheKeyProvider is missing.
+
+THINGS WORTH KNOWING BEFORE YOU ADOPT IT
+- CacheKey is the query's identity within its own namespace, not the whole key. The query type, the service name and the scope are added for you, and every part is escaped by ICacheKeyProvider.
+- Scopes fail closed. A Tenant query with no resolved tenant, or a User query with no authenticated caller, skips the cache and logs a Warning instead of falling back to a wider key.
+- The cache stores TValue, never the Result, and a hit rebuilds Result&lt;TValue&gt;.Success(value). TValue must round-trip through System.Text.Json; add it to the cache's SerializerContext if the service registers one.
+- Stampede-protected: the handler runs inside one ICacheService.GetOrSetAsync call. A failed Result is returned and never cached, so a query waiting on the same key runs the handler itself. Eager refresh and factory timeouts are switched off so the handler never runs outside the request.
+- A command names the query that owns each entry, not a raw key string, because entries are namespaced per query type. The command's Scope must match the queries it invalidates.
+- Eviction runs only when the command succeeded and the outermost command committed, is not cancellable by the request token, and continues past a failing key.
+- Hit/miss counters and Activity tags are recorded per query type under the existing "SharedKernel.Application" meter, so 13.ServiceDefaults' WithApplicationTelemetry() exports them with no extra registration. Logging uses EventIds 5200-5299.
+- The two behavior types are internal; the package's contract is the marker interfaces, CacheScope, CacheKeyRef and AddCachingBehaviors().
+- SharedKernel.Analyzers' SK0017 and SK0018 flag a command implementing the query marker and a query implementing the command marker; SK0041 flags two cacheable queries sharing a simple type name, which would collapse their key namespaces.
+
+See the package README for the invalidation-ordering diagram and the full reference.</PackageReleaseNotes>
+    <PackageTags>cqrs;pipeline-behavior;caching;cache-invalidation;shared-kernel</PackageTags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <WarningsAsErrors>$(WarningsAsErrors);nullable;CS1591;RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <!--
+      The Pipeline package that references SharedKernel.Caching.Abstractions —
+      SharedKernel.Application.Pipeline never takes this reference (SharedKernel.Application does, for CachePolicy only).
+    -->
+    <ProjectReference Include="..\SharedKernel.Application.Pipeline\SharedKernel.Application.Pipeline.csproj" />
+    <ProjectReference Include="..\..\02.Caching\SharedKernel.Caching.Abstractions\SharedKernel.Caching.Abstractions.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!--
+      Both behaviors are internal: the public contract of this package is the marker interfaces,
+      CacheScope and AddCachingBehaviors(), not the pipeline types the builder registers by
+      reflection. The test project constructs them directly, the repo's dominant convention
+      (02.Caching.FusionCache, 06.Persistence.EfCore, 07.Messaging.MassTransit and 40 others).
+    -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>SharedKernel.Application.Pipeline.Caching.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+</Project>

@@ -1,5 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
-using SharedKernel.Application.Behaviors.Idempotency;
+using SharedKernel.Application.Pipeline.Idempotency;
 using SharedKernel.Execution.Transactions;
 using SharedKernel.Execution.Context;
 using SharedKernel.Persistence.Testing;

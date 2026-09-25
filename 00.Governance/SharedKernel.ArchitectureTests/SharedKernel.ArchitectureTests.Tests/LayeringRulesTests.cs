@@ -188,7 +188,7 @@ public class LayeringRulesTests
     /// <summary>
     /// Fire path: a Behaviors-shaped assembly that depends on <c>SharedKernel.Caching.Abstractions</c>
     /// fails <see cref="SharedKernelLayeringRules.ApplicationBehaviorsNeverReferencesCachingPollyHostingOrCore"/> —
-    /// that reference belongs exclusively to the sibling <c>SharedKernel.Application.Behaviors.Caching</c>
+    /// that reference belongs exclusively to the sibling <c>SharedKernel.Application.Pipeline.Caching</c>
     /// package as of P-544.
     /// </summary>
     [Fact]
@@ -200,7 +200,7 @@ public class LayeringRulesTests
                 public interface ICacheService { }
             }
 
-            namespace SharedKernel.Application.Behaviors
+            namespace SharedKernel.Application.Pipeline
             {
                 public sealed class LeakyBehavior
                 {
@@ -217,7 +217,7 @@ public class LayeringRulesTests
 
         result.IsSuccessful.Should().BeFalse(
             because: "LeakyBehavior references SharedKernel.Caching.Abstractions, which now belongs " +
-                     "exclusively to SharedKernel.Application.Behaviors.Caching");
+                     "exclusively to SharedKernel.Application.Pipeline.Caching");
     }
 
     /// <summary>
@@ -228,7 +228,7 @@ public class LayeringRulesTests
     public void ApplicationBehaviorsNeverReferencesCachingPollyHostingOrCore_CleanAssembly_RulePasses()
     {
         const string cleanSource = """
-            namespace SharedKernel.Application.Behaviors
+            namespace SharedKernel.Application.Pipeline
             {
                 public sealed class CleanBehavior
                 {
@@ -265,7 +265,7 @@ public class LayeringRulesTests
                 public interface IConnectionMultiplexerAdapter { }
             }
 
-            namespace SharedKernel.Application.Behaviors.Caching
+            namespace SharedKernel.Application.Pipeline.Caching
             {
                 public sealed class LeakyCachingBehavior
                 {
@@ -298,7 +298,7 @@ public class LayeringRulesTests
                 public interface ICacheService { }
             }
 
-            namespace SharedKernel.Application.Behaviors.Caching
+            namespace SharedKernel.Application.Pipeline.Caching
             {
                 public sealed class CleanCachingBehavior
                 {

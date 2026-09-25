@@ -15,7 +15,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// All factory methods accept <see cref="Assembly"/> (or <c>params Assembly[]</c>) and return
 /// <see cref="ConditionList"/>. Predicates are designed and tested here against contrived
 /// in-memory fixture assemblies — <c>00.Governance</c> never references
-/// <c>05.Application</c>/<c>05.Application.Behaviors</c> directly (layering: <c>00.Governance</c>
+/// <c>05.Application</c>/<c>05.Application.Pipeline</c> directly (layering: <c>00.Governance</c>
 /// references nothing). The owning domain (<c>05.Application</c>) is responsible for invoking
 /// the existing cross-domain consumption pattern already established for
 /// <see cref="CachingAbstractionRules"/>/<see cref="RedisTopologyRules"/> (consumed by
@@ -36,8 +36,8 @@ public static class ApplicationPipelineRules
     /// <c>SharedKernel.Messaging</c> (excluding <c>SharedKernel.Messaging.Abstractions</c>).
     /// </summary>
     /// <param name="assemblies">
-    /// The assemblies to scan — typically <c>SharedKernel.Application.Behaviors</c> (for
-    /// <c>TracingBehavior</c>) and <c>SharedKernel.Application.Behaviors.Caching</c> (for
+    /// The assemblies to scan — typically <c>SharedKernel.Application.Pipeline</c> (for
+    /// <c>TracingBehavior</c>) and <c>SharedKernel.Application.Pipeline.Caching</c> (for
     /// <c>CacheInvalidationBehavior</c>, which lives in that sibling package as of P-544), or a
     /// contrived fixture assembly shaped like either.
     /// </param>
@@ -85,11 +85,11 @@ public static class ApplicationPipelineRules
     /// <summary>
     /// Returns a <see cref="ConditionList"/> asserting that no type implementing the open
     /// generic <c>IPipelineBehavior&lt;,&gt;</c> in <paramref name="behaviorsAssembly"/> has a
-    /// <c>TRequest</c> generic-parameter constraint that structurally satisfies MediatR's
-    /// <c>IStreamRequest&lt;TResponse&gt;</c> (directly or via interface closure).
+    /// <c>TRequest</c> generic-parameter constraint that structurally satisfies the kernel's
+    /// <c>IStreamQuery&lt;TResponse&gt;</c> (directly or via interface closure).
     /// </summary>
     /// <param name="behaviorsAssembly">
-    /// The <c>SharedKernel.Application.Behaviors</c> assembly, or a contrived fixture assembly
+    /// The <c>SharedKernel.Application.Pipeline</c> assembly, or a contrived fixture assembly
     /// shaped like it.
     /// </param>
     /// <returns>
@@ -101,7 +101,7 @@ public static class ApplicationPipelineRules
     /// This is a structural IL generic-constraint check, not a runtime DI resolution test — it
     /// fails at the architecture-test stage, earlier than any runtime wiring attempt, if a
     /// future behavior's <c>TRequest</c> constraint is loosened in a way that could accidentally
-    /// capture <c>IStreamQuery&lt;TResponse&gt;</c>/<c>IStreamRequest&lt;TResponse&gt;</c>.
+    /// capture <c>IStreamQuery&lt;TResponse&gt;</c>.
     /// <c>05.Application/CLAUDE.md</c> documents as an explicit, deliberate design decision that
     /// none of the platform's pipeline behaviors apply to the streaming query vocabulary
     /// — this rule makes that documented fact mechanically verified rather than merely

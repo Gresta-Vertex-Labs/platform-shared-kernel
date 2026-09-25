@@ -1,4 +1,3 @@
-using MediatR;
 using SharedKernel.Application.Messaging;
 using SharedKernel.Scheduling.Jobs;
 using SharedKernel.Scheduling.Policies;

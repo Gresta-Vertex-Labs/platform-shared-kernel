@@ -1,9 +1,10 @@
 using FluentValidation;
-using MediatR;
+using SharedKernel.Application.Messaging;
+using SharedKernel.Validation.FluentValidation;
 using OrderApi.Application;
 using OrderApi.Infrastructure;
-using SharedKernel.Application.Behaviors.Extensions;
-using SharedKernel.Application.Extensions;
+using SharedKernel.Application.Pipeline.Extensions;
+using SharedKernel.Application.Mediator.MediatR;
 using SharedKernel.Presentation.WebApi.Results;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.ServiceDefaults.Extensions;
@@ -18,16 +19,16 @@ builder.AddServiceDefaults();
 // 01.Core — IClock is the only sanctioned time source; analyzer SK0001 forbids DateTime.UtcNow.
 builder.Services.AddSingleton<IClock, SystemClock>();
 
-// 05.Application — MediatR handler discovery, the domain-event dispatcher, and the
-// zero-prerequisite behavior preset (tracing, logging, metrics, validation). Build() registers
+// 05.Application — handler discovery (MediatR behind the kernel ISender), the domain-event dispatcher, the
+// FluentValidation bridge, and the zero-prerequisite behavior preset (tracing, logging, metrics, validation). Build() registers
 // them in the fixed pipeline order; nothing is registered without it. The behaviors that need
 // an infrastructure seam (authorization over IRequestContext, idempotency over
 // IRequestIdempotencyStore, transaction over IUnitOfWork, auditing over IAuditTrailWriter, and
-// caching from SharedKernel.Application.Behaviors.Caching) are deliberately not in the preset —
+// caching from SharedKernel.Application.Pipeline.Caching) are deliberately not in the preset —
 // each is an explicit opt-in, and Build() throws if its seam is not registered.
-builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(PlaceOrderCommand).Assembly));
-builder.Services.AddSharedKernelApplication();
+builder.Services.AddSharedKernelMediatR(typeof(PlaceOrderCommand).Assembly);
 builder.Services.AddScoped<IValidator<PlaceOrderCommand>, PlaceOrderCommandValidator>();
+builder.Services.AddFluentValidationRequestValidators();
 builder.Services.AddSharedKernelApplicationBehaviors().AddDefaultBehaviors().Build();
 
 // 14.Presentation — RFC 9457 ProblemDetails for unhandled exceptions.

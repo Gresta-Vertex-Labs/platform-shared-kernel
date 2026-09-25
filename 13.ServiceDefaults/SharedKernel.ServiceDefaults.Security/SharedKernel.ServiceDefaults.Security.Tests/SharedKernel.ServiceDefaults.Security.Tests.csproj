@@ -38,7 +38,7 @@
     <PackageReference Include="Grpc.AspNetCore" />
     <PackageReference Include="Grpc.Net.Client" />
     <PackageReference Include="MassTransit" />
-    <PackageReference Include="MediatR" />
+    <ProjectReference Include="..\..\..\05.Application\SharedKernel.Application.Mediator.MediatR\SharedKernel.Application.Mediator.MediatR.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Protobuf Include="Propagation\Protos\propagation.proto" GrpcServices="Both" />

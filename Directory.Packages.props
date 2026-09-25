@@ -184,7 +184,7 @@
     <PackageVersion Include="Microsoft.Extensions.Configuration.Json" Version="10.0.11" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.11" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.11" />
-    <!-- P-544: SharedKernel.Application.Behaviors' MetricsBehavior resolves ApplicationMetrics via
+    <!-- P-544: SharedKernel.Application.Pipeline's MetricsBehavior resolves ApplicationMetrics via
          IMeterFactory/services.AddMetrics() instead of a static Meter field. -->
     <PackageVersion Include="Microsoft.Extensions.Diagnostics" Version="10.0.11" />
     <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks.Abstractions" Version="10.0.5" />
@@ -275,7 +275,9 @@
     <PackageVersion Include="SharedKernel.Analyzers" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Application" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Execution" Version="$(SharedKernelPackageVersion)" />
-    <PackageVersion Include="SharedKernel.Application.Behaviors" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Application.Mediator.MediatR" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Application.Pipeline" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Application.Pipeline.Caching" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.ArchitectureTests" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Caching.Abstractions" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Caching.FusionCache" Version="$(SharedKernelPackageVersion)" />

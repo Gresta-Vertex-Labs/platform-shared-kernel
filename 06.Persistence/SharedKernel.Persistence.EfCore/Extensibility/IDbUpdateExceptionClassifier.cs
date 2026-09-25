@@ -25,7 +25,7 @@ namespace SharedKernel.Persistence.EfCore.Extensibility;
 /// Matches <c>05.Application</c>'s "expected failures are <c>Result</c> values, never exceptions"
 /// contract at the persistence boundary: a unique/FK violation becomes a typed exception carrying
 /// <c>Error.Conflict(...)</c> or <c>Error.Validation(...)</c>, which
-/// <c>05.Application.Behaviors</c>' exception-to-<c>Result</c> boundary (or a service's own
+/// <c>05.Application.Pipeline</c>' exception-to-<c>Result</c> boundary (or a service's own
 /// <c>try/catch</c>) can turn into a <c>Result</c> instead of an unhandled 500.
 /// </para>
 /// </remarks>

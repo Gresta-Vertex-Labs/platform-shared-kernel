@@ -2,8 +2,8 @@ using BillingApi.Api;
 using BillingApi.Application;
 using BillingApi.Infrastructure;
 using BillingApi.Security;
-using SharedKernel.Application.Behaviors.Extensions;
-using SharedKernel.Application.Extensions;
+using SharedKernel.Application.Pipeline.Extensions;
+using SharedKernel.Application.Mediator.MediatR;
 using SharedKernel.Cryptography.Envelope;
 using SharedKernel.Cryptography.Extensions;
 using SharedKernel.Persistence;
@@ -46,10 +46,9 @@ builder.Services.AddSharedKernelDapper(builder.Configuration);
 // The audit sealer writes chain links as its own role (app_audit_sealer), so the application role cannot forge them.
 builder.Services.AddSharedKernelNpgsql(builder.Configuration.GetSection("SharedKernel:Persistence:audit-sealer"), "audit-sealer");
 
-// 05.Application — MediatR with the platform pipeline. TransactionBehavior runs every command in one retry-safe
+// 05.Application — the kernel pipeline, with MediatR behind ISender. TransactionBehavior runs every command in one retry-safe
 // transaction; AuditingBehavior records Succeeded inside it and Failed after a rollback.
-builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblyContaining<Program>());
-builder.Services.AddSharedKernelApplication();
+builder.Services.AddSharedKernelMediatR(typeof(Program).Assembly);
 builder.Services.AddSharedKernelApplicationBehaviors()
     .AddDefaultBehaviors()
     .AddAuthorizationBehavior()

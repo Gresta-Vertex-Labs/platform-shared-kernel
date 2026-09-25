@@ -1,15 +1,15 @@
+using SharedKernel.Application.Mediator.MediatR;
 using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using Grpc.Core;
 using MassTransit;
-using MediatR;
+using SharedKernel.Application.Messaging;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using SharedKernel.Application.Messaging;
 using SharedKernel.Communication.Grpc.Extensions;
 using SharedKernel.Communication.Rest.Extensions;
 using SharedKernel.Execution.Context;
@@ -297,7 +297,7 @@ internal sealed class JobService : IAsyncDisposable
         var builder = Host.CreateApplicationBuilder();
         var clock = new FakeClock(start);
         builder.Services.AddSingleton<IClock>(clock);
-        builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblyContaining<CallDownstreamCommand>());
+        builder.Services.AddSharedKernelMediatR(typeof(CallDownstreamCommand).Assembly);
         FrontService.AddDownstreamRestClient(builder.Services, downstream);
 
         builder.Services

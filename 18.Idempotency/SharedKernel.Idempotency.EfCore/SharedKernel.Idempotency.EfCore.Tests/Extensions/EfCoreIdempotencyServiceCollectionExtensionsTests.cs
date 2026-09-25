@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using SharedKernel.Application.Behaviors.Idempotency;
+using SharedKernel.Application.Pipeline.Idempotency;
 using SharedKernel.Idempotency.EfCore.Extensions;
 using SharedKernel.Messaging.Abstractions.Idempotency;
 using SharedKernel.Execution.Context;

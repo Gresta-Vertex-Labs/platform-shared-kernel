@@ -1,31 +1,78 @@
 #nullable enable
-SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>
-SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>.<Clone>$() -> SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>!
-SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>.Deconstruct(out TDomainEvent DomainEvent) -> void
-SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>.DomainEvent.get -> TDomainEvent
-SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>.DomainEvent.init -> void
-SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>.DomainEventNotification(TDomainEvent DomainEvent) -> void
-SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>.Equals(SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>? other) -> bool
+SharedKernel.Application.Auditing.IAuditableRequest<TResponse>
+SharedKernel.Application.Auditing.IAuditableRequest<TResponse>.Action.get -> string!
+SharedKernel.Application.Auditing.IAuditableRequest<TResponse>.BeforeSnapshot.get -> string?
+SharedKernel.Application.Auditing.IAuditableRequest<TResponse>.GetAfterSnapshot(TResponse response) -> string?
+SharedKernel.Application.Auditing.IAuditableRequest<TResponse>.ResourceId.get -> string!
+SharedKernel.Application.Auditing.IAuditableRequest<TResponse>.ResourceType.get -> string!
+SharedKernel.Application.Authorization.IAuthorizeRequest
+SharedKernel.Application.Authorization.IAuthorizeRequest.PermissionMatch.get -> SharedKernel.Application.Authorization.PermissionMatch
+SharedKernel.Application.Authorization.IAuthorizeRequest.RequiredPermissions.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
+SharedKernel.Application.Authorization.PermissionMatch
+SharedKernel.Application.Authorization.PermissionMatch.All = 0 -> SharedKernel.Application.Authorization.PermissionMatch
+SharedKernel.Application.Authorization.PermissionMatch.Any = 1 -> SharedKernel.Application.Authorization.PermissionMatch
+SharedKernel.Application.Caching.CacheKeyRef
+SharedKernel.Application.Caching.CacheKeyRef.CacheKeyRef() -> void
+SharedKernel.Application.Caching.CacheKeyRef.Equals(SharedKernel.Application.Caching.CacheKeyRef other) -> bool
+SharedKernel.Application.Caching.CacheKeyRef.Key.get -> string!
+SharedKernel.Application.Caching.CacheKeyRef.QueryType.get -> System.Type!
+SharedKernel.Application.Caching.CacheScope
+SharedKernel.Application.Caching.CacheScope.Global = 2 -> SharedKernel.Application.Caching.CacheScope
+SharedKernel.Application.Caching.CacheScope.Tenant = 0 -> SharedKernel.Application.Caching.CacheScope
+SharedKernel.Application.Caching.CacheScope.User = 1 -> SharedKernel.Application.Caching.CacheScope
+SharedKernel.Application.Caching.ICacheableQuery
+SharedKernel.Application.Caching.ICacheableQuery.CacheKey.get -> string!
+SharedKernel.Application.Caching.ICacheableQuery.CachePolicy.get -> SharedKernel.Caching.Abstractions.CachePolicy!
+SharedKernel.Application.Caching.ICacheableQuery.RefreshCache.get -> bool
+SharedKernel.Application.Caching.ICacheableQuery.Scope.get -> SharedKernel.Application.Caching.CacheScope
+SharedKernel.Application.Caching.ICacheableQuery<TValue>
+SharedKernel.Application.Caching.ICacheableQuery<TValue>.ShouldCache(TValue value) -> bool
+SharedKernel.Application.Caching.IInvalidatesCache
+SharedKernel.Application.Caching.IInvalidatesCache.CacheKeysToInvalidate.get -> System.Collections.Generic.IReadOnlyCollection<SharedKernel.Application.Caching.CacheKeyRef>!
+SharedKernel.Application.Caching.IInvalidatesCache.CacheTagsToInvalidate.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
+SharedKernel.Application.Caching.IInvalidatesCache.Scope.get -> SharedKernel.Application.Caching.CacheScope
+SharedKernel.Application.Commands.ICommandScope
+SharedKernel.Application.Commands.ICommandScope.IsActive.get -> bool
+SharedKernel.Application.Commands.ICommandScope.IsNested.get -> bool
+SharedKernel.Application.Commands.ICommandScope.OnCompleted(System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task!>! callback) -> void
 SharedKernel.Application.DomainEvents.IDomainEventHandler<TDomainEvent>
 SharedKernel.Application.DomainEvents.IDomainEventHandler<TDomainEvent>.Handle(TDomainEvent domainEvent, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
-SharedKernel.Application.DomainEvents.MediatRDomainEventDispatcher
-SharedKernel.Application.DomainEvents.MediatRDomainEventDispatcher.DispatchAsync(System.Collections.Generic.IReadOnlyList<SharedKernel.Domain.Events.IDomainEvent!>! events, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
-SharedKernel.Application.DomainEvents.MediatRDomainEventDispatcher.MediatRDomainEventDispatcher(MediatR.IPublisher! publisher) -> void
-SharedKernel.Application.Extensions.ApplicationServiceCollectionExtensions
+SharedKernel.Application.Idempotency.IIdempotentRequest
+SharedKernel.Application.Idempotency.IIdempotentRequest.Fingerprint.get -> string?
+SharedKernel.Application.Idempotency.IIdempotentRequest.IdempotencyKey.get -> string!
+SharedKernel.Application.Logging.ILoggableRequest<TResponse>
+SharedKernel.Application.Logging.ILoggableRequest<TResponse>.GetLoggableResponseFields(TResponse response) -> System.Collections.Generic.IReadOnlyDictionary<string!, object?>?
+SharedKernel.Application.Logging.ILoggableRequest<TResponse>.LoggableRequestFields.get -> System.Collections.Generic.IReadOnlyDictionary<string!, object?>!
 SharedKernel.Application.Messaging.ICommand
 SharedKernel.Application.Messaging.ICommand<TResponse>
 SharedKernel.Application.Messaging.ICommandBase
 SharedKernel.Application.Messaging.ICommandHandler<TCommand, TResponse>
 SharedKernel.Application.Messaging.ICommandHandler<TCommand>
+SharedKernel.Application.Messaging.IPipelineBehavior<TRequest, TResponse>
+SharedKernel.Application.Messaging.IPipelineBehavior<TRequest, TResponse>.Handle(TRequest request, SharedKernel.Application.Messaging.RequestHandlerContinuation<TResponse>! next, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<TResponse>!
 SharedKernel.Application.Messaging.IQuery<TResponse>
 SharedKernel.Application.Messaging.IQueryBase
 SharedKernel.Application.Messaging.IQueryHandler<TQuery, TResponse>
+SharedKernel.Application.Messaging.IRequest<TResponse>
+SharedKernel.Application.Messaging.IRequestHandler<TRequest, TResponse>
+SharedKernel.Application.Messaging.IRequestHandler<TRequest, TResponse>.Handle(TRequest request, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<TResponse>!
+SharedKernel.Application.Messaging.ISender
+SharedKernel.Application.Messaging.ISender.CreateStream<TResponse>(SharedKernel.Application.Streaming.IStreamQuery<TResponse>! request, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<TResponse>!
+SharedKernel.Application.Messaging.ISender.Send<TResponse>(SharedKernel.Application.Messaging.IRequest<TResponse>! request, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TResponse>!
+SharedKernel.Application.Messaging.RequestHandlerContinuation<TResponse>
+SharedKernel.Application.Streaming.IStreamPipelineBehavior<TRequest, TResponse>
+SharedKernel.Application.Streaming.IStreamPipelineBehavior<TRequest, TResponse>.Handle(TRequest request, SharedKernel.Application.Streaming.StreamHandlerContinuation<TResponse>! next, System.Threading.CancellationToken cancellationToken) -> System.Collections.Generic.IAsyncEnumerable<TResponse>!
 SharedKernel.Application.Streaming.IStreamQuery<TResponse>
 SharedKernel.Application.Streaming.IStreamQueryHandler<TQuery, TResponse>
-override SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>.Equals(object? obj) -> bool
-override SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>.GetHashCode() -> int
-override SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>.ToString() -> string!
-static SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>.operator !=(SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>? left, SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>? right) -> bool
-static SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>.operator ==(SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>? left, SharedKernel.Application.DomainEvents.DomainEventNotification<TDomainEvent>? right) -> bool
-static SharedKernel.Application.Extensions.ApplicationServiceCollectionExtensions.AddDomainEventHandler<TDomainEvent, THandler>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
-static SharedKernel.Application.Extensions.ApplicationServiceCollectionExtensions.AddSharedKernelApplication(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+SharedKernel.Application.Streaming.IStreamQueryHandler<TQuery, TResponse>.Handle(TQuery request, System.Threading.CancellationToken cancellationToken) -> System.Collections.Generic.IAsyncEnumerable<TResponse>!
+SharedKernel.Application.Streaming.StreamHandlerContinuation<TResponse>
+SharedKernel.Application.Validation.IRequestValidator<TRequest>
+SharedKernel.Application.Validation.IRequestValidator<TRequest>.ValidateAsync(TRequest request, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<System.Collections.Generic.IReadOnlyList<SharedKernel.Primitives.Errors.Error!>!>
+override SharedKernel.Application.Caching.CacheKeyRef.GetHashCode() -> int
+static SharedKernel.Application.Caching.CacheKeyRef.For<TQuery>(string! key) -> SharedKernel.Application.Caching.CacheKeyRef
+static SharedKernel.Application.Caching.CacheKeyRef.operator !=(SharedKernel.Application.Caching.CacheKeyRef left, SharedKernel.Application.Caching.CacheKeyRef right) -> bool
+static SharedKernel.Application.Caching.CacheKeyRef.operator ==(SharedKernel.Application.Caching.CacheKeyRef left, SharedKernel.Application.Caching.CacheKeyRef right) -> bool
+virtual SharedKernel.Application.Messaging.RequestHandlerContinuation<TResponse>.Invoke() -> System.Threading.Tasks.Task<TResponse>!
+virtual SharedKernel.Application.Streaming.StreamHandlerContinuation<TResponse>.Invoke() -> System.Collections.Generic.IAsyncEnumerable<TResponse>!
+~override SharedKernel.Application.Caching.CacheKeyRef.Equals(object obj) -> bool
+~override SharedKernel.Application.Caching.CacheKeyRef.ToString() -> string

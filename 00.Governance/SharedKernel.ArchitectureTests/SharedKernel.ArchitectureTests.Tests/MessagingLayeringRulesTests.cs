@@ -37,7 +37,7 @@ public class MessagingLayeringRulesTests
 
         result.IsSuccessful.Should().BeTrue(
             "messaging reaches the caller contracts through SharedKernel.Execution only — never MediatR, " +
-            "SharedKernel.Application or SharedKernel.Application.Behaviors");
+            "SharedKernel.Application or SharedKernel.Application.Pipeline");
     }
 
     /// <summary>

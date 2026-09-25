@@ -1,44 +1,38 @@
+using SharedKernel.Application.Mediator.MediatR;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
-using MediatR;
+using SharedKernel.Application.Messaging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using SharedKernel.Application.Behaviors.Extensions;
+using SharedKernel.Application.Pipeline;
+using SharedKernel.Application.Pipeline.Extensions;
 
 namespace SharedKernel.Testing.Application;
 
 /// <summary>
-/// Reusable helper that wires a real <see cref="ServiceCollection"/> + MediatR + a caller-chosen
-/// subset of <c>SharedKernel.Application.Behaviors</c> pipeline behaviors via
-/// <see cref="ApplicationBehaviorsBuilder"/>, and exposes a minimal fluent surface to send a request
-/// and assert on response shape, thrown exceptions, recorded application-pipeline metrics, and
-/// recorded tracing spans.
+/// Reusable helper that wires a real <see cref="ServiceCollection"/> + the kernel request pipeline
+/// (<see cref="RequestPipeline{TRequest,TResponse}"/>) + a caller-chosen subset of
+/// <c>SharedKernel.Application.Pipeline</c> behaviors via <see cref="ApplicationBehaviorsBuilder"/>,
+/// and exposes a minimal fluent surface to send a request and assert on response shape, thrown
+/// exceptions, recorded application-pipeline metrics, and recorded tracing spans.
 /// </summary>
 /// <remarks>
-/// Public promotion of the internal-only <c>PipelineTestHarness</c> already proven in
-/// <c>SharedKernel.Application.Behaviors.Tests/TestHarness/PipelineTestHarness.cs</c> — same design,
-/// renamed to avoid ambiguity with <c>07.Messaging</c>'s <c>TestHarnessFactory</c>/MassTransit
-/// <c>ITestHarness</c> in the sibling <c>Messaging/</c> folder. Implements its OWN local
-/// <see cref="ActivityListener"/>/<see cref="MeterListener"/> wiring (self-contained BCL
-/// <c>System.Diagnostics</c> code), filtered by the literal string <c>"SharedKernel.Application"</c>,
-/// rather than referencing <c>Communication/ActivityRecorder</c> — even though the two are
-/// functionally similar, the sibling-capability-folder-isolation hard rule forbids <c>Application/</c>
-/// from referencing <c>Communication/</c>. This is also the only option: the source Meter/ActivitySource
-/// pair (<c>ApplicationDiagnostics</c> in <c>SharedKernel.Application.Behaviors</c>) is declared
-/// <see langword="internal"/> to that assembly, so this harness cannot reference the instrument
-/// instances directly — it filters by the well-known name/version instead, exactly mirroring the
-/// internal harness's own approach.
-/// </remarks>
-/// <remarks>
-/// Outstanding cross-domain follow-up (tracked, not performed by this package): the original
-/// <c>internal sealed class PipelineTestHarness</c> at
-/// <c>05.Application.Behaviors.Tests/TestHarness/PipelineTestHarness.cs</c> still exists unchanged.
-/// A future <c>05.Application</c> implementer pass should repoint that project's call sites to this
-/// public <see cref="ApplicationPipelineTestHarness"/> and then retire (or thin-wrap) the internal
-/// type. <c>16.Testing</c> never edits another domain's <c>.Tests</c> project, so this package's
-/// obligation is satisfied by shipping this type with zero duplicated wiring logic versus the
-/// internal harness's already-proven shape — not by performing that repointing itself.
+/// <para>
+/// Two ways to build it. <see cref="Build"/> needs no mediator at all: register each handler on
+/// <see cref="Services"/> and send with <see cref="SendThroughPipelineAsync{TRequest,TResponse}"/>,
+/// which resolves the pipeline directly. <see cref="Build{TMarker}"/> adds the MediatR adapter
+/// (<c>AddSharedKernelMediatR</c>) over the marker's assembly, so <see cref="SendAsync{TResponse}"/>
+/// goes through the kernel <see cref="ISender"/> exactly as a service would. Both run the same
+/// behaviors in the same order.
+/// </para>
+/// <para>
+/// Implements its OWN local <see cref="ActivityListener"/>/<see cref="MeterListener"/> wiring
+/// (self-contained BCL <c>System.Diagnostics</c> code), filtered by the literal string
+/// <c>"SharedKernel.Application"</c>: the source Meter/ActivitySource pair
+/// (<c>ApplicationDiagnostics</c> in <c>SharedKernel.Application.Pipeline</c>) is declared
+/// <see langword="internal"/> to that assembly, so this harness filters by the well-known name.
+/// </para>
 /// </remarks>
 public sealed class ApplicationPipelineTestHarness : IDisposable
 {
@@ -96,26 +90,61 @@ public sealed class ApplicationPipelineTestHarness : IDisposable
     }
 
     /// <summary>
-    /// Registers MediatR from the assembly containing <typeparamref name="TMarker"/> and builds the
-    /// <see cref="ServiceProvider"/>. Must be called after all behavior/handler registration.
+    /// Builds the <see cref="ServiceProvider"/> without any mediator. Handlers are whatever the test
+    /// registered on <see cref="Services"/>; send with
+    /// <see cref="SendThroughPipelineAsync{TRequest,TResponse}"/>. Must be called after all
+    /// behavior/handler registration.
     /// </summary>
     /// <returns>This instance, for fluent chaining.</returns>
-    public ApplicationPipelineTestHarness Build<TMarker>()
+    public ApplicationPipelineTestHarness Build()
     {
-        _services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblyContaining<TMarker>());
+        _services.AddSharedKernelRequestPipeline();
         _provider = _services.BuildServiceProvider();
         return this;
     }
 
-    /// <summary>Sends <paramref name="request"/> through the resolved pipeline.</summary>
-    /// <exception cref="InvalidOperationException">Thrown when called before <see cref="Build{TMarker}"/>.</exception>
+    /// <summary>
+    /// Registers the MediatR adapter over the assembly containing <typeparamref name="TMarker"/>
+    /// (discovering its handlers) and builds the <see cref="ServiceProvider"/>. Must be called after
+    /// all behavior/handler registration.
+    /// </summary>
+    /// <typeparam name="TMarker">Any type in the assembly that declares the handlers.</typeparam>
+    /// <returns>This instance, for fluent chaining.</returns>
+    public ApplicationPipelineTestHarness Build<TMarker>()
+    {
+        _services.AddSharedKernelMediatR(typeof(TMarker).Assembly);
+        _provider = _services.BuildServiceProvider();
+        return this;
+    }
+
+    /// <summary>Sends <paramref name="request"/> through the kernel <see cref="ISender"/>.</summary>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when called before <see cref="Build{TMarker}"/>, or after <see cref="Build"/> (which
+    /// registers no <see cref="ISender"/>).
+    /// </exception>
     public Task<TResponse> SendAsync<TResponse>(IRequest<TResponse> request, CancellationToken ct = default)
     {
         if (_provider is null)
             throw new InvalidOperationException("Call Build<TMarker>() before SendAsync.");
 
-        var sender = _provider.GetRequiredService<ISender>();
+        var sender = _provider.GetService<ISender>()
+            ?? throw new InvalidOperationException(
+                "No ISender is registered: Build() builds without a mediator. Use SendThroughPipelineAsync, or Build<TMarker>().");
         return sender.Send(request, ct);
+    }
+
+    /// <summary>
+    /// Runs <paramref name="request"/> through <see cref="RequestPipeline{TRequest,TResponse}"/>
+    /// directly — every applicable behavior, then the registered handler — with no mediator.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">Thrown when called before <see cref="Build"/> or <see cref="Build{TMarker}"/>.</exception>
+    public Task<TResponse> SendThroughPipelineAsync<TRequest, TResponse>(TRequest request, CancellationToken ct = default)
+        where TRequest : IRequest<TResponse>
+    {
+        if (_provider is null)
+            throw new InvalidOperationException("Call Build() or Build<TMarker>() before SendThroughPipelineAsync.");
+
+        return _provider.GetRequiredService<RequestPipeline<TRequest, TResponse>>().HandleAsync(request, ct);
     }
 
     /// <summary>

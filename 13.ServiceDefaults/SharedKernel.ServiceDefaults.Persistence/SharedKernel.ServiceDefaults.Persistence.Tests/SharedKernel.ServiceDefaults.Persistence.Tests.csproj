@@ -6,7 +6,7 @@
     <ProjectReference Include="..\SharedKernel.ServiceDefaults.Persistence.csproj" />
     <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
     <!-- P-557/W6: AuditTrailWriterBridgeTests exercises the real AuditingBehavior<,> directly. -->
-    <ProjectReference Include="..\..\..\05.Application\SharedKernel.Application.Behaviors\SharedKernel.Application.Behaviors.csproj" />
+    <ProjectReference Include="..\..\..\05.Application\SharedKernel.Application.Pipeline\SharedKernel.Application.Pipeline.csproj" />
     <!--
       AuditTransactionWiringPostgresTests: the real Postgres-backed proof that TransactionBehavior's
       new transactional capability and this package's bridges make a Succeeded-outcome audit record
@@ -35,7 +35,7 @@
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="NSubstitute" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
-    <PackageReference Include="MediatR" />
+    <ProjectReference Include="..\..\..\05.Application\SharedKernel.Application.Mediator.MediatR\SharedKernel.Application.Mediator.MediatR.csproj" />
     <PackageReference Include="Testcontainers.PostgreSql" />
   </ItemGroup>
 </Project>

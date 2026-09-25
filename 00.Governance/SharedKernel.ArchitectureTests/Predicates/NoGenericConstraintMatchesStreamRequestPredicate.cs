@@ -6,7 +6,7 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// <summary>
 /// Custom NetArchTest predicate that fails any open-generic <c>IPipelineBehavior&lt;,&gt;</c>
 /// implementor whose <c>TRequest</c> generic-parameter constraint structurally satisfies
-/// MediatR's <c>IStreamRequest&lt;TResponse&gt;</c>.
+/// the kernel's streaming contract <c>IStreamQuery&lt;TResponse&gt;</c> (<c>SharedKernel.Application.Streaming</c>).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -15,8 +15,8 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// to mechanically verify the documented 05.Application design decision that none of the
 /// platform's pipeline behaviors apply to the streaming query vocabulary —
 /// <c>ValidationBehavior</c>'s <c>TRequest : IRequest&lt;TResponse&gt;</c> constraint does not
-/// match <c>IStreamRequest&lt;TResponse&gt;</c> today, and extending any behavior to streaming
-/// is a future, deliberate phase, never silently assumed.
+/// match <c>IStreamQuery&lt;TResponse&gt;</c> today, and streaming has its own behavior contract
+/// (<c>IStreamPipelineBehavior&lt;,&gt;</c>), so a request behavior is never applied to a stream.
 /// </para>
 /// <para>
 /// <strong>Scope check:</strong> types whose <see cref="TypeDefinition.Interfaces"/> contains an
@@ -28,7 +28,7 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// <strong>Detection:</strong> for each in-scope type, inspects the
 /// <see cref="GenericParameter.Constraints"/> collection on the first generic parameter (the
 /// <c>TRequest</c> position) for any constraint <see cref="TypeReference"/> whose
-/// <see cref="MemberReference.FullName"/> matches <c>"MediatR.IStreamRequest`1"</c> directly, or
+/// <see cref="MemberReference.FullName"/> matches <c>"SharedKernel.Application.Streaming.IStreamQuery`1"</c> directly, or
 /// whose resolved interface closure (<see cref="TypeDefinition.Interfaces"/>, walked
 /// recursively) includes it.
 /// </para>
@@ -47,13 +47,13 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 public sealed class NoGenericConstraintMatchesStreamRequestPredicate : ICustomRule
 {
     private const string PipelineBehaviorInterfaceName = "IPipelineBehavior";
-    private const string StreamRequestFullName = "MediatR.IStreamRequest`1";
+    private const string StreamRequestFullName = "SharedKernel.Application.Streaming.IStreamQuery`1";
 
     /// <summary>
     /// Returns <see langword="true"/> (rule met) when <paramref name="type"/> does not
     /// implement the open generic <c>IPipelineBehavior&lt;,&gt;</c>, or when its
     /// <c>TRequest</c> generic-parameter constraints do not structurally satisfy
-    /// <c>IStreamRequest&lt;TResponse&gt;</c>. Returns <see langword="false"/> (rule violated)
+    /// <c>IStreamQuery&lt;TResponse&gt;</c>. Returns <see langword="false"/> (rule violated)
     /// otherwise.
     /// </summary>
     /// <param name="type">
@@ -129,8 +129,8 @@ public sealed class NoGenericConstraintMatchesStreamRequestPredicate : ICustomRu
 
     /// <summary>
     /// Returns the open-generic-definition full name for <paramref name="typeReference"/>
-    /// (e.g. <c>"MediatR.IStreamRequest`1"</c>), stripping any closed generic-argument list
-    /// (e.g. <c>"MediatR.IStreamRequest`1&lt;TResponse&gt;"</c>) that Mono.Cecil's
+    /// (e.g. <c>"SharedKernel.Application.Streaming.IStreamQuery`1"</c>), stripping any closed generic-argument list
+    /// (e.g. <c>"SharedKernel.Application.Streaming.IStreamQuery`1&lt;TResponse&gt;"</c>) that Mono.Cecil's
     /// <see cref="MemberReference.FullName"/> includes for a
     /// <see cref="GenericInstanceType"/> constraint reference. Non-generic-instance
     /// references return their own <see cref="MemberReference.FullName"/> unchanged.

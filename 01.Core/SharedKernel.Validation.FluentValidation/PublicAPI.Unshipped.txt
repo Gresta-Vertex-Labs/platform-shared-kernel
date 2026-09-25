@@ -13,3 +13,8 @@ SharedKernel.Validation.FluentValidation.ValidationRuleBuilderExtensions
 ~static SharedKernel.Validation.FluentValidation.ValidationRuleBuilderExtensions.MustBeValidSepaCreditorId<T>(this FluentValidation.IRuleBuilder<T, string> ruleBuilder) -> FluentValidation.IRuleBuilderOptionsConditions<T, string>
 ~static SharedKernel.Validation.FluentValidation.ValidationRuleBuilderExtensions.MustBeValidVatNumber<T>(this FluentValidation.IRuleBuilder<T, string> ruleBuilder) -> FluentValidation.IRuleBuilderOptionsConditions<T, string>
 ~static SharedKernel.Validation.FluentValidation.ValidationRuleBuilderExtensions.MustBeValidVatNumber<T>(this FluentValidation.IRuleBuilder<T, string> ruleBuilder, System.Func<T, string> countrySelector) -> FluentValidation.IRuleBuilderOptionsConditions<T, string>
+SharedKernel.Validation.FluentValidation.FluentValidationRequestValidator<TRequest>
+SharedKernel.Validation.FluentValidation.FluentValidationRequestValidator<TRequest>.FluentValidationRequestValidator(System.Collections.Generic.IEnumerable<FluentValidation.IValidator<TRequest>!>! validators) -> void
+SharedKernel.Validation.FluentValidation.FluentValidationRequestValidator<TRequest>.ValidateAsync(TRequest request, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<System.Collections.Generic.IReadOnlyList<SharedKernel.Primitives.Errors.Error!>!>
+SharedKernel.Validation.FluentValidation.FluentValidationServiceCollectionExtensions
+static SharedKernel.Validation.FluentValidation.FluentValidationServiceCollectionExtensions.AddFluentValidationRequestValidators(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!

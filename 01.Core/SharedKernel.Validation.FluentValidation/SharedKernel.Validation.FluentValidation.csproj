@@ -2,7 +2,7 @@
   <PropertyGroup>
     <SharedKernelTier>Adapter</SharedKernelTier>
     <!-- NuGet packaging metadata -->
-    <Description>FluentValidation rules for the SharedKernel.Validation identifier types: MustBeValidIban, MustBeValidCardNumber, MustBeValidVatNumber, MustBeValidNationalId and more, plus MustBeValid&lt;T, TValue&gt; for any identifier. Each failure carries the identifier's specific error code, its translatable message values and the field path, never the rejected value, so card and national ID numbers stay out of validation results and logs. A separate package so code that does not use FluentValidation never depends on it.</Description>
+    <Description>FluentValidation rules for the SharedKernel.Validation identifier types: MustBeValidIban, MustBeValidCardNumber, MustBeValidVatNumber, MustBeValidNationalId and more, plus MustBeValid&lt;T, TValue&gt; for any identifier. Each failure carries the identifier's specific error code, its translatable message values and the field path, never the rejected value, so card and national ID numbers stay out of validation results and logs. Also bridges FluentValidation into the kernel request pipeline: AddFluentValidationRequestValidators() runs every IValidator&lt;T&gt; registered for a request as SharedKernel.Application's IRequestValidator&lt;T&gt;, so SharedKernel.Application.Pipeline's ValidationBehavior needs no FluentValidation dependency. A separate package so code that does not use FluentValidation never depends on it.</Description>
     <PackageReleaseNotes>First release.</PackageReleaseNotes>
     <PackageTags>shared-kernel;validation;fluentvalidation;iban;card-number;vat;national-id</PackageTags>
   </PropertyGroup>
@@ -17,7 +17,10 @@
 
   <ItemGroup>
     <PackageReference Include="FluentValidation" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
     <ProjectReference Include="..\SharedKernel.Validation\SharedKernel.Validation.csproj" />
+    <!-- IRequestValidator<T>, bridged by AddFluentValidationRequestValidators() (Adapter -> Abstractions). -->
+    <ProjectReference Include="..\..\05.Application\SharedKernel.Application\SharedKernel.Application.csproj" />
   </ItemGroup>
 
   <ItemGroup>

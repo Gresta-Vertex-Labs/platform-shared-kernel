@@ -10,7 +10,7 @@
   <ItemGroup>
     <!--
       P-557/W1: EfCore no longer references SharedKernel.Security.Abstractions,
-      SharedKernel.Application.Behaviors, or SharedKernel.Cryptography — see
+      SharedKernel.Application.Pipeline, or SharedKernel.Cryptography — see
       SharedKernel.Persistence.Abstractions.Context (IAuditActorContext/ICrossTenantScope) for the
       local seams that replace the former direct Security.Abstractions dependency; see
       13.ServiceDefaults/SharedKernel.ServiceDefaults.Persistence for the Application.Behaviors

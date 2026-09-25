@@ -1,46 +1,40 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <SharedKernelTier>Abstractions</SharedKernelTier>
     <!-- NuGet packaging metadata -->
-    <Description>The CQRS vocabulary a .NET service speaks over MediatR: commands, queries, their handlers, the caller behind a request, and the bridge that turns a domain event into a MediatR notification.
+    <Description>The CQRS vocabulary a .NET service's Application project speaks, owned by the kernel rather than by a mediator library: requests, commands, queries and their handlers, the sender, the pipeline-behavior contract, domain-event handlers, and the markers that opt a request into authorization, validation, idempotency, auditing, logging and caching.
 
-Every handler returns Result or Result&lt;T&gt;, so an expected failure is a value the caller must handle rather than an exception thrown past it. ICommandBase and IQueryBase let a pipeline behavior constrain to "any command" or "any query" once, so behaviors that must not touch reads are never resolved for them. The caller behind a request (IRequestContext) lives in SharedKernel.Execution, which every layer shares.
+Every handler returns Result or Result&lt;T&gt;, so an expected failure is a value the caller must handle rather than an exception thrown past it. ICommandBase and IQueryBase let a pipeline behavior constrain to "any command" or "any query" once, so behaviors that must not touch reads are never resolved for them.
 
-This package declares shapes and performs no I/O. The behaviors that log, authorize, validate, commit and audit those requests live in SharedKernel.Application.Behaviors. Depends only on SharedKernel.Primitives, SharedKernel.Domain and MediatR 12.4.1 (the last MIT-licensed release, pinned deliberately).</Description>
+This package declares shapes and performs no I/O, and it references no mediator: MediatR is used only by SharedKernel.Application.Mediator.MediatR, so replacing it changes no command, query, handler or behavior. The behaviors themselves live in SharedKernel.Application.Pipeline. Depends only on SharedKernel.Primitives, SharedKernel.Domain and SharedKernel.Caching.Abstractions.</Description>
     <PackageReleaseNotes>First release.
 
 WHAT IS IN IT
-- Commands and queries: ICommandBase, ICommand, ICommand&lt;TResponse&gt;, IQueryBase, IQuery&lt;TResponse&gt;, and the handler aliases ICommandHandler&lt;&gt;/ICommandHandler&lt;,&gt;/IQueryHandler&lt;,&gt;. The aliases add no members — they exist so a handler class states its role instead of reading as IRequestHandler&lt;PlaceOrder, Result&lt;Guid&gt;&gt;.
-- Streaming reads: IStreamQuery&lt;TResponse&gt; and IStreamQueryHandler&lt;,&gt;.
-- Domain events: IDomainEventHandler&lt;TDomainEvent&gt;, DomainEventNotification&lt;TDomainEvent&gt; and MediatRDomainEventDispatcher, registered by AddSharedKernelApplication()/AddDomainEventHandler&lt;,&gt;().
+- Requests: IRequest&lt;TResponse&gt;, IRequestHandler&lt;,&gt;, ISender (Send, CreateStream) and IPipelineBehavior&lt;,&gt; with RequestHandlerContinuation&lt;TResponse&gt;.
+- Commands and queries: ICommandBase, ICommand, ICommand&lt;TResponse&gt;, IQueryBase, IQuery&lt;TResponse&gt;, and the handler aliases ICommandHandler&lt;&gt;/ICommandHandler&lt;,&gt;/IQueryHandler&lt;,&gt;.
+- Streaming reads: IStreamQuery&lt;TResponse&gt;, IStreamQueryHandler&lt;,&gt; and IStreamPipelineBehavior&lt;,&gt;.
+- Domain events: IDomainEventHandler&lt;TDomainEvent&gt;.
+- Pipeline markers and ports: IAuthorizeRequest/PermissionMatch, IIdempotentRequest, IAuditableRequest&lt;TResponse&gt;, ILoggableRequest&lt;TResponse&gt;, ICacheableQuery&lt;TValue&gt;, IInvalidatesCache, CacheScope, CacheKeyRef, ICommandScope and IRequestValidator&lt;TRequest&gt;.
 
 THINGS WORTH KNOWING BEFORE YOU ADOPT IT
-- A request's response must be Result or Result&lt;T&gt;. Several pipeline behaviors short-circuit by constructing a failed response, which no other response type can express; SharedKernel.Analyzers' SK0040 flags the mistake at build time.
-- AddSharedKernelApplication() registers the domain-event dispatcher and nothing else. It never calls AddMediatR — your service owns which assemblies are scanned — and it registers no pipeline behavior.
-- Streaming queries get no pipeline behaviors at all. MediatR routes streams through a separate interface, and this platform registers nothing there, so logging, validation and authorization for a stream are the handler's own job. Stream items are deliberately not wrapped in Result&lt;T&gt;.
-- Domain events dispatch serially, after the database write. 06.Persistence's EfUnitOfWork saves first, then dispatches, so a handler that throws fails the request without undoing the row that was already committed. Work that must not be able to fail the request belongs behind an integration event.
+- A request's response must be Result or Result&lt;T&gt; when it uses a pipeline marker. Several pipeline behaviors short-circuit by constructing a failed response, which no other response type can express; SharedKernel.Analyzers' SK0040 flags the mistake at build time.
+- Streams run only IStreamPipelineBehavior registrations, never request behaviors, and stream items are deliberately not wrapped in Result&lt;T&gt;.
+- Domain events dispatch serially through DomainEventDispatcher (SharedKernel.Application.Pipeline), before the physical save.
 
 See the package README for the decision guide, the walkthrough and the full reference.</PackageReleaseNotes>
-    <PackageTags>cqrs;mediatr;application;command;query;streaming;domain-events;shared-kernel</PackageTags>
+    <PackageTags>cqrs;mediator;application;command;query;streaming;domain-events;shared-kernel</PackageTags>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <WarningsAsErrors>$(WarningsAsErrors);nullable;CS1591;RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
     <!--
-      Layering ceiling for SharedKernel.Application is 01.Core, 03.Domain, 04.Contracts.
-      This package never references 06.Persistence, 07.Messaging, 12.Security, or
-      SharedKernel.Caching.Abstractions (that reference belongs to .Behaviors.Caching only).
+      Abstractions tier: no mediator library and no implementation. CachePolicy (ICacheableQuery) is
+      the only reason for the SharedKernel.Caching.Abstractions reference, which is itself
+      dependency-free.
     -->
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
     <ProjectReference Include="..\..\03.Domain\SharedKernel.Domain\SharedKernel.Domain.csproj" />
-  </ItemGroup>
-  <ItemGroup>
-    <!--
-      MediatR pinned to 12.4.x — the last MIT-licensed major (v13 introduced a commercial
-      license). This is a deliberate platform ceiling; see CLAUDE.md version-pin callout.
-    -->
-    <PackageReference Include="MediatR" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <ProjectReference Include="..\..\02.Caching\SharedKernel.Caching.Abstractions\SharedKernel.Caching.Abstractions.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />

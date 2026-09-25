@@ -38,7 +38,7 @@ public class ApplicationPipelineRulesTests
             """;
 
         const string behaviorSource = """
-            namespace SharedKernel.Application.Behaviors.Tracing
+            namespace SharedKernel.Application.Pipeline.Tracing
             {
                 public class TracingBehavior
                 {
@@ -96,7 +96,7 @@ public class ApplicationPipelineRulesTests
             """;
 
         const string behaviorsSource = """
-            namespace SharedKernel.Application.Behaviors.Tracing
+            namespace SharedKernel.Application.Pipeline.Tracing
             {
                 public class TracingBehavior
                 {
@@ -109,7 +109,7 @@ public class ApplicationPipelineRulesTests
                 }
             }
 
-            namespace SharedKernel.Application.Behaviors.CacheInvalidation
+            namespace SharedKernel.Application.Pipeline.Caching
             {
                 public class CacheInvalidationBehavior
                 {
@@ -142,12 +142,12 @@ public class ApplicationPipelineRulesTests
 
     // ---------------------------------------------------------------------------
     // T-149 — Fire path: IPipelineBehavior<,> implementor's TRequest constraint matches
-    //          IStreamRequest<TResponse> structurally
+    //          IStreamQuery<TResponse> structurally
     // ---------------------------------------------------------------------------
 
     /// <summary>
     /// T-149: A contrived fixture with an <c>IPipelineBehavior&lt;,&gt;</c> implementor whose
-    /// <c>TRequest</c> constraint structurally satisfies <c>IStreamRequest&lt;TResponse&gt;</c>
+    /// <c>TRequest</c> constraint structurally satisfies <c>IStreamQuery&lt;TResponse&gt;</c>
     /// must fail
     /// <see cref="ApplicationPipelineRules.NoExistingBehaviorMatchesStreamRequestConstraint"/>.
     /// </summary>
@@ -157,16 +157,17 @@ public class ApplicationPipelineRulesTests
         const string source = """
             using System.Threading;
             using System.Threading.Tasks;
-            using MediatR;
+            using SharedKernel.Application.Messaging;
+            using SharedKernel.Application.Streaming;
 
-            namespace SharedKernel.Application.Behaviors.Violations
+            namespace SharedKernel.Application.Pipeline.Violations
             {
                 public class LooseStreamingBehavior<TRequest, TResponse> : IPipelineBehavior<TRequest, TResponse>
-                    where TRequest : notnull, IStreamRequest<TResponse>
+                    where TRequest : notnull, IStreamQuery<TResponse>
                 {
                     public Task<TResponse> Handle(
                         TRequest request,
-                        RequestHandlerDelegate<TResponse> next,
+                        RequestHandlerContinuation<TResponse> next,
                         CancellationToken cancellationToken)
                     {
                         return next();
@@ -185,7 +186,7 @@ public class ApplicationPipelineRulesTests
 
         result.IsSuccessful.Should().BeFalse(
             because: "LooseStreamingBehavior's TRequest constraint structurally satisfies " +
-                     "MediatR.IStreamRequest<TResponse> — exactly the loosening this rule forecloses");
+                     "SharedKernel.Application.Streaming.IStreamQuery<TResponse> — exactly the loosening this rule forecloses");
     }
 
     // ---------------------------------------------------------------------------
@@ -204,16 +205,17 @@ public class ApplicationPipelineRulesTests
         const string source = """
             using System.Threading;
             using System.Threading.Tasks;
-            using MediatR;
+            using SharedKernel.Application.Messaging;
+            using SharedKernel.Application.Streaming;
 
-            namespace SharedKernel.Application.Behaviors.Compliant
+            namespace SharedKernel.Application.Pipeline.Compliant
             {
                 public class ValidationBehavior<TRequest, TResponse> : IPipelineBehavior<TRequest, TResponse>
                     where TRequest : notnull, IRequest<TResponse>
                 {
                     public Task<TResponse> Handle(
                         TRequest request,
-                        RequestHandlerDelegate<TResponse> next,
+                        RequestHandlerContinuation<TResponse> next,
                         CancellationToken cancellationToken)
                     {
                         return next();
@@ -232,7 +234,23 @@ public class ApplicationPipelineRulesTests
 
         result.IsSuccessful.Should().BeTrue(
             because: "ValidationBehavior's TRequest constraint is IRequest<TResponse>-rooted " +
-                     "only and never structurally matches IStreamRequest<TResponse>");
+                     "only and never structurally matches IStreamQuery<TResponse>");
+    }
+
+    /// <summary>
+    /// P-567: the shipped <c>SharedKernel.Application.Pipeline</c> and
+    /// <c>SharedKernel.Application.Pipeline.Caching</c> assemblies pass both rules — no request behavior
+    /// captures a stream, and neither named behavior reaches concrete infrastructure.
+    /// </summary>
+    [Fact]
+    public void ShippedPipelineAssemblies_PassBothRules()
+    {
+        var pipeline = typeof(SharedKernel.Application.Pipeline.Extensions.ApplicationBehaviorsBuilder).Assembly;
+        var caching = typeof(SharedKernel.Application.Pipeline.Caching.Extensions.CachingBehaviorsExtensions).Assembly;
+
+        ApplicationPipelineRules.NoExistingBehaviorMatchesStreamRequestConstraint(pipeline).GetResult().IsSuccessful.Should().BeTrue();
+        ApplicationPipelineRules.NoExistingBehaviorMatchesStreamRequestConstraint(caching).GetResult().IsSuccessful.Should().BeTrue();
+        ApplicationPipelineRules.BehaviorsNeverReferenceConcreteInfrastructure(pipeline, caching).GetResult().IsSuccessful.Should().BeTrue();
     }
 
     // ---------------------------------------------------------------------------
@@ -247,7 +265,7 @@ public class ApplicationPipelineRulesTests
     /// <see cref="RedisTopologyRulesTests"/>: extra references are provided via
     /// <c>MetadataReference.CreateFromImage</c> from the in-memory bytes (for fixture-to-fixture
     /// chaining) or <c>MetadataReference.CreateFromFile</c> (for real on-disk assemblies like
-    /// MediatR) to avoid <c>CS0234</c> failures.
+    /// SharedKernel.Application) to avoid <c>CS0234</c> failures.
     /// </remarks>
     private static Assembly CompileInMemory(
         string assemblyName,
@@ -262,8 +280,7 @@ public class ApplicationPipelineRulesTests
             MetadataReference.CreateFromFile(Assembly.Load("System.Runtime").Location),
             MetadataReference.CreateFromFile(Assembly.Load("System.Console").Location),
             MetadataReference.CreateFromFile(typeof(Task).Assembly.Location),
-            MetadataReference.CreateFromFile(typeof(MediatR.IBaseRequest).Assembly.Location),
-            MetadataReference.CreateFromFile(typeof(MediatR.IPipelineBehavior<,>).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(SharedKernel.Application.Messaging.IRequest<>).Assembly.Location),
         };
 
         if (extraReferences is not null)

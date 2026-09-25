@@ -1,3 +1,2 @@
-SharedKernel.Application->package:MediatR
-SharedKernel.Idempotency.EfCore->SharedKernel.Application.Behaviors
-SharedKernel.Idempotency.Redis->SharedKernel.Application.Behaviors
+SharedKernel.Idempotency.EfCore->SharedKernel.Application.Pipeline
+SharedKernel.Idempotency.Redis->SharedKernel.Application.Pipeline

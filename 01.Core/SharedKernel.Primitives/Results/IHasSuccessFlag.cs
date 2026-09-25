@@ -8,7 +8,7 @@ namespace SharedKernel.Primitives.Results;
 /// <para>
 /// Implemented by both <see cref="Result{T}"/> and <see cref="Result"/>. Application code should
 /// not need this interface: use it when you genuinely do not know the response type, which in
-/// practice means a MediatR pipeline behavior generic over <c>TResponse</c>.
+/// practice means a request pipeline behavior generic over <c>TResponse</c>.
 /// </para>
 /// <example>
 /// <code>

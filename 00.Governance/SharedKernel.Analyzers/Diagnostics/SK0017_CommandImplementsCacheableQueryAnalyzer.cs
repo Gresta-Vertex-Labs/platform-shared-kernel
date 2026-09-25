@@ -15,7 +15,7 @@ namespace SharedKernel.Analyzers.Diagnostics;
 /// <para>
 /// Caching is queries-only by design — a command must never be cacheable. This rule runs
 /// inside a CONSUMING microservice's own compilation; the violation is a command/query type
-/// declaration, which never occurs inside <c>SharedKernel.Application.Behaviors</c> itself.
+/// declaration, which never occurs inside <c>SharedKernel.Application.Pipeline</c> itself.
 /// </para>
 /// <para>
 /// <strong>Semantic-model requirement.</strong> <c>ICommandBase</c> is typically implemented
@@ -27,7 +27,7 @@ namespace SharedKernel.Analyzers.Diagnostics;
 /// <para>
 /// Interface matching uses <see cref="INamedTypeSymbol.OriginalDefinition"/> plus a
 /// <c>"SharedKernel.Application"</c> containing-namespace prefix check (covering both
-/// <c>SharedKernel.Application</c> and <c>SharedKernel.Application.Behaviors</c>) rather than
+/// <c>SharedKernel.Application</c> and <c>SharedKernel.Application.Pipeline</c>) rather than
 /// exact-assembly identity — this keeps analyzer test fixtures self-contained, with no
 /// <c>ProjectReference</c> to the real assemblies required.
 /// </para>

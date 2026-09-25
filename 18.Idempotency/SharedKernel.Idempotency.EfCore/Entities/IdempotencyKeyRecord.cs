@@ -1,7 +1,7 @@
 namespace SharedKernel.Idempotency.EfCore.Entities;
 
 /// <summary>
-/// Backing row for <c>SharedKernel.Application.Behaviors.Idempotency.IRequestIdempotencyStore</c>.
+/// Backing row for <c>SharedKernel.Application.Pipeline.Idempotency.IRequestIdempotencyStore</c>.
 /// Plain persistence-shape record, not a domain aggregate — internal, never exposed on this
 /// package's public API surface.
 /// </summary>

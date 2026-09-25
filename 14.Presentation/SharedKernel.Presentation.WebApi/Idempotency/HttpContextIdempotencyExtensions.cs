@@ -39,7 +39,7 @@ public static class HttpContextIdempotencyExtensions
     /// </returns>
     /// <remarks>
     /// This is the recommended way for an endpoint handler to read the validated value onto a
-    /// MediatR command's <c>IIdempotentRequest.IdempotencyKey</c> property before dispatch — this
+    /// command's <c>IIdempotentRequest.IdempotencyKey</c> property before dispatch — this
     /// package does not attempt automatic request binding, only extraction/validation and the
     /// guard filter (<see cref="IdempotencyKeyRequirementEndpointFilter"/>).
     /// </remarks>
