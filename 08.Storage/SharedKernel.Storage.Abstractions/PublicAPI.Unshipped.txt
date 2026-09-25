@@ -271,8 +271,6 @@ SharedKernel.Storage.IFileStorageFactory.GetTenantStore(string! storeName) -> Sh
 SharedKernel.Storage.IFileStorageFactory.IsTenantScoped(string! storeName) -> bool
 SharedKernel.Storage.IFileStorageFactory.Open(SharedKernel.Storage.FileReference! reference) -> SharedKernel.Storage.IFileStorage!
 SharedKernel.Storage.IFileStorageFactory.StoreNames.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
-SharedKernel.Storage.IFileStorageHealthProbe
-SharedKernel.Storage.IFileStorageHealthProbe.ProbeAsync(string! storeName, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
 SharedKernel.Storage.IStorageBuilder
 SharedKernel.Storage.IStorageBuilder.Services.get -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 SharedKernel.Storage.ITenantFileStorage
@@ -467,3 +465,6 @@ SharedKernel.Storage.FileUploadOptions.ContentLength.init -> void
 SharedKernel.Storage.FileReference.TenantId.get -> SharedKernel.Execution.Tenancy.TenantId?
 SharedKernel.Storage.IFileStorage.TenantId.get -> SharedKernel.Execution.Tenancy.TenantId?
 SharedKernel.Storage.ITenantFileStorage.ForTenant(SharedKernel.Execution.Tenancy.TenantId tenantId) -> SharedKernel.Storage.IFileStorage!
+SharedKernel.Storage.StorageReadinessProbeNames
+const SharedKernel.Storage.StorageReadinessProbeNames.Prefix = "storage-" -> string!
+static SharedKernel.Storage.StorageReadinessProbeNames.ForStore(string! storeName) -> string!

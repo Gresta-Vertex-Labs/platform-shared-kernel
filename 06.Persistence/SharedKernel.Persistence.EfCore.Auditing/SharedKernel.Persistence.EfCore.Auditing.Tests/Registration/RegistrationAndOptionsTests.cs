@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using SharedKernel.Primitives.Health;
 using SharedKernel.Execution.Auditing;
 using SharedKernel.Execution.Context;
 using SharedKernel.Cryptography.Signing;
@@ -52,7 +53,7 @@ public sealed class RegistrationAndOptionsTests
         scope.ServiceProvider.GetRequiredService<IAuditQueryService>().Should().NotBeNull();
         scope.ServiceProvider.GetRequiredService<IAuditCheckpointService>().Should().NotBeNull();
         scope.ServiceProvider.GetRequiredService<IAuditLedgerMaintenance>().Should().NotBeNull();
-        provider.GetRequiredService<IAuditSealingProbe>().Should().NotBeNull();
+        provider.GetRequiredReadinessProbe(AuditSealingReadiness.ProbeName).Should().NotBeNull();
         provider.GetRequiredService<IAuditRecordAuthenticator>().Should().BeOfType<KeyringAuditRecordAuthenticator>();
         provider.GetRequiredService<IAuditCheckpointSink>().Should().BeOfType<TableAuditCheckpointSink>();
         provider.GetServices<IHostedService>().Should().HaveCount(2, "the self-check and the sealer");

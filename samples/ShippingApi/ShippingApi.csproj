@@ -20,9 +20,8 @@
     <PackageReference Include="SharedKernel.Contracts" />
     <!-- 05.Application.Abstractions: IRequestContext, which the tenant/actor propagation rides on. -->
     <PackageReference Include="SharedKernel.Execution" />
-    <!-- 13.ServiceDefaults: host, messaging telemetry, the bus readiness check. -->
+    <!-- 13.ServiceDefaults: host, messaging telemetry, and AddSharedKernelReadiness (the bus probe). -->
     <PackageReference Include="SharedKernel.ServiceDefaults" />
-    <PackageReference Include="SharedKernel.ServiceDefaults.Messaging" />
     <!-- 14.Presentation: Result -> ProblemDetails at the HTTP boundary. -->
     <PackageReference Include="SharedKernel.Presentation.WebApi" />
   </ItemGroup>

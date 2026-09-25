@@ -4,7 +4,8 @@ using SharedKernel.ServiceDefaults.Extensions;
 namespace SharedKernel.ServiceDefaults.Tests.Packaging;
 
 /// <summary>
-/// Locks the composition base's dependency-free shape (WO-084). Every service on the platform
+/// Locks the composition base's shape (WO-084, amended by P-569): it references Foundation-tier SharedKernel
+/// packages only — today just <c>SharedKernel.Primitives</c>, for <c>IReadinessProbe</c>. Every service on the platform
 /// references this package, so anything it references is restored by every service.
 /// </summary>
 /// <remarks>
@@ -12,7 +13,8 @@ namespace SharedKernel.ServiceDefaults.Tests.Packaging;
 /// Before WO-084, a project referencing this package alone restored 25 SharedKernel projects and 73
 /// NuGet packages — MassTransit, Azure Service Bus, Microsoft.Identity.Web, EF Core, Temporalio,
 /// Quartz, StackExchange.Redis — because the base carried fourteen <c>ProjectReference</c>s. Those
-/// integrations now live in <c>SharedKernel.ServiceDefaults.*</c> packages.
+/// integrations now live in <c>SharedKernel.ServiceDefaults.*</c> packages, or — for readiness — in the provider
+/// packages themselves, which register an <c>IReadinessProbe</c> the base maps without referencing them.
 /// </para>
 /// <para>
 /// <b>Two locks, because each misses what the other catches.</b> The metadata lock inspects the
@@ -53,36 +55,54 @@ public sealed class CompositionBaseIsolationTests
         "OpenTelemetry.Instrumentation.GrpcNetClient",
     ];
 
+    /// <summary>The tier every SharedKernel project the base references must declare.</summary>
+    private const string FoundationTier = "Foundation";
+
     [Fact]
-    public void BaseAssembly_ReferencesNoSharedKernelAssembly()
+    public void BaseAssembly_ReferencesOnlyFoundationSharedKernelAssemblies()
     {
+        var allowed = ProjectReferences()
+            .Where(reference => reference.Tier == FoundationTier)
+            .Select(reference => reference.AssemblyName)
+            .ToHashSet(StringComparer.Ordinal);
+
         var sharedKernelReferences = typeof(ServiceDefaultsExtensions).Assembly
             .GetReferencedAssemblies()
             .Select(reference => reference.Name!)
             .Where(name => name.StartsWith("SharedKernel.", StringComparison.Ordinal))
+            .Where(name => !allowed.Contains(name))
             .ToArray();
 
         Assert.True(
             sharedKernelReferences.Length == 0,
-            "SharedKernel.ServiceDefaults must not use types from any other SharedKernel package, but its "
-            + $"assembly references: {string.Join(", ", sharedKernelReferences)}. Move the code that needs "
-            + "them into the matching SharedKernel.ServiceDefaults.* integration package.");
+            "SharedKernel.ServiceDefaults may use types only from Foundation-tier SharedKernel packages it "
+            + $"references directly, but its assembly also references: {string.Join(", ", sharedKernelReferences)}. "
+            + "Move the code that needs them into the matching SharedKernel.ServiceDefaults.* integration package.");
     }
 
     [Fact]
-    public void BaseProjectFile_DeclaresNoProjectReference()
+    public void BaseProjectFile_DeclaresOnlyFoundationProjectReferences()
     {
-        var projectReferences = LoadProjectFile()
-            .Descendants("ProjectReference")
-            .Select(element => (string?)element.Attribute("Include") ?? "(no Include)")
+        var notFoundation = ProjectReferences()
+            .Where(reference => reference.Tier != FoundationTier)
+            .Select(reference => $"{reference.AssemblyName} (tier '{reference.Tier ?? "none"}')")
             .ToArray();
 
         Assert.True(
-            projectReferences.Length == 0,
-            "SharedKernel.ServiceDefaults.csproj must declare no ProjectReference — every service restores "
-            + "whatever this package references. Found: "
-            + $"{string.Join(", ", projectReferences)}. An integration needing another SharedKernel package "
+            notFoundation.Length == 0,
+            "SharedKernel.ServiceDefaults.csproj may reference Foundation-tier SharedKernel packages only — every "
+            + "service restores whatever this package references. Found: "
+            + $"{string.Join(", ", notFoundation)}. An integration needing another SharedKernel package "
             + "belongs in its own SharedKernel.ServiceDefaults.* package.");
+    }
+
+    [Fact]
+    public void BaseProjectFile_ReferencesPrimitivesForReadinessProbes()
+    {
+        // Guards the Foundation-only lock against passing vacuously once the one reference it exists for is gone.
+        Assert.Contains(
+            ProjectReferences(),
+            reference => reference.AssemblyName == "SharedKernel.Primitives");
     }
 
     [Fact]
@@ -116,7 +136,31 @@ public sealed class CompositionBaseIsolationTests
             element => (string?)element.Attribute("Include") == "Microsoft.AspNetCore.App");
     }
 
-    private static XDocument LoadProjectFile()
+    private static XDocument LoadProjectFile() => XDocument.Load(FindProjectFile());
+
+    /// <summary>
+    /// Every <c>ProjectReference</c> of the base, with the <c>SharedKernelTier</c> its project file declares
+    /// (<see langword="null"/> when it declares none).
+    /// </summary>
+    private static IReadOnlyList<(string AssemblyName, string? Tier)> ProjectReferences()
+    {
+        var projectPath = FindProjectFile();
+        var projectDirectory = Path.GetDirectoryName(projectPath)!;
+
+        return XDocument.Load(projectPath)
+            .Descendants("ProjectReference")
+            .Select(element => (string?)element.Attribute("Include") ?? throw new InvalidOperationException(
+                "A ProjectReference in SharedKernel.ServiceDefaults.csproj has no Include."))
+            .Select(include =>
+            {
+                var referencedPath = Path.GetFullPath(Path.Combine(projectDirectory, include.Replace('\\', Path.DirectorySeparatorChar)));
+                var tier = XDocument.Load(referencedPath).Descendants("SharedKernelTier").Select(e => e.Value.Trim()).FirstOrDefault();
+                return (Path.GetFileNameWithoutExtension(referencedPath), tier);
+            })
+            .ToList();
+    }
+
+    private static string FindProjectFile()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
 
@@ -125,7 +169,7 @@ public sealed class CompositionBaseIsolationTests
             var candidate = Path.Combine(directory.FullName, ProjectFileName);
             if (File.Exists(candidate))
             {
-                return XDocument.Load(candidate);
+                return candidate;
             }
 
             directory = directory.Parent;

@@ -1,21 +1,5 @@
 #nullable enable
-override SharedKernel.Caching.Redis.Core.Health.RedisConnectionHealth.Equals(object? obj) -> bool
-override SharedKernel.Caching.Redis.Core.Health.RedisConnectionHealth.GetHashCode() -> int
-override SharedKernel.Caching.Redis.Core.Health.RedisConnectionHealth.ToString() -> string!
 SharedKernel.Caching.Redis.Core.Extensions.RedisConnectionCoreExtensions
-SharedKernel.Caching.Redis.Core.Health.IRedisConnectionProbe
-SharedKernel.Caching.Redis.Core.Health.IRedisConnectionProbe.ProbeAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Caching.Redis.Core.Health.RedisConnectionHealth!>!
-SharedKernel.Caching.Redis.Core.Health.RedisConnectionHealth
-SharedKernel.Caching.Redis.Core.Health.RedisConnectionHealth.<Clone>$() -> SharedKernel.Caching.Redis.Core.Health.RedisConnectionHealth!
-SharedKernel.Caching.Redis.Core.Health.RedisConnectionHealth.Deconstruct(out bool IsHealthy, out System.TimeSpan? Latency, out string? Description) -> void
-SharedKernel.Caching.Redis.Core.Health.RedisConnectionHealth.Description.get -> string?
-SharedKernel.Caching.Redis.Core.Health.RedisConnectionHealth.Description.init -> void
-SharedKernel.Caching.Redis.Core.Health.RedisConnectionHealth.Equals(SharedKernel.Caching.Redis.Core.Health.RedisConnectionHealth? other) -> bool
-SharedKernel.Caching.Redis.Core.Health.RedisConnectionHealth.IsHealthy.get -> bool
-SharedKernel.Caching.Redis.Core.Health.RedisConnectionHealth.IsHealthy.init -> void
-SharedKernel.Caching.Redis.Core.Health.RedisConnectionHealth.Latency.get -> System.TimeSpan?
-SharedKernel.Caching.Redis.Core.Health.RedisConnectionHealth.Latency.init -> void
-SharedKernel.Caching.Redis.Core.Health.RedisConnectionHealth.RedisConnectionHealth(bool IsHealthy, System.TimeSpan? Latency, string? Description) -> void
 SharedKernel.Caching.Redis.Core.RedisConnectionOptions
 SharedKernel.Caching.Redis.Core.RedisConnectionOptions.CertificateValidation.get -> System.Func<System.Security.Cryptography.X509Certificates.X509Certificate2!, System.Security.Cryptography.X509Certificates.X509Chain?, System.Net.Security.SslPolicyErrors, bool>?
 SharedKernel.Caching.Redis.Core.RedisConnectionOptions.CertificateValidation.set -> void
@@ -35,6 +19,6 @@ SharedKernel.Caching.Redis.Core.RedisConnectionOptions.Ssl.set -> void
 static SharedKernel.Caching.Redis.Core.Extensions.RedisConnectionCoreExtensions.AddRedisConnection(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfiguration! configuration, System.Action<SharedKernel.Caching.Redis.Core.RedisConnectionOptions!>? configure = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 static SharedKernel.Caching.Redis.Core.Extensions.RedisConnectionCoreExtensions.AddRedisConnection(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<SharedKernel.Caching.Redis.Core.RedisConnectionOptions!>! configure) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 static SharedKernel.Caching.Redis.Core.Extensions.RedisConnectionCoreExtensions.EnsureRedisConnectionRegistered(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, string! caller) -> void
-static SharedKernel.Caching.Redis.Core.Health.RedisConnectionHealth.operator !=(SharedKernel.Caching.Redis.Core.Health.RedisConnectionHealth? left, SharedKernel.Caching.Redis.Core.Health.RedisConnectionHealth? right) -> bool
-static SharedKernel.Caching.Redis.Core.Health.RedisConnectionHealth.operator ==(SharedKernel.Caching.Redis.Core.Health.RedisConnectionHealth? left, SharedKernel.Caching.Redis.Core.Health.RedisConnectionHealth? right) -> bool
 static SharedKernel.Caching.Redis.Core.RedisConnectionOptions.SectionName.get -> string!
+SharedKernel.Caching.Redis.Core.Health.RedisReadinessProbeNames
+const SharedKernel.Caching.Redis.Core.Health.RedisReadinessProbeNames.Connection = "redis" -> string!

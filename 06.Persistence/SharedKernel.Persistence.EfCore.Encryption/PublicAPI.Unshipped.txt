@@ -57,7 +57,6 @@ SharedKernel.Persistence.EfCore.Encryption.FieldEncryptionBuilder.UseKeyProvider
 SharedKernel.Persistence.EfCore.Encryption.FieldEncryptionBuilder.UseMaintenanceDataSource(System.Func<System.IServiceProvider!, System.Data.Common.DbDataSource!>! factory) -> SharedKernel.Persistence.EfCore.Encryption.FieldEncryptionBuilder!
 SharedKernel.Persistence.EfCore.Encryption.FieldEncryptionBuilder.UseTenantDataKeys() -> SharedKernel.Persistence.EfCore.Encryption.FieldEncryptionBuilder!
 SharedKernel.Persistence.EfCore.Encryption.FieldEncryptionBuilder.UseTenantDataKeys<TEnvelopeProvider>() -> SharedKernel.Persistence.EfCore.Encryption.FieldEncryptionBuilder!
-SharedKernel.Persistence.EfCore.Encryption.FieldEncryptionServiceKeys
 SharedKernel.Persistence.EfCore.Encryption.Maintenance.EncryptionMaintenanceMode
 SharedKernel.Persistence.EfCore.Encryption.Maintenance.EncryptionMaintenanceMode.EncryptPlaintext = 8 -> SharedKernel.Persistence.EfCore.Encryption.Maintenance.EncryptionMaintenanceMode
 SharedKernel.Persistence.EfCore.Encryption.Maintenance.EncryptionMaintenanceMode.ReEncrypt = 2 -> SharedKernel.Persistence.EfCore.Encryption.Maintenance.EncryptionMaintenanceMode
@@ -154,7 +153,6 @@ SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredResult.RootKeyV
 SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredResult.TenantId.init -> void
 const SharedKernel.Persistence.EfCore.Encryption.Diagnostics.EncryptionMeter.Name = "SharedKernel.Persistence.EfCore.Encryption" -> string!
 const SharedKernel.Persistence.EfCore.Encryption.EncryptionKeyNotFoundException.ErrorCode = "Persistence.Encryption.KeyNotFound" -> string!
-const SharedKernel.Persistence.EfCore.Encryption.FieldEncryptionServiceKeys.KeyRingProbe = "SharedKernel.Persistence.EfCore.Encryption.KeyRing" -> string!
 const SharedKernel.Persistence.EfCore.Encryption.Maintenance.EncryptionMaintenanceReport.TenantDataKeysLabel = "(tenant data keys)" -> string!
 const SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantKeyShreddedException.ErrorCode = "Persistence.Encryption.TenantKeyShredded" -> string!
 const SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredIncompleteException.ErrorCode = "Persistence.Encryption.TenantShredIncomplete" -> string!
@@ -197,3 +195,5 @@ SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredResult.Deconstr
 SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredResult.TenantId.get -> SharedKernel.Execution.Tenancy.TenantId
 SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredResult.TenantShredResult(SharedKernel.Execution.Tenancy.TenantId TenantId, long BlindIndexValuesCleared, long RootKeyValues, long PlaintextValues) -> void
 static SharedKernel.Persistence.EfCore.EncryptedQueryExtensions.WhereEncryptedEquals<T>(this System.Linq.IQueryable<T!>! query, Microsoft.EntityFrameworkCore.DbContext! context, System.Linq.Expressions.Expression<System.Func<T!, string?>!>! property, string! value, SharedKernel.Execution.Tenancy.TenantId? tenantId = null) -> System.Linq.IQueryable<T!>!
+SharedKernel.Persistence.EfCore.Encryption.FieldEncryptionReadiness
+const SharedKernel.Persistence.EfCore.Encryption.FieldEncryptionReadiness.ProbeName = "field-encryption" -> string!

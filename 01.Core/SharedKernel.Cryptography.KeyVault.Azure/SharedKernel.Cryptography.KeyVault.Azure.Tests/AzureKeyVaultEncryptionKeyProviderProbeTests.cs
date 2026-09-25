@@ -1,6 +1,6 @@
 using Azure;
 using SharedKernel.Cryptography.KeyVault.Azure.Tests.Fakes;
-using SharedKernel.Cryptography.Symmetric;
+using SharedKernel.Primitives.Health;
 using Xunit;
 
 namespace SharedKernel.Cryptography.KeyVault.Azure.Tests;
@@ -14,7 +14,7 @@ public sealed class AzureKeyVaultEncryptionKeyProviderProbeTests
     [Fact]
     public async Task ProbeAsync_MasterKeyReadable_ReportsHealthyWithoutKeyUsage()
     {
-        EncryptionKeyProviderHealth health = await _fixture.CreateProvider().ProbeAsync();
+        ReadinessReport health = await _fixture.CreateProvider().ProbeAsync();
 
         Assert.True(health.IsHealthy);
         Assert.Null(health.Description);
@@ -32,7 +32,7 @@ public sealed class AzureKeyVaultEncryptionKeyProviderProbeTests
     {
         _fixture.Vault.GetKeyException = new RequestFailedException(status, $"Caller is not authorized: {SensitiveDetail}");
 
-        EncryptionKeyProviderHealth health = await _fixture.CreateProvider().ProbeAsync();
+        ReadinessReport health = await _fixture.CreateProvider().ProbeAsync();
 
         Assert.False(health.IsHealthy);
         Assert.NotNull(health.Description);
@@ -46,7 +46,7 @@ public sealed class AzureKeyVaultEncryptionKeyProviderProbeTests
     {
         _fixture.Vault.GetKeyException = new HttpRequestException($"No such host: {SensitiveDetail}");
 
-        EncryptionKeyProviderHealth health = await _fixture.CreateProvider().ProbeAsync();
+        ReadinessReport health = await _fixture.CreateProvider().ProbeAsync();
 
         Assert.False(health.IsHealthy);
         Assert.Contains(nameof(HttpRequestException), health.Description, StringComparison.Ordinal);

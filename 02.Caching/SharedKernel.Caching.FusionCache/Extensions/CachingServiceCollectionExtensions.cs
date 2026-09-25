@@ -6,9 +6,11 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using SharedKernel.Caching.Abstractions;
+using SharedKernel.Caching.FusionCache.Health;
 using SharedKernel.Caching.FusionCache.Implementations;
 using SharedKernel.Caching.FusionCache.Serialization;
 using SharedKernel.Configuration.Extensions;
+using SharedKernel.Primitives.Health;
 using ZiggyCreatures.Caching.Fusion;
 using ZiggyCreatures.Caching.Fusion.Serialization;
 using ZiggyCreatures.Caching.Fusion.Serialization.SystemTextJson;
@@ -23,7 +25,7 @@ public static class CachingServiceCollectionExtensions
 {
     /// <summary>
     /// Registers <see cref="ICacheService"/>, <see cref="ICacheKeyProvider"/> and
-    /// <see cref="ITenantCacheKeyProvider"/>, with <see cref="CachingOptions"/> bound from the
+    /// <see cref="ITenantCacheKeyProvider"/> and the cache readiness probe (<see cref="CacheReadinessProbeNames.Cache"/>), with <see cref="CachingOptions"/> bound from the
     /// <c>SharedKernel:Caching</c> section of <paramref name="configuration"/> and validated at startup.
     /// </summary>
     /// <param name="services">The service collection.</param>
@@ -59,7 +61,7 @@ public static class CachingServiceCollectionExtensions
 
     /// <summary>
     /// Registers <see cref="ICacheService"/>, <see cref="ICacheKeyProvider"/> and
-    /// <see cref="ITenantCacheKeyProvider"/>, with <see cref="CachingOptions"/> set in code and
+    /// <see cref="ITenantCacheKeyProvider"/> and the cache readiness probe (<see cref="CacheReadinessProbeNames.Cache"/>), with <see cref="CachingOptions"/> set in code and
     /// validated at startup.
     /// </summary>
     /// <param name="services">The service collection.</param>
@@ -113,6 +115,7 @@ public static class CachingServiceCollectionExtensions
             .WithPostSetup((sp, cache) => ApplyDefaults(cache.DefaultEntryOptions, sp.GetRequiredService<IOptions<CachingOptions>>().Value));
 
         services.TryAddSingleton<ICacheService, FusionCacheService>();
+        services.AddReadinessProbe<CacheReadinessProbe>();
 
         // One key provider serves both interfaces, so global and tenant keys share the validated
         // CachingOptions.ServiceName. Consumers may override either registration.

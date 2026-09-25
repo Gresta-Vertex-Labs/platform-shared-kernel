@@ -167,12 +167,10 @@
          phase (SK.00.ServiceDefaultsGovernance/P-173) using contrived fixtures only. -->
     <ProjectReference Include="..\..\..\13.ServiceDefaults\SharedKernel.MultiTenancy\SharedKernel.MultiTenancy.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\..\..\13.ServiceDefaults\SharedKernel.ServiceDefaults\SharedKernel.ServiceDefaults.csproj" PrivateAssets="all" />
-    <!-- WO-084/P-535: the workflow and scheduler readiness checks, and mutual-TLS composition, moved
-         out of SharedKernel.ServiceDefaults into these integration packages. The two layering-grant
-         tests and the forwarded-header secure-defaults test inspect the real assemblies, so they
-         reference the packages that now hold those types. -->
-    <ProjectReference Include="..\..\..\13.ServiceDefaults\SharedKernel.ServiceDefaults.Workflows.Temporal\SharedKernel.ServiceDefaults.Workflows.Temporal.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\..\..\13.ServiceDefaults\SharedKernel.ServiceDefaults.Scheduling\SharedKernel.ServiceDefaults.Scheduling.csproj" PrivateAssets="all" />
+    <!-- WO-084/P-535: mutual-TLS composition moved
+         out of SharedKernel.ServiceDefaults into this integration package. The forwarded-header
+         secure-defaults test inspects the real assembly, so it
+         references the package that now holds those types. -->
     <ProjectReference Include="..\..\..\13.ServiceDefaults\SharedKernel.ServiceDefaults.Security.Mtls\SharedKernel.ServiceDefaults.Security.Mtls.csproj" PrivateAssets="all" />
     <!-- Required to resolve the real SharedKernel.Presentation.WebApi assembly in
          SecureDefaultsAssertionTests (WO-062 P-410, SK.00.CorsWildcardCredentialsGuard) — verified

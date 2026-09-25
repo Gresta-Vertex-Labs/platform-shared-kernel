@@ -5,6 +5,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using SharedKernel.Primitives.Health;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Storage.Obs;
 using Testcontainers.Minio;
@@ -74,7 +75,7 @@ public sealed class ObsStorageTests(MinioFixture minio) : IClassFixture<MinioFix
         reference.Store.Should().Be("archive");
         buffer.ToArray().Should().Equal(1, 2);
         download.Properties.ContentType.Should().Be("text/plain");
-        (await host.GetRequiredService<IFileStorageHealthProbe>().ProbeAsync("archive")).IsSuccess.Should().BeTrue();
+        (await host.GetRequiredReadinessProbe(StorageReadinessProbeNames.ForStore("archive")).ProbeAsync()).IsHealthy.Should().BeTrue();
     }
 
     [Fact]

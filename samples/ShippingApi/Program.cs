@@ -55,8 +55,9 @@ builder.Services
     .WithSendEndpointRoute<HoldShipment>(Queues.Hold)
     .Build();
 
-// Readiness fails while the bus is not connected, so a replica is not sent traffic it cannot serve.
-builder.Services.AddHealthChecks().AddMessagingReadinessCheck();
+// Readiness fails while the bus is not connected, so a replica is not sent traffic it cannot serve: Build()
+// registered the bus readiness probe, and AddSharedKernelReadiness maps it.
+builder.Services.AddHealthChecks().AddSharedKernelReadiness();
 
 builder.Services.AddProblemDetails();
 

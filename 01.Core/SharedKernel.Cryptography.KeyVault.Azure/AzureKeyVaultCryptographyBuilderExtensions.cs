@@ -13,6 +13,7 @@ using SharedKernel.Cryptography.Extensions;
 using SharedKernel.Cryptography.Random;
 using SharedKernel.Cryptography.Signing;
 using SharedKernel.Cryptography.Symmetric;
+using SharedKernel.Primitives.Health;
 
 namespace SharedKernel.Cryptography.KeyVault.Azure;
 
@@ -26,7 +27,7 @@ public static class AzureKeyVaultCryptographyBuilderExtensions
 {
     /// <summary>
     /// Registers <see cref="AzureKeyVaultEncryptionKeyProvider"/> as <see cref="IEncryptionKeyProvider"/>,
-    /// <see cref="IEnvelopeEncryptionProvider"/> and <see cref="IEncryptionKeyProviderProbe"/>, with validated
+    /// <see cref="IEnvelopeEncryptionProvider"/> and a readiness probe named <see cref="AzureKeyVaultEncryptionKeyProvider.ReadinessProbeName"/>, with validated
     /// <see cref="AzureKeyVaultEncryptionOptions"/>.
     /// </summary>
     /// <param name="builder">The builder returned by <c>AddSharedKernelCryptography</c>.</param>
@@ -66,7 +67,8 @@ public static class AzureKeyVaultCryptographyBuilderExtensions
         });
         services.TryAddSingleton<IEncryptionKeyProvider>(sp => sp.GetRequiredService<AzureKeyVaultEncryptionKeyProvider>());
         services.TryAddSingleton<IEnvelopeEncryptionProvider>(sp => sp.GetRequiredService<AzureKeyVaultEncryptionKeyProvider>());
-        services.TryAddSingleton<IEncryptionKeyProviderProbe>(sp => sp.GetRequiredService<AzureKeyVaultEncryptionKeyProvider>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IReadinessProbe, AzureKeyVaultEncryptionKeyProvider>(
+            sp => sp.GetRequiredService<AzureKeyVaultEncryptionKeyProvider>()));
 
         return builder;
     }

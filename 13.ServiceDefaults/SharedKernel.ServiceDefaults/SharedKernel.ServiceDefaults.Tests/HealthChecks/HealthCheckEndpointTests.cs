@@ -134,7 +134,7 @@ public sealed class HealthCheckEndpointTests : IAsyncDisposable
         var host = await StartHostAsync(checks => checks.AddCheck(
             "failing-messaging",
             () => HealthCheckResult.Unhealthy(),
-            tags: [HealthCheckTags.Ready, HealthCheckTags.Messaging]));
+            tags: [HealthCheckTags.Ready, HealthCheckTags.Db]));
         host.Services.GetRequiredService<SharedKernel.ServiceDefaults.Probes.StartupGate>().MarkReady();
 
         using var client = host.GetTestClient();

@@ -147,7 +147,7 @@ public sealed record VectorCollectionDefinition
     /// <see cref="int"/>s makes it independent of enum member renames — identical technique to
     /// <c>09.Search</c>'s <c>SearchIndexDefinition.Fingerprint</c>, reused deliberately rather than
     /// reinvented. Written into provisioned-collection metadata so
-    /// <c>IVectorCollectionProvisioner.ProbeAsync</c> can detect schema drift.
+    /// the collection's readiness probe can detect schema drift.
     /// </remarks>
     public string Fingerprint
     {

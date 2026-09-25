@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using SharedKernel.Primitives.Health;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Search.Abstractions.Abstractions;
 using SharedKernel.Search.Abstractions.Constants;
@@ -161,6 +162,17 @@ public sealed class MeilisearchSearchBuilder
 
         _services.AddSingleton<ISearchIndexProvisioner>(sp =>
             sp.GetRequiredKeyedService<ISearchIndexProvisioner>(SearchWellKnown.MeilisearchProviderName));
+
+        // One readiness probe per registered index, each over the one provisioner instance above.
+        foreach (var indexName in indexDefinitions.Keys)
+        {
+            _services.AddReadinessProbe(sp =>
+            {
+                var provisioner = (MeilisearchIndexProvisioner)sp.GetRequiredKeyedService<ISearchIndexProvisioner>(
+                    SearchWellKnown.MeilisearchProviderName);
+                return new SearchIndexReadinessProbe(SearchWellKnown.MeilisearchProviderName, indexName, provisioner.ProbeAsync);
+            });
+        }
 
         _services.AddKeyedSingleton<ISearchProviderDescriptor>(
             SearchWellKnown.MeilisearchProviderName,

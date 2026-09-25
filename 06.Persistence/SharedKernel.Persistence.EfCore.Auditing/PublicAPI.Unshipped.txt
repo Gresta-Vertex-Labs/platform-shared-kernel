@@ -192,17 +192,6 @@ SharedKernel.Persistence.EfCore.Auditing.AuditSealerOptions.Enabled.get -> bool
 SharedKernel.Persistence.EfCore.Auditing.AuditSealerOptions.Enabled.set -> void
 SharedKernel.Persistence.EfCore.Auditing.AuditSealerOptions.Interval.get -> System.TimeSpan
 SharedKernel.Persistence.EfCore.Auditing.AuditSealerOptions.Interval.set -> void
-SharedKernel.Persistence.EfCore.Auditing.AuditSealingHealth
-SharedKernel.Persistence.EfCore.Auditing.AuditSealingHealth.<Clone>$() -> SharedKernel.Persistence.EfCore.Auditing.AuditSealingHealth!
-SharedKernel.Persistence.EfCore.Auditing.AuditSealingHealth.AuditSealingHealth(long UnsealedRecords, System.DateTimeOffset? OldestUnsealedOccurredOn, System.TimeSpan Lag) -> void
-SharedKernel.Persistence.EfCore.Auditing.AuditSealingHealth.Deconstruct(out long UnsealedRecords, out System.DateTimeOffset? OldestUnsealedOccurredOn, out System.TimeSpan Lag) -> void
-SharedKernel.Persistence.EfCore.Auditing.AuditSealingHealth.Equals(SharedKernel.Persistence.EfCore.Auditing.AuditSealingHealth? other) -> bool
-SharedKernel.Persistence.EfCore.Auditing.AuditSealingHealth.Lag.get -> System.TimeSpan
-SharedKernel.Persistence.EfCore.Auditing.AuditSealingHealth.Lag.init -> void
-SharedKernel.Persistence.EfCore.Auditing.AuditSealingHealth.OldestUnsealedOccurredOn.get -> System.DateTimeOffset?
-SharedKernel.Persistence.EfCore.Auditing.AuditSealingHealth.OldestUnsealedOccurredOn.init -> void
-SharedKernel.Persistence.EfCore.Auditing.AuditSealingHealth.UnsealedRecords.get -> long
-SharedKernel.Persistence.EfCore.Auditing.AuditSealingHealth.UnsealedRecords.init -> void
 SharedKernel.Persistence.EfCore.Auditing.AuditSelfCheckMode
 SharedKernel.Persistence.EfCore.Auditing.AuditSelfCheckMode.Fail = 2 -> SharedKernel.Persistence.EfCore.Auditing.AuditSelfCheckMode
 SharedKernel.Persistence.EfCore.Auditing.AuditSelfCheckMode.Off = 0 -> SharedKernel.Persistence.EfCore.Auditing.AuditSelfCheckMode
@@ -247,8 +236,6 @@ SharedKernel.Persistence.EfCore.Auditing.IAuditRecordAuthenticator.ComputeMacAsy
 SharedKernel.Persistence.EfCore.Auditing.IAuditRecordAuthenticator.FindKeyAsync(string! keyId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Persistence.EfCore.Auditing.AuditKeyDescriptor?>
 SharedKernel.Persistence.EfCore.Auditing.IAuditRecordAuthenticator.GetCurrentKeyAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Persistence.EfCore.Auditing.AuditKeyDescriptor>
 SharedKernel.Persistence.EfCore.Auditing.IAuditRecordAuthenticator.VerifyMacAsync(string! keyId, System.ReadOnlyMemory<byte> message, System.ReadOnlyMemory<byte> mac, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<bool>
-SharedKernel.Persistence.EfCore.Auditing.IAuditSealingProbe
-SharedKernel.Persistence.EfCore.Auditing.IAuditSealingProbe.ProbeAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Persistence.EfCore.Auditing.AuditSealingHealth!>!
 SharedKernel.Persistence.EfCore.AuditImmutabilityMigrationBuilderExtensions
 const SharedKernel.Persistence.EfCore.Auditing.AuditChainIntegrityException.ErrorCode = "persistence.audit_chain_not_intact" -> string!
 const SharedKernel.Persistence.EfCore.Auditing.AuditFieldLimits.Action = 200 -> int
@@ -290,9 +277,6 @@ override SharedKernel.Persistence.EfCore.Auditing.AuditResealResult.ToString() -
 override SharedKernel.Persistence.EfCore.Auditing.AuditSealPassResult.Equals(object? obj) -> bool
 override SharedKernel.Persistence.EfCore.Auditing.AuditSealPassResult.GetHashCode() -> int
 override SharedKernel.Persistence.EfCore.Auditing.AuditSealPassResult.ToString() -> string!
-override SharedKernel.Persistence.EfCore.Auditing.AuditSealingHealth.Equals(object? obj) -> bool
-override SharedKernel.Persistence.EfCore.Auditing.AuditSealingHealth.GetHashCode() -> int
-override SharedKernel.Persistence.EfCore.Auditing.AuditSealingHealth.ToString() -> string!
 static SharedKernel.Persistence.EfCore.Auditing.AuditChainCheckpoint.operator !=(SharedKernel.Persistence.EfCore.Auditing.AuditChainCheckpoint? left, SharedKernel.Persistence.EfCore.Auditing.AuditChainCheckpoint? right) -> bool
 static SharedKernel.Persistence.EfCore.Auditing.AuditChainCheckpoint.operator ==(SharedKernel.Persistence.EfCore.Auditing.AuditChainCheckpoint? left, SharedKernel.Persistence.EfCore.Auditing.AuditChainCheckpoint? right) -> bool
 static SharedKernel.Persistence.EfCore.Auditing.AuditChainVerificationResult.operator !=(SharedKernel.Persistence.EfCore.Auditing.AuditChainVerificationResult? left, SharedKernel.Persistence.EfCore.Auditing.AuditChainVerificationResult? right) -> bool
@@ -313,8 +297,6 @@ static SharedKernel.Persistence.EfCore.Auditing.AuditResealResult.operator !=(Sh
 static SharedKernel.Persistence.EfCore.Auditing.AuditResealResult.operator ==(SharedKernel.Persistence.EfCore.Auditing.AuditResealResult? left, SharedKernel.Persistence.EfCore.Auditing.AuditResealResult? right) -> bool
 static SharedKernel.Persistence.EfCore.Auditing.AuditSealPassResult.operator !=(SharedKernel.Persistence.EfCore.Auditing.AuditSealPassResult? left, SharedKernel.Persistence.EfCore.Auditing.AuditSealPassResult? right) -> bool
 static SharedKernel.Persistence.EfCore.Auditing.AuditSealPassResult.operator ==(SharedKernel.Persistence.EfCore.Auditing.AuditSealPassResult? left, SharedKernel.Persistence.EfCore.Auditing.AuditSealPassResult? right) -> bool
-static SharedKernel.Persistence.EfCore.Auditing.AuditSealingHealth.operator !=(SharedKernel.Persistence.EfCore.Auditing.AuditSealingHealth? left, SharedKernel.Persistence.EfCore.Auditing.AuditSealingHealth? right) -> bool
-static SharedKernel.Persistence.EfCore.Auditing.AuditSealingHealth.operator ==(SharedKernel.Persistence.EfCore.Auditing.AuditSealingHealth? left, SharedKernel.Persistence.EfCore.Auditing.AuditSealingHealth? right) -> bool
 static SharedKernel.Persistence.AuditLedgerServiceCollectionExtensions.AddSharedKernelAuditLedger(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfiguration! configuration) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 static SharedKernel.Persistence.EfCorePersistenceBuilderAuditingExtensions.UseAuditTrail<TContext>(this SharedKernel.Persistence.EfCorePersistenceBuilder<TContext!>! builder) -> SharedKernel.Persistence.EfCorePersistenceBuilder<TContext!>!
 static SharedKernel.Persistence.EfCore.AuditImmutabilityMigrationBuilderExtensions.CreateAuditLedgerTable(this Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder! migrationBuilder, string? runtimeRole = null, string? sealerRole = null) -> Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder!
@@ -329,3 +311,10 @@ SharedKernel.Persistence.EfCore.Auditing.AuditChainIntegrityException.TenantId.g
 SharedKernel.Persistence.EfCore.Auditing.AuditRecord.TenantId.get -> SharedKernel.Execution.Tenancy.TenantId?
 SharedKernel.Persistence.EfCore.Auditing.IAuditCheckpointService.CreateCheckpointForChainAsync(SharedKernel.Execution.Tenancy.TenantId? tenantId, string! resourceType, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Persistence.EfCore.Auditing.AuditChainCheckpoint!>!
 SharedKernel.Persistence.EfCore.Auditing.IAuditCheckpointSink.GetLatestAsync(SharedKernel.Execution.Tenancy.TenantId? tenantId, string! resourceType, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Persistence.EfCore.Auditing.AuditChainCheckpoint?>!
+SharedKernel.Persistence.EfCore.Auditing.AuditSealerOptions.MaxReadyLag.get -> System.TimeSpan
+SharedKernel.Persistence.EfCore.Auditing.AuditSealerOptions.MaxReadyLag.set -> void
+SharedKernel.Persistence.EfCore.Auditing.AuditSealingReadiness
+const SharedKernel.Persistence.EfCore.Auditing.AuditSealingReadiness.LagKey = "Lag" -> string!
+const SharedKernel.Persistence.EfCore.Auditing.AuditSealingReadiness.OldestUnsealedOccurredOnKey = "OldestUnsealedOccurredOn" -> string!
+const SharedKernel.Persistence.EfCore.Auditing.AuditSealingReadiness.ProbeName = "audit-sealing" -> string!
+const SharedKernel.Persistence.EfCore.Auditing.AuditSealingReadiness.UnsealedRecordsKey = "UnsealedRecords" -> string!

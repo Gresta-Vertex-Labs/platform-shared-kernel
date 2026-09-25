@@ -1,59 +1,59 @@
+using System.Diagnostics;
 using MassTransit.Monitoring;
 using MassTransit.Transports;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
-using SharedKernel.Messaging.Abstractions.MessageBus;
+using SharedKernel.Primitives.Health;
 
 namespace SharedKernel.Messaging.MassTransit.MessageBus;
 
 /// <summary>
-/// <see cref="IMessageBusProbe"/> implementation querying MassTransit's own bus-health surface —
-/// <see cref="BusHealthCheck"/> — against the real, already-registered <see cref="IBusInstance"/>
-/// this domain's <c>MessagingBusBuilder</c> builds for the consuming service.
+/// The message bus's <see cref="IReadinessProbe"/>, named <see cref="MessagingReadinessProbeNames.Bus"/>. It
+/// queries MassTransit's own bus-health surface — <see cref="BusHealthCheck"/> — against the real,
+/// already-registered <see cref="IBusInstance"/> this domain's <c>MessagingBusBuilder</c> builds.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <see cref="IBusInstance"/> is registered as a singleton by <c>AddMassTransit</c> — this type
-/// never constructs an independent, second transport connection. <see cref="BusHealthCheck"/> is
-/// MassTransit's own shipped <c>Microsoft.Extensions.Diagnostics.HealthChecks.IHealthCheck</c>
-/// implementation (the same type MassTransit wires into a host's own <c>AddHealthChecks()</c>
-/// pipeline via <c>ConfigureBusHealthCheckServiceOptions</c>); this type consumes it directly as an
-/// implementation detail rather than re-implementing bus-readiness logic, and never implements
-/// <c>IHealthCheck</c> itself — <c>07.Messaging</c> ships no <c>IHealthCheck</c>.
+/// <see cref="IBusInstance"/> is registered as a singleton by <c>AddMassTransit</c> — this type never
+/// constructs an independent, second transport connection. <see cref="BusHealthCheck"/> is consumed as an
+/// implementation detail rather than re-implementing bus-readiness logic.
 /// </para>
-/// <para>
-/// Registered as a singleton by <c>MessagingBusBuilder.Build()</c> unconditionally.
-/// </para>
+/// <para>Registered as a singleton by <c>MessagingBusBuilder.Build()</c> unconditionally.</para>
 /// </remarks>
-internal sealed class MassTransitMessageBusProbe : IMessageBusProbe
+internal sealed class MassTransitMessageBusProbe : IReadinessProbe
 {
     // Registration name required by BusHealthCheck.CheckHealthAsync (HealthCheckContext.Registration
-    // must be non-null — see the "MassTransit API notes" entry for this discovery). Never surfaced
-    // externally; this probe is not itself registered as an ASP.NET Core IHealthCheck.
+    // must be non-null). Never surfaced externally.
     private const string RegistrationName = "masstransit-bus";
 
-    private readonly IBusInstance _busInstance;
+    private readonly IServiceProvider _services;
 
-    public MassTransitMessageBusProbe(IBusInstance busInstance)
+    public MassTransitMessageBusProbe(IServiceProvider services)
     {
-        _busInstance = busInstance;
+        _services = services;
     }
 
     /// <inheritdoc />
-    public async Task<MessageBusHealth> ProbeAsync(CancellationToken ct)
+    public string Name => MessagingReadinessProbeNames.Bus;
+
+    /// <inheritdoc />
+    public async Task<ReadinessReport> ProbeAsync(CancellationToken cancellationToken = default)
     {
-        var check = new BusHealthCheck(_busInstance);
+        var started = Stopwatch.GetTimestamp();
+        // Resolved here, not injected: a host constructs every probe just to read its name.
+        var check = new BusHealthCheck(_services.GetRequiredService<IBusInstance>());
         var registration = new HealthCheckRegistration(RegistrationName, check, failureStatus: null, tags: null);
         var context = new HealthCheckContext { Registration = registration };
 
-        var result = await check.CheckHealthAsync(context, ct).ConfigureAwait(false);
+        var result = await check.CheckHealthAsync(context, cancellationToken).ConfigureAwait(false);
+        var latency = Stopwatch.GetElapsedTime(started);
 
         if (result.Status == HealthStatus.Healthy)
-            return new MessageBusHealth(IsHealthy: true, Description: null);
+            return ReadinessReport.Healthy(latency: latency);
 
         var description = result.Description
-            ?? result.Exception?.Message
             ?? $"Message bus health status is {result.Status}.";
 
-        return new MessageBusHealth(IsHealthy: false, Description: description);
+        return ReadinessReport.Unhealthy(description, latency: latency);
     }
 }

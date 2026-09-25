@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Localization;
 using Microsoft.Extensions.Options;
+using SharedKernel.Primitives.Health;
 using SharedKernel.Compression;
 using SharedKernel.Compression.Extensions;
 using SharedKernel.Configuration.Extensions;
@@ -912,7 +913,7 @@ public sealed class ConsumerDependencyGraphTests
 
         Assert.IsType<AzureKeyVaultEncryptionKeyProvider>(asKeyProvider);
         Assert.Same(asKeyProvider, provider.GetRequiredService<IEnvelopeEncryptionProvider>());
-        Assert.Same(asKeyProvider, provider.GetRequiredService<IEncryptionKeyProviderProbe>());
+        Assert.Same(asKeyProvider, provider.GetRequiredReadinessProbe(AzureKeyVaultEncryptionKeyProvider.ReadinessProbeName));
         // A key-service provider never offers synchronous key access.
         Assert.Null(provider.GetService<ISynchronousEncryptionKeyProvider>());
     }

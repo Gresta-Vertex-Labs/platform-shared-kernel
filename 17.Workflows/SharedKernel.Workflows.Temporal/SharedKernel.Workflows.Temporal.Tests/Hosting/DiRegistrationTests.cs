@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using SharedKernel.Primitives.Health;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Workflows.Temporal.Authoring;
 using SharedKernel.Workflows.Temporal.Dispatch;
@@ -16,7 +17,7 @@ namespace SharedKernel.Workflows.Temporal.Tests.Hosting;
 
 /// <summary>
 /// T-07 — DI registration lifetimes. <see cref="IWorkflowDispatcher"/> resolves scoped;
-/// <see cref="ITemporalClient"/>/<see cref="IWorkflowIdFactory"/>/<see cref="IWorkflowServiceProbe"/>
+/// <see cref="ITemporalClient"/>/<see cref="IWorkflowIdFactory"/>/the workflow readiness probe
 /// resolve as singletons; activities resolve scoped;
 /// <see cref="ITemporalRawClientAccessor"/> does not resolve without
 /// <see cref="ITemporalWorkflowsBuilder.AllowRawClientAccess"/> and its <c>Warning</c> 17012 is
@@ -108,13 +109,13 @@ public sealed class DiRegistrationTests
     }
 
     [Fact]
-    public void IWorkflowServiceProbe_ResolvesSingleton()
+    public void WorkflowReadinessProbe_ResolvesSingleton()
     {
         using ServiceProvider provider = ClientOnlyServices().BuildServiceProvider();
 
-        var a = provider.GetRequiredService<IWorkflowServiceProbe>();
+        var a = provider.GetRequiredReadinessProbe(WorkflowReadiness.ProbeName);
         using IServiceScope scope = provider.CreateScope();
-        var b = scope.ServiceProvider.GetRequiredService<IWorkflowServiceProbe>();
+        var b = scope.ServiceProvider.GetRequiredReadinessProbe(WorkflowReadiness.ProbeName);
 
         ReferenceEquals(a, b).Should().BeTrue();
     }

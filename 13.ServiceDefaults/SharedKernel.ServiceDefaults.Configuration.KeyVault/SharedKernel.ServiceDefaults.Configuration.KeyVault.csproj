@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <SharedKernelTier>Host</SharedKernelTier>
-    <Description>Azure Key Vault as an IConfiguration source for Platform.SharedKernel microservices: AddSharedKernelKeyVaultConfiguration adds a vault as a configuration provider, authenticating with DefaultAzureCredential unless a credential is supplied. Carries no SharedKernel dependency and no key-provider code; for Key Vault as an encryption-key provider add SharedKernel.ServiceDefaults.Cryptography.KeyVault. Split out of SharedKernel.ServiceDefaults (WO-084).</Description>
+    <Description>Azure Key Vault as an IConfiguration source for Platform.SharedKernel microservices: AddSharedKernelKeyVaultConfiguration adds a vault as a configuration provider, authenticating with DefaultAzureCredential unless a credential is supplied. Carries no SharedKernel dependency and no key-provider code; for Key Vault as an encryption-key provider use SharedKernel.Cryptography.KeyVault.Azure (AddAzureKeyVaultEncryption). Split out of SharedKernel.ServiceDefaults (WO-084).</Description>
     <PackageTags>shared-kernel;service-defaults;azure-key-vault;configuration;secrets</PackageTags>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <!-- Per-project: the SDK assigns false before the Directory.Build.targets default is evaluated. -->

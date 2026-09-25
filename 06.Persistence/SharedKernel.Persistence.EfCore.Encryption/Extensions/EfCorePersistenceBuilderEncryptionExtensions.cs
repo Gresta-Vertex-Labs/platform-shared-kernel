@@ -17,6 +17,7 @@ using SharedKernel.Persistence.EfCore.Encryption.Maintenance;
 using SharedKernel.Persistence.EfCore.Encryption.Metadata;
 using SharedKernel.Persistence.EfCore.Encryption.TenantKeys;
 using SharedKernel.Persistence.EfCore.Extensibility;
+using SharedKernel.Primitives.Health;
 
 namespace SharedKernel.Persistence;
 
@@ -86,7 +87,7 @@ public static class EfCorePersistenceBuilderEncryptionExtensions
         services.AddSingleton<IPersistenceModelConventionFactory, EncryptionModelConventionFactory>();
 
         services.AddHostedService<KeyRingRefreshHostedService>();
-        services.AddKeyedSingleton<IEncryptionKeyProviderProbe, FieldEncryptionKeyRingProbe>(FieldEncryptionServiceKeys.KeyRingProbe);
+        services.AddReadinessProbe<FieldEncryptionKeyRingProbe>();
 
         return settings;
     }

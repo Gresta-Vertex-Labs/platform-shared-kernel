@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharedKernel.Configuration.Extensions;
 using SharedKernel.Cryptography.Symmetric;
+using SharedKernel.Primitives.Health;
 using SharedKernel.Workflows.Temporal.Authoring;
 using SharedKernel.Workflows.Temporal.Codec;
 using SharedKernel.Workflows.Temporal.Configuration;
@@ -48,7 +49,7 @@ internal sealed class TemporalWorkflowsBuilder : ITemporalWorkflowsBuilder
         services.AddValidatedOptions<TemporalOptions>(_section);
         services.TryAddSingleton<IWorkflowIdFactory, WorkflowIdFactory>();
         services.TryAddScoped<IWorkflowDispatcher, WorkflowDispatcher>();
-        services.TryAddSingleton<IWorkflowServiceProbe, WorkflowServiceProbe>();
+        services.AddReadinessProbe<WorkflowServiceProbe>();
     }
 
     /// <inheritdoc />

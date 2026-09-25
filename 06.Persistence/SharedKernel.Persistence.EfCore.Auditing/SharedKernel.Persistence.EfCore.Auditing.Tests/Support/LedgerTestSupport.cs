@@ -13,6 +13,7 @@ using SharedKernel.Persistence.Abstractions.Connections;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.Abstractions.Coordination;
 using SharedKernel.Primitives.Clocks;
+using SharedKernel.Primitives.Health;
 using SharedKernel.Testing.Containers;
 
 namespace SharedKernel.Persistence.EfCore.Auditing.Tests.Support;
@@ -239,6 +240,12 @@ public sealed class LedgerHost : IAsyncDisposable
     }
 
     public T Get<T>() where T : notnull => Provider.GetRequiredService<T>();
+
+    public Task<ReadinessReport> ProbeSealingAsync() =>
+        Provider.GetRequiredReadinessProbe(AuditSealingReadiness.ProbeName).ProbeAsync();
+
+    public async Task<long> UnsealedRecordsAsync() =>
+        (long)(await ProbeSealingAsync()).Data[AuditSealingReadiness.UnsealedRecordsKey];
 
     public async Task<T> InScopeAsync<T>(Func<IServiceProvider, Task<T>> action)
     {

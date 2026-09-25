@@ -145,3 +145,5 @@ virtual SharedKernel.Messaging.MassTransit.Consumers.ConsumerDefinitionBase<TCon
 virtual SharedKernel.Messaging.MassTransit.Consumers.ConsumerDefinitionBase<TConsumer>.PrefetchCount.get -> int?
 SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder.WithTenantContext() -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
 SharedKernel.Messaging.MassTransit.HeaderPropagation.TenantHeaderPropagator.TenantHeaderPropagator(SharedKernel.Execution.Context.IRequestContextAccessor! accessor) -> void
+SharedKernel.Messaging.MassTransit.MessageBus.MessagingReadinessProbeNames
+const SharedKernel.Messaging.MassTransit.MessageBus.MessagingReadinessProbeNames.Bus = "messaging" -> string!

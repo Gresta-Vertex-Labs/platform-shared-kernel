@@ -312,11 +312,8 @@
     <PackageVersion Include="SharedKernel.Search.Meilisearch" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Security.Abstractions" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.ServiceDefaults" Version="$(SharedKernelPackageVersion)" />
-    <PackageVersion Include="SharedKernel.ServiceDefaults.Messaging" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.ServiceDefaults.Persistence" Version="$(SharedKernelPackageVersion)" />
-    <PackageVersion Include="SharedKernel.ServiceDefaults.Search" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.ServiceDefaults.Security" Version="$(SharedKernelPackageVersion)" />
-    <PackageVersion Include="SharedKernel.ServiceDefaults.Storage" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Storage.Abstractions" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Storage.Obs" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Storage.S3" Version="$(SharedKernelPackageVersion)" />

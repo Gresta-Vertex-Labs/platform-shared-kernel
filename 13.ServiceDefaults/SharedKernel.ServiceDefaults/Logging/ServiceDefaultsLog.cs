@@ -42,4 +42,14 @@ internal static partial class ServiceDefaultsLog
         Level = LogLevel.Information,
         Message = "Health check registered (name: {HealthCheckName}, tags: {Tags}).")]
     public static partial void HealthCheckRegistered(ILogger logger, string healthCheckName, string tags);
+
+    /// <summary>
+    /// Logged when a readiness probe throws instead of returning an unhealthy report. Only the exception type is
+    /// logged, matching what the health endpoint shows.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 13005,
+        Level = LogLevel.Warning,
+        Message = "Readiness probe {ProbeName} threw {ExceptionType} instead of reporting unhealthy.")]
+    public static partial void ReadinessProbeThrew(ILogger logger, string probeName, string exceptionType);
 }

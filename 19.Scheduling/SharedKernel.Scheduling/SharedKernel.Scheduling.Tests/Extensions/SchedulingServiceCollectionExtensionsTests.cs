@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using SharedKernel.Primitives.Health;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Scheduling.Extensions;
 using SharedKernel.Scheduling.Options;
@@ -52,7 +53,7 @@ public sealed class SchedulingServiceCollectionExtensionsTests
         await act.Should().NotThrowAsync();
 
         host.Services.GetRequiredService<IScheduledJobRegistry>().Should().NotBeNull();
-        host.Services.GetRequiredService<ISchedulerServiceProbe>().Should().NotBeNull();
+        host.Services.GetRequiredReadinessProbe(SchedulerReadiness.ProbeName).Should().NotBeNull();
 
         await host.StopAsync();
     }

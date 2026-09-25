@@ -14,9 +14,6 @@ override SharedKernel.Messaging.Abstractions.Faults.FaultExceptionInfo.Equals(ob
 override SharedKernel.Messaging.Abstractions.Faults.FaultExceptionInfo.GetHashCode() -> int
 override SharedKernel.Messaging.Abstractions.Faults.FaultExceptionInfo.ToString() -> string!
 override SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation.GetHashCode() -> int
-override SharedKernel.Messaging.Abstractions.MessageBus.MessageBusHealth.Equals(object? obj) -> bool
-override SharedKernel.Messaging.Abstractions.MessageBus.MessageBusHealth.GetHashCode() -> int
-override SharedKernel.Messaging.Abstractions.MessageBus.MessageBusHealth.ToString() -> string!
 SharedKernel.Messaging.Abstractions.Context.IInboundMessageContextAccessor
 SharedKernel.Messaging.Abstractions.Context.IInboundMessageContextAccessor.Current.get -> SharedKernel.Execution.Context.IRequestContext?
 SharedKernel.Messaging.Abstractions.Context.MessageContextHeaders
@@ -83,19 +80,8 @@ SharedKernel.Messaging.Abstractions.MessageBus.IMessageBus
 SharedKernel.Messaging.Abstractions.MessageBus.IMessageBus.PublishAsync<T>(T! message, System.Action<SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext!>! configure, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
 SharedKernel.Messaging.Abstractions.MessageBus.IMessageBus.PublishAsync<T>(T! message, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
 SharedKernel.Messaging.Abstractions.MessageBus.IMessageBus.SendAsync<T>(T! command, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
-SharedKernel.Messaging.Abstractions.MessageBus.IMessageBusProbe
-SharedKernel.Messaging.Abstractions.MessageBus.IMessageBusProbe.ProbeAsync(System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<SharedKernel.Messaging.Abstractions.MessageBus.MessageBusHealth!>!
 SharedKernel.Messaging.Abstractions.MessageBus.ISendEndpointResolver
 SharedKernel.Messaging.Abstractions.MessageBus.ISendEndpointResolver.Resolve<T>() -> System.Uri!
-SharedKernel.Messaging.Abstractions.MessageBus.MessageBusHealth
-SharedKernel.Messaging.Abstractions.MessageBus.MessageBusHealth.<Clone>$() -> SharedKernel.Messaging.Abstractions.MessageBus.MessageBusHealth!
-SharedKernel.Messaging.Abstractions.MessageBus.MessageBusHealth.Deconstruct(out bool IsHealthy, out string? Description) -> void
-SharedKernel.Messaging.Abstractions.MessageBus.MessageBusHealth.Description.get -> string?
-SharedKernel.Messaging.Abstractions.MessageBus.MessageBusHealth.Description.init -> void
-SharedKernel.Messaging.Abstractions.MessageBus.MessageBusHealth.Equals(SharedKernel.Messaging.Abstractions.MessageBus.MessageBusHealth? other) -> bool
-SharedKernel.Messaging.Abstractions.MessageBus.MessageBusHealth.IsHealthy.get -> bool
-SharedKernel.Messaging.Abstractions.MessageBus.MessageBusHealth.IsHealthy.init -> void
-SharedKernel.Messaging.Abstractions.MessageBus.MessageBusHealth.MessageBusHealth(bool IsHealthy, string? Description) -> void
 SharedKernel.Messaging.Abstractions.Options.MessagingOptions
 SharedKernel.Messaging.Abstractions.Options.MessagingOptions.MessagingOptions() -> void
 SharedKernel.Messaging.Abstractions.Options.MessagingOptions.ServiceName.get -> string!
@@ -118,8 +104,6 @@ static SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation.In
 static SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation.operator !=(SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation left, SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation right) -> bool
 static SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation.operator ==(SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation left, SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation right) -> bool
 static SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation.Started(string! reservationToken) -> SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation
-static SharedKernel.Messaging.Abstractions.MessageBus.MessageBusHealth.operator !=(SharedKernel.Messaging.Abstractions.MessageBus.MessageBusHealth? left, SharedKernel.Messaging.Abstractions.MessageBus.MessageBusHealth? right) -> bool
-static SharedKernel.Messaging.Abstractions.MessageBus.MessageBusHealth.operator ==(SharedKernel.Messaging.Abstractions.MessageBus.MessageBusHealth? left, SharedKernel.Messaging.Abstractions.MessageBus.MessageBusHealth? right) -> bool
 ~override SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation.Equals(object obj) -> bool
 ~override SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation.ToString() -> string
 SharedKernel.Messaging.Abstractions.Context.MessageRequestContext.MessageRequestContext(SharedKernel.Execution.Tenancy.TenantId? tenantId, string? userId = null, SharedKernel.Execution.Context.ActorKind actorKind = SharedKernel.Execution.Context.ActorKind.Anonymous, string? clientId = null) -> void

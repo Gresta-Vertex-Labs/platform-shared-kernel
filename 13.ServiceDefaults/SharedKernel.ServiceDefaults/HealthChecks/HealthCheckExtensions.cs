@@ -17,7 +17,7 @@ public static class HealthCheckExtensions
     /// <summary>
     /// Registers <see cref="StartupGate"/> and <see cref="StartupGateHealthCheck"/> and returns
     /// the <see cref="IHealthChecksBuilder"/> so callers can chain opt-in, dependency-specific
-    /// health checks (e.g. <c>AddRedisHealthCheck</c>, <c>AddDatabaseReadinessCheck</c>).
+    /// health checks (e.g. <see cref="ReadinessHealthCheckExtensions.AddSharedKernelReadiness"/>, <c>AddDatabaseReadinessCheck</c>).
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <returns>
@@ -25,7 +25,8 @@ public static class HealthCheckExtensions
     /// </returns>
     /// <remarks>
     /// Registers <b>only</b> base infrastructure — never a dependency-specific check. Every
-    /// dependency-specific check (database, Redis, messaging, cache) is an explicit opt-in call
+    /// dependency-specific check — every provider readiness probe through <c>AddSharedKernelReadiness()</c>, the
+    /// database checks of <c>SharedKernel.ServiceDefaults.Persistence</c> — is an explicit opt-in call
     /// on the returned builder.
     /// </remarks>
     public static IHealthChecksBuilder AddSharedKernelHealthChecks(this IServiceCollection services)

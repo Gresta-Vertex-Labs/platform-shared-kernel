@@ -1,4 +1,5 @@
 using SharedKernel.Presentation.WebApi.Results;
+using SharedKernel.Primitives.Health;
 using SharedKernel.Search.Abstractions.Abstractions;
 using SharedKernel.Search.Abstractions.Models;
 
@@ -126,25 +127,28 @@ public static class OperationsEndpoints
                 : Results.Json(outcomes, statusCode: StatusCodes.Status503ServiceUnavailable);
         });
 
-        // Readiness for one index on one named provider, as 13.ServiceDefaults' health check consumes it.
+        // Readiness for one index on one named provider — the same probe /health/ready runs.
         //
-        // The provider is addressed by key rather than guessed at. Iterating every registered provisioner
-        // and returning the first that answers would "work" here and be wrong in principle: it would
-        // report an index as healthy because some *other* engine happens to have one by the same name.
+        // The provider is addressed by name rather than guessed at. Each provider registered one probe per
+        // index, named search-{provider}-{index}, so asking by that name can never report an index healthy
+        // because some *other* engine happens to have one by the same name.
         ops.MapGet("/probe/{providerKey}/{indexName}", async (
             string providerKey,
             string indexName,
             IServiceProvider services,
             CancellationToken ct) =>
         {
-            var provisioner = services.GetKeyedService<ISearchIndexProvisioner>(providerKey);
-            if (provisioner is null)
+            var probeName = SearchIndexReadinessProbe.ProbeNameFor(providerKey, indexName);
+            var probe = services.GetServices<IReadinessProbe>().FirstOrDefault(p => p.Name == probeName);
+            if (probe is null)
             {
-                return Results.NotFound(new { providerKey, reason = "no provider is registered under that key" });
+                return Results.NotFound(new { providerKey, indexName, reason = "no readiness probe is registered for that provider and index" });
             }
 
-            var health = await provisioner.ProbeAsync(indexName, ct);
-            return health.ToProblemDetailsResult(h => Results.Ok(h));
+            var report = await probe.ProbeAsync(ct);
+            return report.IsHealthy
+                ? Results.Ok(report)
+                : Results.Json(report, statusCode: StatusCodes.Status503ServiceUnavailable);
         });
 
         // Proof that search telemetry is live. Both provider packages declared an ActivitySource and a

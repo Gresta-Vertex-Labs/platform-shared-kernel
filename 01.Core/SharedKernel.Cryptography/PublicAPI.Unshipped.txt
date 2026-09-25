@@ -176,20 +176,9 @@ SharedKernel.Cryptography.Symmetric.EncryptedPayload.KeyId.get -> string!
 SharedKernel.Cryptography.Symmetric.EncryptedPayload.Nonce.get -> System.ReadOnlySpan<byte>
 SharedKernel.Cryptography.Symmetric.EncryptedPayload.Tag.get -> System.ReadOnlySpan<byte>
 SharedKernel.Cryptography.Symmetric.EncryptedPayload.ToBytes() -> byte[]!
-SharedKernel.Cryptography.Symmetric.EncryptionKeyProviderHealth
-SharedKernel.Cryptography.Symmetric.EncryptionKeyProviderHealth.<Clone>$() -> SharedKernel.Cryptography.Symmetric.EncryptionKeyProviderHealth!
-SharedKernel.Cryptography.Symmetric.EncryptionKeyProviderHealth.Deconstruct(out bool IsHealthy, out string? Description) -> void
-SharedKernel.Cryptography.Symmetric.EncryptionKeyProviderHealth.Description.get -> string?
-SharedKernel.Cryptography.Symmetric.EncryptionKeyProviderHealth.Description.init -> void
-SharedKernel.Cryptography.Symmetric.EncryptionKeyProviderHealth.EncryptionKeyProviderHealth(bool IsHealthy, string? Description) -> void
-SharedKernel.Cryptography.Symmetric.EncryptionKeyProviderHealth.Equals(SharedKernel.Cryptography.Symmetric.EncryptionKeyProviderHealth? other) -> bool
-SharedKernel.Cryptography.Symmetric.EncryptionKeyProviderHealth.IsHealthy.get -> bool
-SharedKernel.Cryptography.Symmetric.EncryptionKeyProviderHealth.IsHealthy.init -> void
 SharedKernel.Cryptography.Symmetric.IEncryptionKeyProvider
 SharedKernel.Cryptography.Symmetric.IEncryptionKeyProvider.GetCurrentKeyAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Cryptography.Symmetric.CryptographicKey!>
 SharedKernel.Cryptography.Symmetric.IEncryptionKeyProvider.GetKeyAsync(string! keyId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Cryptography.Symmetric.CryptographicKey?>
-SharedKernel.Cryptography.Symmetric.IEncryptionKeyProviderProbe
-SharedKernel.Cryptography.Symmetric.IEncryptionKeyProviderProbe.ProbeAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Cryptography.Symmetric.EncryptionKeyProviderHealth!>!
 SharedKernel.Cryptography.Symmetric.ISymmetricEncryptionService
 SharedKernel.Cryptography.Symmetric.ISymmetricEncryptionService.DecryptAsync(SharedKernel.Cryptography.Symmetric.EncryptedPayload! payload, System.ReadOnlyMemory<byte> associatedData, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Primitives.Results.Result<byte[]!>!>
 SharedKernel.Cryptography.Symmetric.ISymmetricEncryptionService.DecryptToStringAsync(string! encoded, System.ReadOnlyMemory<byte> associatedData, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Primitives.Results.Result<string!>!>
@@ -307,9 +296,6 @@ override SharedKernel.Cryptography.Envelope.EnvelopePayload.ToString() -> string
 override SharedKernel.Cryptography.Hashing.PhcHashString.ToString() -> string!
 override SharedKernel.Cryptography.Symmetric.CryptographicKey.ToString() -> string!
 override SharedKernel.Cryptography.Symmetric.EncryptedPayload.ToString() -> string!
-override SharedKernel.Cryptography.Symmetric.EncryptionKeyProviderHealth.Equals(object? obj) -> bool
-override SharedKernel.Cryptography.Symmetric.EncryptionKeyProviderHealth.GetHashCode() -> int
-override SharedKernel.Cryptography.Symmetric.EncryptionKeyProviderHealth.ToString() -> string!
 override SharedKernel.Cryptography.Totp.TotpParameters.Equals(object? obj) -> bool
 override SharedKernel.Cryptography.Totp.TotpParameters.GetHashCode() -> int
 override SharedKernel.Cryptography.Totp.TotpParameters.ToString() -> string!
@@ -340,8 +326,6 @@ static SharedKernel.Cryptography.Signing.SigningKey.GetEcdsaAlgorithm(System.Sec
 static SharedKernel.Cryptography.Signing.SigningKey.GetHashAlgorithm(SharedKernel.Cryptography.Signing.SignatureAlgorithm algorithm) -> System.Security.Cryptography.HashAlgorithmName
 static SharedKernel.Cryptography.Symmetric.EncryptedPayload.TryParse(System.ReadOnlySpan<byte> data, out SharedKernel.Cryptography.Symmetric.EncryptedPayload? payload) -> bool
 static SharedKernel.Cryptography.Symmetric.EncryptedPayload.TryParse(string? encoded, out SharedKernel.Cryptography.Symmetric.EncryptedPayload? payload) -> bool
-static SharedKernel.Cryptography.Symmetric.EncryptionKeyProviderHealth.operator !=(SharedKernel.Cryptography.Symmetric.EncryptionKeyProviderHealth? left, SharedKernel.Cryptography.Symmetric.EncryptionKeyProviderHealth? right) -> bool
-static SharedKernel.Cryptography.Symmetric.EncryptionKeyProviderHealth.operator ==(SharedKernel.Cryptography.Symmetric.EncryptionKeyProviderHealth? left, SharedKernel.Cryptography.Symmetric.EncryptionKeyProviderHealth? right) -> bool
 static SharedKernel.Cryptography.Totp.Base32.Decode(string! text) -> SharedKernel.Primitives.Results.Result<byte[]!>!
 static SharedKernel.Cryptography.Totp.Base32.Encode(System.ReadOnlySpan<byte> data) -> string!
 static SharedKernel.Cryptography.Totp.RecoveryCodeGenerator.Normalize(string! code) -> string!

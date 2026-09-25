@@ -29,7 +29,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// Provider-specific contracts live in the package that implements them:
 /// <c>IRedisChannelService</c> in <c>SharedKernel.Caching.Redis.PubSub</c>,
 /// <c>IRedisHashService</c>/<c>ITypedHashStore&lt;T&gt;</c> in
-/// <c>SharedKernel.Caching.Redis.HashStore</c>, and <c>IRedisConnectionProbe</c> in
+/// <c>SharedKernel.Caching.Redis.HashStore</c>, and the Redis connection's <c>IReadinessProbe</c> in
 /// <c>SharedKernel.Caching.Redis.Core.Health</c>.
 /// </para>
 /// <para>
@@ -167,7 +167,7 @@ public static class RedisTopologyRules
     /// provider-neutral contract has no Redis channel, hash store, FusionCache option, RedLock
     /// handle, or connection health check — those belong to the provider packages
     /// (<c>IRedisChannelService</c> in <c>.Redis.PubSub</c>, <c>IRedisHashService</c>/
-    /// <c>ITypedHashStore&lt;T&gt;</c> in <c>.Redis.HashStore</c>, <c>IRedisConnectionProbe</c> in
+    /// <c>ITypedHashStore&lt;T&gt;</c> in <c>.Redis.HashStore</c>, the connection readiness probe in
     /// <c>.Redis.Core.Health</c>).
     /// </summary>
     private const string ProviderSpecificTypeNamePattern =
@@ -515,7 +515,7 @@ public static class RedisTopologyRules
     /// <c>ITypedHashStore&lt;T&gt;</c> and a <c>ConnectionHealthState</c> enum once lived here that way.
     /// Those contracts now belong to the package that implements them —
     /// <c>SharedKernel.Caching.Redis.PubSub</c> and <c>SharedKernel.Caching.Redis.HashStore</c> — and
-    /// connection health is now <c>IRedisConnectionProbe</c> in <c>SharedKernel.Caching.Redis.Core.Health</c>.
+    /// connection health is now a readiness probe in <c>SharedKernel.Caching.Redis.Core.Health</c>.
     /// </para>
     /// <para>
     /// Matching is a case-sensitive regular expression over the simple type name, so compiler-

@@ -14,7 +14,7 @@ namespace SharedKernel.AI.Abstractions.Abstractions;
 /// never rewrites an incompatible existing definition — a definition conflicting with the live
 /// collection returns <c>IntelligenceErrors.CollectionDefinitionConflict</c>; the remedy is
 /// staging → <c>UpsertManyAsync</c> → <see cref="CutoverAsync"/>. It also persists
-/// <see cref="VectorCollectionDefinition.Fingerprint"/> so <see cref="ProbeAsync"/> can detect drift —
+/// <see cref="VectorCollectionDefinition.Fingerprint"/> so the collection's readiness probe can detect drift —
 /// Qdrant via its own genuine collection-level <c>metadata</c> map (requires a Qdrant server at
 /// v1.16.0 or later — verified empirically against a real server, superseding the earlier assumption
 /// that Qdrant has no collection-level metadata slot and would need a reserved sentinel point), Milvus
@@ -35,10 +35,11 @@ namespace SharedKernel.AI.Abstractions.Abstractions;
 /// <see cref="DeleteCollectionAsync"/>.
 /// </para>
 /// <para>
-/// <b><see cref="ProbeAsync"/> is a primitive, not a health check:</b> <c>10.Intelligence</c> ships no
+/// <b>Readiness is not on this contract:</b> each provider registers one <see cref="VectorCollectionReadinessProbe"/>
+/// per registered collection. <c>10.Intelligence</c> ships no
 /// <c>IHealthCheck</c> implementation and no provider references
-/// <c>Microsoft.Extensions.Diagnostics.HealthChecks</c>. Wiring into <c>AddHealthChecks()</c> is
-/// <c>13.ServiceDefaults</c>'s concern.
+/// <c>Microsoft.Extensions.Diagnostics.HealthChecks</c>. Mapping the probes into <c>AddHealthChecks()</c> is
+/// <c>13.ServiceDefaults</c>'s <c>AddSharedKernelReadiness()</c>.
 /// </para>
 /// </remarks>
 public interface IVectorCollectionProvisioner
@@ -54,7 +55,4 @@ public interface IVectorCollectionProvisioner
 
     /// <summary>Atomically cuts a staging collection over to serve as the live collection.</summary>
     Task<Result> CutoverAsync(VectorCollectionCutoverRequest request, CancellationToken cancellationToken = default);
-
-    /// <summary>Probes the readiness of the collection named <paramref name="collectionName"/>.</summary>
-    Task<Result<VectorCollectionHealth>> ProbeAsync(string collectionName, CancellationToken cancellationToken = default);
 }

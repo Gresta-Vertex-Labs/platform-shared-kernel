@@ -43,7 +43,7 @@ public sealed class SampleHost : WebApplicationFactory<Program>, IAsyncLifetime
     /// silently and successfully.
     /// </para>
     /// <para>
-    /// That is exactly what <c>AddMessagingReadinessCheck()</c> is for: in production Kubernetes
+    /// That is exactly what the bus readiness probe (mapped by <c>AddSharedKernelReadiness()</c>) is for: in production Kubernetes
     /// holds traffic until <c>/health/ready</c> passes. This test suite does the same thing, rather
     /// than sleeping and hoping — a suite that raced the bus would fail a few runs in ten, and the
     /// failure would look like a messaging defect instead of a missing readiness gate.

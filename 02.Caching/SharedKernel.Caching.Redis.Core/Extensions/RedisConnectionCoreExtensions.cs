@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharedKernel.Caching.Redis.Core.Health;
 using SharedKernel.Configuration.Extensions;
+using SharedKernel.Primitives.Health;
 using SharedKernel.Primitives.Logging;
 using StackExchange.Redis;
 
@@ -22,7 +23,7 @@ public static partial class RedisConnectionCoreExtensions
     private const string LoggerCategoryName = "SharedKernel.Caching.Redis.Core.RedisConnection";
 
     /// <summary>
-    /// Registers the shared <see cref="IConnectionMultiplexer"/> and <see cref="IRedisConnectionProbe"/>, with
+    /// Registers the shared <see cref="IConnectionMultiplexer"/> and its readiness probe (<see cref="RedisReadinessProbeNames.Connection"/>), with
     /// <see cref="RedisConnectionOptions"/> bound from the <c>SharedKernel:Caching:Redis</c> section and
     /// validated at startup.
     /// </summary>
@@ -65,7 +66,7 @@ public static partial class RedisConnectionCoreExtensions
     }
 
     /// <summary>
-    /// Registers the shared <see cref="IConnectionMultiplexer"/> and <see cref="IRedisConnectionProbe"/>, with
+    /// Registers the shared <see cref="IConnectionMultiplexer"/> and its readiness probe (<see cref="RedisReadinessProbeNames.Connection"/>), with
     /// <see cref="RedisConnectionOptions"/> set in code and validated at startup.
     /// </summary>
     /// <param name="services">The service collection.</param>
@@ -139,13 +140,13 @@ public static partial class RedisConnectionCoreExtensions
             return multiplexer;
         });
 
-        services.AddSingleton<IRedisConnectionProbe, RedisConnectionProbe>();
+        services.AddReadinessProbe<RedisConnectionProbe>();
 
         return services;
     }
 
     private static bool IsRegistered(IServiceCollection services) =>
-        services.Any(d => d.ServiceType == typeof(IRedisConnectionProbe));
+        services.Any(d => d.ServiceType == typeof(IReadinessProbe) && d.ImplementationType == typeof(RedisConnectionProbe));
 
     private static void EnsureNotRegistered(IServiceCollection services)
     {

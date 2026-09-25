@@ -17,9 +17,8 @@
     <!-- 09.Search: both providers side by side, against different document types -->
     <PackageReference Include="SharedKernel.Search.Meilisearch" />
     <PackageReference Include="SharedKernel.Search.ElasticSearch" />
-    <!-- 13.ServiceDefaults: host, search telemetry, one readiness check per index -->
+    <!-- 13.ServiceDefaults: host, search telemetry, and AddSharedKernelReadiness (one probe per index) -->
     <PackageReference Include="SharedKernel.ServiceDefaults" />
-    <PackageReference Include="SharedKernel.ServiceDefaults.Search" />
     <!-- 14.Presentation: Result -> ProblemDetails -->
     <PackageReference Include="SharedKernel.Presentation.WebApi" />
   </ItemGroup>

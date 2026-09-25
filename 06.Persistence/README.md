@@ -261,7 +261,7 @@ builder.Services.AddSharedKernelApplicationBehaviors()
 builder.Services.AddHealthChecks()
     .AddDatabaseReadinessCheck<OrderDbContext>()   // not ready until startup migrations finished
     .AddPersistenceStartupReadinessCheck()
-    .AddAuditSealingReadinessCheck();
+    .AddSharedKernelReadiness();                   // every provider probe, including audit sealing
 ```
 
 `using SharedKernel.Persistence;` covers every persistence registration call. One call registers the data source, the

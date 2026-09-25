@@ -17,9 +17,8 @@
     <!-- 08.Storage: two S3 connections (different IAM users) and one OBS connection -->
     <PackageReference Include="SharedKernel.Storage.S3" />
     <PackageReference Include="SharedKernel.Storage.Obs" />
-    <!-- 13.ServiceDefaults: host, storage telemetry, one readiness check per store -->
+    <!-- 13.ServiceDefaults: host, storage telemetry, and AddSharedKernelReadiness (one probe per store) -->
     <PackageReference Include="SharedKernel.ServiceDefaults" />
-    <PackageReference Include="SharedKernel.ServiceDefaults.Storage" />
     <!-- 14.Presentation: Result -> ProblemDetails -->
     <PackageReference Include="SharedKernel.Presentation.WebApi" />
   </ItemGroup>

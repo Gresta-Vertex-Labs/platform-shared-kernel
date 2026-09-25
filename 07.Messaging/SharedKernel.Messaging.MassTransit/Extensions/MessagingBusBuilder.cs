@@ -25,6 +25,7 @@ using SharedKernel.Messaging.MassTransit.MessageBus;
 using SharedKernel.Messaging.MassTransit.Options;
 using SharedKernel.Messaging.MassTransit.SchemaEvolution;
 using SharedKernel.Messaging.MassTransit.Serialization;
+using SharedKernel.Primitives.Health;
 using System.Linq;
 
 // Aliased to avoid the "MassTransit.Configuration" leaf segment colliding with this file's own
@@ -1042,7 +1043,7 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
         // opt-in builder call required. Matches MassTransit's own singleton IBus/IBusControl
         // lifetime; it is a pure read-only reflection of the bus this builder already constructs,
         // not a new capability with its own configuration surface.
-        Services.AddSingleton<Abstractions.MessageBus.IMessageBusProbe, MassTransitMessageBusProbe>();
+        Services.AddReadinessProbe<MassTransitMessageBusProbe>();
 
         // SC-06: Register IMessageScheduler → MassTransitMessageScheduler as scoped.
         // Uses the fully qualified abstraction type to avoid IMessageScheduler ambiguity

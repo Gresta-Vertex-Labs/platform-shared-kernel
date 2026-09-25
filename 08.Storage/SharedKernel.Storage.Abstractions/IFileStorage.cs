@@ -169,7 +169,7 @@ public interface IFileStorage
     /// <see cref="WriteCondition.IfNotExists"/> instead. S3-family providers answer this metadata request without an
     /// error code, so a store whose bucket does not exist also answers <see langword="false"/> (and
     /// <see cref="GetPropertiesAsync"/> <see cref="StorageErrorCodes.NotFound"/>); the readiness probe
-    /// (<see cref="IFileStorageHealthProbe"/>) is what reports a missing bucket.
+    /// (<see cref="StorageReadinessProbeNames.ForStore(string)"/>) is what reports a missing bucket.
     /// </remarks>
     Task<Result<bool>> ExistsAsync(string key, CancellationToken cancellationToken = default);
 

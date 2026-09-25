@@ -235,7 +235,7 @@ internal sealed class ElasticSearchIndexProvisioner : ISearchIndexProvisioner
         return Result.Success();
     }
 
-    /// <inheritdoc />
+    /// <summary>Measures the index named <paramref name="indexName"/> for its readiness probe (<see cref="SearchIndexReadinessProbe"/>).</summary>
     public async Task<Result<SearchIndexHealth>> ProbeAsync(string indexName, CancellationToken cancellationToken = default)
     {
         lock (_cacheLock)

@@ -14,9 +14,6 @@
     <ProjectReference Include="..\SharedKernel.ServiceDefaults\SharedKernel.ServiceDefaults.csproj" />
     <ProjectReference Include="..\..\06.Persistence\SharedKernel.Persistence.Abstractions\SharedKernel.Persistence.Abstractions.csproj" />
     <ProjectReference Include="..\..\06.Persistence\SharedKernel.Persistence.EfCore\SharedKernel.Persistence.EfCore.csproj" />
-    <!-- Readiness checks over the field-encryption key ring and the audit sealer. -->
-    <ProjectReference Include="..\..\06.Persistence\SharedKernel.Persistence.EfCore.Encryption\SharedKernel.Persistence.EfCore.Encryption.csproj" />
-    <ProjectReference Include="..\..\06.Persistence\SharedKernel.Persistence.EfCore.Auditing\SharedKernel.Persistence.EfCore.Auditing.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />

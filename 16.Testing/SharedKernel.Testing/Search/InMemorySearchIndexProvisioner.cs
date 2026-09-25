@@ -129,7 +129,10 @@ public sealed class InMemorySearchIndexProvisioner : ISearchIndexProvisioner
         return Task.FromResult(Result.Success());
     }
 
-    /// <inheritdoc />
+    /// <summary>
+    /// Measures a registered index — always healthy, deterministically. Pass it to a
+    /// <see cref="SearchIndexReadinessProbe"/> to exercise readiness handling without an engine.
+    /// </summary>
     public Task<SharedKernel.Primitives.Results.Result<SearchIndexHealth>> ProbeAsync(string indexName, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(indexName);

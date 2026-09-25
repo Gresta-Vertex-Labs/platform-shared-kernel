@@ -116,17 +116,10 @@ public static class WorkflowTopologyRules
     /// <para>
     /// <strong>Rationale:</strong> mechanizes <c>17.Workflows/CLAUDE.md</c>'s own Hard Violations
     /// bullet verbatim: "Implementing <c>IHealthCheck</c>, or referencing
-    /// <c>Microsoft.Extensions.Diagnostics.HealthChecks</c>, anywhere in <c>17.Workflows</c>.
-    /// <c>ProbeAsync</c> returning <c>Result&lt;WorkflowServiceHealth&gt;</c> is the primitive; the
-    /// adapter is <c>13.ServiceDefaults</c>'s responsibility" — mirroring the
-    /// <c>06.Persistence</c>/<c>08.Storage</c>/<c>09.Search</c>/<c>10.Intelligence</c>
-    /// readiness-probe split precedent. The corresponding root <c>CLAUDE.md</c> Hard rule granting
-    /// <c>13.ServiceDefaults</c> a narrow <c>ProjectReference</c> back into this package solely to
-    /// resolve that same <c>IWorkflowServiceProbe</c>/<c>WorkflowServiceHealth</c> pair
-    /// is mechanically enforced from the <c>13.ServiceDefaults</c> side by
-    /// <see cref="ServiceDefaultsWorkflowLayeringRules.OnlyReachesWorkflowProbeTypes"/>
-    /// — this class enforces what <c>17.Workflows</c> may not depend on; that one
-    /// enforces what <c>13.ServiceDefaults</c> may not reach into here.
+    /// <c>Microsoft.Extensions.Diagnostics.HealthChecks</c>, anywhere in <c>17.Workflows</c>."
+    /// The provider registers an <c>IReadinessProbe</c> (<c>SharedKernel.Primitives.Health</c>); mapping it to a
+    /// health check is <c>13.ServiceDefaults</c>' <c>AddSharedKernelReadiness()</c>, which references no
+    /// <c>17.Workflows</c> type at all (P-569 removed the 13→17 layering grant).
     /// </para>
     /// </remarks>
     /// <param name="workflowsAssembly">

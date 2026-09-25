@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using SharedKernel.Primitives.Health;
 using SharedKernel.Caching.Redis.Core.Extensions;
 using SharedKernel.Caching.Redis.Core.Health;
 using SharedKernel.Primitives.Logging;
@@ -11,7 +12,7 @@ using Xunit;
 namespace SharedKernel.Caching.Redis.Core.Tests;
 
 /// <summary>
-/// <see cref="IRedisConnectionProbe"/> and the shared <see cref="IConnectionMultiplexer"/> against a real Redis
+/// The Redis connection readiness probe and the shared <see cref="IConnectionMultiplexer"/> against a real Redis
 /// and against an endpoint nothing listens on.
 /// </summary>
 public sealed class RedisConnectionProbeTests : IAsyncLifetime
@@ -28,7 +29,7 @@ public sealed class RedisConnectionProbeTests : IAsyncLifetime
     public async Task ProbeAsync_ReachableRedis_IsHealthyWithLatency()
     {
         await using var provider = Build(o => o.ConnectionString = _container.GetConnectionString());
-        var probe = provider.GetRequiredService<IRedisConnectionProbe>();
+        var probe = provider.GetRequiredReadinessProbe(RedisReadinessProbeNames.Connection);
 
         var health = await probe.ProbeAsync();
 
@@ -47,7 +48,7 @@ public sealed class RedisConnectionProbeTests : IAsyncLifetime
         var multiplexer = provider.GetRequiredService<IConnectionMultiplexer>();
         Assert.Same(multiplexer, provider.GetRequiredService<IConnectionMultiplexer>());
 
-        var health = await provider.GetRequiredService<IRedisConnectionProbe>().ProbeAsync();
+        var health = await provider.GetRequiredReadinessProbe(RedisReadinessProbeNames.Connection).ProbeAsync();
 
         Assert.True(health.IsHealthy);
         Assert.True(multiplexer.IsConnected);
@@ -86,7 +87,7 @@ public sealed class RedisConnectionProbeTests : IAsyncLifetime
             loggerFactory);
 
         // Resolving does not throw: the connection keeps retrying in the background.
-        var probe = provider.GetRequiredService<IRedisConnectionProbe>();
+        var probe = provider.GetRequiredReadinessProbe(RedisReadinessProbeNames.Connection);
         var health = await probe.ProbeAsync();
 
         Assert.False(health.IsHealthy);
@@ -109,7 +110,7 @@ public sealed class RedisConnectionProbeTests : IAsyncLifetime
             o.ConnectTimeout = TimeSpan.FromMilliseconds(200);
             o.CommandTimeout = TimeSpan.FromMilliseconds(200);
         });
-        var probe = provider.GetRequiredService<IRedisConnectionProbe>();
+        var probe = provider.GetRequiredReadinessProbe(RedisReadinessProbeNames.Connection);
 
         for (var i = 0; i < 3; i++)
             Assert.False((await probe.ProbeAsync()).IsHealthy);
@@ -119,7 +120,7 @@ public sealed class RedisConnectionProbeTests : IAsyncLifetime
     public async Task ProbeAsync_CanceledToken_Throws()
     {
         await using var provider = Build(o => o.ConnectionString = _container.GetConnectionString());
-        var probe = provider.GetRequiredService<IRedisConnectionProbe>();
+        var probe = provider.GetRequiredReadinessProbe(RedisReadinessProbeNames.Connection);
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => probe.ProbeAsync(new CancellationToken(canceled: true)));

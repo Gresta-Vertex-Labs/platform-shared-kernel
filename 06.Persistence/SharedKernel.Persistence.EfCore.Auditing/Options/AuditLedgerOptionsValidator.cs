@@ -31,6 +31,8 @@ internal sealed class AuditLedgerOptionsValidator : IValidateOptions<AuditLedger
             failures.Add($"{nameof(AuditLedgerOptions.Sealer)}:{nameof(AuditSealerOptions.BatchSize)} must be between 1 and {MaxBatchSize}.");
         if (sealer.CheckpointInterval <= TimeSpan.Zero)
             failures.Add($"{nameof(AuditLedgerOptions.Sealer)}:{nameof(AuditSealerOptions.CheckpointInterval)} must be positive.");
+        if (sealer.MaxReadyLag <= TimeSpan.Zero)
+            failures.Add($"{nameof(AuditLedgerOptions.Sealer)}:{nameof(AuditSealerOptions.MaxReadyLag)} must be positive.");
 
         if (!Enum.IsDefined(options.SelfCheck))
             failures.Add($"{nameof(AuditLedgerOptions.SelfCheck)} '{options.SelfCheck}' is not defined.");

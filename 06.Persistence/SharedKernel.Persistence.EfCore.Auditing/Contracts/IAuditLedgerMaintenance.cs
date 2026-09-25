@@ -61,16 +61,28 @@ public sealed record AuditSealPassResult(bool LockAcquired, int RecordsSealed);
 /// </param>
 public sealed record AuditResealResult(int ChainsResealed, int RecordsSealed, int CheckpointsEmitted, bool FullySealed);
 
-/// <summary>Readiness primitive reporting how far the sealer lags behind the writers. No <c>IHealthCheck</c> is shipped.</summary>
-public interface IAuditSealingProbe
+/// <summary>
+/// The readiness probe <c>UseAuditTrail()</c> registers, reporting how far the sealer lags behind the writers.
+/// </summary>
+/// <remarks>
+/// Resolve it with <c>GetRequiredReadinessProbe(AuditSealingReadiness.ProbeName)</c>. It is
+/// <c>Degraded</c> when the oldest unsealed record is older than <see cref="AuditSealerOptions.MaxReadyLag"/>, and
+/// <c>Unhealthy</c> when the ledger cannot be read. Its report's data carries the measured tail under the keys below.
+/// </remarks>
+public static class AuditSealingReadiness
 {
-    /// <summary>Measures the unsealed tail of the ledger.</summary>
-    /// <param name="cancellationToken">A token to cancel the operation.</param>
-    Task<AuditSealingHealth> ProbeAsync(CancellationToken cancellationToken = default);
-}
+    /// <summary>The probe's name.</summary>
+    public const string ProbeName = "audit-sealing";
 
-/// <summary>The unsealed tail of the ledger at probe time.</summary>
-/// <param name="UnsealedRecords">Committed records not yet sealed.</param>
-/// <param name="OldestUnsealedOccurredOn">When the oldest of them was written, or <see langword="null"/>.</param>
-/// <param name="Lag">Now minus <paramref name="OldestUnsealedOccurredOn"/>, or <see cref="TimeSpan.Zero"/>.</param>
-public sealed record AuditSealingHealth(long UnsealedRecords, DateTimeOffset? OldestUnsealedOccurredOn, TimeSpan Lag);
+    /// <summary>Data key: committed records not yet sealed (<see cref="long"/>).</summary>
+    public const string UnsealedRecordsKey = "UnsealedRecords";
+
+    /// <summary>
+    /// Data key: when the oldest unsealed record was written (<see cref="DateTimeOffset"/>); absent when nothing is
+    /// unsealed.
+    /// </summary>
+    public const string OldestUnsealedOccurredOnKey = "OldestUnsealedOccurredOn";
+
+    /// <summary>Data key: now minus the oldest unsealed record's time, or <see cref="TimeSpan.Zero"/> (<see cref="TimeSpan"/>).</summary>
+    public const string LagKey = "Lag";
+}

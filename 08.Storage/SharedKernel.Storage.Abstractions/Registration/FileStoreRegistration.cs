@@ -36,7 +36,8 @@ public sealed class FileStoreRegistration
     /// </param>
     /// <param name="probe">
     /// Checks the store's bucket is reachable with the configured credentials, for
-    /// <see cref="IFileStorageHealthProbe.ProbeAsync"/>; returns a failed <c>Result</c> rather than throwing.
+    /// the store's readiness probe (<see cref="StorageReadinessProbeNames.ForStore(string)"/>); returns a failed
+    /// <c>Result</c> rather than throwing.
     /// </param>
     /// <exception cref="ArgumentException"><paramref name="name"/> is not a valid store name.</exception>
     /// <exception cref="ArgumentNullException">

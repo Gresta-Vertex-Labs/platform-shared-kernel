@@ -16,7 +16,6 @@ SharedKernel.Search.Abstractions.Abstractions.ISearchIndexProvisioner.CutoverAsy
 SharedKernel.Search.Abstractions.Abstractions.ISearchIndexProvisioner.DeleteIndexAsync(string! indexName, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
 SharedKernel.Search.Abstractions.Abstractions.ISearchIndexProvisioner.EnsureIndexAsync(SharedKernel.Search.Abstractions.Models.SearchIndexDefinition! definition, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
 SharedKernel.Search.Abstractions.Abstractions.ISearchIndexProvisioner.IndexExistsAsync(string! indexName, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<bool>!>!
-SharedKernel.Search.Abstractions.Abstractions.ISearchIndexProvisioner.ProbeAsync(string! indexName, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Search.Abstractions.Models.SearchIndexHealth!>!>!
 SharedKernel.Search.Abstractions.Abstractions.ISearchIndexProvisioner.VerifyRegisteredIndexesAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
 SharedKernel.Search.Abstractions.Abstractions.ISearchProviderDescriptor
 SharedKernel.Search.Abstractions.Abstractions.ISearchProviderDescriptor.MaxFacetValues.get -> int
@@ -581,3 +580,18 @@ SharedKernel.Search.Abstractions.Abstractions.ISearchIndex<TDocument>.DeleteByFi
 SharedKernel.Search.Abstractions.Abstractions.ISearchIndex<TDocument>.EnumerateAsync(SharedKernel.Search.Abstractions.Models.SearchFilter? filter, SharedKernel.Execution.Tenancy.TenantScope tenantScope, int batchSize, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<TDocument!>!
 SharedKernel.Search.Abstractions.Abstractions.ISearchIndex<TDocument>.GetAsync(string! documentId, SharedKernel.Execution.Tenancy.TenantScope tenantScope, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<TDocument!>!>!
 SharedKernel.Search.Abstractions.Abstractions.ISearchIndex<TDocument>.SearchAsync(SharedKernel.Search.Abstractions.Models.SearchRequest! request, SharedKernel.Execution.Tenancy.TenantScope tenantScope, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Search.Abstractions.Models.SearchResults<TDocument!>!>!>!
+SharedKernel.Search.Abstractions.Abstractions.SearchIndexReadinessProbe
+SharedKernel.Search.Abstractions.Abstractions.SearchIndexReadinessProbe.Name.get -> string!
+SharedKernel.Search.Abstractions.Abstractions.SearchIndexReadinessProbe.ProbeAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Health.ReadinessReport!>!
+SharedKernel.Search.Abstractions.Abstractions.SearchIndexReadinessProbe.SearchIndexReadinessProbe(string! providerName, string! indexName, System.Func<string!, System.Threading.CancellationToken, System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Search.Abstractions.Models.SearchIndexHealth!>!>!>! probe) -> void
+const SharedKernel.Search.Abstractions.Abstractions.SearchIndexReadinessProbe.DocumentCountKey = "DocumentCount" -> string!
+const SharedKernel.Search.Abstractions.Abstractions.SearchIndexReadinessProbe.EngineVersionKey = "EngineVersion" -> string!
+const SharedKernel.Search.Abstractions.Abstractions.SearchIndexReadinessProbe.ErrorCodeKey = "ErrorCode" -> string!
+const SharedKernel.Search.Abstractions.Abstractions.SearchIndexReadinessProbe.IndexAddressableKey = "IndexAddressable" -> string!
+const SharedKernel.Search.Abstractions.Abstractions.SearchIndexReadinessProbe.IndexKey = "Index" -> string!
+const SharedKernel.Search.Abstractions.Abstractions.SearchIndexReadinessProbe.PendingWriteCountKey = "PendingWriteCount" -> string!
+const SharedKernel.Search.Abstractions.Abstractions.SearchIndexReadinessProbe.ProviderKey = "Provider" -> string!
+const SharedKernel.Search.Abstractions.Abstractions.SearchIndexReadinessProbe.ReachableKey = "Reachable" -> string!
+const SharedKernel.Search.Abstractions.Abstractions.SearchIndexReadinessProbe.SchemaFingerprintKey = "SchemaFingerprint" -> string!
+const SharedKernel.Search.Abstractions.Abstractions.SearchIndexReadinessProbe.SearchableKey = "Searchable" -> string!
+static SharedKernel.Search.Abstractions.Abstractions.SearchIndexReadinessProbe.ProbeNameFor(string! providerName, string! indexName) -> string!

@@ -62,8 +62,7 @@ builder.Services.AddScoped<ICustomerDirectory, CustomerDirectory>();
 // Readiness: not ready until migrations and seeders finished, the key ring is loaded and the sealer keeps up.
 builder.Services.AddHealthChecks()
     .AddDatabaseReadinessCheck<BillingDbContext>()
-    .AddFieldEncryptionReadinessCheck()
-    .AddAuditSealingReadinessCheck();
+    .AddSharedKernelReadiness(); // every probe the providers registered: field-encryption keys, audit sealing, ...
 builder.Services.AddHostedService<StartupGateRelease>();
 
 // 14.Presentation — RFC 9457 ProblemDetails for everything that escapes a handler (e.g. a concurrency conflict).

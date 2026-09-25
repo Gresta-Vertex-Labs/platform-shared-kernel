@@ -1,6 +1,5 @@
 using CatalogApi;
 using SharedKernel.Primitives.Clocks;
-using SharedKernel.Search.Abstractions.Constants;
 using SharedKernel.Search.Abstractions.Models;
 using SharedKernel.Search.ElasticSearch.Extensions;
 using SharedKernel.Search.Meilisearch.Extensions;
@@ -100,14 +99,12 @@ builder.Services
     .Build();
 
 // Readiness fails while an index is not addressable, so a replica is not sent traffic it cannot serve.
-// Each check names the provider that actually owns its index. ISearchIndexProvisioner is non-generic,
-// so in a two-engine host an unkeyed resolution returns whichever provider was registered last — and the
-// check would then ask ElasticSearch about a Meilisearch index and report this service unready forever.
-// A single-provider service omits providerKey entirely.
+// Each provider registered one readiness probe per index it was given, named after the provider and the
+// index (search-meilisearch-products, search-elasticsearch-order-lines), so a two-engine host can
+// never ask one engine about the other's index. AddSharedKernelReadiness maps every one of them.
 builder.Services
     .AddHealthChecks()
-    .AddSearchReadinessCheck(Catalog.ProductsIndex, providerKey: SearchWellKnown.MeilisearchProviderName)
-    .AddSearchReadinessCheck(Catalog.OrderLinesRead, providerKey: SearchWellKnown.ElasticSearchProviderName);
+    .AddSharedKernelReadiness();
 
 var app = builder.Build();
 

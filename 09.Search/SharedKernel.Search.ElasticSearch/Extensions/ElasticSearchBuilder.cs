@@ -3,6 +3,7 @@ using Elastic.Clients.Elasticsearch;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using SharedKernel.Primitives.Health;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Search.Abstractions.Abstractions;
 using SharedKernel.Search.Abstractions.Constants;
@@ -214,6 +215,17 @@ public sealed class ElasticSearchBuilder
 
         _services.AddSingleton<ISearchIndexProvisioner>(sp =>
             sp.GetRequiredKeyedService<ISearchIndexProvisioner>(SearchWellKnown.ElasticSearchProviderName));
+
+        // One readiness probe per registered index, each over the one provisioner instance above.
+        foreach (var indexName in indexDefinitions.Keys)
+        {
+            _services.AddReadinessProbe(sp =>
+            {
+                var provisioner = (ElasticSearchIndexProvisioner)sp.GetRequiredKeyedService<ISearchIndexProvisioner>(
+                    SearchWellKnown.ElasticSearchProviderName);
+                return new SearchIndexReadinessProbe(SearchWellKnown.ElasticSearchProviderName, indexName, provisioner.ProbeAsync);
+            });
+        }
 
         _services.AddKeyedSingleton<ISearchProviderDescriptor>(
             SearchWellKnown.ElasticSearchProviderName,

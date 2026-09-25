@@ -155,7 +155,10 @@ public sealed class InMemoryVectorCollectionProvisioner : IVectorCollectionProvi
         return Task.FromResult(SharedKernel.Primitives.Results.Result.Success());
     }
 
-    /// <inheritdoc />
+    /// <summary>
+    /// Measures a registered collection — always healthy, deterministically. Pass it to a
+    /// <see cref="VectorCollectionReadinessProbe"/> to exercise readiness handling without a vector store.
+    /// </summary>
     public Task<SharedKernel.Primitives.Results.Result<VectorCollectionHealth>> ProbeAsync(
         string collectionName, CancellationToken cancellationToken = default)
     {

@@ -506,13 +506,13 @@ public class RedisTopologyRulesTests
     /// <summary>
     /// The provider-specific contracts that left <c>SharedKernel.Caching.Abstractions</c> are
     /// declared by the package that implements them, in that package's own namespace (or, for the
-    /// connection readiness probe, its <c>Health</c> sub-namespace).
+    /// connection readiness probe's name constants, its <c>Health</c> sub-namespace).
     /// </summary>
     [Theory]
     [InlineData(typeof(Caching.Redis.PubSub.IRedisChannelService), "SharedKernel.Caching.Redis.PubSub", "SharedKernel.Caching.Redis.PubSub")]
     [InlineData(typeof(Caching.Redis.HashStore.IRedisHashService), "SharedKernel.Caching.Redis.HashStore", "SharedKernel.Caching.Redis.HashStore")]
     [InlineData(typeof(Caching.Redis.HashStore.ITypedHashStore<>), "SharedKernel.Caching.Redis.HashStore", "SharedKernel.Caching.Redis.HashStore")]
-    [InlineData(typeof(Caching.Redis.Core.Health.IRedisConnectionProbe), "SharedKernel.Caching.Redis.Core", "SharedKernel.Caching.Redis.Core.Health")]
+    [InlineData(typeof(Caching.Redis.Core.Health.RedisReadinessProbeNames), "SharedKernel.Caching.Redis.Core", "SharedKernel.Caching.Redis.Core.Health")]
     public void ProviderSpecificContract_IsDeclaredByItsProviderPackage(Type contract, string providerPackage, string expectedNamespace)
     {
         contract.Assembly.GetName().Name.Should().Be(

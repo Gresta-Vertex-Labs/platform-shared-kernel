@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using SharedKernel.Primitives.Health;
 using SharedKernel.Primitives.Results;
 
 namespace SharedKernel.Storage.Abstractions.Tests;
@@ -134,7 +135,7 @@ public sealed class StoreRegistryTests
     }
 
     [Fact]
-    public async Task The_health_probe_runs_the_store_probe()
+    public async Task Each_store_registers_a_readiness_probe_that_runs_the_store_probe()
     {
         IStorageBuilder builder = new ServiceCollection().AddSharedKernelStorage();
         builder.AddStore(new FileStoreRegistration(
@@ -144,9 +145,11 @@ public sealed class StoreRegistryTests
             (_, _) => Task.FromResult(Result.Failure(StorageErrors.Unavailable("invoices", "probe")))));
         using ServiceProvider provider = builder.Services.BuildServiceProvider();
 
-        Result result = await provider.GetRequiredService<IFileStorageHealthProbe>().ProbeAsync("invoices");
+        ReadinessReport report = await provider.GetRequiredReadinessProbe(StorageReadinessProbeNames.ForStore("invoices")).ProbeAsync();
 
-        result.Error.Code.Should().Be(StorageErrorCodes.Unavailable);
+        report.Status.Should().Be(ReadinessStatus.Unhealthy);
+        report.Data["ErrorCode"].Should().Be(StorageErrorCodes.Unavailable);
+        report.Data["Store"].Should().Be("invoices");
     }
 
     internal static ServiceProvider Build(params (string Name, bool Tenant)[] stores) =>

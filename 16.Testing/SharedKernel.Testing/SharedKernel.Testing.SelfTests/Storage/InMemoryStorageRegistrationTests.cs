@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using SharedKernel.Primitives.Health;
 using SharedKernel.Storage;
 using SharedKernel.Testing.Storage;
 using Xunit;
@@ -111,14 +112,14 @@ public sealed class InMemoryStorageRegistrationTests
     public async Task HealthProbe_ReportsTheStoresSimulatedAvailability()
     {
         using var provider = BuildProvider(b => b.AddInMemoryStore("invoices"));
-        var probe = provider.GetRequiredService<IFileStorageHealthProbe>();
+        var probe = provider.GetRequiredReadinessProbe(StorageReadinessProbeNames.ForStore("invoices"));
 
-        var healthy = await probe.ProbeAsync("invoices");
+        var healthy = await probe.ProbeAsync();
         provider.GetInMemoryStore("invoices").SimulateUnavailable = true;
-        var unhealthy = await probe.ProbeAsync("invoices");
+        var unhealthy = await probe.ProbeAsync();
 
-        Assert.True(healthy.IsSuccess);
-        Assert.Equal(StorageErrorCodes.Unavailable, unhealthy.Error.Code);
+        Assert.True(healthy.IsHealthy);
+        Assert.Equal(StorageErrorCodes.Unavailable, unhealthy.Data["ErrorCode"]);
     }
 
     [Fact]

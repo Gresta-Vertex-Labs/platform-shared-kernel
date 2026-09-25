@@ -24,6 +24,8 @@ using SharedKernel.Messaging.Abstractions.MessageBus;
 using SharedKernel.Messaging.Abstractions.Options;
 using SharedKernel.Messaging.MassTransit.Consumers;
 using SharedKernel.Messaging.MassTransit.Extensions;
+using SharedKernel.Messaging.MassTransit.MessageBus;
+using SharedKernel.Primitives.Health;
 
 // Aliased: MassTransit declares its own IMessageScheduler, and a consuming service that wires
 // delayed delivery has both in scope.
@@ -65,10 +67,12 @@ static async Task Surface1_TheInjectableSurfaceResolves()
     Require(scope.ServiceProvider.GetService<IMessageBus>() is not null, "IMessageBus resolves");
     Require(scope.ServiceProvider.GetService<IEventPublisher>() is not null, "IEventPublisher resolves");
     Require(scope.ServiceProvider.GetService<SkMessageScheduler>() is not null, "IMessageScheduler resolves with delayed delivery");
-    Require(host.Services.GetService<IMessageBusProbe>() is not null, "IMessageBusProbe resolves as a singleton, with no opt-in");
+    Require(
+        host.Services.GetServices<IReadinessProbe>().Any(p => p.Name == MessagingReadinessProbeNames.Bus),
+        "the bus readiness probe is registered, with no opt-in");
     Require(host.Services.GetService<IBus>() is not null, "MassTransit's own IBus is registered");
 
-    Console.WriteLine("Surface 1 PASSED — IMessageBus, IEventPublisher, IMessageScheduler and IMessageBusProbe resolve");
+    Console.WriteLine("Surface 1 PASSED — IMessageBus, IEventPublisher, IMessageScheduler and the bus readiness probe resolve");
     await Task.CompletedTask;
 }
 

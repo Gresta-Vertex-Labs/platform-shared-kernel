@@ -11,7 +11,7 @@ namespace SharedKernel.Testing.Storage;
 /// <para>
 /// Each store goes through the real storage registry, so application code resolves it exactly as in
 /// production — <c>[FromKeyedServices("invoices")] IFileStorage</c>, <see cref="ITenantFileStorage"/>,
-/// <see cref="IFileStorageFactory"/>, <see cref="IFileStorageHealthProbe"/> — with the registry's request
+/// <see cref="IFileStorageFactory"/>, the store's readiness probe — with the registry's request
 /// validation and tenant isolation in front of it.
 /// </para>
 /// <para>

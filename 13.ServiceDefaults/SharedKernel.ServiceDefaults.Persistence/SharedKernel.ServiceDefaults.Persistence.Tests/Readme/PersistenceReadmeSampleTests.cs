@@ -137,7 +137,7 @@ public sealed class PersistenceReadmeSampleTests(PostgreSqlContainerFixture fixt
         services.AddHealthChecks()
             .AddDatabaseReadinessCheck<OrderDbContext>()
             .AddPersistenceStartupReadinessCheck()
-            .AddAuditSealingReadinessCheck();
+            .AddSharedKernelReadiness();
 
         return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
     }

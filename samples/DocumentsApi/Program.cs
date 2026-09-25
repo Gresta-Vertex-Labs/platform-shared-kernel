@@ -21,11 +21,10 @@ storage.AddS3(builder.Configuration, "Public").AddStore(Stores.Assets);
 storage.AddS3(builder.Configuration, "Private").AddTenantStore(Stores.Documents);
 storage.AddObs(builder.Configuration).AddStore(Stores.Archive);
 
-// Readiness fails while any store's bucket is unreachable.
+// Readiness fails while any store's bucket is unreachable: every AddStore/AddTenantStore registered a probe
+// (storage-assets, storage-documents, storage-archive), and AddSharedKernelReadiness maps them all.
 builder.Services.AddHealthChecks()
-    .AddStorageReadinessCheck(Stores.Assets, "storage-assets")
-    .AddStorageReadinessCheck(Stores.Documents, "storage-documents")
-    .AddStorageReadinessCheck(Stores.Archive, "storage-archive");
+    .AddSharedKernelReadiness();
 
 builder.Services.AddProblemDetails();
 
