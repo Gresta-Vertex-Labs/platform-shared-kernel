@@ -7,7 +7,7 @@ namespace SharedKernel.Testing.Communication;
 /// fixtures, plus post-call request inspection.
 /// </summary>
 /// <remarks>
-/// Use <see cref="EnqueueResponse"/> repeatedly to simulate a sequence (e.g., first call 503, second
+/// Use <c>EnqueueResponse</c> repeatedly to simulate a sequence (e.g., first call 503, second
 /// 200) for resilience-policy testing. When the queue is exhausted, <see cref="DefaultResponse"/>
 /// is returned for any further calls.
 /// </remarks>
@@ -18,7 +18,7 @@ public sealed class FakeHttpMessageHandler : HttpMessageHandler
 
     /// <summary>
     /// Gets or sets the response returned once the configured sequence (via
-    /// <see cref="EnqueueResponse"/>) has been exhausted. Defaults to an empty <c>200 OK</c>.
+    /// <c>EnqueueResponse</c>) has been exhausted. Defaults to an empty <c>200 OK</c>.
     /// </summary>
     public Func<HttpRequestMessage, HttpResponseMessage> DefaultResponse { get; set; } =
         _ => new HttpResponseMessage(System.Net.HttpStatusCode.OK);

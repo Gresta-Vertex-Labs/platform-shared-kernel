@@ -272,12 +272,13 @@
       harnesses provably consume the bits produced by that same run rather than whatever happens
       to be newest on disk.
     -->
+    <PackageVersion Include="SharedKernel.AI.Testing" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Analyzers" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Application" Version="$(SharedKernelPackageVersion)" />
-    <PackageVersion Include="SharedKernel.Execution" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Application.Mediator.MediatR" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Application.Pipeline" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Application.Pipeline.Caching" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Application.Testing" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.ArchitectureTests" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Caching.Abstractions" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Caching.FusionCache" Version="$(SharedKernelPackageVersion)" />
@@ -286,6 +287,9 @@
     <PackageVersion Include="SharedKernel.Caching.Redis.DistributedLocking" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Caching.Redis.HashStore" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Caching.Redis.PubSub" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Caching.Redis.Testing" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Caching.Testing" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Communication.Testing" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Compression" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Configuration" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Contracts" Version="$(SharedKernelPackageVersion)" />
@@ -293,12 +297,17 @@
     <PackageVersion Include="SharedKernel.Cryptography" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Cryptography.Argon2" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Cryptography.KeyVault.Azure" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Cryptography.Testing" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.DataPrivacy" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Domain" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Execution" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.FeatureManagement" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.FeatureManagement.Testing" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Idempotency.Abstractions" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Idempotency.EfCore" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Idempotency.Redis" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Idempotency.Testing" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Integration.Testing" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Linter" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Localization" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Messaging.Abstractions" Version="$(SharedKernelPackageVersion)" />
@@ -306,6 +315,7 @@
     <PackageVersion Include="SharedKernel.Messaging.MassTransit.AzureServiceBus" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Messaging.MassTransit.EfCore" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Messaging.MassTransit.RabbitMq" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Messaging.Testing" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Persistence.Abstractions" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Persistence.Dapper" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Persistence.EfCore" Version="$(SharedKernelPackageVersion)" />
@@ -313,20 +323,29 @@
     <PackageVersion Include="SharedKernel.Persistence.EfCore.Encryption" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Persistence.Npgsql" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Persistence.Testing" Version="$(SharedKernelPackageVersion)" />
-    <PackageVersion Include="SharedKernel.Primitives" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Presentation.Testing" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Presentation.WebApi" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Primitives" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Reporting.Testing" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Scheduling.Testing" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Search.Abstractions" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Search.ElasticSearch" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Search.Meilisearch" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Search.Testing" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Security.Abstractions" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Security.Testing" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.ServiceDefaults" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.ServiceDefaults.Persistence" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.ServiceDefaults.Security" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.ServiceDefaults.Testing" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Storage.Abstractions" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Storage.Obs" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Storage.S3" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Storage.Testing" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Testing" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Validation" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Validation.FluentValidation" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Workflows.Testing" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="StackExchange.Redis" Version="2.13.1" />
     <PackageVersion Include="System.ClientModel" Version="1.10.0" />
     <PackageVersion Include="Temporalio" Version="1.17.0" />

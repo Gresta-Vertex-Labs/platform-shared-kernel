@@ -294,6 +294,9 @@ public static class SharedKernelLayeringRules
     /// <summary>
     /// Hard rule: 16.Testing packages must never be referenced by production code.
     /// Testing helpers are dev/test-time only and must never appear as transitive dependencies.
+    /// Every testing package (the core <c>SharedKernel.Testing</c>, each <c>SharedKernel.{Capability}.Testing</c> and
+    /// <c>SharedKernel.Testing.Internal</c>) declares its types under the <c>SharedKernel.Testing</c> namespace, except the
+    /// persistence doubles under <c>SharedKernel.Persistence.Testing</c> (P-571).
     /// </summary>
     /// <param name="assembly">The production assembly to evaluate.</param>
     /// <returns>A <see cref="ConditionList"/> asserting no production type depends on Testing packages.</returns>

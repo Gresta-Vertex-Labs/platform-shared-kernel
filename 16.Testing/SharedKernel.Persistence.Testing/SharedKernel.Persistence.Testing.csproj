@@ -9,6 +9,9 @@
     <WarningsAsErrors>$(WarningsAsErrors);nullable;CS1591;RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
+    <!-- TestRequestContext, the IRequestContext double every testing package shares, lives in the lightweight core
+         package (P-571); this package builds on it. -->
+    <ProjectReference Include="..\SharedKernel.Testing\SharedKernel.Testing.csproj" />
     <!-- IRepository/IReadRepository, IDbConnectionFactory, ICrossTenantScope; IUnitOfWork, IRequestContext and
          IAuditTrailWriter arrive through SharedKernel.Execution. -->
     <ProjectReference Include="..\..\06.Persistence\SharedKernel.Persistence.Abstractions\SharedKernel.Persistence.Abstractions.csproj" />

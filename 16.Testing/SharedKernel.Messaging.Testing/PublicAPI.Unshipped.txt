@@ -1,0 +1,25 @@
+#nullable enable
+SharedKernel.Testing.Messaging.InMemoryEventPublisher
+SharedKernel.Testing.Messaging.InMemoryEventPublisher.InMemoryEventPublisher(System.Collections.Generic.IEnumerable<SharedKernel.Messaging.Abstractions.HeaderPropagation.IMessageHeaderPropagator!>? propagators = null) -> void
+SharedKernel.Testing.Messaging.InMemoryEventPublisher.PublishAsync<TEvent>(TEvent! integrationEvent, System.Action<SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext!>! configure, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
+SharedKernel.Testing.Messaging.InMemoryEventPublisher.PublishAsync<TEvent>(TEvent! integrationEvent, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
+SharedKernel.Testing.Messaging.InMemoryEventPublisher.Published.get -> System.Collections.Generic.IReadOnlyList<object!>!
+SharedKernel.Testing.Messaging.InMemoryEventPublisher.PublishedOf<TEvent>() -> System.Collections.Generic.IReadOnlyList<TEvent!>!
+SharedKernel.Testing.Messaging.InMemoryEventPublisher.ShouldHavePublished<TEvent>() -> TEvent!
+SharedKernel.Testing.Messaging.InMemoryEventPublisher.ShouldHavePublishedContext<TEvent>() -> SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext!
+SharedKernel.Testing.Messaging.InMemoryEventPublisher.ShouldHavePublishedOnce<TEvent>() -> TEvent!
+SharedKernel.Testing.Messaging.InMemoryEventPublisher.ShouldNotHavePublished<TEvent>() -> void
+SharedKernel.Testing.Messaging.InMemoryMessageBus
+SharedKernel.Testing.Messaging.InMemoryMessageBus.InMemoryMessageBus(System.Collections.Generic.IEnumerable<SharedKernel.Messaging.Abstractions.HeaderPropagation.IMessageHeaderPropagator!>? propagators = null) -> void
+SharedKernel.Testing.Messaging.InMemoryMessageBus.PublishAsync<T>(T! message, System.Action<SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext!>! configure, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
+SharedKernel.Testing.Messaging.InMemoryMessageBus.PublishAsync<T>(T! message, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
+SharedKernel.Testing.Messaging.InMemoryMessageBus.SendAsync<T>(T! command, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
+SharedKernel.Testing.Messaging.InMemoryMessageBus.ShouldHavePublished<T>() -> T!
+SharedKernel.Testing.Messaging.InMemoryMessageBus.ShouldHavePublishedContext<T>() -> SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext!
+SharedKernel.Testing.Messaging.InMemoryMessageBus.ShouldHavePublishedOnce<T>() -> T!
+SharedKernel.Testing.Messaging.InMemoryMessageBus.ShouldHaveSent<T>() -> T!
+SharedKernel.Testing.Messaging.InMemoryMessageBus.ShouldHaveSentContext<T>() -> SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext!
+SharedKernel.Testing.Messaging.InMemoryMessageBus.ShouldNotHavePublished<T>() -> void
+SharedKernel.Testing.Messaging.MessagingServiceCollectionExtensions
+static SharedKernel.Testing.Messaging.MessagingServiceCollectionExtensions.AddInMemoryEventPublisher(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SharedKernel.Testing.Messaging.MessagingServiceCollectionExtensions.AddInMemoryMessageBus(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!

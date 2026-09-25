@@ -7,6 +7,7 @@ using SharedKernel.Domain.Aggregates;
 using SharedKernel.Persistence.Abstractions.Repositories;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.Testing;
+using SharedKernel.Testing.Execution;
 using SharedKernel.Primitives.Clocks;
 using Xunit;
 

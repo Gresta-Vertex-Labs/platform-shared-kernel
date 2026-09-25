@@ -1,0 +1,135 @@
+#nullable enable
+const SharedKernel.Testing.Security.FakeUserContext.DefaultSubjectId = "11111111-1111-1111-1111-111111111111" -> string!
+override SharedKernel.Testing.Security.DpopTestProof.Equals(object? obj) -> bool
+override SharedKernel.Testing.Security.DpopTestProof.GetHashCode() -> int
+override SharedKernel.Testing.Security.DpopTestProof.ToString() -> string!
+override SharedKernel.Testing.Security.MtlsTestCertificate.Equals(object? obj) -> bool
+override SharedKernel.Testing.Security.MtlsTestCertificate.GetHashCode() -> int
+override SharedKernel.Testing.Security.MtlsTestCertificate.ToString() -> string!
+SharedKernel.Testing.Security.DpopTestProof
+SharedKernel.Testing.Security.DpopTestProof.<Clone>$() -> SharedKernel.Testing.Security.DpopTestProof!
+SharedKernel.Testing.Security.DpopTestProof.AccessToken.get -> string!
+SharedKernel.Testing.Security.DpopTestProof.AccessToken.init -> void
+SharedKernel.Testing.Security.DpopTestProof.Deconstruct(out string! ProofJwt, out string! AccessToken, out string! PublicJwk, out string! JwkThumbprint) -> void
+SharedKernel.Testing.Security.DpopTestProof.DpopTestProof(string! ProofJwt, string! AccessToken, string! PublicJwk, string! JwkThumbprint) -> void
+SharedKernel.Testing.Security.DpopTestProof.Equals(SharedKernel.Testing.Security.DpopTestProof? other) -> bool
+SharedKernel.Testing.Security.DpopTestProof.JwkThumbprint.get -> string!
+SharedKernel.Testing.Security.DpopTestProof.JwkThumbprint.init -> void
+SharedKernel.Testing.Security.DpopTestProof.ProofJwt.get -> string!
+SharedKernel.Testing.Security.DpopTestProof.ProofJwt.init -> void
+SharedKernel.Testing.Security.DpopTestProof.PublicJwk.get -> string!
+SharedKernel.Testing.Security.DpopTestProof.PublicJwk.init -> void
+SharedKernel.Testing.Security.DpopTestProofBuilder
+SharedKernel.Testing.Security.DpopTestProofBuilder.Build() -> SharedKernel.Testing.Security.DpopTestProof!
+SharedKernel.Testing.Security.DpopTestProofBuilder.DpopTestProofBuilder() -> void
+SharedKernel.Testing.Security.DpopTestProofBuilder.WithAccessToken(string! accessToken) -> SharedKernel.Testing.Security.DpopTestProofBuilder!
+SharedKernel.Testing.Security.DpopTestProofBuilder.WithHttpMethod(string! htm = "POST") -> SharedKernel.Testing.Security.DpopTestProofBuilder!
+SharedKernel.Testing.Security.DpopTestProofBuilder.WithHttpUri(string! htu) -> SharedKernel.Testing.Security.DpopTestProofBuilder!
+SharedKernel.Testing.Security.DpopTestProofBuilder.WithIssuedAt(System.DateTimeOffset iat) -> SharedKernel.Testing.Security.DpopTestProofBuilder!
+SharedKernel.Testing.Security.DpopTestProofBuilder.WithJti(string! jti) -> SharedKernel.Testing.Security.DpopTestProofBuilder!
+SharedKernel.Testing.Security.DpopTestProofBuilder.WithKey(System.Security.Cryptography.ECDsa! key) -> SharedKernel.Testing.Security.DpopTestProofBuilder!
+SharedKernel.Testing.Security.DpopTestProofBuilder.WithMalformedAth(string! rawValue) -> SharedKernel.Testing.Security.DpopTestProofBuilder!
+SharedKernel.Testing.Security.DpopTestProofBuilder.WithMismatchedAth() -> SharedKernel.Testing.Security.DpopTestProofBuilder!
+SharedKernel.Testing.Security.DpopTestProofBuilder.WithMissingAth() -> SharedKernel.Testing.Security.DpopTestProofBuilder!
+SharedKernel.Testing.Security.DpopTestProofBuilder.WithNonce(string! nonce) -> SharedKernel.Testing.Security.DpopTestProofBuilder!
+SharedKernel.Testing.Security.DpopTestProofBuilder.WithType(string! type) -> SharedKernel.Testing.Security.DpopTestProofBuilder!
+SharedKernel.Testing.Security.FakeUserContext
+SharedKernel.Testing.Security.FakeUserContext.ActorKind.get -> SharedKernel.Execution.Context.ActorKind
+SharedKernel.Testing.Security.FakeUserContext.ActorKind.set -> void
+SharedKernel.Testing.Security.FakeUserContext.AuthContextClassReference.get -> string?
+SharedKernel.Testing.Security.FakeUserContext.AuthContextClassReference.set -> void
+SharedKernel.Testing.Security.FakeUserContext.AuthenticationMethods.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
+SharedKernel.Testing.Security.FakeUserContext.AuthenticationMethods.set -> void
+SharedKernel.Testing.Security.FakeUserContext.AuthTime.get -> System.DateTimeOffset?
+SharedKernel.Testing.Security.FakeUserContext.AuthTime.set -> void
+SharedKernel.Testing.Security.FakeUserContext.Claims.get -> System.Collections.Generic.IReadOnlyList<System.Collections.Generic.KeyValuePair<string!, string!>>!
+SharedKernel.Testing.Security.FakeUserContext.Claims.set -> void
+SharedKernel.Testing.Security.FakeUserContext.ClientId.get -> string?
+SharedKernel.Testing.Security.FakeUserContext.ClientId.set -> void
+SharedKernel.Testing.Security.FakeUserContext.Email.get -> string?
+SharedKernel.Testing.Security.FakeUserContext.Email.set -> void
+SharedKernel.Testing.Security.FakeUserContext.FakeUserContext() -> void
+SharedKernel.Testing.Security.FakeUserContext.FindClaim(string! claimType) -> string?
+SharedKernel.Testing.Security.FakeUserContext.FindClaims(string! claimType) -> System.Collections.Generic.IReadOnlyList<string!>!
+SharedKernel.Testing.Security.FakeUserContext.HasPermission(string! permission) -> bool
+SharedKernel.Testing.Security.FakeUserContext.HasRole(string! role) -> bool
+SharedKernel.Testing.Security.FakeUserContext.IsAuthenticated.get -> bool
+SharedKernel.Testing.Security.FakeUserContext.IsAuthenticationFresherThan(System.TimeSpan maxAge, System.DateTimeOffset now) -> bool
+SharedKernel.Testing.Security.FakeUserContext.IsSenderConstrained.get -> bool
+SharedKernel.Testing.Security.FakeUserContext.IsSenderConstrained.set -> void
+SharedKernel.Testing.Security.FakeUserContext.Name.get -> string?
+SharedKernel.Testing.Security.FakeUserContext.Name.set -> void
+SharedKernel.Testing.Security.FakeUserContext.Permissions.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
+SharedKernel.Testing.Security.FakeUserContext.Permissions.set -> void
+SharedKernel.Testing.Security.FakeUserContext.Roles.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
+SharedKernel.Testing.Security.FakeUserContext.Roles.set -> void
+SharedKernel.Testing.Security.FakeUserContext.SessionId.get -> string?
+SharedKernel.Testing.Security.FakeUserContext.SessionId.set -> void
+SharedKernel.Testing.Security.FakeUserContext.SubjectId.get -> string?
+SharedKernel.Testing.Security.FakeUserContext.SubjectId.set -> void
+SharedKernel.Testing.Security.FakeUserContext.TenantId.get -> SharedKernel.Execution.Tenancy.TenantId?
+SharedKernel.Testing.Security.FakeUserContext.TenantId.set -> void
+SharedKernel.Testing.Security.FakeUserContext.WasAuthenticatedWith(string! method) -> bool
+SharedKernel.Testing.Security.InMemoryApiKeyStore
+SharedKernel.Testing.Security.InMemoryApiKeyStore.Add(SharedKernel.Security.ApiKey.Keys.ApiKeyRecord! record) -> void
+SharedKernel.Testing.Security.InMemoryApiKeyStore.Add(SharedKernel.Security.ApiKey.Keys.GeneratedApiKey! key, string! clientId, SharedKernel.Execution.Tenancy.TenantId? tenantId = null, System.Collections.Generic.IReadOnlyCollection<string!>? permissions = null, System.DateTimeOffset? expiresAt = null) -> SharedKernel.Security.ApiKey.Keys.ApiKeyRecord!
+SharedKernel.Testing.Security.InMemoryApiKeyStore.FindAsync(string! keyId, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<SharedKernel.Security.ApiKey.Keys.ApiKeyRecord?>
+SharedKernel.Testing.Security.InMemoryApiKeyStore.InMemoryApiKeyStore() -> void
+SharedKernel.Testing.Security.InMemoryApiKeyStore.Revoke(string! keyId, System.DateTimeOffset revokedAt) -> void
+SharedKernel.Testing.Security.InMemoryDpopReplayCache
+SharedKernel.Testing.Security.InMemoryDpopReplayCache.Count.get -> int
+SharedKernel.Testing.Security.InMemoryDpopReplayCache.InMemoryDpopReplayCache() -> void
+SharedKernel.Testing.Security.InMemoryDpopReplayCache.TryAddAsync(string! proofId, System.DateTimeOffset expiresAt, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<bool>
+SharedKernel.Testing.Security.InMemoryRecoveryCodeStore
+SharedKernel.Testing.Security.InMemoryRecoveryCodeStore.GetUnusedAsync(string! subjectId, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<System.Collections.Generic.IReadOnlyList<SharedKernel.Security.Totp.StoredRecoveryCode!>!>
+SharedKernel.Testing.Security.InMemoryRecoveryCodeStore.InMemoryRecoveryCodeStore() -> void
+SharedKernel.Testing.Security.InMemoryRecoveryCodeStore.Save(string! subjectId, System.Collections.Generic.IEnumerable<SharedKernel.Security.Totp.StoredRecoveryCode!>! codes) -> void
+SharedKernel.Testing.Security.InMemoryRecoveryCodeStore.TryMarkUsedAsync(string! subjectId, string! codeId, System.DateTimeOffset usedAt, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<bool>
+SharedKernel.Testing.Security.InMemoryTotpStepUpStore
+SharedKernel.Testing.Security.InMemoryTotpStepUpStore.Clear() -> void
+SharedKernel.Testing.Security.InMemoryTotpStepUpStore.GetLastVerifiedAsync(string! subjectId, string! sessionId, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<System.DateTimeOffset?>
+SharedKernel.Testing.Security.InMemoryTotpStepUpStore.InMemoryTotpStepUpStore() -> void
+SharedKernel.Testing.Security.InMemoryTotpStepUpStore.RecordAsync(string! subjectId, string! sessionId, System.DateTimeOffset verifiedAt, System.DateTimeOffset expiresAt, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask
+SharedKernel.Testing.Security.MtlsTestCertificate
+SharedKernel.Testing.Security.MtlsTestCertificate.<Clone>$() -> SharedKernel.Testing.Security.MtlsTestCertificate!
+SharedKernel.Testing.Security.MtlsTestCertificate.Certificate.get -> System.Security.Cryptography.X509Certificates.X509Certificate2!
+SharedKernel.Testing.Security.MtlsTestCertificate.Certificate.init -> void
+SharedKernel.Testing.Security.MtlsTestCertificate.Deconstruct(out System.Security.Cryptography.X509Certificates.X509Certificate2! Certificate, out System.Security.Cryptography.X509Certificates.X509Certificate2? IssuingCertificate, out byte[]? RevocationList, out bool IsSelfSigned) -> void
+SharedKernel.Testing.Security.MtlsTestCertificate.Equals(SharedKernel.Testing.Security.MtlsTestCertificate? other) -> bool
+SharedKernel.Testing.Security.MtlsTestCertificate.IsSelfSigned.get -> bool
+SharedKernel.Testing.Security.MtlsTestCertificate.IsSelfSigned.init -> void
+SharedKernel.Testing.Security.MtlsTestCertificate.IssuingCertificate.get -> System.Security.Cryptography.X509Certificates.X509Certificate2?
+SharedKernel.Testing.Security.MtlsTestCertificate.IssuingCertificate.init -> void
+SharedKernel.Testing.Security.MtlsTestCertificate.MtlsTestCertificate(System.Security.Cryptography.X509Certificates.X509Certificate2! Certificate, System.Security.Cryptography.X509Certificates.X509Certificate2? IssuingCertificate, byte[]? RevocationList, bool IsSelfSigned) -> void
+SharedKernel.Testing.Security.MtlsTestCertificate.RevocationList.get -> byte[]?
+SharedKernel.Testing.Security.MtlsTestCertificate.RevocationList.init -> void
+SharedKernel.Testing.Security.MtlsTestCertificateBuilder
+SharedKernel.Testing.Security.MtlsTestCertificateBuilder.AsChainedFromEphemeralCa() -> SharedKernel.Testing.Security.MtlsTestCertificateBuilder!
+SharedKernel.Testing.Security.MtlsTestCertificateBuilder.AsRevoked() -> SharedKernel.Testing.Security.MtlsTestCertificateBuilder!
+SharedKernel.Testing.Security.MtlsTestCertificateBuilder.AsSelfSigned() -> SharedKernel.Testing.Security.MtlsTestCertificateBuilder!
+SharedKernel.Testing.Security.MtlsTestCertificateBuilder.Build() -> SharedKernel.Testing.Security.MtlsTestCertificate!
+SharedKernel.Testing.Security.MtlsTestCertificateBuilder.MtlsTestCertificateBuilder() -> void
+SharedKernel.Testing.Security.MtlsTestCertificateBuilder.WithSubjectName(string! subjectName = "CN=mtls-test-client") -> SharedKernel.Testing.Security.MtlsTestCertificateBuilder!
+SharedKernel.Testing.Security.MtlsTestCertificateBuilder.WithValidityPeriod(System.DateTimeOffset notBefore, System.DateTimeOffset notAfter) -> SharedKernel.Testing.Security.MtlsTestCertificateBuilder!
+SharedKernel.Testing.Security.SecurityTestContextBuilder
+SharedKernel.Testing.Security.SecurityTestContextBuilder.Build() -> System.Security.Claims.ClaimsPrincipal!
+SharedKernel.Testing.Security.SecurityTestContextBuilder.BuildUserContext() -> SharedKernel.Testing.Security.FakeUserContext!
+SharedKernel.Testing.Security.SecurityTestContextBuilder.SecurityTestContextBuilder() -> void
+SharedKernel.Testing.Security.SecurityTestContextBuilder.Unauthenticated() -> SharedKernel.Testing.Security.SecurityTestContextBuilder!
+SharedKernel.Testing.Security.SecurityTestContextBuilder.WithActorKind(SharedKernel.Execution.Context.ActorKind actorKind) -> SharedKernel.Testing.Security.SecurityTestContextBuilder!
+SharedKernel.Testing.Security.SecurityTestContextBuilder.WithAuthContextClassReference(string? authContextClassReference) -> SharedKernel.Testing.Security.SecurityTestContextBuilder!
+SharedKernel.Testing.Security.SecurityTestContextBuilder.WithAuthenticationMethods(params string![]! authenticationMethods) -> SharedKernel.Testing.Security.SecurityTestContextBuilder!
+SharedKernel.Testing.Security.SecurityTestContextBuilder.WithAuthTime(System.DateTimeOffset? authTime) -> SharedKernel.Testing.Security.SecurityTestContextBuilder!
+SharedKernel.Testing.Security.SecurityTestContextBuilder.WithClaim(string! type, string! value) -> SharedKernel.Testing.Security.SecurityTestContextBuilder!
+SharedKernel.Testing.Security.SecurityTestContextBuilder.WithClientId(string? clientId) -> SharedKernel.Testing.Security.SecurityTestContextBuilder!
+SharedKernel.Testing.Security.SecurityTestContextBuilder.WithEmail(string? email) -> SharedKernel.Testing.Security.SecurityTestContextBuilder!
+SharedKernel.Testing.Security.SecurityTestContextBuilder.WithName(string? name) -> SharedKernel.Testing.Security.SecurityTestContextBuilder!
+SharedKernel.Testing.Security.SecurityTestContextBuilder.WithPermissions(params string![]! permissions) -> SharedKernel.Testing.Security.SecurityTestContextBuilder!
+SharedKernel.Testing.Security.SecurityTestContextBuilder.WithRoles(params string![]! roles) -> SharedKernel.Testing.Security.SecurityTestContextBuilder!
+SharedKernel.Testing.Security.SecurityTestContextBuilder.WithSessionId(string? sessionId) -> SharedKernel.Testing.Security.SecurityTestContextBuilder!
+SharedKernel.Testing.Security.SecurityTestContextBuilder.WithSubjectId(string! subjectId) -> SharedKernel.Testing.Security.SecurityTestContextBuilder!
+SharedKernel.Testing.Security.SecurityTestContextBuilder.WithTenantId(SharedKernel.Execution.Tenancy.TenantId? tenantId) -> SharedKernel.Testing.Security.SecurityTestContextBuilder!
+static SharedKernel.Testing.Security.DpopTestProof.operator !=(SharedKernel.Testing.Security.DpopTestProof? left, SharedKernel.Testing.Security.DpopTestProof? right) -> bool
+static SharedKernel.Testing.Security.DpopTestProof.operator ==(SharedKernel.Testing.Security.DpopTestProof? left, SharedKernel.Testing.Security.DpopTestProof? right) -> bool
+static SharedKernel.Testing.Security.MtlsTestCertificate.operator !=(SharedKernel.Testing.Security.MtlsTestCertificate? left, SharedKernel.Testing.Security.MtlsTestCertificate? right) -> bool
+static SharedKernel.Testing.Security.MtlsTestCertificate.operator ==(SharedKernel.Testing.Security.MtlsTestCertificate? left, SharedKernel.Testing.Security.MtlsTestCertificate? right) -> bool

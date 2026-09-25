@@ -12,6 +12,7 @@
       16.Testing per the root CLAUDE.md Test Project Rules.
     -->
     <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
+    <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Security.Testing\SharedKernel.Security.Testing.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="xunit" />

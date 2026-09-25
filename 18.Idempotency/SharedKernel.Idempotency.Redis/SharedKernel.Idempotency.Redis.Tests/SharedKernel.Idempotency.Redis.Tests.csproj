@@ -19,6 +19,7 @@
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Idempotency.Redis.csproj" />
     <!-- SharedKernel.Testing provides RedisContainerFixture, InMemoryLogger, FakeClock -->
+    <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Testing.Internal\SharedKernel.Testing.Internal.csproj" />
     <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
   </ItemGroup>
 </Project>

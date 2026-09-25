@@ -1,0 +1,96 @@
+#nullable enable
+SharedKernel.Testing.Cryptography.FakeAsymmetricSignatureService
+SharedKernel.Testing.Cryptography.FakeAsymmetricSignatureService.FakeAsymmetricSignatureService(SharedKernel.Testing.Cryptography.FakeSigningKeyProvider? keyProvider = null) -> void
+SharedKernel.Testing.Cryptography.FakeAsymmetricSignatureService.GetAlgorithmAsync(string! keyId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Cryptography.Signing.SignatureAlgorithm>
+SharedKernel.Testing.Cryptography.FakeAsymmetricSignatureService.KeyProvider.get -> SharedKernel.Testing.Cryptography.FakeSigningKeyProvider!
+SharedKernel.Testing.Cryptography.FakeAsymmetricSignatureService.SignAsync(System.IO.Stream! data, string! keyId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<byte[]!>
+SharedKernel.Testing.Cryptography.FakeAsymmetricSignatureService.SignAsync(System.ReadOnlyMemory<byte> data, string! keyId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<byte[]!>
+SharedKernel.Testing.Cryptography.FakeAsymmetricSignatureService.SignedPayloads.get -> System.Collections.Generic.IReadOnlyList<(byte[]! Data, string! KeyId)>!
+SharedKernel.Testing.Cryptography.FakeAsymmetricSignatureService.VerifyAsync(System.IO.Stream! data, System.ReadOnlyMemory<byte> signature, string! keyId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<bool>
+SharedKernel.Testing.Cryptography.FakeAsymmetricSignatureService.VerifyAsync(System.ReadOnlyMemory<byte> data, System.ReadOnlyMemory<byte> signature, string! keyId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<bool>
+SharedKernel.Testing.Cryptography.FakeContentHasher
+SharedKernel.Testing.Cryptography.FakeContentHasher.ComputeHash(System.IO.Stream! content) -> byte[]!
+SharedKernel.Testing.Cryptography.FakeContentHasher.ComputeHash(System.ReadOnlySpan<byte> content) -> byte[]!
+SharedKernel.Testing.Cryptography.FakeContentHasher.ComputeHashAsync(System.IO.Stream! content, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<byte[]!>
+SharedKernel.Testing.Cryptography.FakeContentHasher.FakeContentHasher() -> void
+SharedKernel.Testing.Cryptography.FakeContentHasher.HashedContent.get -> System.Collections.Generic.IReadOnlyList<byte[]!>!
+SharedKernel.Testing.Cryptography.FakeCryptographyServiceCollectionExtensions
+SharedKernel.Testing.Cryptography.FakeEncryptionKeyProvider
+SharedKernel.Testing.Cryptography.FakeEncryptionKeyProvider.AddKey(string! keyId) -> SharedKernel.Cryptography.Symmetric.CryptographicKey!
+SharedKernel.Testing.Cryptography.FakeEncryptionKeyProvider.CurrentKeyId.get -> string!
+SharedKernel.Testing.Cryptography.FakeEncryptionKeyProvider.FakeEncryptionKeyProvider(string! currentKeyId = "v1") -> void
+SharedKernel.Testing.Cryptography.FakeEncryptionKeyProvider.GetCurrentKey() -> SharedKernel.Cryptography.Symmetric.CryptographicKey!
+SharedKernel.Testing.Cryptography.FakeEncryptionKeyProvider.GetCurrentKeyAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Cryptography.Symmetric.CryptographicKey!>
+SharedKernel.Testing.Cryptography.FakeEncryptionKeyProvider.GetKey(string! keyId) -> SharedKernel.Cryptography.Symmetric.CryptographicKey?
+SharedKernel.Testing.Cryptography.FakeEncryptionKeyProvider.GetKeyAsync(string! keyId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Cryptography.Symmetric.CryptographicKey?>
+SharedKernel.Testing.Cryptography.FakeEncryptionKeyProvider.RemoveKey(string! keyId) -> void
+SharedKernel.Testing.Cryptography.FakeEncryptionKeyProvider.SetCurrentKey(string! keyId) -> void
+SharedKernel.Testing.Cryptography.FakeEnvelopeEncryptionProvider
+SharedKernel.Testing.Cryptography.FakeEnvelopeEncryptionProvider.FakeEnvelopeEncryptionProvider(string! masterKeyId = "fake-master/v1") -> void
+SharedKernel.Testing.Cryptography.FakeEnvelopeEncryptionProvider.GenerateCallCount.get -> int
+SharedKernel.Testing.Cryptography.FakeEnvelopeEncryptionProvider.GenerateDataKeyAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Cryptography.Envelope.EnvelopeDataKey!>
+SharedKernel.Testing.Cryptography.FakeEnvelopeEncryptionProvider.MasterKeyId.get -> string!
+SharedKernel.Testing.Cryptography.FakeEnvelopeEncryptionProvider.SimulateUnwrapFailure.get -> bool
+SharedKernel.Testing.Cryptography.FakeEnvelopeEncryptionProvider.SimulateUnwrapFailure.set -> void
+SharedKernel.Testing.Cryptography.FakeEnvelopeEncryptionProvider.UnwrapCallCount.get -> int
+SharedKernel.Testing.Cryptography.FakeEnvelopeEncryptionProvider.UnwrapDataKeyAsync(System.ReadOnlyMemory<byte> wrappedKey, string! masterKeyId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Primitives.Results.Result<byte[]!>!>
+SharedKernel.Testing.Cryptography.FakeHmacSigner
+SharedKernel.Testing.Cryptography.FakeHmacSigner.FakeHmacSigner() -> void
+SharedKernel.Testing.Cryptography.FakeHmacSigner.Sign(System.ReadOnlySpan<byte> data, System.ReadOnlySpan<byte> key) -> byte[]!
+SharedKernel.Testing.Cryptography.FakeHmacSigner.SignedPayloads.get -> System.Collections.Generic.IReadOnlyList<(byte[]! Data, byte[]! Key)>!
+SharedKernel.Testing.Cryptography.FakeHmacSigner.VerifiedPayloads.get -> System.Collections.Generic.IReadOnlyList<(byte[]! Data, byte[]! Key)>!
+SharedKernel.Testing.Cryptography.FakeHmacSigner.Verify(System.ReadOnlySpan<byte> data, System.ReadOnlySpan<byte> signature, System.ReadOnlySpan<byte> key) -> bool
+SharedKernel.Testing.Cryptography.FakeOneWayHasher
+SharedKernel.Testing.Cryptography.FakeOneWayHasher.FakeOneWayHasher() -> void
+SharedKernel.Testing.Cryptography.FakeOneWayHasher.Hash(string! secret) -> string!
+SharedKernel.Testing.Cryptography.FakeOneWayHasher.Iterations.get -> int
+SharedKernel.Testing.Cryptography.FakeOneWayHasher.Iterations.set -> void
+SharedKernel.Testing.Cryptography.FakeOneWayHasher.Verify(string! hash, string! secret) -> SharedKernel.Cryptography.Hashing.HashVerificationResult
+SharedKernel.Testing.Cryptography.FakeRemoteEncryptionKeyProvider
+SharedKernel.Testing.Cryptography.FakeRemoteEncryptionKeyProvider.AddKey(string! keyId) -> SharedKernel.Cryptography.Symmetric.CryptographicKey!
+SharedKernel.Testing.Cryptography.FakeRemoteEncryptionKeyProvider.CurrentKeyCallCount.get -> int
+SharedKernel.Testing.Cryptography.FakeRemoteEncryptionKeyProvider.FakeRemoteEncryptionKeyProvider(string! currentKeyId = "v1") -> void
+SharedKernel.Testing.Cryptography.FakeRemoteEncryptionKeyProvider.GetCurrentKeyAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Cryptography.Symmetric.CryptographicKey!>
+SharedKernel.Testing.Cryptography.FakeRemoteEncryptionKeyProvider.GetKeyAsync(string! keyId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Cryptography.Symmetric.CryptographicKey?>
+SharedKernel.Testing.Cryptography.FakeRemoteEncryptionKeyProvider.KeyCallCount.get -> int
+SharedKernel.Testing.Cryptography.FakeRemoteEncryptionKeyProvider.RemoveKey(string! keyId) -> void
+SharedKernel.Testing.Cryptography.FakeRemoteEncryptionKeyProvider.SetCurrentKey(string! keyId) -> void
+SharedKernel.Testing.Cryptography.FakeSecureRandomGenerator
+SharedKernel.Testing.Cryptography.FakeSecureRandomGenerator.FakeSecureRandomGenerator(int? seed = null) -> void
+SharedKernel.Testing.Cryptography.FakeSecureRandomGenerator.Fill(System.Span<byte> destination) -> void
+SharedKernel.Testing.Cryptography.FakeSecureRandomGenerator.GetBytes(int length) -> byte[]!
+SharedKernel.Testing.Cryptography.FakeSecureRandomGenerator.GetInt32(int toExclusive) -> int
+SharedKernel.Testing.Cryptography.FakeSecureRandomGenerator.GetString(System.ReadOnlySpan<char> alphabet, int length) -> string!
+SharedKernel.Testing.Cryptography.FakeSecureRandomGenerator.GetToken(int byteCount = 32) -> string!
+SharedKernel.Testing.Cryptography.FakeSigningKeyProvider
+SharedKernel.Testing.Cryptography.FakeSigningKeyProvider.AddKey(string! keyId, SharedKernel.Cryptography.Signing.SignatureAlgorithm algorithm) -> SharedKernel.Cryptography.Signing.SigningKey!
+SharedKernel.Testing.Cryptography.FakeSigningKeyProvider.CreateKeysOnDemand.get -> bool
+SharedKernel.Testing.Cryptography.FakeSigningKeyProvider.CreateKeysOnDemand.set -> void
+SharedKernel.Testing.Cryptography.FakeSigningKeyProvider.DefaultAlgorithm.get -> SharedKernel.Cryptography.Signing.SignatureAlgorithm
+SharedKernel.Testing.Cryptography.FakeSigningKeyProvider.DefaultAlgorithm.set -> void
+SharedKernel.Testing.Cryptography.FakeSigningKeyProvider.Dispose() -> void
+SharedKernel.Testing.Cryptography.FakeSigningKeyProvider.FakeSigningKeyProvider() -> void
+SharedKernel.Testing.Cryptography.FakeSigningKeyProvider.GetSigningKeyAsync(string! keyId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Cryptography.Signing.SigningKey?>
+SharedKernel.Testing.Cryptography.FakeSymmetricEncryptionService
+SharedKernel.Testing.Cryptography.FakeSymmetricEncryptionService.Decrypt(SharedKernel.Cryptography.Symmetric.EncryptedPayload! payload, System.ReadOnlySpan<byte> associatedData) -> SharedKernel.Primitives.Results.Result<byte[]!>!
+SharedKernel.Testing.Cryptography.FakeSymmetricEncryptionService.DecryptAsync(SharedKernel.Cryptography.Symmetric.EncryptedPayload! payload, System.ReadOnlyMemory<byte> associatedData, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Primitives.Results.Result<byte[]!>!>
+SharedKernel.Testing.Cryptography.FakeSymmetricEncryptionService.DecryptToString(string! encoded, System.ReadOnlySpan<byte> associatedData) -> SharedKernel.Primitives.Results.Result<string!>!
+SharedKernel.Testing.Cryptography.FakeSymmetricEncryptionService.DecryptToStringAsync(string! encoded, System.ReadOnlyMemory<byte> associatedData, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Primitives.Results.Result<string!>!>
+SharedKernel.Testing.Cryptography.FakeSymmetricEncryptionService.Encrypt(System.ReadOnlySpan<byte> plaintext, System.ReadOnlySpan<byte> associatedData) -> SharedKernel.Cryptography.Symmetric.EncryptedPayload!
+SharedKernel.Testing.Cryptography.FakeSymmetricEncryptionService.EncryptAsync(System.ReadOnlyMemory<byte> plaintext, System.ReadOnlyMemory<byte> associatedData, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Cryptography.Symmetric.EncryptedPayload!>
+SharedKernel.Testing.Cryptography.FakeSymmetricEncryptionService.EncryptedPayloads.get -> System.Collections.Generic.IReadOnlyList<(SharedKernel.Cryptography.Symmetric.EncryptedPayload! Payload, byte[]! AssociatedData)>!
+SharedKernel.Testing.Cryptography.FakeSymmetricEncryptionService.EncryptToString(string! plaintext, System.ReadOnlySpan<byte> associatedData) -> string!
+SharedKernel.Testing.Cryptography.FakeSymmetricEncryptionService.EncryptToStringAsync(string! plaintext, System.ReadOnlyMemory<byte> associatedData, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<string!>
+SharedKernel.Testing.Cryptography.FakeSymmetricEncryptionService.FakeSymmetricEncryptionService(SharedKernel.Testing.Cryptography.FakeEncryptionKeyProvider? keyProvider = null) -> void
+SharedKernel.Testing.Cryptography.FakeSymmetricEncryptionService.IsEncryptedWithCurrentKey(SharedKernel.Cryptography.Symmetric.EncryptedPayload! payload) -> bool
+SharedKernel.Testing.Cryptography.FakeSymmetricEncryptionService.IsEncryptedWithCurrentKeyAsync(SharedKernel.Cryptography.Symmetric.EncryptedPayload! payload, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<bool>
+SharedKernel.Testing.Cryptography.FakeSymmetricEncryptionService.KeyProvider.get -> SharedKernel.Testing.Cryptography.FakeEncryptionKeyProvider!
+SharedKernel.Testing.Cryptography.FakeSymmetricEncryptionService.ReEncrypt(SharedKernel.Cryptography.Symmetric.EncryptedPayload! payload, System.ReadOnlySpan<byte> associatedData) -> SharedKernel.Primitives.Results.Result<SharedKernel.Cryptography.Symmetric.EncryptedPayload!>!
+SharedKernel.Testing.Cryptography.FakeSymmetricEncryptionService.ReEncryptAsync(SharedKernel.Cryptography.Symmetric.EncryptedPayload! payload, System.ReadOnlyMemory<byte> associatedData, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Primitives.Results.Result<SharedKernel.Cryptography.Symmetric.EncryptedPayload!>!>
+SharedKernel.Testing.Cryptography.FakeSymmetricEncryptionService.SimulateDecryptFailure.get -> bool
+SharedKernel.Testing.Cryptography.FakeSymmetricEncryptionService.SimulateDecryptFailure.set -> void
+SharedKernel.Testing.Cryptography.FakeTotpReplayGuard
+SharedKernel.Testing.Cryptography.FakeTotpReplayGuard.FakeTotpReplayGuard(SharedKernel.Primitives.Clocks.IClock? clock = null) -> void
+SharedKernel.Testing.Cryptography.FakeTotpReplayGuard.Reset() -> void
+SharedKernel.Testing.Cryptography.FakeTotpReplayGuard.TryAcceptTimeStepAsync(string! identityKey, long timeStep, System.TimeSpan retention, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<bool>
+static SharedKernel.Testing.Cryptography.FakeCryptographyServiceCollectionExtensions.AddFakeCryptography(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!

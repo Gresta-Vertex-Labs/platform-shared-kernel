@@ -1,0 +1,10 @@
+#nullable enable
+SharedKernel.Testing.Communication.FakeHttpContextAccessor
+SharedKernel.Testing.Communication.FakeHttpContextAccessor.FakeHttpContextAccessor(Microsoft.AspNetCore.Http.HttpContext? context = null) -> void
+SharedKernel.Testing.Communication.FakeHttpContextAccessor.HttpContext.get -> Microsoft.AspNetCore.Http.HttpContext?
+SharedKernel.Testing.Communication.FakeHttpContextAccessor.HttpContext.set -> void
+SharedKernel.Testing.Communication.GraphQLTestExecutorFactory
+SharedKernel.Testing.Grpc.TestServerCallContext
+static SharedKernel.Testing.Communication.FakeHttpContextAccessor.WithTenant(SharedKernel.Execution.Tenancy.TenantId? tenantId) -> SharedKernel.Testing.Communication.FakeHttpContextAccessor!
+static SharedKernel.Testing.Communication.GraphQLTestExecutorFactory.Create(Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> HotChocolate.Execution.Configuration.IRequestExecutorBuilder!
+static SharedKernel.Testing.Grpc.TestServerCallContext.Create(string? correlationId = null, Grpc.Core.Metadata? requestHeaders = null, System.Action<Microsoft.Extensions.DependencyInjection.IServiceCollection!>? configureServices = null, System.Collections.Generic.IEnumerable<object!>? endpointMetadata = null, Microsoft.AspNetCore.Http.HttpContext? httpContext = null, string! method = "test-method", string! host = "localhost", System.DateTime? deadline = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> Grpc.Core.ServerCallContext!

@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <SharedKernelTier>Testing</SharedKernelTier>
+    <Description>In-memory test doubles for SharedKernel.Search.Abstractions, for test projects only. InMemorySearchIndex, InMemorySearchIndexProvisioner and InMemorySearchProviderDescriptor evaluate the neutral filter AST, paging and tenant scoping without a search engine.</Description>
+    <PackageTags>search;testing;test-doubles;in-memory;shared-kernel</PackageTags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- A test-helper LIBRARY, not a test project: dotnet test must not try to run it. -->
+    <IsTestProject>false</IsTestProject>
+    <WarningsAsErrors>$(WarningsAsErrors);nullable;CS1591;RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
+    <!-- RS0026/RS0027 (several public overloads with optional parameters): a test double mirrors the overload set of
+         the interface it implements, so the rule cannot be satisfied without breaking the contract it fakes. -->
+    <NoWarn>$(NoWarn);RS0026;RS0027</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\09.Search\SharedKernel.Search.Abstractions\SharedKernel.Search.Abstractions.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+</Project>

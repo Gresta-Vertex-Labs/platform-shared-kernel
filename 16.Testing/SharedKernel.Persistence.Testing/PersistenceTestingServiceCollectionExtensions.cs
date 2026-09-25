@@ -6,6 +6,7 @@ using SharedKernel.Execution.Transactions;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.Abstractions.Repositories;
+using SharedKernel.Testing.Execution;
 
 namespace SharedKernel.Persistence.Testing;
 

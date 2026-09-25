@@ -1,0 +1,72 @@
+#nullable enable
+const SharedKernel.Testing.Caching.FakeTenantCacheKeyProvider.DefaultServiceName = "test-svc" -> string!
+SharedKernel.Testing.Caching.CachingServiceCollectionExtensions
+SharedKernel.Testing.Caching.FakeCacheService
+SharedKernel.Testing.Caching.FakeCacheService.Clear() -> void
+SharedKernel.Testing.Caching.FakeCacheService.ClearAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SharedKernel.Testing.Caching.FakeCacheService.Count.get -> int
+SharedKernel.Testing.Caching.FakeCacheService.ExpireAsync(string! key, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SharedKernel.Testing.Caching.FakeCacheService.FactoryInvocationCount.get -> int
+SharedKernel.Testing.Caching.FakeCacheService.FakeCacheService() -> void
+SharedKernel.Testing.Caching.FakeCacheService.GetOrSetAsync<T>(string! key, System.Func<SharedKernel.Caching.Abstractions.CacheFactoryContext!, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<T>>! factory, SharedKernel.Caching.Abstractions.CachePolicy! policy, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<T>
+SharedKernel.Testing.Caching.FakeCacheService.GetOrSetAsync<T>(string! key, System.Func<System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<T>>! factory, SharedKernel.Caching.Abstractions.CachePolicy! policy, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<T>
+SharedKernel.Testing.Caching.FakeCacheService.GetTags(string! key) -> System.Collections.Generic.IReadOnlyList<string!>?
+SharedKernel.Testing.Caching.FakeCacheService.RemoveAsync(string! key, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SharedKernel.Testing.Caching.FakeCacheService.RemoveByTagAsync(string! tag, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SharedKernel.Testing.Caching.FakeCacheService.RemoveByTagsAsync(System.Collections.Generic.IEnumerable<string!>! tags, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SharedKernel.Testing.Caching.FakeCacheService.SetAsync<T>(string! key, T value, SharedKernel.Caching.Abstractions.CachePolicy! policy, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SharedKernel.Testing.Caching.FakeCacheService.SetManyAsync<T>(System.Collections.Generic.IReadOnlyDictionary<string!, T>! entries, SharedKernel.Caching.Abstractions.CachePolicy! policy, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SharedKernel.Testing.Caching.FakeCacheService.TryGetAsync<T>(string! key, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Caching.Abstractions.CacheLookup<T>>
+SharedKernel.Testing.Caching.FakeCacheService.TryGetManyAsync<T>(System.Collections.Generic.IEnumerable<string!>! keys, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<System.Collections.Generic.IReadOnlyDictionary<string!, SharedKernel.Caching.Abstractions.CacheLookup<T>>!>
+SharedKernel.Testing.Caching.FakeCacheWarmupStrategy
+SharedKernel.Testing.Caching.FakeCacheWarmupStrategy.CallCount.get -> int
+SharedKernel.Testing.Caching.FakeCacheWarmupStrategy.FakeCacheWarmupStrategy(string! name, int order = 0, System.Collections.Concurrent.ConcurrentQueue<string!>? executionLog = null) -> void
+SharedKernel.Testing.Caching.FakeCacheWarmupStrategy.Name.get -> string!
+SharedKernel.Testing.Caching.FakeCacheWarmupStrategy.OnWarmup.get -> System.Action<SharedKernel.Caching.Abstractions.ICacheService!>?
+SharedKernel.Testing.Caching.FakeCacheWarmupStrategy.OnWarmup.set -> void
+SharedKernel.Testing.Caching.FakeCacheWarmupStrategy.Order.get -> int
+SharedKernel.Testing.Caching.FakeCacheWarmupStrategy.SimulateFailure.get -> bool
+SharedKernel.Testing.Caching.FakeCacheWarmupStrategy.SimulateFailure.set -> void
+SharedKernel.Testing.Caching.FakeCacheWarmupStrategy.WarmupAsync(SharedKernel.Caching.Abstractions.ICacheService! cache, System.Threading.CancellationToken ct) -> System.Threading.Tasks.ValueTask
+SharedKernel.Testing.Caching.FakeDistributedLock
+SharedKernel.Testing.Caching.FakeDistributedLock.DisposeAsync() -> System.Threading.Tasks.ValueTask
+SharedKernel.Testing.Caching.FakeDistributedLock.FencingToken.get -> long
+SharedKernel.Testing.Caching.FakeDistributedLock.IsHeld.get -> bool
+SharedKernel.Testing.Caching.FakeDistributedLock.IsReleased.get -> bool
+SharedKernel.Testing.Caching.FakeDistributedLock.LostToken.get -> System.Threading.CancellationToken
+SharedKernel.Testing.Caching.FakeDistributedLock.Resource.get -> string!
+SharedKernel.Testing.Caching.FakeDistributedLock.SimulateLoss() -> void
+SharedKernel.Testing.Caching.FakeDistributedLockService
+SharedKernel.Testing.Caching.FakeDistributedLockService.AcquiredLeases.get -> System.Collections.Generic.IReadOnlyList<SharedKernel.Caching.Abstractions.DistributedLease!>!
+SharedKernel.Testing.Caching.FakeDistributedLockService.AcquiredLocks.get -> System.Collections.Generic.IReadOnlyList<SharedKernel.Testing.Caching.FakeDistributedLock!>!
+SharedKernel.Testing.Caching.FakeDistributedLockService.FakeDistributedLockService() -> void
+SharedKernel.Testing.Caching.FakeDistributedLockService.FakeDistributedLockService(System.TimeProvider! timeProvider) -> void
+SharedKernel.Testing.Caching.FakeDistributedLockService.SimulateContention.get -> bool
+SharedKernel.Testing.Caching.FakeDistributedLockService.SimulateContention.set -> void
+SharedKernel.Testing.Caching.FakeDistributedLockService.SimulateUnavailable.get -> bool
+SharedKernel.Testing.Caching.FakeDistributedLockService.SimulateUnavailable.set -> void
+SharedKernel.Testing.Caching.FakeDistributedLockService.TryAcquireAsync(string! resource, SharedKernel.Caching.Abstractions.DistributedLockOptions? options = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Caching.Abstractions.IDistributedLock?>
+SharedKernel.Testing.Caching.FakeDistributedLockService.TryAcquireLeaseAsync(string! resource, System.TimeSpan duration, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Caching.Abstractions.DistributedLease?>
+SharedKernel.Testing.Caching.FakeTenantCacheKeyProvider
+SharedKernel.Testing.Caching.FakeTenantCacheKeyProvider.BuildKey(string! entity, string! id, params string![]! segments) -> string!
+SharedKernel.Testing.Caching.FakeTenantCacheKeyProvider.BuildTenantKey(SharedKernel.Execution.Tenancy.TenantId tenantId, string! entity, string! id, params string![]! segments) -> string!
+SharedKernel.Testing.Caching.FakeTenantCacheKeyProvider.FakeTenantCacheKeyProvider() -> void
+SharedKernel.Testing.Caching.FakeTenantCacheKeyProvider.FakeTenantCacheKeyProvider(string! serviceName) -> void
+SharedKernel.Testing.Caching.FakeTenantCacheKeyProvider.ServiceName.get -> string!
+SharedKernel.Testing.Caching.FakeTenantCacheService
+SharedKernel.Testing.Caching.FakeTenantCacheService.Cache.get -> SharedKernel.Testing.Caching.FakeCacheService!
+SharedKernel.Testing.Caching.FakeTenantCacheService.Count.get -> int
+SharedKernel.Testing.Caching.FakeTenantCacheService.ExpireAsync(SharedKernel.Execution.Tenancy.TenantId tenantId, string! entity, string! id, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SharedKernel.Testing.Caching.FakeTenantCacheService.FakeTenantCacheService() -> void
+SharedKernel.Testing.Caching.FakeTenantCacheService.FakeTenantCacheService(SharedKernel.Testing.Caching.FakeCacheService! cache, SharedKernel.Caching.Abstractions.ITenantCacheKeyProvider! keyProvider) -> void
+SharedKernel.Testing.Caching.FakeTenantCacheService.GetOrSetAsync<T>(SharedKernel.Execution.Tenancy.TenantId tenantId, string! entity, string! id, System.Func<SharedKernel.Caching.Abstractions.CacheFactoryContext!, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<T>>! factory, SharedKernel.Caching.Abstractions.CachePolicy! policy, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<T>
+SharedKernel.Testing.Caching.FakeTenantCacheService.GetOrSetAsync<T>(SharedKernel.Execution.Tenancy.TenantId tenantId, string! entity, string! id, System.Func<System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<T>>! factory, SharedKernel.Caching.Abstractions.CachePolicy! policy, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<T>
+SharedKernel.Testing.Caching.FakeTenantCacheService.RemoveAsync(SharedKernel.Execution.Tenancy.TenantId tenantId, string! entity, string! id, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SharedKernel.Testing.Caching.FakeTenantCacheService.RemoveByTagAsync(SharedKernel.Execution.Tenancy.TenantId tenantId, string! tag, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SharedKernel.Testing.Caching.FakeTenantCacheService.RemoveTenantAsync(SharedKernel.Execution.Tenancy.TenantId tenantId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SharedKernel.Testing.Caching.FakeTenantCacheService.Reset() -> void
+SharedKernel.Testing.Caching.FakeTenantCacheService.SetAsync<T>(SharedKernel.Execution.Tenancy.TenantId tenantId, string! entity, string! id, T value, SharedKernel.Caching.Abstractions.CachePolicy! policy, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SharedKernel.Testing.Caching.FakeTenantCacheService.TryGetAsync<T>(SharedKernel.Execution.Tenancy.TenantId tenantId, string! entity, string! id, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Caching.Abstractions.CacheLookup<T>>
+static SharedKernel.Testing.Caching.CachingServiceCollectionExtensions.AddFakeCacheWarmupStrategy(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, string! name, int order = 0, System.Collections.Concurrent.ConcurrentQueue<string!>? executionLog = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SharedKernel.Testing.Caching.CachingServiceCollectionExtensions.AddFakeCachingServices(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SharedKernel.Testing.Caching.CachingServiceCollectionExtensions.AddFakeTenantCacheService(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!

@@ -1,211 +1,66 @@
 # SharedKernel.Testing
 
 ![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)
+![Test projects only](https://img.shields.io/badge/use-test%20projects%20only-orange)
+![Test framework: any](https://img.shields.io/badge/test%20framework-any-informational)
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue)
-![Consumption: ProjectReference](https://img.shields.io/badge/consumption-ProjectReference-informational)
-![Runner-agnostic](https://img.shields.io/badge/ships%20no-test%20runner-brightgreen)
 
-**The shared test library for this repository: a test double for every SharedKernel abstraction, container
-fixtures for the real dependencies, and assertion helpers that check outcomes rather than rendered strings.**
+**The lightweight core of the SharedKernel testing packages: the basics every test suite needs, with no
+infrastructure dependency.** It depends only on the Foundation and Model packages (Primitives, Execution,
+DataPrivacy, Validation, Domain, Contracts), Bogus and the `Microsoft.Extensions.*.Abstractions` packages, and on
+no test framework.
 
-Each package here implements another domain's *published contract*, so a test writes against the same
-interface production code does. A fake never reaches for a provider: `FakeCacheService` implements
-`ICacheService` and knows nothing about Redis, so a test that uses it needs no server.
+## Install
 
-| You get | So that |
-| --- | --- |
-| In-memory doubles for the platform's abstractions | A unit test exercises real wiring with no infrastructure |
-| Testcontainers fixtures for Postgres, Redis, RabbitMQ, MinIO, Elasticsearch, Meilisearch and Qdrant | An integration test runs against the real engine, not a mock of it |
-| `InMemoryLogger` and `LoggerAssertions` | Log assertions key off `EventId` and structured properties, never a formatted message |
-| Deterministic fakers (Bogus) seeded once per assembly | The same test data every run, on every machine and in CI |
-| `ApplicationPipelineTestHarness` | A service asserts its own MediatR behavior composition end to end |
-
-## Not a published package
-
-`IsPackable=false`. This library is consumed **by `ProjectReference` inside this repository only** — it is
-never pushed to a feed, and production code never references it (an architecture test enforces that). It is
-also not a test project: it ships no runner, and references `xunit.core` solely for the `IAsyncLifetime`
-contract the container fixtures implement, so your own suite picks its own runner.
+Reference it from a **test project only**; an architecture test fails any production project that references a
+`SharedKernel.*.Testing` package.
 
 ```xml
-<ProjectReference Include="..\..\..\16.Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
+<PackageReference Include="SharedKernel.Testing" />
 ```
 
-## Quick start
+## Contents
 
-### A controllable clock
-
-```csharp
-var clock = new FakeClock(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
-
-var subscription = Subscription.Start(clock);
-clock.Advance(TimeSpan.FromDays(31));
-
-Assert.True(subscription.IsExpired(clock));
-```
-
-`FakeClock` implements `IClock`, so nothing under test reads the machine clock. `Set`/`SetUtcNow` jump to an
-instant, `Advance` moves relative to the current one.
-
-### Asserting what was published
-
-```csharp
-var bus = new InMemoryMessageBus();
-await new PlaceOrderHandler(bus).Handle(command, CancellationToken.None);
-
-var published = bus.ShouldHavePublishedOnce<OrderPlaced>();
-Assert.Equal(orderId, published.OrderId);
-bus.ShouldNotHavePublished<OrderCancelled>();
-```
-
-`ShouldHavePublished<T>()`, `ShouldHaveSent<T>()`, `ShouldHavePublishedOnce<T>()` and
-`ShouldNotHavePublished<T>()` fail with the recorded messages in the failure text. `SetResponseHandler` scripts
-a reply for `RequestAsync`. `InMemoryEventPublisher` does the same for `IEventPublisher`.
-
-### Asserting what was logged
-
-```csharp
-var logger = new InMemoryLogger<OrderService>();
-
-await new OrderService(logger).PlaceAsync(command, CancellationToken.None);
-
-logger.Records.ShouldHaveLogged(new EventId(5101), LogLevel.Information);
-logger.Records.ShouldHaveLoggedWithProperty(new EventId(5101), "RequestType", "PlaceOrderCommand");
-logger.Records.ShouldNotHaveLogged(new EventId(5103));
-```
-
-Assertions key off the `EventId` and the structured properties — never the rendered message — so rewording a
-message template never breaks a test. `AddInMemoryLoggerFactory()` registers the factory for a full host.
-
-### A command through the real pipeline
-
-```csharp
-using var harness = new ApplicationPipelineTestHarness();
-
-harness.Services.AddSingleton<IRequestContext>(new FakeRequestContext { Permissions = ["orders.place"] });
-harness.Services.AddScoped<IUnitOfWork, FakeUnitOfWork>();
-harness.AddBehaviors().AddDefaultBehaviors().AddAuthorizationBehavior().AddTransactionBehavior().Build();
-harness.Build<PlaceOrderCommand>();
-
-var result = await harness.SendAsync(new PlaceOrderCommand("ada", 10m));
-
-Assert.True(result.IsSuccess);
-```
-
-`WithActivityCapture()` additionally records the spans and metric measurements the pipeline emitted, exposed
-as `CapturedActivities` and `CapturedMeasurements`. `AddFakeApplicationBehaviorServices()` registers the
-whole seam set (`IRequestContext`, `IUnitOfWork`, the request-purpose `IIdempotencyStore`) in one call.
-
-### A real dependency, in a container
-
-```csharp
-public sealed class OrderRepositoryTests : IClassFixture<PostgreSqlContainerFixture>
-{
-    private readonly PostgreSqlContainerFixture _postgres;
-
-    public OrderRepositoryTests(PostgreSqlContainerFixture postgres) => _postgres = postgres;
-
-    [Fact]
-    public async Task Saves_and_reads_back()
-    {
-        var options = new DbContextOptionsBuilder<OrderDbContext>()
-            .UseNpgsql(_postgres.ConnectionString)
-            .Options;
-        // ...
-    }
-}
-```
-
-Each fixture starts its container in `InitializeAsync` and exposes a `ConnectionString`, which throws if read
-before the container is up. **Docker must be running**, so keep container-backed tests in their own suite — a
-machine without Docker fails every one of them.
-
-For a test that needs a `SharedKernelDbContext` without a container, derive from `TestSharedKernelDbContext`
-and build options with `TestSharedKernelDbContext.BuildOptions<TContext>(databaseName)`.
-
-### Deterministic data
-
-```csharp
-FakerSeeding.Apply();   // once per test assembly, before anything generates
-
-internal sealed class OrderFaker : AggregateRootFaker<Order, OrderId>
-{
-    public OrderFaker() =>
-        CustomInstantiator(f => Order.Place(f.Person.FullName, f.Random.Int(1, 5)));
-}
-
-var order = new OrderFaker().Generate();
-```
-
-`EntityFaker<TEntity,TId>`, `AggregateRootFaker<TAggregate,TId>`, `TenantedAggregateFaker<,>` and
-`SingleValueObjectFaker<,>` are abstract Bogus `Faker<T>` bases: derive one per type and supply a
-`CustomInstantiator`, since these types have no public parameterless constructor. `WithClock(clock)` hands
-the faker a clock for timestamped construction. `MoneyFaker` is concrete — call `Generate(currency, amount)`.
-
-`FakerSeeding.Apply()` fixes Bogus's global seed, so generated data is identical on every run. Call it from an
-assembly fixture, not per test.
-
-## What is in here
-
-The consumer-facing persistence doubles — `FakeRepository<,>`, `FakeUnitOfWork`, `FakeAuditTrailWriter` (for `AuditEntry`),
-`FakeDbConnectionFactory`, `FakeCrossTenantScope`, `TestRequestContext` and the `PostgresTestServer`/`PostgresTestDatabase`
-fixture — live in the packable `SharedKernel.Persistence.Testing` (namespace `SharedKernel.Persistence.Testing`), which
-this package references.
-
-| Area | Types |
+| Namespace | What it gives you |
 | --- | --- |
-| `Application/` | `FakeRequestContext` (a `TestRequestContext`), `ApplicationPipelineTestHarness`, `AddFakeApplicationBehaviorServices()` |
-| `Caching/` | `FakeCacheService`, `FakeTenantCacheService`, `FakeDistributedLockService`, `FakeDistributedLock`, `FakeRedisChannelService`, `FakeRedisHashService`, `FakeTypedHashStore<T>`, `FakeCacheWarmupStrategy`, `FakeTenantCacheKeyProvider` |
-| `Clocks/` | `FakeClock` |
-| `Communication/` | `FakeHttpMessageHandler`, `HttpClientHandlerTestFactory`, `MockServiceEndpointResolver`, `ActivityRecorder`, `AmbientActivityTestHelper`, `GraphQLTestExecutorFactory`, `FakeHttpContextAccessor` |
-| `Containers/` | `PostgreSqlContainerFixture` (xUnit wrapper over `PostgresTestServer`), `RedisContainerFixture`, `RabbitMqContainerFixture`, `MinioContainerFixture`, `ElasticsearchContainerFixture`, `MeilisearchContainerFixture`, `QdrantContainerFixture` |
-| `Contracts/` | `IntegrationEventFaker<TEvent>`, `EventEnvelopeBuilder<TEvent>`, `PagedListBuilder<T>`, `PagedListAssertions` |
-| `Cryptography/` | Fakes for every `SharedKernel.Cryptography` contract — hashing, symmetric and asymmetric encryption, signing, key providers, envelope encryption, secure random, TOTP replay — plus `AddFakeCryptography()` |
-| `DataPrivacy/` | `PiiMaskingAssertions`, `RecordingDataSubjectRequestHandler` |
-| `Idempotency/` | `FakeIdempotencyStore` (both purposes, tenant-scoped, `Expire` to model a TTL running out), `AddFakeIdempotencyStore(params IdempotencyPurpose[])` |
-| `Domain/` | `DomainEventAssertions`, `BusinessRuleAssertions`, `DomainVersionAssertions`, `SpecificationAssert`, `SpecificationTestBuilder<T>`, `MoneyFaker`, `FakeExchangeRateProvider` |
-| `Fakers/` | `FakerSeeding`, `EntityFaker<TEntity,TId>`, `SingleValueObjectFaker<TValueObject,TValue>` |
-| `FeatureManagement/` | `FakeFeatureManager`, `AddFakeFeatureManagement()` |
-| `Integration/` | `InMemoryWebhookDispatcher`, `InMemoryWebhookDeliveryObserver` |
-| `Intelligence/` | `InMemoryEmbeddingGenerator` (deterministic, hash-derived vectors), `InMemoryVectorCollection<TRecord>`, `InMemorySemanticKernel`, provisioners and descriptors |
-| `Localization/` | `CultureScope` |
-| `Logging/` | `InMemoryLogger`, `InMemoryLogger<T>`, `InMemoryLoggerFactory`, `LogRecord`, `LoggerAssertions` |
-| `Messaging/` | `InMemoryMessageBus`, `InMemoryEventPublisher`, `TestHarnessFactory` |
-| `Notifications/` | `InMemoryNotificationSender`, `InMemoryNotificationDeliveryObserver` |
-| `Persistence/` | `FakeAuditActorContext` (a `TestRequestContext` with a fixed tenant), `FakeAuditTrailWriter` (ledger records), `FakeAuditQueryService`, `TestSharedKernelDbContext`, aggregate fakers, `ProjectionSpecificationBuilder<,>` |
-| `Reporting/` | `InMemoryReportExporter<TRow>` |
-| `Scheduling/` | `InMemoryScheduledJobRegistry` |
-| `Search/` | `InMemorySearchIndex<TDocument>`, `InMemorySearchIndexProvisioner`, `InMemorySearchProviderDescriptor` |
-| `Security/` | `FakeUserContext`, `FakeTenantProvider`, `SecurityTestContextBuilder`, `DpopTestProofBuilder`, `MtlsTestCertificateBuilder`, `InMemoryApiKeyStore`, `InMemoryDpopReplayCache`, `InMemoryTotpStepUpStore`, `InMemoryRecoveryCodeStore` |
-| `ServiceDefaults/` | `InMemoryTenantCatalog`, `StaticTenantProvider`, `FakeTenantResolutionStrategy`, `HealthCheckAssertionExtensions` |
-| `Storage/` | `InMemoryFileStorage` (one store, presigning included), `InMemoryFileStorageOptions`, `AddInMemoryStore`/`AddInMemoryTenantStore` on `AddSharedKernelStorage()`, `GetInMemoryStore(name)`, `InMemoryStorage.CreateFactory(...)` for code that takes an `IFileStorageFactory` |
-| `Validation/` | `ValidationSampleGenerator` — checksum-correct valid and invalid IBAN, PAN, national-id and similar samples |
-| `Workflows/` | `InMemoryWorkflowDispatcher`, `InMemoryWorkflowHandle`, `InMemoryWorkflowHandle<TResult>`, `InMemoryWorkflowStartRecord` |
+| `SharedKernel.Testing.Clocks` | `FakeClock`, a controllable `IClock` |
+| `SharedKernel.Testing.Logging` | `InMemoryLogger`, `InMemoryLoggerFactory`, `LogRecord`, `LoggerAssertions`, `AddInMemoryLoggerFactory()`: assert on `EventId`, level and structured properties, never on rendered text |
+| `SharedKernel.Testing.Execution` | `TestRequestContext`, a configurable `IRequestContext` (`ForUser`, `ForTenant`, `Service`, `System`, `Anonymous`, `With*`) |
+| `SharedKernel.Testing.Application` | `FakeRequestContext`, the pipeline-test flavour (fixed user id, case-insensitive permissions) |
+| `SharedKernel.Testing.Fakers` | `EntityFaker`, `SingleValueObjectFaker`, `FakerSeeding` (one seed per assembly) |
+| `SharedKernel.Testing.Domain` | Domain-event, business-rule, version and specification assertions, `SpecificationTestBuilder`, `MoneyFaker`, `FakeExchangeRateProvider`, `AddFakeDomainServices()` |
+| `SharedKernel.Testing.Persistence` | `AggregateRootFaker`, `TenantedAggregateFaker`, `BulkAggregateFaker`, `ProjectionSpecificationBuilder`, `WithDeletedSpecification` (domain-only; no EF Core) |
+| `SharedKernel.Testing.Contracts` | `PagedListBuilder`, `PagedListAssertions`, `IntegrationEventFaker`, `EventEnvelopeBuilder` |
+| `SharedKernel.Testing.Validation` | `ValidationSampleGenerator`: checksum-correct valid and invalid IBANs, cards, VAT numbers and other identifiers |
+| `SharedKernel.Testing.DataPrivacy` | `PiiMaskingAssertions`, `RecordingDataSubjectRequestHandler` |
+| `SharedKernel.Testing.Localization` | `CultureScope`, which sets the current (UI) culture for a block |
+| `SharedKernel.Testing.Communication` | `FakeHttpMessageHandler`, `HttpClientHandlerTestFactory`, `ActivityRecorder`, `AmbientActivityTestHelper` (BCL only) |
 
-Most areas also ship an `Add…` extension that registers their doubles in one call — `AddInMemoryMessageBus()`,
-`AddFakeCachingServices()`, `AddInMemoryWorkflowDispatcher()` and the rest. Storage registers like a provider, so
-the real store registry (validation, tenant prefixes) sits in front of the fake:
-`services.AddSharedKernelStorage().AddInMemoryStore("invoices").AddInMemoryTenantStore("documents")`.
+## The other testing packages
 
-## The rules these doubles follow
+Each capability has its own package, depending on that capability's abstractions (plus this package where it
+needs the basics), so a test project takes only what it tests:
 
-- **A double implements the owning domain's interface, and nothing more.** It is substitutable for the real
-  implementation because it satisfies the same contract, so a test never needs a mocking framework for a
-  SharedKernel abstraction.
-- **No provider dependency ever leaks in.** A fake references only the abstraction package it implements.
-- **Behaviour matches the contract, including its failure modes.** `FakeRepository` evaluates a real
-  `ISpecification<T>`; `FakeIdempotencyStore` (`Idempotency/`, both purposes, `AddFakeIdempotencyStore()`) reserves a key atomically and rejects a stale
-  reservation token, exactly as the Redis and EF Core stores do.
-- **Deterministic by construction.** Fakers are seeded, the embedding generator derives vectors from a hash,
-  and the clock only moves when a test moves it.
-- **Assertions read state, not text.** Log assertions match an `EventId` and structured properties; message
-  assertions match the recorded message instances.
+| Package | Doubles for |
+| --- | --- |
+| `SharedKernel.Application.Testing` | The application pipeline (`ApplicationPipelineTestHarness`) |
+| `SharedKernel.Persistence.Testing` | Repositories, unit of work, audit trail, cross-tenant scope, PostgreSQL with the production roles |
+| `SharedKernel.Caching.Testing` / `SharedKernel.Caching.Redis.Testing` | `ICacheService`, locks, key providers / Redis hashes and pub/sub |
+| `SharedKernel.Cryptography.Testing` | Encryption, signing, hashing, random, TOTP |
+| `SharedKernel.FeatureManagement.Testing` | OpenFeature `IFeatureClient` |
+| `SharedKernel.Messaging.Testing` | `IMessageBus`, `IEventPublisher` |
+| `SharedKernel.Storage.Testing` | `IFileStorage` (in-memory stores) |
+| `SharedKernel.Search.Testing` | `ISearchIndex<T>`, provisioner, descriptor |
+| `SharedKernel.AI.Testing` | Embeddings, vector collections, semantic kernel |
+| `SharedKernel.Security.Testing` | `IUserContext`, API-key, DPoP and TOTP stores, certificate builders |
+| `SharedKernel.Workflows.Testing` | `IWorkflowDispatcher`, `IWorkflowHandle` |
+| `SharedKernel.Scheduling.Testing` | `IScheduledJobRegistry` |
+| `SharedKernel.Integration.Testing` | Webhooks and notifications |
+| `SharedKernel.Reporting.Testing` | `IReportExporter<TRow>` |
+| `SharedKernel.Idempotency.Testing` | `IIdempotencyStore` |
+| `SharedKernel.Communication.Testing` | `IServiceEndpointResolver`, gRPC `ServerCallContext` |
+| `SharedKernel.Presentation.Testing` | gRPC server context with `HttpContext`, HotChocolate executor, `IHttpContextAccessor` |
+| `SharedKernel.ServiceDefaults.Testing` | `ITenantCatalog`, tenant resolution, health checks |
 
-## Adding a double
-
-A double for another domain's interface belongs in the folder for that domain and proves itself through that
-domain's own contract tests. A standalone helper with no interface behind it — a builder, an assertion class,
-a faker convention — is proven in `SharedKernel.Testing.SelfTests`, which is this library's own suite.
-
-Maintainer rules, the folder-to-domain map and the reference policy live in
-[`16.Testing/CLAUDE.md`](../CLAUDE.md).
+Testcontainers fixtures and the EF Core helpers used by this repository's own suites live in
+`SharedKernel.Testing.Internal`, which is never packed.

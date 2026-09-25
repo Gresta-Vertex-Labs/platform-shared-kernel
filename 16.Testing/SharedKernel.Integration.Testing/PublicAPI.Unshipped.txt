@@ -1,0 +1,47 @@
+#nullable enable
+SharedKernel.Testing.Integration.InMemoryWebhookDeliveryObserver
+SharedKernel.Testing.Integration.InMemoryWebhookDeliveryObserver.Attempts.get -> System.Collections.Generic.IReadOnlyList<(SharedKernel.Integration.Webhooks.Subscriptions.WebhookSubscription! Subscription, int AttemptNumber)>!
+SharedKernel.Testing.Integration.InMemoryWebhookDeliveryObserver.Completions.get -> System.Collections.Generic.IReadOnlyList<(SharedKernel.Integration.Webhooks.Subscriptions.WebhookSubscription! Subscription, SharedKernel.Integration.Webhooks.Dispatch.WebhookDeliveryResult! Result)>!
+SharedKernel.Testing.Integration.InMemoryWebhookDeliveryObserver.InMemoryWebhookDeliveryObserver() -> void
+SharedKernel.Testing.Integration.InMemoryWebhookDeliveryObserver.OnAttemptAsync(SharedKernel.Integration.Webhooks.Subscriptions.WebhookSubscription! subscription, int attemptNumber, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task!
+SharedKernel.Testing.Integration.InMemoryWebhookDeliveryObserver.OnCompletedAsync(SharedKernel.Integration.Webhooks.Subscriptions.WebhookSubscription! subscription, SharedKernel.Integration.Webhooks.Dispatch.WebhookDeliveryResult! result, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task!
+SharedKernel.Testing.Integration.InMemoryWebhookDeliveryObserver.ShouldHaveObservedAttempt(System.Guid subscriptionId) -> void
+SharedKernel.Testing.Integration.InMemoryWebhookDeliveryObserver.ShouldHaveObservedCompletion(System.Guid subscriptionId) -> SharedKernel.Integration.Webhooks.Dispatch.WebhookDeliveryResult!
+SharedKernel.Testing.Integration.InMemoryWebhookDispatcher
+SharedKernel.Testing.Integration.InMemoryWebhookDispatcher.DispatchAsync<TEvent>(TEvent integrationEvent, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<SharedKernel.Integration.Webhooks.Dispatch.WebhookDeliveryResult!>!>!
+SharedKernel.Testing.Integration.InMemoryWebhookDispatcher.Dispatched.get -> System.Collections.Generic.IReadOnlyList<object!>!
+SharedKernel.Testing.Integration.InMemoryWebhookDispatcher.DispatchedTo.get -> System.Collections.Generic.IReadOnlyList<(System.Guid SubscriptionId, object! Event)>!
+SharedKernel.Testing.Integration.InMemoryWebhookDispatcher.DispatchToSubscriptionAsync<TEvent>(SharedKernel.Integration.Webhooks.Subscriptions.WebhookSubscription! subscription, TEvent integrationEvent, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<SharedKernel.Integration.Webhooks.Dispatch.WebhookDeliveryResult!>!
+SharedKernel.Testing.Integration.InMemoryWebhookDispatcher.InMemoryWebhookDispatcher() -> void
+SharedKernel.Testing.Integration.InMemoryWebhookDispatcher.SendTestDeliveryAsync(SharedKernel.Integration.Webhooks.Subscriptions.WebhookSubscription! subscription, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<SharedKernel.Integration.Webhooks.Dispatch.WebhookDeliveryResult!>!
+SharedKernel.Testing.Integration.InMemoryWebhookDispatcher.SetDispatchResult(System.Guid subscriptionId, SharedKernel.Integration.Webhooks.Dispatch.WebhookDeliveryResult! result) -> void
+SharedKernel.Testing.Integration.InMemoryWebhookDispatcher.SetDispatchResult<TEvent>(System.Func<TEvent, System.Collections.Generic.IReadOnlyList<SharedKernel.Integration.Webhooks.Dispatch.WebhookDeliveryResult!>!>! resultFactory) -> void
+SharedKernel.Testing.Integration.InMemoryWebhookDispatcher.SetTestDeliveryResult(System.Guid subscriptionId, SharedKernel.Integration.Webhooks.Dispatch.WebhookDeliveryResult! result) -> void
+SharedKernel.Testing.Integration.InMemoryWebhookDispatcher.ShouldHaveDispatched<TEvent>() -> TEvent
+SharedKernel.Testing.Integration.InMemoryWebhookDispatcher.ShouldHaveDispatchedTo(System.Guid subscriptionId) -> void
+SharedKernel.Testing.Integration.InMemoryWebhookDispatcher.ShouldHaveSentTestDelivery(System.Guid subscriptionId) -> void
+SharedKernel.Testing.Integration.InMemoryWebhookDispatcher.ShouldNotHaveDispatched<TEvent>() -> void
+SharedKernel.Testing.Integration.InMemoryWebhookDispatcher.TestDeliveries.get -> System.Collections.Generic.IReadOnlyList<SharedKernel.Integration.Webhooks.Subscriptions.WebhookSubscription!>!
+SharedKernel.Testing.Integration.IntegrationServiceCollectionExtensions
+SharedKernel.Testing.Notifications.InMemoryNotificationDeliveryObserver
+SharedKernel.Testing.Notifications.InMemoryNotificationDeliveryObserver.Attempts.get -> System.Collections.Generic.IReadOnlyList<(SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationDeliveryContext! Context, int AttemptNumber)>!
+SharedKernel.Testing.Notifications.InMemoryNotificationDeliveryObserver.Completions.get -> System.Collections.Generic.IReadOnlyList<(SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationDeliveryContext! Context, SharedKernel.Integration.Notifications.Abstractions.Delivery.NotificationDeliveryResult! Result)>!
+SharedKernel.Testing.Notifications.InMemoryNotificationDeliveryObserver.InMemoryNotificationDeliveryObserver() -> void
+SharedKernel.Testing.Notifications.InMemoryNotificationDeliveryObserver.OnAttemptAsync(SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationDeliveryContext! context, int attemptNumber, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task!
+SharedKernel.Testing.Notifications.InMemoryNotificationDeliveryObserver.OnCompletedAsync(SharedKernel.Integration.Notifications.Abstractions.Observability.NotificationDeliveryContext! context, SharedKernel.Integration.Notifications.Abstractions.Delivery.NotificationDeliveryResult! result, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task!
+SharedKernel.Testing.Notifications.InMemoryNotificationDeliveryObserver.ShouldHaveFailed(System.Guid notificationDeliveryId) -> SharedKernel.Integration.Notifications.Abstractions.Delivery.NotificationDeliveryResult!
+SharedKernel.Testing.Notifications.InMemoryNotificationDeliveryObserver.ShouldHaveSucceeded(System.Guid notificationDeliveryId) -> SharedKernel.Integration.Notifications.Abstractions.Delivery.NotificationDeliveryResult!
+SharedKernel.Testing.Notifications.InMemoryNotificationSender
+SharedKernel.Testing.Notifications.InMemoryNotificationSender.InMemoryNotificationSender(SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationChannel supportedChannel) -> void
+SharedKernel.Testing.Notifications.InMemoryNotificationSender.SendAsync<TTemplateModel>(SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationMessage<TTemplateModel>! message, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<SharedKernel.Integration.Notifications.Abstractions.Delivery.NotificationDeliveryResult!>!
+SharedKernel.Testing.Notifications.InMemoryNotificationSender.Sent.get -> System.Collections.Generic.IReadOnlyList<object!>!
+SharedKernel.Testing.Notifications.InMemoryNotificationSender.SentOf<TTemplateModel>() -> System.Collections.Generic.IReadOnlyList<SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationMessage<TTemplateModel>!>!
+SharedKernel.Testing.Notifications.InMemoryNotificationSender.SetSendResult<TTemplateModel>(System.Func<SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationMessage<TTemplateModel>!, SharedKernel.Integration.Notifications.Abstractions.Delivery.NotificationDeliveryResult!>! resultFactory) -> void
+SharedKernel.Testing.Notifications.InMemoryNotificationSender.ShouldHaveSent<TTemplateModel>(System.Predicate<SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationMessage<TTemplateModel>!>? filter = null) -> SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationMessage<TTemplateModel>!
+SharedKernel.Testing.Notifications.InMemoryNotificationSender.ShouldNotHaveSent<TTemplateModel>() -> void
+SharedKernel.Testing.Notifications.InMemoryNotificationSender.SupportedChannel.get -> SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationChannel
+SharedKernel.Testing.Notifications.NotificationsServiceCollectionExtensions
+static SharedKernel.Testing.Integration.IntegrationServiceCollectionExtensions.AddInMemoryWebhookDeliveryObserver(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SharedKernel.Testing.Integration.IntegrationServiceCollectionExtensions.AddInMemoryWebhookDispatcher(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SharedKernel.Testing.Notifications.NotificationsServiceCollectionExtensions.AddInMemoryNotificationDeliveryObserver(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SharedKernel.Testing.Notifications.NotificationsServiceCollectionExtensions.AddInMemoryNotificationSender(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, SharedKernel.Integration.Notifications.Abstractions.Notifications.NotificationChannel channel) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!

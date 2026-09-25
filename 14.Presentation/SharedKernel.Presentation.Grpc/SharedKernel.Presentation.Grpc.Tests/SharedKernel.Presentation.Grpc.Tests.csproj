@@ -8,6 +8,7 @@
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Presentation.Grpc.csproj" />
     <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
+    <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Security.Testing\SharedKernel.Security.Testing.csproj" />
     <!--
       Gating-proof-only reference (mirrors 13.ServiceDefaults.Tests' T-43/WO-056 precedent and its
       own D-28/WO-063 SharedKernel.Presentation.WebApi reference): T-71's round-trip test proves

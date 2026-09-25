@@ -5,6 +5,7 @@
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.ServiceDefaults.Persistence.csproj" />
     <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
+    <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Testing.Internal\SharedKernel.Testing.Internal.csproj" />
     <!-- P-557/W6: AuditTrailWriterBridgeTests exercises the real AuditingBehavior<,> directly. -->
     <ProjectReference Include="..\..\..\05.Application\SharedKernel.Application.Pipeline\SharedKernel.Application.Pipeline.csproj" />
     <!--

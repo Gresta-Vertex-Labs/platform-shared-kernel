@@ -1,0 +1,8 @@
+#nullable enable
+SharedKernel.Testing.Communication.MockServiceEndpointResolver
+SharedKernel.Testing.Communication.MockServiceEndpointResolver.Configure(string! serviceName, System.Uri! uri) -> void
+SharedKernel.Testing.Communication.MockServiceEndpointResolver.GetResolvedNames() -> System.Collections.Generic.IReadOnlyList<string!>!
+SharedKernel.Testing.Communication.MockServiceEndpointResolver.MockServiceEndpointResolver() -> void
+SharedKernel.Testing.Communication.MockServiceEndpointResolver.ResolveAsync(string! serviceName, System.Threading.CancellationToken ct) -> System.Threading.Tasks.ValueTask<System.Uri!>
+SharedKernel.Testing.Communication.TestServerCallContext
+static SharedKernel.Testing.Communication.TestServerCallContext.Create(Grpc.Core.Metadata? requestHeaders = null, string! method = "test-method", string! host = "localhost", System.DateTime? deadline = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> Grpc.Core.ServerCallContext!

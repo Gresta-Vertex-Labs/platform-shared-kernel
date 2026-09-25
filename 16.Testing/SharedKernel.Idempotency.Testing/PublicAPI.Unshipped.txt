@@ -1,0 +1,30 @@
+#nullable enable
+override SharedKernel.Testing.Idempotency.FakeIdempotencyStore.RecordedCall.GetHashCode() -> int
+SharedKernel.Testing.Idempotency.FakeIdempotencyServiceCollectionExtensions
+SharedKernel.Testing.Idempotency.FakeIdempotencyStore
+SharedKernel.Testing.Idempotency.FakeIdempotencyStore.Calls.get -> System.Collections.Generic.IReadOnlyList<SharedKernel.Testing.Idempotency.FakeIdempotencyStore.RecordedCall>!
+SharedKernel.Testing.Idempotency.FakeIdempotencyStore.CompleteAsync(SharedKernel.Idempotency.Abstractions.IdempotencyPurpose purpose, string! key, string! token, string? response, System.TimeSpan retention, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<bool>!
+SharedKernel.Testing.Idempotency.FakeIdempotencyStore.Expire(SharedKernel.Idempotency.Abstractions.IdempotencyPurpose purpose, string! key) -> bool
+SharedKernel.Testing.Idempotency.FakeIdempotencyStore.FakeIdempotencyStore() -> void
+SharedKernel.Testing.Idempotency.FakeIdempotencyStore.FakeIdempotencyStore(SharedKernel.Execution.Context.IRequestContextAccessor! requestContextAccessor) -> void
+SharedKernel.Testing.Idempotency.FakeIdempotencyStore.LastRetention.get -> System.TimeSpan?
+SharedKernel.Testing.Idempotency.FakeIdempotencyStore.LastTtl.get -> System.TimeSpan?
+SharedKernel.Testing.Idempotency.FakeIdempotencyStore.RecordedCall
+SharedKernel.Testing.Idempotency.FakeIdempotencyStore.RecordedCall.Deconstruct(out string! Member, out SharedKernel.Idempotency.Abstractions.IdempotencyPurpose Purpose, out string! Key) -> void
+SharedKernel.Testing.Idempotency.FakeIdempotencyStore.RecordedCall.Equals(SharedKernel.Testing.Idempotency.FakeIdempotencyStore.RecordedCall other) -> bool
+SharedKernel.Testing.Idempotency.FakeIdempotencyStore.RecordedCall.Key.get -> string!
+SharedKernel.Testing.Idempotency.FakeIdempotencyStore.RecordedCall.Key.init -> void
+SharedKernel.Testing.Idempotency.FakeIdempotencyStore.RecordedCall.Member.get -> string!
+SharedKernel.Testing.Idempotency.FakeIdempotencyStore.RecordedCall.Member.init -> void
+SharedKernel.Testing.Idempotency.FakeIdempotencyStore.RecordedCall.Purpose.get -> SharedKernel.Idempotency.Abstractions.IdempotencyPurpose
+SharedKernel.Testing.Idempotency.FakeIdempotencyStore.RecordedCall.Purpose.init -> void
+SharedKernel.Testing.Idempotency.FakeIdempotencyStore.RecordedCall.RecordedCall() -> void
+SharedKernel.Testing.Idempotency.FakeIdempotencyStore.RecordedCall.RecordedCall(string! Member, SharedKernel.Idempotency.Abstractions.IdempotencyPurpose Purpose, string! Key) -> void
+SharedKernel.Testing.Idempotency.FakeIdempotencyStore.ReleaseAsync(SharedKernel.Idempotency.Abstractions.IdempotencyPurpose purpose, string! key, string! token, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<bool>!
+SharedKernel.Testing.Idempotency.FakeIdempotencyStore.Reset() -> void
+SharedKernel.Testing.Idempotency.FakeIdempotencyStore.TryBeginAsync(SharedKernel.Idempotency.Abstractions.IdempotencyPurpose purpose, string! key, string! fingerprint, System.TimeSpan ttl, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<SharedKernel.Idempotency.Abstractions.IdempotencyReservation>!
+static SharedKernel.Testing.Idempotency.FakeIdempotencyServiceCollectionExtensions.AddFakeIdempotencyStore(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, params SharedKernel.Idempotency.Abstractions.IdempotencyPurpose[]! purposes) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SharedKernel.Testing.Idempotency.FakeIdempotencyStore.RecordedCall.operator !=(SharedKernel.Testing.Idempotency.FakeIdempotencyStore.RecordedCall left, SharedKernel.Testing.Idempotency.FakeIdempotencyStore.RecordedCall right) -> bool
+static SharedKernel.Testing.Idempotency.FakeIdempotencyStore.RecordedCall.operator ==(SharedKernel.Testing.Idempotency.FakeIdempotencyStore.RecordedCall left, SharedKernel.Testing.Idempotency.FakeIdempotencyStore.RecordedCall right) -> bool
+~override SharedKernel.Testing.Idempotency.FakeIdempotencyStore.RecordedCall.Equals(object obj) -> bool
+~override SharedKernel.Testing.Idempotency.FakeIdempotencyStore.RecordedCall.ToString() -> string

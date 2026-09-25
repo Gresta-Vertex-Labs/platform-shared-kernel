@@ -4,7 +4,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Persistence.Testing.csproj" />
-    <!-- FakeClock for the moved fake tests; a test project may reference SharedKernel.Testing (which builds on this package). -->
+    <!-- FakeClock and FakeRequestContext for the tests; SharedKernel.Testing is also this package's own dependency (TestRequestContext). -->
     <ProjectReference Include="..\..\SharedKernel.Testing\SharedKernel.Testing.csproj" />
   </ItemGroup>
   <ItemGroup>

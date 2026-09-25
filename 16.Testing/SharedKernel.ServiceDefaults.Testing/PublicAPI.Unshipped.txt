@@ -1,0 +1,17 @@
+#nullable enable
+SharedKernel.Testing.ServiceDefaults.FakeTenantResolutionStrategy
+SharedKernel.Testing.ServiceDefaults.FakeTenantResolutionStrategy.FakeTenantResolutionStrategy(System.Func<Microsoft.AspNetCore.Http.HttpContext!, System.Threading.CancellationToken, System.Threading.Tasks.Task<System.Guid?>!>! resolver) -> void
+SharedKernel.Testing.ServiceDefaults.FakeTenantResolutionStrategy.FakeTenantResolutionStrategy(System.Guid? fixedResult = null) -> void
+SharedKernel.Testing.ServiceDefaults.FakeTenantResolutionStrategy.StrategyName.get -> string!
+SharedKernel.Testing.ServiceDefaults.FakeTenantResolutionStrategy.StrategyName.set -> void
+SharedKernel.Testing.ServiceDefaults.FakeTenantResolutionStrategy.TryResolveAsync(Microsoft.AspNetCore.Http.HttpContext! context, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<System.Guid?>!
+SharedKernel.Testing.ServiceDefaults.HealthCheckAssertionExtensions
+SharedKernel.Testing.ServiceDefaults.InMemoryTenantCatalog
+SharedKernel.Testing.ServiceDefaults.InMemoryTenantCatalog.GetByIdAsync(SharedKernel.Execution.Tenancy.TenantId tenantId, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<SharedKernel.MultiTenancy.Catalog.TenantDescriptor?>!
+SharedKernel.Testing.ServiceDefaults.InMemoryTenantCatalog.GetByResolutionKeyAsync(string! resolutionKey, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<SharedKernel.MultiTenancy.Catalog.TenantDescriptor?>!
+SharedKernel.Testing.ServiceDefaults.InMemoryTenantCatalog.InMemoryTenantCatalog() -> void
+SharedKernel.Testing.ServiceDefaults.InMemoryTenantCatalog.MutateStatus(SharedKernel.Execution.Tenancy.TenantId tenantId, SharedKernel.MultiTenancy.Catalog.TenantStatus status) -> void
+SharedKernel.Testing.ServiceDefaults.InMemoryTenantCatalog.Reset() -> void
+SharedKernel.Testing.ServiceDefaults.InMemoryTenantCatalog.SeedTenant(SharedKernel.MultiTenancy.Catalog.TenantDescriptor! descriptor, string? resolutionKey = null) -> void
+static SharedKernel.Testing.ServiceDefaults.HealthCheckAssertionExtensions.ShouldBeTaggedReady(this Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckRegistration! registration) -> void
+static SharedKernel.Testing.ServiceDefaults.HealthCheckAssertionExtensions.ShouldNotBeTaggedLive(this Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckRegistration! registration) -> void
