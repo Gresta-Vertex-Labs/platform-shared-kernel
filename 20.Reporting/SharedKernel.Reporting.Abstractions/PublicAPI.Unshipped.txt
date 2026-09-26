@@ -1,0 +1,275 @@
+#nullable enable
+abstract SharedKernel.Reporting.HtmlToPdfConverterBase.RenderAsync(string! html, SharedKernel.Reporting.HtmlToPdfOptions! options, System.IO.Stream! destination, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
+abstract SharedKernel.Reporting.ReportExporterBase<TRow>.EncodeAsync(System.Collections.Generic.IAsyncEnumerable<TRow>! rows, SharedKernel.Reporting.ReportDefinition<TRow>! definition, System.IO.Stream! destination, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<long>!>!
+abstract SharedKernel.Reporting.ReportExporterBase<TRow>.Format.get -> SharedKernel.Reporting.ReportFormat!
+const SharedKernel.Reporting.HtmlToPdfOptions.PageNumberFooter = "<html><body><div style=\"width:100%;text-align:center;font-family:sans-serif;font-size:8px;color:#666\"><span class=\"pageNumber\"></span> / <span class=\"totalPages\"></span></div></body></html>" -> string!
+const SharedKernel.Reporting.ReportingErrorCodes.ConversionFailed = "reporting.conversion_failed" -> string!
+const SharedKernel.Reporting.ReportingErrorCodes.ConversionTimeout = "reporting.conversion_timeout" -> string!
+const SharedKernel.Reporting.ReportingErrorCodes.ConverterUnavailable = "reporting.converter_unavailable" -> string!
+const SharedKernel.Reporting.ReportingErrorCodes.InvalidDefinition = "reporting.invalid_definition" -> string!
+const SharedKernel.Reporting.ReportingErrorCodes.InvalidDestination = "reporting.invalid_destination" -> string!
+const SharedKernel.Reporting.ReportingErrorCodes.InvalidRequest = "reporting.invalid_request" -> string!
+const SharedKernel.Reporting.ReportingErrorCodes.RowLimitExceeded = "reporting.row_limit_exceeded" -> string!
+const SharedKernel.Reporting.ReportingErrorCodes.UnsupportedFormat = "reporting.unsupported_format" -> string!
+override SharedKernel.Reporting.HtmlAsset.Equals(object? obj) -> bool
+override SharedKernel.Reporting.HtmlAsset.GetHashCode() -> int
+override SharedKernel.Reporting.HtmlAsset.ToString() -> string!
+override SharedKernel.Reporting.HtmlToPdfOptions.Equals(object? obj) -> bool
+override SharedKernel.Reporting.HtmlToPdfOptions.GetHashCode() -> int
+override SharedKernel.Reporting.HtmlToPdfOptions.ToString() -> string!
+override SharedKernel.Reporting.PdfDocumentOutcome.Equals(object? obj) -> bool
+override SharedKernel.Reporting.PdfDocumentOutcome.GetHashCode() -> int
+override SharedKernel.Reporting.PdfDocumentOutcome.ToString() -> string!
+override SharedKernel.Reporting.PdfMargins.Equals(object? obj) -> bool
+override SharedKernel.Reporting.PdfMargins.GetHashCode() -> int
+override SharedKernel.Reporting.PdfMargins.ToString() -> string!
+override SharedKernel.Reporting.PdfPageSize.Equals(object? obj) -> bool
+override SharedKernel.Reporting.PdfPageSize.GetHashCode() -> int
+override SharedKernel.Reporting.PdfPageSize.ToString() -> string!
+override SharedKernel.Reporting.ReportColumn<TRow>.Equals(object? obj) -> bool
+override SharedKernel.Reporting.ReportColumn<TRow>.GetHashCode() -> int
+override SharedKernel.Reporting.ReportColumn<TRow>.ToString() -> string!
+override SharedKernel.Reporting.ReportDefinition<TRow>.Equals(object? obj) -> bool
+override SharedKernel.Reporting.ReportDefinition<TRow>.GetHashCode() -> int
+override SharedKernel.Reporting.ReportDefinition<TRow>.ToString() -> string!
+override SharedKernel.Reporting.ReportDestination.Equals(object? obj) -> bool
+override SharedKernel.Reporting.ReportDestination.GetHashCode() -> int
+override SharedKernel.Reporting.ReportDestination.ToString() -> string!
+override SharedKernel.Reporting.ReportExportOutcome.Equals(object? obj) -> bool
+override SharedKernel.Reporting.ReportExportOutcome.GetHashCode() -> int
+override SharedKernel.Reporting.ReportExportOutcome.ToString() -> string!
+override SharedKernel.Reporting.ReportFormat.Equals(object? obj) -> bool
+override SharedKernel.Reporting.ReportFormat.GetHashCode() -> int
+override SharedKernel.Reporting.ReportFormat.ToString() -> string!
+override SharedKernel.Reporting.ReportStreamOutcome.Equals(object? obj) -> bool
+override SharedKernel.Reporting.ReportStreamOutcome.GetHashCode() -> int
+override SharedKernel.Reporting.ReportStreamOutcome.ToString() -> string!
+SharedKernel.Reporting.HtmlAsset
+SharedKernel.Reporting.HtmlAsset.<Clone>$() -> SharedKernel.Reporting.HtmlAsset!
+SharedKernel.Reporting.HtmlAsset.Content.get -> System.ReadOnlyMemory<byte>
+SharedKernel.Reporting.HtmlAsset.Content.init -> void
+SharedKernel.Reporting.HtmlAsset.Deconstruct(out string! FileName, out System.ReadOnlyMemory<byte> Content) -> void
+SharedKernel.Reporting.HtmlAsset.Equals(SharedKernel.Reporting.HtmlAsset? other) -> bool
+SharedKernel.Reporting.HtmlAsset.FileName.get -> string!
+SharedKernel.Reporting.HtmlAsset.FileName.init -> void
+SharedKernel.Reporting.HtmlAsset.HtmlAsset(string! FileName, System.ReadOnlyMemory<byte> Content) -> void
+SharedKernel.Reporting.HtmlToPdfConverterBase
+SharedKernel.Reporting.HtmlToPdfConverterBase.ConvertAsync(string! html, SharedKernel.Reporting.ReportDestination! destination, SharedKernel.Reporting.HtmlToPdfOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Reporting.PdfDocumentOutcome!>!>!
+SharedKernel.Reporting.HtmlToPdfConverterBase.ConvertToStreamAsync(string! html, System.IO.Stream! destination, SharedKernel.Reporting.HtmlToPdfOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<long>!>!
+SharedKernel.Reporting.HtmlToPdfConverterBase.HtmlToPdfConverterBase(SharedKernel.Reporting.ReportingDependencies! dependencies) -> void
+SharedKernel.Reporting.HtmlToPdfOptions
+SharedKernel.Reporting.HtmlToPdfOptions.<Clone>$() -> SharedKernel.Reporting.HtmlToPdfOptions!
+SharedKernel.Reporting.HtmlToPdfOptions.Assets.get -> System.Collections.Generic.IReadOnlyList<SharedKernel.Reporting.HtmlAsset!>!
+SharedKernel.Reporting.HtmlToPdfOptions.Assets.init -> void
+SharedKernel.Reporting.HtmlToPdfOptions.Equals(SharedKernel.Reporting.HtmlToPdfOptions? other) -> bool
+SharedKernel.Reporting.HtmlToPdfOptions.FooterHtml.get -> string?
+SharedKernel.Reporting.HtmlToPdfOptions.FooterHtml.init -> void
+SharedKernel.Reporting.HtmlToPdfOptions.HeaderHtml.get -> string?
+SharedKernel.Reporting.HtmlToPdfOptions.HeaderHtml.init -> void
+SharedKernel.Reporting.HtmlToPdfOptions.HtmlToPdfOptions() -> void
+SharedKernel.Reporting.HtmlToPdfOptions.Landscape.get -> bool
+SharedKernel.Reporting.HtmlToPdfOptions.Landscape.init -> void
+SharedKernel.Reporting.HtmlToPdfOptions.Margins.get -> SharedKernel.Reporting.PdfMargins!
+SharedKernel.Reporting.HtmlToPdfOptions.Margins.init -> void
+SharedKernel.Reporting.HtmlToPdfOptions.PageSize.get -> SharedKernel.Reporting.PdfPageSize!
+SharedKernel.Reporting.HtmlToPdfOptions.PageSize.init -> void
+SharedKernel.Reporting.HtmlToPdfOptions.PreferCssPageSize.get -> bool
+SharedKernel.Reporting.HtmlToPdfOptions.PreferCssPageSize.init -> void
+SharedKernel.Reporting.HtmlToPdfOptions.PrintBackground.get -> bool
+SharedKernel.Reporting.HtmlToPdfOptions.PrintBackground.init -> void
+SharedKernel.Reporting.HtmlToPdfOptions.Scale.get -> double
+SharedKernel.Reporting.HtmlToPdfOptions.Scale.init -> void
+SharedKernel.Reporting.IHtmlToPdfConverter
+SharedKernel.Reporting.IHtmlToPdfConverter.ConvertAsync(string! html, SharedKernel.Reporting.ReportDestination! destination, SharedKernel.Reporting.HtmlToPdfOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Reporting.PdfDocumentOutcome!>!>!
+SharedKernel.Reporting.IHtmlToPdfConverter.ConvertToStreamAsync(string! html, System.IO.Stream! destination, SharedKernel.Reporting.HtmlToPdfOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<long>!>!
+SharedKernel.Reporting.IReportExporter<TRow>
+SharedKernel.Reporting.IReportExporter<TRow>.ExportAsync(System.Collections.Generic.IAsyncEnumerable<TRow>! rows, SharedKernel.Reporting.ReportDefinition<TRow>! definition, SharedKernel.Reporting.ReportDestination! destination, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Reporting.ReportExportOutcome!>!>!
+SharedKernel.Reporting.IReportExporter<TRow>.ExportToStreamAsync(System.Collections.Generic.IAsyncEnumerable<TRow>! rows, SharedKernel.Reporting.ReportDefinition<TRow>! definition, System.IO.Stream! destination, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Reporting.ReportStreamOutcome!>!>!
+SharedKernel.Reporting.IReportExporter<TRow>.Format.get -> SharedKernel.Reporting.ReportFormat!
+SharedKernel.Reporting.IReportExporterFactory
+SharedKernel.Reporting.IReportExporterFactory.Formats.get -> System.Collections.Generic.IReadOnlyCollection<SharedKernel.Reporting.ReportFormat!>!
+SharedKernel.Reporting.IReportExporterFactory.GetExporter<TRow>(SharedKernel.Reporting.ReportFormat! format) -> SharedKernel.Reporting.IReportExporter<TRow>!
+SharedKernel.Reporting.IReportExporterFactory.ParseFormat(string? value) -> SharedKernel.Primitives.Results.Result<SharedKernel.Reporting.ReportFormat!>!
+SharedKernel.Reporting.IReportingBuilder
+SharedKernel.Reporting.IReportingBuilder.Services.get -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+SharedKernel.Reporting.PdfDocumentOutcome
+SharedKernel.Reporting.PdfDocumentOutcome.<Clone>$() -> SharedKernel.Reporting.PdfDocumentOutcome!
+SharedKernel.Reporting.PdfDocumentOutcome.DownloadUrl.get -> SharedKernel.Storage.PresignedRequest?
+SharedKernel.Reporting.PdfDocumentOutcome.DownloadUrl.init -> void
+SharedKernel.Reporting.PdfDocumentOutcome.Equals(SharedKernel.Reporting.PdfDocumentOutcome? other) -> bool
+SharedKernel.Reporting.PdfDocumentOutcome.PdfDocumentOutcome() -> void
+SharedKernel.Reporting.PdfDocumentOutcome.SizeBytes.get -> long
+SharedKernel.Reporting.PdfDocumentOutcome.SizeBytes.init -> void
+SharedKernel.Reporting.PdfDocumentOutcome.StoredFile.get -> SharedKernel.Storage.FileReference!
+SharedKernel.Reporting.PdfDocumentOutcome.StoredFile.init -> void
+SharedKernel.Reporting.PdfMargins
+SharedKernel.Reporting.PdfMargins.<Clone>$() -> SharedKernel.Reporting.PdfMargins!
+SharedKernel.Reporting.PdfMargins.Bottom.get -> double
+SharedKernel.Reporting.PdfMargins.Bottom.init -> void
+SharedKernel.Reporting.PdfMargins.Deconstruct(out double Top, out double Right, out double Bottom, out double Left) -> void
+SharedKernel.Reporting.PdfMargins.Equals(SharedKernel.Reporting.PdfMargins? other) -> bool
+SharedKernel.Reporting.PdfMargins.Left.get -> double
+SharedKernel.Reporting.PdfMargins.Left.init -> void
+SharedKernel.Reporting.PdfMargins.PdfMargins(double Top, double Right, double Bottom, double Left) -> void
+SharedKernel.Reporting.PdfMargins.Right.get -> double
+SharedKernel.Reporting.PdfMargins.Right.init -> void
+SharedKernel.Reporting.PdfMargins.Top.get -> double
+SharedKernel.Reporting.PdfMargins.Top.init -> void
+SharedKernel.Reporting.PdfPageSize
+SharedKernel.Reporting.PdfPageSize.<Clone>$() -> SharedKernel.Reporting.PdfPageSize!
+SharedKernel.Reporting.PdfPageSize.Deconstruct(out double WidthMillimeters, out double HeightMillimeters) -> void
+SharedKernel.Reporting.PdfPageSize.Equals(SharedKernel.Reporting.PdfPageSize? other) -> bool
+SharedKernel.Reporting.PdfPageSize.HeightMillimeters.get -> double
+SharedKernel.Reporting.PdfPageSize.HeightMillimeters.init -> void
+SharedKernel.Reporting.PdfPageSize.PdfPageSize(double WidthMillimeters, double HeightMillimeters) -> void
+SharedKernel.Reporting.PdfPageSize.WidthMillimeters.get -> double
+SharedKernel.Reporting.PdfPageSize.WidthMillimeters.init -> void
+SharedKernel.Reporting.ReportColumn<TRow>
+SharedKernel.Reporting.ReportColumn<TRow>.<Clone>$() -> SharedKernel.Reporting.ReportColumn<TRow>!
+SharedKernel.Reporting.ReportColumn<TRow>.Alignment.get -> SharedKernel.Reporting.ReportColumnAlignment
+SharedKernel.Reporting.ReportColumn<TRow>.Alignment.init -> void
+SharedKernel.Reporting.ReportColumn<TRow>.Equals(SharedKernel.Reporting.ReportColumn<TRow>? other) -> bool
+SharedKernel.Reporting.ReportColumn<TRow>.Format.get -> string?
+SharedKernel.Reporting.ReportColumn<TRow>.Format.init -> void
+SharedKernel.Reporting.ReportColumn<TRow>.Formatter.get -> System.Func<object?, System.Globalization.CultureInfo!, string?>?
+SharedKernel.Reporting.ReportColumn<TRow>.Formatter.init -> void
+SharedKernel.Reporting.ReportColumn<TRow>.Header.get -> string!
+SharedKernel.Reporting.ReportColumn<TRow>.Header.init -> void
+SharedKernel.Reporting.ReportColumn<TRow>.RelativeWidth.get -> double
+SharedKernel.Reporting.ReportColumn<TRow>.RelativeWidth.init -> void
+SharedKernel.Reporting.ReportColumn<TRow>.ReportColumn() -> void
+SharedKernel.Reporting.ReportColumn<TRow>.Value.get -> System.Func<TRow, object?>!
+SharedKernel.Reporting.ReportColumn<TRow>.Value.init -> void
+SharedKernel.Reporting.ReportColumnAlignment
+SharedKernel.Reporting.ReportColumnAlignment.Auto = 0 -> SharedKernel.Reporting.ReportColumnAlignment
+SharedKernel.Reporting.ReportColumnAlignment.Center = 2 -> SharedKernel.Reporting.ReportColumnAlignment
+SharedKernel.Reporting.ReportColumnAlignment.Left = 1 -> SharedKernel.Reporting.ReportColumnAlignment
+SharedKernel.Reporting.ReportColumnAlignment.Right = 3 -> SharedKernel.Reporting.ReportColumnAlignment
+SharedKernel.Reporting.ReportDefinition
+SharedKernel.Reporting.ReportDefinition<TRow>
+SharedKernel.Reporting.ReportDefinition<TRow>.<Clone>$() -> SharedKernel.Reporting.ReportDefinition<TRow>!
+SharedKernel.Reporting.ReportDefinition<TRow>.Columns.get -> System.Collections.Generic.IReadOnlyList<SharedKernel.Reporting.ReportColumn<TRow>!>!
+SharedKernel.Reporting.ReportDefinition<TRow>.Columns.init -> void
+SharedKernel.Reporting.ReportDefinition<TRow>.Culture.get -> System.Globalization.CultureInfo!
+SharedKernel.Reporting.ReportDefinition<TRow>.Culture.init -> void
+SharedKernel.Reporting.ReportDefinition<TRow>.Equals(SharedKernel.Reporting.ReportDefinition<TRow>? other) -> bool
+SharedKernel.Reporting.ReportDefinition<TRow>.ReportDefinition() -> void
+SharedKernel.Reporting.ReportDefinition<TRow>.Title.get -> string?
+SharedKernel.Reporting.ReportDefinition<TRow>.Title.init -> void
+SharedKernel.Reporting.ReportDefinitionBuilder<TRow>
+SharedKernel.Reporting.ReportDefinitionBuilder<TRow>.Build() -> SharedKernel.Reporting.ReportDefinition<TRow>!
+SharedKernel.Reporting.ReportDefinitionBuilder<TRow>.Column(SharedKernel.Reporting.ReportColumn<TRow>! column) -> SharedKernel.Reporting.ReportDefinitionBuilder<TRow>!
+SharedKernel.Reporting.ReportDefinitionBuilder<TRow>.Column<TValue>(string! header, System.Func<TRow, TValue>! value, string? format = null, SharedKernel.Reporting.ReportColumnAlignment alignment = SharedKernel.Reporting.ReportColumnAlignment.Auto, double relativeWidth = 1) -> SharedKernel.Reporting.ReportDefinitionBuilder<TRow>!
+SharedKernel.Reporting.ReportDefinitionBuilder<TRow>.Column<TValue>(string! header, System.Func<TRow, TValue>! value, System.Func<TValue, System.Globalization.CultureInfo!, string?>! formatter, SharedKernel.Reporting.ReportColumnAlignment alignment = SharedKernel.Reporting.ReportColumnAlignment.Auto, double relativeWidth = 1) -> SharedKernel.Reporting.ReportDefinitionBuilder<TRow>!
+SharedKernel.Reporting.ReportDefinitionBuilder<TRow>.Culture(System.Globalization.CultureInfo! culture) -> SharedKernel.Reporting.ReportDefinitionBuilder<TRow>!
+SharedKernel.Reporting.ReportDefinitionBuilder<TRow>.Title(string? title) -> SharedKernel.Reporting.ReportDefinitionBuilder<TRow>!
+SharedKernel.Reporting.ReportDestination
+SharedKernel.Reporting.ReportDestination.<Clone>$() -> SharedKernel.Reporting.ReportDestination!
+SharedKernel.Reporting.ReportDestination.Condition.get -> SharedKernel.Storage.WriteCondition?
+SharedKernel.Reporting.ReportDestination.Condition.init -> void
+SharedKernel.Reporting.ReportDestination.DownloadFileName.get -> string?
+SharedKernel.Reporting.ReportDestination.DownloadFileName.init -> void
+SharedKernel.Reporting.ReportDestination.Equals(SharedKernel.Reporting.ReportDestination? other) -> bool
+SharedKernel.Reporting.ReportDestination.Key.get -> string!
+SharedKernel.Reporting.ReportDestination.Key.init -> void
+SharedKernel.Reporting.ReportDestination.Metadata.get -> System.Collections.Generic.IReadOnlyDictionary<string!, string!>?
+SharedKernel.Reporting.ReportDestination.Metadata.init -> void
+SharedKernel.Reporting.ReportDestination.PresignedDownloadUrlExpiry.get -> System.TimeSpan?
+SharedKernel.Reporting.ReportDestination.PresignedDownloadUrlExpiry.init -> void
+SharedKernel.Reporting.ReportDestination.ReportDestination() -> void
+SharedKernel.Reporting.ReportDestination.Store.get -> string!
+SharedKernel.Reporting.ReportDestination.Store.init -> void
+SharedKernel.Reporting.ReportDestination.TenantId.get -> SharedKernel.Execution.Tenancy.TenantId?
+SharedKernel.Reporting.ReportDestination.TenantId.init -> void
+SharedKernel.Reporting.ReportExporterBase<TRow>
+SharedKernel.Reporting.ReportExporterBase<TRow>.ExportAsync(System.Collections.Generic.IAsyncEnumerable<TRow>! rows, SharedKernel.Reporting.ReportDefinition<TRow>! definition, SharedKernel.Reporting.ReportDestination! destination, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Reporting.ReportExportOutcome!>!>!
+SharedKernel.Reporting.ReportExporterBase<TRow>.ExportToStreamAsync(System.Collections.Generic.IAsyncEnumerable<TRow>! rows, SharedKernel.Reporting.ReportDefinition<TRow>! definition, System.IO.Stream! destination, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Reporting.ReportStreamOutcome!>!>!
+SharedKernel.Reporting.ReportExporterBase<TRow>.ReportExporterBase(SharedKernel.Reporting.ReportingDependencies! dependencies) -> void
+SharedKernel.Reporting.ReportExportOutcome
+SharedKernel.Reporting.ReportExportOutcome.<Clone>$() -> SharedKernel.Reporting.ReportExportOutcome!
+SharedKernel.Reporting.ReportExportOutcome.DownloadUrl.get -> SharedKernel.Storage.PresignedRequest?
+SharedKernel.Reporting.ReportExportOutcome.DownloadUrl.init -> void
+SharedKernel.Reporting.ReportExportOutcome.Equals(SharedKernel.Reporting.ReportExportOutcome? other) -> bool
+SharedKernel.Reporting.ReportExportOutcome.Format.get -> SharedKernel.Reporting.ReportFormat!
+SharedKernel.Reporting.ReportExportOutcome.Format.init -> void
+SharedKernel.Reporting.ReportExportOutcome.ReportExportOutcome() -> void
+SharedKernel.Reporting.ReportExportOutcome.RowCount.get -> long
+SharedKernel.Reporting.ReportExportOutcome.RowCount.init -> void
+SharedKernel.Reporting.ReportExportOutcome.SizeBytes.get -> long
+SharedKernel.Reporting.ReportExportOutcome.SizeBytes.init -> void
+SharedKernel.Reporting.ReportExportOutcome.StoredFile.get -> SharedKernel.Storage.FileReference!
+SharedKernel.Reporting.ReportExportOutcome.StoredFile.init -> void
+SharedKernel.Reporting.ReportFormat
+SharedKernel.Reporting.ReportFormat.<Clone>$() -> SharedKernel.Reporting.ReportFormat!
+SharedKernel.Reporting.ReportFormat.ContentType.get -> string!
+SharedKernel.Reporting.ReportFormat.Equals(SharedKernel.Reporting.ReportFormat? other) -> bool
+SharedKernel.Reporting.ReportFormat.FileExtension.get -> string!
+SharedKernel.Reporting.ReportFormat.Name.get -> string!
+SharedKernel.Reporting.ReportFormat.ReportFormat(string! name, string! contentType, string! fileExtension) -> void
+SharedKernel.Reporting.ReportFormat.WithExtension(string! fileName) -> string!
+SharedKernel.Reporting.ReportingDependencies
+SharedKernel.Reporting.ReportingDependencies.ReportingDependencies(Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null, SharedKernel.Storage.IFileStorageFactory? storageFactory = null) -> void
+SharedKernel.Reporting.ReportingErrorCodes
+SharedKernel.Reporting.ReportingErrors
+SharedKernel.Reporting.ReportingServiceCollectionExtensions
+SharedKernel.Reporting.ReportStreamOutcome
+SharedKernel.Reporting.ReportStreamOutcome.<Clone>$() -> SharedKernel.Reporting.ReportStreamOutcome!
+SharedKernel.Reporting.ReportStreamOutcome.Equals(SharedKernel.Reporting.ReportStreamOutcome? other) -> bool
+SharedKernel.Reporting.ReportStreamOutcome.Format.get -> SharedKernel.Reporting.ReportFormat!
+SharedKernel.Reporting.ReportStreamOutcome.Format.init -> void
+SharedKernel.Reporting.ReportStreamOutcome.ReportStreamOutcome() -> void
+SharedKernel.Reporting.ReportStreamOutcome.RowCount.get -> long
+SharedKernel.Reporting.ReportStreamOutcome.RowCount.init -> void
+SharedKernel.Reporting.ReportStreamOutcome.SizeBytes.get -> long
+SharedKernel.Reporting.ReportStreamOutcome.SizeBytes.init -> void
+SharedKernel.Reporting.ReportValueFormatting
+static readonly SharedKernel.Reporting.PdfMargins.Default -> SharedKernel.Reporting.PdfMargins!
+static readonly SharedKernel.Reporting.PdfMargins.None -> SharedKernel.Reporting.PdfMargins!
+static readonly SharedKernel.Reporting.PdfPageSize.A3 -> SharedKernel.Reporting.PdfPageSize!
+static readonly SharedKernel.Reporting.PdfPageSize.A4 -> SharedKernel.Reporting.PdfPageSize!
+static readonly SharedKernel.Reporting.PdfPageSize.A5 -> SharedKernel.Reporting.PdfPageSize!
+static readonly SharedKernel.Reporting.PdfPageSize.Legal -> SharedKernel.Reporting.PdfPageSize!
+static readonly SharedKernel.Reporting.PdfPageSize.Letter -> SharedKernel.Reporting.PdfPageSize!
+static readonly SharedKernel.Reporting.ReportFormat.Csv -> SharedKernel.Reporting.ReportFormat!
+static readonly SharedKernel.Reporting.ReportFormat.Pdf -> SharedKernel.Reporting.ReportFormat!
+static readonly SharedKernel.Reporting.ReportFormat.Xlsx -> SharedKernel.Reporting.ReportFormat!
+static SharedKernel.Reporting.HtmlAsset.operator !=(SharedKernel.Reporting.HtmlAsset? left, SharedKernel.Reporting.HtmlAsset? right) -> bool
+static SharedKernel.Reporting.HtmlAsset.operator ==(SharedKernel.Reporting.HtmlAsset? left, SharedKernel.Reporting.HtmlAsset? right) -> bool
+static SharedKernel.Reporting.HtmlToPdfOptions.Default.get -> SharedKernel.Reporting.HtmlToPdfOptions!
+static SharedKernel.Reporting.HtmlToPdfOptions.operator !=(SharedKernel.Reporting.HtmlToPdfOptions? left, SharedKernel.Reporting.HtmlToPdfOptions? right) -> bool
+static SharedKernel.Reporting.HtmlToPdfOptions.operator ==(SharedKernel.Reporting.HtmlToPdfOptions? left, SharedKernel.Reporting.HtmlToPdfOptions? right) -> bool
+static SharedKernel.Reporting.PdfDocumentOutcome.operator !=(SharedKernel.Reporting.PdfDocumentOutcome? left, SharedKernel.Reporting.PdfDocumentOutcome? right) -> bool
+static SharedKernel.Reporting.PdfDocumentOutcome.operator ==(SharedKernel.Reporting.PdfDocumentOutcome? left, SharedKernel.Reporting.PdfDocumentOutcome? right) -> bool
+static SharedKernel.Reporting.PdfMargins.All(double millimeters) -> SharedKernel.Reporting.PdfMargins!
+static SharedKernel.Reporting.PdfMargins.operator !=(SharedKernel.Reporting.PdfMargins? left, SharedKernel.Reporting.PdfMargins? right) -> bool
+static SharedKernel.Reporting.PdfMargins.operator ==(SharedKernel.Reporting.PdfMargins? left, SharedKernel.Reporting.PdfMargins? right) -> bool
+static SharedKernel.Reporting.PdfPageSize.operator !=(SharedKernel.Reporting.PdfPageSize? left, SharedKernel.Reporting.PdfPageSize? right) -> bool
+static SharedKernel.Reporting.PdfPageSize.operator ==(SharedKernel.Reporting.PdfPageSize? left, SharedKernel.Reporting.PdfPageSize? right) -> bool
+static SharedKernel.Reporting.ReportColumn<TRow>.operator !=(SharedKernel.Reporting.ReportColumn<TRow>? left, SharedKernel.Reporting.ReportColumn<TRow>? right) -> bool
+static SharedKernel.Reporting.ReportColumn<TRow>.operator ==(SharedKernel.Reporting.ReportColumn<TRow>? left, SharedKernel.Reporting.ReportColumn<TRow>? right) -> bool
+static SharedKernel.Reporting.ReportDefinition.For<TRow>() -> SharedKernel.Reporting.ReportDefinitionBuilder<TRow>!
+static SharedKernel.Reporting.ReportDefinition<TRow>.operator !=(SharedKernel.Reporting.ReportDefinition<TRow>? left, SharedKernel.Reporting.ReportDefinition<TRow>? right) -> bool
+static SharedKernel.Reporting.ReportDefinition<TRow>.operator ==(SharedKernel.Reporting.ReportDefinition<TRow>? left, SharedKernel.Reporting.ReportDefinition<TRow>? right) -> bool
+static SharedKernel.Reporting.ReportDestination.operator !=(SharedKernel.Reporting.ReportDestination? left, SharedKernel.Reporting.ReportDestination? right) -> bool
+static SharedKernel.Reporting.ReportDestination.operator ==(SharedKernel.Reporting.ReportDestination? left, SharedKernel.Reporting.ReportDestination? right) -> bool
+static SharedKernel.Reporting.ReportExportOutcome.operator !=(SharedKernel.Reporting.ReportExportOutcome? left, SharedKernel.Reporting.ReportExportOutcome? right) -> bool
+static SharedKernel.Reporting.ReportExportOutcome.operator ==(SharedKernel.Reporting.ReportExportOutcome? left, SharedKernel.Reporting.ReportExportOutcome? right) -> bool
+static SharedKernel.Reporting.ReportFormat.operator !=(SharedKernel.Reporting.ReportFormat? left, SharedKernel.Reporting.ReportFormat? right) -> bool
+static SharedKernel.Reporting.ReportFormat.operator ==(SharedKernel.Reporting.ReportFormat? left, SharedKernel.Reporting.ReportFormat? right) -> bool
+static SharedKernel.Reporting.ReportingErrors.ConversionFailed(string! reason) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Reporting.ReportingErrors.ConversionTimeout(System.TimeSpan timeout) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Reporting.ReportingErrors.ConverterUnavailable(string! reason) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Reporting.ReportingErrors.InvalidDefinition(string! reason) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Reporting.ReportingErrors.InvalidDestination(string! reason) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Reporting.ReportingErrors.InvalidRequest(string! reason) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Reporting.ReportingErrors.RowLimitExceeded(SharedKernel.Reporting.ReportFormat! format, long maxRows) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Reporting.ReportingErrors.UnsupportedFormat(string? format, System.Collections.Generic.IEnumerable<SharedKernel.Reporting.ReportFormat!>! supported) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Reporting.ReportingServiceCollectionExtensions.AddExporter(this SharedKernel.Reporting.IReportingBuilder! builder, SharedKernel.Reporting.ReportFormat! format, System.Type! exporterType) -> SharedKernel.Reporting.IReportingBuilder!
+static SharedKernel.Reporting.ReportingServiceCollectionExtensions.AddHtmlToPdfConverter<TConverter>(this SharedKernel.Reporting.IReportingBuilder! builder) -> SharedKernel.Reporting.IReportingBuilder!
+static SharedKernel.Reporting.ReportingServiceCollectionExtensions.AddSharedKernelReporting(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> SharedKernel.Reporting.IReportingBuilder!
+static SharedKernel.Reporting.ReportStreamOutcome.operator !=(SharedKernel.Reporting.ReportStreamOutcome? left, SharedKernel.Reporting.ReportStreamOutcome? right) -> bool
+static SharedKernel.Reporting.ReportStreamOutcome.operator ==(SharedKernel.Reporting.ReportStreamOutcome? left, SharedKernel.Reporting.ReportStreamOutcome? right) -> bool
+static SharedKernel.Reporting.ReportValueFormatting.Format(object? value, System.Globalization.CultureInfo! culture, string? format = null) -> string?
+static SharedKernel.Reporting.ReportValueFormatting.FormatColumnValue<TRow>(SharedKernel.Reporting.ReportColumn<TRow>! column, object? value, System.Globalization.CultureInfo! culture) -> string?
+static SharedKernel.Reporting.ReportValueFormatting.IsNumber(object? value) -> bool
+virtual SharedKernel.Reporting.ReportExporterBase<TRow>.ValidateDefinition(SharedKernel.Reporting.ReportDefinition<TRow>! definition) -> SharedKernel.Primitives.Results.Result

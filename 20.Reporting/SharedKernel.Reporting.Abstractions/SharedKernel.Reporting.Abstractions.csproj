@@ -2,30 +2,38 @@
   <PropertyGroup>
     <SharedKernelTier>Abstractions</SharedKernelTier>
     <!-- NuGet packaging metadata -->
-    <Description>Streaming, memory-bounded report/data export contracts for Platform.SharedKernel microservices: IReportExporter&lt;TRow&gt; (IAsyncEnumerable&lt;TRow&gt;-only, storage-delivered + direct-stream convenience), the ReportColumn/ReportDefinition/ReportDestination/ReportExportOutcome model, the culture-aware ReportValueFormatting default formatter, and StorageStreamingWriter — the Pipe-based delivery primitive that streams encoded bytes to IFileStorage as they are produced. Zero third-party NuGet dependencies — references only SharedKernel.Primitives and SharedKernel.Storage.Abstractions. Implemented by SharedKernel.Reporting.Csv, .Spreadsheet, and .Pdf.</Description>
-    <PackageTags>reporting;export;csv;streaming;shared-kernel</PackageTags>
+    <Description>Report and document export contracts for Platform.SharedKernel services. IReportExporter&lt;TRow&gt; streams an IAsyncEnumerable&lt;TRow&gt; into CSV, Excel or PDF and delivers it to a named SharedKernel.Storage store (with an optional presigned download link) or to any Stream; IReportExporterFactory picks the format at runtime; IHtmlToPdfConverter renders an HTML string to PDF. Includes the fluent ReportDefinition builder, the ReportExporterBase&lt;TRow&gt; and HtmlToPdfConverterBase bases for custom formats, and built-in tracing, metrics and logging. No third-party dependencies. Providers: SharedKernel.Reporting.Csv, .Spreadsheet, .Pdf and .Gotenberg.</Description>
+    <PackageReleaseNotes>First release.</PackageReleaseNotes>
+    <PackageTags>shared-kernel;reporting;export;csv;xlsx;pdf;html-to-pdf;streaming</PackageTags>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- Publish bar: ship XML docs, and fail the build on an undocumented or untracked public member. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <WarningsAsErrors>$(WarningsAsErrors);CS1591;RS0016;RS0017;RS0024;RS0025</WarningsAsErrors>
+    <!-- Shared optional parameters are intentional on this surface (options, cancellation token). -->
+    <NoWarn>$(NoWarn);RS0026;RS0027</NoWarn>
+  </PropertyGroup>
+
   <ItemGroup>
-    <!--
-      Layering (20.Reporting/CLAUDE.md): this domain may reference only 01.Core and
-      SharedKernel.Storage.Abstractions. SharedKernel.Configuration supplies AddValidatedOptions,
-      used by StorageStreamingWriter's own optional wiring today and by every provider package.
-      Any format-library type (ClosedXML.*/PdfSharp.*/MigraDoc.*) referenced from this project is a
-      hard violation — stop and flag it, never add one here.
-    -->
+    <!-- Never a format library (ClosedXML, SpreadCheetah, PdfSharp, MigraDoc): those live in the provider packages. -->
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
     <ProjectReference Include="..\..\08.Storage\SharedKernel.Storage.Abstractions\SharedKernel.Storage.Abstractions.csproj" />
   </ItemGroup>
+
   <ItemGroup>
-    <!--
-      Microsoft.Extensions.Logging.Abstractions is the platform's standard first-party framework
-      package, not a "format-library"/third-party vendor dependency — the same treatment
-      SharedKernel.Caching.Abstractions and SharedKernel.Messaging.Abstractions already give
-      Microsoft.Extensions.DependencyInjection.Abstractions. ILogger&lt;T&gt; backs
-      StorageStreamingWriter's [LoggerMessage] entries (D-11) — the only reason this project takes
-      any PackageReference at all.
-    -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="SharedKernel.Reporting.Abstractions.Tests" />
   </ItemGroup>
 </Project>
