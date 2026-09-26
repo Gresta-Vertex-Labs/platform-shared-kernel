@@ -58,11 +58,12 @@ Files that share a domain scope form one commit group.
 | `SharedKernel.Application.Mediator.MediatR` | `application/mediator` |
 | `SharedKernel.Idempotency.Abstractions` / `.Redis` / `.EfCore` | `idempotency/abstractions`, `idempotency/redis`, `idempotency/efcore` |
 | `SharedKernel.Messaging.MassTransit.RabbitMq` / `.AzureServiceBus` / `.EfCore` (outbox) | `messaging/rabbitmq`, `messaging/azureservicebus`, `messaging/outbox` |
-| `SharedKernel.Presentation.Core` / `.GraphQL` / `.SignalR.Redis` | `presentation/core`, `presentation/graphql`, `presentation/signalr-redis` |
+| `SharedKernel.Presentation.Core` / `.OpenApi` / `.GraphQL` | `presentation/core`, `presentation/openapi`, `presentation/graphql` |
+| `SharedKernel.Presentation.WebApi` and `SharedKernel.Presentation.WebApi.Generators` (packed inside WebApi) | `presentation/webapi` |
 | `SharedKernel.{Capability}.Testing`, `SharedKernel.Testing.Internal` | `testing/{capability}` (e.g. `testing/persistence`), `testing/internal` |
 | `eng/SharedKernelTiers.targets` and the tier rules in `SharedKernel.ArchitectureTests` | `governance` (tier rules are governance even though the target lives in `eng/`) |
 
-GraphQL is a `presentation` package (it moved out of 11.Communication). There is no `application-abstractions`, `behaviors` or `communication/graphql` scope any more, and the probe-only `SharedKernel.ServiceDefaults.*` packages (AI, Caching, Caching.Redis, Messaging, Scheduling, Search, Storage, Workflows.Temporal, Cryptography.KeyVault) no longer exist — a change to a remaining ServiceDefaults package is `service-defaults`.  
+GraphQL is a `presentation` package (it moved out of 11.Communication). There is no `application-abstractions`, `behaviors`, `communication/graphql` or `presentation/signalr-redis` scope any more (`SharedKernel.Presentation.SignalR.Redis` was deleted), and the probe-only `SharedKernel.ServiceDefaults.*` packages (AI, Caching, Caching.Redis, Messaging, Scheduling, Search, Storage, Workflows.Temporal, Cryptography.KeyVault) no longer exist — a change to a remaining ServiceDefaults package is `service-defaults`.  
 If a group has only `.md` / documentation files and no code, mark it `docs-only`.
 
 ---
