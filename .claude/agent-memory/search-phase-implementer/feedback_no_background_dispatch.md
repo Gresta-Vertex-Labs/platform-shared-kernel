@@ -3,6 +3,7 @@ name: feedback_no_background_dispatch
 description: Background Agent dispatch in this harness is slow to report, not lossy — do not assume "nothing landed" means "nothing will land," but also do not idle-wait on it for accountability-critical work
 type: feedback
 ---
+> WO-086 (2026-09): `ISearchIndexProvisioner.ProbeAsync` was removed — readiness is one `IReadinessProbe` per registered index (`SearchIndexReadinessProbe`, `search-{provider}-{index}`); the search-local `TenantScope` (string-keyed `TenantScope.Of(...)`) is now the single `SharedKernel.Execution.Tenancy.TenantScope` (`Global`, `For(TenantId)`, `FromNullable`); container fixtures live in `16.Testing/SharedKernel.Testing.Internal/Containers/` and the in-memory fakes in `SharedKernel.Search.Testing`. The findings below are history.
 
 **Corrected understanding (2026-07-20, same SK.09.Tests real-backend session, after the original version
 of this memory was written mid-session):** the original version of this memory claimed background `Agent`

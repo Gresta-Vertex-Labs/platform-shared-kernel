@@ -4,6 +4,8 @@ description: A real CI failure in T-03 (order-independence) traced to borrowing 
 type: feedback
 ---
 
+> WO-086 (2026-09): `HasProcessedAsync`/`MarkProcessedAsync`/`StoreResponseAsync`, `IIdempotencyResponseStore`, `IdempotentCommandBehavior` and the `InFlightTtl`/`RetentionWindow` options were deleted — the in-flight TTL is now `IIdempotencyStore.TryBeginAsync`'s `ttl` argument and retention `CompleteAsync`'s `retention` argument. The rule still holds in that form: each Redis test passes its own generous `ttl` unless it tests expiry.
+
 **Rule: every `.Redis` Testcontainers test that does more than 1-2 sequential store round trips
 before its final assertion must pass its own explicit `RedisIdempotencyOptions` — never rely on a
 shared test-helper's short `InFlightTtl` fallback meant for a *different* test.**

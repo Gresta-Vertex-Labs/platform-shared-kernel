@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): recorded on MassTransit 9.1.2; the platform is pinned to 8.5.x (P-560) — re-verify the reflection finding against 8.5.x before relying on it.
+
 ## The gap (confirmed via reflection over the shipped assembly, not assumed from docs)
 
 `MassTransit.dll` 9.1.2 (physically named `MassTransit.dll`, but its runtime assembly

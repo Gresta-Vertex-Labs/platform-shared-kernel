@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): the 06-layering lock `SharedKernelLayeringRules.PersistenceNeverReferencesApplicationOrSecurity` was deleted — tiers (SKTIER errors, `DependencyGraphRulesTests`) replace it; `05.Application.Behaviors` is now `SharedKernel.Application.Pipeline`; `TenantSafeDapperCommandService` was removed by P-558 (`IDbSessionFactory`).
+
 ## Context
 Wave A2 picked up where `[[project-p557-remediation-waveA]]`-shaped work (remediation Wave A part 1,
 logged separately) left off: H1 test coverage, H2 (RLS scope-transition correctness), H3

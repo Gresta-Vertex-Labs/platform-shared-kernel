@@ -5,9 +5,13 @@ metadata:
   type: project
 ---
 
-As of 2026-09-04, the last NEW phases written to `state-map.md` Phase Backlog are **P-487–P-490** (under WO-080, three coordinated-pass findings — 01.Core KMS-probe primitive, 05.Application `CacheInvalidationBehavior` ordering-defect fix, 00.Governance mechanical locks x2; see [[project_wo080_kv_probe_cacheinvalidation_layeringgap]]). All four target domains were already `●` Published, so backlog-only, no `state-map-phase` calls.
+As of 2026-09-26: WO-086 (the foundation refactor, tracked in `docs/refactor/FOUNDATION-PLAN.md`) reserved **P-562–P-578**; the highest `### P-NNN` header physically in root `state-map.md` is P-557. Next new phase is therefore **P-579** and next new Work Order **WO-087** — re-verify against both files before assigning.
 
-Next new phase must be **P-491**. Next new Work Order must be **WO-081**.
+> WO-086 (2026-09): the entries below predate the tier refactor. Numbered-layer ceilings they mention are gone (tiers, root CLAUDE.md "Tiers & Dependency Rules"); `ITenantProvider`/`FakeTenantProvider` and `IAuthorizationContext` were deleted (`IRequestContext` in `SharedKernel.Execution`, `IUserContext`); `SharedKernel.Application.Behaviors` is now `SharedKernel.Application.Pipeline`.
+
+As of 2026-09-04 (superseded above), the last NEW phases written to `state-map.md` Phase Backlog are **P-487–P-490** (under WO-080, three coordinated-pass findings — 01.Core KMS-probe primitive, 05.Application `CacheInvalidationBehavior` ordering-defect fix, 00.Governance mechanical locks x2; see [[project_wo080_kv_probe_cacheinvalidation_layeringgap]]). All four target domains were already `●` Published, so backlog-only, no `state-map-phase` calls.
+
+At that time the next new phase was **P-491** and the next Work Order **WO-081**.
 
 As of 2026-08-26 (superseded above): last NEW phases were **P-439–P-453** (under WO-066/WO-067/WO-068/WO-069, all `○` Pending — batch 1/3 of a new missing-packages architecture review; see [[project_wo066_069_new_capabilities_batch1]]). Two more batches are expected from the same review (batch 2/3, batch 3/3) — read that memory file's numbering note for the confirmed starting point before assigning batch-2 IDs, but always re-verify against the live file per the "How to apply" note below.
 

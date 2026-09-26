@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): `05.Application.Behaviors` is now `SharedKernel.Application.Pipeline`; the "13 bridge" and 05's separate `IAuditTrailWriter` are gone — `IAuditTrailWriter`/`AuditEntry`/`AuditOutcome` live in `SharedKernel.Execution.Auditing`, implemented directly by `.EfCore.Auditing`; audit sealing readiness is the `IReadinessProbe` "audit-sealing".
+
 ## Context
 P-557 is a gold-standard pre-publish refactor of 06.Persistence, run as sequential waves (W1-W7) plus
 post-hoc remediation waves after two independent adversarial reviews found gaps the waves' own tests

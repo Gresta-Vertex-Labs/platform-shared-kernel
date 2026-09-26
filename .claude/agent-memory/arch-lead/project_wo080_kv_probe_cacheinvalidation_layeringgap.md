@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): `IEncryptionKeyProviderProbe`, `IMessageBusProbe` and the other probe primitives became `IReadinessProbe`; the named layering grants and their enforcement rules (`ServiceDefaultsWorkflowLayeringRules`/`ServiceDefaultsSchedulingLayeringRules`) were deleted — no grants exist any more; `Application.Behaviors` is now `Application.Pipeline`.
+
 Three findings surfaced by the 2026-08-26 batch's coordinated implementation pass (which closed 31/32 dispatched phases) were handed to arch-lead on 2026-09-04, each flagged as out of a phase-implementer's authority. All three source-verified on disk, not inferred from CLAUDE.md prose. All three ACCEPTED, no declines. Four phases written under one new Work Order, WO-080 (P-487–P-490).
 
 **Finding 1 — 01.Core Azure Key Vault provider ships no readiness-probe primitive, half-blocking P-449.**

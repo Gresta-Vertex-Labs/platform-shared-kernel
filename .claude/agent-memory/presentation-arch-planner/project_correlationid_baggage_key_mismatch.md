@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): `CorrelationIdMiddleware` (and its `BaggageKey` constant) was deleted; the mismatch was fixed in WO-042 by `WellKnownBaggageKeys`, and the inbound correlation id is now owned by `app.UseSharedKernelRequestContext()` (`SharedKernel.ServiceDefaults.Security`). Kept for the general lesson in point 3.
+
 `14.Presentation`'s `CorrelationIdMiddleware` sets `Activity.Current?.SetBaggage("correlation.id", value)` (lowercase, dotted — this is the actual, documented contract, confirmed in `14.Presentation/CLAUDE.md` since WO-031).
 
 While designing WO-041 P-256, I found that `13.ServiceDefaults/state-map.md`'s T-27 test (verifying `BaggageLogRecordProcessor` surfaces CorrelationId onto `LogRecord.Attributes`, P-251) describes itself as calling `Activity.Current?.SetBaggage("CorrelationId", someValue)` — i.e. it hardcodes a **different** literal (`"CorrelationId"`, PascalCase, no dot) than the one `CorrelationIdMiddleware` actually uses. `13.ServiceDefaults`'s own test claims this is "the exact mechanism 14.Presentation's middleware itself uses per WO-031," which is incorrect as written.

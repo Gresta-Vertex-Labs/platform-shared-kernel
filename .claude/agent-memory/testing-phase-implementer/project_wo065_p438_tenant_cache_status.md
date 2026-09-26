@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): `SharedKernel.Testing` was split into 20 packable Testing-tier packages (core `SharedKernel.Testing` + 19 `SharedKernel.{Capability}.Testing`) plus the non-packable `SharedKernel.Testing.Internal` (containers, EF/Npgsql/audit helpers, MassTransit harness); `SharedKernel.Testing.SelfTests` became each package's own nested `.Tests` project. Paths and project names below are pre-split history; the technique/lesson still applies.
+
 WO-065/P-438 (`Caching/FakeTenantCacheService`, `AddFakeTenantCacheService()`, plus a fake-encryption-seam
 interop proof) is CLOSED end to end as of 2026-08-24. All six `16.Testing` phase keys (Design/Scaffold/
 Core/Tests/Docs/Published) are `●` again. Root Phase Backlog P-431 and P-438 both closed to `●` Complete

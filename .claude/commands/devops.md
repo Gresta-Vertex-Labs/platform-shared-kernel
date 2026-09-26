@@ -41,5 +41,5 @@ If the Agent tool call fails, output the error and leave every file unchanged.
 - The user's input is forwarded verbatim. It is never rewritten, expanded, scoped down, or interpreted before dispatch.
 - The agent's jurisdiction is enforced by the agent itself, not here: `.github/**`, MSBuild build-configuration files, `NuGet.Config`, version config, `Dockerfile*`/`.dockerignore`/`deploy/**`, `build/**`/`eng/**`, `PLATFORM.md`, and narrow packaging-only `.csproj` edits.
 - The agent never touches root `CLAUDE.md`, root `state-map.md`, any `{NN}.Domain/CLAUDE.md` or `{NN}.Domain/state-map.md`, any `.cs` file, or any `00.Governance` authored artifact.
-- There is no devops state-map. Multi-step work is tracked in `PLATFORM.md`'s `## DevOps Work Log`, never as a 19th row on the root Domain Summary Board.
+- There is no devops state-map. Multi-step work is tracked in `PLATFORM.md`'s `## DevOps Work Log`, never as a new row on the root Domain Summary Board.
 - No confirmation gate. The agent executes in a single autonomous pass.

@@ -59,8 +59,8 @@ private static bool IsForbiddenExceptionType(ITypeSymbol type)
 - SK0201 — TenantedDbContextOnModelCreatingGuard (Design, Warning) — multi-tenancy block
 - SK0202 — IgnoreQueryFiltersOutsideTenantedRepository (Design, Warning) — multi-tenancy block
 - SK0301–SK0304 — Encryption-domain rules (Security/Design, Warning) — 03xx block
-- SK0703–SK0708 — Messaging-domain rules (Usage/Design, Warning) — 07xx block
-- Next available in general block: SK0014
+- SK0703–SK0708 — Messaging-domain rules (Usage/Design, Warning) — 07xx block (SK0707 retired, P-560)
+- Next available in general block: SK0014 at the time — stale; SK0014–SK0042 have since been assigned (SK0015 deleted WO-086, SK0019 removed P-544), so the next is at least SK0043
 - Next available in 02xx (multi-tenancy): SK0203
 - Next available in 03xx (encryption): SK0305
 - Next available in 07xx (messaging): SK0709
@@ -172,5 +172,5 @@ verify `ILoggableRequest<TResponse>` against `LoggingBehavior`'s source; reading
 source as well (not asked for) showed `IAuditableRequest<TResponse>` has the identical exclusion —
 neither behavior ever calls the `FailureResponse.Create<TResponse>()` helper the rule exists to guard,
 both only forward the response `next()` already produced through a gracefully-degrading outcome
-classifier. Grep the actual helper (`grep "FailureResponse.Create"` across the whole package) to get the
+classifier. Grep the actual helper (`grep "FailureResponse.Create"` across the whole package — today `SharedKernel.Application.Pipeline`) to get the
 authoritative caller list rather than trusting any prose description of "which behaviors do X."

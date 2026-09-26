@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): historical. Parallel domain-event dispatch, fire-and-forget (ChannelFireAndForgetDispatcher, FireAndForgetGuardBehavior) and the streaming behaviors were deleted (P-544); ValidationBehavior no longer references FluentValidation, so the ValidationException alias note is moot; MediatRDomainEventDispatcher is now the native DomainEventDispatcher. The IsEnabled, static-Meter and [EnumeratorCancellation] pitfalls still apply.
+
 SK.05.Tests phase (T-17..T-32) completed 2026-07-02. All 32 test tasks ● (28 + 92 = 120 tests passing).
 
 ## Critical implementation fixes discovered during this phase

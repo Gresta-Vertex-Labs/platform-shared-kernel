@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): the vector-store `ProbeAsync` and `SharedKernel.ServiceDefaults.AI` were replaced by `IReadinessProbe` (`vector-store-{provider}-{collection}`); `TenantScope` is now the single `SharedKernel.Execution.Tenancy.TenantScope`; numbered layering is replaced by tiers.
+
 10.Intelligence's first real build-out, dispatched as WO-045 (P-279–P-286) on 2026-07-21, directly on user request to analyze and design the `10.Intelligence` (AI / vector retrieval) capability domain to gold-standard, developer-friendly fit.
 
 **Starting state:** the domain's own `10.Intelligence/CLAUDE.md` was already an exceptionally rigorous pre-Design brief — eight binding Domain Invariants, a full hard-violations list, AOT posture, and test rules, all derived correctly from the `09.Search`/`08.Storage` precedents (intersection-only seam rule, fail-loud tenant scope, streaming-not-Result-wrapped, probe-primitive-not-IHealthCheck). On disk: four bare placeholder `.csproj` files with zero `.cs` content (`SharedKernel.AI.Abstractions`, `SharedKernel.AI.VectorDb` (+ nested `.Tests`), and a non-conventional domain-root `SharedKernel.AI.Tests`).

@@ -4,6 +4,8 @@ description: Current task-ID/phase numbering state of 16.Testing/state-map.md, u
 type: project
 ---
 
+> WO-086 (2026-09): the domain was restructured into 20 packable Testing-tier packages plus the non-packable `SharedKernel.Testing.Internal`; the "Folder/Namespace Map" and task-ID tails below predate that and are stale — read `16.Testing/state-map.md` and `16.Testing/CLAUDE.md`.
+
 As of 2026-09-08 (after processing P-502/WO-081):
 
 - Last task IDs used per phase: D-243, S-66, C-150, T-105, DO-59, P-02 (Published untouched since WO-008/WO-012).

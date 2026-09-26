@@ -126,7 +126,7 @@ From the identified phase (e.g. `SK.09.Scaffold`), extract:
 4. The number of incomplete tasks (State = `○` or `◐`) and blocked tasks (State = `⚑`).
 
 Additionally extract, and pass through verbatim:
-- The `## Blocked` section — it records verified-on-disk inbound blockers (notably that `16.Testing` ships no Meilisearch or Elasticsearch container fixture) that the implementer must re-verify rather than rediscover mid-phase.
+- The `## Blocked` section — it records verified-on-disk inbound blockers (historically, whether `16.Testing` shipped a Meilisearch or Elasticsearch container fixture — today `MeilisearchContainerFixture`/`ElasticsearchContainerFixture` live in `16.Testing/SharedKernel.Testing.Internal` and the in-memory doubles in `SharedKernel.Search.Testing`) that the implementer must re-verify rather than rediscover mid-phase.
 - The `## Cross-Domain Dependencies` rows whose `This Phase Key` matches the target phase.
 
 If all tasks in the phase are already `●` Complete but the phase key has not been promoted to the root state-map, note this discrepancy and proceed — the implementer will call `state-map-phase` to fix it.
@@ -169,7 +169,7 @@ Implement the following phase from 09.Search/state-map.md.
 Begin by reading 09.Search/CLAUDE.md and 09.Search/state-map.md in full before writing any code.
 
 Verify every cross-domain dependency directly on disk before building on it — in particular, confirm
-whether 16.Testing's MeilisearchContainerFixture and ElasticsearchContainerFixture exist rather than
+whether 16.Testing/SharedKernel.Testing.Internal's MeilisearchContainerFixture and ElasticsearchContainerFixture exist rather than
 trusting any prose that says they do or do not. If a fixture is genuinely absent, implement every
 container-free task and mark only the real-backend tasks `⚑` Blocked. Never hand-roll a competing
 ad-hoc container setup inside a .Tests project.

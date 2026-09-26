@@ -5,6 +5,8 @@ metadata:
   type: reference
 ---
 
+> WO-086 (2026-09): `SharedKernel.Application.Behaviors` is now `SharedKernel.Application.Pipeline` (Host tier) and implements the kernel-owned `IPipelineBehavior<,>` from `SharedKernel.Application` — MediatR is referenced only by `SharedKernel.Application.Mediator.MediatR`. `NoTaskDelayOutsideResilienceBehaviorPredicate` was deleted with `ResilienceBehavior` (P-544). The stream-constraint predicate now matches `SharedKernel.Application.Streaming.IStreamQuery\`1`. The MediatR fixture notes below are historical.
+
 ## ApplicationPipelineRules (WO-036 P-225)
 
 Three `ICustomRule` predicates in `Rules/ApplicationPipelineRules.cs` / `Predicates/`:
@@ -15,8 +17,9 @@ Three `ICustomRule` predicates in `Rules/ApplicationPipelineRules.cs` / `Predica
 2. `NoGenericConstraintMatchesStreamRequestPredicate` — fourth distinct Mono.Cecil technique in
    this domain (after opcode-presence, Ldstr-literal-collection, field-shape+value): walks
    `TypeDefinition.GenericParameters[0].Constraints` on `IPipelineBehavior<,>` implementors,
-   checking each constraint's structural interface closure against `MediatR.IStreamRequest\`1`.
-3. `NoTaskDelayOutsideResilienceBehaviorPredicate` — Call/Callvirt fingerprint on
+   checking each constraint's structural interface closure against `SharedKernel.Application.Streaming.IStreamQuery\`1` (was
+   `MediatR.IStreamRequest\`1` before WO-086).
+3. (deleted, P-544) `NoTaskDelayOutsideResilienceBehaviorPredicate` — Call/Callvirt fingerprint on
    `MethodReference.Name == "Delay" && DeclaringType.FullName == "System.Threading.Tasks.Task"`,
    with a `type.Name == "ResilienceBehavior"` self-exemption checked first.
 
@@ -60,7 +63,11 @@ against `((GenericInstanceType)typeReference).ElementType.FullName` instead, whi
 open-generic form. Verified via a throwaway Mono.Cecil probe console app compiling the exact
 constraint shape and dumping `FullName`/`ElementType.FullName`.
 
-## MediatR test-fixture reference gotcha
+## MediatR test-fixture reference gotcha (historical — pre-WO-086)
+
+Since WO-086 pipeline fixtures compile against the kernel contracts in `SharedKernel.Application`
+(`IRequest<T>`, `IPipelineBehavior<,>`, `IStreamQuery<T>`), not MediatR. The note below only
+applies to a fixture that deliberately exercises `SharedKernel.Application.Mediator.MediatR`.
 
 `MediatR.IBaseRequest`/`IRequest<TResponse>`/`IStreamRequest<TResponse>` live in the separate
 **MediatR.Contracts** assembly; `IPipelineBehavior<,>`/`RequestHandlerDelegate<TResponse>` live
@@ -79,9 +86,13 @@ to work in `ServiceDefaultsGovernanceRulesTests`.
 
 ## Test-project NuGet additions (test project only, never the production package)
 
-Added to `SharedKernel.ArchitectureTests.Tests.csproj` only:
-- `MediatR` `12.4.1` — pinned to match `05.Application`'s own pin (see that project's
-  version-pin note in its csproj); 00.Governance production code still references nothing.
+Added to `SharedKernel.ArchitectureTests.Tests.csproj` only (versions are now central in
+`Directory.Packages.props`):
+- (historical) a direct `MediatR` `12.4.1` reference — gone since WO-086; the test project
+  reaches MediatR only through a `ProjectReference` to `SharedKernel.Application.Mediator.MediatR`
+  (P-567), and `DependencyGraphRulesTests.MediatR_IsReferencedOnlyByTheMediatorAdapter` forbids
+  any other production reference. 00.Governance production packages are Tooling tier and
+  reference nothing.
 - `Microsoft.Extensions.DependencyInjection` `10.0.9` — NU1605 downgrade error forced this
   exact version (transitive floor from `SharedKernel.Caching.Redis.DistributedLocking` →
   `RedLock.net` → `Microsoft.Extensions.Logging` `10.0.9`). Always check transitive floors via

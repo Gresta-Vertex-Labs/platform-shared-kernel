@@ -3,6 +3,7 @@ name: project_09search_t26_and_completion
 description: SK.09.Tests T-26 (cross-provider parity suite) + final domain-wide completion session — empty-Or divergence, EnumerateAsync/tenant-facet verdicts, state-map/CLAUDE.md annotation pattern applied
 type: project
 ---
+> WO-086 (2026-09): `ISearchIndexProvisioner.ProbeAsync` was removed — readiness is one `IReadinessProbe` per registered index (`SearchIndexReadinessProbe`, `search-{provider}-{index}`); the search-local `TenantScope` (string-keyed `TenantScope.Of(...)`) is now the single `SharedKernel.Execution.Tenancy.TenantScope` (`Global`, `For(TenantId)`, `FromNullable`); container fixtures live in `16.Testing/SharedKernel.Testing.Internal/Containers/` and the in-memory fakes in `SharedKernel.Search.Testing`. The findings below are history.
 
 Completed 2026-07-20, same session that closed out T-13–T-17 ([[project_09search_meilisearch_realbackend]])
 and T-21–T-25 ([[project_09search_tests_realbackend_elasticsearch]]). This entry covers the parts only the

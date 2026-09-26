@@ -1,24 +1,27 @@
 ---
 name: reference_redis_reservation_protocol
-description: Exact Redis commands used by SharedKernel.Idempotency.Redis for atomic reservation, confirmation, release, and response replay, and why.
+description: Exact Redis commands used by SharedKernel.Idempotency.Redis (RedisIdempotencyStore) for atomic reservation, completion, release and response replay, and why.
 type: reference
 ---
 
-**Current as of 2026-09-15 (P-544 same-day follow-up).** `IRequestIdempotencyStore.CompleteAsync`/`ReleaseAsync`
-now take an explicit `reservationToken` parameter and return `Task<bool>` (never throw for a lost
-reservation). `RedisRequestIdempotencyStore` holds **no reservation state of its own** — no
-`ConcurrentDictionary` at all. The caller (`IdempotencyBehavior`) is the one that remembers the token,
-from `IdempotencyBeginResult.ReservationToken`, and passes it back explicitly. `RedisIdempotencyMessageStore`
-(`IIdempotencyStore`) is unaffected — see below for why its old sentinel-based protocol still applies there.
+> WO-086 (2026-09): `RedisRequestIdempotencyStore` + `RedisIdempotencyMessageStore` (implementing `05`'s old `IRequestIdempotencyStore` and `07`'s old `IIdempotencyStore`) were replaced by one `RedisIdempotencyStore` implementing `SharedKernel.Idempotency.Abstractions.IIdempotencyStore` for both `IdempotencyPurpose.Request` and `.Message`; the message-store sentinel protocol and `RedisIdempotencyResponseSentinel` were deleted.
 
-Implemented in `18.Idempotency/SharedKernel.Idempotency.Redis/KeyStore/RedisRequestIdempotencyStore.cs` and
-`MessageStore/RedisIdempotencyMessageStore.cs`.
+**Current (post WO-086).** `IIdempotencyStore.TryBeginAsync(purpose, key, fingerprint, ttl, ct)` returns an
+`IdempotencyReservation` (`Started(token)`/`InProgress`/`Completed(response)`/`FingerprintMismatch`);
+`CompleteAsync(purpose, key, token, response, retention, ct)` and `ReleaseAsync(purpose, key, token, ct)` return
+`Task<bool>` (never throw for a lost reservation). The in-flight TTL and the retention window are **caller
+arguments**, not store options. `RedisIdempotencyStore` holds **no reservation state of its own** — the caller
+keeps the token from the reservation and passes it back.
 
-## `RedisRequestIdempotencyStore` (current)
+Implemented in `18.Idempotency/SharedKernel.Idempotency.Redis/Store/RedisIdempotencyStore.cs`.
 
-Each entry is a Redis **hash**, not a plain string: fields `status` (`InProgress`/`Completed`), `fingerprint`, `token`, and — once completed — `response`. `TryBeginAsync`/`CompleteAsync`/`ReleaseAsync` are each a single Lua script via `ScriptEvaluateAsync` — one atomic round trip apiece, never `WATCH`/`MULTI`.
+## Entry shape and scripts
 
-**TryBeginAsync** (`KEYS[1]`=key, `ARGV[1]`=fingerprint, `ARGV[2]`=in-flight TTL ms, `ARGV[3]`=fresh token):
+Each entry is a Redis **hash**: `status` (`InProgress`/`Completed`), `fingerprint`, `token`, and — once completed
+with a response — `response`. `TryBeginAsync`/`CompleteAsync`/`ReleaseAsync` are each a single Lua script via
+`ScriptEvaluateAsync` — one atomic round trip apiece, never `WATCH`/`MULTI`.
+
+**TryBegin** (`KEYS[1]`=key, `ARGV[1]`=fingerprint, `ARGV[2]`=in-flight TTL ms, `ARGV[3]`=fresh token):
 ```lua
 if redis.call('EXISTS', key) == 0 then
     redis.call('HSET', key, 'status', 'InProgress', 'fingerprint', fingerprint, 'token', token)
@@ -33,43 +36,47 @@ if redis.call('HGET', key, 'status') == 'Completed' then
 end
 return {'InProgress', false}
 ```
-Fingerprint is compared **before** status — a reused key with a different fingerprint is always `FingerprintMismatch`, whether the existing entry is in-flight or completed. Lua tables truncate at the first `nil`, so the second array element is always `false` (never actually `nil`) except in the `Completed` branch — C# side checks `!reply[1].IsNull`. The C# side generates `token` fresh on every call and returns it verbatim as `IdempotencyBeginResult.Started(token)` on a win — it is never stored anywhere on the .NET side.
+Fingerprint is compared **before** status — a reused key with a different fingerprint is always
+`FingerprintMismatch`, in flight or completed. Lua tables truncate at the first `nil`, so the second element is
+`false` except in the `Completed` branch — the C# side checks `!reply[1].IsNull`. The token is generated fresh on
+every call and returned as `IdempotencyReservation.Started(token)` on a win; it is never stored on the .NET side.
 
-**CompleteAsync** (`ARGV[1]`=token, `ARGV[2]`=response, `ARGV[3]`=retention TTL ms) — no-ops (returns 0 → C# returns `false`) unless the caller-supplied token matches **and** status is still `InProgress` (a second `CompleteAsync` against an already-completed row is a no-op too, not a silent re-write — this guard is new as of the same-day follow-up, previously `CompleteScript` only checked the token):
+**Complete** (`ARGV[1]`=token, `ARGV[2]`=response, `ARGV[3]`=retention ms, `ARGV[4]`=`'1'` when a response is
+stored) — no-op (0 → `false`) unless the token matches **and** status is still `InProgress`; a `null` response
+completes without a `response` field:
 ```lua
 if redis.call('HGET', key, 'token') == token and redis.call('HGET', key, 'status') == 'InProgress' then
-    redis.call('HSET', key, 'status', 'Completed', 'response', response)
+    if hasResponse == '1' then
+        redis.call('HSET', key, 'status', 'Completed', 'response', response)
+    else
+        redis.call('HSET', key, 'status', 'Completed')
+    end
     redis.call('PEXPIRE', key, retentionMs)
     return 1
 end
 return 0
 ```
 
-**ReleaseAsync** (`ARGV[1]`=token) — deletes only when the token matches AND status is still `InProgress` (never deletes a completed entry) — unchanged shape, now returns `bool` on the C# side (`(int)reply == 1`):
-```lua
-if redis.call('HGET', key, 'token') == token and redis.call('HGET', key, 'status') == 'InProgress' then
-    redis.call('DEL', key)
-    return 1
-end
-return 0
-```
+**Release** (`ARGV[1]`=token) — `DEL` only while the token owns an `InProgress` entry; a completed entry is never
+deleted by a release.
 
-**Key shape unchanged**: `sk:idempotency:{tenantSegment}:{kind}:{rawKey}`, `kind` = `key`/`msg`, tenant segment = GUID `"D"` format or fixed `"no-tenant"` literal. `RedisIdempotencyKeyBuilder` untouched by either migration.
+**Key shape**: `sk:idempotency:{tenantScope}:{kind}:{rawKey}` (`Internal/RedisIdempotencyKeyBuilder.cs`), `kind` =
+`key` for `Request`, `msg` for `Message`; `tenantScope` = `IdempotencyTenantScope.Current(IRequestContextAccessor)`
+(tenant id in `"D"` form, or `no-tenant`). Request keys are byte-identical to the pre-P-568 keys.
 
-**No `IClock` needed** — still true. All TTLs are relative durations (`ttlMs`/`retentionMs` passed straight into `PEXPIRE`), never absolute timestamps.
+**No `IClock` needed** — all TTLs are relative durations passed straight into `PEXPIRE`.
 
-**Fail-open token subtlety:** on a store-unreachable exception during `TryBeginAsync`, the fail-open fallback still returns `Started(token)` with a freshly-generated token that was **never actually written to Redis**. A subsequent `CompleteAsync`/`ReleaseAsync` call with that token hits the identical connectivity exception and follows the identical fail-open/fail-closed branch — `false` under fail-open, throw under fail-closed — never a silent success against a row that never existed.
+**Fail-open token subtlety:** on a store-unreachable exception during `TryBeginAsync`, the fail-open fallback
+(`RedisIdempotencyOptions.AllowExecutionOnStoreUnavailable`) still returns `Started(token)` with a token never
+written to Redis. A later `CompleteAsync`/`ReleaseAsync` with it hits the same connectivity failure and follows the
+same branch — `false` under fail-open, throw under fail-closed — never a silent success against a row that never
+existed.
 
-## `RedisIdempotencyMessageStore` (unchanged — `IIdempotencyStore`, message-dedup only)
-
-Still the original plain-string sentinel protocol, because `IIdempotencyStore` never had a fingerprint or reservation-token concept to begin with:
-- `HasProcessedAsync`: `StringSetAsync(key, sentinel, inFlightTtl, When.NotExists)` — `true` (absent) → not yet processed; `false` (existed) → already processed/in-flight.
-- `MarkProcessedAsync`: `KeyExpireAsync(key, expiryWindow)` — extends TTL only.
-- Sentinel value (`RedisIdempotencyResponseSentinel.Value = "~sk-idempotency-reserved~"`) exists purely because `SET` requires *some* value; the message store never reads it back. Don't remove this type even though the request-idempotency store no longer needs it — the message store still does.
-
-**Store registration lifetime**: `Scoped`, not singleton — see [[feedback_scoped_not_singleton_stores]]. Note: as of the stateless follow-up, `Scoped` is purely about `ITenantContextAccessor`, not about remembering reservation tokens (there's nothing left to remember).
+**Store registration lifetime**: `Scoped` by default (`AddIdempotencyStore<T>(purpose, lifetime = Scoped)`), one
+keyed registration per purpose — see [[feedback_scoped_not_singleton_stores]].
 
 ## History — superseded designs
 
-1. **Pre-P-544**: `RedisIdempotencyKeyStore` implementing the old two-interface `IIdempotencyKeyStore`/`IIdempotencyResponseStore` split.
-2. **P-544 (2026-09-15, same day, earlier revision)**: rewritten as `RedisRequestIdempotencyStore` implementing the new single `IRequestIdempotencyStore`, but each winning `TryBeginAsync` remembered its token in an instance-level `ConcurrentDictionary<string, string>` (keyed by raw key), consulted by `CompleteAsync`/`ReleaseAsync` on the same instance. This was replaced same-day (see "Current" above) once `IRequestIdempotencyStore` itself was redesigned to make the token an explicit round-trip parameter instead of store-remembered state — the dictionary was removed entirely.
+1. **Pre-P-544**: `RedisIdempotencyKeyStore` on the two-interface `IIdempotencyKeyStore`/`IIdempotencyResponseStore` split, plus a separate plain-string sentinel `RedisIdempotencyMessageStore` (`SET NX` + `KeyExpireAsync`).
+2. **P-544 (2026-09-15)**: `RedisRequestIdempotencyStore` on `IRequestIdempotencyStore` — first with an instance-level `ConcurrentDictionary` of won tokens, then (same day) with the token as an explicit round-trip parameter and the dictionary removed.
+3. **P-568/WO-086**: one `RedisIdempotencyStore` for both purposes on `SharedKernel.Idempotency.Abstractions`; TTL and retention moved from options to call arguments.

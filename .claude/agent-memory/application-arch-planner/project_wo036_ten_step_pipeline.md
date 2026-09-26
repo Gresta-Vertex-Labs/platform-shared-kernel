@@ -4,12 +4,13 @@ description: WO-036 (root P-220–P-224) — tracing, streaming vocabulary, resi
 metadata:
   type: project
 ---
+> WO-086 (2026-09): historical. ResilienceBehavior/IRetryableRequest were deleted (P-544); streaming is now kernel IStreamQuery<T>/IStreamQueryHandler<,>/IStreamPipelineBehavior<,> (no MediatR IStreamRequest), and the platform ships no stream behavior; SharedKernel.Application.Behaviors is SharedKernel.Application.Pipeline; the test harness is ApplicationPipelineTestHarness in SharedKernel.Application.Testing. The "no Result<T> per streamed item" decision still holds.
 
 WO-036 dispatched 2026-06-30 (root `state-map.md` P-220–P-224) extends the published seven-step pipeline (WO-035) with five new capabilities, growing the pipeline to a **ten-named-slot** canonical order. Reuses the same six phase keys as WO-035 (`SK.05.Design/Scaffold/Core/Tests/Docs/Published`) — both work orders' tasks coexist under each phase key in `05.Application/state-map.md`.
 
 **Why:** Closes gaps the domain's own CLAUDE.md had been claiming as already true (tracing parity with `07.Messaging`) or that a 2026 CQRS layer needs (streaming reads, resilience, write-side cache invalidation) but never had vocabulary for.
 
-**The five capabilities (see [[pipeline_behavior_local_seam_pattern]] for the seam pattern — note: none of these five need a NEW local seam):**
+**The five capabilities (see [[pattern_local_seam_bridging]] for the seam pattern — note: none of these five need a NEW local seam):**
 
 1. **Tracing parity** — `ApplicationDiagnostics.ActivitySource` (BCL, same name `"SharedKernel.Application"` + version as the existing `Meter`) + a **distinct** new `TracingBehavior<,>` (not folded into `MetricsBehavior` — single responsibility), positioned immediately after `MetricsBehavior`. Mirrors `07.Messaging.MassTransit.Diagnostics.MessagingDiagnostics.ActivitySource` and `ConsumerBase.Consume`'s `using var activity = ActivitySource.StartActivity(...)` shape exactly. Zero new NuGet dependency.
 

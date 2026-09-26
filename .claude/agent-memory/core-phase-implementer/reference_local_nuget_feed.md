@@ -1,18 +1,15 @@
 ---
 name: reference-local-nuget-feed
-description: Where "pack and publish to feed" actually resolves to in this repo — root ./nupkgs/ local feed + NuGet.Config source mapping
+description: ./nupkgs is only the local pack / consumer-verify feed; real publishing is the one-tag release train to GitHub Packages (P-572)
 metadata:
   type: reference
 ---
 
-When a phase says "pack and publish `SharedKernel.X` to feed," this repo has a concrete, repo-wide convention — it is not aspirational:
+"Pack and publish" means two different things in this repo. Keep them apart:
 
-- Root `NuGet.Config` defines a `local-shared-kernel` package source pointing at `./nupkgs` (relative to repo root), with `packageSourceMapping` routing every `SharedKernel.*` package id to that local feed and everything else to nuget.org.
-- `dotnet pack {csproj} --configuration Release --output ./nupkgs` from the repo root is the actual "publish" step — there is no real remote feed.
-- Consumer-verification projects (e.g. `01.Core/SharedKernel.Consumer.Tests/`) reference the packed `SharedKernel.*` packages via `<PackageReference>` (not project references) so `dotnet test` on that project proves the NuGet dependency graph resolves correctly, not just that the source compiles.
-- This same `./nupkgs` folder is shared across all numbered domains (02.Caching, 03.Domain, 06.Persistence, etc. all pack into it too) — it is the one true local feed for the whole mono-repo, not per-domain.
-- `GenerateDocumentationFile` is only added to a package's `.csproj` as part of its NuGet packaging metadata (P-0x "Published" tasks), not during the Core implementation phase — so a clean build during Core/Tests phases does NOT prove XML docs are warning-free. Only verify zero CS1591/CS0419 doc warnings after adding packaging metadata with this flag set.
+- **Publishing** means the release train (P-572). You push one `v*` tag, and `.github/workflows/release.yml` runs `tag-guard` → `verify` → `publish` (environment `nuget-publish`). That run packs and pushes **every** package to GitHub Packages at one MinVer version. No per-package publish exists, no manual republish closure, and no `<Version>` in any csproj. `publish-package.yml` is a dry run only. A phase's "Published" task is closed by that train, never by a local `dotnet pack`.
+- **Local verification** uses root `NuGet.Config`. Its `local-shared-kernel` source points at `./nupkgs`, and `packageSourceMapping` routes `SharedKernel.*` there. `dotnet pack … --output ./nupkgs`, with a temporary `NUGET_PACKAGES`, followed by restoring a `{domain}/consumer-verify/` harness or a sample, proves the packed dependency graph resolves. That is what `.github/workflows/verify.yml` does in CI. `eng/verify-packages.sh` checks that the packed set equals every packable csproj.
 
-**Why:** Discovered while implementing WO-033's P-209 (Cryptography Docs+Published closeout) — confirmed by finding `SharedKernel.Guards.1.0.0.nupkg` already in `./nupkgs/` and reverse-engineering the convention from `SharedKernel.Guards.csproj`'s packaging metadata block and `01.Core/SharedKernel.Consumer.Tests/SharedKernel.Consumer.Tests.csproj`.
+**Why:** an earlier note recorded `./nupkgs` as "the actual publish step — there is no real remote feed". That was true before P-572, and it is wrong now.
 
-**How to apply:** For any future "pack and publish" or "consumer dependency-graph verification" task in any domain, look for `{domain}/consumer-verify/` or `{domain}/SharedKernel.Consumer.Tests/` first — the pattern is already established per-domain. Pack into `./nupkgs` at repo root, never a domain-local folder, unless a domain's own state-map says otherwise (some domains, e.g. `02.Caching`, `06.Persistence`, have their own `nupkgs/`/`nupkg/` folders too — check before assuming root-only).
+**How to apply:** for a consumer dependency-graph check, pack into `./nupkgs` at the repo root and restore the domain's `consumer-verify` harness. For a real release, hand off to devops-lead or the release train and never push packages by hand. XML documentation generation is configured centrally in `Directory.Build.props` (shipping library projects), not added per phase.

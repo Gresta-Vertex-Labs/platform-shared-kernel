@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): `IRequestContext`/`IUnitOfWork`/`IAuditTrailWriter` are now `SharedKernel.Execution` (Foundation); `ITenantProvider`, `IUserContext` use in persistence, the P-078 Security.Abstractions exception and the 06→05 grant were deleted; `PostgreSqlContainerFixture` now lives in non-packable `SharedKernel.Testing.Internal`, `TestRequestContext` in core `SharedKernel.Testing`. Sections above "Domain architecture key facts" are history.
+
 ## SK.06.Docs fully closed 2026-08-04 (64/64) — WO-053 DO-53..DO-64, closing the domain out end to end
 Sixth+ confirmed instance of "state-map ○ but content already exists": all six CLAUDE.md narrative
 sections these 12 tasks required (Structured Logging, Soft-Delete Restore, Read-Replica Routing,
@@ -603,17 +605,16 @@ Without this, the .NET SDK globs pick up test `.cs` files during production buil
 global using Xunit;
 ```
 
-## Domain architecture key facts
-- No outbox types anywhere in 06.Persistence — MassTransit's UseEntityFrameworkOutbox owns that at 07.Messaging
-- SharedKernelDbContext registers exactly 3 interceptors: AuditInterceptor, SoftDeleteInterceptor, ConcurrencyInterceptor
-- ICurrentTenantService is defined in SharedKernel.Persistence.EfCore (not Abstractions)
-- CORRECTED (was stale): `SharedKernel.Persistence.EfCore` DOES take a direct `ProjectReference` to
-  `SharedKernel.Security.Abstractions` (P-078, a deliberate, documented layering exception — it's a
-  zero-dependency interface library) for `IUserContext`/`ITenantProvider`. No OTHER `12.Security.*`
-  package may ever be referenced from this domain.
-- EfCorePersistenceBuilder is the sole DI entry point for EfCore wiring
+## Domain architecture key facts (current as of WO-086, 2026-09)
+- No outbox types anywhere in 06.Persistence — the outbox is `07.Messaging`'s satellite `SharedKernel.Messaging.MassTransit.EfCore`
+- One save interceptor (`PersistenceSaveChangesInterceptor`) plus `DomainClockMaterializationInterceptor`; the former Audit/SoftDelete/Concurrency interceptors are gone (P-558)
+- Tenant and actor come from `IRequestContext` (`SharedKernel.Execution.Context`, `TenantId?`, null fails closed); `IUnitOfWork` from `SharedKernel.Execution.Transactions`, `IAuditTrailWriter` from `SharedKernel.Execution.Auditing` — all Foundation tier
+- No package here references `12.Security`, `SharedKernel.Application`, `SharedKernel.Application.Pipeline` or MediatR (the P-078 `Security.Abstractions` exception and the 06→05 grant are both gone)
+- Tiers: `.Abstractions` = Abstractions tier; `.Npgsql`/`.EfCore`/`.Dapper`/`.EfCore.Auditing`/`.EfCore.Encryption` = Adapter tier with declared edges EfCore,Dapper→Npgsql and Auditing,Encryption→EfCore (SKTIER errors enforce it; root CLAUDE.md "Tiers & Dependency Rules")
+- Readiness: `IReadinessProbe` names `"field-encryption"` and `"audit-sealing"`, mapped by `AddSharedKernelReadiness()`; `ServiceDefaults.Persistence` keeps `AddDatabaseReadinessCheck<T>`, `AddDapperDatabaseReadinessCheck` and `AddPersistenceStartupReadinessCheck` (`AddFieldEncryptionReadinessCheck`/`AddAuditSealingReadinessCheck` were deleted)
+- `AddSharedKernelPostgres<TContext>` is the sole DI entry point for EfCore wiring
 - Paging (Skip/Take) is ALWAYS the last operation in SpecificationEvaluator pipeline
-- AuditInterceptor and SoftDeleteInterceptor must use ChangeTracker.Entry(entity).CurrentValues[name] — never direct property setters
+- Audit/soft-delete stamping writes through `ChangeTracker.Entry(entity).CurrentValues[name]` — never direct property setters
 
 ## Solution file
 All 6 persistence projects registered in Platform.SharedKernel.slnx under /06.Persistence/ folder:

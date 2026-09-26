@@ -4,6 +4,8 @@ description: WO-065 02.Caching fintech-security review — no at-rest encryption
 type: project
 ---
 
+> WO-086 (2026-09): root CLAUDE.md "Layering Rules" is now "Tiers & Dependency Rules".
+
 WO-065 (2026-08-24): direct user request to re-analyze `02.Caching` against big-fintech gold-standard, this time specifically through a security lens ("analyse the needs... in security part"). This is the domain's **second** gold-standard pass — [[project_wo050_caching_goldstandard_review]] (WO-050, 2026-07-29) covered functional/operational completeness (consumer-verify, cross-pod tag invalidation, batch parallelization, tracing); this pass deliberately did not re-litigate anything WO-050 already shipped. Dispatched six phases (P-433–P-438, all `○` Pending) to root `state-map.md`. No `state-map-phase` calls — 02.Caching/00.Governance/16.Testing were all already `●` Published.
 
 **Why this matters beyond this WO:** confirms the pattern from [[project_wo057_security_goldstandard_review]]/[[project_wo061_servicedefaults_goldstandard_review]] generalizes to infrastructure domains, not just identity/host-composition ones — a domain can pass a full functional gold-standard review (WO-050) and still carry real, unaddressed security gaps that only surface when the review question changes from "is this correct and complete" to "is this fintech-grade secure by default."

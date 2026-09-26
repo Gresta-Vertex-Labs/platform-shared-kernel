@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): `SharedKernel.Communication.GraphQL` is now `SharedKernel.Presentation.GraphQL` (14.Presentation, Host tier). `CommunicationLayeringRules` still exists but holds only `NoDirectGrpcInterceptorInheritanceOutsideCommunicationGrpc`, `NoDirectHotChocolateFilterSortInheritanceOutsideGraphQL` and `GrpcNeverReferencesContracts`; the package-to-package predicates were superseded by the tier check (Communication.Rest/.Grpc → Communication.Internal are declared adapter edges). SK0013 still exists. The HotChocolate predicate now exempts the `SharedKernel.Presentation.GraphQL` namespace. `ResultEnvelopeExtensions`/`ToEnvelope()` were removed from `04.Contracts` before its first publish (no response envelope — errors are ProblemDetails), so the "inline Result/Envelope mapping" note at the end is obsolete.
+
 SK.00.CommunicationArchRules added 2026-06-18 as part of WO-025 P-159. Phase key maps to root backlog P-159. Depends on P-154 (Rest), P-155 (Internal), P-156 (Grpc), P-157 (GraphQL) complete.
 
 SK.00.WO026CommunicationQuality added 2026-06-18 as part of WO-026 P-167. Depends on P-163 (Grpc dead-reference removal), P-165 (ResultEnvelopeExtensions), P-166 (PagedResponseType.FromPagedList), P-159 complete. 5 tasks (D-51, C-70, T-127–T-128, DO-23), all at ○ Pending.

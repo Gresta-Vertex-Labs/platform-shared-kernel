@@ -4,6 +4,8 @@ description: 2026-09-15 pre-publish migration of both providers onto 05.Applicat
 type: project
 ---
 
+> WO-086 (2026-09): `IRequestIdempotencyStore`/`IdempotencyBeginResult` (`05.Application.Behaviors`) and the messaging `IIdempotencyStore` were deleted; both are now `SharedKernel.Idempotency.Abstractions.IIdempotencyStore` keyed by `IdempotencyPurpose`, implemented by one `RedisIdempotencyStore` and one `EfCoreIdempotencyStore` (the message stores were merged in). The reservation-token lesson below still holds.
+
 **What happened:** `05.Application.Behaviors` shipped a redesigned request-idempotency contract (`IRequestIdempotencyStore`: `TryBeginAsync(key, requestFingerprint, ct)` / `CompleteAsync(key, serializedResponse, ct)` / `ReleaseAsync(key, ct)`, returning an `IdempotencyBeginResult{Status, StoredResponse}` where `Status` is `Started`/`InProgress`/`Completed`/`FingerprintMismatch`) before either `05.Application.Behaviors` or `18.Idempotency`'s packages had published. This session migrated both `18.Idempotency` providers onto it as a clean rewrite — no shim, no `[Obsolete]`, since nothing downstream could be broken by a breaking change pre-publish.
 
 **Why:** the old two-interface split (`IIdempotencyKeyStore.HasProcessedAsync`/`MarkProcessedAsync` + separate `IIdempotencyResponseStore`) exposed a check-then-act shape at the interface level and required response-replay detection via a runtime `is IIdempotencyResponseStore` pattern-match — awkward. The new single interface folds reservation, fingerprint-based reuse detection, and response replay into one atomic `TryBeginAsync` call.

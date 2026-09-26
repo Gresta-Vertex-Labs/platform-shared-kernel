@@ -4,6 +4,8 @@ description: 2026-09-15 same-day follow-up to P-544 — made IRequestIdempotency
 type: project
 ---
 
+> WO-086 (2026-09): `IRequestIdempotencyStore`/`IdempotencyBeginResult` are now `SharedKernel.Idempotency.Abstractions.IIdempotencyStore`/`IdempotencyReservation`; `SharedKernel.Application.Behaviors` is `SharedKernel.Application.Pipeline` (no MediatR); `FakeRequestIdempotencyStore` is `FakeIdempotencyStore` in `SharedKernel.Idempotency.Testing`; `SharedKernel.Testing.SelfTests` test counts below are historical. The token-round-trip pattern still holds.
+
 **What happened:** Same day as [[project_p544_request_idempotency_migration]] shipped, the coordinator asked
 for a follow-up refinement to the still-unpublished `IRequestIdempotencyStore` contract. The problem: both
 providers kept a per-instance `ConcurrentDictionary<string, token>` remembering which key its own

@@ -4,6 +4,8 @@ description: A Testcontainers.* package version bump (even a "just bump the pin"
 type: feedback
 ---
 
+> WO-086 (2026-09): `SharedKernel.Testing` was split into 20 packable Testing-tier packages (core `SharedKernel.Testing` + 19 `SharedKernel.{Capability}.Testing`) plus the non-packable `SharedKernel.Testing.Internal` (containers, EF/Npgsql/audit helpers, MassTransit harness); `SharedKernel.Testing.SelfTests` became each package's own nested `.Tests` project. Paths and project names below are pre-split history; the technique/lesson still applies.
+
 Confirmed 2026-07-19 (16.Testing SK.16.Scaffold, S-27, WO-044): bumping `Testcontainers.PostgreSql`/`.Redis`/`.RabbitMq`/`.Minio` from `4.1.0` to `4.13.0` was flagged by the dispatching brief as "the riskiest task" and told to actually verify rather than assume a drop-in — that caution was justified. The bump obsoleted each builder type's parameterless constructor (`RedisBuilder()`, `MinioBuilder()`, `RabbitMqBuilder()`, `PostgreSqlBuilder()`) in favor of a `ctor(string image)` overload, surfacing 4 new `CS0618` warnings in the four existing `Containers/*ContainerFixture.cs` files (each of which used `new XBuilder().WithImage("...")`).
 
 **How this was diagnosed and fixed, in order:**

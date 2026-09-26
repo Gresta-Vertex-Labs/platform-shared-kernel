@@ -5,6 +5,8 @@ metadata:
   type: reference
 ---
 
+> WO-086 (2026-09): SK0015 (`StreamPipelineBehaviorMisregistrationAnalyzer`) was deleted and its ID retired — the kernel pipeline has its own `IStreamPipelineBehavior<,>` and no mediator stream registration to get wrong; removal recorded under `### Removed Rules` in `AnalyzerReleases.Unshipped.md`. The unbound-generic `OriginalDefinition` lesson below still applies to any `typeof(Foo<,>)` analyzer. SK0014, SK0016 and `RequestDurationRecordMissingOutcomeTagPredicate` still exist.
+
 ## SK0015 (StreamPipelineBehaviorMisregistrationAnalyzer) — unbound generic symbol pitfall
 
 When a Roslyn analyzer resolves the type argument of `typeof(SomeType<,>)` (an unbound/open generic

@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): `SharedKernel.Testing.Cryptography` is now the packable `16.Testing/SharedKernel.Cryptography.Testing` (`FakeEncryptionKeyProvider`); the core `SharedKernel.Testing` no longer carries transitive package floors for other domains.
+
 # WO-065 Phase 42 — Cache-Value Encryption at Rest (P-433)
 
 Shipped `CacheEncryptionSerializer`/`CacheEncryptionOptions`/`AddCacheEncryption` in

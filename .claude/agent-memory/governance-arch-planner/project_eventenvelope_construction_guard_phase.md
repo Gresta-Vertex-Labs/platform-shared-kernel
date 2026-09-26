@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): historical — `ContractsLayeringRules` was deleted (commit 01847078): `EventEnvelope<TEvent>` has only internal constructors, so no construction path other than `EventEnvelope.Wrap` compiles and no rule is needed. The generic-arity `Newobj` technique below is still a valid reference. `NoDirectEncryptedValueConverterInstantiationPredicate`, cited below as a precedent, no longer exists.
+
 `SK.00.EventEnvelopeConstructionGuard` (WO-054 P-350, 07.Messaging's gold-standard review) prohibits direct construction of `04.Contracts`'s `EventEnvelope<TEvent>` (namespace `SharedKernel.Contracts.Events`) outside its own mandated `EventEnvelope.Wrap<TEvent>()` factory. Motivated by a real, confirmed defect: `07.Messaging`'s shipped `MassTransitEventPublisher.PublishEnvelope<TEvent>` builds the envelope via a raw object initializer and never populates `TenantId` (WO-052/P-331), silently violating the type's own XML-doc-mandated construction contract.
 
 **Design decisions (reusable precedent for any future "one correct construction path" rule on a generic record type):**

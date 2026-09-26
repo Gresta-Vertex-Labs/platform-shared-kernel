@@ -4,6 +4,8 @@ description: Status and architectural decisions from the SK.17.Design/Scaffold/C
 type: project
 ---
 
+> WO-086 (2026-09): `TenantScope` is now `SharedKernel.Execution.Tenancy.TenantScope` (`TenantScope.None` is now `TenantScope.Global`); `SharedKernel.Workflows.Temporal` is Adapter tier and its `SharedKernel.Application` reference is the kernel `ISender`, not MediatR; the activity interceptor also opens a `RequestContextScope`; `InMemoryWorkflowDispatcher` lives in `SharedKernel.Workflows.Testing`. Separately, P-501 (WO-081) moved the codec to `ISymmetricEncryptionService.EncryptAsync`/`DecryptAsync` with associated data, so the sync `Encrypt`/`Decrypt` shape quoted below is historical.
+
 **SK.17.Design (16/16), SK.17.Scaffold (10/10), and SK.17.Core (26/26) all reached `●` in one session (2026-07-23)** — 52/81 total tasks. `SK.17.Tests` (T-01–T-16), `SK.17.Docs`, `SK.17.Published` remain pending, deliberately deferred per the Core/Tests phase split (Core's bar was "builds clean," met with 0 errors/0 new warnings on both `SharedKernel.Workflows.Temporal` and its `.Tests` project).
 
 **Why: unblocking `16.Testing`.** This session was dispatched specifically because `16.Testing`'s `SK.16.Core` C-80–C-84 (`InMemoryWorkflowDispatcher`/`InMemoryWorkflowHandle`) were `⚑` blocked on `17.Workflows` being a real, non-placeholder implementation. That block is now cleared — a future `16.Testing` session can proceed.

@@ -4,6 +4,8 @@ description: WO-053/P-335 status — 06.Persistence core write/read/UoW/connecti
 type: project
 ---
 
+> WO-086 (2026-09): `SharedKernel.Testing` was split into 20 packable Testing-tier packages (core `SharedKernel.Testing` + 19 `SharedKernel.{Capability}.Testing`) plus the non-packable `SharedKernel.Testing.Internal` (containers, EF/Npgsql/audit helpers, MassTransit harness); `SharedKernel.Testing.SelfTests` became each package's own nested `.Tests` project. Paths and project names below are pre-split history; the technique/lesson still applies.
+
 `SK.16.Core` closed 2026-08-04 (C-102–C-105, 105/105) — `FakeDbConnectionFactory`, `FakeRepository<TAggregate,TId>` (single type implementing BOTH `IRepository<TAggregate,TId>` and `IReadRepository<TAggregate,TId>`), `FakeUnitOfWork`, `FakePersistenceTransaction` all implemented in `16.Testing/SharedKernel.Testing/Persistence/`.
 
 `SK.16.Tests` ALSO closed 2026-08-04 (T-66–T-71, 71/71), same-day follow-up session — 50 new tests across 6 files in `SharedKernel.Testing.SelfTests/Persistence/`: `FakeRepositoryTestFixtures.cs`, `FakeDbConnectionFactoryTests.cs`, `FakeRepositoryTests.cs`, `FakeRepositorySpecificationPipelineTests.cs`, `FakeRepositoryPagingAndProjectionTests.cs`, `FakeRepositoryKeysetTests.cs`, `FakeUnitOfWorkTests.cs`. Full regression 844/844 non-container tests green (794 pre-existing + 50 net new).

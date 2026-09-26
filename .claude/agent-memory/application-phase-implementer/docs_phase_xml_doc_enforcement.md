@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): the packages are now SharedKernel.Application, .Pipeline, .Pipeline.Caching and .Mediator.MediatR; IPipelineBehavior<,> is the kernel contract (SharedKernel.Application.Messaging), not MediatR's; DomainEventNotificationHandler and ApplicationServiceCollectionExtensions were deleted; no .csproj carries <Version> any more (MinVer). The <inheritdoc/>/CS1591 lesson still holds.
+
 SK.05.Docs phase (2026-06-29) for `SharedKernel.Application`/`SharedKernel.Application.Behaviors`
 followed the convention already used by `06.Persistence` and `07.Messaging`: rather than treating
 "100% XML doc coverage" as a one-time manual audit, set `<GenerateDocumentationFile>true</
@@ -44,4 +46,3 @@ packages — the Core phase's doc discipline was otherwise already excellent. Bo
 0 warnings/0 errors immediately after, and all 50 existing tests (18 + 32) remained green
 throughout — no production logic touched.
 
-See also [[seven_step_pipeline_implementation]] for the file layout this phase operated on.

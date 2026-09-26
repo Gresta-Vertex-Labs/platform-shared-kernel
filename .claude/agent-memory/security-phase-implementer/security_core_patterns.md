@@ -1,96 +1,11 @@
 ---
 name: security-core-patterns
-description: Key implementation decisions from SK.12.Core — claims mapping, DI registration, AOT constraints, test patterns
+description: SK.12 work-order history (WO-057, WO-058, WO-069) — implementation techniques, package-reference traps, test construction patterns, cross-domain IUserContext fallout
 metadata:
   type: project
 ---
 
-## OidcUserContext — IsAuthenticated invariant (WO-057/P-367, SHIPPED 2026-08-13)
-
-Corrected invariant, now live: the old rule ("`IsAuthenticated` forced false whenever `sub` is absent/
-unparseable") conflated a rejected/unauthenticated caller with a legitimate client-credentials (M2M) token
-that simply has no human subject. Current rule: `UserId` is never `Guid.Empty` only when
-`IdentityKind == User`; `IdentityKind.ServicePrincipal`/`.System` legitimately carry `IsAuthenticated = true`
-with `UserId == Guid.Empty`. `IdentityKind` resolution inside `OidcUserContext`'s constructor:
-`User` when `principal.Identity?.IsAuthenticated == true` AND a parseable non-empty-Guid `sub` claim is
-present; `ServicePrincipal` when `IsAuthenticated == true` but no such claim (logs `SecurityLogEvents
-.ServicePrincipalRecognized`, EventId 12100, Debug); `Anonymous` only when the underlying
-`ClaimsPrincipal.Identity` itself is not authenticated (no log — routine/expected). Detection is IdP-agnostic
-— never hardcode one vendor's claim names (e.g. Entra's `idtyp`/`azp`).
-
-**Constructor shape (WO-057)**: `OidcUserContext(ClaimsPrincipal principal, ClaimMappingOptions claimMapping,
-ILogger<OidcUserContext>? logger = null)` — the second parameter is REQUIRED (not `IOptions<SecurityOptions>`
-as originally drafted; the DI factory extracts `.Value.ClaimMapping` before calling the constructor), the
-logger is optional/nullable so direct/non-DI construction (tests) works without one. `OidcTenantProvider`
-gained the identical optional-`ILogger<OidcTenantProvider>?` pattern, logging `TenantClaimResolutionFailed`
-(EventId 12101, Warning) — but ONLY when the principal is authenticated; an anonymous request resolving to
-`Guid.Empty` is expected, not a signal.
-
-**Defensive role-claim reader**: `OidcUserContext` reads role claims by iterating `principal.Claims` directly
-(never the first-value-wins `Claims` dictionary, which would lose multi-value roles) and handles TWO shapes:
-one `Claim` per role, or a single claim whose value is a JSON array (`["admin","editor"]`, sniffed via a
-cheap `[`/`]` bracket check before attempting `JsonDocument.Parse` — falls back to treating the raw value as
-a single non-array entry on any parse failure, never throws).
-
-**Permissions**: space-delimited single claim (default type `"scope"`, configurable via
-`ClaimMappingOptions.PermissionClaimType`), split via `string.Split(' ', RemoveEmptyEntries | TrimEntries)`.
-
-## AnonymousUserContext fallback pattern
-
-Scoped DI factory for `IUserContext`:
-```csharp
-services.AddScoped<IUserContext>(sp => {
-    var accessor = sp.GetRequiredService<IHttpContextAccessor>();
-    var user = accessor.HttpContext?.User;
-    return user is not null ? new OidcUserContext(user) : AnonymousUserContext.Instance;
-});
-```
-`AnonymousUserContext.Instance` is a static readonly singleton — avoids allocation when no HTTP context is present (background workers, console hosts, unit-test DI containers).
-
-## OidcTenantProvider — never throws
-
-Returns `Guid.Empty` for absent or malformed `tenant_id` claim. Never throws. Callers must handle `Guid.Empty` (unauthenticated or system-level requests).
-
-## SecurityOptions binding
-
-- Section key: `"Security"` (constant `SecurityOptions.SectionKey`)
-- Nested: `JwtOptions` with `Authority` (required), `Audience` (required), `ValidateLifetime` (default `true`), `ClockSkewSeconds` (default `30`)
-- Uses `AddValidatedOptions<SecurityOptions>` from `SharedKernel.Configuration` — startup fails at `IHost.StartAsync()` when required fields are missing
-- JWT Bearer post-configured via `IOptions<SecurityOptions>` — no `BuildServiceProvider()` anti-pattern
-
-## JWT validation defaults
-
-`ValidateIssuer = true`, `ValidateAudience = true`, `ValidateLifetime = true` by default.
-Any relaxation must be explicit and documented at the call site.
-
-## AOT constraints
-
-- `Microsoft.Identity.Web` isolated entirely to `AddAzureB2CAuthentication` — not AOT-safe; swap to standard Entra ID path avoids AOT blast radius
-- `Microsoft.AspNetCore.Authentication.JwtBearer` has partial AOT support (internal reflection in token parsing) — encapsulated behind `IUserContext` so blast radius is limited to DI registration only
-- `OidcUserContext`/`OidcTenantProvider` claims iteration is AOT-safe (no reflection on user types)
-
-## Test construction patterns
-
-**Authenticated principal:**
-```csharp
-new ClaimsPrincipal(new ClaimsIdentity(claims, "Bearer"))
-// authenticationType string → IsAuthenticated = true
-```
-
-**Unauthenticated principal:**
-```csharp
-new ClaimsPrincipal(new ClaimsIdentity(claims))
-// no authenticationType → IsAuthenticated = false
-```
-
-**DI registration tests:** Use `ServiceCollection` + `BuildServiceProvider()` directly. No `WebApplicationFactory` or test host required for unit-level DI verification.
-
-## SecurityClaimTypes constants
-
-- `UserId` = `"sub"`
-- `TenantId` = `"tenant_id"`
-- `Email` = `ClaimTypes.Email`
-- `Role` = `ClaimTypes.Role`
+> WO-086 (2026-09): `IdentityKind` was deleted (now `ActorKind` on `IUserContext`, `SharedKernel.Execution.Context`); `ITenantProvider`, `UserContextTenantProvider` and `AmbientTenantProvider` were deleted (the tenant is `IUserContext.TenantId`, a `TenantId?`); `.Abstractions` is Abstractions tier and the four providers are Host tier. P-546 (2026-09-16) had already removed `OidcUserContext`, `OidcTenantProvider`, `SecurityOptions`, `AddSharedKernelSecurity`, `AddAzureB2CAuthentication` and `Microsoft.Identity.Web`. The sections below are pre-P-546 work-order history: keep the techniques (test construction, package-reference traps, cross-domain implementer grep), but take every type name and current rule from `12.Security/CLAUDE.md`. The old current-state sections (OidcUserContext invariant, fallback factory, OidcTenantProvider, SecurityOptions, Identity.Web AOT, claim-type values) were removed as wrong.
 
 ## Phase completion
 
@@ -396,7 +311,7 @@ build output for `error CS` (not just `error`) isolates genuine compile errors f
   repo-wide grep pattern from WO-057's memory entry (`class\s+\w+(<[^>]+>)?\s*(\([^)]*\))?\s*:\s*[\w<>,\.\s]
   *\bIUserContext\b`) again caught every implementer correctly — **this rule is now confirmed reliable across
   two independent interface-breaking sessions; keep using it (re-derive fresh each time, never trust a prior
-  session's list as still-exhaustive) whenever `IUserContext` or `ITenantProvider` gains a member.**
+  session's list as still-exhaustive) whenever `IUserContext` gains a member.**
 
 ## WO-069/P-452 — SharedKernel.Security.Totp, fifth sibling provider (SHIPPED 2026-09-04)
 

@@ -5,10 +5,12 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): historical. Since the P-543 redesign `EventEnvelope<TEvent>` is constrained to `TEvent : class, IIntegrationEvent`, `SharedKernel.Contracts` (Model tier) never references `SharedKernel.Domain` (`SharedKernelLayeringRules.ContractsNeverReferencesDomain`), `Envelope<T>`/`ContractsJsonContext` were deleted, and `TenantId` stays `Guid?` on the wire (not `SharedKernel.Execution`'s `TenantId` type).
+
 ## Historical note (superseded — kept for context)
 The section below described the very first build-out (2026-05-30, WO-011/WO-012), when all six phases (Design→Published) were completed together in one session and 04.Contracts shipped as `SharedKernel.Contracts 1.0.0`. Two more full WO cycles have since shipped on top of that baseline. Do not treat the "62 tests"/"1.0.0" figures below as current — see "Status as of 2026-07-31" instead.
 
-## Status as of 2026-07-31 (current)
+## Status as of 2026-07-31 (superseded by the P-543 redesign and the WO-086 tier model)
 `SharedKernel.Contracts` is **shipped and Published at v1.1.0** (WO-026/P-166 added `ResultEnvelopeExtensions`, `SharedKernel.Contracts.Mapping` namespace; 72 tests green; consumer-verify covers 6 surfaces). WO-051/P-314 later fixed a doc-accuracy defect (`EventEnvelope<TEvent>.Payload`'s XML doc falsely claimed `AggregateId` was guaranteed).
 
 **WO-052 is now in flight, targeting a breaking `2.0.0` release**, three changes designed by contracts-arch-planner and recorded in full in `04.Contracts/CLAUDE.md`:
@@ -30,7 +32,7 @@ The section below described the very first build-out (2026-05-30, WO-011/WO-012)
 
 **Status as of 2026-07-31 (Published phase closed, WO-052 fully complete):** SK.04.Published is 8/8 `●` — P-06/P-07/P-08 all done in one session. `SharedKernel.Contracts.csproj` bumped to `2.0.0` with a `PackageReleaseNotes` block calling out the breaking `Envelope`→`Envelopes` rename plus the additive `TenantId`/`CursorPagedList<T>` changes; `dotnet pack` produced `SharedKernel.Contracts.2.0.0.nupkg`+`.snupkg` in root `nupkgs/` (via `dotnet pack ... -o nupkgs` from repo root). `consumer-verify/Program.cs`'s stale `using SharedKernel.Contracts.Envelope;` (singular) fixed to `.Envelopes` — the project builds/runs again after being deliberately left broken since the Core-phase session. Extended to 7 surfaces: Surface 4 now covers `EventEnvelope.Wrap` both without and with `tenantId` (plus STJ round-trips for both), and a new Surface 6 constructs/round-trips `CursorPagedList<string>` (populated + terminal-page cases) through the merged `TypeInfoResolverChain`, registered in `ConsumerVerifyJsonContext`. All six phase keys (Design/Scaffold/Core/Tests/Docs/Published) are now `●` — WO-052 v2.0.0 cycle is complete end to end. 87/87 `SharedKernel.Contracts.Tests` green throughout.
 
-**GOVERNANCE FINDING — see `contracts-governance-verification.md` for full detail.** `00.Governance`'s `ContractsPurityRules` has never been run against the real `SharedKernel.Contracts` assembly (only contrived fixtures). Empirical verification during P-08 found `CursorPagedList<T>` needs zero exemption from the domain-type/`Result`-type rules (same as `PagedList<T>`), but `ContractsAssembliesHaveNoNonTrivialMethods` fails platform-wide for every factory-method-bearing type — a pre-existing `00.Governance` predicate gap since 1.0.0, not something this phase introduced, out of this domain's jurisdiction to fix. Read the dedicated memory file before trusting any future "ContractsPurityRules passes" claim.
+**GOVERNANCE FINDING (resolved):** at 2.0.0 `ContractsPurityRules` was only exercised against in-memory fixtures and `ContractsAssembliesHaveNoNonTrivialMethods` failed for every factory-method-bearing type. That rule is now `IntegrationEventsHaveNoNonTrivialMethods`, and `ContractsPurityRulesTests` also runs the rules against the real `SharedKernel.Contracts` assembly.
 
 ## CRITICAL: breaking renames in 04.Contracts cascade into 16.Testing (platform-wide blast radius)
 `16.Testing/SharedKernel.Testing` is referenced by literally every `.Tests` project in the repo (root CLAUDE.md Test Project Rules). It has its own `Contracts/EnvelopeAssertions.cs`(+`EnvelopeAssertionsTests.cs` in `.SelfTests`) that mirrored the exact same `using EnvelopeNs = SharedKernel.Contracts.Envelope;` alias workaround this package used to carry. **The moment C-08 landed, `SharedKernel.Testing` failed to build — which transitively fails every single domain's `.Tests` project**, not just this one's.

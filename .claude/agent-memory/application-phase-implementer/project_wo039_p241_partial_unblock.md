@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): historical. MediatRDomainEventDispatcher is now DomainEventDispatcher (SharedKernel.Application.Pipeline), SharedKernel.Application.Behaviors is SharedKernel.Application.Pipeline, and ResilienceBehavior was deleted. The "verify every sub-part of a blocker" lesson still holds.
+
 WO-039 P-241 (05.Application/state-map.md, SK.05.Tests phase) requires wiring four already-built
 `00.Governance/SharedKernel.ArchitectureTests` rule groups against the REAL `SharedKernel.Application`/
 `SharedKernel.Application.Behaviors` assemblies. For several sessions, all five tasks (T-40..T-44) were

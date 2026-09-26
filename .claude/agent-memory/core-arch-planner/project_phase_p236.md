@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): `SharedKernel.Application.Behaviors` is now `SharedKernel.Application.Pipeline` (Host tier, kernel-owned pipeline, no MediatR); `FailureResponseFactory`/`ResultOfTDispatcher` were deleted. `IFailureFactory<TSelf>` still exists in `SharedKernel.Primitives`.
+
 P-236 adds one AOT-clean, self-referential interface to `SharedKernel.Primitives` so `05.Application` (P-237) can
 genuinely eliminate the reflection its `FailureResponseFactory`/`ResultOfTDispatcher<TResponse>` was supposed to have
 removed after [[project_phase_p230]] shipped `IResultOfT<T>`.

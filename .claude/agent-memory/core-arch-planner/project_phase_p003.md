@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-082/WO-086 (2026-09): the `SharedKernel.Guards` package was merged into `SharedKernel.Core` (namespace `SharedKernel.Guards` kept); `01.Core` is Foundation tier.
+
 P-003 introduces `SharedKernel.Guards` — a two-path guard system — as the fifth package in `01.Core`.
 
 **Why:** Domain constructors and application-layer handlers needed a consistent precondition vocabulary. Ad-hoc null checks and bare throws produced inconsistent Error codes and unobservable failures on the railway monad. The two-path design satisfies both usage styles without code duplication.

@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-082/WO-086 (2026-09): the `SharedKernel.Guards` package was merged into `SharedKernel.Core` (Foundation tier; the `SharedKernel.Guards` namespace stays). `GuardPurityRules` and SK0006 still exist.
+
 Phase SK.00.GuardPurity was added on 2026-05-15 under WO-002 P-004.
 
 **Why:** The two-path guard design (Guard.Against.* returns Error?, Guard.Throw.* throws) only delivers value if the functional path is provably pure. A future contributor adding a throwing guard extension breaks domain constructors relying on collection semantics — failure only surfaces at runtime without enforcement.

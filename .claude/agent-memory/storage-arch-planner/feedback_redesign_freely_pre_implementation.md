@@ -21,7 +21,7 @@ Fixing it after `.S3`/`.Obs` ship is a breaking change against two providers sim
 **How to apply:** When a new phase input asks for one new capability on an interface that hasn't
 shipped yet (check the Package Board — state `○` and no Core-phase tasks marked `●`), proactively
 re-read the ENTIRE current interface contract in `CLAUDE.md` for other latent inconsistencies
-against this domain's own stated philosophy (Stream-first, Result-first, zero-third-party-deps in
+against this domain's own stated philosophy (Stream-first, Result-first, Abstractions-tier NuGet limits in
 Abstractions, etc.) before locking the Design phase — don't just bolt on the one requested member.
 Once a phase input targets a package that already has Core-phase tasks at `●` (real shipped code),
 switch back to treating any signature change as a breaking change requiring explicit migration

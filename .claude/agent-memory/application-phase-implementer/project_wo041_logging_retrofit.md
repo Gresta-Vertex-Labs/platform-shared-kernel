@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): SharedKernel.Application.Behaviors is SharedKernel.Application.Pipeline; the FireAndForget and StreamLoggingBehavior files were deleted (P-544), so the DropOldest quirk is gone. The IsEnabled, internal-type ILogger<T> and Mono.Cecil lessons still hold.
+
 Completed 2026-07-10 in one session (Design through Tests, D-66..D-71/S-19/C-69..C-74/T-60..T-66 all ●).
 
 ## Stale-state lesson (important, recurring pattern in this repo)

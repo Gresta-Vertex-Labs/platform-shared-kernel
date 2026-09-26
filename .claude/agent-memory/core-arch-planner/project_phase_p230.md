@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): `SharedKernel.Application.Behaviors` is now `SharedKernel.Application.Pipeline` (Host tier, kernel-owned pipeline, no MediatR); `FailureResponseFactory` was deleted. `IHasSuccessFlag`/`IResultOfT<T>`/`IFailureFactory<TSelf>` still exist in `SharedKernel.Primitives`.
+
 P-230 adds two AOT-clean interfaces to `SharedKernel.Primitives` to unblock `05.Application.Behaviors` from reflection-based patterns.
 
 **Why:** `LoggingBehavior` cannot distinguish failure from success on an unknown `TResponse` without runtime type inspection (which requires `[RequiresUnreferencedCode]`). `FailureResponseFactory` compiles `Expression<Func<Error, TResponse>>` at warm-up time — also `[RequiresUnreferencedCode]`. Both hazards are resolved by primitive interfaces that carry no AOT annotation.

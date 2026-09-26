@@ -4,6 +4,8 @@ description: 01.Core has no Error.Forbidden/ErrorType.Forbidden — blocks WO-05
 type: project
 ---
 
+> WO-086 (2026-09): `ErrorType.Forbidden`/`Error.Forbidden` have since shipped (P-384), and `ErrorTypeStatusCodeMap` now lives in `SharedKernel.Presentation.Core` (`14.Presentation/SharedKernel.Presentation.Core/Errors/ErrorTypeStatusCodeMap.cs`). Kept for the verify-shipped-code lesson.
+
 `01.Core/SharedKernel.Primitives/Errors/ErrorType.cs` only has six members: `None`, `Unexpected`,
 `Validation`, `NotFound`, `Conflict`, `Unauthorized`, `BusinessRule`. There is no `Forbidden` and
 never has been. `Error.cs` has no `Error.Forbidden(...)` factory to match. Confirmed via direct

@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): the core `SharedKernel.Testing` now references Foundation + Model only — it no longer drags in `06.Persistence` or the rest of the repo; per-capability fakes are in `SharedKernel.{Capability}.Testing`, fixtures in `SharedKernel.Testing.Internal`.
+
 # WO-081 Phase 46 — Cache Encryption AAD Key-Binding (P-497)
 
 Retired Phase 42's `CacheEncryptionSerializer` (an `IFusionCacheSerializer` decorator) and

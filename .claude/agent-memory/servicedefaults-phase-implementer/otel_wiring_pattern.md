@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): the base `SharedKernel.ServiceDefaults` now references Foundation-tier packages only, so the concrete-package `ProjectReference`s mentioned below (MassTransit, RabbitMQ options) no longer exist — string-name wiring is now the only possible approach, not just the correct one. The family has grown to eleven `With*Telemetry()` methods.
+
 `WithMessagingTelemetry()` and `WithCachingTelemetry()` (both in `SharedKernel.ServiceDefaults/Telemetry/`)
 wire already-existing `ActivitySource`/`Meter` instruments owned by `07.Messaging` and `02.Caching`
 respectively into the host's `TracerProvider`/`MeterProvider` — by **string name only**, via
@@ -12,7 +14,7 @@ respectively into the host's `TracerProvider`/`MeterProvider` — by **string na
 
 **Why this matters:** these source/meter names belong to classes that are `internal` to their owning
 assembly (e.g. `SharedKernel.Messaging.MassTransit.Diagnostics.MessagingDiagnostics` is `internal static`,
-no `InternalsVisibleTo` grant to `SharedKernel.ServiceDefaults`). Even when a `ProjectReference` to the
+no `InternalsVisibleTo` grant to `SharedKernel.ServiceDefaults`). Even if a `ProjectReference` to the
 owning concrete package already exists in `SharedKernel.ServiceDefaults.csproj` (for unrelated reasons —
 e.g. the RabbitMQ health check needs `RabbitMqBusOptions`), the OTel wiring method still cannot and must
 not reference the internal diagnostics type directly. String-name wiring via `AddSource`/`AddMeter` is not

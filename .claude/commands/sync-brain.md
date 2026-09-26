@@ -2,7 +2,7 @@ You are the keeper of the architectural brain for Platform.SharedKernel.
 
 This command operates in two modes depending on the input:
 
-- **Root mode** — updates `CLAUDE.md` at the repo root (cross-domain rules, folder map, layering)
+- **Root mode** — updates `CLAUDE.md` at the repo root (cross-domain rules, folder map, tiers and dependency rules)
 - **Sub-domain mode** — updates a specific domain's `{NN}.{Name}/CLAUDE.md` (packages, interfaces, rules for that capability only)
 
 Read the input below and determine which mode applies before doing anything else.
@@ -35,12 +35,13 @@ Scan the input summary for any of the following signals. For each signal found, 
 
 | Signal | Target section |
 |--------|---------------|
-| New folder added or renamed | `## Folder Map` row + `## Layering Rules` entry |
-| Folder removed or merged | `## Folder Map` row removed + `## Layering Rules` entry removed |
+| New folder added or renamed | `## Folder Map` row + the package tiers in `## Tiers & Dependency Rules` |
+| Folder removed or merged | `## Folder Map` row removed + its packages removed from `## Tiers & Dependency Rules` |
 | New package added inside an existing folder | `## Folder Map` (update description) + `## "What Goes Where"` (add row if the package introduces a new placement rule) |
 | New abstraction/provider pair | `## Abstractions Packages` table |
-| Dependency rule changed (what can reference what) | `## Layering Rules` block |
-| New hard rule (something that must never happen) | `## Layering Rules` — Hard rules list |
+| New package, or a package moved to another tier | `## Tiers & Dependency Rules` — package → tier list |
+| Tier matrix changed, or an Adapter→Adapter edge declared or removed (`SharedKernelAllowedAdapterReferences`) | `## Tiers & Dependency Rules` — matrix or declared-edges list |
+| New purity rule or hard rule (something that must never happen, beyond the tier matrix) | `## Tiers & Dependency Rules` — purity/hard rules list |
 | New naming pattern or exception | `## Package Naming Convention` |
 | Test project rule changed | `## Test Project Rules` |
 | Solution format change | `## Solution Format` |
@@ -74,10 +75,10 @@ Output ≤ 5 bullet points of what changed and why. If no edits were made, expla
 
 - Operates on exactly two files: `CLAUDE.md` at the repo root (Steps R1–R3) and `CLAUDE.changelog.md` beside it (Step R4 append only). No other file is read, written, or modified.
 - Sub-domain `CLAUDE.md` files are owned by their domain agents — **never read, write, or reference them directly**. Only their summaries, passed as input to this command, are valid signal sources.
-- Section order must stay: What This Repo Is → Folder Map → Layering Rules → Package Naming Convention → Test Project Rules → "What Goes Where" → Abstractions Packages → Solution Format → Changelog (a pointer stub only — the entries themselves live in `CLAUDE.changelog.md`)
+- Section order must stay: What This Repo Is → Folder Map → Tiers & Dependency Rules → Package Naming Convention → Test Project Rules → "What Goes Where" → Abstractions Packages → Solution Format → Changelog (a pointer stub only — the entries themselves live in `CLAUDE.changelog.md`)
 - All tables use markdown pipe syntax
-- The Layering Rules code block stays as a plain fenced code block — no YAML, no JSON
-- Hard rules stay as a bullet list under the code block
+- The tier matrix and the declared adapter edges stay as markdown tables or plain lists — no YAML, no JSON
+- Purity and hard rules stay as a bullet list in `## Tiers & Dependency Rules`. There are no individually named layering grants: a new dependency edge is either allowed by the tier matrix or a declared Adapter→Adapter edge — never record a one-off "grant"
 - The Changelog is append-only — never edit or remove existing entries. At root this means `CLAUDE.changelog.md`; leave `CLAUDE.md`'s `## Changelog` pointer stub untouched
 - Do not add new top-level sections unless the input explicitly introduces a new cross-cutting concern that has no home in any existing section
 

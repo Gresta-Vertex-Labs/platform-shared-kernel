@@ -9,4 +9,4 @@ The outbox pattern is entirely owned by `07.Messaging` via MassTransit's `UseEnt
 
 **Why:** Introducing a competing outbox contract in `06.Persistence` would create parallel infrastructure with no clear owner. MassTransit's EF outbox manages its own schema, persistence, and relay entirely within `07.Messaging` without any coordination from `06.Persistence`.
 
-**How to apply:** When processing any persistence phase request that mentions outbox, domain events, or event dispatching — reject the addition and redirect to `07.Messaging`. `SharedKernelDbContext` registers exactly three interceptors (Audit, SoftDelete, Concurrency). The number four is always wrong for this constructor.
+**How to apply:** When processing any persistence phase request that mentions outbox, domain events, or event dispatching — reject the addition and redirect to `07.Messaging`. Since WO-086 the outbox lives in the satellite `SharedKernel.Messaging.MassTransit.EfCore` (Adapter tier, declared edge → `Messaging.MassTransit`); `06.Persistence` has one save interceptor (`PersistenceSaveChangesInterceptor`) and no outbox type.

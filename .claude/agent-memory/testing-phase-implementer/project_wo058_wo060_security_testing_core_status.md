@@ -4,6 +4,8 @@ description: 16.Testing SK.16.Core AND SK.16.Tests both closed 2026-08-17 (122/1
 type: project
 ---
 
+> WO-086 (2026-09): the security fakes now live in `SharedKernel.Security.Testing`; `FakeTenantProvider`/`StaticTenantProvider` were deleted with `ITenantProvider` (tenant = `TestRequestContext`/`FakeRequestContext`), and `FakeUserContext` exposes `ActorKind` instead of `IdentityKind`. Pre-split paths below are history.
+
 `16.Testing`'s `SK.16.Core` phase closed 2026-08-17 at 122/122 tasks (C-114–C-122), fully promoted in `16.Testing/state-map.md`. Six new/extended production files, all under `16.Testing/SharedKernel.Testing/`:
 - `Security/SecurityTestContextBuilder.cs` (net-new) — fluent `ClaimsPrincipal`/`IUserContext` test-fixture builder, identity-basics (C-114) + AMR/ACR/AuthTime (C-116) built in the same pass.
 - `Application/FakeDualApprovalStore.cs` (net-new, C-117) + `AddFakeDualApprovalStore()` added as a standalone method to the existing `Application/ApplicationServiceCollectionExtensions.cs` (C-118).

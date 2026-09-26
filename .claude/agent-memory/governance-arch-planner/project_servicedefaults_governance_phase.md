@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): `CompositionRootExclusivityRules` and `CachingAbstractionRules` were deleted in P-574 (the tier check covers composition-root exclusivity: an Adapter-tier provider may be referenced only by a Host package, a Testing package or a declared Adapter→Adapter edge). `HealthCheckTagIntegrityRules` still exists. The per-domain `Add*ReadinessCheck` methods were deleted — providers register `IReadinessProbe` and `healthChecks.AddSharedKernelReadiness()` maps them; only `AddDatabaseReadinessCheck<TContext>`, `AddDapperDatabaseReadinessCheck`, `AddPersistenceStartupReadinessCheck` and `AddLedgerReadinessCheck` remain.
+
 WO-027 P-173 added phase `SK.00.ServiceDefaultsGovernance` (17 tasks: D-52, C-71–C-74, T-129–T-138, DO-24; total governance tasks now 328) to `00.Governance/state-map.md`, with corresponding additions to `00.Governance/CLAUDE.md`. Depends on P-170 (13.ServiceDefaults Core) for **real-assembly verification only** — design/implementation proceeds now against contrived in-memory fixtures (same `CSharpCompilation` + `MetadataReference.CreateFromImage` technique as `RedisTopologyRulesTests`), since `SharedKernel.ServiceDefaults`/`SharedKernel.MultiTenancy` don't exist yet.
 
 **Why this phase exists:** `13.ServiceDefaults/CLAUDE.md` claims two things are "mechanically enforced by SharedKernelLayeringRules" that were not actually true: (1) live/ready tag mutual exclusivity, (2) composition-root exclusivity for ALL provider families. Rule (2) was only ever scoped to `02.Caching` (P-009/WO-003, written before `13.ServiceDefaults` existed). This is the same category of aspirational-but-unenforced-rule gap previously closed for Redis topology in P-145 — see [[project_redis_topology_phase]].

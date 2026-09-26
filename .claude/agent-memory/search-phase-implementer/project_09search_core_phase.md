@@ -3,6 +3,7 @@ name: project_09search_core_phase
 description: SK.09.Core (C-01–C-48) session — SDK verification technique, confirmed real SDK shapes, provider-specific engine workarounds, EventId usage, build-warning baseline
 type: project
 ---
+> WO-086 (2026-09): `ISearchIndexProvisioner.ProbeAsync` was removed — readiness is one `IReadinessProbe` per registered index (`SearchIndexReadinessProbe`, `search-{provider}-{index}`); the search-local `TenantScope` (string-keyed `TenantScope.Of(...)`) is now the single `SharedKernel.Execution.Tenancy.TenantScope` (`Global`, `For(TenantId)`, `FromNullable`); container fixtures live in `16.Testing/SharedKernel.Testing.Internal/Containers/` and the in-memory fakes in `SharedKernel.Search.Testing`. The findings below are history.
 
 SK.09.Core (all 48 C-01–C-48 tasks) completed 2026-07-19 — full implementation of
 `SharedKernel.Search.Abstractions`, `.Meilisearch`, `.ElasticSearch`. All three packages build with 0

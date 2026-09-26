@@ -4,6 +4,8 @@ description: Reusable techniques for Docker-gated Containers/ self-tests -- reac
 type: feedback
 ---
 
+> WO-086 (2026-09): `SharedKernel.Testing` was split into 20 packable Testing-tier packages (core `SharedKernel.Testing` + 19 `SharedKernel.{Capability}.Testing`) plus the non-packable `SharedKernel.Testing.Internal` (containers, EF/Npgsql/audit helpers, MassTransit harness); `SharedKernel.Testing.SelfTests` became each package's own nested `.Tests` project. Paths and project names below are pre-split history; the technique/lesson still applies.
+
 Two concrete techniques worked out while writing `MilvusContainerFixtureTests.cs` (T-52/T-53, WO-045, 2026-07-22), worth reusing on any future `Containers/` fixture test.
 
 **1. Reaching a container's management/side-channel port when the fixture doesn't expose it as a property.**

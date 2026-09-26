@@ -1,22 +1,20 @@
 ---
 name: project_icurrenttenantservice_location
-description: ICurrentTenantService removed — TenantedDbContext now uses ITenantProvider from Security.Abstractions; Guid.Empty is the no-tenant sentinel
+description: Tenant source for TenantedDbContext — IRequestContext.TenantId (SharedKernel.Execution, TenantId?); null fails closed (zero rows, writes rejected)
 metadata:
   type: project
 ---
 
-**P-078 decision (WO-014, 2026-06-02):** `ICurrentTenantService` (local interface with `TenantId` as `Guid?`) has been removed from `SharedKernel.Persistence.EfCore`. `TenantedDbContext` now injects `ITenantProvider` from `SharedKernel.Security.Abstractions` (`TenantId` is `Guid`, non-nullable).
+> WO-086 (2026-09): `ITenantProvider` (Security.Abstractions) and its `Guid.Empty` sentinel were deleted; the earlier `ICurrentTenantService` (P-078) and the `NoOpTenantProvider` are long gone.
 
-**Why the switch was made:** The local interface copy created divergence risk. `Security.Abstractions` is zero-dependency, so referencing it from `EfCore` is architecturally correct and eliminates the maintenance burden of keeping two interfaces in sync.
+**Current rule:** `TenantedDbContext.CurrentTenantId` is `RequestContext.TenantId` — `IRequestContext` from `SharedKernel.Execution.Context` (Foundation tier), typed `SharedKernel.Execution.Tenancy.TenantId?` (a `readonly record struct` that rejects `Guid.Empty`). The same `IRequestContext` feeds audit attribution. With no `IRequestContext` registered the builder defaults to `AnonymousRequestContext` (no tenant).
 
-**Guid.Empty no-tenant sentinel (P-092, WO-016, 2026-06-02):**
+**Fail-closed:** `null` tenant → the named tenant filter matches zero rows and the tenant write guard rejects every tenant-scoped write. There is no "empty GUID" tenant any more.
 
-`ITenantProvider.TenantId` is non-nullable. When no real provider is registered, `NoOpTenantProvider` returns `Guid.Empty` explicitly (not `default(Guid)` — same value but intent is explicit). The global filter becomes `e.TenantId == Guid.Empty`, returning zero rows. This is intentional and safe — no production entity should have `TenantId == Guid.Empty`.
+**Why:** one caller contract shared with `05.Application`'s pipeline; `06.Persistence` never references `12.Security` or `SharedKernel.Application` — the host (`SharedKernel.ServiceDefaults.Security`'s `AddSharedKernelRequestContext()`) supplies the implementation.
 
-**Why:** `Guid?` vs `Guid` is a correctness boundary. Returning zero rows on misconfiguration is safer than a cross-tenant leak. Teams see an empty result set immediately.
+**How to apply:** plan multi-tenancy tasks against `IRequestContext.TenantId`; never reintroduce a local tenant seam or a sentinel value. Cross-tenant work goes through `ICrossTenantScope`.
 
-**How to apply:** When planning any multi-tenancy task, use `ITenantProvider` (not `ICurrentTenantService`). The no-op placeholder is `NoOpTenantProvider` returning `Guid.Empty`. Never plan a task that writes `Guid.Empty` as a real tenant ID in production rows.
-
-**TenantedDbContext filter:** Built via expression trees — `Expression.Parameter`, `Expression.Property`, `Expression.Equal`, `Expression.Lambda` — applied via `modelBuilder.Entity(clrType).HasQueryFilter(lambda)`. No `GetMethod`/`MakeGenericMethod`/`Invoke`.
+**Filter construction:** expression trees applied via `HasQueryFilter` — no `GetMethod`/`MakeGenericMethod`/`Invoke`.
 
 See also: [[project_iusercontext_pattern]]

@@ -3,6 +3,7 @@ name: project_09search_tests_realbackend_elasticsearch
 description: SK.09.Tests T-21–T-25 real-backend ElasticSearch session — 1 production bug found+fixed, ES PIT keep_alive polling pitfall, confirmed ordering/tenant-exclusion evidence, SDK shape gotchas
 type: project
 ---
+> WO-086 (2026-09): `ISearchIndexProvisioner.ProbeAsync` was removed — readiness is one `IReadinessProbe` per registered index (`SearchIndexReadinessProbe`, `search-{provider}-{index}`); the search-local `TenantScope` (string-keyed `TenantScope.Of(...)`) is now the single `SharedKernel.Execution.Tenancy.TenantScope` (`Global`, `For(TenantId)`, `FromNullable`); container fixtures live in `16.Testing/SharedKernel.Testing.Internal/Containers/` and the in-memory fakes in `SharedKernel.Search.Testing`. The findings below are history.
 
 T-21 through T-25 (real-backend ElasticSearch, `SharedKernel.Search.ElasticSearch.Tests`) implemented
 2026-07-20 against a real `docker.elastic.co/elasticsearch/elasticsearch:9.4.2` container via

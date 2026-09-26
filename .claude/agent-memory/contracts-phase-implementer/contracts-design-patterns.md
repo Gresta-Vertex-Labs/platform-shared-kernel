@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): historical. Since the P-543 redesign `EventEnvelope<TEvent>` is constrained to `TEvent : class, IIntegrationEvent`, `SharedKernel.Contracts` (Model tier) never references `SharedKernel.Domain` (`SharedKernelLayeringRules.ContractsNeverReferencesDomain`), `Envelope<T>`/`ContractsJsonContext` were deleted, and `TenantId` stays `Guid?` on the wire (not `SharedKernel.Execution`'s `TenantId` type).
+
 ## PagedList<T> constructor visibility
 The constructor must be `internal` (not `private`) with `[JsonConstructor]` for STJ source-generated deserialization to work. Private constructors cause SYSLIB1222 from the source generator. `Create` is still the only externally intended construction path — the internal constructor is not part of the public API.
 

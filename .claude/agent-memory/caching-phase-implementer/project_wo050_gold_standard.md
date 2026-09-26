@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): Testcontainers is now referenced by `16.Testing/SharedKernel.Testing.Internal` (the container fixtures), not the core `SharedKernel.Testing`, which references Foundation + Model only.
+
 # WO-050 — Caching Gold-Standard Follow-Up (Phases 38-41)
 
 Four independent phases dispatched from a direct root architecture review, none blocking

@@ -3,6 +3,7 @@ name: project_09search_meilisearch_realbackend
 description: SK.09.Tests T-13-T-17 (Meilisearch real-backend) session — 3 genuine production bugs found+fixed, MeiliSearch 0.20.0 SDK exception-inconsistency catalog, tenant-token gotchas, EnumerateAsync ordering confirmed
 type: project
 ---
+> WO-086 (2026-09): `ISearchIndexProvisioner.ProbeAsync` was removed — readiness is one `IReadinessProbe` per registered index (`SearchIndexReadinessProbe`, `search-{provider}-{index}`); the search-local `TenantScope` (string-keyed `TenantScope.Of(...)`) is now the single `SharedKernel.Execution.Tenancy.TenantScope` (`Global`, `For(TenantId)`, `FromNullable`); container fixtures live in `16.Testing/SharedKernel.Testing.Internal/Containers/` and the in-memory fakes in `SharedKernel.Search.Testing`. The findings below are history.
 
 Completed 2026-07-20: `16.Testing`'s `MeilisearchContainerFixture`/`ElasticsearchContainerFixture` landed
 (confirmed on disk, smoke-tested), unblocking `SK.09.Tests` T-13–T-17 (Meilisearch real-backend). All five

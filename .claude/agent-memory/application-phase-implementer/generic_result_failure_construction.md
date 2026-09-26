@@ -1,35 +1,16 @@
 ---
 name: generic_result_failure_construction
-description: How AuthorizationBehavior/IdempotentCommandBehavior build a Result/Result<T> failure from Error when TResponse is generic, without reflection
+description: How pipeline behaviors build a Result/Result<T> failure from Error when TResponse is generic — FailureResponse.Create<TResponse> in SharedKernel.Application.Pipeline
 metadata:
   type: project
 ---
 
-`SharedKernel.Application.Behaviors` needed a way to short-circuit a MediatR pipeline behavior
-with a failed response of type `TResponse`, where `TResponse` is only known to satisfy
-`IRequest<TResponse>` — at runtime it's either the non-generic `Result` (struct) or a closed
-`Result<T>` (sealed class), with no shared interface linking them.
+> WO-086 (2026-09): `SharedKernel.Application.Behaviors` is `SharedKernel.Application.Pipeline`; the Expression-compiled `FailureResponseFactory` described in earlier versions of this note was replaced by `Shared/FailureResponse.cs`.
 
-**CURRENT (revised) solution, as of 2026-06-29 — supersedes the original `dynamic` approach:**
-`Shared/FailureResponseFactory.cs` (`internal static class FailureResponseFactory`,
-`TResponse Create<TResponse>(Error error)`). Special-cases `typeof(TResponse) == typeof(Result)`
-directly. For the `Result<T>` case, builds a small `Expression` tree per distinct closed `TResponse`
-type that performs the implicit `Error -> Result<T>` conversion (`Expression.Convert` through the
-`public static implicit operator`), compiles it once via `Expression.Lambda<Func<Error,object>>(...)
-.Compile()`, and caches it in a static `ConcurrentDictionary<Type, Func<Error, object>>` keyed by
-`TResponse`. This is the SECOND documented, justified exception to the platform-wide
-`MakeGenericMethod`/reflection prohibition in `05.Application` (the first being
-`MediatRDomainEventDispatcher`'s per-event-type dispatch cache) — built via `Expression` compilation
-(the governance rule's own recommended alternative to reflection), not `MakeGenericMethod`.
+Behaviors that short-circuit (`AuthorizationBehavior`, `ValidationBehavior`, `IdempotencyBehavior`) must return a failed `TResponse`, where `TResponse` is only known to satisfy `IRequest<TResponse>` — at runtime either the non-generic `Result` or a closed `Result<T>`.
 
-**Why the original `dynamic`/`Microsoft.CSharp` approach was rejected:** it pulled in a new
-`Microsoft.CSharp` NuGet package reference this domain had no other reason to carry, and is not
-AOT/trim-safe (DLR-based). Replaced before the Tests phase began. `Microsoft.CSharp` package
-reference has been REMOVED from `SharedKernel.Application.Behaviors.csproj` — do not re-add it.
+**Current solution:** `SharedKernel.Application.Pipeline/Shared/FailureResponse.cs` (`internal static class FailureResponse`, `TResponse Create<TResponse>(Error error)`). `typeof(TResponse) == typeof(Result)` is a straight cast; any other `TResponse` resolves its public static `Failure(Error)` method once via `GetMethod`, binds it with `CreateDelegate`, and caches the delegate in a generic nested `Cache<TResponse>` class — one of the documented reflection sites in `05.Application/CLAUDE.md`. A response type without that factory throws `InvalidOperationException` at the first short-circuit (00.Governance's SK0040 flags a marker on a non-`Result` request at compile time).
 
-**How to apply:** If a future behavior needs the same "construct Result/Result&lt;T&gt; from Error
-generically" capability, reuse `FailureResponseFactory.Create<TResponse>(error)` rather than
-re-deriving a new mechanism. Never use `dynamic` for this class of problem in this domain — the
-cached-compiled-`Expression` pattern is the chosen, documented answer.
+**Why not `dynamic`:** it pulled in `Microsoft.CSharp` for no other reason and is DLR-based. Do not re-add it.
 
-See also [[seven_step_pipeline_implementation]].
+**How to apply:** a new behavior that needs "construct Result/Result<T> from Error generically" reuses `FailureResponse.Create<TResponse>(error)` — never a new mechanism, never `dynamic`.

@@ -4,6 +4,8 @@ description: Distributed-scheduling lock must be keyed per occurrence and never 
 type: project
 ---
 
+> WO-086 (2026-09): `IFencedLock` is now a self-expiring `IDistributedLockService.TryAcquireLeaseAsync` lease (`SharedKernel.Caching.Abstractions`); the per-occurrence, never-released design below is what shipped, with the lease's fencing token exposed as `ScheduledJobExecutionContext.FencingToken`.
+
 While implementing `19.Scheduling`'s P-464 (`SharedKernel.Scheduling`), the arch-planner's original
 design for cross-replica single execution ("acquire an `IFencedLock` per job per tick, keyed by job
 name, release after the job body completes") turned out to be a genuine correctness bug, found while

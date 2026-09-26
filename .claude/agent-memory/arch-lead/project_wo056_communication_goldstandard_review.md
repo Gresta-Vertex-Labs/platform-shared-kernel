@@ -4,6 +4,8 @@ description: WO-056 11.Communication gold-standard review — P-356-365; validat
 type: project
 ---
 
+> WO-086 (2026-09): `CorrelationIdDelegatingHandler`/`TenantIdDelegatingHandler` became `RequestContextDelegatingHandler`; `IdempotencyHeaders`/`x-idempotency-key` became `WellKnownHeaders.IdempotencyKey` (`Idempotency-Key`); `SharedKernel.Communication.GraphQL` moved to `SharedKernel.Presentation.GraphQL`.
+
 WO-056 (2026-08-11): 11.Communication gold-standard architecture review, triggered by direct user
 request ("this package must be on every single project... must be gold standard and developer
 friendly"). Dispatched ten phases (P-356–P-365) across 11.Communication (9) / 13.ServiceDefaults (1).

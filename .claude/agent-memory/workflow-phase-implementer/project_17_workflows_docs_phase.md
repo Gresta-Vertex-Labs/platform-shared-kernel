@@ -4,6 +4,8 @@ description: 17.Workflows SK.17.Docs phase status (2026-07-27) — 74/81 tasks c
 type: project
 ---
 
+> WO-086 (2026-09): `IWorkflowServiceProbe`/`WorkflowServiceHealth` were deleted — the probe is the internal `WorkflowServiceProbe : IReadinessProbe` named `"workflows"`, mapped by `AddSharedKernelReadiness()`; `TaskQueueBacklog` was dropped (P-569).
+
 `SK.17.Docs` (DO-01–DO-06) reached `●` on 2026-07-27 — 74/81 tasks complete overall for
 `17.Workflows`/`SharedKernel.Workflows.Temporal`. Only `SK.17.Published` (P-01–P-07) remains.
 

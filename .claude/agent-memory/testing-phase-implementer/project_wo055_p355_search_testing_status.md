@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): `SharedKernel.Testing` was split into 20 packable Testing-tier packages (core `SharedKernel.Testing` + 19 `SharedKernel.{Capability}.Testing`) plus the non-packable `SharedKernel.Testing.Internal` (containers, EF/Npgsql/audit helpers, MassTransit harness); `SharedKernel.Testing.SelfTests` became each package's own nested `.Tests` project. Paths and project names below are pre-split history; the technique/lesson still applies.
+
 WO-055/P-355 extended the already-`**implemented**` `Search/` folder with an opt-in bulk-write
 throttle surface on `InMemorySearchIndex<TDocument>` — two new 4-arg `IndexManyAsync`/
 `DeleteManyAsync` overloads carrying a new `SearchBulkWriteOptions` record, plus a

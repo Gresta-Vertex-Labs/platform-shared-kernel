@@ -4,6 +4,8 @@ description: WO-044 09.Search full build-out (Abstractions + Meilisearch + Elast
 type: project
 ---
 
+> WO-086 (2026-09): `ProbeAsync` on the provisioner and `SharedKernel.ServiceDefaults.Search` were replaced by `IReadinessProbe` (`search-{provider}-{index}`); the four local `TenantScope` copies became the single `SharedKernel.Execution.Tenancy.TenantScope`; numbered layering is replaced by tiers.
+
 WO-044 (2026-07-19, P-272–P-278) registered 09.Search's phase backlog at the root level. Unlike every prior "domain X already has a pre-drafted brain" precedent (WO-031 Presentation, WO-032 Integration, WO-043 Storage), this domain's pre-existing design was not merely present — it was **already exceptionally, unusually rigorous**: all six phase keys (Design/Scaffold/Core/Tests/Docs/Published) were fully task-broken across all three packages in `09.Search/CLAUDE.md` (1443 lines) and `09.Search/state-map.md` (350 lines), including dedicated `search-arch-planner`/`search-phase-implementer` agents and an `implement-phase-search` command already created (untracked in git at session start). None of it had ever been registered in the root Phase Backlog or Domain Summary Board (09 was still `○ Not Started`).
 
 **Verdict: ACCEPT verbatim, no upgrade.** Reviewed the design in full against every platform principle (Result<T> discipline, self-supplied surfaces, magic-string constants, LoggerMessage/EventId ranges, layering, .Abstractions+.{Provider} split, health-check split, test-double precedent) and found nothing to correct — this is the rare case where the domain planner's own pre-work already exceeds what arch-lead would typically specify. My job was pure registration + review, not design.

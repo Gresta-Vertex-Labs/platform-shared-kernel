@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): `RequestAsync` and `ExecuteRoutingSlipAsync` (and their `MessageBus.Request`/`MessageBus.ExecuteRoutingSlip` activities) were removed by P-560; `WithMessagingTelemetry()` lives in the `SharedKernel.ServiceDefaults` base (the `.Messaging` integration package was deleted). Platform pinned to MassTransit 8.5.x.
+
 ## MessagingDiagnostics.ActivitySource (SK.07.OTel, P-172)
 
 **Location:** `07.Messaging/SharedKernel.Messaging.MassTransit/Diagnostics/MessagingDiagnostics.cs` — `internal static class` with `public static readonly ActivitySource ActivitySource = new("SharedKernel.Messaging", "1.0.0")`. Also exposes `SourceName`/`SourceVersion` consts so `13.ServiceDefaults.WithMessagingTelemetry()` (P-132, downstream) can reference the literal without re-deriving it.

@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): `IMessageBusProbe`/`MessageBusHealth` and `AddMessagingReadinessCheck` were deleted — the bus probe is now an `IReadinessProbe` named `messaging`, registered by `MessagingBusBuilder.Build()` and mapped by `AddSharedKernelReadiness()`. The lesson (wrap the real configured connection, never build a second one) still applies and is now structural: the base cannot reference a provider at all.
+
 **The defect (found 2026-08-04, WO-054/P-351):** `AddRabbitMqMessagingHealthCheck(string amqpUri)` and
 `AddAzureServiceBusMessagingHealthCheck(string connectionStringOrNamespace)` — both shipped since
 WO-020/P-122 — each built their own second connection entirely from a caller-supplied config string

@@ -5,6 +5,8 @@ metadata:
   type: feedback
 ---
 
+> WO-086 (2026-09): `AddSearchReadinessCheck` was deleted (search indexes register `IReadinessProbe`s); the verification lesson below still holds.
+
 A dispatched phase input's "Depends on" line is a claim, not a fact. WO-042/P-261 (2026-07-14) stated
 "P-259 (already dispatched and implemented in 01.Core...)" — but reading `01.Core/state-map.md` directly
 showed `SK.01.P259` was only D-30 (design) `●`; C-43 (the actual `WellKnownHeaders`/`WellKnownBaggageKeys`

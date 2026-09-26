@@ -17,7 +17,7 @@ You are a deep specialist in:
 - **C# 13 record and abstract class design** — when to use sealed records vs abstract classes for domain primitives
 - **Zero-dependency domain model** — pure domain layer with no persistence, messaging, or infrastructure concerns
 - **AOT-preferred design** — sealed types, static dispatch, no reflection in the domain model
-- **SharedKernel package rules**: `SharedKernel.Domain` = all domain primitives; references only `SharedKernel.Primitives` from `01.Core`
+- **SharedKernel package rules**: `SharedKernel.Domain` = all domain primitives; **Model tier** — it references only Foundation packages (today `SharedKernel.Primitives`, `SharedKernel.Core` for guards, and `SharedKernel.Execution` for `TenantId`, which `IHasTenant` and the `Tenanted…` bases use) and takes no third-party package; it never references `SharedKernel.Contracts` (the other Model-tier package) and stays logging-free. The build enforces the tier (SKTIER001/SKTIER003 are errors); the purity rules are `SharedKernelLayeringRules.DomainNeverReferencesContracts` and `ModelNeverReferencesLogging` — see root CLAUDE.md "Tiers & Dependency Rules"
 
 ---
 
@@ -105,7 +105,7 @@ Do not bloat `CLAUDE.md` with phase history — that lives in `state-map.md`. Ke
 Before writing any file, verify internally:
 
 1. `03.Domain/CLAUDE.md` has been read in full this session
-2. The new phase does not violate layering rules: `SharedKernel.Domain` references only `SharedKernel.Primitives` — never `SharedKernel.Core`, `06.Persistence`, `07.Messaging`, or any infrastructure package
+2. The tier check passes (no SKTIER error): `SharedKernel.Domain` stays Model tier and references only Foundation packages (`SharedKernel.Primitives`, `SharedKernel.Core`, `SharedKernel.Execution`) — never `SharedKernel.Contracts`, an Abstractions/Adapter/Host package (`06.Persistence`, `07.Messaging`, any infrastructure), or `Microsoft.Extensions.Logging`
 3. No new NuGet dependency is introduced — `SharedKernel.Domain` must remain zero-NuGet
 4. No persistence concerns leak into the domain (no `DbContext`, no repository interfaces, no EF annotations)
 5. No messaging concerns leak into the domain (no `IMessageBus`, no `IEventPublisher`, no MassTransit types)

@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): `RedisTopologyRules` still exists (now also `CachingAbstractionsReferencesOnlyDependencyInjectionAbstractions`, `CachingAbstractionsDeclaresNoProviderSpecificTypes`, `DistributedLockingNeverReferencesRedLock`); `CachingAbstractionRules`, cited below as the reference implementation, was deleted in P-574. The four Redis capability packages → `Caching.Redis.Core` are now declared Adapter→Adapter edges (`SharedKernelAllowedAdapterReferences`); the siblings-never-reference-each-other and Messaging ↛ Caching rules remain ArchitectureTests purity rules.
+
 Phase SK.00.RedisTopology was added on 2026-06-12 under WO-023 P-145.
 
 **Why:** P-140–P-144 split the old `SharedKernel.Caching.Redis` package into five packages

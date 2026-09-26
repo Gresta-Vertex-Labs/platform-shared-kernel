@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): historical. Since the P-543 redesign `EventEnvelope<TEvent>` is constrained to `TEvent : class, IIntegrationEvent`, `SharedKernel.Contracts` (Model tier) never references `SharedKernel.Domain` (`SharedKernelLayeringRules.ContractsNeverReferencesDomain`), `Envelope<T>`/`ContractsJsonContext` were deleted, and `TenantId` stays `Guid?` on the wire (not `SharedKernel.Execution`'s `TenantId` type).
+
 ## Envelope/Envelope namespace-type collision fix (WO-052 / P-328, designed 2026-07-31)
 
 Since inception, `Envelope`/`Envelope<T>` lived in namespace `SharedKernel.Contracts.Envelope` — identical to the type name itself, a well-known C# ambiguity footgun. The domain's own CLAUDE.md carried a mandatory workaround for it from the start ("use a using alias or fully-qualified names"), and that workaround had already been duplicated verbatim across the package's own tests plus two external consumers (`11.Communication.Rest`, `16.Testing`) before the fix landed.

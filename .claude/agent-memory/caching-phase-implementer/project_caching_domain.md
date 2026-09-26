@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): phase history from before P-547/WO-086. Tiers replace numbered layering (`Caching.Abstractions` = Abstractions tier; FusionCache and `Redis.*` = Adapter tier, declared edge `Redis.*`→`Redis.Core`). Caching fakes moved to `16.Testing/SharedKernel.Caching.Testing`, Redis Testcontainers fixtures to `SharedKernel.Testing.Internal`. RedLock.net, `RedLockRenewableLock` and `CachingCoreOptions` were deleted.
+
 # SharedKernel Caching Domain — Architecture & Versions
 
 **Three-package split (established Phase 5–7, renamed Phase 14):**
@@ -26,7 +28,7 @@ tests unaffected — still 209 from Phase 31).
 - `ITenantCacheKeyProvider` extends `ICacheKeyProvider` — lives in `SharedKernel.Caching.Abstractions`. Zero dependency on `12.Security` or `IHttpContextAccessor`.
 - `TenantCacheKeyProvider` is `internal sealed` in `SharedKernel.Caching.FusionCache`. Constructor takes `IOptions<CachingCoreOptions>` (from Abstractions, not `CachingOptions` from FusionCache).
 - `AddTenantCacheKeyProvider(this ICachingBuilder)` uses `TryAddSingleton<ITenantCacheKeyProvider, TenantCacheKeyProvider>()` — does NOT touch the existing `ICacheKeyProvider → CacheKeyProvider` registration. Both coexist.
-- `FakeTenantCacheKeyProvider` lives in `16.Testing/SharedKernel.Testing/Caching/` — default service name `"test-svc"`, accepts custom name via constructor.
+- `FakeTenantCacheKeyProvider` lives in `16.Testing/SharedKernel.Caching.Testing/` (moved from `SharedKernel.Testing/Caching/` by WO-086) — default service name `"test-svc"`, accepts custom name via constructor.
 - Test baseline after Phase 29: **196 FusionCache + 142 Redis tests passing**.
 - `InternalsVisibleTo` was already set in FusionCache.csproj for the test project — no csproj changes needed to access `internal sealed TenantCacheKeyProvider` in tests.
 
@@ -42,7 +44,7 @@ tests unaffected — still 209 from Phase 31).
 - RedLock.net 2.3.2 has NO public `ExtendAsync` on `IRedLock`. The internal timer-based auto-extension exists but is inaccessible.
 - `RedLockRenewableLock` uses re-acquisition: dispose old lock first, then `CreateLockAsync` on same resource. Brief unprotected window is unavoidable on single-node Redis.
 - `SemaphoreSlim` must NOT be disposed in `DisposeAsync` — `RenewAsync` may be called concurrently/after disposal. Use `volatile bool _disposed` as fast-path check before touching the semaphore.
-- `FakeDistributedLockService` and `FakeRenewableLock` live in `16.Testing/SharedKernel.Testing/Caching/`.
+- `FakeDistributedLockService` lives in `16.Testing/SharedKernel.Caching.Testing/` (moved from `SharedKernel.Testing/Caching/` by WO-086; `FakeRenewableLock` no longer exists).
 
 **Phase 30 (RedisCircuitBreaker) — key decisions:**
 

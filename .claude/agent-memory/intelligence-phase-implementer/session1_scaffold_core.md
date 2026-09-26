@@ -3,6 +3,7 @@ name: session1_scaffold_core
 description: 10.Intelligence SK.10.Scaffold (S-01-S-07) + SK.10.Core C-01 session findings — Milvus.Client verification failure, verified NuGet pins, file layout conventions, and skill-invocation behavior for state-map-phase.
 type: project
 ---
+> WO-086 (2026-09): the AI-local `TenantScope` is now the single `SharedKernel.Execution.Tenancy.TenantScope` (`Global`, `For(TenantId)`, `FromNullable`); readiness is an `IReadinessProbe` per collection (no `ProbeAsync`); `SharedKernel.AI.Milvus` was retracted (WO-048). History below.
 
 ## Milvus.Client is NOT viable — verified 2026-07-22, hard blocker
 

@@ -7,6 +7,8 @@ metadata:
 
 # MassTransit 9.x TestHarness Patterns (Discovered SK.07.Tests)
 
+> WO-086 (2026-09): recorded on MassTransit 9.1.2; the platform is pinned to 8.5.x (P-560) — re-verify API claims. `RequestAsync` (and its `RequestAsyncTimeoutTests`) was removed by P-560; outbox tests now live in `SharedKernel.Messaging.MassTransit.EfCore.Tests`, transport tests in `.RabbitMq.Tests`/`.AzureServiceBus.Tests`; the repo's own harness builder is `16.Testing/SharedKernel.Testing.Internal`'s `TestHarnessFactory`.
+
 ## Package
 `MassTransit.TestFramework` 9.1.2 — NOT `MassTransit.Testing` (renamed in 9.x).
 Use `AddMassTransitTestHarness()`, resolve `ITestHarness` from DI.
@@ -78,3 +80,6 @@ NOT a static method — `KebabCaseEndpointNameFormatter.SanitizeName(...)` cause
 
 **Why:** Phase SK.07.Tests implemented 2026-06-08; SK.07.Routing implemented 2026-06-09; 79 MassTransit tests pass.
 **How to apply:** Apply all patterns above in any future messaging test work.
+
+## Locale-safe decimal assertions (kept from the retired RoutingSlip notes)
+Never compare against a literal decimal string like `"49.99"` — `decimal.ToString()` is locale-dependent (Turkish locale produces `"49,99"`). Use `.ToString(CultureInfo.InvariantCulture)` on both sides.

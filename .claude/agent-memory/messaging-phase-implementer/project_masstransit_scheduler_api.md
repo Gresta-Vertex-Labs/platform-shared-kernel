@@ -1,11 +1,13 @@
 ---
 name: masstransit-scheduler-api
-description: MassTransit 9.x IMessageScheduler API patterns discovered during SK.07.Scheduling — cancel overloads, transport-aware wiring, obsolete APIs, name collision fix
+description: MassTransit IMessageScheduler API patterns discovered during SK.07.Scheduling — cancel overloads, transport-aware delayed-delivery wiring (now in the transport satellites), obsolete APIs, name collision fix
 metadata:
   type: project
 ---
 
-# MassTransit 9.x Scheduler API (Discovered SK.07.Scheduling)
+# MassTransit Scheduler API (Discovered SK.07.Scheduling)
+
+> WO-086 (2026-09): `WithInMemoryScheduler()` was renamed `WithDelayedDelivery()` and the Quartz scheduler was deleted (both P-560); the transport-specific scheduler wiring now lives in the satellites `SharedKernel.Messaging.MassTransit.RabbitMq` (`RabbitMqMessagingTransport`) and `.AzureServiceBus` (`AzureServiceBusMessagingTransport`). Platform pinned to MassTransit 8.5.x — re-verify API claims below against it.
 
 ## SchedulePublish return type
 `MassTransit.IMessageScheduler.SchedulePublish<T>(DateTime, T, CancellationToken)` returns
@@ -23,16 +25,10 @@ to message types. This is required because `CancelAsync(Guid, ct)` has no type p
 cancel requires the type. Populated in `ScheduleAsync`, removed in `CancelAsync`. Per-scope only
 (not persisted across restarts — consistent with in-memory scheduler semantics).
 
-## Transport-aware in-memory scheduler wiring (WithInMemoryScheduler)
+## Transport-aware scheduler wiring (WithDelayedDelivery; lives in each transport satellite)
 - **RabbitMQ:** `cfg.AddDelayedMessageScheduler()` + `busCfg.UseDelayedMessageScheduler()`
 - **Azure Service Bus:** `cfg.AddServiceBusMessageScheduler()` + `busCfg.UseServiceBusMessageScheduler()`
-- `UseDelayedMessageScheduler()` on ASB is OBSOLETE — always check `_transport` and pick the right method.
-
-## Quartz durable scheduler wiring (WithQuartzScheduler)
-- Registration: `cfg.AddQuartzConsumers(o => o.QueueName = queueName)` + `cfg.AddMessageScheduler(uri)`
-- Bus factory: `busCfg.UseMessageScheduler(uri)` where `uri = new Uri($"queue:{queueName}")`
-- `queueName` defaults to `QuartzSchedulerOptions.Schema` ("quartz")
-- `UseInMemoryScheduler(ctx, queueName)` from `MassTransit.QuartzIntegration` is OBSOLETE — do not use
+- `UseDelayedMessageScheduler()` on ASB is OBSOLETE — each satellite transport wires its own method, so the core never branches on transport.
 
 ## IMessageScheduler name collision in MessagingBusBuilder.cs
 Both `MassTransit.IMessageScheduler` and `SharedKernel.Messaging.Abstractions.Scheduling.IMessageScheduler`

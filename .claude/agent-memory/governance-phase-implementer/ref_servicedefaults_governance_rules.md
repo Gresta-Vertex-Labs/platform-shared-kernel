@@ -5,6 +5,8 @@ metadata:
   type: reference
 ---
 
+> WO-086 (2026-09): `CompositionRootExclusivityRules` and `CachingAbstractionRules` were deleted in P-574 — the tier check covers composition-root exclusivity (an Adapter-tier provider is reachable only from Host packages, Testing packages or a declared Adapter→Adapter edge); `SharedKernel.Persistence.PostgreSQL` no longer exists. `HealthCheckTagIntegrityRules` still exists. The per-provider `Add*ReadinessCheck`/`Add*HealthCheck` methods were largely deleted: providers register `IReadinessProbe` and `healthChecks.AddSharedKernelReadiness()` maps them to `ready` checks (still existing: `AddDatabaseReadinessCheck<TContext>`, `AddDapperDatabaseReadinessCheck`, `AddPersistenceStartupReadinessCheck`, `AddLedgerReadinessCheck`). `HealthCheckTags` now holds only `Live`, `Ready` and `Db`, so the `HealthCheckTags.Redis`/`.Cache` example below is historical.
+
 ## HealthCheckTagIntegrityRules (WO-027 P-173)
 
 New Mono.Cecil technique distinct from prior opcode-presence walks: **Ldstr literal collection**.

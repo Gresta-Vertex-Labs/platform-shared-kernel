@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): `CorrelationIdDelegatingHandler` + `TenantIdDelegatingHandler` are now one `RequestContextDelegatingHandler` reading `IRequestContextAccessor` (no `IHttpContextAccessor`/`IUserContext`); `SharedKernel.Communication.GraphQL` moved to `14.Presentation` as `SharedKernel.Presentation.GraphQL` — the GraphQL decisions below are history for this domain.
+
 WO-025 (P-154 through P-157) added 97 total tasks across 9 phases for the four Communication packages.
 
 Phase counts: Design 22, Scaffold 13, Rest 10, Grpc 9, GraphQL 8, Internal 6, Tests 18, Docs 5, Published 6.

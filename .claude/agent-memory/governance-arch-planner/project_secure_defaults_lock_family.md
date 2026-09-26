@@ -4,6 +4,8 @@ description: The recurring "lock a documented-but-not-yet-mechanized default" ph
 type: project
 ---
 
+> WO-086 (2026-09): `SecureDefaultsAssertion` and its methods still exist. Occurrence 4 targeted `CorrelationIdMiddleware`, which was deleted — correlation ids are now resolved by `app.UseSharedKernelRequestContext()` (`SharedKernel.ServiceDefaults.Security`); only its fixture tests remain. `SharedKernel.Security.*` providers and `SharedKernel.MultiTenancy` are Host tier.
+
 Recurring phase family in 00.Governance/state-map.md: a security- or correctness-relevant default,
 once designed in another domain, gets a mechanical lock here so a future refactor can't silently
 regress it with that domain's own tests still green. All built on the single `SecureDefaultsAssertion`

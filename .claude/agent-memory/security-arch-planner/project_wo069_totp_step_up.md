@@ -4,6 +4,8 @@ description: WO-069/P-452 design — SharedKernel.Security.Totp's IClaimsTransfo
 type: project
 ---
 
+> WO-086 (2026-09): `IdentityKind` was deleted (now `ActorKind` on `IUserContext`, from `SharedKernel.Execution.Context`) and the tenant is `TenantId?`. The pre-P-546 types named below (`OidcUserContext`, `ApiKeyUserContext`, `MtlsUserContext`, `ITotpChallengeStore`, a `Guid` `UserId`) no longer exist — `12.Security/CLAUDE.md` describes the shipped design (session-bound step-up via `TotpStepUpClaimsTransformation`).
+
 WO-069 (2026-08-26) dispatched a fifth `12.Security` sibling provider package, `SharedKernel.Security.Totp`
 (P-452, depends on `01.Core`'s P-451 TOTP/HOTP primitive inside `SharedKernel.Cryptography`, itself
 design-locked/not yet Core-implemented at dispatch time). Full task breakdown is in

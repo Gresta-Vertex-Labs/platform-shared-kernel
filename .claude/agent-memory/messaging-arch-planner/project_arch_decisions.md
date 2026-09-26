@@ -1,21 +1,24 @@
 ---
 name: project-arch-decisions
-description: Critical architecture decisions, package boundary rules, MassTransit 9.x API discoveries, and the P-254 logging/EventId allocation for the 07.Messaging domain
+description: Critical architecture decisions, package boundary rules (post-WO-086 tiers), MassTransit API discoveries, and the P-254 logging/EventId allocation for the 07.Messaging domain
 metadata:
   type: project
 ---
 
-## Package Split Rules
-- `SharedKernel.Messaging.Abstractions` — zero transport NuGet dependencies; only `Microsoft.Extensions.DependencyInjection.Abstractions`. All interfaces and option POCOs that are transport-agnostic live here.
-- `SharedKernel.Messaging.MassTransit` — all MassTransit wiring, transport adapters, consumer base, builder, DI extensions. No reference to `SharedKernel.Persistence.*` packages — outbox wired via generic `TDbContext` type parameter only.
-- `AddSharedKernelMessaging` extension method and `MessagingBusBuilder` live in the MassTransit package (not Abstractions), because Abstractions is a zero-DI-extension library.
-- `MessagingOptionsValidator` (IValidateOptions<MessagingOptions>) lives in MassTransit package — Abstractions cannot reference `Microsoft.Extensions.Options`.
+> WO-086 (2026-09): the 07→05 grant is gone — caller identity is `SharedKernel.Execution` (`PropagatedRequestContext`); transports/outbox moved to satellites `.RabbitMq`/`.AzureServiceBus`/`.EfCore`; `IMessageBusProbe` was deleted (the `"messaging"` `IReadinessProbe`). Routing slips, sagas and `RequestAsync` were removed earlier (P-560).
 
-## MassTransit 9.x API Discoveries (critical — do not assume 8.x behavior)
-- Package is `MassTransit` 9.1.2 (not 8.x as initially documented)
+## Package Split Rules (current)
+- `SharedKernel.Messaging.Abstractions` — Abstractions tier: references Foundation/Model only (`SharedKernel.Primitives`, `SharedKernel.Execution`, `SharedKernel.Contracts`), third-party limited to `Microsoft.Extensions.*.Abstractions` (SKTIER003). All transport-agnostic interfaces and option POCOs live here.
+- `SharedKernel.Messaging.MassTransit` — Adapter tier: MassTransit core wiring, consumer base, builder, DI extensions, idempotency (`IIdempotencyStore` keyed `IdempotencyPurpose.Message`, from `SharedKernel.Idempotency.Abstractions`) and request-context filters, the `"messaging"` `IReadinessProbe`.
+- Satellites `SharedKernel.Messaging.MassTransit.RabbitMq` / `.AzureServiceBus` (transports) and `.EfCore` (outbox) — Adapter tier, each with the one declared adapter edge → `SharedKernel.Messaging.MassTransit`.
+- No `SharedKernel.Messaging.*` package references `06.Persistence.*` (outbox via generic `TDbContext` only), `SharedKernel.Caching.*` (and back), `SharedKernel.Application`/`.Application.Pipeline`, or MediatR. The build enforces the tiers (SKTIER001–006 errors) — see root `CLAUDE.md` "Tiers & Dependency Rules".
+- `AddSharedKernelMessaging` extension method and `MessagingBusBuilder` live in the MassTransit package (not Abstractions), because Abstractions is a zero-DI-extension library.
+- `MessagingOptionsValidator` (IValidateOptions<MessagingOptions>) lives in MassTransit package — Abstractions does not reference `Microsoft.Extensions.Options`.
+
+## MassTransit API Discoveries
+> Recorded against MassTransit 9.1.2; the platform is now pinned to **8.5.x** (last Apache-2.0 line, P-560). Re-verify each item against 8.5.x before relying on it.
 - EF Core outbox package: `MassTransit.EntityFrameworkCore` (NOT `MassTransit.EntityFrameworkCoreIntegration`)
-- Test package: `MassTransit.TestFramework` 9.1.2 (NOT `MassTransit.Testing`)
-- `IClientFactory.CreateRequestClient<T>(CancellationToken)` does not exist in 9.x — use `IServiceProvider.CreateRequestClient<T>()` from `MassTransit.RequestClientExtensions`
+- Test package: `MassTransit.TestFramework` (NOT `MassTransit.Testing`)
 - `IServiceBusBusFactoryConfigurator` has no `TransportType` — set it on `IServiceBusHostConfigurator` instead
 - `BindConfiguration` not available (no ConfigurationExtensions transitive dep) — bind config manually
 - `ConsumerBase.Consume` is interface implementation, not virtual override — `sealed` keyword does not apply
@@ -30,7 +33,7 @@ metadata:
 - `PublishContext` name conflict in MassTransit package — alias as `MessagingPublishContext`
 
 ## Outbox Ownership (hard boundary)
-- OutboxMessage, IOutboxWriter, and all outbox types are owned by MassTransit in 07.Messaging
+- OutboxMessage, IOutboxWriter, and all outbox types are owned by MassTransit in 07.Messaging (`SharedKernel.Messaging.MassTransit.EfCore`)
 - Must NEVER be defined in 06.Persistence
 - Consuming service bridges at its own composition root by passing its DbContext as a generic type parameter
 
@@ -67,11 +70,11 @@ metadata:
 ## Logging Standard and EventId Allocation (P-254, WO-041)
 
 - Domain reserved range: `7000-7999` (`07 * 1000`, from `SharedKernel.Primitives.Logging.LoggingEventIdRanges.Messaging` in 01.Core, P-249)
-- Only `SharedKernel.Messaging.MassTransit` logs (Abstractions has zero logging deps) — single `7000-7099` sub-block, no per-package subdivision needed
-- Final allocation: 7001 `ConsumerBase.ConsumerConsumeError`, 7002 `BatchConsumerBase.BatchConsumeEntry`, 7003 `BatchConsumerBase.BatchConsumeError`, 7004 `FaultConsumerAdapter.FaultConsumerHandling`, 7005 `FaultConsumerAdapter.FaultConsumerError` (new — replaced a raw `_logger.LogError` call), 7006 `RoutingSlipActivityBase.RoutingSlipExecuteError`, 7007 `RoutingSlipActivityBase.RoutingSlipCompensateError`, 7008 `VersionTranslatingConsumer.VersionTranslating`, 7009 `TranslatorRegistrationValidator.VersionTranslatorNoConsumer` — continue sequentially from 7010 for future additions
+- Logging lives in `SharedKernel.Messaging.MassTransit` (7001–7009, 7011–7012) and the `.AzureServiceBus` satellite (7010 `DeadLetterPolicyAdvisoryHostedService`); Abstractions has zero logging deps. The whole domain shares one sequential `70xx` sequence rather than per-package sub-blocks
+- Final allocation: 7001 `ConsumerBase.ConsumerConsumeError`, 7002 `BatchConsumerBase.BatchConsumeEntry`, 7003 `BatchConsumerBase.BatchConsumeError`, 7004 `FaultConsumerAdapter.FaultConsumerHandling`, 7005 `FaultConsumerAdapter.FaultConsumerError` (new — replaced a raw `_logger.LogError` call), 7006 `RoutingSlipActivityBase.RoutingSlipExecuteError`, 7007 `RoutingSlipActivityBase.RoutingSlipCompensateError`, 7008 `VersionTranslatingConsumer.VersionTranslating`, 7009 `TranslatorRegistrationValidator.VersionTranslatorNoConsumer`. 7006/7007 (routing slip) were retired with routing slips (P-560); 7010 `DeadLetterPolicyAdvisory`, 7011–7012 request-context registration advisory followed — continue sequentially from 7013
 - Pre-P-254 state had 3 confirmed internal collisions from raw integer `EventId` literals (1, 2, 3) reused across unrelated `LoggerMessage.Define<>()` delegates — a good example of why the mechanical `[LoggerMessage]` + registry-range convention exists
 - New shared `MessagingLogScope.Create(Guid? correlationId) → Dictionary<string,object?>` (`Logging/MessagingLogScope.cs`, MassTransit package) is the single approved seed for any `BeginScope` dictionary in this package — always seeds `["CorrelationId"]`. Replaces four previously-independent hand-rolled implementations in `ConsumerBase`, `BatchConsumerBase`, `FaultConsumerAdapter`, `RoutingSlipActivityBase`
-- `RoutingSlipActivityBase`'s retrofit is a deliberate behavior change, not a pure refactor: its `BeginScope` dictionary never carried a `CorrelationId` key before P-254 (it only tagged `Activity.Current`) — now it does, via the shared helper seeded from `context.TrackingNumber`
+- (Historical — `RoutingSlipActivityBase` was removed by P-560.) Its retrofit is a deliberate behavior change, not a pure refactor: its `BeginScope` dictionary never carried a `CorrelationId` key before P-254 (it only tagged `Activity.Current`) — now it does, via the shared helper seeded from `context.TrackingNumber`
 - `VersionTranslatingConsumer` and `TranslatorRegistrationValidator` never used `BeginScope` — out of scope for `MessagingLogScope`, only their `LoggerMessage.Define` calls needed converting
 - Pattern to watch for: when a future domain phase adds a new consumer/activity base type that logs, check whether it needs `MessagingLogScope.Create` too — the four-type list is not automatically closed
 

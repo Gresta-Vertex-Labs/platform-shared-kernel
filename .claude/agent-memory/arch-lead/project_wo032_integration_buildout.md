@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): numbered layering rules and `SharedKernelLayeringRules` are replaced by tiers (`eng/SharedKernelTiers.targets`, `DependencyGraphRulesTests`); Integration.Webhooks is Adapter tier.
+
 WO-032 (2026-06-26): 15.Integration's first dispatchable phases, P-200–P-204. Domain was `○ Not Started` on the root board going in (the folder had a `CLAUDE.md` domain brain drafted on 2026-06-25, but zero phases had ever been written to the root `state-map.md` Phase Backlog for it, and zero tasks existed in `15.Integration/state-map.md`).
 
 **What existed before this WO:** A fully-drafted `15.Integration/CLAUDE.md` for a single package, `SharedKernel.Integration.Webhooks` — outbound signed webhook dispatch. Packages: subscriptions (`WebhookSubscription`/`IWebhookSubscriptionStore`), dispatch (`IWebhookDispatcher`/`WebhookDeliveryResult`), signing (`WebhookSignatureProvider`/`WebhookSignatureVerifier`/`WebhookSignatureHeaders`), delivery-exhausted notification (`WebhookDeliveryExhaustedEvent`), observability hook (`IWebhookDeliveryObserver`), options (`WebhookDeliveryOptions`), DI extensions (`AddSharedKernelWebhooks`/`WithDeliveryObserver<T>`). No `.Abstractions` split — correctly justified as single-provider, single-mechanism (re-evaluate only if a second outbound channel appears later).

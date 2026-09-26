@@ -184,6 +184,13 @@ add Testcontainers or a separate Temporalio.Testing package reference. If the de
 genuinely unreachable on this machine, mark only the real-environment tasks `⚑` Blocked with the
 evidence recorded in the Blocked section — never hand-roll a substitute.
 
+Older state-map rows predate WO-086 and may name removed types; build against the current source:
+SharedKernel.Workflows.Temporal is Adapter tier (the SKTIER build check must pass); the tenant is
+SharedKernel.Execution.Tenancy.TenantScope (Global, never accepted on a dispatch); CommandActivity<>
+dispatches through the kernel ISender from SharedKernel.Application, never MediatR; readiness is the
+internal WorkflowServiceProbe, an IReadinessProbe named "workflows" mapped by the host's
+AddSharedKernelReadiness() — IWorkflowServiceProbe and any ServiceDefaults workflow package are gone.
+
 The determinism rule governs everything: workflow code is replay code. If a phase item would require a
 clock, a random source, I/O, DI, configuration, static state, or a thread-pool escape inside a
 [Workflow] type, stop and flag it — it belongs in an activity. Remember the deliberate SK0001

@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): `CorrelationIdMiddleware` (EventId 14000) was deleted. The domain now has six packages (`.Core`, `.WebApi`, `.Grpc`, `.SignalR`, `.SignalR.Redis`, `.GraphQL`); shipped code uses `LoggingEventIdRanges.Presentation + n` with WebApi at +1…, SignalR at +100…, Grpc at +200…. Read `14.Presentation/CLAUDE.md` for the current sub-block table before assigning an id.
+
 WO-041 P-256 locked 14.Presentation's `EventId` allocation inside `LoggingEventIdRanges.Presentation` (14000, from `01.Core`'s registry, P-249):
 
 - `SharedKernel.Presentation.WebApi` sub-block: 14000–14099 (declared first in the Packages table)

@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): historical. Since the P-543 redesign `EventEnvelope<TEvent>` is constrained to `TEvent : class, IIntegrationEvent`, `SharedKernel.Contracts` (Model tier) never references `SharedKernel.Domain` (`SharedKernelLayeringRules.ContractsNeverReferencesDomain`), `Envelope<T>`/`ContractsJsonContext` were deleted, and `TenantId` stays `Guid?` on the wire (not `SharedKernel.Execution`'s `TenantId` type).
+
 ## Phase Sequencing for 04.Contracts
 
 **WO-011** covers P-055 (EventEnvelope<TEvent>) only. It depends on P-053 (03.Domain base domain implementations being complete).

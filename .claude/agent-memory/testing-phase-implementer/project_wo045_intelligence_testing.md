@@ -4,6 +4,8 @@ description: WO-045 (P-283 Qdrant/Milvus container fixtures, P-284 Intelligence/
 type: project
 ---
 
+> WO-086 (2026-09): `SharedKernel.Testing` was split into 20 packable Testing-tier packages (core `SharedKernel.Testing` + 19 `SharedKernel.{Capability}.Testing`) plus the non-packable `SharedKernel.Testing.Internal` (containers, EF/Npgsql/audit helpers, MassTransit harness); `SharedKernel.Testing.SelfTests` became each package's own nested `.Tests` project. Paths and project names below are pre-split history; the technique/lesson still applies.
+
 WO-045 dispatched 2026-07-21 by testing-arch-planner, targeting `10.Intelligence`'s freshly-ratified (but not yet coded) `SharedKernel.AI.Abstractions` contract.
 
 - **P-283** (`Containers/QdrantContainerFixture`, `Containers/MilvusContainerFixture`) carries **no blocker** -- both are official dedicated Testcontainers modules (`Testcontainers.Qdrant`, `Testcontainers.Milvus`, confirmed on nuget.org at `4.13.0`, matching this package's existing pin exactly, no version-bump ceremony needed unlike the Elasticsearch addition). Container fixtures expose only flat scalar connection properties and take zero `ProjectReference` to the owning domain's abstraction package.

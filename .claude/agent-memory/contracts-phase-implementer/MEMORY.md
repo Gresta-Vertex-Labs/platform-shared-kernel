@@ -1,5 +1,4 @@
 # Agent Memory Index
 
-- [Contracts Design Phase Patterns](contracts-design-patterns.md) — Key implementation decisions from SK.04.Design: STJ context patterns, namespace collision, EventEnvelope shape
-- [Contracts Phase Status](contracts-phase-status.md) — Phase completion status and what each phase delivered
-- [Contracts Governance Verification](contracts-governance-verification.md) — 00.Governance's ContractsPurityRules has never been checked against the real assembly; pre-existing gap found + how to re-verify
+- [Contracts Design Phase Patterns](contracts-design-patterns.md) — (historical; ContractsJsonContext/Envelope<T> deleted by P-543) SK.04.Design decisions: STJ context patterns, namespace collision, EventEnvelope shape
+- [Contracts Phase Status](contracts-phase-status.md) — (historical, pre-P-543) phase completion status, 16.Testing cascade lesson, STJ null gotcha

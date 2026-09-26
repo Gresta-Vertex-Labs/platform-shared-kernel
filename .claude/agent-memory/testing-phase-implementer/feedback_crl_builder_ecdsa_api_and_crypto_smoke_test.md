@@ -4,6 +4,8 @@ description: CertificateRevocationListBuilder has no single RSA-or-ECDsa-agnosti
 type: feedback
 ---
 
+> WO-086 (2026-09): `SharedKernel.Testing` was split into 20 packable Testing-tier packages (core `SharedKernel.Testing` + 19 `SharedKernel.{Capability}.Testing`) plus the non-packable `SharedKernel.Testing.Internal` (containers, EF/Npgsql/audit helpers, MassTransit harness); `SharedKernel.Testing.SelfTests` became each package's own nested `.Tests` project. Paths and project names below are pre-split history; the technique/lesson still applies.
+
 Rule: for any new BCL-cryptography-heavy test-fixture builder in `16.Testing` (DPoP proofs, X.509 certs, CRLs, JWS/JWT-shaped output), write and RUN a throwaway smoke-test console app (reference the real `SharedKernel.Testing.csproj`, exercise every new type, assert real invariants — signature verification, chain validation, ASN.1 parsing) in the scratchpad, then delete it, BEFORE marking the Core-phase task done. A clean `dotnet build` proves the code compiles against the assumed API shape; it proves nothing about whether that shape is actually correct or whether the crypto is genuinely valid.
 
 **Why:** `MtlsTestCertificateBuilder`'s `.AsRevoked()` path (16.Testing, WO-060/P-391, C-120, 2026-08-17) compiled cleanly on the first attempt against a guessed `CertificateRevocationListBuilder.Build(X509Certificate2, BigInteger, DateTimeOffset, HashAlgorithmName, X509SignatureGenerator, DateTimeOffset?)` signature — plausible-looking, wrong. Reflecting the real type (`typeof(CertificateRevocationListBuilder).GetMethods()`, printed as a throwaway console app) showed only two real overloads exist:

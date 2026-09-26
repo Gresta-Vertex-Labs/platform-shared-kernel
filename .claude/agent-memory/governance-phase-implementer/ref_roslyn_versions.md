@@ -28,7 +28,7 @@ of their contents.
 - `Shipped.md` carries every shipped rule under a `## Release X.Y` header, in a
   `Rule ID | Category | Severity | Notes` table. All 41 rules are recorded under `## Release 1.0`.
 - `Unshipped.md` holds only its header comments once everything has shipped; a NEW rule goes there
-  first and moves to `Shipped.md` when a release is cut.
+  first and moves to `Shipped.md` when a release is cut. A retired rule is listed under `### Removed Rules` in `Unshipped.md` (e.g. SK0015, WO-086/P-567) while its original row stays in `Shipped.md`.
 - **There is no `NoWarn` for RS2008 and there must not be one.** With correct filenames the build
   is 0 warnings. Adding a rule without recording it makes RS2008 fire — which is the whole point.
 

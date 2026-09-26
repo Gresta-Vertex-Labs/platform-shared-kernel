@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): `RedisContainerFixture` now lives in `16.Testing/SharedKernel.Testing.Internal` (non-packable); consumer-facing fakes are in the packable `SharedKernel.Caching.Testing`/`SharedKernel.Caching.Redis.Testing`.
+
 # WO-050 Phase 38 — NuGetPackagingParity (COMPLETE, 2026-07-29)
 
 Brought all 7 shipped `02.Caching` packages to full NuGet metadata parity, authored 5
@@ -100,7 +102,7 @@ Mirrors the two pre-existing READMEs (`SharedKernel.Caching.FusionCache/README.m
 one-paragraph purpose statement, install snippet (`dotnet add package` +
 `<PackageReference>`), a minimal DI-registration + usage code sample matching that
 package's own documented consumption pattern from `CLAUDE.md`'s "DI Registration"
-section, a short "Layering" fenced diagram, and a closing link to the repo README. Do
+section, a short fenced dependency diagram, and a closing link to the repo README. Do
 not attempt a full API reference in the README — `GenerateDocumentationFile` + XML doc
 comments already cover that; the README's job is orientation only.
 

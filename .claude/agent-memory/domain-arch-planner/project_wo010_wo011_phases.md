@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): the Tenanted bases' `TenantId` is now `SharedKernel.Execution.Tenancy.TenantId` (a `readonly record struct` that rejects `Guid.Empty`), not `Guid`; `ITenantProvider` was deleted. `SharedKernel.Domain` is Model tier (Foundation references only).
+
 WO-010 and WO-011 added 49 tasks (D-19..D-30, C-22..C-34, T-16..T-27, DO-14..DO-26, P-06..P-07) to `03.Domain/state-map.md`. All design decisions are locked.
 
 **Why:** Extends the DDD foundation with error correctness, multi-tenancy, event dispatch decoupling, single-value objects, domain services, version counters, exception hierarchy, specification sentinels/paging, event schema versioning, and aggregate factory patterns.

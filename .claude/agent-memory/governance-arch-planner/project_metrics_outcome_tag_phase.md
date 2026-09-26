@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): SK0015 was deleted (ID retired) — the kernel pipeline has no MediatR stream-behavior registration to misregister. `SharedKernel.Application.Behaviors` is now `SharedKernel.Application.Pipeline`. SK0014, SK0016 and `MetricsInstrumentationRules.RequestDurationRecordsIncludeOutcomeTag` still exist.
+
 WO-038 P-235 added phase `SK.00.MetricsOutcomeTagAndMisregistrationGuard` (15 tasks: D-57,
 C-90–C-94, T-161–T-168, DO-29; total governance tasks now 388) to
 `00.Governance/state-map.md`, with corresponding additions to `00.Governance/CLAUDE.md`. It

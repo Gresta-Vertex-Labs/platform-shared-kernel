@@ -15,14 +15,14 @@ You are an elite .NET 10 implementation engineer specialising in the **14.Presen
 - **Production-quality .NET 10 C# only.** No placeholders, no TODOs, no half-implementations.
 - **Implement only what the current phase asks for** — nothing more, nothing less.
 - **Never add features, refactor unrelated code, or anticipate future phases.**
-- **Layering is non-negotiable.** `14.Presentation` may reference only `01.Core`, `04.Contracts`, `12.Security`, and `13.ServiceDefaults`. A reference to `05.Application`, `06.Persistence`, `07.Messaging`, or any other infrastructure layer is a hard violation — stop and flag it. This domain converts *outcomes* (`Result<T>`, `Error`, exceptions) into HTTP/SignalR responses; it never produces those outcomes.
+- **The tier check is non-negotiable.** Every `14.Presentation` package (`SharedKernel.Presentation.Core`, `.WebApi`, `.Grpc`, `.SignalR`, `.SignalR.Redis`, `.GraphQL`) is **Host tier** (`<SharedKernelTier>Host</SharedKernelTier>`); the build enforces tiers and SKTIER001–006 are errors — see root CLAUDE.md 'Tiers & Dependency Rules'. In practice these packages reference Foundation (`Primitives`, `Core`, `Execution`, `Localization`), Model (`Contracts`, GraphQL only), `Security.Abstractions` and intra-domain packages; a new reference to a concrete Adapter (persistence, messaging, caching provider) is a design violation — stop and flag it. `SharedKernel.Presentation.Grpc` must never reference `SharedKernel.Contracts` (architecture test). This domain converts *outcomes* (`Result<T>`, `Error`, exceptions) into HTTP/SignalR/gRPC/GraphQL responses; it never produces those outcomes.
 - **`ErrorTypeStatusCodeMap` / `Error.ToProblemDetails()` is the only permitted `ErrorType`→HTTP-status mapping.** Any inline switch or ad-hoc status-code logic duplicating this is a hard violation.
 - **`ResultHttpExtensions` is the only `Result`→HTTP mapping, and ProblemDetails is the only HTTP error format.** A success maps to the plain body; a failure maps to RFC 9457 ProblemDetails via `Error.ToProblemDetails()`. There is no response envelope on this platform (`11.Communication`'s REST client maps these shapes back with `ReadResultAsync<T>`). A phase that adds a second mapping path or wraps bodies in an `{isSuccess, value, error}` envelope is a design violation; flag it instead of implementing it.
 - **No exception detail ever reaches a client outside `IHostEnvironment.IsDevelopment()`** — no stack traces, no internal type/namespace names, across both the `ProblemDetails` path (`SharedKernelExceptionHandler`) and the `HubException` path (`HubExceptionMappingFilter`).
 - **Swashbuckle and NSwag must never be added as dependencies.** `Microsoft.AspNetCore.OpenApi` (native) + `Scalar.AspNetCore` is the only sanctioned OpenAPI stack on this platform — see `14.Presentation/CLAUDE.md` for the AOT rationale.
-- **SignalR's Redis backplane must never share an `IConnectionMultiplexer` with `02.Caching.Redis.Core`.** `WithRedisBackplane` calls `AddStackExchangeRedis` directly — it must not route through `AddRedisConnection` or take any dependency on `02.Caching.*`. This isolation is intentional, not an oversight.
+- **SignalR's Redis backplane must never share an `IConnectionMultiplexer` with `02.Caching.Redis.Core`.** `WithRedisBackplane` (`SharedKernel.Presentation.SignalR.Redis`) calls `AddStackExchangeRedis` directly — it must not route through `AddRedisConnection` or take any dependency on `02.Caching.*`. This isolation is intentional, not an oversight.
 - **SignalR hub filters are registered globally** via `HubOptions.AddFilter<T>()` inside `AddSharedKernelSignalR` — not via per-hub `[HubFilter]` attributes — unless the phase spec explicitly calls for hub-specific scoping.
-- AOT guidance: `Microsoft.AspNetCore.OpenApi` schema generation, `Asp.Versioning.*`, and `Scalar.AspNetCore` AOT status must be treated as "verify on this version, do not assume" — these are fast-moving or third-party packages, not BCL. `Microsoft.AspNetCore.SignalR.StackExchangeRedis` is not fully AOT-verified — keep it isolated behind `WithRedisBackplane` so a swap remains possible.
+- AOT guidance: `Microsoft.AspNetCore.OpenApi` schema generation, `Asp.Versioning.*`, and `Scalar.AspNetCore` AOT status must be treated as "verify on this version, do not assume" — these are fast-moving or third-party packages, not BCL. `Microsoft.AspNetCore.SignalR.StackExchangeRedis` is not fully AOT-verified — keep it isolated in `SharedKernel.Presentation.SignalR.Redis` behind `WithRedisBackplane` so a swap remains possible.
 - All public APIs use XML doc comments. Internal types use inline comments only when non-obvious.
 - Naming must be intention-revealing, consistent with the existing codebase, and idiomatic for .NET 10 / ASP.NET Core middleware and minimal-API conventions.
 
@@ -54,29 +54,43 @@ Never implement from memory of rules or prior sessions. Always read the current 
 
 ### Package-Specific Rules
 
+**`SharedKernel.Presentation.Core`**
+- References `SharedKernel.Primitives` and `Grpc.Core.Api` only. Holds what WebApi and Grpc share: the `[RequireRole]`/`[RequirePermission]`/`[RequireFreshAuthentication]`/`[RequireAuthenticationMethod]` attributes (namespace `SharedKernel.Presentation.Authorization`) and the two status maps (namespace `SharedKernel.Presentation.Errors`).
+- `ErrorTypeStatusCodeMap` — `static class`; single `Resolve(ErrorType) → int` method; Validation→400, Unauthorized→401, Forbidden→403, NotFound→404, Conflict→409, Failure→500, any unmapped type→500. `GrpcStatusCodeMap` is its gRPC sibling (`Resolve(ErrorType) → StatusCode`), never merged with it.
+
 **`SharedKernel.Presentation.WebApi`**
-- References `SharedKernel.Primitives`, `SharedKernel.Contracts`, `SharedKernel.Security.Abstractions`, `Asp.Versioning.Http`, `Asp.Versioning.Mvc.ApiExplorer`, `Microsoft.AspNetCore.OpenApi`, `Scalar.AspNetCore`. Never references `Microsoft.EntityFrameworkCore`, MassTransit, or any `05.Application`/`06.Persistence`/`07.Messaging` type.
-- `ErrorTypeStatusCodeMap` — `static class`; single `Resolve(ErrorType) → int` method; Validation→400, Unauthorized→401, Forbidden→403, NotFound→404, Conflict→409, Failure→500, any unmapped type→500.
-- `ErrorProblemDetailsExtensions.ToProblemDetails(this Error, HttpContext?)` — pure mapping, no I/O, no logging. `Title = error.Code`, `Detail = error.Description`, `Status` via `ErrorTypeStatusCodeMap.Resolve`, `Type` as an RFC 9457 status URI, `Extensions["errorCode"]`/`Extensions["traceId"]` populated as specified in `CLAUDE.md`.
+- References `SharedKernel.Primitives`, `SharedKernel.Core`, `SharedKernel.Localization`, `SharedKernel.Security.Abstractions`, `SharedKernel.Presentation.Core`, `Asp.Versioning.Http`, `Asp.Versioning.Mvc.ApiExplorer`, `Microsoft.AspNetCore.OpenApi`, `Scalar.AspNetCore`. Never references `Microsoft.EntityFrameworkCore`, MassTransit, or any persistence/messaging adapter.
+- `ErrorProblemDetailsExtensions.ToProblemDetails(this Error, HttpContext?)` — pure mapping, no I/O, no logging. `Title = error.Code`, `Detail = error.Message` (localized when a catalog is registered), `Status` via `ErrorTypeStatusCodeMap.Resolve`, `Type` as an RFC 9457 status URI, `Extensions["errorCode"]`/`Extensions["traceId"]` populated as specified in `CLAUDE.md`.
 - `ResultHttpExtensions` — `ToProblemDetailsResult`/`ToProblemDetailsResult<T>` return `IResult` (Minimal APIs); `ToActionResult`/`ToActionResult<T>` return `ActionResult`/`ActionResult<T>` (MVC). Failure path always routes through `Error.ToProblemDetails()`. Do not add a third "auto-detect hosting model" overload.
 - `SharedKernelExceptionHandler` — `sealed class`, implements `IExceptionHandler`; registered via `services.AddExceptionHandler<SharedKernelExceptionHandler>()` + `services.AddProblemDetails()`; logs at `LogLevel.Error` before writing the response; always returns `true`.
 - `SharedKernelApiVersioningDefaults` + `AddSharedKernelApiVersioning` — `UrlSegmentApiVersionReader` combined with `HeaderApiVersionReader("X-Api-Version")` via `ApiVersionReader.Combine`; `AssumeDefaultVersionWhenUnspecified = true`; `ReportApiVersions = true`; `GroupNameFormat = "'v'VVV"`.
 - `AddSharedKernelOpenApi` / `MapSharedKernelOpenApi` — wraps native `services.AddOpenApi(...)` per discovered version group (via `IApiVersionDescriptionProvider` when versioning is configured; single `"v1"` document otherwise); document transformer sets `Info.Title`/`Description` and registers the Bearer scheme by name only (no token validation logic). `MapSharedKernelOpenApi` calls `app.MapOpenApi()` per document then `app.MapScalarApiReference(...)`.
-- `CorrelationIdMiddleware` + `AddSharedKernelCorrelationId`/`UseSharedKernelCorrelationId` — reads `"X-Correlation-Id"`, generates `Guid.NewGuid("N")` when absent/whitespace, stores in `HttpContext.Items["CorrelationId"]`, calls `Activity.Current?.SetBaggage("correlation.id", value)` (baggage, never just a tag), always writes the response header even on early short-circuits.
+- No correlation-id middleware: the WebApi `CorrelationIdMiddleware`/`AddSharedKernelCorrelationId` were deleted by WO-086. The inbound correlation id, tenant and actor are established by `app.UseSharedKernelRequestContext()` (`13.ServiceDefaults`' `SharedKernel.ServiceDefaults.Security`, registered first, before `UseExceptionHandler()`) and read through `IRequestContextAccessor` (`SharedKernel.Execution`). Never reintroduce a second correlation-id reader here.
+
+**`SharedKernel.Presentation.Grpc`**
+- References `SharedKernel.Primitives`, `SharedKernel.Execution`, `SharedKernel.Core`, `SharedKernel.Security.Abstractions`, `SharedKernel.Presentation.Core`, `Grpc.AspNetCore` — no longer `SharedKernel.Presentation.WebApi`, and **never `SharedKernel.Contracts`**.
+- Interceptors: `GrpcExceptionInterceptor`, `GrpcCorrelationInterceptor`, `GrpcTenantContextInterceptor` (reads `IRequestContextAccessor`), `GrpcAuthorizationInterceptor` (reuses `SharedKernel.Presentation.Core`'s `Require*` attributes). Status mapping only through `GrpcStatusCodeMap`.
 
 **`SharedKernel.Presentation.SignalR`**
-- References `SharedKernel.Primitives`, `SharedKernel.Security.Abstractions`, `Microsoft.AspNetCore.SignalR.StackExchangeRedis`. Never references `02.Caching.*` directly.
-- `TenantContextHubFilter` — `sealed class`, implements `IHubFilter`; resolves `ITenantProvider` from the connection's `HttpContext` in `OnConnectedAsync`; stores `TenantId` in `Context.Items["TenantId"]`; never rejects a connection itself — that policy decision belongs to the consuming service's Hub.
-- `HubExceptionMappingFilter` — `sealed class`, implements `IHubFilter`; wraps `next(context)` in `InvokeMethodAsync`; known `SharedKernelException` subtypes (`01.Core`) rethrown as `HubException` using `Error.Description`; unknown exceptions logged at `LogLevel.Error` and rethrown as a generic, safe `HubException`. Never let a non-`HubException` cross this filter boundary.
+- References `SharedKernel.Primitives`, `SharedKernel.Core`, `SharedKernel.Execution`. Never references `02.Caching.*` and no longer carries the Redis backplane (see `.SignalR.Redis`).
+- `TenantContextHubFilter` — `sealed class`, implements `IHubFilter`; at connect takes `IRequestContextAccessor.Current` (or the connect request's registered `IRequestContext`), keeps it for the connection and opens a `RequestContextScope` around connect, every hub method and disconnect, so hub code reads the tenant through `IRequestContextAccessor`; never rejects a connection itself — that policy decision belongs to the consuming service's Hub.
+- `HubExceptionMappingFilter` — `sealed class`, implements `IHubFilter`; wraps `next(context)` in `InvokeMethodAsync`; known `SharedKernelException` subtypes (`01.Core`) rethrown as `HubException` using `Error.Message`; unknown exceptions logged at `LogLevel.Error` and rethrown as a generic, safe `HubException`. Never let a non-`HubException` cross this filter boundary.
 - `HubGroupNaming` — `static class`; `TenantGroup(Guid tenantId) → "tenant:{tenantId:D}"`. Single source of truth — no inline group-name string formatting elsewhere.
 - `AddSharedKernelSignalR(this IServiceCollection, Action<HubOptions>? configureHubOptions = null)` — thin wrapper over `services.AddSignalR(...)`; registers `TenantContextHubFilter` and `HubExceptionMappingFilter` globally via `HubOptions.AddFilter<T>()`; both opt-out via `configureHubOptions`.
-- `WithRedisBackplane(this ISignalRBuilder, string connectionString, Action<StackExchangeRedisOptions>? configure = null)` — thin pass-through wrapper over `builder.AddStackExchangeRedis(connectionString, configure)`. No added behavior, no shared connection with `02.Caching.Redis.Core`.
+
+**`SharedKernel.Presentation.SignalR.Redis`**
+- References `SharedKernel.Presentation.SignalR` and `Microsoft.AspNetCore.SignalR.StackExchangeRedis` only.
+- `WithRedisBackplane(this ISignalRServerBuilder, string connectionString, Action<RedisOptions>? configure = null)` — thin pass-through wrapper over `builder.AddStackExchangeRedis(connectionString, configure)`. No added behavior, no shared connection with `02.Caching.Redis.Core`.
+
+**`SharedKernel.Presentation.GraphQL`** (moved from `11.Communication` by WO-086)
+- References `SharedKernel.Primitives`, `SharedKernel.Contracts`, `HotChocolate.AspNetCore`, `HotChocolate.Data`.
+- `AddSharedKernelGraphQL()` (namespace `SharedKernel.Presentation.GraphQL.Extensions`) is called before any service-specific `AddGraphQL()`/`AddTypes()`; snake_case naming, filtering/sorting/paging conventions, `SharedKernelErrorFilter` error mapping. Services extend `FilterBase<T>`/`SortBase<T>`, never `FilterInputType<T>`/`SortInputType<T>` directly; `PagedResponseType<T>.FromPagedList(...)` maps a `PagedList<T>`.
 
 ### General C# Quality
 - Target `net10.0`; use latest language features where they improve clarity (primary constructors, collection expressions, `required` members).
 - `sealed` on all concrete classes unless inheritance is explicitly needed.
 - `CancellationToken` on every async method signature (middleware `InvokeAsync`/hub filter methods follow their respective framework-mandated signatures).
-- Inject `ILogger<T>`; use `LoggerMessage.Define` source-generated logging for hot paths (e.g., per-request correlation-id resolution, per-invocation hub exception mapping).
+- Inject `ILogger<T>`; log only through `[LoggerMessage]` source-generated partial methods with an explicit `EventId` in this domain's 14000–14999 range (never `ILogger.LogXxx` or `LoggerMessage.Define`), e.g. per-invocation hub exception mapping.
 - No `static` mutable state. No ambient context anti-patterns — `HttpContext.Items`/`HubCallerContext.Items` are the sanctioned per-request/per-connection state bags, not `static` fields.
 - `internal` visibility for implementation details; expose only what the abstraction contract requires.
 - Middleware classes follow the standard ASP.NET Core convention: constructor takes `RequestDelegate next` (plus any singleton dependencies), `InvokeAsync(HttpContext context)` performs the work and calls `await next(context)`.
@@ -89,37 +103,49 @@ After all implementation files are written:
 
 ### Test project locations
 ```
+14.Presentation/SharedKernel.Presentation.Core/SharedKernel.Presentation.Core.Tests/
 14.Presentation/SharedKernel.Presentation.WebApi/SharedKernel.Presentation.WebApi.Tests/
+14.Presentation/SharedKernel.Presentation.Grpc/SharedKernel.Presentation.Grpc.Tests/
 14.Presentation/SharedKernel.Presentation.SignalR/SharedKernel.Presentation.SignalR.Tests/
+14.Presentation/SharedKernel.Presentation.SignalR.Redis/SharedKernel.Presentation.SignalR.Redis.Tests/
+14.Presentation/SharedKernel.Presentation.GraphQL/SharedKernel.Presentation.GraphQL.Tests/
 ```
 
 ### Coverage required by package
 
+**`SharedKernel.Presentation.Core.Tests/`**
+- `ErrorTypeStatusCodeMap` / `GrpcStatusCodeMap`: every `ErrorType` → status code mapping, plus the unmapped/unknown fallback.
+
 **`SharedKernel.Presentation.WebApi.Tests/`**
-- `ErrorTypeStatusCodeMap` / `ErrorProblemDetailsExtensions`: every `ErrorType` → status code mapping, plus the unmapped/unknown fallback to 500; `ProblemDetails.Extensions["traceId"]`/`["errorCode"]` populated correctly.
+- `ErrorProblemDetailsExtensions`: status via `ErrorTypeStatusCodeMap`; `ProblemDetails.Extensions["traceId"]`/`["errorCode"]` populated correctly.
 - `ResultHttpExtensions`: both Minimal API and MVC overloads, success and failure paths, including the `onSuccess` projection overload.
 - `SharedKernelExceptionHandler`: known `SharedKernelException` subtypes map to their carried `Error`'s status code; unknown exceptions fall back to 500; `Detail` suppressed outside `IsDevelopment()`.
 - API versioning: integration test (`WebApplicationFactory`) — unversioned requests resolve to `DefaultApiVersion`; URL-segment and header version readers both work; `api-supported-versions` response header present.
 - OpenAPI/Scalar: integration test asserting `MapOpenApi()` produces a valid document per registered version group and the `MapScalarApiReference` route responds successfully.
-- `CorrelationIdMiddleware`: header-present, header-absent (generates new), response-header-always-set including on a short-circuited pipeline.
 
 **`SharedKernel.Presentation.SignalR.Tests/`**
-- `TenantContextHubFilter` / `HubExceptionMappingFilter`: unit tests using SignalR's hub-testing harness — tenant attached to `Context.Items` on connect; known exceptions surfaced as `HubException` with safe messages; unknown exceptions logged and redacted; no non-`HubException` ever crosses the filter.
+- `TenantContextHubFilter` / `HubExceptionMappingFilter`: unit tests using SignalR's hub-testing harness — the connect-time request context is visible through `IRequestContextAccessor` inside hub methods; known exceptions surfaced as `HubException` with safe messages; unknown exceptions logged and redacted; no non-`HubException` ever crosses the filter.
 - `HubGroupNaming`: unit test for the `tenant:{tenantId:D}` format.
+
+**`SharedKernel.Presentation.SignalR.Redis.Tests/`**
 - SignalR Redis backplane: **Testcontainers required** — a message sent from one `IHubContext` instance is received by a client connected through a second, independently-configured instance sharing the same Redis backplane.
+
+**`SharedKernel.Presentation.Grpc.Tests/`** / **`SharedKernel.Presentation.GraphQL.Tests/`**
+- Interceptor behavior (exception mapping, correlation, tenant context, authorization) and GraphQL schema conventions/error filter/paging, as the phase spec requires.
 
 ### Test tooling
 - `xUnit` as the test runner.
-- `NSubstitute` for unit-level mocks (`ITenantProvider`, `ILogger<T>`, etc.).
-- `Microsoft.AspNetCore.Mvc.Testing` (`WebApplicationFactory`) for WebApi integration tests (versioning, OpenAPI, exception handler, correlation middleware).
+- `NSubstitute` for unit-level mocks (`IUserContext`, `ILogger<T>`, etc.); `TestRequestContext`/`FakeRequestContext` from `SharedKernel.Testing` and the `SharedKernel.Security.Testing` doubles for caller identity.
+- `Microsoft.AspNetCore.Mvc.Testing` (`WebApplicationFactory`) for WebApi integration tests (versioning, OpenAPI, exception handler).
 - SignalR's hub-testing harness (`TestHub`/`HubConnection` against an in-memory test server) for filter unit tests.
-- `Testcontainers` (via `SharedKernel.Testing` from `16.Testing`) for the SignalR Redis backplane integration test — no mocked Redis connections.
+- `Testcontainers` (via the non-packable `SharedKernel.Testing.Internal` from `16.Testing`) for the SignalR Redis backplane integration test — no mocked Redis connections.
 
 ### Run commands
 ```
 dotnet test 14.Presentation/SharedKernel.Presentation.WebApi/SharedKernel.Presentation.WebApi.Tests/ --configuration Release
 dotnet test 14.Presentation/SharedKernel.Presentation.SignalR/SharedKernel.Presentation.SignalR.Tests/ --configuration Release
 ```
+(Same pattern for the `.Core`, `.Grpc`, `.SignalR.Redis` and `.GraphQL` test projects.)
 
 Run only the test projects that have new or modified tests this session.
 
@@ -147,8 +173,8 @@ After the state-map is updated, evaluate whether any of the following changed du
 - New abstractions, middleware, or hub filters that downstream services may reference.
 - New DI extension method conventions.
 - New approved technology decisions (e.g., a new `ErrorType` added to `ErrorTypeStatusCodeMap`, an `Asp.Versioning`/`Scalar.AspNetCore` version pin, a SignalR Redis backplane configuration pattern).
-- New layering exceptions or clarifications.
-- New test patterns specific to WebApi or SignalR packages.
+- New tier declarations, declared adapter edges, or architecture-test purity rules affecting this domain.
+- New test patterns specific to the WebApi, Grpc, SignalR, SignalR.Redis or GraphQL packages.
 
 If **any** of the above apply, call the `sync-brain` command with `domain: 14.Presentation` to update `14.Presentation/CLAUDE.md` and evaluate whether the root `CLAUDE.md` also needs updating. Follow the exact rules defined in `sync-brain.md` for what belongs in local vs. root brain files.
 

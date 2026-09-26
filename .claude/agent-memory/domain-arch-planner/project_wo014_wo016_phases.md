@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): `MediatRDomainEventDispatcher` was deleted — the native `DomainEventDispatcher` in `SharedKernel.Application.Pipeline` implements `IDomainEventDispatcher` (still in `03.Domain`), registered by `AddSharedKernelDomainEvents()`. Numbered layering was replaced by package tiers; the placement rationale below is historical, the placement itself still holds.
+
 WO-016 (P-095) added 5 tasks (D-31, C-35, T-28, DO-27, P-08) for the `IncludeDeleted` flag on `ISpecification<T>`.
 WO-014 (P-081) added 5 tasks (D-32, C-36, T-29, DO-28, P-09) for `IDomainEventDispatcher` interface.
 

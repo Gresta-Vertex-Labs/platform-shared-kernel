@@ -4,6 +4,7 @@ description: WO-041 P-253 logging-authoring retrofit for 05.Application — Even
 metadata:
   type: project
 ---
+> WO-086 (2026-09): SharedKernel.Application.Behaviors is SharedKernel.Application.Pipeline (EventIds 5100-5199 unchanged, in Shared/ApplicationBehaviorsLoggingEventIds.cs); the FireAndForget and StreamLoggingBehavior files were deleted (P-544).
 
 WO-041 P-253 ("Application: Logging Retrofit to the Platform `[LoggerMessage]` Standard") was dispatched
 2026-07-09, Design locked (D-66..D-71), Core/Tests/Docs/Published all `○` Pending in `05.Application/state-map.md`.

@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): fakes moved from `SharedKernel.Testing` to `16.Testing/SharedKernel.Caching.Testing` (`FakeCacheService`, `FakeDistributedLockService`); Redis Testcontainers fixtures live in `SharedKernel.Testing.Internal`; the packages are now Adapter tier with the declared edge `Redis.*`→`Redis.Core`. RedLock.net, `FakeRenewableLock`, `CachingCoreOptions`/`AddCachingCoreOptions` and the invalidation bus were deleted (P-547/P-550).
+
 # WO-023 — Redis Package Split (Phases 32-36) — COMPLETE
 
 `SharedKernel.Caching.Redis` was split into 5 packages. Phase 32 (complete,

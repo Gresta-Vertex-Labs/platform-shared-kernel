@@ -4,6 +4,8 @@ description: SharedKernel.Testing.csproj's HotChocolate.Data reference transitiv
 type: project
 ---
 
+> WO-086 (2026-09): `SharedKernel.Testing` was split into 20 testing packages; HotChocolate (and so this `GreenDonut`/`HotChocolate` `Result`/`Error` ambiguity) now only reaches `SharedKernel.Presentation.Testing` and its `.Tests` project. `SharedKernel.Testing.SelfTests` became each package's own `.Tests` project. The diagnosis technique still applies.
+
 `SharedKernel.Testing.csproj` carries `HotChocolate.AspNetCore`/`HotChocolate.Data` (for `Communication/GraphQLTestExecutorFactory`, C-39). That package brings a `global using GreenDonut;` into the project's generated `GlobalUsings.g.cs`. `GreenDonut` declares its own `Result<TValue>` type (used for DataLoader batching).
 
 **Symptom:** any new file in `SharedKernel.Testing` that writes `Result<Foo>` unqualified (even with `using SharedKernel.Primitives.Results;` present) fails with CS0104 ambiguous reference between `GreenDonut.Result<TValue>` and `SharedKernel.Primitives.Results.Result<T>`. Non-generic `Result` (no type argument) is NOT ambiguous — only the generic form collides.
