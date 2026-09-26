@@ -12,7 +12,7 @@ composition root chooses the providers. A service that needs only an in-process 
 | --- | --- |
 | [`SharedKernel.Caching.Abstractions`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/02.Caching/SharedKernel.Caching.Abstractions/README.md) | `ICacheService`, `ITenantCacheService`, `CachePolicy`, `CacheKeyFormat`, `IDistributedLockService`. No provider dependency |
 | [`SharedKernel.Caching.FusionCache`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/02.Caching/SharedKernel.Caching.FusionCache/README.md) | The FusionCache implementation of the cache contracts: memory layer, stampede protection, fail-safe, compression, encryption, warmup |
-| [`SharedKernel.Caching.Redis.Core`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/02.Caching/SharedKernel.Caching.Redis.Core/README.md) | The one shared Redis connection (`AddRedisConnection`): configuration, timeouts, fail-fast, TLS and mutual TLS, connection logs, `IRedisConnectionProbe` |
+| [`SharedKernel.Caching.Redis.Core`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/02.Caching/SharedKernel.Caching.Redis.Core/README.md) | The one shared Redis connection (`AddRedisConnection`): configuration, timeouts, fail-fast, TLS and mutual TLS, connection logs, the `redis` readiness probe |
 | [`SharedKernel.Caching.Redis`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/02.Caching/SharedKernel.Caching.Redis/README.md) | Redis distributed layer and backplane for the cache (`AddRedisL2`), with FusionCache circuit breakers |
 | [`SharedKernel.Caching.Redis.DistributedLocking`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/02.Caching/SharedKernel.Caching.Redis.DistributedLocking/README.md) | Redis locks and leases with atomic fencing tokens (`AddRedisDistributedLocking`) |
 | [`SharedKernel.Caching.Redis.HashStore`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/02.Caching/SharedKernel.Caching.Redis.HashStore/README.md) | Redis hashes for sessions, snapshots and counters (`IRedisHashService`, `ITypedHashStore<T>`) |
@@ -51,19 +51,26 @@ builder.Services.AddRedisChannelService();                       // IRedisChanne
   registration takes no connection string and throws `InvalidOperationException` when `AddRedisConnection` has not
   been called first.
 - **Any subset.** A lock-only worker calls `AddRedisConnection(...).AddRedisDistributedLocking()` and needs no cache.
+- **Readiness.** `AddSharedKernelCaching` registers a `cache` probe and `AddRedisConnection` a `redis` probe
+  (`IReadinessProbe`); `services.AddHealthChecks().AddSharedKernelReadiness()` in the host reports them.
+- **Testing.** `SharedKernel.Caching.Testing` (`AddFakeCachingServices()`, `AddFakeTenantCacheService()`) and
+  `SharedKernel.Caching.Redis.Testing` (`AddFakeRedisServices()`) register in-memory fakes; no Redis needed.
 - **No invalidation messaging.** With the distributed layer configured, removals, expirations, tag evictions and clears
   reach every instance through the backplane.
 
-## Layering
+## Dependencies
 
 ```text
 Redis (L2) ────────────────┐
 Redis.DistributedLocking ──┼─→ Abstractions + Redis.Core (connection, probe)
 Redis.HashStore ───────────┤
 Redis.PubSub ──────────────┴─→ Redis.Core
-FusionCache ──────────────→ Abstractions
+FusionCache ──────────────→ Abstractions, SharedKernel.Configuration, SharedKernel.Cryptography, SharedKernel.Primitives
+Abstractions ─────────────→ SharedKernel.Execution (TenantId)
 Redis.Core ───────────────→ SharedKernel.Configuration, SharedKernel.Primitives, StackExchange.Redis
 ```
 
-Sibling provider packages never reference each other, and `Redis.Core` references no caching package. `07.Messaging`
+`Abstractions` is Abstractions tier; the other six are Adapter tier, and the four Redis capability packages declare
+`Redis.Core` as their only allowed adapter reference (build-enforced, SKTIER002). Sibling provider packages never
+reference each other, and `Redis.Core` references no caching package. `07.Messaging`
 never references any caching package, and no caching package references messaging.

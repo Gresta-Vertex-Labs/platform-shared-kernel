@@ -48,6 +48,7 @@ on it. Only a Dapper-only (or plain ADO.NET) service calls `AddSharedKernelNpgsq
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
+| Tier | Adapter |
 | Database | PostgreSQL 15 or later |
 | Dependencies | Npgsql 10, `Pgvector`, `SharedKernel.Persistence.Abstractions`, `SharedKernel.Configuration` |
 | Namespace | `SharedKernel.Persistence` (registration), `SharedKernel.Persistence.Npgsql.*` (types) |
@@ -181,7 +182,9 @@ source; read-only Dapper sessions use it with `TargetSessionAttributes=PreferSta
 service) binds the caller's tenant to every transaction. The policy from
 `migrationBuilder.EnableTenantRowLevelSecurity("orders")` is a single predicate,
 `tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid`, for `USING` and `WITH CHECK`, and uses the
-tenant index. No tenant bound means no rows.
+tenant index. No tenant bound means no rows. The tenant is the caller's `IRequestContext.TenantId`
+(`SharedKernel.Execution`'s `TenantId`, written as its lowercase "D" form); `ITenantSessionBinder.BindAsync(connection,
+transaction, TenantId?)` is the one place it is set.
 
 Row-level security protects against application bugs (a missing filter, `IgnoreQueryFilters()`, a hand-written
 query). It does not stop SQL injection: injected SQL runs as the application role and can bind any tenant. Keep SQL

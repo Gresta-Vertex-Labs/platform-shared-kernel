@@ -10,6 +10,12 @@ verifiably. Subscription storage and delivery-history persistence are the consum
 responsibility, expressed through two seams this package defines but never implements:
 `IWebhookSubscriptionStore` (required) and `IWebhookDeliveryObserver` (optional).
 
+| | |
+| --- | --- |
+| Tier | Adapter (references Foundation, Model and Abstractions packages only: `SharedKernel.Primitives`, `.Execution`, `.Configuration`, `.Cryptography`, `SharedKernel.Contracts`, `SharedKernel.Messaging.Abstractions`) |
+| Install | `<PackageReference Include="SharedKernel.Integration.Webhooks" />` |
+| Test doubles | `SharedKernel.Integration.Testing`: `AddInMemoryWebhookDispatcher()`, `AddInMemoryWebhookDeliveryObserver()` |
+
 ---
 
 ## Minimal setup
@@ -306,6 +312,17 @@ if (await processedDeliveryStore.HasProcessedAsync(deliveryId, ct))
 }
 ```
 
+### Correlation id
+
+Every delivery also carries `X-Correlation-Id` (`WellKnownHeaders.CorrelationId`) with the correlation id of
+the operation that dispatched it: the ambient `IRequestContext` (`SharedKernel.Execution`), set by the host's
+request-context middleware, a message consumer, a workflow activity or a scheduled job. A subscriber can quote
+it in a support request and you can find the originating operation in your logs. When no operation is running,
+the header is omitted; a subscription header of the same name wins.
+
+Nothing else about the caller is sent. The tenant id, actor and client id stay inside the platform, because a
+webhook endpoint is outside its trust boundary.
+
 ### Reacting to delivery exhaustion
 
 When a subscription exhausts `WebhookDeliveryOptions.MaxAttempts` without ever receiving a 2xx
@@ -426,7 +443,8 @@ path.
 - Compare a signature digest with `==`/`string.Equals` — `WebhookSignatureVerifier` uses
   `CryptographicOperations.FixedTimeEquals` exclusively, including per-candidate when verifying
   against multiple rotation-window secrets, without short-circuiting the iteration.
-- Reference `06.Persistence`, `11.Communication.*`, or `SharedKernel.Messaging.MassTransit`.
+- Reference `06.Persistence`, `11.Communication.*`, `SharedKernel.Messaging.MassTransit` or any ASP.NET Core package.
+- Send the caller's tenant id, actor or client id to a subscriber — only the correlation id leaves the platform.
 - Throw out of `IWebhookDispatcher` because of a single subscriber's HTTP failure or an
   `IWebhookUrlValidator` rejection.
 - Deliver to a target resolving to a loopback, link-local, private, or multicast/reserved IP address

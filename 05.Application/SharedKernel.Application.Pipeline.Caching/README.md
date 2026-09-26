@@ -1,8 +1,8 @@
-# SharedKernel.Application.Behaviors.Caching
+# SharedKernel.Application.Pipeline.Caching
 
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
-[![MediatR 12.4](https://img.shields.io/badge/MediatR-12.4-5c6bc0)](https://github.com/jbogard/MediatR)
+![Tier: Host](https://img.shields.io/badge/tier-Host-5c6bc0)
 ![Public API: tracked](https://img.shields.io/badge/public%20API-tracked-informational)
 ![Published: GitHub Packages](https://img.shields.io/badge/published-GitHub%20Packages-success)
 ![Scopes: fail closed](https://img.shields.io/badge/scopes-fail%20closed-success)
@@ -12,7 +12,7 @@
 > transaction commits, never before. Keys are partitioned by query type, tenant and caller, so nothing can read
 > anything it should not.**
 
-Two MediatR pipeline behaviors. A query declares `ICacheableQuery<TValue>` and is served from cache — in memory,
+Two request-pipeline behaviors. A query declares `ICacheableQuery<TValue>` and is served from cache — in memory,
 or Redis through `02.Caching` — without its handler knowing a cache exists. A command declares `IInvalidatesCache`
 and names what it made stale. Everything else — key construction, tenant and caller partitioning, stampede
 protection, the "never cache a failure" rule, and evicting only once the write has actually landed — is the
@@ -98,17 +98,17 @@ GitHub Packages needs a token even to read: a personal access token with `read:p
 in GitHub Actions.
 
 ```shell
-dotnet add package SharedKernel.Application.Behaviors.Caching
+dotnet add package SharedKernel.Application.Pipeline.Caching
 ```
 
-This is an opt-in sibling of [`SharedKernel.Application.Behaviors`](../SharedKernel.Application.Behaviors/README.md),
-for one reason: it needs `SharedKernel.Caching.Abstractions`, and the core behaviors package refuses to put a cache
+This is an opt-in sibling of [`SharedKernel.Application.Pipeline`](../SharedKernel.Application.Pipeline/README.md),
+for one reason: it needs `SharedKernel.Caching.Abstractions`, and the core pipeline package refuses to put a cache
 dependency in front of every service that never caches anything. Reference this only when you want caching.
 
 ## Quick start
 
 ```csharp
-using SharedKernel.Application.Behaviors.Caching.Extensions;
+using SharedKernel.Application.Pipeline.Caching.Extensions;
 using SharedKernel.Caching.FusionCache.Extensions;
 
 builder.Services.AddSharedKernelCaching(o => o.ServiceName = "orders");   // ICacheService + key providers
@@ -432,7 +432,7 @@ public CachePolicy CachePolicy =>
 ### 8. Test a cached query
 
 ```csharp
-var cache = new FakeCacheService();               // SharedKernel.Testing
+var cache = new FakeCacheService();               // SharedKernel.Caching.Testing
 services.AddSingleton<ICacheService>(cache);
 services.AddSingleton<ITenantCacheKeyProvider>(new FakeTenantCacheKeyProvider());
 services.AddSharedKernelApplicationBehaviors().AddCachingBehaviors().Build();
@@ -461,7 +461,7 @@ cache.FactoryInvocationCount.Should().Be(1);      // second dispatch was a hit
 | `CacheScope` | `Tenant` = 0, `User`, `Global` |
 | `AddCachingBehaviors()` | Registers both behaviors in their stages and declares their required services |
 
-The two behavior types are **internal**. They are registered by `AddCachingBehaviors()` and resolved by MediatR;
+The two behavior types are **internal**. They are registered by `AddCachingBehaviors()` and resolved by the kernel `RequestPipeline<,>`;
 the package's contract is the interfaces above.
 
 ## Pitfalls
@@ -489,7 +489,7 @@ the package's contract is the interfaces above.
 
 | Decision | Why |
 | --- | --- |
-| A separate package from `SharedKernel.Application.Behaviors` | The core behaviors package will not put `SharedKernel.Caching.Abstractions` in front of every service that never caches anything |
+| A separate package from `SharedKernel.Application.Pipeline` | The core pipeline package will not put `SharedKernel.Caching.Abstractions` in front of every service that never caches anything |
 | Cache `TValue`, never `Result<TValue>` | `Result` has private constructors, so a reflection-based serializer cannot write it. Caching the value keeps `01.Core` free of serialization concerns |
 | Keys namespaced by query type | Without it, two queries picking the same key silently deserialize each other's payloads. The namespace is what makes `CacheKey` safe to write casually |
 | A command names the query, not the key | Keys carry the query type, so a raw key string cannot be reconstructed by a command — and naming the type makes a rename a compile error |
@@ -515,8 +515,8 @@ the package's contract is the interfaces above.
 ## AI quick reference
 
 ```text
-PACKAGE     SharedKernel.Application.Behaviors.Caching (05.Application). net10.0. Opt-in sibling of
-            SharedKernel.Application.Behaviors; the only package in 05.Application allowed to reference
+PACKAGE     SharedKernel.Application.Pipeline.Caching (05.Application, Host tier). net10.0. Opt-in sibling of
+            SharedKernel.Application.Pipeline; the only pipeline package allowed to reference
             SharedKernel.Caching.Abstractions.
 REGISTER    services.AddSharedKernelCaching(o => o.ServiceName = "svc");        // ICacheService + ITenantCacheKeyProvider
             services.AddSharedKernelApplicationBehaviors().AddCachingBehaviors().AddTransactionBehavior().Build();
@@ -548,7 +548,7 @@ TELEMETRY   Meter + ActivitySource "SharedKernel.Application" (exported by WithA
             Logging [LoggerMessage] EventIds 5200-5299. No tenant/user/key/value in logs or metric tags.
 ANALYZERS   SK0017 command implements ICacheableQuery. SK0018 query implements IInvalidatesCache.
             SK0041 two ICacheableQuery types share a simple type name (their key namespaces collapse).
-TEST        SharedKernel.Testing FakeCacheService (stampede-faithful: per-key gate + post-gate re-check),
+TEST        SharedKernel.Caching.Testing FakeCacheService (stampede-faithful: per-key gate + post-gate re-check),
             FakeTenantCacheKeyProvider. Assert FactoryInvocationCount for hit/miss.
 FORBIDDEN   Constructing the behaviors (internal). Interpolating a whole cache key. Leaving a caller-dependent query
             at Tenant scope. Implementing ICacheableQuery on a command, or IInvalidatesCache on a query.
@@ -566,7 +566,7 @@ FORBIDDEN   Constructing the behaviors (internal). Interpolating a whole cache k
   concurrent callers on a hit path; another proves each caller gets its own failure on the skip path. The failure
   path depends on a skipped factory value not being broadcast to waiters, so that contract is held in place by a
   test rather than by a comment.
-- **Eviction follows the commit**, proved end to end through a real `ServiceCollection`, a real MediatR pipeline and
+- **Eviction follows the commit**, proved end to end through a real `ServiceCollection`, the real kernel pipeline and
   a real dispatch — including an independent cross-domain lock in `00.Governance`.
 - **Thread-safe.** The behaviors hold no mutable state; per-request state lives on the stack.
 

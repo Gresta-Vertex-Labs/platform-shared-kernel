@@ -2,8 +2,8 @@
 
 **Configuration section path:** `SharedKernel:Integration:Webhooks`
 
-Bound and validated via `AddSharedKernelWebhooks()`, which calls `SharedKernel.Configuration`'s
-`.Bind(section).ValidateDataAnnotations().ValidateOnStart()` pipeline under the hood. Validation
+Bound and validated via `AddSharedKernelWebhooks()`, which calls
+`AddOptions<WebhookDeliveryOptions>().BindConfiguration(...).ValidateDataAnnotations().ValidateOnStart()` under the hood. Validation
 runs eagerly at application startup — a misconfigured deployment fails immediately with an
 actionable `OptionsValidationException`, not on first dispatch.
 

@@ -14,8 +14,11 @@ nothing to wire up, and no dependency added to your own package graph.
 ## Install
 
 ```xml
-<PackageReference Include="SharedKernel.Analyzers" Version="*" PrivateAssets="all" />
+<PackageReference Include="SharedKernel.Analyzers" PrivateAssets="all" />
 ```
+
+The version comes from your repository's single `SharedKernelVersion` property (central package management); every
+SharedKernel package is released together. **Tier:** Tooling — it is never a runtime dependency of production code.
 
 That is the entire setup. The rules run on your next build.
 

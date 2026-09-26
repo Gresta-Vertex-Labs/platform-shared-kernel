@@ -1,8 +1,8 @@
-# SharedKernel.Application.Behaviors
+# SharedKernel.Application.Pipeline
 
 ![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue)
-![MediatR 12.4.1](https://img.shields.io/badge/MediatR-12.4.1%20(MIT)-5c6bc0)
+![Tier: Host](https://img.shields.io/badge/tier-Host-5c6bc0)
 ![Public API: tracked](https://img.shields.io/badge/public%20API-tracked-informational)
 
 **The cross-cutting half of a request: tracing, logging, metrics, authorization, validation, idempotency,
@@ -24,10 +24,15 @@ correctness property: authorization has to precede validation, a commit has to p
 | Error-aware telemetry | Spans, metrics and logs all carry the error type and code, so a dashboard can alert on *what* failed |
 | `AddBehavior(type, stage)` | Your own behavior lands in the canonical order instead of wherever it was registered |
 
-**Dependencies:** `SharedKernel.Application`, `SharedKernel.Application.Abstractions`, `SharedKernel.Primitives`, `MediatR`, `FluentValidation`, and
-first-party `Microsoft.Extensions.*` packages. **No cache, no Polly, no hosting, no `SharedKernel.Core`** —
+**Tier:** Host — referenced by a service's composition-root (API/worker) project, never by its
+application-layer project, which needs only [`SharedKernel.Application`](../SharedKernel.Application/README.md).
+
+**Dependencies:** `SharedKernel.Application`, `SharedKernel.Execution`, `SharedKernel.Primitives`,
+`SharedKernel.Idempotency.Abstractions` and first-party `Microsoft.Extensions.*` packages. **No mediator, no
+FluentValidation, no cache, no Polly, no hosting** — the transport is
+[`SharedKernel.Application.Mediator.MediatR`](../SharedKernel.Application.Mediator.MediatR/README.md) and the
 caching behaviors live in the separate
-[`SharedKernel.Application.Behaviors.Caching`](../SharedKernel.Application.Behaviors.Caching/README.md).
+[`SharedKernel.Application.Pipeline.Caching`](../SharedKernel.Application.Pipeline.Caching/README.md).
 
 ## Contents
 
@@ -47,18 +52,24 @@ caching behaviors live in the separate
 ## Install
 
 ```xml
-<PackageReference Include="SharedKernel.Application.Behaviors" Version="*" />
+<PackageReference Include="SharedKernel.Application.Pipeline" />
+<PackageReference Include="SharedKernel.Application.Mediator.MediatR" />   <!-- the ISender transport -->
 ```
+
+Versions come from your single `SharedKernelVersion` property (see the repository's `PLATFORM.md`,
+"Consuming the kernel").
 
 ## Quick start
 
-The zero-prerequisite preset. These four behaviors need nothing registered beyond MediatR itself:
+The zero-prerequisite preset. These four behaviors need nothing registered beyond a mediator adapter:
 
 ```csharp
-using SharedKernel.Application.Behaviors.Extensions;
+using SharedKernel.Application.Mediator.MediatR;
+using SharedKernel.Application.Pipeline.Extensions;
+using SharedKernel.Validation.FluentValidation;
 
-builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(PlaceOrderCommand).Assembly));
-builder.Services.AddSharedKernelApplication();
+builder.Services.AddSharedKernelMediatR(typeof(PlaceOrderCommand).Assembly); // ISender, handlers, domain events
+builder.Services.AddFluentValidationRequestValidators();                      // optional: IValidator<T> -> IRequestValidator<T>
 
 builder.Services.AddSharedKernelApplicationBehaviors()
     .AddDefaultBehaviors()     // Tracing, Logging, Metrics, Validation
@@ -177,7 +188,7 @@ flowchart TD
 ```
 
 They compose: a refund command can be all four at once. Caching markers live in the
-[caching package](../SharedKernel.Application.Behaviors.Caching/README.md).
+[caching package](../SharedKernel.Application.Pipeline.Caching/README.md).
 
 ## What each behavior does
 
@@ -240,11 +251,17 @@ denial is the point: a marker that means "authorize me" must never be satisfiabl
 
 ### `ValidationBehavior`
 
-Runs every registered `IValidator<TRequest>` **sequentially** — not in parallel, because two async validators
-sharing a scoped `DbContext` would throw — collects every failure, and returns
+Runs every registered `IRequestValidator<TRequest>` (`SharedKernel.Application.Validation`) **sequentially** —
+not in parallel, because two async validators sharing a scoped `DbContext` would throw — collects every error,
+and returns
 `Error.Validation(errors)`: one error with code `validation.failed` carrying each field failure in
 `Error.Details`. It does not throw. At the HTTP boundary `14.Presentation` renders that as a 400 with a
 per-field `errors` map; `11.Communication.Rest` rebuilds the same detail on the calling side.
+
+The pipeline carries no validation library. Implement `IRequestValidator<TRequest>` yourself, or keep writing
+FluentValidation validators and bridge them with `services.AddFluentValidationRequestValidators()`
+(`SharedKernel.Validation.FluentValidation`), which adapts every registered `IValidator<T>` and keeps each
+failure's error code and property path.
 
 ### `IdempotencyBehavior`
 
@@ -275,7 +292,7 @@ A nested command skips this behavior entirely — the outermost command owns the
 ### `TransactionBehavior`
 
 Runs the rest of the pipeline and the handler **inside** `IUnitOfWork.ExecuteInTransactionAsync`
-(`SharedKernel.Application.Abstractions`): the unit of work saves what was staged, runs the `OnBeforeCommit`
+(`SharedKernel.Execution.Transactions`): the unit of work saves what was staged, runs the `OnBeforeCommit`
 callbacks and commits — **only for the outermost command, and only when the response is successful**. A failed
 `Result` rolls back, so a handler that mutated an aggregate before deciding to fail leaves no trace; an
 exception rolls back and propagates.
@@ -347,18 +364,18 @@ which records the attempt either way.
 
 ## Seams you must register
 
-Each is a small interface owned by `05.Application` and implemented by infrastructure. That is what keeps
-`05.Application` from referencing persistence, security or a cache.
+Each is a contract from a Foundation or Abstractions-tier package, implemented by infrastructure. That is what
+keeps this package from referencing persistence, security or a cache.
 
-| Seam | Declared in | Needed by | Implemented by |
+| Contract | Declared in | Needed by | Implemented by |
 | --- | --- | --- | --- |
-| `IRequestContext` | `SharedKernel.Application.Abstractions` | Authorization, caching, auditing | `13.ServiceDefaults.Security`'s `AddSharedKernelRequestContext()` (over `12.Security`), or the shipped `SystemRequestContext` |
-| `IUnitOfWork` | `SharedKernel.Application.Abstractions` | Transaction, auditing | `06.Persistence` (`AddSharedKernelPostgres`), directly — no adapter |
-| `IIdempotencyStore` (keyed by `IdempotencyPurpose.Request`) | `SharedKernel.Idempotency.Abstractions` | Idempotency | `18.Idempotency`'s `AddRedisIdempotency`/`AddEfCoreIdempotency` |
-| `IAuditTrailWriter` | `SharedKernel.Application.Abstractions` | Auditing | `06.Persistence.EfCore.Auditing` (`UseAuditTrail()`), directly |
+| `IRequestContext` | `SharedKernel.Execution` (`.Context`) | Authorization, caching, auditing | `SharedKernel.ServiceDefaults.Security`'s `AddSharedKernelRequestContext()` (over `12.Security`), or the shipped `SystemRequestContext` |
+| `IUnitOfWork` | `SharedKernel.Execution` (`.Transactions`) | Transaction, auditing | `06.Persistence` (`AddSharedKernelPostgres`), directly — no adapter |
+| `IIdempotencyStore` (keyed by `IdempotencyPurpose.Request`) | `SharedKernel.Idempotency.Abstractions` | Idempotency | `18.Idempotency`'s `AddRedisIdempotency(p => p.ForRequests())`/`AddEfCoreIdempotency(…)` |
+| `IAuditTrailWriter` | `SharedKernel.Execution` (`.Auditing`) | Auditing | `06.Persistence.EfCore.Auditing` (`UseAuditTrail()`), directly |
 
-`06.Persistence` implements the same `IUnitOfWork`/`IAuditTrailWriter`/`IRequestContext` the behaviors consume;
-there is exactly one of each.
+`06.Persistence` implements the same `IUnitOfWork`/`IAuditTrailWriter` the behaviors consume and reads the same
+`IRequestContext`; there is exactly one of each.
 
 ## Nested commands and `ICommandScope`
 
@@ -401,7 +418,7 @@ Your own behavior goes into a named stage instead of wherever it happened to be 
 ```csharp
 builder.Services.AddSharedKernelApplicationBehaviors()
     .AddDefaultBehaviors()
-    .AddBehavior(typeof(FeatureFlagBehavior<,>), PipelineStage.Authorization, typeof(IFeatureManager))
+    .AddBehavior(typeof(FeatureFlagBehavior<,>), PipelineStage.Authorization, typeof(IFeatureClient))
     .Build();
 ```
 
@@ -459,11 +476,14 @@ retry across the deploy comes back as `idempotency.key_reused`. Set `Fingerprint
 work only makes sense where there is a commit.
 
 **Registering `IRequestContext` as a singleton over a scoped identity.** The first request's caller would be
-frozen in for the lifetime of the process. Register it scoped.
+frozen in for the lifetime of the process. `AddSharedKernelRequestContext()` gets this right (a transient that
+reads the ambient `RequestContextScope`, falling back to the scoped caller); a hand-written one should be scoped.
 
 ## Testing
 
-`16.Testing`'s `ApplicationPipelineTestHarness` composes a real MediatR pipeline with real behaviors:
+`SharedKernel.Application.Testing`'s `ApplicationPipelineTestHarness` (`SharedKernel.Testing.Application`)
+composes the real kernel `RequestPipeline<,>` with real behaviors — no mediator needed. `FakeRequestContext`
+comes from `SharedKernel.Testing`, `FakeUnitOfWork` from `SharedKernel.Persistence.Testing`:
 
 ```csharp
 using var harness = new ApplicationPipelineTestHarness();
@@ -496,7 +516,8 @@ Assert.Contains(harness.CapturedMeasurements, m => m.InstrumentName == "sharedke
 ```
 
 `AddFakeApplicationBehaviorServices()` registers `IRequestContext`, `IUnitOfWork` and
-`IIdempotencyStore` (request purpose) fakes in one call. `FakeIdempotencyStore` implements the real reservation
+`IIdempotencyStore` (request purpose) fakes in one call. `FakeIdempotencyStore`
+(`SharedKernel.Idempotency.Testing`, registered with `AddFakeIdempotencyStore(purposes)`) implements the real reservation
 protocol, including rejecting a stale token, so an idempotency test exercises the same states the Redis and
 EF Core stores produce.
 
@@ -504,8 +525,9 @@ EF Core stores produce.
 
 | | |
 | --- | --- |
-| **Depends on** | `SharedKernel.Application`, `SharedKernel.Primitives`, `MediatR` 12.4.1, `FluentValidation`, `Microsoft.Extensions.{DependencyInjection.Abstractions, Diagnostics, Logging, Logging.Abstractions, Options, Options.DataAnnotations}` |
-| **Does not depend on** | Any cache, Polly, hosting, or `SharedKernel.Core` — enforced by an architecture test |
+| **Tier** | Host |
+| **Depends on** | `SharedKernel.Application`, `SharedKernel.Execution`, `SharedKernel.Primitives`, `SharedKernel.Idempotency.Abstractions`, `Microsoft.Extensions.{DependencyInjection.Abstractions, Diagnostics, Logging, Logging.Abstractions, Options, Options.DataAnnotations}` |
+| **Does not depend on** | A mediator, FluentValidation, any cache, Polly, hosting, or `SharedKernel.Core` — enforced by architecture tests |
 | **Target** | `net10.0` |
 | **Public API** | Tracked; an unrecorded change fails the build |
 | **EventId range** | 5100–5199, within `01.Core`'s `05.Application` block |

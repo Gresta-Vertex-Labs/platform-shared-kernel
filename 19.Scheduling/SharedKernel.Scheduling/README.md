@@ -16,9 +16,14 @@ workflow uses both — this package fires the trigger, `17.Workflows` owns every
 
 ## Installation
 
+```xml
+<PackageReference Include="SharedKernel.Scheduling" />
 ```
-dotnet add package SharedKernel.Scheduling
-```
+
+Versions come from the consumer's single `SharedKernelVersion`. **Tier: Adapter** — references
+`SharedKernel.Primitives`, `.Execution`, `.Configuration`, `SharedKernel.Caching.Abstractions`
+(`IDistributedLockService`), `SharedKernel.Application` (the kernel `ISender`, no MediatR) and `Quartz` (for its
+`CronExpression` parser only; Quartz's scheduler is never used).
 
 ## Quick start
 
@@ -40,12 +45,13 @@ scheduling.AddRecurring<RunNightlyReconciliationCommand>(
 
 scheduling.AddDeferred<SendWelcomeEmailCommand>(
     jobName: $"welcome-email:{userId}",
-    fireAtUtc: DateTimeOffset.UtcNow.AddMinutes(15),
+    fireAtUtc: clock.UtcNow.AddMinutes(15),                 // IClock, never DateTimeOffset.UtcNow
     commandFactory: ctx => new SendWelcomeEmailCommand(userId),
     configure: options =>
     {
         options.MisfirePolicy = MisfirePolicy.FireOnce;
         options.OverlapPolicy = OverlapPolicy.Skip;
+        options.TenantScope = TenantScope.For(tenantId);    // optional; SharedKernel.Execution.Tenancy
     });
 ```
 
@@ -55,14 +61,15 @@ duplicate reconciliation runs happen.
 
 ## The `ScheduledCommandJob<TCommand>` bridge
 
-Every registered job's unit of work is a MediatR command. `IScheduledJobRegistry.AddRecurring`/
-`.AddDeferred` take a `Func<ScheduledJobExecutionContext, TCommand>` factory — not a bare command
-instance — because a fired job has no external caller able to supply one the way an HTTP request or a
-Temporal activity input does. Internally, `ScheduledCommandJob<TCommand>` (a closed generic, zero
-reflection — the scheduling-side counterpart to `17.Workflows`' `CommandActivity<TCommand>`) resolves
-`ISender` from a fresh DI scope created per execution and dispatches through the full MediatR pipeline.
+Every registered job's unit of work is a command sent through the kernel `ISender`
+(`SharedKernel.Application`) — the same application pipeline an HTTP request gets, behind whichever mediator
+adapter the host registered (e.g. `SharedKernel.Application.Mediator.MediatR`). `AddRecurring`/`AddDeferred`
+take a `Func<ScheduledJobExecutionContext, TCommand>` factory — not a bare command instance — because a fired
+job has no external caller able to supply one. Internally, `ScheduledCommandJob<TCommand>` (a closed generic,
+zero reflection — the scheduling-side counterpart to `17.Workflows`' `CommandActivity<TCommand>`) resolves
+`ISender` from a fresh DI scope created per execution.
 
-What that means for the `SharedKernel.Application.Behaviors` pipeline:
+What that means for the application pipeline (`SharedKernel.Application.Pipeline`):
 
 - **The command is an outermost command.** A fresh DI scope means a fresh `ICommandScope`, so
   `TransactionBehavior` commits the job's unit of work when the command succeeds, and
@@ -70,15 +77,32 @@ What that means for the `SharedKernel.Application.Behaviors` pipeline:
   from inside itself share that one commit.
 - **Failures come back as a `Result`.** Validation (`ErrorType.Validation`) and authorization
   (`ErrorType.Unauthorized`/`Forbidden`) failures are logged as a failed fire, never thrown.
-- **Authorization needs a system identity.** `AuthorizationBehavior` reads `IRequestContext`, and a
-  scheduled job has no caller. If the service opts into authorization, register
-  `SharedKernel.Application.Context.SystemRequestContext` — naming the scheduler and listing exactly the
-  permissions its jobs need — or every guarded command fails closed with `Error.Unauthorized`.
+
+## Who the job runs as
+
+Before each execution the runner opens a `RequestContextScope` carrying
+`new SystemRequestContext([], identity: jobName, tenantId: options.TenantScope.Tenant, correlationId: CorrelationIds.New())`
+(`SharedKernel.Execution`). Inside the job:
+
+- `IRequestContext` answers with `ActorKind.System`, the job name, the job's tenant (or none for
+  `TenantScope.Global`) and a new correlation id — so tenant-filtered persistence and idempotency keys use the
+  job's tenant.
+- Every outbound REST or gRPC call, message and workflow the job starts carries the same tenant and correlation
+  id, so one run can be followed across services.
+- The context holds **no permissions**. A job whose command is guarded by `AuthorizationBehavior` opens its own
+  scope with exactly the permissions it needs, or the command fails closed:
+
+  ```csharp
+  using (RequestContextScope.Begin(new SystemRequestContext(["reports.generate"], "nightly-reports", tenantId)))
+  {
+      return await sender.Send(command, ct);
+  }
+  ```
 
 ## Cross-replica single execution — and the single-replica caveat
 
-Register an `IDistributedLockService` (e.g. `02.Caching.Redis.DistributedLocking`'s Redis-backed
-implementation) **before** calling `AddSharedKernelScheduling` to get exactly-once-per-tick execution
+Register an `IDistributedLockService` (e.g. `SharedKernel.Caching.Redis.DistributedLocking`'s Redis-backed
+implementation) **before** calling `AddSharedKernelScheduling` to get exactly-once-per-occurrence execution
 across every replica of your service:
 
 ```csharp
@@ -88,25 +112,44 @@ services.AddRedisConnection(configuration)   // SharedKernel:Caching:Redis — t
 services.AddSharedKernelScheduling(...);
 ```
 
+Each occurrence is claimed with a self-expiring lease keyed by job name **and** scheduled fire time; its fencing
+token reaches the job as `ScheduledJobExecutionContext.FencingToken`. When the lock store is unreachable, no
+replica runs the occurrence and an error is logged — an outage is never mistaken for another replica's claim.
+
 **If you do not register one, this package still starts — but every registered job will fire once PER
 REPLICA, per tick, the moment you scale beyond a single instance.** This is a supported mode for
 single-replica/dev use, and it is never silent: omitting the lock logs a startup `Warning` naming this
 exact caveat. Do not scale a service using this package beyond one replica without registering a
 distributed lock first.
 
-## Readiness probing
+## Readiness
 
-`ISchedulerServiceProbe`/`SchedulerServiceHealth` report whether the hosted loop is running and how
-many jobs are registered — zero I/O, in-process state only. This package ships the probe primitive and
-no `IHealthCheck`; wiring it into `AddHealthChecks()` is `13.ServiceDefaults`'s
-`AddSchedulerReadinessCheck`.
+`AddSharedKernelScheduling()` registers one `IReadinessProbe` named `scheduler`
+(`SchedulerReadiness.ProbeName`). It is healthy while the scheduling loop runs and reads only in-process state
+(zero I/O); `ReadinessReport.Data` carries `IsRunning`, `RegisteredJobCount` and `LastTickUtc`. Map it in the
+host:
 
-## Why `ScheduledJobOptions.TenantScope` is nullable
+```csharp
+builder.Services.AddHealthChecks().AddSharedKernelReadiness();   // SharedKernel.ServiceDefaults
+```
+
+## Why `ScheduledJobOptions.TenantScope` is optional
 
 Every other tenant-aware capability domain on this platform makes a tenant-scope parameter mandatory.
-This package does not, because a scheduled job is registered **once, at startup, as a system-level
-actor** — not as a per-request or per-tenant operation. A genuinely per-tenant recurring job ("send
-each active tenant's weekly digest") is one system-level registration whose command handler iterates
-its own tenant directory; the scheduler itself never fans out N tenant-scoped executions on the job's
-behalf. `TenantScope` exists only as an optional, purely informational label for logging/telemetry
-correlation — it carries no isolation enforcement.
+This package does not — `TenantScope` defaults to `TenantScope.Global` — because a scheduled job is registered
+**once, at startup, as a system-level actor**, not as a per-request or per-tenant operation. A genuinely
+per-tenant recurring job ("send each active tenant's weekly digest") is one system-level registration whose
+command handler iterates its own tenant directory; the scheduler itself never fans out N tenant-scoped
+executions on the job's behalf. Set a tenant only for the rare job owned by a single tenant: it becomes the job's
+`IRequestContext.TenantId`.
+
+## Testing
+
+`SharedKernel.Scheduling.Testing` provides `InMemoryScheduledJobRegistry`: registrations are recorded and a test
+fires a tick explicitly with `TriggerAsync`, so misfire and overlap policies are asserted without a clock, a
+hosted loop or a lock store.
+
+## Package
+
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) — see
+[19.Scheduling/CLAUDE.md](../CLAUDE.md) for the invariants, the job execution model and the misfire semantics.

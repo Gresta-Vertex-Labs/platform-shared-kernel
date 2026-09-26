@@ -25,7 +25,7 @@ for Huawei Cloud OBS.
 | You get | So that |
 | --- | --- |
 | Named stores — `[FromKeyedServices("invoices")] IFileStorage` | Code names a purpose; buckets, prefixes, encryption and credentials are configuration |
-| `ITenantFileStorage.ForTenant(id)` | A tenant's keys live under its own prefix; no key, listing or copy can leave it |
+| `ITenantFileStorage.ForTenant(TenantId)` | A tenant's keys live under its own prefix; no key, listing or copy can leave it |
 | `WriteCondition.IfNotExists` / `IfMatch(etag)` | Create-only and optimistic-concurrency writes, checked atomically by the provider |
 | `FileUploadOptions.ChecksumSha256` | The provider rejects bytes that were corrupted on the way |
 | `CreateUploadFormAsync` | Browser uploads limited to a size range and content type, enforced by the provider |
@@ -57,8 +57,8 @@ dotnet add package SharedKernel.Storage.Abstractions   # application and domain-
 dotnet add package SharedKernel.Storage.S3             # the host (or SharedKernel.Storage.Obs)
 ```
 
-The only dependencies are `SharedKernel.Primitives` (for `Result` and `Error`) and
-`Microsoft.Extensions.DependencyInjection.Abstractions`.
+The only dependencies are `SharedKernel.Primitives` (for `Result` and `Error`), `SharedKernel.Execution` (for
+`TenantId`) and `Microsoft.Extensions.DependencyInjection.Abstractions` — an Abstractions-tier package.
 
 ## Quick start
 
@@ -113,7 +113,7 @@ bucket name, which is configuration.
 | …and the service has exactly one shared store | `IFileStorage` (unkeyed; resolving throws if there are several) |
 | Read and write files that belong to a tenant | `[FromKeyedServices("name")] ITenantFileStorage` → `ForTenant(tenantId)` |
 | Open a store named in data — a stored `FileReference`, a job argument | `IFileStorageFactory.Open(reference)` / `GetStore(name)` / `GetTenantStore(name)` |
-| Check a store's bucket is reachable (readiness) | `IFileStorageHealthProbe`, wired by `SharedKernel.ServiceDefaults.Storage` |
+| Check a store's bucket is reachable (readiness) | Nothing: every store registers an `IReadinessProbe` named `storage-{store}` (`StorageReadinessProbeNames.ForStore`); the host maps them with `AddHealthChecks().AddSharedKernelReadiness()` (`SharedKernel.ServiceDefaults`) |
 | Validate input the way every store does | `StorageValidation` (rarely needed: every member validates already) |
 | Write a provider package | `IStorageBuilder`, `FileStoreRegistration`, `StorageErrors` |
 
@@ -135,14 +135,14 @@ singleton registered under its name; the name is the only thing application code
 
 ```text
 store "documents"  (bucket acme-docs, prefix documents/)
-   ForTenant("acme")    "contracts/nda.pdf"  →  documents/tenants/acme/contracts/nda.pdf
-   ForTenant("globex")  "contracts/nda.pdf"  →  documents/tenants/globex/contracts/nda.pdf
+   ForTenant(tenantA)   "contracts/nda.pdf"  →  documents/tenants/3f2c…-…/contracts/nda.pdf
+   ForTenant(tenantB)   "contracts/nda.pdf"  →  documents/tenants/9a41…-…/contracts/nda.pdf
 ```
 
 - A tenant store is **only** reachable through `ForTenant(tenantId)`. Resolving it as `IFileStorage` throws, so it
   cannot be used without choosing a tenant.
-- Tenant ids are validated — 1 to 128 characters from `A-Z a-z 0-9 . _ -`, not `.` or `..` — and **never escaped**,
-  so two tenant ids can never produce the same prefix. An invalid id throws `ArgumentException`.
+- The tenant is a `SharedKernel.Execution.Tenancy.TenantId` (a non-empty GUID), written in its `D` form, so two
+  tenants can never produce the same prefix. `ForTenant(default)` throws `ArgumentException`.
 - A view returns keys, listings, folders and error messages **without** the prefix, and its `FileReference` carries
   the tenant, so `IFileStorageFactory.Open(reference)` reopens the right view.
 - Take the tenant from the authenticated request (`IRequestContext.TenantId`), never from input the caller controls.
@@ -155,7 +155,7 @@ never exceptions. Only three things throw:
 
 - **cancellation** of your `CancellationToken` (`OperationCanceledException`);
 - **`ListAsync`**, an async stream with no `Result` to return (`StorageException`, carrying the error);
-- **programming errors**: a `null` argument, an invalid tenant id, an unknown store name.
+- **programming errors**: a `null` argument, `default(TenantId)`, an unknown store name.
 
 Error messages name the store and the key you passed, never the bucket, endpoint or provider request id — they may
 reach an HTTP response. Providers log those details instead.
@@ -311,8 +311,8 @@ BatchDeleteResult result = (await view.DeleteManyAsync(keys, ct)).Value;
 | `IFileStorage` | Interface | One store (or tenant view): upload, download, properties, exists, delete, batch delete, copy, listing, presigned URLs, forms and multipart |
 | `ITenantFileStorage` | Interface | A tenant store; `ForTenant(tenantId)` returns the tenant's `IFileStorage` view |
 | `IFileStorageFactory` | Interface | Stores by name: `GetStore`, `GetTenantStore`, `Open(FileReference)`, `StoreNames`, `IsTenantScoped` |
-| `IFileStorageHealthProbe` | Interface | `ProbeAsync(storeName)`: is the store's bucket reachable with these credentials |
-| `FileReference` | Record | The durable handle: `Store`, `TenantId`, `Key`, `ETag`, `VersionId` |
+| `StorageReadinessProbeNames` | Static class | `ForStore(name)` → `storage-{name}`, the name of the store's `IReadinessProbe` (is the bucket reachable with these credentials) |
+| `FileReference` | Record | The durable handle: `Store`, `TenantId` (`TenantId?`), `Key`, `ETag`, `VersionId` |
 | `FileProperties` | Record | Size, content type, ETag, version, headers, SHA-256, tier, metadata |
 | `FileDownload` | Class | An open download: `Content`, `Properties`, `Length`, `Range`; dispose it |
 | `FileListItem` / `FileListRequest` / `FileListPage` | Records | Listing: an object, a page request, a page with `Folders` and `ContinuationToken` |
@@ -326,7 +326,7 @@ BatchDeleteResult result = (await view.DeleteManyAsync(keys, ct)).Value;
 | `MultipartUpload` / `MultipartUploadOptions` / `UploadedPart` | Records | Presigned multipart upload |
 | `StorageErrorCodes` / `StorageErrors` | Static classes | The error codes, and the factory providers build errors with |
 | `StorageException` | Exception | Thrown by `ListAsync`; carries the `Error` |
-| `StorageValidation` | Static class | The key, tenant, metadata, tag, header, checksum and expiry rules |
+| `StorageValidation` | Static class | The key, metadata, tag, header, checksum and expiry rules |
 | `StorageServiceCollectionExtensions` | Static class | `AddSharedKernelStorage()`; `AddStore(FileStoreRegistration)` for providers |
 | `IStorageBuilder` / `FileStoreRegistration` | Interface / Class | How a provider package contributes stores |
 
@@ -352,7 +352,6 @@ BatchDeleteResult result = (await view.DeleteManyAsync(keys, ct)).Value;
 | `storage.already_exists` | Conflict (409) | A create-only write found an object |
 | `storage.precondition_failed` | Conflict (409) | An `If-Match` ETag no longer matches (also a conditional delete of a missing object) |
 | `storage.invalid_key` | Validation (400) | The key or prefix breaks the key rules |
-| `storage.invalid_tenant` | Validation (400) | The tenant id breaks the tenant rules |
 | `storage.invalid_request` | Validation (400) | An option is invalid: metadata, tags, headers, page size, part number, missing `ContentLength` |
 | `storage.expiry_too_long` | Validation (400) | A presign expiry is not positive or exceeds the store's `MaxPresignExpiry` |
 | `storage.checksum_mismatch` | Validation (400) | The provider received bytes that do not match `ChecksumSha256` |
@@ -366,7 +365,7 @@ BatchDeleteResult result = (await view.DeleteManyAsync(keys, ct)).Value;
 | Exception | Thrown by | When |
 | --- | --- | --- |
 | `ArgumentNullException` | Every member | A stream, options object, collection or store is `null` |
-| `ArgumentException` | `ForTenant`, `IFileStorageFactory.Open`, `FileStoreRegistration`, `WriteCondition.IfMatch` | An invalid tenant id, store name or empty ETag |
+| `ArgumentException` | `ForTenant`, `IFileStorageFactory.Open`, `FileStoreRegistration`, `WriteCondition.IfMatch` | `default(TenantId)`, an invalid store name or an empty ETag |
 | `ArgumentOutOfRangeException` | `ByteRange`, `FileDownload` | A negative position, or an end before the start |
 | `InvalidOperationException` | `IFileStorageFactory`, unkeyed `IFileStorage`/`ITenantFileStorage`, `AddStore` | An unknown store, a tenancy mismatch, an ambiguous unkeyed store, a duplicate store name |
 | `OperationCanceledException` | Every async member | Your `CancellationToken` was cancelled |
@@ -397,11 +396,11 @@ the old design silently sent S3 traffic to OBS when both were registered.
 **Why is tenant isolation in the contracts package, not in each provider?** One implementation protects every provider
 and the in-memory test store alike. Providers only ever see keys that were validated and prefixed.
 
-**Why `ForTenant(id)` instead of a tenant argument on every member?** Same explicitness, one entry point. A view cannot
+**Why `ForTenant(tenantId)` instead of a tenant argument on every member?** Same explicitness, one entry point. A view cannot
 be used without a tenant, and a tenant store cannot be resolved without a view.
 
-**Why validate tenant ids instead of escaping them?** Escaping schemes invite two ids that map to the same prefix.
-A small alphabet with no separators cannot collide.
+**Why a typed `TenantId` instead of a string?** A string tenant id needed its own validation and escaping rules, and
+two services could disagree about them. A non-empty GUID in its `D` form has no separators and cannot collide.
 
 **Why `Result` instead of exceptions?** A missing file, a lost race or a throttled provider is an outcome the caller
 must handle, and `Result` makes the compiler remind them. Exceptions remain for bugs and cancellation.
@@ -421,7 +420,7 @@ INJECT         [FromKeyedServices("name")] IFileStorage | ITenantFileStorage -> 
 REGISTER       services.AddSharedKernelStorage().AddS3(configuration).AddStore("a").AddTenantStore("b"); config at
                SharedKernel:Storage:S3 (or :S3:{name} via AddS3(configuration, name)) and SharedKernel:Storage:Stores:{name}.
 KEYS           Relative to the store/tenant: "2026/09/x.pdf". No leading '/', no '..', no '\'. Never add tenant prefixes by hand.
-TENANT         ForTenant(requestContext.TenantId) from the authenticated principal. Never from headers or bodies.
+TENANT         ForTenant(requestContext.TenantId!.Value) — a TenantId from the authenticated principal. Never from headers or bodies.
 PERSIST        FileReference (Store, TenantId, Key, ETag). Reopen: factory.Open(reference). Never persist URLs or buckets.
 UPLOAD         UploadAsync(key, stream, new FileUploadOptions { ContentType, ContentLength = Request.ContentLength }, ct).
                Stream is caller-owned: not disposed, not rewound.
@@ -434,7 +433,8 @@ BROWSER UPLOAD CreateUploadFormAsync(key, new PresignedPostOptions { Expiry, Max
 LARGE UPLOAD   StartMultipartUploadAsync -> CreateUploadPartUrlAsync(upload, n, expiry) -> CompleteMultipartUploadAsync(upload, parts).
 COPY           source.CopyToAsync(key, destinationStoreOrView, newKey, options, ct).
 ERRORS         Match result.Error.Code against StorageErrorCodes.*. Only cancellation throws; ListAsync throws StorageException.
-TESTS          services.AddSharedKernelStorage().AddInMemoryStore("a").AddInMemoryTenantStore("b") (SharedKernel.Testing).
+TESTS          services.AddSharedKernelStorage().AddInMemoryStore("a").AddInMemoryTenantStore("b") (SharedKernel.Storage.Testing).
+HEALTH         Nothing to register: each store is IReadinessProbe "storage-{store}"; host: AddHealthChecks().AddSharedKernelReadiness().
 FORBIDDEN      IAmazonS3 or any cloud SDK type in application code; hand-built tenant prefixes; persisted presigned URLs.
 ```
 
@@ -453,10 +453,10 @@ FORBIDDEN      IAmazonS3 or any cloud SDK type in application code; hand-built t
 ## Deliberately not included
 
 - **No implementation.** Providers live in `SharedKernel.Storage.S3` and `SharedKernel.Storage.Obs`; an in-memory
-  store for tests lives in `SharedKernel.Testing`.
+  store for tests lives in `SharedKernel.Storage.Testing`.
 - **No bucket administration.** Creating buckets, lifecycle rules, policies and CORS belong to infrastructure code.
 - **No archive tiers.** Tiers that need a restore step before a read are left to bucket lifecycle rules.
-- **No ambient tenant.** The tenant is always an explicit argument, resolved at the edge.
+- **No ambient tenant.** The tenant is always an explicit `TenantId` argument, resolved at the edge.
 - **No virus scanning or content inspection.** Quarantine uploads in one store and copy them on after scanning
   ([recipe 9](#9-move-a-file-out-of-quarantine-into-a-tenants-folder)).
 - **No client-side encryption.** Use the provider's server-side encryption, or `SharedKernel.Cryptography`'s envelope

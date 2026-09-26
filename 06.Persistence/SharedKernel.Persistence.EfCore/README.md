@@ -44,6 +44,7 @@ dotnet add package Microsoft.EntityFrameworkCore.Design   # for dotnet ef, with 
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
+| Tier | Adapter (its one adapter edge, to `SharedKernel.Persistence.Npgsql`, is declared) |
 | Database | PostgreSQL 15 or later (the only supported database) |
 | Brings | `SharedKernel.Persistence.Abstractions`, `SharedKernel.Persistence.Npgsql`, Npgsql's EF Core provider, `EFCore.NamingConventions`, `Pgvector.EntityFrameworkCore` |
 | Namespaces | `SharedKernel.Persistence` (registration), `SharedKernel.Persistence.EfCore` (model and migration helpers), `SharedKernel.Persistence.EfCore.Context` (context bases) |
@@ -53,8 +54,8 @@ dotnet add package Microsoft.EntityFrameworkCore.Design   # for dotnet ef, with 
 | [`SharedKernel.Persistence.EfCore.Encryption`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/06.Persistence/SharedKernel.Persistence.EfCore.Encryption) | `.UseFieldEncryption()`: encrypted columns, blind indexes, key rotation, per-tenant crypto-shredding |
 | [`SharedKernel.Persistence.EfCore.Auditing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/06.Persistence/SharedKernel.Persistence.EfCore.Auditing) | `.UseAuditTrail()`: a tamper-evident audit ledger |
 | [`SharedKernel.Persistence.Dapper`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/06.Persistence/SharedKernel.Persistence.Dapper) | Hand-written SQL that joins the same transaction |
-| [`SharedKernel.Application.Behaviors`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/05.Application/SharedKernel.Application.Behaviors) | `TransactionBehavior`/`AuditingBehavior`: one transaction per MediatR command |
-| [`SharedKernel.ServiceDefaults.Persistence`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/13.ServiceDefaults/SharedKernel.ServiceDefaults.Persistence) | Readiness checks |
+| [`SharedKernel.Application.Pipeline`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/05.Application/SharedKernel.Application.Pipeline) | `TransactionBehavior`/`AuditingBehavior`: one transaction per command |
+| [`SharedKernel.ServiceDefaults.Persistence`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/13.ServiceDefaults/SharedKernel.ServiceDefaults.Persistence) | Database and startup readiness checks |
 | [`SharedKernel.Persistence.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/16.Testing/SharedKernel.Persistence.Testing) | Fakes and a PostgreSQL fixture with the production role split, for test projects |
 
 ## Quick start
@@ -133,6 +134,7 @@ That is the whole setup. Everything below is detail.
 | `Money Total` | `total_amount numeric(19,4)` + `total_currency char(3)`; required unless `Money?` |
 | an aggregate root | PostgreSQL `xmin` as its concurrency token, exposed as `EntityVersion` |
 | `IHasAudit` / `ISoftDeletable` / `IHasTenant` | the columns, lengths and indexes; `CreatedBy`/`CreatedOn` written once and never updated |
+| a `TenantId` / `TenantId?` property (`SharedKernel.Execution.Tenancy`) | a `uuid` column through a built-in value converter |
 | `OrderLine` in `Order.Lines` | changing a line touches the root row and checks its version |
 | any name | `snake_case`, identifiers above 63 bytes truncated deterministically |
 
@@ -199,7 +201,7 @@ await unitOfWork.ExecuteInTransactionAsync(async ct =>
 ```
 
 Keep HTTP calls and message publishing out of the delegate; queue them with `ICommandScope.OnCompleted`, which runs
-after the commit. With MediatR, `TransactionBehavior` does exactly this for every command.
+after the commit. Through the request pipeline, `TransactionBehavior` does exactly this for every command.
 
 ### 4. Multi-tenancy and row-level security
 
@@ -374,7 +376,7 @@ READ         IReadRepository<T,TId> (never tracks) for queries; Spec.For<T>().Wh
              ListPagedAsync(spec, PageRequest) | ListKeysetAsync(spec, CursorPageRequest, key, descending) |
              *ProjectedAsync | StreamAsync. A keyset spec must not order itself.
 WRITE        IRepository<T,TId> (always tracks): GetByIdAsync, AddAsync, UpdateAsync(agg[, version]),
-             DeleteAsync(agg[, version]). Never call SaveChanges in a MediatR handler: TransactionBehavior commits.
+             DeleteAsync(agg[, version]). Never call SaveChanges in a command handler: TransactionBehavior commits.
 TRANSACTION  unitOfWork.ExecuteInTransactionAsync(async ct => { load + change inside }, ct). The delegate may run
              again: no HTTP calls or publishing inside; use OnBeforeCommit / ICommandScope.OnCompleted.
 ETAG         ConcurrencyVersion.Get(db, trackedEntity) -> EntityVersion; ToString() is the ETag value.
@@ -390,7 +392,7 @@ MIGRATIONS   Factory : PostgresDesignTimeDbContextFactory<T>("name") { Create =>
 BACKGROUND   ICallerDbContextFactory<T>.CreateDbContextAsync(new SystemRequestContext([], "job"), ct), or a DI scope.
 FORBIDDEN    DbContext.Database.BeginTransaction in application code; SaveChanges() (sync) with domain events;
              string-interpolated SQL; superuser/owner connection at runtime; IgnoreQueryFilters() without a name;
-             a Guid.Empty tenant.
+             a Guid.Empty tenant (use TenantId; "no tenant" is a null TenantId?).
 ```
 
 ## Compatibility and guarantees

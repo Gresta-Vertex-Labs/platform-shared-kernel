@@ -1,103 +1,123 @@
 # 18.Idempotency — Domain Brain
 
+> **Audience:** maintainers and AI agents changing code in this folder. Consumers read each package's
+> `README.md`. Phase history lives in [`state-map.md`](state-map.md).
+
 ## What This Domain Is
 
-The **only legal home in the platform for a concrete idempotency store**. It ships production implementations of two contracts that other domains declare but — by construction — cannot implement themselves.
+The platform's **one idempotency contract and its production stores.** A single purpose-keyed reservation
+contract, `IIdempotencyStore`, backs every duplicate-execution guard in a service:
 
-| Contract | Declared in | Purpose |
+| Caller | Purpose | Declared/used in |
 |---|---|---|
-| `IRequestIdempotencyStore` | `05.Application.Behaviors` | Duplicate-submission protection *and* response replay for an in-process MediatR command, via `TryBeginAsync`/`CompleteAsync`/`ReleaseAsync` (P-544 redesign — replaced the previous two-interface `IIdempotencyKeyStore`/`IIdempotencyResponseStore` split before either package published) |
-| `IIdempotencyStore` | `07.Messaging.Abstractions` | Idempotent-consumer deduplication for message handling, via `HasProcessedAsync`/`MarkProcessedAsync` — unchanged by P-544 |
+| `IdempotencyBehavior<,>` — duplicate-submission protection and response replay for an in-process command (`IIdempotentRequest`) | `IdempotencyPurpose.Request` | `05.Application/SharedKernel.Application.Pipeline` |
+| MassTransit consumer idempotency (`MessagingBusBuilder.WithIdempotency()`) | `IdempotencyPurpose.Message` | `07.Messaging/SharedKernel.Messaging.MassTransit` |
 
-This domain **declares no contracts of its own.** It is implementation-only. If you find yourself wanting to add an interface here that consumers depend on, that interface almost certainly belongs in the domain that owns the concept.
-
----
-
-## Why This Domain Exists At All
-
-This is the important part, and it is not obvious. Read it before proposing any restructuring.
-
-Three idempotency contracts shipped platform-wide and **zero implementations existed** — only `16.Testing` fakes and two throwaway classes inside other domains' test suites. Every consuming microservice hand-rolled duplicate suppression. That was not neglect; it was structurally impossible to fix in place:
-
-- `07.Messaging` may reference only `01–04`, **and** is under a hard rule in root `CLAUDE.md`: *07.Messaging must never reference any `SharedKernel.Caching.*` package.* So no Redis-backed `IIdempotencyStore` could live there. It may not reference `06.Persistence` either, so no EF-backed one could.
-- `05.Application` is under the hard rule *05.Application must never reference a concrete infrastructure package — only abstractions.* So neither implementation could live there.
-- No layer *below* `07.Messaging` may reference upward into it to implement its interface — that is the dependency direction the whole layering scheme forbids.
-
-A domain numbered **above both `05` and `07`** is the only position from which a single package can legally reference down into both and implement all three. That is this domain's entire reason for existing (WO-070).
-
-**Consequence:** do not "simplify" by moving these packages into `02.Caching`, `05.Application`, `06.Persistence`, or `07.Messaging`. Each of those moves is blocked by a named hard rule, and the move would have to break one to succeed.
+Both callers consume the contract; neither declares its own. Before WO-086 (P-568) there were two separate
+contracts — `05`'s `IRequestIdempotencyStore` and Messaging's own `IIdempotencyStore` — and four store classes;
+they are gone. Do not reintroduce a caller-specific store interface.
 
 ---
 
 ## Packages
 
-```
-SharedKernel.Idempotency.Redis    → Redis-backed; built on 02.Caching.Redis.Core
-SharedKernel.Idempotency.EfCore   → EF Core/PostgreSQL-backed; built on 06.Persistence.EfCore/.PostgreSQL
-```
+| Package | Tier | Role | References |
+|---|---|---|---|
+| `SharedKernel.Idempotency.Abstractions` | Abstractions | `IIdempotencyStore`, `IdempotencyReservation`/`IdempotencyReservationStatus` (`Started`/`InProgress`/`Completed`/`FingerprintMismatch`), `IdempotencyPurpose` (`Request`/`Message`), `IdempotencyPurposeSelection`, `IdempotencyTenantScope` (the one tenant encoding: "D" GUID or `no-tenant`), `AddIdempotencyStore<T>(purpose \| purposes)`, `HasIdempotencyStore`, `GetRequiredIdempotencyStore` | `SharedKernel.Execution`, `Microsoft.Extensions.DependencyInjection.Abstractions` |
+| `SharedKernel.Idempotency.Redis` | Adapter | `RedisIdempotencyStore` (one class, every purpose); `AddRedisIdempotency(p => …, o => …)` | Abstractions, `SharedKernel.Primitives`, `SharedKernel.Caching.Redis.Core` (declared adapter edge) |
+| `SharedKernel.Idempotency.EfCore` | Adapter | `EfCoreIdempotencyStore` (one class, every purpose) over its own `IdempotencyDbContext`; `AddEfCoreIdempotency(db => …, p => …, o => …)` | Abstractions, `SharedKernel.Primitives`, `SharedKernel.Persistence.EfCore` (declared adapter edge) |
 
-**No `.Abstractions` package exists in this domain, and none may be added.** The abstractions already exist — in `05.Application.Behaviors` and `07.Messaging.Abstractions`, owned by the domains that consume them. Adding `SharedKernel.Idempotency.Abstractions` would create a fourth, competing idempotency vocabulary and is the single most likely wrong turn a future session could take here.
-
-The two provider packages are **siblings**: neither references the other, and there is no shared `.Core` package between them. They share an interface surface, not code — mirroring the `08.Storage` `.S3`/`.Obs` and `09.Search` `.Meilisearch`/`.ElasticSearch` precedents.
+- The two providers are **siblings**: neither references the other and there is no shared `.Core`. Duplicate small
+  helpers rather than share them, so each provider stays independently swappable.
+- `.Redis` must never reference `06.Persistence`; `.EfCore` must never reference `02.Caching`. Each adapter→adapter
+  edge is declared in the csproj's `<SharedKernelAllowedAdapterReferences>` (SKTIER002 otherwise). A package
+  reaching both backing stores would drag Redis into PostgreSQL-only services and vice versa.
+- Nothing in the kernel references the providers. `05.Application.Pipeline` and `07.Messaging.MassTransit`
+  reference only `.Abstractions`; a service picks a provider at its composition root.
+- Test double: `16.Testing/SharedKernel.Idempotency.Testing`'s `FakeIdempotencyStore`
+  (`AddFakeIdempotencyStore(purposes)`), which implements the same reservation protocol.
 
 ---
 
-## Layering
+## The contract
 
+```csharp
+Task<IdempotencyReservation> TryBeginAsync(IdempotencyPurpose purpose, string key, string fingerprint, TimeSpan ttl, CancellationToken ct);
+Task<bool> CompleteAsync(IdempotencyPurpose purpose, string key, string token, string? response, TimeSpan retention, CancellationToken ct);
+Task<bool> ReleaseAsync(IdempotencyPurpose purpose, string key, string token, CancellationToken ct);
 ```
-18.Idempotency → may reference 01.Core, 02.Caching (.Redis package only),
-                 05.Application.Behaviors, 06.Persistence (.EfCore package only),
-                 07.Messaging.Abstractions
-```
 
-**Per-package reference rules — these are narrower than the domain line above and are what actually binds:**
-
-| Package | May reference | Must never reference |
-|---|---|---|
-| `SharedKernel.Idempotency.Redis` | `01.Core`, `02.Caching.Redis.Core` (+ siblings as needed), `05.Application.Behaviors`, `07.Messaging.Abstractions` | `06.Persistence` — anything |
-| `SharedKernel.Idempotency.EfCore` | `01.Core`, `06.Persistence.EfCore`/`.PostgreSQL`, `05.Application.Behaviors`, `07.Messaging.Abstractions` | `02.Caching` — anything |
-
-A package that reached both backing stores would drag Redis into PostgreSQL-only services and vice versa, defeating the reason two providers exist.
-
-Nothing in the platform references `18.Idempotency`. Consuming microservices reference it directly at their own composition root, choosing the provider they want — the same shape as every other `.Abstractions` + `.{Provider}` capability, except the abstraction half lives in someone else's domain.
+- Entries are identified by **(tenant scope, purpose, key)**. The store resolves the tenant scope itself from the
+  ambient `IRequestContextAccessor` via `IdempotencyTenantScope.Current(accessor)`; callers never pass a tenant.
+- **Callers own lease and retention.** `ttl` is the in-flight lease, `retention` how long a completed entry is
+  kept. Providers have no TTL settings: `IdempotencyBehaviorOptions.LeaseDuration`/`RetentionWindow` (05) and
+  messaging's `IdempotencyOptions.LeaseDuration`/`ExpiryWindow` (07) supply them.
+- Registration is keyed by purpose (`[FromKeyedServices(IdempotencyPurpose.Request)]`). A second registration for
+  the same purpose throws. `ApplicationBehaviorsBuilder.Build()`/`MessagingBusBuilder.Build()` check
+  `HasIdempotencyStore(purpose)` at startup.
 
 ---
 
 ## Domain Invariants
 
-**1 — Atomicity is the product.** `IRequestIdempotencyStore.TryBeginAsync` must classify the key's full state (started / in-flight / completed-with-response / fingerprint-mismatch) in a single atomic round trip. A `SELECT`-then-classify or an `EXISTS`-then-`SET` is a defect, not a simplification, regardless of how narrow the window looks. **P-544 (2026-09-15) redesigned both providers' `IIdempotencyKeyStore`/`IIdempotencyResponseStore` implementations onto `IRequestIdempotencyStore` before either package published — no shim, no back-compat path.**
+**1 — Atomicity is the product.** `TryBeginAsync` classifies the entry's full state (started / in-flight /
+completed-with-response / fingerprint-mismatch) in **one atomic round trip**. A read-then-write, `EXISTS`-then-`SET`
+or `WATCH`/`MULTI` loop is a defect, however narrow the window looks.
 
-- `.Redis` (`RedisRequestIdempotencyStore`): each entry is a Redis hash (`status`, `fingerprint`, `token`, and — once completed — `response`), keyed as today. `TryBeginAsync`, `CompleteAsync`, and `ReleaseAsync` are each a single Lua script (one atomic round trip apiece), so `status`+`response` are written together on completion, never observably torn. Fingerprint is compared before status, so a reused key against a different fingerprint is always `FingerprintMismatch` regardless of whether the existing entry is in-flight or completed. An unconfirmed reservation self-expires via the hash's own TTL — no compensating cleanup.
-- `.EfCore` (`EfCoreRequestIdempotencyStore`): `TryBeginAsync` is a single raw-SQL `INSERT ... ON CONFLICT (TenantId, Key) DO UPDATE ... RETURNING fingerprint, status, response, reservation_token` upsert, executed directly against the context's ADO.NET connection (never `Database.ExecuteSqlInterpolatedAsync`, which discards `RETURNING` data). Every `SET` in the `DO UPDATE` is a no-op unless the existing row is already expired, so a live conflicting row's fingerprint/status/response/token come back completely unchanged — one round trip, no second `SELECT`, no plain `DbSet.Add()` + caught-`DbUpdateException` shape anywhere.
-- **Reservation token (both providers) — caller-supplied, not store-remembered.** Every winning `TryBeginAsync` call generates a fresh per-reservation token (a GUID) and returns it as `IdempotencyBeginResult.ReservationToken`. Neither provider remembers that token itself — `05.Application.Behaviors`'s `IdempotencyBehavior` passes it back explicitly to `CompleteAsync`/`ReleaseAsync`, both of which mutate the row only when the supplied token still matches the row's current one **and** the row is still `InProgress` (a second `CompleteAsync` against an already-completed row, or any `ReleaseAsync` against one, is a false no-op — not a silent re-apply). Both members return `bool`: `true` only when the token still owned the reservation and the mutation applied, `false` — never a thrown exception — otherwise. This is what makes "who actually won this reservation" a robust, race-free signal — for `.EfCore` specifically, comparing the *returned* token (rather than comparing timestamps) avoids a real correctness hazard: two callers racing for the same key under a coarse-resolution `IClock` could otherwise compute an identical `@now`, making timestamp equality an unreliable "did I win" test. The token guard is also what prevents a slow caller's late `CompleteAsync`/`ReleaseAsync` — arriving after its own reservation already expired and a different caller has since re-reserved the same key — from corrupting that new owner's entry. **Follow-up to P-544 (2026-09-15, same day):** the contract itself moved the token round trip from an internal per-instance `ConcurrentDictionary<string, token>` guard (each provider remembering which key it personally won) to an explicit `reservationToken` parameter on `IRequestIdempotencyStore.CompleteAsync`/`ReleaseAsync`, making both stores genuinely stateless — no store-held mutable state at all, not even scoped-to-DI-scope state. `.EfCore`'s `CompleteAsync` also gained the `Status == InProgress` guard it previously lacked (only `ReleaseAsync` had it before), for parity with `.Redis`'s `CompleteScript`, which gained the same guard in the same pass.
+- `.Redis`: each entry is one hash (`status`, `fingerprint`, `token`, `response`) at
+  `sk:idempotency:{tenantScope}:key:{key}` (Request) or `sk:idempotency:{tenantScope}:msg:{key}` (Message).
+  `TryBeginAsync`/`CompleteAsync`/`ReleaseAsync` are each a single Lua script. Fingerprint is compared before
+  status, so a reused key with a different fingerprint is always `FingerprintMismatch`. A new reservation's hash
+  expires after `ttl`; `CompleteAsync` extends it to `retention`.
+- `.EfCore`: one table `idempotency_keys`, primary key `(tenant_scope, purpose, key)`. `TryBeginAsync` is one raw
+  `INSERT … ON CONFLICT (tenant_scope, purpose, "key") DO UPDATE … RETURNING …` on the context's own ADO.NET
+  connection (never `ExecuteSqlInterpolatedAsync`, which discards `RETURNING`). Every `SET` is a no-op unless the
+  existing row has expired, so a live row returns unchanged. The caller won exactly when the returned
+  `reservation_token` is its own — never compare timestamps (a coarse `IClock` can collide).
 
-**2 — A fault must not consume the key.** `IdempotencyBehavior<TRequest,TResponse>` (`05.Application.Behaviors`) calls `CompleteAsync` only on a successful `next()` return and `ReleaseAsync` on a `Result.Failure` or a thrown exception — never `CompleteAsync` on entry. `ReleaseAsync` frees the key immediately; even without it, an unconfirmed reservation expires on its own via the short in-flight TTL (`.Redis`) or `ExpiresAtUtc` reclaim (`.EfCore`), so a crashed caller can never permanently wedge a key.
+**2 — The token guards completion.** A winning `TryBeginAsync` returns a fresh per-reservation token.
+`CompleteAsync`/`ReleaseAsync` mutate only while that token still owns an **`InProgress`** entry and return `bool`
+— `false`, never an exception, otherwise. A late caller whose lease expired and was reclaimed cannot touch the new
+owner's entry; a completed entry is never released. Stores hold no reservation state of their own.
 
-**3 — Tenant scoping is by construction, never by convention.** Every key is tenant-scoped through a composed seam (`.Redis`) or a mandatory `TenantId` column (`.EfCore`). A caller must not be able to produce a cross-tenant collision by supplying an unprefixed key string. Tenant identity itself is resolved through `07.Messaging.Abstractions`'s existing `TenantContext.ITenantContextAccessor` (`Guid? TenantId`), reused rather than reinvented — both provider packages already carry a legal reference to that assembly for `IIdempotencyStore`, so this authors no new contract in `18.Idempotency`, preserving "declares no contracts of its own." A `null` `TenantId` (unauthenticated/background/system context) resolves to a single fixed, non-caller-suppliable non-tenant segment — never simply omitted — so a null-tenant entry can never collide with a real tenant's entry. This mirrors `02.Caching`'s `ITenantCacheService` (P-435/WO-065), which exists because tag-based cross-tenant invalidation was reachable by convention error.
+**3 — A fault must not consume the key.** Callers complete only on success and release on a failed `Result` or an
+exception. Even without a release, an unconfirmed reservation expires after `ttl`, so a crashed caller never
+permanently wedges a key.
 
-**4 — Fail-closed by default.** Store unavailability blocks the guarded command/consumer rather than letting it run unprotected. Fail-open is available as a single explicit `AllowExecutionOnStoreUnavailable` flag whose XML doc states **in capitals** that it increases duplicate-execution risk. A narrow internal exception classifier (never a blanket `catch (Exception)`) recognizes only genuine connectivity/timeout exceptions per provider, and applies uniformly across `TryBeginAsync`/`CompleteAsync`/`ReleaseAsync` (and `HasProcessedAsync`/`MarkProcessedAsync` on the unaffected `IIdempotencyStore` message stores) so a mid-flight outage after fail-open let a call through does not then throw out of the confirmation step. `TryBeginAsync`'s fail-open fallback returns `Started` with a freshly-generated token that was never actually written to the store — a subsequent `CompleteAsync`/`ReleaseAsync` call against that token hits the identical connectivity failure and follows the identical fail-open/fail-closed decision (returning `false` under fail-open, throwing under fail-closed), rather than silently succeeding against a row that never existed. This follows the platform's conservative-default convention: deny-by-default CORS (P-404), fail-closed tenant cache scoping (P-435), WO-060's revocation-caching bias toward safety.
+**4 — Tenant scoping is by construction.** The tenant scope is part of every key (Redis) or of the primary key
+(EF Core), from `IdempotencyTenantScope`: the `TenantId` in "D" form, or the fixed `no-tenant` segment when there is
+no context or no tenant — never a GUID, so it cannot collide with a real tenant. A caller cannot produce a
+cross-tenant collision by choosing a key string. The inbound adapters (`UseSharedKernelRequestContext()`, the
+MassTransit consume filter, the job runner) establish the context; a multi-tenant service that skips them shares
+`no-tenant`.
 
-**5 — Retention is bounded and visible.** `.Redis` gets TTL for free. `.EfCore` must carry an `ExpiresAtUtc` column (with a non-unique index supporting a cleanup scan), exclude expired rows from reads, and ship cleanup as a **documented recipe** — a consumer-registered `IHostedService`, or a `19.Scheduling` job once that domain ships. This package must never start a hidden background loop of its own, and must never silently grow an unbounded table. `.EfCore`'s own `IdempotencyDbContext` deliberately does **not** extend `06.Persistence.EfCore`'s `SharedKernelDbContext` — that base's `SoftDeleteInterceptor` would silently turn the cleanup recipe's hard `DELETE` into an update, defeating retention outright, and its `ConcurrencyInterceptor` assumes a row-version column this table has no reason to carry. `IdempotencyDbContext` is a small, self-contained, plain-EF-Core context owning exactly two entities.
+**5 — Fail closed by default.** An unreachable store throws. Each provider has one opt-out,
+`AllowExecutionOnStoreUnavailable`, whose XML doc says **in capitals** that it increases duplicate-execution risk;
+under it `TryBeginAsync` returns `Started` with a token never written and `CompleteAsync`/`ReleaseAsync` return
+`false`, logging a Warning. Classification is narrow (connectivity/timeout only, never a blanket
+`catch (Exception)`) and uniform across all three members. EF Core retry is off for this context: each call is one
+statement and the caller owns retry.
 
-**6 — Opaque response payloads.** `IRequestIdempotencyStore.CompleteAsync` persists the caller-supplied serialized string exactly as given. This domain never inspects, reshapes, or re-serializes a stored response, and never assumes a format.
+**6 — Retention is bounded and visible.** Redis gets TTL for free. `.EfCore` carries `expires_at_utc` (indexed),
+excludes expired rows, and ships cleanup as a **documented recipe** (a consumer `BackgroundService` or a
+`19.Scheduling` job) — never a hidden background loop. `IdempotencyDbContext` is a plain `DbContext`, deliberately
+not `SharedKernelDbContext` (soft-delete/concurrency conventions would defeat the hard `DELETE`).
 
-**7 — `IRequestIdempotencyStore` and `IIdempotencyStore` stay two physical classes, never merged.** They are two independently-evolving contracts — `IRequestIdempotencyStore` carries a fingerprint/reservation-token/response-replay shape `IIdempotencyStore` has never had and has no reason to grow. Both providers ship exactly **two** physical store classes: `RedisRequestIdempotencyStore`/`EfCoreRequestIdempotencyStore` implement `IRequestIdempotencyStore` alone; `RedisIdempotencyMessageStore`/`EfCoreIdempotencyMessageStore` implement `IIdempotencyStore` alone. **Historical note, P-544 (2026-09-15):** before this redesign, `IIdempotencyKeyStore` and `IIdempotencyResponseStore` were two separate `05.Application.Behaviors` interfaces that this domain's key-store class had to implement *together* on one instance, because replay detection was a runtime `is IIdempotencyResponseStore` check against the injected `IIdempotencyKeyStore`. That two-interfaces-one-class constraint no longer exists — `IRequestIdempotencyStore` is a single interface — but the class count stayed at two per provider regardless, because `IIdempotencyStore` was always going to be its own class either way.
+**7 — Opaque responses.** `CompleteAsync` persists the caller's string exactly as given (`null` for messages).
+Stores never inspect, reshape or re-serialize it.
 
 ---
 
 ## Technology
 
-| Concern | Choice | Notes |
-|---|---|---|
-| Redis access | `02.Caching.Redis.Core`'s shared `IConnectionMultiplexer` | Never a privately-constructed multiplexer — connection, TLS, timeouts and the `IRedisConnectionProbe` readiness check are owned there. `AddSharedKernelRedisIdempotency` calls `EnsureRedisConnectionRegistered`, so it throws when `AddRedisConnection` was not called first |
-| Redis atomicity (`IRequestIdempotencyStore`) | A per-key Redis hash (`status`/`fingerprint`/`token`/`response`); `TryBeginAsync`/`CompleteAsync`/`ReleaseAsync` are each a single Lua script | Never `WATCH`/`MULTI` optimistic retry loops. `HasProcessedAsync`/`MarkProcessedAsync` on the separate `IIdempotencyStore` message store are unaffected — still the original `SET key <sentinel> NX PX` / `PEXPIRE` shape, no Lua needed there |
-| Relational access | `06.Persistence.EfCore` + `.PostgreSQL` | `IRequestIdempotencyStore.TryBeginAsync`: `INSERT ... ON CONFLICT (TenantId, Key) DO UPDATE ... RETURNING fingerprint, status, response, reservation_token`, executed via a raw `DbCommand` against the context's own ADO.NET connection (`Database.OpenConnectionAsync`/`GetDbConnection()`) — never `Database.ExecuteSqlInterpolatedAsync`, which discards `RETURNING` data. `IIdempotencyStore.HasProcessedAsync` (message store) keeps the original `ExecuteSqlInterpolatedAsync`-based upsert, since it never needed `RETURNING` data |
-| Tenant resolution | `07.Messaging.Abstractions.TenantContext.ITenantContextAccessor` (`Guid? TenantId`), reused — not reinvented | Both provider packages already reference that assembly for `IIdempotencyStore`; a `null` `TenantId` maps to one fixed non-tenant segment, never omitted |
-| Options validation | `AddOptions<T>().Configure(...).ValidateDataAnnotations().ValidateOnStart()`, applied directly | Same fail-fast mechanism `01.Core/SharedKernel.Configuration`'s `AddValidatedOptions` promotes, mirroring the delegate overload of `02.Caching.Redis.Core`'s `AddRedisConnection` — used directly rather than via that wrapper because this domain's DI surface is action-based (`Action<TOptions> configure`), not `IConfigurationSection`-based. `RedisIdempotencyOptions`/`EfCoreIdempotencyOptions` also implement `IValidatableObject` for the cross-field `InFlightTtl < RetentionWindow` check |
-| Clock | `01.Core`'s `IClock` | Never `DateTime.UtcNow` — every `.EfCore` `ReservedAtUtc`/`ExpiresAtUtc` timestamp and expiry comparison is clock-sourced. `.Redis` needs no `IClock` — TTLs are relative (`StringSetAsync`/`KeyExpireAsync` durations), not absolute timestamps |
-| Logging | `[LoggerMessage]`, EventIds `18000`–`18099` (`.Redis`), `18100`–`18199` (`.EfCore`) | `Idempotency = 18000` shipped in `01.Core`'s `LoggingEventIdRanges` in code. Both packages use exactly one `EventId` each (`+0` for `.Redis`, `+100` for `.EfCore`) for the fail-open Warning, parameterized by an `Operation` string rather than one `EventId` per store method |
-| Store registration lifetime | `Scoped` for all four store classes (`RedisRequestIdempotencyStore`/`RedisIdempotencyMessageStore`/`EfCoreRequestIdempotencyStore`/`EfCoreIdempotencyMessageStore`), never singleton | `ITenantContextAccessor` implementations are conventionally registered `Scoped` on this platform (`SharedKernel.Messaging.MassTransit.MessagingBusBuilder.WithTenantContext<TAccessor>()` does exactly this) — a singleton service cannot safely constructor-inject a scoped dependency under a DI container built with `ValidateScopes = true`. `.EfCore`'s store classes were always going to be `Scoped` regardless (a plain EF Core `DbContext`, itself `Scoped`, is never safe to capture into a singleton) — `.Redis`'s `IConnectionMultiplexer` dependency remains a singleton underneath the thin `Scoped` store wrapper. Neither `RedisRequestIdempotencyStore` nor `EfCoreRequestIdempotencyStore` holds any reservation state of its own (removed as a same-day follow-up to P-544) — the `Scoped` lifetime here is purely about the tenant accessor and, for `.EfCore`, the `DbContext`, not about remembering reservation tokens |
-| Missing-`ITenantContextAccessor` fail-fast | A dedicated `IHostedService` (`IdempotencyTenantAccessorStartupValidator`, duplicated per package, never shared) resolving `ITenantContextAccessor` through a short-lived `IServiceScope` at `IHost.StartAsync()` | Registration-order-independent (unlike an inline check inside the `Add*Idempotency` extension method, which would false-positive if the consumer registers `ITenantContextAccessor` *after* calling it) and environment-independent (unlike relying on `ServiceProviderOptions.ValidateOnBuild`, which the generic host only enables by default in `Development`) |
+| Concern | Choice |
+|---|---|
+| Redis access | `02.Caching.Redis.Core`'s shared `IConnectionMultiplexer`; `AddRedisIdempotency` throws when `AddRedisConnection` was not called first. Never a private multiplexer |
+| Relational access | `06.Persistence.EfCore`'s `UsePostgres(dataSource)` for the context options; raw `DbCommand` for the upsert |
+| Clock | `IClock` for every `.EfCore` timestamp; `.Redis` uses relative TTLs only |
+| Options | `RedisIdempotencyOptions` (`SharedKernel:Idempotency:Redis`) / `EfCoreIdempotencyOptions` (`SharedKernel:Idempotency:EfCore`) — only `AllowExecutionOnStoreUnavailable` |
+| Lifetimes | Stores and `IdempotencyDbContext` scoped; the multiplexer stays a singleton. Both provider registrations `TryAdd` `IRequestContextAccessor` |
+| Logging | `[LoggerMessage]`, EventIds `18000`–`18099` (`.Redis`, fail-open Warning `18000`), `18100`–`18199` (`.EfCore`, `18100`) |
 
 ---
 
@@ -105,23 +125,32 @@ Nothing in the platform references `18.Idempotency`. Consuming microservices ref
 
 | I need to add… | It belongs in… |
 |---|---|
-| A new idempotency *contract* | **Not here.** `05.Application.Behaviors` for command-side, `07.Messaging.Abstractions` for consumer-side |
-| A Redis-specific store behavior | `SharedKernel.Idempotency.Redis` |
-| A relational store behavior | `SharedKernel.Idempotency.EfCore` |
-| Tenant identity for a store call | Resolve via `07.Messaging.Abstractions.TenantContext.ITenantContextAccessor` — never a new `18.Idempotency`-local contract (Invariant 3) |
-| Response-replay support on a provider | Already built into `IRequestIdempotencyStore.TryBeginAsync`'s `Completed` status carrying the stored response — no separate interface or runtime `is` check exists anymore (Invariant 7) |
-| Code shared by both providers | Nowhere — duplicate it. There is deliberately no `.Core` sibling; the two providers must stay independently swappable |
-| A third backing store (e.g. DynamoDB, Cosmos) | A new sibling `SharedKernel.Idempotency.{Provider}` — never a branch inside an existing provider |
-| An in-memory test double | `16.Testing/SharedKernel.Testing` — a fake implementing `IRequestIdempotencyStore` |
-| A cleanup/expiry job | **Not here.** A documented consumer recipe, or a `19.Scheduling` job |
+| A change to the reservation contract | `SharedKernel.Idempotency.Abstractions` — then update both providers, `FakeIdempotencyStore`, `IdempotencyBehavior` and the MassTransit filter together |
+| A new purpose | `IdempotencyPurpose` + `IdempotencyPurposeSelection`; check the Redis key segment and the EF `purpose` column width (16) |
+| A Redis-specific behavior | `SharedKernel.Idempotency.Redis` |
+| A relational behavior | `SharedKernel.Idempotency.EfCore` |
+| Code shared by both providers | Nowhere — duplicate it |
+| A third backing store | A new sibling `SharedKernel.Idempotency.{Provider}` (Adapter tier) |
+| A cleanup/expiry job | Not here — a documented consumer recipe or a `19.Scheduling` job |
+
+---
+
+## Test Rules
+
+- Concurrency, tenant isolation, expiry reclaim and stale-token claims are proved against **real** Redis/PostgreSQL
+  (Testcontainers, Integration lane). A fake is not evidence for an atomicity claim.
+- Both providers cover all four statuses, foreign/stale tokens, release-after-complete, fail-open and fail-closed
+  against an unreachable endpoint, and DI registration (duplicate purpose, missing Redis connection).
 
 ---
 
 ## Open Items
 
-- **Both packages are implemented, build clean, and pack clean** (`SharedKernel.Idempotency.Redis`, `SharedKernel.Idempotency.EfCore` — `TreatWarningsAsErrors`, zero warnings, 2026-09-04). Design, Scaffold, Core, and Docs phases are `●` in `state-map.md`. Neither package is yet registered in `Platform.SharedKernel.slnx` — that registration is explicitly out of this domain implementer's jurisdiction under the shared-file protocol in effect during the implementing session and is a follow-up for whoever next touches the `.slnx`.
-- **Tests phase is `◐`, not `●` — this is a real gap, not a formality.** T-05/T-10 (fail-open/fail-closed against a genuinely unreachable endpoint) are `●` with real passing-test evidence, and 40 further unit/DI-resolution tests (20 per package: key-builder correctness, exception-classifier correctness, options cross-field validation, `IHost.StartAsync()` DI resolution including the missing-`ITenantContextAccessor` fail-fast) also ran green. But **T-01–T-04 (`.Redis`) and T-06–T-09 (`.EfCore`) — the actual concurrent-reservation, tenant-isolation, and expiry-reclaim proofs against real Testcontainers Redis/PostgreSQL containers — are written but have never been executed**, because no Docker daemon was reachable in the implementing session. This domain's own CLAUDE.md rule is that a concurrency claim asserted by anything other than a real backing store is not evidence; the code has not yet had that evidence collected. The next session with Docker available must run `dotnet test` on both `.Tests` projects, fix anything that fails, and only then mark `SK.18.Tests` → `●`.
-- Published phase is `◐`: P-01/P-02/P-04 done (NuGet metadata present via `Directory.Build.props` + each `.csproj`'s own `Description`/`PackageTags`, `dotnet pack` verified clean for both packages, zero `<Version>`/`<VersionPrefix>` elements). P-03 (a `consumer-verify` throwaway-project harness proving both `Add*Idempotency` extensions resolve through a real `IHost.StartAsync()`, including the missing-accessor fail-fast) was not built this session — the equivalent proof exists today only as in-process xUnit tests (`RedisIdempotencyServiceCollectionExtensionsTests`/`EfCoreIdempotencyServiceCollectionExtensionsTests`), which is weaker evidence than a real standalone executable per the platform's established `consumer-verify` convention. P-05 (the final `state-map-phase` call closing root Phase Backlog P-454/P-455) correctly cannot fire until Tests and Published are both `●` — do not force this early.
-- Root Phase Backlog P-454 and P-455 (WO-070) remain `○`/`◐` in the root `state-map.md` — intentionally not touched by the implementing session (shared-file protocol: only the domain's own `state-map-phase`-driven propagation, per Step S8c, should ever flip them, and that propagation is gated on the Tests-phase gap above).
-- **[2026-09-15] P-544 migration.** Both providers were rewritten from `IIdempotencyKeyStore`/`IIdempotencyResponseStore` onto `05.Application.Behaviors`'s redesigned `IRequestIdempotencyStore` (`TryBeginAsync`/`CompleteAsync`/`ReleaseAsync`) ahead of either package's first publish, so this was a clean rewrite with no shim or `[Obsolete]` path. `RedisIdempotencyKeyStore` → `RedisRequestIdempotencyStore`; `EfCoreIdempotencyKeyStore` → `EfCoreRequestIdempotencyStore`. Both providers gained a reservation-token guard on `CompleteAsync`/`ReleaseAsync` (Invariant 1) that was not requested by the migration brief but closes the stale-confirm-corrupts-a-reclaimed-row gap this file's 2026-09-09 changelog entry had flagged and left open — fixed now rather than deferred again, since the rewrite already touched every code path that gap lived in. `IIdempotencyStore` (`07.Messaging.Abstractions`) and its two message-store classes are unaffected. `SharedKernel.Idempotency.Redis.Tests` 31/31 and `SharedKernel.Idempotency.EfCore.Tests` 32/32, both against real Testcontainers Redis/PostgreSQL.
-- **[2026-09-15] Same-day P-544 follow-up — stateless stores.** `05.Application.Behaviors`'s `IRequestIdempotencyStore` was refined so both providers no longer need any reservation-tracking state of their own: `IdempotencyBeginResult` gained `ReservationToken` (non-null exactly when `Status == Started`), and `CompleteAsync`/`ReleaseAsync` now take an explicit `reservationToken` parameter and return `Task<bool>` instead of `Task` — `true` when the token still owned the reservation and the mutation applied, `false` (never a thrown exception) when it did not. Both providers had their `ConcurrentDictionary<string, token>`/`ConcurrentDictionary<string, Guid>` removed outright; `RedisRequestIdempotencyStore.CompleteScript` gained the `status == 'InProgress'` guard `ReleaseScript` already had (parity: a second `CompleteAsync` against an already-completed row is now a false no-op, not a silent re-write), and `EfCoreRequestIdempotencyStore.CompleteAsync` gained the equivalent `Status == IdempotencyRecordStatus.InProgress` predicate it previously lacked, plus `Guid.TryParse` short-circuiting an unparsable token to `false` with no database round trip. `IdempotencyBehavior<TRequest,TResponse>` (`05.Application.Behaviors`) now takes an `ILogger<IdempotencyBehavior<TRequest,TResponse>>` and logs a `Warning` (`EventId` 5120, `.Behaviors`' own range — not this domain's 18000-range) when `CompleteAsync` reports `false` after a successful handler run; the response is still returned regardless, since the work already happened. Both `.Redis`/`.EfCore` test suites re-verified against real Testcontainers with new foreign/stale-token coverage added: `SharedKernel.Idempotency.Redis.Tests` 33/33, `SharedKernel.Idempotency.EfCore.Tests` 35/35.
+- **Consumer idempotency keys only by message id.** `07.Messaging`'s `IdempotentConsumerBehavior` uses
+  `ConsumeContext.MessageId` as the key with the fixed fingerprint `"message"`, and the store adds only the tenant
+  scope. Two receive endpoints (or two polymorphic consumers) in one service that receive the same message share
+  one reservation, so the second is skipped as a duplicate. Fix: include the consumer/endpoint in the key. Pre-existing;
+  not fixed by WO-086.
+- **Persisted formats changed in P-568** (documented in each provider README): Redis message entries are hashes
+  (old string values fail with `WRONGTYPE`); the EF table is keyed `(tenant_scope, purpose, key)` and
+  `idempotency_messages` is gone. Nothing was in production, so no data migration ships.

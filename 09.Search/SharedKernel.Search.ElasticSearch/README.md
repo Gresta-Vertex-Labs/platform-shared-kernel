@@ -119,7 +119,7 @@ Omitting `.WithSourceSerializerContext(...)` logs a startup warning (`ElasticSea
 Result<AggregationResultSet> result = await analytics.AggregateAsync(
     filter: SearchFilter.Eq(OrderSearchFields.Status, SearchValue.From("shipped")),
     aggregations: [AggregationRequest.Terms("byRegion", OrderSearchFields.Region, size: 20)],
-    TenantScope.Of(tenantId), ct);
+    TenantScope.For(tenantId), ct);
 
 if (result.IsSuccess && result.Value.TryGetTerms("byRegion", out var byRegion))
 {
@@ -159,7 +159,7 @@ builder.Services
 
 // then, in application code:
 Result<IReadOnlyList<SearchSuggestion>> suggestions = await suggest.SuggestAsync(
-    "nameSuggest", prefix: "wirel", TenantScope.Of(tenantId), size: 10, fuzzy: false, ct);
+    "nameSuggest", prefix: "wirel", TenantScope.For(tenantId), size: 10, fuzzy: false, ct);
 ```
 
 `ISuggestSearch<TDocument>` exposes ElasticSearch's completion suggester — a purpose-built in-memory FST that answers prefix queries in roughly constant time and returns **suggestion strings with weights**, not documents. Meilisearch has no such structure and no such field type; its type-ahead story is ordinary prefix matching over the regular index, exposed as `IInstantSearch<TDocument>` in that package. The two solve the same product problem with different data structures and different result shapes, which is why each is declared in its own provider package rather than neutralised.
@@ -169,13 +169,13 @@ A completion field must exist in the mapping **before** documents are indexed, s
 ## Cursor-based deep pagination
 
 ```csharp
-await foreach (var hit in cursorSearch.StreamAsync(request, TenantScope.Of(tenantId), keepAlive: TimeSpan.FromMinutes(5), ct))
+await foreach (var hit in cursorSearch.StreamAsync(request, TenantScope.For(tenantId), keepAlive: TimeSpan.FromMinutes(5), ct))
 {
     // hit.Document / hit.Rank — relevance order, past MaxTotalHits
 }
 
 // Or the resumable triple, for a long-running export that checkpoints across process restarts:
-Result<SearchCursor> cursor = await cursorSearch.OpenCursorAsync(request, TenantScope.Of(tenantId), TimeSpan.FromMinutes(5), ct);
+Result<SearchCursor> cursor = await cursorSearch.OpenCursorAsync(request, TenantScope.For(tenantId), TimeSpan.FromMinutes(5), ct);
 Result<CursorPage<OrderSearchDocument>> page = await cursorSearch.ReadCursorAsync(cursor.Value, ct);
 await cursorSearch.CloseCursorAsync(cursor.Value, ct);
 ```

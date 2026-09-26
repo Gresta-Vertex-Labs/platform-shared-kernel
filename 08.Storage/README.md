@@ -51,7 +51,7 @@ Every service that stores files makes the same decisions, and each one fails qui
 
 | The problem | What the packages do |
 | --- | --- |
-| A tenant id or `../` in a key reaches another customer's files | Tenant stores keep each tenant under its own prefix; keys and tenant ids are validated before any request, so nothing can leave it |
+| A tenant id or `../` in a key reaches another customer's files | Tenant stores keep each tenant (a typed `TenantId`) under its own prefix; keys are validated before any request, so nothing can leave it |
 | Two requests upload the same key and the second silently wins | `WriteCondition.IfNotExists` and `IfMatch(etag)`, enforced atomically by the provider |
 | A browser upload URL accepts a 20 GB file or an HTML page | Presigned **forms** carry a signed size range and content-type policy the provider enforces |
 | Large uploads are buffered in memory, or pass through the service at all | Streams end to end; multipart for unknown lengths; presigned multipart lets clients upload gigabytes directly |
@@ -72,19 +72,18 @@ outside this folder:
 
 | Package | Adds |
 | --- | --- |
-| [`SharedKernel.ServiceDefaults.Storage`](../13.ServiceDefaults/SharedKernel.ServiceDefaults.Storage/README.md) | `AddStorageReadinessCheck(storeName)` — a Kubernetes readiness check per store |
-| [`SharedKernel.ServiceDefaults`](../13.ServiceDefaults/SharedKernel.ServiceDefaults/README.md) | `WithStorageTelemetry()` — exports the `SharedKernel.Storage` traces and metrics |
-| [`SharedKernel.Testing`](../16.Testing/SharedKernel.Testing/README.md) | `AddInMemoryStore(name)` / `AddInMemoryTenantStore(name)` — an in-memory store with the production rules, for unit tests |
+| [`SharedKernel.ServiceDefaults`](../13.ServiceDefaults/SharedKernel.ServiceDefaults/README.md) | `AddHealthChecks().AddSharedKernelReadiness()` — maps each store's `storage-{store}` readiness probe to a Kubernetes readiness check; `WithStorageTelemetry()` — exports the `SharedKernel.Storage` traces and metrics |
+| [`SharedKernel.Storage.Testing`](../16.Testing/SharedKernel.Storage.Testing/README.md) | `AddInMemoryStore(name)` / `AddInMemoryTenantStore(name)` — an in-memory store with the production rules, for unit tests |
 
 ## Architecture
 
 ### A request, end to end
 
 ```text
-application ── [FromKeyedServices("documents")] ITenantFileStorage ── .ForTenant("acme") ──┐
+application ── [FromKeyedServices("documents")] ITenantFileStorage ── .ForTenant(tenantId) ─┐
                                                                                           ▼
-Abstractions     tenant view      validate key, options, tenant id         ── invalid → storage.invalid_* (no I/O)
-                                  "contracts/nda.pdf" → "tenants/acme/contracts/nda.pdf"
+Abstractions     tenant view      validate key and options                 ── invalid → storage.invalid_* (no I/O)
+                                  "contracts/nda.pdf" → "tenants/{tenantId}/contracts/nda.pdf"
                                                                                           ▼
 S3 provider      store            + store prefix "documents/"  → bucket "acme-documents"
                                   feature check (S3Compatibility)          ── missing → storage.not_supported
@@ -104,26 +103,27 @@ back to the caller                Result<FileReference> with the key "contracts/
 connection "S3"  (SharedKernel:Storage:S3)          connection "Obs"  (SharedKernel:Storage:Obs)
    ├─ store "invoices"   → bucket acme-invoices        └─ store "archive" → bucket acme-archive
    └─ store "documents"  → bucket acme-docs, prefix documents/, tenant-scoped
-                              └─ tenants/acme/…   tenants/globex/…
+                              └─ tenants/{tenant A}/…   tenants/{tenant B}/…
 ```
 
 - **A store** is a bucket, optionally narrowed to a key prefix, with its own encryption, default tier and maximum
   link lifetime (`SharedKernel:Storage:Stores:{name}`).
 - **A connection** is one set of credentials and one endpoint. Stores on the same connection copy server-side;
   buckets with different IAM users use named connections (`AddS3(configuration, "Private")`).
-- **A tenant store** is only reachable through `ForTenant(id)`; the provider never sees a key outside the tenant's
+- **A tenant store** is only reachable through `ForTenant(tenantId)` — a `SharedKernel.Execution.Tenancy.TenantId`,
+  never a string; the provider never sees a key outside the tenant's
   prefix, and the caller never sees the prefix.
 
 ### Package dependencies
 
 ```text
-SharedKernel.Storage.Obs ──→ SharedKernel.Storage.S3 ──→ SharedKernel.Storage.Abstractions ──→ SharedKernel.Primitives
-                                      │
-                                      └──→ AWSSDK.S3, SharedKernel.Configuration
+SharedKernel.Storage.Obs ──→ SharedKernel.Storage.S3 ──→ SharedKernel.Storage.Abstractions ──→ SharedKernel.Primitives,
+      (Adapter)                  (Adapter)   │           (Abstractions tier)                    SharedKernel.Execution
+                                             └──→ AWSSDK.S3, SharedKernel.Configuration            (Foundation)
 ```
 
-`08.Storage` depends on `01.Core` only. The Abstractions reference no cloud SDK and S3 never references OBS; both are
-enforced by architecture tests.
+The Abstractions reference Foundation packages only and no cloud SDK; S3 never references OBS (Obs → S3 is the one
+declared adapter-to-adapter edge). Tiers are enforced by the build, the rest by architecture tests.
 
 ## A file service in 10 minutes
 
@@ -131,7 +131,7 @@ enforced by architecture tests.
 
 ```shell
 dotnet add package SharedKernel.Storage.S3                 # or SharedKernel.Storage.Obs, or both
-dotnet add package SharedKernel.ServiceDefaults.Storage    # readiness checks (optional)
+dotnet add package SharedKernel.ServiceDefaults            # readiness checks and telemetry (optional)
 ```
 
 Application and domain projects reference `SharedKernel.Storage.Abstractions` only.
@@ -165,11 +165,13 @@ builder.Services.AddSharedKernelStorage()
     .AddTenantStore("documents");
 
 builder.Services.AddHealthChecks()
-    .AddStorageReadinessCheck("invoices", "storage-invoices")
-    .AddStorageReadinessCheck("documents", "storage-documents");
+    .AddSharedKernelReadiness();   // "storage-invoices" and "storage-documents": a HEAD on each store's bucket
 
 builder.WithStorageTelemetry();
 ```
+
+Every store registers its own readiness probe (`IReadinessProbe`, named `storage-{store}`);
+`AddSharedKernelReadiness()` maps every registered probe to a `ready` health check.
 
 ### 4. Upload and download through your API
 
@@ -220,19 +222,20 @@ The file never passes through the service. For files too large for one request, 
 public sealed class ContractFiles([FromKeyedServices("documents")] ITenantFileStorage documents, IRequestContext request)
 {
     public Task<Result<FileListPage>> ListAsync(CancellationToken ct) =>
-        documents.ForTenant(request.TenantId!).ListPageAsync(new FileListRequest { Prefix = "contracts/" }, ct);
+        documents.ForTenant(request.TenantId!.Value).ListPageAsync(new FileListRequest { Prefix = "contracts/" }, ct);
 }
 ```
 
-Take the tenant from the authenticated request. A view for tenant `acme` cannot read, list, copy or delete anything
-of tenant `globex` — not even with a key such as `../globex/x`, which is rejected before any request is sent.
+Take the tenant from the authenticated request (`IRequestContext.TenantId`, a `TenantId?`). A view for one tenant
+cannot read, list, copy or delete anything of another — not even with a key such as `../{other}/x`, which is
+rejected before any request is sent.
 
 ### 7. Test without a bucket
 
 ```csharp
 services.AddSharedKernelStorage()
     .AddInMemoryStore("invoices")
-    .AddInMemoryTenantStore("documents");   // SharedKernel.Testing: same validation and tenant rules
+    .AddInMemoryTenantStore("documents");   // SharedKernel.Storage.Testing: same validation and tenant rules
 ```
 
 ## What each provider supports
@@ -268,7 +271,7 @@ The last live run passed 100 of 100 (2026-09-22, S3 `eu-central-1`, OBS `tr-west
 
 | Guarantee | How |
 | --- | --- |
-| **No cross-tenant access** | Tenant views prefix every key; keys and tenant ids are validated (no `..`, no leading `/`, no escaping tricks); the provider store is never handed out |
+| **No cross-tenant access** | Tenant views prefix every key with a typed `TenantId`; keys are validated (no `..`, no leading `/`, no escaping tricks); the provider store is never handed out |
 | **No silent overwrites** | Conditional writes checked by the provider; conditional copies go through a conditional PUT because some services ignore conditions on copies |
 | **No silent degradation** | A feature the provider lacks is refused before the request, never dropped |
 | **No surprises at run time** | Buckets, prefixes, credentials, regions and limits are validated when the host starts |
@@ -288,5 +291,6 @@ a restore step, bucket administration (creation, lifecycle, policies), antivirus
 | AWS and MinIO: configuration, credentials, several connections, encryption, IAM permissions | [S3](SharedKernel.Storage.S3/README.md) |
 | Huawei Cloud OBS: configuration, what OBS supports | [Obs](SharedKernel.Storage.Obs/README.md) |
 | A complete service, tested against the real clouds | [samples/DocumentsApi](../samples/DocumentsApi/README.md) |
-| Readiness checks | [ServiceDefaults.Storage](../13.ServiceDefaults/SharedKernel.ServiceDefaults.Storage/README.md) |
+| Readiness checks and telemetry | [ServiceDefaults](../13.ServiceDefaults/SharedKernel.ServiceDefaults/README.md) |
+| The in-memory store for tests | [Storage.Testing](../16.Testing/SharedKernel.Storage.Testing/README.md) |
 | Maintainer rules and design decisions | [CLAUDE.md](CLAUDE.md) |

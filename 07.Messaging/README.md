@@ -6,11 +6,11 @@
 caller's tenant travelling with the message, at-most-once consumption, and failures you handle instead of catch.**
 
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
-[![RabbitMQ](https://img.shields.io/badge/RabbitMQ-verified-FF6600?logo=rabbitmq&logoColor=white)](SharedKernel.Messaging.MassTransit/README.md)
-[![Azure Service Bus](https://img.shields.io/badge/Azure%20Service%20Bus-supported-0078D4?logo=microsoftazure&logoColor=white)](SharedKernel.Messaging.MassTransit/README.md)
+[![RabbitMQ](https://img.shields.io/badge/RabbitMQ-verified-FF6600?logo=rabbitmq&logoColor=white)](SharedKernel.Messaging.MassTransit.RabbitMq/README.md)
+[![Azure Service Bus](https://img.shields.io/badge/Azure%20Service%20Bus-supported-0078D4?logo=microsoftazure&logoColor=white)](SharedKernel.Messaging.MassTransit.AzureServiceBus/README.md)
 [![MassTransit 8.5](https://img.shields.io/badge/MassTransit-8.5.x%20(Apache--2.0)-512BD4)](#why-masstransit-85-and-not-9x)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](../LICENSE)
-![Packages: 2](https://img.shields.io/badge/packages-2-informational)
+![Packages: 5](https://img.shields.io/badge/packages-5-informational)
 ![Public API: tracked](https://img.shields.io/badge/public%20API-tracked-informational)
 
 [Packages](#the-packages) · [10-minute start](#a-messaging-service-in-10-minutes) · [Caller identity](#the-caller-travels-with-the-message) · [Failures](#failures-are-values) · [Sample](#see-it-run) · [Guarantees](#what-you-can-rely-on)
@@ -20,16 +20,19 @@ caller's tenant travelling with the message, at-most-once consumption, and failu
 ---
 
 ```csharp
+builder.Services.AddRedisConnection(builder.Configuration);
+builder.Services.AddRedisIdempotency(p => p.ForMessages());          // the store WithIdempotency() uses
+
 builder.Services
     .AddSharedKernelMessaging(builder.Configuration)                      // SharedKernel:Messaging
-    .UseRabbitMq(builder.Configuration.GetConnectionString("rabbitmq")!)
+    .UseRabbitMq(builder.Configuration.GetConnectionString("rabbitmq")!) // SharedKernel.Messaging.MassTransit.RabbitMq
     .WithRetry()
     .WithIdempotency()                  // a redelivered message runs the consumer once
     .WithInboundRequestContext()        // the publisher's tenant and actor reach the consumer
     .AddConsumer<OrderPlacedConsumer>()
     .Build();
 
-builder.Services.AddHealthChecks().AddMessagingReadinessCheck();
+builder.Services.AddHealthChecks().AddSharedKernelReadiness();   // includes the bus's "messaging" probe
 ```
 
 That is the whole registration. Queue names, retry shape and dead-letter policy follow from it; a consumer
@@ -62,11 +65,16 @@ This domain is the set of decisions that make those hard to write, taken once.
 
 | Package | What it is | Take a dependency on it when |
 | --- | --- | --- |
-| [**SharedKernel.Messaging.Abstractions**](SharedKernel.Messaging.Abstractions/README.md) | The contracts: `IMessageBus`, `IEventPublisher`, `IIdempotencyStore`, `IMessageScheduler`, `IMessageBusProbe`, `MessageRequestContext`. No transport dependency. | Your library or application layer publishes or consumes messages |
-| [**SharedKernel.Messaging.MassTransit**](SharedKernel.Messaging.MassTransit/README.md) | The bus behind those contracts: RabbitMQ and Azure Service Bus, retry, outbox, idempotency, dead-letter, tracing and metrics. | You are the composition root — the startup project |
+| [**SharedKernel.Messaging.Abstractions**](SharedKernel.Messaging.Abstractions/README.md) | Abstractions tier. The contracts: `IMessageBus`, `IEventPublisher`, `PublishContext`, `IMessageScheduler`, `IMessageHeaderPropagator`, `IFaultConsumer`, `IInboundMessageContextAccessor`, `MessagingErrorCodes`. No transport dependency. | Your library or application layer publishes or consumes messages |
+| [**SharedKernel.Messaging.MassTransit**](SharedKernel.Messaging.MassTransit/README.md) | Adapter tier. The bus behind those contracts: the builder, consumers, retry, idempotency, dead-letter policy, caller propagation, tracing, metrics and the readiness probe. No broker client. | You are the composition root — the startup project |
+| [**SharedKernel.Messaging.MassTransit.RabbitMq**](SharedKernel.Messaging.MassTransit.RabbitMq/README.md) | Adapter tier. `UseRabbitMq(...)`. | Your bus runs on RabbitMQ |
+| [**SharedKernel.Messaging.MassTransit.AzureServiceBus**](SharedKernel.Messaging.MassTransit.AzureServiceBus/README.md) | Adapter tier. `UseAzureServiceBus(...)`, managed identity. | Your bus runs on Azure Service Bus |
+| [**SharedKernel.Messaging.MassTransit.EfCore**](SharedKernel.Messaging.MassTransit.EfCore/README.md) | Adapter tier. `WithEntityFrameworkOutbox<TDbContext>()`. | You publish inside a database transaction |
 
-Application code references the first. Only `Program.cs` references the second. That is what makes the transport
-replaceable, and what keeps MassTransit out of the type signatures your tests have to construct.
+Application code references the first. Only `Program.cs` references the others — the core plus exactly the
+transport and integrations it uses, so a RabbitMQ service never restores the Azure SDK and a service without an
+outbox never restores EF Core. That is what makes the transport replaceable, and what keeps MassTransit out of the
+type signatures your tests have to construct.
 
 ## Architecture
 
@@ -76,12 +84,14 @@ your application code                    IMessageBus / IEventPublisher / IReques
 ────────────────────────────────────────────────────────────────────────────────
 composition root (Program.cs)            AddSharedKernelMessaging(configuration)
                                                    │
-SharedKernel.Messaging.MassTransit       bus wiring · retry · outbox · idempotency
+SharedKernel.Messaging.MassTransit       bus wiring · retry · idempotency · readiness
                                          propagators · consume filters · diagnostics
-                                                   │
-MassTransit 8.5.x                        transport adapters
-                                                   │
-                                         RabbitMQ          Azure Service Bus
+                                                   │  MessagingTransport / ConfigureMassTransit
+             ┌─────────────────────────────────────┼─────────────────────────────┐
+  .MassTransit.RabbitMq          .MassTransit.AzureServiceBus          .MassTransit.EfCore
+  UseRabbitMq                    UseAzureServiceBus                    WithEntityFrameworkOutbox
+             │                                     │                             │
+         RabbitMQ                          Azure Service Bus              your DbContext
 ```
 
 ## A messaging service in 10 minutes
@@ -118,7 +128,9 @@ if (published.IsFailure) return published.ToProblemDetailsResult();
 
 **4 — Consume it**, as in the snippet at the top of this page.
 
-**5 — Gate traffic on readiness.** `AddMessagingReadinessCheck()` reports unhealthy until the bus is connected.
+**5 — Gate traffic on readiness.** `Build()` registers a readiness probe named `messaging`;
+`services.AddHealthChecks().AddSharedKernelReadiness()` (`SharedKernel.ServiceDefaults`) maps it, and it reports
+unhealthy until the bus is connected.
 This matters more than it looks — see [the window before ready](#the-window-before-ready).
 
 ## The caller travels with the message
@@ -132,8 +144,8 @@ it, which is both boilerplate and a standing invitation to get tenancy wrong.
 
 | Direction | What happens |
 | --- | --- |
-| **Publish** | The current caller's tenant and actor are written as transport headers. An anonymous caller writes no actor headers at all, rather than empty ones a consumer must tell apart from absent ones |
-| **Consume** | They are read back, and `IRequestContext` resolves to that caller inside the consume — and to the service's own caller everywhere else |
+| **Publish** | The current caller's correlation id, tenant and actor are written as transport headers (`SharedKernel.Execution`'s one mapping, shared with REST, gRPC and Temporal). An anonymous caller writes no actor headers at all, rather than empty ones a consumer must tell apart from absent ones |
+| **Consume** | They are read back into a `PropagatedRequestContext`, the consumer runs inside a `RequestContextScope`, and `IRequestContext` resolves to that caller inside the consume — and to the service's own caller everywhere else. Outbound calls the consumer makes carry the same tenant and correlation id |
 
 So one handler serves the HTTP path and the message path without branching. Published from *inside* a consumer,
 the original caller is carried onward, so a chain of consumers keeps attributing work to whoever started it.
@@ -164,8 +176,8 @@ your code is never laundered into a failed `Result`.
 
 | Capability | How |
 | --- | --- |
-| **Exactly-once consumption of a message id** | `WithIdempotency()` over an atomic reserve/complete/release store — `18.Idempotency` ships Redis and EF Core implementations |
-| **Transactional outbox** | `WithEntityFrameworkOutbox<TDbContext>()` — your `DbContext` by generic parameter; no reference to `06.Persistence` |
+| **At-most-once consumption of a message id** | `WithIdempotency()` over `SharedKernel.Idempotency.Abstractions`' atomic reserve/complete/release store, registered for `IdempotencyPurpose.Message` — `18.Idempotency` ships Redis and EF Core implementations |
+| **Transactional outbox** | `WithEntityFrameworkOutbox<TDbContext>()` from `.MassTransit.EfCore` — your `DbContext` by generic parameter; no reference to `06.Persistence` |
 | **Retry and circuit breaking** | `WithRetry()`, `WithCircuitBreaker()`; a consumer declares its own non-retryable exception types |
 | **Dead-letter policy** | `WithDeadLetterPolicy()` (RabbitMQ), plus `AddFaultConsumer<T, TConsumer>()` to observe what exhausted its retries |
 | **Deferred delivery** | `WithDelayedDelivery()` — the *broker* holds the message, so it survives this process restarting |
@@ -173,7 +185,7 @@ your code is never laundered into a failed `Result`.
 | **Compression and encryption** | `WithPayloadTransform()`, built on `01.Core`'s primitives; compress-then-encrypt, and the reverse on consume |
 | **Schema evolution** | `WithVersionTranslator<TOld, TNew, T>()` — an old message is projected to the current shape before the consumer sees it |
 | **Tracing and metrics** | An `ActivitySource` and a `Meter` on every verb; wired by `13.ServiceDefaults`' `WithMessagingTelemetry()` |
-| **Readiness** | `IMessageBusProbe` over the real configured bus — never a second connection built from copied configuration |
+| **Readiness** | An `IReadinessProbe` named `messaging` over the real configured bus — never a second connection built from copied configuration |
 
 ## The window before ready
 
@@ -198,7 +210,8 @@ API change. Do not bump it without a recorded licensing decision.
 
 ## See it run
 
-[**samples/ShippingApi**](../samples/ShippingApi/README.md) is a service on both packages — publish, send,
+[**samples/ShippingApi**](../samples/ShippingApi/README.md) is a service on the packed packages (MassTransit core
+and the RabbitMQ transport) — publish, send,
 delayed delivery, idempotency, inbound caller identity, retry, a fault consumer and the readiness probe — with
 nine end-to-end scenarios against a real RabbitMQ broker.
 
@@ -222,7 +235,7 @@ services on one broker would have contended for the same queues. All three were 
 | **No tenant leakage** | The tenant is carried explicitly and is absent — not inherited — when the publisher had none |
 | **No queue-name collisions** | Every queue is prefixed with the validated service name |
 | **No transport in your application code** | Consumers receive the deserialized message and a token; MassTransit types appear only in `Program.cs` |
-| **No untracked API change** | Both packages' public surfaces are tracked in `PublicAPI.*.txt`; an addition or signature change fails the build until reviewed |
+| **No untracked API change** | Every package's public surface is tracked in `PublicAPI.*.txt`; an addition or signature change fails the build until reviewed |
 | **Tested for real** | RabbitMQ through Testcontainers in CI, plus a full sample service end to end |
 
 **Deliberately out of scope:** request/response over the bus (use `11.Communication`); sagas, routing slips and
@@ -236,6 +249,6 @@ Amazon SQS (no adapter today).
 | The programming model: bus, publisher, contexts, idempotency, faults, errors | [Abstractions](SharedKernel.Messaging.Abstractions/README.md) |
 | Wiring a bus: transports, retry, outbox, dead-letter, payload transform, diagnostics | [MassTransit](SharedKernel.Messaging.MassTransit/README.md) |
 | A complete service, tested against a real broker | [samples/ShippingApi](../samples/ShippingApi/README.md) |
-| Idempotency stores | [18.Idempotency](../18.Idempotency/) |
-| Readiness checks and telemetry wiring | [ServiceDefaults.Messaging](../13.ServiceDefaults/SharedKernel.ServiceDefaults.Messaging/README.md) |
+| The idempotency store contract and its Redis and PostgreSQL stores | [18.Idempotency](../18.Idempotency/SharedKernel.Idempotency.Abstractions/README.md) |
+| Readiness endpoints and telemetry wiring (`AddSharedKernelReadiness`, `WithMessagingTelemetry`) | [ServiceDefaults](../13.ServiceDefaults/SharedKernel.ServiceDefaults/README.md) |
 | Maintainer rules and design decisions | [CLAUDE.md](CLAUDE.md) |

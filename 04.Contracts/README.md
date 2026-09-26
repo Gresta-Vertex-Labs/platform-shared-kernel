@@ -1,10 +1,10 @@
 # 04.Contracts
 
-![Layer](https://img.shields.io/badge/layer-04%20contracts-512BD4)
+![Tier](https://img.shields.io/badge/tier-Model-512BD4)
 ![Depends on](https://img.shields.io/badge/depends%20on-SharedKernel.Primitives%20only-brightgreen)
 ![Wire format](https://img.shields.io/badge/events-CloudEvents%201.0-5c6bc0)
 
-**The wire-contract layer of Platform.SharedKernel.** Everything one service sends another, and every page an
+**The wire contracts of Platform.SharedKernel.** Everything one service sends another, and every page an
 API returns, has its shape defined here.
 
 > Looking for how to use the package? Read the
@@ -14,7 +14,7 @@ API returns, has its shape defined here.
 ## Contents
 
 - [What lives here](#what-lives-here)
-- [Where the layer sits](#where-the-layer-sits)
+- [Where the package sits](#where-the-package-sits)
 - [How an integration event travels](#how-an-integration-event-travels)
 - [How cursor paging works](#how-cursor-paging-works)
 - [Design principles](#design-principles)
@@ -33,10 +33,12 @@ API returns, has its shape defined here.
 | [`CLAUDE.md`](CLAUDE.md) | The domain brain: implementation rules, decisions and traps for maintainers and AI agents |
 | [`state-map.md`](state-map.md) | Phase and task history for this domain |
 
-## Where the layer sits
+## Where the package sits
 
-Arrows point from a package to what it depends on. Contracts depends only on `SharedKernel.Primitives`, so a
-service can share its contracts without sharing its domain model.
+Arrows point from a package to what it depends on. `SharedKernel.Contracts` is a **Model**-tier package that
+depends only on `SharedKernel.Primitives`, so a service can share its contracts without sharing its domain model.
+The build enforces the tier; a separate architecture rule keeps it from referencing `SharedKernel.Domain`, the
+other Model-tier package.
 
 ```mermaid
 flowchart BT
@@ -46,7 +48,7 @@ flowchart BT
     Persistence["06.Persistence<br/>returns PagedList"]
     Messaging["07.Messaging<br/>wraps and publishes events"]
     Search["09.Search<br/>projects hits to PagedList"]
-    Communication["11.Communication<br/>GraphQL paging"]
+    Presentation["14.Presentation<br/>GraphQL paging"]
     Integration["15.Integration<br/>routes webhooks by event name"]
 
     style Contracts fill:#512BD4,color:#fff,stroke:#2d1780
@@ -55,7 +57,7 @@ flowchart BT
     Persistence --> Contracts
     Messaging --> Contracts
     Search --> Contracts
-    Communication --> Contracts
+    Presentation --> Contracts
     Integration --> Contracts
 ```
 
@@ -140,7 +142,7 @@ sequenceDiagram
 | Internal `[JsonConstructor]`s that validate | Invalid envelopes, pages and requests arriving over the wire |
 | `IntegrationEventDescriptor` | Missing or malformed event names, versions below 1, two types claiming one name and version |
 | `00.Governance` `ContractsPurityRules` | Domain or infrastructure types leaking into a contracts assembly |
-| `00.Governance` layering rules | A contracts assembly referencing a higher layer |
+| Tier check (`SKTIER001`, `SKTIER003`) and `ContractsNeverReferencesDomain` | A reference to anything but Foundation packages, a third-party package, or `SharedKernel.Domain` |
 
 ## Build and test
 

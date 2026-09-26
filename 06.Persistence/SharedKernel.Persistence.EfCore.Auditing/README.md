@@ -46,9 +46,10 @@ dotnet add package SharedKernel.Persistence.EfCore.Auditing
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
+| Tier | Adapter (its one adapter edge, to `SharedKernel.Persistence.EfCore`, is declared) |
 | Database | PostgreSQL 15 or later |
 | Builds on | `SharedKernel.Persistence.EfCore`, `SharedKernel.Cryptography` (`IHmacSigner`, optional `IAsymmetricSignatureService`) |
-| Implements | `IAuditTrailWriter` from [`SharedKernel.Application.Abstractions`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/05.Application/SharedKernel.Application.Abstractions) — used by `05.Application`'s `AuditingBehavior` directly |
+| Implements | `IAuditTrailWriter` from [`SharedKernel.Execution`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/01.Core/SharedKernel.Execution) (`SharedKernel.Execution.Auditing`) — used by `SharedKernel.Application.Pipeline`'s `AuditingBehavior` directly |
 | Namespaces | `SharedKernel.Persistence` (`UseAuditTrail`), `SharedKernel.Persistence.EfCore.Auditing` (query, maintenance), `SharedKernel.Persistence.EfCore` (migration helpers) |
 
 ## Quick start
@@ -88,7 +89,7 @@ protected override void Up(MigrationBuilder migrationBuilder) =>
 protected override void Down(MigrationBuilder migrationBuilder) => migrationBuilder.DropAuditLedgerTable();
 ```
 
-**3. Audit a command** — with `05.Application`'s pipeline, a marker interface is all it takes:
+**3. Audit a command** — with `SharedKernel.Application.Pipeline`, a marker interface is all it takes:
 
 ```csharp
 public sealed record ApproveOrder(OrderId Id) : ICommand, IAuditableRequest<Result>
@@ -130,8 +131,8 @@ tenant's records. The sealer holds a transaction-scoped advisory lock, so it wor
 
 ## Writing records
 
-`05.Application`'s `AuditingBehavior` writes for every `IAuditableRequest`: `Succeeded` inside the transaction via
-`IUnitOfWork.OnBeforeCommit`, `Failed` after a rollback. Without MediatR, write directly:
+`SharedKernel.Application.Pipeline`'s `AuditingBehavior` writes for every `IAuditableRequest`: `Succeeded` inside the
+transaction via `IUnitOfWork.OnBeforeCommit`, `Failed` after a rollback. Outside the request pipeline, write directly:
 
 ```csharp
 public sealed class ApproveOrderHandler(IAuditTrailWriter audit, IUnitOfWork unitOfWork) : ICommandHandler<ApproveOrder>
@@ -156,7 +157,7 @@ public sealed class ApproveOrderHandler(IAuditTrailWriter audit, IUnitOfWork uni
 | --- | --- |
 | User, actor kind, client, session, tenant | `IRequestContext` |
 | Source service | `SharedKernel:Persistence:ServiceName` / `UseServiceName` |
-| Correlation and W3C trace ids | the ambient `Activity` |
+| Correlation and W3C trace ids | the ambient `Activity` (correlation id from its `WellKnownBaggageKeys.CorrelationId` baggage, set by `UseSharedKernelRequestContext()`) |
 | Action, resource, outcome, snapshots, error code, approval id, idempotency key | the `AuditEntry` |
 
 - **Actor kinds:** `User`, `Service` (a machine identity), `System` (a job under `SystemRequestContext`) or
@@ -184,7 +185,7 @@ var chain   = await auditQuery.VerifyChainAsync("Order", requirePayloads: false,
 | `IAuditLedgerMaintenance.ErasePayloadAsync(recordId, reason)` / `EraseResourcePayloadsAsync(type, id, reason)` | Deletes snapshots and their salt, records the erasure; the chain stays verifiable (it commits to `SHA-256(salt ‖ payload)`) |
 | `SealPendingAsync()` | Seals now (tests, maintenance) |
 | `SealAllChainsAsync(reason)` | After a key compromise — see below |
-| `IAuditSealingProbe.ProbeAsync()` | Unsealed count and age of the oldest — `AddAuditSealingReadinessCheck()` wires it |
+| The `audit-sealing` readiness probe (`IReadinessProbe`, `AuditSealingReadiness.ProbeName`) | Registered by `UseAuditTrail()`. `Healthy` while sealing keeps up, `Degraded` when the oldest unsealed record is older than `Sealer:MaxReadyLag`, `Unhealthy` when the ledger cannot be read; data `UnsealedRecords`, `OldestUnsealedOccurredOn`, `Lag`. The host maps it with `AddHealthChecks().AddSharedKernelReadiness()` |
 
 ## Keys: rotation and compromise
 
@@ -261,6 +262,7 @@ sealer role for superuser, ownership and `UPDATE`/`DELETE`/`TRUNCATE`.
 | `Sealer:BatchSize` | 500 | Records per pass |
 | `Sealer:CheckpointInterval` | 1 hour | How often moved chains are verified and their heads signed |
 | `Sealer:DataSourceName` | — | The sealer's own data source (role) |
+| `Sealer:MaxReadyLag` | 5 minutes | Oldest-unsealed age above which the `audit-sealing` probe reports `Degraded` |
 | `SelfCheck` | `Warn` | `Off`, `Warn`, `Fail` |
 
 **Telemetry:** meter and `ActivitySource` `SharedKernel.Persistence.EfCore.Auditing` — append duration, idempotent
@@ -289,7 +291,7 @@ REGISTER     AddSharedKernelCryptography(configuration) + AddSharedKernelPostgre
              Keys in SharedKernel:Persistence:Auditing:{CurrentKeyId, Keys:{id}:{Material, Order}} from a secret store.
 MIGRATION    migrationBuilder.CreateAuditLedgerTable(runtimeRole: "app_runtime", sealerRole: "app_audit_sealer")
              + REVOKE UPDATE, DELETE, TRUNCATE ... FROM app_cross_tenant. Never RLS on ledger tables.
-AUDIT        MediatR: command implements IAuditableRequest<TResponse> (Action, ResourceType, ResourceId, snapshots)
+AUDIT        Pipeline: command implements IAuditableRequest<TResponse> (Action, ResourceType, ResourceId, snapshots)
              + AddAuditingBehavior(). Manual: unitOfWork.OnBeforeCommit(t => audit.RecordAsync(new AuditEntry {..}, t)).
 ACTIONS      Dotted lowercase names: "order.approved". ResourceType = aggregate name. ResourceId = id string.
 QUERY        IAuditQueryService.QueryAsync(new AuditRecordQuery { ResourceType, ResourceId }) — caller's tenant only.

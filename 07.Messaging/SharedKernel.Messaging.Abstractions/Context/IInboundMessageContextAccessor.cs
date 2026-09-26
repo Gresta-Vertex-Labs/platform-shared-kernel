@@ -8,12 +8,12 @@ namespace SharedKernel.Messaging.Abstractions.Context;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Registered as <em>scoped</em> by <c>MessagingBusBuilder.WithRequestContextPropagation()</c>.
+/// Registered as <em>scoped</em> by <c>MessagingBusBuilder.WithInboundRequestContext()</c>.
 /// MassTransit creates one dependency-injection scope per message delivery, so the value is set
 /// once per delivery and never leaks between concurrently-consumed messages.
 /// </para>
 /// <para>
-/// Most code should never inject this. <c>WithRequestContextPropagation()</c> also registers
+/// Most code should never inject this. <c>WithInboundRequestContext()</c> also registers
 /// <c>IRequestContext</c> so that it resolves to the inbound identity inside a consume and to
 /// whatever the service had registered before — typically <c>13.ServiceDefaults</c>'s HTTP-backed
 /// one — everywhere else. Injecting <c>IRequestContext</c> therefore just works in a handler that

@@ -1,12 +1,18 @@
 # SharedKernel.Presentation.SignalR
 
-`IHubFilter` implementations (tenant context attachment, exception-to-`HubException` mapping), a
-tenant-scoped SignalR group naming convention, and an opt-in Redis-backed scale-out backplane.
+`IHubFilter` implementations (request-context scope for every hub call, exception-to-`HubException`
+mapping, per-connection invocation rate limiting), a tenant-scoped SignalR group naming convention,
+conservative `HubOptions` defaults and a startup CORS diagnostic.
+
+**Tier:** Host. It references `SharedKernel.Primitives`, `SharedKernel.Core` and
+`SharedKernel.Execution` only — no Redis, no `SharedKernel.Presentation.WebApi`. The Redis
+scale-out backplane is the separate
+[`SharedKernel.Presentation.SignalR.Redis`](../SharedKernel.Presentation.SignalR.Redis/README.md)
+package.
 
 Like its `.WebApi` sibling, this package is framework-glue: it converts outcomes your hub methods
-already produce (or throw) into safe, client-facing SignalR responses. It never references
-`05.Application`, `06.Persistence`, `07.Messaging`, or `02.Caching.*` — see "Why the Redis
-backplane is distinct from `02.Caching.Redis.PubSub`" in `14.Presentation/CLAUDE.md`.
+already produce (or throw) into safe, client-facing SignalR responses. It references no mediator,
+persistence, messaging or caching package.
 
 ---
 
@@ -14,12 +20,14 @@ backplane is distinct from `02.Caching.Redis.PubSub`" in `14.Presentation/CLAUDE
 
 ```xml
 <ItemGroup>
-  <PackageReference Include="SharedKernel.Presentation.SignalR" Version="x.y.z" />
+  <PackageReference Include="SharedKernel.Presentation.SignalR" />
+  <!-- only for a hub host that runs more than one replica: -->
+  <PackageReference Include="SharedKernel.Presentation.SignalR.Redis" />
 </ItemGroup>
 ```
 
-Brings in `Microsoft.AspNetCore.SignalR.StackExchangeRedis` as a transitive dependency (used only
-when `WithRedisBackplane` is called — otherwise SignalR stays fully in-memory).
+Versions come from your single `SharedKernelVersion`; every SharedKernel package ships with the
+same version.
 
 ---
 
@@ -28,29 +36,42 @@ when `WithRedisBackplane` is called — otherwise SignalR stays fully in-memory)
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.AddSharedKernelRequestContext();   // SharedKernel.ServiceDefaults.Security
 builder.Services.AddSharedKernelSignalR();
 
 var app = builder.Build();
+
+app.UseSharedKernelRequestContext();                 // first, as for every HTTP host
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapHub<OrdersHub>("/hubs/orders");
 
 app.Run();
 ```
 
-`AddSharedKernelSignalR` registers SignalR plus two global hub filters — applied to **every** hub
-in the service automatically, with no `[HubFilter]` attributes needed:
+`AddSharedKernelSignalR` registers SignalR plus three global hub filters — applied to **every** hub
+in the service automatically, with no `[HubFilter]` attributes needed — and `IRequestContextAccessor`
+(`SharedKernel.Execution`) when nothing else registered it:
 
-- **`TenantContextHubFilter`** — resolves `ITenantProvider` from the connecting client's
-  `HttpContext` and stores the tenant ID in `Context.Items["TenantId"]` for the life of the
-  connection. It never rejects a connection with no resolvable tenant — that policy decision
-  belongs to your Hub (via `[Authorize]` or an explicit check inside the hub method).
+- **`TenantContextHubFilter`** — at connect time takes the caller's `IRequestContext` (the ambient
+  one from `IRequestContextAccessor.Current`, set by `UseSharedKernelRequestContext()` and
+  `SharedKernel.MultiTenancy`'s tenant resolution, or else the `IRequestContext` registered in the
+  connect request's services), keeps it for the life of the connection, and opens a
+  `RequestContextScope` with it around the connect handler, every hub method and the disconnect
+  handler. Hub code — and anything it calls, such as a repository filtering by tenant or an outbound
+  REST call carrying the correlation id — reads the caller through `IRequestContextAccessor` /
+  `IRequestContext`, exactly as on the HTTP path. It never rejects a connection with no tenant —
+  that policy decision belongs to your Hub (via `[Authorize]` or an explicit check).
 - **`HubExceptionMappingFilter`** — wraps every hub method invocation. Known
-  `SharedKernelException` subtypes (`01.Core`) are rethrown as a `HubException` carrying the
-  `Error`'s message; any other exception is logged at `LogLevel.Error` and rethrown as a generic,
-  redacted `HubException("An unexpected error occurred.")`. No stack trace or internal type name
+  `SharedKernelException` subtypes (`SharedKernel.Core`) are rethrown as a `HubException` carrying
+  the `Error`'s message; any other exception is logged at `LogLevel.Error` (`EventId` 14100) and
+  rethrown as a generic, redacted `HubException("An unexpected error occurred.")`. An
+  already-thrown `HubException` passes through unchanged. No stack trace or internal type name
   ever crosses the hub boundary.
+- **`HubInvocationRateLimitFilter`** — a no-op until `configureRateLimit` enables it (see below).
 
-Both filters are opt-out via the `configureHubOptions` callback if a consuming service needs
+The filters are opt-out via the `configureHubOptions` callback if a consuming service needs
 different behavior:
 
 ```csharp
@@ -86,35 +107,17 @@ builder.Services.AddSharedKernelSignalR(options =>
 });
 ```
 
-This is purely a `HubOptions` default-value change — it never alters
-`TenantContextHubFilter`/`HubExceptionMappingFilter`/`WithRedisBackplane` behavior.
+This is purely a `HubOptions` default-value change — it never alters the hub filters' behavior.
 
 ---
 
-## Scale-out setup — Redis backplane
+## Scale-out — Redis backplane
 
-Omitting `WithRedisBackplane` is correct for local dev and single-replica deployments. Add it the
-moment a hub-hosting service runs more than one pod/instance behind a load balancer:
-
-```csharp
-builder.Services
-    .AddSharedKernelSignalR()
-    .WithRedisBackplane(builder.Configuration.GetConnectionString("SignalRBackplane")!);
-
-// Optional: configure the underlying RedisOptions (e.g. channel prefix).
-builder.Services
-    .AddSharedKernelSignalR()
-    .WithRedisBackplane(connectionString, redisOptions =>
-    {
-        redisOptions.Configuration.ChannelPrefix = RedisChannel.Literal("orders-svc");
-    });
-```
-
-`WithRedisBackplane` is a thin pass-through over
-`Microsoft.AspNetCore.SignalR.StackExchangeRedis`'s own `AddStackExchangeRedis` — it manages its
-own `IConnectionMultiplexer` lifecycle internally and **never** shares a connection with
-`02.Caching.Redis.Core`. A backplane outage and a cache-connection outage must never be conflated
-in health checks or logs; that is intentional isolation, not an oversight.
+Omitting a backplane is correct for local dev and single-replica deployments. The moment a
+hub-hosting service runs more than one replica behind a load balancer, add
+[`SharedKernel.Presentation.SignalR.Redis`](../SharedKernel.Presentation.SignalR.Redis/README.md)
+and chain `.WithRedisBackplane(connectionString)` onto `AddSharedKernelSignalR()`. This package has
+no Redis dependency of its own.
 
 ---
 
@@ -124,12 +127,16 @@ in health checks or logs; that is intentional isolation, not an oversight.
 group name string inline elsewhere.
 
 ```csharp
-public sealed class OrdersHub : Hub
+public sealed class OrdersHub(IRequestContextAccessor requestContext) : Hub
 {
     public override async Task OnConnectedAsync()
     {
-        var tenantId = (Guid)Context.Items[TenantContextHubFilter.ItemsKey]!;
-        await Groups.AddToGroupAsync(Context.ConnectionId, HubGroupNaming.TenantGroup(tenantId));
+        // TenantContextHubFilter opened the connection's RequestContextScope around this call.
+        if (requestContext.Current?.TenantId is { } tenantId)
+        {
+            await Groups.AddToGroupAsync(Context.ConnectionId, HubGroupNaming.TenantGroup(tenantId.Value));
+        }
+
         await base.OnConnectedAsync();
     }
 }
@@ -137,11 +144,12 @@ public sealed class OrdersHub : Hub
 // Elsewhere — e.g. from an application-layer notification handler holding an
 // IHubContext<OrdersHub> (composition root concern, not this package's):
 await hubContext.Clients
-    .Group(HubGroupNaming.TenantGroup(tenantId))
+    .Group(HubGroupNaming.TenantGroup(tenantId.Value))
     .SendAsync("OrderUpdated", orderId, cancellationToken);
 ```
 
-`HubGroupNaming.TenantGroup(Guid)` always formats as `"tenant:{tenantId:D}"`.
+`HubGroupNaming.TenantGroup(Guid)` always formats as `"tenant:{tenantId:D}"` — pass
+`TenantId.Value` (`SharedKernel.Execution.Tenancy.TenantId`).
 
 ---
 
@@ -173,22 +181,12 @@ exceeding its limit never throttles any other connection on the same hub.
 A rejected invocation throws a `HubException` carrying a specific, caller-safe message (e.g. `"Too
 many requests. Please slow down."`) — **before** the target hub method body ever executes.
 
-### Hub-filter composition rule this depends on
+### Hub-filter composition rule
 
-`HubExceptionMappingFilter`'s existing catch-all had no branch recognizing an already-thrown
-`HubException` as terminal before this capability shipped — without one, a `HubException` raised by
-`HubInvocationRateLimitFilter` (or any other filter) would fall into the "unknown exception" branch
-and be silently re-wrapped into the generic redacted `"An unexpected error occurred."` message,
-discarding the specific rate-limit text this filter exists to surface. `HubExceptionMappingFilter`
-now has a `catch (HubException) { throw; }` branch, checked **first**, so an already-well-formed
-`HubException` always passes through unchanged.
-
-> **Standing rule for any future hub filter you write that throws its own `HubException`:** never
-> assume `HubExceptionMappingFilter`'s existing catch-all already preserves it — verify explicitly
-> (as this capability's own tests do, with a real two-filter pipeline proving the specific message
-> survives). This branch happened to already exist in this package (present since the very first
-> WO-031 build-out), but that was confirmed only by checking `git log`, not assumed from reading the
-> code once.
+`HubExceptionMappingFilter` rethrows an already-thrown `HubException` unchanged (a
+`catch (HubException) { throw; }` branch, checked first), so the rate-limit filter's specific message
+reaches the client instead of the generic redacted one. Any hub filter you write that throws its own
+`HubException` relies on the same rule — cover it with a test that runs the real two-filter pipeline.
 
 ---
 
@@ -231,7 +229,7 @@ Omitting `.RequireCors(...)` on a mapped hub does **not** fail the request outri
 startup `Warning` above so the gap is visible in logs/telemetry rather than silently causing
 inaccessible or (worse) accidentally-permissive hub connections discovered only in production.
 
-**Which shape ultimately shipped (T-66):** diagnostic-only, confirmed sufficient — no shared
+**Diagnostic only.** No shared
 CORS-integration point (e.g. a negotiate-endpoint origin-policy bridge) was built or is needed. The
 real SignalR CORS-decision marker is `Microsoft.AspNetCore.Cors.Infrastructure.ICorsMetadata`
 (confirmed via reflection against the installed assemblies — **not** `ICorsPolicyMetadata`, a
@@ -245,14 +243,20 @@ always carries identical CORS metadata to its primary hub endpoint.
 
 | Concern | Type |
 | --- | --- |
-| Tenant attachment at connect time | `TenantContextHubFilter` |
+| Caller (`IRequestContext`) scope for every hub call | `TenantContextHubFilter` |
 | Exception-to-`HubException` redaction | `HubExceptionMappingFilter` |
 | Tenant-scoped group naming | `HubGroupNaming.TenantGroup` |
 | SignalR + global filter registration | `AddSharedKernelSignalR` |
 | Conservative resource-exhaustion `HubOptions` defaults | `AddSharedKernelSignalR` (see "Resource-exhaustion defaults" above) |
 | Per-connection invocation rate limit + argument validation | `HubInvocationRateLimitOptions` (via `AddSharedKernelSignalR`'s `configureRateLimit`) |
 | Startup diagnostic for a mapped hub with no CORS policy | `SignalRCorsStartupDiagnostic` (registered automatically by `AddSharedKernelSignalR`) |
-| Redis scale-out backplane | `WithRedisBackplane` |
+| Redis scale-out backplane | `WithRedisBackplane` — in `SharedKernel.Presentation.SignalR.Redis` |
 
 See the [Configuration Reference](../CONFIGURATION.md) for every DI extension method's options and
 defaults.
+
+## Related packages
+
+- [`SharedKernel.Presentation.SignalR.Redis`](../SharedKernel.Presentation.SignalR.Redis/README.md) — the Redis scale-out backplane.
+- [`SharedKernel.Presentation.WebApi`](../SharedKernel.Presentation.WebApi/README.md) — `AddSharedKernelCors` and `CorsPolicyNames` for the hub's CORS policy.
+- `SharedKernel.ServiceDefaults.Security` — `AddSharedKernelRequestContext()` / `UseSharedKernelRequestContext()`, the caller context the hub filter carries.

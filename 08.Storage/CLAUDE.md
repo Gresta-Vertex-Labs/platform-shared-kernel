@@ -10,8 +10,8 @@ host picks a provider.
 Philosophy: **named stores, not buckets. Tenant isolation by construction. Stream-first. Every rule validated
 before I/O, every expected failure a `Result`.**
 
-Redesigned before first publish by **P-559** (2026-09-22). Entry points: `README.md` (overview), each package
-`README.md` (usage), this file (maintainer rules). Nothing in this domain is published yet.
+Entry points: `README.md` (overview), each package `README.md` (usage), this file (maintainer rules). Released with
+the repo-wide release train.
 
 ---
 
@@ -19,17 +19,18 @@ Redesigned before first publish by **P-559** (2026-09-22). Entry points: `README
 
 | Package | Role | References |
 | --- | --- | --- |
-| `SharedKernel.Storage.Abstractions` | Contracts (`IFileStorage`, `ITenantFileStorage`, `IFileStorageFactory`, `IFileStorageHealthProbe`), models, `StorageErrors`/`StorageErrorCodes`/`StorageException`, `StorageValidation`, and the store registry (`AddSharedKernelStorage`, `IStorageBuilder`, `FileStoreRegistration`, internal `FileStorageFactory`/`ScopedFileStorage`/`TenantFileStorage`) | `SharedKernel.Primitives`, `Microsoft.Extensions.DependencyInjection.Abstractions` |
-| `SharedKernel.Storage.S3` | The S3 implementation (AWS, MinIO, any S3-compatible service): `AddS3(configuration)`, `AddS3(configuration, connectionName)`, `AddS3Compatible`, `S3StorageBuilder` (`AddStore`/`AddTenantStore`), `S3StorageOptions`, `S3StoreOptions`, `S3Encryption`, `S3Compatibility`; internal `S3FileStorage`, `S3Connection`, telemetry, logging | Abstractions, `SharedKernel.Configuration`, `AWSSDK.S3`, `Microsoft.Extensions.Logging.Abstractions` |
-| `SharedKernel.Storage.Obs` | Huawei Cloud OBS: `AddObs`, `ObsStorageOptions`, the OBS compatibility profile — nothing else | `SharedKernel.Storage.S3` |
+| `SharedKernel.Storage.Abstractions` (Abstractions tier) | Contracts (`IFileStorage`, `ITenantFileStorage`, `IFileStorageFactory`), models, `StorageErrors`/`StorageErrorCodes`/`StorageException`, `StorageValidation`, `StorageReadinessProbeNames`, and the store registry (`AddSharedKernelStorage`, `IStorageBuilder`, `FileStoreRegistration`, internal `FileStorageFactory`/`ScopedFileStorage`/`TenantFileStorage`/`FileStoreReadinessProbe`) | `SharedKernel.Primitives`, `SharedKernel.Execution`, `Microsoft.Extensions.DependencyInjection.Abstractions` |
+| `SharedKernel.Storage.S3` (Adapter tier) | The S3 implementation (AWS, MinIO, any S3-compatible service): `AddS3(configuration)`, `AddS3(configuration, connectionName)`, `AddS3Compatible`, `S3StorageBuilder` (`AddStore`/`AddTenantStore`), `S3StorageOptions`, `S3StoreOptions`, `S3Encryption`, `S3Compatibility`; internal `S3FileStorage`, `S3Connection`, telemetry, logging | Abstractions, `SharedKernel.Configuration`, `AWSSDK.S3`, `Microsoft.Extensions.Logging.Abstractions` |
+| `SharedKernel.Storage.Obs` (Adapter tier) | Huawei Cloud OBS: `AddObs`, `ObsStorageOptions`, the OBS compatibility profile — nothing else | `SharedKernel.Storage.S3` |
 
 All three track their public API (`PublicAPI.*.txt`, RS0016/RS0017 as errors) and require XML docs (CS1591). Every
 public type lives in the flat namespace `SharedKernel.Storage`, except the S3/OBS option types
 (`SharedKernel.Storage.S3`, `SharedKernel.Storage.Obs`).
 
-**Layering:** `08.Storage` references `01.Core` only. `SharedKernel.Storage.Obs → SharedKernel.Storage.S3` is the one
-intra-domain provider reference, and it is deliberate (P-559): the two implementations were ~500 lines of identical
-code maintained twice. `S3` must never reference `Obs`; Abstractions never references a cloud SDK, S3, OBS or
+**Tiers:** Abstractions references Foundation packages only (`Primitives`, `Execution`). `SharedKernel.Storage.Obs →
+SharedKernel.Storage.S3` is the one adapter→adapter edge, declared in Obs's `<SharedKernelAllowedAdapterReferences>`
+(SKTIER002 otherwise), and it is deliberate: the two implementations were ~500 lines of identical code maintained
+twice. `S3` must never reference `Obs`; Abstractions never references a cloud SDK, S3, OBS or
 `SharedKernel.Configuration` (`StorageTopologyRules`).
 
 ---
@@ -37,7 +38,7 @@ code maintained twice. `S3` must never reference `Obs`; Abstractions never refer
 ## How It Fits Together
 
 ```text
-app code ──> IFileStorage / ITenantFileStorage.ForTenant(id)      (keyed singletons, one per store name)
+app code ──> IFileStorage / ITenantFileStorage.ForTenant(TenantId) (keyed singletons, one per store name)
                  │
                  ▼
           ScopedFileStorage  (Abstractions, internal)   validates keys/options, applies "tenants/{id}/",
@@ -53,6 +54,10 @@ app code ──> IFileStorage / ITenantFileStorage.ForTenant(id)      (keyed sin
   factory, probe))`. The factory returns the provider's **raw** store (`StoreName == name`, `TenantId == null`, whole
   store); the registry checks that and wraps it. The raw store is never handed out, so tenant stores cannot be used
   without a tenant and every copy between handed-out stores can be unwrapped to raw stores for a server-side copy.
+- `AddStore` also registers one `IReadinessProbe` per store, named `storage-{store}`
+  (`StorageReadinessProbeNames.ForStore`), which runs the registration's `probe` delegate (S3: `HEAD` on the bucket).
+  The host maps every probe with `services.AddHealthChecks().AddSharedKernelReadiness()` (ServiceDefaults base);
+  this domain ships no `IHealthCheck` and no probe interface of its own.
 - `IFileStorage` unkeyed resolves only when exactly one shared store is registered (same for `ITenantFileStorage`);
   otherwise it throws naming the stores. Store names: 1–64 of `A-Z a-z 0-9 . _ -`, unique ignoring case.
 - Configuration: connection at `SharedKernel:Storage:S3` (connection `S3`), `SharedKernel:Storage:S3:{name}` (named
@@ -66,9 +71,9 @@ app code ──> IFileStorage / ITenantFileStorage.ForTenant(id)      (keyed sin
 ## Contract Rules (do not break)
 
 1. **Keys are validated before any I/O** by `StorageValidation.ValidateKey`: no empty key, leading `/`, `\`, empty/`.`/`..`
-   segment, control character, or more than 1024 UTF-8 bytes (checked again by the provider on the full key). Tenant
-   ids: 1–128 of `A-Z a-z 0-9 . _ -`, not `.`/`..` — **validated, never escaped**, so two ids cannot share a prefix.
-2. **Tenant keys are `{store prefix}tenants/{tenantId}/{key}`.** A tenant view returns relative keys and rewrites
+   segment, control character, or more than 1024 UTF-8 bytes (checked again by the provider on the full key). Tenants
+   are `SharedKernel.Execution.Tenancy.TenantId` values (a non-empty GUID); `ForTenant(default)` throws.
+2. **Tenant keys are `{store prefix}tenants/{tenantId:D}/{key}`.** A tenant view returns relative keys and rewrites
    error messages so the prefix never reaches a caller. A tenant store is never resolvable as `IFileStorage`.
 3. **Expected failures are `Result` values with a `StorageErrorCodes` code** — built only through `StorageErrors`.
    Throttling, 5xx, timeouts and network failures are `storage.unavailable` (after the SDK's own retries), never an
@@ -100,7 +105,7 @@ app code ──> IFileStorage / ITenantFileStorage.ForTenant(id)      (keyed sin
 | --- | --- |
 | Named stores instead of a bucket argument | Bucket names are configuration; per-call buckets spread them through code and made the unkeyed `IAmazonS3` collide when S3 and OBS were both registered (the old OBS client silently served S3 stores) |
 | Tenant isolation in Abstractions (`ScopedFileStorage`), not per provider | One implementation for every provider and the in-memory fake; providers only see validated, prefixed keys |
-| `ITenantFileStorage.ForTenant(id)` returning a view, not a tenant parameter on 17 members | Same explicitness as `ITenantCacheService` with one entry point; a view cannot be used without a tenant |
+| `ITenantFileStorage.ForTenant(TenantId)` returning a view, not a tenant parameter on 17 members | Same explicitness as `ITenantCacheService` with one entry point; a view cannot be used without a tenant |
 | Presigned members on `IFileStorage`, `IBlobUriGenerator` removed | One object per store; tenant views cover presigning for free |
 | OBS over the S3 implementation (sibling rule reversed) | The two packages were identical except for configuration; OBS differences are a compatibility profile |
 | Conditional copies stream through a conditional PUT | MinIO (and possibly others) ignore `If-None-Match` on `CopyObject` and overwrite — verified against MinIO 2025-09 |
@@ -112,7 +117,7 @@ app code ──> IFileStorage / ITenantFileStorage.ForTenant(id)      (keyed sin
 | `S3Compatibility.ETagIsContentMd5` + `bytes=0-` full downloads | OBS ETags of encrypted objects are not content MD5s and the SDK's legacy MD5 check failed every full download; the only SDK switch is process-wide (`AWSConfigsS3.DisableDefaultChecksumValidation`), which a library must not flip |
 | Named S3 connections | Buckets owned by different IAM users could not be configured together — found by the live run |
 | OBS profile: conditions and checksums refused, tags on | Measured on OBS `tr-west-1`: `If-None-Match`, `If-Match` and `x-amz-checksum-sha256` are accepted and ignored (overwrite, unchecked bytes); tagging works |
-| `DefaultBucket`, `CheckHealthAsync(bucket)`, `FileMetadata` with empty content type removed | Dead setting; health belongs to `IFileStorageHealthProbe`; listings honestly have no content type (`FileListItem`) |
+| `DefaultBucket`, `CheckHealthAsync(bucket)`, `FileMetadata` with empty content type removed | Dead setting; health belongs to the per-store `IReadinessProbe`; listings honestly have no content type (`FileListItem`) |
 
 ---
 
@@ -136,8 +141,9 @@ app code ──> IFileStorage / ITenantFileStorage.ForTenant(id)      (keyed sin
   Testcontainers) for every behaviour: round trips, non-seekable multipart upload, ranges, conditions, checksums, batch
   delete, copies across stores and tenants, listing and paging, presigned GET/PUT/POST/multipart through `HttpClient`,
   tenant isolation, probe, outage → `unavailable`, cancellation, telemetry. Never mock `IAmazonS3` for behaviour.
-- The storage test projects do not reference `SharedKernel.Testing` (it references Abstractions for the in-memory
-  store; keeping them apart keeps the build graph acyclic in practice).
+- The in-memory store for consuming services' tests is `16.Testing/SharedKernel.Storage.Testing`
+  (`AddInMemoryStore`/`AddInMemoryTenantStore`, namespace `SharedKernel.Testing.Storage`). The storage test projects
+  do not reference it (it references Abstractions; keeping them apart keeps the build graph acyclic).
 - `consumer-verify/` composes S3 and OBS stores in a real host and checks start-up validation.
 
 ## Known Limits
@@ -171,25 +177,10 @@ changes. Never document a provider behaviour that no test or live run has shown.
 
 `samples/DocumentsApi/DocumentsApi.Tests` runs every capability through an HTTP API against MinIO, and against real
 Amazon S3 (two IAM users, two buckets) and Huawei Cloud OBS when `SK_LIVE_*` is set (see that README). Run it after
-any provider change: MinIO accepted three defects that only the real services exposed (P-559 live pass, below).
+any provider change: MinIO accepted three defects that only the real services exposed (P-559 live pass, recorded in `state-map.md`).
 
 ---
 
-## Changelog
+## History
 
-- [2026-09-22] **P-559 pre-publish redesign** of all three packages. Named and tenant-scoped stores, conditional
-  writes, SHA-256 verification, range reads, folder listing with paging, cross-store copy, presigned PUT with signed
-  headers, presigned POST forms with size/type policy, presigned multipart, IAM default credential chain, SSE-S3/KMS,
-  storage tiers, `ExpectedBucketOwner`, telemetry, `unavailable` instead of exceptions, `Forbidden` for access denied;
-  OBS reduced to configuration over S3. 109 tests (66 unit, 43 MinIO). Pre-P-559 history (WO-043, WO-055, SK.08.*
-  phases) is in git history and `state-map.md`.
-- [2026-09-22] **P-559 live verification** through the new `samples/DocumentsApi` (100 scenarios: 50 MinIO, 50 AWS S3
-  eu-central-1 + OBS tr-west-1, all passing). Fixed what the real services exposed: `FileUploadOptions.ContentLength`
-  (a checksummed upload of a request body failed), `S3Compatibility.ETagIsContentMd5` (every full download of an
-  encrypted OBS object failed the SDK's MD5 check), named S3 connections `AddS3(configuration, name)` (buckets with
-  different IAM users could not be configured), EventId 8105 for a wrong region (was a bare provider error). OBS
-  profile corrected from verified behaviour: tags on; conditions and checksums stay refused because OBS ignores them.
-- [2026-09-22] **P-559 documentation pass**: domain README rewritten as the GitHub landing page (packages,
-  architecture, 10-minute start, provider matrix, guarantees); the three package READMEs rewritten to the Caching gold
-  standard with recipes, reference tables and AI quick references; XML docs of every public member reviewed against
-  the implementation; NuGet descriptions rewritten; documentation rules added to this file.
+Design history (P-559 redesign and live pass, WO-086 foundation refactor) is in `state-map.md`.

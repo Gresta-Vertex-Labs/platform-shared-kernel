@@ -1,6 +1,6 @@
 # SharedKernel.AI.Qdrant
 
-The Qdrant vector-database provider for `SharedKernel.AI.Abstractions`. Implements `IVectorCollection<TRecord>`, `IVectorCollectionProvisioner`, and `IVectorProviderDescriptor` against the official `Qdrant.Client` gRPC SDK, plus declares Qdrant-exclusive contracts unreachable from a Milvus- or SemanticKernel-only composition root.
+The Qdrant vector-database provider for `SharedKernel.AI.Abstractions`. Implements `IVectorCollection<TRecord>`, `IVectorCollectionProvisioner`, and `IVectorProviderDescriptor` against the official `Qdrant.Client` gRPC SDK, plus declares Qdrant-exclusive contracts unreachable from a SemanticKernel-only composition root. Adapter tier: references `SharedKernel.AI.Abstractions`, `SharedKernel.Primitives`, `SharedKernel.Configuration` and `Qdrant.Client`.
 
 Application code should inject the neutral `SharedKernel.AI.Abstractions` interfaces — never `Qdrant.Client`'s `QdrantClient`/`IQdrantClient` types directly.
 
@@ -8,7 +8,7 @@ Application code should inject the neutral `SharedKernel.AI.Abstractions` interf
 
 - `QdrantVectorCollection<TRecord>` — the neutral `IVectorCollection<TRecord>` implementation: write (`UpsertAsync`, `UpsertManyAsync`, `DeleteAsync`, `DeleteManyAsync`, `DeleteByFilterAsync`), read (`QueryAsync`, `GetAsync`, `CountAsync`), corpus walk (`ScrollAsync`), and a documented no-op `WaitUntilQueryableAsync` (every write already dispatches `wait: true`)
 - `QdrantFilterCompiler` — an exhaustive, no-discard-arm translation of the closed 8-node `VectorFilter` AST onto Qdrant's `must`/`must_not`/`should` condition grammar
-- `QdrantCollectionProvisioner` — `EnsureCollectionAsync`/`CollectionExistsAsync`/`DeleteCollectionAsync`/`CutoverAsync`/`ProbeAsync`, persisting `VectorCollectionDefinition.Fingerprint` in Qdrant's own collection-level `metadata` map (requires Qdrant server **v1.16.0+** — see the version note below)
+- `QdrantCollectionProvisioner` — `EnsureCollectionAsync`/`CollectionExistsAsync`/`DeleteCollectionAsync`/`CutoverAsync`, persisting `VectorCollectionDefinition.Fingerprint` in Qdrant's own collection-level `metadata` map (requires Qdrant server **v1.16.0+** — see the version note below)
 - `QdrantProviderDescriptor` — the zero-I/O `IVectorProviderDescriptor` singleton
 - `IQdrantHybridQueryAccessor<TRecord>` — **Qdrant-exclusive**: dense+sparse hybrid (Reciprocal Rank Fusion) similarity queries
 - `IQdrantQuantizationProfileAccessor` — **Qdrant-exclusive**: read-only access to a collection's configured quantization profile
@@ -19,8 +19,10 @@ Application code should inject the neutral `SharedKernel.AI.Abstractions` interf
 ## Install
 
 ```xml
-<ProjectReference Include="..\SharedKernel.AI.Qdrant\SharedKernel.AI.Qdrant.csproj" />
+<PackageReference Include="SharedKernel.AI.Qdrant" />
 ```
+
+Versions come from the consumer's single `SharedKernelVersion`.
 
 ## Configuration
 
@@ -74,13 +76,21 @@ services
 
 Never register two collections against the same `TRecord` — the second unkeyed registration silently wins.
 
+## Readiness
+
+`Build()` registers one `VectorCollectionReadinessProbe` (`IReadinessProbe`) per collection, named `vector-store-qdrant-{collection}` — `vector-store-qdrant-product-chunks` above. It is ready when the Qdrant server answers, the collection exists and is addressable with this service's credentials, and a query succeeds; `ReadinessReport.Data` carries the vector count, engine version and stored schema fingerprint. Map every probe to a health check in the host:
+
+```csharp
+builder.Services.AddHealthChecks().AddSharedKernelReadiness();   // SharedKernel.ServiceDefaults
+```
+
 ## Server version requirement — collection metadata needs Qdrant v1.16.0+
 
-`QdrantCollectionProvisioner` persists `VectorCollectionDefinition.Fingerprint` in Qdrant's genuine collection-level `metadata` map (`CreateCollectionAsync`/`UpdateCollectionAsync`'s `metadata` parameter). **This requires a Qdrant server at v1.16.0 or later.** Verified empirically against real containers: a `v1.13.4` server silently accepts a write carrying `metadata` and then returns it back empty (`GetCollectionInfoAsync().Config.Metadata.Count == 0`) — no error, no warning — which defeats `ProbeAsync`'s schema-drift detection with no visible symptom until a real round-trip is checked. A `v1.16.0`+ server round-trips it correctly. Reflecting the client SDK proves the *client* can send the field; it proves nothing about the *server version actually deployed*.
+`QdrantCollectionProvisioner` persists `VectorCollectionDefinition.Fingerprint` in Qdrant's genuine collection-level `metadata` map (`CreateCollectionAsync`/`UpdateCollectionAsync`'s `metadata` parameter). **This requires a Qdrant server at v1.16.0 or later.** Verified empirically against real containers: a `v1.13.4` server silently accepts a write carrying `metadata` and then returns it back empty (`GetCollectionInfoAsync().Config.Metadata.Count == 0`) — no error, no warning — which defeats the readiness probe's schema-fingerprint reporting and drift detection with no visible symptom until a real round-trip is checked. A `v1.16.0`+ server round-trips it correctly. Reflecting the client SDK proves the *client* can send the field; it proves nothing about the *server version actually deployed*.
 
 ## The seam rule — Qdrant-exclusive contracts never leak into `.Abstractions`
 
-`IQdrantHybridQueryAccessor<TRecord>`, `IQdrantQuantizationProfileAccessor`, and `IQdrantRawClientAccessor` are declared **only** in this package. Referencing any of them takes a compile-time dependency on `SharedKernel.AI.Qdrant` — a composition root wired against `SharedKernel.AI.Milvus` or `SharedKernel.AI.SemanticKernel` alone cannot even name these types, so swapping providers surfaces as a **build error** enumerating every non-portable call site, never a runtime `GetRequiredService` failure discovered in production.
+`IQdrantHybridQueryAccessor<TRecord>`, `IQdrantQuantizationProfileAccessor`, and `IQdrantRawClientAccessor` are declared **only** in this package. Referencing any of them takes a compile-time dependency on `SharedKernel.AI.Qdrant` — a composition root wired against `SharedKernel.AI.SemanticKernel` alone cannot even name these types, so swapping providers surfaces as a **build error** enumerating every non-portable call site, never a runtime `GetRequiredService` failure discovered in production.
 
 `IQdrantRawClientAccessor` is additionally triple-gated: it is registered only when the composition root calls `.AllowRawClientAccess()`, that call logs a startup `Warning`, and its own XML doc states in capitals that **THE RAW CLIENT BYPASSES TENANT SCOPING** — tenant-scope injection happens inside `QdrantVectorCollection<TRecord>`'s own translation path; a call made directly against the raw client receives none of it.
 

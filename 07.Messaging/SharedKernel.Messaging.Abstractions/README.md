@@ -24,12 +24,11 @@ for RabbitMQ and Azure Service Bus.
 | --- | --- |
 | `IMessageBus` / `IEventPublisher`, every verb returning `Result` | An unreachable broker is a value you handle, not an exception you must know to catch |
 | Consumer idempotency options (the store is `SharedKernel.Idempotency.Abstractions`' `IIdempotencyStore`) | A duplicate delivery is refused atomically; "in flight" and "already done" are different answers |
-| `MessageRequestContext` + `MessageContextHeaders` | A consumer knows which tenant and which actor caused the message |
+| `IInboundMessageContextAccessor` (over `SharedKernel.Execution`'s `IRequestContext`) | A consumer knows which tenant and which actor caused the message |
 | `PublishContext` | Correlation, causation, tenant, subject, partition key and headers, per dispatch |
 | `IMessageHeaderPropagator` | Ambient values reach every message without a line at each call site |
 | `IMessageScheduler` | The broker holds a deferred message, so it survives this process restarting |
 | `IFaultConsumer` | A message that exhausted its retries becomes visible instead of only ending up in an error queue |
-| `IMessageBusProbe` | Kubernetes readiness over the real configured bus |
 
 ## Contents
 
@@ -44,13 +43,15 @@ for RabbitMQ and Azure Service Bus.
 
 ## Install
 
-```bash
-dotnet add package SharedKernel.Messaging.Abstractions
+```xml
+<PackageReference Include="SharedKernel.Messaging.Abstractions" />
 ```
 
-Your application and domain projects reference this package. Your **startup project** additionally references
-`SharedKernel.Messaging.MassTransit`, which registers the implementations. That split is what keeps the transport
-out of the type signatures your tests have to construct.
+The version comes from your single `SharedKernelVersion`, like every SharedKernel package. This is an
+**Abstractions-tier** package: your application and domain projects reference it. Your **startup project**
+additionally references `SharedKernel.Messaging.MassTransit` and one transport satellite
+(`SharedKernel.Messaging.MassTransit.RabbitMq` or `.AzureServiceBus`), which register the implementations. That
+split is what keeps the transport out of the type signatures your tests have to construct.
 
 ## Quick start
 
@@ -87,7 +88,7 @@ public sealed class HoldShipmentHandler(IMessageBus bus)
 | Stop a duplicate delivery from running the consumer twice | Register an `IIdempotencyStore` for `IdempotencyPurpose.Message` — a ready-made store (below) or your own |
 | Push an ambient value onto every outgoing message | Implement `IMessageHeaderPropagator` |
 | See what failed after its retries ran out | Implement `IFaultConsumer<TMessage>` |
-| Report bus health to Kubernetes | `IMessageBusProbe` |
+| Report bus health to Kubernetes | Nothing here — the MassTransit package registers an `IReadinessProbe` named `messaging`; the host maps it with `AddSharedKernelReadiness()` |
 | Accept an old message shape during a rolling deploy | Implement `IMessageVersionTranslator<TOld, TNew>` |
 
 ## Publishing
@@ -121,10 +122,11 @@ you never have to disable a propagator to override it once.
 ## Idempotency
 
 Brokers deliver at least once. The consumer filter refuses the second delivery through
-`SharedKernel.Idempotency.Abstractions`' `IIdempotencyStore`, registered for `IdempotencyPurpose.Message` (since
-P-568 the same contract also guards the application pipeline's commands). It is deliberately a *reservation*, not a
-check followed by a write; the message id ("D" form) is the key, the fingerprint is fixed, and this package's
-`IdempotencyOptions` supplies the lease (`LeaseDuration`) and the retention (`ExpiryWindow`):
+`SharedKernel.Idempotency.Abstractions`' `IIdempotencyStore`, registered for `IdempotencyPurpose.Message` (the same
+contract guards the application pipeline's commands under `IdempotencyPurpose.Request`). It is deliberately a
+*reservation*, not a check followed by a write; the message id ("D" form) is the key, scoped by the ambient tenant,
+the fingerprint is fixed, and this package's `IdempotencyOptions` (section `SharedKernel:Messaging:Idempotency`)
+supplies the lease (`LeaseDuration`, 30 s) and the retention (`ExpiryWindow`, 24 h):
 
 ```csharp
 Task<IdempotencyReservation> TryBeginAsync(IdempotencyPurpose purpose, string key, string fingerprint, TimeSpan ttl, CancellationToken ct);
@@ -137,6 +139,7 @@ Task<bool> ReleaseAsync(IdempotencyPurpose purpose, string key, string token, Ca
 | `Started` | This delivery now holds the reservation | Runs the consumer, then completes — or releases if it throws |
 | `InProgress` | Another delivery holds it right now | Leaves the message unacknowledged so the broker redelivers it |
 | `Completed` | A previous delivery consumed it to completion | Returns without running the consumer, acknowledging the message |
+| `FingerprintMismatch` | Cannot happen for messages (the fingerprint is fixed) | Throws — it indicates a store defect |
 
 > **`TryBeginAsync` must be one conditional write** — a Redis `SET NX`, an `INSERT … ON CONFLICT DO NOTHING` —
 > never a read followed by a write. No caller can make a check-then-act pair atomic from outside.
@@ -145,25 +148,34 @@ Task<bool> ReleaseAsync(IdempotencyPurpose purpose, string key, string token, Ca
 > distinguish "in flight" from "completed": a redelivery following a **failed** attempt was reported as a
 > duplicate, acknowledged, and dropped. Silent message loss, in the component whose job is not losing messages.
 
-**Use a ready-made store** rather than writing one: `SharedKernel.Idempotency.Redis` (atomic Lua reservation) or
-`SharedKernel.Idempotency.EfCore` (`INSERT … ON CONFLICT` on a unique key). Both are tenant-scoped and both have
-been verified against real infrastructure.
+**Use a ready-made store** rather than writing one: `SharedKernel.Idempotency.Redis`
+(`AddRedisIdempotency(p => p.ForMessages())`, atomic Lua reservation) or `SharedKernel.Idempotency.EfCore`
+(`AddEfCoreIdempotency(..., p => p.ForMessages())`, `INSERT … ON CONFLICT` on a unique key). Both are tenant-scoped
+and both have been verified against real infrastructure. A custom store registers with
+`AddIdempotencyStore<T>(IdempotencyPurpose.Message)`.
+
+> **Known limitation:** the key is the message id alone, with no consumer or endpoint in it. If one service has two
+> receive endpoints (or two polymorphic consumers) that receive the same message, the second is skipped as a
+> duplicate. Do not enable consumer idempotency in such a service until the key includes the endpoint.
 
 ## The caller across the bus
 
 A consumer has no HTTP request, so `IRequestContext.TenantId` is `null` and tenant-scoped persistence fails
-closed. These three types are how the publisher's identity reaches it:
+closed. The caller contract is `SharedKernel.Execution`'s (Foundation tier), shared with HTTP, gRPC, Temporal
+and scheduled jobs; this package adds only the accessor for the current delivery:
 
-| Type | Role |
-| --- | --- |
-| `MessageContextHeaders` | The header names the actor travels under (the tenant uses `01.Core`'s `WellKnownHeaders.TenantId`) |
-| `MessageRequestContext` | An `IRequestContext` rebuilt from those headers |
-| `IInboundMessageContextAccessor` | The current delivery's identity, or `null` outside a consume |
+| Type | Package | Role |
+| --- | --- | --- |
+| `WellKnownHeaders` (`CorrelationId`, `TenantId`, `ActorId`, `ActorKind`, `ClientId`) | `SharedKernel.Primitives` | The header names the caller travels under (`X-Correlation-Id`, `X-Tenant-Id`, `x-sk-actor-*`, `x-sk-client-id`) |
+| `RequestContextPropagation` | `SharedKernel.Execution` | The one mapping between an `IRequestContext` and those headers |
+| `PropagatedRequestContext` | `SharedKernel.Execution` | An `IRequestContext` rebuilt from those headers |
+| `IInboundMessageContextAccessor` | this package | The current delivery's identity, or `null` outside a consume |
 
-Turn it on with `MessagingBusBuilder.WithInboundRequestContext()` in the transport package. After that,
-injecting `IRequestContext` into a consumer just works — it answers for the caller that published.
+Turn it on with `MessagingBusBuilder.WithInboundRequestContext()` in `SharedKernel.Messaging.MassTransit`. After
+that, injecting `IRequestContext` into a consumer just works — it answers for the caller that published — and the
+consumer runs inside a `RequestContextScope`, so the calls it makes carry the same tenant and correlation id.
 
-> **Attribution, not authorization.** `MessageRequestContext.HasPermissionAsync` always returns `false`,
+> **Attribution, not authorization.** `PropagatedRequestContext.HasPermissionAsync` always returns `false`,
 > whatever the message said. Headers are attacker-controllable by anyone who can reach the broker, so a
 > permission carried on one would be a permission granted by the wire.
 
@@ -190,9 +202,10 @@ unchanged, so a bug in your code is never laundered into a failed `Result`.
 | `Microsoft.Extensions.DependencyInjection.Abstractions` | `IMessagingBuilder.Services` |
 | `SharedKernel.Primitives` | `Result` / `Error` |
 | `SharedKernel.Contracts` | The `IIntegrationEvent` constraint on `IEventPublisher` |
-| `SharedKernel.Application.Abstractions` | `IRequestContext` and `ActorKind` — the caller-identity contracts only |
+| `SharedKernel.Execution` | `IRequestContext` and `TenantId` (`PublishContext.WithTenantId`) — Foundation tier |
 
-**No transport dependency, and no configuration binder.** A service that consumes `IMessageBus` without composing
+This package is in the **Abstractions** tier: it references Foundation and Model packages plus
+`Microsoft.Extensions.DependencyInjection.Abstractions` only. **No transport dependency, and no configuration binder.** A service that consumes `IMessageBus` without composing
 a bus inherits neither.
 
 ---

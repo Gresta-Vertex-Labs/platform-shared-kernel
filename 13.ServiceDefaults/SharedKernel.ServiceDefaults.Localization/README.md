@@ -2,6 +2,7 @@
 
 Precedence-ordered request-culture resolution, composed on top of ASP.NET Core's own
 `RequestLocalizationMiddleware`. One of the `SharedKernel.ServiceDefaults.*` integration packages.
+**Tier:** Host.
 
 It decides **which culture** a request gets. It translates nothing — pair it with `01.Core`'s
 `SharedKernel.Localization` and its `ILocalizationCatalog` for that.
@@ -13,18 +14,23 @@ It decides **which culture** a request gets. It translates nothing — pair it w
 <PackageReference Include="SharedKernel.ServiceDefaults.Localization" />
 ```
 
+Versions come from the consumer's single `SharedKernelVersion` property.
+
 ```csharp
 using SharedKernel.ServiceDefaults.Localization;
 
 builder.AddServiceDefaults();
+builder.Services.AddSharedKernelRequestContext();          // SharedKernel.ServiceDefaults.Security
 builder.Services.AddSharedKernelMultiTenancy();
 builder.Services.AddScoped<ITenantCatalog>(sp => /* see SharedKernel.MultiTenancy's README */);
 
 builder.AddSharedKernelLocalization(o => o.UserPreferenceClaimType = "preferred_culture");
 
 var app = builder.Build();
+app.UseSharedKernelRequestContext();
+app.UseExceptionHandler();
 app.UseAuthentication();
-app.UseMiddleware<TenantResolutionMiddleware>(); // populates the ambient tenant id
+app.UseMiddleware<TenantResolutionMiddleware>(); // sets the request context's tenant
 app.UseRequestLocalization();                     // the BCL call — this package never wires it for you
 ```
 
@@ -36,7 +42,8 @@ Signed signals before an unsigned header, deliberately — the same security les
 1. **`UserPreference`** — the authenticated user's stored preference claim,
    `IUserContext.FindClaim(UserPreferenceClaimType)`. Skipped when `UserPreferenceClaimType` is unconfigured.
 2. **`TenantDefault`** — the current tenant's `TenantDescriptor.DefaultCulture`, through an optionally
-   registered `ITenantCatalog`. Skipped, never throwing, when none is registered.
+   registered `ITenantCatalog`. The tenant is `IRequestContext.TenantId` (`RequestContextScope.Current`, else
+   the registered `IRequestContext`). Skipped, never throwing, when there is no tenant or no catalog.
 3. **`AcceptLanguageHeader`** — the BCL's `AcceptLanguageHeaderRequestCultureProvider`.
 
 ## Rules
@@ -44,14 +51,12 @@ Signed signals before an unsigned header, deliberately — the same security les
 | Rule | Why |
 | --- | --- |
 | Configure at least one of `UserPreferenceClaimType` or an `ITenantCatalog` | With neither, both dynamic steps can never resolve and culture comes from `Accept-Language` alone — almost always by accident. A one-time startup warning (EventId `13004`) says so. |
-| Place `TenantResolutionMiddleware` after `UseAuthentication()` and before `UseRequestLocalization()` | The tenant-default step reads the ambient tenant id, which that middleware populates from the authenticated user. |
+| Place `TenantResolutionMiddleware` after `UseAuthentication()` and before `UseRequestLocalization()` | The tenant-default step reads the request context's tenant, which that middleware sets in its inner `RequestContextScope`. |
 
 ## Why a separate package
 
 It brings `SharedKernel.MultiTenancy` — for `ITenantCatalog` — and `SharedKernel.Security.Abstractions`,
-neither of which a service without localization needs. The types keep their
-`SharedKernel.ServiceDefaults.Localization` namespace from before the WO-084 split, and EventId `13004` is
-unchanged, so moving to this package changes a `PackageReference` and no source.
+neither of which a service without localization needs.
 
 ## Package
 

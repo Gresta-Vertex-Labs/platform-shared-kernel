@@ -63,7 +63,8 @@ dotnet add package SharedKernel.Caching.Abstractions
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
-| Dependencies | `Microsoft.Extensions.DependencyInjection.Abstractions` only |
+| Tier | Abstractions |
+| Dependencies | `SharedKernel.Execution` (for `TenantId`) and `Microsoft.Extensions.DependencyInjection.Abstractions` only |
 | Registration | None in this package; register a provider (see [Provider setup](#provider-setup)) |
 | Namespace | `SharedKernel.Caching.Abstractions` |
 
@@ -220,6 +221,14 @@ builder.Services
 fails if it is missing or invalid. Optional features such as compression, encryption and warmup are documented in the
 provider READMEs.
 
+`AddSharedKernelCaching` registers a `cache` readiness probe and `AddRedisConnection` a `redis` one
+(`SharedKernel.Primitives.Health.IReadinessProbe`); a host reports both with
+`services.AddHealthChecks().AddSharedKernelReadiness()` from `SharedKernel.ServiceDefaults`.
+
+In unit tests, `SharedKernel.Caching.Testing`'s `services.AddFakeCachingServices()` registers in-memory fakes of
+`ICacheService`, `IDistributedLockService` and both key providers (`AddFakeTenantCacheService()` adds
+`ITenantCacheService`); the Redis-specific fakes are in `SharedKernel.Caching.Redis.Testing` (`AddFakeRedisServices()`).
+
 ## Recipes
 
 ### 1. Cache a query
@@ -276,18 +285,18 @@ public sealed class InvoiceReader(ITenantCacheService cache, IInvoiceRepository 
 {
     private static readonly CachePolicy Policy = CachePolicy.Default.WithTags("invoices");
 
-    public ValueTask<Invoice?> GetAsync(string tenantId, string invoiceId, CancellationToken ct) =>
+    public ValueTask<Invoice?> GetAsync(TenantId tenantId, string invoiceId, CancellationToken ct) =>
         cache.GetOrSetAsync(tenantId, "invoice", invoiceId, t => invoices.FindAsync(tenantId, invoiceId, t), Policy, ct);
 
-    public ValueTask OnInvoicesImportedAsync(string tenantId, CancellationToken ct) =>
+    public ValueTask OnInvoicesImportedAsync(TenantId tenantId, CancellationToken ct) =>
         cache.RemoveByTagAsync(tenantId, "invoices", ct);   // this tenant only
 
-    public ValueTask OnTenantOffboardedAsync(string tenantId, CancellationToken ct) =>
+    public ValueTask OnTenantOffboardedAsync(TenantId tenantId, CancellationToken ct) =>
         cache.RemoveTenantAsync(tenantId, ct);              // every entry of the tenant
 }
 ```
 
-Pass the policy unscoped; the service scopes it. The tenant is always an argument, never ambient state.
+Pass the policy unscoped; the service scopes it. The tenant is always an argument, never ambient state: a `SharedKernel.Execution.Tenancy.TenantId` (`default(TenantId)` throws), written into keys and tags as its lowercase GUID. A caller that holds the nullable `IRequestContext.TenantId` decides what a missing tenant means before it calls.
 
 ### 5. Survive an outage of the source
 
@@ -394,18 +403,19 @@ Presets: `CachePolicy.Default`, and `CachePolicy.NeverExpire` (no time-based exp
 | Kind | Format | Example |
 | --- | --- | --- |
 | Key | `{service}:{entity}:{id}[:{segment}…]` | `orders:invoice:42:en-GB` |
-| Tenant key | `{service}:@{tenant}:{entity}:{id}[:{segment}…]` | `orders:@tenant-a:invoice:42` |
-| Tenant tag | `@{tenant}:{tag}` | `@tenant-a:invoices` |
-| Tenant-wide tag | `@{tenant}` | `@tenant-a` |
+| Tenant key | `{service}:@{tenant}:{entity}:{id}[:{segment}…]` | `orders:@3f2b…e91c:invoice:42` |
+| Tenant tag | `@{tenant}:{tag}` | `@3f2b…e91c:invoices` |
+| Tenant-wide tag | `@{tenant}` | `@3f2b…e91c` |
 
-- **Escaping.** Every caller-supplied part is escaped: `%` → `%25`, `:` → `%3A`, `@` → `%40`.
+- **Tenant.** `{tenant}` is the `TenantId` written as its lowercase GUID (`TenantId.ToString()`); `default(TenantId)` throws `ArgumentException`.
+- **Escaping.** Every other caller-supplied part is escaped: `%` → `%25`, `:` → `%3A`, `@` → `%40`.
 - **Service names.** 1–64 characters of lowercase `a-z`, `0-9`, `.`, `_` or `-`, starting with a letter or digit.
 
 ### Exceptions
 
 | Exception | Thrown by | When |
 | --- | --- | --- |
-| `ArgumentException` | Every cache method, key builders | A key, tag, tenant, entity or id is null or whitespace; an invalid service name; a tag starting with `@` |
+| `ArgumentException` | Every cache method, key builders | A key, tag, entity or id is null or whitespace; a `default(TenantId)`; an invalid service name; a tag starting with `@` |
 | `ArgumentNullException` | Every method | A factory, policy or collection is `null` |
 | `ArgumentOutOfRangeException` | `CachePolicy`, `CacheFactoryContext.SetDurations`, `DistributedLockOptions`, `DistributedLease` | A duration, threshold or token is out of range |
 | `InvalidOperationException` | `CachePolicy.ForTenant`, `WithTags`, `WithFactoryTimeouts`; `CacheLookup<T>.Value` | Scoping twice; soft timeout without fail-safe; reading the value of a miss |
@@ -486,8 +496,9 @@ FORBIDDEN      Provider types (IFusionCache, IConnectionMultiplexer) in applicat
   recorded.
 - **Every public member is documented**, including the exceptions it throws. The XML documentation ships in the
   package.
-- **Provider-neutral by rule.** Architecture tests fail CI if this package references anything but
-  `Microsoft.Extensions.DependencyInjection.Abstractions`, or declares a provider-specific type.
+- **Provider-neutral by rule.** Architecture tests fail CI if this package references anything but `SharedKernel.Execution` and
+  `Microsoft.Extensions.DependencyInjection.Abstractions`, or declares a provider-specific type; the build rejects
+  any non-Abstractions-tier dependency (SKTIER001, SKTIER003).
 - **Always-valid values.** `CachePolicy`, `DistributedLockOptions` and `DistributedLease` validate on construction;
   `CachePolicy` copies caller arrays and compares tags by value.
 - **Stable formats.** The key and tag format is part of the contract; a change is a breaking change.
@@ -500,6 +511,6 @@ FORBIDDEN      Provider types (IFusionCache, IConnectionMultiplexer) in applicat
   `07.Messaging`.
 - **No Redis-specific contracts.** Hash storage and Pub/Sub live in `SharedKernel.Caching.Redis.HashStore` and
   `SharedKernel.Caching.Redis.PubSub`.
-- **No ambient tenant.** Tenant identity is always an explicit argument, resolved at the edge.
+- **No ambient tenant.** Tenant identity is always an explicit `TenantId` argument, resolved at the edge.
 - **No sliding expiration and no key versioning.** See [Design decisions](#design-decisions).
 - **No lock renewal API.** Locks are kept alive by the provider until disposed; there is nothing to renew by hand.

@@ -19,7 +19,7 @@ public sealed class UserContext : IUserContext
     /// </param>
     /// <param name="subjectId">The subject identifier. Must not be empty.</param>
     /// <param name="claims">The claims <see cref="FindClaim"/> and <see cref="FindClaims"/> search.</param>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="actorKind"/> is not User or ServicePrincipal.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="actorKind"/> is not User or Service.</exception>
     /// <exception cref="ArgumentException"><paramref name="subjectId"/> is null, empty or whitespace.</exception>
     public UserContext(ActorKind actorKind, string subjectId, IEnumerable<Claim>? claims = null)
     {

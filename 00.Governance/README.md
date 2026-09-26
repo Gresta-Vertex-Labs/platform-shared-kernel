@@ -2809,7 +2809,7 @@ A singleton registration overrides that. The single instance captures whichever 
 #### What it does not flag
 
 - Non-generic registrations such as `AddSingleton(typeof(IMessageBus), ...)`, and `TryAddSingleton<...>`.
-- Contracts that only share the prefix, such as `IMessageBusProbe`. It is correctly a singleton, and `MessagingBusBuilder` registers it that way itself.
+- Contracts that only share the prefix, such as a service's own `IMessageBusFactory`.
 - The match is on the simple name, not the resolved type, so an unrelated interface of your own named exactly `IMessageBus` is also flagged.
 
 #### Example
@@ -2987,7 +2987,7 @@ warning SK0708: 'OrderBatchConsumer' appears to be a batch consumer (name contai
 
 ## Architecture tests
 
-`SharedKernel.ArchitectureTests` catches what no single line of code reveals: which assembly references which, whether a layer stays pure, and what a method body actually does once compiled. It ships more than 80 ready-made rules across 38 rule classes, built on [NetArchTest](https://github.com/BenMorris/NetArchTest) and Mono.Cecil, that you assert from your own test suite with any test runner.
+`SharedKernel.ArchitectureTests` catches what no single line of code reveals: which assembly references which, whether a layer stays pure, and what a method body actually does once compiled. It ships about 80 ready-made rules across 29 rule classes, built on [NetArchTest](https://github.com/BenMorris/NetArchTest) and Mono.Cecil, that you assert from your own test suite with any test runner.
 
 ```csharp
 using System.Reflection;

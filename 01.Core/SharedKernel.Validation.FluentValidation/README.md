@@ -31,6 +31,7 @@ job, never depends on it.
 - [Install](#install)
 - [Quick start](#quick-start)
 - [Rules](#rules)
+- [Run validators in the request pipeline](#run-validators-in-the-request-pipeline)
 - [What a failure contains](#what-a-failure-contains)
 - [End to end: from rule to HTTP response](#end-to-end-from-rule-to-http-response)
 - [Recipes](#recipes)
@@ -48,7 +49,8 @@ dotnet add package SharedKernel.Validation.FluentValidation
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
-| Depends on | `SharedKernel.Validation`, `FluentValidation` 11 |
+| Tier | Adapter |
+| Depends on | `SharedKernel.Validation`, `SharedKernel.Application` (for `IRequestValidator<T>`), `FluentValidation` 11 |
 | Namespace | `SharedKernel.Validation.FluentValidation` |
 
 ## Quick start
@@ -94,6 +96,31 @@ public sealed class CreateCustomerValidator : AbstractValidator<CreateCustomer>
 The country-dependent rules skip when the country is missing or not a valid code, so a bad country is reported once,
 by the country field's own rule.
 
+## Run validators in the request pipeline
+
+`AddFluentValidationRequestValidators()` makes every FluentValidation `IValidator<T>` registered for a request run in
+the kernel pipeline's validation step (`SharedKernel.Application.Pipeline`'s `ValidationBehavior`). It registers
+`FluentValidationRequestValidator<TRequest>` as the open-generic `SharedKernel.Application.Validation.IRequestValidator<TRequest>`;
+the validators themselves you register as usual.
+
+```csharp
+// Program.cs
+using FluentValidation;
+using SharedKernel.Validation.FluentValidation;
+
+builder.Services.AddValidatorsFromAssemblyContaining<CreateCustomerValidator>(); // FluentValidation.DependencyInjectionExtensions
+builder.Services.AddFluentValidationRequestValidators();                          // the bridge; idempotent
+```
+
+| Behaviour | Detail |
+| --- | --- |
+| Several validators for one request | Run one after another, never concurrently (a validator may use a scoped `DbContext`) |
+| Each failure | One `Error.Validation(failure.ErrorCode, failure.ErrorMessage)`; `ErrorCodes.Validation.Failed` when a hand-built failure has no code |
+| `Error.MessageArguments` | The failure's placeholder values plus `PropertyPath` and `PropertyName`; FluentValidation's `PropertyValue` is always dropped |
+| No validator registered | No errors from the bridge; hand-written `IRequestValidator<T>` implementations run alongside it |
+
+The pipeline itself never references FluentValidation: this package is the only bridge.
+
 ## What a failure contains
 
 For `Iban = "DE8937040044053201300"`, one character short:
@@ -113,7 +140,7 @@ Every code is listed in `ValidationErrorCodes`. Each has one message in `Validat
 
 With the platform's pipeline, nothing between the rule and the response needs code:
 
-1. `SharedKernel.Application.Behaviors`' `ValidationBehavior` turns each failure into an `Error`, keeping the code, the
+1. `AddFluentValidationRequestValidators()` runs your validators in `SharedKernel.Application.Pipeline`'s `ValidationBehavior`, which turns each failure into an `Error`, keeping the code, the
    message and the placeholder values. The field path goes into `MessageArguments["PropertyPath"]`.
 2. `SharedKernel.Presentation.WebApi` returns a ProblemDetails response:
    - `errors` holds the messages, keyed by field;
@@ -238,7 +265,8 @@ FAILURE    ErrorCode = specific ValidationErrorCodes value; ErrorMessage = Engli
            FormattedMessagePlaceholderValues = error values + PropertyName (display) + PropertyPath;
            AttemptedValue = null; CustomState = SharedKernel Error.
 CHAIN      Only When/Unless after these rules. No WithMessage/WithErrorCode/WithName/WithSeverity.
-PIPELINE   ValidationBehavior keeps the code -> ProblemDetails errors (by field) + errorCodes -> REST client restores both.
+PIPELINE   services.AddFluentValidationRequestValidators() (+ AddValidatorsFromAssembly...) -> IRequestValidator<T> in
+           ValidationBehavior keeps the code -> ProblemDetails errors (by field) + errorCodes -> REST client restores both.
 COUNTRY    VAT/NationalId rules skip when the country is missing/invalid; validate the country field separately.
 ```
 

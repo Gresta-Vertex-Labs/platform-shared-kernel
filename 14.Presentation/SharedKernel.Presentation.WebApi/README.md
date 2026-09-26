@@ -1,13 +1,22 @@
 # SharedKernel.Presentation.WebApi
 
 RFC 9457 `ProblemDetails` error mapping, a global `IExceptionHandler`, API versioning
-(`Asp.Versioning`), native OpenAPI document generation + Scalar interactive UI, inbound
-correlation-id middleware, and `Result<T>` → `IResult`/`ActionResult` HTTP-boundary extensions.
+(`Asp.Versioning`), native OpenAPI document generation + Scalar interactive UI, declarative
+endpoint authorization, and `Result<T>` → `IResult`/`ActionResult` HTTP-boundary extensions.
+
+**Tier:** Host. It references `SharedKernel.Primitives`, `SharedKernel.Core`,
+`SharedKernel.Localization`, `SharedKernel.Security.Abstractions` and
+[`SharedKernel.Presentation.Core`](../SharedKernel.Presentation.Core/README.md) (the `[Require*]`
+attributes and the `ErrorType` status maps).
 
 This package is **framework-glue, not business logic**: it converts outcomes your application
 layer already produced (`Result<T>`, `Error`, exceptions) into HTTP responses. It never produces
-those outcomes itself, and it never references `05.Application`, `06.Persistence`, `07.Messaging`,
-or any other infrastructure layer.
+those outcomes itself — it references no mediator, pipeline, persistence or messaging package.
+
+The inbound correlation id and the request's `IRequestContext` scope are **not** this package's:
+they belong to `app.UseSharedKernelRequestContext()` in `SharedKernel.ServiceDefaults.Security`,
+which reads, validates (at most 128 characters of `[A-Za-z0-9-_:.]`, otherwise a new id), echoes
+and propagates `X-Correlation-Id`. Every example below starts the pipeline with it.
 
 ---
 
@@ -15,13 +24,15 @@ or any other infrastructure layer.
 
 ```xml
 <ItemGroup>
-  <PackageReference Include="SharedKernel.Presentation.WebApi" Version="x.y.z" />
+  <PackageReference Include="SharedKernel.Presentation.WebApi" />
+  <PackageReference Include="SharedKernel.ServiceDefaults.Security" />
 </ItemGroup>
 ```
 
-Brings in `Asp.Versioning.Http`, `Asp.Versioning.Mvc.ApiExplorer`, `Microsoft.AspNetCore.OpenApi`,
-and `Scalar.AspNetCore` as transitive dependencies. Swashbuckle/NSwag are never pulled in — see
-"Why no Swashbuckle/NSwag" in `14.Presentation/CLAUDE.md` for the AOT rationale.
+Versions come from your single `SharedKernelVersion` (central package management); every
+SharedKernel package ships with the same version. `WebApi` brings in `Asp.Versioning.Http`,
+`Asp.Versioning.Mvc.ApiExplorer`, `Microsoft.AspNetCore.OpenApi`, and `Scalar.AspNetCore` as
+transitive dependencies. Swashbuckle/NSwag are never pulled in.
 
 ---
 
@@ -33,15 +44,15 @@ an RFC 9457 `ProblemDetails` body, with correlation IDs flowing end-to-end.
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.AddSharedKernelRequestContext();   // SharedKernel.ServiceDefaults.Security
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<SharedKernelExceptionHandler>();
-builder.Services.AddSharedKernelCorrelationId();
 
 var app = builder.Build();
 
-// CorrelationId middleware must be first — before exception handling — so the header is present
-// on error responses too.
-app.UseSharedKernelCorrelationId();
+// The request-context middleware must be first — before exception handling — so the correlation
+// id is on error responses too.
+app.UseSharedKernelRequestContext();
 app.UseExceptionHandler();
 
 app.Run();
@@ -51,12 +62,12 @@ What this buys you:
 
 - Any exception thrown from an endpoint/controller is caught by `SharedKernelExceptionHandler`,
   logged at `LogLevel.Error`, and converted to a `ProblemDetails` response. Known
-  `SharedKernelException` subtypes (from `01.Core`) preserve their carried `Error`'s status code
-  and message; unknown exceptions fall back to a generic 500 with the message suppressed outside
-  `IHostEnvironment.IsDevelopment()`.
+  `SharedKernelException` subtypes (from `SharedKernel.Core`) preserve their carried `Error`'s
+  status code and message; unknown exceptions fall back to a generic 500 with the message
+  suppressed outside `IHostEnvironment.IsDevelopment()`.
 - Every request gets a stable `X-Correlation-Id` response header (generated if the client didn't
-  send one), propagated into `Activity` baggage for OpenTelemetry and `11.Communication.Rest`'s
-  outbound correlation handler.
+  send a valid one), carried on `IRequestContext.CorrelationId` and sent onward by
+  `SharedKernel.Communication.Rest`/`.Grpc`, MassTransit and Temporal.
 
 ---
 
@@ -65,9 +76,9 @@ What this buys you:
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.AddSharedKernelRequestContext();
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<SharedKernelExceptionHandler>();
-builder.Services.AddSharedKernelCorrelationId();
 
 // Versioning must be registered before OpenAPI — the OpenAPI extension reads
 // IApiVersionDescriptionProvider to discover version groups.
@@ -76,7 +87,8 @@ builder.Services.AddSharedKernelOpenApi(title: "Orders API", description: "Order
 
 var app = builder.Build();
 
-app.UseSharedKernelCorrelationId();
+app.UseSharedKernelRequestContext();
+app.UseSharedKernelSecurityHeaders();
 app.UseExceptionHandler();
 
 app.MapSharedKernelOpenApi();   // maps /openapi/{version}.json and /scalar/{version}
@@ -198,7 +210,15 @@ admin.MapPost("/reports/{id:guid}/approve", ApproveReportAsync)
 
 ### MVC controller actions
 
+The attributes live in `SharedKernel.Presentation.Core`, namespace
+`SharedKernel.Presentation.Authorization`; the filter and the Minimal API sugar stay in this package
+(`SharedKernel.Presentation.WebApi.Authorization`). `SharedKernel.Presentation.Grpc` evaluates the
+same attributes on gRPC service methods.
+
 ```csharp
+using SharedKernel.Presentation.Authorization;          // [RequireRole], [RequirePermission], ...
+using SharedKernel.Presentation.WebApi.Authorization;   // AuthorizationRequirementEndpointFilter
+
 [ApiController]
 [Route("v{version:apiVersion}/admin")]
 [ApiVersion(1.0)]
@@ -241,7 +261,7 @@ token. Always use `[RequireRole]`/`[RequirePermission]`.
 
 A failed check always returns a `ProblemDetails` body via `Error.ToProblemDetails()` (HTTP 403) —
 never a bare, body-less 403 — so it is indistinguishable, from the API consumer's point of view,
-from a `05.Application` `AuthorizationBehavior` rejection deeper in the pipeline. This filter is a
+from a `SharedKernel.Application.Pipeline` `AuthorizationBehavior` rejection deeper in the pipeline. This filter is a
 complement to that pipeline behavior, not a replacement for it: `[RequireRole]` gates the whole
 endpoint regardless of which command/query it dispatches, while `IAuthorizeRequest` gates an
 individual command/query regardless of which endpoint dispatched it.
@@ -252,7 +272,7 @@ individual command/query regardless of which endpoint dispatched it.
 `AuthorizationRequirementEndpointFilter` used by `[RequireRole]`/`[RequirePermission]` above — there
 is no second filter type and no second `.AddEndpointFilter<...>()` registration call. They gate an
 endpoint on *how recently* and *how* the caller authenticated, built on `12.Security`'s step-up
-signals (`IUserContext.AuthTime`/`.AuthenticationMethods`, WO-058/P-375) — useful for a high-risk
+signals (`IUserContext.AuthTime`/`.AuthenticationMethods`) — useful for a high-risk
 action that should require the caller to have completed MFA recently, even if their session token
 is otherwise still valid.
 
@@ -309,7 +329,7 @@ single-`Error` path, adding two members with the same keys:
 
 An error's key is the field it refers to — the `ErrorArgumentNames.PropertyPath` entry in its
 `MessageArguments`, such as `Accounts[0].Iban` — when present, and its code otherwise.
-`05.Application`'s `ValidationBehavior` sets the field path on every FluentValidation failure, so a
+`SharedKernel.Application.Pipeline`'s `ValidationBehavior` keeps the field path every `IRequestValidator<T>` reports (the FluentValidation bridge, `AddFluentValidationRequestValidators()`, sets it on every failure), so a
 command validated there is reported by field. No extra wiring is needed — this happens
 automatically once `SharedKernelExceptionHandler` is registered.
 
@@ -368,13 +388,13 @@ same internal `LocalizedDetailResolver.AddErrorsExtensions` helper, so they prod
 ## Security response headers
 
 `UseSharedKernelSecurityHeaders()` writes a conservative default set of HTTP response security
-headers on every response. Register it immediately after `UseSharedKernelCorrelationId()` and before
+headers on every response. Register it immediately after `UseSharedKernelRequestContext()` and before
 `UseExceptionHandler()`:
 
 ```csharp
 var app = builder.Build();
 
-app.UseSharedKernelCorrelationId();     // 1st — correlation id must be set even on error responses
+app.UseSharedKernelRequestContext();    // 1st — correlation id must be set even on error responses
 app.UseSharedKernelSecurityHeaders();   // 2nd
 app.UseExceptionHandler();              // 3rd
 ```
@@ -465,7 +485,7 @@ consuming service — read them from `IConfiguration` rather than hardcoding the
 ## Inbound idempotency-key HTTP boundary
 
 `[RequireIdempotencyKey]` guards an endpoint on the presence of a valid client-supplied
-`Idempotency-Key` request header — the HTTP-boundary half that neither `05.Application`'s in-process
+`Idempotency-Key` request header (`WellKnownHeaders.IdempotencyKey`, the same name `SharedKernel.Communication.Rest` sends) — the HTTP-boundary half that neither `SharedKernel.Application.Pipeline`'s in-process
 `IIdempotentRequest`/`IdempotencyBehavior` nor `11.Communication.Rest`'s outbound propagation
 covers. The end-to-end recipe, header to dispatch:
 
@@ -493,7 +513,7 @@ static async Task<IResult> CreatePaymentHandler(
     // 2. Construct the command carrying that key.
     var command = new CreatePaymentCommand(body.AccountId, body.Amount, IdempotencyKey: idempotencyKey!);
 
-    // 3. Dispatch as normal — 05.Application's IdempotencyBehavior<TRequest,TResponse> reserves the
+    // 3. Dispatch as normal — SharedKernel.Application.Pipeline's IdempotencyBehavior reserves the
     //    key atomically and never re-executes the handler for it: a completed duplicate replays the
     //    original response, one still in flight returns 409 (idempotency.in_progress), and the same
     //    key sent with a different payload returns 409 (idempotency.key_reused).
@@ -516,12 +536,12 @@ an authorization concern, and the two are never folded together.
 
 ## Optimistic concurrency — ETag / If-Match
 
-`RowVersionETag`/`ConditionalRequestExtensions` bridge `06.Persistence`'s row-version optimistic
-concurrency (`IHasConcurrency.RowVersion`, normally surfaced as `Error.Conflict`/409) to HTTP's own
+`RowVersionETag`/`ConditionalRequestExtensions` bridge `06.Persistence`'s optimistic concurrency (PostgreSQL `xmin`,
+exposed as the opaque `EntityVersion` via `ConcurrencyVersion.Get(db, aggregate)`, normally surfaced as `Error.Conflict`/409) to HTTP's own
 standard conditional-request mechanism (RFC 9110 §13). **This is additive — never a replacement for
 `Error.Conflict`.** A service may use either, both, or neither.
 
-The end-to-end recipe:
+The end-to-end recipe (the read model carries the aggregate's `EntityVersion Version`, taken from `ConcurrencyVersion.Get` when it was loaded):
 
 ```csharp
 // 1. GET returns the resource's current state and its ETag.
@@ -529,7 +549,7 @@ app.MapGet("/v{version:apiVersion}/accounts/{id:guid}", async (
     Guid id, IAccountQueryService svc, HttpContext ctx, CancellationToken ct) =>
 {
     var account = await svc.GetByIdAsync(id, ct);
-    ctx.Response.Headers.ETag = RowVersionETag.From(account.RowVersion);
+    ctx.Response.Headers.ETag = RowVersionETag.From(BitConverter.GetBytes(account.Version.ToRowVersion()));
     return Results.Ok(account);
 });
 
@@ -540,7 +560,7 @@ app.MapPut("/v{version:apiVersion}/accounts/{id:guid}", async (
     Guid id, UpdateAccountRequest body, IAccountQueryService reads, HttpContext ctx, CancellationToken ct) =>
 {
     var current = await reads.GetByIdAsync(id, ct);
-    var currentETag = RowVersionETag.From(current.RowVersion);
+    var currentETag = RowVersionETag.From(BitConverter.GetBytes(current.Version.ToRowVersion()));
 
     if (!ctx.TryValidateIfMatch(currentETag, out var problemDetails))
     {
@@ -565,7 +585,7 @@ HTTP-protocol-native outcome that never originates as a domain failure, unlike `
 ## Rate-limit rejection → ProblemDetails bridge
 
 `RateLimitRejectionProblemDetails.Create` shapes a rate-limiter rejection into an RFC 9457 429
-`ProblemDetails` body — closing the handoff `13.ServiceDefaults`'s `AddSharedKernelRateLimiting()`
+`ProblemDetails` body — closing the handoff `SharedKernel.ServiceDefaults`' `AddSharedKernelRateLimiting()`
 leaves for a consuming service's own `RateLimiterOptions.OnRejected` callback (referenced by name
 only; neither package takes a `ProjectReference` on the other):
 
@@ -612,7 +632,7 @@ builder.Services.AddSharedKernelPayloadLimits(o =>
 
 var app = builder.Build();
 
-app.UseSharedKernelCorrelationId();
+app.UseSharedKernelRequestContext();
 app.UseSharedKernelSecurityHeaders();
 
 // Request-scoped half: sets IHttpMaxRequestBodySizeFeature.MaxRequestBodySize, guarded by
@@ -759,38 +779,15 @@ Link: <https://api.example.com/v3/orders>; rel="successor-version"
 
 ---
 
-## Correlation-id format validation
+## Correlation id
 
-`CorrelationIdOptions` (via `AddSharedKernelCorrelationId`'s additive `configure` parameter) bounds
-and shape-checks a **caller-supplied** `X-Correlation-Id` header before it ever reaches
-`HttpContext.Items`, `Activity` baggage, or the response header. An unvalidated, caller-controlled
-string flowing straight into OTel baggage and every downstream structured log record is a
-log-injection/oversized-baggage-propagation vector — the same trust-boundary class this platform
-has already fixed twice elsewhere (`11.Communication`'s GUID-fallback defect, `13.ServiceDefaults`'s
-forwarded-header trust boundary) but never yet at the point a raw correlation-id header first enters
-the system.
-
-```csharp
-builder.Services.AddSharedKernelCorrelationId(o =>
-{
-    o.MaxLength = 128;   // default shown — conservative, but permissive enough for GUIDs/ULIDs
-    // o.AllowedCharacterPattern left at its conservative default: alphanumerics plus - _ : .
-});
-```
-
-**The guarantee: a malformed value is regenerated, never propagated.** A caller-supplied value
-exceeding `MaxLength` or containing a character outside `AllowedCharacterPattern` is rejected exactly
-like an absent/whitespace header already was — a fresh `Guid.NewGuid("N")` is generated instead,
-*before* the rejected value ever reaches `HttpContext.Items`, `Activity.SetBaggage`, or the response
-header. Only the **length** of a rejected value is logged (`EventId` 14006) — never its raw content,
-which would recreate the exact injection vector this validation defends against.
-
-Well-formed values already in production use (dashed GUIDs, `"N"`-format GUIDs, ULIDs, and other
-common safe token shapes) are preserved unchanged end-to-end — this is a bounds/injection guard, not
-a GUID-only restriction, so existing well-behaved callers see no behavior change. A host that calls
-`UseSharedKernelCorrelationId()` without ever calling `AddSharedKernelCorrelationId()` still gets the
-default-safe validation applied automatically, since the middleware falls back to a fresh default
-`CorrelationIdOptions` instance when none is registered in DI.
+This package no longer handles the correlation id. `app.UseSharedKernelRequestContext()`
+(`SharedKernel.ServiceDefaults.Security`) owns it: it accepts a caller-supplied `X-Correlation-Id`
+only when it is at most 128 characters of `[A-Za-z0-9-_:.]` (dashed and `"N"` GUIDs, ULIDs and similar
+tokens pass unchanged), otherwise it creates a new one; it echoes the value on every response and
+carries it on `IRequestContext.CorrelationId` for every outbound hop. The rule is fixed — one rule for
+every channel, `SharedKernel.Execution`'s `CorrelationIds` — so there is no options type to tune.
+`ProblemDetails.Extensions["traceId"]` is the trace id (`Activity.Current?.Id`), not the correlation id.
 
 ---
 
@@ -846,15 +843,15 @@ When a magic-byte check is configured, the filter buffers the request body
 
 | Concern | Type |
 | --- | --- |
-| `ErrorType` → HTTP status code | `ErrorTypeStatusCodeMap.Resolve` |
+| `ErrorType` → HTTP status code | `ErrorTypeStatusCodeMap.Resolve` (`SharedKernel.Presentation.Core`, namespace `SharedKernel.Presentation.Errors`) |
 | `Error` → `ProblemDetails` | `ErrorProblemDetailsExtensions.ToProblemDetails` |
 | `Result<T>` → `IResult`/`ActionResult` | `ResultHttpExtensions` |
 | Global unhandled-exception handling | `SharedKernelExceptionHandler` |
 | API versioning defaults | `SharedKernelApiVersioningDefaults`, `AddSharedKernelApiVersioning` |
 | OpenAPI + Scalar | `AddSharedKernelOpenApi`, `MapSharedKernelOpenApi` |
-| Correlation ID propagation | `CorrelationIdMiddleware`, `AddSharedKernelCorrelationId`, `UseSharedKernelCorrelationId` |
-| Declarative role/permission authorization | `RequireRoleAttribute`, `RequirePermissionAttribute`, `AuthorizationRequirementEndpointFilter`, `AddSharedKernelAuthorizationFilters` |
-| Declarative step-up/fresh-authentication gating | `RequireFreshAuthenticationAttribute`, `RequireAuthenticationMethodAttribute` |
+| Correlation id (inbound) | `UseSharedKernelRequestContext()` in `SharedKernel.ServiceDefaults.Security` — not this package |
+| Declarative role/permission authorization | `RequireRoleAttribute`, `RequirePermissionAttribute` (both in `SharedKernel.Presentation.Core`), `AuthorizationRequirementEndpointFilter`, `AddSharedKernelAuthorizationFilters` |
+| Declarative step-up/fresh-authentication gating | `RequireFreshAuthenticationAttribute`, `RequireAuthenticationMethodAttribute` (`SharedKernel.Presentation.Core`) |
 | Multi-field validation `ProblemDetails` | `ValidationProblemDetailsExtensions.ToProblemDetails` |
 | Security response headers | `SecurityHeadersOptions`, `UseSharedKernelSecurityHeaders` |
 | CORS policy convention | `CorsPolicyOptions`, `CorsPolicyNames`, `AddSharedKernelCors` |
@@ -864,7 +861,6 @@ When a magic-byte check is configured, the filter buffers the request body
 | Payload size / JSON max-depth limits | `PayloadLimitsOptions`, `AddSharedKernelPayloadLimits`, `UseSharedKernelPayloadLimits` |
 | OpenAPI ApiKey/mTLS security schemes | `OpenApiSecuritySchemesOptions` (via `AddSharedKernelOpenApi`) |
 | RFC 8594 Sunset/Deprecation headers | `ApiVersionLifecycleOptions` (via `AddSharedKernelApiVersioning`) |
-| Correlation-id format validation | `CorrelationIdOptions` (via `AddSharedKernelCorrelationId`) |
 | File/multipart upload validation | `UploadValidationOptions`, `RequireValidatedUploadAttribute`, `AddSharedKernelUploadValidation` |
 
 See the [Configuration Reference](../CONFIGURATION.md) for every DI extension method's options and

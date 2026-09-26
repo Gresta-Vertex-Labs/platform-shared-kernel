@@ -55,6 +55,7 @@ dotnet add package SharedKernel.Contracts
 | --- | --- |
 | Target framework | `net10.0` |
 | Dependencies | `SharedKernel.Primitives` only |
+| Tier | Model: no third-party dependency, no I/O |
 | Registration | None: records, static factories and one attribute |
 | Serializer | `System.Text.Json`, reflection-based; no `JsonSerializerContext` to register |
 
@@ -158,7 +159,8 @@ public sealed record OrderPlaced(
 
 ### 2. Publish it
 
-With `07.Messaging`, the publisher wraps the event for you:
+With `07.Messaging`, the publisher wraps the event for you. There `tenantId` is the platform's
+`SharedKernel.Execution.Tenancy.TenantId`, normally taken from the caller's `IRequestContext.TenantId`:
 
 ```csharp
 await eventPublisher.PublishAsync(
@@ -168,10 +170,11 @@ await eventPublisher.PublishAsync(
 ```
 
 Anywhere else (an outbox table, a raw HTTP callback, a file), wrap it yourself. Pass the optional arguments by
-name: three of them are strings.
+name: three of them are strings. The envelope carries the tenant as a plain `Guid?`, so this package needs no
+reference beyond `SharedKernel.Primitives`; pass `TenantId.Value` when you hold a `TenantId`.
 
 ```csharp
-var envelope = EventEnvelope.Wrap(orderPlaced, source: "orders-service", tenantId: tenantId);
+var envelope = EventEnvelope.Wrap(orderPlaced, source: "orders-service", tenantId: tenantId.Value);
 ```
 
 ### 3. Consume it
@@ -320,7 +323,7 @@ is `false`.
 | `Time` | `time` | `Data.OccurredOn` | |
 | `Subject` | `subject` | `Wrap` argument | Omitted when `null` |
 | `DataContentType` | `datacontenttype` | constant | `application/json` |
-| `TenantId` | `tenantid` | `Wrap` argument | Extension; omitted when `null`; never `Guid.Empty` |
+| `TenantId` | `tenantid` | `Wrap` argument (`Guid?`) | Extension; omitted when `null`; never `Guid.Empty`. Deliberately `Guid?`, not `TenantId?`: rebuild one with `TenantId.FromNullable(envelope.TenantId)` |
 | `CorrelationId` | `correlationid` | `Wrap` argument | Extension; omitted when `null` |
 | `CausationId` | `causationid` | `Wrap` argument | Extension; omitted when `null` |
 | `Data` | `data` | the event | Serialized as its runtime type |

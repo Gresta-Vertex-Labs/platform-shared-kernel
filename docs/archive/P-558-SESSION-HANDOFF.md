@@ -20,10 +20,10 @@ save paths — plus heavy DX debt (22 usings, a builder that needed `.Build()`, 
 chose a redesign rather than patches; it was built in waves (shared contracts, PostgreSQL-only, five parallel
 streams, polish), reviewed again adversarially (correctness, security, DX), remediated, and documented.
 
-Records: `06.Persistence/docs/p558/` — [`p558-review-findings.md`](06.Persistence/docs/p558/p558-review-findings.md)
-(initial review), [`p558-design.md`](06.Persistence/docs/p558/p558-design.md) (binding decisions),
-[`p558-final-review-findings.md`](06.Persistence/docs/p558/p558-final-review-findings.md) (second review),
-[`waves.md`](06.Persistence/docs/p558/waves.md) (what each wave did, with commits).
+Records: `06.Persistence/docs/p558/` — [`p558-review-findings.md`](../../06.Persistence/docs/p558/p558-review-findings.md)
+(initial review), [`p558-design.md`](../../06.Persistence/docs/p558/p558-design.md) (binding decisions),
+[`p558-final-review-findings.md`](../../06.Persistence/docs/p558/p558-final-review-findings.md) (second review),
+[`waves.md`](../../06.Persistence/docs/p558/waves.md) (what each wave did, with commits).
 
 ## 2. Decisions made by the owner
 

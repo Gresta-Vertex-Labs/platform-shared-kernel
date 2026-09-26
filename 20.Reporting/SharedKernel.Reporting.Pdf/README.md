@@ -4,6 +4,12 @@
 
 See [`SharedKernel.Reporting.Abstractions`](../SharedKernel.Reporting.Abstractions/README.md) for the shared contract and column model.
 
+```xml
+<PackageReference Include="SharedKernel.Reporting.Pdf" />
+```
+
+Versions come from the consumer's single `SharedKernelVersion`. **Tier: Adapter** — brings `SharedKernel.Reporting.Abstractions` and `SharedKernel.Storage.Abstractions`; register a storage provider for the store the export targets.
+
 ## SCOPE BOUNDARY — read this before reaching for `.Pdf`
 
 **MULTI-SECTION DOCUMENTS, IMAGES, CHARTS, AND HEADERS/FOOTERS BEYOND ONE OPTIONAL TITLE ARE EXPLICITLY OUT OF SCOPE.** This is not a general-purpose PDF authoring library — it supports exactly one flat statement-style table (an optional title, a header row, and one row per exported `TRow`). Nothing else.

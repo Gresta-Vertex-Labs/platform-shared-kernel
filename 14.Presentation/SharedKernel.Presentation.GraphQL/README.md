@@ -2,22 +2,35 @@
 
 HotChocolate v16 server-side GraphQL conventions for Platform.SharedKernel microservices:
 `SharedKernelFilterConvention` (snake_case filter operations), the `FilterBase<T>`/`SortBase<T>`
-abstract base types, `PagedResponseType<T>` (`TotalCount` + `Items`, aligned with `04.Contracts`'
-`PagedList<T>`), `SharedKernelErrorFilter` (`IError` → `ProblemDetails`-compatible shape), and the
-`AddSharedKernelGraphQL` DI entry point.
+abstract base types, `PagedResponseType<T>` (`TotalCount` + `Items`, aligned with
+`SharedKernel.Contracts`' `PagedList<T>`), `SharedKernelErrorFilter` (`IError` →
+`ProblemDetails`-compatible shape), and the `AddSharedKernelGraphQL` DI entry point.
+
+**Tier:** Host. A GraphQL server is an inbound API surface, so the package lives beside WebApi, gRPC
+and SignalR in `14.Presentation`. It replaces `SharedKernel.Communication.GraphQL` from
+`11.Communication`; the types are unchanged, only the package id and the root namespace moved
+(`SharedKernel.Communication.GraphQL.*` → `SharedKernel.Presentation.GraphQL.*`).
 
 **HotChocolate v16 is not AOT-safe.** Do not add `<IsAotCompatible>true</IsAotCompatible>` to any
 project that references this package.
 
 ## Install
 
-```bash
-dotnet add package SharedKernel.Presentation.GraphQL
+```xml
+<PackageReference Include="SharedKernel.Presentation.GraphQL" />
 ```
 
-```xml
-<PackageReference Include="SharedKernel.Presentation.GraphQL" Version="1.0.0" />
-```
+Versions come from your single `SharedKernelVersion`; every SharedKernel package ships with the
+same version.
+
+| Namespace | Types |
+| --- | --- |
+| `SharedKernel.Presentation.GraphQL.Extensions` | `AddSharedKernelGraphQL` |
+| `SharedKernel.Presentation.GraphQL.Options` | `GraphQLOptions` |
+| `SharedKernel.Presentation.GraphQL.Types` | `FilterBase<T>`, `SortBase<T>` |
+| `SharedKernel.Presentation.GraphQL.Pagination` | `PagedResponseType<T>` |
+
+`SharedKernelFilterConvention` and `SharedKernelErrorFilter` are internal; `AddSharedKernelGraphQL` registers them.
 
 ## Usage
 
@@ -84,16 +97,24 @@ source (`IPage`/`Connection<T>`).
 scalar rather than `Int`. HotChocolate's own `IPage`/`Connection<T>` totals are `int` and widen without
 loss.
 
-## Layering
+## Options
+
+| `GraphQLOptions` member | Default | Meaning |
+| --- | --- | --- |
+| `EnableFiltering` | `true` | Registers `HotChocolate.Data` filtering with `SharedKernelFilterConvention`. |
+| `EnableSorting` | `true` | Registers `HotChocolate.Data` sorting. |
+| `EnablePaging` | `true` | Offset and cursor paging, capped at `MaxPageSize`. |
+| `MaxPageSize` | `100` | Largest page a paging argument may request; must be `1..500`. |
+| `AllowIntrospection` | `true` | Schema introspection. Set it to `false` in production. |
+
+## Dependencies
 
 ```text
-SharedKernel.Presentation.GraphQL  →  SharedKernel.Primitives (01.Core),
-                                        SharedKernel.Contracts (04.Contracts),
+SharedKernel.Presentation.GraphQL  →  SharedKernel.Primitives, SharedKernel.Contracts,
                                         HotChocolate.Data, HotChocolate.AspNetCore
 ```
 
-Target framework: `net10.0`. Never references `02.Caching`, `05.Application`, `06.Persistence`, or
-`07.Messaging`.
+Target framework: `net10.0`. It references no mediator, persistence, caching or messaging package.
 
-For full documentation see
-[`14.Presentation/CLAUDE.md`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/14.Presentation/CLAUDE.md).
+See the domain [README](../README.md) and [`CLAUDE.md`](../CLAUDE.md) for how it fits with the other
+presentation packages.

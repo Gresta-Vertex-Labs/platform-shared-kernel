@@ -5,8 +5,27 @@ idempotency (`IdempotencyBehavior`) and MassTransit's consumer idempotency (`Wit
 same `IIdempotencyStore`. No Redis, EF Core or messaging dependency — it references only
 `SharedKernel.Execution` and `Microsoft.Extensions.DependencyInjection.Abstractions`.
 
-Implementations: `SharedKernel.Idempotency.Redis` (atomic Lua scripts) and `SharedKernel.Idempotency.EfCore`
-(atomic `INSERT … ON CONFLICT` on PostgreSQL). Test double: `16.Testing`'s `FakeIdempotencyStore`.
+Implementations: [`SharedKernel.Idempotency.Redis`](../SharedKernel.Idempotency.Redis/README.md) (atomic Lua
+scripts) and [`SharedKernel.Idempotency.EfCore`](../SharedKernel.Idempotency.EfCore/README.md) (atomic
+`INSERT … ON CONFLICT` on PostgreSQL). Test double: `16.Testing`'s `SharedKernel.Idempotency.Testing`
+(`FakeIdempotencyStore`).
+
+**Tier:** Abstractions. It replaces the two earlier contracts — `05.Application`'s `IRequestIdempotencyStore`
+(with `IdempotencyBeginResult`/`IdempotencyBeginStatus`) and `SharedKernel.Messaging.Abstractions`' own
+`IIdempotencyStore` — with one purpose-keyed interface (WO-086, P-568).
+
+## Install
+
+Most services never reference this package directly: it arrives with `SharedKernel.Application.Pipeline`,
+`SharedKernel.Messaging.MassTransit` and both providers. Reference it yourself only to write a custom store or to
+use the contract from your own code:
+
+```xml
+<PackageReference Include="SharedKernel.Idempotency.Abstractions" />
+```
+
+Versions come from your single `SharedKernelVersion` property (the repository's `PLATFORM.md`, "Consuming the
+kernel").
 
 ## The contract
 
@@ -83,3 +102,56 @@ shares the `no-tenant` scope.
 An unreachable store throws (fail closed). Each provider has one explicit opt-out,
 `AllowExecutionOnStoreUnavailable`, which lets the guarded work run as `Started` during an outage — at the cost
 of possible duplicates.
+
+## Writing a custom store
+
+A third backend implements the three members with the same semantics and registers itself per purpose:
+
+```csharp
+public sealed class DynamoIdempotencyStore(IAmazonDynamoDB dynamo, IRequestContextAccessor context) : IIdempotencyStore
+{
+    public async Task<IdempotencyReservation> TryBeginAsync(
+        IdempotencyPurpose purpose, string key, string fingerprint, TimeSpan ttl, CancellationToken ct)
+    {
+        var scope = IdempotencyTenantScope.Current(context);   // "D" tenant id, or "no-tenant"
+        // ONE conditional write keyed by (scope, purpose, key) that returns the existing item on conflict.
+        // Map it to IdempotencyReservation.Started(token) / InProgress() / Completed(response) / FingerprintMismatch().
+        ...
+    }
+
+    // CompleteAsync / ReleaseAsync: mutate only while `token` owns an in-flight entry; otherwise return false.
+    ...
+}
+
+services.AddIdempotencyStore<DynamoIdempotencyStore>(p => p.ForRequests().ForMessages());   // scoped by default
+```
+
+- `TryBeginAsync` must be a single conditional write, never a read followed by a write.
+- Never throw from `CompleteAsync`/`ReleaseAsync` for a lost or foreign token — return `false`.
+- Store the response string exactly as given; never parse it.
+- Throw on an unreachable backend unless the store offers an explicit, documented fail-open switch.
+
+## Known limitation: consumer keys are message ids only
+
+MassTransit's consumer idempotency uses `ConsumeContext.MessageId` as the key with a fixed fingerprint, and the
+store scopes it only by tenant. Two receive endpoints (or two polymorphic consumers) in **one** service that both
+receive the same message therefore share one reservation: the second is acknowledged as a duplicate and skipped.
+Until the key includes the consumer/endpoint, enable `WithIdempotency()` only where each message is consumed by one
+consumer per service.
+
+## Testing
+
+`SharedKernel.Idempotency.Testing` (`16.Testing`) ships `FakeIdempotencyStore`, an in-memory store that implements
+the same reservation protocol — the four statuses and the stale-token rule, with `Expire(purpose, key)` to model a lease running out — registered with
+`services.AddFakeIdempotencyStore(purposes)`. Atomicity itself is only proved against the real providers (their
+Integration-lane tests use Testcontainers).
+
+## Related packages
+
+| Package | Role |
+| --- | --- |
+| [`SharedKernel.Idempotency.Redis`](../SharedKernel.Idempotency.Redis/README.md) | Redis store — `AddRedisIdempotency(p => …)` |
+| [`SharedKernel.Idempotency.EfCore`](../SharedKernel.Idempotency.EfCore/README.md) | PostgreSQL store — `AddEfCoreIdempotency(db => …, p => …)` |
+| `SharedKernel.Application.Pipeline` (`05.Application`) | `IdempotencyBehavior`, the `Request` caller |
+| `SharedKernel.Messaging.MassTransit` (`07.Messaging`) | `WithIdempotency()`, the `Message` caller |
+| `SharedKernel.Execution` (`01.Core`) | `IRequestContextAccessor`, `TenantId` |

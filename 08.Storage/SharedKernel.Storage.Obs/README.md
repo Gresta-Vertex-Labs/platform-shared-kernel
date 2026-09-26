@@ -57,7 +57,7 @@ builder.Services.AddSharedKernelStorage()
     .AddObs(builder.Configuration)
     .AddStore("archive");
 
-builder.Services.AddHealthChecks().AddStorageReadinessCheck("archive");   // SharedKernel.ServiceDefaults.Storage
+builder.Services.AddHealthChecks().AddSharedKernelReadiness();             // SharedKernel.ServiceDefaults: "storage-archive"
 ```
 
 ```csharp

@@ -45,7 +45,7 @@ FeatureFlag.Boolean("NewChekout")   (typo)         -> false    error FLAG_NOT_FO
 | Evaluation that never throws | A missing flag, a type mismatch or a failing filter returns your default, with the reason and error in the details |
 | `ValidateOnStart(...)` | A misspelled key or a variant that does not parse stops startup, listing every problem |
 | The OpenTelemetry `feature_flag.evaluation` event, per flag | Traces show who got which variant, and never record the user id |
-| `FakeFeatureClient` in `SharedKernel.Testing` | Unit tests set flag values in one line, with no configuration or host |
+| `FakeFeatureClient` in `SharedKernel.FeatureManagement.Testing` | Unit tests set flag values in one line, with no configuration or host |
 
 ## Contents
 
@@ -194,7 +194,7 @@ bob, no tenant    -> legacy-checkout
 | Fail startup on a missing or broken flag | `ValidateOnStart(...)` |
 | See flag decisions in traces | `"telemetry": { "enabled": true }` on the flag |
 | Add a condition of your own | An `IFeatureFilter` + `AddFeatureFilter<T>()` ([recipe 6](#6-add-your-own-condition)) |
-| Test code that reads flags | `FakeFeatureClient` from `SharedKernel.Testing` |
+| Test code that reads flags | `FakeFeatureClient` from `SharedKernel.FeatureManagement.Testing` |
 
 ## How it works
 
@@ -491,7 +491,7 @@ If the filter throws, the flag returns its default and a warning is logged.
 var flags = new FakeFeatureClient()
     .SetEnabled(Flags.NewCheckout)
     .Set(Flags.CheckoutTheme, "dark")
-    .Set(Flags.Exports, ctx => ctx.GetValue(FeatureContextKeys.TenantId)?.AsString == "acme");
+    .Set(Flags.Exports, ctx => ctx.GetValue(FeatureContextKeys.TenantId)?.AsString == "0b7ad0a4-2d8c-4b9e-8a8e-4f5b1ce1e0d2");
 
 var endpoint = new CheckoutEndpoint(flags);
 Assert.Equal("new-checkout/dark", await endpoint.GetLayoutAsync(CancellationToken.None));
@@ -590,7 +590,7 @@ CONFIG      feature_management.feature_flags[]: id, enabled, conditions.client_f
             Microsoft.TimeWindow, Microsoft.Percentage = random per call), requirement_type All|Any, variants[{name,
             configuration_value}], allocation{default_when_enabled, default_when_disabled, user, group, percentile, seed},
             telemetry{enabled, metadata{version}}. Legacy: FeatureManagement:Key = true/false.
-TEST        SharedKernel.Testing: new FakeFeatureClient().SetEnabled(flag).Set(flag, value | ctx => value)
+TEST        SharedKernel.FeatureManagement.Testing (namespace SharedKernel.Testing.FeatureManagement): new FakeFeatureClient().SetEnabled(flag).Set(flag, value | ctx => value)
             .SetObject(flag, value, typeInfo); services.AddFakeFeatureFlags(f => ...); WasEvaluated(flag).
             Plain ServiceProvider: await sp.GetRequiredService<IFeatureLifecycleManager>().EnsureInitializedAsync().
 FORBIDDEN   Microsoft.FeatureManagement IFeatureManager/IVariantFeatureManager(+Snapshot) and OpenFeature Api.Instance (SK0002);

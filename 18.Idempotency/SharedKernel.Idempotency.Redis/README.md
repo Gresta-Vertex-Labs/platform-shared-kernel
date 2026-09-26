@@ -2,7 +2,20 @@
 
 Atomic, tenant-scoped, Redis-backed implementation of `SharedKernel.Idempotency.Abstractions`' `IIdempotencyStore`,
 the one reservation contract behind the application pipeline's command idempotency and MassTransit's consumer
-idempotency. See that package's README for the contract and how each caller uses it.
+idempotency. See [that package's README](../SharedKernel.Idempotency.Abstractions/README.md) for the contract and
+how each caller uses it.
+
+**Tier:** Adapter. References `SharedKernel.Idempotency.Abstractions`, `SharedKernel.Primitives` and
+`SharedKernel.Caching.Redis.Core` (its one declared adapter edge) — never `06.Persistence`.
+
+## Install
+
+```xml
+<PackageReference Include="SharedKernel.Idempotency.Redis" />
+```
+
+Versions come from your single `SharedKernelVersion` property (the repository's `PLATFORM.md`, "Consuming the
+kernel").
 
 ## Quick start
 
@@ -56,3 +69,20 @@ EventId 18000 at Warning.
 ## Registration lifetime
 
 The store is `Scoped`; the shared `IConnectionMultiplexer` underneath stays a singleton.
+
+## Upgrading from the pre-WO-086 API
+
+| Before | Now |
+| --- | --- |
+| `AddSharedKernelRedisIdempotency(o => …)` | `AddRedisIdempotency(p => p.ForRequests().ForMessages(), o => …)` — purposes are explicit |
+| `RedisRequestIdempotencyStore` + `RedisIdempotencyMessageStore` (two contracts) | `RedisIdempotencyStore`, one `IIdempotencyStore` keyed by `IdempotencyPurpose` |
+| `RedisIdempotencyOptions.InFlightTtl` / `.RetentionWindow` | Removed — the caller passes them: `IdempotencyBehaviorOptions.LeaseDuration`/`RetentionWindow`, messaging `IdempotencyOptions.LeaseDuration`/`ExpiryWindow` |
+| Tenant from Messaging's `ITenantContextAccessor` (startup check required one) | Tenant from the ambient `IRequestContextAccessor`; no startup validator |
+| Message entries stored as plain strings | Hashes, like request entries — flush old `sk:idempotency:*:msg:*` keys (see "Persisted format" above) |
+
+## Related packages
+
+- [`SharedKernel.Idempotency.Abstractions`](../SharedKernel.Idempotency.Abstractions/README.md) — the contract.
+- [`SharedKernel.Idempotency.EfCore`](../SharedKernel.Idempotency.EfCore/README.md) — the PostgreSQL sibling.
+- `SharedKernel.Caching.Redis.Core` (`02.Caching`) — `AddRedisConnection`, the shared connection and its `redis` readiness probe.
+- `SharedKernel.Idempotency.Testing` (`16.Testing`) — `FakeIdempotencyStore` for unit tests.

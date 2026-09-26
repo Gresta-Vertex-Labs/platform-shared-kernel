@@ -44,6 +44,7 @@ dotnet add package SharedKernel.Persistence.EfCore.Encryption
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
+| Tier | Adapter (its one adapter edge, to `SharedKernel.Persistence.EfCore`, is declared) |
 | Builds on | `SharedKernel.Persistence.EfCore`, `SharedKernel.Cryptography` |
 | Key source | any `IEncryptionKeyProvider` — Azure Key Vault (`SharedKernel.Cryptography.KeyVault.Azure`), configuration, or your own |
 | Namespaces | `SharedKernel.Persistence` (`UseFieldEncryption`), `SharedKernel.Persistence.EfCore` (`Encrypt`, `WithBlindIndex`, `WhereEncryptedEquals`) |
@@ -161,8 +162,8 @@ var customer = await db.Customers.WhereEncryptedEquals(x => x.Email, input).Sing
 ```
 
 Purpose, normalization and the caller's tenant come from the model and the context; the index travels as a query
-parameter. Blind indexes are tenant-bound: a tenanted entity is searched within one tenant (pass `tenantId:` to the
-`IQueryable` overload for a cross-tenant job). An index reveals which rows hold equal values — do not index
+parameter. Blind indexes are tenant-bound: a tenanted entity is searched within one tenant (pass a `TenantId` as
+`tenantId:` to the `IQueryable` overload for a cross-tenant job). An index reveals which rows hold equal values — do not index
 low-cardinality properties.
 
 ## Keys
@@ -174,7 +175,7 @@ low-cardinality properties.
 | Blind-index keys | `IBlindIndexKeyProvider`, versioned; lookups match every configured version |
 | KMS providers | Asynchronous providers are bridged: keys loaded at startup, refreshed every `KeyRefreshInterval` (5 min) |
 | Unknown key id | Fetched in the background; that one read throws `EncryptionKeyNotFoundException`, later reads succeed. List ids that must work from the first request in `AdditionalDecryptionKeyIds` |
-| Health | The keyed `IEncryptionKeyProviderProbe` (`FieldEncryptionServiceKeys.KeyRingProbe`) turns unhealthy when keys were not refreshed within `MaxKeyStaleness` (30 min); `AddFieldEncryptionReadinessCheck()` wires it |
+| Health | `UseFieldEncryption()` registers the `field-encryption` readiness probe (`IReadinessProbe`, `FieldEncryptionReadiness.ProbeName`): `Unhealthy` until the keys are loaded and when they were not refreshed within `MaxKeyStaleness` (30 min). The host maps it with `AddHealthChecks().AddSharedKernelReadiness()` |
 
 ### Key rotation protocol
 

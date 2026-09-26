@@ -15,7 +15,9 @@ validation reports every error; fail loudly instead of silently.
 
 **Hard rules**
 
-1. References `01.Core` only (`SharedKernel.Primitives`, `SharedKernel.Core`). Never persistence, messaging,
+1. **Model tier** (`<SharedKernelTier>Model</SharedKernelTier>`): references Foundation packages only
+   (`SharedKernel.Primitives`, `SharedKernel.Core`, `SharedKernel.Execution`) and no third-party package; the build
+   enforces it (SKTIER001/003). Never `SharedKernel.Contracts` (`DomainNeverReferencesContracts`), persistence, messaging,
    DI, logging or HTTP types.
 2. Never read `DateTime.UtcNow`/`DateTimeOffset.UtcNow`; time comes from `IClock`.
 3. Every public API change is recorded in `PublicAPI.Unshipped.txt`; every public member has XML docs.
@@ -29,7 +31,7 @@ validation reports every error; fail loudly instead of silently.
 
 | Package | Role | References |
 | --- | --- | --- |
-| `SharedKernel.Domain` | All DDD building blocks | `SharedKernel.Primitives`, `SharedKernel.Core` |
+| `SharedKernel.Domain` (Model tier) | All DDD building blocks | `SharedKernel.Primitives`, `SharedKernel.Core`, `SharedKernel.Execution` (for `TenantId`) |
 
 | Project | Purpose |
 | --- | --- |
@@ -100,7 +102,7 @@ implements the interfaces, which is all persistence reads):
 | Clock | `AggregateRoot<TId>` holds a nullable `IClock`; the ORM constructor sets none. `Now` **throws `InvalidOperationException`** without one. Never add a sentinel clock (a `NullClock` returning `MinValue` once stamped year 0001 on every event of a loaded aggregate). Attach only through the explicit `IHasClock.AttachClock`. |
 | Events | Only through `RaiseDomainEvent` (both overloads null-check). Each call increments `Version`, the **event sequence number** (`IHasVersion`), never a concurrency token. `ClearDomainEvents` does not reset it. |
 | Audit fields | Private setters, written only by persistence. `RowVersion` has a protected setter (PostgreSQL maps it to `xmin`). |
-| Tenancy | Tenanted bases guard `tenantId` with `Guard.Throw.InvalidGuid` (never `Guid.Empty`). `TenantId` never changes. The domain receives it as a `Guid`; never reference `ITenantProvider`. |
+| Tenancy | `IHasTenant.TenantId` and every `Tenanted…` base use `SharedKernel.Execution.Tenancy.TenantId`. The constructors also guard `tenantId.Value` with `Guard.Throw.InvalidGuid`, so `default(TenantId)` throws `DomainException`. `TenantId` never changes; the ORM constructor leaves it `default` until materialization. The application layer supplies it (typically `IRequestContext.TenantId`); the domain never resolves tenants itself. |
 | Soft delete | Aggregates: `MarkAsDeleted(deletedBy)` uses `Now`, calls `OnDelete` once (a `virtual` no-op since P-558); protected, idempotent `Restore()` + `virtual OnRestore()` undo it (P-558). Entities: `MarkAsDeleted(deletedBy, deletedOn)`, `deletedOn` must be UTC. Both go through `SoftDeletion.ShouldMarkDeleted`: a blank actor throws `DomainException` (even when already deleted); an already-deleted record is left untouched (no second event, original actor and time kept). |
 
 ### Rules, creation and exceptions
@@ -170,12 +172,13 @@ Changes here that silently break another layer. Check the right column before me
 | --- | --- |
 | The explicit operator on `StronglyTypedId<TValue>` | `06.Persistence` `KeysetQueryableExtensions` finds `op_Explicit` **by reflection** to unwrap typed ids in the keyset seek; a rename breaks at runtime, not compile time |
 | `IHasClock`, the ORM constructors or `Now` | `06.Persistence` `DomainClockMaterializationInterceptor` |
+| `IHasTenant` or the `Tenanted…` bases | `06.Persistence` maps `TenantId` with a value converter (EF Core) and `TenantIdTypeHandler` (Dapper) and builds the tenant filter, write guard and RLS binding on `IHasTenant` |
 | `IHasVersion` or the event sequence semantics | `06.Persistence` `DomainColumnConvention` (maps `Version` as a required, non-concurrency column) |
 | Keyset tiebreak direction | `06.Persistence` seek predicate, which flips both comparisons when descending |
 | `CurrencyCatalog` codes or minor units | `01.Core` `SharedKernel.Validation` holds a second ISO 4217 table; keep them consistent |
 | `Money`/`Currency` factories or the private persistence constructor | `06.Persistence` `MoneyMapping`/`CurrencyValueConverter` (every `Money` property mapped by convention); `16.Testing` `MoneyFaker` |
 | `IBusinessRule`, `ValueObject` validation or `TryCreate` | `16.Testing` fixtures; `samples/OrderApi`; `00.Governance` SK0037 and `AggregateFactoriesMustCreateValidationResults` |
-| `IDomainEventDispatcher` | `05.Application` `MediatRDomainEventDispatcher`; `06.Persistence` unit of work |
+| `IDomainEventDispatcher` | `05.Application` `SharedKernel.Application.Pipeline` `DomainEventDispatcher` (`AddSharedKernelDomainEvents()`); `06.Persistence` unit of work |
 | Any public API | `PublicAPI.Unshipped.txt`, `SharedKernel.Domain.ConsumerVerify`, the package README |
 
 ---
@@ -235,3 +238,4 @@ Changes here that silently break another layer. Check the right column before me
 - [2026-09-15] P-540 — pre-first-publish gold-standard pass, audited by execution. Fixed: transient entities not equal to themselves; aggregates loaded by an ORM stamping 0001-01-01 on events and DeletedOn (NullClock removed, IHasClock added, Now throws without a clock); AddCriteria replacing earlier criteria; TryCreate letting guard violations escape and truncating validation to one error (now ValidationResult<T>); DomainEvent.Id regenerated on deserialization (init + UUIDv7); BIF minor units and stale/missing ISO 4217 codes; Money.ToString printing the type name; duplicate soft-delete events; PagedSpecification offset overflow; empty tenants accepted; two primary sorts allowed; value-object collection components compared by reference; keyset Id tiebreak sorted against the seek predicate; strongly-typed ID JSON failing as dictionary keys and limited to four value types. Changed by user ruling: IBusinessRule.Code required; explicit EnsureValid; explicit conversions; Money moved to Monetary with IFormattable, predicates, Divide, Min/Max, Sum and ToZero/Ceiling/Floor; missing tenanted soft-delete bases and soft-deletable entity bases added; IHasVersion redefined as event sequence; IPolicy polished with ToRule; AOT dropped as a constraint. Public API tracked (404 lines). 425 → 511 domain tests; 10 perturbations each caught; cross-domain fixes in 05/06/16/samples; unit filter and Postgres integration suites green (domain-phase)
 - [2026-09-15] Brain restructured for readability (tables, cross-domain couplings); README and folder landing page rewritten (agent)
 - [2026-09-21] P-558: specification API (Spec.For builder, typed ThenInclude, ProjectionSpecification; Paged/Keyset/ReadOnly specs and AsNoTracking removed), Restore()/OnRestore, [TenantShared] (agent)
+- [2026-09-26] WO-086 (P-565, P-567, P-575): Model tier; `IHasTenant`/`Tenanted…` use `SharedKernel.Execution.Tenancy.TenantId` (new `SharedKernel.Execution` reference); the domain-event dispatcher is `05.Application`'s native `DomainEventDispatcher` (agent)

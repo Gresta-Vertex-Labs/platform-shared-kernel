@@ -1,23 +1,27 @@
 # SharedKernel.Testing
 
 ![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)
+![Tier: Testing](https://img.shields.io/badge/tier-Testing-orange)
 ![Test projects only](https://img.shields.io/badge/use-test%20projects%20only-orange)
 ![Test framework: any](https://img.shields.io/badge/test%20framework-any-informational)
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue)
 
 **The lightweight core of the SharedKernel testing packages: the basics every test suite needs, with no
-infrastructure dependency.** It depends only on the Foundation and Model packages (Primitives, Execution,
-DataPrivacy, Validation, Domain, Contracts), Bogus and the `Microsoft.Extensions.*.Abstractions` packages, and on
-no test framework.
+infrastructure dependency.** It is packable and depends only on the Foundation and Model packages (Primitives,
+Execution, DataPrivacy, Validation, Domain, Contracts), Bogus and the `Microsoft.Extensions.*.Abstractions`
+packages — never on a capability package or a test framework (locked by an architecture test).
 
 ## Install
 
 Reference it from a **test project only**; an architecture test fails any production project that references a
-`SharedKernel.*.Testing` package.
+testing package.
 
 ```xml
 <PackageReference Include="SharedKernel.Testing" />
 ```
+
+Versions come from the single `SharedKernelVersion`. Every other `SharedKernel.*.Testing` package that needs these
+basics brings this one with it.
 
 ## Contents
 
@@ -35,6 +39,23 @@ Reference it from a **test project only**; an architecture test fails any produc
 | `SharedKernel.Testing.DataPrivacy` | `PiiMaskingAssertions`, `RecordingDataSubjectRequestHandler` |
 | `SharedKernel.Testing.Localization` | `CultureScope`, which sets the current (UI) culture for a block |
 | `SharedKernel.Testing.Communication` | `FakeHttpMessageHandler`, `HttpClientHandlerTestFactory`, `ActivityRecorder`, `AmbientActivityTestHelper` (BCL only) |
+
+## Example
+
+```csharp
+var clock = new FakeClock(new DateTimeOffset(2026, 9, 1, 9, 0, 0, TimeSpan.Zero));
+var loggers = new InMemoryLoggerFactory();
+var context = TestRequestContext.ForTenant(tenantId).WithPermissions("invoices.write");
+
+var service = new InvoiceService(clock, context, loggers.CreateLogger<InvoiceService>());
+await service.IssueAsync(invoice, ct);
+
+clock.Advance(TimeSpan.FromDays(31));
+await service.MarkOverdueAsync(ct);
+
+loggers.GetLogger(typeof(InvoiceService).FullName!).Records
+    .ShouldHaveLoggedWithProperty(new EventId(42010), "InvoiceId", invoice.Id);
+```
 
 ## The other testing packages
 

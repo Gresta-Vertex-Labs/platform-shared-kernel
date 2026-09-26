@@ -2,15 +2,21 @@
 
 Server-side gRPC API surface conventions for SharedKernel microservices — the inbound counterpart
 to `SharedKernel.Presentation.WebApi`, giving gRPC service methods the same exception-mapping,
-correlation/tenant-propagation, and declarative-authorization story HTTP endpoints already get.
+caller-context, and declarative-authorization story HTTP endpoints already get.
+
+**Tier:** Host. It references `SharedKernel.Primitives`, `SharedKernel.Core`,
+`SharedKernel.Execution`, `SharedKernel.Security.Abstractions`,
+[`SharedKernel.Presentation.Core`](../SharedKernel.Presentation.Core/README.md) (the `[Require*]`
+attributes and `GrpcStatusCodeMap`) and `Grpc.AspNetCore`. It does **not** reference
+`SharedKernel.Presentation.WebApi`, so a gRPC-only host carries no OpenAPI/versioning/Scalar
+dependencies.
 
 Like its `.WebApi`/`.SignalR` siblings, this package is framework-glue: it converts outcomes your
 gRPC service methods already produce (or throw) into safe, client-facing `RpcException`/`Status`
-responses. It never references `04.Contracts` — protobuf-generated messages are this package's
-only wire-contract surface, mirroring `SharedKernel.Communication.Grpc`'s existing rule that
-client-side gRPC code never references `04.Contracts` either. `SharedKernel.Communication.Grpc`
-stays outbound-only (client channel/interceptors); this package owns the inbound gRPC API
-boundary.
+responses. It never references `SharedKernel.Contracts` — protobuf-generated messages are this
+package's only wire-contract surface, mirroring `SharedKernel.Communication.Grpc`'s rule.
+`SharedKernel.Communication.Grpc` stays outbound-only (client channel/interceptors); this package
+owns the inbound gRPC API boundary.
 
 ---
 
@@ -18,15 +24,12 @@ boundary.
 
 ```xml
 <ItemGroup>
-  <PackageReference Include="SharedKernel.Presentation.Grpc" Version="x.y.z" />
+  <PackageReference Include="SharedKernel.Presentation.Grpc" />
 </ItemGroup>
 ```
 
-Brings in `Grpc.AspNetCore` (server hosting) as a transitive dependency, plus a `ProjectReference`
-on `SharedKernel.Presentation.WebApi` — the one deliberate exception to this domain's usual
-"distinct API surfaces, no cross-references" rule — solely to reuse `RequireRoleAttribute`/
-`RequirePermissionAttribute`/`RequireFreshAuthenticationAttribute`/`RequireAuthenticationMethodAttribute`
-verbatim, so the platform has **one** declarative authorization dialect across HTTP and gRPC.
+Versions come from your single `SharedKernelVersion`; every SharedKernel package ships with the
+same version. `SharedKernel.Presentation.Core` comes transitively.
 
 ---
 
@@ -35,9 +38,14 @@ verbatim, so the platform has **one** declarative authorization dialect across H
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.AddSharedKernelRequestContext();   // SharedKernel.ServiceDefaults.Security: IRequestContext over IUserContext
 builder.Services.AddSharedKernelGrpc();
 
 var app = builder.Build();
+
+app.UseSharedKernelRequestContext();   // optional for a gRPC-only host; first when present
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapGrpcService<OrdersService>();
 
@@ -47,31 +55,35 @@ app.Run();
 `AddSharedKernelGrpc` registers gRPC plus four global server interceptors — applied to **every**
 mapped gRPC service automatically, via `GrpcServiceOptions.Interceptors`, with no per-service
 wiring needed (unlike HTTP's `AuthorizationRequirementEndpointFilter`, which needs an explicit
-`.AddEndpointFilter<T>()` call per route/group):
+`.AddEndpointFilter<T>()` call per route/group) — and `IRequestContextAccessor` when nothing else
+registered it. It returns the stock `IGrpcServerBuilder`.
 
 - **`GrpcExceptionInterceptor`** — the gRPC counterpart to `IExceptionHandler`/
-  `SharedKernelExceptionHandler`. Known `SharedKernelException` subtypes (`01.Core`) map to an
-  `RpcException` via `GrpcStatusCodeMap`; unknown exceptions are logged at `LogLevel.Error` and
-  mapped to `StatusCode.Internal` with detail suppressed outside
+  `SharedKernelExceptionHandler`. Known `SharedKernelException` subtypes (`SharedKernel.Core`) map
+  to an `RpcException` via `GrpcStatusCodeMap`; unknown exceptions are logged at `LogLevel.Error`
+  (`EventId` 14200) and mapped to `StatusCode.Internal` with detail suppressed outside
   `IHostEnvironment.IsDevelopment()`. Overrides all four server interceptor methods (unary +
   three streaming shapes) — gRPC, unlike HTTP, has more than one call shape that needs mapping.
-- **`GrpcCorrelationInterceptor`** — reads the inbound `X-Correlation-Id` gRPC metadata key
-  (the same key `SharedKernel.Communication.Grpc`'s client-side `CorrelationTracingInterceptor`
-  writes), generating one when absent, and sets `Activity.Current`'s correlation baggage exactly
-  like `CorrelationIdMiddleware` does for HTTP.
-- **`GrpcTenantContextInterceptor`** — resolves `ITenantProvider` (`12.Security.Abstractions`)
-  from the call's `HttpContext` and stores the resolved tenant id in
-  `ServerCallContext.UserState["TenantId"]` for the call's lifetime. Mirrors
-  `TenantContextHubFilter`'s policy exactly: it never rejects a call with no resolvable tenant.
+- **`GrpcCorrelationInterceptor`** — resolves the call's correlation id: the ambient one when
+  `UseSharedKernelRequestContext()` already ran for the request, otherwise the inbound
+  `X-Correlation-Id` metadata (the key `SharedKernel.Communication.Grpc`'s client interceptor writes),
+  accepted only under `CorrelationIds`' one rule (at most 128 characters of `[A-Za-z0-9-_:.]`) and
+  created when absent or invalid. It also sets the `Activity` correlation baggage.
+- **`GrpcTenantContextInterceptor`** — opens a `RequestContextScope` around the call carrying the
+  caller: the ambient `IRequestContext`, else the one registered in the call's request services,
+  else `AnonymousRequestContext`, always with the resolved correlation id. Service code, repositories
+  and outbound clients read tenant, actor and correlation id through `IRequestContext` /
+  `IRequestContextAccessor`. It never reads a tenant from metadata and never rejects a call with no
+  tenant; the tenant comes from the authenticated caller (or `SharedKernel.MultiTenancy`).
 - **`GrpcAuthorizationInterceptor`** — evaluates `[RequireRole]`/`[RequirePermission]`/
-  `[RequireFreshAuthentication]`/`[RequireAuthenticationMethod]` applied directly to a gRPC
-  service implementation class or method, via the exact same endpoint-metadata mechanism ASP.NET
-  Core uses for MVC controller actions — `ServerCallContext.GetHttpContext()?.GetEndpoint()?.Metadata`.
-  No gRPC-specific attribute vocabulary exists; these are the identical attribute types your HTTP
-  endpoints already use.
+  `[RequireFreshAuthentication]`/`[RequireAuthenticationMethod]` (namespace
+  `SharedKernel.Presentation.Authorization`) applied directly to a gRPC service implementation class
+  or method, read from `ServerCallContext.GetHttpContext()?.GetEndpoint()?.Metadata`. These are the
+  identical attribute types your HTTP endpoints use. A rejection is logged (`EventId` 14201).
 
-A conservative `GrpcServiceOptions.MaxReceiveMessageSize` (4 MiB) is set before your `configure`
-callback runs, so it is always overridable.
+A conservative `GrpcServiceOptions.MaxReceiveMessageSize`
+(`GrpcServiceCollectionExtensions.DefaultMaxReceiveMessageSizeBytes`, 4 MiB) is set before your
+`configure` callback runs, so it is always overridable.
 
 ```csharp
 builder.Services.AddSharedKernelGrpc(options =>
@@ -85,6 +97,8 @@ builder.Services.AddSharedKernelGrpc(options =>
 ## Declarative authorization on a gRPC service method
 
 ```csharp
+using SharedKernel.Presentation.Authorization;   // SharedKernel.Presentation.Core
+
 public sealed class OrdersService : Orders.OrdersBase
 {
     [RequireRole("admin")]
@@ -123,11 +137,12 @@ extensions (or let a thrown `SharedKernelException` reach `GrpcExceptionIntercep
 
 ## `GrpcStatusCodeMap`
 
-A sibling to `SharedKernel.Presentation.WebApi.Errors.ErrorTypeStatusCodeMap` — never a merge.
-HTTP status codes and gRPC `StatusCode` are different target enums with no clean 1:1
-correspondence (HTTP's 422 has no gRPC analogue; gRPC's `Aborted`/`FailedPrecondition` cover
-ground HTTP splits across 409/412/422). Both maps key off the same `01.Core` `ErrorType` enum —
-that shared vocabulary is the generalization point, not a shared value table.
+Lives in `SharedKernel.Presentation.Core`, namespace `SharedKernel.Presentation.Errors`, beside its
+HTTP sibling `ErrorTypeStatusCodeMap` — never merged with it. HTTP status codes and gRPC
+`StatusCode` are different target enums with no clean 1:1 correspondence (HTTP's 422 has no gRPC
+analogue; gRPC's `Aborted`/`FailedPrecondition` cover ground HTTP splits across 409/412/422). Both
+maps key off the same `ErrorType` enum (`SharedKernel.Primitives`) — that shared vocabulary is the
+generalization point, not a shared value table.
 
 | `ErrorType` | gRPC `StatusCode` |
 |---|---|
@@ -142,14 +157,17 @@ that shared vocabulary is the generalization point, not a shared value table.
 
 ---
 
-## No new `13.ServiceDefaults` telemetry entry point
+## No telemetry entry point of its own
 
 gRPC calls ride the same Kestrel/HTTP2 pipeline ASP.NET Core's existing server-side OpenTelemetry
-instrumentation already traces — the same pipeline HTTP/1.1 Minimal API/MVC endpoints are already
-traced through with no `14.Presentation`-specific `WithXTelemetry` entry point needed there
-either. This is a deliberate decision, not a gap.
+instrumentation already traces, so this package ships no `WithXTelemetry` extension. This is a
+deliberate decision, not a gap.
 
 ---
 
-See `14.Presentation/CLAUDE.md` for the full design rationale, interface contracts, and layering
-rules.
+## Related packages
+
+- [`SharedKernel.Presentation.Core`](../SharedKernel.Presentation.Core/README.md) — the attributes and status maps.
+- `SharedKernel.Communication.Grpc` — the outbound client side (channel factory, correlation/tenant interceptors).
+- `SharedKernel.ServiceDefaults.Security` — `AddSharedKernelRequestContext()` / `UseSharedKernelRequestContext()`.
+- [Configuration reference](../CONFIGURATION.md) and the domain [README](../README.md).

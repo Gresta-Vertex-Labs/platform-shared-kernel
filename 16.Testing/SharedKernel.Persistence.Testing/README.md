@@ -2,6 +2,7 @@
 
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![Testcontainers](https://img.shields.io/badge/Testcontainers-PostgreSQL-2496ED?logo=docker&logoColor=white)](https://dotnet.testcontainers.org/)
+![Tier: Testing](https://img.shields.io/badge/tier-Testing-orange)
 ![Test projects only](https://img.shields.io/badge/use-test%20projects%20only-orange)
 ![Test framework: any](https://img.shields.io/badge/test%20framework-any-informational)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
@@ -42,7 +43,9 @@ dotnet add MyService.Tests package SharedKernel.Persistence.Testing
 | --- | --- |
 | Target framework | `net10.0` |
 | Docker | Only for `PostgresTestServer.StartAsync()` (or use `FromExistingServer`) |
-| Namespace | `SharedKernel.Persistence.Testing` — everything is in it |
+| Namespace | `SharedKernel.Persistence.Testing` — everything except `TestRequestContext` (`SharedKernel.Testing.Execution`) |
+| Tier | Testing (packable; references `SharedKernel.Testing`, the persistence packages and `Testcontainers.PostgreSql`) |
+| Version | From the consumer's single `SharedKernelVersion` |
 
 ## Unit tests: in-memory fakes
 

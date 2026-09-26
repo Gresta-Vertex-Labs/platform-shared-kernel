@@ -33,9 +33,20 @@ MassTransit out of your handlers, your tests and your type signatures.
 
 ## Install
 
-```bash
-dotnet add package SharedKernel.Messaging.MassTransit
+```xml
+<PackageReference Include="SharedKernel.Messaging.MassTransit" />
+<!-- exactly one transport -->
+<PackageReference Include="SharedKernel.Messaging.MassTransit.RabbitMq" />
+<!-- or: <PackageReference Include="SharedKernel.Messaging.MassTransit.AzureServiceBus" /> -->
+<!-- optional: <PackageReference Include="SharedKernel.Messaging.MassTransit.EfCore" /> for the outbox -->
 ```
+
+Versions come from your single `SharedKernelVersion`. This package is in the **Adapter** tier and carries no broker
+client and no EF Core: the transports and the outbox are the satellite packages
+[`.RabbitMq`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/07.Messaging/SharedKernel.Messaging.MassTransit.RabbitMq/README.md),
+[`.AzureServiceBus`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/07.Messaging/SharedKernel.Messaging.MassTransit.AzureServiceBus/README.md) and
+[`.EfCore`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/07.Messaging/SharedKernel.Messaging.MassTransit.EfCore/README.md). Their extension methods live in this package's
+`SharedKernel.Messaging.MassTransit.Extensions` namespace, so the chain below needs no extra `using`.
 
 ## Quick start
 
@@ -49,19 +60,23 @@ dotnet add package SharedKernel.Messaging.MassTransit
 ```csharp
 // Register the service's own IRequestContext FIRST — the container resolves the last
 // registration, and WithInboundRequestContext() must be the one that wins.
-builder.AddSharedKernelRequestContext();
+builder.Services.AddSharedKernelRequestContext();           // SharedKernel.ServiceDefaults.Security
+
+// The store WithIdempotency() uses (18.Idempotency), registered for IdempotencyPurpose.Message.
+builder.Services.AddRedisConnection(builder.Configuration);
+builder.Services.AddRedisIdempotency(p => p.ForMessages());
 
 builder.Services
     .AddSharedKernelMessaging(builder.Configuration)
-    .UseRabbitMq(builder.Configuration.GetConnectionString("rabbitmq")!)
+    .UseRabbitMq(builder.Configuration.GetConnectionString("rabbitmq")!)   // .RabbitMq satellite
     .WithRetry()
     .WithIdempotency()
     .WithInboundRequestContext()
-    .WithAmbientCorrelationPropagation()
     .AddConsumer<OrderPlacedConsumer>()
     .Build();
 
-builder.Services.AddHealthChecks().AddMessagingReadinessCheck();
+// Build() registers an IReadinessProbe named "messaging"; this maps it to /health/ready.
+builder.Services.AddHealthChecks().AddSharedKernelReadiness();   // SharedKernel.ServiceDefaults
 ```
 
 `ServiceName` prefixes every queue this service declares (`order-service-order-placed` for an
@@ -73,22 +88,23 @@ queue in the deployment.
 
 | Call | What it does |
 | --- | --- |
-| `UseRabbitMq(connectionString)` / `UseRabbitMq(configure)` | RabbitMQ, with TLS, prefetch, concurrency and cluster options on the overload |
-| `UseAzureServiceBus(connectionString)` / `UseAzureServiceBus(configure)` | Azure Service Bus, including a fully-qualified namespace with `DefaultAzureCredential` |
+| `UseRabbitMq(connectionString)` / `UseRabbitMq(configure)` | RabbitMQ (`.RabbitMq` satellite), with host, credentials, virtual host, prefetch, heartbeat and concurrency on the overload |
+| `UseAzureServiceBus(connectionString)` / `UseAzureServiceBus(configure)` | Azure Service Bus (`.AzureServiceBus` satellite), including a fully-qualified namespace with `DefaultAzureCredential` |
+| `UseTransport(transport)` / `ConfigureMassTransit(configure)` | The extension points the satellites use; a new broker is a new `MessagingTransport` satellite |
 | `AddConsumer<T>()` / `AddConsumer<T, TDefinition>()` | Registers a consumer; the definition overload sets per-consumer retry, concurrency and non-retryable exceptions |
 | `AddBatchConsumer<T>(configure)` | A consumer that receives messages in batches |
 | `AddFaultConsumer<TMessage, TConsumer>()` | Observes messages that exhausted their retries |
 | `WithRetry(configure)` | Incremental retry, in-process, before a message is faulted |
 | `WithCircuitBreaker(configure)` | Stops hammering a dependency that is already failing |
 | `WithDeadLetterPolicy(configure)` | RabbitMQ error-queue TTL (a no-op on Azure Service Bus, which owns this at the resource level — a startup warning says so) |
-| `WithIdempotency()` | At-most-once consumption per `MessageId` |
+| `WithIdempotency()` / `WithIdempotency(configure)` | At-most-once consumption per `MessageId` (`LeaseDuration`, `ExpiryWindow`) |
 | `WithInboundRequestContext()` | The publisher's tenant and actor, both directions |
 | `WithDelayedDelivery()` | Transport-native scheduled delivery |
-| `WithEntityFrameworkOutbox<TDbContext>()` | Publish inside the same transaction as your data |
+| `WithEntityFrameworkOutbox<TDbContext>()` | Publish inside the same transaction as your data (`.EfCore` satellite) |
 | `WithSendEndpointRoute<T>(queue)` | Routes a command type to a named queue |
 | `WithHeaderPropagator<T>()` | Your own ambient-value propagator |
-| `WithAmbientCorrelationPropagation()` | Correlation id from `Activity.Current`, no consumer code |
-| `WithTenantContext<TAccessor>()` | Tenant from your own accessor, when you are not using `WithInboundRequestContext()` |
+| `WithAmbientCorrelationPropagation()` | The ambient caller's correlation id (`X-Correlation-Id`, never an `Activity` id), no consumer code |
+| `WithTenantContext()` | The ambient caller's tenant only (`IRequestContextAccessor.Current`), when you are not using `WithInboundRequestContext()` |
 | `WithVersionTranslator<TOld, TNew, T>()` | Projects an old message shape to the current one before the consumer sees it |
 | `WithPayloadTransform(configure)` | Compress-then-encrypt on publish, the reverse on consume |
 | `Build()` | Validates, registers everything, returns the `IServiceCollection` |
@@ -126,7 +142,7 @@ suffix dropped.
 ## Idempotency
 
 ```csharp
-services.AddSharedKernelIdempotencyRedis(configuration);   // or .EfCore, from 18.Idempotency
+builder.Services.AddRedisIdempotency(p => p.ForMessages());   // or AddEfCoreIdempotency(..., p => p.ForMessages())
 
 builder.Services
     .AddSharedKernelMessaging(builder.Configuration)
@@ -135,13 +151,20 @@ builder.Services
     .Build();
 ```
 
-The filter reserves the `MessageId` atomically before the consumer runs, completes on success, and **releases on
-failure** so a redelivery can retry immediately instead of waiting out the lease. A duplicate that is still in
-flight throws `ConcurrentMessageDeliveryException`, which keeps the message unacknowledged — expected behaviour,
-not something to alert on.
+The filter resolves the `IIdempotencyStore` (`SharedKernel.Idempotency.Abstractions`) keyed by
+`IdempotencyPurpose.Message`; `Build()` throws if none is registered. It reserves the `MessageId` atomically before
+the consumer runs — for `LeaseDuration` (default 30 s, must outlast the slowest consumer), scoped by the ambient
+tenant — completes on success with a retention of `ExpiryWindow` (default 24 h), and **releases on failure** so a
+redelivery can retry immediately instead of waiting out the lease. A duplicate that is still in flight throws
+`ConcurrentMessageDeliveryException`, which keeps the message unacknowledged — expected behaviour, not something to
+alert on. `Build()` requires `0 < LeaseDuration < ExpiryWindow`.
 
 A message with no `MessageId` passes through: there is nothing to deduplicate on, and inventing an id would make
 every delivery look unique anyway.
+
+> **Known limitation:** the key is the `MessageId` alone. When two receive endpoints (or two polymorphic
+> consumers) in one service receive the same message, the second is skipped as a duplicate. Do not enable
+> `WithIdempotency()` in a service where one message reaches more than one of its endpoints.
 
 ## The caller across the bus
 
@@ -149,9 +172,14 @@ every delivery look unique anyway.
 .WithInboundRequestContext()
 ```
 
-Publishes the current caller's tenant and actor as transport headers, and rebuilds them on the consumer so that
-injecting `IRequestContext` resolves to the caller that published. Outside a consume it still resolves to the
-service's own caller, so **one handler serves both the HTTP path and the message path without branching**.
+Publishes the current caller's correlation id, tenant and actor as transport headers (`SharedKernel.Execution`'s
+`RequestContextPropagation`, under `WellKnownHeaders`: `X-Correlation-Id`, `X-Tenant-Id`, `x-sk-actor-id`,
+`x-sk-actor-kind`, `x-sk-client-id`), and rebuilds them on the consumer as a `PropagatedRequestContext` so that
+injecting `IRequestContext` resolves to the caller that published. The consumer runs inside a
+`RequestContextScope`, so REST, gRPC and bus calls it makes forward the same tenant and correlation id. Outside a
+consume `IRequestContext` still resolves to the service's own caller, so **one handler serves both the HTTP path
+and the message path without branching**. A permission check inside a consume always answers `false`: headers
+attribute, they never authorize.
 
 Register it **after** your own `IRequestContext` — the container resolves the last registration. Get it wrong and
 consumers silently see no tenant, which looks like a persistence bug; a startup warning (EventId 7011) fires when
@@ -167,8 +195,9 @@ Messages published inside a `SaveChangesAsync` are written to outbox tables in t
 data and delivered afterwards by a background worker: no lost event when the process dies between the commit and
 the publish, and no phantom event when the transaction rolls back.
 
-Your `DbContext` arrives as a generic parameter, so this package takes no dependency on `06.Persistence`. Add
-MassTransit's outbox entities to your model and run the migration before the bus starts.
+The method comes from the `SharedKernel.Messaging.MassTransit.EfCore` satellite, so a service without an outbox
+never restores EF Core. Your `DbContext` arrives as a generic parameter, so neither package takes a dependency on
+`06.Persistence`. Add MassTransit's outbox entities to your model and run the migration before the bus starts.
 
 ## Failure handling
 
@@ -229,9 +258,10 @@ An `ActivitySource` and a `Meter`, both named `SharedKernel.Messaging`:
 Spans: `MessageBus.Publish`, `MessageBus.Send`, `EventPublisher.Publish`, `Consumer.Consume`. Wire them with
 `13.ServiceDefaults`' `WithMessagingTelemetry()`.
 
-`IMessageBusProbe` reports the health of the **real configured bus** — never a second connection built from
-copied configuration. `AddMessagingReadinessCheck()` (from `SharedKernel.ServiceDefaults.Messaging`) exposes it
-to Kubernetes.
+`Build()` registers an `IReadinessProbe` (`SharedKernel.Primitives.Health`) named `messaging`
+(`MessagingReadinessProbeNames.Bus`) that reports the health of the **real configured bus** — MassTransit's own
+bus health check, never a second connection built from copied configuration.
+`services.AddHealthChecks().AddSharedKernelReadiness()` (`SharedKernel.ServiceDefaults`) exposes it to Kubernetes.
 
 ## The window before ready
 

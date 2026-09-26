@@ -46,6 +46,7 @@ dotnet add package SharedKernel.Security.Totp
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
+| Tier | Host (references ASP.NET Core; reference it from the host project only) |
 | Dependencies | [`SharedKernel.Security.Abstractions`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/12.Security/SharedKernel.Security.Abstractions), [`SharedKernel.Cryptography`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/01.Core/SharedKernel.Cryptography), the ASP.NET Core shared framework (`Microsoft.AspNetCore.App`) |
 | Namespace | `SharedKernel.Security.Totp` |
 | Registration | `AddSharedKernelCryptography(configuration).AddTotpStepUp<TStepUpStore, TRecoveryCodeStore>()` |
@@ -54,7 +55,7 @@ dotnet add package SharedKernel.Security.Totp
 | Companion package | Adds |
 | --- | --- |
 | [`SharedKernel.Security.Oidc`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/12.Security/SharedKernel.Security.Oidc) | JWT bearer authentication; supplies the user's subject id, session id and `amr` claims |
-| [`SharedKernel.Presentation.WebApi`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/14.Presentation/SharedKernel.Presentation.WebApi) | `[RequireAuthenticationMethod]` and the endpoint filter that enforces it |
+| [`SharedKernel.Presentation.WebApi`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/14.Presentation/SharedKernel.Presentation.WebApi) | The endpoint filter that enforces `SharedKernel.Presentation.Core`'s `[RequireAuthenticationMethod]` (namespace `SharedKernel.Presentation.Authorization`) |
 | [`SharedKernel.Cryptography.Argon2`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/01.Core/SharedKernel.Cryptography.Argon2) | Argon2id as the hash algorithm for recovery codes |
 
 ## Quick start
@@ -65,6 +66,7 @@ dotnet add package SharedKernel.Security.Totp
 // Program.cs
 using SharedKernel.Cryptography.Extensions;
 using SharedKernel.Cryptography.Totp;
+using SharedKernel.Presentation.Authorization;
 using SharedKernel.Presentation.WebApi.Authorization;
 using SharedKernel.Security.Abstractions;
 using SharedKernel.Security.Oidc.Extensions;
@@ -310,6 +312,7 @@ public interface ITotpEnrollmentRepository
 using System.Security.Cryptography;
 using SharedKernel.Presentation.WebApi.Errors;
 using SharedKernel.Primitives.Errors;
+using SharedKernel.Execution.Context;
 using SharedKernel.Security.Abstractions;
 using SharedKernel.Security.Totp;
 
@@ -319,7 +322,7 @@ enrollment.MapPost("/", async (
     IUserContext user, HttpContext http, TotpEnrollmentService enrollments, TotpSecretProtector secrets,
     ITotpEnrollmentRepository repository, CancellationToken ct) =>
 {
-    if (user.IdentityKind != IdentityKind.User || user.SubjectId is not { } subjectId)
+    if (user.ActorKind != ActorKind.User || user.SubjectId is not { } subjectId)
     {
         return Results.Problem(Error.Forbidden("totp.not_a_user", "Only users can enroll.").ToProblemDetails(http));
     }
@@ -458,6 +461,7 @@ Attach the requirement to the endpoint, and give the client an endpoint that che
 ```csharp
 // Program.cs
 using System.Security.Cryptography;
+using SharedKernel.Presentation.Authorization;
 using SharedKernel.Presentation.WebApi.Authorization;
 using SharedKernel.Presentation.WebApi.Errors;
 using SharedKernel.Primitives.Errors;
@@ -743,6 +747,7 @@ using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Cryptography.Extensions;
 using SharedKernel.Cryptography.Totp;
 using SharedKernel.Primitives.Clocks;
+using SharedKernel.Execution.Context;
 using SharedKernel.Security.Abstractions;
 using SharedKernel.Security.Totp;
 using Xunit;
@@ -811,7 +816,7 @@ public sealed class TotpStepUpTests
     }
 
     private static IUserContext User(string sessionId) =>
-        new UserContext(IdentityKind.User, "user-1") { SessionId = sessionId };
+        new UserContext(ActorKind.User, "user-1") { SessionId = sessionId };
 
     private static async Task<bool> HasOtpAsync(ServiceProvider provider, string sessionId)
     {
@@ -839,7 +844,7 @@ public sealed class TotpStepUpTests
         public string AuthenticationType => Scheme;
 
         public IUserContext Map(ClaimsIdentity identity) =>
-            new UserContext(IdentityKind.User, identity.FindFirst("sub")!.Value, identity.Claims)
+            new UserContext(ActorKind.User, identity.FindFirst("sub")!.Value, identity.Claims)
             {
                 SessionId = identity.FindFirst("sid")?.Value,
             };
@@ -1139,7 +1144,7 @@ STORES       ITotpStepUpStore keyed by (subjectId, sessionId), expire at expires
              IRecoveryCodeStore.TryMarkUsedAsync = single UPDATE ... WHERE used_at IS NULL, true when 1 row.
              ITotpReplayGuard.TryAcceptTimeStepAsync = atomic compare-and-set, keep for retention.
 TEST         Register a controllable IClock before AddSharedKernelCryptography; codes from
-             new TotpGenerator(clock).GenerateCode(secret); users as new UserContext(IdentityKind.User, id) { SessionId = ... }.
+             new TotpGenerator(clock).GenerateCode(secret); users as new UserContext(ActorKind.User, id) { SessionId = ... }.
 FORBIDDEN    Plaintext secrets or recovery codes at rest; logging codes or secrets; activating without ConfirmAsync;
              keying a step-up by user only; in-memory stores in production; read-then-write redemption.
 ```

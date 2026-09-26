@@ -50,6 +50,7 @@
 | `SK.01.P553` | P-553 Validation + FluentValidation Pre-First-Publish Pass | All tasks in Phase: P-553 are `●` | P-553 |
 | `SK.01.P554` | P-554 DataPrivacy Pre-First-Publish Pass | All tasks in Phase: P-554 are `●` | P-554 |
 | `SK.01.P555` | P-555 FeatureManagement Pre-First-Publish Pass | All tasks in Phase: P-555 are `●` | P-555 |
+| `SK.01.WO086` | WO-086 Foundation refactor (01.Core share) | Recorded complete; see the note under Package Board | P-564, P-565, P-566, P-567, P-569, P-574, P-575 |
 | `SK.01.P384` | P-384 Core: ErrorType.Forbidden + Error.Forbidden Factory | All tasks in Phase: P-384 are `●` | P-384 |
 | `SK.01.P443` | P-443 New Package: SharedKernel.Validation | All tasks in Phase: P-443 are `●` | P-443 |
 | `SK.01.P444` | P-444 New Package: SharedKernel.Validation.FluentValidation | All tasks in Phase: P-444 are `●` | P-444 |
@@ -124,6 +125,8 @@ Format when blocked — replace placeholder with table:
 ---
 
 ## Package Board
+
+> **WO-086 (`SK.01.WO086`, 2026-09-26):** new Foundation package `SharedKernel.Execution` (P-564: `IRequestContext`, `ActorKind`, `SystemRequestContext`, `AnonymousRequestContext`, `IUnitOfWork`, `IAuditTrailWriter`, `TenantId`, `TenantScope` — replacing `SharedKernel.Application.Abstractions`; P-566: `RequestContextScope`, `IRequestContextAccessor`, `RequestContextPropagation`, `PropagatedRequestContext`, `CorrelationIds`; `WellKnownHeaders` gained `IdempotencyKey`/`ActorId`/`ActorKind`/`ClientId`). P-565: FeatureManagement targets `TenantId?`. P-569: `SharedKernel.Primitives.Health` (`IReadinessProbe`, `ReadinessReport`, `AddReadinessProbe`) replaces `IEncryptionKeyProviderProbe`/`EncryptionKeyProviderHealth`; the Key Vault provider registers `encryption-key-provider`. P-567: `Validation.FluentValidation` gained `AddFluentValidationRequestValidators()`. P-574: every package declares a tier (ten Foundation, three Adapter). P-575: `CLAUDE.md` and READMEs rewritten. Every package ships with the repo-wide release train; per-package publish notes below are history.
 
 > **P-505/WO-082 (shipped):** `SharedKernel.Guards` was merged into `SharedKernel.Core` — its own row below is retired and its capability now lives on the `SharedKernel.Core` row. This domain now ships **twelve** published packages, not thirteen. The `SharedKernel.Guards`/`SharedKernel.Guards.Clauses`/`SharedKernel.Guards.Descriptions` C# namespaces are unchanged — only the physical package moved.
 
@@ -2178,3 +2181,4 @@ were raw strings at every call site. `SharedKernel.Primitives` was referenced bu
 - [2026-09-18] SK.01.P554 published — `SharedKernel.DataPrivacy` `1.0.0-alpha.0.1106` on GitHub Packages, with `SharedKernel.Primitives` republished from `09143b6` (coordinator)
 - [2026-09-18] SK.01.P555 complete — `SharedKernel.FeatureManagement` pre-first-publish pass: OpenFeature `IFeatureClient` with typed `FeatureFlag<T>`, explicit targeting (fixing targeting that never reached `Microsoft.Targeting`), ambient accessor, per-scope consistency, startup validation, telemetry without user ids (Microsoft's own event suppressed); SK0002 retargeted, `FakeFeatureClient`. 82/82 (coordinator)
 - [2026-09-18] SK.01.P555 published — `SharedKernel.FeatureManagement` `1.0.0-alpha.0.1112` on GitHub Packages, with `SharedKernel.Primitives` republished from `e0c65d0`; all twelve `01.Core` packages are now published (coordinator)
+- [2026-09-26] WO-086 recorded (`SK.01.WO086`): Execution package, Primitives.Health readiness contract, tiers, FluentValidation request-validator bridge; CLAUDE.md and every package README rewritten to the final state — WO-086 P-575

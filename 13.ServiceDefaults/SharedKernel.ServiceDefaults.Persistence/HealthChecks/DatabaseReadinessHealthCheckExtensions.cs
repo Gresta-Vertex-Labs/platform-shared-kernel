@@ -94,7 +94,7 @@ public static class DatabaseReadinessHealthCheckExtensions
     /// <param name="name">The registration name. Defaults to <see cref="HealthCheckNames.PersistenceStartup"/>.</param>
     /// <returns>The same <paramref name="builder"/> instance, for fluent chaining.</returns>
     /// <remarks>
-    /// Tagged <see cref="HealthCheckTags.Ready"/>. <see cref="AddDatabaseReadinessCheck{TContext}"/> applies the same gate;
+    /// Tagged <see cref="HealthCheckTags.Ready"/> and <see cref="HealthCheckTags.Db"/>. <see cref="AddDatabaseReadinessCheck{TContext}"/> applies the same gate;
     /// register this one in a service that has no EF Core readiness check. Requires <c>AddSharedKernelPostgres</c>.
     /// </remarks>
     public static IHealthChecksBuilder AddPersistenceStartupReadinessCheck(

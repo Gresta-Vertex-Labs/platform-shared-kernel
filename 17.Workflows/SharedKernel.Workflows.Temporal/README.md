@@ -4,8 +4,8 @@ Durable, crash-proof workflow orchestration for Platform.SharedKernel microservi
 [`Temporalio`](https://github.com/temporalio/sdk-dotnet) .NET SDK. Downstream services depend on this
 package to **dispatch** durable workflows (start, signal, query, cancel, terminate, await result) from
 ordinary application code, to **author** workflows and activities against platform-shaped base types,
-to **host** a Temporal worker inside the generic host, and to **probe** worker/service readiness — all
-with correlation-id/tenant-id propagation, `Result<T>`-to-Temporal-failure mapping, and payload
+to **host** a Temporal worker inside the generic host, and to report readiness as the `workflows` `IReadinessProbe` — all
+with tenant, correlation-id and caller propagation, `Result<T>`-to-Temporal-failure mapping, and payload
 encryption already wired.
 
 A deliberate single package: there is no `SharedKernel.Workflows.Abstractions` split, because durable
@@ -59,10 +59,13 @@ invisible in every dashboard. Every activity body must end in an explicit map.
 ## Install
 
 ```xml
-<ProjectReference Include="..\SharedKernel.Workflows.Temporal\SharedKernel.Workflows.Temporal.csproj" />
+<PackageReference Include="SharedKernel.Workflows.Temporal" />
 ```
 
-Or, once published, the NuGet package `SharedKernel.Workflows.Temporal`.
+Versions come from the consumer's single `SharedKernelVersion`. **Tier: Adapter** — references
+`SharedKernel.Primitives`, `.Execution`, `.Configuration`, `.Cryptography`, `SharedKernel.Application` (the
+kernel `ISender`, no MediatR) and the `Temporalio` packages; no ASP.NET Core. For unit tests of code that
+dispatches workflows, use `SharedKernel.Workflows.Testing` (`AddInMemoryWorkflowDispatcher()`).
 
 ---
 
@@ -78,12 +81,12 @@ would turn the API pod's rolling deploy into a workflow outage.
 builder.Services
     .AddSharedKernelTemporalWorkflows(builder.Configuration)
     .AsClientOnly()
-    .WithPayloadEncryption()   // optional — AES-256-GCM via 01.Core's ISymmetricEncryptionService
+    .WithPayloadEncryption()   // optional — AES-256-GCM via SharedKernel.Cryptography
     .WithOpenTelemetry()       // optional — Temporal's TracingInterceptor
     .Build();
 ```
 
-This registers `IWorkflowDispatcher` (scoped), `IWorkflowIdFactory`/`IWorkflowServiceProbe` (singleton),
+This registers `IWorkflowDispatcher` (scoped), `IWorkflowIdFactory` (singleton), the `workflows` readiness probe,
 and the underlying `ITemporalClient` (singleton) — and registers **no** `IHostedService`. Calling
 `.AddWorkflow<T>()`, `.AddActivities<T>()`, or `.WithWorker(...)` after `.AsClientOnly()` is a
 configuration error caught at `.Build()`, not discovered at first poll.
@@ -117,7 +120,7 @@ Inject the dispatch surface — **never** a raw `Temporalio.*` type:
 ```csharp
 public sealed class OrderService(IWorkflowDispatcher dispatcher)
 {
-    public async Task<Result<string>> StartFulfilmentAsync(string orderId, string tenantId, CancellationToken ct)
+    public async Task<Result<string>> StartFulfilmentAsync(string orderId, TenantId tenantId, CancellationToken ct)
     {
         var options = new WorkflowStartOptions
         {
@@ -128,7 +131,7 @@ public sealed class OrderService(IWorkflowDispatcher dispatcher)
         };
 
         Result<IWorkflowHandle> result = await dispatcher.StartAsync<OrderFulfilmentWorkflow, string>(
-            orderId, options, TenantScope.Of(tenantId), ct);
+            orderId, options, TenantScope.For(tenantId), ct);   // SharedKernel.Execution.Tenancy
 
         return result.IsSuccess
             ? Result<string>.Success(result.Value.WorkflowId)
@@ -140,7 +143,7 @@ public sealed class OrderService(IWorkflowDispatcher dispatcher)
 `TenantScope` is a **mandatory, non-nullable, non-defaulted separate parameter** on every dispatch
 member — a workflow execution is addressed by a caller-supplied workflow id in a flat per-namespace
 keyspace, so without a structural tenant discriminator, tenant B signalling tenant A's workflow is one
-guessed string away. A dispatch call made with `TenantScope.None` returns
+guessed string away. `TenantScope` is `SharedKernel.Execution.Tenancy.TenantScope`; a dispatch call made with `TenantScope.Global` returns
 `WorkflowErrors.TenantScopeMissing` with **no I/O performed**. No dispatch member ever accepts a raw,
 caller-supplied workflow id — every start routes through `IWorkflowIdFactory`, so the tenant segment is
 structural rather than conventional.
@@ -204,7 +207,7 @@ public sealed class ChargeCardActivity : ActivityBase
     }
 }
 
-// The sole 05.Application (MediatR) bridge — a closed generic per command, no reflection.
+// The sole application-pipeline bridge (the kernel ISender) — a closed generic per command, no reflection.
 public sealed class ApproveOrderActivity : CommandActivity<ApproveOrderCommand>
 {
     public ApproveOrderActivity(ISender sender, ILogger<ApproveOrderActivity> logger, IClock clock)
@@ -233,7 +236,7 @@ public sealed class OrderFulfilmentWorkflow : WorkflowBase
             new ActivityDispatchOptions { StartToCloseTimeout = TimeSpan.FromSeconds(15) });
 
         // Workflow.UtcNow, never DateTimeOffset.UtcNow — this line is replay code.
-        Logger.LogInformation("Order {OrderId} fulfilled at {Timestamp}", orderId, UtcNow);
+        OrderLog.OrderFulfilled(Logger, orderId, UtcNow);   // a [LoggerMessage] method, called on Workflow.Logger
         return receiptId;
     }
 
@@ -252,17 +255,42 @@ public sealed class OrderFulfilmentWorkflow : WorkflowBase
 ### What `CommandActivity<TCommand>` means for the application pipeline
 
 - **The command is an outermost command.** Each activity execution runs in its own DI scope, so for
-  `SharedKernel.Application.Behaviors`' `ICommandScope` the command is outermost: `TransactionBehavior`
+  `ICommandScope` (`SharedKernel.Application.Commands`) the command is outermost: `TransactionBehavior`
   commits once when it succeeds, and `ICommandScope.OnCompleted` callbacks run before the activity
   returns. A callback that throws is logged and never fails the activity.
 - **Failures come back as a `Result`.** Validation and authorization failures (`ErrorType.Validation`,
   `Unauthorized`, `Forbidden`) are returned, not thrown, so they become non-retryable Temporal failures.
-- **Authorization needs a system identity.** A worker has no HTTP caller. If the service opts into
-  `AuthorizationBehavior`, register `SharedKernel.Application.Context.SystemRequestContext` — naming the
-  worker and listing exactly the permissions its activities need — or every guarded command fails closed
-  with `Error.Unauthorized`.
+- **The caller is the dispatching call, as attribution only.** Every activity runs inside a
+  `RequestContextScope` carrying a `PropagatedRequestContext` built from the Temporal headers: the
+  workflow's tenant, the dispatching caller's actor and client, and its correlation id (a new one if none
+  arrived). `IRequestContext` answers with that tenant, so tenant filters and idempotency keys work, and
+  the activity's outbound REST, gRPC and bus calls forward the same tenant and correlation id.
+- **Authorization needs a system identity.** A propagated context grants no permission, so a command
+  guarded by `AuthorizationBehavior` fails closed. Open a scope with exactly the permissions the activity
+  needs:
+  ```csharp
+  using (RequestContextScope.Begin(new SystemRequestContext(["orders.approve"], "orders-worker", TenantScope.Tenant)))
+  {
+      await base.ExecuteAsync(command, cancellationToken);
+  }
+  ```
 - **Retries re-send the command.** A command with side effects outside its unit of work should
   implement `IIdempotentRequest` with a key derived from the workflow id.
+
+---
+
+## Readiness
+
+`AddSharedKernelTemporalWorkflows(...).Build()` registers one `IReadinessProbe` named `workflows`
+(`WorkflowReadiness.ProbeName`) on every composition. It is ready when the Temporal service answers, this
+service's namespace can be described, and — on a worker-hosting composition — every hosted worker is still
+polling (a worker whose pollers died is up, connected and useless). `ReadinessReport.Data` carries the three
+checks under `WorkflowReadiness.ReachableKey`, `NamespaceAddressableKey` and `WorkerPollersActiveKey`. A task-queue
+backlog never fails readiness. Map it in the host:
+
+```csharp
+builder.Services.AddHealthChecks().AddSharedKernelReadiness();   // SharedKernel.ServiceDefaults
+```
 
 ---
 
@@ -270,7 +298,7 @@ public sealed class OrderFulfilmentWorkflow : WorkflowBase
 
 All production logging in this package uses the `[LoggerMessage]` source-generated pattern with
 explicit `EventId`s inside the reserved sub-block **17000–17099**
-(`LoggingEventIdRanges.Workflows`, from `01.Core`; 17100+ remains unallocated against a future split).
+(`LoggingEventIdRanges.Workflows`, from `SharedKernel.Primitives`; 17100+ remains unallocated against a future split).
 Inside workflow code, the logger instance is always `Workflow.Logger` (replay-aware — it suppresses
 duplicate emissions during replay); inside activities, an ordinary injected `ILogger<T>`. Both satisfy
 the same `ILogger`-extension-method shape, so the identical generated method is callable from either.
@@ -278,15 +306,15 @@ the same `ILogger`-extension-method shape, so the identical generated method is 
 | EventId | Level | Method | Fired when |
 | --- | --- | --- | --- |
 | 17000 | Information | `WorkflowStarted` | A workflow execution was successfully started. |
-| 17001 | Warning | `TenantScopeMissingOnDispatch` | A dispatch call was rejected for `TenantScope.None`. |
+| 17001 | Warning | `TenantScopeMissingOnDispatch` | A dispatch call was rejected for `TenantScope.Global`. |
 | 17002 | Debug | `SignalDispatched` | A signal was successfully delivered. |
 | 17003 | Debug | `QueryDispatched` | A query was successfully dispatched. |
 | 17004 | Warning | `WorkflowTerminated` | A workflow execution was terminated (no compensation runs). |
-| 17005 | Warning | `TenantHeaderMissingOnWorkflow` | A tenant-scoped workflow observed no tenant header; `TenantScope.None` was surfaced. |
+| 17005 | Warning | `TenantHeaderMissingOnWorkflow` | A tenant-scoped workflow observed no tenant header; `TenantScope.Global` was surfaced. |
 | 17006 | Error | `PayloadCodecFailed` | The payload codec failed to encode/decode a payload. |
 | 17007 | Information | `WorkerBuilt` | A worker-hosting composition finished building. |
 | 17008 | Information | `ClientOnlyBuilt` | A client-only composition finished building. |
-| 17009 | Warning | `ProbeDegraded` | `IWorkflowServiceProbe.ProbeAsync` reported a degraded axis. |
+| 17009 | Warning | `ProbeDegraded` | The `workflows` readiness probe reported a degraded check. |
 | 17010 | Information | `PayloadEncryptionConfigured` | `.WithPayloadEncryption()` was applied to the client composition. |
 | 17011 | Debug | `ActivityHeartbeatRecorded` | `ActivityBase.Heartbeat(...)` was called. |
 | 17012 | Warning | `RawClientAccessEnabled` | `.AllowRawClientAccess()` was called — tenant scoping and workflow-id composition are bypassed for any code consuming the resulting accessor. |

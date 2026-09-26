@@ -10,15 +10,16 @@ with a TTL-based in-memory endpoint cache and stale-while-revalidate fallback),
 `Uri` (`{scheme}://{serviceName}.{namespace}.svc.{clusterDomain}`) and lets the caller's transport
 (REST, gRPC) surface the connection error.
 
+**Tier:** Adapter.
+
 ## Install
 
-```bash
-dotnet add package SharedKernel.Communication.Internal
+```xml
+<PackageReference Include="SharedKernel.Communication.Internal" />
 ```
 
-```xml
-<PackageReference Include="SharedKernel.Communication.Internal" Version="1.0.0" />
-```
+The version comes from the consumer's single `SharedKernelVersion`; every SharedKernel package is released
+together.
 
 ## Usage
 
@@ -65,16 +66,19 @@ services.AddStaticServiceDiscovery(new Dictionary<string, Uri>());
 // ^ throws InvalidOperationException — call exactly one of these per service, never both.
 ```
 
-## Layering
+## Dependencies
 
 ```text
-SharedKernel.Communication.Internal  →  SharedKernel.Primitives (01.Core),
-                                         Microsoft.Extensions.ServiceDiscovery
+SharedKernel.Communication.Internal  →  SharedKernel.Primitives (Foundation),
+                                         Microsoft.Extensions.ServiceDiscovery,
+                                         Microsoft.Extensions.Hosting.Abstractions
 ```
 
-Target framework: `net10.0`. No `04.Contracts`, `12.Security`, or higher-numbered domain reference —
-this is the foundational, dependency-lightest package in `11.Communication`, consumed intra-domain by
-both `.Rest` and `.Grpc`.
+Adapter tier, `net10.0`. The dependency-lightest package in `11.Communication`; `.Rest` and `.Grpc` reference
+it through a declared adapter edge, and it references neither of them.
+
+For unit tests, `SharedKernel.Communication.Testing` provides `MockServiceEndpointResolver`
+(test projects only).
 
 For full documentation see
 [`11.Communication/CLAUDE.md`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/11.Communication/CLAUDE.md).

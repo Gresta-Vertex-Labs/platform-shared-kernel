@@ -1,6 +1,6 @@
 # SharedKernel.AI.SemanticKernel
 
-The LLM orchestration provider for `SharedKernel.AI.Abstractions`. Implements `IEmbeddingGenerator` and `ISemanticKernel` on top of `Microsoft.SemanticKernel`'s OpenAI connectors, plus declares SemanticKernel-exclusive contracts unreachable from a Qdrant- or Milvus-only composition root.
+The LLM orchestration provider for `SharedKernel.AI.Abstractions`. Implements `IEmbeddingGenerator` and `ISemanticKernel` on top of `Microsoft.SemanticKernel`'s OpenAI connectors, plus declares SemanticKernel-exclusive contracts unreachable from a Qdrant-only composition root. Adapter tier: references `SharedKernel.AI.Abstractions`, `SharedKernel.Primitives`, `SharedKernel.Configuration` and `Microsoft.SemanticKernel`.
 
 Application code should inject the neutral `SharedKernel.AI.Abstractions` interfaces — never `Microsoft.SemanticKernel`'s `Kernel`, `IChatCompletionService`, or an `OpenAIClient` type directly.
 
@@ -10,7 +10,7 @@ This is the single most important thing to understand before using this package:
 
 - **`ISemanticKernel` never executes a tool call.** When a completion's `FinishReason` is `ToolCallsRequested`, `SemanticKernelOrchestrator` reports the requested `ToolCallRequest` list back to the caller and stops — it never invokes `Microsoft.SemanticKernel`'s own auto-invoke machinery. Tool calls are offered to the model via `ToolCallBehavior.EnableFunctions(..., autoInvoke: false)` specifically so the model can request one without this package ever running it. The *caller* executes each `ToolCallRequest` against its own business logic, builds a `ToolCallResult`, appends `.ToMessage()` to the message list, and issues a follow-up `CompleteAsync` call.
 - **This package never retries a completion by default.** A retry re-bills the call and re-rolls a non-deterministic output — silently retrying would both cost money the caller did not authorize and potentially return a different answer than the one that "failed." The **only** retry path anywhere in this package is the explicit, bounded, opt-in `.WithBoundedRetry(maxAttempts, baseDelay)` builder call, and even then it applies **only** to `CompleteAsync` — never to `CompleteStreamingAsync` (retrying a partially-streamed response would duplicate already-yielded content), and never to a genuinely non-transient failure (the retry check inspects the real HTTP status code — 429 or 5xx only — never the generic mapped `Error.Type`, so a 400 Bad Request is never retried even though its `Error` factory happens to share a type with a transient fault).
-- **This package never caches a completion.** `CompleteAsync` always dispatches a fresh call to the endpoint. `10.Intelligence` may not reference `02.Caching` in any case, and silently serving a stale completion the caller did not explicitly ask for would violate Domain Invariant #4 (non-determinism is a property of the contract, not a defect to hide).
+- **This package never caches a completion.** `CompleteAsync` always dispatches a fresh call to the endpoint. Nothing in this domain references a caching package, and silently serving a stale completion the caller did not explicitly ask for would violate Domain Invariant #4 (non-determinism is a property of the contract, not a defect to hide).
 
 ## Included Types
 
@@ -25,8 +25,10 @@ This is the single most important thing to understand before using this package:
 ## Install
 
 ```xml
-<ProjectReference Include="..\SharedKernel.AI.SemanticKernel\SharedKernel.AI.SemanticKernel.csproj" />
+<PackageReference Include="SharedKernel.AI.SemanticKernel" />
 ```
+
+Versions come from the consumer's single `SharedKernelVersion`. This provider registers no readiness probe: checking an LLM endpoint honestly means a real, billed completion call.
 
 ## Configuration
 
@@ -87,7 +89,7 @@ Registers `IEmbeddingGenerator`, `ISemanticKernel`, and `ICompletionProviderDesc
 
 ## The seam rule — SemanticKernel-exclusive contracts never leak into `.Abstractions`
 
-`IKernelPluginAccessor` and `IKernelRawClientAccessor` are declared **only** in this package. Referencing either takes a compile-time dependency on `SharedKernel.AI.SemanticKernel` — a composition root wired against `SharedKernel.AI.Qdrant` or `SharedKernel.AI.Milvus` alone cannot even name these types, so swapping the orchestration provider surfaces as a **build error**, never a runtime `GetRequiredService` failure discovered in production.
+`IKernelPluginAccessor` and `IKernelRawClientAccessor` are declared **only** in this package. Referencing either takes a compile-time dependency on `SharedKernel.AI.SemanticKernel` — a composition root wired against `SharedKernel.AI.Qdrant` alone cannot even name these types, so swapping the orchestration provider surfaces as a **build error**, never a runtime `GetRequiredService` failure discovered in production.
 
 `IKernelRawClientAccessor` is additionally triple-gated: registered only when the composition root calls `.AllowRawClientAccess()`, that call logs a startup `Warning`, and its own XML doc states in capitals that the hatch bypasses this package's own scoping and observability seam.
 

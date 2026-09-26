@@ -50,6 +50,7 @@ dotnet add package SharedKernel.Caching.Redis.HashStore
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
+| Tier | Adapter |
 | Depends on | `SharedKernel.Caching.Abstractions` (for `CacheLookup<T>`), `SharedKernel.Caching.Redis.Core` |
 | Namespaces | `SharedKernel.Caching.Redis.HashStore` (contracts), `SharedKernel.Caching.Redis.HashStore.Extensions` (registration) |
 
@@ -133,12 +134,12 @@ public sealed class SessionStore(ITypedHashStore<SessionDto> sessions)
 {
     private static readonly TimeSpan IdleTimeout = TimeSpan.FromMinutes(20);
 
-    private static string Key(string tenantId, string sessionId) => $"identity:tenant:{tenantId}:session:{sessionId}";
+    private static string Key(TenantId tenantId, string sessionId) => $"identity:tenant:{tenantId}:session:{sessionId}";
 
-    public ValueTask TouchAsync(string tenantId, string sessionId, SessionDto session, CancellationToken ct) =>
+    public ValueTask TouchAsync(TenantId tenantId, string sessionId, SessionDto session, CancellationToken ct) =>
         sessions.SetFieldAsync(Key(tenantId, sessionId), "data", session, IdleTimeout, ct);   // restarts the 20 minutes
 
-    public ValueTask<bool> ExtendAsync(string tenantId, string sessionId, CancellationToken ct) =>
+    public ValueTask<bool> ExtendAsync(TenantId tenantId, string sessionId, CancellationToken ct) =>
         sessions.ExpireAsync(Key(tenantId, sessionId), IdleTimeout, ct);                   // false: already gone
 }
 ```
@@ -148,7 +149,7 @@ public sealed class SessionStore(ITypedHashStore<SessionDto> sessions)
 ```csharp
 public sealed class LoginAttemptCounter(ITypedHashStore<long> counters, TimeProvider time)
 {
-    public async ValueTask<bool> IsBlockedAsync(string tenantId, string userName, CancellationToken ct)
+    public async ValueTask<bool> IsBlockedAsync(TenantId tenantId, string userName, CancellationToken ct)
     {
         string key = $"identity:tenant:{tenantId}:login-attempts:{time.GetUtcNow():yyyyMMddHH}";
         long attempts = await counters.IncrementFieldAsync(key, userName, timeToLive: TimeSpan.FromHours(2), ct: ct);

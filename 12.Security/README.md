@@ -16,7 +16,7 @@ strongly they signed in.
 
 | Package | Use it for | Entry point |
 | --- | --- | --- |
-| [`SharedKernel.Security.Abstractions`](SharedKernel.Security.Abstractions/README.md) | The identity model application code injects: `IUserContext`, `ITenantProvider`, `IUserContextMapper` | Referenced by the others; register `SystemUserContext.Instance` in background hosts |
+| [`SharedKernel.Security.Abstractions`](SharedKernel.Security.Abstractions/README.md) | The identity model application code injects: `IUserContext` (caller, tenant, roles, permissions), `IUserContextMapper`. Abstractions tier | Referenced by the others; register `SystemUserContext.Instance` in background hosts |
 | [`SharedKernel.Security.Oidc`](SharedKernel.Security.Oidc/README.md) | JWT access tokens from any OpenID Connect provider (Entra ID, External ID, Auth0, Okta, Keycloak), with DPoP, certificate-bound tokens and revocation | `AddOidcAuthentication(configuration)` |
 | [`SharedKernel.Security.ApiKey`](SharedKernel.Security.ApiKey/README.md) | Machine clients with API keys: generated, hashed at rest, expiring and revocable, or checked by your own validator | `AddManagedApiKeyAuthentication<TStore>(...)` or `AddApiKeyAuthentication<TValidator>()` |
 | [`SharedKernel.Security.Mtls`](SharedKernel.Security.Mtls/README.md) | Partners and services authenticating with client certificates, including a private certificate authority | `AddMtlsAuthentication<TValidator>()` |
@@ -30,7 +30,7 @@ referenced by the host's `Program.cs`.
 | Caller | Package |
 | --- | --- |
 | A user signed in through an identity provider | `.Oidc` |
-| Another service using the client-credentials flow | `.Oidc` (reported as `IdentityKind.ServicePrincipal`) |
+| Another service using the client-credentials flow | `.Oidc` (reported as `ActorKind.Service`) |
 | A partner or script that cannot run an OAuth flow | `.ApiKey` |
 | A regulated partner required to use mutual TLS | `.Mtls` |
 | A user performing a payment, payout or settings change that needs a fresh second factor | `.Totp` on top of `.Oidc` |
@@ -93,7 +93,7 @@ var app = builder.Build();
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapGet("/me", (IUserContext user) => new { user.IdentityKind, user.SubjectId, user.TenantId, user.Roles })
+app.MapGet("/me", (IUserContext user) => new { user.ActorKind, user.SubjectId, user.TenantId, user.Roles })
     .RequireAuthorization();
 
 app.MapPost("/partner/settlements", (IUserContext partner) => Results.Accepted())
@@ -109,7 +109,7 @@ The store, cache, check and validator types are yours: each package README shows
 | Layer | Adds | Package |
 | --- | --- | --- |
 | Kestrel client-certificate negotiation, forwarded certificates behind a proxy | `AddMtlsClientCertificate`, `AddMtlsForwardedHeaderCertificate` | [`SharedKernel.ServiceDefaults.Security.Mtls`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/13.ServiceDefaults/SharedKernel.ServiceDefaults.Security.Mtls) |
-| Endpoint attributes: `[RequireRole]`, `[RequirePermission]`, `[RequireFreshAuthentication]`, `[RequireAuthenticationMethod]` | ProblemDetails 401/403 | [`SharedKernel.Presentation.WebApi`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/14.Presentation/SharedKernel.Presentation.WebApi) |
+| Endpoint attributes: `[RequireRole]`, `[RequirePermission]`, `[RequireFreshAuthentication]`, `[RequireAuthenticationMethod]` | ProblemDetails 401/403 | [`SharedKernel.Presentation.Core`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/14.Presentation/SharedKernel.Presentation.Core) (namespace `SharedKernel.Presentation.Authorization`) |
 | Tenant resolution from the tenant claim, a header or a database | `AddSharedKernelMultiTenancy()` | [`SharedKernel.MultiTenancy`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/13.ServiceDefaults/SharedKernel.MultiTenancy) |
 | Hashing, random values, TOTP algorithms | `AddSharedKernelCryptography(configuration)` | [`SharedKernel.Cryptography`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/01.Core/SharedKernel.Cryptography) |
 
@@ -122,7 +122,7 @@ The store, cache, check and validator types are yours: each package README shows
 - **Ordinal comparisons.** Roles, permissions and scopes are case-sensitive.
 - **Credentials in headers only.** API keys are never read from the query string.
 - **Misconfiguration stops startup.** Options are validated when the host starts, not on the first request.
-- **Scoped identity.** `IUserContext` and `ITenantProvider` are resolved per request; never capture them in a
+- **Scoped identity.** `IUserContext` is resolved per request; never capture it in a
   singleton.
 - **Structured logs, no secrets.** Event ids 12100-12499; tokens, API keys and one-time codes are never logged.
 

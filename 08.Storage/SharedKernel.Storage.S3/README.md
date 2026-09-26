@@ -71,7 +71,7 @@ builder.Services.AddSharedKernelStorage()
     .AddStore("invoices")
     .AddTenantStore("documents");
 
-builder.Services.AddHealthChecks().AddStorageReadinessCheck("invoices");   // SharedKernel.ServiceDefaults.Storage
+builder.Services.AddHealthChecks().AddSharedKernelReadiness();              // SharedKernel.ServiceDefaults: "storage-invoices", …
 builder.WithStorageTelemetry();                                             // SharedKernel.ServiceDefaults
 ```
 
@@ -303,7 +303,8 @@ Scope a store's policy to its `KeyPrefix` when several stores share a bucket.
 | `IFileStorage` keyed by store name | Singleton | Shared stores |
 | `ITenantFileStorage` keyed by store name | Singleton | Tenant stores |
 | `IFileStorage` / `ITenantFileStorage` unkeyed | Singleton | Resolve only when exactly one store of that kind exists |
-| `IFileStorageFactory`, `IFileStorageHealthProbe` | Singleton | From `AddSharedKernelStorage()` |
+| `IFileStorageFactory` | Singleton | From `AddSharedKernelStorage()` |
+| `IReadinessProbe` named `storage-{store}` | Singleton | One per store, from `AddStore`/`AddTenantStore`; a `HeadBucket` on the store's bucket |
 | `IOptionsMonitor<S3StorageOptions>` (default, or named by connection), `IOptionsMonitor<S3StoreOptions>` (named by store) | Singleton | Validated on start |
 
 `IAmazonS3` is deliberately not registered.
@@ -325,7 +326,7 @@ Scope a store's policy to its `KeyPrefix` when several stores share a bucket.
 | Register an `IAmazonS3` for these stores | Configure the connection | The package manages its own client per connection |
 | Share one IAM user between stores that need different access | Use named connections | Each connection has its own credentials |
 | Enable `ConditionalWrites` on a service that ignores them | Switch the flag off | Otherwise "create only" silently overwrites |
-| Rely on `ExistsAsync` to catch a misnamed bucket | Add `AddStorageReadinessCheck(store)` | A `HEAD` answer has no error code: a missing bucket looks like a missing object there (other operations return `storage.provider_error`) |
+| Rely on `ExistsAsync` to catch a misnamed bucket | Map the store's `storage-{store}` readiness probe (`AddHealthChecks().AddSharedKernelReadiness()`) | A `HEAD` answer has no error code: a missing bucket looks like a missing object there (other operations return `storage.provider_error`) |
 | Expect server-side copies above 5 GiB | Copy by streaming (different connection) or upload again | `CopyObject` is limited to 5 GiB |
 
 ## Design decisions
@@ -356,7 +357,7 @@ ENCRYPTION     Store Encryption = "Kms" (+ KmsKeyId) | "S3Managed" | "BucketDefa
 PREFIX         Store KeyPrefix = "folder/" (ends with '/'); stores in one bucket copy server-side.
 LIMITS         Store MaxPresignExpiry (default 1h, max 7d); MultipartPartSize 5 MiB..5 GiB (default 16 MiB).
 COMPATIBILITY  Connection Compatibility { ConditionalWrites, Sha256Checksums, ObjectTags, KmsEncryption, PresignedPost, ETagIsContentMd5 }.
-HEALTH         services.AddHealthChecks().AddStorageReadinessCheck("name") (SharedKernel.ServiceDefaults.Storage).
+HEALTH         Each store registers IReadinessProbe "storage-{name}"; host: services.AddHealthChecks().AddSharedKernelReadiness() (SharedKernel.ServiceDefaults).
 TELEMETRY      builder.WithStorageTelemetry() (SharedKernel.ServiceDefaults).
 FORBIDDEN      Registering or injecting IAmazonS3 for these stores; keys in committed config; string buckets in application code.
 ```

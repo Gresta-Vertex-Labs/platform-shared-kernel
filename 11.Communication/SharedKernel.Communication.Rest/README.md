@@ -1,21 +1,24 @@
 # SharedKernel.Communication.Rest
 
 Typed `HttpClient` factory for Platform.SharedKernel microservices with Polly v8 resilience
-(`StandardResilienceHandler` — retry, circuit breaker, timeout), `CorrelationIdDelegatingHandler`,
-`TenantIdDelegatingHandler`, an opt-in `IdempotencyKeyDelegatingHandler`, ProblemDetails
-deserialization to `Error`, and the fluent `IRestCommunicationBuilder` DI entry point. Every typed
-client registered through this package carries the platform's resilience and propagation defaults —
-no raw `HttpClient` injection, ever.
+(`StandardResilienceHandler` — retry, circuit breaker, timeout), a `RequestContextDelegatingHandler`
+that forwards the current caller (correlation id, tenant, actor, client), an opt-in
+`IdempotencyKeyDelegatingHandler`, ProblemDetails deserialization to `Error`, and the fluent
+`IRestCommunicationBuilder` DI entry point. Every typed client registered through this package carries
+the platform's resilience and propagation defaults — no raw `HttpClient` injection, ever.
+
+**Tier:** Adapter. No ASP.NET Core dependency: the caller is read from `SharedKernel.Execution`'s
+`IRequestContextAccessor`, so the same client works from an HTTP request, a message consumer, a workflow
+activity or a scheduled job.
 
 ## Install
 
-```bash
-dotnet add package SharedKernel.Communication.Rest
+```xml
+<PackageReference Include="SharedKernel.Communication.Rest" />
 ```
 
-```xml
-<PackageReference Include="SharedKernel.Communication.Rest" Version="1.0.0" />
-```
+The version comes from the consumer's single `SharedKernelVersion`; every SharedKernel package is released
+together.
 
 ## Usage
 
@@ -30,8 +33,8 @@ services
         options.Resilience.CircuitBreakerEnabled = true;
     });
 
-// Inject OrderServiceClient — a typed HttpClient with StandardResilienceHandler +
-// CorrelationIdDelegatingHandler + TenantIdDelegatingHandler already wired, in that pipeline order.
+// Inject OrderServiceClient — a typed HttpClient with RequestContextDelegatingHandler and
+// StandardResilienceHandler already wired, in that pipeline order.
 public sealed class OrderServiceClient(HttpClient httpClient)
 {
     public async Task<Result<OrderDto>> GetOrderAsync(Guid orderId, CancellationToken ct)
@@ -47,9 +50,40 @@ deferred to the first HTTP request — when `RestClientOptions`/`RestResilienceO
 value (`TimeoutSeconds <= 0`, `RetryCount <= 0`, a negative `TotalTimeoutBufferSec`, etc.).
 
 `BaseAddress` may be omitted when an `IServiceEndpointResolver` is registered (see
-[`SharedKernel.Communication.Internal`](https://www.nuget.org/packages/SharedKernel.Communication.Internal)) —
+[`SharedKernel.Communication.Internal`](../SharedKernel.Communication.Internal/README.md)) —
 resolution then happens per request, at the point a call is issued, never hardcoded inside a typed
 client method.
+
+## Caller propagation
+
+`RequestContextDelegatingHandler` writes the ambient caller (`IRequestContextAccessor.Current`) onto every
+outgoing request through `SharedKernel.Execution`'s `RequestContextPropagation`, the same mapping gRPC,
+MassTransit and Temporal use:
+
+| Header | Written when |
+| --- | --- |
+| `X-Correlation-Id` | Always: the caller's correlation id, or a new one when this call starts a new operation (never `Activity.Id`) |
+| `X-Tenant-Id` | The caller has a tenant |
+| `x-sk-actor-id` | The caller has a user id |
+| `x-sk-actor-kind` | There is a caller (`Anonymous` is a real answer) |
+| `x-sk-client-id` | The caller has a client id |
+
+Names are `SharedKernel.Primitives.Propagation.WellKnownHeaders`. A header you set on the request yourself is
+never overwritten, and a propagation failure never fails the call. The handler runs before the resilience
+handler, so every retry re-sends the same values.
+
+The ambient caller is opened by the inbound adapters — `app.UseSharedKernelRequestContext()`
+(`SharedKernel.ServiceDefaults.Security`) for HTTP, and the gRPC, messaging, workflow and scheduling
+integrations for their own entry points. Code with no inbound request opens one explicitly:
+
+```csharp
+using SharedKernel.Execution.Context;
+
+using var scope = RequestContextScope.Begin(
+    new SystemRequestContext([], "nightly-sync", correlationId: CorrelationIds.New()));
+
+await orders.GetOrderAsync(orderId, ct);   // X-Correlation-Id from the scope, x-sk-actor-kind: System
+```
 
 ## Recipe: reading a status-only outcome vs. a deserialized payload
 
@@ -79,9 +113,9 @@ mirroring the real wire shape `SharedKernel.Presentation.WebApi` produces: `erro
 `"https://httpstatuses.io/404"`, not a machine code — and `detail` → `Error.Message`. The response's
 HTTP status maps back to an `ErrorType` (400 → Validation, 401 → Unauthorized, 403 → Forbidden,
 404 → NotFound, 409 → Conflict, 422 → BusinessRule, everything else → Unexpected) via
-`HttpStatusErrorTypeMap`, the reverse of `SharedKernel.Presentation.WebApi`'s
-`ErrorTypeStatusCodeMap.Resolve` — duplicated here rather than shared, since `11.Communication` may
-never reference `14.Presentation`. When the body carries the `errors` extension (a multi-field
+`HttpStatusErrorTypeMap`, the reverse of `SharedKernel.Presentation.Core`'s
+`ErrorTypeStatusCodeMap.Resolve` — duplicated here rather than shared, so a client never depends on
+the presentation packages. When the body carries the `errors` extension (a multi-field
 validation failure: keyed by field path, or by code for an error that names no field, each value an
 array of messages), every entry is rebuilt as its own `Error` and returned as one aggregate via
 `Error.Validation(IReadOnlyList<Error>)` — the same shape `ValidationException`/`Error.Details`
@@ -105,7 +139,8 @@ was retired for exactly that defect (P-361).
 `StandardResilienceHandler`'s default `RetryCount = 3` means every typed client already silently
 re-issues non-idempotent verbs (POST/PATCH/DELETE) on transient failure. `EnableIdempotencyKeyPropagation`
 converts that existing hazard into an explicit, downstream-consumable guarantee — a stable
-`x-idempotency-key` header attached once, before the first attempt, and preserved unchanged across
+`Idempotency-Key` header (`WellKnownHeaders.IdempotencyKey`, the header `SharedKernel.Presentation.WebApi`'s
+`[RequireIdempotencyKey]` reads) attached once, before the first attempt, and preserved unchanged across
 every Polly-driven retry of the same logical call:
 
 ```csharp
@@ -118,18 +153,22 @@ services
     });
 ```
 
-Disabled by default. A caller-supplied `x-idempotency-key` value is never overwritten.
+Disabled by default. A caller-supplied `Idempotency-Key` value is never overwritten.
 
-## Layering
+## Dependencies
 
 ```text
-SharedKernel.Communication.Rest  →  SharedKernel.Primitives (01.Core),
-                                     SharedKernel.Security.Abstractions (12.Security),
+SharedKernel.Communication.Rest  →  SharedKernel.Primitives, SharedKernel.Execution (Foundation),
+                                     SharedKernel.Communication.Internal (declared adapter edge),
                                      Microsoft.Extensions.Http, Microsoft.Extensions.Http.Resilience
 ```
 
-Target framework: `net10.0`. Never references `02.Caching`, `05.Application`, `06.Persistence`, or
-`07.Messaging` — outbound REST communication is the only concern this package owns.
+Adapter tier, `net10.0`. No ASP.NET Core, `SharedKernel.Security.*` or `SharedKernel.Contracts` reference —
+the build's tier check rejects any other adapter reference.
+
+Related packages: [`SharedKernel.Communication.Internal`](../SharedKernel.Communication.Internal/README.md)
+(service discovery), [`SharedKernel.Communication.Grpc`](../SharedKernel.Communication.Grpc/README.md)
+(the gRPC counterpart), `SharedKernel.Communication.Testing` (test doubles, test projects only).
 
 For full documentation see
 [`11.Communication/CLAUDE.md`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/11.Communication/CLAUDE.md).

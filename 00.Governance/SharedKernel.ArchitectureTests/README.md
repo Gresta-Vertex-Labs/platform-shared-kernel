@@ -16,8 +16,11 @@ never flows into a consumer's production dependency graph.
 ## Install
 
 ```xml
-<PackageReference Include="SharedKernel.ArchitectureTests" Version="1.0.0" PrivateAssets="all" />
+<PackageReference Include="SharedKernel.ArchitectureTests" PrivateAssets="all" />
 ```
+
+The version comes from your repository's single `SharedKernelVersion` property (central package management); every
+SharedKernel package is released together. **Tier:** Tooling — it is never a runtime dependency of production code.
 
 `PrivateAssets="all"` is redundant — the package already declares itself a development
 dependency — but harmless, and explicit is fine.
@@ -158,10 +161,8 @@ never seen fail is a rule you do not yet know is wired up.
 Which kernel package may reference which is enforced by the build, not by this package: every
 kernel `.csproj` declares a `<SharedKernelTier>` (Foundation, Model, Abstractions, Adapter, Host,
 Testing, Tooling) and `eng/SharedKernelTiers.targets` fails the build with an `SKTIER*` error on an
-edge the tier matrix does not allow, including ASP.NET Core below the Host tier (`SKTIER006`). The
-numbered-layer rules this class used to ship (`CoreReferencesNothing`, `…ReferencesOnlyCore…`,
-`DomainNeverReferencesPersistence`, …) were deleted in P-574. What is left are the rules the tier
-matrix cannot express:
+edge the tier matrix does not allow, including ASP.NET Core below the Host tier (`SKTIER006`). What
+is left here are the rules the tier matrix cannot express:
 
 | Rule | Enforces |
 |---|---|
@@ -242,7 +243,6 @@ building one outside `EventEnvelope.Wrap` no longer compiles.
 | `MessagingArchitectureRules.NoDirectBusInjectionOutsideMessaging` | No raw transport interface is injected outside the messaging package |
 | `MessagingArchitectureRules.NoEventPublisherInDomainLayer` | The domain never injects a publisher |
 | `ExtendedMessagingArchitectureRules.NoDirectMassTransitSchedulerInjection` | No raw message scheduler outside the owning package |
-| `ExtendedMessagingArchitectureRules.SagaStatesMustExtendSagaStateBase` | Every saga state extends the shared base |
 
 ### Provider topology
 

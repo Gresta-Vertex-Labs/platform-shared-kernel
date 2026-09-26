@@ -53,6 +53,7 @@ dotnet add package SharedKernel.Caching.FusionCache
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
+| Tier | Adapter |
 | Depends on | `SharedKernel.Caching.Abstractions`, `SharedKernel.Configuration`, `SharedKernel.Cryptography`, `SharedKernel.Primitives`, `ZiggyCreatures.FusionCache` 2.6 |
 | Namespace | `SharedKernel.Caching.FusionCache.Extensions` |
 
@@ -254,7 +255,7 @@ is reflection-based, which works for ordinary JIT deployments.
 ## Telemetry
 
 Instrumentation name `SharedKernel.Caching` for both the meter and the activity source.
-`13.ServiceDefaults`' `WithCachingTelemetry()` subscribes to it.
+`SharedKernel.ServiceDefaults`' `WithCachingTelemetry()` subscribes to it.
 
 | Instrument | Type | Tags |
 | --- | --- | --- |
@@ -297,6 +298,7 @@ is dropped. Logs use the same prefix, and tenant tags appear as `@tenant:{tag}`.
 | `ICacheKeyProvider`, `ITenantCacheKeyProvider` | Singleton, one instance for both |
 | `ITenantCacheService` | Singleton, with `AddTenantCacheService` |
 | `IFusionCache` | Singleton; not for application code |
+| `IReadinessProbe` named `cache` (`CacheReadinessProbeNames.Cache`) | Singleton; reads a synthetic key through `ICacheService` with a 2 s timeout and reports `Degraded` (never `Unhealthy`) when that fails, because memory and fail-safe may still serve |
 
 ### Exceptions at registration
 

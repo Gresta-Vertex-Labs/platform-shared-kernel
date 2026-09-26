@@ -230,29 +230,15 @@ otherwise a token signed with `partner-api` would pass as a receipt. The core
 [token recipe](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/01.Core/SharedKernel.Cryptography#7-sign-and-verify-a-token)
 shows the single-key case.
 
-### 4. Add a readiness check
+### 4. Report readiness
+
+`AddAzureKeyVaultEncryption` registers the provider as an `IReadinessProbe` (`SharedKernel.Primitives.Health`) named
+`encryption-key-provider` (`AzureKeyVaultEncryptionKeyProvider.ReadinessProbeName`). Nothing else is needed in this
+package; the host maps every registered probe to a `ready` health check:
 
 ```csharp
-using Microsoft.Extensions.Diagnostics.HealthChecks;
-using SharedKernel.Cryptography.Symmetric;
-
-public sealed class KeyVaultReadinessCheck(IEncryptionKeyProviderProbe probe) : IHealthCheck
-{
-    public async Task<HealthCheckResult> CheckHealthAsync(
-        HealthCheckContext context, CancellationToken cancellationToken = default)
-    {
-        EncryptionKeyProviderHealth health = await probe.ProbeAsync(cancellationToken);
-        return health.IsHealthy
-            ? HealthCheckResult.Healthy(health.Description)
-            : HealthCheckResult.Unhealthy(health.Description);
-    }
-}
-```
-
-```csharp
-// Program.cs
-builder.Services.AddHealthChecks()
-    .AddCheck<KeyVaultReadinessCheck>("key-vault", tags: ["ready"]);
+// Program.cs (SharedKernel.ServiceDefaults)
+builder.Services.AddHealthChecks().AddSharedKernelReadiness();   // includes "encryption-key-provider"
 ```
 
 The probe reads the master key's metadata, never performs a cryptographic operation, and reports failures by HTTP
@@ -345,7 +331,7 @@ Invalid configuration stops the host at startup.
 
 | Method | Registers |
 | --- | --- |
-| `AddAzureKeyVaultEncryption` | `AzureKeyVaultEncryptionKeyProvider` as itself, `IEncryptionKeyProvider`, `IEnvelopeEncryptionProvider` and `IEncryptionKeyProviderProbe` |
+| `AddAzureKeyVaultEncryption` | `AzureKeyVaultEncryptionKeyProvider` as itself, `IEncryptionKeyProvider`, `IEnvelopeEncryptionProvider` and `IReadinessProbe` (`encryption-key-provider`) |
 | `AddAzureKeyVaultSigning` | `AzureKeyVaultSigningKeyProvider` as itself and `ISigningKeyProvider` |
 | Both | `TokenCredential` (`DefaultAzureCredential` if you registered none), `TimeProvider.System`, `ISecureRandomGenerator` |
 

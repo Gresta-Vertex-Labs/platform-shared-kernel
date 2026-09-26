@@ -2,7 +2,20 @@
 
 Atomic, tenant-scoped, PostgreSQL-backed implementation of `SharedKernel.Idempotency.Abstractions`'
 `IIdempotencyStore`, for services that run PostgreSQL and do not want Redis solely for deduplication. See the
-abstractions package's README for the contract and how the pipeline and MassTransit use it.
+[abstractions package's README](../SharedKernel.Idempotency.Abstractions/README.md) for the contract and how the
+pipeline and MassTransit use it.
+
+**Tier:** Adapter. References `SharedKernel.Idempotency.Abstractions`, `SharedKernel.Primitives` and
+`SharedKernel.Persistence.EfCore` (its one declared adapter edge, for `UsePostgres`) — never `02.Caching`.
+
+## Install
+
+```xml
+<PackageReference Include="SharedKernel.Idempotency.EfCore" />
+```
+
+Versions come from your single `SharedKernelVersion` property (the repository's `PLATFORM.md`, "Consuming the
+kernel").
 
 ## Quick start
 
@@ -113,3 +126,20 @@ public sealed class IdempotencyCleanupService(
 ## Registration lifetime
 
 The store and `IdempotencyDbContext` are `Scoped` — a `DbContext` is not thread-safe.
+
+## Upgrading from the pre-WO-086 API
+
+| Before | Now |
+| --- | --- |
+| `AddSharedKernelEfCoreIdempotency(db => …, o => …)` | `AddEfCoreIdempotency(db => …, p => p.ForRequests().ForMessages(), o => …)` — purposes are explicit |
+| `EfCoreRequestIdempotencyStore` + `EfCoreIdempotencyMessageStore` (two contracts) | `EfCoreIdempotencyStore`, one `IIdempotencyStore` keyed by `IdempotencyPurpose` |
+| `EfCoreIdempotencyOptions.InFlightTtl` / `.RetentionWindow` | Removed — the caller passes them: `IdempotencyBehaviorOptions.LeaseDuration`/`RetentionWindow`, messaging `IdempotencyOptions.LeaseDuration`/`ExpiryWindow` |
+| Tenant from Messaging's `ITenantContextAccessor` (startup check required one) | Tenant from the ambient `IRequestContextAccessor`; no startup validator |
+| Tables `idempotency_keys (tenant_id uuid, key)` + `idempotency_messages` | One table `idempotency_keys (tenant_scope, purpose, key)` — new migration (see "Persisted format" above) |
+
+## Related packages
+
+- [`SharedKernel.Idempotency.Abstractions`](../SharedKernel.Idempotency.Abstractions/README.md) — the contract.
+- [`SharedKernel.Idempotency.Redis`](../SharedKernel.Idempotency.Redis/README.md) — the Redis sibling.
+- `SharedKernel.Persistence.EfCore` (`06.Persistence`) — `UsePostgres(dataSource)`.
+- `SharedKernel.Idempotency.Testing` (`16.Testing`) — `FakeIdempotencyStore` for unit tests.

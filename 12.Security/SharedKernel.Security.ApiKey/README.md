@@ -18,7 +18,7 @@ every request, and turns a valid key into the same `IUserContext` your applicati
 | --- | --- | --- | --- |
 | `{prefix}_{key id}_{secret}{checksum}` from a cryptographic random source | Only the SHA-256 hash is stored | One default scheme selects API key or bearer per request | A fixed format and prefix for secret-scanning patterns |
 | 190-bit secret | Fixed-time comparison, even for unknown ids | Works in either registration order | CRC-32 checksum rejects typos without a lookup |
-| Expiry and revocation via `IClock` | You own the table; the package owns the checks | `IdentityKind.ServicePrincipal` in `IUserContext` | Header only, never the query string |
+| Expiry and revocation via `IClock` | You own the table; the package owns the checks | `ActorKind.Service` in `IUserContext` | Header only, never the query string |
 | Or bring your own `IApiKeyValidator` | Keys never logged; key ids logged for audit | Tenant, roles and permissions per key | One prefix per environment |
 
 ## Contents
@@ -43,6 +43,7 @@ dotnet add package SharedKernel.Security.ApiKey
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
+| Tier | Host (references ASP.NET Core; reference it from the host project only) |
 | Dependencies | [`SharedKernel.Security.Abstractions`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/12.Security/SharedKernel.Security.Abstractions), [`SharedKernel.Cryptography`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/01.Core/SharedKernel.Cryptography), the ASP.NET Core shared framework (`Microsoft.AspNetCore.App`) |
 | Registration | `AddManagedApiKeyAuthentication<TStore>(...)` or `AddApiKeyAuthentication<TValidator>()` |
 
@@ -50,7 +51,7 @@ dotnet add package SharedKernel.Security.ApiKey
 | --- | --- |
 | [`SharedKernel.Security.Oidc`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/12.Security/SharedKernel.Security.Oidc) | JWT bearer tokens from an OpenID Connect provider, accepted on the same endpoints as API keys |
 | [`SharedKernel.Security.Mtls`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/12.Security/SharedKernel.Security.Mtls) | Client certificate authentication for partners that must use mutual TLS |
-| [`SharedKernel.Presentation.WebApi`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/14.Presentation/SharedKernel.Presentation.WebApi) | `[RequireRole]` and `[RequirePermission]` checks against `IUserContext`, with ProblemDetails responses |
+| [`SharedKernel.Presentation.WebApi`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/14.Presentation/SharedKernel.Presentation.WebApi) | `AddSharedKernelAuthorizationFilters()`, which enforces `SharedKernel.Presentation.Core`'s `[RequireRole]` and `[RequirePermission]` (namespace `SharedKernel.Presentation.Authorization`) against `IUserContext`, with ProblemDetails responses |
 | [`SharedKernel.MultiTenancy`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/13.ServiceDefaults/SharedKernel.MultiTenancy) | Tenant resolution that reads the tenant of an API key caller through the registered mapper |
 
 ## Quick start
@@ -59,6 +60,7 @@ dotnet add package SharedKernel.Security.ApiKey
 
 ```csharp
 using Microsoft.EntityFrameworkCore;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Security.ApiKey.Keys;
 
 public sealed class ApiKeyEntity
@@ -66,7 +68,7 @@ public sealed class ApiKeyEntity
     public required string KeyId { get; init; }        // 16 characters, not secret
     public required string KeyHash { get; init; }      // 43 characters, SHA-256 of the key
     public required string ClientId { get; init; }
-    public Guid? TenantId { get; set; }                // null for no tenant, never Guid.Empty
+    public Guid? TenantId { get; set; }                // null for no tenant; converted with TenantId.FromNullable
     public List<string> Roles { get; set; } = [];
     public List<string> Permissions { get; set; } = [];
     public DateTimeOffset CreatedAt { get; init; }
@@ -101,7 +103,7 @@ public sealed class EfApiKeyStore(AppDbContext db) : IApiKeyStore
             ? null
             : new ApiKeyRecord(key.KeyId, key.KeyHash, key.ClientId)
             {
-                TenantId = key.TenantId,
+                TenantId = TenantId.FromNullable(key.TenantId),
                 Roles = key.Roles,
                 Permissions = key.Permissions,
                 ExpiresAt = key.ExpiresAt,
@@ -146,8 +148,8 @@ curl -H "X-Api-Key: acme_live_…" https://orders.example.com/whoami
 ```
 
 > [!TIP]
-> Every registration uses `TryAdd`. An `IApiKeyStore`, `IApiKeyValidator`, `IClock`, `IUserContext` or
-> `ITenantProvider` you register first is kept, which is how you replace a service or register a test double.
+> Every registration uses `TryAdd`. An `IApiKeyStore`, `IApiKeyValidator`, `IClock` or `IUserContext`
+> you register first is kept, which is how you replace a service or register a test double.
 
 ## Which registration do I need?
 
@@ -182,7 +184,7 @@ flowchart TD
     C -->|Yes| V["IApiKeyValidator.ValidateAsync"]
     V -->|Failure| Y["Fail, log 12200"]
     V -->|Success| S["ClaimsPrincipal<br/>authentication type ApiKey"]
-    S --> U["IUserContext<br/>IdentityKind.ServicePrincipal"]
+    S --> U["IUserContext<br/>ActorKind.Service"]
 ```
 
 A request with the header is decided by the API key alone. An invalid key is not retried with the bearer scheme, and
@@ -309,7 +311,7 @@ The quick start's `EfApiKeyStore` is a complete store. What matters for any stor
 | --- | --- |
 | Make `KeyId` unique (primary key or unique index) | `FindAsync` receives only the key id; the validator then compares the hash |
 | Store `KeyHash`, never `Key` | A database leak must not reveal usable keys |
-| Map `TenantId` to `null` when there is no tenant | `null` is the documented value; `Guid.Empty` is also treated as no tenant |
+| Map `TenantId` to `null` when there is no tenant | `TenantId?` cannot hold `Guid.Empty`; `TenantId.FromNullable` turns an empty column value into `null` |
 | Return `null` for an unknown id; let exceptions propagate | An unavailable store fails the request; it never authenticates it |
 | Keep revoked rows | `Revoked` shows up in logs and audit trails; a deleted row reports `UnknownKey` |
 
@@ -438,7 +440,7 @@ A record's grants become the caller's identity:
 | Record | Claim | `IUserContext` | ASP.NET Core |
 | --- | --- | --- | --- |
 | `ClientId` | `sub`, `client_id` | `SubjectId`, `ClientId` | `User.Identity.Name` |
-| `TenantId` | `tenant_id` | `TenantId`; `ITenantProvider.TenantId` | |
+| `TenantId` | `tenant_id` | `TenantId`, and `IRequestContext.TenantId` | |
 | `Roles` | one `roles` claim each | `Roles`, `HasRole` | `User.IsInRole`, `RequireRole` |
 | `Permissions` | one `scope` claim each | `Permissions`, `HasPermission` | |
 | `KeyId` | `api_key_id` | `FindClaim(ApiKeyAuthenticationDefaults.KeyIdClaimType)` | |
@@ -450,24 +452,29 @@ Check permissions in the handler, and scope queries to the tenant (this assumes 
 using Microsoft.EntityFrameworkCore;
 using SharedKernel.Security.Abstractions;
 
-app.MapGet("/orders", async (IUserContext caller, ITenantProvider tenant, AppDbContext db, CancellationToken ct) =>
+app.MapGet("/orders", async (IUserContext caller, AppDbContext db, CancellationToken ct) =>
     {
         if (!caller.HasPermission("orders:read"))
         {
             return Results.Forbid();
         }
 
-        // Guid.Empty when the key has no tenant: the filter then matches no rows.
-        return Results.Ok(await db.Orders.Where(o => o.TenantId == tenant.TenantId).ToListAsync(ct));
+        if (caller.TenantId is not { } tenantId)
+        {
+            return Results.Forbid(); // a key without a tenant: fail closed instead of querying
+        }
+
+        return Results.Ok(await db.Orders.Where(o => o.TenantId == tenantId.Value).ToListAsync(ct));
     })
     .RequireAuthorization();
 ```
 
-Or declare the requirement on the route with `SharedKernel.Presentation.WebApi`, which answers with a ProblemDetails
+Or declare the requirement on the route with `SharedKernel.Presentation.Core`'s attributes, enforced by `SharedKernel.Presentation.WebApi`, which answers with a ProblemDetails
 `403`:
 
 ```csharp
-using SharedKernel.Presentation.WebApi.Authorization;
+using SharedKernel.Presentation.Authorization;      // [RequireRole], [RequirePermission]
+using SharedKernel.Presentation.WebApi.Authorization; // AddSharedKernelAuthorizationFilters
 
 builder.Services.AddSharedKernelAuthorizationFilters();
 
@@ -546,6 +553,7 @@ get the same header handling, forwarding, claims, `IUserContext` mapping and log
 ```csharp
 using System.Net;
 using System.Net.Http.Json;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Security.ApiKey.Validation;
 
 public sealed record PartnerKeyIntrospection(
@@ -576,7 +584,7 @@ public sealed class PartnerPortalApiKeyValidator(HttpClient http) : IApiKeyValid
 
         return ApiKeyValidationResult.Success(
             clientId: key.PartnerId,
-            tenantId: key.TenantId == Guid.Empty ? null : key.TenantId,
+            tenantId: TenantId.FromNullable(key.TenantId),
             roles: ["partner"],
             permissions: key.Scopes,
             keyId: key.KeyId);
@@ -801,7 +809,6 @@ Call one of the two, once. Both return the same `IServiceCollection`.
 | `IApiKeyValidator` | Scoped | Both | `TValidator`, or the internal managed validator; `TryAdd` |
 | `IUserContextMapper` (`ApiKey`) | Singleton | Both | Added once |
 | `IUserContext` | Scoped | Both | Resolved from the request's principal through all registered mappers; `TryAdd`. A registered `AnonymousUserContext` instance is treated as a placeholder and replaced |
-| `ITenantProvider` | Scoped | Both | `UserContextTenantProvider`; `TryAdd` |
 | `IHttpContextAccessor` | Singleton | Both | |
 | `IApiKeyStore` | Scoped | Managed | `TStore`; `TryAdd` |
 | `ApiKeyGenerator` | Singleton | Managed | `TryAdd` |
@@ -863,7 +870,7 @@ no key.
 
 | `IUserContext` member | Value |
 | --- | --- |
-| `IdentityKind` | `ServicePrincipal` |
+| `ActorKind` | `Service` |
 | `IsAuthenticated` | `true` |
 | `SubjectId`, `ClientId` | `ClientId` |
 | `TenantId` | `TenantId`, or `null` |
@@ -882,7 +889,7 @@ The `ClaimsIdentity` uses `sub` as its name claim and `roles` as its role claim,
 
 | Member | Description |
 | --- | --- |
-| `Success(clientId, tenantId = null, roles = null, permissions = null, keyId = null)` | A valid key. Throws `ArgumentException` for a blank `clientId` or a `Guid.Empty` tenant |
+| `Success(clientId, tenantId = null, roles = null, permissions = null, keyId = null)` | A valid key. Throws `ArgumentException` for a blank `clientId` or a `default(TenantId)` tenant |
 | `Failure(reason = "Rejected", keyId = null)` | An invalid key. `reason` must not be blank; it is logged, never returned to the client |
 | `IsValid`, `ClientId`, `TenantId`, `Roles`, `Permissions`, `KeyId`, `FailureReason` | The outcome; `ClientId` and `FailureReason` are `null` on the other outcome |
 
@@ -903,7 +910,7 @@ Failure reasons from managed keys:
 | `KeyId` | Constructor | From `GeneratedApiKey.KeyId` |
 | `KeyHash` | Constructor | From `GeneratedApiKey.KeyHash` |
 | `ClientId` | Constructor | Becomes the caller's subject id |
-| `TenantId` | `init` | `null` for no tenant; never `Guid.Empty` |
+| `TenantId` | `init` | `TenantId?`; `null` for no tenant |
 | `Roles`, `Permissions` | `init` | Default empty |
 | `ExpiresAt` | `init` | `null` for no expiry |
 | `RevokedAt` | `init` | `null` when not revoked; a future time schedules the revocation |
@@ -966,7 +973,7 @@ as described in the [security policy](https://github.com/Gresta-Vertex-Labs/plat
 | --- | --- | --- |
 | Accept keys from the query string | Send them in `X-Api-Key` (or your `HeaderName`) | URLs end up in logs, history and referrers |
 | Store or log `GeneratedApiKey.Key` | Store `KeyId` and `KeyHash`; show `Key` once | A leaked table or log would expose working keys |
-| Store `Guid.Empty` as a record's tenant | Store `null` | `ApiKeyValidationResult.Success` throws, so every request with that key fails |
+| Pass `default(TenantId)` as a tenant | Pass `null`, or convert a column with `TenantId.FromNullable` | `ApiKeyValidationResult.Success` throws, so every request with that key fails |
 | Use one prefix in every environment | `acme_live` in production, `acme_test` elsewhere | A test key would work in production, and scanners cannot tell them apart |
 | Hash keys with `IOneWayHasher` or another slow hash | Let the package use SHA-256 | High-entropy secrets gain nothing from a slow hash; every request pays for it |
 | Delete a record to revoke a key | Set `RevokedAt` | Logs then say `Revoked`, and the audit trail survives |
@@ -992,16 +999,16 @@ ISSUE        ApiKeyGenerator.Generate() -> GeneratedApiKey. Store KeyId + KeyHas
 STORE        Implement IApiKeyStore.FindAsync(string keyId, CancellationToken) -> ValueTask<ApiKeyRecord?>.
              Look up by KeyId only; return null when not found; let exceptions propagate. Registered scoped.
 RECORD       new ApiKeyRecord(keyId, keyHash, clientId) { TenantId, Roles, Permissions, ExpiresAt, RevokedAt }.
-             TenantId null for no tenant, never Guid.Empty.
+             TenantId is TenantId? (SharedKernel.Execution.Tenancy): null for no tenant; TenantId.FromNullable(guid?).
 REVOKE       Set RevokedAt (now, or a future time to schedule). Expire with ExpiresAt. Both are "<= now".
 ROTATE       Issue a second key for the same client, client switches, then set RevokedAt on the old key.
 VALIDATOR    IApiKeyValidator.ValidateAsync(string presentedKey, CancellationToken) -> ValueTask<ApiKeyValidationResult>.
              ApiKeyValidationResult.Success(clientId, tenantId, roles, permissions, keyId) / Failure(reason, keyId).
              Fixed-time comparison or hashed lookup; reasons are logged, never returned.
 HEADER       X-Api-Key by default; change with configureScheme: s => s.HeaderName = "...". Never query string.
-CALLER       Inject IUserContext: IdentityKind.ServicePrincipal, SubjectId == ClientId, TenantId, Roles,
+CALLER       Inject IUserContext: ActorKind.Service, SubjectId == ClientId, TenantId (TenantId?), Roles,
              Permissions (HasPermission, ordinal), FindClaim(ApiKeyAuthenticationDefaults.KeyIdClaimType).
-             ITenantProvider.TenantId is Guid.Empty when the key has no tenant.
+             TenantId is null when the key has no tenant; IRequestContext.TenantId is the same value.
 WITH OIDC    AddOidcAuthentication(configuration) + AddManagedApiKeyAuthentication<TStore>(...) in any order.
              Header present -> ApiKey only; absent -> Bearer. Do not set DefaultAuthenticateScheme/DefaultChallengeScheme.
 ONLY KEYS    .RequireAuthorization(p => p.AddAuthenticationSchemes(ApiKeyAuthenticationDefaults.AuthenticationScheme)
@@ -1010,7 +1017,7 @@ TEST         Register IClock and IApiKeyStore instances before AddManagedApiKeyA
              ApiKeyGenerator from the provider; resolve IApiKeyValidator from a scope or use TestServer.
 LOGS         12200 key rejected (Reason, KeyId); 12201 more than one header value.
 FORBIDDEN    Query-string keys; storing or logging plaintext keys; == on keys; slow password hashes for keys;
-             Guid.Empty tenants; one prefix across environments; caching store misses.
+             default(TenantId) tenants; one prefix across environments; caching store misses.
 ```
 
 ## Compatibility and guarantees

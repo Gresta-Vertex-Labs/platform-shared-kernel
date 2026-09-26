@@ -41,19 +41,22 @@ The two adopted libraries are less ergonomic than the two most popular declined 
 
 ---
 
-## Layering
+## Tiers and references
 
-```
-20.Reporting → may reference 01.Core, 08.Storage.Abstractions
-```
+| Package | Tier | References |
+|---|---|---|
+| `SharedKernel.Reporting.Abstractions` | Abstractions | `SharedKernel.Primitives`, `SharedKernel.Storage.Abstractions`, `Microsoft.Extensions.Logging.Abstractions` |
+| `SharedKernel.Reporting.Csv` | Adapter | `.Abstractions`, `SharedKernel.Configuration` — no third-party package |
+| `SharedKernel.Reporting.Spreadsheet` | Adapter | `.Abstractions`, `SharedKernel.Configuration`, `ClosedXML` |
+| `SharedKernel.Reporting.Pdf` | Adapter | `.Abstractions`, `SharedKernel.Configuration`, `PDFsharp`, `PDFsharp-MigraDoc` |
 
-That is the complete list, and it is deliberately austere.
+That is the complete list, and it is deliberately austere. The build enforces the tiers (SKTIER001–006); an Abstractions package takes no third-party package outside the `Microsoft.Extensions.*.Abstractions` allow-list.
 
-**This domain never references `06.Persistence`.** The caller supplies the `IAsyncEnumerable<TRow>`. Composing with `06.Persistence`'s already-shipped `IAsyncEnumerable` streaming reads (`StreamAsync`) and keyset cursor pagination (`ListKeysetAsync`) happens **in consumer code**, not through a reference here. A reference would let this domain grow its own data-access opinions, which is exactly the duplication the streaming contract is designed to avoid.
+**This domain never references a persistence package.** The caller supplies the `IAsyncEnumerable<TRow>`. Composing with `06.Persistence`'s `IAsyncEnumerable` streaming reads (`StreamAsync`) and keyset cursor pagination (`ListKeysetAsync`) happens **in consumer code**, not through a reference here. A reference would let this domain grow its own data-access opinions, which is exactly the duplication the streaming contract is designed to avoid.
 
-**No inbound grant exists or is needed.** Unlike `06.Persistence`/`08.Storage`/`09.Search`/`10.Intelligence`/`17.Workflows`/`19.Scheduling`, this domain holds no persistent connection, so there is nothing to probe for readiness. It is a stateless library in the same class as `01.Core.Compression`/`.Cryptography`. **The absence of a `13.ServiceDefaults` readiness phase here is deliberate, not an omission** — this is stated in P-477's acceptance criteria precisely so a future session does not "notice the gap" and add one.
+**No readiness probe exists or is needed.** This domain holds no persistent connection, so there is nothing to probe; it is a stateless library in the same class as `SharedKernel.Compression`/`.Cryptography`. **The absence of an `IReadinessProbe` here is deliberate, not an omission** — do not "notice the gap" and add one.
 
-**Composition with higher-numbered domains needs no grant in either direction.** A long-running export driven by `19.Scheduling` or `17.Workflows` composes inside the consuming service's own job body or activity, which may reference any package regardless of number. The platform's downward-only numbering constrains *SharedKernel packages referencing each other*, not consumer code referencing several SharedKernel packages.
+**Composition with scheduling or workflows needs nothing here.** A long-running export driven by `19.Scheduling` or `17.Workflows` composes inside the consuming service's own job body or activity; the tier rules constrain SharedKernel packages referencing each other, not consumer code referencing several of them.
 
 ---
 
@@ -63,7 +66,7 @@ That is the complete list, and it is deliberately austere.
 
 **Important scope note, added after ClosedXML's actual behavior was verified (not assumed) during WO-077 Design:** this invariant governs the *contract shape* — no materializing overload, ever. It is **not** a claim that every provider's underlying encoding is itself O(1)-memory. `.Csv` genuinely is. `.Spreadsheet` (ClosedXML) and `.Pdf` (MigraDoc/PdfSharp) are **not** — both third-party libraries build their full document object model in memory before writing a byte to the destination stream, a verified, permanent characteristic of those dependencies, not a defect awaiting a fix. Never let this invariant's wording be read as "every provider streams to disk row by row" — say plainly, per provider, what is and is not true, in capitals in that provider's own XML docs. See the Third-Party Licensing / Providers section below for the specifics.
 
-**2 — Delivery goes through storage, never through the response.** Output is written to a named store of `08.Storage.Abstractions` (`ReportDestination.Store`, plus `TenantId` for a tenant store), resolved through `IFileStorageFactory`, and an optional presigned download request is created by the same store's `IFileStorage.CreateDownloadUrlAsync`. No code path may offer a fully-buffered byte array as the *sole* option. A small-output convenience path may exist (`ExportToStreamAsync`), but never as the only way out. The concrete mechanism making this real, not aspirational: `StorageStreamingWriter` (`.Abstractions`) opens a `System.IO.Pipelines.Pipe` and runs `IFileStorage.UploadAsync` concurrently against the pipe's reader-side `Stream` while a provider's encoder writes into the writer side — bytes reach storage as they are produced, with no intermediate byte-array buffering at the delivery layer, regardless of what a given provider's own encoding step does internally (see Invariant 1's note above — the pipe removes delivery-layer buffering; it cannot remove a third-party library's own in-memory document model).
+**2 — Delivery goes through storage, never through the response.** Output is written to a named store of `SharedKernel.Storage.Abstractions` (`ReportDestination.Store`, plus `TenantId` — a `TenantId?`, `null` for a shared store — for a tenant store), resolved through `IFileStorageFactory`, and an optional presigned download request is created by the same store's `IFileStorage.CreateDownloadUrlAsync`. No code path may offer a fully-buffered byte array as the *sole* option. A small-output convenience path may exist (`ExportToStreamAsync`), but never as the only way out. The concrete mechanism making this real, not aspirational: `StorageStreamingWriter` (`.Abstractions`) opens a `System.IO.Pipelines.Pipe` and runs `IFileStorage.UploadAsync` concurrently against the pipe's reader-side `Stream` while a provider's encoder writes into the writer side — bytes reach storage as they are produced, with no intermediate byte-array buffering at the delivery layer, regardless of what a given provider's own encoding step does internally (see Invariant 1's note above — the pipe removes delivery-layer buffering; it cannot remove a third-party library's own in-memory document model).
 
 **3 — Formatting is `CultureInfo`, not translation.** Per-column formatters accept a `CultureInfo`. Formatting numbers, dates, and currency by culture is a **BCL capability**. This domain takes **no dependency on `SharedKernel.Localization`** (WO-078) or any translation catalog — a column *header* that needs translating is resolved by the caller before it reaches the column definition. Blurring these two concerns would drag a translation catalog into every export.
 
@@ -106,20 +109,17 @@ That is the complete list, and it is deliberately austere.
 | Redaction or PII masking | **Not here.** `01.Core/SharedKernel.DataPrivacy` (WO-076), applied before rows reach the exporter |
 | Translated column headers | **Not here.** Resolved by the caller; this domain only formats by `CultureInfo` |
 | Running an export on a schedule | **Not here.** `19.Scheduling` fires it; the composition lives in consumer code |
-| An `IHealthCheck` or readiness probe | **Nowhere.** This domain is stateless by design — see Layering |
-| An in-memory test double | `16.Testing/SharedKernel.Testing` (P-481) |
+| An `IHealthCheck` or readiness probe | **Nowhere.** This domain is stateless by design — see Tiers and references |
+| An in-memory test double | `16.Testing/SharedKernel.Reporting.Testing` (`InMemoryReportExporter<TRow>`) |
 
 ---
 
 ## Open Items
 
-- **All four packages are implemented, tested, documented, and packed — shipped 2026-09-04.** `Directory.Packages.props` pins `ClosedXML`/`PDFsharp`/`PDFsharp-MigraDoc` (see Third-Party Licensing) and `01.Core`'s `LoggingEventIdRanges.Reporting = 20000` is live in code — both prior blockers on this list are resolved and no longer apply. See `state-map.md`'s Overall Progress for the full 58/60-task breakdown.
-- Two `state-map.md` tasks remain open **deliberately**, both process/administrative rather than technical: **S-05** (register the four projects + a `20.Reporting` solution folder in `Platform.SharedKernel.slnx` — the four project paths are recorded in `state-map.md`'s Package Board) and **P-05** (run `/state-map-phase` to promote `SK.20.Design`/`.Core`/`.Tests`/`.Docs` — all genuinely `●` — to the root `state-map.md`, and close root Phase Backlog P-477–P-480). Both were skipped this session under an explicit shared-file dispatch protocol barring edits to `Platform.SharedKernel.slnx` and the root `state-map.md`/`CLAUDE.md` (concurrent domain implementers were running against the same repo). Whoever next has clearance to touch those root files should perform both.
-- `16.Testing`'s in-memory `IReportExporter<TRow>` fake (P-481) remains that domain's own, separately-dispatched work — this domain's implementation does not block it; the exact `IReportExporter<TRow>` two-member contract shape is now real, compiled code (`SharedKernel.Reporting.Abstractions.Exporters.IReportExporter<TRow>`) for P-481 to build against.
+None. All four packages are implemented, tested, documented and ship with the repo-wide release train; the in-memory double is `16.Testing/SharedKernel.Reporting.Testing` (`InMemoryReportExporter<TRow>`).
 
 ---
 
 ## Changelog
 
-- [2026-09-04] All four packages implemented, tested (54 tests), documented, and packed end to end (WO-077, phase-implementer)
-- [2026-09-22] Delivery docs updated for `08.Storage`'s P-559 redesign: `ReportDestination` names a store (and tenant), resolved through `IFileStorageFactory`; the presigned download comes from the store itself as a `PresignedRequest` (coordinator)
+History — WO-077 (P-477–P-480), the `08.Storage` P-559 delivery update and the WO-086 refactor — is in `state-map.md` ("Domain-Brain Changelog").

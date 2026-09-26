@@ -1,51 +1,33 @@
 # 14.Presentation — Configuration Reference
 
-Every DI extension method exposed by `SharedKernel.Presentation.WebApi` and
-`SharedKernel.Presentation.SignalR`, its options, and its platform-default values. See each
-package's `README.md` for usage examples; see `CLAUDE.md` for the authoritative interface
-contracts and implementation rules.
+Every DI extension method exposed by `SharedKernel.Presentation.WebApi`,
+`SharedKernel.Presentation.SignalR`, `SharedKernel.Presentation.SignalR.Redis`,
+`SharedKernel.Presentation.Grpc` and `SharedKernel.Presentation.GraphQL`, its options, and its
+platform-default values. `SharedKernel.Presentation.Core` has no registration (attributes and static
+maps only). See each package's `README.md` for usage examples and the domain
+[README](README.md) for how the packages fit together.
+
+None of these packages binds an `IConfiguration` section: every option is set in code through the
+registration method's callback.
+
+---
+
+## Pipeline order (HTTP hosts)
+
+```csharp
+app.UseSharedKernelRequestContext();   // SharedKernel.ServiceDefaults.Security — correlation id + request context scope
+app.UseSharedKernelSecurityHeaders();  // SharedKernel.Presentation.WebApi
+app.UseExceptionHandler();             // SharedKernelExceptionHandler
+// UseAuthentication(), tenant resolution, UseAuthorization(), UseCors(...), endpoints
+```
+
+The correlation id is not configured here. `UseSharedKernelRequestContext()` accepts a
+caller-supplied `X-Correlation-Id` of at most 128 characters of `[A-Za-z0-9-_:.]`, otherwise creates
+one, and echoes it on every response; the rule is fixed.
 
 ---
 
 ## `SharedKernel.Presentation.WebApi`
-
-### `AddSharedKernelCorrelationId(this IServiceCollection, Action<CorrelationIdOptions>? configure = null)`
-
-| Parameter | Required | Default | Effect |
-| --- | --- | --- | --- |
-| `configure` | no | `null` | Customises `CorrelationIdOptions`. Omit to use the documented default `MaxLength`/`AllowedCharacterPattern` — every well-formed value already in production use (GUIDs, ULIDs) continues to pass unchanged. |
-
-| `CorrelationIdOptions` member | Default | Purpose |
-| --- | --- | --- |
-| `MaxLength` | `128` | Maximum accepted length, in characters, for a caller-supplied `X-Correlation-Id` header value |
-| `AllowedCharacterPattern` | alphanumerics plus `-` `_` `:` `.` | A safe-but-permissive allowlist covering GUID/ULID/general safe-token shapes |
-
-A host that never calls this method still gets the default-safe validation applied automatically —
-`CorrelationIdMiddleware` falls back to a fresh default `CorrelationIdOptions` instance when none is
-registered in DI, so `UseSharedKernelCorrelationId()` alone is never a broken/unvalidated
-configuration.
-
-### `UseSharedKernelCorrelationId(this IApplicationBuilder)`
-
-No options. Must be the **first** call in the pipeline — before `UseExceptionHandler` — so the
-`X-Correlation-Id` response header is set even on error responses.
-
-**Format-validation behavior:** a caller-supplied header value exceeding `MaxLength` or containing a
-character outside `AllowedCharacterPattern` is rejected exactly like an absent/whitespace header —
-regenerated via a fresh `Guid.NewGuid("N")`, **before** the rejected value ever reaches
-`HttpContext.Items`, `Activity.SetBaggage`, or the response header. Only the rejected value's
-*length* is logged (`EventId` 14006) — never its raw content, which would recreate the exact
-log-injection vector this validation defends against.
-
-| Constant | Value | Purpose |
-| --- | --- | --- |
-| `CorrelationIdMiddleware.HeaderName` | `"X-Correlation-Id"` | Request/response header name |
-| `CorrelationIdMiddleware.ItemsKey` | `"CorrelationId"` | `HttpContext.Items` storage key |
-| `CorrelationIdMiddleware.BaggageKey` | `"correlation.id"` | `Activity` baggage key (not a tag — survives process boundaries) |
-
-Behavior: reads the inbound header; if absent or whitespace, generates `Guid.NewGuid("N")`.
-Always writes the resolved value back as a response header via `Response.OnStarting`, which fires
-even when downstream middleware short-circuits the pipeline.
 
 ### `AddSharedKernelApiVersioning(this IServiceCollection)`
 
@@ -149,8 +131,8 @@ attribute inert (present as metadata, never evaluated) — the endpoint stays fu
 
 | Type | Ctor | Composition | Failure response |
 | --- | --- | --- | --- |
-| `RequireRoleAttribute` | `params string[] roles` | roles within one instance OR'd; stacked instances AND'd | `Error.Forbidden(...).ToProblemDetails()` (403) |
-| `RequirePermissionAttribute` | `params string[] permissions` | permissions within one instance OR'd; stacked instances AND'd | `Error.Forbidden(...).ToProblemDetails()` (403) |
+| `RequireRoleAttribute` (`SharedKernel.Presentation.Authorization`, in `SharedKernel.Presentation.Core`) | `params string[] roles` | roles within one instance OR'd; stacked instances AND'd | `Error.Forbidden(...).ToProblemDetails()` (403) |
+| `RequirePermissionAttribute` (same namespace) | `params string[] permissions` | permissions within one instance OR'd; stacked instances AND'd | `Error.Forbidden(...).ToProblemDetails()` (403) |
 
 Evaluated against `IUserContext.HasRole`/`HasPermission` (`12.Security.Abstractions`) — never
 `ClaimTypes.Role` and never the built-in `[Authorize(Roles = "...")]`, which bypasses this
@@ -209,7 +191,7 @@ Every other field of the produced `ProblemDetails`
 identically to the single-`Error` path applied to the exception's first error. The same two members
 are produced by `Error.ToProblemDetails()` for an aggregate whose `Error.Details` is non-empty.
 
-### `Error.ToProblemDetails()` optional localization (P-484/WO-078 — no DI extension method)
+### `Error.ToProblemDetails()` optional localization (no DI extension method)
 
 Unlike every other opt-in capability in this domain, this one activates **automatically** once a
 consuming service registers `SharedKernel.Localization`'s `ILocalizationCatalog` — there is no
@@ -224,19 +206,19 @@ builder.Services.AddLocalizationCatalog(catalog =>
     catalog.AddJsonDirectory(Path.Combine(AppContext.BaseDirectory, "Localization")));
 // Localization/tr.json: { "order.not_found": "{orderId} numaralı sipariş bulunamadı." }
 
-// A service that never registers ILocalizationCatalog sees byte-identical output to before P-484.
+// A service that never registers ILocalizationCatalog gets Error.Message as Detail.
 ```
 
 | Condition | `ProblemDetails.Detail` |
 | --- | --- |
-| No `ILocalizationCatalog` registered | `Error.Message` (unchanged pre-P-484 behavior) |
+| No `ILocalizationCatalog` registered | `Error.Message` |
 | Catalog registered, no entry for `(error.Code, CurrentUICulture)` | `Error.Message` (fallback — never blank) |
 | Catalog registered, entry found, but it uses a placeholder the error has no value for | `Error.Message` (never a raw `{placeholder}`) |
 | Catalog registered, entry found | The translation, with its placeholders filled from `Error.MessageArguments` in `CurrentUICulture` |
 
 `CultureInfo.CurrentUICulture` is read as an ambient value only — this package never resolves or
-sets culture itself; that is `13.ServiceDefaults`'s `AddSharedKernelLocalization()` middleware's
-job (P-483) when a consuming service opts in. `Title`/`Status`/`Type`/`Extensions["errorCode"]`/
+sets culture itself; that is ASP.NET Core request localization's job (`SharedKernel.ServiceDefaults.Localization`'s `AddSharedKernelLocalization()`
+when a consuming service opts in). `Title`/`Status`/`Type`/`Extensions["errorCode"]`/
 `Extensions["traceId"]` are never affected. The multi-field `ValidationProblemDetailsExtensions`
 path (above) applies this same localization/fallback independently per failing field's
 `Error.Code` — one field may translate while a sibling falls back in the same response body.
@@ -247,7 +229,7 @@ path (above) applies this same localization/fallback independently per failing f
 | --- | --- | --- | --- |
 | `configure` | no | `null` | Customises `SecurityHeadersOptions`. Omit to use every documented default value. |
 
-**Ordering requirement:** register immediately after `UseSharedKernelCorrelationId()` and before
+**Ordering requirement:** register immediately after `UseSharedKernelRequestContext()` (`SharedKernel.ServiceDefaults.Security`) and before
 `UseExceptionHandler()`/error-handling middleware.
 
 | `SecurityHeadersOptions` member | Header | Default value | Enabled by default? |
@@ -296,7 +278,7 @@ section for the full end-to-end recipe. Omitting this step leaves `[RequireIdemp
 
 | Constant | Value | Purpose |
 | --- | --- | --- |
-| `HttpContextIdempotencyExtensions.IdempotencyKeyHeader` | `"Idempotency-Key"` | Request header name (domain-local for now — see the type's XML docs) |
+| `HttpContextIdempotencyExtensions.IdempotencyKeyHeader` | `"Idempotency-Key"` | Request header name; forwards `WellKnownHeaders.IdempotencyKey` (`SharedKernel.Primitives`), the name `SharedKernel.Communication.Rest` sends |
 | `HttpContextIdempotencyExtensions.MaxIdempotencyKeyLength` | `256` | Maximum accepted key length, in characters |
 
 A missing/malformed key on an endpoint carrying `[RequireIdempotencyKey]` short-circuits with
@@ -332,7 +314,7 @@ re-fetch recipe. Additive to, never a replacement for, `Error.Conflict`/409 — 
 ### `RateLimitRejectionProblemDetails.Create(HttpContext context, TimeSpan? retryAfter = null)` (no DI registration — pure static helper)
 
 No options, no registration. Call it directly from a consuming service's
-`RateLimiterOptions.OnRejected` callback (wired via `13.ServiceDefaults`'s
+`RateLimiterOptions.OnRejected` callback (wired via `SharedKernel.ServiceDefaults`'
 `AddSharedKernelRateLimiting()` — referenced by name only, no `ProjectReference` either direction).
 Produces a 429 `ProblemDetails`; when `retryAfter` is supplied, also sets a real `Retry-After`
 response header (whole seconds), not just a body field.
@@ -398,11 +380,11 @@ the global `UploadValidationOptions` defaults. Rejects with 413 (size)/415 (cont
 | `configureHubOptions` | no | `null` | Invoked **after** the platform registers its three global filters — use it to remove any platform filter from `options.HubFilters`, add service-specific filters, or set other `HubOptions` (e.g. `MaximumReceiveMessageSize`) |
 | `configureRateLimit` | no | `null` | Configures `HubInvocationRateLimitOptions`. Omitted/`null` still registers `HubInvocationRateLimitFilter` (so it can be enabled later with no redeploy of the registration itself), but every check defaults to disabled — a genuine no-op |
 
-Always registers, as singletons, and as global filters via `HubOptions.AddFilter<T>()`:
+Always registers `IRequestContextAccessor` (`TryAdd`, so an existing registration wins) and, as singletons and global filters via `HubOptions.AddFilter<T>()`:
 
 | Filter | Registered as | Scope |
 | --- | --- | --- |
-| `TenantContextHubFilter` | Singleton + global hub filter | Connection-scoped (`OnConnectedAsync`) |
+| `TenantContextHubFilter` | Singleton + global hub filter | Captures the caller on connect; opens a `RequestContextScope` around connect, every invocation and disconnect |
 | `HubExceptionMappingFilter` | Singleton + global hub filter | Invocation-scoped (`InvokeMethodAsync`) |
 | `HubInvocationRateLimitFilter` | Singleton + global hub filter | Invocation-scoped (`InvokeMethodAsync`), consulted before the target method body runs |
 
@@ -457,7 +439,28 @@ Returns the stock `ISignalRServerBuilder` from `Microsoft.AspNetCore.SignalR`'s 
 no custom wrapper type — so it composes with any other `ISignalRServerBuilder` extension,
 including `WithRedisBackplane` below.
 
+### `HubGroupNaming.TenantGroup(Guid tenantId)`
+
+Not configurable — pure static formatter. Always returns `"tenant:{tenantId:D}"`; pass
+`TenantId.Value` (`SharedKernel.Execution.Tenancy`). This is the single source of truth for
+tenant-scoped group names; never format a group name string inline elsewhere in a consuming service.
+
+### Reading the caller inside a hub method
+
+`TenantContextHubFilter` stores nothing a hub reads by key. It captures the connect request's
+`IRequestContext` (the ambient one from `IRequestContextAccessor.Current`, else the one registered in
+the connect request's services) and opens a `RequestContextScope` with it around the connect handler,
+every hub method and the disconnect handler. Read tenant, actor and correlation id from an injected
+`IRequestContextAccessor` (`.Current`) or `IRequestContext`. With no context available the filter
+passes through and `Current` stays `null`; it never rejects a connection.
+
+---
+
+## `SharedKernel.Presentation.SignalR.Redis`
+
 ### `WithRedisBackplane(this ISignalRServerBuilder builder, string connectionString, Action<RedisOptions>? configure = null)`
+
+Namespace `SharedKernel.Presentation.SignalR.Extensions`, like `AddSharedKernelSignalR`.
 
 | Parameter | Required | Default | Effect |
 | --- | --- | --- | --- |
@@ -465,20 +468,8 @@ including `WithRedisBackplane` below.
 | `configure` | no | `null` | Passed directly through to `AddStackExchangeRedis`'s own `RedisOptions` configuration callback (e.g. to set a channel prefix) |
 
 Pure pass-through — no platform-added behavior, no shared `IConnectionMultiplexer` with
-`02.Caching.Redis.Core`. Omitting this call keeps SignalR fully in-memory (correct for local dev
-and single-replica deployments only — connections will not fan out across pods without it).
-
-### `HubGroupNaming.TenantGroup(Guid tenantId)`
-
-Not configurable — pure static formatter. Always returns `"tenant:{tenantId:D}"`. This is the
-single source of truth for tenant-scoped group names; never format a group name string inline
-elsewhere in a consuming service.
-
-### Hub filter `Items` keys (for reading inside Hub methods)
-
-| Key | Set by | Type | Notes |
-| --- | --- | --- | --- |
-| `TenantContextHubFilter.ItemsKey` (`"TenantId"`) | `TenantContextHubFilter.OnConnectedAsync` | `Guid` | `Guid.Empty` when no `ITenantProvider` resolves a tenant — filter never rejects the connection itself |
+`SharedKernel.Caching.Redis.Core`. Not referencing this package keeps SignalR fully in-memory (correct
+for local dev and single-replica deployments only — messages will not fan out across pods without it).
 
 ---
 
@@ -522,22 +513,25 @@ Known `SharedKernelException` subtypes always map through `GrpcStatusCodeMap` us
 
 ### `GrpcCorrelationInterceptor` (registered by `AddSharedKernelGrpc`, no separate call)
 
-Not configurable. Reads the `X-Correlation-Id` gRPC metadata key (`GrpcCorrelationInterceptor
-.MetadataKey`) — the same key `SharedKernel.Communication.Grpc`'s client-side
-`CorrelationTracingInterceptor` writes — generating `Guid.NewGuid("N")` when absent or whitespace.
-Stores the resolved value in `ServerCallContext.UserState["CorrelationId"]` and calls
-`Activity.Current?.SetBaggage(WellKnownBaggageKeys.CorrelationId, value)`.
+Not configurable. Resolves the call's correlation id once: the ambient `RequestContextScope`'s id
+when `UseSharedKernelRequestContext()` already ran for the request, otherwise the `X-Correlation-Id`
+gRPC metadata key (`GrpcCorrelationInterceptor.MetadataKey` = `WellKnownHeaders.CorrelationId`, the
+key `SharedKernel.Communication.Grpc`'s client interceptor writes) through
+`CorrelationIds.AcceptOrCreate` — at most 128 characters of `[A-Za-z0-9-_:.]`, otherwise a new id.
+Caches it in `ServerCallContext.UserState[GrpcCorrelationInterceptor.ItemsKey]` (`"CorrelationId"`)
+and calls `Activity.Current?.SetBaggage(WellKnownBaggageKeys.CorrelationId, value)`.
 
 ### `GrpcTenantContextInterceptor` (registered by `AddSharedKernelGrpc`, no separate call)
 
-Not configurable. Resolves `ITenantProvider` (`12.Security.Abstractions`) from the call's
-`HttpContext.RequestServices` and stores the resolved `TenantId` in
-`ServerCallContext.UserState["TenantId"]`. Mirrors `TenantContextHubFilter`'s policy exactly:
-`Guid.Empty` when no `ITenantProvider` resolves a tenant — never rejects the call itself.
+Not configurable. Opens a `RequestContextScope` around the call carrying: the ambient
+`IRequestContext` (`IRequestContextAccessor.Current`), else the `IRequestContext` registered in the
+call's `HttpContext.RequestServices`, else `AnonymousRequestContext.Instance` — always with the
+correlation id above. It never reads a tenant from metadata and never rejects a call; read the caller
+from `IRequestContext`/`IRequestContextAccessor` inside the service method.
 
 ### `GrpcAuthorizationInterceptor` (registered by `AddSharedKernelGrpc`, no separate call)
 
-Reuses `SharedKernel.Presentation.WebApi.Authorization`'s four attributes **verbatim** — apply
+Evaluates the four attributes of `SharedKernel.Presentation.Core` (namespace `SharedKernel.Presentation.Authorization`), the same ones WebApi evaluates — apply
 them directly to a gRPC service implementation class or method, exactly as you would on an MVC
 controller action:
 
@@ -558,22 +552,46 @@ See the package `README.md` for the full `ErrorType → StatusCode` table. `Resu
 generic overload returns the unwrapped value on success. Never hand-construct
 `new RpcException(new Status(...))` at a gRPC service-method call site.
 
-### `ServerCallContext.UserState` keys (for reading inside gRPC service methods)
+### `ServerCallContext.UserState` keys
 
 | Key | Set by | Type | Notes |
 | --- | --- | --- | --- |
-| `GrpcCorrelationInterceptor.ItemsKey` (`"CorrelationId"`) | `GrpcCorrelationInterceptor` | `string` | Always non-empty — generated when the inbound metadata key was absent |
-| `GrpcTenantContextInterceptor.ItemsKey` (`"TenantId"`) | `GrpcTenantContextInterceptor` | `Guid` | `Guid.Empty` when no `ITenantProvider` resolves a tenant — interceptor never rejects the call itself |
+| `GrpcCorrelationInterceptor.ItemsKey` (`"CorrelationId"`) | `GrpcCorrelationInterceptor` | `string` | Always non-empty. The same value is `IRequestContext.CorrelationId` inside the call — prefer that. |
+
+There is no tenant key: the tenant is `IRequestContext.TenantId` (`TenantId?`) inside the call's scope.
+
+---
+
+## `SharedKernel.Presentation.GraphQL`
+
+### `AddSharedKernelGraphQL(this IServiceCollection, Action<GraphQLOptions>? configure = null)`
+
+Namespace `SharedKernel.Presentation.GraphQL.Extensions`. Returns HotChocolate's
+`IRequestExecutorBuilder`. Call it **before** any service-specific `AddGraphQL()`/`AddTypes()` call;
+a second call is a no-op that returns the existing builder. Registers snake_case naming, the
+(internal) `SharedKernelFilterConvention`, offset and cursor paging capped at `MaxPageSize`, the
+(internal) `SharedKernelErrorFilter` and the introspection gate.
+
+| `GraphQLOptions` member | Default | Effect |
+| --- | --- | --- |
+| `EnableFiltering` | `true` | `HotChocolate.Data` filtering with the platform filter convention |
+| `EnableSorting` | `true` | `HotChocolate.Data` sorting |
+| `EnablePaging` | `true` | Offset and cursor paging |
+| `MaxPageSize` | `100` | Largest requestable page; outside `1..500` throws `OptionsValidationException` at the call |
+| `AllowIntrospection` | `true` | Schema introspection — set `false` in production |
 
 ---
 
 ## Cross-cutting notes
 
-- None of the three packages requires a `ProjectReference` outside `01.Core`,
-  `04.Contracts` (`.WebApi` only — never `.Grpc`, never `.SignalR`), `12.Security.Abstractions`,
-  and (for `.Grpc` only, a deliberate intra-domain exception) `.WebApi` itself. All three are
-  fully self-contained with respect to `13.ServiceDefaults` — the correlation-id baggage key is
-  this domain's own contract (see CLAUDE.md P-192).
-- No configuration option in any of the three packages accepts environment-variable-style string
-  toggles; all configuration is via strongly-typed C# (`Action<TOptions>` callbacks), consistent with the
-  rest of the platform's Options-pattern conventions.
+- Every package here is Host tier. `.WebApi` and `.Grpc` both reference `.Core` and never each other;
+  `.SignalR` references neither; `.SignalR.Redis` references `.SignalR`. `.Grpc` never references
+  `SharedKernel.Contracts` (protobuf messages are its wire contract); `.GraphQL` does, for
+  `PagedList<T>`.
+- The correlation id and the request's `IRequestContext` scope come from
+  `SharedKernel.ServiceDefaults.Security` (`AddSharedKernelRequestContext()` +
+  `UseSharedKernelRequestContext()`); the gRPC interceptors and the SignalR hub filter carry that same
+  context into calls and hub invocations.
+- No configuration option in any package here accepts environment-variable-style string toggles or
+  binds an `IConfiguration` section; all configuration is strongly-typed C# (`Action<TOptions>`
+  callbacks).

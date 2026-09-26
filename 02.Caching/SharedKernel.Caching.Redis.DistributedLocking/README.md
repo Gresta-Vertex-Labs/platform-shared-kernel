@@ -54,6 +54,7 @@ dotnet add package SharedKernel.Caching.Redis.DistributedLocking
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
+| Tier | Adapter |
 | Depends on | `SharedKernel.Caching.Abstractions`, `SharedKernel.Caching.Redis.Core`, `SharedKernel.Primitives` |
 | Redis | A single primary, or Redis Cluster; Lua scripting enabled |
 | Namespace | `SharedKernel.Caching.Redis.DistributedLocking.Extensions` |

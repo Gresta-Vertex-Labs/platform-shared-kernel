@@ -8,11 +8,11 @@ namespace SharedKernel.Testing.Communication;
 /// defaults (introspection enabled, a generous max page size) for isolated GraphQL schema tests.
 /// </summary>
 /// <remarks>
-/// This package takes no project reference to <c>SharedKernel.Communication.GraphQL</c> (scope
+/// This package takes no project reference to <c>SharedKernel.Presentation.GraphQL</c> (scope
 /// lock) — it wires the equivalent test-safe defaults directly against the raw HotChocolate API
 /// (<c>AddGraphQLServer()</c>) rather than calling <c>AddSharedKernelGraphQL()</c>. Tests that need
 /// to verify the platform's actual conventions (snake_case filtering, <c>SharedKernelErrorFilter</c>,
-/// etc.) belong in <c>SharedKernel.Communication.GraphQL</c>'s own test suite, not here.
+/// etc.) belong in <c>SharedKernel.Presentation.GraphQL</c>'s own test suite, not here.
 /// </remarks>
 public static class GraphQLTestExecutorFactory
 {

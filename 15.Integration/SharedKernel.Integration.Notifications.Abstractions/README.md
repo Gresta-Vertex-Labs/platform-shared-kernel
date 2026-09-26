@@ -11,6 +11,12 @@ This package ships **zero I/O and zero concrete `INotificationSender`** — it i
 resilience/signing/retry/observer discipline" identity, applied to a person instead of a
 subscriber's API endpoint.
 
+| | |
+| --- | --- |
+| Tier | Abstractions (references `SharedKernel.Primitives`, `SharedKernel.Configuration` and `SharedKernel.Storage.Abstractions` only) |
+| Install | `<PackageReference Include="SharedKernel.Integration.Notifications.Abstractions" />` plus one or both provider packages |
+| Test doubles | `SharedKernel.Integration.Testing`: `AddInMemoryNotificationSender(channel)`, `AddInMemoryNotificationDeliveryObserver()` |
+
 ---
 
 ## Minimal setup
@@ -43,12 +49,15 @@ configuration section `SharedKernel:Integration:Notifications` and validated eag
 ## `INotificationSenderIdentityResolver` — the per-tenant "from" address seam
 
 ```csharp
-public sealed class TenantNotificationSenderIdentityResolver(ITenantCatalog tenants, ITenantProvider tenantProvider)
+// ITenantCatalog is your own tenant directory; IRequestContext comes from SharedKernel.Execution.
+public sealed class TenantNotificationSenderIdentityResolver(ITenantCatalog tenants, IRequestContext requestContext)
     : INotificationSenderIdentityResolver
 {
     public async Task<NotificationSenderIdentity> ResolveAsync(NotificationChannel channel, CancellationToken ct)
     {
-        var tenant = await tenants.GetAsync(tenantProvider.TenantId, ct);
+        var tenantId = requestContext.TenantId
+            ?? throw new InvalidOperationException("A notification needs a tenant to choose its sender identity.");
+        var tenant = await tenants.GetAsync(tenantId, ct);
         return channel switch
         {
             NotificationChannel.Email => new NotificationSenderIdentity(tenant.SupportEmail, tenant.DisplayName),
@@ -59,9 +68,9 @@ public sealed class TenantNotificationSenderIdentityResolver(ITenantCatalog tena
 }
 ```
 
-This mirrors `05.Application`'s `IRequestContext` bridge pattern — this package never reaches
-into a persistence store or `13.ServiceDefaults` directly; the consuming service bridges its own
-real identity source at its own composition root.
+This package never reaches into a persistence store or a host package itself; the consuming service
+bridges its own tenant directory at its composition root, reading the caller's tenant from
+`IRequestContext.TenantId` (`SharedKernel.Execution.Tenancy.TenantId?`, `null` when there is none).
 
 ---
 
@@ -106,7 +115,7 @@ public sealed class OrderReceiptSender(IServiceProvider services)
 ```csharp
 Attachments = [new NotificationAttachment
 {
-    FileReference = invoiceFileReference, // SharedKernel.Storage.Abstractions.Models.FileReference
+    FileReference = invoiceFileReference, // SharedKernel.Storage.FileReference (SharedKernel.Storage.Abstractions)
     FileName = "invoice.pdf",
     ContentType = "application/pdf",
 }],
@@ -172,5 +181,5 @@ out of scope for this package's first release (WO-072).
 ## `Locale` — a forward-compatible seam only
 
 `NotificationMessage.Locale` exists on the contract today but is not consumed by any logic in this
-package or either shipped provider. It is reserved for future composition with
-`SharedKernel.Localization` once that package ships.
+package or either shipped provider. It is reserved for a future composition with
+`SharedKernel.Localization`.
