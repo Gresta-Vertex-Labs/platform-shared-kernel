@@ -10,17 +10,17 @@
   </ItemGroup>
   <ItemGroup>
     <!--
-      Layering: 14.Presentation may reference 01.Core, 04.Contracts, 12.Security, and
-      13.ServiceDefaults only. References to 05.Application, 06.Persistence, 07.Messaging, or any
-      other infrastructure layer are hard violations — this domain converts outcomes (Result<T>,
-      Error, exceptions) into HTTP responses; it never produces those outcomes itself.
+      Tier: Host. The tier rules would allow any non-Testing package, but this one deliberately
+      references only Foundation packages, Security.Abstractions and Presentation.Core (another Host
+      package): it converts outcomes (Result<T>, Error, exceptions) into HTTP responses and never
+      produces them, so it takes no adapter (persistence, messaging, caching) reference.
     -->
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
     <ProjectReference Include="..\..\01.Core\SharedKernel.Core\SharedKernel.Core.csproj" />
     <!--
-      SharedKernel.Localization is a 01.Core abstraction (ILocalizationCatalog), the same layer
-      this package already depends on for Result<T>/Error — referencing it does not violate this
-      domain's "no concrete-provider reference" posture (P-484/WO-078, D-81). Used exclusively to
+      SharedKernel.Localization is a Foundation package (ILocalizationCatalog), the same tier as
+      Primitives' Result<T>/Error — referencing it does not violate this package's "no
+      concrete-provider reference" posture (P-484/WO-078, D-81). Used exclusively to
       optionally localize Error.ToProblemDetails()'s Detail value; never a hard requirement — see
       Errors/LocalizedDetailResolver.cs.
     -->

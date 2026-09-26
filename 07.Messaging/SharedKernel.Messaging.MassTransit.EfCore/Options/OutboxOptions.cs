@@ -38,4 +38,10 @@ public sealed class OutboxOptions
     /// Default is <c>30 minutes</c>.
     /// </summary>
     public TimeSpan DuplicateDetectionWindow { get; set; } = TimeSpan.FromMinutes(30);
+
+    /// <summary>
+    /// Gets or sets the database engine behind the outbox, which selects the SQL the delivery service locks
+    /// outbox rows with. Default is <see cref="OutboxDatabase.PostgreSql"/>.
+    /// </summary>
+    public OutboxDatabase Database { get; set; } = OutboxDatabase.PostgreSql;
 }

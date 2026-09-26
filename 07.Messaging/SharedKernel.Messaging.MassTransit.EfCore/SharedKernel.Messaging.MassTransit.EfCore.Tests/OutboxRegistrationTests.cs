@@ -2,6 +2,7 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Messaging.MassTransit.Extensions;
+using SharedKernel.Messaging.MassTransit.Options;
 
 namespace SharedKernel.Messaging.MassTransit.EfCore.Tests;
 
@@ -24,6 +25,38 @@ public sealed class OutboxRegistrationTests
             .Build();
 
         services.Should().Contain(d => IsOutboxService(d), "the EF Core outbox must be registered with MassTransit");
+    }
+
+    [Theory]
+    [InlineData(OutboxDatabase.PostgreSql)]
+    [InlineData(OutboxDatabase.SqlServer)]
+    [InlineData(OutboxDatabase.MySql)]
+    [InlineData(OutboxDatabase.Sqlite)]
+    public void WithEntityFrameworkOutbox_EachDatabase_RegistersTheOutbox(OutboxDatabase database)
+    {
+        var services = new ServiceCollection();
+
+        services
+            .AddSharedKernelMessaging(o => o.ServiceName = "outbox-test-service")
+            .UseRabbitMq("rabbitmq://localhost")
+            .WithEntityFrameworkOutbox<RegistrationTestDbContext>(o => o.Database = database)
+            .Build();
+
+        services.Should().Contain(d => IsOutboxService(d));
+    }
+
+    [Fact]
+    public void OutboxOptions_Database_DefaultsToPostgreSql()
+        => new OutboxOptions().Database.Should().Be(OutboxDatabase.PostgreSql);
+
+    [Fact]
+    public void WithEntityFrameworkOutbox_UndefinedDatabase_Throws()
+    {
+        var builder = new ServiceCollection().AddSharedKernelMessaging(o => o.ServiceName = "outbox-test-service");
+
+        var act = () => builder.WithEntityFrameworkOutbox<RegistrationTestDbContext>(o => o.Database = (OutboxDatabase)99);
+
+        act.Should().Throw<ArgumentOutOfRangeException>().WithMessage("*OutboxOptions.Database*");
     }
 
     [Fact]

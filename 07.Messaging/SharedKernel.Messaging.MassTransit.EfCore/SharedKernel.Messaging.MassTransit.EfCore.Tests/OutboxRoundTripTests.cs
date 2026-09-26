@@ -11,6 +11,9 @@ using SharedKernel.Messaging.Abstractions.EventPublisher;
 using SharedKernel.Messaging.Abstractions.Options;
 using SharedKernel.Messaging.MassTransit.Consumers;
 using SharedKernel.Messaging.MassTransit.EventPublisher;
+using SharedKernel.Messaging.MassTransit.Extensions;
+using SharedKernel.Messaging.MassTransit.Options;
+using SharedKernel.Messaging.MassTransit.Transports;
 
 namespace SharedKernel.Messaging.MassTransit.EfCore.Tests.HarnessTests;
 
@@ -118,22 +121,14 @@ public sealed class OutboxRoundTripTests : IDisposable
         services.AddDbContext<OutboxTestDbContext>(opts =>
             opts.UseSqlite(connection));
 
-        services.Configure<MessagingOptions>(o => o.ServiceName = "outbox-test-service");
-
-        // Register MassTransit with outbox but minimal transport — no hosted service started
-        services.AddMassTransit(cfg =>
-        {
-            cfg.AddConsumer<ItemShippedConsumer>();
-            cfg.AddEntityFrameworkOutbox<OutboxTestDbContext>(o =>
-            {
-                o.UseSqlite();
-                o.UseBusOutbox();
-            });
-            // Use in-memory transport without starting bus
-            cfg.UsingInMemory((ctx, busCfg) => busCfg.ConfigureEndpoints(ctx));
-        });
-
-        services.AddScoped<IEventPublisher, MassTransitEventPublisher>();
+        // The package's own registration, on SQLite; no hosted service is started, so the bus and the
+        // delivery worker never run.
+        services
+            .AddSharedKernelMessaging(o => o.ServiceName = "outbox-test-service")
+            .UseTransport(new InMemoryTestTransport())
+            .AddConsumer<ItemShippedConsumer>()
+            .WithEntityFrameworkOutbox<OutboxTestDbContext>(o => o.Database = OutboxDatabase.Sqlite)
+            .Build();
 
         return services.BuildServiceProvider(true);
     }
@@ -172,6 +167,13 @@ internal sealed class OutboxTestDbContext : DbContext
         modelBuilder.AddOutboxMessageEntity();
         modelBuilder.AddOutboxStateEntity();
     }
+}
+
+/// <summary>MassTransit's in-memory transport, with the platform pipeline applied as a real transport would.</summary>
+internal sealed class InMemoryTestTransport() : MessagingTransport("in-memory")
+{
+    public override void Configure(IBusRegistrationConfigurator configurator, MessagingTransportSettings settings)
+        => configurator.UsingInMemory((context, bus) => settings.ConfigureBus(context, bus));
 }
 
 // ---------------------------------------------------------------------------

@@ -9,3 +9,10 @@ SharedKernel.Messaging.MassTransit.Options.OutboxOptions.QueryDelay.get -> Syste
 SharedKernel.Messaging.MassTransit.Options.OutboxOptions.QueryDelay.set -> void
 SharedKernel.Messaging.MassTransit.Extensions.EntityFrameworkOutboxMessagingBusBuilderExtensions
 static SharedKernel.Messaging.MassTransit.Extensions.EntityFrameworkOutboxMessagingBusBuilderExtensions.WithEntityFrameworkOutbox<TDbContext>(this SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder! builder, System.Action<SharedKernel.Messaging.MassTransit.Options.OutboxOptions!>? configure = null) -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
+SharedKernel.Messaging.MassTransit.Options.OutboxDatabase
+SharedKernel.Messaging.MassTransit.Options.OutboxDatabase.MySql = 2 -> SharedKernel.Messaging.MassTransit.Options.OutboxDatabase
+SharedKernel.Messaging.MassTransit.Options.OutboxDatabase.PostgreSql = 0 -> SharedKernel.Messaging.MassTransit.Options.OutboxDatabase
+SharedKernel.Messaging.MassTransit.Options.OutboxDatabase.Sqlite = 3 -> SharedKernel.Messaging.MassTransit.Options.OutboxDatabase
+SharedKernel.Messaging.MassTransit.Options.OutboxDatabase.SqlServer = 1 -> SharedKernel.Messaging.MassTransit.Options.OutboxDatabase
+SharedKernel.Messaging.MassTransit.Options.OutboxOptions.Database.get -> SharedKernel.Messaging.MassTransit.Options.OutboxDatabase
+SharedKernel.Messaging.MassTransit.Options.OutboxOptions.Database.set -> void

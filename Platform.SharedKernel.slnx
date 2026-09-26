@@ -93,6 +93,7 @@
     <Project Path="07.Messaging/SharedKernel.Messaging.MassTransit.AzureServiceBus/SharedKernel.Messaging.MassTransit.AzureServiceBus.csproj" />
     <Project Path="07.Messaging/SharedKernel.Messaging.MassTransit.AzureServiceBus/SharedKernel.Messaging.MassTransit.AzureServiceBus.Tests/SharedKernel.Messaging.MassTransit.AzureServiceBus.Tests.csproj" />
     <Project Path="07.Messaging/SharedKernel.Messaging.MassTransit.EfCore/SharedKernel.Messaging.MassTransit.EfCore.csproj" />
+    <Project Path="07.Messaging/SharedKernel.Messaging.MassTransit.EfCore/SharedKernel.Messaging.MassTransit.EfCore.Integration.Tests/SharedKernel.Messaging.MassTransit.EfCore.Integration.Tests.csproj" />
     <Project Path="07.Messaging/SharedKernel.Messaging.MassTransit.EfCore/SharedKernel.Messaging.MassTransit.EfCore.Tests/SharedKernel.Messaging.MassTransit.EfCore.Tests.csproj" />
     <Project Path="07.Messaging/SharedKernel.Messaging.MassTransit.RabbitMq/SharedKernel.Messaging.MassTransit.RabbitMq.csproj" />
     <Project Path="07.Messaging/SharedKernel.Messaging.MassTransit.RabbitMq/SharedKernel.Messaging.MassTransit.RabbitMq.Tests/SharedKernel.Messaging.MassTransit.RabbitMq.Tests.csproj" />

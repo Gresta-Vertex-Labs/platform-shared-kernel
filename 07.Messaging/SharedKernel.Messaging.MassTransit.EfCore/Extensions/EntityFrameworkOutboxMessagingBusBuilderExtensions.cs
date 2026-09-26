@@ -24,9 +24,11 @@ public static class EntityFrameworkOutboxMessagingBusBuilderExtensions
     /// <param name="builder">The messaging bus builder.</param>
     /// <param name="configure">
     /// Optional action to customise <see cref="OutboxOptions"/>.
-    /// When <c>null</c>, default outbox options apply (100 batch, 1 s delay, 30 min dedup window).
+    /// When <c>null</c>, default outbox options apply (PostgreSQL, 100 batch, 1 s delay, 30 min dedup window).
+    /// Set <see cref="OutboxOptions.Database"/> when the <typeparamref name="TDbContext"/> is not on PostgreSQL.
     /// </param>
     /// <returns>The builder for fluent chaining.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><see cref="OutboxOptions.Database"/> is not a defined value.</exception>
     /// <remarks>
     /// <para>
     /// The consuming service's <typeparamref name="TDbContext"/> must include the MassTransit outbox
@@ -49,9 +51,24 @@ public static class EntityFrameworkOutboxMessagingBusBuilderExtensions
         var opts = new OutboxOptions();
         configure?.Invoke(opts);
 
+        // MassTransit locks outbox rows with SQL Server syntax unless told otherwise, which fails on every
+        // delivery poll against PostgreSQL. Reject an undefined value here rather than at the first poll.
+        Action<IEntityFrameworkOutboxConfigurator> useDatabase = opts.Database switch
+        {
+            OutboxDatabase.PostgreSql => o => o.UsePostgres(),
+            OutboxDatabase.SqlServer => o => o.UseSqlServer(),
+            OutboxDatabase.MySql => o => o.UseMySql(),
+            OutboxDatabase.Sqlite => o => o.UseSqlite(),
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(configure),
+                opts.Database,
+                $"{nameof(OutboxOptions)}.{nameof(OutboxOptions.Database)} is not a defined {nameof(OutboxDatabase)} value."),
+        };
+
         return builder.ConfigureMassTransit(cfg =>
             cfg.AddEntityFrameworkOutbox<TDbContext>(o =>
             {
+                useDatabase(o);
                 o.QueryDelay = opts.QueryDelay;
                 o.DuplicateDetectionWindow = opts.DuplicateDetectionWindow;
                 o.UseBusOutbox(bo => bo.MessageDeliveryLimit = opts.BatchSize);

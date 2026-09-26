@@ -12,4 +12,6 @@ builder.Services
 
 The `DbContext` must map the outbox tables (`modelBuilder.AddInboxStateEntity()`, `AddOutboxMessageEntity()`, `AddOutboxStateEntity()`), and the service owns the migration. Delivery is at-least-once, so consumers must be idempotent.
 
+The delivery service locks outbox rows with SQL that depends on the database, chosen by `OutboxOptions.Database`: `PostgreSql` (the default), `SqlServer`, `MySql` or `Sqlite`. Set it when the `DbContext` is not on PostgreSQL. MassTransit's own default is SQL Server syntax, which PostgreSQL rejects on every poll, so nothing would be delivered.
+
 MassTransit is pinned to 8.5.x, the last Apache-2.0 release.
