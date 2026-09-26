@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <SharedKernelTier>Testing</SharedKernelTier>
-    <Description>In-memory test double for SharedKernel.Reporting.Abstractions, for test projects only. InMemoryReportExporter streams rows into a recorded report and delivers it to a storage store, so export code can be tested without a real format provider.</Description>
+    <Description>In-memory test doubles for SharedKernel.Reporting, for test projects only. InMemoryReportExporter records the rows, definition and destination of every export; InMemoryReportExporterFactory hands one out per format and row type; InMemoryHtmlToPdfConverter records every HTML document and writes a placeholder PDF. AddInMemoryReporting() swaps them into a test host.</Description>
     <PackageTags>reporting;export;testing;test-doubles;shared-kernel</PackageTags>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <!-- A test-helper LIBRARY, not a test project: dotnet test must not try to run it. -->
@@ -14,6 +14,7 @@
     <ProjectReference Include="..\..\08.Storage\SharedKernel.Storage.Abstractions\SharedKernel.Storage.Abstractions.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
     <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
     <AdditionalFiles Include="PublicAPI.Shipped.txt" />
     <AdditionalFiles Include="PublicAPI.Unshipped.txt" />

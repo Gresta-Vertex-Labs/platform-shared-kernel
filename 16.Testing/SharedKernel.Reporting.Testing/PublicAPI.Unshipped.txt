@@ -1,12 +1,53 @@
 #nullable enable
+override SharedKernel.Testing.Reporting.HtmlConversion.Equals(object? obj) -> bool
+override SharedKernel.Testing.Reporting.HtmlConversion.GetHashCode() -> int
+override SharedKernel.Testing.Reporting.HtmlConversion.ToString() -> string!
+SharedKernel.Testing.Reporting.HtmlConversion
+SharedKernel.Testing.Reporting.HtmlConversion.<Clone>$() -> SharedKernel.Testing.Reporting.HtmlConversion!
+SharedKernel.Testing.Reporting.HtmlConversion.Deconstruct(out string! Html, out SharedKernel.Reporting.HtmlToPdfOptions! Options, out SharedKernel.Reporting.ReportDestination? Destination) -> void
+SharedKernel.Testing.Reporting.HtmlConversion.Destination.get -> SharedKernel.Reporting.ReportDestination?
+SharedKernel.Testing.Reporting.HtmlConversion.Destination.init -> void
+SharedKernel.Testing.Reporting.HtmlConversion.Equals(SharedKernel.Testing.Reporting.HtmlConversion? other) -> bool
+SharedKernel.Testing.Reporting.HtmlConversion.Html.get -> string!
+SharedKernel.Testing.Reporting.HtmlConversion.Html.init -> void
+SharedKernel.Testing.Reporting.HtmlConversion.HtmlConversion(string! Html, SharedKernel.Reporting.HtmlToPdfOptions! Options, SharedKernel.Reporting.ReportDestination? Destination) -> void
+SharedKernel.Testing.Reporting.HtmlConversion.Options.get -> SharedKernel.Reporting.HtmlToPdfOptions!
+SharedKernel.Testing.Reporting.HtmlConversion.Options.init -> void
+SharedKernel.Testing.Reporting.InMemoryHtmlToPdfConverter
+SharedKernel.Testing.Reporting.InMemoryHtmlToPdfConverter.Conversions.get -> System.Collections.Generic.IReadOnlyList<SharedKernel.Testing.Reporting.HtmlConversion!>!
+SharedKernel.Testing.Reporting.InMemoryHtmlToPdfConverter.ConvertAsync(string! html, SharedKernel.Reporting.ReportDestination! destination, SharedKernel.Reporting.HtmlToPdfOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Reporting.PdfDocumentOutcome!>!>!
+SharedKernel.Testing.Reporting.InMemoryHtmlToPdfConverter.ConvertToStreamAsync(string! html, System.IO.Stream! destination, SharedKernel.Reporting.HtmlToPdfOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<long>!>!
+SharedKernel.Testing.Reporting.InMemoryHtmlToPdfConverter.InMemoryHtmlToPdfConverter() -> void
+SharedKernel.Testing.Reporting.InMemoryHtmlToPdfConverter.LastConversion.get -> SharedKernel.Testing.Reporting.HtmlConversion?
+SharedKernel.Testing.Reporting.InMemoryHtmlToPdfConverter.Reset() -> void
+SharedKernel.Testing.Reporting.InMemoryHtmlToPdfConverter.SimulatedError.get -> SharedKernel.Primitives.Errors.Error?
+SharedKernel.Testing.Reporting.InMemoryHtmlToPdfConverter.SimulatedError.set -> void
+SharedKernel.Testing.Reporting.InMemoryHtmlToPdfConverter.SimulateFailure.get -> bool
+SharedKernel.Testing.Reporting.InMemoryHtmlToPdfConverter.SimulateFailure.set -> void
 SharedKernel.Testing.Reporting.InMemoryReportExporter<TRow>
-SharedKernel.Testing.Reporting.InMemoryReportExporter<TRow>.ExportAsync(System.Collections.Generic.IAsyncEnumerable<TRow>! rows, SharedKernel.Reporting.Abstractions.Models.ReportDefinition<TRow>! definition, SharedKernel.Reporting.Abstractions.Models.ReportDestination! destination, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Reporting.Abstractions.Models.ReportExportOutcome!>!>!
-SharedKernel.Testing.Reporting.InMemoryReportExporter<TRow>.ExportToStreamAsync(System.Collections.Generic.IAsyncEnumerable<TRow>! rows, SharedKernel.Reporting.Abstractions.Models.ReportDefinition<TRow>! definition, System.IO.Stream! destination, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
-SharedKernel.Testing.Reporting.InMemoryReportExporter<TRow>.InMemoryReportExporter(SharedKernel.Primitives.Clocks.IClock? clock = null) -> void
-SharedKernel.Testing.Reporting.InMemoryReportExporter<TRow>.LastDefinition.get -> SharedKernel.Reporting.Abstractions.Models.ReportDefinition<TRow>?
-SharedKernel.Testing.Reporting.InMemoryReportExporter<TRow>.LastDestination.get -> SharedKernel.Reporting.Abstractions.Models.ReportDestination?
+SharedKernel.Testing.Reporting.InMemoryReportExporter<TRow>.ExportAsync(System.Collections.Generic.IAsyncEnumerable<TRow>! rows, SharedKernel.Reporting.ReportDefinition<TRow>! definition, SharedKernel.Reporting.ReportDestination! destination, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Reporting.ReportExportOutcome!>!>!
+SharedKernel.Testing.Reporting.InMemoryReportExporter<TRow>.ExportCount.get -> int
+SharedKernel.Testing.Reporting.InMemoryReportExporter<TRow>.ExportToStreamAsync(System.Collections.Generic.IAsyncEnumerable<TRow>! rows, SharedKernel.Reporting.ReportDefinition<TRow>! definition, System.IO.Stream! destination, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Reporting.ReportStreamOutcome!>!>!
+SharedKernel.Testing.Reporting.InMemoryReportExporter<TRow>.Format.get -> SharedKernel.Reporting.ReportFormat!
+SharedKernel.Testing.Reporting.InMemoryReportExporter<TRow>.InMemoryReportExporter(SharedKernel.Reporting.ReportFormat? format = null, SharedKernel.Primitives.Clocks.IClock? clock = null) -> void
+SharedKernel.Testing.Reporting.InMemoryReportExporter<TRow>.LastDefinition.get -> SharedKernel.Reporting.ReportDefinition<TRow>?
+SharedKernel.Testing.Reporting.InMemoryReportExporter<TRow>.LastDestination.get -> SharedKernel.Reporting.ReportDestination?
 SharedKernel.Testing.Reporting.InMemoryReportExporter<TRow>.LastRows.get -> System.Collections.Generic.IReadOnlyList<TRow>!
 SharedKernel.Testing.Reporting.InMemoryReportExporter<TRow>.Reset() -> void
 SharedKernel.Testing.Reporting.InMemoryReportExporter<TRow>.ShouldHaveExported(System.Predicate<System.Collections.Generic.IReadOnlyList<TRow>!>? rowsPredicate = null) -> void
+SharedKernel.Testing.Reporting.InMemoryReportExporter<TRow>.SimulatedError.get -> SharedKernel.Primitives.Errors.Error?
+SharedKernel.Testing.Reporting.InMemoryReportExporter<TRow>.SimulatedError.set -> void
 SharedKernel.Testing.Reporting.InMemoryReportExporter<TRow>.SimulateFailure.get -> bool
 SharedKernel.Testing.Reporting.InMemoryReportExporter<TRow>.SimulateFailure.set -> void
+SharedKernel.Testing.Reporting.InMemoryReportExporterFactory
+SharedKernel.Testing.Reporting.InMemoryReportExporterFactory.Exporter<TRow>(SharedKernel.Reporting.ReportFormat! format) -> SharedKernel.Testing.Reporting.InMemoryReportExporter<TRow>!
+SharedKernel.Testing.Reporting.InMemoryReportExporterFactory.Formats.get -> System.Collections.Generic.IReadOnlyCollection<SharedKernel.Reporting.ReportFormat!>!
+SharedKernel.Testing.Reporting.InMemoryReportExporterFactory.GetExporter<TRow>(SharedKernel.Reporting.ReportFormat! format) -> SharedKernel.Reporting.IReportExporter<TRow>!
+SharedKernel.Testing.Reporting.InMemoryReportExporterFactory.InMemoryReportExporterFactory(params SharedKernel.Reporting.ReportFormat![]! formats) -> void
+SharedKernel.Testing.Reporting.InMemoryReportExporterFactory.InMemoryReportExporterFactory(SharedKernel.Primitives.Clocks.IClock? clock, params SharedKernel.Reporting.ReportFormat![]! formats) -> void
+SharedKernel.Testing.Reporting.InMemoryReportExporterFactory.ParseFormat(string? value) -> SharedKernel.Primitives.Results.Result<SharedKernel.Reporting.ReportFormat!>!
+SharedKernel.Testing.Reporting.InMemoryReportingServiceCollectionExtensions
+static readonly SharedKernel.Testing.Reporting.InMemoryHtmlToPdfConverter.PlaceholderPdf -> System.ReadOnlyMemory<byte>
+static SharedKernel.Testing.Reporting.HtmlConversion.operator !=(SharedKernel.Testing.Reporting.HtmlConversion? left, SharedKernel.Testing.Reporting.HtmlConversion? right) -> bool
+static SharedKernel.Testing.Reporting.HtmlConversion.operator ==(SharedKernel.Testing.Reporting.HtmlConversion? left, SharedKernel.Testing.Reporting.HtmlConversion? right) -> bool
+static SharedKernel.Testing.Reporting.InMemoryReportingServiceCollectionExtensions.AddInMemoryReporting(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
