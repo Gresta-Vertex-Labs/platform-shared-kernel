@@ -81,6 +81,7 @@ Order order = Find(id).GetValueOrThrow();   // throws NotFoundException for the 
 Error.Validation(ErrorCodes.Validation.Required, "Name is required.");
 Error.NotFound(...);   Error.Conflict(...);      Error.Unauthorized(...);
 Error.Forbidden(...);  Error.BusinessRule(...);  Error.Unexpected(...);
+Error.Unavailable(...);  Error.Timeout(...);
 ```
 
 **`Code` is the field that matters most.** It is the stable identity of the failure, and three separate things key off it: consumers branch on it, dashboards and alert rules filter on it, and `SharedKernel.Localization` looks up a translated message by it. So: dot-separated lowercase, general to specific; stable once shipped; never any interpolated data. Check `ErrorCodes` first — a suitable constant often already exists.
@@ -98,11 +99,14 @@ Error.Forbidden(...);  Error.BusinessRule(...);  Error.Unexpected(...);
 | `Conflict` | Clashes with existing state — duplicate, or concurrency | 409 |
 | `BusinessRule` | Well-formed, but violates a domain invariant | 422 |
 | `Unexpected` | Unclassified fault | 500 |
+| `Unavailable` | A dependency or the service is temporarily unable to serve — unreachable, throttling, failing; retry later | 503 |
+| `Timeout` | The operation ran out of time; its outcome may be unknown | 504 |
 
-The two pairs people get wrong:
+The pairs people get wrong:
 
 - **`Unauthorized` vs `Forbidden`** — "who are you?" versus "may you do *this*?". Substituting one makes an authorization failure indistinguishable from a missing credential in logs, and tells the client to re-authenticate when that cannot help.
 - **`Validation` vs `BusinessRule`** — if the caller could fix it by correcting a field, it's validation. If the request is well-formed and the domain is refusing, it's a business rule.
+- **`Unexpected` vs `Unavailable`/`Timeout`** — a dependency that is down or too slow is an operational condition the caller can retry, not a defect. `Unavailable` when it refused the call or could not be reached; `Timeout` when it ran out of time, so a write may still have landed. Reporting either as `Unexpected` turns every outage into a 500 that reads like a bug.
 
 ### `ValidationResult` — many errors, not one
 
@@ -322,7 +326,9 @@ every hop; `Idempotency-Key` is the one name used by inbound HTTP and outbound R
 
 **Pick the registry matching your call-site shape.** Tags are span-local attributes. Baggage propagates across process boundaries and rides on every outbound call, so keep that registry small. They are not interchangeable, and two of them holding the same literal for the same concept does not make them so.
 
-> The tenant **baggage** key is `"TenantId"` while the tenant **tag** key is `"tenant.id"`. That asymmetry is deliberate and pinned by a test: `13.ServiceDefaults`' `BaggageLogRecordProcessor` copies baggage onto log records *generically*, so a baggage key string becomes the emitted log property name. Renaming it would silently rename a field that deployed dashboards and alert rules filter on.
+> The tenant **baggage** key is `"TenantId"` while the tenant **tag** key is `"tenant.id"`. That asymmetry is deliberate and pinned by a test: `13.ServiceDefaults`' `BaggageLogRecordProcessor` copies these baggage items onto log records under their own keys, so a baggage key string becomes the emitted log property name. Renaming it would silently rename a field that deployed dashboards and alert rules filter on.
+
+> **Baggage is caller input.** A caller can send W3C `baggage` with any key, these two included. Never read a caller's identity from baggage. `BaggageLogRecordProcessor` copies exactly the keys of `WellKnownBaggageKeys` (pinned by a test) and nothing else, and relies on platform middleware *replacing* each one (P-562 X2), so a key added here reaches log records only once `13.ServiceDefaults` adds it too.
 
 **`LoggingEventIdRanges`** reserves a 1000-wide `EventId` block per capability domain (`{domain number} * 1000`), subdivided into 100-wide per-package sub-blocks. Derive every `[LoggerMessage]` EventId from it as an expression, so the number stays traceable to the domain that owns it:
 

@@ -34,6 +34,10 @@ app.UseMiddleware<TenantResolutionMiddleware>(); // sets the request context's t
 app.UseRequestLocalization();                     // the BCL call — this package never wires it for you
 ```
 
+With `14.Presentation`'s `app.UseSharedKernelWebApi()`, which adds authentication and authorization itself, put both
+calls in its `BeforeAuthorization` hook, in the same order, so its 401, 403 and 429 answers are translated too:
+`app.UseSharedKernelWebApi(p => p.BeforeAuthorization(a => { a.UseMiddleware<TenantResolutionMiddleware>(); a.UseRequestLocalization(); }));`
+
 ## Resolution order
 
 Signed signals before an unsigned header, deliberately — the same security lesson as

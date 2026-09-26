@@ -1,6 +1,8 @@
 # Migrating to the tiered foundation (WO-086)
 
-Code written against the kernel before WO-086 (P-562–P-575) needs the changes below. Nothing was in production
+Code written against the kernel before WO-086 (P-562–P-575) needs the changes below. §8 adds what P-579 changed when it merged
+`main`'s presentation redesign ("P-562 (presentation, main)") and application model ("P-563 (application model, merged from
+main in P-579)") into this branch; where a row of §1–§3 and §8 disagree, §8 wins. Nothing was in production
 use, so no compatibility shims were kept: every old name is gone, not obsolete. Derived from
 `git diff 053e5612~1..e3387513` (P-564–P-574), the commit messages and the `PublicAPI.*.txt` diffs.
 
@@ -19,9 +21,10 @@ host's `Program.cs` registrations (§3), (4) tenant types (§4), (5) test projec
 | `SharedKernel.Application` (MediatR-based) | `SharedKernel.Application` (no MediatR) + `SharedKernel.Application.Mediator.MediatR` | The contracts package no longer references MediatR. A host that dispatches through MediatR adds the adapter package. |
 | `SharedKernel.Communication.GraphQL` | `SharedKernel.Presentation.GraphQL` | Moved to `14.Presentation` (server-side GraphQL is presentation). |
 | `SharedKernel.Messaging.MassTransit` (RabbitMQ, Azure Service Bus and the EF outbox inside) | `SharedKernel.Messaging.MassTransit` + `.RabbitMq` / `.AzureServiceBus` / `.EfCore` | Add the satellite for the transport/outbox you use. The fluent chain and namespaces are unchanged. |
-| `SharedKernel.Presentation.WebApi` (authorization attributes, `ErrorTypeStatusCodeMap`) | + `SharedKernel.Presentation.Core` (referenced transitively) | New namespaces (§2). |
+| `SharedKernel.Presentation.WebApi` (authorization attributes and policies, error presentation, `ErrorTypeStatusCodeMap`) | + `SharedKernel.Presentation.Core` (referenced transitively) | What WebApi and Grpc share moved to Core (§8). |
 | `SharedKernel.Presentation.Grpc` (referenced WebApi) | `SharedKernel.Presentation.Grpc` + `SharedKernel.Presentation.Core` | Grpc no longer pulls WebApi. |
-| `SharedKernel.Presentation.SignalR` (Redis backplane inside) | `SharedKernel.Presentation.SignalR` + `SharedKernel.Presentation.SignalR.Redis` | `WithRedisBackplane()` moved to the satellite (same namespace). |
+| `SharedKernel.Presentation.SignalR` (Redis backplane inside) | `SharedKernel.Presentation.SignalR` | The backplane was removed (main's P-562 D15: unused, duplicated the framework); the short-lived WO-086 satellite `SharedKernel.Presentation.SignalR.Redis` is gone too. Use Microsoft's `AddSignalR().AddStackExchangeRedis(...)` directly. |
+| — | `SharedKernel.Presentation.OpenApi` | New (main): API versioning, one OpenAPI document per version, Scalar (§8). |
 | `SharedKernel.ServiceDefaults.AI`, `.Caching`, `.Caching.Redis`, `.Messaging`, `.Scheduling`, `.Search`, `.Storage`, `.Workflows.Temporal`, `.Cryptography.KeyVault` | none — `SharedKernel.ServiceDefaults`' `AddSharedKernelReadiness()` | Deleted; each provider registers its own `IReadinessProbe` (§3). |
 | `SharedKernel.Testing` (one non-packable library) | `SharedKernel.Testing` (packable core) + 19 `SharedKernel.{Capability}.Testing` packages + `SharedKernel.Testing.Internal` (not packable) | §6. Namespaces are unchanged; only the package that holds them changed. |
 | — | `SharedKernel.Idempotency.Abstractions` | New: the one idempotency store contract (§2). |
@@ -76,18 +79,19 @@ Old package IDs stay on GitHub Packages at their last alpha version until P-578 
 | `MediatR.IRequest<T>`, `IRequestHandler<,>`, `ISender`, `IPipelineBehavior<,>`, `RequestHandlerDelegate<T>` in kernel contracts | kernel-owned `SharedKernel.Application.Messaging` `IRequest<T>`, `IRequestHandler<,>`, `ISender`, `IPipelineBehavior<,>`, `RequestHandlerContinuation<T>` (`next()` call sites unchanged) |
 | MediatR `IStreamRequest<T>` and stream behaviors | `SharedKernel.Application.Streaming` `IStreamQuery<T>`, `IStreamQueryHandler<,>`, `IStreamPipelineBehavior<,>` |
 | FluentValidation `IValidator<T>` consumed by `ValidationBehavior` | `SharedKernel.Application.Validation.IRequestValidator<T>`; bridge existing validators with `AddFluentValidationRequestValidators()` |
-| `INotificationHandler<DomainEventNotification<T>>`, `DomainEventNotification<T>`, `MediatRDomainEventDispatcher` | `IDomainEventHandler<T>` + native `DomainEventDispatcher`; `AddDomainEventHandler` lives in `SharedKernel.Application.Pipeline.Extensions` |
-| `SharedKernel.Application.Behaviors.Authorization.IAuthorizeRequest` / `PermissionMatch` | `SharedKernel.Application.Authorization.*` |
+| `INotificationHandler<DomainEventNotification<T>>`, `DomainEventNotification<T>`, `MediatRDomainEventDispatcher` | `IDomainEventHandler<T>` + the native dispatcher (internal); `AddDomainEventHandler` lives in `SharedKernel.Application.Pipeline` (§8) |
+| `SharedKernel.Application.Behaviors.Authorization.IAuthorizeRequest` / `PermissionMatch` | deleted — `[RequirePermission]` (`SharedKernel.Application.Authorization.RequirePermissionAttribute`, §8) |
 | `SharedKernel.Application.Behaviors.Idempotency.IIdempotentRequest` | `SharedKernel.Application.Idempotency.IIdempotentRequest` |
 | `SharedKernel.Application.Behaviors.Auditing.IAuditableRequest<T>` | `SharedKernel.Application.Auditing.IAuditableRequest<T>` |
 | `SharedKernel.Application.Behaviors.Logging.ILoggableRequest<T>` | `SharedKernel.Application.Logging.ILoggableRequest<T>` |
 | `SharedKernel.Application.Behaviors.Commands.ICommandScope` | `SharedKernel.Application.Commands.ICommandScope` |
 | `SharedKernel.Application.Behaviors.Caching.ICacheableQuery(<T>)` / `CacheScope`; `…CacheInvalidation.IInvalidatesCache` / `CacheKeyRef` | `SharedKernel.Application.Caching.*` |
-| `SharedKernel.Application.Behaviors.{Auditing,Authorization,Idempotency,Logging,Tracing,Transaction,Validation}.*Behavior` | `SharedKernel.Application.Pipeline.{…}.*Behavior` |
-| `SharedKernel.Application.Behaviors.Extensions.ApplicationBehaviorsBuilder` / `PipelineStage` / `ApplicationBehaviorsServiceCollectionExtensions` | `SharedKernel.Application.Pipeline.Extensions.*` (method names unchanged) |
-| `SharedKernel.Application.Behaviors.Caching.Extensions.CachingBehaviorsExtensions` | `SharedKernel.Application.Pipeline.Caching.Extensions.CachingBehaviorsExtensions` |
-| `ApplicationLoggingOptions` | `SharedKernel.Application.Pipeline.Logging.ApplicationLoggingOptions` |
-| — | `RequestPipeline<,>` / `StreamRequestPipeline<,>` (`AddSharedKernelRequestPipeline()`) |
+| `SharedKernel.Application.Behaviors.{Auditing,Authorization,Idempotency,Logging,Tracing,Transaction,Validation}.*Behavior` | internal in `SharedKernel.Application.Pipeline` (§8) |
+| `SharedKernel.Application.Behaviors.Extensions.ApplicationBehaviorsBuilder` / `ApplicationBehaviorsServiceCollectionExtensions` | deleted — `AddSharedKernelApplication(assemblies, app => …)` / `ApplicationPipelineBuilder` (§8) |
+| `SharedKernel.Application.Behaviors.Extensions.PipelineStage` | `SharedKernel.Application.Pipeline.PipelineStage` |
+| `SharedKernel.Application.Behaviors.Caching.Extensions.CachingBehaviorsExtensions` (`AddCachingBehaviors()`) | `SharedKernel.Application.Pipeline.Caching.CachingPipelineExtensions` (`app.WithCaching()`, §8) |
+| `ApplicationLoggingOptions` | `SharedKernel.Application.Pipeline.ApplicationLoggingOptions` |
+| — | `RequestPipeline<,>` / `StreamRequestPipeline<,>` (registered by `AddSharedKernelApplication`) |
 
 ### Idempotency (`SharedKernel.Idempotency.Abstractions`)
 
@@ -137,27 +141,28 @@ A service's own probe: implement `IReadinessProbe` and call `services.AddReadine
 | `PublishContext.TenantId` / `WithTenantId(Guid)` | `TenantId` |
 | Message header propagators reading `ITenantContextAccessor`/`IHttpContextAccessor` | read `IRequestContextAccessor` |
 | `RabbitMqBusOptions`, `AzureServiceBusOptions`, `OutboxOptions` in the core MassTransit package | the `.RabbitMq`, `.AzureServiceBus`, `.EfCore` satellites (same namespace `SharedKernel.Messaging.MassTransit.Options`, same config sections); new extension point `UseTransport(...)`/`ConfigureMassTransit(...)` |
-| `AddSharedKernelAuthorizationFilters` / the endpoint filter | unchanged, still in `SharedKernel.Presentation.WebApi.Authorization` (only the attributes moved) |
+| `AddSharedKernelAuthorizationFilters` / the endpoint filter | removed — the attributes are real `[Authorize]` attributes evaluated by native policies (§8) |
 
 ## 3. Registration methods
 
 | Old | New |
 |---|---|
-| `services.AddMediatR(...)` + `services.AddSharedKernelApplication()` | `services.AddSharedKernelMediatR(typeof(Handler).Assembly)` (dispatch) + `services.AddSharedKernelDomainEvents()` (domain events). Without a mediator (tests, workers): `AddSharedKernelRequestPipeline()` + `AddSharedKernelDomainEvents()` |
+| `services.AddMediatR(...)` + `services.AddSharedKernelApplication()` + `AddSharedKernelApplicationBehaviors()…Build()` | `services.AddSharedKernelApplication(typeof(Handler).Assembly, app => app.UseMediatR().With…())` — one call (§8) |
 | `services.AddSharedKernelCorrelationId(...)` / `app.UseSharedKernelCorrelationId()` | `services.AddSharedKernelRequestContext()` / `app.UseSharedKernelRequestContext()` — **first** middleware, before `UseExceptionHandler()` |
 | `AddMessagingReadinessCheck`, `AddRedisHealthCheck`, `AddCacheReadinessCheck`, `AddKeyVaultKeyProviderReadinessCheck`, `AddFieldEncryptionReadinessCheck`, `AddAuditSealingReadinessCheck`, `AddStorageReadinessCheck(store)`, `AddSearchReadinessCheck(...)`, `AddVectorStoreReadinessCheck(...)`, `AddWorkflowReadinessCheck`, `AddSchedulerReadinessCheck` | `services.AddHealthChecks().AddSharedKernelReadiness()` once. `ServiceDefaults.Persistence` keeps `AddDatabaseReadinessCheck<T>`, `AddDapperDatabaseReadinessCheck`, `AddPersistenceStartupReadinessCheck` |
 | `AddSharedKernelKeyVaultKeyProvider(builder)` (ServiceDefaults.Cryptography.KeyVault) | `services.AddSharedKernelCryptography(configuration).AddAzureKeyVaultEncryption(configuration)` (`SharedKernel.Cryptography.KeyVault.Azure`), which registers the key provider and its probe |
 | `AddSharedKernelRedisIdempotency(...)` | `AddRedisIdempotency(p => p.ForRequests().ForMessages(), o => …)` |
 | `AddSharedKernelEfCoreIdempotency(...)` | `AddEfCoreIdempotency(db => …, p => p.ForRequests().ForMessages(), o => …)` |
 | `services.AddScoped<IIdempotencyStore, MyStore>()` | `services.AddIdempotencyStore<MyStore>(IdempotencyPurpose.Message)` (per purpose) |
-| FluentValidation validators picked up by `ValidationBehavior` | `services.AddFluentValidationRequestValidators()` |
+| FluentValidation validators picked up by `ValidationBehavior` | `services.AddFluentValidationRequestValidators(typeof(Validator).Assembly)` (registers the validators too) |
 | `UseRabbitMq(...)` / `UseAzureServiceBus(...)` / `WithEntityFrameworkOutbox<T>()` from the core package | the same methods, from `Messaging.MassTransit.RabbitMq` / `.AzureServiceBus` / `.EfCore` |
 | `WithTenantContext<TAccessor>()` | `WithTenantContext()` |
-| `WithRedisBackplane()` from `Presentation.SignalR` | the same method, from `Presentation.SignalR.Redis` |
+| `WithRedisBackplane()` from `Presentation.SignalR` | removed — Microsoft's `AddStackExchangeRedis(...)` on `ISignalRServerBuilder` |
 | `SecurityTestContextBuilder.WithIdentityKind(IdentityKind.ServicePrincipal)` (testing) | `WithActorKind(ActorKind.Service)` |
 
-Canonical HTTP order: `UseSharedKernelRequestContext()` → `UseSharedKernelSecurityHeaders()` → `UseExceptionHandler()` →
-`UseAuthentication()`/`UseAuthorization()` → `app.UseMiddleware<TenantResolutionMiddleware>()` → endpoints.
+Canonical HTTP order (§8): `app.UseSharedKernelRequestContext()` → `app.UseSharedKernelWebApi(...)` (security headers,
+exception handler, routing, CORS, authentication, rate limiting, authorization, required headers — tenant resolution via
+its `BeforeAuthorization` hook) → endpoints (`app.MapEndpoints()`).
 
 ## 4. Behaviour changes to check
 
@@ -210,3 +215,47 @@ Canonical HTTP order: `UseSharedKernelRequestContext()` → `UseSharedKernelSecu
 | `SK0015` (MediatR stream misregistration) | deleted |
 | `SK0016`/`SK0017`/`SK0018`/`SK0040`/`SK0041` over MediatR/Behaviors types | the same rules over `SharedKernel.Application` types |
 | Manual per-package publish (`publish-package.yml`) and republish closures | one `v*` tag publishes every package (`release.yml`); `publish-package.yml` is a dry run |
+
+## 8. Merge of main's presentation redesign and application model (P-579)
+
+`main` redesigned 14.Presentation ("P-562 (presentation, main)") and the application model ("P-563 (application model,
+merged from main in P-579)") while WO-086 ran. P-579 kept WO-086's architecture and re-implemented main's features on
+it. Records: `05.Application/docs/p563/design.md` (A1 and A3 superseded by WO-086), `14.Presentation/docs/p562/`.
+
+### Application (`05.Application`)
+
+| Old | New |
+|---|---|
+| `IAuthorizeRequest` (`RequiredPermissions`, `PermissionMatch`) + `AddAuthorizationBehavior()` | `[RequirePermission("a", "b")]` (`SharedKernel.Application.Authorization.RequirePermissionAttribute`) on the command or query. Values of one attribute are alternatives; several attributes all apply. Always enforced, streaming queries included. A request without it is not checked (the old "empty list denies" rule went with `IAuthorizeRequest`) |
+| `services.AddSharedKernelMediatR(asm)` + `services.AddSharedKernelApplicationBehaviors().AddDefaultBehaviors()…Build()` | `services.AddSharedKernelApplication(asm, app => app.UseMediatR().WithIdempotency().WithTransactions().WithAuditing())` (`SharedKernel.Application.Pipeline`; `UseMediatR` from `.Mediator.MediatR`). One call; a second throws |
+| `AddTracingBehavior()`, `AddLoggingBehavior()`, `AddMetricsBehavior()`, `AddValidationBehavior()`, `AddDefaultBehaviors()` | always on |
+| `AddIdempotencyBehavior(o => …)` / `AddTransactionBehavior()` / `AddAuditingBehavior()` / `AddBehavior(type, stage, deps)` | `WithIdempotency(o => …)` / `WithTransactions()` / `WithAuditing()` / `WithBehavior(type, stage, deps)` |
+| `AddCachingBehaviors()` (`…Pipeline.Caching.Extensions`) | `app.WithCaching()` (`SharedKernel.Application.Pipeline.Caching.CachingPipelineExtensions`) |
+| `Build()` throwing for a seam that was not registered before it | seams are checked when the host starts (`ValidateOnStart`), one message naming every missing one; registration order does not matter. `ISender` is always required (a mediator must be plugged in); `IRequestContext` is required when a scanned request carries `[RequirePermission]`. A plain `ServiceProvider` in a test runs no check — call `IStartupValidator.Validate()` |
+| `AddSharedKernelRequestPipeline()`, `AddSharedKernelDomainEvents()` | deleted — `AddSharedKernelApplication` registers `RequestPipeline<,>`, `StreamRequestPipeline<,>` and the domain-event dispatcher, and scans handlers, validators and domain-event handlers |
+| `SharedKernel.Application.Pipeline.Extensions.*` (`PipelineStage`, `AddDomainEventHandler`), `…Pipeline.Logging.ApplicationLoggingOptions`, `…Pipeline.Idempotency.IdempotencyBehaviorOptions` | namespace `SharedKernel.Application.Pipeline` |
+| Public behavior classes (`TracingBehavior<,>` …) and `DomainEventDispatcher` | internal |
+| `AddFluentValidationRequestValidators()` + FluentValidation's own `AddValidatorsFromAssembly` | `AddFluentValidationRequestValidators(typeof(X).Assembly)` registers the validators too |
+| `idempotency.key_missing` | `idempotency.key_required` — every idempotency code is `01.Core`'s `ErrorCodes.Idempotency` (`KeyRequired`, `KeyInvalid`, `InProgress`, `KeyReused`); `IdempotencyErrorCodes` is gone |
+| `ApplicationPipelineTestHarness`'s `AddBehaviors()…Build()` | `harness.Configure(app => app.With…()).Build()` (no mediator) or `.Build<TMarker>()` (adds `UseMediatR()`); both run the start check |
+
+**Persisted data:** request idempotency reservations are now keyed per tenant **and caller** (a 64-hex SHA-256 digest of
+tenant, actor kind, user id, client id, impersonator and the raw key). Reservations stored before the upgrade are not
+found, so a retry that spans the deploy runs again.
+
+### Presentation (`14.Presentation`)
+
+| Old | New |
+|---|---|
+| `[RequirePermission]` on an endpoint (`SharedKernel.Presentation.Authorization`, Core) | `[RequireEndpointPermission]` / `.RequireEndpointPermission(...)` — for endpoints that send no command, hubs and gRPC methods. An endpoint that sends a command relies on the command's `[RequirePermission]` |
+| `[RequireRole]`, `[RequireFreshAuthentication]`, `[RequireAuthenticationMethod]` evaluated by endpoint filters | the same attributes (`SharedKernel.Presentation.Authorization`, package `SharedKernel.Presentation.Core`), now real `[Authorize]` attributes over native policies; `[RequireAuthenticationMethod(..., MaxAgeSeconds = n)]` uses the per-method verification time (`amr_time`) |
+| Sub-namespaces `SharedKernel.Presentation.WebApi.Errors/.Http/.Idempotency/.Middleware/.Results/.Options/…` | one namespace `SharedKernel.Presentation.WebApi` |
+| `AddSharedKernelCors`, `UseSharedKernelSecurityHeaders`, `AddSharedKernelPayloadLimits`, upload validation, version-lifecycle middleware, `AddSharedKernelApiVersioning`/`AddSharedKernelOpenApi` in WebApi | `builder.AddSharedKernelWebApi()` + `app.UseSharedKernelWebApi(p => …)` (configured from `SharedKernel:Presentation:WebApi`); versioning, OpenAPI and Scalar in the `SharedKernel.Presentation.OpenApi` add-on (`AddSharedKernelOpenApi`, `MapSharedKernelOpenApi`; documents are not published outside Development by default). Upload validation was removed (use presigned uploads) |
+| `result.ToProblemDetailsResult(...)`, `ToActionResult` | typed results `ToOk`, `ToCreated`, `ToAccepted`, `ToNoContent`, `ToOkWithETag`, `ToHttpResult` (also in MVC) |
+| `MapXxxEndpoints()` extension methods | `IEndpointModule` (`static void Map(IEndpointRouteBuilder)`) + the generated `app.MapEndpoints()` (a source generator shipped inside the WebApi package) |
+| `page`/`pageSize`, `cursor`/`limit` parsed by hand | `Paging` / `CursorPaging` endpoint parameters (`paging.Request` is a validated `PageRequest`/`CursorPageRequest`); invalid input answers 400 with `pagination.*` codes before the handler |
+| `[RequireIdempotencyKey]` + `TryGetIdempotencyKey` | `[RequireIdempotencyKey]`/`[AcceptIdempotencyKey]` + an `IdempotencyKey` parameter or `GetIdempotencyKey()`; `If-Match` likewise (`IfMatch<TVersion>`, 412 for a stale version) |
+| Correlation id owned by WebApi's middleware (main) | still `UseSharedKernelRequestContext()` (WO-086), placed **before** `UseSharedKernelWebApi()`; WebApi's `GetCorrelationId()` and the problem `correlationId` member read the request context. Inbound W3C baggage is refused at that edge (`TrustInboundBaggage` moved to `AddSharedKernelRequestContext(o => …)`) |
+| gRPC correlation/tenant/authorization interceptors | removed — gRPC calls run through the same HTTP pipeline, so the request context and the attributes apply; `Presentation.Grpc` references Core, never WebApi |
+| `TenantContextHubFilter` (public) | an internal request-context hub filter registered by `AddSharedKernelSignalR()`; `HubCallerContext.GetTenantId()` returns `TenantId?` |
+| `ErrorType.Unexpected` for an outage | `ErrorType.Unavailable` (503) / `ErrorType.Timeout` (504) — `01.Core` |

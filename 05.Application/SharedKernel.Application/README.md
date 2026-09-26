@@ -25,7 +25,7 @@ commit and audit requests live in
 | `IStreamQuery<TResponse>` and its handler | A large read streams item by item instead of materializing in memory |
 | `IRequestValidator<TRequest>` | Validation is a kernel port; FluentValidation is one optional implementation |
 | `IDomainEventHandler<TDomainEvent>` | A domain event from `03.Domain` is handled against the raw event type, with no wrapper |
-| Request markers (`IAuthorizeRequest`, `IIdempotentRequest`, `IAuditableRequest<T>`, `ILoggableRequest<T>`, `ICacheableQuery<T>`, `IInvalidatesCache`) and `ICommandScope` | A request opts into a behavior by declaring an interface; the handler body never changes |
+| `[RequirePermission]` (always enforced) and the request markers (`IIdempotentRequest`, `IAuditableRequest<T>`, `ILoggableRequest<T>`, `ICacheableQuery<T>`, `IInvalidatesCache`) and `ICommandScope` | A request opts into a behavior by declaring an interface; the handler body never changes |
 
 **Tier:** Abstractions. **Dependencies:** `SharedKernel.Primitives`, `SharedKernel.Domain`,
 `SharedKernel.Caching.Abstractions` (for `CachePolicy` on `ICacheableQuery`). No MediatR, no FluentValidation, no
@@ -62,8 +62,8 @@ the pipeline:
 
 ```csharp
 // API / worker project
-builder.Services.AddSharedKernelMediatR(typeof(PlaceOrderCommand).Assembly);   // SharedKernel.Application.Mediator.MediatR
-builder.Services.AddSharedKernelApplicationBehaviors().AddDefaultBehaviors().Build(); // SharedKernel.Application.Pipeline
+builder.Services.AddSharedKernelApplication(typeof(PlaceOrderCommand).Assembly, app => app.UseMediatR());
+// AddSharedKernelApplication: SharedKernel.Application.Pipeline; UseMediatR: SharedKernel.Application.Mediator.MediatR
 ```
 
 ## Quick start
@@ -251,10 +251,9 @@ public sealed class SendOrderConfirmation(IEmailSender email) : IDomainEventHand
 ```
 
 You implement `IDomainEventHandler<TDomainEvent>` against the **raw domain event** — there is no notification
-wrapper. `AddSharedKernelMediatR(assemblies)` discovers handlers in the scanned assemblies; a handler elsewhere is
+wrapper. `AddSharedKernelApplication(assemblies, …)` discovers handlers in the scanned assemblies; a handler elsewhere is
 registered with `AddDomainEventHandler<OrderPlaced, SendOrderConfirmation>()` (`SharedKernel.Application.Pipeline`).
-The native `DomainEventDispatcher` (registered by `AddSharedKernelDomainEvents()`, which the MediatR adapter calls
-for you) resolves them.
+The native `DomainEventDispatcher` (registered by the same call) resolves them.
 
 **When events are dispatched.** `06.Persistence`'s `SharedKernelDbContext.SaveChangesAsync` collects the events
 from tracked aggregates and dispatches them **before** the physical save — on every save path (the unit of
@@ -311,8 +310,8 @@ public sealed class TenantRequiredBehavior<TRequest, TResponse>(IRequestContext 
 }
 ```
 
-Register it into a named stage with `ApplicationBehaviorsBuilder.AddBehavior(typeof(TenantRequiredBehavior<,>),
-PipelineStage.Authorization, typeof(IRequestContext))` so it lands in the canonical order.
+Register it into a named stage with `app.WithBehavior(typeof(TenantRequiredBehavior<,>),
+PipelineStage.Authorization, typeof(IRequestContext))` on `AddSharedKernelApplication` so it lands in the canonical order.
 
 ## Reference
 
@@ -324,7 +323,7 @@ PipelineStage.Authorization, typeof(IRequestContext))` so it lands in the canoni
 | `SharedKernel.Application.Streaming` | `IStreamQuery<TResponse>`, `IStreamQueryHandler<TQuery,TResponse>`, `IStreamPipelineBehavior<,>`, `StreamHandlerContinuation<TResponse>` |
 | `SharedKernel.Application.Validation` | `IRequestValidator<TRequest>` |
 | `SharedKernel.Application.DomainEvents` | `IDomainEventHandler<TDomainEvent>` |
-| `SharedKernel.Application.Authorization` | `IAuthorizeRequest`, `PermissionMatch` |
+| `SharedKernel.Application.Authorization` | `RequirePermissionAttribute` |
 | `SharedKernel.Application.Idempotency` | `IIdempotentRequest` |
 | `SharedKernel.Application.Auditing` | `IAuditableRequest<TResponse>` |
 | `SharedKernel.Application.Logging` | `ILoggableRequest<TResponse>` |
@@ -356,8 +355,8 @@ The handler aliases add no members. They exist so a class declaration states its
 
 | Marker | Members | Used by |
 | --- | --- | --- |
-| `IAuthorizeRequest` | `RequiredPermissions`, `PermissionMatch` (`All` default, `Any`) | `AuthorizationBehavior` |
-| `IIdempotentRequest` | `IdempotencyKey`, `Fingerprint` (optional) | `IdempotencyBehavior` (commands only) |
+| `[RequirePermission(params permissions)]` | `Permissions` — values of one attribute are alternatives; several attributes all apply; `AllowMultiple`, `Inherited` | `AuthorizationBehavior` (always registered; unauthenticated → 401 `unauthorized.default`, missing permission → 403 `forbidden.insufficient_permission`; streaming queries too) |
+| `IIdempotentRequest` | `IdempotencyKey` (reserved per tenant and caller), `Fingerprint` (optional) | `IdempotencyBehavior` (commands only) |
 | `IAuditableRequest<TResponse>` | `Action`, `ResourceType`, `ResourceId`, `BeforeSnapshot`, `GetAfterSnapshot(response)` | `AuditingBehavior` |
 | `ILoggableRequest<TResponse>` | `LoggableRequestFields`, `GetLoggableResponseFields(response)` | `LoggingBehavior` |
 | `ICacheableQuery<TValue>` | `CacheKey`, `CachePolicy`, `Scope`, `RefreshCache`, `ShouldCache(value)` | `CachingBehavior` (`.Pipeline.Caching`) |
@@ -375,7 +374,7 @@ idempotency on it throws at the first short-circuit, in production. Analyzer `SK
 time — do not suppress it.
 
 **Implementing MediatR's interfaces.** A class implementing `MediatR.IRequestHandler` or `INotificationHandler`
-is not discovered by `AddSharedKernelMediatR`. Implement the kernel interfaces; the application-layer project
+is not discovered by `AddSharedKernelApplication`. Implement the kernel interfaces; the application-layer project
 should not reference MediatR at all.
 
 **Expecting the unary behaviors to run for a stream.** They do not. `IStreamQuery<TResponse>` runs through

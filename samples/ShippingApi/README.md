@@ -6,7 +6,7 @@ redeliveries, carries the caller's tenant across the bus, and observes what fail
 you can drive with `curl`.
 
 ```
-POST /shipments               publish  → ShipmentDispatched, consumed into a read model
+POST /shipments               publish  → 202 + Location; ShipmentDispatched, consumed into a read model
 GET  /shipments/{id}          read     → 404 until the consumer has run (an honest asynchronous write)
 POST /shipments/{id}/hold     send     → one endpoint, not a broadcast
 POST /shipments/{id}/chase    schedule → the broker holds it, not this process
@@ -27,7 +27,8 @@ GET  /health/live /health/ready        → the bus-backed readiness probe
 | Retry, then a fault you can see | `WithRetry()` + `AddFaultConsumer<FailingShipmentCheck, ShipmentCheckFaultConsumer>()` |
 | Transport-native deferred delivery | `WithDelayedDelivery()` → `IMessageScheduler.ScheduleAsync` |
 | Readiness that actually gates traffic | the bus probe `Build()` registers, mapped by `AddSharedKernelReadiness()` |
-| `Result` at the HTTP boundary | `published.ToProblemDetailsResult()` |
+| Commands and queries behind every endpoint | `AddSharedKernelApplication(typeof(Program).Assembly, app => app.UseMediatR())`; `ShipmentEndpoints` is an endpoint module (`IEndpointModule`, mapped by `app.MapEndpoints()`) whose endpoints only send through the kernel's `ISender`; the handlers in `Features/Shipments/` publish, send and schedule |
+| `Result` at the HTTP boundary | `UseSharedKernelRequestContext()`, then `AddSharedKernelWebApi()` + `UseSharedKernelWebApi()`; `sender.Send(new PutShipmentOnHold(id, reason), ct).ToAccepted($"/shipments/{id}")` — 202 with a `Location` to watch (`ToHttpResult(id => TypedResults.Accepted(location, body))` where the 202 carries a body, as `POST /shipments` does), or an RFC 9457 problem (`messaging.unavailable` is 503); a missing shipment is a `shipment.not_found` 404 problem |
 
 The consumer is the point of the whole sample:
 

@@ -185,20 +185,21 @@ app.MapPut("/invoices/{id:guid}", async (Guid id, HttpRequest request,
         ContentLength = request.ContentLength,   // a request body cannot report its length itself
         Condition = WriteCondition.IfNotExists,
     }, ct);
-    return saved.ToProblemDetailsResult(reference => Results.Created($"/invoices/{id}", reference));
+    return saved.ToCreated(_ => $"/invoices/{id}");   // 201 with the FileReference, or a problem response
 });
 
 app.MapGet("/invoices/{id:guid}", async (Guid id, [FromKeyedServices("invoices")] IFileStorage invoices,
     CancellationToken ct) =>
 {
     Result<FileDownload> file = await invoices.DownloadAsync($"{id}.pdf", cancellationToken: ct);
-    return file.ToProblemDetailsResult(f => Results.Stream(f.Content, f.Properties.ContentType));
+    return file.ToHttpResult(f => TypedResults.Stream(f.Content, f.Properties.ContentType)); // disposes the stream
 });
 ```
 
 Nothing is buffered: the request body streams into the provider, and the provider's response streams back.
-`ToProblemDetailsResult` (`SharedKernel.Presentation.WebApi`) turns `storage.not_found` into 404,
-`storage.already_exists` into 409, and so on.
+The typed results (`ToCreated`, `ToHttpResult`; `SharedKernel.Presentation.WebApi`) answer a failure with an RFC 9457
+problem whose `errorCode` is the storage code: `storage.not_found` → 404, `storage.unavailable` → 503,
+`storage.already_exists` → 409, or 412 when the request itself carried `If-Match` or `If-None-Match`.
 
 ### 5. Let the browser upload directly
 

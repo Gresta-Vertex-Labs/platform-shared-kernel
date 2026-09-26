@@ -109,7 +109,8 @@ IMessageScheduler  (scoped; registered by WithDelayedDelivery())
 
 IMessageHeaderPropagator  (scoped; WithHeaderPropagator<T>())
     Propagate(PublishContext context) → void — runs on every verb (PublishAsync, SendAsync, IEventPublisher), in
-    registration order, before the caller's callback.
+    registration order, before the caller's callback. Never takes a caller's identity (tenant, user) from
+    Activity baggage, which a caller can set (P-562 X2): identity comes from IRequestContext.
 
 IFaultConsumer<TMessage>  (AddFaultConsumer<TMessage, TConsumer>() only — never services.AddScoped)
     HandleAsync(Guid faultId, DateTimeOffset faultTimestamp, TMessage message,
@@ -135,7 +136,8 @@ MessagingErrorCodes / MessagingErrors — messaging.unavailable, .endpoint_not_f
 > **Every verb returns `Result` (P-560).** An unreachable broker, a missing endpoint or an unserializable payload
 > is an operational condition with a `messaging.*` code. `MessagingExceptionClassifier` maps only recognised
 > transport faults; anything else is rethrown, so a genuine bug is never laundered into a failed `Result`. Only
-> cancellation throws.
+> cancellation throws. Since P-562 an unreachable broker (`messaging.unavailable`) is `ErrorType.Unavailable`, which
+> `14.Presentation` answers 503, not 500.
 
 ### `SharedKernel.Messaging.MassTransit`
 

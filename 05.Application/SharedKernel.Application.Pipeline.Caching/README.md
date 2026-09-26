@@ -108,21 +108,22 @@ dependency in front of every service that never caches anything. Reference this 
 ## Quick start
 
 ```csharp
-using SharedKernel.Application.Pipeline.Caching.Extensions;
+using SharedKernel.Application.Mediator.MediatR;
+using SharedKernel.Application.Pipeline;
+using SharedKernel.Application.Pipeline.Caching;
 using SharedKernel.Caching.FusionCache.Extensions;
 
 builder.Services.AddSharedKernelCaching(o => o.ServiceName = "orders");   // ICacheService + key providers
 
-builder.Services.AddSharedKernelApplicationBehaviors()
-    .AddDefaultBehaviors()
-    .AddCachingBehaviors()          // both behaviors, each in its correct stage
-    .AddTransactionBehavior()       // so eviction has a commit to follow
-    .Build();
+builder.Services.AddSharedKernelApplication(typeof(Program).Assembly, app => app
+    .UseMediatR()
+    .WithCaching()                  // both behaviors, each in its correct stage
+    .WithTransactions());           // so eviction has a commit to follow
 ```
 
-`AddCachingBehaviors()` puts the caching behavior in the **Query** stage and the invalidation behavior in the
-**Command** stage, and declares `ICacheService` and `ITenantCacheKeyProvider` as required. `Build()` throws at
-startup naming whichever is missing — never at the first request. `AddSharedKernelCaching()` registers both.
+`WithCaching()` puts the caching behavior in the **Query** stage and the invalidation behavior in the
+**Command** stage, and declares `ICacheService` and `ITenantCacheKeyProvider` as required. The host start fails
+naming whichever is missing — never at the first request. `AddSharedKernelCaching()` registers both.
 
 ```csharp
 // A cached query. The handler is unchanged and unaware.
@@ -435,7 +436,7 @@ public CachePolicy CachePolicy =>
 var cache = new FakeCacheService();               // SharedKernel.Caching.Testing
 services.AddSingleton<ICacheService>(cache);
 services.AddSingleton<ITenantCacheKeyProvider>(new FakeTenantCacheKeyProvider());
-services.AddSharedKernelApplicationBehaviors().AddCachingBehaviors().Build();
+services.AddSharedKernelApplication(typeof(GetOrderQuery).Assembly, app => app.UseMediatR().WithCaching());
 
 await sender.Send(new GetOrderQuery(id));
 await sender.Send(new GetOrderQuery(id));
@@ -459,9 +460,9 @@ cache.FactoryInvocationCount.Should().Be(1);      // second dispatch was a hit
 | `IInvalidatesCache.Scope` | Must match the queries being invalidated. Default `Tenant` |
 | `CacheKeyRef.For<TQuery>(key)` | Names one entry by its owning query type |
 | `CacheScope` | `Tenant` = 0, `User`, `Global` |
-| `AddCachingBehaviors()` | Registers both behaviors in their stages and declares their required services |
+| `WithCaching()` (extension on `ApplicationPipelineBuilder`, namespace `SharedKernel.Application.Pipeline.Caching`) | Registers both behaviors in their stages and declares their required services |
 
-The two behavior types are **internal**. They are registered by `AddCachingBehaviors()` and resolved by the kernel `RequestPipeline<,>`;
+The two behavior types are **internal**. They are registered by `WithCaching()` and resolved by the kernel `RequestPipeline<,>`;
 the package's contract is the interfaces above.
 
 ## Pitfalls
@@ -481,7 +482,7 @@ the package's contract is the interfaces above.
   waiting caller.
 - **Caching on a command.** SK0017 flags a command implementing the query marker; SK0018 flags a query implementing
   the command marker. Caching is for queries, invalidation is for commands.
-- **Expecting eviction without a transaction behavior.** `AddTransactionBehavior()` is what gives the callback a
+- **Expecting eviction without a transaction behavior.** `WithTransactions()` is what gives the callback a
   commit to follow; without it the callback still runs after the handler, which is usually what you want, but the
   "after commit" guarantee is only as real as the commit.
 
@@ -519,8 +520,8 @@ PACKAGE     SharedKernel.Application.Pipeline.Caching (05.Application, Host tier
             SharedKernel.Application.Pipeline; the only pipeline package allowed to reference
             SharedKernel.Caching.Abstractions.
 REGISTER    services.AddSharedKernelCaching(o => o.ServiceName = "svc");        // ICacheService + ITenantCacheKeyProvider
-            services.AddSharedKernelApplicationBehaviors().AddCachingBehaviors().AddTransactionBehavior().Build();
-            Build() throws naming ICacheService / ITenantCacheKeyProvider if missing.
+            services.AddSharedKernelApplication(asm, app => app.UseMediatR().WithCaching().WithTransactions());
+            The host start fails naming ICacheService / ITenantCacheKeyProvider if missing.
 QUERY       record Q(...) : ICacheableQuery<TValue>   // ALSO an IQuery<TValue>; response is Result<TValue>
               CachePolicy CachePolicy => CachePolicy.Default | .For(l1, l2) | .WithTags(..) | .WithFailSafe(..) | .WithJitter(..)
               string CacheKey => "<identity WITHIN this query's namespace, not a whole key>"

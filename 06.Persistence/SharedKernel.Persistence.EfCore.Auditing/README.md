@@ -100,8 +100,8 @@ public sealed record ApproveOrder(OrderId Id) : ICommand, IAuditableRequest<Resu
     public string? BeforeSnapshot => null;
     public string? GetAfterSnapshot(Result response) => null;
 }
-// builder.Services.AddSharedKernelApplicationBehaviors().AddDefaultBehaviors()
-//     .AddTransactionBehavior().AddAuditingBehavior().Build();
+// builder.Services.AddSharedKernelApplication(typeof(Program).Assembly, app => app
+//     .UseMediatR().WithTransactions().WithAuditing());   // SharedKernel.Application.Pipeline
 ```
 
 Options are validated at startup: the current key must exist and be the newest (highest `Order`), every key must
@@ -292,7 +292,7 @@ REGISTER     AddSharedKernelCryptography(configuration) + AddSharedKernelPostgre
 MIGRATION    migrationBuilder.CreateAuditLedgerTable(runtimeRole: "app_runtime", sealerRole: "app_audit_sealer")
              + REVOKE UPDATE, DELETE, TRUNCATE ... FROM app_cross_tenant. Never RLS on ledger tables.
 AUDIT        Pipeline: command implements IAuditableRequest<TResponse> (Action, ResourceType, ResourceId, snapshots)
-             + AddAuditingBehavior(). Manual: unitOfWork.OnBeforeCommit(t => audit.RecordAsync(new AuditEntry {..}, t)).
+             + .WithAuditing() on AddSharedKernelApplication (SharedKernel.Application.Pipeline). Manual: unitOfWork.OnBeforeCommit(t => audit.RecordAsync(new AuditEntry {..}, t)).
 ACTIONS      Dotted lowercase names: "order.approved". ResourceType = aggregate name. ResourceId = id string.
 QUERY        IAuditQueryService.QueryAsync(new AuditRecordQuery { ResourceType, ResourceId }) — caller's tenant only.
 VERIFY       VerifyChainAsync(resourceType) -> Status Intact|Broken|Unverifiable, FailureKind, FailedAtSequence.

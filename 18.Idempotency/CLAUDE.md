@@ -53,8 +53,9 @@ Task<bool> ReleaseAsync(IdempotencyPurpose purpose, string key, string token, Ca
   kept. Providers have no TTL settings: `IdempotencyBehaviorOptions.LeaseDuration`/`RetentionWindow` (05) and
   messaging's `IdempotencyOptions.LeaseDuration`/`ExpiryWindow` (07) supply them.
 - Registration is keyed by purpose (`[FromKeyedServices(IdempotencyPurpose.Request)]`). A second registration for
-  the same purpose throws. `ApplicationBehaviorsBuilder.Build()`/`MessagingBusBuilder.Build()` check
-  `HasIdempotencyStore(purpose)` at startup.
+  the same purpose throws. `AddSharedKernelApplication(…, app => app.WithIdempotency())` checks the Request store at host start
+  (naming it when missing), and `MessagingBusBuilder.Build()` checks
+  `HasIdempotencyStore(IdempotencyPurpose.Message)` at startup.
 
 ---
 
@@ -90,6 +91,15 @@ no context or no tenant — never a GUID, so it cannot collide with a real tenan
 cross-tenant collision by choosing a key string. The inbound adapters (`UseSharedKernelRequestContext()`, the
 MassTransit consume filter, the job runner) establish the context; a multi-tenant service that skips them shares
 `no-tenant`.
+
+**Caller scoping happens before the key reaches a store (P-562 X3).** For `IdempotencyPurpose.Request`,
+`IdempotencyBehavior` (`SharedKernel.Application.Pipeline`) never passes the command's raw key: the store receives a
+SHA-256 digest (64 lowercase hex characters) of the tenant, the caller (actor kind, subject, client, impersonator) and
+the raw key, so one caller can never be replayed another caller's stored response. The store's own tenant partition
+stays on top of it. The digest fits the EF Core `key` column and needs no escaping in the Redis key; the digest layout
+is a stored format. A malformed or missing key is refused before the store with `ErrorCodes.Idempotency`
+(`idempotency.key_required`, `idempotency.key_invalid`); an in-flight or reused key comes back as
+`idempotency.in_progress` / `idempotency.key_reused`.
 
 **5 — Fail closed by default.** An unreachable store throws. Each provider has one opt-out,
 `AllowExecutionOnStoreUnavailable`, whose XML doc says **in capitals** that it increases duplicate-execution risk;

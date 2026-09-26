@@ -28,9 +28,10 @@ Foundation or Abstractions package (`SharedKernel.Execution`, `SharedKernel.Idem
    `00.Governance`'s `DependencyGraphRulesTests.MediatR_IsReferencedOnlyByTheMediatorAdapter`). It is pinned to
    `12.4.x`, the last MIT-licensed major; never bump it.
 3. `SharedKernel.Application.Pipeline` (Host tier) adds only `SharedKernel.Application`,
-   `SharedKernel.Execution`, `SharedKernel.Primitives`, `SharedKernel.Idempotency.Abstractions` and first-party
+   `SharedKernel.Execution`, `SharedKernel.Primitives`, `SharedKernel.Core` (since P-579, for `error.ToException()` when a
+   streaming query is denied), `SharedKernel.Idempotency.Abstractions` and first-party
    `Microsoft.Extensions.*` packages. It must **never** reference a cache, Polly, hosting, FluentValidation or a
-   mediator (`ApplicationPipelineRules.PipelineNeverReferencesCachingPollyHostingOrCore`,
+   mediator (`ApplicationPipelineRules.PipelineNeverReferencesCachingPollyOrHosting`,
    `BehaviorsNeverReferenceConcreteInfrastructure`). The `SharedKernel.Caching.Abstractions` reference for the
    behaviors belongs exclusively to `SharedKernel.Application.Pipeline.Caching`.
 4. No response envelope, ever. `14.Presentation`'s `ResultHttpExtensions` maps a failure to RFC 9457
@@ -40,7 +41,7 @@ Foundation or Abstractions package (`SharedKernel.Execution`, `SharedKernel.Idem
    This domain consumes them and never redeclares them (`UnitOfWorkSeamRules.SharedContractsAreNotRedeclared`).
 6. AOT and trimming are **not** constraints here (user ruling, 2026-09-15). Reflection is used where it is the
    clearest code — see "Reflection use" — and cached once per closed type.
-7. In `ApplicationBehaviorsBuilder.Build()` the first-registered behavior of a stage is outermost, so its code
+7. In `AddSharedKernelApplication` the first-registered behavior of a stage is outermost, so its code
    **after** `next()` runs last. `CommandScopeBehavior` is registered first in the command stage so its
    post-commit callbacks observe `TransactionBehavior`'s commit (and `AuditingBehavior`'s and
    `IdempotencyBehavior`'s post-`next()` code) as already complete. `RequestPipeline<,>` wraps behaviors in
@@ -52,10 +53,10 @@ Foundation or Abstractions package (`SharedKernel.Execution`, `SharedKernel.Idem
 
 | Package | Tier | Role | References |
 | --- | --- | --- | --- |
-| `SharedKernel.Application` | Abstractions | The kernel mediator contracts (`IRequest<T>`, `IRequestHandler<,>`, `ISender`, `IPipelineBehavior<,>`, `RequestHandlerContinuation<T>`, stream counterparts), CQRS vocabulary (`ICommand`/`ICommand<T>`/`IQuery<T>`/`IStreamQuery<T>` + handler aliases), `IRequestValidator<T>`, `IDomainEventHandler<T>`, and every request marker (`IAuthorizeRequest`, `IIdempotentRequest`, `IAuditableRequest<T>`, `ILoggableRequest<T>`, `ICacheableQuery<T>`, `IInvalidatesCache`, `CacheScope`, `CacheKeyRef`, `ICommandScope`) | `SharedKernel.Primitives`, `SharedKernel.Domain`, `SharedKernel.Caching.Abstractions` |
-| `SharedKernel.Application.Pipeline` | Host | `RequestPipeline<,>`/`StreamRequestPipeline<,>`, eight behaviors (Tracing, Logging, Metrics, Authorization, Validation, Idempotency, Transaction, Auditing in two halves), `ApplicationBehaviorsBuilder`/`PipelineStage`, the native `DomainEventDispatcher` | `SharedKernel.Application`, `SharedKernel.Execution`, `SharedKernel.Primitives`, `SharedKernel.Idempotency.Abstractions`, `Microsoft.Extensions.{DependencyInjection.Abstractions, Logging(.Abstractions), Options(.DataAnnotations), Diagnostics}` |
-| `SharedKernel.Application.Pipeline.Caching` | Host | `CachingBehavior<,>` (query stage) and `CacheInvalidationBehavior<,>` (command stage), wired by `AddCachingBehaviors()` | `SharedKernel.Application.Pipeline`, `SharedKernel.Caching.Abstractions` |
-| `SharedKernel.Application.Mediator.MediatR` | Host | `AddSharedKernelMediatR(params Assembly[])`: MediatR as the transport behind `ISender`, handler discovery | `SharedKernel.Application`, `SharedKernel.Application.Pipeline`, `MediatR` 12.4.1 |
+| `SharedKernel.Application` | Abstractions | The kernel mediator contracts (`IRequest<T>`, `IRequestHandler<,>`, `ISender`, `IPipelineBehavior<,>`, `RequestHandlerContinuation<T>`, stream counterparts), CQRS vocabulary (`ICommand`/`ICommand<T>`/`IQuery<T>`/`IStreamQuery<T>` + handler aliases), `IRequestValidator<T>`, `IDomainEventHandler<T>`, and `[RequirePermission]` (`Authorization`, always enforced) and every request marker (`IIdempotentRequest`, `IAuditableRequest<T>`, `ILoggableRequest<T>`, `ICacheableQuery<T>`, `IInvalidatesCache`, `CacheScope`, `CacheKeyRef`, `ICommandScope`) | `SharedKernel.Primitives`, `SharedKernel.Domain`, `SharedKernel.Caching.Abstractions` |
+| `SharedKernel.Application.Pipeline` | Host | The one registration call `AddSharedKernelApplication(assemblies, app => app.With…())` (handler/validator/domain-event-handler scan, host-start seam check) with `ApplicationPipelineBuilder`/`PipelineStage`; `RequestPipeline<,>`/`StreamRequestPipeline<,>`; the internal behaviors (Tracing, Logging, Metrics, Authorization + stream authorization, Validation, Idempotency, Transaction, Auditing in two halves) and the native `DomainEventDispatcher` | `SharedKernel.Application`, `SharedKernel.Execution`, `SharedKernel.Primitives`, `SharedKernel.Core`, `SharedKernel.Idempotency.Abstractions`, `Microsoft.Extensions.{DependencyInjection.Abstractions, Logging(.Abstractions), Options(.DataAnnotations), Diagnostics}` |
+| `SharedKernel.Application.Pipeline.Caching` | Host | `CachingBehavior<,>` (query stage) and `CacheInvalidationBehavior<,>` (command stage), added by `app.WithCaching()` | `SharedKernel.Application.Pipeline`, `SharedKernel.Caching.Abstractions` |
+| `SharedKernel.Application.Mediator.MediatR` | Host | `app.UseMediatR()`: MediatR as the transport behind `ISender` (one route per scanned request type) | `SharedKernel.Application`, `SharedKernel.Application.Pipeline`, `MediatR` 12.4.1 |
 
 `SharedKernel.Application.ConsumerVerify` (not packable) references all four packed packages by
 `PackageReference`, plus `SharedKernel.Idempotency.Abstractions` and `SharedKernel.Validation.FluentValidation`,
@@ -83,38 +84,39 @@ packages (`SharedKernel.Testing`, `SharedKernel.Application.Testing`, `SharedKer
 
 ## DI Registration
 
+One call (P-563 A4, application model merged from main in P-579), in `SharedKernel.Application.Pipeline`:
+
 ```csharp
-// Transport + handler discovery (commands, queries, streams, domain-event handlers). Also registers
-// RequestPipeline<,>, StreamRequestPipeline<,> and DomainEventDispatcher.
-services.AddSharedKernelMediatR(typeof(PlaceOrderHandler).Assembly);
+services.AddSharedKernelApplication(typeof(PlaceOrderHandler).Assembly, app => app
+    .UseMediatR()                                   // SharedKernel.Application.Mediator.MediatR — the ISender
+    .WithIdempotency(o => o.RetentionWindow = TimeSpan.FromHours(24)) // needs IIdempotencyStore (Request) + IRequestContext
+    .WithTransactions()                             // needs IUnitOfWork
+    .WithAuditing()                                 // needs IAuditTrailWriter; registers both auditing halves
+    .WithCaching()                                  // SharedKernel.Application.Pipeline.Caching; needs ICacheService + ITenantCacheKeyProvider
+    .WithBehavior(typeof(MyBehavior<,>), PipelineStage.Command, typeof(IMyDependency)));
 
-services.AddFluentValidationRequestValidators();                          // IValidator<T> -> IRequestValidator<T>
+services.AddFluentValidationRequestValidators(typeof(PlaceOrderHandler).Assembly); // IValidator<T> -> IRequestValidator<T>
 
-// The contracts the behaviors consume, implemented by infrastructure directly:
+// The contracts the behaviors consume, implemented by infrastructure directly — before or after the call above:
 services.AddSharedKernelRequestContext();                                  // IRequestContext (ServiceDefaults.Security)
 builder.AddSharedKernelPostgres<OrderDbContext>("orders", p => p.UseAuditTrail()); // IUnitOfWork, IAuditTrailWriter
 services.AddRedisIdempotency(p => p.ForRequests());                        // IIdempotencyStore for IdempotencyPurpose.Request
 services.AddSharedKernelCaching(o => o.ServiceName = "orders");           // ICacheService, ITenantCacheKeyProvider
-
-services.AddSharedKernelApplicationBehaviors()
-    .AddTracingBehavior()
-    .AddLoggingBehavior()
-    .AddMetricsBehavior()
-    .AddAuthorizationBehavior()      // requires IRequestContext
-    .AddValidationBehavior()
-    .AddCachingBehaviors()           // SharedKernel.Application.Pipeline.Caching — query + command stage
-    .AddIdempotencyBehavior(o => o.RetentionWindow = TimeSpan.FromHours(24)) // requires the request-purpose store
-    .AddTransactionBehavior()        // requires IUnitOfWork
-    .AddAuditingBehavior()           // requires IAuditTrailWriter; registers both auditing halves
-    .Build();
 ```
 
-- A service without a mediator adapter (tests, a custom transport) calls `AddSharedKernelRequestPipeline()` and
-  `AddSharedKernelDomainEvents()` directly and resolves `RequestPipeline<TRequest, TResponse>`.
-- `AddDefaultBehaviors()` = Tracing + Logging + Metrics + Validation — the only behaviors with **no**
-  `Build()`-time missing-dependency guard. Everything else is an individual opt-in.
-- `AddBehavior(openGenericType, stage, requiredServices)` slots a custom behavior into a stage; this is exactly
-  how `AddCachingBehaviors()` wires its two behaviors without `.Pipeline` referencing a cache.
+- **Always registered:** every `IRequestHandler<,>`/`IStreamQueryHandler<,>` (transient), `IRequestValidator<>` and
+  `IDomainEventHandler<>` (scoped) of the assemblies, public or internal; `DomainEventDispatcher` as
+  `IDomainEventDispatcher`; `ICommandScope`; `RequestPipeline<,>`/`StreamRequestPipeline<,>`; and the Tracing,
+  Logging, Metrics, **Authorization** (plus its stream twin) and Validation behaviors. `AddDomainEventHandler<TEvent,
+  THandler>()` registers a handler from another assembly.
+- **Opt-ins** (`With…`) land in the canonical order whatever order they are called in; `WithBehavior(type, stage,
+  requiredServices)` is how `WithCaching()` wires its two behaviors without `.Pipeline` referencing a cache.
+- **Seams are checked when the host starts** (`ValidateOnStart` on an internal options type), never at registration:
+  one `OptionsValidationException` names every missing service and what needs it. `ISender` is always required, so a
+  host that forgot `UseMediatR()` fails at start. A request type of the scanned assemblies carrying
+  `[RequirePermission]` makes `IRequestContext` required. A plain `ServiceProvider` without a host runs no check
+  (tests call `IStartupValidator.Validate()` — `ApplicationPipelineTestHarness` does).
+- **Calling it twice throws** — pass every assembly and every option to the one call.
 - The full persistence composition, compiled and run by a test, is `06.Persistence/README.md`.
 
 ---
@@ -129,7 +131,9 @@ Not a design constraint (user ruling, 2026-09-15). Every instance is cached once
 | `.Pipeline/Shared/ResponseOutcome.cs` | `TResponse.GetProperty("Error")` + `CreateDelegate`, cached per closed `TResponse` | Reads the `Error` off any failed response |
 | `.Pipeline/DomainEvents/DomainEventDispatcher.cs` | `MakeGenericType` of a private closed invoker per runtime event type, cached in a static `ConcurrentDictionary` | The concrete event type is only known per element at runtime |
 | `.Pipeline/Idempotency/IdempotencyResponseSerializer.cs` | Hand-written `JsonConverter<Result>`/`JsonConverter<Result<T>>` + factory | `Result` types have private constructors and get-only properties |
-| `.Mediator.MediatR/MediatRServiceCollectionExtensions.cs` | Assembly scan + `MakeGenericType` at **registration** only; per request type a keyed `RequestDispatcher<TRequest, TResponse>` singleton | A send then resolves the dispatcher by request type and makes no reflective call |
+| `.Pipeline/ApplicationServiceCollectionExtensions.cs` | Assembly scan at **registration** only (handlers, validators, domain-event handlers, `[RequirePermission]` request types) | Registration discovers the service's types; nothing is scanned per send |
+| `.Pipeline/Authorization/AuthorizationBehavior.cs` | `GetCustomAttributes<RequirePermissionAttribute>` once per closed request type (`PermissionRequirements<TRequest>`) | The attribute is the declaration; reading it per call would be waste |
+| `.Mediator.MediatR/MediatRServiceCollectionExtensions.cs` | Assembly scan + `MakeGenericType` at **registration** only (`UseMediatR()`); per request type a keyed `RequestDispatcher<TRequest, TResponse>` singleton | A send then resolves the dispatcher by request type and makes no reflective call |
 
 ---
 
@@ -140,11 +144,11 @@ Not a design constraint (user ruling, 2026-09-15). Every instance is cached once
 | Namespace | Types |
 | --- | --- |
 | `Messaging` | `IRequest<TResponse>` (marker); `IRequestHandler<TRequest,TResponse>.Handle(request, ct)`; `ISender` (`Send<TResponse>(IRequest<TResponse>, ct)`, `CreateStream<TResponse>(IStreamQuery<TResponse>, ct)`); `IPipelineBehavior<TRequest,TResponse>.Handle(request, RequestHandlerContinuation<TResponse> next, ct)` — `next` takes no arguments (MediatR-shaped, so `await next()` call sites are unchanged); `ICommandBase`/`IQueryBase` zero-member markers; `ICommand : ICommandBase, IRequest<Result>`; `ICommand<T> : ICommandBase, IRequest<Result<T>>`; `IQuery<T> : IQueryBase, IRequest<Result<T>>`; `ICommandHandler<>`, `ICommandHandler<,>`, `IQueryHandler<,>` — pure `IRequestHandler<,>` aliases |
-| `Streaming` | `IStreamQuery<T>`, `IStreamQueryHandler<TQuery,T>` (returns `IAsyncEnumerable<T>`, items not wrapped in `Result`), `IStreamPipelineBehavior<,>` + `StreamHandlerContinuation<T>`. `.Pipeline` ships no stream behavior; `StreamRequestPipeline<,>` runs any a service registers |
+| `Streaming` | `IStreamQuery<T>`, `IStreamQueryHandler<TQuery,T>` (returns `IAsyncEnumerable<T>`, items not wrapped in `Result`), `IStreamPipelineBehavior<,>` + `StreamHandlerContinuation<T>`. `.Pipeline` registers one stream behavior, `StreamAuthorizationBehavior` (`[RequirePermission]` on a streaming query); `StreamRequestPipeline<,>` runs it and any a service registers |
 | `Validation` | `IRequestValidator<TRequest>.ValidateAsync(request, ct)` → `ValueTask<IReadOnlyList<Error>>` (empty = valid; field path in `Error.MessageArguments[ErrorArgumentNames.PropertyPath]`, never the rejected value) |
 | `DomainEvents` | `IDomainEventHandler<in TDomainEvent>.Handle(event, ct)` against the raw `03.Domain` event |
-| `Authorization` | `IAuthorizeRequest` (`RequiredPermissions`, `PermissionMatch` defaulting to `All`), `PermissionMatch` (`All`/`Any`) |
-| `Idempotency` | `IIdempotentRequest` (`IdempotencyKey`, optional `Fingerprint`) |
+| `Authorization` | `RequirePermissionAttribute` — `[RequirePermission("a", "b")]` on a command, query or stream query: the values of one attribute are alternatives, several attributes all apply (`AllowMultiple`, `Inherited`); a blank or empty list throws when the attribute is constructed |
+| `Idempotency` | `IIdempotentRequest` (`IdempotencyKey` — reserved per tenant and caller, optional `Fingerprint`) |
 | `Auditing` | `IAuditableRequest<TResponse>` (`Action`, `ResourceType`, `ResourceId`, `BeforeSnapshot`, `GetAfterSnapshot`) |
 | `Logging` | `ILoggableRequest<TResponse>` (`LoggableRequestFields`, `GetLoggableResponseFields`) |
 | `Caching` | `ICacheableQuery` (non-generic base: `CacheKey`, `CachePolicy`, `Scope`, `RefreshCache`; an internal member makes it unimplementable outside the assembly) and `ICacheableQuery<TValue>` (also an `IQuery<TValue>`; `ShouldCache`); `IInvalidatesCache` (`CacheKeysToInvalidate` as `CacheKeyRef`, `CacheTagsToInvalidate`, `Scope`); `CacheKeyRef.For<TQuery>(key)`; `CacheScope` (`Tenant` = 0, `User`, `Global`) |
@@ -152,37 +156,45 @@ Not a design constraint (user ruling, 2026-09-15). Every instance is cached once
 
 ### `SharedKernel.Application.Pipeline`
 
-| Namespace | Types |
-| --- | --- |
-| root | `RequestPipeline<TRequest,TResponse>.HandleAsync(request, ct)` (resolves the handler and every `IPipelineBehavior<TRequest,TResponse>`, first = outermost); `StreamRequestPipeline<,>.Handle` |
-| `Tracing` / `Logging` / `Authorization` / `Validation` / `Idempotency` / `Transaction` / `Auditing` | Public behavior classes `TracingBehavior<,>`, `LoggingBehavior<,>` (+ `ApplicationLoggingOptions.SlowRequestThreshold`, 500 ms), `AuthorizationBehavior<,>`, `ValidationBehavior<,>` (over `IEnumerable<IRequestValidator<TRequest>>`), `IdempotencyBehavior<,>` (+ `IdempotencyBehaviorOptions`: `LeaseDuration` 30 s, `RetentionWindow` 24 h, lease < retention), `TransactionBehavior<,>`, `AuditingBehavior<,>`; internal `MetricsBehavior<,>`, `CommandScopeBehavior<,>`, `AuditingCommitBehavior<,>` |
-| `DomainEvents` | `DomainEventDispatcher` — the native `IDomainEventDispatcher` (`03.Domain`): serial, events in list order, handlers in registration order, exact runtime type only, an exception propagates and stops dispatch, no handler = skipped |
-| `Extensions` | `AddSharedKernelApplicationBehaviors()` → `ApplicationBehaviorsBuilder` (`Add…Behavior()`, `AddBehavior`, `AddDefaultBehaviors`, `Build`); `PipelineStage` (`Observability`, `Authorization`, `Validation`, `Query`, `Command`); `AddSharedKernelRequestPipeline()`; `AddSharedKernelDomainEvents()` (scoped `IDomainEventDispatcher`); `AddDomainEventHandler<TDomainEvent,THandler>()` |
+Public (namespace `SharedKernel.Application.Pipeline`): `ApplicationServiceCollectionExtensions` —
+`AddSharedKernelApplication(params Assembly[])`, `(Assembly, Action<ApplicationPipelineBuilder>)`,
+`(Assembly[], Action<ApplicationPipelineBuilder>)` and `AddDomainEventHandler<TDomainEvent,THandler>()`;
+`ApplicationPipelineBuilder` (`Services`, `Assemblies`, `WithIdempotency(Action<IdempotencyBehaviorOptions>?)`,
+`WithTransactions()`, `WithAuditing()`, `WithBehavior(type, stage, params requiredServices)`); `PipelineStage`
+(`Observability`, `Authorization`, `Validation`, `Query`, `Command`); `ApplicationLoggingOptions`
+(`SlowRequestThreshold`, 500 ms); `IdempotencyBehaviorOptions` (`LeaseDuration` 30 s, `RetentionWindow` 24 h, lease <
+retention); `RequestPipeline<TRequest,TResponse>.HandleAsync(request, ct)` (resolves the handler and every
+`IPipelineBehavior<TRequest,TResponse>`, first = outermost) and `StreamRequestPipeline<,>.Handle` — public because a
+mediator adapter (and a test) resolves them.
 
-`Build()` calls `AddLogging()` and `AddSharedKernelRequestPipeline()`, always registers `ICommandScope`
-(scoped), throws for an opted-in behavior whose contract is missing (`IRequestContext`, the request-purpose
-`IIdempotencyStore` via `HasIdempotencyStore(IdempotencyPurpose.Request)`, `IUnitOfWork`, `IAuditTrailWriter`,
-or a custom behavior's required services), rejects a second call, and validates custom behavior types.
+Internal (P-563 A5; `InternalsVisibleTo` the test project only): every behavior — `TracingBehavior<,>`,
+`LoggingBehavior<,>`, `MetricsBehavior<,>`, `AuthorizationBehavior<,>`, `StreamAuthorizationBehavior<,>`,
+`ValidationBehavior<,>` (over `IEnumerable<IRequestValidator<TRequest>>`), `CommandScopeBehavior<,>`,
+`IdempotencyBehavior<,>`, `AuditingBehavior<,>`, `TransactionBehavior<,>`, `AuditingCommitBehavior<,>` — and
+`DomainEventDispatcher` (serial, events in list order, handlers in registration order, exact runtime type only, an
+exception propagates and stops dispatch, no handler = skipped), `IdempotencyKeyScope`, `PipelineRequirements`.
+
+`AddSharedKernelApplication` throws `ArgumentException` for no (or a `null`) assembly and `InvalidOperationException`
+for a second call or for two different handlers of one request type (a hand-registered handler — factory, instance or
+the same type — is kept). `WithBehavior` throws `ArgumentException` for a type that is not an open generic
+`IPipelineBehavior<,>` and ignores a duplicate.
 
 ### `SharedKernel.Application.Pipeline.Caching`
 
-`AddCachingBehaviors(this ApplicationBehaviorsBuilder)` — registers the `CachingBehaviorsMetrics` singleton and
-adds `CachingBehavior<,>` (query stage) and `CacheInvalidationBehavior<,>` (command stage), both requiring
-`ICacheService` and `ITenantCacheKeyProvider`. Both behaviors are internal; `IRequestContext` is optional
-(without one, only `Global` scope can be served).
+`app.WithCaching()` (`CachingPipelineExtensions`, namespace `SharedKernel.Application.Pipeline.Caching`) — registers
+the `CachingBehaviorsMetrics` singleton and adds `CachingBehavior<,>` (query stage) and `CacheInvalidationBehavior<,>`
+(command stage), both requiring `ICacheService` and `ITenantCacheKeyProvider` (checked at host start). Both behaviors
+are internal; `IRequestContext` is optional (without one, only `Global` scope can be served).
 
 ### `SharedKernel.Application.Mediator.MediatR`
 
-`AddSharedKernelMediatR(params Assembly[] assemblies)` — throws `ArgumentException` for no assemblies. Adds
-MediatR once (scanning only this adapter's assembly), `AddSharedKernelRequestPipeline()`,
-`AddSharedKernelDomainEvents()`, `ISender` → internal `MediatRSender` (transient, so a nested send stays in the
-caller's scope). Scans for non-abstract, non-generic classes implementing `IRequestHandler<,>`,
-`IStreamQueryHandler<,>` (both transient) or `IDomainEventHandler<>` (scoped, `TryAddEnumerable`). Per request
-type it registers a MediatR handler for an internal `RequestEnvelope<TRequest,TResponse>` that runs
-`RequestPipeline<,>`, and a keyed `RequestDispatcher` singleton. A hand-registered handler (factory, instance or
-the same type) is kept; two different handler types for one request throw `InvalidOperationException`. Sending a
-request with no discovered handler throws `InvalidOperationException` naming the type. MediatR's own pipeline
-stays empty; a class implementing MediatR's `IRequestHandler`/`INotificationHandler` is not discovered.
+`app.UseMediatR()` (extension on `ApplicationPipelineBuilder`) — adds MediatR once (scanning only this adapter's
+assembly) and `ISender` → internal `MediatRSender` (transient, so a nested send stays in the caller's scope). For every
+non-abstract, non-generic class of `app.Assemblies` implementing `IRequestHandler<,>` or `IStreamQueryHandler<,>` it
+registers a MediatR handler for an internal `RequestEnvelope<TRequest,TResponse>` that runs `RequestPipeline<,>`, and a
+keyed `RequestDispatcher` singleton. The handlers themselves are registered by `AddSharedKernelApplication`. Sending a
+request with no discovered handler throws `InvalidOperationException` naming the type. MediatR's own pipeline stays
+empty; a class implementing MediatR's `IRequestHandler`/`INotificationHandler` is not discovered.
 
 ---
 
@@ -242,10 +254,10 @@ command-stage behavior is active; `ICommandScope` is always registered.
 | `TracingBehavior` | tags `request.type`, `request.kind` | span `Error`, description = error code, tags `error.type`/`error.code` | span `Error`, `AddException`, tag `error.type` = exception full name, rethrows |
 | `LoggingBehavior` | `Information` (or `Warning` over `SlowRequestThreshold`) | `Warning` with error type/code | `Error` with the exception, rethrows |
 | `MetricsBehavior` | `outcome="success"` | `outcome="failure"`, `error.type` = `Error.Type` | `outcome="exception"`, `error.type` = exception full name, rethrows |
-| `AuthorizationBehavior` | calls `next()` | before `next()`: unauthenticated → `Error.Unauthorized`; empty `RequiredPermissions` → `Error.Forbidden("authorization.no_permissions_declared")`; denied → `Error.Forbidden(ErrorCodes.Forbidden.InsufficientPermission)` | never throws itself |
+| `AuthorizationBehavior` | calls `next()` (a request without `[RequirePermission]` is not checked and `IRequestContext` is not resolved) | before `next()`: unauthenticated → `Error.Unauthorized(ErrorCodes.Unauthorized.Default)`; an attribute none of whose values the caller holds → `Error.Forbidden(ErrorCodes.Forbidden.InsufficientPermission)` | throws `InvalidOperationException` only when the request declares a permission and no `IRequestContext` is registered (the start check normally reports it first). `StreamAuthorizationBehavior` throws the denial's `error.ToException()` when enumeration starts |
 | `ValidationBehavior` | calls `next()` when every validator returns no error | before `next()`: `Error.Validation(errors)` aggregating every validator's errors in `Error.Details` | never throws itself |
 | `CommandScopeBehavior` | runs queued `OnCompleted` callbacks (outermost frame only) after `next()` | discards the frame's callbacks | discards the frame's callbacks |
-| `IdempotencyBehavior` | `CompleteAsync(Request, key, token, response, RetentionWindow)`; `false` logs a Warning (5120) and still returns | `ReleaseAsync` | `ReleaseAsync`, rethrows |
+| `IdempotencyBehavior` | key = `IdempotencyKeyScope.Create(requestContext, rawKey)`; `CompleteAsync(Request, key, token, response, RetentionWindow)`; `false` logs a Warning (5120) and still returns | `ReleaseAsync` | `ReleaseAsync`, rethrows |
 | `TransactionBehavior` | the rest runs inside `ExecuteInTransactionAsync` (outermost command; may replay — handlers must be re-runnable; callbacks queued by a discarded attempt are dropped); saves, runs `OnBeforeCommit`, commits | rollback; a joined failure marks the outer transaction rollback-only | rollback, propagates |
 | `AuditingBehavior` + `AuditingCommitBehavior` | inner half queues `Succeeded` on `OnBeforeCommit` (written directly when no transaction is active) | outer half, after rollback: `Failed` with `ErrorCode`; a `RecordAsync` failure propagates | outer half: `Failed` with the exception type's full name (including a failed commit); a `RecordAsync` failure is logged (5130) and the **original** exception rethrows |
 | `CachingBehavior` | handler runs inside `GetOrSetAsync` (once per key across concurrent callers); the `TValue` is cached | returned to that caller only, never cached (`SkipCaching`) | propagates, nothing cached; fail-safe may serve an expired entry |
@@ -272,23 +284,37 @@ after the commit is logged at `Error` (5110) and does **not** change the respons
 ## The idempotency contract
 
 `IdempotencyBehavior` uses the `IIdempotencyStore` (`SharedKernel.Idempotency.Abstractions`) registered for
-`IdempotencyPurpose.Request` (`[FromKeyedServices(IdempotencyPurpose.Request)]`). The store scopes keys by the
-ambient tenant itself; the behavior passes lease and retention on every call, so the store needs no retention
-settings.
+`IdempotencyPurpose.Request` (`[FromKeyedServices(IdempotencyPurpose.Request)]`) and the caller's `IRequestContext`
+(`WithIdempotency()` requires both at host start). The behavior passes lease and retention on every call, so the store
+needs no retention settings; the store additionally partitions by the ambient tenant.
 
-- `TryBeginAsync(Request, key, fingerprint, LeaseDuration)`: `Started` (with a token) runs the handler;
-  `InProgress` → `Error.Conflict("idempotency.in_progress")`; `Completed` → the stored response is deserialized
-  and replayed; `FingerprintMismatch` → `Error.Conflict("idempotency.key_reused")`.
+- **Keys are reserved per tenant and caller** (P-562 X3, merged from main in P-579). The store never sees the raw key:
+  `IdempotencyKeyScope.Create` hands it a SHA-256 digest (64 lowercase hex chars) of a frozen layout label, the
+  tenant, the actor kind, the subject (`UserId`), the client and the impersonator, and the raw key — each field
+  length-prefixed, absent ≠ empty. The session id is left out so a retry after a fresh sign-in replays. **Anonymous
+  callers of a tenant share one scope** (only the fingerprint separates them): keys must be unguessable. The layout is a
+  stored format — change it only with a new label.
+- `TryBeginAsync(Request, scopedKey, fingerprint, LeaseDuration)`: `Started` (with a token) runs the handler;
+  `InProgress` → `Error.Conflict(ErrorCodes.Idempotency.InProgress)`; `Completed` → the stored response is
+  deserialized and replayed; `FingerprintMismatch` → `Error.Conflict(ErrorCodes.Idempotency.KeyReused)`. An empty key
+  → `Error.Validation(ErrorCodes.Idempotency.KeyRequired)` (`idempotency.key_required`, was `key_missing`). The codes
+  live in `01.Core`'s `ErrorCodes.Idempotency` (P-563 A6), shared with `14.Presentation`'s `Idempotency-Key` header
+  checks, so no drift test exists.
 - The fingerprint is `IIdempotentRequest.Fingerprint` when set (trimmed), otherwise a lowercase-hex SHA-256 of the
   request's JSON; a serialization failure becomes an `InvalidOperationException` naming the command type.
 - `CompleteAsync`/`ReleaseAsync` return `false` — never throw — when the token no longer owns the reservation.
 - The key is never echoed in an error message.
 
-## The authorization fail-closed rule
+## Authorization is declared on the use case
 
-An **empty** `IAuthorizeRequest.RequiredPermissions` is a misconfiguration: `Error.Forbidden("authorization.no_permissions_declared")`.
-A request that needs no check must not implement `IAuthorizeRequest`. `PermissionMatch.All` stops at the first
-missing permission, `Any` at the first held one. Denial never names the missing permission.
+`[RequirePermission]` (P-563 A2, merged from main in P-579) replaces `IAuthorizeRequest`/`PermissionMatch`. The
+behavior is **always registered** — there is no opt-in to forget — and runs on every path a request is sent from
+(HTTP, messages, jobs, workflows; streams through `StreamAuthorizationBehavior`). A request without the attribute is
+not checked (the old "empty permission list denies" rule went with `IAuthorizeRequest`). Values of one attribute are
+alternatives, several attributes all apply. Denial never names the missing permission. An endpoint that sends a
+command does not repeat the command's permissions; `14.Presentation`'s `[RequireEndpointPermission]` is for what has no
+command (hubs, gRPC methods, endpoints that send nothing). `SK0040` requires a request carrying `[RequirePermission]`
+or `IIdempotentRequest` to return `Result`/`Result<T>`.
 
 ---
 
@@ -330,9 +356,13 @@ concerns; `TValue` must round-trip through `System.Text.Json` (and be in the cac
 | Idempotency store | Purpose-keyed `IIdempotencyStore` from `SharedKernel.Idempotency.Abstractions` shared with messaging (P-568) | A request-only store owned here | Persisted formats changed; the behavior owns lease and retention |
 | `CachingBehavior` cache-miss path | Context overload of `GetOrSetAsync`; failures `SkipCaching()`; policy forced to `WithoutEagerRefresh()` and `WithFactoryTimeouts(null, null)` | `TryGetAsync`/`SetAsync` | No eager refresh or factory timeout for cached queries (both would run the handler after the scope is disposed) |
 | Tenant cache scoping | Keys through `ITenantCacheKeyProvider.BuildTenantKey(TenantId, …)`; tags `BuildTenantTag`; `ForTenant` | `ITenantCacheService` (takes `(entity, id)` and an explicit tenant) | `.Pipeline.Caching` consumes the plain `ICacheService` with the same tenant format |
-| Pipeline extensibility | Five-value `PipelineStage` + `AddBehavior(type, stage, requiredServices)` | An unordered registration list | A sibling package slots into a precise stage |
+| Pipeline extensibility | Five-value `PipelineStage` + `WithBehavior(type, stage, requiredServices)` | An unordered registration list | A sibling package slots into a precise stage |
 | Short-circuit response | `FailureResponse.Create<TResponse>` (cached delegate) | A second failure shape | One mechanism for Authorization, Validation, Idempotency |
 | `ApplicationLoggingOptions`/`IdempotencyBehaviorOptions` validation | DataAnnotations + `ValidateOnStart()` | `SharedKernel.Configuration`'s `AddValidatedOptions` | No extra project reference; invalid values fail at startup |
+| Registration (P-563 A4, merged from main in P-579) | One `AddSharedKernelApplication(assemblies, app => …)` in `.Pipeline`; the mediator plugs in as a builder extension (`UseMediatR()`), like the messaging transports (`UseRabbitMq()`); seams checked by `ValidateOnStart`; a second call throws | WO-086's `AddSharedKernelMediatR` + `AddSharedKernelApplicationBehaviors()…Build()` (two calls, ordering traps, `Build()` throwing for a seam registered later); main's `AddSharedKernelApplication` inside a MediatR-bound `SharedKernel.Application` (A1/A3, rejected by the owner for WO-086) | FluentValidation stays a second line (`AddFluentValidationRequestValidators(asm)`), because the pipeline takes no validator library; a host that forgets the mediator fails at start (`ISender` is always required) |
+| Authorization declaration (P-563 A2, merged from main in P-579) | `[RequirePermission]` on the use case, always enforced, `IRequestContext` resolved only for marked requests | `IAuthorizeRequest`/`PermissionMatch` (an opt-in behavior could be forgotten; an endpoint and a command declared the same permission twice) | A marker-free request is unchecked by design — a request that needs a check must say so |
+| Behavior visibility (P-563 A5, merged from main in P-579) | Behaviors and `DomainEventDispatcher` internal; the public surface is the registration call, its builder, the options and `RequestPipeline<,>` | Public behavior classes | Tests reach them through `InternalsVisibleTo`; `PipelineOrderAssertion` inspects registrations by type name |
+| Idempotency per caller (P-562 X3, merged from main in P-579) | The behavior scopes the key to tenant + caller before the store sees it | Tenant-only keys (one caller could replay another's response) | Reservations stored before the upgrade are not found |
 
 Removed before first publish (P-544) and not coming back: fire-and-forget dispatch, `ResilienceBehavior`,
 parallel domain-event dispatch, `DualApprovalBehavior`, a response envelope. See `CLAUDE.history.md`.
@@ -348,7 +378,7 @@ parallel domain-event dispatch, `DualApprovalBehavior`, a response envelope. See
 | `IdempotencyBehavior`'s use of `IIdempotencyStore` | `18.Idempotency` stores; `16.Testing/SharedKernel.Idempotency.Testing`'s `FakeIdempotencyStore` |
 | `ICacheableQuery<TValue>`/`IInvalidatesCache`/key or tag scoping | `02.Caching.Abstractions`' `CacheKeyFormat`/`ITenantCacheKeyProvider`/`CachePolicy.ForTenant`; SK0017/SK0018/SK0041 |
 | `IDomainEventHandler<T>`/`DomainEventDispatcher` | `06.Persistence`'s save pipeline; `03.Domain`'s `IDomainEventDispatcher` |
-| Stage order in `ApplicationBehaviorsBuilder` | `SharedKernel.Application.Pipeline.Tests/PipelineOrderTests`; `00.Governance`'s `ApplicationPipelineRules` |
+| Stage order in `ApplicationPipelineBuilder.Register` | `SharedKernel.Application.Pipeline.Tests/PipelineOrderTests`; `00.Governance`'s `ApplicationPipelineRules` |
 | Any public API | `PublicAPI.Unshipped.txt` of the package and its `README.md` |
 
 ---
@@ -356,13 +386,18 @@ parallel domain-event dispatch, `DualApprovalBehavior`, a response envelope. See
 ## Test Rules
 
 - Prove pipeline order and cross-behavior interaction through a real `ServiceCollection` +
-  `ApplicationBehaviorsBuilder` + `RequestPipeline<,>` (or `ISender` via `AddSharedKernelMediatR`) — never a
+  `AddSharedKernelApplication` + `RequestPipeline<,>` (or `ISender` via `app.UseMediatR()`) — never a
   hand-rolled continuation standing in for the whole pipeline.
 - Every row in "Each behavior's contract" has a test for its success, failure and (where applicable) exception path.
 - The nested-command guard has dedicated coverage: merge on success, discard on failure/exception, `OnCompleted`
   throwing when no command is active.
 - Idempotency covers `Started`/`InProgress`/`Completed`/`FingerprintMismatch`, release on failure and on exception.
-- `AddBehavior` stage ordering and the `Build()` guards have dedicated tests.
+- `WithBehavior` stage ordering, the host-start seam check (every missing service named, `[RequirePermission]` demanding
+  `IRequestContext`, `ISender` always demanded) and the double-call guard have dedicated tests.
+- Authorization covers: unmarked request unchecked without resolving `IRequestContext`, 401 for an anonymous caller,
+  403 per attribute, alternatives within one attribute, several attributes, inheritance, the stream variant.
+- Idempotency covers per-caller scoping (two callers with one key each execute; the same caller replays; anonymous
+  callers of a tenant share a scope) and the key layout.
 - `.Mediator.MediatR` tests cover discovery (commands, queries, streams, domain-event handlers), a hand-registered
   handler kept, duplicate handlers rejected, and a missing handler's error.
 - `.Pipeline.Caching` concurrency is proven against a real FusionCache, not only the fake.
@@ -372,4 +407,5 @@ parallel domain-event dispatch, `DualApprovalBehavior`, a response envelope. See
 ## Changelog
 
 Entries before 2026-09-15 are in [`CLAUDE.history.md`](CLAUDE.history.md); later history, including WO-086
-(P-564, P-565, P-567, P-568, P-571), is recorded in [`state-map.md`](state-map.md) and the root `CLAUDE.changelog.md`.
+(P-564, P-565, P-567, P-568, P-571) and P-579 (main's P-563 application model and P-562 X3 merged onto WO-086;
+design record with the supersession note in [`docs/p563/design.md`](docs/p563/design.md)), is recorded in [`state-map.md`](state-map.md) and the root `CLAUDE.changelog.md`.

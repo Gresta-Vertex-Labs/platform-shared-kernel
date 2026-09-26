@@ -70,11 +70,15 @@ The proofs that the check itself still works:
 - **`DependencyGraphRulesTests`** (in `SharedKernel.ArchitectureTests.Tests`, reading the csproj graph):
   `EveryPackableProject_DeclaresAKnownTier`, `EveryDirectReference_RespectsTheTierMatrix`,
   `AspNetCore_IsReferencedOnlyByHostAndTestingProjects`, `TestingPackages_AreReferencedOnlyByTestingProjectsOrTests`,
-  `MediatR_IsReferencedOnlyByTheMediatorAdapter`, `ProjectReferenceGraph_HasNoCycles`.
+  `MediatR_IsReferencedOnlyByTheMediatorAdapter`, `AnalyzerOnlyReferences_AreExemptFromTheMatrix_AndTargetToolingOnly`,
+  `ProjectReferenceGraph_HasNoCycles`. A `ReferenceOutputAssembly="false"` reference (it only orders the build or loads a
+  Roslyn component) is exempt from the matrix in both the build and these tests, and may only target a Tooling project —
+  the one such edge is `Presentation.WebApi` → `Presentation.WebApi.Generators` (P-579).
 - **`OptionalDependencySatelliteRulesTests`** — the MassTransit core references no transport, Azure or EF Core package
   (and its assembly loads none); satellites are Adapters with a declared edge to the core; `Presentation.Grpc` never
-  reaches `WebApi`; `Presentation.Core` is Host with no ASP.NET Core/Presentation dependency; `Presentation.SignalR`
-  references no Redis; GraphQL is a Presentation Host package.
+  reaches `WebApi` (it references `Presentation.Core` only); `Presentation.Core` is Host and depends on no sibling
+  presentation package (ASP.NET Core is allowed); GraphQL is a Presentation Host package. The SignalR Redis backplane
+  package no longer exists (P-579).
 - **`TestingPackagesNeverReferencedByProductionTests`** — no production project references a Testing package; the
   core `SharedKernel.Testing` depends only on Foundation and Model packages.
 
@@ -99,6 +103,20 @@ All analyzers report **Warning** by default; consumers escalate through `.editor
 | Messaging | SK0703 MessageBusSingletonRegistration · SK0704 HardcodedQueueUriInGetSendEndpoint · SK0705 FaultConsumerDirectRegistration · SK0708 BatchConsumerRegisteredViaAddConsumer |
 | Removed | SK0015 (streams have the kernel `IStreamPipelineBehavior<,>`; no mediator registration — P-567), SK0019 (target type removed — P-544) |
 
+Rules whose triggers name kernel types (each locked by a `RealKernelTypeNameTests` case):
+
+- **SK0040** fires on a non-abstract request carrying `[RequirePermission]`
+  (`SharedKernel.Application.Authorization.RequirePermissionAttribute`, on the type or a base type — the attribute is
+  inherited) or implementing `SharedKernel.Application.Idempotency.IIdempotentRequest`, whose
+  `SharedKernel.Application.Messaging.IRequest<T>` response is not `Result`/a closed `Result<T>`. A same-named attribute
+  in any other namespace never matches (the endpoint attribute is `RequireEndpointPermission` in
+  `SharedKernel.Presentation.Authorization`). `IAuthorizeRequest` was deleted (P-579).
+- **SK0036** exempts the `SharedKernel.Presentation.Grpc` prefix; its message names `SharedKernel.Core.Extensions`'
+  `ThrowIfFailure()`/`GetValueOrThrow()` — the gRPC package's own `GrpcResultExtensions` no longer exists.
+- **SK0016/SK0017/SK0041** match the `SharedKernel.Application` namespace prefix; the markers live in the
+  `SharedKernel.Application` assembly (`.Messaging`, `.Caching`, `.Idempotency`), the behaviors in
+  `SharedKernel.Application.Pipeline`.
+
 IDs that are architecture tests rather than analyzers (they need a whole assembly): SK0012 `ReflectionGuardRules`,
 SK0301–SK0303 `EncryptionPatternGuardRules`, SK0701–SK0702 `MessagingArchitectureRules`, SK0706
 `ExtendedMessagingArchitectureRules`. SK0707 (saga states) was retired with sagas (P-560).
@@ -117,17 +135,18 @@ platform's own packages, is in the package README.
 | `SharedKernelLayeringRules` | `ContractsNeverReferencesDomain`, `DomainNeverReferencesContracts`, `ModelNeverReferencesLogging`, `TestingNeverReferencedByProduction` — only what the tier matrix cannot express |
 | `DomainLayerPurityRules`, `DomainGoldStandardRules`, `GuardPurityRules`, `CoreArchitectureRules` | Domain purity (no infrastructure, clock, event handlers), domain-service base, `Guard.Against` never throws, `TryAdd*` registration convention |
 | `ContractsPurityRules` | Integration events are sealed, behaviour-free; no domain or `Result` type on the contracts surface |
-| `ApplicationPipelineRules`, `UnitOfWorkSeamRules`, `MetricsInstrumentationRules` | Behaviors reference no concrete infrastructure; `Application.Pipeline` references no cache/Polly/hosting/Core; `.Pipeline.Caching` only `Caching.Abstractions`; `IUnitOfWork`/`IRequestContext`/`IAuditTrailWriter` declared only in `SharedKernel.Execution`; duration histograms carry an `outcome` tag |
+| `ApplicationPipelineRules`, `UnitOfWorkSeamRules`, `MetricsInstrumentationRules` | Behaviors (internal since P-579; NetArchTest scans non-public types) reference no concrete infrastructure; `Application.Pipeline` references no cache/Polly/hosting (`PipelineNeverReferencesCachingPollyOrHosting` — `SharedKernel.Core` allowed since P-579); `.Pipeline.Caching` only `Caching.Abstractions`; `IUnitOfWork`/`IRequestContext`/`IAuditTrailWriter` declared only in `SharedKernel.Execution`; duration histograms carry an `outcome` tag |
 | `PersistenceLayerProtectionRules`, `PersistenceInterfaceOwnershipRules`, `RepositoryContractCompletenessRules`, `EfCorePackageHygieneRules`, `PersistenceNamespaceConventionRules` | One `SaveChanges` call site, no `IQueryable` escape, read repositories never track, one declaring assembly for `IUserContext`, no tenant-identity interface next to `IRequestContext.TenantId`, EF Core hygiene, namespace placement |
 | `RedisTopologyRules` | Redis core never references its role packages; siblings independent; pub/sub ↛ messaging and messaging ↛ caching; `Caching.Abstractions` references only DI abstractions and declares no provider types; no RedLock |
 | `StorageTopologyRules`, `SearchTopologyRules`, `IntelligenceTopologyRules`, `WorkflowTopologyRules` | Abstractions free of vendor SDKs; sibling providers independent (Obs → S3 only); S3 SDK only in providers; no health-checks dependency in providers; raw Temporal accessor never consumed in-repo |
-| `CommunicationLayeringRules`, `PresentationLayeringRules` | gRPC (client and server) never references `SharedKernel.Contracts`; interceptors/filters through platform bases; `ProblemDetails` shaped only in `Presentation.WebApi`; no inline `Result` branch before an HTTP result |
+| `CommunicationLayeringRules`, `PresentationLayeringRules` | gRPC (client and server) never references `SharedKernel.Contracts`; interceptors/filters through platform bases; `ProblemDetails` shaped only in `Presentation.WebApi`; no inline `Result` branch before an HTTP result (typed results `ToOk`/`ToErrorResult` are the mapping); the versioning/OpenAPI/Scalar stack only in `Presentation.OpenApi` |
 | `SecurityArchitectureRules`, `CryptoIsolationRules`, `EncryptionPatternGuardRules` | No request context in the domain; no singleton `IUserContext`; DPoP parsing only in Oidc; client-certificate reads only in Mtls; no raw cipher outside `SharedKernel.Cryptography`; no encryption attribute on domain entities |
 | `MessagingArchitectureRules`, `ExtendedMessagingArchitectureRules` | No raw bus/publisher/scheduler injection outside messaging; no publisher in the domain |
 | `HealthCheckTagIntegrityRules`, `HealthCheckConstantsUsageRules` | Dependency checks tagged `ready`, never `live`; no bare health-check name/tag literal where constants exist |
 | `ReflectionGuardRules` | No `MakeGenericMethod` dispatch outside `ReflectionExemptionRegistry` |
 
-Assertion helpers (not `ConditionList`s): `SecureDefaultsAssertion`, `PipelineOrderAssertion`,
+Assertion helpers (not `ConditionList`s): `SecureDefaultsAssertion`, `PipelineOrderAssertion` (by type, or by name for the
+kernel's internal built-in behaviors after `AddSharedKernelApplication(…)`),
 `LoggingEventIdIntegrityAssertion`, `WellKnownConstantOwnershipAssertion`; `RuleAnchor` validates the anchor types
 some rules take.
 
@@ -209,3 +228,13 @@ History up to P-574 is in [`state-map.md`](state-map.md) and the root [`CLAUDE.c
   SKTIER000–006) is an error with no baseline; `DependencyGraphRulesTests`, `OptionalDependencySatelliteRulesTests`,
   `RuleExecutionCoverageTests`, `RealKernelTypeNameTests` and `eng/verify-tier-errors.sh` added; SK0015 removed. This
   brain rewritten from 5,600 lines to the final state.
+- [2026-09-26] P-579 (origin/main merged into WO-086): SK0040 triggers on `[RequirePermission]` (inherited) instead of
+  the deleted `IAuthorizeRequest`; SK0036's message and tests name `SharedKernel.Core`'s `ThrowIfFailure()`/
+  `GetValueOrThrow()`; `PipelineNeverReferencesCachingPollyHostingOrCore` renamed
+  `PipelineNeverReferencesCachingPollyOrHosting` (the pipeline now uses `SharedKernel.Core`'s `error.ToException()`);
+  the built-in behaviors are internal, so `PipelineOrderAssertion` gained a by-name overload and the ordering lock
+  registers through `AddSharedKernelApplication(…, app => app.UseMediatR().With…())`;
+  `PresentationLayeringRules.NoOpenApiStackDependencyOutsideOpenApiAddOn` added (main's P-562); analyzer-only
+  (`ReferenceOutputAssembly="false"`) project references exempt from the tier matrix; the SignalR Redis backplane
+  package is gone. `ReflectionExemptionRegistry` records the new registration-time reflection sites (none needs an
+  entry).

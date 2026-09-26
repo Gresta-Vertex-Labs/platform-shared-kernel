@@ -202,7 +202,7 @@ building one outside `EventEnvelope.Wrap` no longer compiles.
 |---|---|
 | `ApplicationPipelineRules.BehaviorsNeverReferenceConcreteInfrastructure` | Named pipeline behaviors depend on abstractions only |
 | `ApplicationPipelineRules.NoExistingBehaviorMatchesStreamRequestConstraint` | No behavior's generic constraint accidentally captures stream requests |
-| `ApplicationPipelineRules.PipelineNeverReferencesCachingPollyHostingOrCore` | `SharedKernel.Application.Pipeline` carries no cache, Polly, hosting or `SharedKernel.Core` dependency |
+| `ApplicationPipelineRules.PipelineNeverReferencesCachingPollyOrHosting` | `SharedKernel.Application.Pipeline` carries no cache, Polly or hosting dependency (`SharedKernel.Core` is allowed since P-579: the pipeline uses `error.ToException()`) |
 | `ApplicationPipelineRules.PipelineCachingNeverReferencesConcreteInfrastructure` | The caching behaviors reach `SharedKernel.Caching.Abstractions`, never a cache provider |
 | `UnitOfWorkSeamRules.SharedContractsAreNotRedeclared` | `IUnitOfWork`, `IRequestContext` and `IAuditTrailWriter` are declared only in `SharedKernel.Execution` — no second copy (nor the deleted `ITransactionalUnitOfWork`/`IPersistenceTransaction`/`ICurrentActorContext`/`ICurrentTenantContext`) anywhere else |
 | `MetricsInstrumentationRules.RequestDurationRecordsIncludeOutcomeTag` | Every duration histogram carries an `outcome` tag, so failures stay separable |
@@ -274,7 +274,8 @@ siblings never see each other. Storage is the one exception: `SharedKernel.Stora
 | `CommunicationLayeringRules.NoDirectHotChocolateFilterSortInheritanceOutsideGraphQL` | Filters/sorts extend the platform base, not HotChocolate directly |
 | `PresentationLayeringRules.GrpcNeverReferencesContracts` | Same contract rule, server side |
 | `PresentationLayeringRules.NoDirectProblemDetailsConstructionOutsideWebApi` | `ProblemDetails` is shaped in one place |
-| `PresentationLayeringRules.NoInlineResultBranchBeforeHttpResultOutsideWebApi` | No hand-rolled `IsSuccess` branch at an HTTP boundary |
+| `PresentationLayeringRules.NoInlineResultBranchBeforeHttpResultOutsideWebApi` | No hand-rolled `IsSuccess` branch at an HTTP boundary; map with the typed results (`ToOk`, `ToErrorResult`, …) |
+| `PresentationLayeringRules.NoOpenApiStackDependencyOutsideOpenApiAddOn` | API versioning, OpenAPI and Scalar stay in `SharedKernel.Presentation.OpenApi` |
 
 ### Security
 
@@ -322,7 +323,7 @@ These helpers inspect IL directly and throw on violation.
 | Helper | Asserts |
 |---|---|
 | `LoggingEventIdIntegrityAssertion.AssertGloballyUniqueAndInRange` | Every `[LoggerMessage]` `EventId` is unique platform-wide and inside its domain's reserved range |
-| `PipelineOrderAssertion.AssertRegistrationOrder` | Registrations occur in the required relative order — where order is the correctness property, not a preference |
+| `PipelineOrderAssertion.AssertRegistrationOrder` | Registrations occur in the required relative order — where order is the correctness property, not a preference. Pass the behavior types, or their simple names for the kernel's internal built-in behaviors (build the collection with `AddSharedKernelApplication(…)`) |
 | `WellKnownConstantOwnershipAssertion.AssertSoleDeclaration` | A shared constant is declared in exactly one place, so two packages cannot drift apart on a wire value |
 | `SecureDefaultsAssertion.AssertEnumPropertyDefaultEquals` | An options enum's default is the secure value |
 | `SecureDefaultsAssertion.AssertStringCollectionPropertyDefaultEquals` | A default collection matches exactly |

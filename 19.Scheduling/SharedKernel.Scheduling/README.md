@@ -89,7 +89,8 @@ Before each execution the runner opens a `RequestContextScope` carrying
   job's tenant.
 - Every outbound REST or gRPC call, message and workflow the job starts carries the same tenant and correlation
   id, so one run can be followed across services.
-- The context holds **no permissions**. A job whose command is guarded by `AuthorizationBehavior` opens its own
+- The context holds **no permissions**, and authorization is always on: a job whose command carries
+  `[RequirePermission]` (`SharedKernel.Application.Authorization`) opens its own
   scope with exactly the permissions it needs, or the command fails closed:
 
   ```csharp
@@ -98,6 +99,9 @@ Before each execution the runner opens a `RequestContextScope` carrying
       return await sender.Send(command, ct);
   }
   ```
+
+  When the service's commands carry `[RequirePermission]`, the host start also demands a registered
+  `IRequestContext` (`AddSharedKernelApplication`'s start check names the request types).
 
 ## Cross-replica single execution — and the single-replica caveat
 

@@ -39,7 +39,7 @@ Every multi-tenant service needs the same persistence decisions, and each one is
 | --- | --- |
 | A query forgets `WHERE tenant_id = …` and leaks another customer's data | Tenant filter in EF Core **and** a PostgreSQL row-level-security policy bound per transaction — hand-written SQL included |
 | Retry on transient faults breaks explicit transactions | The whole unit of work runs inside the retrying strategy; ambiguous commits are never replayed |
-| Two users overwrite each other's changes | Every aggregate root gets `xmin` optimistic concurrency, exposed as an ETag-ready `EntityVersion` |
+| Two users overwrite each other's changes | Every aggregate root gets `xmin` optimistic concurrency, exposed as an ETag-ready `EntityVersion` — an opaque token sealed with the service's key, so an ETag never reveals the database's transaction counter |
 | Backups and replicas expose personal data | Column-level AES-256-GCM, searchable through blind indexes, rotatable, erasable per tenant |
 | "Who changed this?" has no trustworthy answer | An append-only ledger sealed into keyed hash chains, verifiable by anyone with the key |
 | Every service wires EF Core, Dapper, TLS and roles differently | One entry point, one configuration shape, one canonical role script |
@@ -251,12 +251,10 @@ builder.AddSharedKernelPostgres<OrderDbContext>("orders", p => p
     .UseAuditTrail()                           // IAuditTrailWriter, sealer, self-check
     .MigrateOnStartup());                      // migrations + seeders, one replica at a time
 
-builder.Services.AddSharedKernelMediatR(typeof(Program).Assembly);    // handlers + domain-event dispatcher
-builder.Services.AddSharedKernelApplicationBehaviors()
-    .AddDefaultBehaviors()
-    .AddTransactionBehavior()                  // one retry-safe transaction per command
-    .AddAuditingBehavior()                     // Succeeded inside it, Failed after rollback
-    .Build();
+builder.Services.AddSharedKernelApplication(typeof(Program).Assembly, app => app   // handlers, validators, domain events
+    .UseMediatR()                              // ISender, with MediatR as the transport
+    .WithTransactions()                        // one retry-safe transaction per command
+    .WithAuditing());                          // Succeeded inside it, Failed after rollback
 
 builder.Services.AddHealthChecks()
     .AddDatabaseReadinessCheck<OrderDbContext>()   // not ready until startup migrations finished
@@ -354,7 +352,8 @@ public sealed class PlaceOrderHandler(IRepository<Order, OrderId> orders, IReque
 Reads go through `IReadRepository<Order, OrderId>` (never tracked) or `IRepository` (tracked, for changes — and for
 reading an ETag). Queries are specifications — `Spec.For<Order>().Where(o => o.Customer == name).OrderBy(o => o.CreatedOn)`
 — and paging happens at the call site: `ListPagedAsync(spec, pageRequest)`, `ListKeysetAsync(spec, cursorPageRequest,
-o => o.CreatedOn)`. Optimistic concurrency with ETag/If-Match:
+o => o.CreatedOn)`. Optimistic concurrency with ETag/If-Match — which needs the service's key provider registered,
+because every version is sealed with a subkey of it:
 [EfCore README](SharedKernel.Persistence.EfCore/README.md#1-optimistic-concurrency-with-etag--if-match).
 
 ### 7. Testing
@@ -417,7 +416,7 @@ tenant erasure. Its end-to-end tests run in CI against Testcontainers PostgreSQL
 | --- | --- |
 | **No cross-tenant reads or writes**, through EF Core, Dapper or raw SQL | Tenant filter + write guard + transaction-local row-level security; the runtime role cannot bypass RLS (checked at startup) |
 | **No silent misconfiguration** | Options, the model, the role's privileges, policy coverage and the audit ledger's grants are verified when the host starts |
-| **No lost updates** | `xmin` concurrency on every aggregate root; `EntityVersion` round-trips through ETag / If-Match |
+| **No lost updates** | `xmin` concurrency on every aggregate root; `EntityVersion` round-trips through ETag / If-Match as an opaque, aggregate-bound token |
 | **Retry-safe transactions** | The whole unit of work replays on a transient fault; an ambiguous `COMMIT` is never replayed |
 | **Personal data encrypted at rest** | AES-256-GCM per column, bound to row, column and tenant; erasable per tenant |
 | **A trustworthy audit trail** | Append-only (triggers + grants), sealed into HMAC chains, verifiable, with signed checkpoints |

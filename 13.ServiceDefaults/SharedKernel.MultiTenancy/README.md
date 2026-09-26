@@ -46,12 +46,18 @@ builder.Services.Configure<TenantResolutionOptions>(
 
 var app = builder.Build();
 
-app.UseSharedKernelRequestContext();
-app.UseSharedKernelSecurityHeaders();
-app.UseExceptionHandler();
-app.UseAuthentication();
-app.UseMiddleware<TenantResolutionMiddleware>();          // after UseAuthentication()
-app.UseAuthorization();
+// The canonical pipeline, with 14.Presentation's SharedKernel.Presentation.WebApi:
+app.UseSharedKernelRequestContext();                        // first: the request's scope and correlation id
+app.UseSharedKernelWebApi(p => p.BeforeAuthorization(a =>
+    a.UseMiddleware<TenantResolutionMiddleware>()));        // after authentication, before authorization
+app.MapEndpoints();
+
+// Without SharedKernel.Presentation.WebApi, the same order by hand:
+// app.UseSharedKernelRequestContext();
+// app.UseExceptionHandler();
+// app.UseAuthentication();
+// app.UseMiddleware<TenantResolutionMiddleware>();
+// app.UseAuthorization();
 ```
 
 Read the tenant through the request context:

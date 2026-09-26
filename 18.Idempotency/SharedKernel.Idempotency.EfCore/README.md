@@ -35,7 +35,11 @@ settings.
 
 ## Table
 
-One table, `idempotency_keys`, one row per (tenant scope, purpose, key):
+One table, `idempotency_keys`, one row per (tenant scope, purpose, key). The key is stored exactly as given. For
+`IdempotencyPurpose.Request` it is, through `IdempotencyBehavior`, never the command's raw key but a SHA-256 digest of
+tenant, caller and key — always 64 lowercase hex characters, whatever the raw key's length (P-562 X3) — so a
+reservation belongs to one caller of one tenant, and another caller using the same key cannot be handed its stored
+response. The `tenant_scope` column stays on top of that.
 
 | Column | Type | Notes |
 | --- | --- | --- |

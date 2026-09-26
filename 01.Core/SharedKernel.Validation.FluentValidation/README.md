@@ -98,18 +98,21 @@ by the country field's own rule.
 
 ## Run validators in the request pipeline
 
-`AddFluentValidationRequestValidators()` makes every FluentValidation `IValidator<T>` registered for a request run in
-the kernel pipeline's validation step (`SharedKernel.Application.Pipeline`'s `ValidationBehavior`). It registers
-`FluentValidationRequestValidator<TRequest>` as the open-generic `SharedKernel.Application.Validation.IRequestValidator<TRequest>`;
-the validators themselves you register as usual.
+`AddFluentValidationRequestValidators(params Assembly[] assemblies)` makes every FluentValidation `IValidator<T>` for a
+request run in the kernel pipeline's validation step (`SharedKernel.Application.Pipeline`'s `ValidationBehavior`). It
+registers `FluentValidationRequestValidator<TRequest>` as the open-generic
+`SharedKernel.Application.Validation.IRequestValidator<TRequest>` and every validator found in the assemblies you pass —
+scoped, public and internal, each at most once. Pass the same assemblies as `AddSharedKernelApplication`. With no
+assembly it registers only the bridge, and you register the validators yourself.
 
 ```csharp
 // Program.cs
-using FluentValidation;
+using SharedKernel.Application.Pipeline;
+using SharedKernel.Application.Mediator.MediatR;
 using SharedKernel.Validation.FluentValidation;
 
-builder.Services.AddValidatorsFromAssemblyContaining<CreateCustomerValidator>(); // FluentValidation.DependencyInjectionExtensions
-builder.Services.AddFluentValidationRequestValidators();                          // the bridge; idempotent
+builder.Services.AddSharedKernelApplication(typeof(Program).Assembly, app => app.UseMediatR());
+builder.Services.AddFluentValidationRequestValidators(typeof(Program).Assembly);   // the bridge + the validators; idempotent
 ```
 
 | Behaviour | Detail |
@@ -140,8 +143,9 @@ Every code is listed in `ValidationErrorCodes`. Each has one message in `Validat
 
 With the platform's pipeline, nothing between the rule and the response needs code:
 
-1. `AddFluentValidationRequestValidators()` runs your validators in `SharedKernel.Application.Pipeline`'s `ValidationBehavior`, which turns each failure into an `Error`, keeping the code, the
-   message and the placeholder values. The field path goes into `MessageArguments["PropertyPath"]`.
+1. `SharedKernel.Application.Pipeline`'s `ValidationBehavior` runs your validators and turns each failure into an `Error`,
+   keeping the code, the message and the placeholder values. The field path goes into
+   `MessageArguments["PropertyPath"]`.
 2. `SharedKernel.Presentation.WebApi` returns a ProblemDetails response:
    - `errors` holds the messages, keyed by field;
    - `errorCodes` holds the codes under the same keys;
@@ -265,7 +269,8 @@ FAILURE    ErrorCode = specific ValidationErrorCodes value; ErrorMessage = Engli
            FormattedMessagePlaceholderValues = error values + PropertyName (display) + PropertyPath;
            AttemptedValue = null; CustomState = SharedKernel Error.
 CHAIN      Only When/Unless after these rules. No WithMessage/WithErrorCode/WithName/WithSeverity.
-PIPELINE   services.AddFluentValidationRequestValidators() (+ AddValidatorsFromAssembly...) -> IRequestValidator<T> in
+PIPELINE   services.AddFluentValidationRequestValidators(typeof(Program).Assembly) registers the bridge + that assembly's
+           validators (no assembly -> bridge only; register validators yourself) -> IRequestValidator<T> in
            ValidationBehavior keeps the code -> ProblemDetails errors (by field) + errorCodes -> REST client restores both.
 COUNTRY    VAT/NationalId rules skip when the country is missing/invalid; validate the country field separately.
 ```

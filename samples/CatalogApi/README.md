@@ -7,8 +7,9 @@ artifacts against real engines — not to be copied wholesale, since most servic
 | Domain | What this sample uses it for |
 |---|---|
 | `09.Search` (all three packages) | Both providers side by side; the neutral contracts, plus each engine's exclusive ones |
-| `13.ServiceDefaults` | OpenTelemetry, health endpoints, `AddSharedKernelReadiness()` over the per-index probes each provider registers, `UseSharedKernelRequestContext()` (correlation id) |
-| `14.Presentation` | `Result<T>` → RFC 9457 ProblemDetails |
+| `13.ServiceDefaults` (+ `.Security`) | OpenTelemetry, health endpoints, `AddSharedKernelReadiness()` over the per-index probes each provider registers, `AddSharedKernelRequestContext()` + `UseSharedKernelRequestContext()` first in the pipeline (correlation id) |
+| `05.Application` (`SharedKernel.Application.Pipeline` + `.Mediator.MediatR`) | `AddSharedKernelApplication(typeof(Program).Assembly, app => app.UseMediatR())`: every endpoint sends a query or command through the kernel's `ISender`, and only the handlers in `Features/` (`Storefront`, `BackOffice`, `Operations`) touch the engines; the two corpus walks are stream queries (`IStreamQuery<T>`, `ISender.CreateStream`) |
+| `14.Presentation` | `AddSharedKernelWebApi()` + `UseSharedKernelWebApi()` right after the request context; three endpoint modules (`IEndpointModule`, mapped by the generated `app.MapEndpoints()`); `Result<T>` → typed results (`ToOk(…)`); every failure an RFC 9457 problem — an engine outage 503, a timeout 504 |
 
 ## Running it
 
@@ -23,7 +24,7 @@ docker run -d --name sk-search-es -p 9200:9200 \
   docker.elastic.co/elasticsearch/elasticsearch:9.4.2
 
 dotnet pack Platform.SharedKernel.slnx -c Release
-dotnet run --project samples/CatalogApi --urls http://localhost:5199 -p:SharedKernelPackageVersion=<the packed version>
+dotnet run --project samples/CatalogApi -p:SharedKernelPackageVersion=<the packed version> -- --urls http://localhost:5199
 ```
 
 Then provision and seed, in that order:
@@ -62,15 +63,29 @@ Meilisearch has no count endpoint and reads `totalHits` off a paginated search, 
 at the index ceiling — so it reports a lower bound rather than a number it cannot vouch for.
 ElasticSearch answers from `_count` and is always exact. Both are honest about which they are.
 
-**A down engine is a `Result`, not an exception.** Stop Meilisearch and search again:
+**A down engine is a `Result`, not an exception — and a 503, not a 500.** Stop Meilisearch and search
+again:
 
 ```bash
 docker stop sk-search-meili
 curl -i localhost:5199/storefront/$NORTH/products?q=mouse
-# HTTP 500 — {"title":"search.unreachable","errorCode":"search.unreachable", …}
+# HTTP/1.1 503 Service Unavailable
+# Content-Type: application/problem+json
+# {"type":"https://tools.ietf.org/html/rfc9110#section-15.6.4","title":"Service Unavailable","status":503,
+#  "detail":"The service is temporarily unavailable. Try again later.",
+#  "instance":"/storefront/6f1c2a4e-…/products","errorCode":"search.unreachable","correlationId":"f800e48c…","traceId":"00-f800e48c…-01"}
 ```
 
-ElasticSearch keeps serving. Restart the container and the storefront recovers with no intervention.
+`search.unreachable` is an `ErrorType.Unavailable` error, so the endpoint — `sender.Send(…).ToOk(…)`, no
+`IsSuccess` branch — answers 503; `search.timeout` and `search.write_timeout` are `ErrorType.Timeout`,
+answered 504. The engine's own message names internal endpoints (`Search provider 'meilisearch' at
+'http://localhost:7700' is unreachable.`), so it reaches the client only in Development; elsewhere the detail
+is generic and `errorCode` still says what happened. Set
+`SharedKernel:Presentation:WebApi:Problems:UnavailableRetryAfter` to add a `Retry-After` to every 503 problem
+response (not to the `/ops/verify` report or `/health/ready`).
+
+ElasticSearch keeps serving. `/health/ready` reports the service unready while the index is not
+addressable. Restart the container and the storefront recovers with no intervention.
 
 **Telemetry is real.** `GET /diagnostics/telemetry` shows the spans and measurements the packages
 emitted, subscribed by the same `SharedKernel.Search` source and meter name `WithSearchTelemetry()`
@@ -87,7 +102,9 @@ stay observably identical. `DELETE /ops/indexes` then re-provision is the sample
 staging → bulk-load → `CutoverAsync` rebuild a real service performs.
 
 **A forgotten rebuild is caught.** `GET /ops/verify` compares every live index against the definition
-this build declares, and returns 503 with the specific drift when they differ.
+this build declares, and returns 503 with the specific drift when they differ. Its report — like
+`/ops/provision`'s — shows each error's message through `ErrorPresentation.GetClientMessage`, the text a
+problem response would carry: a definition drift in full, an engine outage only in Development.
 
 **Tenant isolation holds everywhere**, including the ElasticSearch suggester — which ignores query
 filters entirely, so the tenant travels as a completion category context declared at provisioning time:
@@ -106,7 +123,8 @@ they serve **different document types** — `ISearchIndex<ProductDocument>` and
 The two non-generic contracts do collide, though: `ISearchIndexProvisioner` and
 `ISearchProviderDescriptor` have no type parameter to tell them apart, so an unkeyed resolution returns
 whichever provider was registered last. Each provider package therefore also registers them **keyed by
-provider name**, and this sample addresses them that way (`/ops/probe/{provider}/{index}`).
+provider name**. `/ops/probe/{provider}/{index}` needs neither: it runs the index's own readiness probe, found by
+its name (below), and answers 200 or 503 with the probe's report.
 
 Readiness needs no key at all. Each provider registers one `IReadinessProbe` per index it was given,
 named after the provider and the index, and the host maps every probe in one call:
@@ -138,8 +156,8 @@ right provider key or report a healthy service unready forever.
 | `GET /ops/verify` · `GET /ops/probe/{provider}/{index}` | drift and readiness |
 | `GET /diagnostics/telemetry` | what the packages emitted |
 
-The Meilisearch-exclusive and ElasticSearch-exclusive endpoints take a compile-time dependency on their
-provider package. Swap this service to one engine and the other engine's endpoints become **build
+The handlers behind the Meilisearch-exclusive and ElasticSearch-exclusive endpoints take a compile-time dependency on their
+provider package. Swap this service to one engine and the other engine's handlers become **build
 errors naming themselves** — which is the point of declaring exclusive capabilities in the provider
 package instead of behind a runtime capability flag.
 
@@ -149,4 +167,5 @@ package instead of behind a runtime capability flag.
 `search.meilisearch.tenant_token_issuance_failed` until `Search:Meilisearch:ApiKeyUid` is set. Meilisearch
 will not sign a tenant token with the master key, so that needs the uid of a separately-provisioned
 search key (`GET /keys` on the engine). Left unset here deliberately: the actionable failure message is
-itself worth seeing.
+itself worth seeing — run with `--environment Development` to see it in the problem's `detail`, since it is a
+server error (500) whose message is replaced by a generic one in every other environment.

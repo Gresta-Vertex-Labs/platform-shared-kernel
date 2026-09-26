@@ -81,6 +81,30 @@ the public API (`PublicAPI.Shipped.txt`/`Unshipped.txt` are tracked on every pac
 - These extensions never register `ILogger<T>` or `IClock` for the caller; use `AddInMemoryLoggerFactory()` and
   `FakeClock`.
 
+### Doubles that track P-562/P-563 (merged from main in P-579)
+
+- **`FakeUserContext` / `SecurityTestContextBuilder`** (`Security.Testing`, P-562 X1): per-method verification times —
+  `AuthenticationMethodTimes`, `GetAuthenticationMethodTime(method)` answering exactly as `UserContext` does (null
+  unless `WasAuthenticatedWith(method)`; then the method's time, else `AuthTime`), fluent
+  `WithAuthenticationMethodTime(method, verifiedAt)`. The builder emits one `amr_time` claim per dated method through
+  `AuthenticationMethodTimeClaim.Create` (whole seconds in `.Build()`, the exact value in `.BuildUserContext()`). A
+  time only dates a method — list it in `AuthenticationMethods` too. This lets a consumer test drive
+  `[RequireAuthenticationMethod("otp", MaxAgeSeconds = 300)]` fresh and expired from its `FakeClock`.
+- **`FakeRepository<,>`** (`Persistence.Testing`, P-562 X4): `UpdateAsync`/`DeleteAsync(aggregate, expectedVersion)`
+  ignore the version — a real `EntityVersion` is an opaque token only the real repository's keys issue — so a test
+  passes `EntityVersion.None` and tests concurrency and ETags against PostgreSQL. Registered next to a
+  `FakeUnitOfWork`, a rollback restores which aggregates it holds (not in-place changes to an aggregate object).
+- **`FakeIdempotencyStore`** (`Idempotency.Testing`, P-562 X3): through `IdempotencyBehavior` it receives the tenant-
+  and caller-scoped digest (64 lowercase hex), never the raw key, so a recorded call's `Key` is that digest.
+  `.WithIdempotency()` also needs an `IRequestContext` registered.
+- **`ApplicationPipelineTestHarness`** (`Application.Testing`, P-563): `.Configure(app => app.WithTransactions()…)`
+  takes the same `ApplicationPipelineBuilder` a service passes to `AddSharedKernelApplication`, and
+  `.Build<TMarker>()` runs the real registration and its host-start seam checks. Authorization is always on.
+- **`TestServerCallContext`** (`Presentation.Testing`, reworked by P-562): serves a service's own gRPC methods and
+  interceptors. `correlationId` is sent as the inbound `WellKnownHeaders.CorrelationId` header. Not simulated:
+  authorization (`[RequireEndpointPermission]` and its siblings are enforced by ASP.NET Core authorization before a
+  method runs — test them against an in-process host) and the platform's exception interceptor.
+
 ---
 
 ## Where a new double belongs

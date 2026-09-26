@@ -1,82 +1,94 @@
 # SharedKernel.Presentation.Core
 
-What the HTTP and gRPC boundary packages share: the declarative authorization attributes and the
-`ErrorType` status maps. It has no ASP.NET Core reference.
+What the SharedKernel inbound API boundaries share, so every protocol answers the same way and a gRPC host needs no
+HTTP API stack: the declarative authorization attributes, the authorization policies behind them, and the error rules
+(status category and client message) that HTTP problems, SignalR hub errors and gRPC statuses all apply.
 
-**Tier:** Host. It references `SharedKernel.Primitives` and `Grpc.Core.Api` (for `StatusCode`) only.
-[`SharedKernel.Presentation.WebApi`](../SharedKernel.Presentation.WebApi/README.md) and
-[`SharedKernel.Presentation.Grpc`](../SharedKernel.Presentation.Grpc/README.md) both reference it, so
-neither boundary package references the other and a service has one authorization dialect.
+**Tier:** Host. It references `SharedKernel.Primitives`, `SharedKernel.Execution`, `SharedKernel.Localization`,
+`SharedKernel.Security.Abstractions` and the ASP.NET Core shared framework; no third-party packages.
+[`SharedKernel.Presentation.WebApi`](../SharedKernel.Presentation.WebApi/README.md),
+[`SharedKernel.Presentation.Grpc`](../SharedKernel.Presentation.Grpc/README.md),
+[`SharedKernel.Presentation.SignalR`](../SharedKernel.Presentation.SignalR/README.md) and
+[`SharedKernel.Presentation.OpenApi`](../SharedKernel.Presentation.OpenApi/README.md) reference it, so gRPC never
+references WebApi (P-570, completed by P-579).
 
 ---
 
 ## Installation
 
-Services normally get this package transitively through `SharedKernel.Presentation.WebApi` or
-`SharedKernel.Presentation.Grpc`. Reference it directly only in a project that declares the
-attributes without hosting either boundary (for example a shared controllers library):
+Services get this package with WebApi, Grpc or SignalR. Reference it directly only in a project that declares the
+attributes without hosting any of them (for example a shared controllers library):
 
 ```xml
 <PackageReference Include="SharedKernel.Presentation.Core" />
 ```
 
-Versions come from your single `SharedKernelVersion`; every SharedKernel package ships with the
-same version. There is nothing to register: the package holds attributes and static helpers only.
+Versions come from your single `SharedKernelVersion`; every SharedKernel package ships with the same version. There is
+nothing to register: `AddSharedKernelWebApi()`, `AddSharedKernelGrpc()` and `AddSharedKernelSignalR()` register the
+authorization this package provides.
 
 ---
 
 ## Authorization attributes — `SharedKernel.Presentation.Authorization`
 
-| Attribute | Checks, through `IUserContext` | Composition |
-| --- | --- | --- |
-| `[RequireRole(params string[] roles)]` | `HasRole` (ordinal) | any listed role; stacked attributes AND |
-| `[RequirePermission(params string[] permissions)]` | `HasPermission` (ordinal) | any listed permission; stacked attributes AND |
-| `[RequireFreshAuthentication(int maxAgeSeconds)]` | `IsAuthenticationFresherThan(maxAge, IClock.UtcNow)` | one per target; `maxAgeSeconds` > 0 |
-| `[RequireAuthenticationMethod(params string[] methods)]` | `WasAuthenticatedWith` | any listed `amr` value |
-
-All four compose AND across each other. A failed check is `Error.Forbidden` — HTTP 403
-`ProblemDetails` or gRPC `PermissionDenied`. An anonymous caller fails through the ordinary false
-path. The attributes do nothing on their own; the evaluator is WebApi's
-`AuthorizationRequirementEndpointFilter` (attach it with `.AddEndpointFilter<…>()`) or Grpc's
-`GrpcAuthorizationInterceptor` (registered globally by `AddSharedKernelGrpc()`).
-
 ```csharp
 using SharedKernel.Presentation.Authorization;
-
-[RequireRole("Admin", "Auditor")]            // Admin OR Auditor ...
-[RequirePermission("reports:approve")]       // ... AND reports:approve
-[RequireFreshAuthentication(300)]            // ... AND authenticated in the last 5 minutes
-public sealed class ReportApprovalsController : ControllerBase { /* ... */ }
 ```
 
-Never use ASP.NET Core's `[Authorize(Roles = "...")]` alongside these: it reads `ClaimTypes.Role`
-directly and bypasses the authentication package's `IUserContextMapper`.
+| Attribute / convention | Checks, through the caller's `IUserContext` | Refused with |
+| --- | --- | --- |
+| `[RequireEndpointPermission(params string[] permissions)]`, `.RequireEndpointPermission(…)` | `HasPermission` (ordinal), any listed | 401 anonymous, 403 `forbidden.insufficient_permission` |
+| `[RequireRole(params string[] roles)]`, `.RequireRole(…)` | `HasRole` (ordinal), any listed | 401, 403 |
+| `[RequireFreshAuthentication(int maxAgeSeconds)]`, `.RequireFreshAuthentication(…)` | `IsAuthenticationFresherThan(maxAge, IClock.UtcNow)` | 401 with an RFC 9470 step-up challenge, `unauthorized.step_up_required` |
+| `[RequireAuthenticationMethod(params string[] methods)]` (optional `MaxAgeSeconds`), `.RequireAuthenticationMethod(…)` | `WasAuthenticatedWith`, and with a maximum age `GetAuthenticationMethodTime` | 401 step-up, with `max_age` when set |
+
+- They are real ASP.NET Core `[Authorize]` attributes backed by native policies, so they work wherever ASP.NET Core
+  authorizes: minimal APIs and groups, MVC, SignalR hubs and hub methods, gRPC services and methods, and
+  `MapHub`/`MapGrpcService` conventions. Values within one attribute are alternatives (OR); several attributes must all
+  be satisfied (AND). An anonymous caller is always challenged (401) first.
+- The requirement is encoded in the policy name and cannot be replaced: `Policy` and `Roles` are read-only.
+  `AuthenticationSchemes` can be set as on `[Authorize]`.
+- **Permissions of a use case go on the command or query** (`05.Application`'s `[RequirePermission]`), not on the
+  endpoint. `[RequireEndpointPermission]` is for what sends no command: hubs, gRPC methods, endpoints that do not call
+  `ISender`, the OpenAPI documents. Authentication strength stays at the edge.
+- Every authentication scheme needs an `IUserContextMapper` (the SharedKernel OIDC, API key and mTLS packages register
+  one); a caller no mapper understands is refused with 403, and each such scheme is named in a warning at startup.
+- Never use `[Authorize(Roles = "...")]` alongside these: it reads role claims directly and bypasses the mapper.
+
+A refused HTTP request gets its status and challenge headers here; `SharedKernel.Presentation.WebApi` adds the RFC 9457
+problem body. A gRPC call never gets a body: gRPC answers 401 as `Unauthenticated` and 403 as `PermissionDenied`.
 
 ---
 
-## Status maps — `SharedKernel.Presentation.Errors`
+## Error rules (internal)
 
-Two single sources of truth; never duplicate either switch in a service.
+Services never call these directly; the protocol packages do, so one error reads the same everywhere:
 
-| `ErrorType` | `ErrorTypeStatusCodeMap.Resolve` (HTTP) | `GrpcStatusCodeMap.Resolve` (gRPC) |
-| --- | --- | --- |
-| `Validation` | 400 | `InvalidArgument` |
-| `Unauthorized` | 401 | `Unauthenticated` |
-| `Forbidden` | 403 | `PermissionDenied` |
-| `NotFound` | 404 | `NotFound` |
-| `Conflict` | 409 | `Aborted` |
-| `BusinessRule` | 422 | `FailedPrecondition` |
-| `Unexpected` | 500 | `Internal` |
-| anything else, including `None` | 500 | `Unknown` |
+- `ErrorType` to HTTP status: Validation 400, Unauthorized 401, Forbidden 403, NotFound 404, Conflict 409,
+  BusinessRule 422, Unexpected 500, Unavailable 503, Timeout 504, anything else 500 (gRPC's own map,
+  `GrpcStatusCodeMap`, is in the Grpc package). WebApi adds the one request-dependent rule: a version conflict of a
+  conditional request is 412.
+- The client message: the error's message, translated through an optional `ILocalizationCatalog` in the request's
+  culture; for a server error (a 5xx status) outside Development, a generic sentence instead, because such messages
+  describe internals.
+- The correlation id every protocol reports (problem `correlationId`, gRPC `ErrorInfo`, SignalR) is the one held by the
+  request's `RequestContextScope`, which `SharedKernel.ServiceDefaults.Security`'s `UseSharedKernelRequestContext()`
+  opens.
 
-`ErrorTypeStatusCodeMap` returns an `int` built from `System.Net.HttpStatusCode`. Services rarely call
-either map directly: `Error.ToProblemDetails()`/`ResultHttpExtensions` (WebApi) and
-`GrpcResultExtensions`/`GrpcExceptionInterceptor` (Grpc) call them.
+---
+
+## Logging
+
+This package emits three events of the `14000–14099` sub-block, with the numbers they had in WebApi before P-579:
+14002 Warning (authorization refused: endpoint and code, never principal data), 14009 Warning (a principal no
+`IUserContextMapper` understands), 14010 Warning (an authentication scheme without a mapper, at startup).
 
 ---
 
 ## Related packages
 
-- [`SharedKernel.Presentation.WebApi`](../SharedKernel.Presentation.WebApi/README.md) — evaluates the attributes on HTTP endpoints and maps `Error` to `ProblemDetails`.
-- [`SharedKernel.Presentation.Grpc`](../SharedKernel.Presentation.Grpc/README.md) — evaluates them on gRPC service methods and maps `Error` to `RpcException`.
-- `SharedKernel.Security.Abstractions` — `IUserContext`, which the evaluators read.
+- [`SharedKernel.Presentation.WebApi`](../SharedKernel.Presentation.WebApi/README.md) — the HTTP boundary; problem bodies.
+- [`SharedKernel.Presentation.Grpc`](../SharedKernel.Presentation.Grpc/README.md) — the rich gRPC status.
+- [`SharedKernel.Presentation.SignalR`](../SharedKernel.Presentation.SignalR/README.md) — coded hub errors.
+- `SharedKernel.Security.Abstractions` (`12.Security`) — `IUserContext`, `IUserContextMapper`.
+- `SharedKernel.ServiceDefaults.Security` (`13.ServiceDefaults`) — the request context and its correlation id.

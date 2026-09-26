@@ -60,7 +60,7 @@ public async Task<Result<Guid>> HandleAsync(CreatePayout command, CancellationTo
 | [**Validation.FluentValidation**](SharedKernel.Validation.FluentValidation/README.md) | A rule for every Validation type: `MustBeValidIban()`, `MustBeValidVatNumber(x => x.Country)` …, and `AddFluentValidationRequestValidators()`, which runs your `IValidator<T>`s in the kernel request pipeline | FluentValidation |
 | [**DataPrivacy**](SharedKernel.DataPrivacy/README.md) | 23 kinds of personal data, including every GDPR and KVKK special category, as attributes that mask values in logs; masking helpers, HMAC pseudonymization, idempotent data-subject export and erasure | — |
 | [**Localization**](SharedKernel.Localization/README.md) | Typed message definitions whose errors carry their values, named placeholders, one immutable catalog from JSON or `.resx`, validated at startup | — |
-| [**FeatureManagement**](SharedKernel.FeatureManagement/README.md) | Feature flags on OpenFeature's `IFeatureClient`: typed `FeatureFlag<T>`, the caller's user and tenant applied to every evaluation, one answer per request, never throws, checked at startup | OpenFeature, Microsoft.FeatureManagement |
+| [**FeatureManagement**](SharedKernel.FeatureManagement/README.md) | Feature flags on OpenFeature's `IFeatureClient`: typed `FeatureFlag<T>`, the caller's user and tenant (from the open request context — never `Activity` baggage — or an accessor your service registers) applied to every evaluation, one answer per request, never throws, checked at startup | OpenFeature, Microsoft.FeatureManagement |
 
 Every package targets `net10.0`. A dash means the package needs nothing beyond the .NET runtime and
 `Microsoft.Extensions.*` abstractions.
@@ -324,8 +324,9 @@ TIER        Foundation (Primitives, Core, Configuration, Execution, Compression,
             DataPrivacy, FeatureManagement): reference only Foundation. Adapter (Cryptography.Argon2,
             Cryptography.KeyVault.Azure, Validation.FluentValidation): may add Abstractions. No ASP.NET Core. net10.0.
 RESULTS     Result<T> / Result / ValidationResult (Primitives). Error(Code, Message, Type): Error.Validation | NotFound |
-            Conflict | Unauthorized | Forbidden | BusinessRule | Unexpected. Codes dot.separated.lowercase, stable, never
-            interpolated; check ErrorCodes first. Error.None, never null. Value on a failure throws.
+            Conflict | Unauthorized | Forbidden | BusinessRule | Unexpected | Unavailable (503) | Timeout (504). Codes
+            dot.separated.lowercase, stable, never interpolated; check ErrorCodes first. Error.None, never null. Value on a
+            failure throws.
 CHAINING    Core: Map Bind Ensure Tap Match (sync, Task, ValueTask); ResultTry.Try/TryAsync; ResultCombine.Combine;
             Guard.Against.X(value) -> Error? (null = passed); Guard.Throw.X(value) throws DomainException.
 TIME / IDS  inject IClock (SK0001); IIdGenerator / UuidV7IdGenerator; LoggingEventIdRanges.Core = 1000.
@@ -356,7 +357,8 @@ LOCALIZE    LocalizedMessage.Define<T..>(code, "text {name}", "name").ToError(ty
             AddLocalizationCatalog(c => c.AddJsonDirectory(path)), once.
 FLAGS       FeatureFlag.Boolean / String / Integer / Double / Object<T>; inject OpenFeature IFeatureClient (scoped);
             IsEnabledAsync / GetValueAsync / GetDetailsAsync; FeatureTargetingContext(userId, TenantId?, groups);
-            AddSharedKernelFeatureManagement(rootConfiguration, o => o.ValidateOnStart(...)).
+            AddSharedKernelFeatureManagement(rootConfiguration, o => o.ValidateOnStart(...)); the default accessor
+            targets the caller of the open RequestContextScope (never Activity baggage, P-562 X2).
 DI          TryAdd everywhere: register overrides BEFORE the package call. AddLocalizationCatalog and
             AddSharedKernelFeatureManagement throw on a second call.
 FORBIDDEN   DateTime.UtcNow; throwing for expected failures; interpolated error codes; secrets in messages;

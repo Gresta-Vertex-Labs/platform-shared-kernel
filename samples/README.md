@@ -2,16 +2,17 @@
 
 Runnable services built only from the **packed** SharedKernel packages. Together they are the reference
 for how a service on the kernel is shaped: which projects it has, which package goes in which project,
-how the version is pinned, and in what order `Program.cs` composes things. Each one also proves, in CI,
-that a family of packages works end to end for a consumer that has nothing but the published artifacts.
+how the version is pinned, in what order `Program.cs` composes things, and how a request travels from HTTP
+to a handler. Each one also proves, in CI, that a family of packages works end to end for a consumer that
+has nothing but the published artifacts.
 
 | Sample | What it is the reference for | External infrastructure |
 |---|---|---|
-| [`OrderApi`](OrderApi/) | **The four-project shape**, with an architecture test that enforces it; the application pipeline, validation, `Result` → ProblemDetails, readiness | none |
-| [`BillingApi`](BillingApi/) | The whole persistence stack: EF Core + Dapper in one transaction, row-level security, field encryption, the audit ledger, authorization/transaction/auditing behaviors | PostgreSQL (Docker Compose, or Testcontainers in its tests) |
-| [`ShippingApi`](ShippingApi/) | Messaging: publish/send over RabbitMQ, delayed delivery, consumer idempotency, retries and faults, the caller's tenant, actor and correlation id carried to the consumer | RabbitMQ (Testcontainers, `masstransit/rabbitmq` for the delayed-exchange plugin) |
+| [`OrderApi`](OrderApi/) | **The four-project shape**, with an architecture test that enforces it; the application pipeline, validation, a use case protected by `[RequirePermission]`, `Result` → ProblemDetails, a versioned API with OpenAPI documents, readiness | none |
+| [`BillingApi`](BillingApi/) | The whole persistence stack: EF Core + Dapper in one transaction, row-level security, field encryption, the audit ledger, transactions and auditing in the pipeline, `[RequirePermission]` on every use case, ETags and paging | PostgreSQL (Docker Compose, or Testcontainers in its tests) |
+| [`ShippingApi`](ShippingApi/) | Messaging: publish/send over RabbitMQ, delayed delivery, consumer idempotency, retries and faults, the caller's tenant, actor and correlation id carried to the consumer | RabbitMQ (Testcontainers, `masstransit/rabbitmq` for the delayed-exchange plugin); Docker Compose for running it by hand |
 | [`DocumentsApi`](DocumentsApi/) | Object storage: named and tenant stores on two S3 connections plus OBS, presigned links and forms, multipart | MinIO (Testcontainers); optionally real Amazon S3 and Huawei Cloud OBS (`SK_LIVE_*`) |
-| [`CatalogApi`](CatalogApi/) | Search: both engines side by side against different document types, the neutral contracts plus each engine's exclusive ones | Meilisearch and Elasticsearch (Docker, see its README) |
+| [`CatalogApi`](CatalogApi/) | Search: both engines side by side against different document types, the neutral contracts plus each engine's exclusive ones, stream queries | Meilisearch and Elasticsearch (Docker, see its README) |
 
 ## The shape of a service
 
@@ -40,16 +41,18 @@ Application because it implements the Application's ports. Nothing references th
 | Project | Kernel packages (examples) | Never |
 |---|---|---|
 | **Domain** | `SharedKernel.Domain` — which brings `Primitives`, `Core` and `Execution` (`TenantId`, `IClock`, `Result`, `Error`) | anything else of the kernel, ASP.NET Core, a logger |
-| **Application** | `SharedKernel.Application` (`ICommand`/`IQuery`, handlers, `ISender`, the pipeline markers); `SharedKernel.Idempotency.Abstractions` / `SharedKernel.Caching.Abstractions` when it uses the idempotency or caching markers; other `*.Abstractions` it needs (`Persistence.Abstractions` for `IRepository<,>`, `Messaging.Abstractions` for `IEventPublisher`, `Storage.Abstractions`, `Search.Abstractions`, …); `Execution` for `IRequestContext`/`IUnitOfWork` | `Application.Pipeline`, `Application.Mediator.MediatR`, MediatR itself, any adapter, any host package |
-| **Infrastructure** | adapters: `Persistence.EfCore` (+ `.Auditing`, `.Encryption`), `Persistence.Dapper`, `Messaging.MassTransit` + a transport satellite (`.RabbitMq` / `.AzureServiceBus`) and `.EfCore` for the outbox, `Storage.S3` / `.Obs`, `Search.Meilisearch` / `.ElasticSearch`, `Caching.FusionCache` / `.Redis`, `Idempotency.Redis` / `.EfCore`, `Communication.Rest` / `.Grpc`, `Validation.FluentValidation`, `Security.Oidc` | host packages |
-| **Api / Worker** | host: `ServiceDefaults`, `ServiceDefaults.Security` (request context), `ServiceDefaults.Persistence`, `MultiTenancy`, `Application.Pipeline` (+ `.Caching`), `Application.Mediator.MediatR`, `Presentation.WebApi` / `.Grpc` / `.SignalR` / `.GraphQL` | business logic |
+| **Application** | `SharedKernel.Application` (`ICommand`/`IQuery`, handlers, `ISender`, `[RequirePermission]`, the pipeline markers); `SharedKernel.Idempotency.Abstractions` / `SharedKernel.Caching.Abstractions` when it uses the idempotency or caching markers; other `*.Abstractions` it needs (`Persistence.Abstractions` for `IRepository<,>`, `Messaging.Abstractions` for `IEventPublisher`, `Storage.Abstractions`, `Search.Abstractions`, …); `Execution` for `IRequestContext`/`IUnitOfWork` | `Application.Pipeline`, `Application.Mediator.MediatR`, MediatR itself, any adapter, any host package |
+| **Infrastructure** | adapters: `Persistence.EfCore` (+ `.Auditing`, `.Encryption`), `Persistence.Dapper`, `Messaging.MassTransit` + a transport satellite (`.RabbitMq` / `.AzureServiceBus`) and `.EfCore` for the outbox, `Storage.S3` / `.Obs`, `Search.Meilisearch` / `.ElasticSearch`, `Caching.FusionCache` / `.Redis`, `Idempotency.Redis` / `.EfCore`, `Communication.Rest` / `.Grpc`, `Validation.FluentValidation` | host packages |
+| **Api / Worker** | host: `ServiceDefaults`, `ServiceDefaults.Security` (request context), `ServiceDefaults.Persistence`, `MultiTenancy`, `Security.Oidc` (or `.ApiKey`, `.Mtls`), `Application.Pipeline` (+ `.Caching`), `Application.Mediator.MediatR`, `Presentation.WebApi` (brings `Presentation.Core`) / `.OpenApi` / `.Grpc` / `.SignalR` / `.GraphQL` | business logic |
 | **Tests** | `SharedKernel.Testing` (fakes: `FakeClock`, `TestRequestContext`, fakers) and the per-capability `*.Testing` package of what the test touches — `Application.Testing` (pipeline harness), `Persistence.Testing`, `Messaging.Testing`, `Storage.Testing`, `Idempotency.Testing`, … | being referenced by a production project |
 
 `samples/OrderApi` is this shape exactly, and `OrderApi.Tests/ArchitectureTests.cs` asserts it against
 the real restore graph. Copy that test into a new service and fill in its project names.
 
 The other samples are single-project hosts on purpose: each is about one family of packages, and the
-split would add projects without adding anything that `OrderApi` does not already show.
+split would add projects without adding anything that `OrderApi` does not already show. They use the
+same use-case layout — endpoints in `IEndpointModule`s, each command or query with its handler in a
+`Features/` folder.
 
 ## Pinning the version
 
@@ -98,77 +101,114 @@ builder.WithMessagingTelemetry();                      // ...and each With*Telem
 
 builder.Services.AddSingleton<IClock, SystemClock>();  // the only time source (SK0001)
 
-// Who is calling: an authentication package produces IUserContext, and AddSharedKernelRequestContext()
-// turns it into the one IRequestContext every behavior, adapter and outbound call reads.
+// Who is calling: an authentication package produces IUserContext, and AddSharedKernelRequestContext() turns it
+// into the one IRequestContext every behavior, adapter and outbound call reads — and that [RequirePermission] is
+// checked against.
 builder.Services.AddOidcAuthentication(builder.Configuration);
 builder.Services.AddSharedKernelRequestContext();
 
-// The service's own layers. Adapters register their own readiness probes.
-builder.Services.AddOrderApplication();
+// The service's own adapters. Each registers its own readiness probe.
 builder.Services.AddOrderInfrastructure();             // e.g. AddSharedKernelPostgres<T>(...), AddSharedKernelStorage()...
 
-// The application pipeline: the mediator adapter, then the behaviors (Build() checks every seam).
-builder.Services.AddSharedKernelMediatR(typeof(PlaceOrderCommand).Assembly);
-builder.Services.AddSharedKernelApplicationBehaviors()
-    .AddDefaultBehaviors()                             // tracing, logging, metrics, validation
-    .AddAuthorizationBehavior()                        // opt-ins, each needing its seam
-    .AddTransactionBehavior()
-    .Build();
+// The application layer in ONE call: the handlers of the assembly, the mediator behind the kernel's ISender, the
+// always-on behaviors (tracing, logging, metrics, authorization, validation) and the opt-ins, each needing its seam.
+// Seams are checked when the host starts, so registration order does not matter.
+builder.Services.AddSharedKernelApplication(typeof(PlaceOrderCommand).Assembly, app => app
+    .UseMediatR()
+    .WithTransactions()                                // IUnitOfWork
+    .WithAuditing());                                  // IAuditTrailWriter
+builder.Services.AddFluentValidationRequestValidators(typeof(PlaceOrderCommand).Assembly);
 
 // Messaging after the request context: WithInboundRequestContext() must be the last IRequestContext.
 builder.Services.AddSharedKernelMessaging(builder.Configuration).UseRabbitMq(...)
     .WithInboundRequestContext().WithAmbientCorrelationPropagation().Build();
 
 builder.Services.AddHealthChecks().AddSharedKernelReadiness();   // every IReadinessProbe, one call
-builder.Services.AddProblemDetails();
-builder.Services.AddExceptionHandler<SharedKernelExceptionHandler>();
+
+builder.AddSharedKernelWebApi();                       // the HTTP boundary (SharedKernel:Presentation:WebApi)
+builder.AddSharedKernelOpenApi(o => o.Title = "Orders API");   // optional: versioning, OpenAPI, Scalar
 ```
 
-The middleware order is fixed:
+The middleware order is fixed — the canonical pipeline:
 
 ```csharp
 var app = builder.Build();
 
-app.UseSharedKernelRequestContext();   // FIRST: X-Correlation-Id + the request's context scope, on every response
-app.UseSharedKernelSecurityHeaders();  // immediately after it
-app.UseExceptionHandler();             // RFC 9457 ProblemDetails for anything that escapes
-app.UseCors(CorsPolicyNames.Default);  // if the service uses AddSharedKernelCors()
-app.UseAuthentication();
-app.UseMiddleware<TenantResolutionMiddleware>();  // optional (SharedKernel.MultiTenancy): refines the tenant
-app.UseAuthorization();
+app.UseSharedKernelRequestContext();   // FIRST: X-Correlation-Id, inbound baggage refused, the request's context scope
+app.UseSharedKernelWebApi(p => p       // security headers, exception handler, problem bodies, routing, CORS,
+    .BeforeAuthorization(a => a.UseMiddleware<TenantResolutionMiddleware>()));   // authentication, (tenant), authorization
 
 app.MapDefaultHealthCheckEndpoints();  // /health/live, /health/ready
-app.MapOrderEndpoints();
+app.MapEndpoints();                    // every IEndpointModule of the assembly (generated at compile time)
+app.MapSharedKernelOpenApi();          // Development only, unless ExposeInProduction
 
 app.Services.GetRequiredService<StartupGate>().MarkReady();   // after startup work; readiness is 503 until then
 await app.RunAsync();
 ```
 
-`UseSharedKernelRequestContext()` goes before authentication on purpose: it reads the caller lazily, the
-first time something asks, which is after `UseAuthentication()` has run. A service without authentication
-registers `AnonymousUserContext.Instance` as its `IUserContext` (OrderApi, DocumentsApi, CatalogApi).
+`UseSharedKernelRequestContext()` goes before everything on purpose: its scope wraps the WebApi pipeline's exception
+handler, so the correlation id is on every log line and every response, errors included. It reads the caller lazily,
+the first time something asks, which is after the authentication `UseSharedKernelWebApi()` adds. The tenant-resolution
+hook (`SharedKernel.MultiTenancy`) is only for services that use it. A service without authentication registers
+`AnonymousUserContext.Instance` as its `IUserContext` (OrderApi, DocumentsApi, CatalogApi).
+
+## The HTTP boundary, the same way in every sample
+
+```csharp
+public sealed class OrderEndpoints : IEndpointModule
+{
+    public static void Map(IEndpointRouteBuilder app) =>
+        app.MapGet("/orders/{id:guid}", (Guid id, ISender sender, CancellationToken ct) =>
+            sender.Send(new GetOrderQuery(id), ct).ToOk());
+}
+```
+
+Endpoints live in endpoint modules (`IEndpointModule`; the generator in the WebApi package writes `MapEndpoints()` at
+compile time). An endpoint translates the request into a command or query, sends it through the kernel's `ISender`
+(MediatR is only the adapter behind it), and maps the `Result` with one typed-result call — `ToOk`, `ToCreated`,
+`ToAccepted`, `ToNoContent`, `ToOkWithETag`, `ToHttpResult` — never branching on `IsSuccess` or choosing a status code
+for a failure. It never calls a repository, store, search engine or bus itself: the handler does, next to its command
+or query in a `Features/` folder. Permissions are declared once, on the command or query (`[RequirePermission]`), and
+enforced by the pipeline on every path — HTTP, a message consumer, a job — as a 401 problem for an anonymous caller and a
+403 for a caller without the permission. CatalogApi's two corpus walks are stream queries (`ISender.CreateStream`),
+streamed as they are read. Every error, returned or thrown, is an RFC 9457 `application/problem+json` body carrying
+`errorCode`, `traceId` and `correlationId`. The one exception is CatalogApi's deployment reports (`/ops/provision`,
+`/ops/indexes`, `/ops/verify`), which list an outcome per index in their own body; `/ops/verify` answers 503 with that
+report when an index is not ready. A conflict that shows a precondition the request sent in a header (`If-Match`,
+`If-None-Match`) to be false — a stale version, a file that already exists — is 412; every other conflict is 409.
+
+Beyond that, each sample shows what its domain needs from the boundary:
+
+| Sample | Shows |
+|---|---|
+| `OrderApi` | A versioned API with OpenAPI documents and a Scalar reference (`AddSharedKernelOpenApi`, Development only); a `[RequirePermission]` use case proven 401/403/204 over HTTP |
+| `BillingApi` | Optimistic concurrency with opaque versions (`ToOkWithETag`, an `IfMatch<EntityVersion>` parameter: 304, 428, 400, 412); `Paging`/`CursorPaging` parameters; `[RequirePermission]` on every command and query, enforced by the pipeline (401/403 problems) |
+| `DocumentsApi` | Lifting the 4 MiB request-body limit for one streaming endpoint (`WithRequestSizeLimit`); storage preconditions from `If-None-Match`/`If-Match` as 412, the same conflict without a header as 409 |
+| `CatalogApi` | An engine outage as 503 and a timeout as 504, with internal detail shown only in Development |
+| `ShippingApi` | 202 Accepted with a `Location` for asynchronous work (`ToAccepted`); a broker outage as 503 |
 
 ## A short tour
 
 **[OrderApi](OrderApi/)** — no infrastructure, so the composition is all there is to read. Four projects;
-`AddOrderApplication()`/`AddOrderInfrastructure()` register what each layer owns; handlers are discovered
-by `AddSharedKernelMediatR`; a FluentValidation validator runs through the kernel's `IRequestValidator<T>`
-port; the order store's readiness probe is mapped by `AddSharedKernelReadiness()`. Tests: the
-architecture test, the application layer through the real pipeline with `SharedKernel.Application.Testing`
-and `FakeClock`, and HTTP through `WebApplicationFactory`.
+`AddOrderInfrastructure()` registers the adapters; one `AddSharedKernelApplication(..., app => app.UseMediatR())` call
+discovers the handlers; a FluentValidation validator runs through the kernel's `IRequestValidator<T>` port; the order
+store's readiness probe is mapped by `AddSharedKernelReadiness()`; `CancelOrderCommand` declares
+`[RequirePermission("orders.cancel")]`. Tests: the architecture test, the application layer through the real
+pipeline with `SharedKernel.Application.Testing`, `FakeClock` and `TestRequestContext`, and HTTP through
+`WebApplicationFactory` with a test authentication scheme.
 
 **[BillingApi](BillingApi/)** — multi-tenant billing on PostgreSQL with the production role split. One
 `AddSharedKernelPostgres<BillingDbContext>` registration with multi-tenancy (row-level security), field
-encryption and the audit ledger; Dapper joining the same unit of work; the pipeline with authorization,
-transaction and auditing; a development-only header authentication scheme that produces a real
-`IUserContext`. Tests run over HTTP against Testcontainers PostgreSQL provisioned by
-`SharedKernel.Persistence.Testing`, plus a handler test over its fakes.
+encryption and the audit ledger; Dapper joining the same unit of work; the pipeline with transactions and
+auditing; a development-only header authentication scheme that produces a real `IUserContext`. Tests run over
+HTTP against Testcontainers PostgreSQL provisioned by `SharedKernel.Persistence.Testing`, plus a handler test
+over its fakes.
 
-**[ShippingApi](ShippingApi/)** — `AddSharedKernelMessaging(configuration).UseRabbitMq(...)` in one chain:
-CloudEvents publish and point-to-point send, broker-side delayed delivery, at-most-once consumption over
-an `IIdempotencyStore`, retries then a visible fault, and the publisher's tenant, actor and correlation id
-rebuilt on the consumer so it reads `IRequestContext` exactly as an HTTP handler does. Tests go through a
-real RabbitMQ broker.
+**[ShippingApi](ShippingApi/)** — `AddSharedKernelMessaging(configuration).UseRabbitMq(...)` in one chain
+(`UseRabbitMq` from the `SharedKernel.Messaging.MassTransit.RabbitMq` satellite): CloudEvents publish and
+point-to-point send, broker-side delayed delivery, at-most-once consumption over an `IIdempotencyStore`, retries
+then a visible fault, and the publisher's tenant, actor and correlation id rebuilt on the consumer so it reads
+`IRequestContext` exactly as an HTTP handler does. Tests go through a real RabbitMQ broker.
 
 **[DocumentsApi](DocumentsApi/)** — three named stores on three connections (two S3 IAM users and OBS),
 one of them tenant-scoped (`ITenantFileStorage.ForTenant(TenantId)`); streaming up- and download, ranges,
@@ -201,7 +241,7 @@ Locally:
 dotnet pack Platform.SharedKernel.slnx -c Release          # writes ./nupkgs
 V=$(ls nupkgs/SharedKernel.Primitives.*.nupkg | sed -E 's/.*Primitives\.(.*)\.nupkg/\1/')
 dotnet test samples/OrderApi/OrderApi.Tests -c Release -p:SharedKernelPackageVersion=$V
-dotnet run --project samples/OrderApi/OrderApi.Api --urls http://localhost:5199 -p:SharedKernelPackageVersion=$V
+dotnet run --project samples/OrderApi/OrderApi.Api -p:SharedKernelPackageVersion=$V -- --urls http://localhost:5199 --environment Development
 ```
 
 The BillingApi, ShippingApi and DocumentsApi tests need Docker.

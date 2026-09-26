@@ -1011,23 +1011,28 @@ SearchErrors   (public static class — canonical Error factory; provider implem
     .Unauthorized(indexName, operation)                  "search.unauthorized"
     .TenantScopeMissing(indexName)                       "search.tenant_scope_missing"
 
-    — Error.Unexpected —
+    — Error.Unavailable (P-562; HTTP 503) —
     .Unreachable(providerName, endpoint)                 "search.unreachable"
+
+    — Error.Timeout (P-562; HTTP 504) —
     .Timeout(operation, elapsed)                         "search.timeout"
-    .WriteRejected(indexName, reason)                    "search.write_rejected"
     .WriteTimeout(indexName, elapsed)                    "search.write_timeout"
+
+    — Error.Unexpected —
+    .WriteRejected(indexName, reason)                    "search.write_rejected"
     .BulkPartiallyFailed(failedCount, totalCount)        "search.bulk_partially_failed"
     .ProbeFailed(indexName, reason)                      "search.probe_failed"
     .EngineVersionUnsupported(actual, supportedRange)    "search.engine_version_unsupported"
     .EngineFault(providerName, operation, detail)        "search.engine_fault"
 
-    NOTE (ONLY THE SIX REAL Error FACTORIES ARE USED): SharedKernel.Primitives' Error exposes exactly
-          Unexpected, Validation, NotFound, Conflict, Unauthorized, and BusinessRule — each
-          (string code, string message) — plus the Error.None sentinel field. There is NO Error.Failure,
-          no Error.Forbidden, no single-argument overload, and no exception-accepting overload. Wherever
-          a generic "the operation failed" is meant, Error.Unexpected is used, matching
-          ErrorCodes.Unexpected.Default. Every code literal is a private const string on the holder
-          class — never retyped at a call site (SK0022).
+    NOTE (THE Error FACTORIES): SharedKernel.Primitives' Error exposes Unexpected, Validation,
+          NotFound, Conflict, Unauthorized, Forbidden, BusinessRule, Unavailable and Timeout — each
+          (string code, string message) — plus the Validation(IReadOnlyList<Error>) aggregate and the
+          Error.None sentinel field. There is NO Error.Failure and no exception-accepting overload. This
+          domain uses Unavailable for an engine that is down or overloaded and Timeout for one that ran
+          out of time (P-562), never Forbidden or BusinessRule. Wherever a generic "the operation failed"
+          is meant, Error.Unexpected is used, matching ErrorCodes.Unexpected.Default. Every code literal is
+          a private const string on the holder class — never retyped at a call site (SK0022).
 
     NOTE (Error.BusinessRule IS USED ZERO TIMES IN THIS DOMAIN, deliberately): per ErrorType's own XML
           doc it maps to HTTP 422 Unprocessable Entity and denotes a DOMAIN-RULE violation; nothing in a
@@ -1733,7 +1738,7 @@ ElasticSearchLog   (internal static partial class — [LoggerMessage], EventId s
 - Using `EnumerateAsync`'s ordering as a correctness assumption, or building a resumable export on positional state. Ordering is **unspecified** until a Tests-phase task verifies it against a real container on both engines.
 - Adding a nested / object-array path filter node to `SearchFilter`. The portable technique is flattening into a precomputed composite filterable field at document-mapping time; a neutral nested node is silently wrong on one engine.
 - Adding a string- or boolean-bounded range. `Between` accepts `Int64`, `Double`, and `DateTimeOffset` bounds only and throws `ArgumentException` otherwise.
-- Constructing an ad-hoc `Error` inline in either provider — all errors come from `SearchErrors`, `MeilisearchErrors`, or `ElasticSearchErrors`. Naming a non-existent factory (`Error.Failure`, `Error.Forbidden`) or returning `Error.None` from any method are both violations.
+- Constructing an ad-hoc `Error` inline in either provider — all errors come from `SearchErrors`, `MeilisearchErrors`, or `ElasticSearchErrors`. Naming a non-existent factory (`Error.Failure`) or returning `Error.None` from any method are both violations. An outage is `Error.Unavailable` and a timeout `Error.Timeout` (P-562), never `Error.Unexpected`.
 - Using `Error.BusinessRule` anywhere in this domain — it maps to HTTP 422 and denotes a domain-rule violation; nothing in a capability package is a domain rule.
 - Implementing `IHealthCheck`, or referencing `Microsoft.Extensions.Diagnostics.HealthChecks`, anywhere in `09.Search`. Readiness is one `SearchIndexReadinessProbe` (`IReadinessProbe`) per registered index, registered by the provider's `Build()`; the host maps it with `AddSharedKernelReadiness()`. Re-adding a `ProbeAsync` to `ISearchIndexProvisioner` or a per-index `Add*ReadinessCheck` is a violation.
 - `SearchIndexReadinessProbe` treating `SearchIndexHealth.PendingWriteCount == null` as unhealthy, or failing readiness on a deep write backlog. A deep backlog means results are **stale**, not **unavailable**.

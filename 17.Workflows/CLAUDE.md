@@ -48,8 +48,8 @@ All packages target `net10.0`, `ImplicitUsings` enabled, `Nullable` enabled. The
 
 > **`Result<T>` ↔ Temporal failure mapping — the domain's second-most-important decision, because getting it wrong silently burns a retry budget on errors that will never succeed.** Temporal's default activity `RetryPolicy` retries a failing activity indefinitely with exponential backoff. A `Result.Failure(Error.Validation(...))` returned from an activity is a **deterministic** failure: the same input will fail identically on attempt 2 and attempt 200. Retrying it wastes worker capacity, delays the workflow's own failure handling, and buries the real cause under a retry storm. Therefore `WorkflowFailureMapper` maps by `ErrorType`, not by convention:
 >
-> - `ErrorType.Validation`, `NotFound`, `Conflict`, `Unauthorized`, `BusinessRule` → `ApplicationFailureException` with **`nonRetryable: true`** and `errorType` set to the `Error.Code`, so a workflow's `catch (ActivityFailureException)` can branch on the code and compensate immediately.
-> - `ErrorType.Unexpected` → `ApplicationFailureException` with **`nonRetryable: false`** — a transient infrastructure fault is exactly what the retry policy exists for.
+> - `ErrorType.Validation`, `NotFound`, `Conflict`, `Unauthorized`, `Forbidden`, `BusinessRule` → `ApplicationFailureException` with **`nonRetryable: true`** and `errorType` set to the `Error.Code`, so a workflow's `catch (ActivityFailureException)` can branch on the code and compensate immediately.
+> - `ErrorType.Unexpected`, `Unavailable`, `Timeout` → `ApplicationFailureException` with **`nonRetryable: false`** — a transient fault, a dependency that is down, or one that ran out of time is exactly what the retry policy exists for (`Unavailable`/`Timeout` added by P-562).
 > - An **unmapped** exception escaping an activity body is retryable by default, matching Temporal's own semantics. This package never blanket-catches.
 >
 > **The inverse direction is the sharper edge:** an activity that swallows a `Result.Failure` and returns normally reports **success** to Temporal, and the workflow proceeds down the happy path with a value that was never produced. Every `ActivityBase`/`CommandActivity<>` member therefore ends in an explicit map — a `Result` that reaches the end of an activity body without being mapped is a bug, and the `.Tests` project asserts it for every shipped base type.
@@ -301,8 +301,11 @@ CommandActivity<TCommand, TResult>     where TCommand : ICommand<TResult>
           correlation id (a new one when the header is missing). IRequestContext therefore answers with
           that tenant (persistence tenant filters and idempotency keys work) and outbound REST/gRPC/bus
           calls forward it. A PropagatedRequestContext grants NO permission (HasPermissionAsync is always
-          false): a command guarded by AuthorizationBehavior fails closed unless the activity opens its
-          own RequestContextScope with a SystemRequestContext carrying an explicit permission set. A
+          false): a use case carrying [RequirePermission] (SharedKernel.Application.Authorization, always
+          enforced) fails closed unless the activity opens its own RequestContextScope with a
+          SystemRequestContext carrying an explicit permission set. A worker has no HTTP caller: when the
+          service's use cases carry [RequirePermission], the host start also demands a registered
+          IRequestContext (AddSharedKernelApplication's start check names the request types). A
           retried activity re-sends the command — a command with side effects outside its unit of work
           implements IIdempotentRequest with a key derived from the workflow id.
 ```
@@ -423,8 +426,9 @@ WorkflowFailureMapper   (internal static)
     .ToError(Exception exception)                                       → Error
 
     NOTE (THE MAPPING TABLE IS THE CONTRACT — see the Result<T> blockquote in Technology Stack):
-          Validation/NotFound/Conflict/Unauthorized/BusinessRule ⇒ nonRetryable: true, errorType =
-          Error.Code. Unexpected ⇒ nonRetryable: false. The inverse (.ToError) maps
+          Validation/NotFound/Conflict/Unauthorized/Forbidden/BusinessRule ⇒ nonRetryable: true,
+          errorType = Error.Code. Unexpected/Unavailable/Timeout ⇒ nonRetryable: false (P-562); the
+          stashed ErrorType restores every type, Forbidden/Unavailable/Timeout included. The inverse (.ToError) maps
           WorkflowFailedException / ActivityFailureException / RpcException back onto WorkflowErrors
           members, preserving the original errorType string as the Error.Code wherever the failure
           originated from this same mapper — so a code set in an activity survives the round trip and
@@ -613,9 +617,11 @@ WorkflowErrors   (static factory catalog)
     .PayloadCodecFailure / .InvalidWorkflowRegistration
 
     NOTE (VERIFIED AGAINST THE REAL Error API, AND THIS DIFFERS FROM WHAT A GUESS WOULD PRODUCE):
-          SharedKernel.Primitives' Error exposes Unexpected, Validation, NotFound, Conflict,
-          Unauthorized, Forbidden and BusinessRule — plus the None sentinel. THERE IS NO
-          Error.Failure. Every "the operation failed" case routes through Error.Unexpected.
+          SharedKernel.Primitives' Error exposes the factories Unexpected, Validation, NotFound,
+          Conflict, Unauthorized, Forbidden, BusinessRule, Unavailable and Timeout (the last two added by
+          P-562) — plus the None sentinel. THERE IS NO Error.Failure. Every "the operation failed" case
+          routes through Error.Unexpected; workflow.service_unavailable and workflow.timed_out are still
+          Unexpected (moving them to Unavailable/Timeout is a P-562 follow-up).
           Error.None is never returned from any member — it is the "no error" sentinel, never a failure.
           TenantScopeMissing is Unauthorized, not Validation — a missing tenant scope on a
           cross-tenant-addressable keyspace is an authorization failure, and framing it as a 422
@@ -642,7 +648,7 @@ WorkflowErrors   (static factory catalog)
 - An injected `ILogger<TWorkflow>` inside a workflow, or a direct `Workflow.Logger.LogInformation(...)` extension call. Workflow logging is `[LoggerMessage]`-generated methods invoked **on `Workflow.Logger`**.
 - **Changing the code path of a workflow that has running executions without `Workflow.Patched`.** Reordering activity calls, inserting a step, changing a timer duration, or renaming an activity in a deployed workflow makes every in-flight execution fail on replay with a non-determinism error. `Workflow.Patched`/`DeprecatePatch` is the only sanctioned change mechanism, and its lifecycle (introduce patch → deploy → wait for old executions to drain → deprecate → remove) is documented in the README, not left to folklore. This is the operational analogue of `07.Messaging`'s `IMessageVersionTranslator` and carries the same "rolling upgrade or outage" stakes.
 - **Swallowing a `Result.Failure` inside an activity and returning normally.** Every activity body ends in an explicit `WorkflowFailureMapper` call. A silent success on a failed `Result` sends the workflow down the happy path with a value that was never produced — the single most damaging bug shape this domain can produce, because it is invisible in every dashboard.
-- Mapping an expected `Error` (Validation/NotFound/Conflict/Unauthorized/BusinessRule) to a **retryable** failure. It will be retried until the policy exhausts, burning worker capacity on an outcome that cannot change.
+- Mapping an expected `Error` (Validation/NotFound/Conflict/Unauthorized/Forbidden/BusinessRule) to a **retryable** failure. It will be retried until the policy exhausts, burning worker capacity on an outcome that cannot change.
 - Blanket-catching `Exception` in an activity or workflow and converting it to a success, a `Result.Failure`, or a swallowed no-op. Temporal's retry, timeout, and compensation machinery is driven by exceptions escaping; catching them disables it.
 - Making `TenantScope` optional, nullable, defaulted, or a member of `WorkflowStartOptions`. It is a required separate parameter on every dispatch member, feeds `IWorkflowIdFactory`, and is asserted worker-side from the Temporal header.
 - Accepting a **raw, caller-supplied workflow id** on any dispatch member. Every start routes through `IWorkflowIdFactory`, so the tenant segment is structural rather than conventional.
@@ -741,7 +747,7 @@ services
 - **History-replay determinism tests are mandatory, not optional, and are the single highest-value test in this domain.** For every shipped workflow-shaped sample and every base-type behaviour, capture the execution history as JSON and replay it with `WorkflowReplayer`. This is the only mechanism that catches a determinism regression *before* it reaches production, where it manifests as every in-flight execution failing at once. A workflow change that passes its behaviour tests and fails its replay test is a change that would have taken down live executions.
 - `ActivityEnvironment` unit-tests activities in isolation — including heartbeating, cancellation, and the `Result`→failure mapping — with no server and no workflow.
 - **Fail-loud tests are mandatory.** For every rejection path — `TenantScope.Global` on a dispatch, a workflow id colliding with a running execution, `.AddWorkflow<T>()` on a `.AsClientOnly()` builder, a worker registered with no workflows and no activities, `.WithPayloadEncryption()` with no configured key, a non-`[Workflow]` type passed to `.AddWorkflow<T>()` — assert both that the correct `Error` (or `Build()`-time exception) results **and that no I/O occurred**. A test asserting only the error would pass against an implementation that connects first and validates second.
-- **The `Result`→failure mapping table is asserted exhaustively, one test per `ErrorType`.** All five expected `ErrorType` values map to `nonRetryable: true` with `errorType == Error.Code`; `Unexpected` maps to `nonRetryable: false`. Plus the inverse: a failure raised by this mapper in an activity round-trips back to the same `Error.Code` at the dispatch site. This table is the contract; a silent flip of one row is a production retry storm or a production stall.
+- **The `Result`→failure mapping table is asserted exhaustively, one test per `ErrorType`.** All six deterministic `ErrorType` values (Validation, NotFound, Conflict, Unauthorized, Forbidden, BusinessRule) map to `nonRetryable: true` with `errorType == Error.Code`; `Unexpected`, `Unavailable` and `Timeout` map to `nonRetryable: false` (P-562). Plus the inverse: a failure raised by this mapper in an activity round-trips back to the same `Error.Code` at the dispatch site. This table is the contract; a silent flip of one row is a production retry storm or a production stall.
 - **Every shipped activity base is tested for the swallow-a-`Result.Failure` defect specifically.** Construct a `CommandActivity<TCommand>` over an `ISender` substitute returning `Result.Failure(...)` and assert the activity **throws** — a passing test that only checks the happy path would not catch the domain's most damaging bug shape.
 - Propagation tests assert the round trip through the real `WorkflowEnvironment`: a correlation id and tenant id set client-side arrive intact in `WorkflowBase.CorrelationId`/`.TenantScope` **and** in `ActivityBase.TenantScope` for an activity invoked by that workflow — including across a child-workflow hop. Assert against `01.Core`'s `WellKnownHeaders` constants, never a retyped literal (the exact defect WO-042 existed to kill).
 - Payload-codec tests assert that an encrypted workflow argument is **not** present as plaintext in the captured history payload, and that decode round-trips. Include a key-version test proving a payload encrypted under `v1` still decodes after `v2` is added — the workflow-history retention window makes this a longer-lived requirement than the equivalent `06.Persistence` column-encryption case.

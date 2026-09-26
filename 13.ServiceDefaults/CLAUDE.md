@@ -18,8 +18,8 @@ Philosophy: **Composition-only. Opt-in by default. Liveness ≠ Readiness. One r
 
 | Package | Provides | References |
 | --- | --- | --- |
-| `SharedKernel.ServiceDefaults` | **Composition base.** `AddServiceDefaults()` (OTel traces/metrics/logs + base health checks), `AddSharedKernelHealthChecks()`, `MapDefaultHealthCheckEndpoints(requireAuthorization)`, `StartupGate`/`StartupGateHealthCheck`, `AddSharedKernelReadiness()` (maps every `IReadinessProbe` to a `ready` check), `HealthCheckNames`/`HealthCheckTags`/`HealthCheckRegistrationLogging`, every `WithXTelemetry()`, `AddSharedKernelRateLimiting()`/`RateLimitPolicyNames`, `BaggageLogRecordProcessor` | `SharedKernel.Primitives` only (Foundation) + OpenTelemetry. Locked by `CompositionBaseIsolationTests` |
-| `SharedKernel.ServiceDefaults.Security` | `AddSharedKernelRequestContext()` and `app.UseSharedKernelRequestContext()` — the one `IRequestContext` over `12.Security`'s `IUserContext`, and the HTTP inbound adapter that owns the correlation id and the request's `RequestContextScope` | base, `SharedKernel.Execution`, `SharedKernel.Security.Abstractions` |
+| `SharedKernel.ServiceDefaults` | **Composition base.** `AddServiceDefaults()` (OTel traces/metrics/logs + base health checks), `AddSharedKernelHealthChecks()`, `MapDefaultHealthCheckEndpoints(requireAuthorization)`, `StartupGate`/`StartupGateHealthCheck`, `AddSharedKernelReadiness()` (maps every `IReadinessProbe` to a `ready` check), `HealthCheckNames`/`HealthCheckTags`/`HealthCheckRegistrationLogging`, every `WithXTelemetry()`, `AddSharedKernelRateLimiting()`/`RateLimitPolicyNames`, `BaggageLogRecordProcessor` (copies only `correlation.id`/`TenantId`) and `RequestBaggageRefusingPropagator` (a request's `baggage` header never fills `Baggage.Current`) — P-562 X2 | `SharedKernel.Primitives` only (Foundation) + OpenTelemetry. Locked by `CompositionBaseIsolationTests` |
+| `SharedKernel.ServiceDefaults.Security` | `AddSharedKernelRequestContext()` and `app.UseSharedKernelRequestContext()` — the one `IRequestContext` over `12.Security`'s `IUserContext`, and the HTTP inbound adapter that owns the correlation id and the request's `RequestContextScope`, and refuses inbound W3C baggage at the edge (`TrustInboundBaggage`) | base, `SharedKernel.Execution`, `SharedKernel.Security.Abstractions` |
 | `SharedKernel.ServiceDefaults.Persistence` | `AddDatabaseReadinessCheck<TContext>()`, `AddDapperDatabaseReadinessCheck()`, `AddPersistenceStartupReadinessCheck()` | base, `Persistence.Abstractions`, `Persistence.EfCore` |
 | `SharedKernel.ServiceDefaults.Security.Mtls` | `AddMtlsClientCertificate()`, `AddMtlsForwardedHeaderCertificate()`, `MtlsForwardedHeaderMiddleware`, `MtlsForwardedHeaderOptions` | base, `Security.Mtls` |
 | `SharedKernel.ServiceDefaults.Configuration.KeyVault` | `AddSharedKernelKeyVaultConfiguration(vaultUri, credential?)` — Key Vault secrets as an `IConfiguration` source | base, `Azure.Extensions.AspNetCore.Configuration.Secrets`, `Azure.Identity` |
@@ -31,7 +31,11 @@ There are no per-dependency readiness packages. Every provider registers its own
 `messaging`, `redis`, `cache`, `encryption-key-provider`, `field-encryption`, `audit-sealing`, `storage-{store}`,
 `search-{provider}-{index}`, `vector-store-{provider}-{collection}`, `workflows`, `scheduler`. The Azure Key Vault
 key provider is registered by `01.Core`'s `SharedKernel.Cryptography.KeyVault.Azure`
-(`AddSharedKernelCryptography(configuration).AddAzureKeyVaultEncryption(configuration)`), not here.
+(`AddSharedKernelCryptography(configuration).AddAzureKeyVaultEncryption(configuration)`), not here. **Since P-562 X4**
+it is also the root of `06.Persistence`'s ETags with no opt-in: `AddSharedKernelPostgres` seals every `EntityVersion`
+with an HKDF subkey of the unkeyed `ISynchronousEncryptionKeyProvider`, else of the unkeyed `IEncryptionKeyProvider`.
+With an asynchronous provider a hosted warm-up loads the key before the host takes traffic (up to 10 seconds;
+readiness does not wait for it), and it is refreshed every 5 minutes.
 
 All projects target `net10.0` with `ImplicitUsings` and `Nullable`; tests are nested `{Package}.Tests` projects.
 
@@ -58,16 +62,20 @@ builder.WithMessagingTelemetry().WithPersistenceTelemetry(); // only the domains
 var app = builder.Build();
 
 app.UseSharedKernelRequestContext();                        // FIRST: correlation id + request context scope
-app.UseSharedKernelSecurityHeaders();                       // 14.Presentation.WebApi
 app.UseExceptionHandler();
 app.UseAuthentication();
 app.UseMiddleware<TenantResolutionMiddleware>();            // optional; after UseAuthentication()
-app.UseAuthorization();
 app.UseRateLimiter();                                       // when AddSharedKernelRateLimiting() is used
+app.UseAuthorization();
 
 app.MapDefaultHealthCheckEndpoints();                       // /health/live, /health/ready
 app.Run();
 ```
+
+With `14.Presentation`'s `builder.AddSharedKernelWebApi()`, the pipeline after `UseSharedKernelRequestContext()` is
+`app.UseSharedKernelWebApi(p => p.BeforeAuthorization(a => a.UseMiddleware<TenantResolutionMiddleware>()));
+app.MapEndpoints();` — `UseSharedKernelWebApi()` adds the exception handler, authentication, `UseRateLimiter()` and
+authorization in a fixed order.
 
 `samples/OrderApi/OrderApi.Api/Program.cs` is the compiled reference for this order.
 
@@ -86,6 +94,20 @@ AddSharedKernelTelemetry(this IHostApplicationBuilder, string serviceName) → I
     Tracing (ASP.NET Core, HttpClient, EF Core), metrics (ASP.NET Core, HttpClient, runtime), logs with
     IncludeScopes + IncludeFormattedMessage, BaggageLogRecordProcessor, OTLP exporter configured only by the
     standard OTEL_EXPORTER_OTLP_* environment variables.
+    P-562 X2: also registers ConfigureOpenTelemetryTracerProvider((_, _) => RequestBaggageRefusingPropagator.Install())
+    — OpenTelemetry's default propagator is decorated when the tracer provider is built, so an incoming request's
+    baggage header never fills Baggage.Current and is never forwarded by the HttpClient/gRPC client
+    instrumentations. Idempotent; a propagator set before the host starts is wrapped, one set after start removes the
+    protection.
+
+BaggageLogRecordProcessor  (internal, Telemetry/)
+    For each key of PlatformBaggageKeys.All — "correlation.id" and "TenantId", nothing else (P-562 X2) — reads
+    Activity.Current?.GetBaggageItem(key) (walks the parent chain) when the record is finalized and appends it under
+    the same key, unless the value contains a control character or U+2028/U+2029, or the record already has that
+    attribute. No-op when Activity.Current is null or carries neither key.
+    MESSAGE PATH: MassTransit copies the publisher's baggage (MT-Activity-Correlation-Context) onto the consuming
+    activity; the allow-list keeps only the two keys on consumer logs. A consumer's tenant and actor come from
+    dedicated headers (07.Messaging's WithInboundRequestContext()), never from baggage.
 
 AddSharedKernelHealthChecks(this IServiceCollection) → IHealthChecksBuilder
     StartupGate singleton + StartupGateHealthCheck ("startup", tagged ready). Called by AddServiceDefaults();
@@ -127,9 +149,11 @@ All are idempotent: a second call registers no duplicate instrument or view.
 ```text
 AddSharedKernelRateLimiting(this IHostApplicationBuilder, Action<RateLimiterOptions>? configure = null)
     BCL Microsoft.AspNetCore.RateLimiting: a global fixed window per remote IP (100/min) plus the named
-    RateLimitPolicyNames.Authentication policy (10/min). configure runs last. OnRejected stays the BCL bare 429;
-    for an RFC 9457 body the service sets OnRejected and calls 14.Presentation.WebApi's
-    RateLimitRejectionProblemDetails.Create(httpContext, retryAfter). Needs app.UseRateLimiter().
+    RateLimitPolicyNames.Authentication policy (10/min). configure runs last. OnRejected deliberately left unset
+    (P-562): with 14.Presentation's AddSharedKernelWebApi() the platform's 429 application/problem+json body
+    (errorCode rate_limit.exceeded, Retry-After from the limiter) is automatic and UseSharedKernelWebApi() adds
+    UseRateLimiter() itself; without it, the BCL bare 429 and the service calls app.UseRateLimiter(). A service's
+    own OnRejected set in configure wins. Never a 14.Presentation reference from this domain.
 ```
 
 ### `SharedKernel.ServiceDefaults.Security`
@@ -148,6 +172,8 @@ UseSharedKernelRequestContext(this IApplicationBuilder) → IApplicationBuilder
     (only its length, EventId 13007; a created id logs EventId 13006 at Debug). Sets Activity baggage
     WellKnownBaggageKeys.CorrelationId, echoes the header via Response.OnStarting (also on error responses),
     and runs the request inside RequestContextScope.Begin(HttpRequestContext).
+    Refuses inbound W3C baggage at the edge: the caller's items are cleared from the request Activity unless
+    TrustInboundBaggage is set (off by default; moved here from 14.Presentation's WebApi by P-579, P-562 X2).
     HttpRequestContext reads the caller lazily from SecurityRequestContext, because the middleware runs before
     UseAuthentication() and the scoped IUserContext snapshots HttpContext.User when first created.
 ```
@@ -248,12 +274,24 @@ ITenantCatalog { GetByIdAsync(TenantId, ct); GetByResolutionKeyAsync(string, ct)
 - **`ITenantCatalog` is read-only.** Provisioning/onboarding never goes on it. `CachedTenantCatalog`'s TTL stays short
   and bounded; call `InvalidateTenantAsync` after a status change.
 - **Propagation identifiers come from `01.Core`** (`WellKnownHeaders`, `WellKnownBaggageKeys`) — never a local literal.
-- **`BaggageLogRecordProcessor` is generic**: it copies every `Activity` baggage entry onto log records and never names
-  a key. An explicit attribute on the record wins over baggage.
+- **`BaggageLogRecordProcessor` copies only the platform's own baggage keys** — `correlation.id` and `TenantId`
+  (`PlatformBaggageKeys`, retyped from `WellKnownBaggageKeys` and pinned to it by a test) — and never a value containing
+  a control character or U+2028/U+2029 (P-562 X2, owner-approved; supersedes WO-041's "generic, never names a key").
+  Baggage also arrives from callers (the W3C `baggage` header) and from message headers (MassTransit copies
+  `MT-Activity-Correlation-Context` onto the consuming activity); copying every item let an anonymous caller put any
+  property on every log record of its request. A key belongs on the list only if platform middleware writes and
+  *replaces* it. An explicit attribute on the record wins over baggage.
+- **OpenTelemetry's `Baggage.Current` is never filled from an incoming request** (P-562 X2):
+  `AddSharedKernelTelemetry` decorates `Propagators.DefaultTextMapPropagator` with `RequestBaggageRefusingPropagator`
+  when the tracer provider is built. Extraction from an `HttpRequest` carrier keeps the trace context and drops the
+  baggage; every other carrier and all injection are unchanged. Never replace or remove the decorator, and never read
+  a caller's identity from baggage.
 - **Never log** certificate bytes, raw tokens, raw header values or a rejected correlation id — lengths, thumbprints
   and subjects only.
 - **`AddSharedKernelRateLimiting()` is never called by `AddServiceDefaults()`** and never references
-  `14.Presentation`; the 429 `ProblemDetails` recipe lives in the service's composition root.
+  `14.Presentation`. It never sets a default `OnRejected` (P-562): `14.Presentation`'s `AddSharedKernelWebApi()`
+  fills `OnRejected` only when nothing else has, so a default here would take the platform's 429 body away from every
+  service composing both packages. The docs never show a hand-rolled rejection body.
 - **`AddSharedKernelKeyVaultConfiguration()` stays distinct from the Key Vault key provider**
   (`AddAzureKeyVaultEncryption` in `SharedKernel.Cryptography.KeyVault.Azure`): secrets as configuration versus keys
   for encryption.
@@ -293,8 +331,17 @@ are not claimed to be. HotChocolate/ASP.NET Core concerns belong to `14.Presenta
   inactive tenant fails closed; the middleware's inner scope replaces only the tenant.
 - mTLS: validator resolved per handshake; forwarded header ignored outside `TrustedNetworks`; the unconfigured-trust
   warning fires exactly once.
-- `RateLimitRejectionRecipeTests` drives a real host through the `OnRejected` recipe with a test-only reference to
-  `SharedKernel.Presentation.WebApi`; the production base never references it.
+- `RateLimitRejectionRecipeTests` (rewritten by P-562) drives real hosts with a test-only reference to
+  `SharedKernel.Presentation.WebApi`: with `AddSharedKernelWebApi()` + `AddSharedKernelRateLimiting()` +
+  `UseSharedKernelWebApi()` and nothing written by the service, a policy and a global-limiter rejection are 429
+  `application/problem+json`, `rate_limit.exceeded`, `Retry-After`; a service's own `OnRejected` wins; without
+  `14.Presentation` the answer is a bare 429. The production base never references it.
+- `BaggageLogRecordProcessor` (P-562 X2): the two platform keys on `Activity.Current` or a parent are copied; every
+  other key (`SubjectId`, `tenant.id`, case variants, MassTransit's `messaging.*` keys) is not; a value with a C0/DEL/C1
+  control character or U+2028/U+2029 is not copied; the keys equal `WellKnownBaggageKeys`.
+- `RequestBaggageRefusingPropagator` (P-562 X2, a non-parallel collection because the tests replace the process-wide
+  default propagator and restore it): extraction from an `HttpRequest` keeps the trace id and drops the baggage, the
+  undecorated SDK default reads it (non-vacuity), a dictionary carrier keeps its baggage, injection is unchanged.
 - `CompositionBaseIsolationTests` must fail when a SharedKernel reference is added to the base project.
 
 History of this domain lives in [`state-map.md`](state-map.md) and the root [`CLAUDE.changelog.md`](../CLAUDE.changelog.md).

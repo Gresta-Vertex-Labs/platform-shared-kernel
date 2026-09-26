@@ -39,7 +39,7 @@ The package split is **sibling providers** (`.Abstractions` + `.{Provider}` leav
 | Concern | Technology | Notes |
 | --- | --- | --- |
 | AI abstractions | Pure C# interfaces + `sealed record` / `readonly record struct` models | Zero third-party NuGet dependencies |
-| Outcome type | `Result<T>` / `Result` / `Error` from `SharedKernel.Primitives` | Expected failures (model not found, rate limited, context-window exceeded, dimension mismatch, model-identity mismatch, collection not found, tenant scope missing) are `Error` values from `IntelligenceErrors`, never thrown exceptions |
+| Outcome type | `Result<T>` / `Result` / `Error` from `SharedKernel.Primitives` | Expected failures (model not found, rate limited, context-window exceeded, dimension mismatch, model-identity mismatch, collection not found, tenant scope missing) are `Error` values from `IntelligenceErrors`, never thrown exceptions. `Error` also has `Unavailable` and `Timeout` (added by P-562 for outages, HTTP 503/504); this domain's `intelligence.unreachable`/`intelligence.timeout` are still `Unexpected` — moving them is a P-562 follow-up |
 | Tenant scope | `SharedKernel.Execution.Tenancy.TenantScope` over `TenantId` | The platform's one tenant scope; adapters write and filter the tenant field as the `TenantId`'s `"D"` string |
 | Readiness | `SharedKernel.Primitives.Health.IReadinessProbe` | `VectorCollectionReadinessProbe`, one per registered collection, named `vector-store-{provider}-{collection}`; the host maps every probe with `AddSharedKernelReadiness()` |
 | LLM orchestration | `Microsoft.SemanticKernel` `1.78.0` (+ explicit `Microsoft.SemanticKernel.Connectors.OpenAI`, `OpenAI`, `System.ClientModel`, `Microsoft.Extensions.Http` pins) | Reflection-heavy, non-AOT-safe; isolated in `SharedKernel.AI.SemanticKernel`. SK's `ITextEmbeddingGenerationService` carries **no token usage**, so `SemanticKernelEmbeddingGenerator` is built on `OpenAI.Embeddings.EmbeddingClient` directly (keeps Invariant #5 honest); the orchestrator uses SK's `IChatCompletionService`, whose `Metadata["Usage"]`/`["FinishReason"]` do carry it |
@@ -869,11 +869,13 @@ IntelligenceErrors   (public static class — canonical Error factory; provider 
     .RateLimited(providerName, retryAfter)                         "intelligence.rate_limited"
     .CompletionFailed(providerName, reason)                        "intelligence.completion_failed"
 
-    NOTE (ONLY REAL Error FACTORIES ARE USED): SharedKernel.Primitives' Error exposes Unexpected,
-          Validation, NotFound, Conflict, Unauthorized, Forbidden and BusinessRule — each
-          (string code, string message) — plus the Error.None sentinel. There is NO Error.Failure, and
-          this domain uses neither Forbidden nor BusinessRule. Every code literal is a private const
-          string on the holder class — never retyped at a call site (SK0022).
+    NOTE (THE Error FACTORIES): SharedKernel.Primitives' Error exposes Unexpected, Validation,
+          NotFound, Conflict, Unauthorized, Forbidden, BusinessRule, Unavailable and Timeout — each
+          (string code, string message) — plus the Error.None sentinel. There is NO Error.Failure. This
+          domain uses Unexpected, Validation, NotFound, Conflict and Unauthorized, never Forbidden or
+          BusinessRule; its outage and timeout codes are still Unexpected (a P-562 follow-up would move
+          them to Unavailable/Timeout). Every code literal is a private const string on the holder
+          class — never retyped at a call site (SK0022).
 
     NOTE (Error.BusinessRule IS USED ZERO TIMES): per ErrorType's own XML doc it maps to HTTP 422 and
           denotes a DOMAIN-RULE violation; nothing in a capability package is a domain rule.

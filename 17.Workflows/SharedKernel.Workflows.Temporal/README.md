@@ -265,9 +265,11 @@ public sealed class OrderFulfilmentWorkflow : WorkflowBase
   workflow's tenant, the dispatching caller's actor and client, and its correlation id (a new one if none
   arrived). `IRequestContext` answers with that tenant, so tenant filters and idempotency keys work, and
   the activity's outbound REST, gRPC and bus calls forward the same tenant and correlation id.
-- **Authorization needs a system identity.** A propagated context grants no permission, so a command
-  guarded by `AuthorizationBehavior` fails closed. Open a scope with exactly the permissions the activity
-  needs:
+- **Authorization needs a system identity.** A worker has no HTTP caller, and authorization is always on: a
+  command carrying `[RequirePermission]` (`SharedKernel.Application.Authorization`) is checked on every path. When
+  the service's commands carry it, the host start demands a registered `IRequestContext`; and a propagated
+  context grants no permission, so the guarded command fails closed with `Error.Forbidden`. Open a scope with
+  exactly the permissions the activity needs:
   ```csharp
   using (RequestContextScope.Begin(new SystemRequestContext(["orders.approve"], "orders-worker", TenantScope.Tenant)))
   {

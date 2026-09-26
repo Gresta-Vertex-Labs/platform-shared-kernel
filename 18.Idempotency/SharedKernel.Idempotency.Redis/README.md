@@ -39,9 +39,14 @@ Each entry is one Redis hash — `status` (`InProgress`/`Completed`), `fingerpri
 a response, `response` — keyed as:
 
 ```
-sk:idempotency:{tenantScope}:key:{rawKey}      IdempotencyPurpose.Request
+sk:idempotency:{tenantScope}:key:{key}         IdempotencyPurpose.Request
 sk:idempotency:{tenantScope}:msg:{messageId}   IdempotencyPurpose.Message
 ```
+
+`{key}` is the key passed to `TryBeginAsync` exactly as given. For `IdempotencyPurpose.Request` it is, through
+`IdempotencyBehavior`, never the command's raw key but a SHA-256 digest of tenant, caller and key (64 lowercase hex
+characters, P-562 X3), so a reservation belongs to one caller of one tenant and another caller using the same key
+cannot be handed its stored response. The `{tenantScope}` segment stays on top of that.
 
 `{tenantScope}` is `IdempotencyTenantScope`'s encoding: the tenant id in "D" form, or `no-tenant`. `TryBeginAsync`,
 `CompleteAsync` and `ReleaseAsync` are each one Lua script — one atomic round trip comparing fingerprint, token and

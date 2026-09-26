@@ -80,8 +80,8 @@ services.AddEfCoreIdempotency(o => o.UsePostgres(dataSource), p => p.ForMessages
 A custom store registers the same way — `services.AddIdempotencyStore<MyStore>(IdempotencyPurpose.Message)` —
 and is resolved with `[FromKeyedServices(IdempotencyPurpose.Request)] IIdempotencyStore` or
 `provider.GetRequiredIdempotencyStore(purpose)`. A second registration for the same purpose throws: it would
-silently leave the first unused. `ApplicationBehaviorsBuilder.Build()` and `MessagingBusBuilder.Build()` fail at
-startup when the purpose they need has no store (`HasIdempotencyStore(purpose)`).
+silently leave the first unused. `AddSharedKernelApplication(..., app => app.WithIdempotency())` and `MessagingBusBuilder.Build()` fail
+at startup when the purpose they need has no store (`HasIdempotencyStore(purpose)`).
 
 ## Tenant scope
 

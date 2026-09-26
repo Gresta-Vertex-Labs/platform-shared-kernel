@@ -19,10 +19,10 @@ Foundation or Abstractions-tier package (`SharedKernel.Execution`, `SharedKernel
 
 ```csharp
 // The whole surface of a guarded, validated, idempotent, cached, audited operation.
+[RequirePermission("orders.approve")]
 public sealed record ApproveOrderCommand(Guid OrderId, string IdempotencyKey)
-    : ICommand, IAuthorizeRequest, IIdempotentRequest, IInvalidatesCache
+    : ICommand, IIdempotentRequest, IInvalidatesCache
 {
-    public IReadOnlyCollection<string> RequiredPermissions => ["orders.approve"];
     public IReadOnlyCollection<CacheKeyRef> CacheKeysToInvalidate => [CacheKeyRef.For<GetOrderQuery>(OrderId.ToString())];
 }
 
@@ -73,10 +73,10 @@ only the contracts; the pipeline, the mediator and the cache belong to its compo
 
 | Package | Tier | What you get | Beyond `Microsoft.Extensions.*` |
 | --- | --- | --- | --- |
-| [**Application**](SharedKernel.Application/README.md) | Abstractions | The kernel mediator contracts (`IRequest<T>`, `IRequestHandler<,>`, `ISender`, `IPipelineBehavior<,>`), `ICommand`/`ICommand<T>`/`IQuery<T>`/`IStreamQuery<T>` and their handler aliases, `IRequestValidator<T>`, `IDomainEventHandler<T>`, and every request marker (`IAuthorizeRequest`, `IIdempotentRequest`, `IAuditableRequest<T>`, `ILoggableRequest<T>`, `ICacheableQuery<T>`, `IInvalidatesCache`, `ICommandScope`) | SharedKernel.Primitives, SharedKernel.Domain, SharedKernel.Caching.Abstractions |
-| [**Application.Pipeline**](SharedKernel.Application.Pipeline/README.md) | Host | `RequestPipeline<,>`, eight behaviors — Tracing, Logging, Metrics, Authorization, Validation, Idempotency, Transaction, Auditing — plus `PipelineStage` and `AddBehavior` for your own, and the native `DomainEventDispatcher`. **No mediator, no FluentValidation, no cache, no Polly, no hosting** | SharedKernel.Execution, SharedKernel.Idempotency.Abstractions |
+| [**Application**](SharedKernel.Application/README.md) | Abstractions | The kernel mediator contracts (`IRequest<T>`, `IRequestHandler<,>`, `ISender`, `IPipelineBehavior<,>`), `ICommand`/`ICommand<T>`/`IQuery<T>`/`IStreamQuery<T>` and their handler aliases, `IRequestValidator<T>`, `IDomainEventHandler<T>`, `[RequirePermission]`, and every request marker (`IIdempotentRequest`, `IAuditableRequest<T>`, `ILoggableRequest<T>`, `ICacheableQuery<T>`, `IInvalidatesCache`, `ICommandScope`) | SharedKernel.Primitives, SharedKernel.Domain, SharedKernel.Caching.Abstractions |
+| [**Application.Pipeline**](SharedKernel.Application.Pipeline/README.md) | Host | The one registration call `AddSharedKernelApplication(assemblies, app => …)` — handler, validator and domain-event-handler discovery, seams checked at host start — `RequestPipeline<,>`, eight internal behaviors (Tracing, Logging, Metrics and Authorization and Validation always on; Idempotency, Transaction, Auditing opt-in), `PipelineStage` and `WithBehavior` for your own, and the native domain-event dispatcher. **No mediator, no FluentValidation, no cache, no Polly, no hosting** | SharedKernel.Execution, SharedKernel.Idempotency.Abstractions |
 | [**Application.Pipeline.Caching**](SharedKernel.Application.Pipeline.Caching/README.md) | Host | Query caching over `ICacheableQuery<TValue>` and post-commit eviction over `IInvalidatesCache`, partitioned by query type, tenant and caller | SharedKernel.Caching.Abstractions |
-| [**Application.Mediator.MediatR**](SharedKernel.Application.Mediator.MediatR/README.md) | Host | `AddSharedKernelMediatR(assemblies)`: MediatR 12.4.1 as the transport behind `ISender`, plus handler discovery. The only SharedKernel package that references MediatR | MediatR |
+| [**Application.Mediator.MediatR**](SharedKernel.Application.Mediator.MediatR/README.md) | Host | `app.UseMediatR()`: MediatR 12.4.1 as the transport behind `ISender`. The only SharedKernel package that references MediatR | MediatR |
 
 Every package targets `net10.0`.
 
@@ -89,22 +89,22 @@ Every package targets `net10.0`.
 | Stream a large result set | Application | `IStreamQuery<TResponse>` |
 | Know who the caller is, inside a handler | `SharedKernel.Execution` | inject `IRequestContext` |
 | Dispatch from a job or workflow with no HTTP request | `SharedKernel.Execution` | `SystemRequestContext` |
-| Send a command or query | Application + Mediator.MediatR | inject `ISender`; `AddSharedKernelMediatR(assemblies)` |
-| React to a domain event | Application + Pipeline | `IDomainEventHandler<TEvent>` (discovered by `AddSharedKernelMediatR`, or `AddDomainEventHandler<TEvent, THandler>()`) |
-| Stop writing the same logging in every handler | Application.Pipeline | `AddDefaultBehaviors()` |
-| Gate an operation on a permission | Application.Pipeline | `IAuthorizeRequest` + `AddAuthorizationBehavior()` |
-| Validate a request before the handler runs | Application.Pipeline | `IRequestValidator<T>` (or FluentValidation via `AddFluentValidationRequestValidators()`) + `AddValidationBehavior()` |
-| Make a double-submitted command safe | Application.Pipeline | `IIdempotentRequest` + an `IIdempotencyStore` for `IdempotencyPurpose.Request` (`18.Idempotency`) |
-| Commit once, at the outermost command | Application.Pipeline | `AddTransactionBehavior()` + `IUnitOfWork` |
-| Record who changed what | Application.Pipeline | `IAuditableRequest<TResponse>` + `IAuditTrailWriter` |
+| Send a command or query | Application + Pipeline + Mediator.MediatR | inject `ISender`; `AddSharedKernelApplication(assemblies, app => app.UseMediatR())` |
+| React to a domain event | Application + Pipeline | `IDomainEventHandler<TEvent>` (discovered by `AddSharedKernelApplication`, or `AddDomainEventHandler<TEvent, THandler>()`) |
+| Stop writing the same logging in every handler | Application.Pipeline | `AddSharedKernelApplication` (tracing, logging, metrics always on) |
+| Gate an operation on a permission | Application (+ Pipeline enforces it) | `[RequirePermission("x")]` on the command or query — always enforced |
+| Validate a request before the handler runs | Application.Pipeline | `IRequestValidator<T>` (or FluentValidation via `AddFluentValidationRequestValidators(assembly)`) — validation is always on |
+| Make a double-submitted command safe | Application.Pipeline | `IIdempotentRequest` + `WithIdempotency()` + an `IIdempotencyStore` for `IdempotencyPurpose.Request` (`18.Idempotency`) |
+| Commit once, at the outermost command | Application.Pipeline | `WithTransactions()` + `IUnitOfWork` |
+| Record who changed what | Application.Pipeline | `IAuditableRequest<TResponse>` + `WithAuditing()` + `IAuditTrailWriter` |
 | Run work after the commit lands | Application.Pipeline | `ICommandScope.OnCompleted` |
-| Add your own cross-cutting behavior | Application.Pipeline | `AddBehavior(typeof(T<,>), PipelineStage.X, requiredServices)` |
-| Cache a hot read | Application.Pipeline.Caching | `ICacheableQuery<TValue>` |
+| Add your own cross-cutting behavior | Application.Pipeline | `app.WithBehavior(typeof(T<,>), PipelineStage.X, requiredServices)` |
+| Cache a hot read | Application.Pipeline.Caching | `ICacheableQuery<TValue>` + `app.WithCaching()` |
 | Evict what a write made stale | Application.Pipeline.Caching | `IInvalidatesCache` + `CacheKeyRef.For<TQuery>(key)` |
 
 **Where to start.** Put `SharedKernel.Application` in the application-layer project and write handlers that
 return `Result`. Put `.Mediator.MediatR` and `.Pipeline` in the API/worker project and call
-`AddDefaultBehaviors()`. Add the other behaviors the first time you catch yourself writing the same permission
+`AddSharedKernelApplication(assembly, app => app.UseMediatR())`. Add the opt-in behaviors the first time you catch yourself writing the same permission
 check, commit or duplicate-submission guard in a second handler. Add `.Pipeline.Caching` only when a measured read
 is worth caching. `samples/OrderApi` is the reference layout.
 
@@ -167,31 +167,28 @@ packages without versions — every SharedKernel package ships at one repo-wide 
 Then compose once, at the composition root:
 
 ```csharp
-builder.Services.AddSharedKernelMediatR(typeof(PlaceOrderHandler).Assembly);  // ISender, handlers, domain events
-builder.Services.AddFluentValidationRequestValidators();                       // optional FluentValidation bridge
+builder.Services.AddSharedKernelApplication(typeof(PlaceOrderHandler).Assembly, app => app
+    .UseMediatR()          // ISender (SharedKernel.Application.Mediator.MediatR)
+    .WithCaching()         // needs ICacheService + ITenantCacheKeyProvider (SharedKernel.Application.Pipeline.Caching)
+    .WithIdempotency()     // needs the IdempotencyPurpose.Request store + IRequestContext
+    .WithTransactions()    // needs IUnitOfWork
+    .WithAuditing());      // needs IAuditTrailWriter
+builder.Services.AddFluentValidationRequestValidators(typeof(PlaceOrderHandler).Assembly); // optional FluentValidation bridge
 
-// Infrastructure implements the consumed contracts itself — no adapters.
+// Infrastructure implements the consumed contracts itself — no adapters. Before or after the call above.
 builder.Services.AddSharedKernelRequestContext();                             // ServiceDefaults.Security -> IRequestContext
 builder.AddSharedKernelPostgres<OrderDbContext>("orders", p => p.UseAuditTrail()); // 06 -> IUnitOfWork, IAuditTrailWriter
 builder.Services.AddRedisIdempotency(p => p.ForRequests());                   // 18 -> IIdempotencyStore (Request)
 builder.Services.AddSharedKernelCaching(o => o.ServiceName = "orders");       // 02 -> ICacheService
-
-builder.Services.AddSharedKernelApplicationBehaviors()
-    .AddDefaultBehaviors()        // Tracing, Logging, Metrics, Validation — no prerequisites
-    .AddAuthorizationBehavior()   // needs IRequestContext
-    .AddCachingBehaviors()        // needs ICacheService + ITenantCacheKeyProvider
-    .AddIdempotencyBehavior()     // needs the IdempotencyPurpose.Request store
-    .AddTransactionBehavior()     // needs IUnitOfWork
-    .AddAuditingBehavior()        // needs IAuditTrailWriter
-    .Build();                     // throws here, at startup, naming anything missing
 ```
 
-Call order does not matter — `Build()` always registers in the canonical order below. Opting into a behavior
-without its contract fails at `Build()`, not at the first request that needed it.
+Tracing, logging, metrics, authorization (`[RequirePermission]`) and validation are always on. Call order does not
+matter — the behaviors land in the canonical order below. A missing contract fails the **host start** with one message
+naming every missing service, not the first request that needed it; a second `AddSharedKernelApplication` call throws.
 
 ## The pipeline order
 
-Fixed regardless of `.AddXBehavior()`/`AddBehavior` call order — outermost first. A query stops after the Query
+Fixed regardless of `With…` call order — outermost first. A query stops after the Query
 stage; only a command (`ICommandBase`) enters the Command stage.
 
 ```mermaid
@@ -291,7 +288,7 @@ package. Infrastructure implements it directly; there is exactly one of each and
 | `IAuditTrailWriter` | `SharedKernel.Execution` (`.Auditing`) | `06.Persistence.EfCore.Auditing` |
 | `IIdempotencyStore` (purpose `Request`) | `SharedKernel.Idempotency.Abstractions` | `18.Idempotency` (`AddRedisIdempotency`, `AddEfCoreIdempotency`) |
 | `ICacheService`, `ITenantCacheKeyProvider` | `SharedKernel.Caching.Abstractions` | `02.Caching.FusionCache` (`AddSharedKernelCaching`) |
-| `IDomainEventDispatcher` (implemented here) | `SharedKernel.Domain` | `DomainEventDispatcher` (`AddSharedKernelDomainEvents()`), called by `06.Persistence`'s save pipeline |
+| `IDomainEventDispatcher` (implemented here) | `SharedKernel.Domain` | `DomainEventDispatcher` (registered by `AddSharedKernelApplication`), called by `06.Persistence`'s save pipeline |
 
 This is what keeps this layer buildable and testable with no infrastructure package on disk.
 
@@ -313,15 +310,13 @@ internal sealed class GetOrderHandler(IOrderRepository orders) : IQueryHandler<G
 }
 ```
 
-**Authorization: fail closed, and never say which permission was missing.**
+**Authorization: declared on the use case, always enforced, and never says which permission was missing.**
 
 ```csharp
-public sealed record ApproveOrderCommand(Guid OrderId) : ICommand, IAuthorizeRequest
-{
-    public IReadOnlyCollection<string> RequiredPermissions => ["orders.approve"];
-}
+[RequirePermission("orders.approve")]
+public sealed record ApproveOrderCommand(Guid OrderId) : ICommand;
 // Anonymous -> Error.Unauthorized (401). Missing permission -> Error.Forbidden (403).
-// Declaring IAuthorizeRequest with an EMPTY permission set is refused, not waved through.
+// Enforced on every path the command is sent from: HTTP, a message consumer, a job, a workflow activity.
 ```
 
 **Idempotency: a retried submission replays the first answer.**
@@ -370,7 +365,7 @@ public sealed class SendConfirmationHandler(IEmailSender email) : IDomainEventHa
 {
     public Task Handle(OrderPlacedDomainEvent domainEvent, CancellationToken ct) => email.SendAsync(domainEvent.Email, ct);
 }
-// Discovered by AddSharedKernelMediatR(assemblies); dispatched serially, in the order the aggregate raised them.
+// Discovered by AddSharedKernelApplication(assemblies, …); dispatched serially, in the order the aggregate raised them.
 ```
 
 ## Conventions every package follows
@@ -381,8 +376,8 @@ public sealed class SendConfirmationHandler(IEmailSender email) : IDomainEventHa
 | **No response envelope** | Handlers return `Result`/`Result<T>` only. `14.Presentation` maps a failure to RFC 9457 ProblemDetails; `11.Communication` maps it back |
 | **A short-circuit is a `Result` failure, never an exception** | Unauthorized, invalid and duplicate are foreseeable outcomes, not faults. Every behavior short-circuits by constructing a failed response |
 | **Contracts, never a reference to the real thing** | The behaviors consume `SharedKernel.Execution`, `SharedKernel.Idempotency.Abstractions` and `SharedKernel.Caching.Abstractions`; infrastructure implements them |
-| **Fixed pipeline order** | `Build()` registers in the same five-stage order whatever order you called things in |
-| **Missing prerequisites fail at startup** | Opting into an infrastructure-gated behavior without its contract throws at `Build()`, naming the type |
+| **Fixed pipeline order** | `AddSharedKernelApplication` registers in the same five-stage order whatever order you called the `With…` methods in |
+| **Missing prerequisites fail at startup** | A missing contract fails the host start (`ValidateOnStart`), one message naming every missing service |
 | **Only the outermost command commits** | Nested commands skip idempotency and join the running transaction (a nested failure makes it rollback-only); one logical operation, one commit |
 | **Structured logging** | `[LoggerMessage]` with `EventId`s from this layer's range, 5000-5999, one 100-wide block per package |
 | **Documented, tracked public API** | Every package ships XML docs and fails the build on an undocumented public member or an untracked API change |
@@ -410,7 +405,7 @@ use it:
 | SK0017 | A command implementing `ICacheableQuery` — caching is for queries |
 | SK0018 | A query implementing `IInvalidatesCache` — invalidation is for commands |
 | SK0030 | A `Result` returned by a call and never checked |
-| SK0040 | `IAuthorizeRequest`/`IIdempotentRequest` on a request whose response is not `Result`/`Result<T>` — the behavior would throw on its first short-circuit |
+| SK0040 | `[RequirePermission]`/`IIdempotentRequest` on a request whose response is not `Result`/`Result<T>` — the behavior would throw on its first short-circuit |
 | SK0041 | Two `ICacheableQuery` types sharing a simple type name — their cache key namespaces collapse |
 
 `00.Governance` also holds an executed, cross-domain lock proving cache eviction observably follows the commit
@@ -445,7 +440,7 @@ dotnet test 05.Application/SharedKernel.Application.Mediator.MediatR/SharedKerne
 ```
 
 Pipeline order and cross-behavior interaction are proved through a real `ServiceCollection`, a real
-`RequestPipeline<,>` (or `ISender` via `AddSharedKernelMediatR`) and a real dispatch, never a hand-rolled stand-in.
+`RequestPipeline<,>` (or `ISender` via `app.UseMediatR()`) and a real dispatch, never a hand-rolled stand-in.
 `SharedKernel.Application.ConsumerVerify` runs a command end to end against the packed packages.
 
 ## AI quick reference
@@ -467,15 +462,14 @@ PIPELINE    Fixed order, outermost first, independent of call order:
               Query         : caching behavior (custom Query-stage behaviors)
               Command       : CommandScope, Idempotency, Auditing (Failed), Transaction, Auditing (Succeeded), cache invalidation
             Queries SKIP the command stage. First registered is outermost, so its post-next() code runs LAST.
-REGISTER    services.AddSharedKernelMediatR(typeof(Handler).Assembly);   // ISender + handlers + DomainEventDispatcher
-            services.AddSharedKernelApplicationBehaviors()
-                .AddDefaultBehaviors()        // Tracing+Logging+Metrics+Validation, zero prerequisites
-                .AddAuthorizationBehavior() .AddCachingBehaviors() .AddIdempotencyBehavior()
-                .AddTransactionBehavior() .AddAuditingBehavior()
-                .AddBehavior(typeof(My<,>), PipelineStage.Query, typeof(IDep))
-                .Build();                     // THROWS at startup naming any missing required service
-            No mediator: AddSharedKernelRequestPipeline() + AddSharedKernelDomainEvents(), resolve RequestPipeline<,>.
-MARKERS     IAuthorizeRequest (RequiredPermissions, PermissionMatch All|Any) — empty set = Forbidden, fail closed.
+REGISTER    services.AddSharedKernelApplication(typeof(Handler).Assembly, app => app   // ONE call; a second throws
+                .UseMediatR()                 // ISender (Mediator.MediatR); ISender is always required at host start
+                .WithCaching() .WithIdempotency() .WithTransactions() .WithAuditing()
+                .WithBehavior(typeof(My<,>), PipelineStage.Query, typeof(IDep)));
+            Always on: Tracing, Logging, Metrics, Authorization, Validation. Seams checked at HOST START (ValidateOnStart),
+            every missing service in one message. Handlers/validators/domain-event handlers scanned from the assemblies.
+            FluentValidation: services.AddFluentValidationRequestValidators(assembly).
+MARKERS     [RequirePermission("a","b")] — one attribute = alternatives, several = all; always enforced; 401/403.
             IIdempotentRequest (IdempotencyKey, Fingerprint?) — commands only.
             IAuditableRequest<T> (Action, ResourceType, ResourceId, BeforeSnapshot, GetAfterSnapshot).
             ILoggableRequest<T> (self-supplied loggable fields; never reflection over the request).
@@ -494,7 +488,7 @@ FORBIDDEN   Throwing for an expected failure. A response envelope. MediatR outsi
    couplings table lists what breaks elsewhere.
 2. Record every public API change in the affected package's own `PublicAPI.Unshipped.txt`.
 3. Keep the fixed pipeline order. A new built-in behavior needs a documented position, never an implicit one; a
-   sibling package extends the pipeline through `PipelineStage`/`AddBehavior` instead.
+   sibling package extends the pipeline through `PipelineStage`/`WithBehavior` instead.
 4. Never add a reference from `SharedKernel.Application`/`.Pipeline` to concrete infrastructure or a mediator —
    consume a Foundation/Abstractions contract and let infrastructure implement it.
 5. Read [`CLAUDE.history.md`](CLAUDE.history.md) only to understand *why* a since-removed capability once existed —

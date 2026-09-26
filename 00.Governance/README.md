@@ -208,7 +208,7 @@ The kernel's CQRS pipeline (`SharedKernel.Application`, `SharedKernel.Applicatio
 | [SK0016](#sk0016-requesttypeshortnameusage) | `typeof(T).Name` used as a metric tag, log scope or cache key | `typeof(T).FullName ?? typeof(T).Name` |
 | [SK0017](#sk0017-commandimplementscacheablequery) | A command marked cacheable | Caching is for queries only |
 | [SK0018](#sk0018-queryimplementsinvalidatescache) | A query marked as invalidating the cache | Invalidation is for commands only |
-| [SK0040](#sk0040-pipelinemarkerresponseshapemismatch) | `IAuthorizeRequest`/`IIdempotentRequest` on a request whose `IRequest<T>` response isn't `Result`/`Result<T>` | Declare the response as `Result`/`Result<T>` |
+| [SK0040](#sk0040-pipelinemarkerresponseshapemismatch) | `[RequirePermission]` (inherited) or `IIdempotentRequest` on a request whose `IRequest<T>` response isn't `Result`/`Result<T>` | Declare the response as `Result`/`Result<T>` |
 | [SK0041](#sk0041-duplicatecacheablequeryname) | Two cacheable queries sharing a simple type name | Rename one -- cache entries are namespaced by that name |
 
 #### Logging
@@ -238,7 +238,7 @@ How every production log statement is written.
 | [SK0033](#sk0033-reflectionbasedobjectmapperusage) | AutoMapper, or Mapster's runtime adapter | A Mapperly `[Mapper]` class, or hand-written mapping |
 | [SK0034](#sk0034-amountcurrencypaircoupling) | A `decimal` amount paired with a `string` currency code | Consider `Money` (advisory) |
 | [SK0035](#sk0035-unmaskedclassifieddataatloggingcallsite) | Classified or personal data logged unmasked | Classify the logging parameter, or mask it with `PiiMasking` |
-| [SK0036](#sk0036-rawrpcexceptionconstruction) | `RpcException` constructed outside the gRPC presentation layer | Return a `Result` and call `ToGrpcResult()` |
+| [SK0036](#sk0036-rawrpcexceptionconstruction) | `RpcException` constructed outside the gRPC presentation layer | Return a `Result` and end it with `SharedKernel.Core`'s `ThrowIfFailure()` or `GetValueOrThrow()` |
 
 #### Persistence
 
@@ -1131,7 +1131,7 @@ Two request types with the same short name in different namespaces, for example 
 
 #### What it flags
 
-- A `typeof(X).Name` member access in a file whose namespace declaration starts with `SharedKernel.Application`. This covers `SharedKernel.Application`, `SharedKernel.Application.Pipeline`, `SharedKernel.Application.Pipeline.Caching`, `SharedKernel.Application.Mediator.MediatR`, and their sub-namespaces.
+- A `typeof(X).Name` member access in a file whose namespace declaration starts with `SharedKernel.Application`. This covers `SharedKernel.Application` and its sub-namespaces (`.Caching`, `.Messaging`, …), `SharedKernel.Application.Pipeline`, `SharedKernel.Application.Pipeline.Caching`, `SharedKernel.Application.Mediator.MediatR`, and their sub-namespaces.
 - `typeof(A).FullName ?? typeof(B).Name` where `A` and `B` are not written identically.
 
 Unlike most rules, the namespace is a condition for firing, not an exemption. The rule targets the kernel pipeline code that builds request-type tags and keys. Code in your own service namespaces is not checked.
@@ -1260,7 +1260,7 @@ using SharedKernel.Application.Messaging;
 // Flagged: SK0018
 public sealed record GetOrderQuery(Guid OrderId) : IQuery<OrderDto>, IInvalidatesCache
 {
-    public IReadOnlyCollection<CacheKeyRef> CacheKeysToInvalidate => [CacheKeyRef.For<GetOrderQuery>($"orders:{OrderId}")];
+    public IReadOnlyCollection<CacheKeyRef> CacheKeysToInvalidate => [CacheKeyRef.For<GetOrderQuery>(OrderId.ToString())];
 }
 ```
 
@@ -1273,7 +1273,7 @@ public sealed record GetOrderQuery(Guid OrderId) : IQuery<OrderDto>;
 
 public sealed record ShipOrderCommand(Guid OrderId) : ICommand<Guid>, IInvalidatesCache
 {
-    public IReadOnlyCollection<CacheKeyRef> CacheKeysToInvalidate => [CacheKeyRef.For<GetOrderQuery>($"orders:{OrderId}")];
+    public IReadOnlyCollection<CacheKeyRef> CacheKeysToInvalidate => [CacheKeyRef.For<GetOrderQuery>(OrderId.ToString())];
 }
 ```
 
@@ -1290,23 +1290,23 @@ warning SK0018: 'GetOrderQuery' implements IQuery<TResponse> and IInvalidatesCac
 
 **Category:** Design · **Default severity:** Warning
 
-A request implementing `IAuthorizeRequest` or `IIdempotentRequest` must declare its `IRequest<TResponse>` response as `Result` or a closed `Result<T>`.
+A request that carries `SharedKernel.Application.Authorization`'s `[RequirePermission]` attribute (on the type or a base type) or implements `IIdempotentRequest` must declare its `IRequest<TResponse>` response as `Result` or a closed `Result<T>`.
 
 #### Why it matters
 
-`AuthorizationBehavior` and `IdempotencyBehavior` short-circuit through the internal `FailureResponse.Create<TResponse>()`, which binds to a public static `Failure(Error)` factory the first time a closed `TResponse` is used — `Result` takes a hardcoded fast path, and every other `TResponse` must expose that factory or the call throws `InvalidOperationException`. If a request implementing either marker declares a plain DTO as its response, nothing fails at compile time — the first authorization denial or duplicate submission throws in production. This rule moves that failure to compile time.
+The authorization and idempotency behaviors short-circuit through the internal `FailureResponse.Create<TResponse>()`, which binds to a public static `Failure(Error)` factory the first time a closed `TResponse` is used — `Result` takes a hardcoded fast path, and every other `TResponse` must expose that factory or the call throws `InvalidOperationException`. If a request carrying either marker declares a plain DTO as its response, nothing fails at compile time — the first authorization denial or duplicate submission throws in production. This rule moves that failure to compile time.
 
-Reading `FailureResponse.cs` and every behavior that calls it found exactly two callers: `AuthorizationBehavior` (gated by `IAuthorizeRequest`) and `IdempotencyBehavior` (gated by `IIdempotentRequest`). `AuditingBehavior` (`IAuditableRequest<TResponse>`) and `LoggingBehavior` (`ILoggableRequest<TResponse>`) never call it — both only forward the response `next()` already produced and read it through `ResponseOutcome.TryGetError`, which treats a non-`Result` response as a success rather than requiring a `Failure(Error)` factory. This rule does not check those two markers.
+Reading `FailureResponse.cs` and every behavior that calls it found exactly two callers gated by a marker: the authorization behavior (gated by `[RequirePermission]` on the request type or a base type) and the idempotency behavior (gated by `IIdempotentRequest`). The auditing behavior (`IAuditableRequest<TResponse>`) and the logging behavior (`ILoggableRequest<TResponse>`) never call it — both only forward the response `next()` already produced and read it through `ResponseOutcome.TryGetError`, which treats a non-`Result` response as a success rather than requiring a `Failure(Error)` factory. This rule does not check those two markers.
 
 #### What it flags
 
-- A non-abstract class, record, or struct implementing `IAuthorizeRequest` and/or `IIdempotentRequest`, and `SharedKernel.Application.Messaging.IRequest<TResponse>` (directly or transitively), whose resolved `TResponse` is not `Result` or a closed `Result<T>` (`SharedKernel.Primitives.Results`, arity 0 or 1).
+- A non-abstract class, record, or struct carrying `[RequirePermission]` declared in namespace `SharedKernel.Application.Authorization` (an attribute of the same name in any other namespace is not matched; the endpoint attribute is `RequireEndpointPermission`) and/or implementing `SharedKernel.Application.Idempotency.IIdempotentRequest`, and `SharedKernel.Application.Messaging.IRequest<TResponse>` (directly or transitively), whose resolved `TResponse` is not `Result` or a closed `Result<T>` (`SharedKernel.Primitives.Results`, arity 0 or 1).
 - Reported on the type name, naming every matched marker and the actual response type.
 
 #### What it does not flag
 
 - `IAuditableRequest<TResponse>` and `ILoggableRequest<TResponse>` — neither behavior constructs a failure response.
-- A marker implemented with no `IRequest<TResponse>` at all — no behavior can ever resolve into that type's pipeline.
+- A marker on a type with no `IRequest<TResponse>` at all — no behavior can ever resolve into that type's pipeline.
 - A response type that is itself still an open type parameter (or unresolved) — the eventual closed shape cannot be determined at the declaration site.
 - A closed `Result<T>` whose own type argument `T` is an open type parameter — only the outer `Result`/`Result<T>` shape is checked.
 - Abstract types.
@@ -1318,28 +1318,23 @@ using SharedKernel.Application.Messaging;
 using SharedKernel.Application.Authorization;
 
 // Flagged: SK0040 — OrderDto has no static Failure(Error) factory
-public sealed record ApproveOrderCommand(Guid OrderId) : IAuthorizeRequest, IRequest<OrderDto>
-{
-    public IReadOnlyCollection<string> RequiredPermissions => ["orders.approve"];
-}
+[RequirePermission("orders.approve")]
+public sealed record ApproveOrderCommand(Guid OrderId) : IRequest<OrderDto>;
 ```
 
 ```csharp
-using SharedKernel.Application.Messaging;
 using SharedKernel.Application.Authorization;
-using SharedKernel.Primitives.Results;
+using SharedKernel.Application.Messaging;
 
 // Compliant
-public sealed record ApproveOrderCommand(Guid OrderId) : IAuthorizeRequest, IRequest<Result<OrderDto>>
-{
-    public IReadOnlyCollection<string> RequiredPermissions => ["orders.approve"];
-}
+[RequirePermission("orders.approve")]
+public sealed record ApproveOrderCommand(Guid OrderId) : ICommand<OrderDto>;
 ```
 
 #### Diagnostic
 
 ```text
-warning SK0040: 'ApproveOrderCommand' implements IAuthorizeRequest, which short-circuits with a failed response via FailureResponse.Create<TResponse> — but its request response type is 'OrderDto', not Result or a closed Result<T>. This throws InvalidOperationException the first time the behavior short-circuits, at runtime. Declare the response as Result or Result<T>, or remove IAuthorizeRequest.
+warning SK0040: 'ApproveOrderCommand' declares [RequirePermission], which short-circuits with a failed response via FailureResponse.Create<TResponse> — but its request response type is 'OrderDto', not Result or a closed Result<T>. This throws InvalidOperationException the first time the behavior short-circuits, at runtime. Declare the response as Result or Result<T>, or remove [RequirePermission].
 ```
 
 ---
@@ -2442,13 +2437,13 @@ warning SK0035: 'Customer.Email' carries [EmailAddressData] and is passed to [Lo
 
 **Category:** Usage · **Default severity:** Warning
 
-Return a `Result` and convert it with `ToGrpcResult()` instead of constructing `RpcException` or `Status` yourself.
+Return a `Result` and end it with `SharedKernel.Core`'s `ThrowIfFailure()` or `GetValueOrThrow()` instead of constructing `RpcException` or `Status` yourself.
 
 #### Why it matters
 
-`SharedKernel.Presentation.Grpc` maps each `ErrorType` to a gRPC status code in one place. A hand-built `RpcException` picks its own status code, so the same failure can reach clients as `NotFound` from one service and `Internal` from another. Clients then cannot rely on status codes for retries or error handling.
+`SharedKernel.Presentation.Grpc` maps each `ErrorType` to a gRPC status code in one place, and sends every failure as a rich `google.rpc.Status`: the client message (localized, and redacted for server errors outside Development), an `ErrorInfo` detail with the error code, the error domain and the trace and correlation ids, and a `BadRequest` detail with the field errors (at most 50 and about 3 KB, then one `grpc.more_field_violations` entry saying how many were left out). Authorization refusals are plain `Unauthenticated`/`PermissionDenied`, without a rich status. A hand-built `RpcException` picks its own status code and carries none of that: the package's exception interceptor keeps only its status code (and, for a client error, its message), puts `grpc.{status}` where the error code belongs, and drops its trailers. So the same failure can reach clients as `NotFound` from one service and `Internal` from another, with no code to branch on. Clients then cannot rely on status codes for retries or error handling.
 
-`GrpcResultExtensions.ToGrpcResult()` and `ToGrpcResult<T>()` throw an `RpcException` with the mapped status code and the error message on failure, and return the value on success.
+`ThrowIfFailure()` (for `Result`) and `GetValueOrThrow()` (for `Result<T>`, returning the value on success), with their `Task` and `ValueTask` overloads, are in `SharedKernel.Core.Extensions`. On failure they throw the error's `SharedKernelException`, and the exception interceptor turns it into that status. A client reads the details with `RpcException.GetRpcStatus()`. The gRPC package no longer has extensions of its own with these names: they had the same signatures as Core's, so a file importing both namespaces did not compile (P-562).
 
 #### What it flags
 
@@ -2459,7 +2454,7 @@ Return a `Result` and convert it with `ToGrpcResult()` instead of constructing `
 
 #### What it does not flag
 
-- Code inside a namespace declaration whose name starts with `SharedKernel.Presentation.Grpc`, where the sanctioned mapping and interceptors live. The match is a plain name prefix.
+- Code inside a namespace declaration whose name starts with `SharedKernel.Presentation.Grpc`, where the rich-status factory and the exception interceptor live. The match is a plain name prefix.
 - Target-typed construction, such as `Status status = new(StatusCode.NotFound, "...")`.
 - Static members such as `Status.DefaultSuccess`, and types derived from `RpcException`.
 - Generated code.
@@ -2476,20 +2471,26 @@ public override Task<OrderReply> GetOrder(GetOrderRequest request, ServerCallCon
 
 ```csharp
 // Compliant
-using SharedKernel.Presentation.Grpc.Results;
+using SharedKernel.Core.Extensions;   // GetValueOrThrow, ThrowIfFailure
 
 public override async Task<OrderReply> GetOrder(GetOrderRequest request, ServerCallContext context)
 {
     Result<OrderReply> result = await orders.GetAsync(request.OrderId, context.CancellationToken);
-    return result.ToGrpcResult();
+    return result.GetValueOrThrow();
+}
+
+public override async Task<Empty> CancelOrder(CancelOrderRequest request, ServerCallContext context)
+{
+    await orders.CancelAsync(request.OrderId, context.CancellationToken).ThrowIfFailure();
+    return new Empty();
 }
 ```
 
 #### Diagnostic
 
 ```text
-warning SK0036: Direct construction of Grpc.Core.RpcException is prohibited outside SharedKernel.Presentation.Grpc. Use SharedKernel.Presentation.Grpc.Results.GrpcResultExtensions.ToGrpcResult()/.ToGrpcResult<T>() to map a Result<T> outcome to an RpcException instead of hand-constructing one.
-warning SK0036: Direct construction of Grpc.Core.Status is prohibited outside SharedKernel.Presentation.Grpc. Use SharedKernel.Presentation.Grpc.Results.GrpcResultExtensions.ToGrpcResult()/.ToGrpcResult<T>() to map a Result<T> outcome to an RpcException instead of hand-constructing one.
+warning SK0036: Direct construction of Grpc.Core.RpcException is prohibited outside SharedKernel.Presentation.Grpc. Return a Result and end it with ThrowIfFailure()/GetValueOrThrow() from SharedKernel.Core.Extensions: the SharedKernel.Presentation.Grpc exception interceptor turns the exception they throw into the platform's rich status, which a hand-constructed RpcException does not carry.
+warning SK0036: Direct construction of Grpc.Core.Status is prohibited outside SharedKernel.Presentation.Grpc. Return a Result and end it with ThrowIfFailure()/GetValueOrThrow() from SharedKernel.Core.Extensions: the SharedKernel.Presentation.Grpc exception interceptor turns the exception they throw into the platform's rich status, which a hand-constructed RpcException does not carry.
 ```
 
 ---

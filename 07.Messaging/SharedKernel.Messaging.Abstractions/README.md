@@ -182,14 +182,14 @@ consumer runs inside a `RequestContextScope`, so the calls it makes carry the sa
 
 `MessagingErrorCodes` — stable strings, safe to branch on and to alert on:
 
-| Code | Meaning |
-| --- | --- |
-| `messaging.unavailable` | Transport unreachable, or the connection dropped |
-| `messaging.endpoint_not_found` | A send addressed a queue that does not exist |
-| `messaging.serialization_failed` | The payload could not be serialized |
-| `messaging.publish_rejected` | The broker refused the message |
-| `messaging.invalid_message` | The event failed validation before dispatch |
-| `messaging.contract_violation` | The event type has no valid `[IntegrationEvent]` attribute |
+| Code | `ErrorType` (HTTP) | Meaning |
+| --- | --- | --- |
+| `messaging.unavailable` | Unavailable (503; `Unexpected` before P-562) | Transport unreachable, or the connection dropped |
+| `messaging.endpoint_not_found` | NotFound (404) | A send addressed a queue that does not exist |
+| `messaging.serialization_failed` | Unexpected (500) | The payload could not be serialized |
+| `messaging.publish_rejected` | Unexpected (500) | The broker refused the message |
+| `messaging.invalid_message` | Validation (400) | The event failed validation before dispatch |
+| `messaging.contract_violation` | Validation (400) | The event type has no valid `[IntegrationEvent]` attribute |
 
 Only cancellation throws. Anything the transport package does not recognise as an operational fault is rethrown
 unchanged, so a bug in your code is never laundered into a failed `Result`.

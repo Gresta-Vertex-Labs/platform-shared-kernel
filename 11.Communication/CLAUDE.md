@@ -110,11 +110,19 @@ Rules:
 - **Idempotency key:** opt-in (`EnableIdempotencyKeyPropagation`), a hyphenated GUID set once before the first
   attempt; retries re-send the same `HttpRequestMessage`, so the "already present" check keeps it stable. The header
   is `Idempotency-Key` — the one `14.Presentation`'s `[RequireIdempotencyKey]` reads.
-- **ProblemDetails → `Error`:** `errorCode` (fallback `title`) → `Error.Code`, never `type` (an RFC 9457 URI);
-  `detail` → `Error.Message`; status → `ErrorType` through `HttpStatusErrorTypeMap` (hand-maintained reverse of
-  `14.Presentation`'s `ErrorTypeStatusCodeMap`; do not reference `14.Presentation` to share it). An `errors`
-  extension (with the parallel `errorCodes` map) is rebuilt into `Error.Validation(IReadOnlyList<Error>)`.
-  Unrecognisable bodies give `Error.Unexpected("http.{status}")`; a 2xx with no body gives `http.empty-body`.
+- **ProblemDetails → `Error` (P-544, P-562 R38):** `errorCode` → `Error.Code`, else `"http.{status}"` — never
+  `title` (the status reason phrase since P-562, and free text from a non-platform upstream that the caller would
+  adopt and re-send as its own `errorCode`) and never `type` (a URI). `detail` → `Error.Message`, else
+  `"HTTP {status} error"`. Status → `ErrorType` through `HttpStatusErrorTypeMap`, the hand-maintained reverse of
+  `14.Presentation`'s `ErrorTypeStatusCodeMap` (`SharedKernel.Presentation.Core`) (503 → `Unavailable`, 504 → `Timeout`) plus the statuses an
+  HTTP boundary answers outside it (412 → Conflict, 413/415/428 → Validation, 429 → Unavailable); everything else →
+  Unexpected; do not reference `14.Presentation` to share it. Only on a 400 or a 422 is the `errors` extension (with
+  the parallel `errorCodes` map) rebuilt into `Error.Validation(IReadOnlyList<Error>)` — so a 422 with field errors is
+  Validation, without them BusinessRule; on any other status both maps are ignored, so a 401/409/503 keeps its
+  category. `ProblemDetailsDto` binds only `detail`, `errorCode`, `errors` and `errorCodes`. A body with none of those
+  members (non-JSON, empty, a bare `{"title":"Not Found","status":404}` from a gateway) still takes its `ErrorType` from
+  the status, code `"http.{status}"` — a bodiless 503/429 is `Unavailable`, a 504 `Timeout`. Never throws. A 2xx with
+  no body gives `http.empty-body`.
 - STJ source-generated `ProblemDetailsJsonContext` is the primary path; the reflection fallback uses one
   `static readonly JsonSerializerOptions`.
 - `EnsureSuccessOrErrorAsync` is status-only (`Task<Result>`); `ReadResultAsync<T>` deserializes. Never reintroduce a
@@ -166,6 +174,9 @@ Rules:
 | `DateTime.UtcNow`/`DateTimeOffset.UtcNow` in production code | SK0001 — inject `IClock` |
 | `ResolveAsync` throwing, or `AddStaticServiceDiscovery` in production | Discovery contract |
 | A `SharedKernel.Contracts` reference in `.Grpc`, or a response-envelope type in `.Rest` | Failures travel as ProblemDetails and map back to `Result<T>` |
+| `ProblemDetailsDeserializer` reading `type` or `title` as `Error.Code` (P-544, P-562 R38) | `type` is a URI and `title` the status reason phrase (free text from a non-platform upstream); use `errorCode`, else `"http.{status}"` |
+| `ProblemDetailsDeserializer` turning an `errors` map into `Error.Validation` on a status other than 400 or 422 (P-562 R38) | A 401/403/409/5xx must keep its status category |
+| The outbound idempotency header under any name other than `WellKnownHeaders.IdempotencyKey` (`"Idempotency-Key"`), e.g. the old `x-idempotency-key` | P-562; `14.Presentation` reads only that name |
 | Direct `ILogger.LogXxx` or `LoggerMessage.Define` | `[LoggerMessage]` only (SK0020/SK0021) |
 
 ---

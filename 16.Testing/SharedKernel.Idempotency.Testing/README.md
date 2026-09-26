@@ -53,10 +53,10 @@ store already registered for it. Resolve `FakeIdempotencyStore` itself to assert
 
 ```csharp
 services.AddFakeIdempotencyStore(IdempotencyPurpose.Request);
-// ... compose the pipeline with AddIdempotencyBehavior() and send the same command twice ...
+// ... AddSharedKernelApplication(assembly, app => app.UseMediatR().WithIdempotency()), then send the same command twice ...
 
 var store = provider.GetRequiredService<FakeIdempotencyStore>();
-store.Calls.Should().Contain(c => c.Member == "CompleteAsync" && c.Key == command.IdempotencyKey);
+store.Calls.Should().Contain(c => c.Member == "CompleteAsync");  // under the caller-scoped key: a 64-char digest, not the raw key
 secondResult.Should().BeEquivalentTo(firstResult);                // replayed, handler ran once
 ```
 

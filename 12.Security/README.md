@@ -109,7 +109,7 @@ The store, cache, check and validator types are yours: each package README shows
 | Layer | Adds | Package |
 | --- | --- | --- |
 | Kestrel client-certificate negotiation, forwarded certificates behind a proxy | `AddMtlsClientCertificate`, `AddMtlsForwardedHeaderCertificate` | [`SharedKernel.ServiceDefaults.Security.Mtls`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/13.ServiceDefaults/SharedKernel.ServiceDefaults.Security.Mtls) |
-| Endpoint attributes: `[RequireRole]`, `[RequirePermission]`, `[RequireFreshAuthentication]`, `[RequireAuthenticationMethod]` | ProblemDetails 401/403 | [`SharedKernel.Presentation.Core`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/14.Presentation/SharedKernel.Presentation.Core) (namespace `SharedKernel.Presentation.Authorization`) |
+| Endpoint attributes: `[RequireRole]`, `[RequireEndpointPermission]`, `[RequireFreshAuthentication]`, `[RequireAuthenticationMethod]` | ProblemDetails 401/403 | [`SharedKernel.Presentation.Core`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/14.Presentation/SharedKernel.Presentation.Core) (namespace `SharedKernel.Presentation.Authorization`) |
 | Tenant resolution from the tenant claim, a header or a database | `AddSharedKernelMultiTenancy()` | [`SharedKernel.MultiTenancy`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/13.ServiceDefaults/SharedKernel.MultiTenancy) |
 | Hashing, random values, TOTP algorithms | `AddSharedKernelCryptography(configuration)` | [`SharedKernel.Cryptography`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/01.Core/SharedKernel.Cryptography) |
 

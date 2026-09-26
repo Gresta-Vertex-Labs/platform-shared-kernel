@@ -51,7 +51,7 @@ dotnet add package SharedKernel.Security.Mtls
 | --- | --- |
 | [`SharedKernel.ServiceDefaults.Security.Mtls`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/13.ServiceDefaults/SharedKernel.ServiceDefaults.Security.Mtls) | Kestrel client certificate negotiation, and certificates forwarded by a TLS-terminating proxy |
 | [`SharedKernel.Security.Oidc`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/12.Security/SharedKernel.Security.Oidc) | Bearer tokens, including certificate-bound tokens (RFC 8705) |
-| [`SharedKernel.Presentation.WebApi`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/14.Presentation/SharedKernel.Presentation.WebApi) | Enforces `SharedKernel.Presentation.Core`'s `[RequireRole]` and `[RequirePermission]` (namespace `SharedKernel.Presentation.Authorization`) on endpoints |
+| [`SharedKernel.Presentation.WebApi`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/14.Presentation/SharedKernel.Presentation.WebApi) | `[RequireRole]` and `[RequireEndpointPermission]` on endpoints (attributes from `SharedKernel.Presentation.Core`, namespace `SharedKernel.Presentation.Authorization`; enforced here) |
 
 ## Quick start
 
@@ -572,6 +572,9 @@ app.UseAuthorization();
 
 **Order matters.** `UseForwardedHeaders` with `XForwardedFor` replaces the connection's remote address with the
 client's. Run `MtlsForwardedHeaderMiddleware` before it, so `TrustedNetworks` is compared with the ingress's address.
+With `SharedKernel.Presentation.WebApi`, put both in its first hook, in the same order, and let it add authentication
+and authorization:
+`app.UseSharedKernelWebApi(p => p.AtStart(a => { a.UseMiddleware<MtlsForwardedHeaderMiddleware>(); a.UseForwardedHeaders(); }));`
 Without `XForwardedProto`, the request is plain HTTP to the service and the Certificate handler returns no result.
 
 **NGINX Ingress Controller** verifies the client and passes the certificate, URL-encoded PEM, in `ssl-client-cert`:
@@ -605,8 +608,7 @@ Bearer tokens stay the default scheme; certificate endpoints name the `Certifica
 
 ```csharp
 // Program.cs
-using SharedKernel.Presentation.Authorization;
-using SharedKernel.Presentation.WebApi.Authorization;
+using SharedKernel.Presentation.WebApi;
 using SharedKernel.Security.Abstractions;
 using SharedKernel.Security.Mtls;
 using SharedKernel.Security.Mtls.Extensions;
@@ -616,7 +618,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOidcAuthentication(builder.Configuration);                // "Bearer", the default scheme
 builder.Services.AddMtlsAuthentication<OpenBankingCertificateValidator>();    // "Certificate", per endpoint
-builder.Services.AddSharedKernelAuthorizationFilters();
+builder.AddSharedKernelWebApi();                                              // RequireEndpointPermission and error responses
 
 builder.Services.AddAuthorizationBuilder()
     .AddPolicy("Partner", policy => policy
@@ -624,8 +626,7 @@ builder.Services.AddAuthorizationBuilder()
         .RequireAuthenticatedUser());
 
 var app = builder.Build();
-app.UseAuthentication();
-app.UseAuthorization();
+app.UseSharedKernelWebApi();                                                  // authentication and authorization
 
 // Users and first-party apps: bearer tokens.
 app.MapGroup("/api")
@@ -634,23 +635,25 @@ app.MapGroup("/api")
 
 // Partners: client certificates only.
 RouteGroupBuilder partner = app.MapGroup("/partner").RequireAuthorization("Partner");
-partner.AddEndpointFilter<AuthorizationRequirementEndpointFilter>();
 partner.MapPost("/payments", (IUserContext caller) => Results.Accepted())
-    .RequirePermission("payments:initiate");
+    .RequireEndpointPermission("payments:initiate");
 
 app.Run();
 ```
 
-With controllers, use `[Authorize(AuthenticationSchemes = MtlsAuthenticationDefaults.AuthenticationScheme)]`.
-`RequirePermission` checks the permissions your validator returned; `RequireRole` checks its roles.
+With controllers, use `[Authorize(AuthenticationSchemes = MtlsAuthenticationDefaults.AuthenticationScheme)]`, or
+`[RequireEndpointPermission("payments:initiate", AuthenticationSchemes = MtlsAuthenticationDefaults.AuthenticationScheme)]`.
+`RequireEndpointPermission` checks the permissions your validator returned; `RequireRole` checks its roles. A named policy of
+your own, such as `Partner`, works next to the platform's.
 
 - **Do not list both schemes in one policy.** The request then has two identities, and `IUserContext` maps only one
   of them.
 - **To require a token and a certificate together**, protect the endpoint with the bearer scheme and issue
   certificate-bound tokens. `SharedKernel.Security.Oidc` rejects a token with `cnf` `x5t#S256` unless the connection
   carries that certificate, from Kestrel or from the forwarding middleware.
-- **`RequireFreshAuthentication` and `RequireAuthenticationMethod` always deny certificate callers.** A certificate
-  has no authentication time or methods.
+- **`RequireFreshAuthentication` always refuses certificate callers, and `RequireAuthenticationMethod` does unless a
+  claims transformation of yours adds an `amr` claim (with its `amr_time`).** A certificate has no authentication time
+  and no methods of its own. The refusal is a 401 step-up challenge, which a certificate client cannot answer.
 
 ### 7. Rotate a client certificate
 
@@ -983,7 +986,7 @@ adds), with authentication type `Certificate`:
 | --- | --- |
 | `ActorKind` | `Service` |
 | `IsAuthenticated` | `true` |
-| `AuthenticationMethods`, `AuthTime`, `AuthContextClassReference` | Empty, `null`, `null` |
+| `AuthenticationMethods`, `AuthTime`, `AuthContextClassReference` | Empty (unless a claims transformation adds `amr` claims, dated by `amr_time`), `null`, `null` |
 | `SessionId`, `Name`, `Email` | `null` |
 | `IsSenderConstrained` | `false` |
 
@@ -1057,8 +1060,8 @@ usage failures are logged by ASP.NET Core under `Microsoft.AspNetCore.Authentica
 - **Code that reads `HttpContext.Connection.ClientCertificate` directly.** With `AllowAnyClientCertificate` or a
   forwarded header, that certificate has not been validated unless this scheme authenticated the request.
 - **Authorization.** Authentication yields roles and permissions; endpoints still have to require them.
-- **Step-up checks.** Certificate callers have no authentication time or methods, so freshness requirements always
-  deny them.
+- **Step-up checks.** Certificate callers have no authentication time and no methods of their own, so freshness
+  requirements always refuse them, with a 401 step-up challenge they cannot answer.
 - **Resource exhaustion.** Revocation downloads and a slow validator add latency to every request that uses the
   scheme; rate-limit untrusted callers.
 
