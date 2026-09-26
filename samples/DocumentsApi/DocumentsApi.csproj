@@ -27,6 +27,11 @@
     <PackageReference Include="SharedKernel.Application.Mediator.MediatR" />
     <!-- 14.Presentation: Result -> ProblemDetails -->
     <PackageReference Include="SharedKernel.Presentation.WebApi" />
+    <!-- 20.Reporting: CSV, Excel and tabular PDF exports; HTML-to-PDF through Gotenberg -->
+    <PackageReference Include="SharedKernel.Reporting.Csv" />
+    <PackageReference Include="SharedKernel.Reporting.Spreadsheet" />
+    <PackageReference Include="SharedKernel.Reporting.Pdf" />
+    <PackageReference Include="SharedKernel.Reporting.Gotenberg" />
   </ItemGroup>
 
 </Project>

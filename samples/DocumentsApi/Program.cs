@@ -2,6 +2,7 @@ using DocumentsApi;
 using SharedKernel.Application.Mediator.MediatR;
 using SharedKernel.Application.Pipeline;
 using SharedKernel.Presentation.WebApi;
+using SharedKernel.Reporting;
 using SharedKernel.Security.Abstractions;
 using SharedKernel.ServiceDefaults.Extensions;
 using SharedKernel.ServiceDefaults.HealthChecks;
@@ -12,9 +13,10 @@ using SharedKernel.Storage;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 13.ServiceDefaults — OpenTelemetry and health endpoints; storage spans and metrics.
+// 13.ServiceDefaults — OpenTelemetry and health endpoints; storage and reporting spans and metrics.
 builder.AddServiceDefaults();
 builder.WithStorageTelemetry();
+builder.WithReportingTelemetry();
 
 // 08.Storage — three stores on three connections. Buckets, prefixes, encryption and credentials are
 // configuration (SharedKernel:Storage:*); code only names the stores.
@@ -25,6 +27,15 @@ IStorageBuilder storage = builder.Services.AddSharedKernelStorage();
 storage.AddS3(builder.Configuration, "Public").AddStore(Stores.Assets);
 storage.AddS3(builder.Configuration, "Private").AddTenantStore(Stores.Documents);
 storage.AddObs(builder.Configuration).AddStore(Stores.Archive);
+
+// 20.Reporting — CSV, Excel and PDF exports of any row type, picked at runtime through IReportExporterFactory, and
+// HTML-to-PDF through Gotenberg (SharedKernel:Reporting:Gotenberg:BaseUrl; its "gotenberg" probe joins readiness).
+// Every export streams into one of the stores above and comes back as a presigned link (ReportEndpoints).
+builder.Services.AddSharedKernelReporting()
+    .AddCsv(builder.Configuration)
+    .AddSpreadsheet(builder.Configuration)
+    .AddPdf(builder.Configuration)
+    .AddGotenberg(builder.Configuration);
 
 // Readiness fails while any store's bucket is unreachable: every AddStore/AddTenantStore registered a probe
 // (storage-assets, storage-documents, storage-archive), and AddSharedKernelReadiness maps them all.
@@ -56,7 +67,7 @@ app.UseSharedKernelWebApi();
 app.MapDefaultHealthCheckEndpoints();
 app.Services.GetRequiredService<StartupGate>().MarkReady();
 
-// Every IEndpointModule of this assembly (FileEndpoints, LinkEndpoints), found at compile time by the generator the
+// Every IEndpointModule of this assembly (FileEndpoints, LinkEndpoints, ReportEndpoints), found at compile time by the generator the
 // WebApi package ships.
 app.MapEndpoints();
 
