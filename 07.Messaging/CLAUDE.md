@@ -602,11 +602,6 @@ must supply its own `JsonSerializerContext` for every message and envelope type.
   first to finish completes the id and the second sees `Completed` and is skipped as a duplicate — its consumer never
   runs. Verified in code after WO-086. Fix: add the endpoint (input address) or consumer type to the key. Until then,
   do not enable `WithIdempotency()` in a service where one message reaches more than one of its endpoints.
-- `WithEntityFrameworkOutbox<TDbContext>()` sets no lock-statement provider (`UsePostgres()`/`UseSqlServer()`) on
-  MassTransit's outbox configurator, so MassTransit's default applies; only SQLite is tested (the test sets
-  `UseSqlite()` itself). Verify against PostgreSQL, or add a provider option, before a service relies on it.
-- `SharedKernel.Messaging.Abstractions.csproj`'s `<Description>` still names the removed `IMessageBusProbe` and omits
-  the `SharedKernel.Execution` reference; correct it with the next change to that project.
 
 ---
 

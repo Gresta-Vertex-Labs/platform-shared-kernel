@@ -1,7 +1,7 @@
 # WO-086 Foundation Refactor — Session Handoff
 
 > **For the next Claude session.** Read this file first, then follow "How to resume". Everything you need is
-> linked from here. Last updated: 2026-09-26, after P-574 (`dc1a22ef`) was committed.
+> linked from here. Last updated: 2026-09-26, after P-575/P-576 and the follow-up fixes were committed.
 
 ## 1. Where the plan lives
 
@@ -44,9 +44,9 @@
 | P-572 | 10 — Release train and CI | ● done (`b0fb8e41`) — not yet run on a real runner |
 | P-573 | 11 — Samples as the reference architecture | ● done (`c7070aab`) |
 | P-574 | 12 — Governance cleanup (tier baseline empty, SKTIER becomes an error) | ● done (`dc1a22ef`) |
-| P-575 | 13 — Documentation (root/domain CLAUDE.md, READMEs, PLATFORM.md, MIGRATION.md) | ○ **next** |
-| P-576 | 14 — Agents (`.claude/agents/*`) and commands (`.claude/commands/*`) | ○ **next** (parallel with P-575) |
-| P-577 | 15a — First release train (**ask the user for the tag**) | ○ |
+| P-575 | 13 — Documentation (root/domain CLAUDE.md, READMEs, PLATFORM.md, MIGRATION.md) | ● done (`ac49285b`) |
+| P-576 | 14 — Agents (`.claude/agents/*`) and commands (`.claude/commands/*`) | ● done (`f3aab769`) |
+| P-577 | 15a — First release train (**ask the user for the tag**) | ○ **next — blocked on the user** |
 | P-578 | 15b — Retire old package IDs (**ask the user first**) | ○ |
 
 **Order:** 3 & 7 in parallel → 4 → 5 & 8 in parallel → 6 → 9 → 10 → 11 → 12 → 13 → 14 → 15.
@@ -89,6 +89,20 @@
 - `IdempotencyBehavior` uses `IdempotencyBehaviorOptions.LeaseDuration`/`RetentionWindow`; MassTransit uses `IdempotencyOptions.LeaseDuration`/`ExpiryWindow`. 16.Testing: `FakeIdempotencyStore` + `AddFakeIdempotencyStore(purposes)`.
 - `eng/tier-baseline.txt` is **empty**; making SKTIER an error is P-574.
 - **Known pre-existing gap, not fixed:** consumer idempotency keys only by MessageId, so two receive endpoints (or polymorphic consumers) in one service receiving the same message → the second is skipped as a duplicate. Fix = add consumer/endpoint to the key. Decide in P-574 or a follow-up.
+
+**P-575/P-576 — docs, agents and commands:**
+- Root `CLAUDE.md` has "Tiers & Dependency Rules" (439 → 335 lines); every domain CLAUDE.md/README/state-map describes the final state; `docs/refactor/MIGRATION.md` (121 old → new rows, incl. persisted-data changes); `P-558-SESSION-HANDOFF.md` archived under `docs/archive/`. All 44 agents, 7 commands and ~210 agent-memory files use tiers and final names; 21 stale memory entries deleted. The domain `*-phase-implementer`/`*-arch-planner` agents are safe to use again.
+
+**Follow-up fixes after the phases (2026-09-26):**
+- `dae7a349` — audit records take the correlation id from `IRequestContext` (was Activity baggage only, so consumer/activity/job records had none). `TestRequestContext.CorrelationId` added.
+- `a6bc32ad` — **real defect:** the EF Core outbox never selected a lock provider, so MassTransit used SQL Server syntax and PostgreSQL delivery never worked. `OutboxOptions.Database` (default `PostgreSql`); proven by `SharedKernel.Messaging.MassTransit.EfCore.Integration.Tests`.
+- `7994392a` — csproj comments/descriptions in tier terms (Security.Abstractions' nuspec description no longer names `ITenantProvider`).
+- A `fix:` commit for test doubles and doc comments (FakeTenantResolutionStrategy, stray `ProbeAsync`, scheduler tenant doc, FeatureManagement's default tenant accessor reading `IRequestContextAccessor`) — see git log.
+- **Main-checkout gotcha:** `C:\Users\dincm\Documents\GitHub\platform-shared-kernel` is longer than `C:\Github\platform-shared-kernel`, so some test assemblies (e.g. `ServiceDefaults.Configuration.KeyVault.Tests`) exceed MAX_PATH there. Build/test in a short worktree (`git worktree add C:\wt\verify`), and delete worktrees with `cmd /c 'rd /s /q \\?\C:\wt\<name>'` + `git worktree prune`.
+
+**Still open (decide with the user):**
+- Consumer idempotency keys only by MessageId: two receive endpoints (or polymorphic consumers) in one service receiving the same message → the second is skipped. Fix = add the endpoint/consumer to the key.
+- `HubGroupNaming.TenantGroup` still takes `Guid` rather than `TenantId`.
 
 **P-574 — governance cleanup:**
 - `eng/tier-baseline.txt` and the downgrade logic are deleted; **SKTIER diagnostics are build errors**. New **SKTIER006**: any ASP.NET Core reference (framework or `Microsoft.AspNetCore.*` package, incl. transitive) below the Host/Testing tiers. `verify.yml`'s `tier-check` runs `eng/verify-tier-errors.sh` (two probe projects that must fail with SKTIER001/006).
@@ -140,7 +154,7 @@ None — the file is empty since P-568.
 
 1. `git checkout refactor/wo-086-foundation` and `git log --oneline -5`. The newest commit should be `053e5612` (or later).
 2. Read [`FOUNDATION-PLAN.md`](FOUNDATION-PLAN.md): the "Target architecture" section plus the section for the step you're about to do.
-3. Start **P-575** (Step 13) and **P-576** (Step 14) in parallel (docs vs `.claude/`). Each step's full task list is in FOUNDATION-PLAN.md. Parallel phases worked well in `C:\wt\<phase>` worktrees on `wo086/<phase>` branches, rebased onto each other afterwards; the only conflicts were additive `PublicAPI.Unshipped.txt` hunks (keep both sides).
+3. Only P-577 (release) and P-578 (retire old package IDs) remain, and both need the user: the exact tag, a repo admin creating the `nuget-publish` environment and tag-protection ruleset, merging to `main` (release.yml's `tag-guard` requires the tagged commit on `origin/main`), and explicit approval for the irreversible package retirement. Each step's full task list is in FOUNDATION-PLAN.md. Parallel phases worked well in `C:\wt\<phase>` worktrees on `wo086/<phase>` branches, rebased onto each other afterwards; the only conflicts were additive `PublicAPI.Unshipped.txt` hunks (keep both sides).
 4. For each step:
    1. Implement it directly, or with `general-purpose` agents given the plan as the spec. **Do not use the domain `*-phase-implementer` agents or domain brains yet**: they still describe the old numbered-layer rules until P-576.
    2. Delete any `eng/tier-baseline.txt` entries the step fixes.
