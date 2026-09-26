@@ -3482,7 +3482,8 @@ times across this pass's build waves, to be pre-existing and unrelated to any fi
 | P-575 | Documentation | `●` (`ac49285b`) |
 | P-576 | Agents and commands | `●` (`f3aab769`) |
 | P-577 | First release train | `○` |
-| P-578 | Retire old package IDs (ask the user first) | `○` |
+| P-578 | Retire old package IDs (ask the user first) | `○` — approved 2026-09-26: delete them after the release |
+| P-579 | Integrate `main`'s P-563 "one application model" (merged `0a8931f3`): WO-086 architecture kept, main's features ported ([RequirePermission], one `AddSharedKernelApplication(... app.UseMediatR() …)`, endpoint modules, WebApi flattening, `Paging`) | `●` (`eb89d010`, `76a39ba8`, `0160606f`) |
 
 Order: P-562 → P-563 → P-564 → {P-565, P-569} → P-566 → {P-567, P-570} → P-568 → P-571 → P-572 … P-578.
 

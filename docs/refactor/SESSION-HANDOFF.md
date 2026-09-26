@@ -1,7 +1,7 @@
 # WO-086 Foundation Refactor — Session Handoff
 
 > **For the next Claude session.** Read this file first, then follow "How to resume". Everything you need is
-> linked from here. Last updated: 2026-09-26, after P-575/P-576 and the follow-up fixes were committed.
+> linked from here. Last updated: 2026-09-26, after P-579 (main integrated) was committed.
 
 ## 1. Where the plan lives
 
@@ -46,8 +46,9 @@
 | P-574 | 12 — Governance cleanup (tier baseline empty, SKTIER becomes an error) | ● done (`dc1a22ef`) |
 | P-575 | 13 — Documentation (root/domain CLAUDE.md, READMEs, PLATFORM.md, MIGRATION.md) | ● done (`ac49285b`) |
 | P-576 | 14 — Agents (`.claude/agents/*`) and commands (`.claude/commands/*`) | ● done (`f3aab769`) |
-| P-577 | 15a — First release train (**ask the user for the tag**) | ○ **next — blocked on the user** |
-| P-578 | 15b — Retire old package IDs (**ask the user first**) | ○ |
+| P-579 | Integrate `origin/main`'s P-563 application model (merge `eb89d010`) | ● done (`0160606f`) |
+| P-577 | 15a — First release train: tag **`v1.0.0-alpha.1`** (user-approved) after the PR merges | ○ **next** |
+| P-578 | 15b — Delete the old package IDs on GitHub Packages (user-approved, after the release succeeds) | ○ |
 
 **Order:** 3 & 7 in parallel → 4 → 5 & 8 in parallel → 6 → 9 → 10 → 11 → 12 → 13 → 14 → 15.
 - Step 6 needs Step 4 (the accessor) and Step 5 (the pipeline).
@@ -101,8 +102,12 @@
 - `fix(messaging): key consumer idempotency by consumer as well as MessageId` — **real defect:** MassTransit runs the scoped idempotency filter once per consumer, and the key was the MessageId alone, so a second consumer of the same message (another endpoint, or the same one) saw `Completed` and never ran. Key is now `{MessageId:D}:{sha256-hex("{endpoint path}|{consumer type}")}`; `IdempotentConsumerIdentityFilter` (registered by `UseIdempotentConsumers`, ahead of the scoped filter) names the consumer. Persisted-format note in `MIGRATION.md` §5. Same commit: `InMemoryVectorCollectionProvisioner.ProbeAsync` removed; FeatureManagement README/brain describe `AmbientTenantTargetingContextAccessor`.
 - **Main-checkout gotcha:** `C:\Users\dincm\Documents\GitHub\platform-shared-kernel` is longer than `C:\Github\platform-shared-kernel`, so some test assemblies (e.g. `ServiceDefaults.Configuration.KeyVault.Tests`) exceed MAX_PATH there. Build/test in a short worktree (`git worktree add C:\wt\verify`), and delete worktrees with `cmd /c 'rd /s /q \\?\C:\wt\<name>'` + `git worktree prune`.
 
-**Still open (decide with the user):**
-- `HubGroupNaming.TenantGroup` still takes `Guid` rather than `TenantId`.
+**P-579 — main's application model integrated (2026-09-26):** `origin/main` had merged a parallel refactor also numbered P-563 (application model + 14.Presentation redesign). User decision: WO-086 architecture wins, main's features ported. Result: `services.AddSharedKernelApplication(assemblies, app => app.UseMediatR().WithIdempotency().WithTransactions().WithAuditing().WithCaching().WithBehavior(...))` (seams checked at host start, second call throws; behaviors internal); `[RequirePermission]` on the use case (`IAuthorizeRequest`/`PermissionMatch` deleted); `ErrorCodes.Idempotency` in 01.Core; WebApi keeps main's flat namespace, `IEndpointModule` + generator (`WebApi.Generators`, Tooling tier; tier targets exempt `ReferenceOutputAssembly="false"` edges), `Paging`/`CursorPaging`; `Presentation.Core` holds `[RequireEndpointPermission]`/`[RequireRole]`/`[RequireFreshAuthentication]`/`[RequireAuthenticationMethod]`; Grpc has no interceptors and no WebApi reference; `Presentation.SignalR.Redis` deleted (main's D15). Build 0 errors / 32 warnings; Unit 84 assemblies / 10,146; Architecture 373; Integration 23 / 1,637. Details and every rename in `MIGRATION.md` §8.
+
+**Release decisions (user, 2026-09-26):** push the branch and open a PR to `main`; after it merges, tag `v1.0.0-alpha.1`; after the release succeeds, delete the old package IDs on GitHub Packages (Application.Abstractions, Application.Behaviors, Application.Behaviors.Caching, Communication.GraphQL, the nine deleted ServiceDefaults.* packages, Presentation.SignalR.Redis if it was ever published). `gh` must be logged in with `delete:packages`; a repo admin must create the `nuget-publish` environment and tag protection first.
+
+**Still open:**
+- `HubGroupNaming.TenantGroup(Guid)` kept alongside a new `TenantGroup(TenantId)` overload.
 
 **P-574 — governance cleanup:**
 - `eng/tier-baseline.txt` and the downgrade logic are deleted; **SKTIER diagnostics are build errors**. New **SKTIER006**: any ASP.NET Core reference (framework or `Microsoft.AspNetCore.*` package, incl. transitive) below the Host/Testing tiers. `verify.yml`'s `tier-check` runs `eng/verify-tier-errors.sh` (two probe projects that must fail with SKTIER001/006).
@@ -154,7 +159,7 @@ None — the file is empty since P-568.
 
 1. `git checkout refactor/wo-086-foundation` and `git log --oneline -5`. The newest commit should be `053e5612` (or later).
 2. Read [`FOUNDATION-PLAN.md`](FOUNDATION-PLAN.md): the "Target architecture" section plus the section for the step you're about to do.
-3. Only P-577 (release) and P-578 (retire old package IDs) remain, and both need the user: the exact tag, a repo admin creating the `nuget-publish` environment and tag-protection ruleset, merging to `main` (release.yml's `tag-guard` requires the tagged commit on `origin/main`), and explicit approval for the irreversible package retirement. Each step's full task list is in FOUNDATION-PLAN.md. Parallel phases worked well in `C:\wt\<phase>` worktrees on `wo086/<phase>` branches, rebased onto each other afterwards; the only conflicts were additive `PublicAPI.Unshipped.txt` hunks (keep both sides).
+3. Only P-577 (release) and P-578 (delete old package IDs) remain; the user approved both (see "Release decisions" above). Steps: `gh auth login` with `read:packages,delete:packages`; push the branch and open the PR to `main`; the user merges; a repo admin has created `nuget-publish` + tag protection; tag `v1.0.0-alpha.1` on the merged `main` commit and push the tag; watch `release.yml`; verify a clean consumer restores every package at `1.0.0-alpha.1`; then delete the old package IDs. Each step's full task list is in FOUNDATION-PLAN.md. Parallel phases worked well in `C:\wt\<phase>` worktrees on `wo086/<phase>` branches, rebased onto each other afterwards; the only conflicts were additive `PublicAPI.Unshipped.txt` hunks (keep both sides).
 4. For each step:
    1. Implement it directly, or with `general-purpose` agents given the plan as the spec. **Do not use the domain `*-phase-implementer` agents or domain brains yet**: they still describe the old numbered-layer rules until P-576.
    2. Delete any `eng/tier-baseline.txt` entries the step fixes.
@@ -174,11 +179,12 @@ dotnet test  Platform.SharedKernel.Unit.slnf -c Release --no-build
 dotnet test  Platform.SharedKernel.Integration.slnf -c Release --no-build   # Docker; for persistence/messaging/caching/idempotency steps
 ```
 
-Counts after P-574 (use these to spot regressions):
-- **Build:** 0 errors, 35 warnings; SKTIER are errors.
-- **Unit:** 81 assemblies / 8,835 tests.
-- **Architecture:** 346 tests (deleted numbered-layer rules took theirs). Analyzers: 386.
-- **Integration:** 24 assemblies / 1,635 tests.
+Counts after P-579 (use these to spot regressions):
+- **Build:** 0 errors, 32 warnings; SKTIER are errors.
+- **Unit:** 84 assemblies / 10,146 tests.
+- **Architecture:** 373 tests. Analyzers: 390.
+- **Integration:** 23 assemblies / 1,637 tests.
+- **Packages:** 103 (`eng/verify-packages.sh`).
 - **Known flakes under full-suite load** (re-run alone before treating as a regression): `MeilisearchContainerFixtureTests`, `CacheLevelMetricsTests.SecondReadOnTheSameNode_IsAnL1Hit`, Redis socket errors in `Idempotency.Redis.Tests`, two `Messaging.MassTransit.Tests`, one `Testing.SelfTests`.
 - **Docker** must be running for Integration and for `ServiceDefaults.Persistence.Tests`. Start Docker Desktop first; it was down at the start of the 2026-09-25 session.
 
