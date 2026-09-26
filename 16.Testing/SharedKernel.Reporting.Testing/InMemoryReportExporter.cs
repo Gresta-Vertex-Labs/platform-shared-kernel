@@ -1,42 +1,26 @@
+using System.Text;
 using SharedKernel.Primitives.Clocks;
-using SharedKernel.Reporting.Abstractions.Errors;
-using SharedKernel.Reporting.Abstractions.Exporters;
-using SharedKernel.Reporting.Abstractions.Models;
+using SharedKernel.Primitives.Errors;
+using SharedKernel.Primitives.Results;
+using SharedKernel.Reporting;
 using SharedKernel.Storage;
 using SharedKernel.Testing.Clocks;
 
 namespace SharedKernel.Testing.Reporting;
 
 /// <summary>
-/// In-memory fake implementation of <see cref="IReportExporter{TRow}"/> for use in unit tests.
+/// An in-memory <see cref="IReportExporter{TRow}"/> for unit tests: records the rows, definition and destination of
+/// each export, and fabricates the outcome without touching storage.
 /// </summary>
-/// <typeparam name="TRow">The row type this exporter accepts.</typeparam>
+/// <typeparam name="TRow">The row type.</typeparam>
 /// <remarks>
 /// <para>
-/// <b>THIS FAKE DELIBERATELY MATERIALIZES EVERY ROW IT IS HANDED, INTO AN INTERNAL LIST, FOR
-/// ASSERTION PURPOSES ONLY.</b> The real <see cref="IReportExporter{TRow}"/> contract's Invariant 1
-/// (see that interface's own XML docs) forbids any materializing overload precisely so callers never
-/// buffer an unbounded row source — this fake's own full-drain behavior is a TEST-DOUBLE CONVENIENCE,
-/// never a claim that the real providers are all memory-bounded. They are not, uniformly:
-/// <c>SharedKernel.Reporting.Csv</c> genuinely streams in O(1) memory, but
-/// <c>SharedKernel.Reporting.Spreadsheet</c>/<c>.Pdf</c> do NOT — a verified, permanent characteristic
-/// of the underlying ClosedXML/MigraDoc-PdfSharp dependencies, documented in those packages' own XML
-/// docs, not a defect this fake reproduces or contradicts by materializing everything itself.
+/// Unlike a real exporter it keeps every row, so a test can assert on them — never infer memory behaviour from it.
+/// <see cref="ExportToStreamAsync"/> writes one tab-separated line per row (the header first) so a test of an HTTP
+/// download sees content.
 /// </para>
 /// <para>
-/// Still accepts only <see cref="IAsyncEnumerable{T}"/> on both members, exactly like the real
-/// contract — the ONLY difference is that this fake drains the source completely before returning,
-/// rather than streaming it through an encoder. A test wanting to prove single-pass/non-buffering
-/// behavior of a REAL provider must use that provider directly, never infer it from this fake.
-/// </para>
-/// <para>
-/// Fabricates a synthetic <see cref="ReportExportOutcome"/> (and, when a presigned URL was
-/// requested, a synthetic <see cref="PresignedRequest"/>) directly from the caller-supplied
-/// <see cref="ReportDestination"/> — this fake never touches a real
-/// <c>SharedKernel.Storage.IFileStorage</c>/<c>IFileStorageFactory</c>, and takes no
-/// dependency on either. References only <c>SharedKernel.Reporting.Abstractions</c> (plus this
-/// package's own established <see cref="Clocks.FakeClock"/> cross-folder exception, used solely to
-/// derive a deterministic <see cref="PresignedRequest.ExpiresAt"/> — never real wall-clock time).
+/// A presigned download link, when requested, expires at the clock's now plus the requested lifetime.
 /// </para>
 /// </remarks>
 public sealed class InMemoryReportExporter<TRow> : IReportExporter<TRow>
@@ -44,151 +28,151 @@ public sealed class InMemoryReportExporter<TRow> : IReportExporter<TRow>
     private readonly IClock _clock;
     private readonly List<TRow> _lastRows = [];
 
-    /// <summary>
-    /// Creates a new <see cref="InMemoryReportExporter{TRow}"/>.
-    /// </summary>
-    /// <param name="clock">
-    /// The clock used to derive a deterministic <see cref="PresignedRequest.ExpiresAt"/> when
-    /// <see cref="ReportDestination.PresignedDownloadUrlExpiry"/> is set. Defaults to a fresh
-    /// <see cref="FakeClock"/> when omitted.
-    /// </param>
-    public InMemoryReportExporter(IClock? clock = null)
+    /// <summary>Creates the fake.</summary>
+    /// <param name="format">The format it reports; <see cref="ReportFormat.Csv"/> when <see langword="null"/>.</param>
+    /// <param name="clock">The clock presigned links expire by; a new <see cref="FakeClock"/> when <see langword="null"/>.</param>
+    public InMemoryReportExporter(ReportFormat? format = null, IClock? clock = null)
     {
+        Format = format ?? ReportFormat.Csv;
         _clock = clock ?? new FakeClock();
     }
 
+    /// <inheritdoc />
+    public ReportFormat Format { get; }
+
     /// <summary>
-    /// When <see langword="true"/>, both <see cref="ExportAsync"/> and
-    /// <see cref="ExportToStreamAsync"/> still fully drain <c>rows</c> (so
-    /// <see cref="LastRows"/>/<see cref="LastDefinition"/>/<see cref="LastDestination"/> stay
-    /// accurate) but return a failed <c>Result&lt;T&gt;</c>/<c>Result</c> instead of a
-    /// synthetic success.
+    /// Gets or sets whether every export fails, after reading the rows, with <see cref="SimulatedError"/>.
     /// </summary>
     public bool SimulateFailure { get; set; }
 
-    /// <summary>The rows captured by the most recent <see cref="ExportAsync"/>/<see cref="ExportToStreamAsync"/> call.</summary>
+    /// <summary>
+    /// Gets or sets the error a simulated failure returns. Defaults to <c>storage.unavailable</c> on the destination
+    /// store (or <c>reporting.invalid_destination</c> for a stream export).
+    /// </summary>
+    public Error? SimulatedError { get; set; }
+
+    /// <summary>Gets the number of exports so far.</summary>
+    public int ExportCount { get; private set; }
+
+    /// <summary>Gets the rows of the most recent export.</summary>
     public IReadOnlyList<TRow> LastRows => _lastRows;
 
-    /// <summary>The <see cref="ReportDefinition{TRow}"/> supplied to the most recent export call.</summary>
+    /// <summary>Gets the definition of the most recent export.</summary>
     public ReportDefinition<TRow>? LastDefinition { get; private set; }
 
-    /// <summary>
-    /// The <see cref="ReportDestination"/> supplied to the most recent <see cref="ExportAsync"/> call.
-    /// Never set by <see cref="ExportToStreamAsync"/>, which takes a raw <see cref="Stream"/> instead.
-    /// </summary>
+    /// <summary>Gets the destination of the most recent <see cref="ExportAsync"/>; not set by <see cref="ExportToStreamAsync"/>.</summary>
     public ReportDestination? LastDestination { get; private set; }
 
     /// <inheritdoc />
-    public async Task<SharedKernel.Primitives.Results.Result<ReportExportOutcome>> ExportAsync(
+    public async Task<Result<ReportExportOutcome>> ExportAsync(
         IAsyncEnumerable<TRow> rows,
         ReportDefinition<TRow> definition,
         ReportDestination destination,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(rows);
         ArgumentNullException.ThrowIfNull(definition);
         ArgumentNullException.ThrowIfNull(destination);
 
-        var rowCount = await DrainAsync(rows, cancellationToken).ConfigureAwait(false);
-        LastDefinition = definition;
+        await CaptureAsync(rows, definition, cancellationToken).ConfigureAwait(false);
         LastDestination = destination;
 
         if (SimulateFailure)
         {
-            return SharedKernel.Primitives.Results.Result<ReportExportOutcome>.Failure(
-                ReportingErrors.InvalidDestination("Simulated failure via InMemoryReportExporter<TRow>.SimulateFailure."));
+            return SimulatedError ?? StorageErrors.Unavailable(destination.Store, "upload");
         }
 
-        var storedFile = new FileReference
-        {
-            Store = destination.Store,
-            TenantId = destination.TenantId,
-            Key = destination.Key,
-        };
-        var downloadUrl = destination.PresignedDownloadUrlExpiry is { } expiry
+        PresignedRequest? downloadUrl = destination.PresignedDownloadUrlExpiry is { } expiry
             ? new PresignedRequest
             {
-                Url = new Uri($"https://fake-report-storage.test/{destination.Store}/{destination.Key}"),
+                Url = new Uri($"https://reports.test/{Uri.EscapeDataString(destination.Store)}/{destination.Key}"),
                 Method = HttpMethod.Get.Method,
                 Headers = new Dictionary<string, string>(),
                 ExpiresAt = _clock.UtcNow + expiry,
             }
             : null;
 
-        return SharedKernel.Primitives.Results.Result<ReportExportOutcome>.Success(new ReportExportOutcome
+        return new ReportExportOutcome
         {
-            StoredFile = storedFile,
+            StoredFile = new FileReference { Store = destination.Store, TenantId = destination.TenantId, Key = destination.Key },
             DownloadUrl = downloadUrl,
-            RowCount = rowCount,
-        });
+            Format = Format,
+            RowCount = _lastRows.Count,
+            SizeBytes = Render(definition).Length,
+        };
     }
 
     /// <inheritdoc />
-    public async Task<SharedKernel.Primitives.Results.Result> ExportToStreamAsync(
+    public async Task<Result<ReportStreamOutcome>> ExportToStreamAsync(
         IAsyncEnumerable<TRow> rows,
         ReportDefinition<TRow> definition,
         Stream destination,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(rows);
         ArgumentNullException.ThrowIfNull(definition);
         ArgumentNullException.ThrowIfNull(destination);
 
-        await DrainAsync(rows, cancellationToken).ConfigureAwait(false);
-        LastDefinition = definition;
+        await CaptureAsync(rows, definition, cancellationToken).ConfigureAwait(false);
+        if (SimulateFailure)
+        {
+            return SimulatedError ?? ReportingErrors.InvalidDestination("Simulated failure of InMemoryReportExporter.");
+        }
 
-        return SimulateFailure
-            ? SharedKernel.Primitives.Results.Result.Failure(
-                ReportingErrors.InvalidDestination("Simulated failure via InMemoryReportExporter<TRow>.SimulateFailure."))
-            : SharedKernel.Primitives.Results.Result.Success();
+        byte[] content = Render(definition);
+        await destination.WriteAsync(content, cancellationToken).ConfigureAwait(false);
+        return new ReportStreamOutcome { Format = Format, RowCount = _lastRows.Count, SizeBytes = content.Length };
     }
 
-    /// <summary>
-    /// Asserts that an export was captured whose <see cref="LastRows"/> optionally satisfy
-    /// <paramref name="rowsPredicate"/>.
-    /// </summary>
-    /// <param name="rowsPredicate">
-    /// An optional predicate over the captured rows. When omitted, only "an export happened at all"
-    /// is asserted.
-    /// </param>
-    /// <exception cref="InvalidOperationException">
-    /// No export was captured yet, or the captured rows do not satisfy <paramref name="rowsPredicate"/>.
-    /// </exception>
+    /// <summary>Throws unless an export happened and, when given, its rows satisfy <paramref name="rowsPredicate"/>.</summary>
+    /// <param name="rowsPredicate">An optional condition on the rows of the most recent export.</param>
+    /// <exception cref="InvalidOperationException">No export happened, or the rows do not satisfy the condition.</exception>
     public void ShouldHaveExported(Predicate<IReadOnlyList<TRow>>? rowsPredicate = null)
     {
         if (LastDefinition is null)
         {
-            throw new InvalidOperationException(
-                $"Expected an export via {nameof(ExportAsync)}/{nameof(ExportToStreamAsync)}, but none was captured.");
+            throw new InvalidOperationException($"Expected an export in the {Format.Name} format, but none happened.");
         }
 
         if (rowsPredicate is not null && !rowsPredicate(LastRows))
         {
-            throw new InvalidOperationException(
-                "An export was captured, but the captured rows did not satisfy the supplied predicate.");
+            throw new InvalidOperationException($"An export happened, but its {LastRows.Count} rows did not satisfy the condition.");
         }
     }
 
-    /// <summary>Clears every captured export, as if this fake were newly constructed.</summary>
+    /// <summary>Forgets every export, as if newly created; the simulated failure is cleared too.</summary>
     public void Reset()
     {
         _lastRows.Clear();
         LastDefinition = null;
         LastDestination = null;
         SimulateFailure = false;
+        SimulatedError = null;
+        ExportCount = 0;
     }
 
-    private async Task<long> DrainAsync(IAsyncEnumerable<TRow> rows, CancellationToken cancellationToken)
+    private async Task CaptureAsync(IAsyncEnumerable<TRow> rows, ReportDefinition<TRow> definition, CancellationToken cancellationToken)
     {
         _lastRows.Clear();
-        long count = 0;
-
-        await foreach (var row in rows.WithCancellation(cancellationToken).ConfigureAwait(false))
+        await foreach (TRow row in rows.WithCancellation(cancellationToken).ConfigureAwait(false))
         {
             _lastRows.Add(row);
-            count++;
         }
 
-        return count;
+        LastDefinition = definition;
+        ExportCount++;
+    }
+
+    private byte[] Render(ReportDefinition<TRow> definition)
+    {
+        var text = new StringBuilder();
+        text.AppendJoin('\t', definition.Columns.Select(c => c.Header)).Append('\n');
+        foreach (TRow row in _lastRows)
+        {
+            text.AppendJoin('\t', definition.Columns.Select(c => ReportValueFormatting.FormatColumnValue(c, c.Value(row), definition.Culture)))
+                .Append('\n');
+        }
+
+        return Encoding.UTF8.GetBytes(text.ToString());
     }
 }

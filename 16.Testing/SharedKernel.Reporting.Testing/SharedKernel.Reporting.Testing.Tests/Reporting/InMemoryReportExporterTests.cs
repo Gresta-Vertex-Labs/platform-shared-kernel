@@ -1,229 +1,130 @@
-using SharedKernel.Reporting.Abstractions.Models;
+using System.Text;
+using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
+using SharedKernel.Primitives.Results;
+using SharedKernel.Reporting;
+using SharedKernel.Storage;
 using SharedKernel.Testing.Clocks;
 using SharedKernel.Testing.Reporting;
 
-using SharedKernel.Execution.Tenancy;
+namespace SharedKernel.Reporting.Testing.Tests.Reporting;
 
-namespace SharedKernel.Testing.SelfTests.Reporting;
-
-/// <summary>
-/// Proves <see cref="InMemoryReportExporter{TRow}"/> genuinely implements
-/// <see cref="SharedKernel.Reporting.Abstractions.Exporters.IReportExporter{TRow}"/> — both members
-/// fully drain the supplied <see cref="IAsyncEnumerable{T}"/>, <see cref="InMemoryReportExporter{TRow}.ShouldHaveExported"/>
-/// throws/returns correctly on found/not-found, <see cref="InMemoryReportExporter{TRow}.SimulateFailure"/>
-/// forces a failure outcome while still capturing rows, and no real
-/// <c>IFileStorage</c>/<c>.Csv</c>/<c>.Spreadsheet</c>/<c>.Pdf</c> dependency is taken anywhere. No
-/// consuming service has adopted this fake yet, so this self-test is the only behavioral proof
-/// today, per the SelfTests routing rule.
-/// </summary>
 public sealed class InMemoryReportExporterTests
 {
-    private static readonly TenantId TenantA = new(Guid.Parse("0f8fad5b-d9cb-469f-a165-70867728950e"));
+    private static readonly ReportDefinition<Row> Definition = ReportDefinition.For<Row>()
+        .Column("Id", r => r.Id)
+        .Column("Name", r => r.Name)
+        .Build();
 
-    private sealed record TestRow(int Id, string Name);
-
-    private static async IAsyncEnumerable<TestRow> RowsAsync(params TestRow[] rows)
+    [Fact]
+    public async Task ExportAsync_RecordsRowsDefinitionAndDestination_AndFabricatesTheOutcome()
     {
-        foreach (var row in rows)
+        var clock = new FakeClock();
+        var exporter = new InMemoryReportExporter<Row>(ReportFormat.Xlsx, clock);
+        var destination = new ReportDestination { Store = "reports", Key = "a.xlsx", PresignedDownloadUrlExpiry = TimeSpan.FromMinutes(5) };
+
+        Result<ReportExportOutcome> result = await exporter.ExportAsync(Rows(3), Definition, destination);
+
+        exporter.LastRows.Should().HaveCount(3);
+        exporter.LastDefinition.Should().BeSameAs(Definition);
+        exporter.LastDestination.Should().BeSameAs(destination);
+        result.Value.Format.Should().Be(ReportFormat.Xlsx);
+        result.Value.RowCount.Should().Be(3);
+        result.Value.StoredFile.Key.Should().Be("a.xlsx");
+        result.Value.DownloadUrl!.ExpiresAt.Should().Be(clock.UtcNow + TimeSpan.FromMinutes(5));
+        exporter.ShouldHaveExported(rows => rows[2].Name == "n3");
+    }
+
+    [Fact]
+    public async Task ExportToStreamAsync_WritesATabSeparatedRendering()
+    {
+        var exporter = new InMemoryReportExporter<Row>();
+        using var stream = new MemoryStream();
+
+        Result<ReportStreamOutcome> result = await exporter.ExportToStreamAsync(Rows(2), Definition, stream);
+
+        Encoding.UTF8.GetString(stream.ToArray()).Should().Be("Id\tName\n1\tn1\n2\tn2\n");
+        result.Value.SizeBytes.Should().Be(stream.Length);
+    }
+
+    [Fact]
+    public async Task SimulateFailure_ReturnsTheSimulatedError_AfterReadingTheRows()
+    {
+        var exporter = new InMemoryReportExporter<Row> { SimulateFailure = true };
+
+        Result<ReportExportOutcome> result = await exporter.ExportAsync(Rows(2), Definition, new ReportDestination { Store = "reports", Key = "a" });
+
+        result.Error.Code.Should().Be(StorageErrorCodes.Unavailable);
+        exporter.LastRows.Should().HaveCount(2);
+        exporter.Reset();
+        exporter.SimulateFailure.Should().BeFalse();
+        var assert = () => exporter.ShouldHaveExported();
+        assert.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void Factory_HandsOutOneExporterPerFormatAndRowType_AndParsesFormats()
+    {
+        var factory = new InMemoryReportExporterFactory();
+
+        factory.GetExporter<Row>(ReportFormat.Pdf).Should().BeSameAs(factory.Exporter<Row>(ReportFormat.Pdf));
+        factory.Exporter<Row>(ReportFormat.Pdf).Format.Should().Be(ReportFormat.Pdf);
+        factory.ParseFormat(".XLSX").Value.Should().Be(ReportFormat.Xlsx);
+        factory.ParseFormat("docx").Error.Code.Should().Be(ReportingErrorCodes.UnsupportedFormat);
+        new InMemoryReportExporterFactory(ReportFormat.Csv).Formats.Should().Equal(ReportFormat.Csv);
+    }
+
+    [Fact]
+    public async Task HtmlConverter_RecordsTheDocument_AndWritesAPlaceholderPdf()
+    {
+        var converter = new InMemoryHtmlToPdfConverter();
+        using var stream = new MemoryStream();
+
+        Result<long> result = await converter.ConvertToStreamAsync("<p>hi</p>", stream);
+        Result<PdfDocumentOutcome> stored = await converter.ConvertAsync("<p>2</p>", new ReportDestination { Store = "docs", Key = "b.pdf" });
+
+        result.Value.Should().Be(stream.Length);
+        stream.ToArray().Should().Equal(InMemoryHtmlToPdfConverter.PlaceholderPdf.ToArray());
+        stored.Value.StoredFile.Key.Should().Be("b.pdf");
+        converter.Conversions.Select(c => c.Html).Should().Equal("<p>hi</p>", "<p>2</p>");
+        converter.LastConversion!.Destination!.Store.Should().Be("docs");
+    }
+
+    [Fact]
+    public async Task HtmlConverter_SimulateFailure_ReturnsTheSimulatedError_AndWritesNothing()
+    {
+        var converter = new InMemoryHtmlToPdfConverter { SimulateFailure = true };
+        using var stream = new MemoryStream();
+
+        (await converter.ConvertToStreamAsync("<p/>", stream)).Error.Code.Should().Be(ReportingErrorCodes.ConverterUnavailable);
+        converter.SimulatedError = ReportingErrors.ConversionTimeout(TimeSpan.FromSeconds(1));
+        (await converter.ConvertAsync("<p/>", new ReportDestination { Store = "d", Key = "k" })).Error.Code
+            .Should().Be(ReportingErrorCodes.ConversionTimeout);
+
+        stream.Length.Should().Be(0);
+        converter.Conversions.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void AddInMemoryReporting_ReplacesTheRealServices()
+    {
+        var services = new ServiceCollection();
+        services.AddSharedKernelReporting();
+        services.AddInMemoryReporting();
+        using ServiceProvider provider = services.BuildServiceProvider();
+
+        provider.GetRequiredService<IReportExporterFactory>().Should().BeSameAs(provider.GetRequiredService<InMemoryReportExporterFactory>());
+        provider.GetRequiredService<IHtmlToPdfConverter>().Should().BeSameAs(provider.GetRequiredService<InMemoryHtmlToPdfConverter>());
+    }
+
+    private static async IAsyncEnumerable<Row> Rows(int count)
+    {
+        for (var i = 1; i <= count; i++)
         {
             await Task.Yield();
-            yield return row;
+            yield return new Row(i, $"n{i}");
         }
     }
 
-    private static ReportDefinition<TestRow> CreateDefinition() =>
-        new()
-        {
-            Columns =
-            [
-                new ReportColumn<TestRow> { Header = "Id", Ordinal = 0, ValueSelector = r => r.Id },
-                new ReportColumn<TestRow> { Header = "Name", Ordinal = 1, ValueSelector = r => r.Name },
-            ],
-        };
-
-    private static ReportDestination CreateDestination(TimeSpan? presignedExpiry = null) =>
-        new() { Store = "reports", TenantId = TenantA, Key = "export.csv", PresignedDownloadUrlExpiry = presignedExpiry };
-
-    [Fact]
-    public async Task ExportAsync_DrainsAllRows_MakesThemAvailableViaLastRows()
-    {
-        var exporter = new InMemoryReportExporter<TestRow>();
-        var rows = RowsAsync(new TestRow(1, "Alice"), new TestRow(2, "Bob"));
-
-        var result = await exporter.ExportAsync(rows, CreateDefinition(), CreateDestination(), CancellationToken.None);
-
-        Assert.True(result.IsSuccess);
-        Assert.Equal(2, exporter.LastRows.Count);
-        Assert.Equal("Alice", exporter.LastRows[0].Name);
-        Assert.Equal(2, result.Value.RowCount);
-    }
-
-    [Fact]
-    public async Task ExportAsync_Success_RecordsDefinitionAndDestination()
-    {
-        var exporter = new InMemoryReportExporter<TestRow>();
-        var definition = CreateDefinition();
-        var destination = CreateDestination();
-
-        await exporter.ExportAsync(RowsAsync(), definition, destination, CancellationToken.None);
-
-        Assert.Same(definition, exporter.LastDefinition);
-        Assert.Same(destination, exporter.LastDestination);
-    }
-
-    [Fact]
-    public async Task ExportAsync_Success_FabricatesStoredFileFromDestination_NoRealIFileStorage()
-    {
-        var exporter = new InMemoryReportExporter<TestRow>();
-        var destination = CreateDestination();
-
-        var result = await exporter.ExportAsync(RowsAsync(), CreateDefinition(), destination, CancellationToken.None);
-
-        Assert.True(result.IsSuccess);
-        Assert.Equal(destination.Store, result.Value.StoredFile.Store);
-        Assert.Equal(destination.TenantId, result.Value.StoredFile.TenantId);
-        Assert.Equal(destination.Key, result.Value.StoredFile.Key);
-        Assert.Null(result.Value.DownloadUrl);
-    }
-
-    [Fact]
-    public async Task ExportAsync_PresignedUrlRequested_FabricatesDeterministicDownloadUrl()
-    {
-        var clock = new FakeClock();
-        var exporter = new InMemoryReportExporter<TestRow>(clock);
-        var expiry = TimeSpan.FromMinutes(15);
-        var destination = CreateDestination(presignedExpiry: expiry);
-
-        var result = await exporter.ExportAsync(RowsAsync(), CreateDefinition(), destination, CancellationToken.None);
-
-        Assert.True(result.IsSuccess);
-        Assert.NotNull(result.Value.DownloadUrl);
-        Assert.Equal(clock.UtcNow + expiry, result.Value.DownloadUrl!.ExpiresAt);
-    }
-
-    [Fact]
-    public async Task ExportAsync_SimulateFailure_ReturnsFailure_ButStillCapturesRows()
-    {
-        var exporter = new InMemoryReportExporter<TestRow> { SimulateFailure = true };
-        var rows = RowsAsync(new TestRow(1, "Alice"));
-
-        var result = await exporter.ExportAsync(rows, CreateDefinition(), CreateDestination(), CancellationToken.None);
-
-        Assert.True(result.IsFailure);
-        Assert.Single(exporter.LastRows);
-    }
-
-    [Fact]
-    public async Task ExportToStreamAsync_DrainsAllRows_MakesThemAvailableViaLastRows()
-    {
-        var exporter = new InMemoryReportExporter<TestRow>();
-        using var stream = new MemoryStream();
-        var rows = RowsAsync(new TestRow(1, "Alice"), new TestRow(2, "Bob"), new TestRow(3, "Carol"));
-
-        var result = await exporter.ExportToStreamAsync(rows, CreateDefinition(), stream, CancellationToken.None);
-
-        Assert.True(result.IsSuccess);
-        Assert.Equal(3, exporter.LastRows.Count);
-    }
-
-    [Fact]
-    public async Task ExportToStreamAsync_SimulateFailure_ReturnsFailure()
-    {
-        var exporter = new InMemoryReportExporter<TestRow> { SimulateFailure = true };
-        using var stream = new MemoryStream();
-
-        var result = await exporter.ExportToStreamAsync(RowsAsync(new TestRow(1, "Alice")), CreateDefinition(), stream, CancellationToken.None);
-
-        Assert.True(result.IsFailure);
-        Assert.Single(exporter.LastRows);
-    }
-
-    [Fact]
-    public async Task ExportToStreamAsync_NeverSetsLastDestination()
-    {
-        var exporter = new InMemoryReportExporter<TestRow>();
-        using var stream = new MemoryStream();
-
-        await exporter.ExportToStreamAsync(RowsAsync(), CreateDefinition(), stream, CancellationToken.None);
-
-        Assert.Null(exporter.LastDestination);
-    }
-
-    [Fact]
-    public void ShouldHaveExported_NoExportYet_Throws()
-    {
-        var exporter = new InMemoryReportExporter<TestRow>();
-
-        Assert.Throws<InvalidOperationException>(() => exporter.ShouldHaveExported());
-    }
-
-    [Fact]
-    public async Task ShouldHaveExported_AfterExport_NoPredicate_Succeeds()
-    {
-        var exporter = new InMemoryReportExporter<TestRow>();
-        await exporter.ExportAsync(RowsAsync(new TestRow(1, "Alice")), CreateDefinition(), CreateDestination(), CancellationToken.None);
-
-        var exception = Record.Exception(() => exporter.ShouldHaveExported());
-
-        Assert.Null(exception);
-    }
-
-    [Fact]
-    public async Task ShouldHaveExported_PredicateSatisfied_Succeeds()
-    {
-        var exporter = new InMemoryReportExporter<TestRow>();
-        await exporter.ExportAsync(RowsAsync(new TestRow(1, "Alice"), new TestRow(2, "Bob")), CreateDefinition(), CreateDestination(), CancellationToken.None);
-
-        var exception = Record.Exception(() => exporter.ShouldHaveExported(rows => rows.Count == 2));
-
-        Assert.Null(exception);
-    }
-
-    [Fact]
-    public async Task ShouldHaveExported_PredicateNotSatisfied_Throws()
-    {
-        var exporter = new InMemoryReportExporter<TestRow>();
-        await exporter.ExportAsync(RowsAsync(new TestRow(1, "Alice")), CreateDefinition(), CreateDestination(), CancellationToken.None);
-
-        Assert.Throws<InvalidOperationException>(() => exporter.ShouldHaveExported(rows => rows.Count == 99));
-    }
-
-    [Fact]
-    public async Task Reset_ClearsCapturedStateAndSimulateFailure()
-    {
-        var exporter = new InMemoryReportExporter<TestRow> { SimulateFailure = true };
-        await exporter.ExportAsync(RowsAsync(new TestRow(1, "Alice")), CreateDefinition(), CreateDestination(), CancellationToken.None);
-
-        exporter.Reset();
-
-        Assert.Empty(exporter.LastRows);
-        Assert.Null(exporter.LastDefinition);
-        Assert.Null(exporter.LastDestination);
-        Assert.False(exporter.SimulateFailure);
-        Assert.Throws<InvalidOperationException>(() => exporter.ShouldHaveExported());
-    }
-
-    [Fact]
-    public async Task ExportAsync_EmptyRowSource_ReportsZeroRowCount()
-    {
-        var exporter = new InMemoryReportExporter<TestRow>();
-
-        var result = await exporter.ExportAsync(RowsAsync(), CreateDefinition(), CreateDestination(), CancellationToken.None);
-
-        Assert.True(result.IsSuccess);
-        Assert.Equal(0, result.Value.RowCount);
-        Assert.Empty(exporter.LastRows);
-    }
-
-    [Fact]
-    public async Task SecondExport_OverwritesPreviouslyCapturedRows()
-    {
-        var exporter = new InMemoryReportExporter<TestRow>();
-        await exporter.ExportAsync(RowsAsync(new TestRow(1, "Alice"), new TestRow(2, "Bob")), CreateDefinition(), CreateDestination(), CancellationToken.None);
-
-        await exporter.ExportAsync(RowsAsync(new TestRow(3, "Carol")), CreateDefinition(), CreateDestination(), CancellationToken.None);
-
-        Assert.Single(exporter.LastRows);
-        Assert.Equal("Carol", exporter.LastRows[0].Name);
-    }
+    public sealed record Row(int Id, string Name);
 }

@@ -26,7 +26,7 @@ namespace SharedKernel.Reporting.Pdf.Fonts;
 /// <para>
 /// This resolver serves exactly two faces — Regular and Bold — matching this provider's own
 /// deliberately narrow scope (a header row plus body rows, no italics, no further weights).
-/// <see cref="Options.PdfExportOptions"/> carries no font-family option: this provider always
+/// <see cref="PdfExportOptions"/> carries no font-family option: this provider always
 /// renders under the embedded Roboto family, by design, so the cross-platform guarantee above can
 /// never be silently defeated by a caller naming a font this package does not embed.
 /// </para>

@@ -1,0 +1,27 @@
+#nullable enable
+SharedKernel.Reporting.Pdf.IPdfReportExporter<TRow>
+SharedKernel.Reporting.Pdf.PdfExportOptions
+SharedKernel.Reporting.Pdf.PdfExportOptions.AlternateRowShading.get -> bool
+SharedKernel.Reporting.Pdf.PdfExportOptions.AlternateRowShading.set -> void
+SharedKernel.Reporting.Pdf.PdfExportOptions.FontSize.get -> double
+SharedKernel.Reporting.Pdf.PdfExportOptions.FontSize.set -> void
+SharedKernel.Reporting.Pdf.PdfExportOptions.Landscape.get -> bool
+SharedKernel.Reporting.Pdf.PdfExportOptions.Landscape.set -> void
+SharedKernel.Reporting.Pdf.PdfExportOptions.MarginMillimeters.get -> double
+SharedKernel.Reporting.Pdf.PdfExportOptions.MarginMillimeters.set -> void
+SharedKernel.Reporting.Pdf.PdfExportOptions.MaxRows.get -> int
+SharedKernel.Reporting.Pdf.PdfExportOptions.MaxRows.set -> void
+SharedKernel.Reporting.Pdf.PdfExportOptions.PaperSize.get -> SharedKernel.Reporting.Pdf.PdfPaperSize
+SharedKernel.Reporting.Pdf.PdfExportOptions.PaperSize.set -> void
+SharedKernel.Reporting.Pdf.PdfExportOptions.PdfExportOptions() -> void
+SharedKernel.Reporting.Pdf.PdfExportOptions.ShowPageNumbers.get -> bool
+SharedKernel.Reporting.Pdf.PdfExportOptions.ShowPageNumbers.set -> void
+SharedKernel.Reporting.Pdf.PdfPaperSize
+SharedKernel.Reporting.Pdf.PdfPaperSize.A3 = 1 -> SharedKernel.Reporting.Pdf.PdfPaperSize
+SharedKernel.Reporting.Pdf.PdfPaperSize.A4 = 0 -> SharedKernel.Reporting.Pdf.PdfPaperSize
+SharedKernel.Reporting.Pdf.PdfPaperSize.A5 = 2 -> SharedKernel.Reporting.Pdf.PdfPaperSize
+SharedKernel.Reporting.Pdf.PdfPaperSize.Legal = 4 -> SharedKernel.Reporting.Pdf.PdfPaperSize
+SharedKernel.Reporting.Pdf.PdfPaperSize.Letter = 3 -> SharedKernel.Reporting.Pdf.PdfPaperSize
+SharedKernel.Reporting.PdfReportingBuilderExtensions
+static SharedKernel.Reporting.Pdf.PdfExportOptions.SectionName.get -> string!
+static SharedKernel.Reporting.PdfReportingBuilderExtensions.AddPdf(this SharedKernel.Reporting.IReportingBuilder! builder, Microsoft.Extensions.Configuration.IConfiguration! configuration) -> SharedKernel.Reporting.IReportingBuilder!

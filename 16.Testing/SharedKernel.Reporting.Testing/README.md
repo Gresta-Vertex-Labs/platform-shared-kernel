@@ -6,10 +6,14 @@
 ![Test framework: any](https://img.shields.io/badge/test%20framework-any-informational)
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue)
 
-**`InMemoryReportExporter<TRow>` implements `SharedKernel.Reporting.Abstractions`' `IReportExporter<TRow>` in
-memory, so export code is tested without a CSV, spreadsheet or PDF provider.** It consumes the row stream as a real
-exporter does (one pass, never re-enumerated), records the rows and the definition, and delivers the result to the
-named storage store in the `ReportDestination`.
+**In-memory fakes for [`SharedKernel.Reporting`](../../20.Reporting/SharedKernel.Reporting.Abstractions/README.md),
+so export and PDF code is tested without a format provider, a browser or storage.**
+
+| Fake | Replaces | Records |
+|---|---|---|
+| `InMemoryReportExporter<TRow>` | `IReportExporter<TRow>` | the rows, definition and destination of each export |
+| `InMemoryReportExporterFactory` | `IReportExporterFactory` | one fake exporter per format and row type |
+| `InMemoryHtmlToPdfConverter` | `IHtmlToPdfConverter` | every HTML document, its options and destination |
 
 ## Install
 
@@ -20,37 +24,64 @@ testing package.
 <PackageReference Include="SharedKernel.Reporting.Testing" />
 ```
 
-Versions come from the single `SharedKernelVersion`. Namespace: `SharedKernel.Testing.Reporting`.
+Namespace: `SharedKernel.Testing.Reporting`.
 
-## Contents
-
-| Member | What it does |
-| --- | --- |
-| `ExportAsync(rows, definition, destination, ct)` | Streams the rows, records them, and writes the report to the destination store |
-| `ExportToStreamAsync(rows, definition, stream, ct)` | The same into a caller-supplied stream |
-| `LastRows`, `LastDefinition`, `LastDestination` | What the most recent export received |
-| `ShouldHaveExported(rows => ...)` | Asserts an export happened, optionally matching its rows |
-| `SimulateFailure`, `Reset()` | Failure path and cleanup |
-
-The constructor takes an optional `IClock` (use `FakeClock`) for the timestamps the exporter stamps. There is no
-`Add*` helper: register the instance as `IReportExporter<TRow>` yourself.
-
-## Example
+## A handler that picks the format at runtime
 
 ```csharp
-var exporter = new InMemoryReportExporter<InvoiceRow>(new FakeClock());
-var storage = InMemoryStorage.CreateFactory(new InMemoryFileStorage("reports"));
-var job = new MonthlyInvoiceExport(exporter, repository);
+var reports = new InMemoryReportExporterFactory();              // CSV, Excel and PDF; or pass your own formats
+var handler = new ExportOrdersHandler(reports, orders, caller);
 
-await job.RunAsync(month, ct);
+Result<ReportExportOutcome> result = await handler.Handle(new ExportOrders(Format: "xlsx"), ct);
 
-exporter.ShouldHaveExported(rows => rows.Count == 3);
-exporter.LastDestination!.Store.Should().Be("reports");
+result.Value.Format.Should().Be(ReportFormat.Xlsx);
+reports.Exporter<Order>(ReportFormat.Xlsx).ShouldHaveExported(rows => rows.Count == 3);
+reports.ParseFormat("docx").Error.Code.Should().Be(ReportingErrorCodes.UnsupportedFormat);
 ```
 
-## Related packages
+## One exporter
 
-- References `SharedKernel.Reporting.Abstractions`, `SharedKernel.Storage.Abstractions` and `SharedKernel.Testing`
-  (`FakeClock`).
-- [`SharedKernel.Storage.Testing`](../SharedKernel.Storage.Testing/README.md) — the in-memory store the report is
-  delivered to.
+```csharp
+var exporter = new InMemoryReportExporter<Invoice>(ReportFormat.Csv, new FakeClock());
+
+await service.ExportAsync(exporter, ct);
+
+exporter.LastRows.Should().HaveCount(2);
+exporter.LastDestination!.Key.Should().EndWith(".csv");
+exporter.ExportCount.Should().Be(1);
+```
+
+- `ExportAsync` fabricates the outcome from the destination — `StoredFile`, and a `DownloadUrl` expiring at the clock's
+  now plus `PresignedDownloadUrlExpiry` — without touching storage.
+- `ExportToStreamAsync` writes one tab-separated line per row, header first, so an HTTP download test sees content.
+- `SimulateFailure = true` makes every export fail after reading the rows — with `storage.unavailable`, or the
+  `SimulatedError` you set (e.g. `ReportingErrors.RowLimitExceeded(ReportFormat.Pdf, 10_000)`); `Reset()` forgets everything.
+- It keeps every row so a test can assert on them — never infer a real provider's memory behaviour from it.
+
+## HTML to PDF
+
+```csharp
+var converter = new InMemoryHtmlToPdfConverter();
+
+await service.SendInvoiceAsync(invoice, converter, ct);
+
+converter.LastConversion!.Html.Should().Contain(invoice.Number);
+converter.LastConversion.Options.FooterHtml.Should().NotBeNull();
+converter.LastConversion.Destination!.Condition.Should().Be(WriteCondition.IfNotExists);
+```
+
+It writes `InMemoryHtmlToPdfConverter.PlaceholderPdf` (a tiny `%PDF-` placeholder) to streams, and returns a
+`PdfDocumentOutcome` for storage destinations. `SimulateFailure` returns `reporting.converter_unavailable`, or your
+`SimulatedError` (e.g. `ReportingErrors.ConversionTimeout(TimeSpan.FromSeconds(60))`).
+
+## In a test host
+
+```csharp
+services.AddSharedKernelReporting()…;                  // or the real registration of the app under test
+services.AddInMemoryReporting();                       // replaces the factory and the converter
+
+var reports = provider.GetRequiredService<InMemoryReportExporterFactory>();
+var pdfs = provider.GetRequiredService<InMemoryHtmlToPdfConverter>();
+```
+
+The factory uses the host's `IClock` when one is registered.

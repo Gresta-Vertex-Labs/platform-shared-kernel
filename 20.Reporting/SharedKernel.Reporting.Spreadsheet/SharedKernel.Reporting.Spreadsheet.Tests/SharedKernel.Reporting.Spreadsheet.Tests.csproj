@@ -19,6 +19,8 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="FluentAssertions" />
+    <!-- An independent reader: every workbook the exporter writes is opened back with ClosedXML. -->
+    <PackageReference Include="ClosedXML" />
     <PackageReference Include="Microsoft.Extensions.Hosting" />
   </ItemGroup>
 </Project>

@@ -3,12 +3,15 @@ using Amazon.Runtime;
 using Amazon.S3;
 using Amazon.S3.Model;
 using DocumentsApi;
+using DotNet.Testcontainers.Builders;
+using DotNet.Testcontainers.Containers;
 using Testcontainers.Minio;
 
 namespace DocumentsApi.Tests.Infrastructure;
 
 /// <summary>
-/// The backends every scenario runs against: MinIO always, and the real clouds when <c>SK_LIVE_*</c> is set.
+/// The backends every scenario runs against: MinIO always, and the real clouds when <c>SK_LIVE_*</c> is set; plus
+/// Gotenberg for HTML-to-PDF.
 /// Each run writes only under <c>sharedkernel-samples/{run id}/</c> and deletes what it wrote.
 /// </summary>
 public sealed class Backends : IAsyncLifetime
@@ -19,7 +22,18 @@ public sealed class Backends : IAsyncLifetime
     private const string MinioImage = "quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z";
     private static readonly string[] MinioBuckets = ["sample-assets", "sample-documents", "sample-archive"];
 
+    private const string GotenbergImage = "gotenberg/gotenberg:8.37.0";
+    private const int GotenbergPort = 3000;
+    private const string GotenbergBaseUrl = "SharedKernel:Reporting:Gotenberg:BaseUrl";
+
     private readonly MinioContainer _minio = new MinioBuilder(MinioImage).Build();
+
+    // HTML-to-PDF for the report scenarios, and the "gotenberg" readiness probe.
+    private readonly IContainer _gotenberg = new ContainerBuilder(GotenbergImage)
+        .WithPortBinding(GotenbergPort, assignRandomHostPort: true)
+        .WithWaitStrategy(Wait.ForUnixContainer().UntilHttpRequestIsSucceeded(r => r.ForPort(GotenbergPort).ForPath("/health")))
+        .Build();
+
     private readonly Dictionary<string, SampleHost> _hosts = [];
 
     public static string RunId { get; } =
@@ -49,7 +63,8 @@ public sealed class Backends : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        await _minio.StartAsync();
+        await Task.WhenAll(_minio.StartAsync(), _gotenberg.StartAsync());
+        string gotenbergUrl = $"http://{_gotenberg.Hostname}:{_gotenberg.GetMappedPublicPort(GotenbergPort)}";
         using (var client = new AmazonS3Client(
             new BasicAWSCredentials(_minio.GetAccessKey(), _minio.GetSecretKey()),
             new AmazonS3Config { ServiceURL = _minio.GetConnectionString(), ForcePathStyle = true, AuthenticationRegion = "us-east-1" }))
@@ -60,9 +75,12 @@ public sealed class Backends : IAsyncLifetime
             }
         }
 
-        _hosts[MinIO] = new SampleHost(MinIO, MinioSettings());
+        Dictionary<string, string?> minio = MinioSettings();
+        minio[GotenbergBaseUrl] = gotenbergUrl;
+        _hosts[MinIO] = new SampleHost(MinIO, minio);
         if (LiveSettings() is { } live)
         {
+            live[GotenbergBaseUrl] = gotenbergUrl;
             _hosts[Live] = new SampleHost(Live, live);
         }
     }
@@ -76,6 +94,7 @@ public sealed class Backends : IAsyncLifetime
         }
 
         await _minio.DisposeAsync();
+        await _gotenberg.DisposeAsync();
     }
 
     private static TheoryData<string, string> Cases(params string[] stores)

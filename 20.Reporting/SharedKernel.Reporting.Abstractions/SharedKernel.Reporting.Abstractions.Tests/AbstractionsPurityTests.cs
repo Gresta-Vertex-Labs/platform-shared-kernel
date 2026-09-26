@@ -1,6 +1,6 @@
 using System.Reflection;
 using FluentAssertions;
-using SharedKernel.Reporting.Abstractions.Exporters;
+
 
 namespace SharedKernel.Reporting.Abstractions.Tests;
 
@@ -14,6 +14,7 @@ public sealed class AbstractionsPurityTests
     private static readonly string[] ForbiddenAssemblyNamePrefixes =
     [
         "ClosedXML",
+        "SpreadCheetah",
         "PdfSharp",
         "MigraDoc",
         "DocumentFormat.OpenXml",

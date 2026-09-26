@@ -1,59 +1,44 @@
 # SharedKernel.Reporting.Csv
 
-RFC 4180 CSV report/data export for Platform.SharedKernel microservices — hand-written, **zero third-party NuGet dependencies**. The only one of this domain's three providers that is genuinely constant-memory end to end: encoding happens directly against the destination `Stream` via `StreamWriter`, one row at a time, as the `IAsyncEnumerable<TRow>` source is enumerated.
-
-**This is the provider to reach for when the row count could be large.** See [`SharedKernel.Reporting.Abstractions`](../SharedKernel.Reporting.Abstractions/README.md) for the shared contract and column model.
+RFC 4180 CSV exports for [`SharedKernel.Reporting`](../SharedKernel.Reporting.Abstractions/README.md). Rows are
+written straight to the destination one at a time, so memory stays **constant** — a million-row export costs no more
+than a ten-row one. No third-party dependencies.
 
 ```xml
 <PackageReference Include="SharedKernel.Reporting.Csv" />
 ```
 
-Versions come from the consumer's single `SharedKernelVersion`. **Tier: Adapter** — brings `SharedKernel.Reporting.Abstractions` and `SharedKernel.Storage.Abstractions`; register a storage provider for the store the export targets.
+Versions come from the consumer's single `SharedKernelVersion`. **Tier: Adapter** — referenced by the Infrastructure or
+Api project; application code uses `IReportExporterFactory` or `ICsvReportExporter<TRow>`.
 
-## DI quick start
+## Register
 
 ```csharp
-var builder = Host.CreateApplicationBuilder(args);
-
-builder.Services.AddSharedKernelStorage().AddS3(builder.Configuration).AddStore("exports"); // any SharedKernel.Storage provider
-builder.Services.AddCsvReportExporter<Invoice>(builder.Configuration);
-
-var host = builder.Build();
-await host.StartAsync();
-
-var exporter = host.Services.GetRequiredService<ICsvReportExporter<Invoice>>();
+builder.Services.AddSharedKernelReporting().AddCsv(builder.Configuration);
 ```
 
-`AddCsvReportExporter<TRow>` registers `CsvExportOptions` (validated, checked eagerly at startup via `ValidateOnStart()`), the shared `StorageStreamingWriter` (idempotent — safe alongside `AddSpreadsheetReportExporter`/`AddPdfReportExporter` in the same host), and `ICsvReportExporter<TRow>`. It does **not** register storage: call `AddSharedKernelStorage()` with a provider (`SharedKernel.Storage.S3`, `.Obs`) and register the stores your `ReportDestination.Store` values name.
+One call serves every row type: inject `ICsvReportExporter<Order>`, `ICsvReportExporter<Invoice>`, … or get the `"csv"`
+exporter from `IReportExporterFactory`. Options are validated when the host starts.
 
-`ICsvReportExporter<TRow>` is a provider-exclusive marker interface (`: IReportExporter<TRow>`) — injecting it against a composition root that never called `AddCsvReportExporter` fails to compile against the wrong assembly reference, never a runtime format-string check.
+## Options — `SharedKernel:Reporting:Csv`
 
-## Configuration
+| Setting | Default | |
+|---|---|---|
+| `Delimiter` | `,` | `;` for Excel in locales with a decimal comma (tr-TR, de-DE, fr-FR…). Not `"`, CR or LF. |
+| `IncludeUtf8Bom` | `true` | Excel reads non-ASCII text correctly only with the BOM. |
+| `IncludeHeaderRow` | `true` | The first line holds the column headers. |
+| `EscapeFormulas` | `true` | CSV-injection guard, below. |
 
-```json
-{
-  "SharedKernel": {
-    "Reporting": {
-      "Csv": {
-        "IncludeUtf8Bom": true,
-        "Delimiter": ","
-      }
-    }
-  }
-}
-```
+## Output
 
-`IncludeUtf8Bom` defaults to `true`. RFC 4180 itself is silent on BOM — this is a deliberate platform default: the typical audience for a CSV export (a business user opening a statement in Excel) benefits from the BOM far more often than it is harmed by it.
+- RFC 4180: a field is quoted when it contains the delimiter, `"`, CR or LF; `"` is doubled. Lines end with CRLF.
+- Values are formatted by the column's `Format` and the report's `Culture` — `1.234,50` under `de-DE` with `N2`; with the
+  default `,` delimiter that field is quoted, with `;` it is not.
+- `null` is an empty field. The title and column widths do not apply to CSV.
 
-## The RFC 4180 escaping guarantee
+## CSV injection (CWE-1236)
 
-- Delimiter: `,` by default (configurable).
-- A field is quoted when it contains the delimiter, a double quote, `\r`, or `\n`.
-- An embedded double quote is escaped by doubling it.
-- Line terminator: `\r\n`.
-
-This single rule applies uniformly to every formatted string regardless of source type — a culture whose decimal separator is `,` (e.g. `de-DE`) produces a numeric field that already contains a comma, and the same "contains the delimiter → quote it" rule handles it correctly. There is no numeric-specific special case anywhere in this encoder.
-
-## Why this is the safe choice for unbounded row counts
-
-Every other provider in this domain (`.Spreadsheet` via ClosedXML, `.Pdf` via MigraDoc/PdfSharp) materializes its entire output document object model in memory before writing a byte — a verified, permanent characteristic of those third-party dependencies, not a defect. `SharedKernel.Reporting.Csv` has no such limitation: it never buffers more than one row's worth of formatted text at a time, and holds no document object model at all. If you don't know how many rows an export will produce, or you know it could be millions, this is the provider to use.
+A spreadsheet opening a CSV runs any field starting with `=`, `+`, `-` or `@` as a formula — `=HYPERLINK(…)` or a DDE
+payload in a customer name becomes code on the reader's machine. With `EscapeFormulas` (the default), text starting
+with `=`, `+`, `-`, `@`, a tab or a carriage return is prefixed with `'`, so it shows as text. **Numbers are never
+prefixed**: `-5.25` from a `decimal` stays a number. Turn it off only for files no person opens in a spreadsheet.

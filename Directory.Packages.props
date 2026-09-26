@@ -100,12 +100,17 @@
     -->
     <PackageVersion Include="CSharpier.MsBuild" Version="1.3.0" />
     <!--
-      SharedKernel.Reporting.Spreadsheet (20.Reporting/WO-077, P-479): unconditional MIT, verified
-      directly against the published nuspec on nuget.org before pinning (20.Reporting/CLAUDE.md's
-      ratified licensing table). No incremental/streaming write path exists in this library — see
-      that package's own docs for the accepted, documented memory-model limitation.
+      Test-only: reads the .xlsx files SharedKernel.Reporting.Spreadsheet writes back, as an independent
+      reader, in its tests and in 20.Reporting/consumer-verify. MIT. No shipping package references it
+      (it builds the whole workbook in memory, which is why the provider moved to SpreadCheetah).
     -->
     <PackageVersion Include="ClosedXML" Version="0.105.1" />
+    <!--
+      SharedKernel.Reporting.Spreadsheet: streaming .xlsx writer — rows go to the output stream as they
+      are added, async, in constant memory, with no dependencies on net8.0+. MIT, verified against the
+      published nuspec on nuget.org (2026-09-26).
+    -->
+    <PackageVersion Include="SpreadCheetah" Version="1.28.0" />
     <PackageVersion Include="coverlet.collector" Version="6.0.4" />
     <PackageVersion Include="Dapper" Version="2.1.79" />
     <!-- P-558/W1b: snake_case naming for the PostgreSQL EF Core setup (replaces the former hand-rolled convention). Apache-2.0. -->
@@ -353,6 +358,7 @@
     <PackageVersion Include="SharedKernel.Primitives" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Reporting.Abstractions" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Reporting.Csv" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Reporting.Gotenberg" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Reporting.Pdf" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Reporting.Spreadsheet" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Reporting.Testing" Version="$(SharedKernelPackageVersion)" />

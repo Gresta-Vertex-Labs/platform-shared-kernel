@@ -2,19 +2,38 @@
   <PropertyGroup>
     <SharedKernelTier>Adapter</SharedKernelTier>
     <!-- NuGet packaging metadata -->
-    <Description>ClosedXML-backed .xlsx spreadsheet report/data export for Platform.SharedKernel microservices. SpreadsheetReportExporter&lt;TRow&gt; writes the header row and one row per streamed TRow directly into worksheet cells as the IAsyncEnumerable&lt;TRow&gt; source is enumerated — never buffers rows into a List&lt;TRow&gt; first. IMPORTANT: ClosedXML itself exposes NO incremental/streaming write path — XLWorkbook.SaveAs materializes the full workbook object graph in memory before writing a byte to the destination. This provider is therefore NOT memory-bounded, a documented, permanent characteristic of the ClosedXML dependency (see this package's README) — use SharedKernel.Reporting.Csv for genuinely large row counts. Register via AddSpreadsheetReportExporter&lt;TRow&gt;(IConfiguration).</Description>
-    <PackageTags>reporting;export;spreadsheet;excel;xlsx;closedxml;shared-kernel</PackageTags>
+    <Description>Excel (.xlsx) exports for SharedKernel.Reporting, streamed in constant memory: rows are written to the output as they arrive, so a million-row workbook needs no more memory than a small one. Numbers, dates, times and booleans are real typed cells — sortable and summable in Excel — with .NET format strings translated to Excel number formats, a bold frozen header row, autofilter and column widths. Built on SpreadCheetah (MIT). Register with services.AddSharedKernelReporting().AddSpreadsheet(configuration).</Description>
+    <PackageReleaseNotes>First release.</PackageReleaseNotes>
+    <PackageTags>shared-kernel;reporting;export;excel;xlsx;spreadsheet;streaming</PackageTags>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- Publish bar: ship XML docs, and fail the build on an undocumented or untracked public member. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <WarningsAsErrors>$(WarningsAsErrors);CS1591;RS0016;RS0017;RS0024;RS0025</WarningsAsErrors>
+  </PropertyGroup>
+
   <ItemGroup>
-    <!-- Sibling-package rule (20.Reporting/CLAUDE.md): never references .Csv or .Pdf. -->
+    <!-- Never references .Csv, .Pdf or .Gotenberg: sibling providers stay independent. -->
     <ProjectReference Include="..\SharedKernel.Reporting.Abstractions\SharedKernel.Reporting.Abstractions.csproj" />
     <ProjectReference Include="..\..\01.Core\SharedKernel.Configuration\SharedKernel.Configuration.csproj" />
   </ItemGroup>
+
   <ItemGroup>
-    <!-- Unconditional MIT — ratified in 20.Reporting/CLAUDE.md's licensing table. -->
-    <PackageReference Include="ClosedXML" />
+    <!-- MIT; streaming writer with no further dependencies. -->
+    <PackageReference Include="SpreadCheetah" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Options" />
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="SharedKernel.Reporting.Spreadsheet.Tests" />
   </ItemGroup>
 </Project>

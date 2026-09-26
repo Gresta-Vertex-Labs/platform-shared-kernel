@@ -1,7 +1,8 @@
 # DocumentsApi
 
 A small file service built on the `08.Storage` packages, and the end-to-end proof that they work against real
-Amazon S3 and Huawei Cloud OBS — not only against MinIO.
+Amazon S3 and Huawei Cloud OBS — not only against MinIO. It also shows `20.Reporting`: exports of a store listing
+as CSV, Excel or PDF, and HTML rendered to PDF by Gotenberg, each streamed into a store and returned as a link.
 
 | Store | Kind | Connection | What it shows |
 | --- | --- | --- | --- |
@@ -20,6 +21,17 @@ storage.AddObs(builder.Configuration).AddStore("archive");
 builder.Services.AddHealthChecks().AddSharedKernelReadiness();
 ```
 
+Reporting sits on the same stores:
+
+```csharp
+builder.Services.AddSharedKernelReporting()
+    .AddCsv(builder.Configuration)
+    .AddSpreadsheet(builder.Configuration)
+    .AddPdf(builder.Configuration)
+    .AddGotenberg(builder.Configuration);   // SharedKernel:Reporting:Gotenberg:BaseUrl; adds the "gotenberg" probe
+builder.WithReportingTelemetry();
+```
+
 Buckets, key prefixes, encryption and link limits are in `appsettings.json`; credentials never are.
 
 ## Endpoints
@@ -35,7 +47,9 @@ Buckets, key prefixes, encryption and link limits are in `appsettings.json`; cre
 | `POST /copy` | `CopyToAsync` — within a store, across stores and across providers |
 | `POST /links/{store}/download` · `/upload` · `/form` | `CreateDownloadUrlAsync` · `CreateUploadUrlAsync` · `CreateUploadFormAsync` |
 | `POST /multipart/{store}/start` · `/part-url` · `/complete` · `/abort` | Presigned multipart upload |
-| `GET /health/ready` | One readiness check per store |
+| `POST /reports/{store}/listing?format=xlsx&prefix=` | `IReportExporterFactory.ParseFormat` (`csv`, `xlsx`, `pdf`; an extension or content type works too) + `ExportAsync` — the listing (`ListAsync`) streams into `reports/{id}.{ext}` in the same store; answers the key, row count, size and a 10-minute download link (`Features/Reports/ExportListing.cs`) |
+| `POST /pdf/{store}/{**key}` `{ "html", "fileName" }` | `IHtmlToPdfConverter.ConvertAsync` — A4, page-number footer, create-only (`WriteCondition.IfNotExists`, so 409 when the PDF exists; `storage.not_supported` on OBS, which has no conditional writes); answers a download link (`Features/Reports/RenderPdf.cs`) |
+| `GET /health/ready` | One readiness check per store, plus `gotenberg` |
 
 The tenant comes from an `X-Tenant-Id` header so the tests can act as several tenants; it is a `TenantId` (a GUID),
 and a tenant store asked for without a valid one answers `documents.tenant_required`. A real service takes it from
@@ -111,7 +125,7 @@ dotnet pack Platform.SharedKernel.slnx -c Release -o ./nupkgs -p:MinVerVersionOv
 dotnet test samples/DocumentsApi/DocumentsApi.Tests -p:SharedKernelPackageVersion=1.0.0-local.1
 ```
 
-Without further setup the scenarios run against MinIO (Docker, via Testcontainers); MinIO also stands in for OBS
+Without further setup the scenarios run against MinIO and Gotenberg (Docker, via Testcontainers); MinIO also stands in for OBS
 with the OBS compatibility profile. To run every scenario against the real clouds as well, set:
 
 | Variable | Example |
