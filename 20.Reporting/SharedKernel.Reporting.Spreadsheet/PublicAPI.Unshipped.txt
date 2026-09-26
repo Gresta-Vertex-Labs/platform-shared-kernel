@@ -1,0 +1,19 @@
+#nullable enable
+const SharedKernel.Reporting.Spreadsheet.SpreadsheetExportOptions.ExcelMaxDataRows = 1048575 -> int
+SharedKernel.Reporting.Spreadsheet.ISpreadsheetReportExporter<TRow>
+SharedKernel.Reporting.Spreadsheet.SpreadsheetExportOptions
+SharedKernel.Reporting.Spreadsheet.SpreadsheetExportOptions.AutoFilter.get -> bool
+SharedKernel.Reporting.Spreadsheet.SpreadsheetExportOptions.AutoFilter.set -> void
+SharedKernel.Reporting.Spreadsheet.SpreadsheetExportOptions.BoldHeaderRow.get -> bool
+SharedKernel.Reporting.Spreadsheet.SpreadsheetExportOptions.BoldHeaderRow.set -> void
+SharedKernel.Reporting.Spreadsheet.SpreadsheetExportOptions.DefaultSheetName.get -> string!
+SharedKernel.Reporting.Spreadsheet.SpreadsheetExportOptions.DefaultSheetName.set -> void
+SharedKernel.Reporting.Spreadsheet.SpreadsheetExportOptions.FreezeHeaderRow.get -> bool
+SharedKernel.Reporting.Spreadsheet.SpreadsheetExportOptions.FreezeHeaderRow.set -> void
+SharedKernel.Reporting.Spreadsheet.SpreadsheetExportOptions.MaxRows.get -> int
+SharedKernel.Reporting.Spreadsheet.SpreadsheetExportOptions.MaxRows.set -> void
+SharedKernel.Reporting.Spreadsheet.SpreadsheetExportOptions.SpreadsheetExportOptions() -> void
+SharedKernel.Reporting.Spreadsheet.SpreadsheetExportOptions.Validate(System.ComponentModel.DataAnnotations.ValidationContext! validationContext) -> System.Collections.Generic.IEnumerable<System.ComponentModel.DataAnnotations.ValidationResult!>!
+SharedKernel.Reporting.SpreadsheetReportingBuilderExtensions
+static SharedKernel.Reporting.Spreadsheet.SpreadsheetExportOptions.SectionName.get -> string!
+static SharedKernel.Reporting.SpreadsheetReportingBuilderExtensions.AddSpreadsheet(this SharedKernel.Reporting.IReportingBuilder! builder, Microsoft.Extensions.Configuration.IConfiguration! configuration) -> SharedKernel.Reporting.IReportingBuilder!
