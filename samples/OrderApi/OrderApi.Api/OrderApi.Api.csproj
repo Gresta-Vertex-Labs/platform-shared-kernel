@@ -32,8 +32,11 @@
     <!-- Host: the pipeline behaviors and the one mediator adapter (the only MediatR reference). -->
     <PackageReference Include="SharedKernel.Application.Pipeline" />
     <PackageReference Include="SharedKernel.Application.Mediator.MediatR" />
-    <!-- Host: Result<T> -> HTTP, RFC 9457 ProblemDetails. -->
+    <!-- Host: the HTTP boundary (endpoint modules, Result<T> -> HTTP, RFC 9457 ProblemDetails). It brings
+         SharedKernel.Presentation.Core, the authorization attributes and policies. -->
     <PackageReference Include="SharedKernel.Presentation.WebApi" />
+    <!-- Host: API versioning, one OpenAPI document per version and Scalar, served in Development only. -->
+    <PackageReference Include="SharedKernel.Presentation.OpenApi" />
   </ItemGroup>
 
 </Project>

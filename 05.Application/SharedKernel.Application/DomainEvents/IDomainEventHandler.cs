@@ -10,7 +10,7 @@ namespace SharedKernel.Application.DomainEvents;
 /// <typeparamref name="TDomainEvent"/> is the raw domain event (<c>03.Domain</c>). The native
 /// <c>DomainEventDispatcher</c> (<c>SharedKernel.Application.Pipeline</c>) resolves every handler
 /// registered for the event's concrete type through DI and runs them one after another; no mediator
-/// is involved. <c>AddSharedKernelMediatR(...)</c> registers the handlers it finds in the scanned
+/// is involved. <c>AddSharedKernelApplication(...)</c> registers the handlers it finds in the scanned
 /// assemblies, and <c>AddDomainEventHandler&lt;TDomainEvent, THandler&gt;()</c> registers one by hand. If
 /// a handler needs to cross the service boundary, it must inject
 /// <c>SharedKernel.Messaging.Abstractions.IEventPublisher</c> (<c>07.Messaging</c>) and publish an

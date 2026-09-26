@@ -177,11 +177,11 @@ public class LayeringRulesTests
     }
 
     // ---------------------------------------------------------------------------
-    // PipelineNeverReferencesCachingPollyHostingOrCore — P-544
+    // PipelineNeverReferencesCachingPollyOrHosting — P-544
     // ---------------------------------------------------------------------------
 
     [Fact]
-    public void PipelineNeverReferencesCachingPollyHostingOrCore_CachingAbstractionsDependency_RuleFails()
+    public void PipelineNeverReferencesCachingPollyOrHosting_CachingAbstractionsDependency_RuleFails()
     {
         const string violationSource = """
             namespace SharedKernel.Caching.Abstractions
@@ -199,7 +199,7 @@ public class LayeringRulesTests
             """;
 
         var result = ApplicationPipelineRules
-            .PipelineNeverReferencesCachingPollyHostingOrCore(CompileInMemory("PipelineCachingViolation", violationSource))
+            .PipelineNeverReferencesCachingPollyOrHosting(CompileInMemory("PipelineCachingViolation", violationSource))
             .GetResult();
 
         result.IsSuccessful.Should().BeFalse(
@@ -207,7 +207,7 @@ public class LayeringRulesTests
     }
 
     [Fact]
-    public void PipelineNeverReferencesCachingPollyHostingOrCore_CleanAssembly_RulePasses()
+    public void PipelineNeverReferencesCachingPollyOrHosting_CleanAssembly_RulePasses()
     {
         const string cleanSource = """
             namespace SharedKernel.Application.Pipeline
@@ -220,21 +220,53 @@ public class LayeringRulesTests
             """;
 
         var result = ApplicationPipelineRules
-            .PipelineNeverReferencesCachingPollyHostingOrCore(CompileInMemory("PipelineClean", cleanSource))
+            .PipelineNeverReferencesCachingPollyOrHosting(CompileInMemory("PipelineClean", cleanSource))
             .GetResult();
 
-        result.IsSuccessful.Should().BeTrue(because: "CleanBehavior has no dependency on Caching, Polly, Hosting, or Core");
+        result.IsSuccessful.Should().BeTrue(because: "CleanBehavior has no dependency on Caching, Polly or Hosting");
+    }
+
+    /// <summary>
+    /// P-579: the pipeline turns a failed result into its exception with <c>SharedKernel.Core</c>'s
+    /// <c>error.ToException()</c>, so a Core dependency is allowed.
+    /// </summary>
+    [Fact]
+    public void PipelineNeverReferencesCachingPollyOrHosting_CoreDependency_RulePasses()
+    {
+        const string coreSource = """
+            namespace SharedKernel.Core.Extensions
+            {
+                public static class ErrorExtensions
+                {
+                    public static System.Exception ToException(this string error) => new System.InvalidOperationException(error);
+                }
+            }
+
+            namespace SharedKernel.Application.Pipeline
+            {
+                public sealed class ThrowingBehavior
+                {
+                    public System.Exception Fail(string error) => SharedKernel.Core.Extensions.ErrorExtensions.ToException(error);
+                }
+            }
+            """;
+
+        var result = ApplicationPipelineRules
+            .PipelineNeverReferencesCachingPollyOrHosting(CompileInMemory("PipelineCoreAllowed", coreSource))
+            .GetResult();
+
+        result.IsSuccessful.Should().BeTrue(because: "SharedKernel.Core is an allowed dependency of the pipeline since P-579");
     }
 
     [Fact]
-    public void PipelineNeverReferencesCachingPollyHostingOrCore_RealPipelineAssembly_RulePasses()
+    public void PipelineNeverReferencesCachingPollyOrHosting_RealPipelineAssembly_RulePasses()
     {
         var result = ApplicationPipelineRules
-            .PipelineNeverReferencesCachingPollyHostingOrCore(
-                typeof(SharedKernel.Application.Pipeline.Extensions.ApplicationBehaviorsBuilder).Assembly)
+            .PipelineNeverReferencesCachingPollyOrHosting(
+                typeof(SharedKernel.Application.Pipeline.ApplicationPipelineBuilder).Assembly)
             .GetResult();
 
-        result.IsSuccessful.Should().BeTrue(because: "SharedKernel.Application.Pipeline carries no cache, Polly, hosting or Core dependency");
+        result.IsSuccessful.Should().BeTrue(because: "SharedKernel.Application.Pipeline carries no cache, Polly or hosting dependency");
     }
 
     // ---------------------------------------------------------------------------
@@ -296,7 +328,7 @@ public class LayeringRulesTests
     {
         var result = ApplicationPipelineRules
             .PipelineCachingNeverReferencesConcreteInfrastructure(
-                typeof(SharedKernel.Application.Pipeline.Caching.Extensions.CachingBehaviorsExtensions).Assembly)
+                typeof(SharedKernel.Application.Pipeline.Caching.CachingPipelineExtensions).Assembly)
             .GetResult();
 
         result.IsSuccessful.Should().BeTrue(because: "the caching pipeline reaches SharedKernel.Caching.Abstractions only");

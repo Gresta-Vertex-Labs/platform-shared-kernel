@@ -70,6 +70,19 @@ public sealed class HttpTests(WebApplicationFactory<Program> factory) : IClassFi
         created.Headers.GetValues(CorrelationHeader).Should().ContainSingle().Which.Should().NotBeNullOrWhiteSpace();
     }
 
+    [Fact]
+    public async Task OpenApiDocument_IsServedInDevelopment()
+    {
+        // WebApplicationFactory runs the host in Development, where AddSharedKernelOpenApi publishes the documents.
+        // Outside Development nothing is mapped: CI's smoke test runs the host in Production and expects a 404.
+        var response = await _client.GetAsync("/openapi/v1.json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var document = await response.Content.ReadFromJsonAsync<JsonElement>();
+        document.GetProperty("paths").EnumerateObject().Select(p => p.Name)
+            .Should().Contain(["/orders", "/orders/{id}", "/orders/{id}/cancel"]);
+    }
+
     [Theory]
     [InlineData("/health/live")]
     [InlineData("/health/ready")]

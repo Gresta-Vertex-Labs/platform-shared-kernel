@@ -1,4 +1,5 @@
 using SharedKernel.Application.Mediator.MediatR;
+using SharedKernel.Application.Pipeline;
 using SharedKernel.Application.Messaging;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Primitives.Results;
@@ -35,7 +36,7 @@ public sealed class InMemoryScheduledJobRegistryTests
     private static ISender BuildSender()
     {
         var services = new ServiceCollection();
-        services.AddSharedKernelMediatR(typeof(InMemoryScheduledJobRegistryTests).Assembly);
+        services.AddSharedKernelApplication(typeof(InMemoryScheduledJobRegistryTests).Assembly, app => app.UseMediatR());
         return services.BuildServiceProvider().GetRequiredService<ISender>();
     }
 

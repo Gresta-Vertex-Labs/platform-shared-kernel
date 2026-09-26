@@ -14,7 +14,7 @@ namespace SharedKernel.Application.Messaging;
 /// shipped implementation.
 /// </para>
 /// <para>
-/// The response of a request that uses a pipeline marker (<c>IAuthorizeRequest</c>,
+/// The response of a request that uses a pipeline marker (<c>[RequirePermission]</c>,
 /// <c>IIdempotentRequest</c>) must be <c>Result</c> or <c>Result&lt;T&gt;</c>, because the pipeline
 /// short-circuits by constructing a failed response. <c>SharedKernel.Analyzers</c>' SK0040 reports the
 /// mistake.

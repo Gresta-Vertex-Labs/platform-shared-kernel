@@ -35,7 +35,7 @@ public sealed class EndToEndPropagationTests
 
     /// <summary>
     /// HTTP → REST. Also defect 1: the idempotency key the REST client sends arrives under the header the inbound
-    /// <c>TryGetIdempotencyKey</c> reads.
+    /// <c>GetIdempotencyKey()</c> reads.
     /// </summary>
     [Fact]
     public async Task HttpToRest_CorrelationTenantActorAndIdempotencyKeySurvive()

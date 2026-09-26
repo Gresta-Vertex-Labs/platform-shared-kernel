@@ -7,7 +7,7 @@ namespace SharedKernel.Application.Messaging;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The only dispatch contract application code depends on. <c>AddSharedKernelMediatR(...)</c>
+/// The only dispatch contract application code depends on. <c>AddSharedKernelApplication(..., app =&gt; app.UseMediatR())</c>
 /// (<c>SharedKernel.Application.Mediator.MediatR</c>) registers the shipped implementation; a
 /// different mediator is a different implementation of this interface, with no change to requests,
 /// handlers or behaviors.

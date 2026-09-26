@@ -106,6 +106,34 @@ public sealed partial class DependencyGraphRulesTests
         offenders.Should().BeEmpty($"MediatR is referenced only by {adapter}; everything else depends on SharedKernel.Application's ISender");
     }
 
+    /// <summary>
+    /// P-579: a <c>ReferenceOutputAssembly="false"</c> reference is exempt from the tier matrix (the build's tier check
+    /// skips it too), so a Host package may load a Tooling-tier Roslyn component that way — the one such edge is
+    /// <c>SharedKernel.Presentation.WebApi</c> → <c>SharedKernel.Presentation.WebApi.Generators</c>. Such an edge may
+    /// only target a Tooling project: anything else is a real dependency hidden from the matrix.
+    /// </summary>
+    [Fact]
+    public void AnalyzerOnlyReferences_AreExemptFromTheMatrix_AndTargetToolingOnly()
+    {
+        var graph = Graph.Value;
+
+        var webApi = graph.Find("SharedKernel.Presentation.WebApi");
+        webApi.Should().NotBeNull();
+        webApi!.AnalyzerOnlyReferences.Should().Contain("SharedKernel.Presentation.WebApi.Generators");
+        webApi.ProjectReferences.Should().NotContain("SharedKernel.Presentation.WebApi.Generators",
+            "an analyzer-only edge is not a dependency and is not checked against the tier matrix");
+        graph.Find("SharedKernel.Presentation.WebApi.Generators")!.Tier.Should().Be("Tooling");
+
+        var offenders = graph.Projects
+            .Where(p => p.Tier is not null)
+            .SelectMany(p => p.AnalyzerOnlyReferences
+                .Select(graph.Find)
+                .Where(r => r?.Tier is not null and not "Tooling")
+                .Select(r => $"{p.Name} -> {r!.Name} ({r.Tier})"));
+
+        offenders.Should().BeEmpty("a ReferenceOutputAssembly=\"false\" reference may only load a Tooling-tier component");
+    }
+
     [Fact]
     public void ProjectReferenceGraph_HasNoCycles()
     {
@@ -144,7 +172,8 @@ public sealed partial class DependencyGraphRulesTests
         IReadOnlyList<string> ProjectReferences,
         IReadOnlyList<string> AllowedAdapters,
         IReadOnlyList<string> RuntimePackages,
-        IReadOnlyList<string> AspNetCoreReferences);
+        IReadOnlyList<string> AspNetCoreReferences,
+        IReadOnlyList<string> AnalyzerOnlyReferences);
 
     private sealed record Violation(string Key, string Description);
 
@@ -208,8 +237,23 @@ public sealed partial class DependencyGraphRulesTests
             var isExe = string.Equals(Property("OutputType"), "Exe", StringComparison.OrdinalIgnoreCase);
             var isProduction = !isTest && !isExe && !string.Equals(Property("IsPackable"), "false", StringComparison.OrdinalIgnoreCase);
 
-            var references = document.Descendants().Where(e => e.Name.LocalName == "ProjectReference")
-                .Select(e => Path.GetFileNameWithoutExtension((e.Attribute("Include")?.Value ?? string.Empty).Replace('\\', '/')))
+            // A ReferenceOutputAssembly="false" edge only orders the build or loads a Roslyn component: it is not a
+            // dependency, so the tier matrix exempts it (eng/SharedKernelTiers.targets, P-579). It is kept apart.
+            static bool IsAnalyzerOnly(XElement e) => string.Equals(
+                e.Attribute("ReferenceOutputAssembly")?.Value
+                    ?? e.Elements().FirstOrDefault(c => c.Name.LocalName == "ReferenceOutputAssembly")?.Value,
+                "false",
+                StringComparison.OrdinalIgnoreCase);
+            static string ReferenceName(XElement e) =>
+                Path.GetFileNameWithoutExtension((e.Attribute("Include")?.Value ?? string.Empty).Replace('\\', '/'));
+
+            var projectReferences = document.Descendants().Where(e => e.Name.LocalName == "ProjectReference").ToList();
+            var references = projectReferences.Where(e => !IsAnalyzerOnly(e))
+                .Select(ReferenceName)
+                .Where(n => n.Length > 0)
+                .ToList();
+            var analyzerOnly = projectReferences.Where(IsAnalyzerOnly)
+                .Select(ReferenceName)
                 .Where(n => n.Length > 0)
                 .ToList();
             var packages = document.Descendants().Where(e => e.Name.LocalName == "PackageReference")
@@ -226,7 +270,7 @@ public sealed partial class DependencyGraphRulesTests
                 .Where(n => n == "Microsoft.AspNetCore.App" || n.StartsWith("Microsoft.AspNetCore.", StringComparison.Ordinal))
                 .ToList();
 
-            return new ProjectNode(name, Path.GetRelativePath(root.FullName, path), Property("SharedKernelTier"), isProduction, references, adapters, packages, aspNetCore);
+            return new ProjectNode(name, Path.GetRelativePath(root.FullName, path), Property("SharedKernelTier"), isProduction, references, adapters, packages, aspNetCore, analyzerOnly);
         }
 
         private static DirectoryInfo FindRepositoryRoot()

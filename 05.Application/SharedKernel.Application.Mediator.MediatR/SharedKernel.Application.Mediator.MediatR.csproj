@@ -2,16 +2,16 @@
   <PropertyGroup>
     <SharedKernelTier>Host</SharedKernelTier>
     <!-- NuGet packaging metadata -->
-    <Description>MediatR as the transport behind SharedKernel.Application's ISender. AddSharedKernelMediatR(assemblies) scans for the kernel's own handler types — IRequestHandler (ICommandHandler/IQueryHandler), IStreamQueryHandler and IDomainEventHandler — and registers, for each request type, a MediatR handler that runs the kernel's RequestPipeline: the behaviors registered by SharedKernel.Application.Pipeline, then the handler.
+    <Description>MediatR as the transport behind SharedKernel.Application's ISender. UseMediatR() on the AddSharedKernelApplication builder registers the kernel ISender and, for each request and streaming-query type whose handler AddSharedKernelApplication found, a MediatR handler that runs the kernel's RequestPipeline: the behaviors registered by SharedKernel.Application.Pipeline, then the handler.
 
 This is the only SharedKernel package that references MediatR. Commands, queries, handlers and behaviors are written against SharedKernel.Application, so replacing MediatR is a different implementation of ISender and changes no application code. Pinned to MediatR 12.4.1, the last MIT-licensed release.</Description>
     <PackageReleaseNotes>First release.
 
 WHAT IS IN IT
-- AddSharedKernelMediatR(params Assembly[] assemblies): registers MediatR, the kernel ISender, RequestPipeline/StreamRequestPipeline, the native DomainEventDispatcher, and every kernel handler found in the assemblies.
+- UseMediatR() on the builder of AddSharedKernelApplication (SharedKernel.Application.Pipeline): registers MediatR, the kernel ISender and one MediatR route per request and streaming-query type of the scanned assemblies. The handlers, validators, behaviors and domain-event dispatch are registered by AddSharedKernelApplication itself: services.AddSharedKernelApplication(typeof(Program).Assembly, app =&gt; app.UseMediatR()) is the whole registration.
 
 THINGS WORTH KNOWING BEFORE YOU ADOPT IT
-- It registers no behaviors: call AddSharedKernelApplicationBehaviors()...Build() (SharedKernel.Application.Pipeline) for those. MediatR's own pipeline stays empty; the kernel pipeline runs inside the MediatR handler.
+- MediatR's own pipeline stays empty; the kernel pipeline runs inside the MediatR handler.
 - A request can be sent only if its handler was found in a scanned assembly. Sending anything else throws InvalidOperationException naming the request type.
 - Implement the kernel interfaces, never MediatR's: a class implementing MediatR.IRequestHandler or INotificationHandler is not discovered.</PackageReleaseNotes>
     <PackageTags>cqrs;mediatr;mediator;application;shared-kernel</PackageTags>

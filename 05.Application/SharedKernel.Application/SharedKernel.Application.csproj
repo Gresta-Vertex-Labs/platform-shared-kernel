@@ -14,7 +14,7 @@ WHAT IS IN IT
 - Commands and queries: ICommandBase, ICommand, ICommand&lt;TResponse&gt;, IQueryBase, IQuery&lt;TResponse&gt;, and the handler aliases ICommandHandler&lt;&gt;/ICommandHandler&lt;,&gt;/IQueryHandler&lt;,&gt;.
 - Streaming reads: IStreamQuery&lt;TResponse&gt;, IStreamQueryHandler&lt;,&gt; and IStreamPipelineBehavior&lt;,&gt;.
 - Domain events: IDomainEventHandler&lt;TDomainEvent&gt;.
-- Pipeline markers and ports: IAuthorizeRequest/PermissionMatch, IIdempotentRequest, IAuditableRequest&lt;TResponse&gt;, ILoggableRequest&lt;TResponse&gt;, ICacheableQuery&lt;TValue&gt;, IInvalidatesCache, CacheScope, CacheKeyRef, ICommandScope and IRequestValidator&lt;TRequest&gt;.
+- Pipeline markers and ports: [RequirePermission] (always enforced), IIdempotentRequest, IAuditableRequest&lt;TResponse&gt;, ILoggableRequest&lt;TResponse&gt;, ICacheableQuery&lt;TValue&gt;, IInvalidatesCache, CacheScope, CacheKeyRef, ICommandScope and IRequestValidator&lt;TRequest&gt;.
 
 THINGS WORTH KNOWING BEFORE YOU ADOPT IT
 - A request's response must be Result or Result&lt;T&gt; when it uses a pipeline marker. Several pipeline behaviors short-circuit by constructing a failed response, which no other response type can express; SharedKernel.Analyzers' SK0040 flags the mistake at build time.

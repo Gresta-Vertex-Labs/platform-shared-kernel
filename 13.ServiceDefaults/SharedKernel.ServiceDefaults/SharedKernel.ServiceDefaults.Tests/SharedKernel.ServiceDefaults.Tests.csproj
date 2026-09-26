@@ -14,16 +14,18 @@
     -->
     <ProjectReference Include="..\..\SharedKernel.MultiTenancy\SharedKernel.MultiTenancy.csproj" />
     <!--
-      D-28 (WO-063/P-419) gating-proof-only — mirrors the T-43/WO-056 Grpc.AspNetCore/Polly.Core
-      precedent above: a genuine, compiled proof that AddSharedKernelRateLimiting()'s OnRejected
-      recipe documented in this domain's README actually produces
-      SharedKernel.Presentation.WebApi's RateLimitRejectionProblemDetails-shaped 429 body, rather
-      than merely asserting the recipe compiles. NEVER referenced by the production
-      SharedKernel.ServiceDefaults.csproj — 13.ServiceDefaults's layering ceiling (01-12 plus
-      individually-named exceptions) deliberately excludes 14.Presentation, and D-28 reaffirms
+      D-28 (WO-063/P-419, rewritten for P-562) gating-proof-only — mirrors the T-43/WO-056
+      Grpc.AspNetCore/Polly.Core precedent above: RateLimitRejectionRecipeTests proves that
+      AddSharedKernelRateLimiting() composed with SharedKernel.Presentation.WebApi's
+      AddSharedKernelWebApi()/UseSharedKernelWebApi() answers a rejection with the platform's 429
+      application/problem+json body, as this domain's README documents. NEVER referenced by the
+      production SharedKernel.ServiceDefaults.csproj — 13.ServiceDefaults's layering ceiling (01-12
+      plus individually-named exceptions) deliberately excludes 14.Presentation, and D-28 reaffirms
       rather than reopens that boundary. Test-only.
     -->
     <ProjectReference Include="..\..\..\14.Presentation\SharedKernel.Presentation.WebApi\SharedKernel.Presentation.WebApi.csproj" />
+    <!-- P-579: the HTTP edge that refuses inbound baggage is UseSharedKernelRequestContext() (test-only reference). -->
+    <ProjectReference Include="..\..\SharedKernel.ServiceDefaults.Security\SharedKernel.ServiceDefaults.Security.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="xunit" />

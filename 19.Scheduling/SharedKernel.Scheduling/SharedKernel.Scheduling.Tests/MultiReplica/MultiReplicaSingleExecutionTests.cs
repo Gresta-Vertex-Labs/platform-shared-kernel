@@ -1,4 +1,5 @@
 using SharedKernel.Application.Mediator.MediatR;
+using SharedKernel.Application.Pipeline;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Caching.Abstractions;
@@ -43,7 +44,7 @@ public sealed class MultiReplicaSingleExecutionTests : IAsyncLifetime
             new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build());
         services.AddSingleton<IClock>(sharedClock);
         services.AddInMemoryLoggerFactory();
-        services.AddSharedKernelMediatR(typeof(RecordingCommand).Assembly);
+        services.AddSharedKernelApplication(typeof(RecordingCommand).Assembly, app => app.UseMediatR());
         // The SAME recorder instance is shared across both "replicas" so the test can assert the
         // total invocation count across both processes combined — exactly what proves single
         // execution ACROSS replicas rather than merely within one.

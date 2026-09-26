@@ -245,12 +245,31 @@ public class ApplicationPipelineRulesTests
     [Fact]
     public void ShippedPipelineAssemblies_PassBothRules()
     {
-        var pipeline = typeof(SharedKernel.Application.Pipeline.Extensions.ApplicationBehaviorsBuilder).Assembly;
-        var caching = typeof(SharedKernel.Application.Pipeline.Caching.Extensions.CachingBehaviorsExtensions).Assembly;
+        var pipeline = typeof(SharedKernel.Application.Pipeline.ApplicationPipelineBuilder).Assembly;
+        var caching = typeof(SharedKernel.Application.Pipeline.Caching.CachingPipelineExtensions).Assembly;
 
         ApplicationPipelineRules.NoExistingBehaviorMatchesStreamRequestConstraint(pipeline).GetResult().IsSuccessful.Should().BeTrue();
         ApplicationPipelineRules.NoExistingBehaviorMatchesStreamRequestConstraint(caching).GetResult().IsSuccessful.Should().BeTrue();
         ApplicationPipelineRules.BehaviorsNeverReferenceConcreteInfrastructure(pipeline, caching).GetResult().IsSuccessful.Should().BeTrue();
+    }
+
+    /// <summary>
+    /// P-579: every built-in behavior is internal. The rules scan with NetArchTest, which sees non-public types, so
+    /// they still inspect the real behaviors rather than passing vacuously over an assembly with no public ones.
+    /// </summary>
+    [Fact]
+    public void ShippedPipelineAssemblies_InternalBehaviorsAreScanned()
+    {
+        var pipeline = typeof(SharedKernel.Application.Pipeline.ApplicationPipelineBuilder).Assembly;
+        var caching = typeof(SharedKernel.Application.Pipeline.Caching.CachingPipelineExtensions).Assembly;
+
+        var scanned = NetArchTest.Rules.Types.InAssemblies([pipeline, caching])
+            .GetTypes()
+            .Select(type => type.Name)
+            .ToList();
+
+        scanned.Should().Contain(["TracingBehavior`2", "AuthorizationBehavior`2", "StreamAuthorizationBehavior`2", "CacheInvalidationBehavior`2"]);
+        pipeline.GetType("SharedKernel.Application.Pipeline.Tracing.TracingBehavior`2")!.IsPublic.Should().BeFalse();
     }
 
     // ---------------------------------------------------------------------------

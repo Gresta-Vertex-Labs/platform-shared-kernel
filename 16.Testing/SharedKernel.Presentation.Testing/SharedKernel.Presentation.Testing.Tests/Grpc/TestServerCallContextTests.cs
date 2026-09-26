@@ -1,239 +1,169 @@
 using Grpc.Core;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Core.Exceptions;
+using SharedKernel.Core.Extensions;
+using SharedKernel.Primitives.Errors;
+using SharedKernel.Primitives.Propagation;
+using SharedKernel.Primitives.Results;
 using SharedKernel.Execution.Context;
 using SharedKernel.Execution.Tenancy;
-using SharedKernel.Presentation.Authorization;
-using SharedKernel.Presentation.Grpc.Interceptors;
-using SharedKernel.Primitives.Clocks;
-using SharedKernel.Primitives.Errors;
-using SharedKernel.Security.Abstractions;
-using SharedKernel.Testing.Clocks;
-using SharedKernel.Testing.Security;
+using SharedKernel.Testing.Execution;
+using CallContext = SharedKernel.Testing.Grpc.TestServerCallContext;
 
 namespace SharedKernel.Testing.SelfTests.Grpc;
 
 /// <summary>
-/// Proves <see cref="SharedKernel.Testing.Grpc.TestServerCallContext"/> genuinely exercises all
-/// four shipped <c>SharedKernel.Presentation.Grpc</c> interceptors end to end, entirely in-process
-/// — no consuming domain has adopted this harness yet, so this self-test is the only behavioral
-/// proof today, per the SelfTests routing rule.
+/// Proves <see cref="CallContext"/> gives a service method or a service's own interceptor, run without a
+/// <c>Grpc.AspNetCore</c> host, what ASP.NET Core hosting would: inbound metadata, the <see cref="HttpContext"/>
+/// through <c>GetHttpContext()</c> with its services and endpoint metadata, and the call options — and that a service
+/// method ending its results with <c>SharedKernel.Core</c>'s <c>GetValueOrThrow()</c> can be unit-tested with it. Since
+/// P-562 <c>SharedKernel.Presentation.Grpc</c> has no public interceptors to drive (correlation, tenant and
+/// authorization run in the HTTP pipeline) and no result extensions of its own (R32), so these self-tests are the
+/// behavioral proof of the harness itself, per the testing-package routing rule.
 /// </summary>
 public sealed class TestServerCallContextTests
 {
-    private static readonly Microsoft.Extensions.Logging.Abstractions.NullLogger<GrpcExceptionInterceptor> ExceptionLogger =
-        Microsoft.Extensions.Logging.Abstractions.NullLogger<GrpcExceptionInterceptor>.Instance;
-
     [Fact]
-    public async Task GrpcCorrelationInterceptor_ReadsCorrelationIdFromMetadata_StoresInUserState()
+    public void CorrelationId_IsSentAsTheInboundCorrelationHeader()
     {
-        var context = SharedKernel.Testing.Grpc.TestServerCallContext.Create(correlationId: "corr-123");
-        var interceptor = new GrpcCorrelationInterceptor();
+        var context = CallContext.Create(correlationId: "corr-123");
 
-        await interceptor.UnaryServerHandler<string, string>("req", context, (_, c) => Task.FromResult("ok"));
-
-        Assert.Equal("corr-123", context.UserState[GrpcCorrelationInterceptor.ItemsKey]);
+        Assert.Equal("corr-123", context.RequestHeaders.GetValue(WellKnownHeaders.CorrelationId));
     }
 
     [Fact]
-    public async Task GrpcCorrelationInterceptor_NoCorrelationId_GeneratesOne()
+    public void WithoutACorrelationId_NoCorrelationHeaderIsSent()
     {
-        var context = SharedKernel.Testing.Grpc.TestServerCallContext.Create();
-        var interceptor = new GrpcCorrelationInterceptor();
+        var context = CallContext.Create(requestHeaders: new Metadata { { "x-custom", "value" } });
 
-        await interceptor.UnaryServerHandler<string, string>("req", context, (_, c) => Task.FromResult("ok"));
-
-        var generated = Assert.IsType<string>(context.UserState[GrpcCorrelationInterceptor.ItemsKey]);
-        Assert.False(string.IsNullOrWhiteSpace(generated));
+        Assert.Null(context.RequestHeaders.Get(WellKnownHeaders.CorrelationId));
+        Assert.Equal("value", context.RequestHeaders.GetValue("x-custom"));
     }
 
     [Fact]
-    public async Task GrpcTenantContextInterceptor_ResolvesTenantIdFromRequestServices()
+    public void ConfiguredServices_AreTheRequestServicesOfTheHttpContext()
     {
         var tenantId = new TenantId(Guid.NewGuid());
-        var context = SharedKernel.Testing.Grpc.TestServerCallContext.Create(
-            configureServices: services => services.AddSingleton<IRequestContext>(new SystemRequestContext([], "caller", tenantId)));
-        var interceptor = new GrpcTenantContextInterceptor(new RequestContextAccessor());
+        var context = CallContext.Create(
+            configureServices: services => services.AddSingleton<IRequestContext>(TestRequestContext.ForTenant(tenantId)));
 
-        TenantId? observed = null;
-        await interceptor.UnaryServerHandler<string, string>("req", context, (_, c) =>
+        var requestContext = context.GetHttpContext().RequestServices.GetRequiredService<IRequestContext>();
+
+        Assert.Equal(tenantId, requestContext.TenantId);
+    }
+
+    [Fact]
+    public void EndpointMetadata_IsReadableFromTheHttpContext()
+    {
+        var marker = new EndpointMarker("orders");
+        var context = CallContext.Create(endpointMetadata: [marker]);
+
+        var endpoint = context.GetHttpContext().GetEndpoint();
+
+        Assert.NotNull(endpoint);
+        Assert.Same(marker, endpoint.Metadata.GetMetadata<EndpointMarker>());
+    }
+
+    [Fact]
+    public void SuppliedHttpContext_IsUsedAsIs()
+    {
+        var httpContext = new DefaultHttpContext();
+
+        var context = CallContext.Create(
+            httpContext: httpContext,
+            configureServices: services => services.AddSingleton<IRequestContext>(TestRequestContext.ForTenant(new TenantId(Guid.NewGuid()))));
+
+        Assert.Same(httpContext, context.GetHttpContext());
+    }
+
+    [Fact]
+    public void CallOptions_AreApplied()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var deadline = new DateTime(2030, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
+        var context = CallContext.Create(
+            method: "/orders.Orders/Get",
+            host: "orders.internal",
+            deadline: deadline,
+            cancellationToken: cancellation.Token);
+
+        Assert.Equal("/orders.Orders/Get", context.Method);
+        Assert.Equal("orders.internal", context.Host);
+        Assert.Equal(deadline, context.Deadline);
+        Assert.Equal(cancellation.Token, context.CancellationToken);
+    }
+
+    [Fact]
+    public async Task ServiceMethod_UsingGetValueOrThrow_ThrowsTheExceptionOfItsError()
+    {
+        // Unit-tested without a host, a failed result is the exception of its error (Error.ToException()); in a host,
+        // the interceptor of SharedKernel.Presentation.Grpc turns that same exception into the rich google.rpc.Status.
+        var context = CallContext.Create(correlationId: "corr-7");
+
+        var exception = await Assert.ThrowsAsync<NotFoundException>(() => OrdersService.GetAsync("42", context));
+
+        Assert.Equal("order.not_found", exception.Error.Code);
+        Assert.Equal(ErrorType.NotFound, exception.Error.Type);
+    }
+
+    [Fact]
+    public async Task ServiceMethod_UsingGetValueOrThrow_ReturnsTheValue()
+    {
+        var context = CallContext.Create(
+            configureServices: services => services.AddSingleton<IRequestContext>(TestRequestContext.ForTenant(new TenantId(Guid.NewGuid()))));
+
+        var order = await OrdersService.GetAsync("7", context);
+
+        Assert.Equal("order-7", order);
+    }
+
+    [Fact]
+    public async Task ServerStreamingServiceMethod_WritesTrailersThroughTheContext()
+    {
+        var context = CallContext.Create(correlationId: "corr-9");
+        var writer = new RecordingStreamWriter<string>();
+
+        await OrdersService.StreamAsync(writer, context);
+
+        Assert.Equal(new[] { "a", "b" }, writer.Messages);
+        Assert.Equal("corr-9", context.ResponseTrailers.GetValue("x-echo-correlation"));
+    }
+
+    private sealed record EndpointMarker(string Name);
+
+    /// <summary>A consumer-style gRPC service written against the platform's public surface.</summary>
+    private static class OrdersService
+    {
+        public static Task<string> GetAsync(string id, ServerCallContext context)
         {
-            observed = RequestContextScope.Current?.TenantId;
-            return Task.FromResult("ok");
-        });
+            var result = id == "7"
+                && context.GetHttpContext().RequestServices.GetService<IRequestContext>() is not null
+                    ? Result<string>.Success($"order-{id}")
+                    : Result<string>.Failure(Error.NotFound("order.not_found", $"Order {id} was not found."));
 
-        Assert.Equal(tenantId, observed);
-    }
+            return Task.FromResult(result.GetValueOrThrow());
+        }
 
-    [Fact]
-    public async Task GrpcTenantContextInterceptor_NoRequestContextRegistered_RunsAnonymousWithACorrelationId_NeverRejects()
-    {
-        var context = SharedKernel.Testing.Grpc.TestServerCallContext.Create();
-        var interceptor = new GrpcTenantContextInterceptor(new RequestContextAccessor());
-
-        IRequestContext? observed = null;
-        var result = await interceptor.UnaryServerHandler<string, string>("req", context, (_, c) =>
+        public static async Task StreamAsync(IServerStreamWriter<string> writer, ServerCallContext context)
         {
-            observed = RequestContextScope.Current;
-            return Task.FromResult("ok");
-        });
-
-        // P-566: the call always runs inside a scope, anonymous here, so it still carries a correlation id.
-        Assert.NotNull(observed);
-        Assert.False(observed!.IsAuthenticated);
-        Assert.Null(observed.TenantId);
-        Assert.True(CorrelationIds.IsValid(observed.CorrelationId));
-        Assert.Equal("ok", result);
+            await writer.WriteAsync("a");
+            await writer.WriteAsync("b");
+            context.ResponseTrailers.Add("x-echo-correlation", context.RequestHeaders.GetValue(WellKnownHeaders.CorrelationId) ?? string.Empty);
+        }
     }
 
-    [Fact]
-    public async Task GrpcAuthorizationInterceptor_NoEndpointMetadata_AllowsUnconditionally()
+    private sealed class RecordingStreamWriter<T> : IServerStreamWriter<T>
     {
-        var context = SharedKernel.Testing.Grpc.TestServerCallContext.Create();
-        var interceptor = new GrpcAuthorizationInterceptor();
-
-        var result = await interceptor.UnaryServerHandler<string, string>("req", context, (_, c) => Task.FromResult("ok"));
-
-        Assert.Equal("ok", result);
-    }
-
-    [Fact]
-    public async Task GrpcAuthorizationInterceptor_RequireRole_MissingRole_ThrowsPermissionDenied()
-    {
-        var context = SharedKernel.Testing.Grpc.TestServerCallContext.Create(
-            configureServices: services => services.AddSingleton<IUserContext>(new FakeUserContext { Roles = [] }),
-            endpointMetadata: [new RequireRoleAttribute("Admin")]);
-        var interceptor = new GrpcAuthorizationInterceptor();
-
-        var exception = await Assert.ThrowsAsync<RpcException>(
-            async () => await interceptor.UnaryServerHandler<string, string>("req", context, (_, c) => Task.FromResult("ok")));
-
-        Assert.Equal(StatusCode.PermissionDenied, exception.StatusCode);
-    }
-
-    [Fact]
-    public async Task GrpcAuthorizationInterceptor_RequireRole_HasRole_Succeeds()
-    {
-        var context = SharedKernel.Testing.Grpc.TestServerCallContext.Create(
-            configureServices: services => services.AddSingleton<IUserContext>(new FakeUserContext { Roles = ["Admin"] }),
-            endpointMetadata: [new RequireRoleAttribute("Admin")]);
-        var interceptor = new GrpcAuthorizationInterceptor();
-
-        var result = await interceptor.UnaryServerHandler<string, string>("req", context, (_, c) => Task.FromResult("ok"));
-
-        Assert.Equal("ok", result);
-    }
-
-    [Fact]
-    public async Task GrpcAuthorizationInterceptor_RequireFreshAuthentication_StaleAuth_Rejected()
-    {
-        var clock = new FakeClock();
-        var userContext = new FakeUserContext();
-        var context = SharedKernel.Testing.Grpc.TestServerCallContext.Create(
-            configureServices: services =>
-            {
-                services.AddSingleton<IUserContext>(userContext);
-                services.AddSingleton<IClock>(clock);
-            },
-            endpointMetadata: [new RequireFreshAuthenticationAttribute(30)]);
-        var interceptor = new GrpcAuthorizationInterceptor();
-
-        var exception = await Assert.ThrowsAsync<RpcException>(
-            async () => await interceptor.UnaryServerHandler<string, string>("req", context, (_, c) => Task.FromResult("ok")));
-
-        Assert.Equal(StatusCode.PermissionDenied, exception.StatusCode);
-    }
-
-    [Fact]
-    public async Task GrpcExceptionInterceptor_SharedKernelException_MapsToRpcException()
-    {
-        var context = SharedKernel.Testing.Grpc.TestServerCallContext.Create();
-        var interceptor = new GrpcExceptionInterceptor(ExceptionLogger, new FakeHostEnvironment());
-
-        var exception = await Assert.ThrowsAsync<RpcException>(async () =>
-            await interceptor.UnaryServerHandler<string, string>(
-                "req",
-                context,
-                (_, c) => throw new ValidationException([Error.Validation("field.invalid", "Field is invalid.")])));
-
-        Assert.Equal(StatusCode.InvalidArgument, exception.StatusCode);
-    }
-
-    [Fact]
-    public async Task GrpcExceptionInterceptor_UnknownException_MapsToInternal()
-    {
-        var context = SharedKernel.Testing.Grpc.TestServerCallContext.Create();
-        var interceptor = new GrpcExceptionInterceptor(ExceptionLogger, new FakeHostEnvironment());
-
-        var exception = await Assert.ThrowsAsync<RpcException>(async () =>
-            await interceptor.UnaryServerHandler<string, string>(
-                "req",
-                context,
-                (_, c) => throw new InvalidOperationException("boom")));
-
-        Assert.Equal(StatusCode.Internal, exception.StatusCode);
-    }
-
-    [Fact]
-    public async Task GrpcExceptionInterceptor_ServerStreamingShape_AlsoMapsExceptions()
-    {
-        // Proves the harness supports non-unary call shapes too (D-228) — the constructed
-        // ServerCallContext is generic-shape-agnostic.
-        var context = SharedKernel.Testing.Grpc.TestServerCallContext.Create();
-        var interceptor = new GrpcExceptionInterceptor(ExceptionLogger, new FakeHostEnvironment());
-
-        var exception = await Assert.ThrowsAsync<RpcException>(async () =>
-            await interceptor.ServerStreamingServerHandler<string, string>(
-                "req",
-                NullServerStreamWriter<string>.Instance,
-                context,
-                (_, _, c) => throw new InvalidOperationException("boom")));
-
-        Assert.Equal(StatusCode.Internal, exception.StatusCode);
-    }
-
-    [Fact]
-    public async Task Create_CorrelationIdAndTenantAndAuthorization_AllComposeTogether()
-    {
-        var tenantId = new TenantId(Guid.NewGuid());
-        var context = SharedKernel.Testing.Grpc.TestServerCallContext.Create(
-            correlationId: "corr-xyz",
-            configureServices: services =>
-            {
-                services.AddSingleton<IRequestContext>(new SystemRequestContext([], "caller", tenantId));
-                services.AddSingleton<IUserContext>(new FakeUserContext { Roles = ["Admin"] });
-            },
-            endpointMetadata: [new RequireRoleAttribute("Admin")]);
-
-        await new GrpcCorrelationInterceptor().UnaryServerHandler<string, string>("req", context, (_, c) => Task.FromResult("ok"));
-        TenantId? observedTenant = null;
-        await new GrpcTenantContextInterceptor(new RequestContextAccessor()).UnaryServerHandler<string, string>("req", context, (_, c) =>
-        {
-            observedTenant = RequestContextScope.Current?.TenantId;
-            return Task.FromResult("ok");
-        });
-        var result = await new GrpcAuthorizationInterceptor().UnaryServerHandler<string, string>("req", context, (_, c) => Task.FromResult("ok"));
-
-        Assert.Equal("corr-xyz", context.UserState[GrpcCorrelationInterceptor.ItemsKey]);
-        Assert.Equal(tenantId, observedTenant);
-        Assert.Equal("ok", result);
-    }
-
-    private sealed class FakeHostEnvironment : Microsoft.Extensions.Hosting.IHostEnvironment
-    {
-        public string EnvironmentName { get; set; } = Microsoft.Extensions.Hosting.Environments.Production;
-        public string ApplicationName { get; set; } = "SelfTests";
-        public string ContentRootPath { get; set; } = AppContext.BaseDirectory;
-        public Microsoft.Extensions.FileProviders.IFileProvider ContentRootFileProvider { get; set; } =
-            new Microsoft.Extensions.FileProviders.NullFileProvider();
-    }
-
-    private sealed class NullServerStreamWriter<T> : IServerStreamWriter<T>
-    {
-        public static readonly NullServerStreamWriter<T> Instance = new();
+        public List<T> Messages { get; } = [];
 
         public WriteOptions? WriteOptions { get; set; }
 
-        public Task WriteAsync(T message) => Task.CompletedTask;
+        public Task WriteAsync(T message)
+        {
+            Messages.Add(message);
+            return Task.CompletedTask;
+        }
     }
 }

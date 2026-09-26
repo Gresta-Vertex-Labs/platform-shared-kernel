@@ -32,7 +32,7 @@ namespace SharedKernel.Application.Pipeline.Logging;
 /// <see cref="ILoggableRequest{TResponse}"/> for the opt-in mechanism.
 /// </para>
 /// </remarks>
-public sealed partial class LoggingBehavior<TRequest, TResponse>(
+internal sealed partial class LoggingBehavior<TRequest, TResponse>(
     ILogger<TRequest> logger,
     IOptions<ApplicationLoggingOptions> options)
     : IPipelineBehavior<TRequest, TResponse>

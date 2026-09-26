@@ -1,0 +1,10 @@
+#nullable enable
+SharedKernel.Presentation.Grpc.GrpcErrorCodes
+SharedKernel.Presentation.Grpc.GrpcHostBuilderExtensions
+SharedKernel.Presentation.Grpc.SharedKernelGrpcOptions
+SharedKernel.Presentation.Grpc.SharedKernelGrpcOptions.ErrorDomain.get -> string!
+SharedKernel.Presentation.Grpc.SharedKernelGrpcOptions.ErrorDomain.set -> void
+SharedKernel.Presentation.Grpc.SharedKernelGrpcOptions.SharedKernelGrpcOptions() -> void
+const SharedKernel.Presentation.Grpc.GrpcErrorCodes.MoreFieldViolations = "grpc.more_field_violations" -> string!
+static SharedKernel.Presentation.Grpc.GrpcHostBuilderExtensions.AddSharedKernelGrpc(this Microsoft.Extensions.Hosting.IHostApplicationBuilder! builder, System.Action<SharedKernel.Presentation.Grpc.SharedKernelGrpcOptions!>? configure = null) -> Grpc.AspNetCore.Server.IGrpcServerBuilder!
+static SharedKernel.Presentation.Grpc.SharedKernelGrpcOptions.SectionName.get -> string!

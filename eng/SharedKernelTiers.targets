@@ -45,7 +45,14 @@
     must not be reported as the shortcut edge (Auditing -> Npgsql).
   -->
   <ItemGroup>
+    <!--
+      A reference with ReferenceOutputAssembly="false" is not a dependency: it only orders the build (or loads a
+      Roslyn component through OutputItemType="Analyzer") and never reaches the referencing assembly or its package's
+      dependencies. The one such edge is SharedKernel.Presentation.WebApi -> SharedKernel.Presentation.WebApi.Generators
+      (Tooling), whose endpoint-module generator WebApi packs under analyzers/dotnet/cs (P-563 P2, merged in P-579).
+    -->
     <_SkDirectProjectReference Include="@(ProjectReference)" />
+    <_SkDirectProjectReference Remove="@(ProjectReference->WithMetadataValue('ReferenceOutputAssembly', 'false'))" />
   </ItemGroup>
 
   <!-- Queried by referencing projects. Evaluation-only: builds nothing. -->

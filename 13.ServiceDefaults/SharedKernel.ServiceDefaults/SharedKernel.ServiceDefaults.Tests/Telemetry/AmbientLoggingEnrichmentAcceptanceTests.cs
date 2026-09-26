@@ -70,6 +70,34 @@ public sealed class AmbientLoggingEnrichmentAcceptanceTests
         Assert.Contains(captured, kv => kv.Key == WellKnownBaggageKeys.CorrelationId && Equals(kv.Value, "corr-e2e-002"));
     }
 
+    [Fact]
+    public async Task CallersTenantBaggage_IsReplacedByTheResolvedTenant_BeforeItReachesALogRecord()
+    {
+        // P-562 X2. TenantId is one of the two keys BaggageLogRecordProcessor copies, and a caller can send it (hosting
+        // adds inbound baggage items to the request activity). Tenant resolution replaces the item — with the resolved
+        // tenant, or removed when none resolves — so the caller's value never reaches a log record.
+        using var activity = new Activity("http-request").Start();
+        activity.AddBaggage(WellKnownBaggageKeys.TenantId, "victim-tenant");
+        activity.AddBaggage("SubjectId", "admin");
+
+        var context = new DefaultHttpContext();
+        var options = Microsoft.Extensions.Options.Options.Create(
+            new TenantResolutionOptions { StrategyOrder = [TenantResolutionStrategyNames.Header] });
+        var middleware = new TenantResolutionMiddleware(
+            _ => Task.CompletedTask,
+            [new HeaderTenantResolutionStrategy()],
+            options,
+            NullLogger<TenantResolutionMiddleware>.Instance);
+
+        await middleware.InvokeAsync(context);
+
+        var captured = await EmitAndCaptureAsync(logger => logger.LogInformation("request handled"));
+
+        Assert.DoesNotContain(captured, kv => kv.Key == WellKnownBaggageKeys.TenantId);
+        Assert.DoesNotContain(captured, kv => Equals(kv.Value, "victim-tenant"));
+        Assert.DoesNotContain(captured, kv => kv.Key == "SubjectId");
+    }
+
     private static async Task<IReadOnlyList<KeyValuePair<string, object?>>> EmitAndCaptureAsync(
         Action<ILogger> emit)
     {

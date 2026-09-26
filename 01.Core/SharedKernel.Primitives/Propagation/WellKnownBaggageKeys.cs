@@ -25,10 +25,18 @@ namespace SharedKernel.Primitives.Propagation;
 /// </para>
 /// <para>
 /// <b>These keys surface as log property names.</b> <c>13.ServiceDefaults</c>'
-/// <c>BaggageLogRecordProcessor</c> copies baggage onto log records generically, by enumeration
-/// rather than by known key, so whatever string is used here becomes the property name operators
-/// query on. That is why changing a value is an operational breaking change and not a tidy-up, and
-/// it is the reason <see cref="TenantId"/> looks inconsistent with its tag-key counterpart.
+/// <c>BaggageLogRecordProcessor</c> copies these baggage items onto log records under their own keys,
+/// so whatever string is used here becomes the property name operators query on. That is why
+/// changing a value is an operational breaking change and not a tidy-up, and it is the reason
+/// <see cref="TenantId"/> looks inconsistent with its tag-key counterpart.
+/// </para>
+/// <para>
+/// <b>Baggage is caller input.</b> A caller can send W3C <c>baggage</c> carrying any key, these two
+/// included, so no package reads a caller's identity from baggage. The log processor copies exactly
+/// the keys of this registry — it retypes them, because its package references none, and a test pins
+/// them here — and relies on platform middleware replacing each one with
+/// <see cref="System.Diagnostics.Activity.SetBaggage"/> (P-562 X2). A key added here reaches log
+/// records only once <c>13.ServiceDefaults</c> adds it too.
 /// </para>
 /// <para>
 /// <b>Why <c>01.Core</c> and not <c>04.Contracts</c>:</b> see <see cref="WellKnownHeaders"/>, whose
@@ -57,15 +65,16 @@ public static class WellKnownBaggageKeys
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Written by <c>13.ServiceDefaults.MultiTenancy.TenantResolutionMiddleware</c> and surfaced
-    /// onto every subsequent log record by <c>13.ServiceDefaults.BaggageLogRecordProcessor</c>,
-    /// which copies baggage generically rather than by known key.
+    /// Written by <c>13.ServiceDefaults.MultiTenancy.TenantResolutionMiddleware</c>, which replaces
+    /// any item a caller sent under this key, and surfaced onto every subsequent log record by
+    /// <c>13.ServiceDefaults.BaggageLogRecordProcessor</c>. Diagnostics only: the tenant a request
+    /// acts on comes from its resolved identity, never from this baggage item.
     /// </para>
     /// <para>
     /// <b>Why this one is PascalCase while <see cref="CorrelationId"/> is dotted-lowercase.</b>
     /// It is not an oversight, and it must not be "corrected" to <c>"tenant.id"</c> for symmetry
-    /// with <see cref="WellKnownTagKeys.TenantId"/>. Because the baggage processor copies baggage
-    /// generically, the key string becomes the emitted log property name verbatim — so renaming it
+    /// with <see cref="WellKnownTagKeys.TenantId"/>. Because the baggage processor copies the item
+    /// under its own key, the key string becomes the emitted log property name verbatim — so renaming it
     /// silently renames a field that deployed dashboards, saved searches, and alert rules filter
     /// on. That is an operational breaking change for consumers, decided by whoever owns their log
     /// pipeline, not something to fold into a constants registry. This constant therefore records

@@ -1,5 +1,9 @@
+using SharedKernel.Application.Mediator.MediatR;
+using SharedKernel.Application.Pipeline;
 using SharedKernel.Idempotency.Abstractions;
 using SharedKernel.Messaging.MassTransit.Extensions;
+using SharedKernel.Presentation.WebApi;
+using SharedKernel.Primitives.Clocks;
 using SharedKernel.ServiceDefaults.Extensions;
 using SharedKernel.ServiceDefaults.HealthChecks;
 using SharedKernel.ServiceDefaults.Probes;
@@ -13,6 +17,9 @@ var builder = WebApplication.CreateBuilder(args);
 builder.AddServiceDefaults();
 builder.WithMessagingTelemetry();
 
+// 01.Core — IClock is the only sanctioned time source; analyzer SK0001 forbids DateTime.UtcNow.
+builder.Services.AddSingleton<IClock, SystemClock>();
+
 // The sample's own state.
 builder.Services.AddSingleton<ShipmentProjection>();
 builder.Services.AddSingleton<FaultLog>();
@@ -23,6 +30,10 @@ builder.Services.AddSingleton<FaultLog>();
 // resolves the last one registered.
 builder.Services.AddDemoIdentity();
 builder.Services.AddSharedKernelRequestContext();
+
+// 05.Application — MediatR behind the kernel's ISender, the handlers of this assembly (Features/) and the always-on behaviors (tracing,
+// logging, metrics, authorization, validation). The endpoints send commands and queries; the handlers publish, send and schedule.
+builder.Services.AddSharedKernelApplication(typeof(Program).Assembly, app => app.UseMediatR());
 
 // The idempotency store WithIdempotency() requires. In this process only — see the type's remarks.
 builder.Services.AddIdempotencyStore<InMemoryIdempotencyStore>(IdempotencyPurpose.Message, ServiceLifetime.Singleton);
@@ -63,18 +74,23 @@ builder.Services
 // registered the bus readiness probe, and AddSharedKernelReadiness maps it.
 builder.Services.AddHealthChecks().AddSharedKernelReadiness();
 
-builder.Services.AddProblemDetails();
+// 14.Presentation — the HTTP boundary in one call (SharedKernel:Presentation:WebApi): every failed Result and every
+// exception becomes an RFC 9457 problem (messaging.unavailable a 503); correlation ids, security headers, limits.
+builder.AddSharedKernelWebApi();
 
 var app = builder.Build();
 
 // First in the pipeline: the request's X-Correlation-Id and its request context, so the caller and the
-// correlation id are in scope for every later middleware, every publish and every response.
+// correlation id are in scope for every later middleware, every publish and every response. Then, before any
+// endpoint: security headers, the exception handler, problem bodies and routing.
 app.UseSharedKernelRequestContext();
-app.UseExceptionHandler();
+app.UseSharedKernelWebApi();
+
 app.MapDefaultHealthCheckEndpoints();
 app.Services.GetRequiredService<StartupGate>().MarkReady();
 
-app.MapShipmentEndpoints();
+// Every IEndpointModule of this assembly, found at compile time by the generator the WebApi package ships.
+app.MapEndpoints();
 
 await app.RunAsync();
 

@@ -130,9 +130,16 @@ public sealed class TenantResolutionMiddleware(
 
         // Ambient enrichment: make TenantId available to every log record produced for the
         // remainder of the request via SharedKernel.ServiceDefaults's BaggageLogRecordProcessor.
-        if (resolvedTenantId is { } tenant)
+        // The item is always replaced: a caller can send a TenantId baggage item itself (W3C baggage), and one that
+        // survived an unresolved request would be copied onto every log record as if it were the tenant (P-562 X2,
+        // merged in P-579). No tenant removes the item rather than writing a sentinel.
+        if (Activity.Current is { } activity)
         {
-            Activity.Current?.SetBaggage(WellKnownBaggageKeys.TenantId, tenant.ToString());
+            while (activity.GetBaggageItem(WellKnownBaggageKeys.TenantId) is not null)
+                activity.SetBaggage(WellKnownBaggageKeys.TenantId, null);
+
+            if (resolvedTenantId is { } tenant)
+                activity.SetBaggage(WellKnownBaggageKeys.TenantId, tenant.ToString());
         }
 
         var inner = RequestContextScope.Current

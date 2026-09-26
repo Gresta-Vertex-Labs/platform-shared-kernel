@@ -281,7 +281,9 @@ public sealed class ConsumerVerifyTests
         await using (var command = raw.CreateCommand("SELECT customer_email FROM orders"))
             Assert.DoesNotContain("ada@example.com", (string)(await command.ExecuteScalarAsync())!);
 
-        // Read back decrypted, with its version (ETag); a stale If-Match is a conflict carrying the current version.
+        // Read back decrypted, with its version (ETag): an opaque token, sealed with a subkey of the registered key
+        // provider. The current version is accepted; the same version once someone else changed the order is a conflict
+        // carrying the current one.
         EntityVersion version;
         await using (var scope = servicesA.CreateAsyncScope())
         {
@@ -289,10 +291,22 @@ public sealed class ConsumerVerifyTests
             var order = (await repository.GetByIdAsync(id))!;
             Assert.Equal("ada@example.com", order.CustomerEmail);
             version = ConcurrencyVersion.Get(scope.ServiceProvider.GetRequiredService<OrdersDbContext>(), order);
+            Assert.Equal(28, version.ToString().Length);
 
             order.Total = 50m;
-            await repository.UpdateAsync(order, EntityVersion.Parse($"W/\"{version.ToRowVersion() + 1}\"")); // a stale If-Match header
-            await Assert.ThrowsAsync<ConflictException>(() => scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync());
+            await repository.UpdateAsync(order, EntityVersion.Parse($"\"{version}\"")); // the client's If-Match
+            await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync();
+        }
+
+        await using (var scope = servicesA.CreateAsyncScope())
+        {
+            var repository = scope.ServiceProvider.GetRequiredService<IRepository<Order, OrderId>>();
+            var order = (await repository.GetByIdAsync(id))!;
+            order.Total = 60m;
+            await repository.UpdateAsync(order, EntityVersion.Parse($"W/\"{version}\"")); // a stale If-Match header
+            var conflict = await Assert.ThrowsAsync<ConflictException>(() => scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync());
+            Assert.True(ConcurrencyVersion.TryGetCurrentVersion(conflict, out var current));
+            Assert.NotEqual(version, current);
         }
 
         // Tenant B sees nothing — neither through the EF filter nor through the database policy.

@@ -13,7 +13,8 @@ namespace SharedKernel.Analyzers.Diagnostics;
 /// <c>"SharedKernel.Application"</c> prefix rather than an exact assembly identity comparison) so
 /// analyzer test fixtures can declare a fixture-local marker interface inside a matching-namespace
 /// code block within the same compilation, with no <c>ProjectReference</c> to the real
-/// <c>SharedKernel.Application</c>/<c>SharedKernel.Application.Pipeline</c> assemblies required.
+/// <c>SharedKernel.Application</c> assembly (namespaces <c>SharedKernel.Application.Messaging</c>,
+/// <c>.Caching</c>, <c>.Idempotency</c>, …) required.
 /// </remarks>
 internal static class MarkerInterfaceHelpers
 {

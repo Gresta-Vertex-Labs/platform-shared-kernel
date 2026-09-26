@@ -1,12 +1,13 @@
-using System.ComponentModel;
+using System.Buffers.Binary;
+using System.Buffers.Text;
 using System.Diagnostics.CodeAnalysis;
-using System.Globalization;
+using System.Text.Json.Serialization;
 
 namespace SharedKernel.Persistence.Abstractions.Repositories;
 
 /// <summary>
-/// The stored version of an aggregate, for optimistic concurrency over HTTP (<c>ETag</c> / <c>If-Match</c>).
-/// Opaque: send it to the client as text and parse what comes back; never compute with it.
+/// The version of an aggregate for optimistic concurrency over HTTP (<c>ETag</c> / <c>If-Match</c>): an opaque,
+/// sealed token.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -16,34 +17,66 @@ namespace SharedKernel.Persistence.Abstractions.Repositories;
 /// or <c>DeleteAsync(aggregate, expected)</c>.
 /// </para>
 /// <para>
-/// The representation is the provider's row version (PostgreSQL's <c>xmin</c>) and may change between
-/// providers; <see cref="None"/> is the version of an aggregate that was never saved.
+/// <strong>Opaque by construction.</strong> A version holds only the token its persistence provider sealed, never a
+/// database value. <c>SharedKernel.Persistence.EfCore</c> seals PostgreSQL's <c>xmin</c> together with the identity
+/// of its aggregate under a key derived from the service's own key, so the token reveals nothing about the database
+/// (in particular not how many transactions it committed) to anyone without that key. <see cref="ToString()"/>,
+/// string interpolation, <see cref="TryFormat"/> and JSON can therefore only ever produce the token; there is no way
+/// to put a raw row version on the wire through this type.
+/// </para>
+/// <para>
+/// <strong>Parsing checks the shape only</strong> — 28 characters of unpadded Base64Url in the version-1 format. A
+/// plain number is not a version. Whether a well-formed token is a version of <em>the aggregate being changed</em> is
+/// decided when it is used (<c>UpdateAsync</c>/<c>DeleteAsync</c>): a token of another aggregate, an altered token or
+/// one sealed with a key the service does not know is treated as a stale version — a <c>ConflictException</c>
+/// (<c>persistence.concurrency_conflict</c>), which <c>14.Presentation</c> answers with 412 when the request carries
+/// <c>If-Match</c>.
+/// </para>
+/// <para>
+/// <strong>Deterministic:</strong> the same version of the same aggregate always yields the same token while the
+/// service's key is unchanged, so <c>If-None-Match</c> works. A key rotation changes every token once.
+/// </para>
+/// <para>
+/// <see cref="None"/> is the version of an aggregate that was never saved. It has no text form
+/// (<see cref="ToString()"/> returns an empty string, JSON <c>null</c>), and no text parses to it.
 /// </para>
 /// </remarks>
+[JsonConverter(typeof(EntityVersionJsonConverter))]
 public readonly struct EntityVersion : IEquatable<EntityVersion>, ISpanFormattable, IParsable<EntityVersion>
 {
-    private readonly ulong _value;
+    /// <summary>The length of a version's text: 21 bytes as unpadded Base64Url.</summary>
+    private const int TextLength = 28;
 
-    private EntityVersion(ulong value) => _value = value;
+    /// <summary>The length of a sealed token: the format byte and the provider's 20 bytes.</summary>
+    private const int TokenLength = 21;
 
-    /// <summary>Gets the version of an aggregate that was never saved.</summary>
+    /// <summary>The first byte of every version-1 token.</summary>
+    private const byte FormatV1 = 0x01;
+
+    // The 21 token bytes, kept as values so the struct stays a plain, allocation-free value:
+    // [format][head: 4 bytes][body: 16 bytes]. A default instance (format 0) is None.
+    private readonly byte _format;
+    private readonly uint _head;
+    private readonly ulong _body0;
+    private readonly ulong _body1;
+
+    private EntityVersion(ReadOnlySpan<byte> token)
+    {
+        _format = token[0];
+        _head = BinaryPrimitives.ReadUInt32BigEndian(token[1..]);
+        _body0 = BinaryPrimitives.ReadUInt64BigEndian(token[5..]);
+        _body1 = BinaryPrimitives.ReadUInt64BigEndian(token[13..]);
+    }
+
+    /// <summary>Gets the version of an aggregate that was never saved. It has no text form.</summary>
     public static EntityVersion None => default;
-
-    /// <summary>Creates a version from a provider's raw row version. For persistence providers, not application code.</summary>
-    /// <param name="rowVersion">The provider's row version.</param>
-    /// <returns>The version.</returns>
-    [EditorBrowsable(EditorBrowsableState.Never)]
-    public static EntityVersion FromRowVersion(ulong rowVersion) => new(rowVersion);
-
-    /// <summary>Returns the provider's raw row version. For persistence providers, not application code.</summary>
-    /// <returns>The raw row version.</returns>
-    [EditorBrowsable(EditorBrowsableState.Never)]
-    public ulong ToRowVersion() => _value;
 
     /// <summary>Parses the text form (<see cref="ToString()"/>), optionally quoted and with a weak <c>W/</c> prefix.</summary>
     /// <param name="value">The text, such as an <c>If-Match</c> header value.</param>
     /// <param name="version">The parsed version.</param>
-    /// <returns><see langword="true"/> when <paramref name="value"/> is a version.</returns>
+    /// <returns>
+    /// <see langword="true"/> when <paramref name="value"/> has the shape of a version. A plain number never does.
+    /// </returns>
     public static bool TryParse([NotNullWhen(true)] string? value, out EntityVersion version) =>
         TryParse(value, provider: null, out version);
 
@@ -54,20 +87,23 @@ public readonly struct EntityVersion : IEquatable<EntityVersion>, ISpanFormattab
         if (s is null)
             return false;
 
-        var span = s.AsSpan().Trim();
-        if (span.StartsWith("W/", StringComparison.Ordinal))
-            span = span[2..];
+        var text = s.AsSpan().Trim();
+        if (text.StartsWith("W/", StringComparison.Ordinal))
+            text = text[2..];
 
-        if (span.Length >= 2 && span[0] == '"' && span[^1] == '"')
-            span = span[1..^1];
+        if (text.Length >= 2 && text[0] == '"' && text[^1] == '"')
+            text = text[1..^1];
 
-        if (span.IsEmpty || span[0] is '+' or '-')
+        // Exactly 28 Base64Url characters: 21 bytes encode without padding and without spare bits, so every token has
+        // exactly one text form. IsValid is checked first because TryDecodeFromChars throws on a foreign character.
+        if (text.Length != TextLength || !Base64Url.IsValid(text, out var decodedLength) || decodedLength != TokenLength)
             return false;
 
-        if (!ulong.TryParse(span, NumberStyles.None, CultureInfo.InvariantCulture, out var value))
+        Span<byte> token = stackalloc byte[TokenLength];
+        if (!Base64Url.TryDecodeFromChars(text, token, out var written) || written != TokenLength || token[0] != FormatV1)
             return false;
 
-        result = new EntityVersion(value);
+        result = new EntityVersion(token);
         return true;
     }
 
@@ -75,7 +111,7 @@ public readonly struct EntityVersion : IEquatable<EntityVersion>, ISpanFormattab
     public static EntityVersion Parse(string s, IFormatProvider? provider) =>
         TryParse(s, provider, out var version)
             ? version
-            : throw new FormatException($"'{s}' is not an entity version.");
+            : throw new FormatException("The value is not an entity version.");
 
     /// <summary>Parses the text form; see <see cref="TryParse(string?, out EntityVersion)"/>.</summary>
     /// <param name="value">The text.</param>
@@ -83,25 +119,53 @@ public readonly struct EntityVersion : IEquatable<EntityVersion>, ISpanFormattab
     /// <exception cref="FormatException"><paramref name="value"/> is not a version.</exception>
     public static EntityVersion Parse(string value) => Parse(value, provider: null);
 
-    /// <summary>Returns the text form, safe to put between the quotes of an <c>ETag</c>.</summary>
+    /// <summary>Returns the token text, safe to put between the quotes of an <c>ETag</c>; empty for <see cref="None"/>.</summary>
     /// <returns>The version as text.</returns>
-    public override string ToString() => _value.ToString(CultureInfo.InvariantCulture);
+    public override string ToString()
+    {
+        if (_format == 0)
+            return string.Empty;
+
+        Span<char> text = stackalloc char[TextLength];
+        _ = TryFormat(text, out var written, default, provider: null);
+        return new string(text[..written]);
+    }
 
     /// <inheritdoc />
     public string ToString(string? format, IFormatProvider? formatProvider) => ToString();
 
     /// <inheritdoc />
-    public bool TryFormat(Span<char> destination, out int charsWritten, ReadOnlySpan<char> format, IFormatProvider? provider) =>
-        _value.TryFormat(destination, out charsWritten, default, CultureInfo.InvariantCulture);
+    public bool TryFormat(Span<char> destination, out int charsWritten, ReadOnlySpan<char> format, IFormatProvider? provider)
+    {
+        if (_format == 0)
+        {
+            charsWritten = 0;
+            return true;
+        }
+
+        if (destination.Length < TextLength)
+        {
+            charsWritten = 0;
+            return false;
+        }
+
+        Span<byte> token = stackalloc byte[TokenLength];
+        token[0] = _format;
+        BinaryPrimitives.WriteUInt32BigEndian(token[1..], _head);
+        BinaryPrimitives.WriteUInt64BigEndian(token[5..], _body0);
+        BinaryPrimitives.WriteUInt64BigEndian(token[13..], _body1);
+        return Base64Url.TryEncodeToChars(token, destination, out charsWritten);
+    }
 
     /// <inheritdoc />
-    public bool Equals(EntityVersion other) => _value == other._value;
+    public bool Equals(EntityVersion other) =>
+        _format == other._format && _head == other._head && _body0 == other._body0 && _body1 == other._body1;
 
     /// <inheritdoc />
     public override bool Equals(object? obj) => obj is EntityVersion other && Equals(other);
 
     /// <inheritdoc />
-    public override int GetHashCode() => _value.GetHashCode();
+    public override int GetHashCode() => HashCode.Combine(_format, _head, _body0, _body1);
 
     /// <summary>Compares two versions for equality.</summary>
     /// <param name="left">The first version.</param>

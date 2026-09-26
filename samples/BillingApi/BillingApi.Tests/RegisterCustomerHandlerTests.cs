@@ -1,9 +1,10 @@
-using SharedKernel.Execution.Tenancy;
-using BillingApi.Application;
 using BillingApi.Domain;
+using BillingApi.Features;
+using BillingApi.Features.Customers;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Execution.Transactions;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence.Testing;
 using SharedKernel.Testing.Execution;
 using SharedKernel.Primitives.Clocks;

@@ -21,6 +21,10 @@
     <PackageReference Include="SharedKernel.ServiceDefaults" />
     <!-- 13.ServiceDefaults.Security: UseSharedKernelRequestContext() - the request context and its X-Correlation-Id -->
     <PackageReference Include="SharedKernel.ServiceDefaults.Security" />
+    <!-- 05.Application: the endpoints send commands and queries through the kernel ISender; the pipeline and its
+         MediatR adapter are Host packages -->
+    <PackageReference Include="SharedKernel.Application.Pipeline" />
+    <PackageReference Include="SharedKernel.Application.Mediator.MediatR" />
     <!-- 14.Presentation: Result -> ProblemDetails -->
     <PackageReference Include="SharedKernel.Presentation.WebApi" />
   </ItemGroup>

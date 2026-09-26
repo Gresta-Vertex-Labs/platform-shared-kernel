@@ -36,7 +36,7 @@ namespace SharedKernel.Application.Pipeline.Transaction;
 /// (<see cref="ICommandScope.IsNested"/>) with no active transaction calls <c>next()</c> directly.
 /// </para>
 /// </remarks>
-public sealed class TransactionBehavior<TRequest, TResponse>(IUnitOfWork unitOfWork, ICommandScope commandScope)
+internal sealed class TransactionBehavior<TRequest, TResponse>(IUnitOfWork unitOfWork, ICommandScope commandScope)
     : IPipelineBehavior<TRequest, TResponse>
     where TRequest : ICommandBase, IRequest<TResponse>
 {

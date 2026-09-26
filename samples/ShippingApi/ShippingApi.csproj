@@ -24,6 +24,10 @@
     <PackageReference Include="SharedKernel.Execution" />
     <!-- 18.Idempotency: IIdempotencyStore, which InMemoryIdempotencyStore implements for IdempotencyPurpose.Message. -->
     <PackageReference Include="SharedKernel.Idempotency.Abstractions" />
+    <!-- 05.Application: the endpoints send commands and queries through the kernel ISender; the pipeline and its
+         MediatR adapter are Host packages. -->
+    <PackageReference Include="SharedKernel.Application.Pipeline" />
+    <PackageReference Include="SharedKernel.Application.Mediator.MediatR" />
     <!-- 13.ServiceDefaults: host, messaging telemetry, and AddSharedKernelReadiness (the bus probe). -->
     <PackageReference Include="SharedKernel.ServiceDefaults" />
     <!-- 13.ServiceDefaults.Security: AddSharedKernelRequestContext() / UseSharedKernelRequestContext() - the caller and the correlation id. -->

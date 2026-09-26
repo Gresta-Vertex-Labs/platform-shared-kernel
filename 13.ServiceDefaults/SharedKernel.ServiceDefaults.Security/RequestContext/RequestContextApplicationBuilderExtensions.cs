@@ -18,25 +18,30 @@ public static class RequestContextApplicationBuilderExtensions
     /// </exception>
     /// <remarks>
     /// <para>
-    /// <b>Middleware order.</b> Call it <b>first</b>, before <c>UseExceptionHandler()</c>, so the correlation id is
-    /// in the log context of every later middleware and on every response, error responses included:
+    /// <b>Middleware order.</b> Call it <b>first</b>, before the exception handler, so inbound baggage is refused
+    /// before anything reads it, and the correlation id is in the log context of every later middleware and on every
+    /// response, error responses included. With <c>SharedKernel.Presentation.WebApi</c>:
     /// </para>
     /// <code>
-    /// app.UseSharedKernelRequestContext();          // correlation id + the request's context scope
-    /// app.UseSharedKernelSecurityHeaders();
-    /// app.UseExceptionHandler();
-    /// app.UseAuthentication();
-    /// app.UseMiddleware&lt;TenantResolutionMiddleware&gt;(); // optional: refines the tenant in an inner scope
-    /// app.UseAuthorization();
+    /// app.UseSharedKernelRequestContext();   // inbound baggage refused, correlation id, the request's context scope
+    /// app.UseSharedKernelWebApi(pipeline =&gt; pipeline
+    ///     .BeforeAuthorization(a =&gt; a.UseMiddleware&lt;TenantResolutionMiddleware&gt;()));   // optional
+    /// app.MapEndpoints();
     /// </code>
+    /// <para>
+    /// Without it: <c>UseSharedKernelRequestContext()</c>, <c>UseExceptionHandler()</c>, <c>UseAuthentication()</c>,
+    /// the optional <c>TenantResolutionMiddleware</c> (it refines the tenant in an inner scope),
+    /// <c>UseAuthorization()</c>. gRPC and SignalR requests pass through the same pipeline and get the same scope.
+    /// </para>
     /// <para>
     /// Placing it before <c>UseAuthentication()</c> is safe: the caller is read from the request's
     /// <c>IUserContext</c> only when something first asks, which is after authentication has run. Nothing between
     /// this middleware and <c>UseAuthentication()</c> should read the caller.
     /// </para>
     /// <para>
-    /// It replaces <c>SharedKernel.Presentation.WebApi</c>'s former <c>UseSharedKernelCorrelationId()</c>, which it
-    /// absorbs: one middleware now owns both the correlation id and the request's context.
+    /// It replaces <c>SharedKernel.Presentation.WebApi</c>'s former correlation-id middleware and inbound-baggage step,
+    /// which it absorbs: one middleware now owns the correlation id, the refusal of caller baggage
+    /// (<see cref="RequestContextOptions.TrustInboundBaggage"/>) and the request's context.
     /// </para>
     /// </remarks>
     public static IApplicationBuilder UseSharedKernelRequestContext(this IApplicationBuilder app)

@@ -33,7 +33,7 @@ namespace SharedKernel.Application.Pipeline.Validation;
 /// </para>
 /// </remarks>
 /// <param name="validators">The validators registered for <typeparamref name="TRequest"/>.</param>
-public sealed class ValidationBehavior<TRequest, TResponse>(IEnumerable<IRequestValidator<TRequest>> validators)
+internal sealed class ValidationBehavior<TRequest, TResponse>(IEnumerable<IRequestValidator<TRequest>> validators)
     : IPipelineBehavior<TRequest, TResponse>
     where TRequest : IRequest<TResponse>
 {

@@ -3,16 +3,15 @@ using System.Diagnostics.Metrics;
 using FluentAssertions;
 using SharedKernel.Application.Messaging;
 using Microsoft.Extensions.DependencyInjection;
-using SharedKernel.Application.Pipeline.Extensions;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 
 namespace SharedKernel.Application.Pipeline.Tests.Metrics;
 
 /// <summary>
-/// <see cref="Behaviors.Metrics.MetricsBehavior{TRequest,TResponse}"/> and
-/// <see cref="Behaviors.Metrics.ApplicationMetrics"/> are internal, so this test drives them through
-/// a real composed <c>ServiceCollection</c> + <c>AddSharedKernelMediatR</c> + <see cref="ApplicationBehaviorsBuilder"/>
+/// <c>MetricsBehavior&lt;TRequest, TResponse&gt;</c> and
+/// <c>ApplicationMetrics</c> are internal, so this test drives them through
+/// a real composed <c>ServiceCollection</c> + <c>AddSharedKernelApplication(..., app =&gt; app.UseMediatR())</c>
 /// dispatch and observes the published <c>"SharedKernel.Application"</c> meter directly via
 /// <see cref="MeterListener"/> — the same documented instrument name <c>13.ServiceDefaults</c>
 /// subscribes to at the host level.
@@ -62,7 +61,16 @@ public sealed class MetricsBehaviorTests
             var dict = new Dictionary<string, object?>();
             foreach (var tag in tags)
                 dict[tag.Key] = tag.Value;
-            records.Add(new RecordedMeasurement(value, dict));
+
+            // Every composed pipeline in this assembly records on the same meter, and tests run in
+            // parallel: keep only this class's own requests.
+            if (dict.TryGetValue("request.type", out var requestType)
+                && requestType is string name
+                && name.StartsWith(typeof(MetricsBehaviorTests).FullName!, StringComparison.Ordinal))
+            {
+                lock (records)
+                    records.Add(new RecordedMeasurement(value, dict));
+            }
         });
         listener.Start();
         return (listener, records);
@@ -71,8 +79,7 @@ public sealed class MetricsBehaviorTests
     private static ServiceProvider BuildProvider()
     {
         var services = new ServiceCollection();
-        services.AddSharedKernelMediatR(typeof(MetricsBehaviorTests).Assembly);
-        services.AddSharedKernelApplicationBehaviors().AddMetricsBehavior().Build();
+        services.AddSharedKernelApplication(typeof(MetricsBehaviorTests).Assembly, app => app.UseMediatR());
         return services.BuildServiceProvider();
     }
 

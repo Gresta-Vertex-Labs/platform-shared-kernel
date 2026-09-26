@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- The snippets under test compile against the real ASP.NET Core routing types. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
+    <PackageReference Include="FluentAssertions" />
+    <!-- Pin Roslyn to the version the generator is built against. -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel.Presentation.WebApi.Generators.csproj" />
+    <!-- The snippets reference the real WebApi assembly, the way a service does. -->
+    <ProjectReference Include="..\..\SharedKernel.Presentation.WebApi\SharedKernel.Presentation.WebApi.csproj" />
+  </ItemGroup>
+</Project>

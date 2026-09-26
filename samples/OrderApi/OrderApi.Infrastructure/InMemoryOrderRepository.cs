@@ -1,18 +1,24 @@
 using System.Collections.Concurrent;
-using OrderApi.Application;
+using OrderApi.Application.Features.Orders;
 using OrderApi.Domain;
 
 namespace OrderApi.Infrastructure;
 
 /// <summary>
 /// In-memory store so the sample runs with no database. A real service would use
-/// <c>SharedKernel.Persistence.EfCore</c>'s <c>EfRepository&lt;Order, OrderId&gt;</c>.
+/// <c>SharedKernel.Persistence.EfCore</c>'s <c>IRepository&lt;Order, OrderId&gt;</c>.
 /// </summary>
 public sealed class InMemoryOrderRepository : IOrderRepository
 {
     private readonly ConcurrentDictionary<Guid, Order> _orders = new();
 
     public Task AddAsync(Order order, CancellationToken ct)
+    {
+        _orders[order.Id.Value] = order;
+        return Task.CompletedTask;
+    }
+
+    public Task UpdateAsync(Order order, CancellationToken ct)
     {
         _orders[order.Id.Value] = order;
         return Task.CompletedTask;

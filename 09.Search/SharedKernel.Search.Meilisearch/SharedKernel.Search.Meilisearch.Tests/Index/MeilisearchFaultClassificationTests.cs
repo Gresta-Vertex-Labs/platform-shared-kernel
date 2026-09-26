@@ -2,6 +2,7 @@ using System.Net.Http;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using SharedKernel.Execution.Tenancy;
+using SharedKernel.Primitives.Errors;
 using SharedKernel.Search.Abstractions.Abstractions;
 using SharedKernel.Search.Abstractions.Models;
 using SharedKernel.Search.Meilisearch.Index;
@@ -73,6 +74,21 @@ public sealed class MeilisearchFaultClassificationTests
         result.Subject.Error.Code.Should().BeOneOf(
             OperationalFailureCodes,
             "a caller must be able to tell 'retry in a moment' from 'this request will never succeed'");
+    }
+
+    [Fact]
+    public async Task SearchAsync_AgainstAnUnreachableInstance_IsAnUnavailableOrTimeoutError_NeverUnexpected()
+    {
+        // P-562: the code has always said "retry in a moment"; the error type now says so too, so the
+        // HTTP boundary answers 503 or 504 for a down engine instead of 500.
+        var index = CreateIndexAgainstUnreachableInstance();
+
+        var result = await index.SearchAsync(SearchRequest.Default, TenantScope.Global);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Type.Should().Be(
+            result.Error.Code == "search.timeout" ? ErrorType.Timeout : ErrorType.Unavailable,
+            "search.unreachable is an Unavailable error and search.timeout a Timeout error");
     }
 
     [Fact]

@@ -112,15 +112,16 @@ public static class ApplicationPipelineRules
     /// <summary>
     /// <c>SharedKernel.Application.Pipeline</c> must never reference <c>SharedKernel.Caching</c> (bare prefix, including
     /// <c>.Abstractions</c>: that reference belongs to the sibling <c>SharedKernel.Application.Pipeline.Caching</c>
-    /// package, P-544), Polly, <c>Microsoft.Extensions.Hosting</c>, or <c>SharedKernel.Core</c>.
+    /// package, P-544), Polly or <c>Microsoft.Extensions.Hosting</c>. It may reference <c>SharedKernel.Core</c>, which it uses to
+    /// turn a failed result into its exception (<c>error.ToException()</c>) — P-579 allowed that reference.
     /// </summary>
     /// <remarks>
     /// The pipeline is Host tier, so the tier matrix would allow every one of these references. This rule keeps the
     /// core pipeline free of optional dependencies, so a service that does not cache pays for no cache package.
     /// </remarks>
     /// <param name="assembly">The <c>SharedKernel.Application.Pipeline</c> assembly to evaluate.</param>
-    /// <returns>A <see cref="ConditionList"/> asserting the pipeline package stays free of these four dependencies.</returns>
-    public static ConditionList PipelineNeverReferencesCachingPollyHostingOrCore(Assembly assembly) =>
+    /// <returns>A <see cref="ConditionList"/> asserting the pipeline package stays free of these three dependencies.</returns>
+    public static ConditionList PipelineNeverReferencesCachingPollyOrHosting(Assembly assembly) =>
         Types
             .InAssembly(assembly)
             .That()
@@ -130,9 +131,7 @@ public static class ApplicationPipelineRules
             .And()
             .NotHaveDependencyOn("Polly")
             .And()
-            .NotHaveDependencyOn("Microsoft.Extensions.Hosting")
-            .And()
-            .NotHaveDependencyOn("SharedKernel.Core");
+            .NotHaveDependencyOn("Microsoft.Extensions.Hosting");
 
     /// <summary>
     /// <c>SharedKernel.Application.Pipeline.Caching</c> may reach <c>SharedKernel.Caching.Abstractions</c> but never a

@@ -15,6 +15,13 @@ internal static class Http
         return string.IsNullOrEmpty(body) ? default : JsonDocument.Parse(body).RootElement.Clone();
     }
 
+    /// <summary>Reads the <c>errorCode</c> member every problem response carries, or <see langword="null"/> without one.</summary>
+    public static async Task<string?> ErrorCodeAsync(this HttpResponseMessage response)
+    {
+        var body = await response.JsonAsync();
+        return body.ValueKind == JsonValueKind.Object && body.TryGetProperty("errorCode", out var code) ? code.GetString() : null;
+    }
+
     public static async Task<Guid> RegisterCustomerAsync(this HttpClient client, string name, string email, string? taxNumber = null)
     {
         var response = await client.PostAsJsonAsync("/customers", new { name, email, taxNumber });

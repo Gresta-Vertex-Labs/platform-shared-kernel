@@ -5,41 +5,52 @@ using OpenTelemetry.Logs;
 namespace SharedKernel.ServiceDefaults.Telemetry;
 
 /// <summary>
-/// Copies every <see cref="Activity.Baggage"/> entry on <see cref="Activity.Current"/> onto
-/// <see cref="LogRecord.Attributes"/> at the moment a log record is finalized, making ambient
-/// distributed-trace baggage — such as CorrelationId or TenantId — available on every exported
-/// log record without any call site needing to pass it as an explicit message-template placeholder.
+/// Copies the platform's own <see cref="Activity"/> baggage — the correlation id and the tenant id — from
+/// <see cref="Activity.Current"/> onto <see cref="LogRecord.Attributes"/> when a log record is finalized, so every
+/// exported record carries them without any call site passing them as message-template placeholders.
 /// </summary>
 /// <remarks>
 /// <para>
-/// This is a <b>generic</b> mechanism: it carries no hardcoded baggage key names. It works
-/// uniformly for any domain that sets <see cref="Activity"/> baggage — for example,
-/// <c>14.Presentation</c>'s correlation-id middleware (which owns its own <see cref="Activity"/>
-/// baggage key directly against the BCL, per WO-031) and <c>SharedKernel.MultiTenancy</c>'s
-/// <c>TenantResolutionMiddleware</c> (which sets <c>WellKnownBaggageKeys.TenantId</c>) — without
-/// <c>SharedKernel.ServiceDefaults</c> ever needing a <c>ProjectReference</c> to either domain or
-/// knowing either concept by name.
+/// <b>Only platform keys (P-562 X2).</b> The processor copies <c>correlation.id</c> and <c>TenantId</c>, the two keys
+/// platform middleware writes (<c>SharedKernel.ServiceDefaults.Security</c>' <c>UseSharedKernelRequestContext</c> and <c>SharedKernel.MultiTenancy</c>'s
+/// <c>TenantResolutionMiddleware</c>), under their own names. Every other baggage item is ignored, whoever set it:
+/// baggage also arrives from outside — the W3C <c>baggage</c> request header, and message headers, which
+/// MassTransit copies onto the consuming activity — so copying every item let a caller put any property, a forged
+/// <c>SubjectId</c> for one, on every log record of its request. A value to log that is not one of these two belongs
+/// in the log statement itself.
 /// </para>
 /// <para>
-/// An attribute already present on <see cref="LogRecord.Attributes"/> at a given key is never
-/// overwritten by an ambient baggage value at the same key — an explicit call-site value always
-/// wins. When <see cref="Activity.Current"/> is <see langword="null"/>, or carries no baggage,
-/// this processor is a no-op: it does not throw and adds no attributes.
+/// <b>Log-forging guard.</b> A value containing a control character (C0, DEL or C1, which includes CR, LF and NEL)
+/// or a Unicode line or paragraph separator is not copied, because a log viewer would render it as a line break.
+/// Platform values are GUIDs and validated correlation ids, which never contain one.
 /// </para>
 /// <para>
-/// Scoped to whatever sets <see cref="Activity"/> baggage during the lifetime of the current
-/// <see cref="Activity"/> — in practice, the HTTP-request path. A message-consumption-scope
-/// equivalent (e.g. a MassTransit consumer filter propagating message headers into baggage) is not
-/// implemented here; it is a future <c>07.Messaging</c>-owned follow-up outside this domain's
-/// jurisdiction.
+/// <b>What it cannot tell.</b> A baggage item carries no record of who set it. When a caller's <c>TenantId</c> or
+/// <c>correlation.id</c> item reaches the activity and nothing overwrites it, it is copied like the platform's own.
+/// That is why the HTTP edge drops inbound baggage (<c>SharedKernel.ServiceDefaults.Security</c>'s
+/// <c>RequestContextOptions.TrustInboundBaggage</c>, off by default; <c>14.Presentation</c>'s until P-579) and why both
+/// middlewares <em>replace</em> their key with <see cref="Activity.SetBaggage"/>.
+/// </para>
+/// <para>
+/// An attribute already present on <see cref="LogRecord.Attributes"/> at a given key is never overwritten: an
+/// explicit call-site value always wins. When <see cref="Activity.Current"/> is <see langword="null"/>, or carries
+/// neither key, the processor does nothing.
+/// </para>
+/// <para>
+/// <c>SharedKernel.ServiceDefaults</c> references neither writer: the key names are retyped here and pinned to
+/// <c>SharedKernel.Primitives.Propagation.WellKnownBaggageKeys</c> by a test.
 /// </para>
 /// </remarks>
 public sealed class BaggageLogRecordProcessor : BaseProcessor<LogRecord>
 {
+    // U+2028 and U+2029 are not control characters, but many log viewers render them as line breaks.
+    private const char LineSeparator = (char)0x2028;
+    private const char ParagraphSeparator = (char)0x2029;
+
     /// <summary>
-    /// Appends every <see cref="Activity.Baggage"/> entry from <see cref="Activity.Current"/> to
-    /// <paramref name="data"/>'s <see cref="LogRecord.Attributes"/> that is not already present
-    /// under the same key.
+    /// Adds the platform baggage items found on <see cref="Activity.Current"/> or its parents to
+    /// <paramref name="data"/>'s <see cref="LogRecord.Attributes"/>, unless a value contains a control character or
+    /// an attribute with the same key is already present.
     /// </summary>
     /// <param name="data">The log record being finalized.</param>
     public override void OnEnd(LogRecord data)
@@ -49,36 +60,70 @@ public sealed class BaggageLogRecordProcessor : BaseProcessor<LogRecord>
             return;
         }
 
-        using var baggageEnumerator = activity.Baggage.GetEnumerator();
-
-        if (!baggageEnumerator.MoveNext())
-        {
-            return;
-        }
-
         var existingAttributes = data.Attributes;
-        var mergedAttributes = new List<KeyValuePair<string, object?>>(existingAttributes?.Count ?? 0);
+        List<KeyValuePair<string, object?>>? mergedAttributes = null;
 
-        if (existingAttributes is not null)
+        foreach (var key in PlatformBaggageKeys.All)
         {
-            mergedAttributes.AddRange(existingAttributes);
+            if (activity.GetBaggageItem(key) is not { } value
+                || !IsLoggable(value)
+                || Contains(existingAttributes, key))
+            {
+                continue;
+            }
+
+            if (mergedAttributes is null)
+            {
+                mergedAttributes = new List<KeyValuePair<string, object?>>(
+                    (existingAttributes?.Count ?? 0) + PlatformBaggageKeys.All.Count);
+
+                if (existingAttributes is not null)
+                {
+                    mergedAttributes.AddRange(existingAttributes);
+                }
+            }
+
+            mergedAttributes.Add(new KeyValuePair<string, object?>(key, value));
         }
 
-        var existingKeys = new HashSet<string>(
-            mergedAttributes.Select(attribute => attribute.Key),
-            StringComparer.Ordinal);
-
-        do
+        if (mergedAttributes is not null)
         {
-            var (key, value) = baggageEnumerator.Current;
+            data.Attributes = mergedAttributes;
+        }
+    }
 
-            if (existingKeys.Add(key))
+    /// <summary>
+    /// Returns <see langword="false"/> when <paramref name="value"/> contains a character a log viewer renders as a
+    /// line break or does not print: a control character or a Unicode line or paragraph separator.
+    /// </summary>
+    internal static bool IsLoggable(string value)
+    {
+        foreach (var character in value)
+        {
+            if (char.IsControl(character) || character is LineSeparator or ParagraphSeparator)
             {
-                mergedAttributes.Add(new KeyValuePair<string, object?>(key, value));
+                return false;
             }
         }
-        while (baggageEnumerator.MoveNext());
 
-        data.Attributes = mergedAttributes;
+        return true;
+    }
+
+    private static bool Contains(IReadOnlyList<KeyValuePair<string, object?>>? attributes, string key)
+    {
+        if (attributes is null)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < attributes.Count; index++)
+        {
+            if (string.Equals(attributes[index].Key, key, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

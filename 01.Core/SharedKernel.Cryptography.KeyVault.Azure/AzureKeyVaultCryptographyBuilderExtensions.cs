@@ -33,6 +33,15 @@ public static class AzureKeyVaultCryptographyBuilderExtensions
     /// <param name="builder">The builder returned by <c>AddSharedKernelCryptography</c>.</param>
     /// <param name="configuration">The configuration root; options bind from <c>SharedKernel:Cryptography:KeyVault:Azure:Encryption</c>.</param>
     /// <returns>The same builder.</returns>
+    /// <remarks>
+    /// <b>Never wired into persistence on the service's behalf.</b> This call does not turn on <c>06.Persistence</c>'s
+    /// field encryption: a service wanting KMS-backed column encryption opts in with <c>UseFieldEncryption(…)</c> in its
+    /// own persistence registration. The provider does fill the one unkeyed <see cref="IEncryptionKeyProvider"/> slot,
+    /// which <c>06.Persistence</c> uses as the root of its ETag key (P-562 X4) when no
+    /// <c>ISynchronousEncryptionKeyProvider</c> is registered — through an HKDF subkey of its own purpose, so that
+    /// sharing is safe and a service with ETags needs no second provider. (Ported in P-579 from the note main added to the
+    /// deleted <c>SharedKernel.ServiceDefaults.Cryptography.KeyVault</c>.)
+    /// </remarks>
     /// <example>
     /// <code>
     /// services.AddSharedKernelCryptography(configuration)

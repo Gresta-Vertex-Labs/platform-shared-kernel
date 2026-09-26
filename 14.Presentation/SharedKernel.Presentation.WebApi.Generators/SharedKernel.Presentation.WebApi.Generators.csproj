@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- Source generators MUST target netstandard2.0 — the compiler will not load any other TFM.
+         This deliberately overrides Directory.Build.props' net10.0 default. Do not remove. -->
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <!-- Tooling (P-579): a Roslyn component that references no SharedKernel package. WebApi reaches it only through
+         a ReferenceOutputAssembly="false" edge, which the tier check exempts (eng/SharedKernelTiers.targets). -->
+    <SharedKernelTier>Tooling</SharedKernelTier>
+    <IsRoslynComponent>true</IsRoslynComponent>
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+    <!--
+      Not a package of its own: SharedKernel.Presentation.WebApi packs this assembly under analyzers/dotnet/cs,
+      so every service that references WebApi gets the endpoint-module generator with it (P-563 P2).
+    -->
+    <IsPackable>false</IsPackable>
+    <!-- Every type is internal; the compiler loads the generator through its [Generator] attribute. -->
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- RS2008: analyzer release tracking is for the diagnostics of 00.Governance's SharedKernel.Analyzers package;
+         these diagnostics ship with WebApi and are documented in its README. -->
+    <NoWarn>$(NoWarn);RS2008</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" PrivateAssets="all" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="SharedKernel.Presentation.WebApi.Generators.Tests" />
+  </ItemGroup>
+</Project>

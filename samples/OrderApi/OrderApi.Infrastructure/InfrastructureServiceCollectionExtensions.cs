@@ -1,5 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
-using OrderApi.Application;
+using OrderApi.Application.Features.Orders;
 using SharedKernel.Primitives.Health;
 using SharedKernel.Validation.FluentValidation;
 
@@ -9,8 +9,8 @@ namespace OrderApi.Infrastructure;
 public static class InfrastructureServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers the order store, its readiness probe, and the FluentValidation bridge that lets
-    /// <c>ValidationBehavior</c> run the application's FluentValidation validators through the kernel's
+    /// Registers the order store, its readiness probe, and the FluentValidation bridge: the application's
+    /// FluentValidation validators, run by the pipeline's validation step through the kernel's
     /// <c>IRequestValidator&lt;T&gt;</c> port.
     /// </summary>
     /// <param name="services">The service collection.</param>
@@ -21,7 +21,7 @@ public static class InfrastructureServiceCollectionExtensions
 
         services.AddSingleton<IOrderRepository, InMemoryOrderRepository>();
         services.AddReadinessProbe<OrderStoreReadinessProbe>();
-        services.AddFluentValidationRequestValidators();
+        services.AddFluentValidationRequestValidators(typeof(PlaceOrderCommand).Assembly);
         return services;
     }
 }

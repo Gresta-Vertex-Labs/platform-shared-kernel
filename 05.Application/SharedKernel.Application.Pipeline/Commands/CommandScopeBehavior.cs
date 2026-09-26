@@ -22,7 +22,7 @@ namespace SharedKernel.Application.Pipeline.Commands;
 /// instead of evicting directly.
 /// </para>
 /// <para>
-/// Automatically registered by <c>ApplicationBehaviorsBuilder.Build()</c> whenever any command-stage
+/// Automatically registered by <c>AddSharedKernelApplication</c> whenever any command-stage
 /// behavior (idempotency, transaction, auditing, or a custom <c>PipelineStage.Command</c> behavior)
 /// is active — never opted into directly.
 /// </para>

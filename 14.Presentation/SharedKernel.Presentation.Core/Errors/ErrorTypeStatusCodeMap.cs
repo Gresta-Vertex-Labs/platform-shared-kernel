@@ -1,42 +1,37 @@
-using System.Net;
+using Microsoft.AspNetCore.Http;
 using SharedKernel.Primitives.Errors;
 
-namespace SharedKernel.Presentation.Errors;
+namespace SharedKernel.Presentation;
 
-/// <summary>
-/// Single source of truth for mapping a <see cref="ErrorType"/> to an HTTP status code. Lives in
-/// <c>SharedKernel.Presentation.Core</c> (P-570) beside <see cref="GrpcStatusCodeMap"/>, so both boundary
-/// packages share it and neither references the other; it uses <see cref="HttpStatusCode"/> rather than
-/// ASP.NET Core's <c>StatusCodes</c> so this package needs no ASP.NET Core reference.
-/// </summary>
+/// <summary>The single source of truth for the HTTP status code of an <see cref="ErrorType"/>.</summary>
 /// <remarks>
-/// Any inline switch statement duplicating this mapping anywhere else in a consuming service is a
-/// platform violation — always call <see cref="Resolve"/> (directly, or indirectly via
-/// <c>ErrorProblemDetailsExtensions.ToProblemDetails</c>) instead.
+/// Never duplicate this mapping in a switch of your own. HTTP response writers call
+/// <c>SharedKernel.Presentation.WebApi</c>'s <c>ErrorPresentation.GetStatusCode</c>, which applies this map plus the one request-dependent rule: a
+/// <see cref="ErrorType.Conflict"/> whose code is in <c>Problems:PreconditionFailedErrorCodes</c>, on a request that
+/// carries <c>If-Match</c> or <c>If-None-Match</c>, is 412.
 /// </remarks>
-public static class ErrorTypeStatusCodeMap
+internal static class ErrorTypeStatusCodeMap
 {
-    /// <summary>
-    /// Resolves the HTTP status code that corresponds to the specified <paramref name="type"/>.
-    /// </summary>
-    /// <param name="type">The error type to resolve.</param>
+    /// <summary>Returns the HTTP status code for <paramref name="type"/>.</summary>
+    /// <param name="type">The error type.</param>
     /// <returns>
-    /// The mapped HTTP status code: <see cref="ErrorType.Validation"/> → 400,
-    /// <see cref="ErrorType.Unauthorized"/> → 401, <see cref="ErrorType.Forbidden"/> → 403,
-    /// <see cref="ErrorType.NotFound"/> → 404, <see cref="ErrorType.Conflict"/> → 409,
-    /// <see cref="ErrorType.BusinessRule"/> → 422, <see cref="ErrorType.Unexpected"/> → 500. Any
-    /// <see cref="ErrorType"/> not explicitly mapped (including <see cref="ErrorType.None"/>)
-    /// falls back to 500.
+    /// <see cref="ErrorType.Validation"/> 400, <see cref="ErrorType.Unauthorized"/> 401,
+    /// <see cref="ErrorType.Forbidden"/> 403, <see cref="ErrorType.NotFound"/> 404, <see cref="ErrorType.Conflict"/> 409,
+    /// <see cref="ErrorType.BusinessRule"/> 422, <see cref="ErrorType.Unexpected"/> 500,
+    /// <see cref="ErrorType.Unavailable"/> 503 and <see cref="ErrorType.Timeout"/> 504. Anything else, including
+    /// <see cref="ErrorType.None"/>, is 500.
     /// </returns>
     public static int Resolve(ErrorType type) => type switch
     {
-        ErrorType.Validation => (int)HttpStatusCode.BadRequest,
-        ErrorType.Unauthorized => (int)HttpStatusCode.Unauthorized,
-        ErrorType.Forbidden => (int)HttpStatusCode.Forbidden,
-        ErrorType.NotFound => (int)HttpStatusCode.NotFound,
-        ErrorType.Conflict => (int)HttpStatusCode.Conflict,
-        ErrorType.BusinessRule => (int)HttpStatusCode.UnprocessableEntity,
-        ErrorType.Unexpected => (int)HttpStatusCode.InternalServerError,
-        _ => (int)HttpStatusCode.InternalServerError,
+        ErrorType.Validation => StatusCodes.Status400BadRequest,
+        ErrorType.Unauthorized => StatusCodes.Status401Unauthorized,
+        ErrorType.Forbidden => StatusCodes.Status403Forbidden,
+        ErrorType.NotFound => StatusCodes.Status404NotFound,
+        ErrorType.Conflict => StatusCodes.Status409Conflict,
+        ErrorType.BusinessRule => StatusCodes.Status422UnprocessableEntity,
+        ErrorType.Unexpected => StatusCodes.Status500InternalServerError,
+        ErrorType.Unavailable => StatusCodes.Status503ServiceUnavailable,
+        ErrorType.Timeout => StatusCodes.Status504GatewayTimeout,
+        _ => StatusCodes.Status500InternalServerError,
     };
 }

@@ -1,35 +1,34 @@
-using System.Diagnostics;
 using SharedKernel.Execution.Context;
-using SharedKernel.Execution.Tenancy;
-using SharedKernel.Primitives.Propagation;
 
 namespace SharedKernel.FeatureManagement.Internal;
 
 /// <summary>
-/// The default <see cref="IFeatureTargetingContextAccessor"/>: the ambient caller's tenant, and no user.
+/// The default <see cref="IFeatureTargetingContextAccessor"/>: the caller of the open <see cref="RequestContextScope"/>.
 /// </summary>
 /// <remarks>
 /// <para>
-/// When a <see cref="RequestContextScope"/> is open — every inbound adapter opens one: HTTP, gRPC, message
-/// consume, workflow activity, scheduled job — the tenant is that caller's <see cref="IRequestContext.TenantId"/>,
-/// and a caller without a tenant targets as anonymous. The scope is authoritative, so baggage is not consulted then.
+/// Every inbound adapter opens a scope — HTTP, gRPC, message consume, workflow activity, scheduled job — from an
+/// identity it has verified, so the scope is the caller: its <see cref="IRequestContext.UserId"/> (for an
+/// authenticated caller) and its <see cref="IRequestContext.TenantId"/>. A caller with neither targets as anonymous,
+/// and so does code running with no scope open.
 /// </para>
 /// <para>
-/// Without an open scope, the tenant comes from the current activity's <see cref="WellKnownBaggageKeys.TenantId"/>
-/// baggage item when it is a valid <see cref="TenantId"/>.
+/// <see cref="System.Diagnostics.Activity"/> baggage is never read: a caller sets baggage itself (the W3C
+/// <c>baggage</c> header), so a tenant or user taken from it would let anyone choose another tenant's flags
+/// (P-562 X2, merged from main in P-579).
 /// </para>
 /// </remarks>
 internal sealed class AmbientTenantTargetingContextAccessor : IFeatureTargetingContextAccessor
 {
     public FeatureTargetingContext? GetTargetingContext()
     {
-        if (RequestContextScope.Current is { } caller)
-        {
-            return caller.TenantId is { } callerTenant ? FeatureTargetingContext.ForTenant(callerTenant) : null;
-        }
+        if (RequestContextScope.Current is not { } caller)
+            return null;
 
-        return TenantId.TryParse(Activity.Current?.GetBaggageItem(WellKnownBaggageKeys.TenantId), out TenantId tenantId)
-            ? FeatureTargetingContext.ForTenant(tenantId)
-            : null;
+        var userId = caller.IsAuthenticated && !string.IsNullOrWhiteSpace(caller.UserId) ? caller.UserId : null;
+
+        return userId is null && caller.TenantId is null
+            ? null
+            : new FeatureTargetingContext(userId, caller.TenantId);
     }
 }

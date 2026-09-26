@@ -11,7 +11,7 @@ namespace SharedKernel.Application.Pipeline.Auditing;
 /// <see cref="AuditOutcome.Succeeded"/> entry of an audited command inside its transaction.
 /// </summary>
 /// <remarks>
-/// Registered by <c>AddAuditingBehavior()</c> immediately inside <c>TransactionBehavior</c>. On a
+/// Registered by <c>WithAuditing()</c> immediately inside <c>TransactionBehavior</c>. On a
 /// successful response it queues the entry with <see cref="IUnitOfWork.OnBeforeCommit"/> when a
 /// transaction is active, so the entry is written after the business changes are saved and commits
 /// with them; with no active transaction (or no unit of work registered) it writes the entry directly.

@@ -45,7 +45,7 @@ public class PipelineOrderAssertionTests
 
     /// <summary>
     /// T-153 (passing case): when the <see cref="IServiceCollection"/> registrations exactly
-    /// match the expected order, <see cref="PipelineOrderAssertion.AssertRegistrationOrder"/>
+    /// match the expected order, <see cref="PipelineOrderAssertion.AssertRegistrationOrder(IServiceCollection, Type[])"/>
     /// must not throw.
     /// </summary>
     [Fact]
@@ -73,7 +73,7 @@ public class PipelineOrderAssertionTests
     /// <summary>
     /// T-153 (failing case): when the <see cref="IServiceCollection"/> registrations are out of
     /// order relative to the expected sequence,
-    /// <see cref="PipelineOrderAssertion.AssertRegistrationOrder"/> must throw
+    /// <see cref="PipelineOrderAssertion.AssertRegistrationOrder(IServiceCollection, Type[])"/> must throw
     /// <see cref="InvalidOperationException"/> naming both sequences.
     /// </summary>
     [Fact]
@@ -94,5 +94,66 @@ public class PipelineOrderAssertionTests
             .Throw<InvalidOperationException>(
                 because: "FirstBehavior and SecondBehavior are registered out of order")
             .WithMessage("*registration order mismatch*");
+    }
+
+    // ---------------------------------------------------------------------------
+    // Name-based overload — for the kernel's internal built-in behaviors
+    // ---------------------------------------------------------------------------
+
+    [Fact]
+    public void AssertRegistrationOrder_ByName_MatchingOrder_DoesNotThrow()
+    {
+        var services = new ServiceCollection();
+        services.AddTransient(typeof(SharedKernel.Application.Messaging.IPipelineBehavior<,>), typeof(FirstBehavior<,>));
+        services.AddTransient(typeof(SharedKernel.Application.Messaging.IPipelineBehavior<,>), typeof(SecondBehavior<,>));
+
+        var act = () => PipelineOrderAssertion.AssertRegistrationOrder(services, "FirstBehavior", "SecondBehavior");
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void AssertRegistrationOrder_ByName_OutOfOrder_ThrowsInvalidOperationException()
+    {
+        var services = new ServiceCollection();
+        services.AddTransient(typeof(SharedKernel.Application.Messaging.IPipelineBehavior<,>), typeof(SecondBehavior<,>));
+        services.AddTransient(typeof(SharedKernel.Application.Messaging.IPipelineBehavior<,>), typeof(FirstBehavior<,>));
+
+        var act = () => PipelineOrderAssertion.AssertRegistrationOrder(services, "FirstBehavior", "SecondBehavior");
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*registration order mismatch*");
+    }
+
+    /// <summary>
+    /// P-579: the real registration puts the built-in behaviors in the canonical order whatever order the
+    /// <c>With…()</c> calls are made in. The behaviors are internal, so they are named, not passed as types.
+    /// </summary>
+    [Fact]
+    public void AssertRegistrationOrder_RealRegistration_EveryOptInOutOfOrder_IsCanonical()
+    {
+        var services = new ServiceCollection();
+        SharedKernel.Application.Pipeline.ApplicationServiceCollectionExtensions.AddSharedKernelApplication(
+            services,
+            typeof(PipelineOrderAssertionTests).Assembly,
+            app => SharedKernel.Application.Pipeline.Caching.CachingPipelineExtensions
+                .WithCaching(app.WithAuditing().WithTransactions())
+                .WithIdempotency());
+
+        var act = () => PipelineOrderAssertion.AssertRegistrationOrder(
+            services,
+            "TracingBehavior",
+            "LoggingBehavior",
+            "MetricsBehavior",
+            "AuthorizationBehavior",
+            "ValidationBehavior",
+            "CachingBehavior",
+            "CommandScopeBehavior",
+            "IdempotencyBehavior",
+            "AuditingBehavior",
+            "TransactionBehavior",
+            "AuditingCommitBehavior",
+            "CacheInvalidationBehavior");
+
+        act.Should().NotThrow(because: "AddSharedKernelApplication registers the pipeline in its canonical order");
     }
 }

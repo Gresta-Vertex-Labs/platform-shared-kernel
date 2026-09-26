@@ -15,19 +15,20 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// Used by
 /// <see cref="Rules.PresentationLayeringRules.NoDirectProblemDetailsConstructionOutsideWebApi"/>
 /// to enforce that hand-rolled <c>ProblemDetails</c> construction never bypasses the platform's
-/// single error-shape mapping (<c>ErrorTypeStatusCodeMap</c>, <c>traceId</c> population,
-/// <c>Detail</c>-suppression outside <c>Development</c>) owned by
+/// single error shape (the status from <c>ErrorPresentation</c>, the <c>errorCode</c>, <c>traceId</c> and
+/// <c>correlationId</c> members, localization, redaction of server errors outside <c>Development</c>) owned by
 /// <c>SharedKernel.Presentation.WebApi</c>.
 /// </para>
 /// <para>
 /// <strong>No namespace exemption.</strong> Unlike most other <see cref="ICustomRule"/>
 /// predicates in this assembly, this predicate does not exempt any namespace internally —
 /// there is no single namespace prefix shared by every legitimate construction site inside
-/// <c>SharedKernel.Presentation.WebApi</c> (<c>ErrorProblemDetailsExtensions</c>, the global
-/// <c>IExceptionHandler</c>, and any future <c>ProblemDetails</c> factory all legitimately
-/// construct the type). Exclusion is achieved entirely by the caller never passing the
-/// <c>SharedKernel.Presentation.WebApi</c> assembly to the factory method on
-/// <see cref="Rules.PresentationLayeringRules"/>.
+/// <c>SharedKernel.Presentation.WebApi</c> (its problem factory, the exception handler and any
+/// future <c>ProblemDetails</c> factory all legitimately construct the type). Exclusion is achieved entirely by the
+/// caller never passing the <c>SharedKernel.Presentation.WebApi</c> assembly to the factory method on
+/// <see cref="Rules.PresentationLayeringRules"/>. The other presentation packages are not exempt: SignalR and gRPC
+/// present errors through the shared error presentation (<c>SharedKernel.Presentation.Core</c>), and the OpenAPI add-on describes the problem shape
+/// with <c>OpenApiSchema</c> objects, never a <c>ProblemDetails</c> instance.
 /// </para>
 /// <para>
 /// Detection: walks <see cref="TypeDefinition.Methods"/>.<see cref="MethodDefinition.Body"/>
@@ -46,9 +47,10 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// </code>
 /// </para>
 /// <para>
-/// <strong>Compliant pattern:</strong>
-/// <code>return error.ToProblemDetails();</code> or
-/// <code>return result.ToProblemDetailsResult();</code>
+/// <strong>Compliant pattern:</strong> a typed result from the WebApi core,
+/// <code>return result.ToOk();</code> or <code>return error.ToErrorResult();</code>
+/// or, when a <c>ProblemDetails</c> object itself is needed,
+/// <code>var problem = error.ToProblemDetails(httpContext);</code>
 /// </para>
 /// </remarks>
 public sealed class NoDirectProblemDetailsConstructionPredicate : ICustomRule

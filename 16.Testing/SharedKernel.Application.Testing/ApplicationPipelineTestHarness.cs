@@ -1,30 +1,39 @@
-using SharedKernel.Application.Mediator.MediatR;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
-using SharedKernel.Application.Messaging;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using SharedKernel.Application.Mediator.MediatR;
+using SharedKernel.Application.Messaging;
 using SharedKernel.Application.Pipeline;
-using SharedKernel.Application.Pipeline.Extensions;
+using SharedKernel.Application.Streaming;
 
 namespace SharedKernel.Testing.Application;
 
 /// <summary>
-/// Reusable helper that wires a real <see cref="ServiceCollection"/> + the kernel request pipeline
-/// (<see cref="RequestPipeline{TRequest,TResponse}"/>) + a caller-chosen subset of
-/// <c>SharedKernel.Application.Pipeline</c> behaviors via <see cref="ApplicationBehaviorsBuilder"/>,
-/// and exposes a minimal fluent surface to send a request and assert on response shape, thrown
-/// exceptions, recorded application-pipeline metrics, and recorded tracing spans.
+/// Reusable helper that wires a real <see cref="ServiceCollection"/> through
+/// <c>AddSharedKernelApplication</c> with a caller-chosen set of opt-in behaviors
+/// (<see cref="Configure"/>), and exposes a minimal fluent surface to send a request
+/// and assert on response shape, thrown exceptions, recorded application-pipeline metrics, and
+/// recorded tracing spans.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Two ways to build it. <see cref="Build"/> needs no mediator at all: register each handler on
-/// <see cref="Services"/> and send with <see cref="SendThroughPipelineAsync{TRequest,TResponse}"/>,
-/// which resolves the pipeline directly. <see cref="Build{TMarker}"/> adds the MediatR adapter
-/// (<c>AddSharedKernelMediatR</c>) over the marker's assembly, so <see cref="SendAsync{TResponse}"/>
-/// goes through the kernel <see cref="ISender"/> exactly as a service would. Both run the same
-/// behaviors in the same order.
+/// Two ways to build it, both running the same behaviors in the same order. <see cref="Build"/> needs no
+/// mediator: register each handler on <see cref="Services"/>, and <see cref="SendAsync{TResponse}"/> goes
+/// through a harness sender that runs <see cref="RequestPipeline{TRequest,TResponse}"/> directly.
+/// <see cref="Build{TMarker}"/> registers the application layer over the marker's assembly — its handlers,
+/// validators and domain-event handlers — with the MediatR adapter (<c>UseMediatR()</c>), so
+/// <see cref="SendAsync{TResponse}"/> goes through the kernel <see cref="ISender"/> exactly as a service's does.
+/// </para>
+/// <para>
+/// Both run the start-time checks a host runs (<see cref="IStartupValidator"/>), so a seam the chosen behaviors
+/// need and the test did not register fails the build with <see cref="OptionsValidationException"/>, exactly as it
+/// would fail the host. Authorization is always part of the pipeline: when the assembly passed to
+/// <see cref="Build{TMarker}"/> declares a <c>[RequirePermission]</c> request, register an <c>IRequestContext</c>
+/// (for example with <c>AddFakeApplicationBehaviorServices()</c>) before building.
 /// </para>
 /// <para>
 /// Implements its OWN local <see cref="ActivityListener"/>/<see cref="MeterListener"/> wiring
@@ -44,6 +53,7 @@ public sealed class ApplicationPipelineTestHarness : IDisposable
     private readonly List<(string InstrumentName, double Value, IReadOnlyList<KeyValuePair<string, object?>> Tags)> _capturedMeasurements = [];
     private ActivityListener? _activityListener;
     private ServiceProvider? _provider;
+    private Action<ApplicationPipelineBuilder> _configure = static _ => { };
 
     /// <summary>Initializes a new instance of <see cref="ApplicationPipelineTestHarness"/>.</summary>
     public ApplicationPipelineTestHarness()
@@ -60,7 +70,8 @@ public sealed class ApplicationPipelineTestHarness : IDisposable
             var tagList = new List<KeyValuePair<string, object?>>();
             foreach (var tag in tags)
                 tagList.Add(tag);
-            _capturedMeasurements.Add((instrument.Name, measurement, tagList));
+            lock (_capturedMeasurements)
+                _capturedMeasurements.Add((instrument.Name, measurement, tagList));
         });
         _meterListener.Start();
     }
@@ -68,9 +79,19 @@ public sealed class ApplicationPipelineTestHarness : IDisposable
     /// <summary>Exposes the underlying <see cref="ServiceCollection"/> for additional test-specific registration.</summary>
     public ServiceCollection Services => _services;
 
-    /// <summary>Begins building the opt-in behavior pipeline via <see cref="ApplicationBehaviorsBuilder"/>.</summary>
-    /// <remarks>Delegates to <c>Services.AddSharedKernelApplicationBehaviors()</c>.</remarks>
-    public ApplicationBehaviorsBuilder AddBehaviors() => _services.AddSharedKernelApplicationBehaviors();
+    /// <summary>
+    /// Chooses the opt-in behaviors (<c>WithIdempotency()</c>, <c>WithTransactions()</c>, …) that
+    /// <see cref="Build"/> and <see cref="Build{TMarker}"/> register; tracing, logging, metrics, authorization and
+    /// validation are always on.
+    /// </summary>
+    /// <param name="configure">The opt-in choice, as passed to <c>AddSharedKernelApplication</c>.</param>
+    /// <returns>This instance, for fluent chaining.</returns>
+    public ApplicationPipelineTestHarness Configure(Action<ApplicationPipelineBuilder> configure)
+    {
+        ArgumentNullException.ThrowIfNull(configure);
+        _configure = configure;
+        return this;
+    }
 
     /// <summary>
     /// Registers an opt-in <see cref="ActivityListener"/> filtered to the
@@ -83,54 +104,61 @@ public sealed class ApplicationPipelineTestHarness : IDisposable
         {
             ShouldListenTo = source => source.Name == ApplicationDiagnosticsName,
             Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
-            ActivityStarted = activity => _capturedActivities.Add(activity),
+            ActivityStarted = activity =>
+            {
+                lock (_capturedActivities)
+                    _capturedActivities.Add(activity);
+            },
         };
         ActivitySource.AddActivityListener(_activityListener);
         return this;
     }
 
     /// <summary>
-    /// Builds the <see cref="ServiceProvider"/> without any mediator. Handlers are whatever the test
-    /// registered on <see cref="Services"/>; send with
-    /// <see cref="SendThroughPipelineAsync{TRequest,TResponse}"/>. Must be called after all
-    /// behavior/handler registration.
+    /// Registers the application layer (<c>AddSharedKernelApplication</c>) with the behaviors chosen by
+    /// <see cref="Configure"/> and no mediator, and builds the <see cref="ServiceProvider"/>. Handlers are whatever
+    /// the test registered on <see cref="Services"/>; <see cref="SendAsync{TResponse}"/> runs each request's
+    /// <see cref="RequestPipeline{TRequest,TResponse}"/> directly. Must be called after all test-specific
+    /// registration. Runs the start-time checks a host runs, so a missing seam fails here with
+    /// <see cref="OptionsValidationException"/>.
     /// </summary>
     /// <returns>This instance, for fluent chaining.</returns>
     public ApplicationPipelineTestHarness Build()
     {
-        _services.AddSharedKernelRequestPipeline();
-        _provider = _services.BuildServiceProvider();
-        return this;
+        // This assembly declares no handler, validator or [RequirePermission] request, so the scan adds nothing.
+        _services.AddSharedKernelApplication(typeof(ApplicationPipelineTestHarness).Assembly, _configure);
+        _services.TryAddTransient<ISender, PipelineSender>();
+        return BuildProvider();
     }
 
     /// <summary>
-    /// Registers the MediatR adapter over the assembly containing <typeparamref name="TMarker"/>
-    /// (discovering its handlers) and builds the <see cref="ServiceProvider"/>. Must be called after
-    /// all behavior/handler registration.
+    /// Registers the application layer (<c>AddSharedKernelApplication</c>) over the assembly containing
+    /// <typeparamref name="TMarker"/> — its handlers, validators and domain-event handlers — with the behaviors
+    /// chosen by <see cref="Configure"/> and the MediatR adapter, and builds the <see cref="ServiceProvider"/>. Must
+    /// be called after all test-specific registration. Runs the start-time checks a host runs, so a missing seam
+    /// fails here with <see cref="OptionsValidationException"/>.
     /// </summary>
     /// <typeparam name="TMarker">Any type in the assembly that declares the handlers.</typeparam>
     /// <returns>This instance, for fluent chaining.</returns>
     public ApplicationPipelineTestHarness Build<TMarker>()
     {
-        _services.AddSharedKernelMediatR(typeof(TMarker).Assembly);
-        _provider = _services.BuildServiceProvider();
-        return this;
+        var configure = _configure;
+        _services.AddSharedKernelApplication(typeof(TMarker).Assembly, app =>
+        {
+            configure(app);
+            app.UseMediatR();
+        });
+        return BuildProvider();
     }
 
     /// <summary>Sends <paramref name="request"/> through the kernel <see cref="ISender"/>.</summary>
-    /// <exception cref="InvalidOperationException">
-    /// Thrown when called before <see cref="Build{TMarker}"/>, or after <see cref="Build"/> (which
-    /// registers no <see cref="ISender"/>).
-    /// </exception>
+    /// <exception cref="InvalidOperationException">Thrown when called before <see cref="Build"/> or <see cref="Build{TMarker}"/>.</exception>
     public Task<TResponse> SendAsync<TResponse>(IRequest<TResponse> request, CancellationToken ct = default)
     {
         if (_provider is null)
-            throw new InvalidOperationException("Call Build<TMarker>() before SendAsync.");
+            throw new InvalidOperationException("Call Build() or Build<TMarker>() before SendAsync.");
 
-        var sender = _provider.GetService<ISender>()
-            ?? throw new InvalidOperationException(
-                "No ISender is registered: Build() builds without a mediator. Use SendThroughPipelineAsync, or Build<TMarker>().");
-        return sender.Send(request, ct);
+        return _provider.GetRequiredService<ISender>().Send(request, ct);
     }
 
     /// <summary>
@@ -172,5 +200,60 @@ public sealed class ApplicationPipelineTestHarness : IDisposable
         _activityListener?.Dispose();
         _meterListener.Dispose();
         _provider?.Dispose();
+    }
+
+    private ApplicationPipelineTestHarness BuildProvider()
+    {
+        _provider = _services.BuildServiceProvider();
+        _provider.GetRequiredService<IStartupValidator>().Validate();
+        return this;
+    }
+
+    /// <summary>
+    /// The <see cref="ISender"/> of <see cref="Build"/>: runs each request's pipeline directly, with no mediator.
+    /// </summary>
+    private sealed class PipelineSender(IServiceProvider services) : ISender
+    {
+        public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            var dispatcher = (RequestDispatcher<TResponse>)Activator.CreateInstance(
+                typeof(RequestDispatcher<,>).MakeGenericType(request.GetType(), typeof(TResponse)))!;
+            return dispatcher.SendAsync(services, request, cancellationToken);
+        }
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(
+            IStreamQuery<TResponse> request,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            var dispatcher = (StreamDispatcher<TResponse>)Activator.CreateInstance(
+                typeof(StreamDispatcher<,>).MakeGenericType(request.GetType(), typeof(TResponse)))!;
+            return dispatcher.CreateStream(services, request, cancellationToken);
+        }
+    }
+
+    private abstract class RequestDispatcher<TResponse>
+    {
+        public abstract Task<TResponse> SendAsync(IServiceProvider services, IRequest<TResponse> request, CancellationToken cancellationToken);
+    }
+
+    private sealed class RequestDispatcher<TRequest, TResponse> : RequestDispatcher<TResponse>
+        where TRequest : IRequest<TResponse>
+    {
+        public override Task<TResponse> SendAsync(IServiceProvider services, IRequest<TResponse> request, CancellationToken cancellationToken)
+            => services.GetRequiredService<RequestPipeline<TRequest, TResponse>>().HandleAsync((TRequest)request, cancellationToken);
+    }
+
+    private abstract class StreamDispatcher<TResponse>
+    {
+        public abstract IAsyncEnumerable<TResponse> CreateStream(IServiceProvider services, IStreamQuery<TResponse> request, CancellationToken cancellationToken);
+    }
+
+    private sealed class StreamDispatcher<TRequest, TResponse> : StreamDispatcher<TResponse>
+        where TRequest : IStreamQuery<TResponse>
+    {
+        public override IAsyncEnumerable<TResponse> CreateStream(IServiceProvider services, IStreamQuery<TResponse> request, CancellationToken cancellationToken)
+            => services.GetRequiredService<StreamRequestPipeline<TRequest, TResponse>>().Handle((TRequest)request, cancellationToken);
     }
 }

@@ -32,7 +32,7 @@ namespace SharedKernel.Application.Pipeline.Tracing;
 /// cost when tracing is not being collected.
 /// </para>
 /// </remarks>
-public sealed class TracingBehavior<TRequest, TResponse> : IPipelineBehavior<TRequest, TResponse>
+internal sealed class TracingBehavior<TRequest, TResponse> : IPipelineBehavior<TRequest, TResponse>
     where TRequest : IRequest<TResponse>
 {
     /// <inheritdoc/>

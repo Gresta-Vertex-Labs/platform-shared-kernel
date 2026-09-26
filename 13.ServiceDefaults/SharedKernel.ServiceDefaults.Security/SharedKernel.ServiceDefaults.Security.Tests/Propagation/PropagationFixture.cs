@@ -1,3 +1,4 @@
+using SharedKernel.Application.Pipeline;
 using SharedKernel.Application.Mediator.MediatR;
 using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
@@ -18,8 +19,8 @@ using SharedKernel.Messaging.Abstractions.MessageBus;
 using SharedKernel.Messaging.MassTransit.Context;
 using SharedKernel.Messaging.MassTransit.Extensions;
 using SharedKernel.Messaging.MassTransit.MessageBus;
-using SharedKernel.Presentation.Grpc.Extensions;
-using SharedKernel.Presentation.WebApi.Idempotency;
+using SharedKernel.Presentation.Grpc;
+using SharedKernel.Presentation.WebApi;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Propagation;
 using SharedKernel.Primitives.Results;
@@ -66,7 +67,7 @@ internal sealed class CallRecorder
 
 /// <summary>
 /// The downstream service: a real ASP.NET Core host on <see cref="TestServer"/> that runs the platform's own inbound
-/// adapters — <c>UseSharedKernelRequestContext()</c> for HTTP and <c>AddSharedKernelGrpc()</c> for gRPC — and records
+/// adapter, <c>UseSharedKernelRequestContext()</c>, for HTTP and gRPC alike (gRPC runs through the HTTP pipeline), and records
 /// what each call carried, including the correlation id the adapter made ambient.
 /// </summary>
 internal sealed class DownstreamService : IAsyncDisposable
@@ -90,7 +91,7 @@ internal sealed class DownstreamService : IAsyncDisposable
         builder.Services.AddSingleton(recorder);
         builder.Services.AddScoped<IUserContext>(_ => AnonymousUserContext.Instance);
         builder.Services.AddSharedKernelRequestContext();
-        builder.Services.AddSharedKernelGrpc();
+        builder.AddSharedKernelGrpc();
 
         var app = builder.Build();
         app.UseSharedKernelRequestContext();
@@ -98,7 +99,7 @@ internal sealed class DownstreamService : IAsyncDisposable
 
         app.MapPost("/record/{hop}", (string hop, HttpContext context, CallRecorder calls) =>
         {
-            context.TryGetIdempotencyKey(out var idempotencyKey);
+            var idempotencyKey = context.GetIdempotencyKey();
             calls.Add(new ReceivedCall(
                 hop,
                 Header(context, WellKnownHeaders.CorrelationId),
@@ -297,7 +298,7 @@ internal sealed class JobService : IAsyncDisposable
         var builder = Host.CreateApplicationBuilder();
         var clock = new FakeClock(start);
         builder.Services.AddSingleton<IClock>(clock);
-        builder.Services.AddSharedKernelMediatR(typeof(CallDownstreamCommand).Assembly);
+        builder.Services.AddSharedKernelApplication(typeof(CallDownstreamCommand).Assembly, app => app.UseMediatR());
         FrontService.AddDownstreamRestClient(builder.Services, downstream);
 
         builder.Services

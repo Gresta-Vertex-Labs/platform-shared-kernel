@@ -7,9 +7,18 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Presentation.WebApi.csproj" />
+    <!-- The endpoint-module generator, which the WebApi package carries and a project reference does not (P-563 P2). -->
+    <ProjectReference Include="..\..\SharedKernel.Presentation.WebApi.Generators\SharedKernel.Presentation.WebApi.Generators.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\..\..\01.Core\SharedKernel.Localization\SharedKernel.Localization.csproj" />
     <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
+    <!-- The request context that owns the correlation id and the refusal of inbound baggage (P-579): every test host
+         composes it the way a service does, UseSharedKernelRequestContext() before UseSharedKernelWebApi(). -->
+    <ProjectReference Include="..\..\..\13.ServiceDefaults\SharedKernel.ServiceDefaults.Security\SharedKernel.ServiceDefaults.Security.csproj" />
     <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Security.Testing\SharedKernel.Security.Testing.csproj" />
+    <!-- EntityVersion, the version type of the If-Match and ETag tests. -->
+    <ProjectReference Include="..\..\..\06.Persistence\SharedKernel.Persistence.Abstractions\SharedKernel.Persistence.Abstractions.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="xunit" />
@@ -23,7 +32,11 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="FluentAssertions" />
-    <PackageReference Include="NSubstitute" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <!--
+      Test-only: the correlation-on-log-record test builds a minimal BaseProcessor<LogRecord> that mirrors
+      13.ServiceDefaults' BaggageLogRecordProcessor contract, without a ProjectReference to SharedKernel.ServiceDefaults.
+    -->
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
   </ItemGroup>
 </Project>

@@ -8,7 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using SharedKernel.Execution.Auditing;
 using SharedKernel.Application.Auditing;
-using SharedKernel.Application.Pipeline.Extensions;
+using SharedKernel.Application.Pipeline;
 using SharedKernel.Execution.Context;
 using SharedKernel.Cryptography.Signing;
 using SharedKernel.Persistence;
@@ -24,7 +24,7 @@ namespace SharedKernel.ServiceDefaults.Persistence.Tests.Integration;
 
 /// <summary>
 /// Proves, against real PostgreSQL, the production composition
-/// <c>AddSharedKernelApplicationBehaviors().AddAuditingBehavior().AddTransactionBehavior().Build()</c>
+/// <c>AddSharedKernelApplication(assembly, app => app.WithAuditing().WithTransactions())</c>
 /// over the EF Core unit of work and audit trail — with no adapter or bridge in between (P-558): a
 /// <c>Succeeded</c> audit record commits atomically with the business write it attests to, and a
 /// business write that fails at commit time leaves no <c>Succeeded</c> record but a <c>Failed</c> one.
@@ -99,13 +99,10 @@ public sealed class AuditTransactionWiringPostgresTests
         // No bridge: EfUnitOfWork and EfAuditTrailWriter implement the shared IUnitOfWork and
         // IAuditTrailWriter (SharedKernel.Execution) the behaviors consume directly.
 
-        services.AddSharedKernelMediatR(typeof(AuditTransactionWiringPostgresTests).Assembly);
-
         // The documented composition named in this wave's brief — nothing else.
-        services.AddSharedKernelApplicationBehaviors()
-            .AddAuditingBehavior()
-            .AddTransactionBehavior()
-            .Build();
+        services.AddSharedKernelApplication(
+            typeof(AuditTransactionWiringPostgresTests).Assembly,
+            app => app.UseMediatR().WithAuditing().WithTransactions());
 
         var provider = services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });

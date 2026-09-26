@@ -11,7 +11,10 @@ using SharedKernel.Application.Pipeline.Auditing;
 using SharedKernel.Execution.Transactions;
 using SharedKernel.Application.Pipeline.Authorization;
 using SharedKernel.Application.Pipeline.Commands;
-using SharedKernel.Application.Pipeline.Extensions;
+using SharedKernel.Application.Pipeline.Logging;
+using SharedKernel.Application.Pipeline.Metrics;
+using SharedKernel.Application.Pipeline.Tracing;
+using SharedKernel.Application.Pipeline.Validation;
 using SharedKernel.Application.Pipeline.Idempotency;
 using SharedKernel.Idempotency.Abstractions;
 using SharedKernel.Application.Pipeline.Tests.Support;
@@ -23,16 +26,16 @@ namespace SharedKernel.Application.Pipeline.Tests;
 
 /// <summary>
 /// Proves the fixed canonical five-stage pipeline order, custom <see cref="PipelineStage"/>
-/// placement via <see cref="ApplicationBehaviorsBuilder.AddBehavior"/>, and
+/// placement via <see cref="ApplicationPipelineBuilder.WithBehavior"/>, and
 /// <see cref="ICommandScope"/>'s post-commit callback timing — all through one real, composed
-/// <c>ServiceCollection</c> + <c>AddSharedKernelMediatR</c> + <see cref="ApplicationBehaviorsBuilder"/> dispatch,
+/// <c>ServiceCollection</c> + <c>AddSharedKernelApplication</c> dispatch,
 /// never a hand-rolled <see cref="RequestHandlerContinuation{TResponse}"/> mock.
 /// </summary>
 public sealed class PipelineOrderTests
 {
-    private sealed record TestCommand(string IdempotencyKey) : ICommand<string>, IIdempotentRequest, IAuthorizeRequest, IAuditableRequest<Result<string>>
+    [RequirePermission("test.permission")]
+    private sealed record TestCommand(string IdempotencyKey) : ICommand<string>, IIdempotentRequest, IAuditableRequest<Result<string>>
     {
-        public IReadOnlyCollection<string> RequiredPermissions => ["test.permission"];
         public string Action => "test.action";
         public string ResourceType => "TestResource";
         public string ResourceId => "r-1";
@@ -132,21 +135,17 @@ public sealed class PipelineOrderTests
         services.AddSingleton<IAuditTrailWriter>(new FakeAuditTrailWriter(sequence));
         services.AddSingleton<IRequestContext>(new FakeRequestContext(isAuthenticated: true, new HashSet<string> { "test.permission" }));
 
-        services.AddSharedKernelMediatR(typeof(PipelineOrderTests).Assembly);
-
-        var builder = services.AddSharedKernelApplicationBehaviors()
-            .AddAuthorizationBehavior()
-            .AddValidationBehavior()
-            .AddIdempotencyBehavior()
-            .AddTransactionBehavior()
-            .AddAuditingBehavior()
-            .AddBehavior(typeof(ObservabilityMarker<,>), PipelineStage.Observability)
-            .AddBehavior(typeof(AuthorizationMarker<,>), PipelineStage.Authorization)
-            .AddBehavior(typeof(ValidationMarker<,>), PipelineStage.Validation)
-            .AddBehavior(typeof(QueryMarker<,>), PipelineStage.Query)
-            .AddBehavior(typeof(CommandMarker<,>), PipelineStage.Command);
-
-        builder.Build();
+        // Opt-ins deliberately listed out of canonical order: the order must come from the package.
+        services.AddSharedKernelApplication(typeof(PipelineOrderTests).Assembly, app => app
+            .UseMediatR()
+            .WithBehavior(typeof(CommandMarker<,>), PipelineStage.Command)
+            .WithAuditing()
+            .WithTransactions()
+            .WithBehavior(typeof(QueryMarker<,>), PipelineStage.Query)
+            .WithIdempotency()
+            .WithBehavior(typeof(ValidationMarker<,>), PipelineStage.Validation)
+            .WithBehavior(typeof(AuthorizationMarker<,>), PipelineStage.Authorization)
+            .WithBehavior(typeof(ObservabilityMarker<,>), PipelineStage.Observability));
 
         return services.BuildServiceProvider();
     }
@@ -185,41 +184,37 @@ public sealed class PipelineOrderTests
     }
 
     [Fact]
-    public void Build_RegistersNoMediator()
+    public void AddSharedKernelApplication_WithoutUseMediatR_RegistersNoMediator()
     {
         var services = new ServiceCollection();
-        services.AddSingleton<IUnitOfWork>(new FakeUnitOfWork());
 
-        services.AddSharedKernelApplicationBehaviors()
-            .AddTransactionBehavior()
-            .Build();
+        services.AddSharedKernelApplication(typeof(PipelineOrderTests).Assembly, app => app.WithTransactions());
 
         services.Any(d => d.ServiceType == typeof(ISender)).Should().BeFalse();
     }
 
     /// <summary>
-    /// <see cref="ApplicationBehaviorsBuilder.Build"/> registers logger-dependent behaviors
+    /// <c>AddSharedKernelApplication</c> registers logger-dependent behaviors
     /// (<c>CommandScopeBehavior</c>, <c>IdempotencyBehavior</c>) that constructor-inject
-    /// <c>ILogger&lt;T&gt;</c>. Proves <c>Build()</c> itself makes logging resolvable — a bare
+    /// <c>ILogger&lt;T&gt;</c>. Proves the registration call itself makes logging resolvable — a bare
     /// <see cref="ServiceCollection"/> with no prior <c>services.AddLogging()</c> call must still
     /// dispatch successfully once idempotency and transaction are both opted into.
     /// </summary>
     [Fact]
-    public async Task Build_WithIdempotencyAndTransaction_NoPriorAddLogging_DispatchesSuccessfully()
+    public async Task AddSharedKernelApplication_WithIdempotencyAndTransaction_NoPriorAddLogging_DispatchesSuccessfully()
     {
         var services = new ServiceCollection();
         var sequence = new List<string>();
         services.AddSingleton(sequence);
         services.AddSingleton<IUnitOfWork>(new FakeUnitOfWork(sequence));
         services.AddKeyedSingleton<IIdempotencyStore>(IdempotencyPurpose.Request, new FakeIdempotencyStore(sequence));
+        services.AddSingleton<IRequestContext>(new FakeRequestContext(isAuthenticated: true, new HashSet<string> { "test.permission" }));
 
-        services.AddSharedKernelMediatR(typeof(PipelineOrderTests).Assembly);
-
-        // Deliberately no services.AddLogging() call anywhere above — Build() must add it itself.
-        services.AddSharedKernelApplicationBehaviors()
-            .AddIdempotencyBehavior()
-            .AddTransactionBehavior()
-            .Build();
+        // Deliberately no services.AddLogging() call anywhere above — the registration call must add it itself.
+        services.AddSharedKernelApplication(typeof(PipelineOrderTests).Assembly, app => app
+            .UseMediatR()
+            .WithIdempotency()
+            .WithTransactions());
 
         using var provider = services.BuildServiceProvider();
         var sender = provider.GetRequiredService<ISender>();
@@ -229,5 +224,65 @@ public sealed class PipelineOrderTests
         result.IsSuccess.Should().BeTrue();
         sequence.Should().Contain("idempotency.complete");
         sequence.Should().Contain("transaction.commit");
+    }
+
+    private static List<Type> RegisteredBehaviors(IServiceCollection services)
+        => services
+            .Where(descriptor => descriptor.ServiceType == typeof(IPipelineBehavior<,>))
+            .Select(descriptor => descriptor.ImplementationType!)
+            .ToList();
+
+    /// <summary>
+    /// Authorization is always on: with no opt-in at all, it sits between the observability
+    /// behaviors and validation, so a <see cref="RequirePermissionAttribute"/> can never go
+    /// unenforced because a registration call was forgotten.
+    /// </summary>
+    [Fact]
+    public void Register_NoOptIns_AuthorizationIsAlwaysRegisteredBetweenObservabilityAndValidation()
+    {
+        var services = new ServiceCollection();
+        services.AddSharedKernelApplication(typeof(PipelineOrderTests).Assembly);
+
+        RegisteredBehaviors(services).Should().Equal(
+            typeof(TracingBehavior<,>),
+            typeof(LoggingBehavior<,>),
+            typeof(MetricsBehavior<,>),
+            typeof(AuthorizationBehavior<,>),
+            typeof(ValidationBehavior<,>));
+    }
+
+    [Fact]
+    public void Register_EveryOptIn_AuthorizationKeepsItsCanonicalPositionOnce()
+    {
+        var services = new ServiceCollection();
+        services.AddSharedKernelApplication(typeof(PipelineOrderTests).Assembly, app => app
+            .WithAuditing()
+            .WithTransactions()
+            .WithIdempotency()
+            .WithBehavior(typeof(AuthorizationMarker<,>), PipelineStage.Authorization));
+
+        RegisteredBehaviors(services).Should().Equal(
+            typeof(TracingBehavior<,>),
+            typeof(LoggingBehavior<,>),
+            typeof(MetricsBehavior<,>),
+            typeof(AuthorizationBehavior<,>),
+            typeof(AuthorizationMarker<,>),
+            typeof(ValidationBehavior<,>),
+            typeof(CommandScopeBehavior<,>),
+            typeof(IdempotencyBehavior<,>),
+            typeof(AuditingBehavior<,>),
+            typeof(TransactionBehavior<,>),
+            typeof(AuditingCommitBehavior<,>));
+    }
+
+    [Fact]
+    public void Register_StreamAuthorization_IsAlwaysRegistered()
+    {
+        var services = new ServiceCollection();
+        services.AddSharedKernelApplication(typeof(PipelineOrderTests).Assembly);
+
+        services.Where(descriptor => descriptor.ServiceType == typeof(SharedKernel.Application.Streaming.IStreamPipelineBehavior<,>))
+            .Select(descriptor => descriptor.ImplementationType)
+            .Should().ContainSingle().Which.Should().Be(typeof(StreamAuthorizationBehavior<,>));
     }
 }

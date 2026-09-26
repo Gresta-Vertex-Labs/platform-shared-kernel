@@ -39,5 +39,5 @@ internal sealed class MediatRSender(global::MediatR.ISender mediator, IServicePr
 
     private static InvalidOperationException NoHandler(Type requestType, string handlerKind) =>
         new($"No {handlerKind} is registered for '{requestType.FullName}'. Handlers are discovered by "
-            + "AddSharedKernelMediatR(assemblies): pass the assembly that declares the handler.");
+            + "AddSharedKernelApplication(assemblies, app => app.UseMediatR()): pass the assembly that declares the handler.");
 }

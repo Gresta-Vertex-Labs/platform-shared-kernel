@@ -27,6 +27,14 @@ namespace SharedKernel.Testing.Idempotency;
 /// return <see langword="false"/> otherwise, never throwing. A release removes the entry, so the key starts fresh.
 /// Time is not simulated: call <see cref="Expire"/> to model a reservation's TTL running out.
 /// </para>
+/// <para>
+/// <b>Keys are stored exactly as given; only the tenant scope is added here.</b> Through the pipeline's
+/// <c>IdempotencyBehavior</c> the store receives the command's key already scoped to the tenant and the caller (a
+/// 64-character lowercase hexadecimal digest), the same key the Redis and EF Core stores receive, so a pipeline test
+/// sees the same per-caller separation production does: two callers using one key each get their own reservation.
+/// Consequently <see cref="Calls"/> records that scoped key, not the command's raw
+/// <c>IIdempotentRequest.IdempotencyKey</c>.
+/// </para>
 /// </remarks>
 public sealed class FakeIdempotencyStore : IIdempotencyStore
 {

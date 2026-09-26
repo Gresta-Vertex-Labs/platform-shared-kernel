@@ -69,6 +69,8 @@ public sealed class ExceptionHardeningTests
     [InlineData(ErrorType.Forbidden, typeof(ForbiddenException))]
     [InlineData(ErrorType.BusinessRule, typeof(DomainException))]
     [InlineData(ErrorType.Unexpected, typeof(DomainException))]
+    [InlineData(ErrorType.Unavailable, typeof(DomainException))]
+    [InlineData(ErrorType.Timeout, typeof(DomainException))]
     public void ToException_PicksSubclassFromErrorType(ErrorType type, Type expected)
     {
         var error = new Error("code", "message", type);
@@ -77,6 +79,25 @@ public sealed class ExceptionHardeningTests
 
         Assert.IsType(expected, exception);
         Assert.Same(error, exception.Error);
+    }
+
+    [Fact]
+    public void ToException_UnavailableAndTimeout_BecomeDomainException_CarryingTheErrorUnchanged()
+    {
+        // P-562: no dedicated exception type for either, so the carried error is what keeps the
+        // 503/504 distinction — it must come through with its type, code and message intact.
+        var unavailable = Error.Unavailable("storage.unavailable", "Store 'invoices' is unavailable.");
+        var timeout = Error.Timeout("search.timeout", "Operation 'search' timed out.");
+
+        var fromUnavailable = Assert.IsType<DomainException>(unavailable.ToException());
+        var fromTimeout = Assert.IsType<DomainException>(timeout.ToException());
+
+        Assert.Same(unavailable, fromUnavailable.Error);
+        Assert.Equal(ErrorType.Unavailable, fromUnavailable.Error.Type);
+        Assert.Equal("Store 'invoices' is unavailable.", fromUnavailable.Message);
+        Assert.Same(timeout, fromTimeout.Error);
+        Assert.Equal(ErrorType.Timeout, fromTimeout.Error.Type);
+        Assert.Equal("Operation 'search' timed out.", fromTimeout.Message);
     }
 
     [Fact]

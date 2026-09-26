@@ -12,6 +12,14 @@ namespace SharedKernel.Application.Idempotency;
 public interface IIdempotentRequest
 {
     /// <summary>Gets the idempotency key for this command instance.</summary>
+    /// <remarks>
+    /// Reserved per tenant and caller: <c>IdempotencyBehavior</c> scopes the key to the tenant and the
+    /// caller <c>IRequestContext</c> reports, so it only has to be unique for its sender, and another
+    /// caller using the same key never sees this caller's response. Callers the context cannot identify
+    /// (anonymous) share one scope per tenant, where only the fingerprint separates them — use a random,
+    /// unguessable key (a UUID per operation) there. Empty or whitespace-only fails with
+    /// <c>idempotency.key_required</c> (<c>ErrorCodes.Idempotency.KeyRequired</c>).
+    /// </remarks>
     string IdempotencyKey { get; }
 
     /// <summary>
@@ -36,6 +44,12 @@ public interface IIdempotentRequest
     /// A command exposed to either hazard should return a stable fingerprint computed only from its
     /// own discriminating business fields (e.g. customer id + amount), excluding any field that
     /// legitimately varies between otherwise-identical retries.
+    /// </para>
+    /// <para>
+    /// On a command anonymous callers may send, the fingerprint is all that separates two senders who
+    /// use the same key (see <see cref="IdempotencyKey"/>): a fingerprint coarser than the request lets
+    /// one sender's request replay the other's response, so there it must cover every field that tells
+    /// one sender's request from another's.
     /// </para>
     /// </remarks>
     string? Fingerprint => null;

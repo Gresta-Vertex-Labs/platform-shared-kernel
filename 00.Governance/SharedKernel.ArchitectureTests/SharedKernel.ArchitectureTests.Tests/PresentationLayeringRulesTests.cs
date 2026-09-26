@@ -8,25 +8,36 @@ using Xunit;
 namespace SharedKernel.ArchitectureTests.Tests;
 
 /// <summary>
-/// Tests for <see cref="PresentationLayeringRules"/> — introduced by WO-031 P-199.
+/// Tests for <see cref="PresentationLayeringRules"/> — introduced by WO-031 P-199, adjusted for the P-562 redesign.
 /// </summary>
 /// <remarks>
 /// <para>
 /// T-143/T-144 cover <see cref="PresentationLayeringRules.NoDirectProblemDetailsConstructionOutsideWebApi"/>.
 /// T-145/T-146 cover <see cref="PresentationLayeringRules.NoInlineResultBranchBeforeHttpResultOutsideWebApi"/>.
+/// T-360/T-361 cover <see cref="PresentationLayeringRules.GrpcNeverReferencesContracts"/>.
 /// </para>
 /// <para>
-/// Per the phase's Dependencies section, design/implementation proceeds against contrived
-/// in-memory fixtures built via <see cref="CSharpCompilation"/> +
+/// Contrived in-memory fixtures are built via <see cref="CSharpCompilation"/> +
 /// <see cref="MetadataReference.CreateFromFile(string)"/> — the same technique used by
 /// <c>RedisTopologyRulesTests</c>, <c>ServiceDefaultsGovernanceRulesTests</c>, and
 /// <c>HealthCheckConstantsUsageRulesTests</c>. Real ASP.NET Core types
 /// (<c>Microsoft.AspNetCore.Mvc.ProblemDetails</c>, <c>Microsoft.AspNetCore.Http.IResult</c>,
 /// etc.) are stubbed locally in each fixture's source under the matching namespace/name so the
 /// predicates' exact <c>FullName</c>/<c>Name</c> matching resolves correctly without requiring an
-/// ASP.NET Core framework reference in this test project. A real-assembly re-verification pass
-/// against <c>SharedKernel.Presentation.WebApi</c> is a tracked, non-blocking follow-up gated on
-/// P-194 per the phase's Dependencies section.
+/// ASP.NET Core framework reference in this test project.
+/// </para>
+/// <para>
+/// <strong>P-562.</strong> The fixtures follow the redesigned WebApi surface: typed results (<c>ToOk</c>,
+/// <c>ToErrorResult</c>, <c>ErrorHttpResult</c>) instead of the deleted <c>ToProblemDetailsResult</c>, and the
+/// typed-results union and <c>IActionResult</c> return types the rule now recognizes. The real-assembly tests pass
+/// all three sibling packages — <c>.OpenApi</c>, <c>.SignalR</c>, <c>.Grpc</c> — through the WebApi-exclusion rules
+/// (only <c>SharedKernel.Presentation.WebApi</c> is exempt) and lock the OpenAPI stack inside the add-on.
+/// </para>
+/// <para>
+/// <strong>P-562 final review.</strong> Stand-ins only prove that the predicate agrees with the fixture: after R21
+/// moved <c>ErrorHttpResult</c>, a fixture still declaring the old namespace kept passing. The inline-branch rule is
+/// therefore also proven against the shipped types, with fixtures compiled against the test host's real WebApi,
+/// Primitives and ASP.NET Core assemblies (<c>CompileAgainstRealAssemblies</c>).
 /// </para>
 /// </remarks>
 public class PresentationLayeringRulesTests
@@ -199,13 +210,13 @@ public class PresentationLayeringRulesTests
 
     // ---------------------------------------------------------------------------
     // T-145 — Fire path: inline IsSuccess/IsFailure branch before IResult/ActionResult
-    // return, with no ToProblemDetailsResult call
+    // return, with no mapping through the WebApi core
     // ---------------------------------------------------------------------------
 
     /// <summary>
     /// T-145: A contrived fixture method reading <c>Result.IsSuccess</c>/<c>IsFailure</c> and
-    /// returning <c>IResult</c>/<c>ActionResult</c>/<c>ActionResult&lt;T&gt;</c> with no
-    /// <c>ToProblemDetailsResult</c> call must fail
+    /// returning <c>IResult</c>/<c>ActionResult</c>/<c>ActionResult&lt;T&gt;</c> without mapping through the WebApi
+    /// core must fail
     /// <see cref="PresentationLayeringRules.NoInlineResultBranchBeforeHttpResultOutsideWebApi"/>,
     /// naming the offending type/method.
     /// </summary>
@@ -262,8 +273,8 @@ public class PresentationLayeringRulesTests
             .GetResult();
 
         result.IsSuccessful.Should().BeFalse(
-            because: "Handle reads Result.IsSuccess and returns IResult with no " +
-                     "ToProblemDetailsResult call in the same method");
+            because: "Handle reads Result.IsSuccess and returns IResult without mapping " +
+                     "through the WebApi core in the same method");
 
         result.FailingTypeNames.Should().Contain(
             "Application.Endpoints.OrderEndpoints",
@@ -271,13 +282,13 @@ public class PresentationLayeringRulesTests
     }
 
     // ---------------------------------------------------------------------------
-    // T-146 — Pass path: same two signals, but also calls ToProblemDetailsResult;
-    // companion vacuous-pass path: no IsSuccess/IsFailure usage at all
+    // T-146 — Pass path: same two signals, but the method maps through the WebApi
+    // core's typed results; companion vacuous-pass path: no IsSuccess/IsFailure usage
     // ---------------------------------------------------------------------------
 
     /// <summary>
     /// T-146: A contrived fixture exhibiting the same two signals as T-145, but the method also
-    /// calls a member named <c>ToProblemDetailsResult</c>, must pass
+    /// calls <c>SharedKernel.Presentation.WebApi.ResultHttpExtensions.ToOk</c>, must pass
     /// <see cref="PresentationLayeringRules.NoInlineResultBranchBeforeHttpResultOutsideWebApi"/>.
     /// </summary>
     [Fact]
@@ -312,7 +323,7 @@ public class PresentationLayeringRulesTests
 
                 public static class ResultHttpExtensions
                 {
-                    public static IResult ToProblemDetailsResult(this Result result)
+                    public static IResult ToOk(this Result result)
                     {
                         return new OkResult();
                     }
@@ -331,7 +342,7 @@ public class PresentationLayeringRulesTests
                     {
                         var diagnosticCheck = result.IsSuccess;
                         System.Console.WriteLine(diagnosticCheck);
-                        return result.ToProblemDetailsResult();
+                        return result.ToOk();
                     }
                 }
             }
@@ -344,8 +355,274 @@ public class PresentationLayeringRulesTests
             .GetResult();
 
         result.IsSuccessful.Should().BeTrue(
-            because: "Handle calls ToProblemDetailsResult in the same method, suppressing the " +
+            because: "Handle maps through ResultHttpExtensions.ToOk in the same method, suppressing the " +
                      "violation despite the IsSuccess read and IResult return type both being present");
+    }
+
+    // ---------------------------------------------------------------------------
+    // P-562 — the rule after the redesign: typed-results unions and IActionResult are HTTP
+    // results; the failure branch may route through ToErrorResult or ErrorHttpResult; a
+    // same-named method on another type is not the platform mapping
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// P-562: typed results made <c>Results&lt;T1, T2&gt;</c> the everyday return type, so a hand-rolled branch
+    /// returning a typed-results union must fail — the redesign's most likely violation.
+    /// </summary>
+    [Fact]
+    public void NoInlineResultBranchBeforeHttpResultOutsideWebApi_TypedResultsUnionReturn_RuleFails()
+    {
+        const string source = """
+            namespace SharedKernel.Primitives
+            {
+                public class Result<T>
+                {
+                    public bool IsSuccess { get; set; }
+                    public T Value { get; set; } = default!;
+                }
+            }
+
+            namespace Microsoft.AspNetCore.Http
+            {
+                public interface IResult { }
+            }
+
+            namespace Microsoft.AspNetCore.Http.HttpResults
+            {
+                public sealed class Ok<T> : Microsoft.AspNetCore.Http.IResult { }
+                public sealed class ProblemHttpResult : Microsoft.AspNetCore.Http.IResult { }
+                public sealed class Results<T1, T2> : Microsoft.AspNetCore.Http.IResult
+                {
+                    public static Results<T1, T2> From(object result) => new Results<T1, T2>();
+                }
+            }
+
+            namespace Application.Endpoints
+            {
+                using Microsoft.AspNetCore.Http.HttpResults;
+                using SharedKernel.Primitives;
+
+                public static class OrderEndpoints
+                {
+                    public static Results<Ok<int>, ProblemHttpResult> Handle(Result<int> result)
+                    {
+                        if (result.IsSuccess)
+                        {
+                            return Results<Ok<int>, ProblemHttpResult>.From(new Ok<int>());
+                        }
+
+                        return Results<Ok<int>, ProblemHttpResult>.From(new ProblemHttpResult());
+                    }
+                }
+            }
+            """;
+
+        var assembly = CompileInMemory("Fixture.InlineResultBranch.TypedResultsUnion", source);
+
+        var result = PresentationLayeringRules
+            .NoInlineResultBranchBeforeHttpResultOutsideWebApi(assembly)
+            .GetResult();
+
+        result.IsSuccessful.Should().BeFalse(
+            because: "Handle reads Result<T>.IsSuccess and returns a typed-results union built by hand");
+        result.FailingTypeNames.Should().Contain("Application.Endpoints.OrderEndpoints");
+    }
+
+    /// <summary>
+    /// P-562: MVC's everyday action return type, <c>IActionResult</c>, is an HTTP result too. Since R19 removed
+    /// <c>ToActionResult</c>, a controller maps a <c>Result</c> with the same typed results as a minimal API, so an
+    /// action that returns <c>IActionResult</c> after reading <c>IsFailure</c> built its response by hand.
+    /// </summary>
+    [Fact]
+    public void NoInlineResultBranchBeforeHttpResultOutsideWebApi_IActionResultReturn_RuleFails()
+    {
+        const string source = """
+            namespace SharedKernel.Primitives
+            {
+                public class Result
+                {
+                    public bool IsFailure { get; set; }
+                }
+            }
+
+            namespace Microsoft.AspNetCore.Mvc
+            {
+                public interface IActionResult { }
+                public sealed class OkResult : IActionResult { }
+                public sealed class NotFoundResult : IActionResult { }
+            }
+
+            namespace Application.Controllers
+            {
+                using Microsoft.AspNetCore.Mvc;
+                using SharedKernel.Primitives;
+
+                public sealed class OrdersController
+                {
+                    public IActionResult Cancel(Result result)
+                    {
+                        if (result.IsFailure)
+                        {
+                            return new NotFoundResult();
+                        }
+
+                        return new OkResult();
+                    }
+                }
+            }
+            """;
+
+        var assembly = CompileInMemory("Fixture.InlineResultBranch.IActionResult", source);
+
+        var result = PresentationLayeringRules
+            .NoInlineResultBranchBeforeHttpResultOutsideWebApi(assembly)
+            .GetResult();
+
+        result.IsSuccessful.Should().BeFalse(
+            because: "Cancel reads Result.IsFailure and returns an IActionResult it built by hand");
+        result.FailingTypeNames.Should().Contain("Application.Controllers.OrdersController");
+    }
+
+    /// <summary>
+    /// P-562: a failure branch written out but routed through the core — <c>error.ToErrorResult()</c> or
+    /// <c>new ErrorHttpResult(error)</c> — carries the platform's status, code, localization and redaction, so it
+    /// passes. The fixture declares <c>ErrorHttpResult</c> where R21 put it, the root namespace; the real-assembly
+    /// tests below prove the same against the shipped type.
+    /// </summary>
+    [Theory]
+    [InlineData("result.Error.ToErrorResult()")]
+    [InlineData("new ErrorHttpResult(result.Error)")]
+    public void NoInlineResultBranchBeforeHttpResultOutsideWebApi_FailureBranchThroughTheCore_RulePasses(string failureBranch)
+    {
+        var source = $$"""
+            namespace SharedKernel.Primitives
+            {
+                public sealed class Error { }
+
+                public class Result<T>
+                {
+                    public bool IsFailure { get; set; }
+                    public T Value { get; set; } = default!;
+                    public Error Error { get; set; } = new Error();
+                }
+            }
+
+            namespace Microsoft.AspNetCore.Http
+            {
+                public interface IResult { }
+                public sealed class OkResult : IResult { }
+            }
+
+            namespace SharedKernel.Presentation.WebApi
+            {
+                using SharedKernel.Primitives;
+
+                public sealed class ErrorHttpResult : Microsoft.AspNetCore.Http.IResult
+                {
+                    public ErrorHttpResult(Error error) { }
+                }
+
+                public static class ResultHttpExtensions
+                {
+                    public static ErrorHttpResult ToErrorResult(this Error error) => new ErrorHttpResult(error);
+                }
+            }
+
+            namespace Application.Endpoints
+            {
+                using Microsoft.AspNetCore.Http;
+                using SharedKernel.Presentation.WebApi;
+                using SharedKernel.Primitives;
+
+                public static class OrderEndpoints
+                {
+                    public static IResult Handle(Result<int> result)
+                    {
+                        if (result.IsFailure)
+                        {
+                            return {{failureBranch}};
+                        }
+
+                        return new OkResult();
+                    }
+                }
+            }
+            """;
+
+        var assembly = CompileInMemory($"Fixture.InlineResultBranch.ThroughTheCore.{failureBranch.Length}", source);
+
+        var result = PresentationLayeringRules
+            .NoInlineResultBranchBeforeHttpResultOutsideWebApi(assembly)
+            .GetResult();
+
+        result.IsSuccessful.Should().BeTrue(
+            because: $"Handle's failure branch goes through the WebApi core ({failureBranch})");
+    }
+
+    /// <summary>
+    /// P-562: the escape hatch is matched by declaring type, not by name — a service's own extension method named
+    /// <c>ToOk</c> is a hand-rolled mapping, not the platform's.
+    /// </summary>
+    [Fact]
+    public void NoInlineResultBranchBeforeHttpResultOutsideWebApi_SameNamedMethodOnAnotherType_RuleFails()
+    {
+        const string source = """
+            namespace SharedKernel.Primitives
+            {
+                public class Result
+                {
+                    public bool IsSuccess { get; set; }
+                }
+            }
+
+            namespace Microsoft.AspNetCore.Http
+            {
+                public interface IResult { }
+                public sealed class OkResult : IResult { }
+                public sealed class BadRequestResult : IResult { }
+            }
+
+            namespace Application.Http
+            {
+                using Microsoft.AspNetCore.Http;
+                using SharedKernel.Primitives;
+
+                public static class HomeGrownResultExtensions
+                {
+                    public static IResult ToOk(this Result result) => new OkResult();
+                }
+            }
+
+            namespace Application.Endpoints
+            {
+                using Application.Http;
+                using Microsoft.AspNetCore.Http;
+                using SharedKernel.Primitives;
+
+                public static class OrderEndpoints
+                {
+                    public static IResult Handle(Result result)
+                    {
+                        if (!result.IsSuccess)
+                        {
+                            return new BadRequestResult();
+                        }
+
+                        return result.ToOk();
+                    }
+                }
+            }
+            """;
+
+        var assembly = CompileInMemory("Fixture.InlineResultBranch.HomeGrownToOk", source);
+
+        var result = PresentationLayeringRules
+            .NoInlineResultBranchBeforeHttpResultOutsideWebApi(assembly)
+            .GetResult();
+
+        result.IsSuccessful.Should().BeFalse(
+            because: "a ToOk declared outside SharedKernel.Presentation.WebApi is not the platform's mapping");
+        result.FailingTypeNames.Should().Contain("Application.Endpoints.OrderEndpoints");
     }
 
     /// <summary>
@@ -387,6 +664,81 @@ public class PresentationLayeringRulesTests
         result.IsSuccessful.Should().BeTrue(
             because: "Handle never reads Result.IsSuccess/IsFailure — there is nothing yet to enforce");
     }
+
+    // ---------------------------------------------------------------------------
+    // P-562 final review — the inline-branch rule against the real WebApi types
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// The predicate names the WebApi mapping types and the typed-results namespace as strings, and a stale name
+    /// matches nothing: after R21 moved <c>ErrorHttpResult</c> to the root namespace, a compliant
+    /// <c>new ErrorHttpResult(error)</c> was flagged. These fixtures compile against the shipped WebApi, Primitives
+    /// and ASP.NET Core assemblies, so each mapping the core offers passes only while the predicate names the real
+    /// types, and a future move fails here.
+    /// </summary>
+    [Theory]
+    [InlineData("ErrorHttpResult", "if (result.IsFailure) { return new ErrorHttpResult(result.Error); } return TypedResults.Ok(result.Value);")]
+    [InlineData("ToErrorResult", "if (result.IsFailure) { return result.Error.ToErrorResult(); } return TypedResults.Ok(result.Value);")]
+    [InlineData("ToProblemDetails", "if (result.IsFailure) { return TypedResults.Problem(result.Error.ToProblemDetails(httpContext)); } return TypedResults.Ok(result.Value);")]
+    [InlineData("ToOk", "if (result.IsFailure) { httpContext.Items[\"failed\"] = true; } return result.ToOk();")]
+    public void NoInlineResultBranchBeforeHttpResultOutsideWebApi_RealCoreMapping_RulePasses(string mapping, string body)
+    {
+        var assembly = CompileAgainstRealAssemblies(
+            $"Fixture.InlineResultBranch.RealCore.{mapping}",
+            RealEndpointSource("IResult", body));
+
+        var result = PresentationLayeringRules
+            .NoInlineResultBranchBeforeHttpResultOutsideWebApi(assembly)
+            .GetResult();
+
+        result.IsSuccessful.Should().BeTrue(
+            because: $"Handle maps through the shipped WebApi core ({mapping}); failing types: " +
+                     string.Join(", ", result.FailingTypeNames ?? []));
+    }
+
+    /// <summary>
+    /// The fire path with the real types: a branch built by hand from <c>TypedResults</c> fails, whether the handler
+    /// returns <c>IResult</c> or a real typed-results union.
+    /// </summary>
+    [Theory]
+    [InlineData("IResult", "IResult")]
+    [InlineData("Union", "Results<Ok<int>, NotFound>")]
+    public void NoInlineResultBranchBeforeHttpResultOutsideWebApi_RealTypedResultsBuiltByHand_RuleFails(
+        string caseName,
+        string returnType)
+    {
+        var assembly = CompileAgainstRealAssemblies(
+            $"Fixture.InlineResultBranch.RealByHand.{caseName}",
+            RealEndpointSource(
+                returnType,
+                "if (result.IsFailure) { return TypedResults.NotFound(); } return TypedResults.Ok(result.Value);"));
+
+        var result = PresentationLayeringRules
+            .NoInlineResultBranchBeforeHttpResultOutsideWebApi(assembly)
+            .GetResult();
+
+        result.IsSuccessful.Should().BeFalse(
+            because: $"Handle reads Result<T>.IsFailure and returns {returnType} built from TypedResults by hand");
+        result.FailingTypeNames.Should().Contain("Application.Endpoints.OrderEndpoints");
+    }
+
+    private static string RealEndpointSource(string returnType, string body) => $$"""
+        using Microsoft.AspNetCore.Http;
+        using Microsoft.AspNetCore.Http.HttpResults;
+        using SharedKernel.Presentation.WebApi;
+        using SharedKernel.Primitives.Results;
+
+        namespace Application.Endpoints
+        {
+            public static class OrderEndpoints
+            {
+                public static {{returnType}} Handle(Result<int> result, HttpContext httpContext)
+                {
+                    {{body}}
+                }
+            }
+        }
+        """;
 
     // ---------------------------------------------------------------------------
     // T-360 — Fire path: contrived assembly shaped like SharedKernel.Presentation.Grpc
@@ -454,26 +806,177 @@ public class PresentationLayeringRulesTests
     /// <summary>
     /// T-361 (coordinator-directed extension, WO-074, folded into P-469): the real, currently-built
     /// <c>SharedKernel.Presentation.Grpc</c> assembly must pass
-    /// <see cref="PresentationLayeringRules.GrpcNeverReferencesContracts"/> with zero violations —
-    /// this is the empirical proof that NetArchTest's <c>NotHaveDependencyOn</c> correctly
-    /// distinguishes "reachable via the reference closure" (true today, because of the deliberate
-    /// <c>SharedKernel.Presentation.WebApi</c> reference) from "actually used by a type in this
-    /// assembly" (false today — no type does), so this rule is a sufficient mechanical lock without
-    /// requiring the <c>SharedKernel.Presentation.WebApi</c> reference itself to be removed.
+    /// <see cref="PresentationLayeringRules.GrpcNeverReferencesContracts"/> with zero violations.
+    /// When this test was written the WebApi core referenced <c>04.Contracts</c>, so the contracts
+    /// were reachable through the deliberate <c>SharedKernel.Presentation.WebApi</c> reference, and
+    /// the test proved NetArchTest's <c>NotHaveDependencyOn</c> tells "reachable" from "used by a type
+    /// in this assembly". Since P-562 the WebApi core references no <c>04.Contracts</c> at all; the
+    /// test stays as the lock should a reference ever return.
     /// </summary>
     [Fact]
     public void GrpcNeverReferencesContracts_RealGrpcAssembly_RulePasses()
     {
-        var grpcAssembly = typeof(SharedKernel.Presentation.Grpc.Results.GrpcResultExtensions).Assembly;
-
         var result = PresentationLayeringRules
-            .GrpcNeverReferencesContracts(grpcAssembly)
+            .GrpcNeverReferencesContracts(GrpcAssembly)
             .GetResult();
 
         result.IsSuccessful.Should().BeTrue(
             because: "no type in the real SharedKernel.Presentation.Grpc assembly actually uses a " +
                      "SharedKernel.Contracts type; neither it nor SharedKernel.Presentation.WebApi references Contracts");
     }
+
+    // ---------------------------------------------------------------------------
+    // P-562 — the real presentation assemblies: only the WebApi core is exempt
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// P-562: the OpenAPI add-on, SignalR and gRPC packages are not legitimate <c>ProblemDetails</c> construction
+    /// sites — SignalR and gRPC present errors through the core's <c>ErrorPresentation</c>, and the add-on describes
+    /// the problem shape as an <c>OpenApiSchema</c> — so the real assemblies pass the rule unexempted.
+    /// </summary>
+    [Fact]
+    public void NoDirectProblemDetailsConstructionOutsideWebApi_RealOpenApiSignalRAndGrpcAssemblies_RulePasses()
+    {
+        var result = PresentationLayeringRules
+            .NoDirectProblemDetailsConstructionOutsideWebApi(PresentationSiblingAssemblies())
+            .GetResult();
+
+        result.IsSuccessful.Should().BeTrue(
+            because: "only SharedKernel.Presentation.WebApi builds ProblemDetails; failing types: " +
+                     string.Join(", ", result.FailingTypeNames ?? []));
+    }
+
+    /// <summary>
+    /// P-562 control: the real WebApi core does construct <c>ProblemDetails</c> (its problem factory), so the rule is
+    /// not vacuous against shipped code — and this is exactly why callers must exclude that one assembly.
+    /// </summary>
+    [Fact]
+    public void NoDirectProblemDetailsConstructionOutsideWebApi_RealWebApiAssembly_RuleFails_WhichIsWhyItIsExcluded()
+    {
+        var result = PresentationLayeringRules
+            .NoDirectProblemDetailsConstructionOutsideWebApi(WebApiAssembly)
+            .GetResult();
+
+        result.IsSuccessful.Should().BeFalse(
+            because: "the WebApi core is the one place that shapes ProblemDetails, so it must never be passed to the rule");
+    }
+
+    /// <summary>
+    /// P-562: SignalR's <c>Result</c> handling (hub method results) returns no HTTP result type, the gRPC package
+    /// maps exceptions rather than <c>Result</c>s (R32 removed its own result extensions; services end a failed
+    /// <c>Result</c> with <c>SharedKernel.Core</c>'s), and the add-on reads no <c>Result</c> — so the real sibling
+    /// assemblies pass the inline-branch rule unexempted.
+    /// </summary>
+    [Fact]
+    public void NoInlineResultBranchBeforeHttpResultOutsideWebApi_RealOpenApiSignalRAndGrpcAssemblies_RulePasses()
+    {
+        var result = PresentationLayeringRules
+            .NoInlineResultBranchBeforeHttpResultOutsideWebApi(PresentationSiblingAssemblies())
+            .GetResult();
+
+        result.IsSuccessful.Should().BeTrue(
+            because: "no sibling package maps a Result to an HTTP response by hand; failing types: " +
+                     string.Join(", ", result.FailingTypeNames ?? []));
+    }
+
+    // ---------------------------------------------------------------------------
+    // P-562 — NoOpenApiStackDependencyOutsideOpenApiAddOn
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// P-562: the WebApi core, SignalR and gRPC packages carry no dependency on the API versioning, OpenAPI or Scalar
+    /// stack — every one of those lives in <c>SharedKernel.Presentation.OpenApi</c>.
+    /// </summary>
+    [Fact]
+    public void NoOpenApiStackDependencyOutsideOpenApiAddOn_RealWebApiSignalRAndGrpcAssemblies_RulePasses()
+    {
+        var result = PresentationLayeringRules
+            .NoOpenApiStackDependencyOutsideOpenApiAddOn(WebApiAssembly, SignalRAssembly, GrpcAssembly)
+            .GetResult();
+
+        result.IsSuccessful.Should().BeTrue(
+            because: "the core and the protocol packages stay free of the OpenAPI stack; failing types: " +
+                     string.Join(", ", result.FailingTypeNames ?? []));
+    }
+
+    /// <summary>
+    /// P-562 control: the real add-on does depend on the stack, so the rule detects a real dependency rather than
+    /// passing vacuously — and the add-on is the one assembly callers never pass.
+    /// </summary>
+    [Fact]
+    public void NoOpenApiStackDependencyOutsideOpenApiAddOn_RealOpenApiAddOn_RuleFails_WhichIsWhyItIsExcluded()
+    {
+        var result = PresentationLayeringRules
+            .NoOpenApiStackDependencyOutsideOpenApiAddOn(OpenApiAssembly)
+            .GetResult();
+
+        result.IsSuccessful.Should().BeFalse(
+            because: "SharedKernel.Presentation.OpenApi is where Asp.Versioning, Microsoft.OpenApi and Scalar belong");
+    }
+
+    /// <summary>
+    /// P-562 fire path, once per namespace of the stack (so every chained condition is exercised, not only the first):
+    /// an assembly shaped like the WebApi core that reaches for one of them fails the rule.
+    /// </summary>
+    [Theory]
+    [InlineData("Asp.Versioning")]
+    [InlineData("Microsoft.AspNetCore.OpenApi")]
+    [InlineData("Microsoft.OpenApi")]
+    [InlineData("Scalar.AspNetCore")]
+    public void NoOpenApiStackDependencyOutsideOpenApiAddOn_CoreUsingTheStack_RuleFails(string stackNamespace)
+    {
+        var stackStubSource = $$"""
+            namespace {{stackNamespace}}
+            {
+                public sealed class StackType { }
+            }
+            """;
+
+        var coreSource = $$"""
+            namespace SharedKernel.Presentation.WebApi
+            {
+                public static class DocumentAwareProblems
+                {
+                    // Violation: the core reaching for the stack the OpenAPI add-on owns.
+                    public static object Describe() => new {{stackNamespace}}.StackType();
+                }
+            }
+            """;
+
+        var stackAssembly = CompileInMemory($"Fixture.PresentationOpenApiStack.{stackNamespace}.Stub", stackStubSource);
+        var coreAssembly = CompileInMemory(
+            $"Fixture.PresentationOpenApiStack.ViolatingCore.{stackNamespace}",
+            coreSource,
+            extraReferences: new[] { stackAssembly });
+
+        var result = PresentationLayeringRules
+            .NoOpenApiStackDependencyOutsideOpenApiAddOn(coreAssembly)
+            .GetResult();
+
+        result.IsSuccessful.Should().BeFalse(
+            because: $"DocumentAwareProblems depends on {stackNamespace}, which only the OpenAPI add-on may reference");
+        result.FailingTypeNames.Should().Contain("SharedKernel.Presentation.WebApi.DocumentAwareProblems");
+    }
+
+    private static Assembly WebApiAssembly => typeof(SharedKernel.Presentation.WebApi.WebApiHostBuilderExtensions).Assembly;
+
+    private static Assembly OpenApiAssembly => typeof(SharedKernel.Presentation.OpenApi.OpenApiHostBuilderExtensions).Assembly;
+
+    private static Assembly SignalRAssembly => typeof(SharedKernel.Presentation.SignalR.SignalRHostBuilderExtensions).Assembly;
+
+    /// <summary>
+    /// Anchored on the package's setup entry point, its one root-namespace type. R32 removed the former anchor,
+    /// <c>GrpcResultExtensions</c>.
+    /// </summary>
+    private static Assembly GrpcAssembly => typeof(SharedKernel.Presentation.Grpc.GrpcHostBuilderExtensions).Assembly;
+
+    /// <summary>The presentation packages that build on the WebApi core — every one checked, none exempt.</summary>
+    private static Assembly[] PresentationSiblingAssemblies() =>
+    [
+        OpenApiAssembly,
+        SignalRAssembly,
+        GrpcAssembly,
+    ];
 
     // ---------------------------------------------------------------------------
     // Helpers
@@ -509,6 +1012,32 @@ public class PresentationLayeringRulesTests
             }
         }
 
+        return EmitAndLoad(assemblyName, syntaxTree, references);
+    }
+
+    /// <summary>
+    /// Compiles <paramref name="source"/> against every assembly the test host trusts: the .NET and ASP.NET Core
+    /// shared frameworks and this project's references, the real WebApi core and <c>SharedKernel.Primitives</c> among
+    /// them. A fixture then uses the shipped types, not stand-ins declared under the same names.
+    /// </summary>
+    private static Assembly CompileAgainstRealAssemblies(string assemblyName, string source)
+    {
+        var trustedPlatformAssemblies = AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") as string
+            ?? throw new InvalidOperationException("The test host lists no trusted platform assemblies.");
+
+        var references = trustedPlatformAssemblies
+            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
+            .Select(path => (MetadataReference)MetadataReference.CreateFromFile(path))
+            .ToList();
+
+        return EmitAndLoad(assemblyName, CSharpSyntaxTree.ParseText(source), references);
+    }
+
+    private static Assembly EmitAndLoad(
+        string assemblyName,
+        SyntaxTree syntaxTree,
+        IEnumerable<MetadataReference> references)
+    {
         var compilation = CSharpCompilation.Create(
             assemblyName,
             syntaxTrees: new[] { syntaxTree },

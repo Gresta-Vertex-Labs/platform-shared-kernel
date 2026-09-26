@@ -16,7 +16,7 @@ namespace SharedKernel.Application.Pipeline.Caching.Shared;
 /// </para>
 /// <para>
 /// A DI-created singleton resolved from <see cref="IMeterFactory"/> — not a static field — matching
-/// <c>ApplicationMetrics</c>. Registered by <c>AddCachingBehaviors()</c> alongside
+/// <c>ApplicationMetrics</c>. Registered by <c>WithCaching()</c> alongside
 /// <c>services.AddMetrics()</c> so an <see cref="IMeterFactory"/> is always resolvable.
 /// </para>
 /// </remarks>

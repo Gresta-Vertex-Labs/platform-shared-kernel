@@ -8,14 +8,14 @@ A query implementing ICacheableQuery&lt;TValue&gt; supplies its own key, scope a
 
 A command implementing IInvalidatesCache names the queries it makes stale through CacheKeyRef.For&lt;TQuery&gt;, so a renamed query is a compile error rather than a missed eviction. Eviction is deferred through ICommandScope until the outermost command's transaction has committed, runs uncancellable so a client disconnect cannot leave the cache stale, and isolates each key so one failure does not abandon the rest.
 
-The markers (ICacheableQuery&lt;TValue&gt;, IInvalidatesCache, CacheScope, CacheKeyRef) live in SharedKernel.Application, so an Application project declares them without this package. These behaviors are a separate package because SharedKernel.Application.Pipeline will not take a cache dependency on behalf of services that never cache anything. Register them into the same pipeline with AddCachingBehaviors(). Depends on SharedKernel.Application.Pipeline and SharedKernel.Caching.Abstractions.Abstractions.</Description>
+The markers (ICacheableQuery&lt;TValue&gt;, IInvalidatesCache, CacheScope, CacheKeyRef) live in SharedKernel.Application, so an Application project declares them without this package. These behaviors are a separate package because SharedKernel.Application.Pipeline will not take a cache dependency on behalf of services that never cache anything. Add them to the same pipeline with WithCaching() on AddSharedKernelApplication. Depends on SharedKernel.Application.Pipeline and SharedKernel.Caching.Abstractions.Abstractions.</Description>
     <PackageReleaseNotes>First release.
 
 WHAT IS IN IT
 - The caching behavior for ICacheableQuery&lt;TValue&gt; (declared in SharedKernel.Application), cached in the Query stage. Supplies CacheKey, CachePolicy, Scope, RefreshCache and ShouldCache.
 - The invalidation behavior for IInvalidatesCache (declared in SharedKernel.Application), evicted in the Command stage after commit. Supplies CacheKeysToInvalidate (CacheKeyRef), CacheTagsToInvalidate and Scope.
 - CacheScope (declared in SharedKernel.Application): Tenant (default), User, Global.
-- AddCachingBehaviors(), which registers both in their correct stages and makes Build() fail at startup when ICacheService or ITenantCacheKeyProvider is missing.
+- WithCaching() on the AddSharedKernelApplication builder, which registers both in their correct stages; the host start fails when ICacheService or ITenantCacheKeyProvider is missing.
 
 THINGS WORTH KNOWING BEFORE YOU ADOPT IT
 - CacheKey is the query's identity within its own namespace, not the whole key. The query type, the service name and the scope are added for you, and every part is escaped by ICacheKeyProvider.
@@ -25,7 +25,7 @@ THINGS WORTH KNOWING BEFORE YOU ADOPT IT
 - A command names the query that owns each entry, not a raw key string, because entries are namespaced per query type. The command's Scope must match the queries it invalidates.
 - Eviction runs only when the command succeeded and the outermost command committed, is not cancellable by the request token, and continues past a failing key.
 - Hit/miss counters and Activity tags are recorded per query type under the existing "SharedKernel.Application" meter, so 13.ServiceDefaults' WithApplicationTelemetry() exports them with no extra registration. Logging uses EventIds 5200-5299.
-- The two behavior types are internal; the package's contract is the marker interfaces, CacheScope, CacheKeyRef and AddCachingBehaviors().
+- The two behavior types are internal; the package's contract is the marker interfaces, CacheScope, CacheKeyRef and WithCaching().
 - SharedKernel.Analyzers' SK0017 and SK0018 flag a command implementing the query marker and a query implementing the command marker; SK0041 flags two cacheable queries sharing a simple type name, which would collapse their key namespaces.
 
 See the package README for the invalidation-ordering diagram and the full reference.</PackageReleaseNotes>
@@ -44,7 +44,7 @@ See the package README for the invalidation-ordering diagram and the full refere
   <ItemGroup>
     <!--
       Both behaviors are internal: the public contract of this package is the marker interfaces,
-      CacheScope and AddCachingBehaviors(), not the pipeline types the builder registers by
+      CacheScope and WithCaching(), not the pipeline types the builder registers by
       reflection. The test project constructs them directly, the repo's dominant convention
       (02.Caching.FusionCache, 06.Persistence.EfCore, 07.Messaging.MassTransit and 40 others).
     -->

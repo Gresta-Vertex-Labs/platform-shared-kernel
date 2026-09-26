@@ -19,6 +19,9 @@ public sealed class Order : AggregateRoot<OrderId>
     public Money Total { get; private set; } = Money.Zero("EUR");
     public IReadOnlyList<string> Lines => _lines.AsReadOnly();
 
+    /// <summary>Whether the order was cancelled; a cancelled order cannot be cancelled again.</summary>
+    public bool IsCancelled { get; private set; }
+
     private Order(OrderId id, IClock clock) : base(id, clock) { }
 
     /// <summary>ORM materialisation path — never call from application code.</summary>
@@ -44,5 +47,17 @@ public sealed class Order : AggregateRoot<OrderId>
             order.Id.Value, order.Customer, total.Amount, total.Currency) { OccurredOn = ts });
 
         return Result<Order>.Success(order);
+    }
+
+    /// <summary>Cancels the order, raising <see cref="OrderCancelledEvent"/>.</summary>
+    /// <returns>Success, or <c>order.already_cancelled</c> (a conflict) when it was cancelled before.</returns>
+    public Result Cancel()
+    {
+        if (IsCancelled)
+            return Result.Failure(Error.Conflict("order.already_cancelled", $"Order {Id.Value} is already cancelled."));
+
+        IsCancelled = true;
+        RaiseDomainEvent(ts => new OrderCancelledEvent(Id.Value) { OccurredOn = ts });
+        return Result.Success();
     }
 }

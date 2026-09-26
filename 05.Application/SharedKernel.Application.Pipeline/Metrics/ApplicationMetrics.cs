@@ -9,8 +9,7 @@ namespace SharedKernel.Application.Pipeline.Metrics;
 /// <remarks>
 /// A DI-created singleton, resolved from <see cref="IMeterFactory"/> — not a static field — so its
 /// lifetime is owned by the host's dependency injection container rather than the process. Registered
-/// by <c>ApplicationBehaviorsBuilder.Build()</c> only when <c>AddMetricsBehavior()</c> was opted
-/// into, alongside a call to <c>services.AddMetrics()</c> to ensure an <see cref="IMeterFactory"/>
+/// by <c>AddSharedKernelApplication</c> (metrics are always on), alongside a call to <c>services.AddMetrics()</c> to ensure an <see cref="IMeterFactory"/>
 /// is available to resolve.
 /// </remarks>
 internal sealed class ApplicationMetrics

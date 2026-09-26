@@ -2,7 +2,6 @@ using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Application.DomainEvents;
 using SharedKernel.Application.Pipeline.DomainEvents;
-using SharedKernel.Application.Pipeline.Extensions;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Domain.Events;
 
@@ -68,7 +67,8 @@ public sealed class DomainEventDispatcherTests
         var journal = new Journal();
         var services = new ServiceCollection();
         services.AddSingleton(journal);
-        services.AddSharedKernelDomainEvents();
+        // SharedKernel.Application declares no domain-event handler, so only the ones added below are registered.
+        services.AddSharedKernelApplication(typeof(SharedKernel.Application.Commands.ICommandScope).Assembly);
         services.AddDomainEventHandler<FirstTestEvent, FirstHandler>();
         services.AddDomainEventHandler<FirstTestEvent, SecondFirstHandler>();
         services.AddDomainEventHandler<SecondTestEvent, SecondHandler>();

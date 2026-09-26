@@ -26,7 +26,6 @@
   <ItemGroup>
     <PackageReference Include="SharedKernel.Application" />
     <PackageReference Include="FluentValidation" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
   </ItemGroup>
 
 </Project>

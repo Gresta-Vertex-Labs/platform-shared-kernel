@@ -7,7 +7,6 @@ using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Execution.Auditing;
 using SharedKernel.Application.Pipeline.Auditing;
 using SharedKernel.Application.Pipeline.Commands;
-using SharedKernel.Application.Pipeline.Extensions;
 using SharedKernel.Application.Pipeline.Tests.Support;
 using SharedKernel.Execution.Transactions;
 using SharedKernel.Primitives.Errors;
@@ -16,8 +15,8 @@ using SharedKernel.Primitives.Results;
 namespace SharedKernel.Application.Pipeline.Tests.Transaction;
 
 /// <summary>
-/// Proves — through a real, composed <c>ServiceCollection</c> + <c>AddMediatR</c> +
-/// <see cref="ApplicationBehaviorsBuilder"/> dispatch — how auditing sits around the transaction: the
+/// Proves — through a real, composed <c>ServiceCollection</c> + <c>AddSharedKernelApplication</c>
+/// dispatch — how auditing sits around the transaction: the
 /// <see cref="AuditOutcome.Succeeded"/> entry is written inside the transaction, after the business
 /// save and before the commit (the unit of work's pre-commit hook); every failure — a failed
 /// <c>Result</c>, a thrown exception, a failed commit — is written after the rollback.
@@ -74,12 +73,12 @@ public sealed class TransactionalAuditingOrderingTests
         services.AddSingleton<IUnitOfWork>(unitOfWork);
         services.AddSingleton<IAuditTrailWriter>(writer);
 
-        services.AddSharedKernelMediatR(typeof(TransactionalAuditingOrderingTests).Assembly);
-
-        var builder = services.AddSharedKernelApplicationBehaviors().AddAuditingBehavior();
-        if (withTransaction)
-            builder.AddTransactionBehavior();
-        builder.Build();
+        services.AddSharedKernelApplication(typeof(TransactionalAuditingOrderingTests).Assembly, app =>
+        {
+            app.UseMediatR().WithAuditing();
+            if (withTransaction)
+                app.WithTransactions();
+        });
 
         return (services.BuildServiceProvider(), sequence, unitOfWork, writer);
     }

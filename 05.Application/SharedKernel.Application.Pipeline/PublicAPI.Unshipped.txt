@@ -1,68 +1,36 @@
 #nullable enable
-SharedKernel.Application.Pipeline.Auditing.AuditingBehavior<TRequest, TResponse>
-SharedKernel.Application.Pipeline.Auditing.AuditingBehavior<TRequest, TResponse>.AuditingBehavior(SharedKernel.Execution.Auditing.IAuditTrailWriter! auditTrailWriter, Microsoft.Extensions.Logging.ILogger<SharedKernel.Application.Pipeline.Auditing.AuditingBehavior<TRequest, TResponse>!>! logger) -> void
-SharedKernel.Application.Pipeline.Auditing.AuditingBehavior<TRequest, TResponse>.Handle(TRequest request, SharedKernel.Application.Messaging.RequestHandlerContinuation<TResponse>! next, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<TResponse>!
-SharedKernel.Application.Pipeline.Authorization.AuthorizationBehavior<TRequest, TResponse>
-SharedKernel.Application.Pipeline.Authorization.AuthorizationBehavior<TRequest, TResponse>.AuthorizationBehavior(SharedKernel.Execution.Context.IRequestContext! requestContext) -> void
-SharedKernel.Application.Pipeline.Authorization.AuthorizationBehavior<TRequest, TResponse>.Handle(TRequest request, SharedKernel.Application.Messaging.RequestHandlerContinuation<TResponse>! next, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<TResponse>!
-SharedKernel.Application.Pipeline.DomainEvents.DomainEventDispatcher
-SharedKernel.Application.Pipeline.DomainEvents.DomainEventDispatcher.DispatchAsync(System.Collections.Generic.IReadOnlyList<SharedKernel.Domain.Events.IDomainEvent!>! events, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
-SharedKernel.Application.Pipeline.DomainEvents.DomainEventDispatcher.DomainEventDispatcher(System.IServiceProvider! services) -> void
-SharedKernel.Application.Pipeline.Extensions.ApplicationBehaviorsBuilder
-SharedKernel.Application.Pipeline.Extensions.ApplicationBehaviorsBuilder.AddAuditingBehavior() -> SharedKernel.Application.Pipeline.Extensions.ApplicationBehaviorsBuilder!
-SharedKernel.Application.Pipeline.Extensions.ApplicationBehaviorsBuilder.AddAuthorizationBehavior() -> SharedKernel.Application.Pipeline.Extensions.ApplicationBehaviorsBuilder!
-SharedKernel.Application.Pipeline.Extensions.ApplicationBehaviorsBuilder.AddBehavior(System.Type! openGenericBehaviorType, SharedKernel.Application.Pipeline.Extensions.PipelineStage stage, params System.Type![]! requiredServices) -> SharedKernel.Application.Pipeline.Extensions.ApplicationBehaviorsBuilder!
-SharedKernel.Application.Pipeline.Extensions.ApplicationBehaviorsBuilder.AddDefaultBehaviors() -> SharedKernel.Application.Pipeline.Extensions.ApplicationBehaviorsBuilder!
-SharedKernel.Application.Pipeline.Extensions.ApplicationBehaviorsBuilder.AddLoggingBehavior() -> SharedKernel.Application.Pipeline.Extensions.ApplicationBehaviorsBuilder!
-SharedKernel.Application.Pipeline.Extensions.ApplicationBehaviorsBuilder.AddMetricsBehavior() -> SharedKernel.Application.Pipeline.Extensions.ApplicationBehaviorsBuilder!
-SharedKernel.Application.Pipeline.Extensions.ApplicationBehaviorsBuilder.AddTracingBehavior() -> SharedKernel.Application.Pipeline.Extensions.ApplicationBehaviorsBuilder!
-SharedKernel.Application.Pipeline.Extensions.ApplicationBehaviorsBuilder.AddTransactionBehavior() -> SharedKernel.Application.Pipeline.Extensions.ApplicationBehaviorsBuilder!
-SharedKernel.Application.Pipeline.Extensions.ApplicationBehaviorsBuilder.AddValidationBehavior() -> SharedKernel.Application.Pipeline.Extensions.ApplicationBehaviorsBuilder!
-SharedKernel.Application.Pipeline.Extensions.ApplicationBehaviorsBuilder.Build() -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
-SharedKernel.Application.Pipeline.Extensions.ApplicationBehaviorsBuilder.Services.get -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
-SharedKernel.Application.Pipeline.Extensions.ApplicationBehaviorsServiceCollectionExtensions
-SharedKernel.Application.Pipeline.Extensions.DomainEventServiceCollectionExtensions
-SharedKernel.Application.Pipeline.Extensions.PipelineStage
-SharedKernel.Application.Pipeline.Extensions.PipelineStage.Authorization = 1 -> SharedKernel.Application.Pipeline.Extensions.PipelineStage
-SharedKernel.Application.Pipeline.Extensions.PipelineStage.Command = 4 -> SharedKernel.Application.Pipeline.Extensions.PipelineStage
-SharedKernel.Application.Pipeline.Extensions.PipelineStage.Observability = 0 -> SharedKernel.Application.Pipeline.Extensions.PipelineStage
-SharedKernel.Application.Pipeline.Extensions.PipelineStage.Query = 3 -> SharedKernel.Application.Pipeline.Extensions.PipelineStage
-SharedKernel.Application.Pipeline.Extensions.PipelineStage.Validation = 2 -> SharedKernel.Application.Pipeline.Extensions.PipelineStage
-SharedKernel.Application.Pipeline.Extensions.RequestPipelineServiceCollectionExtensions
-SharedKernel.Application.Pipeline.Idempotency.IdempotencyBehavior<TRequest, TResponse>
-SharedKernel.Application.Pipeline.Idempotency.IdempotencyBehavior<TRequest, TResponse>.Handle(TRequest request, SharedKernel.Application.Messaging.RequestHandlerContinuation<TResponse>! next, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<TResponse>!
-SharedKernel.Application.Pipeline.Logging.ApplicationLoggingOptions
-SharedKernel.Application.Pipeline.Logging.ApplicationLoggingOptions.ApplicationLoggingOptions() -> void
-SharedKernel.Application.Pipeline.Logging.ApplicationLoggingOptions.SlowRequestThreshold.get -> System.TimeSpan
-SharedKernel.Application.Pipeline.Logging.ApplicationLoggingOptions.SlowRequestThreshold.set -> void
-SharedKernel.Application.Pipeline.Logging.LoggingBehavior<TRequest, TResponse>
-SharedKernel.Application.Pipeline.Logging.LoggingBehavior<TRequest, TResponse>.Handle(TRequest request, SharedKernel.Application.Messaging.RequestHandlerContinuation<TResponse>! next, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<TResponse>!
-SharedKernel.Application.Pipeline.Logging.LoggingBehavior<TRequest, TResponse>.LoggingBehavior(Microsoft.Extensions.Logging.ILogger<TRequest>! logger, Microsoft.Extensions.Options.IOptions<SharedKernel.Application.Pipeline.Logging.ApplicationLoggingOptions!>! options) -> void
+SharedKernel.Application.Pipeline.ApplicationLoggingOptions
+SharedKernel.Application.Pipeline.ApplicationLoggingOptions.ApplicationLoggingOptions() -> void
+SharedKernel.Application.Pipeline.ApplicationLoggingOptions.SlowRequestThreshold.get -> System.TimeSpan
+SharedKernel.Application.Pipeline.ApplicationLoggingOptions.SlowRequestThreshold.set -> void
+SharedKernel.Application.Pipeline.ApplicationPipelineBuilder
+SharedKernel.Application.Pipeline.ApplicationPipelineBuilder.Assemblies.get -> System.Collections.Generic.IReadOnlyList<System.Reflection.Assembly!>!
+SharedKernel.Application.Pipeline.ApplicationPipelineBuilder.Services.get -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+SharedKernel.Application.Pipeline.ApplicationPipelineBuilder.WithAuditing() -> SharedKernel.Application.Pipeline.ApplicationPipelineBuilder!
+SharedKernel.Application.Pipeline.ApplicationPipelineBuilder.WithBehavior(System.Type! openGenericBehaviorType, SharedKernel.Application.Pipeline.PipelineStage stage, params System.Type![]! requiredServices) -> SharedKernel.Application.Pipeline.ApplicationPipelineBuilder!
+SharedKernel.Application.Pipeline.ApplicationPipelineBuilder.WithIdempotency(System.Action<SharedKernel.Application.Pipeline.IdempotencyBehaviorOptions!>? configure = null) -> SharedKernel.Application.Pipeline.ApplicationPipelineBuilder!
+SharedKernel.Application.Pipeline.ApplicationPipelineBuilder.WithTransactions() -> SharedKernel.Application.Pipeline.ApplicationPipelineBuilder!
+SharedKernel.Application.Pipeline.ApplicationServiceCollectionExtensions
+SharedKernel.Application.Pipeline.IdempotencyBehaviorOptions
+SharedKernel.Application.Pipeline.IdempotencyBehaviorOptions.IdempotencyBehaviorOptions() -> void
+SharedKernel.Application.Pipeline.IdempotencyBehaviorOptions.LeaseDuration.get -> System.TimeSpan
+SharedKernel.Application.Pipeline.IdempotencyBehaviorOptions.LeaseDuration.set -> void
+SharedKernel.Application.Pipeline.IdempotencyBehaviorOptions.RetentionWindow.get -> System.TimeSpan
+SharedKernel.Application.Pipeline.IdempotencyBehaviorOptions.RetentionWindow.set -> void
+SharedKernel.Application.Pipeline.IdempotencyBehaviorOptions.Validate(System.ComponentModel.DataAnnotations.ValidationContext! validationContext) -> System.Collections.Generic.IEnumerable<System.ComponentModel.DataAnnotations.ValidationResult!>!
+SharedKernel.Application.Pipeline.PipelineStage
+SharedKernel.Application.Pipeline.PipelineStage.Authorization = 1 -> SharedKernel.Application.Pipeline.PipelineStage
+SharedKernel.Application.Pipeline.PipelineStage.Command = 4 -> SharedKernel.Application.Pipeline.PipelineStage
+SharedKernel.Application.Pipeline.PipelineStage.Observability = 0 -> SharedKernel.Application.Pipeline.PipelineStage
+SharedKernel.Application.Pipeline.PipelineStage.Query = 3 -> SharedKernel.Application.Pipeline.PipelineStage
+SharedKernel.Application.Pipeline.PipelineStage.Validation = 2 -> SharedKernel.Application.Pipeline.PipelineStage
 SharedKernel.Application.Pipeline.RequestPipeline<TRequest, TResponse>
 SharedKernel.Application.Pipeline.RequestPipeline<TRequest, TResponse>.HandleAsync(TRequest request, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TResponse>!
 SharedKernel.Application.Pipeline.RequestPipeline<TRequest, TResponse>.RequestPipeline(SharedKernel.Application.Messaging.IRequestHandler<TRequest, TResponse>! handler, System.Collections.Generic.IEnumerable<SharedKernel.Application.Messaging.IPipelineBehavior<TRequest, TResponse>!>! behaviors) -> void
 SharedKernel.Application.Pipeline.StreamRequestPipeline<TRequest, TResponse>
 SharedKernel.Application.Pipeline.StreamRequestPipeline<TRequest, TResponse>.Handle(TRequest request, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<TResponse>!
 SharedKernel.Application.Pipeline.StreamRequestPipeline<TRequest, TResponse>.StreamRequestPipeline(SharedKernel.Application.Streaming.IStreamQueryHandler<TRequest, TResponse>! handler, System.Collections.Generic.IEnumerable<SharedKernel.Application.Streaming.IStreamPipelineBehavior<TRequest, TResponse>!>! behaviors) -> void
-SharedKernel.Application.Pipeline.Tracing.TracingBehavior<TRequest, TResponse>
-SharedKernel.Application.Pipeline.Tracing.TracingBehavior<TRequest, TResponse>.Handle(TRequest request, SharedKernel.Application.Messaging.RequestHandlerContinuation<TResponse>! next, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<TResponse>!
-SharedKernel.Application.Pipeline.Tracing.TracingBehavior<TRequest, TResponse>.TracingBehavior() -> void
-SharedKernel.Application.Pipeline.Transaction.TransactionBehavior<TRequest, TResponse>
-SharedKernel.Application.Pipeline.Transaction.TransactionBehavior<TRequest, TResponse>.Handle(TRequest request, SharedKernel.Application.Messaging.RequestHandlerContinuation<TResponse>! next, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<TResponse>!
-SharedKernel.Application.Pipeline.Transaction.TransactionBehavior<TRequest, TResponse>.TransactionBehavior(SharedKernel.Execution.Transactions.IUnitOfWork! unitOfWork, SharedKernel.Application.Commands.ICommandScope! commandScope) -> void
-SharedKernel.Application.Pipeline.Validation.ValidationBehavior<TRequest, TResponse>
-SharedKernel.Application.Pipeline.Validation.ValidationBehavior<TRequest, TResponse>.Handle(TRequest request, SharedKernel.Application.Messaging.RequestHandlerContinuation<TResponse>! next, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<TResponse>!
-SharedKernel.Application.Pipeline.Validation.ValidationBehavior<TRequest, TResponse>.ValidationBehavior(System.Collections.Generic.IEnumerable<SharedKernel.Application.Validation.IRequestValidator<TRequest>!>! validators) -> void
-static SharedKernel.Application.Pipeline.Extensions.ApplicationBehaviorsServiceCollectionExtensions.AddSharedKernelApplicationBehaviors(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> SharedKernel.Application.Pipeline.Extensions.ApplicationBehaviorsBuilder!
-static SharedKernel.Application.Pipeline.Extensions.DomainEventServiceCollectionExtensions.AddDomainEventHandler<TDomainEvent, THandler>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
-static SharedKernel.Application.Pipeline.Extensions.DomainEventServiceCollectionExtensions.AddSharedKernelDomainEvents(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
-static SharedKernel.Application.Pipeline.Extensions.RequestPipelineServiceCollectionExtensions.AddSharedKernelRequestPipeline(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
-SharedKernel.Application.Pipeline.Extensions.ApplicationBehaviorsBuilder.AddIdempotencyBehavior(System.Action<SharedKernel.Application.Pipeline.Idempotency.IdempotencyBehaviorOptions!>? configure = null) -> SharedKernel.Application.Pipeline.Extensions.ApplicationBehaviorsBuilder!
-SharedKernel.Application.Pipeline.Idempotency.IdempotencyBehavior<TRequest, TResponse>.IdempotencyBehavior(SharedKernel.Idempotency.Abstractions.IIdempotencyStore! store, SharedKernel.Application.Commands.ICommandScope! commandScope, Microsoft.Extensions.Options.IOptions<SharedKernel.Application.Pipeline.Idempotency.IdempotencyBehaviorOptions!>! options, Microsoft.Extensions.Logging.ILogger<SharedKernel.Application.Pipeline.Idempotency.IdempotencyBehavior<TRequest, TResponse>!>! logger) -> void
-SharedKernel.Application.Pipeline.Idempotency.IdempotencyBehaviorOptions
-SharedKernel.Application.Pipeline.Idempotency.IdempotencyBehaviorOptions.IdempotencyBehaviorOptions() -> void
-SharedKernel.Application.Pipeline.Idempotency.IdempotencyBehaviorOptions.LeaseDuration.get -> System.TimeSpan
-SharedKernel.Application.Pipeline.Idempotency.IdempotencyBehaviorOptions.LeaseDuration.set -> void
-SharedKernel.Application.Pipeline.Idempotency.IdempotencyBehaviorOptions.RetentionWindow.get -> System.TimeSpan
-SharedKernel.Application.Pipeline.Idempotency.IdempotencyBehaviorOptions.RetentionWindow.set -> void
-SharedKernel.Application.Pipeline.Idempotency.IdempotencyBehaviorOptions.Validate(System.ComponentModel.DataAnnotations.ValidationContext! validationContext) -> System.Collections.Generic.IEnumerable<System.ComponentModel.DataAnnotations.ValidationResult!>!
+static SharedKernel.Application.Pipeline.ApplicationServiceCollectionExtensions.AddDomainEventHandler<TDomainEvent, THandler>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SharedKernel.Application.Pipeline.ApplicationServiceCollectionExtensions.AddSharedKernelApplication(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Reflection.Assembly! assembly, System.Action<SharedKernel.Application.Pipeline.ApplicationPipelineBuilder!>! configure) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SharedKernel.Application.Pipeline.ApplicationServiceCollectionExtensions.AddSharedKernelApplication(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Reflection.Assembly![]! assemblies, System.Action<SharedKernel.Application.Pipeline.ApplicationPipelineBuilder!>! configure) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SharedKernel.Application.Pipeline.ApplicationServiceCollectionExtensions.AddSharedKernelApplication(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, params System.Reflection.Assembly![]! assemblies) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!

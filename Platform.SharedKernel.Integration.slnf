@@ -20,8 +20,6 @@
       "09.Search/SharedKernel.Search.ElasticSearch/SharedKernel.Search.ElasticSearch.Tests/SharedKernel.Search.ElasticSearch.Tests.csproj",
       "09.Search/SharedKernel.Search.Meilisearch/SharedKernel.Search.Meilisearch.Tests/SharedKernel.Search.Meilisearch.Tests.csproj",
       "10.Intelligence/SharedKernel.AI.Qdrant/SharedKernel.AI.Qdrant.Tests/SharedKernel.AI.Qdrant.Tests.csproj",
-      "14.Presentation/SharedKernel.Presentation.SignalR/SharedKernel.Presentation.SignalR.Tests/SharedKernel.Presentation.SignalR.Tests.csproj",
-      "14.Presentation/SharedKernel.Presentation.SignalR.Redis/SharedKernel.Presentation.SignalR.Redis.Tests/SharedKernel.Presentation.SignalR.Redis.Tests.csproj",
       "16.Testing/SharedKernel.Persistence.Testing/SharedKernel.Persistence.Testing.Tests/SharedKernel.Persistence.Testing.Tests.csproj",
       "16.Testing/SharedKernel.Testing.Internal/SharedKernel.Testing.Internal.Tests/SharedKernel.Testing.Internal.Tests.csproj",
       "18.Idempotency/SharedKernel.Idempotency.EfCore/SharedKernel.Idempotency.EfCore.Tests/SharedKernel.Idempotency.EfCore.Tests.csproj",

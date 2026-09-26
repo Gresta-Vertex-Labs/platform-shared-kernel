@@ -423,6 +423,10 @@ jobs:
           test -n "$id"
           curl -sf "http://localhost:5199/orders/$id" | grep -q '"currency":"EUR"'
           test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:5199/orders/01999999-0000-7000-8000-000000000000)" = 404
+          # Cancelling declares [RequirePermission("orders.cancel")] on the command; the pipeline refuses an anonymous caller.
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:5199/orders/$id/cancel")" = 401
+          # No launch profile, so this runs in Production: the API documents must not be published by default (P-562).
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:5199/openapi/v1.json)" = 404
           echo "OrderApi sample smoke test passed"
 
       # CatalogApi runs both search engines at once, so it needs both: started here as plain

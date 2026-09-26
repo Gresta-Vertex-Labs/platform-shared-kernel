@@ -3,6 +3,10 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using DocumentsApi.Tests.Infrastructure;
 using FluentAssertions;
+using Microsoft.AspNetCore.Http.Metadata;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
+using SharedKernel.Presentation.WebApi;
 using SharedKernel.Storage;
 
 namespace DocumentsApi.Tests;
@@ -11,6 +15,25 @@ namespace DocumentsApi.Tests;
 [Collection(BackendsCollection.Name)]
 public sealed class FileScenarios(Backends backends)
 {
+    /// <summary>
+    /// The platform caps request bodies at 4 MiB, and Kestrel — which the in-memory test server does not run — enforces
+    /// it. So the one endpoint that lifts the cap is pinned by its metadata: without it, every upload above 4 MiB would
+    /// fail in production while these tests stayed green.
+    /// </summary>
+    [Fact]
+    public void Only_the_upload_endpoint_lifts_the_request_body_limit()
+    {
+        var limited = backends[Backends.MinIO].Services.GetRequiredService<EndpointDataSource>().Endpoints
+            .OfType<RouteEndpoint>()
+            .Where(endpoint => endpoint.Metadata.GetMetadata<IRequestSizeLimitMetadata>() is not null)
+            .ToList();
+
+        RouteEndpoint upload = limited.Should().ContainSingle().Subject;
+        upload.RoutePattern.RawText.Should().Be("/files/{store}/{**key}");
+        upload.Metadata.GetMetadata<IHttpMethodMetadata>()!.HttpMethods.Should().Equal("PUT");
+        upload.Metadata.GetMetadata<IRequestSizeLimitMetadata>()!.MaxRequestBodySize.Should().Be(FileEndpoints.MaxUploadBytes);
+    }
+
     [Theory]
     [MemberData(nameof(Backends.AllStores), MemberType = typeof(Backends))]
     public async Task An_upload_round_trips_bytes_headers_and_metadata(string backend, string store)
@@ -106,8 +129,9 @@ public sealed class FileScenarios(Backends backends)
             return;
         }
 
+        // storage.already_exists is a conflict; the client asked for it with If-None-Match, so the answer is 412.
         first.StatusCode.Should().Be(HttpStatusCode.Created);
-        second.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        second.StatusCode.Should().Be(HttpStatusCode.PreconditionFailed);
         (await SampleHost.ErrorCodeAsync(second)).Should().Be(StorageErrorCodes.AlreadyExists);
         (await api.GetByteArrayAsync($"/files/{store}/{key}")).Should().Equal(1);
     }
@@ -129,10 +153,70 @@ public sealed class FileScenarios(Backends backends)
             return;
         }
 
+        // storage.precondition_failed is a conflict; the client named the version in If-Match, so the answer is 412.
         update.StatusCode.Should().Be(HttpStatusCode.Created);
-        stale.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        stale.StatusCode.Should().Be(HttpStatusCode.PreconditionFailed);
         (await SampleHost.ErrorCodeAsync(stale)).Should().Be(StorageErrorCodes.PreconditionFailed);
         (await api.GetByteArrayAsync($"/files/{store}/{key}")).Should().Equal(2);
+
+        // A read pinned to the old version is refused the same way.
+        using HttpResponseMessage staleRead = await SendWithIfMatchAsync(api, HttpMethod.Get, $"/files/{store}/{key}", original.ETag!);
+        staleRead.StatusCode.Should().Be(HttpStatusCode.PreconditionFailed);
+        (await SampleHost.ErrorCodeAsync(staleRead)).Should().Be(StorageErrorCodes.PreconditionFailed);
+    }
+
+    /// <summary>
+    /// A precondition the service cannot use is refused, never ignored: ignoring it would make the client's conditional
+    /// write unconditional. The endpoint declares <c>If-Match</c> as a nullable <c>IfMatch&lt;string&gt;</c>, so the
+    /// platform refuses it before the endpoint runs: the ETag without its quotes (not an entity tag), <c>*</c> or a list
+    /// is 400, a weak tag — which <c>If-Match</c>'s strong comparison never matches — 412.
+    /// </summary>
+    [Theory]
+    [InlineData("unquoted", HttpStatusCode.BadRequest, PresentationErrorCodes.PreconditionInvalid)]
+    [InlineData("any", HttpStatusCode.BadRequest, PresentationErrorCodes.PreconditionInvalid)]
+    [InlineData("list", HttpStatusCode.BadRequest, PresentationErrorCodes.PreconditionInvalid)]
+    [InlineData("weak", HttpStatusCode.PreconditionFailed, PresentationErrorCodes.PreconditionFailed)]
+    public async Task An_if_match_the_service_cannot_use_is_refused_not_ignored(string sent, HttpStatusCode status, string code)
+    {
+        using HttpClient api = backends[Backends.MinIO].Api();
+        string key = SampleHost.NewKey();
+        FileReference original = await SampleHost.ReadAsync<FileReference>(
+            await api.PutAsync($"/files/{Stores.Assets}/{key}", new ByteArrayContent([1])));
+        string ifMatch = sent switch
+        {
+            "unquoted" => original.ETag!.Trim('"'),
+            "any" => "*",
+            "list" => $"{original.ETag}, \"another\"",
+            _ => $"W/{original.ETag}",
+        };
+
+        HttpResponseMessage refused = await PutConditionalAsync(api, Stores.Assets, key, [2], ifMatch: ifMatch);
+
+        refused.StatusCode.Should().Be(status);
+        (await SampleHost.ErrorCodeAsync(refused)).Should().Be(code);
+        (await api.GetByteArrayAsync($"/files/{Stores.Assets}/{key}")).Should().Equal(1);
+    }
+
+    /// <summary>
+    /// 412 answers a precondition the client sent in a header. A create-only copy asks for it in its body, so the same
+    /// <c>storage.already_exists</c> is an ordinary conflict: 409.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(Backends.AllBackends), MemberType = typeof(Backends))]
+    public async Task A_create_only_copy_onto_an_existing_file_is_409(string backend)
+    {
+        using HttpClient api = backends[backend].Api();
+        string source = SampleHost.NewKey();
+        string destination = SampleHost.NewKey();
+        (await api.PutAsync($"/files/{Stores.Assets}/{source}", new ByteArrayContent([1]))).EnsureSuccessStatusCode();
+        (await api.PutAsync($"/files/{Stores.Assets}/{destination}", new ByteArrayContent([2]))).EnsureSuccessStatusCode();
+
+        using HttpResponseMessage copy = await api.PostAsJsonAsync(
+            "/copy", new CopyRequest(Stores.Assets, source, Stores.Assets, destination, CreateOnly: true));
+
+        copy.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await SampleHost.ErrorCodeAsync(copy)).Should().Be(StorageErrorCodes.AlreadyExists);
+        (await api.GetByteArrayAsync($"/files/{Stores.Assets}/{destination}")).Should().Equal(2);
     }
 
     [Theory]
@@ -244,6 +328,13 @@ public sealed class FileScenarios(Backends backends)
             request.Headers.TryAddWithoutValidation("If-Match", ifMatch);
         }
 
+        return api.SendAsync(request);
+    }
+
+    private static Task<HttpResponseMessage> SendWithIfMatchAsync(HttpClient api, HttpMethod method, string url, string ifMatch)
+    {
+        var request = new HttpRequestMessage(method, url);
+        request.Headers.TryAddWithoutValidation("If-Match", ifMatch);
         return api.SendAsync(request);
     }
 

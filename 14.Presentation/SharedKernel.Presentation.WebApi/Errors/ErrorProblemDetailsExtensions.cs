@@ -1,63 +1,32 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using SharedKernel.Presentation.Errors;
-using SharedKernel.Presentation.WebApi.Http;
 using SharedKernel.Primitives.Errors;
 
-namespace SharedKernel.Presentation.WebApi.Errors;
+namespace SharedKernel.Presentation.WebApi;
 
-/// <summary>
-/// Converts an <see cref="Error"/> into an RFC 9457 <see cref="ProblemDetails"/> response body.
-/// </summary>
+/// <summary>Converts an <see cref="Error"/> into the RFC 9457 <see cref="ProblemDetails"/> body of this platform.</summary>
 /// <remarks>
-/// This is the only permitted way to convert an <see cref="Error"/> into an HTTP error body.
-/// Hand-rolled <see cref="ProblemDetails"/> construction inline in endpoint/controller code is a
-/// platform violation.
+/// Most code never calls this: return a typed result (<c>ToOk()</c>, <c>ToErrorResult()</c>) or throw, and the
+/// response is written for you. Use it when you write a response yourself, and write it through
+/// <see cref="IProblemDetailsService"/> so the platform's members are completed.
 /// </remarks>
 public static class ErrorProblemDetailsExtensions
 {
-    /// <summary>
-    /// Maps the specified <paramref name="error"/> to a <see cref="ProblemDetails"/> instance.
-    /// </summary>
-    /// <param name="error">The error to convert.</param>
-    /// <param name="context">
-    /// The current <see cref="HttpContext"/>, used to populate <c>Extensions["traceId"]</c> when
-    /// <see cref="System.Diagnostics.Activity.Current"/> is unavailable. May be <see langword="null"/>.
-    /// </param>
+    /// <summary>Builds the problem body for <paramref name="error"/> in the current request.</summary>
+    /// <param name="error">The error.</param>
+    /// <param name="httpContext">The current request, which decides the language, redaction and ids.</param>
     /// <returns>
-    /// A <see cref="ProblemDetails"/> with <c>Title</c> set to <see cref="Error.Code"/>,
-    /// <c>Detail</c> set to <see cref="Error.Message"/> — or, when an
-    /// <see cref="SharedKernel.Localization.ILocalizationCatalog"/> is registered in
-    /// <paramref name="context"/>'s <c>RequestServices</c> and has a translation for
-    /// <c>(error.Code, System.Globalization.CultureInfo.CurrentUICulture)</c>, that translated
-    /// string instead (P-484/WO-078; see <see cref="LocalizedDetailResolver"/>) — <c>Status</c>
-    /// resolved via <see cref="ErrorTypeStatusCodeMap.Resolve"/>, <c>Type</c> as an RFC 9457
-    /// status URI, and <c>Extensions["errorCode"]</c>/<c>Extensions["traceId"]</c> populated.
-    /// When <see cref="Error.Details"/> is non-empty (an aggregate built by
-    /// <see cref="Error.Validation(System.Collections.Generic.IReadOnlyList{Error})"/>),
-    /// <c>Extensions["errors"]</c> and <c>Extensions["errorCodes"]</c> are additionally populated
-    /// via <see cref="LocalizedDetailResolver.AddErrorsExtensions"/>: both keyed by each child
-    /// error's field path (its <see cref="ErrorArgumentNames.PropertyPath"/> argument), or by its
-    /// code when it names no field, with <c>errors</c> holding the independently localized
-    /// messages and <c>errorCodes</c> the codes of the same errors in the same order. This is the
-    /// same shape <see cref="ValidationProblemDetailsExtensions"/> produces for a thrown
-    /// <see cref="SharedKernel.Core.Exceptions.ValidationException"/>, since both call the one
-    /// shared helper. Localization is optional and additive: a service that never registers a
-    /// catalog produces byte-identical output to before P-484. Pure mapping — no logging, no I/O.
+    /// A problem with <c>status</c> from <see cref="ErrorPresentation.GetStatusCode"/>, the framework's
+    /// <c>title</c> and <c>type</c> for that status (or <c>Problems:TypeBaseUri</c> followed by the code),
+    /// <c>detail</c> from <see cref="ErrorPresentation.GetClientMessage"/>, <c>instance</c> set to the request path,
+    /// and the extension members <c>errorCode</c>, <c>traceId</c>, <c>correlationId</c> (when the request has one)
+    /// and, when <see cref="Error.Details"/> is not empty, <c>errors</c> and <c>errorCodes</c> keyed by field path.
     /// </returns>
-    public static ProblemDetails ToProblemDetails(this Error error, HttpContext? context = null)
+    public static ProblemDetails ToProblemDetails(this Error error, HttpContext httpContext)
     {
-        var status = ErrorTypeStatusCodeMap.Resolve(error.Type);
-        var detail = LocalizedDetailResolver.ResolveDetail(error, context);
-        var problemDetails = ProblemDetailsShaping.Create(status, error.Code, detail, context);
+        ArgumentNullException.ThrowIfNull(error);
+        ArgumentNullException.ThrowIfNull(httpContext);
 
-        problemDetails.Extensions["errorCode"] = error.Code;
-
-        if (error.Details.Count > 0)
-        {
-            LocalizedDetailResolver.AddErrorsExtensions(problemDetails, error.Details, context);
-        }
-
-        return problemDetails;
+        return ProblemFactory.ForError(error, httpContext);
     }
 }

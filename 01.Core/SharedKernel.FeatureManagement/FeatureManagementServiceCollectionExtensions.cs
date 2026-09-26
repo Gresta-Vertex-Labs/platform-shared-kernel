@@ -30,6 +30,13 @@ public static class FeatureManagementServiceCollectionExtensions
     /// in a test), call <c>IFeatureLifecycleManager.EnsureInitializedAsync()</c> first; until then every
     /// evaluation returns its default with <c>ErrorType.ProviderNotReady</c>.
     /// </para>
+    /// <para>
+    /// Targeting reads the caller from an <see cref="IFeatureTargetingContextAccessor"/>. Unless the service registers
+    /// its own (before or after this call), the default one targets the caller of the open
+    /// <c>RequestContextScope</c> — its user id and tenant — which every inbound adapter opens; with no scope open the
+    /// caller is anonymous to user, group and tenant targeting and shares one percentage bucket. The caller is never
+    /// read from <see cref="System.Diagnostics.Activity"/> baggage, which the caller itself can set.
+    /// </para>
     /// </remarks>
     /// <param name="services">The service collection.</param>
     /// <param name="configuration">The application's root configuration.</param>
@@ -64,6 +71,8 @@ public static class FeatureManagementServiceCollectionExtensions
 
         HideTelemetryFromTheEvaluator(services);
 
+        // The default accessor reads the open RequestContextScope, never Activity baggage, which the caller itself can
+        // set (P-562 X2).
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IFeatureTargetingContextAccessor, AmbientTenantTargetingContextAccessor>();
         services.TryAddSingleton<MicrosoftFeatureManagementProvider>();

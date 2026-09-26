@@ -6,7 +6,7 @@ namespace SharedKernel.Application.Pipeline.Tests.Support;
 /// <summary>
 /// A minimal <see cref="ICommandScope"/> double for isolated behavior unit tests that only need to
 /// control <see cref="IsNested"/> — composed pipeline order is proven separately through the real
-/// internal <c>CommandScope</c> via <c>ApplicationBehaviorsBuilder</c>.
+/// internal <c>CommandScope</c> via <c>AddSharedKernelApplication</c>.
 /// </summary>
 internal sealed class FakeCommandScope(bool isNested = false) : ICommandScope
 {

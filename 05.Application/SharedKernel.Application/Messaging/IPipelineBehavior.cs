@@ -20,7 +20,7 @@ public delegate Task<TResponse> RequestHandlerContinuation<TResponse>();
 /// applies to through its generic constraints (<c>where TRequest : ICommandBase</c>, a marker
 /// interface, …). The pipeline resolves every registration whose constraints the request satisfies,
 /// in registration order, the first one outermost. <c>SharedKernel.Application.Pipeline</c>'s
-/// <c>ApplicationBehaviorsBuilder</c> fixes that order by stage, so the order is a property of the
+/// <c>AddSharedKernelApplication</c> fixes that order by stage, so the order is a property of the
 /// platform rather than of the calls a service happens to make.
 /// </para>
 /// <para>

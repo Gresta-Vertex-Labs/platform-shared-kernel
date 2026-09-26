@@ -1,44 +1,77 @@
+using System.ComponentModel;
+using Microsoft.AspNetCore.Authorization;
+
 namespace SharedKernel.Presentation.Authorization;
 
 /// <summary>
-/// Declares that an endpoint requires the caller's authentication to be no older than
-/// <see cref="MaxAge"/> — a step-up/fresh-authentication gate distinct from role/permission checks.
+/// Requires the caller to have authenticated recently — a step-up gate for sensitive operations such as changing
+/// payout details. An <see cref="AuthorizeAttribute"/>, so it works natively wherever
+/// <see cref="RequireEndpointPermissionAttribute"/> does: minimal APIs (<c>RequireFreshAuthentication(…)</c>), MVC, SignalR
+/// hubs and hub methods, and gRPC.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Usable directly on an MVC controller/action or attached to a Minimal API endpoint via
-/// <c>RouteHandlerBuilder.WithMetadata(new RequireFreshAuthenticationAttribute(...))</c> — see
-/// <c>AuthorizationEndpointFilterExtensions.RequireFreshAuthentication</c> (<c>SharedKernel.Presentation.WebApi</c>)
-/// for the equivalent Minimal API sugar.
+/// Evaluated with <see cref="Security.Abstractions.IUserContext.IsAuthenticationFresherThan"/> against the injected
+/// clock. Over HTTP a signed-in caller whose authentication is older than <see cref="MaxAge"/> (or has no
+/// authentication time) is answered 401 with an RFC 9470 challenge — <c>error="insufficient_user_authentication"</c>
+/// and <c>max_age</c> — and the code <c>unauthorized.step_up_required</c>, telling the client to sign in again; a
+/// gRPC call gets the same challenge header and ends as <c>Unauthenticated</c>. SignalR checks the attributes of a hub
+/// method before any hub filter runs, so a refused invocation fails with SignalR's own <c>HubException</c> message,
+/// "Failed to invoke '…' because user is unauthorized", and the method never runs.
 /// </para>
 /// <para>
-/// Evaluated by <c>AuthorizationRequirementEndpointFilter</c> (HTTP) and <c>GrpcAuthorizationInterceptor</c> (gRPC) — the same global filter that
-/// evaluates <see cref="RequireRoleAttribute"/>/<see cref="RequirePermissionAttribute"/> — against
-/// <c>IUserContext.IsAuthenticationFresherThan</c>.
-/// Rejects a request whose <c>AuthTime</c> is older than <see cref="MaxAge"/> or absent with
-/// <see cref="SharedKernel.Primitives.Errors.Error.Forbidden(string, string)"/> (403) — the same
-/// rejection shape <see cref="RequireRoleAttribute"/>/<see cref="RequirePermissionAttribute"/>
-/// already use. An anonymous/unauthenticated caller is rejected via the ordinary absent-
-/// <c>AuthTime</c> path, with no dedicated <c>IsAuthenticated</c> branch. Composes AND-across with
-/// every other attribute this filter evaluates.
+/// The constructor fixes the requirement: <see cref="Policy"/> and <see cref="Roles"/> are read-only here.
+/// <see cref="AuthorizeAttribute.AuthenticationSchemes"/> can be set, as on <c>[Authorize]</c>, to choose the schemes
+/// that authenticate the caller; it adds to the policy and never replaces the requirement.
 /// </para>
 /// </remarks>
 [AttributeUsage(AttributeTargets.Method | AttributeTargets.Class, AllowMultiple = false, Inherited = true)]
-public sealed class RequireFreshAuthenticationAttribute : Attribute
+public sealed class RequireFreshAuthenticationAttribute : AuthorizeAttribute, IAuthorizeData
 {
-    /// <summary>
-    /// Initializes a new instance of the <see cref="RequireFreshAuthenticationAttribute"/> class.
-    /// </summary>
-    /// <param name="maxAgeSeconds">
-    /// The maximum acceptable age, in seconds, of the caller's authentication event. Must be
-    /// greater than zero.
-    /// </param>
+    private readonly string _policy;
+
+    /// <summary>Initializes a new instance of the <see cref="RequireFreshAuthenticationAttribute"/> class.</summary>
+    /// <param name="maxAgeSeconds">The oldest acceptable authentication, in seconds; greater than zero.</param>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="maxAgeSeconds"/> is zero or negative.</exception>
     public RequireFreshAuthenticationAttribute(int maxAgeSeconds)
     {
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(maxAgeSeconds, 0);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxAgeSeconds);
+
         MaxAge = TimeSpan.FromSeconds(maxAgeSeconds);
+        _policy = SharedKernelPolicyNames.ForFreshAuthentication(maxAgeSeconds);
+        base.Policy = _policy;
     }
 
-    /// <summary>Gets the maximum acceptable age of the caller's authentication event.</summary>
+    /// <summary>Gets the oldest acceptable authentication.</summary>
     public TimeSpan MaxAge { get; }
+
+    /// <summary>Gets the name of the policy ASP.NET Core evaluates for this attribute, encoded from its maximum age.</summary>
+    /// <remarks>Read-only: it hides the setter of <see cref="AuthorizeAttribute.Policy"/>, which would replace the requirement.</remarks>
+    [EditorBrowsable(EditorBrowsableState.Never)]
+    public new string Policy => _policy;
+
+    /// <summary>
+    /// Always <see langword="null"/>: roles are required with <see cref="RequireRoleAttribute"/>, evaluated through
+    /// <c>IUserContext</c>.
+    /// </summary>
+    /// <remarks>
+    /// Read-only: it hides the setter of <see cref="AuthorizeAttribute.Roles"/>, whose check reads role claims directly
+    /// and ignores how the authentication package maps roles.
+    /// </remarks>
+    [EditorBrowsable(EditorBrowsableState.Never)]
+    public new string? Roles => null;
+
+    /// <inheritdoc />
+    string? IAuthorizeData.Policy
+    {
+        get => _policy;
+        set => throw new NotSupportedException(AuthorizeDataMessages.Fixed);
+    }
+
+    /// <inheritdoc />
+    string? IAuthorizeData.Roles
+    {
+        get => null;
+        set => throw new NotSupportedException(AuthorizeDataMessages.Fixed);
+    }
 }

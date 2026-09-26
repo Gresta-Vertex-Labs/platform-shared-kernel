@@ -135,6 +135,79 @@ public sealed class SecurityTestContextBuilderTests
     }
 
     [Fact]
+    public void Build_WithAuthenticationMethodTime_EmitsTheClaimOfTheSharedHelper()
+    {
+        var verifiedAt = AuthTime.AddMinutes(30);
+
+        var principal = new SecurityTestContextBuilder()
+            .WithAuthenticationMethods("pwd", "otp")
+            .WithAuthenticationMethodTime("otp", verifiedAt)
+            .Build();
+
+        var expected = AuthenticationMethodTimeClaim.Create("otp", verifiedAt);
+        Assert.Equal(expected.Value, Single(principal, expected.Type));
+        Assert.Equal(verifiedAt, AuthenticationMethodTimeClaim.Read(principal.Claims)["otp"]);
+    }
+
+    [Fact]
+    public void Build_WithAuthenticationMethodTimeTwiceForOneMethod_EmitsOneClaim_WithTheLaterCall()
+    {
+        var principal = new SecurityTestContextBuilder()
+            .WithAuthenticationMethodTime("otp", AuthTime)
+            .WithAuthenticationMethodTime("hwk", AuthTime.AddMinutes(1))
+            .WithAuthenticationMethodTime("otp", AuthTime.AddMinutes(2))
+            .Build();
+
+        var times = AuthenticationMethodTimeClaim.Read(principal.Claims);
+        Assert.Equal(2, principal.FindAll(SecurityClaimTypes.AuthenticationMethodTime).Count());
+        Assert.Equal(AuthTime.AddMinutes(2), times["otp"]);
+        Assert.Equal(AuthTime.AddMinutes(1), times["hwk"]);
+    }
+
+    [Fact]
+    public void WithAuthenticationMethodTime_SubSecondTime_ClaimRoundsDown_UserContextKeepsIt()
+    {
+        var verifiedAt = AuthTime.AddMilliseconds(900);
+        var builder = new SecurityTestContextBuilder().WithAuthenticationMethods("otp").WithAuthenticationMethodTime("otp", verifiedAt);
+
+        Assert.Equal(AuthTime, AuthenticationMethodTimeClaim.Read(builder.Build().Claims)["otp"]);
+        Assert.Equal(verifiedAt, builder.BuildUserContext().GetAuthenticationMethodTime("otp"));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("  ")]
+    public void WithAuthenticationMethodTime_NullOrWhitespaceMethod_Throws(string? method)
+    {
+        Assert.ThrowsAny<ArgumentException>(() => new SecurityTestContextBuilder().WithAuthenticationMethodTime(method!, AuthTime));
+    }
+
+    [Fact]
+    public void WithAuthenticationMethodTime_BeforeTheUnixEpoch_Throws()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new SecurityTestContextBuilder().WithAuthenticationMethodTime("otp", DateTimeOffset.UnixEpoch.AddSeconds(-1)));
+    }
+
+    [Fact]
+    public void BuildUserContext_WithAuthenticationMethodTime_ProjectsTheTimes()
+    {
+        var context = new SecurityTestContextBuilder()
+            .WithAuthenticationMethods("pwd", "otp")
+            .WithAuthTime(AuthTime)
+            .WithAuthenticationMethodTime("otp", AuthTime.AddMinutes(30))
+            .BuildUserContext();
+
+        Assert.Equal(AuthTime.AddMinutes(30), Assert.Single(context.AuthenticationMethodTimes).Value);
+        Assert.Equal(AuthTime.AddMinutes(30), context.GetAuthenticationMethodTime("otp"));
+        Assert.Equal(AuthTime, context.GetAuthenticationMethodTime("pwd"));
+        Assert.Equal(
+            AuthenticationMethodTimeClaim.Create("otp", AuthTime.AddMinutes(30)).Value,
+            context.FindClaim(SecurityClaimTypes.AuthenticationMethodTime));
+    }
+
+    [Fact]
     public void Build_AuthenticationMethods_OneClaimPerMethod()
     {
         var principal = new SecurityTestContextBuilder().WithAuthenticationMethods("pwd", "otp").Build();
@@ -296,7 +369,7 @@ public sealed class SecurityTestContextBuilderTests
     }
 
     // Mirrors SharedKernel.Security.Oidc's default claim mapping (sub, azp, tenant_id, sid, name, email, roles,
-    // space-delimited scope, amr, acr, auth_time, idtyp=app), which this project cannot reference directly.
+    // space-delimited scope, amr, amr_time, acr, auth_time, idtyp=app), which this project cannot reference directly.
     [Theory]
     [InlineData(ActorKind.User)]
     [InlineData(ActorKind.Service)]
@@ -313,6 +386,7 @@ public sealed class SecurityTestContextBuilderTests
             .WithRoles("Admin", "Editor")
             .WithPermissions("orders:read", "orders:write")
             .WithAuthenticationMethods("pwd", "otp")
+            .WithAuthenticationMethodTime("otp", AuthTime.AddMinutes(30))
             .WithAuthContextClassReference("urn:acr:silver")
             .WithAuthTime(AuthTime);
 
@@ -333,6 +407,7 @@ public sealed class SecurityTestContextBuilderTests
             expected.Permissions,
             identity.FindAll(SecurityClaimTypes.Scope).SelectMany(claim => claim.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries)));
         Assert.Equal(expected.AuthenticationMethods, identity.FindAll(SecurityClaimTypes.AuthenticationMethod).Select(claim => claim.Value));
+        Assert.Equal(expected.AuthenticationMethodTimes, AuthenticationMethodTimeClaim.Read(identity.Claims));
         Assert.Equal(expected.AuthContextClassReference, identity.FindFirst(SecurityClaimTypes.AuthContextClassReference)?.Value);
         Assert.Equal(
             expected.AuthTime,

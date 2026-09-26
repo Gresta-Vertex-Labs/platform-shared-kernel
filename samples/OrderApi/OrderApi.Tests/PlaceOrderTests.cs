@@ -1,39 +1,43 @@
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
-using OrderApi.Application;
+using OrderApi.Application.Features.Orders;
 using OrderApi.Domain;
 using OrderApi.Infrastructure;
-using SharedKernel.Application.Pipeline.Extensions;
+using SharedKernel.Execution.Context;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Testing.Application;
 using SharedKernel.Testing.Clocks;
+using SharedKernel.Testing.Execution;
 using Xunit;
 
 namespace OrderApi.Tests;
 
 /// <summary>
 /// The application layer through the real kernel pipeline, without HTTP: the packed
-/// <c>SharedKernel.Application.Testing</c> harness runs the same behaviors, in the same order, as the Api, and
-/// <c>SharedKernel.Testing</c>'s <see cref="FakeClock"/> makes time deterministic.
+/// <c>SharedKernel.Application.Testing</c> harness registers <c>OrderApi.Application</c> exactly as the Api does
+/// (<c>AddSharedKernelApplication(assembly, app =&gt; app.UseMediatR())</c>), so the same behaviors run in the same order,
+/// and <c>SharedKernel.Testing</c>'s <see cref="FakeClock"/> and <see cref="TestRequestContext"/> make time and the
+/// caller deterministic.
 /// </summary>
 public sealed class PlaceOrderTests : IDisposable
 {
     private readonly FakeClock _clock = new(new DateTimeOffset(2026, 9, 26, 8, 30, 0, TimeSpan.Zero));
     private readonly InMemoryOrderRepository _repository = new();
+    private readonly TestRequestContext _caller = TestRequestContext.ForUser("clerk-1");
     private readonly ApplicationPipelineTestHarness _harness = new();
 
     public PlaceOrderTests()
     {
         // The service's own registrations, exactly as the Api makes them.
-        _harness.Services.AddOrderApplication();
         _harness.Services.AddOrderInfrastructure();
 
-        // Test doubles replace the real time source and give the test a handle on the store.
+        // Test doubles replace the real time source, the caller and the store. CancelOrderCommand declares
+        // [RequirePermission], so the start check demands an IRequestContext.
         _harness.Services.AddSingleton<IClock>(_clock);
+        _harness.Services.AddSingleton<IRequestContext>(_caller);
         _harness.Services.AddSingleton<IOrderRepository>(_repository);
 
-        _harness.AddBehaviors().AddDefaultBehaviors().Build();
         _harness.Build<PlaceOrderCommand>();
     }
 
@@ -78,6 +82,32 @@ public sealed class PlaceOrderTests : IDisposable
 
         result.IsFailure.Should().BeTrue();
         result.Error.Type.Should().Be(ErrorType.NotFound);
+    }
+
+    [Fact]
+    public async Task Cancel_WithoutThePermission_IsForbidden_AndTheOrderIsUntouched()
+    {
+        var placed = await _harness.SendAsync(new PlaceOrderCommand("Acme Ltd", 10m, "EUR", ["Widget"]));
+
+        var result = await _harness.SendAsync(new CancelOrderCommand(placed.Value));
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Type.Should().Be(ErrorType.Forbidden);
+        (await _repository.GetAsync(placed.Value, CancellationToken.None))!.IsCancelled.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Cancel_WithThePermission_CancelsOnce()
+    {
+        _caller.WithPermissions(OrderPermissions.Cancel);
+        var placed = await _harness.SendAsync(new PlaceOrderCommand("Acme Ltd", 10m, "EUR", ["Widget"]));
+
+        (await _harness.SendAsync(new CancelOrderCommand(placed.Value))).IsSuccess.Should().BeTrue();
+        var again = await _harness.SendAsync(new CancelOrderCommand(placed.Value));
+
+        again.Error.Type.Should().Be(ErrorType.Conflict, "the aggregate refuses to cancel twice");
+        (await _repository.GetAsync(placed.Value, CancellationToken.None))!.DomainEvents
+            .OfType<OrderCancelledEvent>().Should().ContainSingle();
     }
 
     public void Dispose() => _harness.Dispose();

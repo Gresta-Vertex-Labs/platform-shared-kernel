@@ -75,7 +75,7 @@ public static class StorageErrorCodes
     public const string NotSupported = "storage.not_supported";
 
     /// <summary>
-    /// <c>storage.unavailable</c> (<c>Unexpected</c>): the provider is unreachable, throttling, timing out or
+    /// <c>storage.unavailable</c> (<c>Unavailable</c>): the provider is unreachable, throttling, timing out or
     /// failing (5xx), after the provider client's own retries. Retrying later may succeed.
     /// </summary>
     public const string Unavailable = "storage.unavailable";

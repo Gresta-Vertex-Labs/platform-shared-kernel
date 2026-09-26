@@ -5,12 +5,6 @@ SharedKernel.Application.Auditing.IAuditableRequest<TResponse>.BeforeSnapshot.ge
 SharedKernel.Application.Auditing.IAuditableRequest<TResponse>.GetAfterSnapshot(TResponse response) -> string?
 SharedKernel.Application.Auditing.IAuditableRequest<TResponse>.ResourceId.get -> string!
 SharedKernel.Application.Auditing.IAuditableRequest<TResponse>.ResourceType.get -> string!
-SharedKernel.Application.Authorization.IAuthorizeRequest
-SharedKernel.Application.Authorization.IAuthorizeRequest.PermissionMatch.get -> SharedKernel.Application.Authorization.PermissionMatch
-SharedKernel.Application.Authorization.IAuthorizeRequest.RequiredPermissions.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
-SharedKernel.Application.Authorization.PermissionMatch
-SharedKernel.Application.Authorization.PermissionMatch.All = 0 -> SharedKernel.Application.Authorization.PermissionMatch
-SharedKernel.Application.Authorization.PermissionMatch.Any = 1 -> SharedKernel.Application.Authorization.PermissionMatch
 SharedKernel.Application.Caching.CacheKeyRef
 SharedKernel.Application.Caching.CacheKeyRef.CacheKeyRef() -> void
 SharedKernel.Application.Caching.CacheKeyRef.Equals(SharedKernel.Application.Caching.CacheKeyRef other) -> bool
@@ -76,3 +70,6 @@ virtual SharedKernel.Application.Messaging.RequestHandlerContinuation<TResponse>
 virtual SharedKernel.Application.Streaming.StreamHandlerContinuation<TResponse>.Invoke() -> System.Collections.Generic.IAsyncEnumerable<TResponse>!
 ~override SharedKernel.Application.Caching.CacheKeyRef.Equals(object obj) -> bool
 ~override SharedKernel.Application.Caching.CacheKeyRef.ToString() -> string
+SharedKernel.Application.Authorization.RequirePermissionAttribute
+SharedKernel.Application.Authorization.RequirePermissionAttribute.Permissions.get -> System.Collections.Generic.IReadOnlyList<string!>!
+SharedKernel.Application.Authorization.RequirePermissionAttribute.RequirePermissionAttribute(params string![]! permissions) -> void

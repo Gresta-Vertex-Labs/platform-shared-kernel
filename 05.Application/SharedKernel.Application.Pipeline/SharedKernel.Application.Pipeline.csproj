@@ -2,27 +2,27 @@
   <PropertyGroup>
     <SharedKernelTier>Host</SharedKernelTier>
     <!-- NuGet packaging metadata -->
-    <Description>The cross-cutting half of a request: tracing, logging, metrics, authorization, validation, idempotency, transactions and auditing, composed in one fixed order and each opted into explicitly.
+    <Description>The application layer of a service in one call: AddSharedKernelApplication(assemblies, app =&gt; app.UseMediatR().With…()) finds the handlers, validators and domain-event handlers and composes the cross-cutting half of a request — tracing, logging, metrics, authorization, validation, idempotency, transactions and auditing — in one fixed order.
 
 A handler decides business outcomes; everything around that decision lives here, so adding an audit trail or an idempotency guard later changes a marker interface on a command, never a handler body. The order is fixed by the package rather than by your registration calls, because it is a correctness property: authorization runs before validation so a caller who may not act never learns the validation rules, and a commit happens before a cache eviction so nothing evicts on the strength of a write that has not landed.
 
-Expected failures are Result values, never exceptions. Authorization fails closed — a request declaring no permissions is denied. Only a successful outcome persists anything: a failed Result commits nothing, caches nothing, and releases its idempotency key. Only the outermost command commits, so a nested command joins the outer transaction, and ICommandScope.OnCompleted runs work strictly after that commit. Idempotency reserves a key with a request fingerprint, replays the original response for a completed duplicate, and rejects the same key sent with a different body.
+Expected failures are Result values, never exceptions. Authorization is declared on the use case with [RequirePermission] and always enforced, on every path a request is sent from. Only a successful outcome persists anything: a failed Result commits nothing, caches nothing, and releases its idempotency key. Only the outermost command commits, so a nested command joins the outer transaction, and ICommandScope.OnCompleted runs work strictly after that commit. Idempotency reserves a key per tenant and caller with a request fingerprint, replays the original response for a completed duplicate, and rejects the same key sent with a different body.
 
-Depends on SharedKernel.Application, SharedKernel.Execution, SharedKernel.Idempotency.Abstractions, SharedKernel.Primitives and first-party Microsoft.Extensions packages — no mediator, no validator library, no cache, no Polly, no hosting, enforced by an architecture test. Caching behaviors ship separately as SharedKernel.Application.Pipeline.Caching; the mediator adapter is SharedKernel.Application.Mediator.MediatR.</Description>
+Depends on SharedKernel.Application, SharedKernel.Execution, SharedKernel.Idempotency.Abstractions, SharedKernel.Primitives, SharedKernel.Core and first-party Microsoft.Extensions packages — no mediator, no validator library, no cache, no Polly, no hosting, enforced by an architecture test. Caching behaviors ship separately as SharedKernel.Application.Pipeline.Caching (WithCaching()); the mediator adapter is SharedKernel.Application.Mediator.MediatR (UseMediatR()).</Description>
     <PackageReleaseNotes>First release.
 
 WHAT IS IN IT
-- Eight behaviors across five stages: TracingBehavior, LoggingBehavior, MetricsBehavior (Observability), AuthorizationBehavior (Authorization), ValidationBehavior (Validation), then a command scope, IdempotencyBehavior, TransactionBehavior and AuditingBehavior (Command). The Query and Command stages also accept your own behaviors.
-- ApplicationBehaviorsBuilder: AddDefaultBehaviors() turns on the four that need no infrastructure; every other behavior is an individual opt-in whose seam Build() verifies at startup. AddBehavior(type, PipelineStage, requiredServices) places a service-specific behavior in the canonical order.
+- AddSharedKernelApplication(assemblies, app =&gt; …): scans handlers, validators and domain-event handlers; tracing, logging, metrics, authorization and validation always on; WithIdempotency(), WithTransactions(), WithAuditing() and WithBehavior(type, PipelineStage, requiredServices) opt in, always in the canonical order. Every seam is checked when the host starts (one message naming every missing service); a second call throws.
+- Eight internal behaviors across five stages (Observability, Authorization, Validation, Query, Command), plus a stream authorization behavior.
 - Four seams, bridged at your composition root: IRequestContext, IUnitOfWork and IAuditTrailWriter (in SharedKernel.Execution) and IIdempotencyStore (in SharedKernel.Idempotency.Abstractions, registered for IdempotencyPurpose.Request). That is what keeps this package free of persistence, security and cache dependencies.
 - RequestPipeline&lt;TRequest, TResponse&gt; and StreamRequestPipeline&lt;TRequest, TResponse&gt;: compose the behaviors and the handler for one request, independent of any mediator. DomainEventDispatcher runs IDomainEventHandler&lt;T&gt; registrations natively.
-- The request markers (IAuthorizeRequest, IIdempotentRequest, IAuditableRequest&lt;TResponse&gt;, ILoggableRequest&lt;TResponse&gt;) and the validation port IRequestValidator&lt;T&gt; live in SharedKernel.Application.
+- [RequirePermission] and the request markers (IIdempotentRequest, IAuditableRequest&lt;TResponse&gt;, ILoggableRequest&lt;TResponse&gt;) and the validation port IRequestValidator&lt;T&gt; live in SharedKernel.Application.
 - ICommandScope (declared in SharedKernel.Application): nested-command detection plus OnCompleted, for work that must follow the commit.
 
 THINGS WORTH KNOWING BEFORE YOU ADOPT IT
-- Build() is not optional. The Add… calls only set flags, so a pipeline that was never built runs bare — the symptom is silence, not an error. Build() also refuses a second call on the same builder, and registers logging and metrics infrastructure itself.
+- A mediator is required: app.UseMediatR() (or another ISender); without one the host start fails naming ISender.
 - Validation returns a failure, it does not throw. Every failing field is collected into one Error.Validation(errors) carrying the set in Error.Details; 14.Presentation renders that as a 400 with a per-field errors map. Validators run sequentially, because two async validators sharing a scoped DbContext would throw.
-- Authorization denies a request that declares no permissions (403), and returns 401 only when the caller is unauthenticated. Permission names never appear in the message a caller sees.
+- Authorization checks only requests carrying [RequirePermission]: 401 (unauthorized.default) for an unauthenticated caller, 403 (forbidden.insufficient_permission) for a missing permission. Permission names never appear in the message a caller sees.
 - The idempotency fingerprint defaults to a hash of the serialized request, which changes whenever the command type gains a property. Set IIdempotentRequest.Fingerprint on any command you expect to be retried across a deploy, or a legitimate retry comes back as idempotency.key_reused. A key is released on a business failure, so a corrected command can be resubmitted with the same key.
 - Auditing records an attempt that throws as well as one that succeeds or is rejected; AuditEntry.ErrorCode carries the error code in the first case and the exception type name in the second. A failed audit write blocks the commit, except while handling a handler exception, where the original exception still wins.
 - The request-duration histogram is in SECONDS (sharedkernel.application.request.duration, via IMeterFactory). A dashboard built on millisecond values needs retuning; 13.ServiceDefaults' WithApplicationTelemetry() registers matching buckets.
@@ -50,18 +50,23 @@ See the package README for the pipeline diagram, the failure matrix and the full
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
-    <!-- Concrete AddLogging() DI extension — ApplicationBehaviorsBuilder.Build() calls it unconditionally
+    <!-- Concrete AddLogging() DI extension — AddSharedKernelApplication calls it unconditionally
          so logger-dependent behaviors (CommandScopeBehavior, IdempotencyBehavior) can always resolve
          ILogger<T>, even against a bare ServiceCollection with no prior AddLogging() call. -->
     <PackageReference Include="Microsoft.Extensions.Logging" />
     <PackageReference Include="Microsoft.Extensions.Options" />
     <!-- ValidateDataAnnotations()/ValidateOnStart() for ApplicationLoggingOptions — fails at
-         AddSharedKernelApplicationBehaviors().Build()-time host startup, not at the first request.
+         host startup, not at the first request.
          A plain Microsoft.Extensions.* NuGet package, never a SharedKernel.Configuration (01.Core)
          project reference. -->
     <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" />
     <!-- IMeterFactory / services.AddMetrics() for MetricsBehavior's ApplicationMetrics singleton. -->
     <PackageReference Include="Microsoft.Extensions.Diagnostics" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The behaviors are internal (P-563 A5, merged in P-579): the public surface is the registration call, its
+         builder and the options. The tests construct them directly. -->
+    <InternalsVisibleTo Include="SharedKernel.Application.Pipeline.Tests" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />

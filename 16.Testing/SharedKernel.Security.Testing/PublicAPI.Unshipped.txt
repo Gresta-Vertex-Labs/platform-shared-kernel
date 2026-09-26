@@ -133,3 +133,8 @@ static SharedKernel.Testing.Security.DpopTestProof.operator !=(SharedKernel.Test
 static SharedKernel.Testing.Security.DpopTestProof.operator ==(SharedKernel.Testing.Security.DpopTestProof? left, SharedKernel.Testing.Security.DpopTestProof? right) -> bool
 static SharedKernel.Testing.Security.MtlsTestCertificate.operator !=(SharedKernel.Testing.Security.MtlsTestCertificate? left, SharedKernel.Testing.Security.MtlsTestCertificate? right) -> bool
 static SharedKernel.Testing.Security.MtlsTestCertificate.operator ==(SharedKernel.Testing.Security.MtlsTestCertificate? left, SharedKernel.Testing.Security.MtlsTestCertificate? right) -> bool
+SharedKernel.Testing.Security.FakeUserContext.AuthenticationMethodTimes.get -> System.Collections.Generic.IReadOnlyDictionary<string!, System.DateTimeOffset>!
+SharedKernel.Testing.Security.FakeUserContext.AuthenticationMethodTimes.set -> void
+SharedKernel.Testing.Security.FakeUserContext.GetAuthenticationMethodTime(string! method) -> System.DateTimeOffset?
+SharedKernel.Testing.Security.FakeUserContext.WithAuthenticationMethodTime(string! method, System.DateTimeOffset verifiedAt) -> SharedKernel.Testing.Security.FakeUserContext!
+SharedKernel.Testing.Security.SecurityTestContextBuilder.WithAuthenticationMethodTime(string! method, System.DateTimeOffset verifiedAt) -> SharedKernel.Testing.Security.SecurityTestContextBuilder!

@@ -13,6 +13,7 @@
 //   4. The probe reports IsRunning/RegisteredJobCount correctly through the real host.
 
 using SharedKernel.Application.Mediator.MediatR;
+using SharedKernel.Application.Pipeline;
 using SharedKernel.Application.Messaging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -40,7 +41,7 @@ static async Task Surface1And4_RegistrationResolvesAndProbeReportsThroughRealHos
     HostApplicationBuilder builder = Host.CreateApplicationBuilder();
     builder.Services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
     builder.Services.AddSingleton<IClock, SystemClock>();
-    builder.Services.AddSharedKernelMediatR(typeof(ConsumerVerifyPingCommand).Assembly);
+    builder.Services.AddSharedKernelApplication(typeof(ConsumerVerifyPingCommand).Assembly, app => app.UseMediatR());
 
     ISchedulingBuilder schedulingBuilder = builder.Services.AddSharedKernelScheduling();
     schedulingBuilder.AddRecurring<ConsumerVerifyPingCommand>(
@@ -82,7 +83,7 @@ static async Task Surface2_DeferredJobFiresEndToEndThroughMediatR()
     HostApplicationBuilder builder = Host.CreateApplicationBuilder();
     builder.Services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
     builder.Services.AddSingleton<IClock, SystemClock>();
-    builder.Services.AddSharedKernelMediatR(typeof(ConsumerVerifyPingCommand).Assembly);
+    builder.Services.AddSharedKernelApplication(typeof(ConsumerVerifyPingCommand).Assembly, app => app.UseMediatR());
     builder.Services.AddSingleton<ConsumerVerifyPingRecorder>();
 
     ISchedulingBuilder schedulingBuilder = builder.Services.AddSharedKernelScheduling(

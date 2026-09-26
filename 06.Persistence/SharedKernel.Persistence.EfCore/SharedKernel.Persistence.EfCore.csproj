@@ -9,13 +9,19 @@
   </PropertyGroup>
   <ItemGroup>
     <!--
-      Adapter tier. EfCore references no Security, Application or Cryptography package: the caller,
+      Adapter tier. EfCore references no Security or Application package: the caller,
       tenant, unit of work and audit contracts come from SharedKernel.Execution (Foundation, via
-      Persistence.Abstractions), and the Cryptography-dependent surface lives in
+      Persistence.Abstractions), and field encryption lives in
       SharedKernel.Persistence.EfCore.Encryption. Beyond Foundation/Model/Abstractions packages it
       may only reach the declared adapter edge to SharedKernel.Persistence.Npgsql (SKTIER002).
     -->
     <ProjectReference Include="..\SharedKernel.Persistence.Abstractions\SharedKernel.Persistence.Abstractions.csproj" />
+    <!--
+      P-562/X4: entity versions (ETags) are sealed with a subkey (HKDF, purpose "SharedKernel.Persistence.EntityVersion")
+      of the service's own key provider, the IEncryptionKeyProvider/ISynchronousEncryptionKeyProvider it registers.
+      SharedKernel.Cryptography has no third-party dependency.
+    -->
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Cryptography\SharedKernel.Cryptography.csproj" />
     <ProjectReference Include="..\..\03.Domain\SharedKernel.Domain\SharedKernel.Domain.csproj" />
     <ProjectReference Include="..\..\01.Core\SharedKernel.Core\SharedKernel.Core.csproj" />
     <!-- P-557/W2: PersistenceServiceOptions implements ISectionBoundOptions. -->

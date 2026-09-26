@@ -1,42 +1,35 @@
 using FluentAssertions;
-using SharedKernel.Presentation.Errors;
+using Microsoft.AspNetCore.Http;
 using SharedKernel.Primitives.Errors;
 using Xunit;
 
 namespace SharedKernel.Presentation.Core.Tests.Errors;
 
-public class ErrorTypeStatusCodeMapTests
+public sealed class ErrorTypeStatusCodeMapTests
 {
     [Theory]
-    [InlineData(ErrorType.Validation, 400)]
-    [InlineData(ErrorType.Unauthorized, 401)]
-    [InlineData(ErrorType.Forbidden, 403)]
-    [InlineData(ErrorType.NotFound, 404)]
-    [InlineData(ErrorType.Conflict, 409)]
-    [InlineData(ErrorType.BusinessRule, 422)]
-    [InlineData(ErrorType.Unexpected, 500)]
-    public void Resolve_KnownErrorType_ReturnsMappedStatusCode(ErrorType type, int expectedStatusCode)
+    [InlineData(ErrorType.Validation, StatusCodes.Status400BadRequest)]
+    [InlineData(ErrorType.Unauthorized, StatusCodes.Status401Unauthorized)]
+    [InlineData(ErrorType.Forbidden, StatusCodes.Status403Forbidden)]
+    [InlineData(ErrorType.NotFound, StatusCodes.Status404NotFound)]
+    [InlineData(ErrorType.Conflict, StatusCodes.Status409Conflict)]
+    [InlineData(ErrorType.BusinessRule, StatusCodes.Status422UnprocessableEntity)]
+    [InlineData(ErrorType.Unexpected, StatusCodes.Status500InternalServerError)]
+    [InlineData(ErrorType.Unavailable, StatusCodes.Status503ServiceUnavailable)]
+    [InlineData(ErrorType.Timeout, StatusCodes.Status504GatewayTimeout)]
+    [InlineData(ErrorType.None, StatusCodes.Status500InternalServerError)]
+    [InlineData((ErrorType)999, StatusCodes.Status500InternalServerError)]
+    public void Resolve_MapsEveryType(ErrorType type, int expected)
     {
-        var statusCode = ErrorTypeStatusCodeMap.Resolve(type);
-
-        statusCode.Should().Be(expectedStatusCode);
+        ErrorTypeStatusCodeMap.Resolve(type).Should().Be(expected);
     }
 
     [Fact]
-    public void Resolve_NoneErrorType_FallsBackTo500()
+    public void Resolve_GivesEveryDeclaredTypeAnErrorStatus()
     {
-        var statusCode = ErrorTypeStatusCodeMap.Resolve(ErrorType.None);
-
-        statusCode.Should().Be(500);
-    }
-
-    [Fact]
-    public void Resolve_UnmappedErrorType_FallsBackTo500()
-    {
-        var unmappedType = (ErrorType)999;
-
-        var statusCode = ErrorTypeStatusCodeMap.Resolve(unmappedType);
-
-        statusCode.Should().Be(500);
+        foreach (var type in Enum.GetValues<ErrorType>())
+        {
+            ErrorTypeStatusCodeMap.Resolve(type).Should().BeInRange(400, 599, $"{type} must map to an error status");
+        }
     }
 }

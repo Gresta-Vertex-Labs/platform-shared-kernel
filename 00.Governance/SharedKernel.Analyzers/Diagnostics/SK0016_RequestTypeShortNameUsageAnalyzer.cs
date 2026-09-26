@@ -9,7 +9,8 @@ namespace SharedKernel.Analyzers.Diagnostics;
 /// <summary>
 /// SK0016 — Fires on a standalone <c>typeof(X).Name</c> member access found inside a file whose
 /// namespace declaration starts with <c>SharedKernel.Application</c> (covers both
-/// <c>SharedKernel.Application</c> and <c>SharedKernel.Application.Pipeline</c>), unless the
+/// <c>SharedKernel.Application</c>, <c>SharedKernel.Application.Caching</c> and
+/// <c>SharedKernel.Application.Pipeline</c>), unless the
 /// member access is the right-hand operand of a <c>??</c> coalesce expression whose left-hand
 /// operand is <c>typeof(X).FullName</c> for the syntactically-identical <c>X</c>.
 /// </summary>

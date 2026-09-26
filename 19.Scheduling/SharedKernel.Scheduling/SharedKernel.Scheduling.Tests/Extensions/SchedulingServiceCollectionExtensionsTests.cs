@@ -1,4 +1,5 @@
 using SharedKernel.Application.Mediator.MediatR;
+using SharedKernel.Application.Pipeline;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -34,7 +35,7 @@ public sealed class SchedulingServiceCollectionExtensionsTests
             .ConfigureServices(services =>
             {
                 services.AddSingleton<IClock>(new SharedKernel.Testing.Clocks.FakeClock());
-                services.AddSharedKernelMediatR(typeof(RecordingCommand).Assembly);
+                services.AddSharedKernelApplication(typeof(RecordingCommand).Assembly, app => app.UseMediatR());
                 services.AddSingleton<RecordingCommandRecorder>();
 
                 ISchedulingBuilder builder = services.AddSharedKernelScheduling();

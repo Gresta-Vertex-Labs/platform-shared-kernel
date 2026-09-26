@@ -57,36 +57,28 @@ public sealed partial class DependencyGraphRulesTests
         var closure = ProductionClosure(graph, grpc!).Select(p => p.Name).ToList();
 
         closure.Should().NotContain("SharedKernel.Presentation.WebApi", "a gRPC host must not pull the HTTP API stack");
-        grpc!.ProjectReferences.Should().Contain("SharedKernel.Presentation.Core", "the shared attributes and status maps live there");
+        grpc!.ProjectReferences.Should().Contain("SharedKernel.Presentation.Core",
+            "the endpoint authorization attributes and policies and the error presentation live there");
         graph.Find("SharedKernel.Presentation.WebApi")!.ProjectReferences.Should().Contain("SharedKernel.Presentation.Core");
     }
 
+    /// <summary>
+    /// P-579: <c>SharedKernel.Presentation.Core</c> holds what the HTTP, SignalR and gRPC boundaries share (the endpoint
+    /// authorization attributes and policies, error presentation, the error-type status map). The authorization policies
+    /// need ASP.NET Core, which the Host tier allows; it must never depend on a sibling presentation package, or a gRPC
+    /// host would pull the HTTP API stack through it.
+    /// </summary>
     [Fact]
-    public void PresentationCore_IsHostTier_WithNoAspNetCoreOrPresentationDependency()
+    public void PresentationCore_IsHostTier_WithNoPresentationDependency()
     {
         var graph = Graph.Value;
         var core = graph.Find("SharedKernel.Presentation.Core");
         core.Should().NotBeNull();
 
         core!.Tier.Should().Be("Host");
-        core.ProjectReferences.Should().Equal(["SharedKernel.Primitives"]);
-        File.ReadAllText(Path.Combine(RepositoryRoot(), core.RelativePath))
-            .Should().NotContain("Microsoft.AspNetCore.App", "the shared boundary vocabulary needs no ASP.NET Core");
-    }
-
-    [Fact]
-    public void PresentationSignalR_ReferencesNoRedis_TheBackplaneIsItsOwnPackage()
-    {
-        var graph = Graph.Value;
-        var signalR = graph.Find("SharedKernel.Presentation.SignalR");
-        var redis = graph.Find("SharedKernel.Presentation.SignalR.Redis");
-        signalR.Should().NotBeNull();
-        redis.Should().NotBeNull();
-
-        ProductionClosure(graph, signalR!).SelectMany(p => p.RuntimePackages)
-            .Should().NotContain(p => p.Contains("Redis", StringComparison.OrdinalIgnoreCase));
-        redis!.Tier.Should().Be("Host");
-        redis.RuntimePackages.Should().Contain("Microsoft.AspNetCore.SignalR.StackExchangeRedis");
+        ProductionClosure(graph, core).Select(p => p.Name)
+            .Where(name => name != core.Name && name.StartsWith("SharedKernel.Presentation.", StringComparison.Ordinal))
+            .Should().BeEmpty("the shared presentation core references no sibling presentation package");
     }
 
     [Fact]
@@ -122,7 +114,7 @@ public sealed partial class DependencyGraphRulesTests
     [Fact]
     public void PresentationGrpcAssembly_DoesNotLoadWebApi()
     {
-        var references = typeof(SharedKernel.Presentation.Grpc.Results.GrpcResultExtensions).Assembly
+        var references = typeof(SharedKernel.Presentation.Grpc.GrpcHostBuilderExtensions).Assembly
             .GetReferencedAssemblies()
             .Select(a => a.Name)
             .ToList();
@@ -148,14 +140,5 @@ public sealed partial class DependencyGraphRulesTests
         }
 
         return result;
-    }
-
-    private static string RepositoryRoot()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Platform.SharedKernel.slnx")))
-            directory = directory.Parent;
-
-        return directory?.FullName ?? throw new InvalidOperationException("Platform.SharedKernel.slnx not found above the test output directory.");
     }
 }

@@ -72,5 +72,13 @@ public sealed class FixedUserContextTests
         Assert.False(context.HasPermission("orders:write"));
         Assert.False(context.WasAuthenticatedWith("pwd"));
         Assert.False(context.IsAuthenticationFresherThan(TimeSpan.MaxValue, Now));
+        Assert.Null(context.GetAuthenticationMethodTime("otp"));
+    }
+
+    [Fact]
+    public void GetAuthenticationMethodTime_OnTheConcreteTypes_ReturnsNull()
+    {
+        Assert.Null(AnonymousUserContext.Instance.GetAuthenticationMethodTime("otp"));
+        Assert.Null(SystemUserContext.Instance.GetAuthenticationMethodTime("otp"));
     }
 }

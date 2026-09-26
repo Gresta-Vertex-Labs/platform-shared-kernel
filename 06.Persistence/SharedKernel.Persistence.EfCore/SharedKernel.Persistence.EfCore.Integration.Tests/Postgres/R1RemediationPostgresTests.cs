@@ -545,6 +545,7 @@ public sealed class R1RemediationPostgresTests(PostgreSqlContainerFixture fixtur
         var configuration = Configuration(("c4", NewDatabase()));
         var services = new ServiceCollection();
         services.AddLogging();
+        services.AddTestEntityVersionKeys();
         services.AddScoped(_ => caller);
         services.AddSharedKernelPostgres<TContext>(configuration, "c4", Quiet);
         var provider = services.BuildServiceProvider();
@@ -567,6 +568,9 @@ public sealed class R1RemediationPostgresTests(PostgreSqlContainerFixture fixtur
             await context.SaveChangesAsync();
             version = ConcurrencyVersion.Get(context, aggregate);
         }
+
+        // The version the row was inserted with: stale once the update below ran.
+        var inserted = version;
 
         TAggregate snapshot;
         await using (var scope = provider.CreateAsyncScope())
@@ -608,7 +612,8 @@ public sealed class R1RemediationPostgresTests(PostgreSqlContainerFixture fixtur
         await using (var scope = provider.CreateAsyncScope())
         {
             var context = scope.ServiceProvider.GetRequiredService<TContext>();
-            await new EfRepository<TAggregate, Guid>(context).DeleteAsync(snapshot, EntityVersion.FromRowVersion(version.ToRowVersion() + 1_000_000));
+            inserted.Should().NotBe(version, typeof(TAggregate).Name);
+            await new EfRepository<TAggregate, Guid>(context).DeleteAsync(snapshot, inserted);
             await FluentActions.Awaiting(() => context.SaveChangesAsync()).Should().ThrowAsync<ConflictException>(typeof(TAggregate).Name);
         }
 

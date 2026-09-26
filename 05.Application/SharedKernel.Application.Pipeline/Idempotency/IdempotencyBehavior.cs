@@ -6,6 +6,7 @@ using SharedKernel.Application.Idempotency;
 using SharedKernel.Application.Messaging;
 using SharedKernel.Application.Pipeline.Commands;
 using SharedKernel.Application.Pipeline.Shared;
+using SharedKernel.Execution.Context;
 using SharedKernel.Idempotency.Abstractions;
 using SharedKernel.Primitives.Errors;
 
@@ -26,10 +27,35 @@ namespace SharedKernel.Application.Pipeline.Idempotency;
 /// </para>
 /// <para>
 /// An empty or whitespace-only <see cref="IIdempotentRequest.IdempotencyKey"/> fails with
-/// <c>Error.Validation("idempotency.key_missing", ...)</c>. Otherwise, the request's fingerprint —
-/// its own <see cref="IIdempotentRequest.Fingerprint"/> when supplied (trimmed, non-empty),
-/// otherwise a SHA-256 hash of its default JSON serialization — is passed to
-/// <see cref="IIdempotencyStore.TryBeginAsync"/> with <see cref="IdempotencyBehaviorOptions.LeaseDuration"/>:
+/// <c>Error.Validation(</c><see cref="ErrorCodes.Idempotency.KeyRequired"/><c>, ...)</c>
+/// (<c>idempotency.key_required</c>), the code <c>14.Presentation</c> answers a missing
+/// <c>Idempotency-Key</c> header with.
+/// </para>
+/// <para>
+/// <b>A reservation belongs to one caller of one tenant</b> (P-562 X3, merged from main in P-579). The key handed to
+/// the store is never the command's raw key but a SHA-256 digest (64 lowercase hexadecimal characters) of the tenant,
+/// the caller and the raw key, read from <see cref="IRequestContext"/>: actor kind, subject
+/// (<see cref="IRequestContext.UserId"/>), client and impersonator (<see cref="IdempotencyKeyScope"/>). The session id
+/// is left out, so a retry after a fresh sign-in still replays. Two callers who use the same key each get their own
+/// reservation and their own execution, so a caller who learns another caller's key is never handed that caller's
+/// stored response; the same caller retrying gets the replay. The store additionally partitions by the tenant of the
+/// ambient request context.
+/// </para>
+/// <para>
+/// <b>Anonymous callers share one scope per tenant.</b> A caller <see cref="IRequestContext"/> cannot identify
+/// (<see cref="ActorKind.Anonymous"/>, no subject) differs from another only by its tenant, so all anonymous callers
+/// of a tenant reserve in one scope — as do all callers of one actor kind whose context reports no identifiers. There
+/// the request fingerprint is the only separation. An anonymous caller who knows another anonymous caller's key and
+/// sends a request with the same fingerprint receives that caller's stored response; with a different fingerprint it
+/// gets <c>idempotency.key_reused</c>. So keys must be unguessable (a random UUID per operation), an anonymous
+/// command's response must carry nothing only its sender may see, and an explicit fingerprint on such a command must
+/// cover every field that tells one sender's request from another's.
+/// </para>
+/// <para>
+/// The request's fingerprint — its own <see cref="IIdempotentRequest.Fingerprint"/> when supplied (trimmed,
+/// non-empty), otherwise a SHA-256 hash of its default JSON serialization — is passed to
+/// <see cref="IIdempotencyStore.TryBeginAsync"/> together with the scoped key and
+/// <see cref="IdempotencyBehaviorOptions.LeaseDuration"/>:
 /// </para>
 /// <list type="bullet">
 ///   <item><description><see cref="IdempotencyReservationStatus.Started"/> — <c>next()</c> runs; on success the response is serialized and completed via
@@ -37,9 +63,9 @@ namespace SharedKernel.Application.Pipeline.Idempotency;
 ///   <see cref="IdempotencyReservation.Token"/>; on a <c>Result.Failure</c> the reservation is released via
 ///   <see cref="IIdempotencyStore.ReleaseAsync"/> (never completed — a failed attempt must remain retryable); on a thrown
 ///   exception the reservation is likewise released and the exception is rethrown unchanged.</description></item>
-///   <item><description><see cref="IdempotencyReservationStatus.InProgress"/> — <c>Error.Conflict("idempotency.in_progress", ...)</c>, without calling <c>next()</c>.</description></item>
+///   <item><description><see cref="IdempotencyReservationStatus.InProgress"/> — <c>Error.Conflict(</c><see cref="ErrorCodes.Idempotency.InProgress"/><c>, ...)</c>, without calling <c>next()</c>.</description></item>
 ///   <item><description><see cref="IdempotencyReservationStatus.Completed"/> — the stored response is deserialized and returned directly, replaying the original outcome.</description></item>
-///   <item><description><see cref="IdempotencyReservationStatus.FingerprintMismatch"/> — <c>Error.Conflict("idempotency.key_reused", ...)</c>.</description></item>
+///   <item><description><see cref="IdempotencyReservationStatus.FingerprintMismatch"/> — <c>Error.Conflict(</c><see cref="ErrorCodes.Idempotency.KeyReused"/><c>, ...)</c>.</description></item>
 /// </list>
 /// <para>
 /// A <see langword="false"/> result from <see cref="IIdempotencyStore.CompleteAsync"/> means the reservation was
@@ -50,8 +76,9 @@ namespace SharedKernel.Application.Pipeline.Idempotency;
 /// </para>
 /// <para>The idempotency key itself is never echoed in any error message returned to the caller.</para>
 /// </remarks>
-public sealed partial class IdempotencyBehavior<TRequest, TResponse>(
+internal sealed partial class IdempotencyBehavior<TRequest, TResponse>(
     [FromKeyedServices(IdempotencyPurpose.Request)] IIdempotencyStore store,
+    IRequestContext requestContext,
     ICommandScope commandScope,
     IOptions<IdempotencyBehaviorOptions> options,
     ILogger<IdempotencyBehavior<TRequest, TResponse>> logger)
@@ -70,10 +97,10 @@ public sealed partial class IdempotencyBehavior<TRequest, TResponse>(
         if (string.IsNullOrWhiteSpace(request.IdempotencyKey))
         {
             return FailureResponse.Create<TResponse>(
-                Error.Validation("idempotency.key_missing", "An idempotency key is required."));
+                Error.Validation(ErrorCodes.Idempotency.KeyRequired, "An idempotency key is required."));
         }
 
-        var key = request.IdempotencyKey;
+        var key = IdempotencyKeyScope.Create(requestContext, request.IdempotencyKey);
         var fingerprint = string.IsNullOrWhiteSpace(request.Fingerprint)
             ? RequestFingerprint.Compute(request)
             : request.Fingerprint.Trim();
@@ -94,13 +121,13 @@ public sealed partial class IdempotencyBehavior<TRequest, TResponse>(
             case IdempotencyReservationStatus.InProgress:
                 return FailureResponse.Create<TResponse>(
                     Error.Conflict(
-                        "idempotency.in_progress",
+                        ErrorCodes.Idempotency.InProgress,
                         "A request with this idempotency key is still being processed."));
 
             case IdempotencyReservationStatus.FingerprintMismatch:
                 return FailureResponse.Create<TResponse>(
                     Error.Conflict(
-                        "idempotency.key_reused",
+                        ErrorCodes.Idempotency.KeyReused,
                         "The idempotency key was already used for a different request."));
 
             case IdempotencyReservationStatus.Started:

@@ -119,4 +119,29 @@ public interface IUserContext
     /// <paramref name="now"/>; <see langword="false"/> when it is unknown or older.
     /// </returns>
     bool IsAuthenticationFresherThan(TimeSpan maxAge, DateTimeOffset now);
+
+    /// <summary>Returns when the caller verified an authentication method.</summary>
+    /// <param name="method">The authentication method reference, such as <c>otp</c>, compared ordinally.</param>
+    /// <returns>
+    /// When <paramref name="method"/> was verified; <see langword="null"/> when <see cref="WasAuthenticatedWith"/> is
+    /// <see langword="false"/> for it, or its time is unknown.
+    /// </returns>
+    /// <remarks>
+    /// <para>
+    /// A method added after sign-in, such as a step-up, carries its own time in a
+    /// <see cref="SecurityClaimTypes.AuthenticationMethodTime"/> claim; a method the credential carried was verified at
+    /// sign-in, <see cref="AuthTime"/>.
+    /// </para>
+    /// <para>
+    /// Compare it with the current time when a method must be recent, not only present. That matters on long-lived
+    /// connections: a SignalR connection keeps the principal it connected with, and a gRPC streaming call the principal
+    /// it started with, so an <c>amr</c> value on them stays however old it gets, while a plain request re-authenticates
+    /// every time.
+    /// </para>
+    /// <para>
+    /// The default implementation returns <see langword="null"/>, so a requirement with a maximum age refuses the callers
+    /// of an implementation that does not override it.
+    /// </para>
+    /// </remarks>
+    DateTimeOffset? GetAuthenticationMethodTime(string method) => null;
 }

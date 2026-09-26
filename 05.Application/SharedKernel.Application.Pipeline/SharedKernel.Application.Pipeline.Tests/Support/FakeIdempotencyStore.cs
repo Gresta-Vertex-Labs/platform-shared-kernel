@@ -13,6 +13,8 @@ internal sealed class FakeIdempotencyStore(List<string>? sequence = null) : IIde
     public int BeginCallCount { get; private set; }
     public int CompleteCallCount { get; private set; }
     public int ReleaseCallCount { get; private set; }
+    /// <summary>Every key handed to <see cref="TryBeginAsync"/>, in call order.</summary>
+    public List<string> BegunKeys { get; } = [];
     public List<IdempotencyPurpose> Purposes { get; } = [];
     public TimeSpan? LastTtl { get; private set; }
     public TimeSpan? LastRetention { get; private set; }
@@ -21,6 +23,7 @@ internal sealed class FakeIdempotencyStore(List<string>? sequence = null) : IIde
         IdempotencyPurpose purpose, string key, string fingerprint, TimeSpan ttl, CancellationToken cancellationToken)
     {
         BeginCallCount++;
+        BegunKeys.Add(key);
         Purposes.Add(purpose);
         LastTtl = ttl;
 

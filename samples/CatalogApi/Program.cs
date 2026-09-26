@@ -1,12 +1,15 @@
 using CatalogApi;
+using SharedKernel.Application.Mediator.MediatR;
+using SharedKernel.Application.Pipeline;
+using SharedKernel.Presentation.WebApi;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Search.Abstractions.Models;
 using SharedKernel.Search.ElasticSearch.Extensions;
 using SharedKernel.Search.Meilisearch.Extensions;
 using SharedKernel.Search.Meilisearch.Provisioning;
+using SharedKernel.Security.Abstractions;
 using SharedKernel.ServiceDefaults.Extensions;
 using SharedKernel.ServiceDefaults.HealthChecks;
-using SharedKernel.Security.Abstractions;
 using SharedKernel.ServiceDefaults.Probes;
 using SharedKernel.ServiceDefaults.Security;
 using SharedKernel.ServiceDefaults.Telemetry;
@@ -114,7 +117,22 @@ builder.Services
     .AddHealthChecks()
     .AddSharedKernelReadiness();
 
+// 05.Application — the handlers of this assembly (Features/), MediatR behind the kernel's ISender, and the always-on
+// behaviors (tracing, logging, metrics, authorization, validation). The endpoints send commands and queries; only
+// the handlers touch the engines.
+builder.Services.AddSharedKernelApplication(typeof(Program).Assembly, app => app.UseMediatR());
+
+// 14.Presentation — the HTTP boundary in one call (SharedKernel:Presentation:WebApi). Every search failure is a
+// Result, and every Result failure an RFC 9457 problem: search.unreachable is 503, search.timeout and
+// search.write_timeout 504 — with the engine's own message, which names internal endpoints, shown only in Development.
+builder.AddSharedKernelWebApi();
+
 var app = builder.Build();
+
+// First in the pipeline: the request's X-Correlation-Id and request context, on every response. Then, before any
+// endpoint: security headers, the exception handler, problem bodies and routing.
+app.UseSharedKernelRequestContext();
+app.UseSharedKernelWebApi();
 
 // The telemetry probe listens from process start, not from the first call to /diagnostics/telemetry.
 // Resolving a singleton lazily means its constructor — and therefore its ActivityListener — does not
@@ -128,13 +146,10 @@ _ = app.Services.GetRequiredService<TelemetryProbe>();
 // explicit /ops/provision call instead, so there is nothing to wait for.
 app.Services.GetRequiredService<StartupGate>().MarkReady();
 
-// First in the pipeline: the request's X-Correlation-Id and request context, on every response.
-app.UseSharedKernelRequestContext();
-
 app.MapDefaultHealthCheckEndpoints();
-app.MapStorefrontEndpoints();
-app.MapBackOfficeEndpoints();
-app.MapOperationsEndpoints();
+// Every IEndpointModule of this assembly (storefront, back office, operations), found at compile time by the
+// generator the WebApi package ships.
+app.MapEndpoints();
 
 await app.RunAsync();
 

@@ -445,31 +445,38 @@ public class RealKernelTypeNameTests
     }
 
     // ---------------------------------------------------------------------------
-    // SK0040 — IRequest<T> (SharedKernel.Application.Messaging), IAuthorizeRequest,
-    // IIdempotentRequest, Result (SharedKernel.Primitives.Results)
+    // SK0040 — IRequest<T> (SharedKernel.Application.Messaging), [RequirePermission]
+    // (SharedKernel.Application.Authorization, inherited), IIdempotentRequest, Result (SharedKernel.Primitives.Results)
     // ---------------------------------------------------------------------------
 
     [Fact]
     public async Task Sk0040_RealMarkerOnNonResultRequest_Fires()
     {
+        Assert.Equal(
+            "SharedKernel.Application.Authorization",
+            typeof(SharedKernel.Application.Authorization.RequirePermissionAttribute).Namespace
+        );
+
         var diagnostics = await AnalyzeAsync(
             new PipelineMarkerResponseShapeMismatchAnalyzer(),
             """
-            using System.Collections.Generic;
             using SharedKernel.Application.Authorization;
             using SharedKernel.Application.Idempotency;
             using SharedKernel.Application.Messaging;
 
             namespace Fixture
             {
-                public sealed record ExportReport : IRequest<string>, IAuthorizeRequest
-                {
-                    public IReadOnlyCollection<string> RequiredPermissions => ["reports.export"];
-                }
+                [RequirePermission("reports.export")]
+                public sealed record ExportReport : IRequest<string>;
 
-                public sealed record PlaceOrder : ICommand<int>, IAuthorizeRequest, IIdempotentRequest
+                [RequirePermission("reports.read")]
+                public abstract record ProtectedQuery : IRequest<string>;
+
+                public sealed record ReadReport : ProtectedQuery;
+
+                [RequirePermission("orders.place")]
+                public sealed record PlaceOrder : ICommand<int>, IIdempotentRequest
                 {
-                    public IReadOnlyCollection<string> RequiredPermissions => ["orders.place"];
                     public string IdempotencyKey => "key";
                 }
 
@@ -481,8 +488,9 @@ public class RealKernelTypeNameTests
             """
         );
 
-        AssertFlagged(diagnostics, "SK0040", "ExportReport");
+        AssertFlagged(diagnostics, "SK0040", "ExportReport", "ReadReport");
         Assert.Contains("'string'", diagnostics[0].GetMessage(), StringComparison.Ordinal);
+        Assert.Contains("[RequirePermission]", diagnostics[0].GetMessage(), StringComparison.Ordinal);
     }
 
     // ---------------------------------------------------------------------------
@@ -750,15 +758,25 @@ public class RealKernelTypeNameTests
     }
 
     // ---------------------------------------------------------------------------
-    // SK0036 — SharedKernel.Presentation.Grpc exemption and GrpcResultExtensions in the message
+    // SK0036 — SharedKernel.Presentation.Grpc exemption (every namespace of the real package) and
+    // SharedKernel.Core's ThrowIfFailure()/GetValueOrThrow() in the message
     // ---------------------------------------------------------------------------
 
     [Fact]
     public async Task Sk0036_RealRpcException_FiresOutsidePresentationGrpc_MessageNamesRealExtensions()
     {
-        var extensions = typeof(SharedKernel.Presentation.Grpc.Results.GrpcResultExtensions);
-        Assert.StartsWith("SharedKernel.Presentation.Grpc", extensions.Namespace, StringComparison.Ordinal);
-        Assert.Contains(extensions.GetMethods(), method => method.Name == "ToGrpcResult");
+        // The exemption prefix must cover every namespace of the real gRPC package, since its rich-status factory
+        // and exception interceptor are the only sanctioned construction sites.
+        var grpcNamespaces = System.Reflection.Assembly.Load("SharedKernel.Presentation.Grpc")
+            .GetTypes()
+            .Select(type => type.Namespace)
+            .Where(ns => ns is not null)
+            .Distinct()
+            .ToList();
+        Assert.NotEmpty(grpcNamespaces);
+        Assert.All(grpcNamespaces, ns => Assert.StartsWith("SharedKernel.Presentation.Grpc", ns, StringComparison.Ordinal));
+
+        var extensions = typeof(SharedKernel.Core.Extensions.ResultExtensions);
 
         var diagnostics = await AnalyzeAsync(
             new RawRpcExceptionConstructionAnalyzer(),
@@ -790,7 +808,10 @@ public class RealKernelTypeNameTests
             "new RpcException(new Status(StatusCode.NotFound, \"missing\"))",
             "new Status(StatusCode.NotFound, \"missing\")"
         );
-        Assert.Contains(extensions.FullName!, diagnostics[0].GetMessage(), StringComparison.Ordinal);
+        var message = diagnostics[0].GetMessage();
+        Assert.Contains(extensions.Namespace!, message, StringComparison.Ordinal);
+        Assert.Contains($"{nameof(SharedKernel.Core.Extensions.ResultExtensions.ThrowIfFailure)}()", message, StringComparison.Ordinal);
+        Assert.Contains($"{nameof(SharedKernel.Core.Extensions.ResultExtensions.GetValueOrThrow)}()", message, StringComparison.Ordinal);
     }
 
     // ---------------------------------------------------------------------------

@@ -46,6 +46,7 @@ internal sealed class OidcUserContextMapper(
             Roles = All(identity, claims.RoleClaimType),
             Permissions = SpaceDelimited(identity, OidcDefaults.Permissions(claims)),
             AuthenticationMethods = All(identity, claims.AuthenticationMethodClaimType),
+            AuthenticationMethodTimes = AuthenticationMethodTimeClaim.Read(identity.Claims),
             AuthContextClassReference = First(identity, claims.AuthContextClassReferenceClaimType),
             AuthTime = ReadUnixTime(identity, claims.AuthTimeClaimType),
             IsSenderConstrained = TokenConfirmation.Read(identity).IsSenderConstrained,

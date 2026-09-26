@@ -93,6 +93,11 @@ public sealed record Error(string Code, string Message, ErrorType Type)
     /// </summary>
     /// <param name="code">Stable machine-readable identifier. <see cref="ErrorCodes.Unexpected.Default"/> if you have nothing more specific.</param>
     /// <param name="message">Human-readable description. Do not paste raw exception text here — it reaches callers.</param>
+    /// <remarks>
+    /// A dependency that is down, throttling, or too slow is not an unclassified fault — use
+    /// <see cref="Unavailable"/> or <see cref="Timeout"/>, so a caller can tell "retry later" from a
+    /// defect.
+    /// </remarks>
     public static Error Unexpected(string code, string message)
         => new(code, message, ErrorType.Unexpected);
 
@@ -286,6 +291,35 @@ public sealed record Error(string Code, string Message, ErrorType Type)
     /// </remarks>
     public static Error Forbidden(string code, string message)
         => new(code, message, ErrorType.Forbidden);
+
+    /// <summary>
+    /// Creates an <see cref="ErrorType.Unavailable"/> error — a dependency, or the service itself,
+    /// is temporarily unable to serve the request: unreachable, throttling, or failing. Retrying
+    /// later may succeed. Maps to HTTP 503.
+    /// </summary>
+    /// <param name="code">Stable machine-readable identifier. <see cref="ErrorCodes.Unavailable.Default"/> if you have nothing more specific.</param>
+    /// <param name="message">Human-readable description. Name what is unavailable, never a host, endpoint, or connection string — it reaches callers.</param>
+    /// <remarks>
+    /// The request was fine and nothing in this code is broken; a dependency is down or overloaded.
+    /// That is what separates it from <see cref="Unexpected"/>. If the operation ran out of time
+    /// instead, and may still complete, use <see cref="Timeout"/>.
+    /// </remarks>
+    public static Error Unavailable(string code, string message)
+        => new(code, message, ErrorType.Unavailable);
+
+    /// <summary>
+    /// Creates an <see cref="ErrorType.Timeout"/> error — the operation exceeded its time budget,
+    /// and its outcome may be unknown. Maps to HTTP 504.
+    /// </summary>
+    /// <param name="code">Stable machine-readable identifier. <see cref="ErrorCodes.Timeout.Default"/> if you have nothing more specific.</param>
+    /// <param name="message">Human-readable description of what timed out. Do not paste raw exception text here — it reaches callers.</param>
+    /// <remarks>
+    /// A timed-out write may still land after the caller stopped waiting, so retry only an
+    /// idempotent operation, or check the outcome first. If the dependency could not be reached at
+    /// all, use <see cref="Unavailable"/>.
+    /// </remarks>
+    public static Error Timeout(string code, string message)
+        => new(code, message, ErrorType.Timeout);
 
     // Code plus type, not the message: the code is what a consumer branches on and greps logs
     // for, and a message is long enough to push everything useful out of a watch-window row.

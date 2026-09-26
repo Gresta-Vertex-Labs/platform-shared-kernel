@@ -12,11 +12,11 @@ namespace SharedKernel.Application.Pipeline;
 /// The mediator-independent core of request dispatch. The behaviors are every
 /// <see cref="IPipelineBehavior{TRequest,TResponse}"/> registration whose generic constraints the
 /// request satisfies, in registration order, the first one outermost —
-/// <see cref="Extensions.ApplicationBehaviorsBuilder.Build"/> registers them in the fixed stage
+/// <c>AddSharedKernelApplication</c> registers them in the fixed stage
 /// order, so the order never depends on the calls a service happens to make.
 /// </para>
 /// <para>
-/// Registered open-generic (transient) by <c>Build()</c> and by <c>AddSharedKernelMediatR(...)</c>.
+/// Registered open-generic (transient) by <c>AddSharedKernelApplication</c>.
 /// A mediator adapter resolves it from the request's DI scope and calls <see cref="HandleAsync"/>;
 /// a test can do the same without any mediator.
 /// </para>

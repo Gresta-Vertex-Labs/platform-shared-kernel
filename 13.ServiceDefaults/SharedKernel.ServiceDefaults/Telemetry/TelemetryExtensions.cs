@@ -21,9 +21,9 @@ public static class TelemetryExtensions
     /// version, ASP.NET Core / HttpClient / (conditionally) EF Core instrumentation in the
     /// <c>TracerProvider</c>, runtime and ASP.NET Core instrumentation in the
     /// <c>MeterProvider</c>, and a <see cref="BaggageLogRecordProcessor"/> in the logging pipeline
-    /// so ambient <see cref="System.Diagnostics.Activity"/> baggage (CorrelationId, TenantId, etc.)
-    /// is copied onto every exported log record. An OTLP exporter is registered for all three
-    /// signals, with its endpoint and protocol read from the standard
+    /// so the platform's own <see cref="System.Diagnostics.Activity"/> baggage (the correlation id
+    /// and the tenant id, nothing else) is copied onto every exported log record. An OTLP exporter
+    /// is registered for all three signals, with its endpoint and protocol read from the standard
     /// <c>OTEL_EXPORTER_OTLP_ENDPOINT</c> / <c>OTEL_EXPORTER_OTLP_PROTOCOL</c> environment
     /// variables.
     /// </summary>
@@ -43,6 +43,18 @@ public static class TelemetryExtensions
     /// <see langword="true"/>) means every <c>[LoggerMessage]</c>-authored log statement
     /// platform-wide (root <c>CLAUDE.md</c> Logging Conventions) is exported through the same OTLP
     /// pipeline as traces and metrics.
+    /// <para>
+    /// <b>Inbound baggage (P-562 X2).</b> When the tracer provider is built, OpenTelemetry's
+    /// default propagator is decorated so it takes no baggage from an incoming HTTP request:
+    /// <c>OpenTelemetry.Baggage.Current</c> is never filled from a caller's <c>baggage</c> header,
+    /// so the HttpClient and gRPC client instrumentations can no longer forward it to downstream
+    /// services. Trace context is still read, baggage from other carriers (Temporal workflow
+    /// headers) is kept, and the service's own outgoing baggage — <c>Baggage.Current</c> items it
+    /// sets, and <see cref="System.Diagnostics.Activity"/> baggage, which .NET sends when
+    /// <c>Baggage.Current</c> is empty — still propagates. A propagator the service sets before the
+    /// host starts is decorated, not replaced. The request's <see cref="System.Diagnostics.Activity"/>
+    /// is a separate store, cleared at the edge by <c>UseSharedKernelRequestContext()</c> (<c>SharedKernel.ServiceDefaults.Security</c>, <c>RequestContextOptions.TrustInboundBaggage</c>).
+    /// </para>
     /// </remarks>
     public static IHostApplicationBuilder AddSharedKernelTelemetry(
         this IHostApplicationBuilder builder,
@@ -81,6 +93,11 @@ public static class TelemetryExtensions
                     options.IncludeScopes = true;
                     options.IncludeFormattedMessage = true;
                 });
+
+        // Deferred to the tracer provider's construction: every instrumentation reads the default propagator per
+        // call, and one the service sets before the host starts gets decorated rather than replaced.
+        builder.Services.ConfigureOpenTelemetryTracerProvider(
+            static (_, _) => RequestBaggageRefusingPropagator.Install());
 
         return builder;
     }

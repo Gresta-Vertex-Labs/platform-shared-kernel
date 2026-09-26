@@ -1,14 +1,23 @@
 using SharedKernel.Execution.Tenancy;
 using SharedKernel.Execution.Context;
+using System.Collections.ObjectModel;
 using SharedKernel.Security.Abstractions;
 
 namespace SharedKernel.Testing.Security;
 
 /// <summary>A settable <see cref="IUserContext"/> for unit tests.</summary>
 /// <remarks>
+/// <para>
 /// Defaults to an authenticated <see cref="ActorKind.User"/> with <see cref="DefaultSubjectId"/>, so most tests
 /// need no setup. <see cref="IsAuthenticated"/> follows <see cref="ActorKind"/>, as on every real context; set
 /// <see cref="ActorKind"/> to <see cref="ActorKind.Anonymous"/> for an unauthenticated caller.
+/// </para>
+/// <para>
+/// For a step-up with a maximum age (<c>[RequireAuthenticationMethod("otp", MaxAgeSeconds = 300)]</c>), list the
+/// method and date it from the test's clock:
+/// <c>new FakeUserContext { AuthenticationMethods = ["pwd", "otp"] }.WithAuthenticationMethodTime("otp", clock.UtcNow.AddMinutes(-2))</c>
+/// is fresh, and <c>AddMinutes(-6)</c> is expired.
+/// </para>
 /// </remarks>
 public sealed class FakeUserContext : IUserContext
 {
@@ -49,6 +58,18 @@ public sealed class FakeUserContext : IUserContext
     /// <inheritdoc/>
     public IReadOnlyCollection<string> AuthenticationMethods { get; set; } = [];
 
+    /// <summary>
+    /// Gets or sets when authentication methods were verified, keyed by method. Empty by default. Read by
+    /// <see cref="GetAuthenticationMethodTime"/>, which compares methods ordinally.
+    /// </summary>
+    /// <remarks>
+    /// As on <see cref="UserContext.AuthenticationMethodTimes"/>, a time only dates a method:
+    /// <see cref="AuthenticationMethods"/> still decides which methods the caller has, and a listed method without a
+    /// time was verified at <see cref="AuthTime"/>. <see cref="WithAuthenticationMethodTime"/> sets one entry.
+    /// </remarks>
+    public IReadOnlyDictionary<string, DateTimeOffset> AuthenticationMethodTimes { get; set; } =
+        ReadOnlyDictionary<string, DateTimeOffset>.Empty;
+
     /// <inheritdoc/>
     public string? AuthContextClassReference { get; set; }
 
@@ -87,4 +108,54 @@ public sealed class FakeUserContext : IUserContext
     /// <inheritdoc/>
     public bool IsAuthenticationFresherThan(TimeSpan maxAge, DateTimeOffset now) =>
         AuthTime is { } authTime && authTime - now <= UserContext.MaxFutureAuthTime && now - authTime <= maxAge;
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Answers as <see cref="UserContext"/> does: <see langword="null"/> unless <see cref="WasAuthenticatedWith"/> is
+    /// <see langword="true"/> for the method; then its time in <see cref="AuthenticationMethodTimes"/>, or, when it has
+    /// none, <see cref="AuthTime"/>.
+    /// </remarks>
+    public DateTimeOffset? GetAuthenticationMethodTime(string method)
+    {
+        ArgumentNullException.ThrowIfNull(method);
+
+        if (!WasAuthenticatedWith(method))
+        {
+            return null;
+        }
+
+        foreach (var (recordedMethod, verifiedAt) in AuthenticationMethodTimes)
+        {
+            if (string.Equals(recordedMethod, method, StringComparison.Ordinal))
+            {
+                return verifiedAt;
+            }
+        }
+
+        return AuthTime;
+    }
+
+    /// <summary>Records when the caller verified an authentication method, replacing an earlier time for it.</summary>
+    /// <param name="method">The authentication method reference, such as <c>otp</c>.</param>
+    /// <param name="verifiedAt">When it was verified; take it from the test's clock.</param>
+    /// <returns>This context.</returns>
+    /// <remarks>
+    /// Only dates the method: list it in <see cref="AuthenticationMethods"/> too, or
+    /// <see cref="GetAuthenticationMethodTime"/> ignores the time, as a real context does.
+    /// </remarks>
+    /// <exception cref="ArgumentException"><paramref name="method"/> is null, empty or white space.</exception>
+    public FakeUserContext WithAuthenticationMethodTime(string method, DateTimeOffset verifiedAt)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(method);
+
+        var times = new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal);
+        foreach (var (recordedMethod, recordedAt) in AuthenticationMethodTimes)
+        {
+            times[recordedMethod] = recordedAt;
+        }
+
+        times[method] = verifiedAt;
+        AuthenticationMethodTimes = times.AsReadOnly();
+        return this;
+    }
 }

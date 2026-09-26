@@ -31,7 +31,7 @@ namespace SharedKernel.Application.Pipeline.DomainEvents;
 /// </para>
 /// </remarks>
 /// <param name="services">The service provider of the current DI scope.</param>
-public sealed class DomainEventDispatcher(IServiceProvider services) : IDomainEventDispatcher
+internal sealed class DomainEventDispatcher(IServiceProvider services) : IDomainEventDispatcher
 {
     private static readonly ConcurrentDictionary<Type, DomainEventInvoker> Invokers = new();
 

@@ -25,6 +25,16 @@ public sealed class ErrorCodesTests
     public void Unauthorized_Default_IsNotNullOrEmpty()
         => Assert.False(string.IsNullOrWhiteSpace(ErrorCodes.Unauthorized.Default));
 
+    // The values are a wire contract: 14.Presentation answers the header checks and 05.Application
+    // the reservation with these exact strings, and clients branch on them.
+    [Theory]
+    [InlineData(ErrorCodes.Idempotency.KeyRequired, "idempotency.key_required")]
+    [InlineData(ErrorCodes.Idempotency.KeyInvalid, "idempotency.key_invalid")]
+    [InlineData(ErrorCodes.Idempotency.InProgress, "idempotency.in_progress")]
+    [InlineData(ErrorCodes.Idempotency.KeyReused, "idempotency.key_reused")]
+    public void Idempotency_Codes_HaveTheirWireValues(string actual, string expected)
+        => Assert.Equal(expected, actual);
+
     [Fact]
     public void AllCodes_AreUniqueAcrossCategories()
     {
@@ -44,6 +54,12 @@ public sealed class ErrorCodesTests
             ErrorCodes.Forbidden.Default,
             ErrorCodes.Forbidden.InsufficientPermission,
             ErrorCodes.Unexpected.Default,
+            ErrorCodes.Unavailable.Default,
+            ErrorCodes.Timeout.Default,
+            ErrorCodes.Idempotency.KeyRequired,
+            ErrorCodes.Idempotency.KeyInvalid,
+            ErrorCodes.Idempotency.InProgress,
+            ErrorCodes.Idempotency.KeyReused,
             ErrorCodes.Domain.RuleViolated,
         };
 
@@ -95,6 +111,15 @@ public sealed class ErrorCodesTests
 
         Assert.Empty(forbidden.Intersect(unauthorized));
     }
+
+    // P-562: the general-purpose codes behind Error.Unavailable and Error.Timeout.
+    [Fact]
+    public void Unavailable_Default_HasCorrectValue()
+        => Assert.Equal("unavailable.default", ErrorCodes.Unavailable.Default);
+
+    [Fact]
+    public void Timeout_Default_HasCorrectValue()
+        => Assert.Equal("timeout.default", ErrorCodes.Timeout.Default);
 
     [Fact]
     public void Forbidden_Codes_UseTheDottedLowercaseConvention()

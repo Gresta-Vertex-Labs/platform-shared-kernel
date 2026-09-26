@@ -4,7 +4,8 @@ using SharedKernel.Application.Mediator.MediatR;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Application.Authorization;
 using SharedKernel.Application.Commands;
-using SharedKernel.Application.Pipeline.Extensions;
+using Microsoft.Extensions.Options;
+using SharedKernel.Application.Pipeline;
 using SharedKernel.Application.Idempotency;
 using SharedKernel.Idempotency.Abstractions;
 using SharedKernel.Validation.FluentValidation;
@@ -17,11 +18,9 @@ using Xunit;
 
 namespace SharedKernel.Application.ConsumerVerify;
 
+[RequirePermission("orders.place")]
 public sealed record PlaceOrder(string Customer, decimal Amount, string IdempotencyKey)
-    : ICommand<Guid>, IAuthorizeRequest, IIdempotentRequest
-{
-    public IReadOnlyCollection<string> RequiredPermissions => ["orders.place"];
-}
+    : ICommand<Guid>, IIdempotentRequest;
 
 public sealed class PlaceOrderValidator : AbstractValidator<PlaceOrder>
 {
@@ -104,7 +103,7 @@ public sealed class UnitOfWork(Journal journal) : IUnitOfWork
 public sealed class RequestContext : IRequestContext
 {
     public bool IsAuthenticated { get; init; } = true;
-    public string? UserId => "user-1";
+    public string? UserId { get; set; } = "user-1";
     public SharedKernel.Execution.Tenancy.TenantId? TenantId => null;
     public HashSet<string> Permissions { get; } = ["orders.place"];
 
@@ -153,14 +152,13 @@ public sealed class ConsumerVerifyTests
     [Fact]
     public void Pipeline_PackageCarriesNoInfrastructureOrMediatorDependency()
     {
-        var references = typeof(ApplicationBehaviorsBuilder).Assembly.GetReferencedAssemblies()
+        var references = typeof(ApplicationPipelineBuilder).Assembly.GetReferencedAssemblies()
             .Select(assembly => assembly.Name!)
             .ToArray();
 
         Assert.Contains("SharedKernel.Application", references);
         Assert.DoesNotContain(references, name => name.StartsWith("Polly", StringComparison.Ordinal)
             || name.StartsWith("SharedKernel.Caching", StringComparison.Ordinal)
-            || name == "SharedKernel.Core"
             || name == "Microsoft.Extensions.Hosting.Abstractions"
             || name.StartsWith("MediatR", StringComparison.Ordinal)
             || name.StartsWith("FluentValidation", StringComparison.Ordinal));
@@ -230,27 +228,54 @@ public sealed class ConsumerVerifyTests
         Assert.Equal(1, journal.HandlerCalls);
     }
 
+    [Fact]
+    public async Task Command_SameKeyFromAnotherCaller_RunsItsOwnExecution_AndNeverReplaysTheFirstCallersResponse()
+    {
+        var (sender, journal, context) = Build();
+
+        var first = await sender.Send(new PlaceOrder("ada", 10m, "key-6"));
+        context.UserId = "user-2";
+        var otherCaller = await sender.Send(new PlaceOrder("ada", 10m, "key-6"));
+        context.UserId = "user-1";
+        var retry = await sender.Send(new PlaceOrder("ada", 10m, "key-6"));
+
+        Assert.NotEqual(first.Value, otherCaller.Value);
+        Assert.Equal(first.Value, retry.Value);
+        Assert.Equal(2, journal.HandlerCalls);
+    }
+
+    [Fact]
+    public async Task Command_BlankIdempotencyKey_IsKeyRequired()
+    {
+        var (sender, journal, _) = Build();
+
+        var result = await sender.Send(new PlaceOrder("ada", 10m, " "));
+
+        Assert.Equal(ErrorType.Validation, result.Error.Type);
+        Assert.Equal("idempotency.key_required", result.Error.Code);
+        Assert.Equal(0, journal.HandlerCalls);
+    }
+
     private static (ISender Sender, Journal Journal, RequestContext Context) Build()
     {
         var journal = new Journal();
         var context = new RequestContext();
         var services = new ServiceCollection();
 
-        services.AddSharedKernelMediatR(typeof(PlaceOrderHandler).Assembly);
-        services.AddScoped<IValidator<PlaceOrder>, PlaceOrderValidator>();
-        services.AddFluentValidationRequestValidators();
+        // One call: handlers are found in this assembly, and the mediator and the opt-ins are chosen on the builder.
+        // The seams follow it, because they are checked when the host starts, not here.
+        services.AddSharedKernelApplication(typeof(PlaceOrderHandler).Assembly, app => app
+            .UseMediatR()
+            .WithIdempotency()
+            .WithTransactions());
+        services.AddFluentValidationRequestValidators(typeof(PlaceOrderValidator).Assembly);
         services.AddSingleton(journal);
         services.AddSingleton<IRequestContext>(context);
         services.AddIdempotencyStore<IdempotencyStore>(IdempotencyPurpose.Request);
         services.AddScoped<IUnitOfWork, UnitOfWork>();
-        services.AddSharedKernelApplicationBehaviors()
-            .AddDefaultBehaviors()
-            .AddAuthorizationBehavior()
-            .AddIdempotencyBehavior()
-            .AddTransactionBehavior()
-            .Build();
 
         var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        provider.GetRequiredService<IStartupValidator>().Validate();
         return (provider.CreateScope().ServiceProvider.GetRequiredService<ISender>(), journal, context);
     }
 }

@@ -24,7 +24,7 @@ namespace SharedKernel.Application.Pipeline.Auditing;
 /// entry is written on the writer's own connection without waiting on any lock the business
 /// transaction held. Its inner partner, registered <em>inside</em> <c>TransactionBehavior</c>,
 /// records success: it queues the <see cref="AuditOutcome.Succeeded"/> entry with
-/// <see cref="Transactions.IUnitOfWork.OnBeforeCommit"/>, so the entry is written in the same
+/// <see cref="SharedKernel.Execution.Transactions.IUnitOfWork.OnBeforeCommit(Func{CancellationToken, Task})"/>, so the entry is written in the same
 /// transaction as the change it attests to and commits or rolls back with it. When no transaction is
 /// active (no <c>TransactionBehavior</c>), the inner half writes the success entry directly.
 /// </para>
@@ -47,7 +47,7 @@ namespace SharedKernel.Application.Pipeline.Auditing;
 /// nested command — the outer command's own entry records the failure.
 /// </para>
 /// </remarks>
-public sealed partial class AuditingBehavior<TRequest, TResponse>(
+internal sealed partial class AuditingBehavior<TRequest, TResponse>(
     IAuditTrailWriter auditTrailWriter,
     ILogger<AuditingBehavior<TRequest, TResponse>> logger)
     : IPipelineBehavior<TRequest, TResponse>
