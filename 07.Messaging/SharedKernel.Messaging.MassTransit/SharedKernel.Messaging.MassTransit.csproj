@@ -23,8 +23,8 @@
         SharedKernel.Contracts             — EventEnvelope<TEvent> used by MassTransitEventPublisher
         SharedKernel.Compression           — IPayloadCompressor, used by WithPayloadTransform() (P-346)
         SharedKernel.Cryptography          — ISynchronousSymmetricEncryptionService, used by WithPayloadTransform() (P-346)
-      Both SharedKernel.Compression and SharedKernel.Cryptography are 01.Core packages, already
-      permitted by the root layering rule ("07.Messaging may reference 01-04").
+      Both SharedKernel.Compression and SharedKernel.Cryptography are Foundation-tier packages,
+      which an Adapter-tier package may always reference.
       NO reference to any 06.Persistence.* package is permitted, and no broker client or EF Core:
       those live in the .RabbitMq, .AzureServiceBus and .EfCore satellite packages (P-570).
     -->

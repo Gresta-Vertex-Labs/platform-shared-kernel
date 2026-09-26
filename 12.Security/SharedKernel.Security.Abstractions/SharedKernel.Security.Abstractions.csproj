@@ -2,7 +2,7 @@
   <PropertyGroup>
     <SharedKernelTier>Abstractions</SharedKernelTier>
     <!-- NuGet packaging metadata -->
-    <Description>Identity contracts shared by every SharedKernel service: IUserContext (subject, client, tenant, session, roles, permissions and step-up context of the caller), ITenantProvider, the per-scheme IUserContextMapper seam that authentication packages plug into, ready-made anonymous and system contexts, and the short OIDC claim type names. No ASP.NET Core or third-party dependency.</Description>
+    <Description>Identity contracts shared by every SharedKernel service: IUserContext (subject, client, tenant, session, roles, permissions and step-up context of the caller, as ActorKind and TenantId from SharedKernel.Execution), the per-scheme IUserContextMapper seam that authentication packages plug into, ready-made anonymous and system contexts, and the short OIDC claim type names. No ASP.NET Core or third-party dependency.</Description>
     <PackageReleaseNotes>First release.</PackageReleaseNotes>
     <PackageTags>shared-kernel;security;identity;user-context;tenant;claims;abstractions</PackageTags>
     <!--

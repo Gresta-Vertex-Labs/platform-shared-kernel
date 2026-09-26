@@ -10,10 +10,9 @@
   </ItemGroup>
   <ItemGroup>
     <!--
-      Layering: 14.Presentation may reference 01.Core, 04.Contracts, 12.Security, and
-      13.ServiceDefaults only. This package NEVER references 04.Contracts — a named exception to
-      14.Presentation's otherwise-permitted 04.Contracts reference, mirroring
-      SharedKernel.Communication.Grpc's existing P-163 rule: protobuf-generated messages are this
+      Host tier. This package NEVER references SharedKernel.Contracts — a purity rule the tier
+      check cannot express (kept in PresentationLayeringRules), mirroring
+      SharedKernel.Communication.Grpc's P-163 rule: protobuf-generated messages are this
       package's only wire-contract surface, not 04.Contracts DTOs (P-468/WO-074, D-78).
 
       No reference to SharedKernel.Presentation.WebApi (P-570): the authorization attributes and the

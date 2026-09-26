@@ -12,7 +12,8 @@
     <!--
       Deliberate design decision (P-080, Cap 3): SharedKernel.Contracts (04.Contracts) is
       referenced to expose PagedList<T> as the return type of IReadRepository.ListPagedAsync.
-      This is within root layering rules (06.Persistence may reference 01–05). It widens
+      An Abstractions-tier package may reference Model-tier packages (root CLAUDE.md "Tiers &amp;
+      Dependency Rules"). It widens
       the Abstractions dependency surface from [Primitives, Domain] to [Primitives, Domain,
       Contracts]. No ORM NuGet references are introduced by this change.
     -->

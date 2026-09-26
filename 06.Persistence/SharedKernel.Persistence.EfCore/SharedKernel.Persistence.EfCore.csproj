@@ -9,14 +9,11 @@
   </PropertyGroup>
   <ItemGroup>
     <!--
-      P-557/W1: EfCore no longer references SharedKernel.Security.Abstractions,
-      SharedKernel.Application.Pipeline, or SharedKernel.Cryptography — see
-      SharedKernel.Persistence.Abstractions.Context (IAuditActorContext/ICrossTenantScope) for the
-      local seams that replace the former direct Security.Abstractions dependency; see
-      13.ServiceDefaults/SharedKernel.ServiceDefaults.Persistence for the Application.Behaviors
-      bridge and the real IUserContext/ITenantProvider bridge; see
-      SharedKernel.Persistence.EfCore.Encryption for the former Cryptography-dependent surface.
-      06 must now reference only 01–05, and in practice only 01.Core (Domain/Core) + Abstractions.
+      Adapter tier. EfCore references no Security, Application or Cryptography package: the caller,
+      tenant, unit of work and audit contracts come from SharedKernel.Execution (Foundation, via
+      Persistence.Abstractions), and the Cryptography-dependent surface lives in
+      SharedKernel.Persistence.EfCore.Encryption. Beyond Foundation/Model/Abstractions packages it
+      may only reach the declared adapter edge to SharedKernel.Persistence.Npgsql (SKTIER002).
     -->
     <ProjectReference Include="..\SharedKernel.Persistence.Abstractions\SharedKernel.Persistence.Abstractions.csproj" />
     <ProjectReference Include="..\..\03.Domain\SharedKernel.Domain\SharedKernel.Domain.csproj" />

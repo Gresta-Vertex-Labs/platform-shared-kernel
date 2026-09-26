@@ -11,8 +11,8 @@
       permitted. SharedKernel.Execution (Foundation) supplies the ambient caller whose correlation id
       every delivery carries (P-566). SharedKernel.Primitives is referenced for future-proofing (D-01) plus
       LoggingEventIdRanges (WO-041). SharedKernel.Cryptography (01.Core) was added under
-      WO-064/P-427 for ISymmetricEncryptionService (opt-in AES-GCM payload encryption) — still
-      within the "may reference 01.Core" layering allowance, not a new cross-domain exception. No
+      WO-064/P-427 for ISymmetricEncryptionService (opt-in AES-GCM payload encryption) — a
+      Foundation-tier package, which this Adapter-tier package may always reference. No
       reference to 06.Persistence, 11.Communication.*, or SharedKernel.Messaging.MassTransit is
       permitted.
     -->

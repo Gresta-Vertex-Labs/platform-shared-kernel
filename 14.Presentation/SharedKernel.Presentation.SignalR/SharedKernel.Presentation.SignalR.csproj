@@ -10,10 +10,10 @@
   </ItemGroup>
   <ItemGroup>
     <!--
-      Layering: 14.Presentation may reference 01.Core, 04.Contracts, 12.Security, and
-      13.ServiceDefaults only. SharedKernel.Contracts is not needed by this package — hub filters
-      operate on Error/SharedKernelException (01.Core) and ITenantProvider (12.Security), never on
-      wire DTOs.
+      Host tier. SharedKernel.Contracts is not needed by this package — hub filters operate on
+      Error/SharedKernelException (Foundation) and IRequestContext / IRequestContextAccessor
+      (SharedKernel.Execution), never on wire DTOs. The Redis backplane lives in
+      SharedKernel.Presentation.SignalR.Redis (P-570).
     -->
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
     <ProjectReference Include="..\..\01.Core\SharedKernel.Core\SharedKernel.Core.csproj" />
