@@ -10,11 +10,15 @@
     <ProjectReference Include="..\SharedKernel.Reporting.Csv\SharedKernel.Reporting.Csv.csproj" />
     <ProjectReference Include="..\SharedKernel.Reporting.Spreadsheet\SharedKernel.Reporting.Spreadsheet.csproj" />
     <ProjectReference Include="..\SharedKernel.Reporting.Pdf\SharedKernel.Reporting.Pdf.csproj" />
+    <ProjectReference Include="..\SharedKernel.Reporting.Gotenberg\SharedKernel.Reporting.Gotenberg.csproj" />
     <ProjectReference Include="..\..\08.Storage\SharedKernel.Storage.Abstractions\SharedKernel.Storage.Abstractions.csproj" />
   </ItemGroup>
   <ItemGroup>
     <!-- Generic host — lets this harness exercise the real IHost.StartAsync() eager
          ValidateOnStart() path, not just BuildServiceProvider(). -->
     <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <!-- Independent readers: the workbook and the PDF are opened back as a consumer would. -->
+    <PackageReference Include="ClosedXML" />
+    <PackageReference Include="PDFsharp" />
   </ItemGroup>
 </Project>

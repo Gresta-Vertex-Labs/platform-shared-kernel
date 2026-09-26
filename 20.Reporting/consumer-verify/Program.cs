@@ -1,173 +1,150 @@
-// consumer-verify — exercises 20.Reporting's published packages exactly as a downstream
-// microservice would: real DI composition through ProjectReference (standing in for a packed
-// NuGet reference — the compiled surface is identical either way), never in-process unit-test
-// scaffolding. Five surfaces:
-//   1. All three providers (.Csv/.Spreadsheet/.Pdf) registered together resolve with zero DI
-//      exceptions through a real IHost.StartAsync()
-//   2. The shared StorageStreamingWriter registers exactly once (idempotent TryAddSingleton) even
-//      though all three providers' AddXReportExporter<TRow>() extensions each call it
-//   3. A real CSV export round-trips through a named IFileStorage store end to end, with a presigned URL
-//   4. A real spreadsheet export round-trips through IFileStorage and re-opens correctly via ClosedXML
-//   5. A real PDF export round-trips through IFileStorage and re-opens correctly via PdfSharp
+// consumer-verify — exercises 20.Reporting's packages exactly as a downstream service composes them: one
+// AddSharedKernelReporting() chain in a real IHost, storage through the real storage registry, and every output opened
+// back with an independent reader. Surfaces:
+//   1. The whole chain (CSV, Excel, PDF, Gotenberg) starts, validates its options, and resolves every exporter for any
+//      row type — through the per-format interfaces, the factory, and keyed services
+//   2. The factory parses a user-supplied format and picks the exporter at runtime
+//   3. A CSV export is stored with its content type, download file name and a presigned link
+//   4. An Excel export is stored and re-opens with ClosedXML, numbers as numbers
+//   5. A PDF export is stored and re-opens with PDFsharp
+// Gotenberg itself (a Docker service) is exercised by SharedKernel.Reporting.Gotenberg.Tests in the Integration lane.
 
 using System.Collections.Concurrent;
 using ClosedXML.Excel;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using PdfSharp.Pdf.IO;
 using SharedKernel.Primitives.Results;
-using SharedKernel.Reporting.Abstractions.Delivery;
-using SharedKernel.Reporting.Abstractions.Models;
-using SharedKernel.Reporting.Csv.Exporters;
-using SharedKernel.Reporting.Csv.Extensions;
-using SharedKernel.Reporting.Pdf.Exporters;
-using SharedKernel.Reporting.Pdf.Extensions;
-using SharedKernel.Reporting.Spreadsheet.Exporters;
-using SharedKernel.Reporting.Spreadsheet.Extensions;
+using SharedKernel.Reporting;
+using SharedKernel.Reporting.Csv;
+using SharedKernel.Reporting.Pdf;
+using SharedKernel.Reporting.Spreadsheet;
 using SharedKernel.Storage;
 
-await Surface1And2_AllThreeProvidersResolveWithSharedWriter();
-await Surface3_CsvRoundTrip();
-await Surface4_SpreadsheetRoundTrip();
-await Surface5_PdfRoundTrip();
+var storage = new RecordingFileStorage();
+using IHost host = await StartHostAsync(storage);
 
+var definition = ReportDefinition.For<Row>()
+    .Title("Orders")
+    .Column("Id", r => r.Id)
+    .Column("Customer", r => r.Name, relativeWidth: 2)
+    .Column("Total", r => r.Total, format: "N2")
+    .Build();
+
+Surface1_EveryExporterResolves(host.Services);
+Surface2_FactoryPicksTheFormatAtRuntime(host.Services);
+await Surface3_CsvRoundTrip(host.Services, storage, definition);
+await Surface4_SpreadsheetRoundTrip(host.Services, storage, definition);
+await Surface5_PdfRoundTrip(host.Services, storage, definition);
+
+await host.StopAsync();
 Console.WriteLine();
 Console.WriteLine("ALL SURFACES VERIFIED — consumer-verify PASSED");
 return;
 
-// ── Surfaces 1 & 2: all three providers resolve, shared writer registers once ──
-static async Task Surface1And2_AllThreeProvidersResolveWithSharedWriter()
+static async Task<IHost> StartHostAsync(RecordingFileStorage storage)
 {
-    var builder = Host.CreateApplicationBuilder();
+    HostApplicationBuilder builder = Host.CreateApplicationBuilder();
+    builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+    {
+        ["SharedKernel:Reporting:Csv:Delimiter"] = ";",
+        ["SharedKernel:Reporting:Gotenberg:BaseUrl"] = "http://gotenberg:3000",
+    });
+
     builder.Services.AddSharedKernelStorage().AddStore(new FileStoreRegistration(
         RecordingFileStorage.Name,
         tenantScoped: false,
-        _ => new RecordingFileStorage(),
+        _ => storage,
         (_, _) => Task.FromResult(Result.Success())));
 
-    builder.Services.AddCsvReportExporter<Row>(builder.Configuration);
-    builder.Services.AddSpreadsheetReportExporter<Row>(builder.Configuration);
-    builder.Services.AddPdfReportExporter<Row>(builder.Configuration);
+    builder.Services.AddSharedKernelReporting()
+        .AddCsv(builder.Configuration)
+        .AddSpreadsheet(builder.Configuration)
+        .AddPdf(builder.Configuration)
+        .AddGotenberg(builder.Configuration);
 
-    using var host = builder.Build();
+    IHost host = builder.Build();
     await host.StartAsync();
-
-    var csvExporter = host.Services.GetRequiredService<ICsvReportExporter<Row>>();
-    var spreadsheetExporter = host.Services.GetRequiredService<ISpreadsheetReportExporter<Row>>();
-    var pdfExporter = host.Services.GetRequiredService<IPdfReportExporter<Row>>();
-
-    Verify(csvExporter is CsvReportExporter<Row>, "ICsvReportExporter<Row> resolves as CsvReportExporter<Row>");
-    Verify(spreadsheetExporter is SpreadsheetReportExporter<Row>, "ISpreadsheetReportExporter<Row> resolves as SpreadsheetReportExporter<Row>");
-    Verify(pdfExporter is IPdfReportExporter<Row>, "IPdfReportExporter<Row> resolves as PdfReportExporter<Row>");
-
-    // All three AddXReportExporter<TRow>() calls independently call TryAddSingleton<StorageStreamingWriter>() —
-    // resolving it twice must yield the identical instance, proving no collision/duplicate registration.
-    var writer1 = host.Services.GetRequiredService<StorageStreamingWriter>();
-    var writer2 = host.Services.GetRequiredService<StorageStreamingWriter>();
-    Verify(ReferenceEquals(writer1, writer2), "StorageStreamingWriter resolves as one shared singleton across all three providers");
-
-    await host.StopAsync();
-    Console.WriteLine("Surface 1+2 PASS: all three providers resolve with zero DI exceptions and share one StorageStreamingWriter");
+    return host;
 }
 
-// ── Surface 3: real CSV round trip ────────────────────────────────────────────
-static async Task Surface3_CsvRoundTrip()
+static void Surface1_EveryExporterResolves(IServiceProvider services)
 {
-    var storage = new RecordingFileStorage();
-    var writer = new StorageStreamingWriter(storage.CreateFactory(), Microsoft.Extensions.Logging.Abstractions.NullLogger<StorageStreamingWriter>.Instance);
-    var options = Microsoft.Extensions.Options.Options.Create(new SharedKernel.Reporting.Csv.Options.CsvExportOptions());
-    var exporter = new CsvReportExporter<Row>(writer, options);
+    Verify(services.GetRequiredService<ICsvReportExporter<Row>>().Format == ReportFormat.Csv, "ICsvReportExporter<Row> resolves");
+    Verify(services.GetRequiredService<ISpreadsheetReportExporter<Row>>().Format == ReportFormat.Xlsx, "ISpreadsheetReportExporter<Row> resolves");
+    Verify(services.GetRequiredService<IPdfReportExporter<string>>().Format == ReportFormat.Pdf, "IPdfReportExporter<T> resolves for any row type");
+    Verify(services.GetRequiredKeyedService<IReportExporter<Row>>("xlsx").Format == ReportFormat.Xlsx, "keyed IReportExporter<Row> resolves");
+    Verify(services.GetRequiredService<IHtmlToPdfConverter>() is not null, "IHtmlToPdfConverter resolves");
+    Console.WriteLine("Surface 1 PASS: the whole chain starts and every exporter resolves for any row type");
+}
 
-    var definition = new ReportDefinition<Row>
-    {
-        Columns =
-        [
-            new ReportColumn<Row> { Header = "Id", Ordinal = 0, ValueSelector = r => r.Id },
-            new ReportColumn<Row> { Header = "Name", Ordinal = 1, ValueSelector = r => r.Name },
-        ],
-    };
+static void Surface2_FactoryPicksTheFormatAtRuntime(IServiceProvider services)
+{
+    var factory = services.GetRequiredService<IReportExporterFactory>();
+    Verify(factory.Formats.Count == 3, "three formats registered");
+    Verify(factory.ParseFormat(".XLSX").Value == ReportFormat.Xlsx, "ParseFormat accepts an extension");
+    Verify(factory.ParseFormat("text/csv").Value == ReportFormat.Csv, "ParseFormat accepts a content type");
+    Verify(factory.ParseFormat("docx").Error.Code == ReportingErrorCodes.UnsupportedFormat, "an unknown format is a validation failure");
+    Verify(factory.GetExporter<Row>(ReportFormat.Pdf) is IPdfReportExporter<Row>, "GetExporter returns the provider's exporter");
+    Console.WriteLine("Surface 2 PASS: the factory parses a user-supplied format and picks the exporter");
+}
 
-    var result = await exporter.ExportAsync(
-        Rows(new Row(1, "Alice"), new Row(2, "Bob")),
+static async Task Surface3_CsvRoundTrip(IServiceProvider services, RecordingFileStorage storage, ReportDefinition<Row> definition)
+{
+    Result<ReportExportOutcome> result = await services.GetRequiredService<ICsvReportExporter<Row>>().ExportAsync(
+        Rows(new Row(1, "Ada", 10.5m), new Row(2, "=cmd|' /C calc'!A0", 2m)),
         definition,
-        new ReportDestination { Store = RecordingFileStorage.Name, Key = "export.csv", PresignedDownloadUrlExpiry = TimeSpan.FromMinutes(5) },
-        CancellationToken.None);
+        new ReportDestination
+        {
+            Store = RecordingFileStorage.Name,
+            Key = "orders.csv",
+            DownloadFileName = "Siparişler.csv",
+            PresignedDownloadUrlExpiry = TimeSpan.FromMinutes(5),
+        });
 
     Verify(result.IsSuccess, "CSV ExportAsync succeeds");
-    Verify(result.Value.RowCount == 2, "CSV RowCount is 2");
-    Verify(result.Value.StoredFile.Store == RecordingFileStorage.Name, "CSV StoredFile names the store it was written to");
-    Verify(result.Value.DownloadUrl is { Method: "GET" }, "CSV DownloadUrl is presigned by the same store");
-    var content = System.Text.Encoding.UTF8.GetString(storage.GetContent("export.csv"));
-    Verify(content.Contains("Alice", StringComparison.Ordinal) && content.Contains("Bob", StringComparison.Ordinal), "CSV content round-trips correctly");
-
-    Console.WriteLine("Surface 3 PASS: real CSV export round-trips through IFileStorage");
+    Verify(result.Value.RowCount == 2 && result.Value.DownloadUrl is not null, "outcome carries the row count and a download link");
+    string csv = System.Text.Encoding.UTF8.GetString(storage.GetContent("orders.csv"));
+    Verify(csv.Contains("1;Ada;10.50", StringComparison.Ordinal), "configured ';' delimiter and N2 format applied");
+    Verify(csv.Contains(";'=cmd", StringComparison.Ordinal), "formula injection is neutralised");
+    Verify(storage.GetOptions("orders.csv").ContentType == "text/csv", "content type stored");
+    Verify(storage.GetOptions("orders.csv").ContentDisposition!.Contains("filename*=UTF-8''Sipari%C5%9Fler.csv", StringComparison.Ordinal), "download file name stored");
+    Console.WriteLine("Surface 3 PASS: CSV stored with content type, download name and presigned link");
 }
 
-// ── Surface 4: real spreadsheet round trip ────────────────────────────────────
-static async Task Surface4_SpreadsheetRoundTrip()
+static async Task Surface4_SpreadsheetRoundTrip(IServiceProvider services, RecordingFileStorage storage, ReportDefinition<Row> definition)
 {
-    var storage = new RecordingFileStorage();
-    var writer = new StorageStreamingWriter(storage.CreateFactory(), Microsoft.Extensions.Logging.Abstractions.NullLogger<StorageStreamingWriter>.Instance);
-    var options = Microsoft.Extensions.Options.Options.Create(new SharedKernel.Reporting.Spreadsheet.Options.SpreadsheetExportOptions());
-    var exporter = new SpreadsheetReportExporter<Row>(writer, options);
-
-    var definition = new ReportDefinition<Row>
-    {
-        Columns =
-        [
-            new ReportColumn<Row> { Header = "Id", Ordinal = 0, ValueSelector = r => r.Id },
-            new ReportColumn<Row> { Header = "Name", Ordinal = 1, ValueSelector = r => r.Name },
-        ],
-    };
-
-    var result = await exporter.ExportAsync(
-        Rows(new Row(1, "Alice")),
+    IReportExporter<Row> exporter = services.GetRequiredService<IReportExporterFactory>().GetExporter<Row>(ReportFormat.Xlsx);
+    Result<ReportExportOutcome> result = await exporter.ExportAsync(
+        Rows(new Row(1, "Ada", 1234.5m)),
         definition,
-        new ReportDestination { Store = RecordingFileStorage.Name, Key = "export.xlsx" },
-        CancellationToken.None);
+        new ReportDestination { Store = RecordingFileStorage.Name, Key = "orders.xlsx" });
 
-    Verify(result.IsSuccess, "Spreadsheet ExportAsync succeeds");
-    using var workbook = new XLWorkbook(new MemoryStream(storage.GetContent("export.xlsx")));
-    var worksheet = workbook.Worksheets.First();
-    Verify(worksheet.Cell(2, 2).GetString() == "Alice", "spreadsheet content round-trips correctly via ClosedXML re-open");
-
-    Console.WriteLine("Surface 4 PASS: real spreadsheet export round-trips through IFileStorage and re-opens via ClosedXML");
+    Verify(result.IsSuccess, "Excel ExportAsync succeeds");
+    using var workbook = new XLWorkbook(new MemoryStream(storage.GetContent("orders.xlsx")));
+    IXLWorksheet sheet = workbook.Worksheet(1);
+    Verify(sheet.Name == "Orders", "the title names the sheet");
+    Verify(sheet.Cell("C2").DataType == XLDataType.Number && sheet.Cell("C2").GetValue<decimal>() == 1234.5m, "totals are numbers");
+    Console.WriteLine("Surface 4 PASS: Excel stored and re-opens via ClosedXML with typed cells");
 }
 
-// ── Surface 5: real PDF round trip ────────────────────────────────────────────
-static async Task Surface5_PdfRoundTrip()
+static async Task Surface5_PdfRoundTrip(IServiceProvider services, RecordingFileStorage storage, ReportDefinition<Row> definition)
 {
-    var storage = new RecordingFileStorage();
-    var writer = new StorageStreamingWriter(storage.CreateFactory(), Microsoft.Extensions.Logging.Abstractions.NullLogger<StorageStreamingWriter>.Instance);
-    var options = Microsoft.Extensions.Options.Options.Create(new SharedKernel.Reporting.Pdf.Options.PdfExportOptions());
-    var exporter = new PdfReportExporter<Row>(writer, options);
-
-    var definition = new ReportDefinition<Row>
-    {
-        Title = "Verification Statement",
-        Columns =
-        [
-            new ReportColumn<Row> { Header = "Id", Ordinal = 0, ValueSelector = r => r.Id },
-            new ReportColumn<Row> { Header = "Name", Ordinal = 1, ValueSelector = r => r.Name },
-        ],
-    };
-
-    var result = await exporter.ExportAsync(
-        Rows(new Row(1, "Alice")),
+    Result<ReportExportOutcome> result = await services.GetRequiredService<IPdfReportExporter<Row>>().ExportAsync(
+        Rows(new Row(1, "Ada", 1m), new Row(2, "Grace", 2m)),
         definition,
-        new ReportDestination { Store = RecordingFileStorage.Name, Key = "export.pdf" },
-        CancellationToken.None);
+        new ReportDestination { Store = RecordingFileStorage.Name, Key = "orders.pdf" });
 
     Verify(result.IsSuccess, "PDF ExportAsync succeeds");
-    using var pdf = PdfReader.Open(new MemoryStream(storage.GetContent("export.pdf")), PdfDocumentOpenMode.Import);
-    Verify(pdf.PageCount >= 1, "PDF re-opens via PdfSharp with at least one page");
-
-    Console.WriteLine("Surface 5 PASS: real PDF export round-trips through IFileStorage and re-opens via PdfSharp");
+    using var pdf = PdfReader.Open(new MemoryStream(storage.GetContent("orders.pdf")), PdfDocumentOpenMode.Import);
+    Verify(pdf.PageCount == 1 && pdf.Info.Title == "Orders", "PDF re-opens via PDFsharp with its title");
+    Console.WriteLine("Surface 5 PASS: PDF stored and re-opens via PDFsharp");
 }
 
 static async IAsyncEnumerable<Row> Rows(params Row[] rows)
 {
-    foreach (var row in rows)
+    foreach (Row row in rows)
     {
         await Task.Yield();
         yield return row;
@@ -182,42 +159,32 @@ static void Verify(bool condition, string label)
     }
 }
 
-internal sealed record Row(int Id, string Name);
+internal sealed record Row(int Id, string Name, decimal Total);
 
 /// <summary>
-/// Minimal in-process storage provider store recording uploaded content, registered as the <c>verify</c>
-/// store through the real storage registry — this harness deliberately avoids a 16.Testing reference,
-/// mirroring 08.Storage's own consumer-verify precedent. Members the exporters never call throw.
+/// Minimal in-process store recording uploaded content and options, registered as the <c>verify</c> store through the
+/// real storage registry — this harness deliberately avoids a 16.Testing reference, mirroring 08.Storage's own
+/// consumer-verify. Members the exporters never call throw.
 /// </summary>
 internal sealed class RecordingFileStorage : IFileStorage
 {
     public const string Name = "verify";
 
-    private readonly ConcurrentDictionary<string, byte[]> _store = new();
+    private readonly ConcurrentDictionary<string, (byte[] Content, FileUploadOptions Options)> _store = new();
 
     public string StoreName => Name;
 
     public SharedKernel.Execution.Tenancy.TenantId? TenantId => null;
 
-    /// <summary>Builds the registry the exporters resolve their store through.</summary>
-    public IFileStorageFactory CreateFactory()
-    {
-        var services = new ServiceCollection();
-        services.AddSharedKernelStorage().AddStore(new FileStoreRegistration(
-            Name,
-            tenantScoped: false,
-            _ => this,
-            (_, _) => Task.FromResult(Result.Success())));
-        return services.BuildServiceProvider().GetRequiredService<IFileStorageFactory>();
-    }
+    public byte[] GetContent(string key) => _store[key].Content;
 
-    public byte[] GetContent(string key) => _store[key];
+    public FileUploadOptions GetOptions(string key) => _store[key].Options;
 
     public async Task<Result<FileReference>> UploadAsync(string key, Stream content, FileUploadOptions? options = null, CancellationToken cancellationToken = default)
     {
         using var buffer = new MemoryStream();
         await content.CopyToAsync(buffer, cancellationToken);
-        _store[key] = buffer.ToArray();
+        _store[key] = (buffer.ToArray(), options ?? new FileUploadOptions());
         return Result<FileReference>.Success(new FileReference { Store = Name, Key = key });
     }
 
