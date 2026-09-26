@@ -56,7 +56,6 @@ SharedKernel.Testing.Intelligence.InMemoryVectorCollectionProvisioner.CutoverAsy
 SharedKernel.Testing.Intelligence.InMemoryVectorCollectionProvisioner.DeleteCollectionAsync(string! collectionName, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
 SharedKernel.Testing.Intelligence.InMemoryVectorCollectionProvisioner.EnsureCollectionAsync(SharedKernel.AI.Abstractions.Models.VectorCollectionDefinition! definition, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
 SharedKernel.Testing.Intelligence.InMemoryVectorCollectionProvisioner.InMemoryVectorCollectionProvisioner() -> void
-SharedKernel.Testing.Intelligence.InMemoryVectorCollectionProvisioner.ProbeAsync(string! collectionName, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.AI.Abstractions.Abstractions.VectorCollectionHealth!>!>!
 SharedKernel.Testing.Intelligence.InMemoryVectorCollectionProvisioner.RegisteredCollectionNames.get -> System.Collections.Generic.IReadOnlyList<string!>!
 SharedKernel.Testing.Intelligence.InMemoryVectorCollectionProvisioner.Reset() -> void
 SharedKernel.Testing.Intelligence.InMemoryVectorCollectionProvisioner.SimulateFailure.get -> bool

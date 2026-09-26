@@ -259,8 +259,14 @@ live under different root keys.
 | `TargetingKey` | `UserId`, or `TenantId` when there is no user |
 
 **Where it comes from.** The registered `IFeatureTargetingContextAccessor`, read once when a scope first resolves
-`IFeatureClient`. Register it with any lifetime, scoped included. Without one, the tenant comes from the `TenantId`
-`Activity` baggage item (`WellKnownBaggageKeys.TenantId`) and there is no user.
+`IFeatureClient`. Register it with any lifetime, scoped included. Without one, the default accessor
+(`AmbientTenantTargetingContextAccessor`) supplies the ambient caller's tenant and no user:
+
+- When a `RequestContextScope` is open (every inbound adapter opens one: HTTP, gRPC, message consume, workflow
+  activity, scheduled job), its `IRequestContext.TenantId` is authoritative. A caller without a tenant targets as
+  anonymous; baggage is not consulted as a fallback.
+- Only when no scope is open is the tenant read from the `TenantId` `Activity` baggage item
+  (`WellKnownBaggageKeys.TenantId`), when it parses as a `TenantId`.
 
 **Evaluating for someone else.** Pass a context to the call; its values replace the caller's.
 

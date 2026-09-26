@@ -152,7 +152,7 @@ builder.Services
 ```
 
 The filter resolves the `IIdempotencyStore` (`SharedKernel.Idempotency.Abstractions`) keyed by
-`IdempotencyPurpose.Message`; `Build()` throws if none is registered. It reserves the `MessageId` atomically before
+`IdempotencyPurpose.Message`; `Build()` throws if none is registered. It reserves the message atomically before
 the consumer runs — for `LeaseDuration` (default 30 s, must outlast the slowest consumer), scoped by the ambient
 tenant — completes on success with a retention of `ExpiryWindow` (default 24 h), and **releases on failure** so a
 redelivery can retry immediately instead of waiting out the lease. A duplicate that is still in flight throws
@@ -162,9 +162,8 @@ alert on. `Build()` requires `0 < LeaseDuration < ExpiryWindow`.
 A message with no `MessageId` passes through: there is nothing to deduplicate on, and inventing an id would make
 every delivery look unique anyway.
 
-> **Known limitation:** the key is the `MessageId` alone. When two receive endpoints (or two polymorphic
-> consumers) in one service receive the same message, the second is skipped as a duplicate. Do not enable
-> `WithIdempotency()` in a service where one message reaches more than one of its endpoints.
+The key is `{MessageId:D}:{sha256-hex("{receive-endpoint path}|{consumer type}")}` (101 characters), so every
+consumer of a message — on its own endpoint or sharing one — deduplicates its own deliveries.
 
 ## The caller across the bus
 

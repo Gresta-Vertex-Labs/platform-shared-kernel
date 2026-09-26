@@ -36,11 +36,16 @@ public sealed class IdempotencyTests
                 cfg.AddConsumer<TConsumer>();
                 cfg.UsingInMemory((ctx, busCfg) =>
                 {
-                    busCfg.UseConsumeFilter(typeof(IdempotentConsumerBehavior<>), ctx);
+                    busCfg.UseIdempotentConsumers(ctx);
                     busCfg.ConfigureEndpoints(ctx);
                 });
             })
             .BuildServiceProvider(true);
+
+    // The key the filter reserves for a message delivered to a consumer on its default in-memory receive endpoint.
+    private static string KeyFor<TConsumer>(Guid messageId, string queue) =>
+        IdempotentConsumerBehavior<IdempotencyTestMessage>.CreateKey(
+            messageId, new Uri($"loopback://localhost/{queue}"), typeof(TConsumer).FullName);
 
     private static IdempotentConsumerBehavior<IdempotencyFilterTestMessage> Filter(IIdempotencyStore store) =>
         new(store, MsOptions.Create(new IdempotencyOptions()));
@@ -69,7 +74,7 @@ public sealed class IdempotencyTests
         await harness.InactivityTask;
 
         await store.Received(1).TryBeginAsync(
-            Message, messageId.ToString("D"), IdempotentConsumerBehavior<IdempotencyTestMessage>.MessageFingerprint,
+            Message, KeyFor<IdempotencyTrackingConsumer>(messageId, "IdempotencyTracking"), IdempotentConsumerBehavior<IdempotencyTestMessage>.MessageFingerprint,
             new IdempotencyOptions().LeaseDuration, Arg.Any<CancellationToken>());
 
         IdempotencyTracker.ConsumeCount.Should().Be(0,
@@ -107,7 +112,7 @@ public sealed class IdempotencyTests
         // The token must round-trip: a store uses it to reject a stale holder. No response is stored for a
         // message, and the retention is the configured expiry window.
         await store.Received(1).CompleteAsync(
-            Message, messageId.ToString("D"), Token, null, new IdempotencyOptions().ExpiryWindow, Arg.Any<CancellationToken>());
+            Message, KeyFor<IdempotencyTrackingConsumer>(messageId, "IdempotencyTracking"), Token, null, new IdempotencyOptions().ExpiryWindow, Arg.Any<CancellationToken>());
         await store.DidNotReceiveWithAnyArgs().ReleaseAsync(default, default!, default!, default);
 
         await harness.Stop();
@@ -164,7 +169,7 @@ public sealed class IdempotencyTests
         // Without the release the id would stay reserved for the whole lease, and every redelivery
         // inside that window would be discarded as a duplicate - losing the message.
         await store.Received().ReleaseAsync(
-            Message, messageId.ToString("D"), Token, Arg.Is<CancellationToken>(t => t == CancellationToken.None));
+            Message, KeyFor<IdempotencyThrowingConsumer>(messageId, "IdempotencyThrowing"), Token, Arg.Is<CancellationToken>(t => t == CancellationToken.None));
         await store.DidNotReceiveWithAnyArgs().CompleteAsync(default, default!, default!, default, default, default);
 
         await harness.Stop();
@@ -207,7 +212,7 @@ public sealed class IdempotencyTests
         FlakyIdempotencyConsumer.Successes.Should().Be(1);
 
         var replay = await store.TryBeginAsync(
-            Message, messageId.ToString("D"), IdempotentConsumerBehavior<FlakyIdempotencyMessage>.MessageFingerprint,
+            Message, KeyFor<FlakyIdempotencyConsumer>(messageId, "FlakyIdempotency"), IdempotentConsumerBehavior<FlakyIdempotencyMessage>.MessageFingerprint,
             TimeSpan.FromSeconds(30), CancellationToken.None);
         replay.Status.Should().Be(IdempotencyReservationStatus.Completed);
 

@@ -1028,9 +1028,10 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
             busCfg.UseConsumeFilter(typeof(InboundRequestContextFilter<>), ctx);
 
         // ID-03 / P-134: Wire global idempotency consume pipeline filter.
-        // UseConsumeFilter with the open generic type applies to all message types.
+        // UseConsumeFilter with the open generic type applies to all message types; MassTransit runs it
+        // once per consumer, and the identity filter registered alongside names that consumer for the key.
         if (_withIdempotency)
-            busCfg.UseConsumeFilter(typeof(IdempotentConsumerBehavior<>), ctx);
+            busCfg.UseIdempotentConsumers(ctx);
 
         // P-346: Wire the compress/encrypt payload-transform serializer when enabled.
         if (_withPayloadTransform && _payloadTransformOptions is not null)

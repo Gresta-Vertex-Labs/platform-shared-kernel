@@ -11,7 +11,7 @@ contract, `IIdempotencyStore`, backs every duplicate-execution guard in a servic
 | Caller | Purpose | Declared/used in |
 |---|---|---|
 | `IdempotencyBehavior<,>` — duplicate-submission protection and response replay for an in-process command (`IIdempotentRequest`) | `IdempotencyPurpose.Request` | `05.Application/SharedKernel.Application.Pipeline` |
-| MassTransit consumer idempotency (`MessagingBusBuilder.WithIdempotency()`) | `IdempotencyPurpose.Message` | `07.Messaging/SharedKernel.Messaging.MassTransit` |
+| MassTransit consumer idempotency (`MessagingBusBuilder.WithIdempotency()`); key `{MessageId:D}:{sha256-hex("{endpoint path}\|{consumer type}")}`, one reservation per consumer | `IdempotencyPurpose.Message` | `07.Messaging/SharedKernel.Messaging.MassTransit` |
 
 Both callers consume the contract; neither declares its own. Before WO-086 (P-568) there were two separate
 contracts — `05`'s `IRequestIdempotencyStore` and Messaging's own `IIdempotencyStore` — and four store classes;
@@ -146,11 +146,7 @@ Stores never inspect, reshape or re-serialize it.
 
 ## Open Items
 
-- **Consumer idempotency keys only by message id.** `07.Messaging`'s `IdempotentConsumerBehavior` uses
-  `ConsumeContext.MessageId` as the key with the fixed fingerprint `"message"`, and the store adds only the tenant
-  scope. Two receive endpoints (or two polymorphic consumers) in one service that receive the same message share
-  one reservation, so the second is skipped as a duplicate. Fix: include the consumer/endpoint in the key. Pre-existing;
-  not fixed by WO-086.
 - **Persisted formats changed in P-568** (documented in each provider README): Redis message entries are hashes
   (old string values fail with `WRONGTYPE`); the EF table is keyed `(tenant_scope, purpose, key)` and
-  `idempotency_messages` is gone. Nothing was in production, so no data migration ships.
+  `idempotency_messages` is gone. Message keys also gained the endpoint/consumer hash (`docs/refactor/MIGRATION.md`).
+  Nothing was in production, so no data migration ships.

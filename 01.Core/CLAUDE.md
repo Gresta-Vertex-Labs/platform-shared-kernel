@@ -597,7 +597,7 @@ Internals worth knowing (all `internal`):
   read the configured definitions through `ConfiguredFeatureDefinitions`.
 - `ScopedFeatureClient` reuses the first successful result per (type, key, default, explicit context) for the scope,
   capped by `ScopeResultLifetime`; errors and calls with `FlagEvaluationOptions` are never reused.
-- `BaggageTenantTargetingContextAccessor` (default, `TryAdd`): tenant from `WellKnownBaggageKeys.TenantId` (parsed with `TenantId.TryParse`), no user. A service normally registers its own accessor over `IRequestContext` or `IUserContext`.
+- `AmbientTenantTargetingContextAccessor` (default, `TryAdd`), no user: when a `RequestContextScope` is open its `IRequestContext.TenantId` is authoritative (a tenantless scope targets as anonymous, no baggage fallback); only with no open scope is the tenant read from `WellKnownBaggageKeys.TenantId` (parsed with `TenantId.TryParse`). A service registers its own accessor to add a user or groups.
 - EventId 1301 (`LoggingEventIdRanges.Core + 300 + 1`, this package's 1300-1399 sub-block): a filter or configuration
   failure, logged at Warning with the exception; the error message returned to callers never includes it.
 

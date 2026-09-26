@@ -154,9 +154,8 @@ Task<bool> ReleaseAsync(IdempotencyPurpose purpose, string key, string token, Ca
 and both have been verified against real infrastructure. A custom store registers with
 `AddIdempotencyStore<T>(IdempotencyPurpose.Message)`.
 
-> **Known limitation:** the key is the message id alone, with no consumer or endpoint in it. If one service has two
-> receive endpoints (or two polymorphic consumers) that receive the same message, the second is skipped as a
-> duplicate. Do not enable consumer idempotency in such a service until the key includes the endpoint.
+The key is `{MessageId:D}:{sha256-hex("{receive-endpoint path}|{consumer type}")}`, so each consumer of a message
+deduplicates its own deliveries.
 
 ## The caller across the bus
 

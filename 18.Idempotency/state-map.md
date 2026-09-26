@@ -210,9 +210,8 @@ _Nothing blocked._
 | FD-06 | Provider tests run in the Integration lane against real Redis/PostgreSQL (P-572 CI) — supersedes the WO-070 "never executed" Tests-phase gap | Both providers | `●` |
 | FD-07 | `CLAUDE.md` and the three READMEs describe the final state (P-575) | docs | `●` |
 
-**Open, not fixed by WO-086:** consumer idempotency keys only by `MessageId`, so two receive endpoints in one
-service consuming the same message share a reservation and the second is skipped (`07.Messaging`'s
-`IdempotentConsumerBehavior`). Recorded in `CLAUDE.md` Open Items.
+Consumer idempotency keys are `{MessageId:D}:{sha256-hex("{endpoint path}|{consumer type}")}` — one reservation per
+consumer (`07.Messaging`'s `IdempotentConsumerBehavior`; fixed 2026-09-26, formerly `MessageId` alone).
 
 ---
 

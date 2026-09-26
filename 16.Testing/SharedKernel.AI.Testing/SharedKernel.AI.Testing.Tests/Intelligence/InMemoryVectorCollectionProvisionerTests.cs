@@ -46,9 +46,17 @@ public sealed class InMemoryVectorCollectionProvisionerTests
         var result = await provisioner.EnsureCollectionAsync(withExtraField, CancellationToken.None);
 
         Assert.True(result.IsSuccess);
-        var probe = await provisioner.ProbeAsync("chunks", CancellationToken.None);
-        Assert.True(probe.IsSuccess);
-        Assert.Equal(withExtraField.Fingerprint, probe.Value.SchemaFingerprint);
+
+        // Both fields are now part of the stored definition: re-declaring either with a different role conflicts.
+        foreach (var field in new[] { "Status", "Price" })
+        {
+            var conflicting = VectorCollectionDefinition.Create(
+                "chunks", "test-model", 2, VectorDistanceMetric.Cosine,
+                [new VectorFieldDefinition { Name = field, Kind = VectorFieldKind.String, Filterable = false }]).Value;
+            var conflict = await provisioner.EnsureCollectionAsync(conflicting, CancellationToken.None);
+
+            Assert.Equal(IntelligenceErrors.CollectionDefinitionConflict("chunks", field), conflict.Error);
+        }
     }
 
     [Fact]
@@ -180,36 +188,6 @@ public sealed class InMemoryVectorCollectionProvisionerTests
             CancellationToken.None);
 
         Assert.True(result.IsFailure);
-    }
-
-    [Fact]
-    public async Task ProbeAsync_UnregisteredCollection_ReturnsCollectionNotFound()
-    {
-        var provisioner = new InMemoryVectorCollectionProvisioner();
-
-        var result = await provisioner.ProbeAsync("never-registered", CancellationToken.None);
-
-        Assert.Equal(IntelligenceErrors.CollectionNotFound("never-registered"), result.Error);
-    }
-
-    [Fact]
-    public async Task ProbeAsync_RegisteredCollection_ReturnsDeterministicHealthyProbe()
-    {
-        var provisioner = new InMemoryVectorCollectionProvisioner();
-        var definition = BuildDefinition("chunks", ["Status"]);
-        await provisioner.EnsureCollectionAsync(definition, CancellationToken.None);
-
-        var result = await provisioner.ProbeAsync("chunks", CancellationToken.None);
-
-        Assert.True(result.IsSuccess);
-        Assert.True(result.Value.Reachable);
-        Assert.True(result.Value.CollectionAddressable);
-        Assert.True(result.Value.Queryable);
-        Assert.Equal(0, result.Value.VectorCount);
-        Assert.Equal(0, result.Value.PendingWriteCount);
-        Assert.Equal("in-memory-fake", result.Value.EngineVersion);
-        Assert.Equal(definition.Fingerprint, result.Value.SchemaFingerprint);
-        Assert.Equal(TimeSpan.Zero, result.Value.Latency);
     }
 
     [Fact]

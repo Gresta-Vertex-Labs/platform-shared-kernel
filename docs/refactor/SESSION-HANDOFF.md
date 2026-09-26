@@ -88,7 +88,7 @@
 - `AddRedisIdempotency(p => p.ForRequests().ForMessages(), o => …)` / `AddEfCoreIdempotency(db => …, p => …, o => …)`; one store class per backend. Atomic Lua / `ON CONFLICT` kept. Persisted formats changed (Redis message entries are now hashes; EF table keyed `(tenant_scope, purpose, key)`, `idempotency_messages` dropped) — documented in the provider READMEs.
 - `IdempotencyBehavior` uses `IdempotencyBehaviorOptions.LeaseDuration`/`RetentionWindow`; MassTransit uses `IdempotencyOptions.LeaseDuration`/`ExpiryWindow`. 16.Testing: `FakeIdempotencyStore` + `AddFakeIdempotencyStore(purposes)`.
 - `eng/tier-baseline.txt` is **empty**; making SKTIER an error is P-574.
-- **Known pre-existing gap, not fixed:** consumer idempotency keys only by MessageId, so two receive endpoints (or polymorphic consumers) in one service receiving the same message → the second is skipped as a duplicate. Fix = add consumer/endpoint to the key. Decide in P-574 or a follow-up.
+- Consumer idempotency keys were MessageId-only (second consumer of a message skipped); fixed after the phases — see "Follow-up fixes".
 
 **P-575/P-576 — docs, agents and commands:**
 - Root `CLAUDE.md` has "Tiers & Dependency Rules" (439 → 335 lines); every domain CLAUDE.md/README/state-map describes the final state; `docs/refactor/MIGRATION.md` (121 old → new rows, incl. persisted-data changes); `P-558-SESSION-HANDOFF.md` archived under `docs/archive/`. All 44 agents, 7 commands and ~210 agent-memory files use tiers and final names; 21 stale memory entries deleted. The domain `*-phase-implementer`/`*-arch-planner` agents are safe to use again.
@@ -98,10 +98,10 @@
 - `a6bc32ad` — **real defect:** the EF Core outbox never selected a lock provider, so MassTransit used SQL Server syntax and PostgreSQL delivery never worked. `OutboxOptions.Database` (default `PostgreSql`); proven by `SharedKernel.Messaging.MassTransit.EfCore.Integration.Tests`.
 - `7994392a` — csproj comments/descriptions in tier terms (Security.Abstractions' nuspec description no longer names `ITenantProvider`).
 - A `fix:` commit for test doubles and doc comments (FakeTenantResolutionStrategy, stray `ProbeAsync`, scheduler tenant doc, FeatureManagement's default tenant accessor reading `IRequestContextAccessor`) — see git log.
+- `fix(messaging): key consumer idempotency by consumer as well as MessageId` — **real defect:** MassTransit runs the scoped idempotency filter once per consumer, and the key was the MessageId alone, so a second consumer of the same message (another endpoint, or the same one) saw `Completed` and never ran. Key is now `{MessageId:D}:{sha256-hex("{endpoint path}|{consumer type}")}`; `IdempotentConsumerIdentityFilter` (registered by `UseIdempotentConsumers`, ahead of the scoped filter) names the consumer. Persisted-format note in `MIGRATION.md` §5. Same commit: `InMemoryVectorCollectionProvisioner.ProbeAsync` removed; FeatureManagement README/brain describe `AmbientTenantTargetingContextAccessor`.
 - **Main-checkout gotcha:** `C:\Users\dincm\Documents\GitHub\platform-shared-kernel` is longer than `C:\Github\platform-shared-kernel`, so some test assemblies (e.g. `ServiceDefaults.Configuration.KeyVault.Tests`) exceed MAX_PATH there. Build/test in a short worktree (`git worktree add C:\wt\verify`), and delete worktrees with `cmd /c 'rd /s /q \\?\C:\wt\<name>'` + `git worktree prune`.
 
 **Still open (decide with the user):**
-- Consumer idempotency keys only by MessageId: two receive endpoints (or polymorphic consumers) in one service receiving the same message → the second is skipped. Fix = add the endpoint/consumer to the key.
 - `HubGroupNaming.TenantGroup` still takes `Guid` rather than `TenantId`.
 
 **P-574 — governance cleanup:**
@@ -109,7 +109,7 @@
 - `Security.Oidc/.ApiKey/.Mtls/.Totp` are now **Host** tier.
 - Numbered-layer rules deleted (tier check covers them); kept purity rules: `ContractsNeverReferencesDomain`, `DomainNeverReferencesContracts`, `ModelNeverReferencesLogging`, `TestingNeverReferencedByProduction`, Grpc↛Contracts, Redis siblings, 07↛Caching, MediatR-only-in-adapter, topology/crypto/persistence/health rules. `RuleExecutionCoverageTests` fails if any public rule method has no test calling it.
 - Analyzers: `RealKernelTypeNameTests` (26) compiles fixtures against the real kernel assemblies.
-- Not done: the P-571 `.Testing` namespace-rule note; the consumer-idempotency MessageId-only key (P-568 note); CS1574 in `AuditingBehavior.cs` (unresolved cref to `OnBeforeCommit`).
+- Not done: the P-571 `.Testing` namespace-rule note; CS1574 in `AuditingBehavior.cs` (unresolved cref to `OnBeforeCommit`).
 
 **P-573 — reference samples:**
 - `samples/OrderApi` is four projects + tests: `OrderApi.Domain` (SharedKernel.Domain), `.Application` (SharedKernel.Application, FluentValidation), `.Infrastructure` (Validation.FluentValidation adapter, an `order-store` readiness probe), `.Api` (ServiceDefaults, ServiceDefaults.Security, Application.Pipeline, Application.Mediator.MediatR, Presentation.WebApi), `OrderApi.Tests` (26 tests incl. `ArchitectureTests`, which checks each project's transitive kernel closure against a tier table from `deps.json`).

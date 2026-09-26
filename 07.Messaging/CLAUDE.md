@@ -388,14 +388,17 @@ alternatives for a service that does not want the full round trip.
 
 ### Consumer idempotency
 
-`WithIdempotency()` adds `IdempotentConsumerBehavior<T>` as a global consume filter over the
+`WithIdempotency()` adds `IdempotentConsumerBehavior<T>` as a global consume filter (MassTransit runs it once per
+consumer, in that consumer's message pipe, after `IdempotentConsumerIdentityFilter<T>` names the consumer) over the
 `[FromKeyedServices(IdempotencyPurpose.Message)] IIdempotencyStore` (`SharedKernel.Idempotency.Abstractions`).
 Register a store first — `AddRedisIdempotency(p => p.ForMessages())`, `AddEfCoreIdempotency(..., p => p.ForMessages())`
 or `AddIdempotencyStore<T>(IdempotencyPurpose.Message)` — or `Build()` throws.
 
 1. No `MessageId` → pass through.
-2. `TryBeginAsync(Message, messageId "D", fingerprint "message", LeaseDuration)`; the store scopes the key by the
-   ambient tenant (`IdempotencyTenantScope`), which `WithInboundRequestContext()` sets first.
+2. `TryBeginAsync(Message, key, fingerprint "message", LeaseDuration)` with key
+   `{MessageId:D}:{sha256-hex("{receive-endpoint path}|{consumer full type name}")}` (101 chars), so each consumer
+   deduplicates its own deliveries; the store scopes the key by the ambient tenant (`IdempotencyTenantScope`), which
+   `WithInboundRequestContext()` sets first.
 3. `Completed` → return without consuming (acknowledges). `InProgress` → throw `ConcurrentMessageDeliveryException`
    (expected, keeps the message unacknowledged — do not alert on it). `FingerprintMismatch` → a store defect, throws.
 4. `Started` → consume; on exception `ReleaseAsync` then rethrow; on success `CompleteAsync(..., ExpiryWindow)`.
@@ -596,12 +599,7 @@ must supply its own `JsonSerializerContext` for every message and envelope type.
 
 ## Open Items
 
-- **Consumer idempotency keys only by `MessageId` (known gap, not fixed).** `IdempotentConsumerBehavior<T>` reserves
-  `ConsumeContext.MessageId` alone (tenant-scoped, purpose `Message`), with no consumer or endpoint in the key.
-  When one service has two receive endpoints (or two polymorphic consumers) that both receive the same message, the
-  first to finish completes the id and the second sees `Completed` and is skipped as a duplicate — its consumer never
-  runs. Verified in code after WO-086. Fix: add the endpoint (input address) or consumer type to the key. Until then,
-  do not enable `WithIdempotency()` in a service where one message reaches more than one of its endpoints.
+None. (Consumer idempotency keys now include the receive endpoint and the consumer — see "Consumer idempotency".)
 
 ---
 

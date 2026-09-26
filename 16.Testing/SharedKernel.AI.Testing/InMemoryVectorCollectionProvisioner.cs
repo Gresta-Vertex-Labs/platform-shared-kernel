@@ -24,12 +24,12 @@ namespace SharedKernel.Testing.Intelligence;
 /// <c>IntelligenceErrors.CollectionDefinitionConflict</c>). <see cref="DeleteCollectionAsync"/> is
 /// idempotent (an absent name still succeeds). <see cref="CutoverAsync"/> requires
 /// <see cref="VectorCollectionCutoverRequest.StagingCollectionName"/> to be currently registered.
-/// <see cref="ProbeAsync"/> returns a deterministic, always-healthy
-/// <see cref="VectorCollectionHealth"/> for a registered collection, with <c>VectorCount</c> fixed
-/// at zero since this fake tracks no document store of its own, and
-/// <see cref="VectorCollectionHealth.PendingWriteCount"/> fixed at zero (not <see langword="null"/>)
-/// -- a documented divergence from the real contract's "permanently nullable" honesty rule, since
-/// this fake models no real optimizer backlog to report against at all.
+/// </para>
+/// <para>
+/// No readiness probe: readiness is not on <see cref="IVectorCollectionProvisioner"/>, and the real providers
+/// register a <see cref="VectorCollectionReadinessProbe"/> per collection declared on their builder, whereas this
+/// fake learns its collections only at run time through <see cref="EnsureCollectionAsync"/>. A test that exercises
+/// readiness handling constructs a <see cref="VectorCollectionReadinessProbe"/> over its own delegate.
 /// </para>
 /// <para>
 /// <b>DELIBERATE NON-COUPLING BETWEEN ALL SIX <c>Intelligence/</c> FAKES</b> (the second application
@@ -50,8 +50,7 @@ public sealed class InMemoryVectorCollectionProvisioner : IVectorCollectionProvi
     /// Gets or sets a value indicating whether write-path operations should simulate a provider
     /// rejection. When <see langword="true"/>, <see cref="EnsureCollectionAsync"/>,
     /// <see cref="DeleteCollectionAsync"/>, and <see cref="CutoverAsync"/> all return a failure
-    /// instead of performing the operation. <see cref="CollectionExistsAsync"/> and
-    /// <see cref="ProbeAsync"/> are unaffected.
+    /// instead of performing the operation. <see cref="CollectionExistsAsync"/> is unaffected.
     /// </summary>
     public bool SimulateFailure { get; set; }
 
@@ -153,36 +152,6 @@ public sealed class InMemoryVectorCollectionProvisioner : IVectorCollectionProvi
         }
 
         return Task.FromResult(SharedKernel.Primitives.Results.Result.Success());
-    }
-
-    /// <summary>
-    /// Measures a registered collection — always healthy, deterministically. Pass it to a
-    /// <see cref="VectorCollectionReadinessProbe"/> to exercise readiness handling without a vector store.
-    /// </summary>
-    public Task<SharedKernel.Primitives.Results.Result<VectorCollectionHealth>> ProbeAsync(
-        string collectionName, CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(collectionName);
-
-        if (!_collections.TryGetValue(collectionName, out var definition))
-        {
-            return Task.FromResult(SharedKernel.Primitives.Results.Result<VectorCollectionHealth>.Failure(
-                IntelligenceErrors.CollectionNotFound(collectionName)));
-        }
-
-        var health = new VectorCollectionHealth
-        {
-            Reachable = true,
-            CollectionAddressable = true,
-            Queryable = true,
-            VectorCount = 0,
-            PendingWriteCount = 0,
-            EngineVersion = "in-memory-fake",
-            SchemaFingerprint = definition.Fingerprint,
-            Latency = TimeSpan.Zero,
-        };
-
-        return Task.FromResult(SharedKernel.Primitives.Results.Result<VectorCollectionHealth>.Success(health));
     }
 
     /// <summary>Clears every registered collection definition.</summary>

@@ -131,13 +131,10 @@ services.AddIdempotencyStore<DynamoIdempotencyStore>(p => p.ForRequests().ForMes
 - Store the response string exactly as given; never parse it.
 - Throw on an unreachable backend unless the store offers an explicit, documented fail-open switch.
 
-## Known limitation: consumer keys are message ids only
+## Consumer keys
 
-MassTransit's consumer idempotency uses `ConsumeContext.MessageId` as the key with a fixed fingerprint, and the
-store scopes it only by tenant. Two receive endpoints (or two polymorphic consumers) in **one** service that both
-receive the same message therefore share one reservation: the second is acknowledged as a duplicate and skipped.
-Until the key includes the consumer/endpoint, enable `WithIdempotency()` only where each message is consumed by one
-consumer per service.
+MassTransit's consumer idempotency reserves `{MessageId:D}:{sha256-hex("{receive-endpoint path}|{consumer type}")}`
+with a fixed fingerprint, and the store scopes it by tenant — one reservation per consumer of a message.
 
 ## Testing
 
