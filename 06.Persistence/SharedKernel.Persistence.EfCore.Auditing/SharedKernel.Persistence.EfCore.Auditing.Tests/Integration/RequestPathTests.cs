@@ -164,6 +164,37 @@ public sealed class RequestPathTests(PostgreSqlContainerFixture fixture)
     }
 
     [Fact]
+    public async Task CorrelationId_ComesFromTheRequestContext_WhenThereIsNoBaggage()
+    {
+        // A consumer, Temporal activity or scheduled job opens a RequestContextScope with a correlation id but
+        // sets no Activity baggage; the record must still carry the caller's correlation id.
+        var cs = await LedgerTestDatabase.CreateAsync(fixture);
+        await using var host = LedgerHost.Build(cs);
+        host.Context.CorrelationId = "corr-from-consumer";
+
+        await host.InScopeAsync(sp => sp.GetRequiredService<EfAuditTrailWriter>().RecordAsync(Entry(AuditOutcome.Failed)));
+        var stored = (await host.InScopeAsync(sp => sp.GetRequiredService<IAuditQueryService>().QueryAsync(new AuditRecordQuery { ResourceType = "Order" }))).Items.Single();
+
+        stored.CorrelationId.Should().Be("corr-from-consumer");
+    }
+
+    [Fact]
+    public async Task CorrelationId_FromTheRequestContext_WinsOverBaggage()
+    {
+        var cs = await LedgerTestDatabase.CreateAsync(fixture);
+        await using var host = LedgerHost.Build(cs);
+        host.Context.CorrelationId = "corr-context";
+
+        using var activity = new Activity("audited-request").SetIdFormat(ActivityIdFormat.W3C).Start();
+        activity.SetBaggage(SharedKernel.Primitives.Propagation.WellKnownBaggageKeys.CorrelationId, "corr-baggage");
+
+        await host.InScopeAsync(sp => sp.GetRequiredService<EfAuditTrailWriter>().RecordAsync(Entry(AuditOutcome.Failed)));
+        var stored = (await host.InScopeAsync(sp => sp.GetRequiredService<IAuditQueryService>().QueryAsync(new AuditRecordQuery { ResourceType = "Order" }))).Items.Single();
+
+        stored.CorrelationId.Should().Be("corr-context");
+    }
+
+    [Fact]
     public async Task NoTenant_WithoutAnExplicitSystemScope_IsRejected()
     {
         // A16: an unresolved tenant used to land silently on the "system" chain.

@@ -34,6 +34,7 @@ public sealed class TestRequestContext : IRequestContext
     public string? ClientId { get; set; }
     public string? SessionId { get; set; }
     public string? ImpersonatorId { get; set; }
+    public string? CorrelationId { get; set; }
 
     public ValueTask<bool> HasPermissionAsync(string permission, CancellationToken cancellationToken) => ValueTask.FromResult(true);
 }

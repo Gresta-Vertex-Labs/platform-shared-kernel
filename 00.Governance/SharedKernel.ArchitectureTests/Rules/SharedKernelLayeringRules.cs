@@ -9,7 +9,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// <remarks>
 /// <para>
 /// Which package may reference which is enforced by the build: every kernel csproj declares a
-/// <c>&lt;SharedKernelTier&gt;</c> and <c>eng/SharedKernelTiers.targets</c> fails the build (SKTIER000–005)
+/// <c>&lt;SharedKernelTier&gt;</c> and <c>eng/SharedKernelTiers.targets</c> fails the build (SKTIER000–006)
 /// on an edge the tier matrix does not allow (WO-086). The numbered-layer rules that used to live here
 /// ("domain NN may reference only domains below NN") were deleted in P-574 because the tier check
 /// covers them.

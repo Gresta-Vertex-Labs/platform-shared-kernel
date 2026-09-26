@@ -93,6 +93,8 @@ SharedKernel.Testing.Execution.TestRequestContext.ActorKind.set -> void
 SharedKernel.Testing.Execution.TestRequestContext.ClientId.get -> string?
 SharedKernel.Testing.Execution.TestRequestContext.ClientId.set -> void
 SharedKernel.Testing.Execution.TestRequestContext.HasPermissionAsync(string! permission, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<bool>
+SharedKernel.Testing.Execution.TestRequestContext.CorrelationId.get -> string?
+SharedKernel.Testing.Execution.TestRequestContext.CorrelationId.set -> void
 SharedKernel.Testing.Execution.TestRequestContext.ImpersonatorId.get -> string?
 SharedKernel.Testing.Execution.TestRequestContext.ImpersonatorId.set -> void
 SharedKernel.Testing.Execution.TestRequestContext.IsAuthenticated.get -> bool

@@ -59,6 +59,9 @@ public class TestRequestContext : IRequestContext
     /// <summary>Gets or sets the identity acting on the caller's behalf.</summary>
     public string? ImpersonatorId { get; set; }
 
+    /// <summary>Gets or sets the caller's correlation id. Defaults to <see langword="null"/>.</summary>
+    public string? CorrelationId { get; set; }
+
     /// <summary>Gets or sets the permissions the caller holds. Defaults to none.</summary>
     public IReadOnlyCollection<string> Permissions { get; set; } = [];
 

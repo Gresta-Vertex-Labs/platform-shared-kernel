@@ -45,7 +45,12 @@ internal sealed class AuditRecordFactory(
         var clientId = Truncate(Context.ClientId);
         var sessionId = Truncate(Context.SessionId);
         var impersonatorId = Truncate(Context.ImpersonatorId);
-        var correlationId = Truncate(activity?.GetBaggageItem(WellKnownBaggageKeys.CorrelationId));
+        // The request context is the source of truth: every inbound adapter (HTTP, gRPC, MassTransit consume,
+        // Temporal activity, scheduler) sets it, while correlation baggage exists only on the HTTP and gRPC paths.
+        var correlationId = Truncate(
+            Context.CorrelationId is { Length: > 0 } fromContext
+                ? fromContext
+                : activity?.GetBaggageItem(WellKnownBaggageKeys.CorrelationId));
         var traceId = activity is { IdFormat: ActivityIdFormat.W3C } ? activity.TraceId.ToHexString() : null;
 
         if (!Enum.IsDefined(entry.Outcome))
