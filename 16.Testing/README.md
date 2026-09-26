@@ -28,7 +28,7 @@ holds the heavy, repository-only infrastructure (Testcontainers fixtures, EF Cor
 | [`SharedKernel.Workflows.Testing`](SharedKernel.Workflows.Testing/README.md) | `IWorkflowDispatcher`, `IWorkflowHandle` |
 | [`SharedKernel.Scheduling.Testing`](SharedKernel.Scheduling.Testing/README.md) | `IScheduledJobRegistry` |
 | [`SharedKernel.Integration.Testing`](SharedKernel.Integration.Testing/README.md) | Webhooks and notifications |
-| [`SharedKernel.Reporting.Testing`](SharedKernel.Reporting.Testing/README.md) | `IReportExporter<TRow>` |
+| [`SharedKernel.Reporting.Testing`](SharedKernel.Reporting.Testing/README.md) | `IReportExporter<TRow>`, `IReportExporterFactory`, `IHtmlToPdfConverter` |
 | [`SharedKernel.Communication.Testing`](SharedKernel.Communication.Testing/README.md) | `IServiceEndpointResolver`, gRPC `ServerCallContext` |
 | [`SharedKernel.Presentation.Testing`](SharedKernel.Presentation.Testing/README.md) | gRPC server context with `HttpContext`, HotChocolate executor, `IHttpContextAccessor` |
 | [`SharedKernel.ServiceDefaults.Testing`](SharedKernel.ServiceDefaults.Testing/README.md) | `ITenantCatalog`, tenant resolution, health-check assertions |

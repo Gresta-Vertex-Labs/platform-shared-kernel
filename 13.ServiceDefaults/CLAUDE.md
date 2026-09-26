@@ -139,6 +139,7 @@ HealthCheckRegistrationLogging.LogRegistration(...) — public so a service's ow
 | `WithIntelligenceTelemetry()` | `SharedKernel.AI` | `SharedKernel.AI` |
 | `WithMessagingTelemetry()` | `MassTransit`, `SharedKernel.Messaging` | `MassTransit` |
 | `WithPersistenceTelemetry()` | `SharedKernel.Persistence`, `SharedKernel.Persistence.EfCore.Auditing`, `Npgsql` | those three + `SharedKernel.Persistence.EfCore.Encryption` |
+| `WithReportingTelemetry()` | `SharedKernel.Reporting` | `SharedKernel.Reporting` |
 | `WithSchedulingTelemetry()` | `SharedKernel.Scheduling` | `SharedKernel.Scheduling` |
 | `WithSearchTelemetry()` | `SharedKernel.Search` | `SharedKernel.Search` |
 | `WithStorageTelemetry()` | `SharedKernel.Storage` | `SharedKernel.Storage` |

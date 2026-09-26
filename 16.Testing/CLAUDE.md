@@ -37,7 +37,7 @@ Testing package** — see Hard rules.
 | `SharedKernel.Workflows.Testing` | `SharedKernel.Testing.Workflows` | `Workflows.Temporal` | `InMemoryWorkflowDispatcher`/`InMemoryWorkflowHandle`; `AddInMemoryWorkflowDispatcher()` |
 | `SharedKernel.Scheduling.Testing` | `SharedKernel.Testing.Scheduling` | `Scheduling` | `InMemoryScheduledJobRegistry` (manual `TriggerAsync`) |
 | `SharedKernel.Integration.Testing` | `SharedKernel.Testing.Integration`, `.Notifications` | `Integration.Webhooks`, `.Notifications.Abstractions` | Webhook dispatcher/observer, notification sender/observer; `AddInMemory*()` |
-| `SharedKernel.Reporting.Testing` | `SharedKernel.Testing.Reporting` | `Reporting.Abstractions` | `InMemoryReportExporter<TRow>` |
+| `SharedKernel.Reporting.Testing` | `SharedKernel.Testing.Reporting` | `Reporting.Abstractions` | `InMemoryReportExporter<TRow>`, `InMemoryReportExporterFactory`, `InMemoryHtmlToPdfConverter`, `AddInMemoryReporting()` |
 | `SharedKernel.Communication.Testing` | `SharedKernel.Testing.Communication` | `Communication.Internal`, `Grpc.Core.Testing` | `MockServiceEndpointResolver`, gRPC `ServerCallContext` stub |
 | `SharedKernel.Presentation.Testing` | `SharedKernel.Testing.Communication`, `.Grpc` | `Execution`, `Presentation.Grpc`, `Grpc.Core.Testing`, HotChocolate | `TestServerCallContext` (with `HttpContext`), `GraphQLTestExecutorFactory`, `FakeHttpContextAccessor` |
 | `SharedKernel.ServiceDefaults.Testing` | `SharedKernel.Testing.ServiceDefaults` | `MultiTenancy`, health-check abstractions | `InMemoryTenantCatalog`, `FakeTenantResolutionStrategy`, `HealthCheckAssertionExtensions` |

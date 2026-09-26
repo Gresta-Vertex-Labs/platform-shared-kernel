@@ -1,120 +1,194 @@
 # SharedKernel.Reporting.Abstractions
 
-Streaming, memory-bounded report/data export contracts for Platform.SharedKernel microservices. Zero third-party NuGet dependencies — references only `SharedKernel.Primitives`, `SharedKernel.Storage.Abstractions` and `Microsoft.Extensions.Logging.Abstractions`.
+Report and document export for Platform.SharedKernel services: stream rows into **CSV, Excel or PDF**, or render
+**HTML to PDF**, and deliver the file to a named `SharedKernel.Storage` store (with a presigned download link) or to
+any stream. This package holds the contracts, the fluent report definition, the bases for custom formats, the
+delivery pipeline and the telemetry; no third-party dependencies.
 
-Implemented by [`SharedKernel.Reporting.Csv`](../SharedKernel.Reporting.Csv/README.md), [`SharedKernel.Reporting.Spreadsheet`](../SharedKernel.Reporting.Spreadsheet/README.md), and [`SharedKernel.Reporting.Pdf`](../SharedKernel.Reporting.Pdf/README.md).
+| Provider | Format | Memory |
+|---|---|---|
+| [`SharedKernel.Reporting.Csv`](../SharedKernel.Reporting.Csv/README.md) | CSV (RFC 4180) | constant |
+| [`SharedKernel.Reporting.Spreadsheet`](../SharedKernel.Reporting.Spreadsheet/README.md) | Excel `.xlsx` (typed cells) | constant |
+| [`SharedKernel.Reporting.Pdf`](../SharedKernel.Reporting.Pdf/README.md) | tabular PDF (statements, lists) | in memory, capped by `MaxRows` |
+| [`SharedKernel.Reporting.Gotenberg`](../SharedKernel.Reporting.Gotenberg/README.md) | HTML → PDF (invoices, letters) | streamed |
 
 ```xml
 <PackageReference Include="SharedKernel.Reporting.Abstractions" />
 ```
 
-Versions come from the consumer's single `SharedKernelVersion`. **Tier: Abstractions.** For unit tests, `SharedKernel.Reporting.Testing` provides `InMemoryReportExporter<TRow>`, which records every export instead of writing a file.
+Versions come from the consumer's single `SharedKernelVersion`. **Tier: Abstractions** — an Application project may
+reference it. For unit tests, [`SharedKernel.Reporting.Testing`](../../16.Testing/SharedKernel.Reporting.Testing/README.md)
+has in-memory fakes.
 
-## The contract
+## Register
 
 ```csharp
-public interface IReportExporter<TRow>
-{
-    Task<Result<ReportExportOutcome>> ExportAsync(
-        IAsyncEnumerable<TRow> rows,
-        ReportDefinition<TRow> definition,
-        ReportDestination destination,
-        CancellationToken cancellationToken);
+builder.Services.AddSharedKernelStorage().AddS3(builder.Configuration).AddStore("reports");
 
-    Task<Result> ExportToStreamAsync(
-        IAsyncEnumerable<TRow> rows,
-        ReportDefinition<TRow> definition,
-        Stream destination,
-        CancellationToken cancellationToken);
+builder.Services.AddSharedKernelReporting()
+    .AddCsv(builder.Configuration)            // SharedKernel.Reporting.Csv
+    .AddSpreadsheet(builder.Configuration)    // SharedKernel.Reporting.Spreadsheet
+    .AddPdf(builder.Configuration)            // SharedKernel.Reporting.Pdf
+    .AddGotenberg(builder.Configuration);     // SharedKernel.Reporting.Gotenberg — IHtmlToPdfConverter
+
+builder.WithReportingTelemetry();             // SharedKernel.ServiceDefaults
+```
+
+Each format is registered once and serves **every row type**. Add only the formats you use. Storage is optional:
+without it, `ExportToStreamAsync` works and `ExportAsync` throws an explaining `InvalidOperationException`.
+
+## Define a report
+
+```csharp
+ReportDefinition<Order> definition = ReportDefinition.For<Order>()
+    .Title("Orders — September")
+    .Culture(CultureInfo.GetCultureInfo("tr-TR"))                  // numbers and dates, not translation
+    .Column("Order", o => o.Number)
+    .Column("Placed", o => o.PlacedAt, format: "yyyy-MM-dd")
+    .Column("Customer", o => o.CustomerName, relativeWidth: 3)
+    .Column("Total", o => o.Total, format: "N2")                   // numbers right-align automatically
+    .Column("Status", o => o.Status, (status, culture) => status.ToDisplayText())
+    .Build();
+```
+
+- Columns render in the order added. `null` is an empty cell, never `"null"`.
+- `format` is a .NET format string. CSV and PDF format the value as text; Excel keeps numbers, dates, times and
+  booleans as **typed cells** and translates the format to an Excel number format.
+- A column with a formatter function is text in every format.
+- `alignment` (`Auto`, `Left`, `Center`, `Right`) and `relativeWidth` shape PDF and Excel; CSV ignores them.
+- Headers are yours to translate before building the definition.
+
+## Export
+
+Inject one format's exporter, or pick the format at runtime:
+
+```csharp
+public sealed class ExportOrdersHandler(IReportExporterFactory exporters, IOrderQueries orders, IRequestContext caller)
+{
+    public async Task<Result<ReportExportOutcome>> Handle(ExportOrders command, CancellationToken ct)
+    {
+        Result<ReportFormat> format = exporters.ParseFormat(command.Format);   // "xlsx", ".csv", "application/pdf"…
+        if (format.IsFailure)
+        {
+            return format.Error;                                               // reporting.unsupported_format
+        }
+
+        return await exporters.GetExporter<Order>(format.Value).ExportAsync(
+            orders.StreamAsync(command.Month, ct),                             // IAsyncEnumerable<Order> — never a List
+            Definition,
+            new ReportDestination
+            {
+                Store = "reports",
+                TenantId = caller.TenantId,                                    // for a tenant store
+                Key = format.Value.WithExtension($"orders/{Guid.CreateVersion7():N}"),
+                DownloadFileName = format.Value.WithExtension("Orders September"),
+                PresignedDownloadUrlExpiry = TimeSpan.FromMinutes(15),
+            },
+            ct);
+    }
 }
 ```
 
-Both members accept `IAsyncEnumerable<TRow>` — **never** `IEnumerable<TRow>` or `List<TRow>`, and no such overload will ever be added. `ExportAsync` is the primary, storage-delivered path (into a named `IFileStorage` store, with an optional presigned download request created by that store). `ExportToStreamAsync` is a small-output/direct-stream convenience path — never the *only* way out of a provider.
+Or inject `ICsvReportExporter<Order>` / `ISpreadsheetReportExporter<Order>` / `IPdfReportExporter<Order>`, or the keyed
+service `[FromKeyedServices("xlsx")] IReportExporter<Order>`.
 
-If you have an in-memory collection, convert it yourself: `myList.ToAsyncEnumerable()` (`System.Linq.Async` or a one-line adapter). That is your call to make, not this contract's to weaken.
+`ReportExportOutcome` carries `StoredFile` (persist this `FileReference`), `DownloadUrl` (a `PresignedRequest`, when
+requested), `Format`, `RowCount` and `SizeBytes`. `ExportToStreamAsync` writes to any stream instead — an HTTP
+response, a `MemoryStream` for an e-mail attachment — and returns `ReportStreamOutcome`.
 
-## The column/definition model
+### Destination
 
-```csharp
-var definition = new ReportDefinition<Invoice>
-{
-    Culture = CultureInfo.GetCultureInfo("de-DE"),
-    Title = "Q1 Invoices",
-    Columns =
-    [
-        new ReportColumn<Invoice> { Header = "Id", Ordinal = 0, ValueSelector = i => i.Id },
-        new ReportColumn<Invoice> { Header = "Amount", Ordinal = 1, ValueSelector = i => i.Amount },
-    ],
-};
-```
-
-- `Ordinal` is the column's explicit output position — not its position in the `Columns` list. Every provider renders columns sorted by `Ordinal`.
-- A `null` from `ValueSelector`, or a `null` from an optional `Formatter`, always means a blank cell — never the literal text `"null"`.
-- `Culture` defaults to `CultureInfo.InvariantCulture` and drives `ReportValueFormatting.Format` — the default formatter every provider applies when a column supplies no `Formatter`. This is BCL culture formatting (numbers/dates/currency) — never a translation catalog. A translated column *header* is the caller's job, resolved before it reaches `Header`.
-
-## Delivery
-
-```csharp
-var destination = new ReportDestination
-{
-    Store = "exports",                                   // a store registered with AddSharedKernelStorage()
-    TenantId = tenantId,                                 // only for a tenant store; from the authenticated request
-    Key = $"invoices/{DateOnly.FromDateTime(DateTime.UtcNow)}.csv",
-    PresignedDownloadUrlExpiry = TimeSpan.FromHours(1), // omit for no presigned URL
-};
-
-var result = await exporter.ExportAsync(rows, definition, destination, cancellationToken);
-if (result.IsSuccess)
-{
-    FileReference stored = result.Value.StoredFile;    // store, tenant and key — persist this
-    PresignedRequest? link = result.Value.DownloadUrl; // Url, Method, Headers, ExpiresAt; only when PresignedDownloadUrlExpiry was set
-    long rowCount = result.Value.RowCount;             // counted for free while streaming
-}
-```
-
-- `Store` names a store the host registered; an unknown store, or a `TenantId` that does not match the store's tenancy (set for a shared store, missing for a tenant store), is a configuration error and throws.
-- For a tenant store the object lands under that tenant's own prefix, and `StoredFile` carries the tenant. Open it later with `IFileStorageFactory.Open(storedFile)`.
-- `PresignedDownloadUrlExpiry` may not exceed the store's `MaxPresignExpiry`; a longer one fails the export with `storage.expiry_too_long` after the object has been stored.
-- Every storage failure (`storage.already_exists`, `storage.unavailable`, …) comes back as the failed `Result` with the storage error code unchanged.
-
-`ExportAsync` is composed internally from `StorageStreamingWriter` — a `System.IO.Pipelines.Pipe`-based primitive that runs `IFileStorage.UploadAsync` concurrently against a provider's own row-to-bytes encoder, so bytes reach storage as they are produced rather than after the whole output is buffered. This package exposes no DI registration of its own — each provider (`.Csv`/`.Spreadsheet`/`.Pdf`) owns its own `AddXReportExporter<TRow>(IConfiguration)` extension, since only a concrete provider knows its own encoding.
-
-## Out of scope, by design
-
-| Concern | Lives in |
+| Property | |
 |---|---|
-| Querying/streaming rows out of a database | The caller. This domain never references `06.Persistence` or opens a connection. |
-| PII classification and redaction | `01.Core/SharedKernel.DataPrivacy`, applied by the caller **before** rows reach an exporter. See the capitalized statement on `IReportExporter<TRow>`'s own XML docs — rows arrive already-redacted or they leave un-redacted; there is no safety net here. |
-| Translated column headers | The caller, before the column reaches `ReportColumn<TRow>.Header`. This domain only formats by `CultureInfo`. |
-| Running an export on a schedule | `19.Scheduling`/`17.Workflows` — composed in consumer code; nothing to register here. |
-| Tenant provisioning | `13.ServiceDefaults`. |
-| A readiness probe / `IHealthCheck` | Nowhere. This domain is stateless — no persistent connection to be ready or not ready. |
+| `Store`, `Key` | Required. An unknown store throws (configuration error). |
+| `TenantId` | Required exactly for a tenant store; take it from `IRequestContext`, never from input. |
+| `DownloadFileName` | Stored as `Content-Disposition: attachment` (UTF-8 names supported); presigned links download under it. |
+| `Condition` | e.g. `WriteCondition.IfNotExists` — never overwrite an issued statement. |
+| `Metadata` | User metadata on the object. |
+| `PresignedDownloadUrlExpiry` | Creates a download link; must not exceed the store's maximum. |
 
-## Full host composition (foreshadowing `consumer-verify`)
+### How delivery works
 
-This package never registers itself — a provider does. A real composition root wires storage plus whichever provider(s) it needs, then resolves through a real `IHost`:
+The exporter writes into a pipe whose other end is `IFileStorage.UploadAsync`: bytes reach storage **while they are
+produced**, never buffered as a whole file. If the export fails part-way (a row limit, an exception) the upload is
+aborted — **a half-written report is never stored**. If the store rejects the upload early (a failed condition), the
+exporter stops at its next write instead of reading the rest of the rows.
+
+## HTML to PDF
 
 ```csharp
-var builder = Host.CreateApplicationBuilder(args);
-
-builder.Services.AddSharedKernelStorage()
-    .AddS3(builder.Configuration)
-    .AddStore("exports");
-builder.Services.AddCsvReportExporter<Invoice>(builder.Configuration);
-builder.Services.AddSpreadsheetReportExporter<Invoice>(builder.Configuration); // optional, composes freely
-builder.Services.AddPdfReportExporter<Invoice>(builder.Configuration);        // optional, composes freely
-
-var host = builder.Build();
-await host.StartAsync(); // ValidateOnStart() runs here — a misconfigured provider fails now, not on first export
-
-var csvExporter = host.Services.GetRequiredService<ICsvReportExporter<Invoice>>();
+Result<PdfDocumentOutcome> stored = await converter.ConvertAsync(       // IHtmlToPdfConverter
+    html,
+    new ReportDestination { Store = "invoices", Key = "2026-0042.pdf", Condition = WriteCondition.IfNotExists },
+    new HtmlToPdfOptions { PageSize = PdfPageSize.A4, FooterHtml = HtmlToPdfOptions.PageNumberFooter },
+    ct);
 ```
 
-All three providers share one `StorageStreamingWriter` singleton (registered idempotently via `TryAddSingleton` in each provider's own DI extension) — registering more than one provider in the same host is a supported, tested composition, not an afterthought. See `20.Reporting/consumer-verify` for the full working harness this snippet foreshadows.
+`HtmlToPdfOptions`: `PageSize` (A3/A4/A5/Letter/Legal or custom mm), `Landscape`, `Margins` (mm), `PrintBackground`,
+`Scale`, `PreferCssPageSize`, `HeaderHtml`/`FooterHtml` (placeholders `pageNumber`, `totalPages`, `date`, `title`), and
+`Assets` (images, fonts, stylesheets referenced by file name). **HTML-encode user data** before it enters the markup.
+See [`SharedKernel.Reporting.Gotenberg`](../SharedKernel.Reporting.Gotenberg/README.md).
 
-## Memory model, honestly, per provider
+## Failures
 
-This domain's contract *shape* never allows a materializing overload. Whether a given *provider's own encoding* is itself O(1)-memory is a separate, provider-specific fact:
+Expected failures are `Result`s; the codes are constants in `ReportingErrorCodes`:
 
-- **`.Csv`** genuinely is constant-memory end to end.
-- **`.Spreadsheet`** (ClosedXML) and **`.Pdf`** (MigraDoc/PdfSharp) are **not** — both third-party libraries build their full in-memory document object model before writing a byte. This is documented in capitals in each provider's own XML docs and README — read them before choosing a provider for a large row count.
+| Code | Type | When |
+|---|---|---|
+| `reporting.invalid_definition` | Validation | No columns, or a column without header or value, or a bad width |
+| `reporting.invalid_destination` | Validation | Missing store or key, `default(TenantId)`, bad file name or expiry |
+| `reporting.unsupported_format` | Validation | `ParseFormat` did not match a registered format |
+| `reporting.row_limit_exceeded` | Validation | More rows than the format's `MaxRows`; nothing is stored |
+| `reporting.invalid_request` | Validation | Empty HTML or invalid conversion options |
+| `reporting.conversion_failed` | Validation | The converter refused the document |
+| `reporting.converter_unavailable` | Unavailable | The converter could not be reached or failed |
+| `reporting.conversion_timeout` | Timeout | The conversion took too long |
+
+Storage failures keep their `storage.*` codes. An exception thrown by the row source, a value function or a formatter
+propagates — it is a bug, not an outcome.
+
+## Personal data
+
+An export is a bulk copy into a durable, shareable file. This library classifies and redacts nothing: redact with
+`SharedKernel.DataPrivacy` in the query that produces the rows. Logs, spans and metrics never contain row values, keys
+or file names.
+
+## Telemetry
+
+`WithReportingTelemetry()` exports the `SharedKernel.Reporting` source and meter:
+
+- Spans `reporting export` and `reporting convert`, tagged `reporting.format`, `reporting.operation`, `reporting.store`,
+  `reporting.row_count`, `reporting.size_bytes`, and on failure `error.type` with an error status.
+- `reporting.operation.duration` (s), `reporting.rows`, `reporting.bytes`.
+- Logs (category `SharedKernel.Reporting`, EventIds 20000–20006): started (Debug), completed (Information), failed with
+  its error code (Warning), threw (Error), cancelled (Debug), download link failed (Warning), PDF converted.
+
+## A custom format
+
+Derive from `ReportExporterBase<TRow>` — validation, delivery, tracing and logging are done for you:
+
+```csharp
+internal sealed class JsonLinesExporter<TRow>(ReportingDependencies dependencies) : ReportExporterBase<TRow>(dependencies)
+{
+    public static readonly ReportFormat JsonLines = new("jsonl", "application/x-ndjson", ".jsonl");
+
+    public override ReportFormat Format => JsonLines;
+
+    protected override async Task<Result<long>> EncodeAsync(
+        IAsyncEnumerable<TRow> rows, ReportDefinition<TRow> definition, Stream destination, CancellationToken ct)
+    {
+        long count = 0;
+        await foreach (TRow row in rows.WithCancellation(ct))
+        {
+            // write one JSON object per line to destination (write-only, not seekable; never dispose it)
+            count++;
+        }
+
+        return count;                                        // or a failure such as ReportingErrors.RowLimitExceeded
+    }
+}
+
+builder.Services.AddSharedKernelReporting().AddExporter(JsonLinesExporter<object>.JsonLines, typeof(JsonLinesExporter<>));
+```
+
+`HtmlToPdfConverterBase` (`RenderAsync`) plus `AddHtmlToPdfConverter<T>()` does the same for another HTML engine.

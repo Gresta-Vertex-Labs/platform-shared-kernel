@@ -2,42 +2,66 @@
 
 ## What This Domain Is
 
-Streaming, memory-bounded generation of **structured tabular output** — statements, regulatory reports, bulk data exports — in CSV, spreadsheet, and PDF form, delivered through object storage rather than buffered back through an HTTP response.
+Streaming generation of **structured output** — statements, regulatory extracts, bulk data exports — as CSV, Excel and
+tabular PDF, plus **HTML-to-PDF** for free-form documents (invoices, letters), delivered to object storage (with a
+presigned download link) or to any stream.
 
-The word that matters in that sentence is **streaming**. The failure mode this domain exists to prevent is a service materializing an entire result set into memory to build a report, which works fine in staging and falls over on the tenant with two million rows.
+The word that matters is **streaming**. The failure this domain exists to prevent is a service materializing a whole
+result set to build a report — fine in staging, fatal on the tenant with two million rows.
 
 ---
 
 ## Packages
 
 ```
-SharedKernel.Reporting.Abstractions   → IReportExporter<TRow>, column/field model, delivery composition
-SharedKernel.Reporting.Csv            → RFC 4180, hand-written, zero third-party NuGet
-SharedKernel.Reporting.Spreadsheet    → ClosedXML
-SharedKernel.Reporting.Pdf            → PdfSharp / MigraDoc
+SharedKernel.Reporting.Abstractions   → contracts, fluent definition, exporter/converter bases, delivery, telemetry, DI
+SharedKernel.Reporting.Csv            → RFC 4180, hand-written, no third-party package, constant memory
+SharedKernel.Reporting.Spreadsheet    → .xlsx on SpreadCheetah (streaming, constant memory, typed cells)
+SharedKernel.Reporting.Pdf            → tabular PDF on PDFsharp/MigraDoc (in memory, capped by MaxRows)
+SharedKernel.Reporting.Gotenberg      → IHtmlToPdfConverter over Gotenberg (headless Chromium, a Docker service)
 ```
 
-Standard `.Abstractions` + `.{Provider}` split — three providers exist, so the split is mandatory, not optional. Provider packages are **siblings**: none references another, and there is no shared `.Core` between them.
+`.Abstractions` + sibling providers. No provider references another; all shared behaviour (validation, delivery,
+tracing, metrics, logging) lives in `.Abstractions`' base classes, so a provider only encodes bytes.
+
+One registration chain, one namespace (`SharedKernel.Reporting`) for everything a service calls:
+
+```csharp
+builder.Services.AddSharedKernelStorage().AddS3(builder.Configuration).AddStore("reports");
+builder.Services.AddSharedKernelReporting()
+    .AddCsv(builder.Configuration)          // SharedKernel:Reporting:Csv
+    .AddSpreadsheet(builder.Configuration)  // SharedKernel:Reporting:Spreadsheet
+    .AddPdf(builder.Configuration)          // SharedKernel:Reporting:Pdf
+    .AddGotenberg(builder.Configuration);   // SharedKernel:Reporting:Gotenberg — IHtmlToPdfConverter
+builder.WithReportingTelemetry();           // SharedKernel.ServiceDefaults
+```
+
+Each `Add{Format}` registers **one open generic exporter for every row type** — never one registration per `TRow`.
 
 ---
 
 ## Third-Party Licensing — a ratified decision, not a default
 
-This was settled during WO-077 planning and must not be quietly revisited by a future session reaching for a more familiar library.
-
 | Library | Verdict | Reason |
 |---|---|---|
-| **ClosedXML** | ✅ Adopted (spreadsheet) | Unconditional MIT |
-| **PdfSharp / MigraDoc** | ✅ Adopted (PDF) | Unconditional MIT |
-| EPPlus | ❌ Declined | PolyForm Noncommercial — unusable in a commercial platform |
-| QuestPDF | ❌ Declined | Revenue-gated commercial licence above a threshold |
-| iText7 | ❌ Declined | AGPL — copyleft obligations unacceptable for a distributed NuGet package |
+| **SpreadCheetah** `1.28.0` | ✅ Adopted (spreadsheet) | MIT, no dependencies on net8.0+, streaming async writer |
+| **PDFsharp** + **PDFsharp-MigraDoc** `6.2.4` | ✅ Adopted (tabular PDF) | MIT |
+| **Gotenberg** `8.x` (Docker image, no NuGet) | ✅ Adopted (HTML-to-PDF) | MIT; called over HTTP, no vendor SDK |
+| **Roboto** font (embedded in `.Pdf`) | ✅ Adopted | Apache-2.0 (`Fonts/LICENSE.txt`) |
+| ClosedXML | ⤵ Test-only | MIT, but builds the whole workbook in memory (a 32 MB `.xlsx` cost 1+ GB, `ClosedXML#1180`) and saves synchronously. Replaced by SpreadCheetah in the 2026-09-26 pass; kept only as an independent reader in tests and `consumer-verify` |
+| EPPlus | ❌ Declined | PolyForm Noncommercial |
+| QuestPDF | ❌ Declined | Revenue-gated licence |
+| iText7 / pdfHTML | ❌ Declined | AGPL |
+| wkhtmltopdf / DinkToPdf | ❌ Declined | Abandoned, unpatched WebKit |
+| IronPDF, Syncfusion | ❌ Declined | Commercial |
+| PuppeteerSharp / Playwright (in-process Chromium) | Not chosen | Permissive, but puts a ~300 MB browser inside every service image and process, with its sandbox issues and exploit surface. Gotenberg isolates Chromium in its own pod. A second `IHtmlToPdfConverter` provider could still wrap one |
 
-The two adopted libraries are less ergonomic than the two most popular declined ones. That is the cost of the licence constraint and it was accepted knowingly. If a format genuinely cannot be served by an acceptably-licensed dependency, **scope that format out** rather than shipping a phase that cannot be completed — do not introduce a copyleft or revenue-gated dependency into a package the platform publishes.
+If a format cannot be served by an acceptably licensed dependency, **scope it out** — never ship a copyleft or
+revenue-gated dependency in a published package.
 
-**Shipped 2026-09-04.** `Directory.Packages.props` now pins `ClosedXML` `0.105.1` and, for PDF, `PDFsharp` `6.2.4` + `PDFsharp-MigraDoc` `6.2.4` — both MIT, verified directly against each published nuspec before pinning. **Correction to the original plan, verified against the live NuGet index, not assumed:** the three-way `PdfSharp` + `MigraDoc.DocumentObjectModel` + `MigraDoc.Rendering` package split this section originally named no longer exists on nuget.org. The current, actively-maintained PDFsharp-team packages are exactly two IDs — `PDFsharp` (core PDF primitives) and `PDFsharp-MigraDoc` (bundles the `MigraDoc.DocumentObjectModel`/`MigraDoc.Rendering` namespaces, depends on `PDFsharp` at the identical pinned version) — a corrected package-ID mapping onto the same licence-ratified technology, never a substitution. Do not "fix" the `<PackageVersion>` entries in `Directory.Packages.props` back to the old three-ID split; it will fail restore.
-
-**ClosedXML's real memory behavior — verified by research, not assumed, during WO-077 Design (D-08).** ClosedXML exposes no incremental/streaming write path. `XLWorkbook.SaveAs` builds the entire workbook object graph in memory and only serializes it to the destination stream when called — a documented real case saw a 32 MB `.xlsx` output cost 1+ GB of peak process memory (`ClosedXML/ClosedXML#1180`). `SharedKernel.Reporting.Spreadsheet` therefore **cannot honestly claim to be memory-bounded**, and must not imply otherwise anywhere in its docs. What it *can* and does guarantee: it never additionally buffers the row source into a `List<TRow>` before feeding ClosedXML (avoiding paying that cost twice), and its own XML docs/README state the ClosedXML limitation in capitals with a pointer to `.Csv` for genuinely large exports. This is recorded as a **permanent, accepted characteristic of the chosen dependency**, not a defect for a future phase to "fix" — no evaluated MIT-licensed alternative offers true `.xlsx` streaming at an acceptable ergonomic/implementation-risk cost (the SAX-style `DocumentFormat.OpenXml` primitive does stream, but was already weighed against ClosedXML and declined for that reason when P-479 was scoped). The identical reasoning and the identical documentation obligation apply to `.Pdf`'s MigraDoc/PdfSharp pairing, mitigated there by that provider's deliberately narrow "simple tabular/statement layout" scope rather than by any streaming capability MigraDoc doesn't have either.
+**PDFsharp package IDs.** The current PDFsharp team packages are exactly two: `PDFsharp` and `PDFsharp-MigraDoc`
+(which bundles `MigraDoc.DocumentObjectModel`/`MigraDoc.Rendering`). The old three-ID split no longer exists on
+nuget.org; do not "fix" `Directory.Packages.props` back to it.
 
 ---
 
@@ -45,54 +69,74 @@ The two adopted libraries are less ergonomic than the two most popular declined 
 
 | Package | Tier | References |
 |---|---|---|
-| `SharedKernel.Reporting.Abstractions` | Abstractions | `SharedKernel.Primitives`, `SharedKernel.Storage.Abstractions`, `Microsoft.Extensions.Logging.Abstractions` |
-| `SharedKernel.Reporting.Csv` | Adapter | `.Abstractions`, `SharedKernel.Configuration` — no third-party package |
-| `SharedKernel.Reporting.Spreadsheet` | Adapter | `.Abstractions`, `SharedKernel.Configuration`, `ClosedXML` |
+| `SharedKernel.Reporting.Abstractions` | Abstractions | `SharedKernel.Primitives`, `SharedKernel.Storage.Abstractions`, `Microsoft.Extensions.DependencyInjection.Abstractions`, `Microsoft.Extensions.Logging.Abstractions` |
+| `SharedKernel.Reporting.Csv` | Adapter | `.Abstractions`, `SharedKernel.Configuration` |
+| `SharedKernel.Reporting.Spreadsheet` | Adapter | `.Abstractions`, `SharedKernel.Configuration`, `SpreadCheetah` |
 | `SharedKernel.Reporting.Pdf` | Adapter | `.Abstractions`, `SharedKernel.Configuration`, `PDFsharp`, `PDFsharp-MigraDoc` |
+| `SharedKernel.Reporting.Gotenberg` | Adapter | `.Abstractions`, `SharedKernel.Configuration`, `SharedKernel.Execution`, `Microsoft.Extensions.Http(.Resilience)` |
 
-That is the complete list, and it is deliberately austere. The build enforces the tiers (SKTIER001–006); an Abstractions package takes no third-party package outside the `Microsoft.Extensions.*.Abstractions` allow-list.
+The build enforces the tiers (SKTIER001–006). `AbstractionsPurityTests` fails if `.Abstractions` references or exposes a
+format library. **This domain never references a persistence package** — the caller supplies the
+`IAsyncEnumerable<TRow>` (`StreamAsync`, `ListKeysetAsync`, `IFileStorage.ListAsync`, …).
 
-**This domain never references a persistence package.** The caller supplies the `IAsyncEnumerable<TRow>`. Composing with `06.Persistence`'s `IAsyncEnumerable` streaming reads (`StreamAsync`) and keyset cursor pagination (`ListKeysetAsync`) happens **in consumer code**, not through a reference here. A reference would let this domain grow its own data-access opinions, which is exactly the duplication the streaming contract is designed to avoid.
+**Readiness.** Only `.Gotenberg` holds a dependency worth probing: it registers the `gotenberg` probe (`GET /health`).
+The exporters are stateless libraries and have none.
 
-**No readiness probe exists or is needed.** This domain holds no persistent connection, so there is nothing to probe; it is a stateless library in the same class as `SharedKernel.Compression`/`.Cryptography`. **The absence of an `IReadinessProbe` here is deliberate, not an omission** — do not "notice the gap" and add one.
-
-**Composition with scheduling or workflows needs nothing here.** A long-running export driven by `19.Scheduling` or `17.Workflows` composes inside the consuming service's own job body or activity; the tier rules constrain SharedKernel packages referencing each other, not consumer code referencing several of them.
+**Scheduling and workflows** compose in consumer code (a `19.Scheduling` job or `17.Workflows` activity calls an
+exporter); no reference either way.
 
 ---
 
 ## Domain Invariants
 
-**1 — The primary contract is streaming, with no escape hatch.** `IReportExporter<TRow>` accepts `IAsyncEnumerable<TRow>` on both of its members — `ExportAsync` (storage-delivered) and `ExportToStreamAsync` (the Invariant-2 convenience path). **No overload accepting `IEnumerable<TRow>` or `List<TRow>` may exist anywhere on the contract** — the moment one does, every caller uses it and the memory-boundedness guarantee is gone. This is the domain's central invariant.
+**1 — The contract is streaming, with no escape hatch.** `IReportExporter<TRow>` takes `IAsyncEnumerable<TRow>` on both
+members. **No overload taking `IEnumerable<TRow>`/`List<TRow>` may ever exist** — once it does, every caller uses it.
+Per provider, honestly: CSV and Excel encode in constant memory (proven by allocation tests over 20k vs 200k–400k rows);
+PDF builds a MigraDoc document in memory and is capped by `PdfExportOptions.MaxRows` (default 10,000).
 
-**Important scope note, added after ClosedXML's actual behavior was verified (not assumed) during WO-077 Design:** this invariant governs the *contract shape* — no materializing overload, ever. It is **not** a claim that every provider's underlying encoding is itself O(1)-memory. `.Csv` genuinely is. `.Spreadsheet` (ClosedXML) and `.Pdf` (MigraDoc/PdfSharp) are **not** — both third-party libraries build their full document object model in memory before writing a byte to the destination stream, a verified, permanent characteristic of those dependencies, not a defect awaiting a fix. Never let this invariant's wording be read as "every provider streams to disk row by row" — say plainly, per provider, what is and is not true, in capitals in that provider's own XML docs. See the Third-Party Licensing / Providers section below for the specifics.
+**2 — Delivery streams into storage.** `ExportAsync`/`ConvertAsync` write through a `System.IO.Pipelines.Pipe` whose
+reader side is `IFileStorage.UploadAsync`: bytes reach storage as they are produced. A writer that fails (a `Result`
+failure such as `reporting.row_limit_exceeded`, or an exception) faults the pipe, so **a half-written report is never
+stored**. An upload that stops early (failed condition, invalid key) completes the pipe's reader *and* aborts the
+writer's next write, so the row source is not drained for nothing. `ExportToStreamAsync`/`ConvertToStreamAsync` write
+to any stream (an HTTP response body).
 
-**2 — Delivery goes through storage, never through the response.** Output is written to a named store of `SharedKernel.Storage.Abstractions` (`ReportDestination.Store`, plus `TenantId` — a `TenantId?`, `null` for a shared store — for a tenant store), resolved through `IFileStorageFactory`, and an optional presigned download request is created by the same store's `IFileStorage.CreateDownloadUrlAsync`. No code path may offer a fully-buffered byte array as the *sole* option. A small-output convenience path may exist (`ExportToStreamAsync`), but never as the only way out. The concrete mechanism making this real, not aspirational: `StorageStreamingWriter` (`.Abstractions`) opens a `System.IO.Pipelines.Pipe` and runs `IFileStorage.UploadAsync` concurrently against the pipe's reader-side `Stream` while a provider's encoder writes into the writer side — bytes reach storage as they are produced, with no intermediate byte-array buffering at the delivery layer, regardless of what a given provider's own encoding step does internally (see Invariant 1's note above — the pipe removes delivery-layer buffering; it cannot remove a third-party library's own in-memory document model).
+**3 — Formatting is `CultureInfo`, not translation.** Headers are translated by the caller. `ReportValueFormatting`
+applies a column's `Format` under the report's `Culture`; no dependency on `SharedKernel.Localization`.
 
-**3 — Formatting is `CultureInfo`, not translation.** Per-column formatters accept a `CultureInfo`. Formatting numbers, dates, and currency by culture is a **BCL capability**. This domain takes **no dependency on `SharedKernel.Localization`** (WO-078) or any translation catalog — a column *header* that needs translating is resolved by the caller before it reaches the column definition. Blurring these two concerns would drag a translation catalog into every export.
+**4 — PII is the caller's problem, and is said out loud.** An export is a bulk copy into a durable, shareable file.
+Nothing here classifies or redacts — `01.Core/SharedKernel.DataPrivacy`, applied in the query. Spans, metrics and logs
+carry format, operation, store, row count, size and error code — **never row content, object keys or file names**.
 
-**4 — Scope boundaries are documented in XML, not just here.** Tenant provisioning, data classification/redaction, and scheduling are all explicitly out of scope for this domain, and the XML docs must cross-reference where each actually lives (`13.ServiceDefaults` / `01.Core.DataPrivacy` / `19.Scheduling`). Exports are a natural place for each of those concerns to accidentally accrete.
+**5 — Spreadsheet-safe text.** CSV prefixes text starting with `= + - @ \t \r` with `'` (`CsvExportOptions.EscapeFormulas`,
+default on; numbers are never prefixed). Excel writes text as text cells, never formulas. HTML-to-PDF: the HTML runs in
+a browser — callers HTML-encode user data, and Gotenberg is deployed with an allow-list and no egress (its README).
 
-**5 — PII is the caller's problem, and must be said out loud.** An export is a bulk extraction of data to a durable file with a shareable URL — the highest-consequence PII surface the platform has. This domain performs **no** classification or redaction of its own (that is `01.Core/SharedKernel.DataPrivacy`, WO-076). The docs must state plainly that rows arrive already-redacted or they leave un-redacted; there is no safety net here.
-
-**6 — Providers are independently swappable.** No shared `.Core`, no cross-provider references, no base class holding "common" encoding logic. Duplication between providers is accepted: the formats share nothing but the delivery path, which already lives in `.Abstractions`.
+**6 — Expected failures are `Result`s; bugs throw.** Invalid definitions/destinations, unsupported formats, row limits,
+converter failures and storage failures are `Result` failures (`ReportingErrorCodes`, `storage.*`). An exception from
+the row source, a value function or a formatter propagates. Missing storage registration or an unknown store throws
+`InvalidOperationException` (configuration error).
 
 ---
 
-## Technology
+## Design
 
 | Concern | Choice | Notes |
 |---|---|---|
-| Row source | Caller-supplied `IAsyncEnumerable<TRow>` | This domain never opens a connection or issues a query |
-| Contract shape | `IReportExporter<TRow>.ExportAsync` (storage-delivered) + `.ExportToStreamAsync` (Invariant-2 convenience path) | Both members take `IAsyncEnumerable<TRow>` — never `IEnumerable`/`List<TRow>` on either |
-| Provider discrimination | Marker interfaces (`ICsvReportExporter<TRow>`, `ISpreadsheetReportExporter<TRow>`, `IPdfReportExporter<TRow>`), each declared only in its own provider package | Compile-time provider exclusivity, mirroring `09.Search`/`10.Intelligence`'s established pattern — never a runtime format-string switch |
-| Delivery mechanism | `StorageStreamingWriter` (`.Abstractions`) — `System.IO.Pipelines.Pipe` running `IFileStorage.UploadAsync` concurrently against a provider's own `ExportToStreamAsync` encoder | BCL only, no NuGet reference; makes Invariant 2 concrete rather than aspirational |
-| CSV encoding | Hand-written, RFC 4180 | Zero third-party NuGet — the dependency-free baseline case; the only provider that is genuinely constant-memory end to end |
-| Spreadsheet | ClosedXML `0.105.1` | Unconditional MIT; **verified to have no incremental write path — not memory-bounded, documented in capitals**; pinned in root `Directory.Packages.props` (WO-077, shipped 2026-09-04) |
-| PDF | `PDFsharp` `6.2.4` + `PDFsharp-MigraDoc` `6.2.4` (two NuGet IDs — see Third-Party Licensing above for why this replaced the originally-planned three-ID split) | Unconditional MIT; same in-memory-document-model constraint as ClosedXML, mitigated by the deliberately narrow tabular/statement scope; pinned in root `Directory.Packages.props` (WO-077, shipped 2026-09-04). **`PdfDocument.Save` needs a `Position`-readable stream** (to compute xref byte offsets while writing) — the `Pipe`-backed stream `StorageStreamingWriter` hands every provider does not support this, so `PdfReportExporter` renders into a local `MemoryStream` buffer first and copies it to the real destination afterward; costs nothing beyond what the memory-model concession above already accepts, but is a real implementation constraint future PDF work must not "optimize away" by trying to `Save` straight to the pipe stream. **PdfSharp 6.x performs no implicit OS font enumeration on any platform** — `SharedKernel.Reporting.Pdf` embeds the Roboto font family (Apache License 2.0, `Fonts/Roboto-{Regular,Bold}.ttf` + `Fonts/LICENSE.txt`) via a custom `IFontResolver` (`EmbeddedRobotoFontResolver`/`PdfFontResolverRegistration`) rather than reading a host-installed font — required for identical behavior between local Windows development and the Linux containers this platform deploys to; there is no font-family configuration option, by design |
-| Delivery | `08.Storage.Abstractions` | `IFileStorageFactory.Open(...)` picks the store (and tenant view) named by `ReportDestination`; `IFileStorage.UploadAsync` (verified: reads a plain caller-owned `Stream` from its current position, no upfront length required — exactly what the `Pipe`-based writer needs); `IFileStorage.CreateDownloadUrlAsync` for the optional presigned read, returned as `ReportExportOutcome.DownloadUrl` (`PresignedRequest?`). A presign failure (e.g. `storage.expiry_too_long` above the store's `MaxPresignExpiry`) fails the export with that storage error after the object is stored; the durable handle is `ReportExportOutcome.StoredFile` (`FileReference`) |
-| Formatting | BCL `CultureInfo`, via a shared `ReportValueFormatting` default helper in `.Abstractions` | Never a translation catalog |
-| Options validation | `01.Core/SharedKernel.Configuration`'s `AddValidatedOptions` | Provider packages only |
-| Logging | `[LoggerMessage]`, EventIds `20000`–`20999`, sub-blocks `.Abstractions` 20000-20099 / `.Csv` 20100-20199 / `.Spreadsheet` 20200-20299 / `.Pdf` 20300-20399 | `Reporting = 20000` **shipped in `01.Core`'s `LoggingEventIdRanges`** — confirmed by reading the source file directly 2026-09-04. `StorageStreamingWriter`'s three generic entries (export-started/completed/failed, `.Abstractions` sub-block) cover every provider; no provider-specific event was found to need its own entry in `.Csv`/`.Spreadsheet`/`.Pdf`'s own 100-wide sub-blocks — a deliberate decision, not an oversight |
+| Definition | `ReportDefinition.For<T>().Title(…).Culture(…).Column(header, value, format:, alignment:, relativeWidth:).Build()` | Columns render in the order added. `ReportColumn<T>`: `Header`, `Value`, `Format`, `Formatter`, `Alignment` (`Auto` right-aligns numbers), `RelativeWidth` |
+| Format metadata | `ReportFormat` (`Name`, `ContentType`, `FileExtension`; `Csv`/`Xlsx`/`Pdf`; custom formats allowed) | `WithExtension("orders")`; equality by name |
+| Runtime choice | `IReportExporterFactory` — `Formats`, `ParseFormat(name / extension / content type)` → `Result`, `GetExporter<T>(format)` | Exporters are also keyed services: `[FromKeyedServices("xlsx")] IReportExporter<T>` |
+| Typed injection | `ICsvReportExporter<T>`, `ISpreadsheetReportExporter<T>`, `IPdfReportExporter<T>` | Declared in each provider package |
+| Extension point | `ReportExporterBase<T>` (`Format`, `EncodeAsync` → `Result<long>`, optional `ValidateDefinition`) + `builder.AddExporter(format, typeof(MyExporter<>))`; `HtmlToPdfConverterBase` (`RenderAsync`) + `AddHtmlToPdfConverter<T>()` | Both take `ReportingDependencies` (logger factory, optional `IFileStorageFactory`) |
+| Delivery | `ReportDestination`: `Store`, `TenantId?`, `Key`, `DownloadFileName` (→ RFC 6266 `Content-Disposition` with UTF-8 `filename*`), `Condition` (`WriteCondition`), `Metadata`, `PresignedDownloadUrlExpiry` | Outcomes: `ReportExportOutcome` (`StoredFile`, `DownloadUrl`, `Format`, `RowCount`, `SizeBytes`), `ReportStreamOutcome`, `PdfDocumentOutcome` |
+| CSV | Hand-written; `CsvExportOptions`: `Delimiter` (validated), `IncludeUtf8Bom`, `IncludeHeaderRow`, `EscapeFormulas` | Each row built in a reused `StringBuilder`, written with `StreamWriter.WriteAsync` — never a blocking write into the pipe |
+| Excel | SpreadCheetah; `SpreadsheetExportOptions`: `DefaultSheetName`, `BoldHeaderRow`, `FreezeHeaderRow`, `AutoFilter`, `MaxRows` (≤ 1,048,575) | Numbers, `DateTime`/`DateTimeOffset`/`DateOnly`, `TimeOnly`, `TimeSpan` (`[h]:mm:ss`), `bool` are typed cells; .NET formats translated by `ExcelFormats` (N/F/D/P/E/C + custom numeric pass-through; date patterns); a `Formatter` column is text; title → sheet name + document title |
+| PDF | PDFsharp/MigraDoc; `PdfExportOptions`: `PaperSize`, `Landscape`, `MarginMillimeters`, `FontSize`, `ShowPageNumbers`, `AlternateRowShading`, `MaxRows` | Column widths share the usable width by `RelativeWidth` (never overflow); header repeats per page; "n / N" footer; title → heading + PDF metadata. `PdfDocument.Save` needs a seekable stream, so it saves to a `MemoryStream` and copies. PDFsharp enumerates no OS fonts: Roboto is embedded via `EmbeddedRobotoFontResolver` (process-wide `GlobalFontSettings.FontResolver`) |
+| HTML-to-PDF | `IHtmlToPdfConverter.ConvertAsync` / `ConvertToStreamAsync`; `HtmlToPdfOptions`: `PageSize` (mm), `Landscape`, `Margins` (mm), `PrintBackground`, `Scale`, `PreferCssPageSize`, `HeaderHtml`, `FooterHtml` (`PageNumberFooter`), `Assets` | Gotenberg `POST /forms/chromium/convert/html`, response streamed to the destination; form values in invariant culture; correlation id as `Gotenberg-Trace`; optional basic auth; `AddStandardResilienceHandler` (retries on transient errors, attempt timeout, circuit breaker sampling ≥ 2× timeout); `HttpClient.Timeout` infinite. Mapping: 4xx → `conversion_failed`, 401/403/404/429/5xx/unreachable → `converter_unavailable`, 408/504/timeout → `conversion_timeout` |
+| Telemetry | `ActivitySource` + `Meter` `SharedKernel.Reporting`: spans `reporting export` / `reporting convert`; `reporting.operation.duration` (s), `reporting.rows`, `reporting.bytes`; `error.type` + error status on failure | Wired by `WithReportingTelemetry()` |
+| Logging | `[LoggerMessage]`, category `SharedKernel.Reporting`, EventIds 20000–20006 (`.Abstractions` sub-block 20000–20099): started, completed, failed (error code), threw, cancelled (Debug), presign failed, converted | Sub-blocks `.Csv` 20100 / `.Spreadsheet` 20200 / `.Pdf` 20300 / `.Gotenberg` 20400 reserved, unused |
+| Errors | `ReportingErrorCodes`: `invalid_definition`, `invalid_destination`, `unsupported_format`, `row_limit_exceeded`, `invalid_request`, `conversion_failed`, `converter_unavailable`, `conversion_timeout`; factories in `ReportingErrors` | Storage failures keep `storage.*` |
+| Public API | `PublicAPI.Shipped/Unshipped.txt` on all five packages; implementations internal | `CS1591`/`RS0016` are errors |
 
 ---
 
@@ -100,26 +144,37 @@ That is the complete list, and it is deliberately austere. The build enforces th
 
 | I need to add… | It belongs in… |
 |---|---|
-| A change to the export contract or column model | `SharedKernel.Reporting.Abstractions` — `IReportExporter<TRow>`, `ReportColumn<TRow>`/`ReportDefinition<TRow>`/`ReportDestination`/`ReportExportOutcome` |
-| A change to how bytes reach storage (retries, buffer sizing, upload concurrency) | `SharedKernel.Reporting.Abstractions` — `StorageStreamingWriter`; never re-implemented per provider |
-| A format-specific encoding behavior | The owning provider package — never the abstraction. Implement it inside that provider's `ExportToStreamAsync`; `ExportAsync` composes it with `StorageStreamingWriter` automatically |
-| A fourth output format | A new sibling `SharedKernel.Reporting.{Format}`, licence-checked first, with its own marker interface (`I{Format}ReportExporter<TRow>`) mirroring `ICsvReportExporter<TRow>`/`ISpreadsheetReportExporter<TRow>`/`IPdfReportExporter<TRow>` |
-| A convenience overload accepting `IEnumerable<TRow>`/`List<TRow>` | **Declined, structurally.** The moment one exists on `IReportExporter<TRow>`, every caller uses it and Invariant 1 is gone. If a caller genuinely has an in-memory collection, `MyList.ToAsyncEnumerable()` (a one-line BCL/`System.Linq.Async` adapter) is the caller's problem to solve, not this domain's contract to weaken |
-| Anything that queries a database | **Not here.** The caller streams rows in |
-| Redaction or PII masking | **Not here.** `01.Core/SharedKernel.DataPrivacy` (WO-076), applied before rows reach the exporter |
-| Translated column headers | **Not here.** Resolved by the caller; this domain only formats by `CultureInfo` |
-| Running an export on a schedule | **Not here.** `19.Scheduling` fires it; the composition lives in consumer code |
-| An `IHealthCheck` or readiness probe | **Nowhere.** This domain is stateless by design — see Tiers and references |
-| An in-memory test double | `16.Testing/SharedKernel.Reporting.Testing` (`InMemoryReportExporter<TRow>`) |
+| A change to the export or conversion contract, the definition model or outcomes | `.Abstractions` |
+| A change to how bytes reach storage, or to telemetry/logging | `.Abstractions` — `ReportingDependencies` (internal pipeline); never per provider |
+| A format-specific encoding behaviour | The provider's `EncodeAsync` / `RenderAsync` |
+| A new output format | A sibling `SharedKernel.Reporting.{Format}` (licence-checked first) deriving from `ReportExporterBase<T>`, its own `I{Format}ReportExporter<T>`, and an `Add{Format}(configuration)` calling `AddExporter` — or, inside a service, just `AddExporter(format, typeof(MyExporter<>))` |
+| Another HTML-to-PDF engine | A sibling deriving from `HtmlToPdfConverterBase`, registered with `AddHtmlToPdfConverter<T>()` |
+| A convenience overload taking `IEnumerable<T>`/`List<T>` | **Declined, structurally** (Invariant 1). A caller with a list uses `list.ToAsyncEnumerable()` |
+| Anything that queries a database, redacts PII, translates headers or schedules | **Not here** — consumer code, `DataPrivacy`, the caller, `19.Scheduling` |
+| Templating HTML (Razor, Scriban, …) | **Not here.** The converter takes a finished HTML string; the service renders it |
+| An in-memory test double | `16.Testing/SharedKernel.Reporting.Testing` — `InMemoryReportExporter<T>`, `InMemoryReportExporterFactory`, `InMemoryHtmlToPdfConverter`, `AddInMemoryReporting()` |
+
+---
+
+## Verification
+
+- Unit lane: `.Abstractions.Tests` (pipeline: store-nothing-on-failure, early upload stop, tenant stores, content
+  disposition, spans), `.Csv.Tests`, `.Spreadsheet.Tests` (read back with ClosedXML), `.Pdf.Tests` (layout fits the page,
+  read back with PDFsharp), `16.Testing/SharedKernel.Reporting.Testing.Tests`.
+- Integration lane: `.Gotenberg.Tests` — stub-handler tests of every form field and error mapping, plus a real
+  `gotenberg/gotenberg:8.37.0` container (Testcontainers).
+- `20.Reporting/consumer-verify` — the whole chain in a real host; outputs reopened by independent readers.
+- `samples/DocumentsApi` — `/reports/{store}/listing?format=` and `/pdf/{store}/{key}` against MinIO + Gotenberg, from
+  the packed packages.
 
 ---
 
 ## Open Items
 
-None. All four packages are implemented, tested, documented and ship with the repo-wide release train; the in-memory double is `16.Testing/SharedKernel.Reporting.Testing` (`InMemoryReportExporter<TRow>`).
+None.
 
 ---
 
 ## Changelog
 
-History — WO-077 (P-477–P-480), the `08.Storage` P-559 delivery update and the WO-086 refactor — is in `state-map.md` ("Domain-Brain Changelog").
+History is in `state-map.md` ("Domain-Brain Changelog").
