@@ -12,6 +12,6 @@
     <!-- Generic host — lets this harness exercise the real IHost.StartAsync() eager
          ValidateOnStart() path, not just BuildServiceProvider(). -->
     <PackageReference Include="Microsoft.Extensions.Hosting" />
-    <PackageReference Include="MediatR" />
+    <ProjectReference Include="..\..\05.Application\SharedKernel.Application.Mediator.MediatR\SharedKernel.Application.Mediator.MediatR.csproj" />
   </ItemGroup>
 </Project>

@@ -2,9 +2,6 @@ using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using NSubstitute;
-using SharedKernel.Cryptography.Symmetric;
-using SharedKernel.Persistence.EfCore.Auditing;
-using SharedKernel.Persistence.EfCore.Encryption;
 using SharedKernel.Persistence.EfCore.Seeding;
 using SharedKernel.ServiceDefaults.HealthChecks;
 
@@ -20,17 +17,14 @@ public sealed class PersistenceReadinessChecksTests
         services.AddHealthChecks()
             .AddDatabaseReadinessCheck<DatabaseReadinessHealthCheckTests.TestDbContext>()
             .AddDapperDatabaseReadinessCheck()
-            .AddPersistenceStartupReadinessCheck()
-            .AddFieldEncryptionReadinessCheck()
-            .AddAuditSealingReadinessCheck();
+            .AddPersistenceStartupReadinessCheck();
 
         using var provider = services.BuildServiceProvider();
         var names = provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<HealthCheckServiceOptions>>()
             .Value.Registrations.Select(r => r.Name).ToList();
 
         names.Should().OnlyHaveUniqueItems().And.Contain(
-            [HealthCheckNames.Database, HealthCheckNames.DapperDatabase, HealthCheckNames.PersistenceStartup,
-             HealthCheckNames.FieldEncryption, HealthCheckNames.AuditSealing]);
+            [HealthCheckNames.Database, HealthCheckNames.DapperDatabase, HealthCheckNames.PersistenceStartup]);
     }
 
     [Fact]
@@ -58,35 +52,5 @@ public sealed class PersistenceReadinessChecksTests
         var result = await check.CheckHealthAsync(new HealthCheckContext());
         result.Status.Should().Be(HealthStatus.Unhealthy);
         result.Description.Should().Contain("migrations");
-    }
-
-    [Fact]
-    public async Task FieldEncryptionCheck_ReportsTheKeyRingProbe()
-    {
-        var probe = Substitute.For<IEncryptionKeyProviderProbe>();
-        probe.ProbeAsync(Arg.Any<CancellationToken>()).Returns(new EncryptionKeyProviderHealth(false, "key vault unreachable"));
-
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddKeyedSingleton(FieldEncryptionServiceKeys.KeyRingProbe, probe);
-        services.AddHealthChecks().AddFieldEncryptionReadinessCheck();
-        await using var provider = services.BuildServiceProvider();
-
-        var report = await provider.GetRequiredService<HealthCheckService>().CheckHealthAsync();
-        report.Entries[HealthCheckNames.FieldEncryption].Status.Should().Be(HealthStatus.Unhealthy);
-        report.Entries[HealthCheckNames.FieldEncryption].Description.Should().Be("key vault unreachable");
-    }
-
-    [Fact]
-    public async Task AuditSealingCheck_IsDegraded_OnlyWhenTheLagExceedsTheAllowance()
-    {
-        var probe = Substitute.For<IAuditSealingProbe>();
-        var check = new AuditSealingHealthCheck(probe, TimeSpan.FromMinutes(5));
-
-        probe.ProbeAsync(Arg.Any<CancellationToken>()).Returns(new AuditSealingHealth(3, DateTimeOffset.UtcNow, TimeSpan.FromSeconds(10)));
-        (await check.CheckHealthAsync(new HealthCheckContext())).Status.Should().Be(HealthStatus.Healthy);
-
-        probe.ProbeAsync(Arg.Any<CancellationToken>()).Returns(new AuditSealingHealth(900, DateTimeOffset.UtcNow, TimeSpan.FromHours(1)));
-        (await check.CheckHealthAsync(new HealthCheckContext())).Status.Should().Be(HealthStatus.Degraded);
     }
 }

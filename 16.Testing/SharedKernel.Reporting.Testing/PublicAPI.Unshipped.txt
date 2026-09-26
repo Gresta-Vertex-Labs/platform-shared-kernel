@@ -1,0 +1,12 @@
+#nullable enable
+SharedKernel.Testing.Reporting.InMemoryReportExporter<TRow>
+SharedKernel.Testing.Reporting.InMemoryReportExporter<TRow>.ExportAsync(System.Collections.Generic.IAsyncEnumerable<TRow>! rows, SharedKernel.Reporting.Abstractions.Models.ReportDefinition<TRow>! definition, SharedKernel.Reporting.Abstractions.Models.ReportDestination! destination, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Reporting.Abstractions.Models.ReportExportOutcome!>!>!
+SharedKernel.Testing.Reporting.InMemoryReportExporter<TRow>.ExportToStreamAsync(System.Collections.Generic.IAsyncEnumerable<TRow>! rows, SharedKernel.Reporting.Abstractions.Models.ReportDefinition<TRow>! definition, System.IO.Stream! destination, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
+SharedKernel.Testing.Reporting.InMemoryReportExporter<TRow>.InMemoryReportExporter(SharedKernel.Primitives.Clocks.IClock? clock = null) -> void
+SharedKernel.Testing.Reporting.InMemoryReportExporter<TRow>.LastDefinition.get -> SharedKernel.Reporting.Abstractions.Models.ReportDefinition<TRow>?
+SharedKernel.Testing.Reporting.InMemoryReportExporter<TRow>.LastDestination.get -> SharedKernel.Reporting.Abstractions.Models.ReportDestination?
+SharedKernel.Testing.Reporting.InMemoryReportExporter<TRow>.LastRows.get -> System.Collections.Generic.IReadOnlyList<TRow>!
+SharedKernel.Testing.Reporting.InMemoryReportExporter<TRow>.Reset() -> void
+SharedKernel.Testing.Reporting.InMemoryReportExporter<TRow>.ShouldHaveExported(System.Predicate<System.Collections.Generic.IReadOnlyList<TRow>!>? rowsPredicate = null) -> void
+SharedKernel.Testing.Reporting.InMemoryReportExporter<TRow>.SimulateFailure.get -> bool
+SharedKernel.Testing.Reporting.InMemoryReportExporter<TRow>.SimulateFailure.set -> void

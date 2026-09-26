@@ -47,7 +47,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// </para>
 /// <para>
 /// <strong>Permitted exemption list</strong> (caller-controlled — carries no internal namespace
-/// guard, consistent with <c>PresentationLayeringRules</c>/<c>CompositionRootExclusivityRules</c>/
+/// guard, consistent with <c>PresentationLayeringRules</c>/
 /// <c>StorageTopologyRules</c>/<c>SearchTopologyRules</c>): none. Any future exemption must be
 /// documented in <c>00.Governance/CLAUDE.md</c> before it is applied in code.
 /// </para>
@@ -219,7 +219,7 @@ public static class IntelligenceTopologyRules
     /// <strong>Rationale:</strong> mechanizes Domain Invariant #8 / <c>10.Intelligence/CLAUDE.md</c>'s
     /// own Hard Violations entry verbatim: "Implementing <c>IHealthCheck</c>, or referencing
     /// <c>Microsoft.Extensions.Diagnostics.HealthChecks</c>, anywhere in <c>10.Intelligence</c>." —
-    /// <c>IVectorCollectionProvisioner.ProbeAsync</c> is the sanctioned readiness primitive; wiring
+    /// <c>VectorCollectionReadinessProbe</c> (an <c>IReadinessProbe</c>) is the sanctioned readiness primitive; wiring
     /// into <c>AddHealthChecks()</c> remains a <c>13.ServiceDefaults</c> concern, mirroring the
     /// <c>06.Persistence</c>/<c>08.Storage</c>/<c>09.Search</c> readiness-probe split precedent.
     /// </para>

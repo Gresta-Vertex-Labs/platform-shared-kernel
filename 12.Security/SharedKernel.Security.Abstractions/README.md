@@ -14,13 +14,14 @@ background jobs. Each arrives through a different authentication scheme with dif
 `ClaimsPrincipal` directly gets every one of those details wrong sooner or later: a GUID-parsed subject that breaks for
 `auth0|…` users, a case-insensitive scope check, a job that runs as "anonymous", a claim from a scheme nobody vetted.
 This package defines `IUserContext`, the one identity type application code reads, and the small seam authentication
-packages use to produce it. It has no ASP.NET Core dependency, so domain-adjacent code and tests use it freely.
+packages use to produce it. It is an **Abstractions**-tier package with no ASP.NET Core dependency, so
+domain-adjacent code and tests use it freely.
 
 | 👤 Caller | 🏢 Tenant | 🔑 Rights | ⏱️ Step-up |
 | --- | --- | --- | --- |
-| `IdentityKind`: User, ServicePrincipal, System, Anonymous | `ITenantProvider` with a `Guid.Empty` no-tenant sentinel | Roles and permissions, compared ordinally | `amr`, `acr` and `auth_time` of the sign-in |
-| String `SubjectId`, any identity provider format | Tenant asserted by the credential | Uninitialized values fail closed | Freshness checks against an injected clock |
-| Ready-made anonymous and system contexts | `UserContextTenantProvider` | Checks read mapped values, never raw claims | Sender-constrained token flag (DPoP, mTLS) |
+| `ActorKind` (`SharedKernel.Execution`): User, Service, System, Anonymous | `TenantId?` asserted by the credential; `null` means no tenant | Roles and permissions, compared ordinally | `amr`, `acr` and `auth_time` of the sign-in |
+| String `SubjectId`, any identity provider format | Never `Guid.Empty`: `TenantId` cannot hold it | Unmapped schemes fail closed | Freshness checks against an injected clock |
+| Ready-made anonymous and system contexts | The same `TenantId` type `IRequestContext` and persistence use | Checks read mapped values, never raw claims | Sender-constrained token flag (DPoP, mTLS) |
 
 ## Contents
 
@@ -37,41 +38,52 @@ packages use to produce it. It has no ASP.NET Core dependency, so domain-adjacen
 
 ## Install
 
-```shell
-dotnet add package SharedKernel.Security.Abstractions
+```xml
+<PackageReference Include="SharedKernel.Security.Abstractions" />
 ```
+
+The version comes from the consumer's single `SharedKernelVersion`; every SharedKernel package is released together.
 
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
-| Dependencies | None outside the .NET base class library |
+| Tier | Abstractions |
+| Dependencies | `SharedKernel.Execution` (for `ActorKind` and `TenantId`); nothing from ASP.NET Core or third parties |
 | Namespace | `SharedKernel.Security.Abstractions` |
-| Registration | None in this package. An authentication package registers `IUserContext` and `ITenantProvider`; a background host registers `SystemUserContext` |
+| Registration | None in this package. An authentication package registers `IUserContext`; a background host registers `SystemUserContext` |
 
-Reference this package from application code. Reference an authentication package only from the host's `Program.cs`.
+Reference this package from code that needs the authenticated identity (roles, scopes, step-up). Application handlers
+that only need "who and which tenant" read `IRequestContext` from `SharedKernel.Execution` instead. Reference an
+authentication package only from the host's `Program.cs`.
 
 | Companion package | Adds |
 | --- | --- |
-| [`SharedKernel.Security.Oidc`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/12.Security/SharedKernel.Security.Oidc) | JWT access tokens from any OpenID Connect provider, as `User` or `ServicePrincipal` contexts |
-| [`SharedKernel.Security.ApiKey`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/12.Security/SharedKernel.Security.ApiKey) | API key clients, as `ServicePrincipal` contexts |
-| [`SharedKernel.Security.Mtls`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/12.Security/SharedKernel.Security.Mtls) | Client certificate clients, as `ServicePrincipal` contexts |
+| [`SharedKernel.Security.Oidc`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/12.Security/SharedKernel.Security.Oidc) | JWT access tokens from any OpenID Connect provider, as `User` or `Service` contexts |
+| [`SharedKernel.Security.ApiKey`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/12.Security/SharedKernel.Security.ApiKey) | API key clients, as `Service` contexts |
+| [`SharedKernel.Security.Mtls`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/12.Security/SharedKernel.Security.Mtls) | Client certificate clients, as `Service` contexts |
 | [`SharedKernel.Security.Totp`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/12.Security/SharedKernel.Security.Totp) | Session step-up that adds `otp` to `AuthenticationMethods` |
-| [`SharedKernel.Presentation.WebApi`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/14.Presentation/SharedKernel.Presentation.WebApi) | `[RequireRole]`, `[RequireEndpointPermission]`, `[RequireFreshAuthentication]`, `[RequireAuthenticationMethod]` endpoint attributes over `IUserContext` |
-| [`SharedKernel.MultiTenancy`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/13.ServiceDefaults/SharedKernel.MultiTenancy) | Tenant resolution from claims, headers or a database, as its own `ITenantProvider` |
+| [`SharedKernel.ServiceDefaults.Security`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/13.ServiceDefaults/SharedKernel.ServiceDefaults.Security) | `AddSharedKernelRequestContext()`: the platform's `IRequestContext` over `IUserContext`, and `UseSharedKernelRequestContext()` |
+| [`SharedKernel.Presentation.Core`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/14.Presentation/SharedKernel.Presentation.Core) | `[RequireRole]`, `[RequireEndpointPermission]`, `[RequireFreshAuthentication]`, `[RequireAuthenticationMethod]` endpoint attributes over `IUserContext` (namespace `SharedKernel.Presentation.Authorization`) |
+| [`SharedKernel.MultiTenancy`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/13.ServiceDefaults/SharedKernel.MultiTenancy) | Tenant resolution from claims, headers or a database, refining the request context's tenant |
+| [`SharedKernel.Security.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/16.Testing/SharedKernel.Security.Testing) | `FakeUserContext`, `SecurityTestContextBuilder` and in-memory stores — test projects only |
 
 ## Quick start
 
-**1. Register an authentication package** in the host. It adds the scheme, its mapper, a scoped `IUserContext` and a
-scoped `ITenantProvider`.
+**1. Register an authentication package** in the host. It adds the scheme, its mapper and a scoped `IUserContext`.
+`AddSharedKernelRequestContext()` exposes the same caller as `IRequestContext` to the application pipeline and
+persistence.
 
 ```csharp
 // Program.cs
 using SharedKernel.Security.Oidc.Extensions;
+using SharedKernel.ServiceDefaults.Security;
 
 builder.Services.AddOidcAuthentication(builder.Configuration); // settings: SharedKernel:Security:Oidc
+builder.Services.AddSharedKernelRequestContext();              // IRequestContext over IUserContext
 builder.Services.AddAuthorization();
 
 WebApplication app = builder.Build();
+app.UseSharedKernelRequestContext();                            // first: correlation id and the caller scope
 app.UseAuthentication();
 app.UseAuthorization();
 ```
@@ -83,7 +95,7 @@ using SharedKernel.Security.Abstractions;
 
 app.MapGet("/me", (IUserContext caller) => Results.Ok(new
 {
-    Kind = caller.IdentityKind.ToString(),
+    Kind = caller.ActorKind.ToString(),
     caller.SubjectId,
     caller.ClientId,
     caller.TenantId,
@@ -97,25 +109,24 @@ app.MapGet("/me", (IUserContext caller) => Results.Ok(new
 
 ```csharp
 builder.Services.AddScoped<IUserContext>(_ => SystemUserContext.Instance);
-builder.Services.AddScoped<ITenantProvider, UserContextTenantProvider>();
 ```
 
 > [!TIP]
-> Authentication packages register `IUserContext` and `ITenantProvider` with `TryAdd`. A registration you make yourself
-> wins regardless of order, which is how a service supplies its own implementation.
+> Authentication packages register `IUserContext` with `TryAdd`. A registration you make yourself wins regardless of
+> order, which is how a service supplies its own implementation.
 
 ## Which type do I need?
 
 | I need to… | Use | Recipe |
 | --- | --- | --- |
-| Know who is calling and treat people, integrations and jobs differently | `IUserContext.IdentityKind` | [Read the caller](#1-read-the-caller-in-a-handler) |
+| Know who is calling and treat people, integrations and jobs differently | `IUserContext.ActorKind` | [Read the caller](#1-read-the-caller-in-a-handler) |
 | Allow an action by permission (OAuth scope) or role | `HasPermission`, `HasRole` | [Permissions and roles](#2-check-permissions-and-roles) |
 | Require a recent, strong sign-in for a payment or settings change | `WasAuthenticatedWith`, `IsAuthenticationFresherThan` | [Step-up checks](#3-require-a-recent-strong-sign-in) |
 | Require a step-up that is still recent, also on a SignalR connection | `GetAuthenticationMethodTime` | [Step-up checks](#3-require-a-recent-strong-sign-in) |
 | Run a background job under a trusted identity | `SystemUserContext` | [Background workers](#4-run-background-work-as-the-system) |
-| Get the tenant of the current operation | `ITenantProvider` | [Read the caller](#1-read-the-caller-in-a-handler) |
+| Get the tenant of the current operation | `IRequestContext.TenantId` (or `IUserContext.TenantId` for the credential's own claim) | [Read the caller](#1-read-the-caller-in-a-handler) |
 | Support an authentication scheme no package covers | `IUserContextMapper`, `UserContextResolver` | [Custom scheme](#5-map-a-custom-authentication-scheme) |
-| Feed the MediatR pipeline's authorization and caching | `IRequestContext` over `IUserContext` | [Application bridge](#6-bridge-to-the-application-pipeline) |
+| Feed the application pipeline's authorization, caching and persistence | `IRequestContext`, registered by `AddSharedKernelRequestContext()` | [Application bridge](#6-bridge-to-the-application-pipeline) |
 | Test code that reads the caller | `UserContext`, `AnonymousUserContext`, `SystemUserContext` | [Testing](#7-test-code-that-reads-the-caller) |
 | Name a standard claim without a string literal | `SecurityClaimTypes` | [Reference](#securityclaimtypes) |
 
@@ -123,16 +134,17 @@ builder.Services.AddScoped<ITenantProvider, UserContextTenantProvider>();
 
 ### Four kinds of caller
 
-Every `IUserContext` has an `IdentityKind`. `IsAuthenticated` is `true` for every kind except `Anonymous`, so branch on
-the kind when a job or an integration must not be treated like a person.
+Every `IUserContext` has an `ActorKind` — the same enum `IRequestContext` uses, from `SharedKernel.Execution.Context`.
+`IsAuthenticated` is `true` for every kind except `Anonymous`, so branch on the kind when a job or an integration must
+not be treated like a person.
 
-| Member | `User` | `ServicePrincipal` | `System` | `Anonymous` |
+| Member | `User` | `Service` | `System` | `Anonymous` |
 | --- | --- | --- | --- | --- |
 | Who | A person, signed in through an identity provider | An application acting for itself: client-credentials token, API key, client certificate | Trusted code with no caller: scheduled job, consumer, workflow activity | No authenticated caller |
 | `IsAuthenticated` | `true` | `true` | `true` | `false` |
 | `SubjectId` | The subject (`sub`, or the configured claim) | The client's id | `null` | `null` |
 | `ClientId` | The application the user came through (`azp`, `client_id`), if present | The client's id | `null` | `null` |
-| `TenantId` | From the credential, if it carries a GUID | From the credential, if it carries a GUID | `null` | `null` |
+| `TenantId` (`TenantId?`) | From the credential, if it carries a non-empty GUID | From the credential, if it carries a non-empty GUID | `null` | `null` |
 | `SessionId` | `sid`, else the token id | `sid` or token id for OIDC tokens; `null` for API keys and certificates | `null` | `null` |
 | `Name`, `Email` | From the credential | Usually `null` | `null` | `null` |
 | `Roles`, `Permissions` | Granted roles and scopes | Granted roles and scopes | Empty | Empty |
@@ -140,10 +152,11 @@ the kind when a job or an integration must not be treated like a person.
 | `IsSenderConstrained` | DPoP-bound or certificate-bound token | DPoP-bound or certificate-bound token | `false` | `false` |
 | `HasRole`, `HasPermission`, `WasAuthenticatedWith`, `IsAuthenticationFresherThan` | Ordinal checks | Ordinal checks | Always `false` | Always `false` |
 
-`SubjectId` is never `null` for `User` and `ServicePrincipal`, and always `null` for the other two. It is a string
+`SubjectId` is never `null` for `User` and `Service`, and always `null` for the other two. It is a string
 because identity providers issue subjects in any format: `auth0|5f7c…`, Okta ids, pairwise identifiers, GUIDs.
 
-`IdentityKind.Anonymous` is `0`, the enum's default, so an uninitialized value means "no caller", never "someone".
+`IsAuthenticated` is fixed by the type, not by a default enum value: `UserContext` is always authenticated and accepts
+only `User` or `Service`, `SystemUserContext` is authenticated, and `AnonymousUserContext` never is.
 
 ### From authentication to `IUserContext`
 
@@ -194,9 +207,9 @@ sequenceDiagram
 | --- | --- | --- |
 | `IUserContextMapper` for its scheme | Each authentication package (`TryAddEnumerable`) | Singleton |
 | `IUserContext` resolved through `UserContextResolver` | Each authentication package, only when none is registered | Scoped |
-| `ITenantProvider` as `UserContextTenantProvider` | Each authentication package, only when none is registered | Scoped |
 | `IUserContext` as `SystemUserContext.Instance` | A host without incoming requests, itself | Scoped |
-| `ITenantProvider` from resolved tenant | `SharedKernel.MultiTenancy`, when a service uses it | Scoped |
+| `IRequestContext` over `IUserContext`, plus `IRequestContextAccessor` | `SharedKernel.ServiceDefaults.Security`'s `AddSharedKernelRequestContext()` | Transient (the ambient scope, else the request's) |
+| A refined tenant for the request | `SharedKernel.MultiTenancy`'s middleware, as an inner `RequestContextScope` | Per request |
 
 An `AnonymousUserContext.Instance` registered as an instance is treated as a placeholder: authentication packages
 remove it and register the real context.
@@ -207,21 +220,25 @@ Complete examples. Each lists the `using` directives it needs.
 
 ### 1. Read the caller in a handler
 
-Decide by `IdentityKind`, take the tenant from `ITenantProvider`, and return expected failures as `Result` values.
+Decide by `ActorKind`, take the tenant from `IRequestContext`, and return expected failures as `Result` values.
+`IRequestContext.TenantId` is the credential's tenant unless `SharedKernel.MultiTenancy` refined it for this request,
+so it is the tenant persistence filters by; `IUserContext.TenantId` is always the credential's own claim.
 
 ```csharp
+using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Security.Abstractions;
 
-public sealed record Order(Guid Id, Guid TenantId, string PlacedBy, decimal Total);
+public sealed record Order(Guid Id, TenantId TenantId, string PlacedBy, decimal Total);
 
 public interface IOrderStore
 {
     Task AddAsync(Order order, CancellationToken ct);
 }
 
-public sealed class PlaceOrderHandler(IUserContext caller, ITenantProvider tenant, IOrderStore orders)
+public sealed class PlaceOrderHandler(IUserContext caller, IRequestContext request, IOrderStore orders)
 {
     public async Task<Result<Guid>> HandleAsync(decimal total, CancellationToken ct)
     {
@@ -230,11 +247,11 @@ public sealed class PlaceOrderHandler(IUserContext caller, ITenantProvider tenan
             return Error.Unauthorized("orders.unauthenticated", "Sign in to place an order.");
         }
 
-        string? placedBy = caller.IdentityKind switch
+        string? placedBy = caller.ActorKind switch
         {
-            IdentityKind.User => caller.SubjectId,                          // a person
-            IdentityKind.ServicePrincipal => $"client:{caller.SubjectId}",  // an integration acting for itself
-            _ => null,                                                      // System: jobs do not place orders
+            ActorKind.User => caller.SubjectId,                  // a person
+            ActorKind.Service => $"client:{caller.SubjectId}",   // an integration acting for itself
+            _ => null,                                           // System: jobs do not place orders
         };
 
         if (placedBy is null)
@@ -242,8 +259,7 @@ public sealed class PlaceOrderHandler(IUserContext caller, ITenantProvider tenan
             return Error.Forbidden("orders.caller_not_allowed", "This caller cannot place orders.");
         }
 
-        Guid tenantId = tenant.TenantId;
-        if (tenantId == Guid.Empty)
+        if (request.TenantId is not { } tenantId)
         {
             return Error.Forbidden("orders.tenant_required", "Orders are placed within a tenant.");
         }
@@ -298,8 +314,10 @@ public sealed class RefundPolicy(IUserContext caller)
 ```
 
 The checks read the mapped `Permissions` and `Roles`, never raw claims: a `roles` claim the mapper did not map grants
-nothing. For HTTP endpoints, `[RequireEndpointPermission]` and `[RequireRole]` from `SharedKernel.Presentation.WebApi` run the
-same checks declaratively. For a service-specific claim, read it with `FindClaim` or `FindClaims`:
+nothing. For HTTP endpoints, `[RequireEndpointPermission]` and `[RequireRole]` from `SharedKernel.Presentation.Core` (namespace `SharedKernel.Presentation.Authorization`) run the
+same checks declaratively; on the use case itself, `[RequirePermission]` (`SharedKernel.Application.Authorization`)
+checks a permission against `IRequestContext` on every path. For a service-specific claim, read it with `FindClaim`
+or `FindClaims`:
 
 ```csharp
 IReadOnlyList<string> regions = caller.FindClaims("allowed_regions"); // every value, in credential order
@@ -311,6 +329,7 @@ For a payout or a change of bank details, ask how and how recently the user auth
 is valid. Take the current time from `IClock`.
 
 ```csharp
+using SharedKernel.Execution.Context;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
@@ -322,7 +341,7 @@ public sealed class PayoutStepUpPolicy(IUserContext caller, IClock clock)
 
     public Result EnsureStepUp()
     {
-        if (caller.IdentityKind != IdentityKind.User)
+        if (caller.ActorKind != ActorKind.User)
         {
             return Error.Forbidden("payouts.user_required", "Payouts are initiated by a signed-in person.");
         }
@@ -398,8 +417,7 @@ using SharedKernel.Security.Abstractions;
 
 HostApplicationBuilder builder = Host.CreateApplicationBuilder(args);
 
-builder.Services.AddScoped<IUserContext>(_ => SystemUserContext.Instance);
-builder.Services.AddScoped<ITenantProvider, UserContextTenantProvider>(); // Guid.Empty: no ambient tenant
+builder.Services.AddScoped<IUserContext>(_ => SystemUserContext.Instance); // no tenant: TenantId is null
 builder.Services.AddScoped<IStatementWriter, MyStatementWriter>();
 builder.Services.AddScoped<StatementGenerator>();
 builder.Services.AddHostedService<NightlyStatementJob>();
@@ -408,6 +426,8 @@ builder.Build().Run();
 ```
 
 ```csharp
+using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Security.Abstractions;
@@ -434,20 +454,20 @@ public sealed class NightlyStatementJob(IServiceScopeFactory scopes) : Backgroun
 
 public interface IStatementWriter
 {
-    Task WriteAsync(Guid tenantId, CancellationToken ct);
+    Task WriteAsync(TenantId tenantId, CancellationToken ct);
 }
 
 public sealed class StatementGenerator(IUserContext caller, IStatementWriter statements)
 {
-    public async Task<Result> GenerateForTenantsAsync(IReadOnlyList<Guid> tenantIds, CancellationToken ct)
+    public async Task<Result> GenerateForTenantsAsync(IReadOnlyList<TenantId> tenantIds, CancellationToken ct)
     {
         // Only trusted background code may generate statements for every tenant.
-        if (caller.IdentityKind != IdentityKind.System)
+        if (caller.ActorKind != ActorKind.System)
         {
             return Error.Forbidden("statements.system_only", "Statements are generated by the scheduler.");
         }
 
-        foreach (Guid tenantId in tenantIds)
+        foreach (TenantId tenantId in tenantIds)
         {
             await statements.WriteAsync(tenantId, ct); // the tenant is passed explicitly, not read ambiently
         }
@@ -458,7 +478,10 @@ public sealed class StatementGenerator(IUserContext caller, IStatementWriter sta
 ```
 
 `SystemUserContext` holds no roles or permissions: every `HasRole` and `HasPermission` returns `false`. What a system
-caller may do is decided by your own rules, keyed on `IdentityKind.System`.
+caller may do is decided by your own rules, keyed on `ActorKind.System`. Code that goes through the application
+pipeline, persistence or an outbound client also needs an `IRequestContext`: open
+`RequestContextScope.Begin(new SystemRequestContext([...], "statement-job", correlationId: CorrelationIds.New()))`
+around the work, so outbound calls and audit records carry the job as their actor.
 
 > [!WARNING]
 > Register `SystemUserContext` only in hosts that serve no requests. Authentication packages keep an existing
@@ -469,13 +492,14 @@ caller may do is decided by your own rules, keyed on `IdentityKind.System`.
 ### 5. Map a custom authentication scheme
 
 For a scheme no package covers, write the handler and a mapper whose `AuthenticationType` is the scheme name. Here a
-partner signs requests; the partner id becomes a `ServicePrincipal`.
+partner signs requests; the partner id becomes a `Service` caller.
 
 ```csharp
 using System.Security.Claims;
 using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
+using SharedKernel.Execution.Context;
 using SharedKernel.Security.Abstractions;
 
 /// <summary>Your signature check. Returns the partner id for a correctly signed request, otherwise null.</summary>
@@ -520,7 +544,7 @@ public sealed class PartnerSignatureUserContextMapper : IUserContextMapper
             return AnonymousUserContext.Instance; // never an authenticated context without a subject
         }
 
-        return new UserContext(IdentityKind.ServicePrincipal, partnerId, identity.Claims)
+        return new UserContext(ActorKind.Service, partnerId, identity.Claims)
         {
             ClientId = partnerId,
             Permissions = [.. identity.FindAll(SecurityClaimTypes.Scope).Select(claim => claim.Value)],
@@ -542,12 +566,11 @@ builder.Services.AddAuthentication()
 builder.Services.TryAddEnumerable(
     ServiceDescriptor.Singleton<IUserContextMapper, PartnerSignatureUserContextMapper>());
 
-// Only needed when no authentication package is registered; the packages add the same two lines.
+// Only needed when no authentication package is registered; the packages add the same registration.
 builder.Services.AddHttpContextAccessor();
 builder.Services.TryAddScoped<IUserContext>(services => UserContextResolver.Resolve(
     services.GetRequiredService<IHttpContextAccessor>().HttpContext?.User,
     services.GetServices<IUserContextMapper>()));
-builder.Services.TryAddScoped<ITenantProvider, UserContextTenantProvider>();
 ```
 
 The identity must be on `HttpContext.User`: make the scheme the default, or name it in the endpoint's authorization
@@ -556,47 +579,39 @@ to anonymous.
 
 ### 6. Bridge to the application pipeline
 
-[`SharedKernel.Application`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/05.Application/SharedKernel.Application)
-authorizes and caches through its own `IRequestContext`, which does not reference this package. A web host normally
-registers it with `SharedKernel.ServiceDefaults.Security`'s `services.AddSharedKernelRequestContext()`, which also
-reports the actor kind, client and session that `05.Application` uses, for example to scope idempotency keys per caller.
-The hand-written bridge below leaves those at their defaults: every authenticated caller is `ActorKind.User`, with no
-client.
-
-```csharp
-using SharedKernel.Application.Context;
-using SharedKernel.Security.Abstractions;
-
-public sealed class UserRequestContext(IUserContext user, ITenantProvider tenants) : IRequestContext
-{
-    public bool IsAuthenticated => user.IsAuthenticated;
-
-    public string? UserId => user.SubjectId;
-
-    public Guid? TenantId => tenants.TenantId == Guid.Empty ? null : tenants.TenantId;
-
-    public ValueTask<bool> HasPermissionAsync(string permission, CancellationToken cancellationToken) =>
-        ValueTask.FromResult(user.HasPermission(permission));
-}
-```
+The application pipeline (`SharedKernel.Application.Pipeline`), persistence and every outbound client read the caller
+as `SharedKernel.Execution`'s `IRequestContext`, which does not reference this package. Do not write the bridge
+yourself: `SharedKernel.ServiceDefaults.Security` registers it, and also reports the actor kind, client and session
+that the pipeline uses, for example to scope idempotency keys per tenant and caller.
 
 ```csharp
 // Program.cs of a web host
-builder.Services.AddScoped<IRequestContext, UserRequestContext>();
+using SharedKernel.ServiceDefaults.Security;
 
-// Program.cs of a worker host: an explicit identity and permission set instead
-builder.Services.AddScoped<IRequestContext>(_ =>
-    new SystemRequestContext(["statements:generate"], identity: "statement-job"));
+builder.Services.AddOidcAuthentication(builder.Configuration);
+builder.Services.AddSharedKernelRequestContext();   // IRequestContext + IRequestContextAccessor over IUserContext
+
+app.UseSharedKernelRequestContext();                // before UseExceptionHandler(): owns the correlation id and scope
 ```
 
-Reading the tenant through `ITenantProvider` rather than `IUserContext.TenantId` keeps the bridge correct when the
-service resolves tenants another way, for example with `SharedKernel.MultiTenancy`.
+| `IRequestContext` | From `IUserContext` |
+| --- | --- |
+| `IsAuthenticated`, `ClientId`, `SessionId` | The same members |
+| `UserId` | `SubjectId`, else `ClientId`; `null` when unauthenticated |
+| `TenantId` | `TenantId` (`null` fails closed in persistence), unless `SharedKernel.MultiTenancy` refines it |
+| `ActorKind` | `ActorKind` when authenticated, otherwise `Anonymous` |
+| `HasPermissionAsync` | `HasPermission` (ordinal) |
+
+A worker host with no requests opens a `SystemRequestContext` scope around each unit of work instead (recipe 4).
 
 ### 7. Test code that reads the caller
 
-No mocks and no web host: build a `UserContext` directly, or use the two singletons.
+No mocks and no web host: build a `UserContext` directly, or use the two singletons. `SharedKernel.Security.Testing`
+adds `FakeUserContext` and `SecurityTestContextBuilder` when a test needs a mutable caller.
 
 ```csharp
+using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Security.Abstractions;
 using Xunit;
@@ -608,7 +623,7 @@ public sealed class PayoutStepUpPolicyTests
     [Fact]
     public void RecentMfaSignIn_IsAllowed()
     {
-        var caller = new UserContext(IdentityKind.User, "auth0|5f7c1e")
+        var caller = new UserContext(ActorKind.User, "auth0|5f7c1e")
         {
             AuthenticationMethods = ["pwd", "mfa"],
             AuthTime = Now.AddMinutes(-2),
@@ -620,7 +635,7 @@ public sealed class PayoutStepUpPolicyTests
     [Fact]
     public void OldSignIn_IsRejected()
     {
-        var caller = new UserContext(IdentityKind.User, "auth0|5f7c1e")
+        var caller = new UserContext(ActorKind.User, "auth0|5f7c1e")
         {
             AuthenticationMethods = ["mfa"],
             AuthTime = Now.AddHours(-1),
@@ -639,12 +654,13 @@ public sealed class PayoutStepUpPolicyTests
     }
 
     [Fact]
-    public void TenantProvider_UsesTheCallersTenant()
+    public void Caller_CarriesTheCredentialsTenant()
     {
-        var tenantId = Guid.Parse("0b7ad0a4-2d8c-4b9e-8a8e-4f5b1ce1e0d2");
-        var caller = new UserContext(IdentityKind.ServicePrincipal, "billing-sync") { TenantId = tenantId };
+        TenantId tenantId = TenantId.Parse("0b7ad0a4-2d8c-4b9e-8a8e-4f5b1ce1e0d2");
+        var caller = new UserContext(ActorKind.Service, "billing-sync") { TenantId = tenantId };
 
-        Assert.Equal(tenantId, new UserContextTenantProvider(caller).TenantId);
+        Assert.Equal(tenantId, caller.TenantId);
+        Assert.Null(SystemUserContext.Instance.TenantId); // no tenant is null, never Guid.Empty
     }
 
     private sealed class FixedClock(DateTimeOffset now) : IClock
@@ -667,26 +683,26 @@ handler wiring or claim renaming, so also cover the scheme end to end with a tes
 | Type | Kind | Purpose |
 | --- | --- | --- |
 | `IUserContext` | Interface | The caller of the current operation |
-| `IdentityKind` | Enum | `Anonymous = 0`, `User = 1`, `ServicePrincipal = 2`, `System = 3` |
-| `UserContext` | Sealed class | Immutable context for a `User` or `ServicePrincipal`, built by a mapper or a test |
+| `UserContext` | Sealed class | Immutable context for a `User` or `Service` caller, built by a mapper or a test |
 | `AnonymousUserContext` | Sealed class | `Instance`: no caller; every check `false` |
 | `SystemUserContext` | Sealed class | `Instance`: trusted code without a caller; authenticated, no roles or permissions |
 | `IUserContextMapper` | Interface | Turns one scheme's `ClaimsIdentity` into an `IUserContext` |
 | `UserContextResolver` | Static class | `Resolve(ClaimsPrincipal?, IEnumerable<IUserContextMapper>)` |
-| `ITenantProvider` | Interface | `Guid TenantId`; `Guid.Empty` when the operation has no tenant |
-| `UserContextTenantProvider` | Sealed class | `ITenantProvider` returning `IUserContext.TenantId ?? Guid.Empty`, read on every access |
 | `SecurityClaimTypes` | Static class | Short claim type names |
 | `AuthenticationMethodTimeClaim` | Static class | `Create(method, verifiedAt)` and `Read(claims)` for `amr_time` claims: when a method was verified |
+
+Two types come from `SharedKernel.Execution`: `ActorKind` (`SharedKernel.Execution.Context`: `User = 0`, `Service = 1`,
+`System = 2`, `Anonymous = 3`) and `TenantId` (`SharedKernel.Execution.Tenancy`, a GUID that is never `Guid.Empty`).
 
 ### `IUserContext`
 
 | Member | Type | Meaning |
 | --- | --- | --- |
-| `IdentityKind` | `IdentityKind` | The kind of caller |
+| `ActorKind` | `ActorKind` | The kind of caller |
 | `IsAuthenticated` | `bool` | `true` for every kind except `Anonymous` |
-| `SubjectId` | `string?` | Stable id of the user or service principal, unique per issuer; non-null exactly for `User` and `ServicePrincipal` |
+| `SubjectId` | `string?` | Stable id of the user or service, unique per issuer; non-null exactly for `User` and `Service` |
 | `ClientId` | `string?` | The application the call came through (`azp`/`client_id`, or the API key's or certificate's client id) |
-| `TenantId` | `Guid?` | The tenant the credential asserts; `null` when absent or not a GUID |
+| `TenantId` | `TenantId?` | The tenant the credential asserts; `null` when absent, empty or not a GUID |
 | `SessionId` | `string?` | The sign-in session (`sid`), or the token id when the provider issues no session id |
 | `Name` | `string?` | Display name |
 | `Email` | `string?` | Email address; not verified unless the issuer says so |
@@ -707,7 +723,7 @@ handler wiring or claim renaming, so also cover the scheme end to end with a tes
 ### `UserContext`
 
 ```csharp
-var context = new UserContext(IdentityKind.User, subjectId: "auth0|5f7c1e", claims: identity.Claims)
+var context = new UserContext(ActorKind.User, subjectId: "auth0|5f7c1e", claims: identity.Claims)
 {
     ClientId = "web-portal",
     TenantId = tenantId,
@@ -726,8 +742,8 @@ var context = new UserContext(IdentityKind.User, subjectId: "auth0|5f7c1e", clai
 
 | Topic | Behavior |
 | --- | --- |
-| Constructor | `UserContext(IdentityKind identityKind, string subjectId, IEnumerable<Claim>? claims = null)` |
-| Allowed kinds | `User` and `ServicePrincipal` only; use the singletons for `System` and `Anonymous` |
+| Constructor | `UserContext(ActorKind actorKind, string subjectId, IEnumerable<Claim>? claims = null)` |
+| Allowed kinds | `User` and `Service` only; use the singletons for `System` and `Anonymous` |
 | Immutability | Every optional member is `init`-only |
 | Copies | `claims`, `Roles`, `Permissions`, `AuthenticationMethods` and `AuthenticationMethodTimes` (keyed ordinally) are copied when set; later changes to the source do not affect the context |
 | Duplicates | Kept as given; mappers normalize |
@@ -773,14 +789,13 @@ claims, so these are the names on the `ClaimsPrincipal`.
 
 | Call | Throws | When |
 | --- | --- | --- |
-| `new UserContext(...)` | `ArgumentOutOfRangeException` | `identityKind` is not `User` or `ServicePrincipal` (checked first) |
+| `new UserContext(...)` | `ArgumentOutOfRangeException` | `actorKind` is not `User` or `Service` (checked first) |
 | `new UserContext(...)` | `ArgumentException` (`ArgumentNullException` for `null`) | `subjectId` is null, empty or whitespace |
 | `UserContext` `Roles`/`Permissions`/`AuthenticationMethods`/`AuthenticationMethodTimes` `init` | `ArgumentNullException` | Set to `null` |
 | `UserContext.FindClaim`, `FindClaims`, `HasRole`, `HasPermission`, `WasAuthenticatedWith`, `GetAuthenticationMethodTime` | `ArgumentNullException` | Argument is `null` |
 | `AuthenticationMethodTimeClaim.Create` | `ArgumentException` / `ArgumentOutOfRangeException` | `method` is null, empty or whitespace / `verifiedAt` is before the Unix epoch |
 | `AuthenticationMethodTimeClaim.Read` | `ArgumentNullException` | `claims` is `null`; malformed values are skipped, never thrown |
 | `UserContextResolver.Resolve` | `ArgumentNullException` | `mappers` is `null` |
-| `new UserContextTenantProvider(null)` | `ArgumentNullException` | Always |
 
 This package writes no logs and returns no `Result` values.
 
@@ -790,8 +805,8 @@ This package writes no logs and returns no `Result` values.
 
 | Threat | Protection |
 | --- | --- |
-| An uninitialized or default identity treated as a caller | `IdentityKind.Anonymous` is `0`; `IsAuthenticated` follows the kind |
-| A context with a kind but no subject | `UserContext` requires a non-blank subject and accepts only `User` and `ServicePrincipal` |
+| An uninitialized identity treated as a caller | `IsAuthenticated` is fixed by the type: only `UserContext` and `SystemUserContext` are authenticated, and `UserContext` requires a subject |
+| A context with a kind but no subject | `UserContext` requires a non-blank subject and accepts only `User` and `Service` |
 | An identity from an unvetted scheme becoming a caller | Only identities with a mapper for their exact `AuthenticationType` are mapped; others resolve to anonymous |
 | An identity that reports itself unauthenticated | Skipped, even when its authentication type has a mapper |
 | A scope granted by case variation (`Orders.Write` for `orders.write`) | Ordinal comparison in every check |
@@ -802,7 +817,7 @@ This package writes no logs and returns no `Result` values.
 | A step-up method staying on a long-lived connection's principal for ever | The method carries its verification time (`amr_time`), which a check with a maximum age compares with the clock on every call |
 | A recorded time standing in for a method the caller does not have | `GetAuthenticationMethodTime` answers only for methods in `AuthenticationMethods` |
 | Background jobs inheriting privileges | `SystemUserContext` holds no roles or permissions |
-| Code without a tenant reading another tenant's data | `ITenantProvider` returns `Guid.Empty`, which matches no real tenant |
+| Code without a tenant reading another tenant's data | No tenant is `null` (`TenantId` cannot hold `Guid.Empty`), and persistence fails closed on `null` |
 
 ### What it does not protect against
 
@@ -830,14 +845,14 @@ as described in the [security policy](https://github.com/Gresta-Vertex-Labs/plat
 
 | ❌ Don't | ✅ Do | Why |
 | --- | --- | --- |
-| Register `IUserContext` or `ITenantProvider` as a singleton, or inject them into a singleton | Keep them scoped; resolve them inside a scope | A singleton captures the first request's caller and serves it to every later request. The architecture rule `SecurityArchitectureRules.NoSingletonRegistrationOfSecurityContextTypes` (`SharedKernel.ArchitectureTests`) flags `AddSingleton<IUserContext>` and `AddSingleton<ITenantProvider>` |
+| Register `IUserContext` as a singleton, or inject it into a singleton | Keep it scoped; resolve it inside a scope | A singleton captures the first request's caller and serves it to every later request. The architecture rule `SecurityArchitectureRules.NoSingletonRegistrationOfSecurityContextTypes` (`SharedKernel.ArchitectureTests`) flags `AddSingleton<IUserContext>` |
 | Inject `ClaimsPrincipal`, `HttpContext` or `IHttpContextAccessor` to read the caller | Inject `IUserContext` | Raw claims skip the mapper rules: unknown schemes, claim names, normalization. Analyzer `SK0031` flags the injection |
 | Compare permissions with `OrdinalIgnoreCase` or `ToLowerInvariant()` | Call `HasPermission` | OAuth scopes are case-sensitive; ignoring case grants rights nobody issued |
 | `Guid.Parse(caller.SubjectId)` or a `uuid` column for subjects | Store `SubjectId` as text | Providers issue `auth0\|…`, Okta and pairwise ids; parsing fails or turns users into something else |
-| Take the tenant from a header, query string or request body | Use `ITenantProvider` | Unauthenticated input lets a caller pick another tenant |
-| Allow a privileged action on `IsAuthenticated` alone | Branch on `IdentityKind` | Service principals and the system context are authenticated too |
+| Take the tenant from a header, query string or request body in application code | Read `IRequestContext.TenantId` (resolved by the host) | Unauthenticated input lets a caller pick another tenant |
+| Allow a privileged action on `IsAuthenticated` alone | Branch on `ActorKind` | Service callers and the system context are authenticated too |
 | Register `SystemUserContext` in a host that serves requests | Register it only in hosts without incoming requests | Authentication packages keep your registration, so every request would run as the system |
-| Construct `UserContext` with `IdentityKind.System` or `Anonymous` | Use `SystemUserContext.Instance`, `AnonymousUserContext.Instance` | The constructor throws `ArgumentOutOfRangeException` |
+| Construct `UserContext` with `ActorKind.System` or `Anonymous` | Use `SystemUserContext.Instance`, `AnonymousUserContext.Instance` | The constructor throws `ArgumentOutOfRangeException` |
 | Check `FindClaim("roles") == "admin"` | Call `HasRole("admin")` | Mappers normalize multi-valued and configured claim names; the raw claim may not be the one that counts |
 | Pass `DateTimeOffset.UtcNow` to `IsAuthenticationFresherThan` | Pass `IClock.UtcNow` | Tests can move an injected clock; analyzer `SK0001` flags direct reads |
 | Use `Email` as the key for a user | Use `SubjectId` (with the issuer) | Email addresses change and may be unverified |
@@ -849,16 +864,20 @@ as described in the [security policy](https://github.com/Gresta-Vertex-Labs/plat
 Rules for generating code with this package. Each line is a rule.
 
 ```text
-INJECT       IUserContext (caller) and ITenantProvider (tenant) in application code. Both are scoped.
+INJECT       IUserContext (caller, credential tenant, rights) in edge code; IRequestContext (SharedKernel.Execution)
+             in handlers, persistence and clients. Both are resolved per request.
 REGISTER     Nothing from this package. Hosts call an authentication package (AddOidcAuthentication,
              AddManagedApiKeyAuthentication, AddApiKeyAuthentication, AddMtlsAuthentication), which registers
-             IUserContextMapper (singleton), IUserContext and ITenantProvider (scoped, TryAdd).
-WORKERS      Host without requests: services.AddScoped<IUserContext>(_ => SystemUserContext.Instance);
-             services.AddScoped<ITenantProvider, UserContextTenantProvider>(). Never in a web host.
-KINDS        IdentityKind: Anonymous(0) | User | ServicePrincipal | System. IsAuthenticated == (kind != Anonymous).
-             Branch on IdentityKind for privileged actions, not on IsAuthenticated.
-SUBJECT      SubjectId is string?; non-null exactly for User and ServicePrincipal. Never parse as Guid.
-TENANT       ITenantProvider.TenantId is Guid; Guid.Empty = no tenant. IUserContext.TenantId is Guid?.
+             IUserContextMapper (singleton) and IUserContext (scoped, TryAdd); AddSharedKernelRequestContext()
+             (SharedKernel.ServiceDefaults.Security) adds IRequestContext over it.
+WORKERS      Host without requests: services.AddScoped<IUserContext>(_ => SystemUserContext.Instance), and
+             RequestContextScope.Begin(new SystemRequestContext([...], "job-name")) around each unit of work.
+             Never in a web host.
+KINDS        ActorKind (SharedKernel.Execution.Context): User(0) | Service | System | Anonymous.
+             IsAuthenticated == (kind != Anonymous). Branch on ActorKind for privileged actions, not on IsAuthenticated.
+SUBJECT      SubjectId is string?; non-null exactly for User and Service. Never parse as Guid.
+TENANT       IUserContext.TenantId is TenantId? (SharedKernel.Execution.Tenancy); null = no tenant; never Guid.Empty.
+             The operation's tenant is IRequestContext.TenantId (MultiTenancy may refine it).
 CHECKS       HasPermission(scope), HasRole(role), WasAuthenticatedWith(amr): ordinal, case-sensitive.
              FindClaim(type) first value; FindClaims(type) all values. Use SecurityClaimTypes constants.
 STEP-UP      caller.WasAuthenticatedWith("mfa") && caller.IsAuthenticationFresherThan(maxAge, clock.UtcNow).
@@ -866,38 +885,38 @@ STEP-UP      caller.WasAuthenticatedWith("mfa") && caller.IsAuthenticationFreshe
 RECENT AMR   caller.GetAuthenticationMethodTime("otp") is { } at && at - now <= UserContext.MaxFutureAuthTime
              && now - at <= maxAge: the method's own time (amr_time, else AuthTime). Needed wherever the principal
              outlives the step-up (SignalR, gRPC streams). At the HTTP boundary:
-             [RequireAuthenticationMethod("otp", MaxAgeSeconds = n)] (SharedKernel.Presentation.WebApi), on hub methods.
+             [RequireAuthenticationMethod("otp", MaxAgeSeconds = n)] (SharedKernel.Presentation.Core, enforced by
+             SharedKernel.Presentation.WebApi), on hub methods.
              Mappers set AuthenticationMethodTimes = AuthenticationMethodTimeClaim.Read(identity.Claims); code that adds
              an amr value after sign-in adds AuthenticationMethodTimeClaim.Create(method, verifiedAt) with it.
 ERRORS       No caller -> Error.Unauthorized (401). Authenticated but not allowed -> Error.Forbidden (403).
              (14.Presentation's step-up requirements answer an authenticated caller 401 unauthorized.step_up_required.)
 MAPPER       class : IUserContextMapper { AuthenticationType => scheme name; Map(identity) returns
-             new UserContext(IdentityKind.User|ServicePrincipal, subjectId, identity.Claims) { ... }
+             new UserContext(ActorKind.User|Service, subjectId, identity.Claims) { ... }
              or AnonymousUserContext.Instance when the subject is missing }.
              Register: TryAddEnumerable(ServiceDescriptor.Singleton<IUserContextMapper, TMapper>()).
              Handler identity: new ClaimsIdentity(claims, Scheme.Name).
 RESOLVE      UserContextResolver.Resolve(httpContext?.User, services.GetServices<IUserContextMapper>()).
-BRIDGE       Prefer services.AddSharedKernelRequestContext() (SharedKernel.ServiceDefaults.Security). By hand:
-             IRequestContext (SharedKernel.Application.Context): IsAuthenticated, UserId = SubjectId,
-             TenantId from ITenantProvider (Guid.Empty -> null), HasPermissionAsync -> HasPermission.
-TESTS        new UserContext(IdentityKind.User, "subject") { Roles = [...], Permissions = [...], AuthTime = ... };
-             AnonymousUserContext.Instance; SystemUserContext.Instance; new UserContextTenantProvider(context).
-FORBIDDEN    AddSingleton<IUserContext>/<ITenantProvider>; injecting ClaimsPrincipal/HttpContext/IHttpContextAccessor
-             to read identity; case-insensitive permission or role compares; Guid.Parse(SubjectId); tenant ids from
-             headers, query or body; UserContext with System or Anonymous kind; claim-type string literals.
+BRIDGE       Never hand-written: AddSharedKernelRequestContext(). UserId = SubjectId ?? ClientId, same ActorKind
+             (Anonymous when unauthenticated), same TenantId, HasPermissionAsync -> HasPermission.
+TESTS        new UserContext(ActorKind.User, "subject") { Roles = [...], Permissions = [...], AuthTime = ... };
+             AnonymousUserContext.Instance; SystemUserContext.Instance; SharedKernel.Security.Testing's FakeUserContext.
+FORBIDDEN    AddSingleton<IUserContext>; injecting ClaimsPrincipal/HttpContext/IHttpContextAccessor to read identity;
+             case-insensitive permission or role compares; Guid.Parse(SubjectId); tenant ids from headers, query or
+             body in application code; UserContext with System or Anonymous kind; claim-type string literals.
 ```
 
 ## Compatibility and guarantees
 
 - **Public API is tracked** with `Microsoft.CodeAnalysis.PublicApiAnalyzers`; changes are deliberate and reviewed.
 - **Every public member is documented**, including the exceptions it throws.
-- **No dependencies**: only `System.Security.Claims` from the base class library. Domain-adjacent libraries and test
+- **No web or third-party dependencies**: `System.Security.Claims` plus `SharedKernel.Execution`. Domain-adjacent libraries and test
   projects reference it without a web stack.
 - **Thread-safe**: `UserContext` is immutable after construction, the two singletons are stateless, and
   `UserContextResolver` is a stateless static class.
-- **Fail-closed defaults**: the default `IdentityKind`, an unmapped scheme, a missing subject and a missing `AuthTime`
+- **Fail-closed defaults**: an unmapped scheme, a missing subject, a missing tenant and a missing `AuthTime`
   all resolve to "no" rather than "yes".
 
 **Deliberately not included:** dependency injection extensions (authentication packages and hosts own registration),
-authentication handlers, endpoint authorization attributes (`SharedKernel.Presentation.WebApi`), tenant resolution
+authentication handlers, endpoint authorization attributes (`SharedKernel.Presentation.Core`), tenant resolution
 strategies (`SharedKernel.MultiTenancy`), claims transformations, per-issuer subject namespacing, and logging.

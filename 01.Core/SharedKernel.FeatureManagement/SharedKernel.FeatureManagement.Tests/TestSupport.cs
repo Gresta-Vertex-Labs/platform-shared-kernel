@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using OpenFeature;
 using OpenFeature.Hosting;
+using SharedKernel.Execution.Tenancy;
 
 namespace SharedKernel.FeatureManagement.Tests;
 
@@ -85,3 +86,16 @@ public sealed record CheckoutSettings(int Steps, bool ExpressPay, string Title, 
 
 [JsonSerializable(typeof(CheckoutSettings))]
 internal sealed partial class TestJsonContext : JsonSerializerContext;
+
+/// <summary>
+/// Tenants used across the tests. The <c>*Text</c> constants are <see cref="TenantId.ToString()"/> of each tenant,
+/// which is how a tenant appears as a group name in flag configuration.
+/// </summary>
+internal static class TestTenants
+{
+    public const string AcmeText = "0f8fad5b-d9cb-469f-a165-70867728950e";
+    public const string OtherText = "7c9e6679-7425-40de-944b-e07fc1f90ae7";
+
+    public static readonly TenantId Acme = TenantId.Parse(AcmeText);
+    public static readonly TenantId Other = TenantId.Parse(OtherText);
+}

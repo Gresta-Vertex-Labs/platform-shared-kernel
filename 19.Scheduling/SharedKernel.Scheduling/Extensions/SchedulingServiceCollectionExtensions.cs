@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using SharedKernel.Primitives.Health;
 using SharedKernel.Scheduling.Hosting;
 using SharedKernel.Scheduling.Options;
 using SharedKernel.Scheduling.Probes;
@@ -72,8 +73,7 @@ public static class SchedulingServiceCollectionExtensions
 
         services.TryAddSingleton<SchedulingHostedService>();
         services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<SchedulingHostedService>());
-        services.TryAddSingleton<ISchedulerServiceProbe>(
-            sp => new SchedulerServiceProbe(sp.GetRequiredService<SchedulingHostedService>()));
+        services.AddReadinessProbe<SchedulerServiceProbe>();
 
         return registry;
     }

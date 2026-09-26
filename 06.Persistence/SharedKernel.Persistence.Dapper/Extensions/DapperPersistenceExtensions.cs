@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using SharedKernel.Application.Context;
+using SharedKernel.Execution.Context;
 using SharedKernel.Configuration.Extensions;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.Dapper;

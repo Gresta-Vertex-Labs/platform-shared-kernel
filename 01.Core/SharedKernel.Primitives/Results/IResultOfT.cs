@@ -10,7 +10,7 @@ namespace SharedKernel.Primitives.Results;
 /// Implemented by <see cref="Result{T}"/> only. The non-generic <see cref="Result"/> is
 /// deliberately excluded: it carries no value, so <see cref="Value"/> would be a member it could
 /// not honestly implement. Application code should not need this interface — reach for it in a
-/// MediatR pipeline behavior generic over <c>TResponse</c>, where the response shape is genuinely
+/// request pipeline behavior generic over <c>TResponse</c>, where the response shape is genuinely
 /// unknown.
 /// </para>
 /// <para>

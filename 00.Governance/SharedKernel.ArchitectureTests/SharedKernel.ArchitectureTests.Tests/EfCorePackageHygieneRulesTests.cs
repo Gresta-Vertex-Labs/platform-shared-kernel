@@ -152,7 +152,7 @@ public class EfCorePackageHygieneRulesTests
             using System.Threading;
             using System.Threading.Tasks;
 
-            namespace Application.Abstractions
+            namespace Application.Transactions
             {
                 public interface IUnitOfWork
                 {
@@ -165,7 +165,7 @@ public class EfCorePackageHygieneRulesTests
                 public class AppDbContext { }
 
                 // Violation: IUnitOfWork implementor with two public instance constructors
-                public class EfUnitOfWork : Application.Abstractions.IUnitOfWork
+                public class EfUnitOfWork : Application.Transactions.IUnitOfWork
                 {
                     // Constructor 1 — the intended DI constructor
                     public EfUnitOfWork(AppDbContext dbContext) { }
@@ -204,7 +204,7 @@ public class EfCorePackageHygieneRulesTests
             using System.Threading;
             using System.Threading.Tasks;
 
-            namespace Application.Abstractions
+            namespace Application.Transactions
             {
                 public interface IUnitOfWork
                 {
@@ -217,7 +217,7 @@ public class EfCorePackageHygieneRulesTests
                 public class AppDbContext { }
 
                 // Compliant: exactly one public instance constructor
-                public class EfUnitOfWork : Application.Abstractions.IUnitOfWork
+                public class EfUnitOfWork : Application.Transactions.IUnitOfWork
                 {
                     public EfUnitOfWork(AppDbContext dbContext) { }
 
@@ -310,7 +310,7 @@ public class EfCorePackageHygieneRulesTests
             using System.Threading;
             using System.Threading.Tasks;
 
-            namespace Application.Abstractions
+            namespace Application.Transactions
             {
                 // The compliant transaction abstraction (P-099)
                 public interface ITransactionalUnitOfWork
@@ -324,10 +324,10 @@ public class EfCorePackageHygieneRulesTests
                 // Compliant: uses the platform abstraction — no IDbContextTransaction reference
                 public class CreateOrderHandler
                 {
-                    private readonly Application.Abstractions.ITransactionalUnitOfWork _unitOfWork;
+                    private readonly Application.Transactions.ITransactionalUnitOfWork _unitOfWork;
 
                     public CreateOrderHandler(
-                        Application.Abstractions.ITransactionalUnitOfWork unitOfWork)
+                        Application.Transactions.ITransactionalUnitOfWork unitOfWork)
                     {
                         _unitOfWork = unitOfWork;
                     }

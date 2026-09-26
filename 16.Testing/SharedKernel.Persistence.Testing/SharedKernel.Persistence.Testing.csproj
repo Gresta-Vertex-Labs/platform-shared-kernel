@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Testing</SharedKernelTier>
     <Description>Test helpers for services built on the SharedKernel persistence packages — reference from test projects only. In-memory fakes that follow the production rules (specification evaluation, paging and cursors, a unit of work that rolls back and replays like the retrying strategy), a test IRequestContext, and a Testcontainers PostgreSQL fixture that provisions the production database roles and applies the row-level security, audit-ledger and encryption migration helpers.</Description>
     <PackageTags>persistence;testing;test-doubles;fakes;testcontainers;postgresql;integration-testing;shared-kernel</PackageTags>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
@@ -8,8 +9,11 @@
     <WarningsAsErrors>$(WarningsAsErrors);nullable;CS1591;RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
+    <!-- TestRequestContext, the IRequestContext double every testing package shares, lives in the lightweight core
+         package (P-571); this package builds on it. -->
+    <ProjectReference Include="..\SharedKernel.Testing\SharedKernel.Testing.csproj" />
     <!-- IRepository/IReadRepository, IDbConnectionFactory, ICrossTenantScope; IUnitOfWork, IRequestContext and
-         IAuditTrailWriter arrive through SharedKernel.Application.Abstractions. -->
+         IAuditTrailWriter arrive through SharedKernel.Execution. -->
     <ProjectReference Include="..\..\06.Persistence\SharedKernel.Persistence.Abstractions\SharedKernel.Persistence.Abstractions.csproj" />
     <!-- PostgresTestDatabase: the migration helpers it applies (row-level security, audit ledger, tenant keys) and
          the EF Core SQL generator that turns them into statements. -->

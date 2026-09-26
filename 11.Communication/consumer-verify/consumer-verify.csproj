@@ -8,7 +8,6 @@
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Communication.Rest\SharedKernel.Communication.Rest.csproj" />
     <ProjectReference Include="..\SharedKernel.Communication.Grpc\SharedKernel.Communication.Grpc.csproj" />
-    <ProjectReference Include="..\SharedKernel.Communication.GraphQL\SharedKernel.Communication.GraphQL.csproj" />
     <ProjectReference Include="..\SharedKernel.Communication.Internal\SharedKernel.Communication.Internal.csproj" />
   </ItemGroup>
   <ItemGroup>

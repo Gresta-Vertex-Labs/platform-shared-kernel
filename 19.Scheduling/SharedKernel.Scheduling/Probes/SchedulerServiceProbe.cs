@@ -1,30 +1,36 @@
+using Microsoft.Extensions.DependencyInjection;
+using SharedKernel.Primitives.Health;
 using SharedKernel.Scheduling.Hosting;
 
 namespace SharedKernel.Scheduling.Probes;
 
 /// <summary>
-/// The single implementation of <see cref="ISchedulerServiceProbe"/>, reading
-/// <see cref="SchedulingHostedService"/>'s in-process state only — zero I/O.
+/// The scheduler's readiness probe (<see cref="SchedulerReadiness.ProbeName"/>): reads the in-process state of
+/// <see cref="SchedulingHostedService"/> — never I/O.
 /// </summary>
-internal sealed class SchedulerServiceProbe : ISchedulerServiceProbe
+/// <remarks>
+/// The hosted service is resolved on the first probe, not in the constructor: a host constructs every probe to
+/// read its name while it builds its health checks, which can happen while hosted services are being created.
+/// </remarks>
+internal sealed class SchedulerServiceProbe(IServiceProvider services) : IReadinessProbe
 {
-    private readonly SchedulingHostedService _hostedService;
+    public string Name => SchedulerReadiness.ProbeName;
 
-    public SchedulerServiceProbe(SchedulingHostedService hostedService)
+    public Task<ReadinessReport> ProbeAsync(CancellationToken cancellationToken = default)
     {
-        _hostedService = hostedService;
-    }
+        cancellationToken.ThrowIfCancellationRequested();
 
-    /// <inheritdoc />
-    public Task<SchedulerServiceHealth> ProbeAsync(CancellationToken cancellationToken = default)
-    {
-        var health = new SchedulerServiceHealth
+        var hostedService = services.GetRequiredService<SchedulingHostedService>();
+        var data = new Dictionary<string, object>(StringComparer.Ordinal)
         {
-            IsRunning = _hostedService.IsRunning,
-            RegisteredJobCount = _hostedService.RegisteredJobCount,
-            LastTickUtc = _hostedService.LastTickUtc,
+            [SchedulerReadiness.IsRunningKey] = hostedService.IsRunning,
+            [SchedulerReadiness.RegisteredJobCountKey] = hostedService.RegisteredJobCount,
         };
+        if (hostedService.LastTickUtc is { } lastTick)
+            data[SchedulerReadiness.LastTickUtcKey] = lastTick;
 
-        return Task.FromResult(health);
+        return Task.FromResult(hostedService.IsRunning
+            ? ReadinessReport.Healthy("Scheduler loop is running.", data)
+            : ReadinessReport.Unhealthy("Scheduler loop is not running.", data));
     }
 }

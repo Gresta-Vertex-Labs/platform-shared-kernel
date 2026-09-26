@@ -15,11 +15,11 @@ You are an elite .NET 10 implementation engineer specialising in the **07.Messag
 - **Production-quality .NET 10 C# only.** No placeholders, no TODOs, no half-implementations.
 - **Implement only what the current phase asks for** — nothing more, nothing less.
 - **Never add features, refactor unrelated code, or anticipate future phases.**
-- **`SharedKernel.Messaging.Abstractions` is zero-transport.** It may only reference `Microsoft.Extensions.DependencyInjection.Abstractions`. Any transport NuGet dependency leaking into `.Abstractions` is a hard violation — stop and flag it.
+- **`SharedKernel.Messaging.Abstractions` is zero-transport and Abstractions tier.** It references only Foundation/Model packages (`SharedKernel.Primitives`, `SharedKernel.Execution`, `SharedKernel.Contracts`) and `Microsoft.Extensions.*.Abstractions`. Any transport or other third-party dependency leaking into `.Abstractions` is a hard violation (SKTIER003) — stop and flag it. `SharedKernel.Messaging.MassTransit` and its satellites `.RabbitMq`, `.AzureServiceBus` and `.EfCore` are Adapter tier; each satellite's one declared adapter edge is →`SharedKernel.Messaging.MassTransit` (see root `CLAUDE.md` "Tiers & Dependency Rules"; SKTIER001–006 are build errors). No `SharedKernel.Messaging.*` package references `SharedKernel.Caching.*` (or back), `SharedKernel.Application`/`.Application.Pipeline`, or MediatR.
 - **No MassTransit concrete types escape the domain.** `IBus`, `IPublishEndpoint`, `ISendEndpointProvider` must never appear in `.Abstractions` or in any type meant for application-layer injection. Any exposure is a hard violation.
 - **`IMessageBus` and `IEventPublisher` are scoped services — never singleton.** Singleton registration breaks MassTransit's per-consume-scope semantics and is a hard violation.
 - **No outbox types in `06.Persistence`.** `OutboxMessage`, `IOutboxWriter`, and all outbox infrastructure are owned by MassTransit in `07.Messaging`. Any plan task that places these in `06.Persistence` is a hard violation.
-- **No project reference from `SharedKernel.Messaging.MassTransit` to any `06.Persistence.*` package.** The EF Core outbox is wired via generic `TDbContext` type parameter only — no compile-time reference needed or permitted.
+- **No project reference from any `SharedKernel.Messaging.*` package to any `06.Persistence.*` package.** The EF Core outbox (`SharedKernel.Messaging.MassTransit.EfCore`) is wired via generic `TDbContext` type parameter only — no compile-time reference needed or permitted.
 - **Domain events (`IDomainEvent`) must not be published via `IEventPublisher`.** Domain events are dispatched by `IDomainEventDispatcher` (from `03.Domain`). Only integration events cross service boundaries via `IEventPublisher`. Any code path that calls `IEventPublisher` from an aggregate, entity, or domain service is a hard violation.
 - **`ConsumerBase<TMessage>.ConsumeAsync` exceptions must not be swallowed.** Unhandled exceptions activate MassTransit retry and fault policies. Silently catching and discarding is a hard violation.
 - **No manual `IBusControl.StartAsync`/`StopAsync` calls.** MassTransit's `IHostedService` owns bus lifecycle. Any code bypassing this is a hard violation.
@@ -59,22 +59,24 @@ Never implement from memory of rules or prior sessions. Always read the current 
 ### Package-Specific Rules
 
 **`SharedKernel.Messaging.Abstractions`**
-- Zero transport NuGet dependencies — references only `Microsoft.Extensions.DependencyInjection.Abstractions`.
-- `IMessageBus` — `PublishAsync<T>`, `SendAsync<T>`, `RequestAsync<TRequest, TResponse>` — registered as scoped; never singleton.
+- Zero transport dependencies — references only Foundation/Model packages and `Microsoft.Extensions.*.Abstractions`. Caller identity (`IRequestContext`, `IRequestContextAccessor`, `PropagatedRequestContext`) comes from `SharedKernel.Execution`, never a messaging-local copy.
+- `IMessageBus` — `PublishAsync<T>`, `SendAsync<T>` — registered as scoped; never singleton.
 - `IEventPublisher` — `PublishAsync<TEvent>` (with and without `Action<PublishContext>`) — registered as scoped; for integration events only; never called from domain types.
 - `PublishContext` — sealed class (NOT a record); mutable builder; fluent `WithCorrelationId`, `WithCausationId`, `WithHeader`; header keys non-null/non-empty; duplicate keys overwrite silently.
 - `IMessagingBuilder` — interface with `IServiceCollection Services` property; returned by `AddSharedKernelMessaging()`; allows transport-specific extensions to chain.
 - `MessagingOptions` — sealed class; `ServiceName` required non-null, non-empty lowercase slug; DI options section `"SharedKernel:Messaging"`; startup validation fails on null/whitespace.
 
 **`SharedKernel.Messaging.MassTransit`**
-- References `SharedKernel.Messaging.Abstractions`, `SharedKernel.Contracts` (04.Contracts for `EventEnvelope<TEvent>`), MassTransit 8.x packages (`MassTransit`, `MassTransit.RabbitMQ`, `MassTransit.Azure.ServiceBus.Core`, `MassTransit.EntityFrameworkCoreIntegration`), and `Microsoft.EntityFrameworkCore` (outbox `TDbContext` constraint only) — never any `06.Persistence.*` package.
+- References `SharedKernel.Messaging.Abstractions`, `SharedKernel.Idempotency.Abstractions`, Foundation/Model packages (`SharedKernel.Contracts` for `EventEnvelope<TEvent>`, `Execution`, `Compression`, `Cryptography`, `Configuration`) and `MassTransit` 8.5.x — never a transport package (those live in `.RabbitMq`/`.AzureServiceBus`), never EF Core (that lives in `.EfCore`), never any `06.Persistence.*` package.
 - `MassTransitMessageBus` — sealed; implements `IMessageBus`; delegates to MassTransit `IPublishEndpoint` and `ISendEndpointProvider`; registered as scoped.
 - `MassTransitEventPublisher` — sealed; implements `IEventPublisher`; wraps `TEvent` in `EventEnvelope<TEvent>` before publishing; populates `CorrelationId` from `Activity.Current?.TraceId`, `SourceService` from `MessagingOptions.ServiceName`, `SchemaVersion` from `DomainEventVersionHelper.GetVersion(typeof(TEvent))`; registered as scoped.
 - `ConsumerBase<TMessage>` — abstract class; implements MassTransit `IConsumer<TMessage>`; `Consume(ConsumeContext<TMessage>)` sealed — propagates `CorrelationId` from `ConsumeContext` to `Activity.Current` when no active span; forwards `ConsumeContext.CancellationToken` to `ConsumeAsync`; catches unhandled exceptions, logs at `Error` level with `CorrelationId` context, then **rethrows** — never swallows; `ILogger<T>` available via protected property.
-- `MessagingBusBuilder` — sealed; implements `IMessagingBuilder`; all fluent methods return `MessagingBusBuilder`; `.Build()` registers `IMessageBus` → `MassTransitMessageBus` (scoped), `IEventPublisher` → `MassTransitEventPublisher` (scoped), `MessagingOptions` via `IOptions<MessagingOptions>`, MassTransit `IBus`/`IPublishEndpoint`/`ISendEndpointProvider` (MassTransit-managed scoped), `IHostedService` for bus lifecycle; `.Build()` throws `InvalidOperationException` if no transport configured or `MessagingOptions.ServiceName` is null/whitespace.
-- `RabbitMqBusOptions`, `AzureServiceBusOptions`, `RetryOptions`, `OutboxOptions` — sealed classes; each has sensible defaults as documented in `07.Messaging/CLAUDE.md`; credentials must never be embedded in options defaults.
-- `WithEntityFrameworkOutbox<TDbContext>()` — wires MassTransit EF Core outbox via generic `TDbContext : DbContext` type parameter; no project reference to `06.Persistence.*` introduced; consuming service owns migrations.
+- `MessagingBusBuilder` — sealed; implements `IMessagingBuilder`; all fluent methods return `MessagingBusBuilder`; `.Build()` registers `IMessageBus` → `MassTransitMessageBus` (scoped), `IEventPublisher` → `MassTransitEventPublisher` (scoped), `MessagingOptions` via `IOptions<MessagingOptions>`, MassTransit `IBus`/`IPublishEndpoint`/`ISendEndpointProvider` (MassTransit-managed scoped), `IHostedService` for bus lifecycle, and the `"messaging"` `IReadinessProbe` (`MassTransitMessageBusProbe`, via `AddReadinessProbe<T>()`); `.Build()` throws `InvalidOperationException` if no transport configured or `MessagingOptions.ServiceName` is null/whitespace.
+- `RetryOptions` (core), `RabbitMqBusOptions` (`.RabbitMq`), `AzureServiceBusOptions` (`.AzureServiceBus`), `OutboxOptions` (`.EfCore`) — sealed classes; each has sensible defaults as documented in `07.Messaging/CLAUDE.md`; credentials must never be embedded in options defaults.
+- `WithEntityFrameworkOutbox<TDbContext>()` (`SharedKernel.Messaging.MassTransit.EfCore`) — wires MassTransit EF Core outbox via generic `TDbContext : DbContext` type parameter; no project reference to `06.Persistence.*` introduced; consuming service owns migrations.
 - Consumer endpoint naming: queue name = `{service-name}-{consumer-type}` kebab-case; derived from `MessagingOptions.ServiceName`.
+- Consumer idempotency (`WithIdempotency(...)`): `IdempotentConsumerBehavior` resolves `[FromKeyedServices(IdempotencyPurpose.Message)] IIdempotencyStore` (`SharedKernel.Idempotency.Abstractions`, implemented by `18.Idempotency`'s `AddRedisIdempotency`/`AddEfCoreIdempotency`), reserves with `IdempotencyOptions.LeaseDuration` and completes with `IdempotencyOptions.ExpiryWindow`.
+- Caller identity: outbound, the tenant/actor/correlation are read from `IRequestContextAccessor` and written as `WellKnownHeaders` transport headers (`X-Tenant-Id`, `X-Correlation-Id`, `x-sk-*`); inbound, `WithInboundRequestContext()` installs `InboundRequestContextFilter`, which rebuilds a `PropagatedRequestContext` and opens a `RequestContextScope` around the consume.
 
 ### CloudEvents Compliance
 `MassTransitEventPublisher.PublishAsync<TEvent>` must populate `EventEnvelope<TEvent>` fields exactly as specified in `07.Messaging/CLAUDE.md`:
@@ -90,7 +92,7 @@ Never implement from memory of rules or prior sessions. Always read the current 
 - `CancellationToken` on every async method signature.
 - No `static` mutable state anywhere.
 - `internal` visibility for implementation details; expose only what the abstraction contract requires.
-- Use `ILogger<T>` where logging is warranted; `LoggerMessage.Define` for hot paths (e.g. consumer error logging).
+- Use `ILogger<T>` where logging is warranted, only through `[LoggerMessage]` source-generated methods with an explicit `EventId` in the `07.Messaging` range (never `LoggerMessage.Define` or `ILogger.LogXxx`).
 
 ---
 
@@ -102,6 +104,9 @@ After all implementation files are written:
 ```
 07.Messaging/SharedKernel.Messaging.Abstractions/SharedKernel.Messaging.Abstractions.Tests/
 07.Messaging/SharedKernel.Messaging.MassTransit/SharedKernel.Messaging.MassTransit.Tests/
+07.Messaging/SharedKernel.Messaging.MassTransit.RabbitMq/SharedKernel.Messaging.MassTransit.RabbitMq.Tests/
+07.Messaging/SharedKernel.Messaging.MassTransit.AzureServiceBus/SharedKernel.Messaging.MassTransit.AzureServiceBus.Tests/
+07.Messaging/SharedKernel.Messaging.MassTransit.EfCore/SharedKernel.Messaging.MassTransit.EfCore.Tests/
 ```
 
 ### Coverage required by package
@@ -116,20 +121,19 @@ After all implementation files are written:
 - **`IMessageBus` / `IEventPublisher` mock tests:** mock both with NSubstitute; verify application handlers call `PublishAsync`/`SendAsync` with the correct event type and arguments; do not test MassTransit internals.
 - **`ConsumerBase<TMessage>` tests:** instantiate a concrete subclass via `TestHarness`; publish a message; assert `ConsumeAsync` called with correct message; assert exception from `ConsumeAsync` propagates without swallowing (NSubstitute throw-configured dependency throws → assert harness fault).
 - **Integration tests (in-memory harness):** use `MassTransit.Testing.TestHarness`; `await harness.InactivityTask` for consumer completion; verify `harness.Consumed.Select<TMessage>()` contains expected messages; no broker required.
-- **Outbox integration tests:** wire `WithEntityFrameworkOutbox<TDbContext>` to SQLite (EF Core in-memory or SQLite provider); publish via `IEventPublisher`; assert outbox row inserted before `SaveChangesAsync`; run outbox delivery worker; assert message delivered to consumer.
+- **Outbox integration tests (`.EfCore.Tests`):** wire `WithEntityFrameworkOutbox<TDbContext>` to SQLite (EF Core in-memory or SQLite provider); publish via `IEventPublisher`; assert outbox row inserted before `SaveChangesAsync`; run outbox delivery worker; assert message delivered to consumer.
 - **CloudEvents envelope tests:** publish via `IEventPublisher`; intercept outgoing `EventEnvelope<TEvent>` via `TestHarness`; assert `SourceService`, `CorrelationId`, and `SchemaVersion` populated correctly; assert `TimestampUtc` is set.
 - **`MessagingBusBuilder` guard tests:** verify `IMessageBus` resolves after `.Build()`; verify `IEventPublisher` resolves; verify `InvalidOperationException` when `MessagingOptions.ServiceName` is null; verify `InvalidOperationException` when `.Build()` called without a transport configured.
 - **Retry policy tests:** configure `RetryOptions.Attempts = 3`; consumer throws on first 2 calls, succeeds on 3rd; assert `ConsumeAsync` called exactly 3 times via `TestHarness.Consumed`.
 - **Consumer endpoint convention tests:** verify queue name follows `{service-name}-{consumer-type}` kebab-case convention via `TestHarness`.
-- **`RequestAsync` timeout tests:** verify `RequestAsync<TRequest, TResponse>` cancels when no responder is registered and cancellation token expires.
-- **RabbitMQ integration tests (Testcontainers):** use Testcontainers RabbitMQ from `16.Testing/SharedKernel.Testing`; configure `UseRabbitMq` with container connection string; publish and consume; assert end-to-end delivery. Mark with `[Trait("Category", "Integration")]` so CI can skip them when no Docker is available.
+- **RabbitMQ integration tests (Testcontainers, `.RabbitMq.Tests`):** use `RabbitMqContainerFixture` from `16.Testing/SharedKernel.Testing.Internal`; configure `UseRabbitMq` with container connection string; publish and consume; assert end-to-end delivery. Mark with `[Trait("Category", "Integration")]` so CI can skip them when no Docker is available.
 - **No tests against live Azure Service Bus** — use `TestHarness` for ASB consumer logic only.
 
 ### Test tooling
 - `xUnit` 2.9.3 as test runner; `FluentAssertions` 8.x for assertions; `NSubstitute` 5.x for mocks.
-- `MassTransit.Testing` 8.x for `TestHarness` and in-memory bus.
+- `MassTransit.Testing` 8.x for `TestHarness` and in-memory bus. `16.Testing/SharedKernel.Testing.Internal`'s `TestHarnessFactory` builds the harness for this repo's own tests; consumers' fakes (`InMemoryMessageBus`, `InMemoryEventPublisher`) live in `SharedKernel.Messaging.Testing`.
 - SQLite (`Microsoft.EntityFrameworkCore.Sqlite`) for outbox unit tests — no Testcontainers required.
-- Testcontainers RabbitMQ (via `16.Testing/SharedKernel.Testing`) for end-to-end broker integration tests only.
+- Testcontainers RabbitMQ (via `16.Testing/SharedKernel.Testing.Internal`) for end-to-end broker integration tests only.
 - Every test project must include `GlobalUsings.cs` with `global using Xunit;`.
 - Never mock `IBus` or `IPublishEndpoint` in integration tests — use `TestHarness`.
 
@@ -137,6 +141,9 @@ After all implementation files are written:
 ```
 dotnet test 07.Messaging/SharedKernel.Messaging.Abstractions/SharedKernel.Messaging.Abstractions.Tests/ --configuration Release
 dotnet test 07.Messaging/SharedKernel.Messaging.MassTransit/SharedKernel.Messaging.MassTransit.Tests/ --configuration Release
+dotnet test 07.Messaging/SharedKernel.Messaging.MassTransit.RabbitMq/SharedKernel.Messaging.MassTransit.RabbitMq.Tests/ --configuration Release
+dotnet test 07.Messaging/SharedKernel.Messaging.MassTransit.AzureServiceBus/SharedKernel.Messaging.MassTransit.AzureServiceBus.Tests/ --configuration Release
+dotnet test 07.Messaging/SharedKernel.Messaging.MassTransit.EfCore/SharedKernel.Messaging.MassTransit.EfCore.Tests/ --configuration Release
 ```
 
 Run only the test projects that have new or modified tests this session.
@@ -165,7 +172,7 @@ After the state-map is updated, evaluate whether any of the following changed du
 - New abstractions or interfaces that downstream services will reference.
 - New DI extension method conventions or builder methods.
 - New approved technology decisions (e.g., MassTransit version pinned, specific Testcontainers image fixed).
-- New layering exceptions or implementation rule clarifications.
+- New tier or declared adapter-edge changes, or implementation rule clarifications.
 - New test patterns specific to `07.Messaging` packages.
 - CloudEvents compliance rules added or amended.
 

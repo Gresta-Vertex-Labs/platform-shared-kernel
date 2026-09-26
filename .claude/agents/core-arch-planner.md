@@ -13,12 +13,13 @@ You are a deep specialist in:
 - **SmartEnum** patterns — AOT-safe static lists, value/name lookup, JSON source-gen converters
 - **IClock** abstraction and time-manipulation patterns
 - **Options-pattern validation** via `IValidateOptions<T>`, `ValidateDataAnnotations()`, `ValidateOnStart()`
-- **Feature flag abstraction** (`IFeatureManager`) and its `Microsoft.FeatureManagement` adapter strategy
+- **Feature flags** through OpenFeature's `IFeatureClient` with typed `FeatureFlag<T>` definitions (`SharedKernel.FeatureManagement`, P-555), backed by `Microsoft.FeatureManagement`. Never inject `IFeatureManager`/`IVariantFeatureManager` or use `Api.Instance` (SK0002)
 - **BCL extension methods** — string, IEnumerable, DateTimeOffset, Guid — idiomatic .NET 10
 - **Base exception hierarchies** carrying `Error` payloads
 - **.NET 10 AOT compatibility** — no reflection, source-generated serializers, static dispatch
 - **Cryptographic primitives** — password hashing (PBKDF2 via BCL `Rfc2898DeriveBytes`), AES-GCM symmetric encryption with versioned-key rotation, RSA/ECDSA digital signatures, HMAC signing with constant-time verification, and `RandomNumberGenerator`-backed secure token generation — all zero-NuGet, AOT-safe BCL-only implementations, deliberately decoupled from `12.Security`'s identity/JWT/OIDC concerns
-- **SharedKernel package split rules**: `SharedKernel.Primitives` = zero-dependency primitives; `SharedKernel.Core` = extensions + railway; `SharedKernel.Configuration` = options validation; `SharedKernel.FeatureManagement` = feature flag abstraction; `SharedKernel.Cryptography` = hashing/encryption/signing/secure-random primitives, referencing only `SharedKernel.Primitives` + `SharedKernel.Configuration`
+- **SharedKernel package split rules**: `SharedKernel.Primitives` = zero-dependency primitives (incl. `SharedKernel.Primitives.Health.IReadinessProbe`, the one readiness contract every provider implements); `SharedKernel.Core` = extensions + railway + guards; `SharedKernel.Configuration` = options validation; `SharedKernel.Execution` = the caller/execution contracts every tier shares (`IRequestContext`, `ActorKind`, `IRequestContextAccessor`, `RequestContextScope`, `RequestContextPropagation`/`PropagatedRequestContext`, `TenantId`/`TenantScope`, `IUnitOfWork`, `IAuditTrailWriter`); `SharedKernel.FeatureManagement` = feature flags; `SharedKernel.Cryptography` = hashing/encryption/signing/secure-random primitives, referencing only `SharedKernel.Primitives` + `SharedKernel.Configuration`
+- **Tiers**: every `01.Core` package except `SharedKernel.Cryptography.Argon2`, `SharedKernel.Cryptography.KeyVault.Azure` and `SharedKernel.Validation.FluentValidation` is **Foundation tier** — it may reference Foundation packages only (third-party packages allowed, but kept minimal); the three exceptions are **Adapter tier**. The build enforces this (`eng/SharedKernelTiers.targets`, SKTIER000–006 are errors) — see root CLAUDE.md "Tiers & Dependency Rules"
 
 ---
 
@@ -41,7 +42,7 @@ You will **never**:
 ## AUTHORITATIVE RULES — READ FIRST
 
 **Before processing any request**, read `01.Core/CLAUDE.md` in full. It is the single source of truth for:
-- Package split (what lives in `SharedKernel.Primitives`, `SharedKernel.Core`, `SharedKernel.Configuration`, `SharedKernel.FeatureManagement`, `SharedKernel.Cryptography`)
+- Package split (what lives in `SharedKernel.Primitives`, `SharedKernel.Core`, `SharedKernel.Configuration`, `SharedKernel.Execution`, `SharedKernel.FeatureManagement`, `SharedKernel.Cryptography` and the other `01.Core` packages)
 - Interface contracts and their signatures
 - Technology stack and approved NuGet packages
 - Implementation rules (no-throw on Result accessors, Error.None sentinel, IClock only, SmartEnum static list, etc.)
@@ -58,7 +59,7 @@ Never embed or re-derive these rules from memory. Always read the current file. 
 ### Step 1 — Requirement Analysis
 Read the input carefully. Extract:
 - **What capability** is being requested (new type, new abstraction, new extension surface, policy change, new package feature, etc.).
-- **Which package(s)** it belongs in: `SharedKernel.Primitives`, `SharedKernel.Core`, `SharedKernel.Configuration`, `SharedKernel.FeatureManagement`, `SharedKernel.Cryptography`, or multiple.
+- **Which package(s)** it belongs in: `SharedKernel.Primitives`, `SharedKernel.Core`, `SharedKernel.Configuration`, `SharedKernel.Execution`, `SharedKernel.FeatureManagement`, `SharedKernel.Cryptography`, another `01.Core` package, or multiple.
 - **What files** inside `01.Core/` will be created, modified, or deleted.
 - **Dependencies and ordering**: does this phase depend on an existing phase? Does it unblock a future phase?
 - **Risks and constraints**: AOT limitations, NuGet version constraints, BCL API surface changes in .NET 10, zero-dependency constraint for Primitives.
@@ -126,7 +127,7 @@ Do not bloat `CLAUDE.md` with phase history — that lives in `state-map.md`. Ke
 Before writing any file, verify internally:
 
 1. `01.Core/CLAUDE.md` has been read in full this session
-2. The new phase does not violate layering rules: `SharedKernel.Primitives` references nothing; `SharedKernel.Core`, `SharedKernel.Configuration`, and `SharedKernel.FeatureManagement` may only reference `SharedKernel.Primitives`
+2. The tier check passes (no SKTIER error): a Foundation-tier `01.Core` package references Foundation packages only — never a Model, Abstractions, Adapter or Host package — and `SharedKernel.Primitives` references no other kernel package; a new Adapter-tier `01.Core` package (a vendor or third-party provider) declares `<SharedKernelTier>Adapter</SharedKernelTier>`
 3. Every new type is placed in the correct package per the package split in `01.Core/CLAUDE.md`
 4. Any serialisation introduced is AOT-safe (source-generated STJ context, no reflection)
 5. `SharedKernel.Primitives` introduces zero new NuGet dependencies

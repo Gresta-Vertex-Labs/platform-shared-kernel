@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Qdrant.Client;
 using SharedKernel.AI.Abstractions.Abstractions;
+using SharedKernel.AI.Abstractions.Constants;
 using SharedKernel.AI.Abstractions.Models;
 using SharedKernel.AI.Qdrant.Collections;
 using SharedKernel.AI.Qdrant.Diagnostics;
@@ -13,6 +14,7 @@ using SharedKernel.AI.Qdrant.Quantization;
 using SharedKernel.AI.Qdrant.Raw;
 using SharedKernel.AI.Qdrant.Sparse;
 using SharedKernel.Primitives.Clocks;
+using SharedKernel.Primitives.Health;
 
 namespace SharedKernel.AI.Qdrant.Extensions;
 
@@ -90,9 +92,21 @@ public sealed class QdrantBuilder
         // QdrantCollectionProvisioner's constructor does not take a raw QdrantOptions and needs none —
         // QdrantProviderDescriptor's constructor DOES take primitives derived from IOptions<QdrantOptions>,
         // which AddValidatedOptions only ever registers wrapped, never unwrapped.
-        _services.AddSingleton<IVectorCollectionProvisioner>(sp => new QdrantCollectionProvisioner(
+        _services.AddSingleton(sp => new QdrantCollectionProvisioner(
             sp.GetRequiredService<QdrantClient>(),
             sp.GetRequiredService<ILogger<QdrantCollectionProvisioner>>()));
+        _services.AddSingleton<IVectorCollectionProvisioner>(sp => sp.GetRequiredService<QdrantCollectionProvisioner>());
+
+        // One readiness probe per registered collection, each over the one provisioner instance above.
+        foreach (var collectionName in collections.Keys)
+        {
+            _services.AddReadinessProbe(sp =>
+            {
+                var provisioner = sp.GetRequiredService<QdrantCollectionProvisioner>();
+                return new VectorCollectionReadinessProbe(
+                    IntelligenceWellKnown.QdrantProviderName, collectionName, provisioner.ProbeAsync);
+            });
+        }
 
         _services.AddSingleton<IVectorProviderDescriptor>(sp =>
         {

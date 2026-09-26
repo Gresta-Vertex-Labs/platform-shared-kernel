@@ -4,8 +4,8 @@ using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
-using SharedKernel.Application.Auditing;
-using SharedKernel.Application.Context;
+using SharedKernel.Execution.Auditing;
+using SharedKernel.Execution.Context;
 using SharedKernel.Persistence.Abstractions.Connections;
 using SharedKernel.Persistence.EfCore;
 using SharedKernel.Persistence.EfCore.Auditing.SelfCheck;
@@ -87,16 +87,16 @@ public sealed class SealerHardeningTests(PostgreSqlContainerFixture fixture)
 
             await WriteAsync(first, Failed("o-1"));
             await WriteAsync(first, Failed("o-2"));
-            (await first.Get<IAuditSealingProbe>().ProbeAsync()).UnsealedRecords.Should().Be(2);
+            (await first.UnsealedRecordsAsync()).Should().Be(2);
             (await SealAsync(first)).RecordsSealed.Should().Be(2);
         }
 
         // A fresh process (no learned bound) sees the same: nothing hidden, nothing left.
         await using var second = LedgerHost.Build(cs);
         await WriteAsync(second, Failed("o-3"));
-        (await second.Get<IAuditSealingProbe>().ProbeAsync()).UnsealedRecords.Should().Be(1);
+        (await second.UnsealedRecordsAsync()).Should().Be(1);
         (await SealAsync(second)).RecordsSealed.Should().Be(1);
-        (await second.Get<IAuditSealingProbe>().ProbeAsync()).UnsealedRecords.Should().Be(0);
+        (await second.UnsealedRecordsAsync()).Should().Be(0);
 
         var order = await second.InScopeAsync(sp => sp.GetRequiredService<IAuditQueryService>().VerifyChainAsync("Order"));
         order.IsIntact.Should().BeTrue();

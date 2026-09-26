@@ -3,9 +3,10 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Npgsql;
-using SharedKernel.Application.Auditing;
-using SharedKernel.Application.Context;
-using SharedKernel.Application.Transactions;
+using SharedKernel.Execution.Auditing;
+using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
+using SharedKernel.Execution.Transactions;
 using SharedKernel.Core.Exceptions;
 using SharedKernel.Cryptography.Extensions;
 using SharedKernel.Cryptography.Symmetric;
@@ -43,7 +44,7 @@ public sealed record OrderId(Guid Value) : StronglyTypedId<Guid>(Value)
 
 public sealed class Order : AuditableAggregateRoot<OrderId>, IHasTenant
 {
-    public Order(OrderId id, Guid tenantId, string customerEmail, decimal total, IClock clock)
+    public Order(OrderId id, TenantId tenantId, string customerEmail, decimal total, IClock clock)
         : base(id, clock)
     {
         TenantId = tenantId;
@@ -53,7 +54,7 @@ public sealed class Order : AuditableAggregateRoot<OrderId>, IHasTenant
 
     private Order() { } // ORM materialization path
 
-    public Guid TenantId { get; private set; }
+    public TenantId TenantId { get; private set; }
 
     public string CustomerEmail { get; private set; } = string.Empty;
 
@@ -214,10 +215,10 @@ public sealed class ConsumerVerifyTests
         }
 
         var configuration = Configuration(new NpgsqlConnectionStringBuilder(admin) { Username = "app", Password = "app" }.ConnectionString);
-        var tenantA = Guid.NewGuid();
-        var tenantB = Guid.NewGuid();
+        var tenantA = new TenantId(Guid.NewGuid());
+        var tenantB = new TenantId(Guid.NewGuid());
 
-        ServiceProvider Services(Guid? tenant)
+        ServiceProvider Services(TenantId? tenant)
         {
             var services = new ServiceCollection();
             services.AddLogging();

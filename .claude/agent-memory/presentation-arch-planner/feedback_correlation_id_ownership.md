@@ -1,12 +1,12 @@
 ---
 name: feedback_correlation_id_ownership
-description: CorrelationIdMiddleware's baggage/Items keys are 14.Presentation's own contract — never a borrowed 13.ServiceDefaults convention
+description: Inbound correlation id is owned by 13.ServiceDefaults.Security (UseSharedKernelRequestContext) since WO-086 — 14.Presentation consumes it, never re-reads the header
 metadata:
   type: feedback
 ---
 
-The original domain draft listed a Cross-Domain Dependency: `SK.14.Core` needs `13.ServiceDefaults` for "OTel ActivitySource/baggage conventions" so `CorrelationIdMiddleware` could "align its baggage key." WO-031 P-192 explicitly corrected this — the `correlation.id` baggage key and `HttpContext.Items["CorrelationId"]` key are `14.Presentation`'s own contract, defined here, with zero `ProjectReference` on `13.ServiceDefaults`.
+Since WO-086 (2026-09) the inbound correlation id, tenant and actor are established by `app.UseSharedKernelRequestContext()` (`SharedKernel.ServiceDefaults.Security`, the first middleware, before `UseExceptionHandler()`), which owns `X-Correlation-Id` (`WellKnownHeaders.CorrelationId`) and opens a `RequestContextScope`. `14.Presentation` reads the result through `IRequestContextAccessor` (`SharedKernel.Execution`); its own `CorrelationIdMiddleware`/`CorrelationIdOptions`/`AddSharedKernelCorrelationId` were deleted. (Before WO-086 the key and middleware were this domain's own contract — WO-031 P-192.)
 
-**Why:** `14.Presentation` may only reference `01.Core`, `04.Contracts`, `12.Security`, `13.ServiceDefaults` per root layering rules — but "may reference" doesn't mean "should always take a dependency for every adjacent concern." Correlation-id is presentation's own inbound-HTTP-edge concept; OTel/tracing wiring in `13.ServiceDefaults` can choose to align with this domain's published key, but the dependency arrow must not point from `14.Presentation` back into `13.ServiceDefaults` for something this domain fully owns.
+**Why:** two readers of the same inbound header drifted before (the `"correlation.id"` vs `"CorrelationId"` baggage mismatch, WO-042 — see [[project_correlationid_baggage_key_mismatch]]). One owner, one scope, and everyone else reading the accessor makes that drift impossible.
 
-**How to apply:** When evaluating any future cross-domain dependency row for this domain, ask whether the "dependency" is actually this domain's own contract that another domain might *consume* (one-way, outward) versus a genuine implementation need (e.g., `ITenantProvider` from `12.Security.Abstractions`, which is a real `ProjectReference`). Don't list the former as a "Pending" blocking dependency — it isn't one.
+**How to apply:** never plan a correlation-id or tenant header reader, baggage writer or `HttpContext.Items` key in `14.Presentation`; a hub filter, gRPC interceptor or ProblemDetails `traceId`/correlation extension reads `IRequestContextAccessor`/`Activity`. The general lesson still holds when evaluating a cross-domain dependency row: separate "another domain consumes our published contract" (one-way, not a blocking dependency) from a genuine implementation need.

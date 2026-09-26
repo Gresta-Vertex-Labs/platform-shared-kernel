@@ -1,7 +1,7 @@
 using System.Reflection;
 using FluentAssertions;
 using Microsoft.AspNetCore.Authorization;
-using SharedKernel.Presentation.WebApi.Authorization;
+using SharedKernel.Presentation.Authorization;
 using SharedKernel.Presentation.WebApi.Tests.TestSupport;
 using Xunit;
 

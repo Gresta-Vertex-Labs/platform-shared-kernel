@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Adapter</SharedKernelTier>
     <!-- NuGet packaging metadata -->
     <Description>Azure Key Vault for SharedKernel.Cryptography. Encryption: AES-256 data keys wrapped by a Key Vault master key (RSA or managed-HSM AES) and stored as versions of one Key Vault secret, so every replica shares the same current key and rotation is a single call; implements IEncryptionKeyProvider, IEnvelopeEncryptionProvider and a readiness probe, with keys cached in memory and untrusted key ids never able to trigger unbounded Key Vault calls. Signing: RSA and ECDSA keys that never leave Key Vault, signing remotely through asynchronous calls and verifying locally with the public key, for PS256–PS512, RS256–RS512 and ES256–ES512. Master key material never leaves Key Vault.</Description>
     <PackageReleaseNotes>First release.</PackageReleaseNotes>

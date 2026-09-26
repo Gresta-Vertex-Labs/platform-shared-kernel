@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Domain.Aggregates;
 using SharedKernel.Domain.Entities;
@@ -22,7 +23,7 @@ public sealed class Invoice : TenantedAuditableSoftDeletableAggregateRoot<Invoic
 {
     private readonly List<InvoiceLine> _lines = [];
 
-    private Invoice(InvoiceId id, Guid tenantId, IClock clock) : base(id, tenantId, clock) { }
+    private Invoice(InvoiceId id, TenantId tenantId, IClock clock) : base(id, tenantId, clock) { }
 
     private Invoice() { } // EF Core materialization
 
@@ -48,7 +49,7 @@ public sealed class Invoice : TenantedAuditableSoftDeletableAggregateRoot<Invoic
 
     public static Result<Invoice> Draft(
         InvoiceId id,
-        Guid tenantId,
+        TenantId tenantId,
         CustomerId customerId,
         string number,
         Currency currency,
@@ -116,7 +117,7 @@ public sealed class Invoice : TenantedAuditableSoftDeletableAggregateRoot<Invoic
 /// </summary>
 public sealed class InvoiceLine : Entity<InvoiceLineId>, IHasTenant
 {
-    internal InvoiceLine(InvoiceLineId id, Guid tenantId, string description, int quantity, Money unitPrice) : base(id)
+    internal InvoiceLine(InvoiceLineId id, TenantId tenantId, string description, int quantity, Money unitPrice) : base(id)
     {
         TenantId = tenantId;
         Description = description;
@@ -126,7 +127,7 @@ public sealed class InvoiceLine : Entity<InvoiceLineId>, IHasTenant
 
     private InvoiceLine() { } // EF Core materialization
 
-    public Guid TenantId { get; private set; }
+    public TenantId TenantId { get; private set; }
 
     public string Description { get; private set; } = string.Empty;
 

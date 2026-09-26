@@ -39,14 +39,21 @@ namespace SharedKernel.ServiceDefaults.HealthChecks;
 /// <see cref="HealthCheckServiceOptions"/> and simply writes nothing.
 /// </para>
 /// <example>
-/// A readiness check written outside this platform, logging like the built-in ones:
+/// How <c>SharedKernel.ServiceDefaults.Persistence</c>'s <c>AddPersistenceStartupReadinessCheck</c> logs its
+/// registration; a service writing its own readiness check follows the same shape:
 /// <code>
-/// public static IHealthChecksBuilder AddLedgerReadinessCheck(this IHealthChecksBuilder builder)
+/// public static IHealthChecksBuilder AddPersistenceStartupReadinessCheck(
+///     this IHealthChecksBuilder builder,
+///     string name = HealthCheckNames.PersistenceStartup)
 /// {
-///     string[] tags = [HealthCheckTags.Ready];
+///     string[] tags = [HealthCheckTags.Ready, HealthCheckTags.Db];
 ///     HealthCheckRegistrationLogging.LogRegistration(
-///         builder.Services, typeof(LedgerHealthCheckExtensions).FullName!, "ledger", tags);
-///     return builder.AddCheck&lt;LedgerReadinessHealthCheck&gt;("ledger", tags: tags);
+///         builder.Services, typeof(DatabaseReadinessHealthCheckExtensions).FullName!, name, tags);
+///     return builder.Add(new HealthCheckRegistration(
+///         name,
+///         sp => new PersistenceStartupHealthCheck(sp.GetRequiredService&lt;IPersistenceStartup&gt;()),
+///         failureStatus: null,
+///         tags: tags));
 /// }
 /// </code>
 /// </example>

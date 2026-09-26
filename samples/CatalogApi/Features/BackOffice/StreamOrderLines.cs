@@ -1,5 +1,7 @@
 using System.Runtime.CompilerServices;
-using SharedKernel.Application;
+using SharedKernel.Application.Messaging;
+using SharedKernel.Application.Streaming;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Search.Abstractions.Models;
 using SharedKernel.Search.ElasticSearch.Cursors;
 
@@ -12,7 +14,7 @@ public sealed record OrderLineSummary(string DocumentId, string ProductName);
 /// The streaming shape of deep pagination, as a stream query (<c>ISender.CreateStream</c>) — no cursor bookkeeping at
 /// the call site at all. ElasticSearch-exclusive.
 /// </summary>
-public sealed record StreamOrderLines(string TenantId) : IStreamQuery<OrderLineSummary>;
+public sealed record StreamOrderLines(TenantId TenantId) : IStreamQuery<OrderLineSummary>;
 
 public sealed class StreamOrderLinesHandler(ICursorSearch<OrderLineDocument> cursor)
     : IStreamQueryHandler<StreamOrderLines, OrderLineSummary>
@@ -23,7 +25,7 @@ public sealed class StreamOrderLinesHandler(ICursorSearch<OrderLineDocument> cur
     {
         await foreach (var hit in cursor.StreamAsync(
             new SearchRequest { PageSize = 4 },
-            TenantScope.Of(query.TenantId),
+            TenantScope.For(query.TenantId),
             TimeSpan.FromMinutes(1),
             cancellationToken))
         {

@@ -2,6 +2,7 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 using SharedKernel.Domain.Abstractions;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence.EfCore.Extensibility;
 using SharedKernel.Persistence.EfCore.Repositories;
 using SharedKernel.Persistence.Abstractions.Repositories;
@@ -40,7 +41,7 @@ public sealed class BulkSetterGuardTests
     {
         public int Id { get; set; }
 
-        public Guid TenantId { get; set; }
+        public TenantId TenantId { get; set; }
 
         public string Name { get; set; } = "";
 
@@ -66,6 +67,8 @@ public sealed class BulkSetterGuardTests
         {
             modelBuilder.Entity<GuardEntity>(b =>
             {
+                // A bare DbContext has none of the platform conventions, so TenantId needs its converter here.
+                b.Property(e => e.TenantId).HasConversion(tenant => tenant.Value, value => new TenantId(value));
                 b.Property(e => e.Secret).HasAnnotation(PersistenceModelAnnotationNames.Encrypt, "secret");
                 b.Property(e => e.Version).IsConcurrencyToken();
                 b.ComplexProperty(e => e.Contact, c =>
@@ -127,7 +130,7 @@ public sealed class BulkSetterGuardTests
 
     [Fact]
     public void EfPropertyTarget_FailsClosed() =>
-        Validate(s => s.SetProperty(e => EF.Property<Guid>(e, nameof(GuardEntity.TenantId)), Guid.Empty))
+        Validate(s => s.SetProperty(e => EF.Property<TenantId>(e, nameof(GuardEntity.TenantId)), default(TenantId)))
             .Should().Throw<UnsupportedSpecificationException>().WithMessage("*plain member path*");
 
     [Fact]
@@ -138,7 +141,7 @@ public sealed class BulkSetterGuardTests
     [Fact]
     public void ProtectedColumns_AreRejected()
     {
-        Validate(s => s.SetProperty(e => e.TenantId, Guid.NewGuid())).Should().Throw<UnsupportedSpecificationException>();
+        Validate(s => s.SetProperty(e => e.TenantId, new TenantId(Guid.NewGuid()))).Should().Throw<UnsupportedSpecificationException>();
         Validate(s => s.SetProperty(e => e.Version, 1u)).Should().Throw<UnsupportedSpecificationException>().WithMessage("*concurrency*");
         Validate(s => s.SetProperty(e => e.Id, 5)).Should().Throw<UnsupportedSpecificationException>().WithMessage("*primary key*");
         Validate(s => s.SetProperty(e => e.CreatedBy, "x")).Should().Throw<UnsupportedSpecificationException>();

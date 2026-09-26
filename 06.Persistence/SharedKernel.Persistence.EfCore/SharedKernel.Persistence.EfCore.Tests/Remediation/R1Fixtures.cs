@@ -1,11 +1,12 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
-using SharedKernel.Application.Context;
+using SharedKernel.Execution.Context;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Domain.Aggregates;
 using SharedKernel.Domain.Events;
 using SharedKernel.Domain.Monetary;
 using SharedKernel.Domain.StronglyTypedIds;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.MultiTenancy;
 using SharedKernel.Primitives.Clocks;
@@ -56,7 +57,7 @@ public sealed class R1Order : IHasTenant
 {
     public Guid Id { get; set; }
 
-    public Guid TenantId { get; set; }
+    public TenantId TenantId { get; set; }
 
     public string Name { get; set; } = string.Empty;
 
@@ -69,7 +70,7 @@ public sealed class R1OrderLine : IHasTenant
 
     public Guid OrderId { get; set; }
 
-    public Guid TenantId { get; set; }
+    public TenantId TenantId { get; set; }
 
     public string Text { get; set; } = string.Empty;
 

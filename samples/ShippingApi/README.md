@@ -22,12 +22,13 @@ GET  /health/live /health/ready        → the bus-backed readiness probe
 | CloudEvents publish and consume | `POST /shipments` → `ShipmentDispatchedConsumer` |
 | Point-to-point send with an explicit route | `WithSendEndpointRoute<HoldShipment>` → `HoldShipmentConsumer` |
 | **The publisher's tenant and actor on the consumer** | `WithInboundRequestContext()`; the consumer injects `IRequestContext` and reads it like an HTTP handler would |
+| **The request's correlation id on the consumer** | `UseSharedKernelRequestContext()` owns `X-Correlation-Id`; `WithAmbientCorrelationPropagation()` carries it across the broker (`RequestCorrelationId_ReachesTheConsumer`) |
 | At-most-once consumption | `WithIdempotency()` over `InMemoryIdempotencyStore` |
 | Retry, then a fault you can see | `WithRetry()` + `AddFaultConsumer<FailingShipmentCheck, ShipmentCheckFaultConsumer>()` |
 | Transport-native deferred delivery | `WithDelayedDelivery()` → `IMessageScheduler.ScheduleAsync` |
-| Readiness that actually gates traffic | `AddMessagingReadinessCheck()` |
-| Commands and queries behind every endpoint | `AddSharedKernelApplication(typeof(Program).Assembly)`; `ShipmentEndpoints` is an endpoint module (`IEndpointModule`, mapped by `app.MapEndpoints()`) whose endpoints only send through `ISender`; the handlers in `Features/Shipments/` publish, send and schedule |
-| `Result` at the HTTP boundary | `AddSharedKernelWebApi()` + `UseSharedKernelWebApi()`; `sender.Send(new PutShipmentOnHold(id, reason), ct).ToAccepted($"/shipments/{id}")` — 202 with a `Location` to watch (`ToHttpResult(id => TypedResults.Accepted(location, body))` where the 202 carries a body, as `POST /shipments` does), or an RFC 9457 problem (`messaging.unavailable` is 503); a missing shipment is a `shipment.not_found` 404 problem |
+| Readiness that actually gates traffic | the bus probe `Build()` registers, mapped by `AddSharedKernelReadiness()` |
+| Commands and queries behind every endpoint | `AddSharedKernelApplication(typeof(Program).Assembly, app => app.UseMediatR())`; `ShipmentEndpoints` is an endpoint module (`IEndpointModule`, mapped by `app.MapEndpoints()`) whose endpoints only send through the kernel's `ISender`; the handlers in `Features/Shipments/` publish, send and schedule |
+| `Result` at the HTTP boundary | `UseSharedKernelRequestContext()`, then `AddSharedKernelWebApi()` + `UseSharedKernelWebApi()`; `sender.Send(new PutShipmentOnHold(id, reason), ct).ToAccepted($"/shipments/{id}")` — 202 with a `Location` to watch (`ToHttpResult(id => TypedResults.Accepted(location, body))` where the 202 carries a body, as `POST /shipments` does), or an RFC 9457 problem (`messaging.unavailable` is 503); a missing shipment is a `shipment.not_found` 404 problem |
 
 The consumer is the point of the whole sample:
 
@@ -125,7 +126,7 @@ artifacts — a project reference would bypass exactly the thing under test. See
 
 | Here | In production |
 | --- | --- |
-| `HeaderRequestContext` reads the tenant and actor from two request headers | `13.ServiceDefaults`' `AddSharedKernelRequestContext()` over the authenticated principal |
+| `AddDemoIdentity()` builds the `IUserContext` from two request headers | An authentication package (`AddOidcAuthentication(...)`) builds it from a token; `AddSharedKernelRequestContext()` and everything after it are unchanged |
 | `InMemoryIdempotencyStore` deduplicates within one process | `SharedKernel.Idempotency.Redis` or `.EfCore`, which reserve atomically across replicas |
 | `ShipmentProjection` is a dictionary | A real read model written through `06.Persistence` inside the consumer's transaction |
 

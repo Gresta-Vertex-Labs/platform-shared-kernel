@@ -5,13 +5,15 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Npgsql;
-using SharedKernel.Application.Context;
+using SharedKernel.Execution.Context;
 using SharedKernel.Cryptography.Signing;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence;
 using SharedKernel.Persistence.Abstractions.Connections;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.Abstractions.Coordination;
 using SharedKernel.Primitives.Clocks;
+using SharedKernel.Primitives.Health;
 using SharedKernel.Testing.Containers;
 
 namespace SharedKernel.Persistence.EfCore.Auditing.Tests.Support;
@@ -22,16 +24,17 @@ public sealed class AuditPostgresCollection : ICollectionFixture<PostgreSqlConta
 /// <summary>A settable request context, local to these tests.</summary>
 public sealed class TestRequestContext : IRequestContext
 {
-    public static readonly Guid TenantA = new("aaaaaaaa-0000-0000-0000-000000000001");
-    public static readonly Guid TenantB = new("bbbbbbbb-0000-0000-0000-000000000002");
+    public static readonly TenantId TenantA = new(new Guid("aaaaaaaa-0000-0000-0000-000000000001"));
+    public static readonly TenantId TenantB = new(new Guid("bbbbbbbb-0000-0000-0000-000000000002"));
 
     public bool IsAuthenticated { get; set; } = true;
     public string? UserId { get; set; } = "user-1";
-    public Guid? TenantId { get; set; } = TenantA;
+    public TenantId? TenantId { get; set; } = TenantA;
     public ActorKind ActorKind { get; set; } = ActorKind.User;
     public string? ClientId { get; set; }
     public string? SessionId { get; set; }
     public string? ImpersonatorId { get; set; }
+    public string? CorrelationId { get; set; }
 
     public ValueTask<bool> HasPermissionAsync(string permission, CancellationToken cancellationToken) => ValueTask.FromResult(true);
 }
@@ -238,6 +241,12 @@ public sealed class LedgerHost : IAsyncDisposable
     }
 
     public T Get<T>() where T : notnull => Provider.GetRequiredService<T>();
+
+    public Task<ReadinessReport> ProbeSealingAsync() =>
+        Provider.GetRequiredReadinessProbe(AuditSealingReadiness.ProbeName).ProbeAsync();
+
+    public async Task<long> UnsealedRecordsAsync() =>
+        (long)(await ProbeSealingAsync()).Data[AuditSealingReadiness.UnsealedRecordsKey];
 
     public async Task<T> InScopeAsync<T>(Func<IServiceProvider, Task<T>> action)
     {

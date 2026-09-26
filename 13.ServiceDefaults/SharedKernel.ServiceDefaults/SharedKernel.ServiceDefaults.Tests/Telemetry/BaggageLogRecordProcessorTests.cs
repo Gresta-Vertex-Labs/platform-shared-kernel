@@ -87,7 +87,7 @@ public sealed class BaggageLogRecordProcessorTests
     public void PlatformTenantKey_IsTheOneTenantResolutionWrites()
     {
         // Writer and reader live in packages that do not reference each other.
-        Assert.Equal(TenantBaggageKeys.TenantId, PlatformBaggageKeys.TenantId);
+        Assert.Equal(WellKnownBaggageKeys.TenantId, PlatformBaggageKeys.TenantId);
     }
 
     [Theory]

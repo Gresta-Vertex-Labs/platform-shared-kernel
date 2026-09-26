@@ -2,8 +2,9 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using SharedKernel.Application.Context;
-using SharedKernel.Application.Transactions;
+using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
+using SharedKernel.Execution.Transactions;
 using SharedKernel.Persistence;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.EfCore.Context;
@@ -241,7 +242,7 @@ internal sealed class CustomActorContext(Guid userId) : IRequestContext
 {
     public bool IsAuthenticated => true;
     public string? UserId { get; } = userId.ToString("D");
-    public Guid? TenantId => null;
+    public TenantId? TenantId => null;
     public ActorKind ActorKind => ActorKind.User;
 
     public ValueTask<bool> HasPermissionAsync(string permission, CancellationToken cancellationToken) =>

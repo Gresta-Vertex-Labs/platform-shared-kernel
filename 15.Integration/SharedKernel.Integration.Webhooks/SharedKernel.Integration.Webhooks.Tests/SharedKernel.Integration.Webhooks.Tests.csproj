@@ -4,7 +4,9 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Integration.Webhooks.csproj" />
+    <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Cryptography.Testing\SharedKernel.Cryptography.Testing.csproj" />
     <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
+    <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Messaging.Testing\SharedKernel.Messaging.Testing.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="xunit" />

@@ -1,0 +1,21 @@
+#nullable enable
+const SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.SectionName = "SharedKernel:Messaging:RabbitMq" -> string!
+SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions
+SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.ConcurrentMessageLimit.get -> int?
+SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.ConcurrentMessageLimit.set -> void
+SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.Host.get -> string!
+SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.Host.set -> void
+SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.Password.get -> string!
+SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.Password.set -> void
+SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.Prefetch.get -> ushort
+SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.Prefetch.set -> void
+SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.RabbitMqBusOptions() -> void
+SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.RequestedHeartbeat.get -> System.TimeSpan
+SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.RequestedHeartbeat.set -> void
+SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.Username.get -> string!
+SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.Username.set -> void
+SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.VirtualHost.get -> string!
+SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.VirtualHost.set -> void
+SharedKernel.Messaging.MassTransit.Extensions.RabbitMqMessagingBusBuilderExtensions
+static SharedKernel.Messaging.MassTransit.Extensions.RabbitMqMessagingBusBuilderExtensions.UseRabbitMq(this SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder! builder, string! connectionString) -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
+static SharedKernel.Messaging.MassTransit.Extensions.RabbitMqMessagingBusBuilderExtensions.UseRabbitMq(this SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder! builder, System.Action<SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions!>! configure) -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!

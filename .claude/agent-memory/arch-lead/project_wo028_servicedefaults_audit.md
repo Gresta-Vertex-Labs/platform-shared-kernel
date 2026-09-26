@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): per-domain probe primitives and their `Add*ReadinessCheck` adapters were replaced by `IReadinessProbe` + `AddSharedKernelReadiness()`; `AddDatabaseReadinessCheck<TContext>`/`AddDapperDatabaseReadinessCheck` still exist in `SharedKernel.ServiceDefaults.Persistence`.
+
 WO-028 (P-175–P-178) is a hardening pass against `13.ServiceDefaults`'s already-`◐`-dispatched WO-027 Core implementation (C-01–C-18 landed, 41 tests green) — requested directly by the user as a "find bad practices, eliminate magic strings, verify multitenancy" audit, not a new-capability request.
 
 **Why this matters going forward:** this is the first time in the project's history that an audit of *already-shipped, tested* code (not a new-feature request) produced new phases. The lesson: passing tests do not prove an abstraction is correct — see the false-confidence test finding below.

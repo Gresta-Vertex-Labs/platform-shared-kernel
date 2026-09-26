@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Foundation</SharedKernelTier>
     <!-- NuGet packaging metadata -->
     <Description>Personal-data classification, masking, log redaction and data-subject requests (GDPR/KVKK). A taxonomy of 23 kinds of personal data, including every GDPR/KVKK special category, built on Microsoft.Extensions.Compliance, with one attribute per kind usable on properties, fields and [LoggerMessage] parameters. SetPrivacyRedactors() plugs matching redactors into .NET log redaction, so a tagged value is masked or erased when it is logged. PiiMasking masks email addresses, phone numbers, card numbers (first 6 and last 4), IBANs, national IDs, names and IP addresses; Pseudonymizer replaces an identifier with a stable HMAC-SHA256 token. IDataSubjectRequestHandler is the contract each service implements to export or erase a person's data, with idempotent request ids and receipts that record what was kept and why. No reflection.</Description>
     <PackageReleaseNotes>First release.</PackageReleaseNotes>

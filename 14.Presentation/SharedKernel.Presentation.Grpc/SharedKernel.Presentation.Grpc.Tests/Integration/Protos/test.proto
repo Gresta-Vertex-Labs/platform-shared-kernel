@@ -37,4 +37,9 @@ message EchoReply {
 message ContextReply {
   string correlation_id = 1;
   string baggage_correlation_id = 2;
+  // What the method reads from the ambient RequestContextScope that UseSharedKernelRequestContext() opened.
+  string scope_correlation_id = 3;
+  string user_id = 4;
+  string actor_kind = 5;
+  string tenant_id = 6;
 }

@@ -1,6 +1,6 @@
 using Grpc.Core;
 using Grpc.Net.ClientFactory;
-using Microsoft.AspNetCore.Http;
+using SharedKernel.Execution.Context;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using SharedKernel.Communication.Grpc.Builders;
@@ -13,7 +13,7 @@ namespace SharedKernel.Communication.Grpc.Tests.DI;
 public sealed class GrpcCommunicationBuilderTests
 {
     [Fact]
-    public void AddSharedKernelGrpcCommunication_RegistersIHttpContextAccessor()
+    public void AddSharedKernelGrpcCommunication_RegistersIRequestContextAccessor()
     {
         // Arrange
         var services = new ServiceCollection();
@@ -23,7 +23,9 @@ public sealed class GrpcCommunicationBuilderTests
         var sp = services.BuildServiceProvider();
 
         // Assert
-        sp.GetService<IHttpContextAccessor>().Should().NotBeNull();
+        sp.GetService<IRequestContextAccessor>().Should().NotBeNull();
+        services.Should().NotContain(d => d.ServiceType.Name == "IHttpContextAccessor",
+            "P-566: the client reads the ambient context, never the inbound HttpContext");
     }
 
     [Fact]

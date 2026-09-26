@@ -6,7 +6,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Npgsql;
-using SharedKernel.Application.Transactions;
+using SharedKernel.Execution.Transactions;
 using SharedKernel.Persistence;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Options;

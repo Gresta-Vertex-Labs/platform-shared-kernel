@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): `AddVectorStoreReadinessCheck` was deleted (vector collections register `IReadinessProbe`s mapped by `AddSharedKernelReadiness()`); `AddOrchestrationReadinessCheck` was never built (retracted, P-291). Keep this as a lesson about locking only verified contract parts.
+
 WO-045/P-285 (2026-07-21, Vector-Store/Orchestration readiness checks for `10.Intelligence`) surfaced
 a blocker category distinct from every prior one in [[feedback_verify_dependency_claims]]. All prior
 cases (`08.Storage`/WO-043, `09.Search`/WO-044) were "design ● / implementation ○" — the owning

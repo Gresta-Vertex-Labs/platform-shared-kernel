@@ -29,9 +29,11 @@ result.FailingTypeNames // IEnumerable<string>?
 
 ## SharedKernelLayeringRules factory signature
 
+Since WO-086/P-574 this class holds only the purity rules the package tiers cannot express (`ContractsNeverReferencesDomain`, `DomainNeverReferencesContracts`, `ModelNeverReferencesLogging`, `TestingNeverReferencedByProduction`); package-to-package direction is enforced by `eng/SharedKernelTiers.targets` (SKTIER000–006, build errors) and `DependencyGraphRulesTests`. The same factory shape applies to every topic rules class under `Rules/`.
+
 All methods take `Assembly` as a parameter and return `ConditionList`:
 ```csharp
-public static ConditionList DomainNeverReferencesPersistence(Assembly assembly) => ...
+public static ConditionList ContractsNeverReferencesDomain(Assembly assembly) => ...
 ```
 
 ## ArchitectureRuleBase.AssertRule

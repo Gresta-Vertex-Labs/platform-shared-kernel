@@ -8,6 +8,14 @@
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Presentation.Grpc.csproj" />
     <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
+    <!-- TestServerCallContext for the interceptor unit tests. -->
+    <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Presentation.Testing\SharedKernel.Presentation.Testing.csproj" />
+    <!--
+      The host composition a gRPC service uses (P-579): UseSharedKernelRequestContext() opens each call's context scope,
+      and the WebApi pipeline authenticates and authorizes. The package itself references neither.
+    -->
+    <ProjectReference Include="..\..\..\13.ServiceDefaults\SharedKernel.ServiceDefaults.Security\SharedKernel.ServiceDefaults.Security.csproj" />
+    <ProjectReference Include="..\..\SharedKernel.Presentation.WebApi\SharedKernel.Presentation.WebApi.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="xunit" />
@@ -23,7 +31,8 @@
     <PackageReference Include="FluentAssertions" />
     <!--
       Real gRPC over an in-process TestServer (the documented "Test gRPC services in ASP.NET Core" pattern), hosted
-      the way a service is: AddSharedKernelWebApi + AddSharedKernelGrpc, then UseSharedKernelWebApi. Never a mocked
+      the way a service is: AddSharedKernelRequestContext + AddSharedKernelWebApi + AddSharedKernelGrpc, then
+      UseSharedKernelRequestContext and UseSharedKernelWebApi. Never a mocked
       ServerCallContext for pipeline behavior. Grpc.AspNetCore also brings Grpc.Tools for the test .proto.
     -->
     <PackageReference Include="Microsoft.AspNetCore.TestHost" />

@@ -177,8 +177,8 @@ public class SK0703_MessageBusSingletonRegistrationAnalyzerTests
 
     /// <summary>
     /// Pass path: a contract that merely shares the <c>IMessageBus</c> prefix is not the scoped bus.
-    /// <c>IMessageBusProbe</c> is correctly a singleton (<c>MessagingBusBuilder</c> registers it that
-    /// way itself); the rule once matched on the prefix and flagged it.
+    /// The input is modeled on the former <c>IMessageBusProbe</c> (replaced by an <c>IReadinessProbe</c> in
+    /// WO-086), which was correctly a singleton; the rule once matched on the prefix and flagged it.
     /// </summary>
     [Fact]
     public async Task PassPath_AddSingletonWithPrefixSharingProbe_NoDiagnostic()

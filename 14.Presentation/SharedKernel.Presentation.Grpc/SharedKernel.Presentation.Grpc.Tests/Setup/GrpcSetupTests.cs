@@ -116,4 +116,15 @@ public sealed class GrpcSetupTests
         using var provider = builder.Services.BuildServiceProvider();
         return provider.GetRequiredService<IOptions<SharedKernelGrpcOptions>>().Value;
     }
+
+    [Fact]
+    public void P579_ThePackage_ReferencesNeitherTheWebApiPackageNorContracts()
+    {
+        // gRPC takes what it shares with HTTP from SharedKernel.Presentation.Core, so a gRPC host takes no HTTP API
+        // stack; protobuf messages, not Contracts DTOs, are its wire contract (GrpcNeverReferencesContracts).
+        var references = typeof(GrpcHostBuilderExtensions).Assembly.GetReferencedAssemblies().Select(name => name.Name).ToArray();
+
+        references.Should().Contain("SharedKernel.Presentation.Core");
+        references.Should().NotContain(["SharedKernel.Presentation.WebApi", "SharedKernel.Contracts"]);
+    }
 }

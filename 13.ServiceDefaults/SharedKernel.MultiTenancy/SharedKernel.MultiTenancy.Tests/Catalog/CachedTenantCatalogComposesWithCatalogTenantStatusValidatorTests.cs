@@ -9,7 +9,7 @@ public sealed class CachedTenantCatalogComposesWithCatalogTenantStatusValidatorT
     [Fact]
     public async Task CatalogTenantStatusValidator_ComposesWithCachedTenantCatalog_WithZeroCodeChanges()
     {
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
         var descriptor = new TenantDescriptor(
             tenantId, "Acme", TenantStatus.Active, TenantIsolationMode.Shared, null, new Dictionary<string, string>());
 

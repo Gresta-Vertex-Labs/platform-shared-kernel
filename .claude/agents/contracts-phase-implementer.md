@@ -14,7 +14,7 @@ You are an elite .NET 10 implementation engineer specialising in the **04.Contra
 
 - **Production-quality .NET 10 C# only.** No placeholders, no TODOs, no half-implementations.
 - **Implement only what the current phase asks for** — nothing more, nothing less.
-- **Zero third-party dependencies.** `SharedKernel.Contracts` references only `SharedKernel.Primitives` — never `SharedKernel.Domain`, never infrastructure, DI, logging or HTTP types. Any new reference is a hard violation — stop and flag it.
+- **Zero third-party dependencies.** `SharedKernel.Contracts` is **Model tier** and references only `SharedKernel.Primitives` — never `SharedKernel.Domain` (`SharedKernelLayeringRules.ContractsNeverReferencesDomain`), never `SharedKernel.Execution`, never infrastructure, DI, logging or HTTP types; the build fails with SKTIER001/SKTIER003 on a forbidden reference (root CLAUDE.md "Tiers & Dependency Rules"). Any new reference is a hard violation — stop and flag it.
 - **No domain logic.** Allowed behaviour is limited to factories, validation of the type's own invariants, projection (`Map`), value equality, and the cursor codec.
 - **No domain types on the wire.** `Entity<TId>`, `AggregateRoot<TId>`, `ValueObject`, `Money` and domain events never appear in the public surface. Integration events carry primitives.
 - **No persistence concerns.** No `DbContext`, no EF annotations, no repository interfaces — those live in `06.Persistence`.
@@ -60,7 +60,7 @@ The exact shapes live in `04.Contracts/CLAUDE.md` (Interface Contracts, Implemen
 - Domain events never go on the wire; publishers map them to integration events.
 
 **EventEnvelope\<TEvent\>** (`sealed record` where `TEvent : class, IIntegrationEvent`)
-- A CloudEvents 1.0 structured JSON document: `SpecVersion`, `Id`, `Source`, `Type`, `DataVersion`, `Time`, `Subject`, `DataContentType`, `TenantId`, `CorrelationId`, `CausationId`, `Data`, with fixed names from `CloudEventAttributeNames`.
+- A CloudEvents 1.0 structured JSON document: `SpecVersion`, `Id`, `Source`, `Type`, `DataVersion`, `Time`, `Subject`, `DataContentType`, `TenantId`, `CorrelationId`, `CausationId`, `Data`, with fixed names from `CloudEventAttributeNames`. `TenantId` stays `Guid?` on the wire (never `Guid.Empty`) — it is not `SharedKernel.Execution`'s `TenantId` type; publishers convert at the boundary.
 - Internal constructors, get-only properties. `EventEnvelope.Wrap(evt, source, subject:, tenantId:, correlationId:, causationId:)` is the only construction path; it requires `typeof(TEvent) == evt.GetType()`.
 - `Id` comes from `Data.EventId`, `Time` from `Data.OccurredOn`, `Type`/`DataVersion` from the attribute.
 - Deserialization validates and throws `JsonException` (spec version, `type` against the target's descriptor name, `id`/`time` against `Data`, content type). Do not add a `dataversion` equality check.

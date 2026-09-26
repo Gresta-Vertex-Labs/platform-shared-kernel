@@ -1,6 +1,7 @@
 using BillingApi.Domain;
 using BillingApi.Infrastructure;
-using SharedKernel.Application;
+using SharedKernel.Application.Authorization;
+using SharedKernel.Application.Messaging;
 using SharedKernel.Persistence.Abstractions.Repositories;
 using SharedKernel.Persistence.EfCore.Concurrency;
 using SharedKernel.Primitives.Results;

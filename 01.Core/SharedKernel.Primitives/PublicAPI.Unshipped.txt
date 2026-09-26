@@ -1,7 +1,42 @@
 #nullable enable
+override SharedKernel.Primitives.Health.ReadinessReport.GetHashCode() -> int
+SharedKernel.Primitives.Health.IReadinessProbe
+SharedKernel.Primitives.Health.IReadinessProbe.Name.get -> string!
+SharedKernel.Primitives.Health.IReadinessProbe.ProbeAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Health.ReadinessReport!>!
+SharedKernel.Primitives.Health.ReadinessProbeServiceCollectionExtensions
+SharedKernel.Primitives.Health.ReadinessReport
+SharedKernel.Primitives.Health.ReadinessReport.Data.get -> System.Collections.Generic.IReadOnlyDictionary<string!, object!>!
+SharedKernel.Primitives.Health.ReadinessReport.Data.init -> void
+SharedKernel.Primitives.Health.ReadinessReport.Description.get -> string?
+SharedKernel.Primitives.Health.ReadinessReport.Description.init -> void
+SharedKernel.Primitives.Health.ReadinessReport.Equals(SharedKernel.Primitives.Health.ReadinessReport? other) -> bool
+SharedKernel.Primitives.Health.ReadinessReport.IsHealthy.get -> bool
+SharedKernel.Primitives.Health.ReadinessReport.Latency.get -> System.TimeSpan?
+SharedKernel.Primitives.Health.ReadinessReport.Latency.init -> void
+SharedKernel.Primitives.Health.ReadinessReport.ReadinessReport(SharedKernel.Primitives.Health.ReadinessStatus status, System.TimeSpan? latency = null, string? description = null, System.Collections.Generic.IReadOnlyDictionary<string!, object!>? data = null) -> void
+SharedKernel.Primitives.Health.ReadinessReport.Status.get -> SharedKernel.Primitives.Health.ReadinessStatus
+SharedKernel.Primitives.Health.ReadinessReport.Status.init -> void
+SharedKernel.Primitives.Health.ReadinessStatus
+SharedKernel.Primitives.Health.ReadinessStatus.Degraded = 1 -> SharedKernel.Primitives.Health.ReadinessStatus
+SharedKernel.Primitives.Health.ReadinessStatus.Healthy = 2 -> SharedKernel.Primitives.Health.ReadinessStatus
+SharedKernel.Primitives.Health.ReadinessStatus.Unhealthy = 0 -> SharedKernel.Primitives.Health.ReadinessStatus
+static SharedKernel.Primitives.Health.ReadinessProbeServiceCollectionExtensions.AddReadinessProbe(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Func<System.IServiceProvider!, SharedKernel.Primitives.Health.IReadinessProbe!>! factory) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SharedKernel.Primitives.Health.ReadinessProbeServiceCollectionExtensions.AddReadinessProbe<TProbe>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SharedKernel.Primitives.Health.ReadinessProbeServiceCollectionExtensions.GetRequiredReadinessProbe(this System.IServiceProvider! services, string! name) -> SharedKernel.Primitives.Health.IReadinessProbe!
+static SharedKernel.Primitives.Health.ReadinessReport.Degraded(string? description, System.Collections.Generic.IReadOnlyDictionary<string!, object!>? data = null, System.TimeSpan? latency = null) -> SharedKernel.Primitives.Health.ReadinessReport!
+static SharedKernel.Primitives.Health.ReadinessReport.Healthy(string? description = null, System.Collections.Generic.IReadOnlyDictionary<string!, object!>? data = null, System.TimeSpan? latency = null) -> SharedKernel.Primitives.Health.ReadinessReport!
+static SharedKernel.Primitives.Health.ReadinessReport.Unhealthy(string? description, System.Collections.Generic.IReadOnlyDictionary<string!, object!>? data = null, System.TimeSpan? latency = null) -> SharedKernel.Primitives.Health.ReadinessReport!
+SharedKernel.Primitives.Health.ReadinessReport.<Clone>$() -> SharedKernel.Primitives.Health.ReadinessReport!
+override SharedKernel.Primitives.Health.ReadinessReport.Equals(object? obj) -> bool
+override SharedKernel.Primitives.Health.ReadinessReport.ToString() -> string!
+static SharedKernel.Primitives.Health.ReadinessReport.operator !=(SharedKernel.Primitives.Health.ReadinessReport? left, SharedKernel.Primitives.Health.ReadinessReport? right) -> bool
+static SharedKernel.Primitives.Health.ReadinessReport.operator ==(SharedKernel.Primitives.Health.ReadinessReport? left, SharedKernel.Primitives.Health.ReadinessReport? right) -> bool
+const SharedKernel.Primitives.Propagation.WellKnownHeaders.ActorId = "x-sk-actor-id" -> string!
+const SharedKernel.Primitives.Propagation.WellKnownHeaders.ActorKind = "x-sk-actor-kind" -> string!
+const SharedKernel.Primitives.Propagation.WellKnownHeaders.ClientId = "x-sk-client-id" -> string!
+const SharedKernel.Primitives.Propagation.WellKnownHeaders.IdempotencyKey = "Idempotency-Key" -> string!
 const SharedKernel.Primitives.Errors.ErrorCodes.Timeout.Default = "timeout.default" -> string!
 const SharedKernel.Primitives.Errors.ErrorCodes.Unavailable.Default = "unavailable.default" -> string!
-const SharedKernel.Primitives.Propagation.WellKnownHeaders.IdempotencyKey = "Idempotency-Key" -> string!
 SharedKernel.Primitives.Errors.ErrorCodes.Timeout
 SharedKernel.Primitives.Errors.ErrorCodes.Unavailable
 SharedKernel.Primitives.Errors.ErrorType.Timeout = 9 -> SharedKernel.Primitives.Errors.ErrorType

@@ -17,7 +17,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// <see cref="Helpers.ArchitectureRuleBase"/> API. No new SK diagnostic ID is introduced by this class — every
 /// rule is a pure NetArchTest <see cref="ConditionList"/> predicate over Mono.Cecil IL inspection, following the
 /// same "boundary-mapping prohibition via architecture test, not Roslyn analyzer" precedent already established
-/// for SK-less rules in this domain (<see cref="RedisTopologyRules"/>, <see cref="CompositionRootExclusivityRules"/>,
+/// for SK-less rules in this domain (<see cref="RedisTopologyRules"/>, the former <c>CompositionRootExclusivityRules</c>,
 /// and <see cref="CommunicationLayeringRules"/>'s gRPC/Contracts rule).
 /// </para>
 /// <para>
@@ -29,13 +29,17 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// exclusion must be caller-controlled rather than predicate-internal.
 /// </para>
 /// <para>
-/// <strong>What the P-562 redesign changed.</strong> The presentation domain became four packages: the WebApi core,
-/// the OpenAPI add-on and the SignalR and gRPC packages, both of which now build on the core. Only the WebApi core
-/// shapes <c>ProblemDetails</c> or maps a <c>Result</c> to an HTTP response: SignalR and gRPC present errors through
-/// the core's <c>ErrorPresentation</c> (as a <c>HubException</c> message and a <c>google.rpc.Status</c>), and the
-/// OpenAPI add-on only <em>describes</em> the problem shape, as <c>Microsoft.OpenApi</c> schema objects. So the
-/// exclusion stays exactly one assembly — <c>SharedKernel.Presentation.WebApi</c> — and the three siblings are
-/// checked like any other assembly (proven against the real assemblies by the companion tests). The deleted
+/// <strong>What the P-562 redesign and WO-086 changed.</strong> The presentation domain is the WebApi core, the
+/// OpenAPI add-on, the SignalR and gRPC packages, and <c>SharedKernel.Presentation.Core</c> (WO-086/P-570), which
+/// holds what the HTTP, SignalR and gRPC boundaries share: the endpoint authorization attributes and policies
+/// (namespace <c>SharedKernel.Presentation.Authorization</c>) and the internal error presentation and error-type
+/// status map (namespace <c>SharedKernel.Presentation</c>). The gRPC package references the presentation core only,
+/// never the WebApi core; SignalR and the OpenAPI add-on reference both. Only the WebApi core shapes
+/// <c>ProblemDetails</c> or maps a <c>Result</c> to an HTTP response: SignalR and gRPC present errors through the shared error presentation (as a <c>HubException</c>
+/// message and a <c>google.rpc.Status</c>), and the OpenAPI add-on only <em>describes</em> the problem shape, as
+/// <c>Microsoft.OpenApi</c> schema objects. So the exclusion stays exactly one assembly —
+/// <c>SharedKernel.Presentation.WebApi</c> — and every sibling is checked like any other assembly (proven against the
+/// real assemblies by the companion tests). The deleted
 /// <c>ToProblemDetailsResult</c> no longer marks a compliant method; the typed-result mapping surface does (see
 /// <see cref="NoInlineResultBranchBeforeHttpResultOutsideWebApi"/>).
 /// </para>
@@ -98,7 +102,7 @@ public static class PresentationLayeringRules
     /// <para>
     /// The caller supplies every assembly to be checked EXCEPT <c>SharedKernel.Presentation.WebApi</c> itself — there
     /// is no internal namespace exemption inside the predicate (see the class-level <strong>Caller-controlled
-    /// exclusion convention</strong> remark). <c>SharedKernel.Presentation.OpenApi</c>,
+    /// exclusion convention</strong> remark). <c>SharedKernel.Presentation.Core</c>, <c>SharedKernel.Presentation.OpenApi</c>,
     /// <c>SharedKernel.Presentation.SignalR</c> and <c>SharedKernel.Presentation.Grpc</c> are not exempt: none of them
     /// constructs a <c>ProblemDetails</c> (the OpenAPI add-on's <c>ProblemDetails</c> component is an
     /// <c>OpenApiSchema</c>, never the type itself).
@@ -214,8 +218,8 @@ public static class PresentationLayeringRules
     /// </para>
     /// <para>
     /// The caller supplies the platform's presentation packages other than the add-on —
-    /// <c>SharedKernel.Presentation.WebApi</c>, <c>SharedKernel.Presentation.SignalR</c> and
-    /// <c>SharedKernel.Presentation.Grpc</c> — and never <c>SharedKernel.Presentation.OpenApi</c> itself (the
+    /// <c>SharedKernel.Presentation.Core</c>, <c>SharedKernel.Presentation.WebApi</c>,
+    /// <c>SharedKernel.Presentation.SignalR</c> and <c>SharedKernel.Presentation.Grpc</c> — and never <c>SharedKernel.Presentation.OpenApi</c> itself (the
     /// caller-controlled exclusion convention). A consuming service's own assemblies are not in scope: a service may
     /// reference <c>Asp.Versioning</c> directly, for example to declare <c>[ApiVersion]</c> on its controllers.
     /// </para>
@@ -263,15 +267,15 @@ public static class PresentationLayeringRules
     /// </para>
     /// <para>
     /// <strong>Why a rule and not just the project graph.</strong>
-    /// <c>SharedKernel.Presentation.Grpc</c> takes a deliberate <c>ProjectReference</c> on
-    /// <c>SharedKernel.Presentation.WebApi</c>, for what every protocol on the shared pipeline must agree on:
-    /// <c>ErrorPresentation</c> (status category, client message, localization, redaction),
-    /// <c>AddSharedKernelAuthorization</c> (the policies behind <c>RequireEndpointPermission</c> and its siblings) and the
-    /// correlation id. Today neither package references <c>04.Contracts</c>, so no Contracts type is reachable, but
-    /// any future reference added to <c>SharedKernel.Presentation.WebApi</c> would flow transitively into the gRPC
-    /// package and a <c>using SharedKernel.Contracts;</c> inside a gRPC service method would compile. The Hard rule
-    /// ("never reference <c>04.Contracts</c>") must hold at the type-use level, not only at the
-    /// direct-<c>ProjectReference</c> level.
+    /// <c>SharedKernel.Presentation.Grpc</c> does not reference <c>SharedKernel.Presentation.WebApi</c> (P-570): what
+    /// every protocol on the shared pipeline must agree on — error presentation (status category, client message,
+    /// localization, redaction), the authorization policies behind the endpoint authorization attributes
+    /// (<c>SharedKernel.Presentation.Authorization</c>) and the error-type status map — lives in
+    /// <c>SharedKernel.Presentation.Core</c>, which both reference; <c>GrpcStatusCodeMap</c> stays in the gRPC package. Today neither package references
+    /// <c>04.Contracts</c>, so no Contracts type is reachable, but any future reference added to a package in the gRPC
+    /// package's closure would flow transitively into it and a <c>using SharedKernel.Contracts;</c> inside a gRPC
+    /// service method would compile. The Hard rule ("never reference <c>04.Contracts</c>") must hold at the type-use
+    /// level, not only at the direct-<c>ProjectReference</c> level.
     /// </para>
     /// <para>
     /// <strong>Why <c>NotHaveDependencyOn</c> is the correct, sufficient mechanism even with a
@@ -279,7 +283,7 @@ public static class PresentationLayeringRules
     /// scanned type's ACTUAL Mono.Cecil-observed dependency namespaces (fields, method
     /// parameters/return types/bodies) — never the assembly-level reference list a
     /// <c>ProjectReference</c> populates. A type merely being reachable via the reference closure
-    /// (because the compiler needs <c>SharedKernel.Presentation.WebApi</c>'s own transitive
+    /// (because the compiler needs a referenced package's own transitive
     /// dependencies resolvable) does not, by itself, fail this check — only an actual
     /// <c>SharedKernel.Contracts.*</c> type USE inside a <c>SharedKernel.Presentation.Grpc</c> type
     /// does. This is confirmed empirically by <c>GrpcNeverReferencesContracts_RealGrpcAssembly_RulePasses</c>

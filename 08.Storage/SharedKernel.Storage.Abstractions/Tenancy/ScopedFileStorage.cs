@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 
@@ -19,16 +20,16 @@ internal sealed class ScopedFileStorage : IFileStorage
     private readonly IFileStorage _inner;
     private readonly string _prefix;
 
-    public ScopedFileStorage(IFileStorage inner, string? tenantId)
+    public ScopedFileStorage(IFileStorage inner, TenantId? tenantId)
     {
         _inner = inner;
         TenantId = tenantId;
-        _prefix = tenantId is null ? string.Empty : $"{TenantFileStorage.TenantsFolder}{tenantId}/";
+        _prefix = tenantId is null ? string.Empty : $"{TenantFileStorage.TenantsFolder}{tenantId.Value}/";
     }
 
     public string StoreName => _inner.StoreName;
 
-    public string? TenantId { get; }
+    public TenantId? TenantId { get; }
 
     public async Task<Result<FileReference>> UploadAsync(
         string key,

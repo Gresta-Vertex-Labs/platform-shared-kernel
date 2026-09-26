@@ -1,3 +1,5 @@
+using SharedKernel.Execution.Tenancy;
+
 namespace SharedKernel.MultiTenancy.Resolution;
 
 /// <summary>
@@ -42,5 +44,5 @@ public interface ITenantStatusValidator
     /// <returns>
     /// <see langword="true"/> when the tenant is active; otherwise <see langword="false"/>.
     /// </returns>
-    Task<bool> IsActiveAsync(Guid tenantId, CancellationToken ct);
+    Task<bool> IsActiveAsync(TenantId tenantId, CancellationToken ct);
 }

@@ -1,7 +1,9 @@
 using BillingApi.Domain;
 using BillingApi.Features.Customers;
-using SharedKernel.Application;
-using SharedKernel.Application.Context;
+using SharedKernel.Application.Auditing;
+using SharedKernel.Application.Authorization;
+using SharedKernel.Execution.Context;
+using SharedKernel.Application.Messaging;
 using SharedKernel.Domain.Monetary;
 using SharedKernel.Domain.Specifications;
 using SharedKernel.Persistence.Abstractions.Repositories;

@@ -1,5 +1,6 @@
 using Elastic.Clients.Elasticsearch;
 using FluentAssertions;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Search.Abstractions.Models;
 using SharedKernel.Search.ElasticSearch.Suggest;
 using SharedKernel.Search.ElasticSearch.Tests.Containers;
@@ -60,9 +61,9 @@ public sealed class ElasticSearchSuggestTests : IAsyncLifetime
         var index = ElasticsearchProviderFactory.CreateIndex<SuggestableProduct>(_client, _definition);
         var documents = new SuggestableProduct[]
         {
-            new() { DocumentId = "sug-1", TenantId = "tenant-a", Name = "Wireless Mouse", NameSuggest = "Wireless Mouse" },
-            new() { DocumentId = "sug-2", TenantId = "tenant-a", Name = "Wireless Keyboard", NameSuggest = "Wireless Keyboard" },
-            new() { DocumentId = "sug-3", TenantId = "tenant-b", Name = "Wireless Headphones", NameSuggest = "Wireless Headphones" },
+            new() { DocumentId = "sug-1", TenantId = TestTenants.TenantA.ToString(), Name = "Wireless Mouse", NameSuggest = "Wireless Mouse" },
+            new() { DocumentId = "sug-2", TenantId = TestTenants.TenantA.ToString(), Name = "Wireless Keyboard", NameSuggest = "Wireless Keyboard" },
+            new() { DocumentId = "sug-3", TenantId = TestTenants.TenantB.ToString(), Name = "Wireless Headphones", NameSuggest = "Wireless Headphones" },
         };
         (await index.IndexManyAsync(documents, SearchWriteConsistency.Searchable)).IsSuccess.Should().BeTrue();
 
@@ -80,7 +81,7 @@ public sealed class ElasticSearchSuggestTests : IAsyncLifetime
     public async Task SuggestAsync_ReturnsCompletionsForThePrefix()
     {
         var result = await _suggest.SuggestAsync(
-            SuggestableProduct.SuggestField, "Wireless", TenantScope.Of("tenant-a"));
+            SuggestableProduct.SuggestField, "Wireless", TenantScope.For(TestTenants.TenantA));
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().NotBeEmpty();
@@ -95,7 +96,7 @@ public sealed class ElasticSearchSuggestTests : IAsyncLifetime
         // typed — the completion context is the only thing preventing that, since the suggester ignores
         // query filters entirely.
         var result = await _suggest.SuggestAsync(
-            SuggestableProduct.SuggestField, "Wireless", TenantScope.Of("tenant-a"), size: 50);
+            SuggestableProduct.SuggestField, "Wireless", TenantScope.For(TestTenants.TenantA), size: 50);
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().NotContain(
@@ -104,10 +105,10 @@ public sealed class ElasticSearchSuggestTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task SuggestAsync_WithTenantScopeNoneOnATenantedIndex_FailsClosed()
+    public async Task SuggestAsync_WithTenantScopeGlobalOnATenantedIndex_FailsClosed()
     {
         var result = await _suggest.SuggestAsync(
-            SuggestableProduct.SuggestField, "Wireless", TenantScope.None);
+            SuggestableProduct.SuggestField, "Wireless", TenantScope.Global);
 
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("search.tenant_scope_missing");
@@ -119,7 +120,7 @@ public sealed class ElasticSearchSuggestTests : IAsyncLifetime
         // A field that was never declared produces an opaque ElasticSearch mapping error, and the
         // caller's real mistake — forgetting WithCompletionField at the composition root — is not
         // recoverable from it.
-        var result = await _suggest.SuggestAsync("notDeclared", "Wireless", TenantScope.Of("tenant-a"));
+        var result = await _suggest.SuggestAsync("notDeclared", "Wireless", TenantScope.For(TestTenants.TenantA));
 
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("search.field_not_searchable");
@@ -132,7 +133,7 @@ public sealed class ElasticSearchSuggestTests : IAsyncLifetime
     public async Task SuggestAsync_WithABlankPrefix_IsRejected(string prefix)
     {
         var result = await _suggest.SuggestAsync(
-            SuggestableProduct.SuggestField, prefix, TenantScope.Of("tenant-a"));
+            SuggestableProduct.SuggestField, prefix, TenantScope.For(TestTenants.TenantA));
 
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("search.invalid_request");
@@ -144,7 +145,7 @@ public sealed class ElasticSearchSuggestTests : IAsyncLifetime
         // Opt-in, because ElasticSearch's length-scaled edit distance costs materially more than an
         // exact prefix walk over the FST.
         var result = await _suggest.SuggestAsync(
-            SuggestableProduct.SuggestField, "Wirelss", TenantScope.Of("tenant-a"), fuzzy: true);
+            SuggestableProduct.SuggestField, "Wirelss", TenantScope.For(TestTenants.TenantA), fuzzy: true);
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().NotBeEmpty("fuzzy completion must tolerate a single-character typo");

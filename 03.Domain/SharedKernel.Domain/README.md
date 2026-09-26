@@ -52,7 +52,8 @@ dotnet add package SharedKernel.Domain
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
-| Dependencies | `SharedKernel.Primitives` and `SharedKernel.Core` only |
+| Dependencies | `SharedKernel.Primitives`, `SharedKernel.Core` and `SharedKernel.Execution` only (all Foundation tier) |
+| Tier | Model: no third-party dependency, no I/O |
 | Registration | None: everything is a base class, an interface or a static method |
 
 ## Quick start
@@ -244,13 +245,15 @@ public sealed record OrderShipped(OrderId OrderId) : DomainEvent;
 
 ### 5. The aggregate
 
+`TenantId` is `SharedKernel.Execution.Tenancy.TenantId`, the platform's one tenant identifier.
+
 ```csharp
 public sealed class Order : TenantedAuditableAggregateRoot<OrderId>
 {
     private readonly List<OrderLine> _lines = [];
 
     private Order(
-        OrderId id, Guid tenantId, CustomerId customerId, ShippingAddress shipTo,
+        OrderId id, TenantId tenantId, CustomerId customerId, ShippingAddress shipTo,
         IReadOnlyList<OrderLine> lines, IClock clock)
         : base(id, tenantId, clock)
     {
@@ -273,7 +276,7 @@ public sealed class Order : TenantedAuditableAggregateRoot<OrderId>
     public IReadOnlyList<OrderLine> Lines => _lines;
 
     public static ValidationResult<Order> Place(
-        OrderId id, Guid tenantId, CustomerId customerId, ShippingAddress shipTo,
+        OrderId id, TenantId tenantId, CustomerId customerId, ShippingAddress shipTo,
         IReadOnlyList<OrderLine> lines, IClock clock) =>
         TryCreate(() => new Order(id, tenantId, customerId, shipTo, lines, clock));
 
@@ -286,7 +289,7 @@ public sealed class Order : TenantedAuditableAggregateRoot<OrderId>
 }
 ```
 
-What the base class gives this aggregate: `TenantId` (never `Guid.Empty`), `CreatedBy`/`CreatedOn`/`ModifiedBy`/`ModifiedOn`
+What the base class gives this aggregate: `TenantId` (a `SharedKernel.Execution.Tenancy.TenantId`, never `default`), `CreatedBy`/`CreatedOn`/`ModifiedBy`/`ModifiedOn`
 filled by persistence, `DomainEvents`, and `Version`, the event sequence number.
 
 ### 6. Queries
@@ -294,7 +297,7 @@ filled by persistence, `DomainEvents`, and `Version`, the event sequence number.
 ```csharp
 public sealed class OrdersOfCustomer : Specification<Order>
 {
-    public OrdersOfCustomer(Guid tenantId, CustomerId customerId)
+    public OrdersOfCustomer(TenantId tenantId, CustomerId customerId)
     {
         AddCriteria(order => order.TenantId == tenantId);
         AddCriteria(order => order.CustomerId == customerId); // combined with AND
@@ -432,8 +435,9 @@ alternative is an event stamped `0001-01-01`.
 | `AuditableSoftDeletableAggregateRoot<TId>` | Audit and soft delete |
 | `FullAuditableAggregateRoot<TId>` | Audit, soft delete and a `RowVersion` concurrency token |
 
-- Each aggregate base has a `Tenanted…` counterpart that adds `TenantId`: fixed at construction, never
-  `Guid.Empty`.
+- Each aggregate base has a `Tenanted…` counterpart that adds `TenantId` (`SharedKernel.Execution.Tenancy.TenantId`):
+  fixed at construction; `default(TenantId)` throws `DomainException`, and `TenantId` itself rejects `Guid.Empty`.
+  Supply it from the caller, typically `IRequestContext.TenantId`.
 - Entities mirror the non-tenanted set: `Entity<TId>`, `AuditableEntity<TId>`, `SoftDeletableEntity<TId>`,
   `AuditableSoftDeletableEntity<TId>`, `FullAuditableEntity<TId>`.
 - Persistence reads only the interfaces (`IHasAudit`, `ISoftDeletable`, `IHasTenant`, `IHasConcurrency`). For a
@@ -605,7 +609,7 @@ total.ToString("N2", CultureInfo.GetCultureInfo("tr-TR"));  // "59,97 USD"
 | Assume `IncludeSoftDeleted()` widens the tenant too | Enter a cross-tenant scope when a query must see other tenants | It lifts only the soft-delete filter; the persistence tenant filter (and row-level security) still apply |
 | Put ordering on more than one operand of `And`/`Or`/`Not`, or paging on any | Order at most one operand; page at the repository call site | Composites carry the one ordering and throw `InvalidOperationException` for two orderings or any paging |
 | Remove an aggregate through the repository when others must react | Call a domain method such as `Close()` that raises an event | Repository deletion soft-deletes without a domain event |
-| Rely on events being published without a dispatcher | Register an `IDomainEventDispatcher` (for example `05.Application`'s `AddSharedKernelApplication(typeof(Program).Assembly)`) | Persistence discards undispatched events at the save (with a warning) |
+| Rely on events being published without a dispatcher | Register an `IDomainEventDispatcher` (for example `AddSharedKernelApplication(typeof(Program).Assembly)` from `SharedKernel.Application.Pipeline`) | Persistence discards undispatched events at the save (with a warning) |
 | Compare or add `Money` of possibly different currencies | Check `Currency` first, or convert with `ConvertAsync` | Mismatches throw `BusinessRuleViolationException` |
 | Call `.Sum()` on a possibly empty list of `Money` | Call `.Sum(currency)` | An empty sequence has no currency to return |
 | Read `result.Value` without checking | Check `result.IsValid` first | `Value` on an invalid result throws |
@@ -620,7 +624,7 @@ Conventions for generating code with this package. Each line is a rule.
 IDENTIFIER   public sealed record {Name}Id(Guid Value) : StronglyTypedId<Guid>(Value);
              Unwrap with .Value or an explicit cast. No implicit conversions exist.
 AGGREGATE    Extend AggregateRoot<TId> or a base: Auditable-, SoftDeletable-, AuditableSoftDeletable-,
-             FullAuditable-; prefix Tenanted- for multi-tenant (extra Guid tenantId constructor argument).
+             FullAuditable-; prefix Tenanted- for multi-tenant (extra TenantId tenantId constructor argument, SharedKernel.Execution.Tenancy).
              Private constructor (id, [tenantId,] ..., IClock clock) : base(id, [tenantId,] clock).
              Private parameterless constructor for the ORM. Properties with private setters.
              Public static factory returning ValidationResult<TAggregate> => TryCreate(() => new ...).
@@ -653,16 +657,17 @@ FORBIDDEN    I/O, DbContext, ILogger, DI, HttpClient or messaging types in domai
   it is recorded.
 - **Every public member is documented**, including the exceptions it throws; the XML documentation ships in the
   package.
-- **No infrastructure dependency.** The package references only `SharedKernel.Primitives` and
-  `SharedKernel.Core`, performs no I/O, and never reads the system clock.
+- **No infrastructure dependency.** The package references only `SharedKernel.Primitives`,
+  `SharedKernel.Core` and `SharedKernel.Execution`, performs no I/O, and never reads the system clock.
 - **Build-time guardrails** in [`SharedKernel.Analyzers`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/SharedKernel.Analyzers/README.md):
   `SK0001` (direct clock access), `SK0009` (event without a version), `SK0010` (two primary sorts),
   `SK0037` (value object without `EnsureValid()`).
 
 ## Deliberately not included
 
-- **No event handlers or dispatcher implementation.** Handlers and the MediatR dispatcher live in the
-  application layer; this package defines `IDomainEventDispatcher` only.
+- **No event handlers or dispatcher implementation.** Handlers (`IDomainEventHandler<T>`, in `SharedKernel.Application`)
+  and the dispatcher (`DomainEventDispatcher`, registered by `AddSharedKernelApplication(...)` in
+  `SharedKernel.Application.Pipeline`) live in the application packages; this package defines `IDomainEventDispatcher` only.
 - **No persistence.** Repositories, EF Core mappings and the clock-attaching interceptor live in the persistence
   layer; the domain never references it.
 - **No implicit conversions** from identifiers or single-value objects to their underlying value.

@@ -11,13 +11,13 @@ namespace SharedKernel.Analyzers.Diagnostics;
 /// <c>[RequirePermission]</c> attribute or implements its <c>IIdempotentRequest</c> marker — whose owning behavior
 /// short-circuits by constructing a failed response through the internal
 /// <c>FailureResponse.Create&lt;TResponse&gt;</c> helper, while also implementing
-/// <c>MediatR.IRequest&lt;TResponse&gt;</c> with a <c>TResponse</c> that is neither the
+/// <c>SharedKernel.Application.Messaging.IRequest&lt;TResponse&gt;</c> with a <c>TResponse</c> that is neither the
 /// non-generic <c>Result</c> nor a closed <c>Result&lt;T&gt;</c>.
 /// </summary>
 /// <remarks>
 /// <para>
 /// <strong>The gap.</strong> <c>FailureResponse.Create&lt;TResponse&gt;</c>
-/// (<c>SharedKernel.Application/Shared/FailureResponse.cs</c>, namespace <c>SharedKernel.Application.Pipeline</c>) binds to a public static
+/// (<c>SharedKernel.Application.Pipeline/Shared/FailureResponse.cs</c>) binds to a public static
 /// <c>Failure(Error)</c> factory resolved via reflection the first time a closed
 /// <c>TResponse</c> is used. <c>Result</c> takes a hardcoded fast path; every other
 /// <c>TResponse</c> must expose that factory or the call throws
@@ -29,11 +29,11 @@ namespace SharedKernel.Analyzers.Diagnostics;
 /// <strong>Only the markers whose behavior genuinely calls <c>FailureResponse.Create</c> are
 /// checked.</strong> Reading <c>FailureResponse.cs</c> and every behavior that references it
 /// found exactly two marker-gated ones, both internal to <c>SharedKernel.Application.Pipeline</c>:
-/// <c>AuthorizationBehavior{TRequest,TResponse}</c> (gated by <c>SharedKernel.Application.RequirePermissionAttribute</c>
+/// <c>AuthorizationBehavior{TRequest,TResponse}</c> (gated by <c>SharedKernel.Application.Authorization.RequirePermissionAttribute</c>
 /// on the request type or a base type; always registered) and <c>IdempotencyBehavior{TRequest,TResponse}</c>
-/// (gated by <c>SharedKernel.Application.IIdempotentRequest</c>). <c>AuditingBehavior{TRequest,TResponse}</c>
-/// (gated by <c>SharedKernel.Application.IAuditableRequest{TResponse}</c>) and <c>LoggingBehavior{TRequest,TResponse}</c>
-/// (gated by <c>SharedKernel.Application.ILoggableRequest{TResponse}</c>) never call it — both only ever forward
+/// (gated by <c>SharedKernel.Application.Idempotency.IIdempotentRequest</c>). <c>AuditingBehavior{TRequest,TResponse}</c>
+/// (gated by <c>SharedKernel.Application.Auditing.IAuditableRequest{TResponse}</c>) and <c>LoggingBehavior{TRequest,TResponse}</c>
+/// (gated by <c>SharedKernel.Application.Logging.ILoggableRequest{TResponse}</c>) never call it — both only ever forward
 /// the response <c>next()</c> already produced and read it through
 /// <c>ResponseOutcome.TryGetError</c>, which degrades gracefully (treats a non-<c>Result</c>
 /// response as a success) rather than requiring a <c>Failure(Error)</c> factory. Implementing
@@ -44,7 +44,7 @@ namespace SharedKernel.Analyzers.Diagnostics;
 /// type-declaration rule of this shape.
 /// </para>
 /// <para>
-/// <strong>Semantic-model requirement.</strong> Both markers, and <c>MediatR.IRequest&lt;TResponse&gt;</c>
+/// <strong>Semantic-model requirement.</strong> Both markers, and <c>SharedKernel.Application.Messaging.IRequest&lt;TResponse&gt;</c>
 /// itself, are typically implemented transitively (through <c>ICommand&lt;TResponse&gt;</c>/
 /// <c>IQuery&lt;TResponse&gt;</c>), so the full interface closure
 /// (<see cref="INamedTypeSymbol.AllInterfaces"/>) must be resolved via the semantic model —
@@ -70,8 +70,8 @@ namespace SharedKernel.Analyzers.Diagnostics;
 /// </para>
 /// <para>
 /// <strong>No <c>IRequest&lt;TResponse&gt;</c>, no diagnostic.</strong> A type implementing one of
-/// the two markers without implementing <c>MediatR.IRequest&lt;TResponse&gt;</c> at all can never
-/// have either behavior resolve into its pipeline (MediatR's own DI resolution requires it), so
+/// the two markers without implementing <c>SharedKernel.Application.Messaging.IRequest&lt;TResponse&gt;</c> at all can never
+/// have either behavior resolve into its pipeline (the kernel pipeline's own DI resolution requires it), so
 /// there is no runtime hazard and this rule does not report.
 /// </para>
 /// <para>
@@ -90,10 +90,11 @@ public sealed class PipelineMarkerResponseShapeMismatchAnalyzer : AnalyzerBase
     private const string DiagnosticId = "SK0040";
     private const string NamespacePrefix = "SharedKernel.Application";
     private const string ResultsNamespace = "SharedKernel.Primitives.Results";
-    private const string MediatRNamespace = "MediatR";
+    private const string RequestNamespace = "SharedKernel.Application.Messaging";
     private const string RequestSimpleName = "IRequest";
     private const string ResultSimpleName = "Result";
     private const string RequirePermissionAttributeName = "RequirePermissionAttribute";
+    private const string RequirePermissionNamespace = "SharedKernel.Application.Authorization";
     private const string RequirePermissionLabel = "[RequirePermission]";
 
     private static readonly (string SimpleName, int Arity)[] FailureConstructingMarkers =
@@ -106,7 +107,7 @@ public sealed class PipelineMarkerResponseShapeMismatchAnalyzer : AnalyzerBase
         id: DiagnosticId,
         title: "Pipeline marker interface requires a Result-shaped response",
         messageFormat: "'{0}' declares {1}, which short-circuits with a failed response via "
-            + "FailureResponse.Create<TResponse> — but its MediatR response type is '{2}', not "
+            + "FailureResponse.Create<TResponse> — but its request response type is '{2}', not "
             + "Result or a closed Result<T>. This throws InvalidOperationException the first time "
             + "the behavior short-circuits, at runtime. Declare the response as Result or "
             + "Result<T>, or remove {1}.",
@@ -150,7 +151,7 @@ public sealed class PipelineMarkerResponseShapeMismatchAnalyzer : AnalyzerBase
         if (matchedMarkers.Count == 0)
             return;
 
-        var responseType = TryGetMediatRResponseType(symbol);
+        var responseType = TryGetRequestResponseType(symbol);
         if (responseType is null)
             return;
 
@@ -199,7 +200,7 @@ public sealed class PipelineMarkerResponseShapeMismatchAnalyzer : AnalyzerBase
                     continue;
 
                 var ns = attributeClass.ContainingNamespace;
-                if (ns is not null && !ns.IsGlobalNamespace && ns.ToDisplayString() == NamespacePrefix)
+                if (ns is not null && !ns.IsGlobalNamespace && ns.ToDisplayString() == RequirePermissionNamespace)
                     return true;
             }
         }
@@ -207,7 +208,7 @@ public sealed class PipelineMarkerResponseShapeMismatchAnalyzer : AnalyzerBase
         return false;
     }
 
-    private static ITypeSymbol? TryGetMediatRResponseType(INamedTypeSymbol symbol)
+    private static ITypeSymbol? TryGetRequestResponseType(INamedTypeSymbol symbol)
     {
         foreach (var iface in symbol.AllInterfaces)
         {
@@ -217,7 +218,7 @@ public sealed class PipelineMarkerResponseShapeMismatchAnalyzer : AnalyzerBase
                 continue;
 
             var ns = original.ContainingNamespace;
-            if (ns is null || ns.IsGlobalNamespace || ns.ToDisplayString() != MediatRNamespace)
+            if (ns is null || ns.IsGlobalNamespace || ns.ToDisplayString() != RequestNamespace)
                 continue;
 
             return iface.TypeArguments[0];

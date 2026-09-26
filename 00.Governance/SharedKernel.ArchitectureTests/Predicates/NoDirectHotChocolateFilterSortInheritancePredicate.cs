@@ -5,9 +5,9 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 
 /// <summary>
 /// Custom NetArchTest predicate that fails any type outside the
-/// <c>SharedKernel.Communication.GraphQL</c> namespace that directly inherits from
+/// <c>SharedKernel.Presentation.GraphQL</c> namespace that directly inherits from
 /// <c>FilterInputType</c> or <c>SortInputType</c> (HotChocolate) without having
-/// <c>FilterBase</c> or <c>SortBase</c> from <c>SharedKernel.Communication.GraphQL</c>
+/// <c>FilterBase</c> or <c>SortBase</c> from <c>SharedKernel.Presentation.GraphQL</c>
 /// in its base type chain first.
 /// </summary>
 /// <remarks>
@@ -22,7 +22,7 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// <para>
 /// <strong>Namespace exemption:</strong> types whose
 /// <c>TypeDefinition.Namespace</c> starts with
-/// <c>"SharedKernel.Communication.GraphQL"</c> return <see langword="true"/> unconditionally —
+/// <c>"SharedKernel.Presentation.GraphQL"</c> return <see langword="true"/> unconditionally —
 /// the platform GraphQL package is where <c>FilterBase&lt;T&gt;</c> and
 /// <c>SortBase&lt;T&gt;</c> are defined and legitimately inherit from the HotChocolate base
 /// types.
@@ -61,13 +61,13 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// <para>
 /// <strong>Failure message:</strong>
 /// <c>"{FullName} inherits from {FilterInputType/SortInputType} directly. Use FilterBase&lt;T&gt;
-/// or SortBase&lt;T&gt; from SharedKernel.Communication.GraphQL to apply platform naming and
+/// or SortBase&lt;T&gt; from SharedKernel.Presentation.GraphQL to apply platform naming and
 /// exposure conventions."</c>
 /// </para>
 /// </remarks>
 public sealed class NoDirectHotChocolateFilterSortInheritancePredicate : ICustomRule
 {
-    private const string ExemptedNamespacePrefix = "SharedKernel.Communication.GraphQL";
+    private const string ExemptedNamespacePrefix = "SharedKernel.Presentation.GraphQL";
     private const string ObjectTypeName = "Object";
 
     // Forbidden HotChocolate base-type name prefixes
@@ -87,14 +87,14 @@ public sealed class NoDirectHotChocolateFilterSortInheritancePredicate : ICustom
     /// </summary>
     /// <param name="type">The Mono.Cecil <see cref="TypeDefinition"/> to inspect.</param>
     /// <returns>
-    /// <see langword="false"/> when the type (outside <c>SharedKernel.Communication.GraphQL</c>)
+    /// <see langword="false"/> when the type (outside <c>SharedKernel.Presentation.GraphQL</c>)
     /// directly or indirectly inherits from <c>FilterInputType</c> or <c>SortInputType</c>
     /// without going through <c>FilterBase</c> or <c>SortBase</c> first;
     /// <see langword="true"/> otherwise, including the fail-open case.
     /// </returns>
     public bool MeetsRule(TypeDefinition type)
     {
-        // Namespace exemption — types inside SharedKernel.Communication.GraphQL are always permitted.
+        // Namespace exemption — types inside SharedKernel.Presentation.GraphQL are always permitted.
         if (type.Namespace is not null &&
             type.Namespace.StartsWith(ExemptedNamespacePrefix, System.StringComparison.Ordinal))
         {

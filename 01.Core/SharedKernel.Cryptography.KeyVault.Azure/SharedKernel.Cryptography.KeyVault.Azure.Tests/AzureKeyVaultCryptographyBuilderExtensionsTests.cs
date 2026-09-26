@@ -1,6 +1,7 @@
 using Azure.Core;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using SharedKernel.Primitives.Health;
 using SharedKernel.Cryptography.Envelope;
 using SharedKernel.Cryptography.Extensions;
 using SharedKernel.Cryptography.KeyVault.Azure.Tests.Fakes;
@@ -57,7 +58,7 @@ public sealed class AzureKeyVaultCryptographyBuilderExtensionsTests
 
         Assert.Same(concrete, provider.GetRequiredService<IEncryptionKeyProvider>());
         Assert.Same(concrete, provider.GetRequiredService<IEnvelopeEncryptionProvider>());
-        Assert.Same(concrete, provider.GetRequiredService<IEncryptionKeyProviderProbe>());
+        Assert.Same(concrete, provider.GetRequiredReadinessProbe(AzureKeyVaultEncryptionKeyProvider.ReadinessProbeName));
         Assert.Same(credential, provider.GetRequiredService<TokenCredential>());
         Assert.Equal(0, credential.Calls);
     }
@@ -88,7 +89,7 @@ public sealed class AzureKeyVaultCryptographyBuilderExtensionsTests
             typeof(AzureKeyVaultEncryptionKeyProvider),
             typeof(IEncryptionKeyProvider),
             typeof(IEnvelopeEncryptionProvider),
-            typeof(IEncryptionKeyProviderProbe),
+            typeof(IReadinessProbe),
             typeof(AzureKeyVaultSigningKeyProvider),
             typeof(ISigningKeyProvider),
             typeof(TokenCredential),
@@ -224,7 +225,7 @@ public sealed class AzureKeyVaultCryptographyBuilderExtensionsTests
             typeof(AzureKeyVaultEncryptionKeyProvider),
             typeof(IEncryptionKeyProvider),
             typeof(IEnvelopeEncryptionProvider),
-            typeof(IEncryptionKeyProviderProbe),
+            typeof(IReadinessProbe),
             typeof(AzureKeyVaultSigningKeyProvider),
             typeof(ISigningKeyProvider),
             typeof(TokenCredential),

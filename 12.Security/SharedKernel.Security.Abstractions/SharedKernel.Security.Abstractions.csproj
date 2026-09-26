@@ -1,7 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Abstractions</SharedKernelTier>
     <!-- NuGet packaging metadata -->
-    <Description>Identity contracts shared by every SharedKernel service: IUserContext (subject, client, tenant, session, roles, permissions and step-up context of the caller), ITenantProvider, the per-scheme IUserContextMapper seam that authentication packages plug into, ready-made anonymous and system contexts, and the short OIDC claim type names. No ASP.NET Core or third-party dependency.</Description>
+    <Description>Identity contracts shared by every SharedKernel service: IUserContext (subject, client, tenant, session, roles, permissions and step-up context of the caller, as ActorKind and TenantId from SharedKernel.Execution), the per-scheme IUserContextMapper seam that authentication packages plug into, ready-made anonymous and system contexts, and the short OIDC claim type names. No ASP.NET Core or third-party dependency.</Description>
     <PackageReleaseNotes>First release.</PackageReleaseNotes>
     <PackageTags>shared-kernel;security;identity;user-context;tenant;claims;abstractions</PackageTags>
     <!--
@@ -14,6 +15,7 @@
     <WarningsAsErrors>$(WarningsAsErrors);nullable;CS1591;RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Execution\SharedKernel.Execution.csproj" />
     <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
     <AdditionalFiles Include="PublicAPI.Shipped.txt" />
     <AdditionalFiles Include="PublicAPI.Unshipped.txt" />

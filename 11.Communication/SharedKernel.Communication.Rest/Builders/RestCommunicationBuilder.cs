@@ -91,17 +91,16 @@ internal sealed class RestCommunicationBuilder : IRestCommunicationBuilder
                     capturedServiceName));
         }
 
-        // Fixed pipeline order (outer → inner): CorrelationId → TenantId → IdempotencyKey (conditional)
+        // Fixed pipeline order (outer → inner): RequestContext → IdempotencyKey (conditional)
         // → StandardResilienceHandler → transport. Registration order on IHttpClientBuilder determines
         // outer-to-inner handler order — the first-registered handler wraps every handler registered
-        // after it — so these three header-injecting handlers must be registered BEFORE
+        // after it — so these header-injecting handlers must be registered BEFORE
         // AddStandardResilienceHandler for them to run exactly once per logical call, outside Polly's
         // retry loop, rather than being re-entered on every retry attempt.
-        builder.AddHttpMessageHandler<CorrelationIdDelegatingHandler>();
-        builder.AddHttpMessageHandler<TenantIdDelegatingHandler>();
+        builder.AddHttpMessageHandler<RequestContextDelegatingHandler>();
 
         // Opt-in idempotency-key propagation (P-364/WO-056) — only added when explicitly enabled.
-        // Positioned after TenantIdDelegatingHandler, before StandardResilienceHandler so the key is
+        // Positioned after RequestContextDelegatingHandler, before StandardResilienceHandler so the key is
         // set once, before Polly's first attempt, and survives unchanged through every retry.
         if (options.EnableIdempotencyKeyPropagation)
         {

@@ -5,6 +5,8 @@ metadata:
   type: reference
 ---
 
+> WO-086 (2026-09): `CommunicationLayeringRules` today holds only `NoDirectGrpcInterceptorInheritanceOutsideCommunicationGrpc`, `NoDirectHotChocolateFilterSortInheritanceOutsideGraphQL` and `GrpcNeverReferencesContracts`. Methods 1 and 2 below were deleted — the tier check covers them (Communication.Rest/.Grpc → Communication.Internal are the only declared Adapter→Adapter edges). `SharedKernel.Communication.GraphQL` is now `SharedKernel.Presentation.GraphQL` (Host tier), so the HotChocolate predicate exempts that namespace. The patterns below remain valid.
+
 ## CommunicationLayeringRules overview (WO-025 P-159)
 
 Four factory methods in `SharedKernel.ArchitectureTests/Rules/CommunicationLayeringRules.cs`:

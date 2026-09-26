@@ -1,26 +1,25 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <Description>Atomic, tenant-scoped, PostgreSQL-backed implementation of SharedKernel.Application's IRequestIdempotencyStore and SharedKernel.Messaging.Abstractions' IIdempotencyStore. Atomicity via INSERT ... ON CONFLICT DO UPDATE ... RETURNING on a unique (TenantId, Key)/(TenantId, MessageId) constraint, with a per-reservation token guarding confirm/release against a reclaimed row; fail-closed on store unavailability by default. Ships its own minimal IdempotencyDbContext, deliberately not SharedKernelDbContext.</Description>
+    <SharedKernelTier>Adapter</SharedKernelTier>
+    <SharedKernelAllowedAdapterReferences>SharedKernel.Persistence.EfCore</SharedKernelAllowedAdapterReferences>
+    <Description>Atomic, tenant-scoped, PostgreSQL-backed implementation of SharedKernel.Idempotency.Abstractions' IIdempotencyStore, registered keyed by purpose (AddEfCoreIdempotency(..., p => p.ForRequests().ForMessages())). Atomicity via INSERT ... ON CONFLICT DO UPDATE ... RETURNING on a unique (tenant scope, purpose, key) primary key, with a per-reservation token guarding confirm/release against a reclaimed row; fail-closed on store unavailability by default. Ships its own minimal IdempotencyDbContext, deliberately not SharedKernelDbContext.</Description>
     <PackageTags>idempotency;efcore;postgresql;deduplication;shared-kernel</PackageTags>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
     <!--
       18.Idempotency layering (root CLAUDE.md / 18.Idempotency/CLAUDE.md): SharedKernel.Idempotency.EfCore
-      may reference 01.Core, 06.Persistence.EfCore only, 05.Application (SharedKernel.Application),
-      07.Messaging.Abstractions. Never 02.Caching — anything.
+      may reference Foundation packages, SharedKernel.Idempotency.Abstractions and, among adapters,
+      SharedKernel.Persistence.EfCore only. Never the application pipeline, messaging or 02.Caching.
     -->
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
-    <ProjectReference Include="..\..\01.Core\SharedKernel.Configuration\SharedKernel.Configuration.csproj" />
     <ProjectReference Include="..\..\06.Persistence\SharedKernel.Persistence.EfCore\SharedKernel.Persistence.EfCore.csproj" />
-    <ProjectReference Include="..\..\05.Application\SharedKernel.Application\SharedKernel.Application.csproj" />
-    <ProjectReference Include="..\..\07.Messaging\SharedKernel.Messaging.Abstractions\SharedKernel.Messaging.Abstractions.csproj" />
+    <ProjectReference Include="..\SharedKernel.Idempotency.Abstractions\SharedKernel.Idempotency.Abstractions.csproj" />
   </ItemGroup>
   <ItemGroup>
     <!-- No direct PackageReference to EF Core/Npgsql: both flow transitively via
          SharedKernel.Persistence.EfCore (S-07). -->
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
-    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Options" />
   </ItemGroup>

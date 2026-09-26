@@ -1,9 +1,7 @@
-using SharedKernel.Primitives.Results;
-
 namespace SharedKernel.Storage;
 
-/// <summary>The registry behind <see cref="IFileStorageFactory"/>, the keyed stores and the health probe.</summary>
-internal sealed class FileStorageFactory : IFileStorageFactory, IFileStorageHealthProbe
+/// <summary>The registry behind <see cref="IFileStorageFactory"/> and the keyed stores.</summary>
+internal sealed class FileStorageFactory : IFileStorageFactory
 {
     private readonly IServiceProvider _services;
     private readonly Dictionary<string, Entry> _entries;
@@ -66,9 +64,6 @@ internal sealed class FileStorageFactory : IFileStorageFactory, IFileStorageHeal
                 $"The reference has a tenant, but storage store '{entry.Registration.Name}' is shared by all tenants."),
         };
     }
-
-    public Task<Result> ProbeAsync(string storeName, CancellationToken cancellationToken = default) =>
-        Find(storeName).Registration.Probe(_services, cancellationToken);
 
     internal IFileStorage GetDefaultStore() =>
         GetSingle(tenantScoped: false, "IFileStorage", "[FromKeyedServices(\"name\")] IFileStorage").Store.Value;

@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
 using SharedKernel.Communication.Grpc.Interceptors;
+using SharedKernel.Execution.Context;
 
 namespace SharedKernel.Communication.Grpc.Tests.Interceptors;
 
@@ -14,7 +15,7 @@ public sealed class CorrelationTracingInterceptorTests
         Marshallers.StringMarshaller);
 
     private static CorrelationTracingInterceptor CreateInterceptor() =>
-        new(NullLogger<CorrelationTracingInterceptor>.Instance);
+        new(new RequestContextAccessor(), NullLogger<CorrelationTracingInterceptor>.Instance);
 
     private static ClientInterceptorContext<string, string> BuildContext(Metadata? headers)
     {
@@ -245,6 +246,28 @@ public sealed class CorrelationTracingInterceptorTests
             "the fallback must be the canonical hyphenated GUID format (\"D\"), not Guid.NewGuid().ToString(\"N\")");
         value.Should().Contain("-");
         value.Should().HaveLength(36);
+    }
+
+    /// <summary>P-566, defect 4: the ambient caller's correlation id is sent, never the Activity's id.</summary>
+    [Fact]
+    public void AsyncUnaryCall_WithAmbientCaller_SendsItsCorrelationIdNotTheActivityId()
+    {
+        var interceptor = CreateInterceptor();
+        Metadata? capturedMetadata = null;
+        using var activity = new Activity("grpc-outbound").Start();
+
+        using (RequestContextScope.Begin(new SystemRequestContext([], correlationId: "caller-correlation")))
+        {
+            interceptor.AsyncUnaryCall("request", BuildContext(null),
+                (_, ctx) =>
+                {
+                    capturedMetadata = ctx.Options.Headers;
+                    return MakeFakeUnaryCall();
+                });
+        }
+
+        GetEntry(capturedMetadata!, CorrelationTracingInterceptor.CorrelationIdKey)!.Value
+            .Should().Be("caller-correlation").And.NotBe(activity.Id);
     }
 
     private static AsyncUnaryCall<string> MakeFakeUnaryCall() =>

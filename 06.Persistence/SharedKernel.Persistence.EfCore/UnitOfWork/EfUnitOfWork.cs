@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using SharedKernel.Application.Transactions;
+using SharedKernel.Execution.Transactions;
 using SharedKernel.Persistence.Abstractions.Coordination;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Conventions;

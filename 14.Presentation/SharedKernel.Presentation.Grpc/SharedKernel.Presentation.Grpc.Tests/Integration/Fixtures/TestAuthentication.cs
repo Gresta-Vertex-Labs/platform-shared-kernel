@@ -7,6 +7,8 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Security.Abstractions;
 
 namespace SharedKernel.Presentation.Grpc.Tests.Integration.Fixtures;
@@ -25,6 +27,8 @@ internal static class TestAuthentication
 
     public const string AuthTimeHeader = "x-test-auth-time";
 
+    public const string TenantHeader = "x-test-tenant";
+
     public const string ReadPermission = "orders.read";
 
     public const string AdminPermission = "orders.admin";
@@ -34,6 +38,8 @@ internal static class TestAuthentication
     private const string PermissionClaim = "perm";
 
     private const string AuthTimeClaim = "auth_time";
+
+    private const string TenantClaim = "tid";
 
     public static WebApplicationBuilder AddTestAuthentication(this WebApplicationBuilder builder)
     {
@@ -45,7 +51,7 @@ internal static class TestAuthentication
     }
 
     /// <summary>Returns call metadata that signs the call in as <paramref name="user"/>.</summary>
-    public static Metadata SignedIn(string user = "user-1", string? permissions = null, DateTimeOffset? authTime = null)
+    public static Metadata SignedIn(string user = "user-1", string? permissions = null, DateTimeOffset? authTime = null, TenantId? tenant = null)
     {
         var metadata = new Metadata { { UserHeader, user } };
 
@@ -59,10 +65,15 @@ internal static class TestAuthentication
             metadata.Add(AuthTimeHeader, time.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture));
         }
 
+        if (tenant is { } tenantId)
+        {
+            metadata.Add(TenantHeader, tenantId.ToString());
+        }
+
         return metadata;
     }
 
-    internal static IEnumerable<Claim> ClaimsFrom(string user, string permissions, string authTime)
+    internal static IEnumerable<Claim> ClaimsFrom(string user, string permissions, string authTime, string tenant = "")
     {
         yield return new Claim(SubjectClaim, user);
 
@@ -75,16 +86,23 @@ internal static class TestAuthentication
         {
             yield return new Claim(AuthTimeClaim, authTime);
         }
+
+        if (tenant.Length > 0)
+        {
+            yield return new Claim(TenantClaim, tenant);
+        }
     }
 
     internal static IUserContext Map(ClaimsIdentity identity)
     {
         var authTime = identity.FindFirst(AuthTimeClaim)?.Value;
+        var tenant = identity.FindFirst(TenantClaim)?.Value;
 
-        return new UserContext(IdentityKind.User, identity.FindFirst(SubjectClaim)!.Value)
+        return new UserContext(ActorKind.User, identity.FindFirst(SubjectClaim)!.Value)
         {
             Permissions = [.. identity.FindAll(PermissionClaim).Select(claim => claim.Value)],
             AuthTime = authTime is null ? null : DateTimeOffset.FromUnixTimeSeconds(long.Parse(authTime, CultureInfo.InvariantCulture)),
+            TenantId = tenant is null ? null : TenantId.Parse(tenant, CultureInfo.InvariantCulture),
         };
     }
 }
@@ -107,7 +125,8 @@ internal sealed class TestAuthenticationHandler : AuthenticationHandler<Authenti
         var claims = TestAuthentication.ClaimsFrom(
             user,
             Request.Headers[TestAuthentication.PermissionsHeader].ToString(),
-            Request.Headers[TestAuthentication.AuthTimeHeader].ToString());
+            Request.Headers[TestAuthentication.AuthTimeHeader].ToString(),
+            Request.Headers[TestAuthentication.TenantHeader].ToString());
 
         var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, TestAuthentication.Scheme));
         return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(principal, TestAuthentication.Scheme)));

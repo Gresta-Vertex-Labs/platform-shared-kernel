@@ -4,7 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using SharedKernel.Application.Context;
+using SharedKernel.Execution.Context;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Migrations;
 using SharedKernel.Persistence.EfCore.Seeding;

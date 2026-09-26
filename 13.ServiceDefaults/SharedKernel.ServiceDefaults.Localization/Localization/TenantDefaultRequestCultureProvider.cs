@@ -2,7 +2,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Localization;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.MultiTenancy.Catalog;
-using SharedKernel.Security.Abstractions;
+using SharedKernel.Execution.Context;
 
 namespace SharedKernel.ServiceDefaults.Localization;
 
@@ -32,13 +32,13 @@ internal sealed class TenantDefaultRequestCultureProvider : IRequestCultureProvi
             return null;
         }
 
-        var tenantId = httpContext.RequestServices.GetService<ITenantProvider>()?.TenantId ?? Guid.Empty;
-        if (tenantId == Guid.Empty)
+        var tenantId = (RequestContextScope.Current ?? httpContext.RequestServices.GetService<IRequestContext>())?.TenantId;
+        if (tenantId is not { } tenant)
         {
             return null;
         }
 
-        var descriptor = await catalog.GetByIdAsync(tenantId, httpContext.RequestAborted).ConfigureAwait(false);
+        var descriptor = await catalog.GetByIdAsync(tenant, httpContext.RequestAborted).ConfigureAwait(false);
 
         return descriptor?.DefaultCulture is { } culture
             ? new ProviderCultureResult(culture)

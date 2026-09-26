@@ -6,8 +6,8 @@ using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Core.Exceptions;
 using SharedKernel.Core.Extensions;
 using SharedKernel.Localization;
-using SharedKernel.Presentation.WebApi;
-using SharedKernel.Presentation.WebApi.Authorization;
+using SharedKernel.Execution.Context;
+using SharedKernel.Presentation.Authorization;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Propagation;
 using SharedKernel.Primitives.Results;
@@ -66,12 +66,23 @@ internal sealed class TestServiceImpl(CallProbe probe) : TestService.TestService
         }
     }
 
-    public override Task<ContextReply> GetContext(EchoRequest request, ServerCallContext context) =>
-        Task.FromResult(new ContextReply
+    // Reads the caller as a service method does: the injected IRequestContext, which is the ambient scope the HTTP
+    // pipeline's UseSharedKernelRequestContext() opened for the call (no gRPC interceptor is involved).
+    public override Task<ContextReply> GetContext(EchoRequest request, ServerCallContext context)
+    {
+        var injected = context.GetHttpContext().RequestServices.GetRequiredService<IRequestContext>();
+        var scope = RequestContextScope.Current;
+
+        return Task.FromResult(new ContextReply
         {
-            CorrelationId = context.GetHttpContext().GetCorrelationId() ?? string.Empty,
+            CorrelationId = injected.CorrelationId ?? string.Empty,
             BaggageCorrelationId = Activity.Current?.GetBaggageItem(WellKnownBaggageKeys.CorrelationId) ?? string.Empty,
+            ScopeCorrelationId = scope?.CorrelationId ?? string.Empty,
+            UserId = scope?.UserId ?? string.Empty,
+            ActorKind = scope?.ActorKind.ToString() ?? string.Empty,
+            TenantId = scope?.TenantId?.ToString() ?? string.Empty,
         });
+    }
 
     [RequireEndpointPermission(TestAuthentication.ReadPermission)]
     public override Task<EchoReply> ReadOrders(EchoRequest request, ServerCallContext context) =>

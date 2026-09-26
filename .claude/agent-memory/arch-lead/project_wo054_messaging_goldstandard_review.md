@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): `ITenantContextAccessor`/`WithTenantContext<T>()` and `IMessageBusProbe` were deleted (`IRequestContextAccessor` in `SharedKernel.Execution`; `IReadinessProbe` named `messaging`); Messaging `IIdempotencyStore` became `SharedKernel.Idempotency.Abstractions.IIdempotencyStore`; transports and outbox are satellites (`Messaging.MassTransit.RabbitMq`/`.AzureServiceBus`/`.EfCore`); the "07 may reference only 01–04" wall is replaced by tiers.
+
 WO-054 (2026-08-04): 07.Messaging gold-standard architecture review, triggered by direct user request ("analyse 07.Messaging deeply, find bad practices, bring to gold standard, add as many phases as you like"). Dispatched 13 phases (P-340–P-352, WO-054, all `○` Pending) — 10 in 07.Messaging, 1 each in 00.Governance/13.ServiceDefaults/16.Testing.
 
 **Why this matters:** unlike most prior gold-standard passes (WO-050/051/052/053), this domain was NOT stale/under-reviewed — it had just completed a LoggingRetrofit pass and already ships genuinely strong governance (SK0701-708, the MSG0101-equivalent rules), strong exception-handling discipline, and real Testcontainers-backed RabbitMQ integration tests. A dedicated research agent doing real `.cs`-file verification (not trusting `07.Messaging/CLAUDE.md` prose) still found three genuine, previously-undetected defects:

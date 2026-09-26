@@ -1,6 +1,8 @@
 using BillingApi.Domain;
-using MediatR;
-using SharedKernel.Application;
+using SharedKernel.Application.Auditing;
+using SharedKernel.Application.Authorization;
+using SharedKernel.Application.DomainEvents;
+using SharedKernel.Application.Messaging;
 using SharedKernel.Persistence.Abstractions.Repositories;
 using SharedKernel.Primitives.Results;
 
@@ -36,11 +38,11 @@ public sealed class IssueInvoiceHandler(IRepository<Invoice, InvoiceId> invoices
 /// is written in the same transaction as the invoice.
 /// </summary>
 public sealed class InvoiceIssuedHandler(IRepository<Customer, CustomerId> customers)
-    : INotificationHandler<DomainEventNotification<InvoiceIssued>>
+    : IDomainEventHandler<InvoiceIssued>
 {
-    public async Task Handle(DomainEventNotification<InvoiceIssued> notification, CancellationToken cancellationToken)
+    public async Task Handle(InvoiceIssued domainEvent, CancellationToken cancellationToken)
     {
-        var customer = await customers.GetByIdAsync(notification.DomainEvent.CustomerId, cancellationToken);
+        var customer = await customers.GetByIdAsync(domainEvent.CustomerId, cancellationToken);
         customer?.RecordInvoiceIssued();
     }
 }

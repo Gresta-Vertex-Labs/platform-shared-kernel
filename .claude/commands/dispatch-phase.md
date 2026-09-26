@@ -1,6 +1,6 @@
 You are the cross-domain phase dispatcher for Platform.SharedKernel.
 
-This command reads pending phases from the root `state-map.md` Phase Backlog, groups them by domain, sorts by dependency order (lower domain number = higher priority), and dispatches each domain's phases to its registered arch-planner agent — one domain at a time, waiting for each agent to finish before moving to the next.
+This command reads pending phases from the root `state-map.md` Phase Backlog, groups them by domain, sorts by dependency order (producers before consumers, in tier order Foundation → Model → Abstractions → Adapter → Host → Testing/Tooling), and dispatches each domain's phases to its registered arch-planner agent — one domain at a time, waiting for each agent to finish before moving to the next.
 
 ---
 
@@ -50,7 +50,7 @@ For each pending phase, check its `**Depends on:**` field.
 If a phase lists dependencies (e.g. `P-001, P-003`):
 - Check whether those dependency phases are `◐` Dispatched or `●` Complete in the backlog.
 - If a dependency is still `○` Pending **and** is NOT in the current batch being processed: mark the dependent phase as **blocked for this run** and exclude it from the dispatch queue.
-- If a dependency is `○` Pending **and** IS in the current batch: it is fine — it will be dispatched first because its domain number is lower (Step 3 sort ensures this).
+- If a dependency is `○` Pending **and** IS in the current batch: it is fine — Step 3 orders the queue so that a dependency's domain is always dispatched before the domain that depends on it.
 
 Record any phases excluded due to unresolved dependencies. They will appear in the Step 6 report.
 
@@ -60,7 +60,12 @@ Record any phases excluded due to unresolved dependencies. They will appear in t
 
 Group the remaining (unblocked) pending phases by their **Domain** field.
 
-**Domain-to-Agent Registry** (dispatch order = domain number ascending):
+**Dispatch order.** Folder numbers are domain names, not dependency layers (root `CLAUDE.md` "Tiers & Dependency Rules"). Order the domains so producers come before consumers:
+1. **`**Depends on:**` first.** If a phase in domain A depends on a phase in domain B, B is dispatched before A. This rule always wins.
+2. **Then tier order.** Among domains with no dependency between them, dispatch the one whose phases target the lowest tier first: Foundation → Model → Abstractions → Adapter → Host → Testing/Tooling. Judge a domain's tier by the packages its pending phases change (e.g. a phase on `SharedKernel.Execution` is Foundation even though it sits in `01.Core`; a phase on `SharedKernel.Application.Pipeline` is Host even though it sits in `05.Application`). A domain whose phases span several tiers takes its lowest one.
+3. **Then domain number ascending**, only as a tie-breaker.
+
+**Domain-to-Agent Registry** (the Domain Number column is a stable identifier and the final tie-breaker, not the dispatch order):
 
 | Domain | Domain Number | Arch-Planner Agent |
 |--------|:-------------:|-------------------|
@@ -87,7 +92,7 @@ Group the remaining (unblocked) pending phases by their **Domain** field.
 | 20.Reporting | 20 | `reporting-arch-planner` |
 
 Split the grouped domains into two lists:
-- **Dispatch list**: domains with a registered agent → ordered by domain number ascending.
+- **Dispatch list**: domains with a registered agent → ordered by the dispatch order above.
 - **Deferred list**: domains with no registered agent → record for the Step 6 report.
 
 ---
@@ -185,6 +190,6 @@ If a section has no entries, omit it from the output.
 - Never modifies any domain's `state-map.md` or `CLAUDE.md` directly — that is the domain planner agent's responsibility.
 - Phase status transitions in root state-map: `○ Pending` → `◐ Dispatched` (after agent returns).
 - Never re-dispatches a phase already at `◐ Dispatched` or `● Complete`.
-- Never dispatches out of dependency order — foundational domains (lower numbers) always before dependent ones.
+- Never dispatches out of dependency order — a phase's dependencies, then lower tiers (Foundation → Model → Abstractions → Adapter → Host → Testing/Tooling), always before their consumers; domain number only breaks ties.
 - Changelog entries are append-only.
 - If the Agent tool call for a domain agent fails or returns an error, do NOT mark those phases as Dispatched. Record the failure in the report and leave the phases at `○ Pending` so they can be retried.

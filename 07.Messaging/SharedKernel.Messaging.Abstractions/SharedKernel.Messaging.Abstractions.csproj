@@ -1,7 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Abstractions</SharedKernelTier>
     <!-- NuGet packaging metadata -->
-    <Description>Transport-agnostic messaging abstractions for Platform.SharedKernel microservices: IMessageBus and IEventPublisher (every verb returning Result with messaging.* error codes), PublishContext, IIdempotencyStore with an atomic reserve/complete/release contract, IMessageScheduler, IMessageHeaderPropagator, IMessageBusProbe and MessagingOptions. Zero transport NuGet dependencies — references only Microsoft.Extensions.DependencyInjection.Abstractions, SharedKernel.Primitives (Result/Error) and SharedKernel.Contracts (the IIntegrationEvent constraint on IEventPublisher).</Description>
+    <Description>Transport-agnostic messaging abstractions for Platform.SharedKernel microservices: IMessageBus and IEventPublisher (every verb returning Result with messaging.* error codes), PublishContext, ISendEndpointResolver, IdempotencyOptions (the consumer-idempotency lease and retention; the store contract is SharedKernel.Idempotency.Abstractions' IIdempotencyStore), IMessageScheduler, IMessageHeaderPropagator, IFaultConsumer, IMessageVersionTranslator, IInboundMessageContextAccessor (the caller identity a message arrived with, as SharedKernel.Execution's IRequestContext), IMessagingBuilder and MessagingOptions. Bus readiness is reported through SharedKernel.Primitives' IReadinessProbe, which transport providers implement. Zero transport NuGet dependencies — references only Microsoft.Extensions.DependencyInjection.Abstractions, SharedKernel.Primitives (Result/Error), SharedKernel.Execution (IRequestContext, tenancy) and SharedKernel.Contracts (the IIntegrationEvent constraint on IEventPublisher).</Description>
     <PackageTags>messaging;abstractions;message-bus;event-publisher;cloud-events;shared-kernel;masstransit</PackageTags>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <!--
@@ -26,8 +27,9 @@
   <ItemGroup>
     <!--
       SharedKernel.Contracts — IIntegrationEvent, the constraint on IEventPublisher.PublishAsync<TEvent>.
-      Permitted by the root layering rule ("07.Messaging may reference 01-04"); it references only
-      SharedKernel.Primitives, so no transport or domain dependency leaks in.
+      An Abstractions-tier package may reference Model-tier packages (root CLAUDE.md "Tiers &amp;
+      Dependency Rules"); it references only SharedKernel.Primitives, so no transport or domain
+      dependency leaks in.
     -->
     <ProjectReference Include="..\..\04.Contracts\SharedKernel.Contracts\SharedKernel.Contracts.csproj" />
     <!--
@@ -37,20 +39,13 @@
     -->
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
     <!--
-      SharedKernel.Application.Abstractions — IRequestContext and ActorKind, rebuilt on the consumer
-      from the identity headers a message arrived with (P-561).
-
-      This is a NAMED layering grant, recorded in the root CLAUDE.md Hard rules and mechanically
-      locked by MessagingLayeringRules.OnlyReachesApplicationContextTypes. It mirrors 06.Persistence's
-      own grant, and for the same reason: IRequestContext is the one platform-wide caller contract,
-      and a messaging-local copy of it would mean 06.Persistence could not read what a consumer
-      resolved — which is the entire point of carrying the identity across the bus.
-
-      It reaches SharedKernel.Application.Abstractions ONLY — never MediatR, SharedKernel.Application
-      or .Behaviors — and within it only the Context types. That package itself references nothing but
-      SharedKernel.Primitives, which this package already had, so the dependency graph does not grow.
+      SharedKernel.Execution — IRequestContext, IRequestContextAccessor and ActorKind, rebuilt on the
+      consumer from the identity headers a message arrived with (P-561, WO-086). A Foundation-tier
+      package, so no grant is needed: IRequestContext is the one platform-wide caller contract, and
+      sharing it is what lets 06.Persistence read the caller a consumer resolved. Execution itself
+      references only SharedKernel.Primitives, so the dependency graph does not grow.
     -->
-    <ProjectReference Include="..\..\05.Application\SharedKernel.Application.Abstractions\SharedKernel.Application.Abstractions.csproj" />
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Execution\SharedKernel.Execution.csproj" />
   </ItemGroup>
   <ItemGroup>
     <!--

@@ -12,7 +12,7 @@ namespace SharedKernel.ServiceDefaults.Telemetry;
 /// <remarks>
 /// <para>
 /// <b>Only platform keys (P-562 X2).</b> The processor copies <c>correlation.id</c> and <c>TenantId</c>, the two keys
-/// platform middleware writes (<c>14.Presentation</c>'s correlation middleware and <c>SharedKernel.MultiTenancy</c>'s
+/// platform middleware writes (<c>SharedKernel.ServiceDefaults.Security</c>' <c>UseSharedKernelRequestContext</c> and <c>SharedKernel.MultiTenancy</c>'s
 /// <c>TenantResolutionMiddleware</c>), under their own names. Every other baggage item is ignored, whoever set it:
 /// baggage also arrives from outside — the W3C <c>baggage</c> request header, and message headers, which
 /// MassTransit copies onto the consuming activity — so copying every item let a caller put any property, a forged
@@ -27,8 +27,9 @@ namespace SharedKernel.ServiceDefaults.Telemetry;
 /// <para>
 /// <b>What it cannot tell.</b> A baggage item carries no record of who set it. When a caller's <c>TenantId</c> or
 /// <c>correlation.id</c> item reaches the activity and nothing overwrites it, it is copied like the platform's own.
-/// That is why the HTTP edge drops inbound baggage (<c>14.Presentation</c>'s <c>TrustInboundBaggage</c>, off by
-/// default) and why both middlewares <em>replace</em> their key with <see cref="Activity.SetBaggage"/>.
+/// That is why the HTTP edge drops inbound baggage (<c>SharedKernel.ServiceDefaults.Security</c>'s
+/// <c>RequestContextOptions.TrustInboundBaggage</c>, off by default; <c>14.Presentation</c>'s until P-579) and why both
+/// middlewares <em>replace</em> their key with <see cref="Activity.SetBaggage"/>.
 /// </para>
 /// <para>
 /// An attribute already present on <see cref="LogRecord.Attributes"/> at a given key is never overwritten: an

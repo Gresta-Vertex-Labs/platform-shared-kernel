@@ -7,6 +7,8 @@ metadata:
 
 # Project: SharedKernel Messaging Domain
 
+> WO-086 (2026-09): the two packages are now five — `SharedKernel.Messaging.Abstractions` (Abstractions tier) plus `SharedKernel.Messaging.MassTransit` and its satellites `.RabbitMq`/`.AzureServiceBus`/`.EfCore` (Adapter tier); `16.Testing`'s `InMemoryMessageBus`/`InMemoryEventPublisher` now live in `SharedKernel.Messaging.Testing`; sagas, routing slips and scheduling via Quartz were removed by P-560; the platform is pinned to MassTransit 8.5.x.
+
 WO-020 (initial 6-phase delivery: Design/Scaffold/Core/Tests/Docs/Published) and WO-021 gap-fill (Resilience, Scheduling, Saga, Batch, Routing, Core anti-pattern fix) and WO-022 (Idempotency, HeaderPropagation, ConsumerDefinition, VersionTranslation, RoutingSlip) are ALL complete (●) as of 2026-06-10. The domain's two packages (`SharedKernel.Messaging.Abstractions`, `SharedKernel.Messaging.MassTransit`) are published at 1.0.0 with full XML docs and passing tests.
 
 WO-027 (2026-06-19) added P-172 — a single-phase gap fix discovered via cross-domain review of the still-pending P-132 (`13.ServiceDefaults` OTel wiring). P-132 had assumed a `"SharedKernel.Messaging"` `ActivitySource` already existed in `07.Messaging` for it to register with the host's `TracerProvider`/`MeterProvider`. It does not exist. Per `13.ServiceDefaults`'s own brain rule, that domain never creates an `ActivitySource` on behalf of another domain — so the source had to be created here first.

@@ -33,11 +33,26 @@
       Include="..\..\..\01.Core\SharedKernel.FeatureManagement\SharedKernel.FeatureManagement.csproj"
       PrivateAssets="all"
     />
-    <!-- Real-type name locks: SK0036's message names SharedKernel.Core's ThrowIfFailure()/GetValueOrThrow()
-         (P-562 R32 removed the gRPC package's own), and its test takes those names with nameof. -->
-    <ProjectReference
-      Include="..\..\..\01.Core\SharedKernel.Core\SharedKernel.Core.csproj"
-      PrivateAssets="all"
-    />
+    <!-- RealKernelTypeNameTests: every analyzer that matches a SharedKernel type name, metadata name or
+         namespace prefix is also run against the compiled kernel package that owns the name, so a type
+         moved or renamed by a refactor fails a test instead of silently disabling the rule. Test-only;
+         never a dependency of SharedKernel.Analyzers itself, hence PrivateAssets="all". -->
+    <ProjectReference Include="..\..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\01.Core\SharedKernel.Core\SharedKernel.Core.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\01.Core\SharedKernel.Execution\SharedKernel.Execution.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\02.Caching\SharedKernel.Caching.Redis.PubSub\SharedKernel.Caching.Redis.PubSub.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\03.Domain\SharedKernel.Domain\SharedKernel.Domain.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\04.Contracts\SharedKernel.Contracts\SharedKernel.Contracts.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\05.Application\SharedKernel.Application\SharedKernel.Application.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\06.Persistence\SharedKernel.Persistence.Dapper\SharedKernel.Persistence.Dapper.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\06.Persistence\SharedKernel.Persistence.EfCore\SharedKernel.Persistence.EfCore.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\07.Messaging\SharedKernel.Messaging.Abstractions\SharedKernel.Messaging.Abstractions.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\09.Search\SharedKernel.Search.Abstractions\SharedKernel.Search.Abstractions.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\10.Intelligence\SharedKernel.AI.Abstractions\SharedKernel.AI.Abstractions.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\12.Security\SharedKernel.Security.Abstractions\SharedKernel.Security.Abstractions.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\12.Security\SharedKernel.Security.Oidc\SharedKernel.Security.Oidc.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\12.Security\SharedKernel.Security.ApiKey\SharedKernel.Security.ApiKey.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\14.Presentation\SharedKernel.Presentation.Grpc\SharedKernel.Presentation.Grpc.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\17.Workflows\SharedKernel.Workflows.Temporal\SharedKernel.Workflows.Temporal.csproj" PrivateAssets="all" />
   </ItemGroup>
 </Project>

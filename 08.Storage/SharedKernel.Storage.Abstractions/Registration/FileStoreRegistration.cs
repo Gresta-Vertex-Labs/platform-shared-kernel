@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Results;
 
 namespace SharedKernel.Storage;
@@ -14,7 +15,7 @@ namespace SharedKernel.Storage;
 /// <see cref="IFileStorage.TenantId"/> must be <see langword="null"/>, otherwise resolving the store throws
 /// <see cref="InvalidOperationException"/>. The raw store is never handed out: the registry wraps it in a view
 /// that validates every request before it reaches the provider, and for a <see cref="TenantScoped"/> store
-/// callers only reach it through <see cref="ITenantFileStorage.ForTenant(string)"/>, which prefixes every key
+/// callers only reach it through <see cref="ITenantFileStorage.ForTenant(TenantId)"/>, which prefixes every key
 /// with <c>tenants/{tenantId}/</c>.
 /// </para>
 /// <para>
@@ -35,7 +36,8 @@ public sealed class FileStoreRegistration
     /// </param>
     /// <param name="probe">
     /// Checks the store's bucket is reachable with the configured credentials, for
-    /// <see cref="IFileStorageHealthProbe.ProbeAsync"/>; returns a failed <c>Result</c> rather than throwing.
+    /// the store's readiness probe (<see cref="StorageReadinessProbeNames.ForStore(string)"/>); returns a failed
+    /// <c>Result</c> rather than throwing.
     /// </param>
     /// <exception cref="ArgumentException"><paramref name="name"/> is not a valid store name.</exception>
     /// <exception cref="ArgumentNullException">

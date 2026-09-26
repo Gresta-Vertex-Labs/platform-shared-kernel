@@ -7,8 +7,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using OpenTelemetry;
 using OtelLogRecord = OpenTelemetry.Logs.LogRecord;
-using SharedKernel.Presentation.WebApi.Correlation;
 using SharedKernel.Presentation.WebApi.Tests.TestSupport;
+using SharedKernel.ServiceDefaults.Security;
 using SharedKernel.Primitives.Logging;
 using SharedKernel.Primitives.Propagation;
 using SharedKernel.Primitives.Results;
@@ -18,9 +18,11 @@ using Xunit;
 namespace SharedKernel.Presentation.WebApi.Tests.Integration;
 
 /// <summary>
-/// Design D5/D16 with R3: a valid inbound correlation id is kept, an invalid one replaced (and never logged), a missing
-/// one becomes the trace id, and the id reaches the accessor, baggage, log records, the response header and error
-/// bodies — while baggage the caller sent reaches neither the activity nor any log record unless trusted.
+/// Design D5/D16 with R3, as composed since P-579: <c>SharedKernel.ServiceDefaults.Security</c>'s
+/// <c>UseSharedKernelRequestContext()</c> owns the correlation id and the refusal of inbound baggage, and this package
+/// reads the id from the request's scope. A valid inbound id is kept, an invalid one replaced (and never logged), a
+/// missing one becomes a new id, and the id reaches <c>GetCorrelationId()</c>, baggage, log records, the response header
+/// and error bodies — while baggage the caller sent reaches neither the activity nor any log record unless trusted.
 /// </summary>
 public sealed class CorrelationIdTests
 {
@@ -61,10 +63,10 @@ public sealed class CorrelationIdTests
 
         var (header, accessor) = await SendAsync(app, inbound);
 
-        header.Should().NotBe(inbound).And.MatchRegex("^[0-9a-f]{32}$");
+        header.Should().NotBe(inbound).And.MatchRegex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$");
         accessor.Should().Be(header);
-        var record = logs.GetLogger(typeof(CorrelationIdMiddleware).FullName!).Records
-            .Should().ContainSingle(r => r.EventId.Id == LoggingEventIdRanges.Presentation + 6).Subject;
+        var record = logs.GetLogger("SharedKernel.ServiceDefaults.Security.RequestContextMiddleware").Records
+            .Should().ContainSingle(r => r.EventId.Id == LoggingEventIdRanges.ServiceDefaults + 7).Subject;
         record.Message.Should().NotContain(inbound);
         record.TryGetProperty("CorrelationIdLength", out var length).Should().BeTrue();
         length.Should().Be(inbound.Length);
@@ -77,11 +79,11 @@ public sealed class CorrelationIdTests
 
         var (header, _) = await SendAsync(app, new string('a', 129));
 
-        header.Should().HaveLength(32);
+        header.Should().HaveLength(36, "a new id is a GUID in its \"D\" form");
     }
 
     [Fact]
-    public async Task MissingId_BecomesTheTraceId()
+    public async Task MissingId_BecomesANewId_NotTheTraceId()
     {
         using var listener = ListenToAspNetCore();
         await using var app = await StartAsync();
@@ -90,8 +92,10 @@ public sealed class CorrelationIdTests
 
         using var response = await app.GetTestClient().SendAsync(request);
 
-        response.Headers.GetValues(WellKnownHeaders.CorrelationId).Should().ContainSingle().Which.Should().Be(TraceId);
-        (await response.Content.ReadAsStringAsync()).Should().Be(TraceId);
+        // One rule platform-wide (CorrelationIds.New): a correlation id is never derived from the caller's trace context.
+        var header = response.Headers.GetValues(WellKnownHeaders.CorrelationId).Should().ContainSingle().Subject;
+        header.Should().NotBe(TraceId).And.MatchRegex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$");
+        (await response.Content.ReadAsStringAsync()).Should().Be(header);
     }
 
     [Fact]
@@ -151,53 +155,17 @@ public sealed class CorrelationIdTests
         using var listener = ListenToAspNetCore();
         var captured = new List<IReadOnlyList<KeyValuePair<string, object?>>?>();
         await using var app = await StartAsync(
-            options => options.TrustInboundBaggage = true,
-            configureBuilder: builder => CaptureLogAttributes(builder, captured));
+            configureBuilder: builder =>
+            {
+                builder.Services.AddSharedKernelRequestContext(options => options.TrustInboundBaggage = true);
+                CaptureLogAttributes(builder, captured);
+            });
 
         var (activityBaggage, response) = await SendWithForgedBaggageAsync(app);
 
         response.EnsureSuccessStatusCode();
         activityBaggage.Should().Contain(ForgedKey);
         captured.Should().Contain(attributes => attributes != null && attributes.Any(attribute => attribute.Key == ForgedKey));
-    }
-
-    [Theory]
-    [InlineData(false, false)]
-    [InlineData(true, true)]
-    public void R3_HostingsPropagator_ReadsNoInboundBaggage_UnlessTrusted(bool trust, bool readsBaggage)
-    {
-        var options = new SharedKernelWebApiOptions { TrustInboundBaggage = trust };
-        var propagator = new InboundBaggagePropagator(DistributedContextPropagator.CreateDefaultPropagator(), Microsoft.Extensions.Options.Options.Create(options));
-        var headers = new Dictionary<string, string>
-        {
-            [TraceParentHeader] = $"00-{TraceId}-b7ad6b7169203331-01",
-            [BaggageHeader] = $"{ForgedKey}=forged-tenant",
-        };
-
-        void Getter(object? carrier, string name, out string? value, out IEnumerable<string>? values)
-        {
-            values = null;
-            value = ((Dictionary<string, string>)carrier!).GetValueOrDefault(name);
-        }
-
-        propagator.ExtractTraceIdAndState(headers, Getter, out var traceParent, out _);
-        var baggage = propagator.ExtractBaggage(headers, Getter);
-
-        traceParent.Should().Contain(TraceId, "trace context is always read");
-        (baggage?.Any(item => item.Key == ForgedKey) == true).Should().Be(readsBaggage);
-    }
-
-    [Fact]
-    public void R3_RemoveAll_RemovesEveryItem_DuplicatesIncluded()
-    {
-        using var activity = new Activity("request");
-        activity.AddBaggage("tenant.id", "a");
-        activity.AddBaggage("tenant.id", "b");
-        activity.AddBaggage("user.id", "c");
-
-        InboundBaggage.RemoveAll(activity);
-
-        activity.Baggage.Should().BeEmpty();
     }
 
     [Fact]
@@ -211,31 +179,6 @@ public sealed class CorrelationIdTests
 
         var problem = await response.ShouldBeProblemAsync(StatusCodes.Status404NotFound, "order.not_found");
         problem.GetProperty(ProblemDetailsExtensionNames.CorrelationId).GetString().Should().Be("flow-11");
-    }
-
-    [Fact]
-    public async Task CustomPattern_IsApplied()
-    {
-        await using var app = await StartAsync(options => options.CorrelationId.AllowedCharacterPattern = "^[0-9]+$");
-
-        var (digits, _) = await SendAsync(app, "12345");
-        var (letters, _) = await SendAsync(app, "abc");
-
-        digits.Should().Be("12345");
-        letters.Should().NotBe("abc");
-    }
-
-    [Fact]
-    public async Task Disabled_WritesNoHeader_AndTheAccessorIsNull()
-    {
-        await using var app = await StartAsync(options => options.CorrelationId.Enabled = false);
-        using var request = new HttpRequestMessage(HttpMethod.Get, "/id");
-        request.Headers.Add(WellKnownHeaders.CorrelationId, "flow-12");
-
-        using var response = await app.GetTestClient().SendAsync(request);
-
-        response.Headers.Contains(WellKnownHeaders.CorrelationId).Should().BeFalse();
-        (await response.Content.ReadAsStringAsync()).Should().Be("(none)");
     }
 
     [Fact]

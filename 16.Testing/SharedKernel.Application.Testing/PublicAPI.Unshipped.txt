@@ -1,0 +1,15 @@
+#nullable enable
+SharedKernel.Testing.Application.ApplicationPipelineTestHarness
+SharedKernel.Testing.Application.ApplicationPipelineTestHarness.ApplicationPipelineTestHarness() -> void
+SharedKernel.Testing.Application.ApplicationPipelineTestHarness.Build() -> SharedKernel.Testing.Application.ApplicationPipelineTestHarness!
+SharedKernel.Testing.Application.ApplicationPipelineTestHarness.Build<TMarker>() -> SharedKernel.Testing.Application.ApplicationPipelineTestHarness!
+SharedKernel.Testing.Application.ApplicationPipelineTestHarness.CapturedActivities.get -> System.Collections.Generic.IReadOnlyList<System.Diagnostics.Activity!>!
+SharedKernel.Testing.Application.ApplicationPipelineTestHarness.CapturedMeasurements.get -> System.Collections.Generic.IReadOnlyList<(string! InstrumentName, double Value, System.Collections.Generic.IReadOnlyList<System.Collections.Generic.KeyValuePair<string!, object?>>! Tags)>!
+SharedKernel.Testing.Application.ApplicationPipelineTestHarness.Configure(System.Action<SharedKernel.Application.Pipeline.ApplicationPipelineBuilder!>! configure) -> SharedKernel.Testing.Application.ApplicationPipelineTestHarness!
+SharedKernel.Testing.Application.ApplicationPipelineTestHarness.Dispose() -> void
+SharedKernel.Testing.Application.ApplicationPipelineTestHarness.SendAsync<TResponse>(SharedKernel.Application.Messaging.IRequest<TResponse>! request, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TResponse>!
+SharedKernel.Testing.Application.ApplicationPipelineTestHarness.SendThroughPipelineAsync<TRequest, TResponse>(TRequest request, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TResponse>!
+SharedKernel.Testing.Application.ApplicationPipelineTestHarness.Services.get -> Microsoft.Extensions.DependencyInjection.ServiceCollection!
+SharedKernel.Testing.Application.ApplicationPipelineTestHarness.WithActivityCapture() -> SharedKernel.Testing.Application.ApplicationPipelineTestHarness!
+SharedKernel.Testing.Application.ApplicationServiceCollectionExtensions
+static SharedKernel.Testing.Application.ApplicationServiceCollectionExtensions.AddFakeApplicationBehaviorServices(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!

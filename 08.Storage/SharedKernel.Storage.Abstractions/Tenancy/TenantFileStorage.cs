@@ -1,4 +1,4 @@
-using SharedKernel.Primitives.Errors;
+using SharedKernel.Execution.Tenancy;
 
 namespace SharedKernel.Storage;
 
@@ -17,11 +17,11 @@ internal sealed class TenantFileStorage : ITenantFileStorage
 
     public string StoreName => _inner.StoreName;
 
-    public IFileStorage ForTenant(string tenantId)
+    public IFileStorage ForTenant(TenantId tenantId)
     {
-        if (StorageValidation.ValidateTenantId(tenantId) is Error error)
+        if (tenantId.IsDefault)
         {
-            throw new ArgumentException(error.Message, nameof(tenantId));
+            throw new ArgumentException("The tenant identifier must not be default(TenantId).", nameof(tenantId));
         }
 
         return new ScopedFileStorage(_inner, tenantId);

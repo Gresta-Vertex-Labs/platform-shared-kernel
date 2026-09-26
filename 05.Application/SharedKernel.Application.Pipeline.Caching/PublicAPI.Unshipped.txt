@@ -1,0 +1,3 @@
+#nullable enable
+SharedKernel.Application.Pipeline.Caching.CachingPipelineExtensions
+static SharedKernel.Application.Pipeline.Caching.CachingPipelineExtensions.WithCaching(this SharedKernel.Application.Pipeline.ApplicationPipelineBuilder! builder) -> SharedKernel.Application.Pipeline.ApplicationPipelineBuilder!

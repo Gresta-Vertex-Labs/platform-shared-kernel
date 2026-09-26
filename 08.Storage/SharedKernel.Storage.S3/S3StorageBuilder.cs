@@ -75,7 +75,7 @@ public sealed class S3StorageBuilder : IStorageBuilder
     /// <summary>
     /// Adds a tenant-scoped store on this connection, configured like <see cref="AddStore"/>: resolvable only as
     /// <c>[FromKeyedServices(name)] ITenantFileStorage</c> (or unkeyed when it is the only tenant store), whose
-    /// <see cref="ITenantFileStorage.ForTenant(string)"/> views keep every tenant under
+    /// <see cref="ITenantFileStorage.ForTenant"/> views keep every tenant under
     /// <c>{KeyPrefix}tenants/{tenantId}/</c>. Never resolvable as <see cref="IFileStorage"/>.
     /// </summary>
     /// <param name="name">

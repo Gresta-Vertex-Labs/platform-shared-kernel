@@ -5,6 +5,8 @@ metadata:
   type: feedback
 ---
 
+> WO-082/WO-086 (2026-09): the `SharedKernel.Guards` package was merged into `SharedKernel.Core` (namespace `SharedKernel.Guards` kept); the lesson below is unchanged.
+
 When the Guards implementation phase (C-16 through C-29) was completed, every public type and extension method in SharedKernel.Guards already received full XML doc comments including `<summary>`, `<remarks>`, `<typeparam>`, and `<param>` tags.
 
 **Why:** The implementer applied XML docs as part of the Core phase rather than deferring to the Docs phase. This is correct behavior per CLAUDE.md rule: "All public APIs use XML doc comments."

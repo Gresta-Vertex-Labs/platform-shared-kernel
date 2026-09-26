@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): recorded on MassTransit 9.1.2; the platform is pinned to 8.5.x (P-560) — re-verify. The RabbitMQ/Azure Service Bus configuration helpers and `RabbitMqBusOptions`/`AzureServiceBusOptions` moved out of `MessagingBusBuilder` into the satellites `SharedKernel.Messaging.MassTransit.RabbitMq`/`.AzureServiceBus`.
+
 # MassTransit 9.1.2 Concurrency-Limit API Facts (SK.07.ConsumerConcurrency, P-342/WO-054)
 
 ## `IServiceBusEndpointConfigurator.MaxConcurrentCalls` is obsolete

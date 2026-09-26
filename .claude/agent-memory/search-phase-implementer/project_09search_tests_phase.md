@@ -3,6 +3,7 @@ name: project_09search_tests_phase
 description: SK.09.Tests container-free session — bugs found and fixed, test techniques established, blocker re-confirmed
 type: project
 ---
+> WO-086 (2026-09): `ISearchIndexProvisioner.ProbeAsync` was removed — readiness is one `IReadinessProbe` per registered index (`SearchIndexReadinessProbe`, `search-{provider}-{index}`); the search-local `TenantScope` (string-keyed `TenantScope.Of(...)`) is now the single `SharedKernel.Execution.Tenancy.TenantScope` (`Global`, `For(TenantId)`, `FromNullable`); container fixtures live in `16.Testing/SharedKernel.Testing.Internal/Containers/` and the in-memory fakes in `SharedKernel.Search.Testing`. The findings below are history.
 
 SK.09.Tests container-free tasks (T-01–T-12, T-18–T-20; 15/26) completed 2026-07-19 — 248 tests green
 (155 Abstractions, 49 Meilisearch, 44 ElasticSearch). T-13–T-17/T-21–T-26 (11 tasks, real-backend) were

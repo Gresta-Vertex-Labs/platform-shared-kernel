@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Scheduling.Policies;
 
 namespace SharedKernel.Scheduling.Registry;
@@ -28,11 +29,33 @@ public sealed class ScheduledJobOptions
     public OverlapPolicy? OverlapPolicy { get; set; }
 
     /// <summary>
-    /// Gets or sets an optional, purely informational tenant label for this job registration. See the
-    /// remarks on <see cref="TenantScope"/> for why this is nullable and carries no isolation
-    /// enforcement.
+    /// Gets or sets the tenant this job runs as. Defaults to <see cref="TenantScope.Global"/>, meaning a
+    /// system-level job with no tenant.
     /// </summary>
-    public TenantScope? TenantScope { get; set; }
+    /// <remarks>
+    /// <para>
+    /// <b>Optional here, unlike every other tenant-aware domain.</b> <c>09.Search</c>,
+    /// <c>10.Intelligence</c>, <c>17.Workflows</c> and <c>18.Idempotency</c> take a mandatory,
+    /// non-defaulted tenant on every operation. A scheduled job is registered <b>once, at startup, as a
+    /// system-level actor</b>, so <see cref="TenantScope.Global"/> is the normal value.
+    /// </para>
+    /// <para>
+    /// A per-tenant recurring job (for example, "send each active tenant's weekly digest") is one
+    /// system-level registration whose command handler iterates its own tenant directory; the scheduler
+    /// never fans out per-tenant executions. A tenant set here is for the rare job owned by a single tenant.
+    /// </para>
+    /// <para>
+    /// <b>The scope is the job's caller tenant, not a label.</b> Every execution runs under an ambient
+    /// <c>SystemRequestContext</c> (identity = the job name, no permissions, a new correlation id) whose
+    /// <c>IRequestContext.TenantId</c> is this scope's tenant — <see langword="null"/> for
+    /// <see cref="TenantScope.Global"/>. Persistence filters, guards and stamps rows by that tenant, and
+    /// the outbound calls, messages and workflows the job starts carry it. A
+    /// <see cref="TenantScope.Global"/> job that touches tenant-scoped data therefore fails closed unless it
+    /// enters a cross-tenant scope (<c>ICrossTenantScope</c>). The same value is surfaced on
+    /// <see cref="Jobs.ScheduledJobExecutionContext.TenantScope"/>.
+    /// </para>
+    /// </remarks>
+    public TenantScope TenantScope { get; set; }
 
     /// <summary>
     /// Gets or sets the TTL for this job's per-occurrence distributed-lock claim.

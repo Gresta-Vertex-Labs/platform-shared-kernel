@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json.Serialization;
 using FluentAssertions;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Search.Abstractions.Abstractions;
 using SharedKernel.Search.Abstractions.Models;
 using SharedKernel.Search.Meilisearch.Options;
@@ -170,9 +171,9 @@ public sealed class MeilisearchBulkThrottleTests : IAsyncLifetime
 
             var documents = new[]
             {
-                new SkuKeyedDocument { DocumentId = "tenant-a-valid-1", TenantId = "tenant-a", Sku = "SKU-A-001" },
-                new SkuKeyedDocument { DocumentId = "tenant-b-invalid-1", TenantId = "tenant-b", Sku = null }, // missing primary key -> task fails
-                new SkuKeyedDocument { DocumentId = "tenant-a-valid-2", TenantId = "tenant-a", Sku = "SKU-A-002" },
+                new SkuKeyedDocument { DocumentId = "tenant-a-valid-1", TenantId = TestTenants.TenantA.ToString(), Sku = "SKU-A-001" },
+                new SkuKeyedDocument { DocumentId = "tenant-b-invalid-1", TenantId = TestTenants.TenantB.ToString(), Sku = null }, // missing primary key -> task fails
+                new SkuKeyedDocument { DocumentId = "tenant-a-valid-2", TenantId = TestTenants.TenantA.ToString(), Sku = "SKU-A-002" },
             };
             var bulkOptions = new SearchBulkWriteOptions { MaxBatchesPerSecond = 10 };
 
@@ -187,11 +188,11 @@ public sealed class MeilisearchBulkThrottleTests : IAsyncLifetime
             // The two valid, differently-tenanted siblings were never dropped by the pacing logic.
             // Queried by CountAsync per tenant rather than GetAsync, since Meilisearch's own document
             // identity for THIS index is the "sku" field, not our own DocumentId.
-            var tenantACount = await index.CountAsync(filter: null, TenantScope.Of("tenant-a"));
+            var tenantACount = await index.CountAsync(filter: null, TenantScope.For(TestTenants.TenantA));
             tenantACount.IsSuccess.Should().BeTrue();
             tenantACount.Value.IsExact.Should().BeTrue();
             tenantACount.Value.Value.Should().Be(2);
-            var tenantBCount = await index.CountAsync(filter: null, TenantScope.Of("tenant-b"));
+            var tenantBCount = await index.CountAsync(filter: null, TenantScope.For(TestTenants.TenantB));
             tenantBCount.IsSuccess.Should().BeTrue();
             tenantBCount.Value.IsExact.Should().BeTrue();
             tenantBCount.Value.Value.Should().Be(0, "the one tenant-b document failed to index and must not silently appear");

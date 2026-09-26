@@ -295,7 +295,7 @@ public sealed class RichStatusTests
     }
 
     [Fact]
-    public async Task GrpcOnlyHost_WithoutTheWebApiPipeline_StillCarriesTheRichStatus()
+    public async Task GrpcOnlyHost_WithoutTheWebApiPipeline_StillCarriesTheRichStatus_AndTheCorrelationId()
     {
         await using var app = await GrpcTestHost.StartAsync(useWebApi: false);
 
@@ -303,9 +303,8 @@ public sealed class RichStatusTests
 
         var status = exception.ShouldHaveRichStatus(StatusCode.InvalidArgument);
         status.FieldViolations().Should().HaveCount(3);
-        status.ErrorInfo().Metadata.Should().NotContainKey(
-            ProblemDetailsExtensionNames.CorrelationId,
-            "only UseSharedKernelWebApi() resolves a correlation id");
+        // The correlation id belongs to UseSharedKernelRequestContext(), not to the WebApi pipeline (P-579).
+        status.ErrorInfo().Metadata[ProblemDetailsExtensionNames.CorrelationId].Should().Be("flow-3");
     }
 
     [Fact]

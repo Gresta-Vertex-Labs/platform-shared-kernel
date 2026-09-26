@@ -1,4 +1,5 @@
-using SharedKernel.Application.Context;
+using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
 
 namespace SharedKernel.Persistence.EfCore.Integration.Tests.Postgres;
 
@@ -9,7 +10,7 @@ internal sealed class MutableTestActorContext : IRequestContext
     public ActorKind ActorKind { get; set; } = ActorKind.User;
     public bool IsAuthenticated => true;
     public string? UserId => ActorId;
-    public Guid? TenantId { get; set; }
+    public TenantId? TenantId { get; set; }
 
     public ValueTask<bool> HasPermissionAsync(string permission, CancellationToken cancellationToken) =>
         ValueTask.FromResult(false);
@@ -18,7 +19,7 @@ internal sealed class MutableTestActorContext : IRequestContext
 /// <summary>Mutable, scoped-DI-friendly tenant fake for pooling tests.</summary>
 internal sealed class MutableTestTenantContext : IRequestContext
 {
-    public Guid? TenantId { get; set; }
+    public TenantId? TenantId { get; set; }
     public bool IsAuthenticated => true;
     public string? UserId => "tenant-test";
 

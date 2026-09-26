@@ -1,62 +1,40 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Abstractions</SharedKernelTier>
     <!-- NuGet packaging metadata -->
-    <Description>The application layer of a .NET service over MediatR: commands, queries and their handlers, the pipeline around them (tracing, logging, metrics, authorization, validation, idempotency, transactions, auditing) in one fixed order, and the bridge that turns a domain event into a MediatR notification.
+    <Description>The CQRS vocabulary a .NET service's Application project speaks, owned by the kernel rather than by a mediator library: requests, commands, queries and their handlers, the sender, the pipeline-behavior contract, domain-event handlers, and the markers that opt a request into authorization, validation, idempotency, auditing, logging and caching.
 
-One call registers it: services.AddSharedKernelApplication(typeof(Program).Assembly, app => app.WithAuthorization().WithTransactions()) scans the assembly for handlers and FluentValidation validators, turns on tracing, logging, metrics and validation, and adds the behaviors you opt into. A service a behavior needs is checked when the host starts, so registration order does not matter.
+Every handler returns Result or Result&lt;T&gt;, so an expected failure is a value the caller must handle rather than an exception thrown past it. ICommandBase and IQueryBase let a pipeline behavior constrain to "any command" or "any query" once, so behaviors that must not touch reads are never resolved for them.
 
-Every handler returns Result or Result&lt;T&gt;, so an expected failure is a value the caller must handle rather than an exception thrown past it. Authorization is declared once, on the use case, with [RequirePermission]. Only a successful outcome persists anything: a failed Result commits nothing and releases its idempotency key. Depends on SharedKernel.Application.Abstractions, SharedKernel.Primitives, SharedKernel.Domain, MediatR 12.4.1 (the last MIT-licensed release, pinned deliberately), FluentValidation and first-party Microsoft.Extensions packages.</Description>
-    <PackageReleaseNotes>First release as one package: the former SharedKernel.Application.Behaviors was merged into it (P-563).
+This package declares shapes and performs no I/O, and it references no mediator: MediatR is used only by SharedKernel.Application.Mediator.MediatR, so replacing it changes no command, query, handler or behavior. The behaviors themselves live in SharedKernel.Application.Pipeline. Depends only on SharedKernel.Primitives, SharedKernel.Domain and SharedKernel.Caching.Abstractions.</Description>
+    <PackageReleaseNotes>First release.
 
 WHAT IS IN IT
-- Commands and queries: ICommand, ICommand&lt;T&gt;, IQuery&lt;T&gt;, ICommandBase, IQueryBase, the handler aliases, IStreamQuery&lt;T&gt; and IStreamQueryHandler&lt;,&gt;.
-- Registration: AddSharedKernelApplication(assemblies, app => …) with WithAuthorization(), WithIdempotency(), WithTransactions(), WithAuditing() and WithBehavior(type, PipelineStage).
-- Request declarations: [RequirePermission], IIdempotentRequest, IAuditableRequest&lt;TResponse&gt;, ILoggableRequest&lt;TResponse&gt;, and ICommandScope for work after the commit.
-- Domain events: IDomainEventHandler&lt;T&gt;, DomainEventNotification&lt;T&gt;, AddDomainEventHandler&lt;,&gt;().
-- For idempotency stores (SharedKernel.Application.Idempotency): IRequestIdempotencyStore, IdempotencyBeginResult, IdempotencyBeginStatus.
+- Requests: IRequest&lt;TResponse&gt;, IRequestHandler&lt;,&gt;, ISender (Send, CreateStream) and IPipelineBehavior&lt;,&gt; with RequestHandlerContinuation&lt;TResponse&gt;.
+- Commands and queries: ICommandBase, ICommand, ICommand&lt;TResponse&gt;, IQueryBase, IQuery&lt;TResponse&gt;, and the handler aliases ICommandHandler&lt;&gt;/ICommandHandler&lt;,&gt;/IQueryHandler&lt;,&gt;.
+- Streaming reads: IStreamQuery&lt;TResponse&gt;, IStreamQueryHandler&lt;,&gt; and IStreamPipelineBehavior&lt;,&gt;.
+- Domain events: IDomainEventHandler&lt;TDomainEvent&gt;.
+- Pipeline markers and ports: [RequirePermission] (always enforced), IIdempotentRequest, IAuditableRequest&lt;TResponse&gt;, ILoggableRequest&lt;TResponse&gt;, ICacheableQuery&lt;TValue&gt;, IInvalidatesCache, CacheScope, CacheKeyRef, ICommandScope and IRequestValidator&lt;TRequest&gt;.
 
-See the package README for the pipeline, the failure matrix and the full reference.</PackageReleaseNotes>
-    <PackageTags>cqrs;mediatr;application;command;query;pipeline-behavior;validation;authorization;idempotency;transaction;auditing;domain-events;shared-kernel</PackageTags>
+THINGS WORTH KNOWING BEFORE YOU ADOPT IT
+- A request's response must be Result or Result&lt;T&gt; when it uses a pipeline marker. Several pipeline behaviors short-circuit by constructing a failed response, which no other response type can express; SharedKernel.Analyzers' SK0040 flags the mistake at build time.
+- Streams run only IStreamPipelineBehavior registrations, never request behaviors, and stream items are deliberately not wrapped in Result&lt;T&gt;.
+- Domain events dispatch serially through DomainEventDispatcher (SharedKernel.Application.Pipeline), before the physical save.
+
+See the package README for the decision guide, the walkthrough and the full reference.</PackageReleaseNotes>
+    <PackageTags>cqrs;mediator;application;command;query;streaming;domain-events;shared-kernel</PackageTags>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <WarningsAsErrors>$(WarningsAsErrors);nullable;CS1591;RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
     <!--
-      Layering ceiling for SharedKernel.Application is 01.Core, 03.Domain, 04.Contracts and
-      SharedKernel.Application.Abstractions. It never references 06.Persistence, 07.Messaging,
-      12.Security, or SharedKernel.Caching.Abstractions (that reference belongs to
-      SharedKernel.Application.Caching only).
+      Abstractions tier: no mediator library and no implementation. CachePolicy (ICacheableQuery) is
+      the only reason for the SharedKernel.Caching.Abstractions reference, which is itself
+      dependency-free.
     -->
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
     <ProjectReference Include="..\..\03.Domain\SharedKernel.Domain\SharedKernel.Domain.csproj" />
-    <!-- IRequestContext, IUnitOfWork and IAuditTrailWriter: the contracts 06.Persistence implements
-         directly, so no composition-root adapter is needed. -->
-    <ProjectReference Include="..\SharedKernel.Application.Abstractions\SharedKernel.Application.Abstractions.csproj" />
-  </ItemGroup>
-  <ItemGroup>
-    <!--
-      MediatR pinned to 12.4.x — the last MIT-licensed major (v13 introduced a commercial
-      license). This is a deliberate platform ceiling; see CLAUDE.md version-pin callout.
-    -->
-    <PackageReference Include="MediatR" />
-    <PackageReference Include="FluentValidation" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
-    <!-- Concrete AddLogging(): the registration call makes ILogger<T> resolvable even against a bare
-         ServiceCollection. -->
-    <PackageReference Include="Microsoft.Extensions.Logging" />
-    <PackageReference Include="Microsoft.Extensions.Options" />
-    <!-- ValidateDataAnnotations()/ValidateOnStart() for ApplicationLoggingOptions and the start-time
-         seam check. A plain Microsoft.Extensions.* package, never a SharedKernel.Configuration reference. -->
-    <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" />
-    <!-- IMeterFactory / services.AddMetrics() for the metrics behavior. -->
-    <PackageReference Include="Microsoft.Extensions.Diagnostics" />
-  </ItemGroup>
-  <ItemGroup>
-    <!-- The behaviors are internal; the test project constructs them directly. -->
-    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
-      <_Parameter1>SharedKernel.Application.Tests</_Parameter1>
-    </AssemblyAttribute>
+    <ProjectReference Include="..\..\02.Caching\SharedKernel.Caching.Abstractions\SharedKernel.Caching.Abstractions.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />

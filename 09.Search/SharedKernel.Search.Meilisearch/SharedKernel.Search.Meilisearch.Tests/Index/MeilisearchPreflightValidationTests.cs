@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Search.Abstractions.Abstractions;
 using SharedKernel.Search.Abstractions.Models;
 using SharedKernel.Search.Meilisearch.Index;
@@ -14,7 +15,7 @@ namespace SharedKernel.Search.Meilisearch.Tests.Index;
 /// <c>FieldNotFacetable</c>; <c>Page * PageSize &gt; MaxTotalHits</c> returns
 /// <c>PaginationLimitExceeded</c> naming <c>ICursorSearch</c>/<c>EnumerateAsync</c> as alternatives; a
 /// facet count over the cap returns <c>FacetLimitExceeded</c>; and a <c>TenantField</c>-declaring index
-/// with <c>TenantScope.None</c> returns <c>TenantScopeMissing</c>. Every case additionally asserts that
+/// with <c>TenantScope.Global</c> returns <c>TenantScopeMissing</c>. Every case additionally asserts that
 /// no I/O was attempted.
 /// </summary>
 /// <remarks>
@@ -62,7 +63,7 @@ public sealed class MeilisearchPreflightValidationTests
         var index = CreateIndexWithNoIoCapableClient(Definition());
         var request = SearchRequest.Default with { Filter = SearchFilter.Eq("undeclared", SearchValue.From("x")) };
 
-        var act = async () => await index.SearchAsync(request, TenantScope.None);
+        var act = async () => await index.SearchAsync(request, TenantScope.Global);
 
         var result = await act.Should().NotThrowAsync("validation must reject before any client dereference");
         result.Subject.IsFailure.Should().BeTrue();
@@ -75,7 +76,7 @@ public sealed class MeilisearchPreflightValidationTests
         var index = CreateIndexWithNoIoCapableClient(Definition());
         var request = SearchRequest.Default with { Sort = [SearchSort.Ascending("name")] };
 
-        var act = async () => await index.SearchAsync(request, TenantScope.None);
+        var act = async () => await index.SearchAsync(request, TenantScope.Global);
 
         var result = await act.Should().NotThrowAsync();
         result.Subject.IsFailure.Should().BeTrue();
@@ -88,7 +89,7 @@ public sealed class MeilisearchPreflightValidationTests
         var index = CreateIndexWithNoIoCapableClient(Definition());
         var request = SearchRequest.Default with { Facets = ["status"] }; // status is Filterable, not Facetable
 
-        var act = async () => await index.SearchAsync(request, TenantScope.None);
+        var act = async () => await index.SearchAsync(request, TenantScope.Global);
 
         var result = await act.Should().NotThrowAsync();
         result.Subject.IsFailure.Should().BeTrue();
@@ -101,7 +102,7 @@ public sealed class MeilisearchPreflightValidationTests
         var index = CreateIndexWithNoIoCapableClient(Definition());
         var request = SearchRequest.Default with { Page = 6, PageSize = 20 }; // 120 > MaxTotalHits(100)
 
-        var act = async () => await index.SearchAsync(request, TenantScope.None);
+        var act = async () => await index.SearchAsync(request, TenantScope.Global);
 
         var result = await act.Should().NotThrowAsync();
         result.Subject.IsFailure.Should().BeTrue();
@@ -120,7 +121,7 @@ public sealed class MeilisearchPreflightValidationTests
             NumericFacetStats = ["f1", "f2", "f3", "f4", "f5"],
         };
 
-        var act = async () => await index.SearchAsync(request, TenantScope.None);
+        var act = async () => await index.SearchAsync(request, TenantScope.Global);
 
         var result = await act.Should().NotThrowAsync();
         result.Subject.IsFailure.Should().BeTrue();
@@ -128,12 +129,12 @@ public sealed class MeilisearchPreflightValidationTests
     }
 
     [Fact]
-    public async Task TenantedIndex_WithTenantScopeNone_ReturnsTenantScopeMissing_WithNoIoAttempted()
+    public async Task TenantedIndex_WithTenantScopeGlobal_ReturnsTenantScopeMissing_WithNoIoAttempted()
     {
         var index = CreateIndexWithNoIoCapableClient(TenantedDefinition());
         var request = SearchRequest.Default;
 
-        var act = async () => await index.SearchAsync(request, TenantScope.None);
+        var act = async () => await index.SearchAsync(request, TenantScope.Global);
 
         var result = await act.Should().NotThrowAsync();
         result.Subject.IsFailure.Should().BeTrue();
@@ -145,7 +146,7 @@ public sealed class MeilisearchPreflightValidationTests
     {
         // Two assertions in one, and the second is the point of the pre-publish Result-discipline fix.
         //
-        // (1) The guard is genuinely conditional on TenantScope.None rather than always failing: the
+        // (1) The guard is genuinely conditional on TenantScope.Global rather than always failing: the
         //     executor proceeds past it and reaches the unusable client, which is what distinguishes
         //     "the guard stopped I/O" from "something unrelated short-circuited" in the prior test. The
         //     distinguishing evidence is the error CODE — engine_fault, not tenant_scope_missing.
@@ -158,7 +159,7 @@ public sealed class MeilisearchPreflightValidationTests
         var index = CreateIndexWithNoIoCapableClient(TenantedDefinition());
         var request = SearchRequest.Default;
 
-        var act = async () => await index.SearchAsync(request, TenantScope.Of("tenant-a"));
+        var act = async () => await index.SearchAsync(request, TenantScope.For(TestTenants.TenantA));
 
         var result = await act.Should().NotThrowAsync(
             "every fault on a Result-returning member is classified and returned, never thrown");

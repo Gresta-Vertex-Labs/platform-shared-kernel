@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Context;
 using System.Net.Http.Json;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json.Serialization;
@@ -112,24 +113,22 @@ internal sealed class MtlsTestHost : IAsyncDisposable
     private static CallerSnapshot Describe(HttpContext context)
     {
         IUserContext user = context.RequestServices.GetRequiredService<IUserContext>();
-        ITenantProvider tenant = context.RequestServices.GetRequiredService<ITenantProvider>();
         return new CallerSnapshot(
-            user.IdentityKind,
+            user.ActorKind,
             user.IsAuthenticated,
             user.SubjectId,
             user.ClientId,
-            user.TenantId,
+            user.TenantId?.Value,
             [.. user.Roles],
             [.. user.Permissions],
             user.FindClaim(MtlsAuthenticationDefaults.CertificateThumbprintClaimType),
             user.FindClaim("extra"),
-            tenant.TenantId,
             context.User.Identity?.AuthenticationType);
     }
 }
 
 internal sealed record CallerSnapshot(
-    [property: JsonConverter(typeof(JsonStringEnumConverter<IdentityKind>))] IdentityKind IdentityKind,
+    [property: JsonConverter(typeof(JsonStringEnumConverter<ActorKind>))] ActorKind ActorKind,
     bool IsAuthenticated,
     string? SubjectId,
     string? ClientId,
@@ -138,5 +137,4 @@ internal sealed record CallerSnapshot(
     string[] Permissions,
     string? Thumbprint,
     string? Extra,
-    Guid ProviderTenantId,
     string? AuthenticationType);

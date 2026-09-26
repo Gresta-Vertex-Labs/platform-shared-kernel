@@ -1,8 +1,6 @@
 using System.Reflection;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
-using SharedKernel.Presentation.WebApi.Authorization;
-using SharedKernel.Presentation.WebApi.Correlation;
 using SharedKernel.Presentation.WebApi.Cors;
 using SharedKernel.Presentation.WebApi.ExceptionHandling;
 using SharedKernel.Presentation.WebApi.RateLimiting;
@@ -15,20 +13,21 @@ namespace SharedKernel.Presentation.WebApi.Tests.Logging;
 /// Pins every <c>[LoggerMessage]</c> EventId of the package (sub-block 14000–14099), read from the compiled attribute
 /// so a renumbering fails immediately; ids kept from before P-562 keep their numbers.
 /// </summary>
+/// <remarks>
+/// Since P-579 three ids of this sub-block are declared by <c>SharedKernel.Presentation.Core</c>, which took over the
+/// authorization machinery (14002, 14009, 14010; pinned by that package's tests), and two are retired: 14000 and 14006
+/// were the deleted correlation-id middleware's, whose work <c>SharedKernel.ServiceDefaults.Security</c>'s
+/// <c>UseSharedKernelRequestContext()</c> does under its own ids. A retired id is never reused.
+/// </remarks>
 public sealed class LoggerMessageEventIdTests
 {
     [Theory]
-    [InlineData(typeof(CorrelationIdMiddleware), "CorrelationIdAssigned", 14000, LogLevel.Debug)]
     [InlineData(typeof(SharedKernelExceptionHandler), "ServerError", 14001, LogLevel.Error)]
-    [InlineData(typeof(SharedKernelAuthorizationResultHandler), "AuthorizationRejected", 14002, LogLevel.Warning)]
     [InlineData(typeof(IdempotencyKeyGuard), "IdempotencyKeyRejected", 14003, LogLevel.Warning)]
     [InlineData(typeof(WebApiOptionsValidator), "CorsConfigurationInvalid", 14004, LogLevel.Critical)]
     [InlineData(typeof(RateLimitRejectionPostConfigure), "RateLimitRejected", 14005, LogLevel.Warning)]
-    [InlineData(typeof(CorrelationIdMiddleware), "CorrelationIdRejected", 14006, LogLevel.Warning)]
     [InlineData(typeof(SharedKernelExceptionHandler), "ClientError", 14007, LogLevel.Debug)]
     [InlineData(typeof(SharedKernelExceptionHandler), "RequestAborted", 14008, LogLevel.Debug)]
-    [InlineData(typeof(SharedKernelRequirementHandler), "NoUserContextMapper", 14009, LogLevel.Warning)]
-    [InlineData(typeof(SharedKernelAuthorizationStartupCheck), "SchemeWithoutMapper", 14010, LogLevel.Warning)]
     [InlineData(typeof(WebApiStartupDiagnostics), "PipelineNotApplied", 14011, LogLevel.Warning)]
     [InlineData(typeof(WebApiStartupDiagnostics), "ExceptionDetailsOutsideDevelopment", 14012, LogLevel.Warning)]
     [InlineData(typeof(WebSocketOriginMiddleware), "WebSocketOriginRefused", 14013, LogLevel.Warning)]
@@ -43,17 +42,29 @@ public sealed class LoggerMessageEventIdTests
     [Fact]
     public void EveryLogMethod_IsInThePackageSubBlock_AndUnique()
     {
-        var ids = typeof(WebApiHostBuilderExtensions).Assembly.GetTypes()
+        var ids = EventIds(typeof(WebApiHostBuilderExtensions).Assembly);
+
+        ids.Should().HaveCount(9).And.OnlyHaveUniqueItems();
+        ids.Should().OnlyContain(id => id >= 14000 && id <= 14099);
+    }
+
+    [Fact]
+    public void RetiredAndMovedIds_AreNotDeclaredHere()
+    {
+        var ids = EventIds(typeof(WebApiHostBuilderExtensions).Assembly);
+
+        ids.Should().NotContain([14000, 14006], "14000 and 14006 belonged to the deleted correlation-id middleware (P-579)");
+        ids.Should().NotContain([14002, 14009, 14010], "SharedKernel.Presentation.Core declares these since P-579");
+    }
+
+    private static int[] EventIds(Assembly assembly) =>
+        assembly.GetTypes()
             .Where(type => type.Name == "Log" && type.IsNested)
             .SelectMany(type => type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static))
             .Select(method => method.GetCustomAttribute<LoggerMessageAttribute>())
             .OfType<LoggerMessageAttribute>()
             .Select(attribute => attribute.EventId)
             .ToArray();
-
-        ids.Should().HaveCount(14).And.OnlyHaveUniqueItems();
-        ids.Should().OnlyContain(id => id >= 14000 && id <= 14099);
-    }
 
     private static LoggerMessageAttribute GetAttribute(Type containingType, string methodName)
     {

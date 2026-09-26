@@ -1,3 +1,5 @@
+using SharedKernel.Application.Mediator.MediatR;
+using SharedKernel.Application.Pipeline;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -67,7 +69,7 @@ internal sealed class SchedulingTestHarness : IAsyncDisposable
         var clock = new FakeClock(initialClock);
         services.AddSingleton<IClock>(clock);
         services.AddInMemoryLoggerFactory();
-        services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblyContaining<RecordingCommand>());
+        services.AddSharedKernelApplication(typeof(RecordingCommand).Assembly, app => app.UseMediatR());
         services.AddSingleton<RecordingCommandRecorder>();
 
         if (lockService is not null)

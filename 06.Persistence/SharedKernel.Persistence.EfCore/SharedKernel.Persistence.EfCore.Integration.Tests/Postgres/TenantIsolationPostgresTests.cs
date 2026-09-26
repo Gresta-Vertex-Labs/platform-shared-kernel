@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using SharedKernel.Contracts.Pagination;
 using SharedKernel.Core.Exceptions;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Testing.Containers;
 using SharedKernel.Testing.Persistence;
@@ -31,21 +32,21 @@ public sealed class TenantIsolationPostgresTests
 
     // Every test in this suite proves write-side tenant isolation, so TenantWriteGuardInterceptor is
     // always wired in. The context's own CrossTenantScope is the one its repositories and the guard observe.
-    private PgTestDbContext CreateContext(Guid tenantId, string actorId = "actor") =>
+    private PgTestDbContext CreateContext(TenantId tenantId, string actorId = "actor") =>
         PgTestDbContextFactory.Create(
             ConnectionString,
             new FakeAuditActorContext(actorId),
             new FakeAuditActorContext(actorId, tenantId),
             additionalInterceptors: null);
 
-    private static PgOrderAggregate NewOrder(Guid tenantId, string code) =>
+    private static PgOrderAggregate NewOrder(TenantId tenantId, string code) =>
         new(PgOrderId.New(), tenantId, $"Order-{code}", code, "Main St", "Springfield", new SharedKernel.Primitives.Clocks.SystemClock());
 
     [Fact]
     public async Task PlainDbSet_TenantedSoftDeletableEntity_BothFiltersActive()
     {
-        var tenantA = Guid.NewGuid();
-        var tenantB = Guid.NewGuid();
+        var tenantA = new TenantId(Guid.NewGuid());
+        var tenantB = new TenantId(Guid.NewGuid());
         var codePrefix = $"plain-{Guid.NewGuid():N}";
 
         await using (var setup = CreateContext(tenantA))
@@ -85,8 +86,8 @@ public sealed class TenantIsolationPostgresTests
     [Fact]
     public async Task IncludeDeleted_Query_StaysInsideTenant()
     {
-        var tenantA = Guid.NewGuid();
-        var tenantB = Guid.NewGuid();
+        var tenantA = new TenantId(Guid.NewGuid());
+        var tenantB = new TenantId(Guid.NewGuid());
         var codePrefix = $"incdel-q-{Guid.NewGuid():N}";
 
         await using (var setup = CreateContext(tenantA))
@@ -123,8 +124,8 @@ public sealed class TenantIsolationPostgresTests
     [Fact]
     public async Task IncludeDeleted_Keyset_StaysInsideTenant()
     {
-        var tenantA = Guid.NewGuid();
-        var tenantB = Guid.NewGuid();
+        var tenantA = new TenantId(Guid.NewGuid());
+        var tenantB = new TenantId(Guid.NewGuid());
 
         await using (var setup = CreateContext(tenantA))
             await setup.Database.EnsureCreatedAsync();
@@ -169,8 +170,8 @@ public sealed class TenantIsolationPostgresTests
     [Fact]
     public async Task IncludeDeleted_BulkExecuteUpdate_StaysInsideTenant()
     {
-        var tenantA = Guid.NewGuid();
-        var tenantB = Guid.NewGuid();
+        var tenantA = new TenantId(Guid.NewGuid());
+        var tenantB = new TenantId(Guid.NewGuid());
         var prefix = $"bulk-upd-{Guid.NewGuid():N}";
 
         await using (var setup = CreateContext(tenantA))
@@ -202,8 +203,8 @@ public sealed class TenantIsolationPostgresTests
     [Fact]
     public async Task IncludeDeleted_BulkExecuteDelete_StaysInsideTenant()
     {
-        var tenantA = Guid.NewGuid();
-        var tenantB = Guid.NewGuid();
+        var tenantA = new TenantId(Guid.NewGuid());
+        var tenantB = new TenantId(Guid.NewGuid());
         var prefix = $"bulk-del-{Guid.NewGuid():N}";
 
         await using (var setup = CreateContext(tenantA))
@@ -233,8 +234,8 @@ public sealed class TenantIsolationPostgresTests
     [Fact]
     public async Task CrossTenantInsert_Rejected()
     {
-        var tenantA = Guid.NewGuid();
-        var tenantB = Guid.NewGuid();
+        var tenantA = new TenantId(Guid.NewGuid());
+        var tenantB = new TenantId(Guid.NewGuid());
 
         await using var setup = CreateContext(tenantA);
         await setup.Database.EnsureCreatedAsync();
@@ -251,8 +252,8 @@ public sealed class TenantIsolationPostgresTests
     [Fact]
     public async Task CrossTenantUpdate_Detached_Rejected()
     {
-        var tenantA = Guid.NewGuid();
-        var tenantB = Guid.NewGuid();
+        var tenantA = new TenantId(Guid.NewGuid());
+        var tenantB = new TenantId(Guid.NewGuid());
 
         await using var setup = CreateContext(tenantA);
         await setup.Database.EnsureCreatedAsync();
@@ -278,8 +279,8 @@ public sealed class TenantIsolationPostgresTests
     [Fact]
     public async Task CrossTenantDelete_Rejected()
     {
-        var tenantA = Guid.NewGuid();
-        var tenantB = Guid.NewGuid();
+        var tenantA = new TenantId(Guid.NewGuid());
+        var tenantB = new TenantId(Guid.NewGuid());
 
         await using var setup = CreateContext(tenantA);
         await setup.Database.EnsureCreatedAsync();
@@ -307,7 +308,7 @@ public sealed class TenantIsolationPostgresTests
     [Fact]
     public async Task CrossTenantBulkSetPropertyTenantId_Rejected()
     {
-        var tenantA = Guid.NewGuid();
+        var tenantA = new TenantId(Guid.NewGuid());
 
         await using var setup = CreateContext(tenantA);
         await setup.Database.EnsureCreatedAsync();
@@ -325,7 +326,7 @@ public sealed class TenantIsolationPostgresTests
         // rejection specifically, not the separate "no criteria" rejection.
         var act = () => repo.ExecuteUpdateAsync(
             new SharedKernel.Persistence.Abstractions.Repositories.AllRowsSpecification<PgOrderAggregate>(),
-            s => s.SetProperty(o => o.TenantId, Guid.NewGuid()));
+            s => s.SetProperty(o => o.TenantId, new TenantId(Guid.NewGuid())));
 
         await act.Should().ThrowAsync<SharedKernel.Persistence.EfCore.Repositories.UnsupportedSpecificationException>(
             "BulkSpecificationGuard must reject a SetProperty targeting TenantId");
@@ -334,7 +335,7 @@ public sealed class TenantIsolationPostgresTests
     [Fact]
     public async Task CrossTenantBulkSetPropertyTenantId_ViaEfPropertyStringName_Rejected()
     {
-        var tenantA = Guid.NewGuid();
+        var tenantA = new TenantId(Guid.NewGuid());
 
         await using var setup = CreateContext(tenantA);
         await setup.Database.EnsureCreatedAsync();
@@ -353,7 +354,7 @@ public sealed class TenantIsolationPostgresTests
         // inspector cannot name must be rejected outright, not assumed harmless.
         var act = () => repo.ExecuteUpdateAsync(
             new SharedKernel.Persistence.Abstractions.Repositories.AllRowsSpecification<PgOrderAggregate>(),
-            s => s.SetProperty(o => EF.Property<Guid>(o, "TenantId"), Guid.NewGuid()));
+            s => s.SetProperty(o => EF.Property<TenantId>(o, "TenantId"), new TenantId(Guid.NewGuid())));
 
         await act.Should().ThrowAsync<SharedKernel.Persistence.EfCore.Repositories.UnsupportedSpecificationException>(
             "a setter whose target the inspector cannot resolve must fail closed, since it can name "
@@ -382,8 +383,8 @@ public sealed class TenantIsolationPostgresTests
         // proves ForbiddenException specifically for a tenanted aggregate that carries no concurrency
         // token of its own — the concurrency-token mechanism itself is provider-neutral, so that
         // coverage is not Postgres-specific.
-        var tenantA = Guid.NewGuid();
-        var tenantB = Guid.NewGuid();
+        var tenantA = new TenantId(Guid.NewGuid());
+        var tenantB = new TenantId(Guid.NewGuid());
 
         await using var setup = CreateContext(tenantA);
         await setup.Database.EnsureCreatedAsync();
@@ -416,8 +417,8 @@ public sealed class TenantIsolationPostgresTests
         // Same inverted shape as above, for the delete path (Attach()+Remove()) — see the sibling
         // A4: the row exists and belongs to another tenant, so the concurrency failure is a PROVEN
         // tenant-isolation violation (ForbiddenException); an ordinary race stays a ConflictException.
-        var tenantA = Guid.NewGuid();
-        var tenantB = Guid.NewGuid();
+        var tenantA = new TenantId(Guid.NewGuid());
+        var tenantB = new TenantId(Guid.NewGuid());
 
         await using var setup = CreateContext(tenantA);
         await setup.Database.EnsureCreatedAsync();
@@ -446,8 +447,8 @@ public sealed class TenantIsolationPostgresTests
     [Fact]
     public async Task CrossTenantScopeBypass_WorksAndIsExplicit()
     {
-        var tenantA = Guid.NewGuid();
-        var tenantB = Guid.NewGuid();
+        var tenantA = new TenantId(Guid.NewGuid());
+        var tenantB = new TenantId(Guid.NewGuid());
 
         await using var setup = CreateContext(tenantA);
         await setup.Database.EnsureCreatedAsync();

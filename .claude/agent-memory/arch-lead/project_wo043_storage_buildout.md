@@ -4,6 +4,8 @@ description: WO-043 08.Storage full build-out (Abstractions + S3 + Obs) plus cro
 type: project
 ---
 
+> WO-086 (2026-09): the storage probe (`IFileStorageHealthProbe`) and `SharedKernel.ServiceDefaults.Storage` were deleted — each store registers an `IReadinessProbe` named `storage-{store}`.
+
 WO-043 (2026-07-16, P-265–P-271) took 08.Storage from a fully-designed-but-undispatched domain brain (Abstractions/S3/Obs packages already documented in `08.Storage/CLAUDE.md` from a prior session, Package Board all `○`) to a dispatched 7-phase backlog across 4 domains.
 
 **Phases written:**

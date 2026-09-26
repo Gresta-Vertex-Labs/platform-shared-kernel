@@ -1,7 +1,8 @@
 using System.Diagnostics;
 using System.Security.Cryptography;
-using SharedKernel.Application.Auditing;
-using SharedKernel.Application.Context;
+using SharedKernel.Execution.Auditing;
+using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence.EfCore.Auditing.Format;
 using SharedKernel.Persistence.EfCore.Auditing.Storage;
 using SharedKernel.Primitives.Clocks;
@@ -25,7 +26,7 @@ internal sealed class AuditRecordFactory(
 
     /// <summary>Builds the record for <paramref name="entry"/> in the chain of <paramref name="tenantId"/>.</summary>
     /// <exception cref="ArgumentException">A field is empty or longer than its <see cref="AuditFieldLimits"/> limit.</exception>
-    public PendingLedgerRecord Create(AuditEntry entry, Guid? tenantId)
+    public PendingLedgerRecord Create(AuditEntry entry, TenantId? tenantId)
     {
         ArgumentNullException.ThrowIfNull(entry);
 
@@ -44,7 +45,12 @@ internal sealed class AuditRecordFactory(
         var clientId = Truncate(Context.ClientId);
         var sessionId = Truncate(Context.SessionId);
         var impersonatorId = Truncate(Context.ImpersonatorId);
-        var correlationId = Truncate(activity?.GetBaggageItem(WellKnownBaggageKeys.CorrelationId));
+        // The request context is the source of truth: every inbound adapter (HTTP, gRPC, MassTransit consume,
+        // Temporal activity, scheduler) sets it, while correlation baggage exists only on the HTTP and gRPC paths.
+        var correlationId = Truncate(
+            Context.CorrelationId is { Length: > 0 } fromContext
+                ? fromContext
+                : activity?.GetBaggageItem(WellKnownBaggageKeys.CorrelationId));
         var traceId = activity is { IdFormat: ActivityIdFormat.W3C } ? activity.TraceId.ToHexString() : null;
 
         if (!Enum.IsDefined(entry.Outcome))

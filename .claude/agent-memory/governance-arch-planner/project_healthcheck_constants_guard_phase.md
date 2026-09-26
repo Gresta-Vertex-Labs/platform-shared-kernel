@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): `HealthCheckConstantsUsageRules`, `StringConstantsClassDetector` and `HealthCheckTags`/`HealthCheckNames` (in the `SharedKernel.ServiceDefaults` base) still exist; the composition-root exclusivity rule (P-173) cited below was deleted in P-574 because the tier check covers it.
+
 WO-028 P-178 added phase `SK.00.HealthCheckConstantsGuard` (8 tasks: D-53, C-75–C-77, T-139–T-142, DO-25; total governance tasks now 336) to `00.Governance/state-map.md`, with corresponding additions to `00.Governance/CLAUDE.md`. Depends on P-177 (13.ServiceDefaults — introduces `HealthCheckTags`/`HealthCheckNames` constants classes and the five sibling files that hardcoded literals instead) for **real-assembly verification only** — design/implementation proceeds against contrived in-memory fixtures, same pattern as [[project_servicedefaults_governance_phase]].
 
 **Why this phase exists:** P-177's audit found two generations of the same mistake in one domain — `HealthCheckTags` was built correctly as a constants class, but five sibling files kept hardcoding default health-check *names* as bare literals instead of extending the same discipline. Nothing mechanically caught the inconsistency. Same category of gap as Redis topology (P-145) and composition-root exclusivity (P-173) — a documented invariant with no mechanical backstop.

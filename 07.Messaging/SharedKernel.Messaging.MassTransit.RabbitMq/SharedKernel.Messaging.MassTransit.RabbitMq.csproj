@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <SharedKernelTier>Adapter</SharedKernelTier>
+    <SharedKernelAllowedAdapterReferences>SharedKernel.Messaging.MassTransit</SharedKernelAllowedAdapterReferences>
+    <!-- NuGet packaging metadata -->
+    <Description>RabbitMQ transport for SharedKernel.Messaging.MassTransit: UseRabbitMq(...) on the messaging bus builder, with prefetch and concurrency settings, the RabbitMQ delayed-message exchange for WithDelayedDelivery(), dead-letter queue time-to-live for WithDeadLetterPolicy(), and routing-key affinity for publish-time partition keys. MassTransit 8.5.x (the last Apache-2.0 release).</Description>
+    <PackageTags>messaging;masstransit;rabbitmq;shared-kernel</PackageTags>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Public API tracking: an addition, removal or signature change fails the build until PublicAPI.*.txt is updated. -->
+    <WarningsAsErrors>$(WarningsAsErrors);nullable;CS1591;RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
+    <NoWarn>$(NoWarn);RS0026;RS0027</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- The messaging core: MessagingBusBuilder and the MessagingTransport extension point (P-570). -->
+    <ProjectReference Include="..\SharedKernel.Messaging.MassTransit\SharedKernel.Messaging.MassTransit.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Pinned to the 8.5.x line with MassTransit itself (Directory.Packages.props): 9.x is commercially licensed. -->
+    <PackageReference Include="MassTransit.RabbitMQ" />
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="SharedKernel.Messaging.MassTransit.RabbitMq.Tests" />
+  </ItemGroup>
+</Project>

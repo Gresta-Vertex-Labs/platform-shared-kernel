@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+option csharp_namespace = "SharedKernel.ServiceDefaults.Security.Tests.Propagation";
+
+package propagationtest;
+
+// Test-only service for the P-566 end-to-end propagation tests. Not a production contract.
+service PropagationProbe {
+  rpc Capture (CaptureRequest) returns (CaptureReply);
+}
+
+message CaptureRequest {
+  string hop = 1;
+}
+
+message CaptureReply {
+  string correlation_id = 1;
+  string tenant_id = 2;
+  string actor_kind = 3;
+}

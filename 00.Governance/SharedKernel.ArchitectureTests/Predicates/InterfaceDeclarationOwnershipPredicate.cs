@@ -10,7 +10,7 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// <remarks>
 /// <para>
 /// Used by <see cref="Rules.PersistenceInterfaceOwnershipRules"/> to assert that certain
-/// interface declarations (e.g., <c>IUserContext</c>, <c>ITenantProvider</c>) exist only in
+/// interface declarations (e.g., <c>IUserContext</c>) exist only in
 /// their designated owner assembly (<c>SharedKernel.Security.Abstractions</c>). The rule is
 /// applied to every other assembly under test; the owner assembly itself is never passed to the
 /// rule.

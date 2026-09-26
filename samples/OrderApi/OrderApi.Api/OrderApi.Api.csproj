@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsPublishable>false</IsPublishable>
+    <!-- Sample code is held to the same bar as shipped code. -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <!--
+    Api: the composition root and the HTTP boundary. The ONLY project of this service that references
+    Host-tier kernel packages: the service defaults (telemetry, health, readiness), the request-context
+    middleware, the application pipeline and its mediator, and Result -> ProblemDetails. It references
+    its own Application (to send commands) and Infrastructure (to register the adapters); Api ->
+    Application is correct and expected.
+
+    Deliberately PackageReference, not ProjectReference, for every SharedKernel package: this sample
+    exists to prove the *packed* packages work for an outside consumer resolving them from a feed. It
+    is excluded from Platform.SharedKernel.slnx and built by CI's packaging-verify job after
+    `dotnet pack`, the same pattern the consumer-verify harnesses use.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\OrderApi.Application\OrderApi.Application.csproj" />
+    <ProjectReference Include="..\OrderApi.Infrastructure\OrderApi.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Host: telemetry, health endpoints, the startup gate, readiness over every IReadinessProbe. -->
+    <PackageReference Include="SharedKernel.ServiceDefaults" />
+    <!-- Host: UseSharedKernelRequestContext() — the correlation id and the request's IRequestContext. -->
+    <PackageReference Include="SharedKernel.ServiceDefaults.Security" />
+    <!-- Host: the pipeline behaviors and the one mediator adapter (the only MediatR reference). -->
+    <PackageReference Include="SharedKernel.Application.Pipeline" />
+    <PackageReference Include="SharedKernel.Application.Mediator.MediatR" />
+    <!-- Host: the HTTP boundary (endpoint modules, Result<T> -> HTTP, RFC 9457 ProblemDetails). It brings
+         SharedKernel.Presentation.Core, the authorization attributes and policies. -->
+    <PackageReference Include="SharedKernel.Presentation.WebApi" />
+    <!-- Host: API versioning, one OpenAPI document per version and Scalar, served in Development only. -->
+    <PackageReference Include="SharedKernel.Presentation.OpenApi" />
+  </ItemGroup>
+
+</Project>

@@ -2,6 +2,7 @@
 
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![Testcontainers](https://img.shields.io/badge/Testcontainers-PostgreSQL-2496ED?logo=docker&logoColor=white)](https://dotnet.testcontainers.org/)
+![Tier: Testing](https://img.shields.io/badge/tier-Testing-orange)
 ![Test projects only](https://img.shields.io/badge/use-test%20projects%20only-orange)
 ![Test framework: any](https://img.shields.io/badge/test%20framework-any-informational)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
@@ -42,7 +43,9 @@ dotnet add MyService.Tests package SharedKernel.Persistence.Testing
 | --- | --- |
 | Target framework | `net10.0` |
 | Docker | Only for `PostgresTestServer.StartAsync()` (or use `FromExistingServer`) |
-| Namespace | `SharedKernel.Persistence.Testing` — everything is in it |
+| Namespace | `SharedKernel.Persistence.Testing` — everything except `TestRequestContext` (`SharedKernel.Testing.Execution`) |
+| Tier | Testing (packable; references `SharedKernel.Testing`, the persistence packages and `Testcontainers.PostgreSql`) |
+| Version | From the consumer's single `SharedKernelVersion` |
 
 ## Unit tests: in-memory fakes
 
@@ -52,7 +55,7 @@ dotnet add MyService.Tests package SharedKernel.Persistence.Testing
 | `FakeUnitOfWork` | `IUnitOfWork` | Runs the operation, saves, runs every `OnBeforeCommit` callback, commits. An exception or a failed `Result` rolls back; a failing joined call makes the transaction rollback-only. A rollback puts every `FakeRepository` registered next to it back as it was when the transaction started. `TransientFailures = n` replays the operation n times from that state. Counters: `TransactionCount`, `CommitCount`, `RollbackCount`, `SaveChangesCallCount` |
 | `FakeAuditTrailWriter` | `IAuditTrailWriter` | Records every `AuditEntry`; `ShouldHaveAudited(action, resourceType, resourceId)` |
 | `FakeCrossTenantScope` | `ICrossTenantScope` | Records `Enter` reasons, nests; `DenyWith` makes `Enter` throw; `ShouldHaveEntered(reason)` |
-| `TestRequestContext` | `IRequestContext` | `ForUser`, `ForTenant`, `Service`, `System`, `Anonymous`, then `WithTenant`, `WithPermissions`, `WithSession`, `WithImpersonator`. Mutable: change `TenantId` to act as another caller. Grants no permission unless told |
+| `TestRequestContext` (namespace `SharedKernel.Testing.Execution`, from the `SharedKernel.Testing` package this one depends on) | `IRequestContext` | `ForUser`, `ForTenant`, `Service`, `System`, `Anonymous`, then `WithTenant`, `WithPermissions`, `WithSession`, `WithImpersonator`. Mutable: change `TenantId` to act as another caller. Grants no permission unless told |
 | `FakeDbConnectionFactory` | `IDbConnectionFactory` | Hands out the `DbConnection` your delegate builds (for example an NSubstitute substitute) |
 
 ```csharp
@@ -175,6 +178,7 @@ Dapper and EF Core in one transaction, the sealed audit chain and crypto-shreddi
 
 ```text
 SCOPE        Test projects only (architecture tests fail production references). using SharedKernel.Persistence.Testing;
+             using SharedKernel.Testing.Execution; (TestRequestContext)
 UNIT         var repo = services.AddFakeRepository<T, TId>(seed); var uow = services.AddFakeUnitOfWork();
              services.AddTestRequestContext(TestRequestContext.ForTenant(id).WithPermissions("p"));
              services.AddFakeAuditTrailWriter(); services.AddFakeCrossTenantScope(). Resolve IUnitOfWork from DI.

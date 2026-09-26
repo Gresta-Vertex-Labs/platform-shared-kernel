@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Metadata;
 using SharedKernel.Core.Exceptions;
 using SharedKernel.Domain.Abstractions;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Diagnostics;
@@ -279,7 +280,7 @@ internal sealed class PersistenceSaveChangesInterceptor : SaveChangesInterceptor
 
     // An added tenant entity without a TenantId (a child created through its aggregate) takes its aggregate's tenant
     // when a tracked parent has one, else the caller's. The guard below then checks the result like any other write.
-    private static void StampTenant(List<EntityEntry> entries, EntryIndex index, Guid? currentTenantId)
+    private static void StampTenant(List<EntityEntry> entries, EntryIndex index, TenantId? currentTenantId)
     {
         foreach (var entry in entries)
         {
@@ -287,10 +288,10 @@ internal sealed class PersistenceSaveChangesInterceptor : SaveChangesInterceptor
                 continue;
 
             var tenantProperty = entry.Property(nameof(IHasTenant.TenantId));
-            if (tenantProperty.CurrentValue is not Guid tenantId || tenantId != Guid.Empty)
+            if (tenantProperty.CurrentValue is not TenantId tenantId || !tenantId.IsDefault)
                 continue;
 
-            var inherited = FindRoot(entry, index)?.Entity is IHasTenant { TenantId: var parentTenant } && parentTenant != Guid.Empty
+            var inherited = FindRoot(entry, index)?.Entity is IHasTenant { TenantId: var parentTenant } && !parentTenant.IsDefault
                 ? parentTenant
                 : currentTenantId;
 
@@ -299,7 +300,7 @@ internal sealed class PersistenceSaveChangesInterceptor : SaveChangesInterceptor
         }
     }
 
-    private static void GuardTenant(List<EntityEntry> entries, Guid? currentTenantId)
+    private static void GuardTenant(List<EntityEntry> entries, TenantId? currentTenantId)
     {
         foreach (var entry in entries)
         {
@@ -320,7 +321,7 @@ internal sealed class PersistenceSaveChangesInterceptor : SaveChangesInterceptor
             if (currentTenantId is null)
                 throw Reject(entityTypeName, TenantIsolationErrors.NoTenant(entityTypeName));
 
-            if (tenantProperty.CurrentValue is not Guid tenantId || tenantId != currentTenantId.Value)
+            if (tenantProperty.CurrentValue is not TenantId tenantId || tenantId != currentTenantId.Value)
                 throw Reject(entityTypeName, TenantIsolationErrors.OtherTenant(entityTypeName));
         }
     }

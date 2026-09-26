@@ -1,3 +1,9 @@
 #nullable enable
 SharedKernel.ServiceDefaults.Security.RequestContextServiceCollectionExtensions
-static SharedKernel.ServiceDefaults.Security.RequestContextServiceCollectionExtensions.AddSharedKernelRequestContext(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SharedKernel.ServiceDefaults.Security.RequestContextServiceCollectionExtensions.AddSharedKernelRequestContext(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<SharedKernel.ServiceDefaults.Security.RequestContextOptions!>? configure = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+SharedKernel.ServiceDefaults.Security.RequestContextApplicationBuilderExtensions
+static SharedKernel.ServiceDefaults.Security.RequestContextApplicationBuilderExtensions.UseSharedKernelRequestContext(this Microsoft.AspNetCore.Builder.IApplicationBuilder! app) -> Microsoft.AspNetCore.Builder.IApplicationBuilder!
+SharedKernel.ServiceDefaults.Security.RequestContextOptions
+SharedKernel.ServiceDefaults.Security.RequestContextOptions.RequestContextOptions() -> void
+SharedKernel.ServiceDefaults.Security.RequestContextOptions.TrustInboundBaggage.get -> bool
+SharedKernel.ServiceDefaults.Security.RequestContextOptions.TrustInboundBaggage.set -> void

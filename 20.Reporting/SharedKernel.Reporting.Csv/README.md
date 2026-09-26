@@ -4,6 +4,12 @@ RFC 4180 CSV report/data export for Platform.SharedKernel microservices — hand
 
 **This is the provider to reach for when the row count could be large.** See [`SharedKernel.Reporting.Abstractions`](../SharedKernel.Reporting.Abstractions/README.md) for the shared contract and column model.
 
+```xml
+<PackageReference Include="SharedKernel.Reporting.Csv" />
+```
+
+Versions come from the consumer's single `SharedKernelVersion`. **Tier: Adapter** — brings `SharedKernel.Reporting.Abstractions` and `SharedKernel.Storage.Abstractions`; register a storage provider for the store the export targets.
+
 ## DI quick start
 
 ```csharp

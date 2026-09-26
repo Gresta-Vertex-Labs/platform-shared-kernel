@@ -107,7 +107,7 @@ Format when blocked:
 | 17 | [Workflows](17.Workflows/state-map.md) | Published | `●` | SK.17.Published complete (7/7) — all six phase keys (Design/Scaffold/Core/Tests/Docs/Published) now `●`, 81/81 tasks done. Docs-phase NuGet metadata re-verified genuinely complete (no `08.Storage`-style `PackageReadmeFile` gap); `dotnet pack` clean, zero `NU5039`/`NU5128`. New `17.Workflows/consumer-verify` harness (four surfaces, real `Host.CreateApplicationBuilder()` → `IHost.StartAsync()`, never `BuildServiceProvider()`) proves `.AsClientOnly()` resolves the dispatch surface with zero DI exceptions and no `IHostedService`; a worker-hosting composition against a real `WorkflowEnvironment` registers the hosted worker service and completes a full start→activity→result round trip; and config misconfiguration fails loudly via a genuine two-tier mechanism — an entirely-absent key throws `InvalidOperationException` synchronously at `.Build()` (before any `IHost` exists), a present-but-invalid value throws `OptionsValidationException` at `IHost.StartAsync()` naming the property. 158/158 tests still passing. Root Phase Backlog **P-287 (WO-046) closed**. | — |
 | 18 | [Idempotency](18.Idempotency/state-map.md) | Design | `○` | — | New domain, added 2026-08-26 (WO-070/P-454–P-455): production-grade Redis- and EF Core-backed implementations of the platform's three already-declared, never-shipped idempotency contracts (`05.Application.Behaviors.IIdempotencyKeyStore`/`IIdempotencyResponseStore`, `07.Messaging.Abstractions.IIdempotencyStore`). Positioned above both owning domains specifically to resolve a layering deadlock neither `05` nor `07` could legally resolve on its own — see root `CLAUDE.md`'s Folder Map entry for the full rationale. |
 | 19 | [Scheduling](19.Scheduling/state-map.md) | Design | `○` | — | New domain, added 2026-08-26 (WO-073/P-464–P-467): lightweight cron/recurring/one-shot deferred job dispatch (`SharedKernel.Scheduling`), distinct from `17.Workflows`'s durable multi-step orchestration — see root `CLAUDE.md`'s "What Goes Where" boundary rule between the two. Carries a new, separately-named `13.ServiceDefaults` readiness-probe grant (P-466), independent of and never widening the existing `17.Workflows` grant. |
-| 20 | [Reporting](20.Reporting/state-map.md) | Design | `○` | — | New domain, added 2026-08-26 (WO-077/P-477–P-481): provider-neutral, streaming, memory-bounded report/data-export (`SharedKernel.Reporting.Abstractions` + `.Csv`/`.Spreadsheet`/`.Pdf`), composing with `06.Persistence`'s `IAsyncEnumerable`/`KeysetSpecification<T,TKey>` streaming reads and `08.Storage`'s `IFileStorage`/`IBlobUriGenerator` delivery rather than duplicating either. Needs no `13.ServiceDefaults` readiness-probe grant — stateless, no persistent connection, same class as `01.Core.Compression`/`.Cryptography`. |
+| 20 | [Reporting](20.Reporting/state-map.md) | Complete | `●` | — | All phases complete (60/60 in the domain state-map); WO-086 moved `ReportDestination.TenantId` to `TenantId?` and the test double to `SharedKernel.Reporting.Testing`. New domain, added 2026-08-26 (WO-077/P-477–P-481): provider-neutral, streaming, memory-bounded report/data-export (`SharedKernel.Reporting.Abstractions` + `.Csv`/`.Spreadsheet`/`.Pdf`), composing with `06.Persistence`'s `IAsyncEnumerable`/`KeysetSpecification<T,TKey>` streaming reads and `08.Storage`'s `IFileStorage`/`IBlobUriGenerator` delivery rather than duplicating either. Needs no `13.ServiceDefaults` readiness-probe grant — stateless, no persistent connection, same class as `01.Core.Compression`/`.Cryptography`. |
 
 ---
 
@@ -3439,6 +3439,53 @@ The same pre-existing `SharedKernel.ServiceDefaults.Configuration.KeyVault.Tests
 MSB3030 (`obj\Release\net10.0\*.Tests.dll` not produced — a Windows path-length limit on this
 particular clone root) that P-556's own entry above already recorded. Confirmed independently, multiple
 times across this pass's build waves, to be pre-existing and unrelated to any file this pass touched.
+
+---
+### WO-086 — Foundation Refactor: Tiered Packages, Execution Context, Mediator Abstraction (BREAKING, cross-domain)
+
+**Status:** `◐` In progress
+**Work Order:** WO-086
+**Domain:** cross-domain (every domain except 04.Contracts is touched)
+**Spec:** [`docs/refactor/FOUNDATION-PLAN.md`](docs/refactor/FOUNDATION-PLAN.md) — authoritative for the whole work order; it supersedes the root `CLAUDE.md` Layering Rules section until P-575 rewrites that section.
+
+#### Why
+- **Numbered folders are used as dependency layers**, which forced four named layering grants.
+- **`IRequestContext`/`IUnitOfWork`/`IAuditTrailWriter` are filed under `05.Application`**, so Persistence and Messaging appear to depend upward.
+- **Pipeline markers live in the MediatR-dependent `Behaviors` package.**
+- **MediatR appears in every public contract.**
+- **Duplicated concepts:** the tenant has about 12 representations, correlation is lost at the first hop, there are about 12 probe contracts and two idempotency contracts.
+- **Optional dependencies are mandatory:** transports, outbox and backplane ship in the core packages.
+- **`SharedKernel.Testing`** is documented for consumers but is not packable.
+- **Publishing needs manual republish closures.**
+- **Four live defects:**
+  - the idempotency header name differs between outbound and inbound;
+  - no `ITenantContextAccessor` implementation exists;
+  - consumers have no tenant for outbound calls;
+  - the correlation id is replaced.
+
+#### Phases
+| Phase | Step | Status |
+|---|---|---|
+| P-562 | Preparation (branch, plan, baseline) | `●` |
+| P-563 | Tier enforcement (`SharedKernelTier`, `SKTIER000-005`, `DependencyGraphRulesTests`, baseline of 3 edges) | `●` |
+| P-564 | `SharedKernel.Execution` (context, `TenantId`, accessor, unit of work, audit); delete `Application.Abstractions` | `●` |
+| P-565 | Tenant and caller unification (`TenantId`/`TenantScope`/`ActorKind` everywhere) | `●` (`8e64d774`) |
+| P-566 | Correlation and context propagation; fixes three of the four defects | `●` (`5edb87cd`) |
+| P-567 | Application contracts and kernel mediator abstraction; `Application.Pipeline`; `Application.Mediator.MediatR` | `●` (`941fe578`) |
+| P-568 | Unified `SharedKernel.Idempotency.Abstractions` | `●` (`350a7bbb`) |
+| P-569 | `IReadinessProbe` contract; collapse probe-only ServiceDefaults packages; delete the 13→17/19 grants | `●` (`1064694a`) |
+| P-570 | Optional-dependency satellites (MassTransit transports/outbox, `Presentation.Core`, SignalR.Redis, GraphQL move) | `●` (`79a5840d`) |
+| P-571 | Per-capability packable `*.Testing` packages | `●` (`4cd3ee45`) |
+| P-572 | Release train and CI | `●` (`b0fb8e41`) |
+| P-573 | Samples as the reference architecture | `●` (`c7070aab`) |
+| P-574 | Governance cleanup (tier baseline empty; `SKTIER` becomes an error) | `●` (`dc1a22ef`) |
+| P-575 | Documentation | `●` (`ac49285b`) |
+| P-576 | Agents and commands | `●` (`f3aab769`) |
+| P-577 | First release train | `○` |
+| P-578 | Retire old package IDs (ask the user first) | `○` — approved 2026-09-26: delete them after the release |
+| P-579 | Integrate `main`'s P-563 "one application model" (merged `0a8931f3`): WO-086 architecture kept, main's features ported ([RequirePermission], one `AddSharedKernelApplication(... app.UseMediatR() …)`, endpoint modules, WebApi flattening, `Paging`) | `●` (`eb89d010`, `76a39ba8`, `0160606f`) |
+
+Order: P-562 → P-563 → P-564 → {P-565, P-569} → P-566 → {P-567, P-570} → P-568 → P-571 → P-572 … P-578.
 
 ## Changelog
 

@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
+using SharedKernel.Execution.Context;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Workflows.Temporal.Authoring;
 using SharedKernel.Workflows.Temporal.Errors;
@@ -82,5 +83,8 @@ public sealed class PropagationActivity : ActivityBase
     }
 
     [Activity(nameof(PropagationActivity))]
-    public Task<string> RunAsync(string input) => Task.FromResult(TenantScope.Value);
+    public Task<string> RunAsync(string input) =>
+        // P-566: the activity also runs inside an ambient request context carrying the tenant and the
+        // dispatching caller's correlation id, which outbound clients called from here read.
+        Task.FromResult($"{TenantScope}|{RequestContextScope.Current?.TenantId}|{RequestContextScope.Current?.CorrelationId}");
 }

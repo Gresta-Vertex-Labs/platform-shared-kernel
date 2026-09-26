@@ -27,7 +27,7 @@ public sealed class BooleanFlagTests
                           "Users": [ "alice" ],
                           "Groups": [
                             { "Name": "beta-testers", "RolloutPercentage": 100 },
-                            { "Name": "tenant-acme", "RolloutPercentage": 100 }
+                            { "Name": "0f8fad5b-d9cb-469f-a165-70867728950e", "RolloutPercentage": 100 }
                           ],
                           "DefaultRolloutPercentage": 0
                         }
@@ -143,9 +143,9 @@ public sealed class BooleanFlagTests
         await using var provider = await FeatureTestHost.StartAsync(FeatureTestHost.Json(Configuration));
         IFeatureClient client = provider.NewScopeClient();
 
-        Assert.True(await client.IsEnabledAsync(Beta, FeatureTargetingContext.ForTenant("tenant-acme").ToEvaluationContext()));
-        Assert.True(await client.IsEnabledAsync(Beta, new FeatureTargetingContext("dave", "tenant-acme").ToEvaluationContext()));
-        Assert.False(await client.IsEnabledAsync(Beta, FeatureTargetingContext.ForTenant("tenant-other").ToEvaluationContext()));
+        Assert.True(await client.IsEnabledAsync(Beta, FeatureTargetingContext.ForTenant(TestTenants.Acme).ToEvaluationContext()));
+        Assert.True(await client.IsEnabledAsync(Beta, new FeatureTargetingContext("dave", TestTenants.Acme).ToEvaluationContext()));
+        Assert.False(await client.IsEnabledAsync(Beta, FeatureTargetingContext.ForTenant(TestTenants.Other).ToEvaluationContext()));
     }
 
     [Fact]

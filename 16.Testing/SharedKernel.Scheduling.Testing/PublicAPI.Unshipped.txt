@@ -1,0 +1,14 @@
+#nullable enable
+SharedKernel.Testing.Scheduling.InMemoryScheduledJobRegistry
+SharedKernel.Testing.Scheduling.InMemoryScheduledJobRegistry.AddDeferred<TCommand>(string! jobName, System.DateTimeOffset fireAtUtc, System.Func<SharedKernel.Scheduling.Jobs.ScheduledJobExecutionContext!, TCommand!>! commandFactory, System.Action<SharedKernel.Scheduling.Registry.ScheduledJobOptions!>! configure) -> SharedKernel.Scheduling.Registry.IScheduledJobRegistry!
+SharedKernel.Testing.Scheduling.InMemoryScheduledJobRegistry.AddRecurring<TCommand>(string! jobName, string! cronExpression, System.Func<SharedKernel.Scheduling.Jobs.ScheduledJobExecutionContext!, TCommand!>! commandFactory, System.Action<SharedKernel.Scheduling.Registry.ScheduledJobOptions!>! configure) -> SharedKernel.Scheduling.Registry.IScheduledJobRegistry!
+SharedKernel.Testing.Scheduling.InMemoryScheduledJobRegistry.BeginInFlight(string! jobName) -> System.IDisposable!
+SharedKernel.Testing.Scheduling.InMemoryScheduledJobRegistry.Fired.get -> System.Collections.Generic.IReadOnlyList<string!>!
+SharedKernel.Testing.Scheduling.InMemoryScheduledJobRegistry.InMemoryScheduledJobRegistry(SharedKernel.Application.Messaging.ISender! sender) -> void
+SharedKernel.Testing.Scheduling.InMemoryScheduledJobRegistry.Misfired.get -> System.Collections.Generic.IReadOnlyList<string!>!
+SharedKernel.Testing.Scheduling.InMemoryScheduledJobRegistry.Reset() -> void
+SharedKernel.Testing.Scheduling.InMemoryScheduledJobRegistry.ShouldHaveFired(string! jobName, int times = 1) -> void
+SharedKernel.Testing.Scheduling.InMemoryScheduledJobRegistry.ShouldHaveMisfired(string! jobName) -> void
+SharedKernel.Testing.Scheduling.InMemoryScheduledJobRegistry.ShouldHaveSkipped(string! jobName) -> void
+SharedKernel.Testing.Scheduling.InMemoryScheduledJobRegistry.Skipped.get -> System.Collections.Generic.IReadOnlyList<string!>!
+SharedKernel.Testing.Scheduling.InMemoryScheduledJobRegistry.TriggerAsync(string! jobName, System.DateTimeOffset simulatedNowUtc, long? fencingToken = null, bool simulatedMisfire = false, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result?>!

@@ -3,8 +3,25 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\SharedKernel.ServiceDefaults.Security.csproj" />
     <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
+    <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Security.Testing\SharedKernel.Security.Testing.csproj" />
+    <!--
+      P-566 end-to-end propagation tests (Propagation/): the HTTP inbound adapter here is the first hop, and every
+      outbound and inbound adapter the request passes through is the real package — REST and gRPC clients, the gRPC
+      server interceptors, the MassTransit consume filter over the in-memory transport, and the scheduler. A test
+      project may reference any tier.
+    -->
+    <ProjectReference Include="..\..\..\11.Communication\SharedKernel.Communication.Rest\SharedKernel.Communication.Rest.csproj" />
+    <ProjectReference Include="..\..\..\11.Communication\SharedKernel.Communication.Grpc\SharedKernel.Communication.Grpc.csproj" />
+    <ProjectReference Include="..\..\..\14.Presentation\SharedKernel.Presentation.Grpc\SharedKernel.Presentation.Grpc.csproj" />
+    <ProjectReference Include="..\..\..\14.Presentation\SharedKernel.Presentation.WebApi\SharedKernel.Presentation.WebApi.csproj" />
+    <ProjectReference Include="..\..\..\07.Messaging\SharedKernel.Messaging.MassTransit\SharedKernel.Messaging.MassTransit.csproj" />
+    <ProjectReference Include="..\..\..\19.Scheduling\SharedKernel.Scheduling\SharedKernel.Scheduling.csproj" />
+    <ProjectReference Include="..\..\SharedKernel.MultiTenancy\SharedKernel.MultiTenancy.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="xunit" />
@@ -18,5 +35,13 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" />
+    <PackageReference Include="Grpc.AspNetCore" />
+    <PackageReference Include="Grpc.Net.Client" />
+    <PackageReference Include="MassTransit" />
+    <ProjectReference Include="..\..\..\05.Application\SharedKernel.Application.Mediator.MediatR\SharedKernel.Application.Mediator.MediatR.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Protobuf Include="Propagation\Protos\propagation.proto" GrpcServices="Both" />
   </ItemGroup>
 </Project>

@@ -6,8 +6,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Npgsql;
-using SharedKernel.Application.Context;
-using SharedKernel.Application.Transactions;
+using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
+using SharedKernel.Execution.Transactions;
 using SharedKernel.Core.Exceptions;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Domain.Aggregates;
@@ -79,7 +80,7 @@ public sealed class EntryNote : AggregateRoot<Guid>
 
 public sealed class EntryTenantedItem : AggregateRoot<EntryOrderId>, IHasTenant
 {
-    public EntryTenantedItem(EntryOrderId id, Guid tenantId, string name, IClock clock) : base(id, clock)
+    public EntryTenantedItem(EntryOrderId id, TenantId tenantId, string name, IClock clock) : base(id, clock)
     {
         TenantId = tenantId;
         Name = name;
@@ -87,7 +88,7 @@ public sealed class EntryTenantedItem : AggregateRoot<EntryOrderId>, IHasTenant
 
     private EntryTenantedItem() { }
 
-    public Guid TenantId { get; private set; }
+    public TenantId TenantId { get; private set; }
 
     public string Name { get; private set; } = string.Empty;
 }
@@ -120,8 +121,8 @@ public sealed class EntryTenantedContext(DbContextOptions<EntryTenantedContext> 
 /// <summary>Seeds one row per tenant — only possible because seeders run inside a cross-tenant scope.</summary>
 public sealed class TwoTenantSeeder : IDataSeeder<EntryTenantedContext>
 {
-    public static readonly Guid TenantA = Guid.NewGuid();
-    public static readonly Guid TenantB = Guid.NewGuid();
+    public static readonly TenantId TenantA = new TenantId(Guid.NewGuid());
+    public static readonly TenantId TenantB = new TenantId(Guid.NewGuid());
 
     public async Task SeedAsync(EntryTenantedContext context, CancellationToken cancellationToken = default)
     {

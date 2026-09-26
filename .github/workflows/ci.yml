@@ -1,44 +1,23 @@
 name: CI
 
-# Standing design decisions (see PLATFORM.md "CI/CD Pipelines" for the full rationale):
-#   - ubuntu-latest only, forced by Testcontainers (Redis/PostgreSQL/RabbitMQ/MinIO/etc. need a
-#     Linux Docker daemon; GitHub-hosted Windows/macOS runners cannot run Linux containers).
+# Standing design decisions (see PLATFORM.md "CI topology" for the full rationale):
+#   - The gates themselves live in the reusable .github/workflows/verify.yml, which release.yml
+#     also calls, so a pull request and a release tag are held to the same checks by construction.
+#     This file decides WHEN they run and what blocks a merge.
 #   - ci-gate is the ONLY required status check. Individual jobs are never marked required
-#     directly — if a future path-filtered job were added and marked required, a PR that never
-#     triggers it would block forever. Renaming/adding/removing a job here never requires a
-#     ruleset edit.
+#     directly: a job skipped by a condition would leave a required check waiting forever, and
+#     renaming/adding/removing a job here never needs a ruleset edit.
 #   - concurrency cancels superseded PR runs only. Never cancel-in-progress for merge_group or
-#     push — a cancelled merge_group run drops the PR from the queue; a cancelled release-adjacent
-#     run can leave a partial package set.
+#     push: a cancelled merge_group run drops the PR from the queue.
 #   - Every third-party action is pinned to a full 40-character commit SHA with a trailing
 #     `# vX.Y.Z` comment. Re-resolve and re-pin on every bump; never float a tag.
-#
-#   - unit-test / integration-test split (DV-010/DV-011): a single "run every test against the
-#     whole solution" job used to be the only required check, and it ran all 18 Testcontainers-
-#     backed test projects (Redis x5, PostgreSQL, Dapper, RabbitMQ, MinIO x2, Meilisearch,
-#     Elasticsearch, Qdrant, SignalR's Redis backplane, 18.Idempotency x2, 19.Scheduling,
-#     16.Testing's own container-fixture self-tests) inline with everything else. On a 2-core
-#     runner that starts as many as 18 containers at once, that job failed a DIFFERENT set of
-#     container tests on every run — confirmed by three consecutive full-suite runs on hardware
-#     far beefier than ubuntu-latest, where every "failing" suite passed cleanly in isolation.
-#     That is resource contention, not a real defect, and it means the required check was
-#     nondeterministically red on pushes that touched nothing related to the failure.
-#     Fix: dotnet build still covers the WHOLE solution (compile correctness for every project,
-#     containers or not, costs nothing extra — Testcontainers packages are ordinary .NET client
-#     libraries at compile time). Only *test execution* is split via two solution filters
-#     (Platform.SharedKernel.Unit.slnf / Platform.SharedKernel.Integration.slnf, both proven
-#     against Platform.SharedKernel.slnx — see PLATFORM.md "Test topology"): unit-test runs the
-#     164 container-free projects and is the required, on-every-push lane; integration-test runs
-#     the 22 Testcontainers-backed projects (with VSTest parallelism capped to the runner's real
-#     core count via eng/testsettings/integration.runsettings) on push-to-main/schedule/manual
-#     dispatch only, and is deliberately NOT in ci-gate's needs so its container flakiness can
-#     never block a merge. 164 + 22 = 186 of the 189 projects in Platform.SharedKernel.slnx (the
-#     other three — SharedKernel.Persistence.Npgsql, .EfCore.Auditing, .EfCore.Encryption — are
-#     production libraries built through references; counts as of P-558, 2026-09-21). Every
-#     *.Tests/*SelfTests project lands in exactly one of the two filters. A verification step below (in unit-test) now fails the build if that identity ever drifts,
-#     so a new *.Tests/*SelfTests project added to the .slnx cannot silently miss both filters
-#     the way SharedKernel.Application.Caching(.Tests), then named .Behaviors.Caching, did (found 2026-09-17, fixed
-#     alongside this comment).
+#   - Two lanes (DV-010/DV-011). The required lane (verify: tier check, solution-filter check,
+#     full build, Unit suite, every consumer-verify harness, packaging-verify with every sample)
+#     runs on every PR and push. The Testcontainers-backed Integration suite runs on push to main,
+#     nightly and on demand only, and is deliberately NOT in ci-gate's needs: running up to 24
+#     container suites at once on a 2-core runner failed a different suite on every run (resource
+#     contention, not defects), and that must never block a merge. A red Integration run is kept
+#     visible by integration-tracking-issue instead. release.yml runs both lanes and requires both.
 
 on:
   pull_request:
@@ -52,10 +31,9 @@ on:
     paths-ignore:
       - '**/*.md'
       - '.claude/**'
-  # Integration lane only (see integration-test's own `if:` below) — never runs on pull_request,
-  # so a contributor's PR feedback loop never pays the container-fan-out cost or its flakiness.
+  # Integration lane only (see the integration job's `if:`); never on pull_request.
   schedule:
-    - cron: '17 3 * * *' # 03:17 UTC daily — off the top-of-hour to avoid the scheduler thundering herd.
+    - cron: '17 3 * * *' # 03:17 UTC daily, off the top of the hour.
   workflow_dispatch: {}
 
 permissions: {}
@@ -64,283 +42,48 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-env:
-  DOTNET_CLI_UI_LANGUAGE: en
-  DOTNET_NOLOGO: 'true'
-  DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
-  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 'true'
-
 jobs:
   # ---------------------------------------------------------------------------------------------
-  # Required, fast lane. Builds the WHOLE solution (full compile correctness — no project, tested
-  # or not, is exempt from build errors) but only RUNS the 164 projects with no Testcontainers
-  # dependency, via Platform.SharedKernel.Unit.slnf. No Docker daemon is needed for this job to
-  # pass; it never boots a container.
+  # Required lane: tier-check, unit-test (build + Unit suite + in-solution consumer-verify
+  # harnesses) and packaging-verify (pack, package-set check, every packed-package consumer and
+  # sample). See verify.yml for each job.
   # ---------------------------------------------------------------------------------------------
-  unit-test:
-    name: Build & Unit Test
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+  verify:
+    name: Verify
+    uses: ./.github/workflows/verify.yml
     permissions:
       contents: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          # MANDATORY for MinVer (see Directory.Build.props "Versioning"). checkout's default
-          # shallow clone fetches no tags, and MinVer does not fail when it finds none — it
-          # silently stamps the MinVerMinimumMajorMinor floor as a prerelease. Without this,
-          # a fully green run would produce correctly-named, wrongly-versioned packages.
-          fetch-depth: 0
-
-      # The stock ubuntu-latest image leaves too little free disk to build ~190 projects in
-      # Release: run #1 and #2 both died with 'No space left on device' mid-build. Reclaim the
-      # preinstalled toolchains this repo never uses (~25GB). Runs before Setup .NET so the
-      # SDK install is not the thing that tips it over.
-      - name: Free disk space
-        run: |
-          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/local/.ghcup \
-                      /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/share/powershell
-          df -h /
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
-        with:
-          global-json-file: global.json
-
-      - name: Cache NuGet packages
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.nuget/packages
-          # CPM concentrates every version into Directory.Packages.props, so hashing that one
-          # file (plus global.json for the SDK band) is a near-perfect restore cache key —
-          # deliberately NOT setup-dotnet's own cache:true, which requires lock files (this repo
-          # has none, and generating ~190 lock files to churn on every bump is a worse trade than
-          # a slightly coarser cache key).
-          key: nuget-${{ runner.os }}-${{ hashFiles('Directory.Packages.props', 'global.json') }}
-          restore-keys: |
-            nuget-${{ runner.os }}-
-
-      - name: Restore
-        run: dotnet restore Platform.SharedKernel.slnx
-
-      - name: NuGet audit (escalated to error in CI only)
-        # Directory.Build.props demotes NU1901-NU1904 to non-fatal warnings locally so a
-        # newly-disclosed transitive CVE cannot break every developer's build with no code
-        # change. CI is where that signal is deliberately restored to a hard failure.
-        run: dotnet restore Platform.SharedKernel.slnx -warnaserror:NU1901,NU1902,NU1903,NU1904
-
-      # Lockstep is only real while MinVer is the sole version authority. MinVer's target
-      # overwrites $(Version) unconditionally, so a hand-written <Version> in a csproj is dead
-      # XML that silently disagrees with the packed artifact — fail on it here rather than let
-      # it mislead a reader.
-      - name: Assert no project declares its own version
-        run: |
-          set -e
-          if git grep -n -E '<(Version|VersionPrefix)>' -- '*.csproj'; then
-            echo "::error::A csproj declares <Version>/<VersionPrefix>. Versions come from MinVer and git tags only (see Directory.Build.props 'Versioning'). Delete the element."
-            exit 1
-          fi
-          echo "OK: no csproj declares its own version."
-
-      # Cheap, build-free static check: every *.Tests/*SelfTests project declared in the .slnx
-      # must appear in at least one of the two solution filters, or its tests silently never run
-      # anywhere in CI. This is exactly how SharedKernel.Application.Caching(.Tests) (then .Behaviors.Caching)
-      # went unexecuted for six days after commit 89b9056 added it to the .slnx but not to either
-      # .slnf (found and fixed 2026-09-17) — this step exists so that class of gap fails loudly
-      # the next time, instead of silently, on the very next push that adds a project.
-      - name: Assert every test project is covered by a solution filter
-        run: |
-          set -e
-          # Parameter expansion instead of sed to strip the Path="…" wrapper (shellcheck SC2001).
-          while IFS= read -r entry; do
-            entry="${entry#Path=\"}"
-            printf '%s\n' "${entry%\"}"
-          done < <(grep -oE 'Path="[^"]*\.(Tests|SelfTests)\.csproj"' Platform.SharedKernel.slnx) \
-            | sort -u > all-tests.txt
-          {
-            grep -oE '"[^"]*\.(Tests|SelfTests)\.csproj"' Platform.SharedKernel.Unit.slnf
-            grep -oE '"[^"]*\.(Tests|SelfTests)\.csproj"' Platform.SharedKernel.Integration.slnf
-          } | tr -d '"' | sort -u > covered-tests.txt
-          missing=$(comm -23 all-tests.txt covered-tests.txt)
-          if [ -n "$missing" ]; then
-            echo "::error::The following *.Tests/*SelfTests project(s) exist in Platform.SharedKernel.slnx but are listed in NEITHER Platform.SharedKernel.Unit.slnf NOR Platform.SharedKernel.Integration.slnf, so their tests never execute in CI. Add each one to whichever filter matches whether it needs a Docker daemon (see PLATFORM.md 'Test topology')."
-            while IFS= read -r missing_project; do printf '  %s\n' "$missing_project"; done <<< "$missing"
-            exit 1
-          fi
-          echo "OK: every test/self-test project in the .slnx is covered by at least one solution filter."
-          rm -f all-tests.txt covered-tests.txt
-
-      # Full-solution build: compile correctness is never skipped for the 22 Testcontainers-backed
-      # test projects just because their tests run in a separate job — only test EXECUTION is split.
-      - name: Build
-        run: dotnet build Platform.SharedKernel.slnx --no-restore --configuration Release
-
-      # Narrowed to the 164 container-free projects. See Platform.SharedKernel.Unit.slnf and the
-      # top-of-file comment for why this split exists.
-      - name: Unit test (no Docker dependency)
-        # No fixed LogFileName: dotnet test spawns one VSTest host per project in the filter, and a
-        # single hardcoded trx name would make every project's run silently overwrite the previous
-        # one's file (confirmed locally — the fixed-name pattern this replaced only ever uploaded
-        # the LAST project's results). Letting the logger auto-name each trx keeps all of them.
-        run: dotnet test Platform.SharedKernel.Unit.slnf --no-build --configuration Release --logger "trx" --results-directory ./TestResults
-
-      # A consumer-verify harness is an Exe, not a test project, so the filter above builds it and
-      # never runs it. This one asserts things only a real generic host can show — that
-      # IHost.StartAsync() fails on a bad ServiceName, that the injectable surface resolves from one
-      # registration chain, that a feature with an unmet prerequisite refuses to build. It needs no
-      # Docker daemon, so it belongs in the required lane rather than the container one.
-      - name: Run 07.Messaging consumer-verify
-        run: dotnet run --project "07.Messaging/consumer-verify/consumer-verify.csproj" --no-build --configuration Release
-
-      # Composes all four 14.Presentation packages as a service does and drives them over real loopback
-      # connections — HttpClient, a SignalR HubConnection and a Grpc.Net.Client channel against Kestrel —
-      # asserting the one problem+json shape, authorization, the required headers, CORS, the 429 body, the
-      # hub and gRPC error contracts. It also generates two versioned OpenAPI documents: Asp.Versioning.OpenApi
-      # reflects over Microsoft.AspNetCore.OpenApi internals, so an upgrade of either that breaks it fails here.
-      # No Docker daemon, so it belongs in the required lane.
-      - name: Run 14.Presentation consumer-verify
-        run: dotnet run --project "14.Presentation/consumer-verify/consumer-verify.csproj" --no-build --configuration Release
-
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: unit-test-results
-          path: TestResults/**/*.trx
-          retention-days: 14
+    with:
+      unit: true
+      packaging: true
+      integration: false
 
   # ---------------------------------------------------------------------------------------------
-  # Non-required lane. Runs the 22 Testcontainers-backed test projects (Redis x5, 06.Persistence x5
-  # (EfCore.Integration, Npgsql, Dapper, EfCore.Auditing, EfCore.Encryption), RabbitMQ, MinIO x2 (S3+OBS),
-  # Meilisearch, Elasticsearch, Qdrant, SignalR's Redis backplane, 18.Idempotency x2, 19.Scheduling,
-  # 16.Testing's own container-fixture self-tests and SharedKernel.Persistence.Testing.Tests)
-  # via Platform.SharedKernel.Integration.slnf, with VSTest parallelism capped by
-  # eng/testsettings/integration.runsettings to the runner's real core count. (MilvusContainerFixture
-  # — the WO-048 SharedKernel.AI.Milvus retraction leftover previously flagged here — was deleted
-  # by testing-phase-implementer on 2026-09-09; its Testcontainers.Milvus PackageReference is
-  # already gone from SharedKernel.Testing.csproj, and the now-orphaned PackageVersion pin in
-  # Directory.Packages.props was removed in this same pass.)
-  #
-  # Deliberately NOT in ci-gate's `needs` and deliberately NOT triggered by pull_request/
-  # merge_group (the `if:` below): the whole point of this split is that container-fan-out
-  # flakiness must never block a merge. It still runs — and still reports real pass/fail — on
-  # every push to main, on the nightly schedule, and on demand, so regressions are caught
-  # promptly without gating anyone's PR.
+  # Non-required lane: the Testcontainers-backed Integration suite. Not triggered by
+  # pull_request/merge_group and not in ci-gate's needs (see the header).
   # ---------------------------------------------------------------------------------------------
-  integration-test:
-    name: Integration Test (Testcontainers)
+  integration:
+    name: Integration
     if: github.event_name != 'pull_request' && github.event_name != 'merge_group'
-    runs-on: ubuntu-latest
-    timeout-minutes: 40
+    uses: ./.github/workflows/verify.yml
     permissions:
       contents: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-
-      # Testcontainers pulls several multi-hundred-MB images (Postgres, Redis, RabbitMQ, MinIO,
-      # Meilisearch, Elasticsearch, Qdrant) on top of the build output — free the same unused
-      # preinstalled toolchains as unit-test.
-      - name: Free disk space
-        run: |
-          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/local/.ghcup \
-                      /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/share/powershell
-          df -h /
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
-        with:
-          global-json-file: global.json
-
-      - name: Cache NuGet packages
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.nuget/packages
-          key: nuget-${{ runner.os }}-${{ hashFiles('Directory.Packages.props', 'global.json') }}
-          restore-keys: |
-            nuget-${{ runner.os }}-
-
-      # Restores only the 18-project closure (plus whatever they transitively reference) —
-      # this job does not need the audit-escalation or version-assert steps, which already run
-      # in the required unit-test job against the full solution.
-      - name: Restore
-        run: dotnet restore Platform.SharedKernel.Integration.slnf
-
-      - name: Build
-        run: dotnet build Platform.SharedKernel.Integration.slnf --no-restore --configuration Release
-
-      - name: Integration test (Testcontainers, capped parallelism)
-        # See unit-test's identical comment: no fixed LogFileName, or every project after the
-        # first silently overwrites the previous one's trx. Console output is additionally teed
-        # to a log file (set -o pipefail so a test failure still fails this step even though tee
-        # itself always exits 0) so the summary step below can report which projects failed
-        # without this — a required, on-every-push lane — having ever been red for six days
-        # with nobody noticing (the exact gap found 2026-09-17: integration-test is deliberately
-        # excluded from ci-gate's needs, so a red run here produces no PR/merge signal at all).
-        run: |
-          set -o pipefail
-          dotnet test Platform.SharedKernel.Integration.slnf --no-build --configuration Release -s eng/testsettings/integration.runsettings --logger "trx" --results-directory ./TestResults 2>&1 | tee test-console.log
-
-      # Best-effort project-level breakdown for the job summary and the tracking-issue body below.
-      # DOTNET_CLI_UI_LANGUAGE=en is forced workflow-wide (top of this file), so on a real GitHub
-      # Actions runner the VSTest console summary lines are English ("Passed!"/"Failed!") — but
-      # unlike the SK0001 diagnostic-ID grep elsewhere in this file, that is the CLI's console
-      # wording, not a compiler diagnostic ID, so it is not guaranteed stable forever. If the
-      # pattern ever stops matching, this step degrades to the generic fallback message, not a
-      # false claim of full health — it never gates the job, only the summary text.
-      - name: Summarize integration test results
-        if: always()
-        run: |
-          {
-            echo "## Integration Test (Testcontainers) Summary"
-            echo ""
-            if [ -f test-console.log ] && grep -q '^Failed!' test-console.log; then
-              echo "### Failing test projects"
-              echo ""
-              grep '^Failed!' test-console.log | awk -F' - ' '{print "- " $NF}'
-            elif [ -f test-console.log ]; then
-              echo "All test projects in Platform.SharedKernel.Integration.slnf passed."
-            else
-              echo "No console log was captured (the run likely failed before the test step started — restore or build). See the job logs and, if produced, the uploaded .trx artifacts."
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: integration-test-results
-          path: |
-            TestResults/**/*.trx
-            test-console.log
-          retention-days: 14
+    with:
+      unit: false
+      packaging: false
+      integration: true
 
   # ---------------------------------------------------------------------------------------------
-  # Makes a red integration-test run VISIBLE without making it a required check — closing the
-  # exact gap found 2026-09-17: integration-test has been red since 2026-09-12 (MinIO's Docker
-  # Hub repo was pulled, see MinioContainerFixture's now-quay.io pin) and nobody noticed for six
-  # days, because integration-test is deliberately excluded from ci-gate's needs (by design — see
-  # that job's own comment) and nothing else ever looked at its result. This job is the "nothing
-  # else" — it never blocks a merge (it is not in ci-gate's needs either, and only ever runs on
-  # schedule/push-to-main, never pull_request/merge_group), but it keeps exactly one tracking
-  # issue open for as long as the lane stays red, and closes it the moment the lane is green
-  # again, so the signal survives past this week's CI run into whoever's actually watching Issues.
+  # Makes a red Integration run VISIBLE without making it a required check. The lane was once red
+  # for six days with nobody noticing (2026-09-12..17), because nothing else looks at its result.
+  # Keeps exactly one tracking issue open while the lane is red and closes it once it is green.
   #
-  # Least privilege: `issues: write` on this job ONLY — no other job in this file has it, and
-  # this job itself declares no `contents` permission because it never checks out the repo (the
-  # gh CLI needs only GH_TOKEN and the ambient GITHUB_REPOSITORY/GITHUB_SERVER_URL env vars the
-  # runner already sets). `gh` is used directly (preinstalled on every GitHub-hosted runner) per
-  # PLATFORM.md Rule 5's "SHA-pinned actions or plain gh/curl with GITHUB_TOKEN" — there is no
-  # third-party action to pin here at all.
+  # Least privilege: `issues: write` on this job only, and no `contents` permission, because it
+  # never checks out the repo. Uses the preinstalled gh CLI, so there is no action to pin.
   # ---------------------------------------------------------------------------------------------
   integration-tracking-issue:
     name: Track Integration Test Health
-    needs: [integration-test]
+    needs: [integration]
     if: |
       always() &&
       (github.event_name == 'schedule' || (github.event_name == 'push' && github.ref == 'refs/heads/main'))
@@ -350,18 +93,17 @@ jobs:
       issues: write
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      INTEGRATION_RESULT: ${{ needs.integration-test.result }}
+      INTEGRATION_RESULT: ${{ needs.integration.result }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       TRACKING_TITLE: 'CI: Integration Test (Testcontainers) lane is failing'
     steps:
-      # Matched on exact title text rather than a label: creating a label needs its own write
-      # permission this job does not otherwise need, and the title is already a stable, specific
-      # search key nothing else in this repo would coincidentally produce.
+      # Matched on the exact title rather than a label: creating a label needs a permission this
+      # job does not otherwise need, and the title is a stable, specific search key.
       - name: Find existing open tracking issue
         run: |
           set -e
-          # Piped to the runner's jq rather than gh's --jq: gh's --jq takes only a filter string and
-          # rejects jq's --arg flag. $t is a jq --arg variable, not a bash expansion.
+          # Piped to the runner's jq rather than gh's --jq, which rejects jq's --arg flag.
+          # $t is a jq --arg variable, not a bash expansion.
           # shellcheck disable=SC2016
           number=$(gh issue list --state open --search "in:title \"$TRACKING_TITLE\"" --json number,title \
             | jq -r --arg t "$TRACKING_TITLE" '[.[] | select(.title == $t)] | .[0].number // empty')
@@ -377,7 +119,7 @@ jobs:
         run: |
           set -e
           line1="integration-test failed on $(date -u '+%Y-%m-%dT%H:%M:%SZ') (trigger: ${{ github.event_name }}, ref: ${{ github.ref_name }}). Run: $RUN_URL"
-          line2="This is the non-required Testcontainers lane (Redis, PostgreSQL, RabbitMQ, MinIO, Meilisearch, Elasticsearch, Qdrant, etc). It never blocks a merge, but a red run here means an integration suite is genuinely broken and no PR feedback will ever surface it. Check the run uploaded integration-test-results artifact (trx files plus console log) to see exactly which project(s) failed."
+          line2="This is the non-required Testcontainers lane (Redis, PostgreSQL, RabbitMQ, MinIO, Meilisearch, Elasticsearch, Qdrant, etc). It never blocks a merge, but a red run here means an integration suite is genuinely broken and no PR feedback will ever surface it. It also blocks the next release tag, which runs this lane as a required gate. Check the run's integration-test-results artifact (trx files plus console log) to see which project(s) failed."
           body=$(printf '%s\n\n%s' "$line1" "$line2")
           if [ -n "$EXISTING_ISSUE" ]; then
             gh issue comment "$EXISTING_ISSUE" --body "$body"
@@ -394,257 +136,6 @@ jobs:
           gh issue comment "$EXISTING_ISSUE" --body "integration-test passed on $(date -u '+%Y-%m-%dT%H:%M:%SZ'). Run: $RUN_URL"
           gh issue close "$EXISTING_ISSUE"
           echo "Closed issue #$EXISTING_ISSUE."
-
-  # ---------------------------------------------------------------------------------------------
-  # Proves the packed .nupkg artifacts actually resolve and function for a consumer — not just
-  # that the source compiles. Packs every real shipping package to a job-local feed, then builds
-  # AND RUNS the eight consumer-verify/*Consumer harnesses that reference those packages via
-  # PackageReference (never ProjectReference) against that feed: the three 00.Governance
-  # harnesses, 01.Core's SharedKernel.Consumer.Tests, 02.Caching's consumer-verify, 03.Domain's
-  # ConsumerVerify, and — added 2026-09-17, having gone unwired since they were created — 04.
-  # Contracts' and 05.Application's ConsumerVerify projects. All eight are deliberately excluded
-  # from Platform.SharedKernel.slnx (see PLATFORM.md) so a normal `dotnet build` never touches
-  # them — this job is their only execution path. A dozen other "consumer-verify"-shaped folders
-  # exist on disk (08.Storage, 09.Search x3, 10.Intelligence x2, 11.Communication,
-  # 13.ServiceDefaults, 14.Presentation, 15.Integration, 17.Workflows, 19.Scheduling,
-  # 20.Reporting) but use ProjectReference, not PackageReference — they are already IN the .slnx
-  # and already compiled by unit-test's full-solution `dotnet build`, so wiring them in here too
-  # would prove nothing new; they were checked individually on 2026-09-17 and confirmed
-  # ProjectReference-only, not silently stale. Kept in the required path deliberately: the whole
-  # job takes exactly one Testcontainers-Redis dependency (an isolated single-container proof, not
-  # the many-containers-at-once fan-out that caused DV-010's flakiness), and it is the one
-  # mechanism proving packages are actually consumable before a tag can be published.
-  # ---------------------------------------------------------------------------------------------
-  packaging-verify:
-    name: Packaging & Consumer-Verify
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          # MANDATORY for MinVer (see Directory.Build.props "Versioning"). checkout's default
-          # shallow clone fetches no tags, and MinVer does not fail when it finds none — it
-          # silently stamps the MinVerMinimumMajorMinor floor as a prerelease. Without this,
-          # a fully green run would produce correctly-named, wrongly-versioned packages.
-          fetch-depth: 0
-
-      # The stock ubuntu-latest image leaves too little free disk to build ~190 projects in
-      # Release: run #1 and #2 both died with 'No space left on device' mid-build. Reclaim the
-      # preinstalled toolchains this repo never uses (~25GB). Runs before Setup .NET so the
-      # SDK install is not the thing that tips it over.
-      - name: Free disk space
-        run: |
-          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/local/.ghcup \
-                      /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/share/powershell
-          df -h /
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
-        with:
-          global-json-file: global.json
-
-      - name: Cache NuGet packages
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.nuget/packages
-          key: nuget-${{ runner.os }}-${{ hashFiles('Directory.Packages.props', 'global.json') }}
-          restore-keys: |
-            nuget-${{ runner.os }}-
-
-      - name: Restore
-        run: dotnet restore Platform.SharedKernel.slnx
-
-      # Every real shipping package (IsPackable=true, non-Exe, non-.Tests) is packed here. A
-      # project missing README.md/Description/PackageTags fails loudly via the SKPKG001-003
-      # guards in Directory.Build.targets rather than silently skipping — see PLATFORM.md's
-      # "known gaps" note for the packages currently failing this gate.
-      - name: Pack every shipping package
-        run: dotnet pack Platform.SharedKernel.slnx --no-restore --configuration Release
-
-      # The mechanical lock on repo-wide lockstep, asserted against the produced artifacts rather
-      # than against any property MSBuild reported: every .nupkg in the feed must carry one
-      # identical version. Also exports that version so the harness steps below consume the bits
-      # this run just built, instead of whatever happens to be newest in ./nupkgs.
-      - name: Verify version lockstep across packed packages
-        run: |
-          set -e
-          # Version is read off the produced artifacts, not off any property MSBuild reported.
-          # Anchored at end-of-name so a package ID that itself ends in a digit
-          # (SharedKernel.Storage.S3) cannot have part of its name misread as the version.
-          versions=$(for f in nupkgs/*.nupkg; do
-            basename "$f" .nupkg | grep -oE '[0-9]+[.][0-9]+[.][0-9]+(-[0-9A-Za-z.-]+)?$'
-          done | sort -u)
-          packed=$(find nupkgs -name "*.nupkg" | wc -l)
-          count=$(echo "$versions" | wc -l)
-          echo "Packed $packed package(s) carrying $count distinct version(s):"
-          echo "$versions" | awk '{ print "  " $0 }'
-          if [ "$count" -ne 1 ]; then
-            echo "::error::Version lockstep broken - packed packages carry $count distinct versions."
-            exit 1
-          fi
-          case "$versions" in
-            0.0.0*)
-              echo "::error::MinVer stamped 0.0.0 - checkout has no tag history (fetch-depth: 0 missing)."
-              exit 1
-              ;;
-          esac
-          echo "SK_VERSION=$versions" >> "$GITHUB_ENV"
-          echo "All $packed packages share one version: $versions"
-
-      - name: Restore consumer-verify harnesses against the freshly packed feed
-        run: |
-          set -e
-          for proj in \
-            "00.Governance/_verification/AnalyzerConsumer/AnalyzerConsumer.csproj" \
-            "00.Governance/_verification/ArchTestConsumer/ArchTestConsumer.csproj" \
-            "00.Governance/_verification/LinterConsumer/LinterConsumer.csproj" \
-            "01.Core/SharedKernel.Consumer.Tests/SharedKernel.Consumer.Tests.csproj" \
-            "02.Caching/consumer-verify/SharedKernel.Caching.ConsumerVerify/SharedKernel.Caching.ConsumerVerify.csproj" \
-            "03.Domain/SharedKernel.Domain.ConsumerVerify/SharedKernel.Domain.ConsumerVerify.csproj" \
-            "04.Contracts/SharedKernel.Contracts.ConsumerVerify/SharedKernel.Contracts.ConsumerVerify.csproj" \
-            "05.Application/SharedKernel.Application.ConsumerVerify/SharedKernel.Application.ConsumerVerify.csproj" \
-            "06.Persistence/SharedKernel.Persistence.ConsumerVerify/SharedKernel.Persistence.ConsumerVerify.csproj" \
-            "samples/OrderApi/OrderApi.csproj" \
-            "samples/CatalogApi/CatalogApi.csproj" \
-            "samples/BillingApi/BillingApi.Tests/BillingApi.Tests.csproj" \
-            "samples/DocumentsApi/DocumentsApi.Tests/DocumentsApi.Tests.csproj" \
-            "samples/ShippingApi/ShippingApi.Tests/ShippingApi.Tests.csproj" \
-            ; do
-            echo "::group::restore $proj"
-            dotnet restore "$proj" --force -p:SharedKernelPackageVersion="$SK_VERSION"
-            echo "::endgroup::"
-          done
-
-      # AnalyzerConsumer is pulled out of the loop below into its own step, because it is the one
-      # harness whose entire reason to exist is proving a compiler DIAGNOSTIC actually fires, not
-      # just that the packed package restores/builds/runs. SK0001 is Warning severity,
-      # AnalyzerConsumer.csproj sets no TreatWarningsAsErrors, and nothing previously inspected the
-      # build output for the diagnostic ID — so a broken analyzer (wrong analyzers/dotnet/cs
-      # PackagePath, a broken netstandard2.0 target, an assembly-load failure) could silently stop
-      # emitting and this job would stay green while publishing a package that enforces nothing.
-      #
-      # Locale-proofing: grep the bare diagnostic ID "SK0001", never the word "warning" — MSBuild's
-      # per-diagnostic canonical line keeps "warning"/"error" in English regardless of CLI locale,
-      # but that is an implementation detail of the current toolchain, not a contract, and this
-      # repo has been built on a non-English-locale machine (confirmed: dotnet's own top-level
-      # status text renders in Turkish there) where other surrounding output ("X Uyarı"/"X Hata"
-      # instead of "X Warning(s)"/"X Error(s)") already is localized. The diagnostic ID itself is
-      # never localized under any observed toolchain behavior, so it's the only safe anchor.
-      # DOTNET_CLI_UI_LANGUAGE=en (workflow-level env, top of this file) is kept as defense in
-      # depth so the raw log stays human-readable in the Actions UI regardless of runner locale,
-      # but the assertion below does not depend on it.
-      - name: Build AnalyzerConsumer and assert SK0001 fired
-        run: |
-          set -e
-          proj="00.Governance/_verification/AnalyzerConsumer/AnalyzerConsumer.csproj"
-          echo "::group::build $proj"
-          dotnet build "$proj" --no-restore --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION" 2>&1 | tee analyzer-consumer-build.log
-          echo "::endgroup::"
-          if ! grep -q 'SK0001' analyzer-consumer-build.log; then
-            echo "::error::SK0001 did not fire while building AnalyzerConsumer against the freshly packed SharedKernel.Analyzers ($SK_VERSION). Program.cs's 'DateTime.UtcNow' usage is expected to trigger it. Its absence means the packed analyzer enforces nothing — check the analyzers/dotnet/cs PackagePath, the netstandard2.0 target, and whether the analyzer assembly loaded at all. Refusing to treat this as a passing verification."
-            exit 1
-          fi
-          echo "OK: SK0001 present in AnalyzerConsumer's build output."
-
-      - name: Run AnalyzerConsumer
-        run: dotnet run --project "00.Governance/_verification/AnalyzerConsumer/AnalyzerConsumer.csproj" --no-build --configuration Release
-
-      - name: Build and run remaining consumer-verify harnesses
-        run: |
-          set -e
-          for proj in \
-            "00.Governance/_verification/ArchTestConsumer/ArchTestConsumer.csproj" \
-            "00.Governance/_verification/LinterConsumer/LinterConsumer.csproj" \
-            "03.Domain/SharedKernel.Domain.ConsumerVerify/SharedKernel.Domain.ConsumerVerify.csproj" \
-            ; do
-            echo "::group::run $proj"
-            dotnet run --project "$proj" --no-restore --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION"
-            echo "::endgroup::"
-          done
-
-      # samples/ are runnable services, not harnesses — build and exercise them against the
-      # packed feed so a sample that breaks against a real published package fails CI here.
-      - name: Build samples against packed packages
-        run: |
-          dotnet build "samples/OrderApi/OrderApi.csproj" --no-restore --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION"
-          dotnet build "samples/CatalogApi/CatalogApi.csproj" --no-restore --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION"
-          dotnet build "samples/BillingApi/BillingApi.Tests/BillingApi.Tests.csproj" --no-restore --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION"
-          dotnet build "samples/DocumentsApi/DocumentsApi.Tests/DocumentsApi.Tests.csproj" --no-restore --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION"
-          dotnet build "samples/ShippingApi/ShippingApi.Tests/ShippingApi.Tests.csproj" --no-restore --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION"
-
-      # BillingApi: the persistence stack through HTTP — real Program, Testcontainers PostgreSQL with the production
-      # role split, real migrations at startup, Production-mode startup checks (RLS coverage, audit self-check).
-      - name: Run BillingApi end-to-end tests (Testcontainers PostgreSQL)
-        run: dotnet test "samples/BillingApi/BillingApi.Tests/BillingApi.Tests.csproj" --no-build --no-restore --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION"
-
-      # DocumentsApi: the storage stack through HTTP — two S3 connections and an OBS connection, tenant stores,
-      # conditional writes, presigned PUT/POST/multipart sent with a plain HttpClient. CI runs it against MinIO
-      # (Testcontainers); the same scenarios run against real S3 and OBS when the SK_LIVE_* variables are set.
-      - name: Run DocumentsApi end-to-end tests (Testcontainers MinIO)
-        run: dotnet test "samples/DocumentsApi/DocumentsApi.Tests/DocumentsApi.Tests.csproj" --no-build --no-restore --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION"
-
-      # ShippingApi: the messaging stack through HTTP — real Program, Testcontainers RabbitMQ, a publish that
-      # genuinely leaves the process and comes back to a consumer. Uses masstransit/rabbitmq rather than the
-      # official rabbitmq image because WithDelayedDelivery() uses the broker's delayed-message exchange, and
-      # that is a community plugin the official image does not ship.
-      - name: Run ShippingApi end-to-end tests (Testcontainers RabbitMQ)
-        run: dotnet test "samples/ShippingApi/ShippingApi.Tests/ShippingApi.Tests.csproj" --no-build --no-restore --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION"
-
-      - name: Smoke-test OrderApi sample
-        env:
-          ASPNETCORE_URLS: http://localhost:5199
-        run: |
-          set -e
-          dotnet run --project "samples/OrderApi/OrderApi.csproj" --no-build --no-restore --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION" &
-          pid=$!
-          trap 'kill $pid 2>/dev/null || true' EXIT
-          for _ in $(seq 1 40); do
-            curl -sf http://localhost:5199/health/ready >/dev/null 2>&1 && break
-            sleep 1
-          done
-          curl -sf http://localhost:5199/health/live  | grep -q Healthy
-          curl -sf http://localhost:5199/health/ready | grep -q Healthy
-          id=$(curl -sf -X POST http://localhost:5199/orders -H 'Content-Type: application/json' -d '{"customer":"CI","amount":10.00,"currency":"eur","lines":["item"]}' | sed 's/.*"id":"//;s/".*//')
-          test -n "$id"
-          curl -sf "http://localhost:5199/orders/$id" | grep -q '"currency":"EUR"'
-          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:5199/orders/01999999-0000-7000-8000-000000000000)" = 404
-          # No launch profile, so this runs in Production: the API documents must not be published by default.
-          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:5199/openapi/v1.json)" = 404
-          echo "OrderApi sample smoke test passed"
-
-      # SharedKernel.Caching.ConsumerVerify is a Testcontainers-backed 5-surface harness
-      # (real Redis) — run separately so its longer runtime and log volume don't crowd the
-      # group above.
-      - name: Run Caching consumer-verify (Testcontainers Redis)
-        run: dotnet run --project "02.Caching/consumer-verify/SharedKernel.Caching.ConsumerVerify/SharedKernel.Caching.ConsumerVerify.csproj" --no-restore --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION"
-
-      # SharedKernel.Consumer.Tests is an xUnit project (not an Exe harness) — run via `dotnet test`.
-      - name: Run 01.Core consumer test suite
-        run: dotnet test "01.Core/SharedKernel.Consumer.Tests/SharedKernel.Consumer.Tests.csproj" --no-restore --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION"
-
-      # SharedKernel.Contracts.ConsumerVerify and SharedKernel.Application.ConsumerVerify were found
-      # on 2026-09-17 to be genuine PackageReference-based (not ProjectReference) harnesses that had
-      # never been wired in here — unlike most "consumer-verify"-shaped folders on disk, which use
-      # ProjectReference and are already exercised by the full-solution `dotnet build` in unit-test.
-      # Both are xUnit projects, run via `dotnet test`, same shape as SharedKernel.Consumer.Tests
-      # above. Neither needs a container: Contracts is DTOs/CloudEvents envelopes, Application is
-      # MediatR command/query vocabulary — both pure in-memory.
-      - name: Run 04.Contracts consumer-verify
-        run: dotnet test "04.Contracts/SharedKernel.Contracts.ConsumerVerify/SharedKernel.Contracts.ConsumerVerify.csproj" --no-restore --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION"
-
-      - name: Run 05.Application consumer-verify
-        run: dotnet test "05.Application/SharedKernel.Application.ConsumerVerify/SharedKernel.Application.ConsumerVerify.csproj" --no-restore --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION"
-
-      # SharedKernel.Persistence.ConsumerVerify restores all six 06.Persistence packages plus
-      # SharedKernel.Persistence.Testing from the packed feed and runs the composed scenario
-      # (multi-tenancy + RLS + audit + encryption + retry) against a Testcontainers PostgreSQL,
-      # so it needs the runner's Docker daemon, like the Caching harness above.
-      - name: Run 06.Persistence consumer-verify (Testcontainers PostgreSQL)
-        run: dotnet test "06.Persistence/SharedKernel.Persistence.ConsumerVerify/SharedKernel.Persistence.ConsumerVerify.csproj" --no-restore --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION"
 
   # ---------------------------------------------------------------------------------------------
   actionlint:
@@ -700,26 +191,26 @@ jobs:
 
   # ---------------------------------------------------------------------------------------------
   # The only required status check. Runs unconditionally (if: always()) so it produces a result
-  # even when an upstream job is skipped by a path filter, cancelled, or fails outright — a
-  # path-filtered job that is itself marked required in the branch/tag ruleset would leave a
-  # docs-only PR waiting forever for a check that never ran. integration-test is deliberately NOT
-  # listed here — see its own job comment for why.
+  # even when an upstream job is skipped, cancelled or failed. `integration` is deliberately NOT
+  # listed here (see the header).
   # ---------------------------------------------------------------------------------------------
   ci-gate:
     name: CI Gate
     if: always()
-    needs: [unit-test, packaging-verify, actionlint, pr-title]
+    needs: [verify, actionlint, pr-title]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}
     steps:
       - name: Check upstream job results
+        env:
+          NEEDS: ${{ toJSON(needs) }}
         run: |
-          echo '${{ toJSON(needs) }}' | jq -e '
+          echo "$NEEDS" | jq -e '
             to_entries | map(.value.result) |
             all(. == "success" or . == "skipped")
           ' || {
             echo "One or more required jobs failed or were cancelled."
-            echo '${{ toJSON(needs) }}'
+            echo "$NEEDS"
             exit 1
           }

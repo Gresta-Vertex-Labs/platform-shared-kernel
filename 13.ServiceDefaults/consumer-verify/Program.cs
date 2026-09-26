@@ -14,7 +14,7 @@ using SharedKernel.MultiTenancy.Resolution;
 using SharedKernel.Persistence.Abstractions.Connections;
 using SharedKernel.ServiceDefaults.Extensions;
 using SharedKernel.ServiceDefaults.Probes;
-using SharedKernel.Security.Abstractions;
+using SharedKernel.Execution.Context;
 
 // ── Surface 1: AddServiceDefaults() — mandatory first call ──────────────────
 var builder = WebApplication.CreateBuilder();
@@ -48,8 +48,8 @@ Console.WriteLine("Surface 3 PASS: ServiceDefaults core services resolve (Health
 // ── Surface 4: MultiTenancy services resolve without exception ──────────────
 using (var scope = app.Services.CreateScope())
 {
-    var tenantProvider = scope.ServiceProvider.GetRequiredService<ITenantProvider>();
-    Verify(tenantProvider.TenantId == Guid.Empty, "AmbientTenantProvider.TenantId defaults Guid.Empty");
+    var accessor = scope.ServiceProvider.GetRequiredService<IRequestContextAccessor>();
+    Verify(accessor.Current is null, "IRequestContextAccessor has no ambient context outside a request");
 
     var strategies = scope.ServiceProvider.GetServices<ITenantResolutionStrategy>().ToList();
     Verify(strategies.Count == 3, "All three platform ITenantResolutionStrategy implementations resolve");
@@ -58,7 +58,7 @@ using (var scope = app.Services.CreateScope())
     Verify(strategies.Any(s => s.StrategyName == TenantResolutionStrategyNames.Database), "Database strategy registered");
 }
 
-Console.WriteLine("Surface 4 PASS: MultiTenancy services resolve (ITenantProvider, ITenantResolutionStrategy x3)");
+Console.WriteLine("Surface 4 PASS: MultiTenancy services resolve (IRequestContextAccessor, ITenantResolutionStrategy x3)");
 
 // ── Surface 5: TenantResolutionMiddleware is constructible from the composed container ──
 using (var scope = app.Services.CreateScope())

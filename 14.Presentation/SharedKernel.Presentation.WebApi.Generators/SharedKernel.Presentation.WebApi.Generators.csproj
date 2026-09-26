@@ -3,6 +3,9 @@
     <!-- Source generators MUST target netstandard2.0 — the compiler will not load any other TFM.
          This deliberately overrides Directory.Build.props' net10.0 default. Do not remove. -->
     <TargetFramework>netstandard2.0</TargetFramework>
+    <!-- Tooling (P-579): a Roslyn component that references no SharedKernel package. WebApi reaches it only through
+         a ReferenceOutputAssembly="false" edge, which the tier check exempts (eng/SharedKernelTiers.targets). -->
+    <SharedKernelTier>Tooling</SharedKernelTier>
     <IsRoslynComponent>true</IsRoslynComponent>
     <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
     <!--

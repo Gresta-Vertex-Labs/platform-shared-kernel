@@ -63,15 +63,17 @@ exemption — mirrors `NoEncryptionRotationJobInjectionPredicate`'s ctor scan bu
 needs a `*TopologyRules` class, this is the template — don't force the Abstractions/Siblings pair
 onto a domain that doesn't have that shape.
 
-## Layering rule with a permitted THIRD upstream domain
+## Per-domain layering methods — deleted (WO-086)
 
-`SharedKernelLayeringRules.WorkflowsReferencesOnlyCoreContractsAndApplication` is the first
-`ConditionList[]`-per-forbidden-term layering method where the domain under test is permitted THREE
-upstream domains (01.Core/04.Contracts/05.Application), not two. Its forbidden list is therefore
-FOURTEEN terms (not the fifteen `SearchReferencesOnlyCoreAndContracts`/
-`IntelligenceReferencesOnlyCoreAndContracts` each use) — `"SharedKernel.Application"` is the one term
-DELIBERATELY ABSENT. When copying the fifteen-term precedent for a future domain, check the actual
-permitted-upstream-domain count first — don't blindly copy fifteen terms.
+This phase also added `SharedKernelLayeringRules.WorkflowsReferencesOnlyCoreContractsAndApplication`,
+a fourteen-forbidden-term method in the same family as `SearchReferencesOnlyCoreAndContracts`/
+`IntelligenceReferencesOnlyCoreAndContracts`. All of those numbered-layer methods were deleted in
+P-574: `SharedKernel.Workflows.Temporal` is Adapter tier (tenant scope from
+`SharedKernel.Execution.Tenancy.TenantScope`, commands through the kernel `ISender`, readiness via
+`IReadinessProbe` "workflows"), and `eng/SharedKernelTiers.targets` (SKTIER000–006, build errors)
+plus `DependencyGraphRulesTests` enforce what it may reference. Never write a per-domain
+forbidden-term list again — declare the package's `<SharedKernelTier>` instead; only purity rules the
+tiers cannot express belong in `SharedKernelLayeringRules`.
 
 ## This phase's build/test outcome — clean on first attempt
 

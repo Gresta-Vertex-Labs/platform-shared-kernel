@@ -33,7 +33,7 @@ public sealed class WorkflowRoundTripTests(TemporalTestFixture fixture)
         Result<IWorkflowHandle<string>> startResult = await dispatcher.StartAsync<EchoWorkflow, string, string>(
             "round-trip-input",
             Options($"round-trip-{Guid.NewGuid():N}"),
-            TenantScope.Of("tenant-round-trip"));
+            TenantScope.For(TestTenants.RoundTrip));
 
         startResult.IsSuccess.Should().BeTrue();
 
@@ -52,14 +52,14 @@ public sealed class WorkflowRoundTripTests(TemporalTestFixture fixture)
         Result<IWorkflowHandle<string>> startResult = await dispatcher.StartAsync<EchoWorkflow, string, string>(
             "separate-await",
             Options($"separate-await-{Guid.NewGuid():N}"),
-            TenantScope.Of("tenant-round-trip"));
+            TenantScope.For(TestTenants.RoundTrip));
 
         startResult.IsSuccess.Should().BeTrue();
         startResult.Value.WorkflowId.Should().NotBeNullOrWhiteSpace();
 
         // Attach to the SAME execution via GetHandle<T>, proving the handle is a durable reference,
         // not a one-shot completion future.
-        var reattached = dispatcher.GetHandle<string>(startResult.Value.WorkflowId, runId: null, TenantScope.Of("tenant-round-trip"));
+        var reattached = dispatcher.GetHandle<string>(startResult.Value.WorkflowId, runId: null, TenantScope.For(TestTenants.RoundTrip));
 
         Result<string> result = await reattached.GetResultAsync();
         result.IsSuccess.Should().BeTrue();

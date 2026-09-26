@@ -1,114 +1,78 @@
 # 13.ServiceDefaults
 
-Host composition layer for Platform.SharedKernel microservices.
+Host composition for Platform.SharedKernel microservices. Every package here is **Host tier**: a service's API or
+worker project references it; nothing below the host does.
 
-- **`SharedKernel.ServiceDefaults`** — the composition base: `AddServiceDefaults()`; OpenTelemetry tracing, metrics, and logging; health-check composition with a hard liveness/readiness split; startup-probe gating; every `WithXTelemetry()`; rate limiting. **References no other SharedKernel package** (WO-084).
-- **`SharedKernel.ServiceDefaults.*`** — fourteen integration packages, one per dependency, each referencing the base plus the one package it integrates. Add only the ones your service needs:
+| Package | Provides |
+| --- | --- |
+| [`SharedKernel.ServiceDefaults`](SharedKernel.ServiceDefaults/README.md) | The composition base: `AddServiceDefaults()` (OpenTelemetry traces, metrics and logs; base health checks), `AddSharedKernelReadiness()`, `MapDefaultHealthCheckEndpoints()`, `StartupGate`, every `WithXTelemetry()`, `AddSharedKernelRateLimiting()`. References only `SharedKernel.Primitives` and OpenTelemetry. |
+| [`SharedKernel.ServiceDefaults.Security`](SharedKernel.ServiceDefaults.Security/README.md) | `AddSharedKernelRequestContext()` + `app.UseSharedKernelRequestContext()` — the caller, tenant and correlation id every layer reads through `IRequestContext` |
+| [`SharedKernel.ServiceDefaults.Persistence`](SharedKernel.ServiceDefaults.Persistence/README.md) | `AddDatabaseReadinessCheck<TContext>()`, `AddDapperDatabaseReadinessCheck()`, `AddPersistenceStartupReadinessCheck()` |
+| [`SharedKernel.MultiTenancy`](SharedKernel.MultiTenancy/README.md) | Tenant resolution (claim, header, tenant directory), `TenantResolutionMiddleware`, the tenant catalog |
+| [`SharedKernel.ServiceDefaults.Security.Mtls`](SharedKernel.ServiceDefaults.Security.Mtls/README.md) | `AddMtlsClientCertificate()`, `AddMtlsForwardedHeaderCertificate()`, `MtlsForwardedHeaderMiddleware` |
+| [`SharedKernel.ServiceDefaults.Configuration.KeyVault`](SharedKernel.ServiceDefaults.Configuration.KeyVault/README.md) | `AddSharedKernelKeyVaultConfiguration(vaultUri)` — Key Vault secrets as configuration |
+| [`SharedKernel.ServiceDefaults.Localization`](SharedKernel.ServiceDefaults.Localization/README.md) | `AddSharedKernelLocalization()` — per-request culture resolution |
 
-  | Package | Provides |
-  | --- | --- |
-  | `.Persistence` | `AddDatabaseReadinessCheck<TContext>()`, `AddDapperDatabaseReadinessCheck()`, `AddPersistenceStartupReadinessCheck()`, `AddFieldEncryptionReadinessCheck()`, `AddAuditSealingReadinessCheck()` |
-  | `.Security` | `AddSharedKernelRequestContext()` — the `IRequestContext` over `12.Security` used by `05.Application` and `06.Persistence` |
-  | `.Caching` | `AddCacheReadinessCheck()` |
-  | `.Caching.Redis` | `AddRedisHealthCheck()` |
-  | `.Messaging` | `AddMessagingReadinessCheck()` |
-  | `.Storage` | `AddStorageReadinessCheck(storeName)` |
-  | `.Search` | `AddSearchReadinessCheck(indexName)` |
-  | `.AI` | `AddVectorStoreReadinessCheck(collectionName)` |
-  | `.Workflows.Temporal` | `AddWorkflowReadinessCheck()` — holds the WO-047 `13→17` layering grant |
-  | `.Scheduling` | `AddSchedulerReadinessCheck()` — holds the P-466 `13→19` layering grant |
-  | `.Security.Mtls` | `AddMtlsClientCertificate()`, `AddMtlsForwardedHeaderCertificate()`, `MtlsForwardedHeaderMiddleware` |
-  | `.Cryptography.KeyVault` | `AddSharedKernelKeyVaultKeyProvider()`, `AddKeyVaultKeyProviderReadinessCheck()` |
-  | `.Configuration.KeyVault` | `AddSharedKernelKeyVaultConfiguration(vaultUri)` |
-  | `.Localization` | `AddSharedKernelLocalization()` |
-
-- **`SharedKernel.MultiTenancy`** — concrete `ITenantProvider` resolution strategies (HTTP header, the authenticated credential's tenant claim via `12.Security`'s `IUserContextMapper`, database tenant-directory lookup); `TenantResolutionMiddleware`; `AmbientTenantProvider`.
-
-Every package here is composition-only: it wires abstractions and concrete providers from other layers together. No business logic, no domain types, no new abstractions are defined here.
-
-> **Why the base references nothing (WO-084).** Before the split, a project referencing
-> `SharedKernel.ServiceDefaults` alone restored 25 SharedKernel projects and 73 NuGet packages —
-> MassTransit, Azure Service Bus, Microsoft.Identity.Web, EF Core, Temporalio, Quartz, StackExchange.Redis.
-> Measured the same way afterwards: 1 project and 10 packages, all OpenTelemetry. Moved types kept their
-> namespaces, so migrating a service means adding the integration `PackageReference`s it needs and
-> editing no source.
+Readiness needs no per-dependency package. Each provider registers its own `IReadinessProbe` when you register the
+provider (`AddRedisConnection`, `MessagingBusBuilder.Build()`, each storage store, search index and vector
+collection, the Temporal worker, the scheduler, field encryption, the audit sealer, the Key Vault key provider), and
+one `AddSharedKernelReadiness()` call maps every probe the service actually has to `/health/ready`.
 
 ## Program.cs composition
-
-A full composition using most integrations. Every call below comes from `SharedKernel.ServiceDefaults`
-or `SharedKernel.MultiTenancy` except those marked `[pkg]`, which need the integration package named in the
-table above — so a service omitting, say, workflows omits both the call and the package.
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-// [pkg .Configuration.KeyVault] Secrets-manager configuration — optional; call BEFORE AddServiceDefaults() so vault-backed values
-// are available to every subsequent registration. NEVER commit plaintext secrets to appsettings.json
-// — see "Secrets-manager configuration" below.
+// Optional, [SharedKernel.ServiceDefaults.Configuration.KeyVault]: vault secrets available to every later call.
 builder.AddSharedKernelKeyVaultConfiguration(new Uri("https://my-vault.vault.azure.net/"));
 
-builder.AddServiceDefaults();                          // OTel + base health endpoints — FIRST call
-builder.Services.AddSharedKernelMultiTenancy();        // optional — multi-tenant services only; default
-                                                        // StrategyOrder is [Claim, Header, Database] —
-                                                        // security-motivated, see Ordering rule 2
-builder.AddSharedKernelRateLimiting();                 // optional — see "Rate limiting" below
+builder.AddServiceDefaults();                                    // FIRST: OpenTelemetry + base health checks
+builder.Services.AddOidcAuthentication(builder.Configuration);    // 12.Security: registers IUserContext
+builder.Services.AddSharedKernelRequestContext();                // [.Security] IRequestContext over IUserContext
+builder.Services.AddSharedKernelMultiTenancy();                  // optional: multi-tenant services
+builder.AddSharedKernelRateLimiting();                           // optional
 
-// Opt-in dependency-specific health checks — only what this service actually uses:
 builder.Services.AddHealthChecks()
-    .AddDatabaseReadinessCheck<MyDbContext>()             // [pkg .Persistence]
-    .AddRedisHealthCheck()                                // [pkg .Caching.Redis] — needs AddRedisConnection
-    .AddMessagingReadinessCheck()                         // [pkg .Messaging]
-    .AddStorageReadinessCheck("invoices")                 // [pkg .Storage] — a store name from AddSharedKernelStorage()
-    .AddSearchReadinessCheck("products-index")            // [pkg .Search]
-    .AddVectorStoreReadinessCheck("documents-collection") // [pkg .AI]
-    .AddWorkflowReadinessCheck();                         // [pkg .Workflows.Temporal]
+    .AddDatabaseReadinessCheck<OrdersDbContext>()                // [.Persistence]
+    .AddSharedKernelReadiness();                                 // every provider's readiness probe
 
-builder.WithMessagingTelemetry();                      // optional — services using 07.Messaging
-builder.WithCachingTelemetry();                        // optional — services using 02.Caching
-builder.WithApplicationTelemetry();                    // optional — services using 05.Application's pipeline behaviors
-builder.WithSearchTelemetry();                         // optional — services using 09.Search
-builder.WithStorageTelemetry();                        // optional — services using 08.Storage
-builder.WithIntelligenceTelemetry();                   // optional — services using 10.Intelligence
-builder.WithWorkflowTelemetry();                       // optional — services using 17.Workflows
-builder.WithPersistenceTelemetry();                    // optional — services using 06.Persistence (tracing only, no companion meter)
-builder.WithCommunicationTelemetry();                  // optional — services making outbound gRPC and/or resilience-wrapped REST calls via 11.Communication
-builder.WithIntegrationTelemetry();                    // optional — services dispatching webhooks via 15.Integration (tracing only, no companion meter)
+builder.WithMessagingTelemetry()                                 // only the domains this service uses
+       .WithPersistenceTelemetry()
+       .WithApplicationTelemetry();
 
-// [pkg .Security.Mtls] mTLS client-certificate composition — optional; pick the one matching this service's TLS-termination
-// topology (a host MAY register both if its topology genuinely varies by environment). Both require
-// 12.Security's IMtlsCertificateValidator to already be registered (typically AddMtlsAuthentication<TValidator>()).
-builder.AddMtlsClientCertificate(ClientCertificateMode.RequireCertificate);        // TLS terminates directly at Kestrel
-// -- or, for TLS that terminates at an ingress/gateway which forwards the client certificate as a header --
-builder.AddMtlsForwardedHeaderCertificate(o => o.HeaderName = "ssl-client-cert");  // header name must match the actual ingress — never a platform-guessed default
-// -- with the trust-boundary allowlist restricted to the known ingress/proxy addresses (recommended in
-// production — an unconfigured TrustedNetworks accepts the forwarded header from ANY network path that
-// reaches this host directly; see "mTLS forwarded-header trust boundary" below) --
-builder.AddMtlsForwardedHeaderCertificate(o =>
-{
-    o.HeaderName = "ssl-client-cert";
-    o.AddTrustedNetwork(IPNetwork.Parse("10.0.0.0/16"));   // the ingress-controller subnet
-    o.AddTrustedProxy(IPAddress.Parse("10.0.5.7"));        // a single known proxy hop
-});
+// Optional, [.Security.Mtls]: pick the one matching where TLS terminates.
+builder.AddMtlsClientCertificate(ClientCertificateMode.RequireCertificate);   // at Kestrel
+// builder.AddMtlsForwardedHeaderCertificate(o =>                              // at an ingress
+// {
+//     o.HeaderName = "ssl-client-cert";
+//     o.AddTrustedNetwork(IPNetwork.Parse("10.0.0.0/16"));
+// });
 
 var app = builder.Build();
 
+app.UseSharedKernelRequestContext();               // FIRST: correlation id + the request's context scope
+app.UseExceptionHandler();
+// app.UseMiddleware<MtlsForwardedHeaderMiddleware>();   // with AddMtlsForwardedHeaderCertificate()
 app.UseAuthentication();
-app.UseRateLimiter();                                  // required when AddSharedKernelRateLimiting() is used — unless 14.Presentation's UseSharedKernelWebApi() already added it
-app.UseMiddleware<TenantResolutionMiddleware>();       // required when AddSharedKernelMultiTenancy() is used — must run after UseAuthentication()
-app.UseMiddleware<MtlsForwardedHeaderMiddleware>();    // [pkg .Security.Mtls] required when AddMtlsForwardedHeaderCertificate() is used — registering the options alone leaves this absent from the pipeline (silent no-op, not a crash)
+app.UseMiddleware<TenantResolutionMiddleware>();   // with AddSharedKernelMultiTenancy(); after UseAuthentication()
+app.UseRateLimiter();                              // with AddSharedKernelRateLimiting()
+app.UseAuthorization();
 
 // requireAuthorization: true adds .RequireAuthorization() to both endpoint mappings — DEFENSE IN DEPTH
 // ONLY, NEVER A SUBSTITUTE FOR NETWORK ISOLATION. See "Health endpoint exposure" below.
-app.MapDefaultHealthCheckEndpoints();                  // "/health/live", "/health/ready"
-
+app.MapDefaultHealthCheckEndpoints();              // /health/live, /health/ready
 app.Run();
 ```
 
-A service that also uses `14.Presentation`'s `app.UseSharedKernelWebApi()` does not call `UseAuthentication()`,
-`UseRateLimiter()` or `UseAuthorization()` itself: that method adds them, in a fixed order, and takes the middleware
-above in its hooks.
+`samples/OrderApi/OrderApi.Api/Program.cs` is the compiled reference for this order.
+
+A service that also uses `14.Presentation`'s `SharedKernel.Presentation.WebApi` (`builder.AddSharedKernelWebApi()`)
+does not call `UseExceptionHandler()`, `UseAuthentication()`, `UseRateLimiter()` or `UseAuthorization()` itself:
+`app.UseSharedKernelWebApi()` adds them in a fixed order and takes the middleware above in its hooks.
+`UseSharedKernelRequestContext()` still runs first:
 
 ```csharp
+app.UseSharedKernelRequestContext();                     // FIRST: correlation id + the request's context scope
 app.UseSharedKernelWebApi(pipeline => pipeline
     .AtStart(a =>
     {
@@ -120,50 +84,72 @@ app.UseSharedKernelWebApi(pipeline => pipeline
         a.UseMiddleware<TenantResolutionMiddleware>();    // after authentication
         a.UseRequestLocalization();                       // [pkg .Localization] so 401, 403 and 429 answers are translated
     }));
+app.MapEndpoints();                                      // the generated map of the service's IEndpointModules
 ```
 
 ### Ordering rules
 
-1. `builder.AddServiceDefaults()` must be the **first** call in `Program.cs`, before any other `SharedKernel.*.Add...` extension. It wires OpenTelemetry and registers only the base health check infrastructure (the always-on `StartupGateHealthCheck` plus the `/health/live` and `/health/ready` endpoint mappings) — it never registers a dependency-specific check.
-2. `AddSharedKernelMultiTenancy()` is optional and only needed by multi-tenant services. It registers `TenantResolutionOptions`, `AmbientTenantProvider` (scoped `ITenantProvider`), and the three platform `ITenantResolutionStrategy` implementations — but **not** the middleware itself. `TenantResolutionOptions.StrategyOrder` is empty by default, which means `TenantResolutionOptions.DefaultStrategyOrder`, `[Claim, Header, Database]` (WO-061/P-393); a configured order, from the delegate or from configuration, replaces it — **SECURITY-MOTIVATED, do not reorder back to `[Header, Claim, Database]` without a security review.** The prior default let an unsigned, caller-supplied `X-Tenant-Id` header outrank a cryptographically-verified JWT tenant claim for the same request, since the middleware takes the first strategy that resolves and stops; putting `Claim` first closes that vector, and the reorder is provably safe for the pre-existing B2B/API-key header-only path because `ClaimTenantResolutionStrategy` returns `null` for any unauthenticated request or a token with no tenant claim. `AddSharedKernelMultiTenancy()` also registers `TenantResolutionOptionsValidator` via `.ValidateOnStart()` — a `StrategyOrder` entry naming an unregistered strategy (a typo, or a strategy whose registration was removed) fails fast at `IHost.StartAsync()` instead of silently resolving every request to `Guid.Empty`.
-3. Every dependency-specific health check (`AddDatabaseReadinessCheck<TContext>`, `AddDapperDatabaseReadinessCheck`, `AddRedisHealthCheck`, `AddCacheReadinessCheck`, `AddMessagingReadinessCheck`, `AddStorageReadinessCheck`, `AddSearchReadinessCheck`, `AddVectorStoreReadinessCheck`, `AddWorkflowReadinessCheck`) is an explicit opt-in call on the `IHealthChecksBuilder` returned by `services.AddHealthChecks()`. A service only registers the checks for dependencies it actually uses. `AddStorageReadinessCheck(storeName)` requires the name of a store registered with `AddSharedKernelStorage()`, `AddSearchReadinessCheck(indexName)` requires `indexName`, and `AddVectorStoreReadinessCheck(collectionName)` requires `collectionName`, as explicit arguments — none is ever read from a provider's own options type (`SharedKernel.Storage.S3`/`.Obs`'s store settings, `SharedKernel.Search.Meilisearch`/`.ElasticSearch`'s index configuration, or `SharedKernel.AI.Qdrant`/`.Milvus`'s collection configuration), since that would reintroduce the provider-specific coupling these methods exist to avoid. Each resolves only its neutral abstraction (`IFileStorageHealthProbe`, `ISearchIndexProvisioner`, `IVectorCollectionProvisioner`) from DI and works uniformly against whichever provider is registered. `AddWorkflowReadinessCheck()` and `AddMessagingReadinessCheck()` take **no** identifier argument — `IWorkflowServiceProbe`/`IMessageBusProbe` are both per-host singletons with nothing analogous to a store/index/collection name to disambiguate; `AddMessagingReadinessCheck()` specifically resolves `07.Messaging`'s `IMessageBusProbe` from DI (registered unconditionally by `MessagingBusBuilder.Build()`), reflecting the real, already-configured bus rather than opening a second, independent connection. `AddSearchReadinessCheck`/`AddVectorStoreReadinessCheck`/`AddWorkflowReadinessCheck`/`AddMessagingReadinessCheck` all report `Unhealthy` — never `Degraded` — unless every one of their probe's boolean signals (`Reachable`+`IndexAddressable`+`Searchable`; `Reachable`+`CollectionAddressable`+`Queryable`; `Reachable`+`NamespaceAddressable`+`WorkerPollersActive`; `IsHealthy`, respectively) report `true`; a deep write/task backlog (`PendingWriteCount`/`TaskQueueBacklog`) is surfaced only as informational `HealthCheckResult.Data` and never fails the check, since it means results are stale or work is slow, not that the dependency is unavailable.
+1. **`builder.AddServiceDefaults()` is the first call.** It wires OpenTelemetry and the always-on `"startup"` check.
+   Chain your readiness checks onto `builder.Services.AddHealthChecks()`; a second `AddSharedKernelHealthChecks()`
+   registers `"startup"` twice and the host throws at startup.
+2. **`app.UseSharedKernelRequestContext()` is the first middleware**, before `UseExceptionHandler()`, so every later
+   middleware logs with the correlation id and every response — error responses included — echoes
+   `X-Correlation-Id`. It is safe before `UseAuthentication()`: the caller is read only when something first asks.
+3. **`TenantResolutionMiddleware` runs after `UseAuthentication()`** — the claim strategy needs the authenticated
+   user. It opens an inner request-context scope that replaces only the tenant. Registering
+   `AddSharedKernelMultiTenancy()` without the middleware leaves the tenant as the one the caller's credential
+   asserts, with no header or directory resolution.
+4. **`MtlsForwardedHeaderMiddleware`** must be added explicitly when `AddMtlsForwardedHeaderCertificate()` is used,
+   and before `UseAuthentication()` so the certificate is set when authentication runs.
+5. **`app.UseRateLimiter()`** is required when `AddSharedKernelRateLimiting()` is used — after authentication, so a
+   policy can partition by the caller — unless the service uses `UseSharedKernelWebApi()`, which adds it itself.
+6. **Registration order of readiness probes does not matter**: `AddSharedKernelReadiness()` reads the probes when
+   health checks are first resolved.
 
-   **Migration note (WO-054/P-351, breaking change):** `AddRabbitMqMessagingHealthCheck(amqpUri)` and `AddAzureServiceBusMessagingHealthCheck(connectionStringOrNamespace)` have been **removed outright, not deprecated** — no signature-compatible replacement exists. Both independently constructed a second connection from a caller-supplied connection string, entirely disconnected from whatever `07.Messaging.MassTransit`'s `MessagingBusBuilder` actually configured for the service — a health check that could pass while the real bus was down, or fail while it was healthy. Replace either call with `.AddMessagingReadinessCheck()` (no arguments — it resolves `IMessageBusProbe` from DI, which already reflects the real, already-configured bus).
-4. `WithMessagingTelemetry()` / `WithCachingTelemetry()` / `WithApplicationTelemetry()` / `WithSearchTelemetry()` / `WithIntelligenceTelemetry()` / `WithWorkflowTelemetry()` / `WithPersistenceTelemetry()` / `WithCommunicationTelemetry()` / `WithIntegrationTelemetry()` are all optional. The first seven only wire already-existing `ActivitySource`/`Meter` instruments owned by `07.Messaging`, `02.Caching`, `05.Application` (`SharedKernel.Application`), `09.Search`, `10.Intelligence`, `17.Workflows`, and `06.Persistence` respectively into this host's `TracerProvider`/`MeterProvider`, by bare string name, with no `ProjectReference` to their owning domain. `WithApplicationTelemetry()` also adds a histogram view for `sharedkernel.application.request.duration`, which `05.Application`'s metrics behavior records in **seconds**: the view applies the OpenTelemetry request-duration bucket boundaries (`0.005` … `10` s), because the SDK's default boundaries assume milliseconds and would put nearly every request in the first bucket. `WithPersistenceTelemetry()` and `WithIntegrationTelemetry()` are the two exceptions among those to the "wires both tracing and metrics" pattern most of their siblings share: `06.Persistence` and `15.Integration` each ship only an `ActivitySource` (for repository-operation spans and webhook-dispatch spans respectively), no companion `Meter`, so both methods call `WithTracing(...)` only — a deliberate scope decision (D-16 for persistence, D-29 for integration), not an oversight, and each will gain a `WithMetrics(...)` call only if its owning domain ships a corresponding meter in a future phase. `WithIntegrationTelemetry()` wires `15.Integration`'s `"SharedKernel.Integration"` `ActivitySource` (`WebhookIntegrationActivitySource`, WO-064/P-424) — again by bare string name, with no `ProjectReference` to `SharedKernel.Integration.Webhooks`. `WithCommunicationTelemetry()` — the eighth sibling — is architecturally distinct from the rest: `11.Communication` owns no `"SharedKernel.Communication"` instrumentation source of its own to wire by string name, so this method instead activates two independent **third-party** OTel integrations already referenced transitively inside `11.Communication` but never invoked by anything: gRPC client tracing (`OpenTelemetry.Instrumentation.GrpcNetClient` — the family's first member requiring its own new `PackageReference` on this package, since there is no `"SharedKernel.Communication"` source to reach by a bare `AddSource` call) and Polly v8's own `"Polly"`-named resilience `Meter` (retry/circuit-breaker/timeout telemetry — **metrics only**; Polly v8.4.2, the version pinned transitively by `Microsoft.Extensions.Http.Resilience 10.7.0`, was confirmed by decompilation to emit no corresponding `ActivitySource`, so there is no `WithTracing(AddSource("Polly"))` call). `WithCommunicationTelemetry()` is purely additive to the baseline HTTP spans `OpenTelemetry.Instrumentation.Http` already produces unconditionally inside `AddSharedKernelTelemetry` — never a replacement. `WithStorageTelemetry()` (added with `08.Storage`'s P-559 redesign) wires `08.Storage`'s `"SharedKernel.Storage"` `ActivitySource` and `Meter` (spans `storage {operation}`; `storage.client.operation.duration`, `storage.client.bytes`) the same string-name-only way, with no `ProjectReference` to `08.Storage`. All ten methods are idempotent — calling any of them more than once registers no duplicate instrument.
-5. `app.UseMiddleware<TenantResolutionMiddleware>()` is **required** whenever `AddSharedKernelMultiTenancy()` is used, and **must** be placed after `app.UseAuthentication()` — `ClaimTenantResolutionStrategy` needs a populated `HttpContext.User`. Without this call, `AmbientTenantProvider.TenantId` stays permanently `Guid.Empty` (a silent, by-design failure mode, not a crash).
-6. `app.MapDefaultHealthCheckEndpoints(bool requireAuthorization = false)` maps `/health/live` (only `"live"`-tagged checks — process-alive signal only) and `/health/ready` (only `"ready"`-tagged checks — may depend on DB/cache/broker connectivity, gates load-balancer rotation, never restarts the pod). `requireAuthorization: true` chains `.RequireAuthorization()` onto both mappings — see "Health endpoint exposure" below for the required network-isolation guidance and a worked example.
-7. `AddMtlsClientCertificate()` / `AddMtlsForwardedHeaderCertificate()` are both optional and cover two mutually-exclusive TLS-termination topologies — a host MAY register both if its actual deployment genuinely varies by environment. `AddMtlsClientCertificate(mode)` is for hosts where TLS terminates directly at Kestrel: it wires `KestrelServerOptions.ConfigureHttpsDefaults` and needs no separate middleware registration. `AddMtlsForwardedHeaderCertificate(configure)` is for hosts where TLS terminates at an ingress/gateway that forwards the client certificate as a request header instead — it registers `MtlsForwardedHeaderOptions` (with `HeaderName` **required**, no platform default, since nginx-ingress/Envoy/Istio/HAProxy each use a different header name/encoding) and must be paired with an explicit `app.UseMiddleware<MtlsForwardedHeaderMiddleware>()` call, mirroring `AddSharedKernelMultiTenancy()`'s "register services here, wire the middleware separately" split. Neither surface reimplements X.509 chain/revocation validation — both delegate the accept/reject decision to `12.Security`'s `SharedKernel.Security.Mtls.IMtlsCertificateValidator`, which must already be registered (typically via `AddMtlsAuthentication<TValidator>()`); omitting it throws at the first TLS handshake (Kestrel path) or first request (forwarded-header path), not at startup. Because Kestrel's `ClientCertificateValidation` delegate is synchronous but `IMtlsCertificateValidator.ValidateAsync` is async-only, `AddMtlsClientCertificate` bridges the two with a blocking `.GetAwaiter().GetResult()` call inside the TLS handshake — a real latency/thread-pool-starvation cost under load, so a validator used on this path must resolve quickly (an in-memory allow-list or a cached trust decision) and must never make a slow remote call (CRL/OCSP, an external policy service). A host that calls neither method is byte-identical in behavior to today — Kestrel's default `ClientCertificateMode.NoCertificate` stays untouched and no new middleware enters the pipeline.
-8. `AddSharedKernelRateLimiting()` is optional. When used, `app.UseRateLimiter()` must also be added to the pipeline (typically before the tenant/mTLS middleware, so a rejected request never reaches them) — unless the service uses `14.Presentation`'s `UseSharedKernelWebApi()`, which adds it itself. See "Rate limiting" below.
+## Readiness
 
-### mTLS forwarded-header trust boundary
+| Probe name | Registered by |
+| --- | --- |
+| `messaging` | `MessagingBusBuilder.Build()` (`07.Messaging`) |
+| `redis` | `AddRedisConnection(configuration)` (`02.Caching`) |
+| `cache` | the FusionCache registration (`02.Caching`) |
+| `encryption-key-provider` | the Azure Key Vault encryption key provider (`01.Core`) |
+| `field-encryption` | `UseFieldEncryption()` (`06.Persistence`) |
+| `audit-sealing` | `UseAuditTrail()` (`06.Persistence`) |
+| `storage-{store}` | each `AddStore(name)` / `AddTenantStore(name)` (`08.Storage`) |
+| `search-{provider}-{index}` | each registered search index (`09.Search`) |
+| `vector-store-{provider}-{collection}` | each registered vector collection (`10.Intelligence`) |
+| `workflows` | the Temporal worker registration (`17.Workflows`) |
+| `scheduler` | `AddSharedKernelScheduling()` (`19.Scheduling`) |
 
-`MtlsForwardedHeaderOptions.TrustedNetworks` (WO-061/P-394) is an opt-in allowlist of the IP networks permitted to set the forwarded client-certificate header, mirroring ASP.NET Core's own `ForwardedHeadersOptions.KnownProxies`/`KnownNetworks` shape (unified into one `IPNetwork`-based collection, since `System.Net.IPNetwork` — BCL since .NET 8 — already expresses a single trusted proxy as a `/32`/`/128` network):
+Leave one off `/health/ready` with `AddSharedKernelReadiness(o => o.Exclude("cache"))`, or give every probe a time
+limit with `o.Timeout`. A service's own dependency implements `IReadinessProbe` and registers it with
+`services.AddReadinessProbe<T>()` (`SharedKernel.Primitives.Health`).
+
+## Health endpoint exposure
+
+**`/health/live` AND `/health/ready` MUST BE NETWORK-RESTRICTED AT THE INGRESS/`NETWORKPOLICY` LAYER IN ANY
+ENVIRONMENT WHERE THEY ARE NOT INTENTIONALLY PUBLIC.** `MapDefaultHealthCheckEndpoints(requireAuthorization: true)` is
+defense in depth only — a kubelet's probes are unauthenticated, so enabling it on the endpoints the kubelet calls
+fails those probes. When health data reaches an external audience, serve only the overall status:
 
 ```csharp
-builder.AddMtlsForwardedHeaderCertificate(o =>
+app.MapHealthChecks("/health/status", new HealthCheckOptions
 {
-    o.HeaderName = "ssl-client-cert";
-    o.AddTrustedNetwork(IPNetwork.Parse("10.0.0.0/16"));   // the ingress-controller subnet
-    o.AddTrustedProxy(IPAddress.Parse("10.0.5.7"));        // a single known proxy hop
+    Predicate = _ => false,
+    ResponseWriter = (context, report) =>
+    {
+        context.Response.ContentType = "application/json";
+        return context.Response.WriteAsync($$"""{"status":"{{report.Status}}"}""");
+    },
 });
 ```
 
-When `TrustedNetworks` is non-empty, `MtlsForwardedHeaderMiddleware` ignores — never decodes, validates, or sets `HttpContext.Connection.ClientCertificate` for — a forwarded header from a remote IP outside the allowlist, regardless of whether the certificate itself would otherwise validate. **Leaving `TrustedNetworks` unconfigured (the default, shown in the unconfigured example above) preserves the pre-P-394 unrestricted behavior** — any network path that reaches this host directly (a misconfigured `NetworkPolicy`, a multi-hop mesh topology, a debug port, a compromised sidecar) can forge the header identically to the real ingress. A one-time startup `Warning` log (`MtlsLog.ForwardedHeaderTrustBoundaryUnconfigured`, EventId `13003`, in `SharedKernel.ServiceDefaults.Security.Mtls`) states this whenever `TrustedNetworks` is left empty. Configuring `TrustedNetworks` is recommended in production for the same reason `KnownProxies`/`KnownNetworks` is recommended for ASP.NET Core's own `UseForwardedHeaders()`.
+## Rate limiting
 
-### Rate limiting
-
-`AddSharedKernelRateLimiting()` wraps ASP.NET Core's own built-in `Microsoft.AspNetCore.RateLimiting` middleware (no new NuGet dependency) with a conservative default: a global fixed-window limiter partitioned by remote IP (100 requests/minute), plus a named `RateLimitPolicyNames.Authentication` policy (10 requests/minute) a consumer attaches to its own token/login routes. Without `14.Presentation`, add the middleware yourself:
-
-```csharp
-builder.AddSharedKernelRateLimiting();
-// ...
-app.UseRateLimiter();
-
-app.MapPost("/auth/token", TokenEndpoint)
-    .RequireRateLimiting(RateLimitPolicyNames.Authentication);
-```
-
-Both thresholds are deliberately conservative defaults, not a tuned-for-every-service policy — a consuming service that needs per-endpoint or per-tenant tuning passes its own `configure` delegate (invoked **last**, after this method's own defaults, so it can override any threshold or add further named policies):
+`AddSharedKernelRateLimiting()` wraps ASP.NET Core's `Microsoft.AspNetCore.RateLimiting`: a global fixed window per
+remote IP (100 requests/minute) and the named `RateLimitPolicyNames.Authentication` policy (10/minute) for login and
+token routes. The `configure` delegate runs last and can override either threshold or add named policies:
 
 ```csharp
 builder.AddSharedKernelRateLimiting(options =>
@@ -176,110 +162,92 @@ builder.AddSharedKernelRateLimiting(options =>
 });
 ```
 
-#### Rejection body
+Without `14.Presentation`, add the middleware yourself:
 
-This domain never references `14.Presentation`, and `AddSharedKernelRateLimiting()` leaves `RateLimiterOptions.OnRejected` unset. On its own that gives ASP.NET Core's default rejection: a bare `429` with no body. A service that also uses `14.Presentation`'s `SharedKernel.Presentation.WebApi` gets the platform's RFC 9457 body with nothing to write — `AddSharedKernelWebApi()` fills `OnRejected` whenever nothing else has — and `UseSharedKernelWebApi()` adds `UseRateLimiter()` to the pipeline itself: after authentication, so a policy can partition by the caller, and before authorization, so requests refused with 401 or 403 still count against the limit:
+```csharp
+builder.AddSharedKernelRateLimiting();
+// ...
+app.UseRateLimiter();
+app.MapPost("/auth/token", TokenEndpoint).RequireRateLimiting(RateLimitPolicyNames.Authentication);
+```
+
+### Rejection body
+
+`AddSharedKernelRateLimiting()` leaves `RateLimiterOptions.OnRejected` unset (P-562). On its own that gives ASP.NET
+Core's default rejection: a bare `429` with no body. A service that also uses `14.Presentation`'s
+`SharedKernel.Presentation.WebApi` gets the platform's RFC 9457 body with nothing to write — `AddSharedKernelWebApi()`
+fills `OnRejected` whenever nothing else has — and `UseSharedKernelWebApi()` adds `UseRateLimiter()` itself: after
+authentication, so a policy can partition by the caller, and before authorization, so requests refused with 401 or 403
+still count against the limit:
 
 ```csharp
 builder.AddSharedKernelWebApi();                       // 14.Presentation
 builder.AddSharedKernelRateLimiting();
 
 var app = builder.Build();
+app.UseSharedKernelRequestContext();
 app.UseSharedKernelWebApi();                           // includes UseRateLimiter()
 
 app.MapPost("/auth/token", TokenEndpoint)
     .RequireRateLimiting(RateLimitPolicyNames.Authentication);
 ```
 
-A rejected request is then answered `429 Too Many Requests` with `Content-Type: application/problem+json`, `errorCode` `rate_limit.exceeded`, the same `traceId`/`correlationId` members as every other error response, and a `Retry-After` header in whole seconds whenever the limiter reports a delay — the fixed-window limiters this method installs always do. There is nothing to hand-roll: never write a `ProblemDetails` body yourself to get this shape. A service that needs a different rejection sets its own `OnRejected` in `configure`; `AddSharedKernelWebApi()` never overwrites a handler a service wrote.
+A rejected request is then answered `429 Too Many Requests` with `Content-Type: application/problem+json`, `errorCode`
+`rate_limit.exceeded`, the same `traceId`/`correlationId` members as every other error response, and a `Retry-After`
+header in whole seconds whenever the limiter reports a delay — the fixed-window limiters this method installs always
+do. Never write a `ProblemDetails` body yourself to get this shape. A service that needs a different rejection sets its
+own `OnRejected` in `configure`; `AddSharedKernelWebApi()` never overwrites a handler a service wrote.
 
-`RateLimitRejectionRecipeTests` (`SharedKernel.ServiceDefaults.Tests`) proves all of this against real hosts: a policy rejection and a global-limiter rejection (429, `application/problem+json`, `rate_limit.exceeded`, `Retry-After`), a service's own `OnRejected`, and a host without `14.Presentation` (a bare `429` — no body, no `Retry-After`). It reaches `SharedKernel.Presentation.WebApi` through a **test-only** `ProjectReference`; the production `SharedKernel.ServiceDefaults.csproj` takes no reference to `14.Presentation` in either direction.
+`RateLimitRejectionRecipeTests` (`SharedKernel.ServiceDefaults.Tests`) proves this against real hosts through a
+**test-only** reference to `SharedKernel.Presentation.WebApi`; `SharedKernel.ServiceDefaults` itself takes no
+reference to `14.Presentation` in either direction.
 
-### Secrets-manager configuration
+## Tenant status validation
 
-`AddSharedKernelKeyVaultConfiguration(vaultUri, credential?)` adds Azure Key Vault as an additional `IConfiguration` source, wrapping `Azure.Extensions.AspNetCore.Configuration.Secrets`:
-
-```csharp
-builder.AddSharedKernelKeyVaultConfiguration(new Uri("https://my-vault.vault.azure.net/"));
-// -- or with an explicit credential instead of the DefaultAzureCredential fallback --
-builder.AddSharedKernelKeyVaultConfiguration(new Uri("https://my-vault.vault.azure.net/"), new ManagedIdentityCredential());
-```
-
-**NEVER COMMIT PLAINTEXT SECRETS (CONNECTION STRINGS, API KEYS, SIGNING KEYS) TO `appsettings.json` OR ANY FILE TRACKED BY SOURCE CONTROL.** Use this method (or an environment-appropriate equivalent) to source secret values from a real secrets manager instead. A misconfigured or unreachable vault throws synchronously from this call, at startup — `ConfigurationManager` (the concrete type behind `IHostApplicationBuilder.Configuration` for both `WebApplicationBuilder` and `Host.CreateApplicationBuilder`) rebuilds its `IConfigurationRoot` eagerly on every `Add(...)` call, unlike the classic deferred-`Build()` `ConfigurationBuilder` pattern, so there is no silent "empty configuration source" fallback to guard against.
-
-Azure Key Vault is the first of a deliberately pluggable secrets-provider family (mirroring `08.Storage`'s S3/OBS multi-cloud precedent) — chosen first because `12.Security.Oidc` targeted Azure B2C when this shipped (that wiring has since been removed; generic OIDC covers Entra ID), and `TokenCredential`/`DefaultAzureCredential` is first-class in the Azure identity story. AWS Secrets Manager and HashiCorp Vault are explicit, documented future providers, not yet implemented.
-
-### Health endpoint exposure
-
-**`/health/live` AND `/health/ready` MUST BE NETWORK-RESTRICTED AT THE INGRESS/`NETWORKPOLICY` LAYER IN ANY ENVIRONMENT WHERE THEY ARE NOT INTENTIONALLY PUBLIC, INDEPENDENT OF WHETHER `requireAuthorization` IS USED.** `MapDefaultHealthCheckEndpoints(requireAuthorization: true)` is defense-in-depth only, never a substitute for network isolation — a Kubernetes kubelet's own liveness/readiness probe calls are typically unauthenticated, so enabling this parameter on the endpoint set the kubelet itself calls will cause the kubelet's own probes to be rejected. Reserve `requireAuthorization: true` for a deployment where these endpoints are deliberately reachable by something other than the kubelet (e.g. an external status dashboard behind its own auth), and gate the kubelet's own probe calls separately (a second, unauthenticated endpoint set, or an ingress rule that exempts the kubelet's source network).
-
-When health data is exposed to an external audience, prefer a minimal `ResponseWriter` that serializes only the overall status — never the default `HealthReport.Entries[*].Data`/`.Description`, which can leak dependency version/connection details:
+`ITenantStatusValidator` lets `TenantResolutionMiddleware` reject a resolved tenant that is suspended or offboarded.
+It is optional; when registered, a `false` result fails closed exactly like "no tenant resolved":
 
 ```csharp
-app.MapDefaultHealthCheckEndpoints();
-
-app.MapHealthChecks("/health/status", new HealthCheckOptions
+public sealed class SqlTenantStatusValidator(ITenantDirectory directory) : ITenantStatusValidator
 {
-    Predicate = _ => false,   // aggregate status only — evaluates no individual checks
-    ResponseWriter = (context, report) =>
-    {
-        context.Response.ContentType = "application/json";
-        return context.Response.WriteAsync($$"""{"status":"{{report.Status}}"}""");
-    },
-});
-```
-
-### Tenant-status validation bridge (`ITenantStatusValidator`)
-
-`ITenantStatusValidator` (WO-061/P-400) is a locally-owned, opt-in seam — mirroring `05.Application`'s `IRequestContext`/`IUnitOfWork` bridge pattern — letting `TenantResolutionMiddleware` reject an otherwise-resolved tenant whose status is suspended/offboarded, without this package taking a direct dependency on any specific tenant directory or cache technology:
-
-```csharp
-// ITenantStatusValidator — bridge to the consuming service's own tenant directory/cache.
-// Never a direct 06.Persistence/02.Caching reference from SharedKernel.MultiTenancy itself.
-services.AddScoped<SharedKernel.MultiTenancy.Resolution.ITenantStatusValidator, SqlTenantStatusValidator>();
-
-public sealed class SqlTenantStatusValidator(ITenantDirectoryReadService directory) : ITenantStatusValidator
-{
-    public async Task<bool> IsActiveAsync(Guid tenantId, CancellationToken ct) =>
-        await directory.GetTenantStatusAsync(tenantId, ct) is TenantStatus.Active;
+    public async Task<bool> IsActiveAsync(TenantId tenantId, CancellationToken ct) =>
+        await directory.GetStatusAsync(tenantId, ct) is TenantStatus.Active;
 }
+
+builder.Services.AddScoped<ITenantStatusValidator, SqlTenantStatusValidator>();
 ```
 
-Resolved as an **optional** DI service — `null` means "not registered," and the check is skipped entirely (zero added latency, zero behavior change) unless a consuming service registers an implementation. A `false` result is treated identically to "no strategy resolved a tenant" (the existing `Guid.Empty` fail-closed path), so an inactive tenant is deliberately indistinguishable from an absent one to every downstream consumer. Services using `DatabaseTenantResolutionStrategy` for DB-per-tenant/schema-per-tenant isolation already get equivalent protection by construction — its directory lookup IS an existence check — so registering `ITenantStatusValidator` alongside it is redundant but harmless, never a behavior conflict.
+`CatalogTenantStatusValidator` is a ready-made implementation over `ITenantCatalog` — see the
+[MultiTenancy README](SharedKernel.MultiTenancy/README.md).
 
-### Automatic log export and ambient TenantId/CorrelationId enrichment
+## Log enrichment
 
-`builder.AddServiceDefaults()` (via `AddSharedKernelTelemetry`) automatically exports every
-`[LoggerMessage]`-authored log record through the same OTLP pipeline as traces and metrics —
-`IncludeScopes` and `IncludeFormattedMessage` are both enabled, and a `BaggageLogRecordProcessor`
-copies the platform's two `System.Diagnostics.Activity` baggage items onto each log record's
-attributes as the record is emitted, before export. No application-code call-site changes are needed to get this.
+`AddServiceDefaults()` exports every log record through OTLP with scopes and formatted messages, and
+`BaggageLogRecordProcessor` copies the platform's two `Activity` baggage items onto each record. That is how the
+correlation id and the tenant id reach every log line without a call site passing them:
 
 | Log attribute | Written by |
 | --- | --- |
-| `correlation.id` | `14.Presentation`'s correlation-id middleware: the caller's `X-Correlation-Id` when it is a single valid value, otherwise the request's W3C trace id (a new GUID when there is no trace) — with **zero** `ProjectReference` from `13.ServiceDefaults` to `14.Presentation` |
-| `TenantId` | `SharedKernel.MultiTenancy`'s `TenantResolutionMiddleware` (with `AddSharedKernelMultiTenancy()`): the resolved tenant, or `Guid.Empty` when none resolves, so log aggregation can tell "no tenant resolved" from "enrichment never wired" |
+| `correlation.id` | `UseSharedKernelRequestContext()` (and `SharedKernel.Presentation.Grpc`'s correlation interceptor): the caller's `X-Correlation-Id` when it is valid, otherwise a new id |
+| `TenantId` | `SharedKernel.MultiTenancy`'s `TenantResolutionMiddleware`, when a tenant resolves |
 
-**Nothing else is copied (P-562 X2).** Baggage also comes from outside: a caller's W3C `baggage`
-header, and message headers, which MassTransit copies onto the consuming activity. Copying every item
-would let an anonymous caller put any property — a forged `SubjectId`, another tenant's `TenantId` — on
-every log record of its request. Both middlewares *replace* their key, and a value containing a
-control character (CR, LF and the rest) or a Unicode line separator is never copied. Any other value
-you want on a log record belongs in the log statement itself.
+**Nothing else is copied (P-562 X2).** Baggage also comes from outside: a caller's W3C `baggage` header, and message
+headers, which MassTransit copies onto the consuming activity. Copying every item would let an anonymous caller put any
+property — a forged `SubjectId`, another tenant's `TenantId` — on every log record of its request. Both writers
+*replace* their key, and a value containing a control character (CR, LF and the rest) or a Unicode line separator is
+never copied. Any other value you want on a log record belongs in the log statement itself.
 
 **A caller's baggage never reaches OpenTelemetry's baggage store either.** OpenTelemetry's ASP.NET Core
-instrumentation used to read the request's `baggage` header into `Baggage.Current`, and the HttpClient and
-gRPC client instrumentations then sent it to every downstream service. `AddSharedKernelTelemetry`
-decorates the default propagator so a request's baggage is dropped there; trace context is still read,
-and baggage your service sets itself still leaves with outgoing calls: `Baggage.SetBaggage` items and,
-while `Baggage.Current` is empty, `Activity` baggage such as the correlation id. The request's `Activity` is the other store: `14.Presentation`'s
-WebApi core clears the caller's items there (`TrustInboundBaggage`, off by default). A service serving
-HTTP without that package keeps the framework default, so a caller's `TenantId` or `correlation.id`
-item stays on the activity unless the middleware above replaces it.
+instrumentation used to read the request's `baggage` header into `Baggage.Current`, and the HttpClient and gRPC client
+instrumentations then sent it to every downstream service. `AddSharedKernelTelemetry` decorates the default propagator
+so a request's baggage is dropped there; trace context is still read, and baggage your service sets itself still
+leaves with outgoing calls. The request's `Activity` is the other store: `UseSharedKernelRequestContext()` clears the
+caller's items there at the edge (`TrustInboundBaggage`, off by default). A service serving HTTP without it keeps the
+framework default, so a caller's `TenantId` or `correlation.id` item stays on the activity unless the middleware above
+replaces it.
 
-**Messages:** a consumer's log records carry the publisher's `correlation.id` and `TenantId`, which
-MassTransit carries across in its own header, and nothing else from that header. The tenant a consumer
-acts on comes from dedicated message headers (`07.Messaging`'s `WithInboundRequestContext()`), never from
-baggage.
+**Messages:** a consumer's log records carry the publisher's `correlation.id` and `TenantId`, which MassTransit carries
+across in its own header, and nothing else from that header. The tenant a consumer acts on comes from dedicated message
+headers (`07.Messaging`'s `WithInboundRequestContext()`), never from baggage.
 
-See `13.ServiceDefaults/CLAUDE.md` for the full interface contracts, tag taxonomy, and implementation rules.
+See [`13.ServiceDefaults/CLAUDE.md`](CLAUDE.md) for the contracts and implementation rules.

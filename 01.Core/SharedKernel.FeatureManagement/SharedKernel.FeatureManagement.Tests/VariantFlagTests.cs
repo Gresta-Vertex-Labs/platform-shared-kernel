@@ -22,7 +22,7 @@ public sealed class VariantFlagTests
                 "allocation": {
                   "default_when_enabled": "Classic",
                   "user": [ { "variant": "Dark", "users": [ "alice" ] } ],
-                  "group": [ { "variant": "Dark", "groups": [ "tenant-acme" ] } ]
+                  "group": [ { "variant": "Dark", "groups": [ "0f8fad5b-d9cb-469f-a165-70867728950e" ] } ]
                 }
               },
               {
@@ -110,7 +110,7 @@ public sealed class VariantFlagTests
         IFeatureClient client = provider.NewScopeClient();
 
         Assert.Equal("dark", await client.GetValueAsync(Theme, new FeatureTargetingContext("alice").ToEvaluationContext()));
-        Assert.Equal("dark", await client.GetValueAsync(Theme, FeatureTargetingContext.ForTenant("tenant-acme").ToEvaluationContext()));
+        Assert.Equal("dark", await client.GetValueAsync(Theme, FeatureTargetingContext.ForTenant(TestTenants.Acme).ToEvaluationContext()));
         Assert.Equal("classic", await client.GetValueAsync(Theme, new FeatureTargetingContext("bob").ToEvaluationContext()));
     }
 

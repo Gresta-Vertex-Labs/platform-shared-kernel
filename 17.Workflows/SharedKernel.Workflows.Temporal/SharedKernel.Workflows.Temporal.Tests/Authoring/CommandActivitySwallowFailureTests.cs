@@ -1,8 +1,7 @@
 using FluentAssertions;
-using MediatR;
+using SharedKernel.Application.Messaging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
-using SharedKernel.Application;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;

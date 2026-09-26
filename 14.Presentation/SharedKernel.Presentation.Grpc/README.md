@@ -6,8 +6,10 @@
 
 The server-side gRPC sibling of
 [`SharedKernel.Presentation.WebApi`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/14.Presentation/SharedKernel.Presentation.WebApi).
-gRPC calls run through the same ASP.NET Core pipeline, so they share its error presentation (status category,
-translation, redaction), its correlation ids and its authorization. The client side is
+gRPC calls run through the same ASP.NET Core pipeline, so they share the request context of
+`SharedKernel.ServiceDefaults.Security`'s `UseSharedKernelRequestContext()` (caller, tenant, correlation id) and the
+error presentation (status category, translation, redaction) and authorization of `SharedKernel.Presentation.Core`. It
+never references the WebApi package, so a gRPC host takes no HTTP API stack (P-579). The client side is
 `SharedKernel.Communication.Grpc` (11.Communication). Protobuf messages are a gRPC service's wire contract, so this
 package never references `SharedKernel.Contracts`.
 
@@ -31,7 +33,9 @@ dotnet add package SharedKernel.Presentation.Grpc
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
-| Dependencies | `SharedKernel.Presentation.WebApi`, `Grpc.AspNetCore`, `Grpc.StatusProto`, `Google.Api.CommonProtos` |
+| Tier | Host (referenced by a service's API project) |
+| Dependencies | `SharedKernel.Presentation.Core`, `SharedKernel.Core`, `SharedKernel.Configuration`, `Grpc.AspNetCore`, `Grpc.StatusProto`, `Google.Api.CommonProtos` — never `SharedKernel.Presentation.WebApi` or `SharedKernel.Contracts` |
+| Composed with | `SharedKernel.ServiceDefaults.Security` (the request context), and optionally `SharedKernel.Presentation.WebApi` for a host that also serves HTTP |
 
 A service that compiles its own `.proto` files also references `Grpc.AspNetCore` directly, which brings `Grpc.Tools`
 for the `<Protobuf Include="…" GrpcServices="Server" />` items.
@@ -39,16 +43,20 @@ for the `<Protobuf Include="…" GrpcServices="Server" />` items.
 ## Use
 
 ```csharp
+using SharedKernel.Presentation.Authorization;   // RequireEndpointPermission
 using SharedKernel.Presentation.Grpc;
 using SharedKernel.Presentation.WebApi;
+using SharedKernel.ServiceDefaults.Security;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.AddSharedKernelRequestContext();   // each call's caller, tenant and correlation id
 builder.AddSharedKernelWebApi();
 builder.AddSharedKernelGrpc(options => options.ErrorDomain = "orders.example.com");
 
 var app = builder.Build();
-app.UseSharedKernelWebApi();   // correlation ids, authentication, authorization — gRPC calls included
+app.UseSharedKernelRequestContext();   // first: each call's RequestContextScope and correlation id
+app.UseSharedKernelWebApi();           // authentication, authorization — gRPC calls included
 
 app.MapGrpcService<OrderGrpcService>().RequireEndpointPermission("orders.read");
 
@@ -78,9 +86,9 @@ the service reads:
 
 ```csharp
 using Grpc.Core;
-using MediatR;
+using SharedKernel.Application.Messaging; // ISender
 using SharedKernel.Core.Extensions;       // GetValueOrThrow, ThrowIfFailure
-using SharedKernel.Presentation.WebApi;   // RequireEndpointPermission, RequireFreshAuthentication
+using SharedKernel.Presentation.Authorization;   // RequireEndpointPermission, RequireFreshAuthentication
 
 [RequireEndpointPermission("orders.read")]      // guards every method of the service
 public sealed class OrderGrpcService(ISender sender) : OrderService.OrderServiceBase
@@ -107,13 +115,14 @@ A service method sends `05.Application` commands and queries through `ISender`, 
   `Error.ToException()`: the `SharedKernelException` of the error's type (a `DomainException` for `Unavailable` and
   `Timeout`), carrying the error unchanged. This package has no result extensions of its own, so importing both
   namespaces never makes a call ambiguous.
-- `AddSharedKernelGrpc()` calls `AddGrpc()` with the exception interceptor, registers the WebApi authorization
-  policies, and returns `AddGrpc()`'s `IGrpcServerBuilder`. It binds `SharedKernel:Presentation:Grpc`, validates it when the host
+- `AddSharedKernelGrpc()` calls `AddGrpc()` with the exception interceptor, registers the shared authorization
+  policies of `SharedKernel.Presentation.Core`, and returns `AddGrpc()`'s `IGrpcServerBuilder`. It binds `SharedKernel:Presentation:Grpc`, validates it when the host
   starts and is idempotent.
 - Global interceptors run in the order they are added, the first outermost: call it before adding your own, so the
   exceptions they throw are mapped too.
-- Without `UseSharedKernelWebApi()`, call `UseRouting()`, `UseAuthentication()` and `UseAuthorization()` before
-  mapping services; errors keep their rich status but carry no correlation id.
+- Without `UseSharedKernelWebApi()` (a gRPC-only host), call `UseSharedKernelRequestContext()`, `UseRouting()`,
+  `UseAuthentication()` and `UseAuthorization()` before mapping services; errors keep their rich status and their
+  correlation id. Without `UseSharedKernelRequestContext()` they carry no correlation id and methods see no scope.
 
 ## The error status
 
@@ -195,7 +204,8 @@ Its description is translated under `grpc.more_field_violations` with a `{count}
 
 ## Authorization
 
-`AddSharedKernelGrpc()` registers the HTTP core's authorization, so the WebApi attributes and conventions are native
+`AddSharedKernelGrpc()` registers `SharedKernel.Presentation.Core`'s authorization, so the attributes and conventions
+(`using SharedKernel.Presentation.Authorization;`) are native
 ASP.NET Core authorization for gRPC too: on a service class or method, and on `MapGrpcService<T>()`. Requirements of
 different attributes all apply (AND); the values of one attribute are alternatives (OR).
 
@@ -211,11 +221,20 @@ different attributes all apply (AND); the values of one attribute are alternativ
   maximum age: keep step-up operations in unary calls, or check `IUserContext.GetAuthenticationMethodTime(…)` inside
   the stream.
 
-## Correlation and tenant
+## Correlation, caller and tenant
 
-A gRPC call gets its correlation id from the HTTP pipeline: in a method it is
-`context.GetHttpContext().GetCorrelationId()`, and it is the `correlationId` of every error status. The caller and the
-tenant come from an injected `IUserContext`, `ITenantProvider` or `IRequestContext`.
+A gRPC call runs through the HTTP pipeline, so `UseSharedKernelRequestContext()` (`SharedKernel.ServiceDefaults.Security`)
+opens its `RequestContextScope` before the method runs — no gRPC interceptor is involved. In a method, read the caller,
+tenant and correlation id from an injected `IRequestContext` (or `IRequestContextAccessor`), exactly as in an HTTP
+handler; `IUserContext` gives the caller's claims. The correlation id is the inbound `x-correlation-id` metadata when it
+is valid (`CorrelationIds.IsValid`), else a new one, and it is the `correlationId` of every error status.
+
+```csharp
+public sealed class OrderGrpcService(ISender sender, IRequestContext caller) : OrderService.OrderServiceBase
+{
+    // caller.UserId, caller.TenantId, caller.CorrelationId: the call's, as UseSharedKernelRequestContext() resolved them
+}
+```
 
 ## Settings
 
@@ -268,8 +287,8 @@ EventIds 14200–14299.
 | 14204 | Debug | Any exception after the call was cancelled |
 
 Every entry carries the exception and the gRPC method; 14202 and 14203 carry the status code and the error code.
-14201 belonged to a removed authorization interceptor and is not reused. Authorization refusals are logged by the
-WebApi core (14002).
+14201 belonged to a removed authorization interceptor and is not reused. Authorization refusals are logged by
+`SharedKernel.Presentation.Core` (14002).
 
 ## Telemetry
 
@@ -283,16 +302,18 @@ server telemetry entry point.
   `RpcException` keeps only its code.
 - **Own interceptors added before `AddSharedKernelGrpc()`.** They run outside the exception interceptor, so their
   exceptions are not mapped.
-- **Correlation ids in unit tests.** A hand-built context never passes the HTTP pipeline, so `GetCorrelationId()` is
-  `null` there.
+- **The request context in unit tests.** A hand-built context never passes the HTTP pipeline, so no scope is open: a
+  test of a method that reads `IRequestContext` opens `RequestContextScope.Begin(…)` itself
+  (`SharedKernel.Presentation.Testing`'s `TestServerCallContext` and `SharedKernel.Testing`'s `TestRequestContext`).
 
 ## Not in this package
 
 | Looking for | Use instead |
 | --- | --- |
 | `ToGrpcResult`, the gRPC `ThrowIfFailure`/`GetValueOrThrow` | `SharedKernel.Core`'s `GetValueOrThrow()` and `ThrowIfFailure()` |
-| `GrpcCorrelationInterceptor` | The WebApi pipeline's correlation ids: `context.GetHttpContext().GetCorrelationId()` |
-| `GrpcTenantContextInterceptor`, `ServerCallContext.UserState` keys | An injected `ITenantProvider` or `IRequestContext` |
-| `GrpcAuthorizationInterceptor` | The WebApi attributes and conventions, enforced by ASP.NET Core authorization |
+| `GrpcCorrelationInterceptor` | `UseSharedKernelRequestContext()`'s correlation id: an injected `IRequestContext.CorrelationId` |
+| `GrpcTenantContextInterceptor`, `ServerCallContext.UserState` keys | An injected `IRequestContext` (the call's scope) |
+| `GrpcAuthorizationInterceptor` | The `SharedKernel.Presentation.Core` attributes and conventions, enforced by ASP.NET Core authorization |
+| `GrpcStatusCodeMap` in `SharedKernel.Presentation.Core` (WO-086 P-570) | It is internal to this package again (P-579) |
 | A `MaxReceiveMessageSize` pin | gRPC's own default (4 MiB), or `GrpcServiceOptions.MaxReceiveMessageSize` |
 | `AddSharedKernelGrpc(IServiceCollection, …)` | `builder.AddSharedKernelGrpc(…)` on the host builder |

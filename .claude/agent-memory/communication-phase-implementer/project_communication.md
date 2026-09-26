@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): `CorrelationIdDelegatingHandler` + `TenantIdDelegatingHandler` are now `RequestContextDelegatingHandler`; propagation reads `IRequestContextAccessor` (no `IHttpContextAccessor`, no ASP.NET Core package, no `ITenantProvider`); the three packages are Adapter tier with declared edges Rest/Grpc → Communication.Internal; `SharedKernel.Communication.GraphQL` moved to `14.Presentation` as `SharedKernel.Presentation.GraphQL`. Status sections below are history.
+
 ## Phase completion status (as of 2026-08-12, WO-056 Tests phase closed)
 
 **UPDATE 2026-08-12:** `SK.11.Tests` (T-31–T-38) fully shipped and closed — all 8 deferred
@@ -107,7 +109,7 @@ Every `11.Communication` production `.csproj` already sets `<GenerateDocumentati
 ### SharedKernel.Communication.Rest
 - `Microsoft.Extensions.Http` 10.0.9 (confirmed against `.csproj` 2026-08-11 — prior "10.0.0" note was stale)
 - `Microsoft.Extensions.Http.Resilience` 10.7.0 (confirmed against `.csproj` 2026-08-11 — prior "9.8.0" note was stale)
-- `Microsoft.AspNetCore.Http` 2.3.11 (for HttpContextAccessor concrete class; prior "2.3.0" note was stale)
+- (`Microsoft.AspNetCore.Http` was removed in WO-086 — no ASP.NET Core below the Host tier)
 
 ### SharedKernel.Communication.Grpc
 - `Grpc.Net.Client` 2.80.0
@@ -116,20 +118,15 @@ Every `11.Communication` production `.csproj` already sets `<GenerateDocumentati
 - `Google.Api.CommonProtos` 2.17.0
 - `OpenTelemetry.Instrumentation.GrpcNetClient` 1.15.1-beta.1
 
-### SharedKernel.Communication.GraphQL
-
-- `HotChocolate.Data` 16.1.4
-- `HotChocolate.AspNetCore` 16.1.4
-- Note: architecture originally specified v14 but v14 is not available for net10.0; v16.1.4 used
-
 ### SharedKernel.Communication.Internal
 
 - `Microsoft.Extensions.ServiceDiscovery` (pin TBD when SK.11.Internal I-07/I-08 complete)
 
 ## Handler pipeline order (REST) — empirically verified 2026-08-11 (R-26/WO-056)
 
-Target/correct order (outer → inner): `CorrelationIdDelegatingHandler` → `TenantIdDelegatingHandler` →
-`IdempotencyKeyDelegatingHandler` (conditional) → `StandardResilienceHandler` → transport.
+Target/correct order (outer → inner): `RequestContextDelegatingHandler` →
+`IdempotencyKeyDelegatingHandler` (conditional) → `StandardResilienceHandler` → transport. (Until WO-086 the
+first slot was two handlers, correlation-id then tenant-id; the history below uses those names.)
 
 **The rule:** on `IHttpClientBuilder`, registration *call order* is outer-to-inner — the first
 `AddHttpMessageHandler<T>()`/`AddStandardResilienceHandler()` call registered becomes the OUTERMOST
@@ -215,7 +212,7 @@ writing any wiring code — do not pattern-match a plausible-sounding method nam
 
 ## gRPC interceptor singleton registration pattern
 
-Both `CorrelationTracingInterceptor` and `TenantIdInterceptor` are registered as **singletons** via `TryAddSingleton`. Despite resolving request-scoped `ITenantProvider`, they are safe as singletons because they access the scope dynamically via `IHttpContextAccessor` at call time (not via constructor injection).
+Both `CorrelationTracingInterceptor` and `TenantIdInterceptor` are registered as **singletons** via `TryAddSingleton`, together with `TryAddSingleton<IRequestContextAccessor, RequestContextAccessor>()`. They are safe as singletons because `IRequestContextAccessor.Current` is AsyncLocal and read at call time, never captured at construction.
 
 ## Address resolution at gRPC channel creation
 
@@ -227,12 +224,3 @@ When `IServiceEndpointResolver` is registered and `Address` is omitted, the addr
 
 `decimal → Money`: `Units = (long)Truncate(value)`, `Nanos = (int)Round((value - units) * 1_000_000_000, 0)`
 `Money → decimal`: `Units + (decimal)Nanos / 1_000_000_000`
-
-## PagedResponseType factory method summary
-
-- `FromPage(IPage)` — offset paging source (HC v16 IPage, not `CollectionSegment<T>`)
-- `FromConnection(Connection<T>)` — cursor paging source
-- `From(IReadOnlyList<T>, int)` — manual assembly
-- `FromPagedList(PagedList<T>)` — bridge from 04.Contracts application layer result (GQ-09/P-165)
-
-`FromPagedList` requires the `SharedKernel.Contracts` (04.Contracts) project reference in the GraphQL csproj — already present in the original scaffold.

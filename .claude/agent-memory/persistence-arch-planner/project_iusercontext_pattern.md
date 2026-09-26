@@ -1,26 +1,16 @@
 ---
 name: project_iusercontext_pattern
-description: IUserContext injection pattern — approved Security.Abstractions reference, GUID audit string format, no-op placeholder rules
+description: Audit actor for CreatedBy/ModifiedBy — IRequestContext.UserId, else the configured ServiceName ("system"); no Security.Abstractions reference
 metadata:
   type: project
 ---
 
-`AuditInterceptor` and `SoftDeleteInterceptor` need `IUserContext` from `SharedKernel.Security.Abstractions`.
+> WO-086 (2026-09): the P-078 `SharedKernel.Security.Abstractions` reference (a numbered-layer exception) and the `IUserContext`/`NoOpUserContext`-based audit path are gone; the actor comes from `SharedKernel.Execution`'s `IRequestContext`.
 
-**P-078 decision (WO-014, 2026-06-02):** `SharedKernel.Persistence.EfCore` holds a deliberate project reference to `SharedKernel.Security.Abstractions`. This is an approved layering exception — `12.Security.Abstractions` is a zero-dependency interface library. The prior workaround (local `IUserContext.cs` copy in EfCore) was removed. All other `12.Security.*` packages remain forbidden in `06.Persistence`.
+**Current rule:** `SharedKernelDbContext` records the actor as `RequestContext.UserId` when it is non-empty, otherwise the service name (`UseServiceName(...)` or `SharedKernel:Persistence:ServiceName`, default `"system"` — `PersistenceDefaults.ServiceName`). `IRequestContext` is `SharedKernel.Execution.Context` (Foundation tier), so `06.Persistence` references no `12.Security` package.
 
-**`IUserContext` shape (Security.Abstractions):** `UserId` is `Guid`; `IsAuthenticated` is `bool`.
+**Why:** a background job or unauthenticated path still produces a non-null, attributable audit value; one caller contract shared with the application pipeline.
 
-**No-op placeholder:** `EfCorePersistenceBuilder.Build()` registers a scoped no-op with `UserId = Guid.Empty`, `IsAuthenticated = false` when no `IUserContext` is already registered.
-
-**Audit string format rule (P-091, WO-016, 2026-06-02):** Audit columns (`CreatedBy`, `ModifiedBy`, `DeletedBy`) are `string HasMaxLength(256)`. The value is produced as:
-- `IsAuthenticated == true && UserId != Guid.Empty` → `userId.ToString("D")` (lowercase hyphenated GUID, 36 chars)
-- Otherwise → `"system"`
-
-Only `"D"` format is permitted. `"N"`, `"B"`, `"P"`, `"X"` are all violations.
-
-**Why:** `UserId` changed from `string` to `Guid` when migrating to `Security.Abstractions`. Audit columns remain `string`. The `"D"` format is stable, unique, human-readable, and fits within 256 chars. `"system"` fallback prevents null audit records in background-service or test contexts.
-
-**How to apply:** When planning any audit interceptor task, always include the `ToString("D")` vs `"system"` branch logic. Never store raw `Guid.ToString()` without the `"D"` specifier.
+**How to apply:** plan audit-column tasks against `IRequestContext` only; for background work use `SystemRequestContext` (explicit identity) through `ICallerDbContextFactory<TContext>` or a DI scope. Never add a `12.Security` reference.
 
 See also: [[project_icurrenttenantservice_location]]

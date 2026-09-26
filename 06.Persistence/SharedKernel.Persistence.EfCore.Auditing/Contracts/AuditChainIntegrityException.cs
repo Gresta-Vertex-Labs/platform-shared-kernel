@@ -1,4 +1,5 @@
 using SharedKernel.Core.Exceptions;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Errors;
 
 namespace SharedKernel.Persistence.EfCore.Auditing;
@@ -16,7 +17,7 @@ public sealed class AuditChainIntegrityException : SharedKernelException
     /// <param name="tenantId">The chain's tenant.</param>
     /// <param name="resourceType">The chain's resource type.</param>
     /// <param name="verification">The verification that failed.</param>
-    public AuditChainIntegrityException(Guid? tenantId, string resourceType, AuditChainVerificationResult verification)
+    public AuditChainIntegrityException(TenantId? tenantId, string resourceType, AuditChainVerificationResult verification)
         : base(BuildMessage(tenantId, resourceType, verification), Error.Conflict(ErrorCode, BuildMessage(tenantId, resourceType, verification)))
     {
         ArgumentNullException.ThrowIfNull(verification);
@@ -26,7 +27,7 @@ public sealed class AuditChainIntegrityException : SharedKernelException
     }
 
     /// <summary>Gets the chain's tenant, or <see langword="null"/> for the system chain.</summary>
-    public Guid? TenantId { get; }
+    public TenantId? TenantId { get; }
 
     /// <summary>Gets the chain's resource type.</summary>
     public string ResourceType { get; }
@@ -34,7 +35,7 @@ public sealed class AuditChainIntegrityException : SharedKernelException
     /// <summary>Gets the verification that failed.</summary>
     public AuditChainVerificationResult Verification { get; }
 
-    private static string BuildMessage(Guid? tenantId, string resourceType, AuditChainVerificationResult verification) =>
-        $"Audit chain ({tenantId?.ToString("D") ?? "system"}, '{resourceType}') is {verification?.Status} " +
+    private static string BuildMessage(TenantId? tenantId, string resourceType, AuditChainVerificationResult verification) =>
+        $"Audit chain ({tenantId?.ToString() ?? "system"}, '{resourceType}') is {verification?.Status} " +
         $"({verification?.FailureKind} at sequence {verification?.FailedAtSequence}): {verification?.Reason}";
 }

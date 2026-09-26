@@ -1,7 +1,4 @@
 #nullable enable
-const SharedKernel.Messaging.Abstractions.Context.MessageContextHeaders.ActorId = "x-sk-actor-id" -> string!
-const SharedKernel.Messaging.Abstractions.Context.MessageContextHeaders.ActorKind = "x-sk-actor-kind" -> string!
-const SharedKernel.Messaging.Abstractions.Context.MessageContextHeaders.ClientId = "x-sk-client-id" -> string!
 const SharedKernel.Messaging.Abstractions.Errors.MessagingErrorCodes.ContractViolation = "messaging.contract_violation" -> string!
 const SharedKernel.Messaging.Abstractions.Errors.MessagingErrorCodes.EndpointNotFound = "messaging.endpoint_not_found" -> string!
 const SharedKernel.Messaging.Abstractions.Errors.MessagingErrorCodes.InvalidMessage = "messaging.invalid_message" -> string!
@@ -13,21 +10,8 @@ const SharedKernel.Messaging.Abstractions.Options.MessagingOptions.SectionName =
 override SharedKernel.Messaging.Abstractions.Faults.FaultExceptionInfo.Equals(object? obj) -> bool
 override SharedKernel.Messaging.Abstractions.Faults.FaultExceptionInfo.GetHashCode() -> int
 override SharedKernel.Messaging.Abstractions.Faults.FaultExceptionInfo.ToString() -> string!
-override SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation.GetHashCode() -> int
-override SharedKernel.Messaging.Abstractions.MessageBus.MessageBusHealth.Equals(object? obj) -> bool
-override SharedKernel.Messaging.Abstractions.MessageBus.MessageBusHealth.GetHashCode() -> int
-override SharedKernel.Messaging.Abstractions.MessageBus.MessageBusHealth.ToString() -> string!
 SharedKernel.Messaging.Abstractions.Context.IInboundMessageContextAccessor
-SharedKernel.Messaging.Abstractions.Context.IInboundMessageContextAccessor.Current.get -> SharedKernel.Application.Context.IRequestContext?
-SharedKernel.Messaging.Abstractions.Context.MessageContextHeaders
-SharedKernel.Messaging.Abstractions.Context.MessageRequestContext
-SharedKernel.Messaging.Abstractions.Context.MessageRequestContext.ActorKind.get -> SharedKernel.Application.Context.ActorKind
-SharedKernel.Messaging.Abstractions.Context.MessageRequestContext.ClientId.get -> string?
-SharedKernel.Messaging.Abstractions.Context.MessageRequestContext.HasPermissionAsync(string! permission, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<bool>
-SharedKernel.Messaging.Abstractions.Context.MessageRequestContext.IsAuthenticated.get -> bool
-SharedKernel.Messaging.Abstractions.Context.MessageRequestContext.MessageRequestContext(System.Guid? tenantId, string? userId = null, SharedKernel.Application.Context.ActorKind actorKind = SharedKernel.Application.Context.ActorKind.Anonymous, string? clientId = null) -> void
-SharedKernel.Messaging.Abstractions.Context.MessageRequestContext.TenantId.get -> System.Guid?
-SharedKernel.Messaging.Abstractions.Context.MessageRequestContext.UserId.get -> string?
+SharedKernel.Messaging.Abstractions.Context.IInboundMessageContextAccessor.Current.get -> SharedKernel.Execution.Context.IRequestContext?
 SharedKernel.Messaging.Abstractions.Errors.MessagingErrorCodes
 SharedKernel.Messaging.Abstractions.Errors.MessagingErrors
 SharedKernel.Messaging.Abstractions.EventPublisher.IEventPublisher
@@ -40,13 +24,11 @@ SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext.Headers.get ->
 SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext.PartitionKey.get -> string?
 SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext.PublishContext() -> void
 SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext.Subject.get -> string?
-SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext.TenantId.get -> System.Guid?
 SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext.WithCausationId(System.Guid causationId) -> SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext!
 SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext.WithCorrelationId(System.Guid correlationId) -> SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext!
 SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext.WithHeader(string! key, string! value) -> SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext!
 SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext.WithPartitionKey(string! partitionKey) -> SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext!
 SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext.WithSubject(string! subject) -> SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext!
-SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext.WithTenantId(System.Guid tenantId) -> SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext!
 SharedKernel.Messaging.Abstractions.Extensions.IMessagingBuilder
 SharedKernel.Messaging.Abstractions.Extensions.IMessagingBuilder.Services.get -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 SharedKernel.Messaging.Abstractions.Faults.FaultExceptionInfo
@@ -66,40 +48,12 @@ SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyOptions
 SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyOptions.ExpiryWindow.get -> System.TimeSpan
 SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyOptions.ExpiryWindow.set -> void
 SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyOptions.IdempotencyOptions() -> void
-SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation
-SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation.Deconstruct(out SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservationStatus Status, out string? ReservationToken) -> void
-SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation.Equals(SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation other) -> bool
-SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation.IdempotencyReservation() -> void
-SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation.IdempotencyReservation(SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservationStatus Status, string? ReservationToken) -> void
-SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation.ReservationToken.get -> string?
-SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation.ReservationToken.init -> void
-SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation.Status.get -> SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservationStatus
-SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation.Status.init -> void
-SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservationStatus
-SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservationStatus.AlreadyProcessed = 2 -> SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservationStatus
-SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservationStatus.InProgress = 1 -> SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservationStatus
-SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservationStatus.Started = 0 -> SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservationStatus
-SharedKernel.Messaging.Abstractions.Idempotency.IIdempotencyStore
-SharedKernel.Messaging.Abstractions.Idempotency.IIdempotencyStore.CompleteAsync(System.Guid messageId, string! reservationToken, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task!
-SharedKernel.Messaging.Abstractions.Idempotency.IIdempotencyStore.ReleaseAsync(System.Guid messageId, string! reservationToken, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task!
-SharedKernel.Messaging.Abstractions.Idempotency.IIdempotencyStore.TryBeginAsync(System.Guid messageId, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation>!
 SharedKernel.Messaging.Abstractions.MessageBus.IMessageBus
 SharedKernel.Messaging.Abstractions.MessageBus.IMessageBus.PublishAsync<T>(T! message, System.Action<SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext!>! configure, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
 SharedKernel.Messaging.Abstractions.MessageBus.IMessageBus.PublishAsync<T>(T! message, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
 SharedKernel.Messaging.Abstractions.MessageBus.IMessageBus.SendAsync<T>(T! command, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
-SharedKernel.Messaging.Abstractions.MessageBus.IMessageBusProbe
-SharedKernel.Messaging.Abstractions.MessageBus.IMessageBusProbe.ProbeAsync(System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<SharedKernel.Messaging.Abstractions.MessageBus.MessageBusHealth!>!
 SharedKernel.Messaging.Abstractions.MessageBus.ISendEndpointResolver
 SharedKernel.Messaging.Abstractions.MessageBus.ISendEndpointResolver.Resolve<T>() -> System.Uri!
-SharedKernel.Messaging.Abstractions.MessageBus.MessageBusHealth
-SharedKernel.Messaging.Abstractions.MessageBus.MessageBusHealth.<Clone>$() -> SharedKernel.Messaging.Abstractions.MessageBus.MessageBusHealth!
-SharedKernel.Messaging.Abstractions.MessageBus.MessageBusHealth.Deconstruct(out bool IsHealthy, out string? Description) -> void
-SharedKernel.Messaging.Abstractions.MessageBus.MessageBusHealth.Description.get -> string?
-SharedKernel.Messaging.Abstractions.MessageBus.MessageBusHealth.Description.init -> void
-SharedKernel.Messaging.Abstractions.MessageBus.MessageBusHealth.Equals(SharedKernel.Messaging.Abstractions.MessageBus.MessageBusHealth? other) -> bool
-SharedKernel.Messaging.Abstractions.MessageBus.MessageBusHealth.IsHealthy.get -> bool
-SharedKernel.Messaging.Abstractions.MessageBus.MessageBusHealth.IsHealthy.init -> void
-SharedKernel.Messaging.Abstractions.MessageBus.MessageBusHealth.MessageBusHealth(bool IsHealthy, string? Description) -> void
 SharedKernel.Messaging.Abstractions.Options.MessagingOptions
 SharedKernel.Messaging.Abstractions.Options.MessagingOptions.MessagingOptions() -> void
 SharedKernel.Messaging.Abstractions.Options.MessagingOptions.ServiceName.get -> string!
@@ -109,8 +63,6 @@ SharedKernel.Messaging.Abstractions.Scheduling.IMessageScheduler.CancelAsync(Sys
 SharedKernel.Messaging.Abstractions.Scheduling.IMessageScheduler.ScheduleAsync<T>(T! message, System.DateTimeOffset deliverAt, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<System.Guid>!
 SharedKernel.Messaging.Abstractions.SchemaEvolution.IMessageVersionTranslator<TOld, TNew>
 SharedKernel.Messaging.Abstractions.SchemaEvolution.IMessageVersionTranslator<TOld, TNew>.Translate(TOld old) -> TNew
-SharedKernel.Messaging.Abstractions.TenantContext.ITenantContextAccessor
-SharedKernel.Messaging.Abstractions.TenantContext.ITenantContextAccessor.TenantId.get -> System.Guid?
 static SharedKernel.Messaging.Abstractions.Errors.MessagingErrors.ContractViolation(string! messageType) -> SharedKernel.Primitives.Errors.Error!
 static SharedKernel.Messaging.Abstractions.Errors.MessagingErrors.EndpointNotFound(string! messageType, string! endpoint) -> SharedKernel.Primitives.Errors.Error!
 static SharedKernel.Messaging.Abstractions.Errors.MessagingErrors.InvalidMessage(string! messageType, string! reason) -> SharedKernel.Primitives.Errors.Error!
@@ -119,12 +71,7 @@ static SharedKernel.Messaging.Abstractions.Errors.MessagingErrors.SerializationF
 static SharedKernel.Messaging.Abstractions.Errors.MessagingErrors.Unavailable(string! operation) -> SharedKernel.Primitives.Errors.Error!
 static SharedKernel.Messaging.Abstractions.Faults.FaultExceptionInfo.operator !=(SharedKernel.Messaging.Abstractions.Faults.FaultExceptionInfo? left, SharedKernel.Messaging.Abstractions.Faults.FaultExceptionInfo? right) -> bool
 static SharedKernel.Messaging.Abstractions.Faults.FaultExceptionInfo.operator ==(SharedKernel.Messaging.Abstractions.Faults.FaultExceptionInfo? left, SharedKernel.Messaging.Abstractions.Faults.FaultExceptionInfo? right) -> bool
-static SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation.AlreadyProcessed() -> SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation
-static SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation.InProgress() -> SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation
-static SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation.operator !=(SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation left, SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation right) -> bool
-static SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation.operator ==(SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation left, SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation right) -> bool
-static SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation.Started(string! reservationToken) -> SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation
-static SharedKernel.Messaging.Abstractions.MessageBus.MessageBusHealth.operator !=(SharedKernel.Messaging.Abstractions.MessageBus.MessageBusHealth? left, SharedKernel.Messaging.Abstractions.MessageBus.MessageBusHealth? right) -> bool
-static SharedKernel.Messaging.Abstractions.MessageBus.MessageBusHealth.operator ==(SharedKernel.Messaging.Abstractions.MessageBus.MessageBusHealth? left, SharedKernel.Messaging.Abstractions.MessageBus.MessageBusHealth? right) -> bool
-~override SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation.Equals(object obj) -> bool
-~override SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyReservation.ToString() -> string
+SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext.TenantId.get -> SharedKernel.Execution.Tenancy.TenantId?
+SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext.WithTenantId(SharedKernel.Execution.Tenancy.TenantId tenantId) -> SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext!
+SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyOptions.LeaseDuration.get -> System.TimeSpan
+SharedKernel.Messaging.Abstractions.Idempotency.IdempotencyOptions.LeaseDuration.set -> void

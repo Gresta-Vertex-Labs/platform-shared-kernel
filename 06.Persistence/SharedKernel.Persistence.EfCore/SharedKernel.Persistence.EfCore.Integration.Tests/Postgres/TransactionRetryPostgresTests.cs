@@ -2,6 +2,7 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Npgsql;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence.EfCore.UnitOfWork;
 using SharedKernel.Testing.Containers;
 using SharedKernel.Testing.Persistence;
@@ -27,7 +28,7 @@ public sealed class TransactionRetryPostgresTests
         new NpgsqlConnectionStringBuilder(_fixture.ConnectionString) { Database = DatabaseName }.ConnectionString;
 
     private PgTestDbContext CreateContext(
-        Guid tenantId, int? maxRetryCount, TransientFaultInjectionInterceptor? faultInjector = null)
+        TenantId tenantId, int? maxRetryCount, TransientFaultInjectionInterceptor? faultInjector = null)
     {
         var caller = new FakeAuditActorContext("actor", tenantId);
         return PgTestDbContextFactory.Create(
@@ -42,7 +43,7 @@ public sealed class TransactionRetryPostgresTests
     [Fact]
     public async Task ExecuteInTransactionAsync_TransientFailureThenSuccess_DoesNotDoubleApply()
     {
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
         var code = $"retry-success-{Guid.NewGuid():N}";
         var faultInjector = new TransientFaultInjectionInterceptor(failuresBeforeSuccess: 2);
 
@@ -71,7 +72,7 @@ public sealed class TransactionRetryPostgresTests
     [Fact]
     public async Task ExecuteInTransactionAsync_RetryExhausted_RethrowsAndWritesNothing()
     {
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
         var code = $"retry-exhaust-{Guid.NewGuid():N}";
         // Always fails — every attempt within the budget is injected as transient, so the retrying
         // execution strategy must eventually exhaust and throw RetryLimitExceededException.

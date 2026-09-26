@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
-using SharedKernel.Application.Transactions;
+using SharedKernel.Execution.Transactions;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Diagnostics;
 using SharedKernel.Persistence.EfCore.MultiTenancy;

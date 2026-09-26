@@ -38,7 +38,8 @@ dotnet add package SharedKernel.Persistence.Abstractions
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
-| Dependencies | `SharedKernel.Primitives`, `SharedKernel.Domain` (specifications), `SharedKernel.Contracts` (paging), `SharedKernel.Application.Abstractions` |
+| Tier | Abstractions (references Foundation, Model and Abstractions packages only) |
+| Dependencies | `SharedKernel.Primitives`, `SharedKernel.Execution` (caller, tenant), `SharedKernel.Domain` (specifications), `SharedKernel.Contracts` (paging) |
 | Not referenced | EF Core, Npgsql, Dapper — none of them, ever |
 | Registration | None needed: `AddSharedKernelPostgres` registers the implementations. `services.AddSharedKernelCrossTenantScope()` for a service with neither EF Core nor Dapper |
 
@@ -46,7 +47,7 @@ Reference it from application and domain-service projects. Reference an implemen
 
 | Related contract | Lives in | Why not here |
 | --- | --- | --- |
-| `IUnitOfWork`, `IRequestContext`, `IAuditTrailWriter` | [`SharedKernel.Application.Abstractions`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/05.Application/SharedKernel.Application.Abstractions) | Shared with the MediatR pipeline — one contract, no adapter |
+| `IUnitOfWork`, `IRequestContext`, `IAuditTrailWriter`, `TenantId` | [`SharedKernel.Execution`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/01.Core/SharedKernel.Execution) | Shared with the request pipeline, messaging and jobs — one contract, no adapter |
 | `ISpecification<T>`, `Spec.For<T>()` | [`SharedKernel.Domain`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/03.Domain/SharedKernel.Domain) | Queries are domain vocabulary |
 | `PagedList<T>`, `CursorPagedList<T>`, `PageRequest` | [`SharedKernel.Contracts`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/04.Contracts/SharedKernel.Contracts) | They cross service boundaries |
 
@@ -197,7 +198,8 @@ FORBIDDEN    Referencing EF Core/Npgsql/Dapper from application code; repository
 
 ## Compatibility and guarantees
 
-- **No ORM, no driver, no infrastructure** — enforced by architecture tests.
+- **No ORM, no driver, no infrastructure** — enforced by the build's tier check (an Abstractions-tier package may
+  reference only `Microsoft.Extensions.*.Abstractions` third-party packages, SKTIER003).
 - **Public API is tracked** with `Microsoft.CodeAnalysis.PublicApiAnalyzers`; every public member is documented.
 - **Two implementations share one behavior:** `SharedKernel.Persistence.EfCore` (PostgreSQL) and
   `SharedKernel.Persistence.Testing`'s in-memory fake apply the same specification, paging and cursor rules, so a

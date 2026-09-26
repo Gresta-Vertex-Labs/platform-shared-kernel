@@ -10,13 +10,13 @@ namespace SharedKernel.ArchitectureTests.Tests;
 /// <summary>
 /// Tests for <see cref="PersistenceInterfaceOwnershipRules"/> — covering all four predicates:
 /// <c>IUserContextDeclaredOnlyInSecurityAbstractions</c>,
-/// <c>TenantIdentityInterfacesDeclaredOnlyInSecurityAbstractions</c>,
+/// <c>TenantIdentityInterfacesAreNeverRedeclared</c>,
 /// <c>IReadRepositoryMustNotExposeIQueryable</c>, and
 /// <c>ReadOnlyRepositoriesNeverTrack</c>.
 /// </summary>
 /// <remarks>
 /// T-52/T-53: Rule 1 — IUserContextDeclaredOnlyInSecurityAbstractions
-/// T-54/T-55: Rule 2 — TenantIdentityInterfacesDeclaredOnlyInSecurityAbstractions
+/// T-54/T-55: Rule 2 — TenantIdentityInterfacesAreNeverRedeclared
 /// T-56/T-57: Rule 3 — IReadRepositoryMustNotExposeIQueryable
 /// T-58/T-59: Rule 4 — ReadOnlyRepositoriesNeverTrack
 /// </remarks>
@@ -96,23 +96,22 @@ public class PersistenceInterfaceOwnershipRulesTests
     }
 
     // ---------------------------------------------------------------------------
-    // T-54 — Rule 2 fire path: ITenantProvider declared outside Security.Abstractions fails
+    // T-54 — Rule 2 fire path: a re-declared ITenantProvider fails
     // ---------------------------------------------------------------------------
 
     /// <summary>
-    /// T-54: An assembly that declares a type named <c>ITenantProvider</c> outside
-    /// <c>SharedKernel.Security.Abstractions</c> must fail
-    /// <see cref="PersistenceInterfaceOwnershipRules.TenantIdentityInterfacesDeclaredOnlyInSecurityAbstractions"/>.
+    /// T-54: An assembly that declares a type named <c>ITenantProvider</c> (deleted by WO-086/P-565) must fail
+    /// <see cref="PersistenceInterfaceOwnershipRules.TenantIdentityInterfacesAreNeverRedeclared"/>.
     /// </summary>
     [Fact]
-    public void TenantIdentityInterfacesDeclaredOnlyInSecurityAbstractions_ITenantProviderDeclaredOutsideOwner_RuleFails()
+    public void TenantIdentityInterfacesAreNeverRedeclared_ITenantProviderDeclared_RuleFails()
     {
         const string source = """
             using System;
 
             namespace SharedKernel.Persistence.EfCore
             {
-                // Violation: ITenantProvider re-declared outside SharedKernel.Security.Abstractions
+                // Violation: a second tenant-identity interface next to IRequestContext
                 public interface ITenantProvider
                 {
                     Guid TenantId { get; }
@@ -123,11 +122,11 @@ public class PersistenceInterfaceOwnershipRulesTests
         var assembly = CompileInMemory("ITenantProviderViolation", source);
 
         var result = PersistenceInterfaceOwnershipRules
-            .TenantIdentityInterfacesDeclaredOnlyInSecurityAbstractions(assembly)
+            .TenantIdentityInterfacesAreNeverRedeclared(assembly)
             .GetResult();
 
         result.IsSuccessful.Should().BeFalse(
-            because: "ITenantProvider is declared outside SharedKernel.Security.Abstractions, " +
+            because: "ITenantProvider re-declares tenant identity, which lives only in IRequestContext.TenantId, " +
                      "violating the single-source-of-truth principle for tenant identity contracts");
     }
 
@@ -138,10 +137,10 @@ public class PersistenceInterfaceOwnershipRulesTests
     /// <summary>
     /// T-55: An assembly that declares neither <c>ITenantProvider</c> nor
     /// <c>ICurrentTenantService</c> must pass
-    /// <see cref="PersistenceInterfaceOwnershipRules.TenantIdentityInterfacesDeclaredOnlyInSecurityAbstractions"/>.
+    /// <see cref="PersistenceInterfaceOwnershipRules.TenantIdentityInterfacesAreNeverRedeclared"/>.
     /// </summary>
     [Fact]
-    public void TenantIdentityInterfacesDeclaredOnlyInSecurityAbstractions_NoTenantIdentityDeclarations_RulePasses()
+    public void TenantIdentityInterfacesAreNeverRedeclared_NoTenantIdentityDeclarations_RulePasses()
     {
         const string source = """
             using System;
@@ -160,7 +159,7 @@ public class PersistenceInterfaceOwnershipRulesTests
         var assembly = CompileInMemory("NoTenantIdentityClean", source);
 
         var result = PersistenceInterfaceOwnershipRules
-            .TenantIdentityInterfacesDeclaredOnlyInSecurityAbstractions(assembly)
+            .TenantIdentityInterfacesAreNeverRedeclared(assembly)
             .GetResult();
 
         result.IsSuccessful.Should().BeTrue(

@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Adapter</SharedKernelTier>
     <!-- NuGet packaging metadata -->
     <Description>FusionCache implementation of the SharedKernel caching contracts: ICacheService, ITenantCacheService and the cache key providers, with stampede protection, fail-safe, eager refresh, factory-controlled caching, tenant-safe telemetry, service-wide distributed-cache timeouts, configuration binding validated at startup, optional Brotli compression, key-bound AES-GCM encryption and startup warmup. Add SharedKernel.Caching.Redis for the distributed layer and backplane.</Description>
     <PackageReleaseNotes>First release.</PackageReleaseNotes>

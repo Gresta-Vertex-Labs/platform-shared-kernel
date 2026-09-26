@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using SharedKernel.Caching.Redis.Core.Extensions;
 using SharedKernel.Caching.Redis.Core.Health;
+using SharedKernel.Primitives.Health;
 using StackExchange.Redis;
 using Xunit;
 
@@ -24,7 +25,7 @@ public sealed class RedisConnectionCoreExtensionsTests
         services.AddRedisConnection(o => o.ConnectionString = "localhost:6379");
 
         Assert.Equal(ServiceLifetime.Singleton, Assert.Single(services, d => d.ServiceType == typeof(IConnectionMultiplexer)).Lifetime);
-        Assert.Equal(ServiceLifetime.Singleton, Assert.Single(services, d => d.ServiceType == typeof(IRedisConnectionProbe)).Lifetime);
+        Assert.Equal(ServiceLifetime.Singleton, Assert.Single(services, d => d.ServiceType == typeof(IReadinessProbe)).Lifetime);
     }
 
     [Fact]
@@ -35,7 +36,7 @@ public sealed class RedisConnectionCoreExtensionsTests
         services.AddRedisConnection(EmptyConfiguration());
 
         Assert.Equal(ServiceLifetime.Singleton, Assert.Single(services, d => d.ServiceType == typeof(IConnectionMultiplexer)).Lifetime);
-        Assert.Equal(ServiceLifetime.Singleton, Assert.Single(services, d => d.ServiceType == typeof(IRedisConnectionProbe)).Lifetime);
+        Assert.Equal(ServiceLifetime.Singleton, Assert.Single(services, d => d.ServiceType == typeof(IReadinessProbe)).Lifetime);
     }
 
     [Fact]

@@ -3,21 +3,26 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Presentation.WebApi;
+using SharedKernel.Security.Abstractions;
+using SharedKernel.ServiceDefaults.Security;
 using SharedKernel.Testing.Logging;
 
 namespace SharedKernel.Presentation.Grpc.Tests.Integration.Fixtures;
 
 /// <summary>
-/// Builds real in-process gRPC hosts the way a service does: <c>AddSharedKernelWebApi</c> and
-/// <c>AddSharedKernelGrpc</c>, a test authentication scheme, then <c>UseSharedKernelWebApi()</c> (correlation ids,
-/// authentication, authorization) and <c>MapGrpcService</c>.
+/// Builds real in-process gRPC hosts the way a service does: <c>AddSharedKernelRequestContext</c>,
+/// <c>AddSharedKernelWebApi</c> and <c>AddSharedKernelGrpc</c>, a test authentication scheme, then
+/// <c>UseSharedKernelRequestContext()</c> (the call's context scope and correlation id), <c>UseSharedKernelWebApi()</c>
+/// (authentication, authorization) and <c>MapGrpcService</c>.
 /// </summary>
 internal static class GrpcTestHost
 {
@@ -71,12 +76,21 @@ internal static class GrpcTestHost
             builder.AddSharedKernelWebApi();
         }
 
+        // What an authentication package registers: the caller of the request, through the registered mappers.
+        builder.Services.AddHttpContextAccessor();
+        builder.Services.TryAddScoped<IUserContext>(static services => UserContextResolver.Resolve(
+            services.GetRequiredService<IHttpContextAccessor>().HttpContext?.User,
+            services.GetServices<IUserContextMapper>()));
+        builder.Services.AddSharedKernelRequestContext();
         builder.AddSharedKernelGrpc(configureGrpc);
         builder.AddTestAuthentication();
         builder.Services.AddSingleton<CallProbe>();
         configureBuilder?.Invoke(builder);
 
         var app = builder.Build();
+
+        // First, as in every service: the call's RequestContextScope wraps everything after it (P-579).
+        app.UseSharedKernelRequestContext();
 
         if (useWebApi)
         {

@@ -1,8 +1,7 @@
-using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using SharedKernel.Communication.Grpc.Interceptors;
-using SharedKernel.Security.Abstractions;
+using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
 
 namespace SharedKernel.Communication.Grpc.Tests.Interceptors;
 
@@ -83,13 +82,11 @@ public sealed class TenantIdInterceptorTests
     }
 
     [Fact]
-    public void AsyncUnaryCall_WithNullHttpContext_NoOpSilently()
+    public void AsyncUnaryCall_WithNoAmbientCaller_NoOpSilently()
     {
-        // Arrange — HttpContext is null (background/non-HTTP scenario)
-        var httpContextAccessor = Substitute.For<IHttpContextAccessor>();
-        httpContextAccessor.HttpContext.Returns((HttpContext?)null);
+        // Arrange — no request context is open (startup, or a caller outside any inbound adapter)
         var interceptor = new TenantIdInterceptor(
-            httpContextAccessor,
+            new RequestContextAccessor(),
             NullLogger<TenantIdInterceptor>.Instance);
 
         var continuationCalled = false;
@@ -103,7 +100,7 @@ public sealed class TenantIdInterceptorTests
                 var tenantEntry = ctx.Options.Headers is not null
                     ? GetEntry(ctx.Options.Headers, TenantIdInterceptor.TenantIdKey)
                     : null;
-                tenantEntry.Should().BeNull("no x-tenant-id when HttpContext is null");
+                tenantEntry.Should().BeNull("no x-tenant-id when no caller is ambient");
                 return FakeUnaryCall();
             });
 
@@ -141,10 +138,10 @@ public sealed class TenantIdInterceptorTests
     public void AsyncUnaryCall_WhenExceptionThrown_DoesNotPropagate()
     {
         // Arrange — accessor throws when accessed
-        var httpContextAccessor = Substitute.For<IHttpContextAccessor>();
-        httpContextAccessor.HttpContext.Returns(_ => throw new InvalidOperationException("simulated fault"));
+        var accessor = Substitute.For<IRequestContextAccessor>();
+        accessor.Current.Returns(_ => throw new InvalidOperationException("simulated fault"));
         var interceptor = new TenantIdInterceptor(
-            httpContextAccessor,
+            accessor,
             NullLogger<TenantIdInterceptor>.Instance);
 
         var context = BuildContext(null);
@@ -246,19 +243,33 @@ public sealed class TenantIdInterceptorTests
             .Should().Be(tenantId.ToString());
     }
 
-    private static TenantIdInterceptor CreateInterceptorWithTenant(Guid tenantId)
+    private static TenantIdInterceptor CreateInterceptorWithTenant(Guid tenantId) =>
+        new(
+            new FixedRequestContextAccessor(new SystemRequestContext([], "test", TenantId.FromNullable(tenantId))),
+            NullLogger<TenantIdInterceptor>.Instance);
+
+    [Fact]
+    public void AsyncUnaryCall_WithAmbientCaller_InjectsActorAndClientMetadata()
     {
-        var tenantProvider = Substitute.For<ITenantProvider>();
-        tenantProvider.TenantId.Returns(tenantId);
+        var interceptor = new TenantIdInterceptor(
+            new FixedRequestContextAccessor(new PropagatedRequestContext(null, "user-3", ActorKind.User, "cli")),
+            NullLogger<TenantIdInterceptor>.Instance);
+        Metadata? capturedMetadata = null;
 
-        var services = new ServiceCollection();
-        services.AddSingleton(tenantProvider);
-        var sp = services.BuildServiceProvider();
+        interceptor.AsyncUnaryCall("request", BuildContext(null),
+            (_, ctx) =>
+            {
+                capturedMetadata = ctx.Options.Headers;
+                return FakeUnaryCall();
+            });
 
-        var httpContext = new DefaultHttpContext { RequestServices = sp };
-        var accessor = Substitute.For<IHttpContextAccessor>();
-        accessor.HttpContext.Returns(httpContext);
-
-        return new TenantIdInterceptor(accessor, NullLogger<TenantIdInterceptor>.Instance);
+        GetEntry(capturedMetadata!, SharedKernel.Primitives.Propagation.WellKnownHeaders.ActorId)!.Value.Should().Be("user-3");
+        GetEntry(capturedMetadata!, SharedKernel.Primitives.Propagation.WellKnownHeaders.ActorKind)!.Value.Should().Be("User");
+        GetEntry(capturedMetadata!, SharedKernel.Primitives.Propagation.WellKnownHeaders.ClientId)!.Value.Should().Be("cli");
     }
+}
+
+internal sealed class FixedRequestContextAccessor(IRequestContext? current) : IRequestContextAccessor
+{
+    public IRequestContext? Current => current;
 }

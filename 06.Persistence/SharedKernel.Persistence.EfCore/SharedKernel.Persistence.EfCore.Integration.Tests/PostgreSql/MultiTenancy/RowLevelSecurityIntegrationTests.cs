@@ -9,8 +9,9 @@ using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
-using SharedKernel.Application.Context;
-using SharedKernel.Application.Transactions;
+using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
+using SharedKernel.Execution.Transactions;
 using SharedKernel.Core.Exceptions;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Persistence;
@@ -43,8 +44,8 @@ public sealed class RowLevelSecurityIntegrationTests : IAsyncLifetime
     private const string PolicyRole = "rls_ef_policy_role";
     private const string Password = "rls_ef_pw";
 
-    private static readonly Guid TenantA = Guid.NewGuid();
-    private static readonly Guid TenantB = Guid.NewGuid();
+    private static readonly TenantId TenantA = new TenantId(Guid.NewGuid());
+    private static readonly TenantId TenantB = new TenantId(Guid.NewGuid());
 
     private readonly PostgreSqlContainerFixture _fixture = new();
     private string _adminConnectionString = string.Empty;
@@ -133,13 +134,13 @@ public sealed class RowLevelSecurityIntegrationTests : IAsyncLifetime
         var context = scope.ServiceProvider.GetRequiredService<RlsTestDbContext>();
 
         var noTenant = () => context.Database.ExecuteSqlInterpolatedAsync(
-            $"INSERT INTO rls_order (id, tenant_id, description) VALUES ({Guid.NewGuid()}, {TenantA}, 'raw')");
+            $"INSERT INTO rls_order (id, tenant_id, description) VALUES ({Guid.NewGuid()}, {TenantA.Value}, 'raw')");
         (await noTenant.Should().ThrowAsync<PostgresException>())
             .Which.MessageText.Should().Contain("row-level security");
 
         host.Tenant.TenantId = TenantA;
         var otherTenant = () => context.Database.ExecuteSqlInterpolatedAsync(
-            $"INSERT INTO rls_order (id, tenant_id, description) VALUES ({Guid.NewGuid()}, {TenantB}, 'raw')");
+            $"INSERT INTO rls_order (id, tenant_id, description) VALUES ({Guid.NewGuid()}, {TenantB.Value}, 'raw')");
         (await otherTenant.Should().ThrowAsync<PostgresException>())
             .Which.MessageText.Should().Contain("row-level security");
 
@@ -203,7 +204,7 @@ public sealed class RowLevelSecurityIntegrationTests : IAsyncLifetime
         var context = scope.ServiceProvider.GetRequiredService<RlsTestDbContext>();
 
         var act = () => context.Database.ExecuteSqlRawAsync(
-            "UPDATE rls_order SET tenant_id = {0} WHERE id = {1}", TenantB, id);
+            "UPDATE rls_order SET tenant_id = {0} WHERE id = {1}", TenantB.Value, id);
 
         await act.Should().ThrowAsync<PostgresException>().Where(e => e.SqlState == PostgresErrorCodes.InsufficientPrivilege);
     }
@@ -339,7 +340,7 @@ public sealed class RowLevelSecurityIntegrationTests : IAsyncLifetime
 
             (await context.Orders.IgnoreQueryFilters().CountAsync()).Should().Be(2);
             await context.Database.ExecuteSqlRawAsync(
-                "INSERT INTO rls_order (id, tenant_id, description) VALUES ({0}, {1}, 'x')", Guid.NewGuid(), TenantB);
+                "INSERT INTO rls_order (id, tenant_id, description) VALUES ({0}, {1}, 'x')", Guid.NewGuid(), TenantB.Value);
         }
 
         (await AdminCountAsync()).Should().Be(3);
@@ -456,7 +457,7 @@ public sealed class RowLevelSecurityIntegrationTests : IAsyncLifetime
         await using var connection = await dataSource.OpenConnectionAsync();
         await using var transaction = await connection.BeginTransactionAsync();
         await new NpgsqlTenantSessionBinder().BindAsync(
-            connection, transaction, Guid.Parse("00000000-0000-0000-0000-000000000007"));
+            connection, transaction, TenantId.Parse("00000000-0000-0000-0000-000000000007"));
 
         await using var explain = new NpgsqlCommand("EXPLAIN SELECT * FROM rls_indexed", connection, transaction);
         var plan = new List<string>();
@@ -541,25 +542,25 @@ public sealed class RowLevelSecurityIntegrationTests : IAsyncLifetime
         return new RlsHost(provider, tenant, crossTenantScope, commands);
     }
 
-    private async Task SeedAsync(params (Guid TenantId, string Description)[] orders)
+    private async Task SeedAsync(params (TenantId TenantId, string Description)[] orders)
     {
         await AdminExecuteAsync("TRUNCATE rls_order");
         foreach (var (tenantId, description) in orders)
             await InsertAsync(Guid.NewGuid(), tenantId, description);
     }
 
-    private async Task SeedAsync(Guid id, (Guid TenantId, string Description) order)
+    private async Task SeedAsync(Guid id, (TenantId TenantId, string Description) order)
     {
         await AdminExecuteAsync("TRUNCATE rls_order");
         await InsertAsync(id, order.TenantId, order.Description);
     }
 
-    private async Task InsertAsync(Guid id, Guid tenantId, string description)
+    private async Task InsertAsync(Guid id, TenantId tenantId, string description)
     {
         await using var dataSource = NpgsqlDataSource.Create(_adminConnectionString);
         await using var insert = dataSource.CreateCommand("INSERT INTO rls_order (id, tenant_id, description) VALUES ($1, $2, $3)");
         insert.Parameters.Add(new NpgsqlParameter { Value = id });
-        insert.Parameters.Add(new NpgsqlParameter { Value = tenantId });
+        insert.Parameters.Add(new NpgsqlParameter { Value = tenantId.Value });
         insert.Parameters.Add(new NpgsqlParameter { Value = description });
         await insert.ExecuteNonQueryAsync();
     }
@@ -627,7 +628,7 @@ public sealed class RowLevelSecurityIntegrationTests : IAsyncLifetime
 internal sealed class RlsOrder : IHasTenant
 {
     public Guid Id { get; set; }
-    public Guid TenantId { get; set; }
+    public TenantId TenantId { get; set; }
     public string Description { get; set; } = string.Empty;
 }
 
@@ -655,7 +656,7 @@ internal sealed class RlsTestDbContext(
 
 internal sealed class MutableTenantContext : IRequestContext
 {
-    public Guid? TenantId { get; set; }
+    public TenantId? TenantId { get; set; }
     public bool IsAuthenticated => false;
     public string? UserId => "rls-ef-test";
     public ActorKind ActorKind => ActorKind.System;

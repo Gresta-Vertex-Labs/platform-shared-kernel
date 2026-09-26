@@ -7,8 +7,8 @@ namespace SharedKernel.Primitives.Clocks;
 /// Registration for <see cref="IClock"/>.
 /// </summary>
 /// <remarks>
-/// This is the only dependency-injection surface in <c>SharedKernel.Primitives</c>, and the sole
-/// reason the package references <c>Microsoft.Extensions.DependencyInjection.Abstractions</c> at
+/// Apart from <see cref="Health.ReadinessProbeServiceCollectionExtensions"/>, this is the only
+/// dependency-injection surface in <c>SharedKernel.Primitives</c>, and one of the two reasons the package references <c>Microsoft.Extensions.DependencyInjection.Abstractions</c> at
 /// all. Nothing else here is registered, and no other type in the package ships an
 /// <c>Add*</c> method — <see cref="Identifiers.IIdGenerator"/> deliberately does not, because one
 /// implementation and one line of registration is not worth a package-owned extension.

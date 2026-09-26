@@ -1,4 +1,4 @@
-using SharedKernel.Application.Context;
+using SharedKernel.Execution.Context;
 
 namespace SharedKernel.Messaging.Abstractions.Context;
 
@@ -8,12 +8,12 @@ namespace SharedKernel.Messaging.Abstractions.Context;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Registered as <em>scoped</em> by <c>MessagingBusBuilder.WithRequestContextPropagation()</c>.
+/// Registered as <em>scoped</em> by <c>MessagingBusBuilder.WithInboundRequestContext()</c>.
 /// MassTransit creates one dependency-injection scope per message delivery, so the value is set
 /// once per delivery and never leaks between concurrently-consumed messages.
 /// </para>
 /// <para>
-/// Most code should never inject this. <c>WithRequestContextPropagation()</c> also registers
+/// Most code should never inject this. <c>WithInboundRequestContext()</c> also registers
 /// <c>IRequestContext</c> so that it resolves to the inbound identity inside a consume and to
 /// whatever the service had registered before — typically <c>13.ServiceDefaults</c>'s HTTP-backed
 /// one — everywhere else. Injecting <c>IRequestContext</c> therefore just works in a handler that
@@ -30,7 +30,7 @@ public interface IInboundMessageContextAccessor
     /// <remarks>
     /// Non-<see langword="null"/> for every message consumed once the feature is enabled, including
     /// one that carried no identity headers at all — in that case it is a
-    /// <see cref="MessageRequestContext"/> with no tenant and no user, which is meaningfully
+    /// <see cref="PropagatedRequestContext"/> with no tenant and no user, which is meaningfully
     /// different from "not consuming".
     /// </remarks>
     IRequestContext? Current { get; }

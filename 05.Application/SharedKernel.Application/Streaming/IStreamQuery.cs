@@ -1,16 +1,16 @@
-using MediatR;
-
-namespace SharedKernel.Application;
+namespace SharedKernel.Application.Streaming;
 
 /// <summary>
 /// Represents a streaming read that yields a sequence of <typeparamref name="TResponse"/> items.
 /// </summary>
 /// <typeparam name="TResponse">The raw per-item payload type.</typeparam>
 /// <remarks>
-/// Platform-vocabulary counterpart to <c>IQuery&lt;TResponse&gt;</c>, but for streaming reads —
-/// built directly on MediatR's own <see cref="IStreamRequest{TResponse}"/> (already part of the
-/// pinned MediatR 12.4.x dependency, zero new NuGet package). Named consistently with
+/// <para>
+/// Platform-vocabulary counterpart to <c>IQuery&lt;TResponse&gt;</c>, but for streaming reads. Sent
+/// through <see cref="Messaging.ISender.CreateStream{TResponse}(IStreamQuery{TResponse}, CancellationToken)"/>
+/// and handled by an <see cref="IStreamQueryHandler{TQuery,TResponse}"/>. Named consistently with
 /// <c>IQuery&lt;TResponse&gt;</c> so a query class self-documents intent.
+/// </para>
 /// <para>
 /// <b>Deliberate, documented deviation from the <c>Result&lt;T&gt;</c> railway:</b>
 /// <typeparamref name="TResponse"/> here is the raw per-item payload type — this interface does
@@ -26,12 +26,11 @@ namespace SharedKernel.Application;
 /// inconsistency with the rest of the domain is intentional and explicit, not an oversight.
 /// </para>
 /// <para>
-/// <b>No pipeline behavior coverage (explicit, not an oversight):</b> none of
-/// <c>SharedKernel.Application</c>'s pipeline behaviors apply to
-/// <see cref="IStreamQuery{TResponse}"/> — MediatR treats unary and streaming requests as two
-/// separate generic hierarchies with no shared base. Extending any behavior to streaming is an
-/// explicit, deliberate future phase — never silently assumed to already work just because the
-/// unary behavior exists.
+/// <b>Stream behaviors are separate from request behaviors.</b> None of the request pipeline
+/// behaviors apply to a stream; a stream runs only the <see cref="IStreamPipelineBehavior{TRequest,TResponse}"/>
+/// implementations registered for it, and <c>SharedKernel.Application.Pipeline</c> registers none of
+/// its own. Logging, validation and authorization for a stream are the handler's own job unless a
+/// service registers a stream behavior for them.
 /// </para>
 /// </remarks>
-public interface IStreamQuery<TResponse> : IStreamRequest<TResponse>;
+public interface IStreamQuery<out TResponse>;

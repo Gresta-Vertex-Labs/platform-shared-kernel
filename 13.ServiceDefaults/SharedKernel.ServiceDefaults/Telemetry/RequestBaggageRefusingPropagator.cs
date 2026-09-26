@@ -19,8 +19,8 @@ namespace SharedKernel.ServiceDefaults.Telemetry;
 /// every outgoing call. With the SDK's default propagator (W3C trace context and W3C baggage), an anonymous caller's
 /// <c>baggage: TenantId=…,SubjectId=…</c> therefore reached every downstream service, and — because the outgoing
 /// <c>baggage</c> header was already set — displaced the platform's own <see cref="System.Diagnostics.Activity"/>
-/// baggage, the correlation id, which .NET would otherwise have sent. <c>14.Presentation</c>'s
-/// <c>TrustInboundBaggage</c> governs the other store, the request's <see cref="System.Diagnostics.Activity"/>, and
+/// baggage, the correlation id, which .NET would otherwise have sent. <c>SharedKernel.ServiceDefaults.Security</c>'
+/// <c>RequestContextOptions.TrustInboundBaggage</c> governs the other store, the request's <see cref="System.Diagnostics.Activity"/>, and
 /// does not reach this one.
 /// </para>
 /// <para>

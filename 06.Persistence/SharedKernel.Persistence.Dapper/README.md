@@ -40,6 +40,7 @@ dotnet add package SharedKernel.Persistence.Dapper
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
+| Tier | Adapter (its one adapter edge, to `SharedKernel.Persistence.Npgsql`, is declared) |
 | Dependencies | Dapper, `SharedKernel.Persistence.Npgsql` — **never** EF Core |
 | Namespaces | `SharedKernel.Persistence` (registration), `SharedKernel.Persistence.Dapper.Sessions` (sessions) |
 
@@ -93,14 +94,15 @@ Neither query mentions the tenant: with row-level security on, the session bound
 
 | Situation | `OpenAsync` | `OpenReadOnlyAsync` |
 | --- | --- | --- |
-| Inside `IUnitOfWork.ExecuteInTransactionAsync` (e.g. a MediatR command) | **joins** that transaction; Dapper and EF Core writes commit or roll back together; `CommitAsync` is a no-op | joins it too, to read the command's own writes |
+| Inside `IUnitOfWork.ExecuteInTransactionAsync` (e.g. a command through `TransactionBehavior`) | **joins** that transaction; Dapper and EF Core writes commit or roll back together; `CommitAsync` is a no-op | joins it too, to read the command's own writes |
 | Outside a unit of work | its own connection and transaction; disposing without `CommitAsync` rolls back | `SET TRANSACTION READ ONLY`, on the replica / standby when configured |
 | Row-level security on | the caller's tenant is bound to the transaction in one statement; no tenant → protected tables return nothing | same |
 | Inside an active `ICrossTenantScope` | opens on the cross-tenant role's data source (refused inside a unit of work, whose transaction runs as the application role) | same |
 
 `session.Command(sql, parameters, ct)` returns a Dapper `CommandDefinition` carrying the transaction and
 `SharedKernel:Persistence:Dapper:DefaultCommandTimeoutSeconds`. `session.RequireTenantId()` returns the bound tenant
-for SQL that filters on it explicitly (always do so when row-level security is off). `IsEnlisted`, `IsReadOnly` and
+(a `SharedKernel.Execution.Tenancy.TenantId`, passed to Dapper as a `uuid` parameter directly) for SQL that filters on
+it explicitly (always do so when row-level security is off); `session.TenantId` is `TenantId?`. `IsEnlisted`, `IsReadOnly` and
 `TenantId` describe the session. `OpenAsync(new DbSessionOptions { IsolationLevel = …, ReadOnly = …,
 EnlistInAmbientTransaction = … })` covers the rest.
 
@@ -152,6 +154,7 @@ using (crossTenantScope.Enter("revenue by tenant report"))
 | `AddStronglyTypedId<OrderId, Guid>()` (optional factory for ids without a public constructor) | the underlying value |
 | `AddSmartEnum<OrderStatus, int>()` | the underlying value; unknown values throw |
 | `AddJsonb(context.Default.T)` | `jsonb`, through the source-generated `JsonTypeInfo<T>` |
+| always | `TenantId` and `TenantId?` ↔ `uuid` (an unset `default(TenantId)` is sent as `NULL`, never `Guid.Empty`) |
 | always | pgvector `Vector`, `HalfVector`, `SparseVector` (needs `UseVector: true` in `SharedKernel:Persistence:{name}`) |
 | `AddTypeHandler(handler)` | anything else |
 

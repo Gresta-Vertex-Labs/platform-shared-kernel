@@ -1,4 +1,5 @@
 using System.Globalization;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Search.Abstractions.Errors;
 using SharedKernel.Search.Abstractions.Models;
@@ -46,7 +47,7 @@ internal static class MeilisearchFilterCompiler
     /// Compiles <paramref name="filter"/> (if any) and prepends the tenant predicate as the outermost
     /// <c>AND</c>, structurally beyond the caller's reach. Fails closed — with no I/O — when
     /// <paramref name="definition"/> declares a <c>TenantField</c> and <paramref name="tenantScope"/>
-    /// is <see cref="TenantScope.None"/>.
+    /// is <see cref="TenantScope.Global"/>.
     /// </summary>
     public static Result<string?> CompileWithTenantScope(
         SearchIndexDefinition definition, SearchFilter? filter, TenantScope tenantScope)
@@ -62,12 +63,12 @@ internal static class MeilisearchFilterCompiler
             return Result<string?>.Success(callerClause);
         }
 
-        if (string.IsNullOrEmpty(tenantScope.Value))
+        if (tenantScope.IsGlobal)
         {
             return Result<string?>.Failure(SearchErrors.TenantScopeMissing(definition.Name));
         }
 
-        var tenantClause = $"{tenantField} = {FormatValue(SearchValue.From(tenantScope.Value))}";
+        var tenantClause = $"{tenantField} = {FormatValue(SearchValue.From(tenantScope.Tenant!.Value.ToString()))}";
         var combined = callerClause is null ? tenantClause : $"({tenantClause}) AND ({callerClause})";
         return Result<string?>.Success(combined);
     }

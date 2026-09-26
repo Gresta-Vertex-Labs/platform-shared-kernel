@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Host</SharedKernelTier>
     <!-- NuGet packaging metadata -->
     <Description>Client certificate (mutual TLS) authentication for machine clients in ASP.NET Core, mapped to SharedKernel's IUserContext. Chain validation against the system store or a private certificate authority, revocation, client-authentication key usage and validity checks, then an IMtlsCertificateValidator that decides which client a certificate belongs to. The validator runs ahead of any custom certificate events, so they cannot skip it.</Description>
     <PackageReleaseNotes>First release.</PackageReleaseNotes>

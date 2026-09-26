@@ -86,10 +86,10 @@ Binds from the `Search:Meilisearch` section (`MeilisearchOptions.SectionName`):
 ```csharp
 Result<SearchResults<ProductSearchDocument>> instant = await instantSearch.InstantAsync(
     new InstantSearchRequest { FreeText = "wireles head", Limit = 10 },
-    TenantScope.Of(tenantId), ct);
+    TenantScope.For(tenantId), ct);
 
 Result<IReadOnlyList<FacetValue>> facetTypeahead = await instantSearch.SearchFacetValuesAsync(
-    ProductSearchFields.Status, facetQuery: "act", filter: null, TenantScope.Of(tenantId), ct);
+    ProductSearchFields.Status, facetQuery: "act", filter: null, TenantScope.For(tenantId), ct);
 ```
 
 `InstantAsync` applies Meilisearch's automatic typo tolerance, prefix matching, and crop-marker highlighting — none of which is expressible as a neutral `SearchRequest` option, since ElasticSearch's nearest equivalents (`fuzziness`, `match_phrase_prefix`) have materially different edit-distance behaviour and cost. `SearchFacetValuesAsync` is type-ahead **within** one facet's own values — it is not the facet distribution `ISearchIndex.SearchAsync` already returns, and must not be conflated with it.
@@ -107,7 +107,7 @@ public sealed class StorefrontTokenService(ITenantSearchTokenIssuer tokenIssuer)
 {
     public Task<Result<TenantSearchToken>> IssueStorefrontTokenAsync(string tenantId, CancellationToken ct) =>
         tokenIssuer.IssueAsync(
-            TenantScope.Of(tenantId), ProductSearchFields.TenantId, ["products"], TimeSpan.FromMinutes(10), ct);
+            TenantScope.For(tenantId), ProductSearchFields.TenantId, ["products"], TimeSpan.FromMinutes(10), ct);
 }
 ```
 

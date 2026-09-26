@@ -1,4 +1,4 @@
-using SharedKernel.Application;
+using SharedKernel.Application.Messaging;
 using SharedKernel.Primitives.Results;
 
 namespace CatalogApi.Features.Operations;

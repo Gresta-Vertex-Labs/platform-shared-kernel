@@ -5,6 +5,7 @@ using DocumentsApi;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Storage;
 
@@ -13,7 +14,11 @@ namespace DocumentsApi.Tests.Infrastructure;
 /// <summary>The DocumentsApi Program configured for one backend, plus helpers the scenarios share.</summary>
 public sealed class SampleHost : WebApplicationFactory<Program>
 {
-    public static readonly string[] Tenants = ["acme", "globex"];
+    public static readonly TenantId Acme = new(Guid.Parse("0f8fad5b-d9cb-469f-a165-70867728950e"));
+
+    public static readonly TenantId Globex = new(Guid.Parse("7c9e6679-7425-40de-944b-e07fc1f90ae7"));
+
+    public static readonly TenantId[] Tenants = [Acme, Globex];
 
     private readonly Dictionary<string, string?> _settings;
 
@@ -27,20 +32,20 @@ public sealed class SampleHost : WebApplicationFactory<Program>
 
     public static JsonSerializerOptions Json { get; } = new(JsonSerializerDefaults.Web);
 
-    /// <summary>A client of the API acting for <paramref name="tenant"/> (ignored by shared stores).</summary>
-    public HttpClient Api(string tenant = "acme")
+    /// <summary>A client of the API acting for <paramref name="tenant"/>, <see cref="Acme"/> by default (ignored by shared stores).</summary>
+    public HttpClient Api(TenantId? tenant = null)
     {
         HttpClient client = CreateClient();
         client.Timeout = TimeSpan.FromMinutes(5);
-        client.DefaultRequestHeaders.Add(Stores.TenantHeader, tenant);
+        client.DefaultRequestHeaders.Add(Stores.TenantHeader, (tenant ?? Acme).ToString());
         return client;
     }
 
     /// <summary>The store the API resolves for <paramref name="store"/> and <paramref name="tenant"/>.</summary>
-    public IFileStorage Store(string store, string tenant = "acme")
+    public IFileStorage Store(string store, TenantId? tenant = null)
     {
         IFileStorageFactory factory = Services.GetRequiredService<IFileStorageFactory>();
-        return factory.IsTenantScoped(store) ? factory.GetTenantStore(store).ForTenant(tenant) : factory.GetStore(store);
+        return factory.IsTenantScoped(store) ? factory.GetTenantStore(store).ForTenant(tenant ?? Acme) : factory.GetStore(store);
     }
 
     /// <summary>Deletes everything this run wrote: every key under each store's run prefix, for every tenant used.</summary>

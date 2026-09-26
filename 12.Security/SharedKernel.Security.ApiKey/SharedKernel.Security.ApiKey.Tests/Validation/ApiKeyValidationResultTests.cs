@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Security.ApiKey.Validation;
 using Xunit;
 
@@ -8,7 +9,7 @@ public sealed class ApiKeyValidationResultTests
     [Fact]
     public void Success_AllValues_ArePreserved()
     {
-        var tenantId = Guid.NewGuid();
+        TenantId tenantId = new TenantId(Guid.NewGuid());
 
         ApiKeyValidationResult result = ApiKeyValidationResult.Success("client", tenantId, ["admin"], ["orders:read"], "KEYID");
 
@@ -49,7 +50,7 @@ public sealed class ApiKeyValidationResultTests
     [Fact]
     public void Success_EmptyTenantId_Throws()
     {
-        ArgumentException exception = Assert.Throws<ArgumentException>(() => ApiKeyValidationResult.Success("client", Guid.Empty));
+        ArgumentException exception = Assert.Throws<ArgumentException>(() => ApiKeyValidationResult.Success("client", default(TenantId)));
 
         Assert.Equal("tenantId", exception.ParamName);
     }

@@ -10,6 +10,12 @@ Every setting of the four packages, read from the options classes and their vali
 | [`SharedKernel:Presentation:SignalR`](#sharedkernelpresentationsignalr) | `SharedKernel.Presentation.SignalR.SharedKernelSignalROptions` | `builder.AddSharedKernelSignalR(configure)` |
 | [`SharedKernel:Presentation:Grpc`](#sharedkernelpresentationgrpc) | `SharedKernel.Presentation.Grpc.SharedKernelGrpcOptions` | `builder.AddSharedKernelGrpc(configure)` |
 
+The request context (correlation id, inbound baggage) is configured in `13.ServiceDefaults`, not here: see
+[The request context](#the-request-context-sharedkernelservicedefaultssecurity). `SharedKernel.Presentation.Core` has no
+settings. `SharedKernel.Presentation.GraphQL` has no configuration section: `AddSharedKernelGraphQL(options => …)` sets
+`GraphQLOptions` (`EnableFiltering`, `EnableSorting`, `EnablePaging`, `MaxPageSize` 100, `AllowIntrospection`) in code;
+see its README.
+
 How every section behaves:
 
 - Each options class names its section (`ISectionBoundOptions.SectionName`) and is registered with
@@ -30,8 +36,9 @@ How every section behaves:
 
 ## `SharedKernel:Presentation:WebApi`
 
-`SharedKernelWebApiOptions`. Every default is the secure choice: correlation ids, security headers, a 4 MiB body
-limit, no cross-origin access, uncached responses and redacted server errors.
+`SharedKernelWebApiOptions`. Every default is the secure choice: security headers, a 4 MiB body limit, no cross-origin
+access, uncached responses and redacted server errors. The correlation id and the refusal of inbound baggage are not
+WebApi settings since P-579: see [The request context](#the-request-context-sharedkernelservicedefaultssecurity).
 
 ```json
 {
@@ -39,12 +46,6 @@ limit, no cross-origin access, uncached responses and redacted server errors.
     "Presentation": {
       "WebApi": {
         "RemoveServerHeader": true,
-        "TrustInboundBaggage": false,
-        "CorrelationId": {
-          "Enabled": true,
-          "MaxLength": 128,
-          "AllowedCharacterPattern": "^[A-Za-z0-9\\-_:.]+$"
-        },
         "Cors": {
           "AllowedOrigins": [ "https://app.example.com" ],
           "AllowedMethods": [],
@@ -90,18 +91,6 @@ The example shows the defaults, except `Cors:AllowedOrigins` and `Problems:Unava
 | Key | Type | Default | Validation | Effect |
 | --- | --- | --- | --- | --- |
 | `RemoveServerHeader` | `bool` | `true` | — | Kestrel sends no `Server` header |
-| `TrustInboundBaggage` | `bool` | `false` | — | `false`: hosting reads no W3C `baggage` from the request and the first middleware removes any inbound item from the request `Activity`. `true` keeps the caller's baggage; set it only behind a gateway that removes caller-supplied baggage |
-
-### `CorrelationId`
-
-| Key | Type | Default | Validation | Effect |
-| --- | --- | --- | --- | --- |
-| `Enabled` | `bool` | `true` | — | Resolve the correlation id and write it to the `X-Correlation-Id` response header, the problem's `correlationId` and `Activity` baggage (`correlation.id`) |
-| `MaxLength` | `int` | `128` | 1 to 1024 | The longest inbound id accepted; a longer one is replaced |
-| `AllowedCharacterPattern` | `string` (regular expression) | `^[A-Za-z0-9\-_:.]+$` (`WebApiCorrelationIdOptions.DefaultAllowedCharacterPattern`) | Required; a valid regular expression | An inbound id must match it. A custom pattern is compiled once and evaluated with a 100 ms timeout; a timeout rejects the id |
-
-An inbound id is also rejected when it contains a control character or the header has several values. A rejected or
-missing id is replaced by the trace id, or a new GUID when the request is not traced.
 
 ### `Cors`
 
@@ -160,8 +149,19 @@ The three default codes are owned by 06.Persistence (`ConcurrencyVersion.Conflic
 | Constant | Value | Use |
 | --- | --- | --- |
 | `SharedKernelWebApiOptions.SectionName` | `SharedKernel:Presentation:WebApi` | The section path |
-| `WebApiCorrelationIdOptions.DefaultAllowedCharacterPattern` | `^[A-Za-z0-9\-_:.]+$` | The default correlation id pattern |
 | `IdempotencyKey.MaxLength` | `256` | The longest `Idempotency-Key`, without the pair of double quotes a client may add; not a setting |
+
+
+### The request context (`SharedKernel.ServiceDefaults.Security`)
+
+Every host composes `builder.Services.AddSharedKernelRequestContext()` and `app.UseSharedKernelRequestContext()` before
+`UseSharedKernelWebApi()` (P-579). It owns what `SharedKernel:Presentation:WebApi:CorrelationId` and
+`:TrustInboundBaggage` configured until then; those keys no longer exist and are ignored if still present.
+
+| Setting | Where | Default | Effect |
+| --- | --- | --- | --- |
+| Correlation id | none: one fixed rule, `CorrelationIds.IsValid` | at most 128 characters of `[A-Za-z0-9-_:.]` | A valid inbound `X-Correlation-Id` is kept; a missing or invalid one is replaced by `CorrelationIds.New()` (a GUID, never the trace id), the rejected value logged by length only (13007) |
+| `RequestContextOptions.TrustInboundBaggage` | code: `AddSharedKernelRequestContext(o => o.TrustInboundBaggage = true)` | `false` | `false`: hosting reads no W3C `baggage` from the request, and the middleware removes any inbound item from the request `Activity` before it adds the correlation id. `true` keeps the caller's baggage; set it only behind a gateway that removes caller-supplied baggage |
 
 ---
 
@@ -268,7 +268,9 @@ These are code, per endpoint or per host, and have no configuration key:
 | Rate limiting policies | ASP.NET Core `AddRateLimiter()`, or 13.ServiceDefaults' `AddSharedKernelRateLimiting()` |
 | Request localization | `UseRequestLocalization()` in the `BeforeAuthorization` hook, and an `ILocalizationCatalog` |
 
-The pre-P-562 settings (`CorrelationIdOptions`, `CorsPolicyOptions`, `SecurityHeadersOptions`, `PayloadLimitsOptions`,
+`WebApiCorrelationIdOptions` (`SharedKernel:Presentation:WebApi:CorrelationId`) and `SharedKernelWebApiOptions.TrustInboundBaggage`
+were removed by P-579 (see [the request context](#the-request-context-sharedkernelservicedefaultssecurity)). The pre-P-562
+settings (`CorrelationIdOptions`, `CorsPolicyOptions`, `SecurityHeadersOptions`, `PayloadLimitsOptions`,
 `UploadValidationOptions`, `ApiVersionLifecycleOptions`, `OpenApiSecuritySchemesOptions`, `HubInvocationRateLimitOptions`,
 `WebApiOptions`) no longer exist; the constant `HttpContextIdempotencyExtensions.MaxIdempotencyKeyLength` is now
 `IdempotencyKey.MaxLength`.

@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): resolved — `MeilisearchContainerFixture` and `ElasticsearchContainerFixture` now exist in `16.Testing/SharedKernel.Testing.Internal/Containers/` (the non-packable Testcontainers package). Kept as history of why the fixtures are shaped the way they are.
+
 Verified on disk 2026-07-19: `16.Testing/SharedKernel.Testing/Containers/` contains exactly four
 fixtures (PostgreSQL, Redis, RabbitMQ, MinIO). Zero search-related rows exist anywhere in
 `16.Testing/state-map.md`, `CLAUDE.md`, or `README.md` — this is a true greenfield gap, not a

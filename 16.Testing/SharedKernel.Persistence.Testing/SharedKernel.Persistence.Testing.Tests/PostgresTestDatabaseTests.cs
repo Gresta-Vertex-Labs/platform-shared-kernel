@@ -2,7 +2,8 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
-using SharedKernel.Application.Transactions;
+using SharedKernel.Execution.Tenancy;
+using SharedKernel.Execution.Transactions;
 using SharedKernel.Domain.Aggregates;
 using SharedKernel.Persistence.Abstractions.Repositories;
 using SharedKernel.Persistence.EfCore.Context;
@@ -12,7 +13,7 @@ namespace SharedKernel.Persistence.Testing.Tests;
 
 public sealed class Ticket : TenantedAggregateRoot<Guid>
 {
-    public Ticket(Guid id, Guid tenantId, string title) : base(id, tenantId, new SystemClock()) => Title = title;
+    public Ticket(Guid id, TenantId tenantId, string title) : base(id, tenantId, new SystemClock()) => Title = title;
 
     private Ticket() { }
 
@@ -67,8 +68,8 @@ public sealed class PostgresTestDatabaseTests(PostgresServerFixture fixture) : I
     public async Task AddSharedKernelPostgres_OnTheGeneratedConfiguration_IsolatesTenants_InTheApplicationAndInTheDatabase()
     {
         await using var database = await fixture.Server.CreateDatabaseAsync();
-        var tenantA = Guid.NewGuid();
-        var tenantB = Guid.NewGuid();
+        var tenantA = new TenantId(Guid.NewGuid());
+        var tenantB = new TenantId(Guid.NewGuid());
 
         var services = new ServiceCollection();
         services.AddLogging();

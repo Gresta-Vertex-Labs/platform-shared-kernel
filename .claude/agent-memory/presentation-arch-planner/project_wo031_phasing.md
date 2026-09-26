@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): the domain now has six Host-tier packages — `.Core` (new), `.WebApi`, `.Grpc`, `.SignalR`, `.SignalR.Redis` (new, the backplane) and `.GraphQL` (moved from `11.Communication`). Task-ID tails below are stale; always read `14.Presentation/state-map.md`.
+
 WO-031 dispatched all six standard phases for `14.Presentation` in one batch (P-192 Design, P-193 Scaffold, P-194/P-195 Core split by package, P-196 Tests, P-197 Docs, P-198 Published). This is the first full-domain phase set processed for this domain — prior session only initialized the empty `state-map.md`/`CLAUDE.md` skeleton with zero tasks.
 
 **Why:** Every other completed domain (11.Communication, 12.Security, 13.ServiceDefaults, 03.Domain) ran Design before Scaffold to lock the public surface first, given this domain's high blast radius (every consuming API/socket service derives error shape, versioning, and hub behavior from it).

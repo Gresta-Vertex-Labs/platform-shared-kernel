@@ -4,6 +4,8 @@ description: WO-044 (P-275 Meilisearch/Elasticsearch container fixtures, P-276 I
 type: project
 ---
 
+> WO-086 (2026-09): the search fakes now live in `SharedKernel.Search.Testing` (proven by its own `.Tests`, not `SharedKernel.Testing.SelfTests`); the search-local `TenantScope` was replaced by the single `SharedKernel.Execution.Tenancy.TenantScope`, and the provisioner `ProbeAsync` by an `IReadinessProbe` per index. Pre-split paths below are history.
+
 WO-044 adds two things to `16.Testing`, mirroring the WO-043/`08.Storage` precedent one domain later: `Containers/MeilisearchContainerFixture` + `Containers/ElasticsearchContainerFixture` (P-275, fixtures five and six in `Containers/`) and a new `Search/` capability folder (P-276: `InMemorySearchIndex<TDocument>`, `InMemorySearchIndexProvisioner`, `InMemorySearchProviderDescriptor`, `AddInMemorySearchIndex<TDocument>()`, `AddInMemorySearchProvisioning()`), faking `09.Search/SharedKernel.Search.Abstractions`.
 
 **Status as of 2026-07-20: SK.16.Design (121/121), SK.16.Scaffold (28/28), SK.16.Core (69/69), and SK.16.Tests (51/51) are all `●`, promoted to root.** Only SK.16.Docs (DO-19-DO-22) remains to fully close WO-044.

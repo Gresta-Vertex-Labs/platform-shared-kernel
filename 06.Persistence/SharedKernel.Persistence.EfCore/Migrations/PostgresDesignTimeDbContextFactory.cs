@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore.Design;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
-using SharedKernel.Application.Context;
+using SharedKernel.Execution.Context;
 using SharedKernel.Persistence;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Exceptions;

@@ -9,7 +9,7 @@ namespace SharedKernel.Presentation.WebApi;
 /// <remarks>
 /// <para>Each hook runs its registrations in the order they were added:</para>
 /// <list type="bullet">
-///   <item><see cref="AtStart"/>: before everything else except the removal of inbound baggage — forwarded headers,
+///   <item><see cref="AtStart"/>: before everything else in this pipeline — forwarded headers,
 ///   so HSTS, the scheme and the client address are right from the first middleware on.</item>
 ///   <item><see cref="BeforeAuthentication"/>: after routing and CORS, before authentication — certificate forwarding.</item>
 ///   <item><see cref="BeforeAuthorization"/>: after authentication, before rate limiting and authorization — request
@@ -28,8 +28,9 @@ public sealed class WebApiPipeline
     }
 
     /// <summary>
-    /// Adds middleware at the start of the pipeline, before correlation ids, HSTS, security headers and the exception
-    /// handler — for example <c>app =&gt; app.UseForwardedHeaders()</c>.
+    /// Adds middleware at the start of the pipeline, before HSTS, security headers and the exception handler
+    /// (<c>UseSharedKernelRequestContext()</c> runs before this whole pipeline) — for example
+    /// <c>app =&gt; app.UseForwardedHeaders()</c>.
     /// </summary>
     /// <param name="configure">Adds the middleware to the application builder it is given.</param>
     /// <returns>This instance.</returns>

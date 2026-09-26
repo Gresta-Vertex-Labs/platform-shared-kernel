@@ -9,11 +9,11 @@ namespace SharedKernel.ArchitectureTests.Tests;
 
 /// <summary>
 /// Tests for <see cref="SecurityArchitectureRules"/> — covering both predicates:
-/// <c>DomainNeverReferencesTenantProvider</c> and
+/// <c>DomainNeverReferencesRequestContext</c> and
 /// <c>NoSingletonRegistrationOfSecurityContextTypes</c>.
 /// </summary>
 /// <remarks>
-/// T-286/T-287: Rule 1 — <c>DomainNeverReferencesTenantProvider</c> (contrived fire/pass paths).
+/// T-286/T-287: Rule 1 — <c>DomainNeverReferencesRequestContext</c> (contrived fire/pass paths).
 /// T-288/T-289: Rule 2 — <c>NoSingletonRegistrationOfSecurityContextTypes</c> (contrived fire/pass
 /// paths).
 /// T-290/T-291: real-assembly, non-gating verification against the real, shipped
@@ -34,23 +34,23 @@ namespace SharedKernel.ArchitectureTests.Tests;
 public class SecurityArchitectureRulesTests
 {
     // ---------------------------------------------------------------------------
-    // T-286 — Rule 1 fire path: 03.Domain-shaped fixture accepts ITenantProvider as a ctor param
+    // T-286 — Rule 1 fire path: 03.Domain-shaped fixture accepts IRequestContext as a ctor param
     // ---------------------------------------------------------------------------
 
     /// <summary>
     /// T-286: A fixture type accepting
-    /// <c>SharedKernel.Security.Abstractions.ITenantProvider</c> as a constructor
-    /// parameter must fail <see cref="SecurityArchitectureRules.DomainNeverReferencesTenantProvider"/>.
+    /// <c>SharedKernel.Execution.Context.IRequestContext</c> as a constructor
+    /// parameter must fail <see cref="SecurityArchitectureRules.DomainNeverReferencesRequestContext"/>.
     /// </summary>
     [Fact]
-    public void DomainNeverReferencesTenantProvider_CtorParameterViolation_RuleFails()
+    public void DomainNeverReferencesRequestContext_CtorParameterViolation_RuleFails()
     {
         const string source = """
-            namespace SharedKernel.Security.Abstractions
+            namespace SharedKernel.Execution.Context
             {
-                // Stub simulating the real, shipped ITenantProvider — same namespace and name so
+                // Stub simulating the real, shipped IRequestContext — same namespace and name so
                 // the exact-FullName match fires correctly.
-                public interface ITenantProvider
+                public interface IRequestContext
                 {
                     System.Guid TenantId { get; }
                 }
@@ -58,15 +58,15 @@ public class SecurityArchitectureRulesTests
 
             namespace Domain.Pricing
             {
-                // Violation: a domain type directly accepts ITenantProvider as a constructor
+                // Violation: a domain type directly accepts IRequestContext as a constructor
                 // parameter, instead of receiving a Guid tenantId primitive from the application
                 // layer.
                 public sealed class PricingPolicy
                 {
-                    private readonly SharedKernel.Security.Abstractions.ITenantProvider _tenantProvider;
+                    private readonly SharedKernel.Execution.Context.IRequestContext _tenantProvider;
 
                     public PricingPolicy(
-                        SharedKernel.Security.Abstractions.ITenantProvider tenantProvider)
+                        SharedKernel.Execution.Context.IRequestContext tenantProvider)
                     {
                         _tenantProvider = tenantProvider;
                     }
@@ -77,12 +77,12 @@ public class SecurityArchitectureRulesTests
         var assembly = CompileInMemory("DomainTenantProviderViolation", source);
 
         var result = SecurityArchitectureRules
-            .DomainNeverReferencesTenantProvider(assembly)
+            .DomainNeverReferencesRequestContext(assembly)
             .GetResult();
 
         result.IsSuccessful.Should().BeFalse(
-            because: "PricingPolicy accepts ITenantProvider directly as a constructor parameter — " +
-                     "03.Domain must never reference ITenantProvider, only a Guid tenantId primitive");
+            because: "PricingPolicy accepts IRequestContext directly as a constructor parameter — " +
+                     "03.Domain must never reference IRequestContext, only a Guid tenantId primitive");
     }
 
     // ---------------------------------------------------------------------------
@@ -91,16 +91,16 @@ public class SecurityArchitectureRulesTests
 
     /// <summary>
     /// T-287: The equivalent fixture type accepting a <see cref="System.Guid"/>
-    /// <c>tenantId</c> primitive instead of <c>ITenantProvider</c> must pass
-    /// <see cref="SecurityArchitectureRules.DomainNeverReferencesTenantProvider"/>.
+    /// <c>tenantId</c> primitive instead of <c>IRequestContext</c> must pass
+    /// <see cref="SecurityArchitectureRules.DomainNeverReferencesRequestContext"/>.
     /// </summary>
     [Fact]
-    public void DomainNeverReferencesTenantProvider_GuidTenantIdPrimitive_RulePasses()
+    public void DomainNeverReferencesRequestContext_GuidTenantIdPrimitive_RulePasses()
     {
         const string source = """
-            namespace SharedKernel.Security.Abstractions
+            namespace SharedKernel.Execution.Context
             {
-                public interface ITenantProvider
+                public interface IRequestContext
                 {
                     System.Guid TenantId { get; }
                 }
@@ -108,8 +108,8 @@ public class SecurityArchitectureRulesTests
 
             namespace Domain.Pricing
             {
-                // Compliant: the application layer resolves ITenantProvider.TenantId and passes
-                // it as a Guid primitive — no reference to ITenantProvider anywhere in this type.
+                // Compliant: the application layer resolves IRequestContext.TenantId and passes
+                // it as a Guid primitive — no reference to IRequestContext anywhere in this type.
                 public sealed class PricingPolicy
                 {
                     private readonly System.Guid _tenantId;
@@ -125,12 +125,12 @@ public class SecurityArchitectureRulesTests
         var assembly = CompileInMemory("DomainTenantIdPrimitiveCompliant", source);
 
         var result = SecurityArchitectureRules
-            .DomainNeverReferencesTenantProvider(assembly)
+            .DomainNeverReferencesRequestContext(assembly)
             .GetResult();
 
         result.IsSuccessful.Should().BeTrue(
             because: "PricingPolicy accepts a Guid tenantId primitive — no reference to " +
-                     "ITenantProvider is present anywhere in the fixture assembly");
+                     "IRequestContext is present anywhere in the fixture assembly");
     }
 
     // ---------------------------------------------------------------------------
@@ -284,24 +284,24 @@ public class SecurityArchitectureRulesTests
     // ---------------------------------------------------------------------------
 
     /// <summary>
-    /// T-290: Re-points <see cref="SecurityArchitectureRules.DomainNeverReferencesTenantProvider"/>
+    /// T-290: Re-points <see cref="SecurityArchitectureRules.DomainNeverReferencesRequestContext"/>
     /// at the real, shipped <c>SharedKernel.Domain</c> assembly and confirms zero violations.
     /// Non-gating — <c>03.Domain</c> was already fully Published (v1.7.0, WO-051) as of this
     /// phase's authoring.
     /// </summary>
     [Fact]
-    public void DomainNeverReferencesTenantProvider_RealDomainAssembly_RulePasses()
+    public void DomainNeverReferencesRequestContext_RealDomainAssembly_RulePasses()
     {
         var domainAssembly = typeof(SharedKernel.Domain.Abstractions.IDomainService).Assembly;
 
         var result = SecurityArchitectureRules
-            .DomainNeverReferencesTenantProvider(domainAssembly)
+            .DomainNeverReferencesRequestContext(domainAssembly)
             .GetResult();
 
         result.IsSuccessful.Should().BeTrue(
             because: "the real, shipped SharedKernel.Domain assembly never references " +
-                     "SharedKernel.Security.Abstractions.ITenantProvider — " +
-                     "03.Domain has no dependency on 12.Security at all");
+                     "SharedKernel.Execution.Context.IRequestContext — " +
+                     "the domain receives the tenant as a value");
     }
 
     // ---------------------------------------------------------------------------
@@ -315,7 +315,7 @@ public class SecurityArchitectureRulesTests
     /// <c>AddOidcAuthentication</c> registration method) and
     /// confirms zero violations. Non-gating — <c>12.Security</c> was already fully Published as
     /// of this phase's authoring; the registration method registers
-    /// <c>IUserContext</c>/<c>ITenantProvider</c> as <c>AddScoped</c>, never
+    /// <c>IUserContext</c> as <c>AddScoped</c>, never
     /// <c>AddSingleton</c>.
     /// </summary>
     [Fact]
@@ -329,7 +329,7 @@ public class SecurityArchitectureRulesTests
 
         result.IsSuccessful.Should().BeTrue(
             because: "the real, shipped OidcServiceCollectionExtensions registers both " +
-                     "IUserContext and ITenantProvider via AddScoped — never AddSingleton");
+                     "IUserContext via AddScoped — never AddSingleton");
     }
 
     // ---------------------------------------------------------------------------

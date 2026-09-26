@@ -4,6 +4,12 @@
 
 See [`SharedKernel.Reporting.Abstractions`](../SharedKernel.Reporting.Abstractions/README.md) for the shared contract and column model.
 
+```xml
+<PackageReference Include="SharedKernel.Reporting.Spreadsheet" />
+```
+
+Versions come from the consumer's single `SharedKernelVersion`. **Tier: Adapter** — brings `SharedKernel.Reporting.Abstractions` and `SharedKernel.Storage.Abstractions`; register a storage provider for the store the export targets.
+
 ## IMPORTANT — memory model
 
 **CLOSEDXML ITSELF EXPOSES NO INCREMENTAL/STREAMING WRITE PATH.** `XLWorkbook.SaveAs` builds the complete in-memory workbook object graph and only serializes it to the destination stream at `SaveAs` time — a documented real-world case saw a 32 MB `.xlsx` output consume 1+ GB of process memory ([`ClosedXML/ClosedXML#1180`](https://github.com/ClosedXML/ClosedXML/issues/1180)).

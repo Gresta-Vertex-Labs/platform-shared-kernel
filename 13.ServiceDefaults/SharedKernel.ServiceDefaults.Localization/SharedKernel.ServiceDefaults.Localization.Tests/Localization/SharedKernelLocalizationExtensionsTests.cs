@@ -7,6 +7,8 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using SharedKernel.MultiTenancy.Catalog;
+using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Security.Abstractions;
 using SharedKernel.ServiceDefaults.Localization;
 using SharedKernel.Testing.Logging;
@@ -30,13 +32,12 @@ public sealed class SharedKernelLocalizationExtensionsTests
     [Fact]
     public async Task ResolvedCulture_UserPreferenceClaim_WinsOverTenantDefaultAndAcceptLanguageHeader()
     {
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
 
         var userContext = Substitute.For<IUserContext>();
         userContext.FindClaim("culture").Returns("de-DE");
 
-        var tenantProvider = Substitute.For<ITenantProvider>();
-        tenantProvider.TenantId.Returns(tenantId);
+        IRequestContext tenantProvider = new SystemRequestContext([], "test", tenantId);
 
         var catalog = Substitute.For<ITenantCatalog>();
         catalog.GetByIdAsync(tenantId, Arg.Any<CancellationToken>()).Returns(
@@ -44,7 +45,7 @@ public sealed class SharedKernelLocalizationExtensionsTests
 
         var builder = Host.CreateApplicationBuilder();
         builder.Services.AddSingleton(userContext);
-        builder.Services.AddSingleton(tenantProvider);
+        builder.Services.AddSingleton<IRequestContext>(tenantProvider);
         builder.Services.AddSingleton(catalog);
         builder.AddSharedKernelLocalization(o => o.UserPreferenceClaimType = "culture");
 

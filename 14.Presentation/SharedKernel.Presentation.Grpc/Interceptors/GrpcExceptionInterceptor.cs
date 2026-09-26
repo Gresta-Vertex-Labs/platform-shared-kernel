@@ -6,7 +6,6 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharedKernel.Core.Exceptions;
 using SharedKernel.Presentation.Grpc.Errors;
-using SharedKernel.Presentation.WebApi;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Logging;
 
@@ -253,8 +252,8 @@ internal sealed partial class GrpcExceptionInterceptor : Interceptor
             Message = "Unhandled exception in gRPC method {GrpcMethod}.")]
         public static partial void UnhandledException(ILogger logger, string grpcMethod, Exception exception);
 
-        // 14201 was the refusal log of the deleted authorization interceptor; refusals are logged by the WebApi core's
-        // authorization (14002) now. Not reused.
+        // 14201 was the refusal log of the deleted authorization interceptor; refusals are logged by
+        // SharedKernel.Presentation.Core's authorization (14002) now. Not reused.
         [LoggerMessage(
             EventId = LoggingEventIdRanges.Presentation + 202,
             Level = LogLevel.Error,

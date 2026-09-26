@@ -41,16 +41,6 @@ public static class StorageErrors
     public static Error InvalidKey(string? key, string reason) =>
         Error.Validation(StorageErrorCodes.InvalidKey, $"Object key '{key}' is invalid: {reason}");
 
-    /// <summary>
-    /// Builds <see cref="StorageErrorCodes.InvalidTenant"/>: the tenant id is not usable as a key prefix.
-    /// </summary>
-    /// <param name="tenantId">The rejected tenant id, or <see langword="null"/>.</param>
-    /// <returns>A <see cref="ErrorType.Validation"/> error whose message states the tenant id rules.</returns>
-    public static Error InvalidTenant(string? tenantId) =>
-        Error.Validation(
-            StorageErrorCodes.InvalidTenant,
-            $"Tenant id '{tenantId}' is invalid: use 1 to {StorageValidation.MaxTenantIdLength} characters from A-Z, a-z, 0-9, '.', '_' and '-', other than '.' and '..'.");
-
     /// <summary>Builds <see cref="StorageErrorCodes.InvalidRequest"/>: an option of the request is invalid.</summary>
     /// <param name="message">The whole error message: what is wrong, naming the option.</param>
     /// <returns>A <see cref="ErrorType.Validation"/> error.</returns>

@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Text.Json;
@@ -194,22 +195,22 @@ public sealed class DomainHardeningTests
 
     // ---- Tenants ----
 
-    private sealed class T1(Guid tenant) : TenantedAggregateRoot<Guid>(Guid.NewGuid(), tenant, new FixedClock(T0));
-    private sealed class T2(Guid tenant) : TenantedAuditableAggregateRoot<Guid>(Guid.NewGuid(), tenant, new FixedClock(T0));
-    private sealed class T3(Guid tenant) : TenantedSoftDeletableAggregateRoot<Guid>(Guid.NewGuid(), tenant, new FixedClock(T0))
+    private sealed class T1(TenantId tenant) : TenantedAggregateRoot<Guid>(Guid.NewGuid(), tenant, new FixedClock(T0));
+    private sealed class T2(TenantId tenant) : TenantedAuditableAggregateRoot<Guid>(Guid.NewGuid(), tenant, new FixedClock(T0));
+    private sealed class T3(TenantId tenant) : TenantedSoftDeletableAggregateRoot<Guid>(Guid.NewGuid(), tenant, new FixedClock(T0))
     {
         protected override void OnDelete() { }
     }
-    private sealed class T4(Guid tenant) : TenantedAuditableSoftDeletableAggregateRoot<Guid>(Guid.NewGuid(), tenant, new FixedClock(T0))
+    private sealed class T4(TenantId tenant) : TenantedAuditableSoftDeletableAggregateRoot<Guid>(Guid.NewGuid(), tenant, new FixedClock(T0))
     {
         protected override void OnDelete() { }
     }
-    private sealed class T5(Guid tenant) : TenantedFullAuditableAggregateRoot<Guid>(Guid.NewGuid(), tenant, new FixedClock(T0))
+    private sealed class T5(TenantId tenant) : TenantedFullAuditableAggregateRoot<Guid>(Guid.NewGuid(), tenant, new FixedClock(T0))
     {
         protected override void OnDelete() { }
     }
 
-    public static TheoryData<Func<Guid, IHasTenant>> TenantedBases => new()
+    public static TheoryData<Func<TenantId, IHasTenant>> TenantedBases => new()
     {
         t => new T1(t),
         t => new T2(t),
@@ -220,19 +221,19 @@ public sealed class DomainHardeningTests
 
     [Theory]
     [MemberData(nameof(TenantedBases))]
-    public void TenantedBase_EmptyTenant_Throws(Func<Guid, IHasTenant> create)
+    public void TenantedBase_EmptyTenant_Throws(Func<TenantId, IHasTenant> create)
     {
         // Before: Guid.Empty was accepted, creating an aggregate that belonged to no tenant.
-        var act = () => create(Guid.Empty);
+        var act = () => create(default);
 
         act.Should().Throw<DomainException>();
     }
 
     [Theory]
     [MemberData(nameof(TenantedBases))]
-    public void TenantedBase_KeepsTheTenant(Func<Guid, IHasTenant> create)
+    public void TenantedBase_KeepsTheTenant(Func<TenantId, IHasTenant> create)
     {
-        var tenant = Guid.NewGuid();
+        var tenant = new TenantId(Guid.NewGuid());
 
         create(tenant).TenantId.Should().Be(tenant);
     }
@@ -240,8 +241,8 @@ public sealed class DomainHardeningTests
     [Fact]
     public void NewTenantedSoftDeleteBases_ImplementTheExpectedInterfaces()
     {
-        new T3(Guid.NewGuid()).Should().BeAssignableTo<ISoftDeletable>().And.NotBeAssignableTo<IHasAudit>();
-        new T4(Guid.NewGuid()).Should().BeAssignableTo<ISoftDeletable>().And.BeAssignableTo<IHasAudit>()
+        new T3(new TenantId(Guid.NewGuid())).Should().BeAssignableTo<ISoftDeletable>().And.NotBeAssignableTo<IHasAudit>();
+        new T4(new TenantId(Guid.NewGuid())).Should().BeAssignableTo<ISoftDeletable>().And.BeAssignableTo<IHasAudit>()
             .And.NotBeAssignableTo<IHasConcurrency>();
     }
 

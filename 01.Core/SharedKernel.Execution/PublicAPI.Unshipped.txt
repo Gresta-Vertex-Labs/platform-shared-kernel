@@ -1,0 +1,141 @@
+#nullable enable
+SharedKernel.Execution.Auditing.AuditEntry
+SharedKernel.Execution.Auditing.AuditEntry.<Clone>$() -> SharedKernel.Execution.Auditing.AuditEntry!
+SharedKernel.Execution.Auditing.AuditEntry.Action.get -> string!
+SharedKernel.Execution.Auditing.AuditEntry.Action.init -> void
+SharedKernel.Execution.Auditing.AuditEntry.AfterSnapshot.get -> string?
+SharedKernel.Execution.Auditing.AuditEntry.AfterSnapshot.init -> void
+SharedKernel.Execution.Auditing.AuditEntry.ApprovalId.get -> string?
+SharedKernel.Execution.Auditing.AuditEntry.ApprovalId.init -> void
+SharedKernel.Execution.Auditing.AuditEntry.AuditEntry() -> void
+SharedKernel.Execution.Auditing.AuditEntry.BeforeSnapshot.get -> string?
+SharedKernel.Execution.Auditing.AuditEntry.BeforeSnapshot.init -> void
+SharedKernel.Execution.Auditing.AuditEntry.Equals(SharedKernel.Execution.Auditing.AuditEntry? other) -> bool
+SharedKernel.Execution.Auditing.AuditEntry.ErrorCode.get -> string?
+SharedKernel.Execution.Auditing.AuditEntry.ErrorCode.init -> void
+SharedKernel.Execution.Auditing.AuditEntry.IdempotencyKey.get -> string?
+SharedKernel.Execution.Auditing.AuditEntry.IdempotencyKey.init -> void
+SharedKernel.Execution.Auditing.AuditEntry.Outcome.get -> SharedKernel.Execution.Auditing.AuditOutcome
+SharedKernel.Execution.Auditing.AuditEntry.Outcome.init -> void
+SharedKernel.Execution.Auditing.AuditEntry.ResourceId.get -> string!
+SharedKernel.Execution.Auditing.AuditEntry.ResourceId.init -> void
+SharedKernel.Execution.Auditing.AuditEntry.ResourceType.get -> string!
+SharedKernel.Execution.Auditing.AuditEntry.ResourceType.init -> void
+SharedKernel.Execution.Auditing.AuditOutcome
+SharedKernel.Execution.Auditing.AuditOutcome.Failed = 1 -> SharedKernel.Execution.Auditing.AuditOutcome
+SharedKernel.Execution.Auditing.AuditOutcome.Succeeded = 0 -> SharedKernel.Execution.Auditing.AuditOutcome
+SharedKernel.Execution.Auditing.IAuditTrailWriter
+SharedKernel.Execution.Auditing.IAuditTrailWriter.RecordAsync(SharedKernel.Execution.Auditing.AuditEntry! entry, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SharedKernel.Execution.Context.ActorKind
+SharedKernel.Execution.Context.ActorKind.Service = 1 -> SharedKernel.Execution.Context.ActorKind
+SharedKernel.Execution.Context.ActorKind.System = 2 -> SharedKernel.Execution.Context.ActorKind
+SharedKernel.Execution.Context.ActorKind.User = 0 -> SharedKernel.Execution.Context.ActorKind
+SharedKernel.Execution.Context.AnonymousRequestContext
+SharedKernel.Execution.Context.AnonymousRequestContext.ActorKind.get -> SharedKernel.Execution.Context.ActorKind
+SharedKernel.Execution.Context.AnonymousRequestContext.HasPermissionAsync(string! permission, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<bool>
+SharedKernel.Execution.Context.AnonymousRequestContext.IsAuthenticated.get -> bool
+SharedKernel.Execution.Context.AnonymousRequestContext.TenantId.get -> SharedKernel.Execution.Tenancy.TenantId?
+SharedKernel.Execution.Context.AnonymousRequestContext.UserId.get -> string?
+SharedKernel.Execution.Context.IRequestContext
+SharedKernel.Execution.Context.IRequestContext.ActorKind.get -> SharedKernel.Execution.Context.ActorKind
+SharedKernel.Execution.Context.IRequestContext.ClientId.get -> string?
+SharedKernel.Execution.Context.IRequestContext.HasPermissionAsync(string! permission, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<bool>
+SharedKernel.Execution.Context.IRequestContext.ImpersonatorId.get -> string?
+SharedKernel.Execution.Context.IRequestContext.IsAuthenticated.get -> bool
+SharedKernel.Execution.Context.IRequestContext.SessionId.get -> string?
+SharedKernel.Execution.Context.IRequestContext.TenantId.get -> SharedKernel.Execution.Tenancy.TenantId?
+SharedKernel.Execution.Context.IRequestContext.UserId.get -> string?
+SharedKernel.Execution.Context.SystemRequestContext
+SharedKernel.Execution.Context.SystemRequestContext.ActorKind.get -> SharedKernel.Execution.Context.ActorKind
+SharedKernel.Execution.Context.SystemRequestContext.HasPermissionAsync(string! permission, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<bool>
+SharedKernel.Execution.Context.SystemRequestContext.IsAuthenticated.get -> bool
+SharedKernel.Execution.Context.SystemRequestContext.TenantId.get -> SharedKernel.Execution.Tenancy.TenantId?
+SharedKernel.Execution.Context.SystemRequestContext.UserId.get -> string?
+SharedKernel.Execution.Transactions.IUnitOfWork
+SharedKernel.Execution.Transactions.IUnitOfWork.ExecuteInTransactionAsync(System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task!>! operation, System.Data.IsolationLevel? isolationLevel, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SharedKernel.Execution.Transactions.IUnitOfWork.ExecuteInTransactionAsync(System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task!>! operation, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SharedKernel.Execution.Transactions.IUnitOfWork.ExecuteInTransactionAsync<TResult>(System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task<TResult>!>! operation, System.Data.IsolationLevel? isolationLevel, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TResult>!
+SharedKernel.Execution.Transactions.IUnitOfWork.ExecuteInTransactionAsync<TResult>(System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task<TResult>!>! operation, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TResult>!
+SharedKernel.Execution.Transactions.IUnitOfWork.IsTransactionActive.get -> bool
+SharedKernel.Execution.Transactions.IUnitOfWork.OnBeforeCommit(System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task!>! callback) -> void
+SharedKernel.Execution.Transactions.IUnitOfWork.SaveChangesAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
+override SharedKernel.Execution.Auditing.AuditEntry.Equals(object? obj) -> bool
+override SharedKernel.Execution.Auditing.AuditEntry.GetHashCode() -> int
+override SharedKernel.Execution.Auditing.AuditEntry.ToString() -> string!
+static SharedKernel.Execution.Auditing.AuditEntry.operator !=(SharedKernel.Execution.Auditing.AuditEntry? left, SharedKernel.Execution.Auditing.AuditEntry? right) -> bool
+static SharedKernel.Execution.Auditing.AuditEntry.operator ==(SharedKernel.Execution.Auditing.AuditEntry? left, SharedKernel.Execution.Auditing.AuditEntry? right) -> bool
+static SharedKernel.Execution.Context.AnonymousRequestContext.Instance.get -> SharedKernel.Execution.Context.AnonymousRequestContext!
+SharedKernel.Execution.Transactions.CommitOutcomeUnknownException
+SharedKernel.Execution.Transactions.CommitOutcomeUnknownException.CommitOutcomeUnknownException(System.Exception! innerException) -> void
+SharedKernel.Execution.Transactions.TransactionRolledBackException
+SharedKernel.Execution.Transactions.TransactionRolledBackException.TransactionRolledBackException() -> void
+SharedKernel.Execution.Context.ActorKind.Anonymous = 3 -> SharedKernel.Execution.Context.ActorKind
+~override SharedKernel.Execution.Tenancy.TenantId.Equals(object obj) -> bool
+~override SharedKernel.Execution.Tenancy.TenantScope.Equals(object obj) -> bool
+override SharedKernel.Execution.Tenancy.TenantId.GetHashCode() -> int
+override SharedKernel.Execution.Tenancy.TenantId.TenantIdJsonConverter.Read(ref System.Text.Json.Utf8JsonReader reader, System.Type! typeToConvert, System.Text.Json.JsonSerializerOptions! options) -> SharedKernel.Execution.Tenancy.TenantId
+override SharedKernel.Execution.Tenancy.TenantId.TenantIdJsonConverter.Write(System.Text.Json.Utf8JsonWriter! writer, SharedKernel.Execution.Tenancy.TenantId value, System.Text.Json.JsonSerializerOptions! options) -> void
+override SharedKernel.Execution.Tenancy.TenantId.ToString() -> string!
+override SharedKernel.Execution.Tenancy.TenantScope.GetHashCode() -> int
+override SharedKernel.Execution.Tenancy.TenantScope.ToString() -> string!
+SharedKernel.Execution.Context.IRequestContext.CorrelationId.get -> string?
+SharedKernel.Execution.Context.IRequestContextAccessor
+SharedKernel.Execution.Context.IRequestContextAccessor.Current.get -> SharedKernel.Execution.Context.IRequestContext?
+SharedKernel.Execution.Context.RequestContextAccessor
+SharedKernel.Execution.Context.RequestContextAccessor.Current.get -> SharedKernel.Execution.Context.IRequestContext?
+SharedKernel.Execution.Context.RequestContextAccessor.RequestContextAccessor() -> void
+SharedKernel.Execution.Context.RequestContextScope
+SharedKernel.Execution.Tenancy.TenantId
+SharedKernel.Execution.Tenancy.TenantId.Equals(SharedKernel.Execution.Tenancy.TenantId other) -> bool
+SharedKernel.Execution.Tenancy.TenantId.IsDefault.get -> bool
+SharedKernel.Execution.Tenancy.TenantId.TenantId() -> void
+SharedKernel.Execution.Tenancy.TenantId.TenantId(System.Guid value) -> void
+SharedKernel.Execution.Tenancy.TenantId.TenantIdJsonConverter
+SharedKernel.Execution.Tenancy.TenantId.TenantIdJsonConverter.TenantIdJsonConverter() -> void
+SharedKernel.Execution.Tenancy.TenantId.ToString(string? format, System.IFormatProvider? formatProvider) -> string!
+SharedKernel.Execution.Tenancy.TenantId.TryFormat(System.Span<char> destination, out int charsWritten, System.ReadOnlySpan<char> format, System.IFormatProvider? provider) -> bool
+SharedKernel.Execution.Tenancy.TenantId.Value.get -> System.Guid
+SharedKernel.Execution.Tenancy.TenantScope
+SharedKernel.Execution.Tenancy.TenantScope.Equals(SharedKernel.Execution.Tenancy.TenantScope other) -> bool
+SharedKernel.Execution.Tenancy.TenantScope.IsGlobal.get -> bool
+SharedKernel.Execution.Tenancy.TenantScope.Tenant.get -> SharedKernel.Execution.Tenancy.TenantId?
+SharedKernel.Execution.Tenancy.TenantScope.TenantScope() -> void
+static SharedKernel.Execution.Context.RequestContextScope.Begin(SharedKernel.Execution.Context.IRequestContext! context) -> System.IDisposable!
+static SharedKernel.Execution.Context.RequestContextScope.Current.get -> SharedKernel.Execution.Context.IRequestContext?
+static SharedKernel.Execution.Tenancy.TenantId.explicit operator SharedKernel.Execution.Tenancy.TenantId(System.Guid value) -> SharedKernel.Execution.Tenancy.TenantId
+static SharedKernel.Execution.Tenancy.TenantId.explicit operator System.Guid(SharedKernel.Execution.Tenancy.TenantId tenantId) -> System.Guid
+static SharedKernel.Execution.Tenancy.TenantId.FromNullable(System.Guid? value) -> SharedKernel.Execution.Tenancy.TenantId?
+static SharedKernel.Execution.Tenancy.TenantId.operator !=(SharedKernel.Execution.Tenancy.TenantId left, SharedKernel.Execution.Tenancy.TenantId right) -> bool
+static SharedKernel.Execution.Tenancy.TenantId.operator ==(SharedKernel.Execution.Tenancy.TenantId left, SharedKernel.Execution.Tenancy.TenantId right) -> bool
+static SharedKernel.Execution.Tenancy.TenantId.Parse(string! s, System.IFormatProvider? provider = null) -> SharedKernel.Execution.Tenancy.TenantId
+static SharedKernel.Execution.Tenancy.TenantId.TryParse(string? s, out SharedKernel.Execution.Tenancy.TenantId result) -> bool
+static SharedKernel.Execution.Tenancy.TenantId.TryParse(string? s, System.IFormatProvider? provider, out SharedKernel.Execution.Tenancy.TenantId result) -> bool
+static SharedKernel.Execution.Tenancy.TenantScope.For(SharedKernel.Execution.Tenancy.TenantId tenant) -> SharedKernel.Execution.Tenancy.TenantScope
+static SharedKernel.Execution.Tenancy.TenantScope.FromNullable(SharedKernel.Execution.Tenancy.TenantId? tenant) -> SharedKernel.Execution.Tenancy.TenantScope
+static SharedKernel.Execution.Tenancy.TenantScope.Global.get -> SharedKernel.Execution.Tenancy.TenantScope
+static SharedKernel.Execution.Tenancy.TenantScope.operator !=(SharedKernel.Execution.Tenancy.TenantScope left, SharedKernel.Execution.Tenancy.TenantScope right) -> bool
+static SharedKernel.Execution.Tenancy.TenantScope.operator ==(SharedKernel.Execution.Tenancy.TenantScope left, SharedKernel.Execution.Tenancy.TenantScope right) -> bool
+SharedKernel.Execution.Context.CorrelationIds
+SharedKernel.Execution.Context.PropagatedRequestContext
+SharedKernel.Execution.Context.PropagatedRequestContext.ActorKind.get -> SharedKernel.Execution.Context.ActorKind
+SharedKernel.Execution.Context.PropagatedRequestContext.ClientId.get -> string?
+SharedKernel.Execution.Context.PropagatedRequestContext.CorrelationId.get -> string?
+SharedKernel.Execution.Context.PropagatedRequestContext.HasPermissionAsync(string! permission, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<bool>
+SharedKernel.Execution.Context.PropagatedRequestContext.IsAuthenticated.get -> bool
+SharedKernel.Execution.Context.PropagatedRequestContext.PropagatedRequestContext(SharedKernel.Execution.Tenancy.TenantId? tenantId, string? userId = null, SharedKernel.Execution.Context.ActorKind actorKind = SharedKernel.Execution.Context.ActorKind.Anonymous, string? clientId = null, string? correlationId = null) -> void
+SharedKernel.Execution.Context.PropagatedRequestContext.TenantId.get -> SharedKernel.Execution.Tenancy.TenantId?
+SharedKernel.Execution.Context.PropagatedRequestContext.UserId.get -> string?
+SharedKernel.Execution.Context.RequestContextExtensions
+SharedKernel.Execution.Context.RequestContextPropagation
+SharedKernel.Execution.Context.SystemRequestContext.CorrelationId.get -> string?
+SharedKernel.Execution.Context.SystemRequestContext.SystemRequestContext(System.Collections.Generic.IEnumerable<string!>! permissions, string! identity = "system", SharedKernel.Execution.Tenancy.TenantId? tenantId = null, string? correlationId = null) -> void
+const SharedKernel.Execution.Context.CorrelationIds.MaxLength = 128 -> int
+static SharedKernel.Execution.Context.CorrelationIds.AcceptOrCreate(string? candidate) -> string!
+static SharedKernel.Execution.Context.CorrelationIds.Current(SharedKernel.Execution.Context.IRequestContext? context) -> string?
+static SharedKernel.Execution.Context.CorrelationIds.IsValid(string? value) -> bool
+static SharedKernel.Execution.Context.CorrelationIds.New() -> string!
+static SharedKernel.Execution.Context.RequestContextExtensions.WithCorrelationId(this SharedKernel.Execution.Context.IRequestContext! context, string! correlationId) -> SharedKernel.Execution.Context.IRequestContext!
+static SharedKernel.Execution.Context.RequestContextExtensions.WithTenant(this SharedKernel.Execution.Context.IRequestContext! context, SharedKernel.Execution.Tenancy.TenantId? tenantId) -> SharedKernel.Execution.Context.IRequestContext!
+static SharedKernel.Execution.Context.RequestContextPropagation.ParseActorKind(string? value) -> SharedKernel.Execution.Context.ActorKind
+static SharedKernel.Execution.Context.RequestContextPropagation.ReadHeaders<TCarrier>(TCarrier carrier, System.Func<TCarrier, string!, string?>! getHeader, bool createCorrelationId = true) -> SharedKernel.Execution.Context.PropagatedRequestContext!
+static SharedKernel.Execution.Context.RequestContextPropagation.WriteHeaders<TCarrier>(SharedKernel.Execution.Context.IRequestContext? context, TCarrier carrier, System.Action<TCarrier, string!, string!>! setHeader, string? correlationId = null) -> void

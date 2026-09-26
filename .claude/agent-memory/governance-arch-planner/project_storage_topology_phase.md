@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): historical design. Today `StorageTopologyRules` holds `AbstractionsHasNoThirdPartyDependencies`, `AbstractionsForbiddenAssemblyReferences`, `S3NeverReferencesObs`, `S3ForbiddenAssemblyReferences` and `OnlyProviderPackagesMayReferenceAmazonS3` (Obs→S3 is a declared adapter edge). `CompositionRootExclusivityRules` was deleted in P-574, and `UnitOfWorkSeamRules` now holds only `SharedContractsAreNotRedeclared` — use the code, not the reference implementations named below.
+
 Phase SK.00.StorageTopology was added on 2026-07-16 under WO-043 P-271, dispatched alongside
 the rest of `08.Storage`'s first build-out (P-265–P-271). This is the first phase where
 `00.Governance` designed enforcement for a domain that had **zero** buildable assemblies at

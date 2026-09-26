@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using System.Reflection;
 using FluentAssertions;
 using SharedKernel.Domain.Abstractions;
@@ -25,19 +26,19 @@ public class TenantedAggregateTests
 
     private sealed class TenantOrder : TenantedAggregateRoot<Guid>
     {
-        public TenantOrder(Guid id, Guid tenantId, IClock clock) : base(id, tenantId, clock) { }
+        public TenantOrder(Guid id, TenantId tenantId, IClock clock) : base(id, tenantId, clock) { }
         public TenantOrder() : base() { }
     }
 
     private sealed class TenantAuditableOrder : TenantedAuditableAggregateRoot<Guid>
     {
-        public TenantAuditableOrder(Guid id, Guid tenantId, IClock clock) : base(id, tenantId, clock) { }
+        public TenantAuditableOrder(Guid id, TenantId tenantId, IClock clock) : base(id, tenantId, clock) { }
         public TenantAuditableOrder() : base() { }
     }
 
     private sealed class TenantFullOrder : TenantedFullAuditableAggregateRoot<Guid>
     {
-        public TenantFullOrder(Guid id, Guid tenantId, IClock clock) : base(id, tenantId, clock) { }
+        public TenantFullOrder(Guid id, TenantId tenantId, IClock clock) : base(id, tenantId, clock) { }
         public TenantFullOrder() : base() { }
 
         protected override void OnDelete()
@@ -53,7 +54,7 @@ public class TenantedAggregateTests
     [Fact]
     public void TenantedAggregateRoot_TenantId_SetCorrectly()
     {
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
         var order = new TenantOrder(Guid.NewGuid(), tenantId, new FixedClock());
 
         order.TenantId.Should().Be(tenantId);
@@ -64,7 +65,7 @@ public class TenantedAggregateTests
     {
         var order = new TenantOrder();
 
-        order.TenantId.Should().Be(Guid.Empty);
+        order.TenantId.Should().Be(default(TenantId));
     }
 
     [Fact]
@@ -81,7 +82,7 @@ public class TenantedAggregateTests
     [Fact]
     public void TenantedAuditableAggregateRoot_IsA_AuditableAggregateRoot()
     {
-        var order = new TenantAuditableOrder(Guid.NewGuid(), Guid.NewGuid(), new FixedClock());
+        var order = new TenantAuditableOrder(Guid.NewGuid(), new TenantId(Guid.NewGuid()), new FixedClock());
 
         order.Should().BeAssignableTo<AuditableAggregateRoot<Guid>>();
     }
@@ -89,7 +90,7 @@ public class TenantedAggregateTests
     [Fact]
     public void TenantedAuditableAggregateRoot_Implements_IHasTenant()
     {
-        var order = new TenantAuditableOrder(Guid.NewGuid(), Guid.NewGuid(), new FixedClock());
+        var order = new TenantAuditableOrder(Guid.NewGuid(), new TenantId(Guid.NewGuid()), new FixedClock());
 
         order.Should().BeAssignableTo<IHasTenant>();
     }
@@ -97,7 +98,7 @@ public class TenantedAggregateTests
     [Fact]
     public void TenantedAuditableAggregateRoot_TenantId_SetCorrectly()
     {
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
         var order = new TenantAuditableOrder(Guid.NewGuid(), tenantId, new FixedClock());
 
         order.TenantId.Should().Be(tenantId);
@@ -107,7 +108,7 @@ public class TenantedAggregateTests
     public void TenantedAuditableAggregateRoot_OrmPath_TenantId_IsEmpty()
     {
         var order = new TenantAuditableOrder();
-        order.TenantId.Should().Be(Guid.Empty);
+        order.TenantId.Should().Be(default(TenantId));
     }
 
     // --- TenantedFullAuditableAggregateRoot ---
@@ -115,7 +116,7 @@ public class TenantedAggregateTests
     [Fact]
     public void TenantedFullAuditableAggregateRoot_IsA_FullAuditableAggregateRoot()
     {
-        var order = new TenantFullOrder(Guid.NewGuid(), Guid.NewGuid(), new FixedClock());
+        var order = new TenantFullOrder(Guid.NewGuid(), new TenantId(Guid.NewGuid()), new FixedClock());
 
         order.Should().BeAssignableTo<FullAuditableAggregateRoot<Guid>>();
     }
@@ -123,7 +124,7 @@ public class TenantedAggregateTests
     [Fact]
     public void TenantedFullAuditableAggregateRoot_Implements_IHasTenant()
     {
-        var order = new TenantFullOrder(Guid.NewGuid(), Guid.NewGuid(), new FixedClock());
+        var order = new TenantFullOrder(Guid.NewGuid(), new TenantId(Guid.NewGuid()), new FixedClock());
 
         order.Should().BeAssignableTo<IHasTenant>();
     }
@@ -131,7 +132,7 @@ public class TenantedAggregateTests
     [Fact]
     public void TenantedFullAuditableAggregateRoot_TenantId_SetCorrectly()
     {
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
         var order = new TenantFullOrder(Guid.NewGuid(), tenantId, new FixedClock());
 
         order.TenantId.Should().Be(tenantId);
@@ -141,14 +142,14 @@ public class TenantedAggregateTests
     public void TenantedFullAuditableAggregateRoot_OrmPath_TenantId_IsEmpty()
     {
         var order = new TenantFullOrder();
-        order.TenantId.Should().Be(Guid.Empty);
+        order.TenantId.Should().Be(default(TenantId));
     }
 
     [Fact]
     public void TenantedFullAuditableAggregateRoot_MarkAsDeleted_IsInherited()
     {
         var clock = new FixedClock();
-        var order = new TenantFullOrder(Guid.NewGuid(), Guid.NewGuid(), clock);
+        var order = new TenantFullOrder(Guid.NewGuid(), new TenantId(Guid.NewGuid()), clock);
 
         order.Delete("admin");
 

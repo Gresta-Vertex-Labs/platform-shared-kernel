@@ -5,9 +5,13 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Presentation.WebApi;
+using SharedKernel.Security.Abstractions;
+using SharedKernel.ServiceDefaults.Security;
 using SharedKernel.Testing.Logging;
 
 namespace SharedKernel.Presentation.OpenApi.Tests.TestSupport;
@@ -62,9 +66,17 @@ internal static class OpenApiTestHost
         }
 
         builder.AddTestAuthentication();
+
+        // The request context every service composes first (P-579): it owns the correlation id of every response.
+        builder.Services.AddHttpContextAccessor();
+        builder.Services.TryAddScoped<IUserContext>(static services => UserContextResolver.Resolve(
+            services.GetRequiredService<IHttpContextAccessor>().HttpContext?.User,
+            services.GetServices<IUserContextMapper>()));
+        builder.Services.AddSharedKernelRequestContext();
         configureBuilder?.Invoke(builder);
 
         var app = builder.Build();
+        app.UseSharedKernelRequestContext();
         app.UseSharedKernelWebApi();
         mapEndpoints(app);
 

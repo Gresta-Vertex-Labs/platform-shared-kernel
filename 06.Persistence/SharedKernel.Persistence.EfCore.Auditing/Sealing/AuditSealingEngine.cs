@@ -232,7 +232,7 @@ internal sealed class AuditSealingEngine(
             {
                 var link = slice[i];
                 LedgerDb.Add(command, $"@r{i}", link.RecordId, DbType.Guid);
-                LedgerDb.Add(command, $"@t{i}", link.Chain.TenantId, DbType.Guid);
+                LedgerDb.AddTenant(command, $"@t{i}", link.Chain.TenantId);
                 LedgerDb.Add(command, $"@rt{i}", link.Chain.ResourceType, DbType.String);
                 LedgerDb.Add(command, $"@s{i}", link.Sequence, DbType.Int64);
                 LedgerDb.Add(command, $"@p{i}", link.PreviousMac, DbType.Binary);

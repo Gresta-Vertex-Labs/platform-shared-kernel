@@ -22,7 +22,7 @@ public sealed class HttpClientHandlerTestFactory
 
     /// <summary>
     /// Wraps the chain with a handler that injects an <c>x-correlation-id</c> header, mirroring
-    /// the production <c>CorrelationIdDelegatingHandler</c> pipeline behavior.
+    /// the production <c>RequestContextDelegatingHandler</c> pipeline behavior.
     /// </summary>
     /// <returns>This builder, for fluent chaining.</returns>
     public HttpClientHandlerTestFactory WithCorrelationIdHandler()
@@ -34,7 +34,7 @@ public sealed class HttpClientHandlerTestFactory
     /// <summary>
     /// Wraps the chain with a handler that injects an <c>x-tenant-id</c> header when
     /// <paramref name="tenantId"/> is non-null, mirroring the production
-    /// <c>TenantIdDelegatingHandler</c> pipeline behavior.
+    /// <c>RequestContextDelegatingHandler</c> pipeline behavior.
     /// </summary>
     /// <param name="tenantId">The tenant id to inject, or <see langword="null"/> to skip injection.</param>
     /// <returns>This builder, for fluent chaining.</returns>

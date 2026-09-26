@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Adapter</SharedKernelTier>
     <!-- NuGet packaging metadata -->
     <Description>The Redis connection shared by every SharedKernel.Caching.Redis package: one IConnectionMultiplexer configured once from configuration or code and validated at startup, with timeouts, fail-fast behaviour while disconnected, TLS and mutual TLS, connection event logging and a readiness probe. The distributed cache, backplane, distributed locks, hash store and pub/sub all use it.</Description>
     <PackageReleaseNotes>First release.</PackageReleaseNotes>

@@ -21,8 +21,8 @@ var failures = 0;
 
 // Rules that need no caller-supplied anchor.
 Execute(
-    "SharedKernelLayeringRules.DomainNeverReferencesPersistence",
-    () => SharedKernelLayeringRules.DomainNeverReferencesPersistence(assembly));
+    "SharedKernelLayeringRules.TestingNeverReferencedByProduction",
+    () => SharedKernelLayeringRules.TestingNeverReferencedByProduction(assembly));
 
 // Caller-anchored rules — these are the ones that used to throw from the packed package.
 Execute(
@@ -75,7 +75,7 @@ public sealed class SampleArchTest : ArchitectureRuleBase
 {
     public void VerifyRule()
     {
-        var rule = SharedKernelLayeringRules.DomainNeverReferencesPersistence(
+        var rule = SharedKernelLayeringRules.TestingNeverReferencedByProduction(
             Assembly.GetExecutingAssembly());
         AssertRule(rule);
     }

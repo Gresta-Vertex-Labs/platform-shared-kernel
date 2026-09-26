@@ -1,10 +1,10 @@
 # 03.Domain
 
-![Layer](https://img.shields.io/badge/layer-03%20domain-512BD4)
-![Depends on](https://img.shields.io/badge/depends%20on-01.Core%20only-brightgreen)
+![Tier](https://img.shields.io/badge/tier-Model-512BD4)
+![Depends on](https://img.shields.io/badge/depends%20on-Foundation%20only-brightgreen)
 ![I/O](https://img.shields.io/badge/I%2FO-none-brightgreen)
 
-**The domain-driven design layer of Platform.SharedKernel.** Every aggregate, entity, value object, identifier
+**The domain-driven design building blocks of Platform.SharedKernel.** Every aggregate, entity, value object, identifier
 and domain event in a downstream service is built on the types in this folder.
 
 > Looking for how to use the package? Read the
@@ -14,7 +14,7 @@ and domain event in a downstream service is built on the types in this folder.
 ## Contents
 
 - [What lives here](#what-lives-here)
-- [Where the layer sits](#where-the-layer-sits)
+- [Where the package sits](#where-the-package-sits)
 - [Type map](#type-map)
 - [Aggregate lifecycle](#aggregate-lifecycle)
 - [Design principles](#design-principles)
@@ -33,16 +33,18 @@ and domain event in a downstream service is built on the types in this folder.
 | [`CLAUDE.md`](CLAUDE.md) | The domain brain: implementation rules, decisions and traps for maintainers and AI agents |
 | [`state-map.md`](state-map.md) | Phase and task history for this domain |
 
-## Where the layer sits
+## Where the package sits
 
-Arrows point from a layer to what it depends on. The domain depends only on `01.Core`; nothing in it knows
-about databases, messaging, HTTP or dependency injection.
+Arrows point from a package to what it depends on. `SharedKernel.Domain` is a **Model**-tier package: it
+depends only on Foundation packages from `01.Core` and on no third-party package, and the build enforces it.
+Nothing in it knows about databases, messaging, HTTP or dependency injection.
 
 ```mermaid
 flowchart BT
     subgraph core["01.Core"]
         Primitives["SharedKernel.Primitives<br/>Result, Error, IClock"]
         Core["SharedKernel.Core<br/>Guards, exceptions"]
+        Execution["SharedKernel.Execution<br/>TenantId"]
     end
 
     Domain["03.Domain<br/>SharedKernel.Domain"]
@@ -56,9 +58,9 @@ flowchart BT
     Core --> Primitives
     Domain --> Primitives
     Domain --> Core
+    Domain --> Execution
     Application --> Domain
     Persistence --> Domain
-    Persistence --> Application
     Governance -. checks .-> Domain
 ```
 
@@ -213,8 +215,8 @@ These checks run in every build and fail or warn before a mistake ships.
 | `SK0010` | Analyzer | A specification with two primary sorts |
 | `SK0037` | Analyzer | A value object constructor that never calls `EnsureValid()` |
 | `SK0034` | Advisory analyzer | A raw `decimal` amount paired with a `string` currency code; suggests `Money` |
-| `DomainReferencesOnlyCore` | Architecture rule | Any dependency outside `01.Core` |
-| `DomainNeverReferencesPersistence`, `DomainNeverReferencesMessaging` | Architecture rules | Infrastructure leaking into the domain |
+| `SKTIER001`, `SKTIER003` | Build (tier check) | A reference to anything above the Foundation tier, or any third-party package |
+| `DomainNeverReferencesContracts`, `ModelNeverReferencesLogging` | Architecture rules | `SharedKernel.Contracts` or logging abstractions leaking into the domain |
 | `AggregateFactoriesMustCreateValidationResults` | Architecture rule | An `IAggregateFactory` without a `Create` returning `ValidationResult<TAggregate>` |
 | Public API analyzers | Build | Any public API change not recorded in `PublicAPI.Unshipped.txt` |
 | Documentation | Build | A public member without XML documentation |
@@ -236,7 +238,7 @@ package instead of referencing the project.
 Read [`CLAUDE.md`](CLAUDE.md) before changing code. It holds the rules that are not obvious from the source.
 The short version:
 
-- **Keep the domain pure.** No new dependency beyond `01.Core`; no I/O, clock reads, logging or DI types.
+- **Keep the domain pure.** No new dependency beyond the Foundation packages it already uses; no I/O, clock reads, logging or DI types.
 - **Record public API changes** in `PublicAPI.Unshipped.txt`; the build fails until you do.
 - **Document every public member**, including the exceptions it throws. Summaries never mention ticket IDs or
   history.
@@ -244,4 +246,4 @@ The short version:
 - **Update the package README** when behaviour a consumer can observe changes, and update `ConsumerVerify` when
   the public API changes.
 - **Cross-layer effects** (persistence mapping, application dispatch, governance rules) are changed in their own
-  layers, never by referencing them from here.
+  packages, never by referencing them from here.

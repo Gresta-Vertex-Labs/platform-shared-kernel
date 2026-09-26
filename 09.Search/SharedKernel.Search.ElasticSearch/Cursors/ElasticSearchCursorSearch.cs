@@ -5,6 +5,7 @@ using Elastic.Clients.Elasticsearch.Core.Search;
 using Elastic.Clients.Elasticsearch.QueryDsl;
 using Elastic.Transport;
 using Microsoft.Extensions.Logging;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Search.Abstractions.Abstractions;

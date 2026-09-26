@@ -2,7 +2,7 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Storage;
-using SharedKernel.Application.Transactions;
+using SharedKernel.Execution.Transactions;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Tests.UnitOfWork;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;

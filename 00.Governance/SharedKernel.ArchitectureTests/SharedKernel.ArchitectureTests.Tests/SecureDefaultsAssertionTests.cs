@@ -64,9 +64,9 @@ namespace SharedKernel.ArchitectureTests.Tests;
 /// <see cref="SecureDefaultsAssertion.AssertMethodBodyInvokesMethod"/> against contrived pass/
 /// fail-path fixtures shaped after <c>CorrelationIdMiddleware.ResolveCorrelationId</c>'s real
 /// check-then-substitute pattern. T-331: real-assembly, GATING verification re-points the same,
-/// already-shipped technique at the real <c>CorrelationIdMiddleware</c> and its private validation
-/// callee — <c>ResolveCorrelationId</c>/<c>IsValidFormat</c> until P-562, <c>Resolve</c>/<c>IsValid</c> on the
-/// now-internal middleware since — the first phase in this "lock a not-yet-shipped
+/// already-shipped technique at the real <c>ResolveCorrelationId</c> (now on
+/// <c>SharedKernel.ServiceDefaults.Security</c>'s <c>RequestContextMiddleware</c>, P-566) and its real
+/// <c>CorrelationIds.IsValid</c> callee — the first phase in this "lock a not-yet-shipped
 /// hardened guard" family to require zero new production code in
 /// <see cref="SecureDefaultsAssertion"/>, since the real shipped shape matched this phase's design
 /// exactly (a conditional invocation, never a throw), unlike
@@ -1310,9 +1310,9 @@ public class SecureDefaultsAssertionTests
     /// <summary>
     /// T-331 (<c>SK.00.CorrelationIdValidationGuard</c>/WO-063/P-415): Re-points
     /// <see cref="SecureDefaultsAssertion.AssertMethodBodyInvokesMethod"/> at the real, shipped
-    /// <c>CorrelationIdMiddleware.Resolve</c> and confirms it still calls its own private
-    /// <c>IsValid</c> format-validation helper (named <c>ResolveCorrelationId</c>/<c>IsValidFormat</c>
-    /// before P-562; see the remarks).
+    /// <c>RequestContextMiddleware.ResolveCorrelationId</c> (<c>SharedKernel.ServiceDefaults.Security</c>)
+    /// and confirms it still validates a caller-supplied correlation id with
+    /// <c>SharedKernel.Execution</c>'s <c>CorrelationIds.IsValid</c>.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -1328,9 +1328,10 @@ public class SecureDefaultsAssertionTests
     /// </para>
     /// <para>
     /// <strong>Design matched reality, unlike the CORS phase.</strong> The real, shipped
-    /// <c>CorrelationIdMiddleware.ResolveCorrelationId</c> is a conditional check-then-substitute
-    /// shape exactly as this phase's design (D-58) anticipated — it calls its own private
-    /// <c>IsValidFormat</c> helper and falls back to regenerating a fresh value when the check
+    /// <c>ResolveCorrelationId</c> (originally on <c>CorrelationIdMiddleware</c>, which P-566 folded into
+    /// <c>RequestContextMiddleware</c>) is a conditional check-then-substitute
+    /// shape exactly as this phase's design (D-58) anticipated — it calls a format-validation
+    /// helper (now <c>CorrelationIds.IsValid</c>) and falls back to regenerating a fresh value when the check
     /// fails, never throwing. <see cref="SecureDefaultsAssertion.AssertMethodBodyInvokesMethod"/>
     /// is therefore the correct technique with no re-pointing surprise, unlike
     /// <c>SK.00.CorsWildcardCredentialsGuard</c>'s validator-vs-throw mismatch — this phase adds
@@ -1340,39 +1341,29 @@ public class SecureDefaultsAssertionTests
     /// <strong>Non-vacuous.</strong> Verified by a temporary sanity check during implementation —
     /// asserting a deliberately-wrong callee method name (<c>"IsValidFormatXyz"</c>) against this
     /// exact real method, confirmed to fail with the same message shape T-330's contrived fixture
-    /// produces, then reverted before commit. Both <c>ResolveCorrelationId</c> and
-    /// <c>IsValidFormat</c> are declared directly on <c>CorrelationIdMiddleware</c> itself — the
-    /// callee is a private instance method on the SAME type, not a different one — and the call
+    /// produces, then reverted before commit. Since P-566 the callee is a static method on a
+    /// different type (<c>CorrelationIds</c>), passed explicitly as the expected callee type, and the call
     /// site lives directly in <c>ResolveCorrelationId</c>'s own IL body, not inside a lambda
     /// closure, so no closure-scanning extension is exercised by this particular call site (that
     /// extension remains proven by T-318's own real-assembly call site).
     /// </para>
-    /// <para>
-    /// <strong>Re-pointed for P-562.</strong> The redesign made the middleware <c>internal</c> (applied by
-    /// <c>UseSharedKernelWebApi()</c>), moved it from the deleted <c>…WebApi.Middleware</c> namespace to
-    /// <c>…WebApi.Correlation</c>, and renamed the pair to <c>Resolve</c>/<c>IsValid</c>; a missing or invalid value is
-    /// now replaced by the trace id rather than a new identifier, but a caller-supplied value is still kept only when
-    /// it passes validation (length bound, no control characters, allowed-character pattern). The type is resolved
-    /// with <c>Assembly.GetType(string)</c>, T-318's technique for internal types.
-    /// </para>
     /// </remarks>
     [Fact]
-    public void AssertMethodBodyInvokesMethod_RealCorrelationIdMiddleware_ValidationCallSiteHolds()
+    public void AssertMethodBodyInvokesMethod_RealRequestContextMiddleware_ValidationCallSiteHolds()
     {
-        var declaringType =
-            typeof(SharedKernel.Presentation.WebApi.WebApiApplicationBuilderExtensions).Assembly
-                .GetType("SharedKernel.Presentation.WebApi.Correlation.CorrelationIdMiddleware")
-            ?? throw new InvalidOperationException(
-                "Could not resolve SharedKernel.Presentation.WebApi.Correlation.CorrelationIdMiddleware " +
-                "via Assembly.GetType — has it been renamed or moved?");
+        // P-566 folded CorrelationIdMiddleware into SharedKernel.ServiceDefaults.Security's (internal)
+        // RequestContextMiddleware, and the shape check moved to SharedKernel.Execution's CorrelationIds.IsValid,
+        // shared by every inbound channel. The lock follows the call site.
+        var declaringType = typeof(SharedKernel.ServiceDefaults.Security.RequestContextApplicationBuilderExtensions)
+            .Assembly.GetType("SharedKernel.ServiceDefaults.Security.RequestContextMiddleware", throwOnError: true)!;
 
         var act = () =>
             SecureDefaultsAssertion.AssertMethodBodyInvokesMethod(
-                declaringType, "Resolve", declaringType, "IsValid");
+                declaringType, "ResolveCorrelationId", typeof(SharedKernel.Execution.Context.CorrelationIds), "IsValid");
 
         act.Should().NotThrow(
-            because: "the real, shipped CorrelationIdMiddleware.Resolve still calls its own private " +
-                     "IsValid validation before keeping a caller-supplied value (WO-063, C-65; P-562 D5)");
+            because: "the real, shipped request-context middleware still validates a caller-supplied " +
+                     "correlation id with CorrelationIds.IsValid before preserving it (WO-063, C-65; P-566)");
     }
 
     // ---------------------------------------------------------------------------

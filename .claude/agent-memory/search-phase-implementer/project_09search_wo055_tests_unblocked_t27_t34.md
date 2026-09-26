@@ -3,6 +3,7 @@ name: project-09search-wo055-tests-unblocked-t27-t34
 description: SK.09.Tests WO-055 sub-pass (T-27–T-34) unblocked and shipped — 16.Testing P-355 cleared, real blocker-clearance verification steps, and four reusable test techniques with confirmed real-engine findings
 type: project
 ---
+> WO-086 (2026-09): `ISearchIndexProvisioner.ProbeAsync` was removed — readiness is one `IReadinessProbe` per registered index (`SearchIndexReadinessProbe`, `search-{provider}-{index}`); the search-local `TenantScope` (string-keyed `TenantScope.Of(...)`) is now the single `SharedKernel.Execution.Tenancy.TenantScope` (`Global`, `For(TenantId)`, `FromNullable`); container fixtures live in `16.Testing/SharedKernel.Testing.Internal/Containers/` and the in-memory fakes in `SharedKernel.Search.Testing`. The findings below are history.
 
 Session: the `⚑` Blocked WO-055 sub-pass (T-27–T-34, recorded blocked 2026-08-10 pending `16.Testing`'s P-355) was re-verified and found genuinely unblocked, then fully implemented and shipped 2026-08-11. `SK.09.Tests` is now 34/34 `●`; only `SK.09.Published`'s P-09/P-10 (re-pack) remain across the whole domain.
 

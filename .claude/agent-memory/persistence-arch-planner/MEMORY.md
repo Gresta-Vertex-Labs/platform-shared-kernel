@@ -1,28 +1,17 @@
 # Persistence Architecture Planner — Memory Index
 
-- [Outbox scope: owned by 07.Messaging only](project_outbox_scope.md) — No OutboxMessage/IOutboxWriter/OutboxInterceptor in 06.Persistence; SharedKernelDbContext has exactly three interceptors
-- [IUserContext injection pattern](project_iusercontext_pattern.md) — Security.Abstractions ref approved (P-078); audit string is userId.ToString("D") or "system"; no-op has Guid.Empty/IsAuthenticated=false
-- [ICurrentTenantService removed — ITenantProvider + Guid.Empty sentinel](project_icurrenttenantservice_location.md) — TenantedDbContext uses ITenantProvider; Guid.Empty = zero rows (safe); expression-tree filter (no reflection)
+- [Outbox scope: owned by 07.Messaging only](project_outbox_scope.md) — No outbox types in 06.Persistence; outbox is Messaging.MassTransit.EfCore; one save interceptor
+- [Audit actor from IRequestContext](project_iusercontext_pattern.md) — IRequestContext.UserId (Execution), else ServiceName ("system"); no 12.Security reference
+- [Tenant source: IRequestContext.TenantId](project_icurrenttenantservice_location.md) — TenantId? from SharedKernel.Execution; null fails closed; expression-tree filter (no reflection)
 - [SpecificationEvaluator canonical order](project_specification_evaluator_order.md) — 0.IgnoreQueryFilters→1.Criteria→2.Includes→2b.StringIncludes→3.OrderBy→4.ThenBys→5.Distinct→6.AsNoTracking→7.Skip/Take→8.Select
 - [IProjectionSpecification in Abstractions](project_projection_specification.md) — Extends ISpecification; adds Selector expression; prerequisite for projection reads; IDbConnectionFactory doc restriction removed
 - [EfRepository.ExistsAsync and GetByIdsAsync](project_repository_extensions.md) — ExistsAsync uses AnyAsync (no materialization); GetByIdsAsync uses IN clause; warn >1000 IDs
 - [GetByIdsAsync expression-tree Contains fix](project_getbyidsasync_expression_tree.md) — EF.Property inside Contains = silent client-side eval with StronglyTypedId converters; use expression-tree lambda (P-105)
-- [EfRepository.UpdateAsync tracking optimization](project_efrepository_update_optimization.md) — Skip .Update() for tracked entities; only call for Detached; MarkAsModifiedIfDetached helper
 - [Audit/SoftDelete interceptors use ChangeTracker only](project_ef_interceptor_changetracker_rule.md) — CurrentValues[propertyName] indexer; never direct property setters on aggregates
 - [ISpecificationEvaluator GetProjectedQuery on interface](project_ispecificationevaluator_projection.md) — GetProjectedQuery promoted to interface (P-097); EfReadRepository field is ISpecificationEvaluator not concrete; downcast is hard violation
-- [EfUnitOfWork single constructor rule](project_efunitofwork_single_constructor.md) — One constructor only: (SharedKernelDbContext, IDomainEventDispatcher? = null); second constructor = DI ambiguity hard violation (P-098)
-- [ITransactionalUnitOfWork + IPersistenceTransaction](project_itransactionalunitofwork.md) — BCL-only interfaces in Abstractions; EfPersistenceTransaction wraps IDbContextTransaction in EfCore; WithTransactionalUnitOfWork() optional (P-099)
-- [EfTransactionalUnitOfWork double-dispatch fix](project_double_dispatch_fix.md) — Check Database.CurrentTransaction; defer dispatch to CommitAsync when transaction active; RollbackAsync never dispatches (P-105)
 - [TenantedRepository soft-delete bypass split](project_tenantedrepository_softdelete_bypass.md) — GetByIdForTenantAsync preserves soft-delete; GetByIdForTenantIncludingDeletedAsync bypasses both; IgnoreQueryFilters + re-apply Where workaround (P-100)
 - [ListPagedProjectedAsync two-round-trip pattern](project_listpagedprojectedasync.md) — Count via GetQuery (no projection), data via GetProjectedQuery; depends on P-097 interface promotion (P-101)
 - [ValueObjectOwnershipBuilder rename from Convention](project_valueobjectownershipbuilder.md) — Not IModelFinalizingConvention; call Apply() manually from OnModelCreating; ConfigureConventions has no effect (P-102)
-- [IRepository.GetBySpecAsync — write-side tracked fetch](project_irepository_getbyspecasync.md) — Tracked entity returned; AsNoTracking must NOT be set on write-side specs; avoids IReadRepository misuse (P-106)
-- [EfCorePersistenceBuilder new fluent methods](project_efcorepersistencebuilder_extensions.md) — `WithDbContextFactory()`, `AddInterceptor<T>()`, `WithCompiledModel(IModel)`; platform interceptors always fire first (P-106)
-- [SharedKernel.Persistence.PostgreSQL package](project_postgresql_package.md) — SnakeCaseNamingConvention, JSONB, pgvector, NpgsqlConnectionFactory in PostgreSQL pkg (not Dapper) (P-108)
-- [SharedKernel.Persistence.Dapper package](project_dapper_package.md) — StronglyTypedIdTypeHandler, SmartEnumTypeHandler, DapperReadService; references PostgreSQL pkg; no EfCore ref (P-109)
-- [Encryption subsystem: AES-256-GCM field-level encryption](project_encryption_subsystem.md) — EncryptedValueConverter+EncryptionModelConvention+IEncryptionRotationJob in EfCore; EncryptionOptions+PersistenceServiceOptions with eager ValidateOnStart (P-111/P-112)
-- [IEncryptionVersionOverride rotation-scoped seam](project_encryption_version_override.md) — Mutable OverrideVersion set only around rotation batch SaveChangesAsync; CurrentVersion never mutated (P-147)
-- [LoadBatchAsync reflection elimination](project_loadbatchasync_reflection_free.md) — Non-generic DbContext.Set(Type)/Skip/Take/ToListAsync(IQueryable,ct); no GetMethod/MakeGenericMethod/Invoke (P-147)
 - [IBulkMutationRepository location + bypass policy](project_bulk_mutation_repository.md) — Lives in EfCore (SetPropertyCalls is EF type); bypasses SaveChanges/interceptors/events; ExecuteDeleteAsync always hard-deletes (P-148)
 - [StreamAsync forced AsNoTracking exception](project_streaming_asnotracking_exception.md) — The one place spec.AsNoTracking is NOT honored; Skip/Take = row-window before streaming (P-149)
 - [DatabaseReadinessResult/CheckReadinessAsync — no IHealthCheck](project_database_readiness.md) — BCL-only, never-throwing probes; IHealthCheck adapter belongs to 13.ServiceDefaults (P-150)

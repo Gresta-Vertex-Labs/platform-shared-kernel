@@ -12,7 +12,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
-using SharedKernel.Presentation.WebApi.Authorization;
+using SharedKernel.Presentation.Authorization;
 using SharedKernel.Presentation.WebApi.ExceptionHandling;
 using SharedKernel.Presentation.WebApi.Startup;
 using SharedKernel.Presentation.WebApi.Tests.TestSupport;
@@ -41,11 +41,9 @@ public sealed class WebApiSetupTests
         builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
         {
             [Section + "Limits:MaxJsonDepth"] = "10",
-            [Section + "CorrelationId:MaxLength"] = "64",
             [Section + "Problems:TypeBaseUri"] = "https://errors.example.com/",
             [Section + "Problems:PreconditionFailedErrorCodes:0"] = "orders.stale",
             [Section + "RemoveServerHeader"] = "false",
-            [Section + "TrustInboundBaggage"] = "true",
         });
 
         builder.AddSharedKernelWebApi(options => options.Limits.MaxJsonDepth = 20);
@@ -53,19 +51,15 @@ public sealed class WebApiSetupTests
         var options = provider.GetRequiredService<IOptions<SharedKernelWebApiOptions>>().Value;
 
         options.Limits.MaxJsonDepth.Should().Be(20);
-        options.CorrelationId.MaxLength.Should().Be(64);
         options.Problems.TypeBaseUri.Should().Be(new Uri("https://errors.example.com/"));
         options.Problems.PreconditionFailedErrorCodes.Should().Contain(["persistence.concurrency_conflict", "orders.stale"]);
         options.RemoveServerHeader.Should().BeFalse();
-        options.TrustInboundBaggage.Should().BeTrue();
     }
 
     [Fact]
     public void Defaults_AreTheSecureChoices()
     {
         var options = new SharedKernelWebApiOptions();
-
-        options.TrustInboundBaggage.Should().BeFalse();
         options.SecurityHeaders.CacheControl.Should().Be("no-store");
         options.Limits.MaxJsonDepth.Should().BeNull();
         options.Problems.PreconditionFailedErrorCodes.Should().Equal(
@@ -91,7 +85,7 @@ public sealed class WebApiSetupTests
         var builder = WebApplication.CreateBuilder();
 
         builder.AddSharedKernelWebApi(options => options.Limits.MaxJsonDepth = 12);
-        builder.AddSharedKernelWebApi(options => options.CorrelationId.MaxLength = 50);
+        builder.AddSharedKernelWebApi(options => options.RemoveServerHeader = false);
         using var provider = builder.Services.BuildServiceProvider();
 
         builder.Services.Count(descriptor => descriptor.ServiceType == typeof(SharedKernelExceptionHandler)).Should().Be(1);
@@ -100,7 +94,7 @@ public sealed class WebApiSetupTests
         provider.GetRequiredService<IAuthorizationMiddlewareResultHandler>().Should().BeOfType<SharedKernelAuthorizationResultHandler>();
         var options = provider.GetRequiredService<IOptions<SharedKernelWebApiOptions>>().Value;
         options.Limits.MaxJsonDepth.Should().Be(12);
-        options.CorrelationId.MaxLength.Should().Be(50);
+        options.RemoveServerHeader.Should().BeFalse();
     }
 
     [Fact]
@@ -157,8 +151,6 @@ public sealed class WebApiSetupTests
     [Theory]
     [InlineData("Limits:MaxJsonDepth", "0")]
     [InlineData("Limits:MaxRequestBodySize", "0")]
-    [InlineData("CorrelationId:MaxLength", "0")]
-    [InlineData("CorrelationId:AllowedCharacterPattern", "(")]
     [InlineData("Problems:TypeBaseUri", "/relative/")]
     [InlineData("Problems:TypeBaseUri", "https://errors.example.com/?v=1")]
     [InlineData("Problems:PreconditionFailedErrorCodes:3", " ")]
@@ -450,14 +442,26 @@ public sealed class WebApiSetupTests
     {
         Type[] everyday =
         [
-            typeof(RequireEndpointPermissionAttribute), typeof(RequireRoleAttribute), typeof(RequireFreshAuthenticationAttribute),
-            typeof(RequireAuthenticationMethodAttribute), typeof(RequireIdempotencyKeyAttribute), typeof(RequireIfMatchAttribute),
+            typeof(RequireIdempotencyKeyAttribute), typeof(RequireIfMatchAttribute),
             typeof(ErrorHttpResult), typeof(OkWithETag<>), typeof(IdempotencyKey), typeof(IfMatch<>), typeof(WebApiPipeline),
-            typeof(ResultHttpExtensions), typeof(AuthorizationConventionExtensions), typeof(ConditionalRequestExtensions),
+            typeof(ResultHttpExtensions), typeof(ConditionalRequestExtensions),
             typeof(IdempotencyKeyExtensions), typeof(CorrelationIdHttpContextExtensions),
         ];
 
         everyday.Should().OnlyContain(type => type.Namespace == "SharedKernel.Presentation.WebApi");
+    }
+
+    [Fact]
+    public void P579_AuthorizationTypes_LiveInTheSharedAuthorizationNamespace()
+    {
+        // Shared with gRPC and SignalR through SharedKernel.Presentation.Core, so not WebApi's own namespace.
+        Type[] authorization =
+        [
+            typeof(RequireEndpointPermissionAttribute), typeof(RequireRoleAttribute), typeof(RequireFreshAuthenticationAttribute),
+            typeof(RequireAuthenticationMethodAttribute), typeof(AuthorizationConventionExtensions),
+        ];
+
+        authorization.Should().OnlyContain(type => type.Namespace == "SharedKernel.Presentation.Authorization");
     }
 
     [Fact]
@@ -489,7 +493,7 @@ public sealed class WebApiSetupTests
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         seen.Should().Equal(
-            "start:endpoint=False:correlation=False",
+            "start:endpoint=False:correlation=True",
             "before-authentication:endpoint=True:user=False",
             "before-authorization:user=True");
     }

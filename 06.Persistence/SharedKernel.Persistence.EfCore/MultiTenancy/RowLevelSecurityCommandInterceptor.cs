@@ -2,6 +2,7 @@ using System.Data.Common;
 using System.Runtime.CompilerServices;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.Npgsql.RowLevelSecurity;
@@ -147,7 +148,7 @@ internal sealed class RowLevelSecurityCommandInterceptor : DbCommandInterceptor
     }
 
     private static async ValueTask ExecuteBindAsync(
-        DbConnection connection, DbTransaction transaction, Guid? tenantId, bool async, CancellationToken cancellationToken)
+        DbConnection connection, DbTransaction transaction, TenantId? tenantId, bool async, CancellationToken cancellationToken)
     {
         await using var bind = connection.CreateCommand();
         bind.Transaction = transaction;
@@ -208,7 +209,7 @@ internal static class RowLevelSecurityBindings
     /// Records that <paramref name="tenantId"/> is bound in <paramref name="transactionId"/>. Returns
     /// <see langword="false"/> when that exact binding was already recorded (nothing to do).
     /// </summary>
-    public static bool TryMarkBound(DbContext context, Guid transactionId, Guid? tenantId)
+    public static bool TryMarkBound(DbContext context, Guid transactionId, TenantId? tenantId)
     {
         var binding = Bindings.GetOrCreateValue(context);
         lock (binding)
@@ -239,7 +240,7 @@ internal static class RowLevelSecurityBindings
     {
         public Guid? TransactionId { get; set; }
 
-        public Guid? TenantId { get; set; }
+        public TenantId? TenantId { get; set; }
     }
 }
 

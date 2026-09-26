@@ -1,7 +1,8 @@
 using BillingApi.Domain;
 using BillingApi.Features.Customers;
-using MediatR;
 using Microsoft.AspNetCore.Mvc;
+using SharedKernel.Application.Authorization;
+using SharedKernel.Application.Messaging;
 using SharedKernel.Core.Extensions;
 using SharedKernel.Persistence.Abstractions.Repositories;
 using SharedKernel.Presentation.WebApi;

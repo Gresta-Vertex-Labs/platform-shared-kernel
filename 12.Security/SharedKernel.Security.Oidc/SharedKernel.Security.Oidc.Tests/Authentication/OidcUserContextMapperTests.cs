@@ -1,3 +1,5 @@
+using SharedKernel.Execution.Tenancy;
+using SharedKernel.Execution.Context;
 using System.Security.Claims;
 using SharedKernel.Security.Abstractions;
 using SharedKernel.Security.Oidc.Authentication;
@@ -29,7 +31,7 @@ public sealed class OidcUserContextMapperTests
     {
         IUserContext user = CreateMapper().Map(Identity(("sub", "user-1")));
 
-        Assert.Equal(IdentityKind.User, user.IdentityKind);
+        Assert.Equal(ActorKind.User, user.ActorKind);
         Assert.True(user.IsAuthenticated);
         Assert.Equal("user-1", user.SubjectId);
         Assert.Null(user.ClientId);
@@ -40,7 +42,7 @@ public sealed class OidcUserContextMapperTests
     {
         IUserContext user = CreateMapper().Map(Identity(("sub", "user-1"), ("azp", "web-app")));
 
-        Assert.Equal(IdentityKind.User, user.IdentityKind);
+        Assert.Equal(ActorKind.User, user.ActorKind);
         Assert.Equal("user-1", user.SubjectId);
         Assert.Equal("web-app", user.ClientId);
     }
@@ -52,7 +54,7 @@ public sealed class OidcUserContextMapperTests
     {
         IUserContext user = CreateMapper().Map(Identity(("sub", "object-id"), ("azp", "daemon"), (type, value)));
 
-        Assert.Equal(IdentityKind.ServicePrincipal, user.IdentityKind);
+        Assert.Equal(ActorKind.Service, user.ActorKind);
         Assert.Equal("object-id", user.SubjectId);
         Assert.Equal("daemon", user.ClientId);
     }
@@ -64,7 +66,7 @@ public sealed class OidcUserContextMapperTests
     {
         IUserContext user = CreateMapper().Map(Identity(("sub", "user-1"), (type, value)));
 
-        Assert.Equal(IdentityKind.User, user.IdentityKind);
+        Assert.Equal(ActorKind.User, user.ActorKind);
     }
 
     [Fact]
@@ -72,7 +74,7 @@ public sealed class OidcUserContextMapperTests
     {
         IUserContext user = CreateMapper().Map(Identity(("sub", "service-a"), ("client_id", "service-a")));
 
-        Assert.Equal(IdentityKind.ServicePrincipal, user.IdentityKind);
+        Assert.Equal(ActorKind.Service, user.ActorKind);
         Assert.Equal("service-a", user.SubjectId);
     }
 
@@ -81,7 +83,7 @@ public sealed class OidcUserContextMapperTests
     {
         IUserContext user = CreateMapper().Map(Identity(("sub", "Service-A"), ("client_id", "service-a")));
 
-        Assert.Equal(IdentityKind.User, user.IdentityKind);
+        Assert.Equal(ActorKind.User, user.ActorKind);
     }
 
     [Theory]
@@ -92,7 +94,7 @@ public sealed class OidcUserContextMapperTests
     {
         IUserContext user = CreateMapper().Map(Identity((clientIdClaim, "daemon")));
 
-        Assert.Equal(IdentityKind.ServicePrincipal, user.IdentityKind);
+        Assert.Equal(ActorKind.Service, user.ActorKind);
         Assert.Equal("daemon", user.SubjectId);
         Assert.Equal("daemon", user.ClientId);
     }
@@ -115,8 +117,8 @@ public sealed class OidcUserContextMapperTests
         IUserContext custom = mapper.Map(Identity(("sub", "svc"), ("azp", "daemon"), ("token_use", "machine")));
         IUserContext formerDefault = mapper.Map(Identity(("sub", "user-1"), ("azp", "web"), ("idtyp", "app")));
 
-        Assert.Equal(IdentityKind.ServicePrincipal, custom.IdentityKind);
-        Assert.Equal(IdentityKind.User, formerDefault.IdentityKind);
+        Assert.Equal(ActorKind.Service, custom.ActorKind);
+        Assert.Equal(ActorKind.User, formerDefault.ActorKind);
     }
 
     [Fact]
@@ -148,7 +150,7 @@ public sealed class OidcUserContextMapperTests
     [Fact]
     public void Map_ValidTenantGuid_SetsTenantId()
     {
-        Guid tenant = Guid.NewGuid();
+        TenantId tenant = new TenantId(Guid.NewGuid());
 
         IUserContext user = CreateMapper().Map(Identity(("sub", "user-1"), ("tenant_id", tenant.ToString())));
 
@@ -209,7 +211,7 @@ public sealed class OidcUserContextMapperTests
     [Fact]
     public void Map_EntraClaimSettings_ReadsOidAndTid()
     {
-        Guid tenant = Guid.NewGuid();
+        TenantId tenant = new TenantId(Guid.NewGuid());
         var options = new OidcAuthenticationOptions();
         options.Claims.SubjectClaimType = "oid";
         options.Claims.TenantClaimType = "tid";

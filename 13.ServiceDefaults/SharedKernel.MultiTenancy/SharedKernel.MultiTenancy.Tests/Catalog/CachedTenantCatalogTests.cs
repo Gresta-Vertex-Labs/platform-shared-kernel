@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using NSubstitute;
 using SharedKernel.Caching.Abstractions;
 using SharedKernel.MultiTenancy.Catalog;
@@ -14,7 +15,7 @@ public sealed class CachedTenantCatalogTests
     [Fact]
     public async Task GetByIdAsync_SecondCall_ServedFromCache()
     {
-        var descriptor = Descriptor(Guid.NewGuid(), TenantStatus.Active);
+        var descriptor = Descriptor(new TenantId(Guid.NewGuid()), TenantStatus.Active);
         _inner.GetByIdAsync(descriptor.TenantId, Arg.Any<CancellationToken>()).Returns(descriptor);
         var cached = CreateCatalog();
 
@@ -29,20 +30,20 @@ public sealed class CachedTenantCatalogTests
     [Fact]
     public async Task GetByIdAsync_StoresUnderServiceScopedKey()
     {
-        var descriptor = Descriptor(Guid.NewGuid(), TenantStatus.Active);
+        var descriptor = Descriptor(new TenantId(Guid.NewGuid()), TenantStatus.Active);
         _inner.GetByIdAsync(descriptor.TenantId, Arg.Any<CancellationToken>()).Returns(descriptor);
         var cached = CreateCatalog();
 
         await cached.GetByIdAsync(descriptor.TenantId, CancellationToken.None);
 
-        var key = _keyProvider.BuildKey("tenant-catalog", descriptor.TenantId.ToString("D"));
+        var key = _keyProvider.BuildKey("tenant-catalog", descriptor.TenantId.ToString());
         Assert.Equal(CacheLookup<TenantDescriptor?>.Hit(descriptor), await _cache.TryGetAsync<TenantDescriptor?>(key));
     }
 
     [Fact]
     public async Task GetByIdAsync_UnknownTenant_NullResultIsCachedToo()
     {
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
         _inner.GetByIdAsync(tenantId, Arg.Any<CancellationToken>()).Returns((TenantDescriptor?)null);
         var cached = CreateCatalog();
 
@@ -57,7 +58,7 @@ public sealed class CachedTenantCatalogTests
     [Fact]
     public async Task InvalidateTenantAsync_ForcesNextLookup_ToHitWrappedCatalog()
     {
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
         var active = Descriptor(tenantId, TenantStatus.Active);
         var suspended = Descriptor(tenantId, TenantStatus.Suspended);
         _inner.GetByIdAsync(tenantId, Arg.Any<CancellationToken>()).Returns(active, suspended);
@@ -74,8 +75,8 @@ public sealed class CachedTenantCatalogTests
     [Fact]
     public async Task InvalidateTenantAsync_LeavesOtherTenantsCached()
     {
-        var a = Descriptor(Guid.NewGuid(), TenantStatus.Active);
-        var b = Descriptor(Guid.NewGuid(), TenantStatus.Active);
+        var a = Descriptor(new TenantId(Guid.NewGuid()), TenantStatus.Active);
+        var b = Descriptor(new TenantId(Guid.NewGuid()), TenantStatus.Active);
         _inner.GetByIdAsync(a.TenantId, Arg.Any<CancellationToken>()).Returns(a);
         _inner.GetByIdAsync(b.TenantId, Arg.Any<CancellationToken>()).Returns(b);
         var cached = CreateCatalog();
@@ -92,7 +93,7 @@ public sealed class CachedTenantCatalogTests
     public async Task GetByResolutionKeyAsync_SecondCall_ServedFromCache()
     {
         const string key = "acme.api.example.com";
-        var descriptor = Descriptor(Guid.NewGuid(), TenantStatus.Active);
+        var descriptor = Descriptor(new TenantId(Guid.NewGuid()), TenantStatus.Active);
         _inner.GetByResolutionKeyAsync(key, Arg.Any<CancellationToken>()).Returns(descriptor);
         var cached = CreateCatalog();
 
@@ -102,30 +103,30 @@ public sealed class CachedTenantCatalogTests
         Assert.Equal(descriptor, first);
         Assert.Equal(descriptor, second);
         await _inner.Received(1).GetByResolutionKeyAsync(key, Arg.Any<CancellationToken>());
-        await _inner.DidNotReceive().GetByIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+        await _inner.DidNotReceive().GetByIdAsync(Arg.Any<TenantId>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task GetByResolutionKeyAsync_CachesMappingToTenantId_AndDescriptorById()
     {
         const string key = "acme.api.example.com";
-        var descriptor = Descriptor(Guid.NewGuid(), TenantStatus.Active);
+        var descriptor = Descriptor(new TenantId(Guid.NewGuid()), TenantStatus.Active);
         _inner.GetByResolutionKeyAsync(key, Arg.Any<CancellationToken>()).Returns(descriptor);
         var cached = CreateCatalog();
 
         await cached.GetByResolutionKeyAsync(key, CancellationToken.None);
 
         var mapping = await _cache.TryGetAsync<Guid?>(_keyProvider.BuildKey("tenant-catalog-resolution", key));
-        Assert.Equal(CacheLookup<Guid?>.Hit(descriptor.TenantId), mapping);
+        Assert.Equal(CacheLookup<Guid?>.Hit(descriptor.TenantId.Value), mapping);
         Assert.Equal(descriptor, await cached.GetByIdAsync(descriptor.TenantId, CancellationToken.None));
-        await _inner.DidNotReceive().GetByIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+        await _inner.DidNotReceive().GetByIdAsync(Arg.Any<TenantId>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task GetByResolutionKeyAsync_AfterInvalidateTenant_ReturnsUpdatedDescriptor()
     {
         const string key = "acme.api.example.com";
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
         var active = Descriptor(tenantId, TenantStatus.Active);
         var suspended = Descriptor(tenantId, TenantStatus.Suspended);
         _inner.GetByResolutionKeyAsync(key, Arg.Any<CancellationToken>()).Returns(active);
@@ -159,9 +160,9 @@ public sealed class CachedTenantCatalogTests
     public async Task EveryCacheCall_UsesTtlPolicyWithoutFailSafeOrEagerRefresh()
     {
         const string key = "acme.api.example.com";
-        var descriptor = Descriptor(Guid.NewGuid(), TenantStatus.Active);
+        var descriptor = Descriptor(new TenantId(Guid.NewGuid()), TenantStatus.Active);
         _inner.GetByResolutionKeyAsync(key, Arg.Any<CancellationToken>()).Returns(descriptor);
-        _inner.GetByIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(descriptor);
+        _inner.GetByIdAsync(Arg.Any<TenantId>(), Arg.Any<CancellationToken>()).Returns(descriptor);
         var spy = new PolicyRecordingCacheService(_cache);
         var ttl = TimeSpan.FromSeconds(45);
         var cached = new CachedTenantCatalog(_inner, spy, _keyProvider, ttl);
@@ -201,7 +202,7 @@ public sealed class CachedTenantCatalogTests
 
     private CachedTenantCatalog CreateCatalog() => new(_inner, _cache, _keyProvider);
 
-    private static TenantDescriptor Descriptor(Guid tenantId, TenantStatus status) =>
+    private static TenantDescriptor Descriptor(TenantId tenantId, TenantStatus status) =>
         new(tenantId, "Acme", status, TenantIsolationMode.Shared, null, new Dictionary<string, string>());
 
     /// <summary>Delegates to a <see cref="FakeCacheService"/> and records the policy of every write.</summary>

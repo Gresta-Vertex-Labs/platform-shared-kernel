@@ -12,6 +12,8 @@ using Microsoft.Extensions.Logging;
 using OpenTelemetry;
 using OpenTelemetry.Logs;
 using SharedKernel.Presentation.WebApi;
+using SharedKernel.Security.Abstractions;
+using SharedKernel.ServiceDefaults.Security;
 using SharedKernel.Primitives.Propagation;
 using SharedKernel.ServiceDefaults.Telemetry;
 
@@ -92,6 +94,9 @@ internal static class ProbeHost
 
         if (withWebApi)
         {
+            // P-579: the edge that refuses the caller's Activity baggage is the request context, run before the WebApi.
+            builder.Services.AddSingleton<IUserContext>(AnonymousUserContext.Instance);
+            builder.Services.AddSharedKernelRequestContext();
             builder.AddSharedKernelWebApi();
         }
 
@@ -106,6 +111,7 @@ internal static class ProbeHost
 
         if (withWebApi)
         {
+            app.UseSharedKernelRequestContext();
             app.UseSharedKernelWebApi();
         }
 

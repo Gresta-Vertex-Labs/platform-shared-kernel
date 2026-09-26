@@ -1,0 +1,46 @@
+<Project>
+
+  <!--
+    Writes the release train's expected package set: one PackageId per line, sorted, for every
+    csproj in the repository that packs (WO-086 / P-572).
+
+      dotnet msbuild eng/PackageInventory.proj -nologo -v:q -p:InventoryFile=<path>
+
+    Every csproj on disk is asked, not only the ones in Platform.SharedKernel.slnx, so a packable
+    project that fell out of the solution (and would therefore silently never be packed) still
+    appears here and fails eng/verify-packages.sh. Each project answers through the
+    GetSharedKernelPackageIdentity target in Directory.Build.targets, so the answer is MSBuild's own
+    evaluated IsPackable and PackageId rather than a naming convention.
+
+    A bare <Project> on purpose: it imports no SDK and none of the root Directory.Build.* files.
+  -->
+
+  <PropertyGroup>
+    <_SkRepoRoot>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)..'))</_SkRepoRoot>
+    <InventoryFile Condition="'$(InventoryFile)' == ''">$(_SkRepoRoot)artifacts/expected-packages.txt</InventoryFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <_SkInventoryProject Include="$(_SkRepoRoot)**/*.csproj"
+                         Exclude="$(_SkRepoRoot)**/bin/**;$(_SkRepoRoot)**/obj/**;$(_SkRepoRoot).git/**;$(_SkRepoRoot).claude/**;$(_SkRepoRoot)nupkgs/**;$(_SkRepoRoot)artifacts/**" />
+  </ItemGroup>
+
+  <Target Name="Build">
+    <MSBuild Projects="@(_SkInventoryProject)"
+             Targets="GetSharedKernelPackageIdentity"
+             BuildInParallel="true"
+             Properties="Configuration=Release">
+      <Output TaskParameter="TargetOutputs" ItemName="_SkPackage" />
+    </MSBuild>
+
+    <ItemGroup>
+      <_SkPackageId Include="@(_SkPackage->'%(Identity)'->Distinct())" />
+    </ItemGroup>
+
+    <Error Condition="'@(_SkPackageId)' == ''" Text="PackageInventory: no packable project found under $(_SkRepoRoot)." />
+
+    <WriteLinesToFile File="$(InventoryFile)" Lines="@(_SkPackageId)" Overwrite="true" />
+    <Message Importance="high" Text="PackageInventory: @(_SkPackageId->Count()) packable project(s) written to $(InventoryFile)." />
+  </Target>
+
+</Project>

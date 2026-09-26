@@ -1,4 +1,4 @@
-using MediatR;
+using SharedKernel.Application.Messaging;
 using SharedKernel.Presentation.WebApi;
 using ShippingApi.Features.Shipments;
 

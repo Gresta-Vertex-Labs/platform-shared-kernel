@@ -4,6 +4,8 @@ description: MassTransit 9.1.2 partition-key ordered-delivery mapping (RabbitMQ 
 type: project
 ---
 
+> WO-086 (2026-09): recorded on MassTransit 9.1.2; the platform is pinned to 8.5.x (P-560) — re-verify, including the license-gate finding (8.5.x is Apache-2.0). Transport-specific code now lives in the satellites `SharedKernel.Messaging.MassTransit.RabbitMq`/`.AzureServiceBus`.
+
 Discovered/confirmed while implementing SK.07.OrderedDelivery (P-344/WO-054).
 
 ## The correct transport-agnostic APIs for partition-key mapping

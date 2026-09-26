@@ -5,7 +5,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using SharedKernel.Configuration.Extensions;
 using SharedKernel.Presentation.Grpc.Interceptors;
-using SharedKernel.Presentation.WebApi;
+using SharedKernel.Presentation.Authorization;
 
 namespace SharedKernel.Presentation.Grpc;
 
@@ -46,11 +46,13 @@ public static class GrpcHostBuilderExtensions
     ///   challenge, as over HTTP.</item>
     /// </list>
     /// <para>
-    /// gRPC calls run through the HTTP pipeline, so <c>app.UseSharedKernelWebApi()</c> (after
-    /// <c>builder.AddSharedKernelWebApi()</c>) gives them correlation ids, authentication and authorization; without it,
-    /// call <c>UseRouting()</c>, <c>UseAuthentication()</c> and <c>UseAuthorization()</c> before mapping services. In a
-    /// service method the correlation id is <c>context.GetHttpContext().GetCorrelationId()</c>; the caller and the
-    /// tenant come from an injected <c>IUserContext</c>, <c>ITenantProvider</c> or <c>IRequestContext</c>.
+    /// gRPC calls run through the HTTP pipeline, so no gRPC interceptor handles correlation, tenant or caller:
+    /// <c>SharedKernel.ServiceDefaults.Security</c>'s <c>app.UseSharedKernelRequestContext()</c>, first in the pipeline,
+    /// opens each call's <c>RequestContextScope</c> (caller, tenant, correlation id from <c>X-Correlation-Id</c>), and
+    /// <c>app.UseSharedKernelWebApi()</c> (after <c>builder.AddSharedKernelWebApi()</c>) or plain <c>UseRouting()</c>,
+    /// <c>UseAuthentication()</c> and <c>UseAuthorization()</c> authenticate and authorize it before the method runs. In a
+    /// service method, read the caller, tenant and correlation id from an injected <c>IRequestContext</c> (or
+    /// <c>IRequestContextAccessor</c>), exactly as in an HTTP handler; <c>IUserContext</c> gives the caller's claims.
     /// </para>
     /// <para>
     /// Global interceptors run in the order they are added, the first outermost. Call this before adding your own, so

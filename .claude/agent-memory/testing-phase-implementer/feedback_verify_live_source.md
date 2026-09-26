@@ -4,6 +4,8 @@ description: Never trust a domain's own CLAUDE.md prose, a cross-domain brief's 
 type: feedback
 ---
 
+> WO-086 (2026-09): the four domain-local `TenantScope` copies (Search, AI, Workflows, Scheduling) became the single `SharedKernel.Execution.Tenancy.TenantScope` (`Global`, `For`, `FromNullable`); examples below use the old names. The lesson is unchanged.
+
 Rule: before implementing or confirming any fake/fixture that satisfies another domain's interface, read that domain's actual `.cs` files under its `Abstractions/`/`Models/`/`Errors/` folders (or equivalent) directly — never rely solely on that domain's own `CLAUDE.md` prose, and never assume a prior session's design draft is still accurate.
 
 **Why this matters, concretely observed twice in the same session (2026-07-17, WO-043 Design-phase confirmation for 16.Testing):**

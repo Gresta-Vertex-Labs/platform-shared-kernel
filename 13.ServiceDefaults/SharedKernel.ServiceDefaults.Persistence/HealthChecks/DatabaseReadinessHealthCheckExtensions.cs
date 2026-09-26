@@ -1,8 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
-using SharedKernel.Cryptography.Symmetric;
-using SharedKernel.Persistence.EfCore.Auditing;
-using SharedKernel.Persistence.EfCore.Encryption;
 using SharedKernel.Persistence.Abstractions.Connections;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Diagnostics;
@@ -97,7 +94,7 @@ public static class DatabaseReadinessHealthCheckExtensions
     /// <param name="name">The registration name. Defaults to <see cref="HealthCheckNames.PersistenceStartup"/>.</param>
     /// <returns>The same <paramref name="builder"/> instance, for fluent chaining.</returns>
     /// <remarks>
-    /// Tagged <see cref="HealthCheckTags.Ready"/>. <see cref="AddDatabaseReadinessCheck{TContext}"/> applies the same gate;
+    /// Tagged <see cref="HealthCheckTags.Ready"/> and <see cref="HealthCheckTags.Db"/>. <see cref="AddDatabaseReadinessCheck{TContext}"/> applies the same gate;
     /// register this one in a service that has no EF Core readiness check. Requires <c>AddSharedKernelPostgres</c>.
     /// </remarks>
     public static IHealthChecksBuilder AddPersistenceStartupReadinessCheck(
@@ -112,63 +109,6 @@ public static class DatabaseReadinessHealthCheckExtensions
         return builder.Add(new HealthCheckRegistration(
             name,
             sp => new PersistenceStartupHealthCheck(sp.GetRequiredService<IPersistenceStartup>()),
-            failureStatus: null,
-            tags: tags));
-    }
-
-    /// <summary>
-    /// Registers a readiness check over the field-encryption key ring (<c>UseFieldEncryption(...)</c>): Unhealthy while the
-    /// keys cannot be loaded from the key provider.
-    /// </summary>
-    /// <param name="builder">The health checks builder.</param>
-    /// <param name="name">The registration name. Defaults to <see cref="HealthCheckNames.FieldEncryption"/>.</param>
-    /// <returns>The same <paramref name="builder"/> instance, for fluent chaining.</returns>
-    /// <remarks>Tagged <see cref="HealthCheckTags.Ready"/> and <see cref="HealthCheckTags.EncryptionKeyProvider"/>.</remarks>
-    public static IHealthChecksBuilder AddFieldEncryptionReadinessCheck(
-        this IHealthChecksBuilder builder,
-        string name = HealthCheckNames.FieldEncryption)
-    {
-        ArgumentNullException.ThrowIfNull(builder);
-
-        string[] tags = [HealthCheckTags.Ready, HealthCheckTags.EncryptionKeyProvider];
-        HealthCheckRegistrationLogging.LogRegistration(builder.Services, typeof(DatabaseReadinessHealthCheckExtensions).FullName!, name, tags);
-
-        return builder.Add(new HealthCheckRegistration(
-            name,
-            sp => new FieldEncryptionHealthCheck(
-                sp.GetRequiredKeyedService<IEncryptionKeyProviderProbe>(FieldEncryptionServiceKeys.KeyRingProbe)),
-            failureStatus: null,
-            tags: tags));
-    }
-
-    /// <summary>
-    /// Registers a readiness check over the audit ledger's sealer (<c>UseAuditTrail()</c>): Degraded when the oldest
-    /// unsealed record is older than <paramref name="maxLag"/>, Unhealthy when the ledger cannot be read.
-    /// </summary>
-    /// <param name="builder">The health checks builder.</param>
-    /// <param name="maxLag">The lag reported as Degraded. Defaults to 5 minutes.</param>
-    /// <param name="name">The registration name. Defaults to <see cref="HealthCheckNames.AuditSealing"/>.</param>
-    /// <returns>The same <paramref name="builder"/> instance, for fluent chaining.</returns>
-    /// <remarks>
-    /// Tagged <see cref="HealthCheckTags.Ready"/> and <see cref="HealthCheckTags.Db"/>. A lag is shared by every instance,
-    /// so it degrades rather than fails readiness; alert on the Degraded status or the sealing metrics.
-    /// </remarks>
-    public static IHealthChecksBuilder AddAuditSealingReadinessCheck(
-        this IHealthChecksBuilder builder,
-        TimeSpan? maxLag = null,
-        string name = HealthCheckNames.AuditSealing)
-    {
-        ArgumentNullException.ThrowIfNull(builder);
-        if (maxLag is { } lag)
-            ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(lag, TimeSpan.Zero, nameof(maxLag));
-
-        string[] tags = [HealthCheckTags.Ready, HealthCheckTags.Db];
-        HealthCheckRegistrationLogging.LogRegistration(builder.Services, typeof(DatabaseReadinessHealthCheckExtensions).FullName!, name, tags);
-
-        var allowed = maxLag ?? TimeSpan.FromMinutes(5);
-        return builder.Add(new HealthCheckRegistration(
-            name,
-            sp => new AuditSealingHealthCheck(sp.GetRequiredService<IAuditSealingProbe>(), allowed),
             failureStatus: null,
             tags: tags));
     }

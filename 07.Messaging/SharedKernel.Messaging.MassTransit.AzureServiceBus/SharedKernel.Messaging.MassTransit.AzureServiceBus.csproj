@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <SharedKernelTier>Adapter</SharedKernelTier>
+    <SharedKernelAllowedAdapterReferences>SharedKernel.Messaging.MassTransit</SharedKernelAllowedAdapterReferences>
+    <!-- NuGet packaging metadata -->
+    <Description>Azure Service Bus transport for SharedKernel.Messaging.MassTransit: UseAzureServiceBus(...) on the messaging bus builder, by connection string or by fully-qualified namespace with a managed identity (DefaultAzureCredential), with native scheduled enqueue for WithDelayedDelivery() and session identifiers for publish-time partition keys. MassTransit 8.5.x (the last Apache-2.0 release).</Description>
+    <PackageTags>messaging;masstransit;azure-service-bus;shared-kernel</PackageTags>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Public API tracking: an addition, removal or signature change fails the build until PublicAPI.*.txt is updated. -->
+    <WarningsAsErrors>$(WarningsAsErrors);nullable;CS1591;RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
+    <NoWarn>$(NoWarn);RS0026;RS0027</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- The messaging core: MessagingBusBuilder and the MessagingTransport extension point (P-570). -->
+    <ProjectReference Include="..\SharedKernel.Messaging.MassTransit\SharedKernel.Messaging.MassTransit.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Pinned to the 8.5.x line with MassTransit itself (Directory.Packages.props): 9.x is commercially licensed. -->
+    <PackageReference Include="MassTransit.Azure.ServiceBus.Core" />
+    <!--
+      Azure.Identity — DefaultAzureCredential, used directly by UseAzureServiceBus(...) to
+      authenticate a fully-qualified namespace with a managed identity instead of a connection
+      string. Declared explicitly (P-560): this package compiles against the type at a real call
+      site, so relying on it arriving transitively through MassTransit.Azure.ServiceBus.Core would
+      make the build depend on that package's private dependency graph.
+    -->
+    <PackageReference Include="Azure.Identity" />
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="SharedKernel.Messaging.MassTransit.AzureServiceBus.Tests" />
+  </ItemGroup>
+</Project>

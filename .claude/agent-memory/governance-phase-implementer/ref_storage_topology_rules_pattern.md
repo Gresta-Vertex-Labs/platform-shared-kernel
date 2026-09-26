@@ -4,6 +4,8 @@ description: SK0023 + StorageTopologyRules (WO-043 P-271) implementation shape, 
 type: reference
 ---
 
+> WO-086 (2026-09): `StorageTopologyRules` today holds `AbstractionsHasNoThirdPartyDependencies`, `AbstractionsForbiddenAssemblyReferences`, `S3NeverReferencesObs`, `S3ForbiddenAssemblyReferences` and `OnlyProviderPackagesMayReferenceAmazonS3` — `ProviderPackagesNeverReferenceEachOther` became one-directional because Obs→S3 is now a declared Adapter→Adapter edge (`SharedKernelAllowedAdapterReferences`). `CompositionRootExclusivityRules` (cited below) was deleted in P-574. The const-folding pitfall still applies.
+
 **SK0023 `NonSingletonAmazonS3ClientRegistrationAnalyzer`** — structural inverse of SK0703 (`MessageBusSingletonRegistrationAnalyzer`): flags `AddScoped`/`AddTransient` registration of a type whose first generic type argument's simple name is `"IAmazonS3"` (one- and two-argument forms), because `IAmazonS3` must always be Singleton (SK0703 flags `AddSingleton<IMessageBus>` because that must be Scoped). Syntax-only, no SemanticModel, fires globally, lives in `SharedKernel.Analyzers/Diagnostics/SK0023_NonSingletonAmazonS3ClientRegistrationAnalyzer.cs` (not the `Analyzers/` path some phase specs guess — every SK00NN analyzer lives in `Diagnostics/`, a discrepancy every recent phase spec has repeated and every closeout has resolved in favor of the on-disk convention).
 
 **`StorageTopologyRules`** (`SharedKernel.ArchitectureTests/Rules/StorageTopologyRules.cs`) — mirrors `RedisTopologyRules` but scoped to `08.Storage`'s two provider packages (`.S3`, `.Obs`) instead of Redis's five. Three pure NetArchTest `.Should().NotHaveDependencyOn(...)` predicates, zero Mono.Cecil:

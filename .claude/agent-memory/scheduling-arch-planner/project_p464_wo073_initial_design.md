@@ -4,6 +4,8 @@ description: P-464/WO-073 first-dispatch Design decisions for SharedKernel.Sched
 type: project
 ---
 
+> WO-086 (2026-09): `IFencedLock` is now a per-occurrence `IDistributedLockService` lease (`SharedKernel.Caching.Abstractions`); `ISender` is the kernel one (`SharedKernel.Application`, no MediatR); P-466's `AddSchedulerReadinessCheck` and the `13→19` grant were deleted — the scheduler self-registers an `IReadinessProbe` named `"scheduler"`; the Quartz pin and `LoggingEventIdRanges.Scheduling = 19000` have both shipped, so the blockers below are closed.
+
 19.Scheduling was founded and given its first phase input (P-464/WO-073) on 2026-08-26. This session populated all six state-map phase sections (46 tasks: D-01–D-08, S-01–S-05, C-01–C-09, T-01–T-07, DO-01–DO-05, P-01–P-03) and resolved one open Design question.
 
 **Quartz dependency — resolved, direct pin required.** Verified on disk (not assumed) by reading `07.Messaging/SharedKernel.Messaging.MassTransit/obj/project.assets.json`: `MassTransit.Quartz` 9.1.2 (the repo's only `Quartz*` `PackageVersion` entry at the time) transitively resolves `Quartz/3.18.1`. Decided `19.Scheduling` must not ride that transitive edge — `07.Messaging` can bump/drop `MassTransit.Quartz` independently and silently break this domain's compile-time-visible `CronExpression` usage. Root `Directory.Packages.props` needs its own `<PackageVersion Include="Quartz" Version="3.18.1" />`. That edit is outside `19.Scheduling/`'s jurisdiction (it's a root file) — recorded as a Scaffold-phase (S-03) cross-domain blocker for whoever executes it (likely `devops-lead`).

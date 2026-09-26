@@ -1,5 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Tooling</SharedKernelTier>
     <IsPackable>true</IsPackable>
     <!-- Test-only infrastructure: NuGet marks the package so it never flows transitively
          into a consumer's production dependency graph. This makes the README's
@@ -14,7 +15,7 @@
          CS1591 is clean for this project: every public member is documented. -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <!-- NuGet packaging metadata -->
-    <Description>Pre-built NetArchTest architecture rules for the SharedKernel platform: layering direction, domain purity, provider isolation, forbidden injection patterns, and IL-level secure-default assertions. Assert them from your own test suite with any runner and any assertion library. Test-only development dependency — never flows into a production dependency graph.</Description>
+    <Description>Pre-built NetArchTest architecture rules for the SharedKernel platform: dependency purity the package tiers cannot express, domain purity, provider isolation, forbidden injection patterns, and IL-level secure-default assertions. Assert them from your own test suite with any runner and any assertion library. Test-only development dependency — never flows into a production dependency graph.</Description>
     <PackageTags>architecture;netarchtest;sharedkernel;governance;testing</PackageTags>
   </PropertyGroup>
   <ItemGroup>

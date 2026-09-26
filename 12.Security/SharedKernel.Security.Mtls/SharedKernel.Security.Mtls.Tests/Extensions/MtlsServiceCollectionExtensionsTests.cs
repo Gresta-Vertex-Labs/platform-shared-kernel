@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Context;
 using System.Security.Claims;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Encodings.Web;
@@ -35,8 +36,6 @@ public sealed class MtlsServiceCollectionExtensionsTests
         ServiceDescriptor userContext = Assert.Single(services, d => d.ServiceType == typeof(IUserContext));
         Assert.Equal(ServiceLifetime.Scoped, userContext.Lifetime);
         Assert.NotNull(userContext.ImplementationFactory);
-        ServiceDescriptor tenantProvider = Assert.Single(services, d => d.ServiceType == typeof(ITenantProvider));
-        Assert.Equal(typeof(UserContextTenantProvider), tenantProvider.ImplementationType);
         Assert.Contains(services, d => d.ServiceType == typeof(IHttpContextAccessor));
 
         using ServiceProvider provider = services.BuildServiceProvider();
@@ -87,16 +86,14 @@ public sealed class MtlsServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public void AddMtlsAuthentication_ExistingUserContextAndTenantProvider_AreKept()
+    public void AddMtlsAuthentication_ExistingUserContext_IsKept()
     {
         var services = new ServiceCollection();
         services.AddSingleton<IUserContext>(SystemUserContext.Instance);
-        services.AddScoped<ITenantProvider, FixedTenantProvider>();
 
         services.AddMtlsAuthentication<RecordingValidator>();
 
         Assert.Same(SystemUserContext.Instance, Assert.Single(services, d => d.ServiceType == typeof(IUserContext)).ImplementationInstance);
-        Assert.Equal(typeof(FixedTenantProvider), Assert.Single(services, d => d.ServiceType == typeof(ITenantProvider)).ImplementationType);
     }
 
     [Fact]
@@ -145,7 +142,6 @@ public sealed class MtlsServiceCollectionExtensionsTests
         using IServiceScope scope = provider.CreateScope();
 
         Assert.Same(AnonymousUserContext.Instance, scope.ServiceProvider.GetRequiredService<IUserContext>());
-        Assert.Equal(Guid.Empty, scope.ServiceProvider.GetRequiredService<ITenantProvider>().TenantId);
     }
 
     [Fact]
@@ -164,7 +160,7 @@ public sealed class MtlsServiceCollectionExtensionsTests
 
         IUserContext user = scope.ServiceProvider.GetRequiredService<IUserContext>();
 
-        Assert.Equal(IdentityKind.ServicePrincipal, user.IdentityKind);
+        Assert.Equal(ActorKind.Service, user.ActorKind);
         Assert.Equal("tpp-42", user.SubjectId);
     }
 
@@ -245,11 +241,6 @@ public sealed class MtlsServiceCollectionExtensionsTests
         Assert.NotEmpty(failures);
         Assert.Equal(exceptions.Count(), exceptions.OfType<OptionsValidationException>().Count());
         Assert.Contains(failures, failure => failure.Contains(expectedFragment, StringComparison.Ordinal));
-    }
-
-    private sealed class FixedTenantProvider : ITenantProvider
-    {
-        public Guid TenantId => Guid.Parse("22222222-2222-2222-2222-222222222222");
     }
 
     private sealed class NoResultHandler(

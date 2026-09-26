@@ -50,6 +50,7 @@ dotnet add package SharedKernel.Caching.Redis.PubSub
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
+| Tier | Adapter |
 | Depends on | `SharedKernel.Caching.Redis.Core`, `SharedKernel.Primitives` |
 | Namespaces | `SharedKernel.Caching.Redis.PubSub` (contract), `SharedKernel.Caching.Redis.PubSub.Extensions` (registration) |
 
@@ -277,7 +278,7 @@ twice after each reconnect.
 subscribers is leaving. The returned handle can.
 
 **Why no health property?** Connection health belongs to the shared connection:
-`IRedisConnectionProbe` in `SharedKernel.Caching.Redis.Core` reports it for every Redis package at once.
+the `redis` readiness probe registered by `SharedKernel.Caching.Redis.Core`'s `AddRedisConnection` reports it for every Redis package at once.
 
 **Why does this stay in `02.Caching` instead of `07.Messaging`?** Its contract is deliberately weaker than messaging:
 no durability, no retries, no ordering across restarts. Placing it beside durable messaging would invite code to

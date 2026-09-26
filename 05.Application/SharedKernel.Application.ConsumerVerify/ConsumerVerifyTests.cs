@@ -1,11 +1,17 @@
 using System.Collections.Concurrent;
 using FluentValidation;
-using MediatR;
+using SharedKernel.Application.Mediator.MediatR;
 using Microsoft.Extensions.DependencyInjection;
+using SharedKernel.Application.Authorization;
+using SharedKernel.Application.Commands;
 using Microsoft.Extensions.Options;
-using SharedKernel.Application.Context;
+using SharedKernel.Application.Pipeline;
 using SharedKernel.Application.Idempotency;
-using SharedKernel.Application.Transactions;
+using SharedKernel.Idempotency.Abstractions;
+using SharedKernel.Validation.FluentValidation;
+using SharedKernel.Execution.Transactions;
+using SharedKernel.Execution.Context;
+using SharedKernel.Application.Messaging;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 using Xunit;
@@ -98,61 +104,65 @@ public sealed class RequestContext : IRequestContext
 {
     public bool IsAuthenticated { get; init; } = true;
     public string? UserId { get; set; } = "user-1";
-    public Guid? TenantId => null;
+    public SharedKernel.Execution.Tenancy.TenantId? TenantId => null;
     public HashSet<string> Permissions { get; } = ["orders.place"];
 
     public ValueTask<bool> HasPermissionAsync(string permission, CancellationToken cancellationToken)
         => ValueTask.FromResult(Permissions.Contains(permission));
 }
 
-public sealed class IdempotencyStore : IRequestIdempotencyStore
+public sealed class IdempotencyStore : IIdempotencyStore
 {
-    private readonly ConcurrentDictionary<string, (string Fingerprint, string Token, string? Response)> _entries = new();
+    private readonly ConcurrentDictionary<(IdempotencyPurpose, string), (string Fingerprint, string Token, bool Completed, string? Response)> _entries = new();
 
-    public Task<IdempotencyBeginResult> TryBeginAsync(string key, string requestFingerprint, CancellationToken cancellationToken)
+    public Task<IdempotencyReservation> TryBeginAsync(
+        IdempotencyPurpose purpose, string key, string fingerprint, TimeSpan ttl, CancellationToken cancellationToken)
     {
         var token = Guid.NewGuid().ToString("N");
-        var entry = _entries.GetOrAdd(key, (requestFingerprint, token, null));
+        var entry = _entries.GetOrAdd((purpose, key), (fingerprint, token, false, null));
 
-        if (entry.Fingerprint != requestFingerprint)
-            return Task.FromResult(IdempotencyBeginResult.FingerprintMismatch());
+        if (entry.Fingerprint != fingerprint)
+            return Task.FromResult(IdempotencyReservation.FingerprintMismatch());
         if (entry.Token == token)
-            return Task.FromResult(IdempotencyBeginResult.Started(token));
+            return Task.FromResult(IdempotencyReservation.Started(token));
 
-        return Task.FromResult(entry.Response is null
-            ? IdempotencyBeginResult.InProgress()
-            : IdempotencyBeginResult.Completed(entry.Response));
+        return Task.FromResult(entry.Completed
+            ? IdempotencyReservation.Completed(entry.Response)
+            : IdempotencyReservation.InProgress());
     }
 
-    public Task<bool> CompleteAsync(string key, string reservationToken, string serializedResponse, CancellationToken cancellationToken)
+    public Task<bool> CompleteAsync(
+        IdempotencyPurpose purpose, string key, string token, string? response, TimeSpan retention, CancellationToken cancellationToken)
     {
-        if (!_entries.TryGetValue(key, out var entry) || entry.Token != reservationToken)
+        if (!_entries.TryGetValue((purpose, key), out var entry) || entry.Token != token || entry.Completed)
             return Task.FromResult(false);
 
-        _entries[key] = entry with { Response = serializedResponse };
+        _entries[(purpose, key)] = entry with { Completed = true, Response = response };
         return Task.FromResult(true);
     }
 
-    public Task<bool> ReleaseAsync(string key, string reservationToken, CancellationToken cancellationToken)
-        => Task.FromResult(_entries.TryGetValue(key, out var entry) && entry.Token == reservationToken
-            && _entries.TryRemove(key, out _));
+    public Task<bool> ReleaseAsync(IdempotencyPurpose purpose, string key, string token, CancellationToken cancellationToken)
+        => Task.FromResult(_entries.TryGetValue((purpose, key), out var entry) && entry.Token == token && !entry.Completed
+            && _entries.TryRemove((purpose, key), out _));
 }
 
-/// <summary>Exercises the packed public API of SharedKernel.Application the way a consuming service would.</summary>
+/// <summary>Exercises the packed public API of SharedKernel.Application, .Pipeline and .Mediator.MediatR the way a consuming service would.</summary>
 public sealed class ConsumerVerifyTests
 {
     [Fact]
-    public void Package_CarriesNoInfrastructureDependency()
+    public void Pipeline_PackageCarriesNoInfrastructureOrMediatorDependency()
     {
         var references = typeof(ApplicationPipelineBuilder).Assembly.GetReferencedAssemblies()
             .Select(assembly => assembly.Name!)
             .ToArray();
 
-        Assert.Contains("SharedKernel.Application.Abstractions", references);
+        Assert.Contains("SharedKernel.Application", references);
         Assert.DoesNotContain(references, name => name.StartsWith("Polly", StringComparison.Ordinal)
             || name.StartsWith("SharedKernel.Caching", StringComparison.Ordinal)
-            || name == "SharedKernel.Core"
-            || name == "Microsoft.Extensions.Hosting.Abstractions");
+            || name == "Microsoft.Extensions.Hosting.Abstractions"
+            || name.StartsWith("MediatR", StringComparison.Ordinal)
+            || name.StartsWith("FluentValidation", StringComparison.Ordinal));
+        Assert.DoesNotContain(typeof(ICommand).Assembly.GetReferencedAssemblies(), assembly => assembly.Name!.StartsWith("MediatR", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -252,14 +262,16 @@ public sealed class ConsumerVerifyTests
         var context = new RequestContext();
         var services = new ServiceCollection();
 
-        // One call: handlers and the validator are found in this assembly. The seams follow it,
-        // because they are checked when the host starts, not here.
+        // One call: handlers are found in this assembly, and the mediator and the opt-ins are chosen on the builder.
+        // The seams follow it, because they are checked when the host starts, not here.
         services.AddSharedKernelApplication(typeof(PlaceOrderHandler).Assembly, app => app
+            .UseMediatR()
             .WithIdempotency()
             .WithTransactions());
+        services.AddFluentValidationRequestValidators(typeof(PlaceOrderValidator).Assembly);
         services.AddSingleton(journal);
         services.AddSingleton<IRequestContext>(context);
-        services.AddSingleton<IRequestIdempotencyStore, IdempotencyStore>();
+        services.AddIdempotencyStore<IdempotencyStore>(IdempotencyPurpose.Request);
         services.AddScoped<IUnitOfWork, UnitOfWork>();
 
         var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });

@@ -3,8 +3,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using SharedKernel.Application.Auditing;
-using SharedKernel.Application.Context;
+using SharedKernel.Execution.Auditing;
+using SharedKernel.Execution.Context;
 using SharedKernel.Configuration.Extensions;
 using SharedKernel.Cryptography.Signing;
 using SharedKernel.Persistence.Abstractions.Connections;
@@ -19,6 +19,7 @@ using SharedKernel.Persistence.EfCore.Auditing.SelfCheck;
 using SharedKernel.Persistence.EfCore.Auditing.Writing;
 using SharedKernel.Persistence.EfCore.Options;
 using SharedKernel.Primitives.Clocks;
+using SharedKernel.Primitives.Health;
 
 namespace SharedKernel.Persistence;
 
@@ -28,7 +29,7 @@ public static class AuditLedgerServiceCollectionExtensions
     /// <summary>
     /// Registers the audit ledger: the request-path writer (<see cref="IAuditTrailWriter"/> and
     /// its PostgreSQL implementation), <see cref="IAuditQueryService"/>, <see cref="IAuditCheckpointService"/>,
-    /// <see cref="IAuditLedgerMaintenance"/>, <see cref="IAuditSealingProbe"/>, the background sealer, the
+    /// <see cref="IAuditLedgerMaintenance"/>, the audit-sealing readiness probe (<see cref="AuditSealingReadiness.ProbeName"/>), the background sealer, the
     /// startup self-check, and — unless registered earlier — the default <see cref="IAuditRecordAuthenticator"/>
     /// (the configured HMAC keyring) and <see cref="IAuditCheckpointSink"/>
     /// (the <c>audit_checkpoints</c> table). <see cref="AuditLedgerOptions"/> is validated at startup.
@@ -75,7 +76,7 @@ public static class AuditLedgerServiceCollectionExtensions
             sp.GetRequiredService<IOptions<AuditLedgerOptions>>(),
             sp.GetRequiredService<ILogger<AuditCheckpointWriter>>(),
             sp.GetService<IAsymmetricSignatureService>()));
-        services.TryAddSingleton<IAuditSealingProbe, AuditSealingProbe>();
+        services.AddReadinessProbe<AuditSealingProbe>();
         services.TryAddSingleton<AuditLedgerSelfCheck>();
 
         services.TryAddScoped<EfAuditTrailWriter>();

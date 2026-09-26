@@ -30,21 +30,25 @@ dotnet add package SharedKernel.Presentation.OpenApi
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
-| Dependencies | `SharedKernel.Presentation.WebApi`, `Asp.Versioning.Http`, `Asp.Versioning.Mvc.ApiExplorer`, `Asp.Versioning.OpenApi`, `Microsoft.AspNetCore.OpenApi`, `Scalar.AspNetCore` |
+| Tier | Host (referenced by a service's API project) |
+| Dependencies | `SharedKernel.Presentation.WebApi`, `SharedKernel.Presentation.Core`, `Asp.Versioning.Http`, `Asp.Versioning.Mvc.ApiExplorer`, `Asp.Versioning.OpenApi`, `Microsoft.AspNetCore.OpenApi`, `Scalar.AspNetCore` |
 
 ## Use
 
 ```csharp
-using MediatR;
+using SharedKernel.Application.Messaging;   // ISender
 using SharedKernel.Presentation.OpenApi;
 using SharedKernel.Presentation.WebApi;
+using SharedKernel.ServiceDefaults.Security;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.AddSharedKernelRequestContext();   // the correlationId every documented problem carries
 builder.AddSharedKernelWebApi();
 builder.AddSharedKernelOpenApi(options => options.Title = "Orders API");
 
 var app = builder.Build();
+app.UseSharedKernelRequestContext();
 app.UseSharedKernelWebApi();
 
 app.MapEndpoints();
@@ -81,7 +85,8 @@ the URLs), one document per version, and the platform's problem shape for versio
 - Outside Development it maps nothing unless `ExposeInProduction` is set ("production" here means every environment
   but Development), and logs that at Information (14300).
 - It returns one convention builder for the documents and the reference:
-  `app.MapSharedKernelOpenApi().RequireEndpointPermission("docs.read")` protects both.
+  `app.MapSharedKernelOpenApi().RequireEndpointPermission("docs.read")` protects both (the convention is
+  `SharedKernel.Presentation.Core`'s: `using SharedKernel.Presentation.Authorization;`).
 - An endpoint that declares no version, such as `app.MapGet("/ping", …)`, appears in every version's document.
 - MVC controllers are documented the same way: `[ApiVersion(1.0)]`, the authorization and header attributes, and
   conventions applied with `app.MapControllers().RequireEndpointPermission(…)`. Actions returning typed results document

@@ -4,7 +4,6 @@ using Google.Protobuf.WellKnownTypes;
 using Google.Rpc;
 using Grpc.Core;
 using Microsoft.AspNetCore.Http;
-using SharedKernel.Presentation.WebApi;
 using SharedKernel.Primitives.Errors;
 using RpcStatus = Google.Rpc.Status;
 
@@ -126,12 +125,12 @@ internal static class RpcStatusFactory
         var traceId = Activity.Current?.Id ?? httpContext?.TraceIdentifier;
         if (!string.IsNullOrEmpty(traceId))
         {
-            errorInfo.Metadata[ProblemDetailsExtensionNames.TraceId] = traceId;
+            errorInfo.Metadata[ErrorMemberNames.TraceId] = traceId;
         }
 
-        if (httpContext?.GetCorrelationId() is { } correlationId)
+        if (RequestFacts.GetCorrelationId(httpContext) is { } correlationId)
         {
-            errorInfo.Metadata[ProblemDetailsExtensionNames.CorrelationId] = correlationId;
+            errorInfo.Metadata[ErrorMemberNames.CorrelationId] = correlationId;
         }
 
         return errorInfo;

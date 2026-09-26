@@ -16,8 +16,11 @@ never flows into a consumer's production dependency graph.
 ## Install
 
 ```xml
-<PackageReference Include="SharedKernel.ArchitectureTests" Version="1.0.0" PrivateAssets="all" />
+<PackageReference Include="SharedKernel.ArchitectureTests" PrivateAssets="all" />
 ```
+
+The version comes from your repository's single `SharedKernelVersion` property (central package management); every
+SharedKernel package is released together. **Tier:** Tooling — it is never a runtime dependency of production code.
 
 `PrivateAssets="all"` is redundant — the package already declares itself a development
 dependency — but harmless, and explicit is fine.
@@ -35,7 +38,7 @@ Every rule is a **static factory** that returns a `ConditionList` — an unevalu
 is inspected until you call `.GetResult()`:
 
 ```csharp
-var rule = SharedKernelLayeringRules.DomainNeverReferencesPersistence(domainAssembly);
+var rule = DomainLayerPurityRules.DomainAssembliesNeverReferenceInfrastructure(domainAssembly);
 var result = rule.GetResult();
 
 result.IsSuccessful;      // false if the rule was violated
@@ -62,9 +65,9 @@ public class ArchitectureTests : ArchitectureRuleBase
     }
 
     [Fact]
-    public void Domain_NeverReferencesPersistence()
+    public void Domain_NeverReferencesInfrastructure()
     {
-        AssertRule(SharedKernelLayeringRules.DomainNeverReferencesPersistence(Domain));
+        AssertRule(DomainLayerPurityRules.DomainAssembliesNeverReferenceInfrastructure(Domain));
     }
 }
 ```
@@ -130,12 +133,11 @@ layer, no `IQueryable` escaping your repositories, no raw cipher outside your cr
 `MakeGenericMethod` dispatch, one declaring assembly per shared constant, secure options defaults.
 These are ordinary architecture rules that happen to be pre-written.
 
-**Platform rules — they name SharedKernel packages internally.** Twelve rule classes hardcode
+**Platform rules — they name SharedKernel packages internally.** Ten rule classes hardcode
 `SharedKernel.*` package names in their forbidden-term lists, because their whole job is policing
-this platform's own layering:
+this platform's own package boundaries:
 
-`SharedKernelLayeringRules`, `RedisTopologyRules`, `CommunicationLayeringRules`,
-`CompositionRootExclusivityRules`, `ApplicationPipelineRules`, `CachingAbstractionRules`,
+`SharedKernelLayeringRules`, `RedisTopologyRules`, `CommunicationLayeringRules`, `ApplicationPipelineRules`,
 `ContractsPurityRules`, `IntelligenceTopologyRules`, `SearchTopologyRules`,
 `StorageTopologyRules`, `PersistenceLayerProtectionRules`, `PresentationLayeringRules`
 
@@ -143,7 +145,7 @@ Pointed at a service assembly that references none of the packages they forbid, 
 trivially — not because your architecture is sound but because there was nothing to find. They are
 useful to you in two cases: you are working inside this mono-repo, or you want to assert that your
 service does *not* reach past a SharedKernel abstraction into a concrete provider (which
-`CompositionRootExclusivityRules` and `CachingAbstractionRules` express directly, and is a real
+`StorageTopologyRules.OnlyProviderPackagesMayReferenceAmazonS3` expresses directly for S3, and is a real
 thing worth pinning).
 
 A rule that passes vacuously is the failure mode to watch for generally. When you adopt any rule,
@@ -154,24 +156,20 @@ never seen fail is a rule you do not yet know is wired up.
 
 ## Rule catalog
 
-### Layering — `SharedKernelLayeringRules`
+### Tiers and purity — `SharedKernelLayeringRules`
 
-The dependency direction of the platform: lower-numbered domains are more foundational, and
-references flow downward only.
+Which kernel package may reference which is enforced by the build, not by this package: every
+kernel `.csproj` declares a `<SharedKernelTier>` (Foundation, Model, Abstractions, Adapter, Host,
+Testing, Tooling) and `eng/SharedKernelTiers.targets` fails the build with an `SKTIER*` error on an
+edge the tier matrix does not allow, including ASP.NET Core below the Host tier (`SKTIER006`). What
+is left here are the rules the tier matrix cannot express:
 
 | Rule | Enforces |
 |---|---|
-| `CoreReferencesNothing` | `01.Core` depends on no other SharedKernel domain |
-| `CachingReferencesOnlyCore` | `02.Caching` reaches nothing but `01.Core` |
-| `DomainReferencesOnlyCore` | `03.Domain` reaches nothing but `01.Core` |
-| `ContractsReferencesOnlyCore` | `04.Contracts` reaches nothing but `01.Core` — not even `03.Domain` |
-| `SearchReferencesOnlyCoreAndContracts` `[]` | `09.Search` reaches only `01.Core` and `04.Contracts` |
-| `IntelligenceReferencesOnlyCoreAndContracts` `[]` | `10.Intelligence` reaches only `01.Core` and `04.Contracts` |
-| `WorkflowsReferencesOnlyCoreContractsAndApplication` `[]` | `17.Workflows` reaches only `01.Core`, `04.Contracts`, `05.Application` |
-| `DomainNeverReferencesPersistence` | Hard rule — domain logic never couples to storage |
-| `DomainNeverReferencesMessaging` | Hard rule — the domain raises events, never dispatches them |
-| `ApplicationNeverReferencesConcreteInfrastructure` | Hard rule — the application layer depends on abstractions only |
-| `TestingNeverReferencedByProduction` | Hard rule — test helpers (`SharedKernel.Testing`, and the published `SharedKernel.Persistence.Testing`) never appear as a production dependency |
+| `ContractsNeverReferencesDomain` | `SharedKernel.Contracts` never references `SharedKernel.Domain` (both Model tier) — a wire contract is not the domain model |
+| `DomainNeverReferencesContracts` | `SharedKernel.Domain` never references `SharedKernel.Contracts` (both Model tier) |
+| `ModelNeverReferencesLogging` | Domain and contracts assemblies stay logging-free (`Microsoft.Extensions.Logging.Abstractions` passes the tier allow-list, so the tier check cannot catch it) |
+| `TestingNeverReferencedByProduction` | Hard rule — test helpers (`SharedKernel.Testing*`, `SharedKernel.*.Testing`, `SharedKernel.Persistence.Testing`) never appear as a production dependency |
 
 ### Domain purity
 
@@ -204,9 +202,9 @@ building one outside `EventEnvelope.Wrap` no longer compiles.
 |---|---|
 | `ApplicationPipelineRules.BehaviorsNeverReferenceConcreteInfrastructure` | Named pipeline behaviors depend on abstractions only |
 | `ApplicationPipelineRules.NoExistingBehaviorMatchesStreamRequestConstraint` | No behavior's generic constraint accidentally captures stream requests |
-| `SharedKernelLayeringRules.ApplicationNeverReferencesCachingPollyHostingOrCore` | `SharedKernel.Application` carries no cache, Polly, hosting or `SharedKernel.Core` dependency |
-| `SharedKernelLayeringRules.ApplicationCachingNeverReferencesConcreteInfrastructure` | `SharedKernel.Application.Caching` reaches `SharedKernel.Caching.Abstractions`, never a cache provider |
-| `UnitOfWorkSeamRules.SharedContractsAreNotRedeclared` | `IUnitOfWork`, `IRequestContext` and `IAuditTrailWriter` are declared only in `SharedKernel.Application.Abstractions` — no second copy (nor the deleted `ITransactionalUnitOfWork`/`IPersistenceTransaction`/`ICurrentActorContext`/`ICurrentTenantContext`) anywhere else |
+| `ApplicationPipelineRules.PipelineNeverReferencesCachingPollyOrHosting` | `SharedKernel.Application.Pipeline` carries no cache, Polly or hosting dependency (`SharedKernel.Core` is allowed since P-579: the pipeline uses `error.ToException()`) |
+| `ApplicationPipelineRules.PipelineCachingNeverReferencesConcreteInfrastructure` | The caching behaviors reach `SharedKernel.Caching.Abstractions`, never a cache provider |
+| `UnitOfWorkSeamRules.SharedContractsAreNotRedeclared` | `IUnitOfWork`, `IRequestContext` and `IAuditTrailWriter` are declared only in `SharedKernel.Execution` — no second copy (nor the deleted `ITransactionalUnitOfWork`/`IPersistenceTransaction`/`ICurrentActorContext`/`ICurrentTenantContext`) anywhere else |
 | `MetricsInstrumentationRules.RequestDurationRecordsIncludeOutcomeTag` | Every duration histogram carries an `outcome` tag, so failures stay separable |
 
 ### Persistence
@@ -219,14 +217,13 @@ building one outside `EventEnvelope.Wrap` no longer compiles.
 | `PersistenceInterfaceOwnershipRules.IReadRepositoryMustNotExposeIQueryable` | Same, for the read side |
 | `PersistenceInterfaceOwnershipRules.ReadOnlyRepositoriesNeverTrack` | A read-repository implementation never returns tracked entities (IL scan, async state machines included) |
 | `PersistenceInterfaceOwnershipRules.IUserContextDeclaredOnlyInSecurityAbstractions` | `IUserContext` has exactly one declaring assembly |
-| `PersistenceInterfaceOwnershipRules.TenantIdentityInterfacesDeclaredOnlyInSecurityAbstractions` | Tenant-identity interfaces are never redeclared |
+| `PersistenceInterfaceOwnershipRules.TenantIdentityInterfacesAreNeverRedeclared` | No second tenant-identity interface (`ITenantProvider`, `ICurrentTenantService`, `ITenantContextAccessor`) comes back next to `IRequestContext.TenantId` |
 | `RepositoryContractCompletenessRules.AllReadRepositoryImplementorsMustHaveGetByIdAsync` | Every read repository implements the full contract |
 | `RepositoryContractCompletenessRules.AllReadRepositoryImplementorsMustHaveGetByIdsAsync` | Every read repository implements the full contract |
 | `EfCorePackageHygieneRules.NoDirectEfPropertyUsageInEfCoreAssembly` | No `EF.Property<T>` — use a typed expression |
 | `EfCorePackageHygieneRules.NoSpecificationEvaluatorDowncastInEfCoreAssembly` | No `castclass` onto the specification evaluator |
 | `EfCorePackageHygieneRules.IUnitOfWorkImplementorsMustHaveExactlyOneConstructor` | One constructor, so DI resolution stays unambiguous |
 | `EfCorePackageHygieneRules.ApplicationLayerMustNotReferenceDbContextTransaction` | Transactions go through the abstraction, never `IDbContextTransaction` |
-| `SharedKernelLayeringRules.PersistenceNeverReferencesApplicationOrSecurity` + `PersistenceForbiddenAssemblyReferences` | `06.Persistence` reaches `05.Application` only through `SharedKernel.Application.Abstractions` — never MediatR, `SharedKernel.Application`, `.Behaviors` or `12.Security` (source and assembly level) |
 | `PersistenceNamespaceConventionRules.FindMisplacedExtensions` | Registration/builder extensions live in `SharedKernel.Persistence`, EF Core model/migration/query helpers in `SharedKernel.Persistence.EfCore` (receiver-type based) |
 
 ### Caching and Redis topology
@@ -238,7 +235,6 @@ building one outside `EventEnvelope.Wrap` no longer compiles.
 | `RedisTopologyRules.PubSubNeverReferencesMessaging` | Ephemeral pub/sub never reaches durable messaging |
 | `RedisTopologyRules.MessagingNeverReferencesCaching` | And the reverse direction is barred too |
 | `RedisTopologyRules.CachingAbstractionsHasNoInfrastructureDependencies` | The caching abstraction stays dependency-free |
-| `CachingAbstractionRules.OnlyAllowedAssembliesMayReferenceConcreteCaching` | Only the composition root touches a concrete cache |
 
 ### Messaging
 
@@ -247,7 +243,6 @@ building one outside `EventEnvelope.Wrap` no longer compiles.
 | `MessagingArchitectureRules.NoDirectBusInjectionOutsideMessaging` | No raw transport interface is injected outside the messaging package |
 | `MessagingArchitectureRules.NoEventPublisherInDomainLayer` | The domain never injects a publisher |
 | `ExtendedMessagingArchitectureRules.NoDirectMassTransitSchedulerInjection` | No raw message scheduler outside the owning package |
-| `ExtendedMessagingArchitectureRules.SagaStatesMustExtendSagaStateBase` | Every saga state extends the shared base |
 
 ### Provider topology
 
@@ -274,8 +269,6 @@ siblings never see each other. Storage is the one exception: `SharedKernel.Stora
 
 | Rule | Enforces |
 |---|---|
-| `CommunicationLayeringRules.CommunicationPackagesNeverReferencesForbiddenLayers` `[]` | Outbound communication packages stay in their layer |
-| `CommunicationLayeringRules.CommunicationInternalNeverReferencesOtherCommunicationPackages` `[]` | Service discovery stays independent of the transports |
 | `CommunicationLayeringRules.GrpcNeverReferencesContracts` | Protobuf is the wire contract for gRPC, not a DTO package |
 | `CommunicationLayeringRules.NoDirectGrpcInterceptorInheritanceOutsideCommunicationGrpc` | Interceptors are built through the platform base |
 | `CommunicationLayeringRules.NoDirectHotChocolateFilterSortInheritanceOutsideGraphQL` | Filters/sorts extend the platform base, not HotChocolate directly |
@@ -288,7 +281,7 @@ siblings never see each other. Storage is the one exception: `SharedKernel.Stora
 
 | Rule | Enforces |
 |---|---|
-| `SecurityArchitectureRules.DomainNeverReferencesTenantProvider` | Tenant identity never reaches the domain |
+| `SecurityArchitectureRules.DomainNeverReferencesRequestContext` | `IRequestContext` never reaches the domain — it receives the tenant as a value |
 | `SecurityArchitectureRules.NoSingletonRegistrationOfSecurityContextTypes` | Per-request identity is never captured in a singleton |
 | `SecurityArchitectureRules.DpopProofValidationNeverDuplicatedOutsideOidc` | Proof-of-possession validation has one implementation |
 | `SecurityArchitectureRules.ClientCertificateAccessNeverDuplicatedOutsideMtls` | Client-certificate access has one implementation |
@@ -307,12 +300,9 @@ siblings never see each other. Storage is the one exception: `SharedKernel.Stora
 
 | Rule | Enforces |
 |---|---|
-| `CompositionRootExclusivityRules.OnlyAllowedAssembliesMayReferenceConcreteProviders` `[]` | Concrete providers are referenced only where composition happens |
 | `HealthCheckConstantsUsageRules.NoBareHealthCheckLiteralWhereConstantsExist` | Health-check names come from constants, never retyped literals |
 | `HealthCheckTagIntegrityRules.NoConflictingLivenessReadinessTags` | No check is tagged both `live` and `ready` |
 | `HealthCheckTagIntegrityRules.DependencyHealthChecksCarryReadyNotLive` | A dependency check gates readiness, never liveness — so a slow dependency does not trigger a restart |
-| `ServiceDefaultsWorkflowLayeringRules.OnlyReachesWorkflowProbeTypes` | The upward workflow reference is confined to the readiness probe |
-| `ServiceDefaultsSchedulingLayeringRules.OnlyReachesSchedulerProbeTypes` | The upward scheduler reference is confined to the readiness probe |
 
 ### Reflection
 
@@ -333,7 +323,7 @@ These helpers inspect IL directly and throw on violation.
 | Helper | Asserts |
 |---|---|
 | `LoggingEventIdIntegrityAssertion.AssertGloballyUniqueAndInRange` | Every `[LoggerMessage]` `EventId` is unique platform-wide and inside its domain's reserved range |
-| `PipelineOrderAssertion.AssertRegistrationOrder` | Registrations occur in the required relative order — where order is the correctness property, not a preference |
+| `PipelineOrderAssertion.AssertRegistrationOrder` | Registrations occur in the required relative order — where order is the correctness property, not a preference. Pass the behavior types, or their simple names for the kernel's internal built-in behaviors (build the collection with `AddSharedKernelApplication(…)`) |
 | `WellKnownConstantOwnershipAssertion.AssertSoleDeclaration` | A shared constant is declared in exactly one place, so two packages cannot drift apart on a wire value |
 | `SecureDefaultsAssertion.AssertEnumPropertyDefaultEquals` | An options enum's default is the secure value |
 | `SecureDefaultsAssertion.AssertStringCollectionPropertyDefaultEquals` | A default collection matches exactly |

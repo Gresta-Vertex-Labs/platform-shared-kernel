@@ -1,3 +1,5 @@
+using SharedKernel.Execution.Tenancy;
+
 namespace SharedKernel.Caching.Abstractions;
 
 /// <summary>
@@ -12,11 +14,11 @@ namespace SharedKernel.Caching.Abstractions;
 public interface ITenantCacheKeyProvider : ICacheKeyProvider
 {
     /// <summary>Builds a key in the format <c>{service}:@{tenant}:{entity}:{id}[:{segment}...]</c>.</summary>
-    /// <param name="tenantId">The tenant identifier. Must not be null or whitespace.</param>
+    /// <param name="tenantId">The tenant identifier. Must not be <see langword="default"/>.</param>
     /// <param name="entity">The entity or resource name. Must not be null or whitespace.</param>
     /// <param name="id">The entity identifier. Must not be null or whitespace.</param>
     /// <param name="segments">Optional extra parts, such as a locale. Each must not be null or whitespace.</param>
     /// <returns>The tenant key.</returns>
-    /// <exception cref="ArgumentException">A part is null or whitespace.</exception>
-    string BuildTenantKey(string tenantId, string entity, string id, params string[] segments);
+    /// <exception cref="ArgumentException"><paramref name="tenantId"/> is <see langword="default"/>, or a part is null or whitespace.</exception>
+    string BuildTenantKey(TenantId tenantId, string entity, string id, params string[] segments);
 }

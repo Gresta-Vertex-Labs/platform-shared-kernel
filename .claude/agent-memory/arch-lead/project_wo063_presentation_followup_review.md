@@ -4,6 +4,8 @@ description: WO-063 — same-day 14.Presentation follow-up review after WO-062 s
 type: project
 ---
 
+> WO-086 (2026-09): `CorrelationIdMiddleware` was deleted (`app.UseSharedKernelRequestContext()`, ServiceDefaults.Security); Require* attributes and status maps moved to `SharedKernel.Presentation.Core`; numbered layering is replaced by tiers.
+
 WO-063 (2026-08-20): user asked for another gold-standard/big-fintech pass over `14.Presentation` on the same day `WO-062` (P-402–P-409) shipped end to end. Rather than re-accepting the domain's own "Published"/134-tests-green status at face value, dispatched a dedicated research agent to source-verify every WO-062 claim against real `.cs` files first — see [[feedback_verify_shipped_code_not_docs]].
 
 **Verification result:** all eight WO-062 capabilities held up with zero refutations (multi-field validation, security headers, CORS, idempotency-key, step-up auth, ETag, rate-limit bridge, SignalR defaults all genuinely wired, not just claimed).

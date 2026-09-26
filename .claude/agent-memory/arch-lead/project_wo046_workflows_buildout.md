@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): `IWorkflowServiceProbe` and the 13→17 layering grant were deleted — Workflows.Temporal (Adapter tier) registers an `IReadinessProbe` named `workflows`; `TenantScope` is the single `SharedKernel.Execution.Tenancy.TenantScope`.
+
 **WO-046 context:** 17.Workflows first real build-out, triggered by direct user request ("analys what we need for @17.Workflows... Lets create the best packages... build them"). Domain carried an exceptionally detailed pre-drafted brain (`17.Workflows/CLAUDE.md` + `17.Workflows/state-map.md`, dated same-day 2026-07-22, changelog explicitly says "pending root dispatch as WO-046") — 81 tasks already fully planned across all six lifecycle phases (16 Design + 10 Scaffold + 26 Core + 16 Tests + 6 Docs + 7 Published), zero `.cs` files on disk, two bare placeholder `.csproj` files already registered in the `.slnx`.
 
 **Verdict: ACCEPT verbatim, no upgrade** — mirrors the [[project_wo044_search_buildout]] precedent, not the [[project_wo045_intelligence_buildout]] one (no open architectural-authority questions were left for arch-lead to ratify; the domain brain had already resolved everything with reasoning on record).

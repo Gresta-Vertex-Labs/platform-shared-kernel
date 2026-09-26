@@ -4,7 +4,6 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
-using SharedKernel.Presentation.WebApi.Correlation;
 using SharedKernel.Presentation.WebApi.Cors;
 using SharedKernel.Presentation.WebApi.SecurityHeaders;
 using SharedKernel.Presentation.WebApi.Startup;
@@ -28,9 +27,7 @@ public static class WebApiApplicationBuilderExtensions
     /// <returns>The same <paramref name="app"/>.</returns>
     /// <remarks>
     /// <list type="number">
-    ///   <item>Removal of the caller's W3C baggage (unless <c>TrustInboundBaggage</c>).</item>
     ///   <item>The <see cref="WebApiPipeline.AtStart"/> hooks.</item>
-    ///   <item>Correlation ids.</item>
     ///   <item>HSTS (outside Development), then security headers and the default <c>Cache-Control</c> — before the
     ///   exception handler, so error responses carry them too.</item>
     ///   <item>The exception handler, then problem bodies for bodiless error statuses.</item>
@@ -42,14 +39,25 @@ public static class WebApiApplicationBuilderExtensions
     ///   <item>Authorization, then the required <c>Idempotency-Key</c> and <c>If-Match</c> headers of the endpoint.</item>
     /// </list>
     /// <para>
-    /// Call it first, then map endpoints; add other middleware after it. Because it calls <c>UseRouting()</c>,
-    /// middleware added afterwards sees the selected endpoint, and error responses from anywhere in the pipeline get
-    /// the correlation id and the problem shape. Calling it again has no effect, its hooks included. When
-    /// <c>AddSharedKernelWebApi()</c> ran but this method never does, the host logs a warning at startup.
+    /// Call it right after <c>SharedKernel.ServiceDefaults.Security</c>'s <c>UseSharedKernelRequestContext()</c>, then
+    /// map endpoints; add other middleware after it:
+    /// </para>
+    /// <code>
+    /// app.UseSharedKernelRequestContext();   // correlation id, inbound baggage refused, the request's context scope
+    /// app.UseSharedKernelWebApi(pipeline =&gt; pipeline
+    ///     .BeforeAuthorization(a =&gt; a.UseMiddleware&lt;TenantResolutionMiddleware&gt;()));   // optional
+    /// app.MapEndpoints();
+    /// </code>
+    /// <para>
+    /// The request context middleware owns the correlation id (P-579): running first, its scope wraps this pipeline's
+    /// exception handler, so every response, error responses included, carries the id. Because this method calls
+    /// <c>UseRouting()</c>, middleware added afterwards sees the selected endpoint, and error responses from anywhere
+    /// in the pipeline get the correlation id and the problem shape. Calling it again has no effect, its hooks
+    /// included. When <c>AddSharedKernelWebApi()</c> ran but this method never does, the host logs a warning at startup.
     /// </para>
     /// <para>
-    /// gRPC calls pass through the same pipeline and get correlation ids, authorization and the required-header
-    /// checks, but never a JSON body: gRPC carries errors in its own status.
+    /// gRPC calls pass through the same pipeline and get the request's context and correlation id, authorization and the
+    /// required-header checks, but never a JSON body: gRPC carries errors in its own status.
     /// </para>
     /// </remarks>
     /// <exception cref="InvalidOperationException"><c>AddSharedKernelWebApi()</c> was not called.</exception>
@@ -76,17 +84,7 @@ public static class WebApiApplicationBuilderExtensions
         var pipeline = new WebApiPipeline();
         configure?.Invoke(pipeline);
 
-        if (!options.TrustInboundBaggage)
-        {
-            app.Use(InboundBaggage.InvokeAsync);
-        }
-
         pipeline.ApplyAtStart(app);
-
-        if (options.CorrelationId.Enabled)
-        {
-            app.UseMiddleware<CorrelationIdMiddleware>();
-        }
 
         if (options.SecurityHeaders.Enabled)
         {

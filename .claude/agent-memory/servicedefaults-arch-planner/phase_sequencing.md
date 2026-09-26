@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): the "wire an existing probe from another domain" half of this pattern is gone — providers self-register an `IReadinessProbe` and `AddSharedKernelReadiness()` maps them, so no readiness extension or `ProjectReference` to a provider is planned here any more (`AddStorageReadinessCheck`, `AddSearchReadinessCheck`, `AddVectorStoreReadinessCheck` were deleted; `AddOrchestrationReadinessCheck` was never built). The telemetry half (`With*Telemetry()` in the base, wiring sources by name) still holds.
+
 As of 2026-06-19, the first real task breakdown landed for `13.ServiceDefaults` covering six root backlog items in one pass: P-169 (Scaffold), P-170 (Core foundation — `AddServiceDefaults`/`AddSharedKernelTelemetry`/`AddSharedKernelHealthChecks`/`StartupGate`), P-171 (Core — full `SharedKernel.MultiTenancy` surface), P-010 (Core — Redis/cache health + caching OTel, WO-003), P-122 (Core — RabbitMQ/ASB health, WO-020), P-132 (Core — `WithMessagingTelemetry`, WO-021).
 
 **Hard build order:** Scaffold (S-01→S-10, real `.csproj` references replacing bare stubs) before any Core task. Within Core, the foundation (C-01→C-12: `AddServiceDefaults`, `AddSharedKernelTelemetry`, `AddSharedKernelHealthChecks` + live/ready split, `StartupGate`/`StartupGateHealthCheck`, full MultiTenancy surface) before any dependency-specific extension (C-13→C-19), because every dependency-specific check extends the `IHealthChecksBuilder` returned by `AddSharedKernelHealthChecks()`.

@@ -1,5 +1,6 @@
-using SharedKernel.Application;
+using SharedKernel.Application.Messaging;
 using SharedKernel.Core.Extensions;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Search.Abstractions.Models;
 using SharedKernel.Search.ElasticSearch.Cursors;
@@ -16,7 +17,7 @@ namespace CatalogApi.Features.BackOffice;
 /// must checkpoint its cursor across process restarts, which IAsyncEnumerable cannot express; a stateless HTTP endpoint
 /// is exactly that case.
 /// </remarks>
-public sealed record ReadOrderLineCursor(string TenantId, int Size) : IQuery<CursorPage<OrderLineDocument>>;
+public sealed record ReadOrderLineCursor(TenantId TenantId, int Size) : IQuery<CursorPage<OrderLineDocument>>;
 
 public sealed class ReadOrderLineCursorHandler(ICursorSearch<OrderLineDocument> cursor)
     : IQueryHandler<ReadOrderLineCursor, CursorPage<OrderLineDocument>>
@@ -24,7 +25,7 @@ public sealed class ReadOrderLineCursorHandler(ICursorSearch<OrderLineDocument> 
     public Task<Result<CursorPage<OrderLineDocument>>> Handle(ReadOrderLineCursor query, CancellationToken cancellationToken) =>
         cursor.OpenCursorAsync(
                 new SearchRequest { PageSize = query.Size <= 0 ? 5 : query.Size },
-                TenantScope.Of(query.TenantId),
+                TenantScope.For(query.TenantId),
                 TimeSpan.FromMinutes(1),
                 cancellationToken)
             .Bind(async opened =>

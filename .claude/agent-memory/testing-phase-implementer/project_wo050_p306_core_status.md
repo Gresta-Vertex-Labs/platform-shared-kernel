@@ -4,6 +4,8 @@ description: WO-050/P-306 (16.Testing Caching/ fakes for IRedisChannelService/IR
 type: project
 ---
 
+> WO-086 (2026-09): `SharedKernel.Testing` was split into 20 packable Testing-tier packages (core `SharedKernel.Testing` + 19 `SharedKernel.{Capability}.Testing`) plus the non-packable `SharedKernel.Testing.Internal` (containers, EF/Npgsql/audit helpers, MassTransit harness); `SharedKernel.Testing.SelfTests` became each package's own nested `.Tests` project. Paths and project names below are pre-split history; the technique/lesson still applies.
+
 **`SK.16.Core` (C-96–C-100) CLOSED 2026-07-29** — implemented all four new `Caching/` fakes plus the extended DI registration against the live `02.Caching/SharedKernel.Caching.Abstractions` source, zero drift from the Design-phase target shape already locked in `16.Testing/CLAUDE.md`. This is the **first WO-050 (P-301–P-306) phase where `16.Testing` was the *only* domain involved** — no cross-domain blocker of any kind (`SharedKernel.Caching.Abstractions` was already referenced and fully shipped), and the first time this domain extended an already-`**implemented**`-labeled folder (`Caching/`) rather than standing up a brand-new one.
 
 **`SK.16.Tests` (T-60–T-64) CLOSED 2026-07-29, same day** — proved all four fakes in `SharedKernel.Testing.SelfTests/Caching/` (61 new tests: `FakeRedisChannelServiceTests.cs` 15, `FakeRedisHashServiceTests.cs` 17, `FakeTypedHashStoreTests.cs` 16, `FakeCacheWarmupStrategyTests.cs` 5, `AddFakeTypedHashStoreTests.cs` 3, `AddFakeCacheWarmupStrategyTests.cs` 4, plus 3 added to the existing `AddFakeCachingServicesTests.cs`). Full regression 794/794 (733 pre-existing + 61 net new), real Docker daemon, zero leftover containers.

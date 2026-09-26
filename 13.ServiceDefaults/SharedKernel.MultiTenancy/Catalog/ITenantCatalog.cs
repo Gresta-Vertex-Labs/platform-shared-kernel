@@ -1,3 +1,5 @@
+using SharedKernel.Execution.Tenancy;
+
 namespace SharedKernel.MultiTenancy.Catalog;
 
 /// <summary>
@@ -30,7 +32,7 @@ public interface ITenantCatalog
     /// The matching <see cref="TenantDescriptor"/>, or <see langword="null"/> when no tenant with
     /// this id exists. Never throws for an absent tenant.
     /// </returns>
-    Task<TenantDescriptor?> GetByIdAsync(Guid tenantId, CancellationToken ct);
+    Task<TenantDescriptor?> GetByIdAsync(TenantId tenantId, CancellationToken ct);
 
     /// <summary>
     /// Looks up a tenant by a resolution-strategy-supplied raw value — a request host/subdomain,

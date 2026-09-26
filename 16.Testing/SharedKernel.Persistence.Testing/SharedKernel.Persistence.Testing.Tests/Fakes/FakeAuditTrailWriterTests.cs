@@ -1,4 +1,4 @@
-using SharedKernel.Application.Auditing;
+using SharedKernel.Execution.Auditing;
 using SharedKernel.Testing.Application;
 using SharedKernel.Persistence.Testing;
 

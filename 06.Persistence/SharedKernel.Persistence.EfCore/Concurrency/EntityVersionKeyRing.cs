@@ -200,8 +200,8 @@ internal sealed class EntityVersionKeyRing
     internal static InvalidOperationException NotConfigured() => new(
         "Entity versions (ETags) are sealed with a key derived from the service's own key, and no key provider is " +
         "registered. Register an ISynchronousEncryptionKeyProvider or an IEncryptionKeyProvider (SharedKernel.Cryptography) — " +
-        "for example a StaticEncryptionKeyProvider over keys from your secret store, or 13.ServiceDefaults' " +
-        "AddSharedKernelKeyVaultKeyProvider(); a context built by hand passes one to PersistenceContextDependencies.Create(..., " +
+        "for example a StaticEncryptionKeyProvider over keys from your secret store, or SharedKernel.Cryptography.KeyVault.Azure's " +
+        "AddAzureKeyVaultEncryption(configuration); a context built by hand passes one to PersistenceContextDependencies.Create(..., " +
         "entityVersionKeys:). Versions use its subkey for the purpose '" + KeyPurpose + "', so the root key can be shared with " +
         "field encryption.");
 

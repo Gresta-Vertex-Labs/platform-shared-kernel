@@ -1,4 +1,4 @@
-using SharedKernel.Application;
+using SharedKernel.Application.Messaging;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Search.Abstractions.Abstractions;

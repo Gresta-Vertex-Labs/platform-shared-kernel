@@ -6,6 +6,7 @@ using SharedKernel.AI.Abstractions.Models;
 using SharedKernel.AI.Qdrant.Collections;
 using SharedKernel.AI.Qdrant.Provisioning;
 using SharedKernel.AI.Qdrant.Tests.TestSupport;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Testing.Clocks;
 using SharedKernel.Testing.Containers;
 
@@ -38,8 +39,8 @@ public sealed class QdrantVectorCollectionConformanceTests : IAsyncLifetime
     private const string IdB1 = "201";
     private const string IdB2 = "202";
 
-    private static readonly TenantScope TenantA = TenantScope.Of("tenant-a");
-    private static readonly TenantScope TenantB = TenantScope.Of("tenant-b");
+    private static readonly TenantScope TenantA = TenantScope.For(TestTenants.TenantA);
+    private static readonly TenantScope TenantB = TenantScope.For(TestTenants.TenantB);
 
     private readonly QdrantContainerFixture _fixture;
     private readonly string _collectionName = $"conformance-corpus-{Guid.NewGuid():N}";

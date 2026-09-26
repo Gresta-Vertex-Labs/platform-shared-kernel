@@ -31,14 +31,6 @@ public static class StorageErrorCodes
     public const string InvalidKey = "storage.invalid_key";
 
     /// <summary>
-    /// <c>storage.invalid_tenant</c> (<c>Validation</c>, before any I/O): a tenant id is empty, longer than
-    /// <see cref="StorageValidation.MaxTenantIdLength"/>, <c>.</c>/<c>..</c>, or contains characters outside
-    /// <c>A-Z a-z 0-9 . _ -</c>. <see cref="ITenantFileStorage.ForTenant(string)"/> throws
-    /// <see cref="ArgumentException"/> with this error's message instead of returning it.
-    /// </summary>
-    public const string InvalidTenant = "storage.invalid_tenant";
-
-    /// <summary>
     /// <c>storage.invalid_request</c> (<c>Validation</c>): an option is invalid — content type, header value,
     /// metadata, tags, tier, checksum format, length, page size, part number, upload id, presigned-form sizes —
     /// or the parts passed to <see cref="IFileStorage.CompleteMultipartUploadAsync"/> do not complete the upload.

@@ -1,0 +1,29 @@
+#nullable enable
+SharedKernel.Presentation.Authorization.AuthorizationConventionExtensions
+SharedKernel.Presentation.Authorization.RequireAuthenticationMethodAttribute
+SharedKernel.Presentation.Authorization.RequireAuthenticationMethodAttribute.MaxAgeSeconds.get -> int
+SharedKernel.Presentation.Authorization.RequireAuthenticationMethodAttribute.MaxAgeSeconds.set -> void
+SharedKernel.Presentation.Authorization.RequireAuthenticationMethodAttribute.Methods.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
+SharedKernel.Presentation.Authorization.RequireAuthenticationMethodAttribute.Policy.get -> string!
+SharedKernel.Presentation.Authorization.RequireAuthenticationMethodAttribute.RequireAuthenticationMethodAttribute(params string![]! methods) -> void
+SharedKernel.Presentation.Authorization.RequireAuthenticationMethodAttribute.Roles.get -> string?
+SharedKernel.Presentation.Authorization.RequireFreshAuthenticationAttribute
+SharedKernel.Presentation.Authorization.RequireFreshAuthenticationAttribute.MaxAge.get -> System.TimeSpan
+SharedKernel.Presentation.Authorization.RequireFreshAuthenticationAttribute.Policy.get -> string!
+SharedKernel.Presentation.Authorization.RequireFreshAuthenticationAttribute.RequireFreshAuthenticationAttribute(int maxAgeSeconds) -> void
+SharedKernel.Presentation.Authorization.RequireFreshAuthenticationAttribute.Roles.get -> string?
+SharedKernel.Presentation.Authorization.RequireEndpointPermissionAttribute
+SharedKernel.Presentation.Authorization.RequireEndpointPermissionAttribute.Permissions.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
+SharedKernel.Presentation.Authorization.RequireEndpointPermissionAttribute.Policy.get -> string!
+SharedKernel.Presentation.Authorization.RequireEndpointPermissionAttribute.RequireEndpointPermissionAttribute(params string![]! permissions) -> void
+SharedKernel.Presentation.Authorization.RequireEndpointPermissionAttribute.Roles.get -> string?
+SharedKernel.Presentation.Authorization.RequireRoleAttribute
+SharedKernel.Presentation.Authorization.RequireRoleAttribute.Policy.get -> string!
+SharedKernel.Presentation.Authorization.RequireRoleAttribute.RequireRoleAttribute(params string![]! roles) -> void
+SharedKernel.Presentation.Authorization.RequireRoleAttribute.Roles.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
+static SharedKernel.Presentation.Authorization.AuthorizationConventionExtensions.RequireAuthenticationMethod<TBuilder>(this TBuilder builder, System.TimeSpan maxAge, params string![]! methods) -> TBuilder
+static SharedKernel.Presentation.Authorization.AuthorizationConventionExtensions.RequireAuthenticationMethod<TBuilder>(this TBuilder builder, params string![]! methods) -> TBuilder
+static SharedKernel.Presentation.Authorization.AuthorizationConventionExtensions.RequireFreshAuthentication<TBuilder>(this TBuilder builder, System.TimeSpan maxAge) -> TBuilder
+static SharedKernel.Presentation.Authorization.AuthorizationConventionExtensions.RequireFreshAuthentication<TBuilder>(this TBuilder builder, int maxAgeSeconds) -> TBuilder
+static SharedKernel.Presentation.Authorization.AuthorizationConventionExtensions.RequireEndpointPermission<TBuilder>(this TBuilder builder, params string![]! permissions) -> TBuilder
+static SharedKernel.Presentation.Authorization.AuthorizationConventionExtensions.RequireRole<TBuilder>(this TBuilder builder, params string![]! roles) -> TBuilder

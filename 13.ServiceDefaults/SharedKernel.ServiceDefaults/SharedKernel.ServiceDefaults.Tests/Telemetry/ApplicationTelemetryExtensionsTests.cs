@@ -88,7 +88,7 @@ public sealed class ApplicationTelemetryExtensionsTests
         using var provider = builder.Services.BuildServiceProvider();
         using var tracerProvider = provider.GetRequiredService<TracerProvider>();
 
-        // SharedKernel.Application's ActivitySource is internal and matched by name only,
+        // SharedKernel.Application.Pipeline' ActivitySource is internal and matched by name only,
         // so a locally-created source of the identical name stands in for TracingBehavior, which
         // names each span after the request type's short name.
         using var applicationSource = new ActivitySource(InstrumentationName);

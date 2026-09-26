@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Context;
 using Microsoft.AspNetCore.Authentication.Certificate;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,7 +16,7 @@ public static class MtlsServiceCollectionExtensions
 {
     /// <summary>
     /// Registers the <c>Certificate</c> authentication scheme with <typeparamref name="TValidator"/>, and
-    /// <see cref="IUserContext"/> and <see cref="ITenantProvider"/> when not already registered.
+    /// <see cref="IUserContext"/> when not already registered.
     /// </summary>
     /// <typeparam name="TValidator">Decides which client a trusted certificate belongs to.</typeparam>
     /// <param name="services">The service collection.</param>
@@ -28,7 +29,7 @@ public static class MtlsServiceCollectionExtensions
     /// client certificates, or the proxy that terminates TLS must forward them.
     /// </para>
     /// <para>
-    /// A certificate caller is a <see cref="IdentityKind.ServicePrincipal"/> whose subject id is the client id from the
+    /// A certificate caller is a <see cref="ActorKind.Service"/> whose subject id is the client id from the
     /// validator. Tokens bound to a certificate (RFC 8705) are checked by <c>SharedKernel.Security.Oidc</c>.
     /// </para>
     /// </remarks>
@@ -56,7 +57,6 @@ public static class MtlsServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IUserContextMapper, MtlsUserContextMapper>());
         RemoveAnonymousPlaceholder(services);
         services.TryAddScoped<IUserContext>(ResolveUserContext);
-        services.TryAddScoped<ITenantProvider, UserContextTenantProvider>();
 
         return services;
     }

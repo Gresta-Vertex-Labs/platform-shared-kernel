@@ -1,13 +1,13 @@
 using System.Data;
 using System.Threading;
-using SharedKernel.Application.Transactions;
+using SharedKernel.Execution.Transactions;
 using SharedKernel.Primitives.Results;
 
 namespace SharedKernel.Persistence.Testing;
 
 /// <summary>
 /// In-memory fake implementation of the shared <see cref="IUnitOfWork"/>
-/// (<c>SharedKernel.Application.Abstractions</c>) for use in unit tests.
+/// (<c>SharedKernel.Execution</c>) for use in unit tests.
 /// </summary>
 /// <remarks>
 /// <para>

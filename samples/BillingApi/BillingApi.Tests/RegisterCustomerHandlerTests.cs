@@ -3,8 +3,10 @@ using BillingApi.Features;
 using BillingApi.Features.Customers;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
-using SharedKernel.Application.Transactions;
+using SharedKernel.Execution.Transactions;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence.Testing;
+using SharedKernel.Testing.Execution;
 using SharedKernel.Primitives.Clocks;
 using Xunit;
 
@@ -23,7 +25,7 @@ public sealed class RegisterCustomerHandlerTests
     [Fact]
     public async Task TheHandler_IsReRunnable_UnderTheRetryingUnitOfWork()
     {
-        var tenant = Guid.NewGuid();
+        var tenant = new TenantId(Guid.NewGuid());
         var services = new ServiceCollection();
         var customers = services.AddFakeRepository<Customer, CustomerId>();
         var unitOfWork = services.AddFakeUnitOfWork();

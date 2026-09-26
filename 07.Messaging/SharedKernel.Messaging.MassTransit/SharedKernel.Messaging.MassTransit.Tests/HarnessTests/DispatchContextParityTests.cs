@@ -67,7 +67,7 @@ public sealed class DispatchContextParityTests
             var publisher = scope.ServiceProvider.GetRequiredService<IEventPublisher>();
             (await publisher.PublishAsync(
                 ParityEvent.Create(),
-                ctx => ctx.WithTenantId(tenantId),
+                ctx => ctx.WithTenantId(new SharedKernel.Execution.Tenancy.TenantId(tenantId)),
                 CancellationToken.None)).IsSuccess.Should().BeTrue();
         }
 
@@ -103,7 +103,7 @@ public sealed class DispatchContextParityTests
             var bus = scope.ServiceProvider.GetRequiredService<IMessageBus>();
             (await bus.PublishAsync(
                 new ParityMessage("payload"),
-                ctx => ctx.WithTenantId(tenantId),
+                ctx => ctx.WithTenantId(new SharedKernel.Execution.Tenancy.TenantId(tenantId)),
                 CancellationToken.None)).IsSuccess.Should().BeTrue();
         }
 
@@ -164,7 +164,7 @@ public sealed class DispatchContextParityTests
             var bus = scope.ServiceProvider.GetRequiredService<IMessageBus>();
             await bus.PublishAsync(
                 new ParityMessage("payload"),
-                ctx => ctx.WithTenantId(ambient).WithHeader(WellKnownHeaders.TenantId, "explicit"),
+                ctx => ctx.WithTenantId(new SharedKernel.Execution.Tenancy.TenantId(ambient)).WithHeader(WellKnownHeaders.TenantId, "explicit"),
                 CancellationToken.None);
         }
 

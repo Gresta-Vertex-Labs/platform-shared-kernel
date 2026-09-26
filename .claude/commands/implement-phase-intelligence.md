@@ -175,8 +175,8 @@ Note that 10.Intelligence/CLAUDE.md carries a Status section marking which parts
 and which are still candidate shapes — respect that distinction and never implement an unratified shape.
 
 Verify every cross-domain dependency directly on disk before building on it — in particular, confirm whether
-16.Testing ships a container fixture for this domain's vector database(s) and any in-memory doubles for its
-abstractions, rather than trusting prose that says it does or does not. If a fixture is genuinely absent,
+16.Testing ships a container fixture for this domain's vector database(s) (`SharedKernel.Testing.Internal`) and in-memory doubles for its
+abstractions (`SharedKernel.AI.Testing`), rather than trusting prose that says it does or does not. If a fixture is genuinely absent,
 implement every container-free task and mark only the real-backend tasks `⚑` Blocked. Never hand-roll a
 competing ad-hoc container setup inside a .Tests project.
 

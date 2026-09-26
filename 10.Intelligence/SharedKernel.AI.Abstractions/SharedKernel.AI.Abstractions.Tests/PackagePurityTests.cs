@@ -28,8 +28,9 @@ public sealed class PackagePurityTests
             name => name!.StartsWith("System.", StringComparison.Ordinal)
                 || name.StartsWith("netstandard", StringComparison.Ordinal)
                 || name.StartsWith("mscorlib", StringComparison.Ordinal)
-                || name == "SharedKernel.Primitives",
-            "SharedKernel.AI.Abstractions must reference only the BCL plus SharedKernel.Primitives — " +
+                || name == "SharedKernel.Primitives"
+                || name == "SharedKernel.Execution",
+            "SharedKernel.AI.Abstractions must reference only the BCL plus SharedKernel.Primitives and SharedKernel.Execution (TenantScope) — " +
             "zero third-party NuGet dependencies, no Microsoft.Extensions.*, no Qdrant.Client, no " +
             "Milvus.Client, no Microsoft.SemanticKernel, no Microsoft.Extensions.AI.Abstractions");
     }

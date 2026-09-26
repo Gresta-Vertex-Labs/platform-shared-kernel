@@ -52,7 +52,7 @@ var channel = GrpcChannel.ForAddress(httpClient.BaseAddress!, new GrpcChannelOpt
 var client = new TestService.TestServiceClient(channel);
 ```
 
-**Per-scenario customization** (different `IUserContext`/`ITenantProvider`/`IClock`/environment
+**Per-scenario customization** (different `IUserContext`/`IRequestContext`/`IClock`/environment
 per test): `factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
 services.AddSingleton<IUserContext>(new FakeUserContext { Roles = ["admin"] })))` — last
 registration wins for single-instance DI resolution, so this cleanly overrides the base `Startup`'s

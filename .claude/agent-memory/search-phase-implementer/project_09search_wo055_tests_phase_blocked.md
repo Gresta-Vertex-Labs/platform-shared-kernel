@@ -3,6 +3,7 @@ name: project_09search_wo055_tests_phase_blocked
 description: SK.09.Tests WO-055 sub-pass (T-27–T-34) session — entire phase found genuinely blocked on 16.Testing P-355 not shipping; zero code written, full reproduction and handling technique
 type: project
 ---
+> WO-086 (2026-09): `ISearchIndexProvisioner.ProbeAsync` was removed — readiness is one `IReadinessProbe` per registered index (`SearchIndexReadinessProbe`, `search-{provider}-{index}`); the search-local `TenantScope` (string-keyed `TenantScope.Of(...)`) is now the single `SharedKernel.Execution.Tenancy.TenantScope` (`Global`, `For(TenantId)`, `FromNullable`); container fixtures live in `16.Testing/SharedKernel.Testing.Internal/Containers/` and the in-memory fakes in `SharedKernel.Search.Testing`. The findings below are history.
 
 Session 2026-08-10: dispatched to implement T-27 through T-34 (the WO-055 sub-pass test coverage for
 P-353's two production fixes and P-354's `SearchBulkWriteOptions` throttle, both of which shipped in

@@ -2,6 +2,7 @@
 
 Mutual-TLS host composition: accept client certificates either negotiated directly by Kestrel or
 forwarded by a TLS-terminating proxy. One of the `SharedKernel.ServiceDefaults.*` integration packages.
+**Tier:** Host.
 
 Neither path validates a certificate itself. Both delegate the accept or reject decision to
 `SharedKernel.Security.Mtls`'s `IMtlsCertificateValidator`, which must already be registered — typically
@@ -61,14 +62,12 @@ header name and encoding.
 | `13001` | Warning | Client certificate rejected — thumbprint, subject, and reason |
 | `13003` | Warning | Forwarded-header path configured with no `TrustedNetworks` |
 
-Raw certificate bytes are never logged. These EventIds are unchanged from before the WO-084 package
-split, so existing dashboards and alert rules keep matching.
+Raw certificate bytes are never logged.
 
 ## Why a separate package
 
-It brings `SharedKernel.Security.Mtls`, which a service without mutual TLS has no use for. The types keep
-their `SharedKernel.ServiceDefaults.Security` namespace from before the split, so moving to this package
-changes a `PackageReference` and no source.
+It brings `SharedKernel.Security.Mtls`, which a service without mutual TLS has no use for. The types live
+in the `SharedKernel.ServiceDefaults.Security` namespace.
 
 ## Package
 

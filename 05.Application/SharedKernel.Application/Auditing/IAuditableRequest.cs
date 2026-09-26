@@ -1,15 +1,13 @@
-using SharedKernel.Application.Pipeline;
-
-namespace SharedKernel.Application;
+namespace SharedKernel.Application.Auditing;
 
 /// <summary>
 /// Opts a command into an explicit, append-only audit-trail write by
-/// <see cref="AuditingBehavior{TRequest,TResponse}"/>.
+/// <c>AuditingBehavior</c> (<c>SharedKernel.Application.Pipeline</c>).
 /// </summary>
 /// <typeparam name="TResponse">The response type returned by the command.</typeparam>
 /// <remarks>
 /// <para>
-/// Self-supplied, mirroring <see cref="ILoggableRequest{TResponse}"/>'s exact shape:
+/// Self-supplied, mirroring <see cref="SharedKernel.Application.Logging.ILoggableRequest{TResponse}"/>'s exact shape:
 /// <see cref="Action"/>, <see cref="ResourceType"/>, <see cref="ResourceId"/>, and
 /// <see cref="BeforeSnapshot"/> are immediate properties, known at request-construction time;
 /// <see cref="GetAfterSnapshot"/> is a method, invoked only after <c>next()</c> returns
@@ -17,8 +15,8 @@ namespace SharedKernel.Application;
 /// <c>Result.Failure</c> either, since a rejected command produced no new state to snapshot.
 /// </para>
 /// <para>
-/// All values are opaque, caller-pre-serialized strings — <see cref="AuditingBehavior{TRequest,TResponse}"/>
-/// and the injected <see cref="SharedKernel.Application.Auditing.IAuditTrailWriter"/> never parse or diff them. Never derived via a
+/// All values are opaque, caller-pre-serialized strings — <c>AuditingBehavior</c> (<c>SharedKernel.Application.Pipeline</c>)
+/// and the injected <c>SharedKernel.Execution.Auditing.IAuditTrailWriter</c> never parse or diff them. Never derived via a
 /// reflection-based property walk over an arbitrary <c>TRequest</c>/<c>TResponse</c>.
 /// </para>
 /// <para>
@@ -49,7 +47,7 @@ public interface IAuditableRequest<TResponse>
     /// <param name="response">The response instance returned by the inner pipeline.</param>
     /// <returns>The after-snapshot, or <see langword="null"/> when there is nothing to record.</returns>
     /// <remarks>
-    /// Invoked by <see cref="AuditingBehavior{TRequest,TResponse}"/> only on a successful outcome —
+    /// Invoked by <c>AuditingBehavior</c> (<c>SharedKernel.Application.Pipeline</c>) only on a successful outcome —
     /// never on a thrown exception or a <c>Result.Failure</c>.
     /// </remarks>
     string? GetAfterSnapshot(TResponse response);

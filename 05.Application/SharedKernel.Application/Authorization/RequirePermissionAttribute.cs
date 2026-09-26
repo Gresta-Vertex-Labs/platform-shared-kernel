@@ -1,4 +1,4 @@
-namespace SharedKernel.Application;
+namespace SharedKernel.Application.Authorization;
 
 /// <summary>
 /// Declares a permission the caller must hold before a command or query is handled.
@@ -10,13 +10,13 @@ namespace SharedKernel.Application;
 /// <c>[RequirePermission("invoices.write", "invoices.admin")]</c> admits a caller holding either, and
 /// <c>[RequirePermission("invoices.write")] [RequirePermission("customers.read")]</c> admits only a
 /// caller holding both. These are the same semantics as the endpoint attribute of
-/// <c>SharedKernel.Presentation.WebApi</c>.
+/// <c>SharedKernel.Presentation.Core</c> (<c>[RequireEndpointPermission]</c>).
 /// </para>
 /// <para>
-/// Always enforced by the pipeline <c>AddSharedKernelApplication</c> registers, on every path a request is
+/// Always enforced by the pipeline <c>AddSharedKernelApplication</c> (<c>SharedKernel.Application.Pipeline</c>) registers, on every path a request is
 /// sent from (HTTP, messages, jobs, workflows): an unauthenticated caller gets
 /// <c>Error.Unauthorized</c>, a caller without the permission <c>Error.Forbidden</c> whose message
-/// names no permission. The caller is read from a registered <c>IRequestContext</c>; when a scanned
+/// names no permission. The caller is read from a registered <c>IRequestContext</c> (<c>SharedKernel.Execution</c>); when a scanned
 /// request carries this attribute and none is registered, the host start fails. A request without this
 /// attribute is not checked. The request must return
 /// <c>Result</c> or <c>Result&lt;T&gt;</c>, because the denial is returned as a failed result

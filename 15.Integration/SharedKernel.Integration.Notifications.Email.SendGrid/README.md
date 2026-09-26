@@ -4,6 +4,12 @@ First shipping email provider for `SharedKernel.Integration.Notifications.Abstra
 SendGrid's v3 Mail Send REST API directly through `IHttpClientFactory` +
 `Microsoft.Extensions.Http.Resilience`. No `SendGrid` vendor NuGet SDK dependency.
 
+| | |
+| --- | --- |
+| Tier | Adapter |
+| Install | `<PackageReference Include="SharedKernel.Integration.Notifications.Email.SendGrid" />` (brings `.Notifications.Abstractions` and `SharedKernel.Storage.Abstractions`) |
+| Sends | Only the message itself: no tenant, actor or correlation header leaves the platform |
+
 ---
 
 ## Setup
@@ -70,8 +76,7 @@ API's request shape, not of this provider's own implementation choice).
 
 ## `NotificationDeliveryId` — correlation only, not a request-level dedup guarantee
 
-`NotificationDeliveryId` is propagated via SendGrid's `custom_args` field
-(`personalizations[0]`... actually top-level `custom_args`), which SendGrid treats as opaque
+`NotificationDeliveryId` is propagated via SendGrid's top-level `custom_args` field, which SendGrid treats as opaque
 metadata attached to the send for correlating with SendGrid's own event webhooks — **not** a
 request-level idempotency key the way Twilio's `Idempotency-Key` header is
 (`SharedKernel.Integration.Notifications.Sms.Twilio`). True duplicate-send prevention for email

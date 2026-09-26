@@ -1,5 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Adapter</SharedKernelTier>
     <!-- NuGet packaging metadata -->
     <Description>First shipping email provider for SharedKernel.Integration.Notifications.Abstractions — direct SendGrid v3 Mail Send REST API integration (no vendor SDK) via IHttpClientFactory + Microsoft.Extensions.Http.Resilience. Registers a keyed INotificationSender for NotificationChannel.Email via AddSendGridEmailNotifications(). Streams object-storage attachment content through a base64 transform, never materializing the full attachment as a byte[]. Propagates NotificationDeliveryId via SendGrid's custom_args field (correlation-only — SendGrid's API offers no request-level dedup guarantee).</Description>
     <PackageTags>shared-kernel;notifications;email;sendgrid;outbound-integration</PackageTags>

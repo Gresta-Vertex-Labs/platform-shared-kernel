@@ -2,6 +2,7 @@ using System.Diagnostics;
 using MassTransit;
 using Microsoft.Extensions.Options;
 using SharedKernel.Contracts.Events;
+using SharedKernel.Execution.Context;
 using SharedKernel.Messaging.Abstractions.EventPublisher;
 using SharedKernel.Messaging.Abstractions.HeaderPropagation;
 using SharedKernel.Messaging.Abstractions.Options;
@@ -9,6 +10,8 @@ using SharedKernel.Messaging.MassTransit.Diagnostics;
 using SharedKernel.Messaging.Abstractions.Errors;
 using SharedKernel.Messaging.MassTransit.Internal;
 using SharedKernel.Messaging.MassTransit.MessageBus;
+using SharedKernel.Messaging.MassTransit.Transports;
+using SharedKernel.Primitives.Propagation;
 using SharedKernel.Primitives.Results;
 
 // Alias to disambiguate from MassTransit.PublishContext
@@ -30,15 +33,18 @@ internal sealed class MassTransitEventPublisher : IEventPublisher
     private readonly IPublishEndpoint _publishEndpoint;
     private readonly MessagingOptions _messagingOptions;
     private readonly IReadOnlyList<IMessageHeaderPropagator> _propagators;
+    private readonly MessagingTransport? _transport;
 
     public MassTransitEventPublisher(
         IPublishEndpoint publishEndpoint,
         IOptions<MessagingOptions> messagingOptions,
-        IEnumerable<IMessageHeaderPropagator> propagators)
+        IEnumerable<IMessageHeaderPropagator> propagators,
+        MessagingTransport? transport = null)
     {
         _publishEndpoint = publishEndpoint;
         _messagingOptions = messagingOptions.Value;
         _propagators = [.. propagators];
+        _transport = transport;
     }
 
     /// <inheritdoc />
@@ -104,14 +110,16 @@ internal sealed class MassTransitEventPublisher : IEventPublisher
         using var activity = MessagingDiagnostics.ActivitySource.StartActivity("EventPublisher.Publish");
         activity?.SetTag(MessagingTagKeys.EventType, eventTypeName);
 
-        // Resolve CorrelationId: explicit override > ambient Activity.TraceId > new Guid.
+        // Resolve CorrelationId: explicit override > a propagated X-Correlation-Id header > the ambient
+        // caller's correlation id > a new one. Never the Activity's trace id, which a consumer's own trace
+        // replaces: the correlation id must survive the hop unchanged (defect 4, P-566).
         string correlationId;
         if (ctx.CorrelationId.HasValue)
             correlationId = ctx.CorrelationId.Value.ToString("D");
-        else if (Activity.Current is { TraceId: var traceId })
-            correlationId = traceId.ToString();
+        else if (ctx.Headers.TryGetValue(WellKnownHeaders.CorrelationId, out var propagated) && CorrelationIds.IsValid(propagated))
+            correlationId = propagated;
         else
-            correlationId = Guid.NewGuid().ToString("D");
+            correlationId = CorrelationIds.Current(RequestContextScope.Current) ?? CorrelationIds.New();
 
         // Resolve CausationId: explicit override only.
         string? causationId = ctx.CausationId.HasValue
@@ -119,7 +127,7 @@ internal sealed class MassTransitEventPublisher : IEventPublisher
             : null;
 
         // Resolve TenantId: explicit override only, no ambient fallback (P-340/WO-054).
-        Guid? tenantId = ctx.TenantId;
+        Guid? tenantId = ctx.TenantId?.Value;
 
         // Build the CloudEvents-compliant envelope exclusively via EventEnvelope.Wrap<TEvent>()
         // (04.Contracts's mandated factory) — never a raw object-initializer construction
@@ -145,8 +153,7 @@ internal sealed class MassTransitEventPublisher : IEventPublisher
             return MessagingErrors.InvalidMessage(typeof(TEvent).Name, ex.Message);
         }
 
-        // Parsed, not assumed: the resolved correlation id falls back to the ambient Activity's
-        // trace id, which is a 32-character hex string rather than a GUID literal.
+        // Parsed, not assumed: a caller-supplied correlation id need not be a GUID.
         Guid? transportCorrelationId = Guid.TryParse(correlationId, out var parsed) ? parsed : null;
 
         try
@@ -156,7 +163,7 @@ internal sealed class MassTransitEventPublisher : IEventPublisher
             // header and the transport correlation id on the ordinary publish — the common case.
             await _publishEndpoint.Publish(
                 envelope,
-                pipe => PublishContextPipe.Apply(pipe, ctx, transportCorrelationId),
+                pipe => PublishContextPipe.Apply(pipe, ctx, transportCorrelationId, correlationId, _transport),
                 ct).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

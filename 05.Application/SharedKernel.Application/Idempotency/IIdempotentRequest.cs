@@ -1,4 +1,4 @@
-namespace SharedKernel.Application;
+namespace SharedKernel.Application.Idempotency;
 
 /// <summary>
 /// Marks a command as opting in to duplicate-submission protection (double-click, client retry).
@@ -18,7 +18,7 @@ public interface IIdempotentRequest
     /// caller using the same key never sees this caller's response. Callers the context cannot identify
     /// (anonymous) share one scope per tenant, where only the fingerprint separates them — use a random,
     /// unguessable key (a UUID per operation) there. Empty or whitespace-only fails with
-    /// <c>idempotency.key_required</c>.
+    /// <c>idempotency.key_required</c> (<c>ErrorCodes.Idempotency.KeyRequired</c>).
     /// </remarks>
     string IdempotencyKey { get; }
 

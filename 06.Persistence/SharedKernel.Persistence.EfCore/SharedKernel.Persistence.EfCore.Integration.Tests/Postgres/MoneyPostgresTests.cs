@@ -2,6 +2,7 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using SharedKernel.Domain.Monetary;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Testing.Containers;
 using SharedKernel.Testing.Persistence;
 
@@ -29,13 +30,13 @@ public sealed class MoneyPostgresTests
     private string ConnectionString =>
         new NpgsqlConnectionStringBuilder(_fixture.ConnectionString) { Database = DatabaseName }.ConnectionString;
 
-    private PgTestDbContext CreateContext(Guid tenantId) =>
+    private PgTestDbContext CreateContext(TenantId tenantId) =>
         PgTestDbContextFactory.Create(
             ConnectionString,
             new FakeAuditActorContext("actor"),
             new FakeAuditActorContext("actor", tenantId));
 
-    private static PgOrderAggregate NewOrder(Guid tenantId, string name, string codeSuffix) =>
+    private static PgOrderAggregate NewOrder(TenantId tenantId, string name, string codeSuffix) =>
         new(
             PgOrderId.New(), tenantId, name, $"money-{codeSuffix}-{Guid.NewGuid():N}", "St", "City",
             new SharedKernel.Primitives.Clocks.SystemClock());
@@ -43,7 +44,7 @@ public sealed class MoneyPostgresTests
     [Fact]
     public async Task RoundTrip_ExactAcrossMinorUnitPrecisions_RealPostgresNumericColumn()
     {
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
 
         await using (var setup = CreateContext(tenantId))
             await setup.Database.EnsureCreatedAsync();
@@ -76,7 +77,7 @@ public sealed class MoneyPostgresTests
     [Fact]
     public async Task Query_SumGroupedByCurrency_OrderByAmount_WhereAmountGreaterThan_TranslateToRealSql()
     {
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
 
         await using (var setup = CreateContext(tenantId))
             await setup.Database.EnsureCreatedAsync();
@@ -129,7 +130,7 @@ public sealed class MoneyPostgresTests
     [Fact]
     public async Task NullableMoney_RoundTripsNullAndValueAndBackToNull_RealPostgres()
     {
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
         PgOrderId orderId;
 
         await using (var setup = CreateContext(tenantId))
@@ -171,7 +172,7 @@ public sealed class MoneyPostgresTests
     [Fact]
     public async Task Read_StoredAmountWithMoreDecimalPlacesThanCurrencyAllows_ThrowsInsteadOfSilentlyRounding()
     {
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
         PgOrderId orderId;
 
         await using (var setup = CreateContext(tenantId))
@@ -210,7 +211,7 @@ public sealed class MoneyPostgresTests
         // never at risk of EF's cascade-delete fixup marking it Deleted alongside the soft-deleted
         // root — but this proves it concretely rather than by inference, mirroring
         // SoftDeleteCascadePostgresTests' equivalent proof for the same-table owned Address VO.
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
         PgOrderId orderId;
 
         await using (var setup = CreateContext(tenantId))
@@ -249,7 +250,7 @@ public sealed class MoneyPostgresTests
     [Fact]
     public async Task CurrencyColumn_IsFixedLengthThreeCharacters_RealPostgresSchema()
     {
-        await using var ctx = CreateContext(Guid.NewGuid());
+        await using var ctx = CreateContext(new TenantId(Guid.NewGuid()));
         await ctx.Database.EnsureCreatedAsync();
 
         await using var connection = new NpgsqlConnection(ConnectionString);

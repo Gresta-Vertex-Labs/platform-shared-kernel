@@ -4,7 +4,7 @@ using SharedKernel.Workflows.Temporal.Dispatch;
 namespace SharedKernel.Workflows.Temporal.Tests.Dispatch;
 
 /// <summary>
-/// T-02 — <see cref="IWorkflowIdFactory"/>: the tenant segment is always present; <see cref="TenantScope.None"/>
+/// T-02 — <see cref="IWorkflowIdFactory"/>: the tenant segment is always present; <see cref="TenantScope.Global"/>
 /// and a null/whitespace business key are rejected before any client call; the same inputs always
 /// produce the same id.
 /// </summary>
@@ -15,24 +15,24 @@ public sealed class WorkflowIdFactoryTests
     [Fact]
     public void Create_ComposesTenantWorkflowTypeAndBusinessKey()
     {
-        string id = _sut.Create("OrderWorkflow", "order-42", TenantScope.Of("tenant-a"));
+        string id = _sut.Create("OrderWorkflow", "order-42", TenantScope.For(TestTenants.A));
 
-        id.Should().Be("tenant-a:OrderWorkflow:order-42");
+        id.Should().Be($"{TestTenants.A}:OrderWorkflow:order-42");
     }
 
     [Fact]
     public void Create_TenantSegmentIsAlwaysPresent()
     {
-        string id = _sut.Create("OrderWorkflow", "order-42", TenantScope.Of("tenant-b"));
+        string id = _sut.Create("OrderWorkflow", "order-42", TenantScope.For(TestTenants.B));
 
-        id.Should().StartWith("tenant-b:");
+        id.Should().StartWith($"{TestTenants.B}:");
     }
 
     [Fact]
     public void Create_SameInputs_AlwaysProduceSameId()
     {
-        string first = _sut.Create("OrderWorkflow", "order-42", TenantScope.Of("tenant-a"));
-        string second = _sut.Create("OrderWorkflow", "order-42", TenantScope.Of("tenant-a"));
+        string first = _sut.Create("OrderWorkflow", "order-42", TenantScope.For(TestTenants.A));
+        string second = _sut.Create("OrderWorkflow", "order-42", TenantScope.For(TestTenants.A));
 
         first.Should().Be(second, because: "an unstable id silently defeats the durable idempotency guarantee");
     }
@@ -40,7 +40,7 @@ public sealed class WorkflowIdFactoryTests
     [Fact]
     public void Create_TenantScopeNone_ThrowsBeforeComposingAnything()
     {
-        Action act = () => _sut.Create("OrderWorkflow", "order-42", TenantScope.None);
+        Action act = () => _sut.Create("OrderWorkflow", "order-42", TenantScope.Global);
 
         act.Should().Throw<ArgumentException>();
     }
@@ -51,7 +51,7 @@ public sealed class WorkflowIdFactoryTests
     [InlineData("   ")]
     public void Create_NullOrWhitespaceBusinessKey_Throws(string? businessKey)
     {
-        Action act = () => _sut.Create("OrderWorkflow", businessKey!, TenantScope.Of("tenant-a"));
+        Action act = () => _sut.Create("OrderWorkflow", businessKey!, TenantScope.For(TestTenants.A));
 
         act.Should().Throw<ArgumentException>();
     }
@@ -62,7 +62,7 @@ public sealed class WorkflowIdFactoryTests
     [InlineData("   ")]
     public void Create_NullOrWhitespaceWorkflowTypeName_Throws(string? workflowTypeName)
     {
-        Action act = () => _sut.Create(workflowTypeName!, "order-42", TenantScope.Of("tenant-a"));
+        Action act = () => _sut.Create(workflowTypeName!, "order-42", TenantScope.For(TestTenants.A));
 
         act.Should().Throw<ArgumentException>();
     }
@@ -70,8 +70,8 @@ public sealed class WorkflowIdFactoryTests
     [Fact]
     public void Create_DifferentTenants_ProduceDifferentIds()
     {
-        string idA = _sut.Create("OrderWorkflow", "order-42", TenantScope.Of("tenant-a"));
-        string idB = _sut.Create("OrderWorkflow", "order-42", TenantScope.Of("tenant-b"));
+        string idA = _sut.Create("OrderWorkflow", "order-42", TenantScope.For(TestTenants.A));
+        string idB = _sut.Create("OrderWorkflow", "order-42", TenantScope.For(TestTenants.B));
 
         idA.Should().NotBe(idB);
     }

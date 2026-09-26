@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
-using SharedKernel.Application.Auditing;
+using SharedKernel.Execution.Auditing;
 using SharedKernel.Cryptography.Signing;
 using SharedKernel.Persistence.EfCore.Auditing.Checkpoints;
 using SharedKernel.Persistence.EfCore.Auditing.Tests.Support;

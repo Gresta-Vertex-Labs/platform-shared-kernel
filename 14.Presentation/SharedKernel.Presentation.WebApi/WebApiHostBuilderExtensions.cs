@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Cors.Infrastructure;
@@ -13,7 +12,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using SharedKernel.Configuration.Extensions;
-using SharedKernel.Presentation.WebApi.Correlation;
+using SharedKernel.Presentation.Authorization;
 using SharedKernel.Presentation.WebApi.Cors;
 using SharedKernel.Presentation.WebApi.ExceptionHandling;
 using SharedKernel.Presentation.WebApi.RateLimiting;
@@ -43,7 +42,8 @@ public static class WebApiHostBuilderExtensions
     ///   <item>The platform's exception handling as the fallback of <c>UseExceptionHandler()</c>: an
     ///   <see cref="Microsoft.AspNetCore.Diagnostics.IExceptionHandler"/> the service registers runs first, and whatever it
     ///   leaves becomes the problem shape, logged once — 5xx at Error, 4xx at Debug.</item>
-    ///   <item><see cref="SharedKernelAuthorizationExtensions.AddSharedKernelAuthorization"/>.</item>
+    ///   <item>The platform's authorization (<c>SharedKernel.Presentation.Core</c>): the policies behind
+    ///   <see cref="RequireEndpointPermissionAttribute"/> and its siblings, with a problem body for every refusal.</item>
     ///   <item>A CORS policy, only when <c>Cors:AllowedOrigins</c> lists origins.</item>
     ///   <item>A 429 problem body for rate limiting that has no <c>OnRejected</c> of its own.</item>
     ///   <item>Kestrel without the <c>Server</c> header and with <c>Limits:MaxRequestBodySize</c>; <c>Limits:MaxJsonDepth</c>
@@ -74,7 +74,6 @@ public static class WebApiHostBuilderExtensions
             services.AddSingleton<WebApiPipelineState>();
             services.AddValidatedOptions<SharedKernelWebApiOptions, WebApiOptionsValidator>(builder.Configuration);
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, WebApiStartupDiagnostics>());
-            RefuseInboundBaggage(services);
 
             services.AddRouting();
             services.AddProblemDetails();
@@ -84,7 +83,7 @@ public static class WebApiHostBuilderExtensions
             services.AddOptions<ExceptionHandlerOptions>()
                 .PostConfigure<SharedKernelExceptionHandler>((options, handler) => handler.Install(options));
 
-            services.AddSharedKernelAuthorization();
+            services.AddSharedKernelWebApiAuthorization();
 
             services.AddCors();
             services.AddOptions<CorsOptions>()
@@ -111,26 +110,6 @@ public static class WebApiHostBuilderExtensions
         }
 
         return builder;
-    }
-
-    // Hosting reads each request's trace context and baggage with the DI propagator before any middleware runs. The
-    // decorator refuses the caller's baggage there (unless TrustInboundBaggage), so not even hosting's own first log
-    // record carries it; the pipeline removes whatever reaches the activity another way.
-    private static void RefuseInboundBaggage(IServiceCollection services)
-    {
-        if (services.Any(descriptor => descriptor.ServiceType == typeof(DistributedContextPropagator) && !descriptor.IsKeyedService))
-        {
-            ServiceDecoration.Decorate<DistributedContextPropagator>(
-                services,
-                static (provider, inner) => new InboundBaggagePropagator(inner, provider.GetRequiredService<IOptions<SharedKernelWebApiOptions>>()));
-        }
-        else
-        {
-            // Not yet registered (the web host adds it with TryAdd, and keeps this one).
-            services.AddSingleton<DistributedContextPropagator>(static provider => new InboundBaggagePropagator(
-                DistributedContextPropagator.Current,
-                provider.GetRequiredService<IOptions<SharedKernelWebApiOptions>>()));
-        }
     }
 
     // Runs after every other configuration of ProblemDetailsOptions, so a service's own CustomizeProblemDetails is

@@ -7,7 +7,7 @@
 //                            zero Redis dependency
 //   2. L1 + L2 (Redis)    — AddRedisConnection(...) + AddSharedKernelCaching().AddRedisL2() round-trips
 //                            through a real Testcontainers Redis L2 (verified via a raw redis key read),
-//                            and IRedisConnectionProbe reports the shared connection healthy
+//                            and the Redis readiness probe reports the shared connection healthy
 //   3. Locking-only       — AddRedisConnection(...) + AddRedisDistributedLocking() — no FusionCache; lock,
 //                            contention, fencing tokens and a self-expiring lease against real Redis
 //   4. Hash-store-only    — AddRedisConnection(...) + AddRedisHashService()/AddTypedHashStore<T>() —
@@ -24,6 +24,7 @@
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using SharedKernel.Primitives.Health;
 using SharedKernel.Caching.Abstractions;
 using SharedKernel.Caching.FusionCache.Extensions;
 using SharedKernel.Caching.Redis.Core.Extensions;
@@ -127,10 +128,10 @@ static async Task Surface2_L1PlusL2Async(string connectionString)
     var cache = host.Services.GetRequiredService<ICacheService>();
     var multiplexer = host.Services.GetRequiredService<IConnectionMultiplexer>();
 
-    var health = await host.Services.GetRequiredService<IRedisConnectionProbe>().ProbeAsync();
+    var health = await host.Services.GetRequiredReadinessProbe(RedisReadinessProbeNames.Connection).ProbeAsync();
     Verify(
         health is { IsHealthy: true, Latency: not null, Description: null },
-        "IRedisConnectionProbe reports the shared connection healthy with a latency");
+        "the Redis readiness probe reports the shared connection healthy with a latency");
 
     var key = host.Services.GetRequiredService<ICacheKeyProvider>().BuildKey("surface", Guid.NewGuid().ToString("N"));
     var value = await cache.GetOrSetAsync(
@@ -150,7 +151,7 @@ static async Task Surface2_L1PlusL2Async(string connectionString)
 
     await host.StopAsync();
     Console.WriteLine(
-        "Surface 2 PASS: AddRedisConnection(...) + AddSharedKernelCaching().AddRedisL2() resolve ICacheService and IRedisConnectionProbe, round-trip through a real Redis L2 backplane");
+        "Surface 2 PASS: AddRedisConnection(...) + AddSharedKernelCaching().AddRedisL2() resolve ICacheService and the Redis readiness probe, round-trip through a real Redis L2 backplane");
 }
 
 // ── Surface 3: locking-only — AddRedisConnection(...) + AddRedisDistributedLocking() ──

@@ -41,10 +41,29 @@ Use this path-prefix table. The first matching prefix wins.
 | `18.Idempotency/` | idempotency |
 | `19.Scheduling/` | scheduling |
 | `20.Reporting/` | reporting |
+| `samples/` | samples |
+| `.github/`, `eng/` | ci |
+| `docs/refactor/` | refactor |
 | `.claude/` | tooling |
-| Root-level files (`*.md`, `*.slnx`, `*.json`) | root |
+| Root-level files (`*.md`, `*.slnx`, `*.slnf`, `*.json`, `Directory.*`) | root |
 
 Files that share a domain scope form one commit group.  
+
+**Package sub-scope (optional).** When every file in a group belongs to one package of a multi-package domain, the scope may name it as `domain/package`, the way `search/meilisearch` is used in this repo's history. Use the package's name after its `SharedKernel.{Capability}.` prefix, lowercase, dots as hyphens. Current packages that commonly need it:
+
+| Package | Sub-scope |
+|---------|-----------|
+| `SharedKernel.Execution` (01.Core) | `core/execution` |
+| `SharedKernel.Application.Pipeline`, `.Pipeline.Caching` | `application/pipeline`, `application/pipeline-caching` |
+| `SharedKernel.Application.Mediator.MediatR` | `application/mediator` |
+| `SharedKernel.Idempotency.Abstractions` / `.Redis` / `.EfCore` | `idempotency/abstractions`, `idempotency/redis`, `idempotency/efcore` |
+| `SharedKernel.Messaging.MassTransit.RabbitMq` / `.AzureServiceBus` / `.EfCore` (outbox) | `messaging/rabbitmq`, `messaging/azureservicebus`, `messaging/outbox` |
+| `SharedKernel.Presentation.Core` / `.OpenApi` / `.GraphQL` | `presentation/core`, `presentation/openapi`, `presentation/graphql` |
+| `SharedKernel.Presentation.WebApi` and `SharedKernel.Presentation.WebApi.Generators` (packed inside WebApi) | `presentation/webapi` |
+| `SharedKernel.{Capability}.Testing`, `SharedKernel.Testing.Internal` | `testing/{capability}` (e.g. `testing/persistence`), `testing/internal` |
+| `eng/SharedKernelTiers.targets` and the tier rules in `SharedKernel.ArchitectureTests` | `governance` (tier rules are governance even though the target lives in `eng/`) |
+
+GraphQL is a `presentation` package (it moved out of 11.Communication). There is no `application-abstractions`, `behaviors`, `communication/graphql` or `presentation/signalr-redis` scope any more (`SharedKernel.Presentation.SignalR.Redis` was deleted), and the probe-only `SharedKernel.ServiceDefaults.*` packages (AI, Caching, Caching.Redis, Messaging, Scheduling, Search, Storage, Workflows.Temporal, Cryptography.KeyVault) no longer exist — a change to a remaining ServiceDefaults package is `service-defaults`.  
 If a group has only `.md` / documentation files and no code, mark it `docs-only`.
 
 ---
@@ -59,10 +78,11 @@ Read the actual diff for each group and classify:
 | Bug fix, logic correction, wrong behavior fixed | `fix` |
 | Code restructure with no observable behavior change | `refactor` |
 | Only markdown / comment / documentation changes | `docs` |
-| Project file, NuGet reference, CI, config, tooling | `chore` |
+| CI workflow, MSBuild props/targets, `eng/` script, central package pins | `build` |
+| Project file, NuGet reference, config, tooling | `chore` |
 | New tests for existing code | `test` |
 
-When a group has mixed signals, pick the highest-impact type: `feat` > `fix` > `refactor` > `test` > `chore` > `docs`.
+When a group has mixed signals, pick the highest-impact type: `feat` > `fix` > `refactor` > `test` > `build` > `chore` > `docs`.
 
 Special cases:
 - `state-map.md` files (any domain folder) → `docs` with that domain's scope
@@ -122,7 +142,7 @@ Wait for the user to confirm before proceeding. If they say "edit", ask which me
 
 ## Step 6 — Execute commits in dependency order
 
-Commit groups ordered by domain number (lowest first: governance before core before domain, etc.). This keeps git history readable as a dependency graph.
+Commit groups in dependency order: a group whose packages another group's changes consume is committed first, following the tier order (Foundation → Model → Abstractions → Adapter → Host → Testing/Tooling — see root `CLAUDE.md` "Tiers & Dependency Rules"). Folder numbers are domain names, not layers; use them only to break a tie between groups with no dependency between them (lowest first). This keeps git history readable as a dependency graph.
 
 For each group:
 

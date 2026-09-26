@@ -4,8 +4,9 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
-using SharedKernel.Application.Context;
+using SharedKernel.Execution.Context;
 using SharedKernel.Core.Exceptions;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Testing.Containers;
@@ -72,15 +73,15 @@ public sealed class PooledMultiTenancyPostgresTests
         using (var setupScope = provider.CreateScope())
             await setupScope.ServiceProvider.GetRequiredService<PgTestDbContext>().Database.EnsureCreatedAsync();
 
-        var tenantA = Guid.NewGuid();
-        var tenantB = Guid.NewGuid();
+        var tenantA = new TenantId(Guid.NewGuid());
+        var tenantB = new TenantId(Guid.NewGuid());
         var codeA = $"pooled-concurrent-a-{Guid.NewGuid():N}";
         var codeB = $"pooled-concurrent-b-{Guid.NewGuid():N}";
 
         // Act — GENUINELY concurrent: both tasks run their whole scope lifetime (resolve, mutate
         // tenant, write, read-back-and-assert) in parallel against a 2-slot pool, so the pool is
         // under real contention, not merely sequential reuse.
-        async Task RunForTenant(Guid tenantId, string code)
+        async Task RunForTenant(TenantId tenantId, string code)
         {
             using var scope = provider.CreateScope();
             scope.ServiceProvider.GetRequiredService<MutableTestTenantContext>().TenantId = tenantId;
@@ -110,7 +111,7 @@ public sealed class PooledMultiTenancyPostgresTests
         using (var setupScope = provider.CreateScope())
             await setupScope.ServiceProvider.GetRequiredService<PgTestDbContext>().Database.EnsureCreatedAsync();
 
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
         var code = $"pooled-bg-notenant-{Guid.NewGuid():N}";
 
         using (var writerScope = provider.CreateScope())
@@ -148,8 +149,8 @@ public sealed class PooledMultiTenancyPostgresTests
         using (var setupScope = provider.CreateScope())
             await setupScope.ServiceProvider.GetRequiredService<PgTestDbContext>().Database.EnsureCreatedAsync();
 
-        var ownerTenant = Guid.NewGuid();
-        var readerTenant = Guid.NewGuid();
+        var ownerTenant = new TenantId(Guid.NewGuid());
+        var readerTenant = new TenantId(Guid.NewGuid());
         var orderId = PgOrderId.New();
         var code = $"pooled-bg-crossscope-{Guid.NewGuid():N}";
 
@@ -185,7 +186,7 @@ public sealed class PooledMultiTenancyPostgresTests
         using (var setupScope = provider.CreateScope())
             await setupScope.ServiceProvider.GetRequiredService<PgTestDbContext>().Database.EnsureCreatedAsync();
 
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
         var code = $"pooled-bg-factory-{Guid.NewGuid():N}";
 
         using (var writerScope = provider.CreateScope())

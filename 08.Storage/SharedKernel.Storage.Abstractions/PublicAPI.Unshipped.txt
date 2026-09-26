@@ -7,7 +7,6 @@ const SharedKernel.Storage.StorageErrorCodes.ExpiryTooLong = "storage.expiry_too
 const SharedKernel.Storage.StorageErrorCodes.InvalidKey = "storage.invalid_key" -> string!
 const SharedKernel.Storage.StorageErrorCodes.InvalidRange = "storage.invalid_range" -> string!
 const SharedKernel.Storage.StorageErrorCodes.InvalidRequest = "storage.invalid_request" -> string!
-const SharedKernel.Storage.StorageErrorCodes.InvalidTenant = "storage.invalid_tenant" -> string!
 const SharedKernel.Storage.StorageErrorCodes.NotFound = "storage.not_found" -> string!
 const SharedKernel.Storage.StorageErrorCodes.NotSupported = "storage.not_supported" -> string!
 const SharedKernel.Storage.StorageErrorCodes.PreconditionFailed = "storage.precondition_failed" -> string!
@@ -17,7 +16,6 @@ const SharedKernel.Storage.StorageValidation.MaxKeyBytes = 1024 -> int
 const SharedKernel.Storage.StorageValidation.MaxMetadataBytes = 2048 -> int
 const SharedKernel.Storage.StorageValidation.MaxPartNumber = 10000 -> int
 const SharedKernel.Storage.StorageValidation.MaxTags = 10 -> int
-const SharedKernel.Storage.StorageValidation.MaxTenantIdLength = 128 -> int
 override SharedKernel.Storage.BatchDeleteResult.Equals(object? obj) -> bool
 override SharedKernel.Storage.BatchDeleteResult.GetHashCode() -> int
 override SharedKernel.Storage.BatchDeleteResult.ToString() -> string!
@@ -217,7 +215,6 @@ SharedKernel.Storage.FileReference.Key.get -> string!
 SharedKernel.Storage.FileReference.Key.init -> void
 SharedKernel.Storage.FileReference.Store.get -> string!
 SharedKernel.Storage.FileReference.Store.init -> void
-SharedKernel.Storage.FileReference.TenantId.get -> string?
 SharedKernel.Storage.FileReference.TenantId.init -> void
 SharedKernel.Storage.FileReference.VersionId.get -> string?
 SharedKernel.Storage.FileReference.VersionId.init -> void
@@ -267,7 +264,6 @@ SharedKernel.Storage.IFileStorage.ListAsync(string! prefix = "", System.Threadin
 SharedKernel.Storage.IFileStorage.ListPageAsync(SharedKernel.Storage.FileListRequest! request, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Storage.FileListPage!>!>!
 SharedKernel.Storage.IFileStorage.StartMultipartUploadAsync(string! key, SharedKernel.Storage.MultipartUploadOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Storage.MultipartUpload!>!>!
 SharedKernel.Storage.IFileStorage.StoreName.get -> string!
-SharedKernel.Storage.IFileStorage.TenantId.get -> string?
 SharedKernel.Storage.IFileStorage.UploadAsync(string! key, System.IO.Stream! content, SharedKernel.Storage.FileUploadOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Storage.FileReference!>!>!
 SharedKernel.Storage.IFileStorageFactory
 SharedKernel.Storage.IFileStorageFactory.GetStore(string! storeName) -> SharedKernel.Storage.IFileStorage!
@@ -275,12 +271,9 @@ SharedKernel.Storage.IFileStorageFactory.GetTenantStore(string! storeName) -> Sh
 SharedKernel.Storage.IFileStorageFactory.IsTenantScoped(string! storeName) -> bool
 SharedKernel.Storage.IFileStorageFactory.Open(SharedKernel.Storage.FileReference! reference) -> SharedKernel.Storage.IFileStorage!
 SharedKernel.Storage.IFileStorageFactory.StoreNames.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
-SharedKernel.Storage.IFileStorageHealthProbe
-SharedKernel.Storage.IFileStorageHealthProbe.ProbeAsync(string! storeName, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
 SharedKernel.Storage.IStorageBuilder
 SharedKernel.Storage.IStorageBuilder.Services.get -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 SharedKernel.Storage.ITenantFileStorage
-SharedKernel.Storage.ITenantFileStorage.ForTenant(string! tenantId) -> SharedKernel.Storage.IFileStorage!
 SharedKernel.Storage.ITenantFileStorage.StoreName.get -> string!
 SharedKernel.Storage.MultipartUpload
 SharedKernel.Storage.MultipartUpload.<Clone>$() -> SharedKernel.Storage.MultipartUpload!
@@ -440,7 +433,6 @@ static SharedKernel.Storage.StorageErrors.ExpiryTooLong(System.TimeSpan requeste
 static SharedKernel.Storage.StorageErrors.InvalidKey(string? key, string! reason) -> SharedKernel.Primitives.Errors.Error!
 static SharedKernel.Storage.StorageErrors.InvalidRange(string! store, string! key) -> SharedKernel.Primitives.Errors.Error!
 static SharedKernel.Storage.StorageErrors.InvalidRequest(string! message) -> SharedKernel.Primitives.Errors.Error!
-static SharedKernel.Storage.StorageErrors.InvalidTenant(string? tenantId) -> SharedKernel.Primitives.Errors.Error!
 static SharedKernel.Storage.StorageErrors.NotFound(string! store, string! key) -> SharedKernel.Primitives.Errors.Error!
 static SharedKernel.Storage.StorageErrors.NotSupported(string! store, string! feature) -> SharedKernel.Primitives.Errors.Error!
 static SharedKernel.Storage.StorageErrors.PreconditionFailed(string! store, string! key) -> SharedKernel.Primitives.Errors.Error!
@@ -460,7 +452,6 @@ static SharedKernel.Storage.StorageValidation.ValidatePresignedDownload(SharedKe
 static SharedKernel.Storage.StorageValidation.ValidatePresignedPost(SharedKernel.Storage.PresignedPostOptions! options, System.TimeSpan maxExpiry) -> SharedKernel.Primitives.Errors.Error?
 static SharedKernel.Storage.StorageValidation.ValidatePresignedUpload(SharedKernel.Storage.PresignedUploadOptions! options, System.TimeSpan maxExpiry) -> SharedKernel.Primitives.Errors.Error?
 static SharedKernel.Storage.StorageValidation.ValidateTags(System.Collections.Generic.IReadOnlyDictionary<string!, string!>? tags) -> SharedKernel.Primitives.Errors.Error?
-static SharedKernel.Storage.StorageValidation.ValidateTenantId(string? tenantId) -> SharedKernel.Primitives.Errors.Error?
 static SharedKernel.Storage.StorageValidation.ValidateUpload(SharedKernel.Storage.FileUploadOptions? options) -> SharedKernel.Primitives.Errors.Error?
 static SharedKernel.Storage.UploadedPart.operator !=(SharedKernel.Storage.UploadedPart? left, SharedKernel.Storage.UploadedPart? right) -> bool
 static SharedKernel.Storage.UploadedPart.operator ==(SharedKernel.Storage.UploadedPart? left, SharedKernel.Storage.UploadedPart? right) -> bool
@@ -471,3 +462,9 @@ static SharedKernel.Storage.WriteCondition.operator ==(SharedKernel.Storage.Writ
 ~override SharedKernel.Storage.ByteRange.Equals(object obj) -> bool
 SharedKernel.Storage.FileUploadOptions.ContentLength.get -> long?
 SharedKernel.Storage.FileUploadOptions.ContentLength.init -> void
+SharedKernel.Storage.FileReference.TenantId.get -> SharedKernel.Execution.Tenancy.TenantId?
+SharedKernel.Storage.IFileStorage.TenantId.get -> SharedKernel.Execution.Tenancy.TenantId?
+SharedKernel.Storage.ITenantFileStorage.ForTenant(SharedKernel.Execution.Tenancy.TenantId tenantId) -> SharedKernel.Storage.IFileStorage!
+SharedKernel.Storage.StorageReadinessProbeNames
+const SharedKernel.Storage.StorageReadinessProbeNames.Prefix = "storage-" -> string!
+static SharedKernel.Storage.StorageReadinessProbeNames.ForStore(string! storeName) -> string!

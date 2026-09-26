@@ -2,7 +2,7 @@ using System.Net;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Net.Http.Headers;
-using SharedKernel.Presentation.WebApi.Authorization;
+using SharedKernel.Presentation.Authorization;
 using SharedKernel.Presentation.WebApi.Tests.TestSupport;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Logging;

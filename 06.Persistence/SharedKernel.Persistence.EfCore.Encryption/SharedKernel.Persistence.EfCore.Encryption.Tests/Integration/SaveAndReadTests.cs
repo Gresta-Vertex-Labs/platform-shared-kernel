@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Cryptography.Symmetric;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence.EfCore.Encryption.Tests.Fixtures;
 using SharedKernel.Persistence.EfCore.Extensibility;
 using SharedKernel.Testing.Containers;
@@ -13,11 +14,11 @@ namespace SharedKernel.Persistence.EfCore.Encryption.Tests.Integration;
 [Collection("EncryptionPostgres")]
 public sealed class SaveAndReadTests(PostgreSqlContainerFixture fixture)
 {
-    private readonly Guid _tenant = Guid.NewGuid();
+    private readonly TenantId _tenant = new TenantId(Guid.NewGuid());
 
     private string Cs(string db) => EncryptionHost.Database(fixture.ConnectionString, db);
 
-    private static Customer NewCustomer(Guid tenant) => new()
+    private static Customer NewCustomer(TenantId tenant) => new()
     {
         TenantId = tenant,
         Name = "Ada",

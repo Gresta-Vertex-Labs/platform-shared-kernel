@@ -12,6 +12,7 @@ using SharedKernel.Cryptography.Internal;
 using SharedKernel.Cryptography.Random;
 using SharedKernel.Cryptography.Symmetric;
 using SharedKernel.Primitives.Errors;
+using SharedKernel.Primitives.Health;
 using SharedKernel.Primitives.Results;
 
 namespace SharedKernel.Cryptography.KeyVault.Azure;
@@ -46,7 +47,7 @@ namespace SharedKernel.Cryptography.KeyVault.Azure;
 /// exception: it reports those as unhealthy.
 /// </para>
 /// </remarks>
-public sealed class AzureKeyVaultEncryptionKeyProvider : IEncryptionKeyProvider, IEnvelopeEncryptionProvider, IEncryptionKeyProviderProbe
+public sealed class AzureKeyVaultEncryptionKeyProvider : IEncryptionKeyProvider, IEnvelopeEncryptionProvider, IReadinessProbe
 {
     private const int DataKeySize = 32;
     private static readonly TimeSpan UnknownKeyRefreshFloor = TimeSpan.FromSeconds(10);
@@ -222,21 +223,38 @@ public sealed class AzureKeyVaultEncryptionKeyProvider : IEncryptionKeyProvider,
         }
     }
 
+    /// <summary>
+    /// The <see cref="IReadinessProbe.Name"/> of this provider's readiness probe, registered by
+    /// <c>AddAzureKeyVaultEncryption</c>.
+    /// </summary>
+    public const string ReadinessProbeName = "encryption-key-provider";
+
     /// <inheritdoc />
-    public async Task<EncryptionKeyProviderHealth> ProbeAsync(CancellationToken cancellationToken = default)
+    public string Name => ReadinessProbeName;
+
+    /// <summary>
+    /// Checks that the master key can be read — a metadata read only, never a wrap, unwrap, sign or verify.
+    /// </summary>
+    /// <param name="cancellationToken">A token to cancel the check.</param>
+    /// <returns>
+    /// A healthy report, or an unhealthy one naming the Key Vault status code or exception type — never the
+    /// exception message, which can contain request details.
+    /// </returns>
+    /// <exception cref="OperationCanceledException">The check was canceled.</exception>
+    public async Task<ReadinessReport> ProbeAsync(CancellationToken cancellationToken = default)
     {
         try
         {
             await _keyClient.GetKeyAsync(_options.MasterKeyName, version: null, cancellationToken).ConfigureAwait(false);
-            return new EncryptionKeyProviderHealth(IsHealthy: true, Description: null);
+            return ReadinessReport.Healthy();
         }
         catch (RequestFailedException exception)
         {
-            return new EncryptionKeyProviderHealth(false, $"Azure Key Vault returned status {exception.Status} for the master key.");
+            return ReadinessReport.Unhealthy($"Azure Key Vault returned status {exception.Status} for the master key.");
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            return new EncryptionKeyProviderHealth(false, $"Azure Key Vault could not be reached ({exception.GetType().Name}).");
+            return ReadinessReport.Unhealthy($"Azure Key Vault could not be reached ({exception.GetType().Name}).");
         }
     }
 

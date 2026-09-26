@@ -32,6 +32,7 @@
 | `SK.13.Docs` | Docs | All tasks in Phase: Docs are `●` |
 | `SK.13.Published` | Published | All tasks in Phase: Published are `●` |
 | `SK.13.WO084` | P-531–P-537 (WO-084) | All tasks in Phase: WO-084 are `●` |
+| `SK.13.WO086` | P-565, P-566, P-569, P-574, P-575 (WO-086) | All tasks in Phase: WO-086 are `●` |
 
 ---
 
@@ -128,6 +129,8 @@ Format when blocked — replace placeholder with table:
 ---
 
 ## Package Board
+
+> **Superseded by WO-086 (see `SK.13.WO086`):** the nine probe-only integration packages named below are deleted; the remaining packages are the base, `.Persistence`, `.Security`, `.Security.Mtls`, `.Configuration.KeyVault`, `.Localization` and `SharedKernel.MultiTenancy`, all Host tier. Rows below are history.
 
 | Package | Current Phase | State | Notes |
 |---------|---------------|:-----:|-------|
@@ -530,6 +533,22 @@ Format when blocked — replace placeholder with table:
 
 ---
 
+## Phase: WO-086 — Foundation refactor (BREAKING) <!-- phase-key: SK.13.WO086 -->
+
+> Root phases P-565, P-566, P-569, P-574, P-575 (root `state-map.md`, section WO-086). Every package here is now
+> **Host tier**; the build's tier check (`eng/SharedKernelTiers.targets`, SKTIER001–006 errors) replaces the old
+> 13→17/13→19 layering grants and their architecture rules.
+
+| ID | Task | Work Order | Package(s) | State |
+|----|------|-----------|-----------|:-----:|
+| W86-01 | P-565: `SecurityRequestContext` maps `IUserContext.ActorKind`/`TenantId?`; `ITenantProvider` and `UserContextTenantProvider` gone; tenant strategies return `TenantId?`; `TenantResolutionMiddleware` opens an inner `RequestContextScope` that replaces only the tenant | WO-086/P-565 | .Security, MultiTenancy | `●` |
+| W86-02 | P-566: `AddSharedKernelRequestContext()` registers transient `IRequestContext` = `RequestContextScope.Current ?? scoped SecurityRequestContext` + `IRequestContextAccessor`; new `app.UseSharedKernelRequestContext()` (first, before `UseExceptionHandler()`) owns the correlation id (EventIds 13006/13007); `EndToEndPropagationTests` | WO-086/P-566 | .Security | `●` |
+| W86-03 | P-569: `AddSharedKernelReadiness()` in the base maps every `IReadinessProbe`; deleted `ServiceDefaults.{AI, Caching, Caching.Redis, Messaging, Scheduling, Search, Storage, Workflows.Temporal, Cryptography.KeyVault}` and every `Add*ReadinessCheck` except `.Persistence`'s three; base references Foundation only (`CompositionBaseIsolationTests`) | WO-086/P-569 | base, all | `●` |
+| W86-04 | P-574: tier rules replace `ServiceDefaults*LayeringRules`; all packages Host tier | WO-086/P-574 | all | `●` |
+| W86-05 | P-575: `CLAUDE.md` and every README rewritten to the final state | WO-086/P-575 | all | `●` |
+
+---
+
 ## Overall Progress
 
 > Counts updated whenever a task state changes.
@@ -587,6 +606,8 @@ Format when blocked — replace placeholder with table:
 ## Changelog
 
 > One line per session. Format: `[YYYY-MM-DD] {what changed} — {trigger}`.
+
+- [2026-09-26] WO-086 recorded (P-565, P-566, P-569, P-574, P-575): request context and correlation id owned by `.Security` (`UseSharedKernelRequestContext()`), `ITenantProvider` removed, per-dependency readiness packages deleted in favour of `IReadinessProbe` + `AddSharedKernelReadiness()`, every package Host tier, docs rewritten — WO-086 foundation refactor
 
 - [2026-09-08] WO-081/P-503 processed (cross-domain breaking wave — `01.Core`'s AAD/sync-gate/Key-Vault-hardening phases and `06.Persistence`'s P-498 SEVERE-defect correction both design-locked earlier the same session): **AC#3 refuted, not implemented as written (D-37).** The phase input claimed the fix should make a service "satisfy `06.Persistence`'s P-498 startup fail-fast check without extra manual wiring" — false against `06.Persistence`'s own design-locked D-131, which deliberately replaces an ambient-registration-order collision (this method and `.WithEncryption()` both registering the SAME unkeyed `IEncryptionKeyProvider`) with an EXPLICIT, consumer-driven opt-in (`.WithExternalEncryptionKeyProvider<TProvider>()`) precisely to eliminate that collision — making it automatic here would recreate the exact hazard `06.Persistence` just fixed. **Real gap (AC#1/#2) confirmed and closed (D-38):** direct source read of `Cryptography/KeyVaultKeyProviderExtensions.cs` and `01.Core`'s `AzureKeyVaultCryptographyServiceCollectionExtensions.cs` confirms `AddSharedKernelKeyVaultKeyProvider` wires `AzureKeyVaultEncryptionKeyProvider` raw and uncached as `IEncryptionKeyProvider`/`IEnvelopeEncryptionProvider`/`IEncryptionKeyProviderProbe` — `01.Core`'s own doc says "wrap explicitly if desired," a deliberate gap this composition-root method is the right place to close. New optional `cacheTtl` parameter wraps ONLY `IEncryptionKeyProvider` in `CachedEncryptionKeyProvider` (5-minute internal default, `TimeSpan.Zero` disables, negative throws); `IEnvelopeEncryptionProvider`/`IEncryptionKeyProviderProbe` deliberately stay on the raw provider (neither is implemented by `CachedEncryptionKeyProvider`, and a probe must never cache its own reachability signal); `CachedEncryptionKeyProvider` also registered as its own concrete singleton so `06.Persistence`'s `.WithExternalEncryptionKeyProvider<TProvider>()` can target either the raw or cached variant by its own explicit choice — confirmed compatible, never fighting, `06.Persistence`'s own D-131/D-129 design note that a `CachedEncryptionKeyProvider`-wrapped `TProvider` is explicitly tolerated ("only its async members are ever called"), and confirmed this can never unlock any synchronous path (`CachedEncryptionKeyProvider` never implements `01.Core`'s P-492 `ISynchronousEncryptionKeyProvider` marker regardless of cache warmth). **New cross-domain hazard surfaced, documented not fixed (D-39):** this wave's `07.Messaging` calibration finding (its payload-encryption serializer is hard-synchronous, no async overload, verified by reflection against the installed MassTransit assembly) means a service enabling both this method and `07.Messaging` payload encryption against the same ambient `IEncryptionKeyProvider` breaks unconditionally once `01.Core`'s P-492 ships — documented IN CAPITALS at the one composition-root location a developer would compose both; the actual fix, if any, is `07.Messaging`'s own P-499 territory. Zero cross-domain gate for implementation — no new `PackageReference`/`ProjectReference` needed. `SK.13.Design` +3 (D-37/D-38/D-39, all `●`); `SK.13.Core` +1 (C-70, `○`); `SK.13.Tests` +1 (T-82, `○`); `SK.13.Docs` +1 (DO-32, `○`); `SK.13.Scaffold`/`SK.13.Published` unaffected — additive to the already-published `SharedKernel.ServiceDefaults` package, no new NuGet package, though this IS a default behavior change (not an API break) for existing callers — flagged for release notes at the next `devops-lead` publish pass (servicedefaults-arch-planner, WO-081, P-503)
 - [2026-08-26] WO-078/P-483 processed: `AddSharedKernelLocalization` added — `LocalizationResolutionOptions`/`LocalizationResolutionStrategy` (`UserPreference`/`TenantDefault`/`AcceptLanguageHeader`, default order exactly this), wrapping (never reimplementing) `RequestLocalizationMiddleware`. D-36 locked immediately: precedence is deliberately signed-signal-before-unsigned-header, XML docs must cite WO-061/P-393's `[Claim, Header, Database]` correction explicitly so this does not repeat that mistake. **Re-examined and found NOT cross-domain-blocked despite root state-map's "Depends on: P-482, P-471" framing:** P-471 is intra-domain/same-session (this very dispatch); `01.Core`'s `ILocalizationCatalog` (P-482) is confirmed NOT a functional/compile-time dependency of this composition-root middleware at all — it is consumed by `14.Presentation`'s P-484 (`Error.ToProblemDetails()`), not here. S-24/C-69/T-80/T-81/DO-31 are all ordinary `○` Not Started. **First-ever intra-domain compiled reference from `SharedKernel.ServiceDefaults` to `SharedKernel.MultiTenancy`** (previously fully independent sibling packages, composed only side-by-side at a consumer's own `Program.cs`) — needed to resolve `ITenantCatalog`'s type for the optional `TenantDefault` step, which itself skips cleanly (never throws) when `ITenantCatalog` was never registered. `SK.13.Design` +1 (D-36, `●`); `SK.13.Scaffold` +1 (S-24, `○`); `SK.13.Core` +1 (C-69, `○`); `SK.13.Tests` +2 (T-80/T-81, `○`); `SK.13.Docs` +1 (DO-31, `○`); `SK.13.Published` unaffected (servicedefaults-arch-planner, WO-078, P-483)

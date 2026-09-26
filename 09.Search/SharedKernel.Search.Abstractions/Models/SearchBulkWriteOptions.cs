@@ -39,7 +39,7 @@ public sealed record SearchBulkWriteOptions
     /// </summary>
     /// <exception cref="ArgumentException">
     /// The assigned value is zero or negative. A rate cap of zero or less is not a valid pace; a
-    /// programming error caught at first use, mirroring <c>TenantScope.Of</c> and
+    /// programming error caught at first use, mirroring <c>TenantScope.For</c> and
     /// <c>SearchFilter.Between</c>'s convention of throwing rather than returning a <c>Result</c> for
     /// an invalid literal supplied by the calling code itself.
     /// </exception>

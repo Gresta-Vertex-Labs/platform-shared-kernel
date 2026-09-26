@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using Microsoft.AspNetCore.Http;
 
 namespace SharedKernel.MultiTenancy.Resolution;
@@ -37,5 +38,5 @@ public interface ITenantResolutionStrategy
     /// The resolved tenant identifier, or <see langword="null"/> when this strategy cannot
     /// resolve a tenant from the given request.
     /// </returns>
-    Task<Guid?> TryResolveAsync(HttpContext context, CancellationToken cancellationToken);
+    Task<TenantId?> TryResolveAsync(HttpContext context, CancellationToken cancellationToken);
 }

@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Foundation</SharedKernelTier>
     <!-- NuGet packaging metadata -->
     <Description>Validated value types for financial and identity data: Iban, Bic, CardNumber, CountryCode, CurrencyCode, PhoneNumber, Lei, AbaRoutingNumber, SepaCreditorId, VatNumber and NationalId. Each parses into a normalized value or returns a failed Result with a stable error code, never throws for bad input, binds from ASP.NET Core routes and reads and writes JSON. IBANs are checked against all 89 countries of the SWIFT registry including each country's account-number structure; VAT numbers against the format and check digit of every EU country, the UK, Switzerland, Norway and Türkiye (VKN); card numbers by Luhn check with detection of Visa, Mastercard, Amex, Discover, JCB, UnionPay, Diners Club, Maestro, Mir and Troy. Card and national ID numbers are masked in ToString. Every message can be translated through SharedKernel.Localization, and Turkish ships with the package.</Description>
     <PackageReleaseNotes>First release.</PackageReleaseNotes>

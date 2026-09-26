@@ -3,7 +3,7 @@
 // compiled surface is identical either way), driven through a real Host.CreateApplicationBuilder() ->
 // IHost.StartAsync() composition, never a bare BuildServiceProvider(). Four surfaces:
 //   1. AddSharedKernelScheduling() + AddRecurring/AddDeferred resolves IScheduledJobRegistry/
-//      ISchedulerServiceProbe with zero DI exceptions through a real IHost.StartAsync(), and no
+//      the scheduler readiness probe with zero DI exceptions through a real IHost.StartAsync(), and no
 //      IDistributedLockService registered logs the single-replica startup Warning.
 //   2. A one-shot deferred job actually fires end-to-end through the real MediatR pipeline within a
 //      few seconds of real wall-clock time — proving the whole ScheduledCommandJob<TCommand> bridge,
@@ -12,12 +12,14 @@
 //      MisfirePolicy/OverlapPolicy are left unset.
 //   4. The probe reports IsRunning/RegisteredJobCount correctly through the real host.
 
-using MediatR;
+using SharedKernel.Application.Mediator.MediatR;
+using SharedKernel.Application.Pipeline;
+using SharedKernel.Application.Messaging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using SharedKernel.Application;
+using SharedKernel.Primitives.Health;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Scheduling.Extensions;
@@ -39,7 +41,7 @@ static async Task Surface1And4_RegistrationResolvesAndProbeReportsThroughRealHos
     HostApplicationBuilder builder = Host.CreateApplicationBuilder();
     builder.Services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
     builder.Services.AddSingleton<IClock, SystemClock>();
-    builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblyContaining<ConsumerVerifyPingCommand>());
+    builder.Services.AddSharedKernelApplication(typeof(ConsumerVerifyPingCommand).Assembly, app => app.UseMediatR());
 
     ISchedulingBuilder schedulingBuilder = builder.Services.AddSharedKernelScheduling();
     schedulingBuilder.AddRecurring<ConsumerVerifyPingCommand>(
@@ -58,20 +60,20 @@ static async Task Surface1And4_RegistrationResolvesAndProbeReportsThroughRealHos
     await host.StartAsync();
 
     _ = host.Services.GetRequiredService<IScheduledJobRegistry>();
-    ISchedulerServiceProbe probe = host.Services.GetRequiredService<ISchedulerServiceProbe>();
+    IReadinessProbe probe = host.Services.GetRequiredReadinessProbe(SchedulerReadiness.ProbeName);
 
-    SchedulerServiceHealth health = await probe.ProbeAsync();
-    Verify(health.IsRunning, "the hosted loop reports IsRunning=true after IHost.StartAsync()");
-    Verify(health.RegisteredJobCount == 1, "the probe reports exactly the one registered job");
+    ReadinessReport health = await probe.ProbeAsync();
+    Verify(health.IsHealthy, "the hosted loop reports IsRunning=true after IHost.StartAsync()");
+    Verify((int)health.Data[SchedulerReadiness.RegisteredJobCountKey] == 1, "the probe reports exactly the one registered job");
 
     await host.StopAsync();
 
     health = await probe.ProbeAsync();
-    Verify(!health.IsRunning, "the probe reports IsRunning=false after IHost.StopAsync()");
+    Verify(!health.IsHealthy, "the probe reports IsRunning=false after IHost.StopAsync()");
 
     Console.WriteLine(
         "Surfaces 1 & 4 PASS: AddSharedKernelScheduling()+AddRecurring resolve IScheduledJobRegistry/" +
-        "ISchedulerServiceProbe through a real IHost.StartAsync() with zero DI exceptions, and the probe " +
+        "the scheduler readiness probe through a real IHost.StartAsync() with zero DI exceptions, and the probe " +
         "correctly reflects the hosted loop's running state before and after IHost.StopAsync()");
 }
 
@@ -81,7 +83,7 @@ static async Task Surface2_DeferredJobFiresEndToEndThroughMediatR()
     HostApplicationBuilder builder = Host.CreateApplicationBuilder();
     builder.Services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
     builder.Services.AddSingleton<IClock, SystemClock>();
-    builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblyContaining<ConsumerVerifyPingCommand>());
+    builder.Services.AddSharedKernelApplication(typeof(ConsumerVerifyPingCommand).Assembly, app => app.UseMediatR());
     builder.Services.AddSingleton<ConsumerVerifyPingRecorder>();
 
     ISchedulingBuilder schedulingBuilder = builder.Services.AddSharedKernelScheduling(

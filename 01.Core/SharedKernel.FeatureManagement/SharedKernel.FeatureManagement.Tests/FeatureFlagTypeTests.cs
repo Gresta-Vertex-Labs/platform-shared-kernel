@@ -1,4 +1,5 @@
 using OpenFeature.Model;
+using SharedKernel.Execution.Tenancy;
 using Xunit;
 
 namespace SharedKernel.FeatureManagement.Tests;
@@ -40,9 +41,10 @@ public sealed class FeatureFlagTypeTests
     [Fact]
     public void TargetingContext_UsesTheUser_ThenTheTenant_AsTheTargetingKey()
     {
-        Assert.Equal("alice", new FeatureTargetingContext("alice", "acme").TargetingKey);
-        Assert.Equal("acme", new FeatureTargetingContext(null, "acme").TargetingKey);
-        Assert.Equal("acme", FeatureTargetingContext.ForTenant("acme").TargetingKey);
+        Assert.Equal("alice", new FeatureTargetingContext("alice", TestTenants.Acme).TargetingKey);
+        Assert.Equal(TestTenants.AcmeText, new FeatureTargetingContext(null, TestTenants.Acme).TargetingKey);
+        Assert.Equal(TestTenants.AcmeText, FeatureTargetingContext.ForTenant(TestTenants.Acme).TargetingKey);
+        Assert.Null(new FeatureTargetingContext(null, default(TenantId)).TargetingKey);
         Assert.Null(new FeatureTargetingContext(" ").TargetingKey);
     }
 
@@ -57,10 +59,10 @@ public sealed class FeatureFlagTypeTests
     [Fact]
     public void TargetingContext_BecomesAnOpenFeatureEvaluationContext()
     {
-        EvaluationContext context = new FeatureTargetingContext("alice", "acme", ["beta"]).ToEvaluationContext();
+        EvaluationContext context = new FeatureTargetingContext("alice", TestTenants.Acme, ["beta"]).ToEvaluationContext();
 
         Assert.Equal("alice", context.TargetingKey);
-        Assert.Equal("acme", context.GetValue(FeatureContextKeys.TenantId).AsString);
+        Assert.Equal(TestTenants.AcmeText, context.GetValue(FeatureContextKeys.TenantId).AsString);
         Assert.Equal("beta", Assert.Single(context.GetValue(FeatureContextKeys.Groups).AsList!).AsString);
     }
 
@@ -74,8 +76,8 @@ public sealed class FeatureFlagTypeTests
     }
 
     [Fact]
-    public void ForTenant_RejectsABlankId() =>
-        Assert.Throws<ArgumentException>(() => FeatureTargetingContext.ForTenant(" "));
+    public void ForTenant_RejectsTheDefaultTenant() =>
+        Assert.Throws<ArgumentException>(() => FeatureTargetingContext.ForTenant(default));
 
     [Fact]
     public void ValidationException_ListsEveryFailure()

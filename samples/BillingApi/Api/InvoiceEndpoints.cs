@@ -1,6 +1,6 @@
 using BillingApi.Domain;
 using BillingApi.Features.Invoices;
-using MediatR;
+using SharedKernel.Application.Messaging;
 using SharedKernel.Presentation.WebApi;
 
 namespace BillingApi.Api;

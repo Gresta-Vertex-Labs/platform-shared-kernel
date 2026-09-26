@@ -11,6 +11,7 @@ using SharedKernel.Caching.FusionCache.Implementations;
 using SharedKernel.Caching.FusionCache.Serialization;
 using SharedKernel.Cryptography.Extensions;
 using SharedKernel.Cryptography.Symmetric;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Results;
 using ZiggyCreatures.Caching.Fusion.Serialization;
 using Xunit;
@@ -203,6 +204,9 @@ internal sealed class FactoryCapturingCacheService : ICacheService
 /// </summary>
 public sealed class EncryptedCacheServiceTests
 {
+    private static readonly TenantId TenantA = new(Guid.Parse("0f8fad5b-d9cb-469f-a165-70867728950e"));
+    private static readonly TenantId TenantB = new(Guid.Parse("7c9e6679-7425-40de-944b-e07fc1f90ae7"));
+
     private static ISymmetricEncryptionService CreateRealEncryptionService(string keyId = "v1") =>
         new AesGcmEncryptionService(new AsyncOnlyEncryptionKeyProvider(keyId));
 
@@ -874,11 +878,11 @@ public sealed class EncryptedCacheServiceTests
         using var provider = services.BuildServiceProvider();
         var tenantCache = provider.GetRequiredService<ITenantCacheService>();
 
-        await tenantCache.SetAsync("tenant-a", "orders", "1", "secret-a", CachePolicy.Default);
-        await tenantCache.SetAsync("tenant-b", "orders", "1", "secret-b", CachePolicy.Default);
+        await tenantCache.SetAsync(TenantA, "orders", "1", "secret-a", CachePolicy.Default);
+        await tenantCache.SetAsync(TenantB, "orders", "1", "secret-b", CachePolicy.Default);
 
-        Assert.Equal("secret-a", (await tenantCache.TryGetAsync<string>("tenant-a", "orders", "1")).Value);
-        Assert.Equal("secret-b", (await tenantCache.TryGetAsync<string>("tenant-b", "orders", "1")).Value);
+        Assert.Equal("secret-a", (await tenantCache.TryGetAsync<string>(TenantA, "orders", "1")).Value);
+        Assert.Equal("secret-b", (await tenantCache.TryGetAsync<string>(TenantB, "orders", "1")).Value);
     }
 
     [Fact]
@@ -892,8 +896,8 @@ public sealed class EncryptedCacheServiceTests
         var inner = new InMemoryDictionaryCacheService();
         var sut = CreateSut(inner, CreateRealEncryptionService());
 
-        string tenantAKey = keyProvider.BuildTenantKey("tenant-a", "orders", "1");
-        string tenantBKey = keyProvider.BuildTenantKey("tenant-b", "orders", "1");
+        string tenantAKey = keyProvider.BuildTenantKey(TenantA, "orders", "1");
+        string tenantBKey = keyProvider.BuildTenantKey(TenantB, "orders", "1");
         Assert.NotEqual(tenantAKey, tenantBKey);
 
         await sut.SetAsync(tenantAKey, "secret-a", CachePolicy.Default);

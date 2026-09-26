@@ -1,5 +1,6 @@
 using System.Data.Common;
 using Dapper;
+using SharedKernel.Execution.Tenancy;
 
 namespace SharedKernel.Persistence.Dapper.Sessions;
 
@@ -41,14 +42,15 @@ public interface IDbSession : IAsyncDisposable
     bool IsReadOnly { get; }
 
     /// <summary>The caller's tenant, or <see langword="null"/> when none is resolved.</summary>
-    Guid? TenantId { get; }
+    TenantId? TenantId { get; }
 
     /// <summary>
-    /// The caller's tenant, for SQL that filters on it explicitly.
+    /// The caller's tenant, for SQL that filters on it explicitly. Passed as a Dapper parameter it binds as a
+    /// <c>uuid</c> (the <see cref="TenantId"/> type handler is always registered).
     /// </summary>
     /// <returns>The tenant id.</returns>
     /// <exception cref="InvalidOperationException">No tenant is resolved.</exception>
-    Guid RequireTenantId();
+    TenantId RequireTenantId();
 
     /// <summary>
     /// A Dapper command on this session's transaction, with the configured default command timeout.

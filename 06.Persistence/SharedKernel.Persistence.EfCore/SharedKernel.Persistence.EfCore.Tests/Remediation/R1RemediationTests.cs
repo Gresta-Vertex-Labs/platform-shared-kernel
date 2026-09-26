@@ -4,7 +4,8 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
-using SharedKernel.Application.Transactions;
+using SharedKernel.Execution.Tenancy;
+using SharedKernel.Execution.Transactions;
 using SharedKernel.Contracts.Pagination;
 using SharedKernel.Core.Exceptions;
 using SharedKernel.Domain.Abstractions;
@@ -35,7 +36,7 @@ public sealed class R1RemediationTests : IDisposable
     private R1PlainContext Plain(IDomainEventDispatcher? dispatcher = null) =>
         _database.Create<R1PlainContext>((o, d) => new R1PlainContext(o, d), dispatcher: dispatcher);
 
-    private R1TenantedContext Tenanted(Guid? tenantId) =>
+    private R1TenantedContext Tenanted(TenantId? tenantId) =>
         _database.Create<R1TenantedContext>((o, d) => new R1TenantedContext(o, d), new FakeAuditActorContext("actor", tenantId) { TenantId = tenantId });
 
     // ---- C6: a failed joined operation never commits ----
@@ -219,7 +220,7 @@ public sealed class R1RemediationTests : IDisposable
     [Fact]
     public async Task S1_TenantSharedTypes_AreAllowed_AndChildrenGetTheTenantFilterAndConcurrencyToken()
     {
-        await using var context = Tenanted(Guid.NewGuid());
+        await using var context = Tenanted(new TenantId(Guid.NewGuid()));
         var line = context.Model.FindEntityType(typeof(R1OrderLine))!;
 
         line.GetDeclaredQueryFilters().Select(f => f.Key).Should().Contain(SharedKernel.Persistence.EfCore.Context.PersistenceFilterNames.Tenant);
@@ -231,8 +232,8 @@ public sealed class R1RemediationTests : IDisposable
     [Fact]
     public async Task S1_ChildRows_AreFilteredByTenant_AndAnAddedChildTakesItsOrdersTenant()
     {
-        var tenantA = Guid.NewGuid();
-        var tenantB = Guid.NewGuid();
+        var tenantA = new TenantId(Guid.NewGuid());
+        var tenantB = new TenantId(Guid.NewGuid());
         var lineOfB = Guid.NewGuid();
 
         await using (var asB = Tenanted(tenantB))
@@ -249,8 +250,8 @@ public sealed class R1RemediationTests : IDisposable
     [Fact]
     public async Task S1_DetachedGraph_CarryingAnotherTenantsChild_IsRejected_AndTheChildIsUntouched()
     {
-        var tenantA = Guid.NewGuid();
-        var tenantB = Guid.NewGuid();
+        var tenantA = new TenantId(Guid.NewGuid());
+        var tenantB = new TenantId(Guid.NewGuid());
         var orderA = Guid.NewGuid();
         var lineOfB = Guid.NewGuid();
 
@@ -288,7 +289,7 @@ public sealed class R1RemediationTests : IDisposable
     [Fact]
     public void S1_RowLevelSecurityForModel_CoversEveryTenantTable_ChildrenIncluded()
     {
-        using var context = Tenanted(Guid.NewGuid());
+        using var context = Tenanted(new TenantId(Guid.NewGuid()));
         var tables = RowLevelSecurityMigrationBuilderExtensions.TenantTables(context.GetService<IDesignTimeModel>().Model)
             .Select(t => t.Table).ToList();
 
@@ -305,15 +306,15 @@ public sealed class R1RemediationTests : IDisposable
     [Fact]
     public async Task S6_DirectExecuteUpdate_OnTheTenantColumn_IsRejected()
     {
-        var tenant = Guid.NewGuid();
+        var tenant = new TenantId(Guid.NewGuid());
         await using var context = Tenanted(tenant);
 
         var act = () => context.Orders.Where(o => o.Name == "x")
-            .ExecuteUpdateAsync(s => s.SetProperty(o => o.TenantId, Guid.NewGuid()));
+            .ExecuteUpdateAsync(s => s.SetProperty(o => o.TenantId, new TenantId(Guid.NewGuid())));
         (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*TenantId*another tenant*");
 
         var viaEfProperty = () => context.Orders.Where(o => o.Name == "x")
-            .ExecuteUpdateAsync(s => s.SetProperty(o => EF.Property<Guid>(o, nameof(IHasTenant.TenantId)), Guid.NewGuid()));
+            .ExecuteUpdateAsync(s => s.SetProperty(o => EF.Property<TenantId>(o, nameof(IHasTenant.TenantId)), new TenantId(Guid.NewGuid())));
         await viaEfProperty.Should().ThrowAsync<InvalidOperationException>();
 
         (await context.Orders.Where(o => o.Name == "x").ExecuteUpdateAsync(s => s.SetProperty(o => o.Name, "y")))
@@ -325,8 +326,8 @@ public sealed class R1RemediationTests : IDisposable
     [Fact]
     public async Task S8_AnotherTenantsRow_AndAMissingRow_GetTheSameAnswer()
     {
-        var victimTenant = Guid.NewGuid();
-        var attackerTenant = Guid.NewGuid();
+        var victimTenant = new TenantId(Guid.NewGuid());
+        var attackerTenant = new TenantId(Guid.NewGuid());
         var victimOrder = Guid.NewGuid();
 
         await using (var asVictim = Tenanted(victimTenant))
@@ -357,13 +358,13 @@ public sealed class R1RemediationTests : IDisposable
     {
         await using (var noTenant = Tenanted(tenantId: null))
         {
-            noTenant.Orders.Add(new R1Order { Id = Guid.NewGuid(), TenantId = Guid.NewGuid(), Name = "x" });
+            noTenant.Orders.Add(new R1Order { Id = Guid.NewGuid(), TenantId = new TenantId(Guid.NewGuid()), Name = "x" });
             var ex = (await FluentActions.Awaiting(() => noTenant.SaveChangesAsync()).Should().ThrowAsync<ForbiddenException>()).Which;
             ex.Error.Message.Should().Contain("has no tenant").And.Contain("ICrossTenantScope");
         }
 
-        await using var other = Tenanted(Guid.NewGuid());
-        other.Orders.Add(new R1Order { Id = Guid.NewGuid(), TenantId = Guid.NewGuid(), Name = "x" });
+        await using var other = Tenanted(new TenantId(Guid.NewGuid()));
+        other.Orders.Add(new R1Order { Id = Guid.NewGuid(), TenantId = new TenantId(Guid.NewGuid()), Name = "x" });
         var otherEx = (await FluentActions.Awaiting(() => other.SaveChangesAsync()).Should().ThrowAsync<ForbiddenException>()).Which;
         otherEx.Error.Message.Should().Contain("not the caller's tenant");
         otherEx.Error.Code.Should().Be(TenantIsolationErrors.Code);

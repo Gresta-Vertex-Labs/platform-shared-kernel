@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): strategies now return `TenantId?` (`SharedKernel.Execution.Tenancy`), not `Guid?`; `HealthCheckNames` lost the per-provider names (`redis`, `rabbitmq`, `azure-service-bus`, `cache`) because those checks were deleted in favour of `IReadinessProbe` + `AddSharedKernelReadiness()`. The lessons below still apply.
+
 On 2026-06-19 a gold-standard audit of already-shipped `13.ServiceDefaults` Core code (C-01–C-19, landed under WO-027) surfaced three defects, dispatched as WO-028 (P-175/P-176/P-177). Key lesson: **this domain's own `CLAUDE.md` had previously documented a real defect as an "accepted test limitation."** Specifically, `TenantResolutionMiddleware.InvokeAsync` mapped strategies to `"Header"`/`"Claim"`/`"Database"` by switching on `s.GetType().Name` — and the test suite's `RecordingStrategy` double was deliberately built to be unreachable by that switch, with a doc comment admitting as much. The brain file treated this as a documented limitation rather than escalating it as a defect. **Do not repeat this pattern** — if a future audit finds a workaround masking a real defect, classify it as the defect it is, not as accepted behavior, even if a prior pass already wrote it down as "known."
 
 Corrections landed in planning (state-map C-20–C-28, T-15–T-22; not yet implemented as of this writing):

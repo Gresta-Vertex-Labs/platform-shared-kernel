@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using System.Data.Common;
 using Microsoft.AspNetCore.Http;
 using SharedKernel.Persistence.Abstractions.Connections;
@@ -30,7 +31,7 @@ public sealed class DatabaseTenantResolutionStrategy(IDbConnectionFactory connec
     public string StrategyName => TenantResolutionStrategyNames.Database;
 
     /// <inheritdoc/>
-    public async Task<Guid?> TryResolveAsync(HttpContext context, CancellationToken cancellationToken)
+    public async Task<TenantId?> TryResolveAsync(HttpContext context, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
 
@@ -61,7 +62,7 @@ public sealed class DatabaseTenantResolutionStrategy(IDbConnectionFactory connec
 
             return result is null or DBNull
                 ? null
-                : Guid.TryParse(result.ToString(), out var tenantId) ? tenantId : null;
+                : TenantId.TryParse(result.ToString(), out var tenantId) ? tenantId : null;
         }
         finally
         {

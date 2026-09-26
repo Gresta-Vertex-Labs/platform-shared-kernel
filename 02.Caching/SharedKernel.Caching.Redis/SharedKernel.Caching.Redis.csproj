@@ -1,5 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Adapter</SharedKernelTier>
+    <SharedKernelAllowedAdapterReferences>SharedKernel.Caching.Redis.Core</SharedKernelAllowedAdapterReferences>
     <!-- NuGet packaging metadata -->
     <Description>Redis distributed layer and backplane for SharedKernel.Caching.FusionCache: entries are shared by every instance of a service, and removals, expirations, tag evictions and clears reach all of them. Uses the shared connection from SharedKernel.Caching.Redis.Core, so its TLS and timeout settings apply, with FusionCache circuit breakers that keep an unreachable Redis from slowing every request. Configuration binding validated at startup.</Description>
     <PackageReleaseNotes>First release.</PackageReleaseNotes>

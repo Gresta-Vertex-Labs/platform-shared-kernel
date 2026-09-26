@@ -4,6 +4,7 @@ description: WO-035 (root P-214–P-219) gold-standard build-out — full seven-
 metadata:
   type: project
 ---
+> WO-086 (2026-09): historical. The pipeline is now five PipelineStages in SharedKernel.Application.Pipeline (Host), behaviors implement the kernel IPipelineBehavior<,> (no MediatR outside SharedKernel.Application.Mediator.MediatR); IdempotentCommandBehavior is IdempotencyBehavior over SharedKernel.Idempotency.Abstractions.IIdempotencyStore (IdempotencyPurpose.Request) and replays the stored response; IAuthorizationContext/IIdempotencyKeyStore were deleted (IRequestContext is SharedKernel.Execution); the "01–04 layering ceiling" below was replaced by build-enforced tiers (root CLAUDE.md "Tiers & Dependency Rules").
 
 WO-035 dispatched 2026-06-29 (root `state-map.md` P-214–P-219) is the gold-standard build-out for `05.Application`: command/query vocabulary, the domain-event-to-MediatR bridge (fulfilling `03.Domain` P-081), and a **seven-step** pipeline behavior suite — the original five (Validation/Logging/Metrics/Transaction/Caching) plus two new ones, **AuthorizationBehavior** and **IdempotentCommandBehavior**.
 
@@ -11,7 +12,7 @@ WO-035 dispatched 2026-06-29 (root `state-map.md` P-214–P-219) is the gold-sta
 
 **How to apply:** As of 2026-06-29 this is **design-only** — `05.Application/CLAUDE.md` and `state-map.md` (Design phase D-01..D-10) are written, but Scaffold/Core/Tests/Docs/Published (S/C/T/DO/P task IDs) are still `○` pending. Before recommending or referencing any of the new types below as if they exist in code, verify the state-map phase status first — check `05.Application/state-map.md` Package Board and Overall Progress table, not just CLAUDE.md (CLAUDE.md describes the target design, not necessarily what's implemented).
 
-**Locked design decisions (see [[pipeline_behavior_local_seam_pattern]] for the seam pattern itself):**
+**Locked design decisions (see [[pattern_local_seam_bridging]] for the seam pattern itself):**
 
 1. **Canonical pipeline order is now seven steps**: Logging → Metrics → Validation → Authorization → Caching → Idempotency → Transaction. Authorization sits right after Validation (don't spend a permission check on garbage input) and before everything mutating/caching. Idempotency sits innermost-but-one, immediately outside Transaction (duplicate detection must happen right before commit, not earlier where another behavior could still intervene).
 2. **`AuthorizationBehavior` applies to commands AND queries** — constrained only to `IAuthorizeRequest`, not `ICommandBase`. This is different from Caching/Transaction/Idempotency, which are each constrained to one request shape only. Rationale: queries can need permission checks too (e.g. "view another tenant's data").

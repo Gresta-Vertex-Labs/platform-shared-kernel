@@ -132,7 +132,7 @@ internal sealed class TestUserContextMapper : IUserContextMapper
     {
         var authTime = identity.FindFirst(TestAuthentication.AuthTimeClaim)?.Value;
 
-        return new UserContext(IdentityKind.User, identity.FindFirst(TestAuthentication.SubjectClaim)!.Value)
+        return new UserContext(ActorKind.User, identity.FindFirst(TestAuthentication.SubjectClaim)!.Value)
         {
             Permissions = [.. identity.FindAll(TestAuthentication.PermissionClaim).Select(claim => claim.Value)],
             Roles = [.. identity.FindAll(TestAuthentication.RoleClaim).Select(claim => claim.Value)],

@@ -56,6 +56,7 @@
 | `SK.07.PackagingRecipes` | PackagingRecipes | All tasks in Phase: PackagingRecipes are `●` | P-349 |
 | `SK.07.PayloadTransformAad` | PayloadTransformAad | All tasks in Phase: PayloadTransformAad are `●` | P-499 |
 | `SK.07.PrePublish` | PrePublish | All tasks in Phase: PrePublish are `●` | P-560, P-561 |
+| `SK.07.Foundation` | Foundation | All tasks in Phase: Foundation are `●` | P-564–P-570, P-575 |
 
 ---
 
@@ -91,6 +92,11 @@ Format when blocked — replace placeholder with table:
 | --- | --- | --- | --- |
 | `SharedKernel.Messaging.Abstractions` | Published | `●` | NuGet metadata set; nupkgs/SharedKernel.Messaging.Abstractions.1.0.0.{nupkg,snupkg} verified; XML docs embedded; 33 tests pass |
 | `SharedKernel.Messaging.MassTransit` | Published | `●` | NuGet metadata set; nupkgs/SharedKernel.Messaging.MassTransit.1.0.0.{nupkg,snupkg} verified; XML docs embedded; 43 tests pass |
+| `SharedKernel.Messaging.MassTransit.RabbitMq` | Foundation | `●` | Adapter-tier satellite (P-570); released with the repo-wide release train |
+| `SharedKernel.Messaging.MassTransit.AzureServiceBus` | Foundation | `●` | Adapter-tier satellite (P-570); released with the repo-wide release train |
+| `SharedKernel.Messaging.MassTransit.EfCore` | Foundation | `●` | Adapter-tier satellite (P-570); released with the repo-wide release train |
+
+> Board rows above the satellites record their first publish; since WO-086 every package ships with the repo-wide release train (one MinVer version).
 
 ---
 
@@ -767,6 +773,22 @@ Format when blocked — replace placeholder with table:
 
 ---
 
+## Phase: Foundation <!-- phase-key: SK.07.Foundation -->
+
+> This domain's share of the WO-086 foundation refactor (root P-564–P-575). Numbered layering gave way to build-enforced tiers: `.Abstractions` is Abstractions tier, the MassTransit core and its satellites are Adapter tier, and the 07 → `SharedKernel.Application.Abstractions` grant with its `MessagingLayeringRules` lock is gone because the caller contract now lives in the Foundation-tier `SharedKernel.Execution`. Breaking for consumers; released with the repo-wide release train.
+
+| ID | Task | Work Order | Package(s) | State |
+| --- | --- | --- | --- | --- |
+| FD-01 | Reference `SharedKernel.Execution` instead of `SharedKernel.Application.Abstractions`; `IInboundMessageContextAccessor.Current` returns `SharedKernel.Execution.Context.IRequestContext` (P-564) | WO-086 | SharedKernel.Messaging.Abstractions, SharedKernel.Messaging.MassTransit | `●` |
+| FD-02 | Delete `ITenantContextAccessor`; `WithTenantContext<TAccessor>()` → `WithTenantContext()`, `TenantHeaderPropagator` reads `IRequestContextAccessor`; `PublishContext.TenantId`/`WithTenantId` take `TenantId` (P-565) | WO-086 | both | `●` |
+| FD-03 | Move `MessageRequestContext` to `SharedKernel.Execution` as `PropagatedRequestContext` and `MessageContextHeaders` into `WellKnownHeaders` (same `x-sk-*` values); publish and consume go through `RequestContextPropagation`; the consume filter opens a `RequestContextScope`; correlation id is the caller's `X-Correlation-Id`, never an `Activity` id (P-566) | WO-086 | both | `●` |
+| FD-04 | Replace the messaging `IIdempotencyStore`/`IdempotencyReservation` with `SharedKernel.Idempotency.Abstractions`' purpose-keyed store (`IdempotencyPurpose.Message`); add `IdempotencyOptions.LeaseDuration` (P-568) | WO-086 | both | `●` |
+| FD-05 | Delete `IMessageBusProbe`/`MessageBusHealth`; `Build()` registers an `IReadinessProbe` named `messaging` (`MessagingReadinessProbeNames.Bus`); `SharedKernel.ServiceDefaults.Messaging` deleted (P-569) | WO-086 | SharedKernel.Messaging.MassTransit | `●` |
+| FD-06 | Split RabbitMQ, Azure Service Bus and the EF Core outbox into `.RabbitMq`, `.AzureServiceBus` and `.EfCore` satellites over the new `MessagingTransport`/`UseTransport`/`ConfigureMassTransit` extension points; fluent chain and namespaces unchanged (P-570) | WO-086 | all five | `●` |
+| FD-07 | Rewrite `CLAUDE.md` and every package `README.md` to the final state; write the three satellite READMEs (P-575) | WO-086 | all five | `●` |
+
+---
+
 ## Overall Progress
 
 > Counts updated whenever a task state changes.
@@ -803,6 +825,7 @@ Format when blocked — replace placeholder with table:
 | `SK.07.PackagingRecipes` | PackagingRecipes | 8 | 8 | 0 | `●` |
 | `SK.07.PayloadTransformAad` | PayloadTransformAad | 18 | 18 | 0 | `●` |
 | `SK.07.PrePublish` | PrePublish | 42 | 42 | 0 | `●` |
+| `SK.07.Foundation` | Foundation | 7 | 7 | 0 | `●` |
 
 ---
 
@@ -897,3 +920,5 @@ Format when blocked — replace placeholder with table:
 - [2026-09-08] PA-07→PA-18 → ● in SK.07.PayloadTransformAad — verified `01.Core`'s `SK.01.P491`/`SK.01.P492` shipped on disk before coding. Implemented `PayloadTransformHeaders`, AAD-aware `PayloadTransformMessageSerializer.GetMessageBody<T>`/`PayloadTransformMessageDeserializer.ReverseTransform`, and the `Build()`-time `ISynchronousEncryptionKeyProvider` guard exactly per the locked `PA-01`→`PA-06` design. Waited out a concurrent, unrelated `06.Persistence` sibling-domain build breakage (own `EncryptionModelConvention.cs` EF Core API fix) blocking every test project via `16.Testing`'s `ProjectReference` to `06.Persistence.EfCore`, rather than touching any file outside `07.Messaging`. 10 new tests (3 `PayloadTransformAadTests`, 1 `PayloadTransformAadHarnessTests`, 6 appended to `PayloadTransformConfigurationTests`) plus the required-AAD signature update to `PayloadTransformMismatchTests`; four new MassTransit 9.x API notes discovered while writing tests (NSubstitute/strong-naming on `SendContext<T>` closed over an internal type; `MessageUrn.ForTypeString<T>()` required for `TryGetMessage<T>` to succeed; `ConsumeContext.Headers` reflects the envelope's own pre-mutation snapshot, not a live view of a decorator's late header write). `SharedKernel.Messaging.MassTransit.Tests` 187/187 excl. Integration (was 177). `07.Messaging/CLAUDE.md` rewritten: `#### AAD and synchronous-provider migration` section, "Shipped implementation shape" list, and the payload-transform-AAD Test Rules bullet all moved from design-locked/pending to shipped; four new MassTransit 9.x API notes; package summary line and the WO-021 "Queued capabilities" table row updated/removed. `dotnet pack` verified clean (PA-18). SK.07.PayloadTransformAad → ● (18/18) — closes P-499 (messaging-phase-implementer)
 - [2026-09-23] SK.07.PrePublish → ● — the pre-first-publish gold-standard pass, 42 tasks over seven waves (root P-560, P-561). MassTransit pinned 9.1.2 → 8.5.10 because 9.x is no longer Apache-2.0 and this repo declares MIT on every package; four capabilities cut (`RequestAsync`, Quartz, routing slips, sagas), 12 files deleted; every dispatch verb now returns `Result` with `messaging.*` codes; `IIdempotencyStore` redesigned onto an atomic reservation after both shipped stores were found implementing the documented-as-a-query `HasProcessedAsync` as a mutating reserve, which silently dropped a redelivery following a failed attempt; caller identity now travels the bus (`WithInboundRequestContext()`) under a new named layering grant with its own mechanical lock; `AddSharedKernelMessaging(IConfiguration)` added over `AddValidatedOptions`; public-API tracking added to both packages; `07.Messaging/consumer-verify` and `samples/ShippingApi` added. The sample found three defects no unit test had — the event-publisher path never wrote the tenant transport header, it stamped the transport correlation id only when a custom header or partition key happened to be set, and the endpoint-name formatter produced an EMPTY queue prefix on the configuration path — all three fixed with regression tests. 2,700+ tests green, including nine end-to-end scenarios against a real RabbitMQ broker — pre-publish gold-standard pass
 - [2026-09-23] SK.07.Published → ● (P-06, P-07) — **both packages published to GitHub Packages at `1.0.0-alpha.0.1171`**, this domain's first publish. MinVer lockstep made it 20 packages rather than 2: `dotnet pack` stamps each `ProjectReference` as a `PackageReference` at the version being built, so `SharedKernel.Messaging.Abstractions 1171` declares `SharedKernel.Primitives 1171`, `Contracts 1171` and `Application.Abstractions 1171` — none of which existed on the feed (Primitives was at height 1170, Contracts at 1169, Compression as far back as 1088). The transitive closure was computed from the packed `.nuspec` files rather than from the project graph (the nuspec is what a consumer actually resolves), topologically sorted with `tsort`, and the order machine-verified for violations before any push: ArchitectureTests → Configuration → Primitives → Cryptography → Core → Contracts → Compression → Caching.Redis.Core → Application.Abstractions → Domain → **Messaging.Abstractions** → Persistence.Abstractions → Application → **Messaging.MassTransit** → Integration.Webhooks → Persistence.Npgsql → Application.Behaviors → Persistence.EfCore → **Idempotency.Redis** → **Idempotency.EfCore**. Fourteen of the twenty were unchanged by P-560/P-561 and were republished only to satisfy the version stamp — the same closure discipline P-553 followed when it republished Primitives, Core and Localization alongside Validation. First-ever publish for `18.Idempotency` (both stores) and for `SharedKernel.Integration.Webhooks`. Each push was verified against the feed after the fact rather than trusting the exit code, then the whole set was proven end to end by a throwaway consumer project restoring from the live GitHub Packages feed ONLY — `<clear />` plus package-source mapping, so no local `nupkgs/` fallback could mask an unresolvable dependency — which composed a real bus and asserted the P-561 caller-identity surface. **Published from a workstation rather than through `publish-package.yml`**, because GitHub Actions was refusing to start any job on the account ("recent account payments have failed or your spending limit needs to be increased"); the workflow's substantive gate, "every `SharedKernel.*` dependency already resolves from the feed", was reproduced manually by that consumer restore — messaging pre-publish pass
+- [2026-09-26] SK.07.Foundation → ● — WO-086 (root P-564–P-570, docs P-575): tiers replace numbered layering and the 07 → `Application.Abstractions` grant; caller contract on `SharedKernel.Execution` (`PropagatedRequestContext`, `WellKnownHeaders`, `RequestContextScope` in the consume filter); `ITenantContextAccessor`, `IMessageBusProbe`/`MessageBusHealth` and the messaging `IIdempotencyStore` removed; transports and outbox split into `.RabbitMq`/`.AzureServiceBus`/`.EfCore`; `messaging` readiness probe. Known gap kept open: consumer idempotency keys by `MessageId` only — P-575 doc agent
+- [2026-09-26] Consumer idempotency key fix — `IdempotentConsumerBehavior` keyed by `MessageId` alone, so the second consumer of one message in a service (another endpoint, or the same one: MassTransit runs the scoped filter once per consumer) saw `Completed` and never ran. Key is now `{MessageId:D}:{sha256-hex("{endpoint path}|{consumer type}")}`; `IdempotentConsumerIdentityFilter` (via `UseIdempotentConsumers`) names the consumer ahead of the scoped filter. Closes the gap kept open by SK.07.Foundation; proven by `IdempotencyPerConsumerTests`.

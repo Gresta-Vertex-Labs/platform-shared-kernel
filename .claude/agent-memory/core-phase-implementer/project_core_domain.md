@@ -1,17 +1,18 @@
 ---
 name: project-core-domain
-description: 01.Core implementation status — thirteen packages Published, WO-083 tail (P-515–P-526, P-518 recovered from an uncommitted crash) all ● as of 2026-09-09
+description: 01.Core package set after WO-086 (Execution added, Guards merged into Core; Foundation tier + three Adapters) and how to recover a crashed predecessor session's uncommitted work
 metadata:
   type: project
 ---
 
-As of 2026-09-09, `01.Core` ships thirteen published packages (Primitives, Core, Guards, Configuration,
-FeatureManagement, Cryptography, Compression, Validation, Validation.FluentValidation,
-Cryptography.KeyVault.Azure, Cryptography.Argon2, DataPrivacy, Localization). Every phase key in
-`01.Core/state-map.md` is `●` except `SK.01.P522`, which is legitimately blocked on `P-505` (the
-`Guards`→`Core` merge, not yet dispatched) — do not implement or mark it complete until that lands.
-Before starting any session, re-check `01.Core/state-map.md`'s Phase Key Registry and root
-`state-map.md`'s Phase Backlog for anything dispatched since — this note goes stale fast, this domain gets
+> WO-086 (2026-09): `SharedKernel.Execution` (context, accessor, `RequestContextScope`, propagation, `TenantId`/`TenantScope`, `IUnitOfWork`, `IAuditTrailWriter`) joined `01.Core`, and `SharedKernel.Primitives.Health.IReadinessProbe` replaced every per-domain probe interface. The status snapshot below was rewritten for it; the lessons after it are unchanged.
+
+`01.Core` ships thirteen packages: Primitives, Core (which absorbed `SharedKernel.Guards` in WO-082/P-505),
+Configuration, Execution, FeatureManagement, Cryptography, Compression, Validation, DataPrivacy, Localization
+— all **Foundation tier** (may reference Foundation only) — plus the **Adapter-tier** Validation.FluentValidation,
+Cryptography.KeyVault.Azure and Cryptography.Argon2. The build enforces the tiers (`eng/SharedKernelTiers.targets`,
+SKTIER000–006 are errors). Before starting any session, re-check `01.Core/state-map.md`'s Phase Key Registry and
+root `state-map.md`'s Phase Backlog for anything dispatched since — this note goes stale fast, this domain gets
 small additive work orders frequently.
 
 **A prior session can leave uncommitted, undocumented work on disk that the state-map still shows as `○`.**
@@ -49,7 +50,7 @@ broke `SharedKernel.Validation.FluentValidation`'s `MustBeValidIban<T>()`, which
 single affected project would have caught this in seconds — a full-solution build is the only thing that
 actually proves a change like this didn't break a sibling package.
 
-**Why:** `01.Core` is the platform's most-depended-upon layer, so almost every cross-domain security/audit
+**Why:** `01.Core` is the platform's most-depended-upon domain (every tier references Foundation), so almost every cross-domain security/audit
 review ends up dispatching a small, additive, single-package-scope phase here even when the review's main
 subject is a different domain.
 

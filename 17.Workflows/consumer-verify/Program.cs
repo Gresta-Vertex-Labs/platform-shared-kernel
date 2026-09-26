@@ -3,7 +3,7 @@
 // compiled surface is identical either way), driven through a real Host.CreateApplicationBuilder() ->
 // IHost.StartAsync() composition, never a bare BuildServiceProvider(). Four surfaces:
 //   1. .AsClientOnly() — the shape most consuming services use — resolves IWorkflowDispatcher/
-//      IWorkflowIdFactory/IWorkflowServiceProbe with zero DI exceptions; no IHostedService is
+//      IWorkflowIdFactory/the workflow readiness probe with zero DI exceptions; no IHostedService is
 //      registered; ITemporalRawClientAccessor is unreachable without .AllowRawClientAccess() (P-04).
 //   2. .AddWorkflow<T>().AddActivities<T>().WithWorker(...) reaches IHost.StartAsync() against a real
 //      Temporalio.Testing.WorkflowEnvironment (never a live cluster, so this harness's pass/fail never
@@ -28,7 +28,9 @@ using Microsoft.Extensions.Options;
 using Google.Protobuf;
 using SharedKernel.Cryptography.Extensions;
 using SharedKernel.Cryptography.Symmetric;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Clocks;
+using SharedKernel.Primitives.Health;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Workflows.Temporal.Authoring;
 using SharedKernel.Workflows.Temporal.Codec;
@@ -85,14 +87,14 @@ static async Task Surface1_AsClientOnlyResolvesWithZeroDiExceptions()
     }
 
     _ = host.Services.GetRequiredService<IWorkflowIdFactory>();
-    _ = host.Services.GetRequiredService<IWorkflowServiceProbe>();
+    _ = host.Services.GetRequiredReadinessProbe(WorkflowReadiness.ProbeName);
 
     ITemporalRawClientAccessor? rawAccessor = host.Services.GetService<ITemporalRawClientAccessor>();
     Verify(rawAccessor is null, "ITemporalRawClientAccessor does not resolve without AllowRawClientAccess()");
 
     await host.StopAsync();
     Console.WriteLine(
-        "Surface 1 PASS: .AsClientOnly() resolves IWorkflowDispatcher/IWorkflowIdFactory/IWorkflowServiceProbe " +
+        "Surface 1 PASS: .AsClientOnly() resolves IWorkflowDispatcher/IWorkflowIdFactory/the workflow readiness probe " +
         "through a real IHost.StartAsync() with zero DI exceptions, registers no IHostedService, and the raw " +
         "client hatch stays closed without AllowRawClientAccess()");
 }
@@ -145,7 +147,7 @@ static async Task Surface2_WorkerHostingRoundTripAgainstWorkflowEnvironment()
         Result<IWorkflowHandle<string>> startResult = await dispatcher.StartAsync<ConsumerVerifyEchoWorkflow, string, string>(
             "hello from consumer-verify",
             startOptions,
-            TenantScope.Of("consumer-verify-tenant"));
+            TenantScope.For(new TenantId(Guid.NewGuid())));
 
         Verify(
             startResult.IsSuccess,
@@ -327,7 +329,7 @@ static async Task Surface5_PayloadEncryptionOpacityAndCrossWorkflowIdRejection()
                 IdReusePolicy = WorkflowIdReusePolicy.RejectDuplicate,
                 IdConflictPolicy = WorkflowIdConflictPolicy.Fail,
             },
-            TenantScope.Of("consumer-verify-encrypted-tenant"));
+            TenantScope.For(new TenantId(Guid.NewGuid())));
     }
 
     Verify(startResult.IsSuccess, "an encrypted workflow starts successfully through the public IWorkflowDispatcher surface");

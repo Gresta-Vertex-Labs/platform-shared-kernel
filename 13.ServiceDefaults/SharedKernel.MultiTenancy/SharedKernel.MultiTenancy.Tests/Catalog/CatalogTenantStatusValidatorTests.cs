@@ -8,7 +8,7 @@ public sealed class CatalogTenantStatusValidatorTests
     [Fact]
     public async Task IsActiveAsync_WithActiveTenant_ReturnsTrue()
     {
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
         var catalog = Substitute.For<ITenantCatalog>();
         catalog
             .GetByIdAsync(tenantId, Arg.Any<CancellationToken>())
@@ -32,7 +32,7 @@ public sealed class CatalogTenantStatusValidatorTests
     [InlineData(TenantStatus.Offboarded)]
     public async Task IsActiveAsync_WithSuspendedOrOffboardedTenant_ReturnsFalse(TenantStatus status)
     {
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
         var catalog = Substitute.For<ITenantCatalog>();
         catalog
             .GetByIdAsync(tenantId, Arg.Any<CancellationToken>())
@@ -54,7 +54,7 @@ public sealed class CatalogTenantStatusValidatorTests
     [Fact]
     public async Task IsActiveAsync_WithTenantAbsentFromCatalog_ReturnsFalse_FailClosed()
     {
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
         var catalog = Substitute.For<ITenantCatalog>();
         catalog
             .GetByIdAsync(tenantId, Arg.Any<CancellationToken>())

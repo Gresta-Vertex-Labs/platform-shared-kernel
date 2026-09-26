@@ -1,12 +1,15 @@
+using SharedKernel.Application.Mediator.MediatR;
+using SharedKernel.Execution.Tenancy;
 using FluentAssertions;
-using MediatR;
+using SharedKernel.Application.Messaging;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using SharedKernel.Application;
-using SharedKernel.Application.Context;
-using SharedKernel.Application.Transactions;
+using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Transactions;
+using SharedKernel.Application.Auditing;
+using SharedKernel.Application.Pipeline;
 using SharedKernel.Cryptography.Extensions;
 using SharedKernel.Domain.Aggregates;
 using SharedKernel.Domain.Monetary;
@@ -17,6 +20,7 @@ using SharedKernel.Persistence.EfCore.Auditing;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Migrations;
 using SharedKernel.Persistence.Testing;
+using SharedKernel.Testing.Execution;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Results;
 using SharedKernel.ServiceDefaults.HealthChecks;
@@ -39,7 +43,7 @@ public sealed record OrderId(Guid Value) : StronglyTypedId<Guid>(Value)
 
 public sealed class Order : TenantedAuditableAggregateRoot<OrderId>
 {
-    public Order(OrderId id, Guid tenantId, string customer, Money total, IClock clock)
+    public Order(OrderId id, TenantId tenantId, string customer, Money total, IClock clock)
         : base(id, tenantId, clock)
     {
         Customer = customer;
@@ -123,13 +127,14 @@ public sealed class PersistenceReadmeSampleTests(PostgreSqlContainerFixture fixt
             .ConfigureDbContext((_, o) => o.ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning))));
 
         services.AddSharedKernelApplication(typeof(PersistenceReadmeSampleTests).Assembly, app => app
+            .UseMediatR()
             .WithTransactions()
             .WithAuditing());
 
         services.AddHealthChecks()
             .AddDatabaseReadinessCheck<OrderDbContext>()
             .AddPersistenceStartupReadinessCheck()
-            .AddAuditSealingReadinessCheck();
+            .AddSharedKernelReadiness();
 
         return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
     }
@@ -139,7 +144,7 @@ public sealed class PersistenceReadmeSampleTests(PostgreSqlContainerFixture fixt
     {
         await using var database = await fixture.Server.CreateDatabaseAsync();
         var configuration = database.BuildConfiguration("orders", AuditKeys);
-        var tenantA = Guid.NewGuid();
+        var tenantA = new TenantId(Guid.NewGuid());
         var caller = TestRequestContext.ForTenant(tenantA);
 
         await using var provider = BuildServices(configuration, caller);
@@ -171,7 +176,7 @@ public sealed class PersistenceReadmeSampleTests(PostgreSqlContainerFixture fixt
             audit.Items.Should().ContainSingle();
         }
 
-        caller.TenantId = Guid.NewGuid(); // another tenant: neither the EF filter nor the RLS policy shows the row
+        caller.TenantId = new TenantId(Guid.NewGuid()); // another tenant: neither the EF filter nor the RLS policy shows the row
         await using (var scope = provider.CreateAsyncScope())
         {
             (await scope.ServiceProvider.GetRequiredService<IReadRepository<Order, OrderId>>().GetByIdAsync(id))
@@ -194,7 +199,7 @@ public sealed class PersistenceReadmeSampleTests(PostgreSqlContainerFixture fixt
         var services = new ServiceCollection();
         var orders = services.AddFakeRepository<Order, OrderId>();
         var unitOfWork = services.AddFakeUnitOfWork();
-        var caller = services.AddTestRequestContext(TestRequestContext.ForTenant(Guid.NewGuid()));
+        var caller = services.AddTestRequestContext(TestRequestContext.ForTenant(new TenantId(Guid.NewGuid())));
         services.AddSingleton<IClock, SystemClock>();
         services.AddScoped<PlaceOrderHandler>();
         await using var provider = services.BuildServiceProvider();

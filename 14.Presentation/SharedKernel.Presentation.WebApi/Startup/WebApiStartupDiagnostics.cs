@@ -72,8 +72,8 @@ internal sealed partial class WebApiStartupDiagnostics : IHostedLifecycleService
         [LoggerMessage(
             EventId = LoggingEventIdRanges.Presentation + 11,
             Level = LogLevel.Warning,
-            Message = "AddSharedKernelWebApi() was called but UseSharedKernelWebApi() was not: requests get no correlation "
-                + "ids, security headers, problem responses, CORS or required-header checks. Call "
+            Message = "AddSharedKernelWebApi() was called but UseSharedKernelWebApi() was not: requests get no security "
+                + "headers, problem responses, CORS or required-header checks. Call "
                 + "app.UseSharedKernelWebApi() before mapping endpoints.")]
         public static partial void PipelineNotApplied(ILogger logger);
 

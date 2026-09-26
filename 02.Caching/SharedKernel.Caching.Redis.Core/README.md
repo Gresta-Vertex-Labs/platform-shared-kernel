@@ -20,7 +20,7 @@ other registration takes a connection string.
 | `FailFastWhenDisconnected` (on by default) | During a failover, commands fail at once, the cache serves fail-safe values and callers see the outage immediately |
 | `Ssl`, `ClientCertificates`, `CertificateValidation` | Traffic is encrypted, a private CA can be trusted, and servers that require mutual TLS accept the connection |
 | A warning for non-loopback endpoints without TLS | Unencrypted production traffic is visible in the logs |
-| `IRedisConnectionProbe` | Readiness reports what every Redis package actually sees, without a second connection |
+| The `redis` readiness probe | Readiness reports what every Redis package actually sees, without a second connection |
 
 ## Contents
 
@@ -54,8 +54,9 @@ dotnet add package SharedKernel.Caching.Redis.Core
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
+| Tier | Adapter |
 | Depends on | `SharedKernel.Configuration`, `SharedKernel.Primitives`, `StackExchange.Redis`, `Microsoft.Extensions.Options.DataAnnotations` |
-| Namespaces | `SharedKernel.Caching.Redis.Core` (options), `SharedKernel.Caching.Redis.Core.Extensions` (registration), `SharedKernel.Caching.Redis.Core.Health` (probe) |
+| Namespaces | `SharedKernel.Caching.Redis.Core` (options), `SharedKernel.Caching.Redis.Core.Extensions` (registration), `SharedKernel.Caching.Redis.Core.Health` (`RedisReadinessProbeNames`) |
 
 ## Quick start
 
@@ -125,7 +126,7 @@ password.
 flowchart LR
     Config["SharedKernel:Caching:Redis<br/>or configure delegate"] --> Reg["AddRedisConnection<br/>(once)"]
     Reg --> Mux[("IConnectionMultiplexer<br/>singleton")]
-    Reg --> Probe[IRedisConnectionProbe]
+    Reg --> Probe["IReadinessProbe<br/>redis"]
     Mux --> L2["Distributed cache + backplane<br/>AddRedisL2"]
     Mux --> Locks["Locks and leases<br/>AddRedisDistributedLocking"]
     Mux --> Hash["Hash store<br/>AddRedisHashService"]
@@ -219,25 +220,28 @@ up.
 
 ### 5. Report readiness
 
-`AddRedisConnection` registers `IRedisConnectionProbe`. `SharedKernel.ServiceDefaults.Caching.Redis` wires it into ASP.NET
-Core health checks. To use it in a health check of your own:
+`AddRedisConnection` registers an `IReadinessProbe` (`SharedKernel.Primitives.Health`) named `redis`. A host reports it,
+together with every other registered probe, through ASP.NET Core health checks:
 
 ```csharp
-public sealed class RedisReadinessCheck(IRedisConnectionProbe probe) : IHealthCheck
-{
-    public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken ct = default)
-    {
-        RedisConnectionHealth health = await probe.ProbeAsync(ct);
-        return health.IsHealthy
-            ? HealthCheckResult.Healthy($"PING {health.Latency?.TotalMilliseconds:F0} ms")
-            : HealthCheckResult.Unhealthy(health.Description);
-    }
-}
+builder.Services.AddHealthChecks().AddSharedKernelReadiness();   // SharedKernel.ServiceDefaults
+```
+
+To run it yourself, for example in a smoke test:
+
+```csharp
+using SharedKernel.Caching.Redis.Core.Health;
+using SharedKernel.Primitives.Health;
+
+ReadinessReport report = await services
+    .GetRequiredReadinessProbe(RedisReadinessProbeNames.Connection)
+    .ProbeAsync(ct);
+// report.Status: Healthy (with report.Latency, the PING round trip) or Unhealthy
 ```
 
 - **Unhealthy, never thrown.** A disconnected multiplexer, or a `PING` that fails with `RedisException` or
-  `TimeoutException`, returns `IsHealthy = false`. Only cancellation throws.
-- **Safe to expose.** `Description` never contains the connection string or an exception message.
+  `TimeoutException`, returns an `Unhealthy` report. Only cancellation throws.
+- **Safe to expose.** The description never contains the connection string or an exception message.
 - **Readiness, not liveness.** A Redis outage should take the pod out of the load balancer, not restart it.
 
 ## Logging
@@ -268,7 +272,7 @@ No event contains the connection string, a password or a key.
 | Service | Lifetime | Notes |
 | --- | --- | --- |
 | `IConnectionMultiplexer` | Singleton | Created on first resolution; for SharedKernel packages, not application code |
-| `IRedisConnectionProbe` | Singleton | `ProbeAsync(ct)` → `RedisConnectionHealth(IsHealthy, Latency, Description)` |
+| `IReadinessProbe` named `redis` (`RedisReadinessProbeNames.Connection`) | Singleton | `ProbeAsync(ct)` → `ReadinessReport` (`Healthy` with the `PING` latency, or `Unhealthy`) |
 | `IOptions<RedisConnectionOptions>` | Singleton | Validated with data annotations and `RedisConnectionOptionsValidator`, on start |
 
 ### Exceptions
@@ -329,7 +333,7 @@ CONFIG       Section SharedKernel:Caching:Redis. ConnectionString (required), Co
              FailFastWhenDisconnected true, Ssl false. ClientCertificates/CertificateValidation via configure delegate only.
 SECRETS      Connection string with password from env var SharedKernel__Caching__Redis__ConnectionString or a secret store.
 TLS          Ssl=true for any non-loopback endpoint unless a mesh terminates TLS. Never accept every certificate.
-HEALTH       Inject IRedisConnectionProbe; ProbeAsync -> RedisConnectionHealth(IsHealthy, Latency, Description). Readiness only.
+HEALTH       AddRedisConnection registers IReadinessProbe "redis"; host: services.AddHealthChecks().AddSharedKernelReadiness(). Readiness only.
 ERRORS       Second AddRedisConnection or missing AddRedisConnection -> InvalidOperationException at registration.
              Invalid options -> OptionsValidationException at startup.
 FORBIDDEN    ConnectionMultiplexer.Connect, a second IConnectionMultiplexer, IConnectionMultiplexer in application code.

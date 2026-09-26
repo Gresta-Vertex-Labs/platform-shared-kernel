@@ -4,6 +4,8 @@ description: WO-083/P-527 (16.Testing leg) status — FakeTotpReplayGuard migrat
 type: project
 ---
 
+> WO-086 (2026-09): `SharedKernel.Testing` was split into 20 packable Testing-tier packages (core `SharedKernel.Testing` + 19 `SharedKernel.{Capability}.Testing`) plus the non-packable `SharedKernel.Testing.Internal` (containers, EF/Npgsql/audit helpers, MassTransit harness); `SharedKernel.Testing.SelfTests` became each package's own nested `.Tests` project. Paths and project names below are pre-split history; the technique/lesson still applies.
+
 P-527/WO-083 (`16.Testing`'s leg only — no `SK.16.Design`/`Scaffold` tasks, root phase text was the spec) CLOSED 2026-09-09: `Cryptography/FakeTotpReplayGuard.cs` migrated off the retired `HasBeenUsedAsync`/`MarkUsedAsync` two-step onto `01.Core`'s P-514 single atomic `TryMarkUsedAsync(identityKey, code, validityWindow, ct)` (commit `589b575`). Implementation is a genuine lock-free CAS retry loop (`TryGetValue` → `TryAdd`/`TryUpdate`, the primitive's own bool return is authoritative, a lost race re-reads and retries) — never a check-then-act two-step. Expired-entry-as-absent behavior preserved. `SharedKernel.Testing.SelfTests/Cryptography/FakeTotpReplayGuardTests.cs` grew 9→11 (zero coverage loss + two new `Barrier`-synchronized concurrency tests, pairwise and 50-way, mirroring `01.Core`'s own `TotpVerifierTests` pattern).
 
 **Why:** `01.Core`'s P-514 closed a TOCTOU where two concurrent submissions of the same valid TOTP code could both be accepted. The commit message itself documents a three-item blast radius, corrected twice (first claimed zero, then two, actually three) — see `feedback_isolated_scratch_build_when_blocked.md` for the verification technique this session used because of it.

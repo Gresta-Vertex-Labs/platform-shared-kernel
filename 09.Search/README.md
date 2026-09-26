@@ -40,7 +40,7 @@ That is the whole registration. Application code never sees a `MeilisearchClient
 public sealed class ProductSearch(ISearchIndex<ProductDocument> index)
 {
     public Task<Result<SearchResults<ProductDocument>>> FindAsync(
-        string tenantId, string? text, string? category, CancellationToken ct)
+        TenantId tenantId, string? text, string? category, CancellationToken ct)   // SharedKernel.Execution.Tenancy
     {
         var request = SearchQuery.New()
             .Matching(text)
@@ -52,7 +52,7 @@ public sealed class ProductSearch(ISearchIndex<ProductDocument> index)
 
         return request.IsFailure
             ? Task.FromResult(Result<SearchResults<ProductDocument>>.Failure(request.Error))
-            : index.SearchAsync(request.Value, TenantScope.Of(tenantId), ct);
+            : index.SearchAsync(request.Value, TenantScope.For(tenantId), ct);
     }
 }
 ```
@@ -65,7 +65,7 @@ Swapping `AddSharedKernelMeilisearchSearch` for `AddSharedKernelElasticSearchSea
 
 | Package | What it is | Depends on |
 | --- | --- | --- |
-| [`SharedKernel.Search.Abstractions`](SharedKernel.Search.Abstractions/README.md) | The contracts everything else is written against — `ISearchIndex<TDocument>`, `ISearchIndexProvisioner`, `ISearchProviderDescriptor`, the closed 8-node `SearchFilter` AST, `SearchIndexDefinition`. **Zero third-party NuGet dependencies.** | `SharedKernel.Primitives`, `SharedKernel.Contracts` |
+| [`SharedKernel.Search.Abstractions`](SharedKernel.Search.Abstractions/README.md) | The contracts everything else is written against — `ISearchIndex<TDocument>`, `ISearchIndexProvisioner`, `ISearchProviderDescriptor`, the closed 8-node `SearchFilter` AST, `SearchIndexDefinition`, `SearchIndexReadinessProbe`. **Zero third-party NuGet dependencies** (Abstractions tier). | `SharedKernel.Primitives`, `SharedKernel.Execution`, `SharedKernel.Contracts` |
 | [`SharedKernel.Search.Meilisearch`](SharedKernel.Search.Meilisearch/README.md) | The BFF/fast provider — typo tolerance, prefix search, engine-enforced per-tenant search tokens a browser can hold. | `MeiliSearch` SDK |
 | [`SharedKernel.Search.ElasticSearch`](SharedKernel.Search.ElasticSearch/README.md) | The analytics/heavy provider — structured aggregations, deep cursor pagination, completion-suggester type-ahead. | `Elastic.Clients.Elasticsearch` |
 
@@ -144,9 +144,9 @@ await index.IndexManyAsync(products, SearchWriteConsistency.Accepted, ct);
 **5. Read.** Every read takes an explicit `TenantScope`.
 
 ```csharp
-await index.SearchAsync(request, TenantScope.Of(tenantId), ct);
-await index.GetAsync(id, TenantScope.Of(tenantId), ct);
-await index.CountAsync(filter, TenantScope.Of(tenantId), ct);
+await index.SearchAsync(request, TenantScope.For(tenantId), ct);
+await index.GetAsync(id, TenantScope.For(tenantId), ct);
+await index.CountAsync(filter, TenantScope.For(tenantId), ct);
 ```
 
 **6. Rebuild without downtime**, when a mapping, synonym or stop-word list has to change:
@@ -180,7 +180,8 @@ await provisioner.CutoverAsync(new IndexCutoverRequest { /* … */ }, ct);  // 3
   parameter on every read and every filtered write — never a member of the request object, never a clause in the
   filter tree. A dropped business clause is a bug; a dropped tenant clause is a cross-tenant data leak, so it does not
   travel with the business predicates. Adapters inject it as the outermost `AND` after translating the caller's
-  filter. An index that declares a tenant field and receives `TenantScope.None` fails closed and performs **no I/O**.
+  filter. The scope is the platform's `SharedKernel.Execution.Tenancy.TenantScope` (`For(tenantId)` or `Global`); an
+  index that declares a tenant field and receives `TenantScope.Global` fails closed and performs **no I/O**.
 
 - **An unreachable engine is a `Result`, not an exception — on both providers.** A cluster that is down, refusing
   credentials, overloaded or simply not answering comes back as `search.unreachable`, `search.timeout` or
@@ -194,13 +195,22 @@ await provisioner.CutoverAsync(new IndexCutoverRequest { /* … */ }, ct);  // 3
 
 - **Every operation is traced and measured.** A `search {operation}` client span plus
   `search.client.operation.duration` and `search.client.documents`, under the `SharedKernel.Search` source and meter
-  that `13.ServiceDefaults`' `WithSearchTelemetry()` wires. Query text, filter values and document ids are never
+  that `SharedKernel.ServiceDefaults`' `WithSearchTelemetry()` wires. Query text, filter values and document ids are never
   recorded — free text is user input and routinely carries personal data.
 
 - **A schema change you forgot to deploy is caught.** Every provisioned index carries a fingerprint of the definition
-  it was built from. `ProbeAsync` reports it and `VerifyRegisteredIndexesAsync` checks every registered index against
+  it was built from. Its readiness probe reports it and `VerifyRegisteredIndexesAsync` checks every registered index against
   the code's own declaration, catching the deployment where filters silently match nothing because the rebuild never
   ran.
+
+- **Every index has a readiness probe, with nothing to register.** Each `AddIndex` gets an `IReadinessProbe` named
+  `search-{provider}-{index}` (ready = engine reachable, index addressable with this service's credentials, a
+  zero-row search succeeds; a write backlog never fails readiness). The host maps all of them with
+  `builder.Services.AddHealthChecks().AddSharedKernelReadiness()` (`SharedKernel.ServiceDefaults`); a host running
+  both engines gets distinct probes per engine.
+
+- **Unit tests need no engine.** `SharedKernel.Search.Testing` ships `InMemorySearchIndex<TDocument>` and friends
+  (`AddInMemorySearchIndex<TDocument>(definition)`), evaluating the full filter tree and tenant scope in memory.
 
 - **The public API of all three packages is tracked**, so an addition, removal or signature change fails the build
   until `PublicAPI.*.txt` is updated — a breaking change is a reviewed diff, not something noticed after publish.
@@ -214,4 +224,4 @@ await provisioner.CutoverAsync(new IndexCutoverRequest { /* … */ }, ct);  // 3
 ## Maintainer documentation
 
 [`09.Search/CLAUDE.md`](CLAUDE.md) holds the full interface contracts, the seam rule and its hard violations, the
-per-provider implementation rules, the AOT posture, and the changelog.
+per-provider implementation rules and the AOT posture; [`state-map.md`](state-map.md) holds the history.

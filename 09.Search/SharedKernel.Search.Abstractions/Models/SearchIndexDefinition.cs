@@ -79,7 +79,7 @@ public sealed record SearchIndexDefinition
     /// <c>ISearchIndexProvisioner.EnsureIndexAsync</c> applies these when it creates the index and
     /// reports a conflict rather than rewriting them afterwards. Changing a synonym or stop-word list
     /// is a staging-index rebuild plus a cutover, and the change moves <see cref="Fingerprint"/> so
-    /// <c>ProbeAsync</c> detects a deployment that forgot to rebuild.
+    /// the index's readiness probe detects a deployment that forgot to rebuild.
     /// </para>
     /// </remarks>
     public IReadOnlyDictionary<string, IReadOnlyList<string>> Synonyms { get; init; }
@@ -215,7 +215,7 @@ public sealed record SearchIndexDefinition
     /// Ordinal sorting makes the value independent of declaration order; rendering
     /// <see cref="SearchFieldDefinition.Kind"/> as an explicit <see cref="int"/> makes it independent
     /// of enum member renames. Written into provisioned-index metadata so
-    /// <c>ISearchIndexProvisioner.ProbeAsync</c> can detect schema drift — including a synonym or
+    /// the index's readiness probe can detect schema drift — including a synonym or
     /// stop-word list edited without the staging rebuild those settings require.
     /// </para>
     /// <para>

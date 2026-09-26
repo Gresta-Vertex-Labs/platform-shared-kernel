@@ -12,12 +12,6 @@
     <PackageReference Include="Mono.Cecil" />
     <!-- Roslyn CSharpCompilation for in-memory fixture assembly generation in T-12 -->
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
-    <!-- MediatR pinned to match 05.Application/SharedKernel.Application's own pin
-         (see that project's version-pin note) — needed to reference MediatR.IStreamRequest<>/
-         IPipelineBehavior<,> as extraReferences when compiling WO-036 P-225 fixture assemblies
-         in ApplicationPipelineRulesTests. NuGet-only; 00.Governance never references
-         05.Application (layering: 00.Governance references nothing). -->
-    <PackageReference Include="MediatR" />
     <!-- Concrete DI container needed for T-153's IServiceCollection fixture in
          PipelineOrderAssertionTests (BuildServiceProvider is never called, but
          AddTransient/AddScoped extension methods require the concrete package). -->
@@ -65,17 +59,23 @@
          compiled IL rather than a contrived fixture. Test-project-only ProjectReference — does not
          violate the "00.Governance references nothing" layering rule (production references only). -->
     <ProjectReference Include="..\..\..\05.Application\SharedKernel.Application\SharedKernel.Application.csproj" PrivateAssets="all" />
-    <!-- Test-only reference to the REAL compiled SharedKernel.Application.Caching assembly (it brings
-         SharedKernel.Application, which carries the pipeline since P-563), required by root Phase
-         Backlog P-489/WO-080 (mirrors SK.00.CacheEncryptionAndRedisValidationLock's T-337
-         "Technique A" — a genuinely EXECUTED real-composed-pipeline test, not an IL-only structural
-         check) to build the real pipeline with WithCaching() and prove CacheInvalidationBehavior's
-         eviction observably follows TransactionBehavior's commit. An INDEPENDENT, cross-domain lock
-         on top of 05.Application's own in-domain regression test: a future well-intentioned reorder
-         inside the registration must fail a build even if that domain's own tests were ever weakened
-         or deleted. Test-project-only ProjectReference — does not violate the "00.Governance
-         references nothing" layering rule (production references only). -->
-    <ProjectReference Include="..\..\..\05.Application\SharedKernel.Application.Caching\SharedKernel.Application.Caching.csproj" PrivateAssets="all" />
+    <!-- Test-only reference to the REAL compiled SharedKernel.Application.Pipeline assembly,
+         required by root Phase Backlog P-489/WO-080 (mirrors SK.00.CacheEncryptionAndRedisValidationLock's
+         T-337 "Technique A" — a genuinely EXECUTED real-composed-pipeline test, not an IL-only
+         structural check) to build the real pipeline with AddSharedKernelApplication(…, app => app.WithCaching()
+         .WithTransactions()) and prove CacheInvalidationBehavior's eviction observably follows TransactionBehavior's
+         commit. An INDEPENDENT, cross-domain lock on top of 05.Application's own in-domain regression
+         test: a future well-intentioned reorder inside the registration must fail a build even if that domain's own
+         tests were ever weakened or deleted. The same reference lets PipelineOrderAssertionTests check the real
+         canonical order. Test-project-only ProjectReference — does not violate the "00.Governance references
+         nothing" rule (production references only). -->
+    <ProjectReference Include="..\..\..\05.Application\SharedKernel.Application.Pipeline\SharedKernel.Application.Pipeline.csproj" PrivateAssets="all" />
+    <!-- P-544: CacheInvalidationBehavior/CachingBehavior live in this sibling package; the lock test opts in with
+         the real WithCaching() against the real compiled assembly. -->
+    <ProjectReference Include="..\..\..\05.Application\SharedKernel.Application.Pipeline.Caching\SharedKernel.Application.Pipeline.Caching.csproj" PrivateAssets="all" />
+    <!-- P-567: the lock test dispatches through the real kernel ISender, which the MediatR adapter (UseMediatR())
+         carries. -->
+    <ProjectReference Include="..\..\..\05.Application\SharedKernel.Application.Mediator.MediatR\SharedKernel.Application.Mediator.MediatR.csproj" PrivateAssets="all" />
     <!-- Required to resolve the real SharedKernel.Storage.Abstractions/.S3/.Obs assemblies in
          StorageTopologyRulesTests (WO-043 P-271) — 08.Storage reached Published (P-265/P-266/
          P-267 all shipped) before this phase's implementation session, so real-assembly
@@ -161,13 +161,13 @@
          phase (SK.00.ServiceDefaultsGovernance/P-173) using contrived fixtures only. -->
     <ProjectReference Include="..\..\..\13.ServiceDefaults\SharedKernel.MultiTenancy\SharedKernel.MultiTenancy.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\..\..\13.ServiceDefaults\SharedKernel.ServiceDefaults\SharedKernel.ServiceDefaults.csproj" PrivateAssets="all" />
-    <!-- WO-084/P-535: the workflow and scheduler readiness checks, and mutual-TLS composition, moved
-         out of SharedKernel.ServiceDefaults into these integration packages. The two layering-grant
-         tests and the forwarded-header secure-defaults test inspect the real assemblies, so they
-         reference the packages that now hold those types. -->
-    <ProjectReference Include="..\..\..\13.ServiceDefaults\SharedKernel.ServiceDefaults.Workflows.Temporal\SharedKernel.ServiceDefaults.Workflows.Temporal.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\..\..\13.ServiceDefaults\SharedKernel.ServiceDefaults.Scheduling\SharedKernel.ServiceDefaults.Scheduling.csproj" PrivateAssets="all" />
+    <!-- WO-084/P-535: mutual-TLS composition moved
+         out of SharedKernel.ServiceDefaults into this integration package. The forwarded-header
+         secure-defaults test inspects the real assembly, so it
+         references the package that now holds those types. -->
     <ProjectReference Include="..\..\..\13.ServiceDefaults\SharedKernel.ServiceDefaults.Security.Mtls\SharedKernel.ServiceDefaults.Security.Mtls.csproj" PrivateAssets="all" />
+    <!-- P-566: the real request-context middleware, for the correlation-id validation call-site lock. -->
+    <ProjectReference Include="..\..\..\13.ServiceDefaults\SharedKernel.ServiceDefaults.Security\SharedKernel.ServiceDefaults.Security.csproj" PrivateAssets="all" />
     <!-- Required to resolve the real SharedKernel.Presentation.WebApi assembly in
          SecureDefaultsAssertionTests (WO-062 P-410, SK.00.CorsWildcardCredentialsGuard; WO-063
          P-415, SK.00.CorrelationIdValidationGuard) and PresentationLayeringRulesTests. The CORS

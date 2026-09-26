@@ -1,6 +1,5 @@
-using MediatR;
+using SharedKernel.Application.Messaging;
 using Microsoft.Extensions.Logging;
-using SharedKernel.Application;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Scheduling.Diagnostics;
@@ -10,13 +9,13 @@ namespace SharedKernel.Scheduling.Jobs;
 /// <summary>
 /// The sole <c>05.Application</c> bridge for this package: dispatches a
 /// <typeparamref name="TCommand"/> built by a registration-time factory through the consuming
-/// service's MediatR pipeline, and reports the resulting <see cref="Result"/> back to the hosted
+/// service's application pipeline, and reports the resulting <see cref="Result"/> back to the hosted
 /// scheduling loop.
 /// </summary>
 /// <typeparam name="TCommand">The void-returning command type to dispatch.</typeparam>
 /// <remarks>
 /// <para>
-/// <b>Pipeline semantics.</b> Whatever <c>SharedKernel.Application</c> pipeline stages the service
+/// <b>Pipeline semantics.</b> Whatever <c>SharedKernel.Application.Pipeline</c> stages the service
 /// registered apply unchanged. Validation and authorization failures arrive as a failed
 /// <see cref="Result"/> (<c>ErrorType.Validation</c>, <c>ErrorType.Unauthorized</c>,
 /// <c>ErrorType.Forbidden</c>) and are logged as a failed fire, never thrown. Authorization reads
@@ -54,7 +53,7 @@ public sealed class ScheduledCommandJob<TCommand>
     private readonly IClock _clock;
     private readonly ILogger<ScheduledCommandJob<TCommand>> _logger;
 
-    /// <summary>Initializes the job with the MediatR sender and ordinary DI dependencies.</summary>
+    /// <summary>Initializes the job with the kernel sender and ordinary DI dependencies.</summary>
     public ScheduledCommandJob(ISender sender, IClock clock, ILogger<ScheduledCommandJob<TCommand>> logger)
     {
         _sender = sender;
@@ -63,7 +62,7 @@ public sealed class ScheduledCommandJob<TCommand>
     }
 
     /// <summary>
-    /// Builds the command via <paramref name="commandFactory"/> and sends it through the MediatR
+    /// Builds the command via <paramref name="commandFactory"/> and sends it through the application
     /// pipeline, logging the outcome. A <see cref="Result"/> is always returned — this method never
     /// swallows a failure, and never throws for an ordinary <see cref="Result.IsFailure"/> outcome.
     /// </summary>

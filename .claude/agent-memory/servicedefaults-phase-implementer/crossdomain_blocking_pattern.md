@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): readiness checks no longer block on another domain — providers self-register an `IReadinessProbe` and `AddSharedKernelReadiness()` maps whatever exists, so `Add*HealthCheck` wiring tasks per provider are gone. The pattern below still applies to `With*Telemetry()` wiring.
+
 `13.ServiceDefaults` is the composition root — several of its tasks (`WithMessagingTelemetry`,
 `WithCachingTelemetry`, and likely future `With*Telemetry`/`Add*HealthCheck` methods) are contractually
 specified in `CLAUDE.md` *before* the upstream domain instrument they wire actually exists in code. This is

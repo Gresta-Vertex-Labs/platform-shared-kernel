@@ -1,6 +1,8 @@
 using BillingApi.Domain;
 using Dapper;
-using SharedKernel.Application;
+using SharedKernel.Application.Auditing;
+using SharedKernel.Application.Authorization;
+using SharedKernel.Application.Messaging;
 using SharedKernel.Persistence.Abstractions.Repositories;
 using SharedKernel.Persistence.Dapper.Sessions;
 using SharedKernel.Primitives.Clocks;

@@ -13,6 +13,12 @@
                       ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\..\..\01.Core\SharedKernel.Localization\SharedKernel.Localization.csproj" />
     <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
+    <!-- The request context that owns the correlation id and the refusal of inbound baggage (P-579): every test host
+         composes it the way a service does, UseSharedKernelRequestContext() before UseSharedKernelWebApi(). -->
+    <ProjectReference Include="..\..\..\13.ServiceDefaults\SharedKernel.ServiceDefaults.Security\SharedKernel.ServiceDefaults.Security.csproj" />
+    <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Security.Testing\SharedKernel.Security.Testing.csproj" />
+    <!-- EntityVersion, the version type of the If-Match and ETag tests. -->
+    <ProjectReference Include="..\..\..\06.Persistence\SharedKernel.Persistence.Abstractions\SharedKernel.Persistence.Abstractions.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="xunit" />

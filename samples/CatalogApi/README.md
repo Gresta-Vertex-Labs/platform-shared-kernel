@@ -7,9 +7,9 @@ artifacts against real engines — not to be copied wholesale, since most servic
 | Domain | What this sample uses it for |
 |---|---|
 | `09.Search` (all three packages) | Both providers side by side; the neutral contracts, plus each engine's exclusive ones |
-| `13.ServiceDefaults` (+ `.Search`) | OpenTelemetry, health endpoints, per-index readiness checks |
-| `05.Application` | `AddSharedKernelApplication(typeof(Program).Assembly)`: every endpoint sends a query or command through `ISender`, and only the handlers in `Features/` (`Storefront`, `BackOffice`, `Operations`) touch the engines; the two corpus walks are stream queries (`IStreamQuery<T>`, `ISender.CreateStream`) |
-| `14.Presentation` | `AddSharedKernelWebApi()` + `UseSharedKernelWebApi()`; three endpoint modules (`IEndpointModule`, mapped by the generated `app.MapEndpoints()`); `Result<T>` → typed results (`ToOk(…)`); every failure an RFC 9457 problem — an engine outage 503, a timeout 504 |
+| `13.ServiceDefaults` (+ `.Security`) | OpenTelemetry, health endpoints, `AddSharedKernelReadiness()` over the per-index probes each provider registers, `AddSharedKernelRequestContext()` + `UseSharedKernelRequestContext()` first in the pipeline (correlation id) |
+| `05.Application` (`SharedKernel.Application.Pipeline` + `.Mediator.MediatR`) | `AddSharedKernelApplication(typeof(Program).Assembly, app => app.UseMediatR())`: every endpoint sends a query or command through the kernel's `ISender`, and only the handlers in `Features/` (`Storefront`, `BackOffice`, `Operations`) touch the engines; the two corpus walks are stream queries (`IStreamQuery<T>`, `ISender.CreateStream`) |
+| `14.Presentation` | `AddSharedKernelWebApi()` + `UseSharedKernelWebApi()` right after the request context; three endpoint modules (`IEndpointModule`, mapped by the generated `app.MapEndpoints()`); `Result<T>` → typed results (`ToOk(…)`); every failure an RFC 9457 problem — an engine outage 503, a timeout 504 |
 
 ## Running it
 
@@ -41,16 +41,21 @@ curl -X POST localhost:5199/ops/seed
 ## What to look at
 
 **The count tells you how much it can be trusted.** The products index is provisioned with
-`MaxTotalHits(8)` deliberately, and tenant-north holds ten products:
+`MaxTotalHits(8)` deliberately, and the north tenant holds ten products. Tenants are GUIDs (`TenantId`,
+never a slug); the two seeded ones are `Catalog.TenantNorth` and `Catalog.TenantSouth`, and a route
+value that is not a GUID is a 400:
 
 ```bash
-curl localhost:5199/storefront/tenant-north/products/count
+NORTH=6f1c2a4e-0b7d-4c3e-9a51-3d2e8f7b1a01   # Catalog.TenantNorth
+SOUTH=6f1c2a4e-0b7d-4c3e-9a51-3d2e8f7b1a02   # Catalog.TenantSouth
+
+curl localhost:5199/storefront/$NORTH/products/count
 # {"value":8,"accuracy":"LowerBound","isExact":false,"display":">=8"}
 
-curl localhost:5199/storefront/tenant-north/products/count?category=stationery
+curl localhost:5199/storefront/$NORTH/products/count?category=stationery
 # {"value":3,"accuracy":"Exact","isExact":true,"display":"3"}
 
-curl localhost:5199/back-office/tenant-north/order-lines/count
+curl localhost:5199/back-office/$NORTH/order-lines/count
 # {"value":8,"accuracy":"Exact","isExact":true,"display":"8"}
 ```
 
@@ -63,12 +68,12 @@ again:
 
 ```bash
 docker stop sk-search-meili
-curl -i localhost:5199/storefront/tenant-north/products?q=mouse
+curl -i localhost:5199/storefront/$NORTH/products?q=mouse
 # HTTP/1.1 503 Service Unavailable
 # Content-Type: application/problem+json
 # {"type":"https://tools.ietf.org/html/rfc9110#section-15.6.4","title":"Service Unavailable","status":503,
 #  "detail":"The service is temporarily unavailable. Try again later.",
-#  "instance":"/storefront/tenant-north/products","errorCode":"search.unreachable","correlationId":"f800e48c…","traceId":"00-f800e48c…-01"}
+#  "instance":"/storefront/6f1c2a4e-…/products","errorCode":"search.unreachable","correlationId":"f800e48c…","traceId":"00-f800e48c…-01"}
 ```
 
 `search.unreachable` is an `ErrorType.Unavailable` error, so the endpoint — `sender.Send(…).ToOk(…)`, no
@@ -105,8 +110,8 @@ problem response would carry: a definition drift in full, an engine outage only 
 filters entirely, so the tenant travels as a completion category context declared at provisioning time:
 
 ```bash
-curl "localhost:5199/back-office/tenant-north/order-lines/suggest?prefix=Gaming"   # []
-curl "localhost:5199/back-office/tenant-south/order-lines/suggest?prefix=Gaming"   # Gaming Monitor
+curl "localhost:5199/back-office/$NORTH/order-lines/suggest?prefix=Gaming"   # []
+curl "localhost:5199/back-office/$SOUTH/order-lines/suggest?prefix=Gaming"   # Gaming Monitor
 ```
 
 ## Why both engines in one host
@@ -118,17 +123,20 @@ they serve **different document types** — `ISearchIndex<ProductDocument>` and
 The two non-generic contracts do collide, though: `ISearchIndexProvisioner` and
 `ISearchProviderDescriptor` have no type parameter to tell them apart, so an unkeyed resolution returns
 whichever provider was registered last. Each provider package therefore also registers them **keyed by
-provider name**, and this sample addresses them that way:
+provider name**. `/ops/probe/{provider}/{index}` needs neither: it runs the index's own readiness probe, found by
+its name (below), and answers 200 or 503 with the probe's report.
+
+Readiness needs no key at all. Each provider registers one `IReadinessProbe` per index it was given,
+named after the provider and the index, and the host maps every probe in one call:
 
 ```csharp
-builder.Services.AddHealthChecks()
-    .AddSearchReadinessCheck(Catalog.ProductsIndex,   providerKey: SearchWellKnown.MeilisearchProviderName)
-    .AddSearchReadinessCheck(Catalog.OrderLinesRead, providerKey: SearchWellKnown.ElasticSearchProviderName);
+builder.Services.AddHealthChecks().AddSharedKernelReadiness();
+// ready checks: search-meilisearch-products, search-elasticsearch-order-lines
 ```
 
-A single-provider service omits `providerKey` entirely. Without the key here, the readiness check asks
-ElasticSearch about a Meilisearch index, gets "not addressable", and reports a healthy service unready
-forever — a symptom with no visible connection to its cause. That defect was found by this sample.
+Because the provider registered its own probe, it can never ask ElasticSearch about a Meilisearch index —
+the defect this sample found in the earlier design, where the host named the index and had to pass the
+right provider key or report a healthy service unready forever.
 
 ## Endpoints
 

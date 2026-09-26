@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Security.Abstractions;
@@ -20,7 +21,7 @@ public sealed class ClaimTenantResolutionStrategy : ITenantResolutionStrategy
     public string StrategyName => TenantResolutionStrategyNames.Claim;
 
     /// <inheritdoc/>
-    public Task<Guid?> TryResolveAsync(HttpContext context, CancellationToken cancellationToken)
+    public Task<TenantId?> TryResolveAsync(HttpContext context, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
 

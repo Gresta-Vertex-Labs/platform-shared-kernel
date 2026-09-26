@@ -16,14 +16,22 @@
   <ItemGroup>
     <!-- 07.Messaging: the bus itself. Abstractions arrives transitively, as it would for any consumer. -->
     <PackageReference Include="SharedKernel.Messaging.MassTransit" />
+    <!-- 07.Messaging: the RabbitMQ transport (UseRabbitMq), its own package since P-570. -->
+    <PackageReference Include="SharedKernel.Messaging.MassTransit.RabbitMq" />
     <!-- 04.Contracts: IIntegrationEvent and the CloudEvents envelope every published event is wrapped in. -->
     <PackageReference Include="SharedKernel.Contracts" />
-    <!-- 05.Application: the endpoints send commands and queries through MediatR; its .Abstractions (arriving
-         transitively) carries IRequestContext, which the tenant/actor propagation rides on. -->
-    <PackageReference Include="SharedKernel.Application" />
-    <!-- 13.ServiceDefaults: host, messaging telemetry, the bus readiness check. -->
+    <!-- Execution: IRequestContext and TenantId, which the tenant/actor/correlation propagation rides on. -->
+    <PackageReference Include="SharedKernel.Execution" />
+    <!-- 18.Idempotency: IIdempotencyStore, which InMemoryIdempotencyStore implements for IdempotencyPurpose.Message. -->
+    <PackageReference Include="SharedKernel.Idempotency.Abstractions" />
+    <!-- 05.Application: the endpoints send commands and queries through the kernel ISender; the pipeline and its
+         MediatR adapter are Host packages. -->
+    <PackageReference Include="SharedKernel.Application.Pipeline" />
+    <PackageReference Include="SharedKernel.Application.Mediator.MediatR" />
+    <!-- 13.ServiceDefaults: host, messaging telemetry, and AddSharedKernelReadiness (the bus probe). -->
     <PackageReference Include="SharedKernel.ServiceDefaults" />
-    <PackageReference Include="SharedKernel.ServiceDefaults.Messaging" />
+    <!-- 13.ServiceDefaults.Security: AddSharedKernelRequestContext() / UseSharedKernelRequestContext() - the caller and the correlation id. -->
+    <PackageReference Include="SharedKernel.ServiceDefaults.Security" />
     <!-- 14.Presentation: Result -> ProblemDetails at the HTTP boundary. -->
     <PackageReference Include="SharedKernel.Presentation.WebApi" />
   </ItemGroup>

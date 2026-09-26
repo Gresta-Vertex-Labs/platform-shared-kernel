@@ -4,6 +4,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using SharedKernel.Primitives.Health;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Storage.S3.Tests.Infrastructure;
 
@@ -50,10 +51,9 @@ public sealed class RegistrationTests(MinioFixture minio)
     public async Task A_healthy_bucket_passes_the_probe_and_a_missing_one_fails_it()
     {
         using ServiceProvider host = minio.CreateHost(extraStores: s3 => s3.AddStore("ghost", o => o.Bucket = "no-such-bucket"));
-        IFileStorageHealthProbe probe = host.GetRequiredService<IFileStorageHealthProbe>();
 
-        (await probe.ProbeAsync("files")).IsSuccess.Should().BeTrue();
-        (await probe.ProbeAsync("ghost")).Error.Code.Should().Be(StorageErrorCodes.Unavailable);
+        (await host.GetRequiredReadinessProbe(StorageReadinessProbeNames.ForStore("files")).ProbeAsync()).IsHealthy.Should().BeTrue();
+        (await host.GetRequiredReadinessProbe(StorageReadinessProbeNames.ForStore("ghost")).ProbeAsync()).Data["ErrorCode"].Should().Be(StorageErrorCodes.Unavailable);
     }
 
     [Fact]
@@ -182,7 +182,7 @@ public sealed class NamedConnectionTests(MinioFixture minio)
         IFileStorage assets = host.GetRequiredKeyedService<IFileStorage>("public-assets");
         (await assets.UploadAsync(TestData.UniqueKey(), new MemoryStream([1]))).IsSuccess.Should().BeTrue();
 
-        Action privateStore = () => host.GetRequiredKeyedService<ITenantFileStorage>("private-docs").ForTenant("t").ExistsAsync("a");
+        Action privateStore = () => host.GetRequiredKeyedService<ITenantFileStorage>("private-docs").ForTenant(new TenantId(Guid.NewGuid())).ExistsAsync("a");
         privateStore.Should().Throw<OptionsValidationException>().WithMessage("*S3 connection 'Private'*SecretAccessKey*");
     }
 }

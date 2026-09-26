@@ -1,116 +1,95 @@
 # SharedKernel.Idempotency.EfCore
 
-Atomic, tenant-scoped, PostgreSQL-backed implementation of the platform's two idempotency
-contracts:
+Atomic, tenant-scoped, PostgreSQL-backed implementation of `SharedKernel.Idempotency.Abstractions`'
+`IIdempotencyStore`, for services that run PostgreSQL and do not want Redis solely for deduplication. See the
+[abstractions package's README](../SharedKernel.Idempotency.Abstractions/README.md) for the contract and how the
+pipeline and MassTransit use it.
 
-- `IRequestIdempotencyStore` (`SharedKernel.Application.Idempotency`, in `SharedKernel.Application`) — `EfCoreRequestIdempotencyStore`.
-- `IIdempotencyStore` (`SharedKernel.Messaging.Abstractions`) — `EfCoreIdempotencyMessageStore`.
+**Tier:** Adapter. References `SharedKernel.Idempotency.Abstractions`, `SharedKernel.Primitives` and
+`SharedKernel.Persistence.EfCore` (its one declared adapter edge, for `UsePostgres`) — never `02.Caching`.
 
-For services that run PostgreSQL and do not want to run Redis solely for deduplication. See the
-root `CLAUDE.md` Folder Map entry for `18.Idempotency` for why this domain exists at all.
+## Install
+
+```xml
+<PackageReference Include="SharedKernel.Idempotency.EfCore" />
+```
+
+Versions come from your single `SharedKernelVersion` property (the repository's `PLATFORM.md`, "Consuming the
+kernel").
 
 ## Quick start
 
 ```csharp
 services.AddClock(); // 01.Core/SharedKernel.Primitives — IClock, required
-var idempotencyDataSource = NpgsqlDataSource.Create(connectionString); // or the service's shared data source
-services.AddSharedKernelEfCoreIdempotency(
-    configureDbContext: options => options.UsePostgres(idempotencyDataSource), // namespace SharedKernel.Persistence
-    configureOptions: o =>
-    {
-        o.InFlightTtl = TimeSpan.FromSeconds(30);
-        o.RetentionWindow = TimeSpan.FromHours(24);
-    });
-
-// Required: bridge this platform's tenant identity source. ITenantContextAccessor lives in
-// 07.Messaging.Abstractions and is reused here rather than reinvented.
-services.AddScoped<ITenantContextAccessor, MyTenantContextAccessor>();
+var dataSource = NpgsqlDataSource.Create(connectionString); // or the service's shared data source
+services.AddEfCoreIdempotency(
+    configureDbContext: options => options.UsePostgres(dataSource), // namespace SharedKernel.Persistence
+    purposes: p => p.ForRequests().ForMessages(),
+    configureOptions: o => o.AllowExecutionOnStoreUnavailable = false); // the default: fail closed
 ```
 
-Omitting the `ITenantContextAccessor` registration throws `InvalidOperationException` at
-`IHost.StartAsync()` — not at first store call.
+`AddEfCoreIdempotency` registers `IdempotencyDbContext` and `EfCoreIdempotencyStore` as the keyed
+`IIdempotencyStore` for every selected purpose, and the ambient `IRequestContextAccessor` unless one exists. The
+reservation lease and the retention window are passed by the caller on every call, so this package has no TTL
+settings.
 
-## Contract
+## Table
 
-`IRequestIdempotencyStore.TryBeginAsync(key, requestFingerprint, ct)` atomically reserves a new key
-and records the caller's request fingerprint, or reports the key's existing state. The key is stored in
-the `key` column (512 characters) exactly as given. Through `IdempotencyBehavior` it is never the
-command's raw key but a SHA-256 digest of tenant, caller and key — always 64 lowercase hex characters,
-whatever the raw key's length — so a reservation belongs to one caller of one tenant and another caller
-using the same key cannot be handed its stored response. The `tenant_id` column from
-`ITenantContextAccessor` stays on top of that.
+One table, `idempotency_keys`, one row per (tenant scope, purpose, key). The key is stored exactly as given. For
+`IdempotencyPurpose.Request` it is, through `IdempotencyBehavior`, never the command's raw key but a SHA-256 digest of
+tenant, caller and key — always 64 lowercase hex characters, whatever the raw key's length (P-562 X3) — so a
+reservation belongs to one caller of one tenant, and another caller using the same key cannot be handed its stored
+response. The `tenant_scope` column stays on top of that.
 
-| Existing row | Same fingerprint | Different fingerprint |
-|---|---|---|
-| None, or expired | `Started` — a fresh or reclaimed reservation | (not applicable) |
-| Live, not completed | `InProgress` | `FingerprintMismatch` |
-| Live, completed | `Completed`, with the stored response | `FingerprintMismatch` |
+| Column | Type | Notes |
+| --- | --- | --- |
+| `tenant_scope` | `varchar(36)` | `IdempotencyTenantScope`: tenant id in "D" form, or `no-tenant` |
+| `purpose` | `varchar(16)` | `Request` or `Message` |
+| `key` | `varchar(512)` | the idempotency key, or the message id in "D" form |
+| `fingerprint` | `varchar(128)` | |
+| `status` | `varchar(20)` | `InProgress` or `Completed` |
+| `reservation_token` | `uuid` | fresh per winning reservation |
+| `reserved_at_utc`, `expires_at_utc` | `timestamptz` | from `IClock`; `expires_at_utc` indexed for cleanup |
+| `response` | `text` | stored response, never parsed; `NULL` for messages |
 
-A winning `Started` result carries a `ReservationToken` — an opaque string the caller must pass back
-to `CompleteAsync`/`ReleaseAsync`. `CompleteAsync(key, reservationToken, serializedResponse, ct)`
-marks the key completed, stores the response, and extends `expires_at_utc` to `RetentionWindow`, but
-only when `reservationToken` still owns the row **and** it is still `InProgress` — otherwise it
-returns `false` and touches nothing. `ReleaseAsync(key, reservationToken, ct)` deletes the row under
-the same guard — **only** while it is still `InProgress`; a completed row is never deleted by
-`ReleaseAsync`. Both return `true` only when the token still owned the reservation and the operation
-actually applied; `false` — never an exception — means the reservation was already lost: expired and
-reclaimed by someone else, already completed or released, or a foreign/malformed token. A
-reservation that is never completed or released stays past its `InFlightTtl` until either the next
-`TryBeginAsync` for the same key reclaims it, or the documented cleanup recipe below deletes it —
-either way, it can never permanently block that key.
+Primary key `(tenant_scope, purpose, key)`.
+
+**Persisted format (P-568).** The table was previously keyed by `(tenant_id uuid, key)` with a sentinel GUID
+`00000000-0000-0000-0000-000000000001` for "no tenant", and messages lived in a separate `idempotency_messages`
+table. Both stores now share `idempotency_keys` with a `purpose` column and the string tenant scope; drop
+`idempotency_messages` and recreate `idempotency_keys` from a new migration (nothing was in production).
 
 ## Atomicity
 
-`TryBeginAsync` performs a single raw-SQL upsert, executed directly against the context's own
-connection (not `ExecuteSqlInterpolatedAsync`, which discards `RETURNING` data):
+`TryBeginAsync` is one raw-SQL upsert on the context's own connection:
 
 ```sql
-INSERT INTO idempotency_keys (tenant_id, "key", fingerprint, status, reserved_at_utc, expires_at_utc, response, reservation_token)
-VALUES (@tenant_id, @key, @fingerprint, 'InProgress', @reserved_at_utc, @expires_at_utc, NULL, @token)
-ON CONFLICT (tenant_id, "key") DO UPDATE SET
+INSERT INTO idempotency_keys (tenant_scope, purpose, "key", fingerprint, status, reserved_at_utc, expires_at_utc, response, reservation_token)
+VALUES (@tenant_scope, @purpose, @key, @fingerprint, 'InProgress', @reserved_at_utc, @expires_at_utc, NULL, @token)
+ON CONFLICT (tenant_scope, purpose, "key") DO UPDATE SET
     fingerprint = CASE WHEN idempotency_keys.expires_at_utc <= @reserved_at_utc THEN EXCLUDED.fingerprint ELSE idempotency_keys.fingerprint END,
-    status = CASE WHEN idempotency_keys.expires_at_utc <= @reserved_at_utc THEN EXCLUDED.status ELSE idempotency_keys.status END,
-    -- ...reserved_at_utc / expires_at_utc / response / reservation_token follow the same CASE shape
+    -- status / reserved_at_utc / expires_at_utc / response / reservation_token follow the same CASE shape
 RETURNING fingerprint, status, response, reservation_token
 ```
 
-Every `SET` clause is a no-op unless the existing row is already expired, so a live conflicting row
-is returned completely unchanged. Comparing the row's *returned* `reservation_token` against the
-token this call generated is how the store learns whether it won the row (fresh insert or
-expired-row reclaim) versus merely observing an existing live one — one round trip, no separate
-`SELECT`, and no plain `DbSet.Add()` + caught `DbUpdateException` control flow anywhere. This store
-keeps none of that token for itself — it is returned to the caller as `ReservationToken` and never
-remembered here.
-
-`CompleteAsync`/`ReleaseAsync` only affect the row when the caller-supplied `reservationToken`
-still matches the row's current `reservation_token` **and** the row is still `InProgress` — this
-closes a race a slower confirm or release, arriving after its own reservation already expired and a
-different caller has since re-reserved the same key, could otherwise corrupt. A syntactically
-invalid (non-`Guid`) token is recognized as unable to match any real row without even a database
-round trip.
-
-## Fault vs. failure
-
-A thrown exception from the guarded call never reaches `CompleteAsync` — the reservation's short
-`InFlightTtl` window elapses, and the next `TryBeginAsync` for the same key reclaims the expired row
-(self-healing, no action from this package). A returned business failure calls `ReleaseAsync`
-instead, which deletes the row immediately. See `IRequestIdempotencyStore`'s own XML docs for the
-full contract this package honors.
+Every `SET` is a no-op unless the existing row has expired, so a live row is returned unchanged. The call won the
+row (fresh insert or expired-row reclaim) exactly when the returned `reservation_token` is its own — one round trip,
+no second `SELECT`. `CompleteAsync`/`ReleaseAsync` touch the row only while the supplied token matches and the row is
+still `InProgress`; a malformed token is rejected without a round trip. A reservation never completed or released
+is reclaimed by the next `TryBeginAsync` after its `ttl`, or deleted by the cleanup job below.
 
 ## Fail-closed by default
 
-When PostgreSQL is unreachable, every store call throws by default. Set
-`EfCoreIdempotencyOptions.AllowExecutionOnStoreUnavailable = true` to instead let `TryBeginAsync`
-proceed as `Started` during an outage.
+When PostgreSQL is unreachable every call throws. `EfCoreIdempotencyOptions.AllowExecutionOnStoreUnavailable =
+true` instead lets `TryBeginAsync` return `Started`, logging EventId 18100 at Warning. Retry is switched off for
+this context on purpose: each store call is one atomic statement, and the caller owns the retry.
 
-> **ENABLING `AllowExecutionOnStoreUnavailable` INCREASES DUPLICATE-EXECUTION RISK.** While the
-> store is unreachable, every call — including genuine duplicates — is treated as novel. Only
-> enable this for operations where executing twice is safer than blocking entirely.
+> **ENABLING `AllowExecutionOnStoreUnavailable` INCREASES DUPLICATE-EXECUTION RISK.** It applies to every purpose
+> the registration serves.
 
 ## Migrations
 
-This package ships no EF Core migrations. Add a design-time factory in your own service/migrations
-project:
+This package ships no migrations. Add a design-time factory to your migrations project:
 
 ```csharp
 public sealed class IdempotencyDbContextFactory : IDesignTimeDbContextFactory<IdempotencyDbContext>
@@ -124,14 +103,11 @@ public sealed class IdempotencyDbContextFactory : IDesignTimeDbContextFactory<Id
 }
 ```
 
-Then run `dotnet ef migrations add InitialIdempotency --context IdempotencyDbContext` from that
-project. The two tables (`idempotency_keys`, `idempotency_messages`) are snake_case-named via
-`SharedKernel.Persistence.EfCore`'s `UsePostgres(...)` conventions (retry is switched off for this context on purpose: each store call is one atomic statement).
+Then `dotnet ef migrations add InitialIdempotency --context IdempotencyDbContext`.
 
-## Cleanup recipe (bounded retention)
+## Cleanup (bounded retention)
 
-This package never starts a hidden background loop and never prunes rows itself. Register your own
-periodic cleanup — a plain `IHostedService`:
+This package never prunes rows itself. Register a periodic job:
 
 ```csharp
 public sealed class IdempotencyCleanupService(
@@ -144,38 +120,30 @@ public sealed class IdempotencyCleanupService(
         while (await timer.WaitForNextTickAsync(stoppingToken))
         {
             await using var db = await contextFactory.CreateDbContextAsync(stoppingToken);
-            var now = clock.UtcNow;
             await db.Database.ExecuteSqlInterpolatedAsync(
-                $"DELETE FROM idempotency_keys WHERE expires_at_utc < {now}", stoppingToken);
-            await db.Database.ExecuteSqlInterpolatedAsync(
-                $"DELETE FROM idempotency_messages WHERE expires_at_utc < {now}", stoppingToken);
+                $"DELETE FROM idempotency_keys WHERE expires_at_utc < {clock.UtcNow}", stoppingToken);
         }
     }
 }
 ```
 
-Or, once `19.Scheduling` ships, a `ScheduledCommandJob`-wrapped equivalent.
-
 ## Registration lifetime
 
-Both store classes and `IdempotencyDbContext` are registered `Scoped` — a plain EF Core
-`DbContext` is not thread-safe and must never be captured into a singleton.
+The store and `IdempotencyDbContext` are `Scoped` — a `DbContext` is not thread-safe.
 
-## Verifying DI registration resolves
+## Upgrading from the pre-WO-086 API
 
-```csharp
-var host = Host.CreateDefaultBuilder()
-    .ConfigureServices(services =>
-    {
-        services.AddClock();
-        services.AddSharedKernelEfCoreIdempotency(o => o.UsePostgres(NpgsqlDataSource.Create(connectionString)));
-        services.AddScoped<ITenantContextAccessor, MyTenantContextAccessor>();
-    })
-    .Build();
+| Before | Now |
+| --- | --- |
+| `AddSharedKernelEfCoreIdempotency(db => …, o => …)` | `AddEfCoreIdempotency(db => …, p => p.ForRequests().ForMessages(), o => …)` — purposes are explicit |
+| `EfCoreRequestIdempotencyStore` + `EfCoreIdempotencyMessageStore` (two contracts) | `EfCoreIdempotencyStore`, one `IIdempotencyStore` keyed by `IdempotencyPurpose` |
+| `EfCoreIdempotencyOptions.InFlightTtl` / `.RetentionWindow` | Removed — the caller passes them: `IdempotencyBehaviorOptions.LeaseDuration`/`RetentionWindow`, messaging `IdempotencyOptions.LeaseDuration`/`ExpiryWindow` |
+| Tenant from Messaging's `ITenantContextAccessor` (startup check required one) | Tenant from the ambient `IRequestContextAccessor`; no startup validator |
+| Tables `idempotency_keys (tenant_id uuid, key)` + `idempotency_messages` | One table `idempotency_keys (tenant_scope, purpose, key)` — new migration (see "Persisted format" above) |
 
-await host.StartAsync(); // throws InvalidOperationException here if ITenantContextAccessor is missing
+## Related packages
 
-using var scope = host.Services.CreateScope();
-var requestStore = scope.ServiceProvider.GetRequiredService<IRequestIdempotencyStore>();
-var messageStore = scope.ServiceProvider.GetRequiredService<IIdempotencyStore>();
-```
+- [`SharedKernel.Idempotency.Abstractions`](../SharedKernel.Idempotency.Abstractions/README.md) — the contract.
+- [`SharedKernel.Idempotency.Redis`](../SharedKernel.Idempotency.Redis/README.md) — the Redis sibling.
+- `SharedKernel.Persistence.EfCore` (`06.Persistence`) — `UsePostgres(dataSource)`.
+- `SharedKernel.Idempotency.Testing` (`16.Testing`) — `FakeIdempotencyStore` for unit tests.

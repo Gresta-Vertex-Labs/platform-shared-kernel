@@ -1,5 +1,5 @@
 using System.Net;
-using Microsoft.AspNetCore.Http;
+using SharedKernel.Execution.Context;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Communication.Rest.Extensions;
 using SharedKernel.Communication.Rest.Handlers;
@@ -46,9 +46,8 @@ public sealed class ResiliencePipelineTests
         var services = new ServiceCollection();
 
         // Register stub as primary handler before the resilience handler sees it
-        services.AddTransient<CorrelationIdDelegatingHandler>();
-        services.AddTransient<TenantIdDelegatingHandler>();
-        services.AddSingleton<IHttpContextAccessor, HttpContextAccessor>();
+        services.AddTransient<RequestContextDelegatingHandler>();
+        services.AddSingleton<IRequestContextAccessor, RequestContextAccessor>();
 
         var httpBuilder = services.AddHttpClient<RetryCountingClient>()
             .ConfigurePrimaryHttpMessageHandler(() =>

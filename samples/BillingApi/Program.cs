@@ -1,8 +1,9 @@
 using BillingApi.Features.Customers;
 using BillingApi.Infrastructure;
 using BillingApi.Security;
-using SharedKernel.Application;
 using Microsoft.Extensions.Options;
+using SharedKernel.Application.Mediator.MediatR;
+using SharedKernel.Application.Pipeline;
 using SharedKernel.Cryptography.Envelope;
 using SharedKernel.Cryptography.Extensions;
 using SharedKernel.Cryptography.Symmetric;
@@ -35,7 +36,7 @@ builder.Services.AddSingleton<IEnvelopeEncryptionProvider, LocalMasterKeyEnvelop
 
 // The service's root key provider. 06.Persistence seals every entity version (the ETag) with a subkey it derives from
 // it, so an ETag never shows PostgreSQL's xmin. Here: the root keys field encryption reads — every capability derives
-// its own subkey, so sharing the root key is safe. In production, a KMS: 13.ServiceDefaults' AddSharedKernelKeyVaultKeyProvider().
+// its own subkey, so sharing the root key is safe. In production, a KMS: SharedKernel.Cryptography.KeyVault.Azure's AddAzureKeyVaultEncryption(configuration).
 builder.Services.AddSingleton<ISynchronousEncryptionKeyProvider>(sp =>
 {
     var keys = sp.GetRequiredService<IOptions<EncryptionOptions>>().Value.Keys;
@@ -57,11 +58,12 @@ builder.Services.AddSharedKernelDapper(builder.Configuration);
 // The audit sealer writes chain links as its own role (app_audit_sealer), so the application role cannot forge them.
 builder.Services.AddSharedKernelNpgsql(builder.Configuration.GetSection("SharedKernel:Persistence:audit-sealer"), "audit-sealer");
 
-// 05.Application — MediatR with the platform pipeline, in one call: the handlers and validators of this assembly,
-// [RequirePermission] on every command and query (always enforced; IRequestContext comes from
+// 05.Application — the kernel pipeline in one call, with MediatR behind the kernel's ISender: the handlers of this
+// assembly, [RequirePermission] on every command and query (always enforced; IRequestContext comes from
 // AddSharedKernelRequestContext() above), one retry-safe transaction per command, and an audit record —
 // Succeeded inside the transaction, Failed after a rollback.
 builder.Services.AddSharedKernelApplication(typeof(Program).Assembly, app => app
+    .UseMediatR()
     .WithTransactions()
     .WithAuditing());
 
@@ -70,8 +72,7 @@ builder.Services.AddScoped<ICustomerDirectory, CustomerDirectory>();
 // Readiness: not ready until migrations and seeders finished, the key ring is loaded and the sealer keeps up.
 builder.Services.AddHealthChecks()
     .AddDatabaseReadinessCheck<BillingDbContext>()
-    .AddFieldEncryptionReadinessCheck()
-    .AddAuditSealingReadinessCheck();
+    .AddSharedKernelReadiness(); // every probe the providers registered: field-encryption keys, audit sealing, ...
 builder.Services.AddHostedService<StartupGateRelease>();
 
 // 14.Presentation — the HTTP boundary in one call (SharedKernel:Presentation:WebApi): every error — a failed Result,
@@ -81,8 +82,10 @@ builder.AddSharedKernelWebApi();
 
 var app = builder.Build();
 
-// Before any endpoint: correlation id, security headers, the exception handler, routing, authentication (the demo
-// scheme above) and authorization, in that order.
+// First in the pipeline: the request's X-Correlation-Id and its request context, so every log line, audit record
+// and outbound call of the request carries one correlation id and one caller. Then, before any endpoint: security
+// headers, the exception handler, routing, authentication (the demo scheme above) and authorization, in that order.
+app.UseSharedKernelRequestContext();
 app.UseSharedKernelWebApi();
 
 app.MapDefaultHealthCheckEndpoints();

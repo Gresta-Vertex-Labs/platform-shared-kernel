@@ -1,8 +1,9 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Host</SharedKernelTier>
     <!-- NuGet packaging metadata -->
-    <Description>The HTTP API boundary for SharedKernel services: one call to set up (AddSharedKernelWebApi, UseSharedKernelWebApi with ordered hooks, bound from SharedKernel:Presentation:WebApi and validated) and one RFC 9457 application/problem+json error shape for every error source — Result failures, thrown exceptions, framework responses, MVC model state, minimal-API binding failures, authorization, rate limiting and request limits — with localized messages and server errors redacted outside Development. Typed results for Result and Result&lt;T&gt; (ToOk, ToCreated, ToAccepted, ToOkWithETag, ToNoContent) for minimal APIs and MVC controllers alike, permission, role, fresh-authentication and authentication-method requirements as native ASP.NET Core authorization policies evaluated against IUserContext (with RFC 9470 step-up challenges), correlation ids with caller baggage refused at the edge, required Idempotency-Key and If-Match headers (attributes, conventions or IdempotencyKey and IfMatch&lt;TVersion&gt; parameters) with 412 for stale versions, ETag with 304, security response headers and no-store caching by default, CORS with a WebSocket origin check, request size limits and ErrorType to status mapping including 503 and 504. No third-party dependencies.</Description>
-    <PackageTags>shared-kernel;webapi;aspnetcore;problemdetails;rfc9457;typed-results;authorization;step-up;rfc9470;correlation-id;idempotency;etag;if-match;cors;security-headers;rate-limiting</PackageTags>
+    <Description>The HTTP API boundary for SharedKernel services: one call to set up (AddSharedKernelWebApi, UseSharedKernelWebApi with ordered hooks, bound from SharedKernel:Presentation:WebApi and validated) and one RFC 9457 application/problem+json error shape for every error source — Result failures, thrown exceptions, framework responses, MVC model state, minimal-API binding failures, authorization, rate limiting and request limits — with localized messages and server errors redacted outside Development. Typed results for Result and Result&lt;T&gt; (ToOk, ToCreated, ToAccepted, ToOkWithETag, ToNoContent) for minimal APIs and MVC controllers alike, permission, role, fresh-authentication and authentication-method requirements as native ASP.NET Core authorization policies evaluated against IUserContext (with RFC 9470 step-up challenges, the attributes from SharedKernel.Presentation.Core), the correlationId of every problem read from the request context of SharedKernel.ServiceDefaults.Security, required Idempotency-Key and If-Match headers (attributes, conventions or IdempotencyKey and IfMatch&lt;TVersion&gt; parameters) with 412 for stale versions, ETag with 304, security response headers and no-store caching by default, CORS with a WebSocket origin check, request size limits and ErrorType to status mapping including 503 and 504. No third-party dependencies.</Description>
+    <PackageTags>shared-kernel;webapi;aspnetcore;problemdetails;rfc9457;typed-results;authorization;step-up;rfc9470;idempotency;etag;if-match;cors;security-headers;rate-limiting</PackageTags>
     <!--
       Set per-project, not inherited: the SDK assigns GenerateDocumentationFile=false before
       Directory.Build.targets' '== empty'-guarded default is evaluated. CS1591 below makes an
@@ -20,19 +21,20 @@
   </ItemGroup>
   <ItemGroup>
     <!--
-      Layering: 14.Presentation may reference 01.Core, 04.Contracts and 12.Security. This package
-      converts outcomes (Result, Error, exceptions) into HTTP responses; it never produces them,
-      so it references no application or infrastructure layer. SharedKernel.Localization supplies
-      the optional ILocalizationCatalog used to translate client messages; SharedKernel.Configuration
-      binds and validates SharedKernelWebApiOptions. SharedKernel.Contracts supplies PageRequest and
-      CursorPageRequest, which the Paging and CursorPaging parameters bind query input into.
+      Host tier. This package converts outcomes (Result, Error, exceptions) into HTTP responses; it never produces
+      them, so it references no application or infrastructure package. SharedKernel.Presentation.Core (P-579) supplies
+      what gRPC and SignalR share with it: the authorization attributes and policies, the ErrorType status map, the
+      client-message rule (with the optional ILocalizationCatalog) and the request's correlation id.
+      SharedKernel.Configuration binds and validates SharedKernelWebApiOptions. SharedKernel.Contracts supplies
+      PageRequest and CursorPageRequest, which the Paging and CursorPaging parameters bind query input into.
+      The correlation id itself is resolved by SharedKernel.ServiceDefaults.Security's UseSharedKernelRequestContext(),
+      which this package does not reference: the host composes the two.
     -->
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
     <ProjectReference Include="..\..\04.Contracts\SharedKernel.Contracts\SharedKernel.Contracts.csproj" />
     <ProjectReference Include="..\..\01.Core\SharedKernel.Core\SharedKernel.Core.csproj" />
     <ProjectReference Include="..\..\01.Core\SharedKernel.Configuration\SharedKernel.Configuration.csproj" />
-    <ProjectReference Include="..\..\01.Core\SharedKernel.Localization\SharedKernel.Localization.csproj" />
-    <ProjectReference Include="..\..\12.Security\SharedKernel.Security.Abstractions\SharedKernel.Security.Abstractions.csproj" />
+    <ProjectReference Include="..\SharedKernel.Presentation.Core\SharedKernel.Presentation.Core.csproj" />
   </ItemGroup>
   <ItemGroup>
     <!--
@@ -66,16 +68,13 @@
     <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
   </ItemGroup>
   <ItemGroup>
-    <!-- The add-ons version in lockstep with this package and read its error presentation, status map, authorization
-         registration and header metadata (P-563 P3). -->
+    <!-- The add-ons version in lockstep with this package and read its error presentation, problem writer,
+         authorization registration and header metadata (P-563 P3). gRPC no longer does: it takes what it shares with
+         this package from SharedKernel.Presentation.Core (P-579). -->
     <InternalsVisibleTo Include="SharedKernel.Presentation.OpenApi" />
     <InternalsVisibleTo Include="SharedKernel.Presentation.SignalR" />
-    <InternalsVisibleTo Include="SharedKernel.Presentation.Grpc" />
     <InternalsVisibleTo Include="SharedKernel.Presentation.WebApi.Tests" />
     <InternalsVisibleTo Include="SharedKernel.Presentation.OpenApi.Tests" />
     <InternalsVisibleTo Include="SharedKernel.Presentation.SignalR.Tests" />
-    <InternalsVisibleTo Include="SharedKernel.Presentation.Grpc.Tests" />
-    <!-- 16.Testing's self-tests authorize through the platform policies without a web host. -->
-    <InternalsVisibleTo Include="SharedKernel.Testing.SelfTests" />
   </ItemGroup>
 </Project>

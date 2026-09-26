@@ -64,6 +64,11 @@ Format when blocked — replace placeholder with table:
 
 ## Package Board
 
+> **Superseded (2026-09-26):** the board below records the P-557 shape and is kept as history. P-558 merged
+> `.PostgreSQL` into `.EfCore` (six packages), and WO-086 (see `Phase: WO-086` below) put every package on a tier and
+> on the repo-wide release train, so there is no per-package publish state any more. Current packages, tiers and
+> references: `06.Persistence/CLAUDE.md` → Packages.
+
 > **Corrected by P-557 (2026-09-20):** every row below previously read "Published `●`" — accurate for the pre-P-557 4-package shape (last published-readiness pass: WO-013/WO-018). P-557 restructured the whole domain into 7 packages; none has actually been pushed to GitHub Packages. See `06.Persistence/CLAUDE.md`'s Packages table for the current reference graph and `Phase: P-557` below for the full record.
 
 | Package | Current Phase | State | Notes |
@@ -867,6 +872,25 @@ Format when blocked — replace placeholder with table:
 | P-16 | `SharedKernel.Persistence.ConsumerVerify` proves the DI/dependency-graph surfaces above against the actual packed artifacts | ConsumerVerify | `●` |
 | P-17 | **Publish to GitHub Packages** — a `git tag` release per root `CLAUDE.md`'s MinVer-lockstep convention, republishing the already-published dependency closure (`SharedKernel.Primitives`/`.Core`/`.Configuration`/`.Cryptography`/`.Domain`/`.Contracts`) at the same build height so the packed `.nuspec` files resolve against the feed | All | `○` |
 
+> **P-17 superseded by WO-086 (P-572):** there is no per-domain publish or republish closure any more — one `v*` tag
+> packs and publishes every package (`release.yml`). This domain ships with the first release train (root P-577).
+
+---
+
+## Phase: WO-086 — Foundation refactor (record, root P-564–P-575)
+
+No local tasks: WO-086 is tracked in the root `state-map.md` (section WO-086). What it changed here:
+
+| Phase | Change in 06.Persistence |
+| --- | --- |
+| P-563 / P-574 | Every csproj declares `<SharedKernelTier>` (Abstractions: `.Abstractions`; Adapter: the rest) and its adapter edges (`EfCore`/`Dapper`→`Npgsql`, `EfCore.Auditing`/`EfCore.Encryption`→`EfCore`). The numbered-layer rule `PersistenceNeverReferencesApplicationOrSecurity` was deleted; the tier check (SKTIER001–006) covers it |
+| P-564 | `IUnitOfWork`, `IRequestContext`, `IAuditTrailWriter`, `AuditEntry`/`AuditOutcome`, `ActorKind`, `SystemRequestContext`/`AnonymousRequestContext` come from `SharedKernel.Execution` (namespaces `.Transactions`, `.Context`, `.Auditing`); `SharedKernel.Application.Abstractions` deleted |
+| P-565 | `TenantId` value type on `IHasTenant` and every tenant parameter (`ITenantSessionBinder`, `IDbSession`, `TenantedRepository`, `TenantedDbContext.CurrentTenantId`, `WhereEncryptedEquals`, `ITenantEncryptionKeyManager`, `TenantShredResult`, audit records/checkpoints); internal `TenantIdValueConverter` (EF Core) and `TenantIdTypeHandler` (Dapper). Stored formats unchanged |
+| P-569 | `IAuditSealingProbe`/`AuditSealingHealth` and `FieldEncryptionServiceKeys.KeyRingProbe` deleted → `IReadinessProbe` `audit-sealing` (`AuditSealingReadiness`, `AuditSealerOptions.MaxReadyLag`) and `field-encryption` (`FieldEncryptionReadiness`), registered by `UseAuditTrail()`/`UseFieldEncryption()`. `ServiceDefaults.Persistence` no longer references Encryption/Auditing; its `AddFieldEncryptionReadinessCheck`/`AddAuditSealingReadinessCheck` are gone (use `AddSharedKernelReadiness()`) |
+| P-567 | README samples use `SharedKernel.Application.Pipeline` + `AddSharedKernelMediatR` |
+| P-571 | `SharedKernel.Persistence.Testing` references the core `SharedKernel.Testing` (`TestRequestContext` in `SharedKernel.Testing.Execution`); container fixtures moved to non-packable `SharedKernel.Testing.Internal` |
+| P-575 | `CLAUDE.md` and every README describe the final state |
+
 ---
 
 ## Overall Progress
@@ -962,3 +986,4 @@ Format when blocked — replace placeholder with table:
 - [2026-09-15] SK.06.P541 opened and closed (7/7 `●`, root P-541) — `DomainClockMaterializationInterceptor` attaches the application clock to every loaded aggregate as one shared instance (a per-context instance rebuilt EF Core's internal service provider per context, caught by AuditTrailTests); `Version` mapped; P-540 migration of the evaluator and converters; EfCore 459/459, PostgreSQL 53/53
 - [2026-09-19/20] SK.06.P557 opened and closed for implementation (85/86 `●`, root P-557, user-directed) — seven sequential build waves (structure/seam split, EfCore correctness, `Money` two columns, Npgsql+PostgreSQL+Dapper, Encryption v2, Audit ledger v2, hardening sweep) plus four remediation waves closing the Critical/High findings from two independent post-implementation reviews (a bulk-edit-damage audit and an adversarial security design review — see the phase's own Findings table). Domain split 4→7 packages (`SharedKernel.Persistence.Npgsql`/`.EfCore.Encryption`/`.EfCore.Auditing` new); `.EfCore` dropped its `05.Application.Behaviors`/`12.Security.Abstractions` references for local seams (`ICurrentActorContext`/`ICurrentTenantContext`/`ICrossTenantScope`/`ITenantSessionBinder`) bridged from `13.ServiceDefaults.Persistence`; a derived context's constructor collapsed from nine parameters to one (`PersistenceContextDependencies`); named query filters + a `TenantId`-as-concurrency-token defense closed a detached-stub cross-tenant write attack (H1); domain-event dispatch moved pre-commit; field encryption and the audit trail both rewritten from scratch (interceptor-based AES-256-GCM with blind indexes and resumable rotation; a hash-chained ledger partitioned by tenant+resource-type with three layers of immutability enforcement and a hard ambient-transaction requirement for a Succeeded attestation, closing C2 together with a small `05.Application.Behaviors`/`13.ServiceDefaults.Persistence` companion fix); PostgreSQL row-level security and tenant-safe Dapper read/command services shipped as new capabilities. All D/S/C/T/DO tasks (86 total, 14+8+44+12+4+4) `●`; `SK.06.P557` itself stays `◐` — P-17 (publish to GitHub Packages) is deliberately `○`, a separate user-directed action not yet taken. `dotnet pack` clean across all 7 packages (0 warnings incl. 0 RS00xx) at a consistent version override; `SharedKernel.Persistence.ConsumerVerify` (new) proves the packed artifacts. H8 (audit-chain advisory-lock self-deadlock) mitigated (a bounded `lock_timeout`), not structurally closed — recorded in `CLAUDE.md`'s Known Limitations, not silently claimed fixed. A parallel cleanup wave (packed READMEs, dead governance rules, tag-stripping-script indentation repair) was still finishing outside this phase-recorder's own file ownership at the time this entry was written (persistence-phase-implementer, multiple sessions)
 - [2026-09-20] P-557 docs wave — `06.Persistence/CLAUDE.md` fully rewritten to describe the post-split domain; it had still been describing the pre-P-557 4-package shape, including several claims already false on disk by the time this session started: `EncryptedValueConverter`/`EncryptionModelConvention` for field encryption (replaced by `EncryptionInterceptor`), `MoneyValueConverter`/`.OwnsMoney` packed-string `Money` mapping (replaced by a two-column EF Core complex type), attribute-based `HasJsonbColumn`/`HasVectorColumn` (method-based since P-557; the attributes were deleted as dead code), `ICurrentTenantService` as the tenant seam (renamed/redesigned to `ICurrentTenantContext`, nullable, fail-closed), and a stale "`SharedKernel.Persistence.EfCore.Tests` cannot run pending `16.Testing` P-450" claim (P-450 shipped long ago; the suite runs, 352/352 as of this pass). This file (`state-map.md`) gained the `SK.06.P557` phase key and its full task table, a corrected Package Board (7 rows, all `◐` pre-publish, none published), two in-place-corrected Cross-Domain Dependencies rows recording the removed `05.Application`/`12.Security` references and a new reverse-direction row for `13.ServiceDefaults.Persistence`'s consumption of this domain's local seams, and a dedicated Findings table mapping every Critical/High review finding to its resolution. Root `state-map.md` and root `CLAUDE.md` updated in the same pass — see their own changelogs (persistence-arch-planner)
+- [2026-09-26] WO-086 record added (root P-564–P-575): tiers, `SharedKernel.Execution` contracts, `TenantId`, readiness probes; Package Board and P-17 marked superseded by the release train — P-575 docs pass

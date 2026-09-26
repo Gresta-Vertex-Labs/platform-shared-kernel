@@ -1,7 +1,8 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Host</SharedKernelTier>
     <!-- NuGet packaging metadata -->
-    <Description>Composition base for Platform.SharedKernel microservices: AddServiceDefaults (OpenTelemetry traces, metrics, and logs with ambient CorrelationId/TenantId log enrichment, plus the startup readiness gate), liveness and readiness endpoint mapping, StartupGate, the With*Telemetry family for every SharedKernel domain, HealthCheckNames/HealthCheckTags, and opt-in rate limiting. References no other SharedKernel package. Dependency-specific readiness checks, mutual TLS, Azure Key Vault, and localization live in the SharedKernel.ServiceDefaults.* integration packages, so a service restores only the integrations it actually uses.</Description>
+    <Description>Composition base for Platform.SharedKernel microservices: AddServiceDefaults (OpenTelemetry traces, metrics, and logs with ambient CorrelationId/TenantId log enrichment, plus the startup readiness gate), liveness and readiness endpoint mapping, StartupGate, the With*Telemetry family for every SharedKernel domain, HealthCheckNames/HealthCheckTags, AddSharedKernelReadiness (every provider-registered IReadinessProbe on /health/ready), and opt-in rate limiting. References only SharedKernel.Primitives among SharedKernel packages. Database readiness checks, the request context, mutual TLS, Azure Key Vault configuration, and localization live in the SharedKernel.ServiceDefaults.* integration packages, so a service restores only the integrations it actually uses.</Description>
     <PackageTags>shared-kernel;service-defaults;opentelemetry;health-checks;kubernetes;observability</PackageTags>
     <!--
       NU5104: a stable package release must not depend on a prerelease package. This package
@@ -19,21 +20,27 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
   <!--
-    WO-084: this package deliberately has NO ProjectReference. Before the split it carried fourteen,
-    and a project referencing it alone restored 25 SharedKernel projects and 73 NuGet packages —
-    MassTransit, Azure Service Bus, Microsoft.Identity.Web, EF Core, Temporalio, Quartz, and
-    StackExchange.Redis among them. Two of the fourteen (SharedKernel.Primitives and
-    SharedKernel.Messaging.MassTransit) were used by no source file at all.
+    WO-084, amended by P-569: this package references Foundation-tier SharedKernel packages only.
+    Before the WO-084 split it carried fourteen ProjectReferences, and a project referencing it alone
+    restored 25 SharedKernel projects and 73 NuGet packages — MassTransit, Azure Service Bus,
+    Microsoft.Identity.Web, EF Core, Temporalio, Quartz, and StackExchange.Redis among them.
 
-    Every integration that needs another SharedKernel package lives in its own
-    SharedKernel.ServiceDefaults.* package. Adding a ProjectReference here reintroduces the problem
-    for every service on the platform, and is locked out by two tests in
-    SharedKernel.ServiceDefaults.Tests: a type-level dependency check, and a project-file check that
-    catches an unused reference the type-level check cannot see.
+    The one reference is SharedKernel.Primitives, for IReadinessProbe: every provider registers its
+    own probe, and AddSharedKernelReadiness() maps them to health checks without knowing any provider.
+    Primitives depends on nothing but Microsoft.Extensions.DependencyInjection.Abstractions.
+
+    Every integration that needs a non-Foundation SharedKernel package lives in its own
+    SharedKernel.ServiceDefaults.* package. Adding such a reference here reintroduces the problem for
+    every service on the platform, and is locked out by two tests in SharedKernel.ServiceDefaults.Tests:
+    a type-level dependency check, and a project-file check that catches an unused reference the
+    type-level check cannot see.
 
     The With*Telemetry extensions need no reference: each wires its domain's ActivitySource and
     Meter by string name.
   -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+  </ItemGroup>
   <ItemGroup>
     <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
     <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />

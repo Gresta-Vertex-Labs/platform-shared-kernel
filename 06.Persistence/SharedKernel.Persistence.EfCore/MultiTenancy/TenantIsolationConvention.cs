@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Microsoft.EntityFrameworkCore.Metadata.Conventions;
 using SharedKernel.Domain.Abstractions;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Diagnostics;
 using SharedKernel.Persistence.EfCore.Extensibility;
@@ -92,8 +93,8 @@ internal sealed class TenantIsolationConvention(TenantedDbContext context) : IMo
         var parameter = Expression.Parameter(clrType, "e");
         var tenantId = Expression.Property(parameter, nameof(IHasTenant.TenantId));
         var current = Expression.Property(Expression.Constant(context, context.GetType()), CurrentTenantIdProperty);
-        var hasValue = Expression.Property(current, nameof(Nullable<Guid>.HasValue));
-        var equal = Expression.Equal(Expression.Convert(tenantId, typeof(Guid?)), current);
+        var hasValue = Expression.Property(current, nameof(Nullable<TenantId>.HasValue));
+        var equal = Expression.Equal(Expression.Convert(tenantId, typeof(TenantId?)), current);
         return Expression.Lambda(Expression.AndAlso(hasValue, equal), parameter);
     }
 }

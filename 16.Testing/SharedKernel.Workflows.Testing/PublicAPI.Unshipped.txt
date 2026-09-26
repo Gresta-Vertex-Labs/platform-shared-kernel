@@ -1,0 +1,82 @@
+#nullable enable
+override SharedKernel.Testing.Workflows.InMemoryWorkflowStartRecord.Equals(object? obj) -> bool
+override SharedKernel.Testing.Workflows.InMemoryWorkflowStartRecord.GetHashCode() -> int
+override SharedKernel.Testing.Workflows.InMemoryWorkflowStartRecord.ToString() -> string!
+SharedKernel.Testing.Workflows.InMemoryWorkflowDispatcher
+SharedKernel.Testing.Workflows.InMemoryWorkflowDispatcher.CompleteWorkflow<TResult>(string! workflowId, TResult result) -> void
+SharedKernel.Testing.Workflows.InMemoryWorkflowDispatcher.ConfigureQueryHandler<TQueryResult>(string! workflowId, string! queryName, System.Func<TQueryResult>! handler) -> void
+SharedKernel.Testing.Workflows.InMemoryWorkflowDispatcher.DescribeAsync(string! workflowId, SharedKernel.Execution.Tenancy.TenantScope tenantScope, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Workflows.Temporal.Dispatch.WorkflowExecutionDescription!>!>!
+SharedKernel.Testing.Workflows.InMemoryWorkflowDispatcher.FailWorkflow(string! workflowId, SharedKernel.Primitives.Errors.Error! error) -> void
+SharedKernel.Testing.Workflows.InMemoryWorkflowDispatcher.GetHandle(string! workflowId, string? runId, SharedKernel.Execution.Tenancy.TenantScope tenantScope) -> SharedKernel.Workflows.Temporal.Dispatch.IWorkflowHandle!
+SharedKernel.Testing.Workflows.InMemoryWorkflowDispatcher.GetHandle<TResult>(string! workflowId, string? runId, SharedKernel.Execution.Tenancy.TenantScope tenantScope) -> SharedKernel.Workflows.Temporal.Dispatch.IWorkflowHandle<TResult>!
+SharedKernel.Testing.Workflows.InMemoryWorkflowDispatcher.InMemoryWorkflowDispatcher(SharedKernel.Workflows.Temporal.Dispatch.IWorkflowIdFactory? workflowIdFactory = null) -> void
+SharedKernel.Testing.Workflows.InMemoryWorkflowDispatcher.Reset() -> void
+SharedKernel.Testing.Workflows.InMemoryWorkflowDispatcher.ShouldHaveStarted<TWorkflow>() -> SharedKernel.Testing.Workflows.InMemoryWorkflowStartRecord!
+SharedKernel.Testing.Workflows.InMemoryWorkflowDispatcher.ShouldHaveStartedOnce<TWorkflow>() -> SharedKernel.Testing.Workflows.InMemoryWorkflowStartRecord!
+SharedKernel.Testing.Workflows.InMemoryWorkflowDispatcher.ShouldNotHaveStarted<TWorkflow>() -> void
+SharedKernel.Testing.Workflows.InMemoryWorkflowDispatcher.SimulateFailure.get -> bool
+SharedKernel.Testing.Workflows.InMemoryWorkflowDispatcher.SimulateFailure.set -> void
+SharedKernel.Testing.Workflows.InMemoryWorkflowDispatcher.StartAsync<TWorkflow, TArgs, TResult>(TArgs args, SharedKernel.Workflows.Temporal.Dispatch.WorkflowStartOptions! options, SharedKernel.Execution.Tenancy.TenantScope tenantScope, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Workflows.Temporal.Dispatch.IWorkflowHandle<TResult>!>!>!
+SharedKernel.Testing.Workflows.InMemoryWorkflowDispatcher.StartAsync<TWorkflow, TArgs>(TArgs args, SharedKernel.Workflows.Temporal.Dispatch.WorkflowStartOptions! options, SharedKernel.Execution.Tenancy.TenantScope tenantScope, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Workflows.Temporal.Dispatch.IWorkflowHandle!>!>!
+SharedKernel.Testing.Workflows.InMemoryWorkflowDispatcher.StartAsync<TWorkflow>(SharedKernel.Workflows.Temporal.Dispatch.WorkflowStartOptions! options, SharedKernel.Execution.Tenancy.TenantScope tenantScope, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Workflows.Temporal.Dispatch.IWorkflowHandle!>!>!
+SharedKernel.Testing.Workflows.InMemoryWorkflowDispatcher.StartedWorkflows.get -> System.Collections.Generic.IReadOnlyList<SharedKernel.Testing.Workflows.InMemoryWorkflowStartRecord!>!
+SharedKernel.Testing.Workflows.InMemoryWorkflowHandle
+SharedKernel.Testing.Workflows.InMemoryWorkflowHandle.CancelAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
+SharedKernel.Testing.Workflows.InMemoryWorkflowHandle.QueriesReceived.get -> System.Collections.Generic.IReadOnlyList<string!>!
+SharedKernel.Testing.Workflows.InMemoryWorkflowHandle.QueryAsync<TQueryResult>(string! queryName, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<TQueryResult>!>!
+SharedKernel.Testing.Workflows.InMemoryWorkflowHandle.RunId.get -> string?
+SharedKernel.Testing.Workflows.InMemoryWorkflowHandle.ShouldHaveBeenCancelled() -> void
+SharedKernel.Testing.Workflows.InMemoryWorkflowHandle.ShouldHaveBeenQueried(string! queryName) -> void
+SharedKernel.Testing.Workflows.InMemoryWorkflowHandle.ShouldHaveBeenTerminated(string? expectedReason = null) -> void
+SharedKernel.Testing.Workflows.InMemoryWorkflowHandle.ShouldHaveSignalled(string! signalName) -> object?
+SharedKernel.Testing.Workflows.InMemoryWorkflowHandle.ShouldHaveSignalled<TSignalArgs>(string! signalName) -> TSignalArgs
+SharedKernel.Testing.Workflows.InMemoryWorkflowHandle.ShouldNotHaveSignalled(string! signalName) -> void
+SharedKernel.Testing.Workflows.InMemoryWorkflowHandle.SignalAsync<TSignalArgs>(string! signalName, TSignalArgs args, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
+SharedKernel.Testing.Workflows.InMemoryWorkflowHandle.SignalsReceived.get -> System.Collections.Generic.IReadOnlyList<(string! SignalName, object? Args)>!
+SharedKernel.Testing.Workflows.InMemoryWorkflowHandle.SimulateFailure.get -> bool
+SharedKernel.Testing.Workflows.InMemoryWorkflowHandle.SimulateFailure.set -> void
+SharedKernel.Testing.Workflows.InMemoryWorkflowHandle.Status.get -> SharedKernel.Testing.Workflows.WorkflowLifecycleStatus?
+SharedKernel.Testing.Workflows.InMemoryWorkflowHandle.TerminateAsync(string! reason, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
+SharedKernel.Testing.Workflows.InMemoryWorkflowHandle.WorkflowId.get -> string!
+SharedKernel.Testing.Workflows.InMemoryWorkflowHandle<TResult>
+SharedKernel.Testing.Workflows.InMemoryWorkflowHandle<TResult>.CancelAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
+SharedKernel.Testing.Workflows.InMemoryWorkflowHandle<TResult>.GetResultAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<TResult>!>!
+SharedKernel.Testing.Workflows.InMemoryWorkflowHandle<TResult>.QueriesReceived.get -> System.Collections.Generic.IReadOnlyList<string!>!
+SharedKernel.Testing.Workflows.InMemoryWorkflowHandle<TResult>.QueryAsync<TQueryResult>(string! queryName, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<TQueryResult>!>!
+SharedKernel.Testing.Workflows.InMemoryWorkflowHandle<TResult>.RunId.get -> string?
+SharedKernel.Testing.Workflows.InMemoryWorkflowHandle<TResult>.ShouldHaveBeenCancelled() -> void
+SharedKernel.Testing.Workflows.InMemoryWorkflowHandle<TResult>.ShouldHaveBeenQueried(string! queryName) -> void
+SharedKernel.Testing.Workflows.InMemoryWorkflowHandle<TResult>.ShouldHaveBeenTerminated(string? expectedReason = null) -> void
+SharedKernel.Testing.Workflows.InMemoryWorkflowHandle<TResult>.ShouldHaveSignalled(string! signalName) -> object?
+SharedKernel.Testing.Workflows.InMemoryWorkflowHandle<TResult>.ShouldHaveSignalled<TSignalArgs>(string! signalName) -> TSignalArgs
+SharedKernel.Testing.Workflows.InMemoryWorkflowHandle<TResult>.ShouldNotHaveSignalled(string! signalName) -> void
+SharedKernel.Testing.Workflows.InMemoryWorkflowHandle<TResult>.SignalAsync<TSignalArgs>(string! signalName, TSignalArgs args, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
+SharedKernel.Testing.Workflows.InMemoryWorkflowHandle<TResult>.SignalsReceived.get -> System.Collections.Generic.IReadOnlyList<(string! SignalName, object? Args)>!
+SharedKernel.Testing.Workflows.InMemoryWorkflowHandle<TResult>.SimulateFailure.get -> bool
+SharedKernel.Testing.Workflows.InMemoryWorkflowHandle<TResult>.SimulateFailure.set -> void
+SharedKernel.Testing.Workflows.InMemoryWorkflowHandle<TResult>.Status.get -> SharedKernel.Testing.Workflows.WorkflowLifecycleStatus?
+SharedKernel.Testing.Workflows.InMemoryWorkflowHandle<TResult>.TerminateAsync(string! reason, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
+SharedKernel.Testing.Workflows.InMemoryWorkflowHandle<TResult>.WorkflowId.get -> string!
+SharedKernel.Testing.Workflows.InMemoryWorkflowStartRecord
+SharedKernel.Testing.Workflows.InMemoryWorkflowStartRecord.<Clone>$() -> SharedKernel.Testing.Workflows.InMemoryWorkflowStartRecord!
+SharedKernel.Testing.Workflows.InMemoryWorkflowStartRecord.Args.get -> object?
+SharedKernel.Testing.Workflows.InMemoryWorkflowStartRecord.Args.init -> void
+SharedKernel.Testing.Workflows.InMemoryWorkflowStartRecord.Deconstruct(out string! WorkflowTypeName, out string! WorkflowId, out SharedKernel.Execution.Tenancy.TenantScope TenantScope, out object? Args) -> void
+SharedKernel.Testing.Workflows.InMemoryWorkflowStartRecord.Equals(SharedKernel.Testing.Workflows.InMemoryWorkflowStartRecord? other) -> bool
+SharedKernel.Testing.Workflows.InMemoryWorkflowStartRecord.InMemoryWorkflowStartRecord(string! WorkflowTypeName, string! WorkflowId, SharedKernel.Execution.Tenancy.TenantScope TenantScope, object? Args) -> void
+SharedKernel.Testing.Workflows.InMemoryWorkflowStartRecord.TenantScope.get -> SharedKernel.Execution.Tenancy.TenantScope
+SharedKernel.Testing.Workflows.InMemoryWorkflowStartRecord.TenantScope.init -> void
+SharedKernel.Testing.Workflows.InMemoryWorkflowStartRecord.WorkflowId.get -> string!
+SharedKernel.Testing.Workflows.InMemoryWorkflowStartRecord.WorkflowId.init -> void
+SharedKernel.Testing.Workflows.InMemoryWorkflowStartRecord.WorkflowTypeName.get -> string!
+SharedKernel.Testing.Workflows.InMemoryWorkflowStartRecord.WorkflowTypeName.init -> void
+SharedKernel.Testing.Workflows.WorkflowLifecycleStatus
+SharedKernel.Testing.Workflows.WorkflowLifecycleStatus.Cancelled = 2 -> SharedKernel.Testing.Workflows.WorkflowLifecycleStatus
+SharedKernel.Testing.Workflows.WorkflowLifecycleStatus.Completed = 1 -> SharedKernel.Testing.Workflows.WorkflowLifecycleStatus
+SharedKernel.Testing.Workflows.WorkflowLifecycleStatus.Failed = 4 -> SharedKernel.Testing.Workflows.WorkflowLifecycleStatus
+SharedKernel.Testing.Workflows.WorkflowLifecycleStatus.Running = 0 -> SharedKernel.Testing.Workflows.WorkflowLifecycleStatus
+SharedKernel.Testing.Workflows.WorkflowLifecycleStatus.Terminated = 3 -> SharedKernel.Testing.Workflows.WorkflowLifecycleStatus
+SharedKernel.Testing.Workflows.WorkflowServiceCollectionExtensions
+static SharedKernel.Testing.Workflows.InMemoryWorkflowStartRecord.operator !=(SharedKernel.Testing.Workflows.InMemoryWorkflowStartRecord? left, SharedKernel.Testing.Workflows.InMemoryWorkflowStartRecord? right) -> bool
+static SharedKernel.Testing.Workflows.InMemoryWorkflowStartRecord.operator ==(SharedKernel.Testing.Workflows.InMemoryWorkflowStartRecord? left, SharedKernel.Testing.Workflows.InMemoryWorkflowStartRecord? right) -> bool
+static SharedKernel.Testing.Workflows.WorkflowServiceCollectionExtensions.AddInMemoryWorkflowDispatcher(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!

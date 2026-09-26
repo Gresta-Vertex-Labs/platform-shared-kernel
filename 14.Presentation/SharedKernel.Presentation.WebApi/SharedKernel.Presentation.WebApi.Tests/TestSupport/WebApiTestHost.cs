@@ -4,8 +4,12 @@ using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using SharedKernel.Security.Abstractions;
+using SharedKernel.ServiceDefaults.Security;
 using SharedKernel.Testing.Logging;
 
 namespace SharedKernel.Presentation.WebApi.Tests.TestSupport;
@@ -18,8 +22,9 @@ internal static class WebApiTestHost
     public const string Development = "Development";
 
     /// <summary>
-    /// Starts a <see cref="TestServer"/> host: <c>AddSharedKernelWebApi</c>, then <paramref name="configureBuilder"/>,
-    /// then <c>UseSharedKernelWebApi(configurePipeline)</c>, then <paramref name="mapEndpoints"/>.
+    /// Starts a <see cref="TestServer"/> host: <c>AddSharedKernelRequestContext</c> and <c>AddSharedKernelWebApi</c>, then
+    /// <paramref name="configureBuilder"/>, then <c>UseSharedKernelRequestContext()</c> and
+    /// <c>UseSharedKernelWebApi(configurePipeline)</c> — the canonical order since P-579 — then <paramref name="mapEndpoints"/>.
     /// </summary>
     public static Task<WebApplication> StartAsync(
         Action<WebApplication> mapEndpoints,
@@ -80,10 +85,17 @@ internal static class WebApiTestHost
 
         // A service may register MVC before this package; IProblemDetailsService then tries MVC's writer first.
         configureBeforeWebApi?.Invoke(builder);
+        // What an authentication package registers: the caller of the request, through the registered mappers.
+        builder.Services.AddHttpContextAccessor();
+        builder.Services.TryAddScoped<IUserContext>(static services => UserContextResolver.Resolve(
+            services.GetRequiredService<IHttpContextAccessor>().HttpContext?.User,
+            services.GetServices<IUserContextMapper>()));
+        builder.Services.AddSharedKernelRequestContext();
         builder.AddSharedKernelWebApi(configureOptions);
         configureBuilder?.Invoke(builder);
 
         var app = builder.Build();
+        app.UseSharedKernelRequestContext();
         app.UseSharedKernelWebApi(configurePipeline);
         mapEndpoints(app);
 

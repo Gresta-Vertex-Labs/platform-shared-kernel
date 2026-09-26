@@ -104,7 +104,7 @@ public sealed class KeysetTestAggregateConfig : IEntityTypeConfiguration<KeysetT
 
 /// <summary>
 /// Test DbContext scoped to TenantedTestAggregate only.
-/// Uses ITenantProvider (Security.Abstractions) to drive the global tenant query filter.
+/// Its global tenant query filter is driven by IRequestContext.TenantId.
 /// </summary>
 public sealed class TenantedTestDbContext : TenantedDbContext
 {

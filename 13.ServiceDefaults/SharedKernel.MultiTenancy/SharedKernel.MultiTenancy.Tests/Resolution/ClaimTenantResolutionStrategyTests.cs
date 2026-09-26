@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Context;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,7 +17,7 @@ public sealed class ClaimTenantResolutionStrategyTests
 
         var result = await new ClaimTenantResolutionStrategy().TryResolveAsync(context, CancellationToken.None);
 
-        Assert.Equal(tenantId, result);
+        Assert.Equal(tenantId, result?.Value);
     }
 
     [Fact]
@@ -62,9 +63,9 @@ public sealed class ClaimTenantResolutionStrategyTests
         public string AuthenticationType => "Bearer";
 
         public IUserContext Map(ClaimsIdentity identity) =>
-            new UserContext(IdentityKind.User, "subject")
+            new UserContext(ActorKind.User, "subject")
             {
-                TenantId = Guid.TryParse(identity.FindFirst(SecurityClaimTypes.TenantId)?.Value, out Guid tenantId) ? tenantId : null,
+                TenantId = TenantId.TryParse(identity.FindFirst(SecurityClaimTypes.TenantId)?.Value, out TenantId tenantId) ? tenantId : null,
             };
     }
 }

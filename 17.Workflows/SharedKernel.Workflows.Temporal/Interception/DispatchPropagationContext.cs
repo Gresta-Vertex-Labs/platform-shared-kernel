@@ -1,4 +1,4 @@
-using SharedKernel.Workflows.Temporal.Dispatch;
+using SharedKernel.Execution.Tenancy;
 
 namespace SharedKernel.Workflows.Temporal.Interception;
 
@@ -19,7 +19,7 @@ internal static class DispatchPropagationContext
     private static readonly AsyncLocal<TenantScope?> TenantScopeLocal = new();
 
     /// <summary>Gets the tenant scope for the dispatch call currently in flight on this async flow.</summary>
-    public static TenantScope CurrentTenantScope => TenantScopeLocal.Value ?? TenantScope.None;
+    public static TenantScope CurrentTenantScope => TenantScopeLocal.Value ?? TenantScope.Global;
 
     /// <summary>Sets the tenant scope for the dispatch call about to be issued on this async flow.</summary>
     public static void SetTenantScope(TenantScope tenantScope) => TenantScopeLocal.Value = tenantScope;

@@ -10,7 +10,7 @@ Written for `18.Idempotency`'s T-05 (`.Redis`) and T-10 (`.EfCore`) tasks, both 
 ```csharp
 ConnectionMultiplexer.Connect("127.0.0.1:1,abortConnect=false,connectTimeout=300,connectRetry=0,syncTimeout=300");
 ```
-A subsequent `StringSetAsync`/`KeyExpireAsync` call throws a real `RedisConnectionException`/`RedisTimeoutException` within the configured timeout — genuinely exercises `RedisStoreUnavailableClassifier`.
+A subsequent command (the store's `ScriptEvaluateAsync`) throws a real `RedisConnectionException`/`RedisTimeoutException` within the configured timeout — genuinely exercises `RedisStoreUnavailableClassifier`.
 
 **PostgreSQL**: same idea via Npgsql connection-string timeouts:
 ```

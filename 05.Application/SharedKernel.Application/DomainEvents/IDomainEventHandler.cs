@@ -1,19 +1,20 @@
 using SharedKernel.Domain.Events;
 
-namespace SharedKernel.Application;
+namespace SharedKernel.Application.DomainEvents;
 
 /// <summary>
 /// Handles a single domain event of type <typeparamref name="TDomainEvent"/>.
 /// </summary>
 /// <typeparam name="TDomainEvent">The concrete domain event type.</typeparam>
 /// <remarks>
-/// <typeparamref name="TDomainEvent"/> is the raw domain event (<c>03.Domain</c>) — not a MediatR
-/// notification. Consuming services implement this interface directly; they never implement
-/// MediatR's <c>INotificationHandler&lt;&gt;</c> for domain events. If a handler needs to cross the
-/// service boundary, it must inject <c>SharedKernel.Messaging.Abstractions.IEventPublisher</c>
-/// (<c>07.Messaging</c>) and publish an integration event — this package has no reference to
-/// <c>07.Messaging</c> itself; that wiring happens in the consuming service's own handler
-/// implementation.
+/// <typeparamref name="TDomainEvent"/> is the raw domain event (<c>03.Domain</c>). The native
+/// <c>DomainEventDispatcher</c> (<c>SharedKernel.Application.Pipeline</c>) resolves every handler
+/// registered for the event's concrete type through DI and runs them one after another; no mediator
+/// is involved. <c>AddSharedKernelApplication(...)</c> registers the handlers it finds in the scanned
+/// assemblies, and <c>AddDomainEventHandler&lt;TDomainEvent, THandler&gt;()</c> registers one by hand. If
+/// a handler needs to cross the service boundary, it must inject
+/// <c>SharedKernel.Messaging.Abstractions.IEventPublisher</c> (<c>07.Messaging</c>) and publish an
+/// integration event — this package has no reference to <c>07.Messaging</c> itself.
 /// </remarks>
 public interface IDomainEventHandler<in TDomainEvent>
     where TDomainEvent : IDomainEvent

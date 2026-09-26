@@ -7,6 +7,7 @@ using SharedKernel.AI.Abstractions.Exceptions;
 using SharedKernel.AI.Abstractions.Models;
 using SharedKernel.AI.Qdrant.Collections;
 using SharedKernel.AI.Qdrant.Tests.TestSupport;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Testing.Clocks;
 
 namespace SharedKernel.AI.Qdrant.Tests.Collections;
@@ -43,7 +44,7 @@ public sealed class QdrantVectorCollectionNoIoTests
         var collection = CreateCollection(client, TenantedDefinition());
         var record = new TestVectorRecord { Id = "1", ModelId = "model-a", Vector = new float[] { 0.1f, 0.2f } };
 
-        var result = await collection.UpsertAsync(record, TenantScope.None);
+        var result = await collection.UpsertAsync(record, TenantScope.Global);
 
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("intelligence.tenant_scope_missing");
@@ -57,7 +58,7 @@ public sealed class QdrantVectorCollectionNoIoTests
         var collection = CreateCollection(client, UntenantedDefinition());
         var record = new TestVectorRecord { Id = "1", ModelId = "wrong-model", Vector = new float[] { 0.1f, 0.2f } };
 
-        var result = await collection.UpsertAsync(record, TenantScope.None);
+        var result = await collection.UpsertAsync(record, TenantScope.Global);
 
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("intelligence.embedding_model_mismatch");
@@ -71,7 +72,7 @@ public sealed class QdrantVectorCollectionNoIoTests
         var collection = CreateCollection(client, UntenantedDefinition());
         var record = new TestVectorRecord { Id = "1", ModelId = "model-a", Vector = new float[] { 0.1f, 0.2f, 0.3f } };
 
-        var result = await collection.UpsertAsync(record, TenantScope.None);
+        var result = await collection.UpsertAsync(record, TenantScope.Global);
 
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("intelligence.dimension_mismatch");
@@ -88,7 +89,7 @@ public sealed class QdrantVectorCollectionNoIoTests
         var collection = CreateCollection(client, UntenantedDefinition());
         var record = new TestVectorRecord { Id = "1", ModelId = "model-a", Vector = new float[] { 0.1f, 0.2f } };
 
-        await collection.UpsertAsync(record, TenantScope.None);
+        await collection.UpsertAsync(record, TenantScope.Global);
 
         client.ReceivedCalls().Should().NotBeEmpty();
     }
@@ -99,7 +100,7 @@ public sealed class QdrantVectorCollectionNoIoTests
         var client = Substitute.For<IQdrantClient>();
         var collection = CreateCollection(client, TenantedDefinition());
 
-        var result = await collection.GetAsync("1", TenantScope.None);
+        var result = await collection.GetAsync("1", TenantScope.Global);
 
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("intelligence.tenant_scope_missing");
@@ -112,7 +113,7 @@ public sealed class QdrantVectorCollectionNoIoTests
         var client = Substitute.For<IQdrantClient>();
         var collection = CreateCollection(client, UntenantedDefinition());
 
-        var result = await collection.GetAsync("not a valid qdrant id!!", TenantScope.None);
+        var result = await collection.GetAsync("not a valid qdrant id!!", TenantScope.Global);
 
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("intelligence.invalid_record_id");
@@ -126,7 +127,7 @@ public sealed class QdrantVectorCollectionNoIoTests
         var collection = CreateCollection(client, UntenantedDefinition());
         var query = new VectorQuery { Vector = new float[] { 0.1f, 0.2f }, ModelId = "wrong-model" };
 
-        var result = await collection.QueryAsync(query, TenantScope.None);
+        var result = await collection.QueryAsync(query, TenantScope.Global);
 
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("intelligence.embedding_model_mismatch");
@@ -140,7 +141,7 @@ public sealed class QdrantVectorCollectionNoIoTests
         var collection = CreateCollection(client, UntenantedDefinition());
         var query = new VectorQuery { Vector = new float[] { 0.1f, 0.2f, 0.3f }, ModelId = "model-a" };
 
-        var result = await collection.QueryAsync(query, TenantScope.None);
+        var result = await collection.QueryAsync(query, TenantScope.Global);
 
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("intelligence.dimension_mismatch");
@@ -153,7 +154,7 @@ public sealed class QdrantVectorCollectionNoIoTests
         var client = Substitute.For<IQdrantClient>();
         var collection = CreateCollection(client, TenantedDefinition());
 
-        var result = await collection.CountAsync(null, TenantScope.None);
+        var result = await collection.CountAsync(null, TenantScope.Global);
 
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("intelligence.tenant_scope_missing");
@@ -166,7 +167,7 @@ public sealed class QdrantVectorCollectionNoIoTests
         var client = Substitute.For<IQdrantClient>();
         var collection = CreateCollection(client, TenantedDefinition());
 
-        var result = await collection.DeleteByFilterAsync(VectorFilter.Exists("tags"), TenantScope.None);
+        var result = await collection.DeleteByFilterAsync(VectorFilter.Exists("tags"), TenantScope.Global);
 
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("intelligence.tenant_scope_missing");
@@ -181,7 +182,7 @@ public sealed class QdrantVectorCollectionNoIoTests
 
         var act = async () =>
         {
-            await foreach (var _ in collection.ScrollAsync(null, TenantScope.None, batchSize: 10))
+            await foreach (var _ in collection.ScrollAsync(null, TenantScope.Global, batchSize: 10))
             {
             }
         };

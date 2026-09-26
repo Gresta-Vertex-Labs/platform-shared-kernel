@@ -37,7 +37,6 @@ SharedKernel.Caching.Abstractions.CachePolicy.Equals(SharedKernel.Caching.Abstra
 SharedKernel.Caching.Abstractions.CachePolicy.FactoryHardTimeout.get -> System.TimeSpan?
 SharedKernel.Caching.Abstractions.CachePolicy.FactorySoftTimeout.get -> System.TimeSpan?
 SharedKernel.Caching.Abstractions.CachePolicy.FailSafeMaxDuration.get -> System.TimeSpan?
-SharedKernel.Caching.Abstractions.CachePolicy.ForTenant(string! tenantId) -> SharedKernel.Caching.Abstractions.CachePolicy!
 SharedKernel.Caching.Abstractions.CachePolicy.IsFailSafeEnabled.get -> bool
 SharedKernel.Caching.Abstractions.CachePolicy.IsLocalOnly.get -> bool
 SharedKernel.Caching.Abstractions.CachePolicy.IsTenantScoped.get -> bool
@@ -104,20 +103,8 @@ SharedKernel.Caching.Abstractions.IDistributedLockService
 SharedKernel.Caching.Abstractions.IDistributedLockService.TryAcquireAsync(string! resource, SharedKernel.Caching.Abstractions.DistributedLockOptions? options = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Caching.Abstractions.IDistributedLock?>
 SharedKernel.Caching.Abstractions.IDistributedLockService.TryAcquireLeaseAsync(string! resource, System.TimeSpan duration, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Caching.Abstractions.DistributedLease?>
 SharedKernel.Caching.Abstractions.ITenantCacheKeyProvider
-SharedKernel.Caching.Abstractions.ITenantCacheKeyProvider.BuildTenantKey(string! tenantId, string! entity, string! id, params string![]! segments) -> string!
 SharedKernel.Caching.Abstractions.ITenantCacheService
-SharedKernel.Caching.Abstractions.ITenantCacheService.ExpireAsync(string! tenantId, string! entity, string! id, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
-SharedKernel.Caching.Abstractions.ITenantCacheService.GetOrSetAsync<T>(string! tenantId, string! entity, string! id, System.Func<SharedKernel.Caching.Abstractions.CacheFactoryContext!, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<T>>! factory, SharedKernel.Caching.Abstractions.CachePolicy! policy, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<T>
-SharedKernel.Caching.Abstractions.ITenantCacheService.GetOrSetAsync<T>(string! tenantId, string! entity, string! id, System.Func<System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<T>>! factory, SharedKernel.Caching.Abstractions.CachePolicy! policy, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<T>
-SharedKernel.Caching.Abstractions.ITenantCacheService.RemoveAsync(string! tenantId, string! entity, string! id, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
-SharedKernel.Caching.Abstractions.ITenantCacheService.RemoveByTagAsync(string! tenantId, string! tag, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
-SharedKernel.Caching.Abstractions.ITenantCacheService.RemoveTenantAsync(string! tenantId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
-SharedKernel.Caching.Abstractions.ITenantCacheService.SetAsync<T>(string! tenantId, string! entity, string! id, T value, SharedKernel.Caching.Abstractions.CachePolicy! policy, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
-SharedKernel.Caching.Abstractions.ITenantCacheService.TryGetAsync<T>(string! tenantId, string! entity, string! id, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Caching.Abstractions.CacheLookup<T>>
 static SharedKernel.Caching.Abstractions.CacheKeyFormat.BuildKey(string! serviceName, string! entity, string! id, params System.ReadOnlySpan<string!> segments) -> string!
-static SharedKernel.Caching.Abstractions.CacheKeyFormat.BuildTenantKey(string! serviceName, string! tenantId, string! entity, string! id, params System.ReadOnlySpan<string!> segments) -> string!
-static SharedKernel.Caching.Abstractions.CacheKeyFormat.BuildTenantTag(string! tenantId, string! tag) -> string!
-static SharedKernel.Caching.Abstractions.CacheKeyFormat.BuildTenantWideTag(string! tenantId) -> string!
 static SharedKernel.Caching.Abstractions.CacheKeyFormat.Escape(string! part) -> string!
 static SharedKernel.Caching.Abstractions.CacheKeyFormat.IsValidServiceName(string? serviceName) -> bool
 static SharedKernel.Caching.Abstractions.CacheLookup<T>.Hit(T value) -> SharedKernel.Caching.Abstractions.CacheLookup<T>
@@ -136,3 +123,16 @@ static SharedKernel.Caching.Abstractions.DistributedLockOptions.Default.get -> S
 static SharedKernel.Caching.Abstractions.DistributedLockOptions.operator !=(SharedKernel.Caching.Abstractions.DistributedLockOptions? left, SharedKernel.Caching.Abstractions.DistributedLockOptions? right) -> bool
 static SharedKernel.Caching.Abstractions.DistributedLockOptions.operator ==(SharedKernel.Caching.Abstractions.DistributedLockOptions? left, SharedKernel.Caching.Abstractions.DistributedLockOptions? right) -> bool
 static SharedKernel.Caching.Abstractions.DistributedLockUnavailableException.ForResource(string! resource, System.Exception? innerException = null) -> SharedKernel.Caching.Abstractions.DistributedLockUnavailableException!
+SharedKernel.Caching.Abstractions.CachePolicy.ForTenant(SharedKernel.Execution.Tenancy.TenantId tenantId) -> SharedKernel.Caching.Abstractions.CachePolicy!
+SharedKernel.Caching.Abstractions.ITenantCacheKeyProvider.BuildTenantKey(SharedKernel.Execution.Tenancy.TenantId tenantId, string! entity, string! id, params string![]! segments) -> string!
+SharedKernel.Caching.Abstractions.ITenantCacheService.ExpireAsync(SharedKernel.Execution.Tenancy.TenantId tenantId, string! entity, string! id, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SharedKernel.Caching.Abstractions.ITenantCacheService.GetOrSetAsync<T>(SharedKernel.Execution.Tenancy.TenantId tenantId, string! entity, string! id, System.Func<SharedKernel.Caching.Abstractions.CacheFactoryContext!, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<T>>! factory, SharedKernel.Caching.Abstractions.CachePolicy! policy, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<T>
+SharedKernel.Caching.Abstractions.ITenantCacheService.GetOrSetAsync<T>(SharedKernel.Execution.Tenancy.TenantId tenantId, string! entity, string! id, System.Func<System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<T>>! factory, SharedKernel.Caching.Abstractions.CachePolicy! policy, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<T>
+SharedKernel.Caching.Abstractions.ITenantCacheService.RemoveAsync(SharedKernel.Execution.Tenancy.TenantId tenantId, string! entity, string! id, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SharedKernel.Caching.Abstractions.ITenantCacheService.RemoveByTagAsync(SharedKernel.Execution.Tenancy.TenantId tenantId, string! tag, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SharedKernel.Caching.Abstractions.ITenantCacheService.RemoveTenantAsync(SharedKernel.Execution.Tenancy.TenantId tenantId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SharedKernel.Caching.Abstractions.ITenantCacheService.SetAsync<T>(SharedKernel.Execution.Tenancy.TenantId tenantId, string! entity, string! id, T value, SharedKernel.Caching.Abstractions.CachePolicy! policy, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+SharedKernel.Caching.Abstractions.ITenantCacheService.TryGetAsync<T>(SharedKernel.Execution.Tenancy.TenantId tenantId, string! entity, string! id, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<SharedKernel.Caching.Abstractions.CacheLookup<T>>
+static SharedKernel.Caching.Abstractions.CacheKeyFormat.BuildTenantKey(string! serviceName, SharedKernel.Execution.Tenancy.TenantId tenantId, string! entity, string! id, params System.ReadOnlySpan<string!> segments) -> string!
+static SharedKernel.Caching.Abstractions.CacheKeyFormat.BuildTenantTag(SharedKernel.Execution.Tenancy.TenantId tenantId, string! tag) -> string!
+static SharedKernel.Caching.Abstractions.CacheKeyFormat.BuildTenantWideTag(SharedKernel.Execution.Tenancy.TenantId tenantId) -> string!

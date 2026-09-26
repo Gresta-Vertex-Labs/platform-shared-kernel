@@ -1,4 +1,5 @@
-using SharedKernel.Application;
+using SharedKernel.Application.Messaging;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Search.Abstractions.Models;
 using SharedKernel.Search.ElasticSearch.Analytics;
@@ -10,7 +11,7 @@ namespace CatalogApi.Features.BackOffice;
 /// else; the gap is absence, not degree, which is why this contract lives in the provider package rather than being
 /// watered down into the neutral surface.
 /// </summary>
-public sealed record GetRevenueByRegion(string TenantId) : IQuery<AggregationResultSet>;
+public sealed record GetRevenueByRegion(TenantId TenantId) : IQuery<AggregationResultSet>;
 
 public sealed class GetRevenueByRegionHandler(IAnalyticsSearch<OrderLineDocument> analytics)
     : IQueryHandler<GetRevenueByRegion, AggregationResultSet>
@@ -33,6 +34,6 @@ public sealed class GetRevenueByRegionHandler(IAnalyticsSearch<OrderLineDocument
             AggregationRequest.Cardinality(DistinctCategories, OrderLineFields.Category),
         };
 
-        return analytics.AggregateAsync(filter: null, aggregations, TenantScope.Of(query.TenantId), cancellationToken);
+        return analytics.AggregateAsync(filter: null, aggregations, TenantScope.For(query.TenantId), cancellationToken);
     }
 }

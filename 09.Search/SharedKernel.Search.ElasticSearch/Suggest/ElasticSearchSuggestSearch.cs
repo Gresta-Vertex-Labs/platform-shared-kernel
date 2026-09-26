@@ -3,6 +3,7 @@ using Elastic.Clients.Elasticsearch;
 using Elastic.Clients.Elasticsearch.Core.Search;
 using Elastic.Clients.Elasticsearch.QueryDsl;
 using Microsoft.Extensions.Logging;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Search.Abstractions.Abstractions;
 using SharedKernel.Search.Abstractions.Constants;
@@ -83,7 +84,7 @@ internal sealed class ElasticSearchSuggestSearch<TDocument> : ISuggestSearch<TDo
 
         // Same fail-closed rule as every read on the neutral contract: a tenanted index must never be
         // suggested from without a tenant, or one tenant's content completes another tenant's typing.
-        if (_definition.TenantField is not null && string.IsNullOrEmpty(tenantScope.Value))
+        if (_definition.TenantField is not null && tenantScope.IsGlobal)
         {
             _logger.ElasticSearchTenantScopeMissing(_definition.Name);
             return Result<IReadOnlyList<SearchSuggestion>>.Failure(
@@ -110,7 +111,7 @@ internal sealed class ElasticSearchSuggestSearch<TDocument> : ISuggestSearch<TDo
                 Contexts = _definition.TenantField is { } tenantField
                     ? new Dictionary<Field, ICollection<CompletionContext>>()
                     {
-                        [tenantField] = [new CompletionContext { Context = new Context(tenantScope.Value) }],
+                        [tenantField] = [new CompletionContext { Context = new Context(tenantScope.Tenant!.Value.ToString()) }],
                     }
                     : null,
             },

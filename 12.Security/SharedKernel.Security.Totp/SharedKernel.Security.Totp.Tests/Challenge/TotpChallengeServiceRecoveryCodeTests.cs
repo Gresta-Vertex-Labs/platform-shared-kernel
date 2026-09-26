@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Context;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Cryptography.Extensions;
@@ -276,7 +277,7 @@ public sealed class TotpChallengeServiceRecoveryCodeTests
         var store = new ControllableRecoveryCodeStore(_harness.RecoveryCodes);
         IUserContext user = caller switch
         {
-            "ServicePrincipal" => new FakeUserContext { IdentityKind = IdentityKind.ServicePrincipal, SessionId = "session-1" },
+            "ServicePrincipal" => new FakeUserContext { ActorKind = ActorKind.Service, SessionId = "session-1" },
             "Anonymous" => AnonymousUserContext.Instance,
             "System" => SystemUserContext.Instance,
             _ => TotpTestHarness.User(sessionId: null),

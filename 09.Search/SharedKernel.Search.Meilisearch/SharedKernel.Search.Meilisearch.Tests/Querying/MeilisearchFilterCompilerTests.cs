@@ -1,4 +1,5 @@
 using FluentAssertions;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Search.Abstractions.Models;
 using SharedKernel.Search.Meilisearch.Querying;
 
@@ -225,10 +226,10 @@ public sealed class MeilisearchFilterCompilerTests
     {
         var definition = TenantedDefinition();
 
-        var result = MeilisearchFilterCompiler.CompileWithTenantScope(definition, null, TenantScope.Of("tenant-a"));
+        var result = MeilisearchFilterCompiler.CompileWithTenantScope(definition, null, TenantScope.For(TestTenants.TenantA));
 
         result.IsSuccess.Should().BeTrue();
-        result.Value.Should().Be("tenantId = \"tenant-a\"");
+        result.Value.Should().Be($"tenantId = \"{TestTenants.TenantA}\"");
     }
 
     [Fact]
@@ -237,10 +238,10 @@ public sealed class MeilisearchFilterCompilerTests
         var definition = TenantedDefinition();
         var callerFilter = SearchFilter.Eq("status", SearchValue.From("active"));
 
-        var result = MeilisearchFilterCompiler.CompileWithTenantScope(definition, callerFilter, TenantScope.Of("tenant-a"));
+        var result = MeilisearchFilterCompiler.CompileWithTenantScope(definition, callerFilter, TenantScope.For(TestTenants.TenantA));
 
         result.IsSuccess.Should().BeTrue();
-        result.Value.Should().Be("(tenantId = \"tenant-a\") AND (status = \"active\")");
+        result.Value.Should().Be($"(tenantId = \"{TestTenants.TenantA}\") AND (status = \"active\")");
     }
 
     [Fact]
@@ -251,10 +252,10 @@ public sealed class MeilisearchFilterCompilerTests
             SearchFilter.Eq("status", SearchValue.From("active")),
             SearchFilter.Eq("status", SearchValue.From("pending")));
 
-        var result = MeilisearchFilterCompiler.CompileWithTenantScope(definition, callerFilter, TenantScope.Of("tenant-a"));
+        var result = MeilisearchFilterCompiler.CompileWithTenantScope(definition, callerFilter, TenantScope.For(TestTenants.TenantA));
 
         result.IsSuccess.Should().BeTrue();
-        result.Value.Should().StartWith("(tenantId = \"tenant-a\") AND (");
+        result.Value.Should().StartWith($"(tenantId = \"{TestTenants.TenantA}\") AND (");
     }
 
     [Fact]
@@ -262,18 +263,18 @@ public sealed class MeilisearchFilterCompilerTests
     {
         var definition = SearchIndexDefinition.Create("products", []).Value; // no TenantField declared
 
-        var result = MeilisearchFilterCompiler.CompileWithTenantScope(definition, null, TenantScope.Of("tenant-a"));
+        var result = MeilisearchFilterCompiler.CompileWithTenantScope(definition, null, TenantScope.For(TestTenants.TenantA));
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().BeNull();
     }
 
     [Fact]
-    public void CompileWithTenantScope_OnTenantedIndex_WithTenantScopeNone_FailsClosed_WithTenantScopeMissing()
+    public void CompileWithTenantScope_OnTenantedIndex_WithTenantScopeGlobal_FailsClosed_WithTenantScopeMissing()
     {
         var definition = TenantedDefinition();
 
-        var result = MeilisearchFilterCompiler.CompileWithTenantScope(definition, null, TenantScope.None);
+        var result = MeilisearchFilterCompiler.CompileWithTenantScope(definition, null, TenantScope.Global);
 
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("search.tenant_scope_missing");

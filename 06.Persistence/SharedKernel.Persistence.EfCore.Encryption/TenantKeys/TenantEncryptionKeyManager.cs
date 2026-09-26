@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharedKernel.Cryptography.Symmetric;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Encryption.Diagnostics;
 using SharedKernel.Persistence.EfCore.Encryption.Interception;
@@ -23,20 +24,20 @@ internal sealed class TenantEncryptionKeyManager<TContext>(
 {
     private const string ShredOperation = "ITenantEncryptionKeyManager.ShredTenantAsync";
 
-    public async Task EnsureTenantKeyAsync(Guid tenantId, CancellationToken cancellationToken = default)
+    public async Task EnsureTenantKeyAsync(TenantId tenantId, CancellationToken cancellationToken = default)
     {
-        ArgumentOutOfRangeException.ThrowIfEqual(tenantId, Guid.Empty);
-        var entry = await runtime.TenantKeys.GetAsync(tenantId, runtime.SideConnection(context), create: true, cancellationToken).ConfigureAwait(false);
+        var id = RequireTenant(tenantId);
+        var entry = await runtime.TenantKeys.GetAsync(id, runtime.SideConnection(context), create: true, cancellationToken).ConfigureAwait(false);
         if (entry is null || entry.IsShredded)
             throw new TenantKeyShreddedException();
     }
 
     public async Task<TenantShredResult> ShredTenantAsync(
-        Guid tenantId,
+        TenantId tenantId,
         TenantShredOptions? options = null,
         CancellationToken cancellationToken = default)
     {
-        ArgumentOutOfRangeException.ThrowIfEqual(tenantId, Guid.Empty);
+        var id = RequireTenant(tenantId);
         options ??= new TenantShredOptions();
         MaintenanceSession.RequireCrossTenantScope(context, services, ShredOperation);
 
@@ -62,9 +63,9 @@ internal sealed class TenantEncryptionKeyManager<TContext>(
             {
                 // The tombstone first: it takes the key row's lock, so every in-flight save of the tenant (which holds a
                 // share lock on the same row) has committed before the scan below, and none starts until this commits.
-                await runtime.TenantKeys.ShredAsync(tenantId, session.Connection, transaction, cancellationToken).ConfigureAwait(false);
+                await runtime.TenantKeys.ShredAsync(id, session.Connection, transaction, cancellationToken).ConfigureAwait(false);
 
-                remaining = await CountValuesOutsideTenantKeyAsync(session.Connection, transaction, targets, tenantId, cancellationToken)
+                remaining = await CountValuesOutsideTenantKeyAsync(session.Connection, transaction, targets, id, cancellationToken)
                     .ConfigureAwait(false);
                 if ((remaining.RootKey > 0 || remaining.Plaintext > 0) && !options.AllowIncompleteErasure)
                 {
@@ -73,7 +74,7 @@ internal sealed class TenantEncryptionKeyManager<TContext>(
                 }
 
                 foreach (var target in targets.Where(t => t.BlindIndexColumn is not null))
-                    cleared += await ClearBlindIndexAsync(session.Connection, transaction, target, tenantId, cancellationToken).ConfigureAwait(false);
+                    cleared += await ClearBlindIndexAsync(session.Connection, transaction, target, id, cancellationToken).ConfigureAwait(false);
 
                 await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
             }
@@ -83,7 +84,7 @@ internal sealed class TenantEncryptionKeyManager<TContext>(
             }
         }
 
-        runtime.TenantKeys.MarkShredded(tenantId);
+        runtime.TenantKeys.MarkShredded(id);
         EncryptionMeter.RecordTenantKeyShredded();
         EncryptionLog.TenantKeyShredded(logger, cleared);
         if (remaining.RootKey > 0 || remaining.Plaintext > 0)
@@ -134,6 +135,11 @@ internal sealed class TenantEncryptionKeyManager<TContext>(
         AddTenantParameter(command, tenantId);
         return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
+
+    private static Guid RequireTenant(TenantId tenantId) =>
+        tenantId.IsDefault
+            ? throw new ArgumentException("An unset TenantId (default) names no tenant.", nameof(tenantId))
+            : tenantId.Value;
 
     private static void AddTenantParameter(DbCommand command, Guid tenantId)
     {

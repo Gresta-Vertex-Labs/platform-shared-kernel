@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using SharedKernel.Cryptography.Symmetric;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.EfCore.Encryption.Maintenance;
 using SharedKernel.Persistence.EfCore.Encryption.Tests.Fixtures;
@@ -14,8 +15,8 @@ namespace SharedKernel.Persistence.EfCore.Encryption.Tests.Integration;
 [Collection("EncryptionPostgres")]
 public sealed class MaintenanceTests(PostgreSqlContainerFixture fixture)
 {
-    private readonly Guid _tenantA = Guid.NewGuid();
-    private readonly Guid _tenantB = Guid.NewGuid();
+    private readonly TenantId _tenantA = new TenantId(Guid.NewGuid());
+    private readonly TenantId _tenantB = new TenantId(Guid.NewGuid());
 
     private string Cs(string db) => EncryptionHost.Database(fixture.ConnectionString, db);
 
@@ -37,7 +38,7 @@ public sealed class MaintenanceTests(PostgreSqlContainerFixture fixture)
                 {
                     TenantId = tenant,
                     Name = $"c{i}",
-                    Email = $"user{i}@{tenant:N}.example",
+                    Email = $"user{i}@{tenant.Value:N}.example",
                     Note = i == 0 ? null : "note",
                     Billing = new Address { City = "x", Bank = new BankAccount { Iban = $"TR{i} 0001" } },
                 });
@@ -80,7 +81,7 @@ public sealed class MaintenanceTests(PostgreSqlContainerFixture fixture)
         verify.RowsScanned.Should().Be(10);
 
         await using var scope = v2.CreateAsyncScope();
-        (await scope.ServiceProvider.GetRequiredService<CustomerDbContext>().Customers.WhereEncryptedEquals(x => x.Email, $"user1@{_tenantA:N}.example").SingleAsync())
+        (await scope.ServiceProvider.GetRequiredService<CustomerDbContext>().Customers.WhereEncryptedEquals(x => x.Email, $"user1@{_tenantA.Value:N}.example").SingleAsync())
             .Note.Should().Be("note");
     }
 
@@ -167,7 +168,7 @@ public sealed class MaintenanceTests(PostgreSqlContainerFixture fixture)
 
         await using (var scope = sp.CreateAsyncScope())
         {
-            (await scope.ServiceProvider.GetRequiredService<CustomerDbContext>().Customers.WhereEncryptedEquals(x => x.Email, $"user0@{_tenantA:N}.example").CountAsync())
+            (await scope.ServiceProvider.GetRequiredService<CustomerDbContext>().Customers.WhereEncryptedEquals(x => x.Email, $"user0@{_tenantA.Value:N}.example").CountAsync())
                 .Should().Be(1, "rows still indexed under v1 are found while v1 is configured");
         }
 

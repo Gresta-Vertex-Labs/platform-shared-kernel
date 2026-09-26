@@ -2,6 +2,7 @@ using SharedKernel.Domain.Abstractions;
 using SharedKernel.Domain.Aggregates;
 using SharedKernel.Domain.Events;
 using SharedKernel.Domain.StronglyTypedIds;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Clocks;
 
 namespace SharedKernel.Persistence.EfCore.Tests.TestFixtures;
@@ -133,9 +134,9 @@ public sealed record TenantedTestId(Guid Value) : StronglyTypedId<Guid>(Value)
 public sealed class TenantedTestAggregate : AggregateRoot<TenantedTestId>, IHasTenant
 {
     public string Name { get; private set; } = string.Empty;
-    public Guid TenantId { get; private set; }
+    public TenantId TenantId { get; private set; }
 
-    public TenantedTestAggregate(TenantedTestId id, string name, Guid tenantId, IClock clock)
+    public TenantedTestAggregate(TenantedTestId id, string name, TenantId tenantId, IClock clock)
         : base(id, clock)
     {
         Name = name;
@@ -153,10 +154,10 @@ public sealed class SoftDeletableTenantedAggregate
     : AuditableSoftDeletableAggregateRoot<TenantedTestId>, IHasTenant
 {
     public string Name { get; private set; } = string.Empty;
-    public Guid TenantId { get; private set; }
+    public TenantId TenantId { get; private set; }
 
     public SoftDeletableTenantedAggregate(
-        TenantedTestId id, string name, Guid tenantId, IClock clock)
+        TenantedTestId id, string name, TenantId tenantId, IClock clock)
             : base(id, clock)
     {
         Name = name;

@@ -17,8 +17,8 @@ certificate to a registered client, its tenant, roles and permissions. Applicati
 
 | 🔗 Chain first | 🪪 Your registry decides | 🧩 One identity model | 🛡️ Cannot be skipped |
 | --- | --- | --- | --- |
-| System trust or a private CA | `IMtlsCertificateValidator` maps a certificate to a client | `IUserContext` as a `ServicePrincipal` | Validator runs before application certificate events |
-| Online revocation by default | Tenant, roles and permissions from your data | `ITenantProvider` from the same result | Replaced events fail startup |
+| System trust or a private CA | `IMtlsCertificateValidator` maps a certificate to a client | `IUserContext` as `ActorKind.Service` | Validator runs before application certificate events |
+| Online revocation by default | Tenant, roles and permissions from your data | `TenantId?` from the same result | Replaced events fail startup |
 | Client-authentication usage required | Short failure reasons, logged with the thumbprint | `x5t#S256` thumbprint claim | Defaults never weaker than ASP.NET Core's |
 
 ## Contents
@@ -43,6 +43,7 @@ dotnet add package SharedKernel.Security.Mtls
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
+| Tier | Host (references ASP.NET Core; reference it from the host project only) |
 | Dependencies | [`SharedKernel.Security.Abstractions`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/12.Security/SharedKernel.Security.Abstractions), [`Microsoft.AspNetCore.Authentication.Certificate`](https://www.nuget.org/packages/Microsoft.AspNetCore.Authentication.Certificate), the ASP.NET Core shared framework |
 | Registration | `services.AddMtlsAuthentication<TValidator>(configure)` |
 
@@ -50,7 +51,7 @@ dotnet add package SharedKernel.Security.Mtls
 | --- | --- |
 | [`SharedKernel.ServiceDefaults.Security.Mtls`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/13.ServiceDefaults/SharedKernel.ServiceDefaults.Security.Mtls) | Kestrel client certificate negotiation, and certificates forwarded by a TLS-terminating proxy |
 | [`SharedKernel.Security.Oidc`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/12.Security/SharedKernel.Security.Oidc) | Bearer tokens, including certificate-bound tokens (RFC 8705) |
-| [`SharedKernel.Presentation.WebApi`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/14.Presentation/SharedKernel.Presentation.WebApi) | `[RequireRole]` and `[RequireEndpointPermission]` on endpoints |
+| [`SharedKernel.Presentation.WebApi`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/14.Presentation/SharedKernel.Presentation.WebApi) | `[RequireRole]` and `[RequireEndpointPermission]` on endpoints (attributes from `SharedKernel.Presentation.Core`, namespace `SharedKernel.Presentation.Authorization`; enforced here) |
 
 ## Quick start
 
@@ -171,7 +172,7 @@ sequenceDiagram
     H->>H: Principal from the validator result
     H->>E: CertificateValidated (optional)
     H-->>A: Authenticated as "Certificate"
-    A->>A: IUserContext is a ServicePrincipal
+    A->>A: IUserContext is ActorKind.Service
 ```
 
 The handler builds a new principal from the validator's result. The claims ASP.NET Core derives from the certificate
@@ -259,10 +260,11 @@ using System.Data.Common;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using Microsoft.Extensions.Caching.Memory;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Security.Mtls.Validation;
 
 public sealed record RegisteredClient(
-    string ClientId, Guid? TenantId, string[] Roles, string[] Permissions, bool Revoked);
+    string ClientId, TenantId? TenantId, string[] Roles, string[] Permissions, bool Revoked);
 
 public interface IClientCertificateStore
 {
@@ -323,7 +325,7 @@ public sealed class PostgresClientCertificateStore(DbDataSource database) : ICli
 
         return new RegisteredClient(
             ClientId: reader.GetString(0),
-            TenantId: reader.IsDBNull(1) ? null : reader.GetGuid(1),
+            TenantId: reader.IsDBNull(1) ? null : new TenantId(reader.GetGuid(1)),
             Roles: reader.GetFieldValue<string[]>(2),
             Permissions: reader.GetFieldValue<string[]>(3),
             Revoked: reader.GetBoolean(4));
@@ -398,6 +400,7 @@ the partner's authorization number in the subject's `organizationIdentifier` att
 
 ```csharp
 using System.Security.Cryptography.X509Certificates;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Security.Mtls.Validation;
 
 /// <summary>A partner approved during onboarding.</summary>
@@ -405,7 +408,7 @@ public sealed record PartnerRegistration(
     string ClientId,
     string OrganizationIdentifier, // e.g. "PSDGB-FCA-123456"
     string IssuerName,             // issuer DN of the certificate presented at onboarding
-    Guid TenantId,
+    TenantId TenantId,
     string[] Roles,                // e.g. ["aisp"], from the regulator's register, not the certificate
     string[] Permissions,
     bool Suspended);
@@ -810,7 +813,7 @@ public sealed class PartnerEndpointTests : IDisposable
         using HttpResponseMessage response = await SendAsync(host, certificate);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal("ServicePrincipal:partner-a", await response.Content.ReadAsStringAsync());
+        Assert.Equal("Service:partner-a", await response.Content.ReadAsStringAsync());
     }
 
     [Fact]
@@ -858,7 +861,7 @@ public sealed class PartnerEndpointTests : IDisposable
                     app.UseAuthentication();
                     app.UseAuthorization();
                     app.UseEndpoints(endpoints => endpoints
-                        .MapGet("/partner", (IUserContext caller) => $"{caller.IdentityKind}:{caller.ClientId}")
+                        .MapGet("/partner", (IUserContext caller) => $"{caller.ActorKind}:{caller.ClientId}")
                         .RequireAuthorization(new AuthorizeAttribute
                         {
                             AuthenticationSchemes = MtlsAuthenticationDefaults.AuthenticationScheme,
@@ -912,11 +915,10 @@ IServiceCollection AddMtlsAuthentication<TValidator>(
 | `MtlsAuthenticationOptions` | From `configure`, validated when the host starts |
 | `IUserContextMapper` | Maps identities of the `Certificate` scheme |
 | `IUserContext` | Scoped, resolved from `HttpContext.User` through the registered mappers. An earlier registration wins, except an `AnonymousUserContext` instance placeholder, which is replaced |
-| `ITenantProvider` | `UserContextTenantProvider`, scoped. An earlier registration wins |
 | `IHttpContextAccessor` | Added |
 
 The scheme name is fixed, so call `AddMtlsAuthentication` once per host. Outside a request, `IUserContext` resolves
-to `AnonymousUserContext.Instance` and `ITenantProvider.TenantId` to `Guid.Empty`.
+to `AnonymousUserContext.Instance`, whose `TenantId` is `null`.
 
 ### Options
 
@@ -959,7 +961,7 @@ public interface IMtlsCertificateValidator
 
 | Member | Description |
 | --- | --- |
-| `MtlsValidationResult.Success(clientId, tenantId = null, roles = null, permissions = null)` | Accepts the certificate. Throws `ArgumentException` for an empty or whitespace `clientId`, or a `tenantId` of `Guid.Empty` (pass `null` for no tenant) |
+| `MtlsValidationResult.Success(clientId, tenantId = null, roles = null, permissions = null)` | Accepts the certificate. Throws `ArgumentException` for an empty or whitespace `clientId`, or a `default(TenantId)` tenant (pass `null` for no tenant) |
 | `MtlsValidationResult.Failure(reason = "Rejected")` | Rejects it. `reason` is a short, non-secret code for logs, such as `UnknownClient`; empty throws |
 | `IsValid`, `ClientId`, `TenantId`, `Roles`, `Permissions`, `FailureReason` | The result's values; `Roles` and `Permissions` are never null |
 
@@ -976,13 +978,13 @@ adds), with authentication type `Certificate`:
 | `sub` | `ClientId` | `SubjectId` |
 | `client_id` | `ClientId` | `ClientId` |
 | `x5t#S256` (`MtlsAuthenticationDefaults.CertificateThumbprintClaimType`) | Base64url SHA-256 of the DER certificate, 43 characters | `FindClaim(...)` |
-| `tenant_id` | `TenantId`, when set | `TenantId`, and `ITenantProvider.TenantId` |
+| `tenant_id` | `TenantId`, when set | `TenantId`, and `IRequestContext.TenantId` |
 | `roles` | One claim per role | `Roles`, `HasRole` (ordinal) |
 | `scope` | One claim per permission | `Permissions`, `HasPermission` (ordinal) |
 
 | `IUserContext` member | Certificate caller |
 | --- | --- |
-| `IdentityKind` | `ServicePrincipal` |
+| `ActorKind` | `Service` |
 | `IsAuthenticated` | `true` |
 | `AuthenticationMethods`, `AuthTime`, `AuthContextClassReference` | Empty (unless a claims transformation adds `amr` claims, dated by `amr_time`), `null`, `null` |
 | `SessionId`, `Name`, `Email` | `null` |
@@ -1103,13 +1105,13 @@ ENDPOINTS    Policy with .AddAuthenticationSchemes(MtlsAuthenticationDefaults.Au
              .RequireAuthenticatedUser(), or [Authorize(AuthenticationSchemes = MtlsAuthenticationDefaults.AuthenticationScheme)].
 VALIDATOR    class : IMtlsCertificateValidator; ValueTask<MtlsValidationResult> ValidateAsync(X509Certificate2, CancellationToken).
              Scoped. Runs only after chain/revocation/usage/validity checks pass. Map to a REGISTERED client or Failure.
-RESULT       MtlsValidationResult.Success(clientId, tenantId?, roles?, permissions?) (no empty clientId, no Guid.Empty);
+RESULT       MtlsValidationResult.Success(clientId, tenantId?, roles?, permissions?) (no empty clientId, no default(TenantId));
              MtlsValidationResult.Failure("ShortCode").
 IDENTIFY     Thumbprint: certificate.GetCertHashString(HashAlgorithmName.SHA256). Subject attributes:
              SubjectName.EnumerateRelativeDistinguishedNames(). Never string-split Subject; never SHA-1 Thumbprint.
 PRIVATE CA   options.ChainTrustValidationMode = X509ChainTrustMode.CustomRootTrust; options.CustomTrustStore.Add(root/intermediates).
              No CRL/OCSP: options.RevocationMode = X509RevocationMode.NoCheck and revoke in the validator.
-CALLER       Inject IUserContext: IdentityKind.ServicePrincipal, SubjectId == ClientId, TenantId, Roles, Permissions,
+CALLER       Inject IUserContext: ActorKind.Service, SubjectId == ClientId, TenantId (TenantId?), Roles, Permissions,
              FindClaim(MtlsAuthenticationDefaults.CertificateThumbprintClaimType) = Base64url SHA-256.
 KESTREL      ConfigureHttpsDefaults: ClientCertificateMode + AllowAnyClientCertificate(), or
              builder.AddMtlsClientCertificate(mode) from SharedKernel.ServiceDefaults.Security.Mtls (fast validator only).
@@ -1131,7 +1133,7 @@ FORBIDDEN    AllowedCertificateTypes.All/SelfSigned for a CA; reading Connection
 - **Public API is tracked** with `Microsoft.CodeAnalysis.PublicApiAnalyzers`; changes are deliberate and reviewed.
 - **Every public member is documented**; an undocumented member fails the build.
 - **Defaults are never weaker than ASP.NET Core's** certificate authentication defaults, and a test holds them equal.
-- **Order-independent composition:** `IUserContext` and `ITenantProvider` registered by you or another package are
+- **Order-independent composition:** an `IUserContext` registered by you or another package is
   kept; each authentication package maps only its own scheme.
 - **Fails at startup, not at the first request,** for contradictory trust settings and replaced events.
 

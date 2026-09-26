@@ -1,13 +1,15 @@
 # SharedKernel.Presentation.SignalR
 
 > **SignalR on the platform's error contract: hub errors carry the error code and the same message an HTTP problem
-> would, hub methods may return `Result`, and the WebApi authorization attributes guard hubs and hub methods.**
+> would, hub methods may return `Result`, the shared authorization attributes guard hubs and hub methods, and every hub
+> method runs in the caller's request context.**
 
 One call sets up a hub host that presents errors the way
 [`SharedKernel.Presentation.WebApi`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/14.Presentation/SharedKernel.Presentation.WebApi)
 presents them over HTTP, enforces its authorization requirements, and limits how often a connection may invoke hub
-methods. It builds on the WebApi core (error presentation, authorization, correlation ids) and has no third-party
-dependencies.
+methods. It builds on the WebApi core and `SharedKernel.Presentation.Core` (error presentation, authorization), carries
+the request context of `SharedKernel.ServiceDefaults.Security`'s `UseSharedKernelRequestContext()` (caller, tenant,
+correlation id) into every hub invocation, and has no third-party dependencies.
 
 ## Install
 
@@ -18,32 +20,39 @@ dotnet add package SharedKernel.Presentation.SignalR
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
-| Dependencies | `SharedKernel.Presentation.WebApi`, `SharedKernel.Primitives`, `SharedKernel.Core`, `SharedKernel.Configuration`, `SharedKernel.Security.Abstractions`, the ASP.NET Core shared framework |
+| Tier | Host (referenced by a service's API project) |
+| Dependencies | `SharedKernel.Presentation.WebApi`, `SharedKernel.Presentation.Core`, `SharedKernel.Primitives`, `SharedKernel.Core`, `SharedKernel.Configuration`, `SharedKernel.Execution`, the ASP.NET Core shared framework |
+| Composed with | `SharedKernel.ServiceDefaults.Security` (the request context), which the host adds itself |
 | Third-party packages | none |
 
 ## Setup
 
 ```csharp
+using SharedKernel.Presentation.Authorization;   // RequireEndpointPermission
 using SharedKernel.Presentation.SignalR;
 using SharedKernel.Presentation.WebApi;
+using SharedKernel.ServiceDefaults.Security;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddSharedKernelWebApi();    // error presentation, authorization, correlation ids, CORS
+builder.Services.AddSharedKernelRequestContext();   // the caller, tenant and correlation id of each connection
+builder.AddSharedKernelWebApi();    // error presentation, authorization, CORS
 builder.AddSharedKernelSignalR()    // SignalR, the hub filters and the authorization policies
     .AddStackExchangeRedis("redis:6379");   // optional scale-out, the usual way
 
 var app = builder.Build();
 
-app.UseSharedKernelWebApi();        // correlation ids, CORS, authentication, authorization
+app.UseSharedKernelRequestContext(); // first: the request's RequestContextScope and correlation id
+app.UseSharedKernelWebApi();        // CORS, authentication, authorization
 app.MapHub<OrdersHub>("/hubs/orders", options => options.CloseOnAuthenticationExpiration = true)
     .RequireEndpointPermission("orders.read");
 
 app.Run();
 ```
 
-- `AddSharedKernelSignalR()` calls `AddSignalR()`, registers the WebApi authorization policies and adds two global hub
-  filters: the error mapping, and inside it the invocation rate limit. It returns SignalR's own `ISignalRServerBuilder`, for
+- `AddSharedKernelSignalR()` calls `AddSignalR()`, registers the shared authorization policies (with WebApi's problem
+  body for a refused negotiate request) and adds three global hub filters: the request context outermost, then the
+  error mapping, and inside it the invocation rate limit. It returns SignalR's own `ISignalRServerBuilder`, for
   protocols or a backplane (`AddStackExchangeRedis` comes from `Microsoft.AspNetCore.SignalR.StackExchangeRedis`).
 - It binds `SharedKernel:Presentation:SignalR` and validates it when the host starts; the `configure` callback runs
   after binding. It is idempotent.
@@ -166,7 +175,8 @@ unredacted; keep it off outside Development.
 
 ## Authorization
 
-The WebApi requirement attributes are `[Authorize]` attributes, so SignalR enforces them natively:
+The requirement attributes (`SharedKernel.Presentation.Core`, `using SharedKernel.Presentation.Authorization;`) are
+`[Authorize]` attributes, so SignalR enforces them natively:
 
 - On a hub class or a `MapHub<T>()` endpoint they guard the connection, which is refused with 401 or 403 and the
   platform's problem body.
@@ -216,7 +226,16 @@ then sustain it. One connection exhausting its bucket never slows another.
 The keys and rules are in
 [CONFIGURATION.md](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/14.Presentation/CONFIGURATION.md#sharedkernelpresentationsignalr).
 
-## Tenant and correlation id
+## The caller, tenant and correlation id
+
+A hub invocation does not run in the execution flow of the request that opened the connection, so the
+`RequestContextScope` that `UseSharedKernelRequestContext()` opened for that request is not ambient there by itself.
+`AddSharedKernelSignalR()`'s outermost hub filter captures that request's `IRequestContext` when the connection opens
+and reopens it around the connect handler, every hub method and the disconnect handler (P-579). Hub code, and
+everything it calls — `ISender`, repositories, outbound calls, log enrichment — reads the caller, tenant and correlation
+id from `IRequestContext` or `IRequestContextAccessor` exactly as over HTTP. The context is the one the connection opened
+with: like `Context.User`, it is never refreshed while the connection stays open.
+
 
 ```csharp
 public override async Task OnConnectedAsync()
@@ -233,12 +252,14 @@ public override async Task OnConnectedAsync()
 await hubContext.Clients.Group(HubGroupNaming.TenantGroup(tenantId)).SendAsync("OrderUpdated", orderId);
 ```
 
-- `Context.GetTenantId()` asks the registered `ITenantProvider` about the caller that opened the connection. It is
-  `null`, never `Guid.Empty`, without a provider or a tenant, so tenantless connections never share a group.
-- `HubGroupNaming.TenantGroup(tenantId)` is `tenant:{tenantId:D}` and throws for `Guid.Empty`. Build every group name
+- `Context.GetTenantId()` is the `TenantId?` of the connection's request context — the tenant the caller's credential
+  asserts, or the one `SharedKernel.MultiTenancy`'s tenant resolution resolved. It is `null` for a tenantless
+  connection, so tenantless connections never share a group.
+- `HubGroupNaming.TenantGroup(tenantId)` is `tenant:{tenantId:D}`, for a `TenantId` or a `Guid`, and throws for
+  `Guid.Empty` (or a `default` `TenantId`). Build every group name
   there, never inline.
-- `Context.GetCorrelationId()` is the correlation id `UseSharedKernelWebApi()` resolved for the request that opened
-  the connection, or `null` without that middleware.
+- `Context.GetCorrelationId()` is the correlation id `UseSharedKernelRequestContext()` resolved for the request that
+  opened the connection, or `null` without that middleware.
 
 ## CORS
 
@@ -275,8 +296,9 @@ EventIds 14100–14199.
 
 | Looking for | Use instead |
 | --- | --- |
-| `WithRedisBackplane` | `AddSharedKernelSignalR().AddStackExchangeRedis(…)` from `Microsoft.AspNetCore.SignalR.StackExchangeRedis` |
-| `TenantContextHubFilter` and its `Context.Items` keys | `Context.GetTenantId()` |
+| `WithRedisBackplane`, the `SharedKernel.Presentation.SignalR.Redis` package (deleted by P-579) | `AddSharedKernelSignalR().AddStackExchangeRedis(…)` from `Microsoft.AspNetCore.SignalR.StackExchangeRedis` |
+| `TenantContextHubFilter` (public, WO-086) and its `Context.Items` keys | The internal request-context hub filter `AddSharedKernelSignalR()` adds; `Context.GetTenantId()`, `IRequestContext` |
+| `ITenantProvider` behind `GetTenantId()` | The connection's `IRequestContext` (`ITenantProvider` was deleted by WO-086) |
 | `SignalRCorsStartupDiagnostic` | The WebApi CORS settings and its WebSocket origin check |
 | `HubOptions` pins (message size, parallel invocations, timeouts) | SignalR's defaults, adjusted on `HubOptions` |
 | `MaxStringArgumentLength`, `ArgumentValidators` | Validation in the hub method or the application layer |

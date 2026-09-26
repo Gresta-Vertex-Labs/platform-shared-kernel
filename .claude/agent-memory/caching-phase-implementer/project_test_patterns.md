@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): the shared Redis Testcontainers fixture is `16.Testing/SharedKernel.Testing.Internal`'s `RedisContainerFixture` (`redis:7.4`); caching fakes are in `SharedKernel.Caching.Testing`/`SharedKernel.Caching.Redis.Testing`. `SharedKernel.Caching` (now `.FusionCache`) and `SharedKernel.Caching.Redis.Abstractions` no longer exist, and `IRedisL2BatchService` was deleted (Phase 40); the reconnect and batch patterns below are phase history — verify against source before reuse.
+
 # Test Patterns — 02.Caching Redis
 
 ## Testcontainers Redis image
@@ -108,13 +110,13 @@ metadata:
   now-empty subdirectories (e.g. `Abstractions/`) are gone too — `git rm` removes
   empty dirs automatically but worth a sanity check.
 
-## FakeCacheService in 16.Testing — Phase 22 pattern
+## FakeCacheService in 16.Testing — Phase 22 pattern (location updated for WO-086)
 
 - `FakeCacheService` moved from concept to implementation in Phase 22 (previously missing from 16.Testing)
-- Lives at `16.Testing/SharedKernel.Testing/Caching/FakeCacheService.cs`
+- Lives at `16.Testing/SharedKernel.Caching.Testing/FakeCacheService.cs` (moved out of `SharedKernel.Testing` by WO-086)
 - Uses `ConcurrentDictionary<string, object?>` for thread-safe store
 - Tag tracking: `ConcurrentDictionary<string, HashSet<string>>` keyed by cache key → set of tags
 - `GetManyAsync`: returns a dictionary with an entry for every requested key; missing keys → default(T?)
 - `SetManyAsync`: loops `_store[key] = value` for all entries; updates tag registry per-key
 - `Count` property and `Clear()` method exposed for test assertions
-- `16.Testing/SharedKernel.Testing.csproj` requires `ProjectReference` to `SharedKernel.Caching.Abstractions`
+- `16.Testing/SharedKernel.Caching.Testing.csproj` references `SharedKernel.Caching.Abstractions`; the core `SharedKernel.Testing` references Foundation + Model only

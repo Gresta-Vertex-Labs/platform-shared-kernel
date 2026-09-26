@@ -8,34 +8,47 @@
 
 ## What This Domain Is
 
-Who is calling, and how sure we are. Application code reads the caller through `IUserContext` and the tenant
-through `ITenantProvider`; the provider packages turn an ASP.NET Core authentication result into that context.
-`12.Security` references only `01.Core`.
+Who is calling, and how sure we are. Application code reads the caller — including the tenant — through
+`IUserContext`; the provider packages turn an ASP.NET Core authentication result into that context. Code outside the
+HTTP edge reads `01.Core`'s `IRequestContext` (`SharedKernel.Execution`), which `13.ServiceDefaults`'
+`AddSharedKernelRequestContext()` builds over `IUserContext`. There is no separate tenant provider.
+
+`SharedKernel.Security.Abstractions` is **Abstractions tier** and references only `SharedKernel.Execution` (for
+`ActorKind` and `TenantId`); no ASP.NET Core. `.Oidc`, `.ApiKey`, `.Mtls` and `.Totp` are **Host tier**: they reference
+ASP.NET Core, which SKTIER006 allows only in Host and Testing projects. The build enforces the tiers
+(`eng/SharedKernelTiers.targets`).
 
 ## Packages
 
-| Package | Role | References |
-| --- | --- | --- |
-| `SharedKernel.Security.Abstractions` | `IUserContext`, `ITenantProvider`, `IdentityKind`, `UserContext`, `AnonymousUserContext`, `SystemUserContext`, `IUserContextMapper`, `UserContextResolver`, `UserContextTenantProvider`, `SecurityClaimTypes` | None; no ASP.NET Core |
-| `SharedKernel.Security.Oidc` | JWT bearer for any OIDC provider; DPoP (RFC 9449); certificate-bound tokens (RFC 8705); token revocation | Abstractions, `SharedKernel.Configuration`, `Microsoft.AspNetCore.Authentication.JwtBearer` |
-| `SharedKernel.Security.ApiKey` | Managed API keys (format, generator, hashed store, validator) or a custom validator | Abstractions, `SharedKernel.Cryptography`, ASP.NET Core shared framework |
-| `SharedKernel.Security.Mtls` | Client certificate authentication with an `IMtlsCertificateValidator` | Abstractions, `Microsoft.AspNetCore.Authentication.Certificate` |
-| `SharedKernel.Security.Totp` | TOTP enrollment, code and recovery-code checks, session step-up claims transformation | Abstractions, `SharedKernel.Cryptography`, ASP.NET Core shared framework |
+| Package | Tier | Role | References |
+| --- | --- | --- | --- |
+| `SharedKernel.Security.Abstractions` | Abstractions | `IUserContext`, `UserContext`, `AnonymousUserContext`, `SystemUserContext`, `IUserContextMapper`, `UserContextResolver`, `SecurityClaimTypes` | `SharedKernel.Execution` |
+| `SharedKernel.Security.Oidc` | Host | JWT bearer for any OIDC provider; DPoP (RFC 9449); certificate-bound tokens (RFC 8705); token revocation | Abstractions, `SharedKernel.Configuration`, `SharedKernel.Primitives`, `Microsoft.AspNetCore.Authentication.JwtBearer` |
+| `SharedKernel.Security.ApiKey` | Host | Managed API keys (format, generator, hashed store, validator) or a custom validator | Abstractions, `SharedKernel.Cryptography`, ASP.NET Core shared framework |
+| `SharedKernel.Security.Mtls` | Host | Client certificate authentication with an `IMtlsCertificateValidator` | Abstractions, `Microsoft.AspNetCore.Authentication.Certificate` |
+| `SharedKernel.Security.Totp` | Host | TOTP enrollment, code and recovery-code checks, session step-up claims transformation | Abstractions, `SharedKernel.Cryptography`, ASP.NET Core shared framework |
 
 Provider packages never reference each other. Every package tracks its public API (`PublicAPI.*.txt`, RS0016/RS0017
-as errors) and fails the build on an undocumented public member.
+as errors) and fails the build on an undocumented public member. The declarative endpoint attributes
+(`[RequireRole]`, `[RequireEndpointPermission]`, `[RequireFreshAuthentication]`, `[RequireAuthenticationMethod]`) that read
+`IUserContext` live in `14.Presentation`'s `SharedKernel.Presentation.Core`, namespace
+`SharedKernel.Presentation.Authorization`.
 
 ## The identity model
 
 - `SubjectId` is a **string**. Identity providers issue `auth0|…`, Okta ids, Entra pairwise ids; a `Guid` subject
-  turned every such user into a service account. `SubjectId` is non-null exactly for `User` and `ServicePrincipal`.
-  `UserContext`'s constructor enforces it; keep it enforced in any new implementation.
-- `IsAuthenticated` is derived from `IdentityKind` (`true` for everything but `Anonymous`). No implementation, fake
-  included, may let the two disagree.
+  turned every such user into a service account. `SubjectId` is non-null exactly for `ActorKind.User` and
+  `ActorKind.Service`. `UserContext`'s constructor enforces it (any other kind throws); keep it enforced in any new
+  implementation.
+- The caller's kind is `ActorKind` (`SharedKernel.Execution.Context`: `User` = 0, `Service`, `System`, `Anonymous`) —
+  the same enum `IRequestContext` uses, so no mapping exists between the two. A client-credentials token, an API key
+  and a client certificate are `Service`. `IsAuthenticated` is `true` for everything but `Anonymous`; no
+  implementation, fake included, may let the two disagree. `default(ActorKind)` is `User`, so never let a default
+  value stand for "anonymous" — use `AnonymousUserContext.Instance`.
 - `HasRole`, `HasPermission` and `WasAuthenticatedWith` compare **ordinally**. OAuth scopes are case-sensitive
   (RFC 6749 §3.3); a case-insensitive match can grant `Orders.Write` to a holder of `orders.write`.
-- `TenantId` is `Guid?` from the credential; `UserContextTenantProvider` turns `null` into `Guid.Empty`, the
-  platform's no-tenant sentinel (a tenant filter over `Guid.Empty` returns no rows).
+- `TenantId` is `TenantId?` (`SharedKernel.Execution.Tenancy`), taken from the credential. `null` means no tenant and
+  fails closed downstream; `TenantId` itself can never hold `Guid.Empty`.
 - `FindClaim`/`FindClaims` replace the old first-value-wins dictionary, which hid multi-valued claims.
 - **Method times** (P-562 X1). `GetAuthenticationMethodTime(method)` is non-null only when `WasAuthenticatedWith(method)`:
   the latest `amr_time` claim for it (`SecurityClaimTypes.AuthenticationMethodTime`, value `{method} {unix seconds}`,
@@ -56,13 +69,15 @@ as errors) and fails the build on an undocumented public member.
   (`TokenValidationParameters.AuthenticationType = "Bearer"`, `new ClaimsIdentity(claims, Scheme.Name, …)`).
   `UserContextResolver` picks by exact match on the first authenticated identity. An identity from a scheme with
   no mapper (a cookie, a custom handler) resolves to **anonymous** — never an authenticated context by accident.
-- **Registration order must not matter.** Providers register `IUserContext` and `ITenantProvider` with `TryAdd`,
-  so a worker host's `SystemUserContext` or a service's own implementation wins. The one exception: an
-  `AnonymousUserContext` **instance** descriptor is a placeholder (the persistence builder registers one) and every
-  provider removes it first. Register placeholders only that way, with the non-generic
-  `ServiceDescriptor.Singleton(typeof(IUserContext), AnonymousUserContext.Instance)` so `00.Governance`'s
-  no-singleton-security-context rule stays meaningful. `13.ServiceDefaults.Security`'s `AddSharedKernelRequestContext()` (the `IRequestContext` `06.Persistence` uses
-  since P-558) TryAdds the same `UserContextTenantProvider`, for the same reason.
+- **Registration order must not matter.** Providers register `IUserContext` with `TryAdd`, so a worker host's
+  `SystemUserContext` or a service's own implementation wins. The one exception: an `AnonymousUserContext`
+  **instance** descriptor is a placeholder and every provider removes it first. Register placeholders only that way,
+  with the non-generic `ServiceDescriptor.Singleton(typeof(IUserContext), AnonymousUserContext.Instance)` so
+  `00.Governance`'s no-singleton-security-context rule stays meaningful.
+- **The tenant travels on the caller.** There is no tenant provider: `IUserContext.TenantId` is the credential's tenant,
+  `IRequestContext.TenantId` (built by `13.ServiceDefaults`' `AddSharedKernelRequestContext()`) is what persistence,
+  caching and messaging read, and `SharedKernel.MultiTenancy`'s middleware may replace it for the request in an inner
+  `RequestContextScope`. Never add a second tenant abstraction here.
 - **Inbound claim renaming is off.** `JwtBearerOptions.MapInboundClaims` defaults to `true` in .NET 10 and turns
   `sub`, `roles`, `email`, `amr`, `scp`, `tid` into long URIs. `ConfigureOidcJwtBearerOptions.PostConfigure` forces
   it off; everything in this domain and `SecurityClaimTypes` assumes the short names. The regression test drives a
@@ -125,8 +140,8 @@ as errors) and fails the build on an undocumented public member.
   neither a subject nor a client id fails authentication (event 12100), so `HttpContext.User` is never authenticated
   while `IUserContext` is anonymous. Revocation requests take `SubjectId` from that mapped context, so a configured
   `SubjectClaimType` applies.
-- **Empty tenant ids mean no tenant** in every mapper and in `ManagedApiKeyValidator` (`ApiKeyValidationResult.Success`
-  itself rejects `Guid.Empty`).
+- **Tenants are typed.** Every mapper, `ApiKeyRecord`, `ApiKeyValidationResult` and `MtlsValidationResult` carry a
+  `TenantId?`; a tenant claim that is missing, malformed or the empty GUID maps to `null` (event 12101 for Oidc).
 - **API keys** are never read from the query string. A header holding only whitespace counts as absent, so the
   forwarding scheme falls back to the default scheme. Managed keys: `{prefix}_{16 base62 id}_{32 base62 secret}{6
   base62 CRC-32}`; only `SHA-256(key)` is stored (190-bit secret, so no slow hash is needed); the hash is compared
@@ -178,12 +193,16 @@ as errors) and fails the build on an undocumented public member.
 - `13.ServiceDefaults`: `SharedKernel.MultiTenancy`'s claim strategy resolves the tenant through the registered mappers
   (no Oidc reference); `ServiceDefaults.Security.Mtls` calls `IMtlsCertificateValidator` during the TLS handshake
   (synchronously — a known limitation there) and forwards certificates, which Oidc's RFC 8705 check reads.
-- `14.Presentation`'s requirements (native authorization policies since P-562) resolve an `IUserContext` from the
-  principal being authorized through the registered mappers (`UserContextResolver.Resolve`), never the scoped
-  registration, and read `HasRole`, `HasPermission`, `WasAuthenticatedWith`, `IsAuthenticationFresherThan` and, for a
-  method with a maximum age, `GetAuthenticationMethodTime` bounded by `UserContext.MaxFutureAuthTime`. A signed-in
-  principal no mapper understands is refused (403, logged); a scheme without a mapper is named in a startup warning.
-- `16.Testing`: `FakeUserContext`, `SecurityTestContextBuilder`, `DpopTestProofBuilder`, `InMemoryApiKeyStore`,
+- `13.ServiceDefaults.Security`: `AddSharedKernelRequestContext()` builds `IRequestContext` from `IUserContext`
+  (`UserId` = `SubjectId ?? ClientId`, same `ActorKind`, same `TenantId?`; unauthenticated → `ActorKind.Anonymous`).
+- `14.Presentation`: `SharedKernel.Presentation.Core`'s endpoint attributes (namespace `SharedKernel.Presentation.Authorization`:
+  `[RequireRole]`, `[RequireEndpointPermission]`, `[RequireFreshAuthentication]`, `[RequireAuthenticationMethod]`;
+  native authorization policies since P-562) resolve an `IUserContext` from the principal being authorized through the
+  registered mappers (`UserContextResolver.Resolve`), never the scoped registration, and read `HasRole`,
+  `HasPermission`, `WasAuthenticatedWith`, `IsAuthenticationFresherThan` and, for a method with a maximum age,
+  `GetAuthenticationMethodTime` bounded by `UserContext.MaxFutureAuthTime`. A signed-in principal no mapper understands
+  is refused (403, logged); a scheme without a mapper is named in a startup warning.
+- `16.Testing` (`SharedKernel.Security.Testing`): `FakeUserContext`, `SecurityTestContextBuilder`, `DpopTestProofBuilder`, `InMemoryApiKeyStore`,
   `InMemoryDpopReplayCache`, `InMemoryTotpStepUpStore`, `InMemoryRecoveryCodeStore`.
 - `00.Governance`: DPoP parsing only in `SharedKernel.Security.Oidc`; `ConnectionInfo.ClientCertificate` getter only
   in `SharedKernel.Security.Mtls` (Oidc uses `GetClientCertificateAsync`); secure-default tests on
@@ -216,10 +235,8 @@ as errors) and fails the build on an undocumented public member.
   `.Abstractions` (`.Oidc` now references it directly). mTLS: a throwing validator now rejects (new event 12301)
   instead of a 500, an app `OnAuthenticationFailed` can no longer overturn a validator rejection, and trust settings
   changed on `CertificateAuthenticationOptions` after registration fail startup.
-- [2026-09-17] Published all five packages as `1.0.0-alpha.0.1026` from `3471936`. Before publishing, CI on Linux
-  caught that `/issuer` parses as an absolute `file://` URI there; the authority must now be an absolute http or https
-  URL. Publishing a package whose SharedKernel dependencies were last published at a lower commit height needs
-  those dependencies republished from the same commit first (the workflow's feed dependency gate enforces it).
+- [2026-09-17] First publish of all five packages. Before publishing, CI on Linux caught that `/issuer` parses as an
+  absolute `file://` URI there; the authority must now be an absolute http or https URL.
 - [2026-09-24] **P-562 X1 (security review S3) — step-up expires on long-lived connections.** A SignalR connection
   kept `amr=otp` from connect time, so `[RequireAuthenticationMethod("otp")]` passed long after the step-up window.
   Additive API: `SecurityClaimTypes.AuthenticationMethodTime` (`amr_time`), `AuthenticationMethodTimeClaim`
@@ -229,3 +246,7 @@ as errors) and fails the build on an undocumented public member.
   newer step-up instead of returning early. `14.Presentation.WebApi` gained `RequireAuthenticationMethodAttribute.MaxAgeSeconds`
   and a `RequireAuthenticationMethod(TimeSpan, …)` convention. All five packages need a republish (Abstractions,
   Oidc, ApiKey, Mtls, Totp).
+- [2026-09-26] **WO-086 (P-565, P-574, P-575).** `IdentityKind` replaced by `SharedKernel.Execution`'s `ActorKind`
+  (`ServicePrincipal` → `Service`); `IUserContext.TenantId` and every provider result are `TenantId?`;
+  `ITenantProvider` and `UserContextTenantProvider` deleted; `.Abstractions` references `SharedKernel.Execution`
+  (Abstractions tier); `.Oidc`/`.ApiKey`/`.Mtls`/`.Totp` are Host tier. Released with the repo-wide release train.

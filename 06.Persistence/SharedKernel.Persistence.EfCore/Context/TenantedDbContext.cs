@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using SharedKernel.Domain.Abstractions;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Diagnostics;
@@ -86,7 +87,7 @@ public abstract class TenantedDbContext : SharedKernelDbContext
     /// <see cref="SharedKernelDbContext.RequestContext"/>'s <c>TenantId</c>, or <see langword="null"/>
     /// when no tenant is resolved (fail closed).
     /// </summary>
-    public Guid? CurrentTenantId => RequestContext.TenantId;
+    public TenantId? CurrentTenantId => RequestContext.TenantId;
 
     /// <summary>
     /// Adds the tenant-isolation convention after the base conventions: the named tenant filter and the

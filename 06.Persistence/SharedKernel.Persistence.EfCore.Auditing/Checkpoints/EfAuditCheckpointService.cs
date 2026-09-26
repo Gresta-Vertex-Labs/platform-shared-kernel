@@ -1,4 +1,5 @@
-using SharedKernel.Application.Context;
+using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.EfCore.Auditing.Checkpoints;
 using SharedKernel.Persistence.EfCore.Auditing.Storage;
@@ -35,7 +36,7 @@ internal sealed class EfAuditCheckpointService : IAuditCheckpointService
     }
 
     /// <inheritdoc />
-    public Task<AuditChainCheckpoint> CreateCheckpointForChainAsync(Guid? tenantId, string resourceType, CancellationToken cancellationToken = default)
+    public Task<AuditChainCheckpoint> CreateCheckpointForChainAsync(TenantId? tenantId, string resourceType, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(resourceType);
         _scope.RequireAccess(tenantId, nameof(CreateCheckpointForChainAsync));

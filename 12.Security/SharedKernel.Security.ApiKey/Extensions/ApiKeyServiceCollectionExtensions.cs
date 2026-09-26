@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Context;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -62,8 +63,8 @@ public static class ApiKeyServiceCollectionExtensions
     /// example <c>Bearer</c> from <c>AddOidcAuthentication</c>), in whichever order the two were registered.
     /// </para>
     /// <para>
-    /// Registers <see cref="IUserContext"/> and <see cref="ITenantProvider"/> when not already registered. An API key
-    /// caller is a <see cref="IdentityKind.ServicePrincipal"/> whose subject id is the client id.
+    /// Registers <see cref="IUserContext"/> when not already registered. An API key
+    /// caller is a <see cref="ActorKind.Service"/> whose subject id is the client id.
     /// </para>
     /// </remarks>
     public static IServiceCollection AddApiKeyAuthentication<TValidator>(
@@ -89,7 +90,6 @@ public static class ApiKeyServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IUserContextMapper, ApiKeyUserContextMapper>());
         RemoveAnonymousPlaceholder(services);
         services.TryAddScoped<IUserContext>(ResolveUserContext);
-        services.TryAddScoped<ITenantProvider, UserContextTenantProvider>();
 
         return services;
     }

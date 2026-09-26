@@ -1,4 +1,5 @@
 using SharedKernel.Domain.Abstractions;
+using SharedKernel.Execution.Tenancy;
 
 namespace SharedKernel.Persistence.EfCore.Encryption.Tests.Fixtures;
 
@@ -21,7 +22,7 @@ public sealed class Customer : IHasTenant
 {
     public Guid Id { get; set; } = Guid.CreateVersion7();
 
-    public Guid TenantId { get; set; }
+    public TenantId TenantId { get; set; }
 
     public string Name { get; set; } = string.Empty;
 
@@ -48,7 +49,7 @@ public abstract class Animal : IHasTenant
 {
     public Guid Id { get; set; } = Guid.CreateVersion7();
 
-    public Guid TenantId { get; set; }
+    public TenantId TenantId { get; set; }
 }
 
 public sealed class Dog : Animal
@@ -66,7 +67,7 @@ public class Vehicle : IHasTenant
 {
     public Guid Id { get; set; } = Guid.CreateVersion7();
 
-    public Guid TenantId { get; set; }
+    public TenantId TenantId { get; set; }
 
     public string Vin { get; set; } = string.Empty;
 }

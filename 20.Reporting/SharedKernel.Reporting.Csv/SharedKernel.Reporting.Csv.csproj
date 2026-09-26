@@ -1,5 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Adapter</SharedKernelTier>
     <!-- NuGet packaging metadata -->
     <Description>Hand-written, RFC 4180-compliant CSV report/data export for Platform.SharedKernel microservices — the dependency-free baseline provider of SharedKernel.Reporting.Abstractions, and the only one of the three providers that is genuinely constant-memory end to end. CsvReportExporter&lt;TRow&gt; encodes directly against the destination Stream one row at a time as the IAsyncEnumerable&lt;TRow&gt; source is enumerated. Zero third-party NuGet dependencies. Register via AddCsvReportExporter&lt;TRow&gt;(IConfiguration).</Description>
     <PackageTags>reporting;export;csv;rfc4180;streaming;shared-kernel</PackageTags>

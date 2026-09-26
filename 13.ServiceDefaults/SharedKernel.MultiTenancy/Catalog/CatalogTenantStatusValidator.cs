@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.MultiTenancy.Resolution;
 
 namespace SharedKernel.MultiTenancy.Catalog;
@@ -23,7 +24,7 @@ public sealed class CatalogTenantStatusValidator(ITenantCatalog catalog) : ITena
     /// </remarks>
     /// <param name="tenantId">The tenant identifier to check.</param>
     /// <param name="ct">The cancellation token.</param>
-    public async Task<bool> IsActiveAsync(Guid tenantId, CancellationToken ct)
+    public async Task<bool> IsActiveAsync(TenantId tenantId, CancellationToken ct)
     {
         var descriptor = await catalog.GetByIdAsync(tenantId, ct).ConfigureAwait(false);
         return descriptor?.Status == TenantStatus.Active;

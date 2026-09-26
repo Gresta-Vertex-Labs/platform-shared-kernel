@@ -4,7 +4,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using SharedKernel.Application.Context;
+using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence.Abstractions.Connections;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.Abstractions.Coordination;
@@ -123,7 +124,7 @@ internal sealed class DbSessionFactory : IDbSessionFactory
         return _services.GetRequiredService<IDbConnectionFactory>();
     }
 
-    private Task BindTenantAsync(DbConnection connection, DbTransaction transaction, Guid? tenantId, CancellationToken cancellationToken)
+    private Task BindTenantAsync(DbConnection connection, DbTransaction transaction, TenantId? tenantId, CancellationToken cancellationToken)
     {
         var binder = _services.GetService<ITenantSessionBinder>()
             ?? throw new InvalidOperationException(

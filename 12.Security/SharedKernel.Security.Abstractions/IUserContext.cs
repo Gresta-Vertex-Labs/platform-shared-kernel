@@ -1,3 +1,6 @@
+using SharedKernel.Execution.Tenancy;
+using SharedKernel.Execution.Context;
+
 namespace SharedKernel.Security.Abstractions;
 
 /// <summary>The caller of the current operation.</summary>
@@ -8,8 +11,8 @@ namespace SharedKernel.Security.Abstractions;
 /// implementation.
 /// </para>
 /// <para>
-/// <see cref="SubjectId"/> is never <see langword="null"/> when <see cref="IdentityKind"/> is
-/// <see cref="Abstractions.IdentityKind.User"/> or <see cref="Abstractions.IdentityKind.ServicePrincipal"/>,
+/// <see cref="SubjectId"/> is never <see langword="null"/> when <see cref="ActorKind"/> is
+/// <see cref="ActorKind.User"/> or <see cref="ActorKind.Service"/>,
 /// and always <see langword="null"/> otherwise. Identifiers are strings because identity providers issue
 /// arbitrary subject formats (<c>auth0|…</c>, pairwise identifiers, GUIDs).
 /// </para>
@@ -17,11 +20,11 @@ namespace SharedKernel.Security.Abstractions;
 public interface IUserContext
 {
     /// <summary>Gets the kind of caller.</summary>
-    IdentityKind IdentityKind { get; }
+    ActorKind ActorKind { get; }
 
     /// <summary>
     /// Gets a value indicating whether the caller is authenticated: <see langword="true"/> for every
-    /// <see cref="Abstractions.IdentityKind"/> except <see cref="Abstractions.IdentityKind.Anonymous"/>.
+    /// <see cref="ActorKind"/> except <see cref="ActorKind.Anonymous"/>.
     /// </summary>
     bool IsAuthenticated { get; }
 
@@ -42,7 +45,7 @@ public interface IUserContext
     /// Gets the tenant asserted by the credential, or <see langword="null"/> when it carries none or the value is
     /// not a GUID.
     /// </summary>
-    Guid? TenantId { get; }
+    TenantId? TenantId { get; }
 
     /// <summary>
     /// Gets the identifier of the sign-in session (<c>sid</c>), or of the individual token when the identity

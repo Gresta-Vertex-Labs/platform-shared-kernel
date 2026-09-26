@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -13,8 +12,6 @@ namespace SharedKernel.Presentation.WebApi;
 /// </summary>
 internal sealed partial class WebApiOptionsValidator : IValidateOptions<SharedKernelWebApiOptions>
 {
-    internal const int MaxCorrelationIdLength = 1024;
-
     internal const string WildcardOrigin = "*";
 
     /// <summary>The serialized origin of an opaque document (sandboxed frame, <c>file://</c>, data URL).</summary>
@@ -41,36 +38,12 @@ internal sealed partial class WebApiOptionsValidator : IValidateOptions<SharedKe
 
         List<string> failures = [];
 
-        ValidateCorrelationId(options.CorrelationId, failures);
         ValidateCors(options.Cors, failures);
         ValidateSecurityHeaders(options.SecurityHeaders, failures);
         ValidateLimits(options.Limits, failures);
         ValidateProblems(options.Problems, failures);
 
         return failures.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(failures);
-    }
-
-    private static void ValidateCorrelationId(WebApiCorrelationIdOptions options, List<string> failures)
-    {
-        if (options.MaxLength is < 1 or > MaxCorrelationIdLength)
-        {
-            failures.Add($"CorrelationId:MaxLength must be between 1 and {MaxCorrelationIdLength}.");
-        }
-
-        if (string.IsNullOrWhiteSpace(options.AllowedCharacterPattern))
-        {
-            failures.Add("CorrelationId:AllowedCharacterPattern must be a regular expression.");
-            return;
-        }
-
-        try
-        {
-            _ = new Regex(options.AllowedCharacterPattern, RegexOptions.CultureInvariant);
-        }
-        catch (ArgumentException exception)
-        {
-            failures.Add($"CorrelationId:AllowedCharacterPattern is not a valid regular expression: {exception.Message}");
-        }
     }
 
     private void ValidateCors(WebApiCorsOptions options, List<string> failures)

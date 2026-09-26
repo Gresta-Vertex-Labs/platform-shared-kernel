@@ -52,7 +52,7 @@ internal sealed class ApiKeyAuthenticationHandler(
 
         if (result.TenantId is { } tenantId)
         {
-            claims.Add(new Claim(SecurityClaimTypes.TenantId, tenantId.ToString("D")));
+            claims.Add(new Claim(SecurityClaimTypes.TenantId, tenantId.ToString()));
         }
 
         if (result.KeyId is { } keyId)

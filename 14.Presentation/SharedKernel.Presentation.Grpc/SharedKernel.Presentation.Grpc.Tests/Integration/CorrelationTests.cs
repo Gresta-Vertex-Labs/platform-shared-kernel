@@ -10,7 +10,8 @@ using Xunit;
 namespace SharedKernel.Presentation.Grpc.Tests.Integration;
 
 /// <summary>
-/// Design D5/D13 and B11: gRPC calls get their correlation id from the one HTTP pipeline middleware. The value a
+/// Design D5/D13 and B11: gRPC calls get their correlation id from the one HTTP pipeline middleware, which since P-579 is
+/// <c>SharedKernel.ServiceDefaults.Security</c>'s <c>UseSharedKernelRequestContext()</c>. The value a
 /// service, the baggage and the error status see is the validated one — never the raw header, which the deleted gRPC
 /// correlation interceptor used to re-read and write over the middleware's baggage value.
 /// </summary>
@@ -38,7 +39,7 @@ public sealed class CorrelationTests
 
         var reply = await app.CreateClient().GetContextAsync(new EchoRequest(), CorrelationHeader(inbound));
 
-        reply.CorrelationId.Should().NotBe(inbound).And.MatchRegex("^[0-9a-f]{32}$");
+        reply.CorrelationId.Should().NotBe(inbound).And.MatchRegex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$");
         reply.BaggageCorrelationId.Should().Be(reply.CorrelationId);
     }
 
@@ -54,7 +55,7 @@ public sealed class CorrelationTests
 
         var exception = (await act.Should().ThrowAsync<RpcException>()).Which;
         exception.ShouldHaveRichStatus(StatusCode.NotFound).ErrorInfo().Metadata[ProblemDetailsExtensionNames.CorrelationId]
-            .Should().NotBe(inbound).And.MatchRegex("^[0-9a-f]{32}$");
+            .Should().NotBe(inbound).And.MatchRegex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$");
     }
 
     private static Metadata CorrelationHeader(string value) => new() { { WellKnownHeaders.CorrelationId, value } };

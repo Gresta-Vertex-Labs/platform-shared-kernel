@@ -27,7 +27,7 @@ public sealed class HeaderTenantResolutionStrategyTests
 
         var result = await strategy.TryResolveAsync(context, CancellationToken.None);
 
-        Assert.Equal(tenantId, result);
+        Assert.Equal(tenantId, result?.Value);
     }
 
     [Fact]
@@ -65,6 +65,6 @@ public sealed class HeaderTenantResolutionStrategyTests
 
         var result = await strategy.TryResolveAsync(context, CancellationToken.None);
 
-        Assert.Equal(tenantId, result);
+        Assert.Equal(tenantId, result?.Value);
     }
 }

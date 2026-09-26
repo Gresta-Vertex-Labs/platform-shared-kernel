@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): `SharedKernel.Application.Behaviors` is now `SharedKernel.Application.Pipeline`, and the core `SharedKernel.Testing` no longer references it (Foundation + Model only), so the transitive-reference note below is history. The capture recipe still applies.
+
 T-43 (WO-056/P-365, 2026-08-12) needed genuine proof — not registration-count-only — that
 `WithCommunicationTelemetry()`'s gRPC and Polly wiring actually fire. No `.proto` file existed
 anywhere in the repo before this session (checked `11.Communication.Grpc.Tests`, which only uses

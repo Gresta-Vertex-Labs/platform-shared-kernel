@@ -1,12 +1,11 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using SharedKernel.Application;
-using SharedKernel.Application.Idempotency;
 using SharedKernel.Caching.Redis.Core.Extensions;
+using SharedKernel.Execution.Context;
+using SharedKernel.Idempotency.Abstractions;
 using SharedKernel.Idempotency.Redis.Extensions;
-using SharedKernel.Messaging.Abstractions.Idempotency;
-using SharedKernel.Messaging.Abstractions.TenantContext;
+using SharedKernel.Idempotency.Redis.Store;
 using Xunit;
 
 namespace SharedKernel.Idempotency.Redis.Tests.Extensions;
@@ -19,85 +18,99 @@ public sealed class RedisIdempotencyServiceCollectionExtensionsTests
     // never issue a real Redis command.
     private const string ConnectionString = "localhost:6379";
 
-    private sealed class TestTenantContextAccessor : ITenantContextAccessor
-    {
-        public Guid? TenantId => Guid.NewGuid();
-    }
-
     [Fact]
-    public async Task Host_WithTenantContextAccessorRegistered_StartsSuccessfullyAndResolvesBothContracts()
+    public async Task Host_StartsSuccessfullyAndResolvesAStorePerSelectedPurpose()
     {
         using var host = Host.CreateDefaultBuilder()
             .ConfigureServices(services =>
             {
                 services.AddRedisConnection(o => o.ConnectionString = ConnectionString);
-                services.AddSharedKernelRedisIdempotency();
-                services.AddSingleton<ITenantContextAccessor, TestTenantContextAccessor>();
+                services.AddRedisIdempotency(p => p.ForRequests().ForMessages());
             })
             .Build();
 
         await host.StartAsync();
 
         using var scope = host.Services.CreateScope();
-        var requestStore = scope.ServiceProvider.GetRequiredService<IRequestIdempotencyStore>();
-        var messageStore = scope.ServiceProvider.GetRequiredService<IIdempotencyStore>();
-
-        Assert.NotNull(requestStore);
-        Assert.NotNull(messageStore);
+        Assert.IsType<RedisIdempotencyStore>(scope.ServiceProvider.GetRequiredIdempotencyStore(IdempotencyPurpose.Request));
+        Assert.IsType<RedisIdempotencyStore>(scope.ServiceProvider.GetRequiredIdempotencyStore(IdempotencyPurpose.Message));
 
         await host.StopAsync();
     }
 
     [Fact]
-    public async Task Host_WithoutTenantContextAccessorRegistered_ThrowsAtStartAsync()
+    public void AddRedisIdempotency_RegistersOnlyTheSelectedPurposes()
+    {
+        var services = new ServiceCollection();
+        services.AddRedisConnection(o => o.ConnectionString = ConnectionString);
+        services.AddRedisIdempotency(p => p.ForMessages());
+
+        Assert.True(services.HasIdempotencyStore(IdempotencyPurpose.Message));
+        Assert.False(services.HasIdempotencyStore(IdempotencyPurpose.Request));
+    }
+
+    [Fact]
+    public void AddRedisIdempotency_WithNoPurposeSelected_Throws()
+    {
+        var services = new ServiceCollection();
+        services.AddRedisConnection(o => o.ConnectionString = ConnectionString);
+
+        Assert.Throws<InvalidOperationException>(() => services.AddRedisIdempotency(_ => { }));
+    }
+
+    [Fact]
+    public void AddRedisIdempotency_TwiceForTheSamePurpose_Throws()
+    {
+        var services = new ServiceCollection();
+        services.AddRedisConnection(o => o.ConnectionString = ConnectionString);
+        services.AddRedisIdempotency(p => p.ForRequests());
+
+        var exception = Assert.Throws<InvalidOperationException>(() => services.AddRedisIdempotency(p => p.ForRequests()));
+        Assert.Contains("Request", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Host_RegistersTheAmbientRequestContextAccessor()
     {
         using var host = Host.CreateDefaultBuilder()
             .ConfigureServices(services =>
             {
                 services.AddRedisConnection(o => o.ConnectionString = ConnectionString);
-                services.AddSharedKernelRedisIdempotency();
-                // Deliberately no ITenantContextAccessor registration.
+                services.AddRedisIdempotency(p => p.ForRequests());
+                // No accessor registered by the test: the extension adds the ambient one.
             })
             .Build();
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => host.StartAsync());
+        Assert.IsType<RequestContextAccessor>(host.Services.GetRequiredService<IRequestContextAccessor>());
     }
 
     [Fact]
-    public void AddSharedKernelRedisIdempotency_AppliesConfigureDelegate()
+    public void AddRedisIdempotency_AppliesConfigureDelegate()
     {
         var services = new ServiceCollection();
         services.AddRedisConnection(o => o.ConnectionString = ConnectionString);
-        services.AddSharedKernelRedisIdempotency(o =>
-        {
-            o.InFlightTtl = TimeSpan.FromSeconds(5);
-            o.RetentionWindow = TimeSpan.FromMinutes(10);
-            o.AllowExecutionOnStoreUnavailable = true;
-        });
-        services.AddSingleton<ITenantContextAccessor, TestTenantContextAccessor>();
+        services.AddRedisIdempotency(p => p.ForRequests(), o => o.AllowExecutionOnStoreUnavailable = true);
 
         using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<
             SharedKernel.Idempotency.Redis.Options.RedisIdempotencyOptions>>().Value;
 
-        Assert.Equal(TimeSpan.FromSeconds(5), options.InFlightTtl);
-        Assert.Equal(TimeSpan.FromMinutes(10), options.RetentionWindow);
         Assert.True(options.AllowExecutionOnStoreUnavailable);
     }
 
     [Fact]
-    public void AddSharedKernelRedisIdempotency_WithoutRedisConnection_ThrowsNamingTheFix()
+    public void AddRedisIdempotency_WithoutRedisConnection_ThrowsNamingTheFix()
     {
         var services = new ServiceCollection();
 
-        var exception = Assert.Throws<InvalidOperationException>(() => services.AddSharedKernelRedisIdempotency());
+        var exception = Assert.Throws<InvalidOperationException>(() => services.AddRedisIdempotency(p => p.ForRequests()));
 
         Assert.Contains("AddRedisConnection", exception.Message, StringComparison.Ordinal);
-        Assert.Contains(nameof(RedisIdempotencyServiceCollectionExtensions.AddSharedKernelRedisIdempotency), exception.Message, StringComparison.Ordinal);
+        Assert.Contains(nameof(RedisIdempotencyServiceCollectionExtensions.AddRedisIdempotency), exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void AddSharedKernelRedisIdempotency_WithConfigurationBoundRedisConnection_Resolves()
+    public void AddRedisIdempotency_WithConfigurationBoundRedisConnection_Resolves()
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?> { ["SharedKernel:Caching:Redis:ConnectionString"] = ConnectionString })
@@ -105,13 +118,12 @@ public sealed class RedisIdempotencyServiceCollectionExtensionsTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddRedisConnection(configuration);
-        services.AddSharedKernelRedisIdempotency();
-        services.AddSingleton<ITenantContextAccessor, TestTenantContextAccessor>();
+        services.AddRedisIdempotency(p => p.ForRequests().ForMessages());
 
         using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         using var scope = provider.CreateScope();
 
-        Assert.NotNull(scope.ServiceProvider.GetRequiredService<IRequestIdempotencyStore>());
-        Assert.NotNull(scope.ServiceProvider.GetRequiredService<IIdempotencyStore>());
+        Assert.NotNull(scope.ServiceProvider.GetRequiredIdempotencyStore(IdempotencyPurpose.Request));
+        Assert.NotNull(scope.ServiceProvider.GetRequiredIdempotencyStore(IdempotencyPurpose.Message));
     }
 }

@@ -10,6 +10,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Storage;
 
 await Surface1_S3AndObsStoresSideBySide();
@@ -45,11 +46,12 @@ static async Task Surface1_S3AndObsStoresSideBySide()
 
     IFileStorage invoices = host.Services.GetRequiredKeyedService<IFileStorage>("invoices");
     IFileStorage archive = host.Services.GetRequiredKeyedService<IFileStorage>("archive");
-    IFileStorage tenantDocuments = host.Services.GetRequiredKeyedService<ITenantFileStorage>("documents").ForTenant("tenant-1");
+    TenantId tenant1 = new(Guid.Parse("0f8fad5b-d9cb-469f-a165-70867728950e"));
+    IFileStorage tenantDocuments = host.Services.GetRequiredKeyedService<ITenantFileStorage>("documents").ForTenant(tenant1);
     IFileStorageFactory factory = host.Services.GetRequiredService<IFileStorageFactory>();
 
     Require(invoices.StoreName == "invoices" && archive.StoreName == "archive", "keyed stores resolve by name");
-    Require(tenantDocuments.TenantId == "tenant-1", "tenant view is bound to its tenant");
+    Require(tenantDocuments.TenantId == tenant1, "tenant view is bound to its tenant");
     Require(factory.StoreNames.Count == 3 && factory.IsTenantScoped("documents"), "factory lists every store");
     Require(Throws<InvalidOperationException>(() => host.Services.GetRequiredService<IFileStorage>()), "unkeyed store is ambiguous with two shared stores");
     Require(Throws<InvalidOperationException>(() => factory.GetStore("documents")), "a tenant store is never a shared store");

@@ -6,6 +6,7 @@ using SharedKernel.Domain.Entities;
 using SharedKernel.Domain.Events;
 using SharedKernel.Domain.Monetary;
 using SharedKernel.Domain.StronglyTypedIds;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence.EfCore.Conversions;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Extensibility;
@@ -113,7 +114,7 @@ public sealed class PgOrderAggregate : TenantedFullAuditableAggregateRoot<PgOrde
     /// <summary>Optional <see cref="Money"/> complex property — proves nullable round-trip.</summary>
     public Money? DiscountTotal { get; private set; }
 
-    public PgOrderAggregate(PgOrderId id, Guid tenantId, string name, string code, string street, string city, IClock clock)
+    public PgOrderAggregate(PgOrderId id, TenantId tenantId, string name, string code, string street, string city, IClock clock)
         : base(id, tenantId, clock)
     {
         Name = name;
@@ -150,7 +151,7 @@ public sealed class PgOrderTag : Entity<PgOrderTagId>, SharedKernel.Domain.Abstr
     public PgOrderId OrderId { get; private set; } = null!;
 
     // Tenant data like its order (every entity of a TenantedDbContext is); stamped from the caller when added.
-    public Guid TenantId { get; private set; }
+    public TenantId TenantId { get; private set; }
     public string Label { get; private set; } = string.Empty;
 
     public PgOrderTag(PgOrderTagId id, PgOrderId orderId, string label) : base(id)
@@ -180,7 +181,7 @@ public sealed class PgHardDeleteAggregate : TenantedAuditableAggregateRoot<PgHar
 {
     public string Name { get; private set; } = string.Empty;
 
-    public PgHardDeleteAggregate(PgHardDeleteId id, Guid tenantId, string name, IClock clock)
+    public PgHardDeleteAggregate(PgHardDeleteId id, TenantId tenantId, string name, IClock clock)
         : base(id, tenantId, clock)
     {
         Name = name;

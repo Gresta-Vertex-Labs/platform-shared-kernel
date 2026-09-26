@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using SharedKernel.Execution.Context;
 using SharedKernel.Security.Abstractions;
 
 namespace SharedKernel.Presentation.OpenApi.Tests.TestSupport;
@@ -77,7 +78,7 @@ internal static class TestAuthentication
         public string AuthenticationType => SchemeName;
 
         public IUserContext Map(ClaimsIdentity identity) =>
-            new UserContext(IdentityKind.User, identity.FindFirst(SubjectClaim)!.Value)
+            new UserContext(ActorKind.User, identity.FindFirst(SubjectClaim)!.Value)
             {
                 Permissions = [.. identity.FindAll(PermissionClaim).Select(claim => claim.Value)],
             };

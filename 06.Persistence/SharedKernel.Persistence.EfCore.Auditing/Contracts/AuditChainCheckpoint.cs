@@ -1,3 +1,5 @@
+using SharedKernel.Execution.Tenancy;
+
 namespace SharedKernel.Persistence.EfCore.Auditing;
 
 /// <summary>
@@ -23,7 +25,7 @@ public sealed record AuditChainCheckpoint
     public required Guid Id { get; init; }
 
     /// <summary>Gets the tenant of the anchored chain, or <see langword="null"/> for the system chain.</summary>
-    public Guid? TenantId { get; init; }
+    public TenantId? TenantId { get; init; }
 
     /// <summary>Gets the resource type of the anchored chain.</summary>
     public required string ResourceType { get; init; }
@@ -60,7 +62,7 @@ public interface IAuditCheckpointSink
     /// <param name="tenantId">The chain's tenant, or <see langword="null"/> for the system chain.</param>
     /// <param name="resourceType">The chain's resource type.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
-    Task<AuditChainCheckpoint?> GetLatestAsync(Guid? tenantId, string resourceType, CancellationToken cancellationToken = default);
+    Task<AuditChainCheckpoint?> GetLatestAsync(TenantId? tenantId, string resourceType, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Creates signed checkpoints on demand. The sealer also emits them periodically.</summary>
@@ -85,5 +87,5 @@ public interface IAuditCheckpointService
     /// <param name="resourceType">The chain's resource type.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>The new checkpoint.</returns>
-    Task<AuditChainCheckpoint> CreateCheckpointForChainAsync(Guid? tenantId, string resourceType, CancellationToken cancellationToken = default);
+    Task<AuditChainCheckpoint> CreateCheckpointForChainAsync(TenantId? tenantId, string resourceType, CancellationToken cancellationToken = default);
 }

@@ -5,11 +5,13 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): `SharedKernel.Domain` is Model tier and now also references `SharedKernel.Execution` (for `TenantId`). Since 2026-08-25 versions come from MinVer (repo-wide `v*` tag) — never add or bump a `<Version>` in the csproj; step 1 below is historical.
+
 SK.03.Published (P-05) completion pattern established on 2026-05-26:
 
 1. Edit `SharedKernel.Domain.csproj`: bump `<Version>` and `<PackageVersion>` together; update `<PackageReleaseNotes>` with detailed WO change list (XML-escape `<` and `>` as `&lt;` and `&gt;` in release notes).
 2. Run `dotnet pack ... -c Release -o nupkgs/` — output is `SharedKernel.Domain.{version}.nupkg` + `.snupkg`.
-3. Verify manifest by reading the `.nuspec` inside the `.nupkg` using PowerShell `System.IO.Compression.ZipFile` — check `<dependencies>` group lists only `SharedKernel.Core` and `SharedKernel.Primitives`.
+3. Verify manifest by reading the `.nuspec` inside the `.nupkg` using PowerShell `System.IO.Compression.ZipFile` — check `<dependencies>` group lists only the Foundation packages `SharedKernel.Primitives`, `SharedKernel.Core` and `SharedKernel.Execution` (Model tier: no third-party package, never `SharedKernel.Contracts`).
 4. Update `03.Domain/state-map.md`: mark task `●`, update Overall Progress table (Done count + State).
 5. Call `state-map-phase` with `phase_key: SK.03.Published` — it propagates to root, closes Phase Backlog entries for 03.Domain, updates Overall Progress counts.
 6. Call `sync-brain` with `domain: 03.Domain` — if no new architectural signals exist, only a changelog entry is appended (no section edits).

@@ -6,7 +6,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Npgsql;
-using SharedKernel.Application.Transactions;
+using SharedKernel.Execution.Transactions;
 using SharedKernel.Core.Exceptions;
 using SharedKernel.Cryptography.Symmetric;
 using SharedKernel.Persistence;
@@ -321,7 +321,7 @@ public sealed class EntityVersionPostgresTests(PostgreSqlContainerFixture fixtur
         (await NameAsync(provider, id)).Should().Be("v2");
     }
 
-    /// <summary>An asynchronous-only key provider, as a KMS registers (13's <c>AddSharedKernelKeyVaultKeyProvider()</c>).</summary>
+    /// <summary>An asynchronous-only key provider, as a KMS registers (<c>SharedKernel.Cryptography.KeyVault.Azure</c>'s <c>AddAzureKeyVaultEncryption(configuration)</c>).</summary>
     private sealed class KeyServiceProvider(CryptographicKey current) : IEncryptionKeyProvider
     {
         private int _calls;

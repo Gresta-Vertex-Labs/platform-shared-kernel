@@ -56,8 +56,8 @@ Every multi-tenant service needs the same persistence decisions, and each one is
 | [**SharedKernel.Persistence.EfCore.Auditing**](SharedKernel.Persistence.EfCore.Auditing/README.md) | commands must leave an audit trail | `.UseAuditTrail()`: append-only ledger, background sealer, per-(tenant, resource type) HMAC chains, verification, checkpoints, GDPR payload erasure |
 | [**SharedKernel.Persistence.Testing**](../16.Testing/SharedKernel.Persistence.Testing/README.md) | in **test** projects | In-memory fakes with the production rules, and a Testcontainers PostgreSQL with the production role split |
 
-Related packages outside this folder: [`SharedKernel.Application.Abstractions`](../05.Application/SharedKernel.Application.Abstractions)
-owns `IUnitOfWork`, `IRequestContext` and `IAuditTrailWriter`, which these packages implement directly;
+Related packages outside this folder: [`SharedKernel.Execution`](../01.Core/SharedKernel.Execution/README.md)
+owns `IUnitOfWork`, `IRequestContext`, `IAuditTrailWriter` and `TenantId`, which these packages implement or use directly;
 [`SharedKernel.ServiceDefaults.Security`](../13.ServiceDefaults/SharedKernel.ServiceDefaults.Security/README.md) provides
 the `IRequestContext` over the authenticated user;
 [`SharedKernel.ServiceDefaults.Persistence`](../13.ServiceDefaults/SharedKernel.ServiceDefaults.Persistence/README.md)
@@ -68,8 +68,8 @@ provides the readiness checks.
 ```mermaid
 flowchart TB
     subgraph app["Your service"]
-        H["Handlers<br/>(MediatR commands and queries)"]
-        APP["SharedKernel.Application.Abstractions<br/>IUnitOfWork · IRequestContext · IAuditTrailWriter"]
+        H["Handlers<br/>(commands and queries)"]
+        APP["SharedKernel.Execution<br/>IUnitOfWork · IRequestContext · IAuditTrailWriter · TenantId"]
     end
 
     subgraph persistence["06.Persistence"]
@@ -95,7 +95,7 @@ flowchart TB
     NPG --> PG
 ```
 
-Application code depends on the two abstraction packages only; the host references the implementations. EF Core and
+Application code depends on `SharedKernel.Execution` and `Persistence.Abstractions` only (Foundation and Abstractions tiers); the host references the Adapter-tier implementations. EF Core and
 Dapper share one data source, one transaction and one tenant binding.
 
 ### One command, end to end
@@ -104,7 +104,7 @@ Dapper share one data source, one transaction and one tenant binding.
 sequenceDiagram
     autonumber
     participant C as Caller
-    participant P as MediatR pipeline
+    participant P as Request pipeline
     participant U as Unit of work
     participant H as Handler
     participant DB as PostgreSQL (app_runtime)
@@ -148,7 +148,8 @@ below is compiled and run against PostgreSQL by
 ```shell
 dotnet add package SharedKernel.Persistence.EfCore
 dotnet add package SharedKernel.Persistence.EfCore.Auditing
-dotnet add package SharedKernel.Application                      # MediatR pipeline: transaction + auditing
+dotnet add package SharedKernel.Application.Pipeline             # request pipeline: transaction + auditing
+dotnet add package SharedKernel.Application.Mediator.MediatR     # ISender, with MediatR as the transport
 dotnet add package SharedKernel.ServiceDefaults.Security         # IRequestContext over the authenticated user
 dotnet add package SharedKernel.ServiceDefaults.Persistence      # readiness checks
 dotnet add package Microsoft.EntityFrameworkCore.Design          # dotnet ef (PrivateAssets="all")
@@ -207,7 +208,7 @@ public sealed record OrderId(Guid Value) : StronglyTypedId<Guid>(Value)
 
 public sealed class Order : TenantedAuditableAggregateRoot<OrderId>
 {
-    public Order(OrderId id, Guid tenantId, string customer, Money total, IClock clock)
+    public Order(OrderId id, TenantId tenantId, string customer, Money total, IClock clock)
         : base(id, tenantId, clock)
     {
         Customer = customer;
@@ -251,19 +252,22 @@ builder.AddSharedKernelPostgres<OrderDbContext>("orders", p => p
     .MigrateOnStartup());                      // migrations + seeders, one replica at a time
 
 builder.Services.AddSharedKernelApplication(typeof(Program).Assembly, app => app   // handlers, validators, domain events
+    .UseMediatR()                              // ISender, with MediatR as the transport
     .WithTransactions()                        // one retry-safe transaction per command
     .WithAuditing());                          // Succeeded inside it, Failed after rollback
 
 builder.Services.AddHealthChecks()
     .AddDatabaseReadinessCheck<OrderDbContext>()   // not ready until startup migrations finished
     .AddPersistenceStartupReadinessCheck()
-    .AddAuditSealingReadinessCheck();
+    .AddSharedKernelReadiness();                   // every provider probe, including audit sealing
 ```
 
 `using SharedKernel.Persistence;` covers every persistence registration call. One call registers the data source, the
 context (scoped), `IUnitOfWork`, `IRepository<,>`/`IReadRepository<,>` for every aggregate of the model,
 `ICrossTenantScope`, startup validation of the model and the options, and a fail-closed anonymous `IRequestContext`
-for services that register none. There is no terminal `.Build()`.
+for services that register none. There is no terminal `.Build()`. In the middleware pipeline,
+`app.UseSharedKernelRequestContext()` goes first (before `UseExceptionHandler()`), so every request runs with its
+caller, tenant and correlation id.
 
 ### 5. Migrations
 

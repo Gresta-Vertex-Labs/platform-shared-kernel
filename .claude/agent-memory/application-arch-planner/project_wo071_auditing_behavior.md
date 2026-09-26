@@ -4,6 +4,7 @@ description: WO-071/P-458 AuditingBehavior design (locked 2026-08-26) — twelve
 metadata:
   type: project
 ---
+> WO-086 (2026-09): historical. IAuditTrailWriter/AuditEntry/AuditOutcome are the one shared contract in SharedKernel.Execution.Auditing (no local seam, no adapter); auditing is two halves — AuditingBehavior (Failed, outside the transaction) and AuditingCommitBehavior (Succeeded, via IUnitOfWork.OnBeforeCommit); dual-approval linkage was deleted with DualApprovalBehavior (P-544); the composition is the kernel `RequestPipeline<,>` (first registered = outermost), not MediatR's — the reverse-order reasoning below still holds.
 
 WO-071 (root Phase Backlog P-458, depends on `06.Persistence`'s P-456) adds an opt-in `AuditingBehavior<TRequest,TResponse>` to `SharedKernel.Application.Behaviors`, feeding `06.Persistence`'s new append-only, hash-chained audit trail (`IAuditTrailWriter`/`AuditEntry`/`AuditRecord`/`IAuditActorContext`, P-456/P-457/WO-071, design-locked by `persistence-arch-planner` the same session, 2026-08-26).
 

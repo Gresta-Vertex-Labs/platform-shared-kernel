@@ -32,14 +32,14 @@ namespace SharedKernel.Messaging.Abstractions.HeaderPropagation;
 /// <strong>Example:</strong>
 /// </para>
 /// <code>
-/// public sealed class TenantHeaderPropagator : IMessageHeaderPropagator
+/// public sealed class FeatureFlagHeaderPropagator : IMessageHeaderPropagator
 /// {
-///     private readonly ITenantProvider _tenantProvider;
-///     public TenantHeaderPropagator(ITenantProvider tenantProvider)
-///         => _tenantProvider = tenantProvider;
+///     private readonly IFeatureFlagSnapshot _flags;
+///     public FeatureFlagHeaderPropagator(IFeatureFlagSnapshot flags)
+///         => _flags = flags;
 ///
 ///     public void Propagate(PublishContext context)
-///         => context.WithHeader("x-sk-tenant-id", _tenantProvider.TenantId.ToString());
+///         => context.WithHeader("x-sk-flags", _flags.ToHeaderValue());
 /// }
 /// </code>
 /// </remarks>

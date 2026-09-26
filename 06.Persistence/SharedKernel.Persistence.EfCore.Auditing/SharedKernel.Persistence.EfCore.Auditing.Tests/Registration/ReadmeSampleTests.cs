@@ -4,7 +4,8 @@ using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using SharedKernel.Application.Auditing;
+using SharedKernel.Primitives.Health;
+using SharedKernel.Execution.Auditing;
 using SharedKernel.Cryptography.Extensions;
 using SharedKernel.Persistence;
 using SharedKernel.Persistence.EfCore;
@@ -48,7 +49,7 @@ public sealed class ReadmeSampleTests
         using var scope = provider.CreateScope();
         scope.ServiceProvider.GetRequiredService<IAuditTrailWriter>().Should().NotBeNull();
         scope.ServiceProvider.GetRequiredService<IAuditQueryService>().Should().NotBeNull();
-        provider.GetRequiredService<IAuditSealingProbe>().Should().NotBeNull();
+        provider.GetRequiredReadinessProbe(AuditSealingReadiness.ProbeName).Should().NotBeNull();
         provider.GetRequiredService<AuditSealerConnectionFactory>().IsSeparate.Should().BeTrue();
     }
 

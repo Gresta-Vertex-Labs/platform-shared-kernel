@@ -8,7 +8,7 @@ metadata:
 When asked to write regression tests proving a `[LoggerMessage]` retrofit preserved EventId/Level and to run
 00.Governance's SK0020/SK0021 analyzer + `LoggingEventIdIntegrityAssertion` against real (not contrived)
 assemblies, use these techniques rather than inventing new ones — they are the established cross-domain
-precedent (already used by `05.Application.Behaviors.Tests` and `SharedKernel.Messaging.MassTransit.Tests`).
+precedent (already used by `SharedKernel.Application.Pipeline.Tests` and `SharedKernel.Messaging.MassTransit.Tests`).
 
 **Why:** re-derived from scratch during 11.Communication T-27/T-28 by reading those two domains' actual test
 files via a research subagent — do not skip that step next time; grep first for `LoggingEventIdIntegrityAssertion`
@@ -30,11 +30,10 @@ usages outside `00.Governance` before assuming a pattern needs to be invented.
    Call `LoggingEventIdIntegrityAssertion.AssertGloballyUniqueAndInRange(new Dictionary<Assembly,(int,int)> { [typeof(SomeRealType).Assembly] = (RangeMin, RangeMax) })`
    with the range sourced from `SharedKernel.Primitives.Logging.LoggingEventIdRanges`. Bump `FluentAssertions`
    to whatever `SharedKernel.ArchitectureTests` itself pins (8.10.0 as of WO-041) — a lower pin triggers NU1605.
-   **Layering trap:** if two sibling packages in the domain must be checked together for cross-assembly
+   **Direction trap:** if two sibling packages in the domain must be checked together for cross-assembly
    collisions, anchor the combined test in whichever package's test project is ALREADY permitted to reference
-   the other in production (check the domain's own layering rules first) — never add the reverse test-only
-   reference, even though "it's just a test," if the domain's architecture rules forbid that direction
-   (e.g. `CommunicationLayeringRules.CommunicationInternalNeverReferencesOtherCommunicationPackages`).
+   the other in production (check the declared adapter edges first — here `Rest`/`Grpc` → `Communication.Internal`,
+   never the reverse) — never add the reverse test-only reference, even though "it's just a test."
    **Internal-type trap:** if the type you need `.Assembly` from is `internal`, anchor on a public sibling type
    in the same assembly instead of trying to gain `InternalsVisibleTo` access from a foreign test project.
 

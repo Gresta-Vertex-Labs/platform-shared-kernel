@@ -1,5 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Host</SharedKernelTier>
     <Description>Request-culture resolution for Platform.SharedKernel microservices: AddSharedKernelLocalization wraps ASP.NET Core request localization with a StrategyOrder of user-preference claim, then tenant default culture via SharedKernel.MultiTenancy ITenantCatalog, then the Accept-Language header. Split out of SharedKernel.ServiceDefaults (WO-084).</Description>
     <PackageTags>shared-kernel;service-defaults;localization;culture;multi-tenancy</PackageTags>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>

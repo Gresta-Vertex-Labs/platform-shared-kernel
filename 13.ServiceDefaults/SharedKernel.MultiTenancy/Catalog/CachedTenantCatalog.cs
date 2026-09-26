@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Caching.Abstractions;
 
 namespace SharedKernel.MultiTenancy.Catalog;
@@ -78,7 +79,7 @@ public sealed class CachedTenantCatalog : ITenantCatalog
     }
 
     /// <inheritdoc/>
-    public async Task<TenantDescriptor?> GetByIdAsync(Guid tenantId, CancellationToken ct) =>
+    public async Task<TenantDescriptor?> GetByIdAsync(TenantId tenantId, CancellationToken ct) =>
         await _cache.GetOrSetAsync(
             ByIdKey(tenantId),
             async token => await _inner.GetByIdAsync(tenantId, token).ConfigureAwait(false),
@@ -106,7 +107,7 @@ public sealed class CachedTenantCatalog : ITenantCatalog
                     await _cache.SetAsync(ByIdKey(resolved.TenantId), resolved, _policy, token).ConfigureAwait(false);
                 }
 
-                return resolved?.TenantId;
+                return resolved?.TenantId.Value;
             },
             _policy,
             ct).ConfigureAwait(false);
@@ -116,7 +117,7 @@ public sealed class CachedTenantCatalog : ITenantCatalog
             return null;
         }
 
-        return resolved?.TenantId == tenantId ? resolved : await GetByIdAsync(tenantId.Value, ct).ConfigureAwait(false);
+        return resolved?.TenantId.Value == tenantId ? resolved : await GetByIdAsync(new TenantId(tenantId.Value), ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -126,8 +127,8 @@ public sealed class CachedTenantCatalog : ITenantCatalog
     /// <param name="tenantId">The tenant identifier to evict.</param>
     /// <param name="ct">The cancellation token.</param>
     /// <returns>A task that completes when the entry is removed.</returns>
-    public async Task InvalidateTenantAsync(Guid tenantId, CancellationToken ct) =>
+    public async Task InvalidateTenantAsync(TenantId tenantId, CancellationToken ct) =>
         await _cache.RemoveAsync(ByIdKey(tenantId), ct).ConfigureAwait(false);
 
-    private string ByIdKey(Guid tenantId) => _keyProvider.BuildKey(ByIdEntity, tenantId.ToString("D"));
+    private string ByIdKey(TenantId tenantId) => _keyProvider.BuildKey(ByIdEntity, tenantId.ToString());
 }

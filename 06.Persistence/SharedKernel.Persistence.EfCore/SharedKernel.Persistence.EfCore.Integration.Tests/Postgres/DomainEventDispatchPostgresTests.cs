@@ -4,6 +4,7 @@ using NSubstitute;
 using Npgsql;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Domain.Events;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence.EfCore.UnitOfWork;
 using SharedKernel.Testing.Containers;
 using SharedKernel.Testing.Persistence;
@@ -29,7 +30,7 @@ public sealed class DomainEventDispatchPostgresTests
     private string ConnectionString =>
         new NpgsqlConnectionStringBuilder(_fixture.ConnectionString) { Database = DatabaseName }.ConnectionString;
 
-    private PgTestDbContext CreateContext(Guid tenantId) =>
+    private PgTestDbContext CreateContext(TenantId tenantId) =>
         PgTestDbContextFactory.Create(
             ConnectionString,
             new FakeAuditActorContext("actor"),
@@ -38,7 +39,7 @@ public sealed class DomainEventDispatchPostgresTests
     [Fact]
     public async Task HardDelete_EventsRaisedBeforeRemove_AreDispatched()
     {
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
         var id = PgHardDeleteId.New();
         var dispatcher = Substitute.For<IDomainEventDispatcher>();
 
@@ -72,7 +73,7 @@ public sealed class DomainEventDispatchPostgresTests
     [Fact]
     public async Task HardDelete_NoDispatcherRegistered_EventsStillCleared_DoesNotThrow()
     {
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
         var id = PgHardDeleteId.New();
 
         await using var setup = CreateContext(tenantId);

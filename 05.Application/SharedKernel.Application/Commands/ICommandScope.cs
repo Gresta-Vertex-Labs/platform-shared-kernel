@@ -1,4 +1,4 @@
-namespace SharedKernel.Application;
+namespace SharedKernel.Application.Commands;
 
 /// <summary>
 /// A per-DI-scope seam tracking whether a command is currently executing, whether it is nested
@@ -7,7 +7,7 @@ namespace SharedKernel.Application;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Registered scoped. Because MediatR dispatches a nested <c>ISender.Send</c> call from inside a
+/// Registered scoped. Because the mediator dispatches a nested <c>ISender.Send</c> call from inside a
 /// handler through the same DI scope as the outer command, a single <see cref="ICommandScope"/>
 /// instance observes the entire nesting depth for one logical command execution.
 /// </para>

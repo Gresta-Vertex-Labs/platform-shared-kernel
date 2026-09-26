@@ -12,7 +12,7 @@ namespace SharedKernel.Domain.Abstractions;
 /// </para>
 /// <para>
 /// <b>Registration.</b> This package ships no implementation and nothing registers one automatically.
-/// The consuming service registers one, typically a MediatR-based dispatcher from the application layer.
+/// The consuming service registers one, typically SharedKernel.Application.Pipeline's DomainEventDispatcher.
 /// </para>
 /// <para>
 /// <b>Pitfall.</b> The persistence layer treats the dispatcher as optional. When none is registered it

@@ -1,9 +1,11 @@
 ---
 name: project-caching-state
-description: Package split for 02.Caching (7-package split COMPLETE as of Phase 36), phase history through WO-007/WO-023/WO-041 P-252, interface locations, layering rules, AOT decisions, EventId sub-block allocation
+description: Package split for 02.Caching (7-package split COMPLETE as of Phase 36), phase history through WO-007/WO-023/WO-041 P-252, interface locations, sibling-reference rules, AOT decisions, EventId sub-block allocation
 metadata:
   type: project
 ---
+
+> WO-086 (2026-09): numbered layering is replaced by tiers — `SharedKernel.Caching.Abstractions` is Abstractions tier; FusionCache and every `Redis.*` package are Adapter tier with the declared edge `Redis.*`→`Redis.Core` (see root `CLAUDE.md` "Tiers & Dependency Rules"). Readiness is `IReadinessProbe` ("redis" in Redis.Core, "cache" in FusionCache); `IRedisConnectionProbe` and the `SharedKernel.ServiceDefaults.Caching*` packages were deleted. This file is phase history from before P-547/WO-086: RedLock.net, `ICacheInvalidationBus` and `RedisCacheInvalidationBus` no longer exist; `IRenewableLock` and `CachingCoreOptions` are gone; `IRedisChannelService` now lives in `.Redis.PubSub` and `IRedisHashService`/`ITypedHashStore<T>` in `.Redis.HashStore`, not Abstractions.
 
 ## CORRECTION (2026-07-09): WO-023 is COMPLETE, not planned
 
@@ -19,7 +21,7 @@ Earlier revisions of this memory said the 7-package split (Phases 32-36) was "pl
 | `SharedKernel.Caching.FusionCache` | FusionCache L1 provider + CacheKeyProvider implementation. Renamed from `SharedKernel.Caching` in Phase 14 (WO-004). |
 | `SharedKernel.Caching.Redis` | Redis L2, RedLock, RedisChannelService, RedisHashService, TypedHashStore, RedisCacheInvalidationBus, CacheInvalidationReceiver |
 
-**Layering rule (Phase 17):** Redis and FusionCache packages are siblings — they must never reference each other. Both reference only Abstractions.
+**Sibling rule (Phase 17, still holds):** Redis and FusionCache packages are siblings — they must never reference each other. (Today: FusionCache references Abstractions; the Redis packages reference Abstractions plus `.Redis.Core`.)
 
 **Why:** `05.Application` needs `ICacheService` without pulling in FusionCache. A service needing only Redis (channel, hash, locking) must not be forced to take a transitive FusionCache dependency.
 
@@ -47,7 +49,7 @@ Earlier revisions of this memory said the 7-package split (Phases 32-36) was "pl
 - `RedisConnectionHealthTracker` (Core, Phase 32) and `RedisChannelService`'s own reconnect/resubscribe replay (Ph.26, relocates intact to `.Redis.PubSub` Phase 36) are SEPARATE, coexisting mechanisms — not unified in WO-023.
 - See `02.Caching/state-map.md` Phases 32–36 for full file-level plans.
 
-**Why pub/sub stays in 02.Caching:** `IRedisChannelService`/`ICacheInvalidationBus` are at-most-once/no-durability — the architectural opposite of `07.Messaging`'s outbox-backed guarantees. `07.Messaging` cannot reference `02.Caching` types (`CacheInvalidationMessage`, `CachingCoreOptions`) per layering rules, and moving these types to `07.Messaging` would falsely imply they inherit its durability contract.
+**Why pub/sub stays in 02.Caching:** `IRedisChannelService`/`ICacheInvalidationBus` are at-most-once/no-durability — the architectural opposite of `07.Messaging`'s outbox-backed guarantees. `07.Messaging` cannot reference `02.Caching` types (`CacheInvalidationMessage`, `CachingCoreOptions`) — Messaging ↛ Caching (both ways) is an architecture-test purity rule, and moving these types to `07.Messaging` would falsely imply they inherit its durability contract.
 
 ## Interface Canonical Locations
 

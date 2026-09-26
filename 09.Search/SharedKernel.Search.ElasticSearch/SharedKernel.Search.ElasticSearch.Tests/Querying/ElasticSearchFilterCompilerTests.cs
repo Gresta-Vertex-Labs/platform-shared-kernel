@@ -1,6 +1,7 @@
 using Elastic.Clients.Elasticsearch;
 using Elastic.Clients.Elasticsearch.QueryDsl;
 using FluentAssertions;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Search.Abstractions.Models;
 using SharedKernel.Search.ElasticSearch.Querying;
 // Elastic.Clients.Elasticsearch declares its own non-generic SearchRequest/SearchRequest<T> types;
@@ -248,11 +249,11 @@ public sealed class ElasticSearchFilterCompilerTests
     {
         var definition = TenantedDefinition();
 
-        var result = ElasticSearchFilterCompiler.CompileWithTenantScope(definition, null, TenantScope.Of("tenant-a"));
+        var result = ElasticSearchFilterCompiler.CompileWithTenantScope(definition, null, TenantScope.For(TestTenants.TenantA));
 
         result.IsSuccess.Should().BeTrue();
         result.Value!.Term!.Field.Name.Should().Be("tenantId");
-        result.Value.Term.Value.Should().Be(FieldValue.String("tenant-a"));
+        result.Value.Term.Value.Should().Be(FieldValue.String(TestTenants.TenantA.ToString()));
     }
 
     [Fact]
@@ -261,7 +262,7 @@ public sealed class ElasticSearchFilterCompilerTests
         var definition = TenantedDefinition();
         var callerFilter = SearchFilter.Eq("status", SearchValue.From("active"));
 
-        var result = ElasticSearchFilterCompiler.CompileWithTenantScope(definition, callerFilter, TenantScope.Of("tenant-a"));
+        var result = ElasticSearchFilterCompiler.CompileWithTenantScope(definition, callerFilter, TenantScope.For(TestTenants.TenantA));
 
         result.IsSuccess.Should().BeTrue();
         result.Value!.Bool.Should().NotBeNull();
@@ -275,18 +276,18 @@ public sealed class ElasticSearchFilterCompilerTests
     {
         var definition = SearchIndexDefinition.Create("products", []).Value;
 
-        var result = ElasticSearchFilterCompiler.CompileWithTenantScope(definition, null, TenantScope.Of("tenant-a"));
+        var result = ElasticSearchFilterCompiler.CompileWithTenantScope(definition, null, TenantScope.For(TestTenants.TenantA));
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().BeNull();
     }
 
     [Fact]
-    public void CompileWithTenantScope_OnTenantedIndex_WithTenantScopeNone_FailsClosed()
+    public void CompileWithTenantScope_OnTenantedIndex_WithTenantScopeGlobal_FailsClosed()
     {
         var definition = TenantedDefinition();
 
-        var result = ElasticSearchFilterCompiler.CompileWithTenantScope(definition, null, TenantScope.None);
+        var result = ElasticSearchFilterCompiler.CompileWithTenantScope(definition, null, TenantScope.Global);
 
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("search.tenant_scope_missing");

@@ -1,0 +1,50 @@
+#nullable enable
+SharedKernel.Idempotency.Abstractions.IIdempotencyStore
+SharedKernel.Idempotency.Abstractions.IIdempotencyStore.CompleteAsync(SharedKernel.Idempotency.Abstractions.IdempotencyPurpose purpose, string! key, string! token, string? response, System.TimeSpan retention, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<bool>!
+SharedKernel.Idempotency.Abstractions.IIdempotencyStore.ReleaseAsync(SharedKernel.Idempotency.Abstractions.IdempotencyPurpose purpose, string! key, string! token, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<bool>!
+SharedKernel.Idempotency.Abstractions.IIdempotencyStore.TryBeginAsync(SharedKernel.Idempotency.Abstractions.IdempotencyPurpose purpose, string! key, string! fingerprint, System.TimeSpan ttl, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<SharedKernel.Idempotency.Abstractions.IdempotencyReservation>!
+SharedKernel.Idempotency.Abstractions.IdempotencyPurpose
+SharedKernel.Idempotency.Abstractions.IdempotencyPurpose.Message = 1 -> SharedKernel.Idempotency.Abstractions.IdempotencyPurpose
+SharedKernel.Idempotency.Abstractions.IdempotencyPurpose.Request = 0 -> SharedKernel.Idempotency.Abstractions.IdempotencyPurpose
+SharedKernel.Idempotency.Abstractions.IdempotencyPurposeSelection
+SharedKernel.Idempotency.Abstractions.IdempotencyPurposeSelection.For(SharedKernel.Idempotency.Abstractions.IdempotencyPurpose purpose) -> SharedKernel.Idempotency.Abstractions.IdempotencyPurposeSelection!
+SharedKernel.Idempotency.Abstractions.IdempotencyPurposeSelection.ForMessages() -> SharedKernel.Idempotency.Abstractions.IdempotencyPurposeSelection!
+SharedKernel.Idempotency.Abstractions.IdempotencyPurposeSelection.ForRequests() -> SharedKernel.Idempotency.Abstractions.IdempotencyPurposeSelection!
+SharedKernel.Idempotency.Abstractions.IdempotencyPurposeSelection.IdempotencyPurposeSelection() -> void
+SharedKernel.Idempotency.Abstractions.IdempotencyPurposeSelection.Purposes.get -> System.Collections.Generic.IReadOnlyList<SharedKernel.Idempotency.Abstractions.IdempotencyPurpose>!
+SharedKernel.Idempotency.Abstractions.IdempotencyReservation
+SharedKernel.Idempotency.Abstractions.IdempotencyReservation.Deconstruct(out SharedKernel.Idempotency.Abstractions.IdempotencyReservationStatus Status, out string? StoredResponse, out string? Token) -> void
+SharedKernel.Idempotency.Abstractions.IdempotencyReservation.Equals(SharedKernel.Idempotency.Abstractions.IdempotencyReservation other) -> bool
+SharedKernel.Idempotency.Abstractions.IdempotencyReservation.IdempotencyReservation() -> void
+SharedKernel.Idempotency.Abstractions.IdempotencyReservation.IdempotencyReservation(SharedKernel.Idempotency.Abstractions.IdempotencyReservationStatus Status, string? StoredResponse, string? Token) -> void
+SharedKernel.Idempotency.Abstractions.IdempotencyReservation.Status.get -> SharedKernel.Idempotency.Abstractions.IdempotencyReservationStatus
+SharedKernel.Idempotency.Abstractions.IdempotencyReservation.Status.init -> void
+SharedKernel.Idempotency.Abstractions.IdempotencyReservation.StoredResponse.get -> string?
+SharedKernel.Idempotency.Abstractions.IdempotencyReservation.StoredResponse.init -> void
+SharedKernel.Idempotency.Abstractions.IdempotencyReservation.Token.get -> string?
+SharedKernel.Idempotency.Abstractions.IdempotencyReservation.Token.init -> void
+SharedKernel.Idempotency.Abstractions.IdempotencyReservationStatus
+SharedKernel.Idempotency.Abstractions.IdempotencyReservationStatus.Completed = 2 -> SharedKernel.Idempotency.Abstractions.IdempotencyReservationStatus
+SharedKernel.Idempotency.Abstractions.IdempotencyReservationStatus.FingerprintMismatch = 3 -> SharedKernel.Idempotency.Abstractions.IdempotencyReservationStatus
+SharedKernel.Idempotency.Abstractions.IdempotencyReservationStatus.InProgress = 1 -> SharedKernel.Idempotency.Abstractions.IdempotencyReservationStatus
+SharedKernel.Idempotency.Abstractions.IdempotencyReservationStatus.Started = 0 -> SharedKernel.Idempotency.Abstractions.IdempotencyReservationStatus
+SharedKernel.Idempotency.Abstractions.IdempotencyServiceCollectionExtensions
+SharedKernel.Idempotency.Abstractions.IdempotencyTenantScope
+const SharedKernel.Idempotency.Abstractions.IdempotencyTenantScope.MaxLength = 36 -> int
+const SharedKernel.Idempotency.Abstractions.IdempotencyTenantScope.NoTenant = "no-tenant" -> string!
+override SharedKernel.Idempotency.Abstractions.IdempotencyReservation.GetHashCode() -> int
+static SharedKernel.Idempotency.Abstractions.IdempotencyReservation.Completed(string? storedResponse) -> SharedKernel.Idempotency.Abstractions.IdempotencyReservation
+static SharedKernel.Idempotency.Abstractions.IdempotencyReservation.FingerprintMismatch() -> SharedKernel.Idempotency.Abstractions.IdempotencyReservation
+static SharedKernel.Idempotency.Abstractions.IdempotencyReservation.InProgress() -> SharedKernel.Idempotency.Abstractions.IdempotencyReservation
+static SharedKernel.Idempotency.Abstractions.IdempotencyReservation.Started(string! token) -> SharedKernel.Idempotency.Abstractions.IdempotencyReservation
+static SharedKernel.Idempotency.Abstractions.IdempotencyReservation.operator !=(SharedKernel.Idempotency.Abstractions.IdempotencyReservation left, SharedKernel.Idempotency.Abstractions.IdempotencyReservation right) -> bool
+static SharedKernel.Idempotency.Abstractions.IdempotencyReservation.operator ==(SharedKernel.Idempotency.Abstractions.IdempotencyReservation left, SharedKernel.Idempotency.Abstractions.IdempotencyReservation right) -> bool
+static SharedKernel.Idempotency.Abstractions.IdempotencyServiceCollectionExtensions.AddIdempotencyStore<TStore>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<SharedKernel.Idempotency.Abstractions.IdempotencyPurposeSelection!>! purposes) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SharedKernel.Idempotency.Abstractions.IdempotencyServiceCollectionExtensions.GetRequiredIdempotencyStore(this System.IServiceProvider! services, SharedKernel.Idempotency.Abstractions.IdempotencyPurpose purpose) -> SharedKernel.Idempotency.Abstractions.IIdempotencyStore!
+static SharedKernel.Idempotency.Abstractions.IdempotencyServiceCollectionExtensions.HasIdempotencyStore(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, SharedKernel.Idempotency.Abstractions.IdempotencyPurpose purpose) -> bool
+static SharedKernel.Idempotency.Abstractions.IdempotencyServiceCollectionExtensions.SelectPurposes(System.Action<SharedKernel.Idempotency.Abstractions.IdempotencyPurposeSelection!>! purposes) -> System.Collections.Generic.IReadOnlyList<SharedKernel.Idempotency.Abstractions.IdempotencyPurpose>!
+static SharedKernel.Idempotency.Abstractions.IdempotencyTenantScope.Current(SharedKernel.Execution.Context.IRequestContextAccessor! accessor) -> string!
+static SharedKernel.Idempotency.Abstractions.IdempotencyTenantScope.For(SharedKernel.Execution.Tenancy.TenantId? tenantId) -> string!
+~override SharedKernel.Idempotency.Abstractions.IdempotencyReservation.Equals(object obj) -> bool
+~override SharedKernel.Idempotency.Abstractions.IdempotencyReservation.ToString() -> string
+static SharedKernel.Idempotency.Abstractions.IdempotencyServiceCollectionExtensions.AddIdempotencyStore<TStore>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, SharedKernel.Idempotency.Abstractions.IdempotencyPurpose purpose, Microsoft.Extensions.DependencyInjection.ServiceLifetime lifetime = Microsoft.Extensions.DependencyInjection.ServiceLifetime.Scoped) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!

@@ -1,4 +1,5 @@
 using FluentAssertions;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Search.Abstractions.Models;
 using SharedKernel.Search.Meilisearch.Tests.Containers;
 using SharedKernel.Search.Meilisearch.Tests.Support;
@@ -58,7 +59,7 @@ public sealed class MeilisearchReadBehaviourTests : IAsyncLifetime
             RequireExactTotalHits = true,
         };
 
-        var result = await index.SearchAsync(request, TenantScope.Of(TestProductCorpus.TenantA));
+        var result = await index.SearchAsync(request, TenantScope.For(TestProductCorpus.TenantA));
 
         result.IsSuccess.Should().BeTrue();
         result.Value.TotalHits.Should().Be(expectedElectronics.Length);
@@ -91,7 +92,7 @@ public sealed class MeilisearchReadBehaviourTests : IAsyncLifetime
             await index.IndexManyAsync(TestProductCorpus.All, SearchWriteConsistency.Searchable);
 
             var request = SearchRequest.Default with { Facets = [TestProductFields.Category], PageSize = 1 };
-            var result = await index.SearchAsync(request, TenantScope.Of(TestProductCorpus.TenantA));
+            var result = await index.SearchAsync(request, TenantScope.For(TestProductCorpus.TenantA));
 
             result.IsSuccess.Should().BeTrue();
             result.Value.Facets[TestProductFields.Category].Values.Should().HaveCount(2);
@@ -109,7 +110,7 @@ public sealed class MeilisearchReadBehaviourTests : IAsyncLifetime
         var index = MeilisearchProviderFactory.CreateIndex<TestProduct>(_fixture, _definition);
         var request = SearchRequest.Default with { RequireExactTotalHits = false };
 
-        var result = await index.SearchAsync(request, TenantScope.Of(TestProductCorpus.TenantA));
+        var result = await index.SearchAsync(request, TenantScope.For(TestProductCorpus.TenantA));
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Accuracy.Should().Be(TotalHitsAccuracy.Estimated);
@@ -121,7 +122,7 @@ public sealed class MeilisearchReadBehaviourTests : IAsyncLifetime
         var index = MeilisearchProviderFactory.CreateIndex<TestProduct>(_fixture, _definition);
         var request = SearchRequest.Default with { RequireExactTotalHits = true };
 
-        var result = await index.SearchAsync(request, TenantScope.Of(TestProductCorpus.TenantA));
+        var result = await index.SearchAsync(request, TenantScope.For(TestProductCorpus.TenantA));
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Accuracy.Should().Be(TotalHitsAccuracy.Exact);
@@ -140,7 +141,7 @@ public sealed class MeilisearchReadBehaviourTests : IAsyncLifetime
             Highlight = new HighlightRequest { Fields = [TestProductFields.Name] },
         };
 
-        var result = await index.SearchAsync(request, TenantScope.Of(TestProductCorpus.TenantA));
+        var result = await index.SearchAsync(request, TenantScope.For(TestProductCorpus.TenantA));
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Hits.Should().NotBeEmpty();
@@ -155,7 +156,7 @@ public sealed class MeilisearchReadBehaviourTests : IAsyncLifetime
         var index = MeilisearchProviderFactory.CreateIndex<TestProduct>(_fixture, _definition);
         var tenantBDoc = TestProductCorpus.ForTenant(TestProductCorpus.TenantB)[0];
 
-        var result = await index.GetAsync(tenantBDoc.DocumentId, TenantScope.Of(TestProductCorpus.TenantA));
+        var result = await index.GetAsync(tenantBDoc.DocumentId, TenantScope.For(TestProductCorpus.TenantA));
 
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("search.document_not_found");
@@ -167,7 +168,7 @@ public sealed class MeilisearchReadBehaviourTests : IAsyncLifetime
         var index = MeilisearchProviderFactory.CreateIndex<TestProduct>(_fixture, _definition);
         var tenantADoc = TestProductCorpus.ForTenant(TestProductCorpus.TenantA)[0];
 
-        var result = await index.GetAsync(tenantADoc.DocumentId, TenantScope.Of(TestProductCorpus.TenantA));
+        var result = await index.GetAsync(tenantADoc.DocumentId, TenantScope.For(TestProductCorpus.TenantA));
 
         result.IsSuccess.Should().BeTrue();
         result.Value.DocumentId.Should().Be(tenantADoc.DocumentId);
@@ -178,8 +179,8 @@ public sealed class MeilisearchReadBehaviourTests : IAsyncLifetime
     {
         var index = MeilisearchProviderFactory.CreateIndex<TestProduct>(_fixture, _definition);
 
-        var tenantACount = await index.CountAsync(filter: null, TenantScope.Of(TestProductCorpus.TenantA));
-        var tenantBCount = await index.CountAsync(filter: null, TenantScope.Of(TestProductCorpus.TenantB));
+        var tenantACount = await index.CountAsync(filter: null, TenantScope.For(TestProductCorpus.TenantA));
+        var tenantBCount = await index.CountAsync(filter: null, TenantScope.For(TestProductCorpus.TenantB));
 
         tenantACount.IsSuccess.Should().BeTrue();
         tenantACount.Value.IsExact.Should().BeTrue("the corpus is far below the index maxTotalHits ceiling, so Meilisearch can answer exactly");

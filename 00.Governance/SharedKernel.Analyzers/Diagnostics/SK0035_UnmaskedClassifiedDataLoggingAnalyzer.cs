@@ -76,7 +76,7 @@ public sealed class UnmaskedClassifiedDataLoggingAnalyzer : AnalyzerBase
         title: "Unmasked classified data reaches a logging call site",
         messageFormat: "'{0}' carries {1} and is passed to [LoggerMessage] parameter '{2}', which is not "
             + "classified. Mark the parameter with the same classification attribute so log redaction "
-            + "masks it, or mask it with SharedKernel.DataPrivacy.PiiMasking first.",
+            + "masks it, or mask it with SharedKernel.DataPrivacy.Masking.PiiMasking first.",
         category: Security,
         defaultSeverity: DiagnosticSeverity.Warning,
         readmeAnchor: "sk0035-unmaskedclassifieddataatloggingcallsite"

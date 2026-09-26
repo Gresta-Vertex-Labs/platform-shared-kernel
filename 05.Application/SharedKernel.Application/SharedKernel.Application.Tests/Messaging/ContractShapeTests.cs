@@ -1,12 +1,12 @@
 using FluentAssertions;
-using MediatR;
+using SharedKernel.Application.Messaging;
 using SharedKernel.Primitives.Results;
 
 namespace SharedKernel.Application.Tests.Messaging;
 
 /// <summary>
 /// Verifies the exact contract shapes of the command/query vocabulary in
-/// <c>SharedKernel.Application</c>.
+/// <c>SharedKernel.Application.Messaging</c>.
 /// </summary>
 public sealed class ContractShapeTests
 {
@@ -135,5 +135,22 @@ public sealed class ContractShapeTests
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().Be("ok");
+    }
+
+    [Fact]
+    public void ApplicationAssembly_ReferencesNoMediatorLibrary()
+    {
+        typeof(ICommand).Assembly.GetReferencedAssemblies()
+            .Select(static reference => reference.Name)
+            .Should().NotContain(static name => name != null && name.StartsWith("MediatR", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void IPipelineBehavior_ContinuationTakesNoArguments()
+    {
+        typeof(RequestHandlerContinuation<Result>).GetMethod("Invoke")!.GetParameters().Should().BeEmpty();
+        typeof(IPipelineBehavior<TestCommand, Result>).GetMethod("Handle")!.GetParameters()
+            .Select(static p => p.ParameterType)
+            .Should().Equal(typeof(TestCommand), typeof(RequestHandlerContinuation<Result>), typeof(CancellationToken));
     }
 }

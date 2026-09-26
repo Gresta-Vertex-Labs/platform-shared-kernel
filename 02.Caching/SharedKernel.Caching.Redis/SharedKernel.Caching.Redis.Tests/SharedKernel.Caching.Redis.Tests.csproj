@@ -25,6 +25,6 @@
     <!-- SharedKernel.Caching.FusionCache needed for L1FallbackTests and RedisL2IntegrationTests (AddSharedKernelCaching, CachePolicy) -->
     <ProjectReference Include="..\..\SharedKernel.Caching.FusionCache\SharedKernel.Caching.FusionCache.csproj" />
     <!-- SharedKernel.Testing provides FakeEncryptionKeyProvider -->
-    <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
+    <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Cryptography.Testing\SharedKernel.Cryptography.Testing.csproj" />
   </ItemGroup>
 </Project>

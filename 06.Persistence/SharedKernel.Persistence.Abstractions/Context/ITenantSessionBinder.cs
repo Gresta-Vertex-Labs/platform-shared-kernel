@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Data.Common;
+using SharedKernel.Execution.Tenancy;
 
 namespace SharedKernel.Persistence.Abstractions.Context;
 
@@ -37,6 +38,6 @@ public interface ITenantSessionBinder
     Task BindAsync(
         DbConnection connection,
         DbTransaction transaction,
-        Guid? tenantId,
+        TenantId? tenantId,
         CancellationToken cancellationToken = default);
 }

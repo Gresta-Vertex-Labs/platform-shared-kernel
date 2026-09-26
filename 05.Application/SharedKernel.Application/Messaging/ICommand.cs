@@ -1,7 +1,6 @@
-using MediatR;
 using SharedKernel.Primitives.Results;
 
-namespace SharedKernel.Application;
+namespace SharedKernel.Application.Messaging;
 
 /// <summary>
 /// Represents a void-returning command — a request that mutates state and reports success or

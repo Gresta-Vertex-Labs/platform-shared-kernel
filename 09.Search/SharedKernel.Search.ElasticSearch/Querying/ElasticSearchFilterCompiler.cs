@@ -1,6 +1,7 @@
 using System.Globalization;
 using Elastic.Clients.Elasticsearch;
 using Elastic.Clients.Elasticsearch.QueryDsl;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Search.Abstractions.Errors;
 using SharedKernel.Search.Abstractions.Models;
@@ -65,7 +66,7 @@ internal static class ElasticSearchFilterCompiler
     /// <summary>
     /// Compiles <paramref name="filter"/> (if any) and prepends the tenant predicate as the outermost
     /// filter clause. Fails closed — with no I/O — when <paramref name="definition"/> declares a
-    /// <c>TenantField</c> and <paramref name="tenantScope"/> is <see cref="TenantScope.None"/>.
+    /// <c>TenantField</c> and <paramref name="tenantScope"/> is <see cref="TenantScope.Global"/>.
     /// </summary>
     public static Result<Query?> CompileWithTenantScope(
         SearchIndexDefinition definition, SearchFilter? filter, TenantScope tenantScope)
@@ -77,14 +78,14 @@ internal static class ElasticSearchFilterCompiler
             return Result<Query?>.Success(callerClause);
         }
 
-        if (string.IsNullOrEmpty(tenantScope.Value))
+        if (tenantScope.IsGlobal)
         {
             return Result<Query?>.Failure(SearchErrors.TenantScopeMissing(definition.Name));
         }
 
         var tenantClause = new Query
         {
-            Term = new TermQuery { Field = tenantField, Value = FieldValue.String(tenantScope.Value) },
+            Term = new TermQuery { Field = tenantField, Value = FieldValue.String(tenantScope.Tenant!.Value.ToString()) },
         };
 
         if (callerClause is null)

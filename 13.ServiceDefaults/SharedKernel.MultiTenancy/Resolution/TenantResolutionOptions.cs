@@ -24,7 +24,7 @@ public sealed class TenantResolutionOptions
     /// <b>SECURITY-MOTIVATED DEFAULT — DO NOT REORDER BACK TO <c>[Header, Claim, Database]</c>
     /// WITHOUT A SECURITY REVIEW.</b> The prior default let an unsigned, caller-supplied
     /// <c>X-Tenant-Id</c> header outrank a cryptographically-verified JWT tenant claim for the same
-    /// request — a direct cross-tenant data-access vector, since <c>AmbientTenantProvider.TenantId</c>
+    /// request — a direct cross-tenant data-access vector, since the resolved tenant
     /// is what <c>06.Persistence</c>'s <c>TenantedDbContext</c> global filter trusts. Putting
     /// <see cref="TenantResolutionStrategyNames.Claim"/> first closes that vector:
     /// <see cref="ClaimTenantResolutionStrategy"/> returns <see langword="null"/> for any

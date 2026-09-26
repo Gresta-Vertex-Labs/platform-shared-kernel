@@ -18,8 +18,6 @@ SharedKernel.Persistence.Dapper.Sessions.IDbSession.CommitAsync(System.Threading
 SharedKernel.Persistence.Dapper.Sessions.IDbSession.Connection.get -> System.Data.Common.DbConnection!
 SharedKernel.Persistence.Dapper.Sessions.IDbSession.IsEnlisted.get -> bool
 SharedKernel.Persistence.Dapper.Sessions.IDbSession.IsReadOnly.get -> bool
-SharedKernel.Persistence.Dapper.Sessions.IDbSession.RequireTenantId() -> System.Guid
-SharedKernel.Persistence.Dapper.Sessions.IDbSession.TenantId.get -> System.Guid?
 SharedKernel.Persistence.Dapper.Sessions.IDbSession.Transaction.get -> System.Data.Common.DbTransaction!
 SharedKernel.Persistence.Dapper.Sessions.IDbSessionFactory
 SharedKernel.Persistence.Dapper.Sessions.IDbSessionFactory.OpenAsync(SharedKernel.Persistence.Dapper.Sessions.DbSessionOptions! options, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Persistence.Dapper.Sessions.IDbSession!>!
@@ -36,3 +34,5 @@ static SharedKernel.Persistence.DapperPersistenceExtensions.AddSharedKernelDappe
 static SharedKernel.Persistence.DapperPersistenceExtensions.AddSharedKernelDapper(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<SharedKernel.Persistence.Dapper.TypeHandlers.DapperConfigurationBuilder!>? configure = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 static SharedKernel.Persistence.Dapper.Options.DapperPersistenceOptions.SectionName.get -> string!
 static SharedKernel.Persistence.Dapper.TypeHandlers.DapperConfiguration.Apply(System.Action<SharedKernel.Persistence.Dapper.TypeHandlers.DapperConfigurationBuilder!>? configure = null) -> void
+SharedKernel.Persistence.Dapper.Sessions.IDbSession.RequireTenantId() -> SharedKernel.Execution.Tenancy.TenantId
+SharedKernel.Persistence.Dapper.Sessions.IDbSession.TenantId.get -> SharedKernel.Execution.Tenancy.TenantId?

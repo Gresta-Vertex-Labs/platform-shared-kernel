@@ -1,3 +1,5 @@
+using SharedKernel.Execution.Tenancy;
+using SharedKernel.Execution.Context;
 using System.Net;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
@@ -36,7 +38,6 @@ public sealed class ApiKeyServiceCollectionExtensionsTests
         AssertRegistered<IApiKeyStore>(services, ServiceLifetime.Scoped, typeof(InMemoryApiKeyStore));
         AssertRegistered<IApiKeyValidator>(services, ServiceLifetime.Scoped, typeof(ManagedApiKeyValidator));
         AssertRegistered<IUserContext>(services, ServiceLifetime.Scoped);
-        AssertRegistered<ITenantProvider>(services, ServiceLifetime.Scoped, typeof(UserContextTenantProvider));
         Assert.Single(services, d => d.ServiceType == typeof(IUserContextMapper) && d.ImplementationType == typeof(ApiKeyUserContextMapper));
     }
 
@@ -56,18 +57,15 @@ public sealed class ApiKeyServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public void AddApiKeyAuthentication_ExistingUserContextAndTenantProvider_AreKept()
+    public void AddApiKeyAuthentication_ExistingUserContext_IsKept()
     {
         var services = new ServiceCollection();
         services.AddSingleton<IUserContext>(SystemUserContext.Instance);
-        services.AddScoped<ITenantProvider, FixedTenantProvider>();
 
         services.AddApiKeyAuthentication<AcceptingValidator>();
 
         ServiceDescriptor userContext = Assert.Single(services, d => d.ServiceType == typeof(IUserContext));
         Assert.Same(SystemUserContext.Instance, userContext.ImplementationInstance);
-        ServiceDescriptor tenantProvider = Assert.Single(services, d => d.ServiceType == typeof(ITenantProvider));
-        Assert.Equal(typeof(FixedTenantProvider), tenantProvider.ImplementationType);
     }
 
     [Fact]
@@ -107,14 +105,14 @@ public sealed class ApiKeyServiceCollectionExtensionsTests
 
         CallerSnapshot caller = await host.GetCallerAsync(host.Get("/caller", AcceptingValidator.Key));
 
-        Assert.Equal(IdentityKind.ServicePrincipal, caller.IdentityKind);
+        Assert.Equal(ActorKind.Service, caller.ActorKind);
         Assert.Equal("custom-client", caller.SubjectId);
     }
 
     [Fact]
     public async Task AddApiKeyAuthentication_CustomValidator_ReceivesKeyAndBuildsCaller()
     {
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
         var validator = new AcceptingValidator(tenantId);
         await using ApiKeyTestHost host = await ApiKeyTestHost.StartAsync(services =>
         {
@@ -126,9 +124,9 @@ public sealed class ApiKeyServiceCollectionExtensionsTests
         CallerSnapshot accepted = await host.GetCallerAsync(host.Get("/caller", AcceptingValidator.Key));
         using HttpResponseMessage rejected = await host.Client.SendAsync(host.Get("/protected", "some-other-key"));
 
-        Assert.Equal(IdentityKind.ServicePrincipal, accepted.IdentityKind);
+        Assert.Equal(ActorKind.Service, accepted.ActorKind);
         Assert.Equal("custom-client", accepted.SubjectId);
-        Assert.Equal(tenantId, accepted.TenantId);
+        Assert.Equal(tenantId.Value, accepted.TenantId);
         Assert.Equal(["reader"], accepted.Roles);
         Assert.Equal(["orders:read"], accepted.Permissions);
         Assert.Null(accepted.KeyId);
@@ -234,12 +232,7 @@ public sealed class ApiKeyServiceCollectionExtensionsTests
         }
     }
 
-    private sealed class FixedTenantProvider : ITenantProvider
-    {
-        public Guid TenantId => Guid.Parse("11111111-1111-1111-1111-111111111111");
-    }
-
-    private sealed class AcceptingValidator(Guid? tenantId) : IApiKeyValidator
+    private sealed class AcceptingValidator(TenantId? tenantId) : IApiKeyValidator
     {
         public const string Key = "custom-key-0001";
 

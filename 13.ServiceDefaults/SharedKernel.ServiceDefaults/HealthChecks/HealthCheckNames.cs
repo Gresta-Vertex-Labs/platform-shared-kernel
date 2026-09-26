@@ -4,12 +4,18 @@ namespace SharedKernel.ServiceDefaults.HealthChecks;
 /// Well-known default health-check <em>registration names</em> used throughout this domain.
 /// </summary>
 /// <remarks>
-/// Mirrors the <see cref="HealthCheckTags"/> constants-class pattern. Every <c>Add*HealthCheck</c>
-/// extension method's default <c>name</c> parameter, and the inline <c>"startup"</c> registration
-/// inside <see cref="HealthCheckExtensions.AddSharedKernelHealthChecks"/>, reference these
-/// constants — zero bare-literal health-check registration names remain anywhere in
-/// <c>SharedKernel.ServiceDefaults</c>. Callers may still pass a custom <c>name</c> at the call
-/// site; these constants only define the defaults.
+/// <para>
+/// Mirrors the <see cref="HealthCheckTags"/> constants-class pattern. Every <c>Add*Check</c> extension method's
+/// default <c>name</c> parameter, and the inline <c>"startup"</c> registration inside
+/// <see cref="HealthCheckExtensions.AddSharedKernelHealthChecks"/>, reference these constants. Callers may still pass
+/// a custom <c>name</c> at the call site; these constants only define the defaults.
+/// </para>
+/// <para>
+/// Checks mapped from provider readiness probes by
+/// <see cref="ReadinessHealthCheckExtensions.AddSharedKernelReadiness"/> are named after the probe, and their names
+/// are declared by the provider package that registers the probe (for example <c>RedisReadinessProbeNames</c> or
+/// <c>StorageReadinessProbeNames</c>), not here.
+/// </para>
 /// </remarks>
 public static class HealthCheckNames
 {
@@ -22,39 +28,6 @@ public static class HealthCheckNames
     /// <summary>Default registration name for the startup-migration readiness check (<c>AddPersistenceStartupReadinessCheck</c>).</summary>
     public const string PersistenceStartup = "persistence-startup";
 
-    /// <summary>Default registration name for the field-encryption key-ring readiness check.</summary>
-    public const string FieldEncryption = "field-encryption";
-
-    /// <summary>Default registration name for the audit-ledger sealing readiness check.</summary>
-    public const string AuditSealing = "audit-sealing";
-
-    /// <summary>Default registration name for Redis connectivity checks.</summary>
-    public const string Redis = "redis";
-
-    /// <summary>Default registration name for message-bus connectivity checks.</summary>
-    public const string Messaging = "messaging";
-
-    /// <summary>Default registration name for cache readiness checks.</summary>
-    public const string Cache = "cache";
-
     /// <summary>Registration name for the always-on <see cref="Probes.StartupGateHealthCheck"/>.</summary>
     public const string Startup = "startup";
-
-    /// <summary>Default registration name for object-storage connectivity checks.</summary>
-    public const string Storage = "storage";
-
-    /// <summary>Default registration name for search-index connectivity checks.</summary>
-    public const string Search = "search";
-
-    /// <summary>Default registration name for vector-store connectivity checks.</summary>
-    public const string VectorStore = "vector-store";
-
-    /// <summary>Default registration name for workflow-service connectivity checks.</summary>
-    public const string Workflows = "workflows";
-
-    /// <summary>Default registration name for scheduler-loop liveness checks.</summary>
-    public const string Scheduler = "scheduler";
-
-    /// <summary>Default registration name for encryption-key-provider (KMS) reachability checks.</summary>
-    public const string EncryptionKeyProvider = "encryption-key-provider";
 }

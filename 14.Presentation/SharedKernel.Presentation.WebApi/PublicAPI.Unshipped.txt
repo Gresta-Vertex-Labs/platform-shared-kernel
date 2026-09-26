@@ -3,7 +3,6 @@ SharedKernel.Presentation.WebApi.AcceptIdempotencyKeyAttribute
 SharedKernel.Presentation.WebApi.AcceptIdempotencyKeyAttribute.AcceptIdempotencyKeyAttribute() -> void
 SharedKernel.Presentation.WebApi.AcceptIfMatchAttribute
 SharedKernel.Presentation.WebApi.AcceptIfMatchAttribute.AcceptIfMatchAttribute() -> void
-SharedKernel.Presentation.WebApi.AuthorizationConventionExtensions
 SharedKernel.Presentation.WebApi.ConditionalRequestExtensions
 SharedKernel.Presentation.WebApi.ContentSecurityPolicyExtensions
 SharedKernel.Presentation.WebApi.CorrelationIdHttpContextExtensions
@@ -44,34 +43,12 @@ SharedKernel.Presentation.WebApi.Paging.Request.get -> SharedKernel.Contracts.Pa
 SharedKernel.Presentation.WebApi.PresentationErrorCodes
 SharedKernel.Presentation.WebApi.ProblemDetailsExtensionNames
 SharedKernel.Presentation.WebApi.RequestSizeLimitExtensions
-SharedKernel.Presentation.WebApi.RequireAuthenticationMethodAttribute
-SharedKernel.Presentation.WebApi.RequireAuthenticationMethodAttribute.MaxAgeSeconds.get -> int
-SharedKernel.Presentation.WebApi.RequireAuthenticationMethodAttribute.MaxAgeSeconds.set -> void
-SharedKernel.Presentation.WebApi.RequireAuthenticationMethodAttribute.Methods.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
-SharedKernel.Presentation.WebApi.RequireAuthenticationMethodAttribute.Policy.get -> string!
-SharedKernel.Presentation.WebApi.RequireAuthenticationMethodAttribute.RequireAuthenticationMethodAttribute(params string![]! methods) -> void
-SharedKernel.Presentation.WebApi.RequireAuthenticationMethodAttribute.Roles.get -> string?
-SharedKernel.Presentation.WebApi.RequireFreshAuthenticationAttribute
-SharedKernel.Presentation.WebApi.RequireFreshAuthenticationAttribute.MaxAge.get -> System.TimeSpan
-SharedKernel.Presentation.WebApi.RequireFreshAuthenticationAttribute.Policy.get -> string!
-SharedKernel.Presentation.WebApi.RequireFreshAuthenticationAttribute.RequireFreshAuthenticationAttribute(int maxAgeSeconds) -> void
-SharedKernel.Presentation.WebApi.RequireFreshAuthenticationAttribute.Roles.get -> string?
 SharedKernel.Presentation.WebApi.RequireIdempotencyKeyAttribute
 SharedKernel.Presentation.WebApi.RequireIdempotencyKeyAttribute.RequireIdempotencyKeyAttribute() -> void
 SharedKernel.Presentation.WebApi.RequireIfMatchAttribute
 SharedKernel.Presentation.WebApi.RequireIfMatchAttribute.RequireIfMatchAttribute() -> void
-SharedKernel.Presentation.WebApi.RequireEndpointPermissionAttribute
-SharedKernel.Presentation.WebApi.RequireEndpointPermissionAttribute.Permissions.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
-SharedKernel.Presentation.WebApi.RequireEndpointPermissionAttribute.Policy.get -> string!
-SharedKernel.Presentation.WebApi.RequireEndpointPermissionAttribute.RequireEndpointPermissionAttribute(params string![]! permissions) -> void
-SharedKernel.Presentation.WebApi.RequireEndpointPermissionAttribute.Roles.get -> string?
-SharedKernel.Presentation.WebApi.RequireRoleAttribute
-SharedKernel.Presentation.WebApi.RequireRoleAttribute.Policy.get -> string!
-SharedKernel.Presentation.WebApi.RequireRoleAttribute.RequireRoleAttribute(params string![]! roles) -> void
-SharedKernel.Presentation.WebApi.RequireRoleAttribute.Roles.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
 SharedKernel.Presentation.WebApi.ResultHttpExtensions
 SharedKernel.Presentation.WebApi.SharedKernelWebApiOptions
-SharedKernel.Presentation.WebApi.SharedKernelWebApiOptions.CorrelationId.get -> SharedKernel.Presentation.WebApi.WebApiCorrelationIdOptions!
 SharedKernel.Presentation.WebApi.SharedKernelWebApiOptions.Cors.get -> SharedKernel.Presentation.WebApi.WebApiCorsOptions!
 SharedKernel.Presentation.WebApi.SharedKernelWebApiOptions.Limits.get -> SharedKernel.Presentation.WebApi.WebApiLimitsOptions!
 SharedKernel.Presentation.WebApi.SharedKernelWebApiOptions.Problems.get -> SharedKernel.Presentation.WebApi.WebApiProblemsOptions!
@@ -79,17 +56,7 @@ SharedKernel.Presentation.WebApi.SharedKernelWebApiOptions.RemoveServerHeader.ge
 SharedKernel.Presentation.WebApi.SharedKernelWebApiOptions.RemoveServerHeader.set -> void
 SharedKernel.Presentation.WebApi.SharedKernelWebApiOptions.SecurityHeaders.get -> SharedKernel.Presentation.WebApi.WebApiSecurityHeadersOptions!
 SharedKernel.Presentation.WebApi.SharedKernelWebApiOptions.SharedKernelWebApiOptions() -> void
-SharedKernel.Presentation.WebApi.SharedKernelWebApiOptions.TrustInboundBaggage.get -> bool
-SharedKernel.Presentation.WebApi.SharedKernelWebApiOptions.TrustInboundBaggage.set -> void
 SharedKernel.Presentation.WebApi.WebApiApplicationBuilderExtensions
-SharedKernel.Presentation.WebApi.WebApiCorrelationIdOptions
-SharedKernel.Presentation.WebApi.WebApiCorrelationIdOptions.AllowedCharacterPattern.get -> string!
-SharedKernel.Presentation.WebApi.WebApiCorrelationIdOptions.AllowedCharacterPattern.set -> void
-SharedKernel.Presentation.WebApi.WebApiCorrelationIdOptions.Enabled.get -> bool
-SharedKernel.Presentation.WebApi.WebApiCorrelationIdOptions.Enabled.set -> void
-SharedKernel.Presentation.WebApi.WebApiCorrelationIdOptions.MaxLength.get -> int
-SharedKernel.Presentation.WebApi.WebApiCorrelationIdOptions.MaxLength.set -> void
-SharedKernel.Presentation.WebApi.WebApiCorrelationIdOptions.WebApiCorrelationIdOptions() -> void
 SharedKernel.Presentation.WebApi.WebApiCorsOptions
 SharedKernel.Presentation.WebApi.WebApiCorsOptions.AllowCredentials.get -> bool
 SharedKernel.Presentation.WebApi.WebApiCorsOptions.AllowCredentials.set -> void
@@ -161,7 +128,6 @@ const SharedKernel.Presentation.WebApi.ProblemDetailsExtensionNames.ErrorCodes =
 const SharedKernel.Presentation.WebApi.ProblemDetailsExtensionNames.Errors = "errors" -> string!
 const SharedKernel.Presentation.WebApi.ProblemDetailsExtensionNames.Exception = "exception" -> string!
 const SharedKernel.Presentation.WebApi.ProblemDetailsExtensionNames.TraceId = "traceId" -> string!
-const SharedKernel.Presentation.WebApi.WebApiCorrelationIdOptions.DefaultAllowedCharacterPattern = "^[A-Za-z0-9\\-_:.]+$" -> string!
 override SharedKernel.Presentation.WebApi.CursorPaging.Equals(object? obj) -> bool
 override SharedKernel.Presentation.WebApi.CursorPaging.GetHashCode() -> int
 override SharedKernel.Presentation.WebApi.CursorPaging.ToString() -> string!
@@ -174,12 +140,6 @@ override SharedKernel.Presentation.WebApi.IfMatch<TVersion>.ToString() -> string
 override SharedKernel.Presentation.WebApi.Paging.Equals(object? obj) -> bool
 override SharedKernel.Presentation.WebApi.Paging.GetHashCode() -> int
 override SharedKernel.Presentation.WebApi.Paging.ToString() -> string!
-static SharedKernel.Presentation.WebApi.AuthorizationConventionExtensions.RequireAuthenticationMethod<TBuilder>(this TBuilder builder, System.TimeSpan maxAge, params string![]! methods) -> TBuilder
-static SharedKernel.Presentation.WebApi.AuthorizationConventionExtensions.RequireAuthenticationMethod<TBuilder>(this TBuilder builder, params string![]! methods) -> TBuilder
-static SharedKernel.Presentation.WebApi.AuthorizationConventionExtensions.RequireFreshAuthentication<TBuilder>(this TBuilder builder, System.TimeSpan maxAge) -> TBuilder
-static SharedKernel.Presentation.WebApi.AuthorizationConventionExtensions.RequireFreshAuthentication<TBuilder>(this TBuilder builder, int maxAgeSeconds) -> TBuilder
-static SharedKernel.Presentation.WebApi.AuthorizationConventionExtensions.RequireEndpointPermission<TBuilder>(this TBuilder builder, params string![]! permissions) -> TBuilder
-static SharedKernel.Presentation.WebApi.AuthorizationConventionExtensions.RequireRole<TBuilder>(this TBuilder builder, params string![]! roles) -> TBuilder
 static SharedKernel.Presentation.WebApi.ConditionalRequestExtensions.AcceptIfMatch<TBuilder>(this TBuilder builder) -> TBuilder
 static SharedKernel.Presentation.WebApi.ConditionalRequestExtensions.GetIfMatch(this Microsoft.AspNetCore.Http.HttpContext! httpContext) -> string?
 static SharedKernel.Presentation.WebApi.ConditionalRequestExtensions.RequireIfMatch<TBuilder>(this TBuilder builder) -> TBuilder

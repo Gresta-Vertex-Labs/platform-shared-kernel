@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.MultiTenancy.Catalog;
 
 namespace SharedKernel.MultiTenancy.Tests.Catalog;
@@ -7,7 +8,7 @@ public sealed class TenantDescriptorTests
     [Fact]
     public void RecordEquality_WithSameValues_AreEqual()
     {
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
         var settings = new Dictionary<string, string> { ["theme"] = "dark" };
 
         var first = new TenantDescriptor(tenantId, "Acme", TenantStatus.Active, TenantIsolationMode.Shared, "en-US", settings);
@@ -19,7 +20,7 @@ public sealed class TenantDescriptorTests
     [Fact]
     public void WithExpression_ChangesOnlySpecifiedMember()
     {
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
         var original = new TenantDescriptor(
             tenantId,
             "Acme",
@@ -39,7 +40,7 @@ public sealed class TenantDescriptorTests
     public void DefaultCultureAndSettings_DefaultToNullAndEmpty_WithoutThrowing()
     {
         var descriptor = new TenantDescriptor(
-            Guid.NewGuid(),
+            new TenantId(Guid.NewGuid()),
             "Acme",
             TenantStatus.Active,
             TenantIsolationMode.Dedicated,
@@ -57,11 +58,11 @@ public sealed class TenantDescriptorTests
 /// </summary>
 internal sealed class InMemoryTenantCatalogDouble : ITenantCatalog
 {
-    private readonly Dictionary<Guid, TenantDescriptor> _byId = [];
+    private readonly Dictionary<TenantId, TenantDescriptor> _byId = [];
 
     public void Seed(TenantDescriptor descriptor) => _byId[descriptor.TenantId] = descriptor;
 
-    public Task<TenantDescriptor?> GetByIdAsync(Guid tenantId, CancellationToken ct) =>
+    public Task<TenantDescriptor?> GetByIdAsync(TenantId tenantId, CancellationToken ct) =>
         Task.FromResult(_byId.GetValueOrDefault(tenantId));
 
     public Task<TenantDescriptor?> GetByResolutionKeyAsync(string resolutionKey, CancellationToken ct) =>
@@ -73,7 +74,7 @@ public sealed class ITenantCatalogContractTests
     [Fact]
     public async Task InMemoryDouble_SatisfiesInterface_AndRoundTripsSeededTenant()
     {
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
         var descriptor = new TenantDescriptor(
             tenantId,
             "Acme",

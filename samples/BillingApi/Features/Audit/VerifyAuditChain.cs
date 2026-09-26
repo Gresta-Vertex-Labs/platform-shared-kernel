@@ -1,4 +1,5 @@
-using SharedKernel.Application;
+using SharedKernel.Application.Authorization;
+using SharedKernel.Application.Messaging;
 using SharedKernel.Persistence.EfCore.Auditing;
 using SharedKernel.Primitives.Results;
 

@@ -3,6 +3,7 @@ using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using SharedKernel.Primitives.Health;
 using SharedKernel.Caching.Abstractions;
 using SharedKernel.Caching.FusionCache.Extensions;
 using SharedKernel.Caching.Redis.Core.Extensions;
@@ -265,7 +266,7 @@ public sealed class SharedConnectionIntegrationTests : IAsyncLifetime
         Assert.Equal("bound:", provider.GetRequiredService<IOptions<FusionCacheOptions>>().Value.BackplaneChannelPrefix);
         Assert.Equal(3_000, provider.GetRequiredService<IConnectionMultiplexer>().TimeoutMilliseconds);
 
-        var health = await provider.GetRequiredService<IRedisConnectionProbe>().ProbeAsync();
+        var health = await provider.GetRequiredReadinessProbe(RedisReadinessProbeNames.Connection).ProbeAsync();
         Assert.True(health.IsHealthy);
     }
 

@@ -1,4 +1,5 @@
 using System.Data.Common;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.Npgsql.RowLevelSecurity;
 
@@ -24,7 +25,7 @@ internal sealed class NpgsqlTenantSessionBinder : ITenantSessionBinder
     public async Task BindAsync(
         DbConnection connection,
         DbTransaction transaction,
-        Guid? tenantId,
+        TenantId? tenantId,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(connection);

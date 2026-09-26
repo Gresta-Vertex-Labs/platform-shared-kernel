@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Abstractions</SharedKernelTier>
     <!-- NuGet packaging metadata -->
     <Description>Provider-neutral caching and distributed-locking contracts for SharedKernel services: ICacheService (hybrid memory and distributed cache with stampede protection, fail-safe, eager refresh and factory-controlled caching), ITenantCacheService with collision-free tenant keys and tags, CachePolicy, the canonical cache key format, and IDistributedLockService with fencing tokens, locks kept alive until released, and self-expiring leases. No FusionCache, Redis or RedLock dependency.</Description>
     <PackageReleaseNotes>First release.</PackageReleaseNotes>
@@ -18,6 +19,10 @@
   <ItemGroup>
     <!-- ICachingBuilder exposes IServiceCollection so provider packages can chain registrations. -->
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- TenantId: tenant-scoped keys, tags and ITenantCacheService take the one tenant identifier type. -->
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Execution\SharedKernel.Execution.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />

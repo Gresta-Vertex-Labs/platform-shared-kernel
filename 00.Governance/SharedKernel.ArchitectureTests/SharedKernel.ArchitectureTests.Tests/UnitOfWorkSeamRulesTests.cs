@@ -10,7 +10,7 @@ namespace SharedKernel.ArchitectureTests.Tests;
 /// <summary>
 /// Tests for <see cref="UnitOfWorkSeamRules.SharedContractsAreNotRedeclared"/> (P-558): the unit of
 /// work, request context and audit writer are declared once, in
-/// <c>SharedKernel.Application.Abstractions</c>.
+/// <c>SharedKernel.Execution</c>.
 /// </summary>
 public class UnitOfWorkSeamRulesTests
 {
@@ -50,7 +50,7 @@ public class UnitOfWorkSeamRulesTests
             .SharedContractsAreNotRedeclared(CompileInMemory($"Redeclared{interfaceName}", source))
             .GetResult();
 
-        result.IsSuccessful.Should().BeFalse(because: $"{interfaceName} may only be declared in SharedKernel.Application.Abstractions");
+        result.IsSuccessful.Should().BeFalse(because: $"{interfaceName} may only be declared in SharedKernel.Execution");
     }
 
     [Fact]
@@ -73,8 +73,10 @@ public class UnitOfWorkSeamRulesTests
 
     public static IEnumerable<object[]> RealAssembliesThatMustNotRedeclare()
     {
-        yield return [typeof(SharedKernel.Application.ICommand).Assembly];
-        yield return [typeof(SharedKernel.Application.Caching.ICacheableQuery).Assembly];
+        yield return [typeof(SharedKernel.Application.Messaging.ICommand).Assembly];
+        yield return [typeof(SharedKernel.Application.Pipeline.ApplicationPipelineBuilder).Assembly];
+        yield return [typeof(SharedKernel.Application.Pipeline.Caching.CachingPipelineExtensions).Assembly];
+        yield return [typeof(SharedKernel.Application.Mediator.MediatR.MediatRServiceCollectionExtensions).Assembly];
         yield return [typeof(SharedKernel.Persistence.Abstractions.Context.ICrossTenantScope).Assembly];
         yield return [typeof(SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext).Assembly];
         yield return [typeof(SharedKernel.Persistence.EfCorePersistenceBuilderAuditingExtensions).Assembly];
@@ -92,11 +94,11 @@ public class UnitOfWorkSeamRulesTests
     [Fact]
     public void SharedContracts_AreDeclaredInApplicationAbstractions()
     {
-        var abstractions = typeof(SharedKernel.Application.Transactions.IUnitOfWork).Assembly;
+        var abstractions = typeof(SharedKernel.Execution.Transactions.IUnitOfWork).Assembly;
 
-        abstractions.GetName().Name.Should().Be("SharedKernel.Application.Abstractions");
-        typeof(SharedKernel.Application.Context.IRequestContext).Assembly.Should().BeSameAs(abstractions);
-        typeof(SharedKernel.Application.Auditing.IAuditTrailWriter).Assembly.Should().BeSameAs(abstractions);
+        abstractions.GetName().Name.Should().Be("SharedKernel.Execution");
+        typeof(SharedKernel.Execution.Context.IRequestContext).Assembly.Should().BeSameAs(abstractions);
+        typeof(SharedKernel.Execution.Auditing.IAuditTrailWriter).Assembly.Should().BeSameAs(abstractions);
     }
 
     private static Assembly CompileInMemory(string assemblyName, string source)

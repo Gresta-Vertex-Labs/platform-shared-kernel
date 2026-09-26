@@ -104,6 +104,12 @@ public sealed class AuditSealerOptions
     public TimeSpan CheckpointInterval { get; set; } = TimeSpan.FromHours(1);
 
     /// <summary>
+    /// Gets or sets the sealing lag above which the audit-sealing readiness probe reports <c>Degraded</c>. Defaults to
+    /// 5 minutes. A lag is shared by every instance, so it degrades rather than fails readiness; alert on it.
+    /// </summary>
+    public TimeSpan MaxReadyLag { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>
     /// Gets or sets the service key of a separate database registration the sealer writes links and checkpoints
     /// through, connected as a sealer role of its own; <see langword="null"/> (default) uses the application's
     /// connection.

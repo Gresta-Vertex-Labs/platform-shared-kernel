@@ -1,5 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Host</SharedKernelTier>
     <!-- NuGet packaging metadata -->
     <Description>Concrete multi-tenant resolution strategies for Platform.SharedKernel microservices: HTTP header, credential tenant claim, and database tenant-directory isolation, composed via TenantResolutionMiddleware and AmbientTenantProvider.</Description>
     <PackageTags>shared-kernel;multi-tenancy;tenant-resolution;middleware</PackageTags>
@@ -11,6 +12,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Execution\SharedKernel.Execution.csproj" />
     <ProjectReference Include="..\..\12.Security\SharedKernel.Security.Abstractions\SharedKernel.Security.Abstractions.csproj" />
     <ProjectReference Include="..\..\06.Persistence\SharedKernel.Persistence.Abstractions\SharedKernel.Persistence.Abstractions.csproj" />
     <!--

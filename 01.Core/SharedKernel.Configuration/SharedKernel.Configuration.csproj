@@ -1,5 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Foundation</SharedKernelTier>
     <!-- NuGet packaging metadata -->
     <Description>Options-pattern registration that fails at host startup, not at first use. AddValidatedOptions binds a configuration section, validates it with Data Annotations or a caller-supplied IValidateOptions (such as an [OptionsValidator]-generated one), and enforces it via ValidateOnStart. ISectionBoundOptions lets an options type declare its own section path, and OptionsStrictness opts in to rejecting a missing section or an unrecognised key. Supports named options. No SharedKernel dependencies. Not trim- or AOT-safe: configuration binding is reflective, and every overload declares it.</Description>
     <PackageReleaseNotes>First release.</PackageReleaseNotes>

@@ -11,7 +11,7 @@ namespace SharedKernel.Communication.Grpc.Tests.Governance;
 /// against the real, compiled <c>SharedKernel.Communication.Grpc</c> assembly (T-28, WO-041 P-255) — now that
 /// both cross-domain blockers (<c>01.Core</c> P-249 <see cref="LoggingEventIdRanges"/> and
 /// <c>00.Governance</c> P-250 <see cref="LoggingEventIdIntegrityAssertion"/>) have shipped. Mirrors the
-/// established real-assembly invocation pattern from <c>SharedKernel.Application.Tests</c> and
+/// established real-assembly invocation pattern from <c>SharedKernel.Application.Pipeline.Tests</c> and
 /// <c>SharedKernel.Messaging.MassTransit.Tests</c>.
 /// </summary>
 /// <remarks>
@@ -49,7 +49,7 @@ public sealed class LoggingEventIdIntegrityRealAssemblyTests
         // clause of T-28. Lives in Grpc.Tests (not Internal.Tests) because SharedKernel.Communication.Grpc's
         // production .csproj already legitimately references SharedKernel.Communication.Internal (G-09
         // service-discovery integration) — the reverse direction is a layering violation
-        // (CommunicationLayeringRules.CommunicationInternalNeverReferencesOtherCommunicationPackages).
+        // (an undeclared Adapter -> Adapter edge, SKTIER002, and a reference cycle).
         var grpcAssembly = typeof(CorrelationTracingInterceptor).Assembly;
         var internalAssembly = typeof(IServiceEndpointResolver).Assembly;
 

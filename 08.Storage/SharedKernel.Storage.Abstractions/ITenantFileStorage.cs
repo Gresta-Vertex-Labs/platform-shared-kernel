@@ -1,3 +1,5 @@
+using SharedKernel.Execution.Tenancy;
+
 namespace SharedKernel.Storage;
 
 /// <summary>
@@ -19,9 +21,8 @@ namespace SharedKernel.Storage;
 /// </para>
 /// <para>
 /// Keys are stored as <c>{store key prefix}tenants/{tenantId}/{key}</c>. The view returns keys, listings,
-/// references and error messages without that prefix. The tenant id is validated
-/// (<see cref="StorageValidation.ValidateTenantId(string)"/>), never escaped or case-folded, so two different ids
-/// always map to different prefixes (<c>Acme</c> and <c>acme</c> are different tenants). Deleting a tenant's
+/// references and error messages without that prefix. The tenant is written as <see cref="TenantId.ToString()"/>
+/// (a lowercase GUID), so two different tenants always map to different prefixes. Deleting a tenant's
 /// data is <see cref="IFileStorage.ListAsync"/> and <see cref="IFileStorage.DeleteManyAsync"/> on its view.
 /// </para>
 /// </remarks>
@@ -32,7 +33,7 @@ namespace SharedKernel.Storage;
 ///     IRequestContext request)
 /// {
 ///     public Task&lt;Result&lt;FileDownload&gt;&gt; OpenAsync(string key, CancellationToken ct) =>
-///         documents.ForTenant(request.TenantId!).DownloadAsync(key, cancellationToken: ct);
+///         documents.ForTenant(request.TenantId!.Value).DownloadAsync(key, cancellationToken: ct);
 /// }
 /// </code>
 /// </example>
@@ -42,17 +43,14 @@ public interface ITenantFileStorage
     string StoreName { get; }
 
     /// <summary>Returns the view of this store bound to <paramref name="tenantId"/>.</summary>
-    /// <param name="tenantId">
-    /// The tenant: 1 to <see cref="StorageValidation.MaxTenantIdLength"/> characters from
-    /// <c>A-Z a-z 0-9 . _ -</c>, other than <c>.</c> and <c>..</c>. Case-sensitive.
-    /// </param>
+    /// <param name="tenantId">The tenant. Must not be <see langword="default"/>.</param>
     /// <returns>
     /// An <see cref="IFileStorage"/> whose keys are relative to the tenant and whose
     /// <see cref="IFileStorage.TenantId"/> is <paramref name="tenantId"/>. Creating a view is cheap and does no
     /// I/O; the view can be kept or created per call.
     /// </returns>
     /// <exception cref="ArgumentException">
-    /// <paramref name="tenantId"/> is <see langword="null"/> or not a valid tenant id.
+    /// <paramref name="tenantId"/> is <see langword="default"/>.
     /// </exception>
-    IFileStorage ForTenant(string tenantId);
+    IFileStorage ForTenant(TenantId tenantId);
 }

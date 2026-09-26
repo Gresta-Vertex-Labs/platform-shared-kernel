@@ -1,9 +1,11 @@
 using System.Diagnostics.CodeAnalysis;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using SharedKernel.Configuration.Extensions;
+using SharedKernel.Execution.Context;
 using SharedKernel.Presentation.SignalR.Filters;
 using SharedKernel.Presentation.WebApi;
 
@@ -50,7 +52,15 @@ public static class SignalRHostBuilderExtensions
     ///   <c>"An error occurred on the server while streaming results."</c>: the error mapping wraps the hub method, not
     ///   the reading of its stream. A <c>Result</c> is read only as the hub method's own return value; inside a stream
     ///   item or a collection it cannot be serialized.</item>
-    ///   <item>Authorization: <c>AddSharedKernelAuthorization()</c>, which decodes the policies of
+    ///   <item>The caller's context. Hub invocations do not run in the flow of the request that opened the connection,
+    ///   so a hub filter captures that request's <c>IRequestContext</c> — the <c>RequestContextScope</c> of
+    ///   <c>SharedKernel.ServiceDefaults.Security</c>'s <c>UseSharedKernelRequestContext()</c> — at connect time and
+    ///   reopens it around the connect handler, every hub method and the disconnect handler. Hub code, and everything it
+    ///   calls, then reads the caller, tenant and correlation id from an injected <c>IRequestContext</c> or
+    ///   <c>IRequestContextAccessor</c>, as over HTTP; <see cref="HubCallerContextExtensions.GetTenantId"/> and
+    ///   <see cref="HubCallerContextExtensions.GetCorrelationId"/> read the same context. The host calls
+    ///   <c>AddSharedKernelRequestContext()</c> and <c>UseSharedKernelRequestContext()</c>.</item>
+    ///   <item>Authorization: <c>SharedKernel.Presentation.Core</c>'s, which decodes the policies of
     ///   <c>[RequireEndpointPermission]</c>, <c>[RequireRole]</c>, <c>[RequireFreshAuthentication]</c> and
     ///   <c>[RequireAuthenticationMethod]</c>. On a hub class and on <c>MapHub&lt;T&gt;().RequireEndpointPermission(…)</c> they
     ///   guard the connection, which is refused with 401 or 403. They are <c>[Authorize]</c> attributes, so on a hub
@@ -88,16 +98,20 @@ public static class SignalRHostBuilderExtensions
             services.AddSingleton<SignalRServicesMarker>();
             services.AddValidatedOptions<SharedKernelSignalROptions, SharedKernelSignalROptionsValidator>(builder.Configuration);
 
-            services.AddSharedKernelAuthorization();
+            services.AddSharedKernelWebApiAuthorization();
 
+            services.TryAddSingleton<IRequestContextAccessor, RequestContextAccessor>();
+            services.AddSingleton<RequestContextHubFilter>();
             services.AddSingleton<HubExceptionMappingFilter>();
             services.AddSingleton<HubInvocationRateLimitFilter>();
 
-            // Order is nesting: the error mapping wraps the rate limit, so it sees what the rate limit refuses as well
+            // Order is nesting. The connection's request context wraps everything, so the error mapping and the rate
+            // limit log with its correlation id; the error mapping wraps the rate limit, so it sees what the rate limit refuses as well
             // as what the hub method returns or throws. No filter authorizes: SignalR checks a hub method's
             // [Authorize] attributes, the SharedKernel ones included, before any filter runs.
             services.Configure<HubOptions>(options =>
             {
+                options.AddFilter<RequestContextHubFilter>();
                 options.AddFilter<HubExceptionMappingFilter>();
                 options.AddFilter<HubInvocationRateLimitFilter>();
             });

@@ -1,10 +1,10 @@
 #nullable enable
 SharedKernel.Persistence.Testing.FakeAuditTrailWriter
 SharedKernel.Persistence.Testing.FakeAuditTrailWriter.FakeAuditTrailWriter() -> void
-SharedKernel.Persistence.Testing.FakeAuditTrailWriter.RecordAsync(SharedKernel.Application.Auditing.AuditEntry! entry, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-SharedKernel.Persistence.Testing.FakeAuditTrailWriter.Recorded.get -> System.Collections.Generic.IReadOnlyList<SharedKernel.Application.Auditing.AuditEntry!>!
+SharedKernel.Persistence.Testing.FakeAuditTrailWriter.RecordAsync(SharedKernel.Execution.Auditing.AuditEntry! entry, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SharedKernel.Persistence.Testing.FakeAuditTrailWriter.Recorded.get -> System.Collections.Generic.IReadOnlyList<SharedKernel.Execution.Auditing.AuditEntry!>!
 SharedKernel.Persistence.Testing.FakeAuditTrailWriter.Reset() -> void
-SharedKernel.Persistence.Testing.FakeAuditTrailWriter.ShouldHaveAudited(string! action, string! resourceType, string! resourceId) -> SharedKernel.Application.Auditing.AuditEntry!
+SharedKernel.Persistence.Testing.FakeAuditTrailWriter.ShouldHaveAudited(string! action, string! resourceType, string! resourceId) -> SharedKernel.Execution.Auditing.AuditEntry!
 SharedKernel.Persistence.Testing.FakeAuditTrailWriter.SimulateFailure.get -> bool
 SharedKernel.Persistence.Testing.FakeAuditTrailWriter.SimulateFailure.set -> void
 SharedKernel.Persistence.Testing.FakeCrossTenantScope
@@ -95,46 +95,16 @@ SharedKernel.Persistence.Testing.PostgresTestServer
 SharedKernel.Persistence.Testing.PostgresTestServer.AdminConnectionString.get -> string!
 SharedKernel.Persistence.Testing.PostgresTestServer.CreateDatabaseAsync(string? name = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Persistence.Testing.PostgresTestDatabase!>!
 SharedKernel.Persistence.Testing.PostgresTestServer.DisposeAsync() -> System.Threading.Tasks.ValueTask
-SharedKernel.Persistence.Testing.TestRequestContext
-SharedKernel.Persistence.Testing.TestRequestContext.ActorKind.get -> SharedKernel.Application.Context.ActorKind
-SharedKernel.Persistence.Testing.TestRequestContext.ActorKind.set -> void
-SharedKernel.Persistence.Testing.TestRequestContext.ClientId.get -> string?
-SharedKernel.Persistence.Testing.TestRequestContext.ClientId.set -> void
-SharedKernel.Persistence.Testing.TestRequestContext.HasPermissionAsync(string! permission, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<bool>
-SharedKernel.Persistence.Testing.TestRequestContext.ImpersonatorId.get -> string?
-SharedKernel.Persistence.Testing.TestRequestContext.ImpersonatorId.set -> void
-SharedKernel.Persistence.Testing.TestRequestContext.IsAuthenticated.get -> bool
-SharedKernel.Persistence.Testing.TestRequestContext.IsAuthenticated.set -> void
-SharedKernel.Persistence.Testing.TestRequestContext.Permissions.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
-SharedKernel.Persistence.Testing.TestRequestContext.Permissions.set -> void
-SharedKernel.Persistence.Testing.TestRequestContext.SessionId.get -> string?
-SharedKernel.Persistence.Testing.TestRequestContext.SessionId.set -> void
-SharedKernel.Persistence.Testing.TestRequestContext.TenantId.get -> System.Guid?
-SharedKernel.Persistence.Testing.TestRequestContext.TenantId.set -> void
-SharedKernel.Persistence.Testing.TestRequestContext.TestRequestContext() -> void
-SharedKernel.Persistence.Testing.TestRequestContext.UserId.get -> string?
-SharedKernel.Persistence.Testing.TestRequestContext.UserId.set -> void
-SharedKernel.Persistence.Testing.TestRequestContext.WithImpersonator(string? impersonatorId) -> SharedKernel.Persistence.Testing.TestRequestContext!
-SharedKernel.Persistence.Testing.TestRequestContext.WithPermissions(params string![]! permissions) -> SharedKernel.Persistence.Testing.TestRequestContext!
-SharedKernel.Persistence.Testing.TestRequestContext.WithSession(string? sessionId) -> SharedKernel.Persistence.Testing.TestRequestContext!
-SharedKernel.Persistence.Testing.TestRequestContext.WithTenant(System.Guid? tenantId) -> SharedKernel.Persistence.Testing.TestRequestContext!
 const SharedKernel.Persistence.Testing.PostgresTestDatabase.AuditSealerDataSourceName = "audit-sealer" -> string!
 const SharedKernel.Persistence.Testing.PostgresTestRoles.AuditSealer = "app_audit_sealer" -> string!
 const SharedKernel.Persistence.Testing.PostgresTestRoles.CrossTenant = "app_cross_tenant" -> string!
 const SharedKernel.Persistence.Testing.PostgresTestRoles.Migrator = "app_migrator" -> string!
 const SharedKernel.Persistence.Testing.PostgresTestRoles.Runtime = "app_runtime" -> string!
 const SharedKernel.Persistence.Testing.PostgresTestServer.DefaultImage = "postgres:16.4" -> string!
-const SharedKernel.Persistence.Testing.TestRequestContext.DefaultUserId = "test-user" -> string!
 static SharedKernel.Persistence.Testing.PersistenceTestingServiceCollectionExtensions.AddFakeAuditTrailWriter(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> SharedKernel.Persistence.Testing.FakeAuditTrailWriter!
 static SharedKernel.Persistence.Testing.PersistenceTestingServiceCollectionExtensions.AddFakeCrossTenantScope(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> SharedKernel.Persistence.Testing.FakeCrossTenantScope!
 static SharedKernel.Persistence.Testing.PersistenceTestingServiceCollectionExtensions.AddFakeRepository<TAggregate, TId>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Collections.Generic.IEnumerable<TAggregate>? seed = null) -> SharedKernel.Persistence.Testing.FakeRepository<TAggregate, TId>!
 static SharedKernel.Persistence.Testing.PersistenceTestingServiceCollectionExtensions.AddFakeUnitOfWork(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> SharedKernel.Persistence.Testing.FakeUnitOfWork!
-static SharedKernel.Persistence.Testing.PersistenceTestingServiceCollectionExtensions.AddTestRequestContext(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, SharedKernel.Persistence.Testing.TestRequestContext? context = null) -> SharedKernel.Persistence.Testing.TestRequestContext!
+static SharedKernel.Persistence.Testing.PersistenceTestingServiceCollectionExtensions.AddTestRequestContext(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, SharedKernel.Testing.Execution.TestRequestContext? context = null) -> SharedKernel.Testing.Execution.TestRequestContext!
 static SharedKernel.Persistence.Testing.PostgresTestServer.FromExistingServer(string! adminConnectionString) -> SharedKernel.Persistence.Testing.PostgresTestServer!
 static SharedKernel.Persistence.Testing.PostgresTestServer.StartAsync(string! image = "postgres:16.4", System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Persistence.Testing.PostgresTestServer!>!
-static SharedKernel.Persistence.Testing.TestRequestContext.Anonymous(System.Guid? tenantId = null) -> SharedKernel.Persistence.Testing.TestRequestContext!
-static SharedKernel.Persistence.Testing.TestRequestContext.ForTenant(System.Guid tenantId, string! userId = "test-user") -> SharedKernel.Persistence.Testing.TestRequestContext!
-static SharedKernel.Persistence.Testing.TestRequestContext.ForUser(string! userId = "test-user", System.Guid? tenantId = null) -> SharedKernel.Persistence.Testing.TestRequestContext!
-static SharedKernel.Persistence.Testing.TestRequestContext.Service(string! clientId, System.Guid? tenantId = null) -> SharedKernel.Persistence.Testing.TestRequestContext!
-static SharedKernel.Persistence.Testing.TestRequestContext.System(string! identity = "system", System.Guid? tenantId = null) -> SharedKernel.Persistence.Testing.TestRequestContext!
-virtual SharedKernel.Persistence.Testing.TestRequestContext.HasPermission(string! permission) -> bool

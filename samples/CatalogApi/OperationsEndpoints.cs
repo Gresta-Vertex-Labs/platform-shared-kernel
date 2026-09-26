@@ -1,8 +1,9 @@
 using CatalogApi.Features.Operations;
-using MediatR;
 using Microsoft.AspNetCore.Http.HttpResults;
+using SharedKernel.Application.Messaging;
 using SharedKernel.Presentation.WebApi;
 using SharedKernel.Primitives.Errors;
+using SharedKernel.Primitives.Health;
 
 namespace CatalogApi;
 
@@ -49,8 +50,10 @@ public sealed class OperationsEndpoints : IEndpointModule
         ops.MapGet("/verify", (HttpContext http, ISender sender, CancellationToken ct) =>
             sender.Send(new VerifyIndexes(), ct).ToHttpResult(errors => Report([.. errors.Select(error => Verification(error, http))])));
 
+        // The report of the index's readiness probe: 200 when healthy, 503 with the same report when not; 404 for a
+        // provider and index with no probe.
         ops.MapGet("/probe/{providerKey}/{indexName}", (string providerKey, string indexName, ISender sender, CancellationToken ct) =>
-            sender.Send(new ProbeIndex(providerKey, indexName), ct).ToOk());
+            sender.Send(new ProbeIndex(providerKey, indexName), ct).ToHttpResult(Readiness));
 
         app.MapGet("/diagnostics/telemetry", (ISender sender, CancellationToken ct) =>
             sender.Send(new GetTelemetry(), ct).ToOk()).WithTags("Operations");
@@ -59,6 +62,11 @@ public sealed class OperationsEndpoints : IEndpointModule
     private static IndexVerification Verification(Error? error, HttpContext http) => error is null
         ? new IndexVerification(Ok: true, Error: null, Detail: null)
         : new IndexVerification(Ok: false, error.Code, error.ToProblemDetails(http).Detail);
+
+    private static Results<Ok<ReadinessReport>, JsonHttpResult<ReadinessReport>> Readiness(ReadinessReport report) =>
+        report.IsHealthy
+            ? TypedResults.Ok(report)
+            : TypedResults.Json(report, statusCode: StatusCodes.Status503ServiceUnavailable);
 
     private static Results<Ok<List<IndexVerification>>, JsonHttpResult<List<IndexVerification>>> Report(List<IndexVerification> outcomes) =>
         outcomes.TrueForAll(outcome => outcome.Ok)

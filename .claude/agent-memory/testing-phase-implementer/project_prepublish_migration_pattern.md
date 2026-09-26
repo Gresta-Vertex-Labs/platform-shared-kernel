@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): `SharedKernel.Testing` was split into 20 packable Testing-tier packages (core `SharedKernel.Testing` + 19 `SharedKernel.{Capability}.Testing`) plus the non-packable `SharedKernel.Testing.Internal` (containers, EF/Npgsql/audit helpers, MassTransit harness); `SharedKernel.Testing.SelfTests` became each package's own nested `.Tests` project. Paths and project names below are pre-split history; the technique/lesson still applies.
+
 Some 16.Testing work arrives as a "pre-publish work item" (e.g. P-544, migrating `Application/`
 fakes onto a redesigned `05.Application`) rather than through the normal
 `testing-arch-planner` → `testing-phase-implementer` phase flow. Recognizable traits:

@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <SharedKernelTier>Host</SharedKernelTier>
+    <!-- NuGet packaging metadata -->
+    <Description>MediatR as the transport behind SharedKernel.Application's ISender. UseMediatR() on the AddSharedKernelApplication builder registers the kernel ISender and, for each request and streaming-query type whose handler AddSharedKernelApplication found, a MediatR handler that runs the kernel's RequestPipeline: the behaviors registered by SharedKernel.Application.Pipeline, then the handler.
+
+This is the only SharedKernel package that references MediatR. Commands, queries, handlers and behaviors are written against SharedKernel.Application, so replacing MediatR is a different implementation of ISender and changes no application code. Pinned to MediatR 12.4.1, the last MIT-licensed release.</Description>
+    <PackageReleaseNotes>First release.
+
+WHAT IS IN IT
+- UseMediatR() on the builder of AddSharedKernelApplication (SharedKernel.Application.Pipeline): registers MediatR, the kernel ISender and one MediatR route per request and streaming-query type of the scanned assemblies. The handlers, validators, behaviors and domain-event dispatch are registered by AddSharedKernelApplication itself: services.AddSharedKernelApplication(typeof(Program).Assembly, app =&gt; app.UseMediatR()) is the whole registration.
+
+THINGS WORTH KNOWING BEFORE YOU ADOPT IT
+- MediatR's own pipeline stays empty; the kernel pipeline runs inside the MediatR handler.
+- A request can be sent only if its handler was found in a scanned assembly. Sending anything else throws InvalidOperationException naming the request type.
+- Implement the kernel interfaces, never MediatR's: a class implementing MediatR.IRequestHandler or INotificationHandler is not discovered.</PackageReleaseNotes>
+    <PackageTags>cqrs;mediatr;mediator;application;shared-kernel</PackageTags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <WarningsAsErrors>$(WarningsAsErrors);nullable;CS1591;RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel.Application\SharedKernel.Application.csproj" />
+    <ProjectReference Include="..\SharedKernel.Application.Pipeline\SharedKernel.Application.Pipeline.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!--
+      The ONLY project in the repository that references MediatR (locked by
+      MediatRReferenceRules in SharedKernel.ArchitectureTests). Pinned to 12.4.x, the last
+      MIT-licensed major (v13 introduced a commercial license).
+    -->
+    <PackageReference Include="MediatR" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+</Project>

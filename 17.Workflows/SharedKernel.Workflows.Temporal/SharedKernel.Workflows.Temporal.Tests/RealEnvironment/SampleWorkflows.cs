@@ -154,7 +154,7 @@ public sealed class PropagationChildWorkflow : WorkflowBase
     public async Task<PropagationSnapshot> RunAsync(string input)
     {
         string activityTenant = await ExecuteAsync<PropagationActivity, string, string>(input);
-        return new PropagationSnapshot(TenantScope.Value, CorrelationId, activityTenant);
+        return new PropagationSnapshot(TenantScope.ToString(), CorrelationId, activityTenant);
     }
 }
 
@@ -171,6 +171,6 @@ public sealed class PropagationParentWorkflow : WorkflowBase
             [input],
             new ChildWorkflowOptions { Id = $"{Workflow.Info.WorkflowId}-child" });
 
-        return new PropagationResult(TenantScope.Value, CorrelationId, activityTenant, child);
+        return new PropagationResult(TenantScope.ToString(), CorrelationId, activityTenant, child);
     }
 }

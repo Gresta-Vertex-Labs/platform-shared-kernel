@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): historical. Per-package versions are gone (one MinVer version repo-wide); SharedKernel.Application.Behaviors is SharedKernel.Application.Pipeline; consumer tests compose ApplicationBehaviorsBuilder + RequestPipeline<,> (or AddSharedKernelMediatR) instead of AddMediatR; Resilience, fire-and-forget and DualApproval were deleted. The NSubstitute private-nested-type pitfall still applies.
+
 Closed 20 accumulated Published-phase tasks (P-07..P-26) in one session, spanning five work orders (WO-036/039/040/041/058) that had each shipped through Docs but never through Published. `SK.05.Published` went 6/23 → 23/23.
 
 **Version-bump decision:** both `SharedKernel.Application` and `SharedKernel.Application.Behaviors` bumped `1.0.0` → `1.1.0` as a SINGLE coordinated minor bump, not five separate bumps. Rationale: every one of the five work orders' own phase notes explicitly states its changes are additive/non-breaking (streaming vocabulary, parallel dispatch, fire-and-forget infra, TracingBehavior, ResilienceBehavior, CacheInvalidationBehavior, idempotency response replay, AddDefaultBehaviors, ILoggableRequest, DualApprovalBehavior — all new types/members, zero signature changes to existing public API). Per SemVer, any number of purely-additive deltas collapse into one minor bump. This mirrors the `01.Core`/`SharedKernel.Primitives` 1.1.0 precedent (P-384/WO-059) cited directly in the phase notes as the analogous case.
@@ -17,4 +19,4 @@ Closed 20 accumulated Published-phase tasks (P-07..P-26) in one session, spannin
 
 **Environment note:** no internal NuGet feed/push source is configured in this sandbox — `dotnet pack` succeeds and produces `.nupkg`/`.snupkg` locally, but `dotnet nuget push` was never attempted and should not be implied as done in any report.
 
-See also [[seven_step_pipeline_implementation]] and [[docs_phase_xml_doc_enforcement]] for earlier-session context on this same domain.
+See also [[docs_phase_xml_doc_enforcement]] for earlier-session context on this same domain.

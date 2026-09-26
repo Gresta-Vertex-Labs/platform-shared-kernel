@@ -1,5 +1,6 @@
 using Qdrant.Client.Grpc;
 using SharedKernel.AI.Abstractions.Models;
+using SharedKernel.Execution.Tenancy;
 
 namespace SharedKernel.AI.Qdrant.Querying;
 
@@ -51,7 +52,7 @@ internal static class QdrantFilterCompiler
     /// <remarks>
     /// The tenant clause is injected as the <b>outermost</b> conjunction, strictly after
     /// <paramref name="filter"/> is translated — the caller-supplied filter can never omit it. This
-    /// method assumes the caller has already fail-closed on <c>TenantScope.None</c> against a
+    /// method assumes the caller has already fail-closed on <c>TenantScope.Global</c> against a
     /// tenant-declaring collection; it does not repeat that check.
     /// </remarks>
     public static Filter Compile(VectorFilter? filter, string? tenantField, TenantScope tenantScope)
@@ -63,9 +64,9 @@ internal static class QdrantFilterCompiler
             top.Must.Add(CompileNode(filter));
         }
 
-        if (tenantField is not null && tenantScope.Value.Length > 0)
+        if (tenantField is not null && !tenantScope.IsGlobal)
         {
-            top.Must.Add(BuildEqualityCondition(tenantField, VectorValue.From(tenantScope.Value)));
+            top.Must.Add(BuildEqualityCondition(tenantField, VectorValue.From(tenantScope.Tenant!.Value.ToString())));
         }
 
         return top;

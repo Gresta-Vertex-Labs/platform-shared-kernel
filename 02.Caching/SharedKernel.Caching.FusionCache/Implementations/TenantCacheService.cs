@@ -1,4 +1,5 @@
 using SharedKernel.Caching.Abstractions;
+using SharedKernel.Execution.Tenancy;
 
 namespace SharedKernel.Caching.FusionCache.Implementations;
 
@@ -21,11 +22,11 @@ internal sealed class TenantCacheService : ITenantCacheService
         _keyProvider = keyProvider;
     }
 
-    public ValueTask<CacheLookup<T>> TryGetAsync<T>(string tenantId, string entity, string id, CancellationToken ct = default) =>
+    public ValueTask<CacheLookup<T>> TryGetAsync<T>(TenantId tenantId, string entity, string id, CancellationToken ct = default) =>
         _cache.TryGetAsync<T>(_keyProvider.BuildTenantKey(tenantId, entity, id), ct);
 
     public ValueTask<T> GetOrSetAsync<T>(
-        string tenantId,
+        TenantId tenantId,
         string entity,
         string id,
         Func<CancellationToken, ValueTask<T>> factory,
@@ -39,7 +40,7 @@ internal sealed class TenantCacheService : ITenantCacheService
     }
 
     public ValueTask<T> GetOrSetAsync<T>(
-        string tenantId,
+        TenantId tenantId,
         string entity,
         string id,
         Func<CacheFactoryContext, CancellationToken, ValueTask<T>> factory,
@@ -52,7 +53,7 @@ internal sealed class TenantCacheService : ITenantCacheService
         return _cache.GetOrSetAsync(key, factory, policy.ForTenant(tenantId), ct);
     }
 
-    public ValueTask SetAsync<T>(string tenantId, string entity, string id, T value, CachePolicy policy, CancellationToken ct = default)
+    public ValueTask SetAsync<T>(TenantId tenantId, string entity, string id, T value, CachePolicy policy, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(policy);
 
@@ -60,15 +61,15 @@ internal sealed class TenantCacheService : ITenantCacheService
         return _cache.SetAsync(key, value, policy.ForTenant(tenantId), ct);
     }
 
-    public ValueTask RemoveAsync(string tenantId, string entity, string id, CancellationToken ct = default) =>
+    public ValueTask RemoveAsync(TenantId tenantId, string entity, string id, CancellationToken ct = default) =>
         _cache.RemoveAsync(_keyProvider.BuildTenantKey(tenantId, entity, id), ct);
 
-    public ValueTask ExpireAsync(string tenantId, string entity, string id, CancellationToken ct = default) =>
+    public ValueTask ExpireAsync(TenantId tenantId, string entity, string id, CancellationToken ct = default) =>
         _cache.ExpireAsync(_keyProvider.BuildTenantKey(tenantId, entity, id), ct);
 
-    public ValueTask RemoveByTagAsync(string tenantId, string tag, CancellationToken ct = default) =>
+    public ValueTask RemoveByTagAsync(TenantId tenantId, string tag, CancellationToken ct = default) =>
         _cache.RemoveByTagAsync(CacheKeyFormat.BuildTenantTag(tenantId, tag), ct);
 
-    public ValueTask RemoveTenantAsync(string tenantId, CancellationToken ct = default) =>
+    public ValueTask RemoveTenantAsync(TenantId tenantId, CancellationToken ct = default) =>
         _cache.RemoveByTagAsync(CacheKeyFormat.BuildTenantWideTag(tenantId), ct);
 }

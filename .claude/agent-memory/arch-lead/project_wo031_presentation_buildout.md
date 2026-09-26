@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): `CorrelationIdMiddleware` was deleted — correlation/tenant/caller now flow through `app.UseSharedKernelRequestContext()` (ServiceDefaults.Security); the numbered "14 may reference 13" table is replaced by tiers (WebApi is Host tier).
+
 WO-031 (2026-06-25) phased the first real build-out of `14.Presentation` — the domain brain (`14.Presentation/CLAUDE.md`) was already fully designed (two packages: `SharedKernel.Presentation.WebApi`, `SharedKernel.Presentation.SignalR`, with complete interface contracts) but had zero phases dispatched. Wrote P-192 through P-199 under WO-031, following the standard 6-phase lifecycle (Design/Scaffold/Core/Tests/Docs/Published), with Core split into two parallel phases (P-194 WebApi, P-195 SignalR) since they're independent packages with no shared implementation surface.
 
 **Upgrade applied:** the original domain brain draft had a "Pending" Cross-Domain Dependency from `SK.14.Core` to `13.ServiceDefaults` for "OTel ActivitySource/baggage conventions" backing `CorrelationIdMiddleware`. Removed this — `CorrelationIdMiddleware` owns its own `Activity.SetBaggage` call directly against the BCL `System.Diagnostics.Activity` type, no ProjectReference to `SharedKernel.ServiceDefaults` needed. The root layering table still *permits* `14.Presentation → 13.ServiceDefaults` (left as-is, doesn't need to change), but the actual dependency set for this domain is just `01.Core`, `04.Contracts`, `12.Security.Abstractions`.

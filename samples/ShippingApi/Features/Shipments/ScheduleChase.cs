@@ -1,4 +1,4 @@
-using SharedKernel.Application;
+using SharedKernel.Application.Messaging;
 using SharedKernel.Messaging.Abstractions.Scheduling;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Results;

@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Logging;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Workflows.Temporal.Constants;
-using SharedKernel.Workflows.Temporal.Dispatch;
 using Temporalio.Common;
 using Temporalio.Workflows;
 
@@ -55,11 +55,11 @@ public abstract class WorkflowBase
 
     /// <summary>
     /// Gets the tenant scope lifted from the Temporal headers the client-side propagation
-    /// interceptor set on start. <see cref="TenantScope.None"/> if no tenant header was propagated.
+    /// interceptor set on start. <see cref="TenantScope.Global"/> if no tenant header was propagated.
     /// </summary>
-    protected TenantScope TenantScope => ReadHeaderValue(WorkflowWellKnown.TenantHeaderKey) is { Length: > 0 } value
-        ? TenantScope.Of(value)
-        : TenantScope.None;
+    protected TenantScope TenantScope => TenantId.TryParse(ReadHeaderValue(WorkflowWellKnown.TenantHeaderKey), out TenantId tenant)
+        ? TenantScope.For(tenant)
+        : TenantScope.Global;
 
     /// <summary>
     /// Gets the correlation id lifted from the Temporal headers the client-side propagation

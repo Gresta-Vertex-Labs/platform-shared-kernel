@@ -1,9 +1,9 @@
 namespace SharedKernel.Search.Abstractions.Models;
 
-/// <summary>The result of <c>ISearchIndexProvisioner.ProbeAsync</c> — a readiness primitive, not a health check.</summary>
+/// <summary>What a provider measured about one index, turned into a readiness report by <see cref="Abstractions.SearchIndexReadinessProbe"/>.</summary>
 /// <remarks>
-/// <c>09.Search</c> ships no <c>IHealthCheck</c> implementation; wiring this into
-/// <c>AddHealthChecks()</c> is <c>13.ServiceDefaults</c>'s concern.
+/// <c>09.Search</c> ships no <c>IHealthCheck</c> implementation; mapping the probes into
+/// <c>AddHealthChecks()</c> is <c>13.ServiceDefaults</c>'s <c>AddSharedKernelReadiness()</c>.
 /// </remarks>
 public sealed record SearchIndexHealth
 {

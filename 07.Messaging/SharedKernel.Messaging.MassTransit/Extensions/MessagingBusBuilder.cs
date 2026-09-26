@@ -1,10 +1,10 @@
-using Azure.Identity;
 using MassTransit;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using SharedKernel.Application.Context;
+using SharedKernel.Execution.Context;
+using SharedKernel.Idempotency.Abstractions;
 using SharedKernel.Compression;
 using SharedKernel.Cryptography.Symmetric;
 using SharedKernel.Messaging.Abstractions.Context;
@@ -15,16 +15,16 @@ using SharedKernel.Messaging.Abstractions.Idempotency;
 using SharedKernel.Messaging.Abstractions.Options;
 using SharedKernel.Messaging.Abstractions.Scheduling;
 using SharedKernel.Messaging.Abstractions.SchemaEvolution;
-using SharedKernel.Messaging.Abstractions.TenantContext;
 using SharedKernel.Messaging.MassTransit.Consumers;
 using SharedKernel.Messaging.MassTransit.Context;
-using SharedKernel.Messaging.MassTransit.DeadLetter;
 using SharedKernel.Messaging.MassTransit.EventPublisher;
 using SharedKernel.Messaging.MassTransit.HeaderPropagation;
 using SharedKernel.Messaging.MassTransit.MessageBus;
 using SharedKernel.Messaging.MassTransit.Options;
 using SharedKernel.Messaging.MassTransit.SchemaEvolution;
 using SharedKernel.Messaging.MassTransit.Serialization;
+using SharedKernel.Messaging.MassTransit.Transports;
+using SharedKernel.Primitives.Health;
 using System.Linq;
 
 // Aliased to avoid the "MassTransit.Configuration" leaf segment colliding with this file's own
@@ -41,21 +41,17 @@ namespace SharedKernel.Messaging.MassTransit.Extensions;
 /// Returned by <see cref="ServiceCollectionExtensions.AddSharedKernelMessaging(Microsoft.Extensions.DependencyInjection.IServiceCollection, Microsoft.Extensions.Configuration.IConfiguration, System.Action{SharedKernel.Messaging.Abstractions.Options.MessagingOptions})"/>.
 /// </summary>
 /// <remarks>
-/// Call exactly one transport method (<see cref="UseRabbitMq(string)"/> or
-/// <see cref="UseAzureServiceBus(string)"/>) before calling <see cref="Build"/>.
+/// Call exactly one transport method before calling <see cref="Build"/>: <c>UseRabbitMq</c> from
+/// <c>SharedKernel.Messaging.MassTransit.RabbitMq</c> or <c>UseAzureServiceBus</c> from
+/// <c>SharedKernel.Messaging.MassTransit.AzureServiceBus</c> (both call <see cref="UseTransport"/>).
+/// The EF Core outbox is <c>WithEntityFrameworkOutbox</c> from <c>SharedKernel.Messaging.MassTransit.EfCore</c>.
 /// Multiple <see cref="AddConsumer{TConsumer}()"/> calls are additive.
 /// No outbox, retry, or transport wiring is applied until <see cref="Build"/> is called.
 /// </remarks>
 public sealed class MessagingBusBuilder : IMessagingBuilder
 {
-    // Transport kind tracking — mutually exclusive.
-    private enum TransportKind { None, RabbitMq, AzureServiceBus }
-
-    private TransportKind _transport = TransportKind.None;
-
-    // Stored configuration delegates — applied inside AddMassTransit during Build().
-    private Action<IBusRegistrationContext, IRabbitMqBusFactoryConfigurator>? _rabbitMqBusConfigurator;
-    private Action<IBusRegistrationContext, IServiceBusBusFactoryConfigurator>? _asbBusConfigurator;
+    // The transport — exactly one, set by UseTransport (P-570: transports are satellite packages).
+    private MessagingTransport? _transport;
 
     private RetryOptions? _retryOptions;
     private bool _withRetry;
@@ -63,7 +59,8 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
     private CircuitBreakerOptions? _circuitBreakerOptions;
     private bool _withCircuitBreaker;
 
-    private Action<IBusRegistrationConfigurator>? _outboxConfigurator;
+    // Registration steps added by integration packages (for example the EF Core outbox).
+    private readonly List<Action<IBusRegistrationConfigurator>> _registrationConfigurators = [];
 
     private readonly List<Action<IBusRegistrationConfigurator>> _consumerRegistrations = [];
 
@@ -116,89 +113,38 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
         _configure = configure;
     }
 
-    // -------------------------------------------------------------------------
-    // Transport
-    // -------------------------------------------------------------------------
-
     /// <summary>
-    /// Configures the RabbitMQ transport using a simple AMQP connection string.
+    /// Configures the broker transport. Transport packages call this from their own extension methods —
+    /// <c>UseRabbitMq</c> (<c>SharedKernel.Messaging.MassTransit.RabbitMq</c>) and <c>UseAzureServiceBus</c>
+    /// (<c>SharedKernel.Messaging.MassTransit.AzureServiceBus</c>) — so application code rarely calls it directly.
     /// </summary>
-    /// <param name="connectionString">
-    /// AMQP connection string, e.g. <c>"rabbitmq://localhost"</c> or
-    /// <c>"amqps://user:pass@rabbitmq.svc.cluster.local/vhost"</c>.
-    /// </param>
+    /// <param name="transport">The transport.</param>
     /// <returns>This builder for fluent chaining.</returns>
-    public MessagingBusBuilder UseRabbitMq(string connectionString)
+    /// <exception cref="InvalidOperationException">A transport has already been configured.</exception>
+    public MessagingBusBuilder UseTransport(MessagingTransport transport)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
+        ArgumentNullException.ThrowIfNull(transport);
         EnsureNoTransport();
 
-        _transport = TransportKind.RabbitMq;
-        _rabbitMqBusConfigurator = (_, cfg) => cfg.Host(new Uri(connectionString));
+        _transport = transport;
         return this;
     }
 
     /// <summary>
-    /// Configures the RabbitMQ transport from an explicit options action.
+    /// Adds a MassTransit registration step, applied inside <c>AddMassTransit</c> by <see cref="Build"/> after
+    /// every consumer is registered and before the transport. This is how integration packages extend the bus —
+    /// for example <c>WithEntityFrameworkOutbox</c> from <c>SharedKernel.Messaging.MassTransit.EfCore</c>.
+    /// Multiple calls are additive and run in call order.
     /// </summary>
-    /// <param name="configure">Action to configure <see cref="RabbitMqBusOptions"/>.</param>
+    /// <param name="configure">The registration step.</param>
     /// <returns>This builder for fluent chaining.</returns>
-    public MessagingBusBuilder UseRabbitMq(Action<RabbitMqBusOptions> configure)
+    public MessagingBusBuilder ConfigureMassTransit(Action<IBusRegistrationConfigurator> configure)
     {
         ArgumentNullException.ThrowIfNull(configure);
-        EnsureNoTransport();
-
-        _transport = TransportKind.RabbitMq;
-
-        var opts = new RabbitMqBusOptions();
-        configure(opts);
-
-        _rabbitMqBusConfigurator = (_, cfg) => ConfigureRabbitMq(cfg, opts);
-
+        _registrationConfigurators.Add(configure);
         return this;
     }
 
-    /// <summary>
-    /// Configures the Azure Service Bus transport using a connection string.
-    /// For local development and CI only — use managed identity in production.
-    /// </summary>
-    /// <param name="connectionString">The Azure Service Bus connection string.</param>
-    /// <returns>This builder for fluent chaining.</returns>
-    public MessagingBusBuilder UseAzureServiceBus(string connectionString)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
-        EnsureNoTransport();
-
-        _transport = TransportKind.AzureServiceBus;
-
-        var opts = new AzureServiceBusOptions { ConnectionString = connectionString };
-        _asbBusConfigurator = (_, cfg) => ConfigureAzureServiceBus(cfg, opts);
-
-        return this;
-    }
-
-    /// <summary>
-    /// Configures the Azure Service Bus transport from an explicit options action.
-    /// Use <see cref="AzureServiceBusOptions.FullyQualifiedNamespace"/> with managed identity
-    /// (<c>DefaultAzureCredential</c>) in Kubernetes workloads.
-    /// </summary>
-    /// <param name="configure">Action to configure <see cref="AzureServiceBusOptions"/>.</param>
-    /// <returns>This builder for fluent chaining.</returns>
-    public MessagingBusBuilder UseAzureServiceBus(Action<AzureServiceBusOptions> configure)
-    {
-        ArgumentNullException.ThrowIfNull(configure);
-        EnsureNoTransport();
-
-        _transport = TransportKind.AzureServiceBus;
-
-        var opts = new AzureServiceBusOptions();
-        configure(opts);
-
-        ValidateAzureServiceBusOptions(opts);
-        _asbBusConfigurator = (_, cfg) => ConfigureAzureServiceBus(cfg, opts);
-
-        return this;
-    }
 
     // -------------------------------------------------------------------------
     // Consumers
@@ -254,56 +200,6 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
         return this;
     }
 
-    // -------------------------------------------------------------------------
-    // Outbox
-    // -------------------------------------------------------------------------
-
-    /// <summary>
-    /// Wires the MassTransit EF Core transactional outbox using the consuming service's
-    /// <typeparamref name="TDbContext"/>.
-    /// </summary>
-    /// <typeparam name="TDbContext">
-    /// The consuming service's EF Core <see cref="DbContext"/> that includes MassTransit outbox tables.
-    /// </typeparam>
-    /// <param name="configure">
-    /// Optional action to customise <see cref="OutboxOptions"/>.
-    /// When <c>null</c>, default outbox options apply (100 batch, 1 s delay, 30 min dedup window).
-    /// </param>
-    /// <returns>This builder for fluent chaining.</returns>
-    /// <remarks>
-    /// <para>
-    /// The consuming service's <typeparamref name="TDbContext"/> must include the MassTransit outbox
-    /// tables. Run <c>dotnet ef migrations add AddMassTransitOutbox</c> after calling this method.
-    /// </para>
-    /// <para>
-    /// <c>SharedKernel.Messaging.MassTransit</c> provides no migrations — the consuming service
-    /// owns and runs them.
-    /// </para>
-    /// <para>
-    /// At-least-once delivery is guaranteed; all consumers must be idempotent.
-    /// </para>
-    /// </remarks>
-    public MessagingBusBuilder WithEntityFrameworkOutbox<TDbContext>(Action<OutboxOptions>? configure = null)
-        where TDbContext : DbContext
-    {
-        var opts = new OutboxOptions();
-        configure?.Invoke(opts);
-
-        _outboxConfigurator = cfg =>
-        {
-            cfg.AddEntityFrameworkOutbox<TDbContext>(o =>
-            {
-                o.QueryDelay = opts.QueryDelay;
-                o.DuplicateDetectionWindow = opts.DuplicateDetectionWindow;
-                o.UseBusOutbox(bo =>
-                {
-                    bo.MessageDeliveryLimit = opts.BatchSize;
-                });
-            });
-        };
-
-        return this;
-    }
 
     // -------------------------------------------------------------------------
     // Circuit Breaker (P-126)
@@ -505,25 +401,20 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
 
     /// <summary>
     /// Registers <c>IdempotentConsumerBehavior&lt;TMessage&gt;</c> as a global MassTransit
-    /// consume pipeline filter applied to all consumers.
+    /// consume pipeline filter applied to all consumers, with the default <see cref="IdempotencyOptions"/>.
     /// </summary>
     /// <returns>This builder for fluent chaining.</returns>
     /// <remarks>
     /// <para>
-    /// The consuming service must register a concrete <see cref="IIdempotencyStore"/>
-    /// implementation before calling this method. Calling <see cref="Build"/> without
-    /// a registered <see cref="IIdempotencyStore"/> throws <see cref="InvalidOperationException"/>
-    /// with a diagnostic message.
+    /// Register an <see cref="IIdempotencyStore"/> for <see cref="IdempotencyPurpose.Message"/> first — for example
+    /// <c>AddRedisIdempotency(p =&gt; p.ForMessages())</c> (<c>SharedKernel.Idempotency.Redis</c>),
+    /// <c>AddEfCoreIdempotency(..., p =&gt; p.ForMessages())</c> (<c>SharedKernel.Idempotency.EfCore</c>) or
+    /// <c>AddIdempotencyStore&lt;TStore&gt;(IdempotencyPurpose.Message)</c>. <see cref="Build"/> throws
+    /// <see cref="InvalidOperationException"/> when none is registered.
     /// </para>
     /// <para>
-    /// SharedKernel does not provide an <see cref="IIdempotencyStore"/> implementation —
-    /// the consuming service bridges to its own persistence layer
-    /// (e.g., <c>RedisIdempotencyStore</c>, <c>EfCoreIdempotencyStore</c>).
-    /// </para>
-    /// <para>
-    /// To configure <see cref="IdempotencyOptions"/> (e.g., <c>ExpiryWindow</c>) in addition to
-    /// registering the behavior, use
-    /// <see cref="WithIdempotency(Action{IdempotencyOptions})"/> instead.
+    /// Call <c>WithInboundRequestContext()</c> as well in a multi-tenant service: the store scopes every message id by
+    /// the tenant of the ambient request context, which that filter sets before this one runs.
     /// </para>
     /// </remarks>
     public MessagingBusBuilder WithIdempotency()
@@ -537,22 +428,13 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
     /// consume pipeline filter and configures <see cref="IdempotencyOptions"/>.
     /// </summary>
     /// <param name="configure">
-    /// Action to configure <see cref="IdempotencyOptions"/> (e.g., set
+    /// Action to configure <see cref="IdempotencyOptions"/> (<see cref="IdempotencyOptions.LeaseDuration"/>,
     /// <see cref="IdempotencyOptions.ExpiryWindow"/>).
     /// </param>
     /// <returns>This builder for fluent chaining.</returns>
     /// <remarks>
-    /// <para>
-    /// <see cref="IdempotencyOptions"/> is available to the consuming service's
-    /// <see cref="IIdempotencyStore"/> implementation via
-    /// <c>IOptions&lt;IdempotencyOptions&gt;</c>.
-    /// </para>
-    /// <para>
-    /// The consuming service must register a concrete <see cref="IIdempotencyStore"/>
-    /// implementation before calling this method. Calling <see cref="Build"/> without
-    /// a registered <see cref="IIdempotencyStore"/> throws <see cref="InvalidOperationException"/>
-    /// with a diagnostic message.
-    /// </para>
+    /// The same store requirement as <see cref="WithIdempotency()"/> applies. <see cref="Build"/> throws
+    /// <see cref="InvalidOperationException"/> unless the lease is positive and shorter than the expiry window.
     /// </remarks>
     public MessagingBusBuilder WithIdempotency(Action<IdempotencyOptions> configure)
     {
@@ -602,34 +484,32 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
     /// </summary>
     /// <returns>This builder for fluent chaining.</returns>
     /// <remarks>
-    /// Populates <see cref="SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext.CorrelationId"/>
-    /// from the ambient <see cref="System.Diagnostics.Activity.Current"/> on every dispatch verb
-    /// (<c>PublishAsync</c>, <c>SendAsync</c>, and <c>IEventPublisher.PublishAsync</c>).
-    /// Distributed-trace correlation identity needs no consuming-service-supplied dependency — it
+    /// Writes the ambient caller's correlation id (<see cref="IRequestContextAccessor"/>) as the
+    /// <c>X-Correlation-Id</c> header on every dispatch verb (<c>PublishAsync</c>, <c>SendAsync</c>, and
+    /// <c>IEventPublisher.PublishAsync</c>), and registers <see cref="IRequestContextAccessor"/> unless one is
+    /// registered. The value is the caller's id, never an <c>Activity</c> id (P-566). The ambient context needs
+    /// no consuming-service-supplied dependency — it
     /// is one of three named, documented exceptions to "never implement
     /// <see cref="IMessageHeaderPropagator"/> inside SharedKernel" (P-345/WO-054; the others are
     /// <see cref="TenantHeaderPropagator"/> and <see cref="RequestContextHeaderPropagator"/>).
     /// </remarks>
     public MessagingBusBuilder WithAmbientCorrelationPropagation()
     {
+        Services.TryAddSingleton<IRequestContextAccessor, RequestContextAccessor>();
         Services.AddScoped<IMessageHeaderPropagator, AmbientCorrelationHeaderPropagator>();
         return this;
     }
 
     /// <summary>
-    /// Registers <typeparamref name="TAccessor"/> as a scoped <see cref="ITenantContextAccessor"/>
-    /// and registers the built-in <see cref="TenantHeaderPropagator"/> as a scoped
-    /// <see cref="IMessageHeaderPropagator"/>, in one call.
+    /// Registers the built-in <see cref="TenantHeaderPropagator"/> as a scoped
+    /// <see cref="IMessageHeaderPropagator"/>, so every outgoing message carries the tenant of the ambient
+    /// request context, and <see cref="IRequestContextAccessor"/> unless one is already registered.
     /// </summary>
-    /// <typeparam name="TAccessor">
-    /// The consuming service's <see cref="ITenantContextAccessor"/> implementation, bridging its
-    /// real tenant-identity source (e.g. <c>ITenantProvider</c> from <c>12.Security</c>).
-    /// </typeparam>
     /// <returns>This builder for fluent chaining.</returns>
     /// <remarks>
     /// <para>
-    /// The consuming service only writes the <see cref="ITenantContextAccessor"/> implementation
-    /// bridging its real tenant source — it never writes a propagator by hand, mirroring
+    /// The tenant comes from <see cref="IRequestContextAccessor.Current"/>, which every inbound adapter sets —
+    /// the consuming service writes no class at all, mirroring
     /// <see cref="WithAmbientCorrelationPropagation"/>'s zero-consumer-boilerplate shape.
     /// </para>
     /// <para>
@@ -640,10 +520,9 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
     /// call or another registered <see cref="WithHeaderPropagator{T}"/> propagator.
     /// </para>
     /// </remarks>
-    public MessagingBusBuilder WithTenantContext<TAccessor>()
-        where TAccessor : class, ITenantContextAccessor
+    public MessagingBusBuilder WithTenantContext()
     {
-        Services.AddScoped<ITenantContextAccessor, TAccessor>();
+        Services.TryAddSingleton<IRequestContextAccessor, RequestContextAccessor>();
         Services.AddScoped<IMessageHeaderPropagator, TenantHeaderPropagator>();
         return this;
     }
@@ -665,9 +544,10 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
     /// </para>
     /// <para>
     /// <strong>What it registers.</strong> Outbound, a
-    /// <see cref="RequestContextHeaderPropagator"/> writing the tenant
-    /// (<c>01.Core</c>'s <c>WellKnownHeaders.TenantId</c>) and the actor
-    /// (<c>MessageContextHeaders</c>). Inbound, a consume filter that reads them back and a
+    /// <see cref="RequestContextHeaderPropagator"/> writing the correlation id, tenant, actor and client under
+    /// <c>01.Core</c>'s <c>WellKnownHeaders</c>. Inbound, a consume filter that reads them back, runs the
+    /// consumer inside a <see cref="RequestContextScope"/> carrying them (so outbound calls made by the consumer
+    /// forward the same tenant and correlation id), and a
     /// message-aware <c>IRequestContext</c> that answers from the message inside a consume and from
     /// the service's own registration everywhere else — so one handler serves both paths without
     /// branching.
@@ -681,7 +561,7 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
     /// <para>
     /// <strong>Attribution, not authorization.</strong> A permission check inside a consume always
     /// answers <see langword="false"/>, and the values are only as trustworthy as who can reach the
-    /// broker. See <see cref="MessageRequestContext"/> for the full trust boundary.
+    /// broker. See <see cref="PropagatedRequestContext"/> for the full trust boundary.
     /// </para>
     /// <example>
     /// <code>
@@ -700,6 +580,7 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
             return this;
 
         _withInboundRequestContext = true;
+        Services.TryAddSingleton<IRequestContextAccessor, RequestContextAccessor>();
 
         // One holder per MassTransit delivery scope. Registered concretely as well as behind the
         // interface so the consume filter can write to the very instance consumers read from.
@@ -829,7 +710,7 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
     /// <see cref="DeadLetterOptions.MessageTimeToLive"/> is currently wired.
     /// </para>
     /// <para>
-    /// When called while <see cref="UseAzureServiceBus(string)"/> is the configured transport, this
+    /// When called while <c>UseAzureServiceBus</c> is the configured transport, this
     /// is a no-op — <c>Build()</c> registers an advisory-warning
     /// <see cref="Microsoft.Extensions.Hosting.IHostedService"/> instead of throwing, since Azure
     /// Service Bus dead-lettering is entirely transport-native.
@@ -940,20 +821,24 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
     /// </remarks>
     public IServiceCollection Build()
     {
-        if (_transport == TransportKind.None)
-            throw new InvalidOperationException(
-                "No transport configured. Call UseRabbitMq() or UseAzureServiceBus() before Build().");
+        var transport = _transport ?? throw new InvalidOperationException(
+            "No transport configured. Call UseRabbitMq() (SharedKernel.Messaging.MassTransit.RabbitMq) or " +
+            "UseAzureServiceBus() (SharedKernel.Messaging.MassTransit.AzureServiceBus) before Build().");
 
-        // ID-04 / P-134: Guard — WithIdempotency() requires IIdempotencyStore to be registered.
+        // ID-04 / P-134: Guard — WithIdempotency() requires an IIdempotencyStore for IdempotencyPurpose.Message.
         if (_withIdempotency)
         {
-            var storeDescriptor = Services.FirstOrDefault(
-                d => d.ServiceType == typeof(IIdempotencyStore));
-
-            if (storeDescriptor is null)
+            if (!Services.HasIdempotencyStore(IdempotencyPurpose.Message))
                 throw new InvalidOperationException(
-                    "IIdempotencyStore is not registered. " +
-                    "Call services.AddScoped<IIdempotencyStore, YourImplementation>() before calling WithIdempotency().");
+                    "No IIdempotencyStore is registered for IdempotencyPurpose.Message. Register one before calling " +
+                    "WithIdempotency(), for example AddRedisIdempotency(p => p.ForMessages()) or " +
+                    "AddIdempotencyStore<TStore>(IdempotencyPurpose.Message).");
+
+            var configured = _idempotencyOptions ?? new IdempotencyOptions();
+            if (configured.LeaseDuration <= TimeSpan.Zero || configured.LeaseDuration >= configured.ExpiryWindow)
+                throw new InvalidOperationException(
+                    $"IdempotencyOptions.LeaseDuration ({configured.LeaseDuration}) must be greater than zero and " +
+                    $"shorter than IdempotencyOptions.ExpiryWindow ({configured.ExpiryWindow}).");
         }
 
         // PT-04 / P-346: Guard — WithPayloadTransform() requires the matching 01.Core primitive to
@@ -1017,11 +902,19 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
             sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<MessagingOptions>>().Value.ServiceName,
             includeNamespace: false));
 
-        // ID-05 / P-134: Register IdempotencyOptions if WithIdempotency(Action<>) overload was used.
-        if (_withIdempotency && _idempotencyOptions is not null)
+        // ID-05 / P-134: Register IdempotencyOptions; the consumer filter reads the lease and retention from it.
+        if (_withIdempotency)
         {
             var idempotencyOpts = _idempotencyOptions;
-            Services.Configure<IdempotencyOptions>(o => o.ExpiryWindow = idempotencyOpts.ExpiryWindow);
+            var optionsBuilder = Services.AddOptions<IdempotencyOptions>();
+            if (idempotencyOpts is not null)
+            {
+                optionsBuilder.Configure(o =>
+                {
+                    o.LeaseDuration = idempotencyOpts.LeaseDuration;
+                    o.ExpiryWindow = idempotencyOpts.ExpiryWindow;
+                });
+            }
         }
 
         // ID-03 / P-134: Register IdempotentConsumerBehavior as scoped so DI can inject IIdempotencyStore.
@@ -1047,7 +940,7 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
         // opt-in builder call required. Matches MassTransit's own singleton IBus/IBusControl
         // lifetime; it is a pure read-only reflection of the bus this builder already constructs,
         // not a new capability with its own configuration surface.
-        Services.AddSingleton<Abstractions.MessageBus.IMessageBusProbe, MassTransitMessageBusProbe>();
+        Services.AddReadinessProbe<MassTransitMessageBusProbe>();
 
         // SC-06: Register IMessageScheduler → MassTransitMessageScheduler as scoped.
         // Uses the fully qualified abstraction type to avoid IMessageScheduler ambiguity
@@ -1072,12 +965,17 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
                     sp.GetRequiredService<ILogger<TranslatorRegistrationValidationHostedService>>()));
         }
 
-        // P-343: Register an advisory startup check when WithDeadLetterPolicy() was called while
-        // the Azure Service Bus transport is configured — DeadLetterOptions is RabbitMQ-only.
-        if (_withDeadLetterPolicy && _transport == TransportKind.AzureServiceBus)
-        {
-            Services.AddSingleton<IHostedService, DeadLetterPolicyAdvisoryHostedService>();
-        }
+        // P-570: the transport owns its broker-native settings (delayed-delivery scheduler, dead-letter
+        // policy, partition-key mapping); the platform pipeline is handed to it as ConfigureBus.
+        var transportSettings = new MessagingTransportSettings(
+            _withDelayedDelivery,
+            _withDeadLetterPolicy ? _deadLetterOptions : null,
+            this);
+
+        transport.ConfigureServices(Services, transportSettings);
+
+        // The dispatch verbs read the transport to apply a partition key (P-344, P-570).
+        Services.AddSingleton(transport);
 
         // Register MassTransit with all configuration.
         Services.AddMassTransit(cfg =>
@@ -1090,90 +988,16 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
             foreach (var registration in _versionTranslatorRegistrations)
                 registration(cfg);
 
-            // Apply outbox configuration.
-            _outboxConfigurator?.Invoke(cfg);
-
-            // SC-06: Wire the transport-native message scheduler.
-            // For RabbitMQ, use the delayed message scheduler (transport-delay header).
-            // For Azure Service Bus, use the ASB-native scheduler (ScheduledEnqueueTimeUtc property).
-            // Both register MassTransit.IMessageScheduler in DI, which MassTransitMessageScheduler wraps.
-            if (_withDelayedDelivery)
-            {
-                if (_transport == TransportKind.AzureServiceBus)
-                    cfg.AddServiceBusMessageScheduler();
-                else
-                    cfg.AddDelayedMessageScheduler();
-            }
+            // Integration packages' registration steps (for example the EF Core outbox).
+            foreach (var registration in _registrationConfigurators)
+                registration(cfg);
 
             // The formatter comes from DI (registered above), so it reads the bound ServiceName.
             // SetEndpointNameFormatter is deliberately NOT called: it takes an instance, which
             // would have to be constructed here — before configuration has been bound.
 
-            // Configure transport.
-            if (_transport == TransportKind.RabbitMq)
-            {
-                cfg.UsingRabbitMq((ctx, busCfg) =>
-                {
-                    _rabbitMqBusConfigurator?.Invoke(ctx, busCfg);
-
-                    // SC-06: Wire the RabbitMQ delayed-message exchange for deferred delivery.
-                    if (_withDelayedDelivery)
-                        busCfg.UseDelayedMessageScheduler();
-
-                    // P-561: the inbound identity filter runs ahead of everything else, so a
-                    // tenant-partitioned idempotency store already knows the tenant when it
-                    // reserves the message id.
-                    if (_withInboundRequestContext)
-                        busCfg.UseConsumeFilter(typeof(InboundRequestContextFilter<>), ctx);
-
-
-                    // ID-03 / P-134: Wire global idempotency consume pipeline filter.
-                    // UseConsumeFilter with the open generic type applies to all message types.
-                    if (_withIdempotency)
-                        busCfg.UseConsumeFilter(typeof(IdempotentConsumerBehavior<>), ctx);
-
-                    // P-343: Apply the dead-letter policy's message TTL to the automatically-derived
-                    // fault/dead-letter queues.
-                    if (_withDeadLetterPolicy && _deadLetterOptions is not null)
-                        ConfigureDeadLetterPolicy(busCfg, _deadLetterOptions);
-
-                    // P-346: Wire the compress/encrypt payload-transform serializer when enabled.
-                    if (_withPayloadTransform && _payloadTransformOptions is not null)
-                        ConfigurePayloadTransform(busCfg, ctx, _payloadTransformOptions);
-
-                    ConfigureResilience(busCfg);
-                    busCfg.ConfigureEndpoints(ctx);
-                });
-            }
-            else if (_transport == TransportKind.AzureServiceBus)
-            {
-                cfg.UsingAzureServiceBus((ctx, busCfg) =>
-                {
-                    _asbBusConfigurator?.Invoke(ctx, busCfg);
-
-                    // SC-06: Wire ASB native scheduled delivery (ScheduledEnqueueTimeUtc).
-                    if (_withDelayedDelivery)
-                        busCfg.UseServiceBusMessageScheduler();
-
-                    // P-561: the inbound identity filter runs ahead of everything else, so a
-                    // tenant-partitioned idempotency store already knows the tenant when it
-                    // reserves the message id.
-                    if (_withInboundRequestContext)
-                        busCfg.UseConsumeFilter(typeof(InboundRequestContextFilter<>), ctx);
-
-
-                    // ID-03 / P-134: Wire global idempotency consume pipeline filter.
-                    if (_withIdempotency)
-                        busCfg.UseConsumeFilter(typeof(IdempotentConsumerBehavior<>), ctx);
-
-                    // P-346: Wire the compress/encrypt payload-transform serializer when enabled.
-                    if (_withPayloadTransform && _payloadTransformOptions is not null)
-                        ConfigurePayloadTransform(busCfg, ctx, _payloadTransformOptions);
-
-                    ConfigureResilience(busCfg);
-                    busCfg.ConfigureEndpoints(ctx);
-                });
-            }
+            // Configure transport. It ends its bus callback with transportSettings.ConfigureBus.
+            transport.Configure(cfg, transportSettings);
         });
 
         return Services;
@@ -1185,10 +1009,38 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
 
     private void EnsureNoTransport()
     {
-        if (_transport != TransportKind.None)
+        if (_transport is not null)
             throw new InvalidOperationException(
-                "A transport has already been configured. Only one transport (RabbitMQ or Azure Service Bus) is permitted per bus instance.");
+                $"A transport has already been configured ({_transport.Name}). Only one transport (RabbitMQ or Azure Service Bus) is permitted per bus instance.");
     }
+
+    // The platform pipeline every transport applies last, from inside its bus callback
+    // (MessagingTransportSettings.ConfigureBus).
+    internal void ConfigureBusPipeline<TEndpointConfigurator>(
+        IBusRegistrationContext ctx,
+        IBusFactoryConfigurator<TEndpointConfigurator> busCfg)
+        where TEndpointConfigurator : IReceiveEndpointConfigurator
+    {
+        // P-561: the inbound identity filter runs ahead of everything else, so a
+        // tenant-partitioned idempotency store already knows the tenant when it
+        // reserves the message id.
+        if (_withInboundRequestContext)
+            busCfg.UseConsumeFilter(typeof(InboundRequestContextFilter<>), ctx);
+
+        // ID-03 / P-134: Wire global idempotency consume pipeline filter.
+        // UseConsumeFilter with the open generic type applies to all message types; MassTransit runs it
+        // once per consumer, and the identity filter registered alongside names that consumer for the key.
+        if (_withIdempotency)
+            busCfg.UseIdempotentConsumers(ctx);
+
+        // P-346: Wire the compress/encrypt payload-transform serializer when enabled.
+        if (_withPayloadTransform && _payloadTransformOptions is not null)
+            ConfigurePayloadTransform(busCfg, ctx, _payloadTransformOptions);
+
+        ConfigureResilience(busCfg);
+        busCfg.ConfigureEndpoints(ctx);
+    }
+
 
     private void ConfigureResilience(IBusFactoryConfigurator busCfg)
     {
@@ -1222,87 +1074,6 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
         }
     }
 
-    // Internal (not private) so ConcurrencyLimitConfigurationTests can exercise this helper
-    // in isolation via a substituted IServiceBusBusFactoryConfigurator (P-342/WO-054).
-    internal static void ConfigureAzureServiceBus(
-        IServiceBusBusFactoryConfigurator cfg,
-        AzureServiceBusOptions opts)
-    {
-        if (!string.IsNullOrWhiteSpace(opts.FullyQualifiedNamespace))
-        {
-            // Managed identity path — construct service URI from the fully qualified namespace.
-            var serviceUri = new Uri($"sb://{opts.FullyQualifiedNamespace}");
-            cfg.Host(serviceUri, h =>
-            {
-                h.TokenCredential = new DefaultAzureCredential();
-                h.TransportType = opts.TransportType;
-            });
-        }
-        else if (!string.IsNullOrWhiteSpace(opts.ConnectionString))
-        {
-            cfg.Host(opts.ConnectionString, h =>
-            {
-                h.TransportType = opts.TransportType;
-            });
-        }
-        else
-        {
-            throw new InvalidOperationException(
-                "AzureServiceBusOptions requires exactly one of ConnectionString or FullyQualifiedNamespace to be set.");
-        }
-
-        // P-342/WO-054: Apply the bus-level receive endpoint concurrency default. Previously this
-        // option was read into AzureServiceBusOptions but never consulted anywhere the bus was
-        // actually built — setting it had zero observable effect.
-        // NOTE: IServiceBusEndpointConfigurator.MaxConcurrentCalls is obsolete
-        // ("Set ConcurrentMessageLimit instead (which is exactly what setting this property does)").
-        // ConcurrentMessageLimit (from the core IBusFactoryConfigurator, shared with the RabbitMQ
-        // transport) is the current API — setting it here is the transport-correct equivalent of
-        // the old MaxConcurrentCalls assignment.
-        cfg.ConcurrentMessageLimit = opts.MaxConcurrentCalls;
-    }
-
-    // Internal (not private) so ConcurrencyLimitConfigurationTests can exercise this helper
-    // in isolation via a substituted IRabbitMqBusFactoryConfigurator (P-342/WO-054).
-    internal static void ConfigureRabbitMq(IRabbitMqBusFactoryConfigurator cfg, RabbitMqBusOptions opts)
-    {
-        cfg.Host(opts.Host, opts.VirtualHost, h =>
-        {
-            h.Username(opts.Username);
-            h.Password(opts.Password);
-            h.Heartbeat(opts.RequestedHeartbeat);
-        });
-
-        cfg.PrefetchCount = opts.Prefetch;
-
-        // P-342/WO-054: Optional bus-level default concurrency ceiling, distinct from PrefetchCount.
-        // A per-consumer override on ConsumerDefinitionBase<TConsumer>.ConcurrentMessageLimit takes
-        // precedence over this default on that consumer's own endpoint.
-        if (opts.ConcurrentMessageLimit.HasValue)
-            cfg.ConcurrentMessageLimit = opts.ConcurrentMessageLimit.Value;
-    }
-
-    // Internal (not private) so DeadLetterPolicyConfigurationTests can exercise this helper
-    // in isolation via a substituted IRabbitMqBusFactoryConfigurator (P-343/WO-054).
-    internal static void ConfigureDeadLetterPolicy(IRabbitMqBusFactoryConfigurator cfg, DeadLetterOptions opts)
-    {
-        // Capability note: IRabbitMqSendTopologyConfigurator.ConfigureErrorSettings/
-        // .ConfigureDeadLetterSettings configure the ARGUMENTS of the automatically-derived fault
-        // ("_error") and dead-letter ("_skipped") queues — confirmed via reflection against
-        // MassTransit.RabbitMqTransport 9.1.2 to be the same settings RabbitMqReceiveEndpointBuilder
-        // uses to build the real fault transport a faulted/retry-exhausted message is routed to.
-        // There is no public hook here (or anywhere else in the RabbitMQ transport's configuration
-        // surface) to rename those queues — DeadLetterOptions.QueueNameSuffix is therefore accepted
-        // but has no observable effect in this MassTransit version; see its own XML doc for the full
-        // explanation. Only MessageTimeToLive is wired below.
-        if (!opts.MessageTimeToLive.HasValue)
-            return;
-
-        var timeToLive = opts.MessageTimeToLive.Value;
-
-        cfg.SendTopology.ConfigureErrorSettings = queue => queue.SetQueueArgument("x-message-ttl", timeToLive);
-        cfg.SendTopology.ConfigureDeadLetterSettings = queue => queue.SetQueueArgument("x-message-ttl", timeToLive);
-    }
 
     // Internal (not private) so PayloadTransformConfigurationTests can exercise this helper
     // in isolation via a substituted IBusFactoryConfigurator (P-346/WO-054).
@@ -1372,19 +1143,5 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
             ?? throw new InvalidOperationException(
                 "PayloadTransformOptions.EnableEncryption is set but no ISynchronousSymmetricEncryptionService is registered. " +
                 MissingSynchronousEncryptionGuidance);
-    }
-
-    private static void ValidateAzureServiceBusOptions(AzureServiceBusOptions opts)
-    {
-        var hasConnectionString = !string.IsNullOrWhiteSpace(opts.ConnectionString);
-        var hasNamespace = !string.IsNullOrWhiteSpace(opts.FullyQualifiedNamespace);
-
-        if (hasConnectionString && hasNamespace)
-            throw new InvalidOperationException(
-                "AzureServiceBusOptions: ConnectionString and FullyQualifiedNamespace are mutually exclusive. Set exactly one.");
-
-        if (!hasConnectionString && !hasNamespace)
-            throw new InvalidOperationException(
-                "AzureServiceBusOptions: Either ConnectionString or FullyQualifiedNamespace must be set.");
     }
 }

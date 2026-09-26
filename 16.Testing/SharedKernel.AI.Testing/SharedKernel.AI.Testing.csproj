@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <SharedKernelTier>Testing</SharedKernelTier>
+    <Description>In-memory test doubles for SharedKernel.AI.Abstractions, for test projects only. A deterministic hash-derived embedding generator, an in-memory vector collection and provisioner with tenant scoping, provider descriptors and a scripted semantic kernel, so AI code can be tested without a model or a vector database.</Description>
+    <PackageTags>ai;embeddings;vector-search;testing;test-doubles;shared-kernel</PackageTags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- A test-helper LIBRARY, not a test project: dotnet test must not try to run it. -->
+    <IsTestProject>false</IsTestProject>
+    <WarningsAsErrors>$(WarningsAsErrors);nullable;CS1591;RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\10.Intelligence\SharedKernel.AI.Abstractions\SharedKernel.AI.Abstractions.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+</Project>

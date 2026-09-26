@@ -5,6 +5,7 @@ using SharedKernel.Messaging.Abstractions.HeaderPropagation;
 using SharedKernel.Messaging.Abstractions.MessageBus;
 using SharedKernel.Messaging.MassTransit.Diagnostics;
 using SharedKernel.Messaging.MassTransit.Internal;
+using SharedKernel.Messaging.MassTransit.Transports;
 using SharedKernel.Primitives.Propagation;
 using SharedKernel.Primitives.Results;
 
@@ -20,6 +21,7 @@ internal sealed class MassTransitMessageBus : IMessageBus
     private readonly IReadOnlyList<IMessageHeaderPropagator> _propagators;
     private readonly IReadOnlyDictionary<Type, string> _routeMap;
     private readonly ConventionSendEndpointResolver _resolver;
+    private readonly MessagingTransport? _transport;
 
     public MassTransitMessageBus(
         IPublishEndpoint publishEndpoint,
@@ -39,6 +41,10 @@ internal sealed class MassTransitMessageBus : IMessageBus
         // IServiceProvider — which several tests inject — returns null for anything unregistered, and
         // the throwing overloads turn that into a constructor failure.
         _propagators = [.. serviceProvider.GetService<IEnumerable<IMessageHeaderPropagator>>() ?? []];
+
+        // The configured transport maps a partition key to its ordered-delivery mechanism (P-570). Absent when
+        // the bus is composed without MessagingBusBuilder, which then sets only the routing key.
+        _transport = serviceProvider.GetService<MessagingTransport>();
     }
 
     public Task<Result> PublishAsync<T>(T message, CancellationToken ct) where T : class
@@ -166,6 +172,6 @@ internal sealed class MassTransitMessageBus : IMessageBus
     /// two paths each had their own copy and drifted, and the event one never wrote the tenant
     /// header at all.
     /// </remarks>
-    private static void ApplyContext(SendContext pipe, MessagingPublishContext context)
-        => PublishContextPipe.Apply(pipe, context, context.CorrelationId);
+    private void ApplyContext(SendContext pipe, MessagingPublishContext context)
+        => PublishContextPipe.Apply(pipe, context, context.CorrelationId, transport: _transport);
 }

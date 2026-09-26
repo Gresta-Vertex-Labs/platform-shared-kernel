@@ -7,7 +7,7 @@ namespace SharedKernel.Testing.Domain;
 /// <see cref="ISpecification{T}.Criteria"/> against an in-memory entity, without a database.
 /// </summary>
 /// <remarks>
-/// Compiles <see cref="ISpecification{T}.Criteria"/> via <see cref="System.Linq.Expressions.Expression{TDelegate}.Compile"/>
+/// Compiles <see cref="ISpecification{T}.Criteria"/> via <c>Expression&lt;TDelegate&gt;.Compile()</c>
 /// on every call — reflection-based expression compilation, acceptable in this test-only package,
 /// never acceptable in production code per <c>03.Domain</c>'s own documented constraint on
 /// <c>Specification&lt;T&gt;.IsSatisfiedBy</c>.

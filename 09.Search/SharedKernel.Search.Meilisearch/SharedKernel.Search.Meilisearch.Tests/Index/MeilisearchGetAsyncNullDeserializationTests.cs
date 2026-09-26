@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Search.Abstractions.Abstractions;
 using SharedKernel.Search.Abstractions.Models;
 using SharedKernel.Search.Meilisearch.Index;
@@ -70,7 +71,7 @@ public sealed class MeilisearchGetAsyncNullDeserializationTests
         var index = new MeilisearchIndex<TestDocument>(
             client, Definition(), new MeilisearchOptions(), new FakeClock(), NullLogger<MeilisearchIndex<TestDocument>>.Instance);
 
-        var act = async () => await index.GetAsync("some-document-id", TenantScope.None);
+        var act = async () => await index.GetAsync("some-document-id", TenantScope.Global);
 
         var result = await act.Should().NotThrowAsync(
             "a null-deserialized document must surface as a Result failure, never an unhandled exception");

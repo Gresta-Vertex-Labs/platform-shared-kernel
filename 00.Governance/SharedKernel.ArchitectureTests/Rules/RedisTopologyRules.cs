@@ -17,7 +17,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// <see cref="ConditionList"/> (or one per assembly) — consistent with the established
 /// <see cref="Helpers.ArchitectureRuleBase"/> API. The dependency checks use
 /// <c>.Should().NotHaveDependencyOn(...)</c>, in the same style as
-/// <see cref="CachingAbstractionRules"/>; <see cref="CachingAbstractionsDeclaresNoProviderSpecificTypes"/>
+/// the other topology rules; <see cref="CachingAbstractionsDeclaresNoProviderSpecificTypes"/>
 /// matches type names, and <see cref="CachingAbstractionsReferencesOnlyDependencyInjectionAbstractions"/>
 /// reads the compiled assembly references through
 /// <see cref="Predicates.AssemblyReferenceAllowListPredicate"/>. No SK diagnostic IDs are
@@ -29,7 +29,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// Provider-specific contracts live in the package that implements them:
 /// <c>IRedisChannelService</c> in <c>SharedKernel.Caching.Redis.PubSub</c>,
 /// <c>IRedisHashService</c>/<c>ITypedHashStore&lt;T&gt;</c> in
-/// <c>SharedKernel.Caching.Redis.HashStore</c>, and <c>IRedisConnectionProbe</c> in
+/// <c>SharedKernel.Caching.Redis.HashStore</c>, and the Redis connection's <c>IReadinessProbe</c> in
 /// <c>SharedKernel.Caching.Redis.Core.Health</c>.
 /// </para>
 /// <para>
@@ -149,7 +149,13 @@ public static class RedisTopologyRules
     ];
 
     /// <summary>
-    /// The only non-BCL assembly <c>SharedKernel.Caching.Abstractions</c> may reference —
+    /// The foundation assembly that owns <c>TenantId</c>, which every tenant-scoped key, tag and
+    /// <c>ITenantCacheService</c> member takes (P-565). Dependency-free apart from <c>SharedKernel.Primitives</c>.
+    /// </summary>
+    private const string ExecutionAssemblyName = "SharedKernel.Execution";
+
+    /// <summary>
+    /// One of the two non-BCL assemblies <c>SharedKernel.Caching.Abstractions</c> may reference —
     /// <c>ICachingBuilder</c> exposes <c>IServiceCollection</c> so provider packages can chain
     /// registrations.
     /// </summary>
@@ -161,7 +167,7 @@ public static class RedisTopologyRules
     /// provider-neutral contract has no Redis channel, hash store, FusionCache option, RedLock
     /// handle, or connection health check — those belong to the provider packages
     /// (<c>IRedisChannelService</c> in <c>.Redis.PubSub</c>, <c>IRedisHashService</c>/
-    /// <c>ITypedHashStore&lt;T&gt;</c> in <c>.Redis.HashStore</c>, <c>IRedisConnectionProbe</c> in
+    /// <c>ITypedHashStore&lt;T&gt;</c> in <c>.Redis.HashStore</c>, the connection readiness probe in
     /// <c>.Redis.Core.Health</c>).
     /// </summary>
     private const string ProviderSpecificTypeNamePattern =
@@ -396,7 +402,7 @@ public static class RedisTopologyRules
     /// <strong>Rationale:</strong> the abstractions package is the provider-neutral contract every
     /// provider implements. A dependency on any provider — or on a library only a provider needs —
     /// drags that provider into every consumer and lets provider concepts leak into the contract.
-    /// Same shape as <see cref="SharedKernelLayeringRules.CoreReferencesNothing"/>, scoped to
+    /// A purity rule inside one tier (Abstractions), which the tier check cannot express, scoped to
     /// <c>SharedKernel.Caching.Abstractions</c>.
     /// </para>
     /// <para>
@@ -494,7 +500,7 @@ public static class RedisTopologyRules
             .That()
             .HaveNameStartingWith(string.Empty)
             .Should()
-            .MeetCustomRule(new AssemblyReferenceAllowListPredicate(DependencyInjectionAbstractionsAssemblyName));
+            .MeetCustomRule(new AssemblyReferenceAllowListPredicate(DependencyInjectionAbstractionsAssemblyName, ExecutionAssemblyName));
 
     /// <summary>
     /// Returns a <see cref="ConditionList"/> asserting that <c>SharedKernel.Caching.Abstractions</c>
@@ -509,7 +515,7 @@ public static class RedisTopologyRules
     /// <c>ITypedHashStore&lt;T&gt;</c> and a <c>ConnectionHealthState</c> enum once lived here that way.
     /// Those contracts now belong to the package that implements them —
     /// <c>SharedKernel.Caching.Redis.PubSub</c> and <c>SharedKernel.Caching.Redis.HashStore</c> — and
-    /// connection health is now <c>IRedisConnectionProbe</c> in <c>SharedKernel.Caching.Redis.Core.Health</c>.
+    /// connection health is now a readiness probe in <c>SharedKernel.Caching.Redis.Core.Health</c>.
     /// </para>
     /// <para>
     /// Matching is a case-sensitive regular expression over the simple type name, so compiler-

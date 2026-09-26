@@ -1,3 +1,6 @@
+using SharedKernel.Execution.Tenancy;
+using SharedKernel.Execution.Context;
+
 namespace SharedKernel.Security.Abstractions;
 
 /// <summary>The <see cref="IUserContext"/> of an unauthenticated caller.</summary>
@@ -12,7 +15,7 @@ public sealed class AnonymousUserContext : IUserContext
     }
 
     /// <inheritdoc/>
-    public IdentityKind IdentityKind => IdentityKind.Anonymous;
+    public ActorKind ActorKind => ActorKind.Anonymous;
 
     /// <inheritdoc/>
     public bool IsAuthenticated => false;
@@ -24,7 +27,7 @@ public sealed class AnonymousUserContext : IUserContext
     public string? ClientId => null;
 
     /// <inheritdoc/>
-    public Guid? TenantId => null;
+    public TenantId? TenantId => null;
 
     /// <inheritdoc/>
     public string? SessionId => null;

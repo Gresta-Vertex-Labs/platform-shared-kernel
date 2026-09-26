@@ -3,7 +3,7 @@ using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
-using SharedKernel.Application.Auditing;
+using SharedKernel.Execution.Auditing;
 using SharedKernel.Persistence.EfCore.Auditing.SelfCheck;
 using SharedKernel.Persistence.EfCore.Auditing.Tests.Support;
 using SharedKernel.Testing.Containers;

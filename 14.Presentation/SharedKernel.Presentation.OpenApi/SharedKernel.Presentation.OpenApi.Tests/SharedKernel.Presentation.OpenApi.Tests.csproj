@@ -8,6 +8,8 @@
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Presentation.OpenApi.csproj" />
     <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
+    <!-- The request context every host composes first (P-579): the correlation id of every documented response. -->
+    <ProjectReference Include="..\..\..\13.ServiceDefaults\SharedKernel.ServiceDefaults.Security\SharedKernel.ServiceDefaults.Security.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="xunit" />

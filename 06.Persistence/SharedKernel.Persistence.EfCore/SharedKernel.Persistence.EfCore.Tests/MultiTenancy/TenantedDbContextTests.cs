@@ -1,6 +1,7 @@
-using SharedKernel.Application.Context;
+using SharedKernel.Execution.Context;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
@@ -15,8 +16,8 @@ public sealed class TenantedDbContextTests
     public async Task Query_WithTenantFilter_ReturnsOnlyCurrentTenantEntities()
     {
         // Arrange
-        var tenant1 = Guid.NewGuid();
-        var tenant2 = Guid.NewGuid();
+        var tenant1 = new TenantId(Guid.NewGuid());
+        var tenant2 = new TenantId(Guid.NewGuid());
 
         var dbName = $"tenanted-{Guid.NewGuid():N}";
         var connStr = $"DataSource=file:{dbName}?mode=memory&cache=shared";
@@ -63,8 +64,8 @@ public sealed class TenantedDbContextTests
     public async Task Query_WithNoTenantResolved_ReturnsZeroRows()
     {
         // Arrange — fail-closed: a null (unresolved) tenant matches no rows, replacing
-        // the former Guid.Empty-sentinel test — Guid.Empty is now an ordinary, matchable tenant id.
-        var tenant = Guid.NewGuid();
+        // the former Guid.Empty-sentinel test — a TenantId can never be empty.
+        var tenant = new TenantId(Guid.NewGuid());
         var dbName = $"tenanted-empty-{Guid.NewGuid():N}";
         var connStr = $"DataSource=file:{dbName}?mode=memory&cache=shared";
 
@@ -105,14 +106,14 @@ public sealed class TenantedDbContextTests
             .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
             .Options;
 
-        var actorContext = TestDbContextFactory.CreateAuthenticatedActorContext(Guid.NewGuid(), Guid.NewGuid());
+        var actorContext = TestDbContextFactory.CreateAuthenticatedActorContext(Guid.NewGuid(), new TenantId(Guid.NewGuid()));
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
 
         await using var ctx = BuildTenantedContext(options, actorContext, clock);
         ctx.Database.EnsureCreated();
         var repo = new TenantedTestAggregateRepository(ctx);
 
-        var act = async () => await repo.GetByIdForTenantAsync(TenantedTestId.New(), Guid.NewGuid());
+        var act = async () => await repo.GetByIdForTenantAsync(TenantedTestId.New(), new TenantId(Guid.NewGuid()));
 
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*ICrossTenantScope*");
@@ -122,8 +123,8 @@ public sealed class TenantedDbContextTests
     public async Task GetByIdForTenantAsync_BypassesFilterAndReturnsByExplicitTenant()
     {
         // Arrange
-        var tenant1 = Guid.NewGuid();
-        var tenant2 = Guid.NewGuid();
+        var tenant1 = new TenantId(Guid.NewGuid());
+        var tenant2 = new TenantId(Guid.NewGuid());
         var dbName = $"tenanted-bypass-{Guid.NewGuid():N}";
         var connStr = $"DataSource=file:{dbName}?mode=memory&cache=shared";
 

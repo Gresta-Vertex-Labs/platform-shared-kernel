@@ -2,6 +2,7 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Domain.Specifications;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence.EfCore.Repositories;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
 using SharedKernel.Primitives.Clocks;
@@ -488,7 +489,7 @@ public sealed class BulkSpecificationGuardTests
 
         var act = async () => await repo.ExecuteUpdateAsync(
             new SdTenantedNameEqualsSpec("Match"),
-            setters => setters.SetProperty(e => e.TenantId, Guid.NewGuid()));
+            setters => setters.SetProperty(e => e.TenantId, new TenantId(Guid.NewGuid())));
 
         var exception = await act.Should().ThrowAsync<UnsupportedSpecificationException>();
         exception.Which.Message.Should().Contain("TenantId");

@@ -1,7 +1,8 @@
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
-using SharedKernel.Application.Auditing;
+using SharedKernel.Primitives.Health;
+using SharedKernel.Execution.Auditing;
 using SharedKernel.Persistence.EfCore.Auditing.Tests.Support;
 using SharedKernel.Testing.Containers;
 
@@ -84,7 +85,7 @@ public sealed class SealerTests(PostgreSqlContainerFixture fixture)
         await earlyConnection.DisposeAsync();
 
         (await SealAsync(host)).RecordsSealed.Should().Be(0, "the committed record is behind a still-running older transaction");
-        (await host.Get<IAuditSealingProbe>().ProbeAsync()).UnsealedRecords.Should().Be(1);
+        (await host.UnsealedRecordsAsync()).Should().Be(1);
 
         await lateTransaction.CommitAsync();
         await lateConnection.DisposeAsync();
@@ -94,7 +95,7 @@ public sealed class SealerTests(PostgreSqlContainerFixture fixture)
         page.Items.Single(r => r.Id == lateRecord.Id).Sequence.Should().Be(1, "the older transaction's record comes first");
         page.Items.Single(r => r.Id == earlyRecord.Id).Sequence.Should().Be(2);
         (await VerifyAsync(host)).IsIntact.Should().BeTrue();
-        (await host.Get<IAuditSealingProbe>().ProbeAsync()).UnsealedRecords.Should().Be(0);
+        (await host.UnsealedRecordsAsync()).Should().Be(0);
     }
 
     [Fact]
@@ -164,13 +165,18 @@ public sealed class SealerTests(PostgreSqlContainerFixture fixture)
         host.Clock.UtcNow = DateTimeOffset.UtcNow;
         await WriteAsync(host, Failed("o-2"));
 
-        var health = await host.Get<IAuditSealingProbe>().ProbeAsync();
+        var health = await host.ProbeSealingAsync();
 
-        health.UnsealedRecords.Should().Be(2);
-        health.Lag.Should().BeGreaterThan(TimeSpan.FromMinutes(9));
+        health.Data[AuditSealingReadiness.UnsealedRecordsKey].Should().Be(2L);
+        ((TimeSpan)health.Data[AuditSealingReadiness.LagKey]).Should().BeGreaterThan(TimeSpan.FromMinutes(9));
+        health.Status.Should().Be(ReadinessStatus.Degraded, "a 10-minute lag exceeds the 5-minute default");
 
         await SealAsync(host);
-        (await host.Get<IAuditSealingProbe>().ProbeAsync()).Should().Be(new AuditSealingHealth(0, null, TimeSpan.Zero));
+        var sealedTail = await host.ProbeSealingAsync();
+        sealedTail.Status.Should().Be(ReadinessStatus.Healthy);
+        sealedTail.Data[AuditSealingReadiness.UnsealedRecordsKey].Should().Be(0L);
+        sealedTail.Data[AuditSealingReadiness.LagKey].Should().Be(TimeSpan.Zero);
+        sealedTail.Data.Should().NotContainKey(AuditSealingReadiness.OldestUnsealedOccurredOnKey);
     }
 
     [Fact]
@@ -206,7 +212,7 @@ public sealed class SealerTests(PostgreSqlContainerFixture fixture)
                 await Task.Delay(100);
             }
 
-            (await host.Get<IAuditSealingProbe>().ProbeAsync()).UnsealedRecords.Should().Be(0);
+            (await host.UnsealedRecordsAsync()).Should().Be(0);
             checkpoint.Should().NotBeNull();
             checkpoint!.Sequence.Should().Be(2);
         }

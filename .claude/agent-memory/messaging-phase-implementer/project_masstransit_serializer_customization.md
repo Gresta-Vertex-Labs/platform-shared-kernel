@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): recorded on MassTransit 9.1.2; the platform is pinned to 8.5.x (P-560) — re-verify API claims.
+
 # MassTransit 9.1.2 Custom Serializer/Deserializer Wiring (SK.07.PayloadTransform, P-346/WO-054)
 
 ## The real API shapes (confirmed via `dotnet test`-based reflection probes, not XML docs alone)

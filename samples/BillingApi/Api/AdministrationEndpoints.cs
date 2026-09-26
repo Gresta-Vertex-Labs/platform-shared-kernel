@@ -1,6 +1,8 @@
 using BillingApi.Features.Reports;
 using BillingApi.Features.Tenants;
-using MediatR;
+using SharedKernel.Application.Authorization;
+using SharedKernel.Application.Messaging;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Presentation.WebApi;
 
 namespace BillingApi.Api;
@@ -21,6 +23,6 @@ public sealed class AdministrationEndpoints : IEndpointModule
 
         // GDPR/KVKK erasure of a whole tenant: destroys its data key, so every encrypted value becomes unreadable.
         admin.MapPost("/tenants/{tenantId:guid}/erase", (Guid tenantId, ISender sender, CancellationToken ct) =>
-            sender.Send(new EraseTenant(tenantId), ct).ToOk());
+            sender.Send(new EraseTenant(new TenantId(tenantId)), ct).ToOk());
     }
 }

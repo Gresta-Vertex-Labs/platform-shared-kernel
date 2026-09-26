@@ -15,7 +15,9 @@ enforce the same rules; no business logic; no domain types.
 
 **Hard rules**
 
-1. References `SharedKernel.Primitives` only. Never `03.Domain` (removed 2026-09-15 by user ruling), never
+1. **Model tier** (`<SharedKernelTier>Model</SharedKernelTier>`): references `SharedKernel.Primitives` (Foundation) only
+   and no third-party package; the build enforces it (SKTIER001/003). Never `SharedKernel.Domain`
+   (`ContractsNeverReferencesDomain`, although both are Model tier), never `SharedKernel.Execution`,
    infrastructure, DI, logging or HTTP types.
 2. No domain logic. Allowed behaviour: factories, validation of the type's own invariants, projection (`Map`),
    value equality, and the cursor codec.
@@ -35,7 +37,7 @@ enforce the same rules; no business logic; no domain types.
 
 | Package | Role | References |
 | --- | --- | --- |
-| `SharedKernel.Contracts` | Integration events, CloudEvents envelope, paging contracts | `SharedKernel.Primitives` |
+| `SharedKernel.Contracts` (Model tier) | Integration events, CloudEvents envelope, paging contracts | `SharedKernel.Primitives` |
 
 | Project | Purpose |
 | --- | --- |
@@ -118,13 +120,14 @@ Changes here that silently break another layer. Check the right column before me
 
 | If you change… | Also check |
 | --- | --- |
-| `EventEnvelope.Wrap` parameters or envelope property names | `07.Messaging` `MassTransitEventPublisher`, `PublishContext.Subject`; MassTransit harness tests; `16.Testing` `EventEnvelopeBuilder`, `InMemoryEventPublisher` |
+| `EventEnvelope.Wrap` parameters or envelope property names | `07.Messaging` `MassTransitEventPublisher`, `PublishContext.Subject`; MassTransit harness tests; `16.Testing` `SharedKernel.Testing` `EventEnvelopeBuilder`, `SharedKernel.Messaging.Testing` `InMemoryEventPublisher` |
 | `IntegrationEventDescriptor` name rules or caching | `15.Integration` `WebhookDispatcher` routing key and `WebhookSubscription` event types; `07.Messaging` telemetry tags |
-| `IIntegrationEvent` | `07.Messaging` `IEventPublisher` constraint; `15.Integration` `IWebhookDispatcher`; `16.Testing` `IntegrationEventFaker` |
-| `PagedList<T>` factories or `TotalCount` type | `06.Persistence` `EfReadRepository.ListPaged*`; `09.Search` `SearchResults.ToPagedList`; `11.Communication.GraphQL` `PagedResponseType`; `16.Testing` `FakeRepository`, `PagedListBuilder`, `PagedListAssertions` |
-| `PageRequest`/`CursorPageRequest` shape or limits | `06.Persistence` `IReadRepository.ListPagedAsync`/`ListKeysetAsync` (take them directly) and `16.Testing` `FakeRepository` |
+| `IIntegrationEvent` | `07.Messaging` `IEventPublisher` constraint; `15.Integration` `IWebhookDispatcher`; `16.Testing` `SharedKernel.Testing` `IntegrationEventFaker` |
+| `PagedList<T>` factories or `TotalCount` type | `06.Persistence` `EfReadRepository.ListPaged*`; `09.Search` `SearchResults.ToPagedList`; `14.Presentation` `SharedKernel.Presentation.GraphQL` `PagedResponseType`; `16.Testing` `SharedKernel.Persistence.Testing` `FakeRepository`, `SharedKernel.Testing` `PagedListBuilder`/`PagedListAssertions` |
+| `PageRequest`/`CursorPageRequest` shape or limits | `06.Persistence` `IReadRepository.ListPagedAsync`/`ListKeysetAsync` (take them directly) and `16.Testing` `SharedKernel.Persistence.Testing` `FakeRepository` |
 | `PageCursor` format | Every client holding a cursor; keep the old prefix decodable for a release |
-| Contracts purity or layering | `00.Governance` `ContractsPurityRules`, `ContractsLayeringRules` |
+| Contracts purity or references | `00.Governance` `ContractsPurityRules`, `SharedKernelLayeringRules.ContractsNeverReferencesDomain`; the tier check (`eng/SharedKernelTiers.targets`) |
+| `EventEnvelope.TenantId` type | `07.Messaging` `MassTransitEventPublisher` converts `PublishContext.TenantId` (`TenantId?`, set by `WithTenantId`) to `Guid?` when wrapping |
 | Any public API | `PublicAPI.Unshipped.txt`, `SharedKernel.Contracts.ConsumerVerify`, the package README |
 
 ---
@@ -142,6 +145,7 @@ Changes here that silently break another layer. Check the right column before me
 | `TotalCount` | `long` | `int` | Consumers adjust types |
 | Cursor | Unsigned, versioned, strictly decoded | HMAC-signed (key management in every service) | Queries must enforce tenant and authorization filters |
 | Money DTO | Not included | `MoneyDto` | Added when a real cross-service need appears |
+| `EventEnvelope.TenantId` type | `Guid?` on the wire contract | `SharedKernel.Execution.Tenancy.TenantId?` (would add a Foundation reference beyond `Primitives` and tie the wire format to a kernel type) | Publishers convert `TenantId?` → `Guid?`; consumers wrap it back with `TenantId.FromNullable` |
 
 ---
 
@@ -173,3 +177,4 @@ Changes here that silently break another layer. Check the right column before me
 - [2026-07-31] SK.04.Published complete (P-06/P-07/P-08; 8/8) — `SharedKernel.Contracts` re-packed and shipped at `2.0.0` (breaking `Envelope`→`Envelopes` rename + additive `TenantId`/`CursorPagedList<T>` all now live); `consumer-verify` extended from 6 to 7 surfaces (namespace fix, `Wrap` with/without `tenantId` + STJ round-trip, `CursorPagedList<T>` construction + STJ round-trip); 87/87 tests green. All six phases now `●` — WO-052 v2.0.0 cycle complete end to end. GOVERNANCE FINDING recorded for future sessions (NOT a `04.Contracts` defect, NOT fixed here — wrong jurisdiction): a throwaway harness pointing `00.Governance`'s `ContractsPurityRules` at the real compiled `SharedKernel.Contracts.dll` for the first time (its own `ContractsPurityRulesTests.cs` tests only contrived fixtures, never the real assembly, at any version) found `CursorPagedList<T>` passes the domain-type/`Result`-type public-surface rules cleanly with zero exemption — but `ContractsAssembliesHaveNoNonTrivialMethods` fails against the real assembly for every type carrying a static factory or extension method (`PagedList<T>.Create`, `Envelope.Ok`/`.Fail`, `Wrap`, `ResultEnvelopeExtensions`'s methods, and now `CursorPagedList<T>.Create` too) — its "trivial method" allowlist has never included factory/extension methods, a pre-existing `00.Governance` predicate gap dating to `PagedList<T>`'s 1.0.0 introduction, not something this phase introduced. Also found: the domain-type rule's exemption only names the generic `EventEnvelope\`1`, never the sibling non-generic static `EventEnvelope` class that also carries an `IDomainEvent` constraint via `Wrap<TEvent>` — independently fails the same rule, also pre-existing since WO-011. Candidate follow-up for `00.Governance` (governance-arch-planner/governance-phase-implementer) — no `00.Governance` file touched (contracts-phase-implementer)
 - [2026-09-15] Pre-first-publish redesign by user ruling. Removed: `Envelope`/`Envelope<T>`, `ResultEnvelopeExtensions`, `ContractsJsonContext`/`ContractsSerializerDefaults`, the `03.Domain` reference. `EventEnvelope<TEvent>` now wraps `IIntegrationEvent`, serializes as CloudEvents 1.0 (`Type`/`Source`/`Data`/`DataVersion`/`Subject`), and is constructible only through `Wrap`; event identity comes from a required `[IntegrationEvent]` attribute via `IntegrationEventDescriptor`. `PagedList<T>.TotalCount` is `long`; pages snapshot items, compare by value and validate on deserialization; `CursorPagedList<T>.HasMore` is derived. Added `PageRequest`, `CursorPageRequest`, `PageCursor`, `CursorPosition<TKey, TId>`, `PaginationErrorCodes`, `Map`/`Empty`/`FromLookahead`. Public API tracked; 105 tests; brain, README and landing page rewritten. Cross-domain migrations in 06/07/09/11/15/16/00 (coordinator)
 - [2026-09-21] P-558: no API change; docs point paging at 06.Persistence ListPagedAsync/ListKeysetAsync (Paged/KeysetSpecification removed from 03.Domain) (agent)
+- [2026-09-26] WO-086 (P-565, P-574, P-575): Model tier; `EventEnvelope.TenantId` deliberately stays `Guid?` (wire contract; the package references `SharedKernel.Primitives` only) while the rest of the platform moved to `TenantId`; numbered-layer `ContractsLayeringRules` replaced by the tier check plus `ContractsNeverReferencesDomain`; coupling table updated for the split `16.Testing` packages and `Presentation.GraphQL` (agent)

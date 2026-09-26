@@ -1,5 +1,5 @@
 using System.Reflection;
-using Microsoft.AspNetCore.Http;
+using SharedKernel.Execution.Context;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Communication.Grpc.Interceptors;
 using SharedKernel.Security.Abstractions;
@@ -75,11 +75,11 @@ public sealed class LoggingEventIdRegressionTests
     public void TenantIdInterceptor_WhenExceptionThrown_LogsEventId11101AtError_AndDoesNotPropagate()
     {
         // Arrange — accessor throws when accessed, forcing EnrichContext's catch block
-        var httpContextAccessor = Substitute.For<IHttpContextAccessor>();
-        httpContextAccessor.HttpContext.Returns(_ => throw new InvalidOperationException("simulated fault"));
+        var accessor = Substitute.For<IRequestContextAccessor>();
+        accessor.Current.Returns(_ => throw new InvalidOperationException("simulated fault"));
 
         var capturingLogger = new CapturingLogger<TenantIdInterceptor>();
-        var interceptor = new TenantIdInterceptor(httpContextAccessor, capturingLogger);
+        var interceptor = new TenantIdInterceptor(accessor, capturingLogger);
 
         var context = BuildContext();
         var continuationCalled = false;

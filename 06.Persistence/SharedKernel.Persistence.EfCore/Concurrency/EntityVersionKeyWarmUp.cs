@@ -22,8 +22,8 @@ namespace SharedKernel.Persistence.EfCore.Concurrency;
 /// <para>
 /// <strong>Readiness does not wait for the key.</strong> Persistence works without it — only issuing and checking a
 /// version needs it — so a key service outage must not take every endpoint out of rotation. A service whose readiness
-/// should follow its key service registers a readiness check on it (13.ServiceDefaults'
-/// <c>AddKeyVaultKeyProviderReadinessCheck()</c>).
+/// should follow its key service maps its key provider's readiness probe (the Key Vault provider's
+/// <c>encryption-key-provider</c> probe, mapped by 13.ServiceDefaults' <c>AddSharedKernelReadiness()</c>).
 /// </para>
 /// </remarks>
 internal sealed class EntityVersionKeyWarmUp(EntityVersionCodec codec) : IHostedService

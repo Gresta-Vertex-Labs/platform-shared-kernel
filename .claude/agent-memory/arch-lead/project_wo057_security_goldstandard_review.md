@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): `IdentityKind` became `ActorKind` on `IUserContext`; `ITenantProvider`/`FakeTenantProvider` were deleted (tenant from `IRequestContext.TenantId`/`IUserContext.TenantId`); Security.Oidc/.ApiKey/.Mtls/.Totp are Host tier.
+
 **Trigger:** Direct user request, 2026-08-13 — "Analys the @12.Security/ packages... so important for us... Do we need more packages. Do we need more features. Need to refactor anything. We need gold standard developer friendly packages on security." Explicitly asked to take time and add as many phases as warranted.
 
 **Context that made this notable:** `12.Security` was the platform's *only* domain that had never had a WO-050-through-WO-056-style deep-dive review since its original 2026-06-02 build-out. Its Domain Summary Board row 12 "Summary: Done" ("Both packages packed... 46 tests passing") was the thinnest, least-detailed entry of any `●` Published domain — a signal worth noticing before even reading the code.

@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): `SharedKernel.Application.Behaviors` is now `SharedKernel.Application.Pipeline` (Host tier, kernel-owned `IPipelineBehavior<,>`, no MediatR — MediatR is referenced only by `SharedKernel.Application.Mediator.MediatR`, locked by `DependencyGraphRulesTests.MediatR_IsReferencedOnlyByTheMediatorAdapter`). `ApplicationPipelineRules` today holds `BehaviorsNeverReferenceConcreteInfrastructure`, `NoExistingBehaviorMatchesStreamRequestConstraint`, `PipelineNeverReferencesCachingPollyHostingOrCore` and `PipelineCachingNeverReferencesConcreteInfrastructure` — grep before naming a rule. "Layering: 00.Governance references nothing" now reads: governance packages are Tooling tier. Also gone: `NoHandRolledRetryLoopOutsideResilienceBehavior` (`ResilienceBehavior` was removed, P-544), `CompositionRootExclusivityRules`/`CachingAbstractionRules` (P-574, tier check) and `SagaStateMustExtendSagaStateBasePredicate` (sagas removed from Messaging, P-560). `PipelineOrderAssertion` still exists.
+
 WO-036 P-225 added phase `SK.00.ApplicationPipelineArchRules` (13 tasks: D-55, C-80–C-84,
 T-147–T-153, DO-27; total governance tasks now 359) to `00.Governance/state-map.md`, with
 corresponding additions to `00.Governance/CLAUDE.md`. Depends on `05.Application` P-220

@@ -15,10 +15,9 @@ storage.AddS3(builder.Configuration, "Public").AddStore("assets");
 storage.AddS3(builder.Configuration, "Private").AddTenantStore("documents");
 storage.AddObs(builder.Configuration).AddStore("archive");
 
-builder.Services.AddHealthChecks()
-    .AddStorageReadinessCheck("assets", "storage-assets")
-    .AddStorageReadinessCheck("documents", "storage-documents")
-    .AddStorageReadinessCheck("archive", "storage-archive");
+// Every AddStore/AddTenantStore registered a readiness probe (storage-assets, storage-documents,
+// storage-archive); one call maps them all.
+builder.Services.AddHealthChecks().AddSharedKernelReadiness();
 ```
 
 Buckets, key prefixes, encryption and link limits are in `appsettings.json`; credentials never are.
@@ -38,17 +37,19 @@ Buckets, key prefixes, encryption and link limits are in `appsettings.json`; cre
 | `POST /multipart/{store}/start` · `/part-url` · `/complete` · `/abort` | Presigned multipart upload |
 | `GET /health/ready` | One readiness check per store |
 
-The tenant comes from an `X-Tenant-Id` header so the tests can act as several tenants. A real service takes it from
+The tenant comes from an `X-Tenant-Id` header so the tests can act as several tenants; it is a `TenantId` (a GUID),
+and a tenant store asked for without a valid one answers `documents.tenant_required`. A real service takes it from
 the authenticated principal, never from a header the caller controls.
 
 ## The HTTP boundary
 
-`builder.AddSharedKernelWebApi()` and `app.UseSharedKernelWebApi()` make the API's errors one shape. The endpoints
-live in two endpoint modules, `FileEndpoints` and `LinkEndpoints` (`IEndpointModule`, mapped by the generated
-`app.MapEndpoints()`). Each reads what it needs from the request — the store and key from the route, the tenant,
-preconditions, range and metadata from headers — into a command or query, sends it through `ISender`
-(`builder.Services.AddSharedKernelApplication(typeof(Program).Assembly)`) and maps the `Result` with one call, no
-`IsSuccess` branch. Only the handlers in `Features/Files/` and `Features/Links/` touch the stores:
+`app.UseSharedKernelRequestContext()` runs first (the correlation id and the request's `IRequestContext`, from
+`SharedKernel.ServiceDefaults.Security`); then `builder.AddSharedKernelWebApi()` and `app.UseSharedKernelWebApi()` make
+the API's errors one shape. The endpoints live in two endpoint modules, `FileEndpoints` and `LinkEndpoints`
+(`IEndpointModule`, mapped by the generated `app.MapEndpoints()`). Each reads what it needs from the request — the store and key from the route, the tenant,
+preconditions, range and metadata from headers — into a command or query, sends it through the kernel's `ISender`
+(`builder.Services.AddSharedKernelApplication(typeof(Program).Assembly, app => app.UseMediatR())`) and maps the
+`Result` with one call, no `IsSuccess` branch. Only the handlers in `Features/Files/` and `Features/Links/` touch the stores:
 
 ```csharp
 // FileEndpoints

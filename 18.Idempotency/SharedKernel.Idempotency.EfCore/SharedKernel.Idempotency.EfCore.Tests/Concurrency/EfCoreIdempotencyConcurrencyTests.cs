@@ -1,14 +1,11 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 using MsOptions = Microsoft.Extensions.Options.Options;
-using SharedKernel.Application;
-using SharedKernel.Application.Idempotency;
+using SharedKernel.Execution.Context;
+using SharedKernel.Idempotency.Abstractions;
 using SharedKernel.Idempotency.EfCore.Context;
-using SharedKernel.Idempotency.EfCore.KeyStore;
-using SharedKernel.Idempotency.EfCore.MessageStore;
 using SharedKernel.Idempotency.EfCore.Options;
-using SharedKernel.Messaging.Abstractions.Idempotency;
-using SharedKernel.Messaging.Abstractions.TenantContext;
+using SharedKernel.Idempotency.EfCore.Store;
+using SharedKernel.Idempotency.EfCore.Tests.Support;
 using SharedKernel.Persistence;
 using SharedKernel.Testing.Clocks;
 using SharedKernel.Testing.Containers;
@@ -27,13 +24,16 @@ namespace SharedKernel.Idempotency.EfCore.Tests.Concurrency;
 /// REQUIRES A DOCKER DAEMON. This package ships no EF Core migrations (README.md's
 /// design-time-factory recipe is for real consumers); tests instead create the schema once via
 /// <c>EnsureCreatedAsync</c> against the model produced by
-/// <see cref="Entities.IdempotencyKeyRecordConfiguration"/>/
-/// <see cref="Entities.IdempotencyMessageRecordConfiguration"/>, which is model-equivalent to a
-/// real migration for this narrow purpose.
+/// <see cref="Entities.IdempotencyKeyRecordConfiguration"/>, which is model-equivalent to a real
+/// migration for this narrow purpose. Carried over from the two pre-P-568 stores: the request tests
+/// exercise purpose <see cref="IdempotencyPurpose.Request"/>, the message tests
+/// <see cref="IdempotencyPurpose.Message"/>.
 /// </remarks>
 [Collection("PostgreSqlContainer")]
 public sealed class EfCoreIdempotencyConcurrencyTests : IAsyncLifetime
 {
+    private static readonly TimeSpan DefaultTtl = TimeSpan.FromSeconds(30);
+
     private readonly PostgreSqlContainerFixture _fixture;
 
     public EfCoreIdempotencyConcurrencyTests(PostgreSqlContainerFixture fixture) => _fixture = fixture;
@@ -53,24 +53,33 @@ public sealed class EfCoreIdempotencyConcurrencyTests : IAsyncLifetime
         return new IdempotencyDbContext(optionsBuilder.Options);
     }
 
-    private sealed class FixedTenantAccessor(Guid tenantId) : ITenantContextAccessor
+    private sealed class FixedTenantAccessor(Guid? tenantId) : IRequestContextAccessor
     {
-        public Guid? TenantId { get; } = tenantId;
+        public IRequestContext? Current { get; } =
+            new SystemRequestContext([], "test", SharedKernel.Execution.Tenancy.TenantId.FromNullable(tenantId));
     }
 
-    private EfCoreRequestIdempotencyStore CreateStore(Guid tenantId, FakeClock clock, EfCoreIdempotencyOptions? options = null) =>
+    private EfCoreIdempotencyStore CreateRawStore(Guid? tenantId, FakeClock clock, IdempotencyDbContext? context = null) =>
         new(
-            CreateContext(_fixture.ConnectionString),
+            context ?? CreateContext(_fixture.ConnectionString),
             new FixedTenantAccessor(tenantId),
             clock,
-            MsOptions.Create(options ?? new EfCoreIdempotencyOptions()),
-            new InMemoryLogger<EfCoreRequestIdempotencyStore>());
+            MsOptions.Create(new EfCoreIdempotencyOptions()),
+            new InMemoryLogger<EfCoreIdempotencyStore>());
 
-    // N genuinely concurrent TryBeginAsync calls with the identical (TenantId, Key, fingerprint) —
+    private RequestView CreateStore(Guid? tenantId, FakeClock clock, TimeSpan? ttl = null) =>
+        new(CreateRawStore(tenantId, clock), ttl ?? DefaultTtl);
+
+    private MessageView CreateMessageStore(Guid? tenantId, FakeClock clock, TimeSpan? ttl = null) =>
+        new(CreateRawStore(tenantId, clock), ttl ?? DefaultTtl);
+
+    // N genuinely concurrent TryBeginAsync calls with the identical (tenant, purpose, key, fingerprint) —
     // exactly one must observe Started. Each task gets its own DbContext instance (never shared —
     // DbContext is not thread-safe), all pointed at the same database.
-    [Fact]
-    public async Task TryBeginAsync_ConcurrentCallsWithSameKeyAndFingerprint_ExactlyOneWinsTheReservation()
+    [Theory]
+    [InlineData(IdempotencyPurpose.Request)]
+    [InlineData(IdempotencyPurpose.Message)]
+    public async Task TryBeginAsync_ConcurrentCallsWithSameKeyAndFingerprint_ExactlyOneWinsTheReservation(IdempotencyPurpose purpose)
     {
         var tenantId = Guid.NewGuid();
         var idempotencyKey = $"concurrent-{Guid.NewGuid():N}";
@@ -81,22 +90,101 @@ public sealed class EfCoreIdempotencyConcurrencyTests : IAsyncLifetime
         var tasks = Enumerable.Range(0, concurrency).Select(_ => Task.Run(async () =>
         {
             await using var context = CreateContext(_fixture.ConnectionString);
-            var store = new EfCoreRequestIdempotencyStore(
-                context,
-                new FixedTenantAccessor(tenantId),
-                new FakeClock(),
-                MsOptions.Create(new EfCoreIdempotencyOptions()),
-                new InMemoryLogger<EfCoreRequestIdempotencyStore>());
+            var store = CreateRawStore(tenantId, new FakeClock(), context);
 
             barrier.SignalAndWait();
-            return await store.TryBeginAsync(idempotencyKey, fingerprint, CancellationToken.None);
+            return await store.TryBeginAsync(purpose, idempotencyKey, fingerprint, DefaultTtl, CancellationToken.None);
         }));
 
         var results = await Task.WhenAll(tasks);
 
-        Assert.Single(results, r => r.Status == IdempotencyBeginStatus.Started);
-        Assert.Equal(concurrency - 1, results.Count(r => r.Status == IdempotencyBeginStatus.InProgress));
+        Assert.Single(results, r => r.Status == IdempotencyReservationStatus.Started);
+        Assert.Equal(concurrency - 1, results.Count(r => r.Status == IdempotencyReservationStatus.InProgress));
     }
+
+    // ---- Message purpose (P-568): the redelivery semantics the consumer filter relies on ----
+
+    [Fact]
+    public async Task MessageStore_RedeliveryAfterAFailedAttemptIsReleased_IsReservedAgain()
+    {
+        var tenantId = Guid.NewGuid();
+        var clock = new FakeClock();
+        var messageId = Guid.NewGuid();
+
+        var failedAttempt = await CreateMessageStore(tenantId, clock).TryBeginAsync(messageId, CancellationToken.None);
+        Assert.Equal(IdempotencyReservationStatus.Started, failedAttempt.Status);
+
+        // While the failed attempt still holds the id, a redelivery must not be acknowledged.
+        Assert.Equal(
+            IdempotencyReservationStatus.InProgress,
+            (await CreateMessageStore(tenantId, clock).TryBeginAsync(messageId, CancellationToken.None)).Status);
+
+        Assert.True(await CreateMessageStore(tenantId, clock).ReleaseAsync(messageId, failedAttempt.Token!, CancellationToken.None));
+
+        var redelivery = await CreateMessageStore(tenantId, clock).TryBeginAsync(messageId, CancellationToken.None);
+        Assert.Equal(IdempotencyReservationStatus.Started, redelivery.Status);
+        Assert.True(await CreateMessageStore(tenantId, clock).CompleteAsync(messageId, redelivery.Token!, CancellationToken.None));
+
+        var duplicate = await CreateMessageStore(tenantId, clock).TryBeginAsync(messageId, CancellationToken.None);
+        Assert.Equal(IdempotencyReservationStatus.Completed, duplicate.Status);
+        Assert.Null(duplicate.StoredResponse);
+
+        // A release after completion never un-deduplicates the message.
+        Assert.False(await CreateMessageStore(tenantId, clock).ReleaseAsync(messageId, redelivery.Token!, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task MessageStore_AnAbandonedLease_ExpiresAndTheRedeliveryIsReserved()
+    {
+        var tenantId = Guid.NewGuid();
+        var clock = new FakeClock();
+        var messageId = Guid.NewGuid();
+        var ttl = TimeSpan.FromSeconds(5);
+
+        var crashed = await CreateMessageStore(tenantId, clock, ttl).TryBeginAsync(messageId, CancellationToken.None);
+        Assert.Equal(IdempotencyReservationStatus.Started, crashed.Status);
+
+        clock.Advance(ttl + TimeSpan.FromSeconds(1));
+
+        var redelivery = await CreateMessageStore(tenantId, clock, ttl).TryBeginAsync(messageId, CancellationToken.None);
+        Assert.Equal(IdempotencyReservationStatus.Started, redelivery.Status);
+        Assert.False(await CreateMessageStore(tenantId, clock, ttl).CompleteAsync(messageId, crashed.Token!, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Purposes_AreSeparateKeySpaces_ForTheSameRawKey()
+    {
+        var tenantId = Guid.NewGuid();
+        var clock = new FakeClock();
+        var key = Guid.NewGuid().ToString("D");
+
+        var request = await CreateRawStore(tenantId, clock).TryBeginAsync(IdempotencyPurpose.Request, key, "fingerprint-a", DefaultTtl, CancellationToken.None);
+        var message = await CreateRawStore(tenantId, clock).TryBeginAsync(IdempotencyPurpose.Message, key, "fingerprint-b", DefaultTtl, CancellationToken.None);
+
+        Assert.Equal(IdempotencyReservationStatus.Started, request.Status);
+        Assert.Equal(IdempotencyReservationStatus.Started, message.Status);
+    }
+
+    [Fact]
+    public async Task NoTenantScope_IsSharedAcrossCallersWithoutATenant_AndStoredAsTheNoTenantValue()
+    {
+        var clock = new FakeClock();
+        var key = $"no-tenant-{Guid.NewGuid():N}";
+
+        var first = await CreateStore(tenantId: null, clock).TryBeginAsync(key, "fingerprint", CancellationToken.None);
+        var second = await CreateStore(tenantId: null, clock).TryBeginAsync(key, "fingerprint", CancellationToken.None);
+        var tenant = await CreateStore(Guid.NewGuid(), clock).TryBeginAsync(key, "fingerprint", CancellationToken.None);
+
+        Assert.Equal(IdempotencyReservationStatus.Started, first.Status);
+        Assert.Equal(IdempotencyReservationStatus.InProgress, second.Status);
+        Assert.Equal(IdempotencyReservationStatus.Started, tenant.Status);
+
+        await using var context = CreateContext(_fixture.ConnectionString);
+        Assert.True(await context.IdempotencyKeys.AnyAsync(r => r.Key == key && r.TenantScope == IdempotencyTenantScope.NoTenant));
+    }
+
+    // ---- Carried over from the pre-P-568 request and message stores ----
+
 
     // A row whose ExpiresAtUtc is already in the past is reclaimed by the next reservation attempt,
     // not treated as a live conflict — and its stale response never resurfaces.
@@ -111,7 +199,8 @@ public sealed class EfCoreIdempotencyConcurrencyTests : IAsyncLifetime
         {
             seedContext.Add(new Entities.IdempotencyKeyRecord
             {
-                TenantId = tenantId,
+                TenantScope = tenantId.ToString("D"),
+                Purpose = IdempotencyPurpose.Request,
                 Key = idempotencyKey,
                 Fingerprint = "stale-fingerprint",
                 Status = Entities.IdempotencyRecordStatus.Completed,
@@ -127,7 +216,7 @@ public sealed class EfCoreIdempotencyConcurrencyTests : IAsyncLifetime
 
         var result = await store.TryBeginAsync(idempotencyKey, "fresh-fingerprint", CancellationToken.None);
 
-        Assert.Equal(IdempotencyBeginStatus.Started, result.Status); // reclaimed, not blocked
+        Assert.Equal(IdempotencyReservationStatus.Started, result.Status); // reclaimed, not blocked
     }
 
     // Two tenants reserving the identical raw key concurrently must not collide — proves the
@@ -146,8 +235,8 @@ public sealed class EfCoreIdempotencyConcurrencyTests : IAsyncLifetime
         var resultA = await storeA.TryBeginAsync(sharedRawKey, "fingerprint", CancellationToken.None);
         var resultB = await storeB.TryBeginAsync(sharedRawKey, "fingerprint", CancellationToken.None);
 
-        Assert.Equal(IdempotencyBeginStatus.Started, resultA.Status);
-        Assert.Equal(IdempotencyBeginStatus.Started, resultB.Status);
+        Assert.Equal(IdempotencyReservationStatus.Started, resultA.Status);
+        Assert.Equal(IdempotencyReservationStatus.Started, resultB.Status);
     }
 
     // The message store's own tenant-isolation proof, mirroring the request-store proof above.
@@ -159,14 +248,8 @@ public sealed class EfCoreIdempotencyConcurrencyTests : IAsyncLifetime
         var sharedMessageId = Guid.NewGuid();
         var clock = new FakeClock();
 
-        var storeA = new EfCoreIdempotencyMessageStore(
-            CreateContext(_fixture.ConnectionString), new FixedTenantAccessor(tenantA), clock,
-            MsOptions.Create(new EfCoreIdempotencyOptions()), MsOptions.Create(new IdempotencyOptions()),
-            new InMemoryLogger<EfCoreIdempotencyMessageStore>());
-        var storeB = new EfCoreIdempotencyMessageStore(
-            CreateContext(_fixture.ConnectionString), new FixedTenantAccessor(tenantB), clock,
-            MsOptions.Create(new EfCoreIdempotencyOptions()), MsOptions.Create(new IdempotencyOptions()),
-            new InMemoryLogger<EfCoreIdempotencyMessageStore>());
+        var storeA = CreateMessageStore(tenantA, clock);
+        var storeB = CreateMessageStore(tenantB, clock);
 
         var reservationA = await storeA.TryBeginAsync(sharedMessageId, CancellationToken.None);
         var reservationB = await storeB.TryBeginAsync(sharedMessageId, CancellationToken.None);
@@ -175,9 +258,9 @@ public sealed class EfCoreIdempotencyConcurrencyTests : IAsyncLifetime
         // neither reservation observes the other.
         Assert.Equal(IdempotencyReservationStatus.Started, reservationA.Status);
         Assert.Equal(IdempotencyReservationStatus.Started, reservationB.Status);
-        Assert.NotNull(reservationA.ReservationToken);
-        Assert.NotNull(reservationB.ReservationToken);
-        Assert.NotEqual(reservationA.ReservationToken, reservationB.ReservationToken);
+        Assert.NotNull(reservationA.Token);
+        Assert.NotNull(reservationB.Token);
+        Assert.NotEqual(reservationA.Token, reservationB.Token);
     }
 
     // A different fingerprint against an in-flight reservation is reported as FingerprintMismatch.
@@ -190,10 +273,10 @@ public sealed class EfCoreIdempotencyConcurrencyTests : IAsyncLifetime
         var store = CreateStore(tenantId, clock);
 
         var first = await store.TryBeginAsync(idempotencyKey, "fingerprint-a", CancellationToken.None);
-        Assert.Equal(IdempotencyBeginStatus.Started, first.Status);
+        Assert.Equal(IdempotencyReservationStatus.Started, first.Status);
 
         var second = await CreateStore(tenantId, clock).TryBeginAsync(idempotencyKey, "fingerprint-b", CancellationToken.None);
-        Assert.Equal(IdempotencyBeginStatus.FingerprintMismatch, second.Status);
+        Assert.Equal(IdempotencyReservationStatus.FingerprintMismatch, second.Status);
     }
 
     // A different fingerprint against a completed row is also FingerprintMismatch — fingerprint
@@ -207,12 +290,12 @@ public sealed class EfCoreIdempotencyConcurrencyTests : IAsyncLifetime
         var store = CreateStore(tenantId, clock);
 
         var first = await store.TryBeginAsync(idempotencyKey, "fingerprint-a", CancellationToken.None);
-        Assert.Equal(IdempotencyBeginStatus.Started, first.Status);
-        var completed = await store.CompleteAsync(idempotencyKey, first.ReservationToken!, """{"result":"ok"}""", CancellationToken.None);
+        Assert.Equal(IdempotencyReservationStatus.Started, first.Status);
+        var completed = await store.CompleteAsync(idempotencyKey, first.Token!, """{"result":"ok"}""", CancellationToken.None);
         Assert.True(completed);
 
         var second = await CreateStore(tenantId, clock).TryBeginAsync(idempotencyKey, "fingerprint-b", CancellationToken.None);
-        Assert.Equal(IdempotencyBeginStatus.FingerprintMismatch, second.Status);
+        Assert.Equal(IdempotencyReservationStatus.FingerprintMismatch, second.Status);
     }
 
     // Once completed, the same key/fingerprint replays the exact stored response rather than
@@ -230,11 +313,11 @@ public sealed class EfCoreIdempotencyConcurrencyTests : IAsyncLifetime
         var store = CreateStore(tenantId, clock);
 
         var first = await store.TryBeginAsync(idempotencyKey, fingerprint, CancellationToken.None);
-        Assert.Equal(IdempotencyBeginStatus.Started, first.Status);
-        await store.CompleteAsync(idempotencyKey, first.ReservationToken!, payload, CancellationToken.None);
+        Assert.Equal(IdempotencyReservationStatus.Started, first.Status);
+        await store.CompleteAsync(idempotencyKey, first.Token!, payload, CancellationToken.None);
 
         var second = await CreateStore(tenantId, clock).TryBeginAsync(idempotencyKey, fingerprint, CancellationToken.None);
-        Assert.Equal(IdempotencyBeginStatus.Completed, second.Status);
+        Assert.Equal(IdempotencyReservationStatus.Completed, second.Status);
         Assert.Equal(payload, second.StoredResponse);
     }
 
@@ -252,7 +335,8 @@ public sealed class EfCoreIdempotencyConcurrencyTests : IAsyncLifetime
         {
             seedContext.Add(new Entities.IdempotencyKeyRecord
             {
-                TenantId = tenantId,
+                TenantScope = tenantId.ToString("D"),
+                Purpose = IdempotencyPurpose.Request,
                 Key = idempotencyKey,
                 Fingerprint = "stale-fingerprint",
                 Status = Entities.IdempotencyRecordStatus.Completed,
@@ -266,16 +350,16 @@ public sealed class EfCoreIdempotencyConcurrencyTests : IAsyncLifetime
 
         var store = CreateStore(tenantId, clock);
         var reclaimed = await store.TryBeginAsync(idempotencyKey, "fresh-fingerprint", CancellationToken.None);
-        Assert.Equal(IdempotencyBeginStatus.Started, reclaimed.Status);
+        Assert.Equal(IdempotencyReservationStatus.Started, reclaimed.Status);
 
         // The reclaimed row is now a fresh in-flight reservation under this store's own fingerprint
         // — replaying with that same fingerprint must observe InProgress, never a stale Completed
         // with the old response.
         var replay = await CreateStore(tenantId, clock).TryBeginAsync(idempotencyKey, "fresh-fingerprint", CancellationToken.None);
-        Assert.Equal(IdempotencyBeginStatus.InProgress, replay.Status);
+        Assert.Equal(IdempotencyReservationStatus.InProgress, replay.Status);
     }
 
-    // ReleaseAsync frees the key immediately, without waiting for InFlightTtl to elapse.
+    // ReleaseAsync frees the key immediately, without waiting for the in-flight ttl to elapse.
     [Fact]
     public async Task ReleaseAsync_OnInProgressReservation_FreesTheKeyImmediately()
     {
@@ -285,13 +369,13 @@ public sealed class EfCoreIdempotencyConcurrencyTests : IAsyncLifetime
         var store = CreateStore(tenantId, clock);
 
         var first = await store.TryBeginAsync(idempotencyKey, "fingerprint-a", CancellationToken.None);
-        Assert.Equal(IdempotencyBeginStatus.Started, first.Status);
+        Assert.Equal(IdempotencyReservationStatus.Started, first.Status);
 
-        var released = await store.ReleaseAsync(idempotencyKey, first.ReservationToken!, CancellationToken.None);
+        var released = await store.ReleaseAsync(idempotencyKey, first.Token!, CancellationToken.None);
         Assert.True(released);
 
         var second = await CreateStore(tenantId, clock).TryBeginAsync(idempotencyKey, "fingerprint-b", CancellationToken.None);
-        Assert.Equal(IdempotencyBeginStatus.Started, second.Status);
+        Assert.Equal(IdempotencyReservationStatus.Started, second.Status);
     }
 
     // ReleaseAsync must never delete an already-completed row — "only if not completed" — and must
@@ -307,16 +391,16 @@ public sealed class EfCoreIdempotencyConcurrencyTests : IAsyncLifetime
         var store = CreateStore(tenantId, clock);
 
         var begin = await store.TryBeginAsync(idempotencyKey, fingerprint, CancellationToken.None);
-        await store.CompleteAsync(idempotencyKey, begin.ReservationToken!, payload, CancellationToken.None);
+        await store.CompleteAsync(idempotencyKey, begin.Token!, payload, CancellationToken.None);
 
         // Deliberately calling ReleaseAsync after Complete on the SAME instance, with the very same
         // (still-correct) token — the Status == InProgress predicate is what must stop the delete,
         // not a mismatched token.
-        var released = await store.ReleaseAsync(idempotencyKey, begin.ReservationToken!, CancellationToken.None);
+        var released = await store.ReleaseAsync(idempotencyKey, begin.Token!, CancellationToken.None);
         Assert.False(released);
 
         var replay = await CreateStore(tenantId, clock).TryBeginAsync(idempotencyKey, fingerprint, CancellationToken.None);
-        Assert.Equal(IdempotencyBeginStatus.Completed, replay.Status);
+        Assert.Equal(IdempotencyReservationStatus.Completed, replay.Status);
         Assert.Equal(payload, replay.StoredResponse);
     }
 
@@ -329,29 +413,29 @@ public sealed class EfCoreIdempotencyConcurrencyTests : IAsyncLifetime
         var tenantId = Guid.NewGuid();
         var idempotencyKey = $"stale-owner-{Guid.NewGuid():N}";
         var clock = new FakeClock();
-        var options = new EfCoreIdempotencyOptions { InFlightTtl = TimeSpan.FromSeconds(5) };
+        var ttl = TimeSpan.FromSeconds(5);
 
-        var staleOwner = CreateStore(tenantId, clock, options);
+        var staleOwner = CreateStore(tenantId, clock, ttl);
         var originalReservation = await staleOwner.TryBeginAsync(idempotencyKey, "fingerprint-a", CancellationToken.None);
-        Assert.Equal(IdempotencyBeginStatus.Started, originalReservation.Status);
+        Assert.Equal(IdempotencyReservationStatus.Started, originalReservation.Status);
 
-        // Advance the fake clock past InFlightTtl, then have a different store instance (a
+        // Advance the fake clock past the in-flight ttl, then have a different store instance (a
         // different caller) reclaim the same key under a different fingerprint.
-        clock.Advance(options.InFlightTtl + TimeSpan.FromSeconds(1));
-        var newOwner = CreateStore(tenantId, clock, options);
+        clock.Advance(ttl + TimeSpan.FromSeconds(1));
+        var newOwner = CreateStore(tenantId, clock, ttl);
         var newReservation = await newOwner.TryBeginAsync(idempotencyKey, "fingerprint-b", CancellationToken.None);
-        Assert.Equal(IdempotencyBeginStatus.Started, newReservation.Status);
+        Assert.Equal(IdempotencyReservationStatus.Started, newReservation.Status);
 
         // The stale owner's late CompleteAsync must report false — it does not hold the current
         // token — and must not touch the row.
         var staleCompleted = await staleOwner.CompleteAsync(
-            idempotencyKey, originalReservation.ReservationToken!, """{"from":"stale-owner"}""", CancellationToken.None);
+            idempotencyKey, originalReservation.Token!, """{"from":"stale-owner"}""", CancellationToken.None);
         Assert.False(staleCompleted);
 
         // The new owner's reservation must still be exactly as it left it: in-flight, its own
         // fingerprint, no response.
-        var stillInProgress = await CreateStore(tenantId, clock, options).TryBeginAsync(idempotencyKey, "fingerprint-b", CancellationToken.None);
-        Assert.Equal(IdempotencyBeginStatus.InProgress, stillInProgress.Status);
+        var stillInProgress = await CreateStore(tenantId, clock, ttl).TryBeginAsync(idempotencyKey, "fingerprint-b", CancellationToken.None);
+        Assert.Equal(IdempotencyReservationStatus.InProgress, stillInProgress.Status);
     }
 
     // A caller-supplied token that never belonged to any reservation on this key must be rejected —
@@ -366,16 +450,16 @@ public sealed class EfCoreIdempotencyConcurrencyTests : IAsyncLifetime
         var store = CreateStore(tenantId, clock);
 
         var begin = await store.TryBeginAsync(idempotencyKey, fingerprint, CancellationToken.None);
-        Assert.Equal(IdempotencyBeginStatus.Started, begin.Status);
+        Assert.Equal(IdempotencyReservationStatus.Started, begin.Status);
 
         var foreignToken = Guid.NewGuid().ToString();
-        Assert.NotEqual(begin.ReservationToken, foreignToken);
+        Assert.NotEqual(begin.Token, foreignToken);
 
         var completed = await store.CompleteAsync(idempotencyKey, foreignToken, """{"from":"foreign"}""", CancellationToken.None);
         Assert.False(completed);
 
         var stillInProgress = await CreateStore(tenantId, clock).TryBeginAsync(idempotencyKey, fingerprint, CancellationToken.None);
-        Assert.Equal(IdempotencyBeginStatus.InProgress, stillInProgress.Status);
+        Assert.Equal(IdempotencyReservationStatus.InProgress, stillInProgress.Status);
     }
 
     // Same guarantee on the release path: a foreign token must not free someone else's reservation.
@@ -389,7 +473,7 @@ public sealed class EfCoreIdempotencyConcurrencyTests : IAsyncLifetime
         var store = CreateStore(tenantId, clock);
 
         var begin = await store.TryBeginAsync(idempotencyKey, fingerprint, CancellationToken.None);
-        Assert.Equal(IdempotencyBeginStatus.Started, begin.Status);
+        Assert.Equal(IdempotencyReservationStatus.Started, begin.Status);
 
         var foreignToken = Guid.NewGuid().ToString();
 
@@ -397,7 +481,7 @@ public sealed class EfCoreIdempotencyConcurrencyTests : IAsyncLifetime
         Assert.False(released);
 
         var stillInProgress = await CreateStore(tenantId, clock).TryBeginAsync(idempotencyKey, fingerprint, CancellationToken.None);
-        Assert.Equal(IdempotencyBeginStatus.InProgress, stillInProgress.Status);
+        Assert.Equal(IdempotencyReservationStatus.InProgress, stillInProgress.Status);
     }
 
     // A syntactically-invalid (non-Guid) reservation token can never match a real row — CompleteAsync

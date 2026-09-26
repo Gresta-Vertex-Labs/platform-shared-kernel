@@ -1,0 +1,81 @@
+#nullable enable
+SharedKernel.Testing.Intelligence.InMemoryCompletionProviderDescriptor
+SharedKernel.Testing.Intelligence.InMemoryCompletionProviderDescriptor.ContextWindowTokens.get -> int
+SharedKernel.Testing.Intelligence.InMemoryCompletionProviderDescriptor.ContextWindowTokens.set -> void
+SharedKernel.Testing.Intelligence.InMemoryCompletionProviderDescriptor.InMemoryCompletionProviderDescriptor(string! providerName = "in-memory-fake", int contextWindowTokens = 128000, int maxOutputTokens = 4096) -> void
+SharedKernel.Testing.Intelligence.InMemoryCompletionProviderDescriptor.MaxOutputTokens.get -> int
+SharedKernel.Testing.Intelligence.InMemoryCompletionProviderDescriptor.MaxOutputTokens.set -> void
+SharedKernel.Testing.Intelligence.InMemoryCompletionProviderDescriptor.ProviderName.get -> string!
+SharedKernel.Testing.Intelligence.InMemoryCompletionProviderDescriptor.ProviderName.set -> void
+SharedKernel.Testing.Intelligence.InMemoryCompletionProviderDescriptor.ValidateContextWindow(int estimatedTokens) -> SharedKernel.Primitives.Results.Result
+SharedKernel.Testing.Intelligence.InMemoryEmbeddingGenerator
+SharedKernel.Testing.Intelligence.InMemoryEmbeddingGenerator.Dimension.get -> int
+SharedKernel.Testing.Intelligence.InMemoryEmbeddingGenerator.EmbedAsync(string! text, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.AI.Abstractions.Abstractions.EmbeddingResult!>!>!
+SharedKernel.Testing.Intelligence.InMemoryEmbeddingGenerator.EmbeddedTexts.get -> System.Collections.Generic.IReadOnlyList<string!>!
+SharedKernel.Testing.Intelligence.InMemoryEmbeddingGenerator.EmbedManyAsync(System.Collections.Generic.IReadOnlyList<string!>! texts, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.AI.Abstractions.Abstractions.EmbeddingBatchResult!>!>!
+SharedKernel.Testing.Intelligence.InMemoryEmbeddingGenerator.InMemoryEmbeddingGenerator(string! modelId, int dimension) -> void
+SharedKernel.Testing.Intelligence.InMemoryEmbeddingGenerator.ModelId.get -> string!
+SharedKernel.Testing.Intelligence.InMemoryEmbeddingGenerator.Reset() -> void
+SharedKernel.Testing.Intelligence.InMemoryEmbeddingGenerator.SimulateFailure.get -> bool
+SharedKernel.Testing.Intelligence.InMemoryEmbeddingGenerator.SimulateFailure.set -> void
+SharedKernel.Testing.Intelligence.InMemorySemanticKernel
+SharedKernel.Testing.Intelligence.InMemorySemanticKernel.CompleteAsync(SharedKernel.AI.Abstractions.Abstractions.CompletionRequest! request, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.AI.Abstractions.Abstractions.CompletionResult!>!>!
+SharedKernel.Testing.Intelligence.InMemorySemanticKernel.CompleteStreamingAsync(SharedKernel.AI.Abstractions.Abstractions.CompletionRequest! request, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<SharedKernel.AI.Abstractions.Abstractions.CompletionChunk!>!
+SharedKernel.Testing.Intelligence.InMemorySemanticKernel.EnqueueResponse(SharedKernel.AI.Abstractions.Abstractions.CompletionResult! result) -> void
+SharedKernel.Testing.Intelligence.InMemorySemanticKernel.EnqueueStreamingFailure(SharedKernel.Primitives.Errors.Error! error) -> void
+SharedKernel.Testing.Intelligence.InMemorySemanticKernel.EnqueueStreamingResponse(System.Collections.Generic.IReadOnlyList<SharedKernel.AI.Abstractions.Abstractions.CompletionChunk!>! chunks) -> void
+SharedKernel.Testing.Intelligence.InMemorySemanticKernel.InMemorySemanticKernel(string! providerName = "in-memory-fake") -> void
+SharedKernel.Testing.Intelligence.InMemorySemanticKernel.Reset() -> void
+SharedKernel.Testing.Intelligence.InMemorySemanticKernel.SentRequests.get -> System.Collections.Generic.IReadOnlyList<SharedKernel.AI.Abstractions.Abstractions.CompletionRequest!>!
+SharedKernel.Testing.Intelligence.InMemoryVectorCollection<TRecord>
+SharedKernel.Testing.Intelligence.InMemoryVectorCollection<TRecord>.CollectionName.get -> string!
+SharedKernel.Testing.Intelligence.InMemoryVectorCollection<TRecord>.CountAsync(SharedKernel.AI.Abstractions.Models.VectorFilter? filter, SharedKernel.Execution.Tenancy.TenantScope tenantScope, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<long>!>!
+SharedKernel.Testing.Intelligence.InMemoryVectorCollection<TRecord>.DeleteAsync(string! id, SharedKernel.Execution.Tenancy.TenantScope tenantScope, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.AI.Abstractions.Abstractions.VectorWriteReceipt!>!>!
+SharedKernel.Testing.Intelligence.InMemoryVectorCollection<TRecord>.DeleteByFilterAsync(SharedKernel.AI.Abstractions.Models.VectorFilter! filter, SharedKernel.Execution.Tenancy.TenantScope tenantScope, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.AI.Abstractions.Abstractions.VectorWriteReceipt!>!>!
+SharedKernel.Testing.Intelligence.InMemoryVectorCollection<TRecord>.DeletedIds.get -> System.Collections.Generic.IReadOnlyList<string!>!
+SharedKernel.Testing.Intelligence.InMemoryVectorCollection<TRecord>.DeleteManyAsync(System.Collections.Generic.IReadOnlyCollection<string!>! ids, SharedKernel.Execution.Tenancy.TenantScope tenantScope, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.AI.Abstractions.Abstractions.VectorBulkReceipt!>!>!
+SharedKernel.Testing.Intelligence.InMemoryVectorCollection<TRecord>.GetAsync(string! id, SharedKernel.Execution.Tenancy.TenantScope tenantScope, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<TRecord!>!>!
+SharedKernel.Testing.Intelligence.InMemoryVectorCollection<TRecord>.InMemoryVectorCollection(SharedKernel.AI.Abstractions.Models.VectorCollectionDefinition! definition) -> void
+SharedKernel.Testing.Intelligence.InMemoryVectorCollection<TRecord>.IsQueryable(string! id) -> bool
+SharedKernel.Testing.Intelligence.InMemoryVectorCollection<TRecord>.QueriedVectors.get -> System.Collections.Generic.IReadOnlyList<SharedKernel.AI.Abstractions.Abstractions.VectorQuery!>!
+SharedKernel.Testing.Intelligence.InMemoryVectorCollection<TRecord>.QueryAsync(SharedKernel.AI.Abstractions.Abstractions.VectorQuery! query, SharedKernel.Execution.Tenancy.TenantScope tenantScope, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.AI.Abstractions.Abstractions.VectorQueryResults<TRecord!>!>!>!
+SharedKernel.Testing.Intelligence.InMemoryVectorCollection<TRecord>.Reset() -> void
+SharedKernel.Testing.Intelligence.InMemoryVectorCollection<TRecord>.ScrollAsync(SharedKernel.AI.Abstractions.Models.VectorFilter? filter, SharedKernel.Execution.Tenancy.TenantScope tenantScope, int batchSize, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<TRecord!>!
+SharedKernel.Testing.Intelligence.InMemoryVectorCollection<TRecord>.Seed(TRecord! record) -> void
+SharedKernel.Testing.Intelligence.InMemoryVectorCollection<TRecord>.SimulateFailure.get -> bool
+SharedKernel.Testing.Intelligence.InMemoryVectorCollection<TRecord>.SimulateFailure.set -> void
+SharedKernel.Testing.Intelligence.InMemoryVectorCollection<TRecord>.UpsertAsync(TRecord! record, SharedKernel.Execution.Tenancy.TenantScope tenantScope, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.AI.Abstractions.Abstractions.VectorWriteReceipt!>!>!
+SharedKernel.Testing.Intelligence.InMemoryVectorCollection<TRecord>.UpsertedIds.get -> System.Collections.Generic.IReadOnlyList<string!>!
+SharedKernel.Testing.Intelligence.InMemoryVectorCollection<TRecord>.UpsertManyAsync(System.Collections.Generic.IReadOnlyCollection<TRecord!>! records, SharedKernel.Execution.Tenancy.TenantScope tenantScope, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.AI.Abstractions.Abstractions.VectorBulkReceipt!>!>!
+SharedKernel.Testing.Intelligence.InMemoryVectorCollection<TRecord>.WaitUntilQueryableAsync(SharedKernel.AI.Abstractions.Abstractions.VectorWriteReceipt! receipt, System.TimeSpan timeout, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
+SharedKernel.Testing.Intelligence.InMemoryVectorCollection<TRecord>.WasDeleted(string! id) -> bool
+SharedKernel.Testing.Intelligence.InMemoryVectorCollection<TRecord>.WasUpserted(string! id) -> bool
+SharedKernel.Testing.Intelligence.InMemoryVectorCollectionProvisioner
+SharedKernel.Testing.Intelligence.InMemoryVectorCollectionProvisioner.CollectionExistsAsync(string! collectionName, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<bool>!>!
+SharedKernel.Testing.Intelligence.InMemoryVectorCollectionProvisioner.CutoverAsync(SharedKernel.AI.Abstractions.Abstractions.VectorCollectionCutoverRequest! request, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
+SharedKernel.Testing.Intelligence.InMemoryVectorCollectionProvisioner.DeleteCollectionAsync(string! collectionName, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
+SharedKernel.Testing.Intelligence.InMemoryVectorCollectionProvisioner.EnsureCollectionAsync(SharedKernel.AI.Abstractions.Models.VectorCollectionDefinition! definition, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
+SharedKernel.Testing.Intelligence.InMemoryVectorCollectionProvisioner.InMemoryVectorCollectionProvisioner() -> void
+SharedKernel.Testing.Intelligence.InMemoryVectorCollectionProvisioner.RegisteredCollectionNames.get -> System.Collections.Generic.IReadOnlyList<string!>!
+SharedKernel.Testing.Intelligence.InMemoryVectorCollectionProvisioner.Reset() -> void
+SharedKernel.Testing.Intelligence.InMemoryVectorCollectionProvisioner.SimulateFailure.get -> bool
+SharedKernel.Testing.Intelligence.InMemoryVectorCollectionProvisioner.SimulateFailure.set -> void
+SharedKernel.Testing.Intelligence.InMemoryVectorProviderDescriptor
+SharedKernel.Testing.Intelligence.InMemoryVectorProviderDescriptor.InMemoryVectorProviderDescriptor(string! providerName = "in-memory-fake") -> void
+SharedKernel.Testing.Intelligence.InMemoryVectorProviderDescriptor.MaxBatchSize.get -> int
+SharedKernel.Testing.Intelligence.InMemoryVectorProviderDescriptor.MaxBatchSize.set -> void
+SharedKernel.Testing.Intelligence.InMemoryVectorProviderDescriptor.MaxFilterDepth.get -> int
+SharedKernel.Testing.Intelligence.InMemoryVectorProviderDescriptor.MaxFilterDepth.set -> void
+SharedKernel.Testing.Intelligence.InMemoryVectorProviderDescriptor.MaxVectorDimension.get -> int
+SharedKernel.Testing.Intelligence.InMemoryVectorProviderDescriptor.MaxVectorDimension.set -> void
+SharedKernel.Testing.Intelligence.InMemoryVectorProviderDescriptor.ProviderName.get -> string!
+SharedKernel.Testing.Intelligence.InMemoryVectorProviderDescriptor.ProviderName.set -> void
+SharedKernel.Testing.Intelligence.InMemoryVectorProviderDescriptor.RegisterCollection(string! collectionName, SharedKernel.AI.Abstractions.Models.VectorCollectionDefinition! definition) -> void
+SharedKernel.Testing.Intelligence.InMemoryVectorProviderDescriptor.RegisteredCollections.get -> System.Collections.Generic.IReadOnlyList<string!>!
+SharedKernel.Testing.Intelligence.InMemoryVectorProviderDescriptor.Reset() -> void
+SharedKernel.Testing.Intelligence.InMemoryVectorProviderDescriptor.Validate(string! collectionName, SharedKernel.AI.Abstractions.Abstractions.VectorQuery! query) -> SharedKernel.Primitives.Results.Result
+SharedKernel.Testing.Intelligence.IntelligenceServiceCollectionExtensions
+static SharedKernel.Testing.Intelligence.IntelligenceServiceCollectionExtensions.AddInMemoryEmbeddingGenerator(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, string! modelId, int dimension) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SharedKernel.Testing.Intelligence.IntelligenceServiceCollectionExtensions.AddInMemorySemanticKernel(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SharedKernel.Testing.Intelligence.IntelligenceServiceCollectionExtensions.AddInMemoryVectorCollection<TRecord>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, SharedKernel.AI.Abstractions.Models.VectorCollectionDefinition! definition) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SharedKernel.Testing.Intelligence.IntelligenceServiceCollectionExtensions.AddInMemoryVectorProvisioning(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, string! providerName = "in-memory-fake") -> Microsoft.Extensions.DependencyInjection.IServiceCollection!

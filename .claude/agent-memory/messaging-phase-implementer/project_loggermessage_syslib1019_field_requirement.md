@@ -1,9 +1,11 @@
 ---
 name: loggermessage-syslib1019-field-requirement
-description: [LoggerMessage] source generator requires an ILogger FIELD, not a property, on the containing type — SYSLIB1019/CS8795 workaround discovered during WO-041 P-254 logging retrofit
+description: "[LoggerMessage] source generator requires an ILogger FIELD, not a property, on the containing type — SYSLIB1019/CS8795 workaround discovered during WO-041 P-254 logging retrofit"
 metadata:
   type: project
 ---
+
+> WO-086 (2026-09): `RoutingSlipActivityBase` was removed (P-560); `05.Application.Behaviors` is now `SharedKernel.Application.Pipeline`. The generator limitation itself still applies.
 
 The `[LoggerMessage]`-attributed partial method source generator (`Microsoft.Extensions.Logging.Abstractions`)
 only auto-discovers an `ILogger`-typed **field** on the containing type. It does NOT see an
@@ -32,7 +34,7 @@ class across the SharedKernel monorepo:
    method as `static partial` with an explicit `ILogger logger` parameter and pass the property
    value at every call site.
 3. This applies to ANY domain in the repo, not just `07.Messaging` — the same generator
-   limitation will bite `05.Application.Behaviors`, `11.Communication.*`, `14.Presentation.*`,
+   limitation will bite `05.Application`'s `SharedKernel.Application.Pipeline`, `11.Communication.*`, `14.Presentation.*`,
    `15.Integration`, etc. if any of them expose a protected `ILogger` **property** on a base
    class future logging retrofits touch. Check for this pattern before assuming an instance
    `partial` method declaration will "just work."

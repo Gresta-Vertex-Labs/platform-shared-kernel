@@ -1,4 +1,4 @@
-using SharedKernel.Workflows.Temporal.Dispatch;
+using SharedKernel.Execution.Tenancy;
 
 namespace SharedKernel.Workflows.Temporal.Interception;
 
@@ -23,9 +23,9 @@ internal static class ActivityPropagationContext
 
     /// <summary>
     /// Gets the tenant scope propagated into the current activity invocation, or
-    /// <see cref="TenantScope.None"/> if none was set (e.g. the interceptor found no tenant header).
+    /// <see cref="TenantScope.Global"/> if none was set (e.g. the interceptor found no tenant header).
     /// </summary>
-    public static TenantScope CurrentTenantScope => TenantScopeLocal.Value ?? TenantScope.None;
+    public static TenantScope CurrentTenantScope => TenantScopeLocal.Value ?? TenantScope.Global;
 
     /// <summary>
     /// Gets the correlation id propagated into the current activity invocation, or

@@ -27,7 +27,7 @@ namespace SharedKernel.Analyzers.Diagnostics;
 /// <para>
 /// Interface matching uses <see cref="INamedTypeSymbol.OriginalDefinition"/> plus a
 /// <c>"SharedKernel.Application"</c> containing-namespace prefix check (covering both
-/// <c>SharedKernel.Application</c> and <c>SharedKernel.Application.Caching</c>) rather than
+/// <c>SharedKernel.Application.Messaging</c> and <c>SharedKernel.Application.Caching</c>) rather than
 /// exact-assembly identity — this keeps analyzer test fixtures self-contained, with no
 /// <c>ProjectReference</c> to the real assemblies required.
 /// </para>

@@ -8,6 +8,7 @@ using OpenFeature;
 using OpenFeature.Constant;
 using OpenFeature.Hooks;
 using OpenFeature.Model;
+using SharedKernel.Execution.Tenancy;
 using Xunit;
 
 namespace SharedKernel.FeatureManagement.Tests;
@@ -31,7 +32,7 @@ public sealed partial class ReadmeSampleTests
                       "parameters": {
                         "Audience": {
                           "Users": [ "alice" ],
-                          "Groups": [ { "Name": "acme", "RolloutPercentage": 100 } ],
+                          "Groups": [ { "Name": "0f8fad5b-d9cb-469f-a165-70867728950e", "RolloutPercentage": 100 } ],
                           "DefaultRolloutPercentage": 0
                         }
                       }
@@ -73,18 +74,18 @@ public sealed partial class ReadmeSampleTests
 
         string? SubjectId { get; }
 
-        string? TenantId { get; }
+        TenantId? TenantId { get; }
 
         IReadOnlyCollection<string> Roles { get; }
     }
 
-    private sealed record TestUser(bool IsAuthenticated, string? SubjectId, string? TenantId, IReadOnlyCollection<string> Roles) : IUserContext;
+    private sealed record TestUser(bool IsAuthenticated, string? SubjectId, TenantId? TenantId, IReadOnlyCollection<string> Roles) : IUserContext;
 
     public sealed class UserFeatureTargeting(IUserContext user) : IFeatureTargetingContextAccessor
     {
         public FeatureTargetingContext? GetTargetingContext() =>
             user.IsAuthenticated
-                ? new FeatureTargetingContext(user.SubjectId, user.TenantId?.ToString(), user.Roles)
+                ? new FeatureTargetingContext(user.SubjectId, user.TenantId, user.Roles)
                 : null;
     }
 
@@ -122,13 +123,13 @@ public sealed partial class ReadmeSampleTests
 
     [Theory]
     [InlineData("alice", null, "new-checkout/dark")]
-    [InlineData("bob", "acme", "new-checkout/classic")]
+    [InlineData("bob", TestTenants.AcmeText, "new-checkout/classic")]
     [InlineData("bob", null, "legacy-checkout")]
     public async Task QuickStart_Output(string user, string? tenant, string expected)
     {
         using IHost host = await StartQuickStartHostAsync();
 
-        string layout = await AsAsync(host, new TestUser(true, user, tenant, []), sp =>
+        string layout = await AsAsync(host, new TestUser(true, user, tenant is null ? null : TenantId.Parse(tenant), []), sp =>
             new CheckoutEndpoint(sp.GetRequiredService<IFeatureClient>()).GetLayoutAsync(CancellationToken.None));
 
         Assert.Equal(expected, layout);
@@ -140,11 +141,11 @@ public sealed partial class ReadmeSampleTests
         using IHost host = await StartQuickStartHostAsync();
 
         Task<FlagEvaluationDetails<T>> Evaluate<T>(string user, string? tenant, FeatureFlag<T> flag) =>
-            AsAsync(host, new TestUser(true, user, tenant, []), sp => sp.GetRequiredService<IFeatureClient>().GetDetailsAsync(flag));
+            AsAsync(host, new TestUser(true, user, tenant is null ? null : TenantId.Parse(tenant), []), sp => sp.GetRequiredService<IFeatureClient>().GetDetailsAsync(flag));
 
         Assert.True((await Evaluate("alice", null, Flags.NewCheckout)).Value);
-        Assert.True((await Evaluate("bob", "acme", Flags.NewCheckout)).Value);
-        FlagEvaluationDetails<bool> other = await Evaluate("bob", "other", Flags.NewCheckout);
+        Assert.True((await Evaluate("bob", TestTenants.AcmeText, Flags.NewCheckout)).Value);
+        FlagEvaluationDetails<bool> other = await Evaluate("bob", TestTenants.OtherText, Flags.NewCheckout);
         Assert.False(other.Value);
         Assert.Equal(Reason.TargetingMatch, other.Reason);
 
@@ -165,7 +166,7 @@ public sealed partial class ReadmeSampleTests
 
         bool on = await AsAsync(host, new TestUser(true, "alice", null, []), sp =>
             sp.GetRequiredService<IFeatureClient>().IsEnabledAsync(
-                Flags.NewCheckout, new FeatureTargetingContext("bob", "acme").ToEvaluationContext(), CancellationToken.None));
+                Flags.NewCheckout, new FeatureTargetingContext("bob", TestTenants.Acme).ToEvaluationContext(), CancellationToken.None));
 
         Assert.True(on);
     }
@@ -276,7 +277,7 @@ public sealed partial class ReadmeSampleTests
         int on = 0;
         for (int i = 0; i < 1000; i++)
         {
-            string tenantId = $"tenant-{i}";
+            var tenantId = new TenantId(new Guid(i + 1, 0, 0, new byte[8]));
             bool first = await provider.NewScopeClient().IsEnabledAsync(NewSearch, FeatureTargetingContext.ForTenant(tenantId).ToEvaluationContext(), CancellationToken.None);
             Assert.Equal(first, await provider.NewScopeClient().IsEnabledAsync(NewSearch, FeatureTargetingContext.ForTenant(tenantId).ToEvaluationContext(), CancellationToken.None));
             on += first ? 1 : 0;
@@ -291,13 +292,13 @@ public sealed partial class ReadmeSampleTests
         const string configuration = """
             { "feature_management": { "feature_flags": [
               { "id": "NewSearch", "enabled": true, "conditions": { "client_filters": [
-                { "name": "Microsoft.Targeting", "parameters": { "Audience": { "Groups": [ { "Name": "acme", "RolloutPercentage": 100 } ] } } } ] } }
+                { "name": "Microsoft.Targeting", "parameters": { "Audience": { "Groups": [ { "Name": "0f8fad5b-d9cb-469f-a165-70867728950e", "RolloutPercentage": 100 } ] } } } ] } }
             ] } }
             """;
         await using var provider = await FeatureTestHost.StartAsync(FeatureTestHost.Json(configuration));
 
-        Assert.True(await provider.NewScopeClient().IsEnabledAsync(NewSearch, new FeatureTargetingContext("anyone", "acme").ToEvaluationContext()));
-        Assert.False(await provider.NewScopeClient().IsEnabledAsync(NewSearch, new FeatureTargetingContext("anyone", "globex").ToEvaluationContext()));
+        Assert.True(await provider.NewScopeClient().IsEnabledAsync(NewSearch, new FeatureTargetingContext("anyone", TestTenants.Acme).ToEvaluationContext()));
+        Assert.False(await provider.NewScopeClient().IsEnabledAsync(NewSearch, new FeatureTargetingContext("anyone", TestTenants.Other).ToEvaluationContext()));
     }
 
     [Theory]

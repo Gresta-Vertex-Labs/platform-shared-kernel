@@ -53,7 +53,7 @@ internal sealed class MtlsCertificateEvents(CertificateAuthenticationEvents inne
 
         if (result.TenantId is { } tenantId)
         {
-            claims.Add(new Claim(SecurityClaimTypes.TenantId, tenantId.ToString("D")));
+            claims.Add(new Claim(SecurityClaimTypes.TenantId, tenantId.ToString()));
         }
 
         claims.AddRange(result.Roles.Select(role => new Claim(SecurityClaimTypes.Roles, role)));

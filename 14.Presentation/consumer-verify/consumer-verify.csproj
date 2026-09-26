@@ -9,7 +9,13 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
   <ItemGroup>
-    <!-- All four 14.Presentation packages, composed the way a service does (P-562). -->
+    <!--
+      All four 14.Presentation packages, composed the way a service does (P-562), after the request context that owns
+      the correlation id and each call's RequestContextScope (SharedKernel.ServiceDefaults.Security, P-579). The
+      authorization attributes come from SharedKernel.Presentation.Core, which every one of the four references.
+    -->
+    <ProjectReference Include="..\..\13.ServiceDefaults\SharedKernel.ServiceDefaults.Security\SharedKernel.ServiceDefaults.Security.csproj" />
+    <ProjectReference Include="..\SharedKernel.Presentation.Core\SharedKernel.Presentation.Core.csproj" />
     <ProjectReference Include="..\SharedKernel.Presentation.WebApi\SharedKernel.Presentation.WebApi.csproj" />
     <ProjectReference Include="..\SharedKernel.Presentation.OpenApi\SharedKernel.Presentation.OpenApi.csproj" />
     <ProjectReference Include="..\SharedKernel.Presentation.SignalR\SharedKernel.Presentation.SignalR.csproj" />

@@ -1,5 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Adapter</SharedKernelTier>
+    <SharedKernelAllowedAdapterReferences>SharedKernel.Persistence.EfCore</SharedKernelAllowedAdapterReferences>
     <Description>A tamper-evident, append-only audit ledger on PostgreSQL for SharedKernel services: one INSERT per audited command inside its transaction (Failed entries after a rollback), a background sealer that links records into per-tenant HMAC-SHA256 chains in commit-safe order, signed checkpoints, Intact/Broken/Unverifiable verification, key rotation and compromise recovery, GDPR-erasable snapshots, and a specified byte format (AUDITv3) with test vectors.</Description>
     <PackageTags>persistence;postgresql;audit-trail;audit-log;tamper-evident;hash-chain;compliance;gdpr;shared-kernel</PackageTags>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>

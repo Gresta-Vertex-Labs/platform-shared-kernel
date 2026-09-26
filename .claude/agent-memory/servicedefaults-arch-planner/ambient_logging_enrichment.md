@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): `TenantBaggageKeys` was deleted (the key is `WellKnownBaggageKeys.TenantId`); `14.Presentation`'s `CorrelationIdMiddleware` was deleted — the inbound correlation id is now set by `app.UseSharedKernelRequestContext()` (`SharedKernel.ServiceDefaults.Security`); the tenant is a `TenantId?` and there is no `Guid.Empty` sentinel — the middleware writes the tenant baggage only when a tenant resolved. The generic-processor design and the testing lessons below still hold.
+
 WO-041/P-251 (2026-07-09) added OTLP log export to `AddSharedKernelTelemetry` (a `.WithLogging(...)`
 registration, additive to the existing tracing/metrics chain — no new public method) plus a generic
 ambient-enrichment mechanism: `BaggageLogRecordProcessor` (sealed `BaseProcessor<LogRecord>` in

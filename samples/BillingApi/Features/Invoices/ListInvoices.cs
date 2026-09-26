@@ -1,5 +1,6 @@
 using BillingApi.Domain;
-using SharedKernel.Application;
+using SharedKernel.Application.Authorization;
+using SharedKernel.Application.Messaging;
 using SharedKernel.Contracts.Pagination;
 using SharedKernel.Domain.Specifications;
 using SharedKernel.Persistence.Abstractions.Repositories;

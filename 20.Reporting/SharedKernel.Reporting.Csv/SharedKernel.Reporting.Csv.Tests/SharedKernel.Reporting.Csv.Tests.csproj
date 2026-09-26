@@ -5,7 +5,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Reporting.Csv.csproj" />
-    <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
+    <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Storage.Testing\SharedKernel.Storage.Testing.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="xunit" />

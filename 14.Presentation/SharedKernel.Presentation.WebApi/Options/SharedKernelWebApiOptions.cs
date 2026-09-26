@@ -9,8 +9,8 @@ namespace SharedKernel.Presentation.WebApi;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Every default is the secure, production-ready choice, so a service that configures nothing gets correlation
-/// ids, security headers, a 4 MiB request body limit, no cross-origin access, uncached responses and redacted server
+/// Every default is the secure, production-ready choice, so a service that configures nothing gets security
+/// headers, a 4 MiB request body limit, no cross-origin access, uncached responses and redacted server
 /// errors.
 /// </para>
 /// <para>
@@ -31,9 +31,6 @@ public sealed class SharedKernelWebApiOptions : ISectionBoundOptions
     /// <summary>Gets the configuration section these settings bind from: <c>SharedKernel:Presentation:WebApi</c>.</summary>
     public static string SectionName => "SharedKernel:Presentation:WebApi";
 
-    /// <summary>Gets the correlation id settings.</summary>
-    public WebApiCorrelationIdOptions CorrelationId { get; } = new();
-
     /// <summary>Gets the cross-origin resource sharing settings. No origin is allowed by default.</summary>
     public WebApiCorsOptions Cors { get; } = new();
 
@@ -51,18 +48,4 @@ public sealed class SharedKernelWebApiOptions : ISectionBoundOptions
     /// <see langword="true"/>: naming the server software helps nobody but an attacker.
     /// </summary>
     public bool RemoveServerHeader { get; set; } = true;
-
-    /// <summary>
-    /// Gets or sets a value indicating whether W3C <c>baggage</c> sent by the caller is kept. Defaults to
-    /// <see langword="false"/>: hosting takes no baggage from the request, and the first thing the pipeline does is
-    /// remove any inbound item still on the request's <see cref="System.Diagnostics.Activity"/>, before the correlation
-    /// id is added to it.
-    /// </summary>
-    /// <remarks>
-    /// Baggage travels onward with every outgoing call and is copied onto log records, so a caller who can set it
-    /// can plant values — a tenant id, a user id — that downstream services and log queries trust. Set this to
-    /// <see langword="true"/> only behind a gateway that removes or rewrites caller-supplied baggage. Baggage this
-    /// service adds itself, the correlation id included, is never affected.
-    /// </remarks>
-    public bool TrustInboundBaggage { get; set; }
 }

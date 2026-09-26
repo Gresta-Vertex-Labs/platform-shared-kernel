@@ -11,8 +11,11 @@ pinning a formatter version itself.
 ## Install
 
 ```xml
-<PackageReference Include="SharedKernel.Linter" Version="1.0.0" PrivateAssets="all" />
+<PackageReference Include="SharedKernel.Linter" PrivateAssets="all" />
 ```
+
+The version comes from your repository's single `SharedKernelVersion` property (central package management); every
+SharedKernel package is released together. **Tier:** Tooling — it is never a runtime dependency of production code.
 
 It declares itself a development dependency, so it never reaches your published package's
 dependency graph; `PrivateAssets="all"` is belt-and-braces and harmless.

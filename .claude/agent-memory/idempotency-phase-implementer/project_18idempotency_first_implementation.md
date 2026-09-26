@@ -4,6 +4,8 @@ description: State of 18.Idempotency after the first implementation session (202
 type: project
 ---
 
+> WO-086 (2026-09): the "layering deadlock" reason for this domain is gone (tiers replace numbered layers); the domain now owns `SharedKernel.Idempotency.Abstractions` (`IIdempotencyStore`, purpose-keyed), implemented by `RedisIdempotencyStore`/`EfCoreIdempotencyStore`; both providers are Adapter tier (declared edges `.Redis`→`Caching.Redis.Core`, `.EfCore`→`Persistence.EfCore`). The open items below were closed long ago.
+
 On 2026-09-04, `18.Idempotency` went from docs-only (only `CLAUDE.md`/`state-map.md` existed) to two fully-implemented, building, packing packages: `SharedKernel.Idempotency.Redis` and `SharedKernel.Idempotency.EfCore`. This closed the root Phase Backlog's P-454/P-455 (WO-070) at the code level, but NOT yet at the state-map/backlog level.
 
 **Why:** the domain exists to resolve a layering deadlock — see `18.Idempotency/CLAUDE.md`'s "Why This Domain Exists At All" for the full reasoning (never re-derive this from scratch, it's already written).

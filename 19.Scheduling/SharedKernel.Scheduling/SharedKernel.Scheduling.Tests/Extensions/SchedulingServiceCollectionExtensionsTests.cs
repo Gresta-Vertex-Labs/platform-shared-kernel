@@ -1,9 +1,12 @@
+using SharedKernel.Application.Mediator.MediatR;
+using SharedKernel.Application.Pipeline;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using SharedKernel.Primitives.Health;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Scheduling.Extensions;
 using SharedKernel.Scheduling.Options;
@@ -32,7 +35,7 @@ public sealed class SchedulingServiceCollectionExtensionsTests
             .ConfigureServices(services =>
             {
                 services.AddSingleton<IClock>(new SharedKernel.Testing.Clocks.FakeClock());
-                services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblyContaining<RecordingCommand>());
+                services.AddSharedKernelApplication(typeof(RecordingCommand).Assembly, app => app.UseMediatR());
                 services.AddSingleton<RecordingCommandRecorder>();
 
                 ISchedulingBuilder builder = services.AddSharedKernelScheduling();
@@ -52,7 +55,7 @@ public sealed class SchedulingServiceCollectionExtensionsTests
         await act.Should().NotThrowAsync();
 
         host.Services.GetRequiredService<IScheduledJobRegistry>().Should().NotBeNull();
-        host.Services.GetRequiredService<ISchedulerServiceProbe>().Should().NotBeNull();
+        host.Services.GetRequiredReadinessProbe(SchedulerReadiness.ProbeName).Should().NotBeNull();
 
         await host.StopAsync();
     }

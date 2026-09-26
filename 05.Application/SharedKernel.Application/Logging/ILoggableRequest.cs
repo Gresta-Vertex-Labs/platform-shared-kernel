@@ -1,16 +1,15 @@
-using MediatR;
-using SharedKernel.Application.Pipeline;
+using SharedKernel.Application.Messaging;
 
-namespace SharedKernel.Application;
+namespace SharedKernel.Application.Logging;
 
 /// <summary>
 /// Opts a request into structured request/response payload logging by
-/// <see cref="LoggingBehavior{TRequest,TResponse}"/>.
+/// <c>LoggingBehavior</c> (<c>SharedKernel.Application.Pipeline</c>).
 /// </summary>
 /// <typeparam name="TResponse">The response type returned by the request.</typeparam>
 /// <remarks>
 /// Self-supplied: the request instance alone decides which of its own fields are safe to log (e.g.
-/// an <c>OrderId</c>, never a <c>CreditCardNumber</c>) — <see cref="LoggingBehavior{TRequest,TResponse}"/>
+/// an <c>OrderId</c>, never a <c>CreditCardNumber</c>) — <c>LoggingBehavior</c> (<c>SharedKernel.Application.Pipeline</c>)
 /// never reflects over <c>TRequest</c>'s properties to discover this set. A plain interface, not
 /// itself an <see cref="IRequest{TResponse}"/> — implementers additionally implement
 /// <see cref="IRequest{TResponse}"/> (typically via <c>ICommand&lt;TResponse&gt;</c>/<c>IQuery&lt;TResponse&gt;</c>)
@@ -23,7 +22,7 @@ public interface ILoggableRequest<TResponse>
     /// </summary>
     /// <remarks>
     /// An empty dictionary is valid (opts in to the marker but has nothing to say for a given
-    /// call). <see cref="LoggingBehavior{TRequest,TResponse}"/> simply skips opening the scope when
+    /// call). <c>LoggingBehavior</c> (<c>SharedKernel.Application.Pipeline</c>) simply skips opening the scope when
     /// this is empty.
     /// </remarks>
     IReadOnlyDictionary<string, object?> LoggableRequestFields { get; }
@@ -38,7 +37,7 @@ public interface ILoggableRequest<TResponse>
     /// still logging the request side.
     /// </returns>
     /// <remarks>
-    /// Invoked by <see cref="LoggingBehavior{TRequest,TResponse}"/> only after <c>next()</c> returns
+    /// Invoked by <c>LoggingBehavior</c> (<c>SharedKernel.Application.Pipeline</c>) only after <c>next()</c> returns
     /// normally — never on a thrown exception, since there is no response to project.
     /// </remarks>
     IReadOnlyDictionary<string, object?>? GetLoggableResponseFields(TResponse response);

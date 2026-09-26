@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Context;
 using System.Net;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -34,11 +35,10 @@ public sealed class ApiKeyAuthenticationEndToEndTests
         CallerSnapshot caller = await host.GetCallerAsync(host.Get("/caller", key.Key));
 
         Assert.True(caller.IsAuthenticated);
-        Assert.Equal(IdentityKind.ServicePrincipal, caller.IdentityKind);
+        Assert.Equal(ActorKind.Service, caller.ActorKind);
         Assert.Equal("billing-service", caller.SubjectId);
         Assert.Equal("billing-service", caller.ClientId);
         Assert.Equal(TenantId, caller.TenantId);
-        Assert.Equal(TenantId, caller.ProviderTenantId);
         Assert.Equal(["admin", "auditor"], caller.Roles);
         Assert.Equal(["orders:read", "orders:write"], caller.Permissions);
         Assert.Equal(key.KeyId, caller.KeyId);
@@ -93,9 +93,8 @@ public sealed class ApiKeyAuthenticationEndToEndTests
         CallerSnapshot caller = await host.GetCallerAsync(host.Get("/caller"));
 
         Assert.False(caller.IsAuthenticated);
-        Assert.Equal(IdentityKind.Anonymous, caller.IdentityKind);
+        Assert.Equal(ActorKind.Anonymous, caller.ActorKind);
         Assert.Null(caller.SubjectId);
-        Assert.Equal(Guid.Empty, caller.ProviderTenantId);
         Assert.DoesNotContain(host.LogRecords, r => r.EventId.Id is 12200 or 12201);
     }
 
@@ -152,7 +151,7 @@ public sealed class ApiKeyAuthenticationEndToEndTests
         CallerSnapshot caller = await host.GetCallerAsync(host.Get("/caller", key.Key));
 
         Assert.False(caller.IsAuthenticated);
-        Assert.Equal(IdentityKind.Anonymous, caller.IdentityKind);
+        Assert.Equal(ActorKind.Anonymous, caller.ActorKind);
         host.LogRecords.ShouldHaveLoggedWithProperty(new EventId(12200), "Reason", "Expired");
     }
 
@@ -304,7 +303,7 @@ public sealed class ApiKeyAuthenticationEndToEndTests
         GeneratedApiKey key = host.Host.Services.GetRequiredService<ApiKeyGenerator>().Generate();
         _store.Add(new ApiKeyRecord(key.KeyId, key.KeyHash, "billing-service")
         {
-            TenantId = TenantId,
+            TenantId = new(TenantId),
             Roles = roles ?? [],
             Permissions = permissions ?? [],
             ExpiresAt = expiresAt,

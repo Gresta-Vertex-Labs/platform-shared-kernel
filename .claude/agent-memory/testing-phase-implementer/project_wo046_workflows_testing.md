@@ -4,6 +4,8 @@ description: Status of WO-046 (P-288) — 16.Testing's Workflows/ in-memory IWor
 type: project
 ---
 
+> WO-086 (2026-09): `SharedKernel.Testing` was split into 20 packable Testing-tier packages (core `SharedKernel.Testing` + 19 `SharedKernel.{Capability}.Testing`) plus the non-packable `SharedKernel.Testing.Internal` (containers, EF/Npgsql/audit helpers, MassTransit harness); `SharedKernel.Testing.SelfTests` became each package's own nested `.Tests` project. Paths and project names below are pre-split history; the technique/lesson still applies.
+
 WO-046/P-288 status as of 2026-07-23: `SK.16.Design`/`SK.16.Scaffold`/`SK.16.Core`/`SK.16.Docs` all `●` Complete. Only `SK.16.Tests` (T-55, `SharedKernel.Testing.SelfTests/Workflows/`) remains — `◐` 54/55, unblocked, actionable for a future session.
 
 **Why this took two dispatch cycles:** `17.Workflows/SharedKernel.Workflows.Temporal` was a genuinely empty placeholder `.csproj` when Design/Scaffold were first done (2026-07-22) — the fourth "hard design-ahead-of-schedule" occurrence in `16.Testing`'s history (after Storage/P-269, Search/P-276, Intelligence/P-284). Unlike those three, the blocker did NOT clear within the same Design-confirmation pass — `17.Workflows` hadn't even closed its own `SK.17.Design` yet. It cleared later (17.Workflows's `SK.17.Core` reached `●` 2026-07-23), unblocking this session's Core-phase implementation.

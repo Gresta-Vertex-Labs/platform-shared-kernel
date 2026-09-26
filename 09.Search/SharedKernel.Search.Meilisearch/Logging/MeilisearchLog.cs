@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Logging;
 
 namespace SharedKernel.Search.Meilisearch.Logging;
@@ -87,7 +88,7 @@ internal static partial class MeilisearchLog
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Search + 111,
         Level = LogLevel.Warning,
-        Message = "Index '{IndexName}' declares a TenantField but the caller supplied TenantScope.None.")]
+        Message = "Index '{IndexName}' declares a TenantField but the caller supplied TenantScope.Global.")]
     public static partial void MeilisearchTenantScopeMissing(this ILogger logger, string indexName);
 
     [LoggerMessage(

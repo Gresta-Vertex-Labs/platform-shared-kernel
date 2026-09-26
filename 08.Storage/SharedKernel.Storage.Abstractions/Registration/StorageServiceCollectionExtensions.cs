@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using SharedKernel.Primitives.Health;
 
 namespace SharedKernel.Storage;
 
@@ -7,7 +8,7 @@ namespace SharedKernel.Storage;
 public static class StorageServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers the store registry — <see cref="IFileStorageFactory"/>, <see cref="IFileStorageHealthProbe"/>
+    /// Registers the store registry — <see cref="IFileStorageFactory"/>
     /// and the unkeyed <see cref="IFileStorage"/>/<see cref="ITenantFileStorage"/>, all singletons — and returns a
     /// builder to add a provider and its stores to.
     /// </summary>
@@ -45,7 +46,6 @@ public static class StorageServiceCollectionExtensions
 
         services.TryAddSingleton<FileStorageFactory>();
         services.TryAddSingleton<IFileStorageFactory>(sp => sp.GetRequiredService<FileStorageFactory>());
-        services.TryAddSingleton<IFileStorageHealthProbe>(sp => sp.GetRequiredService<FileStorageFactory>());
         services.TryAddSingleton<IFileStorage>(sp => sp.GetRequiredService<FileStorageFactory>().GetDefaultStore());
         services.TryAddSingleton<ITenantFileStorage>(sp => sp.GetRequiredService<FileStorageFactory>().GetDefaultTenantStore());
 
@@ -55,7 +55,8 @@ public static class StorageServiceCollectionExtensions
     /// <summary>
     /// Adds a provider's store to the registry and registers it as a keyed singleton under its name — as
     /// <see cref="ITenantFileStorage"/> when <see cref="FileStoreRegistration.TenantScoped"/>, otherwise as
-    /// <see cref="IFileStorage"/>. Called by provider packages; application code calls the provider's
+    /// <see cref="IFileStorage"/> — and registers the store's readiness probe, named
+    /// <see cref="StorageReadinessProbeNames.ForStore(string)"/>. Called by provider packages; application code calls the provider's
     /// <c>AddStore</c> or <c>AddTenantStore</c>.
     /// </summary>
     /// <param name="builder">The storage builder.</param>
@@ -84,6 +85,7 @@ public static class StorageServiceCollectionExtensions
         }
 
         services.AddSingleton(registration);
+        services.AddReadinessProbe(sp => new FileStoreReadinessProbe(registration, sp));
 
         string name = registration.Name;
         if (registration.TenantScoped)

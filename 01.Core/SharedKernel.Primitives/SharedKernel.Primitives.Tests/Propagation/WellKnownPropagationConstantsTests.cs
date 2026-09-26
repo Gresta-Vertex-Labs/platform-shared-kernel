@@ -20,6 +20,16 @@ public sealed class WellKnownPropagationConstantsTests
         Assert.Equal("X-Tenant-Id", WellKnownHeaders.TenantId);
     }
 
+    [Theory]
+    [InlineData(WellKnownHeaders.IdempotencyKey, "Idempotency-Key")]
+    [InlineData(WellKnownHeaders.ActorId, "x-sk-actor-id")]
+    [InlineData(WellKnownHeaders.ActorKind, "x-sk-actor-kind")]
+    [InlineData(WellKnownHeaders.ClientId, "x-sk-client-id")]
+    public void WellKnownHeaders_IdentityAndIdempotencyHeaders_EqualExpectedLiterals(string actual, string expected)
+    {
+        Assert.Equal(expected, actual);
+    }
+
     [Fact]
     public void WellKnownHeaders_IdempotencyKey_EqualsExpectedLiteral()
     {

@@ -16,10 +16,14 @@ namespace SharedKernel.Analyzers.Tests;
 public class SK0018_QueryImplementsInvalidatesCacheAnalyzerTests
 {
     private const string MarkerStubs = """
-        namespace SharedKernel.Application
+        namespace SharedKernel.Application.Messaging
         {
             public interface ICommandBase { }
             public interface IQuery<TResponse> { }
+        }
+
+        namespace SharedKernel.Application.Caching
+        {
             public interface IInvalidatesCache { }
         }
 
@@ -41,7 +45,8 @@ public class SK0018_QueryImplementsInvalidatesCacheAnalyzerTests
             TestCode = MarkerStubs + """
                 namespace Fixture.Requests
                 {
-                    using SharedKernel.Application;
+                    using SharedKernel.Application.Caching;
+                    using SharedKernel.Application.Messaging;
 
                     public sealed class {|SK0018:BadQuery|} : IQuery<int>, IInvalidatesCache
                     {
@@ -68,7 +73,8 @@ public class SK0018_QueryImplementsInvalidatesCacheAnalyzerTests
             TestCode = MarkerStubs + """
                 namespace Fixture.Requests
                 {
-                    using SharedKernel.Application;
+                    using SharedKernel.Application.Caching;
+                    using SharedKernel.Application.Messaging;
 
                     public sealed class HybridCommandQuery : IQuery<int>, IInvalidatesCache, ICommandBase
                     {
@@ -90,7 +96,8 @@ public class SK0018_QueryImplementsInvalidatesCacheAnalyzerTests
             TestCode = MarkerStubs + """
                 namespace Fixture.Requests
                 {
-                    using SharedKernel.Application;
+                    using SharedKernel.Application.Caching;
+                    using SharedKernel.Application.Messaging;
 
                     public sealed class GoodQuery : IQuery<int>
                     {

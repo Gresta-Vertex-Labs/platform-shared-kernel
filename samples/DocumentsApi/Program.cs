@@ -1,9 +1,12 @@
 using DocumentsApi;
-using SharedKernel.Application;
+using SharedKernel.Application.Mediator.MediatR;
+using SharedKernel.Application.Pipeline;
 using SharedKernel.Presentation.WebApi;
+using SharedKernel.Security.Abstractions;
 using SharedKernel.ServiceDefaults.Extensions;
 using SharedKernel.ServiceDefaults.HealthChecks;
 using SharedKernel.ServiceDefaults.Probes;
+using SharedKernel.ServiceDefaults.Security;
 using SharedKernel.ServiceDefaults.Telemetry;
 using SharedKernel.Storage;
 
@@ -23,15 +26,20 @@ storage.AddS3(builder.Configuration, "Public").AddStore(Stores.Assets);
 storage.AddS3(builder.Configuration, "Private").AddTenantStore(Stores.Documents);
 storage.AddObs(builder.Configuration).AddStore(Stores.Archive);
 
-// Readiness fails while any store's bucket is unreachable.
+// Readiness fails while any store's bucket is unreachable: every AddStore/AddTenantStore registered a probe
+// (storage-assets, storage-documents, storage-archive), and AddSharedKernelReadiness maps them all.
 builder.Services.AddHealthChecks()
-    .AddStorageReadinessCheck(Stores.Assets, "storage-assets")
-    .AddStorageReadinessCheck(Stores.Documents, "storage-documents")
-    .AddStorageReadinessCheck(Stores.Archive, "storage-archive");
+    .AddSharedKernelReadiness();
 
-// 05.Application — MediatR with the handlers of this assembly (Features/) and the always-on behaviors (tracing,
+// The request context. The sample has no authentication, so the caller is anonymous and the tenant of a tenant
+// store comes from a header (see Stores.cs); a real service registers AddOidcAuthentication(...) and reads the
+// tenant from IRequestContext.TenantId.
+builder.Services.AddSingleton<IUserContext>(AnonymousUserContext.Instance);
+builder.Services.AddSharedKernelRequestContext();
+
+// 05.Application — MediatR behind the kernel's ISender, the handlers of this assembly (Features/) and the always-on behaviors (tracing,
 // logging, metrics, authorization, validation). The endpoints send commands and queries; only the handlers touch the stores.
-builder.Services.AddSharedKernelApplication(typeof(Program).Assembly);
+builder.Services.AddSharedKernelApplication(typeof(Program).Assembly, app => app.UseMediatR());
 
 // 14.Presentation — the HTTP boundary in one call (SharedKernel:Presentation:WebApi). Every storage.* failure becomes
 // an RFC 9457 problem with its code — an outage (storage.unavailable) a 503 — and request bodies are capped at 4 MiB
@@ -40,7 +48,9 @@ builder.AddSharedKernelWebApi();
 
 var app = builder.Build();
 
-// Before any endpoint: correlation id, security headers, the exception handler, problem bodies and routing.
+// First in the pipeline: the request's X-Correlation-Id and request context, on every response. Then, before any
+// endpoint: security headers, the exception handler, problem bodies and routing.
+app.UseSharedKernelRequestContext();
 app.UseSharedKernelWebApi();
 
 app.MapDefaultHealthCheckEndpoints();

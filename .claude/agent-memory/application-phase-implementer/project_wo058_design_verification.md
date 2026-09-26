@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): DualApprovalBehavior (WO-058) was deleted before first publish (P-544). The process lessons (verify same-day designs, do not close a multi-phase Root Backlog ID early, find the live tail of root state-map.md) still hold.
+
 **WO-058 (P-380, dual-control/maker-checker `DualApprovalBehavior`) Design phase (D-72..D-80) closed 2026-08-14 as a pure verification pass — zero code, zero `CLAUDE.md` content changes.** The prior `application-arch-planner` dispatch (same day, 2026-08-13) had already written the FULL design into `05.Application/CLAUDE.md` in one pass, not merely scaffolded it — contracts, pipeline order, builder guard, hard violations, and the worked maker-checker retry example (including the self-approval case) were all already present and matched every task's exact wording. This confirms the phase spec's own hint pattern (also seen in `12.Security`/`13.ServiceDefaults` WO-058 sessions) that a "Design" phase dispatched same-session by the arch-planner is often already fully written — always verify against the actual file content before assuming work remains.
 
 **Why:** Saves redundant/duplicate design authoring and avoids overwriting already-correct content.

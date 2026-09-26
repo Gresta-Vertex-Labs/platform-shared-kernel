@@ -712,7 +712,7 @@ var encryption = new AesGcmEncryptionService(new StaticEncryptionKeyProvider(
 | Namespace | Types |
 | --- | --- |
 | `SharedKernel.Cryptography.Extensions` | `AddSharedKernelCryptography`, `ICryptographyBuilder` and its `Add…` methods |
-| `SharedKernel.Cryptography.Symmetric` | `ISymmetricEncryptionService`, `ISynchronousSymmetricEncryptionService`, `EncryptedPayload`, `CryptographicKey`, key providers, `IEncryptionKeyProviderProbe` |
+| `SharedKernel.Cryptography.Symmetric` | `ISymmetricEncryptionService`, `ISynchronousSymmetricEncryptionService`, `EncryptedPayload`, `CryptographicKey`, key providers |
 | `SharedKernel.Cryptography.Envelope` | `IEnvelopeEncryptionService`, `IEnvelopeEncryptionProvider`, `EnvelopePayload`, `EnvelopeDataKey` |
 | `SharedKernel.Cryptography.KeyDerivation` | `SubkeyDerivation`, `ForPurpose`, `ForPurposeSynchronous` |
 | `SharedKernel.Cryptography.Signing` | `IAsymmetricSignatureService`, `ISigningKeyProvider`, `SigningKey`, `SignatureAlgorithm`, `IHmacSigner` |
@@ -768,7 +768,7 @@ validation passes.
 | `StaticEncryptionKeyProvider` | Implements both, over keys loaded at startup |
 | `CachedEncryptionKeyProvider` | Caches another provider with a time to live, shared in-flight lookups and a size bound (default 1,024) |
 | `PurposeBoundEncryptionKeyProvider` / `…Synchronous…` | Derives a purpose- and context-specific key from each key of another provider |
-| `IEncryptionKeyProviderProbe` | Optional readiness check, implemented by remote providers |
+| `IReadinessProbe` (`SharedKernel.Primitives.Health`) | Implemented by remote providers, e.g. the Azure Key Vault provider (`encryption-key-provider`); in-memory providers need none |
 
 There is no bridge from async to sync. A synchronous service needs keys already in memory, for example a
 `StaticEncryptionKeyProvider` filled from your key service at startup.

@@ -10,7 +10,7 @@ SharedKernel.Security.Abstractions.AnonymousUserContext.FindClaims(string! claim
 SharedKernel.Security.Abstractions.AnonymousUserContext.GetAuthenticationMethodTime(string! method) -> System.DateTimeOffset?
 SharedKernel.Security.Abstractions.AnonymousUserContext.HasPermission(string! permission) -> bool
 SharedKernel.Security.Abstractions.AnonymousUserContext.HasRole(string! role) -> bool
-SharedKernel.Security.Abstractions.AnonymousUserContext.IdentityKind.get -> SharedKernel.Security.Abstractions.IdentityKind
+SharedKernel.Security.Abstractions.AnonymousUserContext.ActorKind.get -> SharedKernel.Execution.Context.ActorKind
 SharedKernel.Security.Abstractions.AnonymousUserContext.IsAuthenticated.get -> bool
 SharedKernel.Security.Abstractions.AnonymousUserContext.IsAuthenticationFresherThan(System.TimeSpan maxAge, System.DateTimeOffset now) -> bool
 SharedKernel.Security.Abstractions.AnonymousUserContext.IsSenderConstrained.get -> bool
@@ -19,11 +19,9 @@ SharedKernel.Security.Abstractions.AnonymousUserContext.Permissions.get -> Syste
 SharedKernel.Security.Abstractions.AnonymousUserContext.Roles.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
 SharedKernel.Security.Abstractions.AnonymousUserContext.SessionId.get -> string?
 SharedKernel.Security.Abstractions.AnonymousUserContext.SubjectId.get -> string?
-SharedKernel.Security.Abstractions.AnonymousUserContext.TenantId.get -> System.Guid?
+SharedKernel.Security.Abstractions.AnonymousUserContext.TenantId.get -> SharedKernel.Execution.Tenancy.TenantId?
 SharedKernel.Security.Abstractions.AnonymousUserContext.WasAuthenticatedWith(string! method) -> bool
 SharedKernel.Security.Abstractions.AuthenticationMethodTimeClaim
-SharedKernel.Security.Abstractions.ITenantProvider
-SharedKernel.Security.Abstractions.ITenantProvider.TenantId.get -> System.Guid
 SharedKernel.Security.Abstractions.IUserContext
 SharedKernel.Security.Abstractions.IUserContext.AuthContextClassReference.get -> string?
 SharedKernel.Security.Abstractions.IUserContext.AuthTime.get -> System.DateTimeOffset?
@@ -35,7 +33,7 @@ SharedKernel.Security.Abstractions.IUserContext.FindClaims(string! claimType) ->
 SharedKernel.Security.Abstractions.IUserContext.GetAuthenticationMethodTime(string! method) -> System.DateTimeOffset?
 SharedKernel.Security.Abstractions.IUserContext.HasPermission(string! permission) -> bool
 SharedKernel.Security.Abstractions.IUserContext.HasRole(string! role) -> bool
-SharedKernel.Security.Abstractions.IUserContext.IdentityKind.get -> SharedKernel.Security.Abstractions.IdentityKind
+SharedKernel.Security.Abstractions.IUserContext.ActorKind.get -> SharedKernel.Execution.Context.ActorKind
 SharedKernel.Security.Abstractions.IUserContext.IsAuthenticated.get -> bool
 SharedKernel.Security.Abstractions.IUserContext.IsAuthenticationFresherThan(System.TimeSpan maxAge, System.DateTimeOffset now) -> bool
 SharedKernel.Security.Abstractions.IUserContext.IsSenderConstrained.get -> bool
@@ -44,16 +42,11 @@ SharedKernel.Security.Abstractions.IUserContext.Permissions.get -> System.Collec
 SharedKernel.Security.Abstractions.IUserContext.Roles.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
 SharedKernel.Security.Abstractions.IUserContext.SessionId.get -> string?
 SharedKernel.Security.Abstractions.IUserContext.SubjectId.get -> string?
-SharedKernel.Security.Abstractions.IUserContext.TenantId.get -> System.Guid?
+SharedKernel.Security.Abstractions.IUserContext.TenantId.get -> SharedKernel.Execution.Tenancy.TenantId?
 SharedKernel.Security.Abstractions.IUserContext.WasAuthenticatedWith(string! method) -> bool
 SharedKernel.Security.Abstractions.IUserContextMapper
 SharedKernel.Security.Abstractions.IUserContextMapper.AuthenticationType.get -> string!
 SharedKernel.Security.Abstractions.IUserContextMapper.Map(System.Security.Claims.ClaimsIdentity! identity) -> SharedKernel.Security.Abstractions.IUserContext!
-SharedKernel.Security.Abstractions.IdentityKind
-SharedKernel.Security.Abstractions.IdentityKind.Anonymous = 0 -> SharedKernel.Security.Abstractions.IdentityKind
-SharedKernel.Security.Abstractions.IdentityKind.ServicePrincipal = 2 -> SharedKernel.Security.Abstractions.IdentityKind
-SharedKernel.Security.Abstractions.IdentityKind.System = 3 -> SharedKernel.Security.Abstractions.IdentityKind
-SharedKernel.Security.Abstractions.IdentityKind.User = 1 -> SharedKernel.Security.Abstractions.IdentityKind
 SharedKernel.Security.Abstractions.SecurityClaimTypes
 SharedKernel.Security.Abstractions.SystemUserContext
 SharedKernel.Security.Abstractions.SystemUserContext.AuthContextClassReference.get -> string?
@@ -66,7 +59,7 @@ SharedKernel.Security.Abstractions.SystemUserContext.FindClaims(string! claimTyp
 SharedKernel.Security.Abstractions.SystemUserContext.GetAuthenticationMethodTime(string! method) -> System.DateTimeOffset?
 SharedKernel.Security.Abstractions.SystemUserContext.HasPermission(string! permission) -> bool
 SharedKernel.Security.Abstractions.SystemUserContext.HasRole(string! role) -> bool
-SharedKernel.Security.Abstractions.SystemUserContext.IdentityKind.get -> SharedKernel.Security.Abstractions.IdentityKind
+SharedKernel.Security.Abstractions.SystemUserContext.ActorKind.get -> SharedKernel.Execution.Context.ActorKind
 SharedKernel.Security.Abstractions.SystemUserContext.IsAuthenticated.get -> bool
 SharedKernel.Security.Abstractions.SystemUserContext.IsAuthenticationFresherThan(System.TimeSpan maxAge, System.DateTimeOffset now) -> bool
 SharedKernel.Security.Abstractions.SystemUserContext.IsSenderConstrained.get -> bool
@@ -75,7 +68,7 @@ SharedKernel.Security.Abstractions.SystemUserContext.Permissions.get -> System.C
 SharedKernel.Security.Abstractions.SystemUserContext.Roles.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
 SharedKernel.Security.Abstractions.SystemUserContext.SessionId.get -> string?
 SharedKernel.Security.Abstractions.SystemUserContext.SubjectId.get -> string?
-SharedKernel.Security.Abstractions.SystemUserContext.TenantId.get -> System.Guid?
+SharedKernel.Security.Abstractions.SystemUserContext.TenantId.get -> SharedKernel.Execution.Tenancy.TenantId?
 SharedKernel.Security.Abstractions.SystemUserContext.WasAuthenticatedWith(string! method) -> bool
 SharedKernel.Security.Abstractions.UserContext
 SharedKernel.Security.Abstractions.UserContext.AuthContextClassReference.get -> string?
@@ -95,7 +88,7 @@ SharedKernel.Security.Abstractions.UserContext.FindClaims(string! claimType) -> 
 SharedKernel.Security.Abstractions.UserContext.GetAuthenticationMethodTime(string! method) -> System.DateTimeOffset?
 SharedKernel.Security.Abstractions.UserContext.HasPermission(string! permission) -> bool
 SharedKernel.Security.Abstractions.UserContext.HasRole(string! role) -> bool
-SharedKernel.Security.Abstractions.UserContext.IdentityKind.get -> SharedKernel.Security.Abstractions.IdentityKind
+SharedKernel.Security.Abstractions.UserContext.ActorKind.get -> SharedKernel.Execution.Context.ActorKind
 SharedKernel.Security.Abstractions.UserContext.IsAuthenticated.get -> bool
 SharedKernel.Security.Abstractions.UserContext.IsAuthenticationFresherThan(System.TimeSpan maxAge, System.DateTimeOffset now) -> bool
 SharedKernel.Security.Abstractions.UserContext.IsSenderConstrained.get -> bool
@@ -109,14 +102,11 @@ SharedKernel.Security.Abstractions.UserContext.Roles.init -> void
 SharedKernel.Security.Abstractions.UserContext.SessionId.get -> string?
 SharedKernel.Security.Abstractions.UserContext.SessionId.init -> void
 SharedKernel.Security.Abstractions.UserContext.SubjectId.get -> string?
-SharedKernel.Security.Abstractions.UserContext.TenantId.get -> System.Guid?
+SharedKernel.Security.Abstractions.UserContext.TenantId.get -> SharedKernel.Execution.Tenancy.TenantId?
 SharedKernel.Security.Abstractions.UserContext.TenantId.init -> void
-SharedKernel.Security.Abstractions.UserContext.UserContext(SharedKernel.Security.Abstractions.IdentityKind identityKind, string! subjectId, System.Collections.Generic.IEnumerable<System.Security.Claims.Claim!>? claims = null) -> void
+SharedKernel.Security.Abstractions.UserContext.UserContext(SharedKernel.Execution.Context.ActorKind actorKind, string! subjectId, System.Collections.Generic.IEnumerable<System.Security.Claims.Claim!>? claims = null) -> void
 SharedKernel.Security.Abstractions.UserContext.WasAuthenticatedWith(string! method) -> bool
 SharedKernel.Security.Abstractions.UserContextResolver
-SharedKernel.Security.Abstractions.UserContextTenantProvider
-SharedKernel.Security.Abstractions.UserContextTenantProvider.TenantId.get -> System.Guid
-SharedKernel.Security.Abstractions.UserContextTenantProvider.UserContextTenantProvider(SharedKernel.Security.Abstractions.IUserContext! userContext) -> void
 const SharedKernel.Security.Abstractions.SecurityClaimTypes.AuthContextClassReference = "acr" -> string!
 const SharedKernel.Security.Abstractions.SecurityClaimTypes.AuthTime = "auth_time" -> string!
 const SharedKernel.Security.Abstractions.SecurityClaimTypes.AuthenticationMethod = "amr" -> string!

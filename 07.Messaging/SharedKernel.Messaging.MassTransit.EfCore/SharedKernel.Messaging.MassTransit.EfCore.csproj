@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <SharedKernelTier>Adapter</SharedKernelTier>
+    <SharedKernelAllowedAdapterReferences>SharedKernel.Messaging.MassTransit</SharedKernelAllowedAdapterReferences>
+    <!-- NuGet packaging metadata -->
+    <Description>EF Core transactional outbox for SharedKernel.Messaging.MassTransit: WithEntityFrameworkOutbox&lt;TDbContext&gt;() on the messaging bus builder, over the consuming service's own DbContext, with batch size, polling delay and duplicate-detection window settings. At-least-once delivery. MassTransit 8.5.x (the last Apache-2.0 release).</Description>
+    <PackageTags>messaging;masstransit;outbox;entity-framework-core;shared-kernel</PackageTags>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Public API tracking: an addition, removal or signature change fails the build until PublicAPI.*.txt is updated. -->
+    <WarningsAsErrors>$(WarningsAsErrors);nullable;CS1591;RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
+    <NoWarn>$(NoWarn);RS0026;RS0027</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <!--
+      The messaging core: MessagingBusBuilder.ConfigureMassTransit, the registration extension point (P-570).
+      No 06.Persistence.* reference: the outbox is wired through the consuming service's TDbContext only.
+    -->
+    <ProjectReference Include="..\SharedKernel.Messaging.MassTransit\SharedKernel.Messaging.MassTransit.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Pinned to the 8.5.x line with MassTransit itself (Directory.Packages.props): 9.x is commercially licensed. -->
+    <PackageReference Include="MassTransit.EntityFrameworkCore" />
+    <!-- For the TDbContext : DbContext constraint on WithEntityFrameworkOutbox<TDbContext>(). -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+</Project>

@@ -8,9 +8,13 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Presentation.WebApi;
+using SharedKernel.Security.Abstractions;
+using SharedKernel.ServiceDefaults.Security;
 using SharedKernel.Testing.Logging;
 
 namespace SharedKernel.Presentation.SignalR.Tests.TestSupport;
@@ -32,7 +36,9 @@ internal static class SignalRTestHost
     public const string StreamFailure = "An error occurred on the server while streaming results.";
 
     /// <summary>
-    /// Starts a <see cref="TestServer"/> host: test authentication, <c>AddSharedKernelWebApi</c> (unless
+    /// Starts a <see cref="TestServer"/> host: test authentication, <c>AddSharedKernelRequestContext</c> and
+    /// <c>UseSharedKernelRequestContext()</c> first (unless <paramref name="withRequestContext"/> is false),
+    /// <c>AddSharedKernelWebApi</c> (unless
     /// <paramref name="withWebApi"/> is false), <c>AddSharedKernelSignalR</c> (unless
     /// <paramref name="withSharedKernelSignalR"/> is false, when <paramref name="configureBuilder"/> registers SignalR
     /// itself), <paramref name="configureBuilder"/>, then <c>UseSharedKernelWebApi()</c> (or plain routing,
@@ -46,7 +52,8 @@ internal static class SignalRTestHost
         IReadOnlyDictionary<string, string?>? configuration = null,
         InMemoryLoggerFactory? loggerFactory = null,
         bool withWebApi = true,
-        bool withSharedKernelSignalR = true)
+        bool withSharedKernelSignalR = true,
+        bool withRequestContext = true)
     {
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = environment });
         builder.WebHost.UseTestServer();
@@ -65,6 +72,16 @@ internal static class SignalRTestHost
         builder.AddTestAuthentication();
         builder.Services.AddSingleton<InvocationCounter>();
 
+        if (withRequestContext)
+        {
+            // What an authentication package registers: the caller of the request, through the registered mappers.
+            builder.Services.AddHttpContextAccessor();
+            builder.Services.TryAddScoped<IUserContext>(static services => UserContextResolver.Resolve(
+                services.GetRequiredService<IHttpContextAccessor>().HttpContext?.User,
+                services.GetServices<IUserContextMapper>()));
+            builder.Services.AddSharedKernelRequestContext();
+        }
+
         if (withWebApi)
         {
             builder.AddSharedKernelWebApi();
@@ -78,6 +95,11 @@ internal static class SignalRTestHost
         configureBuilder?.Invoke(builder);
 
         var app = builder.Build();
+
+        if (withRequestContext)
+        {
+            app.UseSharedKernelRequestContext();
+        }
 
         if (withWebApi)
         {

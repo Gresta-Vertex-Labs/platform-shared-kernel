@@ -8,6 +8,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
+using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Security.Abstractions;
 
 namespace SharedKernel.Presentation.SignalR.Tests.TestSupport;
@@ -33,6 +35,8 @@ internal static class TestAuthentication
 
     public const string MethodTimesHeader = "X-Test-AmrTime";
 
+    public const string TenantHeader = "X-Test-Tenant";
+
     public const string Challenge = "Test realm=\"tests\"";
 
     public const string SubjectClaim = "sub";
@@ -44,6 +48,8 @@ internal static class TestAuthentication
     public const string MethodClaim = "amr";
 
     public const string AuthTimeClaim = "auth_time";
+
+    public const string TenantClaim = "tid";
 
     public static WebApplicationBuilder AddTestAuthentication(this WebApplicationBuilder builder)
     {
@@ -64,7 +70,8 @@ internal static class TestAuthentication
         string? roles = null,
         string? methods = null,
         DateTimeOffset? authTime = null,
-        (string Method, DateTimeOffset VerifiedAt)[]? methodTimes = null)
+        (string Method, DateTimeOffset VerifiedAt)[]? methodTimes = null,
+        TenantId? tenant = null)
     {
         var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { [UserHeader] = user };
         AddIfSet(headers, PermissionsHeader, permissions);
@@ -75,6 +82,7 @@ internal static class TestAuthentication
             headers,
             MethodTimesHeader,
             methodTimes is null ? null : string.Join(',', methodTimes.Select(time => AuthenticationMethodTimeClaim.Create(time.Method, time.VerifiedAt).Value)));
+        AddIfSet(headers, TenantHeader, tenant?.ToString());
         return headers;
     }
 
@@ -108,6 +116,7 @@ internal sealed class TestAuthenticationHandler : AuthenticationHandler<Authenti
         claims.AddRange(Values(TestAuthentication.MethodsHeader).Select(value => new Claim(TestAuthentication.MethodClaim, value)));
         claims.AddRange(Values(TestAuthentication.AuthTimeHeader).Select(value => new Claim(TestAuthentication.AuthTimeClaim, value)));
         claims.AddRange(Values(TestAuthentication.MethodTimesHeader).Select(value => new Claim(SecurityClaimTypes.AuthenticationMethodTime, value)));
+        claims.AddRange(Values(TestAuthentication.TenantHeader).Select(value => new Claim(TestAuthentication.TenantClaim, value)));
 
         var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, TestAuthentication.Scheme));
         return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(principal, TestAuthentication.Scheme)));
@@ -131,14 +140,16 @@ internal sealed class TestUserContextMapper : IUserContextMapper
     public IUserContext Map(ClaimsIdentity identity)
     {
         var authTime = identity.FindFirst(TestAuthentication.AuthTimeClaim)?.Value;
+        var tenant = identity.FindFirst(TestAuthentication.TenantClaim)?.Value;
 
-        return new UserContext(IdentityKind.User, identity.FindFirst(TestAuthentication.SubjectClaim)!.Value)
+        return new UserContext(ActorKind.User, identity.FindFirst(TestAuthentication.SubjectClaim)!.Value)
         {
             Permissions = [.. identity.FindAll(TestAuthentication.PermissionClaim).Select(claim => claim.Value)],
             Roles = [.. identity.FindAll(TestAuthentication.RoleClaim).Select(claim => claim.Value)],
             AuthenticationMethods = [.. identity.FindAll(TestAuthentication.MethodClaim).Select(claim => claim.Value)],
             AuthenticationMethodTimes = AuthenticationMethodTimeClaim.Read(identity.Claims),
             AuthTime = authTime is null ? null : DateTimeOffset.FromUnixTimeSeconds(long.Parse(authTime, CultureInfo.InvariantCulture)),
+            TenantId = tenant is null ? null : TenantId.Parse(tenant, CultureInfo.InvariantCulture),
         };
     }
 }

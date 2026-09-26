@@ -6,20 +6,29 @@
 Use cases live in `05.Application`: a command or query, its permission, its validator and its handler. This domain is
 the thin edge in front of them. It turns the outcome into what a caller receives — an HTTP response or RFC 9457
 problem, a SignalR hub error, a gRPC status, with the same code, message and redaction on all three — and owns the
-concerns of the boundary itself: correlation ids, authentication strength, security headers, CORS, request limits,
-`Idempotency-Key`, `ETag`/`If-Match` and paging parameters.
+concerns of the boundary itself: authentication strength, security headers, CORS, request limits, `Idempotency-Key`,
+`ETag`/`If-Match` and paging parameters. The request's context — its correlation id, the refusal of caller baggage and
+the `RequestContextScope` every layer reads the caller from — comes from `13.ServiceDefaults`'
+`SharedKernel.ServiceDefaults.Security`, composed first (P-579).
 
 ## Packages
 
 | Package | Use it for | Entry point |
 | --- | --- | --- |
-| [`SharedKernel.Presentation.WebApi`](SharedKernel.Presentation.WebApi/README.md) | Every HTTP API: endpoint modules, typed results for `Result`, the error contract, authorization attributes, correlation ids, security headers, CORS, limits, headers and paging. No third-party dependencies | `builder.AddSharedKernelWebApi()`, `app.UseSharedKernelWebApi()`, `app.MapEndpoints()` |
+| [`SharedKernel.Presentation.WebApi`](SharedKernel.Presentation.WebApi/README.md) | Every HTTP API: endpoint modules, typed results for `Result`, the error contract, security headers, CORS, limits, headers and paging. No third-party dependencies | `builder.AddSharedKernelWebApi()`, `app.UseSharedKernelWebApi()`, `app.MapEndpoints()` |
 | [`SharedKernel.Presentation.OpenApi`](SharedKernel.Presentation.OpenApi/README.md) | API versioning, one OpenAPI document per version, the Scalar reference, sunset and deprecation headers | `builder.AddSharedKernelOpenApi()`, `app.MapSharedKernelOpenApi()` |
 | [`SharedKernel.Presentation.SignalR`](SharedKernel.Presentation.SignalR/README.md) | Hubs: coded hub errors, `Result` hub methods, an invocation rate limit, tenant groups | `builder.AddSharedKernelSignalR()` |
 | [`SharedKernel.Presentation.Grpc`](SharedKernel.Presentation.Grpc/README.md) | gRPC services: a rich `google.rpc.Status` for every error a service method produces | `builder.AddSharedKernelGrpc()` |
+| [`SharedKernel.Presentation.Core`](SharedKernel.Presentation.Core/README.md) | What the three protocols share: the authorization attributes (`[RequireEndpointPermission]`, `[RequireRole]`, `[RequireFreshAuthentication]`, `[RequireAuthenticationMethod]`, namespace `SharedKernel.Presentation.Authorization`) and the error rules. Arrives with WebApi, SignalR or Grpc | — |
+| [`SharedKernel.Presentation.GraphQL`](SharedKernel.Presentation.GraphQL/README.md) | HotChocolate GraphQL servers: snake_case filtering and sorting, paging types, a ProblemDetails-shaped error filter | `services.AddSharedKernelGraphQL()` |
 
-WebApi is the core; the other three build on it and version with it. Each package has one public namespace, the
-package name: `using SharedKernel.Presentation.WebApi;` covers endpoints, controllers, options and error codes.
+WebApi is the core; OpenApi and SignalR build on it, gRPC shares only Presentation.Core with it (a gRPC host takes no
+HTTP API stack), and all of them version together. Every package is **Host tier** — referenced by a service's API
+project, never by its domain or application projects. Each package has one public namespace, the package name:
+`using SharedKernel.Presentation.WebApi;` covers endpoints, controllers, options and error codes, and
+`using SharedKernel.Presentation.Authorization;` the four authorization attributes (P-579).
+`SharedKernel.Presentation.SignalR.Redis` no longer exists: add SignalR's own backplane
+(`AddStackExchangeRedis(…)`) on the builder `AddSharedKernelSignalR()` returns.
 Outbound calls to other services are `11.Communication`'s job; identity is `12.Security`'s.
 
 ## The 10-minute path
@@ -27,7 +36,8 @@ Outbound calls to other services are `11.Communication`'s job; identity is `12.S
 ### 1. Register and add the pipeline
 
 ```csharp
-using SharedKernel.Application;
+using SharedKernel.Application.Mediator.MediatR;
+using SharedKernel.Application.Pipeline;
 using SharedKernel.Presentation.WebApi;
 using SharedKernel.Security.Oidc.Extensions;
 using SharedKernel.ServiceDefaults.Security;
@@ -35,20 +45,23 @@ using SharedKernel.ServiceDefaults.Security;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOidcAuthentication(builder.Configuration);    // who is calling (12.Security)
-builder.Services.AddSharedKernelRequestContext();                 // the caller, for the use cases (13.ServiceDefaults)
-builder.Services.AddSharedKernelApplication(typeof(Program).Assembly);  // handlers + pipeline; [RequirePermission] always enforced (05)
+builder.Services.AddSharedKernelRequestContext();                 // the caller + correlation id, for every layer (13.ServiceDefaults)
+builder.Services.AddSharedKernelApplication(typeof(Program).Assembly, app => app.UseMediatR());  // handlers + pipeline; [RequirePermission] always enforced (05)
 builder.AddSharedKernelWebApi();                                  // the HTTP boundary
 
 var app = builder.Build();
 
-app.UseSharedKernelWebApi();   // first, before any endpoint
-app.MapEndpoints();            // every IEndpointModule of this assembly
+app.UseSharedKernelRequestContext();   // first: baggage refused, correlation id, the request's context scope
+app.UseSharedKernelWebApi();           // then the boundary, before any endpoint
+app.MapEndpoints();                    // every IEndpointModule of this assembly
 
 app.Run();
 ```
 
-`UseSharedKernelWebApi()` adds, in order: correlation ids, security headers, the exception handler, routing, CORS,
-authentication, rate limiting, authorization, and the checks of required headers and paging parameters. If
+`UseSharedKernelRequestContext()` goes first so its scope wraps everything after it: every response, error responses
+included, carries the `X-Correlation-Id` and the `correlationId` member. `UseSharedKernelWebApi()` then adds, in order:
+security headers, the exception handler, routing, CORS, authentication, rate limiting, authorization, and the checks of
+required headers and paging parameters (tenant resolution, when used, goes in its `BeforeAuthorization` hook). If
 `AddSharedKernelWebApi()` runs without it, the host logs a warning at startup.
 
 ### 2. Map the use cases in an endpoint module
@@ -57,7 +70,7 @@ The use cases are `05.Application` commands and queries, each with its permissio
 ([05.Application](../05.Application/README.md#2-write-a-use-case)). A module maps them:
 
 ```csharp
-using MediatR;
+using SharedKernel.Application.Messaging;   // ISender
 using SharedKernel.Persistence.Abstractions.Repositories;   // EntityVersion
 using SharedKernel.Presentation.WebApi;
 
@@ -171,11 +184,14 @@ matching conventions. The key only identifies the request: the command, implemen
 One call each, after `AddSharedKernelWebApi()`:
 
 ```csharp
+using SharedKernel.Presentation.Authorization;   // RequireEndpointPermission (SharedKernel.Presentation.Core)
+
 builder.AddSharedKernelOpenApi(options => options.Title = "Orders API");
 builder.AddSharedKernelSignalR();
 builder.AddSharedKernelGrpc(options => options.ErrorDomain = "orders.example.com");
 
 var app = builder.Build();
+app.UseSharedKernelRequestContext();
 app.UseSharedKernelWebApi();
 
 app.MapEndpoints();
@@ -225,10 +241,11 @@ service handles a request. Every key, default and rule is in [CONFIGURATION.md](
 | File upload validation | A presigned upload straight to storage (08.Storage), or `WithRequestSizeLimit(bytes)` |
 | A response envelope around every body | The success value is the body; errors are problems. `11.Communication.Rest` reads both back into a `Result<T>` |
 | MVC `ToActionResult` | The same typed results, returned from the action |
-| A SignalR Redis backplane wrapper | `AddSharedKernelSignalR().AddStackExchangeRedis(…)` |
-| gRPC interceptors for correlation, tenant and authorization; gRPC result extensions | The shared HTTP pipeline, `ITenantProvider`, the attributes; `SharedKernel.Core`'s `GetValueOrThrow()` |
+| A SignalR Redis backplane wrapper (`SharedKernel.Presentation.SignalR.Redis`, deleted by P-579) | `AddSharedKernelSignalR().AddStackExchangeRedis(…)` |
+| gRPC interceptors for correlation, tenant and authorization; gRPC result extensions | The shared HTTP pipeline (`UseSharedKernelRequestContext()` opens each call's scope; read the caller from `IRequestContext`), the attributes; `SharedKernel.Core`'s `GetValueOrThrow()` |
+| A correlation id or inbound-baggage setting in `SharedKernel:Presentation:WebApi` | `SharedKernel.ServiceDefaults.Security`: one validation rule (`CorrelationIds.IsValid`); `AddSharedKernelRequestContext(o => o.TrustInboundBaggage = true)` (P-579) |
 | Rate limiting policies | ASP.NET Core `AddRateLimiter()` or 13.ServiceDefaults' `AddSharedKernelRateLimiting()`; the 429 body is automatic |
-| .NET 10 `AddValidation()` | Validation in the MediatR pipeline (05.Application) |
+| .NET 10 `AddValidation()` | Validation in the application pipeline (05.Application) |
 
 ## Read next
 

@@ -1,0 +1,56 @@
+#nullable enable
+SharedKernel.Testing.Storage.InMemoryFileStorage
+SharedKernel.Testing.Storage.InMemoryFileStorage.AbortMultipartUploadAsync(SharedKernel.Storage.MultipartUpload! upload, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
+SharedKernel.Testing.Storage.InMemoryFileStorage.CompleteMultipartUploadAsync(SharedKernel.Storage.MultipartUpload! upload, System.Collections.Generic.IReadOnlyCollection<SharedKernel.Storage.UploadedPart!>! parts, SharedKernel.Storage.WriteCondition? condition = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Storage.FileReference!>!>!
+SharedKernel.Testing.Storage.InMemoryFileStorage.CopiedPairs.get -> System.Collections.Generic.IReadOnlyList<(string! SourceKey, string! DestinationStore, string! DestinationKey)>!
+SharedKernel.Testing.Storage.InMemoryFileStorage.CopyAsync(string! sourceKey, string! destinationKey, SharedKernel.Storage.FileCopyOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Storage.FileReference!>!>!
+SharedKernel.Testing.Storage.InMemoryFileStorage.CopyToAsync(string! sourceKey, SharedKernel.Storage.IFileStorage! destination, string! destinationKey, SharedKernel.Storage.FileCopyOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Storage.FileReference!>!>!
+SharedKernel.Testing.Storage.InMemoryFileStorage.CreateDownloadUrlAsync(string! key, SharedKernel.Storage.PresignedDownloadOptions! options, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Storage.PresignedRequest!>!>!
+SharedKernel.Testing.Storage.InMemoryFileStorage.CreateUploadFormAsync(string! key, SharedKernel.Storage.PresignedPostOptions! options, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Storage.PresignedPost!>!>!
+SharedKernel.Testing.Storage.InMemoryFileStorage.CreateUploadPartUrlAsync(SharedKernel.Storage.MultipartUpload! upload, int partNumber, System.TimeSpan expiry, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Storage.PresignedRequest!>!>!
+SharedKernel.Testing.Storage.InMemoryFileStorage.CreateUploadUrlAsync(string! key, SharedKernel.Storage.PresignedUploadOptions! options, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Storage.PresignedRequest!>!>!
+SharedKernel.Testing.Storage.InMemoryFileStorage.DeleteAsync(string! key, SharedKernel.Storage.FileDeleteOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
+SharedKernel.Testing.Storage.InMemoryFileStorage.DeletedKeys.get -> System.Collections.Generic.IReadOnlyList<string!>!
+SharedKernel.Testing.Storage.InMemoryFileStorage.DeleteManyAsync(System.Collections.Generic.IEnumerable<string!>! keys, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Storage.BatchDeleteResult!>!>!
+SharedKernel.Testing.Storage.InMemoryFileStorage.DownloadAsync(string! key, SharedKernel.Storage.FileDownloadOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Storage.FileDownload!>!>!
+SharedKernel.Testing.Storage.InMemoryFileStorage.ExistsAsync(string! key, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<bool>!>!
+SharedKernel.Testing.Storage.InMemoryFileStorage.GetContent(string! key) -> byte[]!
+SharedKernel.Testing.Storage.InMemoryFileStorage.GetPropertiesAsync(string! key, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Storage.FileProperties!>!>!
+SharedKernel.Testing.Storage.InMemoryFileStorage.InMemoryFileStorage(string! storeName = "default", SharedKernel.Testing.Storage.InMemoryFileStorageOptions? options = null) -> void
+SharedKernel.Testing.Storage.InMemoryFileStorage.IssuedDownloadUrls.get -> System.Collections.Generic.IReadOnlyList<(string! Key, SharedKernel.Storage.PresignedRequest! Request)>!
+SharedKernel.Testing.Storage.InMemoryFileStorage.IssuedUploadUrls.get -> System.Collections.Generic.IReadOnlyList<(string! Key, SharedKernel.Storage.PresignedRequest! Request)>!
+SharedKernel.Testing.Storage.InMemoryFileStorage.Keys.get -> System.Collections.Generic.IReadOnlyList<string!>!
+SharedKernel.Testing.Storage.InMemoryFileStorage.ListAsync(string! prefix = "", System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<SharedKernel.Storage.FileListItem!>!
+SharedKernel.Testing.Storage.InMemoryFileStorage.ListPageAsync(SharedKernel.Storage.FileListRequest! request, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Storage.FileListPage!>!>!
+SharedKernel.Testing.Storage.InMemoryFileStorage.Reset() -> void
+SharedKernel.Testing.Storage.InMemoryFileStorage.Seed(string! key, byte[]! content, string? contentType = null, System.Collections.Generic.IReadOnlyDictionary<string!, string!>? metadata = null) -> SharedKernel.Storage.FileReference!
+SharedKernel.Testing.Storage.InMemoryFileStorage.Seed(string! key, System.IO.Stream! content, string? contentType = null, System.Collections.Generic.IReadOnlyDictionary<string!, string!>? metadata = null) -> SharedKernel.Storage.FileReference!
+SharedKernel.Testing.Storage.InMemoryFileStorage.SimulateFailure.get -> bool
+SharedKernel.Testing.Storage.InMemoryFileStorage.SimulateFailure.set -> void
+SharedKernel.Testing.Storage.InMemoryFileStorage.SimulateUnavailable.get -> bool
+SharedKernel.Testing.Storage.InMemoryFileStorage.SimulateUnavailable.set -> void
+SharedKernel.Testing.Storage.InMemoryFileStorage.StartMultipartUploadAsync(string! key, SharedKernel.Storage.MultipartUploadOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Storage.MultipartUpload!>!>!
+SharedKernel.Testing.Storage.InMemoryFileStorage.StoreName.get -> string!
+SharedKernel.Testing.Storage.InMemoryFileStorage.TenantId.get -> SharedKernel.Execution.Tenancy.TenantId?
+SharedKernel.Testing.Storage.InMemoryFileStorage.UploadAsync(string! key, System.IO.Stream! content, SharedKernel.Storage.FileUploadOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Storage.FileReference!>!>!
+SharedKernel.Testing.Storage.InMemoryFileStorage.UploadedKeys.get -> System.Collections.Generic.IReadOnlyList<string!>!
+SharedKernel.Testing.Storage.InMemoryFileStorage.UploadPart(SharedKernel.Storage.MultipartUpload! upload, int partNumber, byte[]! content) -> string!
+SharedKernel.Testing.Storage.InMemoryFileStorage.WasCopied(string! sourceKey, string! destinationKey) -> bool
+SharedKernel.Testing.Storage.InMemoryFileStorage.WasDeleted(string! key) -> bool
+SharedKernel.Testing.Storage.InMemoryFileStorage.WasUploaded(string! key) -> bool
+SharedKernel.Testing.Storage.InMemoryFileStorageOptions
+SharedKernel.Testing.Storage.InMemoryFileStorageOptions.Clock.get -> SharedKernel.Primitives.Clocks.IClock?
+SharedKernel.Testing.Storage.InMemoryFileStorageOptions.Clock.set -> void
+SharedKernel.Testing.Storage.InMemoryFileStorageOptions.InMemoryFileStorageOptions() -> void
+SharedKernel.Testing.Storage.InMemoryFileStorageOptions.MaxPresignExpiry.get -> System.TimeSpan
+SharedKernel.Testing.Storage.InMemoryFileStorageOptions.MaxPresignExpiry.set -> void
+SharedKernel.Testing.Storage.InMemoryStorage
+SharedKernel.Testing.Storage.InMemoryStorageBuilderExtensions
+static SharedKernel.Testing.Storage.InMemoryFileStorage.TenantKey(SharedKernel.Execution.Tenancy.TenantId tenantId, string! key) -> string!
+static SharedKernel.Testing.Storage.InMemoryStorage.CreateFactory(params SharedKernel.Testing.Storage.InMemoryFileStorage![]! stores) -> SharedKernel.Storage.IFileStorageFactory!
+static SharedKernel.Testing.Storage.InMemoryStorage.CreateFactory(System.Action<SharedKernel.Storage.IStorageBuilder!>! configure) -> SharedKernel.Storage.IFileStorageFactory!
+static SharedKernel.Testing.Storage.InMemoryStorageBuilderExtensions.AddInMemoryStore(this SharedKernel.Storage.IStorageBuilder! builder, SharedKernel.Testing.Storage.InMemoryFileStorage! store) -> SharedKernel.Storage.IStorageBuilder!
+static SharedKernel.Testing.Storage.InMemoryStorageBuilderExtensions.AddInMemoryStore(this SharedKernel.Storage.IStorageBuilder! builder, string! name, System.Action<SharedKernel.Testing.Storage.InMemoryFileStorageOptions!>? configure = null) -> SharedKernel.Storage.IStorageBuilder!
+static SharedKernel.Testing.Storage.InMemoryStorageBuilderExtensions.AddInMemoryTenantStore(this SharedKernel.Storage.IStorageBuilder! builder, SharedKernel.Testing.Storage.InMemoryFileStorage! store) -> SharedKernel.Storage.IStorageBuilder!
+static SharedKernel.Testing.Storage.InMemoryStorageBuilderExtensions.AddInMemoryTenantStore(this SharedKernel.Storage.IStorageBuilder! builder, string! name, System.Action<SharedKernel.Testing.Storage.InMemoryFileStorageOptions!>? configure = null) -> SharedKernel.Storage.IStorageBuilder!
+static SharedKernel.Testing.Storage.InMemoryStorageBuilderExtensions.GetInMemoryStore(this System.IServiceProvider! services, string! name) -> SharedKernel.Testing.Storage.InMemoryFileStorage!

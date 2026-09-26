@@ -1,3 +1,6 @@
+using SharedKernel.Execution.Tenancy;
+using SharedKernel.Execution.Context;
+
 namespace SharedKernel.Security.Abstractions;
 
 /// <summary>The <see cref="IUserContext"/> of trusted code running without a caller.</summary>
@@ -5,7 +8,7 @@ namespace SharedKernel.Security.Abstractions;
 /// <para>
 /// For scheduled jobs, message consumers and workflow activities. <see cref="IsAuthenticated"/> is
 /// <see langword="true"/>, but the context holds no roles or permissions: what a system context may do is decided
-/// by the service's own authorization rules, keyed on <see cref="IdentityKind"/>.
+/// by the service's own authorization rules, keyed on <see cref="ActorKind"/>.
 /// </para>
 /// <para>
 /// Not registered by any package. A worker host registers it itself; the authentication packages add their
@@ -24,7 +27,7 @@ public sealed class SystemUserContext : IUserContext
     }
 
     /// <inheritdoc/>
-    public IdentityKind IdentityKind => IdentityKind.System;
+    public ActorKind ActorKind => ActorKind.System;
 
     /// <inheritdoc/>
     public bool IsAuthenticated => true;
@@ -36,7 +39,7 @@ public sealed class SystemUserContext : IUserContext
     public string? ClientId => null;
 
     /// <inheritdoc/>
-    public Guid? TenantId => null;
+    public TenantId? TenantId => null;
 
     /// <inheritdoc/>
     public string? SessionId => null;

@@ -47,7 +47,6 @@ public sealed class BearerTokenValidationTests
         Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(1_700_000_000), user.AuthTime);
         Assert.Equal("session-7", user.SessionId);
         Assert.Equal(tenantId, user.TenantId);
-        Assert.Equal(tenantId, user.TenantProviderTenantId);
         Assert.False(user.IsSenderConstrained);
     }
 

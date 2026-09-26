@@ -65,8 +65,8 @@ internal sealed class FieldEncryptionSettings
         throw new InvalidOperationException(
             "Field encryption has no key source. Call 'UseFieldEncryption(k => k.FromConfiguration())' to read keys " +
             "from 'SharedKernel:Persistence:Encryption:Keys', 'k.UseKeyProvider<TProvider>()' for a KMS provider, or " +
-            "register an 'IEncryptionKeyProvider' (for example '13.ServiceDefaults' " +
-            "'AddSharedKernelKeyVaultKeyProvider()').");
+            "register an 'IEncryptionKeyProvider' (for example 'AddSharedKernelCryptography(configuration)" +
+            ".AddAzureKeyVaultEncryption(configuration)' from SharedKernel.Cryptography.KeyVault.Azure).");
     }
 
     /// <summary>Resolves the data source for side connections: the maintenance source, else a registered <see cref="NpgsqlDataSource"/>.</summary>

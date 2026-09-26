@@ -3,13 +3,15 @@ using System.Reflection;
 using Microsoft.EntityFrameworkCore;
 using SharedKernel.Domain.Monetary;
 using SharedKernel.Domain.StronglyTypedIds;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence.EfCore.Conversions;
 
 namespace SharedKernel.Persistence.EfCore.Conventions;
 
 /// <summary>
 /// Pre-convention mappings every <c>SharedKernelDbContext</c> gets: <see cref="Money"/> as a complex type with a
-/// three-letter currency column, and a value converter for every <see cref="StronglyTypedId{TValue}"/> the
+/// three-letter currency column, a <c>uuid</c> converter for every
+/// <see cref="TenantId"/>, and a value converter for every <see cref="StronglyTypedId{TValue}"/> the
 /// context can reach.
 /// </summary>
 /// <remarks>
@@ -36,6 +38,9 @@ internal static class DomainTypeMappings
             .HaveConversion<CurrencyValueConverter>()
             .HaveMaxLength(CurrencyCodeLength)
             .AreFixedLength();
+
+        // Every TenantId and TenantId? property is a uuid column (IHasTenant.TenantId included).
+        configurationBuilder.Properties<TenantId>().HaveConversion<TenantIdValueConverter>();
 
         foreach (var (idType, valueType) in Cache.GetOrAdd(contextType, Discover))
         {

@@ -6,12 +6,13 @@ using SharedKernel.Cryptography.Symmetric;
 using SharedKernel.Persistence.EfCore.Encryption.Configuration;
 using SharedKernel.Persistence.EfCore.Encryption.KeyRing;
 using SharedKernel.Persistence.EfCore.Encryption.Tests.Fixtures;
+using SharedKernel.Primitives.Health;
 
 namespace SharedKernel.Persistence.EfCore.Encryption.Tests.Unit;
 
 public sealed class KeyRingTests
 {
-    private sealed class AsyncOnlyProvider(string currentKeyId) : IEncryptionKeyProvider, IEncryptionKeyProviderProbe
+    private sealed class AsyncOnlyProvider(string currentKeyId) : IEncryptionKeyProvider, IReadinessProbe
     {
         private readonly StaticEncryptionKeyProvider _inner = TestKeys.Provider(currentKeyId);
 
@@ -27,8 +28,10 @@ public sealed class KeyRingTests
             return _inner.GetKeyAsync(keyId, cancellationToken);
         }
 
-        public Task<EncryptionKeyProviderHealth> ProbeAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult(new EncryptionKeyProviderHealth(Healthy, Healthy ? null : "down"));
+        public string Name => "test-key-provider";
+
+        public Task<ReadinessReport> ProbeAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(Healthy ? ReadinessReport.Healthy() : ReadinessReport.Unhealthy("down"));
     }
 
     private sealed class ManualTime : TimeProvider
@@ -135,9 +138,9 @@ public sealed class KeyRingTests
     }
 
     [Fact]
-    public void Probe_IsRegisteredAsAKeyedService()
+    public void Probe_IsRegisteredAsAReadinessProbe()
     {
         using var host = EncryptionHost.Build<CustomerDbContext>("Host=localhost;Port=1;Database=none;Username=x;Password=y");
-        host.GetRequiredKeyedService<IEncryptionKeyProviderProbe>(FieldEncryptionServiceKeys.KeyRingProbe).Should().NotBeNull();
+        host.GetRequiredReadinessProbe(FieldEncryptionReadiness.ProbeName).Should().NotBeNull();
     }
 }

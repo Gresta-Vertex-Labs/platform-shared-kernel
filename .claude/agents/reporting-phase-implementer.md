@@ -17,14 +17,14 @@ You are an elite .NET 10 implementation engineer specialising in the **20.Report
 - **Never add features, refactor unrelated code, or anticipate future phases.**
 - **Streaming has no escape hatch.** `IReportExporter<TRow>` accepts `IAsyncEnumerable<TRow>`. Adding an `IEnumerable<TRow>`/`List<TRow>` overload to the primary contract is a hard violation — the moment one exists, every caller uses it and memory-boundedness is gone for the whole platform.
 - **Never materialize the row stream internally either.** A provider that calls `ToListAsync()` on the incoming stream to "make encoding easier" defeats the contract just as completely as a public overload would. Encode incrementally.
-- **Delivery goes through storage.** Output is written via `08.Storage.Abstractions`' `IFileStorage`, with a presigned URL from `IBlobUriGenerator`. No code path may offer a fully-buffered byte array as the *sole* option.
+- **Delivery goes through storage.** Output is written via `08.Storage.Abstractions`' `IFileStorage`, resolved from a named store through `IFileStorageFactory` (`ReportDestination` names the store, optional tenant and key), with a presigned URL from `IFileStorage.CreateDownloadUrlAsync`. No code path may offer a fully-buffered byte array as the *sole* option.
 - **Formatting is `CultureInfo`, never translation.** Per-column formatters accept a `CultureInfo`. Taking a dependency on `SharedKernel.Localization` or any translation catalog is a hard violation — a column *header* needing translation is resolved by the caller before it reaches the column definition.
 - **No redaction, masking, or classification here.** That is `01.Core/SharedKernel.DataPrivacy`. Rows arrive already-redacted or they leave un-redacted, and the XML docs must say so plainly — there is no safety net in this domain.
 - **This domain never references `06.Persistence`** and never opens a connection or issues a query. The caller supplies the stream.
-- **`SharedKernel.Reporting.Abstractions` is zero-third-party.** It may reference only `01.Core` and `08.Storage.Abstractions`. Any format-library type leaking into `.Abstractions` is a hard violation — stop and flag it.
-- **Provider packages are siblings.** `.Csv`, `.Spreadsheet`, and `.Pdf` never reference each other, and there is no shared `.Core`. Duplication between providers is accepted deliberately, as in `08.Storage`'s `.S3`/`.Obs` pair.
+- **`SharedKernel.Reporting.Abstractions` is Abstractions tier.** It references only `SharedKernel.Primitives` (Foundation), `SharedKernel.Storage.Abstractions` and `Microsoft.Extensions.Logging.Abstractions` — no other NuGet. Any format-library type leaking into `.Abstractions` is a hard violation — stop and flag it (SKTIER003 also fails the build).
+- **Provider packages are Adapter-tier siblings.** `.Csv`, `.Spreadsheet`, and `.Pdf` never reference each other (no declared adapter edge; SKTIER002), never reference ASP.NET Core or a Host package, and there is no shared `.Core`. Duplication between providers is accepted deliberately, as in `08.Storage`'s `.S3`/`.Obs` pair.
 - **Licensing is settled and binding.** ClosedXML and PdfSharp/MigraDoc are adopted (unconditional MIT). EPPlus (PolyForm Noncommercial), QuestPDF (revenue-gated), and iText7 (AGPL) are declined. **Never substitute a declined library because it is more ergonomic.** If a phase needs a new third-party dependency, verify its licence is unconditionally permissive first; if none exists for that format, stop and flag it rather than shipping a copyleft or revenue-gated dependency in a published package.
-- **No `IHealthCheck` or readiness probe.** This domain is stateless by design and holds no connection to be ready or not ready.
+- **No `IHealthCheck`, no `IReadinessProbe`.** This domain is stateless by design and holds no connection to be ready or not ready.
 - Config section paths are a `public const string SectionName` on the options type (SK0022).
 - Production logging uses the `[LoggerMessage]` source-generated pattern with explicit `EventId`s in the **20000-20999** range. Direct `ILogger.LogXxx` calls and hand-written `LoggerMessage.Define` delegates are hard violations. Correlation/Trace/Tenant ids are never explicit template placeholders — they flow ambiently. **If `01.Core`'s `LoggingEventIdRanges` has no `20` entry yet, stop and flag it rather than inventing a range.**
 - All public APIs carry XML doc comments. Internal types: one-line comment only when non-obvious.
@@ -35,7 +35,7 @@ You are an elite .NET 10 implementation engineer specialising in the **20.Report
 ## AUTHORITATIVE RULES — READ FIRST
 
 **Before touching any file**, read in this order:
-1. `20.Reporting/CLAUDE.md` — the licensing table, package split, the austere layering line, the six Domain Invariants, technology choices, EventId range. This is the law.
+1. `20.Reporting/CLAUDE.md` — the licensing table, package split, the austere dependency line, the six Domain Invariants, technology choices, EventId range. This is the law.
 2. `20.Reporting/state-map.md` — confirm the target phase is not already complete; understand what prior phases delivered.
 3. The phase spec — the concrete deliverables for this session.
 
@@ -59,10 +59,10 @@ Never implement from memory of rules or prior sessions. Always read the current 
 ### Package-Specific Rules
 
 **`SharedKernel.Reporting.Abstractions`**
-- Zero third-party dependencies. References `01.Core` (`SharedKernel.Primitives`, `SharedKernel.Configuration`) and `08.Storage.Abstractions` only. A `using ClosedXML.*` or `using PdfSharp.*` here is a hard violation.
+- Abstractions tier: references `SharedKernel.Primitives`, `SharedKernel.Storage.Abstractions` and `Microsoft.Extensions.Logging.Abstractions` only (SKTIER003 rejects any NuGet outside `Microsoft.Extensions.*.Abstractions`). A `using ClosedXML.*` or `using PdfSharp.*` here is a hard violation.
 - `IReportExporter<TRow>` — `IAsyncEnumerable<TRow>` row source, `CancellationToken` on every async member, `Result`/`Result<T>` outcomes.
 - Column/field-definition model — name, ordinal, and a per-column formatter accepting `CultureInfo`. Null/missing-value policy must be explicit, not implied.
-- Delivery composition through `IFileStorage`/`IBlobUriGenerator`.
+- Delivery composition through `IFileStorageFactory`/`IFileStorage` (presigned download via `CreateDownloadUrlAsync`).
 
 **`SharedKernel.Reporting.Csv`**
 - Zero third-party NuGet — hand-written RFC 4180. This is the dependency-free baseline case and must stay that way.
@@ -104,14 +104,14 @@ After all implementation files are written:
 - **CSV encoding:** embedded delimiters, quotes, `CR`/`LF`, leading/trailing whitespace, empty and null values — the RFC 4180 cases hand-written encoders get wrong.
 - **Culture formatting:** the same row formats differently under two `CultureInfo` values for number, date, and currency columns.
 - **Column model:** ordinal ordering respected; a missing/null value follows the documented policy.
-- **Delivery:** output round-trips through `IFileStorage` and a presigned URL is produced. Use `16.Testing`'s in-memory `IFileStorage` double where a real backend is unnecessary.
+- **Delivery:** output round-trips through `IFileStorage` and a presigned URL is produced. Use `SharedKernel.Storage.Testing`'s in-memory store (`AddInMemoryStore`/`AddInMemoryTenantStore`) where a real backend is unnecessary.
 - **Abstractions purity:** a compilation-level assertion that no format-library type is reachable from `.Abstractions`.
 - **Options validation:** valid config binds; invalid config fails at startup, not first use.
 - **DI registration:** each provider resolves through a real `IHost.StartAsync()`.
 
 ### Test tooling
 - `xUnit` as test runner; `NSubstitute` for narrow unit mocks only (options monitors, `ILogger<T>`).
-- `16.Testing/SharedKernel.Testing`'s in-memory `IFileStorage`/`IBlobUriGenerator` doubles for delivery tests.
+- `16.Testing/SharedKernel.Storage.Testing`'s in-memory store (`InMemoryFileStorage`, `AddInMemoryStore`) for delivery tests; consumer-facing reporting doubles live in `SharedKernel.Reporting.Testing`.
 - Spreadsheet and PDF output assertions read the generated artifact back with the same library — never assert on raw bytes of a binary format.
 
 ### Run commands

@@ -1,4 +1,6 @@
-using SharedKernel.Application;
+using SharedKernel.Application.Authorization;
+using SharedKernel.Application.Messaging;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.EfCore.Encryption.TenantKeys;
 using SharedKernel.Primitives.Results;
@@ -6,14 +8,14 @@ using SharedKernel.Primitives.Results;
 namespace BillingApi.Features.Tenants;
 
 /// <summary>What <see cref="EraseTenant"/> did.</summary>
-public sealed record TenantErased(Guid TenantId, bool IsComplete, long BlindIndexValuesCleared);
+public sealed record TenantErased(TenantId TenantId, bool IsComplete, long BlindIndexValuesCleared);
 
 /// <summary>
 /// GDPR/KVKK erasure of a whole tenant: destroys its data key, so every value encrypted under it becomes unreadable,
 /// by anyone, forever. Back office only.
 /// </summary>
 [RequirePermission(Permissions.Admin)]
-public sealed record EraseTenant(Guid TenantId) : ICommand<TenantErased>;
+public sealed record EraseTenant(TenantId TenantId) : ICommand<TenantErased>;
 
 public sealed class EraseTenantHandler(ICrossTenantScope crossTenant, ITenantEncryptionKeyManager keys)
     : ICommandHandler<EraseTenant, TenantErased>

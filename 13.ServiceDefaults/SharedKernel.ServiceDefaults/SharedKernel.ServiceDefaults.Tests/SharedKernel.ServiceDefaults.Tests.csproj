@@ -24,6 +24,8 @@
       rather than reopens that boundary. Test-only.
     -->
     <ProjectReference Include="..\..\..\14.Presentation\SharedKernel.Presentation.WebApi\SharedKernel.Presentation.WebApi.csproj" />
+    <!-- P-579: the HTTP edge that refuses inbound baggage is UseSharedKernelRequestContext() (test-only reference). -->
+    <ProjectReference Include="..\..\SharedKernel.ServiceDefaults.Security\SharedKernel.ServiceDefaults.Security.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="xunit" />

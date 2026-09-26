@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using SharedKernel.Application.Context;
+using SharedKernel.Execution.Context;
 
 namespace SharedKernel.Persistence.Abstractions.Context;
 

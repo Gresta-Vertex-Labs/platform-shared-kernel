@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using System.Buffers.Text;
 using System.Security.Claims;
 using System.Security.Cryptography;
@@ -19,7 +20,7 @@ namespace SharedKernel.Security.Mtls.Tests.Authentication;
 
 public sealed class MtlsCertificateEventsTests : IDisposable
 {
-    private static readonly Guid TenantId = Guid.Parse("7d9f3a4e-2b1c-4e8f-9a6d-5c3b2a1f0e9d");
+    private static readonly TenantId TenantId = new TenantId(Guid.Parse("7d9f3a4e-2b1c-4e8f-9a6d-5c3b2a1f0e9d"));
 
     private readonly InMemoryLoggerFactory _loggerFactory = new();
     private readonly X509Certificate2 _certificate = new MtlsTestCertificateBuilder().AsChainedFromEphemeralCa().Build().Certificate;
@@ -44,7 +45,7 @@ public sealed class MtlsCertificateEventsTests : IDisposable
         Assert.Equal("tpp-42", identity.FindFirst(SecurityClaimTypes.Subject)?.Value);
         Assert.Equal("tpp-42", identity.FindFirst(SecurityClaimTypes.ClientId)?.Value);
         Assert.Equal(ExpectedThumbprint(_certificate), identity.FindFirst(MtlsAuthenticationDefaults.CertificateThumbprintClaimType)?.Value);
-        Assert.Equal(TenantId.ToString("D"), identity.FindFirst(SecurityClaimTypes.TenantId)?.Value);
+        Assert.Equal(TenantId.ToString(), identity.FindFirst(SecurityClaimTypes.TenantId)?.Value);
         Assert.Equal(["psp", "aisp"], identity.FindAll(SecurityClaimTypes.Roles).Select(c => c.Value));
         Assert.Equal(["payments:initiate"], identity.FindAll(SecurityClaimTypes.Scope).Select(c => c.Value));
         Assert.True(context.Result.Principal!.IsInRole("psp"));

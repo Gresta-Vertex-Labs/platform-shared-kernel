@@ -31,10 +31,11 @@ public static class FeatureManagementServiceCollectionExtensions
     /// evaluation returns its default with <c>ErrorType.ProviderNotReady</c>.
     /// </para>
     /// <para>
-    /// Targeting needs the service's own <see cref="IFeatureTargetingContextAccessor"/>, registered before or after
-    /// this call. None is registered here: without one, evaluation has no targeting identity, so every caller is
-    /// anonymous to user, group and tenant targeting and shares one percentage bucket. The caller is never read from
-    /// <see cref="System.Diagnostics.Activity"/> baggage, which the caller itself can set.
+    /// Targeting reads the caller from an <see cref="IFeatureTargetingContextAccessor"/>. Unless the service registers
+    /// its own (before or after this call), the default one targets the caller of the open
+    /// <c>RequestContextScope</c> — its user id and tenant — which every inbound adapter opens; with no scope open the
+    /// caller is anonymous to user, group and tenant targeting and shares one percentage bucket. The caller is never
+    /// read from <see cref="System.Diagnostics.Activity"/> baggage, which the caller itself can set.
     /// </para>
     /// </remarks>
     /// <param name="services">The service collection.</param>
@@ -70,9 +71,10 @@ public static class FeatureManagementServiceCollectionExtensions
 
         HideTelemetryFromTheEvaluator(services);
 
-        // No default IFeatureTargetingContextAccessor: without the service's own, evaluation is anonymous. The caller is
-        // never taken from Activity baggage, which the caller itself can set (P-562 X2).
+        // The default accessor reads the open RequestContextScope, never Activity baggage, which the caller itself can
+        // set (P-562 X2).
         services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton<IFeatureTargetingContextAccessor, AmbientTenantTargetingContextAccessor>();
         services.TryAddSingleton<MicrosoftFeatureManagementProvider>();
 
         services.AddOpenFeature(builder =>

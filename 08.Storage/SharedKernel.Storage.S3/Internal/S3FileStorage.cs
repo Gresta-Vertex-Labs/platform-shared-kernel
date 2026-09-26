@@ -55,7 +55,7 @@ internal sealed class S3FileStorage : IFileStorage
 
     public string StoreName { get; }
 
-    public string? TenantId => null;
+    public SharedKernel.Execution.Tenancy.TenantId? TenantId => null;
 
     internal string Bucket => _options.Bucket;
 

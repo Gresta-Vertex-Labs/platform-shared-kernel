@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): `AddStorageReadinessCheck` and `SharedKernel.ServiceDefaults.Storage` were deleted; each named store registers its own `IReadinessProbe` (`storage-{store}`) mapped by `AddSharedKernelReadiness()`. The provider-agnostic lesson still applies to any future integration.
+
 Decided while designing `AddStorageReadinessCheck` (WO-043/P-270, 2026-07-16) for `08.Storage`, which
 ships `IFileStorage` behind two sibling, mutually-non-referencing providers (`SharedKernel.Storage.S3`,
 `SharedKernel.Storage.Obs`) — a different shape than `06.Persistence` (one `SharedKernelDbContext`

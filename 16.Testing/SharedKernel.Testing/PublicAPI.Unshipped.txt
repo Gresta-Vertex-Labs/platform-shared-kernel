@@ -1,0 +1,244 @@
+#nullable enable
+const SharedKernel.Testing.Execution.TestRequestContext.DefaultUserId = "test-user" -> string!
+override SharedKernel.Testing.Application.FakeRequestContext.HasPermission(string! permission) -> bool
+override SharedKernel.Testing.Logging.LogRecord.Equals(object? obj) -> bool
+override SharedKernel.Testing.Logging.LogRecord.GetHashCode() -> int
+override SharedKernel.Testing.Logging.LogRecord.ToString() -> string!
+SharedKernel.Testing.Application.FakeRequestContext
+SharedKernel.Testing.Application.FakeRequestContext.FakeRequestContext() -> void
+SharedKernel.Testing.Clocks.FakeClock
+SharedKernel.Testing.Clocks.FakeClock.Advance(System.TimeSpan delta) -> void
+SharedKernel.Testing.Clocks.FakeClock.FakeClock(System.DateTimeOffset? initial = null) -> void
+SharedKernel.Testing.Clocks.FakeClock.Set(System.DateTimeOffset value) -> void
+SharedKernel.Testing.Clocks.FakeClock.SetUtcNow(System.DateTimeOffset value) -> void
+SharedKernel.Testing.Clocks.FakeClock.Today.get -> System.DateOnly
+SharedKernel.Testing.Clocks.FakeClock.UtcNow.get -> System.DateTimeOffset
+SharedKernel.Testing.Clocks.FakeClock.UtcNow.set -> void
+SharedKernel.Testing.Communication.ActivityRecorder
+SharedKernel.Testing.Communication.ActivityRecorder.Dispose() -> void
+SharedKernel.Testing.Communication.ActivityRecorder.RecordedActivities.get -> System.Collections.Generic.IReadOnlyList<System.Diagnostics.Activity!>!
+SharedKernel.Testing.Communication.AmbientActivityTestHelper
+SharedKernel.Testing.Communication.AmbientActivityTestHelper.Activity.get -> System.Diagnostics.Activity!
+SharedKernel.Testing.Communication.AmbientActivityTestHelper.Dispose() -> void
+SharedKernel.Testing.Communication.FakeHttpMessageHandler
+SharedKernel.Testing.Communication.FakeHttpMessageHandler.DefaultResponse.get -> System.Func<System.Net.Http.HttpRequestMessage!, System.Net.Http.HttpResponseMessage!>!
+SharedKernel.Testing.Communication.FakeHttpMessageHandler.DefaultResponse.set -> void
+SharedKernel.Testing.Communication.FakeHttpMessageHandler.EnqueueResponse(System.Func<System.Net.Http.HttpRequestMessage!, System.Net.Http.HttpResponseMessage!>! responseFactory) -> void
+SharedKernel.Testing.Communication.FakeHttpMessageHandler.EnqueueResponse(System.Net.Http.HttpResponseMessage! response) -> void
+SharedKernel.Testing.Communication.FakeHttpMessageHandler.FakeHttpMessageHandler() -> void
+SharedKernel.Testing.Communication.FakeHttpMessageHandler.Requests.get -> System.Collections.Generic.IReadOnlyList<System.Net.Http.HttpRequestMessage!>!
+SharedKernel.Testing.Communication.HttpClientHandlerTestFactory
+SharedKernel.Testing.Communication.HttpClientHandlerTestFactory.Build() -> System.Net.Http.HttpMessageHandler!
+SharedKernel.Testing.Communication.HttpClientHandlerTestFactory.HttpClientHandlerTestFactory() -> void
+SharedKernel.Testing.Communication.HttpClientHandlerTestFactory.WithCorrelationIdHandler() -> SharedKernel.Testing.Communication.HttpClientHandlerTestFactory!
+SharedKernel.Testing.Communication.HttpClientHandlerTestFactory.WithInnerHandler(System.Net.Http.HttpMessageHandler! handler) -> SharedKernel.Testing.Communication.HttpClientHandlerTestFactory!
+SharedKernel.Testing.Communication.HttpClientHandlerTestFactory.WithTenantIdHandler(System.Guid? tenantId) -> SharedKernel.Testing.Communication.HttpClientHandlerTestFactory!
+SharedKernel.Testing.Contracts.EventEnvelopeBuilder<TEvent>
+SharedKernel.Testing.Contracts.EventEnvelopeBuilder<TEvent>.Build() -> SharedKernel.Contracts.Events.EventEnvelope<TEvent!>!
+SharedKernel.Testing.Contracts.EventEnvelopeBuilder<TEvent>.EventEnvelopeBuilder() -> void
+SharedKernel.Testing.Contracts.EventEnvelopeBuilder<TEvent>.WithCausationId(string? causationId) -> SharedKernel.Testing.Contracts.EventEnvelopeBuilder<TEvent!>!
+SharedKernel.Testing.Contracts.EventEnvelopeBuilder<TEvent>.WithCorrelationId(string? correlationId) -> SharedKernel.Testing.Contracts.EventEnvelopeBuilder<TEvent!>!
+SharedKernel.Testing.Contracts.EventEnvelopeBuilder<TEvent>.WithData(TEvent! integrationEvent) -> SharedKernel.Testing.Contracts.EventEnvelopeBuilder<TEvent!>!
+SharedKernel.Testing.Contracts.EventEnvelopeBuilder<TEvent>.WithSource(string! source) -> SharedKernel.Testing.Contracts.EventEnvelopeBuilder<TEvent!>!
+SharedKernel.Testing.Contracts.EventEnvelopeBuilder<TEvent>.WithSubject(string? subject) -> SharedKernel.Testing.Contracts.EventEnvelopeBuilder<TEvent!>!
+SharedKernel.Testing.Contracts.EventEnvelopeBuilder<TEvent>.WithTenantId(System.Guid? tenantId) -> SharedKernel.Testing.Contracts.EventEnvelopeBuilder<TEvent!>!
+SharedKernel.Testing.Contracts.IntegrationEventFaker<TEvent>
+SharedKernel.Testing.Contracts.IntegrationEventFaker<TEvent>.IntegrationEventFaker() -> void
+SharedKernel.Testing.Contracts.IntegrationEventFaker<TEvent>.RuleForEventId() -> void
+SharedKernel.Testing.Contracts.IntegrationEventFaker<TEvent>.RuleForOccurredOn() -> void
+SharedKernel.Testing.Contracts.PagedListAssertions
+SharedKernel.Testing.Contracts.PagedListBuilder<T>
+SharedKernel.Testing.Contracts.PagedListBuilder<T>.Build() -> SharedKernel.Contracts.Pagination.PagedList<T>!
+SharedKernel.Testing.Contracts.PagedListBuilder<T>.PagedListBuilder() -> void
+SharedKernel.Testing.Contracts.PagedListBuilder<T>.WithItems(System.Collections.Generic.IEnumerable<T>! items) -> SharedKernel.Testing.Contracts.PagedListBuilder<T>!
+SharedKernel.Testing.Contracts.PagedListBuilder<T>.WithPage(int page) -> SharedKernel.Testing.Contracts.PagedListBuilder<T>!
+SharedKernel.Testing.Contracts.PagedListBuilder<T>.WithPageSize(int pageSize) -> SharedKernel.Testing.Contracts.PagedListBuilder<T>!
+SharedKernel.Testing.Contracts.PagedListBuilder<T>.WithRequest(SharedKernel.Contracts.Pagination.PageRequest! request) -> SharedKernel.Testing.Contracts.PagedListBuilder<T>!
+SharedKernel.Testing.Contracts.PagedListBuilder<T>.WithTotalCount(long totalCount) -> SharedKernel.Testing.Contracts.PagedListBuilder<T>!
+SharedKernel.Testing.DataPrivacy.PiiMaskingAssertions
+SharedKernel.Testing.DataPrivacy.RecordingDataSubjectRequestHandler
+SharedKernel.Testing.DataPrivacy.RecordingDataSubjectRequestHandler.EraseAsync(SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRequest! request, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectErasureReceipt!>!>!
+SharedKernel.Testing.DataPrivacy.RecordingDataSubjectRequestHandler.ErasureRequests.get -> System.Collections.Generic.IReadOnlyList<SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRequest!>!
+SharedKernel.Testing.DataPrivacy.RecordingDataSubjectRequestHandler.ExportAsync(SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRequest! request, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectExport!>!>!
+SharedKernel.Testing.DataPrivacy.RecordingDataSubjectRequestHandler.ExportRequests.get -> System.Collections.Generic.IReadOnlyList<SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectRequest!>!
+SharedKernel.Testing.DataPrivacy.RecordingDataSubjectRequestHandler.RecordingDataSubjectRequestHandler(SharedKernel.Primitives.Clocks.IClock? clock = null, string! source = "test-service") -> void
+SharedKernel.Testing.DataPrivacy.RecordingDataSubjectRequestHandler.SetErasureResult(string! subjectId, SharedKernel.Primitives.Results.Result<SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectErasureReceipt!>! result) -> void
+SharedKernel.Testing.DataPrivacy.RecordingDataSubjectRequestHandler.SetExportResult(string! subjectId, SharedKernel.Primitives.Results.Result<SharedKernel.DataPrivacy.DataSubjectRequests.DataSubjectExport!>! result) -> void
+SharedKernel.Testing.DataPrivacy.RecordingDataSubjectRequestHandler.ShouldHaveErased(string! subjectId) -> void
+SharedKernel.Testing.DataPrivacy.RecordingDataSubjectRequestHandler.ShouldHaveExported(string! subjectId) -> void
+SharedKernel.Testing.Domain.BusinessRuleAssertions
+SharedKernel.Testing.Domain.DomainEventAssertions
+SharedKernel.Testing.Domain.DomainServiceCollectionExtensions
+SharedKernel.Testing.Domain.DomainVersionAssertions
+SharedKernel.Testing.Domain.FakeDomainNotFoundException
+SharedKernel.Testing.Domain.FakeExchangeRateProvider
+SharedKernel.Testing.Domain.FakeExchangeRateProvider.FakeExchangeRateProvider() -> void
+SharedKernel.Testing.Domain.FakeExchangeRateProvider.GetExchangeRateAsync(SharedKernel.Domain.Monetary.Currency! source, SharedKernel.Domain.Monetary.Currency! target, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<decimal>!>!
+SharedKernel.Testing.Domain.FakeExchangeRateProvider.SeedRate(SharedKernel.Domain.Monetary.Currency! source, SharedKernel.Domain.Monetary.Currency! target, decimal rate) -> void
+SharedKernel.Testing.Domain.FakeExchangeRateProvider.SimulateFailure.get -> bool
+SharedKernel.Testing.Domain.FakeExchangeRateProvider.SimulateFailure.set -> void
+SharedKernel.Testing.Domain.MoneyFaker
+SharedKernel.Testing.Domain.MoneyFaker.Generate(SharedKernel.Domain.Monetary.Currency? currency = null, decimal? amount = null) -> SharedKernel.Domain.Monetary.Money!
+SharedKernel.Testing.Domain.MoneyFaker.GenerateMany(int count, SharedKernel.Domain.Monetary.Currency? currency = null) -> System.Collections.Generic.IReadOnlyList<SharedKernel.Domain.Monetary.Money!>!
+SharedKernel.Testing.Domain.MoneyFaker.MoneyFaker() -> void
+SharedKernel.Testing.Domain.SpecificationAssert
+SharedKernel.Testing.Domain.SpecificationTestBuilder<T>
+SharedKernel.Testing.Domain.SpecificationTestBuilder<T>.Against(System.Collections.Generic.IEnumerable<T>! entities) -> SharedKernel.Testing.Domain.SpecificationTestBuilder<T>!
+SharedKernel.Testing.Domain.SpecificationTestBuilder<T>.Assert() -> void
+SharedKernel.Testing.Domain.SpecificationTestBuilder<T>.ExpectCount(int n) -> SharedKernel.Testing.Domain.SpecificationTestBuilder<T>!
+SharedKernel.Testing.Domain.SpecificationTestBuilder<T>.ExpectMatch(System.Func<T, bool>! predicate) -> SharedKernel.Testing.Domain.SpecificationTestBuilder<T>!
+SharedKernel.Testing.Execution.TestRequestContext
+SharedKernel.Testing.Execution.TestRequestContext.ActorKind.get -> SharedKernel.Execution.Context.ActorKind
+SharedKernel.Testing.Execution.TestRequestContext.ActorKind.set -> void
+SharedKernel.Testing.Execution.TestRequestContext.ClientId.get -> string?
+SharedKernel.Testing.Execution.TestRequestContext.ClientId.set -> void
+SharedKernel.Testing.Execution.TestRequestContext.HasPermissionAsync(string! permission, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<bool>
+SharedKernel.Testing.Execution.TestRequestContext.CorrelationId.get -> string?
+SharedKernel.Testing.Execution.TestRequestContext.CorrelationId.set -> void
+SharedKernel.Testing.Execution.TestRequestContext.ImpersonatorId.get -> string?
+SharedKernel.Testing.Execution.TestRequestContext.ImpersonatorId.set -> void
+SharedKernel.Testing.Execution.TestRequestContext.IsAuthenticated.get -> bool
+SharedKernel.Testing.Execution.TestRequestContext.IsAuthenticated.set -> void
+SharedKernel.Testing.Execution.TestRequestContext.Permissions.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
+SharedKernel.Testing.Execution.TestRequestContext.Permissions.set -> void
+SharedKernel.Testing.Execution.TestRequestContext.SessionId.get -> string?
+SharedKernel.Testing.Execution.TestRequestContext.SessionId.set -> void
+SharedKernel.Testing.Execution.TestRequestContext.TenantId.get -> SharedKernel.Execution.Tenancy.TenantId?
+SharedKernel.Testing.Execution.TestRequestContext.TenantId.set -> void
+SharedKernel.Testing.Execution.TestRequestContext.TestRequestContext() -> void
+SharedKernel.Testing.Execution.TestRequestContext.UserId.get -> string?
+SharedKernel.Testing.Execution.TestRequestContext.UserId.set -> void
+SharedKernel.Testing.Execution.TestRequestContext.WithImpersonator(string? impersonatorId) -> SharedKernel.Testing.Execution.TestRequestContext!
+SharedKernel.Testing.Execution.TestRequestContext.WithPermissions(params string![]! permissions) -> SharedKernel.Testing.Execution.TestRequestContext!
+SharedKernel.Testing.Execution.TestRequestContext.WithSession(string? sessionId) -> SharedKernel.Testing.Execution.TestRequestContext!
+SharedKernel.Testing.Execution.TestRequestContext.WithTenant(SharedKernel.Execution.Tenancy.TenantId? tenantId) -> SharedKernel.Testing.Execution.TestRequestContext!
+SharedKernel.Testing.Fakers.EntityFaker<TEntity, TId>
+SharedKernel.Testing.Fakers.EntityFaker<TEntity, TId>.Clock.get -> SharedKernel.Primitives.Clocks.IClock?
+SharedKernel.Testing.Fakers.EntityFaker<TEntity, TId>.EntityFaker() -> void
+SharedKernel.Testing.Fakers.EntityFaker<TEntity, TId>.WithClock(SharedKernel.Primitives.Clocks.IClock! clock) -> SharedKernel.Testing.Fakers.EntityFaker<TEntity!, TId>!
+SharedKernel.Testing.Fakers.FakerSeeding
+SharedKernel.Testing.Fakers.SingleValueObjectFaker<TValueObject, TValue>
+SharedKernel.Testing.Fakers.SingleValueObjectFaker<TValueObject, TValue>.SingleValueObjectFaker() -> void
+SharedKernel.Testing.Fakers.SingleValueObjectFaker<TValueObject, TValue>.WithRandomValue(System.Func<Bogus.Faker!, TValue>! generator) -> SharedKernel.Testing.Fakers.SingleValueObjectFaker<TValueObject!, TValue>!
+SharedKernel.Testing.Fakers.SingleValueObjectFaker<TValueObject, TValue>.WithValue(TValue value) -> SharedKernel.Testing.Fakers.SingleValueObjectFaker<TValueObject!, TValue>!
+SharedKernel.Testing.Localization.CultureScope
+SharedKernel.Testing.Localization.CultureScope.CultureScope(string! cultureName) -> void
+SharedKernel.Testing.Localization.CultureScope.CultureScope(System.Globalization.CultureInfo! culture) -> void
+SharedKernel.Testing.Localization.CultureScope.Dispose() -> void
+SharedKernel.Testing.Logging.InMemoryLogger
+SharedKernel.Testing.Logging.InMemoryLogger.BeginScope<TState>(TState state) -> System.IDisposable!
+SharedKernel.Testing.Logging.InMemoryLogger.Clear() -> void
+SharedKernel.Testing.Logging.InMemoryLogger.InMemoryLogger() -> void
+SharedKernel.Testing.Logging.InMemoryLogger.IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) -> bool
+SharedKernel.Testing.Logging.InMemoryLogger.Log<TState>(Microsoft.Extensions.Logging.LogLevel logLevel, Microsoft.Extensions.Logging.EventId eventId, TState state, System.Exception? exception, System.Func<TState, System.Exception?, string!>! formatter) -> void
+SharedKernel.Testing.Logging.InMemoryLogger.MinLevel.get -> Microsoft.Extensions.Logging.LogLevel
+SharedKernel.Testing.Logging.InMemoryLogger.MinLevel.set -> void
+SharedKernel.Testing.Logging.InMemoryLogger.Records.get -> System.Collections.Generic.IReadOnlyList<SharedKernel.Testing.Logging.LogRecord!>!
+SharedKernel.Testing.Logging.InMemoryLogger<TCategoryName>
+SharedKernel.Testing.Logging.InMemoryLogger<TCategoryName>.BeginScope<TState>(TState state) -> System.IDisposable!
+SharedKernel.Testing.Logging.InMemoryLogger<TCategoryName>.Clear() -> void
+SharedKernel.Testing.Logging.InMemoryLogger<TCategoryName>.InMemoryLogger() -> void
+SharedKernel.Testing.Logging.InMemoryLogger<TCategoryName>.IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) -> bool
+SharedKernel.Testing.Logging.InMemoryLogger<TCategoryName>.Log<TState>(Microsoft.Extensions.Logging.LogLevel logLevel, Microsoft.Extensions.Logging.EventId eventId, TState state, System.Exception? exception, System.Func<TState, System.Exception?, string!>! formatter) -> void
+SharedKernel.Testing.Logging.InMemoryLogger<TCategoryName>.MinLevel.get -> Microsoft.Extensions.Logging.LogLevel
+SharedKernel.Testing.Logging.InMemoryLogger<TCategoryName>.MinLevel.set -> void
+SharedKernel.Testing.Logging.InMemoryLogger<TCategoryName>.Records.get -> System.Collections.Generic.IReadOnlyList<SharedKernel.Testing.Logging.LogRecord!>!
+SharedKernel.Testing.Logging.InMemoryLoggerFactory
+SharedKernel.Testing.Logging.InMemoryLoggerFactory.AddProvider(Microsoft.Extensions.Logging.ILoggerProvider! provider) -> void
+SharedKernel.Testing.Logging.InMemoryLoggerFactory.CreateLogger(string! categoryName) -> Microsoft.Extensions.Logging.ILogger!
+SharedKernel.Testing.Logging.InMemoryLoggerFactory.Dispose() -> void
+SharedKernel.Testing.Logging.InMemoryLoggerFactory.GetLogger(string! categoryName) -> SharedKernel.Testing.Logging.InMemoryLogger!
+SharedKernel.Testing.Logging.InMemoryLoggerFactory.InMemoryLoggerFactory() -> void
+SharedKernel.Testing.Logging.InMemoryLoggerFactory.Loggers.get -> System.Collections.Generic.IReadOnlyDictionary<string!, SharedKernel.Testing.Logging.InMemoryLogger!>!
+SharedKernel.Testing.Logging.LoggerAssertions
+SharedKernel.Testing.Logging.LoggingServiceCollectionExtensions
+SharedKernel.Testing.Logging.LogRecord
+SharedKernel.Testing.Logging.LogRecord.<Clone>$() -> SharedKernel.Testing.Logging.LogRecord!
+SharedKernel.Testing.Logging.LogRecord.Equals(SharedKernel.Testing.Logging.LogRecord? other) -> bool
+SharedKernel.Testing.Logging.LogRecord.EventId.get -> Microsoft.Extensions.Logging.EventId
+SharedKernel.Testing.Logging.LogRecord.EventId.init -> void
+SharedKernel.Testing.Logging.LogRecord.Exception.get -> System.Exception?
+SharedKernel.Testing.Logging.LogRecord.Exception.init -> void
+SharedKernel.Testing.Logging.LogRecord.LogLevel.get -> Microsoft.Extensions.Logging.LogLevel
+SharedKernel.Testing.Logging.LogRecord.LogLevel.init -> void
+SharedKernel.Testing.Logging.LogRecord.LogRecord() -> void
+SharedKernel.Testing.Logging.LogRecord.Message.get -> string!
+SharedKernel.Testing.Logging.LogRecord.Message.init -> void
+SharedKernel.Testing.Logging.LogRecord.Scopes.get -> System.Collections.Generic.IReadOnlyList<object?>!
+SharedKernel.Testing.Logging.LogRecord.Scopes.init -> void
+SharedKernel.Testing.Logging.LogRecord.State.get -> System.Collections.Generic.IReadOnlyList<System.Collections.Generic.KeyValuePair<string!, object?>>?
+SharedKernel.Testing.Logging.LogRecord.State.init -> void
+SharedKernel.Testing.Logging.LogRecord.TryGetProperty(string! name, out object? value) -> bool
+SharedKernel.Testing.Persistence.AggregateRootFaker<TAggregate, TId>
+SharedKernel.Testing.Persistence.AggregateRootFaker<TAggregate, TId>.AggregateRootFaker() -> void
+SharedKernel.Testing.Persistence.BulkAggregateFaker<TAggregate, TId>
+SharedKernel.Testing.Persistence.BulkAggregateFaker<TAggregate, TId>.BulkAggregateFaker(SharedKernel.Testing.Persistence.AggregateRootFaker<TAggregate!, TId>! faker) -> void
+SharedKernel.Testing.Persistence.BulkAggregateFaker<TAggregate, TId>.Generate(int count) -> System.Collections.Generic.List<TAggregate!>!
+SharedKernel.Testing.Persistence.ProjectionSpecificationBuilder<TAggregate, TResult>
+SharedKernel.Testing.Persistence.ProjectionSpecificationBuilder<TAggregate, TResult>.Build() -> SharedKernel.Domain.Specifications.IProjectionSpecification<TAggregate, TResult>!
+SharedKernel.Testing.Persistence.ProjectionSpecificationBuilder<TAggregate, TResult>.ProjectionSpecificationBuilder() -> void
+SharedKernel.Testing.Persistence.ProjectionSpecificationBuilder<TAggregate, TResult>.WithCriteria(System.Linq.Expressions.Expression<System.Func<TAggregate, bool>!>! criteria) -> SharedKernel.Testing.Persistence.ProjectionSpecificationBuilder<TAggregate, TResult>!
+SharedKernel.Testing.Persistence.ProjectionSpecificationBuilder<TAggregate, TResult>.WithSelector(System.Linq.Expressions.Expression<System.Func<TAggregate, TResult>!>! selector) -> SharedKernel.Testing.Persistence.ProjectionSpecificationBuilder<TAggregate, TResult>!
+SharedKernel.Testing.Persistence.TenantedAggregateFaker<TAggregate, TId>
+SharedKernel.Testing.Persistence.TenantedAggregateFaker<TAggregate, TId>.TenantedAggregateFaker() -> void
+SharedKernel.Testing.Persistence.WithDeletedSpecification<TAggregate>
+SharedKernel.Testing.Validation.ValidationSampleGenerator
+static SharedKernel.Testing.Communication.ActivityRecorder.StartRecording(string! activitySourceName) -> SharedKernel.Testing.Communication.ActivityRecorder!
+static SharedKernel.Testing.Communication.AmbientActivityTestHelper.Start(System.Diagnostics.ActivityTraceId traceId, System.Diagnostics.ActivitySpanId? parentSpanId = null) -> SharedKernel.Testing.Communication.AmbientActivityTestHelper!
+static SharedKernel.Testing.Contracts.PagedListAssertions.ShouldBeEmpty<T>(this SharedKernel.Contracts.Pagination.CursorPagedList<T>! list) -> void
+static SharedKernel.Testing.Contracts.PagedListAssertions.ShouldBeEmpty<T>(this SharedKernel.Contracts.Pagination.PagedList<T>! list) -> void
+static SharedKernel.Testing.Contracts.PagedListAssertions.ShouldBeLastPage<T>(this SharedKernel.Contracts.Pagination.CursorPagedList<T>! list) -> void
+static SharedKernel.Testing.Contracts.PagedListAssertions.ShouldHaveItems<T>(this SharedKernel.Contracts.Pagination.CursorPagedList<T>! list, params T[]! expected) -> void
+static SharedKernel.Testing.Contracts.PagedListAssertions.ShouldHaveItems<T>(this SharedKernel.Contracts.Pagination.PagedList<T>! list, params T[]! expected) -> void
+static SharedKernel.Testing.Contracts.PagedListAssertions.ShouldHaveNextPage<T>(this SharedKernel.Contracts.Pagination.CursorPagedList<T>! list) -> string!
+static SharedKernel.Testing.Contracts.PagedListAssertions.ShouldHaveTotalCount<T>(this SharedKernel.Contracts.Pagination.PagedList<T>! list, long expected) -> void
+static SharedKernel.Testing.Contracts.PagedListBuilder<T>.Empty() -> SharedKernel.Contracts.Pagination.PagedList<T>!
+static SharedKernel.Testing.DataPrivacy.PiiMaskingAssertions.ShouldBeMasked(string? original, string! observedMasked, System.Func<string?, string!>! maskingFunction) -> void
+static SharedKernel.Testing.Domain.BusinessRuleAssertions.ShouldBeBroken(this SharedKernel.Domain.BusinessRules.IBusinessRule! rule) -> void
+static SharedKernel.Testing.Domain.BusinessRuleAssertions.ShouldNotBeBroken(this SharedKernel.Domain.BusinessRules.IBusinessRule! rule) -> void
+static SharedKernel.Testing.Domain.DomainEventAssertions.ContainsEventOfType<T>(this System.Collections.Generic.IReadOnlyCollection<SharedKernel.Domain.Events.IDomainEvent!>! events) -> T
+static SharedKernel.Testing.Domain.DomainEventAssertions.ContainsEventWithVersion<T>(this System.Collections.Generic.IReadOnlyCollection<SharedKernel.Domain.Events.IDomainEvent!>! events, int version) -> T
+static SharedKernel.Testing.Domain.DomainEventAssertions.ContainsExactly<T>(this System.Collections.Generic.IReadOnlyCollection<SharedKernel.Domain.Events.IDomainEvent!>! events, int count) -> void
+static SharedKernel.Testing.Domain.DomainEventAssertions.HasNoEvents(this System.Collections.Generic.IReadOnlyCollection<SharedKernel.Domain.Events.IDomainEvent!>! events) -> void
+static SharedKernel.Testing.Domain.DomainEventAssertions.HasNoEventsOfType<T>(this System.Collections.Generic.IReadOnlyCollection<SharedKernel.Domain.Events.IDomainEvent!>! events) -> void
+static SharedKernel.Testing.Domain.DomainEventAssertions.HasRaisedExactlyNEvents(this System.Collections.Generic.IReadOnlyCollection<SharedKernel.Domain.Events.IDomainEvent!>! events, int n) -> void
+static SharedKernel.Testing.Domain.DomainServiceCollectionExtensions.AddFakeDomainServices(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SharedKernel.Testing.Domain.DomainVersionAssertions.ShouldBeVersioned<TEvent>() -> void
+static SharedKernel.Testing.Domain.DomainVersionAssertions.ShouldHaveVersion<TEvent>(int expectedVersion) -> void
+static SharedKernel.Testing.Domain.FakeDomainNotFoundException.For<TAggregate>(object! id) -> SharedKernel.Domain.Exceptions.DomainNotFoundException!
+static SharedKernel.Testing.Domain.SpecificationAssert.DoesNotSatisfy<T>(SharedKernel.Domain.Specifications.ISpecification<T>! spec, T entity) -> void
+static SharedKernel.Testing.Domain.SpecificationAssert.Satisfies<T>(SharedKernel.Domain.Specifications.ISpecification<T>! spec, T entity) -> void
+static SharedKernel.Testing.Domain.SpecificationTestBuilder<T>.For(SharedKernel.Domain.Specifications.ISpecification<T>! spec) -> SharedKernel.Testing.Domain.SpecificationTestBuilder<T>!
+static SharedKernel.Testing.Execution.TestRequestContext.Anonymous(SharedKernel.Execution.Tenancy.TenantId? tenantId = null) -> SharedKernel.Testing.Execution.TestRequestContext!
+static SharedKernel.Testing.Execution.TestRequestContext.ForTenant(SharedKernel.Execution.Tenancy.TenantId tenantId, string! userId = "test-user") -> SharedKernel.Testing.Execution.TestRequestContext!
+static SharedKernel.Testing.Execution.TestRequestContext.ForUser(string! userId = "test-user", SharedKernel.Execution.Tenancy.TenantId? tenantId = null) -> SharedKernel.Testing.Execution.TestRequestContext!
+static SharedKernel.Testing.Execution.TestRequestContext.Service(string! clientId, SharedKernel.Execution.Tenancy.TenantId? tenantId = null) -> SharedKernel.Testing.Execution.TestRequestContext!
+static SharedKernel.Testing.Execution.TestRequestContext.System(string! identity = "system", SharedKernel.Execution.Tenancy.TenantId? tenantId = null) -> SharedKernel.Testing.Execution.TestRequestContext!
+static SharedKernel.Testing.Fakers.FakerSeeding.Apply(int seed = 8675309) -> void
+static SharedKernel.Testing.Logging.LoggerAssertions.ShouldHaveLogged(this System.Collections.Generic.IReadOnlyList<SharedKernel.Testing.Logging.LogRecord!>! records, Microsoft.Extensions.Logging.EventId eventId) -> SharedKernel.Testing.Logging.LogRecord!
+static SharedKernel.Testing.Logging.LoggerAssertions.ShouldHaveLogged(this System.Collections.Generic.IReadOnlyList<SharedKernel.Testing.Logging.LogRecord!>! records, Microsoft.Extensions.Logging.EventId eventId, Microsoft.Extensions.Logging.LogLevel level) -> SharedKernel.Testing.Logging.LogRecord!
+static SharedKernel.Testing.Logging.LoggerAssertions.ShouldHaveLoggedCount(this System.Collections.Generic.IReadOnlyList<SharedKernel.Testing.Logging.LogRecord!>! records, Microsoft.Extensions.Logging.EventId eventId, int expectedCount) -> void
+static SharedKernel.Testing.Logging.LoggerAssertions.ShouldHaveLoggedWithProperty(this System.Collections.Generic.IReadOnlyList<SharedKernel.Testing.Logging.LogRecord!>! records, Microsoft.Extensions.Logging.EventId eventId, string! propertyName, object? expectedValue) -> SharedKernel.Testing.Logging.LogRecord!
+static SharedKernel.Testing.Logging.LoggerAssertions.ShouldNotHaveLogged(this System.Collections.Generic.IReadOnlyList<SharedKernel.Testing.Logging.LogRecord!>! records, Microsoft.Extensions.Logging.EventId eventId) -> void
+static SharedKernel.Testing.Logging.LoggingServiceCollectionExtensions.AddInMemoryLoggerFactory(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SharedKernel.Testing.Logging.LogRecord.operator !=(SharedKernel.Testing.Logging.LogRecord? left, SharedKernel.Testing.Logging.LogRecord? right) -> bool
+static SharedKernel.Testing.Logging.LogRecord.operator ==(SharedKernel.Testing.Logging.LogRecord? left, SharedKernel.Testing.Logging.LogRecord? right) -> bool
+static SharedKernel.Testing.Persistence.WithDeletedSpecification<TAggregate>.Wrap(SharedKernel.Domain.Specifications.ISpecification<TAggregate>! inner) -> SharedKernel.Domain.Specifications.ISpecification<TAggregate>!
+static SharedKernel.Testing.Validation.ValidationSampleGenerator.InvalidBic() -> string!
+static SharedKernel.Testing.Validation.ValidationSampleGenerator.InvalidCountryCode() -> string!
+static SharedKernel.Testing.Validation.ValidationSampleGenerator.InvalidCurrencyCode() -> string!
+static SharedKernel.Testing.Validation.ValidationSampleGenerator.InvalidE164Phone() -> string!
+static SharedKernel.Testing.Validation.ValidationSampleGenerator.InvalidIban(string! countryCode = "DE") -> string!
+static SharedKernel.Testing.Validation.ValidationSampleGenerator.InvalidNationalId(string! countryCode = "TR") -> string!
+static SharedKernel.Testing.Validation.ValidationSampleGenerator.InvalidPan(SharedKernel.Validation.CardNetwork network = SharedKernel.Validation.CardNetwork.Visa) -> string!
+static SharedKernel.Testing.Validation.ValidationSampleGenerator.InvalidVat(string! countryCode = "DE") -> string!
+static SharedKernel.Testing.Validation.ValidationSampleGenerator.ValidBic() -> string!
+static SharedKernel.Testing.Validation.ValidationSampleGenerator.ValidCountryCode() -> string!
+static SharedKernel.Testing.Validation.ValidationSampleGenerator.ValidCurrencyCode() -> string!
+static SharedKernel.Testing.Validation.ValidationSampleGenerator.ValidE164Phone() -> string!
+static SharedKernel.Testing.Validation.ValidationSampleGenerator.ValidIban(string! countryCode = "DE") -> string!
+static SharedKernel.Testing.Validation.ValidationSampleGenerator.ValidNationalId(string! countryCode = "TR") -> string!
+static SharedKernel.Testing.Validation.ValidationSampleGenerator.ValidPan(SharedKernel.Validation.CardNetwork network = SharedKernel.Validation.CardNetwork.Visa) -> string!
+static SharedKernel.Testing.Validation.ValidationSampleGenerator.ValidVat(string! countryCode = "DE") -> string!
+virtual SharedKernel.Testing.Execution.TestRequestContext.HasPermission(string! permission) -> bool
+virtual SharedKernel.Testing.Fakers.SingleValueObjectFaker<TValueObject, TValue>.CreateFrom(TValue value) -> TValueObject!

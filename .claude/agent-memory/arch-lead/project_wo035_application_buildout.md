@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): `SharedKernel.Application.Behaviors` is now `SharedKernel.Application.Pipeline` (Host tier, no MediatR); markers and ports live in `SharedKernel.Application`; `IAuthorizationContext`/`IUnitOfWork` bridges are gone — `IRequestContext`/`IUnitOfWork` are in `SharedKernel.Execution`.
+
 WO-035 dispatched the first real build-out of `05.Application` (P-214–P-219), which sat at root board `○ Not Started` despite already having a detailed, correct design pre-written into `05.Application/CLAUDE.md` and `state-map.md` (six-phase lifecycle scaffolded, zero tasks dispatched). The existing design — `ICommand`/`ICommand<TResponse>`/`IQuery<TResponse>`, the domain-event-to-MediatR bridge fulfilling `03.Domain`'s P-081 forward reference, and five pipeline behaviors (Validation/Logging/Metrics/Transaction/Caching) — was accepted as-is, no redesign.
 
 **Upgrade applied:** added two new opt-in pipeline behaviors to reach gold-standard before dispatch, since "is this caller allowed" and "did this exact request already run" are the two most universal CQRS cross-cutting concerns left undone after the original five:

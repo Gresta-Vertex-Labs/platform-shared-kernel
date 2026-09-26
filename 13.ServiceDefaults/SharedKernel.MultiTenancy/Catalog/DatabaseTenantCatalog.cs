@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using System.Data;
 using System.Data.Common;
 using SharedKernel.Persistence.Abstractions.Connections;
@@ -41,8 +42,8 @@ public sealed class DatabaseTenantCatalog(IDbConnectionFactory connectionFactory
         + "FROM tenant_directory WHERE resolution_key = @resolutionKey";
 
     /// <inheritdoc/>
-    public Task<TenantDescriptor?> GetByIdAsync(Guid tenantId, CancellationToken ct) =>
-        QueryAsync(ByIdCommandText, "@tenantId", tenantId, ct);
+    public Task<TenantDescriptor?> GetByIdAsync(TenantId tenantId, CancellationToken ct) =>
+        QueryAsync(ByIdCommandText, "@tenantId", tenantId.Value, ct);
 
     /// <inheritdoc/>
     public Task<TenantDescriptor?> GetByResolutionKeyAsync(string resolutionKey, CancellationToken ct)
@@ -82,7 +83,7 @@ public sealed class DatabaseTenantCatalog(IDbConnectionFactory connectionFactory
                 return null;
             }
 
-            var tenantId = reader.GetGuid(0);
+            var tenantId = new TenantId(reader.GetGuid(0));
             var displayName = reader.GetString(1);
             var status = Enum.Parse<TenantStatus>(reader.GetString(2), ignoreCase: true);
             var isolationMode = Enum.Parse<TenantIsolationMode>(reader.GetString(3), ignoreCase: true);

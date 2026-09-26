@@ -19,7 +19,10 @@
 //   5. gRPC — AddSharedKernelGrpc: a failed result ended with SharedKernel.Core's GetValueOrThrow/ThrowIfFailure
 //      reaches the client as a rich google.rpc.Status, read back with GetRpcStatus(): ErrorInfo (code, domain, trace
 //      and correlation ids) and BadRequest.
-//   6. All four packages in one host: the registrations compose and every protocol answers.
+//   6. All four packages in one host: the registrations compose and every protocol answers, and a hub method and a
+//      gRPC method read the caller and correlation id UseSharedKernelRequestContext() resolved (P-579).
+// Every host starts as a service does since P-579: AddSharedKernelRequestContext() and UseSharedKernelRequestContext()
+// (SharedKernel.ServiceDefaults.Security) before UseSharedKernelWebApi().
 
 using System.Globalization;
 using System.Net;
@@ -51,6 +54,8 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharedKernel.Contracts.Pagination;
 using SharedKernel.Core.Extensions;
+using SharedKernel.Execution.Context;
+using SharedKernel.Presentation.Authorization;
 using SharedKernel.Presentation.Grpc;
 using SharedKernel.Presentation.OpenApi;
 using SharedKernel.Presentation.SignalR;
@@ -59,6 +64,7 @@ using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Propagation;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Security.Abstractions;
+using SharedKernel.ServiceDefaults.Security;
 
 // Both System.Net.Http.Headers (EntityTagHeaderValue) and Microsoft.Net.Http.Headers declare header types; only the
 // header-name constants are taken from the latter.
@@ -128,6 +134,7 @@ static async Task Surface1_WebApiOneCallSetup()
     }));
 
     await using var app = builder.Build();
+    app.UseSharedKernelRequestContext();
     app.UseSharedKernelWebApi();
     OrdersHttpApi.Map(app);
     app.MapEndpoints();
@@ -371,6 +378,7 @@ static async Task Surface2_InvalidWebApiSettingsStopTheHost()
     var failure = await Check.CatchAsync<OptionsValidationException>(async () =>
     {
         app = builder.Build();
+        app.UseSharedKernelRequestContext();
         app.UseSharedKernelWebApi();
         await app.StartAsync();
     });
@@ -396,6 +404,7 @@ static async Task Surface3_OpenApiDocumentPerVersion()
     builder.AddSharedKernelOpenApi(options => options.Title = "Consumer Verify Orders");
 
     await using var app = builder.Build();
+    app.UseSharedKernelRequestContext();
     app.UseSharedKernelWebApi();
     OrdersHttpApi.MapVersioned(app);
     app.MapSharedKernelOpenApi();
@@ -453,6 +462,7 @@ static async Task Surface4_SignalRResultHubMethods()
     builder.AddSharedKernelSignalR();
 
     await using var app = builder.Build();
+    app.UseSharedKernelRequestContext();
     app.UseSharedKernelWebApi();
     app.MapHub<OrdersHub>(OrdersHub.Path);
     await app.StartAsync();
@@ -489,6 +499,7 @@ static async Task Surface5_GrpcRichStatus()
     builder.AddSharedKernelGrpc(options => options.ErrorDomain = Values.GrpcErrorDomain);
 
     await using var app = builder.Build();
+    app.UseSharedKernelRequestContext();
     app.UseSharedKernelWebApi();
     app.MapGrpcService<OrderGrpcService>();
     await app.StartAsync();
@@ -528,6 +539,7 @@ static async Task Surface6_AllFourPackagesInOneHost()
     builder.AddHeaderAuthentication();
 
     await using var app = builder.Build();
+    app.UseSharedKernelRequestContext();
     app.UseSharedKernelWebApi();
     OrdersHttpApi.MapVersioned(app);
     app.MapHub<OrdersHub>(OrdersHub.Path);
@@ -560,10 +572,31 @@ static async Task Surface6_AllFourPackagesInOneHost()
         Check.That(order == new OrderDto(1, "open"), "combined host: the hub answers");
     }
 
+    // P-579: UseSharedKernelRequestContext() opens the scope for every protocol, so a hub method (through the hub
+    // filter that reopens the connection's context) and a gRPC method read the same caller and correlation id as HTTP.
+    var callerHeaders = new Dictionary<string, string>
+    {
+        [HeaderAuthentication.UserHeader] = "user-7",
+        [WellKnownHeaders.CorrelationId] = "verify-flow-6",
+    };
+
+    await using (var connection = await Hubs.ConnectAsync(httpAddress, callerHeaders))
+    {
+        var caller = await connection.InvokeAsync<string>(nameof(OrdersHub.Caller));
+        Check.That(caller == "user-7|verify-flow-6", $"combined host: a hub method reads the connection's caller and correlation id (got {caller})");
+    }
+
     using var channel = GrpcChannel.ForAddress(Hosts.AddressOf(grpcListener));
     await GrpcChecks.VerifyAsync(new OrderService.OrderServiceClient(channel), "combined host");
 
-    Console.WriteLine("Surface 6 PASSED — WebApi, OpenApi, SignalR and gRPC compose in one host");
+    var grpcCaller = await new OrderService.OrderServiceClient(channel).GetCallerAsync(
+        new GetOrderRequest(),
+        new Metadata { { HeaderAuthentication.UserHeader, "user-8" }, { WellKnownHeaders.CorrelationId, "verify-flow-7" } });
+    Check.That(
+        grpcCaller.UserId == "user-8" && grpcCaller.CorrelationId == "verify-flow-7",
+        $"combined host: a gRPC method reads the call's caller and correlation id from IRequestContext (got {grpcCaller})");
+
+    Console.WriteLine("Surface 6 PASSED — WebApi, OpenApi, SignalR and gRPC compose in one host, one request context for every protocol");
 }
 
 // ===================================================================================================================
@@ -685,9 +718,12 @@ internal static class OrdersHttpApi
 }
 
 /// <summary>The SignalR hub: methods return <see cref="Result{T}"/> exactly like the application layer.</summary>
-public sealed class OrdersHub : Hub
+public sealed class OrdersHub(IRequestContextAccessor requestContext) : Hub
 {
     public const string Path = "/hubs/orders";
+
+    /// <summary>The caller and correlation id of the connection, as the hub method reads them (P-579).</summary>
+    public string Caller() => $"{requestContext.Current?.UserId}|{requestContext.Current?.CorrelationId}";
 
     public Result<OrderDto> GetOrder(int id) => OrderCatalog.Find(id);
 
@@ -699,8 +735,16 @@ public sealed class OrdersHub : Hub
 /// The gRPC service: a failed result ends the call through <c>SharedKernel.Core</c>'s <c>GetValueOrThrow</c> and
 /// <c>ThrowIfFailure</c>, whose exception the platform's interceptor turns into the rich status.
 /// </summary>
-internal sealed class OrderGrpcService : OrderService.OrderServiceBase
+internal sealed class OrderGrpcService(IRequestContext requestContext) : OrderService.OrderServiceBase
 {
+    // The call's context, as UseSharedKernelRequestContext() opened it: no gRPC interceptor is involved.
+    public override Task<CallerReply> GetCaller(GetOrderRequest request, ServerCallContext context) =>
+        Task.FromResult(new CallerReply
+        {
+            UserId = requestContext.UserId ?? string.Empty,
+            CorrelationId = requestContext.CorrelationId ?? string.Empty,
+        });
+
     public override Task<OrderReply> GetOrder(GetOrderRequest request, ServerCallContext context)
     {
         var order = OrderCatalog.Find(request.Id).GetValueOrThrow();
@@ -727,6 +771,14 @@ internal static class Hosts
     {
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = environment });
         builder.Logging.ClearProviders();
+
+        // Every host starts the way a service does (P-579): the request context owns each call's correlation id and
+        // its RequestContextScope, over the caller an authentication package registers as IUserContext.
+        builder.Services.AddHttpContextAccessor();
+        builder.Services.AddScoped<IUserContext>(static services => UserContextResolver.Resolve(
+            services.GetRequiredService<IHttpContextAccessor>().HttpContext?.User,
+            services.GetServices<IUserContextMapper>()));
+        builder.Services.AddSharedKernelRequestContext();
 
         if (useDefaultUrl)
         {
@@ -805,7 +857,7 @@ internal static class HeaderAuthentication
         public string AuthenticationType => SchemeName;
 
         public IUserContext Map(ClaimsIdentity identity) =>
-            new UserContext(IdentityKind.User, identity.FindFirst(SubjectClaim)!.Value)
+            new UserContext(ActorKind.User, identity.FindFirst(SubjectClaim)!.Value)
             {
                 Permissions = [.. identity.FindAll(PermissionClaim).Select(claim => claim.Value)],
             };
@@ -815,9 +867,17 @@ internal static class HeaderAuthentication
 /// <summary>SignalR client helpers.</summary>
 internal static class Hubs
 {
-    public static async Task<HubConnection> ConnectAsync(Uri baseAddress)
+    public static async Task<HubConnection> ConnectAsync(Uri baseAddress, IReadOnlyDictionary<string, string>? headers = null)
     {
-        var connection = new HubConnectionBuilder().WithUrl(new Uri(baseAddress, OrdersHub.Path)).Build();
+        var connection = new HubConnectionBuilder()
+            .WithUrl(new Uri(baseAddress, OrdersHub.Path), options =>
+            {
+                foreach (var (name, value) in headers ?? new Dictionary<string, string>())
+                {
+                    options.Headers[name] = value;
+                }
+            })
+            .Build();
 
         try
         {

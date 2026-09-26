@@ -3,6 +3,7 @@ name: project_09search_docs_phase
 description: SK.09.Docs phase findings — the CS8509/CS8524-vs-TreatWarningsAsErrors resolution (WarningsNotAsErrors, not a discard arm), two genuine XML-doc cref/typeparamref defects, and the DO-08 drift-check corrections
 type: project
 ---
+> WO-086 (2026-09): `ISearchIndexProvisioner.ProbeAsync` was removed — readiness is one `IReadinessProbe` per registered index (`SearchIndexReadinessProbe`, `search-{provider}-{index}`); the search-local `TenantScope` (string-keyed `TenantScope.Of(...)`) is now the single `SharedKernel.Execution.Tenancy.TenantScope` (`Global`, `For(TenantId)`, `FromNullable`); container fixtures live in `16.Testing/SharedKernel.Testing.Internal/Containers/` and the in-memory fakes in `SharedKernel.Search.Testing`. The findings below are history.
 
 09.Search Docs phase (SK.09.Docs, 8/8 tasks, 2026-07-20) completed: `GenerateDocumentationFile`+`TreatWarningsAsErrors`+full NuGet metadata (incl. `PackageReadmeFile`+packed `README.md`) on all three production `.csproj`; zero CS1591/CS1574; three `README.md` files written; DO-08 drift check. All 345 tests still green (155 Abstractions + 92 Meilisearch + 98 ElasticSearch). See [[project_09search_t26_and_completion]] for the prior Tests-phase state this builds on.
 

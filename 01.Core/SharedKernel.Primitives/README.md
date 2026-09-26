@@ -1,16 +1,18 @@
 # SharedKernel.Primitives
 
-The foundation layer of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel). Every other package in the platform depends on this one, directly or transitively, so it stays small, stable, and opinionated.
+The base of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel), in the Foundation tier. Every other package in the platform depends on this one, directly or transitively, so it stays small, stable, and opinionated.
 
-It gives you four things: a way to return failures without exceptions (`Result<T>`, `Error`), a testable clock (`IClock`), a richer enum (`SmartEnum<TEnum, TValue>`), and the registries that stop two packages from disagreeing about a wire identifier.
+It gives you five things: a way to return failures without exceptions (`Result<T>`, `Error`), a testable clock (`IClock`), a richer enum (`SmartEnum<TEnum, TValue>`), the readiness-probe contract every provider implements (`IReadinessProbe`), and the registries that stop two packages from disagreeing about a wire identifier.
 
-```shell
-dotnet add package SharedKernel.Primitives
+```xml
+<PackageReference Include="SharedKernel.Primitives" />
 ```
 
-**One NuGet dependency:** `Microsoft.Extensions.DependencyInjection.Abstractions`, used only by `AddClock()`.
+The version comes from your repository's single `SharedKernelVersion` property.
 
-This package defines the types. The operations on them live one layer up, in [`SharedKernel.Core`](../SharedKernel.Core/README.md): railway chaining (`Map`, `Bind`, `Ensure`, `Tap`), exception boundaries, guard clauses, and the exception hierarchy. Most services reference both.
+**One NuGet dependency:** `Microsoft.Extensions.DependencyInjection.Abstractions`, used only by `AddClock()` and `AddReadinessProbe()`.
+
+This package defines the types. The operations on them live in [`SharedKernel.Core`](../SharedKernel.Core/README.md): railway chaining (`Map`, `Bind`, `Ensure`, `Tap`), exception boundaries, guard clauses, and the exception hierarchy. Most services reference both.
 
 **Trim- and AOT-clean.** Compiles with zero `IL2026`/`IL3050`/`IL2059` under both `EnableTrimAnalyzer` and `EnableAotAnalyzer`, and `SmartEnum` lookups are verified working against a self-contained `TrimMode=full` publish. No reflection, no `dynamic`, no expression trees, no runtime code generation anywhere.
 
@@ -154,7 +156,7 @@ meaning and only loses the ability to be translated again.
 
 ### The three result interfaces
 
-These exist so a MediatR pipeline behavior can work with a `TResponse` it cannot name, with no reflection. **Application code should not need them.**
+These exist so a pipeline behavior can work with a `TResponse` it cannot name, with no reflection. **Application code should not need them.**
 
 - **`IHasSuccessFlag`** — read the outcome. Both result types implement it.
 - **`IResultOfT<T>`** — read the value. `Result<T>` only.
@@ -262,15 +264,65 @@ Two limits worth knowing: values generated in the **same millisecond** have no d
 
 ---
 
+## Readiness probes
+
+`SharedKernel.Primitives.Health` is the one readiness contract every provider package implements: the message bus,
+Redis, the cache, the key vault, field encryption, audit sealing, each storage store, search index and vector
+collection, workflows and the scheduler.
+
+```csharp
+using SharedKernel.Primitives.Health;
+
+public sealed class OrderStoreProbe(IServiceProvider services) : IReadinessProbe
+{
+    public string Name => "order-store";
+
+    public async Task<ReadinessReport> ProbeAsync(CancellationToken cancellationToken = default)
+    {
+        var store = services.GetRequiredService<IOrderStore>();   // resolve inside ProbeAsync, not the constructor
+        return await store.PingAsync(cancellationToken)
+            ? ReadinessReport.Healthy()
+            : ReadinessReport.Unhealthy("The order store did not answer.");
+    }
+}
+
+services.AddReadinessProbe<OrderStoreProbe>();                             // one target
+services.AddReadinessProbe(sp => new StoreProbe(sp, "invoices"));          // one call per target
+```
+
+| Type | Purpose |
+| --- | --- |
+| `IReadinessProbe` | `Name` (unique in the process, the health-check name) and `ProbeAsync` |
+| `ReadinessReport` | `Status`, `Latency`, `Description`, `Data`; `Healthy(...)`, `Degraded(...)`, `Unhealthy(...)` |
+| `ReadinessStatus` | `Unhealthy`, `Degraded`, `Healthy` |
+| `AddReadinessProbe<T>()` | Registers a singleton probe; registering the same type twice is a no-op |
+| `AddReadinessProbe(factory)` | Registers one probe per call, for a provider with several targets |
+| `GetRequiredReadinessProbe(name)` | Resolves one probe by name; throws when none or several match |
+
+- **Providers register their own probes** when they are registered, so a probe exists exactly when its dependency
+  does. A provider package never references a health-checks library.
+- **The host maps them.** `SharedKernel.ServiceDefaults`' `services.AddHealthChecks().AddSharedKernelReadiness()`
+  turns every registered probe into a `ready`-tagged health check. A host without ASP.NET Core can resolve
+  `IEnumerable<IReadinessProbe>` and call them itself.
+- **Construction must be cheap.** A host constructs every probe to read its `Name` while it builds its health checks,
+  so resolve clients and hosted services inside `ProbeAsync`.
+- **Failures are reports, not exceptions.** Only cancellation throws. A report may be shown on a health endpoint, so
+  it never carries connection strings, credentials, tenant data or exception messages.
+
+---
+
 ## Platform registries
 
 Three compile-time constant registries, so two packages cannot independently hardcode the same wire identifier and drift apart. Each has already prevented, or was created because of, a real mismatch.
 
 | Registry | Holds | Call-site shape |
 | --- | --- | --- |
-| `WellKnownHeaders` | `X-Correlation-Id`, `X-Tenant-Id`, `Idempotency-Key` | HTTP / gRPC metadata |
+| `WellKnownHeaders` | `X-Correlation-Id`, `X-Tenant-Id`, `Idempotency-Key`, and the caller headers `x-sk-actor-id`, `x-sk-actor-kind`, `x-sk-client-id` | HTTP headers, gRPC metadata, message and workflow headers |
 | `WellKnownBaggageKeys` | correlation id, tenant id | `Activity.SetBaggage` / `AddBaggage` |
 | `WellKnownTagKeys` | `tenant.id`, `correlation.id`, `error.type`, `error.code` | `Activity.SetTag` |
+
+`SharedKernel.Execution`'s `RequestContextPropagation` writes and reads the correlation, tenant and caller headers on
+every hop; `Idempotency-Key` is the one name used by inbound HTTP and outbound REST alike.
 
 **Pick the registry matching your call-site shape.** Tags are span-local attributes. Baggage propagates across process boundaries and rides on every outbound call, so keep that registry small. They are not interchangeable, and two of them holding the same literal for the same concept does not make them so.
 
@@ -288,7 +340,7 @@ Three compile-time constant registries, so two packages cannot independently har
 public static partial void BackplaneReconnected(ILogger logger, int attemptCount);
 ```
 
-All three live here rather than in `04.Contracts` because `SharedKernel.Communication.Grpc` is mechanically barred from referencing `04.Contracts`, and `01.Core` is the one layer every consumer already references.
+All three live here rather than in `04.Contracts` because `SharedKernel.Communication.Grpc` is mechanically barred from referencing `04.Contracts`, and `SharedKernel.Primitives` is the one package every consumer already references.
 
 ---
 

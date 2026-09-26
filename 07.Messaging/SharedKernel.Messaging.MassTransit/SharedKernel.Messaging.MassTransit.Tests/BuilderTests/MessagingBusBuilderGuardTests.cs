@@ -4,13 +4,14 @@ using SharedKernel.Messaging.Abstractions.EventPublisher;
 using SharedKernel.Messaging.Abstractions.MessageBus;
 using SharedKernel.Messaging.MassTransit.Extensions;
 using SharedKernel.Messaging.MassTransit.Options;
+using SharedKernel.Primitives.Health;
 
 namespace SharedKernel.Messaging.MassTransit.Tests.BuilderTests;
 
 /// <summary>
 /// T-03: AddSharedKernelMessaging DI test — IMessagingBuilder returned; MessagingOptions resolvable.
 /// T-06: MessagingBusBuilder guard tests — Build() throws with no transport;
-///       UseRabbitMq+UseAzureServiceBus throws at second call; ASB both/neither options throws.
+///       one transport per bus (the Azure Service Bus guards moved to that transport's tests, P-570).
 /// </summary>
 public sealed class MessagingBusBuilderGuardTests
 {
@@ -120,62 +121,6 @@ public sealed class MessagingBusBuilderGuardTests
     }
 
     [Fact]
-    public void UseRabbitMq_ThenUseAzureServiceBus_ThrowsInvalidOperationException()
-    {
-        var services = new ServiceCollection();
-        var builder = services
-            .AddSharedKernelMessaging(o => o.ServiceName = "test-service")
-            .UseRabbitMq("rabbitmq://localhost");
-
-        var act = () => builder.UseAzureServiceBus("Endpoint=sb://fake.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=fake=");
-
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*transport has already been configured*");
-    }
-
-    [Fact]
-    public void UseAzureServiceBus_ThenUseRabbitMq_ThrowsInvalidOperationException()
-    {
-        var services = new ServiceCollection();
-        var builder = services
-            .AddSharedKernelMessaging(o => o.ServiceName = "test-service")
-            .UseAzureServiceBus("Endpoint=sb://fake.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=fake=");
-
-        var act = () => builder.UseRabbitMq("rabbitmq://localhost");
-
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*transport has already been configured*");
-    }
-
-    [Fact]
-    public void UseAzureServiceBus_WithBothConnectionStringAndNamespace_ThrowsInvalidOperationException()
-    {
-        var services = new ServiceCollection();
-        var builder = services.AddSharedKernelMessaging(o => o.ServiceName = "test-service");
-
-        var act = () => builder.UseAzureServiceBus(o =>
-        {
-            o.ConnectionString = "Endpoint=sb://fake.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=fake=";
-            o.FullyQualifiedNamespace = "my-namespace.servicebus.windows.net";
-        });
-
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*mutually exclusive*");
-    }
-
-    [Fact]
-    public void UseAzureServiceBus_WithNeitherConnectionStringNorNamespace_ThrowsInvalidOperationException()
-    {
-        var services = new ServiceCollection();
-        var builder = services.AddSharedKernelMessaging(o => o.ServiceName = "test-service");
-
-        var act = () => builder.UseAzureServiceBus(_ => { /* neither set */ });
-
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*ConnectionString*FullyQualifiedNamespace*");
-    }
-
-    [Fact]
     public void UseRabbitMq_WithEmptyConnectionString_ThrowsArgumentException()
     {
         var services = new ServiceCollection();
@@ -251,9 +196,9 @@ public sealed class MessagingBusBuilderGuardTests
     }
 
     // -------------------------------------------------------------------------
-    // RP-04/RP-07 (P-347): IMessageBusProbe is registered as a singleton unconditionally.
+    // RP-04/RP-07 (P-347, P-569): the bus readiness probe is registered as a singleton unconditionally.
     // Asserted via the ServiceDescriptor itself, not a resolved instance — resolving
-    // IMessageBusProbe requires MassTransit to build IBusInstance, which (per the real
+    // the probe requires MassTransit to build IBusInstance, which (per the real
     // MassTransit 9.1.2 license-gate behavior discovered during this phase — see the
     // "MassTransit 9.x API notes" entry) needs a configured license even before the bus is
     // started against a real transport. Functional ProbeAsync behavior is proven separately
@@ -262,7 +207,7 @@ public sealed class MessagingBusBuilderGuardTests
     // -------------------------------------------------------------------------
 
     [Fact]
-    public void Build_AfterUseRabbitMq_RegistersIMessageBusProbe_AsSingleton_Unconditionally()
+    public void Build_AfterUseRabbitMq_RegistersBusReadinessProbe_AsSingleton_Unconditionally()
     {
         var services = new ServiceCollection();
         services
@@ -270,12 +215,13 @@ public sealed class MessagingBusBuilderGuardTests
             .UseRabbitMq("rabbitmq://localhost")
             .Build();
 
-        var descriptor = services.SingleOrDefault(d => d.ServiceType == typeof(IMessageBusProbe));
+        var descriptor = services.SingleOrDefault(d => d.ServiceType == typeof(IReadinessProbe)
+            && d.ImplementationType == typeof(SharedKernel.Messaging.MassTransit.MessageBus.MassTransitMessageBusProbe));
 
         descriptor.Should().NotBeNull(
-            "IMessageBusProbe must be registered unconditionally by Build() — no opt-in call required");
+            "the bus readiness probe must be registered unconditionally by Build() — no opt-in call required");
         descriptor!.Lifetime.Should().Be(ServiceLifetime.Singleton,
-            "IMessageBusProbe must match MassTransit's own singleton IBus/IBusControl lifetime");
+            "the bus readiness probe must match MassTransit's own singleton IBus/IBusControl lifetime");
         descriptor.ImplementationType.Should().Be(typeof(
             SharedKernel.Messaging.MassTransit.MessageBus.MassTransitMessageBusProbe));
     }

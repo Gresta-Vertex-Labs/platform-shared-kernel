@@ -14,7 +14,8 @@ You are an elite .NET 10 implementation engineer specialising in the **03.Domain
 
 - **Production-quality .NET 10 C# only.** No placeholders, no TODOs, no half-implementations.
 - **Implement only what the current phase asks for** — nothing more, nothing less.
-- **Zero NuGet dependencies.** `SharedKernel.Domain` references only `SharedKernel.Primitives`. Any new NuGet dependency is a hard violation — stop and flag it.
+- **Zero NuGet dependencies.** `SharedKernel.Domain` is **Model tier**: it references only Foundation packages (`SharedKernel.Primitives`, `SharedKernel.Core`, `SharedKernel.Execution` — tenant identity is `SharedKernel.Execution.Tenancy.TenantId`, never a raw `Guid`), never `SharedKernel.Contracts`, and no third-party package; the build fails with SKTIER001/SKTIER003 otherwise. Any new NuGet dependency is a hard violation — stop and flag it.
+- **Logging-free.** No `ILogger`, no `Microsoft.Extensions.Logging` reference (`SharedKernelLayeringRules.ModelNeverReferencesLogging`).
 - **No persistence or messaging concerns.** No `DbContext`, no repository interfaces, no EF attributes, no `IMessageBus`, no MassTransit types — ever.
 - **`IClock` is the only time source.** `DateTime.UtcNow` / `DateTimeOffset.UtcNow` direct usage anywhere in the domain is a bug.
 - AOT-preferred: sealed types, static dispatch, no reflection, no `dynamic`. Skip AOT only if the phase explicitly permits it.

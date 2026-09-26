@@ -1,4 +1,4 @@
-using System.Globalization;
+using SharedKernel.Execution.Tenancy;
 
 namespace SharedKernel.Persistence.Npgsql.RowLevelSecurity;
 
@@ -32,8 +32,8 @@ internal static class TenantSessionSql
     /// <returns>A <c>DO</c> block ending with a semicolon.</returns>
     /// <remarks>
     /// <para>
-    /// The tenant id is inlined because a <c>DO</c> block takes no parameters; a <see cref="Guid"/> formatted
-    /// with the <c>D</c> format contains only hexadecimal digits and hyphens, so nothing can be injected.
+    /// The tenant id is inlined because a <c>DO</c> block takes no parameters; a <see cref="TenantId"/> formats as a
+    /// lowercase <c>D</c>-format Guid, which contains only hexadecimal digits and hyphens, so nothing can be injected.
     /// </para>
     /// <para>
     /// Outside an explicit transaction, the statements of one command run in a single implicit
@@ -41,9 +41,9 @@ internal static class TenantSessionSql
     /// precedes and disappears when that command completes.
     /// </para>
     /// </remarks>
-    public static string BindStatement(Guid? tenantId)
+    public static string BindStatement(TenantId? tenantId)
     {
-        var value = tenantId?.ToString("D", CultureInfo.InvariantCulture) ?? string.Empty;
+        var value = tenantId?.ToString() ?? string.Empty;
         return $"DO $sk_rls$BEGIN PERFORM set_config('{TenantIdSetting}', '{value}', true); END$sk_rls$;";
     }
 

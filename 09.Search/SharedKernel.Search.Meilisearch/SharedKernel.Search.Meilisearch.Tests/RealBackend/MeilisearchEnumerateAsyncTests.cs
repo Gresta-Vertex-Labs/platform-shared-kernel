@@ -1,4 +1,5 @@
 using FluentAssertions;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Search.Abstractions.Models;
 using SharedKernel.Search.Meilisearch.Tests.Containers;
 using SharedKernel.Search.Meilisearch.Tests.Support;
@@ -50,7 +51,7 @@ public sealed class MeilisearchEnumerateAsyncTests : IAsyncLifetime
 
         // Deliberately NOT materializing an intermediate list from a LINQ/ToListAsync call — accumulate
         // via a plain running counter/list inside the loop body, one yield at a time.
-        await foreach (var document in index.EnumerateAsync(filter: null, TenantScope.Of(TestProductCorpus.TenantA), batchSize: 4))
+        await foreach (var document in index.EnumerateAsync(filter: null, TenantScope.For(TestProductCorpus.TenantA), batchSize: 4))
         {
             seenIds.Add(document.DocumentId);
         }
@@ -91,7 +92,7 @@ public sealed class MeilisearchEnumerateAsyncTests : IAsyncLifetime
 
         var act = async () =>
         {
-            await foreach (var _ in index.EnumerateAsync(filter: null, TenantScope.Of(TestProductCorpus.TenantA), batchSize, cts.Token))
+            await foreach (var _ in index.EnumerateAsync(filter: null, TenantScope.For(TestProductCorpus.TenantA), batchSize, cts.Token))
             {
                 seenCount++;
                 if (seenCount == batchSize)
@@ -111,7 +112,7 @@ public sealed class MeilisearchEnumerateAsyncTests : IAsyncLifetime
         var index = MeilisearchProviderFactory.CreateIndex<TestProduct>(_fixture, _definition);
         var seenIds = new List<string>();
 
-        await foreach (var document in index.EnumerateAsync(filter: null, TenantScope.Of(TestProductCorpus.TenantB), batchSize: 2))
+        await foreach (var document in index.EnumerateAsync(filter: null, TenantScope.For(TestProductCorpus.TenantB), batchSize: 2))
         {
             seenIds.Add(document.DocumentId);
         }
@@ -127,7 +128,7 @@ public sealed class MeilisearchEnumerateAsyncTests : IAsyncLifetime
 
         await foreach (var document in index.EnumerateAsync(
             SearchFilter.Eq(TestProductFields.Category, SearchValue.From("stationery")),
-            TenantScope.Of(TestProductCorpus.TenantA),
+            TenantScope.For(TestProductCorpus.TenantA),
             batchSize: 3))
         {
             seenIds.Add(document.DocumentId);

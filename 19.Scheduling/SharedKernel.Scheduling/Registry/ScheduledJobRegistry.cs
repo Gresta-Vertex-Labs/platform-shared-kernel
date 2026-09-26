@@ -1,7 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Quartz;
-using SharedKernel.Application;
+using SharedKernel.Application.Messaging;
 using SharedKernel.Scheduling.Extensions;
 using SharedKernel.Scheduling.Jobs;
 

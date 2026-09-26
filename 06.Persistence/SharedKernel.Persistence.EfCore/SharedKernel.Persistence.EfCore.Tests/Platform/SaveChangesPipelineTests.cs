@@ -3,12 +3,13 @@ using FluentAssertions;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
-using SharedKernel.Application.Context;
+using SharedKernel.Execution.Context;
 using SharedKernel.Core.Exceptions;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Domain.Aggregates;
 using SharedKernel.Domain.Events;
 using SharedKernel.Domain.StronglyTypedIds;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.EfCore.Concurrency;
 using SharedKernel.Persistence.EfCore.Context;
@@ -79,11 +80,11 @@ public sealed record PipelineShipped : DomainEvent;
 
 public sealed class PipelineTenantedOrder : AggregateRoot<PipelineOrderId>, IHasTenant
 {
-    public PipelineTenantedOrder(PipelineOrderId id, Guid tenantId, IClock clock) : base(id, clock) => TenantId = tenantId;
+    public PipelineTenantedOrder(PipelineOrderId id, TenantId tenantId, IClock clock) : base(id, clock) => TenantId = tenantId;
 
     private PipelineTenantedOrder() { }
 
-    public Guid TenantId { get; private set; }
+    public TenantId TenantId { get; private set; }
 
     public string Note { get; set; } = string.Empty;
 }
@@ -141,7 +142,7 @@ public sealed class SaveChangesPipelineTests : IDisposable
         return context;
     }
 
-    private PipelineTenantedDbContext Tenanted(Guid? tenantId)
+    private PipelineTenantedDbContext Tenanted(TenantId? tenantId)
     {
         var context = new PipelineTenantedDbContext(
             new DbContextOptionsBuilder<PipelineTenantedDbContext>()
@@ -207,7 +208,7 @@ public sealed class SaveChangesPipelineTests : IDisposable
         // A4: the former translator reported ANY concurrency failure on a tenanted entity as a 403 tenant
         // violation. A plain race is a conflict; a violation is reported only when the row provably belongs to
         // another tenant (covered by the PostgreSQL tenant-isolation tests).
-        var tenant = Guid.NewGuid();
+        var tenant = new TenantId(Guid.NewGuid());
         var id = PipelineOrderId.New();
         await using var context = Tenanted(tenant);
         context.Orders.Add(new PipelineTenantedOrder(id, tenant, new FakeClock(T0)));

@@ -4,6 +4,7 @@ using System.Threading.Channels;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.SignalR;
 using SharedKernel.Core.Exceptions;
+using SharedKernel.Execution.Context;
 using SharedKernel.Core.Extensions;
 using SharedKernel.Localization;
 using SharedKernel.Presentation.WebApi;
@@ -219,9 +220,14 @@ public sealed class RecordingHubFilter : IHubFilter
     }
 }
 
-/// <summary>Reads the connection's tenant and correlation id.</summary>
-public sealed class ContextHub : Hub
+/// <summary>Reads the connection's tenant, correlation id and caller.</summary>
+public sealed class ContextHub(IRequestContextAccessor accessor) : Hub
 {
+    /// <summary>The ambient context the hub method runs in: <c>{UserId}|{ActorKind}|{TenantId}|{CorrelationId}</c>.</summary>
+    public string? Caller() => accessor.Current is { } context
+        ? $"{context.UserId}|{context.ActorKind}|{context.TenantId}|{context.CorrelationId}"
+        : null;
+
     public string? Tenant() => Context.GetTenantId()?.ToString();
 
     public string? Correlation() => Context.GetCorrelationId();

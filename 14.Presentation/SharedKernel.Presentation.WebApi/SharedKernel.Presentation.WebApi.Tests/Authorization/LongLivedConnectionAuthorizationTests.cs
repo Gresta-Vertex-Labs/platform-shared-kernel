@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.DependencyInjection;
-using SharedKernel.Presentation.WebApi.Authorization;
+using SharedKernel.Presentation.Authorization;
 using SharedKernel.Presentation.WebApi.Tests.TestSupport;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Security.Abstractions;

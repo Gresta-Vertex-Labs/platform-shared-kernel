@@ -1,5 +1,5 @@
 using System.Collections.Concurrent;
-using SharedKernel.Application.Context;
+using SharedKernel.Execution.Context;
 
 namespace ShippingApi;
 
@@ -18,6 +18,10 @@ namespace ShippingApi;
 /// idempotency is enabled, which is the point of recording it.
 /// </param>
 /// <param name="HoldReason">Set when a hold command was consumed.</param>
+/// <param name="CorrelationId">
+/// The publishing request's correlation id (its <c>X-Correlation-Id</c>), as the consumer resolved it from
+/// <c>IRequestContext</c>.
+/// </param>
 public sealed record ShipmentView(
     Guid ShipmentId,
     string Carrier,
@@ -26,7 +30,8 @@ public sealed record ShipmentView(
     string? ActorId,
     ActorKind ActorKind,
     int Deliveries,
-    string? HoldReason);
+    string? HoldReason,
+    string? CorrelationId);
 
 /// <summary>
 /// The read model consumers write and the API reads.
@@ -52,11 +57,12 @@ public sealed class ShipmentProjection
                 shipmentId,
                 carrier,
                 trackingNumber,
-                caller.TenantId,
+                caller.TenantId?.Value,
                 caller.UserId,
                 caller.ActorKind,
                 Deliveries: 1,
-                HoldReason: null),
+                HoldReason: null,
+                caller.CorrelationId),
             (_, existing) => existing with { Deliveries = existing.Deliveries + 1 });
 
     /// <summary>Records that a hold command was consumed for a shipment.</summary>

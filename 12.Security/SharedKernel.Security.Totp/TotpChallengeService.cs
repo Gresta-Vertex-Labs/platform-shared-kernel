@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Context;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharedKernel.Cryptography.Hashing;
@@ -165,7 +166,7 @@ public sealed class TotpChallengeService
     {
         subjectId = user.SubjectId;
         sessionId = user.SessionId;
-        return user.IdentityKind == IdentityKind.User && subjectId is not null && sessionId is not null;
+        return user.ActorKind == ActorKind.User && subjectId is not null && sessionId is not null;
     }
 
     private async ValueTask RecordStepUpAsync(string subjectId, string sessionId, string operation, CancellationToken cancellationToken)

@@ -16,13 +16,16 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using SharedKernel.Application.Context;
+using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Messaging.Abstractions.Context;
 using SharedKernel.Messaging.Abstractions.EventPublisher;
 using SharedKernel.Messaging.Abstractions.MessageBus;
 using SharedKernel.Messaging.Abstractions.Options;
 using SharedKernel.Messaging.MassTransit.Consumers;
 using SharedKernel.Messaging.MassTransit.Extensions;
+using SharedKernel.Messaging.MassTransit.MessageBus;
+using SharedKernel.Primitives.Health;
 
 // Aliased: MassTransit declares its own IMessageScheduler, and a consuming service that wires
 // delayed delivery has both in scope.
@@ -64,10 +67,12 @@ static async Task Surface1_TheInjectableSurfaceResolves()
     Require(scope.ServiceProvider.GetService<IMessageBus>() is not null, "IMessageBus resolves");
     Require(scope.ServiceProvider.GetService<IEventPublisher>() is not null, "IEventPublisher resolves");
     Require(scope.ServiceProvider.GetService<SkMessageScheduler>() is not null, "IMessageScheduler resolves with delayed delivery");
-    Require(host.Services.GetService<IMessageBusProbe>() is not null, "IMessageBusProbe resolves as a singleton, with no opt-in");
+    Require(
+        host.Services.GetServices<IReadinessProbe>().Any(p => p.Name == MessagingReadinessProbeNames.Bus),
+        "the bus readiness probe is registered, with no opt-in");
     Require(host.Services.GetService<IBus>() is not null, "MassTransit's own IBus is registered");
 
-    Console.WriteLine("Surface 1 PASSED — IMessageBus, IEventPublisher, IMessageScheduler and IMessageBusProbe resolve");
+    Console.WriteLine("Surface 1 PASSED — IMessageBus, IEventPublisher, IMessageScheduler and the bus readiness probe resolve");
     await Task.CompletedTask;
 }
 
@@ -134,7 +139,7 @@ static async Task Surface3_InvalidServiceNameFailsAtStartup()
 static async Task Surface4_InboundRequestContextIsMessageAware()
 {
     HostApplicationBuilder builder = Host.CreateApplicationBuilder();
-    var tenantId = Guid.NewGuid();
+    var tenantId = new TenantId(Guid.NewGuid());
 
     // The service's own request context, registered first — the documented order.
     builder.Services.AddScoped<IRequestContext>(_ => new VerifyHostRequestContext(tenantId));
@@ -238,13 +243,13 @@ internal sealed record VerifyMessage(string Text);
 /// <summary>Stands in for the request context a real service registers at its composition root.</summary>
 internal sealed class VerifyHostRequestContext : IRequestContext
 {
-    public VerifyHostRequestContext(Guid tenantId) => TenantId = tenantId;
+    public VerifyHostRequestContext(TenantId tenantId) => TenantId = tenantId;
 
     public bool IsAuthenticated => true;
 
     public string? UserId => "host-user";
 
-    public Guid? TenantId { get; }
+    public TenantId? TenantId { get; }
 
     public ActorKind ActorKind => ActorKind.User;
 

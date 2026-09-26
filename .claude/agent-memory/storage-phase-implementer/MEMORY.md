@@ -1,6 +1,6 @@
 # Memory Index
 
-- [08.Storage status snapshot](project_08storage_status.md) — domain complete end to end (all 6 phases ●) as of SK.08.Published closeout, 2026-07-18
+- [08.Storage status snapshot](project_08storage_status.md) — historical (pre-P-559) status as of SK.08.Published closeout, 2026-07-18; contract since redesigned
 - [Design-phase verification approach](feedback_design_phase_verification.md) — independently recount "N-member"/"N models" claims in brain docs, don't trust stated totals
 - [Core vs Tests phase boundary](feedback_core_tests_phase_boundary.md) — don't write the Tests-phase xUnit suite during a Core-phase dispatch; this domain splits them
 - [Split phase on missing upstream fixture](feedback_split_phase_on_missing_upstream_fixture.md) — verify fixtures on disk, implement every genuinely unblocked task, don't inherit a summary sentence's over-broad "blocked" scope

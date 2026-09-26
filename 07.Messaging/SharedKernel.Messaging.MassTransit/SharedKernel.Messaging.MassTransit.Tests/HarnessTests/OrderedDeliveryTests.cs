@@ -15,49 +15,18 @@ namespace SharedKernel.Messaging.MassTransit.Tests.HarnessTests;
 /// <summary>
 /// OD-04: <see cref="MessagingPublishContext.PartitionKey"/>/<c>WithPartitionKey</c> is covered in
 /// <c>SharedKernel.Messaging.Abstractions.Tests.PublishContextTests</c>.
-/// OD-08: Azure Service Bus session-identifier assignment — verified via a substituted
-/// <see cref="ServiceBusSendContext"/>/<see cref="RoutingKeySendContext"/> payload pair, mirroring the
-/// write-only-property assertion technique already established by
-/// <c>BuilderTests.ConcurrencyLimitConfigurationTests</c> (both
-/// <see cref="ServiceBusSendContext.SessionId"/> and <see cref="RoutingKeySendContext.RoutingKey"/> are
-/// setter-only on their respective MassTransit interfaces — there is no getter to read back). A real
-/// Azure Service Bus <c>SendContext</c> payload is only materialized by MassTransit's actual ASB
-/// transport (confirmed empirically: <see cref="MassTransit.Testing.ITestHarness"/>'s in-memory
-/// transport never attaches a <see cref="ServiceBusSendContext"/> payload), so a full TestHarness-level
-/// interception of the assigned <c>SessionId</c> is not achievable without a live ASB connection — out
-/// of scope per the platform's "no tests against live Azure Service Bus" rule. This test instead
-/// exercises the real, shipped <see cref="PartitionKeySendContextExtensions.ApplyPartitionKey"/>
-/// production code directly against a substituted transport-payload pair.
+/// OD-08: RabbitMQ routing-key assignment — verified via a substituted <see cref="RoutingKeySendContext"/>
+/// payload (<see cref="RoutingKeySendContext.RoutingKey"/> is setter-only), exercising the real, shipped
+/// <see cref="PartitionKeySendContextExtensions.ApplyPartitionKey"/>. The Azure Service Bus session-identifier
+/// half moved with that transport to <c>SharedKernel.Messaging.MassTransit.AzureServiceBus.Tests</c> (P-570).
 /// OD-09: Regression — omitting <c>PartitionKey</c> leaves behavior unchanged (no setter calls at the
 /// unit level; unchanged end-to-end delivery at the harness level).
 /// </summary>
 public sealed class OrderedDeliveryTests
 {
     // -------------------------------------------------------------------------
-    // OD-08: PartitionKey set — RabbitMQ routing key + Azure Service Bus SessionId
+    // OD-08: PartitionKey set — routing key
     // -------------------------------------------------------------------------
-
-    [Fact]
-    public void ApplyPartitionKey_WithKey_SetsAzureServiceBusSessionId()
-    {
-        // Arrange: a SendContext substitute whose TryGetPayload<ServiceBusSendContext> resolves to
-        // a second substitute representing the (ASB-transport-only) session-capable payload —
-        // exactly what MassTransit.ServiceBusSendContextExtensions.SetSessionId looks up internally.
-        var sendContext = Substitute.For<SendContext>();
-        var serviceBusContext = Substitute.For<ServiceBusSendContext>();
-        sendContext.TryGetPayload(out Arg.Any<ServiceBusSendContext>())
-            .Returns(callInfo =>
-            {
-                callInfo[0] = serviceBusContext;
-                return true;
-            });
-
-        // Act
-        sendContext.ApplyPartitionKey("order-123");
-
-        // Assert: proves the setter was actually invoked with this value.
-        serviceBusContext.Received(1).SessionId = "order-123";
-    }
 
     [Fact]
     public void ApplyPartitionKey_WithKey_SetsRabbitMqRoutingKey()
@@ -76,35 +45,15 @@ public sealed class OrderedDeliveryTests
         routingKeyContext.Received(1).RoutingKey = "order-123";
     }
 
-    [Fact]
-    public void ApplyPartitionKey_MissingAzureServiceBusPayload_DoesNotThrow()
-    {
-        // Under a non-ASB transport (RabbitMQ, in-memory), TryGetPayload<ServiceBusSendContext>
-        // returns false (default substitute behavior — not configured to return true). Applying the
-        // partition key must remain a safe, silent no-op for the ASB half of the mapping.
-        var sendContext = Substitute.For<SendContext>();
-
-        var act = () => sendContext.ApplyPartitionKey("order-123");
-
-        act.Should().NotThrow();
-    }
-
     // -------------------------------------------------------------------------
     // OD-09: Regression — omitting PartitionKey leaves behavior unchanged
     // -------------------------------------------------------------------------
 
     [Fact]
-    public void ApplyPartitionKey_NullKey_DoesNotSetAzureServiceBusSessionIdOrRoutingKey()
+    public void ApplyPartitionKey_NullKey_DoesNotSetRoutingKey()
     {
         var sendContext = Substitute.For<SendContext>();
-        var serviceBusContext = Substitute.For<ServiceBusSendContext>();
         var routingKeyContext = Substitute.For<RoutingKeySendContext>();
-        sendContext.TryGetPayload(out Arg.Any<ServiceBusSendContext>())
-            .Returns(callInfo =>
-            {
-                callInfo[0] = serviceBusContext;
-                return true;
-            });
         sendContext.TryGetPayload(out Arg.Any<RoutingKeySendContext>())
             .Returns(callInfo =>
             {
@@ -114,9 +63,7 @@ public sealed class OrderedDeliveryTests
 
         sendContext.ApplyPartitionKey(null);
 
-        // The pre-phase behavior (no routing-key/session-id assignment) is provably unchanged —
-        // neither payload's setter is ever invoked when PartitionKey is unset.
-        serviceBusContext.Received(0).SessionId = Arg.Any<string>();
+        // The pre-phase behavior (no routing-key assignment) is provably unchanged.
         routingKeyContext.Received(0).RoutingKey = Arg.Any<string>();
     }
 

@@ -1,52 +1,54 @@
-using SharedKernel.Application.Context;
-using SharedKernel.Messaging.Abstractions.Context;
+using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Messaging.Abstractions.EventPublisher;
 using SharedKernel.Messaging.Abstractions.HeaderPropagation;
+using SharedKernel.Primitives.Propagation;
 
 namespace SharedKernel.Messaging.MassTransit.HeaderPropagation;
 
 /// <summary>
-/// Built-in <see cref="IMessageHeaderPropagator"/> that writes the current caller's tenant and
-/// actor onto every outgoing message, so the consumer can rebuild them.
+/// Built-in <see cref="IMessageHeaderPropagator"/> that writes the current caller — correlation id, tenant, actor
+/// and client — onto every outgoing message, so the consumer can rebuild it.
 /// </summary>
 /// <remarks>
 /// <para>
-/// The publish half of <c>MessagingBusBuilder.WithInboundRequestContext()</c>, which registers it.
-/// It is the third named exception to "never implement <see cref="IMessageHeaderPropagator"/>
-/// inside <c>SharedKernel.*</c>", and safe for the same reason as the other two: the
-/// service-specific value comes from a seam the consuming service owns —
-/// <c>IRequestContext</c> — not from anything invented here.
+/// The publish half of <c>MessagingBusBuilder.WithInboundRequestContext()</c>, which registers it. Uses the same
+/// header mapping as every other transport (<see cref="RequestContextPropagation"/>), so a message and an HTTP call
+/// carry the caller under identical names. It is one of the named exceptions to "never implement
+/// <see cref="IMessageHeaderPropagator"/> inside <c>SharedKernel.*</c>", safe because the value comes from the
+/// platform's own caller contract, not from anything invented here.
 /// </para>
 /// <para>
-/// Published from inside a consumer, this carries the <em>original</em> caller onward rather than
-/// re-stamping the message as anonymous, because the registered <c>IRequestContext</c> is itself
-/// message-aware. A chain of consumers therefore keeps attributing work to the human or service
-/// that started it.
+/// The caller is the ambient context (<see cref="IRequestContextAccessor.Current"/>) when one is open, otherwise the
+/// scope's <c>IRequestContext</c>. Published from inside a consumer, this carries the <em>original</em> caller and
+/// correlation id onward rather than re-stamping the message, because the consume filter made that caller ambient.
+/// A chain of consumers therefore keeps attributing work to the human or service that started it.
 /// </para>
 /// <para>
-/// Writes nothing it does not know: an anonymous caller produces no headers at all, rather than
-/// headers with empty values that a consumer would have to distinguish from absent ones.
+/// Writes nothing it does not know: no tenant header without a tenant, no actor id without a subject.
 /// </para>
 /// </remarks>
 public sealed class RequestContextHeaderPropagator : IMessageHeaderPropagator
 {
+    private readonly IRequestContextAccessor? _accessor;
     private readonly IRequestContext? _requestContext;
 
-    /// <summary>
-    /// Initialises the propagator.
-    /// </summary>
+    /// <summary>Initialises the propagator.</summary>
+    /// <param name="accessor">Reads the ambient request context, or <see langword="null"/>.</param>
     /// <param name="requestContext">
-    /// The current caller, or <see langword="null"/> when the service registers no
-    /// <c>IRequestContext</c> — in which case <see cref="Propagate"/> is a provable no-op.
+    /// The scope's caller, used when no ambient context is open, or <see langword="null"/> when the service
+    /// registers none — in which case <see cref="Propagate"/> writes only an ambient correlation id, if any.
     /// </param>
-    public RequestContextHeaderPropagator(IRequestContext? requestContext = null)
+    public RequestContextHeaderPropagator(
+        IRequestContextAccessor? accessor = null,
+        IRequestContext? requestContext = null)
     {
+        _accessor = accessor;
         _requestContext = requestContext;
     }
 
     /// <summary>
-    /// Copies the caller's tenant, subject, actor kind and client id onto
-    /// <paramref name="context"/>.
+    /// Copies the caller's correlation id, tenant, subject, actor kind and client id onto <paramref name="context"/>.
     /// </summary>
     /// <param name="context">The <see cref="PublishContext"/> for the outgoing message.</param>
     /// <remarks>
@@ -56,20 +58,21 @@ public sealed class RequestContextHeaderPropagator : IMessageHeaderPropagator
     /// </remarks>
     public void Propagate(PublishContext context)
     {
-        if (_requestContext is null)
-            return;
+        ArgumentNullException.ThrowIfNull(context);
 
-        if (_requestContext.TenantId is { } tenantId)
-            context.WithTenantId(tenantId);
+        var caller = _accessor?.Current ?? RequestContextScope.Current ?? _requestContext;
 
-        if (_requestContext.UserId is { Length: > 0 } userId)
-            context.WithHeader(MessageContextHeaders.ActorId, userId);
-
-        // Always written when there is any identity at all: a consumer that sees an actor id but
-        // no kind would have to guess, and "Anonymous" is a meaningful answer, not a missing one.
-        context.WithHeader(MessageContextHeaders.ActorKind, _requestContext.ActorKind.ToString());
-
-        if (_requestContext.ClientId is { Length: > 0 } clientId)
-            context.WithHeader(MessageContextHeaders.ClientId, clientId);
+        RequestContextPropagation.WriteHeaders(caller, context, static (publish, name, value) =>
+        {
+            if (name == WellKnownHeaders.TenantId)
+            {
+                if (TenantId.TryParse(value, out var tenantId))
+                    publish.WithTenantId(tenantId);
+            }
+            else
+            {
+                publish.WithHeader(name, value);
+            }
+        });
     }
 }

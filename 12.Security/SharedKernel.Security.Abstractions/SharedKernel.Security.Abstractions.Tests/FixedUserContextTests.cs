@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Context;
 using Xunit;
 
 namespace SharedKernel.Security.Abstractions.Tests;
@@ -11,14 +12,14 @@ public sealed class FixedUserContextTests
     [Fact]
     public void AnonymousUserContext_KindAndAuthentication_AreAnonymousAndFalse()
     {
-        Assert.Equal(IdentityKind.Anonymous, AnonymousUserContext.Instance.IdentityKind);
+        Assert.Equal(ActorKind.Anonymous, AnonymousUserContext.Instance.ActorKind);
         Assert.False(AnonymousUserContext.Instance.IsAuthenticated);
     }
 
     [Fact]
     public void SystemUserContext_KindAndAuthentication_AreSystemAndTrue()
     {
-        Assert.Equal(IdentityKind.System, SystemUserContext.Instance.IdentityKind);
+        Assert.Equal(ActorKind.System, SystemUserContext.Instance.ActorKind);
         Assert.True(SystemUserContext.Instance.IsAuthenticated);
     }
 
@@ -30,9 +31,9 @@ public sealed class FixedUserContextTests
     }
 
     [Fact]
-    public void AnonymousIdentityKind_IsDefaultEnumValue()
+    public void AnonymousActorKind_IsAnonymous()
     {
-        Assert.Equal(default, AnonymousUserContext.Instance.IdentityKind);
+        Assert.Equal(ActorKind.Anonymous, AnonymousUserContext.Instance.ActorKind);
     }
 
     [Theory]

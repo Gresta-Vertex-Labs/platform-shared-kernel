@@ -29,7 +29,6 @@ public sealed class StorageErrorsTests
             (StorageErrors.NotFound("s", "k"), ErrorType.NotFound),
             (StorageErrors.AccessDenied("s"), ErrorType.Forbidden),
             (StorageErrors.InvalidKey("k", "it is empty."), ErrorType.Validation),
-            (StorageErrors.InvalidTenant("t"), ErrorType.Validation),
             (StorageErrors.InvalidRequest("bad."), ErrorType.Validation),
             (StorageErrors.ExpiryTooLong(TimeSpan.FromDays(9), TimeSpan.FromDays(7)), ErrorType.Validation),
             (StorageErrors.AlreadyExists("s", "k"), ErrorType.Conflict),

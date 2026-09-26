@@ -8,7 +8,7 @@ namespace SharedKernel.ServiceDefaults.Telemetry;
 /// <summary>
 /// Wires the <c>"SharedKernel.Application"</c> <see cref="System.Diagnostics.ActivitySource"/> and
 /// <see cref="System.Diagnostics.Metrics.Meter"/> — both owned and emitted by
-/// <c>SharedKernel.Application</c> — into the host's <c>TracerProvider</c>/<c>MeterProvider</c>.
+/// <c>SharedKernel.Application.Pipeline</c> — into the host's <c>TracerProvider</c>/<c>MeterProvider</c>.
 /// </summary>
 public static class ApplicationTelemetryExtensions
 {
@@ -42,7 +42,7 @@ public static class ApplicationTelemetryExtensions
     /// <remarks>
     /// <para>
     /// <c>13.ServiceDefaults</c> does not create this source/meter pair. In
-    /// <c>SharedKernel.Application</c>, <c>TracingBehavior&lt;,&gt;</c> starts one span per
+    /// <c>SharedKernel.Application.Pipeline</c>, <c>TracingBehavior&lt;,&gt;</c> starts one span per
     /// request from the <see cref="System.Diagnostics.ActivitySource"/>, named after the request
     /// type's short name, and <c>MetricsBehavior&lt;,&gt;</c> records the
     /// <c>sharedkernel.application.request.duration</c> histogram (unit <c>s</c>) tagged with

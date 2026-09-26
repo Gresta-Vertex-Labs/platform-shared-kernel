@@ -53,7 +53,7 @@ public static class TelemetryExtensions
     /// sets, and <see cref="System.Diagnostics.Activity"/> baggage, which .NET sends when
     /// <c>Baggage.Current</c> is empty — still propagates. A propagator the service sets before the
     /// host starts is decorated, not replaced. The request's <see cref="System.Diagnostics.Activity"/>
-    /// is a separate store, cleared at the edge by <c>14.Presentation</c> (<c>TrustInboundBaggage</c>).
+    /// is a separate store, cleared at the edge by <c>UseSharedKernelRequestContext()</c> (<c>SharedKernel.ServiceDefaults.Security</c>, <c>RequestContextOptions.TrustInboundBaggage</c>).
     /// </para>
     /// </remarks>
     public static IHostApplicationBuilder AddSharedKernelTelemetry(

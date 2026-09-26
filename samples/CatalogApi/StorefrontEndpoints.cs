@@ -1,5 +1,6 @@
 using CatalogApi.Features.Storefront;
-using MediatR;
+using SharedKernel.Application.Messaging;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Presentation.WebApi;
 
 namespace CatalogApi;
@@ -20,7 +21,7 @@ public sealed class StorefrontEndpoints : IEndpointModule
         var storefront = app.MapGroup("/storefront/{tenantId}").WithTags("Storefront");
 
         storefront.MapGet("/products", (
-            string tenantId,
+            TenantId tenantId,
             ISender sender,
             string? q,
             string? category,
@@ -54,7 +55,7 @@ public sealed class StorefrontEndpoints : IEndpointModule
                 }));
 
         // The headline of the pre-publish pass: a count now says how much it can be trusted.
-        storefront.MapGet("/products/count", (string tenantId, string? category, ISender sender, CancellationToken ct) =>
+        storefront.MapGet("/products/count", (TenantId tenantId, string? category, ISender sender, CancellationToken ct) =>
             sender.Send(new CountProducts(tenantId, category), ct).ToOk(c => new
             {
                 value = c.Value,
@@ -63,20 +64,20 @@ public sealed class StorefrontEndpoints : IEndpointModule
                 display = c.ToString(),
             }));
 
-        storefront.MapGet("/products/{documentId}", (string tenantId, string documentId, ISender sender, CancellationToken ct) =>
+        storefront.MapGet("/products/{documentId}", (TenantId tenantId, string documentId, ISender sender, CancellationToken ct) =>
             sender.Send(new GetProduct(tenantId, documentId), ct).ToOk());
 
         // The corpus walk, streamed as it is read: a stream query, not a Result (see ExportProducts).
-        storefront.MapGet("/products/export", (string tenantId, ISender sender, CancellationToken ct) =>
+        storefront.MapGet("/products/export", (TenantId tenantId, ISender sender, CancellationToken ct) =>
             TypedResults.Ok(sender.CreateStream(new ExportProducts(tenantId), ct)));
 
         // ── Meilisearch-exclusive from here down (see the handlers) ─────────────────────────────────
 
-        storefront.MapGet("/products/instant", (string tenantId, string q, ISender sender, CancellationToken ct) =>
+        storefront.MapGet("/products/instant", (TenantId tenantId, string q, ISender sender, CancellationToken ct) =>
             sender.Send(new InstantSearchProducts(tenantId, q), ct)
                 .ToOk(r => r.Hits.Select(h => new { h.Document.DocumentId, h.Document.Name })));
 
-        storefront.MapPost("/products/search-token", (string tenantId, ISender sender, CancellationToken ct) =>
+        storefront.MapPost("/products/search-token", (TenantId tenantId, ISender sender, CancellationToken ct) =>
             sender.Send(new IssueSearchToken(tenantId), ct)
                 .ToOk(t => new
                 {

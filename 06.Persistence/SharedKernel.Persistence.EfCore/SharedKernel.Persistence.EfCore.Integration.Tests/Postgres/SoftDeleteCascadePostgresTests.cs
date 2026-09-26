@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Testing.Containers;
 using SharedKernel.Testing.Persistence;
 
@@ -26,7 +27,7 @@ public sealed class SoftDeleteCascadePostgresTests
     private string ConnectionString =>
         new NpgsqlConnectionStringBuilder(_fixture.ConnectionString) { Database = DatabaseName }.ConnectionString;
 
-    private PgTestDbContext CreateContext(Guid tenantId) =>
+    private PgTestDbContext CreateContext(TenantId tenantId) =>
         PgTestDbContextFactory.Create(
             ConnectionString,
             new FakeAuditActorContext("actor"),
@@ -35,7 +36,7 @@ public sealed class SoftDeleteCascadePostgresTests
     [Fact]
     public async Task SoftDelete_RequiredOwnedChildrenSurvive_AndOwnedVOColumnsIntact()
     {
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
         var orderId = PgOrderId.New();
 
         await using (var setup = CreateContext(tenantId))
@@ -91,7 +92,7 @@ public sealed class SoftDeleteCascadePostgresTests
         // A second, independent proof that the rescue is scoped correctly: after the cascade-rescue
         // above, editing ONE rescued line on a FRESH load must not somehow "undelete" the root or
         // duplicate/lose the sibling line.
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
         var orderId = PgOrderId.New();
 
         await using (var setup = CreateContext(tenantId))

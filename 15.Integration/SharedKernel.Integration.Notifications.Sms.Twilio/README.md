@@ -4,6 +4,12 @@ First shipping SMS provider for `SharedKernel.Integration.Notifications.Abstract
 Twilio's Content API (templated messaging) directly through `IHttpClientFactory` +
 `Microsoft.Extensions.Http.Resilience`. No `Twilio` vendor NuGet SDK dependency.
 
+| | |
+| --- | --- |
+| Tier | Adapter |
+| Install | `<PackageReference Include="SharedKernel.Integration.Notifications.Sms.Twilio" />` (brings `.Notifications.Abstractions`) |
+| Sends | Only the message itself: no tenant, actor or correlation header leaves the platform |
+
 ---
 
 ## Setup

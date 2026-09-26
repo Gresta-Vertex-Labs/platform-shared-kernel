@@ -1,5 +1,6 @@
-using SharedKernel.Application;
+using SharedKernel.Application.Messaging;
 using SharedKernel.Core.Extensions;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Search.Abstractions.Abstractions;
 using SharedKernel.Search.Abstractions.Models;
@@ -9,7 +10,7 @@ namespace CatalogApi.Features.Storefront;
 
 /// <summary>Free text + filters + sort + facets + highlighting + paging, all through the neutral builder.</summary>
 public sealed record SearchProducts(
-    string TenantId,
+    TenantId TenantId,
     string? Text,
     string? Category,
     double? MaxPrice,
@@ -53,6 +54,6 @@ public sealed class SearchProductsHandler(ISearchIndex<ProductDocument> index)
         // A malformed query fails Build() and never reaches the engine; one past this index's ceilings fails
         // SearchAsync's pre-flight check, also before any I/O. Either way the client gets the 400.
         return search.Build()
-            .Bind(request => index.SearchAsync(request, TenantScope.Of(query.TenantId), cancellationToken));
+            .Bind(request => index.SearchAsync(request, TenantScope.For(query.TenantId), cancellationToken));
     }
 }

@@ -1,29 +1,23 @@
 ---
 name: health-check-tag-calibration
-description: Canonical tag taxonomy and HealthStatus calibration decisions for every health check in 13.ServiceDefaults
+description: Canonical tag taxonomy and HealthStatus calibration for 13.ServiceDefaults health checks after WO-086 (IReadinessProbe + AddSharedKernelReadiness)
 metadata:
   type: project
 ---
 
-Tag taxonomy established across P-010/P-122/P-170 task design (2026-06-19), all consistent with the domain's central liveness/readiness invariant:
+> WO-086 (2026-09): every per-provider readiness extension (`AddRedisHealthCheck`, `AddCacheReadinessCheck`, `Add{Messaging,Storage,Search,VectorStore,Workflow,Scheduler,EncryptionKeyProvider,FieldEncryption,AuditSealing}ReadinessCheck`) and the nine `SharedKernel.ServiceDefaults.{Provider}` packages hosting them were deleted. Providers now register an `IReadinessProbe` (`SharedKernel.Primitives.Health`) and `healthChecks.AddSharedKernelReadiness()` maps each to a `ready` check. The table below is the current state; verify against `13.ServiceDefaults/CLAUDE.md` before relying on it.
 
-| Check | Tags | HealthStatus on failure | Opt-in? |
+| Check | Registered by | Tags | HealthStatus on failure |
 |---|---|---|---|
-| `StartupGateHealthCheck` | `"ready"` | `Unhealthy` (before `MarkReady()`) | No — auto-registered by `AddServiceDefaults()`, the only exception, because it has zero dependency-specific coupling (depends only on in-process `StartupGate`) |
-| `AddDatabaseReadinessCheck<TContext>` / `AddDapperDatabaseReadinessCheck` | `"ready"`, `"db"` | `Unhealthy` | Yes |
-| `AddRedisHealthCheck` | `"ready"`, `"redis"`, `"cache"` | `Unhealthy` (it's a raw connectivity check, not a fail-safe-aware probe) | Yes |
-| `AddCacheReadinessCheck` | `"ready"`, `"cache"` | `Degraded` — **never `Unhealthy`** | Yes |
-| `AddRabbitMqMessagingHealthCheck` / `AddAzureServiceBusMessagingHealthCheck` | `"ready"`, `"messaging"` | `Unhealthy` | **RETIRED OUTRIGHT (WO-054/P-351, 2026-08-04)** — see [[messaging_health_check_probe_pattern]]. Not deprecated-and-kept; no signature-compatible fix existed. Replaced by `AddMessagingReadinessCheck` |
-| `AddMessagingReadinessCheck` (WO-054/P-351, design-locked 2026-08-04, blocked on `07.Messaging`'s `SK.07.ReadinessProbe`/P-347 as of that date) | `"ready"`, `"messaging"` (reused, unchanged) | `Unhealthy` (never `Degraded` — raw connectivity, no fail-safe layer) iff `MessageBusHealth.IsHealthy == false` | Yes. **Takes NO connection/identifier parameter at all** — resolves `IMessageBusProbe` from DI |
-| `AddStorageReadinessCheck` (WO-043/P-270 — implemented and shipped 2026-07-18) | `"ready"`, `"storage"` | `Unhealthy` | Yes |
-| `AddSearchReadinessCheck` (WO-044/P-277, design-locked, blocked on 09.Search as of 2026-07-19) | `"ready"`, `"search"` | `Unhealthy` (never `Degraded` — no fail-safe layer in front of raw search-index connectivity) iff any of `Reachable`/`IndexAddressable`/`Searchable` is `false`. **`PendingWriteCount` is deliberately excluded from the health calculation entirely** — surfaced only as informational `HealthCheckResult.Data`, since a deep write backlog means results are stale, not unavailable | Yes |
-| `AddVectorStoreReadinessCheck` (WO-045/P-285, design-locked, blocked on 10.Intelligence as of 2026-07-21) | `"ready"`, `"vector-store"` | `Unhealthy` (never `Degraded`) iff any of `Reachable`/`CollectionAddressable`/`Queryable` is `false`. `PendingWriteCount` excluded from the calc, same rationale as Search's identical field | Yes |
-| `AddOrchestrationReadinessCheck` (WO-045/P-285, outer shape only design-locked — see [[upstream_contract_definition_gap]]) | `"ready"`, `"orchestration"` | Not yet determinable — the `ProbeAsync`-shaped member it should wrap does not exist in `10.Intelligence`'s own ratified `ICompletionProviderDescriptor` contract as of this pass | Yes, once implemented |
+| `startup` (`StartupGateHealthCheck`) | `AddSharedKernelHealthChecks()` (only always-on check — in-process state only) | `"ready"` | `Unhealthy` before `MarkReady()` |
+| `AddDatabaseReadinessCheck<TContext>` / `AddDapperDatabaseReadinessCheck` (`SharedKernel.ServiceDefaults.Persistence`) | opt-in | `"ready"`, `"db"` | `Unhealthy`; the EF check also waits for startup migrations |
+| `AddPersistenceStartupReadinessCheck` (`.Persistence`) | opt-in | `"ready"` | `Unhealthy` until `IPersistenceStartup` completes |
+| every `IReadinessProbe` (`redis`, `cache`, `messaging`, `storage-{store}`, `search-{provider}-{index}`, `vector-store-{provider}-{collection}`, `workflows`, `scheduler`, `encryption-key-provider`, `field-encryption`, `audit-sealing`) | opt-in, one call: `AddSharedKernelReadiness()` | `"ready"` | whatever the probe reports: `ReadinessStatus.Degraded` → `Degraded`, `Unhealthy` → `Unhealthy` |
 
-**Key distinction to remember:** `AddRedisHealthCheck` (raw connectivity probe) and `AddCacheReadinessCheck` (functional probe through `ICacheService`) are two different checks with two different calibrations, both opt-in, both tagged `"cache"`. The Redis one reports a hard `Unhealthy` because it's checking the transport directly. The cache-readiness one reports `Degraded` because it goes through `ICacheService.GetAsync`, where FusionCache's L1 fail-safe may legitimately still be serving stale-but-correct data even when L2/Redis is down — pulling the pod from rotation in that case would be the wrong response to a outage FusionCache is specifically designed to absorb.
+**Calibration now lives in the probe, not here.** The cache probe (`CacheReadinessProbe`, `02.Caching.FusionCache`) reports `Degraded`, never `Unhealthy` — FusionCache's fail-safe may still serve stale-but-correct data. The raw Redis connection probe reports `Unhealthy`. This domain's job is to map the probe's status faithfully and never re-calibrate it.
 
-**Why this matters for future phase design:** any new health check task must be classified into this table before being added to state-map.md. The rule of thumb: does this check have a fail-safe/graceful-degradation layer sitting in front of the failure (FusionCache L1, retry-then-serve-cached, etc.)? If yes → `Degraded`. If it's checking raw transport/connection liveness with no absorbing layer → `Unhealthy`. Never `"live"` for anything that touches an external system, full stop.
+**Rule of thumb for reviewing a new probe or check:** is there a fail-safe/graceful-degradation layer in front of the failure (FusionCache fail-safe, retry-then-serve-cached)? If yes → `Degraded`. Raw transport/connection liveness with no absorbing layer → `Unhealthy`. Never `"live"` for anything that touches an external system.
 
-**New sub-pattern from `AddSearchReadinessCheck` (WO-044): a probe result can carry a field that must be EXCLUDED from the health calculation entirely, not merely calibrated to `Degraded`.** `SearchIndexHealth.PendingWriteCount` is nullable-and-permanently-so (per `09.Search/CLAUDE.md`) because it measures staleness (results lag behind writes), not availability — feeding it into Healthy/Unhealthy/Degraded at all would conflate two orthogonal signals. The correct treatment is: surface it as `HealthCheckResult.Data` (a metric/gauge an operator can alert on separately) while the readiness verdict itself is computed from a disjoint set of booleans (`Reachable`/`IndexAddressable`/`Searchable`). When a new health check's probe result has a "backlog/lag/staleness" field alongside "connectivity" fields, check whether the owning domain's own brain already states which category each field belongs to before wiring — do not assume every non-`true` field should push toward `Unhealthy` or `Degraded`.
+**Sub-pattern (WO-044, still valid):** a probe result can carry a field that must be excluded from the verdict entirely — a backlog/lag/staleness figure (search `PendingWriteCount`) measures staleness, not availability. It belongs in the report's `Data`, never in the status. Check the owning domain's own brain for which category each field belongs to.
 
-See [[phase_sequencing]] for build-order dependencies these checks sit behind.
+See [[phase_sequencing]] for build-order dependencies.

@@ -15,7 +15,7 @@ proof-of-possession and revocation checks inside the handler, where application 
 
 | 🔑 Validate | 📌 Bind to the client | 🚫 Revoke | 👤 Identify |
 | --- | --- | --- | --- |
-| Issuer, audience, lifetime, signature | DPoP proofs (RFC 9449) | Your `ITokenRevocationCheck`, fails closed | `IUserContext`, `ITenantProvider` |
+| Issuer, audience, lifetime, signature | DPoP proofs (RFC 9449) | Your `ITokenRevocationCheck`, fails closed | `IUserContext` (caller and `TenantId?`) |
 | Asymmetric allow-list: RS, PS, ES 256–512 | Replay cache and server nonces | Cache keyed by token hash | Users and service principals |
 | Optional `typ` check (`at+jwt`) | Certificate-bound tokens (RFC 8705) | Bounded "not revoked" delay | Claim names from configuration |
 | Settings validated at startup | Enforced in the handler, not in events | Introspection-ready request | Any OIDC provider, no provider SDK |
@@ -42,14 +42,15 @@ dotnet add package SharedKernel.Security.Oidc
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
+| Tier | Host (references ASP.NET Core; reference it from the host project only) |
 | Dependencies | [`SharedKernel.Security.Abstractions`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/12.Security/SharedKernel.Security.Abstractions), [`SharedKernel.Configuration`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/01.Core/SharedKernel.Configuration), [`Microsoft.AspNetCore.Authentication.JwtBearer`](https://www.nuget.org/packages/Microsoft.AspNetCore.Authentication.JwtBearer) (brings the ASP.NET Core shared framework) |
 | Registration | `services.AddOidcAuthentication(configuration)`, then opt in to DPoP and revocation |
 | Configuration section | `SharedKernel:Security:Oidc` |
 
 | Companion package | Adds |
 | --- | --- |
-| [`SharedKernel.Security.Abstractions`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/12.Security/SharedKernel.Security.Abstractions) | `IUserContext`, `ITenantProvider`, `SystemUserContext`, `SecurityClaimTypes` (installed with this package) |
-| [`SharedKernel.Presentation.WebApi`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/14.Presentation/SharedKernel.Presentation.WebApi) | `[RequireRole]`, `[RequireEndpointPermission]`, `[RequireFreshAuthentication]`, `[RequireAuthenticationMethod]` over `IUserContext` |
+| [`SharedKernel.Security.Abstractions`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/12.Security/SharedKernel.Security.Abstractions) | `IUserContext`, `SystemUserContext`, `SecurityClaimTypes` (installed with this package) |
+| [`SharedKernel.Presentation.WebApi`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/14.Presentation/SharedKernel.Presentation.WebApi) | `[RequireRole]`, `[RequireEndpointPermission]`, `[RequireFreshAuthentication]`, `[RequireAuthenticationMethod]` over `IUserContext`, as native authorization policies (attributes from `SharedKernel.Presentation.Core`, namespace `SharedKernel.Presentation.Authorization`) |
 | [`SharedKernel.ServiceDefaults.Security.Mtls`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/13.ServiceDefaults/SharedKernel.ServiceDefaults.Security.Mtls) | Client certificates from Kestrel or a TLS-terminating proxy, for certificate-bound tokens |
 | [`SharedKernel.MultiTenancy`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/13.ServiceDefaults/SharedKernel.MultiTenancy) | Tenant resolution middleware; its claim strategy reads the tenant this package maps |
 | [`SharedKernel.Security.Totp`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/12.Security/SharedKernel.Security.Totp) | Session-bound TOTP step-up (`amr` = `otp`) on top of an OIDC session |
@@ -89,12 +90,12 @@ var app = builder.Build();
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapGet("/me", (IUserContext user, ITenantProvider tenant) => new
+app.MapGet("/me", (IUserContext user) => new
 {
-    user.IdentityKind,
+    user.ActorKind,
     user.SubjectId,
     user.ClientId,
-    TenantId = tenant.TenantId,
+    user.TenantId,
     user.Roles,
     user.Permissions,
 }).RequireAuthorization();
@@ -106,12 +107,13 @@ app.Run();
 anonymous outside a request.
 
 ```csharp
+using SharedKernel.Execution.Context;
 using SharedKernel.Security.Abstractions;
 
 public sealed class OrderApprovals(IUserContext user)
 {
     public bool CanApprove() =>
-        user.IdentityKind == IdentityKind.User
+        user.ActorKind == ActorKind.User
         && user.HasPermission("orders.approve"); // ordinal: scopes are case-sensitive
 }
 ```
@@ -127,7 +129,7 @@ public sealed class OrderApprovals(IUserContext user)
 | Accept tokens from Microsoft Entra ID | `AddOidcAuthentication` with `tid`/`oid` claim settings | [Entra ID](#1-protect-an-api-with-microsoft-entra-id) |
 | Accept tokens from Entra External ID or Azure AD B2C | Same registration, provider-specific `Authority` | [External ID and B2C](#2-accept-tokens-from-entra-external-id-or-azure-ad-b2c) |
 | Accept tokens from Keycloak or Auth0 | `Claims` settings for roles, permissions and tenant | [Keycloak](#3-accept-tokens-from-keycloak), [Auth0](#4-accept-tokens-from-auth0) |
-| Tell a daemon's token from a user's | `IUserContext.IdentityKind`, `Claims:ApplicationTokenClaims` | [Service-to-service](#5-accept-service-to-service-tokens) |
+| Tell a daemon's token from a user's | `IUserContext.ActorKind`, `Claims:ApplicationTokenClaims` | [Service-to-service](#5-accept-service-to-service-tokens) |
 | Accept DPoP-bound tokens | `.AddDpop<TReplayCache>()`, your `IDpopReplayCache` | [DPoP](#6-accept-dpop-bound-tokens) |
 | Reject every token that is not DPoP-bound | `Dpop:Mode = Required`, optional `Dpop:RequireNonce` | [Require DPoP](#7-require-dpop-with-server-nonces) |
 | Accept certificate-bound tokens behind a proxy | Forwarded client certificate + this package's RFC 8705 check | [Certificate-bound tokens](#8-accept-certificate-bound-tokens-behind-a-tls-terminating-proxy) |
@@ -438,7 +440,7 @@ builder.Services.Configure<OidcAuthenticationOptions>(options =>
 
 ### 5. Accept service-to-service tokens
 
-A client-credentials token has no user. The mapper returns `IdentityKind.ServicePrincipal` when any of these holds:
+A client-credentials token has no user. The mapper returns `ActorKind.Service` when any of these holds:
 
 | Rule | Typical provider |
 | --- | --- |
@@ -446,16 +448,17 @@ A client-credentials token has no user. The mapper returns `IdentityKind.Service
 | The subject equals the client id (ordinal) | Okta, Duende IdentityServer |
 | There is a client id but no subject | Providers that omit `sub` for clients |
 
-For a service principal, `SubjectId` is the subject, or the client id when there is no subject. A token with neither
+For a service caller, `SubjectId` is the subject, or the client id when there is no subject. A token with neither
 a subject nor a client id is rejected with `401` and logs event `12100`.
 
 ```csharp
+using SharedKernel.Execution.Context;
 using SharedKernel.Security.Abstractions;
 
 app.MapPost("/internal/orders/{id:guid}/recalculate", (Guid id, IUserContext caller) =>
 {
     // Only the billing daemon, and only with the application role granted to it.
-    if (caller.IdentityKind != IdentityKind.ServicePrincipal
+    if (caller.ActorKind != ActorKind.Service
         || caller.ClientId != "billing-worker"
         || !caller.HasRole("Orders.Recalculate"))
     {
@@ -970,9 +973,10 @@ metadata source; changing a pinned setting there (for example the algorithm list
 For unit tests that need an identity without a token, construct `UserContext` directly:
 
 ```csharp
+using SharedKernel.Execution.Context;
 using SharedKernel.Security.Abstractions;
 
-IUserContext approver = new UserContext(IdentityKind.User, subjectId: "user-42")
+IUserContext approver = new UserContext(ActorKind.User, subjectId: "user-42")
 {
     Roles = ["approver"],
     Permissions = ["orders.approve"],
@@ -994,7 +998,7 @@ IUserContext approver = new UserContext(IdentityKind.User, subjectId: "user-42")
 ### Registration
 
 ```csharp
-services.AddOidcAuthentication(configuration)   // Bearer scheme, IUserContext, ITenantProvider
+services.AddOidcAuthentication(configuration)   // Bearer scheme, IUserContext
     .AddDpop<MyReplayCache>()                   // DPoP tokens; needs a shared IDpopReplayCache
     .AddTokenRevocation<MyRevocationCheck>()    // revocation check on every validated token
     .AddTokenRevocationCache<MyRevocationCache>(); // optional; no effect without AddTokenRevocation
@@ -1014,7 +1018,6 @@ services.AddOidcAuthentication(configuration)   // Bearer scheme, IUserContext, 
 | --- | --- | --- |
 | Authentication scheme `Bearer` | — | Default scheme; JWT bearer with this package's handler |
 | `IUserContext` | Scoped, `TryAdd` | Maps `HttpContext.User` through the registered `IUserContextMapper`s; `AnonymousUserContext` outside a request |
-| `ITenantProvider` | Scoped, `TryAdd` | `UserContextTenantProvider`: `IUserContext.TenantId`, or `Guid.Empty` |
 | `IUserContextMapper` | Singleton, enumerable | The OIDC mapper for identities of type `Bearer` |
 | `IClock` | Singleton, `TryAdd` | `SystemClock`; used for DPoP proof times, nonces and revocation caching |
 | `IHttpContextAccessor` | Singleton | ASP.NET Core |
@@ -1097,7 +1100,7 @@ services.AddOidcAuthentication(configuration)   // Bearer scheme, IUserContext, 
 | `AuthenticationMethodClaimType` | `amr` | `AuthenticationMethods` |
 | `AuthContextClassReferenceClaimType` | `acr` | `AuthContextClassReference` |
 | `AuthTimeClaimType` | `auth_time` | `AuthTime` (Unix seconds) |
-| `ApplicationTokenClaims` | empty: `idtyp` = `app`, `gty` = `client-credentials` | `IdentityKind.ServicePrincipal` on a type and value match |
+| `ApplicationTokenClaims` | empty: `idtyp` = `app`, `gty` = `client-credentials` | `ActorKind.Service` on a type and value match |
 
 Single claim types must not be empty; lists and the dictionary must not contain empty entries. `IsSenderConstrained`
 is `true` when the token has a `cnf` with `jkt` or `x5t#S256`.
@@ -1315,8 +1318,8 @@ Rules for generating code with this package. Each line is a rule.
 REGISTER     services.AddOidcAuthentication(configuration) from section SharedKernel:Security:Oidc.
              Required: Authority (absolute, https) and Audiences (at least one). Then app.UseAuthentication(),
              app.UseAuthorization(), and RequireAuthorization() on endpoints.
-READ CALLER  Inject IUserContext (scoped) or ITenantProvider. IdentityKind: User | ServicePrincipal | Anonymous.
-             HasRole/HasPermission/WasAuthenticatedWith compare ordinally. TenantId is Guid? (Guid.Empty via ITenantProvider).
+READ CALLER  Inject IUserContext (scoped). ActorKind (SharedKernel.Execution.Context): User | Service | Anonymous.
+             HasRole/HasPermission/WasAuthenticatedWith compare ordinally. TenantId is TenantId? (null = no tenant).
 CLAIMS       Names are as issued (no inbound renaming). Configure under Claims: SubjectClaimType, RoleClaimType,
              PermissionClaimTypes, ClientIdClaimTypes, TenantClaimType (GUID), SessionIdClaimTypes, ApplicationTokenClaims.
              Entra ID: SubjectClaimType=oid, TenantClaimType=tid. A configured list REPLACES its default.
@@ -1352,7 +1355,7 @@ FORBIDDEN    MapInboundClaims=true; HS256/none; RequireHttpsMetadata=false in pr
   and Keycloak differ only in configuration.
 - **Standards**: JWT bearer (RFC 6750), DPoP (RFC 9449), certificate-bound tokens (RFC 8705), JWK thumbprints
   (RFC 7638); FAPI 2.0 algorithms (`PS256`, `ES256`) by configuration.
-- **Order-independent registration**: `TryAdd` everywhere; an existing `IUserContext`, `ITenantProvider`, `IClock`,
+- **Order-independent registration**: `TryAdd` everywhere; an existing `IUserContext`, `IClock`,
   replay cache, revocation check or cache wins.
 - **Not trimming- or AOT-safe**: `AddOidcAuthentication` binds configuration by reflection and is marked
   `[RequiresUnreferencedCode]` and `[RequiresDynamicCode]`.

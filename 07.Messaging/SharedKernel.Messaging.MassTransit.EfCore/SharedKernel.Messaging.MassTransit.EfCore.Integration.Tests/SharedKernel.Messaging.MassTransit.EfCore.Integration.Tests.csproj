@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    The container-backed half of SharedKernel.Messaging.MassTransit.EfCore's tests: the outbox against a real
+    PostgreSQL (Testcontainers), with the bus outbox delivery service running. Kept apart from
+    SharedKernel.Messaging.MassTransit.EfCore.Tests so that project stays Docker-free in the unit lane; this one
+    runs in the integration lane (Platform.SharedKernel.Integration.slnf).
+  -->
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel.Messaging.MassTransit.EfCore.csproj" />
+    <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Testing.Internal\SharedKernel.Testing.Internal.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="coverlet.collector">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
+  </ItemGroup>
+</Project>

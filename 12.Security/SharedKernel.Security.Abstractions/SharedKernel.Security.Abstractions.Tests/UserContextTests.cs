@@ -1,3 +1,5 @@
+using SharedKernel.Execution.Tenancy;
+using SharedKernel.Execution.Context;
 using System.Security.Claims;
 using Xunit;
 
@@ -8,24 +10,24 @@ public sealed class UserContextTests
     private static readonly DateTimeOffset Now = new(2026, 9, 16, 12, 0, 0, TimeSpan.Zero);
 
     [Theory]
-    [InlineData(IdentityKind.Anonymous)]
-    [InlineData(IdentityKind.System)]
-    [InlineData((IdentityKind)99)]
-    public void Constructor_KindWithoutSubject_ThrowsArgumentOutOfRange(IdentityKind kind)
+    [InlineData(ActorKind.Anonymous)]
+    [InlineData(ActorKind.System)]
+    [InlineData((ActorKind)99)]
+    public void Constructor_KindWithoutSubject_ThrowsArgumentOutOfRange(ActorKind kind)
     {
         var exception = Assert.Throws<ArgumentOutOfRangeException>(() => new UserContext(kind, "subject-1"));
 
-        Assert.Equal("identityKind", exception.ParamName);
+        Assert.Equal("actorKind", exception.ParamName);
     }
 
     [Theory]
-    [InlineData(IdentityKind.User)]
-    [InlineData(IdentityKind.ServicePrincipal)]
-    public void Constructor_KindWithSubject_SetsKindSubjectAndAuthenticated(IdentityKind kind)
+    [InlineData(ActorKind.User)]
+    [InlineData(ActorKind.Service)]
+    public void Constructor_KindWithSubject_SetsKindSubjectAndAuthenticated(ActorKind kind)
     {
         var context = new UserContext(kind, "subject-1");
 
-        Assert.Equal(kind, context.IdentityKind);
+        Assert.Equal(kind, context.ActorKind);
         Assert.Equal("subject-1", context.SubjectId);
         Assert.True(context.IsAuthenticated);
     }
@@ -33,7 +35,7 @@ public sealed class UserContextTests
     [Fact]
     public void Constructor_NullSubject_Throws()
     {
-        var exception = Assert.ThrowsAny<ArgumentException>(() => new UserContext(IdentityKind.User, null!));
+        var exception = Assert.ThrowsAny<ArgumentException>(() => new UserContext(ActorKind.User, null!));
 
         Assert.Equal("subjectId", exception.ParamName);
     }
@@ -44,7 +46,7 @@ public sealed class UserContextTests
     [InlineData("\t\n")]
     public void Constructor_EmptyOrWhitespaceSubject_ThrowsArgumentException(string subjectId)
     {
-        var exception = Assert.Throws<ArgumentException>(() => new UserContext(IdentityKind.User, subjectId));
+        var exception = Assert.Throws<ArgumentException>(() => new UserContext(ActorKind.User, subjectId));
 
         Assert.Equal("subjectId", exception.ParamName);
     }
@@ -52,13 +54,13 @@ public sealed class UserContextTests
     [Fact]
     public void Constructor_InvalidKindAndEmptySubject_ReportsKindFirst()
     {
-        Assert.Throws<ArgumentOutOfRangeException>(() => new UserContext(IdentityKind.Anonymous, ""));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new UserContext(ActorKind.Anonymous, ""));
     }
 
     [Fact]
     public void Constructor_OnlyRequiredArguments_OptionalMembersHaveEmptyDefaults()
     {
-        var context = new UserContext(IdentityKind.User, "subject-1");
+        var context = new UserContext(ActorKind.User, "subject-1");
 
         Assert.Null(context.ClientId);
         Assert.Null(context.TenantId);
@@ -78,10 +80,10 @@ public sealed class UserContextTests
     [Fact]
     public void InitProperties_AreReturnedAsSet()
     {
-        var tenantId = Guid.Parse("7c9e6679-7425-40de-944b-e07fc1f90ae7");
+        var tenantId = new TenantId(Guid.Parse("7c9e6679-7425-40de-944b-e07fc1f90ae7"));
         var authTime = Now.AddMinutes(-3);
 
-        var context = new UserContext(IdentityKind.ServicePrincipal, "subject-1")
+        var context = new UserContext(ActorKind.Service, "subject-1")
         {
             ClientId = "client-1",
             TenantId = tenantId,
@@ -181,7 +183,7 @@ public sealed class UserContextTests
     public void Constructor_ClaimsSourceMutatedAfterwards_ContextKeepsOriginalClaims()
     {
         var source = new List<Claim> { new("roles", "admin") };
-        var context = new UserContext(IdentityKind.User, "subject-1", source);
+        var context = new UserContext(ActorKind.User, "subject-1", source);
 
         source.Add(new Claim("roles", "injected"));
         source[0] = new Claim("roles", "replaced");
@@ -192,7 +194,7 @@ public sealed class UserContextTests
     [Fact]
     public void HasRole_ExactMatch_ReturnsTrue()
     {
-        var context = new UserContext(IdentityKind.User, "subject-1") { Roles = ["reader", "Admin"] };
+        var context = new UserContext(ActorKind.User, "subject-1") { Roles = ["reader", "Admin"] };
 
         Assert.True(context.HasRole("Admin"));
     }
@@ -204,7 +206,7 @@ public sealed class UserContextTests
     [InlineData("Adm")]
     public void HasRole_CaseOrTextDiffers_ReturnsFalse(string role)
     {
-        var context = new UserContext(IdentityKind.User, "subject-1") { Roles = ["Admin"] };
+        var context = new UserContext(ActorKind.User, "subject-1") { Roles = ["Admin"] };
 
         Assert.False(context.HasRole(role));
     }
@@ -212,7 +214,7 @@ public sealed class UserContextTests
     [Fact]
     public void HasPermission_ExactMatch_ReturnsTrue()
     {
-        var context = new UserContext(IdentityKind.User, "subject-1") { Permissions = ["orders:read", "orders:write"] };
+        var context = new UserContext(ActorKind.User, "subject-1") { Permissions = ["orders:read", "orders:write"] };
 
         Assert.True(context.HasPermission("orders:write"));
     }
@@ -223,7 +225,7 @@ public sealed class UserContextTests
     [InlineData("orders")]
     public void HasPermission_CaseOrTextDiffers_ReturnsFalse(string permission)
     {
-        var context = new UserContext(IdentityKind.User, "subject-1") { Permissions = ["orders:write"] };
+        var context = new UserContext(ActorKind.User, "subject-1") { Permissions = ["orders:write"] };
 
         Assert.False(context.HasPermission(permission));
     }
@@ -231,7 +233,7 @@ public sealed class UserContextTests
     [Fact]
     public void WasAuthenticatedWith_ExactMatch_ReturnsTrue()
     {
-        var context = new UserContext(IdentityKind.User, "subject-1") { AuthenticationMethods = ["pwd", "otp"] };
+        var context = new UserContext(ActorKind.User, "subject-1") { AuthenticationMethods = ["pwd", "otp"] };
 
         Assert.True(context.WasAuthenticatedWith("otp"));
     }
@@ -242,7 +244,7 @@ public sealed class UserContextTests
     [InlineData("mfa")]
     public void WasAuthenticatedWith_CaseOrMethodDiffers_ReturnsFalse(string method)
     {
-        var context = new UserContext(IdentityKind.User, "subject-1") { AuthenticationMethods = ["pwd", "otp"] };
+        var context = new UserContext(ActorKind.User, "subject-1") { AuthenticationMethods = ["pwd", "otp"] };
 
         Assert.False(context.WasAuthenticatedWith(method));
     }
@@ -250,7 +252,7 @@ public sealed class UserContextTests
     [Fact]
     public void RoleChecks_NoValuesGranted_ReturnFalse()
     {
-        var context = new UserContext(IdentityKind.User, "subject-1");
+        var context = new UserContext(ActorKind.User, "subject-1");
 
         Assert.False(context.HasRole("admin"));
         Assert.False(context.HasPermission("orders:write"));
@@ -260,7 +262,7 @@ public sealed class UserContextTests
     [Fact]
     public void RoleChecks_NullArgument_ThrowArgumentNull()
     {
-        var context = new UserContext(IdentityKind.User, "subject-1");
+        var context = new UserContext(ActorKind.User, "subject-1");
 
         Assert.Throws<ArgumentNullException>(() => context.HasRole(null!));
         Assert.Throws<ArgumentNullException>(() => context.HasPermission(null!));
@@ -272,7 +274,7 @@ public sealed class UserContextTests
     {
         // Checks read the mapped collections, never raw claims, so an unmapped claim grants nothing.
         var context = new UserContext(
-            IdentityKind.User,
+            ActorKind.User,
             "subject-1",
             [new Claim("roles", "admin"), new Claim("scope", "orders:write"), new Claim("amr", "otp")]);
 
@@ -284,7 +286,7 @@ public sealed class UserContextTests
     [Fact]
     public void IsAuthenticationFresherThan_AgeExactlyMaxAge_ReturnsTrue()
     {
-        var context = new UserContext(IdentityKind.User, "subject-1") { AuthTime = Now.AddMinutes(-5) };
+        var context = new UserContext(ActorKind.User, "subject-1") { AuthTime = Now.AddMinutes(-5) };
 
         Assert.True(context.IsAuthenticationFresherThan(TimeSpan.FromMinutes(5), Now));
     }
@@ -292,7 +294,7 @@ public sealed class UserContextTests
     [Fact]
     public void IsAuthenticationFresherThan_AgeOneTickOverMaxAge_ReturnsFalse()
     {
-        var context = new UserContext(IdentityKind.User, "subject-1") { AuthTime = Now.AddMinutes(-5).AddTicks(-1) };
+        var context = new UserContext(ActorKind.User, "subject-1") { AuthTime = Now.AddMinutes(-5).AddTicks(-1) };
 
         Assert.False(context.IsAuthenticationFresherThan(TimeSpan.FromMinutes(5), Now));
     }
@@ -300,7 +302,7 @@ public sealed class UserContextTests
     [Fact]
     public void IsAuthenticationFresherThan_AgeUnderMaxAge_ReturnsTrue()
     {
-        var context = new UserContext(IdentityKind.User, "subject-1") { AuthTime = Now.AddMinutes(-4) };
+        var context = new UserContext(ActorKind.User, "subject-1") { AuthTime = Now.AddMinutes(-4) };
 
         Assert.True(context.IsAuthenticationFresherThan(TimeSpan.FromMinutes(5), Now));
     }
@@ -308,7 +310,7 @@ public sealed class UserContextTests
     [Fact]
     public void IsAuthenticationFresherThan_ZeroMaxAgeAndAuthenticatedNow_ReturnsTrue()
     {
-        var context = new UserContext(IdentityKind.User, "subject-1") { AuthTime = Now };
+        var context = new UserContext(ActorKind.User, "subject-1") { AuthTime = Now };
 
         Assert.True(context.IsAuthenticationFresherThan(TimeSpan.Zero, Now));
     }
@@ -316,7 +318,7 @@ public sealed class UserContextTests
     [Fact]
     public void IsAuthenticationFresherThan_UnknownAuthTime_ReturnsFalse()
     {
-        var context = new UserContext(IdentityKind.User, "subject-1");
+        var context = new UserContext(ActorKind.User, "subject-1");
 
         Assert.False(context.IsAuthenticationFresherThan(TimeSpan.MaxValue, Now));
     }
@@ -325,7 +327,7 @@ public sealed class UserContextTests
     public void IsAuthenticationFresherThan_SameInstantDifferentOffset_ComparesInstants()
     {
         var authTime = new DateTimeOffset(2026, 9, 16, 14, 56, 0, TimeSpan.FromHours(3));
-        var context = new UserContext(IdentityKind.User, "subject-1") { AuthTime = authTime };
+        var context = new UserContext(ActorKind.User, "subject-1") { AuthTime = authTime };
 
         Assert.True(context.IsAuthenticationFresherThan(TimeSpan.FromMinutes(4), Now));
         Assert.False(context.IsAuthenticationFresherThan(TimeSpan.FromMinutes(3), Now));
@@ -334,7 +336,7 @@ public sealed class UserContextTests
     [Fact]
     public void IsAuthenticationFresherThan_AuthTimeFarInFuture_ReturnsFalse()
     {
-        var context = new UserContext(IdentityKind.User, "subject-1") { AuthTime = Now.AddDays(1) };
+        var context = new UserContext(ActorKind.User, "subject-1") { AuthTime = Now.AddDays(1) };
 
         Assert.False(context.IsAuthenticationFresherThan(TimeSpan.FromMinutes(5), Now));
     }
@@ -343,7 +345,7 @@ public sealed class UserContextTests
     public void Roles_SourceListMutatedAfterConstruction_ContextUnchanged()
     {
         var roles = new List<string> { "reader" };
-        var context = new UserContext(IdentityKind.User, "subject-1") { Roles = roles };
+        var context = new UserContext(ActorKind.User, "subject-1") { Roles = roles };
 
         roles.Add("admin");
 
@@ -353,13 +355,13 @@ public sealed class UserContextTests
     [Fact]
     public void AuthenticationMethodTimes_NotSet_IsEmpty()
     {
-        Assert.Empty(new UserContext(IdentityKind.User, "subject-1").AuthenticationMethodTimes);
+        Assert.Empty(new UserContext(ActorKind.User, "subject-1").AuthenticationMethodTimes);
     }
 
     [Fact]
     public void GetAuthenticationMethodTime_RecordedMethod_ReturnsItsTime()
     {
-        var context = new UserContext(IdentityKind.User, "subject-1")
+        var context = new UserContext(ActorKind.User, "subject-1")
         {
             AuthenticationMethods = ["pwd", "otp"],
             AuthenticationMethodTimes = new Dictionary<string, DateTimeOffset> { ["otp"] = Now.AddMinutes(-2) },
@@ -373,7 +375,7 @@ public sealed class UserContextTests
     public void GetAuthenticationMethodTime_MethodWithoutRecordedTime_DatesFromTheSignIn()
     {
         // A method the credential carried was verified when the user signed in.
-        var context = new UserContext(IdentityKind.User, "subject-1")
+        var context = new UserContext(ActorKind.User, "subject-1")
         {
             AuthenticationMethods = ["pwd", "otp"],
             AuthenticationMethodTimes = new Dictionary<string, DateTimeOffset> { ["otp"] = Now.AddMinutes(-2) },
@@ -386,7 +388,7 @@ public sealed class UserContextTests
     [Fact]
     public void GetAuthenticationMethodTime_MethodWithoutAnyTime_ReturnsNull()
     {
-        var context = new UserContext(IdentityKind.User, "subject-1") { AuthenticationMethods = ["otp"] };
+        var context = new UserContext(ActorKind.User, "subject-1") { AuthenticationMethods = ["otp"] };
 
         Assert.Null(context.GetAuthenticationMethodTime("otp"));
     }
@@ -395,7 +397,7 @@ public sealed class UserContextTests
     public void GetAuthenticationMethodTime_TimeForAMethodTheCallerDoesNotHave_ReturnsNull()
     {
         // AuthenticationMethods decides which methods the caller has; a time alone proves nothing.
-        var context = new UserContext(IdentityKind.User, "subject-1")
+        var context = new UserContext(ActorKind.User, "subject-1")
         {
             AuthenticationMethods = ["pwd"],
             AuthenticationMethodTimes = new Dictionary<string, DateTimeOffset> { ["otp"] = Now },
@@ -411,7 +413,7 @@ public sealed class UserContextTests
     [InlineData("Otp")]
     public void GetAuthenticationMethodTime_CaseDiffers_ReturnsNull(string method)
     {
-        var context = new UserContext(IdentityKind.User, "subject-1")
+        var context = new UserContext(ActorKind.User, "subject-1")
         {
             AuthenticationMethods = ["otp"],
             AuthenticationMethodTimes = new Dictionary<string, DateTimeOffset> { ["otp"] = Now },
@@ -425,7 +427,7 @@ public sealed class UserContextTests
     {
         // Like the other checks, it reads what the mapper mapped, never raw claims.
         var context = new UserContext(
-            IdentityKind.User,
+            ActorKind.User,
             "subject-1",
             [AuthenticationMethodTimeClaim.Create("otp", Now)])
         {
@@ -438,14 +440,14 @@ public sealed class UserContextTests
     [Fact]
     public void GetAuthenticationMethodTime_NullMethod_Throws()
     {
-        Assert.Throws<ArgumentNullException>(() => new UserContext(IdentityKind.User, "subject-1").GetAuthenticationMethodTime(null!));
+        Assert.Throws<ArgumentNullException>(() => new UserContext(ActorKind.User, "subject-1").GetAuthenticationMethodTime(null!));
     }
 
     [Fact]
     public void AuthenticationMethodTimes_IsACopyKeyedOrdinally_AndReadOnly()
     {
         var source = new Dictionary<string, DateTimeOffset>(StringComparer.OrdinalIgnoreCase) { ["otp"] = Now };
-        var context = new UserContext(IdentityKind.User, "subject-1") { AuthenticationMethodTimes = source };
+        var context = new UserContext(ActorKind.User, "subject-1") { AuthenticationMethodTimes = source };
 
         source["hwk"] = Now;
 
@@ -457,7 +459,7 @@ public sealed class UserContextTests
     [Fact]
     public void AuthenticationMethodTimes_SetToNull_Throws()
     {
-        Assert.Throws<ArgumentNullException>(() => new UserContext(IdentityKind.User, "subject-1") { AuthenticationMethodTimes = null! });
+        Assert.Throws<ArgumentNullException>(() => new UserContext(ActorKind.User, "subject-1") { AuthenticationMethodTimes = null! });
     }
 
     [Fact]
@@ -471,12 +473,12 @@ public sealed class UserContextTests
     }
 
     private static UserContext WithClaims(params (string Type, string Value)[] claims) =>
-        new(IdentityKind.User, "subject-1", claims.Select(claim => new Claim(claim.Type, claim.Value)));
+        new(ActorKind.User, "subject-1", claims.Select(claim => new Claim(claim.Type, claim.Value)));
 
     // An IUserContext written before GetAuthenticationMethodTime existed: it does not implement the member.
     private sealed class ContextWithoutMethodTimes : IUserContext
     {
-        public IdentityKind IdentityKind => IdentityKind.User;
+        public ActorKind ActorKind => ActorKind.User;
 
         public bool IsAuthenticated => true;
 
@@ -484,7 +486,7 @@ public sealed class UserContextTests
 
         public string? ClientId => null;
 
-        public Guid? TenantId => null;
+        public TenantId? TenantId => null;
 
         public string? SessionId => null;
 

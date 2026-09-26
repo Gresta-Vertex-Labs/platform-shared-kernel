@@ -4,6 +4,8 @@ description: WO-039 05.Application deep-dive code review — real bugs and gaps 
 type: project
 ---
 
+> WO-086 (2026-09): `SharedKernel.Application.Behaviors` is now `SharedKernel.Application.Pipeline`; `MediatRDomainEventDispatcher` was deleted (native `DomainEventDispatcher` via `AddSharedKernelDomainEvents()`); MediatR is referenced only by `SharedKernel.Application.Mediator.MediatR`.
+
 WO-039 (2026-07-03): user asked for a full gold-standard review of `05.Application` (SharedKernel.Application + SharedKernel.Application.Behaviors) — bad practices, over-engineering, refactor candidates, missing features. This domain had already been through three work orders (WO-035/036/038) and looked "done" (Core+Tests ● on the board). Reading the actual shipped `.cs` files (not just `CLAUDE.md`/`state-map.md` prose) surfaced four real, previously-undetected issues that documentation alone had missed:
 
 1. **Confirmed functional bug**: `ApplicationBehaviorsBuilder.AddFireAndForgetDispatch()` registers `FireAndForgetGuardBehavior<,>` globally against the open-generic `IPipelineBehavior<,>` in the same call that registers `FireAndForgetBackgroundConsumer`, which dispatches via `ISender.Send(...)`. The guard can't distinguish the consumer's own internal dispatch from external misuse — it always throws, the consumer's catch-all swallows it and logs `Error`. Net effect: fire-and-forget commands never execute when wired exactly as documented. The test suite's own `BuildConsumerDirectProvider` helper has a comment admitting it wires the consumer *without* the guard specifically to avoid this — i.e., the bug was known at the code level but never surfaced as an issue.

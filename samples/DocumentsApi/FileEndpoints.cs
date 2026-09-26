@@ -1,6 +1,6 @@
 using DocumentsApi.Features.Files;
-using MediatR;
 using Microsoft.Net.Http.Headers;
+using SharedKernel.Application.Messaging;
 using SharedKernel.Presentation.WebApi;
 using SharedKernel.Storage;
 

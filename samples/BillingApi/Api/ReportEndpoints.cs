@@ -1,6 +1,6 @@
 using BillingApi.Features.Audit;
 using BillingApi.Features.Reports;
-using MediatR;
+using SharedKernel.Application.Messaging;
 using SharedKernel.Presentation.WebApi;
 
 namespace BillingApi.Api;

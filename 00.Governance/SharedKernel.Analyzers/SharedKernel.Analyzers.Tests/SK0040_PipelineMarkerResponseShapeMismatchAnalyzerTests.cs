@@ -8,19 +8,19 @@ namespace SharedKernel.Analyzers.Tests;
 /// <summary>Tests for SK0040 <see cref="PipelineMarkerResponseShapeMismatchAnalyzer"/>.</summary>
 /// <remarks>
 /// Fire path: a type carrying <c>[RequirePermission]</c> (directly or on a base type) or implementing
-/// <c>IIdempotentRequest</c> plus <c>MediatR.IRequest&lt;TResponse&gt;</c> where <c>TResponse</c> is a
-/// plain DTO — the exact runtime shape that makes <c>FailureResponse.Create&lt;TResponse&gt;</c> throw
-/// <see cref="InvalidOperationException"/> the first time the behavior short-circuits.
+/// <c>IIdempotentRequest</c> plus <c>SharedKernel.Application.Messaging.IRequest&lt;TResponse&gt;</c> where
+/// <c>TResponse</c> is a plain DTO — the exact runtime shape that makes
+/// <c>FailureResponse.Create&lt;TResponse&gt;</c> throw <see cref="InvalidOperationException"/> the first time the
+/// behavior short-circuits.
 /// Pass path: a <c>Result</c>/closed <c>Result&lt;T&gt;</c> response, no <c>IRequest&lt;&gt;</c>
-/// at all, an open/generic response type, <c>14.Presentation</c>'s endpoint attribute of the same
-/// name, and — the two markers whose behaviors were read and found NOT to call
+/// at all, an open/generic response type, an attribute of the same name in another namespace, and — the two markers whose behaviors were read and found NOT to call
 /// <c>FailureResponse.Create</c> — <c>IAuditableRequest&lt;TResponse&gt;</c> and
 /// <c>ILoggableRequest&lt;TResponse&gt;</c>, which must never fire this rule.
 /// </remarks>
 public class SK0040_PipelineMarkerResponseShapeMismatchAnalyzerTests
 {
     private const string Stubs = """
-        namespace MediatR
+        namespace SharedKernel.Application.Messaging
         {
             public interface IRequest<out TResponse> { }
         }
@@ -38,22 +38,31 @@ public class SK0040_PipelineMarkerResponseShapeMismatchAnalyzerTests
             }
         }
 
-        namespace SharedKernel.Application
+        namespace SharedKernel.Application.Authorization
         {
             [System.AttributeUsage(System.AttributeTargets.Class | System.AttributeTargets.Struct, AllowMultiple = true, Inherited = true)]
             public sealed class RequirePermissionAttribute : System.Attribute
             {
                 public RequirePermissionAttribute(params string[] permissions) { }
             }
+        }
 
+        namespace SharedKernel.Application.Idempotency
+        {
             public interface IIdempotentRequest { }
+        }
 
+        namespace SharedKernel.Application.Auditing
+        {
             public interface IAuditableRequest<TResponse> { }
+        }
 
+        namespace SharedKernel.Application.Logging
+        {
             public interface ILoggableRequest<TResponse> { }
         }
 
-        namespace SharedKernel.Presentation.WebApi
+        namespace SharedKernel.Presentation.Authorization
         {
             [System.AttributeUsage(System.AttributeTargets.Class | System.AttributeTargets.Method, AllowMultiple = true)]
             public sealed class RequirePermissionAttribute : System.Attribute
@@ -77,8 +86,8 @@ public class SK0040_PipelineMarkerResponseShapeMismatchAnalyzerTests
             TestCode = Stubs + """
                 namespace Fixture.Requests
                 {
-                    using MediatR;
-                    using SharedKernel.Application;
+                    using SharedKernel.Application.Messaging;
+                    using SharedKernel.Application.Authorization;
 
                     public sealed class OrderDto { }
 
@@ -101,8 +110,8 @@ public class SK0040_PipelineMarkerResponseShapeMismatchAnalyzerTests
             TestCode = Stubs + """
                 namespace Fixture.Requests
                 {
-                    using MediatR;
-                    using SharedKernel.Application;
+                    using SharedKernel.Application.Messaging;
+                    using SharedKernel.Application.Authorization;
 
                     public sealed class OrderDto { }
 
@@ -127,8 +136,8 @@ public class SK0040_PipelineMarkerResponseShapeMismatchAnalyzerTests
             TestCode = Stubs + """
                 namespace Fixture.Requests
                 {
-                    using MediatR;
-                    using SharedKernel.Application;
+                    using SharedKernel.Application.Messaging;
+                    using SharedKernel.Application.Idempotency;
 
                     public sealed class OrderDto { }
 
@@ -153,8 +162,9 @@ public class SK0040_PipelineMarkerResponseShapeMismatchAnalyzerTests
             TestCode = Stubs + """
                 namespace Fixture.Requests
                 {
-                    using MediatR;
-                    using SharedKernel.Application;
+                    using SharedKernel.Application.Messaging;
+                    using SharedKernel.Application.Authorization;
+                    using SharedKernel.Application.Idempotency;
 
                     public sealed class OrderDto { }
 
@@ -188,8 +198,8 @@ public class SK0040_PipelineMarkerResponseShapeMismatchAnalyzerTests
             TestCode = Stubs + """
                 namespace Fixture.Requests
                 {
-                    using MediatR;
-                    using SharedKernel.Application;
+                    using SharedKernel.Application.Messaging;
+                    using SharedKernel.Application.Authorization;
                     using SharedKernel.Primitives.Results;
 
                     [RequirePermission("orders.write")]
@@ -211,8 +221,8 @@ public class SK0040_PipelineMarkerResponseShapeMismatchAnalyzerTests
             TestCode = Stubs + """
                 namespace Fixture.Requests
                 {
-                    using MediatR;
-                    using SharedKernel.Application;
+                    using SharedKernel.Application.Messaging;
+                    using SharedKernel.Application.Idempotency;
                     using SharedKernel.Primitives.Results;
 
                     public sealed class GoodIdempotentCommand : IIdempotentRequest, IRequest<Result<int>>
@@ -229,14 +239,14 @@ public class SK0040_PipelineMarkerResponseShapeMismatchAnalyzerTests
     /// ever resolve into its pipeline — must NOT fire.
     /// </summary>
     [Fact]
-    public async Task PassPath_RequirePermissionWithNoMediatRRequestInterface_NoDiagnostic()
+    public async Task PassPath_RequirePermissionWithNoKernelRequestInterface_NoDiagnostic()
     {
         var test = new CSharpAnalyzerTest<PipelineMarkerResponseShapeMismatchAnalyzer, DefaultVerifier>
         {
             TestCode = Stubs + """
                 namespace Fixture.Requests
                 {
-                    using SharedKernel.Application;
+                    using SharedKernel.Application.Authorization;
 
                     [RequirePermission("orders.write")]
                     public sealed class NotEvenARequest
@@ -249,19 +259,20 @@ public class SK0040_PipelineMarkerResponseShapeMismatchAnalyzerTests
     }
 
     /// <summary>
-    /// <c>14.Presentation</c>'s endpoint attribute of the same name is not the pipeline's: it never
-    /// reaches <c>AuthorizationBehavior</c>, so it must NOT fire.
+    /// An attribute of the same name in another namespace is not the pipeline's: it never reaches
+    /// <c>AuthorizationBehavior</c>, so it must NOT fire. (The endpoint attribute in <c>SharedKernel.Presentation.Authorization</c>
+    /// is named <c>RequireEndpointPermission</c> since P-579; the stub keeps the colliding name on purpose.)
     /// </summary>
     [Fact]
-    public async Task PassPath_PresentationRequirePermissionWithDtoResponse_NoDiagnostic()
+    public async Task PassPath_SameNamedAttributeFromAnotherNamespaceWithDtoResponse_NoDiagnostic()
     {
         var test = new CSharpAnalyzerTest<PipelineMarkerResponseShapeMismatchAnalyzer, DefaultVerifier>
         {
             TestCode = Stubs + """
                 namespace Fixture.Requests
                 {
-                    using MediatR;
-                    using SharedKernel.Presentation.WebApi;
+                    using SharedKernel.Application.Messaging;
+                    using SharedKernel.Presentation.Authorization;
 
                     public sealed class OrderDto { }
 
@@ -290,8 +301,8 @@ public class SK0040_PipelineMarkerResponseShapeMismatchAnalyzerTests
             TestCode = Stubs + """
                 namespace Fixture.Requests
                 {
-                    using MediatR;
-                    using SharedKernel.Application;
+                    using SharedKernel.Application.Messaging;
+                    using SharedKernel.Application.Auditing;
 
                     public sealed class OrderDto { }
 
@@ -319,8 +330,8 @@ public class SK0040_PipelineMarkerResponseShapeMismatchAnalyzerTests
             TestCode = Stubs + """
                 namespace Fixture.Requests
                 {
-                    using MediatR;
-                    using SharedKernel.Application;
+                    using SharedKernel.Application.Messaging;
+                    using SharedKernel.Application.Logging;
 
                     public sealed class OrderDto { }
 
@@ -345,8 +356,8 @@ public class SK0040_PipelineMarkerResponseShapeMismatchAnalyzerTests
             TestCode = Stubs + """
                 namespace Fixture.Requests
                 {
-                    using MediatR;
-                    using SharedKernel.Application;
+                    using SharedKernel.Application.Messaging;
+                    using SharedKernel.Application.Authorization;
 
                     [RequirePermission("orders.write")]
                     public sealed class GenericCommand<TResult> : IRequest<TResult>
@@ -370,8 +381,8 @@ public class SK0040_PipelineMarkerResponseShapeMismatchAnalyzerTests
             TestCode = Stubs + """
                 namespace Fixture.Requests
                 {
-                    using MediatR;
-                    using SharedKernel.Application;
+                    using SharedKernel.Application.Messaging;
+                    using SharedKernel.Application.Idempotency;
                     using SharedKernel.Primitives.Results;
 
                     public sealed class GenericIdempotentCommand<T> : IIdempotentRequest, IRequest<Result<T>>

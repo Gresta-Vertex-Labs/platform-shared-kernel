@@ -27,7 +27,7 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// future <c>ProblemDetails</c> factory all legitimately construct the type). Exclusion is achieved entirely by the
 /// caller never passing the <c>SharedKernel.Presentation.WebApi</c> assembly to the factory method on
 /// <see cref="Rules.PresentationLayeringRules"/>. The other presentation packages are not exempt: SignalR and gRPC
-/// present errors through the core's <c>ErrorPresentation</c>, and the OpenAPI add-on describes the problem shape
+/// present errors through the shared error presentation (<c>SharedKernel.Presentation.Core</c>), and the OpenAPI add-on describes the problem shape
 /// with <c>OpenApiSchema</c> objects, never a <c>ProblemDetails</c> instance.
 /// </para>
 /// <para>

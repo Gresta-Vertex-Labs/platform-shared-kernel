@@ -2,6 +2,7 @@ using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
+using SharedKernel.Primitives.Health;
 using SharedKernel.Caching.Abstractions;
 using SharedKernel.Scheduling.Policies;
 using SharedKernel.Scheduling.Probes;
@@ -11,10 +12,10 @@ using Xunit;
 namespace SharedKernel.Scheduling.Tests.Probes;
 
 /// <summary>
-/// T-07 — <see cref="ISchedulerServiceProbe"/> reports <c>IsRunning</c>/<c>RegisteredJobCount</c>/
+/// T-07 — The scheduler readiness probe reports <c>IsRunning</c>/<c>RegisteredJobCount</c>/
 /// <c>LastTickUtc</c> correctly and performs zero I/O. Zero-I/O is proven by wiring an
 /// <see cref="IDistributedLockService"/> substitute that throws if ever touched, then calling
-/// <see cref="ISchedulerServiceProbe.ProbeAsync"/> directly — never through the hosted loop.
+/// the scheduler readiness probe directly — never through the hosted loop.
 /// </summary>
 public sealed class SchedulerServiceProbeTests
 {
@@ -23,10 +24,10 @@ public sealed class SchedulerServiceProbeTests
         var lockService = Substitute.For<IDistributedLockService>();
         lockService
             .TryAcquireLeaseAsync(Arg.Any<string>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
-            .Throws(new InvalidOperationException("ISchedulerServiceProbe must never perform I/O."));
+            .Throws(new InvalidOperationException("the scheduler readiness probe must never perform I/O."));
         lockService
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockOptions?>(), Arg.Any<CancellationToken>())
-            .Throws(new InvalidOperationException("ISchedulerServiceProbe must never perform I/O."));
+            .Throws(new InvalidOperationException("the scheduler readiness probe must never perform I/O."));
         return lockService;
     }
 
@@ -45,13 +46,13 @@ public sealed class SchedulerServiceProbeTests
                 }),
             lockService: NewThrowingLockService());
 
-        ISchedulerServiceProbe probe = harness.Services.GetRequiredService<ISchedulerServiceProbe>();
+        IReadinessProbe probe = harness.Services.GetRequiredReadinessProbe(SchedulerReadiness.ProbeName);
 
-        SchedulerServiceHealth health = await probe.ProbeAsync();
+        ReadinessReport health = await probe.ProbeAsync();
 
-        health.IsRunning.Should().BeFalse();
-        health.RegisteredJobCount.Should().Be(1);
-        health.LastTickUtc.Should().BeNull();
+        health.Data[SchedulerReadiness.IsRunningKey].Should().Be(false);
+        health.Data[SchedulerReadiness.RegisteredJobCountKey].Should().Be(1);
+        health.Data.Should().NotContainKey(SchedulerReadiness.LastTickUtcKey);
     }
 
     [Fact]
@@ -81,11 +82,12 @@ public sealed class SchedulerServiceProbeTests
 
         await harness.StartAsync();
 
-        ISchedulerServiceProbe probe = harness.Services.GetRequiredService<ISchedulerServiceProbe>();
-        SchedulerServiceHealth health = await probe.ProbeAsync();
+        IReadinessProbe probe = harness.Services.GetRequiredReadinessProbe(SchedulerReadiness.ProbeName);
+        ReadinessReport health = await probe.ProbeAsync();
 
-        health.IsRunning.Should().BeTrue();
-        health.RegisteredJobCount.Should().Be(2);
+        health.Data[SchedulerReadiness.IsRunningKey].Should().Be(true);
+        health.IsHealthy.Should().BeTrue();
+        health.Data[SchedulerReadiness.RegisteredJobCountKey].Should().Be(2);
 
         await harness.StopAsync();
     }
@@ -107,13 +109,13 @@ public sealed class SchedulerServiceProbeTests
 
         await harness.StartAsync();
 
-        ISchedulerServiceProbe probe = harness.Services.GetRequiredService<ISchedulerServiceProbe>();
+        IReadinessProbe probe = harness.Services.GetRequiredReadinessProbe(SchedulerReadiness.ProbeName);
 
         bool observed = await Eventually.UntilAsync(() => harness.HostedService.LastTickUtc is not null);
         observed.Should().BeTrue();
 
-        SchedulerServiceHealth health = await probe.ProbeAsync();
-        health.LastTickUtc.Should().NotBeNull();
+        ReadinessReport health = await probe.ProbeAsync();
+        health.Data.Should().ContainKey(SchedulerReadiness.LastTickUtcKey);
 
         await harness.StopAsync();
     }
@@ -136,9 +138,9 @@ public sealed class SchedulerServiceProbeTests
         await harness.StartAsync();
         await harness.StopAsync();
 
-        ISchedulerServiceProbe probe = harness.Services.GetRequiredService<ISchedulerServiceProbe>();
-        SchedulerServiceHealth health = await probe.ProbeAsync();
+        IReadinessProbe probe = harness.Services.GetRequiredReadinessProbe(SchedulerReadiness.ProbeName);
+        ReadinessReport health = await probe.ProbeAsync();
 
-        health.IsRunning.Should().BeFalse();
+        health.Data[SchedulerReadiness.IsRunningKey].Should().Be(false);
     }
 }

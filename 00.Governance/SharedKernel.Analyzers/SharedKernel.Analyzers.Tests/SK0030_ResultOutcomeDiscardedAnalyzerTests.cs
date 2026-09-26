@@ -17,7 +17,7 @@ namespace SharedKernel.Analyzers.Tests;
 /// chain, explicit discard, and a non-<c>IHasSuccessFlag</c> baseline). T-266–T-269:
 /// real-pattern-audit pass-path fixtures, each modeled on (paraphrased from, never literally
 /// copy-pasted) an actual shipped consumption shape found in
-/// <c>05.Application</c>/<c>06.Persistence.EfCore</c>/
+/// <c>SharedKernel.Application.Pipeline</c> (audited as <c>05.Application.Behaviors</c>)/<c>06.Persistence.EfCore</c>/
 /// <c>07.Messaging.MassTransit</c>/<c>17.Workflows.Temporal</c>. T-270 is the real-source audit
 /// record — see its own XML doc below for the full catalog and the one genuine finding.
 /// </para>
@@ -494,7 +494,7 @@ public class SK0030_ResultOutcomeDiscardedAnalyzerTests
     }
 
     // ---------------------------------------------------------------------------
-    // T-266 — Real-pattern audit, pass path: modeled on 05.Application's actual
+    // T-266 — Real-pattern audit, pass path: modeled on SharedKernel.Application.Pipeline's (then 05.Application.Behaviors) actual
     // pipeline-behavior shape (e.g. CacheInvalidationBehavior / ResponseOutcomeClassifier) —
     // "var result = await next(); if (result is IHasSuccessFlag f && !f.IsSuccess) { ... }
     // return result;"
@@ -665,7 +665,7 @@ public class SK0030_ResultOutcomeDiscardedAnalyzerTests
     /// <summary>
     /// Real-source audit record (T-270) — a manual grep/read across the shipped production
     /// source (excluding <c>bin/</c>, <c>obj/</c>, and every <c>*.Tests</c> project/directory) of
-    /// <c>05.Application</c> (plus <c>05.Application</c> where it declares
+    /// <c>05.Application.Behaviors</c> (plus <c>05.Application</c> where it declares
     /// <c>Result</c>-returning contracts), <c>06.Persistence.EfCore</c>,
     /// <c>07.Messaging.MassTransit</c>, and <c>17.Workflows.Temporal</c> — all four already
     /// Published as of this phase's authoring (2026-07-27) — performed per this domain's own
@@ -674,6 +674,14 @@ public class SK0030_ResultOutcomeDiscardedAnalyzerTests
     /// literal copy-paste of the real <c>.cs</c> files.
     /// </summary>
     /// <remarks>
+    /// <para>
+    /// <b>Historical record.</b> The paths below name the packages as they were audited. Since
+    /// WO-086, <c>05.Application.Behaviors</c> is <c>SharedKernel.Application.Pipeline</c> and the
+    /// sender is the kernel's own <c>SharedKernel.Application.Messaging.ISender</c> (MediatR sits
+    /// behind <c>SharedKernel.Application.Mediator.MediatR</c>); the fire-and-forget consumer named
+    /// in the finding was removed before first publish (P-544). The fixtures still model the
+    /// shapes, which is what the rule checks.
+    /// </para>
     /// <para><b>Distinct consumption shapes found (cross-referenced to their fixture):</b></para>
     /// <list type="number">
     /// <item>Awaited, assigned to a typed local, branched on <c>.IsFailure</c>, then
@@ -681,7 +689,7 @@ public class SK0030_ResultOutcomeDiscardedAnalyzerTests
     /// <c>17.Workflows.Temporal/Authoring/CommandActivity.cs</c>,
     /// <c>Dispatch/WorkflowDispatcher.cs</c>. Modeled by T-268/T-269.</item>
     /// <item>Returned directly as the tail of an async method (<c>return await next();</c>), no
-    /// local variable — <c>05.Application/SharedKernel.Application/Validation/ValidationBehavior.cs</c>,
+    /// local variable — <c>05.Application.Behaviors/Validation/ValidationBehavior.cs</c>,
     /// <c>Tracing/TracingBehavior.cs</c>. A <c>ReturnStatementSyntax</c>, structurally identical
     /// to T-261/T-269's pass path (never an <c>ExpressionStatementSyntax</c> regardless of the
     /// wrapped <c>await</c>).</item>
@@ -712,15 +720,15 @@ public class SK0030_ResultOutcomeDiscardedAnalyzerTests
     /// <c>Microsoft.Extensions.Options.ValidateOptionsResult</c>. T-268's fixture models the
     /// architecturally-analogous consumer shape (awaited send, branch on failure, throw) that
     /// WOULD apply the moment a MassTransit consumer in this platform dispatches a
-    /// <c>Result</c>-returning MediatR command, per this phase's own acceptance criteria.
+    /// <c>Result</c>-returning command, per this phase's own acceptance criteria.
     /// </para>
     /// <para>
     /// <b>GENUINE FINDING — one confirmed bare-statement discard, T-270's core result.</b>
-    /// <c>05.Application/SharedKernel.Application/FireAndForget/FireAndForgetBackgroundConsumer.cs</c>, the
+    /// <c>05.Application.Behaviors/FireAndForget/FireAndForgetBackgroundConsumer.cs</c>, the
     /// statement <c>await sender.Send(command, stoppingToken).ConfigureAwait(false);</c> (as of
     /// this phase's authoring, line 57). <c>command</c> is statically typed
     /// <c>IFireAndForgetCommand</c>, which extends <c>ICommand : ICommandBase,
-    /// IRequest&lt;Result&gt;</c> — MediatR's generic <c>ISender.Send&lt;TResponse&gt;</c>
+    /// IRequest&lt;Result&gt;</c> — the generic <c>ISender.Send&lt;TResponse&gt;</c> (then MediatR's; now the kernel's <c>SharedKernel.Application.Messaging.ISender</c>)
     /// overload is selected at compile time with <c>TResponse</c> inferred as
     /// <c>SharedKernel.Primitives.Results.Result</c>, so the awaited expression's resolved type
     /// is <c>Result</c>, which implements <c>IHasSuccessFlag</c> — SK0030's exact fire condition.

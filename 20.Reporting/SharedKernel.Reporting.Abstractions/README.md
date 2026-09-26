@@ -1,8 +1,14 @@
 # SharedKernel.Reporting.Abstractions
 
-Streaming, memory-bounded report/data export contracts for Platform.SharedKernel microservices. Zero third-party NuGet dependencies — references only `SharedKernel.Primitives` and `SharedKernel.Storage.Abstractions`.
+Streaming, memory-bounded report/data export contracts for Platform.SharedKernel microservices. Zero third-party NuGet dependencies — references only `SharedKernel.Primitives`, `SharedKernel.Storage.Abstractions` and `Microsoft.Extensions.Logging.Abstractions`.
 
 Implemented by [`SharedKernel.Reporting.Csv`](../SharedKernel.Reporting.Csv/README.md), [`SharedKernel.Reporting.Spreadsheet`](../SharedKernel.Reporting.Spreadsheet/README.md), and [`SharedKernel.Reporting.Pdf`](../SharedKernel.Reporting.Pdf/README.md).
+
+```xml
+<PackageReference Include="SharedKernel.Reporting.Abstractions" />
+```
+
+Versions come from the consumer's single `SharedKernelVersion`. **Tier: Abstractions.** For unit tests, `SharedKernel.Reporting.Testing` provides `InMemoryReportExporter<TRow>`, which records every export instead of writing a file.
 
 ## The contract
 
@@ -80,7 +86,7 @@ if (result.IsSuccess)
 | Querying/streaming rows out of a database | The caller. This domain never references `06.Persistence` or opens a connection. |
 | PII classification and redaction | `01.Core/SharedKernel.DataPrivacy`, applied by the caller **before** rows reach an exporter. See the capitalized statement on `IReportExporter<TRow>`'s own XML docs — rows arrive already-redacted or they leave un-redacted; there is no safety net here. |
 | Translated column headers | The caller, before the column reaches `ReportColumn<TRow>.Header`. This domain only formats by `CultureInfo`. |
-| Running an export on a schedule | `19.Scheduling`/`17.Workflows` — composed in consumer code, no layering grant needed. |
+| Running an export on a schedule | `19.Scheduling`/`17.Workflows` — composed in consumer code; nothing to register here. |
 | Tenant provisioning | `13.ServiceDefaults`. |
 | A readiness probe / `IHealthCheck` | Nowhere. This domain is stateless — no persistent connection to be ready or not ready. |
 

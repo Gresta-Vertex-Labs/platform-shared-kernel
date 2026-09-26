@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using SharedKernel.AI.Abstractions.Models;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Results;
 
 namespace SharedKernel.AI.Abstractions.Abstractions;

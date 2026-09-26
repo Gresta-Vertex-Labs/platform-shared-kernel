@@ -14,8 +14,11 @@ nothing to wire up, and no dependency added to your own package graph.
 ## Install
 
 ```xml
-<PackageReference Include="SharedKernel.Analyzers" Version="*" PrivateAssets="all" />
+<PackageReference Include="SharedKernel.Analyzers" PrivateAssets="all" />
 ```
+
+The version comes from your repository's single `SharedKernelVersion` property (central package management); every
+SharedKernel package is released together. **Tier:** Tooling — it is never a runtime dependency of production code.
 
 That is the entire setup. The rules run on your next build.
 
@@ -138,11 +141,10 @@ CQRS pipeline wiring and outbound HTTP.
 |---|---|---|
 | [`SK0013`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/README.md#sk0013-rawhttpclientconstructorinjection) | `HttpClient` injected directly into a constructor | Register a typed client via `AddRestClient<TClient>()` |
 | [`SK0014`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/README.md#sk0014-closedgenericresiliencepipelineregistration) | A closed-generic `ResiliencePipeline<T>` registration | Use the non-generic, string-keyed `ResiliencePipeline` |
-| [`SK0015`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/README.md#sk0015-streampipelinebehaviormisregistration) | `IStreamPipelineBehavior<,>` registered against `IPipelineBehavior<,>` | Register it against `IStreamPipelineBehavior<,>` |
-| [`SK0016`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/README.md#sk0016-requesttypeshortnameusage) | `typeof(X).Name` used as a metric tag, log scope key or cache key | `typeof(X).FullName ?? typeof(X).Name` |
+| [`SK0016`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/README.md#sk0016-requesttypeshortnameusage) | `typeof(X).Name` used as a metric tag, log scope key or cache key inside a `SharedKernel.Application*` namespace | `typeof(X).FullName ?? typeof(X).Name` |
 | [`SK0017`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/README.md#sk0017-commandimplementscacheablequery) | A command implementing `ICacheableQuery<TResponse>` | Remove it — caching is queries-only |
 | [`SK0018`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/README.md#sk0018-queryimplementsinvalidatescache) | A query implementing `IInvalidatesCache` | Remove it — invalidation is commands-only |
-| [`SK0040`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/README.md#sk0040-pipelinemarkerresponseshapemismatch) | `[RequirePermission]`/`IIdempotentRequest` on a request whose MediatR response isn't `Result`/`Result<T>` | Declare the response as `Result`/`Result<T>` |
+| [`SK0040`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/README.md#sk0040-pipelinemarkerresponseshapemismatch) | `[RequirePermission]` (`SharedKernel.Application.Authorization`, incl. inherited) or `IIdempotentRequest` on a request whose `IRequest<T>` response (`SharedKernel.Application.Messaging`) isn't `Result`/`Result<T>` | Declare the response as `Result`/`Result<T>` |
 
 ### Logging authoring
 
@@ -168,10 +170,10 @@ Named constants, provider clients, security and data privacy.
 | [`SK0028`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/README.md#sk0028-nondeterministicapiusageinsideworkflow) | A non-deterministic or side-effecting API inside a `[Workflow]` type | Use the deterministic `Workflow.*` equivalents |
 | [`SK0029`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/README.md#sk0029-rawtemporalclientconstructorinjection) | A raw Temporal client type injected | Inject `IWorkflowDispatcher` or `IWorkflowHandle` |
 | [`SK0030`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/README.md#sk0030-resultoutcomediscarded) | A `Result`/`Result<T>` produced as a bare statement and never inspected | Branch on it, return it, pass it as an argument, or discard explicitly with `_ =` |
-| [`SK0031`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/README.md#sk0031-rawsecuritycontextconstructorinjection) | A raw security-context type injected | Inject `IUserContext` (identity) or `ITenantProvider` (tenant) |
+| [`SK0031`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/README.md#sk0031-rawsecuritycontextconstructorinjection) | A raw security-context type injected | Inject `IUserContext` (identity) or `IRequestContext` (`SharedKernel.Execution.Context`, tenant) |
 | [`SK0032`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/README.md#sk0032-corswildcardoriginwithcredentials) | `AllowCredentials()` combined with a wildcard or always-allow origin | Name explicit origins |
 | [`SK0033`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/README.md#sk0033-reflectionbasedobjectmapperusage) | AutoMapper's reflection-based API, or Mapster's runtime adapter | A `Riok.Mapperly` `[Mapper]` partial class |
-| [`SK0034`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/README.md#sk0034-amountcurrencypaircoupling) | A `decimal` amount member paired with a `string` currency-code member | Consider `SharedKernel.Domain.Money` — advisory only |
+| [`SK0034`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/README.md#sk0034-amountcurrencypaircoupling) | A `decimal` amount member paired with a `string` currency-code member | Consider `Money` (`SharedKernel.Domain.Monetary`) — advisory only |
 | [`SK0035`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/README.md#sk0035-unmaskedclassifieddataatloggingcallsite) | Classified or PII data passed unmasked to a `[LoggerMessage]` parameter | Classify the parameter so log redaction masks it, or mask it with `PiiMasking` |
 | [`SK0036`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/README.md#sk0036-rawrpcexceptionconstruction) | `RpcException`/`Status` constructed outside the gRPC presentation layer | Return a `Result`; end it with `ThrowIfFailure()` / `GetValueOrThrow()` from `SharedKernel.Core.Extensions` |
 | [`SK0037`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/README.md#sk0037-valueobjectmissingensurevalid) | A `ValueObject` subclass whose constructor completes without calling `EnsureValid()` | Call `EnsureValid()` as the last statement of every constructor |
@@ -200,7 +202,7 @@ MassTransit registration correctness.
 
 Numbering gaps — `SK0012`, `SK0301`–`SK0303`, `SK0701`–`SK0702`, `SK0706`–`SK0707` — are architecture
 rules enforced by `SharedKernel.ArchitectureTests` from a test project rather than by the compiler. They
-are not part of this package.
+are not part of this package. `SK0015` and `SK0019` were removed (see `AnalyzerReleases.Unshipped.md`).
 
 ## Which of these will I actually see?
 
@@ -209,7 +211,7 @@ never sees `SK0703`–`SK0708`; one with no Temporal workflows never sees `SK002
 full set on a small service is normal, and quiet.
 
 The rules that apply to essentially any C# project are `SK0001` (clock access), `SK0003`–`SK0005`
-(exception and error shape), `SK0011` (GUID formatting), `SK0016` (type-name collisions), `SK0020` and
+(exception and error shape), `SK0011` (GUID formatting), `SK0020` and
 `SK0021` (log authoring), `SK0022` (magic strings), `SK0030` (discarded results) and `SK0033`
 (reflection-based mappers).
 

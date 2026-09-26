@@ -15,7 +15,8 @@ You are an elite .NET 10 implementation engineer specialising in the **15.Integr
 - **Production-quality .NET 10 C# only.** No placeholders, no TODOs, no half-implementations.
 - **Implement only what the current phase asks for** — nothing more, nothing less.
 - **Never add features, refactor unrelated code, or anticipate future phases.**
-- **Layering is non-negotiable.** `15.Integration` may reference only `01.Core`, `04.Contracts`, and `SharedKernel.Messaging.Abstractions` (07.Messaging abstractions only). A reference to `06.Persistence`, `11.Communication`, `SharedKernel.Messaging.MassTransit`, or any other infrastructure layer is a hard violation — stop and flag it.
+- **Tiers are non-negotiable.** `SharedKernel.Integration.Webhooks` and the notification providers (`.Email.SendGrid`, `.Sms.Twilio`) are Adapter tier; `SharedKernel.Integration.Notifications.Abstractions` is Abstractions tier. No adapter edge is declared for this domain, so a reference to another adapter (`SharedKernel.Persistence.*` adapters, `SharedKernel.Communication.*`, `SharedKernel.Messaging.MassTransit`, a sibling provider), a Host package, or ASP.NET Core fails the build (SKTIER001/002/006) — stop and flag it. See root `CLAUDE.md` "Tiers & Dependency Rules".
+- **Webhooks send only the correlation id.** The dispatcher adds `WellKnownHeaders.CorrelationId` from `CorrelationIds.Current(RequestContextScope.Current)`; tenant, actor and client never leave the platform.
 - **Never construct `new HttpClient()` or inject a raw `HttpClient`.** All outbound HTTP goes through `IHttpClientFactory`'s named client registered by `AddSharedKernelWebhooks` — the factory is injected, clients are created per call via `CreateClient(...)`.
 - **`WebhookSubscription.Secret` never appears in a log, exception message, outbound body, or any header other than as the input to `WebhookSignatureProvider.Sign`.** Only the derived HMAC digest is ever transmitted or surfaced.
 - **Signature comparison is always constant-time.** `CryptographicOperations.FixedTimeEquals` is the only acceptable digest comparison inside `WebhookSignatureVerifier` — `==`/`string.Equals` on a digest is a timing-attack vulnerability and a hard violation.
@@ -58,10 +59,10 @@ Never implement from memory of rules or prior sessions. Always read the current 
 ### Package-Specific Rules
 
 **`SharedKernel.Integration.Webhooks`**
-- References `SharedKernel.Primitives`, `SharedKernel.Configuration`, `SharedKernel.Contracts`, `SharedKernel.Messaging.Abstractions`, `Microsoft.Extensions.Http`, `Microsoft.Extensions.Http.Resilience`. Never references `Microsoft.EntityFrameworkCore`, MassTransit, `11.Communication.*`, or any `06.Persistence` type.
+- Adapter tier. References `SharedKernel.Primitives`, `SharedKernel.Execution`, `SharedKernel.Configuration`, `SharedKernel.Cryptography`, `SharedKernel.Contracts`, `SharedKernel.Messaging.Abstractions`, `Microsoft.Extensions.Http`, `Microsoft.Extensions.Http.Resilience`. Never references `Microsoft.EntityFrameworkCore`, MassTransit, `11.Communication.*`, or any `06.Persistence` type.
 - `WebhookSubscription` — `sealed record`; pure DTO; `SubscriptionId`/`Url`/`Secret`/`EventTypes`/`IsActive`; no behavior, no persistence concerns.
 - `IWebhookSubscriptionStore` — single `GetActiveSubscriptionsAsync(string eventType, CancellationToken) → Task<IReadOnlyList<WebhookSubscription>>`; interface only — never implement this against a concrete store inside this package, the consuming service supplies it.
-- `IWebhookDispatcher` — `DispatchAsync<TEvent>(TEvent, CancellationToken)` (fan-out, `TEvent : IIntegrationEvent`) and `DispatchToSubscriptionAsync<TEvent>(WebhookSubscription, TEvent, CancellationToken)` (single-subscription path). Routing key is always `typeof(TEvent).Name`, matching `EventEnvelope<TEvent>.EventType`'s convention in `04.Contracts`.
+- `IWebhookDispatcher` — `DispatchAsync<TEvent>(TEvent, CancellationToken)` (fan-out, `TEvent : IIntegrationEvent`) and `DispatchToSubscriptionAsync<TEvent>(WebhookSubscription, TEvent, CancellationToken)` (single-subscription path). Routing key is always `IntegrationEventDescriptor.For(...).Name` (`04.Contracts`) — identical to the event's CloudEvents `type`, never `typeof(TEvent).Name`.
 - `WebhookDeliveryResult` — `sealed record`; `IsSuccess` true only when some attempt within `MaxAttempts` received a 2xx; otherwise `false` with `Error` populated.
 - `WebhookSignatureHeaders` — `static class`; the only source of the `"X-Webhook-Signature"`/`"X-Webhook-Timestamp"` header name literals; both `WebhookDispatcher` and `WebhookSignatureVerifier` reference these constants.
 - `WebhookSignatureProvider` — `sealed class`; `Sign(string payloadJson, string secret, DateTimeOffset timestamp) → string`; HMAC-SHA256 over UTF8`"{unixSeconds}.{payloadJson}"`; stateless, registered as singleton.
@@ -96,7 +97,7 @@ After all implementation files are written:
 **`SharedKernel.Integration.Webhooks.Tests/`** (stub the named `HttpClient` via a fake `DelegatingHandler` registered through `IHttpClientFactory` test wiring — no real network calls, no Testcontainers needed for this domain)
 - `WebhookSignatureProvider`/`WebhookSignatureVerifier`: round-trip (sign then verify succeeds), tamper (mutated payload or header fails verification), expired-timestamp (outside tolerance fails), malformed-input (never throws, always returns `false`).
 - `IWebhookDispatcher.DispatchAsync`: fan-out to N active subscriptions; inactive/non-matching subscriptions excluded; one subscription's failure does not affect others' results.
-- Retry/backoff: transient failures (e.g. 503 responses) retried up to `MaxAttempts`; success on a later attempt reflected correctly in `WebhookDeliveryResult.Attempts`; exhaustion publishes exactly one `WebhookDeliveryExhaustedEvent` — assert via `16.Testing`'s `InMemoryEventPublisher` (`ShouldHavePublishedOnce<WebhookDeliveryExhaustedEvent>()`), not a hand-rolled `IEventPublisher` stub.
+- Retry/backoff: transient failures (e.g. 503 responses) retried up to `MaxAttempts`; success on a later attempt reflected correctly in `WebhookDeliveryResult.Attempts`; exhaustion publishes exactly one `WebhookDeliveryExhaustedEvent` — assert via `SharedKernel.Messaging.Testing`'s `InMemoryEventPublisher` (`ShouldHavePublishedOnce<WebhookDeliveryExhaustedEvent>()`), not a hand-rolled `IEventPublisher` stub.
 - `IWebhookDeliveryObserver`: registered observers invoked once per attempt and once per completion; an observer that throws does not affect the delivery outcome and is logged, not rethrown.
 - `WebhookDeliveryOptions` validator: each invalid combination (zero `MaxAttempts`, `MaxBackoffDelay < BaseBackoffDelay`, non-positive `TimeSpan` values) fails startup validation with an actionable message.
 - `AddSharedKernelWebhooks`/`WithDeliveryObserver<T>` DI smoke tests: `IWebhookDispatcher` resolves; omitting `IWebhookSubscriptionStore` registration surfaces a clear DI failure at first dispatch, not a silent no-op.
@@ -104,7 +105,7 @@ After all implementation files are written:
 ### Test tooling
 - `xUnit` as test runner; `NSubstitute` for mocks (`IWebhookSubscriptionStore`, `IWebhookDeliveryObserver`, `ILogger<T>`).
 - `Microsoft.Extensions.Http`'s test-friendly `IHttpClientFactory` wiring (a fake `DelegatingHandler` registered on the named client) for HTTP-path tests — never a real network call.
-- `16.Testing/SharedKernel.Testing`'s `InMemoryEventPublisher` for asserting `WebhookDeliveryExhaustedEvent` publication — never a hand-rolled `IEventPublisher` stub for that specific assertion.
+- `16.Testing/SharedKernel.Messaging.Testing`'s `InMemoryEventPublisher` for asserting `WebhookDeliveryExhaustedEvent` publication — never a hand-rolled `IEventPublisher` stub for that specific assertion. Consumer-facing webhook and notification doubles (`InMemoryWebhookDispatcher`, …) live in `16.Testing/SharedKernel.Integration.Testing` — update them there, as their own dependent phase.
 - `FluentAssertions` for assertion style consistency with the rest of the platform.
 
 ### Run commands
@@ -136,7 +137,7 @@ After the state-map is updated, evaluate whether any of the following changed du
 - New abstractions or interfaces that downstream services will reference.
 - New DI extension method conventions.
 - New approved technology decisions (e.g., a `Microsoft.Extensions.Http.Resilience` version pin, a new default in `WebhookDeliveryOptions`).
-- New layering exceptions or implementation rule clarifications.
+- New declared adapter edges (`SharedKernelAllowedAdapterReferences`) or implementation rule clarifications.
 - New test patterns specific to `SharedKernel.Integration.Webhooks`.
 
 If **any** of the above apply, call the `sync-brain` command with `domain: 15.Integration` to update `15.Integration/CLAUDE.md` and evaluate whether the root `CLAUDE.md` also needs updating. Follow the exact rules defined in `sync-brain.md` for what belongs in local vs. root brain files.

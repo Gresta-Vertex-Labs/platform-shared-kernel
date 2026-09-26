@@ -8,8 +8,9 @@ using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
-using SharedKernel.Application.Context;
-using SharedKernel.Application.Transactions;
+using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
+using SharedKernel.Execution.Transactions;
 using SharedKernel.Persistence;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.Dapper.Sessions;
@@ -33,8 +34,8 @@ public sealed class DbSessionIntegrationTests : IAsyncLifetime
     private const string CrossRole = "dapper_cross";
     private const string Password = "dapper_pw";
 
-    private static readonly Guid TenantA = Guid.NewGuid();
-    private static readonly Guid TenantB = Guid.NewGuid();
+    private static readonly TenantId TenantA = new(Guid.NewGuid());
+    private static readonly TenantId TenantB = new(Guid.NewGuid());
 
     private readonly PostgreSqlContainerFixture _fixture = new();
 
@@ -390,7 +391,7 @@ public sealed class DbSessionIntegrationTests : IAsyncLifetime
         return new TestHost(services.BuildServiceProvider(), tenant, scope);
     }
 
-    private async Task SeedRlsAsync(params (Guid TenantId, string Name)[] rows)
+    private async Task SeedRlsAsync(params (TenantId TenantId, string Name)[] rows)
     {
         await AdminExecuteAsync("TRUNCATE dapper_rls");
         await using var dataSource = NpgsqlDataSource.Create(_fixture.ConnectionString);
@@ -399,7 +400,7 @@ public sealed class DbSessionIntegrationTests : IAsyncLifetime
         {
             await connection.ExecuteAsync(
                 "INSERT INTO dapper_rls (id, tenant_id, name) VALUES (@id, @tenantId, @name)",
-                new { id = Guid.NewGuid(), tenantId, name });
+                new { id = Guid.NewGuid(), tenantId = tenantId.Value, name });
         }
     }
 
@@ -457,7 +458,7 @@ public sealed class WidgetDbContext(DbContextOptions<WidgetDbContext> options, P
 
 public sealed class MutableTenantContext : IRequestContext
 {
-    public Guid? TenantId { get; set; }
+    public TenantId? TenantId { get; set; }
 
     public bool IsAuthenticated => TenantId is not null;
 

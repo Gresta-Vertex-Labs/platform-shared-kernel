@@ -5,12 +5,14 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): `TenantBaggageKeys` was deleted (key: `WellKnownBaggageKeys.TenantId`); the inbound correlation id is now set by `app.UseSharedKernelRequestContext()` (`SharedKernel.ServiceDefaults.Security`), not a `14.Presentation` middleware. The processor and test pattern are unchanged.
+
 `BaggageLogRecordProcessor` (`SharedKernel.ServiceDefaults/Telemetry/BaggageLogRecordProcessor.cs`)
 is a sealed `OpenTelemetry.BaseProcessor<OpenTelemetry.Logs.LogRecord>` that copies every
 `System.Diagnostics.Activity.Current?.Baggage` entry onto `LogRecord.Attributes` at `OnEnd` time,
 skipping any key already present (explicit attributes always win). It carries no hardcoded key
 names — this is what lets it generically surface both `14.Presentation`'s CorrelationId baggage
-(WO-031) and `SharedKernel.MultiTenancy`'s `TenantBaggageKeys.TenantId` baggage with zero
+(WO-031) and `SharedKernel.MultiTenancy`'s `WellKnownBaggageKeys.TenantId` baggage with zero
 cross-domain `ProjectReference`.
 
 `AddSharedKernelTelemetry` wires it via `.WithLogging(logging => logging.AddProcessor<BaggageLogRecordProcessor>().AddOtlpExporter(), options => { options.IncludeScopes = true; options.IncludeFormattedMessage = true; })`

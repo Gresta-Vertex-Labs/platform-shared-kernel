@@ -66,7 +66,7 @@ public static class PresentationErrorCodes
     /// <c>unauthorized.step_up_required</c>: the caller is signed in, but the endpoint requires a more recent sign-in
     /// or a stronger authentication method (401 with an RFC 9470 challenge).
     /// </summary>
-    public const string StepUpRequired = "unauthorized.step_up_required";
+    public const string StepUpRequired = Authorization.SharedKernelAuthorizationResultHandler.StepUpRequiredCode;
 
     /// <summary>The prefix of <see cref="ForStatus"/> codes.</summary>
     private const string HttpStatusPrefix = "http.";

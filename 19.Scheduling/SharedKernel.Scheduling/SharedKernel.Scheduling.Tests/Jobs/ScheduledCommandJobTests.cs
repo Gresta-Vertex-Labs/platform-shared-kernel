@@ -1,5 +1,5 @@
 using FluentAssertions;
-using MediatR;
+using SharedKernel.Application.Messaging;
 using NSubstitute;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;

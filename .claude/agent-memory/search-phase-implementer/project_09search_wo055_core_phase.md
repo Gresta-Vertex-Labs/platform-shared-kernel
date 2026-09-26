@@ -3,6 +3,7 @@ name: project_09search_wo055_core_phase
 description: 09.Search WO-055 SK.09.Core sub-pass (C-49–C-55) — ES bulk raw-PostData rewrite, Meilisearch throttle restructuring, cross-domain 16.Testing collateral handling
 type: project
 ---
+> WO-086 (2026-09): `ISearchIndexProvisioner.ProbeAsync` was removed — readiness is one `IReadinessProbe` per registered index (`SearchIndexReadinessProbe`, `search-{provider}-{index}`); the search-local `TenantScope` (string-keyed `TenantScope.Of(...)`) is now the single `SharedKernel.Execution.Tenancy.TenantScope` (`Global`, `For(TenantId)`, `FromNullable`); container fixtures live in `16.Testing/SharedKernel.Testing.Internal/Containers/` and the in-memory fakes in `SharedKernel.Search.Testing`. The findings below are history.
 
 Session: WO-055's final `SK.09.Core` sub-pass, 7 tasks (C-49–C-55), all shipped 2026-08-10. `SK.09.Core` now 55/55 `●`. Design (D-29–D-35) and Scaffold (S-14) were already `●` from prior sessions — see [[project_09search_wo055_design_phase]].
 

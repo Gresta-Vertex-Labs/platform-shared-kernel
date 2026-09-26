@@ -7,6 +7,7 @@ using Microsoft.Extensions.Options;
 using Polly;
 using SharedKernel.Contracts.Events;
 using SharedKernel.Cryptography.Symmetric;
+using SharedKernel.Execution.Context;
 using SharedKernel.Integration.Webhooks.Events;
 using SharedKernel.Integration.Webhooks.Observability;
 using SharedKernel.Integration.Webhooks.Options;
@@ -14,6 +15,7 @@ using SharedKernel.Integration.Webhooks.Signing;
 using SharedKernel.Integration.Webhooks.Subscriptions;
 using SharedKernel.Messaging.Abstractions.EventPublisher;
 using SharedKernel.Primitives.Logging;
+using SharedKernel.Primitives.Propagation;
 
 namespace SharedKernel.Integration.Webhooks.Dispatch;
 
@@ -230,6 +232,15 @@ public sealed partial class WebhookDispatcher : IWebhookDispatcher
             {
                 request.Headers.TryAddWithoutValidation(headerName, headerValue);
             }
+        }
+
+        // The caller's correlation id, so a subscriber's support request can be traced back to the operation
+        // that caused the delivery (P-566). Only the correlation id: the tenant, actor and client are internal
+        // attribution and never leave the platform — a webhook endpoint is outside its trust boundary.
+        if (CorrelationIds.Current(RequestContextScope.Current) is { } correlationId
+            && !request.Headers.Contains(WellKnownHeaders.CorrelationId))
+        {
+            request.Headers.TryAddWithoutValidation(WellKnownHeaders.CorrelationId, correlationId);
         }
 
         var tracker = new WebhookAttemptTracker();

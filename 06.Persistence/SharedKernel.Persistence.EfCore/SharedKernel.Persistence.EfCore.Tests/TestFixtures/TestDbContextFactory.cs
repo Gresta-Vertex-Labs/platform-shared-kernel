@@ -1,7 +1,8 @@
-using SharedKernel.Application.Context;
+using SharedKernel.Execution.Context;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence.Abstractions.Context;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.MultiTenancy;
@@ -61,7 +62,7 @@ internal static class TestDbContextFactory
     }
 
     public static TenantedTestDbContext CreateTenantedDbContext(
-        Guid? tenantId = null,
+        TenantId? tenantId = null,
         FakeAuditActorContext? actorContext = null,
         IClock? clock = null)
     {
@@ -71,7 +72,7 @@ internal static class TestDbContextFactory
             .Options;
 
         clock ??= CreateClock(DateTimeOffset.UtcNow);
-        actorContext ??= CreateAuthenticatedActorContext(Guid.NewGuid(), tenantId ?? Guid.NewGuid());
+        actorContext ??= CreateAuthenticatedActorContext(Guid.NewGuid(), tenantId ?? new TenantId(Guid.NewGuid()));
 
         var audit = PersistenceContextDependencies.Create(actorContext, clock);
 
@@ -82,7 +83,7 @@ internal static class TestDbContextFactory
     }
 
     public static SoftDeletableTenantedDbContext CreateSoftDeletableTenantedDbContext(
-        Guid? tenantId = null,
+        TenantId? tenantId = null,
         FakeAuditActorContext? actorContext = null,
         IClock? clock = null)
     {
@@ -97,7 +98,7 @@ internal static class TestDbContextFactory
             .Options;
 
         clock ??= CreateClock(DateTimeOffset.UtcNow);
-        actorContext ??= CreateAuthenticatedActorContext(Guid.NewGuid(), tenantId ?? Guid.NewGuid());
+        actorContext ??= CreateAuthenticatedActorContext(Guid.NewGuid(), tenantId ?? new TenantId(Guid.NewGuid()));
 
         var audit = PersistenceContextDependencies.Create(actorContext, clock);
 
@@ -113,7 +114,7 @@ internal static class TestDbContextFactory
     /// format ("D"-formatted GUID string). <paramref name="tenantId"/> defaults to
     /// <see langword="null"/> (no tenant resolved) — pass one explicitly for multi-tenant fixtures.
     /// </summary>
-    public static FakeAuditActorContext CreateAuthenticatedActorContext(Guid userId, Guid? tenantId = null)
+    public static FakeAuditActorContext CreateAuthenticatedActorContext(Guid userId, TenantId? tenantId = null)
         => new(userId.ToString("D"), tenantId);
 
     /// Returns the unauthenticated-fallback <see cref="IRequestContext"/> — the SAME instance

@@ -1,4 +1,5 @@
-using SharedKernel.Application;
+using SharedKernel.Application.Messaging;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Search.Abstractions.Models;
 using SharedKernel.Search.Meilisearch.Instant;
@@ -10,11 +11,11 @@ namespace CatalogApi.Features.Storefront;
 /// dependency on SharedKernel.Search.Meilisearch, so swapping this service to ElasticSearch turns this handler into a
 /// build error naming itself — the point of declaring an engine's exclusive capabilities in its own package.
 /// </summary>
-public sealed record InstantSearchProducts(string TenantId, string Text) : IQuery<SearchResults<ProductDocument>>;
+public sealed record InstantSearchProducts(TenantId TenantId, string Text) : IQuery<SearchResults<ProductDocument>>;
 
 public sealed class InstantSearchProductsHandler(IInstantSearch<ProductDocument> instant)
     : IQueryHandler<InstantSearchProducts, SearchResults<ProductDocument>>
 {
     public Task<Result<SearchResults<ProductDocument>>> Handle(InstantSearchProducts query, CancellationToken cancellationToken) =>
-        instant.InstantAsync(new InstantSearchRequest { FreeText = query.Text, Limit = 5 }, TenantScope.Of(query.TenantId), cancellationToken);
+        instant.InstantAsync(new InstantSearchRequest { FreeText = query.Text, Limit = 5 }, TenantScope.For(query.TenantId), cancellationToken);
 }

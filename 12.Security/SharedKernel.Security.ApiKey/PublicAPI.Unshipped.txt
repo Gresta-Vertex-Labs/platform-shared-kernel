@@ -17,7 +17,6 @@ SharedKernel.Security.ApiKey.Keys.ApiKeyRecord.RevokedAt.get -> System.DateTimeO
 SharedKernel.Security.ApiKey.Keys.ApiKeyRecord.RevokedAt.init -> void
 SharedKernel.Security.ApiKey.Keys.ApiKeyRecord.Roles.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
 SharedKernel.Security.ApiKey.Keys.ApiKeyRecord.Roles.init -> void
-SharedKernel.Security.ApiKey.Keys.ApiKeyRecord.TenantId.get -> System.Guid?
 SharedKernel.Security.ApiKey.Keys.ApiKeyRecord.TenantId.init -> void
 SharedKernel.Security.ApiKey.Keys.GeneratedApiKey
 SharedKernel.Security.ApiKey.Keys.GeneratedApiKey.Key.get -> string!
@@ -40,7 +39,6 @@ SharedKernel.Security.ApiKey.Validation.ApiKeyValidationResult.IsValid.get -> bo
 SharedKernel.Security.ApiKey.Validation.ApiKeyValidationResult.KeyId.get -> string?
 SharedKernel.Security.ApiKey.Validation.ApiKeyValidationResult.Permissions.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
 SharedKernel.Security.ApiKey.Validation.ApiKeyValidationResult.Roles.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
-SharedKernel.Security.ApiKey.Validation.ApiKeyValidationResult.TenantId.get -> System.Guid?
 SharedKernel.Security.ApiKey.Validation.IApiKeyValidator
 SharedKernel.Security.ApiKey.Validation.IApiKeyValidator.ValidateAsync(string! presentedKey, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<SharedKernel.Security.ApiKey.Validation.ApiKeyValidationResult!>
 const SharedKernel.Security.ApiKey.ApiKeyAuthenticationDefaults.AuthenticationScheme = "ApiKey" -> string!
@@ -51,4 +49,6 @@ override SharedKernel.Security.ApiKey.Keys.GeneratedApiKey.ToString() -> string!
 static SharedKernel.Security.ApiKey.Extensions.ApiKeyServiceCollectionExtensions.AddApiKeyAuthentication<TValidator>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<SharedKernel.Security.ApiKey.Options.ApiKeyAuthenticationOptions!>? configureScheme = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 static SharedKernel.Security.ApiKey.Extensions.ApiKeyServiceCollectionExtensions.AddManagedApiKeyAuthentication<TStore>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<SharedKernel.Security.ApiKey.Options.ManagedApiKeyOptions!>! configureKeys, System.Action<SharedKernel.Security.ApiKey.Options.ApiKeyAuthenticationOptions!>? configureScheme = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 static SharedKernel.Security.ApiKey.Validation.ApiKeyValidationResult.Failure(string! reason = "Rejected", string? keyId = null) -> SharedKernel.Security.ApiKey.Validation.ApiKeyValidationResult!
-static SharedKernel.Security.ApiKey.Validation.ApiKeyValidationResult.Success(string! clientId, System.Guid? tenantId = null, System.Collections.Generic.IReadOnlyCollection<string!>? roles = null, System.Collections.Generic.IReadOnlyCollection<string!>? permissions = null, string? keyId = null) -> SharedKernel.Security.ApiKey.Validation.ApiKeyValidationResult!
+SharedKernel.Security.ApiKey.Keys.ApiKeyRecord.TenantId.get -> SharedKernel.Execution.Tenancy.TenantId?
+SharedKernel.Security.ApiKey.Validation.ApiKeyValidationResult.TenantId.get -> SharedKernel.Execution.Tenancy.TenantId?
+static SharedKernel.Security.ApiKey.Validation.ApiKeyValidationResult.Success(string! clientId, SharedKernel.Execution.Tenancy.TenantId? tenantId = null, System.Collections.Generic.IReadOnlyCollection<string!>? roles = null, System.Collections.Generic.IReadOnlyCollection<string!>? permissions = null, string? keyId = null) -> SharedKernel.Security.ApiKey.Validation.ApiKeyValidationResult!

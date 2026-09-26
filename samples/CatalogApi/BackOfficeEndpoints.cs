@@ -1,5 +1,6 @@
 using CatalogApi.Features.BackOffice;
-using MediatR;
+using SharedKernel.Application.Messaging;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Presentation.WebApi;
 
 namespace CatalogApi;
@@ -14,7 +15,7 @@ public sealed class BackOfficeEndpoints : IEndpointModule
     {
         var backOffice = app.MapGroup("/back-office/{tenantId}").WithTags("Back office");
 
-        backOffice.MapGet("/order-lines/count", (string tenantId, string? region, ISender sender, CancellationToken ct) =>
+        backOffice.MapGet("/order-lines/count", (TenantId tenantId, string? region, ISender sender, CancellationToken ct) =>
             sender.Send(new CountOrderLines(tenantId, region), ct).ToOk(c => new
             {
                 value = c.Value,
@@ -25,7 +26,7 @@ public sealed class BackOfficeEndpoints : IEndpointModule
 
         // ── ElasticSearch-exclusive from here down ───────────────────────────────────────────────
 
-        backOffice.MapGet("/order-lines/revenue-by-region", (string tenantId, ISender sender, CancellationToken ct) =>
+        backOffice.MapGet("/order-lines/revenue-by-region", (TenantId tenantId, ISender sender, CancellationToken ct) =>
             sender.Send(new GetRevenueByRegion(tenantId), ct).ToOk(set =>
             {
                 var regions = set.TryGetTerms(GetRevenueByRegionHandler.ByRegion, out var terms)
@@ -39,7 +40,7 @@ public sealed class BackOfficeEndpoints : IEndpointModule
                 return new { regions, distinctCategories = distinct };
             }));
 
-        backOffice.MapGet("/order-lines/cursor", (string tenantId, int size, ISender sender, CancellationToken ct) =>
+        backOffice.MapGet("/order-lines/cursor", (TenantId tenantId, int size, ISender sender, CancellationToken ct) =>
             sender.Send(new ReadOrderLineCursor(tenantId, size), ct)
                 .ToOk(p => new
                 {
@@ -53,11 +54,11 @@ public sealed class BackOfficeEndpoints : IEndpointModule
                 }));
 
         // The streaming shape: a stream query, not a Result (see StreamOrderLines).
-        backOffice.MapGet("/order-lines/stream", (string tenantId, ISender sender, CancellationToken ct) =>
+        backOffice.MapGet("/order-lines/stream", (TenantId tenantId, ISender sender, CancellationToken ct) =>
             TypedResults.Ok(sender.CreateStream(new StreamOrderLines(tenantId), ct)));
 
         backOffice.MapGet("/order-lines/suggest", (
-            string tenantId,
+            TenantId tenantId,
             string prefix,
             ISender sender,
             CancellationToken ct,

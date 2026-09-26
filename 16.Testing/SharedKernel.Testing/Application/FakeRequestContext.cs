@@ -1,9 +1,9 @@
-using SharedKernel.Persistence.Testing;
+using SharedKernel.Testing.Execution;
 
 namespace SharedKernel.Testing.Application;
 
 /// <summary>
-/// The pipeline-test flavor of <see cref="TestRequestContext"/> (<c>SharedKernel.Persistence.Testing</c>): an
+/// The pipeline-test flavor of <see cref="TestRequestContext"/> (<c>SharedKernel.Testing.Execution</c>): an
 /// authenticated caller with a fixed GUID-shaped user id and case-insensitive permission checks.
 /// </summary>
 /// <remarks>

@@ -1,5 +1,5 @@
 using DocumentsApi.Features.Links;
-using MediatR;
+using SharedKernel.Application.Messaging;
 using SharedKernel.Presentation.WebApi;
 using SharedKernel.Storage;
 

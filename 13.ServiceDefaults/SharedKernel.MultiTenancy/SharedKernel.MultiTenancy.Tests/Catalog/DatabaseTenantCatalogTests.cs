@@ -11,9 +11,9 @@ public sealed class DatabaseTenantCatalogTests
     [Fact]
     public async Task GetByIdAsync_WithKnownTenant_ReturnsExpectedDescriptor()
     {
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
         var (factory, _, _) = BuildConnectionFactory(
-            new StubDataReader(hasRow: true, tenantId, "Acme", "Active", "Shared", null));
+            new StubDataReader(hasRow: true, tenantId.Value, "Acme", "Active", "Shared", null));
 
         var catalog = new DatabaseTenantCatalog(factory);
 
@@ -35,7 +35,7 @@ public sealed class DatabaseTenantCatalogTests
 
         var catalog = new DatabaseTenantCatalog(factory);
 
-        var result = await catalog.GetByIdAsync(Guid.NewGuid(), CancellationToken.None);
+        var result = await catalog.GetByIdAsync(new TenantId(Guid.NewGuid()), CancellationToken.None);
 
         Assert.Null(result);
     }
@@ -43,9 +43,9 @@ public sealed class DatabaseTenantCatalogTests
     [Fact]
     public async Task GetByResolutionKeyAsync_WithKnownKey_ReturnsExpectedDescriptor()
     {
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
         var (factory, _, _) = BuildConnectionFactory(
-            new StubDataReader(hasRow: true, tenantId, "Acme", "Suspended", "Dedicated", "tr-TR"));
+            new StubDataReader(hasRow: true, tenantId.Value, "Acme", "Suspended", "Dedicated", "tr-TR"));
 
         var catalog = new DatabaseTenantCatalog(factory);
 

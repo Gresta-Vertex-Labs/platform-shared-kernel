@@ -1,15 +1,17 @@
 using CatalogApi;
-using SharedKernel.Application;
+using SharedKernel.Application.Mediator.MediatR;
+using SharedKernel.Application.Pipeline;
 using SharedKernel.Presentation.WebApi;
 using SharedKernel.Primitives.Clocks;
-using SharedKernel.Search.Abstractions.Constants;
 using SharedKernel.Search.Abstractions.Models;
 using SharedKernel.Search.ElasticSearch.Extensions;
 using SharedKernel.Search.Meilisearch.Extensions;
 using SharedKernel.Search.Meilisearch.Provisioning;
+using SharedKernel.Security.Abstractions;
 using SharedKernel.ServiceDefaults.Extensions;
 using SharedKernel.ServiceDefaults.HealthChecks;
 using SharedKernel.ServiceDefaults.Probes;
+using SharedKernel.ServiceDefaults.Security;
 using SharedKernel.ServiceDefaults.Telemetry;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -24,6 +26,12 @@ builder.WithSearchTelemetry();
 // the same precedent as ILogger<T>.
 builder.Services.AddSingleton<IClock, SystemClock>();
 builder.Services.AddSingleton<TelemetryProbe>();
+
+// The request context. No authentication here: the caller is anonymous and the tenant is a route value, a
+// sample shortcut. A real storefront authenticates (AddOidcAuthentication(...)) and takes the tenant from
+// IRequestContext.TenantId.
+builder.Services.AddSingleton<IUserContext>(AnonymousUserContext.Instance);
+builder.Services.AddSharedKernelRequestContext();
 
 // ── Meilisearch: the storefront (BFF/fast) ────────────────────────────────────────────────────────
 //
@@ -46,7 +54,7 @@ builder.Services
         .Field(ProductFields.Rating, SearchFieldKind.Decimal, filterable: true, sortable: true)
         .Field(ProductFields.ReleasedOn, SearchFieldKind.DateTimeOffset, filterable: true, sortable: true)
         // Deliberately low, so this sample can SHOW what a real ceiling does rather than describe it:
-        // tenant-north holds 10 products, so /storefront/tenant-north/products/count crosses it and
+        // TenantNorth holds 10 products, so /storefront/{TenantNorth}/products/count crosses it and
         // Meilisearch reports a LOWER BOUND instead of a figure it cannot actually vouch for. It also
         // makes page 2 at pageSize 5 exceed the pagination ceiling, which is a real, reachable error.
         // A real storefront leaves this at the 1000 default.
@@ -102,18 +110,17 @@ builder.Services
     .Build();
 
 // Readiness fails while an index is not addressable, so a replica is not sent traffic it cannot serve.
-// Each check names the provider that actually owns its index. ISearchIndexProvisioner is non-generic,
-// so in a two-engine host an unkeyed resolution returns whichever provider was registered last — and the
-// check would then ask ElasticSearch about a Meilisearch index and report this service unready forever.
-// A single-provider service omits providerKey entirely.
+// Each provider registered one readiness probe per index it was given, named after the provider and the
+// index (search-meilisearch-products, search-elasticsearch-order-lines), so a two-engine host can
+// never ask one engine about the other's index. AddSharedKernelReadiness maps every one of them.
 builder.Services
     .AddHealthChecks()
-    .AddSearchReadinessCheck(Catalog.ProductsIndex, providerKey: SearchWellKnown.MeilisearchProviderName)
-    .AddSearchReadinessCheck(Catalog.OrderLinesRead, providerKey: SearchWellKnown.ElasticSearchProviderName);
+    .AddSharedKernelReadiness();
 
-// 05.Application — MediatR with the handlers of this assembly (Features/) and the always-on behaviors (tracing,
-// logging, metrics, authorization, validation). The endpoints send commands and queries; only the handlers touch the engines.
-builder.Services.AddSharedKernelApplication(typeof(Program).Assembly);
+// 05.Application — the handlers of this assembly (Features/), MediatR behind the kernel's ISender, and the always-on
+// behaviors (tracing, logging, metrics, authorization, validation). The endpoints send commands and queries; only
+// the handlers touch the engines.
+builder.Services.AddSharedKernelApplication(typeof(Program).Assembly, app => app.UseMediatR());
 
 // 14.Presentation — the HTTP boundary in one call (SharedKernel:Presentation:WebApi). Every search failure is a
 // Result, and every Result failure an RFC 9457 problem: search.unreachable is 503, search.timeout and
@@ -122,7 +129,9 @@ builder.AddSharedKernelWebApi();
 
 var app = builder.Build();
 
-// Before any endpoint: correlation id, security headers, the exception handler, problem bodies and routing.
+// First in the pipeline: the request's X-Correlation-Id and request context, on every response. Then, before any
+// endpoint: security headers, the exception handler, problem bodies and routing.
+app.UseSharedKernelRequestContext();
 app.UseSharedKernelWebApi();
 
 // The telemetry probe listens from process start, not from the first call to /diagnostics/telemetry.

@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): `IBlobUriGenerator` and `CheckHealthAsync` are gone (presigning moved onto `IFileStorage` in P-559); the 13.ServiceDefaults storage readiness adapter was deleted — each registered store self-registers an `IReadinessProbe` named `storage-{store}`; the ".S3/.Obs never cross-reference" rule is now the one declared adapter edge `Obs → S3`; `.Abstractions` is Abstractions tier (NuGet limited to `Microsoft.Extensions.*.Abstractions`). The phase map below is history.
+
 WO-043 is the 08.Storage first build-out, spanning four domains, dispatched 2026-07-16. Only
 P-265/P-266/P-267 are this agent's own jurisdiction; the other three are recorded here purely as
 cross-domain context so future 08.Storage planning passes don't have to re-derive the dependency

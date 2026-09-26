@@ -1,4 +1,5 @@
 using FluentAssertions;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Search.Abstractions.Models;
 using SharedKernel.Search.Meilisearch.Tests.Containers;
 using SharedKernel.Search.Meilisearch.Tests.Support;
@@ -130,7 +131,7 @@ public sealed class MeilisearchCrossProviderParityTests : IAsyncLifetime
         var index = MeilisearchProviderFactory.CreateIndex<TestProduct>(_fixture, _definition);
         var request = SearchRequest.Default with { Filter = filter, PageSize = 100, RequireExactTotalHits = true };
 
-        var result = await index.SearchAsync(request, TenantScope.Of(TestProductCorpus.TenantA));
+        var result = await index.SearchAsync(request, TenantScope.For(TestProductCorpus.TenantA));
 
         result.IsSuccess.Should().BeTrue($"case '{caseName}' should succeed");
         result.Value.Hits.Select(h => h.Document.DocumentId).Should().BeEquivalentTo(
@@ -163,7 +164,7 @@ public sealed class MeilisearchCrossProviderParityTests : IAsyncLifetime
         var index = MeilisearchProviderFactory.CreateIndex<TestProduct>(_fixture, _definition);
         var request = SearchRequest.Default with { Filter = SearchFilter.Any(), PageSize = 100, RequireExactTotalHits = true };
 
-        var result = await index.SearchAsync(request, TenantScope.Of(TestProductCorpus.TenantA));
+        var result = await index.SearchAsync(request, TenantScope.For(TestProductCorpus.TenantA));
 
         result.IsFailure.Should().BeTrue("Meilisearch's own filter parser rejects an empty '()' expression as invalid syntax");
         result.Error.Code.Should().Be("search.engine_fault");
@@ -197,7 +198,7 @@ public sealed class MeilisearchCrossProviderParityTests : IAsyncLifetime
             }
 
             var observed = new List<string>();
-            await foreach (var document in index.EnumerateAsync(filter: null, TenantScope.Of(TestProductCorpus.TenantA), batchSize: 2))
+            await foreach (var document in index.EnumerateAsync(filter: null, TenantScope.For(TestProductCorpus.TenantA), batchSize: 2))
             {
                 observed.Add(document.DocumentId);
             }
@@ -234,7 +235,7 @@ public sealed class MeilisearchCrossProviderParityTests : IAsyncLifetime
         // works; hits are simply not the object of this assertion.
         var request = SearchRequest.Default with { Facets = [TestProductFields.Category], PageSize = 1 };
 
-        var tenantAResult = await index.SearchAsync(request, TenantScope.Of(TestProductCorpus.TenantA));
+        var tenantAResult = await index.SearchAsync(request, TenantScope.For(TestProductCorpus.TenantA));
 
         tenantAResult.IsSuccess.Should().BeTrue();
         var categoryFacet = tenantAResult.Value.Facets[TestProductFields.Category];

@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using Microsoft.AspNetCore.Http;
 using SharedKernel.Primitives.Propagation;
 
@@ -18,7 +19,7 @@ public sealed class HeaderTenantResolutionStrategy(string headerName = HeaderTen
     /// The default HTTP request header name probed when no header name is supplied — sourced from
     /// <c>01.Core</c>'s <see cref="WellKnownHeaders.TenantId"/> so this header name cannot drift
     /// independently from the identical literal used by
-    /// <c>11.Communication.Rest.TenantIdDelegatingHandler</c> and
+    /// <c>11.Communication.Rest.RequestContextDelegatingHandler</c> and
     /// <c>11.Communication.Grpc.TenantIdInterceptor</c>.
     /// </summary>
     public const string DefaultHeaderName = WellKnownHeaders.TenantId;
@@ -27,19 +28,19 @@ public sealed class HeaderTenantResolutionStrategy(string headerName = HeaderTen
     public string StrategyName => TenantResolutionStrategyNames.Header;
 
     /// <inheritdoc/>
-    public Task<Guid?> TryResolveAsync(HttpContext context, CancellationToken cancellationToken)
+    public Task<TenantId?> TryResolveAsync(HttpContext context, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
 
         if (!context.Request.Headers.TryGetValue(headerName, out var headerValues))
         {
-            return Task.FromResult<Guid?>(null);
+            return Task.FromResult<TenantId?>(null);
         }
 
         var rawValue = headerValues.ToString();
 
-        return Task.FromResult(Guid.TryParse(rawValue, out var tenantId)
+        return Task.FromResult(TenantId.TryParse(rawValue, out var tenantId)
             ? tenantId
-            : (Guid?)null);
+            : (TenantId?)null);
     }
 }

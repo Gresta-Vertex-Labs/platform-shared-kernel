@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): `SharedKernel.Persistence.PostgreSQL` was merged into `.EfCore` (P-558), which now references `.Npgsql` through a declared Adapter edge — the "EfCore must never reference Npgsql (layering rule)" premise of Pattern 1 no longer holds; `ITransactionalUnitOfWork`/`BeginTransactionAsync` were deleted (retry-safe `IUnitOfWork.ExecuteInTransactionAsync` in `SharedKernel.Execution.Transactions` is the only transaction API).
+
 WO-051 (dispatched 2026-07-30, batch 1 of 2: P-315-P-320; batch 2 P-321-P-325 follows in a separate call) established several reusable architectural patterns for `06.Persistence`, all `○` Pending in state-map.md as of this writing (design-only, not yet implemented).
 
 **Pattern 1 — "provider-neutral marking in EfCore + provider-specific realization in PostgreSQL"** (used twice: P-315 xmin concurrency, P-320 retry-on-failure).

@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using SharedKernel.Caching.Abstractions;
 using SharedKernel.Caching.FusionCache.Extensions;
 using SharedKernel.Caching.FusionCache.Implementations;
+using SharedKernel.Execution.Tenancy;
 using Xunit;
 
 namespace SharedKernel.Caching.FusionCache.Tests;
@@ -18,6 +19,9 @@ namespace SharedKernel.Caching.FusionCache.Tests;
 /// </remarks>
 public sealed class CacheKeyProviderTests
 {
+    private static readonly TenantId TenantA = new(Guid.Parse("0f8fad5b-d9cb-469f-a165-70867728950e"));
+    private static readonly TenantId TenantB = new(Guid.Parse("7c9e6679-7425-40de-944b-e07fc1f90ae7"));
+
     // -------------------------------------------------------------------------
     // Mapping onto CacheKeyFormat
     // -------------------------------------------------------------------------
@@ -36,10 +40,10 @@ public sealed class CacheKeyProviderTests
     {
         var provider = CreateProvider("order-svc");
 
-        Assert.Equal("order-svc:@tenant-a:invoice:42", provider.BuildTenantKey("tenant-a", "invoice", "42"));
+        Assert.Equal($"order-svc:@{TenantA}:invoice:42", provider.BuildTenantKey(TenantA, "invoice", "42"));
         Assert.Equal(
-            CacheKeyFormat.BuildTenantKey("order-svc", "tenant-a", "invoice", "42", "en-GB"),
-            provider.BuildTenantKey("tenant-a", "invoice", "42", "en-GB"));
+            CacheKeyFormat.BuildTenantKey("order-svc", TenantA, "invoice", "42", "en-GB"),
+            provider.BuildTenantKey(TenantA, "invoice", "42", "en-GB"));
     }
 
     [Fact]
@@ -47,8 +51,8 @@ public sealed class CacheKeyProviderTests
     {
         var provider = CreateProvider("order-svc");
 
-        var keyA = provider.BuildTenantKey("tenant-a", "invoice", "42");
-        var keyB = provider.BuildTenantKey("tenant-b", "invoice", "42");
+        var keyA = provider.BuildTenantKey(TenantA, "invoice", "42");
+        var keyB = provider.BuildTenantKey(TenantB, "invoice", "42");
         var global = provider.BuildKey("invoice", "42");
 
         Assert.NotEqual(keyA, keyB);
@@ -65,7 +69,7 @@ public sealed class CacheKeyProviderTests
 
         Assert.Throws<ArgumentException>(() => provider.BuildKey(value, "123"));
         Assert.Throws<ArgumentException>(() => provider.BuildKey("entity", value));
-        Assert.Throws<ArgumentException>(() => provider.BuildTenantKey(value, "entity", "id"));
+        Assert.Throws<ArgumentException>(() => provider.BuildTenantKey(TenantA, value, "id"));
     }
 
     // -------------------------------------------------------------------------
@@ -92,8 +96,8 @@ public sealed class CacheKeyProviderTests
 
         Assert.Equal("resolved-svc:order:7", provider.GetRequiredService<ICacheKeyProvider>().BuildKey("order", "7"));
         Assert.Equal(
-            "resolved-svc:@t1:order:7",
-            provider.GetRequiredService<ITenantCacheKeyProvider>().BuildTenantKey("t1", "order", "7"));
+            $"resolved-svc:@{TenantA}:order:7",
+            provider.GetRequiredService<ITenantCacheKeyProvider>().BuildTenantKey(TenantA, "order", "7"));
     }
 
     [Fact]

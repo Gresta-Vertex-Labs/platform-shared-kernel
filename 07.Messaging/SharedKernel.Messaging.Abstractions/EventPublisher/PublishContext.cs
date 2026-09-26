@@ -1,3 +1,5 @@
+using SharedKernel.Execution.Tenancy;
+
 namespace SharedKernel.Messaging.Abstractions.EventPublisher;
 
 /// <summary>
@@ -30,7 +32,7 @@ public sealed class PublishContext
 
     /// <summary>
     /// Gets the explicit correlation identifier to embed in the published envelope.
-    /// <c>null</c> instructs the publisher to auto-populate from <c>Activity.Current?.TraceId</c>.
+    /// <c>null</c> instructs the publisher to use the ambient caller's correlation id (<c>X-Correlation-Id</c>).
     /// </summary>
     public Guid? CorrelationId { get; private set; }
 
@@ -53,7 +55,7 @@ public sealed class PublishContext
     /// — the same name every other domain propagates tenant identity under. Setting it used to be a
     /// silent no-op on that path; P-560 made it real.
     /// </remarks>
-    public Guid? TenantId { get; private set; }
+    public TenantId? TenantId { get; private set; }
 
     /// <summary>
     /// Gets the partition/affinity key used to derive ordered-delivery routing for the outgoing
@@ -91,7 +93,7 @@ public sealed class PublishContext
     public IReadOnlyDictionary<string, string> Headers => _headers;
 
     /// <summary>
-    /// Sets the correlation identifier, overriding the ambient <c>Activity.Current?.TraceId</c>.
+    /// Sets the correlation identifier, overriding the ambient caller's correlation id.
     /// </summary>
     /// <param name="correlationId">The correlation identifier to embed.</param>
     /// <returns>This <see cref="PublishContext"/> instance for fluent chaining.</returns>
@@ -117,7 +119,7 @@ public sealed class PublishContext
     /// </summary>
     /// <param name="tenantId">The tenant identifier the published event belongs to.</param>
     /// <returns>This <see cref="PublishContext"/> instance for fluent chaining.</returns>
-    public PublishContext WithTenantId(Guid tenantId)
+    public PublishContext WithTenantId(TenantId tenantId)
     {
         TenantId = tenantId;
         return this;

@@ -4,6 +4,8 @@ description: WO-043 (P-268 MinioContainerFixture, P-269 InMemoryFileStorage/InMe
 type: project
 ---
 
+> WO-086 (2026-09): `SharedKernel.Testing` was split into 20 packable Testing-tier packages (core `SharedKernel.Testing` + 19 `SharedKernel.{Capability}.Testing`) plus the non-packable `SharedKernel.Testing.Internal` (containers, EF/Npgsql/audit helpers, MassTransit harness); `SharedKernel.Testing.SelfTests` became each package's own nested `.Tests` project. Paths and project names below are pre-split history; the technique/lesson still applies.
+
 WO-043 adds two things to `16.Testing`: `Containers/MinioContainerFixture` (P-268, a fourth Testcontainers `IAsyncLifetime` fixture) and a new `Storage/` capability folder (P-269, `InMemoryFileStorage`/`InMemoryBlobUriGenerator`/`AddInMemoryFileStorage()`, faking `08.Storage/SharedKernel.Storage.Abstractions`'s `IFileStorage`/`IBlobUriGenerator`).
 
 **Status as of 2026-07-17 (Core-phase implementation session): `SK.16.Core` is now 63/63 `●`, closed.**

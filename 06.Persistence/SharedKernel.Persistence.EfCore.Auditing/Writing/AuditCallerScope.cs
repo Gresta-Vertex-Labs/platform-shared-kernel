@@ -1,4 +1,5 @@
-using SharedKernel.Application.Context;
+using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence.Abstractions.Context;
 
 namespace SharedKernel.Persistence.EfCore.Auditing.Writing;
@@ -20,7 +21,7 @@ internal sealed class AuditCallerScope(IRequestContext requestContext, ICrossTen
 
     /// <summary>Returns the caller's tenant, or <see langword="null"/> (system chain) for an explicit system scope.</summary>
     /// <exception cref="InvalidOperationException">No tenant is resolved and the caller is not an explicit system scope.</exception>
-    public Guid? ResolveCallerTenant(string operation)
+    public TenantId? ResolveCallerTenant(string operation)
     {
         if (requestContext.TenantId is { } tenantId)
             return tenantId;
@@ -35,7 +36,7 @@ internal sealed class AuditCallerScope(IRequestContext requestContext, ICrossTen
     }
 
     /// <summary>Gets whether the caller may act on the chains of <paramref name="tenantId"/>.</summary>
-    public bool CanAccess(Guid? tenantId) =>
+    public bool CanAccess(TenantId? tenantId) =>
         crossTenantScope.IsActive ||
         (tenantId is { } id ? id == requestContext.TenantId : requestContext.TenantId is null && IsExplicitSystemScope);
 
@@ -51,12 +52,12 @@ internal sealed class AuditCallerScope(IRequestContext requestContext, ICrossTen
     }
 
     /// <summary>Throws unless the caller may act on the chains of <paramref name="tenantId"/>.</summary>
-    public void RequireAccess(Guid? tenantId, string operation)
+    public void RequireAccess(TenantId? tenantId, string operation)
     {
         if (!CanAccess(tenantId))
         {
             throw new InvalidOperationException(
-                $"'{operation}' targets the audit chains of {(tenantId?.ToString("D") ?? "the system")}, which is not the caller's " +
+                $"'{operation}' targets the audit chains of {(tenantId?.ToString() ?? "the system")}, which is not the caller's " +
                 "tenant; enter a cross-tenant scope to do this.");
         }
     }

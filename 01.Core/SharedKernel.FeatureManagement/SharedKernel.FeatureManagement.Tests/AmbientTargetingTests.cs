@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
+using SharedKernel.Execution.Context;
 using SharedKernel.Primitives.Propagation;
 using Xunit;
 
@@ -59,14 +60,46 @@ public sealed class AmbientTargetingTests
     }
 
     [Fact]
-    public async Task WithoutAnAccessor_ActivityBaggage_IsNotTheCaller()
+    public async Task WithoutAnAccessor_TheTenantComesFromTheOpenRequestContextScope()
     {
-        // P-562 X2: a caller sets baggage itself (the W3C baggage header), so a tenant or user taken from it would let
-        // an anonymous caller pick another tenant's flags. Beta targets the tenant-acme group and the user alice.
+        await using var provider = await FeatureTestHost.StartAsync(FeatureTestHost.Json(BooleanFlagTests.Configuration));
+
+        using var caller = RequestContextScope.Begin(new SystemRequestContext([], "nightly-job", TestTenants.Acme));
+
+        Assert.True(await provider.NewScopeClient().IsEnabledAsync(Beta));
+    }
+
+    [Fact]
+    public async Task WithoutAnAccessor_TheUserComesFromTheOpenRequestContextScope()
+    {
+        await using var provider = await FeatureTestHost.StartAsync(FeatureTestHost.Json(BooleanFlagTests.Configuration));
+
+        using var caller = RequestContextScope.Begin(new SystemRequestContext([], "alice"));
+
+        Assert.True(await provider.NewScopeClient().IsEnabledAsync(Beta));
+    }
+
+    [Fact]
+    public async Task WithoutAnAccessor_AnOpenScopeWithoutATenant_IsAnonymous()
+    {
         await using var provider = await FeatureTestHost.StartAsync(FeatureTestHost.Json(BooleanFlagTests.Configuration));
 
         using var activity = new Activity("request").Start();
-        activity.SetBaggage(WellKnownBaggageKeys.TenantId, "tenant-acme");
+        activity.SetBaggage(WellKnownBaggageKeys.TenantId, TestTenants.AcmeText);
+        using var caller = RequestContextScope.Begin(AnonymousRequestContext.Instance);
+
+        Assert.False(await provider.NewScopeClient().IsEnabledAsync(Beta));
+    }
+
+    [Fact]
+    public async Task WithoutAnAccessor_ActivityBaggage_IsNotTheCaller()
+    {
+        // P-562 X2: a caller sets baggage itself (the W3C baggage header), so a tenant or user taken from it would let
+        // an anonymous caller pick another tenant's flags. Beta targets the Acme tenant's group and the user alice.
+        await using var provider = await FeatureTestHost.StartAsync(FeatureTestHost.Json(BooleanFlagTests.Configuration));
+
+        using var activity = new Activity("request").Start();
+        activity.SetBaggage(WellKnownBaggageKeys.TenantId, TestTenants.AcmeText);
         activity.SetBaggage("SubjectId", "alice");
         activity.SetBaggage("UserId", "alice");
 
@@ -76,23 +109,13 @@ public sealed class AmbientTargetingTests
     [Fact]
     public async Task WithoutAnAccessor_ActivityBaggage_AllocatesNoVariant()
     {
-        // Theme allocates Dark to the tenant-acme group; the default for everyone else is Classic.
+        // Theme allocates Dark to the Acme tenant's group; the default for everyone else is Classic.
         await using var provider = await FeatureTestHost.StartAsync(FeatureTestHost.Json(VariantFlagTests.Configuration));
 
         using var activity = new Activity("request").Start();
-        activity.SetBaggage(WellKnownBaggageKeys.TenantId, "tenant-acme");
+        activity.SetBaggage(WellKnownBaggageKeys.TenantId, TestTenants.AcmeText);
 
         Assert.Equal("classic", await provider.NewScopeClient().GetValueAsync(Theme));
-    }
-
-    [Fact]
-    public async Task WithoutAnAccessor_NoneIsRegistered()
-    {
-        await using var provider = await FeatureTestHost.StartAsync(FeatureTestHost.Json(BooleanFlagTests.Configuration));
-
-        using var scope = provider.CreateScope();
-
-        Assert.Null(scope.ServiceProvider.GetService<IFeatureTargetingContextAccessor>());
     }
 
     [Fact]
@@ -100,16 +123,16 @@ public sealed class AmbientTargetingTests
     {
         await using var provider = await FeatureTestHost.StartAsync(
             FeatureTestHost.Json(BooleanFlagTests.Configuration),
-            after: s => s.AddScoped<IFeatureTargetingContextAccessor>(_ => new StaticTargetingAccessor(new FeatureTargetingContext("bob", "tenant-other"))));
+            after: s => s.AddScoped<IFeatureTargetingContextAccessor>(_ => new StaticTargetingAccessor(new FeatureTargetingContext("bob", TestTenants.Other))));
 
         using var activity = new Activity("request").Start();
-        activity.SetBaggage(WellKnownBaggageKeys.TenantId, "tenant-acme");
+        activity.SetBaggage(WellKnownBaggageKeys.TenantId, TestTenants.AcmeText);
 
         Assert.False(await provider.NewScopeClient().IsEnabledAsync(Beta));
     }
 
     [Fact]
-    public async Task WithoutAnAccessorOrBaggage_TheCallerIsAnonymous()
+    public async Task WithoutAnAccessorOrScope_TheCallerIsAnonymous()
     {
         await using var provider = await FeatureTestHost.StartAsync(FeatureTestHost.Json(BooleanFlagTests.Configuration));
 

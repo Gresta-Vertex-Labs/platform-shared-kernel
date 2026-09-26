@@ -10,6 +10,13 @@ service OrderService {
   rpc GetOrder (GetOrderRequest) returns (OrderReply);
   // Fails validation with one field violation per invalid field (Result.ThrowIfFailure).
   rpc PlaceOrder (PlaceOrderRequest) returns (OrderReply);
+  // Returns the caller and correlation id the method reads from IRequestContext (P-579).
+  rpc GetCaller (GetOrderRequest) returns (CallerReply);
+}
+
+message CallerReply {
+  string user_id = 1;
+  string correlation_id = 2;
 }
 
 message GetOrderRequest {

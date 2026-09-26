@@ -36,9 +36,25 @@
            Text="SKPKG003: $(MSBuildProjectName) is packable but has no adjacent README.md. PackageReadmeFile is centrally set and will fail Pack without one." />
   </Target>
 
+  <!-- Package tiers and their dependency matrix (WO-086 / P-563). -->
+  <Import Project="$(MSBuildThisFileDirectory)eng/SharedKernelTiers.targets" />
+
   <Target Name="SKPKG004_TestsNeverPack" BeforeTargets="Pack" Condition="$(MSBuildProjectName.EndsWith('.Tests'))">
     <Error Condition="'$(IsPackable)' == 'true'"
            Text="SKPKG004: $(MSBuildProjectName) ends in .Tests and must never be packable, even if IsPackable=true was set by hand." />
+  </Target>
+
+  <!--
+    The release train's expected package set (WO-086 / P-572). Queried for every csproj in the
+    repository by eng/PackageInventory.proj, which eng/verify-packages.sh compares against what
+    `dotnet pack` actually produced. Returns nothing for a project that does not pack, so the set is
+    derived from the same evaluated IsPackable/PackageId that Pack uses, never from a hand-kept list.
+    Evaluation only: builds nothing, needs no restore.
+  -->
+  <Target Name="GetSharedKernelPackageIdentity" Returns="@(_SkPackageIdentity)">
+    <ItemGroup>
+      <_SkPackageIdentity Include="$(PackageId)" Condition="'$(IsPackable)' == 'true'" Tier="$(SharedKernelTier)" />
+    </ItemGroup>
   </Target>
 
 </Project>

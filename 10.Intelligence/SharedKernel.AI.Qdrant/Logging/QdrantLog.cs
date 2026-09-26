@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Logging;
 
 namespace SharedKernel.AI.Qdrant.Logging;
@@ -54,7 +55,7 @@ internal static partial class QdrantLog
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Intelligence + 107,
         Level = LogLevel.Warning,
-        Message = "Collection '{CollectionName}' declares a TenantField but the caller supplied TenantScope.None.")]
+        Message = "Collection '{CollectionName}' declares a TenantField but the caller supplied TenantScope.Global.")]
     public static partial void QdrantTenantScopeMissing(this ILogger logger, string collectionName);
 
     [LoggerMessage(

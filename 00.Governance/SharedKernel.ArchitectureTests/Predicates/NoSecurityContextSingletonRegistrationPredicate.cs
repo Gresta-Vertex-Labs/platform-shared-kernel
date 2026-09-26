@@ -9,13 +9,13 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// contain a <c>Call</c>/<c>Callvirt</c> IL instruction invoking a closed-generic
 /// <c>AddSingleton</c> registration method whose generic arguments include
 /// <c>SharedKernel.Security.Abstractions.IUserContext</c> or
-/// <c>SharedKernel.Security.Abstractions.ITenantProvider</c>.
+/// <c>SharedKernel.Execution.Context.IRequestContext</c>.
 /// </summary>
 /// <remarks>
 /// <para>
 /// Used by <see cref="Rules.SecurityArchitectureRules.NoSingletonRegistrationOfSecurityContextTypes"/>
 /// to mechanize <c>12.Security/CLAUDE.md</c>'s documented hard rule verbatim: "<c>IUserContext</c>
-/// and <c>ITenantProvider</c> are scoped — one instance per HTTP request. Never register as
+/// and <c>IRequestContext</c> are scoped — one instance per HTTP request. Never register as
 /// singleton."
 /// </para>
 /// <para>
@@ -43,7 +43,7 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// these two types exists in the platform today; revisit only if a real false negative is found.
 /// </para>
 /// <para>
-/// <strong>No exemption.</strong> <c>IUserContext</c>/<c>ITenantProvider</c> must never be
+/// <strong>No exemption.</strong> <c>IUserContext</c>/<c>IRequestContext</c> must never be
 /// singleton anywhere in the platform's own DI extension methods.
 /// </para>
 /// <para>
@@ -62,13 +62,13 @@ public sealed class NoSecurityContextSingletonRegistrationPredicate : ICustomRul
     private const string UserContextFullName =
         "SharedKernel.Security.Abstractions.IUserContext";
 
-    private const string TenantProviderFullName =
-        "SharedKernel.Security.Abstractions.ITenantProvider";
+    private const string RequestContextFullName =
+        "SharedKernel.Execution.Context.IRequestContext";
 
     /// <summary>
     /// Returns <see langword="false"/> (rule violated) when the type contains a call to a
     /// closed-generic <c>AddSingleton</c> method whose generic arguments include
-    /// <c>IUserContext</c> or <c>ITenantProvider</c>; <see langword="true"/> otherwise.
+    /// <c>IUserContext</c> or <c>IRequestContext</c>; <see langword="true"/> otherwise.
     /// </summary>
     /// <param name="type">The Mono.Cecil <see cref="TypeDefinition"/> to inspect.</param>
     /// <returns>
@@ -99,7 +99,7 @@ public sealed class NoSecurityContextSingletonRegistrationPredicate : ICustomRul
                 foreach (var genericArgument in genericInstanceMethod.GenericArguments)
                 {
                     if (genericArgument.FullName == UserContextFullName ||
-                        genericArgument.FullName == TenantProviderFullName)
+                        genericArgument.FullName == RequestContextFullName)
                     {
                         return false;
                     }

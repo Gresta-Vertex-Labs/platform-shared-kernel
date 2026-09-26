@@ -25,10 +25,10 @@ public static class ProblemDetailsExtensionNames
     public const string ErrorCodes = "errorCodes";
 
     /// <summary><c>traceId</c>: the W3C trace context of the request, the id support staff search for.</summary>
-    public const string TraceId = "traceId";
+    public const string TraceId = ErrorMemberNames.TraceId;
 
     /// <summary><c>correlationId</c>: the correlation id of the request, also sent as the <c>X-Correlation-Id</c> header.</summary>
-    public const string CorrelationId = "correlationId";
+    public const string CorrelationId = ErrorMemberNames.CorrelationId;
 
     /// <summary>
     /// <c>exception</c>: the <c>type</c>, <c>message</c> and <c>stackTrace</c> of an unhandled exception. Present only in the

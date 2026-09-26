@@ -63,8 +63,8 @@ When you receive the phase input:
 ### `SharedKernel.ArchitectureTests` (targets `net10.0`)
 
 - `ArchitectureRuleBase` is `abstract` with `protected` members only — callers subclass it in their own test project.
-- `SharedKernelLayeringRules` is `static` — all methods are `public static IArchRule` factories.
-- Every layering rule method corresponds 1:1 to a constraint in the root `CLAUDE.md` layering table. Do not invent rules that are not in the table.
+- Rule classes (`SharedKernelLayeringRules` and the topic classes under `Rules/`) are `static` — rules are `public static` factories (typically returning a NetArchTest `ConditionList`). `RuleExecutionCoverageTests` fails if any public rule method is not called by a test, so every new rule ships with a test in the same phase.
+- Package-to-package dependency direction is **not** an ArchitectureTests concern: every csproj declares `<SharedKernelTier>`, `eng/SharedKernelTiers.targets` fails the build (SKTIER000–006 are errors, no baseline) and `DependencyGraphRulesTests` checks the same matrix plus cycles. The numbered-layer rules were deleted in P-574. A phase that asks for a "layering rule for a new domain" is implemented by declaring the tier (and any Adapter→Adapter edge in `SharedKernelAllowedAdapterReferences`) in that package's csproj — which is the owning domain's file, so hand that back rather than editing it. Add an ArchitectureTests rule only for a purity constraint the tiers cannot express (e.g. `SharedKernelLayeringRules.ContractsNeverReferencesDomain`/`DomainNeverReferencesContracts`/`ModelNeverReferencesLogging`/`TestingNeverReferencedByProduction`), and only one that mirrors a rule in the root `CLAUDE.md` ("Tiers & Dependency Rules" or a documented purity rule). Do not invent rules.
 - Use NetArchTest's fluent API exclusively: `Types.InAssembly(...).That()...Should()...`. Never use `Assembly.GetReferencedAssemblies()` directly inside rule predicates.
 - `FluentAssertions` is only used in test assertions — not in the rule factories themselves.
 
@@ -172,7 +172,7 @@ Once all applicable tests pass and builds are clean, call the `state-map-phase` 
 After the state-map is updated, evaluate whether any of the following changed during this phase:
 
 - A new SK diagnostic rule was implemented → update the `## Diagnostic Rule Registry` in `00.Governance/CLAUDE.md` with the full descriptor block.
-- A new `SharedKernelLayeringRules` method was added → update the `## Architecture Test Contracts` surface in `00.Governance/CLAUDE.md`.
+- A new rule method (in `SharedKernelLayeringRules` or a topic rules class) was added → update the `## Architecture Test Contracts` surface in `00.Governance/CLAUDE.md`.
 - A NuGet version was pinned or bumped (e.g., `Microsoft.CodeAnalysis.CSharp`, `NetArchTest.eNt`) → record the version decision.
 - A new implementation rule was established (e.g., a Roslyn API pattern chosen for a specific kind of check) → add it to the Implementation Rules section.
 - The linter config was authored or changed → note the CSharpier version pin.
@@ -212,7 +212,7 @@ Do not output verbose code explanations — the code speaks for itself. Keep the
 Examples of what to record:
 - Which `Microsoft.CodeAnalysis.CSharp` version was pinned and why.
 - Roslyn API surface decisions (e.g., `RegisterSyntaxNodeAction` vs `RegisterOperationAction` chosen for a given rule category, and the performance rationale).
-- NetArchTest predicate patterns that worked or had known limitations for specific layering checks.
+- NetArchTest predicate patterns that worked or had known limitations for specific purity checks.
 - CSharpier and `dotnet format` version pins established in the linter.
 - SK diagnostic ID assignments made (so the next available ID is always known without re-reading CLAUDE.md).
 - Analyzer suppress-in-namespace patterns established (e.g., SK0001 suppressed in `SharedKernel.Primitives`).

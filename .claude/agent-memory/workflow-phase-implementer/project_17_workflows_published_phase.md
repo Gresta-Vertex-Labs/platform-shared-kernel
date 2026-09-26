@@ -4,6 +4,8 @@ description: 17.Workflows SK.17.Published phase status (2026-07-27) — domain c
 type: project
 ---
 
+> WO-086 (2026-09): `IWorkflowServiceProbe` was deleted (now an `IReadinessProbe` named `"workflows"`, which `consumer-verify` resolves with `GetRequiredReadinessProbe(WorkflowReadiness.ProbeName)`); numbered layering was replaced by tiers — `SharedKernel.Workflows.Temporal` is Adapter tier.
+
 `SK.17.Published` (P-01–P-07) reached `●` on 2026-07-27 — 81/81 tasks complete. All six phase keys
 (Design/Scaffold/Core/Tests/Docs/Published) are now `●`. **17.Workflows (WO-046) is done end to end.**
 Root Phase Backlog P-287 closed. No production `.cs` files were touched this phase — only NuGet

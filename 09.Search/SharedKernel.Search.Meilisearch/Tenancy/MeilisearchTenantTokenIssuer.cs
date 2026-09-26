@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Search.Abstractions.Errors;
@@ -38,14 +39,13 @@ internal sealed class MeilisearchTenantTokenIssuer : ITenantSearchTokenIssuer
         TimeSpan ttl,
         CancellationToken cancellationToken = default)
     {
-        // Fail closed on TenantScope.None, exactly as every read path does. This token is handed to an
+        // Fail closed on TenantScope.Global, exactly as every read path does. This token is handed to an
         // untrusted client — a browser — and carries the only tenant predicate that will ever be applied
-        // to the searches made with it. TenantScope.None would compile the filter `tenantField = ""`,
-        // which is not a tenant restriction but a filter for documents whose tenant is the empty string:
-        // a token that looks scoped, reads as scoped in a code review, and restricts nothing meaningful.
-        // The one legitimate use of TenantScope.None is a global, single-tenant index, and such an index
+        // to the searches made with it. A token issued for TenantScope.Global would carry no tenant
+        // restriction at all: it would read as scoped in a code review and grant every tenant's documents.
+        // The one legitimate use of TenantScope.Global is a global, single-tenant index, and such an index
         // has no tenant field to scope a token by in the first place.
-        if (string.IsNullOrEmpty(tenantScope.Value))
+        if (tenantScope.IsGlobal)
         {
             return Task.FromResult(Result<TenantSearchToken>.Failure(
                 SearchErrors.TenantScopeMissing(indexNames.Count == 1 ? indexNames.First() : "(multiple)")));
@@ -86,7 +86,7 @@ internal sealed class MeilisearchTenantTokenIssuer : ITenantSearchTokenIssuer
 
         // The rule dictionary is constructed here, closed, from TenantScope + tenantField — callers
         // can never hand-write the SDK's untyped IReadOnlyDictionary<string, object> rule shape.
-        var filterExpression = $"{tenantField} = {QuoteAndEscape(tenantScope.Value)}";
+        var filterExpression = $"{tenantField} = {QuoteAndEscape(tenantScope.Tenant!.Value.ToString())}";
         var rules = new Dictionary<string, object>();
         foreach (var indexName in indexNames)
         {

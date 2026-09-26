@@ -4,6 +4,8 @@ description: WO-054/P-352 (16.Testing Messaging/ PublishContext capture + propag
 type: project
 ---
 
+> WO-086 (2026-09): `SharedKernel.Testing` was split into 20 packable Testing-tier packages (core `SharedKernel.Testing` + 19 `SharedKernel.{Capability}.Testing`) plus the non-packable `SharedKernel.Testing.Internal` (containers, EF/Npgsql/audit helpers, MassTransit harness); `SharedKernel.Testing.SelfTests` became each package's own nested `.Tests` project. Paths and project names below are pre-split history; the technique/lesson still applies.
+
 WO-054/P-352 extends the EXISTING `Messaging/` folder in `16.Testing` (`InMemoryMessageBus`/`InMemoryEventPublisher` gain `PublishContext` capture + `IMessageHeaderPropagator` application). As of 2026-08-04:
 
 - `SK.16.Design`/`SK.16.Scaffold` — `●` complete (pure design/verification, no code).

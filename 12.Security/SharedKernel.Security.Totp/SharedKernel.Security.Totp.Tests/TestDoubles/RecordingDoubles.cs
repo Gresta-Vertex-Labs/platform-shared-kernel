@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Context;
 using System.Collections.Concurrent;
 using System.Globalization;
 using System.Security.Claims;
@@ -129,7 +130,7 @@ internal sealed class TestUserContextMapper(string authenticationType = "Bearer"
             return AnonymousUserContext.Instance;
         }
 
-        IdentityKind kind = identity.HasClaim("idtyp", "app") ? IdentityKind.ServicePrincipal : IdentityKind.User;
+        ActorKind kind = identity.HasClaim("idtyp", "app") ? ActorKind.Service : ActorKind.User;
         return new UserContext(kind, subject, identity.Claims)
         {
             SessionId = identity.FindFirst(SecurityClaimTypes.SessionId)?.Value,

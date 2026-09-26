@@ -5,8 +5,10 @@
 
 Application code returns `Result` or `Result<T>`, or throws. This package turns the outcome into the response: the
 success body, or an RFC 9457 problem with a stable `errorCode`, the `traceId` and the `correlationId`. It also owns the
-concerns of the boundary itself: authorization against `IUserContext`, correlation ids, security headers, CORS, request
-limits, and the `Idempotency-Key`, `ETag` and `If-Match` headers. It has no third-party dependencies. The
+concerns of the boundary itself: the problem bodies of authorization refusals, security headers, CORS, request limits,
+and the `Idempotency-Key`, `ETag` and `If-Match` headers. It has no third-party dependencies. The correlation id and the
+request's context come from `SharedKernel.ServiceDefaults.Security`'s `UseSharedKernelRequestContext()`, which runs
+first; the authorization attributes and policies from `SharedKernel.Presentation.Core` (P-579). The
 [OpenAPI add-on](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/14.Presentation/SharedKernel.Presentation.OpenApi),
 [SignalR](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/14.Presentation/SharedKernel.Presentation.SignalR)
 and [gRPC](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/14.Presentation/SharedKernel.Presentation.Grpc)
@@ -41,25 +43,30 @@ dotnet add package SharedKernel.Presentation.WebApi
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
-| Dependencies | `SharedKernel.Primitives`, `SharedKernel.Core`, `SharedKernel.Configuration`, `SharedKernel.Localization`, `SharedKernel.Contracts` (paging), `SharedKernel.Security.Abstractions`, the ASP.NET Core shared framework |
+| Tier | Host (referenced by a service's API project) |
+| Dependencies | `SharedKernel.Presentation.Core`, `SharedKernel.Primitives`, `SharedKernel.Core`, `SharedKernel.Configuration`, `SharedKernel.Contracts` (paging), the ASP.NET Core shared framework |
+| Composed with | `SharedKernel.ServiceDefaults.Security` (the request context), which the host adds itself |
 | Third-party packages | none |
 | Ships with it | the endpoint-module source generator, under `analyzers/dotnet/cs` |
 
 Every public type is in one namespace, `SharedKernel.Presentation.WebApi`: setup, options, typed results, endpoint
-modules, attributes, header and paging parameters, error codes and problem member names. The plumbing the OpenApi,
-SignalR and gRPC add-ons share with this package (`ErrorPresentation`, the status map, the endpoint-metadata
-interfaces) is internal to the four packages, which version together.
+modules, header and paging parameters, error codes and problem member names. The four authorization attributes and
+their conventions are `SharedKernel.Presentation.Core`'s, in `SharedKernel.Presentation.Authorization`, because
+SignalR and gRPC use them too. The plumbing the add-ons share (`ErrorPresentation`, the status map, the
+endpoint-metadata interfaces) is internal to the presentation packages, which version together.
 
-Handlers send `05.Application` commands and queries through MediatR's `ISender`; this package does not reference
+Handlers send `05.Application` commands and queries through the kernel's `ISender`; this package does not reference
 MediatR or `05.Application`, so any code that returns `Result`/`Result<T>` maps the same way.
 
 ## Setup
 
 ```csharp
 using SharedKernel.Presentation.WebApi;
+using SharedKernel.ServiceDefaults.Security;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.AddSharedKernelRequestContext();   // the request context, correlation id and baggage refusal
 builder.AddSharedKernelWebApi(options =>
 {
     options.Problems.UnavailableRetryAfter = TimeSpan.FromSeconds(30);
@@ -68,6 +75,7 @@ builder.AddSharedKernelWebApi(options =>
 
 var app = builder.Build();
 
+app.UseSharedKernelRequestContext();   // first: its scope wraps everything below
 app.UseSharedKernelWebApi(pipeline => pipeline
     .AtStart(web => web.UseForwardedHeaders())
     .BeforeAuthorization(web => web.UseRequestLocalization()));
@@ -93,21 +101,23 @@ runs the `configure` callback after binding, validates the result, and registers
 
 `UseSharedKernelWebApi()` adds, in this order:
 
-1. removal of the caller's W3C `baggage` (unless `TrustInboundBaggage`);
-2. the `AtStart` hooks;
-3. correlation ids;
-4. HSTS (outside Development), then the security headers and the default `Cache-Control`;
-5. the exception handler, then problem bodies for bodiless error statuses;
-6. `UseRouting()`, then CORS and the WebSocket origin check (when origins are configured);
-7. the `BeforeAuthentication` hooks, then `UseAuthentication()` (when authentication is registered);
-8. the `BeforeAuthorization` hooks, then `UseRateLimiter()` (when rate limiting is registered);
-9. `UseAuthorization()`, then the endpoint's `Idempotency-Key`, `If-Match` and paging checks.
+1. the `AtStart` hooks;
+2. HSTS (outside Development), then the security headers and the default `Cache-Control`;
+3. the exception handler, then problem bodies for bodiless error statuses;
+4. `UseRouting()`, then CORS and the WebSocket origin check (when origins are configured);
+5. the `BeforeAuthentication` hooks, then `UseAuthentication()` (when authentication is registered);
+6. the `BeforeAuthorization` hooks, then `UseRateLimiter()` (when rate limiting is registered);
+7. `UseAuthorization()`, then the endpoint's `Idempotency-Key`, `If-Match` and paging checks.
 
-Call it first, then map endpoints; put other middleware after it. A middleware that must run inside it goes in a hook:
+Call it right after `UseSharedKernelRequestContext()` (`SharedKernel.ServiceDefaults.Security`), then map endpoints;
+put other middleware after it. The request context goes first so its `RequestContextScope` wraps this pipeline's
+exception handler: the correlation id is on every log line and every response, error responses included. Tenant
+resolution (`SharedKernel.MultiTenancy`), when used, goes in the `BeforeAuthorization` hook:
+`app.UseSharedKernelWebApi(p => p.BeforeAuthorization(a => a.UseMiddleware<TenantResolutionMiddleware>()))`. A middleware that must run inside it goes in a hook:
 
 | Hook | Position | Typical middleware |
 | --- | --- | --- |
-| `AtStart` | Before everything but the baggage removal | `UseForwardedHeaders()`, so HSTS, the scheme and the client address are right |
+| `AtStart` | Before everything else of this pipeline (after the request context) | `UseForwardedHeaders()`, so HSTS, the scheme and the client address are right |
 | `BeforeAuthentication` | After routing and CORS | `UseCertificateForwarding()` |
 | `BeforeAuthorization` | After authentication, before rate limiting and authorization | `UseRequestLocalization()`, so 401, 403 and 429 bodies are translated |
 
@@ -139,6 +149,7 @@ public sealed class InvoiceEndpoints : IEndpointModule
     }
 }
 
+app.UseSharedKernelRequestContext();
 app.UseSharedKernelWebApi();
 app.MapEndpoints();
 ```
@@ -328,6 +339,10 @@ that do not call `ISender`. The step-up requirements (`RequireFreshAuthenticatio
 stay on the endpoint, since only the HTTP request knows how the caller signed in. Both layers answer 401
 `unauthorized.default` and 403 `forbidden.insufficient_permission`.
 
+The attributes and conventions are `SharedKernel.Presentation.Core`'s, shared with SignalR and gRPC:
+`using SharedKernel.Presentation.Authorization;` (P-579; they were in this package's namespace before). This package
+registers them and writes the problem body of every refusal.
+
 | Requirement | Attribute | Endpoint convention | A signed-in caller who fails it |
 | --- | --- | --- | --- |
 | Any of the permissions | `[RequireEndpointPermission("orders.write", "orders.admin")]` | `.RequireEndpointPermission(…)` | 403 `forbidden.insufficient_permission` |
@@ -338,6 +353,8 @@ stay on the endpoint, since only the HTTP request knows how the caller signed in
 An anonymous caller is answered 401 `unauthorized.default` by every requirement.
 
 ```csharp
+using SharedKernel.Presentation.Authorization;
+
 var admin = app.MapGroup("/admin").RequireRole("support");        // every endpoint of the group
 admin.MapPost("/payouts", () => TypedResults.Accepted("/admin/payouts/1"))
     .RequireEndpointPermission("payouts.write", "payouts.admin")             // either permission
@@ -489,19 +506,21 @@ invoices.MapGet("/browse", (CursorPaging paging, ISender sender, CancellationTok
 
 ## Correlation ids
 
-- A valid inbound `X-Correlation-Id` is kept: one header value, at most 128 characters, no control characters,
-  matching `^[A-Za-z0-9\-_:.]+$`. Otherwise the request gets the current trace id (32 hex digits) or, when it is not
-  traced, a new GUID in `N` format. One id ties logs and traces together.
+The correlation id is resolved by `SharedKernel.ServiceDefaults.Security`'s `UseSharedKernelRequestContext()`, not by
+this package (P-579); this package reads it from the request's `RequestContextScope`.
+
+- A valid inbound `X-Correlation-Id` is kept: at most 128 characters of `[A-Za-z0-9-_:.]` (`CorrelationIds.IsValid`,
+  the one rule for every protocol). Otherwise the request gets a new id, `CorrelationIds.New()` (a GUID), never the
+  trace id; the rejected value is logged by length only (13007).
 - The id is written to the `X-Correlation-Id` header of every response, errors included, to the `correlationId` of
   every problem, and to `Activity` baggage (`correlation.id`), from where logs and outgoing calls read it. Read it with
-  `HttpContext.GetCorrelationId()`; in a gRPC method with `context.GetHttpContext().GetCorrelationId()`, in a hub with
-  `Context.GetCorrelationId()`.
-- A rejected inbound value is logged at Warning (14006) with its length only, never its text.
-- **Inbound baggage is refused.** Baggage flows onward with every outgoing call and onto log records, so a caller that
-  can set it can plant a tenant or user id that downstream code trusts. Unless `TrustInboundBaggage` is `true`, the
-  hosting propagator reads no baggage from the request, and the first middleware removes any item that reached the
-  request `Activity`. Baggage the service adds itself is kept. Set `TrustInboundBaggage` only behind a gateway that
-  removes caller-supplied baggage.
+  `HttpContext.GetCorrelationId()`, or anywhere with an injected `IRequestContext` (`CorrelationId`); in a gRPC method
+  the same way, in a hub with `Context.GetCorrelationId()`. Without the request context middleware it is `null` and
+  problems omit the member.
+- **Inbound baggage is refused** by the same middleware: hosting reads no baggage from the request, and any item that
+  still reached the request `Activity` is removed before the correlation id is added. Set
+  `AddSharedKernelRequestContext(o => o.TrustInboundBaggage = true)` only behind a gateway that removes caller-supplied
+  baggage. `SharedKernelWebApiOptions.CorrelationId` and `.TrustInboundBaggage` no longer exist.
 
 ## Security headers, CORS and request limits
 
@@ -590,7 +609,8 @@ The codes this package produces are constants on `PresentationErrorCodes`; the p
 ## Configuration
 
 Every setting binds from `SharedKernel:Presentation:WebApi` and is validated before the service handles a request:
-`CorrelationId`, `Cors`, `SecurityHeaders`, `Limits`, `Problems`, `RemoveServerHeader` and `TrustInboundBaggage`. Keys,
+`Cors`, `SecurityHeaders`, `Limits`, `Problems` and `RemoveServerHeader`. The correlation id and inbound baggage are
+configured on `AddSharedKernelRequestContext()` (`SharedKernel.ServiceDefaults.Security`) since P-579. Keys,
 types, defaults and rules are in
 [CONFIGURATION.md](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/14.Presentation/CONFIGURATION.md#sharedkernelpresentationwebapi).
 
@@ -610,21 +630,20 @@ types, defaults and rules are in
 
 ## Logging
 
-EventIds 14000–14099.
+EventIds 14000–14099. 14000 and 14006 (the former correlation-id middleware's) are retired; the request context logs
+those events as 13006 and 13007.
 
 | EventId | Level | Event |
 | --- | --- | --- |
-| 14000 | Debug | A correlation id was assigned to a request without a valid one |
 | 14001 | Error | A request failed with a server error (5xx), with the exception |
-| 14002 | Warning | Authorization refused a request (endpoint, code) |
+| 14002 | Warning | Authorization refused a request (endpoint, code) — emitted by `SharedKernel.Presentation.Core` since P-579 |
 | 14003 | Warning | A request was refused for its `Idempotency-Key` (endpoint, code; never the key) |
 | 14004 | Critical | CORS settings failed startup validation |
 | 14005 | Warning | Rate limiting rejected a request |
-| 14006 | Warning | An inbound correlation id failed validation (its length only) |
 | 14007 | Debug | An exception was answered with a client error (4xx) |
 | 14008 | Debug | The client closed the request before it completed (499) |
-| 14009 | Warning | A signed-in caller was refused: no `IUserContextMapper` handles its authentication type |
-| 14010 | Warning | At startup: an authentication scheme has no `IUserContextMapper` |
+| 14009 | Warning | A signed-in caller was refused: no `IUserContextMapper` handles its authentication type — `SharedKernel.Presentation.Core` |
+| 14010 | Warning | At startup: an authentication scheme has no `IUserContextMapper` — `SharedKernel.Presentation.Core` |
 | 14011 | Warning | At startup: `AddSharedKernelWebApi()` ran but `UseSharedKernelWebApi()` did not |
 | 14012 | Warning | At startup: exception details are enabled outside Development |
 | 14013 | Warning | A WebSocket request from a disallowed origin was refused |
@@ -632,10 +651,11 @@ EventIds 14000–14099.
 ## Pitfalls
 
 - **Forgetting `UseSharedKernelWebApi()`.** Typed results still write problems, so a happy-path test passes, but
-  thrown exceptions, correlation ids, security headers, CORS and the header checks are missing. The host logs warning
+  thrown exceptions, security headers, CORS and the header checks are missing. The host logs warning
   14011.
-- **Middleware in front of it.** Middleware added before `UseSharedKernelWebApi()` runs outside the exception handler
-  and before correlation ids; use a hook.
+- **Forgetting `UseSharedKernelRequestContext()`.** Problems carry no `correlationId`, no `X-Correlation-Id` is echoed,
+  the caller's baggage is not refused, and code reading `IRequestContext` sees no scope. Add it first.
+- **Middleware in front of it.** Middleware added between the two calls runs outside the exception handler; use a hook.
 - **An authentication scheme without a mapper.** Every signed-in caller gets 403 while the token carries the
   permission. Look for 14009 and 14010, and register the scheme's `IUserContextMapper`, test schemes included.
 - **Reading headers raw.** `GetIdempotencyKey()` and `GetIfMatch()` also return `null` for an invalid header on an
@@ -657,9 +677,11 @@ EventIds 14000–14099.
 | `ErrorPresentation`, `ErrorTypeStatusCodeMap`, `PresentationErrorCodes.ForStatus`, the endpoint-metadata interfaces | Internal to the presentation packages; `error.ToErrorResult()` or `error.ToProblemDetails(httpContext)` |
 | `services.AddSharedKernelAuthorization()` | Nothing: `AddSharedKernelWebApi()`, `AddSharedKernelSignalR()` and `AddSharedKernelGrpc()` register it |
 | `GetIfMatchTags()` | `GetIfMatch()`, or an `IfMatch<TVersion>` parameter |
+| `SharedKernelWebApiOptions.CorrelationId`, `.TrustInboundBaggage`, `WebApiCorrelationIdOptions`, the correlation-id middleware (removed by P-579) | `SharedKernel.ServiceDefaults.Security`: `AddSharedKernelRequestContext(o => o.TrustInboundBaggage = …)` and `UseSharedKernelRequestContext()` |
+| The authorization attributes in `SharedKernel.Presentation.WebApi` | `SharedKernel.Presentation.Authorization` (`SharedKernel.Presentation.Core`, P-579) |
 | Hand-written `MapXxxEndpoints()` extension methods | An `IEndpointModule`, mapped by `app.MapEndpoints()` |
 | Binding `page`/`pageSize` yourself | A `Paging` or `CursorPaging` parameter |
 | `ToActionResult` (MVC) | The same typed results (`ToOk()`, `ToCreated()`, …) returned from the action |
 | A type removed by P-562 (`ToProblemDetailsResult`, `AddSharedKernelAuthorizationFilters`, `AddSharedKernelIdempotencyFilters`, `RowVersionETag`, `UseSharedKernelSecurityHeaders`, `AddSharedKernelCors`, `AddSharedKernelPayloadLimits`, `RequireValidatedUpload`, `RateLimitRejectionProblemDetails`, `AddSharedKernelCorrelationId`, `ValidationProblemDetailsExtensions`, …) | The one-call setup, the settings and the parameter types above; each replacement is listed in `14.Presentation/CLAUDE.history.md` |
 | API versioning, OpenAPI, Scalar, `Sunset` and `Deprecation` headers | `SharedKernel.Presentation.OpenApi` |
-| .NET 10 `AddValidation()` | Validation in the MediatR pipeline (05.Application's `ValidationBehavior`) |
+| .NET 10 `AddValidation()` | Validation in the application pipeline (05.Application's `ValidationBehavior`) |

@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): `RequestAsync` was removed by P-560 (the request-client notes below are historical); `ITenantContextAccessor`/`WithTenantContext<TAccessor>()` were deleted (`WithTenantContext()` now takes no accessor) — tenant, actor and correlation now come from `SharedKernel.Execution`'s `IRequestContextAccessor`, written as `WellKnownHeaders` (`x-sk-*`) by `RequestContextHeaderPropagator` and rebuilt on consume as `PropagatedRequestContext` by `WithInboundRequestContext()`. Platform pinned to MassTransit 8.5.x.
+
 ## IMessageHeaderPropagator wiring (SK.07.HeaderPropagation)
 
 **Registration:** `WithHeaderPropagator<T>()` calls `Services.AddScoped<IMessageHeaderPropagator, T>()` — additive, multiple registrations produce an `IEnumerable<IMessageHeaderPropagator>` in DI order.

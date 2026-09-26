@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): `SharedKernel.Communication.GraphQL` moved to `14.Presentation` as `SharedKernel.Presentation.GraphQL` (Host tier) — no longer this agent's package; kept only as HotChocolate v16 API history.
+
 HotChocolate was upgraded from v14 (planned) to v16.1.4 because v14 is incompatible with net10.0.
 
 ## Version pins

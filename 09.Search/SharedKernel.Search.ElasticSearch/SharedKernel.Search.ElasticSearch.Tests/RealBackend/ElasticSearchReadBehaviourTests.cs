@@ -3,6 +3,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Search.Abstractions.Models;
 using SharedKernel.Search.ElasticSearch.Extensions;
@@ -76,7 +77,7 @@ public sealed class ElasticSearchReadBehaviourTests : IAsyncLifetime
             PageSize = 2,
         };
 
-        var result = await _index.SearchAsync(request, TenantScope.Of(TestProductCorpus.TenantA));
+        var result = await _index.SearchAsync(request, TenantScope.For(TestProductCorpus.TenantA));
 
         result.IsSuccess.Should().BeTrue();
         var expected = TestProductCorpus.ForTenant(TestProductCorpus.TenantA)
@@ -94,7 +95,7 @@ public sealed class ElasticSearchReadBehaviourTests : IAsyncLifetime
     {
         var request = new SearchRequest { Facets = [TestProductFields.Status] };
 
-        var result = await _index.SearchAsync(request, TenantScope.Of(TestProductCorpus.TenantA));
+        var result = await _index.SearchAsync(request, TenantScope.For(TestProductCorpus.TenantA));
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Facets.Should().ContainKey(TestProductFields.Status);
@@ -119,7 +120,7 @@ public sealed class ElasticSearchReadBehaviourTests : IAsyncLifetime
     {
         var request = new SearchRequest { Facets = [TestProductFields.Category] };
 
-        var result = await _facetTruncationIndex.SearchAsync(request, TenantScope.Of(TestProductCorpus.TenantA));
+        var result = await _facetTruncationIndex.SearchAsync(request, TenantScope.For(TestProductCorpus.TenantA));
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Facets.Should().ContainKey(TestProductFields.Category);
@@ -136,7 +137,7 @@ public sealed class ElasticSearchReadBehaviourTests : IAsyncLifetime
     {
         var request = new SearchRequest { RequireExactTotalHits = true };
 
-        var result = await _index.SearchAsync(request, TenantScope.Of(TestProductCorpus.TenantA));
+        var result = await _index.SearchAsync(request, TenantScope.For(TestProductCorpus.TenantA));
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Accuracy.Should().Be(TotalHitsAccuracy.Exact);
@@ -152,7 +153,7 @@ public sealed class ElasticSearchReadBehaviourTests : IAsyncLifetime
         // practice, but the assertion is written against the honest contract, not the incidental scale.
         var request = SearchRequest.Default;
 
-        var result = await _index.SearchAsync(request, TenantScope.Of(TestProductCorpus.TenantA));
+        var result = await _index.SearchAsync(request, TenantScope.For(TestProductCorpus.TenantA));
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Accuracy.Should().NotBe(TotalHitsAccuracy.Estimated);
@@ -168,7 +169,7 @@ public sealed class ElasticSearchReadBehaviourTests : IAsyncLifetime
             Highlight = new HighlightRequest { Fields = [TestProductFields.Name] },
         };
 
-        var result = await _index.SearchAsync(request, TenantScope.Of(TestProductCorpus.TenantA));
+        var result = await _index.SearchAsync(request, TenantScope.For(TestProductCorpus.TenantA));
 
         result.IsSuccess.Should().BeTrue();
         var hit = result.Value.Hits.Should().ContainSingle(h => h.Document.DocumentId == "prod-001").Subject;
@@ -179,7 +180,7 @@ public sealed class ElasticSearchReadBehaviourTests : IAsyncLifetime
     [Fact]
     public async Task GetAsync_TenantB_CannotReadTenantADocument_ReturnsDocumentNotFound()
     {
-        var result = await _index.GetAsync("prod-001", TenantScope.Of(TestProductCorpus.TenantB));
+        var result = await _index.GetAsync("prod-001", TenantScope.For(TestProductCorpus.TenantB));
 
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("search.document_not_found");
@@ -188,7 +189,7 @@ public sealed class ElasticSearchReadBehaviourTests : IAsyncLifetime
     [Fact]
     public async Task GetAsync_OwningTenant_ReturnsDocument()
     {
-        var result = await _index.GetAsync("prod-011", TenantScope.Of(TestProductCorpus.TenantB));
+        var result = await _index.GetAsync("prod-011", TenantScope.For(TestProductCorpus.TenantB));
 
         result.IsSuccess.Should().BeTrue();
         result.Value.DocumentId.Should().Be("prod-011");
@@ -197,12 +198,12 @@ public sealed class ElasticSearchReadBehaviourTests : IAsyncLifetime
     [Fact]
     public async Task CountAsync_MatchesTenantCorpusCount_Exactly()
     {
-        var countA = await _index.CountAsync(filter: null, TenantScope.Of(TestProductCorpus.TenantA));
+        var countA = await _index.CountAsync(filter: null, TenantScope.For(TestProductCorpus.TenantA));
         countA.IsSuccess.Should().BeTrue();
         countA.Value.IsExact.Should().BeTrue("the ElasticSearch _count API has no maxTotalHits ceiling, so this provider is always exact");
         countA.Value.Value.Should().Be(TestProductCorpus.ForTenant(TestProductCorpus.TenantA).Count);
 
-        var countB = await _index.CountAsync(filter: null, TenantScope.Of(TestProductCorpus.TenantB));
+        var countB = await _index.CountAsync(filter: null, TenantScope.For(TestProductCorpus.TenantB));
         countB.IsSuccess.Should().BeTrue();
         countB.Value.IsExact.Should().BeTrue();
         countB.Value.Value.Should().Be(TestProductCorpus.ForTenant(TestProductCorpus.TenantB).Count);

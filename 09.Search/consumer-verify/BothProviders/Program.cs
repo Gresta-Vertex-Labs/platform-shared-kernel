@@ -101,8 +101,9 @@ static async Task Surface_BothProvidersAgainstSameTDocumentLastRegistrationWins(
         + "ISearchProviderDescriptor) have no type parameter to tell them apart, so a distinct TDocument "
         + "does NOT disambiguate them and their unkeyed resolution collapses to the last provider "
         + "registered in ANY two-provider host. Resolve those two by provider-name key instead — "
-        + "GetRequiredKeyedService<T>(SearchWellKnown.MeilisearchProviderName) — and pass the same key to "
-        + "13.ServiceDefaults' AddSearchReadinessCheck(providerKey:). Verified above, both ways.");
+        + "GetRequiredKeyedService<T>(SearchWellKnown.MeilisearchProviderName). Readiness is unaffected: each "
+        + "provider registers its own per-index SearchIndexReadinessProbe, named by provider and index. "
+        + "Verified above, both ways.");
 }
 
 static void Verify(bool condition, string label)

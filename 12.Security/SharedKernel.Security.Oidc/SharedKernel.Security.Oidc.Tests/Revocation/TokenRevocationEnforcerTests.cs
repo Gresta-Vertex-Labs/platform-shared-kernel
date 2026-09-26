@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Context;
 using Microsoft.IdentityModel.JsonWebTokens;
 using SharedKernel.Security.Abstractions;
 using SharedKernel.Security.Oidc.Options;
@@ -36,7 +37,7 @@ public sealed class TokenRevocationEnforcerTests
     public async Task IsRevokedAsync_Request_CarriesUserSubjectClientAndSession()
     {
         var enforcer = new TokenRevocationEnforcer(_check);
-        var user = new UserContext(IdentityKind.User, "context-subject") { ClientId = "client-1", SessionId = "session-1" };
+        var user = new UserContext(ActorKind.User, "context-subject") { ClientId = "client-1", SessionId = "session-1" };
 
         await enforcer.IsRevokedAsync(_token, user, _options, Expiry.AddMinutes(-10), _logger, CancellationToken.None);
 

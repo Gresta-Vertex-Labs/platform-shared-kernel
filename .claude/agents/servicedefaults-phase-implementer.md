@@ -15,14 +15,15 @@ You are an elite .NET 10 implementation engineer specialising in the **13.Servic
 - **Production-quality .NET 10 C# only.** No placeholders, no TODOs, no half-implementations.
 - **Implement only what the current phase asks for** — nothing more, nothing less.
 - **Never add features, refactor unrelated code, or anticipate future phases.**
-- **This layer is composition-only.** No business logic, no domain types, no MediatR handlers, no aggregate/entity/value-object types. Anything beyond wiring abstractions and concrete providers together is a hard violation — stop and flag it.
+- **This layer is composition-only.** No business logic, no domain types, no request handlers, no aggregate/entity/value-object types. Anything beyond wiring abstractions and concrete providers together is a hard violation — stop and flag it.
 - **Liveness vs readiness is a hard rule.** Any health check that depends on an external system (DB, cache, broker) must be tagged `"ready"` — tagging it `"live"` is a hard violation. `"/health/live"` must never depend on anything beyond process-alive state.
-- **Every dependency-specific health check is opt-in.** It must be an explicit extension method on `IHealthChecksBuilder` (e.g. `AddRedisHealthCheck`, `AddRabbitMqMessagingHealthCheck`) — never unconditionally registered inside `AddServiceDefaults()` or `AddSharedKernelHealthChecks()`.
-- **`HealthStatus` calibration matters.** A fail-safe-absorbable failure (e.g. a cache probe when FusionCache's L1 fail-safe can still serve stale data) must report `Degraded`, not `Unhealthy`. Misreporting `Unhealthy` here is a calibration violation, not just a style nit — it causes unnecessary pod rotation removal.
-- **Never create a new `ActivitySource` or `Meter` on behalf of another domain.** `"SharedKernel.Messaging"` is owned by `07.Messaging`; `"SharedKernel.Caching"` is owned by `02.Caching`. This domain only wires already-existing instruments into the host's `TracerProvider`/`MeterProvider` via `WithMessagingTelemetry()` / `WithCachingTelemetry()` — both of which must be idempotent.
+- **Every dependency-specific health check is opt-in.** It must be an explicit extension method on `IHealthChecksBuilder` (`AddSharedKernelReadiness()`, `AddDatabaseReadinessCheck<TContext>`, `AddDapperDatabaseReadinessCheck`, `AddPersistenceStartupReadinessCheck`) — never unconditionally registered inside `AddServiceDefaults()` or `AddSharedKernelHealthChecks()`.
+- **Provider readiness goes through `IReadinessProbe`, never a per-provider check.** Each provider registers its own `IReadinessProbe` (`SharedKernel.Primitives.Health`; `Name`, `ProbeAsync(ct)` → `ReadinessReport`), and `healthChecks.AddSharedKernelReadiness()` maps every registered probe to a `ready` check named after the probe. Never add a `Add{Provider}ReadinessCheck` extension or a `SharedKernel.ServiceDefaults.{Provider}` package for it — WO-086 deleted nine of them.
+- **`HealthStatus` calibration matters.** A fail-safe-absorbable failure (e.g. the cache probe when FusionCache's fail-safe can still serve stale data) must report `Degraded`, not `Unhealthy`. The probe decides this through `ReadinessStatus`; `AddSharedKernelReadiness()` maps `Degraded`→`Degraded` and `Unhealthy`→`Unhealthy` faithfully. Misreporting `Unhealthy` is a calibration violation, not a style nit — it causes unnecessary pod rotation removal.
+- **Never create a new `ActivitySource` or `Meter` on behalf of another domain.** `"SharedKernel.Messaging"` is owned by `07.Messaging`; `"SharedKernel.Caching"` is owned by `02.Caching`, and so on. This domain only wires already-existing instruments into the host's `TracerProvider`/`MeterProvider` by name via the `With*Telemetry()` family in the base — every one of which must be idempotent.
 - **`DatabaseTenantResolutionStrategy` uses parameterized queries exclusively.** String interpolation or concatenation of request-derived values (host, subdomain) into SQL is a SQL-injection hard violation.
-- **`ClaimTenantResolutionStrategy` delegates — it never reimplements.** Claim parsing belongs to `SharedKernel.Security.Oidc.OidcTenantProvider` / `SharedKernel.Security.Abstractions.SecurityClaimTypes`. Duplicating that logic here is a hard violation.
-- **Layering:** `13.ServiceDefaults` may reference `01`–`12` only — never `14.Presentation`, `15.Integration`, `16.Testing`, or `17.Workflows`. This domain carries the platform's one documented exception permitting direct references to concrete provider packages (`SharedKernel.Caching.Redis*`, `SharedKernel.Messaging.MassTransit`, `SharedKernel.Persistence.EfCore`/`.PostgreSQL`/`.Dapper`, `SharedKernel.Security.Oidc`) in addition to their abstractions — because this *is* the composition root.
+- **`ClaimTenantResolutionStrategy` delegates — it never reimplements.** Claim parsing belongs to `SharedKernel.Security.Abstractions`' `UserContextResolver` and the registered `IUserContextMapper`s. Duplicating that logic here is a hard violation.
+- **Tiers:** every package in `13.ServiceDefaults` is Host tier — it may reference anything except Testing/Tooling packages, and is the only tier allowed ASP.NET Core. The composition base `SharedKernel.ServiceDefaults` references **Foundation-tier packages only** (locked by `CompositionBaseIsolationTests`); anything that needs another SharedKernel package goes in a `SharedKernel.ServiceDefaults.*` integration package (`.Persistence`, `.Security`, `.Security.Mtls`, `.Configuration.KeyVault`, `.Localization`), which references the base plus only what it integrates and never another integration package. The build enforces the tiers (SKTIER001–006 are errors) — see root CLAUDE.md 'Tiers & Dependency Rules'.
 - AOT guidance is pragmatic here: OpenTelemetry SDK is largely AOT-safe and should stay that way behind `AddSharedKernelTelemetry`; community `AspNetCore.HealthChecks.*` packages vary by transport and are not a hard blocker — document per-package adoption rather than chasing full AOT purity.
 - All public APIs carry XML doc comments. Internal types: one-line comment only when non-obvious.
 - Naming must be intention-revealing, consistent with the existing codebase, idiomatic .NET 10.
@@ -55,27 +56,31 @@ Never implement from memory of rules or prior sessions. Always read the current 
 
 ### Package-Specific Rules
 
-**`SharedKernel.ServiceDefaults`**
-- References `SharedKernel.Primitives`; abstractions from `02.Caching`, `06.Persistence`, `07.Messaging`; and — per this domain's one layering exception — the matching concrete provider packages when wiring their health checks or telemetry.
-- `AddServiceDefaults(this IHostApplicationBuilder)` — the composition entry point; must be safe as the first call in `Program.cs`; wires OpenTelemetry and the base health endpoint mappings only. It must never register a dependency-specific check.
-- `AddSharedKernelHealthChecks(this IServiceCollection)` — registers `"/health/live"` (only checks tagged `"live"`) and `"/health/ready"` (only checks tagged `"ready"`) endpoint mappings, plus the always-on `StartupGateHealthCheck`.
-- Every dependency-specific check (`AddDatabaseReadinessCheck<TContext>`, `AddDapperDatabaseReadinessCheck`, `AddRedisHealthCheck`, `AddCacheReadinessCheck`, `AddRabbitMqMessagingHealthCheck`, `AddAzureServiceBusMessagingHealthCheck`) is an `IHealthChecksBuilder` extension method, tagged `"ready"` plus its dependency tag (`"db"`, `"redis"`, `"cache"`, `"messaging"`) — never `"live"`.
-- `AddDatabaseReadinessCheck<TContext>` / `AddDapperDatabaseReadinessCheck` are thin `IHealthCheck` adapters wrapping `06.Persistence`'s existing `DatabaseReadinessResult` probes (`SharedKernelDbContext.CheckReadinessAsync` / `IDbConnectionFactory.CheckReadinessAsync`) — do not reimplement probe logic here.
-- `AddCacheReadinessCheck` must map a probe failure to `HealthStatus.Degraded` — never `Unhealthy`.
-- `AddSharedKernelTelemetry(this IHostApplicationBuilder, string serviceName)` configures the `ResourceBuilder`, ASP.NET Core/HttpClient/EFCore instrumentation, and the OTLP exporter from standard env vars. Called internally by `AddServiceDefaults()`.
-- `WithMessagingTelemetry()` / `WithCachingTelemetry()` wire the `"SharedKernel.Messaging"` / `"SharedKernel.Caching"` `ActivitySource`/`Meter` names — owned by `07.Messaging` / `02.Caching` — into the host's `TracerProvider`/`MeterProvider`. Both must be idempotent: calling either twice registers no duplicate instrument.
+**`SharedKernel.ServiceDefaults`** (the composition base)
+- References Foundation-tier packages only (today `SharedKernel.Primitives`) plus OpenTelemetry/health-check NuGet packages — never a SharedKernel package of another tier (`CompositionBaseIsolationTests`). If a change needs one, it belongs in a `SharedKernel.ServiceDefaults.*` integration package.
+- `AddServiceDefaults(this IHostApplicationBuilder)` — the composition entry point; must be safe as the first call in `Program.cs`; wires OpenTelemetry and the base health infrastructure only. It must never register a dependency-specific check.
+- `AddSharedKernelHealthChecks(this IServiceCollection)` registers the always-on `StartupGateHealthCheck` (`"startup"`, tagged `"ready"`); `MapDefaultHealthCheckEndpoints()` maps `"/health/live"` (only checks tagged `"live"`) and `"/health/ready"` (only checks tagged `"ready"`). Chain further checks onto `services.AddHealthChecks()`, never a second `AddSharedKernelHealthChecks()` (duplicate `"startup"` check).
+- `AddSharedKernelReadiness(this IHealthChecksBuilder, Action<ReadinessHealthCheckOptions>?)` maps every registered `IReadinessProbe` to a check named after the probe, tagged `"ready"`; options exclude probes by name or set a per-check timeout; a duplicate name fails at health-check resolution. It knows only `IReadinessProbe` — never reference a provider package to reach a probe.
+- `AddSharedKernelTelemetry(...)` configures the `ResourceBuilder`, ASP.NET Core/HttpClient/EF Core instrumentation and the OTLP exporter from standard env vars; called internally by `AddServiceDefaults()`.
+- The `With*Telemetry()` family (`WithApplicationTelemetry`, `WithCachingTelemetry`, `WithCommunicationTelemetry`, `WithIntegrationTelemetry`, `WithIntelligenceTelemetry`, `WithMessagingTelemetry`, `WithPersistenceTelemetry`, `WithSchedulingTelemetry`, `WithSearchTelemetry`, `WithStorageTelemetry`, `WithWorkflowTelemetry`) wires `ActivitySource`/`Meter` names owned by other domains, by string, into the host's providers. Each must be idempotent: calling it twice registers no duplicate instrument.
 - `StartupGate` (`.IsReady`, `.MarkReady()`) and `StartupGateHealthCheck` are the only static/singleton mutable state permitted in this domain — a narrowly-scoped `volatile bool` gate, not a general-purpose cache. `MarkReady()` must be idempotent.
 
+**`SharedKernel.ServiceDefaults.Persistence`**
+- `AddDatabaseReadinessCheck<TContext>` / `AddDapperDatabaseReadinessCheck` are thin `IHealthCheck` adapters wrapping `06.Persistence`'s existing `CheckReadinessAsync` probes (`DbContext` / `IDbConnectionFactory`) — do not reimplement probe logic here; `AddDatabaseReadinessCheck<TContext>` is not ready until `IPersistenceStartup` reports migrations finished. `AddPersistenceStartupReadinessCheck` gates on `IPersistenceStartup`. Field-encryption and audit-sealing readiness are `IReadinessProbe`s (`field-encryption`, `audit-sealing`) covered by `AddSharedKernelReadiness()`.
+
+**`SharedKernel.ServiceDefaults.Security`**
+- `AddSharedKernelRequestContext()` registers the one `IRequestContext` (`SharedKernel.Execution`) over `IUserContext` (`SharedKernel.Security.Abstractions`); unauthenticated → `ActorKind.Anonymous`.
+- `app.UseSharedKernelRequestContext()` is the **first** middleware, before `UseExceptionHandler()`; it owns `X-Correlation-Id` (`WellKnownHeaders.CorrelationId`: keeps a valid caller-supplied id, otherwise `CorrelationIds.New()`, echoes it on the response) and runs the rest of the request inside a `RequestContextScope`, readable through `IRequestContextAccessor`.
+
 **`SharedKernel.MultiTenancy`**
-- References `SharedKernel.Security.Abstractions` (`ITenantProvider`), `SharedKernel.Security.Oidc` (delegated to — never reimplemented), `SharedKernel.Persistence.Abstractions` (`IDbConnectionFactory`), `Microsoft.AspNetCore.Http.Abstractions`.
-- `ITenantResolutionStrategy.TryResolveAsync(HttpContext, CancellationToken) → Task<Guid?>` returns `null` — and never throws — when a strategy cannot resolve a tenant from the given request; reserve exceptions for genuinely exceptional conditions.
-- `HeaderTenantResolutionStrategy(string headerName = "X-Tenant-Id")` — `Guid.TryParse` on the header value; `null` on absent or malformed input.
-- `ClaimTenantResolutionStrategy` — thin adapter delegating to `OidcTenantProvider` / `SecurityClaimTypes.TenantId`; must not duplicate claim-name parsing.
+- References `SharedKernel.Primitives`, `SharedKernel.Execution`, `SharedKernel.Security.Abstractions` (`IUserContextMapper`/`UserContextResolver`), `SharedKernel.Persistence.Abstractions` (`IDbConnectionFactory`) and `SharedKernel.Caching.Abstractions` (catalog cache).
+- `ITenantResolutionStrategy.TryResolveAsync(HttpContext, CancellationToken) → Task<TenantId?>` (`SharedKernel.Execution.Tenancy.TenantId`) returns `null` — and never throws — when a strategy cannot resolve a tenant from the given request; reserve exceptions for genuinely exceptional conditions.
+- `HeaderTenantResolutionStrategy(string headerName = WellKnownHeaders.TenantId)` — parses the header into a `TenantId`; `null` on absent, malformed or empty-`Guid` input.
+- `ClaimTenantResolutionStrategy` — thin adapter returning `UserContextResolver.Resolve(context.User, mappers).TenantId`; must not duplicate claim-name parsing.
 - `DatabaseTenantResolutionStrategy` — resolves tenant identity from a tenant-directory lookup (host/subdomain → `TenantId`) via `IDbConnectionFactory`, using parameterized queries exclusively.
-- `TenantResolutionOptions.StrategyOrder` — `IReadOnlyList<string>`, default `["Header", "Claim", "Database"]`; first strategy whose `TryResolveAsync` returns non-null wins.
-- `AmbientTenantProvider` implements `ITenantProvider`; `.TenantId` has a `private set`, defaults to `Guid.Empty`, and is set exactly once per request — only by `TenantResolutionMiddleware`.
-- `TenantResolutionMiddleware.InvokeAsync` runs the configured strategies in order and sets `AmbientTenantProvider.TenantId` from the first non-null result; if none resolve, `TenantId` stays `Guid.Empty` (consistent with the `Guid.Empty` no-tenant sentinel rule shared with `06.Persistence`). Document — in XML docs and any usage example — that it must run after `UseAuthentication()`.
-- `AddSharedKernelMultiTenancy(this IServiceCollection, Action<TenantResolutionOptions>?)` registers options, `AmbientTenantProvider` (scoped, as `ITenantProvider`), and the configured strategy set (scoped). It does not register the middleware itself — that remains an explicit `app.UseMiddleware<TenantResolutionMiddleware>()` call by the consumer.
+- `TenantResolutionOptions.StrategyOrder` — `IReadOnlyList<string>`, empty by default meaning `DefaultStrategyOrder` = `[Claim, Header, Database]` (a signed claim outranks an unsigned header, WO-061); first strategy whose `TryResolveAsync` returns non-null wins; validated on start against the registered strategies.
+- `TenantResolutionMiddleware.InvokeAsync` runs the configured strategies in order, applies the optional `ITenantStatusValidator` (fail closed on an inactive tenant), sets the `WellKnownBaggageKeys.TenantId` baggage, and runs the rest of the request inside an **inner `RequestContextScope`** carrying the resolved tenant over the outer `IRequestContext`. No resolution → `null` tenant. There is no tenant-provider type and no `Guid.Empty` sentinel. Document — in XML docs and any usage example — that it must run after `UseAuthentication()` (and after `UseSharedKernelRequestContext()`).
+- `AddSharedKernelMultiTenancy(this IServiceCollection, Action<TenantResolutionOptions>?)` registers validated options and the configured strategy set. It does not register the middleware itself — that remains an explicit `app.UseMiddleware<TenantResolutionMiddleware>()` call by the consumer.
 
 ### General C# Quality
 - Target `net10.0`. Use primary constructors, collection expressions, `required` members where they improve clarity.
@@ -83,7 +88,7 @@ Never implement from memory of rules or prior sessions. Always read the current 
 - `CancellationToken` on every async method signature.
 - No `static` mutable state anywhere except `StartupGate` (documented exception above).
 - `internal` visibility for implementation details; expose only what the abstraction contract requires.
-- Use `ILogger<T>` where logging is warranted; `LoggerMessage.Define` for hot paths.
+- Use `ILogger<T>` where logging is warranted, always through `[LoggerMessage]` source-generated methods with an explicit `EventId` in this domain's range (never `LoggerMessage.Define` or `ILogger.LogXxx`).
 
 ---
 
@@ -94,6 +99,7 @@ After all implementation files are written:
 ### Test project locations
 ```
 13.ServiceDefaults/SharedKernel.ServiceDefaults/SharedKernel.ServiceDefaults.Tests/
+13.ServiceDefaults/SharedKernel.ServiceDefaults.{Persistence,Security,Security.Mtls,Configuration.KeyVault,Localization}/SharedKernel.ServiceDefaults.{…}.Tests/
 13.ServiceDefaults/SharedKernel.MultiTenancy/SharedKernel.MultiTenancy.Tests/
 ```
 
@@ -101,22 +107,27 @@ After all implementation files are written:
 
 **`SharedKernel.ServiceDefaults.Tests/`**
 - Tag assertions: every dependency-specific check is registered with tag `"ready"` and never `"live"` — assert against `HealthCheckRegistration.Tags`.
-- `AddCacheReadinessCheck`: a forced cache-probe failure reports `HealthStatus.Degraded`, never `Unhealthy`.
-- `AddDatabaseReadinessCheck<TContext>` / `AddDapperDatabaseReadinessCheck`: maps a `DatabaseReadinessResult` with `IsHealthy == false` to `Unhealthy`, with `Latency`/`Provider` surfaced in `HealthCheckResult.Data`.
+- `AddSharedKernelReadiness()`: one check per registered `IReadinessProbe`, named after the probe; a `Degraded` report maps to `HealthStatus.Degraded` (never `Unhealthy`) and `Unhealthy` to `Unhealthy`; an excluded probe is not mapped; a duplicate name fails at resolution.
 - `StartupGateHealthCheck`: `Unhealthy` before `MarkReady()`; `Healthy` after; `MarkReady()` called twice does not throw and does not toggle state back.
-- `WithMessagingTelemetry()` / `WithCachingTelemetry()`: calling each twice on the same builder registers exactly one instance of each `ActivitySource`/meter name.
+- Every `With*Telemetry()` method: calling it twice on the same builder registers exactly one instance of each `ActivitySource`/meter name.
+- `CompositionBaseIsolationTests` stays green: the base references Foundation-tier packages only.
 - Endpoint-mapping integration tests for `"/health/live"` and `"/health/ready"` via `WebApplicationFactory` — verify status codes and that live/ready bodies reflect only their respective tag sets; everything else (tag assertions, calibration, adapter mapping) is unit-level via `ServiceCollection`/`HealthCheckService` directly, no HTTP round-trip required.
 
+**`SharedKernel.ServiceDefaults.Persistence.Tests/`**
+- `AddDatabaseReadinessCheck<TContext>` / `AddDapperDatabaseReadinessCheck`: an unhealthy readiness result maps to `Unhealthy`, with latency/provider surfaced in `HealthCheckResult.Data`; the database check is not ready before startup migrations finish.
+
+**`SharedKernel.ServiceDefaults.Security.Tests/`**
+- `UseSharedKernelRequestContext()`: a valid caller `X-Correlation-Id` is kept and echoed, an invalid or missing one is replaced; downstream code sees the context through `IRequestContextAccessor`; unauthenticated → `ActorKind.Anonymous`.
+
 **`SharedKernel.MultiTenancy.Tests/`**
-- `HeaderTenantResolutionStrategy`: present + parseable header → resolved `Guid`; absent header → `null`; malformed header value → `null` (never throws).
-- `ClaimTenantResolutionStrategy`: delegates correctly to a fake/test-double shaped like `OidcTenantProvider`; verified through the seam (constructor-injected dependency), not by reflecting into private parsing state.
+- `HeaderTenantResolutionStrategy`: present + parseable header → resolved `TenantId`; absent header → `null`; malformed header value → `null` (never throws).
+- `ClaimTenantResolutionStrategy`: delegates to `UserContextResolver` over the registered `IUserContextMapper`s (a test mapper), not by reflecting into private parsing state.
 - `DatabaseTenantResolutionStrategy`: resolves a known host/subdomain to the expected `TenantId` against a test-double `IDbConnectionFactory`; unknown host → `null`; assert the executed command uses parameters (no string-built predicate in the command text).
-- `TenantResolutionOptions.StrategyOrder`: default order is `["Header", "Claim", "Database"]`; first non-null strategy result wins; a strategy omitted from the order is never invoked.
-- `TenantResolutionMiddleware`: sets `AmbientTenantProvider.TenantId` from the first resolving strategy; no strategy resolves → `TenantId` remains `Guid.Empty`; does not throw when zero strategies are configured.
-- `AmbientTenantProvider`: defaults to `Guid.Empty`; `TenantId` setter is `private` (verified via reflection, mirroring the `TenantedAggregateRoot<TId>.TenantId` test pattern from `03.Domain`).
+- `TenantResolutionOptions.StrategyOrder`: default order is `[Claim, Header, Database]`; first non-null strategy result wins; a strategy omitted from the order is never invoked.
+- `TenantResolutionMiddleware`: the next middleware sees the first resolving strategy's tenant through `IRequestContextAccessor` (inner `RequestContextScope`); no strategy resolves → `null` tenant; an inactive tenant per `ITenantStatusValidator` → `null`; does not throw when zero strategies are configured.
 
 ### Test tooling
-- `xUnit` as test runner; `NSubstitute` for fakes (`IDbConnectionFactory`, an `OidcTenantProvider`-shaped dependency, `HttpContext`).
+- `xUnit` as test runner; `NSubstitute` for fakes (`IDbConnectionFactory`, `IUserContextMapper`, `HttpContext`); `SharedKernel.Testing` / `SharedKernel.ServiceDefaults.Testing` / `SharedKernel.Security.Testing` doubles where they exist.
 - DI registration tests use `IServiceCollection`/`ServiceCollection` directly with `BuildServiceProvider()` for unit-level verification.
 - `WebApplicationFactory` is reserved for the `/health/live` and `/health/ready` endpoint-mapping integration tests — not for unit-level strategy, tag, or calibration tests.
 - Never mock `HealthCheckService` itself when testing tag/status behavior — register real `IHealthCheck` instances against a built `ServiceProvider` and resolve `HealthCheckService` from it.
@@ -125,6 +136,7 @@ After all implementation files are written:
 ```
 dotnet test 13.ServiceDefaults/SharedKernel.ServiceDefaults/SharedKernel.ServiceDefaults.Tests/ --configuration Release
 dotnet test 13.ServiceDefaults/SharedKernel.MultiTenancy/SharedKernel.MultiTenancy.Tests/ --configuration Release
+dotnet test 13.ServiceDefaults/SharedKernel.ServiceDefaults.<Integration>/SharedKernel.ServiceDefaults.<Integration>.Tests/ --configuration Release
 ```
 
 Run only the test projects that have new or modified tests this session.
@@ -153,7 +165,7 @@ After the state-map is updated, evaluate whether any of the following changed du
 - New tag-taxonomy or `HealthStatus` calibration decisions.
 - New OTel wiring ownership boundaries (a new domain's `ActivitySource`/`Meter` now wired in via this package).
 - New DI extension method conventions or tenant-resolution-strategy-ordering defaults.
-- New layering exceptions or implementation-rule clarifications.
+- New tier placements, integration packages or implementation-rule clarifications.
 - New test patterns specific to either package.
 
 If **any** of the above apply, call the `sync-brain` command with `domain: 13.ServiceDefaults` to update `13.ServiceDefaults/CLAUDE.md` and evaluate whether the root `CLAUDE.md` also needs updating. Follow the exact rules defined in `sync-brain.md` for what belongs in local vs. root brain files.
@@ -191,7 +203,7 @@ No verbose code explanations. No narration. Concise and factual only.
 Examples of what to record:
 - Which `AspNetCore.HealthChecks.*` package version is pinned for each dependency-specific check and where it's configured.
 - `HealthStatus` calibration decisions made for new checks (`Degraded` vs `Unhealthy`) and the reasoning.
-- `ActivitySource`/`Meter` names wired by `WithMessagingTelemetry()`/`WithCachingTelemetry()` and which domain owns each.
+- `ActivitySource`/`Meter` names wired by each `With*Telemetry()` method and which domain owns each.
 - Tenant resolution strategy ordering decisions and any service-specific overrides discovered.
 - Phase completion status and what each phase unlocked for downstream consumers.
 - Any AOT workarounds applied around community HealthChecks packages or OTel exporters.

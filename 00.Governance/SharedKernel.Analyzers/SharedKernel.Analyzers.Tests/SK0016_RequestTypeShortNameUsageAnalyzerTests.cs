@@ -20,11 +20,11 @@ public class SK0016_RequestTypeShortNameUsageAnalyzerTests
     // ---------------------------------------------------------------------------
 
     /// <summary>
-    /// T-165: standalone <c>typeof(TRequest).Name</c> inside <c>SharedKernel.Application</c>
+    /// T-165: standalone <c>typeof(TRequest).Name</c> inside <c>SharedKernel.Application.Pipeline</c>
     /// must trigger SK0016.
     /// </summary>
     [Fact]
-    public async Task FirePath_StandaloneTypeofNameInsideApplicationBehaviors_ReportsDiagnostic()
+    public async Task FirePath_StandaloneTypeofNameInsideApplicationPipeline_ReportsDiagnostic()
     {
         var test = new CSharpAnalyzerTest<RequestTypeShortNameUsageAnalyzer, DefaultVerifier>
         {
@@ -46,7 +46,7 @@ public class SK0016_RequestTypeShortNameUsageAnalyzerTests
 
     /// <summary>
     /// Fire path: the same standalone usage also fires inside the base
-    /// <c>SharedKernel.Application</c> namespace (not only the <c>.Behaviors</c> sub-namespace).
+    /// <c>SharedKernel.Application</c> namespace (not only the <c>.Pipeline</c> sub-namespace).
     /// </summary>
     [Fact]
     public async Task FirePath_StandaloneTypeofNameInsideApplicationRootNamespace_ReportsDiagnostic()

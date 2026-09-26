@@ -1,17 +1,19 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Adapter</SharedKernelTier>
     <!-- NuGet packaging metadata -->
-    <Description>Durable Temporal workflow orchestration for Platform.SharedKernel microservices: IWorkflowDispatcher/IWorkflowHandle/IWorkflowHandle&lt;TResult&gt;/IWorkflowIdFactory (tenant-scoped durable dispatch), WorkflowBase/ActivityBase/CommandActivity&lt;TCommand&gt; (deterministic workflow authoring plus the sole 05.Application MediatR bridge), ITemporalWorkflowsBuilder (worker hosting), Result&lt;T&gt;-to-Temporal-failure mapping, AES-256-GCM payload encryption, tenant/correlation header propagation, and a readiness-probe primitive — all over the official Temporalio .NET SDK. A deliberate single package: no SharedKernel.Workflows.Abstractions split exists, because durable execution's determinism/replay/versioning programming model IS the abstraction.</Description>
+    <Description>Durable Temporal workflow orchestration for Platform.SharedKernel microservices: IWorkflowDispatcher/IWorkflowHandle/IWorkflowHandle&lt;TResult&gt;/IWorkflowIdFactory (tenant-scoped durable dispatch), WorkflowBase/ActivityBase/CommandActivity&lt;TCommand&gt; (deterministic workflow authoring plus the sole 05.Application ISender bridge), ITemporalWorkflowsBuilder (worker hosting), Result&lt;T&gt;-to-Temporal-failure mapping, AES-256-GCM payload encryption, tenant/correlation header propagation, and a readiness-probe primitive — all over the official Temporalio .NET SDK. A deliberate single package: no SharedKernel.Workflows.Abstractions split exists, because durable execution's determinism/replay/versioning programming model IS the abstraction.</Description>
     <PackageTags>workflows;temporal;durable-execution;orchestration;shared-kernel</PackageTags>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Execution\SharedKernel.Execution.csproj" />
     <ProjectReference Include="..\..\01.Core\SharedKernel.Configuration\SharedKernel.Configuration.csproj" />
     <ProjectReference Include="..\..\01.Core\SharedKernel.Cryptography\SharedKernel.Cryptography.csproj" />
     <!--
       SharedKernel.Application is the SOLE justification for this reference — it exists only so
-      CommandActivity<TCommand>/CommandActivity<TCommand,TResult> can resolve MediatR's ISender and
+      CommandActivity<TCommand>/CommandActivity<TCommand,TResult> can resolve the kernel ISender (SharedKernel.Application) and
       constrain against ICommand/ICommand<TResponse>. If CommandActivity<> is ever dropped, this
       reference must be dropped with it (17.Workflows/CLAUDE.md, S-02).
 

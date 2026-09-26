@@ -1,3 +1,5 @@
+using SharedKernel.Execution.Tenancy;
+using SharedKernel.Execution.Context;
 using System.Security.Claims;
 using SharedKernel.Security.Abstractions;
 
@@ -16,10 +18,10 @@ internal sealed class MtlsUserContextMapper : IUserContextMapper
             return AnonymousUserContext.Instance;
         }
 
-        return new UserContext(IdentityKind.ServicePrincipal, clientId, identity.Claims)
+        return new UserContext(ActorKind.Service, clientId, identity.Claims)
         {
             ClientId = clientId,
-            TenantId = Guid.TryParse(identity.FindFirst(SecurityClaimTypes.TenantId)?.Value, out Guid tenantId) && tenantId != Guid.Empty ? tenantId : null,
+            TenantId = TenantId.TryParse(identity.FindFirst(SecurityClaimTypes.TenantId)?.Value, out TenantId tenantId) ? tenantId : null,
             Roles = [.. identity.FindAll(SecurityClaimTypes.Roles).Select(claim => claim.Value)],
             Permissions = [.. identity.FindAll(SecurityClaimTypes.Scope).Select(claim => claim.Value)],
 

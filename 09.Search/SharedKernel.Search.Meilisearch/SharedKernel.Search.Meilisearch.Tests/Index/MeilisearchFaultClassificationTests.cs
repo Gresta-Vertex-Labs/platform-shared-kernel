@@ -1,6 +1,7 @@
 using System.Net.Http;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Search.Abstractions.Abstractions;
 using SharedKernel.Search.Abstractions.Models;
@@ -64,7 +65,7 @@ public sealed class MeilisearchFaultClassificationTests
     {
         var index = CreateIndexAgainstUnreachableInstance();
 
-        var act = async () => await index.SearchAsync(SearchRequest.Default, TenantScope.None);
+        var act = async () => await index.SearchAsync(SearchRequest.Default, TenantScope.Global);
 
         var result = await act.Should().NotThrowAsync(
             "an unreachable search engine is an operational condition, not an exception — the same rule " +
@@ -82,7 +83,7 @@ public sealed class MeilisearchFaultClassificationTests
         // HTTP boundary answers 503 or 504 for a down engine instead of 500.
         var index = CreateIndexAgainstUnreachableInstance();
 
-        var result = await index.SearchAsync(SearchRequest.Default, TenantScope.None);
+        var result = await index.SearchAsync(SearchRequest.Default, TenantScope.Global);
 
         result.IsFailure.Should().BeTrue();
         result.Error.Type.Should().Be(
@@ -108,7 +109,7 @@ public sealed class MeilisearchFaultClassificationTests
     {
         var index = CreateIndexAgainstUnreachableInstance();
 
-        var act = async () => await index.CountAsync(filter: null, TenantScope.None);
+        var act = async () => await index.CountAsync(filter: null, TenantScope.Global);
 
         var result = await act.Should().NotThrowAsync();
         result.Subject.IsFailure.Should().BeTrue();
@@ -136,7 +137,7 @@ public sealed class MeilisearchFaultClassificationTests
         // "Your data does not exist" and "I cannot reach the engine" must never be the same answer.
         var index = CreateIndexAgainstUnreachableInstance();
 
-        var act = async () => await index.GetAsync("doc-1", TenantScope.None);
+        var act = async () => await index.GetAsync("doc-1", TenantScope.Global);
 
         var result = await act.Should().NotThrowAsync();
         result.Subject.IsFailure.Should().BeTrue();
@@ -154,7 +155,7 @@ public sealed class MeilisearchFaultClassificationTests
 
         var act = async () =>
         {
-            await foreach (var _ in index.EnumerateAsync(filter: null, TenantScope.None, batchSize: 10))
+            await foreach (var _ in index.EnumerateAsync(filter: null, TenantScope.Global, batchSize: 10))
             {
                 // Intentionally empty: the first MoveNextAsync is what faults.
             }
@@ -174,7 +175,7 @@ public sealed class MeilisearchFaultClassificationTests
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
-        var act = async () => await index.SearchAsync(SearchRequest.Default, TenantScope.None, cts.Token);
+        var act = async () => await index.SearchAsync(SearchRequest.Default, TenantScope.Global, cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
     }

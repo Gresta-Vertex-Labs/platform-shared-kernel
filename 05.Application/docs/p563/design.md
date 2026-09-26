@@ -1,5 +1,21 @@
 # P-563 — one application model with a thin HTTP edge
 
+> **Status after P-579 (2026-09-26).** This record was written on `main` before the WO-086 foundation refactor and
+> merged into it by P-579. The owner kept WO-086's architecture and re-implemented these decisions on it, so read this
+> as "P-563 (application model, merged from main in P-579)" — WO-086 uses the number P-563 for tier enforcement.
+> **A1 and A3 are superseded by WO-086:** MediatR is not visible — the kernel owns `IRequest`/`ISender`/`IPipelineBehavior`
+> in `SharedKernel.Application` (Abstractions tier) and MediatR lives only in `SharedKernel.Application.Mediator.MediatR`;
+> and there is no `SharedKernel.Application.Abstractions` (its contracts are in `SharedKernel.Execution`), no merged
+> vocabulary+pipeline package and no `SharedKernel.Application.Caching` — the packages are `SharedKernel.Application`
+> (contracts), `SharedKernel.Application.Pipeline` (behaviors and the registration call), `.Pipeline.Caching` and
+> `.Mediator.MediatR`. **A2, A4, A5, A6, P1–P4 and S1 were adopted** in that shape: `[RequirePermission]` is
+> `SharedKernel.Application.Authorization.RequirePermissionAttribute`; the one call is
+> `services.AddSharedKernelApplication(assembly, app => app.UseMediatR().With…())` in `SharedKernel.Application.Pipeline`
+> (`UseMediatR()` from the adapter, `WithCaching()` from `.Pipeline.Caching`); the endpoint authorization attributes
+> (`[RequireEndpointPermission]` and the three others) live in `SharedKernel.Presentation.Core`, namespace
+> `SharedKernel.Presentation.Authorization`, because gRPC uses them too. `docs/refactor/MIGRATION.md` §8 lists every
+> resulting name.
+
 Owner decisions, 2026-09-24. Nothing is in production; breaking changes are expected and allowed. The packages of
 05.Application are published only as alphas.
 

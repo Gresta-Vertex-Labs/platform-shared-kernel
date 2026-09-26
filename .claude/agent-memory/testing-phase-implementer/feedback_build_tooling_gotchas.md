@@ -4,6 +4,8 @@ description: Build/tooling gotchas discovered across WO-044/WO-045 -- PowerShell
 type: feedback
 ---
 
+> WO-086 (2026-09): `SharedKernel.Testing` was split into 20 packable Testing-tier packages (core `SharedKernel.Testing` + 19 `SharedKernel.{Capability}.Testing`) plus the non-packable `SharedKernel.Testing.Internal` (containers, EF/Npgsql/audit helpers, MassTransit harness); `SharedKernel.Testing.SelfTests` became each package's own nested `.Tests` project. Paths and project names below are pre-split history; the technique/lesson still applies.
+
 **Never use Windows PowerShell 5.1's `Get-Content -Raw`/`Set-Content -Encoding utf8` for bulk regex find/replace on a UTF-8 `.cs` file, especially one with em-dashes or other non-ASCII characters.**
 
 **Why**: `Get-Content -Raw` in Windows PowerShell 5.1 does not reliably read UTF-8-with-BOM as UTF-8 by default in all contexts; round-tripping through `Set-Content -Encoding utf8` after a regex substitution corrupted every em-dash (`—`) into a 3-character mojibake sequence (`â€”`) across an entire file during WO-044's `InMemorySearchIndex.cs` qualification pass. The same blind regex also incorrectly matched `Result<` as a substring of `Result</c>` inside XML doc-comment closing tags, injecting a code-qualification string into prose text.

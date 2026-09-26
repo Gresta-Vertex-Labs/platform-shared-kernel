@@ -1,6 +1,7 @@
-using System.Diagnostics;
+using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
+using SharedKernel.Primitives.Propagation;
 using SharedKernel.Workflows.Temporal.Constants;
-using SharedKernel.Workflows.Temporal.Dispatch;
 using SharedKernel.Workflows.Temporal.Logging;
 using Temporalio.Api.Common.V1;
 using Temporalio.Client.Interceptors;
@@ -11,8 +12,8 @@ using Temporalio.Workflows;
 namespace SharedKernel.Workflows.Temporal.Interception;
 
 /// <summary>
-/// Carries <see cref="TenantScope"/> and correlation id as Temporal headers across the client → workflow
-/// → activity hop, sourced from <see cref="SharedKernel.Primitives.Propagation.WellKnownHeaders"/> —
+/// Carries <see cref="TenantScope"/>, the correlation id and the dispatching caller (actor and client) as Temporal
+/// headers across the client → workflow → activity hop, sourced from <see cref="SharedKernel.Primitives.Propagation.WellKnownHeaders"/> —
 /// never a retyped literal.
 /// </summary>
 /// <remarks>
@@ -23,7 +24,12 @@ namespace SharedKernel.Workflows.Temporal.Interception;
 /// requires no ambient state), while activity code has no such direct route — the worker-side
 /// <see cref="ActivityInboundInterceptor"/> override republishes them into
 /// <see cref="ActivityPropagationContext"/>, which <see cref="Authoring.ActivityBase.TenantScope"/>
-/// reads.
+/// reads, and opens a <see cref="RequestContextScope"/> carrying a <see cref="PropagatedRequestContext"/>, so an
+/// outbound call made by the activity forwards the same tenant and the dispatching call's correlation id.
+/// <para>
+/// The correlation id is the dispatching caller's (<see cref="CorrelationIds.Current"/>), never
+/// <c>Activity.Current.Id</c>, which the worker's own trace replaces (defect 4, P-566).
+/// </para>
 /// </remarks>
 internal sealed class WorkflowPropagationInterceptor : IClientInterceptor, IWorkerInterceptor
 {
@@ -45,16 +51,18 @@ internal sealed class WorkflowPropagationInterceptor : IClientInterceptor, IWork
 
     private static void WriteHeaders(IDictionary<string, Payload> headers)
     {
-        TenantScope tenantScope = DispatchPropagationContext.CurrentTenantScope;
-        if (tenantScope != TenantScope.None)
+        // The dispatching caller's correlation id, actor and client. Its tenant is not used: the tenant is the
+        // explicit TenantScope the dispatch call was made with, written below.
+        RequestContextPropagation.WriteHeaders(RequestContextScope.Current, headers, static (h, name, value) =>
         {
-            headers[WorkflowWellKnown.TenantHeaderKey] = ToPayload(tenantScope.Value);
-        }
+            if (name != WellKnownHeaders.TenantId)
+                h[name] = ToPayload(value);
+        });
 
-        string? correlationId = Activity.Current?.Id;
-        if (!string.IsNullOrWhiteSpace(correlationId))
+        TenantScope tenantScope = DispatchPropagationContext.CurrentTenantScope;
+        if (tenantScope.Tenant is { } tenant)
         {
-            headers[WorkflowWellKnown.CorrelationHeaderKey] = ToPayload(correlationId);
+            headers[WorkflowWellKnown.TenantHeaderKey] = ToPayload(tenant.ToString());
         }
     }
 
@@ -93,7 +101,7 @@ internal sealed class WorkflowPropagationInterceptor : IClientInterceptor, IWork
         /// <c>ScheduleActivityInput</c>/<c>StartChildWorkflowInput</c> each carry their own, independent
         /// <c>Headers</c> dictionary that starts EMPTY unless something populates it. Without this
         /// override, an activity or child workflow invoked from within a workflow would observe
-        /// <see cref="Dispatch.TenantScope.None"/> even though the workflow itself was correctly
+        /// <see cref="TenantScope.Global"/> even though the workflow itself was correctly
         /// tenant-scoped — silently defeating the propagation guarantee at the first hop past the
         /// workflow boundary.
         /// </summary>
@@ -144,28 +152,25 @@ internal sealed class WorkflowPropagationInterceptor : IClientInterceptor, IWork
 
     private sealed class PropagatingActivityInboundInterceptor(ActivityInboundInterceptor next) : ActivityInboundInterceptor(next)
     {
-        public override Task<object?> ExecuteActivityAsync(ExecuteActivityInput input)
+        public override async Task<object?> ExecuteActivityAsync(ExecuteActivityInput input)
         {
-            TenantScope tenantScope = TenantScope.None;
-            string correlationId = string.Empty;
+            IReadOnlyDictionary<string, Payload> headers = input.Headers is { } h
+                ? h
+                : new Dictionary<string, Payload>();
 
-            if (input.Headers is { } headers)
+            // The dispatching caller, attribution only (it never grants a permission). A missing or invalid
+            // correlation id is replaced by a new one so the activity's own outbound calls are still correlated.
+            PropagatedRequestContext caller = RequestContextPropagation.ReadHeaders(
+                headers,
+                static (carrier, name) => carrier.TryGetValue(name, out var payload) ? FromPayload(payload) : null);
+
+            TenantScope tenantScope = TenantScope.FromNullable(caller.TenantId);
+            ActivityPropagationContext.Set(tenantScope, caller.CorrelationId ?? string.Empty);
+
+            using (RequestContextScope.Begin(caller))
             {
-                if (headers.TryGetValue(WorkflowWellKnown.TenantHeaderKey, out var tenantPayload)
-                    && FromPayload(tenantPayload) is { Length: > 0 } tenantValue)
-                {
-                    tenantScope = TenantScope.Of(tenantValue);
-                }
-
-                if (headers.TryGetValue(WorkflowWellKnown.CorrelationHeaderKey, out var correlationPayload)
-                    && FromPayload(correlationPayload) is { } correlationValue)
-                {
-                    correlationId = correlationValue;
-                }
+                return await base.ExecuteActivityAsync(input).ConfigureAwait(false);
             }
-
-            ActivityPropagationContext.Set(tenantScope, correlationId);
-            return base.ExecuteActivityAsync(input);
         }
     }
 }

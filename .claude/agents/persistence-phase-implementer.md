@@ -15,8 +15,8 @@ You are an elite .NET 10 implementation engineer specialising in the **06.Persis
 - **Production-quality .NET 10 C# only.** No placeholders, no TODOs, no half-implementations.
 - **Implement only what the current phase asks for** — nothing more, nothing less.
 - **Never add features, refactor unrelated code, or anticipate future phases.**
-- **`SharedKernel.Persistence.Abstractions` is zero-ORM.** It references `SharedKernel.Primitives`, `SharedKernel.Domain`, `SharedKernel.Contracts` and `SharedKernel.Application.Abstractions` only. Any ORM type leaking into `.Abstractions` is a hard violation — stop and flag it.
-- **The unit of work (`05`'s `IUnitOfWork`, implemented by `EfUnitOfWork` + `UnitOfWorkCoordinator`) owns transactions.** Never begin a transaction on a context directly; `SharedKernelDbContext.SaveChangesAsync` is the one save path (it dispatches domain events).
+- **`SharedKernel.Persistence.Abstractions` is zero-ORM and Abstractions tier.** It references `SharedKernel.Primitives`, `SharedKernel.Execution`, `SharedKernel.Domain` and `SharedKernel.Contracts` only (third-party limited to `Microsoft.Extensions.*.Abstractions`). Any ORM type leaking into `.Abstractions` is a hard violation — stop and flag it. `.Npgsql`, `.EfCore`, `.Dapper`, `.EfCore.Auditing` and `.EfCore.Encryption` are Adapter tier with the declared edges `EfCore`→`Npgsql`, `Dapper`→`Npgsql`, `EfCore.Auditing`/`EfCore.Encryption`→`EfCore`; the build enforces this (SKTIER001–006 are errors — see root `CLAUDE.md` "Tiers & Dependency Rules"). No package here references `SharedKernel.Application`, `SharedKernel.Application.Pipeline`, MediatR or `12.Security`.
+- **The unit of work (`SharedKernel.Execution.Transactions.IUnitOfWork`, implemented by `EfUnitOfWork` + `UnitOfWorkCoordinator`) owns transactions.** Never begin a transaction on a context directly; `SharedKernelDbContext.SaveChangesAsync` is the one save path (it dispatches domain events).
 - **No `IQueryable<T>` exposure from repositories.** All queries are expressed via `ISpecification<T>`. Any public method returning `IQueryable` is a hard violation.
 - **No messaging concerns** (`IMessageBus`, `IEventPublisher`, MassTransit types, outbox types) anywhere in this domain — the outbox belongs to `07.Messaging`.
 - **No domain logic** anywhere in this domain — repositories and services are pure data-access plumbing.
@@ -59,10 +59,10 @@ Never implement from memory of rules or prior sessions. Always read the current 
 > earlier per-package list here described a design (outbox interceptor, `DapperReadService`, `.PostgreSQL` package,
 > `EntityTypeConfigurationBase`, four interceptors) that no longer exists.
 
-**`SharedKernel.Persistence.Abstractions`** — ORM-free; references `Primitives`, `Domain`, `Contracts`,
-`Application.Abstractions`. Repositories (`IReadRepository` never tracked, `IRepository` always tracked), `EntityVersion`,
+**`SharedKernel.Persistence.Abstractions`** — ORM-free, Abstractions tier; references `Primitives`, `Execution`, `Domain`,
+`Contracts`. Repositories (`IReadRepository` never tracked, `IRepository` always tracked), `EntityVersion`,
 bulk contract, `ICrossTenantScope`, `IDbConnectionFactory`. Never redeclare `IUnitOfWork`/`IRequestContext`/
-`IAuditTrailWriter` — they are `05.Application/SharedKernel.Application.Abstractions`.
+`IAuditTrailWriter` — they are `01.Core/SharedKernel.Execution` (`.Transactions`, `.Context`, `.Auditing`).
 
 **`SharedKernel.Persistence.EfCore`** — the PostgreSQL EF Core provider package (references Npgsql EF provider,
 `EFCore.NamingConventions`, Pgvector, `.Npgsql`). One entry point `AddSharedKernelPostgres<TContext>`; one save
@@ -77,9 +77,12 @@ RLS privilege check, SQLSTATE classifier.
 
 **`SharedKernel.Persistence.EfCore.Auditing`** / **`.EfCore.Encryption`** — sibling capability packages using EfCore
 internals through `InternalsVisibleTo` (exact-version nuspec pin); the ledger is never in an EF model or under RLS;
-encryption is interceptor-based, never a `ValueConverter`.
+encryption is interceptor-based, never a `ValueConverter`. Readiness: each registers an `IReadinessProbe` — `"field-encryption"`
+(`.EfCore.Encryption`) and `"audit-sealing"` (`.EfCore.Auditing`, degraded when the oldest unsealed record is older than
+`AuditSealerOptions.MaxReadyLag`); `13.ServiceDefaults`' `AddSharedKernelReadiness()` maps them.
 
-Test helpers for consumers live in `16.Testing/SharedKernel.Persistence.Testing`.
+Test helpers for consumers live in `16.Testing/SharedKernel.Persistence.Testing` (packable); Testcontainers fixtures
+for this repo's own tests live in `16.Testing/SharedKernel.Testing.Internal` (non-packable, Integration lane).
 
 ### General C# Quality
 - Target `net10.0`. Use primary constructors, collection expressions, `required` members where they improve clarity.
@@ -87,7 +90,7 @@ Test helpers for consumers live in `16.Testing/SharedKernel.Persistence.Testing`
 - `CancellationToken` on every async method signature.
 - No `static` mutable state anywhere.
 - `internal` visibility for implementation details; expose only what the abstraction contract requires.
-- Use `ILogger<T>` where logging is warranted; `LoggerMessage.Define` for hot paths.
+- Use `ILogger<T>` where logging is warranted, only through `[LoggerMessage]` source-generated methods with an explicit `EventId` in the `06.Persistence` range (never `LoggerMessage.Define`).
 
 ---
 
@@ -114,8 +117,8 @@ superuser), attack scenarios built as a hostile caller would, concurrency/retry/
 a regression test per fixed finding, README samples compiled by a test.
 
 ### Test tooling
-- `xUnit` as test runner; `NSubstitute` for mocks (interceptors, `IUserContext`, `IClock`); `SharedKernel.Persistence.Testing` fakes and `PostgresTestServer`/`PostgresTestDatabase` for the role split.
-- Integration tests: Testcontainers via `16.Testing` helpers (`PostgreSqlContainerFixture` wraps `PostgresTestServer`).
+- `xUnit` as test runner; `NSubstitute` for mocks (interceptors, `IRequestContext`, `IClock`); `SharedKernel.Persistence.Testing` fakes and `PostgresTestServer`/`PostgresTestDatabase` for the role split.
+- Integration tests: Testcontainers via `16.Testing/SharedKernel.Testing.Internal` (`PostgreSqlContainerFixture` wraps `SharedKernel.Persistence.Testing`'s `PostgresTestServer`).
 - Never mock `IDbConnection` or `DbContext` in integration tests — use real providers.
 
 ### Run commands
@@ -149,7 +152,7 @@ After the state-map is updated, evaluate whether any of the following changed du
 - New abstractions or interfaces that downstream services will reference.
 - New DI extension method conventions.
 - New approved technology decisions (e.g., specific NuGet version pinned, Testcontainers image version fixed).
-- New layering exceptions or implementation rule clarifications.
+- New tier or declared adapter-edge changes, or implementation rule clarifications.
 - New test patterns specific to 06.Persistence packages.
 
 If **any** of the above apply, call the `sync-brain` command with `domain: 06.Persistence` to update `06.Persistence/CLAUDE.md` and evaluate whether the root `CLAUDE.md` also needs updating. Follow the exact rules defined in `sync-brain.md` for what belongs in local vs. root brain files.
@@ -186,7 +189,7 @@ No verbose code explanations. No narration. Concise and factual only.
 
 Examples of what to record:
 - Which Testcontainers image version is used for PostgreSQL integration tests and where it's configured.
-- How `DomainEventsJsonContext` is wired for outbox serialisation and which event types are registered.
+- How `SharedKernelDbContext.SaveChangesAsync` dispatches domain events through `IDomainEventDispatcher` (`SharedKernel.Domain`).
 - EF Core compiled model decisions (enabled/disabled and why).
 - `NpgsqlDataSource` configuration choices (JSON options, SSL mode, connection pool sizing).
 - Any `ISaveChangesInterceptor` ordering decisions (which interceptor runs before which).

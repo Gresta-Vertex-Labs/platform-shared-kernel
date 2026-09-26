@@ -1,3 +1,4 @@
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Storage;
@@ -33,12 +34,12 @@ public static class Stores
             return Result<IFileStorage>.Success(factory.GetStore(store.Name));
         }
 
-        if (string.IsNullOrEmpty(store.TenantId) || StorageValidation.ValidateTenantId(store.TenantId) is not null)
+        if (store.TenantId is not { } tenantId)
         {
             return Error.Validation("documents.tenant_required", $"Store '{store.Name}' needs a valid {TenantHeader} header.");
         }
 
-        return Result<IFileStorage>.Success(factory.GetTenantStore(store.Name).ForTenant(store.TenantId));
+        return Result<IFileStorage>.Success(factory.GetTenantStore(store.Name).ForTenant(tenantId));
     }
 }
 
@@ -47,12 +48,15 @@ public static class Stores
 /// request's <see cref="Stores.TenantHeader"/> header. <see cref="Stores.Resolve"/> turns it into the store itself.
 /// </summary>
 /// <param name="Name">The store's name.</param>
-/// <param name="TenantId">The request's tenant, or <see langword="null"/> when it sent none.</param>
-public sealed record StoreAddress(string Name, string? TenantId)
+/// <param name="TenantId">The request's tenant, or <see langword="null"/> when it sent none or an invalid one.</param>
+public sealed record StoreAddress(string Name, TenantId? TenantId)
 {
     /// <summary>The store <paramref name="name"/>, for the tenant <paramref name="request"/> names.</summary>
     /// <param name="name">The store's name.</param>
     /// <param name="request">The HTTP request.</param>
     /// <returns>The address.</returns>
-    public static StoreAddress For(string name, HttpRequest request) => new(name, request.Headers[Stores.TenantHeader]);
+    public static StoreAddress For(string name, HttpRequest request) =>
+        new(name, SharedKernel.Execution.Tenancy.TenantId.TryParse(request.Headers[Stores.TenantHeader].ToString(), out var tenantId)
+            ? tenantId
+            : null);
 }

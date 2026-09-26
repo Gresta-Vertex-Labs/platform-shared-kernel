@@ -19,6 +19,3 @@ The project namespace `SharedKernel.Communication.Grpc` collides with the NuGet 
 
 **3. Retry policy types live in Grpc.Net.Client.Configuration**
 `ServiceConfig`, `MethodConfig`, `RetryPolicy`, and `MethodName` are in `Grpc.Net.Client.Configuration`, not the root `Grpc.Net.Client`. Add `using Grpc.Net.Client.Configuration;` in the builder.
-
-**4. Microsoft.AspNetCore.Http vs Microsoft.AspNetCore.Http.Abstractions**
-To instantiate `HttpContextAccessor` (the concrete class), reference `Microsoft.AspNetCore.Http` (2.3.0), not `Microsoft.AspNetCore.Http.Abstractions` (interfaces only). Both packages may be needed — the csproj for `.Grpc` uses `Microsoft.AspNetCore.Http`.

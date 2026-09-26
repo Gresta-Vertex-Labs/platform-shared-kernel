@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <SharedKernelTier>Host</SharedKernelTier>
     <!-- NuGet packaging metadata -->
     <Description>OpenAPI for SharedKernel HTTP APIs in one call (AddSharedKernelOpenApi, MapSharedKernelOpenApi, bound from SharedKernel:Presentation:OpenApi): API versioning by URL segment and X-Api-Version header, one native OpenAPI document per API version and a Scalar reference listing them all, served in Development only unless exposed explicitly, with a startup warning when exposed without authorization. Every operation documents the platform's RFC 9457 application/problem+json error shape; protected operations carry their security requirement (Bearer, API key, mutual TLS) with 401 and 403; required Idempotency-Key and If-Match headers, whether a convention, an attribute or an IdempotencyKey or IfMatch&lt;TVersion&gt; parameter requires them, are documented with 400, and If-Match with 412 and 428. Sunset and deprecation policies emit RFC 9745 Deprecation, RFC 8594 Sunset and Link headers.</Description>
     <PackageTags>shared-kernel;openapi;scalar;api-versioning;aspnetcore;problemdetails;rfc9457;rfc9745;rfc8594;sunset;deprecation</PackageTags>
@@ -17,11 +18,13 @@
   </ItemGroup>
   <ItemGroup>
     <!--
-      Layering: an add-on of the WebApi core in the same domain. It documents what the core enforces
+      Host tier: an add-on of the WebApi core in the same domain. It documents what the core enforces
       (the problem shape, authorization metadata, required headers) and never changes a response; every
       third-party dependency of the HTTP boundary lives here, so the core stays dependency-free.
+      SharedKernel.Presentation.Core (P-579) holds the authorization attributes and policy names it documents.
     -->
     <ProjectReference Include="..\SharedKernel.Presentation.WebApi\SharedKernel.Presentation.WebApi.csproj" />
+    <ProjectReference Include="..\SharedKernel.Presentation.Core\SharedKernel.Presentation.Core.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Asp.Versioning.Http" />

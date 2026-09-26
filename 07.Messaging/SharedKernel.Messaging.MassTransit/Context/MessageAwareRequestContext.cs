@@ -1,4 +1,5 @@
-using SharedKernel.Application.Context;
+using SharedKernel.Execution.Tenancy;
+using SharedKernel.Execution.Context;
 using SharedKernel.Messaging.Abstractions.Context;
 
 namespace SharedKernel.Messaging.MassTransit.Context;
@@ -50,7 +51,7 @@ internal sealed class MessageAwareRequestContext : IRequestContext
     public string? UserId => Current.UserId;
 
     /// <inheritdoc />
-    public Guid? TenantId => Current.TenantId;
+    public TenantId? TenantId => Current.TenantId;
 
     /// <inheritdoc />
     public ActorKind ActorKind => Current.ActorKind;
@@ -63,6 +64,9 @@ internal sealed class MessageAwareRequestContext : IRequestContext
 
     /// <inheritdoc />
     public string? ImpersonatorId => Current.ImpersonatorId;
+
+    /// <inheritdoc />
+    public string? CorrelationId => Current.CorrelationId;
 
     /// <inheritdoc />
     public ValueTask<bool> HasPermissionAsync(string permission, CancellationToken cancellationToken)

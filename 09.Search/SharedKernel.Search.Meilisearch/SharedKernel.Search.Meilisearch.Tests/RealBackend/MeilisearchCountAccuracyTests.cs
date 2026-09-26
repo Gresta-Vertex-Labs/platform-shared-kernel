@@ -1,4 +1,5 @@
 using FluentAssertions;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Search.Abstractions.Models;
 using SharedKernel.Search.Meilisearch.Tests.Containers;
 using SharedKernel.Search.Meilisearch.Tests.Support;
@@ -62,7 +63,7 @@ public sealed class MeilisearchCountAccuracyTests : IAsyncLifetime
         tenantADocumentCount.Should().BeGreaterThan(
             CeilingMaxTotalHits, "the test is meaningless unless the corpus exceeds the ceiling");
 
-        var result = await index.CountAsync(filter: null, TenantScope.Of(TestProductCorpus.TenantA));
+        var result = await index.CountAsync(filter: null, TenantScope.For(TestProductCorpus.TenantA));
 
         result.IsSuccess.Should().BeTrue();
         result.Value.IsExact.Should().BeFalse(
@@ -85,7 +86,7 @@ public sealed class MeilisearchCountAccuracyTests : IAsyncLifetime
 
         var result = await index.CountAsync(
             SearchFilter.Eq(TestProductFields.Category, SearchValue.From("stationery")),
-            TenantScope.Of(TestProductCorpus.TenantA));
+            TenantScope.For(TestProductCorpus.TenantA));
 
         result.IsSuccess.Should().BeTrue();
         result.Value.IsExact.Should().BeTrue();
@@ -98,7 +99,7 @@ public sealed class MeilisearchCountAccuracyTests : IAsyncLifetime
         // The accuracy change must not have weakened the tenant guard that runs before any I/O.
         var index = MeilisearchProviderFactory.CreateIndex<TestProduct>(_fixture, _definition);
 
-        var result = await index.CountAsync(filter: null, TenantScope.None);
+        var result = await index.CountAsync(filter: null, TenantScope.Global);
 
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("search.tenant_scope_missing");

@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): the KMS readiness probe (`IEncryptionKeyProviderProbe`) and `SharedKernel.ServiceDefaults.Cryptography.KeyVault` were deleted — the Key Vault provider registers an `IReadinessProbe` named `encryption-key-provider`.
+
 User is running a three-batch architectural review of missing SharedKernel packages, delivered as separate prompts. This is batch 1/3, covering four capabilities, each given its own Work Order per explicit instruction (WO-066–WO-069, not one shared WO) — matches this repo's established practice of theme-scoped WOs.
 
 **All four verdicts, briefly:**

@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> WO-086 (2026-09): numbered layering is replaced by build-enforced tiers; Messaging ↛ Caching and "Redis siblings never reference each other" survive as purity rules, and Caching.Redis.* → Caching.Redis.Core are declared Adapter→Adapter edges.
+
 WO-023 (P-140–P-146) splits the monolithic `SharedKernel.Caching.Redis` package into five packages, all within `02.Caching`.
 
 **User's three observations and verdicts:**

@@ -1,37 +1,46 @@
 ---
 name: domain_facts
-description: Stable facts about the 13.ServiceDefaults domain's two packages, test counts, and file layout — refresh before trusting if it's been a while
+description: Stable facts about the 13.ServiceDefaults domain's packages (post-WO-086), file layout, and a dated test-count/session history — refresh before trusting if it's been a while
 metadata:
   type: project
 ---
 
-**Packages:** `SharedKernel.ServiceDefaults` (host composition: OTel, health checks, StartupGate) and
-`SharedKernel.MultiTenancy` (tenant resolution strategies, middleware, ambient provider). Both live under
-`13.ServiceDefaults/`, each with a nested `.Tests` project — never a top-level `tests/` folder.
+**Packages (all Host tier, WO-086):** the composition base `SharedKernel.ServiceDefaults` (OTel +
+`With*Telemetry`, health checks, `AddSharedKernelReadiness()`, `StartupGate`, rate limiting) — references
+Foundation-tier packages only (`CompositionBaseIsolationTests`); the integration packages
+`SharedKernel.ServiceDefaults.Persistence` (database/startup readiness checks), `.Security`
+(`AddSharedKernelRequestContext()` + `UseSharedKernelRequestContext()`), `.Security.Mtls`,
+`.Configuration.KeyVault`, `.Localization`; and `SharedKernel.MultiTenancy` (tenant resolution strategies,
+middleware, tenant catalog). All live under `13.ServiceDefaults/`, each with a nested `.Tests` project —
+never a top-level `tests/` folder.
 
-**README convention for this domain:** a single `13.ServiceDefaults/README.md` covers both packages —
-there is no per-package README. Confirmed by `Glob` returning exactly one `README.md` match under
-`13.ServiceDefaults/**`. If a future phase needs README updates, edit that one file.
+**README convention:** each package has its own `README.md`, plus the domain overview
+`13.ServiceDefaults/README.md`. (Before WO-084 there was a single domain README.)
 
-**This domain's one layering exception:** it may reference concrete provider packages directly
-(`SharedKernel.Caching.Redis*`, `SharedKernel.Messaging.MassTransit`, `SharedKernel.Persistence.EfCore`/
-`.PostgreSQL`/`.Dapper`, `SharedKernel.Security.Oidc`) in addition to abstractions — because it *is* the
-composition root. No other domain gets this exception. `SharedKernel.ServiceDefaults.csproj` already
-carries `ProjectReference`s to `SharedKernel.Messaging.Abstractions` AND `SharedKernel.Messaging.MassTransit`
-(the concrete package) — the concrete reference was added for the RabbitMQ/ASB health checks (C-16/C-17),
-which need `RabbitMqBusOptions`/`AzureServiceBusOptions`. This pre-existing reference is why
-`WithMessagingTelemetry` (C-19) needed zero new `ProjectReference` work — it just had to confirm the
-reference was already there.
+**No layering exception any more.** The old "13 may reference concrete providers" exception and the 13→17 /
+13→19 grants are gone. Provider readiness is an `IReadinessProbe` each provider registers itself, mapped by
+`AddSharedKernelReadiness()`, so the base references no provider at all; telemetry wiring is by source/meter
+*name* only (see [[otel_wiring_pattern]]). The tier matrix (root CLAUDE.md 'Tiers & Dependency Rules') is
+enforced by the build (SKTIER001–006 errors).
 
 **Folder structure inside `SharedKernel.ServiceDefaults`:** `Extensions/` (composition entry points),
-`HealthChecks/` (tag-aware adapters), `Telemetry/` (OTel wiring — `TelemetryExtensions.cs`,
-`CachingTelemetryExtensions.cs`, `MessagingTelemetryExtensions.cs`), `Probes/` (`StartupGate`,
-`StartupGateHealthCheck`).
+`HealthChecks/` (`HealthCheckExtensions`, `ReadinessHealthCheckExtensions`, `ReadinessProbeHealthCheck`,
+`HealthCheckNames`/`HealthCheckTags`), `Telemetry/` (`TelemetryExtensions.cs`, one `*TelemetryExtensions.cs`
+per `With*Telemetry`, `BaggageLogRecordProcessor.cs`), `Probes/` (`StartupGate`, `StartupGateHealthCheck`),
+`RateLimiting/`, `Logging/`.
 
 **Folder structure inside `SharedKernel.MultiTenancy`:** `Resolution/` (the three
-`ITenantResolutionStrategy` implementations + `TenantResolutionOptions` + `TenantResolutionStrategyNames`),
-`Middleware/` (`TenantResolutionMiddleware`, `AmbientTenantProvider`), `Extensions/`
-(`AddSharedKernelMultiTenancy`).
+`ITenantResolutionStrategy` implementations returning `TenantId?` + `TenantResolutionOptions` +
+`TenantResolutionStrategyNames` + `ITenantStatusValidator`), `Middleware/` (`TenantResolutionMiddleware`,
+which opens an inner `RequestContextScope`), `Catalog/`, `Extensions/` (`AddSharedKernelMultiTenancy`),
+`Logging/`. `AmbientTenantProvider` was deleted by WO-086.
+
+> WO-086 (2026-09): everything below is dated session history. It names checks, references and types that were
+> since deleted — `AddRedisHealthCheck`, `AddCacheReadinessCheck`, `AddMessagingReadinessCheck`/`IMessageBusProbe`,
+> the vector-store/workflow readiness checks, the `SharedKernel.Workflows.Temporal` reference, `ITenantProvider`,
+> the in-base mTLS `Security/` folder (now `SharedKernel.ServiceDefaults.Security.Mtls`) — and test counts that
+> no longer apply. Keep it for the techniques (packaging gotchas, root state-map propagation, `sync-brain` routing);
+> take current names from `13.ServiceDefaults/CLAUDE.md`.
 
 **Test counts as of 2026-06-22 (SK.13.Core + SK.13.Tests + SK.13.Docs all fully complete, 28/28 + 22/22 + 2/2):**
 37 `SharedKernel.ServiceDefaults.Tests` passing, 26 `SharedKernel.MultiTenancy.Tests` passing — Docs phase

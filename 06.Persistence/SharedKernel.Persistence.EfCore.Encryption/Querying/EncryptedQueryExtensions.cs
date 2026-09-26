@@ -2,6 +2,7 @@ using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using SharedKernel.Domain.Abstractions;
+using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Encryption;
 using SharedKernel.Persistence.EfCore.Encryption.Interception;
@@ -57,7 +58,7 @@ public static class EncryptedQueryExtensions
         DbContext context,
         Expression<Func<T, string?>> property,
         string value,
-        Guid? tenantId = null)
+        TenantId? tenantId = null)
         where T : class
     {
         ArgumentNullException.ThrowIfNull(query);
@@ -78,7 +79,7 @@ public static class EncryptedQueryExtensions
         Guid? tenant = null;
         if (typeof(IHasTenant).IsAssignableFrom(typeof(T)))
         {
-            tenant = tenantId ?? (context as SharedKernelDbContext)?.RequestContext.TenantId
+            tenant = (tenantId ?? (context as SharedKernelDbContext)?.RequestContext.TenantId)?.Value
                 ?? throw new InvalidOperationException(
                     $"'{member.DisplayName}' belongs to a tenanted entity, and its blind index is tenant-bound, but no " +
                     "tenant is known. Search within a tenant, or pass 'tenantId' explicitly.");
