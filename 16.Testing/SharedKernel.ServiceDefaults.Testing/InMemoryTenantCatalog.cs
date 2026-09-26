@@ -9,17 +9,6 @@ namespace SharedKernel.Testing.ServiceDefaults;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>SCOPE-LOCK REVISION (P-473/WO-075), not silently overridden:</b> this domain's existing
-/// scope lock (P-187/WO-029) forbids this package from ever referencing
-/// <c>SharedKernel.ServiceDefaults</c>/<c>SharedKernel.MultiTenancy</c> — 
-/// <c>FakeTenantResolutionStrategy</c> in this same folder are deliberately duck-typed/reference-free
-/// against that package. <see cref="InMemoryTenantCatalog"/> is the ONE named exception: it takes a
-/// genuine <c>ProjectReference</c> to <c>SharedKernel.MultiTenancy</c> because <see cref="ITenantCatalog"/>
-/// must be a real interface implementation, not a duck-typed stand-in, per this phase's own
-/// acceptance criteria. <c>FakeTenantResolutionStrategy</c> are
-/// unaffected and remain reference-free.
-/// </para>
-/// <para>
 /// Dictionary-backed: a primary store keyed by <see cref="TenantDescriptor.TenantId"/>, plus a
 /// secondary index mapping an arbitrary caller-supplied resolution key (host/claim/header value) to
 /// a tenant id. <see cref="GetByIdAsync"/>/<see cref="GetByResolutionKeyAsync"/> return

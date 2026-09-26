@@ -119,8 +119,9 @@ public sealed class InMemoryFileStorage : IFileStorage
     public bool SimulateFailure { get; set; }
 
     /// <summary>
-    /// Gets or sets a value indicating whether <see cref="ProbeAsync"/> — the store's readiness probe —
-    /// reports <see cref="StorageErrorCodes.Unavailable"/>.
+    /// Gets or sets a value indicating whether the store's readiness probe — the <c>IReadinessProbe</c>
+    /// named <see cref="StorageReadinessProbeNames.ForStore(string)"/> that <c>AddInMemoryStore</c>/<c>AddInMemoryTenantStore</c>
+    /// register, as the S3 provider does — reports <see cref="StorageErrorCodes.Unavailable"/>.
     /// </summary>
     public bool SimulateUnavailable { get; set; }
 
@@ -704,10 +705,14 @@ public sealed class InMemoryFileStorage : IFileStorage
         return Task.FromResult(Result.Success());
     }
 
-    /// <summary>The store's readiness probe; fails only while <see cref="SimulateUnavailable"/> is set.</summary>
+    /// <summary>
+    /// The probe delegate behind the store's registered readiness probe; fails only while
+    /// <see cref="SimulateUnavailable"/> is set. Internal, like the S3 provider's: callers observe it through
+    /// the <c>IReadinessProbe</c> the registration adds, never on the store.
+    /// </summary>
     /// <param name="cancellationToken">Cancels the probe.</param>
     /// <returns>Success, or <see cref="StorageErrorCodes.Unavailable"/>.</returns>
-    public Task<Result> ProbeAsync(CancellationToken cancellationToken = default)
+    internal Task<Result> ProbeAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         return Task.FromResult(SimulateUnavailable

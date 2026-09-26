@@ -45,7 +45,7 @@ public sealed class FakeUserContextTests
     [InlineData(ActorKind.User, true)]
     [InlineData(ActorKind.Service, true)]
     [InlineData(ActorKind.System, true)]
-    public void IsAuthenticated_FollowsIdentityKind(ActorKind kind, bool expected)
+    public void IsAuthenticated_FollowsActorKind(ActorKind kind, bool expected)
     {
         var context = new FakeUserContext { ActorKind = kind };
 

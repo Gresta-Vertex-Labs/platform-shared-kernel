@@ -48,10 +48,10 @@ public static class SchedulingTelemetryExtensions
     /// <see cref="TracerProviderBuilder.AddSource(string[])"/> and
     /// <see cref="MeterProviderBuilder.AddMeter(string[])"/> — by string name only, so it needs
     /// <b>no reference</b> to <c>SharedKernel.Scheduling</c>, which is why it lives in this
-    /// dependency-free base. The scheduler readiness check is different: it consumes
-    /// <c>ISchedulerServiceProbe</c> by constructor injection, a real type, so it lives in the separate
-    /// <c>SharedKernel.ServiceDefaults.Scheduling</c> package
-    /// (<c>SchedulerReadinessHealthCheckExtensions.AddSchedulerReadinessCheck</c>).
+    /// dependency-free base. Readiness needs no reference either: <c>SharedKernel.Scheduling</c>
+    /// registers its own <c>IReadinessProbe</c>, which
+    /// <see cref="HealthChecks.ReadinessHealthCheckExtensions.AddSharedKernelReadiness"/> maps onto
+    /// <c>/health/ready</c> with every other provider's probe.
     /// </para>
     /// <para>
     /// Idempotent: calling this method more than once on the same <paramref name="builder"/>

@@ -63,8 +63,9 @@ namespace SharedKernel.ArchitectureTests.Tests;
 /// <see cref="SecureDefaultsAssertion.AssertMethodBodyInvokesMethod"/> against contrived pass/
 /// fail-path fixtures shaped after <c>CorrelationIdMiddleware.ResolveCorrelationId</c>'s real
 /// check-then-substitute pattern. T-331: real-assembly, GATING verification re-points the same,
-/// already-shipped technique at the real <c>CorrelationIdMiddleware.ResolveCorrelationId</c> and
-/// its real private <c>IsValidFormat</c> callee — the first phase in this "lock a not-yet-shipped
+/// already-shipped technique at the real <c>ResolveCorrelationId</c> (now on
+/// <c>SharedKernel.ServiceDefaults.Security</c>'s <c>RequestContextMiddleware</c>, P-566) and its real
+/// <c>CorrelationIds.IsValid</c> callee — the first phase in this "lock a not-yet-shipped
 /// hardened guard" family to require zero new production code in
 /// <see cref="SecureDefaultsAssertion"/>, since the real shipped shape matched this phase's design
 /// exactly (a conditional invocation, never a throw), unlike
@@ -1276,8 +1277,9 @@ public class SecureDefaultsAssertionTests
     /// <summary>
     /// T-331 (<c>SK.00.CorrelationIdValidationGuard</c>/WO-063/P-415): Re-points
     /// <see cref="SecureDefaultsAssertion.AssertMethodBodyInvokesMethod"/> at the real, shipped
-    /// <c>CorrelationIdMiddleware.ResolveCorrelationId</c> and confirms it still calls its own
-    /// private <c>IsValidFormat</c> format-validation helper.
+    /// <c>RequestContextMiddleware.ResolveCorrelationId</c> (<c>SharedKernel.ServiceDefaults.Security</c>)
+    /// and confirms it still validates a caller-supplied correlation id with
+    /// <c>SharedKernel.Execution</c>'s <c>CorrelationIds.IsValid</c>.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -1293,9 +1295,10 @@ public class SecureDefaultsAssertionTests
     /// </para>
     /// <para>
     /// <strong>Design matched reality, unlike the CORS phase.</strong> The real, shipped
-    /// <c>CorrelationIdMiddleware.ResolveCorrelationId</c> is a conditional check-then-substitute
-    /// shape exactly as this phase's design (D-58) anticipated — it calls its own private
-    /// <c>IsValidFormat</c> helper and falls back to regenerating a fresh value when the check
+    /// <c>ResolveCorrelationId</c> (originally on <c>CorrelationIdMiddleware</c>, which P-566 folded into
+    /// <c>RequestContextMiddleware</c>) is a conditional check-then-substitute
+    /// shape exactly as this phase's design (D-58) anticipated — it calls a format-validation
+    /// helper (now <c>CorrelationIds.IsValid</c>) and falls back to regenerating a fresh value when the check
     /// fails, never throwing. <see cref="SecureDefaultsAssertion.AssertMethodBodyInvokesMethod"/>
     /// is therefore the correct technique with no re-pointing surprise, unlike
     /// <c>SK.00.CorsWildcardCredentialsGuard</c>'s validator-vs-throw mismatch — this phase adds
@@ -1305,9 +1308,8 @@ public class SecureDefaultsAssertionTests
     /// <strong>Non-vacuous.</strong> Verified by a temporary sanity check during implementation —
     /// asserting a deliberately-wrong callee method name (<c>"IsValidFormatXyz"</c>) against this
     /// exact real method, confirmed to fail with the same message shape T-330's contrived fixture
-    /// produces, then reverted before commit. Both <c>ResolveCorrelationId</c> and
-    /// <c>IsValidFormat</c> are declared directly on <c>CorrelationIdMiddleware</c> itself — the
-    /// callee is a private instance method on the SAME type, not a different one — and the call
+    /// produces, then reverted before commit. Since P-566 the callee is a static method on a
+    /// different type (<c>CorrelationIds</c>), passed explicitly as the expected callee type, and the call
     /// site lives directly in <c>ResolveCorrelationId</c>'s own IL body, not inside a lambda
     /// closure, so no closure-scanning extension is exercised by this particular call site (that
     /// extension remains proven by T-318/T-328's own real-assembly call sites).

@@ -22,8 +22,9 @@ namespace SharedKernel.Analyzers.Diagnostics;
 /// This is a <strong>syntax-only</strong> check — no <see cref="SemanticModel"/> is required.
 /// The match is on the <em>exact</em> simple names <c>"IMessageBus"</c> and <c>"IEventPublisher"</c>,
 /// never a prefix: sibling contracts that share the prefix are legitimately singletons.
-/// <c>IMessageBusProbe</c> is the concrete case: <c>MessagingBusBuilder</c> itself registers it as a
-/// singleton, and a prefix match flagged a consumer doing the same.
+/// The motivating case was the former <c>IMessageBusProbe</c> (replaced by an <c>IReadinessProbe</c> in
+/// WO-086): <c>MessagingBusBuilder</c> registered it as a singleton, and a prefix match flagged a consumer
+/// doing the same.
 /// </para>
 /// <para>
 /// <b>Covered forms:</b>

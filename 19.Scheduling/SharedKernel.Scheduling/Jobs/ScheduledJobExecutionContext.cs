@@ -32,9 +32,10 @@ public sealed record ScheduledJobExecutionContext
     public required DateTimeOffset ActualFireTimeUtc { get; init; }
 
     /// <summary>
-    /// Gets the optional, purely informational tenant label carried from the job's
+    /// Gets the tenant this execution runs as, carried from the job's
     /// <see cref="ScheduledJobOptions.TenantScope"/>; <see cref="TenantScope.Global"/> for a
-    /// system-level job. See that member's remarks for why this carries no isolation enforcement.
+    /// system-level job. The same tenant is the ambient <c>IRequestContext.TenantId</c> during the
+    /// execution — see that member's remarks.
     /// </summary>
     public TenantScope TenantScope { get; init; }
 

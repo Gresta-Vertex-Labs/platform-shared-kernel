@@ -46,9 +46,16 @@ public sealed class InMemorySearchIndexProvisionerTests
         var result = await provisioner.EnsureIndexAsync(withExtraField, CancellationToken.None);
 
         Assert.True(result.IsSuccess);
-        var probe = await provisioner.ProbeAsync("products", CancellationToken.None);
-        Assert.True(probe.IsSuccess);
-        Assert.Equal(withExtraField.ComputeFingerprint(), probe.Value.SchemaFingerprint);
+
+        // Both fields are now part of the stored definition: re-declaring either with a different role conflicts.
+        foreach (var field in new[] { "Name", "Status" })
+        {
+            var conflicting = SearchIndexDefinition.Create(
+                "products",
+                [new SearchFieldDefinition { Name = field, Kind = SearchFieldKind.Text, Searchable = false, Filterable = true }]).Value;
+            var conflict = await provisioner.EnsureIndexAsync(conflicting, CancellationToken.None);
+            Assert.Equal(SearchErrors.IndexDefinitionConflict("products", field), conflict.Error);
+        }
     }
 
     [Fact]
@@ -180,36 +187,6 @@ public sealed class InMemorySearchIndexProvisionerTests
             CancellationToken.None);
 
         Assert.True(result.IsFailure);
-    }
-
-    [Fact]
-    public async Task ProbeAsync_UnregisteredIndex_ReturnsIndexNotFound()
-    {
-        var provisioner = new InMemorySearchIndexProvisioner();
-
-        var result = await provisioner.ProbeAsync("never-registered", CancellationToken.None);
-
-        Assert.Equal(SearchErrors.IndexNotFound("never-registered"), result.Error);
-    }
-
-    [Fact]
-    public async Task ProbeAsync_RegisteredIndex_ReturnsDeterministicHealthyProbe()
-    {
-        var provisioner = new InMemorySearchIndexProvisioner();
-        var definition = BuildDefinition("products", ["Name"]);
-        await provisioner.EnsureIndexAsync(definition, CancellationToken.None);
-
-        var result = await provisioner.ProbeAsync("products", CancellationToken.None);
-
-        Assert.True(result.IsSuccess);
-        Assert.True(result.Value.Reachable);
-        Assert.True(result.Value.IndexAddressable);
-        Assert.True(result.Value.Searchable);
-        Assert.Equal(0, result.Value.DocumentCount);
-        Assert.Equal(0, result.Value.PendingWriteCount);
-        Assert.Equal("in-memory-fake", result.Value.EngineVersion);
-        Assert.Equal(definition.ComputeFingerprint(), result.Value.SchemaFingerprint);
-        Assert.Equal(TimeSpan.Zero, result.Value.Latency);
     }
 
     [Fact]

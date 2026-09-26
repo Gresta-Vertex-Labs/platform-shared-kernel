@@ -20,9 +20,13 @@ namespace SharedKernel.Testing.Search;
 /// </para>
 /// <para>
 /// <see cref="EnsureIndexAsync"/> is idempotent and additive-only, matching the real contract's own
-/// "never drops a field" rule. <see cref="ProbeAsync"/> reports a deterministic, always-healthy
-/// <see cref="SearchIndexHealth"/> for a registered index, with <c>DocumentCount</c> fixed at zero
-/// since this fake tracks no live document store of its own.
+/// "never drops a field" rule.
+/// </para>
+/// <para>
+/// No readiness probe: readiness is not on <see cref="ISearchIndexProvisioner"/>, and the real providers
+/// register a <see cref="SearchIndexReadinessProbe"/> per index declared on their builder, whereas this fake
+/// learns its indexes only at run time through <see cref="EnsureIndexAsync"/>. A test that exercises
+/// readiness handling constructs a <see cref="SearchIndexReadinessProbe"/> over its own delegate.
 /// </para>
 /// </remarks>
 public sealed class InMemorySearchIndexProvisioner : ISearchIndexProvisioner
@@ -33,7 +37,7 @@ public sealed class InMemorySearchIndexProvisioner : ISearchIndexProvisioner
     /// Gets or sets a value indicating whether write-path operations should simulate a provider
     /// rejection. When <see langword="true"/>, <see cref="EnsureIndexAsync"/>,
     /// <see cref="DeleteIndexAsync"/>, and <see cref="CutoverAsync"/> all return a failure instead
-    /// of performing the operation. <see cref="IndexExistsAsync"/> and <see cref="ProbeAsync"/> are
+    /// of performing the operation. <see cref="IndexExistsAsync"/> is
     /// unaffected, mirroring <see cref="InMemorySearchIndex{TDocument}.SimulateFailure"/>'s
     /// read-path exclusion.
     /// </summary>
@@ -127,34 +131,6 @@ public sealed class InMemorySearchIndexProvisioner : ISearchIndexProvisioner
         }
 
         return Task.FromResult(Result.Success());
-    }
-
-    /// <summary>
-    /// Measures a registered index — always healthy, deterministically. Pass it to a
-    /// <see cref="SearchIndexReadinessProbe"/> to exercise readiness handling without an engine.
-    /// </summary>
-    public Task<SharedKernel.Primitives.Results.Result<SearchIndexHealth>> ProbeAsync(string indexName, CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(indexName);
-
-        if (!_indexes.TryGetValue(indexName, out var definition))
-        {
-            return Task.FromResult(SharedKernel.Primitives.Results.Result<SearchIndexHealth>.Failure(SearchErrors.IndexNotFound(indexName)));
-        }
-
-        var health = new SearchIndexHealth
-        {
-            Reachable = true,
-            IndexAddressable = true,
-            Searchable = true,
-            DocumentCount = 0,
-            PendingWriteCount = 0,
-            EngineVersion = "in-memory-fake",
-            SchemaFingerprint = definition.ComputeFingerprint(),
-            Latency = TimeSpan.Zero,
-        };
-
-        return Task.FromResult(SharedKernel.Primitives.Results.Result<SearchIndexHealth>.Success(health));
     }
 
     /// <inheritdoc />

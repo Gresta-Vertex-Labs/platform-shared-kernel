@@ -22,7 +22,6 @@ SharedKernel.Testing.Storage.InMemoryFileStorage.IssuedUploadUrls.get -> System.
 SharedKernel.Testing.Storage.InMemoryFileStorage.Keys.get -> System.Collections.Generic.IReadOnlyList<string!>!
 SharedKernel.Testing.Storage.InMemoryFileStorage.ListAsync(string! prefix = "", System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<SharedKernel.Storage.FileListItem!>!
 SharedKernel.Testing.Storage.InMemoryFileStorage.ListPageAsync(SharedKernel.Storage.FileListRequest! request, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Storage.FileListPage!>!>!
-SharedKernel.Testing.Storage.InMemoryFileStorage.ProbeAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
 SharedKernel.Testing.Storage.InMemoryFileStorage.Reset() -> void
 SharedKernel.Testing.Storage.InMemoryFileStorage.Seed(string! key, byte[]! content, string? contentType = null, System.Collections.Generic.IReadOnlyDictionary<string!, string!>? metadata = null) -> SharedKernel.Storage.FileReference!
 SharedKernel.Testing.Storage.InMemoryFileStorage.Seed(string! key, System.IO.Stream! content, string? contentType = null, System.Collections.Generic.IReadOnlyDictionary<string!, string!>? metadata = null) -> SharedKernel.Storage.FileReference!

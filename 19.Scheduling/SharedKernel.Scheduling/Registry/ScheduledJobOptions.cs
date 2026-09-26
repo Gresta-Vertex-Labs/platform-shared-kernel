@@ -29,8 +29,8 @@ public sealed class ScheduledJobOptions
     public OverlapPolicy? OverlapPolicy { get; set; }
 
     /// <summary>
-    /// Gets or sets an optional, purely informational tenant label for this job registration.
-    /// Defaults to <see cref="TenantScope.Global"/>, meaning a system-level job with no tenant.
+    /// Gets or sets the tenant this job runs as. Defaults to <see cref="TenantScope.Global"/>, meaning a
+    /// system-level job with no tenant.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -42,9 +42,17 @@ public sealed class ScheduledJobOptions
     /// <para>
     /// A per-tenant recurring job (for example, "send each active tenant's weekly digest") is one
     /// system-level registration whose command handler iterates its own tenant directory; the scheduler
-    /// never fans out per-tenant executions. A tenant set here is only a label, surfaced on
-    /// <see cref="Jobs.ScheduledJobExecutionContext.TenantScope"/> for logging/telemetry correlation or
-    /// for the rare job owned by a single tenant. It enforces no tenant isolation of any kind.
+    /// never fans out per-tenant executions. A tenant set here is for the rare job owned by a single tenant.
+    /// </para>
+    /// <para>
+    /// <b>The scope is the job's caller tenant, not a label.</b> Every execution runs under an ambient
+    /// <c>SystemRequestContext</c> (identity = the job name, no permissions, a new correlation id) whose
+    /// <c>IRequestContext.TenantId</c> is this scope's tenant — <see langword="null"/> for
+    /// <see cref="TenantScope.Global"/>. Persistence filters, guards and stamps rows by that tenant, and
+    /// the outbound calls, messages and workflows the job starts carry it. A
+    /// <see cref="TenantScope.Global"/> job that touches tenant-scoped data therefore fails closed unless it
+    /// enters a cross-tenant scope (<c>ICrossTenantScope</c>). The same value is surfaced on
+    /// <see cref="Jobs.ScheduledJobExecutionContext.TenantScope"/>.
     /// </para>
     /// </remarks>
     public TenantScope TenantScope { get; set; }

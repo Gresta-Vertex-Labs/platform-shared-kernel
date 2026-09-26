@@ -1,29 +1,27 @@
 using Microsoft.AspNetCore.Http;
+using SharedKernel.Execution.Tenancy;
+using SharedKernel.MultiTenancy.Resolution;
 
 namespace SharedKernel.Testing.ServiceDefaults;
 
 /// <summary>
-/// Configurable test double structurally compatible with
-/// <c>SharedKernel.MultiTenancy.ITenantResolutionStrategy</c> (<c>13.ServiceDefaults</c>), without
-/// taking a project reference to <c>SharedKernel.MultiTenancy</c>.
+/// Configurable test double for <see cref="ITenantResolutionStrategy"/>.
 /// </summary>
 /// <remarks>
-/// This package takes no project reference to <c>SharedKernel.MultiTenancy</c> (scope lock) — a
-/// direct interface implementation would require that reference. Member shapes
-/// (<see cref="StrategyName"/>, <see cref="TryResolveAsync"/>) match
-/// <c>ITenantResolutionStrategy</c> exactly, so a consuming service's test project that does take
-/// that reference can still use this type as a drop-in (duck-typed) substitute.
+/// Resolves to a fixed <see cref="TenantId"/> (or <see langword="null"/>, meaning "this strategy does not
+/// apply"), or delegates to a caller-supplied resolver. Register it like any other strategy and name it in
+/// <see cref="TenantResolutionOptions.StrategyOrder"/> by its <see cref="StrategyName"/>.
 /// </remarks>
-public sealed class FakeTenantResolutionStrategy
+public sealed class FakeTenantResolutionStrategy : ITenantResolutionStrategy
 {
-    private readonly Func<HttpContext, CancellationToken, Task<Guid?>> _resolver;
+    private readonly Func<HttpContext, CancellationToken, Task<TenantId?>> _resolver;
 
     /// <summary>
     /// Initialises a new <see cref="FakeTenantResolutionStrategy"/> that always resolves to
     /// <paramref name="fixedResult"/>.
     /// </summary>
     /// <param name="fixedResult">The fixed result every call to <see cref="TryResolveAsync"/> returns.</param>
-    public FakeTenantResolutionStrategy(Guid? fixedResult = null)
+    public FakeTenantResolutionStrategy(TenantId? fixedResult = null)
         : this((_, _) => Task.FromResult(fixedResult))
     {
     }
@@ -33,23 +31,19 @@ public sealed class FakeTenantResolutionStrategy
     /// <paramref name="resolver"/>.
     /// </summary>
     /// <param name="resolver">The delegate invoked by <see cref="TryResolveAsync"/>.</param>
-    public FakeTenantResolutionStrategy(Func<HttpContext, CancellationToken, Task<Guid?>> resolver)
+    public FakeTenantResolutionStrategy(Func<HttpContext, CancellationToken, Task<TenantId?>> resolver)
     {
         ArgumentNullException.ThrowIfNull(resolver);
         _resolver = resolver;
     }
 
     /// <summary>
-    /// Gets or sets the strategy name, mirroring <c>ITenantResolutionStrategy.StrategyName</c>'s shape.
+    /// Gets or sets the strategy name matched against <see cref="TenantResolutionOptions.StrategyOrder"/>.
+    /// Defaults to <c>"Fake"</c>.
     /// </summary>
     public string StrategyName { get; set; } = "Fake";
 
-    /// <summary>
-    /// Resolves a tenant id for <paramref name="context"/>, mirroring
-    /// <c>ITenantResolutionStrategy.TryResolveAsync</c>'s signature exactly.
-    /// </summary>
-    /// <param name="context">The current HTTP context.</param>
-    /// <param name="ct">Cancellation token.</param>
-    /// <returns>The resolved tenant id, or <see langword="null"/> when this strategy cannot resolve one.</returns>
-    public Task<Guid?> TryResolveAsync(HttpContext context, CancellationToken ct) => _resolver(context, ct);
+    /// <inheritdoc />
+    public Task<TenantId?> TryResolveAsync(HttpContext context, CancellationToken cancellationToken) =>
+        _resolver(context, cancellationToken);
 }

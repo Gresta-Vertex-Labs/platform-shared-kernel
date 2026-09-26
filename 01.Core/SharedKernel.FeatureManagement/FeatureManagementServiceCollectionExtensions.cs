@@ -65,7 +65,7 @@ public static class FeatureManagementServiceCollectionExtensions
         HideTelemetryFromTheEvaluator(services);
 
         services.TryAddSingleton(TimeProvider.System);
-        services.TryAddSingleton<IFeatureTargetingContextAccessor, BaggageTenantTargetingContextAccessor>();
+        services.TryAddSingleton<IFeatureTargetingContextAccessor, AmbientTenantTargetingContextAccessor>();
         services.TryAddSingleton<MicrosoftFeatureManagementProvider>();
 
         services.AddOpenFeature(builder =>

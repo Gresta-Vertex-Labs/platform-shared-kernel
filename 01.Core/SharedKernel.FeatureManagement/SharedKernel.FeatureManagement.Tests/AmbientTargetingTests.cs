@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
+using SharedKernel.Execution.Context;
 using SharedKernel.Primitives.Propagation;
 using Xunit;
 
@@ -59,7 +60,29 @@ public sealed class AmbientTargetingTests
     }
 
     [Fact]
-    public async Task WithoutAnAccessor_TheTenantComesFromActivityBaggage()
+    public async Task WithoutAnAccessor_TheTenantComesFromTheOpenRequestContextScope()
+    {
+        await using var provider = await FeatureTestHost.StartAsync(FeatureTestHost.Json(BooleanFlagTests.Configuration));
+
+        using var caller = RequestContextScope.Begin(new SystemRequestContext([], "nightly-job", TestTenants.Acme));
+
+        Assert.True(await provider.NewScopeClient().IsEnabledAsync(Beta));
+    }
+
+    [Fact]
+    public async Task WithoutAnAccessor_AnOpenScopeWithoutATenant_WinsOverBaggage()
+    {
+        await using var provider = await FeatureTestHost.StartAsync(FeatureTestHost.Json(BooleanFlagTests.Configuration));
+
+        using var activity = new Activity("request").Start();
+        activity.SetBaggage(WellKnownBaggageKeys.TenantId, TestTenants.AcmeText);
+        using var caller = RequestContextScope.Begin(AnonymousRequestContext.Instance);
+
+        Assert.False(await provider.NewScopeClient().IsEnabledAsync(Beta));
+    }
+
+    [Fact]
+    public async Task WithoutAnAccessorOrScope_TheTenantComesFromActivityBaggage()
     {
         await using var provider = await FeatureTestHost.StartAsync(FeatureTestHost.Json(BooleanFlagTests.Configuration));
 

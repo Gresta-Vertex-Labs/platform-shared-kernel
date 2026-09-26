@@ -33,12 +33,10 @@ public static class WorkflowTelemetryExtensions
     /// via <see cref="TracerProviderBuilder.AddSource(string[])"/> and
     /// <see cref="MeterProviderBuilder.AddMeter(string[])"/> — by string name only, so it needs no
     /// reference to <c>SharedKernel.Workflows.Temporal</c>, which is why it lives in this
-    /// dependency-free base. The workflow readiness check is different: it consumes
-    /// <c>IWorkflowServiceProbe</c> by constructor injection, a real type, so it lives in the separate
-    /// <c>SharedKernel.ServiceDefaults.Workflows.Temporal</c> package
-    /// (<c>WorkflowReadinessHealthCheckExtensions.AddWorkflowReadinessCheck</c>) — which carries
-    /// Temporalio with it, and is exactly the dependency a service without workflows must not
-    /// restore.
+    /// dependency-free base. Readiness needs no reference either: <c>SharedKernel.Workflows.Temporal</c>
+    /// registers its own <c>IReadinessProbe</c>, which
+    /// <see cref="HealthChecks.ReadinessHealthCheckExtensions.AddSharedKernelReadiness"/> maps onto
+    /// <c>/health/ready</c> with every other provider's probe.
     /// </para>
     /// <para>
     /// Idempotent: calling this method more than once on the same <paramref name="builder"/>

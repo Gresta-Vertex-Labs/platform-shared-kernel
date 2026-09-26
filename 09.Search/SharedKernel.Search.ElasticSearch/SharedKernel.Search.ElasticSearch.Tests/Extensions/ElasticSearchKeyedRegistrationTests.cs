@@ -101,7 +101,7 @@ public sealed class ElasticSearchKeyedRegistrationTests
     [Fact]
     public void TheProviderKeyIsTheProviderName_NotAnInventedString()
     {
-        // 13.ServiceDefaults' AddSearchReadinessCheck(providerKey:) and any consuming service pass this
+        // A consuming service resolving the non-generic contracts by key passes this
         // same constant, so the key must be the one already on the public surface.
         using var provider = BuildProvider();
 

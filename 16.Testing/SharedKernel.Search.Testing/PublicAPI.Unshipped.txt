@@ -31,7 +31,6 @@ SharedKernel.Testing.Search.InMemorySearchIndexProvisioner.DeleteIndexAsync(stri
 SharedKernel.Testing.Search.InMemorySearchIndexProvisioner.EnsureIndexAsync(SharedKernel.Search.Abstractions.Models.SearchIndexDefinition! definition, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
 SharedKernel.Testing.Search.InMemorySearchIndexProvisioner.IndexExistsAsync(string! indexName, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<bool>!>!
 SharedKernel.Testing.Search.InMemorySearchIndexProvisioner.InMemorySearchIndexProvisioner() -> void
-SharedKernel.Testing.Search.InMemorySearchIndexProvisioner.ProbeAsync(string! indexName, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<SharedKernel.Search.Abstractions.Models.SearchIndexHealth!>!>!
 SharedKernel.Testing.Search.InMemorySearchIndexProvisioner.RegisteredIndexNames.get -> System.Collections.Generic.IReadOnlyList<string!>!
 SharedKernel.Testing.Search.InMemorySearchIndexProvisioner.Reset() -> void
 SharedKernel.Testing.Search.InMemorySearchIndexProvisioner.SimulateFailure.get -> bool

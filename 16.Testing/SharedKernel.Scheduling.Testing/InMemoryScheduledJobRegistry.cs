@@ -114,7 +114,8 @@ public sealed class InMemoryScheduledJobRegistry : IScheduledJobRegistry
     /// </param>
     /// <param name="fencingToken">
     /// An optional caller-suppliable fencing token, propagated onto <see cref="ScheduledJobExecutionContext.FencingToken"/>
-    /// exactly like a real acquired <c>IFencedLock</c> claim would.
+    /// exactly as the real scheduler passes on the fencing token of the per-occurrence lease it takes through
+    /// <c>IDistributedLockService.TryAcquireLeaseAsync</c>.
     /// </param>
     /// <param name="simulatedMisfire">
     /// When <see langword="true"/>, this tick is treated as a caught-up missed occurrence rather than

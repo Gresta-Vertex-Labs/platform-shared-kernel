@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Http;
+using SharedKernel.Execution.Tenancy;
+using SharedKernel.MultiTenancy.Resolution;
 using SharedKernel.Testing.ServiceDefaults;
 using Xunit;
 
@@ -9,7 +11,7 @@ public sealed class FakeTenantResolutionStrategyTests
     [Fact]
     public async Task TryResolveAsync_FixedResultConstructor_AlwaysReturnsSameValue()
     {
-        var tenantId = Guid.NewGuid();
+        var tenantId = new TenantId(Guid.NewGuid());
         var strategy = new FakeTenantResolutionStrategy(tenantId);
 
         var resolved = await strategy.TryResolveAsync(new DefaultHttpContext(), CancellationToken.None);
@@ -20,8 +22,8 @@ public sealed class FakeTenantResolutionStrategyTests
     [Fact]
     public async Task TryResolveAsync_DelegateConstructor_InvokesDelegate()
     {
-        var expected = Guid.NewGuid();
-        var strategy = new FakeTenantResolutionStrategy((_, _) => Task.FromResult<Guid?>(expected));
+        var expected = new TenantId(Guid.NewGuid());
+        var strategy = new FakeTenantResolutionStrategy((_, _) => Task.FromResult<TenantId?>(expected));
 
         var resolved = await strategy.TryResolveAsync(new DefaultHttpContext(), CancellationToken.None);
 
@@ -36,6 +38,16 @@ public sealed class FakeTenantResolutionStrategyTests
         var resolved = await strategy.TryResolveAsync(new DefaultHttpContext(), CancellationToken.None);
 
         Assert.Null(resolved);
+    }
+
+    [Fact]
+    public async Task ImplementsITenantResolutionStrategy()
+    {
+        var tenantId = new TenantId(Guid.NewGuid());
+        ITenantResolutionStrategy strategy = new FakeTenantResolutionStrategy(tenantId) { StrategyName = "Custom" };
+
+        Assert.Equal("Custom", strategy.StrategyName);
+        Assert.Equal(tenantId, await strategy.TryResolveAsync(new DefaultHttpContext(), CancellationToken.None));
     }
 
     [Fact]
@@ -54,5 +66,5 @@ public sealed class FakeTenantResolutionStrategyTests
 
     [Fact]
     public void Constructor_NullResolverDelegate_Throws() =>
-        Assert.Throws<ArgumentNullException>(() => new FakeTenantResolutionStrategy((Func<HttpContext, CancellationToken, Task<Guid?>>)null!));
+        Assert.Throws<ArgumentNullException>(() => new FakeTenantResolutionStrategy((Func<HttpContext, CancellationToken, Task<TenantId?>>)null!));
 }

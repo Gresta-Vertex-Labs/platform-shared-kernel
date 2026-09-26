@@ -19,7 +19,7 @@ public sealed class UserContext : IUserContext
     /// </param>
     /// <param name="subjectId">The subject identifier. Must not be empty.</param>
     /// <param name="claims">The claims <see cref="FindClaim"/> and <see cref="FindClaims"/> search.</param>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="actorKind"/> is not User or Service.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="actorKind"/> is not <see cref="ActorKind.User"/> or <see cref="ActorKind.Service"/>.</exception>
     /// <exception cref="ArgumentException"><paramref name="subjectId"/> is null, empty or whitespace.</exception>
     public UserContext(ActorKind actorKind, string subjectId, IEnumerable<Claim>? claims = null)
     {
@@ -28,7 +28,7 @@ public sealed class UserContext : IUserContext
             throw new ArgumentOutOfRangeException(
                 nameof(actorKind),
                 actorKind,
-                "Only User and ServicePrincipal contexts carry a subject; use AnonymousUserContext or SystemUserContext.");
+                "Only User and Service contexts carry a subject; use AnonymousUserContext or SystemUserContext.");
         }
 
         ArgumentException.ThrowIfNullOrWhiteSpace(subjectId);
