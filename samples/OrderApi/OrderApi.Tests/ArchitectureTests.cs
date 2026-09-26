@@ -188,6 +188,7 @@ public sealed class ArchitectureTests
         ["SharedKernel.Persistence.EfCore.Encryption"] = "Adapter",
         ["SharedKernel.Persistence.Npgsql"] = "Adapter",
         ["SharedKernel.Reporting.Csv"] = "Adapter",
+        ["SharedKernel.Reporting.Gotenberg"] = "Adapter",
         ["SharedKernel.Reporting.Pdf"] = "Adapter",
         ["SharedKernel.Reporting.Spreadsheet"] = "Adapter",
         ["SharedKernel.Scheduling"] = "Adapter",

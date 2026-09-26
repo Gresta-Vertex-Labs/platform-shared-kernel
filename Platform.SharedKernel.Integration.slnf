@@ -24,7 +24,8 @@
       "16.Testing/SharedKernel.Testing.Internal/SharedKernel.Testing.Internal.Tests/SharedKernel.Testing.Internal.Tests.csproj",
       "18.Idempotency/SharedKernel.Idempotency.EfCore/SharedKernel.Idempotency.EfCore.Tests/SharedKernel.Idempotency.EfCore.Tests.csproj",
       "18.Idempotency/SharedKernel.Idempotency.Redis/SharedKernel.Idempotency.Redis.Tests/SharedKernel.Idempotency.Redis.Tests.csproj",
-      "19.Scheduling/SharedKernel.Scheduling/SharedKernel.Scheduling.Tests/SharedKernel.Scheduling.Tests.csproj"
+      "19.Scheduling/SharedKernel.Scheduling/SharedKernel.Scheduling.Tests/SharedKernel.Scheduling.Tests.csproj",
+      "20.Reporting/SharedKernel.Reporting.Gotenberg/SharedKernel.Reporting.Gotenberg.Tests/SharedKernel.Reporting.Gotenberg.Tests.csproj"
     ]
   }
 }

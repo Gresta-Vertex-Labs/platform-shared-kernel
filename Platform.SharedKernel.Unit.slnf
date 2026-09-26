@@ -201,6 +201,7 @@
       "20.Reporting/SharedKernel.Reporting.Abstractions/SharedKernel.Reporting.Abstractions.csproj",
       "20.Reporting/SharedKernel.Reporting.Csv/SharedKernel.Reporting.Csv.Tests/SharedKernel.Reporting.Csv.Tests.csproj",
       "20.Reporting/SharedKernel.Reporting.Csv/SharedKernel.Reporting.Csv.csproj",
+      "20.Reporting/SharedKernel.Reporting.Gotenberg/SharedKernel.Reporting.Gotenberg.csproj",
       "20.Reporting/SharedKernel.Reporting.Pdf/SharedKernel.Reporting.Pdf.Tests/SharedKernel.Reporting.Pdf.Tests.csproj",
       "20.Reporting/SharedKernel.Reporting.Pdf/SharedKernel.Reporting.Pdf.csproj",
       "20.Reporting/SharedKernel.Reporting.Spreadsheet/SharedKernel.Reporting.Spreadsheet.Tests/SharedKernel.Reporting.Spreadsheet.Tests.csproj",

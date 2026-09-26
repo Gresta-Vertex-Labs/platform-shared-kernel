@@ -262,6 +262,8 @@
     <Project Path="20.Reporting/SharedKernel.Reporting.Abstractions/SharedKernel.Reporting.Abstractions.Tests/SharedKernel.Reporting.Abstractions.Tests.csproj" />
     <Project Path="20.Reporting/SharedKernel.Reporting.Csv/SharedKernel.Reporting.Csv.csproj" />
     <Project Path="20.Reporting/SharedKernel.Reporting.Csv/SharedKernel.Reporting.Csv.Tests/SharedKernel.Reporting.Csv.Tests.csproj" />
+    <Project Path="20.Reporting/SharedKernel.Reporting.Gotenberg/SharedKernel.Reporting.Gotenberg.csproj" />
+    <Project Path="20.Reporting/SharedKernel.Reporting.Gotenberg/SharedKernel.Reporting.Gotenberg.Tests/SharedKernel.Reporting.Gotenberg.Tests.csproj" />
     <Project Path="20.Reporting/SharedKernel.Reporting.Spreadsheet/SharedKernel.Reporting.Spreadsheet.csproj" />
     <Project Path="20.Reporting/SharedKernel.Reporting.Spreadsheet/SharedKernel.Reporting.Spreadsheet.Tests/SharedKernel.Reporting.Spreadsheet.Tests.csproj" />
     <Project Path="20.Reporting/SharedKernel.Reporting.Pdf/SharedKernel.Reporting.Pdf.csproj" />

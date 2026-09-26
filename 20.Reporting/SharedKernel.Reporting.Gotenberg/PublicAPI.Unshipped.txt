@@ -1,0 +1,17 @@
+#nullable enable
+SharedKernel.Reporting.Gotenberg.GotenbergOptions
+SharedKernel.Reporting.Gotenberg.GotenbergOptions.BaseUrl.get -> System.Uri?
+SharedKernel.Reporting.Gotenberg.GotenbergOptions.BaseUrl.set -> void
+SharedKernel.Reporting.Gotenberg.GotenbergOptions.GotenbergOptions() -> void
+SharedKernel.Reporting.Gotenberg.GotenbergOptions.MaxRetryAttempts.get -> int
+SharedKernel.Reporting.Gotenberg.GotenbergOptions.MaxRetryAttempts.set -> void
+SharedKernel.Reporting.Gotenberg.GotenbergOptions.Password.get -> string?
+SharedKernel.Reporting.Gotenberg.GotenbergOptions.Password.set -> void
+SharedKernel.Reporting.Gotenberg.GotenbergOptions.Timeout.get -> System.TimeSpan
+SharedKernel.Reporting.Gotenberg.GotenbergOptions.Timeout.set -> void
+SharedKernel.Reporting.Gotenberg.GotenbergOptions.Username.get -> string?
+SharedKernel.Reporting.Gotenberg.GotenbergOptions.Username.set -> void
+SharedKernel.Reporting.Gotenberg.GotenbergOptions.Validate(System.ComponentModel.DataAnnotations.ValidationContext! validationContext) -> System.Collections.Generic.IEnumerable<System.ComponentModel.DataAnnotations.ValidationResult!>!
+SharedKernel.Reporting.GotenbergReportingBuilderExtensions
+static SharedKernel.Reporting.Gotenberg.GotenbergOptions.SectionName.get -> string!
+static SharedKernel.Reporting.GotenbergReportingBuilderExtensions.AddGotenberg(this SharedKernel.Reporting.IReportingBuilder! builder, Microsoft.Extensions.Configuration.IConfiguration! configuration) -> SharedKernel.Reporting.IReportingBuilder!

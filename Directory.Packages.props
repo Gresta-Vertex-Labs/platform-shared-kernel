@@ -358,6 +358,7 @@
     <PackageVersion Include="SharedKernel.Primitives" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Reporting.Abstractions" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Reporting.Csv" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Reporting.Gotenberg" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Reporting.Pdf" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Reporting.Spreadsheet" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Reporting.Testing" Version="$(SharedKernelPackageVersion)" />
