@@ -1,0 +1,16 @@
+#nullable enable
+SharedKernel.Reporting.Csv.CsvExportOptions
+SharedKernel.Reporting.Csv.CsvExportOptions.CsvExportOptions() -> void
+SharedKernel.Reporting.Csv.CsvExportOptions.Delimiter.get -> char
+SharedKernel.Reporting.Csv.CsvExportOptions.Delimiter.set -> void
+SharedKernel.Reporting.Csv.CsvExportOptions.EscapeFormulas.get -> bool
+SharedKernel.Reporting.Csv.CsvExportOptions.EscapeFormulas.set -> void
+SharedKernel.Reporting.Csv.CsvExportOptions.IncludeHeaderRow.get -> bool
+SharedKernel.Reporting.Csv.CsvExportOptions.IncludeHeaderRow.set -> void
+SharedKernel.Reporting.Csv.CsvExportOptions.IncludeUtf8Bom.get -> bool
+SharedKernel.Reporting.Csv.CsvExportOptions.IncludeUtf8Bom.set -> void
+SharedKernel.Reporting.Csv.CsvExportOptions.Validate(System.ComponentModel.DataAnnotations.ValidationContext! validationContext) -> System.Collections.Generic.IEnumerable<System.ComponentModel.DataAnnotations.ValidationResult!>!
+SharedKernel.Reporting.Csv.ICsvReportExporter<TRow>
+SharedKernel.Reporting.CsvReportingBuilderExtensions
+static SharedKernel.Reporting.Csv.CsvExportOptions.SectionName.get -> string!
+static SharedKernel.Reporting.CsvReportingBuilderExtensions.AddCsv(this SharedKernel.Reporting.IReportingBuilder! builder, Microsoft.Extensions.Configuration.IConfiguration! configuration) -> SharedKernel.Reporting.IReportingBuilder!

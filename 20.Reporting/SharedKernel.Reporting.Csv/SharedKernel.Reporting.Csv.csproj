@@ -2,17 +2,36 @@
   <PropertyGroup>
     <SharedKernelTier>Adapter</SharedKernelTier>
     <!-- NuGet packaging metadata -->
-    <Description>Hand-written, RFC 4180-compliant CSV report/data export for Platform.SharedKernel microservices — the dependency-free baseline provider of SharedKernel.Reporting.Abstractions, and the only one of the three providers that is genuinely constant-memory end to end. CsvReportExporter&lt;TRow&gt; encodes directly against the destination Stream one row at a time as the IAsyncEnumerable&lt;TRow&gt; source is enumerated. Zero third-party NuGet dependencies. Register via AddCsvReportExporter&lt;TRow&gt;(IConfiguration).</Description>
-    <PackageTags>reporting;export;csv;rfc4180;streaming;shared-kernel</PackageTags>
+    <Description>RFC 4180 CSV exports for SharedKernel.Reporting: streams rows straight into the destination in constant memory, one row at a time, so a million-row export costs no more memory than a ten-row one. Guards against spreadsheet formula injection (CSV injection) by default, writes an Excel-friendly UTF-8 BOM, and takes any delimiter. Register with services.AddSharedKernelReporting().AddCsv(configuration). No third-party dependencies.</Description>
+    <PackageReleaseNotes>First release.</PackageReleaseNotes>
+    <PackageTags>shared-kernel;reporting;export;csv;rfc4180;streaming;csv-injection</PackageTags>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- Publish bar: ship XML docs, and fail the build on an undocumented or untracked public member. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <WarningsAsErrors>$(WarningsAsErrors);CS1591;RS0016;RS0017;RS0024;RS0025</WarningsAsErrors>
+  </PropertyGroup>
+
   <ItemGroup>
-    <!-- Sibling-package rule (20.Reporting/CLAUDE.md): never references .Spreadsheet or .Pdf. -->
+    <!-- Never references .Spreadsheet, .Pdf or .Gotenberg: sibling providers stay independent. -->
     <ProjectReference Include="..\SharedKernel.Reporting.Abstractions\SharedKernel.Reporting.Abstractions.csproj" />
     <ProjectReference Include="..\..\01.Core\SharedKernel.Configuration\SharedKernel.Configuration.csproj" />
   </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Options" />
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="SharedKernel.Reporting.Csv.Tests" />
   </ItemGroup>
 </Project>
