@@ -2,38 +2,52 @@
   <PropertyGroup>
     <SharedKernelTier>Adapter</SharedKernelTier>
     <!-- NuGet packaging metadata -->
-    <Description>PdfSharp/MigraDoc-backed PDF report/data export for Platform.SharedKernel microservices, scoped to simple tabular/statement layouts only (no multi-section documents, images, charts, or headers/footers beyond one optional title). PdfReportExporter&lt;TRow&gt; builds a single MigraDoc table row-by-row from the streamed IAsyncEnumerable&lt;TRow&gt; source and renders it via PdfDocumentRenderer; MigraDoc's own table renderer paginates automatically across page breaks. IMPORTANT: MigraDoc/PdfSharp materialize the full document object model in memory before rendering — this provider is NOT memory-bounded, mitigated by its deliberately narrow scope rather than by any streaming capability (see this package's README). Register via AddPdfReportExporter&lt;TRow&gt;(IConfiguration).</Description>
-    <PackageTags>reporting;export;pdf;pdfsharp;migradoc;shared-kernel</PackageTags>
+    <Description>Tabular PDF exports for SharedKernel.Reporting — statements, lists and extracts: an optional title, one table whose columns always fit the page (widths by relative weight), a header row repeated on every page, numbers right-aligned, alternating row shading and "page / pages" numbering. Fonts are embedded (Roboto, Apache-2.0), so output is identical on Windows and Linux containers. Built on PDFsharp/MigraDoc (MIT). The document is built in memory, so exports are capped by MaxRows; use CSV or Excel for bulk data, and SharedKernel.Reporting.Gotenberg for free-form HTML documents. Register with services.AddSharedKernelReporting().AddPdf(configuration).</Description>
+    <PackageReleaseNotes>First release.</PackageReleaseNotes>
+    <PackageTags>shared-kernel;reporting;export;pdf;pdfsharp;migradoc</PackageTags>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- Publish bar: ship XML docs, and fail the build on an undocumented or untracked public member. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <WarningsAsErrors>$(WarningsAsErrors);CS1591;RS0016;RS0017;RS0024;RS0025</WarningsAsErrors>
+  </PropertyGroup>
+
   <ItemGroup>
-    <!-- Sibling-package rule (20.Reporting/CLAUDE.md): never references .Csv or .Spreadsheet. -->
+    <!-- Never references .Csv, .Spreadsheet or .Gotenberg: sibling providers stay independent. -->
     <ProjectReference Include="..\SharedKernel.Reporting.Abstractions\SharedKernel.Reporting.Abstractions.csproj" />
     <ProjectReference Include="..\..\01.Core\SharedKernel.Configuration\SharedKernel.Configuration.csproj" />
   </ItemGroup>
+
   <ItemGroup>
     <!--
-      Unconditional MIT — ratified in 20.Reporting/CLAUDE.md's licensing table. "PDFsharp-MigraDoc"
-      is the current, actively-maintained bundle of the MigraDoc.DocumentObjectModel/
-      MigraDoc.Rendering namespaces (the original Design phase named those as separate package IDs
-      that no longer exist on nuget.org — verified directly, see Directory.Packages.props comment);
-      it depends on the separate "PDFsharp" core package at the identical pinned version, so both
-      are pinned explicitly rather than letting PDFsharp ride in transitively unpinned.
+      MIT. "PDFsharp-MigraDoc" bundles the MigraDoc.DocumentObjectModel/MigraDoc.Rendering namespaces and depends on
+      "PDFsharp" at the identical version; both are pinned explicitly so PDFsharp never rides in unpinned.
     -->
     <PackageReference Include="PDFsharp" />
     <PackageReference Include="PDFsharp-MigraDoc" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Options" />
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
   </ItemGroup>
+
   <ItemGroup>
     <!--
-      Embedded so PDF rendering never depends on the host OS having any particular font installed —
-      PdfSharp 6.x performs no implicit OS font enumeration on any platform (see
-      Fonts/EmbeddedRobotoFontResolver.cs). Roboto is Apache License 2.0 (Fonts/LICENSE.txt),
-      permissive and redistribution-friendly, compatible with this MIT-licensed package.
+      Embedded so rendering never depends on the host having a font installed — PDFsharp 6.x enumerates no OS fonts.
+      Roboto is Apache License 2.0 (Fonts/LICENSE.txt), compatible with this MIT package.
     -->
     <EmbeddedResource Include="Fonts\Roboto-Regular.ttf" />
     <EmbeddedResource Include="Fonts\Roboto-Bold.ttf" />
     <None Include="Fonts\LICENSE.txt" Pack="true" PackagePath="Fonts\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="SharedKernel.Reporting.Pdf.Tests" />
   </ItemGroup>
 </Project>
