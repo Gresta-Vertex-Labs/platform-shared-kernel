@@ -1,58 +1,48 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <SharedKernelTier>Adapter</SharedKernelTier>
-    <SharedKernelAllowedAdapterReferences>SharedKernel.Communication.Internal</SharedKernelAllowedAdapterReferences>
+    <SharedKernelAllowedAdapterReferences>SharedKernel.Communication</SharedKernelAllowedAdapterReferences>
     <!-- NuGet packaging metadata -->
-    <Description>gRPC channel factory via Grpc.Net.ClientFactory, CorrelationTracingInterceptor (W3C OTel + x-correlation-id), TenantIdInterceptor (x-tenant-id plus actor/client), both reading the ambient caller from IRequestContextAccessor with no ASP.NET Core dependency, MoneyProtoExtensions (Money &lt;-&gt; decimal), TimestampProtoExtensions (Timestamp &lt;-&gt; DateTimeOffset), and fluent IGrpcCommunicationBuilder DI entry point.</Description>
-    <PackageTags>grpc;channel-factory;otel;tracing;correlation-id;tenant-id;protobuf;shared-kernel</PackageTags>
-    <!--
-      NU5104: a stable package must not depend on a prerelease package. Suppressed deliberately —
-      OpenTelemetry.Instrumentation.GrpcNetClient 1.15.1-beta.1 is the only available net10.0-compatible
-      version of this package today (documented in this domain's CLAUDE.md Technology Stack table);
-      pinning this package's own Version below 1.0.0 solely to silence NU5104 would be a worse
-      workaround than acknowledging the real, already-documented upstream constraint.
-    -->
-    <NoWarn>$(NoWarn);NU5104</NoWarn>
+    <Description>Typed gRPC clients for SharedKernel services: AddSharedKernelCommunication(configuration).AddGrpcClient&lt;Service.ServiceClient&gt;("name") over Grpc.Net.ClientFactory, with the address, deadline, retry policy, keepalive and credentials bound from SharedKernel:Communication:Clients:{name}. Every call carries the caller's correlation id, tenant, actor and client and gets a deadline; service discovery spreads calls across pods, so HTTP/2's long-lived connections do not pin one. Results, not exceptions: call.ToResultAsync() reads the rich status a platform service sends (ErrorInfo code, BadRequest field errors) back into the same Error. google.type.Money conversions for decimal and SharedKernel.Domain's Money.</Description>
+    <PackageReleaseNotes>First release.</PackageReleaseNotes>
+    <PackageTags>shared-kernel;grpc;grpc-client;client-factory;correlation-id;load-balancing;protobuf;money</PackageTags>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- Publish bar: ship XML docs, and fail the build on an undocumented or untracked public member. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <WarningsAsErrors>$(WarningsAsErrors);CS1591;RS0016;RS0017;RS0024;RS0025</WarningsAsErrors>
+  </PropertyGroup>
+
   <ItemGroup>
     <!--
-      Adapter tier (SKTIER001/002 enforce what it may reach). The 04.Contracts reference is
-      intentionally absent — gRPC uses Protobuf-generated types directly; PagedList<T> and
-      EventEnvelope<T> have no place in gRPC package code (G-13/P-163, a purity rule kept in
-      CommunicationLayeringRules). The only declared adapter edge is SharedKernel.Communication.Internal.
+      The declared adapter edge: the shared client base. Never SharedKernel.Contracts — protobuf messages are the gRPC
+      wire contract (CommunicationLayeringRules.GrpcNeverReferencesContracts). SharedKernel.Domain (Model tier) for
+      the Money conversions.
     -->
+    <ProjectReference Include="..\SharedKernel.Communication\SharedKernel.Communication.csproj" />
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
     <ProjectReference Include="..\..\01.Core\SharedKernel.Execution\SharedKernel.Execution.csproj" />
-    <!--
-      Intra-domain reference: .Internal is the foundational service-discovery package within 11.Communication.
-      Used for optional IServiceEndpointResolver integration in AddGrpcClient<TClient> (G-09).
-    -->
-    <ProjectReference Include="..\SharedKernel.Communication.Internal\SharedKernel.Communication.Internal.csproj" />
+    <ProjectReference Include="..\..\03.Domain\SharedKernel.Domain\SharedKernel.Domain.csproj" />
   </ItemGroup>
+
   <ItemGroup>
-    <!--
-      Grpc.Net.Client 2.80.0: channel and call invoker for .NET gRPC clients.
-      Grpc.Net.ClientFactory 2.80.0: IHttpClientFactory-based channel factory (singleton channel caching).
-      Google.Protobuf 3.35.1: required for MoneyProtoExtensions and TimestampProtoExtensions well-known types.
-        Money and Timestamp are Google Protobuf well-known types — pure static conversion, no reflection.
-      OpenTelemetry.Instrumentation.GrpcNetClient 1.15.1-beta.1: OTel gRPC instrumentation.
-        Still in beta but the only available option for net10.0; interceptors wrap it in try/catch.
-    -->
     <PackageReference Include="Grpc.Net.Client" />
     <PackageReference Include="Grpc.Net.ClientFactory" />
     <PackageReference Include="Google.Protobuf" />
-    <!--
-      Google.Api.CommonProtos 2.17.0: provides Google.Type.Money (units + nanos well-known type)
-      used by MoneyProtoExtensions. Also transitively provides Timestamp from Google.Protobuf.WellKnownTypes.
-    -->
+    <!-- google.type.Money, and google.rpc.Status/ErrorInfo/BadRequest for the rich status a platform service sends. -->
     <PackageReference Include="Google.Api.CommonProtos" />
-    <PackageReference Include="OpenTelemetry.Instrumentation.GrpcNetClient" />
+    <PackageReference Include="Grpc.StatusProto" />
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
   </ItemGroup>
+
   <ItemGroup>
-    <!-- Allow test project to access internal types (CorrelationTracingInterceptor, TenantIdInterceptor) -->
-    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
-      <_Parameter1>SharedKernel.Communication.Grpc.Tests</_Parameter1>
-    </AssemblyAttribute>
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="SharedKernel.Communication.Grpc.Tests" />
   </ItemGroup>
 </Project>

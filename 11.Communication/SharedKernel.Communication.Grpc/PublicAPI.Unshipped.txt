@@ -1,0 +1,47 @@
+#nullable enable
+SharedKernel.Communication.GrpcClientOptions
+SharedKernel.Communication.GrpcClientOptions.Address.get -> System.Uri?
+SharedKernel.Communication.GrpcClientOptions.Address.set -> void
+SharedKernel.Communication.GrpcClientOptions.Deadline.get -> System.TimeSpan
+SharedKernel.Communication.GrpcClientOptions.Deadline.set -> void
+SharedKernel.Communication.GrpcClientOptions.GrpcClientOptions() -> void
+SharedKernel.Communication.GrpcClientOptions.KeepAlive.get -> SharedKernel.Communication.GrpcKeepAliveOptions!
+SharedKernel.Communication.GrpcClientOptions.KeepAlive.set -> void
+SharedKernel.Communication.GrpcClientOptions.MaxReceiveMessageSize.get -> int?
+SharedKernel.Communication.GrpcClientOptions.MaxReceiveMessageSize.set -> void
+SharedKernel.Communication.GrpcClientOptions.Retry.get -> SharedKernel.Communication.GrpcRetryOptions!
+SharedKernel.Communication.GrpcClientOptions.Retry.set -> void
+SharedKernel.Communication.GrpcCommunicationBuilderExtensions
+SharedKernel.Communication.GrpcKeepAliveOptions
+SharedKernel.Communication.GrpcKeepAliveOptions.GrpcKeepAliveOptions() -> void
+SharedKernel.Communication.GrpcKeepAliveOptions.PingDelay.get -> System.TimeSpan
+SharedKernel.Communication.GrpcKeepAliveOptions.PingDelay.set -> void
+SharedKernel.Communication.GrpcKeepAliveOptions.PingTimeout.get -> System.TimeSpan
+SharedKernel.Communication.GrpcKeepAliveOptions.PingTimeout.set -> void
+SharedKernel.Communication.GrpcResultExtensions
+SharedKernel.Communication.GrpcRetryOptions
+SharedKernel.Communication.GrpcRetryOptions.BackoffMultiplier.get -> double
+SharedKernel.Communication.GrpcRetryOptions.BackoffMultiplier.set -> void
+SharedKernel.Communication.GrpcRetryOptions.GrpcRetryOptions() -> void
+SharedKernel.Communication.GrpcRetryOptions.InitialBackoff.get -> System.TimeSpan
+SharedKernel.Communication.GrpcRetryOptions.InitialBackoff.set -> void
+SharedKernel.Communication.GrpcRetryOptions.MaxAttempts.get -> int
+SharedKernel.Communication.GrpcRetryOptions.MaxAttempts.set -> void
+SharedKernel.Communication.GrpcRetryOptions.MaxBackoff.get -> System.TimeSpan
+SharedKernel.Communication.GrpcRetryOptions.MaxBackoff.set -> void
+SharedKernel.Communication.GrpcRetryOptions.RetryableStatusCodes.get -> System.Collections.Generic.IList<Grpc.Core.StatusCode>?
+SharedKernel.Communication.GrpcRetryOptions.RetryableStatusCodes.set -> void
+SharedKernel.Communication.IGrpcClientBuilder
+SharedKernel.Communication.IGrpcClientBuilder.Configure(System.Action<SharedKernel.Communication.GrpcClientOptions!>! configure) -> SharedKernel.Communication.IGrpcClientBuilder!
+SharedKernel.Communication.IGrpcClientBuilder.HttpClientBuilder.get -> Microsoft.Extensions.DependencyInjection.IHttpClientBuilder!
+SharedKernel.Communication.IGrpcClientBuilder.Name.get -> string!
+SharedKernel.Communication.IGrpcClientBuilder.UseAccessTokenProvider<TProvider>() -> SharedKernel.Communication.IGrpcClientBuilder!
+SharedKernel.Communication.MoneyProtoExtensions
+override SharedKernel.Communication.GrpcClientOptions.Validate(System.ComponentModel.DataAnnotations.ValidationContext! validationContext) -> System.Collections.Generic.IEnumerable<System.ComponentModel.DataAnnotations.ValidationResult!>!
+static SharedKernel.Communication.GrpcCommunicationBuilderExtensions.AddGrpcClient<TClient>(this SharedKernel.Communication.ICommunicationBuilder! builder, string! name, System.Action<SharedKernel.Communication.IGrpcClientBuilder!>? configure = null) -> SharedKernel.Communication.ICommunicationBuilder!
+static SharedKernel.Communication.GrpcResultExtensions.ToError(this Grpc.Core.RpcException! exception) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Communication.GrpcResultExtensions.ToResultAsync<TResponse>(this Grpc.Core.AsyncUnaryCall<TResponse>! call, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<TResponse>!>!
+static SharedKernel.Communication.MoneyProtoExtensions.ToDecimal(this Google.Type.Money! money) -> decimal
+static SharedKernel.Communication.MoneyProtoExtensions.ToMoney(this Google.Type.Money! money) -> SharedKernel.Primitives.Results.ValidationResult<SharedKernel.Domain.Monetary.Money!>!
+static SharedKernel.Communication.MoneyProtoExtensions.ToMoneyProto(this SharedKernel.Domain.Monetary.Money! money) -> Google.Type.Money!
+static SharedKernel.Communication.MoneyProtoExtensions.ToMoneyProto(this decimal amount, string! currencyCode) -> Google.Type.Money!
