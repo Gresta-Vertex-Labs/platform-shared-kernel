@@ -13,6 +13,7 @@ has nothing but the published artifacts.
 | [`ShippingApi`](ShippingApi/) | Messaging: publish/send over RabbitMQ, delayed delivery, consumer idempotency, retries and faults, the caller's tenant, actor and correlation id carried to the consumer | RabbitMQ (Testcontainers, `masstransit/rabbitmq` for the delayed-exchange plugin); Docker Compose for running it by hand |
 | [`DocumentsApi`](DocumentsApi/) | Object storage: named and tenant stores on two S3 connections plus OBS, presigned links and forms, multipart; reporting: CSV/Excel/PDF exports picked at runtime and HTML → PDF, streamed into a store | MinIO and Gotenberg (Testcontainers); optionally real Amazon S3 and Huawei Cloud OBS (`SK_LIVE_*`) |
 | [`CatalogApi`](CatalogApi/) | Search: both engines side by side against different document types, the neutral contracts plus each engine's exclusive ones, stream queries | Meilisearch and Elasticsearch (Docker, see its README) |
+| [`CheckoutApi`](CheckoutApi/) → [`InventoryApi`](InventoryApi/) | **Calling another service**: typed REST and gRPC clients configured from `appsettings.json`, service discovery, an API key, safe retries with `Idempotency-Key`, the caller carried across, the other service's errors returned as its own (`Result`, not exceptions), `google.type.Money` | none — the tests run both on loopback ports |
 
 ## The shape of a service
 
@@ -186,6 +187,8 @@ Beyond that, each sample shows what its domain needs from the boundary:
 | `DocumentsApi` | Lifting the 4 MiB request-body limit for one streaming endpoint (`WithRequestSizeLimit`); storage preconditions from `If-None-Match`/`If-Match` as 412, the same conflict without a header as 409 |
 | `CatalogApi` | An engine outage as 503 and a timeout as 504, with internal detail shown only in Development |
 | `ShippingApi` | 202 Accepted with a `Location` for asynchronous work (`ToAccepted`); a broker outage as 503 |
+| `CheckoutApi` | A downstream service's ProblemDetails and gRPC statuses passed through with their codes (404, 409, 400 with field errors); the downstream down as 503 `communication.unreachable` |
+| `InventoryApi` | One service on two ports (REST over HTTP/1.1, gRPC over HTTP/2) behind an API key; `Idempotency-Key` read with an `IdempotencyKey?` parameter; a failed query as a gRPC rich status (`GetValueOrThrow()`) |
 
 ## A short tour
 
@@ -220,6 +223,15 @@ one host, each against its own document type; tenant scoping on every read (tena
 in the route), qualified counts, index-level synonyms and stop words, drift verification, and the
 engine-exclusive contracts that turn a provider swap into build errors. CI smoke-tests it against both
 engines.
+
+**[CheckoutApi](CheckoutApi/) → [InventoryApi](InventoryApi/)** — two services talking. CheckoutApi registers two
+clients in one chain, `AddSharedKernelCommunication(configuration).AddRestClient<IInventoryClient, InventoryClient>("inventory").AddGrpcClient<Inventory.InventoryClient>("inventory-grpc")`,
+with everything else in `appsettings.json`: addresses that name a service (`http://inventory`,
+`http://_grpc.inventory`) resolved through the `Services` section, the API key, and an `Idempotency-Key` on POSTs so
+the reservation can be retried. A checkout prices over gRPC (`ToResultAsync()`, `google.type.Money` → `Money`) and
+reserves over REST (`PostResultAsync`); every failure is a `Result`, so InventoryApi's 404, 409 and field errors reach
+CheckoutApi's caller unchanged. The tests start InventoryApi on real Kestrel ports and prove that the correlation id
+and idempotency key arrive, a replayed key reserves once, a wrong key is refused, and InventoryApi down is a 503.
 
 ## Building and running them
 

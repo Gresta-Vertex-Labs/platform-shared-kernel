@@ -79,7 +79,7 @@ needs the basics), so a test project takes only what it tests:
 | `SharedKernel.Integration.Testing` | Webhooks and notifications |
 | `SharedKernel.Reporting.Testing` | `IReportExporter<TRow>` |
 | `SharedKernel.Idempotency.Testing` | `IIdempotencyStore` |
-| `SharedKernel.Communication.Testing` | `IServiceEndpointResolver`, gRPC `ServerCallContext` |
+| `SharedKernel.Communication.Testing` | REST and gRPC clients (`StubHttpMessageHandler`, `GrpcCalls`), gRPC `ServerCallContext` |
 | `SharedKernel.Presentation.Testing` | gRPC server context with `HttpContext`, HotChocolate executor, `IHttpContextAccessor` |
 | `SharedKernel.ServiceDefaults.Testing` | `ITenantCatalog`, tenant resolution, health checks |
 
