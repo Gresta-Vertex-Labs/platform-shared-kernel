@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+// The gRPC contract of InventoryApi; CheckoutApi generates its client from this same file.
+option csharp_namespace = "InventoryApi.Grpc";
+
+package inventory.v1;
+
+import "google/type/money.proto";
+
+service Inventory {
+  // A SKU's stock and unit price. NOT_FOUND with reason inventory.sku_not_found for an unknown SKU.
+  rpc GetStock (GetStockRequest) returns (StockReply);
+}
+
+message GetStockRequest {
+  string sku = 1;
+}
+
+message StockReply {
+  string sku = 1;
+  int32 available = 2;
+  google.type.Money unit_price = 3;
+}
