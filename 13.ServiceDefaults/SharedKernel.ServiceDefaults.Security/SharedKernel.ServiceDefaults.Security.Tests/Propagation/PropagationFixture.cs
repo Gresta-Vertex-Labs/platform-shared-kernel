@@ -11,8 +11,8 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using SharedKernel.Communication.Grpc.Extensions;
-using SharedKernel.Communication.Rest.Extensions;
+using Microsoft.Extensions.Configuration;
+using SharedKernel.Communication;
 using SharedKernel.Execution.Context;
 using SharedKernel.Execution.Tenancy;
 using SharedKernel.Messaging.Abstractions.MessageBus;
@@ -215,12 +215,13 @@ internal sealed class FrontService : IAsyncDisposable
         services.AddScoped<IUserContext>(_ => new FakeUserContext { SubjectId = UserId, TenantId = tenant });
         services.AddSharedKernelRequestContext();
 
-        AddDownstreamRestClient(services, downstream);
+        AddDownstreamRestClient(services, builder.Configuration, downstream);
 
-        services.AddSharedKernelGrpcCommunication().AddGrpcClient<PropagationProbe.PropagationProbeClient>("http://downstream");
-        services.AddHttpClient(typeof(PropagationProbe.PropagationProbeClient).Name)
-            .AddHttpMessageHandler(() => new ResponseVersionHandler())
-            .ConfigurePrimaryHttpMessageHandler(downstream.CreateHandler);
+        services.AddSharedKernelCommunication(builder.Configuration).AddGrpcClient<PropagationProbe.PropagationProbeClient>(
+            "downstream-grpc",
+            client => client
+                .Configure(o => o.Address = new Uri("http://downstream"))
+                .HttpClientBuilder.ConfigurePrimaryHttpMessageHandler(() => new ResponseVersionHandler { InnerHandler = downstream.CreateHandler() }));
 
         // The bus, on MassTransit's in-memory transport, with the platform's caller propagation both ways.
         services.AddSharedKernelMessaging(o => o.ServiceName = "front-service").WithInboundRequestContext();
@@ -262,15 +263,16 @@ internal sealed class FrontService : IAsyncDisposable
         return new FrontService(app);
     }
 
-    public static void AddDownstreamRestClient(IServiceCollection services, DownstreamService downstream)
-    {
-        services.AddSharedKernelRestCommunication().AddRestClient<DownstreamRestClient>("downstream", o =>
-        {
-            o.BaseAddress = "http://downstream";
-            o.EnableIdempotencyKeyPropagation = true;
-        });
-        services.AddHttpClient<DownstreamRestClient>().ConfigurePrimaryHttpMessageHandler(downstream.CreateHandler);
-    }
+    public static void AddDownstreamRestClient(IServiceCollection services, IConfiguration configuration, DownstreamService downstream) =>
+        services.AddSharedKernelCommunication(configuration).AddRestClient<DownstreamRestClient>(
+            "downstream",
+            client => client
+                .Configure(o =>
+                {
+                    o.BaseAddress = new Uri("http://downstream");
+                    o.PropagateIdempotencyKey = true;
+                })
+                .HttpClientBuilder.ConfigurePrimaryHttpMessageHandler(downstream.CreateHandler));
 
     public ValueTask DisposeAsync() => _app.DisposeAsync();
 }
@@ -299,7 +301,7 @@ internal sealed class JobService : IAsyncDisposable
         var clock = new FakeClock(start);
         builder.Services.AddSingleton<IClock>(clock);
         builder.Services.AddSharedKernelApplication(typeof(CallDownstreamCommand).Assembly, app => app.UseMediatR());
-        FrontService.AddDownstreamRestClient(builder.Services, downstream);
+        FrontService.AddDownstreamRestClient(builder.Services, builder.Configuration, downstream);
 
         builder.Services
             .AddSharedKernelScheduling(o => o.TickInterval = TimeSpan.FromMilliseconds(150))
