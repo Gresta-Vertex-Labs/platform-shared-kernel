@@ -1,7 +1,7 @@
 using System.Text.Json;
 using SharedKernel.Primitives.Errors;
 
-namespace SharedKernel.Communication.Rest.ProblemDetails;
+namespace SharedKernel.Communication.Rest.Internal;
 
 /// <summary>
 /// Deserializes <c>application/problem+json</c> response bodies into <see cref="Error"/> instances.

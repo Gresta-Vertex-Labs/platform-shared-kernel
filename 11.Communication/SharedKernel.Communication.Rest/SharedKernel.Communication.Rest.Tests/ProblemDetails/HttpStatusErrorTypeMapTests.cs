@@ -1,4 +1,4 @@
-using SharedKernel.Communication.Rest.ProblemDetails;
+using SharedKernel.Communication.Rest.Internal;
 using SharedKernel.Primitives.Errors;
 
 namespace SharedKernel.Communication.Rest.Tests.ProblemDetails;

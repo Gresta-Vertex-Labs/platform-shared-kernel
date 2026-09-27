@@ -1,4 +1,4 @@
-namespace SharedKernel.Communication.Rest.ProblemDetails;
+namespace SharedKernel.Communication.Rest.Internal;
 
 /// <summary>
 /// Internal DTO holding the members of an RFC 9457 Problem Details body that

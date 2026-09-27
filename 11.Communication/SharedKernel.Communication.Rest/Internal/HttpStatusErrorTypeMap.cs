@@ -1,6 +1,6 @@
 using SharedKernel.Primitives.Errors;
 
-namespace SharedKernel.Communication.Rest.ProblemDetails;
+namespace SharedKernel.Communication.Rest.Internal;
 
 /// <summary>
 /// Maps an HTTP status code back to the <see cref="ErrorType"/> that produced it.

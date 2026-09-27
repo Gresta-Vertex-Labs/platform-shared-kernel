@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace SharedKernel.Communication.Rest.ProblemDetails;
+namespace SharedKernel.Communication.Rest.Internal;
 
 /// <summary>
 /// STJ source-generated serialization context for <see cref="ProblemDetailsDto"/>.
