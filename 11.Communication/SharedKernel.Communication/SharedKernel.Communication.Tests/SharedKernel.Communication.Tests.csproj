@@ -1,16 +1,14 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <IsPackable>false</IsPackable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
+  <!-- Unit lane: no network, no Docker. Token endpoints and servers are StubHttpMessageHandlers; certificates are made in memory. -->
   <ItemGroup>
-    <ProjectReference Include="..\SharedKernel.Communication.Internal.csproj" />
+    <ProjectReference Include="..\SharedKernel.Communication.csproj" />
     <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
-    <!--
-      Test-project-only reference (T-28, WO-041 P-255) — never from the production .csproj.
-      Used to invoke 00.Governance's LoggingEventIdIntegrityAssertion against the real, compiled
-      SharedKernel.Communication.Internal assembly, mirroring the established cross-domain precedent
-      (SharedKernel.Application.Pipeline.Tests, SharedKernel.Messaging.MassTransit.Tests).
-    -->
+    <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Communication.Testing\SharedKernel.Communication.Testing.csproj" />
+    <!-- Test-only: the real-assembly EventId integrity check. -->
     <ProjectReference Include="..\..\..\00.Governance\SharedKernel.ArchitectureTests\SharedKernel.ArchitectureTests.csproj" />
   </ItemGroup>
   <ItemGroup>
@@ -24,12 +22,11 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <!-- Bumped 8.4.0 -> 8.10.0 (T-28): SharedKernel.ArchitectureTests pins 8.10.0; NU1605 otherwise. -->
     <PackageReference Include="FluentAssertions" />
-    <PackageReference Include="NSubstitute" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Hosting" />
-    <PackageReference Include="Microsoft.Extensions.Options" />
+  </ItemGroup>
+  <ItemGroup>
+    <Using Include="Xunit" />
+    <Using Include="FluentAssertions" />
   </ItemGroup>
 </Project>
