@@ -1,12 +1,33 @@
 # SharedKernel.Idempotency.Redis
 
-Atomic, tenant-scoped, Redis-backed implementation of `SharedKernel.Idempotency.Abstractions`' `IIdempotencyStore`,
-the one reservation contract behind the application pipeline's command idempotency and MassTransit's consumer
-idempotency. See [that package's README](../SharedKernel.Idempotency.Abstractions/README.md) for the contract and
-how each caller uses it.
+[![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
+![Tier: Adapter](https://img.shields.io/badge/tier-Adapter-6f42c1)
+![Fail closed](https://img.shields.io/badge/store%20outage-fail%20closed-critical)
 
-**Tier:** Adapter. References `SharedKernel.Idempotency.Abstractions`, `SharedKernel.Primitives` and
-`SharedKernel.Caching.Redis.Core` (its one declared adapter edge) — never `06.Persistence`.
+> **The Redis implementation of `IIdempotencyStore`: every reservation, completion and release is one Lua script, so
+> a duplicate command or message is classified in one atomic round trip, scoped by tenant, over the service's shared
+> Redis connection.**
+
+| You get | So that |
+| --- | --- |
+| `AddRedisIdempotency(p => p.ForRequests().ForMessages())` | One call backs command idempotency, consumer deduplication, or both |
+| One Lua script per operation | No `WATCH`/`MULTI` loop and no check-then-act window |
+| Keys under `sk:idempotency:{tenantScope}:…` | A key can never collide across tenants or between requests and messages |
+| Self-expiring entries (`ttl`, then `retention`) | A crashed caller cannot wedge a key and no cleanup job is needed |
+| Fail closed, with one explicit fail-open switch | An outage never silently turns into duplicate execution |
+| The shared `IConnectionMultiplexer` | TLS, timeouts and the `redis` readiness probe are configured once |
+
+## Contents
+
+- [Install](#install)
+- [Quick start](#quick-start)
+- [How it works](#how-it-works)
+- [Configuration](#configuration)
+- [Reference](#reference)
+- [Testing](#testing)
+- [Pitfalls](#pitfalls)
+- [Design decisions](#design-decisions)
 
 ## Install
 
@@ -14,80 +35,146 @@ how each caller uses it.
 <PackageReference Include="SharedKernel.Idempotency.Redis" />
 ```
 
-Versions come from your single `SharedKernelVersion` property (the repository's `PLATFORM.md`, "Consuming the
-kernel").
+The version comes from your central `SharedKernelVersion` property — every SharedKernel package ships at the same
+version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel#using-the-packages).
+
+| Requirement | Value |
+| --- | --- |
+| Target framework | `net10.0` |
+| Tier | Adapter — reference it from your **Infrastructure** project |
+| Depends on | `SharedKernel.Idempotency.Abstractions`, `SharedKernel.Caching.Redis.Core`, `SharedKernel.Primitives` |
+| Namespaces | `SharedKernel.Idempotency.Redis.Extensions`, `.Options`, `.Store` |
 
 ## Quick start
 
 ```csharp
-services.AddRedisConnection(configuration);                  // 02.Caching.Redis.Core — the shared connection
-services.AddRedisIdempotency(p => p.ForRequests().ForMessages());
+using SharedKernel.Caching.Redis.Core.Extensions;
+using SharedKernel.Idempotency.Redis.Extensions;
 
-// optional: the single fail-open switch (default: fail closed)
-services.AddRedisIdempotency(p => p.ForRequests(), o => o.AllowExecutionOnStoreUnavailable = true);
+builder.Services.AddRedisConnection(builder.Configuration);          // the shared connection — first
+builder.Services.AddRedisIdempotency(p => p.ForRequests().ForMessages());
 ```
 
-`AddRedisIdempotency` registers `RedisIdempotencyStore` as the keyed `IIdempotencyStore` for every selected
-purpose. It throws when `AddRedisConnection` has not been called, when no purpose is selected, or when a store is
-already registered for a selected purpose. It registers the ambient `IRequestContextAccessor` unless one exists.
-The reservation lease and the retention window are passed by the caller on every call
-(`IdempotencyBehaviorOptions`, messaging's `IdempotencyOptions`), so this package has no TTL settings.
-
-## Storage shape and atomicity
-
-Each entry is one Redis hash — `status` (`InProgress`/`Completed`), `fingerprint`, `token` and, once completed with
-a response, `response` — keyed as:
-
-```
-sk:idempotency:{tenantScope}:key:{key}         IdempotencyPurpose.Request
-sk:idempotency:{tenantScope}:msg:{messageId}   IdempotencyPurpose.Message
+```json
+{
+  "SharedKernel": {
+    "Caching": {
+      "Redis": { "ConnectionString": "redis.internal:6380", "Ssl": true }
+    }
+  }
+}
 ```
 
-`{key}` is the key passed to `TryBeginAsync` exactly as given. For `IdempotencyPurpose.Request` it is, through
-`IdempotencyBehavior`, never the command's raw key but a SHA-256 digest of tenant, caller and key (64 lowercase hex
-characters, P-562 X3), so a reservation belongs to one caller of one tenant and another caller using the same key
-cannot be handed its stored response. The `{tenantScope}` segment stays on top of that.
+Nothing else calls the store directly: `app.WithIdempotency()` on `AddSharedKernelApplication` and
+`MessagingBusBuilder.WithIdempotency()` resolve it by purpose. To call it yourself, inject
+`[FromKeyedServices(IdempotencyPurpose.Request)] IIdempotencyStore` — see the
+[contract README](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/18.Idempotency/SharedKernel.Idempotency.Abstractions/README.md).
 
-`{tenantScope}` is `IdempotencyTenantScope`'s encoding: the tenant id in "D" form, or `no-tenant`. `TryBeginAsync`,
-`CompleteAsync` and `ReleaseAsync` are each one Lua script — one atomic round trip comparing fingerprint, token and
-status and mutating the hash in the same call; no `WATCH`/`MULTI` loop and no check-then-act window. A new
-reservation's hash expires after the caller's `ttl`; `CompleteAsync` extends it to the caller's `retention`.
-`CompleteAsync` and `ReleaseAsync` act only while the supplied token owns an `InProgress` entry, so a late call
-from a caller whose reservation expired and was reclaimed returns `false` and touches nothing, and a completed
-entry is never released.
+## How it works
 
-**Persisted format (P-568).** Request keys and hashes are byte-identical to the previous
-`RedisRequestIdempotencyStore`. Message entries changed from a plain string (token or a completed sentinel) to the
-same hash shape as requests, under the same `…:msg:{messageId}` key; an old string-valued message key fails with
-`WRONGTYPE`, so flush those keys when upgrading (nothing was in production).
+```mermaid
+sequenceDiagram
+    participant C as Caller (pipeline / consumer)
+    participant S as RedisIdempotencyStore
+    participant R as Redis
+    C->>S: TryBeginAsync(purpose, key, fingerprint, ttl)
+    S->>R: EVAL begin.lua (one round trip)
+    R-->>S: Started(token) | InProgress | Completed(response) | FingerprintMismatch
+    C->>S: CompleteAsync(token, response, retention) or ReleaseAsync(token)
+    S->>R: EVAL complete.lua / release.lua — only if token owns an InProgress entry
+```
 
-## Fail-closed by default
+- **One hash per entry** — fields `status` (`InProgress`/`Completed`), `fingerprint`, `token` and, once completed
+  with a response, `response` — at:
 
-When Redis is unreachable every call throws. `RedisIdempotencyOptions.AllowExecutionOnStoreUnavailable = true`
-instead lets `TryBeginAsync` return `Started` (and `CompleteAsync`/`ReleaseAsync` return `false`), logging
-EventId 18000 at Warning.
+  ```text
+  sk:idempotency:{tenantScope}:key:{key}   IdempotencyPurpose.Request
+  sk:idempotency:{tenantScope}:msg:{key}   IdempotencyPurpose.Message
+  ```
 
-> **ENABLING `AllowExecutionOnStoreUnavailable` INCREASES DUPLICATE-EXECUTION RISK.** While the store is
-> unreachable, every call — including genuine duplicates — is treated as new. It applies to every purpose the
-> registration serves.
+  `{tenantScope}` is `IdempotencyTenantScope`'s encoding (the tenant id in "D" form, or `no-tenant`), read from the
+  ambient `IRequestContextAccessor`. `{key}` is stored exactly as given; for requests it is already a 64-hex digest
+  of tenant, caller and key, built by the application pipeline.
+- **Atomic.** `TryBeginAsync`, `CompleteAsync` and `ReleaseAsync` are each one Lua script that compares fingerprint,
+  token and status and mutates the hash in the same call. The fingerprint is compared before the status.
+- **Expiry.** A new reservation expires after the caller's `ttl`; `CompleteAsync` extends it to the caller's
+  `retention`. The caller owns both values, so this package has no TTL settings.
+- **Token-conditional.** `CompleteAsync`/`ReleaseAsync` act only while the token owns an `InProgress` entry and
+  return `false` otherwise; a completed entry is never released.
+- **Lifetime.** The store is scoped (one instance per keyed registration); the multiplexer underneath is the shared
+  singleton. The package never opens its own connection.
 
-## Registration lifetime
+## Configuration
 
-The store is `Scoped`; the shared `IConnectionMultiplexer` underneath stays a singleton.
+Options are set through the `configure` delegate; the registration does not bind a configuration section (the
+`RedisIdempotencyOptions.SectionName` constant, `SharedKernel:Idempotency:Redis`, is reserved for that).
 
-## Upgrading from the pre-WO-086 API
+| Option | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `RedisIdempotencyOptions.AllowExecutionOnStoreUnavailable` | `bool` | `false` | On a Redis connectivity or timeout failure, `TryBeginAsync` returns `Started` and `CompleteAsync`/`ReleaseAsync` return `false`, instead of throwing. Applies to every purpose of the registration |
 
-| Before | Now |
+```csharp
+builder.Services.AddRedisIdempotency(p => p.ForMessages(), o => o.AllowExecutionOnStoreUnavailable = true);
+```
+
+The connection itself is configured by `SharedKernel.Caching.Redis.Core` under `SharedKernel:Caching:Redis`.
+
+## Reference
+
+### Registration
+
+| Method | Registers |
 | --- | --- |
-| `AddSharedKernelRedisIdempotency(o => …)` | `AddRedisIdempotency(p => p.ForRequests().ForMessages(), o => …)` — purposes are explicit |
-| `RedisRequestIdempotencyStore` + `RedisIdempotencyMessageStore` (two contracts) | `RedisIdempotencyStore`, one `IIdempotencyStore` keyed by `IdempotencyPurpose` |
-| `RedisIdempotencyOptions.InFlightTtl` / `.RetentionWindow` | Removed — the caller passes them: `IdempotencyBehaviorOptions.LeaseDuration`/`RetentionWindow`, messaging `IdempotencyOptions.LeaseDuration`/`ExpiryWindow` |
-| Tenant from Messaging's `ITenantContextAccessor` (startup check required one) | Tenant from the ambient `IRequestContextAccessor`; no startup validator |
-| Message entries stored as plain strings | Hashes, like request entries — flush old `sk:idempotency:*:msg:*` keys (see "Persisted format" above) |
+| `AddRedisIdempotency(Action<IdempotencyPurposeSelection> purposes, Action<RedisIdempotencyOptions>? configure = null)` | `RedisIdempotencyStore` as the keyed `IIdempotencyStore` for each selected purpose (scoped); `IRequestContextAccessor` unless one exists |
 
-## Related packages
+It throws `InvalidOperationException` when `AddRedisConnection` has not been called, when no purpose is selected, or
+when a store is already registered for a selected purpose.
 
-- [`SharedKernel.Idempotency.Abstractions`](../SharedKernel.Idempotency.Abstractions/README.md) — the contract.
-- [`SharedKernel.Idempotency.EfCore`](../SharedKernel.Idempotency.EfCore/README.md) — the PostgreSQL sibling.
-- `SharedKernel.Caching.Redis.Core` (`02.Caching`) — `AddRedisConnection`, the shared connection and its `redis` readiness probe.
-- `SharedKernel.Idempotency.Testing` (`16.Testing`) — `FakeIdempotencyStore` for unit tests.
+### Failure classification
+
+Only `RedisConnectionException`, `RedisTimeoutException`, `RedisServerException` and `TimeoutException` count as
+"store unavailable". Anything else propagates regardless of the option.
+
+### Logging
+
+| Event id | Level | Event |
+| --- | --- | --- |
+| 18000 | Warning | Redis idempotency store was unavailable during `{Operation}`; `AllowExecutionOnStoreUnavailable` is enabled, so the call proceeds as not-yet-processed |
+
+### Health
+
+No probe of its own: the shared connection registers the `redis` readiness probe.
+
+## Testing
+
+Unit tests use [`SharedKernel.Idempotency.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/16.Testing/SharedKernel.Idempotency.Testing/README.md):
+`services.AddFakeIdempotencyStore()` replaces this store with an in-memory `FakeIdempotencyStore` that follows the
+same protocol. Atomicity, tenant isolation and expiry claims need a real Redis (for example Testcontainers); a fake
+is not evidence for them.
+
+## Pitfalls
+
+| Don't | Do | Why |
+| --- | --- | --- |
+| Call `AddRedisIdempotency` before `AddRedisConnection` | Register the shared connection first | The registration throws without it |
+| Turn on `AllowExecutionOnStoreUnavailable` by default | Leave it off unless running twice is safer than not running | While Redis is down every call — duplicates included — is treated as new |
+| Expect settings under `SharedKernel:Idempotency:Redis` | Use the `configure` delegate | The section is not bound |
+| Put Redis under `allkeys-*` eviction without headroom | Size memory for `retention`, or use `volatile-*` policies | An evicted entry lets a duplicate run |
+| Register a second store for the same purpose | One store per purpose | The registration throws |
+
+## Design decisions
+
+**Why Lua instead of `WATCH`/`MULTI`?** A script runs atomically on the server in one round trip; an optimistic
+transaction retries under contention and still needs a read first.
+
+**Why no private connection?** One multiplexer per process is the Redis guidance, and it keeps TLS, timeouts and the
+readiness probe in one place (`SharedKernel.Caching.Redis.Core`).
+
+**Why hashes for messages too?** Requests and messages share one shape and one set of scripts; only the key segment
+(`key` or `msg`) differs.
+
+---
+
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
+[Idempotency domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/18.Idempotency/README.md) ·
+[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

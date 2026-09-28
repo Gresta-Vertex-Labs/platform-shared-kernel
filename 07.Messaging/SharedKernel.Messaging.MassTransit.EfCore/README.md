@@ -2,42 +2,52 @@
 
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
-[![MassTransit 8.5](https://img.shields.io/badge/MassTransit-8.5.x%20(Apache--2.0)-512BD4)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/07.Messaging/README.md#why-masstransit-85-and-not-9x)
+![Tier: Adapter](https://img.shields.io/badge/tier-Adapter-6f42c1)
 ![Public API: tracked](https://img.shields.io/badge/public%20API-tracked-informational)
+![Delivery: at least once](https://img.shields.io/badge/delivery-at%20least%20once-orange)
 
 > **MassTransit's EF Core transactional outbox for
 > [`SharedKernel.Messaging.MassTransit`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/07.Messaging/SharedKernel.Messaging.MassTransit/README.md),
-> over your service's own `DbContext`: messages published inside a unit of work are written in the same
+> over your service's own `DbContext`: a message published inside a unit of work is written in the same
 > transaction as your data and delivered after the commit.**
 
-No lost event when the process dies between the commit and the publish, and no phantom event when the transaction
-rolls back. The core package does not reference EF Core; reference this package only in the startup project of a
-service that uses the outbox.
+| You get | So that |
+| --- | --- |
+| `WithEntityFrameworkOutbox<TDbContext>()` on the bus builder | The outbox is one line, combinable with either transport |
+| Messages stored in your transaction | No lost event when the process dies after commit, no phantom event after a rollback |
+| Background delivery after commit | Publishing never waits on the broker inside a transaction |
+| `OutboxOptions.Database` (PostgreSQL by default) | The delivery poller locks rows with SQL your database accepts |
+| A separate package | The core carries no EF Core dependency |
 
 ## Install
 
 ```xml
 <PackageReference Include="SharedKernel.Messaging.MassTransit" />
 <PackageReference Include="SharedKernel.Messaging.MassTransit.EfCore" />
-<!-- plus one transport: .RabbitMq or .AzureServiceBus -->
+<!-- plus one transport: SharedKernel.Messaging.MassTransit.RabbitMq or .AzureServiceBus -->
 ```
 
-Versions come from your single `SharedKernelVersion`. **Adapter** tier; references the MassTransit core (a declared
-Adapter → Adapter edge), `MassTransit.EntityFrameworkCore` 8.5.x (not `MassTransit.EntityFrameworkCoreIntegration`)
-and `Microsoft.EntityFrameworkCore`. It does **not** reference `06.Persistence`: your `DbContext` arrives as a
-generic type parameter, and no outbox type is defined anywhere in the persistence packages.
+The version comes from your central `SharedKernelVersion` property — every SharedKernel package ships at the same
+version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel#using-the-packages).
 
-## Registration
+| Requirement | Value |
+| --- | --- |
+| Target framework | `net10.0` |
+| Tier | Adapter — reference it from your **Api/Worker** (startup) project |
+| Depends on | `SharedKernel.Messaging.MassTransit` (declared adapter edge), `MassTransit.EntityFrameworkCore` 8.5.x, `Microsoft.EntityFrameworkCore` |
+| Namespaces | `SharedKernel.Messaging.MassTransit.Extensions` (`WithEntityFrameworkOutbox`), `SharedKernel.Messaging.MassTransit.Options` (`OutboxOptions`, `OutboxDatabase`) |
 
-`WithEntityFrameworkOutbox<TDbContext>` is an extension method on `MessagingBusBuilder`, declared in the builder's
-own namespace (`SharedKernel.Messaging.MassTransit.Extensions`), so the chain needs no extra `using`. It is built on
-the core's `ConfigureMassTransit(...)` extension point and combines with either transport. Call it once.
+It does **not** reference `06.Persistence`: your `DbContext` arrives as a type parameter.
+
+## Quick start
 
 ```csharp
+using SharedKernel.Messaging.MassTransit.Extensions;
+
 builder.Services
     .AddSharedKernelMessaging(builder.Configuration)
     .UseRabbitMq(builder.Configuration.GetConnectionString("rabbitmq")!)
-    .WithEntityFrameworkOutbox<OrdersDbContext>(o => o.QueryDelay = TimeSpan.FromSeconds(1))
+    .WithEntityFrameworkOutbox<OrdersDbContext>()
     .WithRetry()
     .AddConsumer<OrderPlacedConsumer>()
     .Build();
@@ -47,15 +57,15 @@ Map MassTransit's outbox entities in the context and add a migration — the ser
 exist before the bus starts:
 
 ```csharp
-public sealed class OrdersDbContext(DbContextOptions<OrdersDbContext> options) : DbContext(options)
+using MassTransit;
+using Microsoft.EntityFrameworkCore;
+
+protected override void OnModelCreating(ModelBuilder modelBuilder)
 {
-    protected override void OnModelCreating(ModelBuilder modelBuilder)
-    {
-        base.OnModelCreating(modelBuilder);
-        modelBuilder.AddInboxStateEntity();
-        modelBuilder.AddOutboxMessageEntity();
-        modelBuilder.AddOutboxStateEntity();
-    }
+    base.OnModelCreating(modelBuilder);
+    modelBuilder.AddInboxStateEntity();
+    modelBuilder.AddOutboxMessageEntity();
+    modelBuilder.AddOutboxStateEntity();
 }
 ```
 
@@ -63,47 +73,75 @@ public sealed class OrdersDbContext(DbContextOptions<OrdersDbContext> options) :
 dotnet ef migrations add AddMassTransitOutbox
 ```
 
-Then publish as usual through `IEventPublisher`/`IMessageBus` inside the unit of work; the message is written to
+Then publish through `IEventPublisher`/`IMessageBus` inside the unit of work as usual: the message is written to
 the outbox during `SaveChangesAsync` and delivered by MassTransit's background worker after the commit.
 
-## Options
+## How it works
 
-`OutboxOptions` (namespace `SharedKernel.Messaging.MassTransit.Options`):
+```mermaid
+sequenceDiagram
+    participant H as Handler
+    participant DB as DbContext / PostgreSQL
+    participant W as Outbox delivery service
+    participant B as Broker
+    H->>DB: change aggregate + PublishAsync(evt)
+    H->>DB: SaveChangesAsync (data + outbox row, one transaction)
+    W->>DB: poll every QueryDelay, lock rows
+    W->>B: deliver up to BatchSize messages
+    W->>DB: mark delivered
+```
 
-| Option | Default | Notes |
-| --- | --- | --- |
-| `BatchSize` | `100` | Messages delivered per cycle of the bus outbox |
-| `QueryDelay` | 1 s | Polling interval for undelivered rows |
-| `DuplicateDetectionWindow` | 30 min | MassTransit's inbox deduplication window |
-| `Database` | `PostgreSql` | Selects the SQL the delivery service locks outbox rows with: `PostgreSql`, `SqlServer`, `MySql` or `Sqlite`. Set it when the `DbContext` is not on PostgreSQL |
+- **At least once.** A crash between delivery and the outbox update redelivers the message, so consumers must be
+  idempotent — enable `WithIdempotency()` on the consuming side.
+- **The lock SQL follows `OutboxOptions.Database`.** MassTransit's own default is SQL Server syntax, which
+  PostgreSQL rejects on every poll; this extension selects PostgreSQL unless told otherwise, and throws
+  `ArgumentOutOfRangeException` for an undefined value at registration.
+- Built on the core's `ConfigureMassTransit(...)` hook; the outbox is MassTransit's own. Call it once.
 
-## Behaviour to know
+## Configuration
 
-- **Delivery is at-least-once.** A message can be delivered again after a crash between delivery and the outbox
-  update, so consumers must be idempotent — enable `WithIdempotency()` on the consuming side.
-- **The lock SQL follows `OutboxOptions.Database`.** MassTransit's own default is SQL Server syntax
-  (`SELECT TOP 1 … WITH (UPDLOCK, ROWLOCK, READPAST)`), which PostgreSQL rejects on every poll, so nothing would be
-  delivered; the extension therefore selects PostgreSQL unless told otherwise.
-- MassTransit is pinned to 8.5.x, the last Apache-2.0 release.
-- The outbox is MassTransit's; this package only wires it to the platform builder. Never define an outbox table,
-  writer or interceptor of your own alongside it.
+`OutboxOptions` is set through the `configure` action; it is not bound from configuration.
+
+| Option | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `BatchSize` | `int` | `100` | Messages delivered per bus-outbox cycle (`MessageDeliveryLimit`) |
+| `QueryDelay` | `TimeSpan` | `00:00:01` | Polling interval for undelivered rows |
+| `DuplicateDetectionWindow` | `TimeSpan` | `00:30:00` | MassTransit's inbox deduplication window |
+| `Database` | `OutboxDatabase` | `PostgreSql` | `PostgreSql`, `SqlServer`, `MySql` or `Sqlite` — the lock SQL of the delivery poller |
+
+## Reference
+
+| Method | Does |
+| --- | --- |
+| `MessagingBusBuilder.WithEntityFrameworkOutbox<TDbContext>(Action<OutboxOptions>? configure = null)` | Adds MassTransit's EF Core outbox and bus outbox over `TDbContext` |
+
+This package does not log and registers no probe; the bus's `messaging` probe and log events belong to the
+[MassTransit core](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/07.Messaging/SharedKernel.Messaging.MassTransit/README.md#reference).
 
 ## Testing
 
-`SharedKernel.Messaging.MassTransit.EfCore.Tests` asserts the registration and that an outbox row is written during
-`SaveChangesAsync`, using SQLite with a kept-open `SqliteConnection("Data Source=:memory:")`.
-`SharedKernel.Messaging.MassTransit.EfCore.Integration.Tests` (Integration lane, Docker) proves end-to-end delivery on
-PostgreSQL with the default options.
+Application code is tested against
+[`SharedKernel.Messaging.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/16.Testing/SharedKernel.Messaging.Testing/README.md)'s
+in-memory fakes, with no outbox involved. To test the outbox wiring, use SQLite with a kept-open
+`SqliteConnection("Data Source=:memory:")` and `Database = OutboxDatabase.Sqlite`, or PostgreSQL in a container
+with the defaults; assert that an outbox row is written during `SaveChangesAsync`.
 
-## Related packages
+## Pitfalls
 
-| Package | Why |
-| --- | --- |
-| [`SharedKernel.Messaging.MassTransit`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/07.Messaging/SharedKernel.Messaging.MassTransit/README.md) | The bus this outbox plugs into |
-| [`SharedKernel.Messaging.MassTransit.RabbitMq`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/07.Messaging/SharedKernel.Messaging.MassTransit.RabbitMq/README.md) / [`.AzureServiceBus`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/07.Messaging/SharedKernel.Messaging.MassTransit.AzureServiceBus/README.md) | The transport the outbox delivers to |
-| [`SharedKernel.Idempotency.Redis` / `.EfCore`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/18.Idempotency/SharedKernel.Idempotency.Abstractions/README.md) | The store consumer-side `WithIdempotency()` needs to make at-least-once delivery safe |
+| Don't | Do | Why |
+| --- | --- | --- |
+| Start the bus before the outbox tables exist | Migrate first (`MigrateOnStartup`, or a deployment step) | The delivery service fails on every poll |
+| Leave `Database` at the default on SQL Server, MySQL or SQLite | Set `o.Database = OutboxDatabase.SqlServer` (etc.) | The lock SQL must match the database |
+| Assume exactly-once delivery | Make consumers idempotent with `WithIdempotency()` | The outbox is at-least-once |
+| Write your own outbox table, writer or interceptor | Use this one | Two outboxes deliver twice or not at all |
+
+## Design decisions
+
+**Why MassTransit's outbox and no kernel outbox?** One implementation, maintained with the bus it feeds;
+`06.Persistence` stays free of messaging. **Why MassTransit 8.5.x?** It is the last Apache-2.0 release.
 
 ---
 
-Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel). See the
-[domain overview](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/07.Messaging/README.md).
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
+[Messaging domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/07.Messaging/README.md) ·
+[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

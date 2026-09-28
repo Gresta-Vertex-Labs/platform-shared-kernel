@@ -2,54 +2,54 @@
 
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
-![Dependencies: first-party only](https://img.shields.io/badge/third--party%20dependencies-none-success)
+![Tier: Foundation](https://img.shields.io/badge/tier-Foundation-2ea44f)
 ![Public API: tracked](https://img.shields.io/badge/public%20API-tracked-informational)
 
-> **Validated value types for financial and identity data: `Iban`, `Bic`, `CardNumber`, `VatNumber`, `NationalId`,
-> `CountryCode`, `CurrencyCode`, `PhoneNumber`, `Lei`, `AbaRoutingNumber` and `SepaCreditorId`. Parse once at the edge,
-> and from then on the type itself guarantees the value is valid and normalized.**
+> **Validated value types for financial and identity data — `Iban`, `Bic`, `CardNumber`, `VatNumber`, `NationalId`,
+> `CountryCode`, `CurrencyCode`, `PhoneNumber`, `Lei`, `AbaRoutingNumber`, `SepaCreditorId`. Parse once at the edge, and
+> from then on the type itself guarantees the value is valid and normalized.**
 
-A `string` named `iban` says nothing about whether anyone checked it, or in which form it is stored. `Iban` does: it
-can only be created through `Iban.Create`, which checks the value against the SWIFT registry and returns the
-normalized form, or a `Result` failure that says exactly what is wrong. The same applies to every type here.
+A `string` named `iban` says nothing about whether anyone checked it. `Iban` can only be created through `Iban.Create`,
+which checks the value against the SWIFT registry and returns the normalized form, or a `Result` failure that says
+exactly what is wrong.
 
 | You get | So that |
 | --- | --- |
 | IBAN checks for all 89 registry countries, including each country's account-number structure | A letter typed for a digit in a German IBAN is caught even when the check digits happen to match |
-| VAT format and check digit for the 27 EU states, UK, Northern Ireland, Switzerland, Norway and Türkiye (VKN) | `DE136695976` is accepted and `DE136695978` rejected, instead of both passing a loose pattern |
-| Card number Luhn check and network detection (Visa, Mastercard, Amex, Discover, JCB, UnionPay, Diners Club, Maestro, Mir, Troy) | You can route by network, and require a known one when you need to |
-| `CardNumber` and `NationalId` mask themselves in `ToString()` | A card or identity number that reaches a log is shown as `411111******1111` |
-| One error code per failure, and messages that never repeat the input | Clients branch on `validation.iban.invalid_length`, and responses and logs never contain the rejected number |
-| Every message defined with named values, and Turkish bundled | The HTTP boundary shows `"DE IBAN'ı 22 karakter olmalıdır, girilen 21 karakter."` to a Turkish caller |
-| `IParsable<T>` and a JSON converter on every type | They bind from routes and query strings, and an invalid value in a JSON body fails deserialization |
-| No exceptions for bad input | `Create` returns `Result<T>`; only `Parse` throws, for code that expects a valid value |
+| VAT format and check digit for the 27 EU states, UK, Northern Ireland, Switzerland, Norway and Türkiye (VKN) | `DE136695976` is accepted and `DE136695978` rejected |
+| Card Luhn check and network detection (Visa, Mastercard, Amex, Discover, JCB, UnionPay, Diners Club, Maestro, Mir, Troy) | You can route by network, and require a known one |
+| `CardNumber` and `NationalId` mask themselves in `ToString()` | A card or identity number that reaches a log shows as `411111******1111` |
+| One error code per failure; messages never repeat the input | Clients branch on `validation.iban.invalid_length`; responses and logs never contain the rejected number |
+| Localized messages with named values, Turkish bundled | A Turkish caller sees `"DE IBAN'ı 22 karakter olmalıdır, girilen 21 karakter."` |
+| `IParsable<T>` and a JSON converter on every type | They bind from routes and query strings; an invalid value in a JSON body fails deserialization |
 
 ## Contents
 
 - [Install](#install)
 - [Quick start](#quick-start)
-- [The types](#the-types)
-- [Coverage](#coverage)
-- [Errors and translations](#errors-and-translations)
 - [How it works](#how-it-works)
 - [Recipes](#recipes)
 - [Reference](#reference)
+- [Testing](#testing)
 - [Pitfalls](#pitfalls)
 - [Design decisions](#design-decisions)
-- [AI quick reference](#ai-quick-reference)
-- [Compatibility and guarantees](#compatibility-and-guarantees)
 
 ## Install
 
-```shell
-dotnet add package SharedKernel.Validation
-dotnet add package SharedKernel.Validation.FluentValidation   # optional: FluentValidation rules
+```xml
+<PackageReference Include="SharedKernel.Validation" />
+<!-- optional: FluentValidation rules -->
+<PackageReference Include="SharedKernel.Validation.FluentValidation" />
 ```
+
+The version comes from your central `SharedKernelVersion` property — every SharedKernel package ships at the same
+version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel#using-the-packages).
 
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
-| Depends on | `SharedKernel.Primitives` (`Result`, `Error`), `SharedKernel.Core` (guard clauses), `SharedKernel.Localization` (message definitions) |
+| Tier | Foundation — reference it from **any** project |
+| Depends on | `SharedKernel.Primitives`, `SharedKernel.Core` (guard clauses), `SharedKernel.Localization` (message definitions) |
 | Namespaces | `SharedKernel.Validation`; guard clauses in `SharedKernel.Guards` |
 
 ## Quick start
@@ -81,8 +81,7 @@ NationalId id   = NationalId.Create(CountryCode.Parse("TR", null), "10000000146"
 bool ok         = PhoneNumber.IsValid("+90 (532) 123-45-67");      // true, stored as +905321234567
 ```
 
-Use the types directly in requests. They bind from routes and read from JSON, so an invalid value never reaches your
-handler:
+Use the types directly in requests — an invalid value never reaches your handler:
 
 ```csharp
 public sealed record CreatePayout(Iban Iban, CurrencyCode Currency, decimal Amount);
@@ -90,11 +89,14 @@ public sealed record CreatePayout(Iban Iban, CurrencyCode Currency, decimal Amou
 app.MapGet("/banks/{bic}", (Bic bic) => $"{bic.BankCode} in {bic.CountryCode}");
 ```
 
-## The types
+No registration is needed for the types. `AddSharedKernelValidation()` is only for national ID validators (recipe 3), and
+there is no configuration section.
+
+## How it works
 
 | Type | Accepts | Normalized value | Extra members |
 | --- | --- | --- | --- |
-| `Iban` | 89 SWIFT registry countries; exact length and account-number structure per country; MOD 97-10 | `DE89370400440532013000` | `CountryCode`, `CheckDigits`, `Bban`, `ToPrintString()` |
+| `Iban` | 89 SWIFT registry countries; exact length and account-number structure; MOD 97-10 | `DE89370400440532013000` | `CountryCode`, `CheckDigits`, `Bban`, `ToPrintString()` |
 | `Bic` | 8 or 11 characters; valid country | `DEUTDEFF500` | `BankCode`, `CountryCode`, `LocationCode`, `BranchCode`, `IsHeadOffice` |
 | `CardNumber` | 12–19 digits; Luhn | `4111111111111111` | `Network`, `Iin`, `Last4`, `Masked`; **`ToString()` is masked** |
 | `VatNumber` | 32 prefixes; format and check digit per country | `DE136695976` | `Prefix`, `Number`, `SupportedPrefixes` |
@@ -106,33 +108,169 @@ app.MapGet("/banks/{bic}", (Bic bic) => $"{bic.BankCode} in {bic.CountryCode}");
 | `AbaRoutingNumber` | 9 digits; Federal Reserve prefix ranges; weighted check digit | `011000015` | |
 | `SepaCreditorId` | Country, check digits, business code, national identifier; MOD 97-10 | `DE98ZZZ09999999999` | `CountryCode`, `BusinessCode`, `NationalIdentifier` |
 
-Every type:
+- **Every type normalizes input** — trims, removes typed separators (spaces, hyphens; for phone numbers also dots and
+  parentheses), upper-cases letters — and compares by normalized `Value`. `default(T)` has an empty `Value`.
+- **Four entry points:** `Create(string?) → Result<T>` (never throws), `IsValid`, `Parse` (throws `FormatException` with
+  the reason), `TryParse`. All types except `NationalId` implement `IValidatedValue<T>`. `NationalId` needs a country
+  beside the number (`NationalId.Create(country, value)`) and has no JSON converter.
+- **IBAN:** `Create` checks the shape (two letters, two digits, up to 30 letters or digits), the registry country, the
+  exact length, the national account-number structure (Germany 18 digits; UK 4 letters + 14 digits; Türkiye 5 digits, a
+  reserved digit, 16 alphanumerics) and MOD 97-10. `Create(value, allowUnregisteredCountry: true)` accepts a valid ISO
+  country not yet in the registry (shape and check digits only); it never weakens a registered country's checks.
+- **VAT:** the first two letters select the rules. Greece is `EL` (`GR` accepted and converted); Switzerland
+  `CHE…MWST`/`TVA`/`IVA`/`TPV`; Norway `NO…MVA`. Short Belgian and Dutch forms are expanded. Numbers issued to individuals
+  are format-only where the check digit depends on personal data (10-digit Bulgarian, 9/10-digit Czech, Latvian personal
+  codes). A number without its prefix goes through `VatNumber.Create(country, number)`.
+- **Cards:** the most specific issuer range wins, and a network is reported only when it allows the card's length. Troy
+  cards starting with 65 report `Discover` (co-branded); 622126–622925 report `UnionPay`.
+  `Create(value, requireKnownNetwork: true)` rejects an unknown network.
+- **"Valid" means well-formed, not existing.** No type checks that an account is open, a VAT number registered or an LEI
+  current — those go to the bank, VIES/HMRC or GLEIF.
 
-- **Normalizes input.** It removes surrounding whitespace, the separators people type (spaces, hyphens, and for phone
-  numbers also dots and parentheses), and upper-cases letters.
-- **Has four entry points:**
-  - `Create(string?) → Result<T>`, which never throws;
-  - `IsValid(string?) → bool`;
-  - `Parse`, which throws `FormatException` with the reason;
-  - `TryParse`.
-- **Compares by normalized value.** `default(T)` has an empty `Value`.
+## Recipes
 
-All types except `NationalId` implement `IValidatedValue<T>`, which gives generic code a single entry point (see
-[recipe 4](#4-write-generic-code-over-any-identifier)).
+### 1. Validate a request with FluentValidation
 
-`NationalId` needs a country beside the number, so it is created with `NationalId.Create(country, value)`, and it has no
-JSON converter.
+```csharp
+using SharedKernel.Validation.FluentValidation;
 
-## Coverage
+public sealed class CreateCustomerValidator : AbstractValidator<CreateCustomer>
+{
+    public CreateCustomerValidator()
+    {
+        RuleFor(x => x.Iban).NotEmpty().MustBeValidIban();
+        RuleFor(x => x.Country).NotEmpty().MustBeValidCountryCode();
+        RuleFor(x => x.TaxNumber).MustBeValidVatNumber(x => x.Country);   // "4540536920" with Country "TR"
+        RuleFor(x => x.NationalId).MustBeValidNationalId(x => x.Country);
+    }
+}
+```
 
-Each table is generated from, or checked against, the same data the code uses, so what is listed here is what the
-package accepts.
+See [`SharedKernel.Validation.FluentValidation`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/01.Core/SharedKernel.Validation.FluentValidation/README.md).
+
+### 2. Guard a constructor argument
+
+```csharp
+using SharedKernel.Guards;
+
+public static Result<Payout> Create(string iban, decimal amount)
+{
+    if (Guard.Against.Invalid<Iban>(iban) is { } error)
+    {
+        return error;
+    }
+
+    return new Payout(Iban.Parse(iban, null), amount);
+}
+```
+
+A blank argument returns Core's `NullOrWhiteSpace` error naming the parameter. For national IDs use
+`Guard.Against.InvalidNationalId(value, country)`.
+
+### 3. Add a country's national ID check
+
+```csharp
+public sealed class DutchBsnValidator : INationalIdValidator
+{
+    public CountryCode Country => CountryCode.Parse("NL", null);
+
+    public Result Validate(string number) =>
+        number.Length == 9 && number.All(char.IsAsciiDigit) && ElevenTest(number)
+            ? Result.Success()
+            : ValidationMessages.NationalIdInvalidCheckDigit.ToError(ErrorType.Validation, "NL");
+
+    private static bool ElevenTest(string n) =>
+        (Enumerable.Range(0, 8).Sum(i => (9 - i) * (n[i] - '0')) - (n[8] - '0')) % 11 == 0;
+}
+
+builder.Services.AddSharedKernelValidation().AddNationalIdValidator<DutchBsnValidator>();
+
+// Then inject NationalIdValidatorRegistry and pass it to NationalId.Create(country, value, registry).
+```
+
+Returning `ValidationMessages.NationalIdInvalidFormat`/`NationalIdInvalidCheckDigit` makes your errors translate like the
+built-in ones.
+
+### 4. Write generic code over any identifier
+
+```csharp
+static string Describe<T>(string input) where T : struct, IValidatedValue<T> =>
+    T.Create(input) is { IsSuccess: true } ok ? ok.Value.Value : "invalid";
+
+Describe<Lei>("5493001kjtiigc8y1r12");   // "5493001KJTIIGC8Y1R12"
+```
+
+### 5. Keep a card number out of logs
+
+```csharp
+CardNumber card = CardNumber.Parse(input, null);
+logger.LogCardAccepted(card);           // renders 411111******1111
+await provider.ChargeAsync(card.Value);  // the full number only where it must go
+```
+
+### 6. Translate the messages
+
+```csharp
+builder.Services.AddLocalizationCatalog(catalog => catalog
+    .AddValidationTranslations()   // Turkish for every message in this package
+    .AddJsonDirectory(Path.Combine(AppContext.BaseDirectory, "Localization")));   // your own, added after, win
+```
+
+English needs nothing — it is each message's default text. `SharedKernel.Presentation.WebApi` then translates every error
+in a ProblemDetails response.
+
+## Reference
+
+### Registration
+
+| Method | Registers |
+| --- | --- |
+| `AddSharedKernelValidation()` | `NationalIdValidatorRegistry` over every registered `INationalIdValidator` (singleton, `TryAdd`) |
+| `AddNationalIdValidator<TValidator>()` | One more `INationalIdValidator` (`TryAddEnumerable`) |
+| `LocalizationCatalogBuilder.AddValidationTranslations()` | The bundled Turkish translations |
+
+### Types
+
+| Type | Purpose |
+| --- | --- |
+| `IValidatedValue<T>` | `Value` and `static Create`; implement it for your own identifiers |
+| `ValidatedValueJsonConverter<T>` | Reads and writes a type as a JSON string; attached to every type except `NationalId` |
+| `CardNetwork` | The detected network |
+| `INationalIdValidator`, `TurkishNationalIdValidator`, `NationalIdValidatorRegistry` | National ID checks per country |
+| `ValidationErrorCodes`, `ValidationMessages` | Every code, and the `LocalizedMessage` behind it |
+| `ValidationGuardExtensions` (namespace `SharedKernel.Guards`) | `Guard.Against.Invalid<T>(value)`, `Guard.Against.InvalidNationalId(value, country, registry?)` |
+
+### Errors
+
+Every failure is `Error.Validation` with a code from `ValidationErrorCodes` and exactly one message; null or blank input
+returns `validation.required` for every type. Values travel in `Error.MessageArguments` (for example
+`iban.invalid_length` carries `country`, `expected`, `actual`). No message repeats the rejected value, except two- and
+three-letter country and currency codes in their own "not a country code" messages. Codes are stable.
+
+| Type | Codes (`validation.` + …) |
+| --- | --- |
+| `Iban` | `iban.invalid_format`, `iban.unsupported_country`, `iban.invalid_length`, `iban.invalid_bban`, `iban.invalid_check_digits` |
+| `Bic` | `bic.invalid_format`, `bic.unknown_country` |
+| `CardNumber` | `card_number.invalid_format`, `card_number.invalid_check_digit`, `card_number.unknown_network` |
+| `VatNumber` | `vat_number.unsupported_country`, `vat_number.invalid_format`, `vat_number.invalid_check_digit` |
+| `NationalId` | `national_id.unsupported_country`, `national_id.invalid_format`, `national_id.invalid_check_digit` |
+| `CountryCode`, `CurrencyCode` | `country_code.invalid_format`, `country_code.unknown`, `currency_code.invalid_format`, `currency_code.unknown` |
+| `PhoneNumber`, `Lei`, `AbaRoutingNumber`, `SepaCreditorId` | `phone_number.invalid_format`, `lei.*`, `aba_routing_number.*`, `sepa_creditor_id.*` |
+
+### Logging
+
+The package does not log.
+
+### Coverage
+
+The tables below are checked against the data the code uses (a test compares them), so what is listed is what the
+package accepts. Reference data changes only with a release; a stricter rule for a country may reject values the
+previous version accepted.
 
 ### IBAN countries
 
-All 89 countries of the SWIFT IBAN registry, release 99 (December 2024). The BBAN format is the national account
-number after the country code and check digits: `n` digits, `a` upper-case letters, `c` letters or digits. `Create`
-checks the length and this structure for every country.
+All 89 countries of the SWIFT IBAN registry, release 99 (December 2024). BBAN format: `n` digits, `a` upper-case
+letters, `c` letters or digits.
 
 <details>
 <summary><b>Show all 89 countries</b></summary>
@@ -167,7 +305,7 @@ checks the length and this structure for every country.
 | `FO` | Faroe Islands | 18 | 14n |
 | `FR` | France | 27 | 10n, 11c, 2n |
 | `GB` | United Kingdom | 22 | 4a, 14n |
-| `GE` | Georgia (country)|Georgia | 22 | 2a, 16n |
+| `GE` | Georgia | 22 | 2a, 16n |
 | `GI` | Gibraltar | 23 | 4a, 15c |
 | `GL` | Greenland | 18 | 14n |
 | `GR` | Greece | 27 | 7n, 16c |
@@ -175,7 +313,7 @@ checks the length and this structure for every country.
 | `HN` | Honduras | 28 | 4a, 20n |
 | `HR` | Croatia | 21 | 17n |
 | `HU` | Hungary | 28 | 24n |
-| `IE` | Republic of Ireland|Ireland | 22 | 4a, 6n, 8n |
+| `IE` | Ireland | 22 | 4a, 6n, 8n |
 | `IL` | Israel | 23 | 19n |
 | `IQ` | Iraq | 23 | 4a, 15n |
 | `IS` | Iceland | 26 | 22n |
@@ -225,7 +363,7 @@ checks the length and this structure for every country.
 | `TR` | Türkiye | 26 | 5n, 1n, 16c |
 | `UA` | Ukraine | 29 | 6n, 19c |
 | `VA` | Vatican City | 22 | 3n, 15n |
-| `VG` | British Virgin Islands|Virgin Islands, British | 24 | 4a, 16n |
+| `VG` | British Virgin Islands | 24 | 4a, 16n |
 | `XK` | Kosovo | 20 | 4n, 10n, 2n |
 | `YE` | Yemen | 30 | 4a, 4n, 18c |
 
@@ -233,8 +371,7 @@ checks the length and this structure for every country.
 
 ### VAT and tax numbers
 
-32 prefixes. "Check" is the check-digit algorithm the tax authority publishes; the value after the prefix is shown as
-the national part (`Number`).
+32 prefixes; "Check" is the algorithm the tax authority publishes, applied to the national part (`Number`).
 
 <details>
 <summary><b>Show all 32 prefixes</b></summary>
@@ -278,8 +415,6 @@ the national part (`Number`).
 
 ### Card networks
 
-Detected from the issuer range and the card length. The most specific matching range wins.
-
 | Network | Ranges | Lengths |
 | --- | --- | --- |
 | Visa | 4 | 13, 16, 19 |
@@ -293,256 +428,46 @@ Detected from the issuer range and the card length. The most specific matching r
 | Mir | 2200–2204 | 16–19 |
 | Troy | 9792 | 16 |
 
-### National IDs
+National IDs: Türkiye's TCKN (11 digits, not starting 0, two check digits from the odd and even position sums) is built
+in; any other country uses your `INationalIdValidator` (recipe 3).
 
-| Country | Number | Check |
-| --- | --- | --- |
-| Türkiye (built in) | TCKN: 11 digits, not starting 0 | Two check digits from the odd and even position sums |
-| Any other | Your `INationalIdValidator` | See [recipe 3](#3-add-a-countrys-national-id-check) |
+## Testing
 
-## Errors and translations
-
-Every failure is an `Error.Validation` whose code is in `ValidationErrorCodes`. Each code has exactly one message, and
-null or blank input returns `validation.required` for every type.
-
-| Type | Codes (`validation.` + …) |
-| --- | --- |
-| `Iban` | `iban.invalid_format`, `iban.unsupported_country`, `iban.invalid_length`, `iban.invalid_bban`, `iban.invalid_check_digits` |
-| `Bic` | `bic.invalid_format`, `bic.unknown_country` |
-| `CardNumber` | `card_number.invalid_format`, `card_number.invalid_check_digit`, `card_number.unknown_network` |
-| `VatNumber` | `vat_number.unsupported_country`, `vat_number.invalid_format`, `vat_number.invalid_check_digit` |
-| `NationalId` | `national_id.unsupported_country`, `national_id.invalid_format`, `national_id.invalid_check_digit` |
-| `CountryCode`, `CurrencyCode` | `country_code.invalid_format`, `country_code.unknown`, `currency_code.invalid_format`, `currency_code.unknown` |
-| `PhoneNumber`, `Lei`, `AbaRoutingNumber`, `SepaCreditorId` | `phone_number.invalid_format`, `lei.*`, `aba_routing_number.*`, `sepa_creditor_id.*` |
-
-Messages are `SharedKernel.Localization` definitions in `ValidationMessages`, and the values travel in
-`Error.MessageArguments`. For example, `iban.invalid_length` carries `country`, `expected` and `actual`.
-
-Add the bundled Turkish translations, and `SharedKernel.Presentation.WebApi` translates every error in a ProblemDetails
-response. English needs nothing, because it is each message's default text:
-
-```csharp
-builder.Services.AddLocalizationCatalog(catalog => catalog
-    .AddValidationTranslations()   // Turkish for every message in this package
-    .AddJsonDirectory(Path.Combine(AppContext.BaseDirectory, "Localization")));   // your own, added after, win
-```
-
-No message repeats the rejected value. The only exception is two- and three-letter country and currency codes, which
-are named in their own "not a country code" messages.
-
-## How it works
-
-### IBAN
-
-In order, `Create` checks:
-
-1. The general shape: two letters, two digits, then up to 30 letters or digits.
-2. That the country is in the registry (release 99, December 2024, 89 countries).
-3. The exact length for that country.
-4. The national account number's structure, for example:
-   - Germany: 18 digits;
-   - UK: 4 letters then 14 digits;
-   - Türkiye: 5 digits, a reserved digit, then 16 letters or digits.
-5. The MOD 97-10 check digits.
-
-The structure check catches errors the check digits alone can miss.
-
-`Create(value, allowUnregisteredCountry: true)` accepts a valid ISO country that is not yet in the registry. It
-checks only the shape and the check digits, for a country that adopts IBANs before the next package release. It
-never weakens the checks for a registered country.
-
-### VAT
-
-The first two letters select the country's rules. Greece is `EL` in VIES, and `GR` is accepted and converted.
-Switzerland is written `CHE…MWST` (or `TVA`/`IVA`/`TPV`) and Norway `NO…MVA`. Older short forms are expanded: a
-9-digit Belgian number gets its leading `0`, and short Dutch numbers are zero-padded.
-
-Every business number is checked in full. Numbers issued to individuals are checked for format only where their check
-digit depends on a birth date or a separate personal-number scheme: 10-digit Bulgarian, 9- and 10-digit Czech, and
-Latvian personal codes.
-
-A number without its prefix, such as a VKN typed into a Turkish form, goes through `VatNumber.Create(country, number)`.
-
-### Card numbers
-
-The Luhn check validates the number. The network comes from the issuer range and the length: the most specific
-matching prefix wins, and a network is only reported when it allows the card's length.
-
-- **`Discover` for Troy cards that start with 65.** Those cards are co-branded with Discover. Troy's own range is 9792.
-- **`UnionPay` for 622126–622925.** UnionPay issues those cards.
-
-`Create(value, requireKnownNetwork: true)` rejects a card whose network is unknown.
-
-### What "valid" means
-
-Every type checks that a value is well-formed. None of them checks that it exists: that an account is open, a card has
-funds, a VAT number is registered, or an LEI is current. Those questions go to the bank, the payment provider, VIES or
-HMRC, and GLEIF.
-
-## Recipes
-
-### 1. Validate a request with FluentValidation
-
-```csharp
-using SharedKernel.Validation.FluentValidation;
-
-public sealed class CreateCustomerValidator : AbstractValidator<CreateCustomer>
-{
-    public CreateCustomerValidator()
-    {
-        RuleFor(x => x.Iban).NotEmpty().MustBeValidIban();
-        RuleFor(x => x.Country).NotEmpty().MustBeValidCountryCode();
-        RuleFor(x => x.TaxNumber).MustBeValidVatNumber(x => x.Country);   // "4540536920" with Country "TR"
-        RuleFor(x => x.NationalId).MustBeValidNationalId(x => x.Country);
-    }
-}
-```
-
-See the [FluentValidation package README](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/01.Core/SharedKernel.Validation.FluentValidation/README.md)
-for how failures carry their codes and values through the pipeline.
-
-### 2. Guard a constructor argument
-
-```csharp
-using SharedKernel.Guards;
-
-public static Result<Payout> Create(string iban, decimal amount)
-{
-    if (Guard.Against.Invalid<Iban>(iban) is { } error)
-    {
-        return error;
-    }
-
-    return new Payout(Iban.Parse(iban, null), amount);
-}
-```
-
-A blank argument returns Core's own `NullOrWhiteSpace` error, naming the parameter. For national IDs, use
-`Guard.Against.InvalidNationalId(value, country)`.
-
-### 3. Add a country's national ID check
-
-```csharp
-public sealed class DutchBsnValidator : INationalIdValidator
-{
-    public CountryCode Country => CountryCode.Parse("NL", null);
-
-    public Result Validate(string number) =>
-        number.Length == 9 && number.All(char.IsAsciiDigit) && ElevenTest(number)
-            ? Result.Success()
-            : ValidationMessages.NationalIdInvalidCheckDigit.ToError(ErrorType.Validation, "NL");
-
-    private static bool ElevenTest(string n) =>
-        (Enumerable.Range(0, 8).Sum(i => (9 - i) * (n[i] - '0')) - (n[8] - '0')) % 11 == 0;
-}
-
-builder.Services.AddSharedKernelValidation().AddNationalIdValidator<DutchBsnValidator>();
-
-// Then inject NationalIdValidatorRegistry and pass it to NationalId.Create(country, value, registry).
-```
-
-Returning `ValidationMessages.NationalIdInvalidFormat` and `NationalIdInvalidCheckDigit` makes your errors translate
-like the built-in ones.
-
-### 4. Write generic code over any identifier
-
-```csharp
-static string Describe<T>(string input) where T : struct, IValidatedValue<T> =>
-    T.Create(input) is { IsSuccess: true } ok ? ok.Value.Value : "invalid";
-
-Describe<Lei>("5493001kjtiigc8y1r12");   // "5493001KJTIIGC8Y1R12"
-```
-
-### 5. Store a card number safely in logs and traces
-
-```csharp
-CardNumber card = CardNumber.Parse(input, null);
-logger.LogCardAccepted(card);          // renders 411111******1111
-await provider.ChargeAsync(card.Value); // the full number only where it must go
-```
-
-## Reference
-
-### Entry points on every type
-
-| Member | Returns | Throws |
-| --- | --- | --- |
-| `Create(string?)` | `Result<T>` | Never for bad input |
-| `IsValid(string?)` | `bool` | Never |
-| `Parse(string, IFormatProvider?)` | `T` | `FormatException` with the validation message; `ArgumentNullException` for null |
-| `TryParse(string?, IFormatProvider?, out T)` | `bool` | Never |
-
-### Other types
-
-| Type | Purpose |
-| --- | --- |
-| `IValidatedValue<T>` | The shared contract: `Value` and `static Create`. Implement it for your own identifiers |
-| `ValidatedValueJsonConverter<T>` | Reads and writes a type as a JSON string; already attached to every type |
-| `CardNetwork` | The detected network |
-| `INationalIdValidator`, `TurkishNationalIdValidator`, `NationalIdValidatorRegistry` | National ID checks per country |
-| `ValidationErrorCodes`, `ValidationMessages` | Every code, and the message definition behind it |
-| `ValidationLocalizationExtensions.AddValidationTranslations()` | Adds the Turkish translations to a catalog |
-| `ValidationServiceCollectionExtensions` | `AddSharedKernelValidation()`, `AddNationalIdValidator<T>()` |
-| `ValidationGuardExtensions` | `Guard.Against.Invalid<T>(value)`, `Guard.Against.InvalidNationalId(value, country)` |
+The types are pure; use them directly. For valid and invalid sample inputs, use `ValidationSampleGenerator` from
+[`SharedKernel.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/16.Testing/SharedKernel.Testing/README.md)
+(`SharedKernel.Testing.Validation`): `ValidIban("DE")`, `InvalidIban()`, `ValidBic()`, `ValidPan(CardNetwork.Visa)`,
+`ValidVat(…)`, `ValidNationalId(…)`, `ValidE164Phone()`, `ValidCurrencyCode()`, `ValidCountryCode()` and their `Invalid…`
+counterparts.
 
 ## Pitfalls
 
-- **Logging `card.Value`.** `ToString()` is masked and `Value` is not. Pass the `CardNumber` itself to logs, and read
-  `Value` only for the payment call.
-- **Serializing a `CardNumber`.** JSON writes the full number, because anything else would not read back. Keep card
-  numbers out of response bodies, events and caches unless the full number is meant to be there.
-- **Treating valid as verified.** A valid IBAN may be closed and a valid VAT number deregistered. Confirm with the
-  authority when it matters.
-- **A national number without the country code.** `PhoneNumber` rejects `0532 123 45 67`. Ask for the country code, or
-  prepend it yourself before parsing.
-- **`VatNumber.Create("4540536920")` without a prefix** fails with `unsupported_country`. Use
-  `VatNumber.Create(country, number)` for forms that collect the country separately.
-- **Checking that a number exists.** No type calls VIES, a bank or GLEIF; that belongs in an integration, not here.
+| Don't | Do | Why |
+| --- | --- | --- |
+| Log `card.Value` | Pass the `CardNumber` itself to logs | `ToString()` is masked; `Value` is not |
+| Serialize a `CardNumber` into responses, events or caches casually | Keep card numbers out unless the full number is meant to be there | JSON writes the full number, since anything else would not read back |
+| Treat valid as verified | Confirm with the authority when it matters | A valid IBAN may be closed and a valid VAT number deregistered |
+| Parse a national phone number (`0532 123 45 67`) | Ask for, or prepend, the country code | `PhoneNumber` is E.164 only |
+| `VatNumber.Create("4540536920")` without a prefix | `VatNumber.Create(country, number)` | It fails with `unsupported_country` |
+| Keep un-parsed strings after the edge | Pass the typed value inward | The type is the proof the value was checked |
 
 ## Design decisions
 
-- **Value types instead of validator functions.** Once parsed, a value cannot be invalid or un-normalized, so nothing
-  downstream checks it again, and a method that takes an `Iban` documents itself.
-- **`Create` returns `Result`, `Parse` throws.** Bad input is expected at the edge and should not cost an exception.
-  `Parse` exists for `IParsable<T>`, which is what gives route binding.
-- **One code per message.** A translation is keyed by code, so a code that could mean two things could not be
-  translated correctly.
-- **No rejected values in messages.** Card and national ID numbers must not reach a log, and a rule that applies to
-  every type is one nobody has to remember.
-- **Masked `ToString()` for card and national ID numbers,** so string interpolation and structured logging are safe by
-  default.
-- **Registry data compiled in.** The IBAN registry, ISO lists and VAT rules are fixed per package version: a lookup
-  never does I/O, and an update is an ordinary package release.
-- **No phone numbering plans.** Checking whether a number could exist in a country needs a numbering-plan library
-  several megabytes in size; E.164 format is what most systems store.
+**Why value types instead of validator functions?** Once parsed, a value cannot be invalid or un-normalized, so nothing
+downstream checks it again, and a method that takes an `Iban` documents itself.
 
-## AI quick reference
+**Why does `Create` return `Result` while `Parse` throws?** Bad input is expected at the edge and should not cost an
+exception; `Parse` exists for `IParsable<T>`, which gives route binding.
 
-```text
-TYPES       Iban Bic CardNumber VatNumber CountryCode CurrencyCode PhoneNumber Lei AbaRoutingNumber SepaCreditorId
-            (all IValidatedValue<T>: Value, static Create(string?) -> Result<T>, IsValid, IParsable Parse/TryParse,
-            JSON string via ValidatedValueJsonConverter<T>); NationalId.Create(CountryCode, string?, registry?).
-NORMALIZE   Trim, remove typed separators, upper-case. Value is the canonical form; equality by Value.
-IBAN        89 registry countries (release 99): length + BBAN structure + MOD 97-10. Create(v, allowUnregisteredCountry).
-VAT         32 prefixes: EU27 (Greece EL; GR accepted), XI, GB, CH (CHE..MWST/TVA/IVA/TPV), NO (..MVA), TR (VKN).
-            Create(string) needs the prefix; Create(CountryCode, number) accepts it without.
-CARD        Luhn; Network in {Visa, Mastercard, AmericanExpress, Discover, Jcb, UnionPay, DinersClub, Maestro, Mir, Troy}.
-            ToString()/Masked = first6 + *** + last4. Value = full PAN (JSON writes Value).
-NATIONAL ID Registry per country; TR (TCKN) built in; AddSharedKernelValidation().AddNationalIdValidator<T>().
-ERRORS      Error.Validation; codes ValidationErrorCodes.* (one message each); blank -> validation.required.
-            Values in Error.MessageArguments; messages never include the input.
-TRANSLATE   catalog.AddValidationTranslations() adds Turkish; English is the default text.
-GUARDS      using SharedKernel.Guards; Guard.Against.Invalid<Iban>(value) -> Error?; InvalidNationalId(value, country).
-FORBIDDEN   Logging card.Value; storing un-parsed strings after the edge; treating valid as existing/registered.
-```
+**Why one code per message, and no rejected values in messages?** A translation is keyed by code; and card and national
+ID numbers must never reach a log — a rule that applies to every type is one nobody has to remember.
 
-## Compatibility and guarantees
+**Why compile the registry data in?** Lookups never do I/O, and an update is an ordinary package release.
 
-- **Public API is tracked** with `Microsoft.CodeAnalysis.PublicApiAnalyzers`, and every public member is documented.
-- **Error codes are stable.** Changing one is a breaking change.
-- **Reference data changes only with a release.** The IBAN registry, ISO 3166, ISO 4217 and VAT rules update in a
-  new package version; a stricter rule for a country may reject values the previous version accepted.
-- **`Create` never throws for bad input,** and no error message contains the rejected value.
-- **Thread-safe.** The types are immutable, and all reference data is frozen.
+**Why no phone numbering plans?** Checking whether a number could exist needs a multi-megabyte numbering-plan library;
+E.164 format is what most systems store.
 
-Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel).
+---
+
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
+[Core domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/01.Core/README.md) ·
+[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

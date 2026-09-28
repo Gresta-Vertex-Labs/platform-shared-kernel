@@ -1,21 +1,19 @@
 # SharedKernel.Contracts
 
-![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)
-![License: MIT](https://img.shields.io/badge/license-MIT-blue)
-![Third-party dependencies: 0](https://img.shields.io/badge/third--party%20dependencies-0-brightgreen)
-![CloudEvents 1.0](https://img.shields.io/badge/CloudEvents-1.0-5c6bc0)
+[![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
+![Tier: Model](https://img.shields.io/badge/tier-Model-0969da)
 ![Public API: tracked](https://img.shields.io/badge/public%20API-tracked-informational)
+![CloudEvents 1.0](https://img.shields.io/badge/CloudEvents-1.0-5c6bc0)
 
-**Cross-service wire contracts for .NET services: integration events in a CloudEvents envelope, and paged
-results with validated requests and opaque cursors.**
-
-Everything here is a shape that crosses a process boundary. The package holds no business logic, performs no
-I/O and depends only on `SharedKernel.Primitives`.
+> **Cross-service wire contracts for .NET services: integration events in a validated CloudEvents 1.0 envelope, and
+> paged results with validated requests and opaque cursors — shapes that cross a process boundary, with no business
+> logic and no I/O.**
 
 | You get | So that |
 | --- | --- |
 | `IIntegrationEvent` with a required `[IntegrationEvent("name", Version = n)]` | Renaming a class never changes what brokers route on or consumers branch on |
-| `EventEnvelope<TEvent>`, a CloudEvents 1.0 JSON document | Any CloudEvents-aware tool can read your events, and a misrouted message fails at deserialization |
+| `EventEnvelope<TEvent>`, a CloudEvents 1.0 JSON document built only by `EventEnvelope.Wrap` | Any CloudEvents-aware tool can read your events, and a misrouted message fails at deserialization |
 | `PagedList<T>` and `CursorPagedList<T>` | Every API returns pages in one shape, with totals as `long` |
 | `PageRequest` and `CursorPageRequest` | Bad `page`, `pageSize` or `limit` input becomes a validation error, never an exception |
 | `PageCursor` | Keyset positions travel as short, URL-safe, versioned strings, and garbage input decodes to a failure |
@@ -24,40 +22,29 @@ I/O and depends only on `SharedKernel.Primitives`.
 
 - [Install](#install)
 - [Quick start](#quick-start)
-- [Which type do I need?](#which-type-do-i-need)
-- [Walkthrough](#walkthrough)
-  - [1. Declare an integration event](#1-declare-an-integration-event)
-  - [2. Publish it](#2-publish-it)
-  - [3. Consume it](#3-consume-it)
-  - [4. Change its schema](#4-change-its-schema)
-  - [5. An offset-paged endpoint](#5-an-offset-paged-endpoint)
-  - [6. A cursor-paged endpoint](#6-a-cursor-paged-endpoint)
+- [How it works](#how-it-works)
+- [Recipes](#recipes)
 - [Reference](#reference)
-  - [Namespaces](#namespaces)
-  - [Integration events](#integration-events)
-  - [EventEnvelope](#eventenvelope)
-  - [Paged results](#paged-results)
-  - [Page requests](#page-requests)
-  - [PageCursor](#pagecursor)
-  - [Error codes](#error-codes)
+- [Testing](#testing)
 - [Pitfalls](#pitfalls)
-- [AI quick reference](#ai-quick-reference)
-- [Compatibility and guarantees](#compatibility-and-guarantees)
-- [Deliberately not included](#deliberately-not-included)
+- [Design decisions](#design-decisions)
 
 ## Install
 
-```shell
-dotnet add package SharedKernel.Contracts
+```xml
+<PackageReference Include="SharedKernel.Contracts" />
 ```
+
+The version comes from your central `SharedKernelVersion` property — every SharedKernel package ships at the same
+version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel#using-the-packages).
 
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
-| Dependencies | `SharedKernel.Primitives` only |
-| Tier | Model: no third-party dependency, no I/O |
+| Tier | Model — reference it from your **Domain** project, or any project that declares or reads wire shapes |
+| Depends on | `SharedKernel.Primitives` only |
 | Registration | None: records, static factories and one attribute |
-| Serializer | `System.Text.Json`, reflection-based; no `JsonSerializerContext` to register |
+| Namespaces | `SharedKernel.Contracts.Events`, `SharedKernel.Contracts.Pagination` |
 
 ## Quick start
 
@@ -110,7 +97,28 @@ string json = JsonSerializer.Serialize(envelope);
 The envelope's member names are fixed and the same whatever naming policy you serialize with. The `data` members
 follow your serializer options (camelCase above, from `JsonSerializerDefaults.Web`).
 
-## Which type do I need?
+## How it works
+
+```mermaid
+flowchart LR
+    Dom["Domain event<br/>(publishing service)"] -- map at the boundary --> IE["Integration event<br/>[IntegrationEvent(name, Version)]"]
+    IE --> Wrap["EventEnvelope.Wrap<br/>CloudEvents 1.0 JSON"]
+    Wrap --> Wire[("Broker, outbox row,<br/>HTTP body")]
+    Wire --> Des["Deserialize EventEnvelope&lt;TEvent&gt;<br/>type, id, time checked"]
+    Des --> Con["Consumer"]
+```
+
+_Events cross the wire as a validated CloudEvents document; a message of another type or version fails at
+deserialization instead of producing an empty object. Pages and page requests follow the same rule: the JSON
+constructor enforces what the factory enforces._
+
+- **Fixed wire names.** Every member carries `[JsonPropertyName]`, so your serializer's naming policy never changes an
+  envelope or a page on the wire. The event's own `data` members follow your serializer options.
+- **Construction and deserialization agree.** No envelope, page or request can exist in a state its factory would
+  reject — not through JSON, not through `with`.
+- **Absent attributes are omitted**, never written as `null`, as CloudEvents requires.
+
+### Which type do I need?
 
 | I need to… | Use |
 | --- | --- |
@@ -133,7 +141,7 @@ follow your serializer options (camelCase above, from `JsonSerializerDefaults.We
 | Rows inserted while paging | Items shift, repeat or are skipped | Stable |
 | Pairs with (`SharedKernel.Persistence`) | `IReadRepository.ListPagedAsync(spec, PageRequest)` | `IReadRepository.ListKeysetAsync(spec, CursorPageRequest, keySelector)` |
 
-## Walkthrough
+## Recipes
 
 An orders service publishes `OrderPlaced`, a billing service consumes it, and the orders API lists orders both
 ways.
@@ -397,6 +405,25 @@ All are `ErrorType.Validation`, available as `PaginationErrorCodes` constants.
 | `pagination.limit.out_of_range` | `limit` below 1 or above the endpoint maximum |
 | `pagination.cursor.invalid` | Cursor blank, too long, malformed, or of other types |
 
+### Logging
+
+None. The package is logging-free by design: `ILogger` is never injected into a contract type.
+
+## Testing
+
+Reference [`SharedKernel.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/16.Testing/SharedKernel.Testing/README.md)
+from your test project (namespace `SharedKernel.Testing.Contracts`):
+
+| Helper | Use |
+| --- | --- |
+| `EventEnvelopeBuilder<TEvent>` | `WithData`, `WithSource`, `WithSubject`, `WithTenantId`, `WithCorrelationId`, `WithCausationId`, then `Build()` — an envelope built through `Wrap` |
+| `IntegrationEventFaker<TEvent>` | A Bogus `Faker<TEvent>` base for realistic integration events |
+| `PagedListBuilder<T>` | `WithItems`, `WithPage`, `WithPageSize`, `WithRequest`, `WithTotalCount`, `Build()`; `PagedListBuilder<T>.Empty()` |
+| `PagedListAssertions` | `ShouldHaveTotalCount`, `ShouldHaveItems`, `ShouldBeEmpty`, and for cursor pages `ShouldHaveNextPage` / `ShouldBeLastPage` |
+
+For a round-trip test of your own event, wrap it, serialize it with the options your transport uses, and deserialize
+it as `EventEnvelope<TEvent>` — a missing `[IntegrationEvent]` or a duplicate name and version fails there.
+
 ## Pitfalls
 
 | Don't | Do | Why |
@@ -412,51 +439,41 @@ All are `ErrorType.Validation`, available as `PaginationErrorCodes` constants.
 | Reuse a cursor across sort orders | Keep one sort per endpoint | A cursor from another sort decodes and starts in the wrong place |
 | Wrap responses in an `{ isSuccess, value, error }` envelope | Return the body, and ProblemDetails for errors | The platform has one error format, RFC 9457 |
 
-## AI quick reference
+## Design decisions
 
-Conventions for generating code with this package. Each line is a rule.
+**Why integration events and not domain events on the wire?** Domain events leak internals and couple consumers to the
+producer's model. Publishers map at the boundary to a record of primitives.
 
-```text
-EVENT        [IntegrationEvent("{context}.{kebab-name}", Version = 1)]
-             public sealed record {PastTense}(Guid EventId, DateTimeOffset OccurredOn, ...primitives) : IIntegrationEvent;
-             Members: primitives, string, Guid, DateTimeOffset, decimal, records/arrays of those. Never domain types.
-             EventId = originating domain event Id. Name lowercase a-z0-9 with . - _ separators. Never rename.
-VERSIONING   Breaking change: new record, same name, Version + 1. Additive change: same version.
-WRAP         EventEnvelope.Wrap(evt, source: "svc-name", subject: "...", tenantId: id, correlationId: "...",
-             causationId: "..."). Optional args by name. Concrete runtime type only.
-             With 07.Messaging use IEventPublisher.PublishAsync(evt, ctx => ctx.WithTenantId(..).WithSubject(..), ct).
-READ         JsonSerializer.Deserialize<EventEnvelope<TEvent>>(json, options). Mismatched type throws JsonException.
-             Envelope props: Id Source Type DataVersion Time Subject TenantId CorrelationId CausationId Data.
-ROUTING KEY  IntegrationEventDescriptor.For<TEvent>().Name   (never typeof(TEvent).Name)
-OFFSET PAGE  var r = PageRequest.Create(page, pageSize); if (!r.IsValid) -> 400 with r.Errors;
-             PagedList<T>.Create(items, r.Value, totalCount) ; .Map(x => dto) ; TotalCount is long.
-CURSOR PAGE  var r = CursorPageRequest.Create(cursor, limit); decode r.Value.Cursor with
-             PageCursor.Decode<TKey, TId>(token) -> Result (IsFailure -> 400 pagination.cursor.invalid);
-             query Take = limit + 1; CursorPagedList<T>.FromLookahead(rows, limit, last => PageCursor.Encode(last.Key, last.Id.Value)).
-ERRORS       HTTP errors are ProblemDetails from 14.Presentation. No Envelope/Result wrapper types exist here.
-FORBIDDEN    Business logic, I/O, domain types, DI registration, JsonSerializerContext registration.
-```
+**Why a required `[IntegrationEvent(name, Version)]` instead of the class name?** A class rename must not break
+consumers or routing, so there is no class-name fallback.
 
-## Compatibility and guarantees
+**Why is `EventEnvelope.TenantId` a `Guid?`, not a `TenantId?`?** It keeps the wire contract free of
+`SharedKernel.Execution`; publishers convert, consumers rebuild one with `TenantId.FromNullable`.
 
-- **Public API is tracked** with `Microsoft.CodeAnalysis.PublicApiAnalyzers`; any change fails the build until it is
-  recorded.
-- **Every public member is documented**, including the exceptions it throws; the XML documentation ships in the
-  package.
-- **Wire names are fixed** by attributes, so changing your serializer's naming policy never changes an envelope or
-  a page on the wire.
-- **Deserialization enforces the same rules as construction**: no envelope, page or request can exist in a state
-  its factory would reject.
-- **One dependency**: `SharedKernel.Primitives`, for `Error` and the result types.
+**Why is `TotalCount` a `long`?** Large tables and search engines exceed `int`.
 
-## Deliberately not included
+**Why reflection-based `System.Text.Json`, not a `JsonSerializerContext`?** A source-generated context cannot cover
+consumers' generic envelopes and pages and fights naming policies. The package is therefore not trim- or
+NativeAOT-safe for generic envelopes and pages.
+
+**Why is the cursor not signed?** Signing would need key management in every service, and tampering can only move a
+page's start position; filtering is the query's job. A new cursor format goes behind a new prefix (`v2.`), and `v1.`
+stays decodable for at least one release.
+
+**What is deliberately not included?**
 
 - **No response envelope** (`{ isSuccess, value, error }`). Success bodies are returned as-is and errors as
-  RFC 9457 ProblemDetails (`14.Presentation`); the REST client (`11.Communication`) maps them back to `Result<T>`.
-- **No domain dependency.** Integration events are projections of domain events; mapping between them belongs to
-  the publishing service.
-- **No transport.** Publishing, outboxes and consumers live in `07.Messaging`; webhooks in `15.Integration`.
-- **No `JsonSerializerContext`.** Serialization uses reflection-based `System.Text.Json`, which handles every
-  generic instantiation without registration.
-- **No signed cursors.** Tampering can only move a page's start position; filtering is the query's job.
-- **No money DTO or other shared value shapes.** Add them when a real cross-service need appears.
+  RFC 9457 ProblemDetails (`SharedKernel.Presentation.WebApi`); the REST client (`SharedKernel.Communication.Rest`)
+  maps them back to `Result<T>`.
+- **No domain dependency.** `SharedKernel.Contracts` and `SharedKernel.Domain` never reference each other.
+- **No transport.** Publishing, outboxes and consumers live in `SharedKernel.Messaging.*`; webhooks in
+  `SharedKernel.Integration.Webhooks`.
+- **No propagation constants.** Correlation, tenant and actor header names are `WellKnownHeaders` in
+  `SharedKernel.Primitives`, because the gRPC packages may not reference this one.
+- **No money DTO or other shared value shapes** until a real cross-service need appears.
+
+---
+
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
+[Contracts domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/04.Contracts/README.md) ·
+[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

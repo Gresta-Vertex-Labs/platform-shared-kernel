@@ -1,58 +1,52 @@
 # SharedKernel.Configuration
 
-![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)
-![License: MIT](https://img.shields.io/badge/license-MIT-blue)
-![Third-party dependencies: 0](https://img.shields.io/badge/third--party%20dependencies-0-brightgreen)
-![Trimming: declared, not hidden](https://img.shields.io/badge/trimming-declared%2C%20not%20hidden-yellow)
+[![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
+![Tier: Foundation](https://img.shields.io/badge/tier-Foundation-2ea44f)
 ![Public API: tracked](https://img.shields.io/badge/public%20API-tracked-informational)
+![Trimming: declared, not hidden](https://img.shields.io/badge/trimming-declared%2C%20not%20hidden-yellow)
 
-**Options-pattern registration that fails at startup, not at first use.**
+> **Options-pattern registration that fails at startup, not at first use: `AddValidatedOptions` binds a section,
+> validates it, and makes `IHost.StartAsync()` throw when it is wrong.**
 
-A missing connection string should fail the deployment, not whichever request first needs it,
-hours later. `AddValidatedOptions` binds a configuration section, validates it, and makes
-`IHost.StartAsync()` throw when it is wrong:
+A missing connection string should fail the deployment, not whichever request first needs it, hours later.
 
-- **Validation:** with Data Annotations, a custom `IValidateOptions<T>`, an
-  `[OptionsValidator]`-generated validator, or several at once.
-- **Section paths declared on the type:** `ISectionBoundOptions` puts the path on the options
-  class, so no call site retypes it or passes the wrong one.
-- **Opt-in strictness:** `OptionsStrictness` rejects a misspelled section path or a misspelled
-  key instead of silently binding defaults.
-- **Named options:** each named instance is bound and validated on its own.
+| You get | So that |
+| --- | --- |
+| `AddValidatedOptions<T>(…)`, always `ValidateOnStart` | Bad configuration stops the host instead of failing the first request |
+| Data Annotations, a custom `IValidateOptions<T>`, an `[OptionsValidator]`-generated validator, or several at once | Per-property and cross-property rules both run, each failure reported once |
+| `ISectionBoundOptions` (`static string SectionName`) | The section path lives on the options type; no call site retypes it or passes the wrong one |
+| `OptionsStrictness.RequireSection` / `RejectUnknownKeys` | A misspelled section path or key is rejected instead of silently binding defaults |
+| Named instances | Each named instance is bound and validated on its own |
 
 ## Contents
 
 - [Install](#install)
-- [At a glance](#at-a-glance)
-- [Rules](#rules)
-- [Usage](#usage)
-  - [Data Annotations](#data-annotations)
-  - [Let the type name its own section](#let-the-type-name-its-own-section)
-  - [Catching typos: OptionsStrictness](#catching-typos-optionsstrictness)
-  - [A rule Data Annotations cannot express](#a-rule-data-annotations-cannot-express)
-  - [Validation with no reflection](#validation-with-no-reflection)
-  - [Nested objects and collections](#nested-objects-and-collections)
-  - [Named instances](#named-instances)
-- [Which overload](#which-overload)
-- [What fails, when, and as what](#what-fails-when-and-as-what)
-- [Traps](#traps)
-- [Trimming and AOT](#trimming-and-aot)
-- [Compatibility and guarantees](#compatibility-and-guarantees)
-- [Deliberately not included](#deliberately-not-included)
+- [Quick start](#quick-start)
+- [How it works](#how-it-works)
+- [Recipes](#recipes)
+- [Reference](#reference)
+- [Testing](#testing)
+- [Pitfalls](#pitfalls)
+- [Design decisions](#design-decisions)
 
 ## Install
 
-```shell
-dotnet add package SharedKernel.Configuration
+```xml
+<PackageReference Include="SharedKernel.Configuration" />
 ```
+
+The version comes from your central `SharedKernelVersion` property — every SharedKernel package ships at the same
+version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel#using-the-packages).
 
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
-| Dependencies | `Microsoft.Extensions.Options.DataAnnotations`, `Microsoft.Extensions.Options.ConfigurationExtensions`, `Microsoft.Extensions.Configuration.Abstractions`, `Microsoft.Extensions.DependencyInjection.Abstractions`. No other SharedKernel package. |
-| Namespaces | `SharedKernel.Configuration` (`ISectionBoundOptions`, `OptionsStrictness`) and `SharedKernel.Configuration.Extensions` (`AddValidatedOptions`) |
+| Tier | Foundation — reference it from **any** project |
+| Depends on | `Microsoft.Extensions.Options.DataAnnotations`, `Microsoft.Extensions.Options.ConfigurationExtensions`, `Microsoft.Extensions.Configuration.Abstractions`, `Microsoft.Extensions.DependencyInjection.Abstractions`; no other SharedKernel package |
+| Namespaces | `SharedKernel.Configuration` (`ISectionBoundOptions`, `OptionsStrictness`), `SharedKernel.Configuration.Extensions` (`AddValidatedOptions`) |
 
-## At a glance
+## Quick start
 
 ```csharp
 using System.ComponentModel.DataAnnotations;
@@ -72,6 +66,21 @@ builder.Services.AddValidatedOptions<DatabaseOptions>(
     strictness: OptionsStrictness.RequireSection | OptionsStrictness.RejectUnknownKeys);
 ```
 
+```json
+{
+  "MyService": {
+    "Database": { "ConnectionString": "Host=db;Database=orders", "MaxConnections": 50 }
+  }
+}
+```
+
+```csharp
+public sealed class Repository(IOptions<DatabaseOptions> options)
+{
+    private readonly string connectionString = options.Value.ConnectionString;
+}
+```
+
 With this registration, each of these stops the host from starting:
 
 | Configuration | Fails with |
@@ -82,95 +91,27 @@ With this registration, each of these stops the host from starting:
 | Section written as `"MyService:Databse"` | `OptionsValidationException`: section `'MyService:Database'` does not exist |
 | Key written as `"MaxConections"` | `InvalidOperationException`: `'MaxConections'` not found on `DatabaseOptions` |
 
-## Rules
+## How it works
 
-| Rule | What enforces it |
-| --- | --- |
-| Register every options type through `AddValidatedOptions`, never `services.Configure<T>(section)` | Convention. `Configure<T>` binds without validating, so failures surface at first use |
-| Declare the section path on the options type, not at the call site | `ISectionBoundOptions.SectionName`, a `static abstract` member: the compiler rejects a type that lacks it, and a null or blank value throws at registration |
-| Never retype a section path as a literal in `GetSection("…")` | `SK0022` (`SharedKernel.Analyzers`) flags raw literals at magic-string call sites |
-| Per-property rules go in Data Annotations; cross-property rules go in an `IValidateOptions<T>` | The `TValidator` overloads. An attribute cannot see a second property |
-| A validator is one of *many*, never "the" validator | Registration uses `TryAddEnumerable`: the pipeline runs every registered validator |
-| Consume named options through `IOptionsMonitor<T>` or `IOptionsSnapshot<T>` | `IOptions<T>` resolves only the default instance, silently, with defaults |
-| Treat `SectionName` as a deployment contract | Changing it stops binding every deployed `appsettings.json` and environment variable that targets the old path |
-
-## Usage
-
-### Data Annotations
-
-```csharp
-builder.Services.AddValidatedOptions<DatabaseOptions>(
-    builder.Configuration.GetSection("MyService:Database"));
-```
-
-Registers `IOptions<T>`, `IOptionsSnapshot<T>` and `IOptionsMonitor<T>`, and arms
-`ValidateOnStart` so `IHost.StartAsync()` throws on bad configuration.
-
-Calling it twice for the same type and name registers the Data Annotations validator once, so each
-failure is reported once. The BCL's own `ValidateDataAnnotations()` duplicates both.
-
-### Let the type name its own section
-
-```csharp
-public sealed class DatabaseOptions : ISectionBoundOptions
-{
-    public static string SectionName => "MyService:Database";
-
-    [Required] public string ConnectionString { get; set; } = string.Empty;
-}
-
-builder.Services.AddValidatedOptions<DatabaseOptions>(builder.Configuration);
-```
-
-There is no section argument, so no call site can pass the wrong one. `SectionName` is read through
-a generic type parameter, which compiles to a direct static call with no reflection.
-
-Declare `SectionName` as a `static` property, not a `const` field: a field cannot satisfy a
-`static abstract` property. It stays readable as `DatabaseOptions.SectionName`, so existing
-`GetSection(DatabaseOptions.SectionName)` calls keep compiling.
-
-A `SectionName` that is `null`, empty or whitespace throws `InvalidOperationException` naming the
-type when `AddValidatedOptions` is called.
-
-Passing an explicit `IConfigurationSection` still works for a type that implements the interface,
-and wins overload resolution. Use it to point one options type at a different section.
-
-### Catching typos: OptionsStrictness
-
-By default, both of these mistakes start the host with the options at their defaults:
-
-```jsonc
-{
-  "MyService": {
-    "Databse": { "ConnectionString": "..." },   // misspelled section: nothing binds
-    "Database": { "MaxConections": 50 }         // misspelled key: silently ignored
-  }
-}
-```
-
-If every property has a default and passes validation, nothing reports either one. Opt in per
-options type:
-
-```csharp
-builder.Services.AddValidatedOptions<DatabaseOptions>(
-    builder.Configuration,
-    strictness: OptionsStrictness.RequireSection | OptionsStrictness.RejectUnknownKeys);
-```
+- Every overload registers `IOptions<T>`, `IOptionsSnapshot<T>` and `IOptionsMonitor<T>`, and calls `ValidateOnStart`,
+  so `IHost.StartAsync()` throws on bad configuration.
+- The Data Annotations validator is registered once per type and name (a pre-built instance with a duplicate check), so
+  calling twice never reports a failure twice. The BCL's own `ValidateDataAnnotations()` duplicates both.
+- Custom validators are added with `TryAddEnumerable`: a validator is one of *many*, and the pipeline runs every one.
+- `ISectionBoundOptions.SectionName` is a `static abstract` property, read through a generic type parameter — a direct
+  static call, no reflection. A `null`, empty or whitespace value throws `InvalidOperationException` naming the type at
+  registration. Declare it as a `static` property, not a `const` (a field cannot satisfy it); it stays readable as
+  `DatabaseOptions.SectionName`. An explicit `IConfigurationSection` overload still wins overload resolution.
+- Strictness checks run every time the instance is validated, so they also apply after a configuration reload.
 
 | Flag | Rejects | Fails as |
 | --- | --- | --- |
-| `RequireSection` | A section that does not exist. An empty object (`"Database": {}`) and `"Database": null` count as missing; a lone environment variable such as `MyService__Database__Port` counts as present. | `OptionsValidationException`, collected with the instance's other validation failures |
-| `RejectUnknownKeys` | A key with no matching property, including inside nested objects. Matching is case-insensitive; keys under a dictionary property are always accepted. | `InvalidOperationException` from the binder, naming every unknown key |
+| `RequireSection` | A section that does not exist. `"Database": {}` and `"Database": null` count as missing; a lone environment variable such as `MyService__Database__Port` counts as present | `OptionsValidationException`, collected with the instance's other failures |
+| `RejectUnknownKeys` | A key with no matching property, including inside nested objects. Case-insensitive; keys under a dictionary property are always accepted | `InvalidOperationException` from the binder, naming every unknown key |
 
-**Why both are off by default.** `RequireSection` would refuse to start a service whose options are
-fully defaulted and deliberately have no section in some environment. `RejectUnknownKeys` crashes
-old pods during a rolling deployment if configuration for the next release, with a key the old code
-does not know, goes live before every pod is upgraded. Turn each on where neither applies.
+## Recipes
 
-Both checks run every time the instance is validated, so they also apply after a configuration
-reload.
-
-### A rule Data Annotations cannot express
+### 1. A rule Data Annotations cannot express
 
 ```csharp
 public sealed class PoolOptions
@@ -193,7 +134,7 @@ builder.Services.AddValidatedOptions<PoolOptions, PoolOptionsValidator>(
     validateDataAnnotations: true);
 ```
 
-### Validation with no reflection
+### 2. Validate with no reflection
 
 ```csharp
 [OptionsValidator]
@@ -201,19 +142,15 @@ public sealed partial class DatabaseOptionsValidator : IValidateOptions<Database
 {
 }
 
-builder.Services.AddValidatedOptions<DatabaseOptions, DatabaseOptionsValidator>(
-    builder.Configuration);
+builder.Services.AddValidatedOptions<DatabaseOptions, DatabaseOptionsValidator>(builder.Configuration);
 ```
 
-`[OptionsValidator]` ships in `Microsoft.Extensions.Options`, so no extra reference is needed. The
-BCL source generator writes `Validate(...)` at compile time from the same attributes, so validation
-does no reflection. Leave `validateDataAnnotations` at its `false` default here: the generated
-validator already covers the attributes, and turning it on reports every failure twice.
+`[OptionsValidator]` ships in `Microsoft.Extensions.Options`; the BCL source generator writes `Validate(...)` from the
+same attributes. Leave `validateDataAnnotations` at `false` here, or every failure is reported twice.
 
-### Nested objects and collections
+### 3. Validate nested objects and collections
 
-Data Annotations on a nested object's properties, or on collection items, **are not validated by
-default**. A `[Required]` inside a nested class never fires. Mark the property:
+Data Annotations on a nested object's properties, or on collection items, **are not validated by default**. Mark them:
 
 ```csharp
 public sealed class Endpoint
@@ -228,10 +165,7 @@ public sealed class GatewayOptions
 }
 ```
 
-Both attributes ship in `Microsoft.Extensions.Options` and are honoured by the Data Annotations
-path and by an `[OptionsValidator]`-generated validator.
-
-### Named instances
+### 4. Register named instances
 
 ```csharp
 builder.Services.AddValidatedOptions<ClientOptions>(
@@ -245,96 +179,95 @@ public sealed class Caller(IOptionsMonitor<ClientOptions> options)
 }
 ```
 
-Each instance is validated on its own. An invalid one fails startup and names itself in
-`OptionsValidationException.OptionsName`; its valid siblings are unaffected. The `RequireSection`
-check is also scoped to the name it was registered for.
+An invalid instance fails startup and names itself in `OptionsValidationException.OptionsName`; valid siblings are
+unaffected. `RequireSection` is scoped to the name it was registered for.
 
-## Which overload
+### 5. Add a post-configure step
+
+Every registration returns `IServiceCollection`, not `OptionsBuilder<T>`. For `.PostConfigure(...)` or a lambda
+`.Validate(...)`, also call `services.AddOptions<T>(name)` — it returns a builder for the same named instance.
+
+## Reference
+
+### Registration
 
 | You have | Call |
 | --- | --- |
 | Attributes only, a section in hand | `AddValidatedOptions<T>(section, name?, strictness?)` |
 | Attributes only, `T : ISectionBoundOptions` | `AddValidatedOptions<T>(configuration, name?, strictness?)` |
-| A custom or generated validator, a section in hand | `AddValidatedOptions<T, TValidator>(section, validateDataAnnotations?, name?, strictness?)` |
-| A custom or generated validator, `T : ISectionBoundOptions` | `AddValidatedOptions<T, TValidator>(configuration, validateDataAnnotations?, name?, strictness?)` |
+| A custom or generated validator, a section in hand | `AddValidatedOptions<T, TValidator>(section, validateDataAnnotations: false, name?, strictness?)` |
+| A custom or generated validator, `T : ISectionBoundOptions` | `AddValidatedOptions<T, TValidator>(configuration, validateDataAnnotations: false, name?, strictness?)` |
 
-All four return the same `IServiceCollection`. Pass the optional arguments by name.
+`OptionsStrictness` is a flags enum: `None` (default), `RequireSection`, `RejectUnknownKeys`. Pass optional arguments by name.
 
-## What fails, when, and as what
+### Failures
 
 | When | Exception | Cause |
 | --- | --- | --- |
 | At the `AddValidatedOptions` call | `ArgumentNullException` | `services`, `section` or `configuration` is null |
 | At the `AddValidatedOptions` call | `ArgumentOutOfRangeException` | `strictness` contains an undefined bit |
 | At the `AddValidatedOptions` call | `InvalidOperationException` | `ISectionBoundOptions.SectionName` is null, empty or whitespace |
-| At `IHost.StartAsync()` | `OptionsValidationException` | An attribute, a validator, or `RequireSection` rejected the values; all failures are in `Failures` |
+| At `IHost.StartAsync()` | `OptionsValidationException` | An attribute, a validator or `RequireSection` rejected the values; all failures are in `Failures` |
 | At `IHost.StartAsync()` | `InvalidOperationException` | Binding failed before validation: an unconvertible value, or an unknown key under `RejectUnknownKeys` |
 
-## Traps
+### Logging
 
-Each of these was measured, not inferred.
+The package does not log.
 
-**`ValidateOnStart()` needs a real host.** With a bare `ServiceCollection` and
-`BuildServiceProvider()`, such as a worker with no `IHost` or a unit test, nothing validates
-eagerly. Resolving `IOptions<T>` succeeds, and the first read of `.Value` throws.
+## Testing
 
-**A bad reload throws from `Reload()` itself.** Once anything has resolved `IOptionsMonitor<T>`,
-its change callback re-validates eagerly, so `IConfigurationRoot.Reload()` throws
-`AggregateException` wrapping `OptionsValidationException`. With `reloadOnChange: true` that
-happens on the file watcher's thread, where nothing catches it. With no monitor resolved,
-`Reload()` is silent and the failure waits for the next read.
+Validation is armed by `ValidateOnStart`, which runs only under a real host. Assert configuration failures at
+`StartAsync`:
 
-**A custom validator is type-wide; Data Annotations are per name.** A `TValidator` is registered
-once against `IValidateOptions<T>`, so it runs for **every** named instance of that type. To apply
-it to one name, check the `name` argument and return `ValidateOptionsResult.Skip` for the others.
+```csharp
+var builder = Host.CreateApplicationBuilder();
+builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+{
+    ["MyService:Database:MaxConnections"] = "5000",
+});
+builder.Services.AddValidatedOptions<DatabaseOptions>(builder.Configuration);
 
-**An explicit null overwrites a property initializer.** A key that is present but null binds as the
-type's default: `public string Name { get; set; } = string.Empty;` holds `null` despite its
-non-nullable declaration, and an `int` initialized to `30` becomes `0`. An *absent* key leaves the
-initializer intact. Validate rather than trusting the initializer.
+using var host = builder.Build();
+await Assert.ThrowsAsync<OptionsValidationException>(() => host.StartAsync());
+```
 
-**A property with a non-public setter is never bound**, and `RejectUnknownKeys` does not report its
-key, because the key does match a property.
+With a bare `ServiceCollection`, resolving `IOptions<T>` succeeds and the first read of `.Value` throws instead.
 
-## Trimming and AOT
+## Pitfalls
 
-This package is **not** trim- or AOT-safe, and says so. Configuration binding is reflective: the
-BCL's own `OptionsBuilder<T>.Bind` carries `[RequiresUnreferencedCode]` and `[RequiresDynamicCode]`.
-A generic library wrapper cannot avoid that, because the configuration-binding source generator
-intercepts `Bind` calls in the *calling* assembly and cannot specialize one that lives in a library.
+| Don't | Do | Why |
+| --- | --- | --- |
+| `services.Configure<T>(section)` | `AddValidatedOptions<T>(…)` | `Configure<T>` binds without validating, so failures surface at first use |
+| Retype a section path in `GetSection("…")` | Implement `ISectionBoundOptions` | One declaration; `SK0022` flags raw literals at `GetSection` |
+| Inject `IOptions<T>` for a named instance | `IOptionsMonitor<T>.Get(name)` or `IOptionsSnapshot<T>` | `IOptions<T>` resolves only the default instance, silently, with defaults |
+| Expect a `TValidator` to apply to one name | Check `name` and return `ValidateOptionsResult.Skip` for others | A custom validator is type-wide; Data Annotations are per name |
+| Trust a property initializer | Validate the value | A key present but `null` binds as the type's default (`int` initialized to `30` becomes `0`); an absent key keeps the initializer |
+| Rely on binding for a property with a non-public setter | Give it a public setter | It is never bound, and `RejectUnknownKeys` does not report its key |
+| Ignore reload failures | Treat a reload with invalid values as an error path | Once `IOptionsMonitor<T>` is resolved, `IConfigurationRoot.Reload()` throws `AggregateException`; with `reloadOnChange: true` on the file watcher's thread |
+| Rename `SectionName` casually | Treat it as a deployment contract | Every deployed `appsettings.json` and environment variable targets the old path |
+| Turn on `RejectUnknownKeys` everywhere by default | Opt in where configuration and code roll out together | New keys going live before every pod is upgraded crash the old pods |
 
-So every overload declares both attributes instead of suppressing them, and every `TOptions` carries
-`[DynamicallyAccessedMembers]` so a trimmer keeps the properties and parameterless constructor the
-binder needs. The package itself builds with zero IL warnings under `EnableTrimAnalyzer`,
-`EnableAotAnalyzer` and `EnableSingleFileAnalyzer`. The remaining risk sits with the caller: members
-of complex types nested inside `TOptions` can be trimmed. For a trimmed or native-AOT publish, keep
-such options flat or bind them by hand in the application, where the source generator can see the
-concrete type.
+## Design decisions
 
-## Compatibility and guarantees
+**Why are both strictness flags off by default?** `RequireSection` would refuse a service whose options are fully
+defaulted and deliberately have no section in some environment; `RejectUnknownKeys` breaks rolling deployments. Nothing
+is on by default that could reject configuration a service previously accepted.
 
-- **Public API is tracked** with `Microsoft.CodeAnalysis.PublicApiAnalyzers`. Any addition, removal or
-  signature change fails the build until it is recorded.
-- **Every public member is documented**, including every exception it can throw. The XML
-  documentation ships in the package.
-- **Registration is idempotent.** Repeating a call for the same type, name and section never
-  duplicates a failure message.
-- **Nothing is on by default that could reject configuration a service previously accepted.** Both
-  strictness checks are opt-in.
+**Why is the package not trim- or AOT-safe?** Configuration binding is reflective (`OptionsBuilder<T>.Bind` carries
+`[RequiresUnreferencedCode]`/`[RequiresDynamicCode]`), and the binding source generator intercepts `Bind` calls only in
+the *calling* assembly. So every overload declares both attributes instead of suppressing them, and every `TOptions`
+carries `[DynamicallyAccessedMembers]`. Members of complex types nested inside `TOptions` can still be trimmed: for a
+native-AOT publish keep options flat or bind them by hand in the application.
 
-## Deliberately not included
+**Why exceptions and not `Result`?** Options validation is a startup fail-fast concern — which is also why this package
+does not depend on `SharedKernel.Primitives`.
 
-- **No return of `OptionsBuilder<T>`.** Every SharedKernel registration method returns
-  `IServiceCollection`. For `.PostConfigure(...)` or a lambda `.Validate(...)`, also call
-  `services.AddOptions<T>(name)`: it returns a builder for the same named instance, and what you add
-  there composes with the registration.
-- **No `IConfiguration` wrapper, provider or section-name builder.** This package adds the validation
-  guarantee and nothing else.
-- **No secrets provider.** Key Vault as a configuration source is
-  `SharedKernel.ServiceDefaults.Configuration.KeyVault`.
-- **No FluentValidation adapter.** `IValidateOptions<T>` is the seam, and an adapter is one short
-  class. For IBAN, PAN and national-ID formats, see `SharedKernel.Validation`.
-- **No `Result<T>`.** Options validation is a startup-time fail-fast concern, so it throws. That is
-  also why this package does not depend on `SharedKernel.Primitives`.
+**What is deliberately not here?** No `IConfiguration` wrapper or section-name builder; no secrets provider (Key Vault as
+a configuration source is `SharedKernel.ServiceDefaults.Configuration.KeyVault`); no FluentValidation adapter —
+`IValidateOptions<T>` is the seam.
 
-Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel).
+---
+
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
+[Core domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/01.Core/README.md) ·
+[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

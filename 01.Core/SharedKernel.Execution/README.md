@@ -2,23 +2,22 @@
 
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
-![Tier: Foundation](https://img.shields.io/badge/tier-Foundation-informational)
+![Tier: Foundation](https://img.shields.io/badge/tier-Foundation-2ea44f)
 ![Public API: tracked](https://img.shields.io/badge/public%20API-tracked-informational)
 
-> **The execution context every package of a service shares: who is calling, which tenant the work belongs to,
-> which correlation id follows it, how work commits, and how an audited action is recorded. No mediator, no ORM,
-> no ASP.NET Core.**
+> **The execution context every package of a service shares: who is calling, which tenant the work belongs to, which
+> correlation id follows it, how work commits, and how an audited action is recorded. No mediator, no ORM, no ASP.NET
+> Core.**
 
-A service has one caller per call, but many packages need to know it: the request pipeline authorizes against it,
-persistence stamps audit columns and filters tenant data by it, the cache scopes keys by it, and every outbound HTTP,
-gRPC, message or workflow call must carry its tenant and correlation id to the next service. This package is the one
-place those contracts live, so none of those packages depends on another to learn who is calling.
+The request pipeline authorizes against the caller, persistence filters tenant data by it, the cache scopes keys by it,
+and every outbound call carries its tenant and correlation id to the next service. This package is the one place those
+contracts live, so none of those packages depends on another to learn who is calling.
 
 | You get | So that |
 | --- | --- |
 | `IRequestContext` with `ActorKind`, `SystemRequestContext`, `AnonymousRequestContext` | One caller contract for HTTP requests, message consumers, workflow activities and jobs |
 | `RequestContextScope` and `IRequestContextAccessor` | Code with no DI scope (an `HttpClient` handler, a publisher, a log enricher) reads the same caller |
-| `RequestContextPropagation` and `PropagatedRequestContext` | Every transport writes and reads the same headers, so the tenant and correlation id survive every hop |
+| `RequestContextPropagation` and `PropagatedRequestContext` | Every transport writes and reads the same headers, so tenant and correlation id survive every hop |
 | `CorrelationIds` | One validation rule and one format for correlation ids on every channel |
 | `TenantId` and `TenantScope` | One tenant type everywhere: never `Guid.Empty`, one string form, an explicit global scope |
 | `IUnitOfWork` | A retry-safe transaction the pipeline and your own code share, implemented by persistence |
@@ -27,16 +26,13 @@ place those contracts live, so none of those packages depends on another to lear
 ## Contents
 
 - [Install](#install)
-- [Where each contract comes from](#where-each-contract-comes-from)
-- [The caller](#the-caller)
-- [The ambient context](#the-ambient-context)
-- [Correlation ids](#correlation-ids)
-- [Propagation across hops](#propagation-across-hops)
-- [Tenants](#tenants)
-- [The unit of work](#the-unit-of-work)
-- [The audit writer](#the-audit-writer)
+- [Quick start](#quick-start)
+- [How it works](#how-it-works)
+- [Recipes](#recipes)
 - [Reference](#reference)
-- [Related packages](#related-packages)
+- [Testing](#testing)
+- [Pitfalls](#pitfalls)
+- [Design decisions](#design-decisions)
 
 ## Install
 
@@ -44,67 +40,135 @@ place those contracts live, so none of those packages depends on another to lear
 <PackageReference Include="SharedKernel.Execution" />
 ```
 
-The version comes from your repository's single `SharedKernelVersion` property (see "Consuming the kernel" in the
-root README). You rarely reference this package directly: every package that needs the caller or the transaction
-already depends on it.
+The version comes from your central `SharedKernelVersion` property — every SharedKernel package ships at the same
+version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel#using-the-packages).
+You rarely reference it directly: every package that needs the caller or the transaction already depends on it.
 
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
-| Tier | Foundation: references only other Foundation packages, and any package may reference it |
+| Tier | Foundation — reference it from **any** project |
 | Depends on | `SharedKernel.Primitives` only |
 | Namespaces | `SharedKernel.Execution.Context`, `SharedKernel.Execution.Tenancy`, `SharedKernel.Execution.Transactions`, `SharedKernel.Execution.Auditing` |
 
-## Where each contract comes from
+## Quick start
 
-| Contract | Consumed by | Implemented or opened by |
-| --- | --- | --- |
-| `IRequestContext` | the application pipeline (authorization, caching, auditing), persistence (audit columns, tenant filters, row-level security), idempotency stores, message publishing | `SharedKernel.ServiceDefaults.Security`'s `AddSharedKernelRequestContext()` over `IUserContext`; `AnonymousRequestContext` when nothing is registered |
-| `RequestContextScope` | every inbound adapter | the HTTP middleware (`UseSharedKernelRequestContext()`), the gRPC server interceptor, the MassTransit consume filter, the Temporal activity interceptor, the scheduler's job runner |
-| `IRequestContextAccessor` | outbound adapters: REST and gRPC clients, MassTransit publishers, Temporal dispatch, idempotency stores | `RequestContextAccessor` in this package; every adapter that needs it registers it with `TryAddSingleton` |
-| `TenantId`, `TenantScope` | every tenant-aware API: caching, storage, search, vectors, workflows, scheduling, feature flags, persistence | this package |
-| `IUnitOfWork` | the pipeline's transaction step, your own code | `SharedKernel.Persistence.EfCore` |
-| `IAuditTrailWriter` | the pipeline's auditing step | `SharedKernel.Persistence.EfCore.Auditing` |
+The package has no registration method. In an HTTP host the request context comes from
+`SharedKernel.ServiceDefaults.Security`:
 
-## The caller
+```csharp
+builder.Services.AddSharedKernelRequestContext();   // IRequestContext over IUserContext
 
-`IRequestContext` exposes `IsAuthenticated`, `UserId`, `TenantId`, `ActorKind` (`User`, `Service`, `System`,
-`Anonymous`), `ClientId`, `SessionId`, `ImpersonatorId`, `CorrelationId` and `HasPermissionAsync`. The members after
-`TenantId` have default implementations, so a minimal implementation only answers the first three and the permission
-check.
+var app = builder.Build();
+app.UseSharedKernelRequestContext();                // first middleware: correlation id + the request's scope
+```
 
-| Caller | Context |
-| --- | --- |
-| An authenticated HTTP or gRPC request | the host's registration (`AddSharedKernelRequestContext()`), `ActorKind.User` or `Service` |
-| An unauthenticated request | `ActorKind.Anonymous`, never `System` |
-| A message consumer or workflow activity | `PropagatedRequestContext`, rebuilt from the headers the sender wrote |
-| A background job, a startup task | `new SystemRequestContext(permissions, identity: "nightly-export", tenantId: tenant, correlationId: CorrelationIds.New())` |
-| Nothing registered | `AnonymousRequestContext.Instance`: unauthenticated, no tenant |
-
-`SystemRequestContext` holds exactly the permissions you pass; an empty set means none, never "all permissions".
-
-**Fail closed.** A `null` tenant matches no tenant-scoped row and rejects every tenant-scoped write, so a caller that
-forgot its tenant cannot read or change another tenant's data.
-
-`WithTenant(tenantId)` and `WithCorrelationId(id)` derive a context that differs in one member and forwards the rest;
-inbound adapters use them to refine the context they open.
-
-## The ambient context
-
-Resolve `IRequestContext` from DI wherever a scope exists (handlers, repositories). Code that has no scope reads the
-context of the call it runs inside through `IRequestContextAccessor`:
+Application code injects the caller:
 
 ```csharp
 using SharedKernel.Execution.Context;
+using SharedKernel.Primitives.Errors;
+using SharedKernel.Primitives.Results;
 
-public sealed class AuditEnricher(IRequestContextAccessor accessor)   // a singleton
+public sealed class CloseAccount(IRequestContext caller, IAccountStore accounts)
 {
-    public string? CurrentTenant() => accessor.Current?.TenantId?.ToString();
+    public async Task<Result> HandleAsync(Guid accountId, CancellationToken ct)
+    {
+        if (caller.TenantId is not { } tenant)                       // no tenant: fail closed
+            return Error.Forbidden("account.no_tenant", "A tenant is required.");
+        if (!await caller.HasPermissionAsync("accounts.close", ct))
+            return Error.Forbidden("account.forbidden", "You may not close accounts.");
+
+        return await accounts.CloseAsync(tenant, accountId, ct);
+    }
 }
 ```
 
-Each inbound adapter opens exactly one scope per call. If you write your own inbound adapter (a queue listener, a
-hosted-service loop), do the same:
+No configuration section: the package has no options.
+
+## How it works
+
+### Where each contract comes from
+
+| Contract | Consumed by | Implemented or opened by |
+| --- | --- | --- |
+| `IRequestContext` | the application pipeline, persistence (audit columns, tenant filters, RLS), idempotency stores, publishing | `SharedKernel.ServiceDefaults.Security`'s `AddSharedKernelRequestContext()`; `AnonymousRequestContext` when nothing is registered |
+| `RequestContextScope` | every inbound adapter | HTTP middleware (`UseSharedKernelRequestContext()`), gRPC server interceptor, MassTransit consume filter, Temporal activity interceptor, scheduler job runner |
+| `IRequestContextAccessor` | outbound adapters (REST/gRPC clients, publishers, Temporal dispatch, idempotency stores) | `RequestContextAccessor`, registered by each adapter with `TryAddSingleton` |
+| `TenantId`, `TenantScope` | every tenant-aware API | this package |
+| `IUnitOfWork` | the pipeline's transaction step, your own code | `SharedKernel.Persistence.EfCore` |
+| `IAuditTrailWriter` | the pipeline's auditing step | `SharedKernel.Persistence.EfCore.Auditing` |
+
+### The caller
+
+| Caller | Context |
+| --- | --- |
+| An authenticated HTTP or gRPC request | the host's registration, `ActorKind.User` or `Service` |
+| An unauthenticated request | `ActorKind.Anonymous`, never `System` |
+| A message consumer or workflow activity | `PropagatedRequestContext`, rebuilt from the sender's headers |
+| A background job, a startup task | `new SystemRequestContext(permissions, identity: "nightly-export", tenantId: tenant, correlationId: CorrelationIds.New())` |
+| Nothing registered | `AnonymousRequestContext.Instance`: unauthenticated, no tenant |
+
+- `IRequestContext` members after `TenantId` (`ActorKind`, `ClientId`, `SessionId`, `ImpersonatorId`, `CorrelationId`)
+  have default implementations.
+- `SystemRequestContext` holds exactly the permissions you pass; an empty set means none, never "all".
+- **Fail closed:** a `null` tenant matches no tenant-scoped row and rejects every tenant-scoped write.
+
+### The ambient scope
+
+- `RequestContextScope.Begin(context)` flows with `ExecutionContext`, like `AsyncLocal<T>`: awaited continuations see it;
+  a scope opened inside an awaited method is not visible to its caller.
+- Disposing restores the previous context, so scopes nest; disposing twice is harmless. Outside any scope `Current` is `null`.
+- With `AddSharedKernelRequestContext()`, `IRequestContext` resolves to the ambient scope when one is open and to the
+  request's security-backed context otherwise.
+
+### Correlation ids
+
+A correlation id follows one logical operation across every service, message, workflow and job. Unlike a trace id it is
+never replaced once the operation has one. Every inbound adapter applies the same rule — 1–128 characters of
+`[A-Za-z0-9-_:.]` (GUIDs, ULIDs and W3C trace ids qualify) — because the value reaches logs and baggage.
+`CorrelationIds.Current` reads the context's `CorrelationId`, then the `correlation.id` baggage item; it never falls back
+to `Activity.Id` or `TraceId`.
+
+### Propagation across hops
+
+`RequestContextPropagation` is the one mapping between a context and transport headers:
+
+| Header (`WellKnownHeaders`) | Value | Written when |
+| --- | --- | --- |
+| `X-Correlation-Id` (`CorrelationId`) | the correlation id | there is one |
+| `X-Tenant-Id` (`TenantId`) | `TenantId.ToString()` | the caller has a tenant |
+| `x-sk-actor-id` (`ActorId`) | `UserId` | the caller has a subject |
+| `x-sk-actor-kind` (`ActorKind`) | `User`, `Service`, `System` or `Anonymous` | there is a caller |
+| `x-sk-client-id` (`ClientId`) | the OAuth2 client id | the caller has one |
+
+- **Permissions are never written.** `PropagatedRequestContext.HasPermissionAsync` always returns `false`: a header anyone
+  on the transport can set must not grant anything.
+- `ReadHeaders` never throws on a malformed header: an unparsable tenant becomes "no tenant", an unknown actor kind
+  `Anonymous`, an invalid correlation id is replaced by a new one (or dropped with `createCorrelationId: false`).
+- The platform's REST and gRPC clients, MassTransit and Temporal already call these methods. Webhooks send only the
+  correlation id — a subscriber is outside the trust boundary.
+
+### The unit of work
+
+- **The delegate may run more than once.** A retrying execution strategy replays it after a transient failure. Load what
+  you need inside it; keep HTTP calls and messages out of it.
+- `ExecuteInTransactionAsync<TResult>` rolls back and returns the result unchanged when it is a failed `Result`/`Result<T>`.
+- A call inside an active transaction joins it; only the outermost call commits. A joined call that throws or fails marks
+  the transaction **rollback-only**, and an outermost operation that still succeeds gets `TransactionRolledBackException`.
+- A commit that fails without a server response throws `CommitOutcomeUnknownException` and is never replayed — re-read
+  (or check the idempotency key) before retrying.
+- `OnBeforeCommit(callback)` queues work inside the transaction after the last save; `IsTransactionActive` reports one.
+
+### The audit writer
+
+`AuditEntry` carries only what the caller knows (action, resource type and id, snapshots, outcome, error code, approval
+id, idempotency key). The writer resolves actor, tenant, client, session, time and correlation id from the request context
+itself. `Succeeded` is written inside the business transaction; `Failed` on its own connection, committed at once.
+
+## Recipes
+
+### 1. Open a scope in your own inbound adapter or background loop
 
 ```csharp
 var context = new SystemRequestContext([], identity: "outbox-relay", correlationId: CorrelationIds.New());
@@ -115,46 +179,23 @@ using (RequestContextScope.Begin(context))
 }
 ```
 
-- The value flows with `ExecutionContext`, like `AsyncLocal<T>`: awaited continuations and tasks started inside the
-  scope see it; a scope opened inside an awaited method is not visible to its caller.
-- Disposing a scope restores the context that was current before it, so scopes nest. Disposing twice is harmless.
-- Outside any scope (startup, a bare background thread) `Current` is `null`.
-- Open and dispose a scope in the same method, with `using`.
-
-With `AddSharedKernelRequestContext()`, `IRequestContext` resolves to the ambient scope when one is open and to the
-request's security-backed context otherwise, so handlers see the same caller whichever way they obtain it.
-
-## Correlation ids
-
-A correlation id follows one logical operation across every service, message, workflow and job it reaches. It is not
-a trace id: a trace id is replaced wherever a new trace starts, a correlation id is never replaced once the operation
-has one.
+### 2. Read the caller from a singleton
 
 ```csharp
-string id = CorrelationIds.New();                        // a GUID in "D" format
-bool ok = CorrelationIds.IsValid(candidate);             // 1-128 chars of [A-Za-z0-9-_:.]
-string accepted = CorrelationIds.AcceptOrCreate(header); // the caller's value when valid, else a new one
-string? current = CorrelationIds.Current(accessor.Current);
+public sealed class AuditEnricher(IRequestContextAccessor accessor)
+{
+    public string? CurrentTenant() => accessor.Current?.TenantId?.ToString();
+}
 ```
 
-- Every inbound adapter applies the same rule, so a value accepted at the edge is never rejected by a later hop.
-  GUIDs, ULIDs and W3C trace ids all qualify.
-- The rule exists because the value reaches logs and baggage: an unchecked caller string would be a log-injection and
-  oversized-baggage vector.
-- `Current` reads the context's `CorrelationId`, then the `correlation.id` baggage item. It never falls back to
-  `Activity.Id` or `TraceId`.
-
-## Propagation across hops
-
-`RequestContextPropagation` is the one mapping between a context and transport headers. Each transport supplies only
-how a header is set or read:
+### 3. Propagate the caller over a custom transport
 
 ```csharp
-// Outbound: write the current caller onto a message's headers.
+// Outbound: keep a value the caller already set.
 RequestContextPropagation.WriteHeaders(
     accessor.Current,
     message.Headers,
-    static (headers, name, value) => headers.TryAdd(name, value));   // keep a value the caller already set
+    static (headers, name, value) => headers.TryAdd(name, value));
 
 // Inbound: rebuild the sender, then run the handler inside its scope.
 PropagatedRequestContext sender = RequestContextPropagation.ReadHeaders(
@@ -167,26 +208,7 @@ using (RequestContextScope.Begin(sender))
 }
 ```
 
-| Header (`WellKnownHeaders`) | Value | Written when |
-| --- | --- | --- |
-| `X-Correlation-Id` (`CorrelationId`) | the correlation id | there is one |
-| `X-Tenant-Id` (`TenantId`) | `TenantId.ToString()` | the caller has a tenant |
-| `x-sk-actor-id` (`ActorId`) | `UserId` | the caller has a subject |
-| `x-sk-actor-kind` (`ActorKind`) | `User`, `Service`, `System` or `Anonymous` | there is a caller |
-| `x-sk-client-id` (`ClientId`) | the OAuth2 client id | the caller has one |
-
-- Permissions are never written. `PropagatedRequestContext.HasPermissionAsync` always returns `false`: a header anyone
-  on the transport can set must not grant anything. Code that must authorize re-resolves permissions from the identity
-  provider using `UserId`.
-- `ReadHeaders` never throws on a malformed header: an unparsable tenant becomes "no tenant" (fail closed), an unknown
-  actor kind becomes `Anonymous`, an invalid correlation id is replaced by a new one (or dropped with
-  `createCorrelationId: false`).
-- The platform's REST and gRPC clients, MassTransit and Temporal already call these methods. Webhooks send only the
-  correlation id, because a subscriber is outside the trust boundary.
-
-## Tenants
-
-`TenantId` wraps a non-empty `Guid`. "No tenant" is `TenantId?` = `null`, never `Guid.Empty`.
+### 4. Work with tenants
 
 ```csharp
 using SharedKernel.Execution.Tenancy;
@@ -194,27 +216,13 @@ using SharedKernel.Execution.Tenancy;
 var tenant = TenantId.Parse("0f8fad5b-d9cb-469f-a165-70867728950e");
 string key = $"orders:{tenant}";                                 // always the lowercase "D" form
 TenantId? fromColumn = TenantId.FromNullable(row.TenantGuid);    // null and Guid.Empty both become null
-bool ok = TenantId.TryParse(header, out TenantId parsed);
-```
 
-- The constructor rejects `Guid.Empty`. `default(TenantId)` exists because it is a struct; `IsDefault` reports it and
-  APIs reject it.
-- The string form is the same everywhere: cache keys, storage prefixes, headers, baggage, logs, row-level-security
-  settings. JSON reads and writes it as a string.
-- Conversions to and from `Guid` are explicit.
-
-`TenantScope` is the explicit scope of an operation that could otherwise leak across tenants, such as a search, a
-vector query, a workflow dispatch or a scheduled job:
-
-```csharp
 await index.SearchAsync(request, TenantScope.For(tenant), ct);
 await index.SearchAsync(request, TenantScope.Global, ct);          // work that belongs to no tenant, on purpose
 TenantScope scope = TenantScope.FromNullable(context.TenantId);   // Global when there is no tenant
 ```
 
-APIs take it as a required parameter with no default, because `default(TenantScope)` is `Global`.
-
-## The unit of work
+### 5. Run retry-safe work in one transaction
 
 ```csharp
 using SharedKernel.Execution.Transactions;
@@ -230,62 +238,79 @@ public sealed class ApproveOrderJob(IUnitOfWork unitOfWork, IRepository<Order, O
 }
 ```
 
-- **The delegate may run more than once.** A retrying execution strategy replays it after a transient failure,
-  discarding what the failed attempt staged. Load what you need inside it; keep HTTP calls and messages out of it.
-- `ExecuteInTransactionAsync<TResult>` rolls back and returns the result unchanged when the result is a failed
-  `Result`/`Result<T>`: nothing is saved. Overloads take an `IsolationLevel`.
-- Calling it inside an active transaction joins that transaction; only the outermost call commits. With
-  `SharedKernel.Persistence.EfCore` every context of the DI scope on the same database shares that one transaction.
-- A joined call that throws or returns a failed result marks the transaction **rollback-only**: nothing commits, and an
-  outermost operation that still returns success gets `TransactionRolledBackException`.
-- A commit that fails without a server response throws `CommitOutcomeUnknownException` and is never replayed. The
-  commit may or may not have happened; re-read (or check the idempotency key) before retrying.
-- `OnBeforeCommit(callback)` queues work inside the active transaction, after the last save and before the commit. The
-  audit trail writes its `Succeeded` record there. `IsTransactionActive` reports whether one is open.
-- There is no `BeginTransactionAsync`: a caller-held transaction handle cannot be replayed by a retrying strategy.
-
-## The audit writer
-
-`AuditEntry` carries only what the caller knows: action, resource type and id, before/after snapshots, outcome, error
-code, approval id and idempotency key. The writer resolves actor, tenant, client, session, time and correlation id from
-the request context itself, so a caller cannot attribute an entry to someone else.
-
-- `Succeeded` is written inside the business transaction and commits or rolls back with it.
-- `Failed` is written on its own connection and committed at once.
-
-The pipeline's auditing behavior writes these for commands marked `IAuditableRequest`; call `RecordAsync` directly only
-for actions that do not go through the pipeline.
-
 ## Reference
+
+### Registration
+
+None in this package. `IRequestContext` is registered by the host (`AddSharedKernelRequestContext()`); adapters
+`TryAddSingleton` the `RequestContextAccessor`; persistence registers `IUnitOfWork` and `IAuditTrailWriter`.
+
+### Types
 
 | Type | Namespace | Purpose |
 | --- | --- | --- |
-| `IRequestContext` | `.Context` | The caller: identity, tenant, actor kind, client, session, impersonator, correlation id, permission check |
+| `IRequestContext` | `.Context` | `IsAuthenticated`, `UserId`, `TenantId`, `ActorKind`, `ClientId`, `SessionId`, `ImpersonatorId`, `CorrelationId`, `HasPermissionAsync` |
 | `ActorKind` | `.Context` | `User`, `Service`, `System`, `Anonymous` |
-| `SystemRequestContext` | `.Context` | Authenticated system actor with an explicit permission set, optional tenant and correlation id |
+| `SystemRequestContext` | `.Context` | `(permissions, identity = "system", tenantId = null, correlationId = null)` |
 | `AnonymousRequestContext` | `.Context` | Unauthenticated, no tenant; `Instance` |
-| `PropagatedRequestContext` | `.Context` | The sender rebuilt from propagation headers; attribution only, grants no permission |
-| `RequestContextScope` | `.Context` | `Begin(context)` makes a context ambient; `Current` |
-| `IRequestContextAccessor`, `RequestContextAccessor` | `.Context` | Reads the ambient context; register as a singleton |
-| `RequestContextExtensions` | `.Context` | `WithTenant`, `WithCorrelationId` |
+| `PropagatedRequestContext` | `.Context` | The sender rebuilt from headers; attribution only |
+| `RequestContextScope` | `.Context` | `Begin(context)` → `IDisposable`; `Current` |
+| `IRequestContextAccessor`, `RequestContextAccessor` | `.Context` | `Current`; register as a singleton |
+| `RequestContextExtensions` | `.Context` | `WithTenant(tenantId)`, `WithCorrelationId(id)` |
 | `RequestContextPropagation` | `.Context` | `WriteHeaders`, `ReadHeaders`, `ParseActorKind` |
 | `CorrelationIds` | `.Context` | `New`, `IsValid`, `AcceptOrCreate`, `Current`, `MaxLength` (128) |
-| `TenantId` | `.Tenancy` | Non-empty `Guid` tenant id; `Parse`, `TryParse`, `FromNullable`, JSON converter |
+| `TenantId` | `.Tenancy` | Non-empty `Guid`; `Parse`, `TryParse`, `FromNullable`, `IsDefault`, explicit `Guid` conversions, `TenantIdJsonConverter` (string form) |
 | `TenantScope` | `.Tenancy` | `For(tenant)`, `Global`, `FromNullable`; `Tenant`, `IsGlobal` |
-| `IUnitOfWork` | `.Transactions` | `ExecuteInTransactionAsync` (4 overloads), `SaveChangesAsync`, `IsTransactionActive`, `OnBeforeCommit` |
+| `IUnitOfWork` | `.Transactions` | `ExecuteInTransactionAsync` (4 overloads, optional `IsolationLevel`), `SaveChangesAsync`, `IsTransactionActive`, `OnBeforeCommit` |
 | `CommitOutcomeUnknownException`, `TransactionRolledBackException` | `.Transactions` | The two transaction outcomes a caller must handle |
-| `IAuditTrailWriter`, `AuditEntry`, `AuditOutcome` | `.Auditing` | Audit records written through the persistence ledger |
+| `IAuditTrailWriter`, `AuditEntry`, `AuditOutcome` | `.Auditing` | `RecordAsync(entry)`; `Succeeded`/`Failed` |
 
-The header and baggage names are in `SharedKernel.Primitives.Propagation` (`WellKnownHeaders`, `WellKnownBaggageKeys`).
+### Logging
 
-## Related packages
+The package does not log.
 
-- [`SharedKernel.Primitives`](../SharedKernel.Primitives/README.md): `Result`, `Error`, `WellKnownHeaders`.
-- `SharedKernel.ServiceDefaults.Security` (`13.ServiceDefaults`): `AddSharedKernelRequestContext()` and
-  `app.UseSharedKernelRequestContext()`, the HTTP adapter. Register the middleware first, before
-  `UseExceptionHandler()`.
-- `SharedKernel.MultiTenancy` (`13.ServiceDefaults`): resolves the request's tenant and opens an inner scope that
-  replaces only the tenant.
-- `SharedKernel.Persistence.EfCore` and `.EfCore.Auditing` (`06.Persistence`): implement `IUnitOfWork` and
-  `IAuditTrailWriter`.
-- `SharedKernel.Testing` (`16.Testing`): `TestRequestContext` for unit tests.
+## Testing
+
+Reference [`SharedKernel.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/16.Testing/SharedKernel.Testing/README.md)
+and use `TestRequestContext` (`SharedKernel.Testing.Execution`) — settable tenant, actor and permissions:
+
+```csharp
+var caller = TestRequestContext.ForTenant(tenant).WithPermissions("accounts.close");
+var handler = new CloseAccount(caller, accounts);
+```
+
+Other factories: `ForUser`, `Service(clientId)`, `System(identity)`, `Anonymous()`. For persistence fakes of
+`IUnitOfWork` and `IAuditTrailWriter`, see
+[`SharedKernel.Persistence.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/16.Testing/SharedKernel.Persistence.Testing/README.md)
+(`AddFakeUnitOfWork()`, `AddFakeAuditTrailWriter()`).
+
+## Pitfalls
+
+| Don't | Do | Why |
+| --- | --- | --- |
+| Use `Guid.Empty` or a `string` for "no tenant" | `TenantId?` = `null` | The constructor rejects `Guid.Empty`; tenant-scoped code fails closed on `null` |
+| Default a `TenantScope` parameter | Make it required | `default(TenantScope)` is `Global` |
+| Grant `SystemRequestContext` "all permissions" | Pass the explicit set the job needs | An empty set means none; there is no wildcard |
+| Authorize with a `PropagatedRequestContext` | Re-resolve permissions from the identity provider by `UserId` | Headers grant nothing; its permission check always fails |
+| Read caller identity from `Activity` baggage | Read `IRequestContext` / `IRequestContextAccessor` | Baggage is caller input |
+| Use `Activity.Id` as the correlation id | `CorrelationIds.Current(context)` | A trace id changes; a correlation id must not |
+| Open a scope in one method and dispose it elsewhere | `using (RequestContextScope.Begin(…))` in one method | Scopes flow with `ExecutionContext` and restore on dispose |
+| Load aggregates before `ExecuteInTransactionAsync` | Load inside the delegate | A retry replays the delegate with fresh state |
+| Send HTTP calls or messages inside the transaction delegate | Use the outbox or `OnBeforeCommit` | The delegate may run more than once |
+| Retry after `CommitOutcomeUnknownException` blindly | Re-read or check the idempotency key | The commit may have happened |
+
+## Design decisions
+
+**Why no `BeginTransactionAsync`?** A caller-held transaction handle cannot be replayed by a retrying execution strategy;
+a delegate can.
+
+**Why does the audit writer resolve the actor itself?** So a caller cannot attribute an entry to someone else.
+
+**Why is this a Foundation package with no mediator, ORM or ASP.NET Core?** Every channel — HTTP, gRPC, messages,
+workflows, jobs — needs the same caller, and every tier must be able to read it.
+
+---
+
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
+[Core domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/01.Core/README.md) ·
+[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

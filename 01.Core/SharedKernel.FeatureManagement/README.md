@@ -2,87 +2,58 @@
 
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
-[![OpenFeature](https://img.shields.io/badge/API-OpenFeature%20(CNCF)-5d5fef)](https://openfeature.dev/)
-![Backend: Microsoft.FeatureManagement](https://img.shields.io/badge/backend-Microsoft.FeatureManagement%204.7-0078d4)
+![Tier: Foundation](https://img.shields.io/badge/tier-Foundation-2ea44f)
 ![Public API: tracked](https://img.shields.io/badge/public%20API-tracked-informational)
+[![OpenFeature](https://img.shields.io/badge/API-OpenFeature%20(CNCF)-5d5fef)](https://openfeature.dev/)
 ![Evaluation: never throws](https://img.shields.io/badge/evaluation-never%20throws-success)
 
 > **Feature flags on the OpenFeature standard. Declare a flag once as a typed constant, and every evaluation targets
 > the right user and tenant, stays the same for the whole request, never throws, and is checked at startup.**
 
-Services inject OpenFeature's `IFeatureClient`, the vendor-neutral API from the CNCF, and ask for a typed
-`FeatureFlag<T>` rather than a string. Behind it, `Microsoft.FeatureManagement` reads flags from configuration (or
-Azure App Configuration), with percentage rollouts, user, group and tenant targeting, time windows and A/B variants.
-The package adds what services need on top: the caller's identity applied to every evaluation (the caller of the
-open request context by default — never `Activity` baggage, which the caller controls), one answer per request, and
-startup that fails on a misspelled flag instead of silently turning a feature off.
-
-```csharp
-public static class Flags
-{
-    public static readonly FeatureFlag<bool> NewCheckout = FeatureFlag.Boolean("NewCheckout");
-    public static readonly FeatureFlag<string> CheckoutTheme = FeatureFlag.String("CheckoutTheme", defaultValue: "classic");
-}
-
-if (await flags.IsEnabledAsync(Flags.NewCheckout, ct)) { ... }       // targets the current user and tenant
-string theme = await flags.GetValueAsync(Flags.CheckoutTheme, ct);   // "dark" for the users in the experiment
-```
-
-```text
-Flags.NewCheckout     alice (listed user)          -> true
-                      bob, tenant acme (listed)    -> true
-                      bob, tenant other            -> false    reason TARGETING_MATCH
-Flags.CheckoutTheme   alice                        -> "dark"   variant Dark     reason TARGETING_MATCH
-                      bob                          -> "classic" variant Classic
-FeatureFlag.Boolean("NewChekout")   (typo)         -> false    error FLAG_NOT_FOUND, and startup fails if declared
-```
+Services inject OpenFeature's `IFeatureClient` and ask for a typed `FeatureFlag<T>` rather than a string. Behind it,
+`Microsoft.FeatureManagement` reads flags from configuration (or Azure App Configuration) with percentage rollouts,
+user/group/tenant targeting, time windows and A/B variants.
 
 | You get | So that |
 | --- | --- |
 | OpenFeature's `IFeatureClient` as the API | Services code against a CNCF standard; moving to LaunchDarkly, flagd or ConfigCat changes the provider, not the call sites |
-| Typed `FeatureFlag<T>` constants: boolean, string, integer, double and JSON object | No flag key is typed twice, and a variant's JSON arrives as your own record, read without reflection |
+| Typed `FeatureFlag<T>` constants: boolean, string, integer, double, JSON object | No flag key is typed twice, and an object variant arrives as your own record, read without reflection |
 | `IFeatureTargetingContextAccessor`, implemented once per service | Percentage rollouts and user, group and tenant targeting work without passing context on every call |
 | One evaluation per flag per request (`EvaluateOncePerScope`) | A configuration reload cannot switch a flag halfway through a request or a message |
-| Evaluation that never throws | A missing flag, a type mismatch or a failing filter returns your default, with the reason and error in the details |
+| Evaluation that never throws | A missing flag, a type mismatch or a failing filter returns your default, with the reason in the details |
 | `ValidateOnStart(...)` | A misspelled key or a variant that does not parse stops startup, listing every problem |
-| The OpenTelemetry `feature_flag.evaluation` event, per flag | Traces show who got which variant, and never record the user id |
-| `FakeFeatureClient` in `SharedKernel.FeatureManagement.Testing` | Unit tests set flag values in one line, with no configuration or host |
+| The OpenTelemetry `feature_flag.evaluation` event | Traces show who got which variant, and never record the user id |
 
 ## Contents
 
 - [Install](#install)
 - [Quick start](#quick-start)
-- [Which type do I need?](#which-type-do-i-need)
 - [How it works](#how-it-works)
-- [Configuring flags](#configuring-flags)
-- [Targeting](#targeting)
-- [Variants and typed values](#variants-and-typed-values)
-- [One answer per request](#one-answer-per-request)
-- [Startup validation](#startup-validation)
-- [Telemetry](#telemetry)
-- [When evaluation fails](#when-evaluation-fails)
 - [Recipes](#recipes)
+- [Configuration](#configuration)
 - [Reference](#reference)
+- [Testing](#testing)
 - [Pitfalls](#pitfalls)
 - [Design decisions](#design-decisions)
-- [Deliberately not included](#deliberately-not-included)
-- [AI quick reference](#ai-quick-reference)
-- [Compatibility and guarantees](#compatibility-and-guarantees)
 
 ## Install
 
-```shell
-dotnet add package SharedKernel.FeatureManagement
+```xml
+<PackageReference Include="SharedKernel.FeatureManagement" />
 ```
+
+The version comes from your central `SharedKernelVersion` property — every SharedKernel package ships at the same
+version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel#using-the-packages).
 
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
-| Depends on | `OpenFeature` and `OpenFeature.Hosting` 2.14 (the API), `Microsoft.FeatureManagement` 4.7 (the backend), `SharedKernel.Primitives` |
-| Namespace | `SharedKernel.FeatureManagement`; plus `OpenFeature` for `IFeatureClient` |
+| Tier | Foundation — reference it from **any** project |
+| Depends on | `OpenFeature` + `OpenFeature.Hosting` (the API), `Microsoft.FeatureManagement` (the backend), `SharedKernel.Primitives`, `SharedKernel.Execution` |
+| Namespaces | `SharedKernel.FeatureManagement`; `OpenFeature` for `IFeatureClient` |
 
-Libraries that only evaluate flags need `IFeatureClient` from `OpenFeature` and the `FeatureFlag<T>` declarations; only
-the host calls `AddSharedKernelFeatureManagement`.
+Libraries that only evaluate flags need `IFeatureClient` and the `FeatureFlag<T>` declarations; only the host calls
+`AddSharedKernelFeatureManagement`.
 
 ## Quick start
 
@@ -117,7 +88,7 @@ public static class Flags
               "parameters": {
                 "Audience": {
                   "Users": [ "alice" ],
-                  "Groups": [ { "Name": "acme", "RolloutPercentage": 100 } ],
+                  "Groups": [ { "Name": "0f8fad5b-d9cb-469f-a165-70867728950e", "RolloutPercentage": 100 } ],
                   "DefaultRolloutPercentage": 0
                 }
               }
@@ -158,9 +129,8 @@ public sealed class UserFeatureTargeting(IUserContext user) : IFeatureTargetingC
 }
 ```
 
-`IUserContext` is `SharedKernel.Security.Abstractions`; any authenticated identity source works (`IRequestContext`
-from `SharedKernel.Execution` too). Without an accessor of your own, the default one targets the caller of the open
-`RequestContextScope` (user id and tenant, no groups).
+`IUserContext` is `SharedKernel.Security.Abstractions`; any verified identity source works. Without an accessor of your
+own, the default one targets the caller of the open `RequestContextScope` (user id and tenant, no groups).
 
 **4. Evaluate.** `IFeatureClient` is scoped; inject it like any request service.
 
@@ -178,26 +148,10 @@ public sealed class CheckoutEndpoint(IFeatureClient flags)
 ```
 
 ```text
-alice             -> new-checkout/dark
-bob, tenant acme  -> new-checkout/classic
-bob, no tenant    -> legacy-checkout
+alice                 -> new-checkout/dark
+bob, tenant 0f8fad5b… -> new-checkout/classic
+bob, no tenant        -> legacy-checkout
 ```
-
-## Which type do I need?
-
-| I want to… | Use |
-| --- | --- |
-| Turn a feature on or off | `FeatureFlag.Boolean` + `IsEnabledAsync` |
-| Pick one of several values (a theme, a page size, a discount) | `FeatureFlag.String` / `.Integer` / `.Double` + `GetValueAsync` |
-| Get a settings object for the assigned variant | `FeatureFlag.Object<T>(key, default, MyJsonContext.Default.T)` |
-| Know which variant someone got, and why | `GetDetailsAsync` → `Variant`, `Reason`, `ErrorType` |
-| Target users, roles, plans or tenants | Implement `IFeatureTargetingContextAccessor` once |
-| Evaluate for someone other than the caller | Pass `FeatureTargetingContext.ToEvaluationContext()` to the call |
-| Roll out to a percentage of tenants | `FeatureTargetingContext.ForTenant(id)` ([recipe 3](#3-roll-out-to-a-percentage-of-tenants)) |
-| Fail startup on a missing or broken flag | `ValidateOnStart(...)` |
-| See flag decisions in traces | `"telemetry": { "enabled": true }` on the flag |
-| Add a condition of your own | An `IFeatureFilter` + `AddFeatureFilter<T>()` ([recipe 6](#6-add-your-own-condition)) |
-| Test code that reads flags | `FakeFeatureClient` from `SharedKernel.FeatureManagement.Testing` |
 
 ## How it works
 
@@ -212,177 +166,44 @@ flowchart LR
     O -->|telemetry hook| T["feature_flag.evaluation event<br/>on the current activity"]
 ```
 
-*A request's first evaluation of a flag goes through OpenFeature to `Microsoft.FeatureManagement`; later ones in the
-same scope reuse it. The caller comes from the accessor, and a context passed to a call wins over it.*
+### Targeting
 
-The package's provider hands `Microsoft.FeatureManagement` an explicit targeting context: the targeting key as the user
-id, and the groups plus the tenant id as groups. That same context drives the on/off state (the `Microsoft.Targeting`
-filter) and variant allocation, so both always agree about who the caller is.
+The provider hands `Microsoft.FeatureManagement` one explicit targeting context that drives both the on/off state and
+variant allocation, so they always agree about who the caller is. A context passed to a call wins over the accessor's.
 
-```mermaid
-flowchart TB
-    I["Context passed to the call<br/>(wins)"] --> R[Evaluation context]
-    L["Client context: the accessor's user,<br/>tenant and groups, read once per scope"] --> R
-    G["OpenFeature global and transaction context<br/>(not used by the package)"] --> R
-```
-
-## Configuring flags
-
-Flags live in configuration: `appsettings.json`, environment variables, Azure App Configuration, anything
-`IConfiguration` reads. Both of Microsoft's schemas work, and a configuration reload takes effect on the next scope.
-
-| Condition | Configuration | Behavior |
-| --- | --- | --- |
-| Always on / off | `{ "id": "X", "enabled": true }` or `"enabled": false` | Reason `STATIC` / `DISABLED` |
-| Users, groups, tenants, percentage | `"client_filters": [ { "name": "Microsoft.Targeting", "parameters": { "Audience": { ... } } } ]` | Sticky per user: the same user always gets the same answer |
-| A date range, or a recurring window | `"name": "Microsoft.TimeWindow"`, `"parameters": { "Start": "...", "End": "..." }` | On inside the window |
-| A random percentage of calls | `"name": "Microsoft.Percentage"`, `"parameters": { "Value": 20 }` | Not sticky; see [Pitfalls](#pitfalls) |
-| All or any of several filters | `"conditions": { "requirement_type": "All", "client_filters": [ ... ] }` | Default is `Any` |
-| Variants | `"variants"` + `"allocation"` (`default_when_enabled`, `user`, `group`, `percentile`) | See [Variants](#variants-and-typed-values) |
-| Your own condition | `"name": "YourAlias"` + `AddFeatureFilter<T>()` | [Recipe 6](#6-add-your-own-condition) |
-
-The older schema still works for plain on/off flags:
-
-```json
-{ "FeatureManagement": { "NewCheckout": true } }
-```
-
-Pass `builder.Configuration` itself to `AddSharedKernelFeatureManagement`, never `GetSection(...)`: the two schemas
-live under different root keys.
-
-## Targeting
-
-`FeatureTargetingContext` describes the caller: a user id, a tenant id and groups (roles, plans, cohorts).
-
-| Value | Used for |
+| `FeatureTargetingContext` value | Used for |
 | --- | --- |
 | `UserId` | `Audience.Users`, `allocation.user`, and the hash behind every percentage |
 | `TenantId` | Added to the groups, so a tenant is targeted under `Audience.Groups` or `allocation.group` |
-| `Groups` | `Audience.Groups` (with a rollout percentage each) and `allocation.group` |
+| `Groups` | `Audience.Groups` (each with a rollout percentage) and `allocation.group` |
 | `TargetingKey` | `UserId`, or `TenantId` when there is no user |
 
-**Where it comes from.** The registered `IFeatureTargetingContextAccessor`, read once when a scope first resolves
-`IFeatureClient`. Register it with any lifetime, scoped included. Without one, the default accessor
-(`AmbientTenantTargetingContextAccessor`) supplies the caller of the open `RequestContextScope` — every inbound
-adapter opens one from an identity it has verified: HTTP, gRPC, message consume, workflow activity, scheduled job:
+The accessor is read once when a scope first resolves `IFeatureClient`, with any lifetime. The built-in default
+(internal) supplies the open request context's authenticated `UserId` and `TenantId`; a
+caller with neither targets as anonymous (one shared percentage bucket). `Activity` baggage is never read — a caller can
+send baggage itself, so a tenant taken from it would let anyone choose another tenant's flags.
 
-- Its `IRequestContext.UserId` when the caller is authenticated, and its `IRequestContext.TenantId`; no groups.
-- A caller with neither, and code running with no scope open, targets as anonymous (one shared percentage bucket).
-- `Activity` baggage is never read (P-562 X2). A caller can send baggage itself (the W3C `baggage` header), so a
-  tenant taken from it would let anyone choose another tenant's flags.
+### One answer per request
 
-**Evaluating for someone else, or with no request.** Pass a context to the call; its values replace the caller's.
-Work that has no caller of its own, such as a background job for one tenant, passes
-`FeatureTargetingContext.ForTenant(tenantId).ToEvaluationContext()` the same way.
+With `EvaluateOncePerScope` (default), the first evaluation of a flag in a scope — one HTTP request, one message, one
+job run — is reused until the scope ends; a configuration change takes effect from the next scope.
 
-```csharp
-bool on = await flags.IsEnabledAsync(Flags.NewCheckout, new FeatureTargetingContext("bob", "acme").ToEvaluationContext(), ct);
-```
+- A result is reused only for the same flag, default and explicit context; `alice` and `bob` are evaluated separately.
+- A failed evaluation is never reused, nor is a call that passes its own `FlagEvaluationOptions`.
+- `ScopeResultLifetime` (default one minute) caps reuse, so a long-running scope still sees a kill switch within a minute.
 
-## Variants and typed values
-
-A variant is a named value in the flag's configuration. `allocation` decides who gets which: listed users, listed
-groups, a percentile range, and defaults for enabled and disabled.
+### Variants and typed values
 
 | Flag | Reads `configuration_value` as | On a value that does not fit |
 | --- | --- | --- |
-| `FeatureFlag.String` | Text | Default, `TYPE_MISMATCH` |
-| `FeatureFlag.Integer` | Whole number, invariant culture | Default, `TYPE_MISMATCH` |
-| `FeatureFlag.Double` | Number, invariant culture (`"0.15"`) | Default, `TYPE_MISMATCH` |
-| `FeatureFlag.Object<T>` | A JSON object, through a source-generated `JsonTypeInfo<T>` | Default, `PARSE_ERROR` |
+| `FeatureFlag.String` | Text | Default, `TypeMismatch` |
+| `FeatureFlag.Integer` / `.Double` | Number, invariant culture (`"0.15"`) | Default, `TypeMismatch` |
+| `FeatureFlag.Object<T>` | A JSON object, through a source-generated `JsonTypeInfo<T>` | Default, `ParseError` |
 
-An object variant is read by the shape of `T`. Configuration keeps every value as text, so each one is converted to the
-type of the property it fills: `3` to an `int`, `true` to a `bool`, and `"007"` stays `"007"` for a `string` property.
+Configuration keeps every value as text, so each is converted to the type of the property it fills: `3` to an `int`,
+`true` to a `bool`, `"007"` stays `"007"` for a `string`.
 
-```csharp
-public sealed record CheckoutSettings(int Steps, bool ExpressPay, IReadOnlyList<string> Providers);
-
-[JsonSerializable(typeof(CheckoutSettings))]
-internal sealed partial class AppJsonContext : JsonSerializerContext;
-
-public static readonly FeatureFlag<CheckoutSettings?> Checkout =
-    FeatureFlag.Object<CheckoutSettings?>("Checkout", null, AppJsonContext.Default.CheckoutSettings);
-```
-
-```json
-{
-  "id": "Checkout",
-  "enabled": true,
-  "variants": [
-    { "name": "OneStep", "configuration_value": { "Steps": 1, "ExpressPay": true, "Providers": [ "card", "iban" ] } }
-  ],
-  "allocation": { "default_when_enabled": "OneStep" }
-}
-```
-
-## One answer per request
-
-With `EvaluateOncePerScope` (the default), the first evaluation of a flag in a scope is reused until the scope ends:
-one HTTP request, one message, one job run. A configuration change still takes effect, from the next scope.
-
-```mermaid
-sequenceDiagram
-    participant R as Request (one scope)
-    participant F as IFeatureClient
-    participant C as Configuration
-    R->>F: IsEnabledAsync(Kill)
-    F->>C: evaluate
-    C-->>F: on
-    F-->>R: on
-    Note over C: an operator turns Kill off
-    R->>F: IsEnabledAsync(Kill)
-    F-->>R: on (same answer, same request)
-    Note over R: next request, new scope
-    R->>F: IsEnabledAsync(Kill)
-    F->>C: evaluate
-    C-->>F: off
-```
-
-- A result is reused only for the same flag, default and explicit context; `alice` and `bob` in one scope are
-  evaluated separately.
-- A failed evaluation is never reused, and neither is a call that passes its own `FlagEvaluationOptions`.
-- `ScopeResultLifetime` (default one minute) caps the reuse, so a long-running scope still sees a kill switch within a
-  minute.
-- Set `EvaluateOncePerScope = false` to evaluate every call.
-
-## Startup validation
-
-```csharp
-builder.Services.AddSharedKernelFeatureManagement(builder.Configuration, flags => flags
-    .ValidateOnStart(Flags.NewCheckout, Flags.CheckoutTheme, Flags.Checkout));
-```
-
-When the host starts, each declared flag must be configured, and for string, number and object flags every variant's
-value must fit the flag's type. Otherwise `StartAsync` throws a `FeatureFlagValidationException` with every problem:
-
-```text
-Feature flag configuration is invalid:
-- 'NewChekout' is not configured.
-- 'PageSize' variant 'Large': its configuration_value is not a whole number.
-- 'Checkout' has no variants; a FeatureFlag.Object flag reads its value from one.
-```
-
-## Telemetry
-
-A flag with `"telemetry": { "enabled": true }` adds the OpenTelemetry `feature_flag.evaluation` event to the current
-`Activity`, so a trace shows which variant a request got:
-
-```text
-feature_flag.evaluation
-  feature_flag.key             = CheckoutTheme
-  feature_flag.result.variant  = Dark
-  feature_flag.result.value    = dark
-  feature_flag.result.reason   = targeting_match
-  feature_flag.provider.name   = Microsoft.FeatureManagement
-  feature_flag.version         = 7           (from "telemetry": { "metadata": { "version": "7" } })
-```
-
-`Telemetry = FeatureTelemetryMode.AllFlags` emits it for every flag; `Off` for none. The event never contains the
-targeting key, user id or tenant id. `Microsoft.FeatureManagement`'s own `FeatureFlag` event, which records the user
-id as `TargetingId`, is suppressed. For evaluation counters, add OpenFeature's `MetricsHook`
-([recipe 8](#8-count-evaluations-with-opentelemetry-metrics)).
-
-## When evaluation fails
+### When evaluation fails
 
 Evaluation never throws. Every problem returns the flag's declared default, and `GetDetailsAsync` says why.
 
@@ -396,8 +217,27 @@ Evaluation never throws. Every problem returns the flag's declared default, and 
 | Flag enabled, no variant allocated | Default | `None` | `DEFAULT` |
 | Flag disabled | `false`, or the `default_when_disabled` variant | `None` | `DISABLED` |
 
-The error message names the flag and variant; it never includes the exception's message, which may quote
-configuration.
+The error message names the flag and variant; it never includes an exception message, which may quote configuration.
+
+### Startup validation
+
+`ValidateOnStart(flags…)`: when the host starts, each declared flag must be configured, and for string, number and
+object flags every variant's value must fit the flag's type. Otherwise `StartAsync` throws
+`FeatureFlagValidationException` listing every problem:
+
+```text
+Feature flag configuration is invalid:
+- 'NewChekout' is not configured.
+- 'PageSize' variant 'Large': its configuration_value is not a whole number.
+- 'Checkout' has no variants; a FeatureFlag.Object flag reads its value from one.
+```
+
+### Telemetry
+
+A flag with `"telemetry": { "enabled": true }` adds the OpenTelemetry `feature_flag.evaluation` event (key, variant,
+value, reason, provider name, `feature_flag.version` from `telemetry.metadata.version`) to the current `Activity`.
+`Telemetry = FeatureTelemetryMode.AllFlags` emits it for every flag; `Off` for none. The event never contains the
+targeting key, user id or tenant id; `Microsoft.FeatureManagement`'s own event, which records the user id, is suppressed.
 
 ## Recipes
 
@@ -411,8 +251,7 @@ configuration.
 public static readonly FeatureFlag<bool> Payments = FeatureFlag.Boolean("Payments", defaultValue: true);
 ```
 
-`defaultValue: true` keeps payments on if the flag is ever missing; set `"enabled": false` to stop them from the next
-request, with no deployment.
+`defaultValue: true` keeps payments on if the flag is ever missing; `"enabled": false` stops them from the next request.
 
 ### 2. Roll out to 10% of users
 
@@ -430,13 +269,15 @@ Each user id hashes to a fixed bucket, so a user in the 10% stays in it; raising
 
 ### 3. Roll out to a percentage of tenants
 
-Evaluate with the tenant as the targeting key, so every user of a tenant gets the same answer:
+Evaluate with the tenant as the targeting key, so every user of a tenant gets the same answer (also the way to evaluate
+for a background job with no caller):
 
 ```csharp
 bool on = await flags.IsEnabledAsync(Flags.NewSearch, FeatureTargetingContext.ForTenant(tenantId).ToEvaluationContext(), ct);
 ```
 
-To name tenants instead, list them as groups: `"Groups": [ { "Name": "acme", "RolloutPercentage": 100 } ]`.
+To name tenants instead, list them as groups: `"Groups": [ { "Name": "<tenant id>", "RolloutPercentage": 100 } ]`. To
+evaluate for another user: `new FeatureTargetingContext("bob", tenantId).ToEvaluationContext()`.
 
 ### 4. Launch at a set time
 
@@ -452,7 +293,7 @@ To name tenants instead, list them as groups: `"Groups": [ { "Name": "acme", "Ro
 }
 ```
 
-### 5. An A/B experiment
+### 5. Run an A/B experiment
 
 ```json
 {
@@ -477,7 +318,30 @@ Purchases.Add(1, new KeyValuePair<string, object?>("variant", button.Variant)); 
 
 Each user always lands in the same half. Change `seed` for the next experiment so users are shuffled again.
 
-### 6. Add your own condition
+### 6. Read a settings object from a variant
+
+```csharp
+public sealed record CheckoutSettings(int Steps, bool ExpressPay, IReadOnlyList<string> Providers);
+
+[JsonSerializable(typeof(CheckoutSettings))]
+internal sealed partial class AppJsonContext : JsonSerializerContext;
+
+public static readonly FeatureFlag<CheckoutSettings?> Checkout =
+    FeatureFlag.Object<CheckoutSettings?>("Checkout", null, AppJsonContext.Default.CheckoutSettings);
+```
+
+```json
+{
+  "id": "Checkout",
+  "enabled": true,
+  "variants": [
+    { "name": "OneStep", "configuration_value": { "Steps": 1, "ExpressPay": true, "Providers": [ "card", "iban" ] } }
+  ],
+  "allocation": { "default_when_enabled": "OneStep" }
+}
+```
+
+### 7. Add your own condition
 
 ```csharp
 [FilterAlias("Plan")]
@@ -496,7 +360,70 @@ builder.Services.AddSharedKernelFeatureManagement(builder.Configuration, flags =
 
 If the filter throws, the flag returns its default and a warning is logged.
 
-### 7. Test code that reads flags
+### 8. Count evaluations with OpenTelemetry metrics
+
+```csharp
+builder.Services.AddSharedKernelFeatureManagement(builder.Configuration, flags => flags
+    .ConfigureOpenFeature(openFeature => openFeature.AddHook(new MetricsHook(MetricsHookOptions.Default))));
+builder.Services.AddOpenTelemetry().WithMetrics(m => m.AddMeter("OpenFeature"));
+```
+
+## Configuration
+
+Flags live in the root `IConfiguration` (`appsettings.json`, environment variables, Azure App Configuration) under
+Microsoft's schema; a reload takes effect on the next scope.
+
+| Key | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `feature_management:feature_flags[]:id` | `string` | — (required) | The flag key; matches `FeatureFlag.Key` ordinally |
+| `feature_management:feature_flags[]:enabled` | `bool` | `false` | Off → reason `DISABLED`; on with no conditions → `STATIC` |
+| `feature_management:feature_flags[]:conditions:client_filters[]` | array | none | `Microsoft.Targeting` (`Audience.Users`/`Groups`/`DefaultRolloutPercentage`, sticky), `Microsoft.TimeWindow` (`Start`/`End`), `Microsoft.Percentage` (`Value`, random per call), or a custom alias |
+| `feature_management:feature_flags[]:conditions:requirement_type` | `Any` \| `All` | `Any` | How several filters combine |
+| `feature_management:feature_flags[]:variants[]` | array | none | `name` + `configuration_value` |
+| `feature_management:feature_flags[]:allocation` | object | none | `default_when_enabled`, `default_when_disabled`, `user`, `group`, `percentile`, `seed` |
+| `feature_management:feature_flags[]:telemetry` | object | off | `enabled`, `metadata` (e.g. `version`) |
+| `FeatureManagement:{Key}` | `bool` | — | Legacy schema for plain on/off flags |
+
+Behaviour options are set in code on `FeatureFlagOptions` (not bound from configuration):
+
+| Option | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `EvaluateOncePerScope` | `bool` | `true` | Reuse a flag's first answer for the rest of the scope |
+| `ScopeResultLifetime` | `TimeSpan` | 1 minute | Upper bound on that reuse; must be positive |
+| `Telemetry` | `FeatureTelemetryMode` | `ConfiguredFlags` | `ConfiguredFlags`, `AllFlags` or `Off` |
+
+## Reference
+
+### Registration
+
+| Method | Registers |
+| --- | --- |
+| `AddSharedKernelFeatureManagement(IConfiguration, Action<FeatureFlagOptions>?)` | Scoped `IFeatureClient` over an isolated OpenFeature API, the provider, the default targeting accessor; call once (a second call throws); pass the **root** configuration |
+| `FeatureFlagOptions.ValidateOnStart(params FeatureFlag[])` | Startup validation of those flags |
+| `FeatureFlagOptions.AddFeatureFilter<TFilter>()` | A custom `IFeatureFilter` |
+| `FeatureFlagOptions.ConfigureOpenFeature(Action<OpenFeatureBuilder>)` | Hooks and other OpenFeature settings |
+
+### Types
+
+| Type | Purpose |
+| --- | --- |
+| `FeatureFlag` / `FeatureFlag<T>` | `Key`, `Kind`, `Description`, `DefaultValue`; factories `Boolean`, `String`, `Integer`, `Double`, `Object<T>` |
+| `FeatureClientExtensions` | On `IFeatureClient`: `IsEnabledAsync`, `GetValueAsync`, `GetDetailsAsync`, with or without an `EvaluationContext` |
+| `FeatureTargetingContext` | `UserId`, `TenantId`, `Groups`, `TargetingKey`; `ForTenant`, `ToEvaluationContext` |
+| `IFeatureTargetingContextAccessor` | `GetTargetingContext()`: the current caller |
+| `FeatureContextKeys` | Evaluation-context attributes: `TenantId` = `"tenantId"`, `Groups` = `"groups"` |
+| `FeatureFlagValidationException` | Startup failure with `Failures` |
+
+### Logging
+
+| Event id | Level | Event |
+| --- | --- | --- |
+| 1301 | Warning | `Feature flag {FlagKey} could not be evaluated; the caller's default value was used` — once per failed evaluation |
+
+## Testing
+
+Reference [`SharedKernel.FeatureManagement.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/16.Testing/SharedKernel.FeatureManagement.Testing/README.md)
+(namespace `SharedKernel.Testing.FeatureManagement`):
 
 ```csharp
 var flags = new FakeFeatureClient()
@@ -510,118 +437,52 @@ Assert.True(flags.WasEvaluated(Flags.NewCheckout));
 ```
 
 In an application test, `services.AddFakeFeatureFlags(f => f.SetEnabled(Flags.NewCheckout))` replaces the real
-registration. A flag the test never set returns its default with `FlagNotFound`, like the real client.
-
-### 8. Count evaluations with OpenTelemetry metrics
-
-```csharp
-builder.Services.AddSharedKernelFeatureManagement(builder.Configuration, flags => flags
-    .ConfigureOpenFeature(openFeature => openFeature.AddHook(new MetricsHook(MetricsHookOptions.Default))));
-builder.Services.AddOpenTelemetry().WithMetrics(m => m.AddMeter("OpenFeature"));
-```
-
-## Reference
-
-| Type | Purpose |
-| --- | --- |
-| `FeatureFlag` | Base: `Key`, `Kind`, `Description`; factories `Boolean`, `String`, `Integer`, `Double`, `Object<T>` |
-| `FeatureFlag<T>` | A declared flag; `DefaultValue` |
-| `FeatureFlagKind` | `Boolean`, `String`, `Integer`, `Double`, `Object` |
-| `FeatureClientExtensions` | On `IFeatureClient`: `IsEnabledAsync`, `GetValueAsync`, `GetDetailsAsync`, each with or without an `EvaluationContext` |
-| `FeatureTargetingContext` | `UserId`, `TenantId`, `Groups`, `TargetingKey`; `ForTenant`, `ToEvaluationContext` |
-| `IFeatureTargetingContextAccessor` | `GetTargetingContext()`: the current caller |
-| `FeatureContextKeys` | Evaluation-context attribute names: `TenantId` = `"tenantId"`, `Groups` = `"groups"` |
-| `FeatureFlagOptions` | `EvaluateOncePerScope`, `ScopeResultLifetime`, `Telemetry`, `ValidateOnStart`, `AddFeatureFilter<T>`, `ConfigureOpenFeature` |
-| `FeatureTelemetryMode` | `ConfiguredFlags` (default), `AllFlags`, `Off` |
-| `FeatureFlagValidationException` | Startup failure with `Failures` |
-| `FeatureManagementServiceCollectionExtensions` | `AddSharedKernelFeatureManagement(configuration, configure?)` |
-
-From OpenFeature: `IFeatureClient` (scoped), `EvaluationContext`, `FlagEvaluationDetails<T>`, `ErrorType`, `Reason`.
+registration; `SetObject(flag, value, typeInfo)` sets an object flag. A flag the test never set returns its default with
+`FlagNotFound`, like the real client. With a plain `ServiceProvider` (no host), call
+`IFeatureLifecycleManager.EnsureInitializedAsync()` first, or every evaluation returns `ProviderNotReady`.
 
 ## Pitfalls
 
-- **Pre-scoping the configuration.** `AddSharedKernelFeatureManagement(configuration.GetSection("FeatureManagement"))`
-  hides every flag in the `feature_management` schema, with no error. Pass the root configuration.
-- **`Microsoft.Percentage` for a rollout.** It draws a random number on every evaluation, so a user sees the feature
-  on one request and not the next. Use `Microsoft.Targeting` with `DefaultRolloutPercentage`, which is sticky per user.
-- **Resolving `IFeatureClient` from the root provider.** It is scoped. In a `BackgroundService`, create a scope per unit
-  of work; a client held for the whole process would reuse results for up to `ScopeResultLifetime`.
-- **`Api.Instance`.** The package registers an isolated OpenFeature API in dependency injection. The global
-  `Api.Instance` has no provider and returns every default. SK0002 flags it.
-- **Injecting `Microsoft.FeatureManagement`'s `IFeatureManager` or `IVariantFeatureManager`.** It skips targeting,
-  per-request consistency, fail-safe defaults and telemetry. SK0002 flags it.
-- **Relying on the default when a flag is missing.** Declare the flag in `ValidateOnStart`, so a typo fails startup.
-- **Expecting group targeting without an accessor.** The default accessor supplies only the open request context's
-  user and tenant. Roles, plans or cohorts need your own `IFeatureTargetingContextAccessor`. The tenant is never
-  taken from `Activity` baggage, which the caller controls.
-- **Culture-formatted numbers.** `configuration_value` is read with the invariant culture: `"0.15"`, never `"0,15"`.
-- **A plain `ServiceProvider` in a test.** The provider is initialized when the host starts; otherwise call
-  `IFeatureLifecycleManager.EnsureInitializedAsync()`, or every evaluation returns `ProviderNotReady`.
+| Don't | Do | Why |
+| --- | --- | --- |
+| `AddSharedKernelFeatureManagement(configuration.GetSection("FeatureManagement"))` | Pass the root configuration | The two schemas live under different root keys; the other one silently disappears |
+| `Microsoft.Percentage` for a rollout | `Microsoft.Targeting` with `DefaultRolloutPercentage` | Percentage draws a random number per call, so a user flips between requests |
+| Resolve `IFeatureClient` from the root provider | Create a scope per unit of work in a `BackgroundService` | It is scoped; a process-long client reuses results for up to `ScopeResultLifetime` |
+| Use OpenFeature's `Api.Instance` | Inject `IFeatureClient` | The package uses an isolated API; the global one has no provider (`SK0002`) |
+| Inject `IFeatureManager` / `IVariantFeatureManager` | Inject `IFeatureClient` | Skips targeting, per-request consistency, safe defaults and telemetry (`SK0002`) |
+| Rely on the default when a flag is missing | Declare the flag in `ValidateOnStart` | A typo then fails startup instead of silently turning a feature off |
+| Expect role or plan targeting from the default accessor | Implement `IFeatureTargetingContextAccessor` | The default supplies only user and tenant, no groups |
+| Write culture-formatted numbers (`"0,15"`) | `"0.15"` | Values are read with the invariant culture |
+| Use OpenFeature `Track` for experiment outcomes | Record metrics tagged with the variant | `Track` does nothing with this provider |
 
 ## Design decisions
 
-| Decision | Why |
-| --- | --- |
-| OpenFeature's `IFeatureClient` instead of our own interface | It is the CNCF standard; our former `IFeatureManager` was a smaller copy of it. Providers exist for most flag services, so the backend can change without touching callers |
-| `Microsoft.FeatureManagement` as the backend | Flags stay in configuration and Azure App Configuration, with targeting, time windows and variants, and no new service to run |
-| Our own provider, not Microsoft's preview OpenFeature provider | It was a 0.1 preview; ours maps targeting both ways, reports reasons and never throws |
-| Typed `FeatureFlag<T>` constants | A key typed once, a default declared next to it, and a type the compiler checks |
-| An accessor for the caller, read once per scope | Targeting must not depend on every call site remembering to pass context. The former API's context never reached `Microsoft.Targeting`, so targeting was silently off |
-| A default accessor over the open request context, never baggage | A default read the tenant from the `TenantId` `Activity` baggage item until P-562 X2. Baggage arrives from the caller (the W3C `baggage` header), so an anonymous request could choose another tenant's flags. The `RequestContextScope` is opened by an inbound adapter from an identity it verified, so it is the caller |
-| Tenant added to the groups | `Microsoft.FeatureManagement` targets only users and groups; this makes tenants targetable with no schema change |
-| One answer per scope, capped at one minute | A flag must not change halfway through a request; a kill switch must still act within a minute |
-| Telemetry off at `Microsoft.FeatureManagement`, on through OpenFeature | Microsoft's own event records the user id; the OpenTelemetry event does not |
-| Startup validation opt-in, per flag | Only the service knows which flags it depends on |
+**Why OpenFeature's `IFeatureClient` instead of our own interface?** It is the CNCF standard with providers for most flag
+services, so the backend can change without touching callers.
 
-## Deliberately not included
+**Why `Microsoft.FeatureManagement` as the backend, with our own provider?** Flags stay in configuration and App
+Configuration with targeting, time windows and variants, and no new service to run. Our provider maps targeting both
+ways, reports reasons and never throws.
 
-- **No endpoint or MediatR feature gates.** An endpoint filter returning 404 when a flag is off, and a MediatR marker,
-  belong to `14.Presentation` and `05.Application`; they are planned there.
-- **No flag management UI or storage.** Flags are configuration; Azure App Configuration or your deployment pipeline
-  edits them.
-- **No experiment analysis.** The package tells you who got which variant; comparing results is your metrics system's job.
-- **No `Track` support.** OpenFeature's `Track` does nothing with this provider; record outcomes as metrics tagged
-  with the variant ([recipe 5](#5-an-ab-experiment)).
+**Why an accessor read once per scope?** Targeting must not depend on every call site remembering to pass context.
 
-## AI quick reference
+**Why the request context and never baggage for the default accessor?** Baggage arrives from the caller (the W3C
+`baggage` header); a `RequestContextScope` is opened by an inbound adapter from an identity it verified.
 
-```text
-DECLARE     static readonly FeatureFlag<bool> X = FeatureFlag.Boolean("Key", defaultValue: false);
-            FeatureFlag.String(key, default) | .Integer | .Double | .Object<T>(key, default, JsonContext.Default.T)
-            Key = configuration id, ordinal. Never pass raw strings at call sites.
-REGISTER    services.AddSharedKernelFeatureManagement(builder.Configuration /* ROOT, never GetSection */, o => o
-                .ValidateOnStart(Flags.X, ...)          // startup fails on missing flag / bad variant
-                .AddFeatureFilter<TFilter>()            // custom IFeatureFilter with [FilterAlias]
-                .ConfigureOpenFeature(b => b.AddHook(...)));
-            o.EvaluateOncePerScope = true (default); o.ScopeResultLifetime = 1 min; o.Telemetry = ConfiguredFlags|AllFlags|Off
-            services.AddScoped<IFeatureTargetingContextAccessor, MyAccessor>();   // user, tenant, groups of the caller
-            No accessor -> the caller of the open RequestContextScope (user id, tenant); never Activity baggage.
-EVALUATE    inject OpenFeature.IFeatureClient (SCOPED). await client.IsEnabledAsync(Flags.X, ct);
-            GetValueAsync(flag, ct); GetDetailsAsync(flag, ct) -> Value, Variant, Reason, ErrorType, ErrorMessage.
-            Other target: pass new FeatureTargetingContext(userId, tenantId, groups).ToEvaluationContext() before ct.
-            Per tenant: FeatureTargetingContext.ForTenant(tenantId). Never throws; failure -> flag default + ErrorType.
-TARGETING   TargetingKey = UserId ?? TenantId. TenantId is added to groups. Audience.Users / Groups / DefaultRolloutPercentage;
-            allocation.user / group / percentile. Context keys: targetingKey, "tenantId", "groups".
-CONFIG      feature_management.feature_flags[]: id, enabled, conditions.client_filters[] (Microsoft.Targeting,
-            Microsoft.TimeWindow, Microsoft.Percentage = random per call), requirement_type All|Any, variants[{name,
-            configuration_value}], allocation{default_when_enabled, default_when_disabled, user, group, percentile, seed},
-            telemetry{enabled, metadata{version}}. Legacy: FeatureManagement:Key = true/false.
-TEST        SharedKernel.FeatureManagement.Testing (namespace SharedKernel.Testing.FeatureManagement): new FakeFeatureClient().SetEnabled(flag).Set(flag, value | ctx => value)
-            .SetObject(flag, value, typeInfo); services.AddFakeFeatureFlags(f => ...); WasEvaluated(flag).
-            Plain ServiceProvider: await sp.GetRequiredService<IFeatureLifecycleManager>().EnsureInitializedAsync().
-FORBIDDEN   Microsoft.FeatureManagement IFeatureManager/IVariantFeatureManager(+Snapshot) and OpenFeature Api.Instance (SK0002);
-            IFeatureClient from the root provider; Microsoft.Percentage for sticky rollouts; pre-scoped configuration.
-```
+**Why add the tenant to the groups?** `Microsoft.FeatureManagement` targets only users and groups; this makes tenants
+targetable with no schema change.
 
-## Compatibility and guarantees
+**Why one answer per scope, capped at one minute?** A flag must not change mid-request; a kill switch must still act
+within a minute.
 
-- **Public API is tracked** with `Microsoft.CodeAnalysis.PublicApiAnalyzers`, and every public member is documented.
-- **Evaluation never throws** for flag problems; the tests cover every row of [When evaluation fails](#when-evaluation-fails).
-- **Flag keys and context attribute names are stable:** `"tenantId"` and `"groups"` are part of the contract.
-- **No user id in telemetry**, tested against a real `ActivityListener`.
-- **Thread-safe.** Declarations are immutable; the per-scope client is safe for concurrent calls, and concurrent first
-  evaluations in one scope return the same answer.
-- **Tested end to end** through real JSON configuration, a real host and `Microsoft.FeatureManagement` 4.7, and every
-  code sample in this README runs as a test.
+**Why is startup validation opt-in per flag?** Only the service knows which flags it depends on.
 
-Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel).
+**What is deliberately not here?** No endpoint or pipeline feature gates, no flag management UI or storage (flags are
+configuration), no experiment analysis. The package is not trim/AOT-safe: `Microsoft.FeatureManagement` binds filter
+parameters by reflection.
+
+---
+
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
+[Core domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/01.Core/README.md) ·
+[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

@@ -1,19 +1,14 @@
 # SharedKernel.Application
 
-![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)
-![License: MIT](https://img.shields.io/badge/license-MIT-blue)
-![Tier: Abstractions](https://img.shields.io/badge/tier-Abstractions-5c6bc0)
+[![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
+![Tier: Abstractions](https://img.shields.io/badge/tier-Abstractions-1f6feb)
 ![Public API: tracked](https://img.shields.io/badge/public%20API-tracked-informational)
+![Mediator: none](https://img.shields.io/badge/mediator-none-brightgreen)
 
-**The CQRS vocabulary every service in the platform speaks: the kernel's own request, handler, sender and
-pipeline-behavior contracts, commands and queries, validators, domain-event handlers, and the markers the
-pipeline behaviors key off — with no mediator library in it.**
-
-This package is deliberately small. It declares *shapes*, runs no logic and performs no I/O, so a service's
-application-layer project can reference it and nothing else. The behaviors that log, authorize, validate,
-commit and audit requests live in
-[`SharedKernel.Application.Pipeline`](../SharedKernel.Application.Pipeline/README.md); the transport behind
-`ISender` is [`SharedKernel.Application.Mediator.MediatR`](../SharedKernel.Application.Mediator.MediatR/README.md).
+> **The CQRS vocabulary every service speaks — the kernel's own request, handler, sender and pipeline-behavior
+> contracts, commands, queries, validators, domain-event handlers and the markers the pipeline keys off — with no
+> mediator library in it, so an Application project references this and nothing else.**
 
 | You get | So that |
 | --- | --- |
@@ -27,28 +22,16 @@ commit and audit requests live in
 | `IDomainEventHandler<TDomainEvent>` | A domain event from `03.Domain` is handled against the raw event type, with no wrapper |
 | `[RequirePermission]` (always enforced) and the request markers (`IIdempotentRequest`, `IAuditableRequest<T>`, `ILoggableRequest<T>`, `ICacheableQuery<T>`, `IInvalidatesCache`) and `ICommandScope` | A request opts into a behavior by declaring an interface; the handler body never changes |
 
-**Tier:** Abstractions. **Dependencies:** `SharedKernel.Primitives`, `SharedKernel.Domain`,
-`SharedKernel.Caching.Abstractions` (for `CachePolicy` on `ICacheableQuery`). No MediatR, no FluentValidation, no
-HTTP, no persistence, no security stack. The caller contract `IRequestContext` is not here: it lives in
-`01.Core`'s `SharedKernel.Execution`, shared with persistence and messaging.
-
 ## Contents
 
 - [Install](#install)
 - [Quick start](#quick-start)
-- [Which interface do I implement?](#which-interface-do-i-implement)
-- [Walkthrough](#walkthrough)
-  - [1. A command that changes state](#1-a-command-that-changes-state)
-  - [2. A query that reads](#2-a-query-that-reads)
-  - [3. Who is calling — `IRequestContext`](#3-who-is-calling--irequestcontext)
-  - [4. Validating a request](#4-validating-a-request)
-  - [5. Handling a domain event](#5-handling-a-domain-event)
-  - [6. Streaming a large read](#6-streaming-a-large-read)
-  - [7. Writing a pipeline behavior](#7-writing-a-pipeline-behavior)
+- [How it works](#how-it-works)
+- [Recipes](#recipes)
 - [Reference](#reference)
-- [Pitfalls](#pitfalls)
 - [Testing](#testing)
-- [Package](#package)
+- [Pitfalls](#pitfalls)
+- [Design decisions](#design-decisions)
 
 ## Install
 
@@ -56,20 +39,30 @@ HTTP, no persistence, no security stack. The caller contract `IRequestContext` i
 <PackageReference Include="SharedKernel.Application" />
 ```
 
-Versions come from your single `SharedKernelVersion` property (the repository's `PLATFORM.md`, "Consuming the
-kernel"). This package registers nothing: it has no DI extension. The composition root wires the transport and
-the pipeline:
+The version comes from your central `SharedKernelVersion` property — every SharedKernel package ships at the same
+version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel#using-the-packages).
+
+| Requirement | Value |
+| --- | --- |
+| Target framework | `net10.0` |
+| Tier | Abstractions — reference it from your **Application** project |
+| Depends on | `SharedKernel.Primitives`, `SharedKernel.Domain`, `SharedKernel.Caching.Abstractions` (for `CachePolicy` on `ICacheableQuery`); no MediatR, no FluentValidation |
+| Namespaces | `SharedKernel.Application.*` — see [Namespaces](#namespaces) |
+
+This package registers nothing. The host (Api or Worker project) wires the pipeline and the transport with
+[`SharedKernel.Application.Pipeline`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/05.Application/SharedKernel.Application.Pipeline/README.md) and
+[`SharedKernel.Application.Mediator.MediatR`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/05.Application/SharedKernel.Application.Mediator.MediatR/README.md):
 
 ```csharp
-// API / worker project
 builder.Services.AddSharedKernelApplication(typeof(PlaceOrderCommand).Assembly, app => app.UseMediatR());
-// AddSharedKernelApplication: SharedKernel.Application.Pipeline; UseMediatR: SharedKernel.Application.Mediator.MediatR
 ```
 
 ## Quick start
 
 ```csharp
 using SharedKernel.Application.Messaging;
+using SharedKernel.Presentation.WebApi;   // the endpoint only: ToCreated
+using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Results;
 
 // 1. The command: what the caller wants, and what it gets back on success.
@@ -90,9 +83,9 @@ public sealed class PlaceOrderHandler(IOrderRepository repository, IClock clock)
     }
 }
 
-// 3. The endpoint: send through the kernel ISender, map the Result to HTTP and stop thinking about it.
-app.MapPost("/orders", async (PlaceOrderCommand command, ISender sender, CancellationToken ct) =>
-    (await sender.Send(command, ct)).ToProblemDetailsResult());
+// 3. The endpoint (Api project): send through the kernel ISender and map the Result to HTTP.
+app.MapPost("/orders", (PlaceOrderCommand command, ISender sender, CancellationToken ct) =>
+    sender.Send(command, ct).ToCreated(id => $"/orders/{id}"));
 ```
 
 Three properties hold from here on, and they are what the rest of the platform builds on:
@@ -104,7 +97,19 @@ Three properties hold from here on, and they are what the rest of the platform b
 - **The response type is `Result` or `Result<T>`.** Several behaviors short-circuit by *constructing* a
   failed response, which only those types can express.
 
-## Which interface do I implement?
+## How it works
+
+A request travels from the caller through `ISender` into the kernel pipeline and on to exactly one handler. This
+package only declares the shapes; the host decides the transport and the behaviors:
+
+```mermaid
+flowchart LR
+    Caller["Endpoint, consumer,<br/>job or workflow"] -->|"ISender.Send(request)"| Sender["ISender<br/>(Application.Mediator.MediatR)"]
+    Sender --> Pipeline["IPipelineBehavior chain<br/>(Application.Pipeline)"]
+    Pipeline --> Handler["ICommandHandler / IQueryHandler<br/>returns Result"]
+```
+
+### Which interface do I implement?
 
 ```mermaid
 flowchart TD
@@ -135,7 +140,7 @@ flowchart TD
 command" — the container then resolves that behavior for commands and silently skips it for everything else.
 That is a registration-time fact, not an `if` inside the behavior.
 
-## Walkthrough
+## Recipes
 
 ### 1. A command that changes state
 
@@ -181,7 +186,7 @@ A query never implements `ICommandBase`, so `TransactionBehavior`, `IdempotencyB
 
 ### 3. Who is calling — `IRequestContext`
 
-The caller contract is `SharedKernel.Execution.Context.IRequestContext` (`01.Core`, Foundation tier) — the one
+The caller contract is `SharedKernel.Execution.Context.IRequestContext` (`SharedKernel.Execution`, Foundation tier) — the one
 caller contract the whole platform shares: `IsAuthenticated`, `UserId`, `TenantId` (`TenantId?`), `ActorKind`
 (`User`/`Service`/`System`/`Anonymous`), `ClientId`, `SessionId`, `CorrelationId` and `HasPermissionAsync`.
 A handler that needs it injects it:
@@ -196,7 +201,7 @@ public sealed class ListMyOrdersHandler(IOrderReadService reads, IRequestContext
 ```
 
 An HTTP service registers it with `SharedKernel.ServiceDefaults.Security`'s `AddSharedKernelRequestContext()`
-(over `12.Security`'s `IUserContext`). A caller with no HTTP request uses one of `SharedKernel.Execution`'s own
+(over `SharedKernel.Security.Abstractions`' `IUserContext`). A caller with no HTTP request uses one of `SharedKernel.Execution`'s own
 implementations:
 
 ```csharp
@@ -236,8 +241,8 @@ public sealed class PlaceOrderValidator : IRequestValidator<PlaceOrderCommand>
 ```
 
 or keep FluentValidation validators and bridge them at the composition root with
-`services.AddFluentValidationRequestValidators()` (`01.Core/SharedKernel.Validation.FluentValidation`). Put the
-field path under `ErrorArgumentNames.PropertyPath` — `14.Presentation` keys the ProblemDetails `errors` map by it —
+`services.AddFluentValidationRequestValidators(typeof(PlaceOrderValidator).Assembly)` (`SharedKernel.Validation.FluentValidation`). Put the
+field path under `ErrorArgumentNames.PropertyPath` — `SharedKernel.Presentation.WebApi` keys the ProblemDetails `errors` map by it —
 and never put the rejected value in an error.
 
 ### 5. Handling a domain event
@@ -255,7 +260,7 @@ wrapper. `AddSharedKernelApplication(assemblies, …)` discovers handlers in the
 registered with `AddDomainEventHandler<OrderPlaced, SendOrderConfirmation>()` (`SharedKernel.Application.Pipeline`).
 The native `DomainEventDispatcher` (registered by the same call) resolves them.
 
-**When events are dispatched.** `06.Persistence`'s `SharedKernelDbContext.SaveChangesAsync` collects the events
+**When events are dispatched.** The persistence packages' `SharedKernelDbContext.SaveChangesAsync` collects the events
 from tracked aggregates and dispatches them **before** the physical save — on every save path (the unit of
 work, a seeder, a factory user) — repeating until handlers raise no more, then writes everything in one save.
 Consequences worth internalising:
@@ -266,7 +271,7 @@ Consequences worth internalising:
   they commit or roll back with the command.
 - **A handler exception abandons the save** and fails the request; nothing is written. Because dispatch happens
   before commit, a handler with an effect outside the database — sending mail, calling another service — must not
-  run here: put it behind an integration event (`04.Contracts` + `07.Messaging`) or `ICommandScope.OnCompleted`,
+  run here: put it behind an integration event (`SharedKernel.Contracts` + `SharedKernel.Messaging.Abstractions`) or `ICommandScope.OnCompleted`,
   which runs after the commit.
 - **No dispatcher registered**: the events are discarded with a warning.
 
@@ -363,51 +368,69 @@ The handler aliases add no members. They exist so a class declaration states its
 | `IInvalidatesCache` | `CacheKeysToInvalidate` (`CacheKeyRef`), `CacheTagsToInvalidate`, `Scope` | `CacheInvalidationBehavior` (`.Pipeline.Caching`) |
 | `ICommandScope` (injected, not implemented) | `IsActive`, `IsNested`, `OnCompleted(callback)` | Handlers queuing post-commit work |
 
-## Pitfalls
+### Logging
 
-**A handler that throws for an expected failure.** Throwing skips the failure path the rest of the platform
-is built on: the pipeline records an exception outcome instead of an error code, the transaction is not
-committed *and* no `Result` reaches the caller to say why. Return `Result.Failure(error)`.
-
-**A request whose response is not `Result`/`Result<T>`.** `IRequest<OrderDto>` compiles, and authorization or
-idempotency on it throws at the first short-circuit, in production. Analyzer `SK0040` flags this at build
-time — do not suppress it.
-
-**Implementing MediatR's interfaces.** A class implementing `MediatR.IRequestHandler` or `INotificationHandler`
-is not discovered by `AddSharedKernelApplication`. Implement the kernel interfaces; the application-layer project
-should not reference MediatR at all.
-
-**Expecting the unary behaviors to run for a stream.** They do not. `IStreamQuery<TResponse>` runs through
-`IStreamPipelineBehavior<,>` only.
-
-**A `SystemRequestContext` with every permission.** It takes an explicit list so a worker's blast radius is
-written down. Granting it everything makes the authorization behavior decorative.
+None: this package declares shapes and runs no code that logs. The pipeline's events (5100–5199) are listed in
+[`SharedKernel.Application.Pipeline`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/05.Application/SharedKernel.Application.Pipeline/README.md#logging).
 
 ## Testing
 
-A handler needs no harness: it is a class returning a `Result`. `16.Testing`'s Testing-tier packages supply the
-doubles:
+A handler needs no harness: it is a class returning a `Result`. Reference
+[`SharedKernel.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/16.Testing/SharedKernel.Testing/README.md) for the doubles:
 
 ```csharp
-var context = new FakeRequestContext { Permissions = ["orders.place"] };   // SharedKernel.Testing (SharedKernel.Testing.Application)
+using SharedKernel.Testing.Application;   // FakeRequestContext
+using SharedKernel.Testing.Clocks;        // FakeClock
+
+var caller = new FakeRequestContext { Permissions = ["orders.place"] };   // authenticated, fixed user id
 
 var result = await new PlaceOrderHandler(repository, new FakeClock()).Handle(command, default);
 
 Assert.True(result.IsSuccess);
 ```
 
-To test the composed pipeline instead, use `SharedKernel.Application.Testing`'s `ApplicationPipelineTestHarness` —
-see the [pipeline README](../SharedKernel.Application.Pipeline/README.md#testing).
+`TestRequestContext` (`SharedKernel.Testing.Execution`) covers the other callers: `ForUser`, `ForTenant`, `Service`,
+`System`, `Anonymous`, then `WithPermissions(...)`. To test the composed pipeline — authorization, validation,
+transactions — use
+[`SharedKernel.Application.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/16.Testing/SharedKernel.Application.Testing/README.md)'s
+`ApplicationPipelineTestHarness`, described in the
+[pipeline README](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/05.Application/SharedKernel.Application.Pipeline/README.md#testing).
 
-## Package
+## Pitfalls
 
-| | |
-| --- | --- |
-| **Tier** | Abstractions |
-| **Depends on** | `SharedKernel.Primitives`, `SharedKernel.Domain`, `SharedKernel.Caching.Abstractions` |
-| **Target** | `net10.0` |
-| **Public API** | Tracked in `PublicAPI.Shipped.txt` / `PublicAPI.Unshipped.txt`; an unrecorded change fails the build |
-| **Versioning** | One version across every package in the repo, from a single git tag (MinVer) |
+| Don't | Do | Why |
+| --- | --- | --- |
+| Throw for an expected failure | Return `Result.Failure(error)` | The pipeline records an exception instead of an error code, nothing commits, and no `Result` tells the caller why |
+| Declare `IRequest<OrderDto>` (a response that is not `Result`/`Result<T>`) | Use `ICommand<T>`/`IQuery<T>` | Authorization and idempotency short-circuit by constructing a failed `Result`; analyzer `SK0040` flags it — do not suppress it |
+| Implement MediatR's `IRequestHandler` or `INotificationHandler` | Implement the kernel interfaces | They are not discovered; the Application project should not reference MediatR at all |
+| Expect the unary behaviors to run for a stream | Register an `IStreamPipelineBehavior<,>`, or handle it in the stream handler | `IStreamQuery<T>` runs through stream behaviors only (`[RequirePermission]` is still checked) |
+| Give a `SystemRequestContext` every permission | List exactly what the worker needs | The explicit list is the worker's written-down blast radius |
+| Send mail or call another service from an `IDomainEventHandler` | Publish an integration event, or use `ICommandScope.OnCompleted` | Domain events are dispatched before the commit; the effect would survive a rollback |
 
-Maintainer rules live in [`05.Application/CLAUDE.md`](../CLAUDE.md); the layer overview is in
-[`05.Application/README.md`](../README.md).
+## Design decisions
+
+**Why kernel-owned `IRequest`/`ISender`/`IPipelineBehavior` instead of MediatR's?** Application projects stay free of a
+mediator library, and replacing MediatR is one new `ISender` adapter plugged in with the same builder call — no handler
+changes.
+
+**Why an argument-less `RequestHandlerContinuation<T>`?** `await next()` keeps behavior bodies in the shape most .NET
+developers already know from MediatR.
+
+**Why must every handler return `Result`/`Result<T>`?** Several behaviors short-circuit by constructing a failed
+response; only these types can express one, and an expected failure becomes a value the caller must handle.
+
+**Why are stream items not wrapped in `Result<T>`?** A stream's natural error channel is an exception that ends
+enumeration; wrapping every item would force every consumer to unwrap on every iteration.
+
+**Why a validation port instead of FluentValidation?** The pipeline carries no validation library.
+`IRequestValidator<T>` is the contract; FluentValidation is bridged by `SharedKernel.Validation.FluentValidation`.
+
+**What is deliberately not included?** A response envelope (errors become RFC 9457 ProblemDetails at the HTTP edge), the
+caller contract (`IRequestContext` is in `SharedKernel.Execution`, shared with persistence and messaging), and any DI
+registration — the host calls `AddSharedKernelApplication` from `SharedKernel.Application.Pipeline`.
+
+---
+
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
+[Application domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/05.Application/README.md) ·
+[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

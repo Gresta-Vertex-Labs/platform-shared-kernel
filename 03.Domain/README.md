@@ -1,249 +1,132 @@
-# 03.Domain
+<div align="center">
 
-![Tier](https://img.shields.io/badge/tier-Model-512BD4)
-![Depends on](https://img.shields.io/badge/depends%20on-Foundation%20only-brightgreen)
-![I/O](https://img.shields.io/badge/I%2FO-none-brightgreen)
+# SharedKernel Domain
 
-**The domain-driven design building blocks of Platform.SharedKernel.** Every aggregate, entity, value object, identifier
-and domain event in a downstream service is built on the types in this folder.
+**Domain-driven design building blocks for .NET services — aggregates, value objects, strongly-typed identifiers,
+business rules, specifications and money — as pure domain code with no I/O, no system clock and no infrastructure.**
 
-> Looking for how to use the package? Read the
-> [**SharedKernel.Domain README**](SharedKernel.Domain/README.md): quick start, decision guide, walkthrough,
-> pitfalls and full reference.
+[![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](../LICENSE)
+![Packages: 1](https://img.shields.io/badge/packages-1-informational)
+![Third-party dependencies: 0](https://img.shields.io/badge/third--party%20dependencies-0-brightgreen)
 
-## Contents
+[Package](#package) · [How it fits together](#how-it-fits-together) · [Get started](#get-started) ·
+[See it run](#see-it-run) · [Guarantees](#guarantees)
 
-- [What lives here](#what-lives-here)
-- [Where the package sits](#where-the-package-sits)
-- [Type map](#type-map)
-- [Aggregate lifecycle](#aggregate-lifecycle)
-- [Design principles](#design-principles)
-- [Design decisions](#design-decisions)
-- [Guardrails](#guardrails)
-- [Build and test](#build-and-test)
-- [Contributing, for people and AI agents](#contributing-for-people-and-ai-agents)
+</div>
 
-## What lives here
+---
 
-| Path | What it is |
-| --- | --- |
-| [`SharedKernel.Domain/`](SharedKernel.Domain/) | The package: aggregates, entities, value objects, identifiers, events, rules, policies, specifications, `Money` |
-| [`SharedKernel.Domain/SharedKernel.Domain.Tests/`](SharedKernel.Domain/SharedKernel.Domain.Tests/) | Unit tests, including the hardening suites that pin every fixed defect |
-| [`SharedKernel.Domain.ConsumerVerify/`](SharedKernel.Domain.ConsumerVerify/) | Restores the **published** package from the feed and exercises its public API as a consumer would |
-| [`CLAUDE.md`](CLAUDE.md) | The domain brain: implementation rules, decisions and traps for maintainers and AI agents |
-| [`state-map.md`](state-map.md) | Phase and task history for this domain |
+## What this domain gives you
 
-## Where the package sits
+- **Aggregates that keep their invariants.** `AggregateRoot<TId>` with `CheckRule`, `RaiseDomainEvent` and a
+  `TryCreate` factory that turns invalid input into a `ValidationResult<T>` holding every error — plus audit,
+  soft-delete and `Tenanted…` bases that persistence understands from their interfaces alone.
+- **Time you can test.** Aggregates read time only from an injected `IClock`; an aggregate loaded without a clock
+  throws instead of stamping `0001-01-01`.
+- **Values that cannot be confused.** `ValueObject` reports every validation error, `StronglyTypedId<TValue>` stops an
+  `OrderId` flowing into a `CustomerId`, and `Money` handles ISO 4217 rounding, allocation and currency mismatches.
+- **Queries as named objects.** `Specification<T>` and the inline `Spec.For<T>()` builder, composable with
+  `And`/`Or`/`Not`, translated by the persistence packages; paging stays at the repository call site.
 
-Arrows point from a package to what it depends on. `SharedKernel.Domain` is a **Model**-tier package: it
-depends only on Foundation packages from `01.Core` and on no third-party package, and the build enforces it.
-Nothing in it knows about databases, messaging, HTTP or dependency injection.
+## Package
+
+| Package | Tier | When you need it |
+| --- | --- | --- |
+| [SharedKernel.Domain](SharedKernel.Domain/README.md) | Model | Always, in a service's **Domain** project — every aggregate, entity, value object, identifier, domain event, rule, policy, specification and monetary amount derives from it |
+
+The package README is the full guide: quick start, a decision table, an order-domain walkthrough, the reference and
+the pitfalls. Test helpers (`FakeClock`, event and rule assertions, `SpecificationAssert`, `MoneyFaker`) are in
+[SharedKernel.Testing](../16.Testing/SharedKernel.Testing/README.md).
+
+## How it fits together
 
 ```mermaid
 flowchart BT
-    subgraph core["01.Core"]
+    subgraph core["01.Core — Foundation"]
         Primitives["SharedKernel.Primitives<br/>Result, Error, IClock"]
-        Core["SharedKernel.Core<br/>Guards, exceptions"]
+        Core["SharedKernel.Core<br/>guards, exceptions"]
         Execution["SharedKernel.Execution<br/>TenantId"]
     end
-
-    Domain["03.Domain<br/>SharedKernel.Domain"]
-
+    Domain["SharedKernel.Domain<br/>Model tier"]
     Application["05.Application<br/>dispatches domain events"]
-    Persistence["06.Persistence<br/>maps aggregates, attaches the clock"]
-    Governance["00.Governance<br/>analyzers and architecture rules"]
-
-    style Domain fill:#512BD4,color:#fff,stroke:#2d1780
-
-    Core --> Primitives
+    Persistence["06.Persistence<br/>maps aggregates, attaches the clock,<br/>evaluates specifications"]
     Domain --> Primitives
     Domain --> Core
     Domain --> Execution
     Application --> Domain
     Persistence --> Domain
-    Governance -. checks .-> Domain
 ```
 
-## Type map
+Arrows point from a package to what it depends on. `SharedKernel.Domain` depends only on Foundation packages and on
+no third-party package, and the build enforces it. It declares the ports the outer layers implement:
+`IDomainEventDispatcher` (implemented by `05.Application`, called by persistence before each save) and
+`IExchangeRateProvider` (implemented by your service).
 
-The base classes a service extends, and the interfaces persistence reads. Each aggregate base also has a
-`Tenanted…` counterpart that adds `TenantId`.
+## Get started
 
-```mermaid
-classDiagram
-    direction BT
-
-    class Entity {
-        <<abstract>>
-        +TId Id
-        +IsTransient() bool
-    }
-    class AggregateRoot {
-        <<abstract>>
-        +DomainEvents
-        +int Version
-        #DateTimeOffset Now
-        #RaiseDomainEvent(factory)
-        #CheckRule(rule)
-        #TryCreate(factory)
-    }
-    class AuditableAggregateRoot {
-        <<abstract>>
-        +CreatedBy, CreatedOn
-        +ModifiedBy, ModifiedOn
-    }
-    class SoftDeletableAggregateRoot {
-        <<abstract>>
-        +IsDeleted, DeletedBy, DeletedOn
-        +MarkAsDeleted(deletedBy)
-        #OnDelete()
-    }
-    class AuditableSoftDeletableAggregateRoot {
-        <<abstract>>
-        +audit and soft delete
-        +MarkAsDeleted(deletedBy)
-    }
-    class FullAuditableAggregateRoot {
-        <<abstract>>
-        +byte[] RowVersion
-    }
-
-    AggregateRoot --|> Entity
-    AuditableAggregateRoot --|> AggregateRoot
-    SoftDeletableAggregateRoot --|> AggregateRoot
-    AuditableSoftDeletableAggregateRoot --|> AggregateRoot
-    FullAuditableAggregateRoot --|> AuditableSoftDeletableAggregateRoot
+```xml
+<PackageReference Include="SharedKernel.Domain" />
 ```
 
-| Base | Interfaces persistence reads |
+```csharp
+using SharedKernel.Domain.Aggregates;
+using SharedKernel.Domain.BusinessRules;
+using SharedKernel.Domain.Events;
+using SharedKernel.Domain.StronglyTypedIds;
+using SharedKernel.Primitives.Clocks;
+using SharedKernel.Primitives.Results;
+
+public sealed record InvoiceId(Guid Value) : StronglyTypedId<Guid>(Value);
+
+[DomainEventVersion(1)]
+public sealed record InvoiceIssued(InvoiceId InvoiceId) : DomainEvent;
+
+public sealed class InvoiceMustHaveLines(int lineCount) : IBusinessRule
+{
+    public string Code => "invoice.no_lines";
+    public string Message => "An invoice needs at least one line.";
+    public bool IsBroken() => lineCount == 0;
+}
+
+public sealed class Invoice : AggregateRoot<InvoiceId>
+{
+    private Invoice(InvoiceId id, int lineCount, IClock clock) : base(id, clock)
+    {
+        CheckRule(new InvoiceMustHaveLines(lineCount));
+        RaiseDomainEvent(at => new InvoiceIssued(id) { OccurredOn = at });
+    }
+
+    private Invoice() { } // ORM
+
+    public static ValidationResult<Invoice> Issue(InvoiceId id, int lineCount, IClock clock) =>
+        TryCreate(() => new Invoice(id, lineCount, clock));
+}
+```
+
+`Invoice.Issue(id, 0, clock)` returns an invalid result whose first error has code `invoice.no_lines`; a valid call
+returns the aggregate with one pending `InvoiceIssued` event and `Version` 1.
+
+## See it run
+
+[samples/OrderApi](../samples/OrderApi/README.md) keeps its domain in `OrderApi.Domain`, a project that references
+only `SharedKernel.Domain`: an `Order` aggregate (`AggregateRoot<OrderId>` with `Place` and `Cancel`), a
+`ValueObject`, a `StronglyTypedId<Guid>` and two domain events. Its architecture test fails the build if the Domain
+project reaches for anything else.
+
+## Guarantees
+
+| Guarantee | How |
 | --- | --- |
-| `Entity<TId>` | `IEntity<TId>` |
-| `AggregateRoot<TId>` | `IAggregateRoot<TId>` (includes `IHasDomainEvents`), `IHasClock`, `IHasVersion` |
-| `AuditableAggregateRoot<TId>` | `IHasAudit` |
-| `SoftDeletableAggregateRoot<TId>` | `ISoftDeletable` |
-| `AuditableSoftDeletableAggregateRoot<TId>` | `IHasAudit`, `ISoftDeletable` |
-| `FullAuditableAggregateRoot<TId>` | `IHasConcurrency` |
-| `Tenanted…AggregateRoot<TId>` (one per base above) | `IHasTenant` |
+| **Pure domain code** | Model tier: the build rejects references above Foundation and any third-party package; architecture tests reject logging and `SharedKernel.Contracts` |
+| **No hidden clock reads** | Analyzer `SK0001` reports `DateTime.UtcNow`/`DateTimeOffset.UtcNow`; `Now` throws when no clock is attached |
+| **Every validation error reported** | `EnsureValid()` throws a `ValidationException` with all errors; `TryCreate` returns them all; `SK0037` reports a value object that never calls it |
+| **Stable error codes** | `IBusinessRule.Code` is required; `money.currency_mismatch`, `currency.code.*`, `not_found.default` are fixed |
+| **No silent query surprises** | A second primary sort throws (`SK0010` at build time); composing two ordered specifications, or a paged one, throws |
+| **Versioned events** | Every concrete event declares `[DomainEventVersion(n)]` (`SK0009`); each `Id` is a UUID v7 that survives serialization |
+| **Tracked public API** | Public API analyzers fail the build on an unrecorded change; every public member is documented |
 
-The rest of the model, by role:
+---
 
-| Role | Types |
-| --- | --- |
-| Values | `ValueObject`, `SingleValueObject<TValue>`, `StronglyTypedId<TValue>`, `Money`, `Currency` |
-| Decisions | `IBusinessRule` (invariants), `IPolicy<T>` (decisions about a subject) |
-| Queries | `Specification<T>`, `Spec.For<T>()`, `ProjectionSpecification<T, TResult>` (paging at the repository call site) |
-| Events | `IDomainEvent`, `DomainEvent`, `DomainEvent<TPayload>`, `[DomainEventVersion]` |
-| Ports | `IDomainEventDispatcher`, `IExchangeRateProvider` |
-
-## Aggregate lifecycle
-
-How an aggregate moves through a request in a service that uses the SharedKernel persistence and application
-packages.
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant H as Command handler
-    participant A as Aggregate
-    participant R as Repository / DbContext
-    participant U as Unit of work
-    participant D as IDomainEventDispatcher
-
-    rect rgb(235, 245, 255)
-    Note over H,A: Create
-    H->>A: Order.Place(..., clock)
-    A->>A: CheckRule, EnsureValid on value objects
-    A->>A: RaiseDomainEvent(OrderPlaced), Version = 1
-    A-->>H: ValidationResult of Order (invalid input is a result, not an exception)
-    H->>R: AddAsync(order)
-    end
-
-    rect rgb(240, 255, 240)
-    Note over H,D: Save
-    H->>U: SaveChangesAsync()
-    U->>R: Audit interceptor fills CreatedBy / CreatedOn
-    U->>D: DispatchAsync(pending events) after the commit
-    U->>A: ClearDomainEvents()
-    end
-
-    rect rgb(255, 248, 235)
-    Note over H,A: Load and change
-    H->>R: GetByIdAsync(id)
-    R->>A: Materialize through the parameterless constructor
-    R->>A: AttachClock(clock)
-    H->>A: order.Ship()
-    A->>A: CheckRule, Now, RaiseDomainEvent(OrderShipped), Version = 2
-    H->>U: SaveChangesAsync()
-    end
-```
-
-## Design principles
-
-1. **Pure domain.** No I/O, no system clock, no logging, no dependency injection. Time comes from an injected
-   `IClock`; external data comes through ports such as `IExchangeRateProvider`.
-2. **Invalid input is a result.** Creation goes through `TryCreate` and returns `ValidationResult<T>`. Exceptions
-   are for defects and for invariants broken by a method call.
-3. **Report every error.** Value objects validate the fully built object and return all failures, not the first.
-4. **Fail loudly, never silently.** A missing clock throws instead of recording year 0001; a second primary sort
-   throws instead of silently winning.
-5. **Explicit over implicit.** No implicit conversions from identifiers or value objects; validation is an
-   explicit `EnsureValid()` call.
-6. **Stable codes.** Every rule and error carries a code that clients and localization rely on.
-
-## Design decisions
-
-| Decision | Why | Rejected alternative |
-| --- | --- | --- |
-| Value objects call `EnsureValid()` explicitly | A base constructor would call the virtual `Validate()` before subclass members are assigned | Validation in the base constructor (runs too early), factory-only validation (easy to bypass) |
-| Loaded aggregates get the clock attached through `IHasClock` | An ORM cannot pass a clock to a parameterless constructor | Passing time into every method (large API break), a null clock returning `MinValue` (silent wrong data) |
-| `TryCreate` returns `ValidationResult<T>` | Keeps every validation error | `Result<T>`, which holds a single error |
-| `IBusinessRule.Code` is required | A shared fallback code makes different violations indistinguishable to clients | An optional code with a generic default |
-| `Version` is the event sequence number | Consumers need to detect missing or out-of-order events; concurrency already has `RowVersion` | Using it as a concurrency token |
-| Explicit conversions on identifiers | An implicit conversion lets an `OrderId` flow into any `Guid` parameter | Implicit conversions for convenience |
-| Equality through `GetEqualityComponents()` on classes | Full control over which members count and how constructors validate | C# records, whose generated equality and constructors cannot enforce validation |
-| `Money` in its own `Monetary` namespace | A namespace named `Money` collided with the type | Keeping it under `ValueObjects.Money` |
-| Reflection is allowed where it gives the best API | AOT and trimming are not constraints for this package | Restricting JSON identifiers to four hand-written value types |
-
-## Guardrails
-
-These checks run in every build and fail or warn before a mistake ships.
-
-| Check | Kind | Catches |
-| --- | --- | --- |
-| `SK0001` | Analyzer | `DateTime.UtcNow` or `DateTimeOffset.UtcNow` instead of `IClock` |
-| `SK0009` | Analyzer | A domain event without `[DomainEventVersion]` |
-| `SK0010` | Analyzer | A specification with two primary sorts |
-| `SK0037` | Analyzer | A value object constructor that never calls `EnsureValid()` |
-| `SK0034` | Advisory analyzer | A raw `decimal` amount paired with a `string` currency code; suggests `Money` |
-| `SKTIER001`, `SKTIER003` | Build (tier check) | A reference to anything above the Foundation tier, or any third-party package |
-| `DomainNeverReferencesContracts`, `ModelNeverReferencesLogging` | Architecture rules | `SharedKernel.Contracts` or logging abstractions leaking into the domain |
-| `AggregateFactoriesMustCreateValidationResults` | Architecture rule | An `IAggregateFactory` without a `Create` returning `ValidationResult<TAggregate>` |
-| Public API analyzers | Build | Any public API change not recorded in `PublicAPI.Unshipped.txt` |
-| Documentation | Build | A public member without XML documentation |
-
-Analyzer details: [`00.Governance/README.md`](../00.Governance/README.md).
-
-## Build and test
-
-```shell
-dotnet build 03.Domain/SharedKernel.Domain/SharedKernel.Domain.csproj -c Release
-dotnet test  03.Domain/SharedKernel.Domain/SharedKernel.Domain.Tests -c Release
-```
-
-`SharedKernel.Domain.ConsumerVerify` needs access to the package feed, because it restores the published
-package instead of referencing the project.
-
-## Contributing, for people and AI agents
-
-Read [`CLAUDE.md`](CLAUDE.md) before changing code. It holds the rules that are not obvious from the source.
-The short version:
-
-- **Keep the domain pure.** No new dependency beyond the Foundation packages it already uses; no I/O, clock reads, logging or DI types.
-- **Record public API changes** in `PublicAPI.Unshipped.txt`; the build fails until you do.
-- **Document every public member**, including the exceptions it throws. Summaries never mention ticket IDs or
-  history.
-- **Pin behaviour with tests.** A fixed defect gets a test that fails when the fix is reverted.
-- **Update the package README** when behaviour a consumer can observe changes, and update `ConsumerVerify` when
-  the public API changes.
-- **Cross-layer effects** (persistence mapping, application dispatch, governance rules) are changed in their own
-  packages, never by referencing them from here.
+**For maintainers:** design rules and invariants live in [CLAUDE.md](CLAUDE.md); phase history in
+[state-map.md](state-map.md).

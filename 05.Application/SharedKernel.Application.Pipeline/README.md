@@ -1,18 +1,13 @@
 # SharedKernel.Application.Pipeline
 
-![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)
-![License: MIT](https://img.shields.io/badge/license-MIT-blue)
-![Tier: Host](https://img.shields.io/badge/tier-Host-5c6bc0)
+[![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
+![Tier: Host](https://img.shields.io/badge/tier-Host-d73a49)
 ![Public API: tracked](https://img.shields.io/badge/public%20API-tracked-informational)
 
-**The application layer of a service in one call — handlers, validators and domain-event handlers found, and the
-cross-cutting half of a request (tracing, logging, metrics, authorization, validation, idempotency, transactions,
-auditing) composed in one fixed order.**
-
-A handler decides business outcomes. Everything around that decision lives here, so adding an audit trail or
-an idempotency guard later changes a marker on a command, never a handler body. The order the behaviors run in is
-fixed by this package rather than by your registration order, because the order is a correctness property:
-authorization has to precede validation, a commit has to precede a cache eviction.
+> **The application layer of a service in one call — handlers, validators and domain-event handlers found, and the
+> cross-cutting half of every request (tracing, logging, metrics, authorization, validation, idempotency,
+> transactions, auditing) composed in one fixed order, so a handler only decides business outcomes.**
 
 | You get | So that |
 | --- | --- |
@@ -26,30 +21,17 @@ authorization has to precede validation, a commit has to precede a cache evictio
 | Error-aware telemetry | Spans, metrics and logs all carry the error type and code, so a dashboard can alert on *what* failed |
 | `WithBehavior(type, stage)` | Your own behavior lands in the canonical order instead of wherever it was registered |
 
-**Tier:** Host — referenced by a service's composition-root (API/worker) project, never by its
-application-layer project, which needs only [`SharedKernel.Application`](../SharedKernel.Application/README.md).
-
-**Dependencies:** `SharedKernel.Application`, `SharedKernel.Execution`, `SharedKernel.Primitives`,
-`SharedKernel.Core`, `SharedKernel.Idempotency.Abstractions` and first-party `Microsoft.Extensions.*` packages. **No
-mediator, no FluentValidation, no cache, no Polly, no hosting** — the transport is
-[`SharedKernel.Application.Mediator.MediatR`](../SharedKernel.Application.Mediator.MediatR/README.md) (`UseMediatR()`)
-and the caching behaviors live in the separate
-[`SharedKernel.Application.Pipeline.Caching`](../SharedKernel.Application.Pipeline.Caching/README.md) (`WithCaching()`).
-
 ## Contents
 
 - [Install](#install)
 - [Quick start](#quick-start)
-- [The pipeline](#the-pipeline)
-- [What each behavior does](#what-each-behavior-does)
-- [What happens when something fails](#what-happens-when-something-fails)
-- [Seams you must register](#seams-you-must-register)
-- [Nested commands and `ICommandScope`](#nested-commands-and-icommandscope)
-- [Extending the pipeline](#extending-the-pipeline)
-- [Telemetry reference](#telemetry-reference)
-- [Pitfalls](#pitfalls)
+- [How it works](#how-it-works)
+- [Recipes](#recipes)
+- [Configuration](#configuration)
+- [Reference](#reference)
 - [Testing](#testing)
-- [Package](#package)
+- [Pitfalls](#pitfalls)
+- [Design decisions](#design-decisions)
 
 ## Install
 
@@ -58,8 +40,19 @@ and the caching behaviors live in the separate
 <PackageReference Include="SharedKernel.Application.Mediator.MediatR" />   <!-- the ISender transport -->
 ```
 
-Versions come from your single `SharedKernelVersion` property (see the repository's `PLATFORM.md`,
-"Consuming the kernel").
+The version comes from your central `SharedKernelVersion` property — every SharedKernel package ships at the same
+version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel#using-the-packages).
+
+| Requirement | Value |
+| --- | --- |
+| Target framework | `net10.0` |
+| Tier | Host — reference it from your **Api** / **Worker** project; the Application project needs only [`SharedKernel.Application`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/05.Application/SharedKernel.Application/README.md) |
+| Depends on | `SharedKernel.Application`, `SharedKernel.Execution`, `SharedKernel.Primitives`, `SharedKernel.Core`, `SharedKernel.Idempotency.Abstractions`, first-party `Microsoft.Extensions.*`; no mediator, FluentValidation, cache, Polly or hosting |
+| Namespaces | `SharedKernel.Application.Pipeline` |
+
+The transport is [`SharedKernel.Application.Mediator.MediatR`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/05.Application/SharedKernel.Application.Mediator.MediatR/README.md)
+(`UseMediatR()`); query caching is the separate
+[`SharedKernel.Application.Pipeline.Caching`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/05.Application/SharedKernel.Application.Pipeline.Caching/README.md) (`WithCaching()`).
 
 ## Quick start
 
@@ -86,9 +79,9 @@ builder.Services.AddSharedKernelApplication(typeof(PlaceOrderCommand).Assembly, 
     .WithAuditing());      // needs IAuditTrailWriter
 
 // The seams, before or after the call above:
-builder.Services.AddSharedKernelRequestContext();                        // IRequestContext (13.ServiceDefaults.Security)
-builder.AddSharedKernelPostgres<OrderDbContext>("orders", p => p.UseAuditTrail()); // IUnitOfWork + IAuditTrailWriter (06.Persistence)
-builder.Services.AddRedisIdempotency(p => p.ForRequests());                 // IIdempotencyStore for requests (18.Idempotency)
+builder.Services.AddSharedKernelRequestContext();                        // IRequestContext (SharedKernel.ServiceDefaults.Security)
+builder.AddSharedKernelPostgres<OrderDbContext>("orders", p => p.UseAuditTrail()); // IUnitOfWork + IAuditTrailWriter (SharedKernel.Persistence.EfCore)
+builder.Services.AddRedisIdempotency(p => p.ForRequests());                 // IIdempotencyStore for requests (SharedKernel.Idempotency.Redis)
 ```
 
 A missing seam fails the **host start** with one `OptionsValidationException` naming every missing service and
@@ -96,7 +89,9 @@ what needs it — never the first request. `ISender` is always required (a media
 `IRequestContext` as soon as a request type of the assemblies carries `[RequirePermission]`. Calling
 `AddSharedKernelApplication` a second time throws: pass every assembly and option to the one call.
 
-## The pipeline
+## How it works
+
+### The pipeline order
 
 Five stages, always in this order, regardless of the order you called the `With…` methods:
 
@@ -159,50 +154,31 @@ Read the arrows down as "before the handler" and up as "after it". The `Succeede
 **inside** the transaction, a `Failed` one after the rollback, the idempotency key is completed **after** the
 commit, and post-commit callbacks run last of all.
 
-## Which markers do I implement?
+### Which markers do I implement?
 
 Tracing, logging, metrics and validation apply to every request — a request declares nothing. The other four are
 opt-in **per request**, through an attribute or a marker it implements:
 
-```mermaid
-flowchart TD
-    Start["A request"]
-    Start --> P{"Does the caller<br/>need a permission?"}
-    P -- yes --> P1["[RequirePermission(...)]<br/>one attribute = alternatives, several = all"]
-    P -- no --> D
-
-    P1 --> D{"Is it a command<br/>that must not run twice?"}
-    D -- yes --> D1["IIdempotentRequest<br/>IdempotencyKey + Fingerprint"]
-    D -- no --> A
-
-    D1 --> A{"Is it a command whose<br/>attempt must be recorded?"}
-    A -- yes --> A1["IAuditableRequest&lt;TResponse&gt;<br/>Action, ResourceType, ResourceId, snapshots"]
-    A -- no --> L
-
-    A1 --> L{"Should some of its fields<br/>reach the logs?"}
-    L -- yes --> L1["ILoggableRequest&lt;TResponse&gt;<br/>the fields you choose, never a reflection walk"]
-    L -- no --> Done["Done"]
-    L1 --> Done
-
-    style P1 fill:#ede7f6
-    style D1 fill:#ede7f6
-    style A1 fill:#ede7f6
-    style L1 fill:#ede7f6
-```
+| The request… | Declares | Behavior |
+| --- | --- | --- |
+| needs a permission | `[RequirePermission(...)]` — one attribute's values are alternatives, several attributes all apply | Authorization |
+| is a command that must not run twice | `IIdempotentRequest` (`IdempotencyKey`, optional `Fingerprint`) | Idempotency |
+| is a command whose attempt must be recorded | `IAuditableRequest<TResponse>` (`Action`, `ResourceType`, `ResourceId`, snapshots) | Auditing |
+| should put some of its fields in the logs | `ILoggableRequest<TResponse>` — the fields you choose, never a reflection walk | Logging |
 
 They compose: a refund command can be all four at once. Caching markers live in the
-[caching package](../SharedKernel.Application.Pipeline.Caching/README.md).
+[caching package](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/05.Application/SharedKernel.Application.Pipeline.Caching/README.md).
 
-## What each behavior does
+### What each behavior does
 
-### `TracingBehavior`
+#### `TracingBehavior`
 
 Starts an `Activity` named after the request type (`PlaceOrderCommand`), tagged `request.type` (full name)
 and `request.kind` (`command`/`query`/`request`). On a failed `Result` it sets the span status to `Error`
 with `error.type` and `error.code`; on an exception it sets `Error`, records the exception as a span event,
 and rethrows. No listener registered means no allocation.
 
-### `LoggingBehavior`
+#### `LoggingBehavior`
 
 `Debug` on entry, then one completion line: `Information` on success, `Warning` when the elapsed time crosses
 `SlowRequestThreshold` (500 ms by default), `Warning` with the error type and code on a failed `Result`, and
@@ -221,17 +197,16 @@ public sealed record PlaceOrderCommand(string Customer, string CardNumber, decim
 }
 ```
 
-Configure the threshold with `services.Configure<ApplicationLoggingOptions>(…)`. It is validated at startup
-and must be greater than zero.
+Configure the threshold with `services.Configure<ApplicationLoggingOptions>(o => …)`; see [Configuration](#configuration).
 
-### `MetricsBehavior`
+#### `MetricsBehavior`
 
 Records one histogram measurement per request — `sharedkernel.application.request.duration`, **in seconds**,
 from an `IMeterFactory` meter named `SharedKernel.Application`. Tags: `request.type`, `request.kind`,
 `outcome` (`success`/`failure`/`exception`), and `error.type` when not successful. Recorded in a `finally`,
 so a throw is measured too.
 
-### Authorization
+#### Authorization
 
 Always registered. Applies to requests carrying `[RequirePermission]` (`SharedKernel.Application.Authorization`):
 
@@ -255,23 +230,23 @@ The denial is returned as a failed `Result`, never thrown, and never echoes perm
 the attribute is checked before its handler runs; its denial is thrown as `UnauthorizedException`/`ForbiddenException`
 when enumeration starts (a stream has no `Result`). The attribute is enforced on every path a request is sent from —
 HTTP, a message consumer, a scheduled job, a workflow activity — so an endpoint that sends the command does not repeat
-the permission (`14.Presentation`'s `[RequireEndpointPermission]` is for endpoints that send no command).
+the permission (`SharedKernel.Presentation.Core`'s `[RequireEndpointPermission]` is for endpoints that send no command).
 
-### `ValidationBehavior`
+#### `ValidationBehavior`
 
 Runs every registered `IRequestValidator<TRequest>` (`SharedKernel.Application.Validation`) **sequentially** —
 not in parallel, because two async validators sharing a scoped `DbContext` would throw — collects every error,
 and returns
 `Error.Validation(errors)`: one error with code `validation.failed` carrying each field failure in
-`Error.Details`. It does not throw. At the HTTP boundary `14.Presentation` renders that as a 400 with a
-per-field `errors` map; `11.Communication.Rest` rebuilds the same detail on the calling side.
+`Error.Details`. It does not throw. At the HTTP boundary `SharedKernel.Presentation.WebApi` renders that as a 400 with a
+per-field `errors` map; `SharedKernel.Communication.Rest` rebuilds the same detail on the calling side.
 
 The pipeline carries no validation library. Implement `IRequestValidator<TRequest>` yourself, or keep writing
 FluentValidation validators and bridge them with `services.AddFluentValidationRequestValidators(typeof(Program).Assembly)`
 (`SharedKernel.Validation.FluentValidation`), which registers the assembly's validators and adapts every `IValidator<T>` and keeps each
 failure's error code and property path.
 
-### `IdempotencyBehavior`
+#### `IdempotencyBehavior`
 
 Applies to commands implementing `IIdempotentRequest` (opted in with `WithIdempotency()`). It reserves the key through the `IIdempotencyStore` registered for `IdempotencyPurpose.Request`
 before the handler runs, and settles it afterwards:
@@ -284,7 +259,7 @@ before the handler runs, and settles it afterwards:
 | `FingerprintMismatch` | `Error.Conflict(ErrorCodes.Idempotency.KeyReused)` (`idempotency.key_reused`) |
 
 An empty key is `Error.Validation(ErrorCodes.Idempotency.KeyRequired)` (`idempotency.key_required`), the code
-`14.Presentation` answers a missing `Idempotency-Key` header with — both take it from `01.Core`'s
+`SharedKernel.Presentation.WebApi` answers a missing `Idempotency-Key` header with — both take it from `SharedKernel.Primitives`'
 `ErrorCodes.Idempotency`.
 
 **A key belongs to one caller of one tenant.** The store never sees the raw key but a 64-character SHA-256 digest of
@@ -307,7 +282,7 @@ public sealed record TransferMoney(Guid From, Guid To, decimal Amount, DateTimeO
 
 A nested command skips this behavior entirely — the outermost command owns the key.
 
-### `TransactionBehavior`
+#### `TransactionBehavior`
 
 Runs the rest of the pipeline and the handler **inside** `IUnitOfWork.ExecuteInTransactionAsync`
 (`SharedKernel.Execution.Transactions`): the unit of work saves what was staged, runs the `OnBeforeCommit`
@@ -315,7 +290,7 @@ callbacks and commits — **only for the outermost command, and only when the re
 `Result` rolls back, so a handler that mutated an aggregate before deciding to fail leaves no trace; an
 exception rolls back and propagates.
 
-- **Handlers must be re-runnable.** Under a retrying execution strategy (on by default in `06.Persistence`) a
+- **Handlers must be re-runnable.** Under a retrying execution strategy (on by default in `SharedKernel.Persistence.EfCore`) a
   transient failure replays the whole delegate: the unit of work discards what the failed attempt staged and the
   handler runs again. Load what you need through repositories inside the handler; keep HTTP calls and messages
   out of it — queue them with `ICommandScope.OnCompleted`, which runs after the commit. Callbacks queued by a
@@ -326,7 +301,7 @@ exception rolls back and propagates.
 - **An ambiguous commit is not retried.** `CommitOutcomeUnknownException` means the commit may or may not have
   happened — re-read (or rely on the idempotency key) before repeating.
 
-### `AuditingBehavior`
+#### `AuditingBehavior`
 
 Applies to commands implementing `IAuditableRequest<TResponse>`, which supplies its own opaque,
 pre-serialized snapshots — this package never reflects over your command:
@@ -354,7 +329,7 @@ outside the transaction, records every failure — a failed `Result`, an excepti
 the **original** exception still propagates and the audit failure is logged. Actor, tenant, time and
 correlation are never in `AuditEntry`: the writer resolves them from `IRequestContext`.
 
-## What happens when something fails
+### What happens when something fails
 
 ```mermaid
 flowchart TD
@@ -380,26 +355,7 @@ flowchart TD
 The rule in one sentence: **only a successful outcome persists anything.** The exception is the audit trail,
 which records the attempt either way.
 
-## Seams you must register
-
-Each is a contract from a Foundation or Abstractions-tier package, implemented by infrastructure. That is what
-keeps this package from referencing persistence, security or a cache.
-
-| Contract | Declared in | Needed by | Implemented by |
-| --- | --- | --- | --- |
-| `IRequestContext` | `SharedKernel.Execution` (`.Context`) | Authorization (only for `[RequirePermission]` requests), idempotency (per-caller keys), caching, auditing | `SharedKernel.ServiceDefaults.Security`'s `AddSharedKernelRequestContext()` (over `12.Security`), or the shipped `SystemRequestContext` |
-| `IUnitOfWork` | `SharedKernel.Execution` (`.Transactions`) | Transaction, auditing | `06.Persistence` (`AddSharedKernelPostgres`), directly — no adapter |
-| `IIdempotencyStore` (keyed by `IdempotencyPurpose.Request`) | `SharedKernel.Idempotency.Abstractions` | Idempotency | `18.Idempotency`'s `AddRedisIdempotency(p => p.ForRequests())`/`AddEfCoreIdempotency(…)` |
-| `IAuditTrailWriter` | `SharedKernel.Execution` (`.Auditing`) | Auditing | `06.Persistence.EfCore.Auditing` (`UseAuditTrail()`), directly |
-
-| `ISender` | `SharedKernel.Application` | Sending (always required) | `SharedKernel.Application.Mediator.MediatR`'s `app.UseMediatR()` |
-
-Each is checked when the host starts, so the order of the registrations does not matter.
-
-`06.Persistence` implements the same `IUnitOfWork`/`IAuditTrailWriter` the behaviors consume and reads the same
-`IRequestContext`; there is exactly one of each.
-
-## Nested commands and `ICommandScope`
+### Nested commands and `ICommandScope`
 
 A handler that sends another command creates a nested command in the same DI scope. `ICommandScope` tracks
 that so the inner one does not open a second transaction or consume its own idempotency key:
@@ -433,7 +389,9 @@ merge into the outer command's and run with them; if the nested command fails, i
 A callback that throws is logged and does not change the response — the work is already committed. Calling
 `OnCompleted` outside a command throws.
 
-## Extending the pipeline
+## Recipes
+
+### 1. Add your own behavior in a named stage
 
 Your own behavior goes into a named stage instead of wherever it happened to be registered:
 
@@ -449,7 +407,66 @@ that is not an open generic implementing `IPipelineBehavior<,>` and `ArgumentOut
 stage; adding the same type twice adds it once. A package can ship its own `With…` extension on
 `ApplicationPipelineBuilder` the same way (`WithCaching()` does).
 
-## Telemetry reference
+## Configuration
+
+The pipeline has no configuration section: both options types are set in code and validated when the host starts.
+
+| Key | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `ApplicationLoggingOptions.SlowRequestThreshold` | `TimeSpan` | `00:00:00.500` | A successful request slower than this logs 5102 at `Warning`; must be greater than zero. Set with `services.Configure<ApplicationLoggingOptions>(o => …)` |
+| `IdempotencyBehaviorOptions.LeaseDuration` | `TimeSpan` | `00:00:30` | How long a reservation holds while the handler runs; up to 24 hours. Set with `app.WithIdempotency(o => …)` |
+| `IdempotencyBehaviorOptions.RetentionWindow` | `TimeSpan` | `1.00:00:00` | How long a completed response is kept for replay; 1 second to 365 days, and longer than `LeaseDuration` |
+
+## Reference
+
+### Registration
+
+| Method | Purpose |
+| --- | --- |
+| `AddSharedKernelApplication(Assembly, Action<ApplicationPipelineBuilder>)` | The one registration call; also `(Assembly[], Action<…>)` and `(params Assembly[])`. A second call throws |
+| `ApplicationPipelineBuilder.WithIdempotency(Action<IdempotencyBehaviorOptions>?)` | Idempotency for `IIdempotentRequest` commands; needs `IIdempotencyStore` (request purpose) and `IRequestContext` |
+| `ApplicationPipelineBuilder.WithTransactions()` | One transaction per outermost command; needs `IUnitOfWork` |
+| `ApplicationPipelineBuilder.WithAuditing()` | Both auditing halves for `IAuditableRequest<T>` commands; needs `IAuditTrailWriter` |
+| `ApplicationPipelineBuilder.WithBehavior(Type, PipelineStage, params Type[])` | Your own open-generic behavior in a stage, with the services it requires |
+| `AddDomainEventHandler<TDomainEvent, THandler>()` | A domain-event handler outside the scanned assemblies |
+
+Always registered: every `IRequestHandler<,>`/`IStreamQueryHandler<,>` of the assemblies (transient),
+`IRequestValidator<>` and `IDomainEventHandler<>` (scoped), the `IDomainEventDispatcher`, `ICommandScope`, and the
+tracing, logging, metrics, authorization and validation behaviors. `RequestPipeline<,>` and `StreamRequestPipeline<,>`
+are public so a mediator adapter (and tests) can resolve them; the behaviors are internal.
+
+### Errors
+
+| Code | Type | When |
+| --- | --- | --- |
+| `unauthorized.default` | Unauthorized | A `[RequirePermission]` request from an unauthenticated caller |
+| `forbidden.insufficient_permission` | Forbidden | The caller holds no value of one `[RequirePermission]` attribute |
+| `validation.failed` | Validation | Any `IRequestValidator<T>` reported errors (each in `Error.Details`) |
+| `idempotency.key_required` | Validation | An `IIdempotentRequest` with an empty key |
+| `idempotency.in_progress` | Conflict | The same key is being handled right now |
+| `idempotency.key_reused` | Conflict | The same key arrived with a different fingerprint |
+
+All come from `ErrorCodes` in `SharedKernel.Primitives`.
+
+### Seams
+
+Each is a contract from a Foundation or Abstractions-tier package, implemented by infrastructure. That is what
+keeps this package from referencing persistence, security or a cache.
+
+| Contract | Declared in | Needed by | Implemented by |
+| --- | --- | --- | --- |
+| `IRequestContext` | `SharedKernel.Execution` (`.Context`) | Authorization (only for `[RequirePermission]` requests), idempotency (per-caller keys), caching, auditing | `SharedKernel.ServiceDefaults.Security`'s `AddSharedKernelRequestContext()`, or the shipped `SystemRequestContext` |
+| `IUnitOfWork` | `SharedKernel.Execution` (`.Transactions`) | Transaction, auditing | `SharedKernel.Persistence.EfCore` (`AddSharedKernelPostgres`), directly |
+| `IIdempotencyStore` (keyed by `IdempotencyPurpose.Request`) | `SharedKernel.Idempotency.Abstractions` | Idempotency | `SharedKernel.Idempotency.Redis`' `AddRedisIdempotency(p => p.ForRequests())` or `SharedKernel.Idempotency.EfCore`'s `AddEfCoreIdempotency(…)` |
+| `IAuditTrailWriter` | `SharedKernel.Execution` (`.Auditing`) | Auditing | `SharedKernel.Persistence.EfCore.Auditing` (`UseAuditTrail()`), directly |
+| `ISender` | `SharedKernel.Application` | Sending (always required) | `SharedKernel.Application.Mediator.MediatR`'s `app.UseMediatR()` |
+
+Each is checked when the host starts, so the order of the registrations does not matter.
+
+The persistence packages implement the same `IUnitOfWork`/`IAuditTrailWriter` the behaviors consume and reads the same
+`IRequestContext`; there is exactly one of each.
+
+### Telemetry
 
 | Signal | Name | Detail |
 | --- | --- | --- |
@@ -458,7 +475,12 @@ stage; adding the same type twice adds it once. A package can ship its own `With
 | Meter | `SharedKernel.Application` | via `IMeterFactory` |
 | Histogram | `sharedkernel.application.request.duration` | **seconds**; tags `request.type`, `request.kind`, `outcome`, `error.type` |
 
-| EventId | Level | Emitted when |
+Wire the meter and activity source into a host with `SharedKernel.ServiceDefaults`' `WithApplicationTelemetry()`,
+which also registers the seconds-based bucket boundaries this histogram needs.
+
+### Logging
+
+| Event id | Level | Event |
 | --- | --- | --- |
 | 5100 | Debug | A request enters the pipeline |
 | 5101 | Information | A request completed successfully |
@@ -469,45 +491,9 @@ stage; adding the same type twice adds it once. A package can ship its own `With
 | 5120 | Warning | `CompleteAsync` reported the idempotency reservation was lost |
 | 5130 | Error | The audit write failed while handling a handler exception |
 
-Wire the meter and activity source into a host with `13.ServiceDefaults`' `WithApplicationTelemetry()`, which
-also registers the seconds-based bucket boundaries this histogram needs.
-
-## Pitfalls
-
-**Forgetting the mediator.** Without `app.UseMediatR()` (or another `ISender`) nothing can send a request; the host
-start fails naming `ISender`. A plain `ServiceProvider` built in a test runs no start check — call
-`IStartupValidator.Validate()` or use `ApplicationPipelineTestHarness`, which does.
-
-**Calling `AddSharedKernelApplication` twice.** It throws, because the second call would register every behavior
-again. Pass every assembly to the one call.
-
-**A response type that is not `Result`/`Result<T>`.** Authorization and idempotency short-circuit by
-*constructing* a failed response. Any other response type throws `InvalidOperationException` at the first
-denial. Analyzer `SK0040` catches this at build time.
-
-**Assuming registration order matters.** It does not. The stage decides the order; `.WithAuditing().WithTransactions()` and
-`.WithTransactions().WithAuditing()` compose identically, and the seams may be registered before or after the call.
-
-**Expecting a failed `Result` to roll back.** Nothing is rolled back, because nothing was committed — the
-commit simply never happens. If your handler wrote through a second store directly, that write is yours to
-undo.
-
-**Reusing an idempotency key after a business failure.** The key is released on failure, so the same key is
-accepted again. That is intentional: a rejected command should be correctable and resubmitted.
-
-**Letting the automatic fingerprint ride.** Adding a property to a command changes it, and every in-flight
-retry across the deploy comes back as `idempotency.key_reused`. Set `Fingerprint` on commands that matter.
-
-**Calling `ICommandScope.OnCompleted` from a query handler.** It throws — no command is active. Post-commit
-work only makes sense where there is a commit.
-
-**Registering `IRequestContext` as a singleton over a scoped identity.** The first request's caller would be
-frozen in for the lifetime of the process. `AddSharedKernelRequestContext()` gets this right (a transient that
-reads the ambient `RequestContextScope`, falling back to the scoped caller); a hand-written one should be scoped.
-
 ## Testing
 
-`SharedKernel.Application.Testing`'s `ApplicationPipelineTestHarness` (`SharedKernel.Testing.Application`)
+[`SharedKernel.Application.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/16.Testing/SharedKernel.Application.Testing/README.md)'s `ApplicationPipelineTestHarness` (`SharedKernel.Testing.Application`)
 runs `AddSharedKernelApplication` with the behaviors you choose and the same host-start seam check — `Build()` needs no
 mediator (handlers registered on `Services`, sent through `RequestPipeline<,>`), `Build<TMarker>()` adds `UseMediatR()`
 over the marker's assembly. `FakeRequestContext`
@@ -548,16 +534,42 @@ Assert.Contains(harness.CapturedMeasurements, m => m.InstrumentName == "sharedke
 protocol, including rejecting a stale token, so an idempotency test exercises the same states the Redis and
 EF Core stores produce.
 
-## Package
+## Pitfalls
 
-| | |
-| --- | --- |
-| **Tier** | Host |
-| **Depends on** | `SharedKernel.Application`, `SharedKernel.Execution`, `SharedKernel.Primitives`, `SharedKernel.Core` (the exception of a denied stream), `SharedKernel.Idempotency.Abstractions`, `Microsoft.Extensions.{DependencyInjection.Abstractions, Diagnostics, Logging, Logging.Abstractions, Options, Options.DataAnnotations}` |
-| **Does not depend on** | A mediator, FluentValidation, any cache, Polly or hosting — enforced by architecture tests |
-| **Target** | `net10.0` |
-| **Public API** | Tracked; an unrecorded change fails the build |
-| **EventId range** | 5100–5199, within `01.Core`'s `05.Application` block |
+| Don't | Do | Why |
+| --- | --- | --- |
+| Forget the mediator | Call `app.UseMediatR()` (or plug in another `ISender`) | Nothing can send a request; the host start fails naming `ISender`. A bare `ServiceProvider` runs no start check — use `ApplicationPipelineTestHarness` or `IStartupValidator.Validate()` in tests |
+| Call `AddSharedKernelApplication` twice | Pass every assembly and option to one call | The second call throws; it would register every behavior again |
+| Return something other than `Result`/`Result<T>` | Use `ICommand<T>`/`IQuery<T>` | Authorization and idempotency construct a failed response; any other type throws at the first denial. `SK0040` catches it at build time |
+| Rely on registration order | Pick a `PipelineStage` | The stage decides the order; `.WithAuditing().WithTransactions()` and the reverse compose identically |
+| Expect a failed `Result` to roll back a second store | Write through the unit of work, or undo it yourself | Nothing commits on failure, but a write the handler made elsewhere is not transactional |
+| Treat a released idempotency key as spent | Let the client correct and resubmit with the same key | The key is released on failure on purpose |
+| Leave the automatic fingerprint on commands retried across a deploy | Set `Fingerprint` explicitly | Adding a property changes the hash, and retries come back `idempotency.key_reused` |
+| Call `ICommandScope.OnCompleted` from a query handler | Queue post-commit work only from commands | It throws — no command is active |
+| Register `IRequestContext` as a singleton over a scoped identity | Use `AddSharedKernelRequestContext()`, or register your own as scoped | The first request's caller would be frozen for the process lifetime |
 
-Maintainer rules live in [`05.Application/CLAUDE.md`](../CLAUDE.md); the layer overview, including the
-pipeline and commit diagrams, is in [`05.Application/README.md`](../README.md).
+## Design decisions
+
+**Why is the order fixed by the package, not by registration?** The order is a correctness property: authorization must
+precede validation (a caller who may not act should not learn the rules, and validators often hit the database), and a
+commit must precede a cache eviction. Two services compose the same request the same way.
+
+**Why is authorization always on?** An opt-in authorization behavior can be forgotten. `[RequirePermission]` on the use
+case is enforced on every path — HTTP, message consumer, scheduled job, workflow activity — so endpoints do not repeat
+it.
+
+**Why are seams checked at host start, not at registration?** Seams may be registered before or after the call; one
+`OptionsValidationException` then names every missing service at once, never the first request.
+
+**Why are idempotency keys scoped per tenant and caller?** Tenant-only keys would let one caller replay another's
+response. The store sees a SHA-256 digest of tenant, caller and key, never the raw key.
+
+**What is deliberately not included?** Fire-and-forget dispatch, a resilience/retry behavior (retries belong to the unit
+of work and outbound clients), parallel domain-event dispatch (handlers share one `DbContext`), a generic dual-approval
+behavior (approval is a domain aggregate) and a response envelope.
+
+---
+
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
+[Application domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/05.Application/README.md) ·
+[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

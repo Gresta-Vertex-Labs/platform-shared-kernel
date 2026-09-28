@@ -2,9 +2,9 @@
 
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
-![Third-party dependencies: 0](https://img.shields.io/badge/third--party%20dependencies-0-brightgreen)
-![Provider: neutral](https://img.shields.io/badge/provider-neutral-informational)
+![Tier: Abstractions](https://img.shields.io/badge/tier-Abstractions-1f6feb)
 ![Public API: tracked](https://img.shields.io/badge/public%20API-tracked-informational)
+![Provider: neutral](https://img.shields.io/badge/provider-neutral-informational)
 
 > **Caching and distributed-locking contracts for .NET services: a hybrid cache that computes each value once,
 > keeps tenants apart by construction, and locks that never mistake an outage for a busy resource.**
@@ -32,45 +32,33 @@ composition root picks the implementation.
 
 - [Install](#install)
 - [Quick start](#quick-start)
-- [Which type do I need?](#which-type-do-i-need)
 - [How it works](#how-it-works)
-  - [Reading through the cache](#reading-through-the-cache)
-  - [Layers and instances](#layers-and-instances)
-  - [Locks and leases](#locks-and-leases)
-- [Provider setup](#provider-setup)
 - [Recipes](#recipes)
-  - [1. Cache a query](#1-cache-a-query)
-  - [2. Never cache a failure](#2-never-cache-a-failure)
-  - [3. Invalidate after a write](#3-invalidate-after-a-write)
-  - [4. Cache tenant data](#4-cache-tenant-data)
-  - [5. Survive an outage of the source](#5-survive-an-outage-of-the-source)
-  - [6. Guard a critical section](#6-guard-a-critical-section)
-  - [7. Run something once across replicas](#7-run-something-once-across-replicas)
-  - [8. Enforce a fencing token](#8-enforce-a-fencing-token)
 - [Reference](#reference)
+- [Testing](#testing)
 - [Pitfalls](#pitfalls)
 - [Design decisions](#design-decisions)
-- [AI quick reference](#ai-quick-reference)
-- [Compatibility and guarantees](#compatibility-and-guarantees)
-- [Deliberately not included](#deliberately-not-included)
 
 ## Install
 
-```shell
-dotnet add package SharedKernel.Caching.Abstractions
+```xml
+<PackageReference Include="SharedKernel.Caching.Abstractions" />
 ```
+
+The version comes from your central `SharedKernelVersion` property — every SharedKernel package ships at the same
+version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel#using-the-packages).
 
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
-| Tier | Abstractions |
-| Dependencies | `SharedKernel.Execution` (for `TenantId`) and `Microsoft.Extensions.DependencyInjection.Abstractions` only |
-| Registration | None in this package; register a provider (see [Provider setup](#provider-setup)) |
+| Tier | Abstractions — reference it from your **Application** project |
+| Depends on | `SharedKernel.Execution` (for `TenantId`) and `Microsoft.Extensions.DependencyInjection.Abstractions` only |
+| Registration | None in this package; the host registers a provider (see [Providers](#providers)) |
 | Namespace | `SharedKernel.Caching.Abstractions` |
 
 ## Quick start
 
-Register a provider once:
+Register a provider once, in the host:
 
 ```csharp
 builder.Services.AddRedisConnection(builder.Configuration);   // SharedKernel.Caching.Redis.Core (with Redis only)
@@ -83,6 +71,8 @@ builder.Services
 Then depend on the contracts:
 
 ```csharp
+using SharedKernel.Caching.Abstractions;
+
 public sealed class ProductReader(ICacheService cache, ICacheKeyProvider keys, IProductRepository products)
 {
     public ValueTask<Product?> GetAsync(Guid id, CancellationToken ct) =>
@@ -96,7 +86,9 @@ public sealed class ProductReader(ICacheService cache, ICacheKeyProvider keys, I
 
 A missing product is cached as `null`, so it isn't looked up again until the entry expires.
 
-## Which type do I need?
+## How it works
+
+### Which type do I need?
 
 | I want to… | Use |
 | --- | --- |
@@ -112,8 +104,6 @@ A missing product is cached as `null`, so it isn't looked up again until the ent
 | Make sure only one process runs a critical section | `IDistributedLockService.TryAcquireAsync` → `IDistributedLock` |
 | Claim a one-off occurrence across replicas | `IDistributedLockService.TryAcquireLeaseAsync` → `DistributedLease` |
 | Reject writes from a holder that lost its lock | `FencingToken` on the lock or lease |
-
-## How it works
 
 ### Reading through the cache
 
@@ -183,7 +173,7 @@ A **lease** has no lifecycle to manage. It is claimed once, never extended or re
 duration. Both return `null` only when another holder has the resource. When the lock store is unreachable they throw
 `DistributedLockUnavailableException`.
 
-## Provider setup
+### Providers
 
 This package contains no implementation. The platform ships these providers:
 
@@ -224,10 +214,6 @@ provider READMEs.
 `AddSharedKernelCaching` registers a `cache` readiness probe and `AddRedisConnection` a `redis` one
 (`SharedKernel.Primitives.Health.IReadinessProbe`); a host reports both with
 `services.AddHealthChecks().AddSharedKernelReadiness()` from `SharedKernel.ServiceDefaults`.
-
-In unit tests, `SharedKernel.Caching.Testing`'s `services.AddFakeCachingServices()` registers in-memory fakes of
-`ICacheService`, `IDistributedLockService` and both key providers (`AddFakeTenantCacheService()` adds
-`ITenantCacheService`); the Redis-specific fakes are in `SharedKernel.Caching.Redis.Testing` (`AddFakeRedisServices()`).
 
 ## Recipes
 
@@ -421,6 +407,25 @@ Presets: `CachePolicy.Default`, and `CachePolicy.NeverExpire` (no time-based exp
 | `InvalidOperationException` | `CachePolicy.ForTenant`, `WithTags`, `WithFactoryTimeouts`; `CacheLookup<T>.Value` | Scoping twice; soft timeout without fail-safe; reading the value of a miss |
 | `DistributedLockUnavailableException` | `TryAcquireAsync`, `TryAcquireLeaseAsync` | The lock store could not be reached |
 
+## Testing
+
+Reference [`SharedKernel.Caching.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/16.Testing/SharedKernel.Caching.Testing/README.md)
+from your test project (namespace `SharedKernel.Testing.Caching`):
+
+```csharp
+services.AddFakeCachingServices()          // ICacheService, ICacheKeyProvider, ITenantCacheKeyProvider, IDistributedLockService
+        .AddFakeTenantCacheService();      // ITenantCacheService
+```
+
+- `FakeCacheService` is faithful where it matters: hit versus miss (including a cached `null`), tags, `SkipCaching()`
+  and stampede protection. Durations, fail-safe and eager refresh are not simulated. Assert with `Count`,
+  `FactoryInvocationCount` and `GetTags(key)`.
+- `FakeDistributedLockService` has `SimulateContention`, `SimulateUnavailable`, `AcquiredLocks`, `AcquiredLeases`; a
+  `FakeDistributedLock` can `SimulateLoss()`.
+- `AddFakeCacheWarmupStrategy(name, order, executionLog)` registers a recording `ICacheWarmupStrategy`.
+- Redis-specific fakes (hash store, Pub/Sub) are in
+  [`SharedKernel.Caching.Redis.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/16.Testing/SharedKernel.Caching.Redis.Testing/README.md).
+
 ## Pitfalls
 
 | Don't | Do | Why |
@@ -446,8 +451,8 @@ interface keeps FusionCache's full feature set behind a provider-neutral contrac
 cannot be bypassed.
 
 **Why is there no cache invalidation bus?** Removing, expiring or tag-evicting an entry already reaches every instance
-through the distributed layer's backplane. A separate bus duplicated that, and an event another service publishes is
-the wrong way to invalidate a cache it does not own.
+through the distributed layer's backplane. A separate bus would duplicate that, and an event another service publishes
+is the wrong way to invalidate a cache it does not own.
 
 **Why does `null` mean only "busy" for locks?** A job that treats "Redis is down" as "another replica is running it"
 never runs, on any replica, and nobody notices. An exception makes the outage visible.
@@ -466,51 +471,26 @@ disagree for longer than the shared layer allows, which is never what a service 
 the cache ignores. Sliding expiration cannot be honoured by the distributed layer, so it would behave differently per
 layer.
 
-## AI quick reference
+**What is guaranteed?**
 
-Conventions for generating code with this package. Each line is a rule.
-
-```text
-READ           cache.GetOrSetAsync(keys.BuildKey("entity", id), ct => Load(id, ct), Policy, ct). Never TryGet+Set.
-KEYS           ICacheKeyProvider.BuildKey(entity, id, segments...). Never string interpolation. Version in entity: "invoice-v2".
-TENANT         ITenantCacheService.GetOrSetAsync(tenantId, entity, id, factory, unscopedPolicy, ct). Tenant is an argument.
-               Evict: RemoveByTagAsync(tenantId, tag) | RemoveTenantAsync(tenantId). Never tenant ids in global keys/tags.
-NULL           Nullable T caches "not found". Miss check: lookup.IsHit (never Value is null).
-FAILURES       async (context, ct) => { var r = await ...; if (r.IsFailure) context.SkipCaching(); return r; }
-POLICY         static readonly CachePolicy X = CachePolicy.For(l1, l2).WithTags(...); L1 <= L2; tags never start with '@'.
-SCOPED DEPS    Factory uses scoped services (DbContext) -> .WithoutEagerRefresh().WithFactoryTimeouts(null, null).
-STALE UNSAFE   Permissions, tenant status, balances -> .WithoutFailSafe().
-INVALIDATE     After commit. RemoveAsync(key) | ExpireAsync(key) (keeps fail-safe) | RemoveByTagAsync(tag) | ClearAsync() (all).
-LOCK           await using var h = await locks.TryAcquireAsync("svc:res:id", new DistributedLockOptions{...}, ct);
-               null -> busy. Pass h.FencingToken to the write; link h.LostToken into work cancellation.
-LEASE          var l = await locks.TryAcquireLeaseAsync("svc:job:{occurrence}", duration, ct); null -> already claimed. Never release.
-OUTAGE         DistributedLockUnavailableException = store down. Never treat as busy.
-REGISTRATION   services.AddRedisConnection(configuration) once (Redis only); AddSharedKernelCaching(o => o.ServiceName = "svc")
-               .AddTenantCacheService().AddRedisL2().AddRedisDistributedLocking(). No connection string on AddRedisL2/locking.
-FORBIDDEN      Provider types (IFusionCache, IConnectionMultiplexer) in application code; hand-built tenant keys; TryGet-then-Set.
-```
-
-## Compatibility and guarantees
-
-- **Public API is tracked** with `Microsoft.CodeAnalysis.PublicApiAnalyzers`. Any change fails the build until it is
-  recorded.
-- **Every public member is documented**, including the exceptions it throws. The XML documentation ships in the
-  package.
-- **Provider-neutral by rule.** Architecture tests fail CI if this package references anything but `SharedKernel.Execution` and
-  `Microsoft.Extensions.DependencyInjection.Abstractions`, or declares a provider-specific type; the build rejects
-  any non-Abstractions-tier dependency (SKTIER001, SKTIER003).
+- **Provider-neutral by rule.** Architecture tests fail CI if this package references anything but
+  `SharedKernel.Execution` and `Microsoft.Extensions.DependencyInjection.Abstractions`, or declares a provider-specific
+  type.
 - **Always-valid values.** `CachePolicy`, `DistributedLockOptions` and `DistributedLease` validate on construction;
   `CachePolicy` copies caller arrays and compares tags by value.
 - **Stable formats.** The key and tag format is part of the contract; a change is a breaking change.
 
-## Deliberately not included
+**What is deliberately not included?**
 
 - **No implementation.** Providers live in `SharedKernel.Caching.FusionCache`, `SharedKernel.Caching.Redis` and
   `SharedKernel.Caching.Redis.DistributedLocking`.
-- **No invalidation messaging.** The backplane carries invalidations. Durable, cross-service events belong in
-  `07.Messaging`.
 - **No Redis-specific contracts.** Hash storage and Pub/Sub live in `SharedKernel.Caching.Redis.HashStore` and
   `SharedKernel.Caching.Redis.PubSub`.
 - **No ambient tenant.** Tenant identity is always an explicit `TenantId` argument, resolved at the edge.
-- **No sliding expiration and no key versioning.** See [Design decisions](#design-decisions).
 - **No lock renewal API.** Locks are kept alive by the provider until disposed; there is nothing to renew by hand.
+
+---
+
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
+[Caching domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/02.Caching/README.md) ·
+[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

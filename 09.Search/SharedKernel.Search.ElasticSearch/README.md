@@ -1,215 +1,361 @@
 # SharedKernel.Search.ElasticSearch
 
-ElasticSearch (analytics/heavy) implementation of [`SharedKernel.Search.Abstractions`](../SharedKernel.Search.Abstractions/README.md). Provides `ElasticSearchIndex<TDocument>` (`ISearchIndex<TDocument>`, alias-based read/write split), `ElasticSearchIndexProvisioner` (atomic alias cutover), `ElasticSearchProviderDescriptor`, `ElasticSearchFilterCompiler`, plus the ElasticSearch-exclusive `IAnalyticsSearch<TDocument>` (terms/cardinality/stats/date-histogram/range aggregations), `ISuggestSearch<TDocument>` (completion-suggester type-ahead) and `ICursorSearch<TDocument>` (point-in-time + `search_after` deep pagination). Backed by `Elastic.Clients.Elasticsearch`.
+[![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
+![Tier: Adapter](https://img.shields.io/badge/tier-Adapter-6f42c1)
+![Public API: tracked](https://img.shields.io/badge/public%20API-tracked-informational)
+[![Elasticsearch](https://img.shields.io/badge/Elasticsearch-9.x%20%7C%2010.x-005571?logo=elasticsearch&logoColor=white)](https://www.elastic.co/elasticsearch)
 
-## Included Types
+> **The Elasticsearch provider for `SharedKernel.Search.Abstractions`: `ISearchIndex<TDocument>` over read and write
+> aliases, plus aggregations, point-in-time deep pagination and completion suggestions for analytics-heavy work.**
 
-- `ElasticSearchIndex<TDocument>` — sealed `ISearchIndex<TDocument>` implementation, scoped
-- `ElasticSearchIndexProvisioner` — sealed `ISearchIndexProvisioner` implementation, singleton
-- `ElasticSearchProviderDescriptor` — sealed `ISearchProviderDescriptor` implementation, singleton
-- `IAnalyticsSearch<TDocument>` / `ElasticSearchAnalytics<TDocument>` — ElasticSearch-exclusive structured aggregations (`Terms`, `Cardinality`, `Stats`, `DateHistogram`, `Range`)
-- `ICursorSearch<TDocument>` / `ElasticSearchCursorSearch<TDocument>` — ElasticSearch-exclusive relevance-ordered deep pagination (point-in-time + `search_after`), including a resumable Open/Read/Close cursor triple
-- `IElasticSearchRawClientAccessor` — the last-resort raw-client escape hatch, registered only via `.AllowRawClientAccess()`
-- `ISuggestSearch<TDocument>` / `SearchSuggestion` — the ElasticSearch-exclusive completion suggester (declared here, never in `.Abstractions`)
-- `ElasticSearchOptions` — Options-pattern configuration, validated at startup
-- `ElasticSearchErrors` — ElasticSearch-specific `Error` factory (`InvalidCursor`, `CursorExpired`, `AggregationFailed`, `SourceSerializerContextMissing`)
-- `AddSharedKernelElasticSearchSearch(IConfiguration)` — DI registration entry point returning the fluent `ElasticSearchBuilder`
+| You get | So that |
+| --- | --- |
+| `AddSharedKernelElasticSearchSearch(configuration).AddIndex<T>(read, write, …).Build()` | One chain registers the client, every index, its provisioner and its readiness probe, validated at startup |
+| `ISearchIndex<TDocument>` over separate read/write aliases | Reads can move to a rebuilt index while writes continue |
+| `IAnalyticsSearch<TDocument>` | Terms, cardinality, stats, date-histogram and range aggregations, tenant-scoped |
+| `ICursorSearch<TDocument>` | Relevance-ordered paging past `MaxTotalHits` with point-in-time + `search_after`, resumable across restarts |
+| `ISuggestSearch<TDocument>` (`.WithCompletionField`) | Completion-suggester type-ahead, scoped by tenant context |
+| `VerifyElasticSearchEngineVersionAsync()` | An explicit startup check that the cluster is 9.x or 10.x |
+| One `search-elasticsearch-{index}` readiness probe per index | `/health/ready` reflects each index, with nothing to register |
 
-**This package must never reference `SharedKernel.Search.Meilisearch`, directly or transitively** — the two providers are independent siblings, never a shared base. `NEST`/`Elasticsearch.Net` are EOL and are never referenced anywhere in this package or the platform.
+## Contents
+
+- [Install](#install)
+- [Quick start](#quick-start)
+- [How it works](#how-it-works)
+- [Recipes](#recipes)
+- [Configuration](#configuration)
+- [Reference](#reference)
+- [Testing](#testing)
+- [Pitfalls](#pitfalls)
+- [Design decisions](#design-decisions)
 
 ## Install
 
 ```xml
-<ProjectReference Include="..\SharedKernel.Search.ElasticSearch\SharedKernel.Search.ElasticSearch.csproj" />
+<PackageReference Include="SharedKernel.Search.ElasticSearch" />
 ```
 
-Or, once published, reference the NuGet package `SharedKernel.Search.ElasticSearch` (which brings in `SharedKernel.Search.Abstractions` transitively).
+The version comes from your central `SharedKernelVersion` property — every SharedKernel package ships at the same
+version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel#using-the-packages).
 
-## Setup
+| Requirement | Value |
+| --- | --- |
+| Target framework | `net10.0` |
+| Tier | Adapter — reference it from your **Infrastructure** project (or the host) |
+| Depends on | `SharedKernel.Search.Abstractions`, `SharedKernel.Configuration`, `Elastic.Clients.Elasticsearch` |
+| Engine | Elasticsearch 9.x or 10.x (tested against 9.4.2) |
+| Host must register | `IClock` (`SharedKernel.Primitives.Clocks`) and logging |
+| Namespaces | `SharedKernel.Search.ElasticSearch.Extensions`, `.Options`, `.Analytics`, `.Cursors`, `.Suggest`, `.Errors`, `.Raw` |
+
+## Quick start
 
 ```csharp
-services
-    .AddSharedKernelElasticSearchSearch(configuration)
-    .AddIndex<OrderSearchDocument>(readAlias: "orders", writeAlias: "orders-write", index => index
-        .TenantField(OrderSearchFields.TenantId)
-        .Field(OrderSearchFields.Reference, SearchFieldKind.Keyword, filterable: true)
-        .Field(OrderSearchFields.PlacedOn,  SearchFieldKind.DateTimeOffset, filterable: true, sortable: true))
-    .WithSourceSerializerContext(OrderSearchJsonContext.Default)   // required for trimmed/AOT consumers
+using System.Text.Json.Serialization;
+using SharedKernel.Primitives.Clocks;
+using SharedKernel.Search.Abstractions.Models;
+using SharedKernel.Search.ElasticSearch.Extensions;
+
+[JsonSerializable(typeof(OrderLineDocument))]
+internal sealed partial class OrderLineJsonContext : JsonSerializerContext;
+
+builder.Services.AddSingleton<IClock, SystemClock>();
+
+builder.Services
+    .AddSharedKernelElasticSearchSearch(builder.Configuration)   // section Search:ElasticSearch
+    .AddIndex<OrderLineDocument>(readAlias: "order-lines", writeAlias: "order-lines", index => index
+        .PrimaryKey(OrderLineFields.DocumentId)
+        .TenantField(OrderLineFields.TenantId)
+        .Field(OrderLineFields.TenantId, SearchFieldKind.Keyword, filterable: true)
+        .Field(OrderLineFields.ProductName, SearchFieldKind.Text, searchable: true)
+        .Field(OrderLineFields.Region, SearchFieldKind.Keyword, filterable: true, facetable: true)
+        .Field(OrderLineFields.Revenue, SearchFieldKind.Decimal, filterable: true, sortable: true)
+        .Field(OrderLineFields.OrderedAt, SearchFieldKind.DateTimeOffset, filterable: true, sortable: true))
+    .WithSourceSerializerContext(OrderLineJsonContext.Default)
     .Build();
 
-// Application code injects the abstractions, never Elastic.Clients.Elasticsearch.ElasticsearchClient directly:
-public sealed class OrderSearchService(
-    ISearchIndex<OrderSearchDocument> index,
-    IAnalyticsSearch<OrderSearchDocument> analytics,
-    ICursorSearch<OrderSearchDocument> cursorSearch)
-{
-    // ...
-}
+builder.Services.AddHealthChecks().AddSharedKernelReadiness();   // SharedKernel.ServiceDefaults
 ```
-
-`AddSharedKernelElasticSearchSearch` binds and validates `ElasticSearchOptions`, registers `ElasticsearchClient` as a **singleton** (thread-safe, pools its own resources), and registers `ISearchIndexProvisioner`/`ISearchProviderDescriptor` as singletons. Each `.AddIndex<TDocument>(...)` call registers scoped `ISearchIndex<TDocument>`, `IAnalyticsSearch<TDocument>`, and `ICursorSearch<TDocument>`. A misconfigured section fails at `IHost.StartAsync()`, not at first query. `readAlias` is what reads (`search`/`get`/`count`/`enumerate`) target and `writeAlias` is what writes (`index`/`delete`/`bulk`) target — `CutoverAsync` flips the read alias atomically via a single aliases request.
-
-## Configuration reference
-
-Binds from the `Search:ElasticSearch` section (`ElasticSearchOptions.SectionName`):
-
-| Property | Type | Required | Default | Notes |
-| --- | --- | --- | --- | --- |
-| `Nodes` | `string[]` | Yes | — | Cluster node URIs, at least one. |
-| `ApiKey` | `string?` | No | `null` | API-key authentication. Takes precedence over `Username`/`Password` when set. |
-| `Username` | `string?` | No | `null` | Basic-auth username, used only when `ApiKey` is not set. |
-| `Password` | `string?` | No | `null` | Basic-auth password, used only when `ApiKey` is not set. |
-| `CertificateFingerprint` | `string?` | No | `null` | Expected server certificate fingerprint, for self-signed deployments. |
-| `AllowInvalidCertificates` | `bool` | No | `false` | Disables TLS certificate validation. Logs a startup warning when `true` — **never enable in production.** |
-| `RequestTimeoutSeconds` | `int` | No | `30` | Request timeout, `[1, 300]`. |
-| `PingTimeoutSeconds` | `int` | No | `2` | Ping timeout, `[1, 30]`. |
-| `MaxTotalHits` | `int` | No | `1000` | Pagination ceiling per registered index, `[1, 1000000]` — see the hard warning below. |
-| `MaxFacetValues` | `int` | No | `100` | Per-facet value-count cap per registered index, `[1, 10000]`. |
-| `BulkMaxBytes` | `int` | No | `10485760` | Target payload-byte ceiling per bulk batch, `[1048576, 52428800]`. |
-| `BulkMaxDocuments` | `int` | No | `2000` | Document-count ceiling per bulk batch, `[1, 50000]`. |
-| `PointInTimeKeepAliveSeconds` | `int` | No | `300` | Point-in-time keep-alive duration for `ICursorSearch`, `[10, 3600]`. |
-| `ProbeCacheSeconds` | `int` | No | `5` | How long a `ProbeAsync` result is cached; `0` disables caching, `[0, 60]`. |
-| `NumberOfShards` | `int` | No | `1` | Primary shard count applied when provisioning a new index, `[1, 100]`. |
-| `NumberOfReplicas` | `int` | No | `1` | Replica count applied when provisioning a new index, `[0, 10]`. |
-| `RefreshIntervalSeconds` | `int` | No | `1` | Refresh interval applied when provisioning a new index, `[-1, 3600]`. |
 
 ```json
 {
   "Search": {
     "ElasticSearch": {
-      "Nodes": ["https://localhost:9200"],
-      "ApiKey": "base64EncodedApiKey",
-      "MaxTotalHits": 1000
+      "Nodes": [ "https://localhost:9200" ],
+      "ApiKey": "<base64 API key>"
     }
   }
 }
 ```
 
-## Verifying the engine version and the live indexes
+At startup (or in a deployment step), check the cluster and provision the index; then application code uses the
+neutral `ISearchIndex<OrderLineDocument>` exactly as with any provider:
 
 ```csharp
-// From a startup task or a deployment smoke test — never implicitly at first resolve.
-Result version = await host.Services.VerifyElasticSearchEngineVersionAsync(ct);
-Result indexes = await provisioner.VerifyRegisteredIndexesAsync(ct);
+// using SharedKernel.Primitives.Results;
+Result version = await app.Services.VerifyElasticSearchEngineVersionAsync(ct);
+Result ensured = await provisioner.EnsureIndexAsync(orderLinesDefinition, ct);   // creates "order-lines"
 ```
 
-`VerifyElasticSearchEngineVersionAsync` checks the connected cluster is 9.x or 10.x, returning `search.engine_version_unsupported` for a reachable cluster on the wrong version and `search.unreachable` for one that does not answer. It is an explicit asynchronous call because the alternative was worse than useless: this check previously ran inside the `ElasticsearchClient` DI factory as a blocking `InfoAsync().GetAwaiter().GetResult()` gated by a `ValidateEngineVersionOnStart` flag, which ran at *first resolution* of the client — typically inside the first request, not at startup — blocked a thread pool thread on a network round trip to do it, and only logged, so an unsupported cluster served traffic anyway.
+The document type and the neutral API are described in
+[`SharedKernel.Search.Abstractions`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/09.Search/SharedKernel.Search.Abstractions/README.md).
 
-`VerifyRegisteredIndexesAsync` (on the neutral `ISearchIndexProvisioner`) checks every registered index exists, is addressable with this service's credentials, and matches its declared schema fingerprint — catching the quiet failure where code ships declaring a field, synonym or stop word the live index was never rebuilt for.
+## How it works
 
-## The `JsonSerializerContext` requirement for trimmed/AOT consumers
-
-`Elastic.Clients.Elasticsearch` sets `IsAotCompatible` for net8+ and **disables reflection-based System.Text.Json by default**. Document (de)serialization must therefore be wired through a source-generated `JsonSerializerContext`:
-
-```csharp
-[JsonSerializable(typeof(OrderSearchDocument))]
-internal sealed partial class OrderSearchJsonContext : JsonSerializerContext;
-
-services.AddSharedKernelElasticSearchSearch(configuration)
-    .AddIndex<OrderSearchDocument>("orders", "orders-write", index => { /* ... */ })
-    .WithSourceSerializerContext(OrderSearchJsonContext.Default)
-    .Build();
+```mermaid
+flowchart LR
+    R["SearchAsync / GetAsync /<br/>CountAsync / EnumerateAsync"] -->|read alias| RA["order-lines"]
+    W["IndexAsync / IndexManyAsync /<br/>DeleteAsync"] -->|write alias| WA["order-lines (write)"]
+    RA --> I1[("concrete index")]
+    WA --> I1
+    C["CutoverAsync"] -. "one _aliases request:<br/>remove + add" .-> RA
 ```
 
-Omitting `.WithSourceSerializerContext(...)` logs a startup warning (`ElasticSearchSourceSerializerContextMissing`) and surfaces `ElasticSearchErrors.SourceSerializerContextMissing` at first document (de)serialization — a runtime failure, not a build failure, precisely because trimming/AOT status is a deployment concern this package cannot detect at compile time. Always register this for any service that will ever publish a trimmed or Native AOT deployment.
+- **Registration.** `AddSharedKernelElasticSearchSearch` binds and validates `ElasticSearchOptions` and registers one
+  singleton `ElasticsearchClient` (single-node or static node pool). Each `AddIndex<T>` registers scoped
+  `ISearchIndex<T>`, `IAnalyticsSearch<T>` and `ICursorSearch<T>`; `WithCompletionField<T>` adds `ISuggestSearch<T>`.
+  `Build()` registers `ISearchIndexProvisioner` and `ISearchProviderDescriptor` as singletons, keyed `elasticsearch`
+  and unkeyed (the same instance), plus one readiness probe per index. The registered index name is the read alias.
+- **Aliases.** Reads go to the read alias, writes to the write alias. A service starts with both set to the same name,
+  the concrete index `EnsureIndexAsync` creates. `CutoverAsync` moves the `LiveIndexName` alias to the staging index
+  in a single `_aliases` request, so reads never see an undefined alias.
+- **Writes.** `SearchWriteConsistency.Accepted` returns once the write is durable; `Searchable` waits for a refresh
+  (`refresh=wait_for`). Bulk writes are split by `BulkMaxBytes` and `BulkMaxDocuments`.
+- **Parity ceiling.** `MaxTotalHits` defaults to 1000, and `EnsureIndexAsync` lowers `index.max_result_window` to the
+  index's ceiling, so a query legal here is legal on Meilisearch. Raise it per index with `.MaxTotalHits(n)`.
+- **Counts** use the `_count` API and are always exact.
+- **Failures.** Invalid responses are classified onto `search.unreachable`, `search.timeout`, `search.unauthorized`
+  or `search.engine_fault` (EventId 9225), the same codes the Meilisearch provider returns for exceptions.
+- **Probes** report a yellow cluster as healthy (a single-node cluster is permanently yellow) and cache the result for
+  `ProbeCacheSeconds`.
 
-## Structured aggregations
+## Recipes
+
+### 1. Aggregate
 
 ```csharp
+using SharedKernel.Search.ElasticSearch.Analytics;
+
 Result<AggregationResultSet> result = await analytics.AggregateAsync(
-    filter: SearchFilter.Eq(OrderSearchFields.Status, SearchValue.From("shipped")),
-    aggregations: [AggregationRequest.Terms("byRegion", OrderSearchFields.Region, size: 20)],
+    filter: SearchFilter.Eq(OrderLineFields.Region, "emea"),
+    aggregations:
+    [
+        AggregationRequest.Terms("byRegion", OrderLineFields.Region, size: 20,
+            subAggregations: [AggregationRequest.Stats("revenue", OrderLineFields.Revenue)]),
+        AggregationRequest.DateHistogram("perMonth", OrderLineFields.OrderedAt, DateHistogramInterval.Month),
+    ],
     TenantScope.For(tenantId), ct);
 
 if (result.IsSuccess && result.Value.TryGetTerms("byRegion", out var byRegion))
 {
-    foreach (var bucket in byRegion.Buckets)
+    foreach (var bucket in byRegion!.Buckets)
     {
-        // bucket.Key / bucket.DocCount
+        // bucket.Key, bucket.DocCount, bucket.SubAggregations.TryGetStats("revenue", out var stats)
     }
 }
 ```
 
-`AggregateAsync` and its closed `AggregationRequest`/`AggregationResult` hierarchies are the hardest wall in this domain: Meilisearch offers only facet-count distributions and numeric min/max, with no sum, average, cardinality, percentiles, date-histogram, or nested/pipeline aggregations. This is declared here — never in `SharedKernel.Search.Abstractions` — precisely so a call site that references it takes a compile-time dependency on ElasticSearch: a provider swap away from ElasticSearch surfaces as a **build error** enumerating every aggregation call site, not a runtime capability check.
+The closed set: `Terms`, `Cardinality`, `Stats`, `DateHistogram` (`Minute` … `Year`) and `Range`
+(`AggregationBucketRange(key, from, to)`); terms and date histograms take sub-aggregations.
 
-## The read alias, the write alias, and a silent failure worth knowing about
-
-`AddIndex<TDocument>(readAlias, writeAlias, …)` addresses reads and writes separately, because during a
-rebuild `CutoverAsync` repoints the read alias at a freshly-built staging index while writes continue
-elsewhere. **That split is not the starting configuration:** a service starts with both names equal to
-the concrete index `EnsureIndexAsync` creates.
-
-If you do split them, make sure the write alias actually resolves. ElasticSearch **auto-creates an index
-on write**, so a write alias pointing at nothing does not fail — every write lands in a brand-new,
-mapping-less, analysis-less index that no read ever touches. The bulk call reports success, the counts
-look plausible, and the data is simply not where the service is looking.
-
-`VerifyRegisteredIndexesAsync` checks for exactly this: that the write alias resolves *and* carries the
-schema fingerprint `EnsureIndexAsync` writes, which an implicitly-created index never has. Call it from
-a startup task or a deployment smoke test and the misconfiguration is loud instead of invisible.
-
-## Completion suggestions (type-ahead)
+### 2. Page deeply or export in relevance order
 
 ```csharp
-builder.Services
-    .AddSharedKernelElasticSearchSearch(builder.Configuration)
-    .AddIndex<ProductSearchDocument>("products-read", "products-write", index => index /* ... */)
-    .WithCompletionField<ProductSearchDocument>("products-read", "nameSuggest")
-    .Build();
+using SharedKernel.Search.ElasticSearch.Cursors;
 
-// then, in application code:
-Result<IReadOnlyList<SearchSuggestion>> suggestions = await suggest.SuggestAsync(
-    "nameSuggest", prefix: "wirel", TenantScope.For(tenantId), size: 10, fuzzy: false, ct);
-```
-
-`ISuggestSearch<TDocument>` exposes ElasticSearch's completion suggester — a purpose-built in-memory FST that answers prefix queries in roughly constant time and returns **suggestion strings with weights**, not documents. Meilisearch has no such structure and no such field type; its type-ahead story is ordinary prefix matching over the regular index, exposed as `IInstantSearch<TDocument>` in that package. The two solve the same product problem with different data structures and different result shapes, which is why each is declared in its own provider package rather than neutralised.
-
-A completion field must exist in the mapping **before** documents are indexed, so `WithCompletionField` is a provisioning-time declaration, not a query option — adding one to a populated index needs a staging rebuild and a cutover for existing documents to become suggestable. Your document type populates the field itself. On a tenanted index the tenant field is registered as a **category context** on the completion mapping: the suggester ignores query filters entirely, so a context is the only mechanism that can scope a suggestion, and without it one tenant's product names would complete another tenant's typing. `TenantScope` is mandatory and fails closed, exactly as on the neutral read path.
-
-## Cursor-based deep pagination
-
-```csharp
-await foreach (var hit in cursorSearch.StreamAsync(request, TenantScope.For(tenantId), keepAlive: TimeSpan.FromMinutes(5), ct))
+await foreach (var hit in cursorSearch.StreamAsync(request, TenantScope.For(tenantId), TimeSpan.FromMinutes(5), ct))
 {
-    // hit.Document / hit.Rank — relevance order, past MaxTotalHits
+    // hit.Document, hit.Rank
 }
 
-// Or the resumable triple, for a long-running export that checkpoints across process restarts:
+// Resumable across process restarts:
 Result<SearchCursor> cursor = await cursorSearch.OpenCursorAsync(request, TenantScope.For(tenantId), TimeSpan.FromMinutes(5), ct);
-Result<CursorPage<OrderSearchDocument>> page = await cursorSearch.ReadCursorAsync(cursor.Value, ct);
+Result<CursorPage<OrderLineDocument>> page = await cursorSearch.ReadCursorAsync(cursor.Value, ct);
+// page.Value.Hits, page.Value.NextCursor, page.Value.IsExhausted
 await cursorSearch.CloseCursorAsync(cursor.Value, ct);
 ```
 
-Built on point-in-time plus `search_after` — never the scroll API, which Elastic explicitly de-recommends for deep pagination. `SearchCursor.Token` is opaque and must never be parsed. Distinct from `ISearchIndex<TDocument>.EnumerateAsync`, which is an unordered corpus walk for reindex/export, not relevance-ordered — Meilisearch has no `search_after`/point-in-time equivalent at any price, which is why this contract is declared here, not on the neutral surface.
+Point-in-time plus `search_after`, never scroll. `SearchCursor.Token` is opaque. An expired point-in-time is
+`search.elasticsearch.cursor_expired`; a malformed cursor is `search.elasticsearch.invalid_cursor`.
+`StreamAsync` faults surface as `SearchStreamException`.
 
-## Pacing a large bulk write — `SearchBulkWriteOptions`
-
-`IndexManyAsync`'s 4-argument overload paces this provider's existing byte/document-count batch loop (`BulkMaxBytes`/`BulkMaxDocuments`) so a large reindex does not starve concurrent read/query traffic against the same cluster:
+### 3. Completion suggestions
 
 ```csharp
-Result<SearchBulkReceipt> receipt = await index.IndexManyAsync(
-    orders,
-    SearchWriteConsistency.Accepted,
-    new SearchBulkWriteOptions { MaxBatchesPerSecond = 5 },
-    ct);
+builder.Services.AddSharedKernelElasticSearchSearch(builder.Configuration)
+    .AddIndex<OrderLineDocument>("order-lines", "order-lines", index => index /* … */)
+    .WithCompletionField<OrderLineDocument>("order-lines", OrderLineFields.ProductNameSuggest)
+    .Build();
+
+Result<IReadOnlyList<SearchSuggestion>> suggestions = await suggest.SuggestAsync(
+    OrderLineFields.ProductNameSuggest, prefix: "wirel", TenantScope.For(tenantId), size: 10, fuzzy: false, ct);
 ```
 
-This provider already runs a sequential `foreach` over its own byte/document-count batches, so honoring `MaxBatchesPerSecond` was a straightforward insertion of a computed delay before every batch dispatch after the first — no restructuring of the batching or serialization logic itself. `MaxBatchesPerSecond = null` (the 3-argument overload's default) skips the delay entirely, leaving today's unthrottled `foreach` unchanged. `DeleteManyAsync`'s 4-argument overload accepts `bulkOptions` for interface parity only — this provider dispatches a document-id bulk delete as a single `BulkAsync` call regardless of size, so there is no inter-batch gap to pace.
+`SearchSuggestion` carries `Text`, `DocumentId` and `Score`. The completion field is part of the mapping, so declare
+it before documents are indexed (an existing index needs a rebuild); your document populates it. On a tenanted index
+the tenant field is a category context on the completion mapping — the suggester ignores query filters.
 
-## Hard warning — `MaxTotalHits` defaults to 1000, not ElasticSearch's native 10 000
+### 4. Rebuild through a staging index
 
-ElasticSearch's own `index.max_result_window` defaults to 10 000; this package defaults `MaxTotalHits` to **1000** instead — the same ceiling Meilisearch's `maxTotalHits` defaults to — and `EnsureIndexAsync` pushes `index.max_result_window` down to match. This is deliberate, cross-provider-parity behaviour, not an oversight: a query proven legal against one provider is thereby guaranteed legal against the other, so a provider swap never converts a page-51 query into a production surprise. The trade-off is real — this knowingly hobbles ElasticSearch's stronger native ceiling — and is the change most likely to generate "the abstraction broke my search" friction.
+```csharp
+await provisioner.EnsureIndexAsync(stagingDefinition, ct);     // e.g. "order-lines-v2"
+// bulk-load order-lines-v2
+await provisioner.CutoverAsync(new IndexCutoverRequest
+{
+    StagingIndexName = "order-lines-v2",
+    LiveIndexName = "order-lines",                            // an ALIAS on Elasticsearch
+    DeleteStagingAfterCutover = false,                        // see Pitfalls
+}, ct);
+```
 
-**If this service will never swap to Meilisearch**, raise the ceiling per index by setting `MaxTotalHits` higher on the `SearchIndexDefinitionBuilder` for that index (`.MaxTotalHits(10_000)` or higher, up to `ElasticSearchOptions`'s own `[1, 1000000]` range) — this is a per-index override, not a global one, so services with a mix of swappable and ElasticSearch-only indexes can set each ceiling independently.
+`LiveIndexName` must be an alias: Elasticsearch cannot create an alias with the name of an existing concrete index.
+Plan the alias layout (a versioned concrete index behind the read alias) before the first cutover.
 
-## Hard warning — ElasticSearch document-level security is a commercial-tier feature
+### 5. Catch a write alias that points nowhere
 
-Meilisearch's tenant search tokens (`ITenantSearchTokenIssuer`, in `SharedKernel.Search.Meilisearch`) are **engine-enforced** — the engine itself refuses to return another tenant's documents, below the application layer, even to a client holding only the token. ElasticSearch has no equivalent in this package, and that absence is deliberate rather than an oversight: ElasticSearch's own equivalent capability, **document-level security, is a commercial (subscription) tier feature**, not something available in the OSS/Basic distribution this package targets.
+```csharp
+Result indexes = await provisioner.VerifyRegisteredIndexesAsync(ct);
+```
 
-**Consequence for a provider swap:** a service that swaps from Meilisearch-with-tenant-tokens to ElasticSearch silently downgrades tenant isolation from **engine-enforced** to **application-enforced** — i.e., from "the engine itself cannot return the wrong tenant's data even if the application forgets to filter" to "correctness depends entirely on the application always passing the right `TenantScope`." This package's own `TenantScope`-as-mandatory-parameter design (see [`SharedKernel.Search.Abstractions`'s README](../SharedKernel.Search.Abstractions/README.md)) is the strongest application-enforced mitigation available, but it is not the same guarantee.
+Elasticsearch auto-creates an index on write, so a write alias that resolves to nothing does not fail: every write
+lands in a new, mapping-less index no read touches. `VerifyRegisteredIndexesAsync` checks that each write alias (when
+it differs from the read alias) resolves and carries the fingerprint `EnsureIndexAsync` writes, and fails with
+`search.probe_failed` otherwise (EventId 9227).
 
-The OSS-tier substitute for document-level security is **deployment configuration this package neither performs nor can verify**: a filtered alias per tenant (or per tenant group) combined with role privileges that deny direct access to the concrete backing index, so that even a compromised or misconfigured application component cannot bypass the alias filter. Set this up at the cluster/deployment level if engine-enforced isolation is a hard requirement for a service on this provider.
+### 6. Raise the ceiling for an Elasticsearch-only index
 
-## Package
+```csharp
+.AddIndex<OrderLineDocument>("order-lines", "order-lines", index => index /* … */ .MaxTotalHits(10_000))
+```
 
-Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) — see [09.Search/CLAUDE.md](../CLAUDE.md) for the full interface contracts, filter-compiler object-graph rules, and AOT posture.
+## Configuration
+
+Section `Search:ElasticSearch` (`ElasticSearchOptions.SectionName`), validated when the host starts.
+
+| Key | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `Search:ElasticSearch:Nodes` | `string[]` | — (required, ≥ 1) | Cluster node URIs |
+| `Search:ElasticSearch:ApiKey` | `string?` | `null` | API-key authentication; wins over `Username`/`Password` |
+| `Search:ElasticSearch:Username` | `string?` | `null` | Basic-auth user, used when `ApiKey` is not set |
+| `Search:ElasticSearch:Password` | `string?` | `null` | Basic-auth password |
+| `Search:ElasticSearch:CertificateFingerprint` | `string?` | `null` | Expected server certificate fingerprint (self-signed clusters) |
+| `Search:ElasticSearch:AllowInvalidCertificates` | `bool` | `false` | Disables TLS validation; logs 9217. Never in production |
+| `Search:ElasticSearch:RequestTimeoutSeconds` | `int` | `30` | Request timeout, 1–300 |
+| `Search:ElasticSearch:PingTimeoutSeconds` | `int` | `2` | Ping timeout, 1–30 |
+| `Search:ElasticSearch:MaxTotalHits` | `int` | `1000` | Pagination ceiling, 1–1000000 (Meilisearch parity, not the native 10 000) |
+| `Search:ElasticSearch:MaxFacetValues` | `int` | `100` | Values returned per facet, 1–10000 |
+| `Search:ElasticSearch:BulkMaxBytes` | `int` | `10485760` | Target payload bytes per bulk batch, 1048576–52428800 |
+| `Search:ElasticSearch:BulkMaxDocuments` | `int` | `2000` | Documents per bulk batch, 1–50000 |
+| `Search:ElasticSearch:PointInTimeKeepAliveSeconds` | `int` | `300` | Point-in-time keep-alive, 10–3600 |
+| `Search:ElasticSearch:ProbeCacheSeconds` | `int` | `5` | How long a probe result is cached; `0` disables, 0–60 |
+| `Search:ElasticSearch:NumberOfShards` | `int` | `1` | Primary shards of a newly provisioned index, 1–100 |
+| `Search:ElasticSearch:NumberOfReplicas` | `int` | `1` | Replicas of a newly provisioned index, 0–10 |
+| `Search:ElasticSearch:RefreshIntervalSeconds` | `int` | `1` | Refresh interval of a newly provisioned index; `-1` disables, -1–3600 |
+
+## Reference
+
+### Registration
+
+| Method | Registers |
+| --- | --- |
+| `AddSharedKernelElasticSearchSearch(IConfiguration)` / `(IConfigurationSection)` | `ElasticSearchOptions`, `ElasticsearchClient` (singleton); returns `ElasticSearchBuilder` |
+| `.AddIndex<TDocument>(readAlias, writeAlias, configure)` | `ISearchIndex<TDocument>`, `IAnalyticsSearch<TDocument>`, `ICursorSearch<TDocument>` (scoped) |
+| `.WithCompletionField<TDocument>(indexName, suggestField)` | `ISuggestSearch<TDocument>` (scoped) and the completion mapping |
+| `.WithSourceSerializerContext(JsonSerializerContext)` | The client's source serializer |
+| `.AllowRawClientAccess()` | `IElasticSearchRawClientAccessor` (singleton; `Client`) — bypasses tenant scoping |
+| `.Build()` | `ISearchIndexProvisioner`, `ISearchProviderDescriptor` (singleton, keyed `elasticsearch` + unkeyed), one readiness probe per index |
+| `IServiceProvider.VerifyElasticSearchEngineVersionAsync(ct)` | — returns `Result`: `search.engine_version_unsupported` or `search.unreachable` on failure |
+
+### Errors
+
+Neutral codes come from `SearchErrors` (see the Abstractions README). Elasticsearch-only codes, from
+`ElasticSearchErrors`:
+
+| Code | Type | When |
+| --- | --- | --- |
+| `search.elasticsearch.invalid_cursor` | Validation | A cursor token that cannot be read |
+| `search.elasticsearch.cursor_expired` | Conflict | The cursor's point-in-time expired |
+| `search.elasticsearch.aggregation_failed` | Unexpected | The engine failed an aggregation |
+| `search.elasticsearch.source_serializer_context_missing` | Unexpected | Declared for a missing `JsonSerializerContext`; not returned by the current code (see 9221) |
+
+### Logging
+
+| Event id | Level | Event |
+| --- | --- | --- |
+| 9200 | Information | Client configured for `{NodeCount}` nodes with `{IndexCount}` indexes |
+| 9201 | Information | Engine version verified |
+| 9202 | Error | Engine version not supported |
+| 9203 | Information | Index ensured (fields, `max_result_window`) |
+| 9204 | Debug | Documents indexed with a refresh mode |
+| 9205 | Debug | Bulk operation completed |
+| 9206 | Warning | Bulk operation partially failed |
+| 9207 | Warning | Waiting for a refresh timed out |
+| 9208 | Debug | Search returned hits |
+| 9209 | Warning | Search request rejected before any I/O |
+| 9210 | Warning | Tenanted index called with `TenantScope.Global` |
+| 9211 | Information | Alias cutover completed |
+| 9212 | Information | Staging index deleted after cutover |
+| 9213 | Debug | Point-in-time opened |
+| 9214 | Debug | Point-in-time closed |
+| 9215 | Warning | Failed to close a point-in-time |
+| 9216 | Warning | Raw client access enabled — bypasses tenant scoping |
+| 9217 | Warning | TLS certificate validation disabled |
+| 9218 | Information | Cluster health yellow, treated as healthy |
+| 9219 | Warning | Probe degraded |
+| 9220 | Warning | Schema fingerprint mismatch |
+| 9221 | Warning | No `JsonSerializerContext` registered; the client falls back to reflection-based serialization |
+| 9222 | Error | Operation faulted with a status code |
+| 9223 | Debug | Aggregation executed |
+| 9224 | Debug | Bulk operation throttled |
+| 9225 | Warning | Operation faulted and was mapped to an error code |
+| 9226 | Information | Synonyms and stop words applied |
+| 9227 | Warning | Index drifted from the registered definition |
+| 9228 | Information | Index verified against the registered definition |
+| 9229 | Debug | Completion suggester returned suggestions |
+
+### Health
+
+`Build()` registers one `IReadinessProbe` per index, named `search-elasticsearch-{readAlias}`. Ready means the cluster
+answers (green or yellow), the alias is addressable with this service's credentials and a zero-row search succeeds.
+Expose them with `services.AddHealthChecks().AddSharedKernelReadiness()` (`SharedKernel.ServiceDefaults`).
+
+## Testing
+
+In a service's unit tests, replace the provider with the in-memory fakes of
+[`SharedKernel.Search.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/16.Testing/SharedKernel.Search.Testing/README.md)
+(`AddInMemorySearchIndex<TDocument>(definition)`, `AddInMemorySearchProvisioning()`). They cover the neutral contract
+only: code that uses `IAnalyticsSearch<T>`, `ICursorSearch<T>` or `ISuggestSearch<T>` needs a real cluster, for
+example `docker.elastic.co/elasticsearch/elasticsearch:9.4.2` with `discovery.type=single-node` in a container.
+
+## Pitfalls
+
+| Don't | Do | Why |
+| --- | --- | --- |
+| Leave `DeleteStagingAfterCutover` at its default `true` | Pass `false` and delete the *previous* backing index yourself | On Elasticsearch the staging index becomes the live alias target; deleting it deletes the live data |
+| Cut over onto a live name that is a concrete index | Make the read alias an alias over a versioned index | Elasticsearch cannot create an alias with an existing index's name |
+| Point a write alias at nothing | Run `VerifyRegisteredIndexesAsync` after deploying | Writes silently auto-create a mapping-less index |
+| Omit `.WithSourceSerializerContext(...)` in a trimmed or AOT deployment | Register a `JsonSerializerContext` for every document type | Without it the client falls back to reflection-based JSON (warning 9221), which trimming breaks |
+| Rely on the client to check the engine version | Call `VerifyElasticSearchEngineVersionAsync` from a startup task | Nothing checks it implicitly |
+| Enable `AllowInvalidCertificates` in production | Use `CertificateFingerprint` for self-signed clusters | It disables TLS validation entirely |
+| Forget to register `IClock` | `services.AddSingleton<IClock, SystemClock>()` | The index and cursor search resolve it |
+| Assume engine-enforced tenant isolation | Configure filtered aliases and role privileges on the cluster if you need it | Document-level security is a commercial-tier feature; isolation here is application-enforced via `TenantScope` |
+| Use `IElasticSearchRawClientAccessor` for routine queries | Stay on the typed contracts | The raw client bypasses tenant scoping |
+
+## Design decisions
+
+**Why do aggregations, cursors and suggestions live here?** Meilisearch has only facet counts and numeric min/max, no
+point-in-time or `search_after`, and no completion structure. Declaring them in this package makes a provider swap a
+build error at every call site instead of a runtime surprise.
+
+**Why is the version check an explicit call?** A check inside the client factory runs at first resolution — usually
+inside the first request — blocks a thread and can only log. An async call from a startup task can fail the start.
+
+**Why `MaxTotalHits` 1000?** Parity with Meilisearch: a query that works on one provider works on the other. An index
+that will never move can raise its own ceiling.
+
+---
+
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
+[Search domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/09.Search/README.md) ·
+[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

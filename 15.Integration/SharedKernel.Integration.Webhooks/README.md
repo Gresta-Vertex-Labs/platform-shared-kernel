@@ -1,453 +1,331 @@
 # SharedKernel.Integration.Webhooks
 
-Outbound webhook delivery for the Platform.SharedKernel ecosystem: dispatch a platform integration
-event to externally-configured HTTP subscribers as a signed, retried, fan-out-safe webhook, and
-verify an inbound webhook claiming to originate from this dispatcher elsewhere on the platform.
+[![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
+![Tier: Adapter](https://img.shields.io/badge/tier-Adapter-6f42c1)
+![SSRF guard: fail closed](https://img.shields.io/badge/SSRF%20guard-fail%20closed-critical)
 
-This package is delivery plumbing, not business logic. It does not decide *which* events matter to
-*which* subscriber — it delivers a given integration event to a given subscriber reliably and
-verifiably. Subscription storage and delivery-history persistence are the consuming microservice's
-responsibility, expressed through two seams this package defines but never implements:
-`IWebhookSubscriptionStore` (required) and `IWebhookDeliveryObserver` (optional).
+> **Deliver integration events to external HTTP subscribers as signed, retried, SSRF-guarded webhooks — and verify
+> them on the receiving side. You supply the subscriptions; the package handles signing, fan-out, retries, secret
+> rotation, optional payload encryption and the "delivery exhausted" signal.**
 
-| | |
+| You get | So that |
 | --- | --- |
-| Tier | Adapter (references Foundation, Model and Abstractions packages only: `SharedKernel.Primitives`, `.Execution`, `.Configuration`, `.Cryptography`, `SharedKernel.Contracts`, `SharedKernel.Messaging.Abstractions`) |
-| Install | `<PackageReference Include="SharedKernel.Integration.Webhooks" />` |
-| Test doubles | `SharedKernel.Integration.Testing`: `AddInMemoryWebhookDispatcher()`, `AddInMemoryWebhookDeliveryObserver()` |
+| `IWebhookDispatcher.DispatchAsync(evt)` | One call fans an `[IntegrationEvent]` out to every matching subscriber, bounded and isolated |
+| HMAC-SHA256 signatures with a timestamp, and `WebhookSignatureVerifier` | Subscribers can prove origin and reject replays |
+| Multi-secret subscriptions (`Secrets`, newest first) | Signing secrets rotate with zero downtime |
+| An SSRF guard on the resolved address before every send | A subscriber URL cannot reach your private network |
+| Retries in the standard HTTP resilience handler, one stable `X-Webhook-Delivery-Id` | Transient failures heal; subscribers deduplicate retries |
+| `WebhookDeliveryExhaustedEvent` on the bus | Any service can react when a subscriber stays down |
+| Opt-in encrypt-then-sign payloads | Payload confidentiality independent of the subscriber's TLS termination |
+| Test (ping) deliveries | A new subscriber can check its endpoint before real events flow |
 
----
+## Contents
 
-## Minimal setup
+- [Install](#install)
+- [Quick start](#quick-start)
+- [How it works](#how-it-works)
+- [Recipes](#recipes)
+- [Configuration](#configuration)
+- [Reference](#reference)
+- [Testing](#testing)
+- [Pitfalls](#pitfalls)
+- [Design decisions](#design-decisions)
 
-```csharp
-// Program.cs
-builder.Services.AddSharedKernelWebhooks();
+## Install
 
-// Required — DI resolution fails at first dispatch without this registration.
-builder.Services.AddScoped<IWebhookSubscriptionStore, EfWebhookSubscriptionStore>();
+```xml
+<PackageReference Include="SharedKernel.Integration.Webhooks" />
 ```
 
-`AddSharedKernelWebhooks()` registers:
+The version comes from your central `SharedKernelVersion` property — every SharedKernel package ships at the same
+version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel#using-the-packages).
 
-- `WebhookDeliveryOptions`, bound to configuration section `SharedKernel:Integration:Webhooks` and
-  validated eagerly at startup (`ValidateOnStart()` — a misconfigured deployment fails fast, not on
-  first dispatch).
-- `WebhookSignatureProvider` as a singleton (stateless HMAC-SHA256 signer).
-- `IWebhookDispatcher` → `WebhookDispatcher` as scoped.
-- A named `HttpClient` (`"SharedKernel.Integration.Webhooks"`) wired with
-  `Microsoft.Extensions.Http.Resilience`'s standard resilience handler for retry/backoff/timeout.
+| Requirement | Value |
+| --- | --- |
+| Target framework | `net10.0` |
+| Tier | Adapter — reference it from your **Infrastructure** project |
+| Depends on | `SharedKernel.Primitives`, `.Execution`, `.Configuration`, `.Cryptography`, `SharedKernel.Contracts`, `SharedKernel.Messaging.Abstractions`, `Microsoft.Extensions.Http.Resilience` |
+| Namespaces | `SharedKernel.Integration.Webhooks.Extensions`, `.Dispatch`, `.Subscriptions`, `.Signing`, `.Events`, `.Observability`, `.Options` |
+| Needs in the host | An `IWebhookSubscriptionStore` (yours) and an `IEventPublisher` (e.g. `SharedKernel.Messaging.MassTransit`) |
 
-It deliberately does **not** register `IWebhookSubscriptionStore` — there is no default
-implementation. The consuming service implements it against its own `06.Persistence` stack:
+## Quick start
+
+```csharp
+using SharedKernel.Integration.Webhooks.Extensions;
+using SharedKernel.Integration.Webhooks.Subscriptions;
+
+builder.Services.AddSharedKernelWebhooks();                                    // SharedKernel:Integration:Webhooks
+builder.Services.AddScoped<IWebhookSubscriptionStore, EfWebhookSubscriptionStore>();   // required, no default
+```
+
+```json
+{
+  "SharedKernel": {
+    "Integration": {
+      "Webhooks": { "MaxAttempts": 5, "RequestTimeout": "00:00:10", "MaxConcurrentDeliveries": 8 }
+    }
+  }
+}
+```
+
+The store is yours, over your own persistence; it owns the "active and subscribed to this event" filter:
 
 ```csharp
 public sealed class EfWebhookSubscriptionStore(AppDbContext db) : IWebhookSubscriptionStore
 {
-    public async Task<IReadOnlyList<WebhookSubscription>> GetActiveSubscriptionsAsync(
-        string eventType, CancellationToken ct)
+    public async Task<IReadOnlyList<WebhookSubscription>> GetActiveSubscriptionsAsync(string eventType, CancellationToken ct)
     {
         var rows = await db.WebhookSubscriptions
-            .Where(s => s.IsActive)
-            .Where(s => s.EventTypes.Count == 0 || s.EventTypes.Contains(eventType))
+            .Where(s => s.IsActive && (s.EventTypes.Count == 0 || s.EventTypes.Contains(eventType)))
             .ToListAsync(ct);
 
-        return rows.Select(r => new WebhookSubscription(
-            r.Id, r.Url, r.Secrets, r.EventTypes, r.IsActive)).ToList();
+        return rows.Select(r => new WebhookSubscription(r.Id, r.Url, r.Secrets, r.EventTypes, r.IsActive)).ToList();
     }
 }
 ```
 
-The implementation owns the active/matching filter logic — `IWebhookDispatcher` trusts whatever
-`IWebhookSubscriptionStore` returns.
-
----
-
-## Custom `WebhookDeliveryOptions`
-
-Pass a configuration callback to override defaults in code, or bind from `appsettings.json` under
-`SharedKernel:Integration:Webhooks` (see the [configuration reference](#configuration-reference)
-below — both mechanisms compose, with the code callback applied after binding).
+Dispatch an integration event:
 
 ```csharp
-builder.Services.AddSharedKernelWebhooks(options =>
-{
-    options.MaxAttempts = 8;
-    options.RequestTimeout = TimeSpan.FromSeconds(15);
-    options.MaxConcurrentDeliveries = 16;
-});
-```
+using SharedKernel.Contracts.Events;
+using SharedKernel.Integration.Webhooks.Dispatch;
 
-Invalid combinations (e.g. `MaxAttempts = 0`, `MaxBackoffDelay < BaseBackoffDelay`, a non-positive
-`TimeSpan`) fail startup validation with an actionable `OptionsValidationException` message —
-they never surface as a silent runtime misbehavior.
-
----
-
-## Outbound URL validation (SSRF guard)
-
-Every delivery is validated against `IWebhookUrlValidator` immediately before the HTTP send — never
-once at subscription-registration time, closing the DNS-rebinding bypass where a hostname resolves to
-a public IP at validation time and a private one at connection time. The default implementation,
-`PrivateNetworkWebhookUrlValidator`, resolves the target host and rejects delivery when the resolved
-IP falls in a loopback, link-local (`169.254.0.0/16`/`fe80::/10`), private (RFC1918/RFC4193), or
-multicast/reserved range, for both IPv4 and IPv6. A rejected target surfaces as a failed, non-throwing
-`WebhookDeliveryResult` — never a thrown exception — exactly like any other HTTP-level failure.
-
-For legitimate internal test/staging subscriptions, opt out via `WebhookDeliveryOptions`:
-
-```csharp
-builder.Services.AddSharedKernelWebhooks(options =>
-{
-    options.AllowPrivateNetworkTargets = true; // never enable this for externally-supplied URLs
-});
-```
-
-A consuming service with a non-default target-network policy (e.g. an internal allowlist) can supply
-a fully custom validator instead — the last-registered validator wins:
-
-```csharp
-builder.Services.WithUrlValidator<CustomAllowlistWebhookUrlValidator>();
-```
-
-Prefer `AllowPrivateNetworkTargets` for the common "allow internal staging targets" case; the
-SSRF-guard default posture must never be silently disabled.
-
----
-
-## Zero-downtime signing-secret rotation
-
-`WebhookSubscription.Secrets` is a newest-first list of every HMAC-SHA256 secret currently valid for
-a subscription. A delivery is always signed with `Secrets[0]` (the newest); verification accepts a
-match against *any* candidate in the list, supporting a dual-valid overlap window during rotation:
-
-1. **Issue a new secret** — prepend it to `Secrets` so it becomes `Secrets[0]`, keeping the old secret
-   in the list. New deliveries sign with the new secret immediately; the subscriber's own verifier
-   (still configured with only the old secret) will reject them until step 2.
-2. **Dual-valid overlap window** — update the subscriber's own verifier to accept both secrets
-   (`WebhookSignatureVerifier.Verify(..., secretCandidates: subscription.Secrets)`), so both the new
-   and the old secret validate successfully during the transition.
-3. **Retire the old secret** — once the subscriber confirms they've deployed the new secret, remove
-   the old one from `Secrets`.
-
-```csharp
-var subscription = subscription with { Secrets = [newSecret, .. subscription.Secrets] }; // step 1
-// ...subscriber deploys verification against both secrets (step 2)...
-var subscription = subscription with { Secrets = [subscription.Secrets[0]] }; // step 3, retire the old one
-```
-
-Existing single-`Secret` callers see no breaking change — `WebhookSubscription`'s obsolete
-single-secret constructor still compiles, mapping to a one-element `Secrets` list.
-
----
-
-## Custom per-subscription headers
-
-`WebhookSubscription.Headers` applies optional static headers to every outbound delivery for that
-subscription, alongside the standard signature/timestamp/delivery-id headers:
-
-```csharp
-var subscription = new WebhookSubscription(
-    subscriptionId, url, secrets, eventTypes, isActive,
-    Headers: new Dictionary<string, string> { ["X-Partner-Id"] = "acme-corp" });
-```
-
-A header name colliding case-insensitively with `WebhookSignatureHeaders.SignatureHeaderName`,
-`.TimestampHeaderName`, or `.DeliveryIdHeaderName` is rejected at dispatch time — as a failed,
-non-throwing `WebhookDeliveryResult` — before any HTTP call is attempted. The platform signature
-headers are never silently overwritten in either direction.
-
----
-
-## Opt-in payload encryption
-
-When `WebhookDeliveryOptions.EncryptPayload` is enabled, the outbound JSON payload is encrypted
-(AES-GCM, via `01.Core/SharedKernel.Cryptography`'s `ISymmetricEncryptionService.EncryptToStringAsync`)
-before signing — encrypt-then-sign, so `WebhookSignatureVerifier` continues to detect tampering on
-exactly the bytes that were transmitted. Disabled by default; TLS already provides transport
-confidentiality — this is defense-in-depth for subscribers who want payload-level confidentiality
-independent of their own TLS termination boundary.
-
-```csharp
-builder.Services.AddSingleton<IEncryptionKeyProvider, YourEncryptionKeyProvider>();
-builder.Services.AddSharedKernelCryptography(builder.Configuration) // 01.Core/SharedKernel.Cryptography
-    .AddSymmetricEncryption();
-
-builder.Services.AddSharedKernelWebhooks(options => options.EncryptPayload = true);
-```
-
-The transmitted body is the ciphertext in `SharedKernel.Cryptography`'s canonical format:
-`EncryptedPayload.ToString()`, unpadded Base64Url of
-`[version 0x01][key id length][key id][nonce][tag][ciphertext]`. A subscriber on the platform reads it back
-with `DecryptToStringAsync` (below) or `EncryptedPayload.TryParse`.
-
-### Deriving the associated data (AAD)
-
-Every encrypt call is bound to `WebhookPayloadAssociatedData.Build(subscription.SubscriptionId,
-deliveryId)` — never a constant, and never derived solely from data transmitted on the wire. The two
-components have different reproducibility stories for the subscriber:
-
-- **`deliveryId`** — per-delivery freshness. Reproducible from the `X-Webhook-Delivery-Id` header,
-  sent on every attempt of a given delivery.
-- **`subscriptionId`** — identity binding. Deliberately **never sent as a header** — the subscriber
-  must already know it out-of-band, through the same pre-established channel that already carries
-  `WebhookSubscription.Secrets`. If the subscription id traveled alongside the ciphertext, a captured
-  ciphertext could be replayed with matching AAD supplied by the attacker, defeating the entire point
-  of binding subscription identity into the AAD.
-
-On the subscriber side, decrypt after verifying the signature (verify-then-decrypt — the signature
-covers the ciphertext, so verification must happen first):
-
-```csharp
-var isValid = WebhookSignatureVerifier.Verify(rawBody, timestamp, signature, subscription.Secrets);
-if (!isValid)
-{
-    return Results.Unauthorized();
-}
-
-var deliveryId = Guid.Parse(deliveryIdHeaderValue); // X-Webhook-Delivery-Id
-var associatedData = WebhookPayloadAssociatedData.Build(subscription.SubscriptionId, deliveryId);
-
-var decrypted = await symmetricEncryptionService.DecryptToStringAsync(rawBody, associatedData);
-var plaintext = decrypted.Value; // rawBody is the ciphertext
-```
-
-A mismatched AAD (wrong subscription id, wrong delivery id, or a captured ciphertext replayed against
-a different subscription) fails authentication exactly like a tampered ciphertext — `decrypted.IsFailure`
-is `true`, never an exception.
-
-Enabling `EncryptPayload` without registering an `ISymmetricEncryptionService` fails loudly with an
-`InvalidOperationException` at first delivery, never silently. This uses only the already-permitted
-`01.Core` reference — no new cross-domain dependency.
-
----
-
-## Registering a delivery observer
-
-`IWebhookDeliveryObserver` is the seam for persisting a delivery-history ledger, emitting metrics,
-or triggering alerts — without this package taking a `06.Persistence` dependency. Zero or more
-observers can be registered; every registered observer fires for every attempt and completion, in
-registration order. An observer's exception is caught and logged at `LogLevel.Warning` — it never
-affects the delivery outcome.
-
-```csharp
-public sealed class EfWebhookDeliveryLedger(AppDbContext db) : IWebhookDeliveryObserver
-{
-    public Task OnAttemptAsync(WebhookSubscription subscription, int attemptNumber, CancellationToken ct)
-    {
-        // record an attempt row
-        return Task.CompletedTask;
-    }
-
-    public Task OnCompletedAsync(WebhookSubscription subscription, WebhookDeliveryResult result, CancellationToken ct)
-    {
-        // record the terminal outcome
-        return Task.CompletedTask;
-    }
-}
-
-builder.Services.WithDeliveryObserver<EfWebhookDeliveryLedger>();
-```
-
----
-
-## Dispatching an integration event
-
-Define an integration event implementing `IIntegrationEvent` (from `SharedKernel.Contracts`) and
-declare its wire name with `[IntegrationEvent(...)]`, then call `IWebhookDispatcher.DispatchAsync`.
-The routing key is always that declared name (resolved from the event's runtime type through
-`IntegrationEventDescriptor`) — the same value as the CloudEvents `type` of its `EventEnvelope<TEvent>`
-in `04.Contracts`, so one event routes identically whether it travels over `07.Messaging` or as a
-webhook. It is never the CLR class name: `WebhookSubscription.EventTypes` holds names such as
-`orders.order-shipped`, and renaming the class never breaks a subscription. Dispatching an event type
-without a valid `[IntegrationEvent]` attribute throws `InvalidOperationException` before any lookup.
-
-```csharp
 [IntegrationEvent("orders.order-shipped")]
-public sealed record OrderShippedIntegrationEvent(
-    Guid EventId, DateTimeOffset OccurredOn, Guid OrderId) : IIntegrationEvent;
+public sealed record OrderShipped(Guid EventId, DateTimeOffset OccurredOn, Guid OrderId) : IIntegrationEvent;
 
-public sealed class OrderShippedHandler(IWebhookDispatcher webhookDispatcher, IClock clock)
+public sealed class NotifyPartners(IWebhookDispatcher webhooks, IClock clock)
 {
     public async Task HandleAsync(Guid orderId, CancellationToken ct)
     {
-        var results = await webhookDispatcher.DispatchAsync(
-            new OrderShippedIntegrationEvent(Guid.NewGuid(), clock.UtcNow, orderId), ct);
-
-        foreach (var result in results.Where(r => !r.IsSuccess))
-        {
-            // result.SubscriptionId, result.Attempts, result.Error are populated;
-            // a WebhookDeliveryExhaustedEvent was already published via IEventPublisher
-            // for any subscription that exhausted MaxAttempts.
-        }
+        IReadOnlyList<WebhookDeliveryResult> results =
+            await webhooks.DispatchAsync(new OrderShipped(Guid.NewGuid(), clock.UtcNow, orderId), ct);
+        // one result per subscription: SubscriptionId, DeliveryId, IsSuccess, StatusCode, Attempts, Error
     }
 }
 ```
 
-`DispatchAsync` looks up active subscriptions via `IWebhookSubscriptionStore`, then delivers to each
-concurrently, bounded by `WebhookDeliveryOptions.MaxConcurrentDeliveries`. One subscriber's failure
-never faults another's delivery, and `DispatchAsync` never throws because of a per-subscription HTTP
-failure — every outcome is a `WebhookDeliveryResult`.
+## How it works
 
-For a single already-resolved subscription (e.g. a manual "redeliver this one" admin action), call
-`DispatchToSubscriptionAsync` directly instead of paying for the fan-out lookup:
-
-```csharp
-var result = await webhookDispatcher.DispatchToSubscriptionAsync(subscription, integrationEvent, ct);
+```mermaid
+sequenceDiagram
+    participant A as Your code
+    participant D as IWebhookDispatcher
+    participant S as IWebhookSubscriptionStore
+    participant V as IWebhookUrlValidator
+    participant H as Subscriber endpoint
+    participant B as IEventPublisher
+    A->>D: DispatchAsync(evt)
+    D->>S: GetActiveSubscriptionsAsync("orders.order-shipped")
+    loop each subscription (≤ MaxConcurrentDeliveries)
+        D->>V: resolve DNS, reject private / loopback / link-local
+        D->>H: POST JSON, X-Webhook-Signature/-Timestamp/-Delivery-Id (retried by the resilience handler)
+        H-->>D: 2xx, or failure after MaxAttempts
+        opt exhausted
+            D->>B: WebhookDeliveryExhaustedEvent
+        end
+    end
+    D-->>A: WebhookDeliveryResult[]
 ```
 
-### Subscriber-side delivery deduplication
+- **Routing key.** The event's `[IntegrationEvent]` name (via `IntegrationEventDescriptor`) — the same value as the
+  CloudEvents `type` on the message bus, never the CLR type name. An event without the attribute throws
+  `InvalidOperationException` before any lookup.
+- **Signature.** `X-Webhook-Signature` is the lowercase-hex HMAC-SHA256 of `"{unixSeconds}.{body}"` (UTF-8), signed
+  with `Secrets[0]`; `X-Webhook-Timestamp` carries the seconds. Secrets never leave the process — only the digest.
+- **Delivery id.** `X-Webhook-Delivery-Id` is one `Guid` per delivery, stable across its retries, and equal to
+  `WebhookDeliveryResult.DeliveryId`.
+- **Correlation, and nothing else.** `X-Correlation-Id` carries the ambient correlation id (omitted when there is
+  none; a subscription header of the same name wins). The tenant, actor and client id never leave the platform.
+- **Isolation.** HTTP failures, timeouts, SSRF rejections and header collisions become a failed
+  `WebhookDeliveryResult`; `DispatchAsync` never throws because of one subscriber.
+- **Retries** live in the standard resilience handler on the named client, driven by `MaxAttempts`, the backoff
+  delays and `RequestTimeout`. After the last attempt the dispatcher publishes exactly one
+  `WebhookDeliveryExhaustedEvent`; a failed publish is logged (EventId 15004) and does not change the result.
+- **Observers.** Every `IWebhookDeliveryObserver` sees `OnAttemptAsync` and `OnCompletedAsync`, in registration order;
+  an observer exception is logged at Warning and never affects delivery.
 
-Every delivery carries an `X-Webhook-Delivery-Id` header (`WebhookSignatureHeaders.DeliveryIdHeaderName`)
-— a `Guid` generated once per delivery and held stable across every retry attempt of it, also returned
-as `WebhookDeliveryResult.DeliveryId`. A subscriber's receiver endpoint can use this value as an
-idempotency key to deduplicate a re-sent request (e.g. a retried delivery whose earlier attempt's
-response was lost in transit):
+## Recipes
+
+### 1. Rotate a signing secret without downtime
+
+`Secrets` is newest first; deliveries sign with `Secrets[0]`, verification accepts any entry.
 
 ```csharp
-var deliveryId = request.Headers[WebhookSignatureHeaders.DeliveryIdHeaderName].ToString();
-if (await processedDeliveryStore.HasProcessedAsync(deliveryId, ct))
-{
-    return Results.Ok(); // already processed this exact delivery — ack without reprocessing
-}
+subscription = subscription with { Secrets = [newSecret, .. subscription.Secrets] };   // 1. sign with the new secret
+// 2. the subscriber verifies against both secrets while it deploys the new one
+subscription = subscription with { Secrets = [subscription.Secrets[0]] };              // 3. retire the old secret
 ```
 
-### Correlation id
-
-Every delivery also carries `X-Correlation-Id` (`WellKnownHeaders.CorrelationId`) with the correlation id of
-the operation that dispatched it: the ambient `IRequestContext` (`SharedKernel.Execution`), set by the host's
-request-context middleware, a message consumer, a workflow activity or a scheduled job. A subscriber can quote
-it in a support request and you can find the originating operation in your logs. When no operation is running,
-the header is omitted; a subscription header of the same name wins.
-
-Nothing else about the caller is sent. The tenant id, actor and client id stay inside the platform, because a
-webhook endpoint is outside its trust boundary.
-
-### Reacting to delivery exhaustion
-
-When a subscription exhausts `WebhookDeliveryOptions.MaxAttempts` without ever receiving a 2xx
-response, the dispatcher publishes exactly one `WebhookDeliveryExhaustedEvent` via `IEventPublisher`
-(wire name `sharedkernel.webhooks.delivery-exhausted`; its `EventType` property carries the failed
-event's `[IntegrationEvent]` name). Any consumer elsewhere on the platform — an ops/alerting handler, or the owning service itself — can
-react to it (disable the subscription, page someone, surface it in an admin UI):
+### 2. Verify a webhook on the receiving side
 
 ```csharp
-public sealed class DisableSubscriptionOnExhaustion(AppDbContext db) // wired via your 07.Messaging consumer base
-{
-    public async Task HandleAsync(WebhookDeliveryExhaustedEvent evt, CancellationToken ct)
-    {
-        await db.WebhookSubscriptions
-            .Where(s => s.Id == evt.SubscriptionId)
-            .ExecuteUpdateAsync(s => s.SetProperty(x => x.IsActive, false), ct);
-    }
-}
-```
+using SharedKernel.Integration.Webhooks.Signing;
 
----
-
-## Testing a new subscription
-
-`IWebhookDispatcher.SendTestDeliveryAsync` sends a synthetic onboarding/connectivity-check delivery
-to a subscription — signed, retried, and header-complete exactly like a real event dispatch, reusing
-`DispatchToSubscriptionAsync` verbatim with zero parallel signing/retry logic. Use it from an
-onboarding or admin flow so a new subscriber can verify their endpoint, signature verification, and
-header handling before any real business event fires:
-
-```csharp
-app.MapPost("/admin/webhook-subscriptions/{subscriptionId:guid}/test", async (
-    Guid subscriptionId,
-    IWebhookSubscriptionLookup subscriptions,
-    IWebhookDispatcher webhookDispatcher,
-    CancellationToken ct) =>
-{
-    var subscription = await subscriptions.GetByIdAsync(subscriptionId, ct);
-    if (subscription is null)
-    {
-        return Results.NotFound();
-    }
-
-    var result = await webhookDispatcher.SendTestDeliveryAsync(subscription, ct);
-    return Results.Ok(result);
-});
-```
-
-The delivery's event type is always `"sharedkernel.webhooks.ping"` (`WebhookPingEvent.EventName`, its
-`[IntegrationEvent]` name) — a reserved name, recorded on the delivery's trace span and logs. The request body is the serialized `WebhookPingEvent`, which carries only
-`EventId` and `OccurredOn`, so a subscriber can tell a test delivery from real business data.
-`WebhookPingEvent` is never published onto `07.Messaging` and never fanned out via `DispatchAsync`'s
-normal subscription lookup.
-
----
-
-## Verifying an inbound webhook
-
-`WebhookSignatureVerifier.Verify` is the primitive a `14.Presentation` Minimal API receiver endpoint
-calls to validate a webhook claiming to originate from a `SharedKernel.Integration.Webhooks`
-dispatcher elsewhere on the platform. It never throws — a malformed timestamp, malformed signature,
-or missing header all simply return `false`.
-
-```csharp
-app.MapPost("/webhooks/inbound/{subscriptionId:guid}", async (
-    Guid subscriptionId,
-    HttpRequest request,
-    IWebhookSubscriptionLookup subscriptions, // your own lookup-by-id seam
-    CancellationToken ct) =>
+app.MapPost("/webhooks/inbound/{subscriptionId:guid}", async (Guid subscriptionId, HttpRequest request,
+    IPartnerSubscriptions subscriptions, CancellationToken ct) =>
 {
     using var reader = new StreamReader(request.Body);
     var rawBody = await reader.ReadToEndAsync(ct);
-
     var subscription = await subscriptions.GetByIdAsync(subscriptionId, ct);
     if (subscription is null)
-    {
         return Results.NotFound();
-    }
 
-    var isValid = WebhookSignatureVerifier.Verify(
+    var valid = WebhookSignatureVerifier.Verify(
         payloadJson: rawBody,
         timestampHeaderValue: request.Headers[WebhookSignatureHeaders.TimestampHeaderName],
         signatureHeaderValue: request.Headers[WebhookSignatureHeaders.SignatureHeaderName],
-        secretCandidates: subscription.Secrets); // accepts a match against any active secret
+        secretCandidates: subscription.Secrets);
 
-    if (!isValid)
-    {
-        return Results.Unauthorized();
-    }
-
-    // process the verified payload...
-    return Results.Ok();
+    return valid ? Results.Ok() : Results.Unauthorized();
 });
 ```
 
-`WebhookSignatureHeaders.SignatureHeaderName` (`X-Webhook-Signature`) and `.TimestampHeaderName`
-(`X-Webhook-Timestamp`) are the only permitted header-name literals — always reference the constants,
-never hardcode the strings at a call site. The default tolerance is 5 minutes; pass an explicit
-`tolerance` argument only if a specific receiver genuinely needs a different window than
-`WebhookDeliveryOptions.SignatureTolerance`'s platform default.
+`Verify` never throws: malformed or missing input returns `false`. The skew window defaults to 5 minutes; pass
+`tolerance` only when a receiver truly needs another. Deduplicate retries on `X-Webhook-Delivery-Id`.
+
+### 3. Add static headers to one subscription
+
+```csharp
+var subscription = new WebhookSubscription(id, url, secrets, eventTypes, isActive: true,
+    Headers: new Dictionary<string, string> { ["X-Partner-Id"] = "acme-corp" });
+```
+
+A name that collides (case-insensitively) with a signature, timestamp or delivery-id header fails that delivery before
+any HTTP call.
+
+### 4. Encrypt payloads
+
+```csharp
+builder.Services.AddSingleton<IEncryptionKeyProvider, YourEncryptionKeyProvider>();
+builder.Services.AddSharedKernelCryptography(builder.Configuration).AddSymmetricEncryption();
+builder.Services.AddSharedKernelWebhooks(o => o.EncryptPayload = true);
+```
+
+The body becomes the AES-GCM ciphertext (`EncryptedPayload.ToString()`, unpadded Base64Url), encrypted **then**
+signed. The associated data is `WebhookPayloadAssociatedData.Build(subscriptionId, deliveryId)`: the delivery id comes
+from the header; the subscription id is **never sent** — the subscriber knows it out of band, like the secret, so a
+captured ciphertext cannot be replayed with attacker-supplied associated data. A platform subscriber verifies first,
+then decrypts:
+
+```csharp
+var associatedData = WebhookPayloadAssociatedData.Build(subscription.SubscriptionId, Guid.Parse(deliveryIdHeader));
+Result<string> plaintext = await encryption.DecryptToStringAsync(rawBody, associatedData);
+```
+
+`EncryptPayload` without a registered `ISymmetricEncryptionService` throws `InvalidOperationException` at the first
+delivery.
+
+### 5. Send a test delivery to a new subscriber
+
+```csharp
+WebhookDeliveryResult result = await webhooks.SendTestDeliveryAsync(subscription, ct);
+```
+
+It sends a `WebhookPingEvent` (`EventId`, `OccurredOn`; event type `sharedkernel.webhooks.ping`) through the same
+signing and retry path. It is never published on the bus or fanned out.
+
+### 6. React to a subscriber that stays down
+
+Consume `WebhookDeliveryExhaustedEvent` (`sharedkernel.webhooks.delivery-exhausted`; `SubscriptionId`, `EventType`,
+`Attempts`, `LastError`) with your messaging consumer — disable the subscription, alert, or show it in an admin UI.
+
+### 7. Allow internal targets, or apply your own policy
+
+```csharp
+builder.Services.AddSharedKernelWebhooks(o => o.AllowPrivateNetworkTargets = true);   // staging only
+builder.Services.WithUrlValidator<PartnerAllowlistValidator>();                          // replaces the default
+```
+
+## Configuration
+
+Section `SharedKernel:Integration:Webhooks`, validated when the host starts; the `configure` delegate of
+`AddSharedKernelWebhooks` runs after binding. Per-property detail:
+[configuration reference](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/15.Integration/SharedKernel.Integration.Webhooks/docs/configuration-reference.md).
+
+| Key | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `SharedKernel:Integration:Webhooks:MaxAttempts` | `int` | `5` | HTTP attempts per delivery before it is exhausted (≥ 1) |
+| `SharedKernel:Integration:Webhooks:BaseBackoffDelay` | `TimeSpan` | `00:00:02` | First retry delay (> 0) |
+| `SharedKernel:Integration:Webhooks:MaxBackoffDelay` | `TimeSpan` | `00:01:00` | Backoff ceiling (> 0, ≥ `BaseBackoffDelay`) |
+| `SharedKernel:Integration:Webhooks:RequestTimeout` | `TimeSpan` | `00:00:10` | Per-attempt timeout (> 0) |
+| `SharedKernel:Integration:Webhooks:SignatureTolerance` | `TimeSpan` | `00:05:00` | Allowed clock skew when verifying (> 0) |
+| `SharedKernel:Integration:Webhooks:MaxConcurrentDeliveries` | `int` | `8` | In-flight deliveries per `DispatchAsync` (≥ 1) |
+| `SharedKernel:Integration:Webhooks:AllowPrivateNetworkTargets` | `bool` | `false` | Disable the private-network SSRF rejection |
+| `SharedKernel:Integration:Webhooks:EncryptPayload` | `bool` | `false` | Encrypt-then-sign every payload |
+
+## Reference
+
+### Registration
+
+| Method | Registers |
+| --- | --- |
+| `AddSharedKernelWebhooks(Action<WebhookDeliveryOptions>? configure = null)` | Options; `WebhookSignatureProvider` (singleton); `IWebhookUrlValidator` → `PrivateNetworkWebhookUrlValidator`; `IWebhookDispatcher` (scoped); the named client `WebhookHttpClientName.Name` (`SharedKernel.Integration.Webhooks`) with the standard resilience handler |
+| `WithDeliveryObserver<T>()` | An additional `IWebhookDeliveryObserver` |
+| `WithUrlValidator<T>()` | Replaces the `IWebhookUrlValidator` |
+
+### Main types
+
+| Type | Purpose |
+| --- | --- |
+| `IWebhookDispatcher` | `DispatchAsync<TEvent>`, `DispatchToSubscriptionAsync<TEvent>(subscription, evt)`, `SendTestDeliveryAsync(subscription)` |
+| `WebhookSubscription` | `SubscriptionId`, `Url`, `Secrets` (newest first), `EventTypes`, `IsActive`, `Headers`; the single-`secret` constructor and `Secret` are obsolete |
+| `WebhookDeliveryResult` | `SubscriptionId`, `DeliveryId`, `IsSuccess`, `StatusCode`, `Attempts`, `Error` |
+| `WebhookSignatureVerifier` | `Verify(payloadJson, timestamp, signature, secretCandidates, tolerance?)` (also a single-`secret` overload) |
+| `WebhookSignatureHeaders` | `X-Webhook-Signature`, `X-Webhook-Timestamp`, `X-Webhook-Delivery-Id` |
+| `WebhookPayloadAssociatedData` | `Build(subscriptionId, deliveryId)` |
+| `WebhookPingEvent`, `WebhookDeliveryExhaustedEvent` | The test event and the exhaustion event (`EventName` constants) |
+
+### Logging
+
+| Event id | Level | Event |
+| --- | --- | --- |
+| 15000 | Warning | A delivery observer threw; the outcome is unaffected |
+| 15001 | Information | Delivery succeeded after `{Attempts}` attempt(s) |
+| 15002 | Warning | Delivery failed with `{StatusCode}`: `{Error}` |
+| 15003 | Warning | Delivery exhausted without a successful response |
+| 15004 | Error | The exhaustion event could not be published |
+
+### Telemetry
+
+`ActivitySource` `SharedKernel.Integration` (subscribe with ServiceDefaults' `WithIntegrationTelemetry()`). Spans
+`WebhookDispatcher.Dispatch` (`webhook.subscription_count`, `webhook.event_type`) and
+`WebhookDispatcher.DispatchToSubscription` (`webhook.subscription_id`, `webhook.event_type`, `webhook.outcome`,
+`webhook.attempt_count`). URLs and secrets are never tags.
+
+## Testing
+
+Reference [`SharedKernel.Integration.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/16.Testing/SharedKernel.Integration.Testing/README.md).
+`services.AddInMemoryWebhookDispatcher()` replaces the dispatcher with `InMemoryWebhookDispatcher`: assert with
+`ShouldHaveDispatched<TEvent>()`, `ShouldHaveDispatchedTo(subscriptionId)`, `ShouldHaveSentTestDelivery(…)`, and shape
+outcomes with `SetDispatchResult(…)`. `AddInMemoryWebhookDeliveryObserver()` records `Attempts` and `Completions`.
+To test the real dispatcher, stub the named client with a `DelegatingHandler`.
+
+## Pitfalls
+
+| Don't | Do | Why |
+| --- | --- | --- |
+| Forget `IWebhookSubscriptionStore` | Register your implementation | There is no default; the first dispatch fails to resolve |
+| Enable `AllowPrivateNetworkTargets` for customer-supplied URLs | Keep it for internal staging only | It opens SSRF into your network |
+| Compare signatures with `==` | `WebhookSignatureVerifier.Verify` | Fixed-time comparison, skew check, rotation support |
+| Hardcode header names | `WebhookSignatureHeaders` constants | One spelling across sender and receiver |
+| Send the subscription id with an encrypted payload | Share it out of band | It is half of the associated data |
+| Retry a failed dispatch in a loop | Tune `MaxAttempts` and backoff; react to the exhaustion event | Retries already run in the resilience handler |
+| Route on the CLR type name | `[IntegrationEvent("context.name")]` | Renaming a class must not break subscriptions |
+
+## Design decisions
+
+**Why not `SharedKernel.Communication.Rest`?** It forwards tenant and actor headers that must not reach an external
+party, and webhook targets are arbitrary URLs, not discovered services.
+
+**Why is exhaustion an integration event?** Any service — alerting, the owner — can react, without this package taking
+a dependency on a specific bus implementation.
+
+**Why does the store belong to the service?** Subscriptions and delivery history are ordinary application data, owned
+by the service's own persistence.
 
 ---
 
-## Configuration reference
-
-See [`docs/configuration-reference.md`](docs/configuration-reference.md) for every
-`WebhookDeliveryOptions` property, its default, its validation bound, and the configuration section
-path.
-
----
-
-## What this package will never do
-
-- Construct `new HttpClient()` or accept a raw `HttpClient` injection — outbound HTTP only goes
-  through `IHttpClientFactory`'s named client.
-- Log, serialize, or transmit `WebhookSubscription.Secret`/`.Secrets` — only the derived HMAC digest
-  ever leaves this package.
-- Compare a signature digest with `==`/`string.Equals` — `WebhookSignatureVerifier` uses
-  `CryptographicOperations.FixedTimeEquals` exclusively, including per-candidate when verifying
-  against multiple rotation-window secrets, without short-circuiting the iteration.
-- Reference `06.Persistence`, `11.Communication.*`, `SharedKernel.Messaging.MassTransit` or any ASP.NET Core package.
-- Send the caller's tenant id, actor or client id to a subscriber — only the correlation id leaves the platform.
-- Throw out of `IWebhookDispatcher` because of a single subscriber's HTTP failure or an
-  `IWebhookUrlValidator` rejection.
-- Deliver to a target resolving to a loopback, link-local, private, or multicast/reserved IP address
-  by default — the SSRF guard is fail-closed unless explicitly opted out.
-- Introduce a new cryptographic primitive of its own for opt-in payload encryption — it composes
-  `01.Core/SharedKernel.Cryptography`'s `ISymmetricEncryptionService` exclusively.
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
+[Integration domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/15.Integration/README.md) ·
+[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

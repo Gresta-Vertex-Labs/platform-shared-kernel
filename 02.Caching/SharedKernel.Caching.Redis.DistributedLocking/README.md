@@ -2,8 +2,9 @@
 
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
-![Third-party lock library: none](https://img.shields.io/badge/lock%20library-none%20(Lua)-brightgreen)
+![Tier: Adapter](https://img.shields.io/badge/tier-Adapter-6f42c1)
 ![Public API: tracked](https://img.shields.io/badge/public%20API-tracked-informational)
+![Lock library: none (Lua)](https://img.shields.io/badge/lock%20library-none%20(Lua)-brightgreen)
 
 > **Redis locks and leases for `IDistributedLockService`: fencing tokens issued in the same atomic step as the
 > acquisition, locks reported lost before another replica can take them, and outages that throw instead of looking
@@ -29,35 +30,28 @@ Application code depends only on `IDistributedLockService`.
 - [Install](#install)
 - [Quick start](#quick-start)
 - [How it works](#how-it-works)
-  - [Keys and scripts](#keys-and-scripts)
-  - [Keep-alive and loss](#keep-alive-and-loss)
 - [Recipes](#recipes)
-  - [1. Guard a critical section](#1-guard-a-critical-section)
-  - [2. Wait for a busy resource](#2-wait-for-a-busy-resource)
-  - [3. Stop long work when the lock is lost](#3-stop-long-work-when-the-lock-is-lost)
-  - [4. Run a job occurrence once across replicas](#4-run-a-job-occurrence-once-across-replicas)
-  - [5. Enforce the fencing token](#5-enforce-the-fencing-token)
-  - [6. Handle a Redis outage](#6-handle-a-redis-outage)
-- [Logging](#logging)
 - [Reference](#reference)
+- [Testing](#testing)
 - [Pitfalls](#pitfalls)
 - [Design decisions](#design-decisions)
-- [AI quick reference](#ai-quick-reference)
-- [Compatibility and guarantees](#compatibility-and-guarantees)
 
 ## Install
 
-```shell
-dotnet add package SharedKernel.Caching.Redis.DistributedLocking
+```xml
+<PackageReference Include="SharedKernel.Caching.Redis.DistributedLocking" />
 ```
+
+The version comes from your central `SharedKernelVersion` property — every SharedKernel package ships at the same
+version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel#using-the-packages).
 
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
-| Tier | Adapter |
+| Tier | Adapter — reference it from your **Infrastructure** project (application code injects `IDistributedLockService` from `SharedKernel.Caching.Abstractions`) |
 | Depends on | `SharedKernel.Caching.Abstractions`, `SharedKernel.Caching.Redis.Core`, `SharedKernel.Primitives` |
 | Redis | A single primary, or Redis Cluster; Lua scripting enabled |
-| Namespace | `SharedKernel.Caching.Redis.DistributedLocking.Extensions` |
+| Namespaces | `SharedKernel.Caching.Redis.DistributedLocking.Extensions` (registration); the contract is in `SharedKernel.Caching.Abstractions` |
 
 ## Quick start
 
@@ -164,6 +158,15 @@ means "lost or released". Disposal is idempotent.
 **Choose `Expiry` well above the connection's `CommandTimeout`.** One extension that waits for a full command timeout
 must not use up the five-sixths deadline. The defaults (30 s expiry, 5 s command timeout) leave room for two failed
 extensions before the lock is reported lost.
+
+### Guarantees
+
+- **Atomic.** Acquisition and token issue, extension, and release are each one server-side script.
+- **Owner-safe.** A holder never extends or deletes a key it does not own.
+- **Monotonic tokens** per resource across locks and leases, for the life of the Redis data.
+- **Loss before expiry.** A holder that cannot extend its lock is told before the key can expire on the server.
+- **Single-primary assumption.** After a failover, a replica that had not yet received a lock key can grant it again;
+  fencing tokens protect the resource in that window. Keys and scripts are valid on Redis Cluster.
 
 ## Recipes
 
@@ -277,24 +280,6 @@ catch (DistributedLockUnavailableException ex)
 The exception wraps the `RedisException` or `TimeoutException` as `InnerException` and names the resource. With the
 connection's default `FailFastWhenDisconnected`, it is thrown at once while Redis is disconnected.
 
-## Logging
-
-Category `SharedKernel.Caching.Redis.DistributedLocking.Implementations.RedisDistributedLockService`. Events carry the
-resource name and fencing token, never owner ids or connection details.
-
-| Event id | Level | Event |
-| --- | --- | --- |
-| 2300 | Debug | Lock acquired on `{Resource}` (`{FencingToken}`) |
-| 2301 | Debug | Lock on `{Resource}` held by another owner (after the whole wait time) |
-| 2302 | Debug | Lease acquired on `{Resource}` for `{Duration}` (`{FencingToken}`) |
-| 2303 | Debug | Lease on `{Resource}` held by another owner |
-| 2304 | Debug | Lock on `{Resource}` released |
-| 2305 | Warning | Lock on `{Resource}` could not be released; it expires on its own |
-| 2306 | Warning | Lock on `{Resource}` could not be extended; retrying until it would expire |
-| 2307 | Error | Lock on `{Resource}` (`{FencingToken}`) lost: `{Reason}` |
-
-Alert on 2307: work that relied on the lock was told to stop.
-
 ## Reference
 
 ### Registration
@@ -323,6 +308,42 @@ Both require `AddRedisConnection` first and are idempotent.
 | `ArgumentOutOfRangeException` | `TryAcquireLeaseAsync`, `DistributedLockOptions` | A duration is out of range |
 | `DistributedLockUnavailableException` | `TryAcquireAsync`, `TryAcquireLeaseAsync` | Redis failed with `RedisException` or `TimeoutException` |
 | `OperationCanceledException` | `TryAcquireAsync`, `TryAcquireLeaseAsync` | The token was cancelled before an attempt or during a wait |
+
+### Logging
+
+Category `SharedKernel.Caching.Redis.DistributedLocking.Implementations.RedisDistributedLockService`. Events carry the
+resource name and fencing token, never owner ids or connection details.
+
+| Event id | Level | Event |
+| --- | --- | --- |
+| 2300 | Debug | Lock acquired on `{Resource}` (`{FencingToken}`) |
+| 2301 | Debug | Lock on `{Resource}` held by another owner (after the whole wait time) |
+| 2302 | Debug | Lease acquired on `{Resource}` for `{Duration}` (`{FencingToken}`) |
+| 2303 | Debug | Lease on `{Resource}` held by another owner |
+| 2304 | Debug | Lock on `{Resource}` released |
+| 2305 | Warning | Lock on `{Resource}` could not be released; it expires on its own |
+| 2306 | Warning | Lock on `{Resource}` could not be extended; retrying until it would expire |
+| 2307 | Error | Lock on `{Resource}` (`{FencingToken}`) lost: `{Reason}` |
+
+Alert on 2307: work that relied on the lock was told to stop.
+
+### Health
+
+No probe of its own: the `redis` readiness probe registered by `AddRedisConnection` reports the shared connection.
+
+## Testing
+
+Reference [`SharedKernel.Caching.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/16.Testing/SharedKernel.Caching.Testing/README.md)
+from your test project and call `services.AddFakeCachingServices()` (namespace `SharedKernel.Testing.Caching`); it
+registers `FakeDistributedLockService` as `IDistributedLockService`, with no Redis.
+
+- `SimulateContention = true` makes acquisitions return `null`; `SimulateUnavailable = true` makes them throw
+  `DistributedLockUnavailableException`.
+- `AcquiredLocks` and `AcquiredLeases` record every grant; a `FakeDistributedLock` exposes `IsHeld`, `IsReleased`,
+  `LostToken` and `SimulateLoss()`, so a test can prove the work stops when the lock is lost.
+- Construct it with a `TimeProvider` to control lease expiry.
+
+To test against a real Redis, run the service with Testcontainers and the production registration.
 
 ## Pitfalls
 
@@ -362,28 +383,8 @@ whenever their settings differ. Put the service in the name instead.
 **Why `null` only for contention?** A job that reads "Redis is down" as "another replica has it" never runs anywhere,
 and nobody notices. An exception makes the outage visible.
 
-## AI quick reference
+---
 
-```text
-REGISTER    builder.Services.AddRedisConnection(builder.Configuration).AddRedisDistributedLocking();
-            or AddSharedKernelCaching(...).AddRedisL2().AddRedisDistributedLocking(). No connection string, no options.
-LOCK        await using IDistributedLock? h = await locks.TryAcquireAsync("svc:tenant:{t}:res:{id}", new DistributedLockOptions
-            { Expiry = 30s, WaitTime = 0-5s }, ct); null -> busy. Link h.LostToken into work cancellation. Pass h.FencingToken.
-LEASE       DistributedLease? l = await locks.TryAcquireLeaseAsync("svc:job:{occurrence}", duration, ct); null -> claimed. Never release.
-OUTAGE      catch DistributedLockUnavailableException -> retry later. NEVER treat as busy.
-LOSS        IsHeld=false + LostToken cancelled when an extension finds another owner or none succeeded for 5/6 of Expiry.
-            Keep Expiry several times CommandTimeout (defaults 30s / 5s).
-FENCING     Protected write: WHERE fencing_token < @token. Tokens increase across locks and leases per resource.
-KEYS        sharedkernel:lock:{resource} (TTL), sharedkernel:lock-fencing:{resource} (never expires). Resource used as given.
-LOGS        2300-2307; alert on 2307 (lock lost, Error).
-```
-
-## Compatibility and guarantees
-
-- **Public API is tracked** with `Microsoft.CodeAnalysis.PublicApiAnalyzers`, and every public member is documented.
-- **Atomic.** Acquisition and token issue, extension, and release are each one server-side script.
-- **Owner-safe.** A holder never extends or deletes a key it does not own.
-- **Monotonic tokens** per resource across locks and leases, for the life of the Redis data.
-- **Loss before expiry.** A holder that cannot extend its lock is told before the key can expire on the server.
-- **Single-primary assumption.** After a failover, a replica that had not yet received a lock key can grant it again;
-  fencing tokens protect the resource in that window. Keys and scripts are valid on Redis Cluster.
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
+[Caching domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/02.Caching/README.md) ·
+[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

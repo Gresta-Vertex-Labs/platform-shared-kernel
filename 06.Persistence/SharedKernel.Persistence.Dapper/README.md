@@ -1,50 +1,55 @@
 # SharedKernel.Persistence.Dapper
 
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
-[![Dapper](https://img.shields.io/badge/Dapper-2.1-4B8BBE)](https://github.com/DapperLib/Dapper)
-[![PostgreSQL 15+](https://img.shields.io/badge/PostgreSQL-15%2B-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
-![EF Core: not referenced](https://img.shields.io/badge/EF%20Core-not%20referenced-brightgreen)
+![Tier: Adapter](https://img.shields.io/badge/tier-Adapter-6f42c1)
+![Public API: tracked](https://img.shields.io/badge/public%20API-tracked-informational)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-only-4169E1?logo=postgresql&logoColor=white)
 
-> **Hand-written SQL that plays by the platform's rules: it joins the command's transaction, runs under the caller's
-> tenant, picks the right database role — and stays plain Dapper.**
+> **Hand-written SQL that plays by the platform's rules: a Dapper session that joins the command's transaction, runs
+> under the caller's tenant and picks the right database role — and stays plain Dapper.**
 
-Raw SQL is where multi-tenant services leak: a report that forgets `WHERE tenant_id = …`, an insert that commits
-even though the command around it failed, a query that runs on the wrong role. `IDbSessionFactory` hands you an open
-connection and transaction that are already right — enlisted in the unit of work, bound to the caller's tenant for
-row-level security, on the replica for reads, on the cross-tenant role inside a cross-tenant scope. You write ordinary
-Dapper on top.
-
-| 🔗 Joins the transaction | 🏢 Tenant-bound | 🎭 Right role | 🧩 Type handlers |
-| --- | --- | --- | --- |
-| Inside a command, Dapper and EF Core commit or roll back together | The caller's tenant is bound for row-level security | Read-only sessions on the replica | Strongly-typed ids, SmartEnums |
-| Outside one, its own transaction | No tenant, no rows | Cross-tenant scope → the cross-tenant role | `jsonb` via source-generated JSON |
-| `CommitAsync` is a no-op when enlisted | `RequireTenantId()` for explicit predicates | Never both at once | pgvector types built in |
+| You get | So that |
+| --- | --- |
+| `IDbSessionFactory.OpenAsync()` joining the ambient unit of work | Dapper and EF Core writes commit or roll back together |
+| The caller's tenant bound transaction-locally | Row-level security filters every raw query; no tenant means no rows |
+| `OpenReadOnlyAsync()` on the replica, cross-tenant role inside a cross-tenant scope | Each query runs on the right connection without code of its own |
+| `session.Command(sql, params, ct)` | Every command carries the transaction and the configured timeout |
+| Type handlers for strongly-typed ids, SmartEnums, `jsonb`, `TenantId`, pgvector | Domain types go straight into parameters and out of rows |
+| `PostgresErrorMapping.TryAsync` | Constraint and RLS errors become the same `Error` values EF Core produces |
 
 ## Contents
 
 - [Install](#install)
 - [Quick start](#quick-start)
-- [How a session behaves](#how-a-session-behaves)
+- [How it works](#how-it-works)
 - [Recipes](#recipes)
-- [Type handlers](#type-handlers)
+- [Configuration](#configuration)
+- [Reference](#reference)
+- [Testing](#testing)
 - [Pitfalls](#pitfalls)
-- [AI quick reference](#ai-quick-reference)
 
 ## Install
 
-```shell
-dotnet add package SharedKernel.Persistence.Dapper
+```xml
+<PackageReference Include="SharedKernel.Persistence.Dapper" />
 ```
+
+The version comes from your central `SharedKernelVersion` property — every SharedKernel package ships at the same
+version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel#using-the-packages).
 
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
-| Tier | Adapter (its one adapter edge, to `SharedKernel.Persistence.Npgsql`, is declared) |
-| Dependencies | Dapper, `SharedKernel.Persistence.Npgsql` — **never** EF Core |
-| Namespaces | `SharedKernel.Persistence` (registration), `SharedKernel.Persistence.Dapper.Sessions` (sessions) |
+| Tier | Adapter — reference it from your **Infrastructure** project |
+| Depends on | `SharedKernel.Persistence.Npgsql` (declared adapter edge), `SharedKernel.Configuration`, Dapper — **never** EF Core |
+| Namespaces | `SharedKernel.Persistence` (registration), `SharedKernel.Persistence.Dapper.Sessions`, `.TypeHandlers`, `.Options` |
+
+## Quick start
 
 ```csharp
+using SharedKernel.Persistence;
+
 // With EF Core: AddSharedKernelPostgres already registered the data source; add the sessions.
 builder.AddSharedKernelPostgres<OrderDbContext>("orders", p => p.UseMultiTenancy(rowLevelSecurity: true));
 builder.Services.AddSharedKernelDapper(builder.Configuration);
@@ -57,15 +62,11 @@ builder.Services.AddSharedKernelDapper(builder.Configuration, dapper => dapper
     .AddJsonb(AppJsonContext.Default.ShippingAddress));
 ```
 
-Unless you registered them, `AddSharedKernelDapper` also adds a fail-closed anonymous `IRequestContext` (no tenant)
-and the default `ICrossTenantScope`, so a Dapper-only service runs without EF Core. Register the real identity (for
-example `AddSharedKernelRequestContext()`) in any order.
-
-## Quick start
-
 ```csharp
 using Dapper;
 using SharedKernel.Persistence.Dapper.Sessions;
+using SharedKernel.Persistence.Npgsql.Errors;
+using SharedKernel.Primitives.Results;
 
 public sealed class OrderQueries(IDbSessionFactory sessions)
 {
@@ -90,25 +91,25 @@ public sealed class OrderQueries(IDbSessionFactory sessions)
 
 Neither query mentions the tenant: with row-level security on, the session bound it and the policy filters every row.
 
-## How a session behaves
+## How it works
 
 | Situation | `OpenAsync` | `OpenReadOnlyAsync` |
 | --- | --- | --- |
-| Inside `IUnitOfWork.ExecuteInTransactionAsync` (e.g. a command through `TransactionBehavior`) | **joins** that transaction; Dapper and EF Core writes commit or roll back together; `CommitAsync` is a no-op | joins it too, to read the command's own writes |
-| Outside a unit of work | its own connection and transaction; disposing without `CommitAsync` rolls back | `SET TRANSACTION READ ONLY`, on the replica / standby when configured |
-| Row-level security on | the caller's tenant is bound to the transaction in one statement; no tenant → protected tables return nothing | same |
-| Inside an active `ICrossTenantScope` | opens on the cross-tenant role's data source (refused inside a unit of work, whose transaction runs as the application role) | same |
+| Inside `IUnitOfWork.ExecuteInTransactionAsync` (e.g. a command through the transaction behavior) | **Joins** that transaction; `CommitAsync` is a no-op | Joins it too, to read the command's own writes |
+| Outside a unit of work | Its own connection and transaction; disposing without `CommitAsync` rolls back | `SET TRANSACTION READ ONLY`, on the replica when `ReadOnlyConnectionString` is configured |
+| Row-level security on | The caller's tenant is bound to the transaction in one statement; no tenant → protected tables return nothing | Same |
+| Inside an active `ICrossTenantScope` | Opens on the cross-tenant role's data source (6401); refused inside a unit of work | Same |
 
-`session.Command(sql, parameters, ct)` returns a Dapper `CommandDefinition` carrying the transaction and
-`SharedKernel:Persistence:Dapper:DefaultCommandTimeoutSeconds`. `session.RequireTenantId()` returns the bound tenant
-(a `SharedKernel.Execution.Tenancy.TenantId`, passed to Dapper as a `uuid` parameter directly) for SQL that filters on
-it explicitly (always do so when row-level security is off); `session.TenantId` is `TenantId?`. `IsEnlisted`, `IsReadOnly` and
-`TenantId` describe the session. `OpenAsync(new DbSessionOptions { IsolationLevel = …, ReadOnly = …,
-EnlistInAmbientTransaction = … })` covers the rest.
+- `AddSharedKernelDapper` also registers the default `ICrossTenantScope` and, when no `IRequestContext` is registered
+  yet, a fail-closed anonymous one (no tenant). Register the real identity (`AddSharedKernelRequestContext()`) in any
+  order — the later registration wins.
+- Type handlers are process-wide in Dapper; `DapperConfiguration.Apply(...)` is the one place they are set, and the
+  `TenantId` handler is always included.
+- Dapper emits no spans of its own: Npgsql's `"Npgsql"` source traces every command.
 
 ## Recipes
 
-### One transaction for EF Core and Dapper
+### 1. One transaction for EF Core and Dapper
 
 ```csharp
 public sealed class PayInvoiceHandler(IRepository<Invoice, InvoiceId> invoices, IDbSessionFactory sessions)
@@ -119,7 +120,7 @@ public sealed class PayInvoiceHandler(IRepository<Invoice, InvoiceId> invoices, 
         var invoice = await invoices.GetByIdAsync(command.Id, ct);
         if (invoice is null) return Result.Failure(InvoiceErrors.NotFound(command.Id));
 
-        await using (var session = await sessions.OpenAsync(ct))              // joins TransactionBehavior's transaction
+        await using (var session = await sessions.OpenAsync(ct))   // joins the command's transaction
         {
             await session.Connection.ExecuteAsync(session.Command(
                 "INSERT INTO payments (id, tenant_id, invoice_id, amount) VALUES (@id, @tenantId, @invoiceId, @amount)",
@@ -131,63 +132,82 @@ public sealed class PayInvoiceHandler(IRepository<Invoice, InvoiceId> invoices, 
 }
 ```
 
-### A back-office report across tenants
+### 2. A back-office report across tenants
 
 ```csharp
 using (crossTenantScope.Enter("revenue by tenant report"))
 {
-    await using var session = await sessions.OpenReadOnlyAsync(ct);          // the cross-tenant role
+    await using var session = await sessions.OpenReadOnlyAsync(ct);   // the cross-tenant role
     var rows = await session.Connection.QueryAsync<TenantRevenue>(session.Command(
         "SELECT tenant_id, sum(gross_amount) AS gross FROM invoices GROUP BY tenant_id", cancellationToken: ct));
 }
 ```
 
-### Map database errors to `Result`
+Needs `RowLevelSecurity:CrossTenantConnectionString` under row-level security — see the
+[Npgsql README](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/06.Persistence/SharedKernel.Persistence.Npgsql/README.md).
 
-`PostgresErrorMapping.TryAsync` turns unique, foreign-key, row-level-security and serialization errors into the same
-`Error` EF Core's `SaveChanges` produces; compare `Error.Code` with `PostgresClassifiedErrorCodes.*`.
+### 3. Choose isolation or opt out of the ambient transaction
 
-## Type handlers
+```csharp
+await using var session = await sessions.OpenAsync(new DbSessionOptions
+{
+    IsolationLevel = IsolationLevel.Serializable,
+    EnlistInAmbientTransaction = false,
+}, ct);
+```
 
-| Registration | Column |
+## Configuration
+
+| Key | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `SharedKernel:Persistence:Dapper:DefaultCommandTimeoutSeconds` | `int?` | `null` (Npgsql's default) | Timeout `session.Command` applies; must be ≥ 1 |
+
+Connection strings, TLS, replica and cross-tenant settings belong to the data source:
+`ConnectionStrings:{name}` + `SharedKernel:Persistence:{name}` (see the Npgsql README).
+
+## Reference
+
+| Method / type | Does |
 | --- | --- |
-| `AddStronglyTypedId<OrderId, Guid>()` (optional factory for ids without a public constructor) | the underlying value |
-| `AddSmartEnum<OrderStatus, int>()` | the underlying value; unknown values throw |
-| `AddJsonb(context.Default.T)` | `jsonb`, through the source-generated `JsonTypeInfo<T>` |
-| always | `TenantId` and `TenantId?` ↔ `uuid` (an unset `default(TenantId)` is sent as `NULL`, never `Guid.Empty`) |
-| always | pgvector `Vector`, `HalfVector`, `SparseVector` (needs `UseVector: true` in `SharedKernel:Persistence:{name}`) |
-| `AddTypeHandler(handler)` | anything else |
+| `AddSharedKernelDapper(IConfiguration, Action<DapperConfigurationBuilder>?)` | Binds and validates `DapperPersistenceOptions`, applies type handlers, registers `IDbSessionFactory` (scoped) and `ICrossTenantScope` |
+| `AddSharedKernelDapper(Action<DapperConfigurationBuilder>?)` | Same without configuration binding |
+| `IDbSessionFactory` | `OpenAsync()`, `OpenReadOnlyAsync()`, `OpenAsync(DbSessionOptions)` → `IDbSession` |
+| `IDbSession` | `Connection`, `Transaction`, `Command(sql, parameters, ct)`, `CommitAsync()`, `RequireTenantId()`, `TenantId`, `IsEnlisted`, `IsReadOnly` |
+| `DbSessionOptions` | `IsolationLevel`, `ReadOnly`, `EnlistInAmbientTransaction` |
+| `DapperConfigurationBuilder` | `AddStronglyTypedId<TId, TValue>(factory?)`, `AddSmartEnum<TEnum, TValue>()`, `AddJsonb<T>(JsonTypeInfo<T>)`, `AddTypeHandler<T>(handler)`, `MatchNamesWithUnderscores(bool)` (on by default) |
 
-`snake_case` columns map to PascalCase properties without aliases (`MatchNamesWithUnderscores(false)` turns it off).
-Dapper keeps this configuration process-wide; `DapperConfiguration.Apply(...)` is the one place it is set.
+Always-registered handlers: `TenantId`/`TenantId?` ↔ `uuid` (an unset `default(TenantId)` is sent as `NULL`), and
+pgvector `Vector`, `HalfVector`, `SparseVector` (with `UseVector: true` on the data source).
 
-**Telemetry:** Dapper emits no spans of its own — Npgsql's `"Npgsql"` source already traces every command. Logs use
-EventId range 6400–6499.
+### Logging
+
+| Event id | Level | Event |
+| --- | --- | --- |
+| 6400 | Warning | Rolling back an uncommitted session failed (never masks the original error) |
+| 6401 | Information | Session opened on the cross-tenant role for an active cross-tenant scope |
+
+## Testing
+
+Test Dapper sessions against real PostgreSQL:
+[`SharedKernel.Persistence.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/16.Testing/SharedKernel.Persistence.Testing/README.md)'s
+`PostgresTestServer.StartAsync()` / `PostgresTestDatabase` create a database with the production role split, so
+row-level-security claims are proven through an unprivileged role. For handler unit tests that only need a
+connection, `FakeDbConnectionFactory` wraps a connection you supply.
 
 ## Pitfalls
 
-| Symptom | Cause and fix |
-| --- | --- |
-| A query returns no rows in a request | Row-level security is on and the caller has no tenant — expected. Background work needs a caller with a tenant, or a cross-tenant scope |
-| A Dapper write survives a failed command | The session was opened outside the command's unit of work. Open it inside the handler |
-| `InvalidOperationException` opening a session in a cross-tenant scope | Inside a unit of work the transaction belongs to the application role; run cross-tenant work outside it |
-| A write lands in another tenant | Only possible with row-level security off and a missing `tenant_id` predicate — use `RequireTenantId()` |
+| Don't | Do | Why |
+| --- | --- | --- |
+| Interpolate or concatenate SQL | Parameters through `session.Command(sql, new { … }, ct)` | Injection; `SK0042` flags a non-constant SQL argument |
+| Open a session outside the command's unit of work for a write | Open it inside the handler | Otherwise the write survives a failed command |
+| Open a cross-tenant session inside a unit of work | Run cross-tenant work outside it | The unit of work's transaction runs as the application role; the open throws |
+| Take tenant ids from request input | `session.RequireTenantId()` | The bound tenant is the caller's |
+| Omit `tenant_id` predicates with row-level security off | Filter on `RequireTenantId()` explicitly | Without RLS nothing else scopes the query |
+| Expect rows in a request without a tenant | Give background work a caller with a tenant, or a cross-tenant scope | RLS returns nothing when no tenant is bound — by design |
+| Inject `NpgsqlConnection`/`NpgsqlDataSource` in application code | Inject `IDbSessionFactory` | Sessions carry the transaction, tenant and role |
 
-## AI quick reference
+---
 
-```text
-REGISTER     services.AddSharedKernelDapper(builder.Configuration, d => d.AddStronglyTypedId<TId, TValue>()...).
-             Dapper-only services first call services.AddSharedKernelNpgsql(builder.Configuration, "name").
-INJECT       IDbSessionFactory. Never NpgsqlConnection/NpgsqlDataSource in application code.
-SESSION      await using var session = await sessions.OpenAsync(ct) | OpenReadOnlyAsync(ct);
-             session.Connection.QueryAsync<T>(session.Command(sql, new { ... }, ct)).
-WRITE        Inside a command handler: the session joins the transaction; no CommitAsync needed (it is a no-op).
-             Outside: await session.CommitAsync(ct) or it rolls back on dispose.
-TENANT       RLS binds the tenant; SQL needs no tenant predicate. Insert tenant_id with session.RequireTenantId().
-ERRORS       await PostgresErrorMapping.TryAsync(() => session.Connection.ExecuteAsync(...)) -> Result<int>.
-FORBIDDEN    String-interpolated or concatenated SQL (SK0042); tenant ids from request input; opening a
-             cross-tenant session inside a unit of work.
-```
-
-Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) · start at the
-[persistence overview](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/06.Persistence).
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
+[Persistence domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/06.Persistence/README.md) ·
+[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

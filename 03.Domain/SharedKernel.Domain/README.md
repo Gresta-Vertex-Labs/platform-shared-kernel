@@ -1,15 +1,14 @@
 # SharedKernel.Domain
 
-![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)
-![License: MIT](https://img.shields.io/badge/license-MIT-blue)
-![Third-party dependencies: 0](https://img.shields.io/badge/third--party%20dependencies-0-brightgreen)
+[![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
+![Tier: Model](https://img.shields.io/badge/tier-Model-0969da)
 ![Public API: tracked](https://img.shields.io/badge/public%20API-tracked-informational)
+![Third-party dependencies: 0](https://img.shields.io/badge/third--party%20dependencies-0-brightgreen)
 
-**Domain-driven design building blocks for .NET services: aggregates, value objects, strongly-typed
-identifiers, business rules, specifications, policies and money.**
-
-The package is pure domain code. It performs no I/O, never reads the system clock, and has no
-dependency on persistence, messaging or dependency injection.
+> **Domain-driven design building blocks for .NET services — aggregates, value objects, strongly-typed identifiers,
+> business rules, specifications, policies and money — as pure domain code with no I/O, no system clock and no
+> infrastructure dependency.**
 
 | You get | So that |
 | --- | --- |
@@ -20,41 +19,35 @@ dependency on persistence, messaging or dependency injection.
 | Strongly-typed identifiers | An `OrderId` can never be passed where a `CustomerId` is expected |
 | Specifications with an inline builder and typed `ThenInclude` | Queries are named, reusable and composable; paging stays at the call site |
 | `Money` with ISO 4217 minor units | Rounding, allocation and currency mismatches are handled once, correctly |
+| Audit, soft-delete and `Tenanted…` base classes | Persistence fills audit fields, filters deleted rows and isolates tenants from the interfaces alone |
 
 ## Contents
 
 - [Install](#install)
 - [Quick start](#quick-start)
-- [Which type do I need?](#which-type-do-i-need)
-- [Walkthrough: an order domain](#walkthrough-an-order-domain)
+- [How it works](#how-it-works)
+- [Recipes](#recipes)
 - [Reference](#reference)
-  - [Namespaces](#namespaces)
-  - [Aggregates and entities](#aggregates-and-entities)
-  - [Business rules](#business-rules)
-  - [TryCreate](#trycreate)
-  - [Value objects](#value-objects)
-  - [Strongly-typed identifiers](#strongly-typed-identifiers)
-  - [Specifications](#specifications)
-  - [Policies](#policies)
-  - [Money](#money)
-  - [Error codes](#error-codes)
+- [Testing](#testing)
 - [Pitfalls](#pitfalls)
-- [AI quick reference](#ai-quick-reference)
-- [Compatibility and guarantees](#compatibility-and-guarantees)
-- [Deliberately not included](#deliberately-not-included)
+- [Design decisions](#design-decisions)
 
 ## Install
 
-```shell
-dotnet add package SharedKernel.Domain
+```xml
+<PackageReference Include="SharedKernel.Domain" />
 ```
+
+The version comes from your central `SharedKernelVersion` property — every SharedKernel package ships at the same
+version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel#using-the-packages).
 
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
-| Dependencies | `SharedKernel.Primitives`, `SharedKernel.Core` and `SharedKernel.Execution` only (all Foundation tier) |
-| Tier | Model: no third-party dependency, no I/O |
-| Registration | None: everything is a base class, an interface or a static method |
+| Tier | Model — reference it from your **Domain** project |
+| Depends on | `SharedKernel.Primitives`, `SharedKernel.Core`, `SharedKernel.Execution` (all Foundation tier); no third-party package |
+| Registration | None: everything is a base class, an interface, an extension method or a static factory |
+| Namespaces | `SharedKernel.Domain.*` — see [Which type do I need?](#which-type-do-i-need) |
 
 ## Quick start
 
@@ -104,7 +97,21 @@ result.IsValid;          // false
 result.Errors[0].Code;   // "invoice.amount_not_positive"
 ```
 
-## Which type do I need?
+## How it works
+
+```mermaid
+flowchart LR
+    F["Static factory<br/>TryCreate(() => new ...)"] --> C["Constructor<br/>CheckRule, EnsureValid"]
+    C -- broken rule or invalid --> V["ValidationResult<br/>IsValid = false, every error"]
+    C -- ok --> A["Aggregate<br/>RaiseDomainEvent, Version + 1"]
+    A --> P["Persistence<br/>audit fields, clock on load"]
+    P --> D["IDomainEventDispatcher<br/>handlers run before the save"]
+```
+
+_Construction either yields a valid aggregate or a `ValidationResult<T>` holding every error; state changes raise
+events that infrastructure dispatches. The domain itself performs no I/O._
+
+### Which type do I need?
 
 | I need to model… | Use | Namespace |
 | --- | --- | --- |
@@ -131,18 +138,43 @@ The difference between the three decision types is the question they answer:
 | `IPolicy<T>` | "Does this subject comply, and if not, why?" | Any subject passed in |
 | `Specification<T>` | "Which rows match?" | A query, translated by the persistence layer |
 
-## Walkthrough: an order domain
+### Time and events
 
-Eight steps build a small, complete ordering model. Every snippet compiles against the package.
+- An aggregate reads time only from its `IClock`, through the protected `Now` property. Analyzer `SK0001`
+  reports any direct `DateTime.UtcNow` or `DateTimeOffset.UtcNow`.
+- Raise events with the factory overload so the timestamp is the clock's time when the event is recorded:
+  `RaiseDomainEvent(at => new OrderShipped(Id) { OccurredOn = at })`.
+- Each raised event advances `Version` by one. `Version` is the aggregate's **event sequence number**, not a
+  concurrency token; consumers can use it to detect a missing or out-of-order event.
+- Every `DomainEvent` gets a version 7 UUID as its `Id`. It is time-ordered and survives serialization, so
+  deduplication by `Id` still works after an outbox round trip.
+- Every concrete event declares `[DomainEventVersion(n)]`; analyzer `SK0009` reports a missing one.
+- An aggregate never clears its own events. Persistence hands them to `IDomainEventDispatcher` before each save,
+  inside the same transaction, then clears them.
 
-### 1. Identity
+### Loading: attaching the clock
 
-```csharp
-public sealed record OrderId(Guid Value) : StronglyTypedId<Guid>(Value);
-public sealed record CustomerId(Guid Value) : StronglyTypedId<Guid>(Value);
-```
+An ORM creates an aggregate through its parameterless constructor, which cannot receive a clock. Until
+infrastructure calls `IHasClock.AttachClock`, anything that reads the time throws `InvalidOperationException`.
 
-### 2. Value objects
+`SharedKernel.Persistence.EfCore` attaches the clock as each aggregate is materialized. If you load aggregates
+another way, call `((IHasClock)aggregate).AttachClock(clock)` yourself. Failing loudly is deliberate: the
+alternative is an event stamped `0001-01-01`.
+
+### Entity equality
+
+Two entities are equal when they have the same concrete type and the same non-default `Id`. An entity whose
+`Id` is still the default is **transient**: it equals only itself, and its hash code changes once the database
+assigns its key.
+
+## Recipes
+
+### 1. Model an order domain
+
+Six steps build a small, complete ordering model, with `OrderId` and `CustomerId` declared like `InvoiceId` in
+the [Quick start](#quick-start).
+
+**1. Value objects**
 
 A single-value wrapper only implements `Validate()`; the base class calls `EnsureValid()` for you.
 
@@ -198,7 +230,7 @@ public sealed class ShippingAddress : ValueObject
 }
 ```
 
-### 3. A child entity
+**2. A child entity**
 
 ```csharp
 public sealed class OrderLine : Entity<Guid>
@@ -219,7 +251,7 @@ public sealed class OrderLine : Entity<Guid>
 }
 ```
 
-### 4. Rules and events
+**3. Rules and events**
 
 ```csharp
 public sealed class OrderMustHaveLines(int lineCount) : IBusinessRule
@@ -243,7 +275,7 @@ public sealed record OrderPlaced(OrderId OrderId, Money Total) : DomainEvent;
 public sealed record OrderShipped(OrderId OrderId) : DomainEvent;
 ```
 
-### 5. The aggregate
+**4. The aggregate**
 
 `TenantId` is `SharedKernel.Execution.Tenancy.TenantId`, the platform's one tenant identifier.
 
@@ -292,7 +324,7 @@ public sealed class Order : TenantedAuditableAggregateRoot<OrderId>
 What the base class gives this aggregate: `TenantId` (a `SharedKernel.Execution.Tenancy.TenantId`, never `default`), `CreatedBy`/`CreatedOn`/`ModifiedBy`/`ModifiedOn`
 filled by persistence, `DomainEvents`, and `Version`, the event sequence number.
 
-### 6. Queries
+**5. Queries**
 
 ```csharp
 public sealed class OrdersOfCustomer : Specification<Order>
@@ -319,22 +351,7 @@ Paging is decided at the call site, not in the specification: the persistence re
 `PageRequest` (offset pages) or a `CursorPageRequest` plus a key selector (keyset pages) from
 `SharedKernel.Contracts`.
 
-### 7. A policy
-
-```csharp
-public sealed class FreeShippingPolicy : IPolicy<Order>
-{
-    private static readonly Money Threshold = Money.Create(50m, Currency.Usd).Value;
-
-    public bool IsCompliant(Order order) =>
-        order.Total.Currency == Threshold.Currency && order.Total >= Threshold;
-
-    public string Explain(Order order) =>
-        IsCompliant(order) ? string.Empty : "Free shipping starts at 50.00 USD.";
-}
-```
-
-### 8. Use it
+**6. Use it**
 
 ```csharp
 var address = ShippingAddress.Create("Turkey", "", "Bagdat Cd. 1");
@@ -355,7 +372,7 @@ var empty = Order.Place(orderId, tenantId, customerId, shipTo, [], clock);
 // empty.IsValid == false, Errors[0].Code "order.no_lines", Errors[0].Type ErrorType.BusinessRule
 ```
 
-### Persisting and loading
+### 2. Persist and load with EF Core
 
 With [`SharedKernel.Persistence.EfCore`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/06.Persistence/SharedKernel.Persistence.EfCore/README.md)
 the infrastructure concerns of this model are handled for you:
@@ -365,91 +382,16 @@ the infrastructure concerns of this model are handled for you:
 | Filling `CreatedBy`, `CreatedOn`, `ModifiedBy`, `ModifiedOn` | The audit interceptor, on save |
 | Attaching the clock to an aggregate the database loads | The clock materialization interceptor, on load |
 | Mapping `Version` so event numbering continues after a reload | The entity type configuration base |
-| Dispatching `DomainEvents` after the save succeeds, then clearing them | The unit of work, through `IDomainEventDispatcher` |
+| Dispatching `DomainEvents` before each save, in the same transaction, then clearing them | The context, through `IDomainEventDispatcher` |
 | Tenant isolation | `TenantedDbContext`'s global query filter |
 
 ```csharp
 var order = await orders.GetByIdAsync(orderId, ct); // clock attached as the row is materialized
 order!.Ship();
-await unitOfWork.SaveChangesAsync(ct);              // OrderShipped is dispatched after the commit
+await unitOfWork.SaveChangesAsync(ct);              // OrderShipped is dispatched before the write
 ```
 
-## Reference
-
-### Namespaces
-
-All namespaces start with `SharedKernel.Domain.`
-
-| Namespace | Contains |
-| --- | --- |
-| `Abstractions` | `IEntity<TId>`, `IAggregateRoot<TId>`, `IHasDomainEvents`, `IHasClock`, `IHasVersion`, `IHasAudit`, `IHasCreatedAudit`, `ISoftDeletable`, `IHasTenant`, `IHasConcurrency`, `IHasAggregateId<TId>`, `IStronglyTypedId<TValue>`, `IDomainEventDispatcher`, markers `IAggregateFactory<,>`, `IDomainService`, `IValueObject` |
-| `Aggregates` | `AggregateRoot<TId>` and its audit, soft-delete and tenant bases |
-| `Entities` | `Entity<TId>` and its audit and soft-delete bases |
-| `Events` | `IDomainEvent`, `DomainEvent`, `DomainEvent<TPayload>`, `DomainEventVersionAttribute`, `DomainEventVersionHelper` |
-| `BusinessRules` | `IBusinessRule`, `AndBusinessRule`, `OrBusinessRule`, `NotBusinessRule`, `BusinessRuleExtensions` |
-| `ValueObjects` | `ValueObject`, `SingleValueObject<TValue>` |
-| `StronglyTypedIds` | `StronglyTypedId<TValue>`; `Serialization.StronglyTypedIdJsonConverterFactory` |
-| `Specifications` | `Specification<T>`, `Spec.For<T>()`/`SpecificationBuilder<T>`, `ProjectionSpecification<T, TResult>`, `AllSpecification<T>`, `EmptySpecification<T>`, composites and `SpecificationExtensions` |
-| `Policies` | `IPolicy<T>`, `AndPolicy<T>`, `OrPolicy<T>`, `NotPolicy<T>`, `PolicyExtensions` |
-| `DomainServices` | `DomainService` |
-| `Monetary` | `Money`, `Currency`, `CurrencyCatalog`, `RoundingPolicy`, `CurrencyMismatchRule`, `IExchangeRateProvider`, `MoneyExtensions` |
-| `Exceptions` | `BusinessRuleViolationException`, `DomainNotFoundException` |
-
-### Aggregates and entities
-
-#### Time and events
-
-- An aggregate reads time only from its `IClock`, through the protected `Now` property. Analyzer `SK0001`
-  reports any direct `DateTime.UtcNow` or `DateTimeOffset.UtcNow`.
-- Raise events with the factory overload so the timestamp is the clock's time when the event is recorded:
-  `RaiseDomainEvent(at => new OrderShipped(Id) { OccurredOn = at })`.
-- Each raised event advances `Version` by one. `Version` is the aggregate's **event sequence number**, not a
-  concurrency token; consumers can use it to detect a missing or out-of-order event.
-- Every `DomainEvent` gets a version 7 UUID as its `Id`. It is time-ordered and survives serialization, so
-  deduplication by `Id` still works after an outbox round trip.
-- Every concrete event declares `[DomainEventVersion(n)]`; analyzer `SK0009` reports a missing one.
-- An aggregate never clears its own events. Infrastructure dispatches them after the save, then calls
-  `ClearDomainEvents()`.
-
-#### Loading: attaching the clock
-
-An ORM creates an aggregate through its parameterless constructor, which cannot receive a clock. Until
-infrastructure calls `IHasClock.AttachClock`, anything that reads the time throws:
-
-```text
-InvalidOperationException: Order has no clock. It was created through its parameterless constructor,
-and infrastructure must call IHasClock.AttachClock before the aggregate reads the time.
-```
-
-`SharedKernel.Persistence.EfCore` attaches the clock as each aggregate is materialized. If you load aggregates
-another way, call `((IHasClock)aggregate).AttachClock(clock)` yourself. Failing loudly is deliberate: the
-alternative is an event stamped `0001-01-01`.
-
-#### Base classes
-
-| Base class | Adds |
-| --- | --- |
-| `AggregateRoot<TId>` | Events, rules, `TryCreate`, clock, `Version` |
-| `AuditableAggregateRoot<TId>` | `CreatedBy`, `CreatedOn`, `ModifiedBy`, `ModifiedOn` |
-| `SoftDeletableAggregateRoot<TId>` | `IsDeleted`, `DeletedOn`, `DeletedBy`, `MarkAsDeleted`, `OnDelete` |
-| `AuditableSoftDeletableAggregateRoot<TId>` | Audit and soft delete |
-| `FullAuditableAggregateRoot<TId>` | Audit, soft delete and a `RowVersion` concurrency token |
-
-- Each aggregate base has a `Tenanted…` counterpart that adds `TenantId` (`SharedKernel.Execution.Tenancy.TenantId`):
-  fixed at construction; `default(TenantId)` throws `DomainException`, and `TenantId` itself rejects `Guid.Empty`.
-  Supply it from the caller, typically `IRequestContext.TenantId`.
-- Entities mirror the non-tenanted set: `Entity<TId>`, `AuditableEntity<TId>`, `SoftDeletableEntity<TId>`,
-  `AuditableSoftDeletableEntity<TId>`, `FullAuditableEntity<TId>`.
-- Persistence reads only the interfaces (`IHasAudit`, `ISoftDeletable`, `IHasTenant`, `IHasConcurrency`). For a
-  combination not listed, extend `AggregateRoot<TId>` and implement the interfaces.
-
-#### Entity equality
-
-Two entities are equal when they have the same concrete type and the same non-default `Id`. An entity whose
-`Id` is still the default is **transient**: it equals only itself, and its hash code changes once the database
-assigns its key.
-
-#### Soft delete
+### 3. Soft-delete and restore an aggregate
 
 ```csharp
 public sealed class Customer : SoftDeletableAggregateRoot<CustomerId>
@@ -470,6 +412,26 @@ public sealed class Customer : SoftDeletableAggregateRoot<CustomerId>
 | Restore | `Restore()` clears `IsDeleted`, `DeletedOn` and `DeletedBy`, then calls `OnRestore`; load the aggregate with a specification that includes deleted rows first |
 
 `OnDelete` and `OnRestore` do nothing unless overridden; override them only to raise an event.
+
+## Reference
+
+### Base classes
+
+| Base class | Adds |
+| --- | --- |
+| `AggregateRoot<TId>` | Events, rules, `TryCreate`, clock, `Version` |
+| `AuditableAggregateRoot<TId>` | `CreatedBy`, `CreatedOn`, `ModifiedBy`, `ModifiedOn` |
+| `SoftDeletableAggregateRoot<TId>` | `IsDeleted`, `DeletedOn`, `DeletedBy`, `MarkAsDeleted`, `OnDelete` |
+| `AuditableSoftDeletableAggregateRoot<TId>` | Audit and soft delete |
+| `FullAuditableAggregateRoot<TId>` | Audit, soft delete and a `RowVersion` concurrency token |
+
+- Each aggregate base has a `Tenanted…` counterpart that adds `TenantId` (`SharedKernel.Execution.Tenancy.TenantId`):
+  fixed at construction; `default(TenantId)` throws `DomainException`, and `TenantId` itself rejects `Guid.Empty`.
+  Supply it from the caller, typically `IRequestContext.TenantId`.
+- Entities mirror the non-tenanted set: `Entity<TId>`, `AuditableEntity<TId>`, `SoftDeletableEntity<TId>`,
+  `AuditableSoftDeletableEntity<TId>`, `FullAuditableEntity<TId>`.
+- Persistence reads only the interfaces (`IHasAudit`, `ISoftDeletable`, `IHasTenant`, `IHasConcurrency`). For a
+  combination not listed, extend `AggregateRoot<TId>` and implement the interfaces.
 
 ### Business rules
 
@@ -599,6 +561,37 @@ total.ToString("N2", CultureInfo.GetCultureInfo("tr-TR"));  // "59,97 USD"
 | `validation.required` | A null strongly-typed identifier or single value, and guard violations |
 | `not_found.default` | `DomainNotFoundException` |
 
+### Logging and analyzers
+
+The package is logging-free by design: `ILogger` is never injected into a domain type. Build-time guardrails come from
+[`SharedKernel.Analyzers`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/SharedKernel.Analyzers/README.md):
+`SK0001` (direct clock access), `SK0009` (event without a version), `SK0010` (two primary sorts in a specification),
+`SK0034` (a raw amount and currency pair instead of `Money`), `SK0037` (value object without `EnsureValid()`).
+
+## Testing
+
+Reference [`SharedKernel.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/16.Testing/SharedKernel.Testing/README.md)
+from your test project. Domain code needs no fakes beyond a clock:
+
+| Helper | Namespace | Use |
+| --- | --- | --- |
+| `FakeClock` | `SharedKernel.Testing.Clocks` | Pass to aggregate constructors; `Advance(delta)`, `Set(value)` |
+| `BusinessRuleAssertions` | `SharedKernel.Testing.Domain` | `rule.ShouldBeBroken()`, `rule.ShouldNotBeBroken()` |
+| `DomainEventAssertions` | `SharedKernel.Testing.Domain` | `events.ContainsEventOfType<OrderShipped>()`, `HasNoEvents()`, `HasRaisedExactlyNEvents(n)` |
+| `DomainVersionAssertions` | `SharedKernel.Testing.Domain` | `ShouldBeVersioned<TEvent>()`, `ShouldHaveVersion<TEvent>(n)` |
+| `SpecificationAssert`, `SpecificationTestBuilder<T>` | `SharedKernel.Testing.Domain` | `SpecificationAssert.Satisfies(spec, entity)` / `DoesNotSatisfy` — in memory, no database |
+| `MoneyFaker`, `FakeExchangeRateProvider` | `SharedKernel.Testing.Domain` | Random valid `Money`; seeded exchange rates (`SeedRate`, `SimulateFailure`) |
+
+```csharp
+var clock = new FakeClock();
+var order = Order.Place(orderId, tenantId, customerId, shipTo, lines, clock).Value;
+
+order.Ship();
+
+order.DomainEvents.ContainsEventOfType<OrderShipped>();
+new OrderMustNotBeShipped(order.ShippedOn).ShouldBeBroken();
+```
+
 ## Pitfalls
 
 | Don't | Do | Why |
@@ -609,66 +602,49 @@ total.ToString("N2", CultureInfo.GetCultureInfo("tr-TR"));  // "59,97 USD"
 | Assume `IncludeSoftDeleted()` widens the tenant too | Enter a cross-tenant scope when a query must see other tenants | It lifts only the soft-delete filter; the persistence tenant filter (and row-level security) still apply |
 | Put ordering on more than one operand of `And`/`Or`/`Not`, or paging on any | Order at most one operand; page at the repository call site | Composites carry the one ordering and throw `InvalidOperationException` for two orderings or any paging |
 | Remove an aggregate through the repository when others must react | Call a domain method such as `Close()` that raises an event | Repository deletion soft-deletes without a domain event |
-| Rely on events being published without a dispatcher | Register an `IDomainEventDispatcher` (for example `AddSharedKernelApplication(typeof(Program).Assembly)` from `SharedKernel.Application.Pipeline`) | Persistence discards undispatched events at the save (with a warning) |
+| Rely on events being handled without a dispatcher | Register one — `AddSharedKernelApplication(...)` from `SharedKernel.Application.Pipeline` does | Persistence discards undispatched events at the save, with a warning |
 | Compare or add `Money` of possibly different currencies | Check `Currency` first, or convert with `ConvertAsync` | Mismatches throw `BusinessRuleViolationException` |
 | Call `.Sum()` on a possibly empty list of `Money` | Call `.Sum(currency)` | An empty sequence has no currency to return |
 | Read `result.Value` without checking | Check `result.IsValid` first | `Value` on an invalid result throws |
 | Read `DateTime.UtcNow` in domain code | Use `Now` or the event factory's timestamp | Time must come from the clock; `SK0001` reports it |
 | Clear events inside the aggregate | Leave it to infrastructure | Clearing before dispatch loses them |
 
-## AI quick reference
+## Design decisions
 
-Conventions for generating code with this package. Each line is a rule.
+**Why must a value object call `EnsureValid()` itself?** Validation in the base constructor would run before the
+subclass assigns its members, and records' generated constructors and `with` bypass validation. An explicit last call is
+the only reliable point; `SK0037` catches an omission.
 
-```text
-IDENTIFIER   public sealed record {Name}Id(Guid Value) : StronglyTypedId<Guid>(Value);
-             Unwrap with .Value or an explicit cast. No implicit conversions exist.
-AGGREGATE    Extend AggregateRoot<TId> or a base: Auditable-, SoftDeletable-, AuditableSoftDeletable-,
-             FullAuditable-; prefix Tenanted- for multi-tenant (extra TenantId tenantId constructor argument, SharedKernel.Execution.Tenancy).
-             Private constructor (id, [tenantId,] ..., IClock clock) : base(id, [tenantId,] clock).
-             Private parameterless constructor for the ORM. Properties with private setters.
-             Public static factory returning ValidationResult<TAggregate> => TryCreate(() => new ...).
-             Enforce invariants with CheckRule(new SomeRule(...)) before assigning state.
-             Read time only via Now. Never DateTime.UtcNow.
-EVENT        [DomainEventVersion(1)] public sealed record {Past}(...) : DomainEvent;
-             Raise inside the aggregate: RaiseDomainEvent(at => new {Past}(...) { OccurredOn = at });
-RULE         public sealed class {Rule}(...) : IBusinessRule { Code "{context}.{snake_case}"; Message; IsBroken() }
-             Code is required and stable. Compose with .And(), .Or(), .Not(code, message).
-VALUE OBJECT Extend ValueObject: assign members, call EnsureValid() LAST in every constructor,
-             implement GetEqualityComponents() and Validate() (yield Error.Validation(code, message)).
-             Expose static Create(...) => TryCreate(() => new ...). Single value: extend SingleValueObject<T>
-             with a public constructor : base(value) and Validate() only.
-ENTITY       Extend Entity<TId>; constructor (TId id, ...) : base(id); private parameterless constructor.
-SPECIFICATION Extend Specification<T>; call builders only in the constructor: AddCriteria (AND), one
-             ApplyOrderBy/ApplyOrderByDescending, ApplyThenBy, AddInclude(...).ThenInclude(...). Inline: Spec.For<T>().
-             Paging at the call site: ListPagedAsync(spec, PageRequest) / ListKeysetAsync(spec, CursorPageRequest, key).
-POLICY       class : IPolicy<T> { bool IsCompliant(T); string Explain(T) => "" when compliant }.
-             Inside an aggregate: CheckRule(policy.ToRule(subject, "code")).
-MONEY        Money.Create(amount, Currency.Usd) returns ValidationResult<Money>. Never mix currencies.
-             Split with Allocate, never by dividing and rounding each part. Sum empty lists with Sum(currency).
-RESULTS      ValidationResult<T>: IsValid, Value (throws if invalid), Errors (IReadOnlyList<Error>).
-JSON         options.Converters.Add(new StronglyTypedIdJsonConverterFactory());
-FORBIDDEN    I/O, DbContext, ILogger, DI, HttpClient or messaging types in domain code.
-```
+**Why does `Now` throw when no clock is attached?** A null or sentinel clock stamps `0001-01-01` on loaded aggregates
+without anyone noticing. Failing loudly turns a missing attach into a defect found by the first test.
 
-## Compatibility and guarantees
+**Why does `TryCreate` return `ValidationResult<T>`, not `Result<T>`?** It keeps every error a value object reports;
+`Result<T>` holds one.
 
-- **Public API is tracked** with `Microsoft.CodeAnalysis.PublicApiAnalyzers`; any change fails the build until
-  it is recorded.
-- **Every public member is documented**, including the exceptions it throws; the XML documentation ships in the
-  package.
-- **No infrastructure dependency.** The package references only `SharedKernel.Primitives`,
-  `SharedKernel.Core` and `SharedKernel.Execution`, performs no I/O, and never reads the system clock.
-- **Build-time guardrails** in [`SharedKernel.Analyzers`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/SharedKernel.Analyzers/README.md):
-  `SK0001` (direct clock access), `SK0009` (event without a version), `SK0010` (two primary sorts),
-  `SK0037` (value object without `EnsureValid()`).
+**Why is `IBusinessRule.Code` required?** Clients branch on codes and localization looks messages up by them; a default
+code would make every rule look the same.
 
-## Deliberately not included
+**Why explicit conversions only on identifiers and single value objects?** An implicit operator lets an `OrderId` flow
+into any `Guid` parameter, which is the mistake strongly-typed identifiers exist to prevent.
+
+**Why is `Version` an event sequence, not a concurrency token?** Optimistic concurrency is PostgreSQL `xmin`, exposed as
+`EntityVersion` by the persistence packages. `Version` counts events so consumers can detect a gap.
+
+**Why are paging and tracking not on specifications?** One place, the repository call site, validates page input, and
+the same specification serves tracked and untracked reads.
+
+**What is deliberately not included?**
 
 - **No event handlers or dispatcher implementation.** Handlers (`IDomainEventHandler<T>`, in `SharedKernel.Application`)
-  and the dispatcher (`DomainEventDispatcher`, registered by `AddSharedKernelApplication(...)` in
-  `SharedKernel.Application.Pipeline`) live in the application packages; this package defines `IDomainEventDispatcher` only.
+  and the dispatcher (registered by `AddSharedKernelApplication(...)` in `SharedKernel.Application.Pipeline`) live in
+  the application packages; this package defines `IDomainEventDispatcher` only.
 - **No persistence.** Repositories, EF Core mappings and the clock-attaching interceptor live in the persistence
-  layer; the domain never references it.
-- **No implicit conversions** from identifiers or single-value objects to their underlying value.
+  packages; the domain never references them.
 - **No exchange rates.** `IExchangeRateProvider` is a port; your service supplies the rate source.
+- **No trimming or NativeAOT promise.** The strongly-typed id JSON factory and the event-version lookup use reflection.
+
+---
+
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
+[Domain building blocks](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/03.Domain/README.md) ·
+[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

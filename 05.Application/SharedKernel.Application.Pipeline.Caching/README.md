@@ -2,9 +2,8 @@
 
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
-![Tier: Host](https://img.shields.io/badge/tier-Host-5c6bc0)
+![Tier: Host](https://img.shields.io/badge/tier-Host-d73a49)
 ![Public API: tracked](https://img.shields.io/badge/public%20API-tracked-informational)
-![Published: GitHub Packages](https://img.shields.io/badge/published-GitHub%20Packages-success)
 ![Scopes: fail closed](https://img.shields.io/badge/scopes-fail%20closed-success)
 ![Eviction: after commit](https://img.shields.io/badge/eviction-after%20commit-orange)
 
@@ -12,11 +11,50 @@
 > transaction commits, never before. Keys are partitioned by query type, tenant and caller, so nothing can read
 > anything it should not.**
 
-Two request-pipeline behaviors. A query declares `ICacheableQuery<TValue>` and is served from cache — in memory,
-or Redis through `02.Caching` — without its handler knowing a cache exists. A command declares `IInvalidatesCache`
-and names what it made stale. Everything else — key construction, tenant and caller partitioning, stampede
-protection, the "never cache a failure" rule, and evicting only once the write has actually landed — is the
-behavior's job, not yours.
+| You get | So that |
+| --- | --- |
+| A cache around any `ICacheableQuery<TValue>` | A hot read is served from memory or Redis, and the handler stays a plain handler |
+| Keys partitioned by query type, tenant and caller | Two queries cannot read each other's entries, one tenant cannot read another's, and one user cannot read another's |
+| Scopes that fail closed | A missing tenant or caller skips the cache instead of quietly writing under a wider key every request would share |
+| A failed `Result` that is never cached | A transient `NotFound` is not pinned for the whole expiry window |
+| Stampede protection on every cached query | A cold key under load runs the handler once, not once per concurrent caller |
+| Eviction that waits for the commit, and cannot be cancelled | Nothing evicts on a write that has not landed, and a client disconnect cannot leave the cache serving stale data |
+| `CacheKeyRef.For<TQuery>(key)` | Renaming a query is a compile error at the command, not a missed eviction found in production |
+| Hit and miss counters tagged by query type | You can answer "what is the hit ratio of `GetOrderQuery`", not just "of this key prefix" |
+
+## Contents
+
+- [Install](#install)
+- [Quick start](#quick-start)
+- [How it works](#how-it-works)
+- [Recipes](#recipes)
+- [Reference](#reference)
+- [Testing](#testing)
+- [Pitfalls](#pitfalls)
+- [Design decisions](#design-decisions)
+
+## Install
+
+```xml
+<PackageReference Include="SharedKernel.Application.Pipeline.Caching" />
+```
+
+The version comes from your central `SharedKernelVersion` property — every SharedKernel package ships at the same
+version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel#using-the-packages).
+
+| Requirement | Value |
+| --- | --- |
+| Target framework | `net10.0` |
+| Tier | Host — reference it from your **Api** / **Worker** project; queries and commands declare the markers from `SharedKernel.Application` |
+| Depends on | `SharedKernel.Application.Pipeline`, `SharedKernel.Caching.Abstractions` |
+| Needs at runtime | `ICacheService` and `ITenantCacheKeyProvider` — registered by `SharedKernel.Caching.FusionCache`'s `AddSharedKernelCaching` |
+| Namespaces | `SharedKernel.Application.Pipeline.Caching` (`WithCaching()`); the markers are in `SharedKernel.Application.Caching` |
+
+This is an opt-in sibling of [`SharedKernel.Application.Pipeline`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/05.Application/SharedKernel.Application.Pipeline/README.md):
+it needs `SharedKernel.Caching.Abstractions`, and the core pipeline package keeps a cache dependency away from every
+service that never caches anything.
+
+## Quick start
 
 ```csharp
 // Read side: one interface, and the handler never changes.
@@ -46,66 +84,7 @@ ApproveOrderCommand(42)   handler succeeds, transaction commits  -> entry evicte
                           client disconnects mid-request         -> entry still evicted (uncancellable)
 ```
 
-| You get | So that |
-| --- | --- |
-| A cache around any `ICacheableQuery<TValue>` | A hot read is served from memory or Redis, and the handler stays a plain handler |
-| Keys partitioned by query type, tenant and caller | Two queries cannot read each other's entries, one tenant cannot read another's, and one user cannot read another's |
-| Scopes that fail closed | A missing tenant or caller skips the cache instead of quietly writing under a wider key every request would share |
-| A failed `Result` that is never cached | A transient `NotFound` is not pinned for the whole expiry window |
-| Stampede protection on every cached query | A cold key under load runs the handler once, not once per concurrent caller |
-| Eviction that waits for the commit, and cannot be cancelled | Nothing evicts on a write that has not landed, and a client disconnect cannot leave the cache serving stale data |
-| `CacheKeyRef.For<TQuery>(key)` | Renaming a query is a compile error at the command, not a missed eviction found in production |
-| Hit and miss counters tagged by query type | You can answer "what is the hit ratio of `GetOrderQuery`", not just "of this key prefix" |
-
-## Contents
-
-- [Install](#install)
-- [Quick start](#quick-start)
-- [Which member do I need?](#which-member-do-i-need)
-- [How it works](#how-it-works)
-- [Cache scope](#cache-scope)
-- [How keys are built](#how-keys-are-built)
-- [Invalidating after a command](#invalidating-after-a-command)
-- [Refreshing, and declining to cache](#refreshing-and-declining-to-cache)
-- [Why the value is cached and not the `Result`](#why-the-value-is-cached-and-not-the-result)
-- [Telemetry](#telemetry)
-- [Recipes](#recipes)
-- [Reference](#reference)
-- [Pitfalls](#pitfalls)
-- [Design decisions](#design-decisions)
-- [Deliberately not included](#deliberately-not-included)
-- [AI quick reference](#ai-quick-reference)
-- [Compatibility and guarantees](#compatibility-and-guarantees)
-
-## Install
-
-The packages are published to GitHub Packages. Add the feed once, in a `nuget.config` at your repository root:
-
-```xml
-<configuration>
-  <packageSources>
-    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
-    <add key="shared-kernel" value="https://nuget.pkg.github.com/Gresta-Vertex-Labs/index.json" />
-  </packageSources>
-  <packageSourceMapping>
-    <packageSource key="shared-kernel"><package pattern="SharedKernel.*" /></packageSource>
-    <packageSource key="nuget.org"><package pattern="*" /></packageSource>
-  </packageSourceMapping>
-</configuration>
-```
-
-GitHub Packages needs a token even to read: a personal access token with `read:packages` locally, or `GITHUB_TOKEN`
-in GitHub Actions.
-
-```shell
-dotnet add package SharedKernel.Application.Pipeline.Caching
-```
-
-This is an opt-in sibling of [`SharedKernel.Application.Pipeline`](../SharedKernel.Application.Pipeline/README.md),
-for one reason: it needs `SharedKernel.Caching.Abstractions`, and the core pipeline package refuses to put a cache
-dependency in front of every service that never caches anything. Reference this only when you want caching.
-
-## Quick start
+Register it:
 
 ```csharp
 using SharedKernel.Application.Mediator.MediatR;
@@ -125,14 +104,9 @@ builder.Services.AddSharedKernelApplication(typeof(Program).Assembly, app => app
 **Command** stage, and declares `ICacheService` and `ITenantCacheKeyProvider` as required. The host start fails
 naming whichever is missing — never at the first request. `AddSharedKernelCaching()` registers both.
 
-```csharp
-// A cached query. The handler is unchanged and unaware.
-public sealed record GetOrderQuery(Guid OrderId) : ICacheableQuery<OrderDto>
-{
-    public CachePolicy CachePolicy => CachePolicy.For(TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(10));
-    public string CacheKey => OrderId.ToString();
-}
+The handler of `GetOrderQuery` is an ordinary handler, unaware of the cache:
 
+```csharp
 internal sealed class GetOrderHandler(IOrderRepository orders) : IQueryHandler<GetOrderQuery, OrderDto>
 {
     public async Task<Result<OrderDto>> Handle(GetOrderQuery query, CancellationToken ct) =>
@@ -141,22 +115,6 @@ internal sealed class GetOrderHandler(IOrderRepository orders) : IQueryHandler<G
             : Error.NotFound("order.not_found", $"Order {query.OrderId} does not exist.");
 }
 ```
-
-## Which member do I need?
-
-| I want to… | Declare | On |
-| --- | --- | --- |
-| Cache a query's result | `ICacheableQuery<TValue>` | the query |
-| Set durations, tags, fail-safe, jitter | `CachePolicy` | the query |
-| Say what makes this instance unique | `CacheKey` | the query |
-| Cache per tenant (the default) | nothing — `Scope` defaults to `Tenant` | — |
-| Cache per caller | `Scope => CacheScope.User` | the query |
-| Cache one entry for the whole service | `Scope => CacheScope.Global` | the query |
-| Force a reload that also refreshes the entry | `RefreshCache => true` | the query |
-| Keep an empty or negative result out of the cache | `ShouldCache(TValue)` | the query |
-| Evict entries after a write commits | `IInvalidatesCache` | the command |
-| Name one entry to evict | `CacheKeyRef.For<TQuery>(key)` | the command |
-| Evict a whole group of entries | `CacheTagsToInvalidate` + `CachePolicy.WithTags(...)` | both |
 
 ## How it works
 
@@ -197,7 +155,23 @@ it. Eager refresh and factory timeouts are switched off on the query's policy �
 handler in the background after the request's DI scope had been disposed. Fail-safe, durations, tags and jitter are
 all kept exactly as the query declared them.
 
-## Cache scope
+### Which member do I need?
+
+| I want to… | Declare | On |
+| --- | --- | --- |
+| Cache a query's result | `ICacheableQuery<TValue>` | the query |
+| Set durations, tags, fail-safe, jitter | `CachePolicy` | the query |
+| Say what makes this instance unique | `CacheKey` | the query |
+| Cache per tenant (the default) | nothing — `Scope` defaults to `Tenant` | — |
+| Cache per caller | `Scope => CacheScope.User` | the query |
+| Cache one entry for the whole service | `Scope => CacheScope.Global` | the query |
+| Force a reload that also refreshes the entry | `RefreshCache => true` | the query |
+| Keep an empty or negative result out of the cache | `ShouldCache(TValue)` | the query |
+| Evict entries after a write commits | `IInvalidatesCache` | the command |
+| Name one entry to evict | `CacheKeyRef.For<TQuery>(key)` | the command |
+| Evict a whole group of entries | `CacheTagsToInvalidate` + `CachePolicy.WithTags(...)` | both |
+
+### Cache scope
 
 Every query and every invalidating command declares the identity its entries are partitioned by.
 
@@ -223,11 +197,11 @@ one entry, across tenants. Widening is always an explicit `CacheScope.Global`, n
 
 `CacheScope.Tenant` is the zero value, so `default(CacheScope)` and both interface defaults land on the safe option.
 
-The scope comes from `IRequestContext` — `05.Application`'s local seam, which your service bridges to its real
-identity source at the composition root. No `IRequestContext` registered means `Tenant` and `User` queries are never
+The scope comes from `IRequestContext` (`SharedKernel.Execution`), which the host registers — for HTTP,
+`AddSharedKernelRequestContext()` from `SharedKernel.ServiceDefaults.Security`. No `IRequestContext` registered means `Tenant` and `User` queries are never
 cached, which is the correct behaviour for a service that has not wired identity up yet.
 
-## How keys are built
+### How keys are built
 
 Every key goes through the registered `ITenantCacheKeyProvider`, never string interpolation, so it carries the
 owning service name and every segment is escaped.
@@ -253,7 +227,7 @@ collapse: two cacheable queries sharing a simple type name.
 Tenant-scoped entries also carry the tenant-wide tag, so `ITenantCacheService.RemoveTenantAsync` removes a tenant's
 cached query results along with the rest of its entries.
 
-## Invalidating after a command
+### Invalidating after a command
 
 ```csharp
 public sealed record ApproveOrderCommand(Guid OrderId) : ICommand, IInvalidatesCache
@@ -289,7 +263,7 @@ and logged at `Error`, so one unreachable key cannot skip the rest.
 Keys and tags are built and validated **before** the handler runs, so a malformed target fails the command rather
 than the post-commit callback, after the change is already saved.
 
-## Refreshing, and declining to cache
+### Refreshing, and declining to cache
 
 `RefreshCache` ignores any existing entry, runs the handler, and writes the result over the entry — the
 force-refresh path for a "reload" button, or a read that must observe a write made outside this service. It still
@@ -318,35 +292,17 @@ public bool ShouldCache(IReadOnlyList<OrderDto> value) => value.Count > 0;
 It runs inside the cache factory, so it must be pure and must not throw — a throw there propagates to every waiting
 caller.
 
-## Why the value is cached and not the `Result`
+### Guarantees
 
-`Result` and `Result<T>` have private constructors and `Value`/`Error` properties that throw in the opposite state,
-so a reflection-based JSON serializer cannot even write one — verified: FusionCache's serializer throws
-`FusionCacheSerializationException` on the L2 write. Caching the `TValue` and rebuilding
-`Result<TValue>.Success(value)` on a hit sidesteps that entirely, and keeps `01.Core`'s `Result` free of any
-serialization concern.
-
-The consequence for you: **`TValue` must round-trip through `System.Text.Json`.** If your service registers a
-`JsonSerializerContext` for the cache, add `TValue` to it.
-
-## Telemetry
-
-Both behaviors record under the existing `"SharedKernel.Application"` meter and activity source, so
-`13.ServiceDefaults`' `WithApplicationTelemetry()` exports them with no extra registration and no new instrument
-name to add anywhere.
-
-| Signal | Name | Tags |
-| --- | --- | --- |
-| Counter | `sharedkernel.application.query.cache.outcome` | `sharedkernel.query.type`, `sharedkernel.cache.scope`, `sharedkernel.cache.outcome` |
-| Counter | `sharedkernel.application.command.cache.invalidation` | `sharedkernel.command.type`, `sharedkernel.cache.target`, `sharedkernel.cache.evicted` |
-| Activity tags | on the request span | `sharedkernel.cache.outcome`, `sharedkernel.cache.scope` |
-
-Outcomes: `Hit`, `Miss`, `Refreshed`, `NotCachedFailure`, `NotCachedByPredicate`, `BypassedScopeUnavailable`. Hit
-ratio for one query type is `Hit / (Hit + Miss)`; the other four tell you *why* a call was not a plain hit or miss.
-
-Logging uses `[LoggerMessage]` at EventIds **5200-5299**, this package's sub-block of the `05.Application` range.
-No tenant id, user id, cache key or cached value is ever a log or metric parameter — cache keys are high-cardinality
-and can carry identifiers, and neither belongs in a metric dimension.
+- **Failures are never cached**, and a cached entry is never a `Result` — both covered by tests against a real
+  FusionCache over a shared distributed cache.
+- **Scope isolation is tested:** one tenant cannot read another's entry, one caller cannot read another's, and a
+  missing identity caches nothing.
+- **Stampede semantics are pinned against a real cache:** the handler runs once for concurrent callers on a hit path,
+  and each caller gets its own failure on the skip path.
+- **Eviction follows the commit**, proved end to end through a real `ServiceCollection`, the kernel pipeline and a
+  real dispatch.
+- **Thread-safe.** The behaviors hold no mutable state; per-request state lives on the stack.
 
 ## Recipes
 
@@ -430,27 +386,13 @@ public CachePolicy CachePolicy =>
         .WithJitter(TimeSpan.FromSeconds(10));   // stagger expiry across instances
 ```
 
-### 8. Test a cached query
-
-```csharp
-var cache = new FakeCacheService();               // SharedKernel.Caching.Testing
-services.AddSingleton<ICacheService>(cache);
-services.AddSingleton<ITenantCacheKeyProvider>(new FakeTenantCacheKeyProvider());
-services.AddSharedKernelApplication(typeof(GetOrderQuery).Assembly, app => app.UseMediatR().WithCaching());
-
-await sender.Send(new GetOrderQuery(id));
-await sender.Send(new GetOrderQuery(id));
-
-cache.FactoryInvocationCount.Should().Be(1);      // second dispatch was a hit
-```
-
 ## Reference
 
 | Type | Purpose |
 | --- | --- |
 | `ICacheableQuery<TValue>` | A query whose successful value is cached. Also an `IQuery<TValue>`, so a query declares it alone |
 | `ICacheableQuery.CacheKey` | This instance's identity within its own namespace |
-| `ICacheableQuery.CachePolicy` | Durations, tags, fail-safe, jitter — `02.Caching.Abstractions` |
+| `ICacheableQuery.CachePolicy` | Durations, tags, fail-safe, jitter — `SharedKernel.Caching.Abstractions` |
 | `ICacheableQuery.Scope` | `Tenant` (default), `User` or `Global` |
 | `ICacheableQuery.RefreshCache` | Ignore the entry, run the handler, overwrite. Default `false` |
 | `ICacheableQuery<TValue>.ShouldCache` | Decline to cache one value. Default: cache every success |
@@ -465,33 +407,79 @@ cache.FactoryInvocationCount.Should().Be(1);      // second dispatch was a hit
 The two behavior types are **internal**. They are registered by `WithCaching()` and resolved by the kernel `RequestPipeline<,>`;
 the package's contract is the interfaces above.
 
+### Telemetry
+
+Both behaviors record under the existing `"SharedKernel.Application"` meter and activity source, so
+`SharedKernel.ServiceDefaults`' `WithApplicationTelemetry()` exports them with no extra registration and no new instrument
+name to add anywhere.
+
+| Signal | Name | Tags |
+| --- | --- | --- |
+| Counter | `sharedkernel.application.query.cache.outcome` | `sharedkernel.query.type`, `sharedkernel.cache.scope`, `sharedkernel.cache.outcome` |
+| Counter | `sharedkernel.application.command.cache.invalidation` | `sharedkernel.command.type`, `sharedkernel.cache.target`, `sharedkernel.cache.evicted` |
+| Activity tags | on the request span | `sharedkernel.cache.outcome`, `sharedkernel.cache.scope` |
+
+Outcomes: `Hit`, `Miss`, `Refreshed`, `NotCachedFailure`, `NotCachedByPredicate`, `BypassedScopeUnavailable`. Hit
+ratio for one query type is `Hit / (Hit + Miss)`; the other four tell you *why* a call was not a plain hit or miss.
+
+### Logging
+
+No tenant id, user id, cache key or cached value is ever a log or metric parameter.
+
+| Event id | Level | Event |
+| --- | --- | --- |
+| 5200 | Debug | Query `{QueryType}` cache outcome `{CacheOutcome}` at `{CacheScope}` scope |
+| 5201 | Warning | Query declares a scope whose identity is unavailable; the cache was skipped and the handler ran |
+| 5210 | Debug | Command `{CommandType}` evicted `{KeyCount}` key(s) and `{TagCount}` tag(s) after commit |
+| 5211 | Error | A post-commit eviction of one key or tag failed; the cache serves a superseded value until it expires |
+| 5212 | Warning | Command declares a scope whose identity is unavailable; the affected entries were not evicted |
+
+### Analyzers
+
+`SK0017` flags a command implementing `ICacheableQuery`; `SK0018` flags a query implementing `IInvalidatesCache`;
+`SK0041` flags two cacheable queries sharing a simple type name (their key namespaces would collapse).
+
+## Testing
+
+Reference [`SharedKernel.Caching.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/16.Testing/SharedKernel.Caching.Testing/README.md): its
+`FakeCacheService` reproduces the per-key stampede gate and the `SkipCaching()` split this package relies on, so a
+test against it fails on the same regressions a real cache would.
+
+```csharp
+var cache = new FakeCacheService();               // SharedKernel.Caching.Testing
+services.AddSingleton<ICacheService>(cache);
+services.AddSingleton<ITenantCacheKeyProvider>(new FakeTenantCacheKeyProvider());
+services.AddSharedKernelApplication(typeof(GetOrderQuery).Assembly, app => app.UseMediatR().WithCaching());
+
+await sender.Send(new GetOrderQuery(id));
+await sender.Send(new GetOrderQuery(id));
+
+cache.FactoryInvocationCount.Should().Be(1);      // second dispatch was a hit
+```
+
+For a full composition without a mediator, `ApplicationPipelineTestHarness` from
+[`SharedKernel.Application.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/16.Testing/SharedKernel.Application.Testing/README.md) accepts
+`Configure(app => app.WithCaching())`.
+
 ## Pitfalls
 
-- **A `CacheKey` that omits a parameter.** Every input that changes the result belongs in the key. The query type,
-  service name, tenant and caller are added for you; the rest is yours.
-- **A caller-dependent result left at `Tenant` scope.** If the value is filtered by permissions or ownership,
-  declare `CacheScope.User` — otherwise one user is served another's data.
-- **A command whose `Scope` disagrees with its queries.** It evicts a key nothing ever wrote, and the stale entry
-  survives. Both default to `Tenant`; change them together or not at all.
-- **A `TValue` that does not round-trip through `System.Text.Json`.** It works against the in-memory layer and
-  fails against the distributed one, so it passes locally and breaks in an environment with Redis.
-- **Two cacheable queries with the same simple type name.** They share a cache namespace. SK0041 reports it.
-- **Expecting a failure to be cached.** It never is — deliberately. A query that should remember "this does not
-  exist" must model that as a successful value, not a `NotFound`.
-- **`ShouldCache` that throws or has side effects.** It runs inside the cache factory, where a throw reaches every
-  waiting caller.
-- **Caching on a command.** SK0017 flags a command implementing the query marker; SK0018 flags a query implementing
-  the command marker. Caching is for queries, invalidation is for commands.
-- **Expecting eviction without a transaction behavior.** `WithTransactions()` is what gives the callback a
-  commit to follow; without it the callback still runs after the handler, which is usually what you want, but the
-  "after commit" guarantee is only as real as the commit.
+| Don't | Do | Why |
+| --- | --- | --- |
+| Leave a parameter out of `CacheKey` | Put every input that changes the result in the key | The query type, service, tenant and caller are added for you; the rest is yours |
+| Leave a caller-dependent result at `Tenant` scope | Declare `CacheScope.User` | Otherwise one user is served another's permission- or ownership-filtered data |
+| Let a command's `Scope` disagree with its queries | Change both together, or neither | It evicts a key nothing wrote, and the stale entry survives |
+| Cache a `TValue` that does not round-trip through `System.Text.Json` | Keep cached values plain and serializable (add them to your cache `JsonSerializerContext`) | It works in memory and fails against Redis — passes locally, breaks in production |
+| Name two cacheable queries alike in different namespaces | Give each a distinct simple type name | They share a key namespace; `SK0041` reports it |
+| Expect a failure to be cached | Model "does not exist" as a successful value | Failures are never cached, deliberately |
+| Throw or cause side effects in `ShouldCache` | Keep it pure | It runs inside the cache factory, where a throw reaches every waiting caller |
+| Rely on "after commit" without `WithTransactions()` | Add `WithTransactions()` | Eviction still runs after the handler, but the guarantee is only as real as the commit |
 
 ## Design decisions
 
 | Decision | Why |
 | --- | --- |
 | A separate package from `SharedKernel.Application.Pipeline` | The core pipeline package will not put `SharedKernel.Caching.Abstractions` in front of every service that never caches anything |
-| Cache `TValue`, never `Result<TValue>` | `Result` has private constructors, so a reflection-based serializer cannot write it. Caching the value keeps `01.Core` free of serialization concerns |
+| Cache `TValue`, never `Result<TValue>` | `Result` has private constructors, so a reflection-based serializer cannot write it. Caching the value keeps `SharedKernel.Primitives` free of serialization concerns |
 | Keys namespaced by query type | Without it, two queries picking the same key silently deserialize each other's payloads. The namespace is what makes `CacheKey` safe to write casually |
 | A command names the query, not the key | Keys carry the query type, so a raw key string cannot be reconstructed by a command — and naming the type makes a rename a compile error |
 | Scope defaults to `Tenant` and fails closed | The unsafe direction is silent widening. A missing identity skipping the cache costs a cache miss; falling back costs a cross-tenant read |
@@ -502,73 +490,29 @@ the package's contract is the interfaces above.
 | Instruments on the existing `"SharedKernel.Application"` meter | A new meter name would need its own `AddMeter` call and would silently export nothing until a host added it |
 | Behaviors internal | Nothing outside should construct them, and it keeps the public surface to the contract |
 
-## Deliberately not included
+**Why is the value cached and not the `Result`?**
+`Result` and `Result<T>` have private constructors and `Value`/`Error` properties that throw in the opposite state,
+so a reflection-based JSON serializer cannot write one — FusionCache's serializer throws
+`FusionCacheSerializationException` on the L2 write. Caching the `TValue` and rebuilding
+`Result<TValue>.Success(value)` on a hit sidesteps that entirely, and keeps `SharedKernel.Primitives`' `Result` free of any
+serialization concern.
+
+The consequence for you: **`TValue` must round-trip through `System.Text.Json`.** If your service registers a
+`JsonSerializerContext` for the cache, add `TValue` to it.
+
+**What is deliberately not included?**
 
 - **No automatic key derivation from the query's properties.** Reflecting over a record to build a key is exactly
   how a key silently stops matching when a property is added. The query states its key.
 - **No cache-aside helper for handlers.** If a handler needs to cache something that is not its own result, inject
   `ICacheService` directly — that is not a pipeline concern.
-- **No output or HTTP response caching.** That is a `14.Presentation` concern, with different invalidation rules.
+- **No output or HTTP response caching.** That is a presentation concern, with different invalidation rules.
 - **No second-level invalidation graph.** A command names what it made stale; the package does not try to infer
   dependencies between queries.
-- **No cache warming.** `02.Caching.FusionCache` owns warmup.
+- **No cache warming.** `SharedKernel.Caching.FusionCache` owns warmup.
 
-## AI quick reference
+---
 
-```text
-PACKAGE     SharedKernel.Application.Pipeline.Caching (05.Application, Host tier). net10.0. Opt-in sibling of
-            SharedKernel.Application.Pipeline; the only pipeline package allowed to reference
-            SharedKernel.Caching.Abstractions.
-REGISTER    services.AddSharedKernelCaching(o => o.ServiceName = "svc");        // ICacheService + ITenantCacheKeyProvider
-            services.AddSharedKernelApplication(asm, app => app.UseMediatR().WithCaching().WithTransactions());
-            The host start fails naming ICacheService / ITenantCacheKeyProvider if missing.
-QUERY       record Q(...) : ICacheableQuery<TValue>   // ALSO an IQuery<TValue>; response is Result<TValue>
-              CachePolicy CachePolicy => CachePolicy.Default | .For(l1, l2) | .WithTags(..) | .WithFailSafe(..) | .WithJitter(..)
-              string CacheKey => "<identity WITHIN this query's namespace, not a whole key>"
-              CacheScope Scope => Tenant(0, default) | User | Global
-              bool RefreshCache => false      // true: skip read, run handler, OVERWRITE entry
-              bool ShouldCache(TValue v) => true
-COMMAND     record C(...) : ICommand, IInvalidatesCache
-              IReadOnlyCollection<CacheKeyRef> CacheKeysToInvalidate => [CacheKeyRef.For<Q>(key), ...]
-              IReadOnlyCollection<string> CacheTagsToInvalidate => []      // optional
-              CacheScope Scope => Tenant                                   // MUST match the queries
-KEYS        {service}:{QueryType}:{CacheKey}                       Global
-            {service}:@{tenant}:{QueryType}:{CacheKey}             Tenant
-            {service}:@{tenant}:{QueryType}:{CacheKey}:u:{userId}  User
-            Built via ITenantCacheKeyProvider; every segment escaped. Never interpolate a key yourself.
-SCOPE       Identity comes from IRequestContext (TenantId, UserId). MISSING IDENTITY => cache skipped, handler runs,
-            Warning logged. NEVER falls back to a wider key.
-SEMANTICS   Handler runs inside ONE ICacheService.GetOrSetAsync => stampede-protected. Failed Result is returned and
-            NEVER cached (SkipCaching). Eager refresh + factory timeouts forced off. TValue must round-trip STJ.
-            Eviction: registered via ICommandScope.OnCompleted, runs AFTER the outermost commit, with
-            CancellationToken.None, per-key try/catch. Failure or throw => nothing registered.
-TELEMETRY   Meter + ActivitySource "SharedKernel.Application" (exported by WithApplicationTelemetry()).
-            sharedkernel.application.query.cache.outcome {query.type, cache.scope, cache.outcome}
-            sharedkernel.application.command.cache.invalidation {command.type, cache.target, cache.evicted}
-            Outcomes: Hit Miss Refreshed NotCachedFailure NotCachedByPredicate BypassedScopeUnavailable.
-            Logging [LoggerMessage] EventIds 5200-5299. No tenant/user/key/value in logs or metric tags.
-ANALYZERS   SK0017 command implements ICacheableQuery. SK0018 query implements IInvalidatesCache.
-            SK0041 two ICacheableQuery types share a simple type name (their key namespaces collapse).
-TEST        SharedKernel.Caching.Testing FakeCacheService (stampede-faithful: per-key gate + post-gate re-check),
-            FakeTenantCacheKeyProvider. Assert FactoryInvocationCount for hit/miss.
-FORBIDDEN   Constructing the behaviors (internal). Interpolating a whole cache key. Leaving a caller-dependent query
-            at Tenant scope. Implementing ICacheableQuery on a command, or IInvalidatesCache on a query.
-```
-
-## Compatibility and guarantees
-
-- **Public API is tracked** with `Microsoft.CodeAnalysis.PublicApiAnalyzers`, and every public member is documented;
-  the build fails on an undocumented member or an unrecorded API change.
-- **Failures are never cached**, and a cached entry is never a `Result` — both covered by tests against a real
-  FusionCache over a shared distributed cache.
-- **Scope isolation is tested, not asserted:** one tenant cannot read another's entry, one caller cannot read
-  another's, and a missing identity caches nothing.
-- **Stampede semantics are pinned against a real cache.** One test proves the handler runs exactly once for
-  concurrent callers on a hit path; another proves each caller gets its own failure on the skip path. The failure
-  path depends on a skipped factory value not being broadcast to waiters, so that contract is held in place by a
-  test rather than by a comment.
-- **Eviction follows the commit**, proved end to end through a real `ServiceCollection`, the real kernel pipeline and
-  a real dispatch — including an independent cross-domain lock in `00.Governance`.
-- **Thread-safe.** The behaviors hold no mutable state; per-request state lives on the stack.
-
-Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel).
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
+[Application domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/05.Application/README.md) ·
+[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

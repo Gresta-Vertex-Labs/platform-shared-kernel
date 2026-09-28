@@ -2,8 +2,9 @@
 
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
-![Delivery: at most once](https://img.shields.io/badge/delivery-at%20most%20once-orange)
+![Tier: Adapter](https://img.shields.io/badge/tier-Adapter-6f42c1)
 ![Public API: tracked](https://img.shields.io/badge/public%20API-tracked-informational)
+![Delivery: at most once](https://img.shields.io/badge/delivery-at%20most%20once-orange)
 
 > **Redis Pub/Sub for loss-tolerant, in-the-moment signals between service instances: text or JSON messages,
 > independent disposable subscriptions that handle messages in order, restored automatically after a reconnect.**
@@ -11,7 +12,7 @@
 **At most once, not durable.** A message reaches only the subscribers connected when it is published. Use this package
 for hints that are harmless to miss, such as "reload your price list" or "a user's presence changed". Work that must
 happen belongs in [`SharedKernel.Messaging`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/07.Messaging/README.md),
-which has an outbox, retries and dead-lettering. Cache invalidation needs no Pub/Sub at all: the cache backplane of
+which has an outbox, retries and dead-lettering. Cache invalidation needs no Pub/Sub at all: the backplane of
 [`SharedKernel.Caching.Redis`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/02.Caching/SharedKernel.Caching.Redis/README.md)
 already reaches every instance.
 
@@ -30,27 +31,24 @@ already reaches every instance.
 - [Quick start](#quick-start)
 - [How it works](#how-it-works)
 - [Recipes](#recipes)
-  - [1. Subscribe for the lifetime of the host](#1-subscribe-for-the-lifetime-of-the-host)
-  - [2. Publish a typed signal](#2-publish-a-typed-signal)
-  - [3. Keep slow work out of the handler](#3-keep-slow-work-out-of-the-handler)
-  - [4. Stop a subscription from inside its handler](#4-stop-a-subscription-from-inside-its-handler)
-- [Logging](#logging)
 - [Reference](#reference)
+- [Testing](#testing)
 - [Pitfalls](#pitfalls)
 - [Design decisions](#design-decisions)
-- [AI quick reference](#ai-quick-reference)
-- [Compatibility and guarantees](#compatibility-and-guarantees)
 
 ## Install
 
-```shell
-dotnet add package SharedKernel.Caching.Redis.PubSub
+```xml
+<PackageReference Include="SharedKernel.Caching.Redis.PubSub" />
 ```
+
+The version comes from your central `SharedKernelVersion` property — every SharedKernel package ships at the same
+version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel#using-the-packages).
 
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
-| Tier | Adapter |
+| Tier | Adapter — reference it from your **Infrastructure** project |
 | Depends on | `SharedKernel.Caching.Redis.Core`, `SharedKernel.Primitives` |
 | Namespaces | `SharedKernel.Caching.Redis.PubSub` (contract), `SharedKernel.Caching.Redis.PubSub.Extensions` (registration) |
 
@@ -65,7 +63,23 @@ builder.Services
     .AddRedisChannelService();
 ```
 
+```json
+{
+  "SharedKernel": {
+    "Caching": {
+      "Redis": { "ConnectionString": "redis:6379" }
+    }
+  }
+}
+```
+
+The connection settings (TLS, timeouts) belong to
+[`SharedKernel.Caching.Redis.Core`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/02.Caching/SharedKernel.Caching.Redis.Core/README.md);
+this package has no options of its own.
+
 ```csharp
+using SharedKernel.Caching.Redis.PubSub;
+
 // Instance A
 await channels.PublishAsync("pricing:price-list-changed", "EUR", ct);
 
@@ -97,11 +111,9 @@ sequenceDiagram
     Sub->>App: cancel handler token, wait for a running handler
 ```
 
-_Each subscription owns a queue on the shared connection and a loop that awaits the handler for one message before
-reading the next. Disposing it removes only that queue._
-
-- **Independent subscriptions.** Each `SubscribeAsync` call creates its own queue. Every subscription on a channel
-  receives every message; disposing one leaves the others running.
+- **At most once.** No message is stored, retried or delivered twice to one subscription.
+- **Independent subscriptions.** Each `SubscribeAsync` call creates its own queue on the shared connection. Every
+  subscription on a channel receives every message; disposing one leaves the others running.
 - **Order.** Within a subscription, messages are handled one at a time in the order Redis delivered them. Separate
   subscriptions run concurrently.
 - **Backlog.** Messages that arrive while a handler runs wait in that subscription's in-memory queue, without a limit.
@@ -110,17 +122,15 @@ reading the next. Disposing it removes only that queue._
 - **Handler failures.** An exception from the handler is logged (2500) and the next message is handled. A JSON message
   that does not deserialize is logged (2501) and skipped.
 - **A `null` message.** For a reference type or a nullable value type, a message whose JSON is the literal `null`
-  deserializes successfully and reaches the typed handler as `null` (the default of `T`), even though the handler's
-  parameter is declared non-nullable. For a non-nullable value type it does not deserialize and is skipped.
+  reaches the typed handler as `null`, even though the parameter is declared non-nullable. For a non-nullable value
+  type it does not deserialize and is skipped.
 - **Disposal.** `DisposeAsync` unsubscribes the queue, cancels the token passed to the handler and waits for a running
   handler to finish, unless it is called from inside that handler. Messages still queued may be dropped. Disposal is
   idempotent.
 - **Channels are literal names**, never patterns, and are global to the Redis server: Pub/Sub ignores database numbers.
 - **Publishing** returns how many client connections received the message; several subscriptions on one connection
-  count once. On Redis Cluster, only connections to
-  the same node are counted.
-- **Failures** while publishing or subscribing surface as `RedisException` (including `RedisConnectionException` while
-  disconnected with the default fail-fast setting) or `TimeoutException`.
+  count once. On Redis Cluster, only connections to the same node are counted.
+- **Shared connection only.** No connection of its own; TLS and timeouts come from `AddRedisConnection`.
 
 ## Recipes
 
@@ -170,7 +180,7 @@ await using IAsyncDisposable subscription = await channels.SubscribeAsync(
     ct);
 ```
 
-Here `hub.BroadcastPresenceAsync` returns `ValueTask`. Put the service, and the tenant where the signal belongs to one,
+Here `hub.BroadcastPresenceAsync` returns `ValueTask`. Put the service, and the tenant when the signal belongs to one,
 in the channel name.
 
 ### 3. Keep slow work out of the handler
@@ -206,19 +216,6 @@ subscription = await channels.SubscribeAsync(
     ct);
 ```
 
-## Logging
-
-Category `SharedKernel.Caching.Redis.PubSub.RedisChannelService`. Events carry the channel name and message type, never
-the message body.
-
-| Event id | Level | Event |
-| --- | --- | --- |
-| 2500 | Error | Handler for `{Channel}` failed; the subscription continues with the next message |
-| 2501 | Warning | Message on `{Channel}` is not a valid `{MessageType}`; it was skipped |
-| 2502 | Warning | Unsubscribing from `{Channel}` failed |
-
-The exception attached to 2500 is whatever your handler threw; keep message contents out of your own exception messages.
-
 ## Reference
 
 ### Registration
@@ -236,7 +233,7 @@ An `IServiceCollection` extension; requires `AddRedisConnection` first and is id
 | `PublishAsync(channel, message, ct)` | Publishes a text message; returns the receiver count |
 | `PublishAsync<T>(channel, message, typeInfo, ct)` | Serializes with `typeInfo`, then publishes |
 | `SubscribeAsync(channel, handler, ct)` | Subscribes `Func<string, CancellationToken, ValueTask>`; returns the subscription |
-| `SubscribeAsync<T>(channel, typeInfo, handler, ct)` | Deserializes each message with `typeInfo`; skips messages that do not deserialize; a JSON `null` reaches the handler as `null` |
+| `SubscribeAsync<T>(channel, typeInfo, handler, ct)` | Deserializes each message with `typeInfo`; skips messages that do not deserialize |
 
 The token passed to `PublishAsync` and `SubscribeAsync` is checked before the command is sent. The token passed to a
 handler is cancelled when its subscription is disposed.
@@ -248,8 +245,38 @@ handler is cancelled when its subscription is disposed.
 | `ArgumentNullException` | Registration: `services` is `null`. Calls: `message`, `typeInfo` or `handler` is `null` |
 | `ArgumentException` | The channel name is null or whitespace |
 | `InvalidOperationException` | Registration: `AddRedisConnection` has not been called |
-| `RedisException`, `TimeoutException` | Redis failed while publishing or subscribing |
+| `RedisException`, `TimeoutException` | Redis failed while publishing or subscribing (`RedisConnectionException` while disconnected with fail-fast) |
 | `OperationCanceledException` | The token was cancelled before the command was sent |
+
+### Logging
+
+Category `SharedKernel.Caching.Redis.PubSub.RedisChannelService`. Events carry the channel name and message type, never
+the message body.
+
+| Event id | Level | Event |
+| --- | --- | --- |
+| 2500 | Error | Handler for `{Channel}` failed; the subscription continues with the next message |
+| 2501 | Warning | Message on `{Channel}` is not a valid `{MessageType}`; it was skipped |
+| 2502 | Warning | Unsubscribing from `{Channel}` failed |
+
+The exception attached to 2500 is whatever your handler threw; keep message contents out of your own exception messages.
+
+### Health
+
+No probe of its own: the `redis` readiness probe registered by `AddRedisConnection` reports the shared connection.
+
+## Testing
+
+Reference [`SharedKernel.Caching.Redis.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/16.Testing/SharedKernel.Caching.Redis.Testing/README.md)
+from your test project and call `services.AddFakeRedisServices()` (namespace `SharedKernel.Testing.Caching`); no Redis
+and no `AddRedisConnection` needed.
+
+`FakeRedisChannelService` delivers in-process with the production semantics — independent subscriptions, one message at
+a time in publish order, disposal cancels the handler token. A publish from the test flow has run every handler by the
+time the `await` completes. Assert with `PublishedMessages`, `GetPublishedMessages(channel)`,
+`GetPublishedMessages<T>(channel, typeInfo)`, `IsSubscribed(channel)`, `GetSubscriptionCount(channel)`,
+`HandlerExceptions` and `SkippedMessages`; set `SimulateFailure = true` to make calls throw `TimeoutException`. Its
+receiver count is the number of subscriptions, not connections.
 
 ## Pitfalls
 
@@ -262,48 +289,27 @@ handler is cancelled when its subscription is disposed.
 | Do slow work inside the handler | Hand it to a bounded queue or background worker | Messages queue in memory without a limit behind a slow handler |
 | Forget to dispose subscriptions | `await using`, or dispose in `StopAsync` | Undisposed subscriptions keep receiving and running handlers |
 | Resubscribe on `ConnectionRestored` yourself | Do nothing | The connection restores subscriptions; resubscribing duplicates every delivery |
-| Put secrets or personal data in messages | Send an id and let the subscriber load the data | Redis stores nothing, but every subscriber of the channel, and anyone able to subscribe to it, receives the message as sent |
+| Put secrets or personal data in messages | Send an id and let the subscriber load the data | Every subscriber of the channel, and anyone able to subscribe to it, receives the message as sent |
 
 ## Design decisions
 
-**Why a queue per subscription?** A handler registered directly on the channel shared one callback list: subscribing a
-second handler left the first active, and unsubscribing removed only the second. A queue per subscription gives each
-subscriber its own ordered delivery and lets disposal remove exactly that subscriber.
+**Why a queue per subscription?** A handler registered directly on the channel shares one callback list: unsubscribing
+one handler cannot be told apart from unsubscribing another. A queue per subscription gives each subscriber its own
+ordered delivery and lets disposal remove exactly that subscriber.
 
 **Why rely on StackExchange.Redis to restore subscriptions?** The connection already re-subscribes after a reconnect.
-Replaying subscriptions on `ConnectionRestored` as well registered every handler twice, so every message was handled
-twice after each reconnect.
+Replaying subscriptions on `ConnectionRestored` as well would register every handler twice, so every message would be
+handled twice after each reconnect.
 
 **Why a disposable instead of `UnsubscribeAsync(channel)`?** Unsubscribing by channel name cannot say which of several
 subscribers is leaving. The returned handle can.
 
-**Why no health property?** Connection health belongs to the shared connection:
-the `redis` readiness probe registered by `SharedKernel.Caching.Redis.Core`'s `AddRedisConnection` reports it for every Redis package at once.
-
 **Why does this stay in `02.Caching` instead of `07.Messaging`?** Its contract is deliberately weaker than messaging:
 no durability, no retries, no ordering across restarts. Placing it beside durable messaging would invite code to
-assume guarantees it does not have.
+assume guarantees it does not have. The `SK0007` analyzer flags Pub/Sub use in messaging code.
 
-## AI quick reference
+---
 
-```text
-REGISTER    builder.Services.AddRedisConnection(builder.Configuration).AddRedisChannelService();   // no connection string
-PUBLISH     long n = await channels.PublishAsync("svc:tenant:{t}:signal", "text", ct);
-            await channels.PublishAsync(channel, value, Ctx.Default.MyEvent, ct);
-SUBSCRIBE   await using IAsyncDisposable s = await channels.SubscribeAsync(channel, (msg, token) => HandleAsync(msg, token), ct);
-            await channels.SubscribeAsync(channel, Ctx.Default.MyEvent, (evt, token) => HandleAsync(evt, token), ct);
-            Long-lived: subscribe in IHostedService.StartAsync, dispose in StopAsync.
-SEMANTICS   At most once; not durable; messages during disconnect are lost; per-subscription ordered, one at a time;
-            handler exceptions logged (2500) and skipped; bad JSON logged (2501) and skipped; JSON null -> handler gets null (check it);
-            restored after reconnect automatically.
-NEVER       Work that must happen (use SharedKernel.Messaging); cache invalidation (backplane does it); manual resubscribe;
-            slow handlers; secrets in messages; generic channel names.
-```
-
-## Compatibility and guarantees
-
-- **Public API is tracked** with `Microsoft.CodeAnalysis.PublicApiAnalyzers`, and every public member is documented.
-- **At most once.** No message is delivered twice to one subscription by this package; none is stored or retried.
-- **Ordered per subscription.** Messages to one subscription are handled sequentially in delivery order.
-- **Isolated subscriptions.** Disposing a subscription affects no other subscription on the same channel.
-- **Shared connection only.** No connection of its own; TLS and timeouts come from `AddRedisConnection`.
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
+[Caching domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/02.Caching/README.md) ·
+[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

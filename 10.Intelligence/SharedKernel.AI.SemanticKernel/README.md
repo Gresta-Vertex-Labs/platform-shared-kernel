@@ -1,26 +1,37 @@
 # SharedKernel.AI.SemanticKernel
 
-The LLM orchestration provider for `SharedKernel.AI.Abstractions`. Implements `IEmbeddingGenerator` and `ISemanticKernel` on top of `Microsoft.SemanticKernel`'s OpenAI connectors, plus declares SemanticKernel-exclusive contracts unreachable from a Qdrant-only composition root. Adapter tier: references `SharedKernel.AI.Abstractions`, `SharedKernel.Primitives`, `SharedKernel.Configuration` and `Microsoft.SemanticKernel`.
+[![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
+![Tier: Adapter](https://img.shields.io/badge/tier-Adapter-6f42c1)
+![Semantic Kernel: 1.78](https://img.shields.io/badge/Semantic%20Kernel-1.78-5C2D91)
+![Retries: opt-in only](https://img.shields.io/badge/retries-opt--in%20only-orange)
 
-Application code should inject the neutral `SharedKernel.AI.Abstractions` interfaces — never `Microsoft.SemanticKernel`'s `Kernel`, `IChatCompletionService`, or an `OpenAIClient` type directly.
+> **The embedding and chat-completion provider for `SharedKernel.AI.Abstractions`, over any OpenAI-compatible
+> endpoint. It reports token usage on every call, hands tool calls back to you, and never retries or caches a
+> completion unless you ask.**
 
-## `ISemanticKernel` never executes tools, never retries by default, and never caches completions
+| You get | So that |
+| --- | --- |
+| `AddSharedKernelSemanticKernel(configuration).Build()` | One call wires embeddings and chat completion, validated at startup |
+| `IEmbeddingGenerator` on OpenAI's `EmbeddingClient` | Every embedding carries its model id, dimension and real token usage |
+| `ISemanticKernel` on Semantic Kernel's `IChatCompletionService` | Completions and streaming with token usage and finish reason |
+| Tools offered with auto-invoke off | The model can request a tool; your code decides whether and how to run it |
+| `.WithBoundedRetry(maxAttempts, baseDelay)` | Retries happen only when you opt in, only on 429 and 5xx, never on a stream |
+| `ICompletionProviderDescriptor.ValidateContextWindow` | An oversized prompt is rejected before it is sent and billed |
+| One `OpenAIClient` over a named `IHttpClientFactory` client | Embeddings and chat share one connection pipeline |
+| `IKernelPluginAccessor` | Semantic Kernel plugins stay available without leaking into application contracts |
 
-This is the single most important thing to understand before using this package:
+## Contents
 
-- **`ISemanticKernel` never executes a tool call.** When a completion's `FinishReason` is `ToolCallsRequested`, `SemanticKernelOrchestrator` reports the requested `ToolCallRequest` list back to the caller and stops — it never invokes `Microsoft.SemanticKernel`'s own auto-invoke machinery. Tool calls are offered to the model via `ToolCallBehavior.EnableFunctions(..., autoInvoke: false)` specifically so the model can request one without this package ever running it. The *caller* executes each `ToolCallRequest` against its own business logic, builds a `ToolCallResult`, appends `.ToMessage()` to the message list, and issues a follow-up `CompleteAsync` call.
-- **This package never retries a completion by default.** A retry re-bills the call and re-rolls a non-deterministic output — silently retrying would both cost money the caller did not authorize and potentially return a different answer than the one that "failed." The **only** retry path anywhere in this package is the explicit, bounded, opt-in `.WithBoundedRetry(maxAttempts, baseDelay)` builder call, and even then it applies **only** to `CompleteAsync` — never to `CompleteStreamingAsync` (retrying a partially-streamed response would duplicate already-yielded content), and never to a genuinely non-transient failure (the retry check inspects the real HTTP status code — 429 or 5xx only — never the generic mapped `Error.Type`, so a 400 Bad Request is never retried even though its `Error` factory happens to share a type with a transient fault).
-- **This package never caches a completion.** `CompleteAsync` always dispatches a fresh call to the endpoint. Nothing in this domain references a caching package, and silently serving a stale completion the caller did not explicitly ask for would violate Domain Invariant #4 (non-determinism is a property of the contract, not a defect to hide).
-
-## Included Types
-
-- `SemanticKernelEmbeddingGenerator` — the neutral `IEmbeddingGenerator` implementation, built directly on `OpenAI.Embeddings.EmbeddingClient` rather than Semantic Kernel's own `ITextEmbeddingGenerationService` (which carries no token-usage metadata at all — see the note below)
-- `SemanticKernelOrchestrator` — the neutral `ISemanticKernel` implementation, built on Semantic Kernel's `IChatCompletionService`
-- `SemanticKernelProviderDescriptor` — the zero-I/O `ICompletionProviderDescriptor` singleton, including `ValidateContextWindow`
-- `IKernelPluginAccessor` — **SemanticKernel-exclusive**: read-only access to the underlying `Kernel`'s plugin/function registry
-- `IKernelRawClientAccessor` — **SemanticKernel-exclusive, triple-gated**: the last-resort raw `OpenAIClient` escape hatch
-- `SemanticKernelOptions` — Options-pattern configuration, validated at startup
-- `AddSharedKernelSemanticKernel(...)` — the fluent DI builder, including the opt-in `.WithBoundedRetry(...)`
+- [Install](#install)
+- [Quick start](#quick-start)
+- [How it works](#how-it-works)
+- [Recipes](#recipes)
+- [Configuration](#configuration)
+- [Reference](#reference)
+- [Testing](#testing)
+- [Pitfalls](#pitfalls)
+- [Design decisions](#design-decisions)
 
 ## Install
 
@@ -28,71 +39,237 @@ This is the single most important thing to understand before using this package:
 <PackageReference Include="SharedKernel.AI.SemanticKernel" />
 ```
 
-Versions come from the consumer's single `SharedKernelVersion`. This provider registers no readiness probe: checking an LLM endpoint honestly means a real, billed completion call.
+The version comes from your central `SharedKernelVersion` property. Every SharedKernel package ships at the same
+version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel#using-the-packages).
 
-## Configuration
+| Requirement | Value |
+| --- | --- |
+| Target framework | `net10.0` |
+| Tier | Adapter: reference it from your **Infrastructure** project |
+| Depends on | `SharedKernel.AI.Abstractions`, `SharedKernel.Primitives`, `SharedKernel.Configuration`, `Microsoft.SemanticKernel` 1.78.0 (+ `Connectors.OpenAI`), `OpenAI` 2.10.0, `Microsoft.Extensions.Http` |
+| Namespaces | `SharedKernel.AI.SemanticKernel.Extensions` (registration), `.Options`, `.Plugins`, `.Raw` |
+
+## Quick start
+
+```csharp
+using SharedKernel.AI.SemanticKernel.Extensions;
+
+builder.Services
+    .AddSharedKernelSemanticKernel(builder.Configuration)   // Intelligence:SemanticKernel
+    .Build();
+```
 
 ```json
 {
   "Intelligence": {
     "SemanticKernel": {
-      "ApiKey": "sk-...",
-      "Endpoint": null,
-      "Organization": null,
+      "ApiKey": "…",
       "ChatModelId": "gpt-4o-mini",
       "EmbeddingModelId": "text-embedding-3-small",
-      "EmbeddingDimension": 1536,
-      "ContextWindowTokens": 128000,
-      "MaxOutputTokens": 4096,
-      "MaxEmbeddingBatchSize": 2048,
-      "HttpTimeoutSeconds": 60
+      "EmbeddingDimension": 1536
     }
   }
 }
 ```
 
-| Property | Required | Default | Notes |
-| --- | :---: | --- | --- |
-| `ApiKey` | yes | — | Credential for the completion/embedding endpoint |
-| `Endpoint` | no | `null` | Custom OpenAI-compatible endpoint; `null` uses the default OpenAI endpoint |
-| `Organization` | no | `null` | Optional organization identifier |
-| `ChatModelId` | yes | — | Chat/completion model identifier |
-| `EmbeddingModelId` | yes | — | Embedding model identifier |
-| `EmbeddingDimension` | no | `1536` | Vector dimension the embedding model produces |
-| `ContextWindowTokens` | no | `128000` | Backs `ICompletionProviderDescriptor.ValidateContextWindow` |
-| `MaxOutputTokens` | no | `4096` | The active model's maximum output tokens per call |
-| `MaxEmbeddingBatchSize` | no | `2048` | Ceiling checked before any I/O — `IntelligenceErrors.BatchSizeExceeded` |
-| `HttpTimeoutSeconds` | no | `60` | HTTP client timeout |
+```csharp
+using SharedKernel.AI.Abstractions.Abstractions;
+using SharedKernel.Primitives.Results;
 
-Misconfiguration fails at `IHost.StartAsync()`, naming the missing property — never a silent default, never a first-call surprise.
+public sealed class Summarizer(ISemanticKernel kernel)
+{
+    public async Task<Result<string>> SummarizeAsync(string text, CancellationToken ct)
+    {
+        var result = await kernel.CompleteAsync(new CompletionRequest
+        {
+            Messages =
+            [
+                new ChatMessage { Role = ChatRole.System, Content = "Summarize in two sentences." },
+                new ChatMessage { Role = ChatRole.User, Content = text },
+            ],
+            MaxOutputTokens = 200,
+        }, ct);
 
-## DI Registration
+        return result.IsSuccess
+            ? Result<string>.Success(result.Value.Message.Content)
+            : Result<string>.Failure(result.Error);
+    }
+}
+```
+
+`result.Value.TokenUsage` tells you what the call cost.
+
+## How it works
+
+```mermaid
+flowchart LR
+    R[CompletionRequest] --> O[SemanticKernelOrchestrator]
+    O --> C[IChatCompletionService]
+    C --> H[OpenAIClient<br/>named HttpClient]
+    H -->|ClientResultException| M{status}
+    M -- 429 / 5xx and retry opted in --> O
+    M -- otherwise --> E[IntelligenceErrors]
+    C -->|ToolCallsRequested| T[ToolCalls returned to caller]
+```
+
+- **Embeddings.** `SemanticKernelEmbeddingGenerator` calls OpenAI's `EmbeddingClient` directly, because Semantic
+  Kernel's embedding service returns no token usage. `EmbedManyAsync` rejects an empty list with
+  `intelligence.invalid_query` and more than `MaxEmbeddingBatchSize` texts with `intelligence.batch_size_exceeded`,
+  both before I/O.
+- **Completions.** `CompletionRequest.ModelId` defaults to `ChatModelId`. Token usage and finish reason come from the
+  connector's response metadata. `CompleteStreamingAsync` yields `CompletionChunk`s and throws
+  `IntelligenceStreamException` on a mid-stream failure.
+- **Tools.** Each `ToolDefinition` is offered to the model with `ToolCallBehavior.EnableFunctions(…, autoInvoke:
+  false)`. A `ToolCallsRequested` result carries `ToolCalls`; you run them and send a follow-up request.
+- **Retries.** None by default. With `.WithBoundedRetry(maxAttempts, baseDelay)`, `CompleteAsync` retries a
+  `ClientResultException` with status 429 or ≥ 500, waiting `baseDelay × 2^(attempt − 1)` between attempts, up to
+  `maxAttempts` attempts in total. A 4xx other than 429 is never retried, and streaming is never retried.
+- **Context window.** `ICompletionProviderDescriptor.ValidateContextWindow(estimatedTokens)` compares your estimate
+  with `ContextWindowTokens`. `CompleteAsync` does not estimate on its own.
+- **Transport.** One `OpenAIClient` singleton uses the named `HttpClient` `SharedKernel.AI.SemanticKernel` (timeout
+  `HttpTimeoutSeconds`), and `Endpoint` when set. Nothing calls `new HttpClient()`.
+
+## Recipes
+
+### 1. Opt in to bounded retries
 
 ```csharp
-services
-    .AddSharedKernelSemanticKernel(configuration)
-    // Opt-in only — applies to CompleteAsync alone, never CompleteStreamingAsync, and only retries
-    // real 429/5xx failures, never a permanent 4xx:
-    // .WithBoundedRetry(maxAttempts: 3, baseDelay: TimeSpan.FromMilliseconds(500))
-    // Opt-in only — logs a startup Warning, and THE RAW CLIENT BYPASSES TENANT SCOPING (this
-    // provider has no vector-collection tenant scope to bypass, but still bypasses this package's
-    // own retry/observability seam):
-    // .AllowRawClientAccess()
+builder.Services
+    .AddSharedKernelSemanticKernel(builder.Configuration)
+    .WithBoundedRetry(maxAttempts: 3, baseDelay: TimeSpan.FromMilliseconds(500))
     .Build();
 ```
 
-Registers `IEmbeddingGenerator`, `ISemanticKernel`, and `ICompletionProviderDescriptor` as singletons — the underlying `OpenAIClient` is built once from a named `IHttpClientFactory` client (`HttpClientPipelineTransport`) and is thread-safe.
+Each retry is billed again and can return a different answer. `maxAttempts` below 1 throws
+`ArgumentOutOfRangeException` when `WithBoundedRetry` is called.
 
-## Why the embedding generator is built directly on `OpenAI.Embeddings.EmbeddingClient`
+### 2. Use an OpenAI-compatible gateway
 
-`Microsoft.SemanticKernel.Embeddings.ITextEmbeddingGenerationService.GenerateEmbeddingsAsync` returns a bare `IList<ReadOnlyMemory<float>>` with **no token-usage metadata attached anywhere** — confirmed by reflecting the interface. Domain Invariant #5 requires real token usage unconditionally on every `EmbeddingResult`/`EmbeddingBatchResult`, so `SemanticKernelEmbeddingGenerator` drops one level below Semantic Kernel's own connector and talks to `OpenAI.Embeddings.EmbeddingClient` directly, whose `OpenAIEmbeddingCollection.Usage` genuinely reports `InputTokenCount`/`TotalTokenCount`. The chat/completion path does **not** need this workaround — Semantic Kernel's `ChatMessageContent.Metadata["Usage"]`/`["FinishReason"]` genuinely carry real connector metadata, so `SemanticKernelOrchestrator` uses `IChatCompletionService` directly.
+Set `Intelligence:SemanticKernel:Endpoint` to the gateway's base URI (a self-hosted or Azure-compatible endpoint).
+Leave it unset for OpenAI itself.
 
-## The seam rule — SemanticKernel-exclusive contracts never leak into `.Abstractions`
+### 3. Validate a prompt before sending it
 
-`IKernelPluginAccessor` and `IKernelRawClientAccessor` are declared **only** in this package. Referencing either takes a compile-time dependency on `SharedKernel.AI.SemanticKernel` — a composition root wired against `SharedKernel.AI.Qdrant` alone cannot even name these types, so swapping the orchestration provider surfaces as a **build error**, never a runtime `GetRequiredService` failure discovered in production.
+```csharp
+public sealed class Guarded(ISemanticKernel kernel, ICompletionProviderDescriptor limits)
+{
+    public async Task<Result<CompletionResult>> AskAsync(CompletionRequest request, int estimatedTokens, CancellationToken ct)
+    {
+        var fits = limits.ValidateContextWindow(estimatedTokens);   // intelligence.context_window_exceeded
+        return fits.IsFailure
+            ? Result<CompletionResult>.Failure(fits.Error)
+            : await kernel.CompleteAsync(request, ct);
+    }
+}
+```
 
-`IKernelRawClientAccessor` is additionally triple-gated: registered only when the composition root calls `.AllowRawClientAccess()`, that call logs a startup `Warning`, and its own XML doc states in capitals that the hatch bypasses this package's own scoping and observability seam.
+### 4. Use Semantic Kernel plugins
 
-## Package
+Inject `IKernelPluginAccessor` and use its `Kernel`: a separate `Microsoft.SemanticKernel.Kernel` wired to the same
+chat-completion service. Plugins invoked there are ordinary Semantic Kernel execution and never affect
+`ISemanticKernel`. Referencing this type ties that code to this package.
 
-Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) — see [10.Intelligence/CLAUDE.md](../CLAUDE.md) for the full interface contracts and implementation rules.
+## Configuration
+
+Section `Intelligence:SemanticKernel` (`SemanticKernelOptions.SectionName`), validated when the host starts. The
+`AddSharedKernelSemanticKernel(IConfigurationSection)` overload binds any other section.
+
+| Key | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `Intelligence:SemanticKernel:ApiKey` | `string` | — (required) | API key for the endpoint |
+| `Intelligence:SemanticKernel:ChatModelId` | `string` | — (required) | Chat model; the default for `CompletionRequest.ModelId` |
+| `Intelligence:SemanticKernel:EmbeddingModelId` | `string` | — (required) | Embedding model; becomes `IEmbeddingGenerator.ModelId` |
+| `Intelligence:SemanticKernel:EmbeddingDimension` | `int` | `1536` | Dimension the embedding model produces (1–1000000) |
+| `Intelligence:SemanticKernel:Endpoint` | `Uri?` | `null` | OpenAI-compatible endpoint; `null` uses OpenAI |
+| `Intelligence:SemanticKernel:Organization` | `string?` | `null` | Bound and validated, but not currently passed to the client |
+| `Intelligence:SemanticKernel:ContextWindowTokens` | `int` | `128000` | Backs `ValidateContextWindow` (1–10000000) |
+| `Intelligence:SemanticKernel:MaxOutputTokens` | `int` | `4096` | Reported as `ICompletionProviderDescriptor.MaxOutputTokens` (1–1000000) |
+| `Intelligence:SemanticKernel:MaxEmbeddingBatchSize` | `int` | `2048` | Most texts per `EmbedManyAsync` call (1–100000) |
+| `Intelligence:SemanticKernel:HttpTimeoutSeconds` | `int` | `60` | Timeout of the named `HttpClient` (1–600) |
+
+## Reference
+
+### Registration
+
+| Method | Registers |
+| --- | --- |
+| `AddSharedKernelSemanticKernel(IConfiguration)` / `(IConfigurationSection)` | `SemanticKernelOptions`, the named `HttpClient`, `OpenAIClient` (singleton); returns `SemanticKernelBuilder` |
+| `SemanticKernelBuilder.WithBoundedRetry(int maxAttempts, TimeSpan baseDelay)` | The retry policy for `CompleteAsync` |
+| `SemanticKernelBuilder.AllowRawClientAccess()` | `IKernelRawClientAccessor` (singleton) at `Build()` |
+| `SemanticKernelBuilder.Build()` | `IEmbeddingGenerator`, `IChatCompletionService`, `ISemanticKernel`, `ICompletionProviderDescriptor`, `IKernelPluginAccessor` (singletons) |
+
+`ICompletionProviderDescriptor.ProviderName` is `semantickernel`.
+
+### Errors
+
+| Failure | Code |
+| --- | --- |
+| HTTP 401, 403 | `intelligence.unauthorized` |
+| HTTP 404 | `intelligence.model_not_found` |
+| HTTP 429 | `intelligence.rate_limited` (no retry-after value) |
+| HTTP ≥ 500 | `intelligence.engine_fault` |
+| Any other status or exception | `intelligence.completion_failed` |
+| Empty `EmbedManyAsync` input | `intelligence.invalid_query` |
+| More than `MaxEmbeddingBatchSize` texts | `intelligence.batch_size_exceeded` |
+| Estimate above `ContextWindowTokens` | `intelligence.context_window_exceeded` |
+
+### Logging
+
+| Event id | Level | Event |
+| --- | --- | --- |
+| 10300 | Information | Provider configured with chat and embedding model ids |
+| 10301 | Debug | Texts embedded, with billed token count |
+| 10302 | Warning | Embedding batch above the ceiling |
+| 10303 | Debug | Completion finished, with finish reason and billed tokens |
+| 10304 | Debug | Streaming completion started |
+| 10305 | Warning | Request rejected before any I/O (declared; not emitted by the current code) |
+| 10306 | Warning | Estimated prompt above the context window (declared; not emitted by the current code) |
+| 10307 | Error | Operation faulted |
+| 10308 | Warning | Raw client access enabled |
+| 10309 | Warning | Retrying a completion (attempt, maximum, error code) |
+
+Prompts, completions and the API key are never logged.
+
+### Health
+
+No readiness probe, by design: the only honest check of an LLM endpoint is a real, billed completion.
+
+## Testing
+
+In a service's tests, use
+[`SharedKernel.AI.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/16.Testing/SharedKernel.AI.Testing/README.md):
+`services.AddInMemorySemanticKernel()` and `services.AddInMemoryEmbeddingGenerator(modelId, dimension)`. Script
+answers with `InMemorySemanticKernel.EnqueueResponse`, `EnqueueStreamingResponse` or `EnqueueStreamingFailure`, and
+assert on `SentRequests`. Never call a paid endpoint by default and never assert on generated text. A host with this
+registration starts without network access, because the client makes no call until it is used.
+
+## Pitfalls
+
+| Don't | Do | Why |
+| --- | --- | --- |
+| Expect `CompleteAsync` to run tools | Execute `ToolCalls` yourself and append `ToolCallResult.ToMessage()` | Tools are offered with auto-invoke off |
+| Wrap `CompleteAsync` in your own retry loop | Use `.WithBoundedRetry(...)` if you need retries at all | Your loop would also retry permanent 4xx failures and multiply cost |
+| Retry a stream after it failed | Surface the failure, or start a new request knowingly | Content already yielded would be duplicated |
+| Change `EmbeddingModelId` without re-embedding | Re-embed into a new collection and cut over | Vector collections reject the new model id with `embedding_model_mismatch` |
+| Rely on `Organization` | Scope access with the API key or the gateway | The value is not passed to the OpenAI client today |
+| Inject `Kernel`, `IChatCompletionService` or `OpenAIClient` in application code | Inject `ISemanticKernel` and `IEmbeddingGenerator` | A provider swap stays a composition-root change (analyzer `SK0026`) |
+| Use `IKernelRawClientAccessor` for routine calls | Use the contracts; opt in to the raw client only as a last resort | The raw client bypasses token accounting, retry policy and error mapping |
+
+## Design decisions
+
+**Why build embeddings on `EmbeddingClient` instead of Semantic Kernel's embedding service?** Semantic Kernel's
+`ITextEmbeddingGenerationService` returns only vectors. OpenAI's `EmbeddingClient` reports input and total tokens,
+and every `EmbeddingResult` must carry real usage. Chat stays on `IChatCompletionService`, whose metadata carries
+usage and finish reason.
+
+**Why decide retries on the HTTP status and not on the error type?** A 400 and a 503 can map to errors of the same
+`ErrorType`. Only the real status separates a transient fault from a permanent one.
+
+**Why no completion cache?** A cached answer is one the caller did not ask for, and this domain may not depend on a
+cache.
+
+---
+
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
+[Intelligence domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/10.Intelligence/README.md) ·
+[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

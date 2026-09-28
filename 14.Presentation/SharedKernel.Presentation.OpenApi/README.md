@@ -1,39 +1,56 @@
 # SharedKernel.Presentation.OpenApi
 
-> **API versioning and one OpenAPI 3.1 document per version for a SharedKernel HTTP API, in two calls. The documents
-> describe what the WebApi core enforces: its error shape, which operations need a caller, and which headers they
-> require or accept.**
+[![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
+![Tier: Host](https://img.shields.io/badge/tier-Host-d73a49)
+![Public API: tracked](https://img.shields.io/badge/public%20API-tracked-informational)
 
-The add-on of
-[`SharedKernel.Presentation.WebApi`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/14.Presentation/SharedKernel.Presentation.WebApi).
-The core has no third-party dependencies; this package brings Asp.Versioning, `Microsoft.AspNetCore.OpenApi` and
-Scalar. It only describes responses; it never changes one.
+> **API versioning and one OpenAPI 3.1 document per version for a SharedKernel HTTP API, in two calls. The documents
+> describe what `SharedKernel.Presentation.WebApi` enforces — its error shape, which operations need a caller, and
+> which headers they require — and are published outside Development only by decision.**
 
 | You get | So that |
 | --- | --- |
-| API versioning: 1.0 by default and assumed when a request names none, read from the URL segment (`/v1/…`) or the `X-Api-Version` header, reported in `api-supported-versions` | Every service versions its API the same way |
-| One OpenAPI 3.1 document per version (`/openapi/v1.json`, `/openapi/v2.json`) and a Scalar reference listing them all (`/scalar`) | Clients and generators see the operations of the version they use |
-| A `default` `application/problem+json` response on every operation, referencing a `ProblemDetails` schema with `errorCode`, `traceId`, `correlationId`, `errors` and `errorCodes` | Generated clients can read every error the API returns |
-| A security requirement and 401/403 on protected operations only | The documents say which operations need a caller |
-| The `Idempotency-Key` and `If-Match` headers, required or optional, with the responses that refuse them; the `ETag` response header | Clients learn the headers the API checks and every way it refuses them |
-| Bearer, API key and mutual TLS security schemes | The reference offers the credentials the service accepts |
-| Sunset and deprecation policies: RFC 9745 `Deprecation`, RFC 8594 `Sunset` and `Link` headers, and notices in the documents | Clients are told on every response when a version goes away |
-| Documents served in Development only, unless `ExposeInProduction`; a startup warning when they are then served without authorization | An API description is published by decision, and to everyone only on purpose |
-| API versioning's own errors in the platform's problem shape | One error shape, a wrong version included |
+| API versioning: 1.0 by default and assumed when a request names none, from the URL segment (`/v1/…`) or `X-Api-Version`, reported in `api-supported-versions` | Every service versions its API the same way |
+| One OpenAPI 3.1 document per version (`/openapi/v1.json`, …) and a Scalar reference at `/scalar` | Clients and generators see the operations of the version they use |
+| A `default` `application/problem+json` response on every operation | Generated clients can read every error the API returns |
+| Security requirements and 401/403 on protected operations only | The documents say which operations need a caller |
+| `Idempotency-Key`, `If-Match` and `ETag` documented with their refusals | Clients learn the headers the API checks and every way it refuses them |
+| Bearer, API-key and mutual-TLS security schemes | The reference offers the credentials the service accepts |
+| RFC 9745 `Deprecation`, RFC 8594 `Sunset` and `Link` headers, and notices in the documents | Clients are told on every response when a version goes away |
+| Documents served in Development only, unless `ExposeInProduction` | An API description is published by decision |
+
+## Contents
+
+- [Install](#install)
+- [Quick start](#quick-start)
+- [How it works](#how-it-works)
+- [Recipes](#recipes)
+- [Configuration](#configuration)
+- [Reference](#reference)
+- [Testing](#testing)
+- [Pitfalls](#pitfalls)
 
 ## Install
 
-```shell
-dotnet add package SharedKernel.Presentation.OpenApi
+```xml
+<PackageReference Include="SharedKernel.Presentation.OpenApi" />
 ```
+
+The version comes from your central `SharedKernelVersion` property — every SharedKernel package ships at the same
+version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel#using-the-packages).
 
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
-| Tier | Host (referenced by a service's API project) |
-| Dependencies | `SharedKernel.Presentation.WebApi`, `SharedKernel.Presentation.Core`, `Asp.Versioning.Http`, `Asp.Versioning.Mvc.ApiExplorer`, `Asp.Versioning.OpenApi`, `Microsoft.AspNetCore.OpenApi`, `Scalar.AspNetCore` |
+| Tier | Host — reference it from your **Api** project |
+| Depends on | [`SharedKernel.Presentation.WebApi`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/14.Presentation/SharedKernel.Presentation.WebApi/README.md), `SharedKernel.Presentation.Core`, `Asp.Versioning.Http`, `Asp.Versioning.Mvc.ApiExplorer`, `Asp.Versioning.OpenApi`, `Microsoft.AspNetCore.OpenApi`, `Scalar.AspNetCore` |
+| Namespaces | `SharedKernel.Presentation.OpenApi` |
 
-## Use
+The WebApi core has no third-party dependencies; this add-on brings Asp.Versioning, `Microsoft.AspNetCore.OpenApi` and
+Scalar. It only describes responses; it never changes one.
+
+## Quick start
 
 ```csharp
 using SharedKernel.Application.Messaging;   // ISender
@@ -71,84 +88,53 @@ public sealed class OrderEndpoints : IEndpointModule
 }
 ```
 
-A versioned group is declared inside the module, like any other group.
+## How it works
 
-`AddSharedKernelOpenApi()` binds `SharedKernel:Presentation:OpenApi`, runs the `configure` callback after binding and
-validates the result when the host starts. It registers API versioning (1.0 by default and assumed when a request names
-none; the URL segment, then the `X-Api-Version` header; versions reported on every response), then the service's
-`Versioning` callback, the API Explorer (one group per version, named `v1`, `v2`, `v1.5`, with the version written into
-the URLs), one document per version, and the platform's problem shape for versioning's own errors. It is idempotent.
+- `AddSharedKernelOpenApi()` binds `SharedKernel:Presentation:OpenApi`, runs `configure` after binding, and validates
+  the result at host start. It registers API versioning (1.0 by default and assumed; URL segment, then
+  `X-Api-Version`), then your `Versioning` callback, the API Explorer (one group per version: `v1`, `v2`, `v1.5`),
+  one document per version, and the platform's problem shape for versioning's own errors. It is idempotent.
+- `MapSharedKernelOpenApi()` maps `/openapi/{documentName}.json` and `/scalar` (the newest non-deprecated version opens
+  first) and returns one convention builder for both. It throws `InvalidOperationException` without
+  `AddSharedKernelOpenApi()`. Outside Development it maps nothing unless `ExposeInProduction` is set (EventId 14300).
+- An endpoint that declares no version (`app.MapGet("/ping", …)`) appears in every version's document. MVC controllers
+  are documented the same way (`[ApiVersion(1.0)]`, the authorization and header attributes).
+- What each operation documents:
 
-- `MapSharedKernelOpenApi()` maps the documents at `/openapi/{documentName}.json` and the Scalar reference at
-  `/scalar`, listing every version; the newest version that is not deprecated opens first. It throws
-  `InvalidOperationException` without `AddSharedKernelOpenApi()`.
-- Outside Development it maps nothing unless `ExposeInProduction` is set ("production" here means every environment
-  but Development), and logs that at Information (14300).
-- It returns one convention builder for the documents and the reference:
-  `app.MapSharedKernelOpenApi().RequireEndpointPermission("docs.read")` protects both (the convention is
-  `SharedKernel.Presentation.Core`'s: `using SharedKernel.Presentation.Authorization;`).
-- An endpoint that declares no version, such as `app.MapGet("/ping", …)`, appears in every version's document.
-- MVC controllers are documented the same way: `[ApiVersion(1.0)]`, the authorization and header attributes, and
-  conventions applied with `app.MapControllers().RequireEndpointPermission(…)`. Actions returning typed results document
-  their success responses like minimal APIs.
+  | When the endpoint… | The operation documents |
+  | --- | --- |
+  | Always | A `default` response: `application/problem+json`, `#/components/schemas/ProblemDetails` |
+  | Has authorization metadata (or a fallback policy applies) and no `[AllowAnonymous]` | One security requirement per declared scheme (any one suffices), and 401 and 403 |
+  | Requires / accepts `Idempotency-Key` | A required / optional header parameter, and 400 |
+  | Requires `If-Match` | A required header, and 400, 412 and 428 |
+  | Accepts `If-Match` | An optional header, and 400 and 412 |
+  | Returns `OkWithETag<T>` (`ToOkWithETag`) | `ETag` on 200, and a 304 for `GET`/`HEAD` |
+  | Takes a `Paging` / `CursorPaging` parameter | `page`/`pageSize` or `cursor`/`limit` with bounds and defaults, and 400 |
 
-## What every operation documents
+  Header rules come from endpoint metadata, so the convention, the attribute and the `IdempotencyKey`/`IfMatch<T>`
+  parameters document identically. Platform responses follow the operation's own; nothing it declares is replaced.
+- The `ProblemDetails` schema lists `type`, `title`, `status`, `detail`, `instance`, `errorCode`, `traceId`,
+  `correlationId`, `errors`, `errorCodes` and the Development-only `exception`; `status`, `errorCode` and `traceId` are
+  required.
 
-| When the endpoint… | The operation documents |
-| --- | --- |
-| Always | A `default` response: `application/problem+json`, `#/components/schemas/ProblemDetails` |
-| Has authorization metadata (`RequireEndpointPermission`, `RequireRole`, `[Authorize]`, …), or no metadata while a fallback policy is set, and no `[AllowAnonymous]` | One security requirement per declared scheme (any one suffices), and 401 and 403 |
-| Requires `Idempotency-Key` | A required header parameter whose pattern admits exactly what the server accepts, and 400 |
-| Accepts `Idempotency-Key` | An optional header parameter, and 400 |
-| Requires `If-Match` | A required header parameter, and 400, 412 and 428 |
-| Accepts `If-Match` | An optional header parameter, and 400 and 412 (never 428) |
-| Returns `OkWithETag<T>` (`ToOkWithETag`) | The `ETag` header on 200, and a 304 with its `ETag` when the endpoint answers `GET` or `HEAD` |
-| Takes a `Paging` or `CursorPaging` parameter | The optional `page`/`pageSize` or `cursor`/`limit` query parameters with their bounds and defaults, and 400 |
+## Recipes
 
-**A permission declared on the command is invisible here.** The document reads endpoint metadata only, so an endpoint
-whose use case carries `[RequirePermission]` (05.Application) and declares nothing itself documents no security
-requirement and no 401/403. Give such endpoints authorization metadata — `.RequireAuthorization()` on the group, or a
-fallback policy (`AddAuthorizationBuilder().SetFallbackPolicy(...)`) — and the document shows that a caller is
-needed; the specific permission stays the use case's.
+### 1. Protect the documents outside Development
 
-The header rules come from endpoint metadata, so every way of declaring a header is documented identically: the
-convention (`RequireIdempotencyKey()`, `AcceptIfMatch()`, …), the attribute, or the `IdempotencyKey` and
-`IfMatch<TVersion>` parameters, nullable or not. A parameter is documented as its header only, never as a query value
-or a body. An endpoint declaring both headers documents one 400 naming the refusals of both. The platform's responses
-follow the operation's own, in status order, and nothing the operation already declares is replaced.
+```csharp
+using SharedKernel.Presentation.Authorization;
 
-The `ProblemDetails` schema lists `type`, `title`, `status`, `detail`, `instance`, `errorCode`, `traceId`,
-`correlationId`, `errors`, `errorCodes` and the Development-only `exception`; `status`, `errorCode` and `traceId` are
-required.
+app.MapSharedKernelOpenApi().RequireEndpointPermission("docs.read");
+// or, for documents meant for everyone:
+app.MapSharedKernelOpenApi().AllowAnonymous();
+```
 
-## Protecting the documents
+Outside Development, when neither a convention on the returned builder nor a fallback policy decides who may read the
+documents, the host warns at startup (EventId 14301). Only conventions on the returned builder count. The Scalar page
+loads documents from the browser, so a bearer-token requirement stops it: protect them with a cookie scheme or behind
+a gateway. The reference page is served without a `Content-Security-Policy` (it would stop its scripts).
 
-- Outside Development, when no convention on the builder that `MapSharedKernelOpenApi()` returned requires
-  authorization and no fallback authorization policy applies, the host logs a warning at startup (14301). Documents
-  meant for everyone say so with `app.MapSharedKernelOpenApi().AllowAnonymous()`, which silences it.
-- Only conventions on the returned builder count: documents mapped inside a protected route group still need the
-  requirement on the builder.
-- The reference page loads the documents from the browser, so a bearer-token requirement stops it from loading them.
-  Protect the documents with a scheme the browser sends by itself (a cookie), or behind a gateway.
-- The reference page is served without a `Content-Security-Policy`, which would stop its scripts; the documents keep
-  the configured one.
-
-## Security schemes
-
-| Setting | Scheme declared |
-| --- | --- |
-| `Bearer` (`true` by default) | `Bearer`: HTTP bearer, format JWT |
-| `ApiKeyHeaderName`, such as `X-Api-Key` | `ApiKey`: an API key in that header |
-| `MutualTls` (`false` by default) | `MutualTls`: a client certificate (OpenAPI 3.1 `mutualTLS`) |
-
-A protected operation lists one requirement per declared scheme, so any one of them satisfies it. With no scheme
-declared, protected operations still document 401 and 403.
-
-## Sunset and deprecation
-
-Declare the policies in the `Versioning` callback (code only; it needs `using Asp.Versioning;`). Every response of
-that version then carries the headers, and that version's document carries the notices after the configured
-description:
+### 2. Deprecate and sunset a version
 
 ```csharp
 using Asp.Versioning;
@@ -167,67 +153,64 @@ builder.AddSharedKernelOpenApi(options =>
 });
 ```
 
-```http
-Deprecation: @1782777600
-Sunset: Sun, 31 Jan 2027 00:00:00 GMT
-Link: <https://docs.example.com/orders/v1>; rel="deprecation"
-```
+Every response of version 1.0 then carries `Deprecation: @1782777600`, `Sunset: Sun, 31 Jan 2027 00:00:00 GMT` and
+`Link: <https://docs.example.com/orders/v1>; rel="deprecation"`, and its document carries the notices. The callback
+runs after the platform defaults, so it can also change the default version or the version readers.
 
-The callback runs after the platform defaults, so it can also change the default version or the version readers.
+### 3. Show that a command-protected endpoint needs a caller
 
-## Settings
+The document reads endpoint metadata only, so an endpoint whose use case carries `[RequirePermission]` and declares
+nothing itself documents no security requirement. Add `.RequireAuthorization()` on the group, or a fallback policy
+(`AddAuthorizationBuilder().SetFallbackPolicy(...)`); the specific permission stays the use case's.
 
-Bound from `SharedKernel:Presentation:OpenApi`; the full reference is in
+## Configuration
+
+Section `SharedKernel:Presentation:OpenApi` (`SharedKernelOpenApiOptions`), validated at host start. Full reference:
 [CONFIGURATION.md](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/14.Presentation/CONFIGURATION.md#sharedkernelpresentationopenapi).
 
-| Setting | Default | Meaning |
+| Key | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `SharedKernel:Presentation:OpenApi:Title` | `string` | The application name | Title of every document and of the reference page |
+| `SharedKernel:Presentation:OpenApi:Description` | `string` | — | Markdown description; deprecation and sunset notices follow it |
+| `SharedKernel:Presentation:OpenApi:Bearer` | `bool` | `true` | Declare the HTTP bearer scheme (JWT) |
+| `SharedKernel:Presentation:OpenApi:ApiKeyHeaderName` | `string` | — | Declare an API-key scheme in this header; must be a valid header name |
+| `SharedKernel:Presentation:OpenApi:MutualTls` | `bool` | `false` | Declare the mutual-TLS scheme (OpenAPI 3.1 `mutualTLS`) |
+| `SharedKernel:Presentation:OpenApi:ExposeInProduction` | `bool` | `false` | Serve the documents and the reference outside Development |
+| `Versioning` (code only) | `Action<ApiVersioningOptions>` | — | Runs after the platform's versioning defaults |
+
+## Reference
+
+| Member | Purpose |
+| --- | --- |
+| `IHostApplicationBuilder.AddSharedKernelOpenApi(Action<SharedKernelOpenApiOptions>?)` | Versioning, API Explorer, one document per version |
+| `IEndpointRouteBuilder.MapSharedKernelOpenApi()` | Maps the documents and `/scalar`; returns `IEndpointConventionBuilder` |
+| `SharedKernelOpenApiOptions` | The options above; `SectionName` |
+
+### Logging
+
+| Event id | Level | Event |
 | --- | --- | --- |
-| `Title` | The application name | Title of every document and of the reference page |
-| `Description` | none | Markdown description of every document; a version's deprecation and sunset notices follow it |
-| `Versioning` | none | Code only: `Action<ApiVersioningOptions>` run after the platform defaults |
-| `Bearer` | `true` | Declare the HTTP bearer scheme |
-| `ApiKeyHeaderName` | none | Declare an API key scheme in this header; must be a valid header name |
-| `MutualTls` | `false` | Declare the mutual TLS scheme |
-| `ExposeInProduction` | `false` | Serve the documents and the reference outside Development |
+| 14300 | Information | `MapSharedKernelOpenApi()` mapped nothing: not Development and `ExposeInProduction` is off |
+| 14301 | Warning | Documents served outside Development with no authorization convention, `AllowAnonymous()` or fallback policy |
 
-```json
-{
-  "SharedKernel": {
-    "Presentation": {
-      "OpenApi": {
-        "Title": "Orders API",
-        "ApiKeyHeaderName": "X-Api-Key",
-        "ExposeInProduction": true
-      }
-    }
-  }
-}
-```
+## Testing
 
-## Logging
-
-EventIds 14300–14399.
-
-| EventId | Level | Event |
-| --- | --- | --- |
-| 14300 | Information | `MapSharedKernelOpenApi()` mapped nothing: the environment is not Development and `ExposeInProduction` is off |
-| 14301 | Warning | At startup: the documents are served outside Development, and neither an authorization convention on the returned builder, `AllowAnonymous()`, nor a fallback policy decides who may read them |
+Host the service with `WebApplicationFactory<Program>` in the `Development` environment and fetch
+`/openapi/v1.json`; assert on the operations, security requirements and headers. `14.Presentation/consumer-verify`
+does the same in CI with two versioned documents.
 
 ## Pitfalls
 
-- **`Versioning` without `using Asp.Versioning;`.** `versioning.Policies.Deprecate(1.0)` and `Sunset(1.0)` are
-  extension methods of that namespace; without it the call binds to another overload and does not compile.
-- **Documents in Staging.** `ExposeInProduction` means every environment but Development.
-- **Bearer-protected documents.** The Scalar page cannot load them; see [Protecting the documents](#protecting-the-documents).
-- **An unknown document**, such as `/openapi/v3.json`, is a plain-text 404, not a problem.
-- **Asp.Versioning.OpenApi** reflects over `Microsoft.AspNetCore.OpenApi` internals. Upgrade the two together;
-  `14.Presentation/consumer-verify` generates two versioned documents so a breaking upgrade fails CI.
+| Don't | Do | Why |
+| --- | --- | --- |
+| Write `versioning.Policies.Deprecate(1.0)` without `using Asp.Versioning;` | Add the using | They are extension methods of that namespace; otherwise another overload binds and it does not compile |
+| Assume `ExposeInProduction` means Production only | Treat it as every environment but Development | Staging is "production" here |
+| Protect documents with a bearer token and expect Scalar to load them | Use a cookie scheme or a gateway | The reference page fetches documents from the browser |
+| Expect `/openapi/v3.json` for an unknown version to be a problem | Know it is a plain-text 404 | Only mapped documents exist |
+| Upgrade `Asp.Versioning.OpenApi` or `Microsoft.AspNetCore.OpenApi` alone | Upgrade them together | The former reflects over the latter's internals |
 
-## Not in this package
+---
 
-| Looking for | Use instead |
-| --- | --- |
-| `AddSharedKernelApiVersioning`, `SharedKernelApiVersioningDefaults` | `AddSharedKernelOpenApi()` and its `Versioning` callback |
-| `AddSharedKernelOpenApi(IServiceCollection, title, …)`, `OpenApiSecuritySchemesOptions`, `MutualTlsSecurityScheme` | `builder.AddSharedKernelOpenApi()` with `Title`, `ApiKeyHeaderName` and `MutualTls` |
-| `ApiVersionLifecycleOptions` and its middleware | Asp.Versioning's sunset and deprecation policies in `Versioning` |
-| A Scalar customization hook | Not offered: `MapSharedKernelOpenApi()` configures the reference itself |
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
+[Presentation domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/14.Presentation/README.md) ·
+[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

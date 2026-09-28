@@ -1,84 +1,87 @@
 # SharedKernel.Persistence.EfCore.Auditing
 
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
-[![PostgreSQL 15+](https://img.shields.io/badge/PostgreSQL-15%2B-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-![Tamper-evident](https://img.shields.io/badge/ledger-tamper--evident-success)
-![Format: AUDITv3](https://img.shields.io/badge/format-AUDITv3%20(specified)-informational)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
+![Tier: Adapter](https://img.shields.io/badge/tier-Adapter-6f42c1)
+![Public API: tracked](https://img.shields.io/badge/public%20API-tracked-informational)
+![Format: AUDITv3](https://img.shields.io/badge/format-AUDITv3%20(specified)-informational)
 
-> **An append-only, tamper-evident audit ledger on PostgreSQL: every command records who did what to which resource,
-> a background sealer chains the records with keyed MACs, and anyone can verify the chain — while personal data in
-> the records stays erasable.**
+> **An append-only, tamper-evident audit ledger on PostgreSQL: every command records who did what to which resource
+> in one `INSERT`, a background sealer chains the records with keyed MACs, and anyone can verify the chain — while
+> personal data in the records stays erasable.**
 
-An audit log in an ordinary table proves nothing: anyone with write access can edit, delete or backfill it. A ledger
-that locks on every write slows every request and deadlocks under load. This package does neither. The request path
-is **one `INSERT`** inside the business transaction. A background **sealer** links committed records, in commit-safe
-order, into one hash chain per tenant and resource type, signs periodic checkpoints outside the chain, and
-verification tells you precisely whether a chain is intact, broken — and where — or unverifiable. The byte-level
-format is [specified](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/06.Persistence/SharedKernel.Persistence.EfCore.Auditing/AUDIT-FORMAT.md),
-with test vectors, so an auditor can verify it with their own code.
-
-| ✍️ Cheap to write | ⛓️ Sealed | 🔍 Verifiable | 🧽 Erasable |
-| --- | --- | --- | --- |
-| One `INSERT`, no lock, no sequence, no retry | Per-(tenant, resource type) HMAC-SHA256 chains | `Intact` / `Broken` / `Unverifiable` with the failure kind | Snapshots erased for GDPR/KVKK, chain intact |
-| `Succeeded` commits with the business write | Commit-safe order: late commits never skipped | Signed checkpoints catch truncation and rewrites | The erasure is itself recorded |
-| `Failed` recorded after a rollback | Key rotation and compromise recovery | Append-only enforced by database triggers | Salted payload commitments |
+| You get | So that |
+| --- | --- |
+| `.UseAuditTrail()` implementing `IAuditTrailWriter` | The application pipeline's `WithAuditing()` records every `IAuditableRequest` |
+| One `INSERT` per record, inside the business transaction | Auditing costs no lock, no sequence and no retry on the request path |
+| Per-(tenant, resource type) HMAC-SHA256 chains sealed in commit-safe order | Edited, deleted, reordered or backfilled records are detected |
+| `Intact` / `Broken` / `Unverifiable` verification with the failure kind and sequence | You know whether, where and how a chain was tampered with |
+| Signed checkpoints, key rotation and compromise recovery | Truncation and rewrites are caught, and a stolen key stops being useful |
+| Payload erasure that keeps the chain verifiable | GDPR/KVKK erasure without breaking the proof |
+| A [specified byte format](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/06.Persistence/SharedKernel.Persistence.EfCore.Auditing/AUDIT-FORMAT.md) with test vectors | An auditor can verify the ledger with their own code |
 
 ## Contents
 
 - [Install](#install)
 - [Quick start](#quick-start)
 - [How it works](#how-it-works)
-- [Writing records](#writing-records)
-- [Reading, verifying, exporting, erasing](#reading-verifying-exporting-erasing)
-- [Keys: rotation and compromise](#keys-rotation-and-compromise)
-- [Database roles (required for the guarantees)](#database-roles-required-for-the-guarantees)
-- [Configuration reference](#configuration-reference)
-- [Security model](#security-model)
-- [AI quick reference](#ai-quick-reference)
+- [Recipes](#recipes)
+- [Configuration](#configuration)
+- [Reference](#reference)
+- [Testing](#testing)
+- [Pitfalls](#pitfalls)
+- [Design decisions](#design-decisions)
 
 ## Install
 
-```shell
-dotnet add package SharedKernel.Persistence.EfCore.Auditing
+```xml
+<PackageReference Include="SharedKernel.Persistence.EfCore.Auditing" />
 ```
+
+The version comes from your central `SharedKernelVersion` property — every SharedKernel package ships at the same
+version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel#using-the-packages).
 
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
-| Tier | Adapter (its one adapter edge, to `SharedKernel.Persistence.EfCore`, is declared) |
+| Tier | Adapter — reference it from your **Infrastructure** project |
 | Database | PostgreSQL 15 or later |
-| Builds on | `SharedKernel.Persistence.EfCore`, `SharedKernel.Cryptography` (`IHmacSigner`, optional `IAsymmetricSignatureService`) |
-| Implements | `IAuditTrailWriter` from [`SharedKernel.Execution`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/01.Core/SharedKernel.Execution) (`SharedKernel.Execution.Auditing`) — used by `SharedKernel.Application.Pipeline`'s `AuditingBehavior` directly |
-| Namespaces | `SharedKernel.Persistence` (`UseAuditTrail`), `SharedKernel.Persistence.EfCore.Auditing` (query, maintenance), `SharedKernel.Persistence.EfCore` (migration helpers) |
+| Depends on | `SharedKernel.Persistence.EfCore` (declared adapter edge, pinned to the exact version), `SharedKernel.Cryptography` (`IHmacSigner`, optional `IAsymmetricSignatureService`) |
+| Implements | `IAuditTrailWriter` from `SharedKernel.Execution` (`SharedKernel.Execution.Auditing`) |
+| Namespaces | `SharedKernel.Persistence` (`UseAuditTrail`), `SharedKernel.Persistence.EfCore.Auditing` (query, maintenance, options), `SharedKernel.Persistence.EfCore` (migration helpers) |
 
 ## Quick start
 
-**1. Register:**
+**1. Register** — the ledger binds `SharedKernel:Persistence:Auditing` from the same configuration:
 
 ```csharp
-using SharedKernel.Persistence;   // AddSharedKernelPostgres, UseMultiTenancy, UseAuditTrail
+using SharedKernel.Cryptography.Extensions;
+using SharedKernel.Persistence;
 
-builder.Services.AddSharedKernelCryptography(builder.Configuration)   // IHmacSigner
-    .AddAsymmetricSigning();                                          // checkpoints (optional)
+builder.Services.AddSharedKernelCryptography(builder.Configuration);   // IHmacSigner (.AddAsymmetricSigning() for checkpoints)
 
 builder.AddSharedKernelPostgres<OrderDbContext>("orders", p => p
     .UseMultiTenancy(rowLevelSecurity: true)
-    .UseAuditTrail());          // binds SharedKernel:Persistence:Auditing from the same configuration
+    .UseAuditTrail());
 ```
 
 ```json
-"SharedKernel": { "Persistence": { "Auditing": {
-  "CurrentKeyId": "k2",
-  "Keys": {
-    "k1": { "Material": "<base64, 32+ bytes, from a secret store>", "Order": 1 },
-    "k2": { "Material": "<base64, 32+ bytes, from a secret store>", "Order": 2 }
-  },
-  "CheckpointSigningKeyId": "audit-checkpoints-2026",
-  "AcceptedCheckpointSigningKeyIds": [ "audit-checkpoints-2025" ],
-  "Sealer": { "Enabled": true, "Interval": "00:00:02", "BatchSize": 500, "CheckpointInterval": "01:00:00" },
-  "SelfCheck": "Fail"
-} } }
+{
+  "SharedKernel": {
+    "Persistence": {
+      "Auditing": {
+        "CurrentKeyId": "k2",
+        "Keys": {
+          "k1": { "Material": "<base64, 32+ bytes, from a secret store>", "Order": 1 },
+          "k2": { "Material": "<base64, 32+ bytes, from a secret store>", "Order": 2 }
+        },
+        "CheckpointSigningKeyId": "audit-checkpoints-2026",
+        "Sealer": { "Interval": "00:00:02", "BatchSize": 500, "CheckpointInterval": "01:00:00" },
+        "SelfCheck": "Fail"
+      }
+    }
+  }
+}
 ```
 
 **2. Create the tables** in a migration (they are not part of the EF Core model):
@@ -100,39 +103,47 @@ public sealed record ApproveOrder(OrderId Id) : ICommand, IAuditableRequest<Resu
     public string? BeforeSnapshot => null;
     public string? GetAfterSnapshot(Result response) => null;
 }
-// builder.Services.AddSharedKernelApplication(typeof(Program).Assembly, app => app
-//     .UseMediatR().WithTransactions().WithAuditing());   // SharedKernel.Application.Pipeline
-```
 
-Options are validated at startup: the current key must exist and be the newest (highest `Order`), every key must
-decode to at least 32 bytes, orders must be distinct.
+// builder.Services.AddSharedKernelApplication(typeof(Program).Assembly, app => app
+//     .UseMediatR().WithTransactions().WithAuditing());
+```
 
 ## How it works
 
-```text
- request ──► business transaction ───────────────► COMMIT        sealer (every instance; one seals at a time)
-             │ business writes                                    │ pg_try_advisory_xact_lock
-             │ INSERT record + payload (Succeeded, 1 statement)   │ records committed before the oldest running
-             │                                                    │   transaction, in (insert_xid, id) order
-             └─ rollback? → INSERT (Failed) on its own connection │ INSERT audit_chain_links:
-                                                                  │   sequence, previous MAC, HMAC-SHA256 MAC
- verify ◄── audit_records + audit_chain_links + checkpoints ◄─────┘ every CheckpointInterval: sign the chain head
+```mermaid
+sequenceDiagram
+    participant R as Request
+    participant DB as PostgreSQL
+    participant S as Sealer (one instance at a time)
+    R->>DB: business writes + INSERT audit record (Succeeded), one transaction
+    R-->>DB: on rollback: INSERT (Failed) on its own connection
+    S->>DB: pg_try_advisory_xact_lock
+    S->>DB: records committed before the oldest running transaction, in (insert_xid, id) order
+    S->>DB: INSERT audit_chain_links (sequence, previous MAC, HMAC-SHA256 MAC)
+    S->>DB: every CheckpointInterval: verify moved chains, sign their heads
 ```
 
-| Step | What happens | Cost on the request |
-| --- | --- | --- |
-| Write | `IAuditTrailWriter.RecordAsync` runs one `INSERT` (record + erasable payload). A **Succeeded** entry goes into the caller's transaction, so it commits or rolls back with the business write; a **Failed** entry commits on its own connection | one statement |
-| Seal | The sealer takes committed records whose inserting transaction is older than the oldest running one, in `(insert_xid, id)` order, and appends a link: sequence, previous MAC, HMAC-SHA256 MAC. A long transaction that commits late is never skipped or sealed out of order | none |
-| Checkpoint | Every `Sealer:CheckpointInterval` the sealer verifies each chain that moved and signs its head with an asymmetric key into an `IAuditCheckpointSink` (default: the `audit_checkpoints` table; use WORM storage for stronger guarantees) | none |
-| Verify | `VerifyChainAsync` / `VerifyChainFromCheckpointAsync` return `Intact`, `Broken` or `Unverifiable` with a failure kind: `SequenceGap`, `HashMismatch`, `LinkMismatch`, `KeyRegression`, `AnchorMismatch`, `TailTruncated`, `UnknownKey`, `PayloadErased`, `NotSealed` | — |
+- **Write.** `IAuditTrailWriter.RecordAsync` runs one `INSERT` (record + erasable payload). `Succeeded` goes into the
+  caller's transaction via `IUnitOfWork.OnBeforeCommit` and commits or rolls back with the business write; `Failed`
+  commits on its own connection after a rollback.
+- **Fields.** User, actor kind, client, session and tenant come from `IRequestContext`; the source service from
+  `SharedKernel:Persistence:ServiceName`; correlation and trace ids from the ambient `Activity`; action, resource,
+  outcome, snapshots, error code, approval id and idempotency key from the `AuditEntry`. An unauthenticated caller is
+  recorded as `Anonymous`, never as `System`. Oversized values throw `ArgumentException` before any SQL
+  (`AuditFieldLimits`). A record without a tenant is accepted only from an authenticated system identity or inside a
+  cross-tenant scope. A reused `IdempotencyKey` returns the stored record (6700).
+- **Seal.** The sealer takes records whose inserting transaction is older than the oldest running one, so a late
+  commit is never skipped or sealed out of order. Each chain is one tenant and one resource type: tenants never
+  contend, and verification never reads another tenant's records. The lock is transaction-scoped, so it works behind a
+  transaction-mode pooler.
+- **Verify.** `Intact`, `Broken` or `Unverifiable`, with a failure kind: `SequenceGap`, `HashMismatch`, `LinkMismatch`,
+  `KeyRegression`, `AnchorMismatch`, `TailTruncated`, `UnknownKey`, `PayloadErased`, `NotSealed`.
+- **Append-only.** Database triggers refuse `UPDATE`/`DELETE` for every role except the owner and superusers; the
+  startup self-check reports anything that would let the runtime role alter the ledger.
 
-Each chain is one tenant and one resource type, so tenants never contend and a verification never reads another
-tenant's records. The sealer holds a transaction-scoped advisory lock, so it works behind a transaction-mode pooler.
+## Recipes
 
-## Writing records
-
-`SharedKernel.Application.Pipeline`'s `AuditingBehavior` writes for every `IAuditableRequest`: `Succeeded` inside the
-transaction via `IUnitOfWork.OnBeforeCommit`, `Failed` after a rollback. Outside the request pipeline, write directly:
+### 1. Write a record outside the request pipeline
 
 ```csharp
 public sealed class ApproveOrderHandler(IAuditTrailWriter audit, IUnitOfWork unitOfWork) : ICommandHandler<ApproveOrder>
@@ -142,9 +153,9 @@ public sealed class ApproveOrderHandler(IAuditTrailWriter audit, IUnitOfWork uni
         // ... change the aggregate ...
         unitOfWork.OnBeforeCommit(token => audit.RecordAsync(new AuditEntry
         {
-            Action = "OrderApproved",
+            Action = "order.approved",
             ResourceType = "Order",
-            ResourceId = command.OrderId.ToString(),
+            ResourceId = command.Id.Value.ToString(),
             Outcome = AuditOutcome.Succeeded,
             AfterSnapshot = afterJson,
         }, token));
@@ -153,70 +164,38 @@ public sealed class ApproveOrderHandler(IAuditTrailWriter audit, IUnitOfWork uni
 }
 ```
 
-| Field | Source |
-| --- | --- |
-| User, actor kind, client, session, tenant | `IRequestContext` |
-| Source service | `SharedKernel:Persistence:ServiceName` / `UseServiceName` |
-| Correlation and W3C trace ids | the ambient `Activity` (correlation id from its `WellKnownBaggageKeys.CorrelationId` baggage, set by `UseSharedKernelRequestContext()`) |
-| Action, resource, outcome, snapshots, error code, approval id, idempotency key | the `AuditEntry` |
-
-- **Actor kinds:** `User`, `Service` (a machine identity), `System` (a job under `SystemRequestContext`) or
-  `Anonymous`. An unauthenticated caller is always recorded as `Anonymous`, never as the platform's own work.
-- **Limits** are checked before any SQL (`AuditFieldLimits`): an oversized value throws `ArgumentException` and never
-  aborts the business transaction.
-- **The system chain:** a record without a tenant is accepted only from an authenticated system identity or inside a
-  cross-tenant scope.
-- **Idempotency:** a reused `IdempotencyKey` returns the stored record; reused for a different event it throws.
-
-## Reading, verifying, exporting, erasing
+### 2. Read, verify, export and erase
 
 ```csharp
 var history = await auditQuery.QueryAsync(new AuditRecordQuery { ResourceType = "Order", ResourceId = id }, ct);
 var chain   = await auditQuery.VerifyChainAsync("Order", requirePayloads: false, ct);
 // chain.IsIntact; otherwise chain.Status, chain.FailureKind and chain.FailedAtSequence say what and where
+
+await maintenance.EraseResourcePayloadsAsync("Customer", customerId, "GDPR request 2026-114", ct);
 ```
 
-| Call | Does |
-| --- | --- |
-| `IAuditQueryService.QueryAsync(query)` | The caller's tenant; keyset paging (`Cursor`/`NextCursor`); every shape index-backed |
-| `QueryAcrossTenantsAsync(query)` | Needs an active `ICrossTenantScope`; records its own `AuditLedger` entry first |
-| `ExportRangeAsync(type, from, to)` | Streams a range; records its own entry first |
-| `VerifyChainAsync(type, requirePayloads)` / `VerifyChainFromCheckpointAsync(checkpoint)` / `VerifyRecordAsync(id)` | Full or incremental verification |
-| `IAuditLedgerMaintenance.ErasePayloadAsync(recordId, reason)` / `EraseResourcePayloadsAsync(type, id, reason)` | Deletes snapshots and their salt, records the erasure; the chain stays verifiable (it commits to `SHA-256(salt ‖ payload)`) |
-| `SealPendingAsync()` | Seals now (tests, maintenance) |
-| `SealAllChainsAsync(reason)` | After a key compromise — see below |
-| The `audit-sealing` readiness probe (`IReadinessProbe`, `AuditSealingReadiness.ProbeName`) | Registered by `UseAuditTrail()`. `Healthy` while sealing keeps up, `Degraded` when the oldest unsealed record is older than `Sealer:MaxReadyLag`, `Unhealthy` when the ledger cannot be read; data `UnsealedRecords`, `OldestUnsealedOccurredOn`, `Lag`. The host maps it with `AddHealthChecks().AddSharedKernelReadiness()` |
+Erasure deletes snapshots and their salt and records the erasure; the chain stays verifiable because it commits to
+`SHA-256(salt ‖ payload)`. `QueryAcrossTenantsAsync` needs an active `ICrossTenantScope`; it and `ExportRangeAsync`
+record their own `AuditLedger` entry first.
 
-## Keys: rotation and compromise
+### 3. Rotate a key, or recover from a compromise
 
-1. **Rotate:** add the new key with a higher `Order`, set `CurrentKeyId` to it, deploy. New seals use it; old records
-   keep verifying with the old key, which must stay in `Keys` for as long as they must verify (removing it makes them
-   `Unverifiable` / `UnknownKey`).
+1. **Rotate:** add the new key with a higher `Order`, set `CurrentKeyId` to it, deploy. Old records keep verifying
+   with the old key, which must stay in `Keys` (removing it makes them `Unverifiable` / `UnknownKey`).
 2. **Compromise:** right after rotating, run `IAuditLedgerMaintenance.SealAllChainsAsync("reason")` inside a
-   cross-tenant scope. Every chain gets a marker sealed under the new key and a fresh checkpoint; a record an attacker
-   later forges with the old key is reported as `KeyRegression`, a re-sealed old record as `LinkMismatch`.
-3. **Checkpoint signing keys** rotate the same way: add the old id to `AcceptedCheckpointSigningKeyIds`. Verification
+   cross-tenant scope. Every chain gets a marker sealed under the new key and a fresh checkpoint; a record forged later
+   with the old key is reported as `KeyRegression`, a re-sealed old record as `LinkMismatch`.
+3. **Checkpoint signing keys** rotate the same way: keep the old id in `AcceptedCheckpointSigningKeyIds`. Verification
    never trusts the key id a checkpoint names on its own.
 
-Register your own `IAuditRecordAuthenticator` (for example a KMS that computes MACs remotely) or
-`IAuditCheckpointSink` before `UseAuditTrail` to replace the defaults; the keyring is then not required.
+Register your own `IAuditRecordAuthenticator` (a KMS computing MACs remotely) or `IAuditCheckpointSink` (WORM storage)
+before `UseAuditTrail` to replace the defaults; the keyring is then not required.
 
-## Database roles (required for the guarantees)
+### 4. Run the sealer under its own role
 
-The triggers make the ledger tables append-only for every role **except** the table owner and superusers, who can
-disable them. Own the tables with a migration role and run the application under a separate one — the platform's
-single role script is in
-[SharedKernel.Persistence.Npgsql → Roles](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/06.Persistence/SharedKernel.Persistence.Npgsql#roles-the-one-canonical-script)
-(`app_migrator`, `app_runtime`, `app_audit_sealer`). The migration, run as `app_migrator`, then sets the ledger's
-privileges itself:
-
-```csharp
-migrationBuilder.CreateAuditLedgerTable(runtimeRole: "app_runtime", sealerRole: "app_audit_sealer");
-migrationBuilder.Sql("REVOKE UPDATE, DELETE, TRUNCATE ON audit_records, audit_record_payloads, audit_chain_links, audit_checkpoints FROM app_cross_tenant;");
-```
-
-It first revokes everything the roles hold on the four tables — including the `UPDATE`/`DELETE` that
-`ALTER DEFAULT PRIVILEGES` grants the runtime role on every new table — and then grants exactly:
+The canonical roles are in the
+[Npgsql README](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/06.Persistence/SharedKernel.Persistence.Npgsql/README.md#1-create-the-roles-the-canonical-script).
+`CreateAuditLedgerTable` revokes everything the roles hold on the ledger tables and grants exactly:
 
 | Table | `app_runtime` | `app_audit_sealer` |
 | --- | --- | --- |
@@ -224,13 +203,13 @@ It first revokes everything the roles hold on the four tables — including the 
 | `audit_record_payloads` | `SELECT, INSERT, DELETE` (DELETE = payload erasure) | — |
 | `audit_chain_links`, `audit_checkpoints` | `SELECT` (plus `INSERT` when there is no sealer role) | `SELECT, INSERT` |
 
-The ledger tables must not use row-level security: the ledger filters by tenant itself, and the sealer must read every
-tenant's records. `AuditLedgerSchema.CreateScript` holds the same DDL (idempotent) for tooling and tests.
+Revoke the cross-tenant role's write privileges too:
 
-**A separate sealer role (recommended).** Without it, anything running as the application — a bug, an injected
-statement — can insert into `audit_chain_links`. A forged link cannot hide unsealed records (the sealer and the probe
-select records that have no link), and verification reports its MAC, but only a separate role keeps the application
-from writing seals at all:
+```csharp
+migrationBuilder.Sql("REVOKE UPDATE, DELETE, TRUNCATE ON audit_records, audit_record_payloads, audit_chain_links, audit_checkpoints FROM app_cross_tenant;");
+```
+
+Then register the sealer's database under a key of its own and point the sealer at it:
 
 ```csharp
 // ConnectionStrings:audit-sealer connects as app_audit_sealer
@@ -238,73 +217,114 @@ builder.Services.AddSharedKernelNpgsql(builder.Configuration.GetSection("SharedK
 ```
 
 ```json
-"SharedKernel": { "Persistence": {
-  "audit-sealer": { "ConnectionStringName": "audit-sealer" },
-  "Auditing": { "Sealer": { "DataSourceName": "audit-sealer" } }
-} }
+{
+  "SharedKernel": {
+    "Persistence": {
+      "audit-sealer": { "ConnectionStringName": "audit-sealer" },
+      "Auditing": { "Sealer": { "DataSourceName": "audit-sealer" } }
+    }
+  }
+}
 ```
 
-**The startup self-check** (`SelfCheck`: `Off`, `Warn` (default), `Fail` — use `Fail` in production) reports a
-superuser runtime role, a runtime role that owns (or is a member of the owner of) a ledger table, any
-`UPDATE`/`DELETE`/`TRUNCATE` privilege on it, row-level security on it, and any missing trigger or trigger not
-`ENABLE ALWAYS` (which `session_replication_role = replica` would silently bypass). With `Sealer:DataSourceName` set it
-also reports a runtime role that can still `INSERT` into `audit_chain_links` or `audit_checkpoints`, and checks the
-sealer role for superuser, ownership and `UPDATE`/`DELETE`/`TRUNCATE`.
+Without a separate sealer role, anything running as the application can insert into `audit_chain_links`; a forged
+link cannot hide unsealed records and verification reports its MAC, but only the role split keeps the application from
+writing seals at all.
 
-## Configuration reference
+## Configuration
 
-| Key under `SharedKernel:Persistence:Auditing` | Default | Meaning |
+Section `SharedKernel:Persistence:Auditing` (`AuditLedgerOptions`), validated at startup: the current key must exist and
+have the highest `Order`, every key must decode to at least 32 bytes, orders must be distinct.
+
+| Key | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `SharedKernel:Persistence:Auditing:CurrentKeyId` | `string?` | — (required with the keyring) | Key new records are sealed under |
+| `SharedKernel:Persistence:Auditing:Keys:{id}:Material` | `string` (Base64) | — | MAC key, ≥ 32 bytes, from a secret store |
+| `SharedKernel:Persistence:Auditing:Keys:{id}:Order` | `int` | — | Rotation order; newer keys higher |
+| `SharedKernel:Persistence:Auditing:CheckpointSigningKeyId` | `string?` | `null` (no checkpoints) | `IAsymmetricSignatureService` key for checkpoints |
+| `SharedKernel:Persistence:Auditing:AcceptedCheckpointSigningKeyIds` | `string[]` | empty | Older signing keys verification still accepts |
+| `SharedKernel:Persistence:Auditing:Sealer:Enabled` | `bool` | `true` | Run the sealer in this process (one instance seals at a time) |
+| `SharedKernel:Persistence:Auditing:Sealer:Interval` | `TimeSpan` | `00:00:02` | Pause between sealing rounds |
+| `SharedKernel:Persistence:Auditing:Sealer:BatchSize` | `int` | `500` | Records sealed per transaction |
+| `SharedKernel:Persistence:Auditing:Sealer:CheckpointInterval` | `TimeSpan` | `01:00:00` | How often moved chains are checkpointed |
+| `SharedKernel:Persistence:Auditing:Sealer:MaxReadyLag` | `TimeSpan` | `00:05:00` | Sealing lag above which the probe reports `Degraded` |
+| `SharedKernel:Persistence:Auditing:Sealer:DataSourceName` | `string?` | `null` (application connection) | Keyed data source of a separate sealer role |
+| `SharedKernel:Persistence:Auditing:SelfCheck` | `Off` \| `Warn` \| `Fail` | `Warn` | Startup self-check outcome; use `Fail` in production |
+
+## Reference
+
+| Method / type | Does |
+| --- | --- |
+| `EfCorePersistenceBuilder<T>.UseAuditTrail()` | Registers the writer, query and maintenance services, the sealer, the self-check and the probe |
+| `IAuditTrailWriter.RecordAsync(AuditEntry)` | Appends one record (`SharedKernel.Execution.Auditing`) |
+| `IAuditQueryService` | `QueryAsync(AuditRecordQuery)` (caller's tenant, keyset paging), `QueryAcrossTenantsAsync`, `ExportRangeAsync`, `VerifyChainAsync`, `VerifyChainFromCheckpointAsync`, `VerifyRecordAsync` |
+| `IAuditLedgerMaintenance` | `SealPendingAsync`, `SealAllChainsAsync(reason)`, `ErasePayloadAsync(recordId, reason)`, `EraseResourcePayloadsAsync(type, id, reason)` |
+| `CreateAuditLedgerTable(runtimeRole, sealerRole?)`, `DropAuditLedgerTable()` | Migration helpers; `AuditLedgerSchema.CreateScript` holds the same idempotent DDL |
+| `IAuditRecordAuthenticator`, `IAuditCheckpointSink` | Replaceable MAC and checkpoint seams |
+
+### Health
+
+`UseAuditTrail()` registers the `audit-sealing` readiness probe (`AuditSealingReadiness.ProbeName`): `Healthy` while
+sealing keeps up, `Degraded` when the oldest unsealed record is older than `Sealer:MaxReadyLag`, `Unhealthy` when the
+ledger cannot be read. `AddSharedKernelReadiness()` exposes it on `/health/ready`.
+
+### Logging
+
+| Event id | Level | Event |
 | --- | --- | --- |
-| `CurrentKeyId`, `Keys:{id}:Material`, `Keys:{id}:Order` | — | The MAC keyring; the current key has the highest order |
-| `CheckpointSigningKeyId`, `AcceptedCheckpointSigningKeyIds` | — | Asymmetric checkpoint signing (optional) |
-| `Sealer:Enabled` | `true` | Run the background sealer in this process |
-| `Sealer:Interval` | 2 seconds | Pause between sealing passes |
-| `Sealer:BatchSize` | 500 | Records per pass |
-| `Sealer:CheckpointInterval` | 1 hour | How often moved chains are verified and their heads signed |
-| `Sealer:DataSourceName` | — | The sealer's own data source (role) |
-| `Sealer:MaxReadyLag` | 5 minutes | Oldest-unsealed age above which the `audit-sealing` probe reports `Degraded` |
-| `SelfCheck` | `Warn` | `Off`, `Warn`, `Fail` |
+| 6700 | Information | An idempotent duplicate returned the stored record |
+| 6701 | Error | Writing a failed-outcome record failed; the failure is not in the ledger |
+| 6702 | Error | A chain verified as broken or unverifiable |
+| 6703 | Debug | Sealing pass completed |
+| 6704 | Error | Sealing round failed; retried after the interval |
+| 6705 | Debug | Another instance holds the sealer lock |
+| 6706 / 6707 | Information / Error | Checkpoint signed / checkpoint emission failed |
+| 6708 | Warning | Self-check finding |
+| 6709 | Critical | Self-check failed with `SelfCheck: Fail`; the host will not start |
+| 6710 | Information | Self-check passed |
+| 6711 | Information | Payloads erased |
+| 6712 | Warning | Chains resealed under a new key |
+| 6713 | Information | Sealer started |
 
-**Telemetry:** meter and `ActivitySource` `SharedKernel.Persistence.EfCore.Auditing` — append duration, idempotent
-duplicates, sealed records, seal duration and lag, verification failures by kind, checkpoints, erased payloads. Logs
-use EventIds 6700–6899.
+Telemetry: meter and `ActivitySource` `SharedKernel.Persistence.EfCore.Auditing` — append duration, idempotent
+duplicates, sealed records, seal duration and lag, verification failures by kind, checkpoints, erased payloads.
 
-## Security model
+## Testing
 
-**Detects:** edited, deleted, reordered or inserted records; a truncated chain tail (against a checkpoint); records
-forged with a retired or compromised key after `SealAllChainsAsync`; a rewritten checkpoint.
+In handler unit tests, replace the writer with
+[`SharedKernel.Persistence.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/16.Testing/SharedKernel.Persistence.Testing/README.md)'s
+`services.AddFakeAuditTrailWriter()` and assert on the entries it recorded. To test the ledger itself, use
+`PostgresTestServer`/`PostgresTestDatabase` (the production role split) and `IAuditLedgerMaintenance.SealPendingAsync()`
+to seal without waiting for the background interval.
 
-**Prevents** (with the role split): updates and deletes of ledger rows by the application and cross-tenant roles; the
-application writing seals (with a separate sealer role); trigger bypass through replica mode (the self-check).
+## Pitfalls
 
-**Does not prevent:** a table owner or superuser disabling the triggers (use the role split, and WORM storage for
-checkpoints when that threat matters); losing records that were never written because the business transaction
-failed before the audit write (the `Failed` record covers handled failures).
+| Don't | Do | Why |
+| --- | --- | --- |
+| Run the application as the table owner or a superuser | Use the role script; `SelfCheck: Fail` in production | Owners and superusers can disable the triggers |
+| Enable row-level security on ledger tables | Leave them without RLS | The ledger filters by tenant itself, and the sealer reads every tenant |
+| `UPDATE` or `DELETE` audit rows | `EraseResourcePayloadsAsync` / `ErasePayloadAsync` | Only snapshots are erasable; the chain proves everything else |
+| Put personal data in `Action`, `ResourceId` or `ErrorCode` | Put it in snapshots | Only payloads can be erased |
+| Remove a retired key from `Keys` | Keep it while its records must verify | Removal makes them `Unverifiable` |
+| Open a standalone transaction for `Succeeded` | Queue it with `OnBeforeCommit` | It must commit or roll back with the business write |
+| Share the application role with the sealer | Register a sealer data source (`Sealer:DataSourceName`) | Otherwise the application can write seals |
 
-Distinct from `SharedKernel.Persistence.EfCore`'s audit columns, which stamp the mutable `CreatedBy`/`ModifiedOn`
-columns and keep no history.
+## Design decisions
 
-## AI quick reference
+**Why a background sealer instead of chaining on write?** Chaining on the request path needs a lock per chain and
+serializes every write; the sealer keeps the request path to one insert and seals late commits in commit-safe order.
 
-```text
-REGISTER     AddSharedKernelCryptography(configuration) + AddSharedKernelPostgres<T>("name", p => p.UseAuditTrail()).
-             Keys in SharedKernel:Persistence:Auditing:{CurrentKeyId, Keys:{id}:{Material, Order}} from a secret store.
-MIGRATION    migrationBuilder.CreateAuditLedgerTable(runtimeRole: "app_runtime", sealerRole: "app_audit_sealer")
-             + REVOKE UPDATE, DELETE, TRUNCATE ... FROM app_cross_tenant. Never RLS on ledger tables.
-AUDIT        Pipeline: command implements IAuditableRequest<TResponse> (Action, ResourceType, ResourceId, snapshots)
-             + .WithAuditing() on AddSharedKernelApplication (SharedKernel.Application.Pipeline). Manual: unitOfWork.OnBeforeCommit(t => audit.RecordAsync(new AuditEntry {..}, t)).
-ACTIONS      Dotted lowercase names: "order.approved". ResourceType = aggregate name. ResourceId = id string.
-QUERY        IAuditQueryService.QueryAsync(new AuditRecordQuery { ResourceType, ResourceId }) — caller's tenant only.
-VERIFY       VerifyChainAsync(resourceType) -> Status Intact|Broken|Unverifiable, FailureKind, FailedAtSequence.
-ERASE        IAuditLedgerMaintenance.EraseResourcePayloadsAsync(type, id, reason) — never DELETE audit rows.
-ROTATE       New key with higher Order + CurrentKeyId; keep old keys; compromise -> SealAllChainsAsync(reason)
-             in a cross-tenant scope.
-SEALER       Separate role app_audit_sealer: AddSharedKernelNpgsql(section "SharedKernel:Persistence:audit-sealer",
-             "audit-sealer") + Auditing:Sealer:DataSourceName = "audit-sealer". SelfCheck = Fail in production.
-FORBIDDEN    UPDATE/DELETE on audit tables; the owner or a superuser as the runtime role; personal data in Action,
-             ResourceId or ErrorCode (only snapshots are erasable).
-```
+**Why HMAC chains plus asymmetric checkpoints?** MACs make records tamper-evident to anyone without the key;
+checkpoints signed outside the chain catch truncation and a rewrite by someone who has it.
 
-Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) · start at the
-[persistence overview](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/06.Persistence) ·
-byte format in [AUDIT-FORMAT.md](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/06.Persistence/SharedKernel.Persistence.EfCore.Auditing/AUDIT-FORMAT.md).
+**Why salted payload commitments?** The chain commits to `SHA-256(salt ‖ payload)`, so erasing a payload and its salt
+removes the personal data without breaking verification.
+
+Distinct from `SharedKernel.Persistence.EfCore`'s audit columns, which stamp the mutable `CreatedBy`/`ModifiedOn` columns
+and keep no history.
+
+---
+
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
+[Persistence domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/06.Persistence/README.md) ·
+[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

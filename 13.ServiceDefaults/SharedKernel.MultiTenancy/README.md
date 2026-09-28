@@ -1,139 +1,209 @@
 # SharedKernel.MultiTenancy
 
-Per-request tenant resolution for Platform.SharedKernel microservices. It decides which tenant a request belongs to
-and puts it on the request context, so every layer that reads `IRequestContext.TenantId` (`TenantId?`,
-`SharedKernel.Execution`) — persistence filters and row-level security, cache keys, idempotency keys, outbound
-propagation — sees the resolved tenant. **Tier: Host.**
+[![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
+![Tier: Host](https://img.shields.io/badge/tier-Host-d73a49)
 
-Without this package, a request's tenant is the one the caller's credential asserts (through
-`SharedKernel.ServiceDefaults.Security`). Add it when a tenant can also come from a header or a tenant directory, or
-when a suspended tenant must be rejected.
+> **Per-request tenant resolution: decides which tenant an HTTP request belongs to — from the verified credential, a
+> header or a tenant directory — and puts it on the request context, so persistence, caching, idempotency and outbound
+> calls all see the same tenant. A suspended tenant fails closed.**
 
-## Included
+| You get | So that |
+| --- | --- |
+| `TenantResolutionMiddleware` | The resolved tenant replaces **only** the tenant on `IRequestContext`; caller and correlation id are kept |
+| Claim → Header → Database strategies | A signed claim outranks a caller-supplied header by default |
+| `ITenantResolutionStrategy` | You can add a strategy of your own (subdomain, path, API-key owner…) |
+| `ITenantStatusValidator` + `CatalogTenantStatusValidator` | A suspended or offboarded tenant is rejected even with a valid claim |
+| `ITenantCatalog`, `DatabaseTenantCatalog`, `CachedTenantCatalog` | Read-only tenant metadata (status, isolation mode, default culture) with a short, invalidatable cache |
+| Startup validation of `StrategyOrder` | A typo or duplicate strategy name fails the host instead of silently resolving nothing |
 
-**`TenantResolutionMiddleware`** — runs the configured strategies in order; the first one returning a tenant wins.
-It then opens an inner `RequestContextScope` that replaces **only** the tenant: the caller and the correlation id stay
-those of `UseSharedKernelRequestContext()`'s scope. When nothing resolves (or the tenant is inactive), the tenant is
-`null` — fail closed, even if the credential asserted one. A resolved tenant is also set as `Activity` baggage
-(`WellKnownBaggageKeys.TenantId`) for log enrichment.
+## Contents
 
-| Strategy | Resolves from |
-|---|---|
-| `ClaimTenantResolutionStrategy` | The authenticated credential's tenant, through the authentication package's `IUserContextMapper` (the claim type is that package's setting) |
-| `HeaderTenantResolutionStrategy` | The `X-Tenant-Id` request header (`WellKnownHeaders.TenantId`), parsed with `TenantId.TryParse`; malformed → no tenant, never an exception |
-| `DatabaseTenantResolutionStrategy` | A tenant-directory lookup (host/domain → tenant) through `IDbConnectionFactory`, parameterized |
+- [Install](#install)
+- [Quick start](#quick-start)
+- [How it works](#how-it-works)
+- [Recipes](#recipes)
+- [Configuration](#configuration)
+- [Reference](#reference)
+- [Testing](#testing)
+- [Pitfalls](#pitfalls)
 
-**`ITenantResolutionStrategy`** — implement `Task<TenantId?> TryResolveAsync(HttpContext, CancellationToken)` and a
-`StrategyName` to add your own.
+## Install
 
-**`ITenantStatusValidator`** — optional. When registered, it is consulted after resolution so a suspended or
-offboarded tenant is rejected even with an otherwise valid claim or header.
+```xml
+<PackageReference Include="SharedKernel.MultiTenancy" />
+```
 
-**`TenantResolutionOptions`** — `StrategyOrder`, bindable from `SharedKernel:MultiTenancy`
-(`TenantResolutionOptions.SectionName`), validated at startup by `TenantResolutionOptionsValidator` (a typo or a
-duplicate entry fails the host rather than silently resolving nothing). Leave it empty to use
-`TenantResolutionOptions.DefaultStrategyOrder`; a configured list replaces the default.
+The version comes from your central `SharedKernelVersion` property — every SharedKernel package ships at the same
+version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel#using-the-packages).
+
+| Requirement | Value |
+| --- | --- |
+| Target framework | `net10.0` |
+| Tier | Host — reference it from your **Api** project |
+| Depends on | `SharedKernel.Execution`, `SharedKernel.Security.Abstractions`, `SharedKernel.Persistence.Abstractions`, `SharedKernel.Caching.Abstractions` |
+| Namespaces | `SharedKernel.MultiTenancy.Extensions`, `.Middleware`, `.Resolution`, `.Catalog` |
+
+Without this package a request's tenant is the one the caller's credential asserts (through
+`SharedKernel.ServiceDefaults.Security`). Add it when a tenant can also come from a header or a directory, or when a
+suspended tenant must be rejected.
 
 ## Quick start
 
 ```csharp
-builder.Services.AddSharedKernelRequestContext();        // SharedKernel.ServiceDefaults.Security
-builder.Services.AddSharedKernelMultiTenancy();
+using SharedKernel.MultiTenancy.Extensions;
+using SharedKernel.MultiTenancy.Middleware;
+using SharedKernel.MultiTenancy.Resolution;
+using SharedKernel.ServiceDefaults.Security;
 
-// Optional: read StrategyOrder from configuration instead of using the default
-builder.Services.Configure<TenantResolutionOptions>(
-    builder.Configuration.GetSection(TenantResolutionOptions.SectionName));
+builder.Services.AddSharedKernelRequestContext();
+builder.Services.AddSharedKernelMultiTenancy(o =>
+    builder.Configuration.GetSection(TenantResolutionOptions.SectionName).Bind(o));   // optional
 
 var app = builder.Build();
 
-// The canonical pipeline, with 14.Presentation's SharedKernel.Presentation.WebApi:
 app.UseSharedKernelRequestContext();                        // first: the request's scope and correlation id
 app.UseSharedKernelWebApi(p => p.BeforeAuthorization(a =>
     a.UseMiddleware<TenantResolutionMiddleware>()));        // after authentication, before authorization
 app.MapEndpoints();
-
-// Without SharedKernel.Presentation.WebApi, the same order by hand:
-// app.UseSharedKernelRequestContext();
-// app.UseExceptionHandler();
-// app.UseAuthentication();
-// app.UseMiddleware<TenantResolutionMiddleware>();
-// app.UseAuthorization();
-```
-
-Read the tenant through the request context:
-
-```csharp
-public sealed class OrderService(IRequestContext caller)
-{
-    public TenantId? CurrentTenant => caller.TenantId;
-}
 ```
 
 ```json
 {
   "SharedKernel": {
-    "MultiTenancy": {
-      "StrategyOrder": [ "Claim", "Header", "Database" ]
-    }
+    "MultiTenancy": { "StrategyOrder": [ "Claim", "Header" ] }
   }
 }
 ```
 
-## Tenant catalog (read-only metadata lookup)
-
-**`ITenantCatalog`** — `GetByIdAsync(TenantId, ct)` and `GetByResolutionKeyAsync(string, ct)` (host, claim value,
-header value) returning a `TenantDescriptor` (status, isolation mode, default culture, settings). Lookup only —
-tenant provisioning/onboarding is a consuming service's own concern.
-
-**`DatabaseTenantCatalog`** — queries a consumer-owned tenant directory table via `IDbConnectionFactory`, with the same
-parameterized-query pattern as `DatabaseTenantResolutionStrategy`.
-
-**`CachedTenantCatalog`** — a short (30 s default), bounded-TTL decorator over any `ITenantCatalog`, stored in the
-service's `ICacheService`. Call `InvalidateTenantAsync(tenantId, ct)` immediately after changing a tenant's status —
-do not rely on the TTL alone. With a distributed cache and backplane (`AddRedisL2`) the invalidation reaches every
-instance; without one, other instances fall back to the TTL. Fail-safe is off, so an unreachable catalog database
-never serves a stale `Active` descriptor.
-
-**`CatalogTenantStatusValidator`** — an `ITenantStatusValidator` backed by `ITenantCatalog`. Fails closed: a tenant
-absent from the catalog is treated like `Suspended`/`Offboarded`.
+Read the tenant through the request context, never from `HttpContext`:
 
 ```csharp
-builder.Services.AddScoped<ITenantCatalog>(sp =>
+public sealed class OrderService(IRequestContext caller)
 {
-    var database = new DatabaseTenantCatalog(sp.GetRequiredService<IDbConnectionFactory>());
-    return new CachedTenantCatalog(
-        database,
-        sp.GetRequiredService<ICacheService>(),
-        sp.GetRequiredService<ICacheKeyProvider>()); // 30 s default TTL
-});
+    public TenantId? CurrentTenant => caller.TenantId;   // null → tenant-scoped code fails closed
+}
+```
+
+Without `SharedKernel.Presentation.WebApi`: `UseSharedKernelRequestContext()`, `UseExceptionHandler()`,
+`UseAuthentication()`, `UseMiddleware<TenantResolutionMiddleware>()`, `UseAuthorization()`.
+
+## How it works
+
+- The middleware runs the strategies in `StrategyOrder`; **the first one returning a tenant wins**.
+- With an `ITenantStatusValidator` registered, a resolved tenant that is not active is dropped. Nothing resolved, or
+  an inactive tenant, means the tenant is `null` — fail closed, even if the credential asserted one. The request still
+  runs; tenant-scoped code (persistence filters, row-level security, tenant caches) refuses to work without a tenant.
+- It then opens an inner `RequestContextScope` via `IRequestContext.WithTenant(...)`: only the tenant changes.
+- The `TenantId` baggage item on the `Activity` is always replaced (removed when no tenant resolved), so a caller's
+  own `TenantId` baggage never reaches log records.
+
+| Strategy | Name | Resolves from |
+| --- | --- | --- |
+| `ClaimTenantResolutionStrategy` | `Claim` | The authenticated credential's tenant, through the scheme's `IUserContextMapper` |
+| `HeaderTenantResolutionStrategy` | `Header` | `X-Tenant-Id` (`WellKnownHeaders.TenantId`) via `TenantId.TryParse`; malformed → no tenant, never an exception |
+| `DatabaseTenantResolutionStrategy` | `Database` | `SELECT tenant_id FROM tenant_directory WHERE host = @host` through `IDbConnectionFactory` |
+
+**Why Claim → Header → Database?** A JWT tenant claim is signature-verified; the header is caller-supplied and trivially
+forged. Putting `Header` first would let any caller override a verified identity — a cross-tenant impersonation
+vector. The default order is locked by an architecture test in `00.Governance`.
+
+## Recipes
+
+### 1. Reject suspended tenants
+
+```csharp
+using SharedKernel.Caching.Abstractions;
+using SharedKernel.MultiTenancy.Catalog;
+using SharedKernel.MultiTenancy.Resolution;
+using SharedKernel.Persistence.Abstractions.Connections;
+
+builder.Services.AddScoped<ITenantCatalog>(sp => new CachedTenantCatalog(
+    new DatabaseTenantCatalog(sp.GetRequiredService<IDbConnectionFactory>()),
+    sp.GetRequiredService<ICacheService>(),
+    sp.GetRequiredService<ICacheKeyProvider>()));           // ttl defaults to 30 s
 
 builder.Services.AddScoped<ITenantStatusValidator, CatalogTenantStatusValidator>();
 ```
 
-## Security note — strategy order matters
+`CatalogTenantStatusValidator` fails closed: a tenant absent from the catalog is treated like `Suspended`. After
+changing a tenant's status, call `CachedTenantCatalog.InvalidateTenantAsync(tenantId, ct)` — with a Redis L2 and
+backplane the eviction reaches every instance; otherwise other instances fall back to the TTL. Fail-safe is off, so an
+unreachable catalog database never serves a stale `Active` descriptor.
 
-The default order is **`Claim` → `Header` → `Database`**, and it is deliberate.
+### 2. Add a strategy of your own
 
-A JWT tenant claim is signature-verified; the `X-Tenant-Id` header is caller-supplied and trivially forged. Placing
-`Header` ahead of `Claim` lets any caller override a verified identity with an arbitrary one — a cross-tenant
-impersonation vector. This ordering is locked by an architecture test in `00.Governance` so it cannot silently
-regress.
+Implement `ITenantResolutionStrategy` — `string StrategyName` and
+`Task<TenantId?> TryResolveAsync(HttpContext, CancellationToken)` — register it scoped, and add its name to
+`StrategyOrder`.
 
-A service with no tenant directory simply omits `"Database"` from the order — no code change required.
+### 3. A service with no tenant directory
 
-`StrategyOrder` is empty by default and the documented order lives in `TenantResolutionOptions.DefaultStrategyOrder`.
-Configuration binding appends to a list that already has items, so a non-empty default would turn a configured
-`["Header"]` into `[Claim, Header, Database, Header]`; with an empty default, a configured order replaces the default
-exactly.
+Leave `"Database"` out of `StrategyOrder`. No code change.
 
-## Logging
+## Configuration
 
-| EventId | Event |
+Section `SharedKernel:MultiTenancy` (`TenantResolutionOptions.SectionName`), bound when you bind it (see Quick start)
+and validated at host start.
+
+| Key | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `SharedKernel:MultiTenancy:StrategyOrder` | `string[]` | empty → `DefaultStrategyOrder` (`Claim`, `Header`, `Database`) | Strategies to try, in order; each must match a registered strategy's `StrategyName`, no duplicates |
+
+`StrategyOrder` is empty by default on purpose: configuration binding appends to a non-empty list, so a configured
+`["Header"]` would otherwise become `[Claim, Header, Database, Header]`. A configured order replaces the default exactly.
+
+The `tenant_directory` table (`tenant_id`, `host`, `resolution_key`, `display_name`, `status`, `isolation_mode`,
+`default_culture`) is consumer-owned; provisioning is out of scope.
+
+## Reference
+
+### Registration
+
+| Method | Registers |
 | --- | --- |
-| `13100` | Tenant resolved — tenant id and strategy name |
-| `13101` | No tenant resolved (or the resolved tenant is inactive) |
+| `AddSharedKernelMultiTenancy(Action<TenantResolutionOptions>?)` | `TenantResolutionOptions` (validated on start), `IRequestContextAccessor` (if absent), the Header, Claim and Database strategies (scoped). The middleware itself is added by you |
 
-## Package
+### Types
 
-Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) — see the
-[13.ServiceDefaults README](../README.md) for the full host composition.
+| Type | Purpose |
+| --- | --- |
+| `TenantResolutionMiddleware` | Resolves the tenant and opens the inner scope |
+| `ITenantResolutionStrategy`, `TenantResolutionStrategyNames` | Strategy contract; `Claim`, `Header`, `Database` |
+| `ITenantStatusValidator` | `IsActiveAsync(TenantId, ct)`; optional gate |
+| `ITenantCatalog` | `GetByIdAsync(TenantId, ct)`, `GetByResolutionKeyAsync(string, ct)` → `TenantDescriptor?` |
+| `TenantDescriptor` | `TenantId`, `DisplayName`, `Status` (`Active`/`Suspended`/`Offboarded`), `IsolationMode` (`Shared`/`Dedicated`), `DefaultCulture`, `Settings` |
+| `DatabaseTenantCatalog`, `CachedTenantCatalog` (`DefaultTtl` = 30 s, `InvalidateTenantAsync`), `CatalogTenantStatusValidator` | Catalog implementations |
+
+### Logging
+
+| Event id | Level | Event |
+| --- | --- | --- |
+| 13100 | Debug | Tenant resolved — tenant id and strategy name |
+| 13101 | Trace | No tenant resolved, or the resolved tenant is inactive |
+
+## Testing
+
+Reference [`SharedKernel.ServiceDefaults.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/16.Testing/SharedKernel.ServiceDefaults.Testing/README.md)
+(namespace `SharedKernel.Testing.ServiceDefaults`):
+
+- `new FakeTenantResolutionStrategy(tenantId)` (or a resolver delegate), `StrategyName` settable — drive the middleware
+  without headers or a database.
+- `InMemoryTenantCatalog` — `SeedTenant(descriptor, resolutionKey)`, `MutateStatus(tenantId, status)`, `Reset()`; pair
+  it with `CatalogTenantStatusValidator` to test suspension.
+
+## Pitfalls
+
+| Don't | Do | Why |
+| --- | --- | --- |
+| Put `Header` before `Claim` | Keep the default order, or omit `Header` | A forged header would override a verified tenant |
+| Add the middleware before `UseAuthentication()` | Place it after authentication, before authorization | The `Claim` strategy needs the authenticated user |
+| Call `AddSharedKernelMultiTenancy()` and forget `UseMiddleware<TenantResolutionMiddleware>()` | Wire the middleware explicitly | Registration alone resolves nothing beyond the credential's tenant |
+| Rely on the catalog TTL after suspending a tenant | Call `InvalidateTenantAsync` | A suspended tenant would keep access for up to the TTL |
+| Treat a `null` tenant as "all tenants" | Fail closed; use `ICrossTenantScope` for deliberate cross-tenant work | `null` means no tenant was resolved |
+
+---
+
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
+[ServiceDefaults domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/13.ServiceDefaults/README.md) ·
+[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

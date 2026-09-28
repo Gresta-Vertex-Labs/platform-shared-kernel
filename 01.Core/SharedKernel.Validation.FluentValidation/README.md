@@ -2,56 +2,53 @@
 
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
-[![FluentValidation 11](https://img.shields.io/badge/FluentValidation-11-blue)](https://docs.fluentvalidation.net/)
+![Tier: Adapter](https://img.shields.io/badge/tier-Adapter-6f42c1)
 ![Public API: tracked](https://img.shields.io/badge/public%20API-tracked-informational)
+[![FluentValidation 11](https://img.shields.io/badge/FluentValidation-11-blue)](https://docs.fluentvalidation.net/)
 
-> **FluentValidation rules for IBANs, card numbers, VAT numbers, national IDs and every other
-> [`SharedKernel.Validation`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/01.Core/SharedKernel.Validation/README.md)
-> identifier: `RuleFor(x => x.Iban).MustBeValidIban()`. Each failure carries the exact error code, values a translation
-> can use, and the field path. It never carries the rejected value.**
+> **FluentValidation rules for IBANs, card numbers, VAT numbers, national IDs and every other `SharedKernel.Validation`
+> identifier — `RuleFor(x => x.Iban).MustBeValidIban()` — plus the bridge that runs FluentValidation validators in the
+> kernel request pipeline. Each failure carries the exact error code, translatable values and the field path, never the
+> rejected value.**
 
-Hand-written rules such as `.Must(BeAValidIban)` produce a generic code and a fixed English message. They can't tell a
-wrong length from a wrong check digit, and they put the rejected value into `AttemptedValue`, where a card number ends
-up in logs. These rules keep all of the detail `SharedKernel.Validation` produces, and leave out the value.
+Hand-written `.Must(BeAValidIban)` rules produce a generic code and a fixed English message, cannot tell a wrong length
+from a wrong check digit, and put the rejected value into `AttemptedValue`, where a card number ends up in logs.
 
 | You get | So that |
 | --- | --- |
 | One rule per identifier type, plus `MustBeValid<T, TValue>()` for any other | One line per field, running the same checks as the value types |
 | The specific code per failure, such as `validation.iban.invalid_length` | Clients and dashboards see what is wrong, not just "IBAN invalid" |
-| The error's values as placeholders, next to `{PropertyName}` and `{PropertyPath}` | The HTTP response shows the message in the caller's language and keys it by field |
+| The error's values as placeholders, next to `{PropertyName}` and `{PropertyPath}` | The HTTP response shows the message in the caller's language, keyed by field |
 | Rules that read the country from another property | A Turkish form's VKN or TCKN field is checked against its country field |
-| No `AttemptedValue` and no `{PropertyValue}` | A card or national ID number can't reach a log through a validation result |
-| Null passes, as with FluentValidation's own format rules | Required-ness stays with `NotEmpty()`, and an optional field isn't reported twice |
-
-It is a separate package so that code which doesn't use FluentValidation, such as a Temporal activity or a scheduled
-job, never depends on it.
+| No `AttemptedValue` and no `{PropertyValue}` | A card or national ID number cannot reach a log through a validation result |
+| `AddFluentValidationRequestValidators(assemblies)` | Existing `IValidator<T>` classes run in the kernel pipeline's validation step |
 
 ## Contents
 
 - [Install](#install)
 - [Quick start](#quick-start)
-- [Rules](#rules)
-- [Run validators in the request pipeline](#run-validators-in-the-request-pipeline)
-- [What a failure contains](#what-a-failure-contains)
-- [End to end: from rule to HTTP response](#end-to-end-from-rule-to-http-response)
+- [How it works](#how-it-works)
 - [Recipes](#recipes)
+- [Reference](#reference)
+- [Testing](#testing)
 - [Pitfalls](#pitfalls)
 - [Design decisions](#design-decisions)
-- [AI quick reference](#ai-quick-reference)
-- [Compatibility and guarantees](#compatibility-and-guarantees)
 
 ## Install
 
-```shell
-dotnet add package SharedKernel.Validation.FluentValidation
+```xml
+<PackageReference Include="SharedKernel.Validation.FluentValidation" />
 ```
+
+The version comes from your central `SharedKernelVersion` property — every SharedKernel package ships at the same
+version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel#using-the-packages).
 
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
-| Tier | Adapter |
-| Depends on | `SharedKernel.Validation`, `SharedKernel.Application` (for `IRequestValidator<T>`), `FluentValidation` 11 |
-| Namespace | `SharedKernel.Validation.FluentValidation` |
+| Tier | Adapter — reference it from your **Infrastructure** project (or wherever your validators live) |
+| Depends on | [`SharedKernel.Validation`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/01.Core/SharedKernel.Validation/README.md), `SharedKernel.Application` (for `IRequestValidator<T>`), `FluentValidation` 11 |
+| Namespaces | `SharedKernel.Validation.FluentValidation` |
 
 ## Quick start
 
@@ -75,45 +72,28 @@ public sealed class CreateCustomerValidator : AbstractValidator<CreateCustomer>
 }
 ```
 
-## Rules
-
-| Rule | Checks | Notes |
-| --- | --- | --- |
-| `MustBeValidIban(allowUnregisteredCountry = false)` | `Iban`: 89 registry countries, length, account-number structure, check digits | `true` also accepts a valid ISO country not yet in the registry |
-| `MustBeValidBic()` | `Bic` | |
-| `MustBeValidCardNumber(requireKnownNetwork = false)` | `CardNumber`: 12–19 digits, Luhn | `true` also requires one of the 10 known networks |
-| `MustBeValidCountryCode()` | `CountryCode`: ISO 3166-1 alpha-2 | |
-| `MustBeValidCurrencyCode()` | `CurrencyCode`: active ISO 4217 | |
-| `MustBeValidPhoneNumber()` | `PhoneNumber`: E.164 | |
-| `MustBeValidLei()` | `Lei` | |
-| `MustBeValidAbaRoutingNumber()` | `AbaRoutingNumber` | |
-| `MustBeValidSepaCreditorId()` | `SepaCreditorId` | |
-| `MustBeValidVatNumber()` | `VatNumber` with its prefix in the value | `DE136695976` |
-| `MustBeValidVatNumber(x => x.Country)` | `VatNumber` of the country another property holds | Prefix optional: `4540536920` with `TR` |
-| `MustBeValidNationalId(x => x.Country, registry = null)` | `NationalId` of that country | TCKN built in; pass a registry for more countries |
-| `MustBeValid<T, TValue>()` | Any `IValidatedValue<TValue>` | Includes your own types |
-
-The country-dependent rules skip when the country is missing or not a valid code, so a bad country is reported once,
-by the country field's own rule.
-
-## Run validators in the request pipeline
-
-`AddFluentValidationRequestValidators(params Assembly[] assemblies)` makes every FluentValidation `IValidator<T>` for a
-request run in the kernel pipeline's validation step (`SharedKernel.Application.Pipeline`'s `ValidationBehavior`). It
-registers `FluentValidationRequestValidator<TRequest>` as the open-generic
-`SharedKernel.Application.Validation.IRequestValidator<TRequest>` and every validator found in the assemblies you pass —
-scoped, public and internal, each at most once. Pass the same assemblies as `AddSharedKernelApplication`. With no
-assembly it registers only the bridge, and you register the validators yourself.
+Run the validators in the request pipeline:
 
 ```csharp
-// Program.cs
-using SharedKernel.Application.Pipeline;
 using SharedKernel.Application.Mediator.MediatR;
+using SharedKernel.Application.Pipeline;
 using SharedKernel.Validation.FluentValidation;
 
 builder.Services.AddSharedKernelApplication(typeof(Program).Assembly, app => app.UseMediatR());
 builder.Services.AddFluentValidationRequestValidators(typeof(Program).Assembly);   // the bridge + the validators; idempotent
 ```
+
+The package has no configuration section.
+
+## How it works
+
+### The pipeline bridge
+
+`AddFluentValidationRequestValidators(params Assembly[])` registers `FluentValidationRequestValidator<TRequest>` as the
+open-generic `IRequestValidator<TRequest>` of `SharedKernel.Application`, and every FluentValidation validator found in
+the assemblies you pass — scoped, public and internal, each at most once. Pass the same assemblies as
+`AddSharedKernelApplication`; with no assembly it registers only the bridge. The pipeline itself never references
+FluentValidation.
 
 | Behaviour | Detail |
 | --- | --- |
@@ -122,11 +102,27 @@ builder.Services.AddFluentValidationRequestValidators(typeof(Program).Assembly);
 | `Error.MessageArguments` | The failure's placeholder values plus `PropertyPath` and `PropertyName`; FluentValidation's `PropertyValue` is always dropped |
 | No validator registered | No errors from the bridge; hand-written `IRequestValidator<T>` implementations run alongside it |
 
-The pipeline itself never references FluentValidation: this package is the only bridge.
+### From rule to HTTP response
 
-## What a failure contains
+1. `ValidationBehavior` (`SharedKernel.Application.Pipeline`) runs your validators and turns each failure into an `Error`,
+   keeping the code, message and values; the field path goes into `MessageArguments["PropertyPath"]`.
+2. `SharedKernel.Presentation.WebApi` returns ProblemDetails with `errors` (messages by field) and `errorCodes` (codes
+   under the same keys), translated when a catalog with `AddValidationTranslations()` is registered.
+3. `SharedKernel.Communication.Rest` reads both maps back into `Error` values on the calling service.
 
-For `Iban = "DE8937040044053201300"`, one character short:
+A Turkish caller sending an IBAN one character short gets:
+
+```json
+{
+  "status": 400,
+  "errors": { "Iban": ["DE IBAN'ı 22 karakter olmalıdır, girilen 21 karakter."] },
+  "errorCodes": { "Iban": ["validation.iban.invalid_length"] }
+}
+```
+
+### What a failure contains
+
+For `Iban = "DE8937040044053201300"`:
 
 | `ValidationFailure` member | Value |
 | --- | --- |
@@ -137,31 +133,11 @@ For `Iban = "DE8937040044053201300"`, one character short:
 | `AttemptedValue` | `null` |
 | `CustomState` | The `Error` from `SharedKernel.Validation` |
 
-Every code is listed in `ValidationErrorCodes`. Each has one message in `ValidationMessages` and a Turkish translation.
-
-## End to end: from rule to HTTP response
-
-With the platform's pipeline, nothing between the rule and the response needs code:
-
-1. `SharedKernel.Application.Pipeline`'s `ValidationBehavior` runs your validators and turns each failure into an `Error`,
-   keeping the code, the message and the placeholder values. The field path goes into
-   `MessageArguments["PropertyPath"]`.
-2. `SharedKernel.Presentation.WebApi` returns a ProblemDetails response:
-   - `errors` holds the messages, keyed by field;
-   - `errorCodes` holds the codes under the same keys;
-   - each message is translated into the caller's language when a catalog with `AddValidationTranslations()` is
-     registered.
-3. `SharedKernel.Communication.Rest` reads both maps back into `Error` values on the calling service.
-
-A Turkish caller sending the short IBAN gets:
-
-```json
-{
-  "status": 400,
-  "errors": { "Iban": ["DE IBAN'ı 22 karakter olmalıdır, girilen 21 karakter."] },
-  "errorCodes": { "Iban": ["validation.iban.invalid_length"] }
-}
-```
+- **Null passes**, as with FluentValidation's own format rules; `""`/whitespace fails with `validation.required`. Use
+  `NotEmpty()` for required fields.
+- The country-dependent rules skip when the country is missing or invalid, so a bad country is reported once, by the
+  country field's own rule.
+- Each rule calls the type's own `Create`, so a value the rule accepts always parses.
 
 ## Recipes
 
@@ -189,7 +165,7 @@ RuleForEach(x => x.Accounts).ChildRules(account =>
 RuleFor(x => x.Iban).MustBeValidIban().When(x => x.PaymentMethod == "transfer");
 ```
 
-`When` and `Unless` are the only options available after these rules; see [Pitfalls](#pitfalls).
+`When` and `Unless` are the only options available after these rules.
 
 ### 4. Your own identifier type
 
@@ -230,57 +206,73 @@ Assert.Equal(ValidationErrorCodes.Iban.InvalidLength, failure.ErrorCode);
 Assert.Equal(22, failure.FormattedMessagePlaceholderValues["expected"]);
 ```
 
-Assert on the code and the values, not the English message text, which may be reworded or translated.
+## Reference
+
+### Registration
+
+| Method | Registers |
+| --- | --- |
+| `AddFluentValidationRequestValidators(params Assembly[] assemblies)` | `IRequestValidator<>` → `FluentValidationRequestValidator<>` (open generic) and the assemblies' `IValidator<T>` classes (scoped, each once); idempotent |
+
+### Rules (`ValidationRuleBuilderExtensions`, on `IRuleBuilder<T, string>`)
+
+| Rule | Checks | Notes |
+| --- | --- | --- |
+| `MustBeValidIban(allowUnregisteredCountry = false)` | `Iban`: 89 registry countries, length, account-number structure, check digits | `true` also accepts a valid ISO country not yet in the registry |
+| `MustBeValidBic()` | `Bic` | |
+| `MustBeValidCardNumber(requireKnownNetwork = false)` | `CardNumber`: 12–19 digits, Luhn | `true` also requires one of the 10 known networks |
+| `MustBeValidCountryCode()` | `CountryCode`: ISO 3166-1 alpha-2 | |
+| `MustBeValidCurrencyCode()` | `CurrencyCode`: active ISO 4217 | |
+| `MustBeValidPhoneNumber()` | `PhoneNumber`: E.164 | |
+| `MustBeValidLei()` / `MustBeValidAbaRoutingNumber()` / `MustBeValidSepaCreditorId()` | `Lei` / `AbaRoutingNumber` / `SepaCreditorId` | |
+| `MustBeValidVatNumber()` | `VatNumber` with its prefix in the value | `DE136695976` |
+| `MustBeValidVatNumber(x => x.Country)` | `VatNumber` of the country another property holds | Prefix optional: `4540536920` with `TR` |
+| `MustBeValidNationalId(x => x.Country, registry = null)` | `NationalId` of that country | TCKN built in; pass a `NationalIdValidatorRegistry` for more countries |
+| `MustBeValid<T, TValue>()` | Any `IValidatedValue<TValue>` | Includes your own types |
+
+### Errors
+
+Codes come from `SharedKernel.Validation`'s `ValidationErrorCodes` (stable), each with one message in
+`ValidationMessages` and a Turkish translation.
+
+### Logging
+
+The package does not log.
+
+## Testing
+
+Validators are plain classes: call `Validate(…)` and assert on `ErrorCode` and `FormattedMessagePlaceholderValues` (recipe
+5), not the English text, which may be reworded or translated. For sample inputs use `ValidationSampleGenerator` from
+[`SharedKernel.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/16.Testing/SharedKernel.Testing/README.md).
+To run the pipeline with the bridge, see `ApplicationPipelineTestHarness` in
+[`SharedKernel.Application.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/16.Testing/SharedKernel.Application.Testing/README.md).
 
 ## Pitfalls
 
-- **Expecting a null value to fail.** It passes. Add `NotEmpty()` for required fields.
-- **`WithMessage`, `WithErrorCode`, `WithName` or `WithSeverity` after these rules.** They don't compile, because each
-  failure sets its own code, which FluentValidation only allows through `Custom`, and `Custom` offers only `When` and
-  `Unless`.
-  - To reword a message, translate its code.
-  - To set the display name used in `{PropertyName}`, put `WithName` on an earlier rule of the same property:
-    `RuleFor(x => x.Bic).NotEmpty().WithName("Bank code").MustBeValidBic()`.
-- **Reading `AttemptedValue` in a failure handler.** It is always null for these rules, by design.
-- **An invalid country makes the VAT and national ID rules skip.** That is intentional: give the country field its own
-  `NotEmpty().MustBeValidCountryCode()` rule.
+| Don't | Do | Why |
+| --- | --- | --- |
+| Expect a null value to fail | Add `NotEmpty()` for required fields | Null passes, like FluentValidation's own format rules |
+| Chain `WithMessage`, `WithErrorCode`, `WithName` or `WithSeverity` after these rules | Translate the code to reword; put `WithName` on an earlier rule: `RuleFor(x => x.Bic).NotEmpty().WithName("Bank code").MustBeValidBic()` | They do not compile: each failure sets its own code, which FluentValidation allows only through `Custom`, and `Custom` offers only `When`/`Unless` |
+| Read `AttemptedValue` in a failure handler | Use `CustomState` (the `Error`) or the placeholder values | It is always `null` for these rules, by design |
+| Rely on the VAT or national ID rule to catch a bad country | Give the country field `NotEmpty().MustBeValidCountryCode()` | Country-dependent rules skip when the country is invalid |
 
 ## Design decisions
 
-- **`Custom`, not a `PropertyValidator`.** A property validator in FluentValidation 11 has one error code per rule, but
-  an IBAN can fail five ways, each with its own code and translation. Keeping the precise code matters more than the
-  `WithMessage` chain, and translations cover rewording.
-- **Null passes,** matching FluentValidation's built-in format validators such as `EmailAddress`.
-- **Nullability-oblivious signatures.** The rules take `IRuleBuilder<T, string>` without nullable annotations, as
-  FluentValidation's own do, so they apply to `string` and `string?` properties without warnings.
-- **No rejected value, anywhere.** A validation result is often logged whole; leaving the value out is the only way to
-  keep card and identity numbers out of logs by default.
+**Why `Custom` rather than a `PropertyValidator`?** A property validator in FluentValidation 11 has one error code per
+rule, but an IBAN can fail five ways, each with its own code and translation. Keeping the precise code matters more than
+the `WithMessage` chain; translations cover rewording.
 
-## AI quick reference
+**Why nullability-oblivious signatures?** The rules take `IRuleBuilder<T, string>` without nullable annotations, as
+FluentValidation's own do, so they apply to `string` and `string?` properties without warnings.
 
-```text
-RULES      MustBeValidIban(allowUnregisteredCountry) MustBeValidBic() MustBeValidCardNumber(requireKnownNetwork)
-           MustBeValidCountryCode() MustBeValidCurrencyCode() MustBeValidPhoneNumber() MustBeValidLei()
-           MustBeValidAbaRoutingNumber() MustBeValidSepaCreditorId() MustBeValidVatNumber()
-           MustBeValidVatNumber(x => x.Country) MustBeValidNationalId(x => x.Country, registry?)
-           MustBeValid<T, TValue>() for any IValidatedValue<TValue>.
-NULL       Passes. "" / whitespace -> validation.required. Use NotEmpty() for required fields.
-FAILURE    ErrorCode = specific ValidationErrorCodes value; ErrorMessage = English default text;
-           FormattedMessagePlaceholderValues = error values + PropertyName (display) + PropertyPath;
-           AttemptedValue = null; CustomState = SharedKernel Error.
-CHAIN      Only When/Unless after these rules. No WithMessage/WithErrorCode/WithName/WithSeverity.
-PIPELINE   services.AddFluentValidationRequestValidators(typeof(Program).Assembly) registers the bridge + that assembly's
-           validators (no assembly -> bridge only; register validators yourself) -> IRequestValidator<T> in
-           ValidationBehavior keeps the code -> ProblemDetails errors (by field) + errorCodes -> REST client restores both.
-COUNTRY    VAT/NationalId rules skip when the country is missing/invalid; validate the country field separately.
-```
+**Why no rejected value anywhere?** A validation result is often logged whole; leaving the value out is the only way to
+keep card and identity numbers out of logs by default.
 
-## Compatibility and guarantees
+**Why a separate package?** Code that does not use FluentValidation — a Temporal activity, a scheduled job — never
+depends on it.
 
-- **Public API is tracked** with `Microsoft.CodeAnalysis.PublicApiAnalyzers`, and every public member is documented.
-- **The same checks as the value types.** Each rule calls the type's own `Create`, so a value the rule accepts always
-  parses.
-- **Error codes are stable,** and come from `SharedKernel.Validation`'s `ValidationErrorCodes`.
-- **No rejected value** in any failure produced by these rules.
+---
 
-Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel).
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
+[Core domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/01.Core/README.md) ·
+[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
