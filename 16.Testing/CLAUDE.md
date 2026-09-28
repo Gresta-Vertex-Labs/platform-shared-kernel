@@ -34,7 +34,7 @@ Every project declares `<SharedKernelTier>Testing</SharedKernelTier>`; every pac
 
 - **Caller:** `TestRequestContext` (settable tenant, actor, permissions, correlation id); `AddTestRequestContext()` (Persistence.Testing) registers one.
 - **Time and logs:** `new FakeClock(...)` for `IClock`; `services.AddInMemoryLoggerFactory()` then `LoggerAssertions` on `InMemoryLogger` records (EventId, level, structured properties).
-- **Replace one dependency in a real host:** every `Add{Fake|InMemory}*()` extension replaces an existing registration of the same service.
+- **Replace one dependency in a real host:** the Cryptography, Idempotency, Persistence and Reporting `AddFake*`/`AddInMemory*` extensions remove an existing registration first; the others only add, so call them before (or instead of) the production registration.
 - **Storage:** `services.AddSharedKernelStorage().AddInMemoryStore("invoices")` — named stores and tenant views resolve as in production.
 - **Pipeline:** `new ApplicationPipelineTestHarness().Configure(app => app.WithTransactions()…).Build<TMarker>()` — `Configure` takes the same `ApplicationPipelineBuilder` a service passes to `AddSharedKernelApplication`, `Build<TMarker>()` (or `Build()`) runs the real registration and seam checks, then `SendAsync`; `WithActivityCapture()` records spans and metrics. Authorization is always on.
 - **REST/gRPC clients:** `UseStubHttpMessageHandler(clientName, stub)` runs a typed client's whole pipeline against canned answers; `GrpcCalls` fakes unary calls.
@@ -50,7 +50,7 @@ Every project declares `<SharedKernelTier>Testing</SharedKernelTier>`; every pac
 5. **No mocking framework inside a double.** Implement the interface directly.
 6. **Docker-bound infrastructure lives only in `Testing.Internal`** (`IsPackable=false`), except `Persistence.Testing`'s `PostgresTestServer` for consumers.
 7. **Deterministic:** time from `FakeClock` or a caller-supplied `TimeProvider`/`IClock`, seeded randomness (`FakerSeeding`), no real I/O outside container fixtures. Flakiness traced into a double is a bug in the double.
-8. **Thread-safe:** every stateful double tolerates parallel test collections.
+8. **Thread-safe (target):** a stateful double should tolerate parallel test collections. `InMemoryScheduledJobRegistry` and `InMemoryReportExporter` still use unsynchronized collections — keep a test that uses them in one collection until they are fixed.
 9. **Faithful failure modes:** a double fails where production fails (definition validation, tenant fail-closed for `TenantScope.Global` against a tenant-declaring index/collection, fingerprint mismatch, conditional-write conflicts) and returns the owning domain's real `Error` codes. Simplifications (exact `TotalHits`, substring free-text, …) are documented in the package README.
 10. **Tenants are `TenantId`, scopes are `SharedKernel.Execution.Tenancy.TenantScope`, callers are `IRequestContext`.** There is no fake tenant provider.
 11. **Registered lifetime:** a double whose history is asserted after the SUT's scope ends is a **singleton** even when production is scoped (message bus, event publisher, search index, vector collection, workflow dispatcher); say so in the XML doc and README.

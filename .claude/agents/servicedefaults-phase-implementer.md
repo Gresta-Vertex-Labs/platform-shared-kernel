@@ -24,7 +24,7 @@ You edit files under `13.ServiceDefaults/` only. Report lines instead of edits f
 | `IReadinessProbe`, `ReadinessReport`, `WellKnownHeaders`/`WellKnownBaggageKeys`, `IRequestContext`, `RequestContextScope`, `CorrelationIds`, `TenantId` | `01.Core` |
 | `IUserContext`, `UserContextResolver`, mappers, `IMtlsCertificateValidator` | `12.Security` |
 | `CheckReadinessAsync`, `IPersistenceStartup`, `IDbConnectionFactory` | `06.Persistence` |
-| The 429 problem body (`RateLimitRejectionProblemDetails`), the rest of the HTTP pipeline | `14.Presentation` |
+| The 429 problem body (applied by `UseSharedKernelWebApi()` when rate limiting has no `OnRejected` of its own), the rest of the HTTP pipeline | `14.Presentation` |
 | `SharedKernel.ServiceDefaults.Testing` (`FakeTenantResolutionStrategy`, `InMemoryTenantCatalog`) | `16.Testing` |
 | `CompositionBaseIsolationTests` and other architecture rules | `00.Governance` |
 

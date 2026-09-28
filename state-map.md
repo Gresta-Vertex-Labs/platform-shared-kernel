@@ -42,7 +42,7 @@ Phases written by `arch-lead` take the next phase id; a user-directed phase with
 | 20 | [Reporting](20.Reporting/state-map.md) | 5 (1 Abstractions, 4 Adapter) | ● | None |
 | — | [samples](samples/README.md) | 7 services: OrderApi, BillingApi, ShippingApi, DocumentsApi, CatalogApi, CheckoutApi, InventoryApi | ● | None |
 
-Every package ships at one repo-wide version through the release train (`PLATFORM.md`); nothing is released per package.
+Every package ships at one repo-wide version through the release train (`CONTRIBUTING.md`, "Versioning and releases"); nothing is released per package.
 
 ## Open Work
 

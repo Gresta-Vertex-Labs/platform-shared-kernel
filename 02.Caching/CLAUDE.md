@@ -95,7 +95,7 @@ services.AddHealthChecks().AddSharedKernelReadiness();           // host: maps "
 ### Serialization, compression, encryption
 
 14. STJ only. NativeAOT builds set `CachingOptions.SerializerContext`; the same options serve L2 and encryption plaintext. `AddRedisL2` uses `.WithRegisteredSerializer()` — never `.WithSystemTextJsonSerializer()` (it would overwrite the context).
-15. `L1SizeLimit` and `SerializerContext` are read at registration by invoking `configure` on a temporary `CachingOptions`; values bound later do not affect them.
+15. `L1SizeLimit` and `SerializerContext` are read from `IOptions<CachingOptions>` when the cache is first built (the dedicated L1 `MemoryCache` and the FusionCache serializer), so both configuration binding and `configure` apply; changing them after the first resolution has no effect.
 16. Brotli is opt-in and L2-only; payloads carry marker bytes `0x42 0x52`; unmarked payloads pass through. protobuf-net is prohibited.
 17. Encryption decorates `ICacheService` (not the serializer) with **AAD = the cache key** — the serializer never sees the key. Decrypt failure → Warning (`Caching + 15`), best-effort evict, miss; `GetOrSetAsync` recomputes once through the wrapped service and never throws or returns wrong data.
 18. `AddBrotliCompression()` must precede `AddCacheEncryption()` (the reverse throws); encryption then compresses before encrypting.
