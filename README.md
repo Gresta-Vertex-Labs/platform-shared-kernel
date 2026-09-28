@@ -15,9 +15,9 @@ enforces the architecture.
 [![Status](https://img.shields.io/badge/status-pre--release-orange)](#-status--roadmap)
 [![CI](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/actions/workflows/ci.yml/badge.svg)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/actions/workflows/ci.yml)
 
-[What it is](#-what-it-is) · [Architecture](#-architecture) · [Package tree](#-the-package-tree) ·
-[Samples](#-sample-services) · [Status](#-status--roadmap) · [Using it](#-using-the-packages) ·
-[Building](#-building-this-repository)
+[What it is](#-what-it-is) · [Get started](#-get-started) · [Architecture](#-architecture) ·
+[Package tree](#-the-package-tree) · [Samples](#-sample-services) · [Status](#-status--roadmap) ·
+[Using it](#using-the-packages) · [Building](#-building-this-repository) · [Contributing](#-contributing)
 
 </div>
 
@@ -36,7 +36,8 @@ plumbing once, as small packages with narrow jobs, so a service only has to writ
 | 🧱 **7 tiers** | every package is Foundation, Model, Abstractions, Adapter, Host, Testing or Tooling, and the build rejects a reference its tier may not take |
 | 🧪 **A test double for every contract** | 20 `*.Testing` packages, so a service's unit tests need no containers |
 | 🛡️ **45 analyzer rules** | Roslyn rules for the conventions: `[LoggerMessage]`-only logging, no discarded `Result`, no raw SDK clients, no magic strings, deterministic workflows |
-| 🚀 **5 sample services** | built only from the packed packages and run in CI against real PostgreSQL, RabbitMQ, MinIO, Meilisearch and Elasticsearch |
+| 🚀 **7 sample services** | built only from the packed packages and run in CI against real PostgreSQL, RabbitMQ, MinIO, Meilisearch and Elasticsearch |
+| 📖 **One README standard** | every package README has the same shape — install, quick start, configuration, reference, testing, pitfalls — [checked by a test](docs/package-readme-standard.md) |
 
 ### Principles
 
@@ -53,6 +54,43 @@ plumbing once, as small packages with narrow jobs, so a service only has to writ
   registers its own readiness probe.
 - **Licence-conscious.** MassTransit is pinned to 8.5.x (the last Apache-2.0 release) and MediatR to 12.4.1
   (the last MIT release). EPPlus, QuestPDF and iText7 were declined on licensing.
+
+---
+
+## ⚡ Get started
+
+A service built on the kernel has four projects, and each one references only the tier made for it.
+[`samples/OrderApi`](samples/OrderApi/) is exactly this shape, with an architecture test that keeps it so.
+
+**1. Pin the version once** — see [Using the packages](#using-the-packages) for the full `Directory.Packages.props`.
+
+**2. Reference by project:**
+
+| Project | References | For example |
+|---------|------------|-------------|
+| `Orders.Domain` | Model tier | `SharedKernel.Domain` |
+| `Orders.Application` | Abstractions tier | `SharedKernel.Application` |
+| `Orders.Infrastructure` | Adapter tier | `SharedKernel.Persistence.EfCore`, `SharedKernel.Messaging.MassTransit.RabbitMq` |
+| `Orders.Api` | Host tier | `SharedKernel.ServiceDefaults`, `SharedKernel.Presentation.WebApi`, `SharedKernel.Application.Pipeline` |
+
+**3. Write the business, not the plumbing:**
+
+```csharp
+// Application — a command, its handler and the permission it needs
+[RequirePermission("orders.create")]
+public sealed record PlaceOrder(Guid CustomerId, decimal Amount, string IdempotencyKey)
+    : ICommand<Guid>, IIdempotentRequest;
+
+// Api — one registration call for the whole request pipeline
+builder.AddServiceDefaults();
+builder.Services.AddSharedKernelApplication(
+    typeof(PlaceOrderHandler).Assembly,
+    app => app.UseMediatR().WithIdempotency().WithTransactions());
+```
+
+Tracing, logging, metrics, authorization and validation run on every request; the `With…` stages are
+opt-in, and the host refuses to start if a stage's dependency is missing. The
+[samples guide](samples/README.md) walks through a complete service.
 
 ---
 
@@ -100,8 +138,8 @@ flowchart LR
 | **Testing** | everything except Tooling | test projects only |
 | **Tooling** | nothing | the build |
 
-The full rules, including the purity rules that tiers cannot express, are in [`CLAUDE.md`](CLAUDE.md).
-Build and release mechanics are in [`PLATFORM.md`](PLATFORM.md).
+The full rules, including the purity rules that tiers cannot express, are in
+[`CONTRIBUTING.md`](CONTRIBUTING.md#tiers). Build internals are in [`eng/README.md`](eng/README.md).
 
 ---
 
@@ -222,7 +260,7 @@ The badge after each name is the package's tier.
   - [SharedKernel.Application.Testing](16.Testing/SharedKernel.Application.Testing/README.md) `Testing` — runs a request through the real pipeline, no mediator needed
   - [SharedKernel.Caching.Testing](16.Testing/SharedKernel.Caching.Testing/README.md) `Testing` — fake cache, tenant cache and distributed locks
   - [SharedKernel.Caching.Redis.Testing](16.Testing/SharedKernel.Caching.Redis.Testing/README.md) `Testing` — fake Redis hashes and Pub/Sub
-  - [SharedKernel.Communication.Testing](16.Testing/SharedKernel.Communication.Testing/README.md) `Testing` — endpoint resolver and gRPC call-context helpers
+  - [SharedKernel.Communication.Testing](16.Testing/SharedKernel.Communication.Testing/README.md) `Testing` — a stub HTTP handler for REST clients and gRPC call fakes
   - [SharedKernel.Cryptography.Testing](16.Testing/SharedKernel.Cryptography.Testing/README.md) `Testing` — recording crypto fakes with failure simulation
   - [SharedKernel.FeatureManagement.Testing](16.Testing/SharedKernel.FeatureManagement.Testing/README.md) `Testing` — a feature client with per-test flags
   - [SharedKernel.Idempotency.Testing](16.Testing/SharedKernel.Idempotency.Testing/README.md) `Testing` — an in-memory idempotency store
@@ -241,15 +279,15 @@ The badge after each name is the package's tier.
 - 📁 **[17.Workflows](17.Workflows/README.md)** — durable execution · *1 package*
   - [SharedKernel.Workflows.Temporal](17.Workflows/SharedKernel.Workflows.Temporal/README.md) `Adapter` — Temporal workflows and activities, tenant-scoped dispatch, payload encryption
 
-- 📁 **[18.Idempotency](18.Idempotency/)** — duplicate-request and duplicate-message protection · *3 packages*
+- 📁 **[18.Idempotency](18.Idempotency/README.md)** — duplicate-request and duplicate-message protection · *3 packages*
   - [SharedKernel.Idempotency.Abstractions](18.Idempotency/SharedKernel.Idempotency.Abstractions/README.md) `Abstractions` — one atomic reservation contract, `IIdempotencyStore`
   - [SharedKernel.Idempotency.Redis](18.Idempotency/SharedKernel.Idempotency.Redis/README.md) `Adapter` — Redis store with atomic Lua
   - [SharedKernel.Idempotency.EfCore](18.Idempotency/SharedKernel.Idempotency.EfCore/README.md) `Adapter` — PostgreSQL store with `INSERT … ON CONFLICT`
 
-- 📁 **[19.Scheduling](19.Scheduling/)** — background jobs · *1 package*
+- 📁 **[19.Scheduling](19.Scheduling/README.md)** — background jobs · *1 package*
   - [SharedKernel.Scheduling](19.Scheduling/SharedKernel.Scheduling/README.md) `Adapter` — cron, recurring and one-shot jobs that run once across replicas
 
-- 📁 **[20.Reporting](20.Reporting/)** — exports and documents · *5 packages*
+- 📁 **[20.Reporting](20.Reporting/README.md)** — exports and documents · *5 packages*
   - [SharedKernel.Reporting.Abstractions](20.Reporting/SharedKernel.Reporting.Abstractions/README.md) `Abstractions` — streaming `IReportExporter<TRow>` and `IHtmlToPdfConverter`
   - [SharedKernel.Reporting.Csv](20.Reporting/SharedKernel.Reporting.Csv/README.md) `Adapter` — RFC 4180 CSV in constant memory, formula-injection guard
   - [SharedKernel.Reporting.Spreadsheet](20.Reporting/SharedKernel.Reporting.Spreadsheet/README.md) `Adapter` — streamed Excel (.xlsx) on SpreadCheetah
@@ -271,6 +309,7 @@ to consuming the kernel.
 | [ShippingApi](samples/ShippingApi/) | Messaging: publish/send, delayed delivery, consumer idempotency, caller context across the bus | RabbitMQ |
 | [DocumentsApi](samples/DocumentsApi/) | Object storage and reporting: named/tenant stores, presigned links, CSV/Excel/PDF exports | MinIO, Gotenberg |
 | [CatalogApi](samples/CatalogApi/) | Search: Meilisearch and Elasticsearch side by side | Meilisearch, Elasticsearch |
+| [CheckoutApi](samples/CheckoutApi/) → [InventoryApi](samples/InventoryApi/) | Two services talking: typed REST and gRPC clients, service discovery, an API key, safe retries with `Idempotency-Key`, the caller carried across, downstream errors returned as `Result` | nothing external (loopback ports) |
 
 ---
 
@@ -287,13 +326,15 @@ to consuming the kernel.
 - Pre-publish reviews of persistence, storage, messaging, application/presentation and reporting, each verified by a sample service
 - A release train: one tag gates on every test suite, consumer harness and sample, then publishes all packages together
 
+- One README standard across every package, checked by an architecture test
+
 **Next**
 - 🏷️ Tag `v1.0.0-alpha.1` and publish the full package set
-- 🌍 Make the repository public
 - 🔍 Pre-publish reviews of the remaining domains
-- 📚 Overview READMEs for 18.Idempotency, 19.Scheduling and 20.Reporting
 
 ---
+
+<a id="using-the-packages"></a>
 
 ## 📦 Using the packages
 
@@ -318,8 +359,9 @@ never end up at mixed versions.
 ```
 
 Don't pin one `SharedKernel.*` package to a different version, and don't float the version (`*`).
-The package feed and its `NuGet.Config` setup are in [`PLATFORM.md`](PLATFORM.md), under "Consuming the
-kernel". Which package goes in which project of your service is in [`samples/README.md`](samples/README.md).
+The package feed and its `NuGet.Config` setup are in
+[`CONTRIBUTING.md` → Consuming the packages](CONTRIBUTING.md#consuming-the-packages). Which package goes in
+which project of your service is in [`samples/README.md`](samples/README.md).
 
 ---
 
@@ -340,17 +382,33 @@ eng/verify-packages.sh artifacts/packages   # checks the release set; the folder
 [`release.yml`](.github/workflows/release.yml) runs every gate: the tier check, the build, both test
 lanes, and every consumer harness and sample against the packed packages. Only then does it publish the
 whole set at the tag's version. No package can be published on its own. Details are in
-[`PLATFORM.md`](PLATFORM.md).
+[`CONTRIBUTING.md`](CONTRIBUTING.md#versioning-and-releases).
 
 ### Repository map
 
 | File | What's in it |
 |------|--------------|
-| [`CLAUDE.md`](CLAUDE.md) | The architecture: tiers, dependency rules, conventions and the "what goes where" guide |
-| [`PLATFORM.md`](PLATFORM.md) | Build, versioning, CI and releases |
-| [`state-map.md`](state-map.md) | Implementation history across all domains |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | How to build, test, add a package and open a pull request |
+| [`eng/README.md`](eng/README.md) | Build internals: tier check, package checks, versioning, CI workflows |
+| [`docs/package-readme-standard.md`](docs/package-readme-standard.md) | The shape every package README follows |
 | `NN.Domain/README.md` | The overview of one capability domain |
-| `NN.Domain/CLAUDE.md` | That domain's maintainer rules |
+| [`CLAUDE.md`](CLAUDE.md), `NN.Domain/CLAUDE.md` | Maintainer rules: architecture, conventions, "what goes where" |
+| [`state-map.md`](state-map.md), `NN.Domain/state-map.md` | The living work board: packages, open work, completed phases |
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome. Read [`CONTRIBUTING.md`](CONTRIBUTING.md) first: it covers the tier rules the
+build enforces, the conventions the analyzers check, and what must pass before a pull request can merge.
+Everyone taking part is expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+### AI-assisted development
+
+The repository is set up for [Claude Code](https://claude.com/claude-code). Every domain has a
+`CLAUDE.md` with its rules, and `.claude/` holds a team of agents (an architecture lead, a planner and an
+implementer per domain, a DevOps lead) with commands such as `/arch`, `/implement-phase <domain>` and
+`/sync-brain`. Using it is optional; the rules it follows are the same ones in `CONTRIBUTING.md`.
 
 ---
 
