@@ -22,13 +22,13 @@ name: Release
 #
 # Versioning: MinVer (Directory.Build.props) stamps every package from the tag; fetch-depth: 0 is
 # mandatory wherever dotnet runs (verify.yml). This workflow never creates a tag. Cutting one is the
-# user's own, explicit decision (see PLATFORM.md "Release train").
+# user's own, explicit decision (see CONTRIBUTING.md "Versioning and releases").
 #
 # Why GitHub Packages, not nuget.org: it needs no new secret (the ambient GITHUB_TOKEN with
 # packages: write), no external account and no public-registry commitment. nuget.org via Trusted
-# Publishing remains PROPOSED in PLATFORM.md; it would be one more push step in the publish job.
+# Publishing is not implemented; it would be one more push step in the publish job.
 #
-# Gating that is authored but NOT active until a repository admin acts (PLATFORM.md, Deferred):
+# Gating that is authored but NOT active until a repository admin acts (see eng/README.md, "CI workflows"):
 #   1. `environment: nuget-publish` needs a GitHub Environment of that name with required
 #      reviewers. Until it exists the publish job runs unattended once verify passes.
 #   2. .github/rulesets/tag-protection.json (only admins may create/update/delete v* tags) is not

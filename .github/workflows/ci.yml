@@ -1,6 +1,6 @@
 name: CI
 
-# Standing design decisions (see PLATFORM.md "CI topology" for the full rationale):
+# Standing design decisions (see eng/README.md "CI workflows"):
 #   - The gates themselves live in the reusable .github/workflows/verify.yml, which release.yml
 #     also calls, so a pull request and a release tag are held to the same checks by construction.
 #     This file decides WHEN they run and what blocks a merge.
@@ -159,7 +159,7 @@ jobs:
   # PR title is the ONLY string release automation will ever parse (squash merges collapse every
   # commit into the PR title). Commit-message lint is deliberately NOT enforced anywhere in this
   # workflow — it would fight the agent workflow's many small WIP commits and is moot once
-  # squashed. See PLATFORM.md "Commit-convention enforcement".
+  # squashed. See CONTRIBUTING.md "Commits and pull requests".
   # ---------------------------------------------------------------------------------------------
   pr-title:
     name: PR title lint

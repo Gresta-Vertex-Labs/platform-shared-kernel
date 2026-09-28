@@ -9,7 +9,7 @@
 
     Exactly one copy of this file exists, at the repository root. A per-domain copy would stop
     MSBuild's upward directory walk and silently drop this file for everything below it — see
-    PLATFORM.md "Migration hazard specific to this repo".
+    eng/README.md "Root build files".
   -->
 
   <PropertyGroup>
@@ -39,7 +39,7 @@
       files set it, concentrated in the newer domains (04/05/07/08/09/10/11/13/17 and their
       consumer-verify harnesses) — 00.Governance/01.Core/02.Caching/03.Domain/06.Persistence/
       12.Security/16.Testing never opted in. A first attempt at centralizing this repo-wide
-      (matching PLATFORM.md's original PROPOSED design) turned ~60 previously-dormant warnings
+      (the build's original, never-adopted design) turned ~60 previously-dormant warnings
       (CS1574 unresolved &lt;see cref&gt; references, RS1041 analyzer-project compat warnings) into
       hard build errors across files this agent has no jurisdiction to fix (.cs source content is
       owned by each domain's phase-implementers, never devops-lead). Reverted: each of the original
@@ -104,7 +104,7 @@
     Any rule of the form "bump a dependency, bump its dependents" therefore reaches almost every
     package anyway; lockstep is that rule stated honestly, minus the per-dependency tag resolver the
     alternative would need. The accepted cost is publishing no-op version bumps for untouched
-    packages. See PLATFORM.md "Versioning" and "Release train".
+    packages. See eng/README.md "Versioning (MinVer)" and CONTRIBUTING.md "Versioning and releases".
 
     MinVerMinimumMajorMinor=1.0 sets the floor: with no v* tag reachable (the state of this repo
     until the first release tag is pushed) MinVer stamps 1.0.0-alpha.0 rather than 0.0.0-alpha.0.

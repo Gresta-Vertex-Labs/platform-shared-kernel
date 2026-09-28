@@ -2,7 +2,7 @@
 
   <!--
     Package tiers (WO-086 / P-563). Replaces the numbered-layer rules with a dependency matrix that the
-    build enforces. The spec is docs/refactor/FOUNDATION-PLAN.md, "Tiers".
+    build enforces. Documented in eng/README.md, "The tier check" (rules for contributors: CONTRIBUTING.md, "Tiers").
 
     Every packable project declares <SharedKernelTier> in its own csproj. The tier says which project
     inside a consuming service is expected to reference the package, and so what it may reference:

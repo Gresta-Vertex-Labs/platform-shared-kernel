@@ -52,7 +52,7 @@
      phrased so that "not applicable" satisfies it. -->
 
 - [ ] The PR title follows Conventional Commits (`type(scope): summary`)
-- [ ] Layering rules are respected — no reference to a higher-numbered domain
+- [ ] Tier rules are respected — every new reference is one its `<SharedKernelTier>` may take (SKTIER checks pass)
 - [ ] Tests cover the change and pass locally
 - [ ] Public API changes, if any, are recorded in `PublicAPI.Unshipped.txt` and have XML docs
 - [ ] New logging, if any, uses `[LoggerMessage]` with an explicit `EventId` in the domain's range
