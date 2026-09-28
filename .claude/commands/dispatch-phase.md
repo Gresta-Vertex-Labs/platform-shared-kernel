@@ -1,195 +1,135 @@
-You are the cross-domain phase dispatcher for Platform.SharedKernel.
-
-This command reads pending phases from the root `state-map.md` Phase Backlog, groups them by domain, sorts by dependency order (producers before consumers, in tier order Foundation → Model → Abstractions → Adapter → Host → Testing/Tooling), and dispatches each domain's phases to its registered arch-planner agent — one domain at a time, waiting for each agent to finish before moving to the next.
-
 ---
+description: Hand pending root work-order phases to their domain arch-planner agents, in dependency order
+argument-hint: "[P-NNN | WO-NNN]"
+---
+
+You are the cross-domain phase dispatcher for Platform.SharedKernel. You take the `○` Pending P-entries from the root `state-map.md` `## Open Work`, hand each domain's entries to its `{slug}-arch-planner` agent (one domain at a time, producers before consumers), and mark them `◐` Dispatched with the phase key the planner created.
 
 **Input:**
 $ARGUMENTS
 
-> Optional: a specific Phase ID (e.g. `P-003`) or Work Order ID (e.g. `WO-001`) to process only that subset.
-> If omitted, all `○ Pending` phases in the backlog are processed.
+> Optional: a Phase ID (`P-583`) or Work Order ID (`WO-091`) to dispatch only that subset. Empty: every `○` Pending P-entry.
 
 ---
 
-## Step 1 — Read the Phase Backlog
+## Step 1 — Read the pending P-entries
 
-Read `state-map.md` at the repo root in full. Locate the `## Phase Backlog` section.
-
-For each phase entry delimited by `---` horizontal rules, extract:
-
-| Field | Source |
-|-------|--------|
-| Phase ID | `### P-{NNN}` header |
-| Title | Text after the `—` in the header |
-| Status | `**Status:**` field |
-| Work Order | `**Work Order:**` field |
-| Domain | `**Domain:**` field (canonical `NN.Name` form) |
-| Depends on | `**Depends on:**` field (comma-separated Phase IDs or `None`) |
-| Full body | Everything from the `### P-NNN` header through the closing `---` |
-
-Filter: keep only entries where **Status** is `○` Pending.
-
-If `$ARGUMENTS` is a Phase ID (matches `P-\d+`): filter to only that phase.
-If `$ARGUMENTS` is a Work Order ID (matches `WO-\d+`): filter to only phases with that Work Order.
-If `$ARGUMENTS` is empty: process all `○` Pending phases.
-
-**Stop condition:** If no matching pending phases are found, output:
-```
-No pending phases found in the Phase Backlog.
-Run the arch-lead agent to generate phases from a capability request.
-```
-Then stop — do not proceed further.
-
----
-
-## Step 2 — Validate Dependencies
-
-For each pending phase, check its `**Depends on:**` field.
-
-If a phase lists dependencies (e.g. `P-001, P-003`):
-- Check whether those dependency phases are `◐` Dispatched or `●` Complete in the backlog.
-- If a dependency is still `○` Pending **and** is NOT in the current batch being processed: mark the dependent phase as **blocked for this run** and exclude it from the dispatch queue.
-- If a dependency is `○` Pending **and** IS in the current batch: it is fine — Step 3 orders the queue so that a dependency's domain is always dispatched before the domain that depends on it.
-
-Record any phases excluded due to unresolved dependencies. They will appear in the Step 6 report.
-
----
-
-## Step 3 — Build the Dispatch Queue
-
-Group the remaining (unblocked) pending phases by their **Domain** field.
-
-**Dispatch order.** Folder numbers are domain names, not dependency layers (root `CLAUDE.md` "Tiers & Dependency Rules"). Order the domains so producers come before consumers:
-1. **`**Depends on:**` first.** If a phase in domain A depends on a phase in domain B, B is dispatched before A. This rule always wins.
-2. **Then tier order.** Among domains with no dependency between them, dispatch the one whose phases target the lowest tier first: Foundation → Model → Abstractions → Adapter → Host → Testing/Tooling. Judge a domain's tier by the packages its pending phases change (e.g. a phase on `SharedKernel.Execution` is Foundation even though it sits in `01.Core`; a phase on `SharedKernel.Application.Pipeline` is Host even though it sits in `05.Application`). A domain whose phases span several tiers takes its lowest one.
-3. **Then domain number ascending**, only as a tie-breaker.
-
-**Domain-to-Agent Registry** (the Domain Number column is a stable identifier and the final tie-breaker, not the dispatch order):
-
-| Domain | Domain Number | Arch-Planner Agent |
-|--------|:-------------:|-------------------|
-| 00.Governance | 00 | `governance-arch-planner` |
-| 01.Core | 01 | `core-arch-planner` |
-| 02.Caching | 02 | `caching-arch-planner` |
-| 03.Domain | 03 | `domain-arch-planner` |
-| 04.Contracts | 04 | `contracts-arch-planner` |
-| 05.Application | 05 | `application-arch-planner` |
-| 06.Persistence | 06 | `persistence-arch-planner` |
-| 07.Messaging | 07 | `messaging-arch-planner` |
-| 08.Storage | 08 | `storage-arch-planner` |
-| 09.Search | 09 | `search-arch-planner` |
-| 10.Intelligence | 10 | `intelligence-arch-planner` |
-| 11.Communication | 11 | `communication-arch-planner` |
-| 12.Security | 12 | `security-arch-planner` |
-| 13.ServiceDefaults | 13 | `servicedefaults-arch-planner` |
-| 14.Presentation | 14 | `presentation-arch-planner` |
-| 15.Integration | 15 | `integration-arch-planner` |
-| 16.Testing | 16 | `testing-arch-planner` |
-| 17.Workflows | 17 | `workflow-arch-planner` |
-| 18.Idempotency | 18 | `idempotency-arch-planner` |
-| 19.Scheduling | 19 | `scheduling-arch-planner` |
-| 20.Reporting | 20 | `reporting-arch-planner` |
-
-Split the grouped domains into two lists:
-- **Dispatch list**: domains with a registered agent → ordered by the dispatch order above.
-- **Deferred list**: domains with no registered agent → record for the Step 6 report.
-
----
-
-## Step 4 — Dispatch Each Domain (Sequential)
-
-Process each domain in the dispatch list, in order. For each domain:
-
-### Step 4a — Compose the agent prompt
-
-Build the full prompt for the domain's arch-planner agent. Include:
-1. The complete text of every pending phase for this domain, in Phase ID order.
-2. The following instruction prefix:
+Read the root `state-map.md`: `## ID Counters`, `## Open Work`, `## Blocked`. Each work order is a `### WO-NNN — {title}` block holding P-entries:
 
 ```
-Process the following phase definition(s) for your domain.
-For each phase: analyse the requirement, design the phase, append it to your domain state-map, and refresh your domain CLAUDE.md.
-Work through them in the order presented.
+#### P-NNN — {capability}
+**Status:** `○` Pending
+**Domain:** {NN}.{Name}
+**Depends on:** {None | P-NNN, …}
+**Phase key:** —
+{what, why, acceptance}
+```
+
+Keep the entries with `**Status:**` `○` Pending, filtered by `$ARGUMENTS` when given (`P-\d+` → that entry; `WO-\d+` → that work order's entries). None left:
+```
+dispatch-phase: no pending phases on the root board.
+Run /arch with a capability request to create work orders.
+```
+Stop.
 
 ---
-{full body of P-NNN}
+
+## Step 2 — Check dependencies
+
+For each entry, every `**Depends on:**` P-entry must be `◐`, `●`, listed under `## Completed Work Orders`, or `○` but in this same batch (Step 3 orders it first). Otherwise hold the entry back for this run and report it as blocked.
+
 ---
-{full body of P-NNN, if multiple}
+
+## Step 3 — Order the domains
+
+Group the remaining entries by `**Domain:**` and order the groups:
+1. **Dependencies first**: if an entry in domain A depends on one in domain B, B goes before A.
+2. **Then tier order** of the packages the entries change: Foundation → Model → Abstractions → Adapter → Host → Testing/Tooling (e.g. `SharedKernel.Execution` is Foundation although it sits in `01.Core`). A group spanning tiers takes its lowest.
+3. **Then folder number** as the tie-breaker.
+
+Planner per domain (all in `.claude/agents/`):
+
+| Folder | Planner |
+| --- | --- |
+| `00.Governance` | `governance-arch-planner` |
+| `01.Core` | `core-arch-planner` |
+| `02.Caching` | `caching-arch-planner` |
+| `03.Domain` | `domain-arch-planner` |
+| `04.Contracts` | `contracts-arch-planner` |
+| `05.Application` | `application-arch-planner` |
+| `06.Persistence` | `persistence-arch-planner` |
+| `07.Messaging` | `messaging-arch-planner` |
+| `08.Storage` | `storage-arch-planner` |
+| `09.Search` | `search-arch-planner` |
+| `10.Intelligence` | `intelligence-arch-planner` |
+| `11.Communication` | `communication-arch-planner` |
+| `12.Security` | `security-arch-planner` |
+| `13.ServiceDefaults` | `servicedefaults-arch-planner` |
+| `14.Presentation` | `presentation-arch-planner` |
+| `15.Integration` | `integration-arch-planner` |
+| `16.Testing` | `testing-arch-planner` |
+| `17.Workflows` | `workflow-arch-planner` |
+| `18.Idempotency` | `idempotency-arch-planner` |
+| `19.Scheduling` | `scheduling-arch-planner` |
+| `20.Reporting` | `reporting-arch-planner` |
+
+A Domain of `eng` is build work for `devops-lead`: do not dispatch it; report it as "run /devops".
+
+---
+
+## Step 4 — Dispatch, one domain at a time
+
+For each group, in order:
+
+**4a. Spawn the planner** (Agent tool, `subagent_type` = the planner, foreground) with:
+
+```
+Read .claude/agents/_common.md, then plan the following P-entries for {NN}.{Name}, in order.
+For each: follow the planner method in _common.md — analyse, give a verdict, design one phase
+(key SK.{NN}.{PascalName}), write it under ## Open Work in {NN}.{Name}/state-map.md with its
+Phase Key Registry row, and refresh {NN}.{Name}/CLAUDE.md. Report the phase key per P-entry.
+
+---
+{full text of P-NNN}
+---
+{full text of the next P-NNN, if any}
 ---
 ```
 
-### Step 4b — Spawn the agent (foreground)
+**4b. Record the result** in the root `state-map.md`, only after the planner returns successfully:
+- For each planned entry: `**Status:** `○` Pending` → `**Status:** `◐` Dispatched`, and `**Phase key:** —` → the key the planner reported.
+- An entry the planner declined: `**Status:** `⊘` Declined` with the reason in one line under it. If every entry of the work order is now `●` or `⊘`, collapse the WO block to one line under `## Completed Work Orders`.
+- Add one line to `## Changelog` (`- [YYYY-MM-DD] P-NNN, … dispatched to {planner} ({NN}.{Name}) (dispatch-phase)`) and trim the section to its last 10 entries.
 
-Use the Agent tool to spawn the domain's registered arch-planner agent with `subagent_type` set to the agent name from the registry. Pass the composed prompt. **Run foreground** — wait for the agent to return before continuing to Step 4c.
-
-### Step 4c — Mark phases as Dispatched
-
-After the agent returns successfully, update `state-map.md`:
-- In `## Phase Backlog`, for each dispatched Phase ID, change:
-  ```
-  **Status:** `○` Pending
-  ```
-  to:
-  ```
-  **Status:** `◐` Dispatched
-  ```
-- Append to `## Changelog`:
-  ```
-  - [YYYY-MM-DD] Phase(s) {P-NNN, ...} dispatched to {agent-name} for {NN.Domain} (dispatch-phase)
-  ```
-
-### Step 4d — Continue
-
-Proceed to the next domain in the dispatch list. Repeat Steps 4a–4c.
+If the planner fails or reports no phase key, leave its entries `○` Pending and record the failure for the report.
 
 ---
 
-## Step 5 — Handle Deferred Domains
-
-For each domain in the deferred list, no agent action is taken. These phases remain `○` Pending.
-
-Record the deferred phase IDs and domain names for the Step 6 report.
-
----
-
-## Step 6 — Report
-
-Output a structured summary:
+## Step 5 — Report
 
 ```
-## /dispatch-phase — Run Summary
+## /dispatch-phase
 
-### ✅ Dispatched
-| Phase | Domain | Agent |
-|-------|--------|-------|
-| P-001 | 01.Core | core-arch-planner |
-| P-002 | 02.Caching | caching-arch-planner |
+Dispatched
+| Phase | Domain | Planner | Phase key |
+| --- | --- | --- | --- |
 
-### ⏳ Deferred (no agent registered)
-| Phase | Domain | Action Required |
-|-------|--------|----------------|
-| P-003 | 03.Domain | Create a domain-arch-planner agent to enable automatic dispatch |
+Declined
+| Phase | Domain | Reason |
 
-### 🚫 Blocked (unresolved dependencies)
-| Phase | Domain | Waiting On |
-|-------|--------|-----------|
-| P-004 | 05.Application | P-002 (02.Caching — still Pending) |
+Held back (open dependencies)
+| Phase | Domain | Waiting on |
 
-### ○ Remaining Pending
-{Any phases not processed because a specific ID/WO filter was passed}
+Not dispatched
+| Phase | Reason (build work, planner failure, filtered out) |
 ```
 
-If a section has no entries, omit it from the output.
+Omit empty sections.
 
 ---
 
-## Format Contract
+## Format contract
 
-- Reads and writes `state-map.md` at the repo root only (plus spawning sub-agents via the Agent tool).
-- Never modifies any domain's `state-map.md` or `CLAUDE.md` directly — that is the domain planner agent's responsibility.
-- Phase status transitions in root state-map: `○ Pending` → `◐ Dispatched` (after agent returns).
-- Never re-dispatches a phase already at `◐ Dispatched` or `● Complete`.
-- Never dispatches out of dependency order — a phase's dependencies, then lower tiers (Foundation → Model → Abstractions → Adapter → Host → Testing/Tooling), always before their consumers; domain number only breaks ties.
-- Changelog entries are append-only.
-- If the Agent tool call for a domain agent fails or returns an error, do NOT mark those phases as Dispatched. Record the failure in the report and leave the phases at `○ Pending` so they can be retried.
+- Writes only the root `state-map.md` (`## Open Work` statuses and phase keys, `## Completed Work Orders`, `## Changelog`). Domain boards and `CLAUDE.md` files are written by the planners.
+- Status transitions here: `○` Pending → `◐` Dispatched or `⊘` Declined. Never re-dispatches a `◐`/`●` entry.
+- Never dispatches out of dependency order.

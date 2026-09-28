@@ -7,7 +7,7 @@ You are executing a smart git commit workflow for Platform.SharedKernel. Your jo
 1. `git status --short` — every changed, staged, deleted, and untracked file
 2. `git diff HEAD` — full diff of all tracked changes
 3. `git diff --cached` — staged changes if any exist  
-4. Read the root `state-map.md` — understand the active work orders and current phases so commit messages can reference the work in progress
+4. Read the `## Open Work` section of the root `state-map.md` (and of any domain `state-map.md` in the diff) — the open work orders and phases give the "why" commit messages can reference
 5. `git log --oneline -5` — learn the commit style and casing conventions of this repo
 
 Do NOT skip the `state-map.md` read. It gives you the "why" behind the changes, which belongs in commit messages.
@@ -43,7 +43,7 @@ Use this path-prefix table. The first matching prefix wins.
 | `20.Reporting/` | reporting |
 | `samples/` | samples |
 | `.github/`, `eng/` | ci |
-| `docs/refactor/` | refactor |
+| `docs/` | docs |
 | `.claude/` | tooling |
 | Root-level files (`*.md`, `*.slnx`, `*.slnf`, `*.json`, `Directory.*`) | root |
 
@@ -87,7 +87,8 @@ When a group has mixed signals, pick the highest-impact type: `feat` > `fix` > `
 Special cases:
 - `state-map.md` files (any domain folder) → `docs` with that domain's scope
 - Root `state-map.md` alone → `docs(root)`  
-- `.claude/commands/` files → `chore(tooling)`
+- `.claude/` files (commands, agents) → `chore(tooling)`
+- `docs/` files → `docs(docs)`; `CONTRIBUTING.md`, `README.md` and other root markdown → `docs(root)`
 - Test projects (`.Tests/` path segment) → `test` unless they contain new test subjects that are themselves the feature
 
 ---
@@ -103,7 +104,7 @@ type(scope): concise description in lowercase, no period
 Rules:
 - Scope is the domain name from Step 2 (e.g. `persistence`, `communication`, `governance`)
 - Description explains **what changed and what it enables** — not which files were touched
-- Pull context from `state-map.md` active work to enrich the description (e.g. phase name, work-order topic)
+- Pull context from `state-map.md` open work to enrich the description (e.g. phase name, work-order topic)
 - Keep the full line under 72 characters
 - No capital letters, no trailing period
 
@@ -128,7 +129,7 @@ Domain        Files   Type       Proposed message
 ──────────────────────────────────────────────────────────────────────────
 governance    7       feat       feat(governance): ...
 communication 12      feat       feat(communication): ...
-root          3       docs       docs(root): update state-map active work
+root          3       docs       docs(root): update state-map open work
 ```
 
 Then print:
@@ -157,7 +158,7 @@ For each group:
    git commit -m "$(cat <<'EOF'
    type(scope): description
 
-   Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+   {the Co-Authored-By trailer from this session's attribution instructions, if any}
    EOF
    )"
    ```
