@@ -1,3 +1,0 @@
-- [build-sdk-workaround](build_sdk_workaround.md) — global.json pins 10.0.300 (not installed); run dotnet from outside the repo tree with absolute paths to get 10.0.400.
-- [docker-unavailable](docker_unavailable_env.md) — this machine has no running Docker daemon; filter out `~Integration` tests, never report Testcontainers suites as passing.
-- [cross-domain-gated-scaffold-tasks](cross_domain_gated_scaffold_tasks.md) — some Scaffold tasks are "confirm resolves against contract from another domain" and must stay `○` until that domain's Phase Backlog entry is `●` Complete, not merely `◐` Dispatched.

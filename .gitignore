@@ -435,3 +435,28 @@ nupkgs/
 
 # Knowledge-graph output (regenerable via /graphify, never commit)
 graphify-out/
+
+# --- Public-repo hygiene -------------------------------------------------
+# Local history archive (state-maps, handoffs, agent memory) — never published
+archive/
+
+# Claude Code: personal settings and per-agent memory stay on the developer's machine
+.claude/agent-memory/
+.claude/settings.json
+.claude/settings.local.json
+.claude/*.lock
+CLAUDE.local.md
+
+# Secrets and keys
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.snk
+
+# Editors / OS
+.idea/
+.DS_Store
+*.swp
+**/.claude/agent-memory/

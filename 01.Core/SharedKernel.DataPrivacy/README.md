@@ -230,7 +230,7 @@ Every method accepts `null`, never throws, and returns `""` for empty input. Onl
 | Method | Example | Rule |
 | --- | --- | --- |
 | `Email(v)` | `j.doe@example.com` → `j***@example.com` | First character + fixed `***`, so the length is hidden |
-| `Email(v, revealDomain: false)` | `ali@alidinc.com.tr` → `a***@***.tr` | For personal domains |
+| `Email(v, revealDomain: false)` | `jane@example.com` → `j***@***.com` | For personal domains |
 | `Phone(v)` | `+1 (555) 123-4567` → `+* (***) ***-4567` | Last 4 digits; last 2 when there are only 2–3 |
 | `CardNumber(v)` | `4111 1111 1111 1111` → `4111 11** **** 1111` | First 6 + last 4 (the PCI DSS maximum); fewer than 12 digits → all masked |
 | `Iban(v)` | `DE89 3704 0044 0532 0130 00` → `DE** **** **** **** **30 00` | Country + last 4; fewer than 10 characters → all masked |

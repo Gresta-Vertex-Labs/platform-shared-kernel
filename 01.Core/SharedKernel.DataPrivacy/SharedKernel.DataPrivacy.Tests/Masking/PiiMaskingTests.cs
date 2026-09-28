@@ -37,7 +37,7 @@ public sealed class PiiMaskingTests
     [Theory]
     [InlineData("j.doe@example.com", true, "j***@example.com")]
     [InlineData("a@x.com", true, "***@x.com")]
-    [InlineData("ali@alidinc.com.tr", false, "a***@***.tr")]
+    [InlineData("jane@example.com", false, "j***@***.com")]
     [InlineData("root@localhost", false, "r***@***")]
     [InlineData("a@b@example.com", true, "a***@example.com")]
     [InlineData("not-an-email", true, "n***")]
