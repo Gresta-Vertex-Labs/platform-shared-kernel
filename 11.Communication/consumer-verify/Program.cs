@@ -1,121 +1,171 @@
-// consumer-verify — exercises every 11.Communication production package exactly as a downstream
-// microservice would: real DI composition through ProjectReference (standing in for a packed NuGet
-// reference — the compiled surface is identical either way), driven through a real
-// Host.CreateApplicationBuilder() -> IHost.StartAsync() composition, never a bare
-// BuildServiceProvider() alone — mirroring the 17.Workflows/consumer-verify precedent's shape
-// (PB-07/P-362, WO-056). Two surfaces:
-//   1. All three DI entry points (AddSharedKernelRestCommunication().AddRestClient<T>(),
-//      AddSharedKernelGrpcCommunication().AddGrpcClient<T>(), AddK8sServiceDiscovery()) resolve
-//      cleanly with zero DI exceptions through a real IHost.StartAsync() — including
-//      K8sServiceDiscoveryOptions' genuine ValidateOnStart() path.
-//   2. A deliberately invalid RestClientOptions (TimeoutSeconds = -1) causes AddRestClient<TClient>
-//      to throw OptionsValidationException synchronously at registration time — proving P-358's
-//      R-23 fix end-to-end against real compiled code, not a unit test calling the validator
-//      object directly.
+// consumer-verify — composes the 11.Communication packages exactly as a service does: settings from configuration,
+// one AddSharedKernelCommunication chain, a real generic host. Every call goes through the packages' own pipelines;
+// the only fake is the connection handler that stands in for the network.
 //
-// The GraphQL surfaces moved to 14.Presentation/consumer-verify with the package itself
-// (SharedKernel.Communication.GraphQL -> SharedKernel.Presentation.GraphQL, P-570/P-573).
-//
-// Note on Surface 1's REST/gRPC client registrations: both SampleRestClient and SampleGrpcClient are
-// registered with an explicit BaseAddress/Address rather than relying on the AddK8sServiceDiscovery
-// resolver registered alongside them in the same host — this proves each of the three DI entry points
-// independently rather than coupling REST/gRPC address resolution to service-discovery DNS I/O (which
-// would make this harness's pass/fail depend on the runtime environment's DNS/network availability).
-// AddK8sServiceDiscovery's own contract — IServiceEndpointResolver.ResolveAsync never throws for an
-// unresolvable name — is proven directly, by resolving IServiceEndpointResolver from the host and
-// calling ResolveAsync on a deliberately nonexistent service name.
+//   1. A REST client (interface + implementation) and a gRPC client register from configuration and start cleanly.
+//   2. Invalid settings fail IHost.StartAsync, naming the setting.
+//   3. The Services section resolves a client's host (service discovery), and the caller's correlation id travels.
+//   4. A platform ProblemDetails reads back as the service's Error; an unreachable service is an Error, not an exception.
+//   5. A gRPC rich status reads back as the service's Error; google.type.Money converts both ways.
 
+using System.Net;
+using System.Text;
+using Google.Rpc;
 using Grpc.Core;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
-using SharedKernel.Communication.Grpc.Extensions;
-using SharedKernel.Communication.Internal.Extensions;
-using SharedKernel.Communication.Internal.Resolvers;
-using SharedKernel.Communication.Rest.Builders;
-using SharedKernel.Communication.Rest.Extensions;
+using SharedKernel.Communication;
+using SharedKernel.Domain.Monetary;
+using SharedKernel.Primitives.Errors;
+using SharedKernel.Primitives.Results;
+using RpcStatus = Google.Rpc.Status;
 
-await Surface1_AllThreeDiEntryPointsResolveCleanly();
-Surface2_InvalidRestClientOptionsThrowsAtRegistrationTime();
+await Surface1_ClientsRegisterFromConfiguration();
+await Surface2_InvalidSettingsFailAtStartup();
+await Surface3_DiscoveryAndPropagation();
+await Surface4_ResultsNotExceptions();
+await Surface5_GrpcErrorsAndMoney();
 
 Console.WriteLine();
 Console.WriteLine("ALL SURFACES VERIFIED — consumer-verify PASSED");
 return;
 
-// ── Surface 1: all three DI entry points — P-362 ─────────────────────────────
-static async Task Surface1_AllThreeDiEntryPointsResolveCleanly()
+static async Task Surface1_ClientsRegisterFromConfiguration()
 {
-    HostApplicationBuilder builder = Host.CreateApplicationBuilder();
-
-    builder.Services
-        .AddSharedKernelRestCommunication()
-        .AddRestClient<SampleRestClient>(
-            "sample-rest-client",
-            options => options.BaseAddress = "http://sample-rest-service");
-
-    builder.Services
-        .AddSharedKernelGrpcCommunication()
-        .AddGrpcClient<SampleGrpcClient>(address: "http://sample-grpc-service:5001");
-
-    builder.Services.AddK8sServiceDiscovery(options => options.Namespace = "consumer-verify");
-
-    using IHost host = builder.Build();
-    // Exercises the real ValidateOnStart() path (K8sServiceDiscoveryOptionsValidator) through a
-    // genuine IHost, not just BuildServiceProvider().
+    using IHost host = BuildHost(new()
+    {
+        ["SharedKernel:Communication:Clients:inventory:BaseAddress"] = "http://inventory",
+        ["SharedKernel:Communication:Clients:pricing:Address"] = "http://pricing",
+    });
     await host.StartAsync();
 
-    SampleRestClient restClient = host.Services.GetRequiredService<SampleRestClient>();
-    Verify(restClient is not null, "SampleRestClient resolves through AddRestClient<T>() with zero DI exceptions");
-
-    SampleGrpcClient grpcClient = host.Services.GetRequiredService<SampleGrpcClient>();
-    Verify(grpcClient is not null, "SampleGrpcClient resolves through AddGrpcClient<T>() with zero DI exceptions");
-
-    IServiceEndpointResolver resolver = host.Services.GetRequiredService<IServiceEndpointResolver>();
-    Uri resolved = await resolver.ResolveAsync("nonexistent-consumer-verify-service", CancellationToken.None);
-    Verify(
-        resolved is not null,
-        "IServiceEndpointResolver.ResolveAsync never throws and returns a Uri for an unresolvable service name");
+    Verify(host.Services.GetRequiredService<IInventoryClient>() is InventoryClient, "IInventoryClient resolves to its implementation");
+    Verify(host.Services.GetRequiredService<SampleGrpcClient>() is not null, "the gRPC client resolves");
 
     await host.StopAsync();
-    Console.WriteLine(
-        "Surface 1 PASS: AddSharedKernelRestCommunication/AddSharedKernelGrpcCommunication/" +
-        "AddK8sServiceDiscovery all resolve cleanly through a real " +
-        "IHost.StartAsync() with zero DI exceptions.");
+    Console.WriteLine("Surface 1 PASS: REST and gRPC clients register from SharedKernel:Communication:Clients and start.");
 }
 
-// ── Surface 2: invalid RestClientOptions — P-358/R-23 ────────────────────────
-static void Surface2_InvalidRestClientOptionsThrowsAtRegistrationTime()
+static async Task Surface2_InvalidSettingsFailAtStartup()
 {
-    var services = new ServiceCollection();
-    IRestCommunicationBuilder restBuilder = services.AddSharedKernelRestCommunication();
+    using IHost host = BuildHost(new()
+    {
+        ["SharedKernel:Communication:Clients:inventory:AttemptTimeout"] = "00:00:05",
+        ["SharedKernel:Communication:Clients:pricing:Address"] = "https+http://pricing",
+    });
 
-    OptionsValidationException? caught = null;
+    // Both clients are invalid, so the host reports both at once.
+    Exception? failure = null;
     try
     {
-        restBuilder.AddRestClient<SampleRestClient>(
-            "invalid-rest-client",
-            options =>
-            {
-                options.BaseAddress = "http://sample-rest-service";
-                options.TimeoutSeconds = -1;
-            });
+        await host.StartAsync();
     }
-    catch (OptionsValidationException ex)
+    catch (Exception exception)
     {
-        caught = ex;
+        failure = exception;
     }
 
-    Verify(
-        caught is not null,
-        "AddRestClient<T> throws OptionsValidationException synchronously at registration time for TimeoutSeconds = -1");
-    Verify(
-        caught!.Failures.Any(failure => failure.Contains("TimeoutSeconds", StringComparison.Ordinal)),
-        "the OptionsValidationException names the invalid TimeoutSeconds property");
+    // A client's resilience pipeline reads its options too, so one invalid client may be reported twice.
+    var messages = (failure as AggregateException)?.InnerExceptions.OfType<OptionsValidationException>().Select(e => e.Message).Distinct().ToList() ?? [];
+    Verify(messages.Count == 2, "StartAsync fails on both invalid clients");
+    Verify(messages.Any(m => m.Contains("BaseAddress is required", StringComparison.Ordinal)), "the missing BaseAddress is named");
+    Verify(messages.Any(m => m.Contains("must be an http or https address", StringComparison.Ordinal)), "the gRPC address a channel cannot use is named");
+    Console.WriteLine("Surface 2 PASS: a client without an address, or with one it cannot use, stops the host from starting.");
+}
 
-    Console.WriteLine(
-        "Surface 2 PASS: an invalid RestClientOptions instance fails AddRestClient<T> loudly at " +
-        "registration time — not deferred to the first HTTP call — proving P-358's R-23 fix end-to-end " +
-        "against real compiled code.");
+static async Task Surface3_DiscoveryAndPropagation()
+{
+    var connection = new RecordingConnection(_ => new HttpResponseMessage(HttpStatusCode.OK)
+    {
+        Content = new StringContent("""{"sku":"sku-1","available":3}""", Encoding.UTF8, "application/json"),
+    });
+    using IHost host = BuildHost(
+        new()
+        {
+            ["SharedKernel:Communication:Clients:inventory:BaseAddress"] = "http://inventory",
+            ["SharedKernel:Communication:Clients:pricing:Address"] = "http://pricing",
+            ["Services:inventory:http:0"] = "http://10.1.2.3:8080",
+        },
+        connection);
+    await host.StartAsync();
+
+    Result<StockLevel> stock = await host.Services.GetRequiredService<IInventoryClient>().GetStockAsync("sku-1", CancellationToken.None);
+
+    Verify(stock.IsSuccess && stock.Value.Available == 3, "the typed client reads the body as a Result");
+    Verify(connection.LastUri!.Authority == "10.1.2.3:8080", "http://inventory resolved to the endpoint in Services:inventory");
+    Verify(connection.Last!.Headers.Contains("X-Correlation-Id"), "the call carries a correlation id");
+    await host.StopAsync();
+    Console.WriteLine("Surface 3 PASS: service discovery and caller propagation run on every call.");
+}
+
+static async Task Surface4_ResultsNotExceptions()
+{
+    var connection = new RecordingConnection(_ => new HttpResponseMessage(HttpStatusCode.NotFound)
+    {
+        Content = new StringContent("""{"status":404,"detail":"No such SKU.","errorCode":"inventory.sku_not_found"}""", Encoding.UTF8, "application/problem+json"),
+    });
+    using IHost host = BuildHost(
+        new()
+        {
+            ["SharedKernel:Communication:Clients:inventory:BaseAddress"] = "http://inventory",
+            ["SharedKernel:Communication:Clients:pricing:Address"] = "http://pricing",
+        },
+        connection);
+    await host.StartAsync();
+    IInventoryClient client = host.Services.GetRequiredService<IInventoryClient>();
+
+    Result<StockLevel> missing = await client.GetStockAsync("sku-9", CancellationToken.None);
+    Verify(missing.Error is { Type: ErrorType.NotFound, Code: "inventory.sku_not_found" }, "a 404 problem reads back as the service's NotFound error");
+
+    using IHost unreachable = BuildHost(new()
+    {
+        ["SharedKernel:Communication:Clients:inventory:BaseAddress"] = "http://127.0.0.1:1",
+        ["SharedKernel:Communication:Clients:inventory:Retry:MaxRetryAttempts"] = "0",
+        ["SharedKernel:Communication:Clients:pricing:Address"] = "http://pricing",
+    });
+    await unreachable.StartAsync();
+    Result<StockLevel> down = await unreachable.Services.GetRequiredService<IInventoryClient>().GetStockAsync("sku-1", CancellationToken.None);
+    Verify(down.Error.Code == CommunicationErrorCodes.Unreachable, "a refused connection is communication.unreachable, not an exception");
+
+    await host.StopAsync();
+    await unreachable.StopAsync();
+    Console.WriteLine("Surface 4 PASS: failures come back as Error values with the service's own code.");
+}
+
+static Task Surface5_GrpcErrorsAndMoney()
+{
+    var status = new RpcStatus { Code = (int)StatusCode.FailedPrecondition, Message = "Price list closed." };
+    status.Details.Add(Google.Protobuf.WellKnownTypes.Any.Pack(new ErrorInfo { Reason = "pricing.list_closed", Domain = "pricing" }));
+    Error error = RpcStatusExtensions.ToRpcException(status).ToError();
+    Verify(error is { Type: ErrorType.BusinessRule, Code: "pricing.list_closed", Message: "Price list closed." }, "a rich status reads back as the service's error");
+
+    Money price = Money.Create(19.99m, Currency.Eur).Value;
+    Verify(price.ToMoneyProto().ToMoney().Value == price, "Money round-trips through google.type.Money");
+    Verify(0.9999999999m.ToMoneyProto("USD") is { Units: 1, Nanos: 0 }, "a sub-nano fraction carries into units");
+
+    Console.WriteLine("Surface 5 PASS: gRPC statuses and money convert without loss.");
+    return Task.CompletedTask;
+}
+
+static IHost BuildHost(Dictionary<string, string?> settings, HttpMessageHandler? connection = null)
+{
+    HostApplicationBuilder builder = Host.CreateApplicationBuilder();
+    builder.Configuration.Sources.Clear();
+    builder.Configuration.AddInMemoryCollection(settings);
+
+    builder.Services.AddSharedKernelCommunication(builder.Configuration)
+        .AddRestClient<IInventoryClient, InventoryClient>("inventory", client =>
+        {
+            if (connection is not null)
+            {
+                client.HttpClientBuilder.ConfigurePrimaryHttpMessageHandler(() => connection);
+            }
+        })
+        .AddGrpcClient<SampleGrpcClient>("pricing");
+
+    return builder.Build();
 }
 
 static void Verify(bool condition, string label)
@@ -128,21 +178,37 @@ static void Verify(bool condition, string label)
     Console.WriteLine($"  - {label}");
 }
 
-// A minimal typed REST client — satisfies AddHttpClient<TClient>()'s constructor convention
-// (a public constructor accepting HttpClient). No real HTTP call is ever issued by this harness.
-internal sealed class SampleRestClient
+internal sealed record StockLevel(string Sku, int Available);
+
+internal interface IInventoryClient
 {
-    public SampleRestClient(HttpClient httpClient)
-    {
-    }
+    Task<Result<StockLevel>> GetStockAsync(string sku, CancellationToken cancellationToken);
 }
 
-// A minimal typed gRPC client — Grpc.Net.ClientFactory's DefaultClientActivator<T> specifically
-// looks for a CallInvoker-accepting constructor when activating a typed client through DI (a
-// ChannelBase-accepting constructor is rejected). No real RPC call is ever issued by this harness.
-internal sealed class SampleGrpcClient
+internal sealed class InventoryClient(HttpClient http) : IInventoryClient
 {
-    public SampleGrpcClient(CallInvoker callInvoker)
+    public Task<Result<StockLevel>> GetStockAsync(string sku, CancellationToken cancellationToken) =>
+        http.GetResultAsync<StockLevel>($"stock/{Uri.EscapeDataString(sku)}", cancellationToken);
+}
+
+/// <summary>Grpc.Net.ClientFactory activates a generated client through its CallInvoker constructor.</summary>
+internal sealed class SampleGrpcClient(CallInvoker callInvoker)
+{
+    public CallInvoker CallInvoker { get; } = callInvoker;
+}
+
+/// <summary>Stands in for the network: records the last request and answers it.</summary>
+internal sealed class RecordingConnection(Func<HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler
+{
+    public HttpRequestMessage? Last { get; private set; }
+
+    // Copied when sent: service discovery puts the original address back on the request once the call is over.
+    public Uri? LastUri { get; private set; }
+
+    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
+        Last = request;
+        LastUri = request.RequestUri;
+        return Task.FromResult(respond(request));
     }
 }

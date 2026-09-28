@@ -1,0 +1,76 @@
+#nullable enable
+SharedKernel.Communication.HttpClientResultExtensions
+SharedKernel.Communication.HttpResponseMessageResultExtensions
+SharedKernel.Communication.IRestClientBuilder
+SharedKernel.Communication.IRestClientBuilder.Configure(System.Action<SharedKernel.Communication.RestClientOptions!>! configure) -> SharedKernel.Communication.IRestClientBuilder!
+SharedKernel.Communication.IRestClientBuilder.HttpClientBuilder.get -> Microsoft.Extensions.DependencyInjection.IHttpClientBuilder!
+SharedKernel.Communication.IRestClientBuilder.Name.get -> string!
+SharedKernel.Communication.IRestClientBuilder.UseAccessTokenProvider<TProvider>() -> SharedKernel.Communication.IRestClientBuilder!
+SharedKernel.Communication.IRestClientBuilder.UseHedging() -> SharedKernel.Communication.IRestClientBuilder!
+SharedKernel.Communication.RestCircuitBreakerOptions
+SharedKernel.Communication.RestCircuitBreakerOptions.BreakDuration.get -> System.TimeSpan
+SharedKernel.Communication.RestCircuitBreakerOptions.BreakDuration.set -> void
+SharedKernel.Communication.RestCircuitBreakerOptions.Enabled.get -> bool
+SharedKernel.Communication.RestCircuitBreakerOptions.Enabled.set -> void
+SharedKernel.Communication.RestCircuitBreakerOptions.FailureRatio.get -> double
+SharedKernel.Communication.RestCircuitBreakerOptions.FailureRatio.set -> void
+SharedKernel.Communication.RestCircuitBreakerOptions.MinimumThroughput.get -> int
+SharedKernel.Communication.RestCircuitBreakerOptions.MinimumThroughput.set -> void
+SharedKernel.Communication.RestCircuitBreakerOptions.RestCircuitBreakerOptions() -> void
+SharedKernel.Communication.RestCircuitBreakerOptions.SamplingDuration.get -> System.TimeSpan
+SharedKernel.Communication.RestCircuitBreakerOptions.SamplingDuration.set -> void
+SharedKernel.Communication.RestClientOptions
+SharedKernel.Communication.RestClientOptions.AttemptTimeout.get -> System.TimeSpan
+SharedKernel.Communication.RestClientOptions.AttemptTimeout.set -> void
+SharedKernel.Communication.RestClientOptions.BaseAddress.get -> System.Uri?
+SharedKernel.Communication.RestClientOptions.BaseAddress.set -> void
+SharedKernel.Communication.RestClientOptions.CircuitBreaker.get -> SharedKernel.Communication.RestCircuitBreakerOptions!
+SharedKernel.Communication.RestClientOptions.CircuitBreaker.set -> void
+SharedKernel.Communication.RestClientOptions.Hedging.get -> SharedKernel.Communication.RestHedgingOptions!
+SharedKernel.Communication.RestClientOptions.Hedging.set -> void
+SharedKernel.Communication.RestClientOptions.PropagateIdempotencyKey.get -> bool
+SharedKernel.Communication.RestClientOptions.PropagateIdempotencyKey.set -> void
+SharedKernel.Communication.RestClientOptions.RestClientOptions() -> void
+SharedKernel.Communication.RestClientOptions.Retry.get -> SharedKernel.Communication.RestRetryOptions!
+SharedKernel.Communication.RestClientOptions.Retry.set -> void
+SharedKernel.Communication.RestClientOptions.TotalTimeout.get -> System.TimeSpan
+SharedKernel.Communication.RestClientOptions.TotalTimeout.set -> void
+SharedKernel.Communication.RestCommunicationBuilderExtensions
+SharedKernel.Communication.RestHedgingOptions
+SharedKernel.Communication.RestHedgingOptions.Delay.get -> System.TimeSpan
+SharedKernel.Communication.RestHedgingOptions.Delay.set -> void
+SharedKernel.Communication.RestHedgingOptions.MaxHedgedAttempts.get -> int
+SharedKernel.Communication.RestHedgingOptions.MaxHedgedAttempts.set -> void
+SharedKernel.Communication.RestHedgingOptions.RestHedgingOptions() -> void
+SharedKernel.Communication.RestRetryOptions
+SharedKernel.Communication.RestRetryOptions.BaseDelay.get -> System.TimeSpan
+SharedKernel.Communication.RestRetryOptions.BaseDelay.set -> void
+SharedKernel.Communication.RestRetryOptions.MaxRetryAttempts.get -> int
+SharedKernel.Communication.RestRetryOptions.MaxRetryAttempts.set -> void
+SharedKernel.Communication.RestRetryOptions.RestRetryOptions() -> void
+SharedKernel.Communication.RestRetryOptions.RetryNonIdempotentMethods.get -> bool
+SharedKernel.Communication.RestRetryOptions.RetryNonIdempotentMethods.set -> void
+override SharedKernel.Communication.RestClientOptions.Validate(System.ComponentModel.DataAnnotations.ValidationContext! validationContext) -> System.Collections.Generic.IEnumerable<System.ComponentModel.DataAnnotations.ValidationResult!>!
+static SharedKernel.Communication.HttpClientResultExtensions.DeleteResultAsync(this System.Net.Http.HttpClient! client, string? requestUri, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
+static SharedKernel.Communication.HttpClientResultExtensions.GetResultAsync<T>(this System.Net.Http.HttpClient! client, string? requestUri, System.Text.Json.JsonSerializerOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<T>!>!
+static SharedKernel.Communication.HttpClientResultExtensions.GetResultAsync<T>(this System.Net.Http.HttpClient! client, string? requestUri, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T>! typeInfo, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<T>!>!
+static SharedKernel.Communication.HttpClientResultExtensions.GetResultAsync<T>(this System.Net.Http.HttpClient! client, string? requestUri, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<T>!>!
+static SharedKernel.Communication.HttpClientResultExtensions.PostResultAsync<TRequest, TResponse>(this System.Net.Http.HttpClient! client, string? requestUri, TRequest value, System.Text.Json.JsonSerializerOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<TResponse>!>!
+static SharedKernel.Communication.HttpClientResultExtensions.PostResultAsync<TRequest, TResponse>(this System.Net.Http.HttpClient! client, string? requestUri, TRequest value, System.Text.Json.Serialization.Metadata.JsonTypeInfo<TRequest>! requestTypeInfo, System.Text.Json.Serialization.Metadata.JsonTypeInfo<TResponse>! responseTypeInfo, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<TResponse>!>!
+static SharedKernel.Communication.HttpClientResultExtensions.PostResultAsync<TRequest>(this System.Net.Http.HttpClient! client, string? requestUri, TRequest value, System.Text.Json.JsonSerializerOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
+static SharedKernel.Communication.HttpClientResultExtensions.PostResultAsync<TRequest>(this System.Net.Http.HttpClient! client, string? requestUri, TRequest value, System.Text.Json.Serialization.Metadata.JsonTypeInfo<TRequest>! requestTypeInfo, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
+static SharedKernel.Communication.HttpClientResultExtensions.PostResultAsync<TRequest>(this System.Net.Http.HttpClient! client, string? requestUri, TRequest value, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
+static SharedKernel.Communication.HttpClientResultExtensions.PutResultAsync<TRequest, TResponse>(this System.Net.Http.HttpClient! client, string? requestUri, TRequest value, System.Text.Json.JsonSerializerOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<TResponse>!>!
+static SharedKernel.Communication.HttpClientResultExtensions.PutResultAsync<TRequest, TResponse>(this System.Net.Http.HttpClient! client, string? requestUri, TRequest value, System.Text.Json.Serialization.Metadata.JsonTypeInfo<TRequest>! requestTypeInfo, System.Text.Json.Serialization.Metadata.JsonTypeInfo<TResponse>! responseTypeInfo, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<TResponse>!>!
+static SharedKernel.Communication.HttpClientResultExtensions.PutResultAsync<TRequest>(this System.Net.Http.HttpClient! client, string? requestUri, TRequest value, System.Text.Json.JsonSerializerOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
+static SharedKernel.Communication.HttpClientResultExtensions.PutResultAsync<TRequest>(this System.Net.Http.HttpClient! client, string? requestUri, TRequest value, System.Text.Json.Serialization.Metadata.JsonTypeInfo<TRequest>! requestTypeInfo, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
+static SharedKernel.Communication.HttpClientResultExtensions.PutResultAsync<TRequest>(this System.Net.Http.HttpClient! client, string? requestUri, TRequest value, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
+static SharedKernel.Communication.HttpClientResultExtensions.SendResultAsync(this System.Net.Http.HttpClient! client, System.Net.Http.HttpRequestMessage! request, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
+static SharedKernel.Communication.HttpClientResultExtensions.SendResultAsync<T>(this System.Net.Http.HttpClient! client, System.Net.Http.HttpRequestMessage! request, System.Text.Json.JsonSerializerOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<T>!>!
+static SharedKernel.Communication.HttpClientResultExtensions.SendResultAsync<T>(this System.Net.Http.HttpClient! client, System.Net.Http.HttpRequestMessage! request, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T>! typeInfo, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<T>!>!
+static SharedKernel.Communication.HttpResponseMessageResultExtensions.ReadResultAsync<T>(this System.Net.Http.HttpResponseMessage! response, System.Text.Json.JsonSerializerOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<T>!>!
+static SharedKernel.Communication.HttpResponseMessageResultExtensions.ReadResultAsync<T>(this System.Net.Http.HttpResponseMessage! response, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T>! typeInfo, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<T>!>!
+static SharedKernel.Communication.HttpResponseMessageResultExtensions.ReadResultAsync<T>(this System.Net.Http.HttpResponseMessage! response, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result<T>!>!
+static SharedKernel.Communication.HttpResponseMessageResultExtensions.ToResultAsync(this System.Net.Http.HttpResponseMessage! response, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<SharedKernel.Primitives.Results.Result>!
+static SharedKernel.Communication.RestCommunicationBuilderExtensions.AddRestClient<TClient, TImplementation>(this SharedKernel.Communication.ICommunicationBuilder! builder, string! name, System.Action<SharedKernel.Communication.IRestClientBuilder!>? configure = null) -> SharedKernel.Communication.ICommunicationBuilder!
+static SharedKernel.Communication.RestCommunicationBuilderExtensions.AddRestClient<TClient>(this SharedKernel.Communication.ICommunicationBuilder! builder, string! name, System.Action<SharedKernel.Communication.IRestClientBuilder!>? configure = null) -> SharedKernel.Communication.ICommunicationBuilder!

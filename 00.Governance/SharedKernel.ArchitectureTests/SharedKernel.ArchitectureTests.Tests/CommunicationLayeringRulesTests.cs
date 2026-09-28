@@ -248,7 +248,7 @@ public class CommunicationLayeringRulesTests
     [Fact]
     public void GrpcNeverReferencesContracts_RealGrpcAssembly_RulePasses()
     {
-        var grpcAssembly = typeof(SharedKernel.Communication.Grpc.Builders.IGrpcCommunicationBuilder)
+        var grpcAssembly = typeof(SharedKernel.Communication.GrpcClientOptions)
             .Assembly;
 
         var result = CommunicationLayeringRules

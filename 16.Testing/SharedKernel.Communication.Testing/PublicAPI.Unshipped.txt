@@ -1,8 +1,40 @@
 #nullable enable
-SharedKernel.Testing.Communication.MockServiceEndpointResolver
-SharedKernel.Testing.Communication.MockServiceEndpointResolver.Configure(string! serviceName, System.Uri! uri) -> void
-SharedKernel.Testing.Communication.MockServiceEndpointResolver.GetResolvedNames() -> System.Collections.Generic.IReadOnlyList<string!>!
-SharedKernel.Testing.Communication.MockServiceEndpointResolver.MockServiceEndpointResolver() -> void
-SharedKernel.Testing.Communication.MockServiceEndpointResolver.ResolveAsync(string! serviceName, System.Threading.CancellationToken ct) -> System.Threading.Tasks.ValueTask<System.Uri!>
+SharedKernel.Testing.Communication.CommunicationTestingServiceCollectionExtensions
+SharedKernel.Testing.Communication.GrpcCalls
+SharedKernel.Testing.Communication.RecordedHttpRequest
+SharedKernel.Testing.Communication.RecordedHttpRequest.<Clone>$() -> SharedKernel.Testing.Communication.RecordedHttpRequest!
+SharedKernel.Testing.Communication.RecordedHttpRequest.Body.get -> string?
+SharedKernel.Testing.Communication.RecordedHttpRequest.Body.init -> void
+SharedKernel.Testing.Communication.RecordedHttpRequest.Deconstruct(out System.Net.Http.HttpMethod! Method, out System.Uri? Uri, out System.Collections.Generic.IReadOnlyDictionary<string!, string!>! Headers, out string? Body) -> void
+SharedKernel.Testing.Communication.RecordedHttpRequest.Equals(SharedKernel.Testing.Communication.RecordedHttpRequest? other) -> bool
+SharedKernel.Testing.Communication.RecordedHttpRequest.Header(string! name) -> string?
+SharedKernel.Testing.Communication.RecordedHttpRequest.Headers.get -> System.Collections.Generic.IReadOnlyDictionary<string!, string!>!
+SharedKernel.Testing.Communication.RecordedHttpRequest.Headers.init -> void
+SharedKernel.Testing.Communication.RecordedHttpRequest.Method.get -> System.Net.Http.HttpMethod!
+SharedKernel.Testing.Communication.RecordedHttpRequest.Method.init -> void
+SharedKernel.Testing.Communication.RecordedHttpRequest.RecordedHttpRequest(System.Net.Http.HttpMethod! Method, System.Uri? Uri, System.Collections.Generic.IReadOnlyDictionary<string!, string!>! Headers, string? Body) -> void
+SharedKernel.Testing.Communication.RecordedHttpRequest.Uri.get -> System.Uri?
+SharedKernel.Testing.Communication.RecordedHttpRequest.Uri.init -> void
+SharedKernel.Testing.Communication.StubHttpMessageHandler
+SharedKernel.Testing.Communication.StubHttpMessageHandler.Requests.get -> System.Collections.Generic.IReadOnlyList<SharedKernel.Testing.Communication.RecordedHttpRequest!>!
+SharedKernel.Testing.Communication.StubHttpMessageHandler.Respond(System.Net.Http.HttpMethod! method, string! path, System.Func<System.Net.Http.HttpRequestMessage!, int, System.Net.Http.HttpResponseMessage!>! respond) -> SharedKernel.Testing.Communication.StubHttpMessageHandler!
+SharedKernel.Testing.Communication.StubHttpMessageHandler.RespondAsync(System.Net.Http.HttpMethod! method, string! path, System.Func<System.Net.Http.HttpRequestMessage!, int, System.Threading.CancellationToken, System.Threading.Tasks.Task<System.Net.Http.HttpResponseMessage!>!>! respond) -> SharedKernel.Testing.Communication.StubHttpMessageHandler!
+SharedKernel.Testing.Communication.StubHttpMessageHandler.RespondJson<T>(System.Net.Http.HttpMethod! method, string! path, T body, System.Net.HttpStatusCode status = System.Net.HttpStatusCode.OK) -> SharedKernel.Testing.Communication.StubHttpMessageHandler!
+SharedKernel.Testing.Communication.StubHttpMessageHandler.RespondProblem(System.Net.Http.HttpMethod! method, string! path, System.Net.HttpStatusCode status, string! errorCode, string? detail = null, System.Collections.Generic.IReadOnlyDictionary<string!, string![]!>? fieldErrors = null) -> SharedKernel.Testing.Communication.StubHttpMessageHandler!
+SharedKernel.Testing.Communication.StubHttpMessageHandler.RespondStatus(System.Net.Http.HttpMethod! method, string! path, System.Net.HttpStatusCode status) -> SharedKernel.Testing.Communication.StubHttpMessageHandler!
+SharedKernel.Testing.Communication.StubHttpMessageHandler.StubHttpMessageHandler() -> void
+SharedKernel.Testing.Communication.StubHttpMessageHandler.Throw(System.Net.Http.HttpMethod! method, string! path, System.Exception! exception) -> SharedKernel.Testing.Communication.StubHttpMessageHandler!
 SharedKernel.Testing.Communication.TestServerCallContext
+const SharedKernel.Testing.Communication.GrpcCalls.ErrorDomain = "sharedkernel.testing" -> string!
+override SharedKernel.Testing.Communication.RecordedHttpRequest.Equals(object? obj) -> bool
+override SharedKernel.Testing.Communication.RecordedHttpRequest.GetHashCode() -> int
+override SharedKernel.Testing.Communication.RecordedHttpRequest.ToString() -> string!
+static SharedKernel.Testing.Communication.CommunicationTestingServiceCollectionExtensions.UseStubHttpMessageHandler(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, string! clientName, SharedKernel.Testing.Communication.StubHttpMessageHandler! stub) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static SharedKernel.Testing.Communication.GrpcCalls.Failure<TResponse>(Grpc.Core.StatusCode statusCode, string! detail = "") -> Grpc.Core.AsyncUnaryCall<TResponse>!
+static SharedKernel.Testing.Communication.GrpcCalls.Failure<TResponse>(SharedKernel.Primitives.Errors.Error! error) -> Grpc.Core.AsyncUnaryCall<TResponse>!
+static SharedKernel.Testing.Communication.GrpcCalls.Success<TResponse>(TResponse response) -> Grpc.Core.AsyncUnaryCall<TResponse>!
+static SharedKernel.Testing.Communication.GrpcCalls.ToRpcException(SharedKernel.Primitives.Errors.Error! error) -> Grpc.Core.RpcException!
+static SharedKernel.Testing.Communication.RecordedHttpRequest.operator !=(SharedKernel.Testing.Communication.RecordedHttpRequest? left, SharedKernel.Testing.Communication.RecordedHttpRequest? right) -> bool
+static SharedKernel.Testing.Communication.RecordedHttpRequest.operator ==(SharedKernel.Testing.Communication.RecordedHttpRequest? left, SharedKernel.Testing.Communication.RecordedHttpRequest? right) -> bool
+static SharedKernel.Testing.Communication.StubHttpMessageHandler.Problem(System.Net.HttpStatusCode status, string! errorCode, string? detail = null, System.Collections.Generic.IReadOnlyDictionary<string!, string![]!>? fieldErrors = null) -> System.Net.Http.HttpResponseMessage!
 static SharedKernel.Testing.Communication.TestServerCallContext.Create(Grpc.Core.Metadata? requestHeaders = null, string! method = "test-method", string! host = "localhost", System.DateTime? deadline = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> Grpc.Core.ServerCallContext!

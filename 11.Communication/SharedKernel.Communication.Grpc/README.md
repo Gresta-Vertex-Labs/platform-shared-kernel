@@ -1,114 +1,112 @@
 # SharedKernel.Communication.Grpc
 
-gRPC client factory for Platform.SharedKernel microservices, via `Grpc.Net.ClientFactory`:
-`CorrelationTracingInterceptor` (W3C `traceparent`/`tracestate` + `X-Correlation-Id`),
-`TenantIdInterceptor` (`X-Tenant-Id` plus the caller's actor and client), a real per-call
-`DeadlineSeconds` deadline, `MoneyProtoExtensions` (`Money` ↔ `decimal`), `TimestampProtoExtensions`
-(`Timestamp` ↔ `DateTimeOffset`), and the fluent `IGrpcCommunicationBuilder` DI entry point. Channels are
-cached and reused via `Grpc.Net.ClientFactory` — never construct `GrpcChannel.ForAddress()` directly.
-
-**Tier:** Adapter. No ASP.NET Core dependency: both interceptors read the caller from
-`SharedKernel.Execution`'s `IRequestContextAccessor`. Server-side gRPC conventions (exception mapping,
-inbound metadata, authorization attributes) are `SharedKernel.Presentation.Grpc` in `14.Presentation`.
-
-## Install
-
-```xml
-<PackageReference Include="SharedKernel.Communication.Grpc" />
-```
-
-The version comes from the consumer's single `SharedKernelVersion`; every SharedKernel package is released
-together.
-
-## Usage
+Typed gRPC clients for services on SharedKernel, over `Grpc.Net.ClientFactory`. One line registers a generated client;
+its address, deadline, retry policy, keepalive and credentials live in configuration; every call carries the caller
+and a deadline; and `ToResultAsync()` reads a failure back into the `Error` the other service returned.
 
 ```csharp
-services
-    .AddSharedKernelGrpcCommunication()
-    .AddGrpcClient<OrderGrpc.OrderGrpcClient>(address: "http://order-service:5001", configure: options =>
-    {
-        options.DeadlineSeconds = 10;
-        options.EnableRetry = true;
-    });
-
-// Inject OrderGrpc.OrderGrpcClient — both interceptors are attached to its channel, and every call
-// carries an enforced CallOptions.Deadline (unless the caller already supplied one, which always wins).
+builder.Services.AddSharedKernelCommunication(builder.Configuration)
+    .AddGrpcClient<Inventory.InventoryClient>("inventory-grpc");
 ```
 
-`AddGrpcClient<TClient>` throws `OptionsValidationException` synchronously — at the call site, not
-deferred to the first RPC — when `GrpcClientOptions.DeadlineSeconds` is zero or negative.
+```json
+"SharedKernel": {
+  "Communication": {
+    "ServiceDiscovery": { "Mode": "Dns" },
+    "Clients": {
+      "inventory-grpc": { "Address": "http://_grpc.inventory", "Deadline": "00:00:05" }
+    }
+  }
+}
+```
 
-`Address` may be omitted when an `IServiceEndpointResolver` is registered (see
-[`SharedKernel.Communication.Internal`](../SharedKernel.Communication.Internal/README.md)) — resolution then
-happens once, at channel-creation time (the channel itself is cached as a singleton).
+```csharp
+Result<StockReply> stock = await client
+    .GetStockAsync(new GetStockRequest { Sku = sku }, cancellationToken: ct)
+    .ToResultAsync(ct);
+```
 
-## Caller propagation
+Service discovery, authentication, mutual TLS and the shared error codes are described in
+[`SharedKernel.Communication`](../SharedKernel.Communication/README.md).
 
-The interceptors write the ambient caller (`IRequestContextAccessor.Current`) as call metadata, through the
-same `RequestContextPropagation` mapping REST, MassTransit and Temporal use:
+## Settings
 
-| Metadata | Interceptor | Written when |
+`SharedKernel:Communication:Clients:{name}`, validated when the host starts (`GrpcClientOptions`):
+
+| Setting | Default | |
 | --- | --- | --- |
-| `traceparent`, `tracestate` | `CorrelationTracingInterceptor` | An `Activity` is current |
-| `x-correlation-id` | `CorrelationTracingInterceptor` | Always: the caller's id, or a new one for a new operation (never `Activity.Id`) |
-| `x-tenant-id` | `TenantIdInterceptor` | The caller has a tenant |
-| `x-sk-actor-id`, `x-sk-actor-kind`, `x-sk-client-id` | `TenantIdInterceptor` | As for REST: user id present / any caller / client id present |
+| `Address` | — (required) | `http://inventory` or `http://_grpc.inventory` (the service's endpoint named `grpc`); `http` or `https`. |
+| `Deadline` | 30 s | Every call that sets no deadline of its own, retries included. The service sees it too. |
+| `Retry:MaxAttempts` | 3 | Attempts, the first included (gRPC's limit is 5); `1` turns retries off. |
+| `Retry:InitialBackoff` / `MaxBackoff` / `BackoffMultiplier` | 500 ms / 5 s / 1.5 | gRPC's randomized exponential backoff. |
+| `Retry:RetryableStatusCodes` | `[ "Unavailable" ]` | The status that says the call did not run. |
+| `KeepAlive:PingDelay` / `PingTimeout` | 60 s / 30 s | HTTP/2 pings find a dead connection before a call waits on it. |
+| `MaxReceiveMessageSize` | 4 MB | The largest response message. |
+| `Authentication`, `Tls` | none | See [`SharedKernel.Communication`](../SharedKernel.Communication/README.md). |
 
-gRPC lowercases metadata keys, so the `WellKnownHeaders` constants arrive as shown. A metadata entry the
-caller supplied is never overwritten, and an interceptor failure is logged (EventId 11100/11101) and never
-fails the call. Without an ambient caller only the trace and correlation entries are written.
+Retries are gRPC's own (gRFC A6): a call is retried only while the service has not answered it — no response headers
+yet — so a retry never repeats work the service reported doing.
 
-## Recipe: Protobuf well-known type conversion
+## Load balancing
 
-`MoneyProtoExtensions`/`TimestampProtoExtensions` are pure, static, allocation-minimal conversions
-between Protobuf well-known types and their .NET equivalents — never hand-roll this conversion at a
-call site:
+gRPC keeps one HTTP/2 connection per endpoint open for a long time, so a Kubernetes ClusterIP service would pin every
+call to the pod the connection reached. Point the client at a **headless** service and set
+`ServiceDiscovery:Mode` to `Dns`: service discovery resolves every pod address and each call goes to the next one,
+round-robin; `RefreshPeriod` follows pods that come and go. Connections are kept per endpoint, several once one is
+full of streams (`EnableMultipleHttp2Connections`).
+
+## Results, not exceptions
+
+`GrpcResultExtensions`:
+
+- `call.ToResultAsync(ct)` awaits a unary call and returns its response or its `Error`, disposing the call; the
+  caller's own cancellation is thrown.
+- `rpcException.ToError()` for a streaming call or a `catch`.
+
+| Status | Error |
+| --- | --- |
+| A platform rich status (`14.Presentation`'s `AddSharedKernelGrpc()`) | The service's error: `ErrorInfo.reason` → `Code`, the status message → `Message` |
+| `InvalidArgument` with a `BadRequest` detail | `Error.Validation` of the field violations, each keeping its field as `PropertyPath` |
+| No `ErrorInfo` | `grpc.{status}` (`grpc.failed_precondition`) with the status's `ErrorType` |
+| Never reached the service (refused, reset, TLS) | `communication.unreachable` |
+| Its deadline passed | `communication.timeout` |
+| No access token | `communication.access_token_unavailable` |
+
+Status → `ErrorType` is the reverse of `14.Presentation`'s `GrpcStatusCodeMap`: InvalidArgument and OutOfRange
+Validation, Unauthenticated Unauthorized, PermissionDenied Forbidden, NotFound, Aborted and AlreadyExists Conflict,
+FailedPrecondition BusinessRule, Unavailable and ResourceExhausted Unavailable, DeadlineExceeded Timeout, anything
+else Unexpected.
+
+## What every call carries
+
+The caller's correlation id, tenant, actor and client as metadata (`WellKnownHeaders`, from `IRequestContextAccessor`),
+written once per call before the retries — metadata the call already has wins; the deadline; then, per attempt, the
+credential and the endpoint service discovery picks. Trace context (`traceparent`) comes from the HTTP handler, so the
+server's span is a child of the gRPC client span.
+
+## google.type.Money
+
+`MoneyProtoExtensions` converts `google.type.Money` both ways:
+
+| Method | |
+| --- | --- |
+| `money.ToMoney()` → `ValidationResult<Money>` | `SharedKernel.Domain`'s `Money`, rounded to the currency's minor unit; an unknown currency or a malformed message is an error |
+| `domainMoney.ToMoneyProto()` | The message |
+| `money.ToDecimal()` / `amount.ToMoneyProto("EUR")` | Plain amounts. Exact to nine decimal places; more are rounded to even first, so `0.9999999999` is 1 unit, never `nanos` = 10⁹ |
+
+For `google.protobuf.Timestamp` use Google.Protobuf's own `Timestamp.FromDateTimeOffset` and `ToDateTimeOffset()`.
+
+## Testing
+
+`SharedKernel.Communication.Testing`'s `GrpcCalls` returns what a generated client's method returns, for a mocked client:
 
 ```csharp
-using SharedKernel.Communication.Grpc.Protobuf;
-
-// decimal -> Google.Type.Money -> decimal, no precision loss
-Money money = 42.50m.ToMoneyProto(currencyCode: "USD");
-decimal amount = money.ToDecimal();
-
-// DateTimeOffset -> Google.Protobuf.WellKnownTypes.Timestamp -> DateTimeOffset, UTC preserved
-Timestamp ts = DateTimeOffset.UtcNow.ToTimestampProto();
-DateTimeOffset when = ts.ToDateTimeOffset();
+client.GetStockAsync(Arg.Any<GetStockRequest>(), Arg.Any<CallOptions>())
+    .Returns(GrpcCalls.Failure<StockReply>(Error.NotFound("inventory.sku_not_found", "No such SKU.")));
 ```
 
-## Recipe: caller-supplied deadline always wins
+`GrpcCalls.Failure(error)` carries the rich status a platform service sends, so `ToResultAsync()` reads it back.
 
-The per-call deadline `AddGrpcClient<TClient>` applies is skipped entirely when the caller already
-supplied one through the generated client's own `CallOptions` overload:
+## Logging
 
-```csharp
-// The platform default DeadlineSeconds (10, from registration above) applies.
-var order = await client.GetOrderAsync(request, cancellationToken: ct);
-
-// This call's own explicit deadline wins instead — never overwritten.
-var urgentOrder = await client.GetOrderAsync(
-    request,
-    new CallOptions(deadline: DateTime.UtcNow.AddSeconds(2)));
-```
-
-The deadline is computed from `IClock` at call time; `AddSharedKernelGrpcCommunication` registers
-`SystemClock` only when no `IClock` is registered.
-
-## Dependencies
-
-```text
-SharedKernel.Communication.Grpc  →  SharedKernel.Primitives, SharedKernel.Execution (Foundation),
-                                     SharedKernel.Communication.Internal (declared adapter edge),
-                                     Grpc.Net.Client, Grpc.Net.ClientFactory, Google.Protobuf,
-                                     Google.Api.CommonProtos, OpenTelemetry.Instrumentation.GrpcNetClient
-```
-
-Adapter tier, `net10.0`. Deliberately does **not** reference `SharedKernel.Contracts` — gRPC uses
-Protobuf-generated types directly (locked by `CommunicationLayeringRules.GrpcNeverReferencesContracts`).
-
-Related packages: [`SharedKernel.Communication.Rest`](../SharedKernel.Communication.Rest/README.md),
-[`SharedKernel.Communication.Internal`](../SharedKernel.Communication.Internal/README.md),
-`SharedKernel.Communication.Testing` (`TestServerCallContext`, test projects only).
-
-For full documentation see
-[`11.Communication/CLAUDE.md`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/11.Communication/CLAUDE.md).
+EventIds 11100–11199: 11100 the caller could not be written onto a call (Error); the call goes out without it.

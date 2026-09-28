@@ -378,6 +378,44 @@ Recorded by P-575. Root tracker: `docs/refactor/FOUNDATION-PLAN.md`.
 
 ---
 
+## Pre-publish gold-standard pass (2026-09-27)
+
+Direct user request: audit before first publish, then a full breaking cleanup (nothing is published yet).
+
+**Defects found and fixed**
+
+| # | Defect | Fix |
+| --- | --- | --- |
+| 1 | A REST client without `BaseAddress` failed every call: `HttpClient` rejects a relative URI before any handler runs, so `ServiceDiscoveryResolvingHandler` never saw it (its tests called the handler directly) | Service discovery is Microsoft.Extensions.ServiceDiscovery's resolving handler under a named base address (`http://inventory`); proven with a real `HttpClient` |
+| 2 | `AddK8sServiceDiscovery` registered only the pass-through provider: no DNS query ever ran; had it run, it would have pinned one pod's IP for 30 s and broken TLS host names | `SharedKernel.Communication.Internal` deleted; `ServiceDiscoveryMode` `Configuration`/`Dns`/`DnsSrv`, round-robin per request, host name kept |
+| 3 | `ToMoneyProto(0.9999999999m)` produced `nanos` = 1,000,000,000 (invalid) | Round to nine places, then split; invalid wire messages refused |
+| 4 | POST/PATCH retried 3× by default — duplicate side effects | Retried (and hedged) only with an `Idempotency-Key` or an explicit opt-in |
+| 5 | `CircuitBreakerEnabled = false` left the breaker on; `FailureThreshold` set the minimum throughput, not a threshold | `CircuitBreaker:Enabled/FailureRatio/MinimumThroughput/SamplingDuration/BreakDuration`, each doing what it says |
+| 6 | `RetryCount` could not be 0 | `Retry:MaxRetryAttempts = 0` is one attempt |
+| 7 | gRPC `traceparent` written from the caller's span before the client span existed: the server span had the wrong parent | Not written by this domain; the HTTP diagnostics handler writes it |
+| 8 | gRPC discovery used `typeof(TClient).Name` as the DNS name, blocked on async and pinned the address forever | Named clients, per-request resolution |
+| 9 | `AddRestClient<IClient>` for an interface could never be activated | `AddRestClient<TClient, TImplementation>`; an interface alone is refused |
+
+**Design changes**
+
+| Area | Now |
+| --- | --- |
+| Packages | New `SharedKernel.Communication` (shared base, Adapter); `.Rest`/`.Grpc` declare the edge to it; `.Internal` deleted; `.Grpc` → `SharedKernel.Domain` for `Money`; the unused prerelease OTel reference (and its NU5104 suppression) dropped |
+| API | One namespace, `SharedKernel.Communication`; `AddSharedKernelCommunication(configuration).AddRestClient<…>(name).AddGrpcClient<…>(name)`; per-client builders exposing `IHttpClientBuilder`; `TimeSpan` settings; PublicAPI tracking and XML docs on all three packages |
+| Configuration | Named options per client from `SharedKernel:Communication:Clients:{name}`, validated on start; code changes via `Configure(...)` |
+| Results | `GetResultAsync`/`PostResultAsync`/`PutResultAsync`/`DeleteResultAsync`/`SendResultAsync`; transport failures → `communication.unreachable`/`timeout`/`circuit_open`/`access_token_unavailable`; invalid 2xx JSON → `communication.invalid_body` (was a thrown `JsonException`); gRPC `ToResultAsync()`/`ToError()` read the platform rich status |
+| Outbound auth | Client credentials (cached, early refresh, single flight, 401 retry), API key, `IAccessTokenProvider` |
+| mTLS | Client certificate (PEM/PKCS#12, reloaded on handler rotation) and private CA trust |
+| Resilience | Hedging option; gRPC retry policy configurable (no `DeadlineExceeded` retry), keepalive, multiple HTTP/2 connections |
+| gRPC propagation | One `RequestContextInterceptor` instead of two; `TimestampProtoExtensions` removed (Google.Protobuf has them) |
+| Testing | `SharedKernel.Communication.Testing`: `StubHttpMessageHandler` + `UseStubHttpMessageHandler`, `GrpcCalls`; `MockServiceEndpointResolver` removed |
+| Samples | `samples/InventoryApi` (REST + gRPC, API key) and `samples/CheckoutApi` (calls it over both, from packed packages) |
+
+Tests: base 43, `.Rest` 138, `.Grpc` 35 (a real gRPC service on `TestServer`), `.Testing` 13; `13.ServiceDefaults.Security`
+end-to-end propagation 37; consumer-verify 5 surfaces; `CheckoutApi.Tests` 9 (both samples on real Kestrel ports).
+
+---
+
 ## Overall Progress
 
 > Counts updated whenever a task state changes.
@@ -444,3 +482,4 @@ Recorded by P-575. Root tracker: `docs/refactor/FOUNDATION-PLAN.md`.
 - [2026-08-12] PB-06 → `—` in SK.11.Published — **the first-ever NuGet publish of all four `SharedKernel.Communication.*` packages is RETRACTED by explicit user decision, not deferred and not blocked.** Archived rather than deleted (and rather than left `○`) so it stops surfacing to `/implement-next-phase`/`/dispatch-phase` as actionable work while the history of what was built remains readable. Recorded `—` (N/A / Skipped) per this file's own Legend, mirroring `13.ServiceDefaults`'s identical treatment of its permanently-retracted `AddOrchestrationReadinessCheck` tasks (D-11/C-40/T-35, WO-047/P-291) — the platform's established precedent for a task withdrawn by decision rather than completed. `SK.11.Published` consequently closes to 7/8 + 1 `—` = `●`, making **all nine phase keys in this domain `●`** for the first time. Nothing was un-built: PB-01–PB-05, PB-07, PB-08 stay `●`, so the four packages remain fully release-ready (complete NuGet metadata, per-package embedded READMEs, clean `dotnet pack` with zero `NU5039`/`NU5128`/vulnerable-package findings, `consumer-verify` passing all three surfaces) — only the outward-facing push is withdrawn. Reinstate PB-06 as `○` if publishing is ever authorized; do not author a replacement task, since everything it depends on is already proven (state-map-phase, user decision)
 - [2026-08-12] Package Board correction (same pass): the `SharedKernel.Communication.Grpc` row was still `◐` with a note reading "WO-056 queued (G-18–G-20, `○`)" — stale since 2026-08-11, when G-18–G-20 actually shipped (canonical GUID fallback/P-356, real per-call `CallOptions.Deadline` + `GrpcClientOptionsValidator`/P-359). It directly contradicted this same file's Overall Progress table, which has had `SK.11.Grpc` at 20/20 `●` since that date. Corrected to `●` and the note rewritten to describe the shipped state, including the empirical `GrpcClientFactoryOptions.CallOptionsActions` finding that replaced the design's assumed-but-nonexistent `ConfigureDefaultCallOptions` overload. Found while archiving PB-06; no code inspected or changed (state-map-phase)
 - [2026-09-26] WO-086 recorded (P-575): GraphQL package moved to 14.Presentation, RequestContextDelegatingHandler replaced the correlation/tenant handlers, Adapter tier, SharedKernel.Communication.Testing; PB-06 retraction superseded by the repo-wide release train — see "WO-086 Foundation Refactor" (P-575 doc agent)
+- [2026-09-27] Pre-publish gold-standard pass: `.Internal` replaced by the `SharedKernel.Communication` base (Microsoft.Extensions.ServiceDiscovery, per-client configuration, outbound auth, mTLS), Result helpers for REST and gRPC, safe retries, hedging, testing kit, InventoryApi/CheckoutApi samples — direct user request

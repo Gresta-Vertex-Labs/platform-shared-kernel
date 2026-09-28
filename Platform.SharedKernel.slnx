@@ -132,8 +132,8 @@
   <Folder Name="/11.Communication/">
     <Project Path="11.Communication/SharedKernel.Communication.Grpc/SharedKernel.Communication.Grpc.csproj" />
     <Project Path="11.Communication/SharedKernel.Communication.Grpc/SharedKernel.Communication.Grpc.Tests/SharedKernel.Communication.Grpc.Tests.csproj" />
-    <Project Path="11.Communication/SharedKernel.Communication.Internal/SharedKernel.Communication.Internal.csproj" />
-    <Project Path="11.Communication/SharedKernel.Communication.Internal/SharedKernel.Communication.Internal.Tests/SharedKernel.Communication.Internal.Tests.csproj" />
+    <Project Path="11.Communication/SharedKernel.Communication/SharedKernel.Communication.csproj" />
+    <Project Path="11.Communication/SharedKernel.Communication/SharedKernel.Communication.Tests/SharedKernel.Communication.Tests.csproj" />
     <Project Path="11.Communication/SharedKernel.Communication.Rest/SharedKernel.Communication.Rest.csproj" />
     <Project Path="11.Communication/SharedKernel.Communication.Rest/SharedKernel.Communication.Rest.Tests/SharedKernel.Communication.Rest.Tests.csproj" />
     <Project Path="11.Communication/consumer-verify/consumer-verify.csproj" />

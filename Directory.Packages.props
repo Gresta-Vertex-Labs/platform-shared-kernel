@@ -126,6 +126,8 @@
     <!-- SharedKernel.Presentation.Grpc (P-562): google.rpc rich status (ErrorInfo, BadRequest). Kept on the
          Grpc.AspNetCore line; its Google.Api.CommonProtos floor (2.16.0) is below the pin above. -->
     <PackageVersion Include="Grpc.StatusProto" Version="2.80.0" />
+    <!-- Client-only code generation (samples/CheckoutApi); a server gets it through Grpc.AspNetCore. -->
+    <PackageVersion Include="Grpc.Tools" Version="2.80.0" />
     <PackageVersion Include="Grpc.Net.Client" Version="2.80.0" />
     <PackageVersion Include="Grpc.Net.ClientFactory" Version="2.80.0" />
     <PackageVersion Include="HotChocolate.AspNetCore" Version="16.1.4" />
@@ -216,6 +218,8 @@
     <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.11" />
     <PackageVersion Include="Microsoft.Extensions.Options.DataAnnotations" Version="10.0.11" />
     <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery" Version="10.7.0" />
+    <!-- SharedKernel.Communication: DNS and DNS SRV endpoint providers (MIT; brings DnsClient, Apache-2.0). -->
+    <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery.Dns" Version="10.7.0" />
     <PackageVersion Include="Microsoft.FeatureManagement" Version="4.7.0" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.5.1" />
     <PackageVersion Include="Microsoft.SemanticKernel" Version="1.78.0" />
@@ -306,8 +310,8 @@
     <PackageVersion Include="SharedKernel.Caching.Redis.PubSub" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Caching.Redis.Testing" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Caching.Testing" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Communication" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Communication.Grpc" Version="$(SharedKernelPackageVersion)" />
-    <PackageVersion Include="SharedKernel.Communication.Internal" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Communication.Rest" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Communication.Testing" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Compression" Version="$(SharedKernelPackageVersion)" />

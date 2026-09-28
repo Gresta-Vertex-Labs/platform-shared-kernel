@@ -29,7 +29,7 @@ holds the heavy, repository-only infrastructure (Testcontainers fixtures, EF Cor
 | [`SharedKernel.Scheduling.Testing`](SharedKernel.Scheduling.Testing/README.md) | `IScheduledJobRegistry` |
 | [`SharedKernel.Integration.Testing`](SharedKernel.Integration.Testing/README.md) | Webhooks and notifications |
 | [`SharedKernel.Reporting.Testing`](SharedKernel.Reporting.Testing/README.md) | `IReportExporter<TRow>`, `IReportExporterFactory`, `IHtmlToPdfConverter` |
-| [`SharedKernel.Communication.Testing`](SharedKernel.Communication.Testing/README.md) | `IServiceEndpointResolver`, gRPC `ServerCallContext` |
+| [`SharedKernel.Communication.Testing`](SharedKernel.Communication.Testing/README.md) | REST and gRPC clients (`StubHttpMessageHandler`, `GrpcCalls`), gRPC `ServerCallContext` |
 | [`SharedKernel.Presentation.Testing`](SharedKernel.Presentation.Testing/README.md) | gRPC server context with `HttpContext`, HotChocolate executor, `IHttpContextAccessor` |
 | [`SharedKernel.ServiceDefaults.Testing`](SharedKernel.ServiceDefaults.Testing/README.md) | `ITenantCatalog`, tenant resolution, health-check assertions |
 | [`SharedKernel.Testing.Internal`](SharedKernel.Testing.Internal/README.md) | **Not packable.** Testcontainers fixtures, EF Core/Npgsql/audit helpers, MassTransit `TestHarnessFactory` — this repository's own suites only |

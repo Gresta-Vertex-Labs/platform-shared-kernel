@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsPublishable>true</IsPublishable>
+    <!-- Sample code is held to the same bar as shipped code. -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- google/type/money.proto, bundled in Google.Api.CommonProtos, on the proto import path. -->
+    <IncludeGoogleApiCommonProtos>true</IncludeGoogleApiCommonProtos>
+  </PropertyGroup>
+
+  <!--
+    A service that calls another one: InventoryApi over gRPC (stock and price) and REST (reservations), with
+    SharedKernel.Communication. PackageReference, not ProjectReference: built from the packed packages, after
+    `dotnet pack` (see samples/README.md).
+  -->
+  <ItemGroup>
+    <PackageReference Include="SharedKernel.ServiceDefaults" />
+    <PackageReference Include="SharedKernel.ServiceDefaults.Security" />
+    <PackageReference Include="SharedKernel.Application.Pipeline" />
+    <PackageReference Include="SharedKernel.Application.Mediator.MediatR" />
+    <PackageReference Include="SharedKernel.Presentation.WebApi" />
+    <!-- 11.Communication: the outbound clients -->
+    <PackageReference Include="SharedKernel.Communication.Rest" />
+    <PackageReference Include="SharedKernel.Communication.Grpc" />
+    <PackageReference Include="Google.Api.CommonProtos" />
+    <PackageReference Include="Grpc.Tools" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The client, generated from the service's own contract; internal, so it never clashes with InventoryApi's types. -->
+    <Protobuf Include="..\InventoryApi\Protos\inventory.proto" GrpcServices="Client" Access="Internal" Link="Protos\inventory.proto" />
+  </ItemGroup>
+
+</Project>

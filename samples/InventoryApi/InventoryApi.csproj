@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsPublishable>true</IsPublishable>
+    <!-- Sample code is held to the same bar as shipped code. -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- google/type/money.proto, bundled in Google.Api.CommonProtos, on the proto import path. -->
+    <IncludeGoogleApiCommonProtos>true</IncludeGoogleApiCommonProtos>
+  </PropertyGroup>
+
+  <!--
+    The service CheckoutApi calls: REST on one port, gRPC on another, both behind an API key. PackageReference, not
+    ProjectReference: built from the packed packages, after `dotnet pack` (see samples/README.md).
+  -->
+  <ItemGroup>
+    <PackageReference Include="SharedKernel.ServiceDefaults" />
+    <PackageReference Include="SharedKernel.ServiceDefaults.Security" />
+    <PackageReference Include="SharedKernel.Application.Pipeline" />
+    <PackageReference Include="SharedKernel.Application.Mediator.MediatR" />
+    <!-- 14.Presentation: Result -> ProblemDetails over REST, Result -> rich status over gRPC -->
+    <PackageReference Include="SharedKernel.Presentation.WebApi" />
+    <PackageReference Include="SharedKernel.Presentation.Grpc" />
+    <!-- 12.Security: callers authenticate with an API key -->
+    <PackageReference Include="SharedKernel.Security.ApiKey" />
+    <!-- 11.Communication.Grpc: Money -> google.type.Money for the gRPC reply -->
+    <PackageReference Include="SharedKernel.Communication.Grpc" />
+    <!-- The gRPC server and Grpc.Tools, which generates the service base from Protos/inventory.proto -->
+    <PackageReference Include="Grpc.AspNetCore" />
+    <PackageReference Include="Google.Api.CommonProtos" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Protobuf Include="Protos\inventory.proto" GrpcServices="Server" />
+  </ItemGroup>
+
+</Project>

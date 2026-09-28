@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <IsPackable>false</IsPackable>
@@ -6,14 +6,12 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
+    <!-- The two packages a service references; SharedKernel.Communication comes with them. -->
     <ProjectReference Include="..\SharedKernel.Communication.Rest\SharedKernel.Communication.Rest.csproj" />
     <ProjectReference Include="..\SharedKernel.Communication.Grpc\SharedKernel.Communication.Grpc.csproj" />
-    <ProjectReference Include="..\SharedKernel.Communication.Internal\SharedKernel.Communication.Internal.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <!-- Generic host — lets a future PB-07 pass exercise the real IHost.StartAsync() eager
-         ValidateOnStart() path (mirroring the 17.Workflows/consumer-verify precedent's P-06 surface),
-         not just BuildServiceProvider(). -->
+    <!-- A real generic host, so ValidateOnStart runs the way it does in a service. -->
     <PackageReference Include="Microsoft.Extensions.Hosting" />
   </ItemGroup>
 </Project>

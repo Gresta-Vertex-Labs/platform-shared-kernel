@@ -1,17 +1,17 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <IsPackable>false</IsPackable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
+  <!--
+    Unit lane: a real gRPC service runs in-process on TestServer (no network, no Docker) and the clients reach it
+    through their whole pipeline — interceptor, deadline, retries, credentials, service discovery.
+  -->
   <ItemGroup>
-    <ProjectReference Include="..\..\..\12.Security\SharedKernel.Security.Abstractions\SharedKernel.Security.Abstractions.csproj" />
     <ProjectReference Include="..\SharedKernel.Communication.Grpc.csproj" />
     <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
-    <!--
-      Test-project-only reference (T-28, WO-041 P-255) — never from the production .csproj.
-      Used to invoke 00.Governance's LoggingEventIdIntegrityAssertion against the real, compiled
-      SharedKernel.Communication.Grpc assembly, mirroring the established cross-domain precedent
-      (SharedKernel.Application.Pipeline.Tests, SharedKernel.Messaging.MassTransit.Tests).
-    -->
+    <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Communication.Testing\SharedKernel.Communication.Testing.csproj" />
+    <!-- Test-only: the real-assembly EventId integrity check. -->
     <ProjectReference Include="..\..\..\00.Governance\SharedKernel.ArchitectureTests\SharedKernel.ArchitectureTests.csproj" />
   </ItemGroup>
   <ItemGroup>
@@ -25,14 +25,16 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <!-- Bumped 8.4.0 -> 8.10.0 (T-28): SharedKernel.ArchitectureTests pins 8.10.0; NU1605 otherwise. -->
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="NSubstitute" />
     <PackageReference Include="Microsoft.AspNetCore.TestHost" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
-    <!--
-      Grpc.Core.Testing: TestServerCallContext for interceptor unit tests without a real gRPC server.
-    -->
-    <PackageReference Include="Grpc.Core.Testing" />
+    <!-- The in-process server, and Grpc.Tools for the test proto. -->
+    <PackageReference Include="Grpc.AspNetCore" />
+  </ItemGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <Protobuf Include="Protos\probe.proto" GrpcServices="Both" />
   </ItemGroup>
 </Project>

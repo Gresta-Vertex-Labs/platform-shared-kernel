@@ -1,35 +1,39 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <SharedKernelTier>Adapter</SharedKernelTier>
-    <SharedKernelAllowedAdapterReferences>SharedKernel.Communication.Internal</SharedKernelAllowedAdapterReferences>
+    <SharedKernelAllowedAdapterReferences>SharedKernel.Communication</SharedKernelAllowedAdapterReferences>
     <!-- NuGet packaging metadata -->
-    <Description>Typed HttpClient factory with Polly v8 resilience (StandardResilienceHandler: retry, circuit-breaker, timeout), a RequestContextDelegatingHandler that forwards the ambient caller's correlation id, tenant, actor and client headers from IRequestContextAccessor (no ASP.NET Core dependency), opt-in Idempotency-Key propagation, ProblemDetails deserialization to Error, and fluent IRestCommunicationBuilder DI entry point.</Description>
-    <PackageTags>http-client;rest;polly;resilience;correlation-id;tenant-id;idempotency-key;problem-details;shared-kernel</PackageTags>
+    <Description>Typed REST clients for SharedKernel services: AddSharedKernelCommunication(configuration).AddRestClient&lt;IClient, Client&gt;("name") with the address, timeouts, retries and credentials bound from SharedKernel:Communication:Clients:{name}. Microsoft.Extensions.Http.Resilience (retry with jitter, per-attempt and total timeouts, circuit breaker, or hedging), and retries never repeat a POST or PATCH unless it carries an Idempotency-Key. The caller's correlation id, tenant, actor and client travel on every call from any host (HTTP, message consumer, job). Results, not exceptions: GetResultAsync/PostResultAsync read a platform ProblemDetails back into the same Error the other service returned and turn an unreachable service, a timeout or an open circuit into Error values.</Description>
+    <PackageReleaseNotes>First release.</PackageReleaseNotes>
+    <PackageTags>shared-kernel;http-client;rest;resilience;polly;problem-details;idempotency-key;correlation-id</PackageTags>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- Publish bar: ship XML docs, and fail the build on an undocumented or untracked public member. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <WarningsAsErrors>$(WarningsAsErrors);CS1591;RS0016;RS0017;RS0024;RS0025</WarningsAsErrors>
+  </PropertyGroup>
+
   <ItemGroup>
-    <!--
-      Adapter tier: Foundation packages plus the named sibling SharedKernel.Communication.Internal
-      (service discovery). The caller comes from SharedKernel.Execution's IRequestContextAccessor, so
-      there is deliberately no Microsoft.AspNetCore.Http reference (P-566).
-    -->
+    <!-- The declared adapter edge: the shared client base. No ASP.NET Core: the caller is IRequestContextAccessor's. -->
+    <ProjectReference Include="..\SharedKernel.Communication\SharedKernel.Communication.csproj" />
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
     <ProjectReference Include="..\..\01.Core\SharedKernel.Execution\SharedKernel.Execution.csproj" />
-    <ProjectReference Include="..\SharedKernel.Communication.Internal\SharedKernel.Communication.Internal.csproj" />
   </ItemGroup>
+
   <ItemGroup>
-    <!--
-      Microsoft.Extensions.Http: IHttpClientFactory and HttpClient DI wiring.
-      Microsoft.Extensions.Http.Resilience: Polly v8 StandardResilienceHandler.
-        Every AddRestClient<TClient> call must attach StandardResilienceHandler — never skip.
-    -->
     <PackageReference Include="Microsoft.Extensions.Http" />
     <PackageReference Include="Microsoft.Extensions.Http.Resilience" />
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
   </ItemGroup>
+
   <ItemGroup>
-    <!-- Allow test project to access internal types (RequestContextDelegatingHandler, IdempotencyKeyDelegatingHandler) -->
-    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
-      <_Parameter1>SharedKernel.Communication.Rest.Tests</_Parameter1>
-    </AssemblyAttribute>
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="SharedKernel.Communication.Rest.Tests" />
   </ItemGroup>
 </Project>

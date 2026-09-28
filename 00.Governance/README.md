@@ -985,7 +985,7 @@ Use a typed client registered with `AddRestClient<TClient>()` instead of injecti
 
 An `HttpClient` that is not managed by `IHttpClientFactory` goes wrong in one of two ways. Creating one per use exhausts sockets under load. Keeping one alive forever pins its connections and never picks up DNS changes, which breaks after a Kubernetes service or load balancer moves.
 
-It also skips the platform's HTTP pipeline. Typed clients registered through `AddSharedKernelRestCommunication().AddRestClient<TClient>()` get standard resilience (retry, circuit breaker, timeout) plus correlation-id and tenant-id propagation. A raw `HttpClient` gets none of these.
+It also skips the platform's HTTP pipeline. Typed clients registered through `AddSharedKernelCommunication(configuration).AddRestClient<TClient>(name)` get standard resilience (retry, circuit breaker, timeout) plus correlation-id and tenant-id propagation. A raw `HttpClient` gets none of these.
 
 #### What it flags
 
@@ -1013,10 +1013,10 @@ public sealed class CheckoutService
 
 ```csharp
 // Compliant
+// The address, retries and credentials come from SharedKernel:Communication:Clients:payment-gateway.
 services
-    .AddSharedKernelRestCommunication()
-    .AddRestClient<PaymentGatewayClient>("payment-gateway", options =>
-        options.BaseAddress = "https://payments.example.com");
+    .AddSharedKernelCommunication(configuration)
+    .AddRestClient<PaymentGatewayClient>("payment-gateway");
 
 // The factory supplies a pipeline-configured HttpClient to the typed client.
 public sealed class PaymentGatewayClient(HttpClient http)

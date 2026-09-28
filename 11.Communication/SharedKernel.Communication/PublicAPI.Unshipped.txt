@@ -1,0 +1,125 @@
+#nullable enable
+SharedKernel.Communication.AccessToken
+SharedKernel.Communication.AccessToken.<Clone>$() -> SharedKernel.Communication.AccessToken!
+SharedKernel.Communication.AccessToken.AccessToken(string! Value, System.DateTimeOffset? ExpiresAt = null, string! Scheme = "Bearer") -> void
+SharedKernel.Communication.AccessToken.Deconstruct(out string! Value, out System.DateTimeOffset? ExpiresAt, out string! Scheme) -> void
+SharedKernel.Communication.AccessToken.Equals(SharedKernel.Communication.AccessToken? other) -> bool
+SharedKernel.Communication.AccessToken.ExpiresAt.get -> System.DateTimeOffset?
+SharedKernel.Communication.AccessToken.ExpiresAt.init -> void
+SharedKernel.Communication.AccessToken.Scheme.get -> string!
+SharedKernel.Communication.AccessToken.Scheme.init -> void
+SharedKernel.Communication.AccessToken.Value.get -> string!
+SharedKernel.Communication.AccessToken.Value.init -> void
+SharedKernel.Communication.AccessTokenContext
+SharedKernel.Communication.AccessTokenContext.AccessTokenContext() -> void
+SharedKernel.Communication.AccessTokenContext.AccessTokenContext(string! ClientName, bool ForceRefresh) -> void
+SharedKernel.Communication.AccessTokenContext.ClientName.get -> string!
+SharedKernel.Communication.AccessTokenContext.ClientName.init -> void
+SharedKernel.Communication.AccessTokenContext.Deconstruct(out string! ClientName, out bool ForceRefresh) -> void
+SharedKernel.Communication.AccessTokenContext.Equals(SharedKernel.Communication.AccessTokenContext other) -> bool
+SharedKernel.Communication.AccessTokenContext.ForceRefresh.get -> bool
+SharedKernel.Communication.AccessTokenContext.ForceRefresh.init -> void
+SharedKernel.Communication.AccessTokenUnavailableException
+SharedKernel.Communication.AccessTokenUnavailableException.AccessTokenUnavailableException(string! clientName, SharedKernel.Primitives.Errors.Error! error) -> void
+SharedKernel.Communication.AccessTokenUnavailableException.ClientName.get -> string!
+SharedKernel.Communication.AccessTokenUnavailableException.Error.get -> SharedKernel.Primitives.Errors.Error!
+SharedKernel.Communication.ClientApiKeyOptions
+SharedKernel.Communication.ClientApiKeyOptions.ClientApiKeyOptions() -> void
+SharedKernel.Communication.ClientApiKeyOptions.HeaderName.get -> string!
+SharedKernel.Communication.ClientApiKeyOptions.HeaderName.set -> void
+SharedKernel.Communication.ClientApiKeyOptions.Value.get -> string?
+SharedKernel.Communication.ClientApiKeyOptions.Value.set -> void
+SharedKernel.Communication.ClientAuthenticationMode
+SharedKernel.Communication.ClientAuthenticationMode.AccessTokenProvider = 3 -> SharedKernel.Communication.ClientAuthenticationMode
+SharedKernel.Communication.ClientAuthenticationMode.ApiKey = 2 -> SharedKernel.Communication.ClientAuthenticationMode
+SharedKernel.Communication.ClientAuthenticationMode.ClientCredentials = 1 -> SharedKernel.Communication.ClientAuthenticationMode
+SharedKernel.Communication.ClientAuthenticationMode.None = 0 -> SharedKernel.Communication.ClientAuthenticationMode
+SharedKernel.Communication.ClientAuthenticationOptions
+SharedKernel.Communication.ClientAuthenticationOptions.ApiKey.get -> SharedKernel.Communication.ClientApiKeyOptions!
+SharedKernel.Communication.ClientAuthenticationOptions.ApiKey.set -> void
+SharedKernel.Communication.ClientAuthenticationOptions.ClientAuthenticationOptions() -> void
+SharedKernel.Communication.ClientAuthenticationOptions.ClientCredentials.get -> SharedKernel.Communication.ClientCredentialsOptions!
+SharedKernel.Communication.ClientAuthenticationOptions.ClientCredentials.set -> void
+SharedKernel.Communication.ClientAuthenticationOptions.Mode.get -> SharedKernel.Communication.ClientAuthenticationMode
+SharedKernel.Communication.ClientAuthenticationOptions.Mode.set -> void
+SharedKernel.Communication.ClientCredentialsOptions
+SharedKernel.Communication.ClientCredentialsOptions.Audience.get -> string?
+SharedKernel.Communication.ClientCredentialsOptions.Audience.set -> void
+SharedKernel.Communication.ClientCredentialsOptions.ClientCredentialsOptions() -> void
+SharedKernel.Communication.ClientCredentialsOptions.ClientId.get -> string?
+SharedKernel.Communication.ClientCredentialsOptions.ClientId.set -> void
+SharedKernel.Communication.ClientCredentialsOptions.ClientSecret.get -> string?
+SharedKernel.Communication.ClientCredentialsOptions.ClientSecret.set -> void
+SharedKernel.Communication.ClientCredentialsOptions.RefreshBeforeExpiry.get -> System.TimeSpan
+SharedKernel.Communication.ClientCredentialsOptions.RefreshBeforeExpiry.set -> void
+SharedKernel.Communication.ClientCredentialsOptions.Resource.get -> string?
+SharedKernel.Communication.ClientCredentialsOptions.Resource.set -> void
+SharedKernel.Communication.ClientCredentialsOptions.Scope.get -> string?
+SharedKernel.Communication.ClientCredentialsOptions.Scope.set -> void
+SharedKernel.Communication.ClientCredentialsOptions.SecretTransport.get -> SharedKernel.Communication.ClientSecretTransport
+SharedKernel.Communication.ClientCredentialsOptions.SecretTransport.set -> void
+SharedKernel.Communication.ClientCredentialsOptions.TokenEndpoint.get -> System.Uri?
+SharedKernel.Communication.ClientCredentialsOptions.TokenEndpoint.set -> void
+SharedKernel.Communication.ClientSecretTransport
+SharedKernel.Communication.ClientSecretTransport.BasicAuthentication = 0 -> SharedKernel.Communication.ClientSecretTransport
+SharedKernel.Communication.ClientSecretTransport.RequestBody = 1 -> SharedKernel.Communication.ClientSecretTransport
+SharedKernel.Communication.ClientTlsOptions
+SharedKernel.Communication.ClientTlsOptions.CertificatePassword.get -> string?
+SharedKernel.Communication.ClientTlsOptions.CertificatePassword.set -> void
+SharedKernel.Communication.ClientTlsOptions.CertificatePath.get -> string?
+SharedKernel.Communication.ClientTlsOptions.CertificatePath.set -> void
+SharedKernel.Communication.ClientTlsOptions.ClientTlsOptions() -> void
+SharedKernel.Communication.ClientTlsOptions.PrivateKeyPath.get -> string?
+SharedKernel.Communication.ClientTlsOptions.PrivateKeyPath.set -> void
+SharedKernel.Communication.ClientTlsOptions.TrustedCertificateAuthoritiesPath.get -> string?
+SharedKernel.Communication.ClientTlsOptions.TrustedCertificateAuthoritiesPath.set -> void
+SharedKernel.Communication.CommunicationClientOptions
+SharedKernel.Communication.CommunicationClientOptions.Authentication.get -> SharedKernel.Communication.ClientAuthenticationOptions!
+SharedKernel.Communication.CommunicationClientOptions.Authentication.set -> void
+SharedKernel.Communication.CommunicationClientOptions.CommunicationClientOptions() -> void
+SharedKernel.Communication.CommunicationClientOptions.Tls.get -> SharedKernel.Communication.ClientTlsOptions!
+SharedKernel.Communication.CommunicationClientOptions.Tls.set -> void
+SharedKernel.Communication.CommunicationDiscoveryOptions
+SharedKernel.Communication.CommunicationDiscoveryOptions.CommunicationDiscoveryOptions() -> void
+SharedKernel.Communication.CommunicationDiscoveryOptions.DnsSrvQuerySuffix.get -> string?
+SharedKernel.Communication.CommunicationDiscoveryOptions.DnsSrvQuerySuffix.set -> void
+SharedKernel.Communication.CommunicationDiscoveryOptions.Mode.get -> SharedKernel.Communication.ServiceDiscoveryMode
+SharedKernel.Communication.CommunicationDiscoveryOptions.Mode.set -> void
+SharedKernel.Communication.CommunicationDiscoveryOptions.RefreshPeriod.get -> System.TimeSpan
+SharedKernel.Communication.CommunicationDiscoveryOptions.RefreshPeriod.set -> void
+SharedKernel.Communication.CommunicationErrorCodes
+SharedKernel.Communication.CommunicationOptions
+SharedKernel.Communication.CommunicationOptions.CommunicationOptions() -> void
+SharedKernel.Communication.CommunicationOptions.ServiceDiscovery.get -> SharedKernel.Communication.CommunicationDiscoveryOptions!
+SharedKernel.Communication.CommunicationOptions.ServiceDiscovery.set -> void
+SharedKernel.Communication.CommunicationOptions.Validate(System.ComponentModel.DataAnnotations.ValidationContext! validationContext) -> System.Collections.Generic.IEnumerable<System.ComponentModel.DataAnnotations.ValidationResult!>!
+SharedKernel.Communication.CommunicationServiceCollectionExtensions
+SharedKernel.Communication.IAccessTokenProvider
+SharedKernel.Communication.IAccessTokenProvider.GetAccessTokenAsync(SharedKernel.Communication.AccessTokenContext context, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<SharedKernel.Primitives.Results.Result<SharedKernel.Communication.AccessToken!>!>
+SharedKernel.Communication.ICommunicationBuilder
+SharedKernel.Communication.ICommunicationBuilder.Configuration.get -> Microsoft.Extensions.Configuration.IConfiguration!
+SharedKernel.Communication.ICommunicationBuilder.Services.get -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+SharedKernel.Communication.ServiceDiscoveryMode
+SharedKernel.Communication.ServiceDiscoveryMode.Configuration = 0 -> SharedKernel.Communication.ServiceDiscoveryMode
+SharedKernel.Communication.ServiceDiscoveryMode.Dns = 1 -> SharedKernel.Communication.ServiceDiscoveryMode
+SharedKernel.Communication.ServiceDiscoveryMode.DnsSrv = 2 -> SharedKernel.Communication.ServiceDiscoveryMode
+const SharedKernel.Communication.CommunicationErrorCodes.AccessTokenUnavailable = "communication.access_token_unavailable" -> string!
+const SharedKernel.Communication.CommunicationErrorCodes.CircuitOpen = "communication.circuit_open" -> string!
+const SharedKernel.Communication.CommunicationErrorCodes.EmptyBody = "communication.empty_body" -> string!
+const SharedKernel.Communication.CommunicationErrorCodes.InvalidBody = "communication.invalid_body" -> string!
+const SharedKernel.Communication.CommunicationErrorCodes.Timeout = "communication.timeout" -> string!
+const SharedKernel.Communication.CommunicationErrorCodes.Unreachable = "communication.unreachable" -> string!
+override SharedKernel.Communication.AccessToken.Equals(object? obj) -> bool
+override SharedKernel.Communication.AccessToken.GetHashCode() -> int
+override SharedKernel.Communication.AccessToken.ToString() -> string!
+override SharedKernel.Communication.AccessTokenContext.GetHashCode() -> int
+static SharedKernel.Communication.AccessToken.operator !=(SharedKernel.Communication.AccessToken? left, SharedKernel.Communication.AccessToken? right) -> bool
+static SharedKernel.Communication.AccessToken.operator ==(SharedKernel.Communication.AccessToken? left, SharedKernel.Communication.AccessToken? right) -> bool
+static SharedKernel.Communication.AccessTokenContext.operator !=(SharedKernel.Communication.AccessTokenContext left, SharedKernel.Communication.AccessTokenContext right) -> bool
+static SharedKernel.Communication.AccessTokenContext.operator ==(SharedKernel.Communication.AccessTokenContext left, SharedKernel.Communication.AccessTokenContext right) -> bool
+static SharedKernel.Communication.CommunicationOptions.ClientsSectionName.get -> string!
+static SharedKernel.Communication.CommunicationOptions.SectionName.get -> string!
+static SharedKernel.Communication.CommunicationServiceCollectionExtensions.AddSharedKernelCommunication(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfiguration! configuration, System.Action<SharedKernel.Communication.CommunicationOptions!>? configure = null) -> SharedKernel.Communication.ICommunicationBuilder!
+virtual SharedKernel.Communication.CommunicationClientOptions.Validate(System.ComponentModel.DataAnnotations.ValidationContext! validationContext) -> System.Collections.Generic.IEnumerable<System.ComponentModel.DataAnnotations.ValidationResult!>!
+~override SharedKernel.Communication.AccessTokenContext.Equals(object obj) -> bool
+~override SharedKernel.Communication.AccessTokenContext.ToString() -> string

@@ -1,99 +1,75 @@
-using SharedKernel.Communication.Grpc.Protobuf;
+using SharedKernel.Domain.Monetary;
+using ProtoMoney = Google.Type.Money;
 
 namespace SharedKernel.Communication.Grpc.Tests.Protobuf;
 
 public sealed class MoneyProtoExtensionsTests
 {
     [Theory]
-    [InlineData(10, 0, 10.0)]
-    [InlineData(10, 500_000_000, 10.5)]
-    [InlineData(10, 990_000_000, 10.99)]
-    [InlineData(0, 10_000_000, 0.01)]
-    [InlineData(-5, -250_000_000, -5.25)]
-    [InlineData(0, 0, 0.0)]
-    public void ToDecimal_RoundTrips_WithoutPrecisionLoss(long units, int nanos, decimal expected)
+    [InlineData(10, 0, "10")]
+    [InlineData(10, 500_000_000, "10.5")]
+    [InlineData(0, 10_000_000, "0.01")]
+    [InlineData(-5, -250_000_000, "-5.25")]
+    [InlineData(0, -1, "-0.000000001")]
+    public void A_message_reads_as_its_exact_amount(long units, int nanos, string expected)
     {
-        // Arrange
-        var money = new Google.Type.Money { Units = units, Nanos = nanos, CurrencyCode = "USD" };
-
-        // Act
-        var result = money.ToDecimal();
-
-        // Assert
-        result.Should().Be(expected);
+        new ProtoMoney { Units = units, Nanos = nanos, CurrencyCode = "EUR" }.ToDecimal()
+            .Should().Be(decimal.Parse(expected, System.Globalization.CultureInfo.InvariantCulture));
     }
 
     [Theory]
-    [InlineData(10.5, "USD")]
-    [InlineData(99.99, "EUR")]
-    [InlineData(0.01, "GBP")]
-    [InlineData(-5.25, "JPY")]
-    [InlineData(0.0, "USD")]
-    [InlineData(1000000.123456789, "USD")]
-    public void ToMoneyProto_RoundTrips_WithoutPrecisionLoss(decimal value, string currency)
+    [InlineData("10.5", 10, 500_000_000)]
+    [InlineData("-1.5", -1, -500_000_000)]
+    [InlineData("0.9999999999", 1, 0)]
+    [InlineData("-0.9999999999", -1, 0)]
+    [InlineData("0.0000000005", 0, 0)]
+    [InlineData("0.0000000015", 0, 2)]
+    public void An_amount_is_rounded_to_nine_places_before_it_is_split(string amount, long units, int nanos)
     {
-        // Arrange + Act
-        var money = value.ToMoneyProto(currency);
-        var roundTripped = money.ToDecimal();
+        ProtoMoney money = decimal.Parse(amount, System.Globalization.CultureInfo.InvariantCulture).ToMoneyProto("eur");
 
-        // Assert
-        roundTripped.Should().Be(value, $"decimal → Money → decimal round-trip must be lossless for {value}");
-        money.CurrencyCode.Should().Be(currency);
+        money.Units.Should().Be(units);
+        money.Nanos.Should().Be(nanos);
+        money.CurrencyCode.Should().Be("EUR");
+    }
+
+    [Theory]
+    [InlineData(1, -1)]
+    [InlineData(-1, 1)]
+    [InlineData(0, 1_000_000_000)]
+    public void A_message_that_breaks_the_rules_is_refused(long units, int nanos)
+    {
+        var money = new ProtoMoney { Units = units, Nanos = nanos, CurrencyCode = "EUR" };
+
+        Action read = () => money.ToDecimal();
+
+        read.Should().Throw<ArgumentException>();
+        money.ToMoney().Errors.Should().ContainSingle().Which.Code.Should().Be("money.proto.invalid");
     }
 
     [Fact]
-    public void ToMoneyProto_SetsCorrectFields()
+    public void A_whole_part_beyond_64_bits_is_refused()
     {
-        // Arrange
-        const decimal value = 10.5m;
+        Action write = () => decimal.MaxValue.ToMoneyProto("EUR");
 
-        // Act
-        var money = value.ToMoneyProto("USD");
-
-        // Assert
-        money.Units.Should().Be(10L);
-        money.Nanos.Should().Be(500_000_000);
-        money.CurrencyCode.Should().Be("USD");
+        write.Should().Throw<ArgumentOutOfRangeException>();
     }
 
     [Fact]
-    public void ToMoneyProto_NegativeValue_SetsMatchingSignOnNanos()
+    public void Domain_money_round_trips()
     {
-        // Arrange
-        const decimal value = -5.25m;
+        Money price = Money.Create(12.34m, Currency.Eur).Value;
 
-        // Act
-        var money = value.ToMoneyProto("USD");
+        Money back = price.ToMoneyProto().ToMoney().Value;
 
-        // Assert
-        money.Units.Should().Be(-5L);
-        money.Nanos.Should().Be(-250_000_000);
+        back.Should().Be(price);
     }
 
     [Fact]
-    public void ToDecimal_ZeroMoney_ReturnsZero()
+    public void An_unknown_currency_is_a_validation_error()
     {
-        // Arrange
-        var money = new Google.Type.Money { Units = 0, Nanos = 0, CurrencyCode = "USD" };
+        var money = new ProtoMoney { Units = 1, CurrencyCode = "ZZZ" };
 
-        // Act
-        var result = money.ToDecimal();
-
-        // Assert
-        result.Should().Be(0m);
-    }
-
-    [Fact]
-    public void ToMoneyProto_LargeValue_Converts()
-    {
-        // Arrange
-        const decimal value = 9_999_999_999.99m;
-
-        // Act
-        var money = value.ToMoneyProto("USD");
-        var roundTripped = money.ToDecimal();
-
-        // Assert
-        roundTripped.Should().Be(value);
+        money.ToMoney().Errors.Should().ContainSingle().Which.Code.Should().Be("currency.code.unknown");
     }
 }

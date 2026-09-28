@@ -2,7 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
-using SharedKernel.Communication.Rest.ProblemDetails;
+using SharedKernel.Communication.Rest.Internal;
 using SharedKernel.Primitives.Errors;
 
 namespace SharedKernel.Communication.Rest.Tests.ProblemDetails;
