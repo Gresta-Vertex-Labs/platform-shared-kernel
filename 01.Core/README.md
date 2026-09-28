@@ -1,370 +1,181 @@
+<div align="center">
+
 # 01.Core
 
+**The foundation every Platform.SharedKernel service builds on — results instead of exceptions, one execution context,
+validated configuration, and cryptography with nothing to get wrong.**
+
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](../LICENSE)
 ![Packages: 13](https://img.shields.io/badge/packages-13-success)
-![Tier: Foundation](https://img.shields.io/badge/tier-Foundation-informational)
-![Failures: values, not exceptions](https://img.shields.io/badge/failures-Result%3CT%3E-6f42c1)
-![Misconfiguration: fails at startup](https://img.shields.io/badge/misconfiguration-fails%20at%20startup-orange)
+![Tier: Foundation](https://img.shields.io/badge/tier-Foundation%20%C3%97%2010-2ea44f)
+![Tier: Adapter](https://img.shields.io/badge/tier-Adapter%20%C3%97%203-6f42c1)
 
-> **The foundation of Platform.SharedKernel: thirteen small NuGet packages every .NET 10 service builds on. Results
-> instead of exceptions, one execution context (caller, tenant, correlation id, unit of work), validated
-> configuration, cryptography with nothing to get wrong, validated identifiers, personal-data protection, translated
-> errors, feature flags and safe compression.**
+</div>
 
-Everything in the platform sits on these packages. Ten of them are in the **Foundation** tier and reference only each
-other; the three that wrap a third-party library (Argon2, Azure Key Vault, FluentValidation) are **Adapter** packages.
-Each package does one job, installs on its own, and follows the same rules: expected failures come back as `Result` values with a
-stable error code, misconfiguration stops the host at startup instead of failing the first request, and nothing it
-logs or returns leaks a secret.
+## What this domain gives you
 
-```csharp
-// One handler, five packages: a feature flag, a translated error, a validated IBAN, a railway chain.
-public async Task<Result<Guid>> HandleAsync(CreatePayout command, CancellationToken ct)
-{
-    if (!await flags.IsEnabledAsync(Flags.InstantPayouts, ct))                       // FeatureManagement
-        return PayoutMessages.Disabled.ToError(ErrorType.Forbidden);                  // Localization
+- **Failures as values.** `Result<T>`, `Error` with stable codes and an `ErrorType` that maps mechanically to HTTP and
+  gRPC status — plus railway chaining, guard clauses and exception boundaries that never leak exception text.
+- **One execution context.** `IRequestContext` answers "who is calling, for which tenant, under which correlation id"
+  the same way for HTTP, gRPC, messages, workflows and jobs, and `IUnitOfWork` gives every package one retry-safe transaction.
+- **Startup, not first-request, failures.** `AddValidatedOptions` binds and validates configuration, so a wrong
+  setting stops the deployment.
+- **Security primitives with safe defaults.** AES-256-GCM, signing, password hashing, TOTP, secure random and
+  fixed-time comparison — keys from providers you register, including Azure Key Vault.
+- **Data you can trust at the edge.** Validated identifiers (`Iban`, `VatNumber`, `CardNumber` …), personal-data
+  classification that is redacted in every log line, and translated error messages.
+- **Registries that stop drift.** One place for wire header names, baggage and tag keys, and logging `EventId` blocks.
 
-    return await Iban.Create(command.Iban)                                           // Validation
-        .Ensure(iban => iban.CountryCode != blockedCountry, PayoutErrors.CountryBlocked)   // Core
-        .Bind(iban => payouts.CreateAsync(iban, command.Amount, ct));                 // Result<Guid>, never a throw
-}
-```
+## Packages
 
-## Contents
-
-- [The packages](#the-packages)
-- [Which package do I need?](#which-package-do-i-need)
-- [How the packages fit together](#how-the-packages-fit-together)
-- [Install](#install)
-- [A tour in code](#a-tour-in-code)
-- [Conventions every package follows](#conventions-every-package-follows)
-- [Status and versions](#status-and-versions)
-- [Analyzers that guard these packages](#analyzers-that-guard-these-packages)
-- [Deliberately not here](#deliberately-not-here)
-- [AI quick reference](#ai-quick-reference)
-
-## The packages
-
-| Package | What you get | Beyond `Microsoft.Extensions.*` |
+| Package | Tier | When you need it |
 | --- | --- | --- |
-| [**Primitives**](SharedKernel.Primitives/README.md) | `Result<T>`, `Error` with stable codes, `ValidationResult`, `IClock`, `IIdGenerator` (UUID v7), `SmartEnum`, the `IReadinessProbe` contract every provider implements, and the shared registries: `LoggingEventIdRanges`, `WellKnownHeaders`, `WellKnownBaggageKeys`, `WellKnownTagKeys` | — |
-| [**Execution**](SharedKernel.Execution/README.md) | The caller (`IRequestContext`, `ActorKind`), the ambient context and its propagation across HTTP, gRPC, messages and workflows, correlation ids, `TenantId`/`TenantScope`, `IUnitOfWork`, `IAuditTrailWriter` | — |
-| [**Core**](SharedKernel.Core/README.md) | Railway chaining (`Map`, `Bind`, `Ensure`, `Tap`, `Match`), `ResultTry`, `ResultCombine`, guard clauses (`Guard.Against` returns an error, `Guard.Throw` throws), an exception hierarchy that carries an `Error` | — |
-| [**Configuration**](SharedKernel.Configuration/README.md) | `AddValidatedOptions`: bind, validate, fail at startup. `ISectionBoundOptions` puts the section path on the type; opt-in strictness rejects misspelled sections and keys | — |
-| [**Cryptography**](SharedKernel.Cryptography/README.md) | AES-256-GCM (async and synchronous), envelope encryption, HKDF subkeys, key rotation, RSA/ECDSA signing, HMAC, PBKDF2 password hashing with pepper and rehash-on-verify, TOTP/HOTP with replay protection, secure random, fixed-time comparison | — |
-| [**Cryptography.Argon2**](SharedKernel.Cryptography.Argon2/README.md) | Argon2id behind `IOneWayHasher`, switched on by one setting; existing hashes upgrade as users sign in | Konscious.Security.Cryptography.Argon2 |
-| [**Cryptography.KeyVault.Azure**](SharedKernel.Cryptography.KeyVault.Azure/README.md) | Azure Key Vault encryption keys wrapped by a master key that never leaves the vault, signing inside the vault, one-call rotation, an `encryption-key-provider` readiness probe | Azure.Security.KeyVault.Keys, Azure.Security.KeyVault.Secrets, Azure.Identity |
-| [**Compression**](SharedKernel.Compression/README.md) | Framed Brotli (default) and gzip that detect truncation, a raw mode for external interop, a 64 MiB decompression cap against bombs | — |
-| [**Validation**](SharedKernel.Validation/README.md) | Value types parsed at the edge: `Iban` (full SWIFT registry), `Bic`, `CardNumber` (masked), `VatNumber` (EU, UK, CH, NO, TR), `NationalId`, `PhoneNumber`, ISO country and currency codes, `Lei`, ABA, SEPA creditor ID. Errors are translatable; Turkish ships in the box | — |
-| [**Validation.FluentValidation**](SharedKernel.Validation.FluentValidation/README.md) | A rule for every Validation type: `MustBeValidIban()`, `MustBeValidVatNumber(x => x.Country)` …, and `AddFluentValidationRequestValidators()`, which runs your `IValidator<T>`s in the kernel request pipeline | FluentValidation |
-| [**DataPrivacy**](SharedKernel.DataPrivacy/README.md) | 23 kinds of personal data, including every GDPR and KVKK special category, as attributes that mask values in logs; masking helpers, HMAC pseudonymization, idempotent data-subject export and erasure | — |
-| [**Localization**](SharedKernel.Localization/README.md) | Typed message definitions whose errors carry their values, named placeholders, one immutable catalog from JSON or `.resx`, validated at startup | — |
-| [**FeatureManagement**](SharedKernel.FeatureManagement/README.md) | Feature flags on OpenFeature's `IFeatureClient`: typed `FeatureFlag<T>`, the caller's user and tenant (from the open request context — never `Activity` baggage — or an accessor your service registers) applied to every evaluation, one answer per request, never throws, checked at startup | OpenFeature, Microsoft.FeatureManagement |
+| [SharedKernel.Primitives](SharedKernel.Primitives/README.md) | Foundation | Always — `Result`, `Error`, `IClock`, `SmartEnum`, `IReadinessProbe`, the `WellKnown*` registries |
+| [SharedKernel.Execution](SharedKernel.Execution/README.md) | Foundation | Reading the caller or tenant, propagating context, a transaction, an audit record |
+| [SharedKernel.Core](SharedKernel.Core/README.md) | Foundation | Chaining results (`Map`, `Bind`, `Ensure`), guard clauses, `ResultTry`, the exception hierarchy |
+| [SharedKernel.Configuration](SharedKernel.Configuration/README.md) | Foundation | Registering any options type (`AddValidatedOptions`) |
+| [SharedKernel.FeatureManagement](SharedKernel.FeatureManagement/README.md) | Foundation | Feature flags, rollouts, A/B variants through OpenFeature |
+| [SharedKernel.Cryptography](SharedKernel.Cryptography/README.md) | Foundation | Encryption, signing, password hashing, TOTP, secure tokens |
+| [SharedKernel.Cryptography.Argon2](SharedKernel.Cryptography.Argon2/README.md) | Adapter | Argon2id password hashing instead of PBKDF2 |
+| [SharedKernel.Cryptography.KeyVault.Azure](SharedKernel.Cryptography.KeyVault.Azure/README.md) | Adapter | Encryption and signing keys held in Azure Key Vault |
+| [SharedKernel.Compression](SharedKernel.Compression/README.md) | Foundation | Compressing payloads with truncation detection and a decompression-bomb cap |
+| [SharedKernel.Validation](SharedKernel.Validation/README.md) | Foundation | Parsing IBANs, VAT numbers, cards, national IDs, phone numbers, ISO codes at the edge |
+| [SharedKernel.Validation.FluentValidation](SharedKernel.Validation.FluentValidation/README.md) | Adapter | FluentValidation rules for those identifiers, and running `IValidator<T>` in the request pipeline |
+| [SharedKernel.DataPrivacy](SharedKernel.DataPrivacy/README.md) | Foundation | Keeping personal data out of logs; GDPR/KVKK export and erasure |
+| [SharedKernel.Localization](SharedKernel.Localization/README.md) | Foundation | Translated error messages with typed, named arguments |
 
-Every package targets `net10.0`. A dash means the package needs nothing beyond the .NET runtime and
-`Microsoft.Extensions.*` abstractions.
-
-## Which package do I need?
-
-| I want to… | Package | Start with |
-| --- | --- | --- |
-| Return a failure without throwing | Primitives | `Result<T>`, `Error.NotFound(code, message)` |
-| Chain steps that can fail | Core | `.Ensure(...).Bind(...).Map(...)` |
-| Check arguments and invariants | Core | `Guard.Against.*` returns `Error?`; `Guard.Throw.*` throws |
-| Turn a throwing call into a result | Core | `ResultTry.TryAsync(...)` |
-| Report every validation error at once | Primitives, Core | `ValidationResult`, `ResultCombine.Combine(...)` |
-| Read the time in a testable way | Primitives | inject `IClock` |
-| Generate database-friendly ids | Primitives | `UuidV7IdGenerator` |
-| Report whether a dependency is ready | Primitives | `IReadinessProbe` + `AddReadinessProbe<T>()` |
-| Know who is calling and for which tenant | Execution | inject `IRequestContext`; `IRequestContextAccessor` where there is no scope |
-| Carry the tenant and correlation id to the next service | Execution | `RequestContextPropagation.WriteHeaders` / `ReadHeaders` (the platform's clients already call it) |
-| Run work in one retry-safe transaction | Execution | `IUnitOfWork.ExecuteInTransactionAsync(...)` |
-| Bind settings that must be valid | Configuration | `AddValidatedOptions<T>(configuration)` |
-| Encrypt a field, a message or a file | Cryptography | `ISymmetricEncryptionService`, `IEnvelopeEncryptionService` |
-| Hash a password or an API key | Cryptography (+ Argon2) | `IOneWayHasher` |
-| Sign a receipt or a token | Cryptography (+ KeyVault.Azure) | `IAsymmetricSignatureService` |
-| Add two-factor codes | Cryptography | `ITotpGenerator`, `ITotpVerifier` |
-| Keep keys in Azure Key Vault | Cryptography.KeyVault.Azure | `.AddAzureKeyVaultEncryption(configuration)` |
-| Compress a payload safely | Compression | `IPayloadCompressor` |
-| Accept an IBAN, card, VAT number or national ID | Validation | `Iban.Create(value)` → `Result<Iban>` |
-| Validate those in FluentValidation | Validation.FluentValidation | `RuleFor(x => x.Iban).MustBeValidIban()` |
-| Keep personal data out of logs | DataPrivacy | `[EmailAddressData]` + `SetPrivacyRedactors()` |
-| Answer a GDPR or KVKK export or erasure request | DataPrivacy | `IDataSubjectRequestHandler` |
-| Show errors in the caller's language | Localization | `LocalizedMessage.Define(...)` + a JSON catalog |
-| Turn a feature on for some users or tenants | FeatureManagement | `FeatureFlag.Boolean(...)` + `IFeatureClient` |
+Foundation packages reference only other Foundation packages and may be referenced from any project of a service. The
+three Adapter packages each wrap one third-party library (Konscious, the Azure SDK, FluentValidation) so it never
+becomes a transitive dependency of the base package; reference them from Infrastructure (or the host).
 
 ## How the packages fit together
 
 ```mermaid
 flowchart BT
-    P["<b>Primitives</b><br/>Result · Error · IClock · probes · registries"]
-    EX["<b>Execution</b><br/>caller · tenant · unit of work"]
-    CFG["<b>Configuration</b><br/>AddValidatedOptions"]
-    C["<b>Core</b><br/>railway · guards · exceptions"]
-    L["<b>Localization</b>"]
-    V["<b>Validation</b>"]
-    FV["<b>Validation.FluentValidation</b>"]
-    CR["<b>Cryptography</b>"]
-    A2["<b>Cryptography.Argon2</b>"]
-    KV["<b>Cryptography.KeyVault.Azure</b>"]
-    CMP["<b>Compression</b>"]
-    DP["<b>DataPrivacy</b>"]
-    FM["<b>FeatureManagement</b>"]
-    APP["SharedKernel.Application<br/>(05.Application)"]
-
-    EX --> P
-    C --> P
-    L --> P
-    DP --> P
-    FM --> P & EX
-    V --> P & C & L
-    FV --> V & APP
-    CR --> P & CFG
-    CMP --> P & CFG
-    A2 --> CR & CFG
-    KV --> CR & CFG
+    Primitives["Primitives<br/>Result · Error · IClock · registries"]
+    Configuration["Configuration<br/>AddValidatedOptions"]
+    Execution["Execution<br/>IRequestContext · TenantId · IUnitOfWork"] --> Primitives
+    Core["Core<br/>railway · guards · exceptions"] --> Primitives
+    Localization["Localization"] --> Primitives
+    DataPrivacy["DataPrivacy"] --> Primitives
+    FeatureManagement["FeatureManagement"] --> Execution
+    Compression["Compression"] --> Primitives
+    Compression --> Configuration
+    Cryptography["Cryptography"] --> Primitives
+    Cryptography --> Configuration
+    Validation["Validation"] --> Core
+    Validation --> Localization
+    Argon2["Cryptography.Argon2<br/>(Adapter)"] --> Cryptography
+    KeyVault["Cryptography.KeyVault.Azure<br/>(Adapter)"] --> Cryptography
+    FluentValidation["Validation.FluentValidation<br/>(Adapter)"] --> Validation
+    FluentValidation --> Application["05.Application<br/>SharedKernel.Application"]
 ```
 
-*An arrow points from a package to one it references. Primitives and Configuration reference no other SharedKernel
-package, so a service can take either on its own.*
+Everything above sits under the rest of the kernel: persistence implements `IUnitOfWork` and `IAuditTrailWriter`, every
+inbound adapter opens the `RequestContextScope`, every outbound adapter propagates it with `RequestContextPropagation`,
+every provider with an external dependency implements `IReadinessProbe`, and the presentation layer maps `ErrorType` to
+HTTP/gRPC status and translates messages through the Localization catalog.
 
-**Where these packages sit.** Every package declares a tier, and the build enforces it (`SKTIER*` errors). The
-Foundation packages here reference only other Foundation packages, and every other package in the platform may
-reference them; that is what lets a domain model, a contract package and an HTTP host share one `Result`, one `Error`,
-one `TenantId` and one caller contract. The three Adapter packages may also reference Abstractions-tier packages:
-`Validation.FluentValidation` references `SharedKernel.Application` for the `IRequestValidator<T>` it implements.
-None references ASP.NET Core.
+## Get started
 
-## Install
+The smallest useful setup: results and guards, validated options, and field encryption.
 
-The packages are published to GitHub Packages. Add the feed once, in a `nuget.config` at your repository root:
+**1. Reference the packages** (the version comes from your central `SharedKernelVersion` property — every package ships
+at the same version):
 
 ```xml
-<configuration>
-  <packageSources>
-    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
-    <add key="shared-kernel" value="https://nuget.pkg.github.com/Gresta-Vertex-Labs/index.json" />
-  </packageSources>
-  <packageSourceMapping>
-    <packageSource key="shared-kernel"><package pattern="SharedKernel.*" /></packageSource>
-    <packageSource key="nuget.org"><package pattern="*" /></packageSource>
-  </packageSourceMapping>
-</configuration>
+<PackageReference Include="SharedKernel.Primitives" />
+<PackageReference Include="SharedKernel.Core" />
+<PackageReference Include="SharedKernel.Configuration" />
+<PackageReference Include="SharedKernel.Cryptography" />
 ```
 
-GitHub Packages needs a token even to read: a personal access token with `read:packages` locally, or `GITHUB_TOKEN`
-in GitHub Actions. Every SharedKernel package ships at one repository-wide version, so pin it once in your
-`Directory.Packages.props` and reference what you use:
-
-```xml
-<!-- Directory.Packages.props -->
-<PropertyGroup>
-  <SharedKernelVersion>1.0.0</SharedKernelVersion>
-</PropertyGroup>
-<ItemGroup>
-  <PackageVersion Include="SharedKernel.Primitives" Version="$(SharedKernelVersion)" />
-  <PackageVersion Include="SharedKernel.Core" Version="$(SharedKernelVersion)" />
-  <PackageVersion Include="SharedKernel.Execution" Version="$(SharedKernelVersion)" />
-  <!-- ...one line per SharedKernel package the service references -->
-</ItemGroup>
-
-<!-- your .csproj -->
-<ItemGroup>
-  <PackageReference Include="SharedKernel.Primitives" />
-  <PackageReference Include="SharedKernel.Core" />
-</ItemGroup>
-```
-
-The full pattern is in [`PLATFORM.md`](../PLATFORM.md), "Consuming the kernel".
-
-## A tour in code
-
-Each snippet comes from its package's README, where the full story, recipes and pitfalls live.
-
-**Primitives and Core: failures are values.**
+**2. Register** in `Program.cs`:
 
 ```csharp
-Result<Order> Find(Guid id) =>
-    repository.Get(id) is { } order
-        ? order
-        : Error.NotFound("order.not_found", $"Order {id} does not exist.");
+using SharedKernel.Configuration.Extensions;
+using SharedKernel.Cryptography.Extensions;
+using SharedKernel.Cryptography.Symmetric;
+using SharedKernel.Primitives.Clocks;
 
-Result<OrderDto> dto = Find(id)
-    .Ensure(order => order.IsOpen, OrderErrors.Closed)
-    .Map(order => order.ToDto());
-```
+builder.Services.AddClock();
+builder.Services.AddValidatedOptions<PayoutOptions>(builder.Configuration);   // fails StartAsync when invalid
 
-**Execution: one caller, carried to every hop.**
-
-```csharp
-public sealed class ShipOrderHandler(IRequestContext caller, IUnitOfWork unitOfWork)
-{
-    public Task<Result> HandleAsync(ShipOrder command, CancellationToken ct) =>
-        caller.TenantId is not { } tenant
-            ? Task.FromResult(Result.Failure(Error.Forbidden("orders.no_tenant", "A tenant is required.")))
-            : unitOfWork.ExecuteInTransactionAsync(token => ShipAsync(tenant, command, token), ct);   // may run twice: retry-safe
-}
-// Outbound REST, gRPC, message and workflow calls made inside this handler carry the same tenant and X-Correlation-Id.
-```
-
-**Configuration: wrong settings stop the deployment.**
-
-```csharp
-public sealed class DatabaseOptions : ISectionBoundOptions
-{
-    public static string SectionName => "MyService:Database";
-
-    [Required]       public string ConnectionString { get; set; } = string.Empty;
-    [Range(1, 1000)] public int    MaxConnections   { get; set; } = 10;
-}
-
-builder.Services.AddValidatedOptions<DatabaseOptions>(builder.Configuration);   // missing or out of range: the host does not start
-```
-
-**Cryptography: the context is part of the ciphertext.**
-
-```csharp
+IConfigurationSection keys = builder.Configuration.GetRequiredSection("Encryption:Keys");
+builder.Services.AddSingleton<IEncryptionKeyProvider>(new StaticEncryptionKeyProvider(
+    currentKeyId: "2026-09",
+    keys.GetChildren().Select(k => new CryptographicKey(k.Key, Convert.FromBase64String(k.Value!)))));
 builder.Services.AddSharedKernelCryptography(builder.Configuration).AddSymmetricEncryption();
-
-string stored = await encryption.EncryptToStringAsync(diagnosis, Encoding.UTF8.GetBytes($"patients/{id}/diagnosis"), ct);
-// Copied into another row or column, it fails to decrypt.
 ```
 
-**Validation: parse once at the edge, keep the typed value.**
+**3. Configure** `appsettings.json` (keys belong in your secret store):
+
+```json
+{
+  "Payouts": { "MaxAmount": 10000 },
+  "Encryption": { "Keys": { "2026-09": "<base64 of 32 random bytes>" } }
+}
+```
+
+**4. Use it:**
 
 ```csharp
-Result<Iban> iban = Iban.Create("de89 3704 0044 0532 0130 00");    // Value "DE89370400440532013000"
-CardNumber card = CardNumber.Parse("4111 1111 1111 1111", null);   // card.ToString() == "411111******1111"
+using System.ComponentModel.DataAnnotations;
+using System.Text;
+using Microsoft.Extensions.Options;
+using SharedKernel.Configuration;
+using SharedKernel.Core.Extensions;
+using SharedKernel.Cryptography.Symmetric;
+using SharedKernel.Guards;
+using SharedKernel.Primitives.Errors;
+using SharedKernel.Primitives.Results;
 
-public sealed record CreatePayout(Iban Iban, CurrencyCode Currency, decimal Amount);   // binds from JSON and routes
+public sealed class PayoutOptions : ISectionBoundOptions
+{
+    public static string SectionName => "Payouts";
+
+    [Range(1, 1_000_000)] public decimal MaxAmount { get; set; }
+}
+
+public sealed class PayoutService(IOptions<PayoutOptions> options, ISymmetricEncryptionService encryption)
+{
+    public async Task<Result<string>> PrepareAsync(Guid payoutId, string? accountNumber, decimal amount, CancellationToken ct) =>
+        await (Guard.Against.NullOrWhiteSpace(accountNumber) ?? Guard.Against.NegativeOrZero(amount))
+            .ToResult(() => amount)
+            .Ensure(a => a <= options.Value.MaxAmount,
+                    Error.BusinessRule("payout.over_limit", "The payout exceeds the configured limit."))
+            .Map(_ => encryption.EncryptToStringAsync(
+                accountNumber!, Encoding.UTF8.GetBytes($"payouts/{payoutId}/account"), ct).AsTask());
+}
 ```
 
-**DataPrivacy: mark it once, masked in every log line.**
+A missing or out-of-range `Payouts:MaxAmount` stops the host at startup; a blank account number or a negative amount
+comes back as a `validation.*` error; an amount over the limit as `payout.over_limit`; and the stored account number is
+bound to its payout, so it cannot be copied to another row.
 
-```csharp
-[LoggerMessage(EventId = 5101, Level = LogLevel.Information, Message = "Customer {Email} signed up.")]
-public static partial void SignedUp(ILogger logger, [EmailAddressData] string email);   // "Customer j***@example.com signed up."
-```
+## Where it is used
 
-**Localization: one definition, every language.**
+Every service in [`samples/`](../samples/README.md) is built on these packages; [`samples/OrderApi`](../samples/OrderApi)
+is the reference for wiring a new service, with an architecture test on each project's kernel references. Request context
+and correlation propagation are proven end to end across HTTP, gRPC, messaging and workflows by the platform's own
+integration tests.
 
-```csharp
-public static readonly LocalizedMessage<Guid> NotFound = LocalizedMessage.Define<Guid>(
-    "order.not_found", "Order {orderId} was not found.", "orderId");
+## Guarantees
 
-return OrderMessages.NotFound.ToError(ErrorType.NotFound, orderId);   // tr-TR caller: "… numaralı sipariş bulunamadı."
-```
+- **No exceptions for expected failures.** Decrypting, decompressing, parsing an identifier or translating a message
+  returns a `Result` or falls back — it never throws on bad input.
+- **Validated at startup.** Every options type is registered through `AddValidatedOptions` with `ValidateOnStart`.
+- **No secrets in output.** `ResultTry` never copies exception text into an `Error`; error messages never repeat a
+  rejected identifier; card and national-ID numbers mask themselves; classified personal data is redacted in logs.
+- **Fail closed on tenancy.** "No tenant" is `null`, never `Guid.Empty`; a propagated header never grants a permission.
+- **Stable wire formats.** Header, baggage and tag names, error codes, `ErrorType` values, encrypted payload, envelope,
+  password-hash and compression frame formats are versioned or permanent.
+- **Tracked public API.** Every package records its API with `PublicApiAnalyzers`, documents every public member, and
+  registers services with `TryAdd`, so a registration you make first always wins.
+- **BCL-only where it matters.** Primitives, Execution, Core, Cryptography and Compression take no third-party dependency.
 
-**FeatureManagement: typed flags that know who is asking.**
+## For maintainers
 
-```csharp
-public static readonly FeatureFlag<bool> NewCheckout = FeatureFlag.Boolean("NewCheckout");
-
-if (await flags.IsEnabledAsync(NewCheckout, ct)) { ... }   // targets the current user and tenant; never throws
-```
-
-**Compression: a cut-off payload is an error, not a shorter result.**
-
-```csharp
-byte[] packed = compressor.Compress(json);
-Result<byte[]> unpacked = compressor.Decompress(stored);   // "compression.truncated_payload", never a valid-looking prefix
-```
-
-## Conventions every package follows
-
-| Convention | What it means for you |
-| --- | --- |
-| **Expected failures are `Result` values** | Invalid input, a missing record or a failed decryption comes back as an `Error` with a stable `Code` such as `validation.iban.invalid_check_digits`. Exceptions are for bugs |
-| **Error codes are contracts** | Dot-separated, lowercase, never interpolated. Clients branch on them, dashboards group by them, Localization translates by them |
-| **Misconfiguration fails at startup** | Options, localization catalogs and flags declared with `ValidateOnStart` are checked when the host starts, not when a request first needs them |
-| **Registering is safe to repeat** | Registrations use `TryAdd`, so an implementation you register *before* the package's call wins. `AddLocalizationCatalog` and `AddSharedKernelFeatureManagement` throw on a second call instead of silently ignoring your settings |
-| **Time comes from `IClock`** | No package reads `DateTime.UtcNow`, so tests control time |
-| **No secrets in messages** | Error messages may reach users and logs, so they never carry exception text, keys, card numbers or national IDs |
-| **Structured logging** | Packages that log use `[LoggerMessage]` with `EventId`s from this domain's range, 1000-1999, one 100-wide block per package |
-| **Documented, tracked public API** | Every package ships XML docs and fails the build on an undocumented public member or an untracked API change (`PublicApiAnalyzers`), so an accidental breaking change cannot slip into a release |
-| **Reflection only where it cannot be avoided** | JSON goes through source-generated `JsonTypeInfo<T>`. Configuration binding is reflective by nature, so Configuration and the registration methods that bind options are not trim- or AOT-safe, and neither is FeatureManagement, whose backend binds filters by reflection |
-
-## Status and versions
-
-Every package in the repository ships at one version, derived from a single `v*` git tag: a release packs and
-publishes all of them together, so the packages you reference are always mutually consistent. Pin that version once
-(see [Install](#install)); there is no per-package version to track.
-
-## Analyzers that guard these packages
-
-`SharedKernel.Analyzers`, from `00.Governance`, turns the rules above into build warnings in the services that use
-these packages:
-
-| Rule | Flags |
-| --- | --- |
-| SK0001 | `DateTime.UtcNow` or `DateTimeOffset.UtcNow` instead of an injected `IClock` |
-| SK0002 | `Microsoft.FeatureManagement`'s evaluators or OpenFeature's `Api.Instance` instead of `IFeatureClient` |
-| SK0022 | A raw string where a header, baggage or tag constant from Primitives exists |
-| SK0030 | A `Result` returned by a call and never checked |
-| SK0035 | A value marked as personal data passed to an unmarked log parameter |
-
-## Deliberately not here
-
-- **Business vocabulary.** `Money`, entities and aggregates are `03.Domain`; these packages have no domain concepts.
-- **HTTP.** Turning an `Error` into a ProblemDetails response is `14.Presentation`, and opening the request's context
-  scope is `13.ServiceDefaults`' `UseSharedKernelRequestContext()`. No package here references ASP.NET Core; the build
-  forbids it below the Host tier (`SKTIER006`).
-- **Health-check wiring.** Probes implement `IReadinessProbe` here (the Key Vault provider registers
-  `encryption-key-provider`); `13.ServiceDefaults`' `AddHealthChecks().AddSharedKernelReadiness()` maps them to
-  health endpoints.
-- **Test doubles.** `FakeFeatureClient` (`SharedKernel.FeatureManagement.Testing`), the cryptography fakes
-  (`SharedKernel.Cryptography.Testing`), `FakeClock` and `TestRequestContext` (`SharedKernel.Testing`) live in
-  `16.Testing`, so no production package carries test code.
-
-## AI quick reference
-
-```text
-TIER        Foundation (Primitives, Core, Configuration, Execution, Compression, Cryptography, Localization, Validation,
-            DataPrivacy, FeatureManagement): reference only Foundation. Adapter (Cryptography.Argon2,
-            Cryptography.KeyVault.Azure, Validation.FluentValidation): may add Abstractions. No ASP.NET Core. net10.0.
-RESULTS     Result<T> / Result / ValidationResult (Primitives). Error(Code, Message, Type): Error.Validation | NotFound |
-            Conflict | Unauthorized | Forbidden | BusinessRule | Unexpected | Unavailable (503) | Timeout (504). Codes
-            dot.separated.lowercase, stable, never interpolated; check ErrorCodes first. Error.None, never null. Value on a
-            failure throws.
-CHAINING    Core: Map Bind Ensure Tap Match (sync, Task, ValueTask); ResultTry.Try/TryAsync; ResultCombine.Combine;
-            Guard.Against.X(value) -> Error? (null = passed); Guard.Throw.X(value) throws DomainException.
-TIME / IDS  inject IClock (SK0001); IIdGenerator / UuidV7IdGenerator; LoggingEventIdRanges.Core = 1000.
-HEALTH      IReadinessProbe { Name; ProbeAsync -> ReadinessReport }; services.AddReadinessProbe<T>() or one
-            AddReadinessProbe(factory) per target; resolve clients inside ProbeAsync; never throw except cancellation.
-CONTEXT     Execution: inject IRequestContext (TenantId? TenantId, UserId, ActorKind, ClientId, CorrelationId,
-            HasPermissionAsync); IRequestContextAccessor.Current where there is no scope; inbound adapters open
-            RequestContextScope.Begin(ctx); jobs use new SystemRequestContext(perms, identity, tenantId, CorrelationIds.New()).
-            RequestContextPropagation.WriteHeaders/ReadHeaders -> PropagatedRequestContext (never grants permissions).
-TENANT      TenantId (non-empty Guid, "D" string, never Guid.Empty; no tenant = null); TenantScope.For(t) / .Global,
-            always a required parameter.
-TX / AUDIT  IUnitOfWork.ExecuteInTransactionAsync(token => ..., ct): delegate may run twice; failed Result rolls back;
-            CommitOutcomeUnknownException is never replayed. IAuditTrailWriter.RecordAsync(AuditEntry).
-OPTIONS     AddValidatedOptions<T>(configuration) with ISectionBoundOptions.SectionName; fails at host start;
-            OptionsStrictness.RequireSection | RejectUnknownKeys.
-CRYPTO      AddSharedKernelCryptography(configuration).AddSymmetricEncryption() / AddEnvelopeEncryption() /
-            AddAsymmetricSigning() / AddTotpVerification(); associated data required on every encrypt and decrypt;
-            IOneWayHasher (PBKDF2 default; .AddArgon2id); FixedTimeComparison; ISecureRandomGenerator.
-            Key Vault: .AddAzureKeyVaultEncryption(configuration) / .AddAzureKeyVaultSigning(configuration).
-COMPRESS    AddSharedKernelCompression(configuration); IPayloadCompressor.Compress -> byte[]; Decompress -> Result<byte[]>.
-VALIDATE    Iban / Bic / CardNumber / VatNumber / NationalId / PhoneNumber / CountryCode / CurrencyCode / Lei .Create(v)
-            -> Result<T>; IParsable + JSON converters; FluentValidation: MustBeValidIban() etc.;
-            AddFluentValidationRequestValidators() runs IValidator<T> as IRequestValidator<T> in the kernel pipeline;
-            catalog.AddValidationTranslations() adds Turkish.
-PRIVACY     [XxxData] attributes (23 kinds) + services.AddRedaction(r => r.SetPrivacyRedactors()) +
-            logging.EnableRedaction(o => o.ApplyDiscriminator = false); PiiMasking.*; Pseudonymizer; IDataSubjectRequestHandler.
-LOCALIZE    LocalizedMessage.Define<T..>(code, "text {name}", "name").ToError(type, value);
-            AddLocalizationCatalog(c => c.AddJsonDirectory(path)), once.
-FLAGS       FeatureFlag.Boolean / String / Integer / Double / Object<T>; inject OpenFeature IFeatureClient (scoped);
-            IsEnabledAsync / GetValueAsync / GetDetailsAsync; FeatureTargetingContext(userId, TenantId?, groups);
-            AddSharedKernelFeatureManagement(rootConfiguration, o => o.ValidateOnStart(...)); the default accessor
-            targets the caller of the open RequestContextScope (never Activity baggage, P-562 X2).
-DI          TryAdd everywhere: register overrides BEFORE the package call. AddLocalizationCatalog and
-            AddSharedKernelFeatureManagement throw on a second call.
-FORBIDDEN   DateTime.UtcNow; throwing for expected failures; interpolated error codes; secrets in messages;
-            ILogger.LogX / LoggerMessage.Define; raw header, baggage or tag strings; Microsoft IFeatureManager; Api.Instance;
-            Guid.Empty as a tenant; Activity.Id as a correlation id.
-```
-
-Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel). Maintainer rules for this
-domain are in [`CLAUDE.md`](CLAUDE.md), and its phase history is in [`state-map.md`](state-map.md).
+Maintainer rules live in [CLAUDE.md](CLAUDE.md), phase history in [state-map.md](state-map.md), and contribution
+guidelines in [CONTRIBUTING.md](../CONTRIBUTING.md).

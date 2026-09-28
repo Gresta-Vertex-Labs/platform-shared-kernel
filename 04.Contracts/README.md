@@ -1,58 +1,56 @@
-# 04.Contracts
+<div align="center">
 
-![Tier](https://img.shields.io/badge/tier-Model-512BD4)
-![Depends on](https://img.shields.io/badge/depends%20on-SharedKernel.Primitives%20only-brightgreen)
-![Wire format](https://img.shields.io/badge/events-CloudEvents%201.0-5c6bc0)
+# SharedKernel Contracts
 
-**The wire contracts of Platform.SharedKernel.** Everything one service sends another, and every page an
-API returns, has its shape defined here.
+**The wire shapes one .NET service shares with another — integration events in a validated CloudEvents 1.0 envelope,
+offset and cursor pages, validated page requests and opaque cursors — with no business logic and no domain types.**
 
-> Looking for how to use the package? Read the
-> [**SharedKernel.Contracts README**](SharedKernel.Contracts/README.md): quick start, decision guide, walkthrough,
-> pitfalls and full reference.
+[![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](../LICENSE)
+![Packages: 1](https://img.shields.io/badge/packages-1-informational)
+![CloudEvents 1.0](https://img.shields.io/badge/CloudEvents-1.0-5c6bc0)
 
-## Contents
+[Package](#package) · [How it fits together](#how-it-fits-together) · [Get started](#get-started) ·
+[See it run](#see-it-run) · [Guarantees](#guarantees)
 
-- [What lives here](#what-lives-here)
-- [Where the package sits](#where-the-package-sits)
-- [How an integration event travels](#how-an-integration-event-travels)
-- [How cursor paging works](#how-cursor-paging-works)
-- [Design principles](#design-principles)
-- [Design decisions](#design-decisions)
-- [Guardrails](#guardrails)
-- [Build and test](#build-and-test)
-- [Contributing, for people and AI agents](#contributing-for-people-and-ai-agents)
+</div>
 
-## What lives here
+---
 
-| Path | What it is |
-| --- | --- |
-| [`SharedKernel.Contracts/`](SharedKernel.Contracts/) | The package: integration events, the CloudEvents envelope, paged results, page requests, the cursor codec |
-| [`SharedKernel.Contracts/SharedKernel.Contracts.Tests/`](SharedKernel.Contracts/SharedKernel.Contracts.Tests/) | Unit tests for every construction and deserialization rule |
-| [`SharedKernel.Contracts.ConsumerVerify/`](SharedKernel.Contracts.ConsumerVerify/) | Restores the **packed** package from a feed and exercises its public API as a consumer would |
-| [`CLAUDE.md`](CLAUDE.md) | The domain brain: implementation rules, decisions and traps for maintainers and AI agents |
-| [`state-map.md`](state-map.md) | Phase and task history for this domain |
+## What this domain gives you
 
-## Where the package sits
+- **Integration events with a stable identity.** A `sealed record` implementing `IIntegrationEvent` and marked
+  `[IntegrationEvent("orders.order-placed", Version = 1)]` — renaming the class never changes what brokers route on.
+- **One envelope, validated both ways.** `EventEnvelope.Wrap` is the only way to build a CloudEvents 1.0 document, and
+  deserializing checks `type`, `id` and `time` against the data, so a misrouted message fails instead of becoming an
+  empty object.
+- **One page shape for every API.** `PagedList<T>` (with a `long` total) and `CursorPagedList<T>`, both projectable with
+  `Map`, returned by the persistence repositories and the search packages.
+- **Client input that cannot crash you.** `PageRequest.Create` / `CursorPageRequest.Create` return every problem as a
+  `pagination.*` validation error; `PageCursor.Decode` never throws for bad input.
 
-Arrows point from a package to what it depends on. `SharedKernel.Contracts` is a **Model**-tier package that
-depends only on `SharedKernel.Primitives`, so a service can share its contracts without sharing its domain model.
-The build enforces the tier; a separate architecture rule keeps it from referencing `SharedKernel.Domain`, the
-other Model-tier package.
+## Package
+
+| Package | Tier | When you need it |
+| --- | --- | --- |
+| [SharedKernel.Contracts](SharedKernel.Contracts/README.md) | Model | Declaring or reading integration events, or returning and accepting pages — depends on `SharedKernel.Primitives` only |
+
+The package README is the full guide: quick start, offset-versus-cursor comparison, a publish/consume/paging
+walkthrough, the envelope and paging reference and the pitfalls. Test helpers (`EventEnvelopeBuilder<TEvent>`,
+`IntegrationEventFaker<TEvent>`, `PagedListBuilder<T>`, `PagedListAssertions`) are in
+[SharedKernel.Testing](../16.Testing/SharedKernel.Testing/README.md).
+
+## How it fits together
 
 ```mermaid
 flowchart BT
     Primitives["01.Core<br/>SharedKernel.Primitives<br/>Error, Result, ValidationResult"]
-    Contracts["04.Contracts<br/>SharedKernel.Contracts"]
-
-    Persistence["06.Persistence<br/>returns PagedList"]
-    Messaging["07.Messaging<br/>wraps and publishes events"]
-    Search["09.Search<br/>projects hits to PagedList"]
-    Presentation["14.Presentation<br/>GraphQL paging"]
-    Integration["15.Integration<br/>routes webhooks by event name"]
-
-    style Contracts fill:#512BD4,color:#fff,stroke:#2d1780
-
+    Contracts["SharedKernel.Contracts<br/>Model tier"]
+    Persistence["06.Persistence<br/>ListPagedAsync, ListKeysetAsync"]
+    Messaging["07.Messaging<br/>IEventPublisher wraps and publishes"]
+    Search["09.Search<br/>results as PagedList"]
+    Presentation["14.Presentation<br/>Paging / CursorPaging parameters"]
+    Integration["15.Integration<br/>webhooks routed by event name"]
     Contracts --> Primitives
     Persistence --> Contracts
     Messaging --> Contracts
@@ -61,104 +59,61 @@ flowchart BT
     Integration --> Contracts
 ```
 
-## How an integration event travels
+Arrows point from a package to what it depends on. `SharedKernel.Contracts` never references `SharedKernel.Domain`
+(and the reverse), so a service can share its contracts without sharing its domain model; integration events are
+mapped from domain events at the publishing service's boundary.
 
-The domain event stays inside the producing service. What crosses the wire is a deliberate projection of it,
-named by an attribute and wrapped in a CloudEvents envelope.
+## Get started
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant Agg as Order aggregate
-    participant H as Orders service handler
-    participant P as IEventPublisher
-    participant B as Broker
-    participant C as Billing consumer
-
-    Agg->>H: OrderPlacedDomainEvent (internal)
-    H->>H: map to OrderPlaced : IIntegrationEvent
-    H->>P: PublishAsync(orderPlaced, ctx.WithTenantId(...))
-    P->>P: EventEnvelope.Wrap takes id and time from the event, type and dataversion from its attribute
-    P->>B: CloudEvents JSON (type = orders.order-placed)
-    B->>C: message
-    C->>C: Deserialize EventEnvelope of OrderPlaced
-    Note over C: type, id and time are checked,<br/>a mismatch throws JsonException
-    C->>C: handle envelope.Data
+```xml
+<PackageReference Include="SharedKernel.Contracts" />
 ```
 
-## How cursor paging works
+```csharp
+using System.Text.Json;
+using SharedKernel.Contracts.Events;
+using SharedKernel.Contracts.Pagination;
 
-The client never sees the sort key or id directly; it holds an opaque cursor and sends it back.
+[IntegrationEvent("orders.order-placed", Version = 1)]
+public sealed record OrderPlaced(
+    Guid EventId, DateTimeOffset OccurredOn, Guid OrderId, decimal TotalAmount, string Currency) : IIntegrationEvent;
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant Client
-    participant API as Orders API
-    participant DB as Database
+// Publishing service (07.Messaging's IEventPublisher does this for you):
+var envelope = EventEnvelope.Wrap(orderPlaced, source: "orders-service", subject: $"order/{orderPlaced.OrderId}");
+string json = JsonSerializer.Serialize(envelope);
 
-    Client->>API: GET /orders/recent?limit=20
-    API->>API: CursorPageRequest.Create(null, 20)
-    API->>DB: ORDER BY created_on DESC, id DESC LIMIT 21
-    DB-->>API: 21 rows
-    API->>API: CursorPagedList.FromLookahead(rows, 20, last => PageCursor.Encode(...))
-    API-->>Client: 20 items, nextCursor "v1.…", hasMore true
-    Client->>API: GET /orders/recent?limit=20&cursor=v1.…
-    API->>API: PageCursor.Decode → (createdOn, id), or 400 pagination.cursor.invalid
-    API->>DB: WHERE (created_on, id) < (@key, @id) … LIMIT 21
-    DB-->>API: 7 rows
-    API-->>Client: 7 items, nextCursor null, hasMore false
+// Consuming service: a message of another type throws JsonException here.
+var received = JsonSerializer.Deserialize<EventEnvelope<OrderPlaced>>(json)!;
+
+// An API endpoint: validate client paging input without exceptions.
+var request = PageRequest.Create(page: 2, pageSize: 50);
+if (!request.IsValid) { /* request.Errors: pagination.page.out_of_range, pagination.page_size.out_of_range */ }
 ```
 
-## Design principles
+## See it run
 
-| Principle | In practice |
+- [samples/ShippingApi](../samples/ShippingApi/README.md) publishes a `[IntegrationEvent("shipping.shipment-dispatched", Version = 1)]`
+  record through `IEventPublisher` over a real RabbitMQ broker.
+- [samples/BillingApi](../samples/BillingApi/README.md) returns `PagedList<InvoiceView>` from a `PageRequest` and
+  `CursorPagedList<InvoiceView>` from a `CursorPageRequest`, both through the persistence repositories.
+
+## Guarantees
+
+| Guarantee | How |
 | --- | --- |
-| A contract is a public API | Every public member is tracked and documented; a breaking change is a new event version, not an edit |
-| The wire shape is fixed | JSON names come from attributes and constants, never from the serializer's naming policy |
-| No invalid instance can exist | Factories and JSON constructors enforce the same rules; there is no public constructor or setter to bypass them |
-| Bad client input is a result | Page and cursor requests return `ValidationResult<T>` with every error; cursor decoding returns `Result<T>` |
-| Contracts carry no domain | No reference to `03.Domain`; events carry primitives, not aggregates or identifiers |
-| One format per concern | Events are CloudEvents; HTTP errors are RFC 9457 ProblemDetails; there is no second response envelope |
+| **Fixed wire names** | Every member carries `[JsonPropertyName]`; a serializer naming policy never changes an envelope or a page |
+| **Nothing invalid on the wire** | JSON constructors enforce the same rules as the factories; `EventEnvelope.Wrap` is the only construction path and requires the event's concrete runtime type |
+| **Stable event identity** | Names are validated (lowercase, 1–128 characters), `Version` ≥ 1, and one type per name + version per process |
+| **Readable during rollouts** | Deserialization does not pin `dataversion`, so consumers read older versions while producers move |
+| **Bounded paging** | `PageRequest.MaxPageSize` = `CursorPageRequest.MaxLimit` = 1000 is the platform's only ceiling; `Offset` always fits `int` |
+| **Safe cursor decoding** | `PageCursor.Decode` returns `pagination.cursor.invalid` for any malformed, oversized or foreign cursor; the format is versioned (`v1.`) |
+| **Pure contracts** | Model tier, `SharedKernel.Primitives` only; architecture tests forbid `SharedKernel.Domain` and logging |
 
-## Design decisions
+**Deliberately out of scope:** a response envelope (errors are RFC 9457 ProblemDetails from `14.Presentation`),
+domain-value DTOs such as money, transport, and signed cursors — a cursor is readable by clients, so every keyset query
+still applies its own tenant and authorization filters.
 
-| Decision | Chosen | Instead of |
-| --- | --- | --- |
-| What goes on the wire | Integration events | Domain events, which leak internals and couple consumers to the producer |
-| Event identity | Required `[IntegrationEvent("name", Version = n)]` | The class name, which changes on a rename |
-| Event format | CloudEvents 1.0 structured JSON | A platform-specific envelope no external tool understands |
-| Success and error responses | Raw body plus ProblemDetails | An `{ isSuccess, value, error }` envelope no server actually produced |
-| Serialization | Reflection-based `System.Text.Json` | A source-generated context that could not cover consumers' generic types |
-| Totals | `long` | `int`, which large tables and search engines exceed |
-| Cursors | Unsigned, versioned, strictly decoded | Signed cursors that need a key in every service |
+---
 
-## Guardrails
-
-| Guard | What it catches |
-| --- | --- |
-| `PublicApiAnalyzers` (RS0016 and siblings as errors) | Any unrecorded change to the public API |
-| `CS1591` as an error | An undocumented public member |
-| Internal `[JsonConstructor]`s that validate | Invalid envelopes, pages and requests arriving over the wire |
-| `IntegrationEventDescriptor` | Missing or malformed event names, versions below 1, two types claiming one name and version |
-| `00.Governance` `ContractsPurityRules` | Domain or infrastructure types leaking into a contracts assembly |
-| Tier check (`SKTIER001`, `SKTIER003`) and `ContractsNeverReferencesDomain` | A reference to anything but Foundation packages, a third-party package, or `SharedKernel.Domain` |
-
-## Build and test
-
-```shell
-dotnet build 04.Contracts/SharedKernel.Contracts/SharedKernel.Contracts.csproj -c Release
-dotnet test  04.Contracts/SharedKernel.Contracts/SharedKernel.Contracts.Tests -c Release
-dotnet test  04.Contracts/SharedKernel.Contracts.ConsumerVerify -c Release -p:SharedKernelPackageVersion=<version>   # needs the package on a feed
-```
-
-The test project references only the package, so it builds and runs in seconds.
-
-## Contributing, for people and AI agents
-
-1. Read [`CLAUDE.md`](CLAUDE.md) first: its rules tables say what may and may not change, and its
-   cross-domain couplings table lists what breaks elsewhere.
-2. Record every public API change in `SharedKernel.Contracts/PublicAPI.Unshipped.txt`.
-3. Add a test for the factory path **and** the JSON path of every new rule.
-4. Never add business logic, a `03.Domain` reference, or a serializer context.
-5. Keep outputs in the package README real: run the snippet and paste what it prints.
+**For maintainers:** design rules and invariants live in [CLAUDE.md](CLAUDE.md); phase history in
+[state-map.md](state-map.md).

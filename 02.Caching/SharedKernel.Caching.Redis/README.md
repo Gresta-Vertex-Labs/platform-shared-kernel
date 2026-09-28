@@ -3,6 +3,7 @@
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
 [![FusionCache 2.6](https://img.shields.io/badge/FusionCache-2.6-orange)](https://github.com/ZiggyCreatures/FusionCache)
+![Tier: Adapter](https://img.shields.io/badge/tier-Adapter-6f42c1)
 ![Public API: tracked](https://img.shields.io/badge/public%20API-tracked-informational)
 
 > **Redis as the distributed layer and backplane of the SharedKernel cache: every instance of a service shares its
@@ -27,29 +28,27 @@ Application code does not change.
 
 - [Install](#install)
 - [Quick start](#quick-start)
-- [Configuration](#configuration)
 - [How it works](#how-it-works)
 - [Recipes](#recipes)
-  - [1. A typical service](#1-a-typical-service)
-  - [2. Survive a Redis outage](#2-survive-a-redis-outage)
-  - [3. Separate environments that share a Redis](#3-separate-environments-that-share-a-redis)
-  - [4. Keep an entry on one instance](#4-keep-an-entry-on-one-instance)
+- [Configuration](#configuration)
 - [Reference](#reference)
+- [Testing](#testing)
 - [Pitfalls](#pitfalls)
 - [Design decisions](#design-decisions)
-- [AI quick reference](#ai-quick-reference)
-- [Compatibility and guarantees](#compatibility-and-guarantees)
 
 ## Install
 
-```shell
-dotnet add package SharedKernel.Caching.Redis
+```xml
+<PackageReference Include="SharedKernel.Caching.Redis" />
 ```
+
+The version comes from your central `SharedKernelVersion` property — every SharedKernel package ships at the same
+version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel#using-the-packages).
 
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
-| Tier | Adapter |
+| Tier | Adapter — reference it from your **Infrastructure** project |
 | Depends on | `SharedKernel.Caching.Abstractions`, `SharedKernel.Caching.Redis.Core`, `SharedKernel.Configuration`, `ZiggyCreatures.FusionCache`, `ZiggyCreatures.FusionCache.Backplane.StackExchangeRedis` |
 | Also needs | `SharedKernel.Caching.FusionCache` (`AddSharedKernelCaching` returns the builder this package extends) |
 | Namespace | `SharedKernel.Caching.Redis.Extensions` |
@@ -84,39 +83,6 @@ builder.Services
 
 `AddRedisL2()` without arguments uses the defaults below. Nothing else changes: code that injects `ICacheService` or
 `ITenantCacheService` now shares entries across instances.
-
-## Configuration
-
-Section `SharedKernel:Caching:Redis:L2`, optional. The connection itself (connection string, TLS, timeouts) lives one
-level up in `SharedKernel:Caching:Redis`; see
-[`SharedKernel.Caching.Redis.Core`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/02.Caching/SharedKernel.Caching.Redis.Core/README.md#configuration).
-
-```json
-{
-  "SharedKernel": {
-    "Caching": {
-      "Redis": {
-        "ConnectionString": "redis.internal:6380",
-        "L2": {
-          "KeyPrefix": "staging:",
-          "DistributedCacheCircuitBreakerDuration": "00:00:02",
-          "BackplaneCircuitBreakerDuration": "00:00:02"
-        }
-      }
-    }
-  }
-}
-```
-
-| Setting | Default | Rules | Meaning |
-| --- | --- | --- | --- |
-| `KeyPrefix` | `""` | Not `null`; at most 64 characters | Prefix of every key the distributed layer writes and, when not empty, of the backplane channel. Cache keys already start with the service name; use it only to separate environments or deployments that share one Redis |
-| `DistributedCacheCircuitBreakerDuration` | `00:00:02` | 0 – 10 min | How long the cache stops using Redis for entries after an operation on it fails. `00:00:00` turns the breaker off |
-| `BackplaneCircuitBreakerDuration` | `00:00:02` | 0 – 10 min | How long the cache stops using the backplane after a backplane operation fails; meanwhile removals and expirations are not sent to other instances. `00:00:00` turns the breaker off |
-
-The service-wide timeouts for distributed operations (`DistributedCacheSoftTimeout`, `DistributedCacheHardTimeout`)
-are `CachingOptions` in `SharedKernel.Caching.FusionCache`. Startup fails with `OptionsValidationException` when a
-setting breaks its rule.
 
 ## How it works
 
@@ -233,6 +199,39 @@ await cache.SetAsync(keys.BuildKey("rate-window", clientId), window, PerInstance
 
 Use it for values that are only meaningful to one process, or too large to be worth a network round trip.
 
+## Configuration
+
+Section `SharedKernel:Caching:Redis:L2`, optional, validated when the host starts. The connection itself (connection string, TLS, timeouts) lives one
+level up in `SharedKernel:Caching:Redis`; see
+[`SharedKernel.Caching.Redis.Core`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/02.Caching/SharedKernel.Caching.Redis.Core/README.md#configuration).
+
+```json
+{
+  "SharedKernel": {
+    "Caching": {
+      "Redis": {
+        "ConnectionString": "redis.internal:6380",
+        "L2": {
+          "KeyPrefix": "staging:",
+          "DistributedCacheCircuitBreakerDuration": "00:00:02",
+          "BackplaneCircuitBreakerDuration": "00:00:02"
+        }
+      }
+    }
+  }
+}
+```
+
+| Key | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `SharedKernel:Caching:Redis:L2:KeyPrefix` | `string` | `""` | Not `null`, at most 64 characters. Prefix of every key the distributed layer writes and, when not empty, of the backplane channel. Cache keys already start with the service name; use it only to separate environments or deployments that share one Redis |
+| `SharedKernel:Caching:Redis:L2:DistributedCacheCircuitBreakerDuration` | `TimeSpan` | `00:00:02` | 0 – 10 min. How long the cache stops using Redis for entries after an operation on it fails. `00:00:00` turns the breaker off |
+| `SharedKernel:Caching:Redis:L2:BackplaneCircuitBreakerDuration` | `TimeSpan` | `00:00:02` | 0 – 10 min. How long the cache stops using the backplane after a backplane operation fails; meanwhile removals and expirations are not sent to other instances. `00:00:00` turns the breaker off |
+
+The service-wide timeouts for distributed operations (`DistributedCacheSoftTimeout`, `DistributedCacheHardTimeout`)
+are `CachingOptions` in `SharedKernel.Caching.FusionCache`. Startup fails with `OptionsValidationException` when a
+setting breaks its rule.
+
 ## Reference
 
 ### Registration
@@ -264,6 +263,22 @@ caching) registers its own; it is independent of this cache.
 | `InvalidOperationException` | `AddRedisConnection` has not been called, or `AddRedisL2` was already called |
 | `OptionsValidationException` | At startup, when `RedisL2Options` is invalid |
 
+### Logging and health
+
+The package writes no log events of its own; FusionCache logs distributed-cache and backplane failures. Connection
+health is the `redis` readiness probe of `AddRedisConnection`; cache health is the `cache` probe of
+`AddSharedKernelCaching`.
+
+## Testing
+
+Unit tests do not need the distributed layer: reference
+[`SharedKernel.Caching.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/16.Testing/SharedKernel.Caching.Testing/README.md)
+and call `services.AddFakeCachingServices()` (plus `AddFakeTenantCacheService()`), which replaces `ICacheService`
+without FusionCache or Redis.
+
+To prove cross-instance behaviour, run two independent `ServiceProvider`s with the production registration against one
+Testcontainers Redis, remove an entry on one, and poll the other until it misses — never a fixed delay.
+
 ## Pitfalls
 
 | Don't | Do | Why |
@@ -281,9 +296,9 @@ caching) registers its own; it is independent of this cache.
 
 ## Design decisions
 
-**Why no connection string here?** `AddRedisL2` used to build its distributed cache and backplane from a bare connection
-string. That opened two extra connections that ignored TLS, mutual TLS, the connect timeout and health checks. Both
-now reuse the multiplexer from `AddRedisConnection`.
+**Why no connection string here?** A distributed cache and backplane built from their own connection string would open
+extra connections that ignore TLS, mutual TLS, the connect timeout and health checks. Both reuse the multiplexer from
+`AddRedisConnection`, and neither can close it.
 
 **Why our own distributed cache instead of `Microsoft.Extensions.Caching.StackExchangeRedis`?** Its `RedisCache` assumes
 it owns its connection: disposing it closed the multiplexer it reached through `IDatabase.Multiplexer`, which is the
@@ -296,12 +311,11 @@ returns when it unsubscribes. The wrapper forwards every call except `Close` and
 the only owner.
 
 **Why does `KeyPrefix` also prefix the backplane channel?** A prefix exists to separate deployments sharing a Redis.
-Separating stored keys but not notifications let each deployment evict the other's memory entries.
+Separating stored keys but not notifications would let each deployment evict the other's memory entries.
 
-**Why FusionCache's circuit breakers instead of Polly?** The Polly breaker in the connection package was never used by the
-cache, only by the hash store and publish calls. FusionCache already wraps every distributed-cache and backplane
+**Why FusionCache's circuit breakers instead of Polly?** FusionCache already wraps every distributed-cache and backplane
 operation and knows how to continue from memory and fail-safe values while its breaker is open, so its breakers are
-the ones that protect cache traffic.
+the ones that protect cache traffic. There is no Polly anywhere in the caching packages.
 
 **Why keep the serializer `AddSharedKernelCaching` registered?** Replacing it with a default serializer would drop the
 service's JSON context and any compression or encryption decoration. `AddRedisL2` wires FusionCache to the registered
@@ -310,27 +324,8 @@ serializer only.
 **Why does a second `AddRedisL2` throw?** Registering the distributed cache and backplane twice stacks registrations and
 leaves it unclear which options apply.
 
-## AI quick reference
+---
 
-```text
-REGISTER     builder.Services.AddRedisConnection(builder.Configuration);
-             builder.Services.AddSharedKernelCaching(builder.Configuration)[.AddTenantCacheService()].AddRedisL2(builder.Configuration);
-             AddRedisL2() with no arguments uses defaults. Never pass a connection string. Call AddRedisL2 once.
-CONFIG       Section SharedKernel:Caching:Redis:L2 (optional): KeyPrefix "" (<=64), DistributedCacheCircuitBreakerDuration 2s,
-             BackplaneCircuitBreakerDuration 2s (0 = off, max 10 min). Connection settings: SharedKernel:Caching:Redis.
-USE          Inject ICacheService / ITenantCacheService. Never IDistributedCache, IFusionCache or IConnectionMultiplexer.
-INVALIDATE   RemoveAsync / ExpireAsync / RemoveByTagAsync / ClearAsync reach every instance. No Pub/Sub needed.
-PER-INSTANCE CachePolicy.For(...).LocalOnly() -> never written to Redis, never announced.
-OUTAGE       FailFastWhenDisconnected=true + breakers + CachingOptions.DistributedCacheHardTimeout; fail-safe policies serve stale.
-KEYS         One Redis string per entry at {KeyPrefix}{service}:{entity}:{id}. KeyPrefix also prefixes the backplane channel.
-NO IDC       AddRedisL2 registers no IDistributedCache; register your own if another component needs one. Absolute expiry only.
-```
-
-## Compatibility and guarantees
-
-- **Public API is tracked** with `Microsoft.CodeAnalysis.PublicApiAnalyzers`, and every public member is documented.
-- **Validated at startup.** Invalid options fail host start, never the first request.
-- **No extra connections.** The distributed cache and the backplane use the shared connection only, and neither can
-  close it.
-- **Application code is unchanged.** Adding or removing this package changes where entries live, not how the cache is
-  called.
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
+[Caching domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/02.Caching/README.md) ·
+[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

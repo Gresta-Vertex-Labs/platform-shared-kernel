@@ -1,12 +1,20 @@
 # SharedKernel.Linter
 
-Formatting enforcement for the SharedKernel platform. **Ships no DLL and no analyzers.** It gives a
-consuming service three things: a format check that fails CI on unformatted code, a one-command
-local format that needs no tool install, and the platform's shared `.editorconfig`.
+[![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
+![Tier: Tooling](https://img.shields.io/badge/tier-Tooling-6a737d)
+![No DLL](https://img.shields.io/badge/ships-MSBuild%20only-informational)
 
-A formatter only settles style arguments if it is mechanical. This package is how a service gets
-the platform's formatting enforced on its pull requests without hand-rolling an MSBuild target or
-pinning a formatter version itself.
+> **A CSharpier format check that fails CI on unformatted code and stays silent locally, a one-command local format,
+> and the platform's shared `.editorconfig`. Ships no DLL and no analyzers.**
+
+| You get | So that |
+| --- | --- |
+| A format check driven by `ContinuousIntegrationBuild` | Pull requests stay formatted without interrupting local builds |
+| `dotnet build -t:SharedKernelLinterFormat` | Everyone formats with the exact CSharpier version CI checks against — no global tool |
+| `InstallSharedKernelLinterConfig` | One command copies the shared `.editorconfig` into your repository |
+| One config file for IDE, code-style analyzers and CSharpier | Changing `max_line_length` or `indent_size` changes all three |
+| Report-only mode pinned | A build never rewrites your files behind your back |
 
 ## Install
 
@@ -14,140 +22,146 @@ pinning a formatter version itself.
 <PackageReference Include="SharedKernel.Linter" PrivateAssets="all" />
 ```
 
-The version comes from your repository's single `SharedKernelVersion` property (central package management); every
-SharedKernel package is released together. **Tier:** Tooling — it is never a runtime dependency of production code.
+The version comes from your central `SharedKernelVersion` property — every SharedKernel package ships at the same
+version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel#using-the-packages).
 
-It declares itself a development dependency, so it never reaches your published package's
-dependency graph; `PrivateAssets="all"` is belt-and-braces and harmless.
+| Requirement | Value |
+| --- | --- |
+| Target framework | Any; the package ships MSBuild files only (.NET SDK 8 or later) |
+| Tier | Tooling — build only; reference it from every project, usually through `Directory.Build.props` |
+| Depends on | `CSharpier.MsBuild` (MIT) |
+| Package content | `build/SharedKernel.Linter.props`, `build/SharedKernel.Linter.targets`, `build/config/.editorconfig` |
 
-That reference alone gives you the CI check. Then install the shared style config once, from your
-repository root so it covers every project beneath it, and **commit it**:
+## Quick start
+
+```xml
+<!-- Directory.Build.props -->
+<Project>
+  <ItemGroup>
+    <PackageReference Include="SharedKernel.Linter" PrivateAssets="all" />
+  </ItemGroup>
+</Project>
+```
+
+Install the shared style once, from the repository root, and commit it:
 
 ```bash
 dotnet build -t:InstallSharedKernelLinterConfig -p:SharedKernelLinterConfigDestination=.
+git add .editorconfig
 ```
 
-An existing `.editorconfig` is never overwritten, so your local edits are safe. To take an updated
-version of the platform config later, ask for it explicitly:
-
-```bash
-dotnet build -t:InstallSharedKernelLinterConfig -p:SharedKernelLinterOverwriteConfig=true
-```
-
-## Day-to-day use
-
-Format before you commit. No global tool, no `dotnet-tools.json`:
+Format before you commit:
 
 ```bash
 dotnet build -t:SharedKernelLinterFormat
 ```
 
-This runs the exact CSharpier version CI will check against — it came with the package. A
-separately-installed `csharpier` is the classic way to end up with a machine that formats one way
-and a pipeline that demands another.
+CI builds with `ContinuousIntegrationBuild=true` now fail on unformatted files.
+
+## How it works
+
+```mermaid
+flowchart LR
+    build["dotnet build"] --> props["SharedKernel.Linter.props"]
+    props -->|ContinuousIntegrationBuild or EnforceFormatting = true| check["CSharpier check<br/>unformatted file = build error"]
+    props -->|otherwise| bypass["CSharpier bypassed"]
+    fmt["-t:SharedKernelLinterFormat"] --> write["CSharpier formats in place"]
+```
 
 | Situation | Behaviour |
-|---|---|
-| Local build (`dotnet build`, any configuration) | Nothing. No check, no reformatting. |
-| `-t:SharedKernelLinterFormat` | Formats this project's files in place. |
-| CI build (`ContinuousIntegrationBuild=true`) | Check only; unformatted files fail the build. |
-| Any build | Your files are never rewritten behind your back. |
+| --- | --- |
+| Local build, any configuration | Nothing — no check, no reformatting |
+| `-t:SharedKernelLinterFormat` | Formats this project's files in place |
+| CI build (`ContinuousIntegrationBuild=true`) | Check only; unformatted files fail the build |
+| Any build | Your files are never rewritten implicitly (`CSharpier_Check` is pinned `true`) |
 
-One property controls enforcement:
+- The switches are set in `.props`, because `CSharpier.MsBuild` derives its command line in its own `.targets`.
+- `build/` at the package root is auto-imported; `buildTransitive/` is deliberately not used, so the gate never appears
+  in someone's build because they referenced a library that referenced this.
+- CSharpier 1.x also formats `.csproj`, `.props` and `.targets` files.
+
+## Recipes
+
+### 1. Reproduce a CI formatting failure locally
 
 ```bash
-# reproduce a CI formatting failure locally
 dotnet build -p:SharedKernelLinterEnforceFormatting=true
 ```
 
+### 2. Opt a project (or the repository) out
+
 ```xml
-<!-- opt out, per project or repo-wide in Directory.Build.props -->
 <SharedKernelLinterEnforceFormatting>false</SharedKernelLinterEnforceFormatting>
 ```
 
-The default is `$(ContinuousIntegrationBuild)`, which GitHub Actions, Azure Pipelines and most
-other providers set for you. Keeping the check out of local builds is deliberate: a formatter that
-interrupts you mid-thought is a formatter people learn to bypass.
-
-## One config file, on purpose
-
-The package ships `.editorconfig` and **no `.csharpierrc.json`**. That is not an omission.
-
-CSharpier reads `indent_style`, `indent_size`, `end_of_line` and `max_line_length` straight from
-`.editorconfig` — but if a `.csharpierrc` exists it uses that **instead**, not merged. So shipping
-both would mean editing `indent_size` or `max_line_length` in `.editorconfig` and watching nothing
-happen. One file drives the IDE, the Roslyn code-style analyzers, and the formatter.
-
-If you genuinely need a CSharpier-only option, adding your own `.csharpierrc` works — just know
-that it then takes over the formatting keys entirely.
-
-### Why the config is copied rather than applied
-
-Both the config and the formatter need the file inside **your** source tree:
-
-- EditorConfig matches its sections relative to the directory containing the file, so an
-  `.editorconfig` sitting in the NuGet cache matches none of your sources.
-- CSharpier resolves its settings by walking up from each file it formats, with the same result.
-
-No `PackageReference` mechanism writes files into a consuming project's source tree —
-`contentFiles` are surfaced as links resolved from the cache, and `content/` is
-packages.config-era and ignored outright. So a package cannot make the config apply on your
-behalf. Copying is the only thing that works, and doing it explicitly beats doing it behind your
-back on first build.
-
-The practical consequence: your committed copy **can** drift from the platform's. The CI check is
-what holds the line, because the formatter and its version come from this package.
-
-## What the config covers
-
-`.editorconfig` is the payload, and it is split by who owns what:
-
-| Area | Owner |
-|---|---|
-| Layout — where lines break and wrap | CSharpier. The `csharp_new_line_*` / `csharp_space_*` keys match its output so IDE typing agrees. |
-| `max_line_length` | The single source of the formatter's print width (120). |
-| Naming conventions | EditorConfig — `I`-prefixed interfaces, `T`-prefixed type parameters, `_camelCase` private fields, PascalCase constants and members, camelCase parameters and locals. |
-| Language style | EditorConfig — file-scoped namespaces, required braces, pattern matching over cast-checks, null propagation, no `this.` qualification, `var` where the type is apparent. |
-| Nullable diagnostics | EditorConfig — the null-state warnings raised from their defaults so they do not blend into build output. |
-
-Severities are **warnings, not errors**. A shared config that fails other teams' builds over a
-style opinion gets deleted rather than adopted; escalate what you care about in your own
-`.editorconfig`, which layers on top of the installed copy. Test projects are exempted from the
-member-naming rule, because underscores in test names are how a test states its scenario.
-
-## Before you turn the check on
-
-**CSharpier 1.x formats XML as well as C#**, so the check covers `.csproj`, `.props` and
-`.targets` alongside `.cs`. On a codebase that has never run it, expect a large first pass —
-measure it before you enable anything:
+### 3. Take an updated platform config
 
 ```bash
-dotnet build -t:SharedKernelLinterFormat   # then review the diff
+dotnet build -t:InstallSharedKernelLinterConfig -p:SharedKernelLinterOverwriteConfig=true
 ```
 
-The sane adoption order is: install the config, run the format target once as a single reviewable
-commit, then let CI keep it that way.
+An existing `.editorconfig` is never overwritten without this switch.
 
-## Contents
+### 4. Adopt on an existing codebase
 
-| Path in package | Purpose |
-|---|---|
-| `build/SharedKernel.Linter.props` | Decides whether the check runs; pins CSharpier to report-only |
-| `build/SharedKernel.Linter.targets` | `SharedKernelLinterFormat` and `InstallSharedKernelLinterConfig` |
-| `build/config/.editorconfig` | The shared style configuration |
+Install the config, run `-t:SharedKernelLinterFormat` once as a single reviewable commit, then let CI keep it that way.
 
-`build/` at the package root is the only location NuGet auto-imports for a `PackageReference`.
-`buildTransitive/` is deliberately not used: a formatting gate should never appear in someone's
-build because they referenced a library that referenced this.
+## Configuration
 
-## Requirements
+MSBuild properties, set on the command line or in a project / `Directory.Build.props`.
 
-- .NET SDK 8.0 or later (CSharpier resolves its own runtime)
-- One dependency: `CSharpier.MsBuild` (MIT), which performs the cross-platform formatter
-  resolution and the check itself
+| Key | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `SharedKernelLinterEnforceFormatting` | `bool` | `$(ContinuousIntegrationBuild)`, else `false` | Run the CSharpier check in this build |
+| `SharedKernelLinterConfigDestination` | path | `$(MSBuildProjectDirectory)` | Where `InstallSharedKernelLinterConfig` writes `.editorconfig` |
+| `SharedKernelLinterOverwriteConfig` | `bool` | `false` | Replace an existing `.editorconfig` on install |
 
-## License
+## Reference
 
-MIT — part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel).
-See the [00.Governance README](../README.md) for the rest of the governance toolchain:
-`SharedKernel.Analyzers` (compile-time rules) and `SharedKernel.ArchitectureTests` (layering rules).
+### Targets
+
+| Target | Does |
+| --- | --- |
+| `SharedKernelLinterFormat` | Re-enters CSharpier's `CSharpierFormatInner` with check and bypass off: formats in place |
+| `InstallSharedKernelLinterConfig` | Copies `build/config/.editorconfig` to the destination unless one exists (or overwrite is set) |
+
+### What the `.editorconfig` covers
+
+| Area | Content |
+| --- | --- |
+| Layout | Owned by CSharpier; `csharp_new_line_*`/`csharp_space_*` keys match its output so IDE typing agrees |
+| Whitespace | 4-space indent (2 for XML/JSON/YAML), `max_line_length = 120`, `end_of_line = crlf`, UTF-8 without BOM, `root = true` |
+| Naming | `I`-prefixed interfaces, `T`-prefixed type parameters, `_camelCase` private fields, PascalCase members and constants, camelCase parameters and locals (member naming relaxed for test projects) |
+| Language style | File-scoped namespaces, required braces, pattern matching, null propagation, no `this.`, `var` where apparent |
+| Nullable | Null-state diagnostics raised so they stand out |
+
+Every style severity is a warning, not an error; escalate in your own copy.
+
+## Testing
+
+There is nothing to fake. To check the gate works in your pipeline, commit a mis-formatted file on a branch and confirm
+the CI build fails; locally, build with `-p:SharedKernelLinterEnforceFormatting=true`.
+
+## Pitfalls
+
+| Don't | Do | Why |
+| --- | --- | --- |
+| Install a global `csharpier` tool | Use `-t:SharedKernelLinterFormat` | A different formatter version formats one way while CI demands another |
+| Add a `.csharpierrc.json` next to `.editorconfig` | Keep one config file | CSharpier then uses it *instead of* `.editorconfig`, not merged |
+| Expect the package to apply the config from the NuGet cache | Install and commit the copy | EditorConfig matches sections relative to the file's own directory |
+| Turn the check on over an unformatted codebase | Format once as its own commit first | The first pass also rewrites project files |
+| Rely on local builds to catch formatting | Let CI (`ContinuousIntegrationBuild`) enforce it | Local builds are silent by design |
+
+## Design decisions
+
+**Why silent locally?** A formatter that fails a build mid-thought trains people to bypass it; failing the PR does the
+same job without the interruption.
+
+**Why copy the config instead of applying it?** No `PackageReference` mechanism writes into a consumer's source tree,
+and an `.editorconfig` outside that tree matches nothing. Your committed copy can drift; the CI check holds the line.
+
+---
+
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
+[00.Governance domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/00.Governance/README.md) ·
+[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

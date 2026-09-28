@@ -5,7 +5,7 @@ name: Verify
 # Integration suite on pull requests and with it on main; release.yml calls it with everything and
 # publishes only the exact package files this workflow packed and verified.
 #
-# Standing design decisions (see PLATFORM.md "CI topology" and "Release train"):
+# Standing design decisions (see eng/README.md "CI workflows" and "Versioning (MinVer)"):
 #   - ubuntu-latest only: Testcontainers needs a Linux Docker daemon.
 #   - Every third-party action is pinned to a full 40-character commit SHA with a `# vX.Y.Z`
 #     comment, and every container image to a digest. Re-resolve and re-pin on every bump.

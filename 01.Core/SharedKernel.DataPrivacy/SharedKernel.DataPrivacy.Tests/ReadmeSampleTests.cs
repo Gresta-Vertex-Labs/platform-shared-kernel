@@ -144,7 +144,7 @@ public sealed partial class ReadmeSampleTests
     public void Masking_TableExamples()
     {
         Assert.Equal("j***@example.com", PiiMasking.Email("j.doe@example.com"));
-        Assert.Equal("a***@***.tr", PiiMasking.Email("ali@alidinc.com.tr", revealDomain: false));
+        Assert.Equal("j***@***.com", PiiMasking.Email("jane@example.com", revealDomain: false));
         Assert.Equal("+* (***) ***-4567", PiiMasking.Phone("+1 (555) 123-4567"));
         Assert.Equal("4111 11** **** 1111", PiiMasking.CardNumber("4111 1111 1111 1111"));
         Assert.Equal("DE** **** **** **** **30 00", PiiMasking.Iban("DE89 3704 0044 0532 0130 00"));

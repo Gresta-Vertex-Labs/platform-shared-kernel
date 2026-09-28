@@ -3,6 +3,7 @@
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
 [![StackExchange.Redis](https://img.shields.io/badge/StackExchange.Redis-2.13-DC382D?logo=redis&logoColor=white)](https://github.com/StackExchange/StackExchange.Redis)
+![Tier: Adapter](https://img.shields.io/badge/tier-Adapter-6f42c1)
 ![Public API: tracked](https://img.shields.io/badge/public%20API-tracked-informational)
 
 > **The one Redis connection every SharedKernel Redis package shares: configured once, validated at startup, with
@@ -26,20 +27,13 @@ other registration takes a connection string.
 
 - [Install](#install)
 - [Quick start](#quick-start)
-- [Configuration](#configuration)
 - [How it works](#how-it-works)
 - [Recipes](#recipes)
-  - [1. Keep the password out of source control](#1-keep-the-password-out-of-source-control)
-  - [2. Turn on TLS](#2-turn-on-tls)
-  - [3. Mutual TLS with a private certificate authority](#3-mutual-tls-with-a-private-certificate-authority)
-  - [4. Ride out short reconnects instead of failing fast](#4-ride-out-short-reconnects-instead-of-failing-fast)
-  - [5. Report readiness](#5-report-readiness)
-- [Logging](#logging)
+- [Configuration](#configuration)
 - [Reference](#reference)
+- [Testing](#testing)
 - [Pitfalls](#pitfalls)
 - [Design decisions](#design-decisions)
-- [AI quick reference](#ai-quick-reference)
-- [Compatibility and guarantees](#compatibility-and-guarantees)
 
 ## Install
 
@@ -47,14 +41,17 @@ Most services get this package through a capability package (`SharedKernel.Cachi
 `.Redis.DistributedLocking`, `.Redis.HashStore` or `.Redis.PubSub`), but they still call `AddRedisConnection`
 themselves.
 
-```shell
-dotnet add package SharedKernel.Caching.Redis.Core
+```xml
+<PackageReference Include="SharedKernel.Caching.Redis.Core" />
 ```
+
+The version comes from your central `SharedKernelVersion` property — every SharedKernel package ships at the same
+version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel#using-the-packages).
 
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
-| Tier | Adapter |
+| Tier | Adapter — reference it from your **Infrastructure** project |
 | Depends on | `SharedKernel.Configuration`, `SharedKernel.Primitives`, `StackExchange.Redis`, `Microsoft.Extensions.Options.DataAnnotations` |
 | Namespaces | `SharedKernel.Caching.Redis.Core` (options), `SharedKernel.Caching.Redis.Core.Extensions` (registration), `SharedKernel.Caching.Redis.Core.Health` (`RedisReadinessProbeNames`) |
 
@@ -95,31 +92,6 @@ builder.Services.AddRedisConnection(o =>
 });
 ```
 
-## Configuration
-
-Section `SharedKernel:Caching:Redis`, bound and validated at startup. The `configure` delegate of the configuration
-overload runs after binding; use it for the two settings configuration cannot carry.
-
-| Setting | Default | Rules | Meaning |
-| --- | --- | --- | --- |
-| `ConnectionString` | _(required)_ | Must parse and name at least one endpoint | StackExchange.Redis connection string, for example `redis.internal:6379,password=…` |
-| `ConnectTimeout` | `00:00:05` | 100 ms – 1 min | How long a connection attempt may take |
-| `CommandTimeout` | `00:00:05` | 100 ms – 1 min | How long a command may wait for its reply, synchronous and asynchronous |
-| `FailFastWhenDisconnected` | `true` | | Fail a command at once while no connection is available, instead of waiting up to `CommandTimeout` for a reconnect |
-| `Ssl` | `false` | | Use TLS. When off and an endpoint is not a loopback address, a warning is logged |
-| `ClientCertificates` | `null` | Code only | Certificates presented in the TLS handshake, for servers that require mutual TLS |
-| `CertificateValidation` | `null` | Code only | Callback that validates the server certificate; `null` uses the platform's validation |
-
-**Precedence over the connection string.**
-
-- `ConnectTimeout` and `CommandTimeout` always replace any timeouts in the string.
-- TLS is on when `Ssl` is `true` or the string enables it; `Ssl = false` never turns off TLS the string enables.
-- `abortConnect` is always `false`: a server that is unreachable at startup never fails the host.
-
-**Startup fails** with `OptionsValidationException` when `ConnectionString` is missing, does not parse or names no
-endpoint, or a timeout is outside its range. The message never echoes the connection string, which may contain a
-password.
-
 ## How it works
 
 ```mermaid
@@ -151,6 +123,7 @@ checks the same connection._
   acquisition throws `DistributedLockUnavailableException`, and hash store and Pub/Sub calls throw.
 - **After a reconnect.** StackExchange.Redis restores the connection and every Pub/Sub subscription on its own.
   Connection failures and restorations are logged (2101, 2100).
+- **No secrets in output.** Validation messages, log events and probe descriptions never contain the connection string.
 
 ## Recipes
 
@@ -244,18 +217,30 @@ ReadinessReport report = await services
 - **Safe to expose.** The description never contains the connection string or an exception message.
 - **Readiness, not liveness.** A Redis outage should take the pod out of the load balancer, not restart it.
 
-## Logging
+## Configuration
 
-Category `SharedKernel.Caching.Redis.Core.RedisConnection`.
+Section `SharedKernel:Caching:Redis`, bound and validated when the host starts. The `configure` delegate of the
+configuration overload runs after binding; use it for the two settings configuration cannot carry.
 
-| Event id | Level | Event |
-| --- | --- | --- |
-| 2100 | Information | Connection to `{EndPoint}` restored |
-| 2101 | Warning | Connection to `{EndPoint}` failed (`{FailureType}`); reconnecting in the background |
-| 2102 | Warning | Endpoint `{EndPoint}` is not a loopback address and TLS is off; logged once, for the first such endpoint |
-| 2103 | Warning | Redis is not reachable at startup; the connection keeps retrying |
+| Key | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `SharedKernel:Caching:Redis:ConnectionString` | `string` | — (required) | StackExchange.Redis connection string, for example `redis.internal:6379,password=…`; must parse and name at least one endpoint |
+| `SharedKernel:Caching:Redis:ConnectTimeout` | `TimeSpan` | `00:00:05` | How long a connection attempt may take; 100 ms – 1 min |
+| `SharedKernel:Caching:Redis:CommandTimeout` | `TimeSpan` | `00:00:05` | How long a command may wait for its reply, synchronous and asynchronous; 100 ms – 1 min |
+| `SharedKernel:Caching:Redis:FailFastWhenDisconnected` | `bool` | `true` | Fail a command at once while no connection is available, instead of waiting up to `CommandTimeout` for a reconnect |
+| `SharedKernel:Caching:Redis:Ssl` | `bool` | `false` | Use TLS. When off and an endpoint is not a loopback address, a warning is logged |
+| `ClientCertificates` (code only) | `X509Certificate2Collection?` | `null` | Certificates presented in the TLS handshake, for servers that require mutual TLS |
+| `CertificateValidation` (code only) | `Func<X509Certificate2, X509Chain?, SslPolicyErrors, bool>?` | `null` | Validates the server certificate; `null` uses the platform's validation |
 
-No event contains the connection string, a password or a key.
+**Precedence over the connection string.**
+
+- `ConnectTimeout` and `CommandTimeout` always replace any timeouts in the string.
+- TLS is on when `Ssl` is `true` or the string enables it; `Ssl = false` never turns off TLS the string enables.
+- `abortConnect` is always `false`: a server that is unreachable at startup never fails the host.
+
+**Startup fails** with `OptionsValidationException` when `ConnectionString` is missing, does not parse or names no
+endpoint, or a timeout is outside its range. The message never echoes the connection string, which may contain a
+password.
 
 ## Reference
 
@@ -284,6 +269,38 @@ No event contains the connection string, a password or a key.
 | `OptionsValidationException` | At host start, or when the multiplexer is first resolved without a host: invalid options |
 | `OperationCanceledException` | `ProbeAsync` was cancelled |
 
+### Logging
+
+Category `SharedKernel.Caching.Redis.Core.RedisConnection`.
+
+| Event id | Level | Event |
+| --- | --- | --- |
+| 2100 | Information | Connection to `{EndPoint}` restored |
+| 2101 | Warning | Connection to `{EndPoint}` failed (`{FailureType}`); reconnecting in the background |
+| 2102 | Warning | Endpoint `{EndPoint}` is not a loopback address and TLS is off; logged once, for the first such endpoint |
+| 2103 | Warning | Redis is not reachable at startup; the connection keeps retrying |
+
+No event contains the connection string, a password or a key.
+
+### Health
+
+Registers the `redis` readiness probe (`RedisReadinessProbeNames.Connection`); `AddSharedKernelReadiness()` exposes it
+on `/health/ready`. See [recipe 5](#5-report-readiness).
+
+## Testing
+
+Application code never sees the connection, so unit tests replace the Redis-backed services instead: reference
+[`SharedKernel.Caching.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/16.Testing/SharedKernel.Caching.Testing/README.md)
+(`AddFakeCachingServices()`, including `IDistributedLockService`) and
+[`SharedKernel.Caching.Redis.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/16.Testing/SharedKernel.Caching.Redis.Testing/README.md)
+(`AddFakeRedisServices()` for the hash store and Pub/Sub). Neither needs `AddRedisConnection`.
+
+To test the real composition, start Redis with Testcontainers and point `ConnectionString` at it:
+
+```csharp
+services.AddRedisConnection(o => o.ConnectionString = redisContainer.GetConnectionString());
+```
+
 ## Pitfalls
 
 | Don't | Do | Why |
@@ -299,10 +316,10 @@ No event contains the connection string, a password or a key.
 
 ## Design decisions
 
-**Why one shared connection?** Every registration used to take its own connection string. The cache and its backplane
-opened extra connections from the bare string, so TLS, mutual TLS, the connect timeout and health tracking never applied
-to cache traffic, and conflicting strings were silently ignored. One `AddRedisConnection` removes the question of which
-settings win: there is only one set.
+**Why one shared connection?** When each registration takes its own connection string, extra connections escape the
+TLS, mutual-TLS, timeout and health settings, and conflicting strings are silently ignored. One `AddRedisConnection`
+removes the question of which settings win: there is only one set, and no SharedKernel package opens a Redis connection
+of its own.
 
 **Why does registering twice throw instead of "first caller wins"?** A silent first-wins rule let a library's defaults
 override the service's real settings with no trace. An exception at registration points at the duplicate immediately.
@@ -311,38 +328,17 @@ override the service's real settings with no trace. An exception at registration
 every request waits up to the command timeout before anything can react. Failing fast lets the cache's circuit breaker
 and fail-safe take over at once and makes an outage visible.
 
-**Why no circuit breaker in this package?** A Polly breaker here protected only the hash store and publish calls, never
-the cache. The distributed cache and backplane now use FusionCache's own circuit breakers (`SharedKernel.Caching.Redis`),
-and fail-fast gives every other package an immediate error during an outage.
+**Why no circuit breaker in this package?** The distributed cache and backplane use FusionCache's own circuit breakers
+(`SharedKernel.Caching.Redis`), and fail-fast gives every other package an immediate error during an outage.
 
-**Why no health state property?** A state tracked from connection events started as "connected" before any connection
-existed, and each package exposed its own copy. A probe that sends `PING` over the shared connection reports what Redis
-actually answers.
+**Why a probe instead of a health state property?** A state tracked from connection events can claim "connected" before
+any connection exists. A probe that sends `PING` over the shared connection reports what Redis actually answers.
 
 **Why a warning, not an error, for plaintext non-loopback endpoints?** TLS is often terminated by a service mesh in front
 of Redis, where the application legitimately connects without TLS.
 
-## AI quick reference
+---
 
-```text
-REGISTER     builder.Services.AddRedisConnection(builder.Configuration);   // ONCE, before any other Redis registration
-             Code only: AddRedisConnection(o => { o.ConnectionString = cs; o.Ssl = true; });
-THEN         .AddRedisL2() on AddSharedKernelCaching(...); services.AddRedisDistributedLocking(); services.AddRedisHashService();
-             services.AddTypedHashStore(Ctx.Default.T); services.AddRedisChannelService(). None take a connection string.
-CONFIG       Section SharedKernel:Caching:Redis. ConnectionString (required), ConnectTimeout 5s, CommandTimeout 5s (100ms-1min),
-             FailFastWhenDisconnected true, Ssl false. ClientCertificates/CertificateValidation via configure delegate only.
-SECRETS      Connection string with password from env var SharedKernel__Caching__Redis__ConnectionString or a secret store.
-TLS          Ssl=true for any non-loopback endpoint unless a mesh terminates TLS. Never accept every certificate.
-HEALTH       AddRedisConnection registers IReadinessProbe "redis"; host: services.AddHealthChecks().AddSharedKernelReadiness(). Readiness only.
-ERRORS       Second AddRedisConnection or missing AddRedisConnection -> InvalidOperationException at registration.
-             Invalid options -> OptionsValidationException at startup.
-FORBIDDEN    ConnectionMultiplexer.Connect, a second IConnectionMultiplexer, IConnectionMultiplexer in application code.
-```
-
-## Compatibility and guarantees
-
-- **Public API is tracked** with `Microsoft.CodeAnalysis.PublicApiAnalyzers`, and every public member is documented.
-- **Validated at startup.** Invalid options fail host start, never the first request.
-- **One connection.** No SharedKernel package opens a Redis connection of its own.
-- **No secrets in output.** Validation messages, log events and probe descriptions never contain the connection string.
-- **Never fails startup on an unreachable server.** The connection keeps retrying; readiness reports the outage.
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
+[Caching domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/02.Caching/README.md) ·
+[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

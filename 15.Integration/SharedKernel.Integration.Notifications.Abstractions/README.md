@@ -1,137 +1,162 @@
 # SharedKernel.Integration.Notifications.Abstractions
 
-Provider-neutral contracts for human-facing notification delivery (email, SMS) across the
-Platform.SharedKernel ecosystem: send a customer a receipt, a one-time passcode, or a transaction
-alert, without this package deciding which templating engine, vendor, or channel your service uses.
+[![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
+![Tier: Abstractions](https://img.shields.io/badge/tier-Abstractions-1f6feb)
+![Zero I/O](https://img.shields.io/badge/I%2FO-none-informational)
 
-This package ships **zero I/O and zero concrete `INotificationSender`** — it is implemented by
-`SharedKernel.Integration.Notifications.Email.SendGrid` and
-`SharedKernel.Integration.Notifications.Sms.Twilio`. It mirrors
-`SharedKernel.Integration.Webhooks`'s "outbound delivery to a destination outside our control, with
-resilience/signing/retry/observer discipline" identity, applied to a person instead of a
-subscriber's API endpoint.
+> **One provider-neutral contract for human-facing notifications — a receipt by email, a one-time passcode by SMS —
+> so application code sends a templated message through `INotificationSender` and never touches a vendor API. The
+> providers live in their own packages.**
 
-| | |
+| You get | So that |
 | --- | --- |
-| Tier | Abstractions (references `SharedKernel.Primitives`, `SharedKernel.Configuration` and `SharedKernel.Storage.Abstractions` only) |
-| Install | `<PackageReference Include="SharedKernel.Integration.Notifications.Abstractions" />` plus one or both provider packages |
-| Test doubles | `SharedKernel.Integration.Testing`: `AddInMemoryNotificationSender(channel)`, `AddInMemoryNotificationDeliveryObserver()` |
+| `INotificationSender`, resolved keyed by `NotificationChannel` | Swapping or adding a provider does not touch the code that sends |
+| `NotificationMessage<TTemplateModel>` with a required, caller-supplied `NotificationDeliveryId` | A caller-level retry reuses the id, so the provider can deduplicate |
+| `NotificationAttachment` as a storage `FileReference` | Attachments stream from object storage; large files never sit in your message |
+| `NotificationDeliveryResult` instead of exceptions | Provider failures are values you branch on |
+| `INotificationDeliveryObserver` | A delivery ledger or metrics hook without the package owning persistence |
+| `INotificationSenderIdentityResolver` | The "from" address (per tenant, if you like) is your decision |
+| Shared retry, timeout and concurrency options | Every provider behaves the same under failure |
 
----
+## Install
 
-## Minimal setup
+```xml
+<PackageReference Include="SharedKernel.Integration.Notifications.Abstractions" />
+```
+
+The version comes from your central `SharedKernelVersion` property — every SharedKernel package ships at the same
+version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel#using-the-packages).
+
+| Requirement | Value |
+| --- | --- |
+| Target framework | `net10.0` |
+| Tier | Abstractions — reference it from your **Application** project |
+| Depends on | `SharedKernel.Primitives`, `SharedKernel.Configuration`, `SharedKernel.Storage.Abstractions` |
+| Namespaces | `SharedKernel.Integration.Notifications.Abstractions.Notifications`, `.Delivery`, `.Observability`, `.Options`, `.Extensions`, `.Tracing` |
+| Providers | [`…Email.SendGrid`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/15.Integration/SharedKernel.Integration.Notifications.Email.SendGrid/README.md), [`…Sms.Twilio`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/15.Integration/SharedKernel.Integration.Notifications.Sms.Twilio/README.md) |
+
+## Quick start
+
+Register the shared options and the providers you need (in the composition root):
 
 ```csharp
-// Program.cs
-builder.Services.AddSharedKernelNotifications();
+using SharedKernel.Integration.Notifications.Abstractions.Extensions;
+using SharedKernel.Integration.Notifications.Email.SendGrid.Extensions;
+using SharedKernel.Integration.Notifications.Sms.Twilio.Extensions;
 
-// Required — DI resolution fails at first send without this registration.
-builder.Services.AddScoped<INotificationSenderIdentityResolver, TenantNotificationSenderIdentityResolver>();
+builder.Services.AddSharedKernelNotifications();                        // SharedKernel:Integration:Notifications
+builder.Services.AddScoped<INotificationSenderIdentityResolver, TenantSenderIdentityResolver>();   // for email
 
-// Register whichever provider(s) you need — each keys its INotificationSender by NotificationChannel.
-builder.Services.AddSendGridEmailNotifications(options => options.ApiKey = configuration["SendGrid:ApiKey"]!);
-builder.Services.AddTwilioSmsNotifications(options =>
+builder.Services.AddSendGridEmailNotifications(o => o.ApiKey = builder.Configuration["SendGrid:ApiKey"]!);
+builder.Services.AddTwilioSmsNotifications(o =>
 {
-    options.AccountSid = configuration["Twilio:AccountSid"]!;
-    options.AuthToken = configuration["Twilio:AuthToken"]!;
-    options.MessagingServiceSid = configuration["Twilio:MessagingServiceSid"];
+    o.AccountSid = builder.Configuration["Twilio:AccountSid"]!;
+    o.AuthToken = builder.Configuration["Twilio:AuthToken"]!;
+    o.MessagingServiceSid = builder.Configuration["Twilio:MessagingServiceSid"];
 });
 ```
 
-`AddSharedKernelNotifications()` registers only `NotificationDeliveryOptions`, bound to
-configuration section `SharedKernel:Integration:Notifications` and validated eagerly at startup
-(`ValidateOnStart()`). It deliberately does **not** register `INotificationSenderIdentityResolver`
-(no default implementation — you supply one against your own tenant catalog/config) or any
-`INotificationSender` (each provider package registers its own, keyed by channel).
+```json
+{
+  "SharedKernel": {
+    "Integration": {
+      "Notifications": { "MaxAttempts": 3, "RequestTimeout": "00:00:10", "MaxConcurrentSends": 16 }
+    }
+  }
+}
+```
 
----
-
-## `INotificationSenderIdentityResolver` — the per-tenant "from" address seam
+Send from application code:
 
 ```csharp
-// ITenantCatalog is your own tenant directory; IRequestContext comes from SharedKernel.Execution.
-public sealed class TenantNotificationSenderIdentityResolver(ITenantCatalog tenants, IRequestContext requestContext)
+using SharedKernel.Integration.Notifications.Abstractions.Delivery;
+using SharedKernel.Integration.Notifications.Abstractions.Notifications;
+
+public sealed record OrderReceiptModel(string OrderNumber, string Total);
+
+public sealed class SendOrderReceipt([FromKeyedServices(NotificationChannel.Email)] INotificationSender email)
+{
+    public async Task<bool> SendAsync(Order order, CancellationToken ct)
+    {
+        NotificationDeliveryResult result = await email.SendAsync(
+            new NotificationMessage<OrderReceiptModel>
+            {
+                NotificationDeliveryId = order.ReceiptDeliveryId,   // stored with the order; reused on retry
+                Channel = NotificationChannel.Email,
+                Recipient = order.CustomerEmail,
+                TemplateId = "d-order-receipt",
+                TemplateModel = new OrderReceiptModel(order.Number, order.Total.ToString("N2")),
+            },
+            ct);
+
+        return result.IsSuccess;   // result.Error on failure — never log the recipient or the model
+    }
+}
+```
+
+## How it works
+
+```mermaid
+flowchart LR
+    A["Application code"] -- "NotificationMessage&lt;T&gt;" --> K{"keyed INotificationSender<br/>(NotificationChannel)"}
+    K -- Email --> SG["SendGrid provider"]
+    K -- Sms --> TW["Twilio provider"]
+    SG --> ST["IFileStorage<br/>(attachments)"]
+    SG -. "OnAttempt / OnCompleted" .-> O["INotificationDeliveryObserver(s)"]
+    TW -.-> O
+```
+
+- **No router.** A send is one message to one channel: resolve the sender keyed by `NotificationChannel` and call
+  it. `NotificationChannel` has two members, `Email` and `Sms`.
+- **Never throws for delivery failures.** A non-2xx response, timeout, transport error or unresolvable attachment
+  returns `NotificationDeliveryResult { IsSuccess = false, Error = … }`; only a `null` message throws.
+- **Deduplication is per provider.** Twilio sends `NotificationDeliveryId` as `Idempotency-Key` (enforced by Twilio).
+  SendGrid carries it in `custom_args` (correlation only), so duplicate-email prevention is your outbox's job.
+- **Retries** happen inside each provider's resilience pipeline, driven by `NotificationDeliveryOptions`; observers see
+  one `OnAttemptAsync` per send (`attemptNumber: 1`) and one `OnCompletedAsync`.
+- **Personal data.** Recipient and template model are PII: providers never log them or tag spans with them. Observers
+  receive the recipient in `NotificationDeliveryContext`; logging it is the observer's responsibility.
+- **Nothing about the caller leaves the platform.** Providers send no tenant, actor or correlation header.
+
+## Recipes
+
+### 1. Resolve the sender identity per tenant
+
+Used by the email provider for the `From`, display name and default reply-to (SMS uses the Twilio options):
+
+```csharp
+public sealed class TenantSenderIdentityResolver(ITenantDirectory tenants, IRequestContext caller)
     : INotificationSenderIdentityResolver
 {
     public async Task<NotificationSenderIdentity> ResolveAsync(NotificationChannel channel, CancellationToken ct)
     {
-        var tenantId = requestContext.TenantId
-            ?? throw new InvalidOperationException("A notification needs a tenant to choose its sender identity.");
+        var tenantId = caller.TenantId ?? throw new InvalidOperationException("A notification needs a tenant.");
         var tenant = await tenants.GetAsync(tenantId, ct);
-        return channel switch
-        {
-            NotificationChannel.Email => new NotificationSenderIdentity(tenant.SupportEmail, tenant.DisplayName),
-            NotificationChannel.Sms => new NotificationSenderIdentity(tenant.SmsSenderId),
-            _ => throw new ArgumentOutOfRangeException(nameof(channel)),
-        };
+        return new NotificationSenderIdentity(tenant.SupportEmail, tenant.DisplayName, ReplyTo: tenant.ReplyToEmail);
     }
 }
 ```
 
-This package never reaches into a persistence store or a host package itself; the consuming service
-bridges its own tenant directory at its composition root, reading the caller's tenant from
-`IRequestContext.TenantId` (`SharedKernel.Execution.Tenancy.TenantId?`, `null` when there is none).
-
----
-
-## Sending a notification
-
-No router/dispatcher type exists in this package — resolve the keyed `INotificationSender` for the
-channel you want and call it directly. This is deliberate: unlike `IWebhookDispatcher`, which owns a
-genuine fan-out across N subscriptions, a notification send is always one message to one channel.
-
-```csharp
-public sealed record OrderReceiptTemplateModel(string OrderNumber, string Total);
-
-public sealed class OrderReceiptSender(IServiceProvider services)
-{
-    public async Task SendAsync(Order order, CancellationToken ct)
-    {
-        var sender = services.GetRequiredKeyedService<INotificationSender>(NotificationChannel.Email);
-
-        var result = await sender.SendAsync(
-            new NotificationMessage<OrderReceiptTemplateModel>
-            {
-                // Caller-supplied and REQUIRED — reused verbatim on a caller-level retry so the
-                // provider's own dedup mechanism actually prevents a double-send.
-                NotificationDeliveryId = order.ReceiptDeliveryId,
-                Channel = NotificationChannel.Email,
-                Recipient = order.CustomerEmail,
-                TemplateId = "d-order-receipt",
-                TemplateModel = new OrderReceiptTemplateModel(order.Number, order.Total.ToString()),
-            },
-            ct);
-
-        if (!result.IsSuccess)
-        {
-            // result.Error — never log order.CustomerEmail or the TemplateModel's own fields.
-        }
-    }
-}
-```
-
-### Attachments — always an object-storage reference, never inline bytes
+### 2. Attach a stored file
 
 ```csharp
 Attachments = [new NotificationAttachment
 {
-    FileReference = invoiceFileReference, // SharedKernel.Storage.FileReference (SharedKernel.Storage.Abstractions)
+    FileReference = invoiceFileReference,     // SharedKernel.Storage.FileReference
     FileName = "invoice.pdf",
     ContentType = "application/pdf",
 }],
 ```
 
-There is no byte-array/inline-content overload anywhere on `NotificationAttachment` — the sending
-provider resolves the object at send time via `IFileStorage.DownloadAsync`.
+There is no inline-bytes overload; the provider opens the object with `IFileStorageFactory` at send time.
 
----
-
-## Delivery observation
+### 3. Keep a delivery ledger
 
 ```csharp
-builder.Services.WithNotificationDeliveryObserver<EfNotificationDeliveryLedger>();
+builder.Services.WithNotificationDeliveryObserver<NotificationLedger>();
 
-public sealed class EfNotificationDeliveryLedger(AppDbContext db) : INotificationDeliveryObserver
+public sealed class NotificationLedger(AppDbContext db) : INotificationDeliveryObserver
 {
     public Task OnAttemptAsync(NotificationDeliveryContext context, int attemptNumber, CancellationToken ct) =>
         Task.CompletedTask;
@@ -141,45 +166,78 @@ public sealed class EfNotificationDeliveryLedger(AppDbContext db) : INotificatio
 }
 ```
 
-An observer's exception is caught and logged, never allowed to fault the send outcome — the same
-hard rule `IWebhookDeliveryObserver` already carries. `NotificationDeliveryContext.Recipient` is
-handed to observer *code*, not logged by this package — logging it is that observer implementation's
-own responsibility (and, per this domain's PII rule, its own violation if it does).
+An observer exception is caught and logged at Warning; it never changes the send result.
+
+## Configuration
+
+Section `SharedKernel:Integration:Notifications`, validated when the host starts; the `configure` delegate of
+`AddSharedKernelNotifications` runs after binding. Every provider reads these values.
+
+| Key | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `SharedKernel:Integration:Notifications:MaxAttempts` | `int` | `3` | Attempts per send, including the first (≥ 1) |
+| `SharedKernel:Integration:Notifications:BaseBackoffDelay` | `TimeSpan` | `00:00:01` | First retry delay (> 0) |
+| `SharedKernel:Integration:Notifications:MaxBackoffDelay` | `TimeSpan` | `00:00:30` | Backoff ceiling (> 0, ≥ `BaseBackoffDelay`) |
+| `SharedKernel:Integration:Notifications:RequestTimeout` | `TimeSpan` | `00:00:10` | Per-attempt timeout (> 0) |
+| `SharedKernel:Integration:Notifications:MaxConcurrentSends` | `int` | `16` | Concurrent sends per provider, enforced by the pipeline's rate limiter (≥ 1) |
+
+## Reference
+
+### Registration
+
+| Method | Registers |
+| --- | --- |
+| `AddSharedKernelNotifications(Action<NotificationDeliveryOptions>? configure = null)` | `NotificationDeliveryOptions` only — no sender, no identity resolver |
+| `WithNotificationDeliveryObserver<T>()` | An additional scoped `INotificationDeliveryObserver` |
+
+### Types
+
+| Type | Purpose |
+| --- | --- |
+| `INotificationSender` | `SupportedChannel`, `SendAsync<TTemplateModel>(message, ct)` → `NotificationDeliveryResult` |
+| `NotificationMessage<TTemplateModel>` | Required `NotificationDeliveryId`, `Channel`, `Recipient`, `TemplateId`, `TemplateModel`; optional `ReplyTo`, `Attachments`, `Locale` (reserved, not used yet) |
+| `NotificationAttachment` | Required `FileReference`, `FileName`; optional `ContentType` |
+| `NotificationDeliveryResult` | `NotificationDeliveryId`, `IsSuccess`, `ProviderMessageId`, `Error` |
+| `NotificationDeliveryContext` | `NotificationDeliveryId`, `Channel`, `Recipient`, `TemplateId` (for observers) |
+| `NotificationSenderIdentity` | `FromAddress`, `DisplayName`, `ReplyTo` |
+| `NotificationIntegrationActivitySource`, `NotificationActivityTags` | Source `SharedKernel.Integration`; tags `notification.channel`, `notification.outcome`, `notification.attempt_count` |
+
+### Logging
+
+This package does no I/O and does not log (EventId block 15100–15199 is reserved). Providers log in their own blocks.
+
+## Testing
+
+Reference [`SharedKernel.Integration.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/16.Testing/SharedKernel.Integration.Testing/README.md).
+`services.AddInMemoryNotificationSender(NotificationChannel.Email)` registers a keyed `InMemoryNotificationSender`:
+assert with `ShouldHaveSent<TModel>(m => …)` / `ShouldNotHaveSent<TModel>()`, read `SentOf<TModel>()`, and shape
+results with `SetSendResult`. `AddInMemoryNotificationDeliveryObserver()` records attempts and completions
+(`ShouldHaveSucceeded(id)`, `ShouldHaveFailed(id)`).
+
+## Pitfalls
+
+| Don't | Do | Why |
+| --- | --- | --- |
+| Generate `NotificationDeliveryId` inside the retry | Create it once, store it with the business record, reuse it | Only a stable id lets the provider deduplicate |
+| Log `Recipient` or the template model | Log the delivery id and the error | Both are personal data |
+| Put file bytes in the message | Store the file and pass its `FileReference` | Attachments stream from storage at send time |
+| Assume email is deduplicated | Guard with your outbox | SendGrid's `custom_args` is correlation only |
+| Forget `INotificationSenderIdentityResolver` when using email | Register one | There is no default; the email sender cannot be resolved without it |
+| Wrap `SendAsync` in try/catch for provider errors | Check `result.IsSuccess` | Delivery failures are returned, not thrown |
+
+## Design decisions
+
+**Why a caller-supplied delivery id?** A webhook delivery with its retries happens inside one call, so the dispatcher
+can mint the id. A notification may be re-sent by the caller after a crash; only the caller can keep the id stable.
+
+**Why no `Push` channel?** Device-token registration and per-platform payloads are far more scope than text
+delivery.
+
+**Why no vendor SDKs?** Both APIs are simple REST; an SDK brings its own `HttpClient` lifecycle and an unaudited
+dependency surface.
 
 ---
 
-## `NotificationDeliveryId` — a deliberately different idempotency shape than webhooks
-
-`WebhookDeliveryResult.DeliveryId` is generated *internally* by `WebhookDispatcher`, because an
-entire webhook delivery — retries included — happens inside one dispatcher call.
-`NotificationMessage.NotificationDeliveryId` is the opposite: **caller-supplied and required**. A
-notification send can be retried by the *caller* after a crash (e.g. a background job re-processing
-an outbox row), and only the caller can guarantee the same id is reused on that retry so the
-provider's own dedup mechanism actually prevents a double-send.
-
-The two shipped providers differ in how strong that dedup guarantee actually is — this is a property
-of the vendors' own APIs, not a gap in this contract:
-
-- **Twilio** (`SharedKernel.Integration.Notifications.Sms.Twilio`) propagates
-  `NotificationDeliveryId` via the Messages API's documented `Idempotency-Key` header — a genuine,
-  provider-enforced request-level guarantee.
-- **SendGrid** (`SharedKernel.Integration.Notifications.Email.SendGrid`) propagates it via the Mail
-  Send API's `custom_args` field, which SendGrid does not treat as a request-level dedup key —
-  correlation-only. True dedup enforcement for email remains the caller's own outbox-level
-  responsibility.
-
----
-
-## No `Push` channel — yet
-
-`NotificationChannel` has exactly two members, `Email` and `Sms`. Device-token registration and
-platform-specific payload shaping are materially more scope than text delivery and are explicitly
-out of scope for this package's first release (WO-072).
-
----
-
-## `Locale` — a forward-compatible seam only
-
-`NotificationMessage.Locale` exists on the contract today but is not consumed by any logic in this
-package or either shipped provider. It is reserved for a future composition with
-`SharedKernel.Localization`.
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
+[Integration domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/15.Integration/README.md) ·
+[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

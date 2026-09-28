@@ -1,23 +1,35 @@
 # SharedKernel.AI.Abstractions
 
-AI / vector-retrieval abstraction contracts for Platform.SharedKernel microservices. Defines `IEmbeddingGenerator` (text-to-vector, batched, token-usage-accounted), `IVectorCollection<TRecord>` (upsert/delete/query/get/count/scroll with mandatory model-identity/dimension/tenant-scope validation before any I/O), `IVectorCollectionProvisioner` (ensure/exists/delete/cutover), `IVectorProviderDescriptor` and `ICompletionProviderDescriptor` (ceilings + zero-I/O pre-flight validation), `ISemanticKernel` (stateless chat/completion orchestration), the closed 8-node `VectorFilter` AST over the closed five-kind `VectorValue` scalar union, plus `VectorCollectionReadinessProbe` and the `IntelligenceErrors` factory. **Abstractions tier, zero third-party NuGet dependencies** — references only `SharedKernel.Primitives` and `SharedKernel.Execution` (for `TenantScope`/`TenantId`). Implemented by `SharedKernel.AI.Qdrant` (vector database) and `SharedKernel.AI.SemanticKernel` (LLM orchestration).
+[![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
+![Tier: Abstractions](https://img.shields.io/badge/tier-Abstractions-1f6feb)
+![Third-party dependencies: none](https://img.shields.io/badge/third--party%20deps-none-brightgreen)
 
-Application code should always inject `IEmbeddingGenerator` / `IVectorCollection<TRecord>` / `IVectorCollectionProvisioner` / `IVectorProviderDescriptor` / `ISemanticKernel` / `ICompletionProviderDescriptor` from this package — never a concrete model SDK or vector-database client type (`QdrantClient`, `Kernel`, an `OpenAIClient`, …) directly.
+> **The contracts your application code uses for embeddings, tenant-scoped vector retrieval and chat completion.
+> Every vector is checked against the model that produced it, every call reports its token cost, and switching
+> providers never touches a handler.**
 
-## Included Types
+| You get | So that |
+| --- | --- |
+| `IEmbeddingGenerator` (`EmbedAsync`, `EmbedManyAsync`) | Text becomes a vector that carries its `ModelId`, `Dimension` and `TokenUsage` |
+| `IVectorCollection<TRecord>` with a mandatory `TenantScope` on every call | Upsert, delete, query, get, count and scroll can never leak across tenants by accident |
+| Model, dimension and tenant checks before any I/O | A query embedded with the wrong model fails with a clear error. It never returns quietly wrong neighbours |
+| A closed 8-node `VectorFilter` over a five-kind `VectorValue` | Metadata filters mean the same thing on every provider. Nothing is dropped or approximated |
+| `VectorCollectionDefinition` with a `Fingerprint` | The embedding model, dimension, metric and fields are declared once and drift is detectable |
+| `ISemanticKernel` (`CompleteAsync`, `CompleteStreamingAsync`) | Chat completion with tool *requests*, token usage and no hidden retries, caching or tool execution |
+| `IntelligenceErrors` + `Result` everywhere | Expected failures are values with stable `intelligence.*` codes |
+| `VectorCollectionReadinessProbe` | Every provider reports collection health the same way on `/health/ready` |
 
-- `IVectorRecord` — a self-supplied `Id`/`Vector`/`ModelId`/`Metadata` surface every stored record type implements
-- `IEmbeddingGenerator` — non-generic, text-only: `EmbedAsync`, `EmbedManyAsync`, both returning unconditional `TokenUsage`
-- `IVectorCollection<TRecord>` — write (`UpsertAsync`, `UpsertManyAsync`, `DeleteAsync`, `DeleteManyAsync`, `DeleteByFilterAsync`, `WaitUntilQueryableAsync`), read (`QueryAsync`, `GetAsync`, `CountAsync`), corpus walk (`ScrollAsync`)
-- `IVectorCollectionProvisioner` — non-generic, one per provider: `EnsureCollectionAsync`, `CollectionExistsAsync`, `DeleteCollectionAsync`, `CutoverAsync` (readiness is not on this contract — see below)
-- `IVectorProviderDescriptor` / `ICompletionProviderDescriptor` — singleton, zero I/O ceiling + pre-flight-validation descriptors, kept deliberately separate (a vector engine's batch/dimension/filter-depth ceilings and an LLM's context-window/output-token ceilings share no honestly-common members)
-- `ISemanticKernel` — `CompleteAsync` / `CompleteStreamingAsync`, deliberately stateless: no tool execution, no retry, no caching (see below)
-- `VectorFilter` — closed 8-node AST (`Eq`/`Ne`/`In`/`Between`/`Exists`/`All`/`Any`/`Negate`) over the closed five-kind `VectorValue` scalar union (`String`/`Int64`/`Double`/`Boolean`/`DateTimeOffset`)
-- `Models/` — `VectorCollectionDefinition` + `VectorFieldDefinition` + `VectorDistanceMetric` + `VectorFieldKind` + `VectorCollectionDefinitionBuilder`, `VectorQuery`, `VectorQueryResults<TRecord>`, `VectorHit<TRecord>`
-- `Abstractions/` — `VectorWriteReceipt`, `VectorItemFailure`, `VectorBulkReceipt`, `VectorCollectionCutoverRequest`, `VectorCollectionHealth`, `TokenUsage`, `EmbeddingResult`, `EmbeddingBatchResult`, `ChatRole`, `ChatMessage`, `ToolDefinition`, `ToolCallRequest`, `ToolCallResult`, `CompletionFinishReason`, `CompletionRequest`, `CompletionResult`, `CompletionChunk`
-- `IntelligenceErrors` — static `Error` factory covering not-found, validation, conflict, unauthorized, and unexpected outcomes
-- `IntelligenceWellKnown` — the domain-local named-constants holder (query-limit defaults, `ActivitySource`/`Meter` names, provider names, OTel tag keys)
-- `IntelligenceStreamException` — the `Error`-carrying exception thrown from `ScrollAsync`'s and `CompleteStreamingAsync`'s `MoveNextAsync`, the domain's two documented exceptions to the `Result`-first rule
+## Contents
+
+- [Install](#install)
+- [Quick start](#quick-start)
+- [How it works](#how-it-works)
+- [Recipes](#recipes)
+- [Reference](#reference)
+- [Testing](#testing)
+- [Pitfalls](#pitfalls)
+- [Design decisions](#design-decisions)
 
 ## Install
 
@@ -25,33 +37,34 @@ Application code should always inject `IEmbeddingGenerator` / `IVectorCollection
 <PackageReference Include="SharedKernel.AI.Abstractions" />
 ```
 
-Versions come from the consumer's single `SharedKernelVersion`. Add a provider package (`SharedKernel.AI.Qdrant` or `SharedKernel.AI.SemanticKernel`) in the host to actually resolve any of the above — this package ships no DI extensions and no implementation. For unit tests, `SharedKernel.AI.Testing` has in-memory doubles for every contract here.
+The version comes from your central `SharedKernelVersion` property. Every SharedKernel package ships at the same
+version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel#using-the-packages).
 
-## Readiness
+| Requirement | Value |
+| --- | --- |
+| Target framework | `net10.0` |
+| Tier | Abstractions: reference it from your **Application** project |
+| Depends on | `SharedKernel.Primitives`, `SharedKernel.Execution` (no third-party packages) |
+| Namespaces | `SharedKernel.AI.Abstractions.Abstractions` (contracts, requests, results), `.Models` (records, filters, definitions), `.Errors`, `.Constants`, `.Exceptions` |
+| Implemented by | [`SharedKernel.AI.Qdrant`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/10.Intelligence/SharedKernel.AI.Qdrant/README.md) (vectors), [`SharedKernel.AI.SemanticKernel`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/10.Intelligence/SharedKernel.AI.SemanticKernel/README.md) (embeddings, completions) |
 
-`IVectorCollectionProvisioner` has no probe member. Each vector provider registers one `VectorCollectionReadinessProbe` (`SharedKernel.Primitives.Health.IReadinessProbe`) per collection, named `vector-store-{provider}-{collection}` (`VectorCollectionReadinessProbe.ProbeNameFor`). It is ready when the store is reachable and the collection is addressable and queryable; a write backlog never fails it. The measured values (`Reachable`, `VectorCount`, `SchemaFingerprint`, …) are in `ReadinessReport.Data` under the probe's `*Key` constants. The host maps every probe to a health check with `services.AddHealthChecks().AddSharedKernelReadiness()` (`SharedKernel.ServiceDefaults`). There is no LLM readiness probe: the only honest check is a real, billed completion call.
+This package has no DI extensions and no implementation. The host registers a provider.
 
-## Design principles
+## Quick start
 
-- **The seam rule.** `SharedKernel.AI.Abstractions` contains no type that a candidate provider cannot implement completely and correctly. If a capability would force one adapter to throw, degrade, approximate, or no-op, it does not live here — it becomes a provider-package-declared exclusive contract instead (sparse/hybrid vectors and quantization on Qdrant; plugin/planner access on SemanticKernel). Referencing one of these takes a compile-time dependency on that provider package, so a provider swap is a **build error**, never a startup resolution error.
-- **`Result`-valued expected failures.** Model-not-found, unauthorized, rate-limited, context-window-exceeded, dimension mismatch, model-identity mismatch, collection-not-found, and missing tenant scope are `Error` values via `IntelligenceErrors` — never thrown exceptions. The only two exceptions are `IVectorCollection<TRecord>.ScrollAsync` and `ISemanticKernel.CompleteStreamingAsync`, which return a bare `IAsyncEnumerable<T>` and surface mid-stream transport faults as `IntelligenceStreamException` from `MoveNextAsync` — mirroring the `06.Persistence`/`08.Storage`/`09.Search` streaming-read precedent.
-- **An embedding is meaningless without its model identity.** A vector is only comparable against vectors produced by the same model, at the same dimensionality, with the same normalization. `VectorCollectionDefinition.EmbeddingModelId`/`.Dimension`/`.DistanceMetric` are validated against `IVectorRecord.ModelId`/`.Vector.Length` on every write and against `VectorQuery.ModelId`/`.Vector.Length` on every query — **before any I/O** — because no vector-database engine detects a same-dimension, different-model mix on its own; it just returns confidently, silently wrong similarity scores forever.
-- **`TenantScope` (`SharedKernel.Execution.Tenancy`) is a mandatory, separate method parameter — never a filter clause, never a request member.** Build it with `TenantScope.For(tenantId)` from the caller's `TenantId`, or `TenantScope.Global` for a collection that belongs to no tenant; adapters store and match the tenant field as the `TenantId`'s `"D"` string. A tenant predicate travelling through the same filter tree as business predicates can be dropped by a translation bug; a dropped business clause is a bug, a dropped tenant clause is a cross-tenant data leak. Adapters inject it as the outermost `AND` after translating the caller's filter. If the registered `VectorCollectionDefinition` declares a `TenantField` and the caller passes `TenantScope.Global`, the provider fails closed with `IntelligenceErrors.TenantScopeMissing` and performs **no I/O**.
-- **`Score` exists — the one deliberate deviation from `09.Search`'s outright score ban.** Similarity score is often genuinely load-bearing for a RAG caller (e.g. "only surface chunks above cosine 0.75") in a way full-text relevance rarely is. `VectorHit<TRecord>.Score` and `VectorQuery.MinScore` both carry the loudest possible XML doc warning: **the scale is provider- and metric-specific.** Cosine similarity is bounded, dot-product is unbounded, Euclidean distance is smaller-is-better — the opposite direction of the other two. Never persist, threshold against a hard-coded constant, or compare `Score` across a provider or metric swap. `VectorHit<TRecord>.Rank` (the 0-based ordinal within the result page) is the portable substitute.
-- **No `WriteConsistency`/consistency-level parameter on any write.** Vector engines do not share one write-visibility model (Qdrant has a `wait` boolean on the write; other engines govern visibility by the *query's* consistency level), so a shared enum would be honest on one engine and meaningless on another. `WaitUntilQueryableAsync` is the honest, separate, opt-in deferred barrier instead.
-- **Cost and token usage are first-class outputs, never hidden.** `TokenUsage` rides on every `EmbeddingResult`, `EmbeddingBatchResult`, and `CompletionResult` unconditionally. `.Abstractions` exposes **no retry-shaped member anywhere** — a retry on a completion call re-bills and re-rolls a non-deterministic output. If a provider offers one at all, it is an explicit, bounded, opt-in builder call, never automatic.
-- **Never promise determinism.** No XML doc, member name, or test asserts that model-generated output is reproducible.
-- **Prompt and completion content is never logged.** `ChatMessage.Content`, `CompletionChunk.DeltaContent`, retrieved `IVectorRecord.Metadata` values, and raw vectors are never log-message parameters, `Error` message parameters, or diagnostic tags — only identifiers, model ids, token counts, latencies, and outcome codes are.
+A record type implements `IVectorRecord`:
 
-## `ISemanticKernel`'s stateless boundary — no tools, no retry, no cache
+```csharp
+using SharedKernel.AI.Abstractions.Models;
 
-`ISemanticKernel` deliberately carries exactly two members, `CompleteAsync` and `CompleteStreamingAsync`, and nothing else:
+public sealed record ProductChunk(
+    string Id,                                        // Qdrant: an unsigned integer string or a GUID
+    ReadOnlyMemory<float> Vector,
+    string ModelId,
+    IReadOnlyDictionary<string, VectorValue> Metadata) : IVectorRecord;
+```
 
-- **No `InvokeToolAsync` or agent/planner-loop member.** When `CompletionResult.FinishReason == CompletionFinishReason.ToolCallsRequested`, the *caller* executes each `ToolCallRequest` against its own business logic, builds a `ToolCallResult`, appends `.ToMessage()` to the growing `CompletionRequest.Messages` list, and issues a follow-up `CompleteAsync` call. Tool execution is arbitrary consumer-owned business logic — invoking it from this layer would require exactly the reflection-driven dynamic dispatch, or a domain-logic reference, this package must never take.
-- **No retry member.** A retry re-bills and re-rolls a non-deterministic output. `SharedKernel.AI.SemanticKernel`'s opt-in `.WithBoundedRetry(...)` builder call is the only sanctioned retry path anywhere in this domain, and it is never reachable through `ISemanticKernel` itself.
-- **No caching member.** `CompleteAsync` always dispatches a fresh call. `10.Intelligence` may not reference `02.Caching` in any case, and this package must never silently serve a stale completion the caller did not explicitly ask for.
-
-## Worked example — collection definition, embed, upsert, query
+A handler embeds the question and queries the collection for the caller's tenant:
 
 ```csharp
 using SharedKernel.AI.Abstractions.Abstractions;
@@ -59,43 +72,233 @@ using SharedKernel.AI.Abstractions.Models;
 using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Results;
 
-public sealed class ProductChunkRecord : IVectorRecord
+public sealed class ProductRetrieval(IEmbeddingGenerator embeddings, IVectorCollection<ProductChunk> chunks)
 {
-    public required string Id { get; init; }
-    public required ReadOnlyMemory<float> Vector { get; init; }
-    public required string ModelId { get; init; }
-    public required IReadOnlyDictionary<string, VectorValue> Metadata { get; init; }
-}
-
-public sealed class ProductSearchService(
-    IEmbeddingGenerator embeddings,
-    IVectorCollection<ProductChunkRecord> collection)
-{
-    public async Task<Result<VectorQueryResults<ProductChunkRecord>>> SearchAsync(
-        TenantId tenantId, string queryText, CancellationToken ct)
+    public async Task<Result<VectorQueryResults<ProductChunk>>> FindAsync(
+        TenantId tenantId, string question, CancellationToken ct)
     {
-        var embedResult = await embeddings.EmbedAsync(queryText, ct);
-        if (embedResult.IsFailure)
+        var embedded = await embeddings.EmbedAsync(question, ct);
+        if (embedded.IsFailure)
         {
-            return Result<VectorQueryResults<ProductChunkRecord>>.Failure(embedResult.Error);
+            return Result<VectorQueryResults<ProductChunk>>.Failure(embedded.Error);
         }
 
         var query = new VectorQuery
         {
-            Vector = embedResult.Value.Vector,
-            ModelId = embedResult.Value.ModelId,
-            Filter = VectorFilter.Eq("status", VectorValue.From("active")),
-            Limit = 10,
-            MinScore = 0.75f,
+            Vector = embedded.Value.Vector,
+            ModelId = embedded.Value.ModelId,         // checked against the collection before any I/O
+            Filter = VectorFilter.Eq("status", "active"),
+            Limit = 5,
         };
 
-        return await collection.QueryAsync(query, TenantScope.For(tenantId), ct);
+        return await chunks.QueryAsync(query, TenantScope.For(tenantId), ct);
     }
 }
 ```
 
-`VectorCollectionDefinition.Create(...)` (or the fluent `VectorCollectionDefinitionBuilder`) declares the collection's embedding-model identity, vector dimension, and distance metric once, at provisioning time — every subsequent write and query validates against that declaration before any network call, never after.
+## How it works
 
-## Package
+```mermaid
+flowchart LR
+    H[Handler] -->|text| E[IEmbeddingGenerator]
+    E -->|Vector + ModelId + TokenUsage| H
+    H -->|VectorQuery + TenantScope| C[IVectorCollection&lt;TRecord&gt;]
+    C -->|1. tenant, model, dimension checks| V{valid?}
+    V -- no --> F[Result failure, no I/O]
+    V -- yes --> P[(Provider)]
+    P --> R[VectorQueryResults: Hits with Score and Rank]
+```
 
-Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) — see [10.Intelligence/CLAUDE.md](../CLAUDE.md) for the full interface contracts, provider implementation rules, and AOT posture.
+- **Model identity.** A collection declares `EmbeddingModelId`, `Dimension` and `DistanceMetric` once. Every write
+  compares `IVectorRecord.ModelId` and `Vector.Length` with it, and every query compares `VectorQuery.ModelId` and
+  `Vector.Length`, before any network call. No vector engine can detect a same-dimension, different-model mix on its
+  own.
+- **Tenancy.** `TenantScope` (`SharedKernel.Execution.Tenancy`) is a separate parameter on every collection method,
+  never part of `VectorQuery` or of your `VectorFilter`. The provider adds it as the outermost `AND` and stores the
+  tenant as the `TenantId` `"D"` string. A collection that declares a `TenantField` rejects `TenantScope.Global` with
+  `intelligence.tenant_scope_missing` and sends nothing.
+- **Failures.** Every method returns `Result`/`Result<T>`, except the two streams: `ScrollAsync` and
+  `CompleteStreamingAsync` return `IAsyncEnumerable<T>` and throw `IntelligenceStreamException` (carrying the
+  `Error`) mid-stream.
+- **Cost.** `TokenUsage` (`PromptTokens`, `CompletionTokens`, `TotalTokens`) is on every `EmbeddingResult`,
+  `EmbeddingBatchResult` and `CompletionResult`. A streamed completion carries it on `CompletionChunk.TokenUsage`, which providers usually
+  fill only once the stream completes.
+- **Scores.** `VectorHit<TRecord>.Score` is provider- and metric-specific: cosine is bounded, dot product is not,
+  Euclidean is smaller-is-better. `Rank` (0-based position in the page) is the portable ordering.
+- **Writes.** `UpsertAsync`/`DeleteAsync` return a `VectorWriteReceipt`; the `…ManyAsync` variants return a
+  `VectorBulkReceipt` with per-item `Failures`. `WaitUntilQueryableAsync(receipt, timeout)` is the explicit
+  read-your-write barrier.
+
+## Recipes
+
+### 1. Declare a collection definition
+
+```csharp
+using SharedKernel.AI.Abstractions.Models;
+
+Result<VectorCollectionDefinition> definition = new VectorCollectionDefinitionBuilder("product-chunks")
+    .EmbeddingModel("text-embedding-3-small", dimension: 1536)
+    .DistanceMetric(VectorDistanceMetric.Cosine)
+    .Field("tenantId", VectorFieldKind.String, filterable: true)
+    .Field("status", VectorFieldKind.String, filterable: true)
+    .TenantField("tenantId")                          // must name a field declared filterable
+    .Build();
+```
+
+`Build()` returns `intelligence.invalid_collection_definition` when `EmbeddingModel` or `DistanceMetric` was not
+called, or when the tenant field is not a filterable field. `VectorCollectionDefinition.Create(name, modelId,
+dimension, metric, fields)` is the non-fluent equivalent.
+
+### 2. Build a filter
+
+```csharp
+var filter = VectorFilter.All(
+    VectorFilter.Eq("status", "active"),
+    VectorFilter.In("category", "books", "music"),
+    VectorFilter.Between("price", 10.0, 50.0),
+    VectorFilter.Negate(VectorFilter.Exists("archivedAt")));
+```
+
+`VectorValue` converts implicitly from `string`, `int`, `long`, `double`, `bool`, `DateTimeOffset` and `Guid`
+(stored as the `"D"` string). `Between` takes nullable, inclusive-by-default bounds and throws `ArgumentException` for string
+or boolean bounds.
+
+### 3. Handle a tool call
+
+```csharp
+var request = new CompletionRequest
+{
+    Messages = [new ChatMessage { Role = ChatRole.User, Content = question }],
+    Tools = [new ToolDefinition { Name = "get_order", Description = "Looks up an order.", ParametersJsonSchema = schemaJson }],
+};
+
+var result = await kernel.CompleteAsync(request, ct);
+if (result.IsSuccess && result.Value.FinishReason == CompletionFinishReason.ToolCallsRequested)
+{
+    var messages = request.Messages.Append(result.Value.Message).ToList();
+    foreach (var call in result.Value.ToolCalls)
+    {
+        var output = await RunToolAsync(call.Name, call.ArgumentsJson, ct);   // your code
+        messages.Add(new ToolCallResult { CallId = call.CallId, ResultJson = output }.ToMessage());
+    }
+
+    result = await kernel.CompleteAsync(request with { Messages = messages }, ct);
+}
+```
+
+### 4. Check a prompt against the context window
+
+Inject `ICompletionProviderDescriptor` and call `ValidateContextWindow(estimatedTokens)` with your own token
+estimate before sending. It returns `intelligence.context_window_exceeded` when the estimate exceeds
+`ContextWindowTokens`. `CompleteAsync` does not estimate for you.
+
+### 5. Re-embed into a new collection without downtime
+
+Provision the new collection with `IVectorCollectionProvisioner.EnsureCollectionAsync`, fill it, then call
+`CutoverAsync(new VectorCollectionCutoverRequest { StagingCollectionName = "product-chunks-v2", LiveCollectionName =
+"product-chunks" })`. `DeleteStagingAfterCutover` (default `true`) controls whether the collection that served
+before is deleted. Re-embedding the corpus is your job.
+
+## Reference
+
+### Contracts
+
+| Type | Members |
+| --- | --- |
+| `IEmbeddingGenerator` | `ModelId`, `Dimension`, `EmbedAsync(text)` → `Result<EmbeddingResult>`, `EmbedManyAsync(texts)` → `Result<EmbeddingBatchResult>` |
+| `IVectorCollection<TRecord>` | `CollectionName`; writes `UpsertAsync`, `UpsertManyAsync`, `DeleteAsync`, `DeleteManyAsync`, `DeleteByFilterAsync`, `WaitUntilQueryableAsync`; reads `QueryAsync`, `GetAsync`, `CountAsync`; stream `ScrollAsync(filter, tenantScope, batchSize)` |
+| `IVectorCollectionProvisioner` | `EnsureCollectionAsync`, `CollectionExistsAsync`, `DeleteCollectionAsync`, `CutoverAsync` |
+| `IVectorProviderDescriptor` | `ProviderName`, `MaxBatchSize`, `MaxVectorDimension`, `MaxFilterDepth`, `RegisteredCollections`, `Validate(collectionName, query)` (zero I/O) |
+| `ISemanticKernel` | `CompleteAsync(CompletionRequest)` → `Result<CompletionResult>`, `CompleteStreamingAsync` → `IAsyncEnumerable<CompletionChunk>` |
+| `ICompletionProviderDescriptor` | `ProviderName`, `ContextWindowTokens`, `MaxOutputTokens`, `ValidateContextWindow(estimatedTokens)` |
+| `IVectorRecord` | `Id`, `Vector`, `ModelId`, `Metadata` (`IReadOnlyDictionary<string, VectorValue>`) |
+
+`VectorQuery`: `Vector`, `ModelId` (required), `Filter`, `Limit` (default `IntelligenceWellKnown.DefaultQueryLimit`
+= 10), `MinScore`, `ReturnMetadata` (default `true`), `ReturnVector` (default `false`). `CompletionRequest`:
+`Messages` (required), `ModelId` (provider default when `null`), `Temperature`, `MaxOutputTokens`, `Tools`,
+`StopSequences`. `CompletionFinishReason`: `Stop`, `MaxTokensReached`, `ToolCallsRequested`, `ContentFiltered`.
+
+### Errors
+
+All from `IntelligenceErrors` (`SharedKernel.AI.Abstractions.Errors`).
+
+| Code | Type |
+| --- | --- |
+| `intelligence.collection_not_found`, `.record_not_found`, `.model_not_found` | NotFound |
+| `intelligence.invalid_query`, `.invalid_filter`, `.invalid_collection_definition`, `.invalid_record_id`, `.field_not_filterable`, `.embedding_model_mismatch`, `.dimension_mismatch`, `.distance_metric_mismatch`, `.batch_size_exceeded`, `.filter_depth_exceeded`, `.context_window_exceeded`, `.unsupported_capability` | Validation |
+| `intelligence.collection_already_exists`, `.collection_definition_conflict`, `.cutover_failed`, `.schema_fingerprint_mismatch` | Conflict |
+| `intelligence.unauthorized`, `.tenant_scope_missing` | Unauthorized |
+| `intelligence.unreachable`, `.timeout`, `.write_rejected`, `.write_timeout`, `.bulk_partially_failed`, `.probe_failed`, `.engine_version_unsupported`, `.engine_fault`, `.rate_limited`, `.completion_failed` | Unexpected |
+
+### Constants
+
+`IntelligenceWellKnown`: `DefaultQueryLimit` (10), `MaxQueryLimit` (1000), `ActivitySourceName` and `MeterName`
+(`SharedKernel.AI`), `QdrantProviderName` (`qdrant`), `SemanticKernelProviderName` (`semantickernel`), tag keys
+`ai.provider`, `ai.collection`, `ai.model`.
+
+### Logging
+
+None. This package declares contracts only; the providers log in the `10000–10999` EventId block.
+
+### Health
+
+`VectorCollectionReadinessProbe` is the `IReadinessProbe` each vector provider registers per collection, named
+`vector-store-{provider}-{collection}` (`VectorCollectionReadinessProbe.ProbeNameFor`). It is ready when the store
+is reachable and the collection is addressable and queryable; a write backlog never fails it. `ReadinessReport.Data`
+carries `Provider`, `Collection`, `Reachable`, `CollectionAddressable`, `Queryable`, `VectorCount`,
+`PendingWriteCount`, `EngineVersion`, `SchemaFingerprint` or `ErrorCode` (the `*Key` constants). The host maps the
+probes with `services.AddHealthChecks().AddSharedKernelReadiness()`. There is no LLM probe.
+
+## Testing
+
+Reference [`SharedKernel.AI.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/16.Testing/SharedKernel.AI.Testing/README.md)
+from your test project (namespace `SharedKernel.Testing.Intelligence`):
+
+```csharp
+services.AddInMemoryEmbeddingGenerator("text-embedding-3-small", dimension: 1536);
+services.AddInMemoryVectorCollection<ProductChunk>(definition);
+services.AddInMemoryVectorProvisioning();
+services.AddInMemorySemanticKernel();
+```
+
+`InMemoryEmbeddingGenerator` derives vectors from a hash of the text, so the same input always gives the same
+vector. `InMemoryVectorCollection<TRecord>` applies the same model, dimension and tenant checks as a real provider.
+`InMemorySemanticKernel` returns scripted responses (`EnqueueResponse`, `EnqueueStreamingResponse`,
+`EnqueueStreamingFailure`) and records `SentRequests`. Never assert on generated text.
+
+## Pitfalls
+
+| Don't | Do | Why |
+| --- | --- | --- |
+| Put the tenant in your `VectorFilter` | Pass `TenantScope.For(tenantId)` | A tenant clause in the business filter can be lost by a translation bug; the separate parameter cannot |
+| Pass `TenantScope.Global` to a tenant-declaring collection | Use `TenantScope.Global` only for collections without a `TenantField` | It fails with `intelligence.tenant_scope_missing` |
+| Build a `VectorQuery` with a hard-coded `ModelId` | Copy `ModelId` from the `EmbeddingResult` | A model upgrade then fails loudly instead of returning wrong neighbours |
+| Persist `Score` or compare it across providers or metrics | Use `Rank`, or threshold per metric | The scale differs per metric and direction differs for Euclidean |
+| Expect `CompleteAsync` to run your tools | Execute `ToolCalls` yourself and send a follow-up request | The kernel never invokes a tool |
+| Log `ChatMessage.Content`, completion text or metadata values | Log ids, model ids, token counts and error codes | Prompts and retrieved content can contain personal data |
+| Inject `QdrantClient`, `Kernel` or an `OpenAIClient` in application code | Inject the contracts in this package | A provider swap stays a composition-root change (analyzer `SK0026`) |
+
+## Design decisions
+
+**Why no retry, cache or agent loop on `ISemanticKernel`?** A retried completion is billed again and can return a
+different answer. A cache would serve an answer the caller did not ask for. Running tools needs business logic this
+layer must not know. The only retry is the explicit `.WithBoundedRetry(...)` in `SharedKernel.AI.SemanticKernel`.
+
+**Why is `Score` exposed?** Retrieval-augmented generation often needs a similarity threshold. The scale caveat is
+documented on `VectorHit<TRecord>.Score` and `VectorQuery.MinScore` instead of hiding the value.
+
+**Why no write-consistency parameter?** Vector engines do not share a visibility model, so an enum would be honest on
+one engine and meaningless on another. `WaitUntilQueryableAsync` is the explicit barrier.
+
+**Why not `Microsoft.Extensions.AI.Abstractions`?** The Abstractions tier takes no third-party package, and it has no
+vector-store concept and no binding of a vector to its model, dimension and metric.
+
+**Why do provider-only features live in the provider packages?** Hybrid search, quantization and Semantic Kernel
+plugins exist on one provider only. Declaring them there makes a provider swap a compile error at every
+non-portable call site.
+
+---
+
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
+[Intelligence domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/10.Intelligence/README.md) ·
+[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

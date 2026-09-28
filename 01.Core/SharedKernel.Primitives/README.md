@@ -1,92 +1,117 @@
 # SharedKernel.Primitives
 
-The base of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel), in the Foundation tier. Every other package in the platform depends on this one, directly or transitively, so it stays small, stable, and opinionated.
+[![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
+![Tier: Foundation](https://img.shields.io/badge/tier-Foundation-2ea44f)
+![Public API: tracked](https://img.shields.io/badge/public%20API-tracked-informational)
+![Trim and AOT: clean](https://img.shields.io/badge/trim%20%26%20AOT-clean-success)
 
-It gives you five things: a way to return failures without exceptions (`Result<T>`, `Error`), a testable clock (`IClock`), a richer enum (`SmartEnum<TEnum, TValue>`), the readiness-probe contract every provider implements (`IReadinessProbe`), and the registries that stop two packages from disagreeing about a wire identifier.
+> **The base every SharedKernel package depends on: failures as values (`Result<T>`, `Error`), a testable clock, a
+> richer enum, the readiness-probe contract, and the registries that stop two packages disagreeing about a wire
+> identifier.**
+
+| You get | So that |
+| --- | --- |
+| `Result` / `Result<T>` / `ValidationResult`, `Error` + `ErrorType` + `ErrorCodes` | Expected failures travel as values with a stable code, and map mechanically to HTTP/gRPC status at the edge |
+| `IClock` / `SystemClock` + `AddClock()` | Time is injectable and testable; `DateTime.UtcNow` is never read inline (`SK0001`) |
+| `SmartEnum<TEnum, TValue>` + `SmartEnumJsonConverter<TEnum, TValue>` | Enumerations carry behaviour, lookups fail loudly, and the underlying value is the JSON contract |
+| `IIdGenerator` / `UuidV7IdGenerator` | Time-ordered ids that keep B-tree inserts local |
+| `IReadinessProbe`, `ReadinessReport`, `AddReadinessProbe` | Every provider reports readiness through one contract, with no health-checks dependency |
+| `WellKnownHeaders`, `WellKnownBaggageKeys`, `WellKnownTagKeys`, `LoggingEventIdRanges` | Header, baggage, tag names and `EventId` blocks exist exactly once platform-wide |
+
+## Contents
+
+- [Install](#install)
+- [Quick start](#quick-start)
+- [How it works](#how-it-works)
+- [Recipes](#recipes)
+- [Reference](#reference)
+- [Testing](#testing)
+- [Pitfalls](#pitfalls)
+- [Design decisions](#design-decisions)
+
+## Install
 
 ```xml
 <PackageReference Include="SharedKernel.Primitives" />
 ```
 
-The version comes from your repository's single `SharedKernelVersion` property.
+The version comes from your central `SharedKernelVersion` property — every SharedKernel package ships at the same
+version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel#using-the-packages).
 
-**One NuGet dependency:** `Microsoft.Extensions.DependencyInjection.Abstractions`, used only by `AddClock()` and `AddReadinessProbe()`.
-
-This package defines the types. The operations on them live in [`SharedKernel.Core`](../SharedKernel.Core/README.md): railway chaining (`Map`, `Bind`, `Ensure`, `Tap`), exception boundaries, guard clauses, and the exception hierarchy. Most services reference both.
-
-**Trim- and AOT-clean.** Compiles with zero `IL2026`/`IL3050`/`IL2059` under both `EnableTrimAnalyzer` and `EnableAotAnalyzer`, and `SmartEnum` lookups are verified working against a self-contained `TrimMode=full` publish. No reflection, no `dynamic`, no expression trees, no runtime code generation anywhere.
-
----
-
-## The rules
-
-These are the non-negotiables. Most are mechanically enforced; all of them exist because breaking them has caused a real defect on this platform.
-
-| Rule | Why, and what enforces it |
+| Requirement | Value |
 | --- | --- |
-| Never read `DateTime.UtcNow` / `DateTimeOffset.UtcNow`. Inject `IClock`. | Inline clock reads make the surrounding logic untestable. Enforced by analyzer `SK0001`. |
-| Never use `null` for "no error". Use `Error.None`. | The failure factories reject a null error, and `Result.Error` throws rather than return one. |
-| Never build a `Result` any way but through its factories. | `Result` is a struct, so `default(Result)` is reachable and is **not** a valid result — see [Traps](#traps-worth-knowing). |
-| Never retype a header, baggage, or tag literal. Reference the registry constant. | These are contracts between packages that cannot reference each other, so drift is not a compile error. Enforced by analyzer `SK0022`. |
-| Never interpolate variable data into an `Error.Code`. | A code with an id in it cannot be aggregated, alerted on, or translated. Put identifiers in the message. |
-| Never derive an `EventId` from a bare literal. Use `LoggingEventIdRanges`. | Two packages independently collided on EventId 4001/4002 before this registry existed. |
-| Pick `ErrorType` by meaning, not convenience. | It maps mechanically to an HTTP status at `14.Presentation`. See [the table](#which-errortype). |
-| Give every `SmartEnum` member a distinct value **and** name. | A duplicate makes lookup ambiguous and throws on first use, not at declaration. |
-| Don't inject `TimeProvider`. | `SystemClock` is the only type allowed to depend on it, so `IClock`'s two members stay the only thing tests substitute. |
+| Target framework | `net10.0` |
+| Tier | Foundation — reference it from **any** project |
+| Depends on | `Microsoft.Extensions.DependencyInjection.Abstractions` only (for `AddClock()` and `AddReadinessProbe()`) |
+| Namespaces | `SharedKernel.Primitives.Results`, `.Errors`, `.Clocks`, `.Enums`, `.Identifiers`, `.Health`, `.Propagation`, `.Logging` |
 
----
+The operations on these types — railway chaining (`Map`, `Bind`, `Ensure`, `Tap`), exception boundaries, guard clauses
+and the exception hierarchy — live in
+[`SharedKernel.Core`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/01.Core/SharedKernel.Core/README.md).
+Most services reference both.
 
-## Results and errors
-
-`Result<T>` and `Result` model an outcome that either succeeded or failed, without using exceptions for expected failures.
+## Quick start
 
 ```csharp
-Result<Order> Find(Guid id)
+using SharedKernel.Primitives.Clocks;
+using SharedKernel.Primitives.Identifiers;
+
+builder.Services.AddClock();                                        // IClock -> SystemClock
+builder.Services.AddSingleton<IIdGenerator, UuidV7IdGenerator>();   // no extension ships, by design
+```
+
+```csharp
+using SharedKernel.Primitives.Clocks;
+using SharedKernel.Primitives.Errors;
+using SharedKernel.Primitives.Results;
+
+public sealed class OrderLookup(IOrderStore store, IClock clock)
 {
-    var order = _repository.Get(id);
-    return order is null
-        ? Error.NotFound("order.not_found", $"Order {id} does not exist.")   // implicit conversion
-        : order;                                                            // ...both ways
+    public Result<Order> Find(Guid id)
+    {
+        var order = store.Get(id);
+        if (order is null)
+            return Error.NotFound("order.not_found", "The order does not exist.");   // implicit conversion
+        if (order.ExpiresAt <= clock.UtcNow)
+            return Error.BusinessRule("order.expired", "The order has expired.");
+        return order;                                                              // ...both ways
+    }
 }
 
-var result = Find(id);
+var result = lookup.Find(id);
 if (result.IsFailure)
-{
     return result.Error;
-}
 Use(result.Value);
 ```
 
+No configuration section: the package has no options.
+
+## How it works
+
+### Results and errors
+
 | Use | When |
 | --- | --- |
-| `Result<T>` | The operation returns a value on success. |
-| `Result` | The operation returns nothing on success — a command, a side effect. |
-| `ValidationResult` / `<T>` | Several things can fail **at once** and the caller needs all of them. |
+| `Result<T>` (sealed class) | The operation returns a value on success |
+| `Result` (readonly struct) | The operation returns nothing on success — a command, a side effect |
+| `ValidationResult` / `ValidationResult<T>` | Several things can fail **at once** and the caller needs all of them |
 
-**Accessing the wrong side throws.** `Value` on a failure and `Error` on a success both throw `InvalidOperationException`. That is deliberate — a silent default would hide the bug. Check `IsSuccess`/`IsFailure` first, or let `SharedKernel.Core` do the branching:
-
-```csharp
-using SharedKernel.Core.Extensions;
-
-Result<OrderDto> dto = Find(id)
-    .Ensure(order => order.IsOpen, OrderErrors.Closed)
-    .Map(order => order.ToDto());
-
-Order order = Find(id).GetValueOrThrow();   // throws NotFoundException for the NotFound error
-```
-
-`Error` is a `sealed record` of `(Code, Message, Type)` with value equality, and one factory per `ErrorType`:
-
-```csharp
-Error.Validation(ErrorCodes.Validation.Required, "Name is required.");
-Error.NotFound(...);   Error.Conflict(...);      Error.Unauthorized(...);
-Error.Forbidden(...);  Error.BusinessRule(...);  Error.Unexpected(...);
-Error.Unavailable(...);  Error.Timeout(...);
-```
-
-**`Code` is the field that matters most.** It is the stable identity of the failure, and three separate things key off it: consumers branch on it, dashboards and alert rules filter on it, and `SharedKernel.Localization` looks up a translated message by it. So: dot-separated lowercase, general to specific; stable once shipped; never any interpolated data. Check `ErrorCodes` first — a suitable constant often already exists.
-
-**`Message` may reach an end user.** It is the fallback shown when no translation is registered for the code, so keep secrets and raw exception text out of it, and don't write "see logs".
+- **Accessing the wrong side throws.** `Value` on a failure and `Error` on a success throw `InvalidOperationException` —
+  a silent default would hide the bug. Branch on `IsSuccess`/`IsFailure`, or use `SharedKernel.Core`'s railway extensions.
+- **`Error` is a `sealed record` of `(Code, Message, Type)`** with value equality, never `null` (`Error.None` means "no
+  error"), and one factory per `ErrorType`.
+- **`Code` is the stable identity** that consumers branch on, dashboards filter on, and `SharedKernel.Localization`
+  translates by: dot-separated lowercase, general to specific, never interpolated data. Check `ErrorCodes` first.
+- **`Message` may reach an end user** as the fallback when no translation exists — no secrets, raw exception text or
+  "see logs".
+- **`Details`** holds field errors (`Error.Validation(errors)` → code `validation.failed`). It survives
+  `System.Text.Json`, so `14.Presentation` maps it to the ProblemDetails `errors` map and `11.Communication.Rest`
+  rebuilds it on the calling side.
+- **`MessageArguments`** holds translation values, filled only by `SharedKernel.Localization`'s `LocalizedMessage.ToError`.
+  It is not part of equality and not serialized — `Message` already contains the values in the default text.
+- `ValidationResult` snapshots the errors you pass and compares by value; `Failure` rejects an empty sequence and a
+  `null` element.
 
 ### Which `ErrorType`
 
@@ -99,113 +124,59 @@ Error.Unavailable(...);  Error.Timeout(...);
 | `Conflict` | Clashes with existing state — duplicate, or concurrency | 409 |
 | `BusinessRule` | Well-formed, but violates a domain invariant | 422 |
 | `Unexpected` | Unclassified fault | 500 |
-| `Unavailable` | A dependency or the service is temporarily unable to serve — unreachable, throttling, failing; retry later | 503 |
+| `Unavailable` | A dependency or the service cannot serve right now; retry later | 503 |
 | `Timeout` | The operation ran out of time; its outcome may be unknown | 504 |
 
-The pairs people get wrong:
+The pairs people get wrong: **`Unauthorized` vs `Forbidden`** ("who are you?" vs "may you do *this*?"); **`Validation`
+vs `BusinessRule`** (could the caller fix a field?); **`Unexpected` vs `Unavailable`/`Timeout`** — a dependency that is
+down or slow is an operational condition, not a defect; reporting it as `Unexpected` turns every outage into a 500 that
+reads like a bug.
 
-- **`Unauthorized` vs `Forbidden`** — "who are you?" versus "may you do *this*?". Substituting one makes an authorization failure indistinguishable from a missing credential in logs, and tells the client to re-authenticate when that cannot help.
-- **`Validation` vs `BusinessRule`** — if the caller could fix it by correcting a field, it's validation. If the request is well-formed and the domain is refusing, it's a business rule.
-- **`Unexpected` vs `Unavailable`/`Timeout`** — a dependency that is down or too slow is an operational condition the caller can retry, not a defect. `Unavailable` when it refused the call or could not be reached; `Timeout` when it ran out of time, so a write may still have landed. Reporting either as `Unexpected` turns every outage into a 500 that reads like a bug.
+### Readiness probes
 
-### `ValidationResult` — many errors, not one
+`SharedKernel.Primitives.Health` is the one readiness contract every provider package implements. Providers register
+their own probes when they are registered, so a probe exists exactly when its dependency does, and no provider references
+a health-checks library. The host maps them: `SharedKernel.ServiceDefaults`' `services.AddHealthChecks().AddSharedKernelReadiness()`
+turns every probe into a `ready`-tagged check. A host without ASP.NET Core resolves `IEnumerable<IReadinessProbe>` itself.
+
+- **Construction must be cheap.** The host constructs every probe to read its `Name`; resolve clients inside `ProbeAsync`.
+- **Failures are reports, not exceptions.** Only cancellation throws. A report may be shown on a health endpoint, so it
+  never carries connection strings, credentials, tenant data or exception messages.
+
+### Platform registries
+
+| Registry | Holds | Call-site shape |
+| --- | --- | --- |
+| `WellKnownHeaders` | `X-Correlation-Id`, `X-Tenant-Id`, `Idempotency-Key`, `x-sk-actor-id`, `x-sk-actor-kind`, `x-sk-client-id` | HTTP headers, gRPC metadata, message and workflow headers |
+| `WellKnownBaggageKeys` | `correlation.id`, `TenantId` | `Activity.SetBaggage` / `AddBaggage` |
+| `WellKnownTagKeys` | `tenant.id`, `correlation.id`, `error.type`, `error.code` | `Activity.SetTag` |
+| `LoggingEventIdRanges` | One 1000-wide `EventId` block per domain (`Core` = 1000 … `Reporting` = 20000), `PackageSubBlockWidth` = 100 | `[LoggerMessage(EventId = …)]` |
+
+`SharedKernel.Execution`'s `RequestContextPropagation` writes and reads the correlation, tenant and caller headers on every
+hop. Tags are span-local; baggage crosses process boundaries on every outbound call, so its registry stays small. The
+tenant **baggage** key is `"TenantId"` while the tenant **tag** key is `"tenant.id"` on purpose: `13.ServiceDefaults`
+copies baggage onto log records under its own key, so the baggage string is the emitted log property name.
+
+## Recipes
+
+### 1. Fold many validation errors into one `Error`
 
 ```csharp
-var errors = new List<Error>();
-if (string.IsNullOrWhiteSpace(cmd.Name)) errors.Add(Error.Validation("name.required", "Name is required."));
-if (cmd.Quantity <= 0)                   errors.Add(Error.Validation("quantity.positive", "Quantity must be positive."));
-
-return errors.Count == 0
-    ? ValidationResult<OrderDraft>.Success(draft)
-    : ValidationResult<OrderDraft>.Failure(errors);
-```
-
-You rarely need to build the list by hand. `SharedKernel.Core` produces a `ValidationResult` from guards or from several results:
-
-```csharp
-using SharedKernel.Core.Extensions;   // ResultCombine
-using SharedKernel.Guards;            // Guard
+using SharedKernel.Guards;   // SharedKernel.Core
 
 ValidationResult validation = Guard.Collect(
     Guard.Against.NullOrWhiteSpace(cmd.Name),
     Guard.Against.NegativeOrZero(cmd.Quantity));
 
-// or, from independent Result<T> checks:
-ValidationResult<IReadOnlyList<LineItem>> lines = ResultCombine.Combine(cmd.Lines.Select(ParseLine));
+if (!validation.IsValid)
+    return Result<OrderDraft>.Failure(Error.Validation(validation.Errors));   // code "validation.failed", Details = every error
 ```
 
-Both types **snapshot** the errors you pass, so continuing to mutate your own list afterwards cannot change the result, and both compare **by value**, so two results built from equal errors are equal. `Failure` rejects an empty sequence and a `null` element.
-
-When the failure has to travel as a `Result` or `Result<T>`, fold the errors into one `Error`:
+### 2. Declare a SmartEnum and serialize it
 
 ```csharp
-return Result<OrderDraft>.Failure(Error.Validation(validation.Errors));
-// Code "validation.failed", Type Validation, and every field error in Error.Details.
-```
+using SharedKernel.Primitives.Enums;
 
-`Details` is empty for every other factory, and survives a round trip through `System.Text.Json`, so the
-list crosses a process boundary intact: `14.Presentation` maps it to the ProblemDetails `errors` map, and
-`11.Communication.Rest` rebuilds it on the calling side.
-
-**`MessageArguments` holds the values for a translated message.** An error built from a
-`SharedKernel.Localization` definition (`OrderMessages.NotFound.ToError(ErrorType.NotFound, orderId)`) carries
-`{ "orderId": … }` here, and `14.Presentation` fills a translation such as `"{orderId} numaralı sipariş bulunamadı."`
-with it. It is empty for every factory in this package, is not part of equality, and is not serialized:
-`Message` already contains the values in the default text, so an error that crosses a process boundary keeps its
-meaning and only loses the ability to be translated again.
-
-### The three result interfaces
-
-These exist so a pipeline behavior can work with a `TResponse` it cannot name, with no reflection. **Application code should not need them.**
-
-- **`IHasSuccessFlag`** — read the outcome. Both result types implement it.
-- **`IResultOfT<T>`** — read the value. `Result<T>` only.
-- **`IFailureFactory<TSelf>`** — *construct* a failure of an unnamed shape. `Result<T>` only.
-
-The constraint shapes differ, and this is the part that trips people up:
-
-```csharp
-// IResultOfT needs TWO type parameters: the response shape AND the value it carries.
-static TValue? ReadValue<TResponse, TValue>(TResponse response)
-    where TResponse : IResultOfT<TValue>
-    => response.IsSuccess ? response.Value : default;
-
-// IFailureFactory IS self-referential, so one parameter is correct here.
-static TResponse BuildFailure<TResponse>(Error error)
-    where TResponse : IFailureFactory<TResponse>
-    => TResponse.Failure(error);
-```
-
-Writing `where TResponse : IResultOfT<TResponse>` does **not** compile (`CS0311`): `Result<int>` implements `IResultOfT<int>`, not `IResultOfT<Result<int>>`.
-
----
-
-## Time
-
-```csharp
-services.AddClock();
-
-public sealed class ExpireSessionHandler(IClock clock)
-{
-    public bool HasExpired(Session s) => s.ExpiresAt <= clock.UtcNow;   // also clock.Today
-}
-```
-
-Three behaviours of `AddClock()`, all verified by running them against a real container:
-
-- **Calling it twice is harmless** — it uses `TryAddSingleton`.
-- **Your own `IClock` wins if you register it *first*.** `TryAdd` is first-registration-wins, not last.
-- **A registered `TimeProvider` is picked up automatically.** The container selects the greediest constructor it can satisfy, so if you register a custom `TimeProvider` — for coordinated simulation or deterministic replay — the clock reads from it with no further wiring. Order doesn't matter for this one.
-
-Both members are UTC. There is no local-time member and none should be added: local time is a presentation concern. In tests, register a fake `IClock`; `16.Testing/SharedKernel.Testing` ships one.
-
----
-
-## SmartEnum
-
-A type-safe enumeration that can carry behaviour and data per member, and whose lookups fail loudly instead of silently accepting `(Status)999`. A plain `enum` is still right for a simple flag set.
-
-```csharp
 public sealed class OrderStatus : SmartEnum<OrderStatus, int>
 {
     public static readonly OrderStatus Pending  = new(nameof(Pending),  1);
@@ -216,59 +187,20 @@ public sealed class OrderStatus : SmartEnum<OrderStatus, int>
 
     public bool IsTerminal => this == Complete;
 }
-```
 
-`static readonly` fields, a `private` constructor, a `sealed` class — that shape is what makes each member a singleton and reference equality correct.
+OrderStatus.List;                             // every member, declaration order
+OrderStatus.FromValue(2);                     // throws if absent
+OrderStatus.TryFromName(input, out var s);    // false if absent; never throws, even for null
 
-```csharp
-OrderStatus.List;                              // every member, declaration order
-OrderStatus.FromValue(2);                      // throws if absent
-OrderStatus.FromName("Shipped");               // ordinal, case-sensitive
-OrderStatus.TryFromValue(input, out var s);    // false if absent; never throws, even for null
-OrderStatus.TryFromName(input, out var s);
-OrderStatus.List.Order();                      // IComparable, ordered by Value
-```
-
-Use the `Try` pair for anything parsed from outside the process — a request field, a database column — and the throwing pair only where a miss is a bug.
-
-**Equality is reference equality; ordering is by value.** `FromValue(2) == OrderStatus.Shipped` holds, so `==` is the right comparison.
-
-### Serializing a SmartEnum
-
-Without a converter a SmartEnum is **write-only** over JSON: the default serializer emits `{"Name":"Shipped","Value":2}` and cannot read it back, because the constructor is private. Opt in per property or per options instance:
-
-```csharp
 public sealed record OrderDto(
-    [property: JsonConverter(typeof(SmartEnumJsonConverter<OrderStatus, int>))]
-    OrderStatus Status);
-
-// or:
-options.Converters.Add(new SmartEnumJsonConverter<OrderStatus, int>());
+    [property: JsonConverter(typeof(SmartEnumJsonConverter<OrderStatus, int>))] OrderStatus Status);
 ```
 
-The wire form is the **underlying value**, not the name — so renaming a member leaves persisted and in-flight payloads readable, the same trade-off a numerically-serialized `enum` makes. An unrecognized value fails as a `JsonException` naming the type and value. Nothing is registered globally.
+`static readonly` fields, a `private` constructor and a `sealed` class make each member a singleton, so `==` is correct.
+Equality is by reference, ordering by value. The JSON wire form is the **underlying value**, so renaming a member keeps
+stored payloads readable; an unknown value fails as a `JsonException`. Nothing is registered globally.
 
----
-
-## Identifiers
-
-```csharp
-services.AddSingleton<IIdGenerator, UuidV7IdGenerator>();   // no DI extension ships, by design
-```
-
-`UuidV7IdGenerator` produces RFC 9562 UUID v7 values, which embed a millisecond timestamp in their high bits. `Guid.NewGuid()`'s fully random v4 is a well-known clustered-index anti-pattern: each insert lands at a random point in the B-tree, causing page splits that worsen as the table grows. v7 restores insert locality while still needing no central coordinator.
-
-Opt-in and additive — nothing calls it automatically, and existing `Guid.NewGuid()` call sites need not change.
-
-Two limits worth knowing: values generated in the **same millisecond** have no defined order relative to each other (only the random bits differ), so never treat id order as event order — store a timestamp from `IClock` if you need that. And a v7 id is **predictable by design**; never use one as a token, secret, or nonce. That is `SharedKernel.Cryptography`'s `ISecureRandomGenerator`.
-
----
-
-## Readiness probes
-
-`SharedKernel.Primitives.Health` is the one readiness contract every provider package implements: the message bus,
-Redis, the cache, the key vault, field encryption, audit sealing, each storage store, search index and vector
-collection, workflows and the scheduler.
+### 3. Write a readiness probe for your own dependency
 
 ```csharp
 using SharedKernel.Primitives.Health;
@@ -279,58 +211,17 @@ public sealed class OrderStoreProbe(IServiceProvider services) : IReadinessProbe
 
     public async Task<ReadinessReport> ProbeAsync(CancellationToken cancellationToken = default)
     {
-        var store = services.GetRequiredService<IOrderStore>();   // resolve inside ProbeAsync, not the constructor
+        var store = services.GetRequiredService<IOrderStore>();   // resolve inside ProbeAsync
         return await store.PingAsync(cancellationToken)
             ? ReadinessReport.Healthy()
             : ReadinessReport.Unhealthy("The order store did not answer.");
     }
 }
 
-services.AddReadinessProbe<OrderStoreProbe>();                             // one target
-services.AddReadinessProbe(sp => new StoreProbe(sp, "invoices"));          // one call per target
+builder.Services.AddReadinessProbe<OrderStoreProbe>();
 ```
 
-| Type | Purpose |
-| --- | --- |
-| `IReadinessProbe` | `Name` (unique in the process, the health-check name) and `ProbeAsync` |
-| `ReadinessReport` | `Status`, `Latency`, `Description`, `Data`; `Healthy(...)`, `Degraded(...)`, `Unhealthy(...)` |
-| `ReadinessStatus` | `Unhealthy`, `Degraded`, `Healthy` |
-| `AddReadinessProbe<T>()` | Registers a singleton probe; registering the same type twice is a no-op |
-| `AddReadinessProbe(factory)` | Registers one probe per call, for a provider with several targets |
-| `GetRequiredReadinessProbe(name)` | Resolves one probe by name; throws when none or several match |
-
-- **Providers register their own probes** when they are registered, so a probe exists exactly when its dependency
-  does. A provider package never references a health-checks library.
-- **The host maps them.** `SharedKernel.ServiceDefaults`' `services.AddHealthChecks().AddSharedKernelReadiness()`
-  turns every registered probe into a `ready`-tagged health check. A host without ASP.NET Core can resolve
-  `IEnumerable<IReadinessProbe>` and call them itself.
-- **Construction must be cheap.** A host constructs every probe to read its `Name` while it builds its health checks,
-  so resolve clients and hosted services inside `ProbeAsync`.
-- **Failures are reports, not exceptions.** Only cancellation throws. A report may be shown on a health endpoint, so
-  it never carries connection strings, credentials, tenant data or exception messages.
-
----
-
-## Platform registries
-
-Three compile-time constant registries, so two packages cannot independently hardcode the same wire identifier and drift apart. Each has already prevented, or was created because of, a real mismatch.
-
-| Registry | Holds | Call-site shape |
-| --- | --- | --- |
-| `WellKnownHeaders` | `X-Correlation-Id`, `X-Tenant-Id`, `Idempotency-Key`, and the caller headers `x-sk-actor-id`, `x-sk-actor-kind`, `x-sk-client-id` | HTTP headers, gRPC metadata, message and workflow headers |
-| `WellKnownBaggageKeys` | correlation id, tenant id | `Activity.SetBaggage` / `AddBaggage` |
-| `WellKnownTagKeys` | `tenant.id`, `correlation.id`, `error.type`, `error.code` | `Activity.SetTag` |
-
-`SharedKernel.Execution`'s `RequestContextPropagation` writes and reads the correlation, tenant and caller headers on
-every hop; `Idempotency-Key` is the one name used by inbound HTTP and outbound REST alike.
-
-**Pick the registry matching your call-site shape.** Tags are span-local attributes. Baggage propagates across process boundaries and rides on every outbound call, so keep that registry small. They are not interchangeable, and two of them holding the same literal for the same concept does not make them so.
-
-> The tenant **baggage** key is `"TenantId"` while the tenant **tag** key is `"tenant.id"`. That asymmetry is deliberate and pinned by a test: `13.ServiceDefaults`' `BaggageLogRecordProcessor` copies these baggage items onto log records under their own keys, so a baggage key string becomes the emitted log property name. Renaming it would silently rename a field that deployed dashboards and alert rules filter on.
-
-> **Baggage is caller input.** A caller can send W3C `baggage` with any key, these two included. Never read a caller's identity from baggage. `BaggageLogRecordProcessor` copies exactly the keys of `WellKnownBaggageKeys` (pinned by a test) and nothing else, and relies on platform middleware *replacing* each one (P-562 X2), so a key added here reaches log records only once `13.ServiceDefaults` adds it too.
-
-**`LoggingEventIdRanges`** reserves a 1000-wide `EventId` block per capability domain (`{domain number} * 1000`), subdivided into 100-wide per-package sub-blocks. Derive every `[LoggerMessage]` EventId from it as an expression, so the number stays traceable to the domain that owns it:
+### 4. Take an `EventId` from the domain's block
 
 ```csharp
 [LoggerMessage(
@@ -340,33 +231,108 @@ every hop; `Idempotency-Key` is the one name used by inbound HTTP and outbound R
 public static partial void BackplaneReconnected(ILogger logger, int attemptCount);
 ```
 
-All three live here rather than in `04.Contracts` because `SharedKernel.Communication.Grpc` is mechanically barred from referencing `04.Contracts`, and `SharedKernel.Primitives` is the one package every consumer already references.
+### 5. Work with a `TResponse` you cannot name (pipeline code)
+
+```csharp
+static TValue? ReadValue<TResponse, TValue>(TResponse response)
+    where TResponse : IResultOfT<TValue>
+    => response.IsSuccess ? response.Value : default;
+
+static TResponse BuildFailure<TResponse>(Error error)
+    where TResponse : IFailureFactory<TResponse>
+    => TResponse.Failure(error);
+```
+
+`IHasSuccessFlag` (both result types), `IResultOfT<T>` and `IFailureFactory<TSelf>` (`Result<T>` only) exist for pipeline
+behaviors; application code should not need them. `where TResponse : IResultOfT<TResponse>` does not compile (`CS0311`).
+
+## Reference
+
+### Registration
+
+| Method | Registers |
+| --- | --- |
+| `AddClock()` | `IClock` → `SystemClock` (singleton, `TryAdd`; a registered `TimeProvider` is picked up) |
+| `AddReadinessProbe<TProbe>()` | A singleton probe; registering the same type twice is a no-op |
+| `AddReadinessProbe(Func<IServiceProvider, IReadinessProbe>)` | One probe per call, for a provider with several targets |
+| `IServiceProvider.GetRequiredReadinessProbe(name)` | Resolves one probe by name; throws when none or several match |
+
+### Main types
+
+| Type | Members |
+| --- | --- |
+| `Result` / `Result<T>` | `Success()`, `Success(value)`, `Failure(error)`, `IsSuccess`, `IsFailure`, `Value`, `Error`; implicit from `Error` (and `T`) |
+| `ValidationResult` / `ValidationResult<T>` | `Success()`, `Success(value)`, `Failure(errors)`, `IsValid`, `Errors`, `Value` (generic) |
+| `Error` | `Code`, `Message`, `Type`, `Details`, `MessageArguments`; `Error.None`; `Validation`, `NotFound`, `Conflict`, `Unauthorized`, `Forbidden`, `BusinessRule`, `Unexpected`, `Unavailable`, `Timeout`, `Validation(errors)` |
+| `IClock` | `UtcNow` (`DateTimeOffset`), `Today` (`DateOnly`) — both UTC |
+| `ReadinessReport` | `Status` (`Healthy`/`Degraded`/`Unhealthy`), `Latency`, `Description`, `Data`; `Healthy(…)`, `Degraded(…)`, `Unhealthy(…)` |
+
+### Error codes (`ErrorCodes`)
+
+| Class | Constants |
+| --- | --- |
+| `Validation` | `Failed` (`validation.failed`), `Required`, `InvalidFormat`, `MaxLength`, `MinLength`, `OutOfRange` |
+| `NotFound` / `Unexpected` | `not_found.default` / `unexpected.exception` |
+| `Conflict` | `Default` (`conflict.default`), `Duplicate` (`conflict.duplicate`) |
+| `Unauthorized` | `Default` (`unauthorized.default`), `Expired` (`unauthorized.expired`) |
+| `Forbidden` | `Default` (`forbidden.default`), `InsufficientPermission` (`forbidden.insufficient_permission`) |
+| `Unavailable` / `Timeout` | `unavailable.default` / `timeout.default` |
+| `Idempotency` | `KeyRequired`, `KeyInvalid`, `KeyReused`, `InProgress` (`idempotency.*`) |
+| `Domain` | `RuleViolated` (`domain.rule.violated`) |
+
+### Logging
+
+The package does not log; it owns the `LoggingEventIdRanges` registry every other package logs from.
+
+## Testing
+
+Reference [`SharedKernel.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/16.Testing/SharedKernel.Testing/README.md)
+from your test project. It ships `FakeClock` (`SharedKernel.Testing.Clocks`: `Set`, `Advance`, settable `UtcNow`):
+
+```csharp
+var clock = new FakeClock(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+services.AddSingleton<IClock>(clock);
+clock.Advance(TimeSpan.FromHours(2));
+```
+
+`Result`, `Error` and `SmartEnum` need no fakes — assert on `IsFailure` and `Error.Code`.
+
+## Pitfalls
+
+| Don't | Do | Why |
+| --- | --- | --- |
+| Read `DateTime.UtcNow` / `DateTimeOffset.UtcNow` | Inject `IClock` | Inline reads make logic untestable (`SK0001`) |
+| Inject `TimeProvider` in application code | Inject `IClock` | Its two members stay the only thing tests substitute |
+| Return `default(Result)` or leave a `Result` field unassigned | Use `Result.Success()` / `Result.Failure(error)` | `Result` is a struct; `default` reports `IsFailure` with no error, and `Error` throws naming this cause |
+| Use `null` for "no error" | `Error.None` | The factories reject `null` |
+| Interpolate ids into `Error.Code` | Put identifiers in the message | A code with an id cannot be aggregated, alerted on or translated |
+| Retype a header, baggage or tag literal | Reference the registry constant | Drift between packages is not a compile error (`SK0022`) |
+| Hand-pick an `EventId` literal | Derive it from `LoggingEventIdRanges` | Keeps every id inside its domain's block |
+| Test `IHasSuccessFlag` on a hot path with `Result` | `response is Result r` | The interface boxes the struct (32 bytes per check) |
+| Give two SmartEnum members the same value or name | Keep both distinct | Lookup tables build on first use, so the duplicate throws late |
+| Renumber `ErrorType` | Treat its values as a wire contract | It is serialized and persisted |
+| Use a v7 id as a token or nonce, or treat id order as event order | `ISecureRandomGenerator` / a timestamp from `IClock` | v7 ids are predictable; ids in the same millisecond have no defined order |
+
+## Design decisions
+
+**Why no metadata bag on `Error`?** It would break value equality and raise serialization questions. Field errors go in
+`Details`, placeholder values in `MessageArguments`; everything else is shaped at the ProblemDetails boundary.
+
+**Why `ErrorCodes` as nested string constants, not an enum?** Services add their own constants without forking the kernel.
+
+**Why no DI extension for `IIdGenerator`?** One implementation, one line to register, and the generator stays opt-in —
+nothing silently replaces `Guid.NewGuid()`.
+
+**Why do the registries live here and not in `SharedKernel.Contracts`?** The gRPC packages may not reference Contracts,
+and Primitives is the one package every consumer already references.
+
+**Why no local-time member on `IClock`?** Local time is a presentation concern.
+
+**Is it AOT-safe?** Yes — no reflection, `dynamic`, expression trees or runtime code generation; `SmartEnum` lookups use
+lists built at type initialization and are verified under a `TrimMode=full` publish.
 
 ---
 
-## Traps worth knowing
-
-Each of these was found by executing the assembly, and each is pinned by a test.
-
-**`default(Result)` is not a valid result.** `Result` is a struct, so the runtime can hand you an all-zero instance that ran neither factory — `default(Result)`, an unassigned field, an element of `new Result[n]`, or the `out` value of a failed `TryGetValue`. It reports `IsFailure` while carrying no error. Reading `Error` throws an `InvalidOperationException` naming this cause rather than returning `null`. (`Result<T>` is a class, so its `default` is simply `null` and fails immediately.)
-
-**`IHasSuccessFlag` boxes the non-generic `Result`.** Measured at **32 bytes per check** for `Result` against **0 bytes** for `Result<T>`. It's AOT-clean either way — no reflection — but on a per-request hot path that only needs a non-generic `Result`, test the concrete type (`response is Result r`) instead, which matches without boxing.
-
-**A duplicate `SmartEnum` value surfaces late.** Lookup tables build on first use, so a duplicate value or name throws at the first `FromValue`/`FromName` call rather than at the declaration — it can sit undetected until something reads it. The exception names the type, the key, and both colliding members.
-
-**`ErrorType` is a wire contract.** Its numeric values are explicit and must never be renumbered — the enum is serialized and persisted, so changing a value reinterprets stored data. Adding a member is safe at runtime but breaks an exhaustive `switch` with no discard arm at compile time.
-
----
-
-## Deliberately not here
-
-- **Railway combinators** (`Map`, `Bind`, `Ensure`, `Tap`, `TapError`, `Match`, `GetValueOrThrow`) for both `Result<T>` and `Result`, with `Task` and `ValueTask` overloads → `SharedKernel.Core`, alongside `ResultTry` (exception boundaries) and `ResultCombine` (aggregating several results).
-- **Guard clauses** (`Guard.Against.*`, `Guard.Throw.*`, `Guard.Collect`) → `SharedKernel.Core`, in the `SharedKernel.Guards` namespace.
-- **Exceptions** (`DomainException`, `ValidationException`, `NotFoundException`, `ConflictException`, `UnauthorizedException`, `ForbiddenException`) and `error.ToException()`, which picks the one matching an `ErrorType` → `SharedKernel.Core`. Primitives deliberately contains no exception types: it models failures as values.
-- **A metadata bag on `Error`** — evaluated and declined. It breaks the type's value-equality contract and raises AOT and cross-process-serialization questions. Both motivating needs (per-field validation errors, a retry-after hint) are solved at the `ProblemDetails` boundary in `14.Presentation` instead. `MessageArguments` is not such a bag: it holds only placeholder values for translation, stays out of equality and JSON, and so answers neither objection.
-- **A DI extension for `IIdGenerator`** — one implementation, one line to register.
-- **A local-time member on `IClock`** — presentation concern.
-
----
-
-Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel). See the [01.Core README](../README.md) for the full capability overview.
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
+[Core domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/01.Core/README.md) ·
+[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

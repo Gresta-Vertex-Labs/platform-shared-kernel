@@ -81,7 +81,7 @@ train publishes every package at every version, so the set can never be mixed):
 
 Map `SharedKernel.*` to the kernel's feed with `packageSourceMapping`, so no other source can supply a
 package of that name. The full `NuGet.Config`, with the GitHub Packages credentials read from the
-environment, is in [`PLATFORM.md`](../PLATFORM.md) → "Consuming the kernel". Never pin one
+environment, is in [`CONTRIBUTING.md` → Consuming the packages](../CONTRIBUTING.md#consuming-the-packages). Never pin one
 `SharedKernel.*` package to a different version from the rest, and never float the version.
 
 **Inside this repository** the samples do the same thing with the repository's own files: the root

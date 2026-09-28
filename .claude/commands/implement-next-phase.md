@@ -1,115 +1,97 @@
-You are the next-phase implementation launcher for Platform.SharedKernel.
-
-This command scans the Phase Backlog in the root `state-map.md` for the first `◐ Dispatched` phase (lowest Phase ID), maps its domain to the registered `implement-phase-{domain}` skill, and invokes it.
-
 ---
+description: Implement the lowest dispatched phase on the root board through /implement-phase
+---
+
+You are the next-phase implementation launcher for Platform.SharedKernel. You find the lowest-numbered dispatched P-entry on the root board and hand it to `/implement-phase`. You never edit a file yourself.
 
 **Input:**
 $ARGUMENTS
 
-> Ignored — this command always targets the single lowest dispatched Phase ID.
+> Ignored: this command always targets the lowest dispatched Phase ID.
 
 ---
 
-## Step 1 — Locate dispatched phases (read-efficient)
+## Step 1 — Find dispatched P-entries
 
-The root `state-map.md` is large. Do NOT read it in full. Use the Grep tool with context to extract only what is needed.
-
-Search `state-map.md` using output_mode `content`, pattern:
+Read the `## Open Work` section of the root `state-map.md` (it is short; the board keeps only open work). Each P-entry looks like:
 
 ```
-Status.*Dispatched
+#### P-NNN — {capability}
+**Status:** `◐` Dispatched
+**Domain:** {NN}.{Name}
+**Depends on:** {None | P-NNN}
+**Phase key:** SK.{NN}.{Key}
 ```
 
-Set `-B 3` (3 lines of context before each match) and `-A 3` (3 lines after) so each result includes both the `### P-NNN` header and the `**Domain:**` field.
-
-If no matches are found, output:
+Collect the entries whose `**Status:**` is `◐` Dispatched. If there are none:
 ```
-implement-next-phase: No dispatched phases found in the Phase Backlog.
-Run /dispatch-phase to dispatch pending phases to their arch-planner agents first.
+implement-next-phase: no dispatched phases on the root board.
+Run /dispatch-phase to plan pending work orders first.
 ```
-Then stop.
+Stop.
 
 ---
 
-## Step 2 — Select the target phase
+## Step 2 — Select the target
 
-From the grep output, parse each match block to extract:
-- **Phase ID**: from the `### P-{NNN}` header line (the numeric part after `P-`)
-- **Title**: text after the `—` on the header line
-- **Domain**: from the `**Domain:**` field (e.g. `11.Communication`)
+Sort by Phase ID ascending. Take the first entry whose `**Depends on:**` P-entries are all `●` (or listed under `## Completed Work Orders`). If none qualifies, list each dispatched entry with the dependency it waits on and stop.
 
-If multiple dispatched phases are found, sort by Phase ID number ascending. Select the **lowest Phase ID** — that is the target.
-
-Display one line:
+Output one line:
 ```
-implement-next-phase: Found dispatched phase {Phase ID} ("{Title}") in domain {Domain}.
+implement-next-phase: P-NNN ("{capability}") in {NN}.{Name}, phase {phase key}.
 ```
+
+If `**Phase key:**` is `—`, the planner's key was never recorded: pass no phase, so `/implement-phase` picks the domain's next open phase.
 
 ---
 
-## Step 3 — Map domain to implement skill
+## Step 3 — Map the domain to its slug
 
-Look up the domain in this registry:
+| Folder | Slug |
+| --- | --- |
+| `00.Governance` | `governance` |
+| `01.Core` | `core` |
+| `02.Caching` | `caching` |
+| `03.Domain` | `domain` |
+| `04.Contracts` | `contracts` |
+| `05.Application` | `application` |
+| `06.Persistence` | `persistence` |
+| `07.Messaging` | `messaging` |
+| `08.Storage` | `storage` |
+| `09.Search` | `search` |
+| `10.Intelligence` | `intelligence` |
+| `11.Communication` | `communication` |
+| `12.Security` | `security` |
+| `13.ServiceDefaults` | `servicedefaults` |
+| `14.Presentation` | `presentation` |
+| `15.Integration` | `integration` |
+| `16.Testing` | `testing` |
+| `17.Workflows` | `workflow` |
+| `18.Idempotency` | `idempotency` |
+| `19.Scheduling` | `scheduling` |
+| `20.Reporting` | `reporting` |
 
-| Domain | Skill |
-|--------|-------|
-| 00.Governance | `implement-phase-governance` |
-| 01.Core | `implement-phase-core` |
-| 02.Caching | `implement-phase-caching` |
-| 03.Domain | `implement-phase-domain` |
-| 04.Contracts | `implement-phase-contracts` |
-| 05.Application | `implement-phase-application` |
-| 06.Persistence | `implement-phase-persistence` |
-| 07.Messaging | `implement-phase-messaging` |
-| 08.Storage | `implement-phase-storage` |
-| 09.Search | `implement-phase-search` |
-| 10.Intelligence | `implement-phase-intelligence` |
-| 11.Communication | `implement-phase-communication` |
-| 12.Security | `implement-phase-security` |
-| 13.ServiceDefaults | `implement-phase-servicedefaults` |
-| 14.Presentation | `implement-phase-presentation` |
-| 15.Integration | `implement-phase-integration` |
-| 16.Testing | `implement-phase-testing` |
-| 17.Workflows | `implement-phase-workflow` |
-| 18.Idempotency | `implement-phase-idempotency` |
-| 19.Scheduling | `implement-phase-scheduling` |
-| 20.Reporting | `implement-phase-reporting` |
-
-If the domain is **not in the registry**, output:
-```
-implement-next-phase: Skipped {Phase ID} — domain {Domain} has no implement-phase command registered yet.
-To enable auto-dispatch for this domain, create .claude/commands/implement-phase-{lowercase-name}.md first.
-```
-Then stop. Do not process any other phase.
+A domain of `eng` (build work) has no implementer: output `implement-next-phase: P-NNN is build work; run /devops with its text.` and stop.
 
 ---
 
-## Step 4 — Invoke the implement skill
+## Step 4 — Invoke `/implement-phase`
 
-Display:
-```
-implement-next-phase: Triggering implement-phase-{domain} for {Phase ID} ({Domain}).
-```
-
-Use the Skill tool to invoke the matched skill (e.g. `implement-phase-communication`).
-Pass no arguments — the domain skill auto-detects its next actionable phase from its own state-map.
+Use the Skill tool to invoke `implement-phase` with arguments `{slug} {phase key}` (or `{slug}` alone when the key is `—`).
 
 ---
 
 ## Step 5 — Report
 
-After the skill returns, output:
+After the skill returns:
 ```
-implement-next-phase: Done. {Phase ID} ({Domain}) handed to implement-phase-{domain}. See output above for results.
+implement-next-phase: P-NNN ({NN}.{Name}) handed to /implement-phase {slug} {phase key}.
 ```
 
 ---
 
-## Format Contract
+## Format contract
 
-- Never reads `state-map.md` in full — uses a single targeted Grep call only.
-- Never modifies any file directly — all writes are done by the invoked domain skill and its sub-agents.
-- Processes exactly **one phase per invocation** — the lowest dispatched Phase ID.
-- If the domain is not in the registry, stops and reports — does not fall through to the next dispatched phase.
-- If the Skill tool call fails, reports the error and leaves state unchanged.
+- Reads the root `state-map.md` only. Writes nothing; every write is done by the implementer through `/state-map-phase`.
+- One phase per run: the lowest dispatched Phase ID whose dependencies are done.
+- If the Skill call fails, report the error; the boards are unchanged.

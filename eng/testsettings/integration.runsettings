@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Platform.SharedKernel — VSTest run settings for the Testcontainers-backed "integration" test
-  lane (DV-010/DV-011, see PLATFORM.md "CI/CD Pipelines").
+  lane (DV-010/DV-011, see eng/README.md "Test run settings").
 
   Root cause this file addresses: three consecutive full-solution `dotnet test` runs on a machine
   far beefier than the ubuntu-latest hosted runner each failed a DIFFERENT set of container-backed

@@ -1,153 +1,89 @@
-You are the keeper of the architectural brain for Platform.SharedKernel.
-
-This command operates in two modes depending on the input:
-
-- **Root mode** — updates `CLAUDE.md` at the repo root (cross-domain rules, folder map, tiers and dependency rules)
-- **Sub-domain mode** — updates a specific domain's `{NN}.{Name}/CLAUDE.md` (packages, interfaces, rules for that capability only)
-
-Read the input below and determine which mode applies before doing anything else.
-
+---
+description: Reconcile the CLAUDE.md files, README package lists and badges, and state-map boards with the code
+argument-hint: "[domain: NN | change summary]"
 ---
 
-**Input summary:**
+You are the keeper of the architectural brain for Platform.SharedKernel. The code is the truth; the `CLAUDE.md` files, READMEs and `state-map.md` boards describe it. You find where they have drifted and correct the descriptions. You never change code, project files or tests.
+
+Read `.claude/agents/_common.md` ("The state-map protocol", "The CLAUDE.md protocol", "README protocol") before editing.
+
+**Input:**
 $ARGUMENTS
 
+> - `domain: {NN | folder}` → reconcile that domain, plus the root rows that mention it.
+> - A free-text change summary (from an agent or the user) → reconcile the domains and root sections it names.
+> - Empty → reconcile the whole repo.
+
+There is no changelog file and no changelog section in any `CLAUDE.md`; do not create one.
+
 ---
 
-## Mode Detection
+## Step 1 — Inventory the code (the truth)
 
-If the input contains `domain:` (e.g. `domain: 02.Caching`), use **Sub-domain mode**.
-Otherwise use **Root mode**.
+For each domain in scope, from disk:
+- **Packages**: every `.csproj` under the folder that declares `<SharedKernelTier>` and is packable (not `*.Tests`, not `IsPackable=false`, not a consumer-verify harness, not `SharedKernel.Testing.Internal`). Record name, tier, `<SharedKernelAllowedAdapterReferences>`, and `ProjectReference`s.
+- **Public surface**: `PublicAPI.Shipped.txt` + `PublicAPI.Unshipped.txt` (registration methods `Add…`/`Use…`/`Map…`, main interfaces).
+- **Logging**: the `EventId` values in `[LoggerMessage]` attributes, against the domain block in `LoggingEventIdRanges`.
+- **Readiness probes**: names passed to `AddReadinessProbe`/`IReadinessProbe` implementations.
+- **Analyzer rules** (00.Governance only): the SK rule IDs the analyzers declare.
 
----
+Use Glob/Grep; do not build unless the summary asks you to verify a claim that only a build can settle.
 
-# ROOT MODE
+## Step 2 — Root `CLAUDE.md`
 
-Your job: analyze the summary, then make only the necessary targeted edits to `CLAUDE.md` at the repo root. Do not rewrite sections that are not affected. If nothing warrants a change, make no edits and explain why.
+Check and correct, surgically:
+- "Where Things Are": each folder's package count, scope line and tier letters; the `samples/` list against the `samples/` folder.
+- "Tiers & Dependency Rules": the declared adapter edges list against every `<SharedKernelAllowedAdapterReferences>` in the repo; purity rules that name packages which no longer exist.
+- "What Goes Where" and "Abstractions Packages": rows naming a package, type or registration method that no longer exists, and missing rows for a new package that introduces a placement rule.
+- "Working in This Repo with Claude Code": the command table against `.claude/commands/*.md`, and the agent description against `.claude/agents/`.
 
-## Step R1 — Read current state
+Keep headings, table columns, tone and density. Add a section only when a genuinely new cross-cutting concern has no home.
 
-Read `CLAUDE.md` at the repo root in full before doing anything else. This is the only file root mode ever reads or writes. Never touch any subfolder `CLAUDE.md`.
+## Step 3 — Domain `CLAUDE.md`
 
-## Step R2 — Extract signals from the input
+For each domain in scope, the headings must be exactly: `## Packages`, `## Public Entry Points`, `## Rules & Invariants`, `## Decisions`, `## Logging`, `## Cross-Domain Couplings`, `## Testing`, `## Known Limitations`. Then:
+- `## Packages` lists exactly the packages from Step 1 with their tiers.
+- `## Public Entry Points` names only members that exist in the public API files; items marked *(planned, SK.xx.Key)* stay only while that phase is open.
+- `## Logging` sub-blocks match the EventIds actually used.
+- `## Cross-Domain Couplings` names only existing packages and edges.
+- Rules or decisions contradicted by the code: correct them if the code is clearly the intended state; otherwise leave them and report the conflict.
+- Strip any changelog or phase-history section that has crept back in.
 
-Scan the input summary for any of the following signals. For each signal found, note which section it affects:
+## Step 4 — READMEs (lists, counts and badges only)
 
-| Signal | Target section |
-|--------|---------------|
-| New folder added or renamed | `## Folder Map` row + the package tiers in `## Tiers & Dependency Rules` |
-| Folder removed or merged | `## Folder Map` row removed + its packages removed from `## Tiers & Dependency Rules` |
-| New package added inside an existing folder | `## Folder Map` (update description) + `## "What Goes Where"` (add row if the package introduces a new placement rule) |
-| New abstraction/provider pair | `## Abstractions Packages` table |
-| New package, or a package moved to another tier | `## Tiers & Dependency Rules` — package → tier list |
-| Tier matrix changed, or an Adapter→Adapter edge declared or removed (`SharedKernelAllowedAdapterReferences`) | `## Tiers & Dependency Rules` — matrix or declared-edges list |
-| New purity rule or hard rule (something that must never happen, beyond the tier matrix) | `## Tiers & Dependency Rules` — purity/hard rules list |
-| New naming pattern or exception | `## Package Naming Convention` |
-| Test project rule changed | `## Test Project Rules` |
-| Solution format change | `## Solution Format` |
-| Sub-domain `CLAUDE.md` initialized or updated with a new package, interface, or cross-cutting pattern | Check if a new `## "What Goes Where"` row, `## Abstractions Packages` row, or `## Folder Map` description update is warranted at the root level |
-| Anything else that does not match the above | Evaluate: only add if it would prevent a future agent from making a wrong decision |
+- Domain `README.md`: its package list and count match Step 1.
+- Package `README.md`: the Tier badge matches the csproj tier; the title is the package id; registration methods and probe names quoted in Quick start / Reference exist. Structural problems against `docs/package-readme-standard.md` are reported, not rewritten here.
+- Root `README.md` (if it lists packages or counts): matches the total.
 
-## Step R3 — Apply edits
+## Step 5 — State-map boards
 
-For each signal from Step R2:
-- Make a **surgical edit** to the affected section only — add a row, update a description, add a bullet
-- Never touch sections that are not affected by the input
-- Never change headings, table column names, or the document structure
-- Keep the tone and density consistent with the existing content (concise, no prose explanations)
-- If a "What Goes Where" row already exists for this package/area, update it instead of duplicating it
+For each domain in scope:
+- Headings exactly as in `_common.md`; `## Changelog` trimmed to 5 (root: 10).
+- `## Package Board` rows match Step 1 (name, tier); a package on disk without a row gets one; a row for a package that no longer exists is marked `⊘` with a reason.
+- Every `## Phase Key Registry` row is either `●`/`⊘` with a `## Completed Phases` line or open with an `## Open Work` entry, and vice versa.
+- Root `## Domain Summary Board`: the domain's State matches its `## Open Work` (see `/state-map-phase` D6); every root P-entry marked `◐` names a phase key that exists on its domain board.
 
-## Step R4 — Append changelog entry
+Only board-level fields are corrected here; task states are `/state-map-phase`'s.
 
-Always append exactly one line to `CLAUDE.changelog.md` (the root changelog was split out of `CLAUDE.md` on 2026-08-25 — see ROOT MODE constraints):
+## Step 6 — Report
+
 ```
-- [YYYY-MM-DD] <one-line description of what changed> (<caller or agent name if mentioned in input, otherwise "agent">)
+## /sync-brain — {scope}
+
+Fixed
+- {file}: {what was wrong → what it says now}
+
+Needs a decision
+- {file}: {conflict between description and code, and the two options}
+
+No drift
+- {files checked with nothing to change}
 ```
-Use today's date. Keep under 120 characters. **This limit is real — historical entries that ran to full paragraphs are why the changelog had to be split out. Do not write a paragraph.**
-
-## Step R5 — Report
-
-Output ≤ 5 bullet points of what changed and why. If no edits were made, explain which signals were missing and what kind of input would trigger a change.
 
 ---
 
-## Root mode format contract (never violate these)
+## Format contract
 
-- Operates on exactly two files: `CLAUDE.md` at the repo root (Steps R1–R3) and `CLAUDE.changelog.md` beside it (Step R4 append only). No other file is read, written, or modified.
-- Sub-domain `CLAUDE.md` files are owned by their domain agents — **never read, write, or reference them directly**. Only their summaries, passed as input to this command, are valid signal sources.
-- Section order must stay: What This Repo Is → Folder Map → Tiers & Dependency Rules → Package Naming Convention → Test Project Rules → "What Goes Where" → Abstractions Packages → Solution Format → Changelog (a pointer stub only — the entries themselves live in `CLAUDE.changelog.md`)
-- All tables use markdown pipe syntax
-- The tier matrix and the declared adapter edges stay as markdown tables or plain lists — no YAML, no JSON
-- Purity and hard rules stay as a bullet list in `## Tiers & Dependency Rules`. There are no individually named layering grants: a new dependency edge is either allowed by the tier matrix or a declared Adapter→Adapter edge — never record a one-off "grant"
-- The Changelog is append-only — never edit or remove existing entries. At root this means `CLAUDE.changelog.md`; leave `CLAUDE.md`'s `## Changelog` pointer stub untouched
-- Do not add new top-level sections unless the input explicitly introduces a new cross-cutting concern that has no home in any existing section
-
----
-
-# SUB-DOMAIN MODE
-
-Your job: analyze the summary, then make only the necessary targeted edits to the specified domain's `CLAUDE.md`. Do not rewrite sections that are not affected. If nothing warrants a change, make no edits and explain why.
-
-## Step S1 — Parse the input
-
-Extract the following fields. All are required; stop and list missing fields if any are absent.
-
-| Field | Expected values |
-|-------|----------------|
-| `domain` | Folder name or number — e.g. `02.Caching`, `02`, `Caching`. Resolved to the canonical `{NN}.{Name}` form using the root CLAUDE.md folder map. |
-
-Resolve the target file path: `{NN}.{Name}/CLAUDE.md`.
-
-## Step S2 — Read current state
-
-Read the resolved `{NN}.{Name}/CLAUDE.md` file in full before doing anything else. This is the only file sub-domain mode ever reads or writes. Never touch the root `CLAUDE.md` or any other domain's file.
-
-## Step S3 — Extract signals from the input
-
-Scan the input summary for any of the following signals. For each signal found, note which section it affects:
-
-| Signal | Target section |
-|--------|---------------|
-| New package in this domain | `## Packages` table — add or update row |
-| Package removed or renamed | `## Packages` table — update or remove row |
-| Interface added, changed, or removed | `## Interface Contracts` block |
-| New or changed implementation rule | `## Implementation Rules` bullet list |
-| Technology added, swapped, or removed | `## Technology Stack` table row |
-| DI registration signature added or changed | `## DI Registration` block |
-| New AOT constraint discovered or resolved | `## AOT Compatibility` bullet |
-| Test rule added or changed | `## Test Rules` bullet |
-| Anything else that does not match the above | Evaluate: only add if it would prevent a future agent from making a wrong decision |
-
-## Step S4 — Apply edits
-
-For each signal from Step S3:
-- Make a **surgical edit** to the affected section only — add a row, update a line, add a bullet
-- Never touch sections that are not affected by the input
-- Never change headings, table column names, or the document structure
-- Keep the tone and density consistent with the existing content (concise, no prose explanations)
-- Never remove content unless the input explicitly says something was removed or replaced
-
-## Step S5 — Append changelog entry
-
-Always append exactly one line to the domain's `## Changelog`:
-```
-- [YYYY-MM-DD] <one-line description of what changed> (<caller or agent name if mentioned in input, otherwise "agent">)
-```
-Use today's date. Keep under 120 characters.
-
-## Step S6 — Report
-
-Output ≤ 5 bullet points of what changed and why. If no edits were made, explain which signals were missing and what kind of input would trigger a change.
-
----
-
-## Sub-domain mode format contract (never violate these)
-
-- Operates on exactly one file: `{NN}.{Name}/CLAUDE.md`. No other file is read, written, or modified.
-- Never touch the root `CLAUDE.md` or any other domain's `CLAUDE.md`.
-- Section order must stay: What This Domain Is → Packages → Technology Stack → Interface Contracts → Implementation Rules → DI Registration → AOT Compatibility → Test Rules → Changelog
-- All tables use markdown pipe syntax
-- Interface Contracts and DI Registration blocks stay as plain fenced code blocks — no YAML, no JSON
-- Implementation Rules and Test Rules stay as bullet lists — no tables
-- The Changelog is append-only — never edit or remove existing entries
-- Do not add new top-level sections unless the input explicitly introduces a concern that has no home in any existing section
+- Writes only `CLAUDE.md` files, `README.md` package lists/counts/badges, and board-level `state-map.md` fields. Never code, project files, tests, `eng/` or CI files.
+- Every edit is justified by something found on disk in Step 1; nothing from memory.
+- Surgical edits: never rewrite a section that is correct, never change heading text or table columns.

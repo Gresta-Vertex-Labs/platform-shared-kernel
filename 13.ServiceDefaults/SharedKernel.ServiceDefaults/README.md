@@ -1,10 +1,32 @@
 # SharedKernel.ServiceDefaults
 
-The composition base every Platform.SharedKernel microservice starts from: one call wires OpenTelemetry, the startup
-readiness gate and the health-check endpoints, and one more maps every dependency's readiness probe.
+[![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
+![Tier: Host](https://img.shields.io/badge/tier-Host-d73a49)
 
-**Tier: Host.** It references `SharedKernel.Primitives` (Foundation) and OpenTelemetry only, so a service restores
-nothing it does not use. `CompositionBaseIsolationTests` locks that in.
+> **The composition base every service starts from: one call wires OpenTelemetry, a startup gate and the health-check
+> infrastructure; one more maps every dependency's readiness probe onto `/health/ready`.**
+
+| You get | So that |
+| --- | --- |
+| `builder.AddServiceDefaults()` | Traces, metrics and logs over OTLP, plus the `startup` readiness check, in one call |
+| `WithXTelemetry()` for each kernel domain | A domain's `ActivitySource` and `Meter` are exported only when the service uses it — no extra dependency |
+| `AddSharedKernelReadiness()` | Every `IReadinessProbe` a provider registered becomes a `ready` check, with no per-dependency wiring |
+| `MapDefaultHealthCheckEndpoints()` | `/health/live` and `/health/ready` for Kubernetes probes |
+| `StartupGate` | Traffic waits until migrations and warm-up finish |
+| Refused inbound baggage + two-key log enrichment | A caller cannot inject `TenantId` or anything else into your logs or downstream calls |
+| `AddSharedKernelRateLimiting()` | A per-IP global limiter and an `authentication` policy with conservative defaults |
+
+## Contents
+
+- [Install](#install)
+- [Quick start](#quick-start)
+- [How it works](#how-it-works)
+- [Recipes](#recipes)
+- [Reference](#reference)
+- [Testing](#testing)
+- [Pitfalls](#pitfalls)
+- [Design decisions](#design-decisions)
 
 ## Install
 
@@ -12,7 +34,15 @@ nothing it does not use. `CompositionBaseIsolationTests` locks that in.
 <PackageReference Include="SharedKernel.ServiceDefaults" />
 ```
 
-The version comes from your single `SharedKernelVersion` property (see the root README, "Consuming the kernel").
+The version comes from your central `SharedKernelVersion` property — every SharedKernel package ships at the same
+version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel#using-the-packages).
+
+| Requirement | Value |
+| --- | --- |
+| Target framework | `net10.0` |
+| Tier | Host — reference it from your **Api** / **Worker** project |
+| Depends on | `SharedKernel.Primitives` only (kernel side), ASP.NET Core, OpenTelemetry |
+| Namespaces | `SharedKernel.ServiceDefaults.Extensions`, `.HealthChecks`, `.Probes`, `.Telemetry`, `.RateLimiting` |
 
 ## Quick start
 
@@ -24,14 +54,14 @@ using SharedKernel.ServiceDefaults.Telemetry;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddServiceDefaults()                    // first call: OpenTelemetry + the "startup" check
-       .WithMessagingTelemetry();               // only the domains this service uses
+builder.AddServiceDefaults();                       // first: OpenTelemetry + the "startup" check
+builder.WithMessagingTelemetry();                   // only the domains this service uses
 
 builder.Services.AddHealthChecks()
-       .AddSharedKernelReadiness();             // one "ready" check per registered IReadinessProbe
+    .AddSharedKernelReadiness();                    // one "ready" check per registered IReadinessProbe
 
 var app = builder.Build();
-app.MapDefaultHealthCheckEndpoints();           // /health/live, /health/ready
+app.MapDefaultHealthCheckEndpoints();               // /health/live, /health/ready
 
 // Once start-up work such as migrations is done, open /health/ready:
 app.Services.GetRequiredService<StartupGate>().MarkReady();
@@ -39,114 +69,138 @@ app.Services.GetRequiredService<StartupGate>().MarkReady();
 app.Run();
 ```
 
-## Rules
+The OTLP exporter reads the standard `OTEL_EXPORTER_OTLP_*` environment variables; the service name is the entry
+assembly's name.
 
-| Rule | Why |
-| --- | --- |
-| Call `builder.AddServiceDefaults()` first | It wires telemetry and the base health-check infrastructure every later call builds on. |
-| Chain checks onto `builder.Services.AddHealthChecks()` | **Not** `AddSharedKernelHealthChecks()`: `AddServiceDefaults()` already calls it, and a second call registers `"startup"` twice — the host then throws `ArgumentException: Duplicate health checks were registered with the name(s): startup`. |
-| Call `AddSharedKernelReadiness()` once | Every provider registers its own probe when you register the provider. Registration order does not matter; probes are read when health checks are first resolved. |
-| Keep `/health/ready` off public ingress, or pass `requireAuthorization: true` | Readiness output can disclose your dependency topology. See below. |
-| Never add a SharedKernel `ProjectReference` to this package | Every service restores whatever it references. Host integrations that need another kernel package live in a `SharedKernel.ServiceDefaults.*` package. |
+## How it works
 
-## Readiness
+- **Telemetry.** `AddServiceDefaults()` registers tracing (ASP.NET Core, HttpClient, EF Core), metrics (ASP.NET Core,
+  runtime) and logging (scopes and formatted messages), all exported over OTLP. Every `WithXTelemetry()` adds its
+  domain's instruments **by name** and references nothing, so none adds a dependency; each is idempotent.
+  `WithApplicationTelemetry()` also registers a bucket view for `sharedkernel.application.request.duration`, recorded
+  in **seconds** — without it every request would land in the first default bucket.
+- **Readiness.** `AddSharedKernelReadiness()` maps each `IReadinessProbe` (`SharedKernel.Primitives.Health`) to a
+  health check named after the probe and tagged `ready`:
 
-`AddSharedKernelReadiness()` maps each `IReadinessProbe` (`SharedKernel.Primitives.Health`) to a health check named
-after the probe and tagged `ready`:
+  | Probe report | Health status |
+  | --- | --- |
+  | `ReadinessStatus.Healthy` / `Degraded` / `Unhealthy` | `Healthy` / `Degraded` / `Unhealthy` |
+  | The probe throws | `Unhealthy`, exception type only (EventId 13005) |
 
-| Probe report | Health status |
-| --- | --- |
-| `ReadinessStatus.Healthy` | `Healthy` |
-| `ReadinessStatus.Degraded` | `Degraded` |
-| `ReadinessStatus.Unhealthy` | `Unhealthy` |
-| the probe throws | `Unhealthy`, exception type only (EventId `13005`) |
+  The report's latency is added as `LatencyMilliseconds`. Registration order does not matter: probes are read when
+  health checks are first resolved. Two probes with the same name fail resolution with an exception naming the duplicate.
+- **Endpoints.** `/health/live` runs `live`-tagged checks only; `/health/ready` runs `ready`-tagged checks only
+  (`startup`, every probe, the database checks). They are unauthenticated unless you pass `requireAuthorization: true`.
+- **Log enrichment.** `BaggageLogRecordProcessor` copies two `Activity` baggage items, `correlation.id` and `TenantId`,
+  onto each exported log record (an attribute already on the record wins; values with control characters or Unicode
+  line separators are never copied). `UseSharedKernelRequestContext()` writes the correlation id and
+  `TenantResolutionMiddleware` the tenant, so both appear on every log line without a call site passing them.
+- **Inbound baggage is refused.** OpenTelemetry's `Baggage.Current` is never filled from a caller's `baggage` header,
+  so HttpClient and gRPC instrumentation cannot forward a caller's items downstream; trace context is still read.
+  Baggage your service sets itself still leaves with outgoing calls. A propagator set with
+  `Sdk.SetDefaultTextMapPropagator` before the host starts is wrapped, not replaced. Clearing the caller's items from
+  the request's `Activity` is done by `SharedKernel.ServiceDefaults.Security`'s `UseSharedKernelRequestContext()`.
+- **Rate limiting.** `AddSharedKernelRateLimiting()` sets a global fixed-window limiter partitioned by remote IP (100
+  requests per minute, no queue) and a fixed-window policy named `authentication` (10 per minute), with status 429.
+  It leaves `OnRejected` unset and takes no reference to `14.Presentation`; with `UseSharedKernelWebApi()` the 429 is
+  the platform's RFC 9457 problem (`rate_limit.exceeded`, `Retry-After`) and `UseRateLimiter()` is added for you.
 
-The report's latency is added to the check data as `LatencyMilliseconds`. Two probes with the same name make
-health-check resolution fail with an exception naming the duplicate.
+## Recipes
+
+### 1. Tune or trim readiness
 
 ```csharp
 builder.Services.AddHealthChecks().AddSharedKernelReadiness(o =>
 {
-    o.Timeout = TimeSpan.FromSeconds(5);        // per check; default: no limit beyond the request's own
-    o.Exclude("cache");                         // keep one probe off /health/ready
+    o.Timeout = TimeSpan.FromSeconds(5);   // per check; default: no limit beyond the request's own
+    o.Exclude("cache");                    // keep one probe off /health/ready
 });
 ```
 
-Probe names registered by the kernel: `messaging`, `redis`, `cache`, `encryption-key-provider`, `field-encryption`,
-`audit-sealing`, `storage-{store}`, `search-{provider}-{index}`, `vector-store-{provider}-{collection}`, `workflows`,
-`scheduler`. For a dependency of your own, implement `IReadinessProbe` (keep its constructor cheap; resolve clients
-inside `ProbeAsync`) and register it with `services.AddReadinessProbe<T>()`.
+### 2. Add a readiness probe for your own dependency
 
-Database checks for EF Core and Dapper are in
-[`SharedKernel.ServiceDefaults.Persistence`](../SharedKernel.ServiceDefaults.Persistence/README.md).
+Implement `IReadinessProbe` (keep the constructor cheap; resolve clients inside `ProbeAsync`) and register it with
+`services.AddReadinessProbe<T>()` from `SharedKernel.Primitives.Health`. `AddSharedKernelReadiness()` picks it up.
 
-## What is in this package
+### 3. Rate-limit a login endpoint
 
-| Member | Purpose |
+```csharp
+using SharedKernel.ServiceDefaults.RateLimiting;
+
+builder.AddSharedKernelRateLimiting(o => { /* adjust RateLimiterOptions */ });
+app.MapPost("/login", ...).RequireRateLimiting(RateLimitPolicyNames.Authentication);
+```
+
+## Reference
+
+### Registration
+
+| Method | Registers |
 | --- | --- |
-| `AddServiceDefaults()` | OpenTelemetry traces, metrics and logs (OTLP, configured by the standard `OTEL_EXPORTER_OTLP_*` variables) with ambient `correlation.id`/`TenantId` log enrichment, plus the base health checks. A caller's `baggage` header never fills OpenTelemetry's baggage store, and only the platform's two keys reach log records (see below) |
-| `AddSharedKernelReadiness(configure?)` | Maps every registered `IReadinessProbe` to a `ready` check |
-| `MapDefaultHealthCheckEndpoints(requireAuthorization)` | Maps `/health/live` (`live`-tagged checks only) and `/health/ready` (`ready`-tagged checks only) |
-| `StartupGate` | Keeps `/health/ready` unhealthy until you call `MarkReady()` |
-| `HealthCheckNames`, `HealthCheckTags` | The shared names and tags |
-| `HealthCheckRegistrationLogging` | Logs a readiness check's registration (EventId `13002`) — use it in a check of your own |
-| `AddSharedKernelRateLimiting()` | ASP.NET Core rate limiting with conservative defaults |
-| `WithApplicationTelemetry()` · `WithCachingTelemetry()` · `WithCommunicationTelemetry()` · `WithIntegrationTelemetry()` · `WithIntelligenceTelemetry()` · `WithMessagingTelemetry()` · `WithPersistenceTelemetry()` · `WithReportingTelemetry()` · `WithSchedulingTelemetry()` · `WithSearchTelemetry()` · `WithStorageTelemetry()` · `WithWorkflowTelemetry()` | Registers a domain's `ActivitySource` and `Meter` with the host |
+| `IHostApplicationBuilder.AddServiceDefaults()` | `AddSharedKernelTelemetry(serviceName)` + `AddSharedKernelHealthChecks()` |
+| `IHostApplicationBuilder.AddSharedKernelTelemetry(serviceName)` | OpenTelemetry tracing, metrics and logs (called by `AddServiceDefaults`) |
+| `IServiceCollection.AddSharedKernelHealthChecks()` | `StartupGate` and the `startup` check (called by `AddServiceDefaults` — never call it again) |
+| `IHealthChecksBuilder.AddSharedKernelReadiness(Action<ReadinessHealthCheckOptions>?)` | One `ready` check per `IReadinessProbe` |
+| `IEndpointRouteBuilder.MapDefaultHealthCheckEndpoints(bool requireAuthorization = false)` | `/health/live`, `/health/ready` |
+| `IHostApplicationBuilder.AddSharedKernelRateLimiting(Action<RateLimiterOptions>?)` | ASP.NET Core rate limiting |
+| `WithApplicationTelemetry()` · `WithCachingTelemetry()` · `WithCommunicationTelemetry()` · `WithIntegrationTelemetry()` · `WithIntelligenceTelemetry()` · `WithMessagingTelemetry()` · `WithPersistenceTelemetry()` · `WithReportingTelemetry()` · `WithSchedulingTelemetry()` · `WithSearchTelemetry()` · `WithStorageTelemetry()` · `WithWorkflowTelemetry()` | A domain's `ActivitySource` and `Meter` |
 
-Every `WithXTelemetry()` wires its domain's instruments **by name** and references nothing, so none adds a
-dependency. Each is idempotent.
+### Types
 
-`WithApplicationTelemetry()` also registers a bucket view for `sharedkernel.application.request.duration`, which
-`SharedKernel.Application.Pipeline` records **in seconds**: the SDK's default buckets assume milliseconds, so without
-the view every request would land in the first bucket.
+| Type | Purpose |
+| --- | --- |
+| `StartupGate` | `MarkReady()` / `IsReady`; the `startup` check is unhealthy until marked |
+| `ReadinessHealthCheckOptions` | `Timeout`, `Exclude(probeName)` |
+| `HealthCheckNames` | `database`, `database-dapper`, `persistence-startup`, `startup` |
+| `HealthCheckTags` | `live`, `ready`, `db` |
+| `RateLimitPolicyNames.Authentication` | `"authentication"` |
+| `HealthCheckRegistrationLogging.LogRegistration(services, categoryName, name, tags)` | Logs a readiness check's registration from a check of your own |
+| `BaggageLogRecordProcessor` | The log-record enricher `AddServiceDefaults()` installs |
 
-## Log enrichment
+### Health
 
-`BaggageLogRecordProcessor` copies two `Activity` baggage items, `correlation.id` and `TenantId`, onto each exported
-log record; an attribute already on the record wins. `SharedKernel.ServiceDefaults.Security`'s
-`UseSharedKernelRequestContext()` puts the correlation id in baggage and `SharedKernel.MultiTenancy`'s
-`TenantResolutionMiddleware` the resolved tenant id, so both appear on every log line without a call site passing
-them. No other baggage item is copied.
+Kernel probe names: `messaging`, `redis`, `cache`, `encryption-key-provider`, `field-encryption`, `audit-sealing`,
+`storage-{store}`, `search-{provider}-{index}`, `vector-store-{provider}-{collection}`, `workflows`, `scheduler`,
+`gotenberg`. Database checks come from
+[`SharedKernel.ServiceDefaults.Persistence`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/13.ServiceDefaults/SharedKernel.ServiceDefaults.Persistence/README.md).
 
-## Baggage a caller sends
+### Logging
 
-W3C `baggage` is a request header like any other: an anonymous caller can send
-`baggage: TenantId=<another tenant>,SubjectId=admin`. Since P-562 X2 this package trusts none of it:
+| Event id | Level | Event |
+| --- | --- | --- |
+| 13002 | Information | Health check registered (name: `{HealthCheckName}`, tags: `{Tags}`) |
+| 13005 | Warning | Readiness probe `{ProbeName}` threw `{ExceptionType}` instead of reporting unhealthy |
 
-- **Log records** get two baggage items only, `correlation.id` and `TenantId`, the ones platform middleware
-  writes (and replaces). A value containing a control character or a Unicode line separator is never
-  copied. Anything else you want on a log record belongs in the log statement.
-- **OpenTelemetry's `Baggage.Current`** is never filled from an incoming request, so the HttpClient and gRPC
-  client instrumentations cannot forward a caller's items downstream. Trace context is still read.
-  Baggage your service sets itself still leaves with outgoing calls: `Baggage.SetBaggage(...)` items and,
-  while `Baggage.Current` is empty, `Activity` baggage such as the correlation id.
+## Testing
 
-The request's `Activity` is cleared of the caller's items at the edge by `SharedKernel.ServiceDefaults.Security`'s
-`UseSharedKernelRequestContext()` (`TrustInboundBaggage`, off by default); this package does not read that setting.
-Without it, the caller's items stay on the activity — .NET sends them with outgoing HTTP calls, and a caller's
-`TenantId` or `correlation.id` item is logged unless tenant resolution or the request-context middleware replaces it.
-A propagator you set with `Sdk.SetDefaultTextMapPropagator` before the host starts is wrapped, not replaced; one set
-after start removes the protection.
+Reference [`SharedKernel.ServiceDefaults.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/16.Testing/SharedKernel.ServiceDefaults.Testing/README.md)
+(namespace `SharedKernel.Testing.ServiceDefaults`): `registration.ShouldBeTaggedReady()` and
+`ShouldNotBeTaggedLive()` assert a `HealthCheckRegistration` lands on the right endpoint. For an end-to-end check,
+host the service with `WebApplicationFactory<Program>` and request `/health/ready`; call `StartupGate.MarkReady()`
+in the test host when your service does so after migrations.
 
-## Security note — health endpoints
+## Pitfalls
 
-`MapDefaultHealthCheckEndpoints()` maps unauthenticated endpoints by default, because Kubernetes probes cannot present
-credentials, and readiness output can disclose your dependency topology. Pass `requireAuthorization: true`, or keep
-these endpoints off public ingress and restrict them with a `NetworkPolicy`. Never expose readiness on an
-internet-facing service.
+| Don't | Do | Why |
+| --- | --- | --- |
+| Call `AddSharedKernelHealthChecks()` after `AddServiceDefaults()` | Chain onto `builder.Services.AddHealthChecks()` | A second call registers `startup` twice: `ArgumentException: Duplicate health checks were registered with the name(s): startup` |
+| Forget `StartupGate.MarkReady()` | Call it once start-up work is done | `/health/ready` stays unhealthy and the pod never receives traffic |
+| Expose `/health/ready` on public ingress | Pass `requireAuthorization: true`, or restrict it with a `NetworkPolicy` | Readiness output discloses your dependency topology |
+| Put a `live` tag on a dependency check | Tag dependency checks `ready` only | A failing database would make Kubernetes restart healthy pods |
+| Pass `CorrelationId`/`TenantId` as log-template placeholders | Rely on the baggage enrichment | They are added to every record already |
+| Add a SharedKernel `ProjectReference` to this package | Put host integrations in a `SharedKernel.ServiceDefaults.{Capability}` package | Every service restores what the base references (`CompositionBaseIsolationTests`) |
 
-## Rate limiting and ProblemDetails
+## Design decisions
 
-`AddSharedKernelRateLimiting()` leaves `OnRejected` unset and takes **no** reference to `14.Presentation`.
-On its own, a rejection is ASP.NET Core's bare 429. Together with `14.Presentation`'s
-`AddSharedKernelWebApi()`/`UseSharedKernelWebApi()` it is the platform's RFC 9457 body with nothing to write:
-429 `application/problem+json` with `errorCode` `rate_limit.exceeded` and `Retry-After`, and
-`UseSharedKernelWebApi()` adds `UseRateLimiter()` itself. An `OnRejected` you set through `configure` wins
-over both. The two packages stay independently referenceable.
+**Why a probe contract instead of `Add*HealthCheck` per provider?** A provider registers its `IReadinessProbe` when it
+is configured, so readiness follows what the service actually uses, and this package needs no reference to any
+provider.
 
-## Related packages
+**Why refuse inbound baggage?** W3C `baggage` is a request header an anonymous caller controls; trusting it would let
+`baggage: TenantId=<another tenant>` reach logs and downstream services.
 
-- [`SharedKernel.ServiceDefaults.Security`](../SharedKernel.ServiceDefaults.Security/README.md) — the request context and correlation id
-- [`SharedKernel.ServiceDefaults.Persistence`](../SharedKernel.ServiceDefaults.Persistence/README.md) — database readiness checks
-- [`SharedKernel.MultiTenancy`](../SharedKernel.MultiTenancy/README.md) — tenant resolution
-- [13.ServiceDefaults README](../README.md) — the full composition and middleware order
+---
+
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
+[ServiceDefaults domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/13.ServiceDefaults/README.md) ·
+[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

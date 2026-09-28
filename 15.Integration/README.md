@@ -1,110 +1,129 @@
 <div align="center">
 
-# SharedKernel Integration
+# 15.Integration
 
 **Outbound delivery to destinations outside your control — signed, retried, SSRF-guarded webhooks and
-customer-facing email and SMS — with one rule: nothing about the caller except a correlation id ever leaves the
-platform, and a retry never delivers twice.**
+customer-facing email and SMS — where nothing about the caller except a correlation id leaves the platform, and a
+retry never delivers twice.**
 
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](../LICENSE)
 ![Packages: 4](https://img.shields.io/badge/packages-4-informational)
 
-[Packages](#the-packages) · [Webhooks](#webhooks) · [Notifications](#notifications) · [Guarantees](#what-you-can-rely-on) · [Testing](#testing)
-
 </div>
 
----
+Two families share one identity here: **webhooks** push your integration events to partners' HTTP endpoints, and
+**notifications** reach people by email or SMS. Both are delivery plumbing: they never decide which event matters to
+whom, they own no persistence (your service supplies the subscriptions and the sender identity), they call vendors
+over plain REST with no SDKs, and they report failures as values instead of exceptions.
 
-## The packages
+## What this domain gives you
 
-| Package | Tier | What it is |
+- **Webhooks that partners can trust** — HMAC-SHA256 signatures with timestamps, a verifier for the receiving side,
+  and zero-downtime secret rotation.
+- **Safe delivery to arbitrary URLs** — the resolved address is checked before every send, so a subscriber URL cannot
+  reach your private network.
+- **Retries without duplicates** — a stable `X-Webhook-Delivery-Id` for subscribers, a caller-supplied
+  `NotificationDeliveryId` for email and SMS (enforced by Twilio as `Idempotency-Key`).
+- **One notification contract** — `INotificationSender` keyed by channel, with SendGrid and Twilio behind it and
+  attachments streamed from object storage.
+- **Operational signals** — a `WebhookDeliveryExhaustedEvent` on the bus, delivery observers for your ledger, EventIds
+  15000–15999 and spans on `SharedKernel.Integration`.
+
+## Packages
+
+| Package | Tier | When you need it |
 | --- | --- | --- |
-| [`SharedKernel.Integration.Webhooks`](SharedKernel.Integration.Webhooks/README.md) | Adapter | Webhook subscriptions, HMAC-SHA256 signing and replay-resistant verification, retrying fan-out dispatch, SSRF guard, multi-secret rotation, opt-in payload encryption, a synthetic ping delivery. See also the [configuration reference](SharedKernel.Integration.Webhooks/docs/configuration-reference.md). |
-| [`SharedKernel.Integration.Notifications.Abstractions`](SharedKernel.Integration.Notifications.Abstractions/README.md) | Abstractions | The provider-neutral `INotificationSender` contract, `NotificationMessage<TTemplateModel>`, the sender-identity and delivery-observer seams. |
-| [`SharedKernel.Integration.Notifications.Email.SendGrid`](SharedKernel.Integration.Notifications.Email.SendGrid/README.md) | Adapter | Email through SendGrid's REST API (no vendor SDK); attachments are `08.Storage` file references, streamed, never inlined. |
-| [`SharedKernel.Integration.Notifications.Sms.Twilio`](SharedKernel.Integration.Notifications.Sms.Twilio/README.md) | Adapter | SMS through Twilio's REST API (no vendor SDK), with `Idempotency-Key` deduplication. |
+| [`SharedKernel.Integration.Webhooks`](SharedKernel.Integration.Webhooks/README.md) | Adapter | You push integration events to external subscribers, or verify webhooks from another platform service |
+| [`SharedKernel.Integration.Notifications.Abstractions`](SharedKernel.Integration.Notifications.Abstractions/README.md) | Abstractions | Application code that sends email or SMS — the contract, options and observer seams |
+| [`SharedKernel.Integration.Notifications.Email.SendGrid`](SharedKernel.Integration.Notifications.Email.SendGrid/README.md) | Adapter | Email through SendGrid dynamic templates, attachments from `08.Storage` |
+| [`SharedKernel.Integration.Notifications.Sms.Twilio`](SharedKernel.Integration.Notifications.Sms.Twilio/README.md) | Adapter | SMS through Twilio Content templates, deduplicated by `Idempotency-Key` |
 
-```xml
-<PackageReference Include="SharedKernel.Integration.Webhooks" />
-<PackageReference Include="SharedKernel.Integration.Notifications.Email.SendGrid" />
+Test doubles: [`SharedKernel.Integration.Testing`](../16.Testing/SharedKernel.Integration.Testing/README.md)
+(`AddInMemoryWebhookDispatcher()`, `AddInMemoryWebhookDeliveryObserver()`, `AddInMemoryNotificationSender(channel)`,
+`AddInMemoryNotificationDeliveryObserver()`).
+
+## How it fits together
+
+```mermaid
+flowchart LR
+    subgraph Service
+        E["Integration event<br/>[IntegrationEvent]"] --> D["IWebhookDispatcher"]
+        S["IWebhookSubscriptionStore<br/>(yours)"] --> D
+        M["NotificationMessage&lt;T&gt;"] --> N{"INotificationSender<br/>keyed by channel"}
+        I["INotificationSenderIdentityResolver<br/>(yours)"] --> N
+    end
+    D -- "signed POST, SSRF-checked,<br/>retried" --> P["Partner endpoints"]
+    D -. "exhausted" .-> B["IEventPublisher<br/>WebhookDeliveryExhaustedEvent"]
+    N -- Email --> SG["SendGrid v3 Mail Send"]
+    N -- Sms --> TW["Twilio Messages API"]
+    ST["08.Storage<br/>attachments"] --> SG
 ```
 
-Versions come from the consumer's single `SharedKernelVersion`. None of the four references ASP.NET Core,
-persistence or `SharedKernel.Communication.*`: the service supplies its own subscription store and sender
-identity.
+## Get started
 
----
-
-## Webhooks
+Webhooks:
 
 ```csharp
-builder.Services.AddSharedKernelWebhooks(options => options.MaxAttempts = 8);
-builder.Services.AddScoped<IWebhookSubscriptionStore, EfWebhookSubscriptionStore>();   // your store
+builder.Services.AddSharedKernelWebhooks();                                             // SharedKernel:Integration:Webhooks
+builder.Services.AddScoped<IWebhookSubscriptionStore, EfWebhookSubscriptionStore>();    // yours
 ```
 
 ```csharp
-public sealed class OrderShippedWebhooks(IWebhookDispatcher webhooks)
-{
-    public Task<IReadOnlyList<WebhookDeliveryResult>> PublishAsync(OrderShipped evt, CancellationToken ct) =>
-        webhooks.DispatchAsync(evt, ct);   // one signed delivery per matching subscription, never throws
-}
+[IntegrationEvent("orders.order-shipped")]
+public sealed record OrderShipped(Guid EventId, DateTimeOffset OccurredOn, Guid OrderId) : IIntegrationEvent;
+
+IReadOnlyList<WebhookDeliveryResult> results = await webhooks.DispatchAsync(evt, ct);   // never throws per subscriber
 ```
 
-The event's routing key is its `[IntegrationEvent]` name (`04.Contracts`), so an event routes identically over the
-bus and as a webhook. Every delivery carries a signature, a timestamp, an `X-Webhook-Delivery-Id` for
-subscriber-side deduplication and the operation's `X-Correlation-Id`. A target that resolves to a loopback, private,
-link-local or multicast address is rejected before any HTTP attempt. When every attempt fails, a
-delivery-exhausted integration event is published through `IEventPublisher`.
-
-## Notifications
+Notifications:
 
 ```csharp
-builder.Services.AddSharedKernelNotifications();
-builder.Services.AddScoped<INotificationSenderIdentityResolver, TenantSenderIdentityResolver>();   // yours
+builder.Services.AddSharedKernelNotifications();                                        // SharedKernel:Integration:Notifications
+builder.Services.AddScoped<INotificationSenderIdentityResolver, TenantSenderIdentityResolver>();   // email "from"
 builder.Services.AddSendGridEmailNotifications(o => o.ApiKey = builder.Configuration["SendGrid:ApiKey"]!);
 builder.Services.AddTwilioSmsNotifications(o =>
 {
     o.AccountSid = builder.Configuration["Twilio:AccountSid"]!;
     o.AuthToken = builder.Configuration["Twilio:AuthToken"]!;
-    o.MessagingServiceSid = builder.Configuration["Twilio:MessagingServiceSid"];   // or From
+    o.MessagingServiceSid = builder.Configuration["Twilio:MessagingServiceSid"];         // or From
 });
 ```
 
-Each provider registers a keyed `INotificationSender`; resolve it with
-`GetRequiredKeyedService<INotificationSender>(NotificationChannel.Email)`. Every message carries a caller-supplied
-`NotificationDeliveryId` that you reuse on a retry: Twilio receives it as `Idempotency-Key` (a real dedup
-guarantee), SendGrid as `custom_args` (correlation only). A sender-identity resolver that needs the caller's tenant
-reads `IRequestContext.TenantId` (`SharedKernel.Execution`).
+```csharp
+var sms = services.GetRequiredKeyedService<INotificationSender>(NotificationChannel.Sms);
+NotificationDeliveryResult result = await sms.SendAsync(new NotificationMessage<OtpModel>
+{
+    NotificationDeliveryId = otpRequest.DeliveryId,    // created once, reused on retry
+    Channel = NotificationChannel.Sms,
+    Recipient = customer.PhoneNumberE164,
+    TemplateId = contentSid,
+    TemplateModel = new OtpModel(code),
+}, ct);
+```
+
+Subscribe to traces with `builder.WithIntegrationTelemetry()` (`SharedKernel.ServiceDefaults`).
+
+## Guarantees
+
+| Guarantee | How |
+| --- | --- |
+| Only the correlation id leaves the platform | Webhooks send `X-Correlation-Id` and nothing else about the caller; notification providers send no platform headers |
+| Subscribers can verify origin and freshness | `X-Webhook-Signature` = HMAC-SHA256 of `"{timestamp}.{body}"`; `WebhookSignatureVerifier` checks it in fixed time within `SignatureTolerance` |
+| Secrets rotate without downtime | `Secrets` newest first: sign with the first, verify against any |
+| No SSRF by default | The resolved address is checked before every send; private, loopback, link-local and multicast targets are rejected |
+| One slow or broken subscriber cannot fault the rest | Bounded fan-out (`MaxConcurrentDeliveries`); every failure is a `WebhookDeliveryResult` |
+| Retries are deduplicable | Stable `X-Webhook-Delivery-Id`; caller-supplied `NotificationDeliveryId` (Twilio `Idempotency-Key`) |
+| A permanently failing subscriber is visible | Exactly one `WebhookDeliveryExhaustedEvent` per exhausted delivery |
+| Options really drive behaviour | Retry, backoff, timeout and concurrency settings configure the standard resilience handler and are validated at startup |
+| Personal data stays out of telemetry | Recipients, template models, URLs and secrets are never log parameters or span tags |
+
+## Limits
+
+- SendGrid deduplication is correlation only; prevent duplicate emails in your outbox.
+- `SendGridNotificationOptions` and `TwilioNotificationOptions` are set in code (no configuration section is bound).
+- There is no `Push` channel, and `NotificationMessage.Locale` is reserved but not used yet.
 
 ---
 
-## What you can rely on
-
-- **Nothing about the caller leaves the platform** except the correlation id on a webhook. Tenant id, actor and
-  client id stay inside the trust boundary; notifications send only the message.
-- **Retries are safe.** Webhook subscribers deduplicate on `X-Webhook-Delivery-Id`; notification retries reuse the
-  caller's `NotificationDeliveryId`.
-- **Configuration is real.** `WebhookDeliveryOptions` (`MaxAttempts`, backoff, `RequestTimeout`,
-  `MaxConcurrentDeliveries`) drive the resilience handler and are validated at startup.
-- **SSRF is closed by default.** `AllowPrivateNetworkTargets` or a custom `IWebhookUrlValidator` is the only opt-out.
-- **Secrets rotate without downtime.** `WebhookSubscription.Secrets` is newest-first: sign with the first, verify
-  against any.
-- **Personal data is never logged.** Recipients and template-model values are never log parameters. Delivery
-  outcomes are logged with fixed `EventId`s (15000–15999) and traced on the `SharedKernel.Integration` source,
-  wired by `WithIntegrationTelemetry()` in `SharedKernel.ServiceDefaults`.
-
----
-
-## Testing
-
-[`SharedKernel.Integration.Testing`](../16.Testing/SharedKernel.Integration.Testing/README.md) has in-memory doubles
-that record instead of sending: `AddInMemoryWebhookDispatcher()`, `AddInMemoryWebhookDeliveryObserver()`,
-`AddInMemoryNotificationSender(channel)` and `AddInMemoryNotificationDeliveryObserver()`.
-
----
-
-## Further reading
-
-- [`CLAUDE.md`](CLAUDE.md) — interface contracts and implementation rules.
-- [`state-map.md`](state-map.md) — phase history (WO-032, WO-064, WO-072, WO-081, WO-086).
+For maintainers: [CLAUDE.md](CLAUDE.md) (domain rules and invariants) · [state-map.md](state-map.md) (phase history).

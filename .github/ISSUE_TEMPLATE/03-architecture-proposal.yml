@@ -1,5 +1,5 @@
 name: 🏛️ Architecture proposal (RFC)
-description: Propose a significant change — a new package or domain, a new dependency, a layering exception, or a breaking redesign.
+description: Propose a significant change — a new package or domain, a new dependency, a tier exception, or a breaking redesign.
 title: "[RFC]: "
 labels: ["type: rfc", "status: needs triage"]
 body:
@@ -9,14 +9,14 @@ body:
         An RFC is a design discussion **before** code is written. It is reviewed against the platform's principles:
         **capability-oriented**, **downward-only dependencies**, **AOT-preferred**, **Kubernetes-native**, and **permissively licensed dependencies only**.
 
-        Read the [layering rules](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/CLAUDE.md#layering-rules-dependency-direction) first — most rejected proposals fail there.
+        Read the [tier rules](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/CONTRIBUTING.md) first — most rejected proposals fail there.
 
   - type: checkboxes
     id: preflight
     attributes:
       label: Before you start
       options:
-        - label: I read the layering rules and the "What goes where" guide.
+        - label: I read the tier rules and the "What goes where" guide.
           required: true
         - label: I searched existing issues and discussions for a similar proposal.
           required: true
@@ -85,8 +85,8 @@ body:
     attributes:
       label: Layering impact
       options:
-        - Stays within the existing layering rules
-        - Needs a new, named layering exception
+        - Stays within the existing tier rules
+        - Needs a new, declared adapter edge or tier exception
         - Adds a new package to an existing domain
         - Adds a new numbered domain
     validations:

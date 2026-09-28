@@ -2,8 +2,9 @@
 
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
-![Serialization: JsonTypeInfo](https://img.shields.io/badge/serialization-JsonTypeInfo-informational)
+![Tier: Adapter](https://img.shields.io/badge/tier-Adapter-6f42c1)
 ![Public API: tracked](https://img.shields.io/badge/public%20API-tracked-informational)
+![Serialization: JsonTypeInfo](https://img.shields.io/badge/serialization-JsonTypeInfo-informational)
 
 > **Redis hashes for sessions, settings snapshots and counters: read and change one field at a time, as JSON, with the
 > key's expiry set in the same atomic step as the write and lookups that tell a missing field from a zero.**
@@ -30,27 +31,24 @@ values use `ICacheService`.
 - [Quick start](#quick-start)
 - [How it works](#how-it-works)
 - [Recipes](#recipes)
-  - [1. Store a session with a sliding expiry](#1-store-a-session-with-a-sliding-expiry)
-  - [2. Count within a time window](#2-count-within-a-time-window)
-  - [3. Read and write a settings snapshot](#3-read-and-write-a-settings-snapshot)
-  - [4. Tell a missing field from a zero](#4-tell-a-missing-field-from-a-zero)
-  - [5. Sign out everywhere](#5-sign-out-everywhere)
 - [Reference](#reference)
+- [Testing](#testing)
 - [Pitfalls](#pitfalls)
 - [Design decisions](#design-decisions)
-- [AI quick reference](#ai-quick-reference)
-- [Compatibility and guarantees](#compatibility-and-guarantees)
 
 ## Install
 
-```shell
-dotnet add package SharedKernel.Caching.Redis.HashStore
+```xml
+<PackageReference Include="SharedKernel.Caching.Redis.HashStore" />
 ```
+
+The version comes from your central `SharedKernelVersion` property — every SharedKernel package ships at the same
+version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel#using-the-packages).
 
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
-| Tier | Adapter |
+| Tier | Adapter — reference it from your **Infrastructure** project |
 | Depends on | `SharedKernel.Caching.Abstractions` (for `CacheLookup<T>`), `SharedKernel.Caching.Redis.Core` |
 | Namespaces | `SharedKernel.Caching.Redis.HashStore` (contracts), `SharedKernel.Caching.Redis.HashStore.Extensions` (registration) |
 
@@ -121,6 +119,9 @@ its expiry, and a write that fails (for example on a key of another type) sets n
 - **Reads.** `GetFieldAsync` returns a miss when the key or field does not exist. `GetFieldsAsync` returns only the fields
   that exist, reading duplicates once. `GetAllFieldsAsync` reads the whole hash in one command.
 - **Cancellation** is checked before a command is sent; a command already sent is not interrupted.
+- **Atomic multi-field writes.** All fields of one `SetFieldsAsync` call are applied together.
+- **No reflection.** Values are serialized only through the supplied `JsonTypeInfo<T>`.
+- **Shared connection only.** No connection of its own; TLS and timeouts come from `AddRedisConnection`.
 - **Failures.** Redis failures surface as `RedisException` (including `RedisConnectionException` while disconnected with
   the default fail-fast setting) or `TimeoutException`. A stored value that does not match the type fails with
   `JsonException`.
@@ -233,7 +234,7 @@ Both are `IServiceCollection` extensions and require `AddRedisConnection` first.
 | `IncrementFieldAsync` | `HINCRBY`, or a Lua script running `HINCRBY` then `PEXPIRE` with a time to live | The new value |
 | `DeleteFieldAsync` | `HDEL` | `true` when the field existed |
 | `DeleteAsync` | `DEL` | `true` when the key existed |
-| `ExpireAsync` | `EXPIRE`, or `PERSIST` for `null` | `true` when the key exists and its expiry changed |
+| `ExpireAsync` | `EXPIRE`/`PEXPIRE`, or `PERSIST` for `null` | `true` when the key exists and its expiry changed |
 
 ### Exceptions
 
@@ -246,6 +247,24 @@ Both are `IServiceCollection` extensions and require `AddRedisConnection` first.
 | `JsonException` | A stored value does not match the requested type |
 | `RedisException`, `TimeoutException` | Redis failed, including a key that holds another Redis type, or an increment on a non-integer field |
 | `OperationCanceledException` | The token was cancelled before the command was sent |
+
+### Logging and health
+
+The package does not log. It has no readiness probe of its own: the `redis` probe registered by `AddRedisConnection`
+reports the shared connection.
+
+## Testing
+
+Reference [`SharedKernel.Caching.Redis.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/16.Testing/SharedKernel.Caching.Redis.Testing/README.md)
+from your test project (namespace `SharedKernel.Testing.Caching`); no Redis and no `AddRedisConnection` needed.
+
+- `services.AddFakeRedisServices()` registers `FakeRedisHashService` as `IRedisHashService`;
+  `services.AddFakeTypedHashStore<T>()` registers `FakeTypedHashStore<T>` as `ITypedHashStore<T>`.
+- Both store the JSON the real service would write, apply the same argument validation, and expire keys by the
+  registered `TimeProvider` (or `TimeProvider.System`), so a fake time provider can expire a hash.
+- Arrange and assert with `Seed`, `SeedRaw` (untyped fake), `ContainsKey`, `GetTimeToLive`, `GetRawField`, `Keys` and
+  `Reset()`; `SimulateFailure = true` makes calls fail as if Redis did not answer.
+- An increment on a non-integer field throws `InvalidOperationException` in the fake, standing in for the Redis error.
 
 ## Pitfalls
 
@@ -280,27 +299,8 @@ atomic increments are Redis concepts. The abstractions package stays provider-ne
 **Why no key prefix, encryption or compression option?** Keys are the data's identity and belong at the call site, and
 values here are usually small. Callers that need encryption or compression apply it to the value before writing.
 
-## AI quick reference
+---
 
-```text
-REGISTER    builder.Services.AddRedisConnection(builder.Configuration).AddTypedHashStore(Ctx.Default.MyDto);
-            AddRedisHashService() for the untyped service. IServiceCollection only; no connection string. One store per T.
-JSON        [JsonSerializable(typeof(MyDto))][JsonSerializable(typeof(long))] partial class Ctx : JsonSerializerContext.
-KEYS        "{service}:tenant:{tenantId}:{entity}:{id}" - used as given, never prefixed.
-READ        CacheLookup<T> l = await store.GetFieldAsync(key, field, ct); l.IsHit / l.TryGetValue(out v). Never Value==null.
-            GetFieldsAsync(key, fields) -> only existing fields. GetAllFieldsAsync for small hashes only.
-WRITE       SetFieldAsync(key, field, value, timeToLive, ct) / SetFieldsAsync(key, dict, timeToLive, ct) - atomic with expiry.
-            No timeToLive -> existing expiry kept. ExpireAsync(key, null) removes expiry.
-COUNT       IncrementFieldAsync(key, field, delta, timeToLive, ct) -> new value; field must be an integer.
-DELETE      DeleteFieldAsync(key, field) / DeleteAsync(key) -> bool.
-ERRORS      JsonException (shape mismatch), RedisException/TimeoutException (Redis), ArgumentOutOfRangeException (ttl <= 0).
-NOT FOR     Cached values (ICacheService), durable messaging, unencrypted secrets.
-```
-
-## Compatibility and guarantees
-
-- **Public API is tracked** with `Microsoft.CodeAnalysis.PublicApiAnalyzers`, and every public member is documented.
-- **Atomic writes with expiry.** A write or increment with `timeToLive` never leaves the key without its expiry.
-- **Atomic multi-field writes.** All fields of one `SetFieldsAsync` call are applied together.
-- **No reflection.** Values are serialized only through the supplied `JsonTypeInfo<T>`.
-- **Shared connection only.** No connection of its own; TLS and timeouts come from `AddRedisConnection`.
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
+[Caching domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/02.Caching/README.md) ·
+[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

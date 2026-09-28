@@ -3,8 +3,8 @@
   <!--
     Evaluated AFTER the project body, so these targets can observe what the csproj itself set
     (Description, PackageTags, IsPackable) and fail the pack step if a shipping project forgot one.
-    Mechanical enforcement of "Description/PackageTags stay per-project" (Rule 7 / PLATFORM.md
-    "Build Configuration Map").
+    Mechanical enforcement of "Description/PackageTags stay per-project" (Rule 7 / eng/README.md
+    "Root build files").
   -->
 
   <!--
