@@ -1,830 +1,122 @@
-# 15.Integration — Outbound Integration
+# 15.Integration — Domain Brain
 
-> **Status:** all four packages are shipped and tested, and ship with the repo-wide release train (one version for every package, from a `v*` tag). WO-064 (hardening), WO-072 (notifications) and P-500 (async, AAD-bound payload encryption) are complete; their task history lives in [`state-map.md`](state-map.md). WO-086 made two changes here: every package declares a `<SharedKernelTier>`, and each webhook delivery carries the caller's correlation id (see "Dispatch").
-
-## What This Domain Is
-
-The outbound-delivery-to-a-destination-outside-our-control surface: signed (where the transport calls for it), resilient, retried, and observable, always via a seam this package defines rather than a `06.Persistence`/`11.Communication` dependency of its own. Two capability families share that identity today:
-
-- **Webhook delivery** (`SharedKernel.Integration.Webhooks`, shipped) — delivering platform integration events to external HTTP subscribers as signed webhooks. Every downstream microservice that needs to notify an external system (a partner API, a customer-configured callback URL) of something that happened — instead of, or in addition to, publishing onto the internal message bus — derives its dispatch, signing, retry, and verification behavior from the types defined here.
-- **Human-facing notification delivery** (`SharedKernel.Integration.Notifications.*`, shipped) — sending a customer a receipt, a one-time passcode, or a transaction alert by email or SMS. Every downstream microservice that needs to reach a *person* rather than a subscriber's API endpoint derives its send/dedup/observer behavior from the types defined here.
-
-Both families are delivery plumbing, not business logic — this domain does not decide *which* events matter to *which* subscriber, or *when* a notification should fire; it only delivers a given payload to a given external destination reliably, verifiably, and without one failure poisoning another delivery. The unifying test for whether a future capability belongs here: does it deliver *to a destination this platform does not control*, with resilience/retry/observer discipline as the concern? An inbound receiver (verifying someone else's signed webhook, receiving a provider's delivery-status callback) is explicitly **not** this domain's concern — `WebhookSignatureVerifier` is offered as a primitive a `14.Presentation` receiver endpoint calls, but this domain never hosts an HTTP receiving endpoint itself.
-
-Philosophy: **Thin. Transport-agnostic of the internal bus. Signed by default (webhooks) or provider-authenticated by default (notifications). Storage-agnostic.**
-
-> **Dependency boundary (tiers):** `SharedKernel.Integration.Notifications.Abstractions` is **Abstractions** tier; `SharedKernel.Integration.Webhooks`, `.Notifications.Email.SendGrid` and `.Notifications.Sms.Twilio` are **Adapter** tier. The build enforces the tier matrix (`eng/SharedKernelTiers.targets`, SKTIER001–006), so these packages reference only Foundation, Model and Abstractions packages — `SharedKernel.Primitives`, `.Execution`, `.Configuration`, `.Cryptography`, `SharedKernel.Contracts`, `SharedKernel.Messaging.Abstractions`, `SharedKernel.Storage.Abstractions` — and no other Adapter (none is declared in `<SharedKernelAllowedAdapterReferences>`) and nothing Host tier (no ASP.NET Core, SKTIER006). Consequences: (1) outbound HTTP goes directly through `IHttpClientFactory`, never `SharedKernel.Communication.Rest`'s typed-client builder (an undeclared Adapter→Adapter edge); this applies to webhooks and to both notification providers; (2) subscription storage, delivery history and per-tenant sender identity live in the consuming service — this domain defines only the seams (`IWebhookSubscriptionStore`/`IWebhookDeliveryObserver`, `INotificationSenderIdentityResolver`/`INotificationDeliveryObserver`); (3) a notification attachment is a `SharedKernel.Storage.FileReference` (store/tenant/key/ETag pointer), never inlined bytes and never a blob-SDK reference of this domain's own.
-
-
----
+> Outbound delivery to destinations the platform does not control, with resilience, retry and observer discipline. Two families share that identity: **webhooks** (`SharedKernel.Integration.Webhooks` — signed, retried, SSRF-guarded dispatch of integration events to external HTTP subscribers, plus the `WebhookSignatureVerifier` primitive) and **human-facing notifications** (`SharedKernel.Integration.Notifications.*` — email via SendGrid, SMS via Twilio, behind one contract). The domain is delivery plumbing: it never decides *which* event matters to *which* subscriber or *when* a notification fires. It deliberately owns **no** persistence (subscription storage, delivery history and sender identity are the consuming service's, through seams defined here), **no** inbound HTTP endpoint (a `14.Presentation` receiver calls `WebhookSignatureVerifier`), **no** vendor SDKs and **no** use of `11.Communication`.
 
 ## Packages
 
-| Package | Tier | Role | References |
-| --- | --- | --- | --- |
-| `SharedKernel.Integration.Webhooks` | Adapter | Outbound webhook subscription contract, HMAC-SHA256 signing + replay-resistant verification, retrying signed dispatch, delivery-exhausted integration event | `SharedKernel.Primitives`, `SharedKernel.Execution` (the ambient caller whose correlation id each delivery carries), `SharedKernel.Configuration`, `SharedKernel.Cryptography` (opt-in payload encryption), `SharedKernel.Contracts`, `SharedKernel.Messaging.Abstractions`, `Microsoft.Extensions.Http`, `Microsoft.Extensions.Http.Resilience` |
-| `SharedKernel.Integration.Notifications.Abstractions` | Abstractions | Provider-neutral email/SMS contract — `NotificationChannel`, `NotificationMessage<TTemplateModel>`, `INotificationSender`, `NotificationDeliveryResult`, `INotificationDeliveryObserver`, `INotificationSenderIdentityResolver`, `NotificationDeliveryOptions`, the shared `NotificationIntegrationActivitySource`. Zero I/O, zero concrete sender — mirrors `IWebhookSubscriptionStore`'s "interface only" precedent | `SharedKernel.Primitives`, `SharedKernel.Configuration`, `SharedKernel.Storage.Abstractions` |
-| `SharedKernel.Integration.Notifications.Email.SendGrid` | Adapter | First shipping email provider — direct SendGrid v3 REST API (no vendor SDK) via `IHttpClientFactory` | `SharedKernel.Integration.Notifications.Abstractions`, `SharedKernel.Storage.Abstractions`, `SharedKernel.Primitives`, `Microsoft.Extensions.Http`, `Microsoft.Extensions.Http.Resilience`, `Microsoft.Extensions.Logging.Abstractions` |
-| `SharedKernel.Integration.Notifications.Sms.Twilio` | Adapter | First shipping SMS provider — direct Twilio REST API (Content API for templated sends, no vendor SDK) via `IHttpClientFactory` | `SharedKernel.Integration.Notifications.Abstractions`, `SharedKernel.Primitives`, `Microsoft.Extensions.Http`, `Microsoft.Extensions.Http.Resilience`, `Microsoft.Extensions.Logging.Abstractions` |
-
-Targets `net10.0`, `ImplicitUsings` enabled, `Nullable` enabled. Every test sub-folder lives inside its package folder (never in a top-level `tests/`).
-
-Test doubles for consuming services live in `16.Testing/SharedKernel.Integration.Testing` (Testing tier, packable): `InMemoryWebhookDispatcher`/`AddInMemoryWebhookDispatcher()`, `InMemoryWebhookDeliveryObserver`/`AddInMemoryWebhookDeliveryObserver()`, `InMemoryNotificationSender`/`AddInMemoryNotificationSender(channel)` and `InMemoryNotificationDeliveryObserver`/`AddInMemoryNotificationDeliveryObserver()`. A change to `IWebhookDispatcher`, `IWebhookDeliveryObserver`, `INotificationSender` or `INotificationDeliveryObserver` must update them.
-
-**Package-split discipline, per family, independently:**
-- `SharedKernel.Integration.Webhooks` carries **no** `.Abstractions` sibling — unlike `02.Caching`/`06.Persistence`, it is a single capability with a single delivery mechanism today (HTTP), not an interchangeable multi-provider surface. If a second outbound *webhook* channel (e.g. a non-HTTP delivery mechanism for the same subscription model) is added later, re-evaluate this specific package's split at that time — do not pre-split speculatively. This reasoning is unchanged by WO-072.
-- `SharedKernel.Integration.Notifications.*` **does** follow the standard `.Abstractions` + `.{Provider}` split from day one (WO-072) — unlike Webhooks, this family starts with two genuinely different providers (SendGrid for email, Twilio for SMS) behind one contract, the textbook case the root `CLAUDE.md` package-naming convention calls out for an immediate split. The two provider packages are siblings and must never reference each other — only `.Abstractions`, mirroring the platform's other multi-provider precedents (`09.Search`, `12.Security`). (`08.Storage` is the one deliberate exception since P-559: `.Obs` builds on `.S3`.)
-- These are two independent split decisions for two independent capability families sharing one domain identity — the shipped decision for one family is never evidence for or against the other's.
-
----
-
-## Technology Stack
-
-| Concern | Technology | Owning Package |
-| --- | --- | --- |
-| Outbound HTTP delivery | `IHttpClientFactory` named client (`Microsoft.Extensions.Http`, in-box with ASP.NET Core) — pinned `10.0.9`, aligning with the platform's existing `10.0.9` floor for `Microsoft.Extensions.*` packages | `SharedKernel.Integration.Webhooks` |
-| Delivery resilience (retry, backoff, timeout) | Polly v8 via `Microsoft.Extensions.Http.Resilience`'s standard resilience handler — pinned `10.7.0` (latest stable on the .NET 10 line at Scaffold time, 2026-06-26); AOT status not yet verified, per the existing AOT caveat below | `SharedKernel.Integration.Webhooks` |
-| Signing | `System.Security.Cryptography.HMACSHA256` (BCL) — zero new dependency | `SharedKernel.Integration.Webhooks` |
-| Replay protection | Timestamp-prefixed signing input + constant-time comparison (`CryptographicOperations.FixedTimeEquals`) | `SharedKernel.Integration.Webhooks` |
-| Outbound payload serialization | `System.Text.Json` source-generated `JsonSerializerContext` | `SharedKernel.Integration.Webhooks` |
-| Delivery-exhausted notification | `IEventPublisher` (`SharedKernel.Messaging.Abstractions`, 07.Messaging) | `SharedKernel.Integration.Webhooks` |
-| Options validation | `SharedKernel.Configuration` (01.Core) Options-pattern validator | `SharedKernel.Integration.Webhooks` |
-| Outbound URL/SSRF guard (WO-064) | `System.Net.Dns` (BCL) resolved-`IPAddress` range checks — zero new dependency | `SharedKernel.Integration.Webhooks` |
-| Distributed tracing (WO-064) | `System.Diagnostics.ActivitySource` (BCL) — `"SharedKernel.Integration"` | `SharedKernel.Integration.Webhooks` |
-| Opt-in payload encryption (WO-064) | `ISymmetricEncryptionService` (AES-GCM, `SharedKernel.Cryptography`, 01.Core) | `SharedKernel.Integration.Webhooks` |
-| Outbound email delivery (WO-072, shipped) | Direct SendGrid v3 REST API via `IHttpClientFactory` named client + `Microsoft.Extensions.Http.Resilience` — no vendor SDK | `SharedKernel.Integration.Notifications.Email.SendGrid` |
-| Outbound SMS delivery (WO-072, shipped) | Direct Twilio REST API (Content API for templated sends) via `IHttpClientFactory` named client + `Microsoft.Extensions.Http.Resilience` — no vendor SDK | `SharedKernel.Integration.Notifications.Sms.Twilio` |
-| Notification attachment reference (WO-072, shipped) | `SharedKernel.Storage.FileReference` (`SharedKernel.Storage.Abstractions`) — store/tenant/key/ETag pointer, opened with `IFileStorageFactory.Open(reference)` and read with `IFileStorage.DownloadAsync` at send time, never inlined bytes | `SharedKernel.Integration.Notifications.Abstractions`, `.Email.SendGrid` |
-| Notification delivery resilience/rate-quota (WO-072, shipped) | Shared `NotificationDeliveryOptions`, same `AddOptions<T>().BindConfiguration(...)`/`IValidatableObject` shape as `WebhookDeliveryOptions`, consumed independently by each provider's own named `HttpClient` | `SharedKernel.Integration.Notifications.Abstractions` |
-| Notification-family distributed tracing (WO-072, shipped) | `System.Diagnostics.ActivitySource` (BCL) — a second instance sharing the name `"SharedKernel.Integration"` with the Webhooks `ActivitySource` | `SharedKernel.Integration.Notifications.Abstractions` |
-
-> **Why not the `SendGrid`/`Twilio` vendor NuGet SDKs (WO-072):** Both vendors' REST APIs (SendGrid Mail Send v3, Twilio Messages/Content API) are simple enough to drive directly with `IHttpClientFactory` + STJ, exactly like this domain's existing webhook-delivery pattern. Taking the vendor SDK instead would introduce a second, unaudited AOT/dependency-versioning surface per provider, and neither vendor SDK is known to respect this domain's "`IHttpClientFactory` is the only permitted `HttpClient` source" hard rule internally — its own client lifecycle could quietly violate P-159 on this package's behalf. This decision requires **no new `Directory.Packages.props` entry** — the already-pinned `Microsoft.Extensions.Http`/`Microsoft.Extensions.Http.Resilience` cover both providers, so `devops-lead` has nothing to pin for WO-072.
->
-> **Why not `SharedKernel.Communication.Rest`:** That package's `AddRestClient<TClient>()` is the platform's typed-client convention for *inter-service* REST calls, and referencing it would be an Adapter→Adapter edge this domain deliberately does not declare. It would also forward the caller's tenant, actor and client headers (`RequestContextDelegatingHandler`), which must never reach an external subscriber. Webhook delivery targets arbitrary, often third-party, externally-configured URLs — not a typed, service-discovery-resolved client — so the typed-client model doesn't fit even ignoring the layering constraint. Going directly through `IHttpClientFactory` is not a violation of the platform-wide "no raw `HttpClient` in a production constructor" rule (P-159): the factory itself is what's injected; `HttpClient` instances are created per-call via `CreateClient(...)` and never stored as injected state.
->
-> **Why no persistence here:** Subscription records (URL, secret, active event types) and any delivery-history ledger are ordinary application data owned by the consuming microservice, modeled with that service's own `06.Persistence` stack. This package only defines the read seam (`IWebhookSubscriptionStore`) and an optional observation seam (`IWebhookDeliveryObserver`) that the consuming service implements against its own storage. The same reasoning extends to notifications (WO-072, shipped): per-tenant sender identity/reply-to is ordinary application configuration, not something `SharedKernel.Integration.Notifications.Abstractions` resolves itself — it defines `INotificationSenderIdentityResolver` as the seam, bridged at the consuming service's own composition root, mirroring `05.Application`'s `IRequestContext` bridge pattern.
-
----
-
-## Interface Contracts
-
-### `SharedKernel.Integration.Webhooks` — public surface
-
-#### Subscriptions (`Subscriptions/`)
-
-```text
-WebhookSubscription  (sealed record)
-    .SubscriptionId  → Guid
-    .Secrets         → IReadOnlyList<string>   (WO-064/P-425, shipped — non-empty, newest-first; "sign with
-                                                the first, verify against any"; shared HMAC-SHA256 key material —
-                                                see Implementation Rules; never logged, never sent on the wire)
-    .Secret          → string   [Obsolete]     (WO-064/P-425 — back-compat convenience for the pre-rotation
-                                                single-secret shape; maps to a one-element Secrets list; retained,
-                                                never removed, since it is part of the released surface)
-    .Url             → Uri
-    .EventTypes      → IReadOnlyList<string>   (empty = subscribed to every event type; each entry is an
-                                                event's [IntegrationEvent] name, e.g. "orders.order-placed" —
-                                                never a CLR class name)
-    .Headers         → IReadOnlyDictionary<string,string>?   (WO-064/P-426, shipped — optional static
-                                                headers applied to every outbound delivery for this subscription,
-                                                default null/empty; a header name colliding with any
-                                                WebhookSignatureHeaders constant is rejected at dispatch time,
-                                                never silently overwritten in either direction)
-    .IsActive        → bool
-    NOTE: Pure DTO, no behavior. The consuming service owns persistence of the backing data (typically an
-          EF Core entity via its own 06.Persistence stack) and projects it into this record when handing
-          subscriptions to the dispatcher. This package never serializes or stores this type itself.
-
-IWebhookSubscriptionStore  (interface)
-    .GetActiveSubscriptionsAsync(string eventType, CancellationToken ct) → Task<IReadOnlyList<WebhookSubscription>>
-    NOTE: Implemented by the consuming microservice — there is no default implementation in this package.
-          Must return only IsActive == true subscriptions whose EventTypes either contains eventType or is
-          empty (empty list means "subscribed to everything"). That filtering is the implementation's
-          responsibility, not IWebhookDispatcher's.
-```
-
-#### Dispatch (`Dispatch/`)
-
-```text
-IWebhookDispatcher  (interface)
-    .DispatchAsync<TEvent>(TEvent integrationEvent, CancellationToken ct)
-        where TEvent : IIntegrationEvent                                   → Task<IReadOnlyList<WebhookDeliveryResult>>
-    NOTE: Resolves the routing key as IntegrationEventDescriptor.For(integrationEvent.GetType()).Name — the
-          [IntegrationEvent] name of the event's RUNTIME type (TEvent may be an interface or base type),
-          identical to the CloudEvents Type of its EventEnvelope<TEvent> in 04.Contracts, so one event routes
-          identically whether it travels over 07.Messaging or as a webhook, and a class rename never breaks a
-          subscription. The same name is used for tracing tags, logs and
-          WebhookDeliveryExhaustedEvent.EventType. An event type without a valid [IntegrationEvent] attribute
-          throws InvalidOperationException before any subscription lookup. Looks up active
-          subscriptions via IWebhookSubscriptionStore, then delivers to each concurrently (bounded by
-          WebhookDeliveryOptions.MaxConcurrentDeliveries). A single subscription's delivery failure never
-          faults the others — see DispatchToSubscriptionAsync.
-
-    .DispatchToSubscriptionAsync<TEvent>(WebhookSubscription subscription, TEvent integrationEvent, CancellationToken ct)
-        where TEvent : IIntegrationEvent                                   → Task<WebhookDeliveryResult>
-    NOTE: Single-subscription delivery path, exposed publicly for callers that already hold a resolved
-          subscription (e.g. a manual "redeliver this one" admin action) and don't need the fan-out lookup.
-          Never throws for an HTTP-level failure (non-2xx, timeout, transport exception) — those surface as
-          a WebhookDeliveryResult with IsSuccess == false. Only invalid input throws: null arguments
-          (ArgumentNullException) or an event type without a valid [IntegrationEvent] attribute
-          (InvalidOperationException).
-          On exhausting WebhookDeliveryOptions.MaxAttempts without a 2xx response, publishes exactly one
-          WebhookDeliveryExhaustedEvent via IEventPublisher before returning the failed result. Generates one
-          Guid delivery id at the start of the call (WO-064/P-423, shipped), stable across every retry of
-          this same delivery, sent as WebhookSignatureHeaders.DeliveryIdHeaderName and returned on
-          WebhookDeliveryResult.DeliveryId. Immediately before every SendAsync, invokes the registered
-          IWebhookUrlValidator (WO-064/P-422, shipped) against the subscription's Url; a rejected target
-          short-circuits to a failed WebhookDeliveryResult without any HTTP attempt, following the same
-          never-throws contract as an HTTP-level failure.
-          Adds X-Correlation-Id (WellKnownHeaders.CorrelationId) with the current operation's correlation id —
-          CorrelationIds.Current(RequestContextScope.Current): the ambient IRequestContext, else the correlation
-          baggage — unless a subscription header already set it. Nothing else from IRequestContext (tenant,
-          actor, client) is sent: the subscriber is outside the trust boundary.
-
-    .SendTestDeliveryAsync(WebhookSubscription subscription, CancellationToken ct) → Task<WebhookDeliveryResult>
-    NOTE (WO-064/P-429, shipped): Synthetic onboarding/connectivity-check delivery. Constructs a
-          WebhookPingEvent and calls the existing DispatchToSubscriptionAsync<WebhookPingEvent> verbatim — zero
-          parallel signing/retry/observer logic. Lets a subscriber verify their endpoint, signature
-          verification, and header handling before any real business event fires.
-
-WebhookDeliveryResult  (sealed record)
-    .SubscriptionId  → Guid
-    .DeliveryId      → Guid      (WO-064/P-423, shipped — identifies the delivery, stable across every
-                                  retry of that delivery; matches the WebhookSignatureHeaders.DeliveryIdHeaderName
-                                  value sent on the wire)
-    .IsSuccess       → bool
-    .StatusCode      → int?      (HTTP status of the final attempt; null if every attempt faulted before a response was received)
-    .Attempts        → int       (1-based count of HTTP attempts actually made)
-    .Error           → string?   (non-null only when IsSuccess == false)
-    NOTE: IsSuccess is true only when some attempt within MaxAttempts received a 2xx response. Every other
-          terminal outcome — non-2xx exhausted, timeout exhausted, transport exception exhausted, SSRF-guard
-          rejection (WO-064/P-422) — is IsSuccess == false with Error populated and StatusCode reflecting the
-          last attempt if one exists (null for an SSRF-guard rejection, since no HTTP attempt was made).
-```
-
-#### Outbound URL validation (`Dispatch/`, WO-064/P-422, shipped)
-
-```text
-IWebhookUrlValidator  (interface)
-    .ValidateAsync(Uri url, CancellationToken ct) → Task<bool>
-    NOTE: Invoked by WebhookDispatcher immediately before every SendAsync — re-checked per delivery attempt,
-          never cached from subscription-registration time, to close the DNS-rebinding bypass where a hostname
-          resolves to a public IP at validation time and a private one at connection time. A false result
-          surfaces as a failed, non-throwing WebhookDeliveryResult. Overridable via WithUrlValidator<T>().
-
-PrivateNetworkWebhookUrlValidator  (sealed class, default IWebhookUrlValidator)
-    NOTE: Resolves the target host via System.Net.Dns and rejects the request when the resolved IPAddress falls
-          in a loopback, link-local (169.254.0.0/16, fd00::/8), private (RFC1918/RFC4193), or multicast/reserved
-          range — checked for both IPv4 and IPv6. Checks the resolved IP, never the literal hostname string.
-          Fail-closed by default; WebhookDeliveryOptions.AllowPrivateNetworkTargets (bool, default false) is the
-          only permitted opt-out, intended for legitimate internal test/staging subscriptions only.
-```
-
-#### Signing and verification (`Signing/`)
-
-```text
-WebhookSignatureHeaders  (static class)
-    .SignatureHeaderName   → "X-Webhook-Signature"
-    .TimestampHeaderName   → "X-Webhook-Timestamp"
-    .DeliveryIdHeaderName  → "X-Webhook-Delivery-Id"   (WO-064/P-423, shipped)
-    NOTE: Single source of truth for all three header names. WebhookDispatcher and WebhookSignatureVerifier must
-          both reference these constants — never a literal header-name string — so the two sides cannot
-          silently drift. A WebhookSubscription.Headers (WO-064/P-426) entry colliding case-insensitively with
-          any of these three names is rejected at dispatch time.
-
-WebhookSignatureProvider  (sealed class)
-    .Sign(string payloadJson, string secret, DateTimeOffset timestamp) → string
-    NOTE: Computes HMAC-SHA256 (System.Security.Cryptography.HMACSHA256, BCL) over
-          UTF8("{timestamp:unix-seconds}.{payloadJson}") keyed by secret; returns the lowercase hex digest.
-          The timestamp-prefixed signing input is the GitHub/Stripe-style replay-protection convention —
-          the digest alone proves authenticity, not freshness; freshness is enforced separately by
-          WebhookSignatureVerifier's tolerance window. Stateless — registered as a singleton.
-
-WebhookSignatureVerifier  (static class)
-    .Verify(string payloadJson, string timestampHeaderValue, string signatureHeaderValue, string secret,
-            TimeSpan? tolerance = null)                                    → bool
-    NOTE: tolerance defaults to 5 minutes. Never throws — a malformed timestamp, a signature outside the
-          tolerance window, or a digest mismatch all return false. Digest comparison uses
-          CryptographicOperations.FixedTimeEquals (constant-time) — never `==` or `string.Equals` on the
-          digest, which would be a timing-attack vulnerability. This is the primitive a downstream
-          service's inbound webhook receiver endpoint (typically a 14.Presentation Minimal API route) calls
-          to validate a webhook claiming to originate from a SharedKernel.Integration.Webhooks dispatcher
-          elsewhere on the platform.
-
-    .Verify(string payloadJson, string timestampHeaderValue, string signatureHeaderValue,
-            IReadOnlyList<string> secretCandidates, TimeSpan? tolerance = null)   → bool
-    NOTE (WO-064/P-425, shipped): Multi-secret rotation overload. Evaluates
-          CryptographicOperations.FixedTimeEquals against every candidate in secretCandidates without
-          short-circuiting the iteration — the boolean result is accumulated across the full list, never
-          returned early on the first match — so total comparison time cannot itself leak which
-          rotation-window secret matched. Returns true if any candidate matches. The single-secret overload
-          above is retained unchanged and delegates to this one with a one-element list.
-
-WebhookPayloadAssociatedData  (static class — P-500/WO-081, shipped)
-    .Build(Guid subscriptionId, Guid deliveryId) → byte[]
-    NOTE: Canonical UTF-8 encoding of "{subscriptionId:D}.{deliveryId:D}" — the associated-data (AAD) input
-          WebhookDispatcher.SendAsync passes to ISymmetricEncryptionService.EncryptToStringAsync, consuming
-          01.Core's shipped P-491 (required AAD on every ISymmetricEncryptionService member). Mirrors
-          WebhookSignatureProvider.BuildSigningInput's role as the one canonical construction shared by both
-          the dispatch side and (for a first-party C# subscriber) the decrypt side — deliberately public, the
-          same reason WebhookSignatureVerifier is public, so a subscriber gets a byte-identical, drift-proof
-          derivation instead of hand-rolling string concatenation against an undocumented format/separator.
-          deliveryId supplies per-delivery freshness and is reproducible by the subscriber from the
-          already-shipped X-Webhook-Delivery-Id header; subscriptionId supplies identity binding and is
-          reproducible only out-of-band — through the same pre-established channel that already carries
-          WebhookSubscription.Secrets, never transmitted on the wire. See "Payload encryption rules" below
-          for why subscriptionId is deliberately never sent as a header.
-```
-
-#### Distributed tracing (`Dispatch/`, WO-064/P-424, shipped)
-
-```text
-WebhookIntegrationActivitySource  (static class, ActivitySource "SharedKernel.Integration")
-    NOTE: WebhookDispatcher.DispatchToSubscriptionAsync starts a "WebhookDispatcher.DispatchToSubscription"
-          span (tags: SubscriptionId, event type, outcome, attempt count); DispatchAsync starts a parent
-          "WebhookDispatcher.Dispatch" span (tags: subscription count, event type) around the fan-out. Spans
-          never carry WebhookSubscription.Url or .Secret as a tag under any circumstance. Any tag name that
-          overlaps an existing cross-domain concept (e.g. a future tenant-id tag) uses 01.Core's
-          WellKnownTagKeys; anything 15.Integration-specific uses a new domain-local WebhookActivityTags
-          constants class, following the same single-source-of-truth discipline as WebhookSignatureHeaders.
-```
-
-#### Delivery-exhausted notification (`Events/`)
-
-```text
-WebhookDeliveryExhaustedEvent  (sealed record, implements IIntegrationEvent)
-    [IntegrationEvent(EventName)]   EventName = "sharedkernel.webhooks.delivery-exhausted" (public const)
-    .EventId         → Guid
-    .OccurredOn      → DateTimeOffset
-    .SubscriptionId  → Guid
-    .EventType       → string   (the [IntegrationEvent] name of the original event that failed to deliver —
-                                 the routing key the subscription matched on)
-    .Attempts        → int
-    .LastError       → string?
-    NOTE: Published via IEventPublisher.PublishAsync exactly once per exhausted subscription, after
-          WebhookDeliveryOptions.MaxAttempts is reached without a 2xx response. Lets any consumer elsewhere
-          on the platform (an ops/alerting handler, or the owning service itself) react — disable the
-          subscription, page someone, surface it in an admin UI. This type lives here rather than in
-          04.Contracts because it is specific to this capability's own failure mode, not a general
-          cross-service contract; any service that wants to consume it already depends on
-          SharedKernel.Integration.Webhooks for the dispatcher itself.
-    NOTE: IIntegrationEvent in 04.Contracts is exactly { Guid EventId; DateTimeOffset OccurredOn; }.
-          IEventPublisher.PublishAsync<TEvent> constrains on `where TEvent : class, IIntegrationEvent` and
-          refuses an event type with no declared wire name, so both the interface and the [IntegrationEvent]
-          attribute are required for the publish call. Its envelope's CloudEvents Type is EventName.
-
-WebhookPingEvent  (sealed record, implements IIntegrationEvent)
-    [IntegrationEvent(EventName)]   EventName = "sharedkernel.webhooks.ping" (public const)
-    .EventId         → Guid
-    .OccurredOn      → DateTimeOffset
-    NOTE (WO-064/P-429, shipped): No business payload — deliberately minimal. Routes as its
-          [IntegrationEvent] name, EventName ("sharedkernel.webhooks.ping"), consistent with
-          IWebhookDispatcher's routing convention, giving the subscriber an unambiguous, reserved event-type name to distinguish a
-          synthetic onboarding delivery from real business data. Constructed and dispatched only by
-          IWebhookDispatcher.SendTestDeliveryAsync — never published onto 07.Messaging or fanned out via
-          DispatchAsync's normal subscription lookup.
-```
-
-#### Logging (`Dispatch/`)
-
-```text
-WebhookDispatcher — Log  (private static partial class nested inside WebhookDispatcher)
-    ObserverException(ILogger logger, Exception ex, string observerType)   [LoggerMessage, EventId = LoggingEventIdRanges.Integration + 0 (= 15000), Level = Warning]
-    NOTE: Backs the single shared LogObserverException(Exception ex, string observerTypeName) helper called from both
-          NotifyAttemptAsync and NotifyCompletedAsync when an IWebhookDeliveryObserver implementation throws. This
-          was the only production log statement in SharedKernel.Integration.Webhooks from P-257 (WO-041) until
-          WO-064 — see "Logging (EventId allocation)" below.
-
-    DeliverySucceeded(ILogger logger, Guid subscriptionId, string eventType, int attempts, int statusCode)
-        [LoggerMessage, EventId = LoggingEventIdRanges.Integration + 1 (= 15001), Level = Information]
-    DeliveryFailed(ILogger logger, Guid subscriptionId, string eventType, int attempts, int? statusCode, string? error)
-        [LoggerMessage, EventId = LoggingEventIdRanges.Integration + 2 (= 15002), Level = Warning]
-    DeliveryExhausted(ILogger logger, Guid subscriptionId, string eventType, int attempts)
-        [LoggerMessage, EventId = LoggingEventIdRanges.Integration + 3 (= 15003), Level = Warning]
-    NOTE (WO-064/P-428, shipped): Fired from WebhookDispatcher.DispatchToSubscriptionAsync on the
-          corresponding terminal outcome. DeliveryExhausted logs alongside — never in place of — the existing
-          WebhookDeliveryExhaustedEvent publish. None of the three ever include WebhookSubscription.Secret, the
-          signature digest, or the raw payload body as a template placeholder.
-```
-
-#### Delivery observation hook (`Observability/`)
-
-```text
-IWebhookDeliveryObserver  (interface)
-    .OnAttemptAsync(WebhookSubscription subscription, int attemptNumber, CancellationToken ct)      → Task
-    .OnCompletedAsync(WebhookSubscription subscription, WebhookDeliveryResult result, CancellationToken ct) → Task
-    NOTE: Optional — zero or more observers registered via WithDeliveryObserver<T>(). All registered
-          observers are invoked for every attempt and completion; an observer's exception is caught and
-          logged at LogLevel.Warning, never allowed to fault the delivery pipeline. This is the seam a
-          consuming service uses to persist a delivery-history ledger against its own 06.Persistence stack
-          without this package taking a 06.Persistence dependency.
-```
-
-#### Options (`Options/`)
-
-```text
-WebhookDeliveryOptions  (options POCO, section "SharedKernel:Integration:Webhooks")
-    .MaxAttempts              (int, default 5)              — [Range(1, int.MaxValue)]
-    .BaseBackoffDelay         (TimeSpan, default 2s)
-    .MaxBackoffDelay          (TimeSpan, default 60s)
-    .RequestTimeout           (TimeSpan, default 10s)
-    .SignatureTolerance       (TimeSpan, default 5m)
-    .MaxConcurrentDeliveries  (int, default 8)               — [Range(1, int.MaxValue)]
-    .AllowPrivateNetworkTargets  (bool, default false)       — WO-064/P-422, shipped; explicit SSRF-guard opt-out
-    .EncryptPayload           (bool, default false)          — WO-064/P-427, shipped; opt-in AES-GCM payload encryption
-                                                                 (P-500/WO-081, shipped: the encrypt call now uses
-                                                                 EncryptToStringAsync with required AAD from
-                                                                 WebhookPayloadAssociatedData.Build)
-    : IValidatableObject
-        → cross-field checks DataAnnotations attributes cannot express on their own:
-          BaseBackoffDelay, MaxBackoffDelay, RequestTimeout, SignatureTolerance all > TimeSpan.Zero;
-          MaxBackoffDelay ≥ BaseBackoffDelay.
-    NOTE: Registered and validated eagerly at startup: AddOptions<WebhookDeliveryOptions>()
-          .BindConfiguration("SharedKernel:Integration:Webhooks").ValidateDataAnnotations().ValidateOnStart().
-          Mechanical bounds are DataAnnotations [Range] attributes; the cross-field rule
-          (MaxBackoffDelay ≥ BaseBackoffDelay) and the positive-TimeSpan checks are IValidatableObject.Validate.
-    NOTE (WO-064/P-421, shipped): MaxAttempts/BaseBackoffDelay/MaxBackoffDelay/RequestTimeout drive the
-          named HttpClient's Microsoft.Extensions.Http.Resilience pipeline via the exact formula —
-          Retry.MaxRetryAttempts = Math.Max(0, MaxAttempts - 1); Retry.Delay = BaseBackoffDelay;
-          Retry.BackoffType = DelayBackoffType.Exponential; Retry.MaxDelay = MaxBackoffDelay;
-          AttemptTimeout.Timeout = RequestTimeout;
-          TotalRequestTimeout.Timeout = (RequestTimeout + MaxBackoffDelay) * MaxAttempts (a documented
-          worst-case bound, not a magic constant) — resolved from ResilienceHandlerContext.ServiceProvider
-          inside AddStandardResilienceHandler's configuration callback, never left to the library's own
-          built-in defaults. See docs/configuration-reference.md for the fully worked mapping.
-```
-
-#### DI extensions (`Extensions/`)
-
-```text
-AddSharedKernelWebhooks(this IServiceCollection services, Action<WebhookDeliveryOptions>? configure = null)
-    → IServiceCollection
-    NOTE: Registers WebhookDeliveryOptions (+ eager validator), WebhookSignatureProvider (singleton —
-          stateless), IWebhookDispatcher → WebhookDispatcher (scoped), IWebhookUrlValidator →
-          PrivateNetworkWebhookUrlValidator (WO-064/P-422, shipped — singleton, overridable via
-          WithUrlValidator<T>()), and a named HttpClient ("SharedKernel.Integration.Webhooks") via
-          AddHttpClient(...).AddStandardResilienceHandler(...) (Microsoft.Extensions.Http.Resilience)
-          configured from the resolved WebhookDeliveryOptions per the P-421 field-mapping formula documented
-          in the Options section above. Does NOT register IWebhookSubscriptionStore (required — the consuming
-          service must register its own implementation or DI resolution fails at first use) or any
-          IWebhookDeliveryObserver (optional).
-
-WithDeliveryObserver<TObserver>(this IServiceCollection services) → IServiceCollection
-    where TObserver : class, IWebhookDeliveryObserver
-    NOTE: Registers TObserver as scoped. Additive — multiple calls accumulate; every registered observer
-          fires for every delivery attempt and completion, in registration order.
-
-WithUrlValidator<TValidator>(this IServiceCollection services) → IServiceCollection
-    where TValidator : class, IWebhookUrlValidator
-    NOTE (WO-064/P-422, shipped): Overrides the default PrivateNetworkWebhookUrlValidator registration —
-          the last call wins (single active validator, unlike WithDeliveryObserver<T>()'s additive registration).
-          Exists for consuming services with a non-default target-network policy; the SSRF-guard default posture
-          must not be silently disabled — prefer WebhookDeliveryOptions.AllowPrivateNetworkTargets for the common
-          "allow internal staging targets" case instead of a full custom validator.
-```
-
----
-
-### `SharedKernel.Integration.Notifications.*` — public surface (WO-072, shipped)
-
-> Every type below is real, shipped, tested code. See `15.Integration/state-map.md`'s `SK.15.WO072` phase (N-01–N-26, all `●`) for the implementation checklist.
-
-#### Notifications (`SharedKernel.Integration.Notifications.Abstractions`, `Notifications/`)
-
-```text
-NotificationChannel  (enum)
-    Email
-    Sms
-    NOTE: No Push member — device-token registration/platform-specific payload shaping is materially more
-          scope than text delivery and is explicitly declined for WO-072; propose it as its own follow-up
-          once this seam is proven.
-
-NotificationMessage<TTemplateModel>  (sealed record)
-    .NotificationDeliveryId  → Guid          (caller-supplied, required — NOT generated internally, unlike
-                                              WebhookDeliveryResult.DeliveryId. A caller-level retry after a
-                                              crash must reuse the same id so the provider's own dedup
-                                              mechanism — see below — actually prevents a double-send. This
-                                              mirrors 05.Application's IIdempotentRequest idempotency-key
-                                              convention, just one layer further out.)
-    .Channel                 → NotificationChannel
-    .Recipient                → string       (PII — email address or E.164 phone number depending on
-                                              Channel; NEVER PASSED AS A [LoggerMessage] TEMPLATE PLACEHOLDER,
-                                              mirroring 10.Intelligence's "prompt/completion text is never a
-                                              log-message parameter" precedent)
-    .TemplateId               → string
-    .TemplateModel             → TTemplateModel   (strongly typed — never string concatenation at the call
-                                              site; PII-bearing fields on this model MUST NOT be passed as a
-                                              [LoggerMessage] placeholder either)
-    .Locale                    → string?     (forward-compatible seam only — see the Localization
-                                              composition note under Implementation Rules; no logic in
-                                              this domain consumes it yet)
-    .ReplyTo                   → string?     (optional override; falls back to the per-tenant resolved
-                                              INotificationSenderIdentity.ReplyTo when null)
-    .Attachments               → IReadOnlyList<NotificationAttachment>?
-    NOTE: Pure DTO, no behavior — mirrors WebhookSubscription's shape discipline.
-
-NotificationAttachment  (sealed record)
-    .FileReference  → SharedKernel.Storage.FileReference   (Store/TenantId/Key/ETag/VersionId —
-                                              the object-storage handle; NEVER an inline byte[]/Stream
-                                              overload anywhere on this type or on NotificationMessage)
-    .FileName        → string               (display filename shown to the recipient; independent of the
-                                              storage Key)
-    .ContentType      → string?
-
-INotificationSender  (interface)
-    .SupportedChannel → NotificationChannel
-    .SendAsync<TTemplateModel>(NotificationMessage<TTemplateModel> message, CancellationToken ct)
-                                              → Task<NotificationDeliveryResult>
-    NOTE: Never throws for a provider-level send failure (non-2xx, timeout, transport exception, or an
-          unresolvable attachment FileReference) — those surface as a NotificationDeliveryResult with
-          IsSuccess == false, mirroring IWebhookDispatcher's never-throws convention. Implementations are
-          registered as KEYED services (AddKeyedScoped<INotificationSender, TSender>(NotificationChannel.X))
-          — this package defines no router/dispatcher type; the channel-selection decision belongs to
-          whatever application-layer code is choosing "send an email" vs. "send an SMS."
-
-NotificationDeliveryResult  (sealed record)
-    .NotificationDeliveryId → Guid
-    .IsSuccess               → bool
-    .ProviderMessageId        → string?      (the vendor's own message/SID id, for correlating with a
-                                              future provider delivery-status callback — out of scope today)
-    .Error                    → string?      (non-null only when IsSuccess == false)
-    NOTE: Deliberately NOT Result<T>-wrapped — a domain-internal parallel to WebhookDeliveryResult's
-          established shape, for consistency within 15.Integration, even though this package's own
-          SharedKernel.Storage.Abstractions dependency uses Result<T> internally.
-```
-
-#### Delivery observation and sender-identity seams (`Observability/`)
-
-```text
-INotificationDeliveryObserver  (interface)
-    .OnAttemptAsync(NotificationDeliveryContext context, int attemptNumber, CancellationToken ct)      → Task
-    .OnCompletedAsync(NotificationDeliveryContext context, NotificationDeliveryResult result, CancellationToken ct) → Task
-    NOTE: Mirrors IWebhookDeliveryObserver's exact shape. An observer's exception is caught and logged,
-          never allowed to fault the send outcome — same hard rule as webhooks.
-
-NotificationDeliveryContext  (sealed record)
-    .NotificationDeliveryId → Guid
-    .Channel                 → NotificationChannel
-    .Recipient                → string   (passed to observer CODE, not logged by this package — a
-                                          consuming observer implementation that logs it is that
-                                          service's own responsibility/violation, not this package's)
-    .TemplateId               → string
-
-INotificationSenderIdentityResolver  (interface)
-    .ResolveAsync(NotificationChannel channel, CancellationToken ct) → Task<NotificationSenderIdentity>
-    NOTE: Bridged at the consuming service's own composition root against its own tenant catalog/config —
-          never a direct persistence/13.ServiceDefaults reference from this package, mirroring
-          05.Application's IRequestContext bridge pattern.
-
-NotificationSenderIdentity  (sealed record)
-    .FromAddress   → string    (the "from" email address, or SMS sender number/short-code/alphanumeric ID)
-    .DisplayName    → string?
-    .ReplyTo         → string?
-```
-
-#### Distributed tracing (`Tracing/`)
-
-```text
-NotificationIntegrationActivitySource  (static class, ActivitySource "SharedKernel.Integration")
-    NOTE: A SECOND, independently-instantiated ActivitySource object deliberately sharing the identical
-          name string WebhookIntegrationActivitySource (SharedKernel.Integration.Webhooks) already uses.
-          Lives here — in .Abstractions — because both provider packages already reference it (an ordinary
-          upward reference), and no legal reference path exists between the two independent package
-          families (Notifications must never reference Webhooks, or vice versa) to share one constant.
-          OTel subscribes to ActivitySource instances purely by name string, so two same-named instances
-          from unrelated packages is correct, not a violation. 13.ServiceDefaults's existing
-          WithIntegrationTelemetry (P-430) needs no change — it already subscribes by this name string.
-```
-
-#### Options (`Options/`, Notifications)
-
-```text
-NotificationDeliveryOptions  (options POCO, section "SharedKernel:Integration:Notifications")
-    .MaxAttempts              (int, default 3)               — [Range(1, int.MaxValue)]
-    .BaseBackoffDelay         (TimeSpan, default 1s)
-    .MaxBackoffDelay          (TimeSpan, default 30s)
-    .RequestTimeout           (TimeSpan, default 10s)
-    .MaxConcurrentSends       (int, default 16)               — [Range(1, int.MaxValue)]
-    : IValidatableObject       → same cross-field-check shape as WebhookDeliveryOptions (positive
-                                  TimeSpans; MaxBackoffDelay ≥ BaseBackoffDelay)
-    NOTE: Registered/validated via AddOptions<T>().BindConfiguration(...).ValidateOnStart() — the identical
-          mechanism WebhookDeliveryOptions uses. SHARED across every provider package — each provider's
-          own named HttpClient resilience wiring is configured from this one options type, never a
-          per-provider duplicate options shape for the retry/backoff/timeout/concurrency knobs. A
-          provider-specific credential (SendGridNotificationOptions.ApiKey, TwilioNotificationOptions.
-          AccountSid/AuthToken/From) lives in that provider's own package, never here.
-```
-
-#### DI extensions (`Extensions/`, Notifications)
-
-```text
-AddSharedKernelNotifications(this IServiceCollection services, Action<NotificationDeliveryOptions>? configure = null)
-    → IServiceCollection
-    NOTE: Registers NotificationDeliveryOptions (+ eager validator) only. Does NOT register any
-          INotificationSender (provider-supplied, keyed) or INotificationSenderIdentityResolver (required
-          — consuming service must register its own, mirroring IWebhookSubscriptionStore's "required,
-          consumer-supplied" precedent).
-
-WithNotificationDeliveryObserver<TObserver>(this IServiceCollection services) → IServiceCollection
-    where TObserver : class, INotificationDeliveryObserver
-    NOTE: Additive — mirrors WithDeliveryObserver<T>()'s exact registration shape.
-
-// Provider packages each add their own registration extension, e.g.:
-AddSendGridEmailNotifications(this IServiceCollection services, Action<SendGridNotificationOptions> configure)
-    → IServiceCollection
-    NOTE (SharedKernel.Integration.Notifications.Email.SendGrid): registers SendGridNotificationOptions,
-          a named HttpClient ("SharedKernel.Integration.Notifications.Email.SendGrid") with
-          AddStandardResilienceHandler(...) configured from NotificationDeliveryOptions, and
-          AddKeyedScoped<INotificationSender, SendGridEmailNotificationSender>(NotificationChannel.Email).
-
-AddTwilioSmsNotifications(this IServiceCollection services, Action<TwilioNotificationOptions> configure)
-    → IServiceCollection
-    NOTE (SharedKernel.Integration.Notifications.Sms.Twilio): same shape, keyed on NotificationChannel.Sms.
-```
-
----
-
-## Implementation Rules
-
-### Hard violations (never do these)
-
-- Constructing `new HttpClient()` anywhere in this package, or injecting a raw `HttpClient` into any constructor — `IHttpClientFactory` is the only permitted source, and only via the named client registered by `AddSharedKernelWebhooks`.
-- `WebhookSubscription.Secret`/`.Secrets` appearing in a log statement, an exception message, an outbound request body, or any header other than as the *input* to `WebhookSignatureProvider.Sign` — only the derived HMAC digest is ever transmitted or surfaced. (WO-064/P-425, shipped: this extends unchanged to the new `Secrets` list — every candidate is signing/verification input only, never surfaced.)
-- Comparing a computed signature digest to a received one with `==`, `string.Equals`, or any non-constant-time comparison — `CryptographicOperations.FixedTimeEquals` is mandatory inside `WebhookSignatureVerifier`, including per-candidate in the WO-064/P-425 multi-secret overload (never short-circuited on the first match).
-- `WebhookSignatureVerifier.Verify` throwing for any malformed input — malformed timestamp, malformed signature, or a missing header must all produce `false`, never an exception.
-- Adding a `DbContext`, `IRepository<T,TId>`, or any other `06.Persistence` type to this package — subscription storage and delivery-history persistence are the consuming service's responsibility, expressed only through `IWebhookSubscriptionStore` and `IWebhookDeliveryObserver`.
-- Adding a `ProjectReference` to any `11.Communication.*` package — outbound HTTP goes directly through `IHttpClientFactory`; see "Why not `SharedKernel.Communication.Rest`" above.
-- Adding a `ProjectReference` to `SharedKernel.Messaging.MassTransit` or any other Adapter/Host package — only `SharedKernel.Messaging.Abstractions` (`IEventPublisher`) is needed, and no Adapter→Adapter edge is declared.
-- Sending the caller's tenant id, actor, client id or any other `IRequestContext` attribution on a webhook or notification — a subscriber or provider is outside the platform's trust boundary. Webhooks forward only the correlation id (`X-Correlation-Id`); never use `RequestContextPropagation` here.
-- Letting an `IWebhookDeliveryObserver` implementation's exception propagate out of `IWebhookDispatcher` — observer calls are wrapped in try/catch with `LogLevel.Warning` logging; a faulty observer must never affect delivery outcome.
-- Publishing `WebhookDeliveryExhaustedEvent` more than once per exhausted delivery, or publishing it for an attempt that has not yet exhausted `WebhookDeliveryOptions.MaxAttempts`.
-- `IWebhookDispatcher.DispatchAsync`/`DispatchToSubscriptionAsync` throwing because of an individual subscription's HTTP failure, or because `IWebhookUrlValidator` rejects the target — per-subscription outcomes surface as a `WebhookDeliveryResult`, never an exception, so one unreachable or SSRF-guard-rejected endpoint cannot fail an entire fan-out (WO-064/P-422, shipped).
-- Checking `WebhookSubscription.Url`'s literal hostname string instead of the DNS-resolved `IPAddress` in `IWebhookUrlValidator` — a hostname-only check is trivially bypassed by DNS rebinding (WO-064/P-422, shipped).
-- Caching an `IWebhookUrlValidator` result from subscription-registration time instead of re-validating immediately before every `SendAsync` — the resolved IP can change between registration and delivery (WO-064/P-422, shipped).
-- A `WebhookSubscription.Headers` entry silently overwriting (or being silently overwritten by) `WebhookSignatureHeaders.SignatureHeaderName`/`.TimestampHeaderName`/`.DeliveryIdHeaderName` — a name collision must fail the dispatch loudly, in either direction (WO-064/P-426, shipped).
-- Any static mutable state.
-
-### Signing convention rules
-
-- The signing input is always `"{unixSeconds}.{payloadJson}"`, UTF-8 encoded — never the payload alone. Signing the payload alone provides authenticity but not freshness, allowing a captured request to be replayed indefinitely. (WO-064/P-427, shipped: when opt-in payload encryption is enabled, `payloadJson` in this formula is the post-encryption ciphertext representation, not the plaintext — see "Payload encryption rules" below.)
-- `WebhookSignatureHeaders.SignatureHeaderName`, `.TimestampHeaderName`, and `.DeliveryIdHeaderName` (WO-064/P-423) are the only permitted header name literals — both the dispatcher (writing headers) and the verifier (reading them) reference these constants.
-- `WebhookDeliveryOptions.SignatureTolerance` (default 5 minutes) is the only permitted clock-skew allowance for `WebhookSignatureVerifier.Verify` — do not hardcode a different window at a call site.
-- `WebhookSubscription.Secrets` is always signed with `Secrets[0]` (the newest, first in the newest-first ordering) — never a randomly-selected or last-in-list candidate (WO-064/P-425, shipped). Verification, in contrast, must accept a match against *any* candidate in the list.
-
-### Delivery rules
-
-- `IWebhookDispatcher` resolves the event-type routing key as `IntegrationEventDescriptor.For(integrationEvent.GetType()).Name` — the `[IntegrationEvent]` name of the runtime type, identical to the CloudEvents `Type` of its `EventEnvelope<TEvent>` in `04.Contracts`, so the same event routes identically over `07.Messaging` and over webhooks. Never `typeof(TEvent).Name`: a class rename must not break a subscription. `WebhookSubscription.EventTypes` therefore holds attribute names, and every dispatched event type must declare `[IntegrationEvent]` or the dispatcher throws `InvalidOperationException`. `WebhookPingEvent` routes as `WebhookPingEvent.EventName` (`"sharedkernel.webhooks.ping"`) and `WebhookDeliveryExhaustedEvent` publishes as `WebhookDeliveryExhaustedEvent.EventName` (`"sharedkernel.webhooks.delivery-exhausted"`) — reference the constants, never retype the literals.
-- Retry/backoff is configured once, on the named `HttpClient`, via `Microsoft.Extensions.Http.Resilience`'s standard resilience handler — never a hand-rolled retry loop inside `WebhookDispatcher`. The four `WebhookDeliveryOptions` retry/backoff/timeout knobs must actually drive that handler's configuration (WO-064/P-421, shipped) — a validated-but-unconsulted options value is itself a hard violation of this rule's intent, even though nothing here previously said so explicitly.
-- `WebhookDeliveryOptions.MaxConcurrentDeliveries` bounds the fan-out in `DispatchAsync` — unbounded `Task.WhenAll` over an arbitrarily large subscription list is a hard violation.
-- `IWebhookDispatcher.SendTestDeliveryAsync` (WO-064/P-429, shipped) must call the real `DispatchToSubscriptionAsync` — a parallel/duplicated signing-and-send code path for test deliveries is prohibited, since the entire point of a test delivery is proving the *actual* production code path works.
-
-### SSRF guard rules (WO-064/P-422, shipped)
-
-- Outbound delivery to a `WebhookSubscription.Url` that resolves to a loopback, link-local (`169.254.0.0/16`/`fd00::/8`), private (RFC1918/RFC4193), or multicast/reserved IP address is rejected by default, for both IPv4 and IPv6 — fail-closed is the only acceptable default posture for a package whose purpose is issuing outbound HTTP requests to externally-supplied URLs.
-- The only permitted opt-out is `WebhookDeliveryOptions.AllowPrivateNetworkTargets` (or a caller-supplied `IWebhookUrlValidator` via `WithUrlValidator<T>()`) — never a silent bypass, a hardcoded allowlist bypassing the validator entirely, or a `TODO`-commented-out check.
-- A rejected target is a `WebhookDeliveryResult` with `IsSuccess == false`, never a thrown exception — consistent with every other HTTP-level failure this package already treats this way.
-- Validation runs immediately before every `SendAsync`, not once at subscription-registration time — this is the specific defense against DNS-rebinding TOCTOU bypass.
-
-### Payload encryption rules (WO-064/P-427, shipped; AAD/async migration P-500/WO-081, shipped)
-
-- Opt-in only, via `WebhookDeliveryOptions.EncryptPayload` — disabled by default; TLS already provides transport confidentiality, this is defense-in-depth for subscribers who want payload-level confidentiality independent of their own TLS termination boundary.
-- Order is always encrypt-then-sign — the HMAC signature is computed over the post-encryption ciphertext bytes, never the plaintext, so `WebhookSignatureVerifier` continues to detect tampering on exactly what was transmitted.
-- Uses `01.Core/SharedKernel.Cryptography`'s `ISymmetricEncryptionService` (AES-GCM/AEAD) exclusively — introducing a new cryptographic primitive inside `SharedKernel.Integration.Webhooks` itself is a hard violation, mirroring the platform-wide "no hand-rolled crypto" rule in the root `CLAUDE.md`.
-- **(P-500/WO-081, shipped)** The encrypt call is always `EncryptToStringAsync`, never the retired synchronous `EncryptToString` — `WebhookDispatcher.SendAsync` is fully async end to end, and since the P-545 `SharedKernel.Cryptography` redesign `ISymmetricEncryptionService` is async-only, so a KMS-backed `IEncryptionKeyProvider` works unchanged. Registration is `AddSharedKernelCryptography(configuration).AddSymmetricEncryption()` plus a consumer-supplied `IEncryptionKeyProvider`. The transmitted body is the ciphertext's canonical `EncryptedPayload.ToString()` form (unpadded Base64Url of `SharedKernel.Cryptography`'s versioned binary layout) — never a hand-rolled encoding.
-- **(P-500/WO-081, shipped)** The associated-data (AAD) argument is always `WebhookPayloadAssociatedData.Build(subscription.SubscriptionId, deliveryId)` — never a constant, never `Array.Empty<byte>()`, and never a value derived solely from data transmitted on the wire. `subscriptionId` must be reproducible by the decrypting party (the external subscriber) only out-of-band — the same pre-established channel that already carries `WebhookSubscription.Secrets` — precisely because an AAD value that is itself transmitted alongside the ciphertext gives no protection against a captured-ciphertext replay: the attacker would simply resupply whatever AAD travels with it. Adding a header that transmits `subscriptionId` (e.g. `X-Webhook-Subscription-Id`) is a hard violation of this rule's intent, not a compliant alternative — it would defeat the entire purpose of binding subscription identity into the AAD. `deliveryId`, in contrast, is expected to come from the already-shipped `X-Webhook-Delivery-Id` header — its role is per-delivery freshness/uniqueness, not identity authentication, so transmitting it is correct and necessary. This anti-cross-subscription-replay guarantee is proven, not merely asserted — `WebhookPayloadEncryptionTests` includes a test that swaps AAD between two otherwise-identical deliveries, and its genuineness was verified by temporarily sabotaging the dispatch-side derivation and confirming the test then fails.
-- **(P-500/WO-081, shipped)** A mismatched AAD at decrypt time is exclusively a subscriber-side concern, surfacing through `01.Core`'s own failed-`Result` contract (`ErrorType.Validation`, code `cryptography.decryption_failed`) — `WebhookDispatcher` itself never observes an AAD mismatch, since it always derives fresh, correct AAD for the exact delivery it is about to send.
-
-### Logging rules
-
-- Every production log statement in this package is authored via the `[LoggerMessage]` source-generated partial-method pattern (root `CLAUDE.md` Logging Conventions) — a direct `ILogger.LogInformation/LogWarning/LogError/LogCritical/LogTrace/LogDebug(...)` extension-method call or a hand-written `LoggerMessage.Define<>()` static delegate is a hard violation, mechanically enforced by `00.Governance`'s SK0020 (`DirectILoggerExtensionMethodUsage`) / SK0021 (`HandWrittenLoggerMessageDefineDelegate`) analyzers and `LoggingEventIdIntegrityAssertion` (P-250) once shipped.
-- Every `[LoggerMessage]` method's `EventId` is written as `LoggingEventIdRanges.Integration + {offset}` (`LoggingEventIdRanges.Integration` is `const int` = 15000, so the sum is itself a valid compile-time constant `[LoggerMessage(EventId = ...)]` argument) — never a bare literal integer.
-- Message template placeholders are PascalCase named properties matching the call's named arguments (e.g. `{ObserverType}`) — never positional placeholders, never string-interpolated into the template.
-- CorrelationId, distributed-trace context, and TenantId are never passed as explicit message-template placeholders on any log statement in this package — they flow ambiently through the OpenTelemetry logging pipeline (`13.ServiceDefaults`), consistent with the root convention.
-
-### Notification hard violations (WO-072, shipped)
-
-- Adding a byte-array/inline-content overload for `NotificationAttachment` anywhere — attachments are `SharedKernel.Storage.FileReference` object references only, opened with `IFileStorageFactory.Open(reference)` and read with `IFileStorage.DownloadAsync` at send time.
-- `NotificationMessage.Recipient` or any field of `NotificationMessage.TemplateModel` appearing as a `[LoggerMessage]` message-template placeholder, an exception message, or an `Activity` tag — mirrors `WebhookSubscription.Secret`'s never-surfaced discipline, extended to PII instead of a signing secret.
-- Generating `NotificationDeliveryId` internally inside a provider's `SendAsync` implementation instead of requiring it as a caller-supplied, required field on `NotificationMessage` — unlike `WebhookDeliveryResult.DeliveryId`, this identifier must survive a caller-level crash-and-retry, which is only possible if the caller (not the provider) owns its generation and persistence.
-- A provider package (`.Email.SendGrid`, `.Sms.Twilio`) referencing the other provider package, or either referencing `SharedKernel.Integration.Webhooks` — sibling packages under one domain identity never reference each other; both depend only on `SharedKernel.Integration.Notifications.Abstractions`.
-- A provider package taking a `PackageReference` to the vendor's own NuGet SDK (`SendGrid`, `Twilio`) — the ratified WO-072 design decision is direct REST calls via `IHttpClientFactory`; reversing this decision is a new design conversation, not a routine implementation choice, since it changes this domain's dependency-surface posture.
-- `INotificationSender.SendAsync` throwing for a provider-level send failure (non-2xx, timeout, transport exception, unresolvable attachment) instead of returning a `NotificationDeliveryResult` with `IsSuccess == false` — the identical never-throws discipline `IWebhookDispatcher` already carries.
-- Introducing a router/dispatcher type that resolves `INotificationSender` by convention instead of the documented keyed-DI resolution (`GetRequiredKeyedService<INotificationSender>(channel)`) — this package deliberately owns no fan-out/routing responsibility, unlike `IWebhookDispatcher`.
-
----
-
-## AOT Notes
-
-- `HMACSHA256` and `CryptographicOperations.FixedTimeEquals` are BCL, fully AOT-compatible.
-- The outbound payload is serialized via a `System.Text.Json` source-generated `JsonSerializerContext` — no runtime reflection-based serialization.
-- `Microsoft.Extensions.Http.Resilience` (Polly v8) AOT status must be re-verified on every major version bump — third-party, not BCL.
-- No reflection anywhere in this package's hot path; `IWebhookSubscriptionStore` and `IWebhookDeliveryObserver` are plain interfaces resolved through ordinary DI.
-- (WO-064/P-422, shipped) `System.Net.Dns.GetHostAddressesAsync`/IP-range checks in `PrivateNetworkWebhookUrlValidator` are BCL, fully AOT-compatible.
-- (WO-064/P-424, shipped) `System.Diagnostics.ActivitySource`/`Activity` are BCL, fully AOT-compatible — no new AOT risk from the tracing addition.
-- (WO-064/P-427, shipped) `ISymmetricEncryptionService` (AES-GCM) from `SharedKernel.Cryptography` is already documented as pure-BCL/AOT-safe in `01.Core`'s own brain (P-205–P-209, WO-033) — this package inherits that guarantee by composition, introducing no new AOT-risk surface of its own.
-- (WO-072, shipped) `SharedKernel.Integration.Notifications.Abstractions` has no third-party dependency beyond what `SharedKernel.Storage.Abstractions` already carries (which is itself zero-third-party, only `SharedKernel.Primitives`) — no new AOT risk from the Abstractions package.
-- (WO-072, shipped) Both provider packages serialize their vendor request envelope via a source-generated `JsonSerializerContext`, no runtime reflection. Deliberately taking **no** vendor SDK (`SendGrid`/`Twilio` NuGet) is itself an AOT-risk-avoidance decision, not just a dependency-surface one — neither vendor SDK's AOT compatibility has been evaluated, and this domain does not need to evaluate it since it never takes the dependency.
-- (WO-072, shipped) `System.Security.Cryptography.ToBase64Transform`/`CryptoStream` (used by `.Email.SendGrid` to stream-encode an attachment into the outbound JSON body without materializing the full base64 string) are BCL, fully AOT-compatible.
-- (P-500/WO-081, shipped) `WebhookPayloadAssociatedData.Build`'s `byte[]` construction is a plain `Encoding.UTF8.GetBytes($"{subscriptionId:D}.{deliveryId:D}")` call — no reflection, no new AOT surface. `EncryptToStringAsync`'s `associatedData` parameter is a plain `byte[]` passed straight through, mirroring `01.Core`'s own P-491 AOT note (a signature change only). This migration introduced zero new AOT risk of its own.
-
----
-
-## Logging (EventId allocation — P-257/WO-041, re-partitioned WO-072)
-
-`15.Integration` reserves `LoggingEventIdRanges.Integration` (15000-15999, from `SharedKernel.Primitives` — `01.Core` P-249) as its platform-wide `EventId` block. **From WO-032 through WO-064 this was documented as an undivided single-package block**, since `SharedKernel.Integration.Webhooks` was the domain's only package and the root registry's 100-wide-per-package sub-block rule applies only "when a domain has multiple packages." **WO-072 ends that exception** — this is now genuinely a multi-package domain, so the block is re-partitioned into 100-wide sub-blocks, one per package, in declaration order (mirroring `02.Caching`'s convention, exactly as this domain's own prior planning always said it would if this day came):
-
-| Package | Sub-block | Status |
-| --- | --- | --- |
-| `SharedKernel.Integration.Webhooks` | 15000-15099 | Shipped — unchanged by this re-partition, see table below |
-| `SharedKernel.Integration.Notifications.Abstractions` | 15100-15199 | Reserved, unused today (pure contracts, zero I/O — no log statement is expected in this package) |
-| `SharedKernel.Integration.Notifications.Email.SendGrid` | 15200-15299 | Shipped |
-| `SharedKernel.Integration.Notifications.Sms.Twilio` | 15300-15399 | Shipped |
-| *(unallocated)* | 15400-15999 | Reserved for a future fifth package in this domain |
-
-### `SharedKernel.Integration.Webhooks` (15000-15099)
-
-| Type | EventId | Level | Trigger |
-| --- | --- | --- | --- |
-| `WebhookDispatcher.Log.ObserverException` | `LoggingEventIdRanges.Integration + 0` (15000) | Warning | An `IWebhookDeliveryObserver` implementation's `OnAttemptAsync`/`OnCompletedAsync` throws; the exception is caught and logged, never propagated (see the observer-isolation hard violation above) |
-| `WebhookDispatcher.Log.DeliverySucceeded` (WO-064/P-428, shipped) | `LoggingEventIdRanges.Integration + 1` (15001) | Information | A delivery's final outcome is a 2xx response, within `MaxAttempts` |
-| `WebhookDispatcher.Log.DeliveryFailed` (WO-064/P-428, shipped) | `LoggingEventIdRanges.Integration + 2` (15002) | Warning | A delivery's final outcome is a non-2xx/timeout/transport failure, within `MaxAttempts` (i.e. not yet exhausted) |
-| `WebhookDispatcher.Log.DeliveryExhausted` (WO-064/P-428, shipped) | `LoggingEventIdRanges.Integration + 3` (15003) | Warning | `MaxAttempts` reached without a 2xx response — logged alongside, never in place of, the `WebhookDeliveryExhaustedEvent` publish |
-
-Offsets `+4` through `+99` (15004-15099) stay reserved for future logging additions to this specific package.
-
-### `SharedKernel.Integration.Notifications.Email.SendGrid` (15200-15299, WO-072, shipped)
-
-| Type | EventId | Level | Trigger |
-| --- | --- | --- | --- |
-| `SendGridEmailNotificationSender.Log.DeliverySucceeded` | `LoggingEventIdRanges.Integration + 200` (15200) | Information | A send's final outcome is a 2xx response |
-| `SendGridEmailNotificationSender.Log.DeliveryFailed` | `LoggingEventIdRanges.Integration + 201` (15201) | Warning | A send's final outcome is a non-2xx/timeout/transport failure, or an unresolvable attachment `FileReference` |
-| `SendGridEmailNotificationSender.Log.ObserverException` | `LoggingEventIdRanges.Integration + 202` (15202) | Warning | An `INotificationDeliveryObserver` implementation's `OnAttemptAsync`/`OnCompletedAsync` throws; the exception is caught and logged, never propagated — added during implementation, mirroring `WebhookDispatcher.Log.ObserverException`'s established shape; not present in the original WO-072 design pass |
-
-### `SharedKernel.Integration.Notifications.Sms.Twilio` (15300-15399, WO-072, shipped)
-
-| Type | EventId | Level | Trigger |
-| --- | --- | --- | --- |
-| `TwilioSmsNotificationSender.Log.DeliverySucceeded` | `LoggingEventIdRanges.Integration + 300` (15300) | Information | A send's final outcome is a 2xx response |
-| `TwilioSmsNotificationSender.Log.DeliveryFailed` | `LoggingEventIdRanges.Integration + 301` (15301) | Warning | A send's final outcome is a non-2xx/timeout/transport failure |
-| `TwilioSmsNotificationSender.Log.ObserverException` | `LoggingEventIdRanges.Integration + 302` (15302) | Warning | An `INotificationDeliveryObserver` implementation's `OnAttemptAsync`/`OnCompletedAsync` throws; the exception is caught and logged, never propagated — added during implementation, same rationale as SendGrid's `+202` above |
-
-Every `[LoggerMessage(EventId = ...)]` value in every package in this domain must be written as `LoggingEventIdRanges.Integration + {offset}` — never a bare literal integer. Neither notification `DeliverySucceeded`/`DeliveryFailed` pair ever includes `NotificationMessage.Recipient` or `.TemplateModel` as a template placeholder — the same discipline `WebhookDispatcher.Log` already carries for `WebhookSubscription.Secret`. Note: `Attempts`/`MaxAttempts` are not surfaced as log-template placeholders for either notification sender — unlike `WebhookDispatcher`, `INotificationDeliveryObserver.OnAttemptAsync` is invoked exactly once per send (`attemptNumber: 1`, matching `WebhookDispatcher.NotifyAttemptAsync`'s own precedent), since `Microsoft.Extensions.Http.Resilience`'s retry pipeline handles retries transparently below the sender and `NotificationDeliveryResult` carries no `Attempts` count on its contract.
-
----
-
-## Tracing (`"SharedKernel.Integration"` ActivitySource — P-424/WO-064, extended WO-072)
-
-This domain's distributed-tracing surface, mirroring the shape of the Logging section above. **Two independently-instantiated `ActivitySource` objects share the identical name `"SharedKernel.Integration"`** — `WebhookIntegrationActivitySource` (`SharedKernel.Integration.Webhooks`, shipped) and `NotificationIntegrationActivitySource` (`SharedKernel.Integration.Notifications.Abstractions`, WO-072, shipped). This is deliberate, not drift: OTel subscribes to sources by name string at the listener level, and no legal reference path exists between the two independent package families to share one constant instance. Both land under one OTel source in Grafana/Tempo, matching this domain's unified identity.
-
-- **Source name:** `"SharedKernel.Integration"`, following the owning-namespace naming convention `06.Persistence`/`07.Messaging` already established — not the package name. Both `ActivitySource` declarations must use this exact literal; a future package in this domain that emits telemetry does the same.
-- **Webhooks spans** (shipped):
-  - `WebhookDispatcher.Dispatch` — the parent span wrapping `DispatchAsync`'s fan-out. Tags: `webhook.subscription_count`, `webhook.event_type` (`WebhookActivityTags.SubscriptionCount`/`.EventType`).
-  - `WebhookDispatcher.DispatchToSubscription` — the per-subscription span wrapping `DispatchToSubscriptionAsync`. Tags: `webhook.subscription_id`, `webhook.event_type`, `webhook.outcome` (`"success"`/`"failure"`), `webhook.attempt_count` (`WebhookActivityTags.SubscriptionId`/`.EventType`/`.Outcome`/`.AttemptCount`).
-  - No span emitted by `SharedKernel.Integration.Webhooks` ever carries `WebhookSubscription.Url` or any signing secret as a tag, under any circumstance — verified by a dedicated `ActivityListener`-based test (`WebhookTracingTests`).
-  - Tag-name source of truth: `WebhookActivityTags` (`Dispatch/`), a domain-local static-constants class mirroring `WebhookSignatureHeaders`' single-source-of-truth discipline.
-- **Notification spans** (WO-072, shipped): each provider wraps its `SendAsync` in a `NotificationSender.Send` span (tags: `notification.channel`, `notification.outcome`, `notification.attempt_count` — a new `NotificationActivityTags` constants class, colocated in `.Abstractions` alongside `NotificationIntegrationActivitySource` for the same "everyone downstream already references this package" reason). No span emitted by either notification provider ever carries `NotificationMessage.Recipient` or any `.TemplateModel` field as a tag, under any circumstance — the identical no-PII-as-tag discipline the Webhooks family already enforces for its signing secret.
-- A future tag needing a cross-domain concept (e.g. a tenant-id tag) reuses `01.Core`'s `WellKnownTagKeys` instead of adding a duplicate literal to either `WebhookActivityTags` or `NotificationActivityTags` — none of today's tags in either family overlap an existing cross-domain concept.
-
----
-
-## DI Registration (shipped shape)
-
-```csharp
-// Minimal setup — caller must also register IWebhookSubscriptionStore
-builder.Services.AddSharedKernelWebhooks();
-builder.Services.AddScoped<IWebhookSubscriptionStore, EfWebhookSubscriptionStore>();
-
-// With custom delivery options
-builder.Services.AddSharedKernelWebhooks(options =>
-{
-    options.MaxAttempts = 8;
-    options.RequestTimeout = TimeSpan.FromSeconds(15);
-});
-
-// Optional delivery-history observer, backed by the consuming service's own persistence
-builder.Services.WithDeliveryObserver<EfWebhookDeliveryLedger>();
-
-// WO-064/P-422, shipped — overriding the default SSRF-guard validator (rarely needed;
-// prefer WebhookDeliveryOptions.AllowPrivateNetworkTargets for the common internal-staging case)
-builder.Services.WithUrlValidator<CustomAllowlistWebhookUrlValidator>();
-
-// Dispatching an integration event as a webhook (application-layer call site).
-// The [IntegrationEvent] name is the routing key subscriptions list in WebhookSubscription.EventTypes.
-[IntegrationEvent("orders.order-shipped")]
-public sealed record OrderShippedIntegrationEvent(Guid EventId, DateTimeOffset OccurredOn, Guid OrderId)
-    : IIntegrationEvent;
-
-var results = await webhookDispatcher.DispatchAsync(
-    new OrderShippedIntegrationEvent(Guid.NewGuid(), clock.UtcNow, order.Id), ct);
-
-// WO-064/P-429, shipped — onboarding a new subscription with a synthetic ping delivery
-var pingResult = await webhookDispatcher.SendTestDeliveryAsync(subscription, ct);
-
-// Verifying an inbound webhook claiming to come from this dispatcher (14.Presentation receiver endpoint)
-var isValid = WebhookSignatureVerifier.Verify(
-    payloadJson: rawBody,
-    timestampHeaderValue: request.Headers[WebhookSignatureHeaders.TimestampHeaderName],
-    signatureHeaderValue: request.Headers[WebhookSignatureHeaders.SignatureHeaderName],
-    secretCandidates: subscription.Secrets); // WO-064/P-425 — accepts a match against any active secret
-```
-
-### Notifications (WO-072, shipped shape)
-
-```csharp
-// Minimal setup — caller must also register INotificationSenderIdentityResolver
-builder.Services.AddSharedKernelNotifications();
-builder.Services.AddScoped<INotificationSenderIdentityResolver, TenantNotificationSenderIdentityResolver>();
-
-// Each provider registers itself, keyed by the channel it serves
-builder.Services.AddSendGridEmailNotifications(options => options.ApiKey = configuration["SendGrid:ApiKey"]!);
-builder.Services.AddTwilioSmsNotifications(options =>
-{
-    options.AccountSid = configuration["Twilio:AccountSid"]!;
-    options.AuthToken = configuration["Twilio:AuthToken"]!;
-    options.MessagingServiceSid = configuration["Twilio:MessagingServiceSid"];
-});
-
-// Optional delivery-history observer, backed by the consuming service's own persistence
-builder.Services.WithNotificationDeliveryObserver<EfNotificationDeliveryLedger>();
-
-// Sending a templated email with an attachment (application-layer call site)
-public sealed record OrderReceiptTemplateModel(string OrderNumber, string Total);
-
-var sender = serviceProvider.GetRequiredKeyedService<INotificationSender>(NotificationChannel.Email);
-var result = await sender.SendAsync(
-    new NotificationMessage<OrderReceiptTemplateModel>
-    {
-        NotificationDeliveryId = order.ReceiptDeliveryId, // caller-owned — reused verbatim on retry
-        Channel = NotificationChannel.Email,
-        Recipient = customer.Email,
-        TemplateId = "d-order-receipt",
-        TemplateModel = new OrderReceiptTemplateModel(order.Number, order.Total.ToString()),
-        Attachments = [new NotificationAttachment { FileReference = invoiceRef, FileName = "invoice.pdf" }],
-    },
-    ct);
-```
-
-**Implementation notes not spelled out in the original WO-072 design pass, decided during N-14/N-22:**
-- Each provider's `AddSendGridEmailNotifications`/`AddTwilioSmsNotifications` inlines its own `AddStandardResilienceHandler().Configure(...)` field-mapping callback (identical formula to `AddSharedKernelWebhooks`/P-421) rather than sharing one helper — `SharedKernel.Integration.Notifications.Abstractions` is deliberately zero-I/O and takes no `Microsoft.Extensions.Http.Resilience` dependency of its own, so no shared configurator type could live there. A small amount of duplication between the two provider DI extensions is the accepted cost of that boundary.
-- `NotificationDeliveryOptions.MaxConcurrentSends` is enforced via the resilience pipeline's own rate-limiter stage (`HttpStandardResilienceOptions.RateLimiter.DefaultRateLimiterOptions`, a BCL `System.Threading.RateLimiting.ConcurrencyLimiterOptions` — `PermitLimit`/`QueueLimit` both set from `MaxConcurrentSends`), not a hand-rolled `SemaphoreSlim` — this is the concrete mechanism behind the design's "no bespoke per-provider throttle type" requirement (N-23).
-- `INotificationDeliveryObserver.OnAttemptAsync` is invoked exactly once per send (`attemptNumber: 1`), mirroring `WebhookDispatcher.NotifyAttemptAsync`'s own precedent — retries are handled transparently by the resilience pipeline below the sender, and `NotificationDeliveryResult` carries no `Attempts` count on its contract (deliberately, per the locked design).
-
----
-
-## Test Rules
-
-- Test project is nested inside the package folder: `SharedKernel.Integration.Webhooks/SharedKernel.Integration.Webhooks.Tests/`.
-- HTTP delivery tests stub the named `HttpClient` via a fake `DelegatingHandler` registered through `IHttpClientFactory` test wiring — no real network calls, no Testcontainers needed for this package.
-- `WebhookSignatureProvider`/`WebhookSignatureVerifier`: round-trip tests (sign then verify succeeds), tamper tests (mutated payload or header fails verification), expired-timestamp tests (outside tolerance fails), malformed-input tests (never throws, always returns `false`).
-- `IWebhookDispatcher.DispatchAsync`: fan-out to N active subscriptions, inactive/non-matching subscriptions excluded, one subscription's failure does not affect others' results.
-- Retry/backoff: transient failures (e.g. 503 responses) retried up to `MaxAttempts`, success on a later attempt reflected correctly in `WebhookDeliveryResult.Attempts`, exhaustion publishes exactly one `WebhookDeliveryExhaustedEvent` — assert via `16.Testing/SharedKernel.Messaging.Testing`'s `InMemoryEventPublisher` (`ShouldHavePublishedOnce<WebhookDeliveryExhaustedEvent>()`) rather than a hand-rolled `IEventPublisher` stub.
-- `IWebhookDeliveryObserver`: registered observers invoked once per attempt and once per completion; an observer that throws does not affect the delivery outcome and is logged (via `WebhookDispatcher.Log.ObserverException`, `EventId = LoggingEventIdRanges.Integration + 0`), not rethrown.
-- `WebhookDeliveryOptions` validator: each invalid combination (zero `MaxAttempts`, `MaxBackoffDelay < BaseBackoffDelay`, non-positive `TimeSpan` values) fails startup validation with an actionable message.
-- (WO-064/P-421, shipped) Resilience-handler field mapping: a GATING regression test configures non-default `MaxAttempts`/`BaseBackoffDelay`/`MaxBackoffDelay`/`RequestTimeout` and proves — via a `StubHttpMessageHandler` failure/retry sequence — that the dispatcher's real attempt count, inter-attempt delay bound, and per-attempt timeout match the configured values, not the resilience library's own built-in defaults.
-- (WO-064/P-422, shipped) `IWebhookUrlValidator`: a rejection test (via a spy/fake validator, never a real DNS lookup) proves a private/loopback/metadata-resolving target is rejected before any HTTP attempt, surfaces as a non-throwing `WebhookDeliveryResult`, and still notifies registered observers; a separate test proves `AllowPrivateNetworkTargets = true` permits the target through.
-- (WO-064/P-423, shipped) Delivery id: a multi-retry test proves the `X-Webhook-Delivery-Id` header value is identical across every attempt of one delivery and equals the returned `WebhookDeliveryResult.DeliveryId`.
-- (WO-064/P-424, shipped) `ActivitySource`: a test using an `ActivityListener` proves a span is emitted for both a successful and a failed delivery, with the documented tags present and `Url`/`Secret` never present as a tag key or value.
-- (WO-064/P-425, shipped) Multi-secret rotation: a test proves a signature produced with a non-newest active secret still verifies against the full `Secrets` candidate list, and that `FixedTimeEquals` is evaluated once per candidate without short-circuiting.
-- (WO-064/P-426, shipped) Custom headers: a test proves `WebhookSubscription.Headers` entries are present on the outbound request; a second test proves a reserved-header-name collision is rejected before any HTTP call.
-- (WO-064/P-427, shipped) Payload encryption: a round-trip test (encrypt → sign over ciphertext → verify → decrypt → original payload recovered) when `EncryptPayload = true`; a test proving zero wire-format change when left at its `false` default.
-- (P-500/WO-081, shipped) Payload encryption AAD: the round-trip test passes matching `WebhookPayloadAssociatedData.Build(subscriptionId, deliveryId)` on both the encrypt and simulated-subscriber-decrypt sides (via `DecryptToStringAsync`); a new test proves decrypting a captured ciphertext against a *different* subscription id's AAD fails, and against the correct one succeeds (the headline anti-cross-subscription-replay proof, swapping AAD between two otherwise-identical deliveries) — verified non-vacuous by temporarily breaking the dispatch-side AAD derivation and confirming the test fails, then reverting.
-- (WO-064/P-428, shipped) Delivery-outcome logging: assertions via `16.Testing/SharedKernel.Testing`'s in-memory `ILogger`/`ILoggerFactory` double proving `DeliverySucceeded`/`DeliveryFailed`/`DeliveryExhausted` fire on the corresponding outcome, and that no log statement in the package ever includes `Secret`/digest/payload content.
-- (WO-064/P-429, shipped) `SendTestDeliveryAsync`: a test proves the ping delivery is signed, delivered, and retried identically to a real event dispatch, and that the delivered event-type is unambiguously `WebhookPingEvent.EventName` (`"sharedkernel.webhooks.ping"`).
-- Routing key: tests prove the subscription lookup, tracing tags and `WebhookDeliveryExhaustedEvent.EventType` use the `[IntegrationEvent]` name of the event's runtime type, and that dispatching an event type without the attribute throws `InvalidOperationException`. Test events declare a unique name+version pair.
-- Standard test package set: `xunit`, `xunit.runner.visualstudio`, `Microsoft.NET.Test.Sdk`, `coverlet.collector`, `FluentAssertions`, plus `Microsoft.Extensions.Http` test doubles as needed. `GlobalUsings.cs` includes `global using Xunit;`.
-
-### Notifications (WO-072, shipped)
-
-- Each package's test project is nested inside its own package folder, same convention as Webhooks.
-- `NotificationDeliveryOptions` validator: same invalid-combination coverage as `WebhookDeliveryOptions` (zero `MaxAttempts`, `MaxBackoffDelay < BaseBackoffDelay`, non-positive `TimeSpan`).
-- `NotificationAttachment`: a compile-time-shape/reflection assertion proving no byte-array/inline-content constructor path exists on the type.
-- `.Email.SendGrid`/`.Sms.Twilio` send tests stub the named `HttpClient` via a fake `DelegatingHandler` — no real network calls, no vendor sandbox account needed, mirroring Webhooks' `StubHttpMessageHandler` precedent exactly.
-- Every provider's send test suite includes a dedicated assertion that `NotificationMessage.Recipient` and every `.TemplateModel` field never appear in a captured log record, via `16.Testing/SharedKernel.Testing`'s in-memory `ILogger`/`ILoggerFactory` double — mirroring the WO-064/P-428 `Secret`/digest/payload-never-logged coverage.
-- `.Email.SendGrid`: a test proves the SendGrid `custom_args` field carries `NotificationDeliveryId`; an attachment test proves the base64-transform path never materializes the full attachment content as a single `byte[]` (assert via a bounded-buffer read pattern, not a literal memory-profiler assertion); attachment-resolution-failure tests (a missing key, and a reference to an unknown store or the wrong tenancy, against `16.Testing`'s `InMemoryFileStorage` stores registered with `AddSharedKernelStorage().AddInMemoryStore(...)`/`.AddInMemoryTenantStore(...)`) prove a non-throwing `NotificationDeliveryResult`; a tenant attachment is read through that tenant's view.
-- `.Sms.Twilio`: a test proves the outbound body is form-encoded (`application/x-www-form-urlencoded`) with `ContentVariables` as a JSON-encoded field value, not a JSON request body; a test proves the `Idempotency-Key` header carries `NotificationDeliveryId`; a test proves no code path renders an HTML-only template for SMS.
-- Keyed-DI resolution: a consumer-verify-style test proves `GetRequiredKeyedService<INotificationSender>(NotificationChannel.Email)` resolves the SendGrid sender and `NotificationChannel.Sms` resolves the Twilio sender when both providers are registered, with no ambiguity — implemented as new Surfaces 3/4 in `15.Integration/consumer-verify/Program.cs` (extending the existing Webhooks Surfaces 1/2 harness) rather than a fourth standalone test project, since it inherently needs both provider packages referenced together in one container.
-- **Build-environment note (not a design decision, a local workaround):** all three new `.Tests` projects' default nested `obj`/`bin` path (`15.Integration/<Package>/<Package>.Tests/obj/Release/net10.0/...`) can exceed Windows' 260-character `MAX_PATH` limit once combined with `Microsoft.NET.Test.Sdk`'s longer generated build-artifact filenames (`.GeneratedMSBuildEditorConfig.editorconfig`, `.deps.json`, etc.) — confirmed by measuring exact path lengths, not assumed; `SharedKernel.Integration.Webhooks.Tests` never hit this because `Webhooks` is a much shorter package-name segment than `Notifications.Abstractions`/`Notifications.Email.SendGrid`/`Notifications.Sms.Twilio`. Each affected `.Tests.csproj` carries a project-local `<BaseIntermediateOutputPath>`/`<BaseOutputPath>` override rooted at `$([System.IO.Path]::GetTempPath())sk-build\...` (an absolute path — a relative `..\..\..\` redirect does **not** help, since MSBuild's too-long-path check runs against the raw unresolved string). This does **not** touch the shared root `Directory.Build.props` and produces no shipped artifact difference — `PackageOutputPath` for `dotnet pack` is set independently and unaffected.
-
----
-
-## Changelog
-
-> Maintained by the integration domain agent. One line per significant change.
-
-- [2026-06-25] Domain brain initialized — packages, technology stack, layering-boundary rationale (no `11.Communication`, no `06.Persistence`), interface contracts (`WebhookSubscription`/`IWebhookSubscriptionStore`, `IWebhookDispatcher`/`WebhookDeliveryResult`, `WebhookSignatureProvider`/`WebhookSignatureVerifier`, `WebhookDeliveryExhaustedEvent`, `IWebhookDeliveryObserver`, `WebhookDeliveryOptions`, DI extensions), implementation rules, AOT notes, DI registration shape, test rules (claude)
-- [2026-06-26] SK.15.Scaffold (P-201) complete — `SharedKernel.Integration.Webhooks.csproj` wired to the four locked ProjectReferences plus `Microsoft.Extensions.Http` `10.0.9` / `Microsoft.Extensions.Http.Resilience` `10.7.0` (first platform pin for both); 7 stub folders created; Tests project wired to `SharedKernel.Testing` + standard xUnit/FluentAssertions set; both already present in `.slnx`; `dotnet build` clean on both target projects (integration-phase-implementer)
-- [2026-06-26] WO-032 Design phase (P-200) locked — every interface contract re-confirmed against current upstream source (`SharedKernel.Primitives`, `SharedKernel.Contracts`'s `IIntegrationEvent`/`EventEnvelope<TEvent>`, `SharedKernel.Messaging.Abstractions`'s `IEventPublisher`, `SharedKernel.Configuration`'s `OptionsExtensions`); one correction made — `WebhookDeliveryOptions` validates via DataAnnotations `[Range]` attributes + `IValidatableObject` through `AddValidatedOptions<TOptions>(IConfigurationSection)`, not a free-standing validator type as originally phrased, since `SharedKernel.Configuration` exposes no separate `IValidateOptions<T>` contract; `IWebhookDispatcher`'s `typeof(TEvent).Name` routing convention reconfirmed as a deliberate parallel to (not a shared constraint with) `EventEnvelope<TEvent>.EventType`; `WebhookDeliveryExhaustedEvent` implementing `IIntegrationEvent` reconfirmed as a convention choice, not an `IEventPublisher` requirement (`PublishAsync<TEvent>` constrains only `where TEvent : class`); zero reference to `06.Persistence`/`11.Communication.*`/`07.Messaging.MassTransit` re-verified across all four confirmed dependency surfaces (integration-arch-planner)
-- [2026-06-26] SK.15.Docs (DO-01–DO-03) complete — `GenerateDocumentationFile` enabled in `SharedKernel.Integration.Webhooks.csproj` (zero missing-doc warnings; one unresolved `<see cref="WebhookDispatcher"/>` in `WebhookSignatureVerifier.cs` fixed by switching to a `<c>` literal since the type lives in a different namespace than the doc comment's compilation context expects); `README.md` added covering minimal setup, custom `WebhookDeliveryOptions`, `WithDeliveryObserver<T>()`, `DispatchAsync`/`DispatchToSubscriptionAsync`, and inbound `WebhookSignatureVerifier.Verify` usage from a `14.Presentation` receiver; `docs/configuration-reference.md` added covering every `WebhookDeliveryOptions` property/default/bound and validation-failure examples; 48/48 tests still passing (integration-phase-implementer)
-- [2026-06-26] SK.15.Published (P-01–P-05) complete — verification-only, no interface/rule changes. `SharedKernel.Integration.Webhooks.csproj` gained full NuGet packaging metadata mirroring the `12.Security`/`13.ServiceDefaults`/`14.Presentation` convention (`PackageId`, MIT license, README packed via `PackagePath="\"`, symbol package); packs cleanly to `.nupkg`+`.snupkg` with zero warnings, output to root `artifacts/nupkg/` per the established repo convention (both extensions already `.gitignore`d). New `15.Integration/consumer-verify` harness (mirrors the `13.ServiceDefaults`/`14.Presentation` consumer-verify pattern, registered in `Platform.SharedKernel.slnx`) proves `AddSharedKernelWebhooks()` + a registered `IWebhookSubscriptionStore` + a stand-in `IEventPublisher` resolves `IWebhookDispatcher` and completes a real `DispatchAsync` call with zero DI exceptions, and proves omitting `IWebhookSubscriptionStore` causes `GetRequiredService<IWebhookDispatcher>()` itself to throw `InvalidOperationException` naming the missing type — failure surfaces immediately at first resolution (a constructor dependency of `WebhookDispatcher`), not deferred into a silently-resolved dispatcher that no-ops inside `DispatchAsync`. Harness discovery: `AddSharedKernelWebhooks()`'s `BindConfiguration` call requires `IConfiguration` registered in the container even with no bound section — any real host's builder already provides this; the harness registers an empty `ConfigurationBuilder().Build()` instance to satisfy it in isolation. 48/48 tests still passing. `SharedKernel.Integration.Webhooks` now `●` Published — **15.Integration domain (WO-032) complete end to end** (integration-phase-implementer)
-- [2026-07-09] LoggingRetrofit phase (P-257, WO-041) planned — audited the domain's entire production log surface: exactly one call site, `WebhookDispatcher.LogObserverException` (a shared private helper invoked from both `NotifyAttemptAsync` and `NotifyCompletedAsync`), currently a direct `_logger.LogWarning(...)` call, no pre-existing `EventId` and no hand-written `LoggerMessage.Define` delegate. Added a "Logging" entry to the Interface Contracts section (`WebhookDispatcher.Log.ObserverException`, `[LoggerMessage]`, `EventId = LoggingEventIdRanges.Integration + 0` = 15000), a new "Logging rules" implementation-rules subsection, and a new "Logging (EventId allocation)" section documenting that this single-package domain needs no 100-wide sub-block subdivision — the full 15000-15999 block belongs to `SharedKernel.Integration.Webhooks`, with `+1..+999` reserved for future growth or a genuine second delivery-channel package. Test Rules updated to reference the new `Log.ObserverException` method. 5 tasks (LR-01→LR-05) added to `15.Integration/state-map.md` under `SK.15.LoggingRetrofit` — execution-blocked until `01.Core` ships `LoggingEventIdRanges` (P-249, `0/4` done as of this planning pass) (integration-arch-planner, WO-041)
-- [2026-07-14] LoggingRetrofit (LR-01→LR-05) shipped — `WebhookDispatcher.LogObserverException` now backed by a `[LoggerMessage]`-attributed `Log.ObserverException(ILogger, Exception, string)` on a nested `Log` class; Logging interface contract corrected to match the shipped signature (added the `Exception ex` parameter) (integration-phase-implementer)
-- [2026-08-21] WO-064 gold-standard/big-fintech hardening pass design-locked on top of the `●`-Published v1.0.0 surface (nine root phases, P-421–P-429, dispatched by `arch-lead`; 38-task implementation checklist added to `state-map.md`'s `SK.15.WO064`, all `○` Pending — none of this has shipped yet). Design banner at the top of this file annotates every affected contract "(WO-064)". Summary of what changed in this pass: `WebhookSubscription` gains `Secrets: IReadOnlyList<string>` (newest-first, sign-with-newest/verify-against-any — P-425) with the singular `Secret` retained `[Obsolete]` for back-compat, and an optional `Headers` dictionary with a fail-loud reserved-name-collision rule against the three `WebhookSignatureHeaders` constants (P-426); `WebhookSignatureHeaders` gains `.DeliveryIdHeaderName` (P-423); `WebhookSignatureVerifier.Verify` gains a multi-secret-candidate overload evaluating `FixedTimeEquals` against every candidate without short-circuiting, to avoid leaking which rotation-window secret matched via timing (P-425); `WebhookDeliveryResult` gains `.DeliveryId: Guid`, stable across a delivery's retries (P-423); a new `IWebhookUrlValidator`/`PrivateNetworkWebhookUrlValidator` seam closes a previously-undocumented, genuinely unmitigated SSRF gap — fail-closed by default, checks the DNS-resolved `IPAddress` (not the hostname, closing the DNS-rebinding bypass) immediately before every `SendAsync`, with `WebhookDeliveryOptions.AllowPrivateNetworkTargets` as the sole opt-out (P-422); a new `"SharedKernel.Integration"` `ActivitySource` closes this domain's status as the only outbound-HTTP-issuing infrastructure domain with zero tracing — spans deliberately never tag `Url`/`Secret` (P-424); `IWebhookDispatcher` gains `SendTestDeliveryAsync`, dispatching a new `WebhookPingEvent : IIntegrationEvent` through the exact same `DispatchToSubscriptionAsync` pipeline, zero parallel delivery logic, for subscriber onboarding (P-429); `WebhookDeliveryOptions` gains `EncryptPayload` (opt-in AES-GCM payload encryption via a **new** `SharedKernel.Cryptography` `ProjectReference` — the package's first reference to a `01.Core` package other than `.Primitives`/`.Configuration` — encrypt-then-sign ordering so the HMAC continues to cover the transmitted bytes, mirroring `07.Messaging`'s P-346 payload transform, P-427); the resilience-handler retry/backoff/timeout wiring gap is corrected — `WebhookDeliveryOptions`' four already-validated knobs now actually drive `HttpStandardResilienceOptions` via a documented, non-magic formula, resolved from `ResilienceHandlerContext.ServiceProvider` inside `AddStandardResilienceHandler`'s configuration callback (P-421, the highest-severity item — a previously silent configuration-trust violation); and three new `[LoggerMessage]` entries (`DeliverySucceeded`/`DeliveryFailed`/`DeliveryExhausted` at `+1`/`+2`/`+3`, 15001-15003) extend this domain's logging coverage past the single `ObserverException` statement it has carried since WO-041 (P-428). New Implementation Rules subsections added: "SSRF guard rules" and "Payload encryption rules". AOT Notes, the Logging table, Test Rules, and the DI Registration example all updated to match. No Packages/Layering/package-split change — still exactly one package, `SharedKernel.Integration.Webhooks`, no `.Abstractions` sibling warranted by any of these nine items (integration-arch-planner, WO-064, P-421–P-429)
-- [2026-08-21] WO064Hardening (SK.15.WO064, H-01–H-38) implemented and shipped end to end, closing all nine root phases (P-421–P-429) dispatched by `integration-arch-planner` the same day. All nine capabilities described by the design pass above are now real, tested code: `WebhookDeliveryOptions`' four retry/backoff/timeout knobs genuinely drive `HttpStandardResilienceOptions` via `AddStandardResilienceHandler().Configure((options, serviceProvider) => ...)`, with the `MaxAttempts == 1` edge case handled by flooring `Retry.MaxRetryAttempts` at Polly's own `[Range(1, ...)]` minimum and short-circuiting `Retry.ShouldHandle` instead (P-421); `IWebhookUrlValidator`/`PrivateNetworkWebhookUrlValidator` reject loopback/link-local/private/multicast targets by resolved IP before every send, with `AllowPrivateNetworkTargets`/`WithUrlValidator<T>()` as the two opt-outs (P-422); every delivery carries a stable `X-Webhook-Delivery-Id` header and `WebhookDeliveryResult.DeliveryId` (P-423); the `"SharedKernel.Integration"` `ActivitySource` emits `WebhookDispatcher.Dispatch`/`.DispatchToSubscription` spans, never tagging `Url`/`Secret` (P-424); `WebhookSubscription.Secrets` (newest-first, sign-with-newest) and the non-short-circuiting multi-candidate `WebhookSignatureVerifier.Verify` overload ship, with the old single-`Secret` constructor/property retained `[Obsolete]` (P-425); `WebhookSubscription.Headers` applies custom per-subscription headers with a fail-loud reserved-name-collision guard (P-426); `WebhookDeliveryOptions.EncryptPayload` opts into AES-GCM encrypt-then-sign via `SharedKernel.Cryptography`'s `ISymmetricEncryptionService`, resolved from the request-scoped `IServiceProvider` and failing loudly (not silently) when unregistered (P-427); `WebhookDispatcher.Log.DeliverySucceeded`/`.DeliveryFailed`/`.DeliveryExhausted` (EventIds 15001–15003) extend the domain's logging coverage past the single pre-existing `ObserverException` statement (P-428); `IWebhookDispatcher.SendTestDeliveryAsync` dispatches a `WebhookPingEvent` through the real `DispatchToSubscriptionAsync` pipeline verbatim, zero parallel logic (P-429). A new top-level "Tracing" section (mirroring the Logging section's shape) documents the `ActivitySource`/spans/no-`Url`-no-`Secret` tagging rule; the "Logging (EventId allocation)" table's stale "Until WO-064 ships" sentence was removed. `README.md` gained six new sections (SSRF guard opt-out, secret-rotation recipe, custom-headers example, payload-encryption recipe with a verify-then-decrypt subscriber snippet, subscriber-side delivery deduplication, "Testing a new subscription") and its inbound-verification/store-projection samples were updated from the obsolete single-`Secret` shape to `Secrets`; `docs/configuration-reference.md` gained `AllowPrivateNetworkTargets`/`EncryptPayload` rows and a full resilience-handler field-mapping table. Three defects were found and fixed during the GATING regression-test pass (H-03/H-08/H-13/H-17/H-22/H-26/H-30/H-33/H-37), none design errors — all three were either an implementation gap the design already anticipated or a pre-existing shared-infrastructure bug this domain's new tests were the first to exercise: (1) `WebhookDispatcher.SendAsync`'s catch clause only matched `HttpRequestException`/`TaskCanceledException`/`TimeoutException`, letting Polly's own `Timeout.TimeoutRejectedException` (and any other `Polly.ExecutionRejectedException`, e.g. a circuit-breaker rejection) propagate out of `DispatchToSubscriptionAsync` instead of surfacing as a non-throwing `WebhookDeliveryResult` — fixed by broadening the catch filter; (2) `WebhookPingDeliveryTests`' own test code read `HttpRequestMessage.Content` from `StubHttpMessageHandler.Requests` *after* the dispatch call returned, by which point `WebhookDispatcher`'s `using var request = ...` had already disposed it (`ObjectDisposedException`) — fixed by capturing the body/headers synchronously inside the responder callback, mirroring the already-correct pattern in `WebhookPayloadEncryptionTests`; (3) a genuine, previously-latent defect in `16.Testing/SharedKernel.Testing`'s `Logging/InMemoryLogger.cs` — this project's `Microsoft.Extensions.Http.Resilience` dependency transitively pulls in `Microsoft.Extensions.Telemetry`/`.Abstractions`, whose `Microsoft.Gen.Logging` source generator (confirmed via a throwaway `EmitCompilerGeneratedFiles=true` build) replaces the BCL's own `[LoggerMessage]` generator for every method in this compilation and passes a *pooled, thread-local* state object that the generated code clears for reuse immediately after `ILogger.Log(...)` returns; `InMemoryLogger.Log` was storing a live reference to that object into `LogRecord.State` instead of copying it, so `LogRecord.TryGetProperty(...)` read back empty by the time a test inspected it — fixed by taking a `.ToArray()` defensive copy synchronously inside `Log()`, before the generator's own `state.Clear()` runs; verified with zero regressions across `16.Testing/SharedKernel.Testing.SelfTests`' full non-Docker-gated suite (970/970). All 38 `SK.15.WO064` tasks (H-01–H-38) now `●`; 109/109 tests passing in `SharedKernel.Integration.Webhooks.Tests` (integration-phase-implementer)
-- [2026-08-26] WO-072 design-locked (root phases P-460–P-462, dispatched by `arch-lead`) — this domain's identity broadens for the first time since WO-032. "What This Domain Is" rewritten from "the outbound webhook dispatcher" to "outbound delivery to a destination outside our control, with resilience/signing/retry/observer discipline," explicitly naming two capability families sharing that identity: `SharedKernel.Integration.Webhooks` (unchanged) and the new `SharedKernel.Integration.Notifications.*` family. Layering boundary section gains the new `08.Storage.Abstractions` reference (`08 < 15`, ordinary downward reference, no exception/grant needed). Packages table gains three new `○` Pending rows; a new "Package-split discipline, per family, independently" note clarifies that Webhooks staying single-package and Notifications immediately splitting into `.Abstractions` + `.Email.SendGrid` + `.Sms.Twilio` are two unrelated decisions, not a contradiction. Technology Stack gains rows for both providers plus a "why not the vendor SDKs" rationale — direct REST via `IHttpClientFactory`, no `SendGrid`/`Twilio` NuGet dependency, **no new `Directory.Packages.props` entry needed** (confirmed against current pins: `Microsoft.Extensions.Http` 10.0.9/`.Http.Resilience` 10.7.0 already cover both). A full new "`SharedKernel.Integration.Notifications.*` — public surface" Interface Contracts subsection added (design-only, `○` Pending): `NotificationChannel`, `NotificationMessage<TTemplateModel>` (caller-supplied `NotificationDeliveryId`, deliberately unlike `WebhookDeliveryResult.DeliveryId`), `NotificationAttachment` (a `SharedKernel.Storage.Abstractions.FileReference` only, never inline bytes), `INotificationSender` (keyed-DI registration, no router type), `NotificationDeliveryResult` (non-`Result<T>`-wrapped, parallel to `WebhookDeliveryResult`), `INotificationDeliveryObserver`/`INotificationSenderIdentityResolver` (mirroring `IWebhookDeliveryObserver`/`05.Application`'s `IAuthorizationContext` bridge pattern respectively), `NotificationIntegrationActivitySource` (a second `ActivitySource` instance deliberately sharing the literal name `"SharedKernel.Integration"` with the Webhooks one — no shared constant possible since no legal reference path exists between the two package families), `NotificationDeliveryOptions` (shared across both providers), and both providers' DI extensions. New "Notification hard violations" Implementation Rules subsection added. AOT Notes extended. **The Logging (EventId allocation) section is re-partitioned** — no longer a single undivided 15000-15999 block; now 100-wide sub-blocks in declaration order (Webhooks 15000-15099 unchanged/shipped, `.Notifications.Abstractions` 15100-15199 reserved/unused, `.Email.SendGrid` 15200-15299, `.Sms.Twilio` 15300-15399, 15400-15999 unallocated) — this is the re-partition this domain's own prior WO-041/LoggingRetrofit planning always said would be needed "if a future phase adds a second package," now executed. Tracing section extended with the shared-`ActivitySource`-name rationale and a new `NotificationActivityTags` constants class (colocated in `.Abstractions`). DI Registration and Test Rules both gain Notifications subsections. Key deferred decision recorded but not acted on: `NotificationMessage.Locale` is a forward-compatible seam only — `SharedKernel.Localization` (P-482/WO-078, itself design-locked same day by `core-arch-planner`) is not referenced this phase; when it ships, a direct `01.Core` reference is legally available without a bridge-seam pattern, mirroring the already-shipped direct `SharedKernel.Cryptography` reference from P-427. See `15.Integration/state-map.md`'s `SK.15.WO072` phase (N-01–N-26, all `○`) for the full implementation checklist (integration-arch-planner, WO-072, P-460–P-462)
-- [2026-09-03] Unowned build breakage found and fixed BEFORE any WO-072 code was written, tracked under a new self-contained `SK.15.CryptoAsyncMigration` phase (not part of WO-072's 26 tasks): `01.Core`'s P-446 (WO-068) breaking async `IEncryptionKeyProvider` migration had explicitly named this domain's Webhooks test double as an expected "trivial" follow-on migration, but — unlike `06.Persistence` (P-448) and `16.Testing` (P-450), which both shipped their own migration phases — no phase was ever dispatched here, leaving `SharedKernel.Integration.Webhooks.Tests` uncompilable with zero tracked task anywhere. Verified via a real clean rebuild (not the dispatch brief) that the shipped *production* `SharedKernel.Integration.Webhooks` package was never actually broken — `WebhookDispatcher`'s P-427 encryption path only calls `ISymmetricEncryptionService`, whose sync convenience members were deliberately retained by P-446's design. The one genuine break was the test project's domain-local `TestSupport/InMemoryEncryptionKeyProvider.cs`, still implementing the interface's removed sync `GetCurrentKey()`/`GetKey(string)` pair. Fixed by deleting that domain-local double and repointing `WebhookPayloadEncryptionTests.cs` at `16.Testing`'s already-migrated, already-shared `SharedKernel.Testing.Cryptography.FakeEncryptionKeyProvider` (P-450) instead of hand-migrating a redundant local copy. 109/109 tests still green, zero regression (integration-phase-implementer)
-- [2026-09-03] WO072Notifications (SK.15.WO072, N-01–N-26) implemented and shipped end to end — all three planned packages are now real, tested, packed code. `SharedKernel.Integration.Notifications.Abstractions`: every type from the design pass implemented verbatim (16/16 tests) — `NotificationMessage<TTemplateModel>`/`NotificationAttachment` as records with `required init` properties (matching `FileReference`'s established shape and the README's object-initializer usage sample, not a positional-parameter record), `INotificationSender` (keyed-DI contract only, no router type), `NotificationDeliveryResult`, `INotificationDeliveryObserver`/`INotificationSenderIdentityResolver`/`NotificationSenderIdentity`, `NotificationDeliveryOptions` (`AddOptions<T>().BindConfiguration(...)`, matching Webhooks' actually-shipped pattern rather than the `AddValidatedOptions<TOptions>(IConfigurationSection)` phrasing in the original design note), `NotificationIntegrationActivitySource`/`NotificationActivityTags`, `AddSharedKernelNotifications`/`WithNotificationDeliveryObserver<T>()`. `.Email.SendGrid` (9/9 tests): `SendGridEmailNotificationSender` posts to the real Mail Send v3 shape via a source-generated `SendGridJsonContext` for the envelope, embedding the caller's arbitrary `TTemplateModel` as a `JsonElement` (STJ's built-in pass-through shape, avoiding a second reflection-based full-object pass); attachments stream through `CryptoStream`/`ToBase64Transform` + a bounded-buffer `StreamReader.ReadToEndAsync`, never materializing the raw attachment as one `byte[]`; `NotificationDeliveryId` lands in `custom_args` (correlation-only, documented as such in both `CLAUDE.md` and the package README). `.Sms.Twilio` (10/10 tests): `TwilioSmsNotificationSender` posts `application/x-www-form-urlencoded` to the Messages API with `ContentVariables` as a JSON-serialized string field, HTTP Basic auth, and `NotificationDeliveryId` on the documented `Idempotency-Key` header (a genuine provider-enforced dedup guarantee, unlike SendGrid's). Both providers share the exact `AddStandardResilienceHandler().Configure(...)` field-mapping formula P-421 established for Webhooks, inlined per-provider (not extracted to `.Abstractions`, which stays deliberately zero-I/O) — `NotificationDeliveryOptions.MaxConcurrentSends` additionally maps onto the resilience pipeline's own `RateLimiter.DefaultRateLimiterOptions` (`PermitLimit`/`QueueLimit`), the concrete mechanism satisfying N-23's "no bespoke throttle type" requirement. Both senders invoke `INotificationDeliveryObserver.OnAttemptAsync` exactly once (`attemptNumber: 1`), mirroring `WebhookDispatcher.NotifyAttemptAsync`'s own precedent, and gained one extra `[LoggerMessage] ObserverException` entry each (`+202`/`+302`) beyond the original design's `DeliverySucceeded`/`DeliveryFailed` pair, mirroring `WebhookDispatcher.Log.ObserverException`'s established shape. `15.Integration/consumer-verify/Program.cs` gained two new surfaces (3/4) proving both providers coexist with unambiguous keyed-DI resolution and that omitting `INotificationSenderIdentityResolver` fails loudly — extending the existing Webhooks harness rather than a fourth standalone project, since this specific proof needs both provider packages referenced together. All three packages pack cleanly (`dotnet pack`, zero warnings) to `nupkgs/`. One local, non-shipping build-environment workaround was required and is documented in Test Rules: all three new `.Tests` projects' default `obj`/`bin` path exceeded Windows' 260-char `MAX_PATH` once combined with `Microsoft.NET.Test.Sdk`'s longer generated filenames — each carries a project-local, absolute-path `<BaseIntermediateOutputPath>`/`<BaseOutputPath>` override rooted at the OS temp directory; this does not touch the shared root `Directory.Build.props` and has no shipped-artifact effect. `Platform.SharedKernel.slnx` registers all six new projects. Every README code sample was written to match the actually-implemented API shape (verified by compiling the equivalent shape in the test/consumer-verify projects, not eyeballed). 35 new tests across the domain (16 + 9 + 10), zero regressions to the pre-existing 109 Webhooks tests. All 26 `SK.15.WO072` tasks now `●` (integration-phase-implementer)
-- [2026-09-08] P-500 (WO-081, this domain's leg of the coordinated `01.Core`-first breaking wave) design-locked on top of the `●`-Published surface — new top-of-file banner paragraph, new `WebhookPayloadAssociatedData` Interface Contracts block (`Signing/`), corrected `.EncryptPayload` Options note, two new design-locked bullets plus one new failure-shape bullet in "Payload encryption rules," a new AOT Notes bullet, and a new Test Rules bullet. Read `01.Core/CLAUDE.md` and `state-map.md`'s `SK.01.P491`/`SK.01.P492` before designing, per this session's brief, and designed against those recorded contract shapes rather than the phase text alone. Two things verified against real source rather than assumed, per this wave's "evaluate rather than rubber-stamp" standard: (1) `WebhookDispatcher.SendAsync` (the sole production `ISymmetricEncryptionService` call site in this domain) is already fully async end to end — unlike `07.Messaging`'s hard-synchronous MassTransit serializer or `06.Persistence`'s PK-blind EF Core `ValueConverter`, this domain's migration from `EncryptToString` to `EncryptToStringAsync` is a straightforward call-site change, not a pipeline restructuring; (2) the phase brief's claim that "subscription id" is already "transmitted in headers" is **false** — `Signing/WebhookSignatureHeaders.cs` defines only `SignatureHeaderName`/`TimestampHeaderName`/`DeliveryIdHeaderName`. Rather than adding a header to make that premise true, the corrected design keeps `subscriptionId` off the wire deliberately: AAD's identity-binding half only has security value if the decrypting party supplies it from a source independent of the request being verified (the same reason `WebhookSubscription.Secrets` is never transmitted), while AAD's freshness half (`deliveryId`) is safe and necessary to transmit, since the subscriber has no other way to learn a value generated fresh per delivery — it already travels via the shipped `X-Webhook-Delivery-Id` header (P-423/WO-064). New public `WebhookPayloadAssociatedData.Build(Guid subscriptionId, Guid deliveryId) → byte[]` (canonical `"{subscriptionId:D}.{deliveryId:D}"` UTF-8) is the single source of truth for both sides, mirroring `WebhookSignatureProvider.BuildSigningInput`'s role and `WebhookSignatureVerifier`'s public-for-subscriber-reuse precedent; a header transmitting `subscriptionId` is recorded as a hard violation of the new AAD rule's intent, not a compliant alternative. Also recorded: this migration structurally avoids ever touching `01.Core`'s P-492 synchronous-provider capability gate, since the sync `EncryptToString` path is retired outright rather than gated — relevant because `13.ServiceDefaults`'s P-503 wraps `IEncryptionKeyProvider` in `CachedEncryptionKeyProvider` by default, and that decorator never itself satisfies P-492's gate for a KMS-backed inner provider. No new failure-shape type introduced — an AAD mismatch is exclusively a subscriber-side concern per `01.Core`'s own `Result.Failure(Error.Unexpected(...))` contract. See `15.Integration/state-map.md`'s new `SK.15.P500` phase (AA-01–AA-11, 6 design-locked/5 pending) for the full task breakdown and Cross-Domain Dependencies. Blocked on `01.Core`'s `SK.01.P491` reaching implementation (integration-arch-planner, WO-081, P-500)
-- [2026-09-08] P-500 (WO-081) implemented and shipped end to end — AA-07→AA-10 are now real, tested, shipped code; AA-11 (Published) stays `⚑` in `15.Integration/state-map.md`, blocked on a `devops-lead` git-tag decision this domain cannot make on its own. `Signing/WebhookPayloadAssociatedData.cs` added exactly per the locked AA-03 design. `WebhookDispatcher.SendAsync`'s single production `ISymmetricEncryptionService` call site now reads `await encryptionService.EncryptToStringAsync(plainPayloadJson, WebhookPayloadAssociatedData.Build(subscription.SubscriptionId, deliveryId), ct)`, replacing the retired synchronous `EncryptToString(plainPayloadJson)` — a signature/call-site change only, confirmed against the real, now-shipped `01.Core` `ISymmetricEncryptionService.cs` before writing it, exactly as this phase's own design predicted (no pipeline restructuring, unlike `07.Messaging`/`06.Persistence`'s obstacles in the same wave). `WebhookPayloadEncryptionTests` updated: the round-trip test now decrypts via `DecryptToStringAsync` with matching AAD; a new test proves the phase's headline anti-cross-subscription-replay guarantee — a captured ciphertext fails to decrypt against a different subscription id's AAD, succeeds against the correct one. This new test's genuineness was proven empirically, not assumed, mirroring `01.Core`'s own T-70 discipline: the dispatch-side AAD derivation was temporarily sabotaged (`subscription.SubscriptionId` swapped for a hardcoded `Guid.Empty`), both encryption tests were confirmed to fail with the exact expected `IsSuccess` mismatch, then reverted and the full suite re-confirmed green. `WebhookDeliveryOptions.EncryptPayload`'s XML doc remarks and the README's payload-encryption section gained the AAD-derivation recipe and an explicit statement of why `subscriptionId` is never sent as a header; the `.csproj` `<Description>` gained this phase's release notes. Real, expected friction from this being a five-domain concurrent wave: `SharedKernel.Testing` (referenced by every domain's own `.Tests` project) transitively references `06.Persistence.EfCore`/`07.Messaging.MassTransit`/`17.Workflows.Temporal`, so this domain's own test project could not build until those three sibling domains' own AAD migrations landed — confirmed not this domain's own failure by inspecting each build error's own project path on every retry, per this session's explicit brief; the test project built clean once those three landed. 110/110 `SharedKernel.Integration.Webhooks.Tests` passing (up from 109), 0/0 warnings/errors; `dotnet pack` succeeds cleanly under the current pre-tag MinVer version; `consumer-verify` re-run, all four surfaces still pass. AA-11 is deliberately left `⚑`, not `●` — mirroring `01.Core`'s own P-491/P-492/P-493 precedent of packing cleanly pre-tag while leaving the real MAJOR-bump git tag to `devops-lead` — but its own stricter wording ("repack once ... tagged") is a literal condition not yet met, so this domain records it honestly as open rather than closed. Every "(P-500/WO-081, design-locked)" annotation in this file updated to "(P-500/WO-081, shipped)"; the top-of-file banner, the `WebhookPayloadAssociatedData` contract block, the `.EncryptPayload` Options note, the Packages table row, "Payload encryption rules," AOT Notes, and Test Rules all updated to match (integration-phase-implementer)
-- [2026-09-15] Contracts redesign: the webhook routing key is now the `[IntegrationEvent]` name of the event's runtime type (`IntegrationEventDescriptor.For(integrationEvent.GetType()).Name`, not `typeof(TEvent).Name`), so `WebhookSubscription.EventTypes` holds attribute names, `WebhookPingEvent`/`WebhookDeliveryExhaustedEvent` declare `sharedkernel.webhooks.ping`/`sharedkernel.webhooks.delivery-exhausted` via `EventName` constants, and dispatching an unattributed event throws `InvalidOperationException` (coordinator)
-- [2026-09-22] Docs updated for `08.Storage`'s P-559 redesign: attachments are `SharedKernel.Storage.FileReference` (store/tenant/key) opened through `IFileStorageFactory.Open`; SendGrid test notes point at the in-memory stores (coordinator)
-- [2026-09-26] WO-086 (P-563, P-566, P-571, P-574, P-575): tiers declared (Notifications.Abstractions = Abstractions; Webhooks, SendGrid, Twilio = Adapter), replacing the numbered layering boundary; `SharedKernel.Integration.Webhooks` references `SharedKernel.Execution` and sends the caller's correlation id as `X-Correlation-Id` on every delivery — nothing else from `IRequestContext` (P-566); test doubles moved to the packable `16.Testing/SharedKernel.Integration.Testing` (P-571); status banners collapsed; folder README written (agent)
+| Package | Tier | Purpose |
+|---|---|---|
+| `SharedKernel.Integration.Webhooks` | Adapter | Subscription seam, HMAC-SHA256 signing + replay-resistant verification, fan-out dispatch with retry, SSRF guard, multi-secret rotation, custom headers, opt-in payload encryption, test (ping) deliveries, delivery-exhausted integration event. References `Primitives`, `Execution`, `Configuration`, `Cryptography`, `Contracts`, `Messaging.Abstractions`; `Microsoft.Extensions.Http(.Resilience)`. |
+| `SharedKernel.Integration.Notifications.Abstractions` | Abstractions | Provider-neutral contract: `NotificationChannel` (`Email`, `Sms`), `NotificationMessage<TTemplateModel>`, `NotificationAttachment`, `INotificationSender`, `NotificationDeliveryResult`, `INotificationDeliveryObserver`, `NotificationDeliveryContext`, `INotificationSenderIdentityResolver`/`NotificationSenderIdentity`, `NotificationDeliveryOptions`, tracing source/tags. Zero I/O, no concrete sender. References `Primitives`, `Configuration`, `Storage.Abstractions` only. |
+| `SharedKernel.Integration.Notifications.Email.SendGrid` | Adapter | SendGrid v3 Mail Send over `IHttpClientFactory` (no SDK); dynamic templates; attachments streamed from `08.Storage`. |
+| `SharedKernel.Integration.Notifications.Sms.Twilio` | Adapter | Twilio Content API over `IHttpClientFactory` (no SDK); form-encoded templated sends; `Idempotency-Key` dedup. |
+
+Also in the folder: nested `.Tests` projects and `consumer-verify/` (resolves every public surface, including both notification senders keyed side by side).
+
+## Public Entry Points
+
+### Webhooks (`SharedKernel.Integration.Webhooks`)
+
+- `services.AddSharedKernelWebhooks(Action<WebhookDeliveryOptions>? configure = null)` — binds `WebhookDeliveryOptions` from `SharedKernel:Integration:Webhooks` (validated on start; `configure` applied after binding), registers `WebhookSignatureProvider`, the default `IWebhookUrlValidator` (`PrivateNetworkWebhookUrlValidator`), scoped `IWebhookDispatcher`, and the named client `WebhookHttpClientName.Name` with the standard resilience handler.
+- The consumer **must** register `IWebhookSubscriptionStore` (`GetActiveSubscriptionsAsync(eventType, ct)`); there is no default.
+- `services.WithDeliveryObserver<T>()` (zero or more `IWebhookDeliveryObserver`), `services.WithUrlValidator<T>()` (replaces the validator).
+- `IWebhookDispatcher.DispatchAsync<TEvent>(evt, ct)` → one `WebhookDeliveryResult` per subscription; `DispatchToSubscriptionAsync<TEvent>(subscription, evt, ct)`; `SendTestDeliveryAsync(subscription, ct)` (a `WebhookPingEvent`, name `WebhookPingEvent.EventName` = `sharedkernel.webhooks.ping`).
+- `WebhookSubscription(SubscriptionId, Url, Secrets, EventTypes, IsActive, Headers?)` — `Secrets` newest-first; the single-secret constructor and `Secret` property are `[Obsolete]`.
+- `WebhookSignatureVerifier.Verify(payloadJson, timestampHeaderValue, signatureHeaderValue, secretCandidates, tolerance?)`; header names on `WebhookSignatureHeaders` (`X-Webhook-Signature`, `X-Webhook-Timestamp`, `X-Webhook-Delivery-Id`).
+- `WebhookPayloadAssociatedData.Build(subscriptionId, deliveryId)` — the AAD a subscriber reproduces to decrypt.
+- `WebhookDeliveryExhaustedEvent` (`WebhookDeliveryExhaustedEvent.EventName` = `sharedkernel.webhooks.delivery-exhausted`), published through `IEventPublisher`.
+- `WebhookDeliveryOptions`: `MaxAttempts` (5), `BaseBackoffDelay` (2 s), `MaxBackoffDelay` (60 s), `RequestTimeout` (10 s), `SignatureTolerance` (5 min), `MaxConcurrentDeliveries` (8), `AllowPrivateNetworkTargets` (false), `EncryptPayload` (false). Full reference: `SharedKernel.Integration.Webhooks/docs/configuration-reference.md`.
+
+### Notifications
+
+- `services.AddSharedKernelNotifications(Action<NotificationDeliveryOptions>? configure = null)` — binds `NotificationDeliveryOptions` from `SharedKernel:Integration:Notifications` (`MaxAttempts` 3, `BaseBackoffDelay` 1 s, `MaxBackoffDelay` 30 s, `RequestTimeout` 10 s, `MaxConcurrentSends` 16). The consumer **must** register `INotificationSenderIdentityResolver`.
+- `services.WithNotificationDeliveryObserver<T>()`.
+- `services.AddSendGridEmailNotifications(o => o.ApiKey = …)` → keyed `INotificationSender` for `NotificationChannel.Email`; needs `AddSharedKernelStorage()` for attachments (`IFileStorageFactory`).
+- `services.AddTwilioSmsNotifications(o => { o.AccountSid; o.AuthToken; o.From / o.MessagingServiceSid })` → keyed sender for `NotificationChannel.Sms` (at least one of `From`/`MessagingServiceSid`).
+- Send: `GetRequiredKeyedService<INotificationSender>(channel).SendAsync(NotificationMessage<T> { NotificationDeliveryId, Channel, Recipient, TemplateId, TemplateModel, Attachments, Locale }, ct)`.
+- Telemetry: every family's `ActivitySource` is named `SharedKernel.Integration`; the host subscribes with ServiceDefaults' `WithIntegrationTelemetry()`.
+
+## Rules & Invariants
+
+1. **Outbound HTTP only through `IHttpClientFactory` named clients.** Never `new HttpClient()`, never an injected `HttpClient`, never `SharedKernel.Communication.*` (undeclared Adapter→Adapter edge, and it would forward tenant/actor headers).
+2. **Nothing about the caller except the correlation id leaves the platform.** Webhooks send `X-Correlation-Id` (`WellKnownHeaders.CorrelationId`) from the ambient `RequestContextScope` (`CorrelationIds.Current`), omitted when there is none; a subscription header of the same name wins. Never tenant, actor or client id; never `RequestContextPropagation`. Notification providers send no platform headers at all.
+3. **Secrets are signing input only.** `WebhookSubscription.Secrets` never appears in logs, exceptions, bodies, headers or span tags; only the HMAC digest is transmitted.
+4. **Signing input is `"{unixSeconds}.{payload}"` (UTF-8), signed with `Secrets[0]`;** verification accepts any candidate, comparing with `CryptographicOperations.FixedTimeEquals` per candidate without short-circuiting.
+5. **`WebhookSignatureVerifier.Verify` never throws** — malformed or missing input returns `false`. The skew window is `SignatureTolerance` (default 5 min); do not hardcode another at a call site.
+6. **Header names come from `WebhookSignatureHeaders`** only. A `WebhookSubscription.Headers` entry colliding (case-insensitively) with a signature/timestamp/delivery-id header fails that delivery before any HTTP call.
+7. **The routing key is the `[IntegrationEvent]` name** via `IntegrationEventDescriptor`, never the CLR type name; an event type without the attribute throws `InvalidOperationException` before lookup. Reference `WebhookPingEvent.EventName`/`WebhookDeliveryExhaustedEvent.EventName`, never retype them.
+8. **Per-subscription failures never throw.** HTTP failures, timeouts and SSRF rejections are a failed `WebhookDeliveryResult`; one subscriber cannot fault a fan-out. Fan-out is bounded by `MaxConcurrentDeliveries` — no unbounded `Task.WhenAll`.
+9. **SSRF guard is fail-closed and runs before every send** against the DNS-resolved addresses (loopback, link-local, private, multicast/reserved; IPv4 and IPv6), never the literal hostname and never cached from registration time. Opt-outs: `AllowPrivateNetworkTargets` or `WithUrlValidator<T>()` only.
+10. **One delivery id per delivery.** `X-Webhook-Delivery-Id` is stable across retries and equals `WebhookDeliveryResult.DeliveryId`.
+11. **Retry lives in the resilience handler**, configured from `WebhookDeliveryOptions` (`MaxAttempts`, backoff, timeouts) — never a hand-rolled loop; every validated option must actually drive the handler. With `MaxAttempts = 1` retries are short-circuited via `ShouldHandle`.
+12. **Exhaustion publishes exactly one `WebhookDeliveryExhaustedEvent`** per exhausted delivery, only after `MaxAttempts`. A failed publish is logged (`ExhaustionEventNotPublished`) and does not change the delivery outcome.
+13. **Observers are isolated:** an `IWebhookDeliveryObserver`/`INotificationDeliveryObserver` exception is caught and logged at Warning, never propagated. `OnAttemptAsync` fires once per send (`attemptNumber: 1`); retries happen below the sender.
+14. **Payload encryption is opt-in, encrypt-then-sign**, through `ISymmetricEncryptionService.EncryptToStringAsync` only (no crypto of this domain's own), with AAD = `WebhookPayloadAssociatedData.Build(subscriptionId, deliveryId)`. Never send the subscription id as a header — the subscriber must know it out of band, or a captured ciphertext could be replayed with attacker-supplied AAD. `EncryptPayload` without a registered `ISymmetricEncryptionService` throws `InvalidOperationException` at first delivery.
+15. **Test deliveries reuse `DispatchToSubscriptionAsync`** — no parallel signing/send path. `WebhookPingEvent` is never published on the bus or fanned out.
+16. **Notifications: `NotificationDeliveryId` is caller-supplied and required** — a provider never generates it, so a caller-level retry reuses it.
+17. **Attachments are `SharedKernel.Storage.FileReference` only**, opened with `IFileStorageFactory.Open` and read with `DownloadAsync` at send time; no inline-bytes overload. SendGrid base64-encodes by streaming (`CryptoStream` + `ToBase64Transform`).
+18. **Recipient and template model are PII:** never a log placeholder, exception message or span tag.
+19. **`INotificationSender.SendAsync` never throws for provider failures** (non-2xx, timeout, transport, unresolvable attachment → `notifications.attachment_unresolvable`); only a null message throws.
+20. **No notification router.** Resolve `INotificationSender` keyed by `NotificationChannel`.
+21. **Provider packages never reference each other or Webhooks**, and never take the vendor SDK.
+22. **No persistence types here** (`DbContext`, repositories) and no ASP.NET Core; only `Messaging.Abstractions` from `07.Messaging`.
+23. **No static mutable state.** Outbound payloads serialize through source-generated `JsonSerializerContext`s (AOT-clean).
+
+## Decisions
+
+| Decision | Why |
+|---|---|
+| Webhooks is one package, no `.Abstractions` split | One delivery mechanism (HTTP); split only if a second webhook channel appears. |
+| Notifications split `.Abstractions` + one package per provider | Two genuinely different providers behind one contract from day one. |
+| Direct REST, no SendGrid/Twilio SDKs | Simple APIs; an SDK would bring its own `HttpClient` lifecycle and an unaudited dependency/AOT surface. |
+| Not `SharedKernel.Communication.Rest` | Undeclared Adapter→Adapter edge; it forwards tenant/actor headers that must not reach an external party; targets are arbitrary URLs, not discovered services. |
+| Subscription store, delivery ledger and sender identity are consumer seams | They are ordinary application data owned by the service's own `06.Persistence` stack. |
+| Delivery-exhausted is an integration event via `IEventPublisher` | Any service (ops alerting, the owner) can react; no Adapter reference to MassTransit. |
+| Webhook delivery id is generated internally; notification delivery id is caller-supplied | A webhook delivery (with retries) happens inside one call; a notification may be retried by the caller after a crash. |
+| Dedup strength differs by provider | Twilio's `Idempotency-Key` is enforced; SendGrid's `custom_args` is correlation-only, so email dedup is the caller's outbox concern. |
+| Each provider inlines its resilience-mapping callback | `.Abstractions` is zero-I/O and takes no `Http.Resilience` dependency, so no shared helper can live there. |
+| `MaxConcurrentSends` enforced by the resilience pipeline's rate-limiter stage | No bespoke per-provider throttle type. |
+| Two `ActivitySource` instances share the name `SharedKernel.Integration` | OTel subscribes by name; the two families have no legal reference path to share one instance. |
+| No `Push` channel | Device-token registration and payload shaping are far more scope than text delivery. |
+
+## Logging
+
+Block **15000–15999** (`LoggingEventIdRanges.Integration`), 100-wide sub-blocks; every EventId is written `LoggingEventIdRanges.Integration + n`.
+
+| Package | Sub-block | In use |
+|---|---|---|
+| `Integration.Webhooks` | 15000–15099 | `WebhookDispatcher.Log`: +0 `ObserverException` (Warning), +1 `DeliverySucceeded` (Information), +2 `DeliveryFailed` (Warning), +3 `DeliveryExhausted` (Warning), +4 `ExhaustionEventNotPublished` (Error). Next free +5. |
+| `Integration.Notifications.Abstractions` | 15100–15199 | Reserved, unused (no I/O). |
+| `Integration.Notifications.Email.SendGrid` | 15200–15299 | `SendGridEmailNotificationSender.Log`: +200 `DeliverySucceeded`, +201 `DeliveryFailed`, +202 `ObserverException`. |
+| `Integration.Notifications.Sms.Twilio` | 15300–15399 | `TwilioSmsNotificationSender.Log`: +300 `DeliverySucceeded`, +301 `DeliveryFailed`, +302 `ObserverException`. |
+| — | 15400–15999 | Unallocated (next package). |
+
+Tracing: spans `WebhookDispatcher.Dispatch` (tags `webhook.subscription_count`, `webhook.event_type`), `WebhookDispatcher.DispatchToSubscription` (`webhook.subscription_id`, `webhook.event_type`, `webhook.outcome`, `webhook.attempt_count`) from `WebhookActivityTags`; `NotificationSender.Send` (`NotificationActivityTags`). Never a URL, secret, recipient or template field as a tag. A cross-domain tag reuses `WellKnownTagKeys`.
+
+## Cross-Domain Couplings
+
+- **01.Core:** `Result`/`Error`, `IClock`, `LoggingEventIdRanges`, `WellKnownHeaders` (Primitives); `RequestContextScope`/`CorrelationIds` for the correlation id (Execution); options helpers (Configuration); `ISymmetricEncryptionService` for payload encryption (Cryptography — the consumer registers `AddSharedKernelCryptography(configuration).AddSymmetricEncryption()` and an `IEncryptionKeyProvider`).
+- **04.Contracts:** `IIntegrationEvent`, `[IntegrationEvent]`, `IntegrationEventDescriptor` — the webhook routing key equals the CloudEvents `type` of the same event over `07.Messaging`.
+- **07.Messaging:** `IEventPublisher` publishes `WebhookDeliveryExhaustedEvent`; the host supplies the MassTransit implementation.
+- **08.Storage:** `FileReference`, `IFileStorageFactory`, `IFileStorage.DownloadAsync` for SendGrid attachments.
+- **13.ServiceDefaults:** `WithIntegrationTelemetry()` subscribes to `SharedKernel.Integration`.
+- **14.Presentation:** a receiver endpoint calls `WebhookSignatureVerifier.Verify`; this domain hosts no endpoint.
+- **16.Testing:** `SharedKernel.Integration.Testing` — `InMemoryWebhookDispatcher`, `InMemoryWebhookDeliveryObserver`, `InMemoryNotificationSender`, `InMemoryNotificationDeliveryObserver` (+ `AddInMemory*()`). A change to `IWebhookDispatcher`, `IWebhookDeliveryObserver`, `INotificationSender` or `INotificationDeliveryObserver` must update them.
+
+## Testing
+
+- All four `.Tests` projects and `consumer-verify` run in the **Unit lane** (`Platform.SharedKernel.Unit.slnf`): no network, no containers. HTTP is stubbed with a `DelegatingHandler` behind the named client.
+- Webhooks suites pin: sign/verify round trip, tamper, expiry and malformed input (never throws); fan-out isolation; resilience field mapping (non-default options actually drive attempts, delays and timeouts — gating test); SSRF rejection via a fake validator (no real DNS); delivery-id stability across retries; span tags never carry URL/secret (`WebhookTracingTests`); multi-secret rotation; header collisions; payload encryption round trip and cross-subscription AAD swap failure (`WebhookPayloadEncryptionTests`); exactly-once exhaustion via `SharedKernel.Messaging.Testing`'s `InMemoryEventPublisher`; outcome logs via `SharedKernel.Testing`'s `InMemoryLogger`.
+- Notification suites pin: options validation; no inline-bytes path on `NotificationAttachment`; recipient/template fields never logged; SendGrid `custom_args` carries the delivery id and attachments stream without one contiguous `byte[]`, with unresolvable attachments (via `SharedKernel.Storage.Testing`'s `AddInMemoryStore`/`AddInMemoryTenantStore`) returning a failed result; Twilio body is form-encoded with `ContentVariables` as a JSON string and `Idempotency-Key` carries the delivery id.
+- The notification `.Tests` projects redirect `BaseIntermediateOutputPath`/`BaseOutputPath` to a temp folder because their nested paths exceed Windows `MAX_PATH`; keep that when touching those csproj files.
+- Consumers use `SharedKernel.Integration.Testing`'s in-memory doubles.
+
+## Known Limitations
+
+- `SendGridNotificationOptions` and `TwilioNotificationOptions` are configured only through the registration delegate; their XML docs mention a `SharedKernel:Integration:Notifications:{SendGrid|Twilio}` section, but nothing binds it. Correct the doc or add binding in a code change.
+- `AddSharedKernelWebhooks`/`AddSharedKernelNotifications` pass the section path as a literal to `BindConfiguration` rather than through `ISectionBoundOptions`.
+- SendGrid dedup is correlation-only; duplicate-email prevention is the caller's outbox responsibility.
+- `NotificationMessage.Locale` is a reserved seam; nothing consumes it yet.
+- `NotificationDeliveryResult` carries no attempt count (retries are inside the resilience pipeline).
+- SendGrid's API has no streaming upload, so an attachment's base64 text is still one JSON string field in the request.
+- `Microsoft.Extensions.Http.Resilience` (Polly v8) AOT compatibility must be re-checked on each major bump.

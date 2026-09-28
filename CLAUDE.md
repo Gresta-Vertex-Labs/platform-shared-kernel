@@ -1,47 +1,54 @@
-# Platform.SharedKernel — Root Brain
+# Platform.SharedKernel
 
-## What This Repo Is
+A mono-repo of NuGet packages that form the **SharedKernel** of a .NET 10 microservice ecosystem. Every package is a reusable building block; no business logic lives here.
+Each package targets one project of a consuming service (Domain, Application, Infrastructure or Api/Worker). Its **tier** says which, and the build enforces what it may reference.
+All packages ship together at one version through a single release train.
 
-A mono-repo of NuGet packages that form the **SharedKernel** for a .NET 10 microservice ecosystem. Every package is a reusable building block — no business logic lives here. Each package is aimed at one project inside a consuming service (Domain, Application, Infrastructure or Api/Worker); its **tier** says which, and the build enforces what it may reference (see "Tiers & Dependency Rules").
+**Philosophy:** Capability-Oriented, Tier-Enforced, AOT-Preferred, K8s-Native, Test-Adjacent.
 
-Philosophy: **Capability-Oriented, Tier-Enforced, AOT-Preferred, K8s-Native, Test-Adjacent.**
-
-> **AOT Guidance (not a hard rule):** AOT compatibility is preferred where it costs nothing. If a feature can be written AOT-cleanly without reflection, `dynamic`, or `Assembly.Load`, do it that way. Prefer STJ source-generated contexts (`JsonSerializerContext`) over runtime serialization when the code stays readable. Avoid `Activator.CreateInstance` without `[DynamicallyAccessedMembers]` when a simple factory or constructor call is equally clear.
->
-> **When to skip AOT:** If writing AOT-safe code requires significant boilerplate, awkward workarounds, or makes the code harder to understand and maintain, drop AOT for that area. Do not add `<IsAotCompatible>true</IsAotCompatible>` to project files — the tag activates trim/AOT analyzers globally and forces AOT compliance on the entire project, which is too coarse-grained.
->
-> Third-party packages that are not AOT-safe are allowed; prefer placing them behind an abstraction interface where a swap is plausible, but this is a design preference, not a requirement.
+> **AOT is a preference, not a rule.** Write AOT-clean code (no reflection, `dynamic`, `Assembly.Load`; STJ source-generated `JsonSerializerContext`; `[DynamicallyAccessedMembers]` over bare `Activator.CreateInstance`) when it costs nothing. Drop it where it would force awkward boilerplate. Never add `<IsAotCompatible>true</IsAotCompatible>` to a project. Non-AOT third-party packages are allowed, preferably behind an abstraction.
 
 ---
 
-## Folder Map
+## Where Things Are
 
-Each numbered folder is a capability domain and owns a `CLAUDE.md` (maintainer rules), a `README.md` (overview) and a `state-map.md` (phase history). **Folder numbers are an address, not a layer** — what a package may reference is decided by its tier. Every package ships at one repo-wide version through the release train (see "Package Versioning"); per-package history lives in the domain state-maps and [`CLAUDE.changelog.md`](CLAUDE.changelog.md). Tier abbreviations: **F** Foundation, **M** Model, **Ab** Abstractions, **Ad** Adapter, **H** Host, **T** Testing, **To** Tooling.
+Each numbered folder is a capability domain with three files: **`CLAUDE.md`** (maintainer rules — read it before editing that domain), **`README.md`** (overview) and **`state-map.md`** (living board: Package Board, Phase Key Registry, Open Work, Blocked, Cross-Domain Dependencies). Completed history is not kept in the repo; `git log` is the record. **Folder numbers are an address and an EventId block, not a layer** — the tier decides references.
 
-| # | Folder | What lives here |
-|---|--------|-----------------|
-| 00 | `00.Governance` | **Tooling.** `SharedKernel.Analyzers` (Roslyn rules SK0001–SK0708: `[LoggerMessage]`-only logging, `Result` never discarded, magic strings, raw SDK clients, workflow determinism, …), `SharedKernel.ArchitectureTests` (NetArchTest purity rules + `DependencyGraphRulesTests` over every csproj; `RuleExecutionCoverageTests` fails when a public rule has no test), `SharedKernel.Linter` (EditorConfig/CSharpier). The tier check itself is MSBuild (`eng/SharedKernelTiers.targets`). |
-| 01 | `01.Core` | **Thirteen packages, Foundation tier except three adapters.** **Primitives:** `Result<T>`, `Error`, `IClock`, `IIdGenerator`, SmartEnums, `LoggingEventIdRanges`, `WellKnownHeaders`/`WellKnownBaggageKeys`/`WellKnownTagKeys`, and `SharedKernel.Primitives.Health` (`IReadinessProbe`, `ReadinessReport`, `AddReadinessProbe`). **Execution:** the one execution context — `IRequestContext`, `ActorKind`, `SystemRequestContext`/`AnonymousRequestContext`, `IRequestContextAccessor` + `RequestContextScope`, `RequestContextPropagation`, `CorrelationIds`, `TenantId`/`TenantScope`, `IUnitOfWork`, `IAuditTrailWriter`. **Core:** railway extensions, `ResultTry`/`ResultCombine`, base exceptions, guard clauses. **Configuration** (`AddValidatedOptions`, `ISectionBoundOptions`), **FeatureManagement** (OpenFeature `IFeatureClient`, typed `FeatureFlag<T>`), **Compression** (framed Brotli/gzip), **Validation** (+ **Validation.FluentValidation**, Ad), **DataPrivacy**, **Localization**, **Cryptography** (+ **Cryptography.Argon2**, **Cryptography.KeyVault.Azure**, both Ad). Entry points: `01.Core/README.md`, each package `README.md`, `01.Core/CLAUDE.md`. |
-| 02 | `02.Caching` | **Seven packages; application code depends only on `SharedKernel.Caching.Abstractions` (Ab).** `ICacheService`, `ITenantCacheService` (explicit `TenantId` on every call), `CachePolicy`, `CacheKeyFormat`, `IDistributedLockService` (locks, leases, fencing tokens). Adapters: **FusionCache** (the cache; `cache` readiness probe), **Redis.Core** (`AddRedisConnection(configuration)`, the one multiplexer; `redis` probe), **Redis** (L2 + backplane), **Redis.DistributedLocking**, **Redis.HashStore**, **Redis.PubSub**; every Redis role package builds on Redis.Core, never on a sibling. Entry points: `02.Caching/README.md`, `02.Caching/CLAUDE.md`. |
-| 03 | `03.Domain` | **`SharedKernel.Domain` (M).** `Entity`, `AggregateRoot` with audit/soft-delete/tenanted bases (`IHasTenant.TenantId` is a `TenantId`), `ValueObject`, `StronglyTypedId`, `DomainEvent`, `IBusinessRule`, `IPolicy`, specifications with offset/keyset paging, `Money` (`SharedKernel.Domain.Monetary`). Aggregates read time from an injected `IClock`. Entry points: `03.Domain/README.md`, `03.Domain/CLAUDE.md`. |
-| 04 | `04.Contracts` | **`SharedKernel.Contracts` (M).** Cross-service wire contracts: `IIntegrationEvent` + `[IntegrationEvent("name", Version = n)]`, CloudEvents `EventEnvelope<TEvent>` (built only by `EventEnvelope.Wrap`), `PagedList<T>`, `CursorPagedList<T>`, `PageRequest`/`CursorPageRequest`, `PageCursor`. No domain types, no response envelope. Entry points: `04.Contracts/README.md`, `04.Contracts/CLAUDE.md`. |
-| 05 | `05.Application` | **Four packages; MediatR appears only in the adapter.** **`SharedKernel.Application` (Ab):** kernel-owned `IRequest<T>`/`IRequestHandler<,>`, `ICommand`/`ICommand<T>`/`IQuery<T>`/`IStreamQuery<T>`, `ISender`, `IPipelineBehavior<,>` + `RequestHandlerContinuation<T>`, `IRequestValidator<T>`, `IDomainEventHandler<T>`, `[RequirePermission]` (always enforced) and every marker (`IIdempotentRequest`, `IAuditableRequest`, `ILoggableRequest`, `ICacheableQuery`, `IInvalidatesCache`, `CacheScope`, `CacheKeyRef`, `ICommandScope`). **`Application.Pipeline` (H):** the one registration call `AddSharedKernelApplication(assemblies, app => app.UseMediatR().With…())` — handler/validator/domain-event-handler scan, seams checked at host start, a second call throws — and the fixed pipeline: Tracing → Logging → Metrics → Authorization → Validation (always on) → query stage → command stage (command scope, `WithIdempotency()` per tenant and caller, `WithAuditing()`, `WithTransactions()`); behaviors internal. **`Application.Pipeline.Caching` (H):** `app.WithCaching()` — `ICacheableQuery` caching and post-commit `IInvalidatesCache` eviction. **`Application.Mediator.MediatR` (H):** `app.UseMediatR()` — MediatR 12.4.1 (last MIT release) behind `ISender`. The application model of main's P-563 (A2, A4–A6) was re-implemented on these packages by P-579. Expected failures are `Result` values; only the outermost command commits; handlers must be re-runnable. Entry points: `05.Application/README.md`, `05.Application/CLAUDE.md`. |
-| 06 | `06.Persistence` | **Six packages, PostgreSQL only.** `builder.AddSharedKernelPostgres<TContext>("orders", p => p.UseMultiTenancy(rowLevelSecurity: true).UseAuditTrail().UseFieldEncryption().MigrateOnStartup())`. **Persistence.Abstractions (Ab):** repositories, `EntityVersion`, bulk mutations, `ICrossTenantScope`, `IDbConnectionFactory`; implements Execution's `IUnitOfWork`/`IAuditTrailWriter` and reads its `IRequestContext`. Adapters: **Npgsql** (data sources, TLS, roles script, SQLSTATE classifier), **EfCore** (conventions, one transaction per DI scope, tenant filter + write guard + transaction-local RLS), **Dapper** (`IDbSessionFactory`), **EfCore.Auditing** (HMAC-chained ledger v3; `audit-sealing` probe), **EfCore.Encryption** (field encryption v3; `field-encryption` probe). Test helpers: `16.Testing/SharedKernel.Persistence.Testing`. Reference service: `samples/BillingApi`. Entry points: `06.Persistence/README.md` (10-minute path, compiled by a test), `06.Persistence/CLAUDE.md`. |
-| 07 | `07.Messaging` | **Five packages.** **Messaging.Abstractions (Ab):** `IMessageBus`/`IEventPublisher` (every verb returns `Result`), `IMessageScheduler`, `IMessageHeaderPropagator`, `IFaultConsumer`, `IMessageVersionTranslator`, `MessagingOptions`. **MassTransit (Ad):** one fluent chain `AddSharedKernelMessaging(configuration).UseRabbitMq(…)…Build()` — retry, circuit breaker, dead-letter policy, delayed delivery, consumer idempotency (over `IIdempotencyStore`, purpose `Message`), ordered delivery, compress-then-encrypt payloads, telemetry, `messaging` probe, and caller propagation (`WithInboundRequestContext()` opens a `RequestContextScope` per consume). Transport and outbox satellites (Ad): **MassTransit.RabbitMq** (`UseRabbitMq`), **.AzureServiceBus** (`UseAzureServiceBus`), **.EfCore** (`WithEntityFrameworkOutbox<TDbContext>`). **Pinned to MassTransit 8.5.x**, the last Apache-2.0 release — do not bump without a recorded licensing decision. Verified end to end by `samples/ShippingApi` (real RabbitMQ). Entry points: `07.Messaging/README.md`, `07.Messaging/CLAUDE.md`. |
-| 08 | `08.Storage` | **Three packages.** **Storage.Abstractions (Ab):** named stores (`AddSharedKernelStorage().AddS3(configuration).AddStore("invoices")`, `[FromKeyedServices] IFileStorage`, `IFileStorageFactory`), tenant stores (`ITenantFileStorage.ForTenant(TenantId)`, keys under `tenants/{id}/`), streaming, ranges, conditional writes, checksums, presigned GET/PUT/POST/multipart, `storage.*` `Result` codes, one `storage-{store}` probe per store. **S3 (Ad)** (AWS, MinIO, any S3-compatible) and **Obs (Ad, over S3)**. Verified by `samples/DocumentsApi`. Entry points: `08.Storage/README.md`, `08.Storage/CLAUDE.md`. |
-| 09 | `09.Search` | **Three packages.** **Search.Abstractions (Ab, zero third-party):** `ISearchIndex<TDocument>`, `ISearchIndexProvisioner`, `ISearchProviderDescriptor`, `IQueryBuilder`, closed `SearchFilter` AST, `SearchIndexDefinition`; `TenantScope` (from Execution) is a separate mandatory parameter on every read and filtered write. **Meilisearch (Ad)** and **ElasticSearch (Ad)** each declare their engine-only contracts in their own package, so a provider swap is a build error; each registers one `search-{provider}-{index}` probe per index. Two engines in one host: resolve the non-generic contracts keyed by provider name. Verified by `samples/CatalogApi`. Entry points: `09.Search/README.md`, `09.Search/CLAUDE.md`. |
-| 10 | `10.Intelligence` | **Three packages.** **AI.Abstractions (Ab, zero third-party):** embedding generation, vector collections (mandatory `TenantScope`), `ISemanticKernel`-shaped orchestration. **AI.Qdrant (Ad)** — the only vector provider (one `vector-store-{provider}-{collection}` probe per collection); **AI.SemanticKernel (Ad)**. No LLM readiness probe by design (a probe would be a billed completion call). Entry points: `10.Intelligence/README.md`, `10.Intelligence/CLAUDE.md`. |
-| 11 | `11.Communication` | **Three outbound-call adapters, one namespace (`SharedKernel.Communication`), no ASP.NET Core dependency.** `services.AddSharedKernelCommunication(configuration).AddRestClient<IClient, Client>("name").AddGrpcClient<T>("name")`, every client's settings from `SharedKernel:Communication:Clients:{name}` (validated on start). **Communication (base):** service discovery through `Microsoft.Extensions.ServiceDiscovery` (`Services` section, DNS, DNS SRV; round-robin per request), outbound auth (client credentials, API key, `IAccessTokenProvider`), mutual TLS, `communication.*` error codes. **Communication.Rest:** Microsoft.Extensions.Http.Resilience (retries, timeouts, breaker, or hedging) that never repeats a POST/PATCH without an `Idempotency-Key`; caller headers from `IRequestContextAccessor`; `GetResultAsync`/`PostResultAsync`… → `Result<T>` (ProblemDetails → the service's `Error`, no response → `communication.unreachable`/`timeout`). **Communication.Grpc:** deadline, retry policy, keepalive, `ToResultAsync()` over the rich status, `google.type.Money` ↔ `Money`. Server-side conventions live in `14.Presentation`. Worked example: `samples/CheckoutApi` → `samples/InventoryApi`. Entry points: `11.Communication/README.md`, `11.Communication/CLAUDE.md`. |
-| 12 | `12.Security` | **Five packages.** **Security.Abstractions (Ab):** `IUserContext` (subject, client, `TenantId?`, `ActorKind`, session, roles, permissions, `amr`/`acr`/`auth_time`, sender-constraint), `IUserContextMapper` + `UserContextResolver`, `AnonymousUserContext`/`SystemUserContext`. Host-tier authentication handlers: **Oidc** (JWT bearer for any OIDC provider, algorithm allow-list, DPoP, certificate-bound tokens, revocation), **ApiKey** (managed keys or a custom validator), **Mtls** (client certificates, private-CA trust), **Totp** (session-bound step-up, recovery codes). Application code never reads `IUserContext` for the tenant — it reads `IRequestContext`. Entry points: `12.Security/README.md`, `12.Security/CLAUDE.md`. |
-| 13 | `13.ServiceDefaults` | **Host composition, seven packages.** **`SharedKernel.ServiceDefaults`** (references Foundation-tier packages only): `AddServiceDefaults`, every `WithXTelemetry`, `StartupGate`, `/health/live` + `/health/ready`, `AddSharedKernelReadiness()` (every registered `IReadinessProbe` becomes a `ready` check), `AddSharedKernelRateLimiting`. **`.Security`:** `AddSharedKernelRequestContext()` (the `IRequestContext` over `IUserContext`) and `app.UseSharedKernelRequestContext()` (correlation id + the request's `RequestContextScope`; registered first). **`.Persistence`** (database/startup readiness checks), **`.Security.Mtls`** (Kestrel client certificates), **`.Configuration.KeyVault`** (Key Vault as an `IConfiguration` source), **`.Localization`** (`AddSharedKernelLocalization`, request culture), **`SharedKernel.MultiTenancy`** (`TenantResolutionMiddleware` with Claim → Header → Database strategies returning `TenantId?`, `ITenantCatalog`, `ITenantStatusValidator`). Entry points: `13.ServiceDefaults/README.md`, `13.ServiceDefaults/CLAUDE.md`. |
-| 14 | `14.Presentation` | **Six Host packages (+ a Tooling generator packed inside WebApi).** **Presentation.Core:** what WebApi and gRPC share — `[RequireEndpointPermission]`/`[RequireRole]`/`[RequireFreshAuthentication]`/`[RequireAuthenticationMethod]` (`SharedKernel.Presentation.Authorization`; real `[Authorize]` attributes over native policies evaluated against `IUserContext`), the authorization policy machinery, error presentation and the `ErrorType` → HTTP map (internal). **WebApi** (one namespace, `SharedKernel.Presentation.WebApi`): `builder.AddSharedKernelWebApi()` + `app.UseSharedKernelWebApi(p => …)` — one RFC 9457 problem shape for every error source (localized, server errors redacted outside Development, `Unavailable`/`Timeout` → 503/504), typed results `ToOk`/`ToCreated`/`ToAccepted`/`ToNoContent`/`ToOkWithETag`, `IEndpointModule` + the generated `app.MapEndpoints()`, `Paging`/`CursorPaging` parameters (400 with `pagination.*`), `IdempotencyKey`/`IfMatch<T>` headers (412), security headers, CORS; no MediatR. **OpenApi:** versioning, one OpenAPI document per version, Scalar (documents unpublished outside Development by default). **Grpc:** rich-status error mapping; calls run through the HTTP pipeline, so the request context and the attributes apply; references Core, never WebApi or Contracts. **SignalR:** error contract, request-context hub filter, invocation rate limit, `HubGroupNaming`. **GraphQL** (HotChocolate conventions). Main's P-562/P-563 redesign merged by P-579; the Redis SignalR backplane was removed. Entry points: `14.Presentation/README.md`, `14.Presentation/CLAUDE.md`, `14.Presentation/CONFIGURATION.md`. |
-| 15 | `15.Integration` | **Outbound delivery to destinations outside our control.** **Integration.Webhooks (Ad):** signed, retried, SSRF-guarded webhook dispatch, multi-secret rotation, optional payload encryption, `X-Webhook-Delivery-Id`, test deliveries; sends the correlation id only (a subscriber is outside the trust boundary). **Notifications.Abstractions (Ab)** + **Email.SendGrid** / **Sms.Twilio (Ad)** (`INotificationSender`, keyed by channel, direct REST, caller-supplied `NotificationDeliveryId`). Entry points: `15.Integration/README.md`, `15.Integration/CLAUDE.md`. |
-| 16 | `16.Testing` | **Test packages, Testing tier, referenced only by test projects** (`TestingNeverReferencedByProduction`). **`SharedKernel.Testing`** — the lightweight, packable core (Foundation + Model references only): `FakeClock`, in-memory logger, `TestRequestContext`, fakers, assertions. Nineteen per-capability packages, all packable: `SharedKernel.{Application, Caching, Caching.Redis, Communication, Cryptography, FeatureManagement, Idempotency, Integration, Messaging, Persistence, Presentation, Reporting, Scheduling, Search, AI, Security, ServiceDefaults, Storage, Workflows}.Testing`, each referencing only its capability's contracts. **`SharedKernel.Testing.Internal`** (not packable): Testcontainers fixtures, EF Core/Npgsql/audit helpers, MassTransit `TestHarnessFactory` for this repo's own tests. Entry points: `16.Testing/README.md`, `16.Testing/CLAUDE.md`. |
-| 17 | `17.Workflows` | **`SharedKernel.Workflows.Temporal` (Ad), one package by design.** `IWorkflowDispatcher`/`IWorkflowHandle<TResult>`/`IWorkflowIdFactory` (mandatory `TenantScope`), `WorkflowBase`/`ActivityBase`, `CommandActivity<TCommand>` (sends through the kernel `ISender`), worker hosting, `Result<T>`↔failure mapping, payload encryption, context propagation into activities, `workflows` probe. No `.Abstractions` split: durable execution's programming model is the abstraction. Entry points: `17.Workflows/README.md`, `17.Workflows/CLAUDE.md`. |
-| 18 | `18.Idempotency` | **Three packages.** **Idempotency.Abstractions (Ab):** the one `IIdempotencyStore` (`TryBeginAsync`/`CompleteAsync`/`ReleaseAsync`, token-conditional), keyed by `IdempotencyPurpose` (`Request`/`Message`), tenant from `IRequestContextAccessor`. **Idempotency.Redis (Ad, atomic Lua)** and **Idempotency.EfCore (Ad, `INSERT … ON CONFLICT`)**: `AddRedisIdempotency(p => p.ForRequests().ForMessages())` / `AddEfCoreIdempotency(…)`. Consumed by `Application.Pipeline`'s `IdempotencyBehavior` and MassTransit consumer idempotency. Entry points: `18.Idempotency/CLAUDE.md`, each package `README.md`. |
-| 19 | `19.Scheduling` | **`SharedKernel.Scheduling` (Ad).** Cron/recurring/one-shot jobs: `IScheduledJobRegistry`, `ScheduledCommandJob<TCommand>` (kernel `ISender`), Quartz's `CronExpression` for parsing only, cross-replica single execution through an optional `IDistributedLockService` lease, mandatory `MisfirePolicy`/`OverlapPolicy`, each run inside a `SystemRequestContext` scope with the job's `TenantScope` and a new correlation id, `scheduler` probe. Entry points: `19.Scheduling/CLAUDE.md`, `SharedKernel.Scheduling/README.md`. |
-| 20 | `20.Reporting` | **Five packages, one namespace `SharedKernel.Reporting`.** **Reporting.Abstractions (Ab):** streaming `IReportExporter<TRow>` over `IAsyncEnumerable<TRow>` and `IHtmlToPdfConverter`, delivered to a named `08.Storage` store (`ReportDestination`: download file name, write condition, presigned link) or any stream; `IReportExporterFactory` (format chosen at runtime), fluent `ReportDefinition.For<T>()`, `ReportExporterBase<T>`/`HtmlToPdfConverterBase` for custom formats. `services.AddSharedKernelReporting().AddCsv(c).AddSpreadsheet(c).AddPdf(c).AddGotenberg(c)` — one open-generic registration per format serves every row type. Adapters: **Csv** (dependency-free RFC 4180, CSV-injection guard), **Spreadsheet** (SpreadCheetah, MIT — streaming, typed cells), **Pdf** (PDFsharp/MigraDoc, MIT — tabular, `MaxRows`), **Gotenberg** (HTML → PDF via a Gotenberg/Chromium container; `gotenberg` probe). EPPlus, QuestPDF and iText7 declined on licensing; ClosedXML is test-only. Entry points: `20.Reporting/CLAUDE.md`, each package `README.md`. |
-| — | `samples/` | Reference services, one per concern: `OrderApi` (the four-project shape — Domain / Application / Infrastructure / Api — with an architecture test on each project's kernel closure), `BillingApi` (persistence), `ShippingApi` (messaging over RabbitMQ), `DocumentsApi` (storage), `CatalogApi` (search). `samples/README.md` is the "how to consume the kernel" guide. |
+Counts are **packable packages** (tests, `consumer-verify` harnesses, benchmarks and `SharedKernel.Testing.Internal` excluded). Tiers: **F** Foundation · **M** Model · **Ab** Abstractions · **Ad** Adapter · **H** Host · **T** Testing · **To** Tooling.
+
+| Folder | Pkgs | Scope | Tiers |
+| --- | ---: | --- | --- |
+| `00.Governance` | 3 | Roslyn analyzers (SK rules), NetArchTest architecture tests, EditorConfig/CSharpier linter | To |
+| `01.Core` | 13 | Primitives (`Result<T>`, `Error`, `IClock`, health probes, well-known headers), Execution (`IRequestContext`, tenancy, unit of work), Core, Configuration, FeatureManagement, Compression, Validation, DataPrivacy, Localization, Cryptography | F, Ad (Argon2, KeyVault.Azure, Validation.FluentValidation) |
+| `02.Caching` | 7 | Cache and lock abstractions; FusionCache; Redis core + L2, locking, hash store, pub/sub | Ab, Ad |
+| `03.Domain` | 1 | Entities, aggregates (audited/soft-delete/tenanted), value objects, ids, specifications, `Money` | M |
+| `04.Contracts` | 1 | Integration events, CloudEvents envelope, paging DTOs and cursors | M |
+| `05.Application` | 4 | Kernel CQRS contracts + markers; pipeline; query caching; MediatR adapter | Ab, H |
+| `06.Persistence` | 6 | PostgreSQL only: abstractions, Npgsql, EF Core, Dapper, audit ledger, field encryption | Ab, Ad |
+| `07.Messaging` | 5 | Message bus abstractions; MassTransit core + RabbitMQ, Azure Service Bus, EF Core outbox | Ab, Ad |
+| `08.Storage` | 3 | Named/tenant file stores; S3 (and compatibles), Huawei OBS | Ab, Ad |
+| `09.Search` | 3 | Search index abstractions; Meilisearch, ElasticSearch | Ab, Ad |
+| `10.Intelligence` | 3 | Embeddings, vector collections, orchestration; Qdrant, Semantic Kernel | Ab, Ad |
+| `11.Communication` | 3 | Outbound calls: discovery/auth/mTLS base, REST client, gRPC client | Ad |
+| `12.Security` | 5 | `IUserContext`; OIDC/JWT, API key, mTLS, TOTP step-up | Ab, H |
+| `13.ServiceDefaults` | 7 | Host composition: OTel, health, readiness, rate limiting, request context, multi-tenancy, Key Vault config, localization | H |
+| `14.Presentation` | 6 | Presentation.Core, WebApi, OpenApi, Grpc, SignalR, GraphQL (+ a Tooling source generator packed inside WebApi) | H |
+| `15.Integration` | 4 | Webhooks; notification abstractions, SendGrid email, Twilio SMS | Ab, Ad |
+| `16.Testing` | 20 | `SharedKernel.Testing` + 19 `SharedKernel.{Capability}.Testing` fakes (plus non-packable `Testing.Internal` fixtures) | T |
+| `17.Workflows` | 1 | Temporal durable workflows (one package by design) | Ad |
+| `18.Idempotency` | 3 | `IIdempotencyStore`; Redis, EF Core | Ab, Ad |
+| `19.Scheduling` | 1 | Cron/recurring/one-shot jobs, single execution across replicas | Ad |
+| `20.Reporting` | 5 | Streaming CSV/Excel/PDF export, HTML → PDF (Gotenberg) | Ab, Ad |
+
+Other top-level locations:
+
+| Path | What |
+| --- | --- |
+| `samples/` | Seven reference services: `OrderApi` (the four-project shape with per-project architecture tests), `BillingApi` (persistence), `ShippingApi` (messaging over RabbitMQ), `DocumentsApi` (storage), `CatalogApi` (search), `CheckoutApi` → `InventoryApi` (11.Communication, REST + gRPC). `samples/README.md` is the "how to consume the kernel" guide. |
+| `eng/` | Build internals: `SharedKernelTiers.targets` (tier check), `PackageInventory.proj`, `verify-*.sh` scripts, test settings. See [`eng/README.md`](eng/README.md). |
+| `docs/` | `package-readme-standard.md` — the shape every package `README.md` follows. |
+| `.claude/` | Commands, agents and settings for Claude Code (see "Working in This Repo with Claude Code"). |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Contributor guide: build, test lanes, CI, release. |
 
 ---
 
@@ -50,270 +57,196 @@ Each numbered folder is a capability domain and owns a `CLAUDE.md` (maintainer r
 Every production `.csproj` declares `<SharedKernelTier>`. `eng/SharedKernelTiers.targets` (imported by `Directory.Build.targets`) checks every direct `ProjectReference` before compile; `00.Governance`'s `DependencyGraphRulesTests` checks the same graph from the test side (no cycles, every production project tiered, no Host/Testing leaks).
 
 | Tier | May reference (ProjectReference) | Third-party rule | Consumed by (in a service) |
-|------|----------------------------------|------------------|----------------------------|
+| --- | --- | --- | --- |
 | **Foundation** | Foundation | any | every project |
 | **Model** | Foundation, Model | `Microsoft.Extensions.*.Abstractions` only | Domain project |
 | **Abstractions** | Foundation, Model, Abstractions | `Microsoft.Extensions.*.Abstractions` only | Application project |
-| **Adapter** | Foundation, Model, Abstractions, plus the adapters named in its `<SharedKernelAllowedAdapterReferences>` | any except ASP.NET Core | Infrastructure project |
+| **Adapter** | Foundation, Model, Abstractions, plus adapters named in its `<SharedKernelAllowedAdapterReferences>` | any except ASP.NET Core | Infrastructure project |
 | **Host** | everything except Testing and Tooling | any | Api/Worker project |
 | **Testing** | everything except Tooling | any | test projects only |
 | **Tooling** | nothing | any | build / analyzers |
 
-**Build errors:** `SKTIER000` unknown tier · `SKTIER001` a reference this tier may not take · `SKTIER002` an Adapter → Adapter edge not declared · `SKTIER003` a Model/Abstractions package taking a runtime NuGet package outside the allow-list · `SKTIER004` a reference to an untiered project · `SKTIER005` a packable project without a tier · `SKTIER006` ASP.NET Core (`Microsoft.AspNetCore.App` or `Microsoft.AspNetCore.*`, transitively too) below Host/Testing. CI's `tier-check` also builds two probe projects that must fail with SKTIER001/006 (`eng/verify-tier-errors.sh`). Test projects, consumer-verify harnesses and samples declare no tier — they are consumers.
+**Build errors:** `SKTIER000` unknown tier · `SKTIER001` a reference this tier may not take · `SKTIER002` an undeclared Adapter → Adapter edge · `SKTIER003` a Model/Abstractions package taking a runtime NuGet package outside the allow-list · `SKTIER004` a reference to an untiered project · `SKTIER005` a packable project without a tier · `SKTIER006` ASP.NET Core (`Microsoft.AspNetCore.App` or `Microsoft.AspNetCore.*`, transitively too) below Host/Testing. CI's `tier-check` also builds two probe projects that must fail with SKTIER001/006 (`eng/verify-tier-errors.sh`). Test projects, consumer-verify harnesses and samples declare no tier — they are consumers.
 
-**Declared adapter edges** (a provider built on its own base): Obs → S3 · EfCore, Dapper → Npgsql · EfCore.Auditing, EfCore.Encryption → EfCore · Caching.Redis, .DistributedLocking, .HashStore, .PubSub → Redis.Core · Messaging.MassTransit.RabbitMq, .AzureServiceBus, .EfCore → Messaging.MassTransit · Communication.Rest, .Grpc → Communication · Idempotency.EfCore → Persistence.EfCore · Idempotency.Redis → Caching.Redis.Core. A new edge is a csproj declaration reviewed like any other API change; sibling role packages never reference each other.
+**Declared adapter edges** (a provider built on its own base):
+- Storage: Obs → S3
+- Persistence: EfCore, Dapper → Npgsql · EfCore.Auditing, EfCore.Encryption → EfCore
+- Caching: Redis, Redis.DistributedLocking, Redis.HashStore, Redis.PubSub → Redis.Core
+- Messaging: MassTransit.RabbitMq, .AzureServiceBus, .EfCore → Messaging.MassTransit
+- Communication: Rest, Grpc → Communication
+- Idempotency: EfCore → Persistence.EfCore · Redis → Caching.Redis.Core
 
-**Purity rules the tiers cannot express** (architecture tests, `00.Governance`):
-- `SharedKernel.Contracts` never references `SharedKernel.Domain`, and `SharedKernel.Domain` never references `SharedKernel.Contracts`.
-- Model packages (`Domain`, `Contracts`) never reference logging — `ILogger` is never injected into a domain or contract type.
+A new edge is a csproj declaration reviewed like any API change; sibling role packages never reference each other.
+
+**Purity rules the tiers cannot express** (architecture tests in `00.Governance`):
+- `SharedKernel.Contracts` and `SharedKernel.Domain` never reference each other.
+- Model packages (`Domain`, `Contracts`) never reference logging.
 - MediatR is referenced only by `SharedKernel.Application.Mediator.MediatR`.
-- `SharedKernel.Presentation.Grpc` and `SharedKernel.Communication.Grpc` never reference `SharedKernel.Contracts` — protobuf messages are the gRPC wire contract.
-- `SharedKernel.Messaging.*` never references `SharedKernel.Caching.*` and vice versa. Loss-tolerant Redis Pub/Sub stays in `02.Caching` as `Caching.Redis.PubSub`; it is not messaging.
-- Redis role packages reference only `Redis.Core`, never each other; the same shape applies to the MassTransit satellites.
-- Testing-tier packages are never referenced by production code — including the packable ones.
-- Plus the domain-specific topology, cryptography-isolation, persistence, pipeline-order and health-tag rules listed in `00.Governance/CLAUDE.md`.
+- `Presentation.Grpc` and `Communication.Grpc` never reference `SharedKernel.Contracts` — protobuf messages are the gRPC wire contract.
+- `SharedKernel.Messaging.*` and `SharedKernel.Caching.*` never reference each other (Redis Pub/Sub is caching, not messaging).
+- Redis role packages reference only `Redis.Core`; MassTransit satellites only the MassTransit core.
+- Testing-tier packages are never referenced by production code, including the packable ones.
+- Plus the topology, cryptography-isolation, persistence, pipeline-order and health-tag rules in `00.Governance/CLAUDE.md`.
 
-**What a consuming service references** (enforced for `samples/OrderApi` by its own `ArchitectureTests`): the **Domain** project → `SharedKernel.Domain`; the **Application** project → `SharedKernel.Application` (+ `Idempotency.Abstractions`/`Caching.Abstractions` when it uses those markers); the **Infrastructure** project → adapters; the **Api/Worker** project → Host packages plus its own Application and Infrastructure projects.
-
----
-
-## Logging Conventions
-
-All production logging platform-wide follows one mechanically-enforced shape so log output stays queryable and alertable in aggregate across every microservice that consumes this kernel (enforced by `00.Governance`).
-
-- Every production log statement uses the `[LoggerMessage]` source-generated partial-method pattern (`Microsoft.Extensions.Logging.Abstractions`). Direct `ILogger.LogInformation/LogWarning/LogError/LogCritical/LogTrace/LogDebug(...)` extension-method calls and hand-written `LoggerMessage.Define<>()` static delegates are prohibited in shipped production code.
-- Every `[LoggerMessage]` method sets an explicit `EventId` — never rely on compiler auto-numbering, which is unstable across edits to the same class.
-- `EventId` ranges are reserved per capability domain using `{two-digit domain number} * 1000` through `+999` — e.g. `01.Core`=1000-1999, `05.Application`=5000-5999, `13.ServiceDefaults`=13000-13999. The registry of domain base values is `LoggingEventIdRanges` in `01.Core`. A domain with multiple packages subdivides its block into 100-wide sub-blocks, one per package, recorded in its own `CLAUDE.md`. (The folder number still names the EventId block; it no longer names a dependency layer.)
-- Message template placeholders are PascalCase named properties matching the call's named arguments (e.g. `{RequestName}`) — never positional, never string-interpolated into the template.
-- CorrelationId, trace context (TraceId/SpanId) and TenantId are never passed as explicit message-template placeholders — they flow ambiently from the request context (`UseSharedKernelRequestContext()` sets them as baggage) through the OpenTelemetry logging pipeline.
-- Logging a structured payload that may carry sensitive fields requires a self-supplied loggable-field surface on the type being logged (`ILoggableRequest<TResponse>` in `SharedKernel.Application`) — never a reflection-based property walk, never `{@Object}` destructuring of a raw domain/DTO object. Personal data is marked with `SharedKernel.DataPrivacy` attributes and redacted by the logging source generator.
-- `SharedKernel.Domain` and `SharedKernel.Contracts` remain logging-free.
+**What a consuming service references** (enforced for `samples/OrderApi` by its `ArchitectureTests`): **Domain** → `SharedKernel.Domain`; **Application** → `SharedKernel.Application` (+ `Idempotency.Abstractions`/`Caching.Abstractions` when it uses those markers); **Infrastructure** → adapters; **Api/Worker** → Host packages plus its own Application and Infrastructure projects.
 
 ---
 
-## Magic String / Named Constants Convention
+## Conventions
 
-No raw string literal may be used at a call site for an identifier that is (a) referenced from more than one call site, or (b) part of a cross-service/cross-process wire contract — HTTP/gRPC header names, `Activity`/OTel baggage or tag keys, `IConfiguration` section/key names, claim-type names, cache-key components, and similar. Always a named constant (a `static class` of `const string` / `static readonly` fields).
+### Logging (enforced by `00.Governance`)
+- Only the `[LoggerMessage]` source-generated partial-method pattern. No `ILogger.LogXxx(...)` calls, no `LoggerMessage.Define<>()`.
+- Every `[LoggerMessage]` sets an explicit `EventId` from its domain's block: `{folder number} * 1000` to `+999` (registry: `LoggingEventIdRanges` in `SharedKernel.Primitives`). A multi-package domain splits its block into 100-wide sub-blocks, recorded in its `CLAUDE.md`.
+- Placeholders are PascalCase named properties (`{RequestName}`), never positional or interpolated.
+- Never pass CorrelationId, TraceId/SpanId or TenantId as placeholders — they flow ambiently from the request context through OpenTelemetry.
+- Structured payloads that may carry sensitive fields expose their own loggable fields (`ILoggableRequest<TResponse>`); never `{@Object}` destructuring or reflection walks. Personal data is marked with `SharedKernel.DataPrivacy` attributes and redacted.
+- `SharedKernel.Domain` and `SharedKernel.Contracts` stay logging-free.
 
-- **Package-local magic strings** live in a small constants class in that package (e.g. `SecurityClaimTypes`, `WebhookSignatureHeaders`, `HubGroupNaming`, `CacheKeyFormat`).
-- **Cross-package wire-format constants** — the correlation, tenant, actor, client and idempotency headers, and the baggage and tag keys that carry them — live in `SharedKernel.Primitives` as `WellKnownHeaders` (`X-Correlation-Id`, `X-Tenant-Id`, `Idempotency-Key`, `x-sk-actor-id`, `x-sk-actor-kind`, `x-sk-client-id`, …), `WellKnownBaggageKeys` and `WellKnownTagKeys`. Every inbound and outbound adapter maps them through `SharedKernel.Execution`'s `RequestContextPropagation`, so a header name exists exactly once. Never in `SharedKernel.Contracts` (the gRPC packages may not reference it).
-- **Configuration section names** are declared on the options type: implement `ISectionBoundOptions` (`public static string SectionName => "..."`) and register with `AddValidatedOptions<TOptions>(configuration)`, so no call site names the path. The older `public const string SectionName` form still compiles but is unenforced.
-- Enforced by `00.Governance`'s `SK0022`, which flags a raw literal at header indexers/setters, `Activity.SetBaggage`/`.SetTag`, `IConfiguration.GetSection` and claim comparisons; any named-constant reference passes.
+### Magic strings / named constants (`SK0022`)
+No raw literal at a call site for an identifier used from more than one place or on the wire (header names, baggage/tag keys, configuration keys, claim types, cache-key parts). Use a named constant:
+- **Package-local** — a small constants class in the package (`SecurityClaimTypes`, `WebhookSignatureHeaders`, `HubGroupNaming`, `CacheKeyFormat`).
+- **Cross-package wire names** — `WellKnownHeaders`, `WellKnownBaggageKeys`, `WellKnownTagKeys` in `SharedKernel.Primitives`, mapped by every adapter through `SharedKernel.Execution`'s `RequestContextPropagation`. Never in `SharedKernel.Contracts`.
+- **Configuration sections** — declared on the options type via `ISectionBoundOptions` (`public static string SectionName => "..."`), registered with `AddValidatedOptions<TOptions>(configuration)`.
 
----
-
-## Package Naming Convention
-
+### Package naming
 ```
-SharedKernel.{Capability}                   → main package (interfaces + default impl if single-provider)
-SharedKernel.{Capability}.Abstractions      → interfaces only, Abstractions tier, minimal dependencies
-SharedKernel.{Capability}.{Provider}        → concrete implementation for a specific technology (Adapter tier)
-SharedKernel.{Capability}.Testing           → fakes for that capability (Testing tier, packable, 16.Testing)
-SharedKernel.{Capability}.Tests             → test project, nested inside the project folder it tests
+SharedKernel.{Capability}                 main package (interfaces + default impl if single-provider)
+SharedKernel.{Capability}.Abstractions    interfaces only, Abstractions tier
+SharedKernel.{Capability}.{Provider}      a technology implementation, Adapter tier
+SharedKernel.{Capability}.Testing         fakes, Testing tier, in 16.Testing
+SharedKernel.{Capability}.Tests           test project, nested in the project it tests
 ```
+- More than one provider → split into `.Abstractions` + `.{Provider}`.
+- **Role split:** one technology serving several roles → `.{Provider}.Core` (connection, health, resilience) + `.{Provider}.{Role}` packages depending only on `.Core` and `.Abstractions` (e.g. `Caching.Redis.*`).
+- **Satellite:** an optional feature with a heavy dependency extends the core's builder from its own package, keeping the core's namespaces (e.g. `Messaging.MassTransit.RabbitMq`).
+- **MAX_PATH:** `…\{Name}\{Name}.Tests\obj\Release\net10.0\{Name}.Tests.dll` must stay within 245 characters when the repo is cloned at a short root (e.g. `C:\Github\platform-shared-kernel`). Check every new or renamed package before scaffolding.
 
-When a capability has more than one provider (Search, Persistence, Caching, Storage, …), **split into `.Abstractions` + `.{Provider}`**. Services reference the abstraction and inject the provider of their choice.
+### Versioning and release
+One version for every package, derived from a git tag by MinVer — no `<Version>` in any `.csproj` (CI fails on one). A `vX.Y.Z` tag on `main` runs every gate, packs all packages and publishes them together to GitHub Packages. Consumers pin one `SharedKernelVersion`. Details: [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
-**Provider role-split variant:** when one technology serves several roles within a capability, split further — `SharedKernel.{Capability}.{Provider}.Core` (connection management, health, resilience) plus `SharedKernel.{Capability}.{Provider}.{Role}` packages that depend only on `.Core` and `.Abstractions`. Example: `Caching.Redis.Core` + `Caching.Redis`, `.DistributedLocking`, `.HashStore`, `.PubSub`.
+### Test projects
+- Nested inside the project folder they test (e.g. `06.Persistence/SharedKernel.Persistence.EfCore/SharedKernel.Persistence.EfCore.Tests/`).
+- Reference `SharedKernel.Testing`, the capability's `SharedKernel.{Capability}.Testing`, and `SharedKernel.Testing.Internal` for Testcontainers fixtures.
+- `classlib`, `net10.0`, in exactly one lane: `Platform.SharedKernel.Unit.slnf` (no Docker) or `Platform.SharedKernel.Integration.slnf` (Testcontainers).
 
-**Optional-dependency satellite variant:** when an optional feature would force a heavy dependency on every consumer, it goes into a satellite that extends the core's builder — `Messaging.MassTransit.RabbitMq`/`.AzureServiceBus`/`.EfCore`. The fluent chain and namespaces stay those of the core.
-
-**Name length:** a test-assembly path `…\{Name}\{Name}.Tests\obj\Release\net10.0\{Name}.Tests.dll` must stay within 245 characters at `C:\Github\platform-shared-kernel` (Windows MAX_PATH). Check every new or renamed package before scaffolding it.
-
----
-
-## Package Versioning — one version, one release train
-
-Every shipping package carries **the same version**, derived from a single git tag by MinVer. There is no `<Version>` in any `.csproj` (CI fails on one). Releasing is `git tag vX.Y.Z` on `main`: `release.yml` runs every gate (tier check, full build, Unit and Integration suites, every consumer-verify harness and sample), packs **all** packages at that version, checks the set against every packable project, and publishes them together to GitHub Packages. There is no per-package publish and no "republish closure". Consumers pin one `SharedKernelVersion` property. Full detail: [`PLATFORM.md`](PLATFORM.md) → "Versioning", "Release train", "Consuming the kernel".
-
-Per-package version numbers and publish dates quoted in older state-map and changelog entries are historical record of what a change did, not a current pin.
-
-## Test Project Rules
-
-- Test projects are **nested inside the project folder they test**, not in a separate top-level `tests/` folder — e.g. `06.Persistence/SharedKernel.Persistence.EfCore/SharedKernel.Persistence.EfCore.Tests/`.
-- A test project references the `16.Testing` packages it needs: `SharedKernel.Testing` (core) plus the capability's `SharedKernel.{Capability}.Testing`, and `SharedKernel.Testing.Internal` for Testcontainers fixtures.
-- Test projects are `classlib` targeting `net10.0`; every test project is in exactly one lane — `Platform.SharedKernel.Unit.slnf` (no Docker) or `Platform.SharedKernel.Integration.slnf` (Testcontainers).
+### Solution
+- `Platform.SharedKernel.slnx`; each numbered folder is a solution folder of the same name. `eng/verify-solution-filters.sh` keeps every test project in exactly one lane filter.
+- `net10.0` everywhere; Central Package Management in `Directory.Packages.props`; build-wide settings in `Directory.Build.props`/`.targets`, `global.json`, `NuGet.Config` (see [`eng/README.md`](eng/README.md)).
+- A new project goes into the `.slnx`, the right `.slnf` and, if packable, `Directory.Packages.props`.
 
 ---
 
-## "What Goes Where" Decision Guide
+## What Goes Where
 
-| I need to add… | It belongs in… |
-|----------------|---------------|
-| A new domain concept (entity, value object, domain event) | `03.Domain` |
-| A tenant-scoped aggregate | `03.Domain` — extend a `Tenanted…` base (`TenantedAggregateRoot<TId>`, `TenantedAuditableAggregateRoot<TId>`, `TenantedSoftDeletableAggregateRoot<TId>`, `TenantedAuditableSoftDeletableAggregateRoot<TId>`, `TenantedFullAuditableAggregateRoot<TId>`); pass a `TenantId` from the application layer (`TenantId` rejects `Guid.Empty` by construction) |
-| A cross-service DTO shared by several services | `04.Contracts` — only when genuinely platform-wide; a service's own request/response DTOs stay in that service |
-| An integration event | The publishing service, as a `sealed record` implementing `IIntegrationEvent` with `[IntegrationEvent("{context}.{name}", Version = n)]`; primitive members only. Map from the domain event at the boundary; a breaking change is a new type with the same name and the next version |
-| The wire envelope for an integration event | `04.Contracts` — `EventEnvelope.Wrap(evt, source:, subject:, tenantId:, correlationId:, causationId:)`, the only construction path (`EventEnvelope.TenantId` is `Guid?` on the wire); `IEventPublisher` calls it |
-| An event's wire name outside an envelope (webhook routing key, telemetry tag) | `04.Contracts` — `IntegrationEventDescriptor.For<TEvent>().Name`; never `typeof(TEvent).Name` |
-| The caller of the current operation (tenant, actor, correlation id, client, session, permissions) | `SharedKernel.Execution` — inject `IRequestContext` (or read `IRequestContextAccessor.Current` in a singleton). One contract for every channel: HTTP, gRPC, a consumed message, a Temporal activity, a scheduled job. `TenantId` is `TenantId?` — `null` means no tenant and tenant-scoped code fails closed; never `Guid.Empty` |
-| Supplying the request context in a host | HTTP: `services.AddSharedKernelRequestContext()` + `app.UseSharedKernelRequestContext()` (`ServiceDefaults.Security`) as the **first** middleware, before `UseExceptionHandler()`; then `UseAuthentication()`, the MultiTenancy `TenantResolutionMiddleware` (replaces only the tenant in an inner scope), then `UseAuthorization()`. The gRPC server interceptor, MassTransit consumers (`WithInboundRequestContext()`), Temporal activities and scheduled jobs open their own `RequestContextScope` |
-| A caller with no inbound request (background service, startup task, test) | `SharedKernel.Execution` — `using var scope = RequestContextScope.Begin(new SystemRequestContext(permissions, "job-name", tenantId))` (`ActorKind.System`, explicit permission set, never "all permissions") or `AnonymousRequestContext`; persistence's `ICallerDbContextFactory<TContext>` takes the context explicitly |
-| Propagating correlation, tenant and caller to an outbound call | Automatic — Communication.Rest/.Grpc, MassTransit, Temporal and Webhooks write `WellKnownHeaders` from `IRequestContextAccessor` through `RequestContextPropagation`. The correlation id keeps its original value end to end (`CorrelationIds.New()` only when none came in); nothing reads `Activity.Id` for correlation. Webhooks send the correlation id only |
-| A tenant value in an API (cache, storage, feature flags, search, workflows) | Always `SharedKernel.Execution.Tenancy.TenantId` (formatted once, as the "D" GUID string); an operation that may be tenant-wide or global takes `TenantScope` (`TenantScope.Global`, `TenantScope.For(tenantId)`, `TenantScope.FromNullable`) as its own mandatory parameter. Never a `string`/`Guid` tenant, never a local `TenantScope` copy |
-| Tenant resolution for an HTTP request | `13.ServiceDefaults/SharedKernel.MultiTenancy` — `AddSharedKernelMultiTenancy()` + `TenantResolutionMiddleware` after authentication; strategies in `StrategyOrder` (default Claim → Header → Database: a signed claim outranks an unsigned header) return `TenantId?`; optional `ITenantStatusValidator` (`CatalogTenantStatusValidator` over `ITenantCatalog`) rejects suspended tenants |
-| A tenant descriptor (display name, status, isolation mode) or catalog lookup | `SharedKernel.MultiTenancy` — `ITenantCatalog`/`TenantDescriptor`, `DatabaseTenantCatalog`/`CachedTenantCatalog` (bounded TTL, `InvalidateTenantAsync`); read-only, provisioning is out of scope |
-| A command/query, handler, or pipeline marker | `05.Application/SharedKernel.Application` (Abstractions tier, no MediatR) — `ICommand`/`ICommand<T>`/`IQuery<T>`/`IStreamQuery<T>`, their handlers, `ISender`, the markers. An Application project references only this |
-| Sending a command or query | Inject `ISender` (`Send`, `CreateStream`). The host picks the mediator on the one registration call: `services.AddSharedKernelApplication(typeof(SomeHandler).Assembly, app => app.UseMediatR())` (`UseMediatR` from `Application.Mediator.MediatR`); without one the host start fails naming `ISender`. Swapping the mediator means another `ISender` adapter; application code is untouched. Never reference MediatR directly |
-| A pipeline behavior | `05.Application/SharedKernel.Application.Pipeline` — `services.AddSharedKernelApplication(assemblies, app => app.UseMediatR().WithIdempotency().WithTransactions().WithAuditing())`: Tracing, Logging, Metrics, Authorization and Validation are always on; the `With…` opt-ins each need a seam, checked when the host starts (one message naming every missing service; seams may be registered before or after). A service's own behavior implements the kernel `IPipelineBehavior<,>` and is added with `app.WithBehavior(typeof(MyBehavior<,>), PipelineStage.X, requiredServices)`. Call it once — a second call throws |
-| Request validation | Implement `IRequestValidator<TRequest>` (`SharedKernel.Application`), (found by `AddSharedKernelApplication` in its assemblies), or keep FluentValidation validators and call `AddFluentValidationRequestValidators(typeof(Program).Assembly)` (`SharedKernel.Validation.FluentValidation`, registers them too); validation is always on and returns `Error.Validation(errors)` |
-| Domain-event handling | Implement `IDomainEventHandler<TEvent>` (`SharedKernel.Application`); `AddSharedKernelApplication` finds it in its assemblies (`AddDomainEventHandler<TEvent, THandler>()` for one elsewhere) and registers the native dispatcher, which runs handlers serially, dispatched by persistence before each save. External side effects belong behind the outbox or `ICommandScope.OnCompleted` |
-| A permission gate on a command or query | `[RequirePermission("x")]` on the use case (`SharedKernel.Application.Authorization`; values of one attribute are alternatives, several attributes all apply) — always enforced on every path (HTTP, messages, jobs, workflows, streams): 401 `unauthorized.default` for an anonymous caller, 403 `forbidden.insufficient_permission` for a missing permission, evaluated against `IRequestContext` (required at host start when a scanned request carries the attribute). An endpoint that sends the command does not repeat it; `[RequireEndpointPermission]` (`Presentation.Core`) is for endpoints that send no command |
-| A maker-checker / dual-control approval gate | The service's own domain — model the pending change as an aggregate with an approval state bound to the exact change. There is no generic approval behavior |
-| Duplicate-submission protection for a command | `IIdempotentRequest` on the command + `app.WithIdempotency()` over an `IIdempotencyStore` registered for `IdempotencyPurpose.Request` (`18.Idempotency`); replays a completed duplicate, returns `Error.Conflict` for one in flight or with a different fingerprint, releases the key on failure. Keys are reserved per tenant and caller (a 64-hex digest; anonymous callers of a tenant share a scope — use unguessable keys). Codes from `ErrorCodes.Idempotency`. Set `Fingerprint` to pin identifying fields. Lease/retention: `IdempotencyBehaviorOptions` |
-| A request that uses a pipeline marker but does not return `Result` | Prohibited — `SK0040` flags `[RequirePermission]`/`IIdempotentRequest` on a request whose response is not `Result`/`Result<T>` |
-| Opt-in payload logging with redaction on a request | Implement `ILoggableRequest<TResponse>` so the request supplies its own loggable fields |
-| Caching a query result / evicting after a command | `05.Application/SharedKernel.Application.Pipeline.Caching` — `app.WithCaching()` on the registration call; `ICacheableQuery<TValue>` with a `CacheScope` (`Tenant`/`User`/`Global`, failing closed when the identity is absent); commands implement `IInvalidatesCache` naming the query with `CacheKeyRef.For<TQuery>`; eviction runs post-commit |
-| A new persistence contract (repository, version, bulk, cross-tenant, connection) | `06.Persistence/SharedKernel.Persistence.Abstractions` (ORM-free). `IUnitOfWork`, `IRequestContext` and `IAuditTrailWriter` are **not** here — they are `SharedKernel.Execution`, never redeclared (`UnitOfWorkSeamRules`) |
-| Registering EF Core on PostgreSQL | `06.Persistence/SharedKernel.Persistence.EfCore` — `builder.AddSharedKernelPostgres<TContext>("name", p => ...)` (namespace `SharedKernel.Persistence`), reading `ConnectionStrings:{name}` + `SharedKernel:Persistence:{name}`; builder options `ConfigureProvider`, `ConfigureDataSource`, `ConfigureDbContext`, `UseDbContextPooling`, `UseServiceName`, `UseUuidV7Keys`, `MigrateOnStartup`, `AddSeeder<T>`, `AddInterceptor<T>`; no `.Build()`. PostgreSQL only |
-| A DbContext | Extend `SharedKernelDbContext` or `TenantedDbContext` with exactly `(DbContextOptions<T>, PersistenceContextDependencies)`; conventions map strongly-typed ids, `TenantId`, `Money`, audit/soft-delete/tenant columns, `xmin` and snake_case; `IEntityTypeConfiguration<T>` only for what a convention cannot know. Override `ShouldApplyConfiguration(Type)` when several contexts share an assembly |
-| A repository for an aggregate | Nothing to register — `IRepository<T,TId>` (always tracked) and `IReadRepository<T,TId>` (never tracked) are open-generic. Subclass `EfRepository`/`EfReadRepository` only to override `AggregateQuery()` |
-| Querying and paging | A `03.Domain` specification (`Spec.For<T>()` or a `Specification<T>` subclass; typed `ThenInclude`; `AddStringInclude` for deep paths; `AsSplitQuery`; `ProjectionSpecification<T,TResult>`), paged at the call site: `ListPagedAsync(spec, PageRequest)` → `PagedList<T>`, `ListKeysetAsync(spec, CursorPageRequest, keySelector, descending)` → `CursorPagedList<T>`, `*ProjectedAsync`, `StreamAsync` for constant memory |
-| One transaction around several repositories or contexts | `IUnitOfWork.ExecuteInTransactionAsync` (`SharedKernel.Execution`) or `TransactionBehavior`. Retry-safe: the delegate may run again, so load inside it. One transaction per DI scope; nested calls join; a joined failure marks it rollback-only (`TransactionRolledBackException`); an ambiguous commit throws `CommitOutcomeUnknownException` and is never replayed; `OnBeforeCommit` queues work inside it. No two-phase commit across databases |
-| Optimistic concurrency / ETag + `If-Match` | `06.Persistence` — every aggregate root uses `xmin`, exposed as `EntityVersion`: `ConcurrencyVersion.Get(db, aggregate)` → ETag, `UpdateAsync`/`DeleteAsync(aggregate, expectedVersion)`, stale → `ConflictException` (`persistence.concurrency_conflict`). Pairs with `14.Presentation`'s ETag/412 helpers |
-| A set-based bulk update/delete | `IBulkMutationRepository<T,TId>` — `ExecuteUpdateAsync(spec, s => s.SetProperty(...))`, `ExecuteDeleteAsync` (soft-deletes `ISoftDeletable`), `ExecutePurgeAsync`; setters on a key, concurrency token, `TenantId`, `Created*` or an encrypted column fail closed; skips the save pipeline and domain events |
-| Multi-tenant data (tenant filter, write guard, row-level security) | `SharedKernel.Persistence.EfCore` — `TenantedDbContext` + `UseMultiTenancy(rowLevelSecurity: true)`. Every entity implements `IHasTenant` or is `[TenantShared]`, else the model build fails. RLS binds `app.tenant_id` transaction-locally (PgBouncer-safe); policies from `migrationBuilder.EnableTenantRowLevelSecurityForModel(TargetModel!)`. The tenant comes from `IRequestContext.TenantId` (fail closed on `null`) |
-| Cross-tenant work (reports, back office, seeding) | `ICrossTenantScope.Enter("reason")` (per DI scope, reason logged). Under RLS the work runs on a separate DB role (`RowLevelSecurity:CrossTenantConnectionString`): `context.Database.UseCrossTenantConnection()`, Dapper sessions automatically. `IgnoreQueryFilters([PersistenceFilterNames.Tenant])` only inside a scope |
-| Hand-written SQL (Dapper) | `06.Persistence/SharedKernel.Persistence.Dapper` — inject `IDbSessionFactory`; `OpenAsync`/`OpenReadOnlyAsync` → `IDbSession` (joins the unit of work, binds the tenant, picks the role); parameterized only (`SK0042`); `PostgresErrorMapping.TryAsync`; type handlers (incl. `TenantId`) via `AddSharedKernelDapper(d => d.AddStronglyTypedId<TId, TValue>())` |
-| Connection strings, TLS, PgBouncer, database roles | `06.Persistence/SharedKernel.Persistence.Npgsql` — `ConnectionStrings:{name}` + `SharedKernel:Persistence:{name}`; TLS `VerifyFull` unless the connection string says otherwise; the canonical role script (`app_migrator`/`app_runtime`/`app_cross_tenant`/`app_audit_sealer`) is in its README. Dapper-only services call `AddSharedKernelNpgsql(configuration, "name")` |
-| Mapping a PostgreSQL error to an `Error` | Automatic for EF Core (unique → Conflict, FK → Validation/Conflict, 42501/RLS → Forbidden, serialization/timeouts → transient Conflict); otherwise `PostgresErrorMapping.TryAsync` / `PostgresExceptionClassifier` |
-| Transient PostgreSQL fault retry | On by default (6 retries); `ConfigureProvider(o => o.MaxRetryCount = 0)` turns it off. The unit of work runs the whole delegate inside the strategy |
-| A DbContext in a background service or singleton | `ICallerDbContextFactory<TContext>.CreateDbContextAsync(new SystemRequestContext([], "job-name"), ct)`, or create a DI scope inside a `RequestContextScope` |
-| Several DbContexts in one service | One `AddSharedKernelPostgres<T>` per context; `IUnitOfWork<TContext>` or `[FromKeyedServices(typeof(TContext))] IUnitOfWork`; contexts on one database share the scope's transaction |
-| Migrations, seeding and startup ordering | `MigrateOnStartup(lockTimeout)` + `AddSeeder<T>` (advisory lock, migration connection); `PostgresDesignTimeDbContextFactory<T>` for `dotnet ef`; `IPersistenceStartup` gates readiness (`ServiceDefaults.Persistence`'s `AddDatabaseReadinessCheck<T>`/`AddPersistenceStartupReadinessCheck`). The platform never creates the database |
-| Field-level column encryption | `06.Persistence/SharedKernel.Persistence.EfCore.Encryption` — `.UseFieldEncryption(k => ...)` + `.Encrypt("purpose")`/`.WithBlindIndex(...)` in `IEntityTypeConfiguration<T>` (never attributes on domain types — SK0302); lookups via `WhereEncryptedEquals`; other LINQ over an encrypted member is refused. Registers the `field-encryption` probe |
-| Rotating a field-encryption key, migrating plaintext, crypto-shredding a tenant | `IEncryptionRotationJob.RunAsync(new EncryptionMaintenanceRequest { Mode = … })` and, with `UseTenantDataKeys()`, `ITenantEncryptionKeyManager.ShredTenantAsync(TenantId)`; both inside a cross-tenant scope; retire a key only when `report.IsSafeToRetire(keyId)` |
-| An append-only, tamper-evident audit trail | `06.Persistence/SharedKernel.Persistence.EfCore.Auditing` — `.UseAuditTrail()` implements `IAuditTrailWriter`; a command opts in with `IAuditableRequest` + `app.WithAuditing()` (`Succeeded` inside the transaction via `OnBeforeCommit`, `Failed` after rollback). A background sealer links records into per-(tenant, resource type) HMAC chains (AUDITv3); `IAuditQueryService` verifies/exports, `IAuditLedgerMaintenance` erases payloads; the `audit-sealing` probe reports sealer lag against `AuditSealerOptions.MaxReadyLag` |
-| The actor recorded for writes without a user | `UseServiceName("orders-api")` or `SharedKernel:Persistence:ServiceName` (default `"system"`); otherwise `IRequestContext.UserId` |
-| Restoring a soft-deleted aggregate | `Restore()` on the soft-deletable aggregate bases, saved through `IRepository`; bulk via `ExecuteUpdateAsync` |
-| JSONB, pgvector, nearest-neighbour ordering | `SharedKernel.Persistence.EfCore` — `HasJsonbColumn`, `HasVectorColumn`/`HasVectorIndex`, `VectorOrderingExpressions.ByDistance` (vectors need `UseVector`) |
-| Reads from a read replica | A separate read context with its own connection name (`Target Session Attributes=prefer-standby`); Dapper `OpenReadOnlyAsync` uses `ReadOnlyConnectionString`. Read your own writes from the primary |
-| Tracing a slow query back to its specification | Automatic — every query is `TagWith`'d with the specification type; repository calls are traced (`SharedKernel.Persistence` `ActivitySource`) |
-| STJ JSON for `StronglyTypedId<TValue>` | `SharedKernel.Domain` — `StronglyTypedIdJsonConverterFactory`, registered once on `JsonSerializerOptions` |
-| STJ JSON for a `SmartEnum<TEnum, TValue>` | `SharedKernel.Primitives` — `SmartEnumJsonConverter<TEnum, TValue>` per property or options instance; the underlying value is the wire contract. Without it a `SmartEnum` is write-only over JSON |
-| A cache interface or policy | `02.Caching/SharedKernel.Caching.Abstractions` |
-| A FusionCache option or cache implementation detail | `02.Caching/SharedKernel.Caching.FusionCache` (required validated `ServiceName`, Brotli compression, `AddCacheEncryption()` with the cache key as associated data, warmup) |
-| Redis L2 and the backplane | `02.Caching/SharedKernel.Caching.Redis` — `AddRedisL2()`; removals, expirations, tag evictions and clears reach every instance through the backplane |
-| The shared Redis connection | `02.Caching/SharedKernel.Caching.Redis.Core` — `AddRedisConnection(configuration)` once (section `SharedKernel:Caching:Redis`, TLS/mTLS, fail-fast); registers the `redis` readiness probe. Every other Redis registration takes no connection string |
-| A distributed lock or self-expiring lease | `02.Caching/SharedKernel.Caching.Redis.DistributedLocking` — `IDistributedLockService`: `TryAcquireAsync` (kept alive until disposed, `LostToken`), `TryAcquireLeaseAsync`; `null` means contended; an unreachable store throws `DistributedLockUnavailableException`. The fencing token is issued atomically with the acquisition; the protected resource must reject a non-increasing token |
-| Structured Redis Hash storage / loss-tolerant Pub/Sub | `Caching.Redis.HashStore` (`IRedisHashService`/`ITypedHashStore<T>`) / `Caching.Redis.PubSub` (`IRedisChannelService`) — Redis-specific contracts in their own packages; Pub/Sub is never messaging and not needed for cache invalidation |
-| A cache call that must not leak across tenants | `ITenantCacheService` — an explicit `TenantId` on every method; keys `{service}:@{tenant}:{entity}:{id}` and tenant-scoped tags built by `CacheKeyFormat`; `RemoveTenantAsync` drops one tenant |
-| A message bus abstraction | `07.Messaging/SharedKernel.Messaging.Abstractions` |
-| Configuring MassTransit | `07.Messaging/SharedKernel.Messaging.MassTransit` — `AddSharedKernelMessaging(configuration).Use{Transport}(…)…Build()`; the transport comes from its satellite: `Messaging.MassTransit.RabbitMq` (`UseRabbitMq`) or `.AzureServiceBus` (`UseAzureServiceBus`); the EF Core outbox from `Messaging.MassTransit.EfCore` (`WithEntityFrameworkOutbox<TDbContext>`). The core has no transport or EF Core dependency. `Build()` registers the `messaging` readiness probe |
-| A consumer base or per-consumer retry definition | `SharedKernel.Messaging.MassTransit` — `ConsumerBase<T>`; `ConsumerDefinitionBase<TConsumer>` with `NonRetryableExceptions`, registered via `AddConsumer<TConsumer, TDefinition>()` |
-| Consumer deduplication | `MessagingBusBuilder.WithIdempotency()` over an `IIdempotencyStore` registered for `IdempotencyPurpose.Message` (`AddRedisIdempotency(p => p.ForMessages())` or `AddEfCoreIdempotency(…)`). Never hand-roll deduplication inside `ConsumeAsync` |
-| A header propagator | Tenant (`WithTenantContext()`), correlation (`WithAmbientCorrelationPropagation()`) and caller propagate from the request context; for anything else implement `IMessageHeaderPropagator.Propagate(PublishContext)` and register `WithHeaderPropagator<T>()`; explicit `PublishContext` values win |
-| The publisher's tenant and actor inside a consumer | `WithInboundRequestContext()` — the consume filter rebuilds a `PropagatedRequestContext` from the transport headers and opens a `RequestContextScope`, so `IRequestContext` and every outbound call from the consumer carry the publisher's tenant, actor and correlation id. Attribution only — a permission check inside a consume always fails |
-| A message schema translator for rolling upgrades | `IMessageVersionTranslator<TOld, TNew>` + `WithVersionTranslator<TOld, TNew, TTranslator>()`; `Translate` is a pure projection |
-| A CloudEvents integration event with tenant identity | `IEventPublisher.PublishAsync` (constrained to `IIntegrationEvent`), which builds the envelope with `EventEnvelope.Wrap`; `PublishContext.WithTenantId`/`WithSubject` |
-| Ordered delivery of related messages | A partition key on the publish context, mapped to each transport's native mechanism (RabbitMQ routing-key affinity, Azure Service Bus sessions) |
-| Compression and/or encryption of a message payload | `WithPayloadTransform()` — compress-then-encrypt with `SharedKernel.Compression`/`.Cryptography`; off by default |
-| A dead-letter policy | `SharedKernel.Messaging.MassTransit` — RabbitMQ dead-letter destination/TTL options; Azure Service Bus uses native dead-lettering |
-| Multi-step coordination with compensation, or a long-running stateful process | `17.Workflows/SharedKernel.Workflows.Temporal` — no sagas or routing slips in messaging |
-| Request/response over the message bus | Prohibited — make an HTTP or gRPC call through `11.Communication`, or publish an event |
-| A production idempotency store | `18.Idempotency` — `SharedKernel.Idempotency.Redis` (atomic Lua) or `.EfCore` (`INSERT … ON CONFLICT DO NOTHING` on `(tenant_scope, purpose, key)`); both record the fingerprint, scope keys by tenant from `IRequestContextAccessor` (`IdempotencyTenantScope`, `"no-tenant"` when none), and fail closed by default. Register per purpose: `AddRedisIdempotency(p => p.ForRequests().ForMessages(), o => …)`. Writing your own: implement `IIdempotencyStore` (`Idempotency.Abstractions`) with `TryBeginAsync` as one conditional write, registered with `AddIdempotencyStore<T>(purpose)` |
-| Opt-in encryption of an outbound webhook payload | `15.Integration/SharedKernel.Integration.Webhooks` — `WebhookDeliveryOptions.EncryptPayload`, encrypt-then-sign with `SharedKernel.Cryptography` |
-| A custom header on a webhook delivery | `WebhookSubscription.Headers`; a name colliding with a platform header is rejected at dispatch |
-| Rotating a webhook signing secret | `WebhookSubscription.Secrets` (newest first; sign with the first, verify against any) |
-| Sending a customer-facing email or SMS | `15.Integration/SharedKernel.Integration.Notifications.Abstractions` — `INotificationSender` resolved keyed by channel; providers `.Email.SendGrid` and `.Sms.Twilio` (REST, no vendor SDK); attachments are `08.Storage` references; a caller-supplied `NotificationDeliveryId` is the provider's dedup key (a real guarantee for Twilio, correlation-only for SendGrid); recipients and template values never appear in logs |
-| A readiness check for a dependency | The provider registers an `IReadinessProbe` (`SharedKernel.Primitives.Health`) itself when it is configured — `redis`, `cache`, `messaging`, `encryption-key-provider`, `field-encryption`, `audit-sealing`, `storage-{store}`, `search-{provider}-{index}`, `vector-store-{provider}-{collection}`, `workflows`, `scheduler`, `gotenberg`. The host calls `services.AddHealthChecks().AddSharedKernelReadiness()` once and every probe becomes a `ready`-tagged check. A service's own dependency: implement `IReadinessProbe` (cheap constructor; resolve clients inside `ProbeAsync`) and `AddReadinessProbe<T>()`. There is no per-dependency `Add*ReadinessCheck` outside `ServiceDefaults.Persistence`'s database checks |
-| OTel, health endpoints, startup gate, rate limiting | `13.ServiceDefaults/SharedKernel.ServiceDefaults` — `AddServiceDefaults`, the `WithXTelemetry` family (Application, Caching, Communication, Integration, Intelligence, Messaging, Persistence, Reporting, Scheduling, Search, Storage, Workflow), `StartupGate`, `MapDefaultHealthCheckEndpoints()` (`/health/live`, `/health/ready`), `AddSharedKernelRateLimiting()` (BCL rate limiter; shape the 429 with `14.Presentation`'s `RateLimitRejectionProblemDetails` in `OnRejected`) |
-| A host integration that needs another kernel package | A `13.ServiceDefaults/SharedKernel.ServiceDefaults.{Capability}` package (Host tier) — never the base, which references Foundation-tier packages only (`CompositionBaseIsolationTests`). Chain readiness onto `services.AddHealthChecks()`, never a second `AddSharedKernelHealthChecks()` |
-| A secrets-manager-backed `IConfiguration` source | `SharedKernel.ServiceDefaults.Configuration.KeyVault` — `AddSharedKernelKeyVaultConfiguration()` (distinct from Key Vault as an encryption-key source, which is `Cryptography.KeyVault.Azure`) |
-| Request culture | `SharedKernel.ServiceDefaults.Localization` — `AddSharedKernelLocalization()` (user preference claim → tenant default culture → `Accept-Language`) |
-| Kestrel client-certificate negotiation | `SharedKernel.ServiceDefaults.Security.Mtls` — `AddMtlsClientCertificate(...)`, delegating acceptance to `Security.Mtls`'s `IMtlsCertificateValidator` |
-| A new structured log statement | The owning package — `[LoggerMessage]` with an explicit `EventId` from that domain's block; never `ILogger.LogXxx()` or `LoggerMessage.Define` |
-| A test assertion on structured log output | `SharedKernel.Testing` — the in-memory `ILogger`/`ILoggerFactory` double |
-| A magic string used in more than one place, or on the wire | A package-local constants class; a correlation/tenant/actor/idempotency header or baggage key → `WellKnownHeaders`/`WellKnownBaggageKeys`/`WellKnownTagKeys` (`SK0022`) |
-| A `Result<T>` change or new primitive type | `01.Core/SharedKernel.Primitives` |
-| A structured metadata bag on `Error` | Declined — `Error` is a `sealed record` with value equality. Field-level details go in `Error.Details`, placeholder values in `Error.MessageArguments`; everything else is shaped at the `ProblemDetails` boundary |
-| A 403 vs 401 error | `Error.Forbidden(code, message)` (`ErrorType.Forbidden`, 403 — permitted to try, a specific condition not met) vs `Error.Unauthorized(...)` (401 — not permitted to try at all); never reuse a code across the two |
-| A time-ordered identifier | `SharedKernel.Primitives` — `IIdGenerator`/`UuidV7IdGenerator` (`Guid.CreateVersion7()`), registered by the service |
-| Localizing an `Error`/`ProblemDetails` | `SharedKernel.Localization` — `LocalizedMessage.Define<…>(code, "Order {orderId} was not found.", "orderId")` → `Message.ToError(ErrorType.NotFound, orderId)`; one catalog via `AddLocalizationCatalog(c => c.AddJsonDirectory(path))` or `AddStringLocalizerCatalog<T>()`; `Error.ToProblemDetails()` localizes with `CultureInfo.CurrentUICulture` and falls back to `Error.Message` |
-| Declaring a type/field as personal data, keeping it out of logs | `SharedKernel.DataPrivacy` — the matching attribute (`[EmailAddressData]`, `[NationalIdData]`, `[HealthData]` … 23 kinds); host: `AddRedaction(r => r.SetPrivacyRedactors())` + `EnableRedaction`; `PiiMasking`, `Pseudonymizer`; `SK0035` flags a marked member passed to an unmarked log parameter |
-| A data-subject export/erasure request (GDPR/KVKK) | `SharedKernel.DataPrivacy` — implement `IDataSubjectRequestHandler`; idempotent by `RequestId`; retained data goes in the receipt with its legal basis |
-| Object mapping | Hand-written code or Mapperly (`[Mapper]`, source-generated); never wrapped in a kernel abstraction. AutoMapper and Mapster's runtime API are prohibited (`SK0033`) |
-| Wrapping a throwing call as `Result<T>`, or aggregating results | `SharedKernel.Core` — `ResultTry.Try`/`TryAsync`, `ResultCombine.Combine` |
-| A BCL extension method or guard clause | `SharedKernel.Core` — `Guard.Against`/`Guard.Throw` in namespace `SharedKernel.Guards` |
-| Registering an options type | `SharedKernel.Configuration` — `AddValidatedOptions<TOptions>(...)`, never `services.Configure<TOptions>(section)`; Data Annotations per property, `IValidateOptions<T>` across properties, optional `OptionsStrictness.RequireSection`/`RejectUnknownKeys`; the section path from `ISectionBoundOptions` |
-| A feature flag | `SharedKernel.FeatureManagement` — `FeatureFlag.Boolean/String/Integer/Double/Object<T>(key, default)` evaluated with OpenFeature's `IFeatureClient`; host: `AddSharedKernelFeatureManagement(builder.Configuration, …)` + an `IFeatureTargetingContextAccessor`; `FeatureTargetingContext.ForTenant(TenantId)` rolls out per tenant. Never `IFeatureManager` or `Api.Instance` (SK0002) |
-| Rollouts, targeting, time windows, A/B experiments | Configuration only, Microsoft's `feature_management` schema (`Microsoft.Targeting`, `Microsoft.TimeWindow`, `variants` + `allocation`) |
-| Hashing, encryption, signatures, HMAC, secure random, fixed-time comparison | `01.Core/SharedKernel.Cryptography` — `IOneWayHasher`, `ISymmetricEncryptionService`/`ISynchronousSymmetricEncryptionService`, `IAsymmetricSignatureService`, `IHmacSigner`, `ISecureRandomGenerator`, `FixedTimeComparison`, `IContentHasher` (non-secret fingerprints); `AddSharedKernelCryptography(configuration)` then opt-in `.AddSymmetricEncryption()`, `.AddEnvelopeEncryption()`, `.AddAsymmetricSigning()`, `.AddTotpVerification()`. AES-256-GCM with required associated data; decryption returns `Result`. Hand-rolled crypto, `System.Random` for secrets and `==` on secrets are prohibited |
-| Keys from a KMS/HSM, key rotation, subkeys, envelope encryption | `SharedKernel.Cryptography` — implement `IEncryptionKeyProvider` (wrap in `CachedEncryptionKeyProvider`), `ReEncryptAsync` before retiring a key, `SubkeyDerivation`/`ForPurpose`, `IEnvelopeEncryptionService`. Azure Key Vault: `SharedKernel.Cryptography.KeyVault.Azure` (`.AddAzureKeyVaultEncryption(configuration)`, `.AddAzureKeyVaultSigning(configuration)`; registers the `encryption-key-provider` probe) |
-| Password-hashing algorithm, cost, pepper | `SharedKernel:Cryptography:OneWayHashing` + `Pbkdf2:Iterations` (PBKDF2 = FIPS default); `SharedKernel.Cryptography.Argon2`'s `.AddArgon2id(configuration)`; stored hashes report `SuccessRehashNeeded` |
-| TOTP/HOTP secrets, verification, replay protection, recovery codes | `SharedKernel.Cryptography` — `TotpSecret`, `TotpProvisioningUri`, `ITotpVerifier` over a consumer `ITotpReplayGuard`, `IRecoveryCodeGenerator` |
-| Second-factor enrollment and step-up | `12.Security/SharedKernel.Security.Totp` — `TotpEnrollmentService`, `TotpChallengeService`, `TotpStepUpClaimsTransformation` (adds `amr=otp` for `FreshnessWindow`, keyed by subject and session) |
-| Compress/decompress an arbitrary payload | `SharedKernel.Compression` — `IPayloadCompressor` (framed Brotli; `"GZip"`, `"Brotli.Raw"`, `"GZip.Raw"` keyed); decompression capped by `MaxDecompressedSize`; compress-then-encrypt, never the reverse |
-| A currency-aware monetary amount / exchange rates | `SharedKernel.Domain` — `Money` (`SharedKernel.Domain.Monetary`): ISO 4217 currencies, cross-currency-rejecting arithmetic, rounding policies, loss-free allocation; `IExchangeRateProvider` is a port the service implements. `SK0034` nudges a raw amount + currency pair toward it |
-| IBAN, BIC, card number, ISO codes, phone number, VAT, LEI, ABA, SEPA creditor ID, national id | `SharedKernel.Validation` — parse at the edge (`Iban.Create(value)` → `Result<Iban>`, `NationalId.Create(country, value)`), pass the typed value inward; FluentValidation rules in `SharedKernel.Validation.FluentValidation` (`MustBeValidIban()`…) |
-| An architecture enforcement rule | `00.Governance/SharedKernel.ArchitectureTests` — only for what the tier check cannot express; every public rule needs a test (`RuleExecutionCoverageTests`) |
-| A Roslyn analyzer | `00.Governance/SharedKernel.Analyzers`; prove it against the real kernel types (`RealKernelTypeNameTests`) |
-| A silently discarded `Result` | Prohibited — `SK0030` flags a bare `Result`-returning statement unless discarded with `_ =` |
-| Reflection-based generic invocation (`MakeGenericMethod` + `Invoke`) | Forbidden — typed dispatch or expression trees (`ReflectionGuardRules`) |
-| A fake for a kernel abstraction in a service's unit tests | `16.Testing/SharedKernel.{Capability}.Testing` — e.g. `InMemoryMessageBus`/`InMemoryEventPublisher` (Messaging), `FakeCacheService`/`AddFakeCachingServices()` (Caching) + `AddFakeRedisServices()` (Caching.Redis), `InMemoryFileStorage` via `AddInMemoryStore(name)` (Storage), `InMemorySearchIndex<T>` (Search), in-memory embedding/vector/kernel doubles (AI), `InMemoryWorkflowDispatcher` (Workflows), `InMemoryScheduledJobRegistry` (Scheduling), `InMemoryWebhookDispatcher`/`InMemoryNotificationSender` (Integration), `InMemoryReportExporter`/`InMemoryReportExporterFactory`/`InMemoryHtmlToPdfConverter` + `AddInMemoryReporting()` (Reporting), `FakeIdempotencyStore`/`AddFakeIdempotencyStore(purposes)` (Idempotency), `FakeFeatureClient` (FeatureManagement), `AddFakeCryptography()` (Cryptography), `FakeUserContext`/test certificates and DPoP proofs (Security), `FakeTenantResolutionStrategy`/`InMemoryTenantCatalog` (ServiceDefaults), `StubHttpMessageHandler` + `UseStubHttpMessageHandler(clientName, stub)` and `GrpcCalls` (Communication) |
-| The caller in a unit test | `SharedKernel.Testing` — `TestRequestContext` (`SharedKernel.Testing.Execution`), settable tenant/actor/permissions |
-| A pipeline test harness for a service's own behavior composition | `SharedKernel.Application.Testing` — `ApplicationPipelineTestHarness.Build()` (runs the kernel pipeline without a mediator) |
-| Persistence fakes or a PostgreSQL with the production role split | `SharedKernel.Persistence.Testing` — `AddFakeRepository<T,TId>()`, `AddFakeUnitOfWork()` (`TransientFailures` proves a handler re-runnable), `AddFakeAuditTrailWriter()`, `AddFakeCrossTenantScope()`, `FakeDbConnectionFactory`, `PostgresTestServer`/`PostgresTestDatabase`. Test Dapper sessions against PostgreSQL |
-| Testcontainers fixtures for this repo's own tests | `16.Testing/SharedKernel.Testing.Internal` (not packable) |
-| A typed HttpClient with resilience and context propagation | `11.Communication/SharedKernel.Communication.Rest` — `services.AddSharedKernelCommunication(configuration).AddRestClient<IClient, Client>("name")`, the address, timeouts, retries and credentials in `SharedKernel:Communication:Clients:{name}`; the implementation takes `HttpClient` in a primary constructor (SK0013 flags an explicit constructor that takes one) and nothing else news up an `HttpClient`. Methods are one line: `http.GetResultAsync(path, Json.Default.T, ct)` / `PostResultAsync` / `PutResultAsync` / `DeleteResultAsync` → `Result<T>` (ProblemDetails → the service's `Error` with its `ErrorType` and field errors; no response → `communication.unreachable`/`timeout`/`circuit_open`) |
-| Retrying or hedging a POST/PATCH safely | `RestClientOptions.PropagateIdempotencyKey`: a new `Idempotency-Key` per call, the same on every retry, and only then are POST and PATCH retried or hedged; a caller-supplied key is kept (set one derived from the operation to survive your own re-runs). GET/PUT/DELETE are retried by default |
-| Service address resolution | `11.Communication/SharedKernel.Communication` — `Microsoft.Extensions.ServiceDiscovery` under the client's address (`http://inventory`, `http://_grpc.inventory`): the `Services` section first (local/Aspire), then `SharedKernel:Communication:ServiceDiscovery:Mode` `Dns` (headless service, round-robin per request — for gRPC) or `DnsSrv`, then the host as written. Never build a `Uri` in a client method |
-| Outbound credentials (OAuth client credentials, API key, managed identity, mTLS) | `SharedKernel.Communication` — per client `Authentication:Mode` `ClientCredentials` (cached, refreshed early, 401 retried once) / `ApiKey` / `AccessTokenProvider` (`client.UseAccessTokenProvider<T>()`), and `Tls` (client certificate, private CA). No token → `communication.access_token_unavailable`, request not sent |
-| A gRPC client | `11.Communication/SharedKernel.Communication.Grpc` — `.AddGrpcClient<Service.ServiceClient>("name")` (`Address`, `Deadline`, `Retry`, `KeepAlive` in configuration); `call.ToResultAsync(ct)` → `Result<T>` from the rich status; `MoneyProtoExtensions` (`google.type.Money` ↔ `Money`/decimal); never inject `GrpcChannel` |
-| HotChocolate GraphQL server conventions | `14.Presentation/SharedKernel.Presentation.GraphQL` — `AddSharedKernelGraphQL()` before the service's own `AddGraphQL()`; extend `FilterBase<T>`/`SortBase<T>`; `PagedResponseType<T>.FromPagedList(...)` |
-| Validating `page`/`pageSize` or `cursor`/`limit` input | `SharedKernel.Contracts` — `PageRequest.Create` / `CursorPageRequest.Create` (`ValidationResult<T>`, `pagination.*` codes); `PageCursor.Decode<TKey, TId>`; `PageRequest.MaxPageSize` = 1000 |
-| A cursor-paginated response | `CursorPagedList<T>` — built by `ListKeysetAsync`, or `FromLookahead(rows, limit, last => PageCursor.Encode(...))` for hand-written SQL; the cursor is unsigned, so the query still applies tenant and authorization filters |
-| JWT bearer authentication for an OIDC provider | `12.Security/SharedKernel.Security.Oidc` — `AddOidcAuthentication(configuration)` from `SharedKernel:Security:Oidc`; claim names, tenant claim and service-principal detection are configuration. `ActorKind.Service` for client-credentials tokens (`Claims:ApplicationTokenClaims`) |
-| `IUserContext` or a mapper for a new scheme | `12.Security/SharedKernel.Security.Abstractions` — one `IUserContextMapper` per scheme; `IUserContext.Permissions`/`HasPermission` (ordinal); step-up signals `AuthenticationMethods`/`AuthContextClassReference`/`AuthTime`. Application code reads `IRequestContext`, which `AddSharedKernelRequestContext()` builds over `IUserContext` |
-| Machine-client API keys (and rotation) | `12.Security/SharedKernel.Security.ApiKey` — `AddManagedApiKeyAuthentication<TStore>` or `AddApiKeyAuthentication<TValidator>`; header only; rotate by issuing a second key and revoking the first |
-| Sender-constrained tokens (DPoP, certificate-bound) | `SharedKernel.Security.Oidc` — `.AddDpop<TReplayCache>()`; `cnf.x5t#S256` always checked against the client certificate |
-| mTLS client-certificate authentication | `12.Security/SharedKernel.Security.Mtls` — `AddMtlsAuthentication<TValidator>`; private CA via `CustomRootTrust` + `CustomTrustStore` |
-| JWS algorithm allow-list, immediate token revocation | `SharedKernel.Security.Oidc` — `ValidAlgorithms` (asymmetric only); `.AddTokenRevocation<TCheck>()` (+ `.AddTokenRevocationCache<TCache>()`), failing closed |
-| ProblemDetails, exception handling, `Result<T>`→HTTP | `14.Presentation/SharedKernel.Presentation.WebApi` — `AddSharedKernelWebApi()`/`UseSharedKernelWebApi()`; typed results `ToOk`/`ToCreated`/`ToAccepted`/`ToNoContent`/`ToOkWithETag`/`ToHttpResult` and `Error.ToProblemDetails()` (multi-field `errors` + `errorCodes`, `correlationId`, `traceId`); hand-rolled `ProblemDetails` and inline `IsSuccess` branching before an HTTP result are prohibited |
-| An HTTP endpoint | An `IEndpointModule` (`static void Map(IEndpointRouteBuilder app)`) in the Api project, mapped by the generated `app.MapEndpoints()` (the generator ships inside the WebApi package). An endpoint turns the request into a command or query, sends it through `ISender` and maps the `Result` — it never calls a repository or client itself |
-| Page or cursor input on an endpoint | `Paging` / `CursorPaging` endpoint parameters (`SharedKernel.Presentation.WebApi`) — `paging.Request` is a validated `PageRequest`/`CursorPageRequest`; invalid input answers 400 with `pagination.*` codes before the handler |
-| Canonical HTTP middleware order | `app.UseSharedKernelRequestContext()` (correlation id, request scope, inbound baggage refused) → `app.UseSharedKernelWebApi(p => p.BeforeAuthorization(a => a.UseMiddleware<TenantResolutionMiddleware>()))` (security headers, exception handler, routing, CORS, authentication, rate limiting, authorization, required headers) → `app.MapEndpoints()` (`samples/OrderApi`) |
-| Declarative role/permission/step-up authorization on an HTTP endpoint, hub or gRPC method | `SharedKernel.Presentation.Core` — `[RequireEndpointPermission]`/`[RequireRole]`/`[RequireFreshAuthentication]`/`[RequireAuthenticationMethod(…, MaxAgeSeconds = n)]` or the `.RequireEndpointPermission(...)` conventions (`SharedKernel.Presentation.Authorization`), native policies over `IUserContext`, 401/403 problems. Not for an endpoint that sends a command: the command's `[RequirePermission]` already applies |
-| Mapping `ErrorType` to an HTTP or gRPC status | Internal maps — the HTTP one in `Presentation.Core`, `GrpcStatusCodeMap` in `Presentation.Grpc`; siblings, never merged. Services use the typed results / `Error.ToProblemDetails()` and the gRPC interceptor |
-| Server-side gRPC mapping and authorization | `14.Presentation/SharedKernel.Presentation.Grpc` — `builder.AddSharedKernelGrpc()`: exception/`Result` → rich `RpcException` status (`SK0036` forbids raw construction); calls run through the HTTP pipeline, so `UseSharedKernelRequestContext()` opens their scope and the `Core` attributes authorize them; never references `SharedKernel.Contracts` or WebApi |
-| Security headers, CORS, request size limits | `SharedKernel.Presentation.WebApi` — configured through `SharedKernel:Presentation:WebApi` and applied by `UseSharedKernelWebApi()` (wildcard + credentials refused at startup; `SK0032`); `WithRequestSizeLimit`/`DisableRequestSizeLimit`, `WithContentSecurityPolicy` per endpoint. Upload validation was removed — use presigned uploads |
-| Inbound `Idempotency-Key` at the HTTP boundary | `SharedKernel.Presentation.WebApi` — `[RequireIdempotencyKey]`/`[AcceptIdempotencyKey]` + an `IdempotencyKey` parameter or `GetIdempotencyKey()`, reading `WellKnownHeaders.IdempotencyKey` (the header the REST client sends); codes from `ErrorCodes.Idempotency`, shared with `05`'s behavior |
-| ETag / `If-Match` / 412 | `SharedKernel.Presentation.WebApi` — `ToOkWithETag`, `[RequireIfMatch]`/`[AcceptIfMatch]` + `IfMatch<TVersion>` (usually `EntityVersion`); a version conflict of a conditional request is 412, 304 for `If-None-Match` |
-| Rate-limit rejection as ProblemDetails | Automatic — `UseSharedKernelWebApi()` shapes the limiter's 429 as the platform problem; the limiter itself is ASP.NET Core's (`AddSharedKernelRateLimiting()` in ServiceDefaults) |
-| API versions, OpenAPI documents, Scalar | `14.Presentation/SharedKernel.Presentation.OpenApi` — `builder.AddSharedKernelOpenApi(o => …)` + `app.MapSharedKernelOpenApi()`; Asp.Versioning per-version documents, sunset/deprecation policies, security schemes; not published outside Development unless `ExposeInProduction` |
-| SignalR hub conventions | `14.Presentation/SharedKernel.Presentation.SignalR` — `builder.AddSharedKernelSignalR()`: the error contract (`HubErrorMessage`), the request-context hub filter (every invocation runs in the connection's `RequestContextScope`), the invocation rate limit, `HubGroupNaming`; a Redis backplane is Microsoft's `AddStackExchangeRedis(...)` |
-| Uploading, downloading, copying or listing files | `08.Storage/SharedKernel.Storage.Abstractions` — the named store `[FromKeyedServices("invoices")] IFileStorage`; persist the returned `FileReference`, reopen with `IFileStorageFactory.Open`; never `IAmazonS3` |
-| Direct client upload/download | `IFileStorage.CreateDownloadUrlAsync`, `CreateUploadUrlAsync`, `CreateUploadFormAsync` (untrusted browsers), multipart presigning; expiry capped by `MaxPresignExpiry` |
-| Cross-store copy, conditional writes, checksums, batch delete | `CopyToAsync`, `WriteCondition.IfNotExists`/`IfMatch`, `FileUploadOptions.ChecksumSha256`, `DeleteManyAsync` |
-| S3, MinIO or S3-compatible / Huawei OBS | `08.Storage/SharedKernel.Storage.S3` (`AddS3(configuration)`, default AWS credential chain, `S3Compatibility`) / `SharedKernel.Storage.Obs` (`AddObs(configuration)`; unsupported features refused as `storage.not_supported`) |
-| Tenant-owned files | `AddTenantStore(name)` + `ITenantFileStorage.ForTenant(tenantId)` (a `TenantId`); keys under `tenants/{id}/`; never hand-built prefixes |
-| Indexing and searching documents | `09.Search/SharedKernel.Search.Abstractions` — `ISearchIndex<TDocument>` (bulk writes report per document; opt-in throttle), `ISearchIndexProvisioner` (idempotent, additive-only; staging → cutover; `VerifyRegisteredIndexesAsync` catches an undeployed schema/synonym change), `SearchQuery.New()`/`IQueryBuilder` (non-generic, string field names), `SearchFilter` factories; `TenantScope` as its own parameter |
-| Counting matches | `ISearchIndex<T>.CountAsync` → `SearchCount`; check `IsExact` (a Meilisearch count at `MaxTotalHits` is a lower bound) |
-| Synonyms and stop words | `SearchIndexDefinitionBuilder.Synonym(...)`/`.StopWords(...)` — one-way synonyms, part of the schema fingerprint; changing them needs staging → cutover. No per-field analyzer knob |
-| Typo-tolerant instant search, tenant search tokens, ranking rules | `09.Search/SharedKernel.Search.Meilisearch` — `IInstantSearch<T>`, `ITenantSearchTokenIssuer`, `WithRankingRules` |
-| Aggregations, cursor export, completion suggester | `09.Search/SharedKernel.Search.ElasticSearch` — `IAnalyticsSearch<T>`, `ICursorSearch<T>`, `ISuggestSearch<T>` (`WithCompletionField`) |
-| Embeddings, vector collections, LLM orchestration | `10.Intelligence/SharedKernel.AI.Abstractions` — the embedding contract (validates model identity, dimension, metric before I/O), vector collections with mandatory `TenantScope`, the `ISemanticKernel`-shaped contract (token usage is a result; no silent retry of a completion; prompt text never logged). Qdrant: `SharedKernel.AI.Qdrant` (provider-exclusive capabilities stay there); LLMs: `SharedKernel.AI.SemanticKernel`. Raw `QdrantClient`/`Kernel` injection is prohibited (SK0026) |
-| A durable, long-running business process | `17.Workflows/SharedKernel.Workflows.Temporal` — `IWorkflowDispatcher`/`IWorkflowHandle<TResult>` with a mandatory `TenantScope`; the workflow id from `IWorkflowIdFactory` is the durable idempotency key; never a raw `ITemporalClient` (SK0029; escape hatch `ITemporalRawClientAccessor` behind three gates) |
-| Authoring a workflow or activity | `WorkflowBase` (deterministic only — `Workflow.UtcNow`/`Workflow.NewGuid()`, no DI, no `IClock`; SK0028) or `ActivityBase` (ordinary DI code); `CommandActivity<TCommand>`/`CommandActivity<TCommand,TResult>` sends a kernel command through `ISender`. Activities run inside the dispatching caller's `RequestContextScope` |
-| A recurring or one-shot job that runs once across replicas | `19.Scheduling/SharedKernel.Scheduling` — `IScheduledJobRegistry` + `ScheduledCommandJob<TCommand>`; optional per-occurrence lease from `IDistributedLockService` (fencing token in `ScheduledJobExecutionContext.FencingToken`); mandatory `MisfirePolicy`/`OverlapPolicy`. Use `17.Workflows` instead when the work is a multi-step process that must survive partial completion; a trigger that starts a workflow composes both |
-| Streaming a large export (CSV/Excel/PDF) to object storage | `20.Reporting/SharedKernel.Reporting.Abstractions` — define it with `ReportDefinition.For<T>().Column(header, value, format:)…Build()`, then `IReportExporter<TRow>.ExportAsync` over an `IAsyncEnumerable<TRow>` (compose with `StreamAsync`/`ListKeysetAsync`), stored while it is produced (never half-written) with a presigned download URL and `DownloadFileName`; `ExportToStreamAsync` for an HTTP response. Inject `ICsvReportExporter<T>`/`ISpreadsheetReportExporter<T>`/`IPdfReportExporter<T>`, or `IReportExporterFactory.ParseFormat(userInput)` + `GetExporter<T>` for a user-chosen format. CSV and Excel run in constant memory; PDF is capped by `MaxRows` |
-| A PDF from HTML (invoice, letter, anything with a layout) | `IHtmlToPdfConverter` (`SharedKernel.Reporting.Abstractions`), registered by `AddGotenberg(configuration)` (`SharedKernel.Reporting.Gotenberg`; Gotenberg runs as its own container). `ConvertAsync` to a store or `ConvertToStreamAsync`; `HtmlToPdfOptions` for page size, margins, header/footer (`PageNumberFooter`) and assets. The service renders the HTML itself and HTML-encodes user data |
-| A new report format | Derive from `ReportExporterBase<TRow>` and register `AddSharedKernelReporting().AddExporter(format, typeof(MyExporter<>))` — delivery, validation, telemetry come with the base |
-| A reference for wiring a new service | `samples/README.md` and `samples/OrderApi` (four projects, each referencing only its tier) |
+Routing only — the domain `CLAUDE.md` holds the rules and details.
+
+| I need… | Package / entry point | Domain |
+| --- | --- | --- |
+| **Execution & context** | | |
+| The caller (tenant, actor, correlation id, permissions) | Inject `IRequestContext` (or `IRequestContextAccessor.Current` in a singleton), `SharedKernel.Execution`. `TenantId` is `TenantId?`; `null` fails closed | 01 |
+| A tenant value in any API | `TenantId`; tenant-wide-or-global operations take `TenantScope` (`Global`, `For`, `FromNullable`). Never `string`/`Guid` | 01 |
+| A caller with no inbound request (job, startup task, test) | `RequestContextScope.Begin(new SystemRequestContext(permissions, "job-name", tenantId))` | 01 |
+| Supplying the request context in an HTTP host | `AddSharedKernelRequestContext()` + `app.UseSharedKernelRequestContext()` as the first middleware (`ServiceDefaults.Security`) | 13 |
+| Propagating context on outbound calls | Automatic in Communication, MassTransit, Temporal, Webhooks via `RequestContextPropagation` | 01 |
+| Tenant resolution for HTTP | `AddSharedKernelMultiTenancy()` + `TenantResolutionMiddleware` (Claim → Header → Database); `ITenantCatalog` | 13 |
+| **Core primitives** | | |
+| `Result<T>`, `Error`, a new primitive | `SharedKernel.Primitives`; `Error.Forbidden` (403) vs `Error.Unauthorized` (401) | 01 |
+| Wrapping throwing calls / combining results | `ResultTry.Try`/`TryAsync`, `ResultCombine.Combine` (`SharedKernel.Core`) | 01 |
+| Guard clauses | `Guard.Against` (`SharedKernel.Guards`) | 01 |
+| Time-ordered ids | `IIdGenerator`/`UuidV7IdGenerator` | 01 |
+| An options type | `AddValidatedOptions<TOptions>(configuration)` + `ISectionBoundOptions`; never `services.Configure` | 01 |
+| A feature flag | `FeatureFlag.Boolean/…(key, default)` over OpenFeature `IFeatureClient`; `AddSharedKernelFeatureManagement` (SK0002 bans `IFeatureManager`) | 01 |
+| Hashing, encryption, signing, HMAC, TOTP, secure random | `SharedKernel.Cryptography` — `AddSharedKernelCryptography(configuration)` + opt-ins; Key Vault in `Cryptography.KeyVault.Azure`, Argon2 in `Cryptography.Argon2` | 01 |
+| Payload compression | `IPayloadCompressor` (`SharedKernel.Compression`); compress-then-encrypt | 01 |
+| IBAN, BIC, card, VAT, national id… | `SharedKernel.Validation` (`Iban.Create` → `Result<Iban>`); FluentValidation rules in `Validation.FluentValidation` | 01 |
+| Personal-data marking, redaction, GDPR requests | `SharedKernel.DataPrivacy` attributes, `IDataSubjectRequestHandler` | 01 |
+| Localized error messages | `LocalizedMessage.Define<…>`, `AddLocalizationCatalog` (`SharedKernel.Localization`) | 01 |
+| Object mapping | Hand-written or Mapperly; AutoMapper/Mapster runtime banned (SK0033) | — |
+| **Domain & contracts** | | |
+| Entity, aggregate, value object, domain event, specification | `SharedKernel.Domain`; tenant-scoped → `Tenanted…AggregateRoot<TId>` bases | 03 |
+| Money and currencies | `Money` (`SharedKernel.Domain.Monetary`); `IExchangeRateProvider` is the service's port | 03 |
+| An integration event | In the publishing service: `sealed record` : `IIntegrationEvent` with `[IntegrationEvent("{context}.{name}", Version = n)]` | 04 |
+| Event envelope / event wire name | `EventEnvelope.Wrap(...)` (only path); `IntegrationEventDescriptor.For<T>().Name` | 04 |
+| Paging DTOs | `PageRequest`/`CursorPageRequest`, `PagedList<T>`, `CursorPagedList<T>`, `PageCursor` | 04 |
+| **Application pipeline** | | |
+| A command/query and its handler | `ICommand`/`ICommand<T>`/`IQuery<T>`/`IStreamQuery<T>` (`SharedKernel.Application`, no MediatR) | 05 |
+| Sending one | Inject `ISender` | 05 |
+| Registering handlers and the pipeline | `AddSharedKernelApplication(assemblies, app => app.UseMediatR().WithIdempotency().WithTransactions().WithAuditing())` — once per host | 05 |
+| A custom pipeline behavior | Kernel `IPipelineBehavior<,>` + `app.WithBehavior(typeof(B<,>), PipelineStage.X, …)` | 05 |
+| Validation | `IRequestValidator<T>`, or FluentValidation via `AddFluentValidationRequestValidators(assembly)`; always on | 05 |
+| Domain-event handlers | `IDomainEventHandler<TEvent>` | 05 |
+| Permission gate on a use case | `[RequirePermission("x")]` — always enforced on every path | 05 |
+| Duplicate-submission protection | `IIdempotentRequest` + `app.WithIdempotency()` over a `Request`-purpose `IIdempotencyStore` | 05, 18 |
+| Query caching / post-commit eviction | `ICacheableQuery<T>`, `IInvalidatesCache` + `app.WithCaching()` (`Application.Pipeline.Caching`) | 05 |
+| **Persistence (PostgreSQL)** | | |
+| EF Core registration | `builder.AddSharedKernelPostgres<TContext>("name", p => p.UseMultiTenancy(rowLevelSecurity: true).UseAuditTrail().UseFieldEncryption().MigrateOnStartup())` | 06 |
+| A DbContext | Extend `SharedKernelDbContext` or `TenantedDbContext` | 06 |
+| Repositories, specs, paging | Open-generic `IRepository<T,TId>`/`IReadRepository<T,TId>`; `ListPagedAsync`, `ListKeysetAsync`, `StreamAsync` | 06 |
+| One transaction | `IUnitOfWork.ExecuteInTransactionAsync` (retry-safe delegate) or `app.WithTransactions()` | 01, 06 |
+| Optimistic concurrency | `EntityVersion` (`xmin`), `ConcurrencyVersion.Get` | 06 |
+| Bulk update/delete | `IBulkMutationRepository<T,TId>` | 06 |
+| Cross-tenant work | `ICrossTenantScope.Enter("reason")` | 06 |
+| Hand-written SQL | `IDbSessionFactory` (`Persistence.Dapper`) | 06 |
+| Connections, TLS, roles | `SharedKernel.Persistence.Npgsql` (role script in its README) | 06 |
+| DbContext outside a request | `ICallerDbContextFactory<TContext>` | 06 |
+| Audit trail / field encryption | `UseAuditTrail()` + `IAuditableRequest` (`EfCore.Auditing`); `UseFieldEncryption()` (`EfCore.Encryption`) | 06 |
+| **Messaging** | | |
+| Publishing / sending | `IMessageBus`, `IEventPublisher` (`Messaging.Abstractions`); every verb returns `Result` | 07 |
+| MassTransit setup | `AddSharedKernelMessaging(configuration).UseRabbitMq(…)` / `.UseAzureServiceBus(…)` `…Build()`; outbox `WithEntityFrameworkOutbox<TDbContext>` | 07 |
+| Consumers, dedup, caller context | `ConsumerBase<T>`, `WithIdempotency()`, `WithInboundRequestContext()` | 07 |
+| Multi-step process with compensation | `17.Workflows` — no sagas in messaging; no request/response over the bus | 17 |
+| **Caching** | | |
+| Cache contracts | `ICacheService`, `ITenantCacheService`, `CachePolicy` (`Caching.Abstractions`) | 02 |
+| Cache implementation / L2 | `Caching.FusionCache`; `AddRedisL2()` (`Caching.Redis`) | 02 |
+| Redis connection | `AddRedisConnection(configuration)` once (`Caching.Redis.Core`) | 02 |
+| Distributed lock / lease | `IDistributedLockService` (`Caching.Redis.DistributedLocking`) | 02 |
+| **Idempotency** | | |
+| A production store | `AddRedisIdempotency(p => p.ForRequests().ForMessages())` or `AddEfCoreIdempotency(…)` | 18 |
+| **Storage, search, AI** | | |
+| Files | `AddSharedKernelStorage().AddS3(configuration).AddStore("name")`, `[FromKeyedServices] IFileStorage`; tenant files `ITenantFileStorage.ForTenant` | 08 |
+| Full-text search | `ISearchIndex<T>`, `ISearchIndexProvisioner` (`Search.Abstractions`); engine-only features in `Search.Meilisearch`/`.ElasticSearch` | 09 |
+| Embeddings, vectors, LLMs | `AI.Abstractions`; `AI.Qdrant`, `AI.SemanticKernel` (raw clients banned, SK0026) | 10 |
+| **Communication (outbound)** | | |
+| Typed REST client | `AddSharedKernelCommunication(configuration).AddRestClient<IClient, Client>("name")`; `GetResultAsync`/`PostResultAsync` → `Result<T>` | 11 |
+| gRPC client | `.AddGrpcClient<T>("name")`, `call.ToResultAsync()` | 11 |
+| **Security** | | |
+| Authentication | `AddOidcAuthentication` (`Security.Oidc`), `AddManagedApiKeyAuthentication` (`.ApiKey`), `AddMtlsAuthentication` (`.Mtls`), step-up in `.Totp` | 12 |
+| The authenticated principal | `IUserContext` (`Security.Abstractions`) — application code reads `IRequestContext` instead | 12 |
+| **Host & presentation** | | |
+| OTel, health, readiness, rate limiting | `AddServiceDefaults`, `MapDefaultHealthCheckEndpoints()`, `AddHealthChecks().AddSharedKernelReadiness()`, `AddSharedKernelRateLimiting()` | 13 |
+| A readiness check for my dependency | Implement `IReadinessProbe` + `AddReadinessProbe<T>()` | 01, 13 |
+| A host integration needing another kernel package | A `SharedKernel.ServiceDefaults.{Capability}` package — never the base | 13 |
+| HTTP API setup, ProblemDetails, typed results | `builder.AddSharedKernelWebApi()` + `app.UseSharedKernelWebApi(…)`; `ToOk`/`ToCreated`/`ToOkWithETag` | 14 |
+| An HTTP endpoint | `IEndpointModule` mapped by the generated `app.MapEndpoints()`; sends through `ISender` | 14 |
+| Endpoint authorization (no command sent) | `[RequireEndpointPermission]`, `[RequireRole]`, `[RequireFreshAuthentication]` (`Presentation.Core`) | 14 |
+| OpenAPI / versioning | `AddSharedKernelOpenApi()` + `MapSharedKernelOpenApi()` | 14 |
+| gRPC server / SignalR / GraphQL | `AddSharedKernelGrpc()`, `AddSharedKernelSignalR()`, `AddSharedKernelGraphQL()` | 14 |
+| **Integration, workflows, jobs, reports** | | |
+| Webhooks | `SharedKernel.Integration.Webhooks` | 15 |
+| Email / SMS | `INotificationSender` keyed by channel; SendGrid, Twilio | 15 |
+| Durable long-running process | `IWorkflowDispatcher`, `WorkflowBase`/`ActivityBase`, `CommandActivity<T>` (`Workflows.Temporal`) | 17 |
+| Recurring/one-shot job | `IScheduledJobRegistry` + `ScheduledCommandJob<TCommand>` | 19 |
+| Streaming export / HTML → PDF | `AddSharedKernelReporting().AddCsv(c)…`, `IReportExporter<TRow>`, `IReportExporterFactory`; `IHtmlToPdfConverter` via `AddGotenberg` | 20 |
+| **Governance & testing** | | |
+| An architecture rule | `SharedKernel.ArchitectureTests` — only what tiers cannot express; every rule needs a test | 00 |
+| A Roslyn analyzer | `SharedKernel.Analyzers` | 00 |
+| Fakes for a service's unit tests | `SharedKernel.{Capability}.Testing`; caller: `TestRequestContext`; pipeline: `ApplicationPipelineTestHarness` | 16 |
+| Testcontainers fixtures (this repo) | `SharedKernel.Testing.Internal` | 16 |
+| Wiring a new service | `samples/README.md`, `samples/OrderApi` | — |
 
 ---
 
 ## Abstractions Packages (Interface Contracts)
 
-These are the packages a service's Application and Domain projects depend on — never the concrete provider:
+What a service's Application and Domain projects depend on — never the concrete provider:
 
 | Contract package | Implemented by |
-|------------------|---------------|
-| `SharedKernel.Execution` (`IRequestContext`, `IRequestContextAccessor`, `IUnitOfWork`, `IAuditTrailWriter`) — Foundation | `ServiceDefaults.Security` (`IRequestContext` over `IUserContext`), the inbound adapters (scopes), `Persistence.EfCore` (`IUnitOfWork`), `Persistence.EfCore.Auditing` (`IAuditTrailWriter`) |
-| `SharedKernel.Primitives.Health` (`IReadinessProbe`) — Foundation | every provider with an external dependency; mapped by `ServiceDefaults`' `AddSharedKernelReadiness()` |
+| --- | --- |
+| `SharedKernel.Execution` (`IRequestContext`, `IRequestContextAccessor`, `IUnitOfWork`, `IAuditTrailWriter`) — Foundation | `ServiceDefaults.Security` (`IRequestContext` over `IUserContext`), inbound adapters (scopes), `Persistence.EfCore` (`IUnitOfWork`), `Persistence.EfCore.Auditing` (`IAuditTrailWriter`) |
+| `SharedKernel.Primitives.Health` (`IReadinessProbe`) — Foundation | every provider with an external dependency; mapped by `AddSharedKernelReadiness()` |
 | `SharedKernel.Application` (`ISender`, `IPipelineBehavior<,>`, markers) | `Application.Mediator.MediatR` (`ISender`), `Application.Pipeline` (+ `.Caching`) |
 | `SharedKernel.Idempotency.Abstractions` | `Idempotency.Redis`, `Idempotency.EfCore` |
-| `SharedKernel.Caching.Abstractions` | `Caching.FusionCache` (`ICacheService`, `ITenantCacheService`; `.Redis` adds L2), `Caching.Redis.DistributedLocking` (`IDistributedLockService`) |
+| `SharedKernel.Caching.Abstractions` | `Caching.FusionCache` (+ `.Redis` L2), `Caching.Redis.DistributedLocking` |
 | `SharedKernel.Persistence.Abstractions` | `Persistence.EfCore` (+ `.Auditing`, `.Encryption`), `Persistence.Npgsql`, `Persistence.Dapper` |
 | `SharedKernel.Messaging.Abstractions` | `Messaging.MassTransit` (+ `.RabbitMq`, `.AzureServiceBus`, `.EfCore`) |
 | `SharedKernel.Storage.Abstractions` | `Storage.S3`, `Storage.Obs` |
@@ -325,15 +258,21 @@ These are the packages a service's Application and Domain projects depend on —
 
 ---
 
-## Solution Format
+## Working in This Repo with Claude Code
 
-- Solution file: `Platform.SharedKernel.slnx` (.NET 10 XML format); each numbered folder is a solution folder of the same name.
-- Two lane filters: `Platform.SharedKernel.Unit.slnf` (every production project + container-free tests) and `Platform.SharedKernel.Integration.slnf` (Testcontainers suites); `eng/verify-solution-filters.sh` keeps every test project in exactly one lane.
-- Target framework `net10.0` everywhere. Build-wide configuration (`Directory.Build.props`/`.targets`, `Directory.Packages.props` with Central Package Management, `global.json`, `NuGet.Config`, `eng/SharedKernelTiers.targets`) is owned by [`PLATFORM.md`](PLATFORM.md). Every new project goes into the `.slnx`, the right `.slnf`, and — if packable — `Directory.Packages.props`.
-- A migration guide for code written against pre-WO-086 packages: [`docs/refactor/MIGRATION.md`](docs/refactor/MIGRATION.md).
+Work flows from intent → work order → domain phase → code, with `state-map.md` as the hand-off point.
 
----
+| Command | What it does |
+| --- | --- |
+| `/arch <request>` | `arch-lead` evaluates the request against the architecture and writes work orders into the affected `state-map.md` files. Plans; never writes code. |
+| `/dispatch-phase` | Fans a work order out to the affected domains' `{domain}-arch-planner` agents, which author phases in their `state-map.md` and refresh their `CLAUDE.md`. |
+| `/implement-phase <domain> [phase]` | Runs `{domain}-phase-implementer` on a phase: code, tests, state-map update. |
+| `/implement-next-phase` | Picks the next ready phase across domains and implements it. |
+| `/state-map-phase` | Records a phase's outcome on its domain's board. |
+| `/sync-brain` | Brings the `CLAUDE.md` files back in line with the code. |
+| `/commit` | Reviews the working tree and writes a conventional commit. |
+| `/devops <request>` | `devops-lead`: CI, packaging, versioning, containers, build configuration. |
 
-## Changelog
-
-> Kept in [`CLAUDE.changelog.md`](CLAUDE.changelog.md) — history, not routing guidance. `/sync-brain` appends new entries there.
+- Agents: `arch-lead`, `devops-lead`, and one `{domain}-arch-planner` + `{domain}-phase-implementer` pair per domain (in `.claude/agents/`).
+- Rules shared by every agent live in `.claude/agents/_common.md`.
+- Agent memory under `.claude/agent-memory/` is local to each developer and gitignored.

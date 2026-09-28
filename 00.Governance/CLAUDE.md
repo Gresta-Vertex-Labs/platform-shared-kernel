@@ -1,240 +1,168 @@
 # 00.Governance — Domain Brain
 
-## What This Domain Is
-
-The enforcement layer: Roslyn analyzers, architecture-test rules, a BenchmarkDotNet configuration and a distributable
-formatting/style package. It ships **no runtime code**. Every package here is **Tooling tier**
-(`<SharedKernelTier>Tooling</SharedKernelTier>`): it references no SharedKernel package at runtime, and no production
-package may reference it.
-
-The dependency rules between the platform's own packages are **not** architecture tests any more. They are the tier
-matrix, enforced by the build (`eng/SharedKernelTiers.targets`). This domain owns the tests that prove that check keeps
-working and the purity rules the matrix cannot express.
-
-Philosophy: **Enforce at build time. Fail loudly with the fix in the message. Zero runtime cost.**
-
-Per-rule consumer documentation (why, what it flags, what it does not, examples, suppression) lives in
-[`README.md`](README.md); the architecture-rule catalog lives in
-[`SharedKernel.ArchitectureTests/README.md`](SharedKernel.ArchitectureTests/README.md). This file holds maintainer
-rules only. History is in [`state-map.md`](state-map.md).
-
----
+> The enforcement layer: Roslyn analyzers, architecture-test rule factories and assertions, a BenchmarkDotNet
+> configuration and a distributable formatting/style package. It ships **no runtime code**; no production package
+> may reference it. It does **not** own the tier check itself — that is MSBuild (`eng/SharedKernelTiers.targets`,
+> imported by `Directory.Build.targets`); this domain owns the tests proving that check still works and the purity
+> rules the tier matrix cannot express. Philosophy: enforce at build time, fail loudly with the fix in the message,
+> zero runtime cost. Consumer rule docs: `README.md` (analyzers) and `SharedKernel.ArchitectureTests/README.md`
+> (architecture rules). The living board is `state-map.md`.
 
 ## Packages
 
-| Package | Role | Target | Published |
-| --- | --- | --- | --- |
-| `SharedKernel.Analyzers` | Roslyn analyzers (SKnnnn diagnostics) | `netstandard2.0` | yes, development dependency |
-| `SharedKernel.ArchitectureTests` | NetArchTest + Mono.Cecil rule factories, IL assertions, `ArchitectureRuleBase` | `net10.0` | yes, development dependency |
-| `SharedKernel.Linter` | Content-only: CSharpier format check/format target and the shared `.editorconfig` | — (no DLL) | yes, development dependency |
-| `SharedKernel.Benchmarks` | `SharedKernelBenchmarkConfig` / `[SharedKernelBenchmark]` | `net10.0` | no |
+| Package | Tier | Purpose |
+| --- | --- | --- |
+| `SharedKernel.Analyzers` | Tooling | Roslyn analyzers (`SKnnnn`), `netstandard2.0`, packed as a development dependency |
+| `SharedKernel.ArchitectureTests` | Tooling | NetArchTest + Mono.Cecil rule factories returning `ConditionList`, IL assertion helpers, `ArchitectureRuleBase`; `net10.0`, development dependency |
+| `SharedKernel.Linter` | Tooling | Content only (`IncludeBuildOutput=false`): CSharpier format check/format targets (`build/SharedKernel.Linter.props`/`.targets`) and the shared `.editorconfig` (`config/`) |
+| `SharedKernel.Benchmarks` | — (not packable, untiered) | `SharedKernelBenchmarkConfig` / `[SharedKernelBenchmark]` for the repo's own benchmarks |
 
 `_verification/` holds three standalone consumers (`AnalyzerConsumer`, `ArchTestConsumer`, `LinterConsumer`) that
 restore the packed packages in CI; the analyzer consumer's build must report `SK0001`.
 
-| Concern | Technology |
+## Public Entry Points
+
+- **Analyzers** — reference the package; every rule reports **Warning** by default and consumers escalate in
+  `.editorconfig` (`dotnet_diagnostic.SKnnnn.severity`). Each `HelpLinkUri` points at its `README.md` section.
+- **Architecture tests** — rule classes in `SharedKernel.ArchitectureTests/Rules/*Rules.cs` return `ConditionList`
+  (or one per scanned assembly); assert through `ArchitectureRuleBase.AssertRule`/`AssertRules` or `GetResult()`.
+  Assertion helpers: `SecureDefaultsAssertion`, `PipelineOrderAssertion` (by type, or by name for the kernel's internal
+  behaviors after `AddSharedKernelApplication(…)`), `LoggingEventIdIntegrityAssertion`,
+  `WellKnownConstantOwnershipAssertion`; `RuleAnchor` validates anchor types; `ReflectionExemptionRegistry`.
+- **Linter** — MSBuild properties/targets: `SharedKernelLinterEnforceFormatting`, `SharedKernelLinterFormat`,
+  `InstallSharedKernelLinterConfig`.
+- **Benchmarks** — `[SharedKernelBenchmark]` + `BenchmarkRunner.Run<T>()`.
+
+### Analyzer rules
+
+| ID | Rule |
 | --- | --- |
-| Analyzers | `Microsoft.CodeAnalysis.CSharp` 4.14.0 (pinned; the test project pins the same version) |
-| Analyzer tests | `Microsoft.CodeAnalysis.CSharp.Analyzer.Testing` (`CSharpAnalyzerTest<TAnalyzer, DefaultVerifier>`) |
-| Architecture rules | `NetArchTest.eNt`, `Mono.Cecil` |
-| Benchmarks | `BenchmarkDotNet` 0.15.x |
-| Formatting | CSharpier (version pinned by the package), `.editorconfig` |
+| SK0001 | No `DateTime`/`DateTimeOffset.Now/UtcNow` — inject `IClock` |
+| SK0002 | No `Microsoft.FeatureManagement` or ambient OpenFeature `Api.Instance` — inject `IFeatureClient` + `FeatureFlag<T>` |
+| SK0003 | No raw `Exception`/`ApplicationException` throw — `Result` or a typed kernel exception |
+| SK0004 | Never return `null` for `Error` — return `Error.None` |
+| SK0005 | A `SharedKernelException` subclass is constructed with an `Error`, not a string only |
+| SK0006 | An `IGuardClause` functional-path method never throws |
+| SK0007 | `IRedisChannelService` is not a messaging substitute — inject `IMessageBus` |
+| SK0008 | Dispatch code depends on `IHasDomainEvents`, not `IAggregateRoot` |
+| SK0009 | A domain event carries `[DomainEventVersion]` |
+| SK0010 | A specification constructor uses one primary ordering direction |
+| SK0011 | `Guid.ToString` with a non-canonical format code |
+| SK0013 | No explicit constructor taking `HttpClient` — typed client with a primary constructor |
+| SK0014 | Register Polly pipelines as non-generic, string-keyed `ResiliencePipeline` |
+| SK0016 | `typeof(X).Name` without a `FullName` companion in tags/keys |
+| SK0017 | A command never implements `ICacheableQuery<T>` |
+| SK0018 | A query never implements `IInvalidatesCache` |
+| SK0020 / SK0021 | `[LoggerMessage]` only — no `ILogger.LogXxx` extension calls, no hand-written `LoggerMessage.Define` (`LoggingAuthoringStyleAnalyzer`) |
+| SK0022 | No raw literal at header/baggage/tag/configuration-section/claim call sites — named constant |
+| SK0023 | `IAmazonS3` registered as Singleton |
+| SK0024 | No raw literal as a search field name |
+| SK0025 | No NEST / Elasticsearch.Net (obsolete client) |
+| SK0026 | No raw vector-DB/model-SDK client injected outside its provider package |
+| SK0027 | No raw literal as a vector collection/field/model identifier |
+| SK0028 | No non-deterministic or side-effecting API inside a `[Workflow]` type |
+| SK0029 | No raw Temporal client injected outside `SharedKernel.Workflows.Temporal` |
+| SK0030 | A `Result` outcome is never silently discarded (`_ =` to discard explicitly) |
+| SK0031 | No `IHttpContextAccessor`/`ClaimsPrincipal`/`HttpContext` constructor injection — `IUserContext`/`IRequestContext` |
+| SK0032 | CORS wildcard/always-allow origin combined with `AllowCredentials()` |
+| SK0033 | No reflection-based object mapper (AutoMapper) — Mapperly or hand-written |
+| SK0034 | Advisory: a raw decimal amount + string currency pair — consider `Money` (never escalated) |
+| SK0035 | A privacy-classified member passed to an unclassified `[LoggerMessage]` parameter |
+| SK0036 | No raw `RpcException`/`Status` construction outside `SharedKernel.Presentation.Grpc` |
+| SK0037 | A `ValueObject` constructor must call `EnsureValid()` |
+| SK0038 / SK0039 | An `IIntegrationEvent` needs a valid `[IntegrationEvent]` attribute |
+| SK0040 | `[RequirePermission]`/`IIdempotentRequest` only on a request whose response is `Result`/`Result<T>` |
+| SK0041 | Two `ICacheableQuery<T>` types share a simple type name |
+| SK0042 | Dapper `sql` argument must be a compile-time constant |
+| SK0201 | A `TenantedDbContext.OnModelCreating` override must call `base` |
+| SK0202 | `IgnoreQueryFilters()` only inside `SharedKernel.Persistence.EfCore` or a `TenantedRepository` |
+| SK0703 | `IMessageBus`/`IEventPublisher` registered Scoped, never Singleton |
+| SK0704 | No hardcoded queue/exchange URI in `GetSendEndpoint` |
+| SK0705 | `IFaultConsumer<T>` registered through `AddFaultConsumer`, never directly |
+| SK0708 | A batch consumer registered through `AddBatchConsumer`, not `AddConsumer` |
 
----
-
-## Tier enforcement (what replaced the numbered layers)
-
-Every packable csproj declares `<SharedKernelTier>`: Foundation, Model, Abstractions, Adapter, Host, Testing or
-Tooling. `eng/SharedKernelTiers.targets` (imported by `Directory.Build.targets`) runs before `CoreCompile` and fails
-the build — every diagnostic is an **error**; there is no baseline and no downgrade:
-
-| Code | Meaning |
-| --- | --- |
-| SKTIER000 | Unknown tier name |
-| SKTIER001 | A `ProjectReference` to a tier this project's tier may not reference |
-| SKTIER002 | An Adapter → Adapter reference not declared in `<SharedKernelAllowedAdapterReferences>` |
-| SKTIER003 | A Model/Abstractions project takes a runtime NuGet package outside `Microsoft.Extensions.*.Abstractions` |
-| SKTIER004 | A tiered project references a project that declares no tier |
-| SKTIER005 | A packable library declares no tier |
-| SKTIER006 | Any ASP.NET Core reference (framework or `Microsoft.AspNetCore.*` package, transitive included) below Host/Testing |
-
-Matrix: Foundation → Foundation; Model → Foundation, Model; Abstractions → Foundation, Model, Abstractions; Adapter →
-those plus declared adapters; Host → everything but Testing/Tooling; Testing → everything but Tooling; Tooling →
-nothing. Test projects, consumer-verify harnesses and samples declare no tier and are not checked.
-
-The proofs that the check itself still works:
-
-- **`eng/verify-tier-errors.sh`** — builds two throw-away probe projects that must fail with SKTIER001 and SKTIER006;
-  run by `verify.yml`'s `tier-check` job. A downgrade, a wrong condition or a target that stops running would leave
-  the normal build green, so never remove it.
-- **`DependencyGraphRulesTests`** (in `SharedKernel.ArchitectureTests.Tests`, reading the csproj graph):
-  `EveryPackableProject_DeclaresAKnownTier`, `EveryDirectReference_RespectsTheTierMatrix`,
-  `AspNetCore_IsReferencedOnlyByHostAndTestingProjects`, `TestingPackages_AreReferencedOnlyByTestingProjectsOrTests`,
-  `MediatR_IsReferencedOnlyByTheMediatorAdapter`, `AnalyzerOnlyReferences_AreExemptFromTheMatrix_AndTargetToolingOnly`,
-  `ProjectReferenceGraph_HasNoCycles`. A `ReferenceOutputAssembly="false"` reference (it only orders the build or loads a
-  Roslyn component) is exempt from the matrix in both the build and these tests, and may only target a Tooling project —
-  the one such edge is `Presentation.WebApi` → `Presentation.WebApi.Generators` (P-579).
-- **`OptionalDependencySatelliteRulesTests`** — the MassTransit core references no transport, Azure or EF Core package
-  (and its assembly loads none); satellites are Adapters with a declared edge to the core; `Presentation.Grpc` never
-  reaches `WebApi` (it references `Presentation.Core` only); `Presentation.Core` is Host and depends on no sibling
-  presentation package (ASP.NET Core is allowed); GraphQL is a Presentation Host package. The SignalR Redis backplane
-  package no longer exists (P-579).
-- **`TestingPackagesNeverReferencedByProductionTests`** — no production project references a Testing package; the
-  core `SharedKernel.Testing` depends only on Foundation and Model packages.
-
-**Never add an architecture rule that restates a tier edge** ("X may only reference Y"). Change the matrix, a tier, or
-`<SharedKernelAllowedAdapterReferences>` instead. Adding a package means: declare its tier, add it to
-`Platform.SharedKernel.slnx` and the right `.slnf`, and check the MAX_PATH budget for its test assembly.
-
----
-
-## Analyzer registry
-
-All analyzers report **Warning** by default; consumers escalate through `.editorconfig`. Full reference:
-[`README.md` → Analyzer rule reference](README.md#rule-reference).
-
-| Block | Rules |
-| --- | --- |
-| Core standards | SK0001 DirectDateTimeUsage · SK0002 DirectMicrosoftFeatureManagerUsage · SK0003 RawExceptionThrow · SK0004 NullErrorReturn · SK0005 StringOnlyExceptionConstructor · SK0006 GuardClauseThrow · SK0007 RedisChannelServiceMessagingSubstitute · SK0008 AggregateRootDispatchCoupling · SK0009 DomainEventMissingVersionAttribute · SK0010 SpecificationOrderingConflict · SK0011 GuidFormatCodeMisuse · SK0037 ValueObjectMissingEnsureValid · SK0038 IntegrationEventMissingAttribute · SK0039 InvalidIntegrationEventAttribute |
-| Application / communication | SK0013 RawHttpClientConstructorInjection · SK0014 ClosedGenericResiliencePipelineRegistration · SK0016 RequestTypeShortNameUsage · SK0017 CommandImplementsCacheableQuery · SK0018 QueryImplementsInvalidatesCache · SK0040 PipelineMarkerResponseShapeMismatch · SK0041 DuplicateCacheableQueryName |
-| Logging | SK0020 DirectILoggerExtensionMethodUsage · SK0021 HandWrittenLoggerMessageDefineDelegate (one analyzer, `LoggingAuthoringStyleAnalyzer`) |
-| Cross-cutting, security, privacy | SK0022 CrossCuttingMagicStringLiteral · SK0023 NonSingletonAmazonS3ClientRegistration · SK0024 RawSearchFieldNameLiteral · SK0025 ObsoleteElasticsearchClientUsage · SK0026 RawIntelligenceProviderClientConstructorInjection · SK0027 RawIntelligenceIdentifierLiteral · SK0028 NonDeterministicApiUsageInsideWorkflow · SK0029 RawTemporalClientConstructorInjection · SK0030 ResultOutcomeDiscarded · SK0031 RawSecurityContextConstructorInjection · SK0032 CorsWildcardOriginWithCredentials · SK0033 ReflectionBasedObjectMapperUsage · SK0034 AmountCurrencyPairCoupling (advisory, never escalated) · SK0035 UnmaskedClassifiedDataAtLoggingCallSite · SK0036 RawRpcExceptionConstruction |
-| Persistence | SK0042 NonConstantDapperSqlArgument · SK0201 TenantedDbContextOnModelCreatingGuard · SK0202 IgnoreQueryFiltersOutsideTenantedRepository |
-| Messaging | SK0703 MessageBusSingletonRegistration · SK0704 HardcodedQueueUriInGetSendEndpoint · SK0705 FaultConsumerDirectRegistration · SK0708 BatchConsumerRegisteredViaAddConsumer |
-| Removed | SK0015 (streams have the kernel `IStreamPipelineBehavior<,>`; no mediator registration — P-567), SK0019 (target type removed — P-544) |
-
-Rules whose triggers name kernel types (each locked by a `RealKernelTypeNameTests` case):
-
-- **SK0040** fires on a non-abstract request carrying `[RequirePermission]`
-  (`SharedKernel.Application.Authorization.RequirePermissionAttribute`, on the type or a base type — the attribute is
-  inherited) or implementing `SharedKernel.Application.Idempotency.IIdempotentRequest`, whose
-  `SharedKernel.Application.Messaging.IRequest<T>` response is not `Result`/a closed `Result<T>`. A same-named attribute
-  in any other namespace never matches (the endpoint attribute is `RequireEndpointPermission` in
-  `SharedKernel.Presentation.Authorization`). `IAuthorizeRequest` was deleted (P-579).
-- **SK0036** exempts the `SharedKernel.Presentation.Grpc` prefix; its message names `SharedKernel.Core.Extensions`'
-  `ThrowIfFailure()`/`GetValueOrThrow()` — the gRPC package's own `GrpcResultExtensions` no longer exists.
-- **SK0016/SK0017/SK0041** match the `SharedKernel.Application` namespace prefix; the markers live in the
-  `SharedKernel.Application` assembly (`.Messaging`, `.Caching`, `.Idempotency`), the behaviors in
-  `SharedKernel.Application.Pipeline`.
-
-IDs that are architecture tests rather than analyzers (they need a whole assembly): SK0012 `ReflectionGuardRules`,
+Retired, never reused: SK0015, SK0019 (listed under "Removed Rules" in `AnalyzerReleases.Unshipped.md`), SK0707.
+IDs that are architecture tests, not analyzers (they need a whole assembly): SK0012 `ReflectionGuardRules`,
 SK0301–SK0303 `EncryptionPatternGuardRules`, SK0701–SK0702 `MessagingArchitectureRules`, SK0706
-`ExtendedMessagingArchitectureRules`. SK0707 (saga states) was retired with sagas (P-560).
+`ExtendedMessagingArchitectureRules`.
 
----
+### Architecture-test rule families
 
-## Architecture rules
-
-`SharedKernel.ArchitectureTests` ships rule factories that return `ConditionList` (or `ConditionList[]`, one element
-per scanned assembly) plus IL assertion helpers. Consumers assert them through `ArchitectureRuleBase.AssertRule`/
-`AssertRules`, or call `GetResult()` themselves. The catalog, which rules are portable and which police this
-platform's own packages, is in the package README.
-
-| Rule class | Rules |
+| Rule classes | What they enforce |
 | --- | --- |
-| `SharedKernelLayeringRules` | `ContractsNeverReferencesDomain`, `DomainNeverReferencesContracts`, `ModelNeverReferencesLogging`, `TestingNeverReferencedByProduction` — only what the tier matrix cannot express |
-| `DomainLayerPurityRules`, `DomainGoldStandardRules`, `GuardPurityRules`, `CoreArchitectureRules` | Domain purity (no infrastructure, clock, event handlers), domain-service base, `Guard.Against` never throws, `TryAdd*` registration convention |
-| `ContractsPurityRules` | Integration events are sealed, behaviour-free; no domain or `Result` type on the contracts surface |
-| `ApplicationPipelineRules`, `UnitOfWorkSeamRules`, `MetricsInstrumentationRules` | Behaviors (internal since P-579; NetArchTest scans non-public types) reference no concrete infrastructure; `Application.Pipeline` references no cache/Polly/hosting (`PipelineNeverReferencesCachingPollyOrHosting` — `SharedKernel.Core` allowed since P-579); `.Pipeline.Caching` only `Caching.Abstractions`; `IUnitOfWork`/`IRequestContext`/`IAuditTrailWriter` declared only in `SharedKernel.Execution`; duration histograms carry an `outcome` tag |
-| `PersistenceLayerProtectionRules`, `PersistenceInterfaceOwnershipRules`, `RepositoryContractCompletenessRules`, `EfCorePackageHygieneRules`, `PersistenceNamespaceConventionRules` | One `SaveChanges` call site, no `IQueryable` escape, read repositories never track, one declaring assembly for `IUserContext`, no tenant-identity interface next to `IRequestContext.TenantId`, EF Core hygiene, namespace placement |
-| `RedisTopologyRules` | Redis core never references its role packages; siblings independent; pub/sub ↛ messaging and messaging ↛ caching; `Caching.Abstractions` references only DI abstractions and declares no provider types; no RedLock |
-| `StorageTopologyRules`, `SearchTopologyRules`, `IntelligenceTopologyRules`, `WorkflowTopologyRules` | Abstractions free of vendor SDKs; sibling providers independent (Obs → S3 only); S3 SDK only in providers; no health-checks dependency in providers; raw Temporal accessor never consumed in-repo |
-| `CommunicationLayeringRules`, `PresentationLayeringRules` | gRPC (client and server) never references `SharedKernel.Contracts`; interceptors/filters through platform bases; `ProblemDetails` shaped only in `Presentation.WebApi`; no inline `Result` branch before an HTTP result (typed results `ToOk`/`ToErrorResult` are the mapping); the versioning/OpenAPI/Scalar stack only in `Presentation.OpenApi` |
+| `SharedKernelLayeringRules` | Only what tiers cannot express: `ContractsNeverReferencesDomain`, `DomainNeverReferencesContracts`, `ModelNeverReferencesLogging`, `TestingNeverReferencedByProduction` |
+| `DomainLayerPurityRules`, `DomainGoldStandardRules`, `GuardPurityRules`, `CoreArchitectureRules` | Domain purity (no infrastructure, clock, handlers), domain-service base, `Guard.Against` never throws, `TryAdd*` registration |
+| `ContractsPurityRules` | Integration events sealed and behaviour-free; no domain or `Result` type on the contracts surface |
+| `ApplicationPipelineRules`, `UnitOfWorkSeamRules`, `MetricsInstrumentationRules` | Behaviors reference no concrete infrastructure (`PipelineNeverReferencesCachingPollyOrHosting`); `IUnitOfWork`/`IRequestContext`/`IAuditTrailWriter` declared only in `SharedKernel.Execution`; duration histograms carry `outcome` |
+| `PersistenceLayerProtectionRules`, `PersistenceInterfaceOwnershipRules`, `RepositoryContractCompletenessRules`, `EfCorePackageHygieneRules`, `PersistenceNamespaceConventionRules` | One `SaveChanges` call site, no `IQueryable` escape, read repositories never track, interface ownership, EF Core hygiene, namespace placement |
+| `RedisTopologyRules` | Redis.Core never references role packages; siblings independent; pub/sub ↛ messaging, messaging ↛ caching; `Caching.Abstractions` declares no provider types; no RedLock |
+| `StorageTopologyRules`, `SearchTopologyRules`, `IntelligenceTopologyRules`, `WorkflowTopologyRules` | Abstractions free of vendor SDKs; sibling providers independent; no health-checks dependency in providers; the raw Temporal accessor never consumed in-repo |
+| `CommunicationLayeringRules`, `PresentationLayeringRules` | gRPC client/server never reference `SharedKernel.Contracts`; interceptors/filters through platform bases; `ProblemDetails` shaped only in `Presentation.WebApi`; no inline `Result` branch before an HTTP result; OpenAPI stack only in `Presentation.OpenApi` (`NoOpenApiStackDependencyOutsideOpenApiAddOn`) |
 | `SecurityArchitectureRules`, `CryptoIsolationRules`, `EncryptionPatternGuardRules` | No request context in the domain; no singleton `IUserContext`; DPoP parsing only in Oidc; client-certificate reads only in Mtls; no raw cipher outside `SharedKernel.Cryptography`; no encryption attribute on domain entities |
 | `MessagingArchitectureRules`, `ExtendedMessagingArchitectureRules` | No raw bus/publisher/scheduler injection outside messaging; no publisher in the domain |
-| `HealthCheckTagIntegrityRules`, `HealthCheckConstantsUsageRules` | Dependency checks tagged `ready`, never `live`; no bare health-check name/tag literal where constants exist |
+| `HealthCheckTagIntegrityRules`, `HealthCheckConstantsUsageRules` | Dependency checks tagged `ready`, never `live`; no bare health-check name/tag literal |
 | `ReflectionGuardRules` | No `MakeGenericMethod` dispatch outside `ReflectionExemptionRegistry` |
 
-Assertion helpers (not `ConditionList`s): `SecureDefaultsAssertion`, `PipelineOrderAssertion` (by type, or by name for the
-kernel's internal built-in behaviors after `AddSharedKernelApplication(…)`),
-`LoggingEventIdIntegrityAssertion`, `WellKnownConstantOwnershipAssertion`; `RuleAnchor` validates the anchor types
-some rules take.
+Repo-graph tests (in `SharedKernel.ArchitectureTests.Tests`, reading csproj files): `DependencyGraphRulesTests` (known
+tier on every packable project, tier matrix, ASP.NET Core only in Host/Testing, Testing packages only in
+Testing/tests, MediatR only in the mediator adapter, analyzer-only references target Tooling, no cycles),
+`OptionalDependencySatelliteRulesTests` (MassTransit core loads no transport/Azure/EF Core; satellites declare an edge;
+`Presentation.Grpc` ↛ `WebApi`; `Presentation.Core` depends on no sibling), `TestingPackagesNeverReferencedByProductionTests`.
 
-Meta-tests that keep the rule set honest:
+## Rules & Invariants
 
-- **`RuleExecutionCoverageTests.EveryPublicRuleMethod_IsCalledByAtLeastOneTest`** — a public rule method no test calls
-  fails. Every new rule needs a fire-path test, a pass-path test and, where the rule
-  names SharedKernel packages, a pass-path test against the **real** assembly.
-- **`RuleAnchorValidationTests`** — anchored rules reject null, non-interface and sealed anchors.
-- **`RealKernelTypeNameTests`** (Analyzers.Tests) — analyzer fixtures compiled against the real kernel assemblies, so a
-  renamed or moved kernel type breaks the test instead of silently disabling the analyzer.
-- **`HelpLinkReadmeAnchorTests`** — every analyzer's `HelpLinkUri` resolves to a heading in `README.md`.
+1. **Never add an architecture rule that restates a tier edge.** Change the matrix, a tier, or `<SharedKernelAllowedAdapterReferences>` instead.
+2. Every tier diagnostic (SKTIER000–006) is an **error** — no baseline, no downgrade. Keep `eng/verify-tier-errors.sh` (probes that must fail with SKTIER001/006, run by `verify.yml`'s `tier-check` job) and `DependencyGraphRulesTests` in step with `eng/SharedKernelTiers.targets`.
+3. A `ReferenceOutputAssembly="false"` reference is exempt from the matrix and may only target a Tooling project (the one such edge: `Presentation.WebApi` → `Presentation.WebApi.Generators`).
+4. **Analyzers**: `netstandard2.0`, only `Microsoft.CodeAnalysis.CSharp` 4.14.0 (pinned in `Directory.Packages.props`; the test project matches), no SharedKernel reference — match kernel types by metadata name/namespace.
+5. IDs use the `SK` prefix and are **never reused**; a retired rule moves to "Removed Rules" in `AnalyzerReleases.Unshipped.md` and keeps a stub `README.md` section telling users to delete suppressions.
+6. RS2008 is satisfied, never suppressed: every new ID goes in `AnalyzerReleases.Unshipped.md`.
+7. Every `DiagnosticDescriptor` has a `HelpLinkUri` to its `README.md` heading (`HelpLinkReadmeAnchorTests`).
+8. Call `ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None)` where generated code would false-positive (`[LoggerMessage]` output for SK0020/SK0021).
+9. Literal-vs-constant rules (SK0022, SK0024, SK0027) discriminate on **syntax shape** (`LiteralExpressionSyntax`), so any named constant passes; receivers resolve through the semantic model.
+10. Rules unsafe in every assembly (SK0011, SK0014, SK0022, SK0023, SK0030, SK0703) have no namespace exemption; exemptions walk `SyntaxNode.Parent` for (file-scoped) namespaces.
+11. SK0040 matches `SharedKernel.Application.Authorization.RequirePermissionAttribute` (inherited) and `SharedKernel.Application.Idempotency.IIdempotentRequest` only — a same-named attribute elsewhere never matches. SK0036 exempts the `SharedKernel.Presentation.Grpc` prefix. SK0016/SK0017/SK0041 match the `SharedKernel.Application` namespace prefix.
+12. **Rule factories take every assembly, anchor and forbidden term from the caller**; no hardcoded allow-lists inside predicates (only exception: `ReflectionExemptionRegistry`, each entry citing its case).
+13. NetArchTest `NotHaveDependencyOn(term)` is a `StartsWith` over **namespaces**, not assembly names; a term that prefixes the scanned assembly's own namespace matches itself. Use `AssemblyReferenceAllowListPredicate` for assembly-reference questions.
+14. Mono.Cecil: a `static class` is `IsAbstract && IsSealed`; `const string` folds to `ldstr`, `static readonly` is `ldsfld`; static lambdas compile onto `<>c`; inspect async methods through their state machines.
+15. In-memory fixture assemblies use names that cannot collide with a loaded real assembly. No static mutable state anywhere in this domain.
+16. Linter: the format check runs only when `ContinuousIntegrationBuild=true` or `SharedKernelLinterEnforceFormatting=true`; `InstallSharedKernelLinterConfig` never overwrites an existing `.editorconfig` unless asked.
 
----
+## Decisions
 
-## Implementation Rules
+| Decision | Why |
+| --- | --- |
+| Tier dependency rules live in MSBuild, not NetArchTest | Fails before compile, in every consumer of the repo, with one matrix instead of per-package rules |
+| Analyzers default to Warning | Consumers adopt incrementally and escalate in `.editorconfig` |
+| SK0034 is advisory only | An amount + currency pair is sometimes legitimate (wire DTOs) |
+| Syntax-shape matching for literal rules | Any named constant passes regardless of where it is declared |
+| `RealKernelTypeNameTests` compile analyzer fixtures against real kernel assemblies | A renamed kernel type breaks a test instead of silently disabling the analyzer |
+| `RuleExecutionCoverageTests` fails on a public rule with no calling test | A rule never seen failing is not wired up |
+| Benchmarks never run under `dotnet test` | BenchmarkDotNet needs a Release, out-of-process run |
 
-**Analyzers**
-- Target `netstandard2.0` (the Roslyn host); no NuGet dependency beyond `Microsoft.CodeAnalysis.CSharp` 4.14.0; no
-  SharedKernel reference. Match kernel types by metadata name/namespace, never by referencing the assembly.
-- IDs use the `SK` prefix and are **never reused**. A retired rule moves to "Removed Rules" in
-  `AnalyzerReleases.Unshipped.md` and keeps a stub section in `README.md` telling users to delete suppressions.
-- RS2008 (release tracking) is satisfied, never suppressed: every new ID goes in `AnalyzerReleases.Unshipped.md`.
-- Every `DiagnosticDescriptor` has a `HelpLinkUri` to its `README.md` section (locked by `HelpLinkReadmeAnchorTests`).
-- Analyzers that inspect source must call `ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None)` where
-  generated code would false-positive (`[LoggerMessage]` output for SK0020/SK0021).
-- Literal-vs-constant rules (SK0022, SK0024, SK0027) discriminate on **syntax shape** (`LiteralExpressionSyntax`), not
-  on the resolved value or the declaring class, so any named constant passes. Receiver types are resolved with the
-  semantic model.
-- A namespace exemption walks `SyntaxNode.Parent` for (file-scoped) namespace declarations. Rules that are unsafe in
-  every assembly (SK0011, SK0014, SK0022, SK0023, SK0030, SK0703) have no exemption.
-- Tests use `CSharpAnalyzerTest<TAnalyzer, DefaultVerifier>` with `{|SKnnnn:…|}` markup; at least one firing and one
-  non-firing case per rule. When a rule's correctness depends on a real kernel or third-party type, add a
-  `RealKernelTypeNameTests` case.
+## Logging
 
-**Architecture tests**
-- Rule factories take every assembly, anchor type and forbidden term from the caller; exemptions are expressed by what
-  the caller passes, never by a hardcoded allow-list inside a predicate (the named exception is
-  `ReflectionExemptionRegistry`, whose entries each cite their motivating case).
-- NetArchTest `NotHaveDependencyOn(term)` matches the term with `StartsWith` against **namespaces** of referenced types,
-  not assembly names; a forbidden term that is a prefix of the scanned assembly's own namespace matches itself. Use
-  `AssemblyReferenceAllowListPredicate` when the question is about assembly references.
-- Mono.Cecil predicates: a `static class` is `IsAbstract && IsSealed`; `const string` is folded into `ldstr` at the
-  call site while `static readonly` is an `ldsfld`; closure-free `static` lambdas compile onto the `<>c` nested type,
-  so exemptions keyed by type must include it; async methods are inspected through their state machines.
-- In-memory fixture assemblies must use names that cannot collide with a loaded real assembly.
-- No static mutable state anywhere in this domain.
+Analyzers and architecture tests do not log. The `00` EventId block is unused;
+`LoggingEventIdIntegrityAssertion` is the helper other domains use to check their own blocks.
 
-**Tiers**
-- The tier check is MSBuild, not NetArchTest. Its tests read project files (`DependencyGraphRulesTests`) and its
-  negative proof is `eng/verify-tier-errors.sh`; keep both whenever `eng/SharedKernelTiers.targets` changes.
-- `SharedKernel.ArchitectureTests`, `SharedKernel.Analyzers` and `SharedKernel.Linter` are Tooling tier and
-  development dependencies; `SharedKernel.Benchmarks` is not published and never runs under `dotnet test`.
+## Cross-Domain Couplings
 
-**Linter**
-- Ships no DLL (`IncludeBuildOutput=false`). The format check runs only when `ContinuousIntegrationBuild=true` or
-  `SharedKernelLinterEnforceFormatting=true`; `SharedKernelLinterFormat` formats with the pinned CSharpier;
-  `InstallSharedKernelLinterConfig` never overwrites an existing `.editorconfig` unless asked.
+- **Every domain** — rule classes and analyzers encode other domains' purity rules by metadata name; when a domain renames or moves a type named here, `RealKernelTypeNameTests` or a real-assembly pass-path test must be updated in the same change.
+- **01.Core** — `LoggingEventIdRanges` (EventId blocks), `WellKnownHeaders`/`WellKnownBaggageKeys` (named by SK0022's message).
+- **05.Application** — `PipelineOrderAssertion` locks the built-in pipeline order through `AddSharedKernelApplication(…, app => app.UseMediatR().With…())`.
+- **Build (`eng/`)** — `SharedKernelTiers.targets`, `verify-tier-errors.sh`; build topics are documented in `CONTRIBUTING.md` and `eng/README.md`.
+- No production package references this domain; analyzer-only references are the only allowed edges into it.
 
----
+## Testing
 
-## Test Rules
+- Unit lane: `SharedKernel.Analyzers.Tests`, `SharedKernel.ArchitectureTests.Tests`, `SharedKernel.Linter.Tests` (nested in each package).
+- Analyzer tests use `CSharpAnalyzerTest<TAnalyzer, DefaultVerifier>` with `{|SKnnnn:…|}` markup: at least one firing and one non-firing case per rule; a `RealKernelTypeNameTests` case when correctness depends on a real kernel or third-party type.
+- Every architecture rule: fire path, pass path, exemption path where one exists, and a pass path against the **real** assembly for platform rules.
+- Meta-tests: `RuleExecutionCoverageTests.EveryPublicRuleMethod_IsCalledByAtLeastOneTest`, `RuleAnchorValidationTests`, `RealKernelTypeNameTests`, `HelpLinkReadmeAnchorTests`.
+- `_verification/` consumers prove the packed packages restore and work outside the repo.
 
-- Analyzer tests: `SharedKernel.Analyzers/SharedKernel.Analyzers.Tests/`. Architecture-rule tests:
-  `SharedKernel.ArchitectureTests/SharedKernel.ArchitectureTests.Tests/`. Linter: `SharedKernel.Linter.Tests`.
-- Every rule: fire path, pass path, and (for exemptions) the exemption path; platform rules also against the real
-  assembly. A rule you have never seen fail is not wired up.
-- Benchmarks are run with `BenchmarkRunner.Run<T>()`, never through the test runner.
+## Known Limitations
 
----
-
-## Changelog
-
-History up to P-574 is in [`state-map.md`](state-map.md) and the root [`CLAUDE.changelog.md`](../CLAUDE.changelog.md).
-
-- [2026-09-26] WO-086 (P-563, P-574, P-575): numbered-layer rule classes deleted (`SharedKernelLayeringRules`' layer
-  rules, `MessagingLayeringRules`, `CachingAbstractionRules`, `CompositionRootExclusivityRules`,
-  `ServiceDefaults*LayeringRules` and the 13→17/13→19 grant rules); the tier check (`eng/SharedKernelTiers.targets`,
-  SKTIER000–006) is an error with no baseline; `DependencyGraphRulesTests`, `OptionalDependencySatelliteRulesTests`,
-  `RuleExecutionCoverageTests`, `RealKernelTypeNameTests` and `eng/verify-tier-errors.sh` added; SK0015 removed. This
-  brain rewritten from 5,600 lines to the final state.
-- [2026-09-26] P-579 (origin/main merged into WO-086): SK0040 triggers on `[RequirePermission]` (inherited) instead of
-  the deleted `IAuthorizeRequest`; SK0036's message and tests name `SharedKernel.Core`'s `ThrowIfFailure()`/
-  `GetValueOrThrow()`; `PipelineNeverReferencesCachingPollyHostingOrCore` renamed
-  `PipelineNeverReferencesCachingPollyOrHosting` (the pipeline now uses `SharedKernel.Core`'s `error.ToException()`);
-  the built-in behaviors are internal, so `PipelineOrderAssertion` gained a by-name overload and the ordering lock
-  registers through `AddSharedKernelApplication(…, app => app.UseMediatR().With…())`;
-  `PresentationLayeringRules.NoOpenApiStackDependencyOutsideOpenApiAddOn` added (main's P-562); analyzer-only
-  (`ReferenceOutputAssembly="false"`) project references exempt from the tier matrix; the SignalR Redis backplane
-  package is gone. `ReflectionExemptionRegistry` records the new registration-time reflection sites (none needs an
-  entry).
+- NetArchTest matches namespaces, so a rule cannot distinguish two assemblies sharing a namespace prefix without `AssemblyReferenceAllowListPredicate`.
+- Analyzers match kernel types by name; a type moved without updating the analyzer silently stops firing unless a `RealKernelTypeNameTests` case covers it.
+- SK0708 detects batch consumers by name (`BatchConsumer` in the type name), not by interface.

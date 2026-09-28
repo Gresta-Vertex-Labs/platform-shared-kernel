@@ -1,45 +1,24 @@
 # 18.Idempotency — Domain Brain
 
-> **Audience:** maintainers and AI agents changing code in this folder. Consumers read each package's
-> `README.md`. Phase history lives in [`state-map.md`](state-map.md).
-
-## What This Domain Is
-
-The platform's **one idempotency contract and its production stores.** A single purpose-keyed reservation
-contract, `IIdempotencyStore`, backs every duplicate-execution guard in a service:
-
-| Caller | Purpose | Declared/used in |
-|---|---|---|
-| `IdempotencyBehavior<,>` — duplicate-submission protection and response replay for an in-process command (`IIdempotentRequest`) | `IdempotencyPurpose.Request` | `05.Application/SharedKernel.Application.Pipeline` |
-| MassTransit consumer idempotency (`MessagingBusBuilder.WithIdempotency()`); key `{MessageId:D}:{sha256-hex("{endpoint path}\|{consumer type}")}`, one reservation per consumer | `IdempotencyPurpose.Message` | `07.Messaging/SharedKernel.Messaging.MassTransit` |
-
-Both callers consume the contract; neither declares its own. Before WO-086 (P-568) there were two separate
-contracts — `05`'s `IRequestIdempotencyStore` and Messaging's own `IIdempotencyStore` — and four store classes;
-they are gone. Do not reintroduce a caller-specific store interface.
-
----
+> The platform's **one idempotency contract and its production stores.** `IIdempotencyStore` (purpose-keyed,
+> token-conditional reservations) backs every duplicate-execution guard in a service: the application pipeline's
+> `IdempotencyBehavior` (`IdempotencyPurpose.Request`, `05.Application`) and MassTransit consumer idempotency
+> (`IdempotencyPurpose.Message`, `07.Messaging`). Two sibling providers implement it — Redis (Lua) and PostgreSQL
+> (EF Core). This domain does **not** own the callers, the HTTP `Idempotency-Key` header handling (`14.Presentation`),
+> the caller-scoped key digest (`05.Application`), a cleanup job (a consumer recipe) or any caller-specific store
+> interface. Consumers read each package's `README.md`; phase status is on the living board (`state-map.md`).
 
 ## Packages
 
-| Package | Tier | Role | References |
-|---|---|---|---|
-| `SharedKernel.Idempotency.Abstractions` | Abstractions | `IIdempotencyStore`, `IdempotencyReservation`/`IdempotencyReservationStatus` (`Started`/`InProgress`/`Completed`/`FingerprintMismatch`), `IdempotencyPurpose` (`Request`/`Message`), `IdempotencyPurposeSelection`, `IdempotencyTenantScope` (the one tenant encoding: "D" GUID or `no-tenant`), `AddIdempotencyStore<T>(purpose \| purposes)`, `HasIdempotencyStore`, `GetRequiredIdempotencyStore` | `SharedKernel.Execution`, `Microsoft.Extensions.DependencyInjection.Abstractions` |
-| `SharedKernel.Idempotency.Redis` | Adapter | `RedisIdempotencyStore` (one class, every purpose); `AddRedisIdempotency(p => …, o => …)` | Abstractions, `SharedKernel.Primitives`, `SharedKernel.Caching.Redis.Core` (declared adapter edge) |
-| `SharedKernel.Idempotency.EfCore` | Adapter | `EfCoreIdempotencyStore` (one class, every purpose) over its own `IdempotencyDbContext`; `AddEfCoreIdempotency(db => …, p => …, o => …)` | Abstractions, `SharedKernel.Primitives`, `SharedKernel.Persistence.EfCore` (declared adapter edge) |
+| Package | Tier | Purpose |
+|---|---|---|
+| `SharedKernel.Idempotency.Abstractions` | Abstractions | `IIdempotencyStore`, `IdempotencyReservation` / `IdempotencyReservationStatus`, `IdempotencyPurpose`, `IdempotencyPurposeSelection`, `IdempotencyTenantScope`, registration helpers. References only `SharedKernel.Execution` + `Microsoft.Extensions.DependencyInjection.Abstractions` |
+| `SharedKernel.Idempotency.Redis` | Adapter | `RedisIdempotencyStore` (one class, every purpose) — each operation is one Lua script. Declared adapter edge → `SharedKernel.Caching.Redis.Core` |
+| `SharedKernel.Idempotency.EfCore` | Adapter | `EfCoreIdempotencyStore` (one class, every purpose) over its own `IdempotencyDbContext`, table `idempotency_keys`. Declared adapter edge → `SharedKernel.Persistence.EfCore` |
 
-- The two providers are **siblings**: neither references the other and there is no shared `.Core`. Duplicate small
-  helpers rather than share them, so each provider stays independently swappable.
-- `.Redis` must never reference `06.Persistence`; `.EfCore` must never reference `02.Caching`. Each adapter→adapter
-  edge is declared in the csproj's `<SharedKernelAllowedAdapterReferences>` (SKTIER002 otherwise). A package
-  reaching both backing stores would drag Redis into PostgreSQL-only services and vice versa.
-- Nothing in the kernel references the providers. `05.Application.Pipeline` and `07.Messaging.MassTransit`
-  reference only `.Abstractions`; a service picks a provider at its composition root.
-- Test double: `16.Testing/SharedKernel.Idempotency.Testing`'s `FakeIdempotencyStore`
-  (`AddFakeIdempotencyStore(purposes)`), which implements the same reservation protocol.
+## Public Entry Points
 
----
-
-## The contract
+### Abstractions
 
 ```csharp
 Task<IdempotencyReservation> TryBeginAsync(IdempotencyPurpose purpose, string key, string fingerprint, TimeSpan ttl, CancellationToken ct);
@@ -47,116 +26,112 @@ Task<bool> CompleteAsync(IdempotencyPurpose purpose, string key, string token, s
 Task<bool> ReleaseAsync(IdempotencyPurpose purpose, string key, string token, CancellationToken ct);
 ```
 
-- Entries are identified by **(tenant scope, purpose, key)**. The store resolves the tenant scope itself from the
-  ambient `IRequestContextAccessor` via `IdempotencyTenantScope.Current(accessor)`; callers never pass a tenant.
-- **Callers own lease and retention.** `ttl` is the in-flight lease, `retention` how long a completed entry is
-  kept. Providers have no TTL settings: `IdempotencyBehaviorOptions.LeaseDuration`/`RetentionWindow` (05) and
-  messaging's `IdempotencyOptions.LeaseDuration`/`ExpiryWindow` (07) supply them.
-- Registration is keyed by purpose (`[FromKeyedServices(IdempotencyPurpose.Request)]`). A second registration for
-  the same purpose throws. `AddSharedKernelApplication(…, app => app.WithIdempotency())` checks the Request store at host start
-  (naming it when missing), and `MessagingBusBuilder.Build()` checks
-  `HasIdempotencyStore(IdempotencyPurpose.Message)` at startup.
+- `IdempotencyReservation` (record struct) with factories `Started(token)`, `InProgress()`, `Completed(storedResponse)`,
+  `FingerprintMismatch()`; status enum `IdempotencyReservationStatus`.
+- `IdempotencyPurpose` — `Request`, `Message`. `IdempotencyPurposeSelection` — `ForRequests()`, `ForMessages()`, `For(purpose)`.
+- `IdempotencyTenantScope` — `For(TenantId?)`, `Current(IRequestContextAccessor)`, `NoTenant = "no-tenant"`, `MaxLength = 36`.
+- `IdempotencyServiceCollectionExtensions` — `AddIdempotencyStore<TStore>(purpose)` / `(purposes)` (keyed by purpose;
+  a second store for the same purpose throws), `HasIdempotencyStore(purpose)`, `GetRequiredIdempotencyStore(purpose)`,
+  `SelectPurposes(...)` (used by providers). Resolve a store with `[FromKeyedServices(IdempotencyPurpose.Request)]`.
 
----
+### Redis
 
-## Domain Invariants
+`services.AddRedisConnection(configuration)` first (02.Caching), then
+`services.AddRedisIdempotency(p => p.ForRequests().ForMessages(), o => o.AllowExecutionOnStoreUnavailable = false)`.
+Throws when no Redis connection is registered. Options: `RedisIdempotencyOptions` (`SectionName` constant
+`SharedKernel:Idempotency:Redis`; set through the delegate — see Known Limitations).
 
-**1 — Atomicity is the product.** `TryBeginAsync` classifies the entry's full state (started / in-flight /
-completed-with-response / fingerprint-mismatch) in **one atomic round trip**. A read-then-write, `EXISTS`-then-`SET`
-or `WATCH`/`MULTI` loop is a defect, however narrow the window looks.
+### EfCore
 
-- `.Redis`: each entry is one hash (`status`, `fingerprint`, `token`, `response`) at
-  `sk:idempotency:{tenantScope}:key:{key}` (Request) or `sk:idempotency:{tenantScope}:msg:{key}` (Message).
-  `TryBeginAsync`/`CompleteAsync`/`ReleaseAsync` are each a single Lua script. Fingerprint is compared before
-  status, so a reused key with a different fingerprint is always `FingerprintMismatch`. A new reservation's hash
-  expires after `ttl`; `CompleteAsync` extends it to `retention`.
-- `.EfCore`: one table `idempotency_keys`, primary key `(tenant_scope, purpose, key)`. `TryBeginAsync` is one raw
-  `INSERT … ON CONFLICT (tenant_scope, purpose, "key") DO UPDATE … RETURNING …` on the context's own ADO.NET
-  connection (never `ExecuteSqlInterpolatedAsync`, which discards `RETURNING`). Every `SET` is a no-op unless the
-  existing row has expired, so a live row returns unchanged. The caller won exactly when the returned
-  `reservation_token` is its own — never compare timestamps (a coarse `IClock` can collide).
+`services.AddEfCoreIdempotency(db => db.UsePostgres(dataSource), p => p.ForRequests(), o => …)`.
+Requires an `IClock`. Registers `IdempotencyDbContext` (EF retry disabled) and the store, both scoped. Ships no
+migrations: the README gives the `IDesignTimeDbContextFactory<IdempotencyDbContext>` recipe and the cleanup
+`BackgroundService` recipe. Options: `EfCoreIdempotencyOptions` (`SectionName` constant `SharedKernel:Idempotency:EfCore`).
 
-**2 — The token guards completion.** A winning `TryBeginAsync` returns a fresh per-reservation token.
-`CompleteAsync`/`ReleaseAsync` mutate only while that token still owns an **`InProgress`** entry and return `bool`
-— `false`, never an exception, otherwise. A late caller whose lease expired and was reclaimed cannot touch the new
-owner's entry; a completed entry is never released. Stores hold no reservation state of their own.
+Both providers `TryAdd` `IRequestContextAccessor`.
 
-**3 — A fault must not consume the key.** Callers complete only on success and release on a failed `Result` or an
-exception. Even without a release, an unconfirmed reservation expires after `ttl`, so a crashed caller never
-permanently wedges a key.
+## Rules & Invariants
 
-**4 — Tenant scoping is by construction.** The tenant scope is part of every key (Redis) or of the primary key
-(EF Core), from `IdempotencyTenantScope`: the `TenantId` in "D" form, or the fixed `no-tenant` segment when there is
-no context or no tenant — never a GUID, so it cannot collide with a real tenant. A caller cannot produce a
-cross-tenant collision by choosing a key string. The inbound adapters (`UseSharedKernelRequestContext()`, the
-MassTransit consume filter, the job runner) establish the context; a multi-tenant service that skips them shares
-`no-tenant`.
+1. **Atomicity is the product.** `TryBeginAsync` classifies started / in-flight / completed / fingerprint-mismatch in
+   one atomic round trip. Read-then-write, `EXISTS`-then-`SET` or `WATCH`/`MULTI` loops are defects.
+2. **Redis layout:** one hash (`status`, `fingerprint`, `token`, `response`) at `sk:idempotency:{tenantScope}:{kind}:{key}`
+   (kind `key` for Request, `msg` for Message); Begin/Complete/Release are each a single Lua script. Fingerprint is
+   compared before status. A new reservation expires after `ttl`; `CompleteAsync` extends it to `retention`.
+3. **EF Core layout:** table `idempotency_keys`, primary key `(tenant_scope, purpose, key)`, `expires_at_utc` indexed.
+   `TryBeginAsync` is one raw `INSERT … ON CONFLICT … DO UPDATE … RETURNING` on the context's own ADO.NET connection —
+   never `ExecuteSqlInterpolatedAsync` (it discards `RETURNING`). Every `SET` is a no-op unless the row expired. The
+   caller won exactly when the returned `reservation_token` is its own — never compare timestamps.
+4. **The token guards completion.** `CompleteAsync`/`ReleaseAsync` mutate only while the token still owns an
+   `InProgress` entry and return `false` (never throw) otherwise. A completed entry is never released.
+5. **A fault must not consume the key.** Callers complete only on success and release on failure; an unconfirmed
+   reservation expires after `ttl` regardless.
+6. **Tenant scoping by construction.** The store resolves the scope itself via `IdempotencyTenantScope.Current(accessor)`
+   ("D" GUID, or `no-tenant`); callers never pass a tenant, and a key string cannot collide across tenants.
+7. **Callers own lease and retention.** Providers have no TTL settings; `ttl`/`retention` come from
+   `IdempotencyBehaviorOptions.LeaseDuration`/`RetentionWindow` (05) and messaging `IdempotencyOptions.LeaseDuration`/`ExpiryWindow` (07).
+8. **Fail closed by default.** An unreachable store throws. The one opt-out, `AllowExecutionOnStoreUnavailable`, makes
+   `TryBeginAsync` return `Started` with an unwritten token and Complete/Release return `false`, with a Warning log.
+   Classify connectivity/timeout only — never a blanket `catch (Exception)`; keep all three members uniform.
+9. **Opaque responses.** `CompleteAsync` stores the caller's string exactly as given (`null` for messages).
+10. **Providers are siblings.** Neither references the other; no shared `.Core`. Duplicate small helpers. `.Redis`
+    never references `06.Persistence`; `.EfCore` never references `02.Caching`.
+11. **Never a private multiplexer** — `.Redis` uses the shared `IConnectionMultiplexer` from `Caching.Redis.Core`.
+12. **`IdempotencyDbContext` is a plain `DbContext`**, not `SharedKernelDbContext` (soft-delete/concurrency conventions
+    would defeat the hard `DELETE` cleanup). Timestamps come from `IClock`.
+13. A contract change updates, together: both providers, `16.Testing`'s `FakeIdempotencyStore`, `IdempotencyBehavior`
+    and the MassTransit consumer behavior. A new purpose must fit the Redis key segment and the EF `purpose` column (16).
 
-**Caller scoping happens before the key reaches a store (P-562 X3).** For `IdempotencyPurpose.Request`,
-`IdempotencyBehavior` (`SharedKernel.Application.Pipeline`) never passes the command's raw key: the store receives a
-SHA-256 digest (64 lowercase hex characters) of the tenant, the caller (actor kind, subject, client, impersonator) and
-the raw key, so one caller can never be replayed another caller's stored response. The store's own tenant partition
-stays on top of it. The digest fits the EF Core `key` column and needs no escaping in the Redis key; the digest layout
-is a stored format. A malformed or missing key is refused before the store with `ErrorCodes.Idempotency`
-(`idempotency.key_required`, `idempotency.key_invalid`); an in-flight or reused key comes back as
-`idempotency.in_progress` / `idempotency.key_reused`.
+## Decisions
 
-**5 — Fail closed by default.** An unreachable store throws. Each provider has one opt-out,
-`AllowExecutionOnStoreUnavailable`, whose XML doc says **in capitals** that it increases duplicate-execution risk;
-under it `TryBeginAsync` returns `Started` with a token never written and `CompleteAsync`/`ReleaseAsync` return
-`false`, logging a Warning. Classification is narrow (connectivity/timeout only, never a blanket
-`catch (Exception)`) and uniform across all three members. EF Core retry is off for this context: each call is one
-statement and the caller owns retry.
-
-**6 — Retention is bounded and visible.** Redis gets TTL for free. `.EfCore` carries `expires_at_utc` (indexed),
-excludes expired rows, and ships cleanup as a **documented recipe** (a consumer `BackgroundService` or a
-`19.Scheduling` job) — never a hidden background loop. `IdempotencyDbContext` is a plain `DbContext`, deliberately
-not `SharedKernelDbContext` (soft-delete/concurrency conventions would defeat the hard `DELETE`).
-
-**7 — Opaque responses.** `CompleteAsync` persists the caller's string exactly as given (`null` for messages).
-Stores never inspect, reshape or re-serialize it.
-
----
-
-## Technology
-
-| Concern | Choice |
+| Decision | Why |
 |---|---|
-| Redis access | `02.Caching.Redis.Core`'s shared `IConnectionMultiplexer`; `AddRedisIdempotency` throws when `AddRedisConnection` was not called first. Never a private multiplexer |
-| Relational access | `06.Persistence.EfCore`'s `UsePostgres(dataSource)` for the context options; raw `DbCommand` for the upsert |
-| Clock | `IClock` for every `.EfCore` timestamp; `.Redis` uses relative TTLs only |
-| Options | `RedisIdempotencyOptions` (`SharedKernel:Idempotency:Redis`) / `EfCoreIdempotencyOptions` (`SharedKernel:Idempotency:EfCore`) — only `AllowExecutionOnStoreUnavailable` |
-| Lifetimes | Stores and `IdempotencyDbContext` scoped; the multiplexer stays a singleton. Both provider registrations `TryAdd` `IRequestContextAccessor` |
-| Logging | `[LoggerMessage]`, EventIds `18000`–`18099` (`.Redis`, fail-open Warning `18000`), `18100`–`18199` (`.EfCore`, `18100`) |
+| One purpose-keyed contract, not one per caller | Both guards need the same reservation protocol; do not reintroduce a request- or message-specific store interface |
+| Stores resolve the tenant; callers don't pass it | Tenant isolation cannot be forgotten at a call site |
+| Caller identity hashed by the caller (05), not the store | The store stays caller-agnostic; the Request key it sees is a 64-hex SHA-256 digest (a stored format) |
+| Message key = `{MessageId:D}:` + SHA-256 hex of endpoint path and consumer type (built in 07) | One reservation per consumer of a message |
+| No cleanup loop inside `.EfCore` | Retention is visible: a documented consumer `BackgroundService` or a `19.Scheduling` job |
+| EF retry disabled for the idempotency context | Each call is one statement; the caller owns retry |
+| A third backing store = new sibling `SharedKernel.Idempotency.{Provider}` | Keeps each provider swappable; it must implement Begin in one atomic round trip |
 
----
+## Logging
 
-## What Goes Where (within this domain)
+Block `18000`–`18999` (`LoggingEventIdRanges.Idempotency`).
 
-| I need to add… | It belongs in… |
-|---|---|
-| A change to the reservation contract | `SharedKernel.Idempotency.Abstractions` — then update both providers, `FakeIdempotencyStore`, `IdempotencyBehavior` and the MassTransit filter together |
-| A new purpose | `IdempotencyPurpose` + `IdempotencyPurposeSelection`; check the Redis key segment and the EF `purpose` column width (16) |
-| A Redis-specific behavior | `SharedKernel.Idempotency.Redis` |
-| A relational behavior | `SharedKernel.Idempotency.EfCore` |
-| Code shared by both providers | Nowhere — duplicate it |
-| A third backing store | A new sibling `SharedKernel.Idempotency.{Provider}` (Adapter tier) |
-| A cleanup/expiry job | Not here — a documented consumer recipe or a `19.Scheduling` job |
+| Sub-block | Package | Current EventIds |
+|---|---|---|
+| `18000`–`18099` | `.Redis` | `18000` fail-open Warning (`RedisIdempotencyLog`) |
+| `18100`–`18199` | `.EfCore` | `18100` fail-open Warning (`EfCoreIdempotencyLog`) |
 
----
+`.Abstractions` does not log.
 
-## Test Rules
+## Cross-Domain Couplings
 
-- Concurrency, tenant isolation, expiry reclaim and stale-token claims are proved against **real** Redis/PostgreSQL
-  (Testcontainers, Integration lane). A fake is not evidence for an atomicity claim.
-- Both providers cover all four statuses, foreign/stale tokens, release-after-complete, fail-open and fail-closed
-  against an unreachable endpoint, and DI registration (duplicate purpose, missing Redis connection).
+- **References:** `01.Core` `SharedKernel.Execution` (`IRequestContextAccessor`, `TenantId`) and `SharedKernel.Primitives`
+  (`IClock`, `LoggingEventIdRanges`); `02.Caching` `Caching.Redis.Core` (`.Redis`); `06.Persistence` `Persistence.EfCore`
+  (`.EfCore`, `UsePostgres`).
+- **Referenced by:** `05.Application` `Application.Pipeline` (`WithIdempotency()` checks the Request store at host start;
+  refusal codes are `ErrorCodes.Idempotency` in `SharedKernel.Primitives`), `07.Messaging` `Messaging.MassTransit`
+  (`MessagingBusBuilder.WithIdempotency()`; `Build()` checks `HasIdempotencyStore(IdempotencyPurpose.Message)`),
+  `16.Testing` `SharedKernel.Idempotency.Testing`. Both callers reference only `.Abstractions`; a service picks a
+  provider at its composition root.
 
----
+## Testing
 
-## Open Items
+- `SharedKernel.Idempotency.Abstractions.Tests` — Unit lane.
+- `SharedKernel.Idempotency.Redis.Tests`, `SharedKernel.Idempotency.EfCore.Tests` — Integration lane (Testcontainers);
+  folders `Concurrency/`, `Extensions/`, `Internal/`, `Options/`, `Support/`.
+- Concurrency, tenant isolation, expiry reclaim and stale-token claims are proved against real Redis/PostgreSQL; a fake
+  is not evidence for an atomicity claim. Each provider covers all four statuses, foreign/stale tokens,
+  release-after-complete, fail-open and fail-closed against an unreachable endpoint, and DI registration (duplicate
+  purpose, missing Redis connection).
+- Consumers use `FakeIdempotencyStore` / `AddFakeIdempotencyStore(purposes)` from `16.Testing/SharedKernel.Idempotency.Testing`,
+  which implements the same protocol.
 
-- **Persisted formats changed in P-568** (documented in each provider README): Redis message entries are hashes
-  (old string values fail with `WRONGTYPE`); the EF table is keyed `(tenant_scope, purpose, key)` and
-  `idempotency_messages` is gone. Message keys also gained the endpoint/consumer hash (`docs/refactor/MIGRATION.md`).
-  Nothing was in production, so no data migration ships.
+## Known Limitations
+
+- `RedisIdempotencyOptions`/`EfCoreIdempotencyOptions` declare a `SectionName` constant but the registrations do not
+  bind configuration; `AllowExecutionOnStoreUnavailable` is set only through the `configure` delegate.
+- `.EfCore` ships no migrations and no cleanup job; expired rows accumulate until the consumer runs the README recipe.
+- A multi-tenant service that skips the inbound adapters (`UseSharedKernelRequestContext()`, the MassTransit consume
+  filter, the job runner) puts every entry in the `no-tenant` scope; anonymous callers of one tenant share a scope, so
+  Request keys must be unguessable.

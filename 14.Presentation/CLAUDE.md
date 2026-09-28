@@ -1,467 +1,270 @@
-# 14.Presentation — Inbound API Boundary
+# 14.Presentation — Domain Brain
 
-> **Audience:** maintainers and AI agents changing code in this folder.
-> **Consumers** read each package's own `README.md`; the folder overview is [`README.md`](README.md) and every setting
-> is in [`CONFIGURATION.md`](CONFIGURATION.md).
-> This brain holds what the source does not make obvious: rules, traps, invariants, couplings and decisions.
-> The design and review records of the 2026-09-23/24 gold-standard pass are in [`docs/p562/`](docs/p562/); the P-563
-> pass that made this domain the thin edge in front of 05.Application's use cases is recorded in
-> [`05.Application/docs/p563/`](../05.Application/docs/p563/). The brain before P-562 (WO-031 through WO-078) lives in
-> [`CLAUDE.history.md`](CLAUDE.history.md) and describes types that no longer exist.
-
-## What This Domain Is
-
-The inbound API boundary. It turns outcomes (`Result`, `Error`, exceptions) into what a caller receives: an HTTP
-response or RFC 9457 problem, a SignalR `HubException`, a gRPC `google.rpc.Status`. One error contract serves all three
-protocols. It also owns the concerns of the boundary: authorization against `IUserContext`, security headers, CORS,
-request limits, `Idempotency-Key`, `ETag` and `If-Match`. The request's context — its correlation id, the refusal of
-inbound baggage and the `RequestContextScope` every layer reads the caller from — is **not** this domain's: it belongs
-to `13.ServiceDefaults/SharedKernel.ServiceDefaults.Security`'s `UseSharedKernelRequestContext()`, which a host runs
-first, before `UseSharedKernelWebApi()` (P-579). This domain reads the id from that scope.
-
-It converts outcomes; it never produces them. Use cases are `05.Application` commands and queries that a service's
-endpoint modules send through the kernel's `ISender`; this domain never references `05.Application` or MediatR (P-563
-P1), so any `Result`-returning code maps the same way. Every package is **Host tier** (WO-086; `eng/SharedKernelTiers.targets`
-enforces it): they reference Foundation, Model and Abstractions packages — `SharedKernel.Primitives`, `.Core`,
-`.Configuration`, `.Localization`, `.Execution`, `SharedKernel.Security.Abstractions` and, for the paging parameters
-only, `SharedKernel.Contracts` (WebApi; `.Grpc` must never) — and each other. Never an Adapter. Outbound calls are
-`11.Communication`'s.
+> The inbound API boundary. It turns outcomes (`Result`, `Error`, exceptions) into what a caller receives — an HTTP
+> response or RFC 9457 problem, a SignalR `HubException`, a gRPC `google.rpc.Status` — with one error contract for all
+> three, and owns the concerns of the edge: endpoint authorization against `IUserContext`, security headers, CORS,
+> request limits, `Idempotency-Key`, `ETag`/`If-Match`, paging parameters, API versioning/OpenAPI, and HotChocolate
+> conventions. It converts outcomes; it never produces them: use cases are `05.Application` commands and queries that
+> endpoint modules send through `ISender`, and this domain references neither `05.Application` nor MediatR. It does
+> **not** own the request context — correlation id, inbound-baggage refusal and the request's `RequestContextScope`
+> belong to `13.ServiceDefaults`' `UseSharedKernelRequestContext()` — nor outbound calls (`11.Communication`), nor the
+> rate limiter itself (`AddSharedKernelRateLimiting()` in ServiceDefaults). Every setting is documented in
+> [`CONFIGURATION.md`](CONFIGURATION.md).
 
 ## Packages
 
-| Package | Role | References |
+| Package | Tier | Purpose |
 | --- | --- | --- |
-| `SharedKernel.Presentation.Core` (shared, P-570/P-579) | What every protocol must agree on, so gRPC needs no WebApi: the four authorization attributes and `AuthorizationConventionExtensions` (public, namespace `SharedKernel.Presentation.Authorization`); internal: the policy provider, requirements, requirement handler, result handler (status and challenge only; the body comes through `IAuthorizationRefusalWriter`), startup check and `AddSharedKernelAuthorization()`, `ErrorTypeStatusCodeMap`, the message half of `ErrorPresentation`, the shared `RequestFacts` (endpoint, gRPC detection, UI culture, environment, correlation id) and `ServiceDecoration` | Primitives, Execution, Localization, Security.Abstractions; ASP.NET Core shared framework. No third-party packages |
-| `SharedKernel.Presentation.WebApi` (core) | One-call setup and pipeline; endpoint modules (`IEndpointModule`, the generated `MapEndpoints()`); the error contract (`ErrorPresentation.GetStatusCode` plus Core's message rule, problem details for every source, and the problem body of an authorization refusal); typed results for `Result`; security headers; CORS and the WebSocket origin check; request limits; required and accepted `Idempotency-Key`/`If-Match`; `Paging`/`CursorPaging`; `ETag`/304; the 429 body; `HttpContext.GetCorrelationId()` over the request's scope | Presentation.Core, Primitives, `.Core`, `.Configuration`, `SharedKernel.Contracts` (paging); ASP.NET Core shared framework. **No third-party packages** |
-| `SharedKernel.Presentation.WebApi.Generators` (not a package, Tooling tier) | The endpoint-module source generator, `netstandard2.0`, diagnostics SKEP001–SKEP004; packed inside WebApi under `analyzers/dotnet/cs` | `Microsoft.CodeAnalysis.CSharp` (private). WebApi's `ReferenceOutputAssembly="false"` edge to it is exempt from the tier check |
-| `SharedKernel.Presentation.OpenApi` (add-on) | API versioning, one OpenAPI 3.1 document per version, Scalar, sunset/deprecation policies; documents what the core enforces, never changes a response | WebApi, Presentation.Core; `Asp.Versioning.Http` 10.2.3, `Asp.Versioning.Mvc.ApiExplorer` 10.2.1, `Asp.Versioning.OpenApi` 10.2.3, `Microsoft.AspNetCore.OpenApi` 10.0.11, `Scalar.AspNetCore` 2.17.8 |
-| `SharedKernel.Presentation.SignalR` (add-on) | Hub error mapping (`{code}: {message}`), `Result` hub methods, the invocation rate limit, `RequestContextHubFilter` (the connection's `RequestContextScope` around every connect, invocation and disconnect), `GetTenantId()`/`GetCorrelationId()`, group naming | WebApi, Presentation.Core, Primitives, Core, Configuration, Execution. No third-party packages. No Redis backplane (D15; `SharedKernel.Presentation.SignalR.Redis` deleted by P-579) |
-| `SharedKernel.Presentation.Grpc` | The exception interceptor building the rich status, `GrpcStatusCodeMap`, `GrpcErrorCodes` | Presentation.Core, Core, Configuration — **never WebApi, never Contracts**; `Grpc.AspNetCore` 2.80.0, `Grpc.StatusProto` 2.80.0, `Google.Api.CommonProtos` 2.17.0 (the first with `FieldViolation.reason`) |
-| `SharedKernel.Presentation.GraphQL` (moved from `11.Communication` by WO-086 P-570) | HotChocolate server conventions: snake_case filtering, `FilterBase<T>`/`SortBase<T>`, `PagedResponseType<T>`, the ProblemDetails-shaped error filter, `AddSharedKernelGraphQL()` | Primitives, Contracts; HotChocolate 16.1.4 (not AOT-safe) |
+| `SharedKernel.Presentation.Core` | Host | What every protocol shares, so gRPC needs no WebApi: the four authorization attributes + `AuthorizationConventionExtensions` (public, namespace `SharedKernel.Presentation.Authorization`); internal policy provider, requirement handler, result handler, startup check, `AddSharedKernelAuthorization()`, `ErrorTypeStatusCodeMap`, the client-message half of `ErrorPresentation`, `RequestFacts`, `ServiceDecoration`. References Primitives, Execution, Localization, Security.Abstractions; no third-party packages |
+| `SharedKernel.Presentation.WebApi` | Host | One-call setup and pipeline, `IEndpointModule` + generated `MapEndpoints()`, the problem contract for every error source, typed results for `Result`, security headers, CORS + WebSocket origin check, request limits, required/accepted `Idempotency-Key`/`If-Match`, `Paging`/`CursorPaging`, `ETag`/304, the 429 body, `GetCorrelationId()`. References Core, Primitives, `SharedKernel.Core`, Configuration, Contracts (paging only); **no third-party packages** |
+| `SharedKernel.Presentation.WebApi.Generators` | Tooling | The endpoint-module source generator (`netstandard2.0`, SKEP001–SKEP004); not packable, packed inside WebApi under `analyzers/dotnet/cs` |
+| `SharedKernel.Presentation.OpenApi` | Host | API versioning (Asp.Versioning), one OpenAPI 3.1 document per version, Scalar, sunset/deprecation, security schemes; documents what the core enforces, never changes a response. References WebApi, Core |
+| `SharedKernel.Presentation.SignalR` | Host | Hub error mapping (`{code}: {message}`), `Result` hub methods, invocation rate limit, `RequestContextHubFilter`, `GetTenantId()`/`GetCorrelationId()`, `HubGroupNaming`. References WebApi, Presentation.Core, Primitives, `SharedKernel.Core`, Configuration, Execution; no third-party packages, no backplane |
+| `SharedKernel.Presentation.Grpc` | Host | The exception interceptor building the rich status, `GrpcStatusCodeMap`, `GrpcErrorCodes`. References Core, `SharedKernel.Core`, Configuration — **never WebApi, never Contracts**; `Grpc.AspNetCore`, `Grpc.StatusProto`, `Google.Api.CommonProtos` |
+| `SharedKernel.Presentation.GraphQL` | Host | HotChocolate server conventions: snake_case filtering (`SharedKernelFilterConvention`), `FilterBase<T>`/`SortBase<T>`, `PagedResponseType<T>`, `SharedKernelErrorFilter` (ProblemDetails-shaped errors), `GraphQLOptions`. References Primitives, Contracts; HotChocolate (not AOT-safe) |
 
-Every package tracks its public API (`PublicAPI.Shipped.txt` empty, `PublicAPI.Unshipped.txt` populated;
-RS0016/RS0017/RS0022/RS0024/RS0025/RS0036/RS0037 and CS1591 are errors). None is published to the feed yet. Versions
-come from the repo-wide MinVer tag; never add a `<Version>`.
+`consumer-verify/` (untiered) composes Core, WebApi, OpenApi, SignalR and gRPC over Kestrel and runs in CI's required
+lane. The Core/WebApi/OpenApi/SignalR/Grpc packages track `PublicAPI.*.txt` (RS0016/RS0017/… and CS1591 are errors).
 
-## The model
+## Public Entry Points
 
-### One error contract
+**WebApi** (namespace `SharedKernel.Presentation.WebApi`, section `SharedKernel:Presentation:WebApi` —
+`SharedKernelWebApiOptions`: `Cors`, `SecurityHeaders`, `Limits`, `Problems`, `RemoveServerHeader`)
 
-- **`ErrorPresentation` decides for every protocol.** It is internal (P-563 P3) and split by P-579: the message half
-  (`GetClientMessage`, `IsServerError`, `GetPresentationMessage`) and `ErrorTypeStatusCodeMap` live in
-  `SharedKernel.Presentation.Core` (namespace `SharedKernel.Presentation`), so gRPC and SignalR use them without WebApi;
-  WebApi's own `ErrorPresentation` adds `GetStatusCode` and forwards the rest. `PresentationErrorCodes.ForStatus` stays
-  WebApi's. `GetStatusCode(error, httpContext)` is `ErrorTypeStatusCodeMap`
-  plus [the 412 rule](#conditional-requests); `GetClientMessage(error, httpContext)` translates (an optional
-  `ILocalizationCatalog` from `RequestServices`, culture from `IRequestCultureFeature`, else `CurrentUICulture`) and
-  redacts server categories outside Development (`IHostEnvironment` from `RequestServices`; no context = production);
-  `IsServerError(type)` is "status ≥ 500". HTTP, SignalR and gRPC all call it, so the same error has the same text
-  everywhere. Never map `ErrorType` in a switch of your own.
-- **Status maps.** HTTP: Validation 400, Unauthorized 401, Forbidden 403, NotFound 404, Conflict 409, BusinessRule 422,
-  Unexpected 500, Unavailable 503, Timeout 504, anything else 500. gRPC (`GrpcStatusCodeMap`, a sibling never merged):
-  InvalidArgument, Unauthenticated, PermissionDenied, NotFound, Aborted, FailedPrecondition, Internal, Unavailable,
-  DeadlineExceeded, anything else Unknown. `ErrorType.Unavailable = 8` and `Timeout = 9` were appended by P-562
-  (01.Core); 17.Workflows persists the number, so never renumber.
-- **One writer.** Every HTTP error goes through `ProblemFactory` (builds the body: framework title and type via
-  `TypedResults.Problem`, then `ProblemDetailsCustomizer.Apply`) and `ProblemResponseWriter.WriteAsync` (status,
-  `Cache-Control: no-store`, `Retry-After` on 503, `IProblemDetailsService.TryWriteAsync`, and a direct
-  `application/problem+json` write when no writer accepts or a writer writes nothing). Framework-generated problems are
-  completed by `ProblemDetailsCustomizer` through `CustomizeProblemDetails` (instance, `errorCode` `http.{status}`,
-  `correlationId`, `traceId`, `type` for 428/429, `TypeBaseUri`). A new error path uses these two; it never writes
-  JSON itself.
-- **Exception handling is the fallback.** `SharedKernelExceptionHandler.Install` sets
-  `ExceptionHandlerOptions.ExceptionHandler` (PostConfigure) unless the service set `ExceptionHandler` or
-  `ExceptionHandlingPath`, so a service's `IExceptionHandler` runs first. It sets `AllowStatusCode404Response` (a
-  `NotFoundException` is a real 404, a gRPC answer starts no response) and chains `SuppressDiagnosticsCallback` so each
-  exception it handled is logged once, by it. Order of cases: aborted request (499, no body, any exception type);
-  `BadHttpRequestException` 400 (validation shape, `validation.invalid_format`, no .NET type names); other
-  `BadHttpRequestException` (its status); `ValidationException` (400, identical to a returned error);
-  `SharedKernelException`; `TimeoutException`/non-abort `OperationCanceledException` (504 `timeout.default`);
-  anything else (500 `unexpected.exception`, `exception` member only in Development or with
-  `IncludeExceptionDetails`). A gRPC request gets the status, no body.
-- **Framework 400s are ours.** `RouteHandlerOptions.ThrowOnBadRequest = true` in every environment; MVC's
-  `InvalidModelStateResponseFactory` is replaced only when it is MVC's own (`RequestValidationErrors`), and
-  `AllowInputFormatterExceptionMessages = false` keeps System.Text.Json's type names out of model state.
-- **Field errors.** `errors`/`errorCodes` are keyed by `ErrorArgumentNames.PropertyPath`, else by the code; JSON paths
-  lose `$.`; each message is presented on its own. gRPC mirrors this as `BadRequest` violations, capped at 50 and 3 KB
-  with a `grpc.more_field_violations` summary (R31).
+- `builder.AddSharedKernelWebApi(o => …)`; `app.UseSharedKernelWebApi(p => p.AtStart(…).BeforeAuthentication(…)
+  .BeforeAuthorization(…))` (`WebApiPipeline` hooks).
+- Endpoints: `IEndpointModule` (`static void Map(IEndpointRouteBuilder app)`) + the generated internal
+  `app.MapEndpoints()`.
+- Results: `ToOk`, `ToCreated`, `ToAccepted`, `ToNoContent`, `ToOkWithETag` (`OkWithETag<T>`), `ToHttpResult`,
+  `ToErrorResult` (`ErrorHttpResult`) — sync and `Task` forms; `Error.ToProblemDetails()`.
+- Headers: `IdempotencyKey`, `IfMatch<TVersion>` parameters; `[RequireIdempotencyKey]`/`[AcceptIdempotencyKey]`,
+  `[RequireIfMatch]`/`[AcceptIfMatch]` or `.RequireIdempotencyKey()`/`.AcceptIdempotencyKey()`/`.RequireIfMatch()`/
+  `.AcceptIfMatch()`; `GetIdempotencyKey()`, `GetIfMatch()`, `SetETag()`.
+- Paging: `Paging` (`page`, `pageSize` → `PageRequest`), `CursorPaging` (`cursor`, `limit` → `CursorPageRequest`).
+- Per-endpoint: `WithRequestSizeLimit`/`DisableRequestSizeLimit`, `WithContentSecurityPolicy`.
+- `HttpContext.GetCorrelationId()`; constants `PresentationErrorCodes`, `ProblemDetailsExtensionNames`.
 
-### The pipeline
+**Core** (namespace `SharedKernel.Presentation.Authorization`) — `[RequireEndpointPermission]`, `[RequireRole]`,
+`[RequireFreshAuthentication]`, `[RequireAuthenticationMethod(…, MaxAgeSeconds = n)]` and the conventions
+`.RequireEndpointPermission(…)`, `.RequireRole(…)`, `.RequireFreshAuthentication(…)`, `.RequireAuthenticationMethod(…)`.
+No registration call: WebApi, SignalR and gRPC register the machinery.
 
-The canonical host pipeline (P-579):
+**OpenApi** (section `SharedKernel:Presentation:OpenApi`, `SharedKernelOpenApiOptions`: `Title`, `Description`,
+`Versioning`, `Bearer`, `ApiKeyHeaderName`, `MutualTls`, `ExposeInProduction`) — `builder.AddSharedKernelOpenApi(o => …)`
+and `app.MapSharedKernelOpenApi()` (maps nothing outside Development unless `ExposeInProduction`).
+
+**SignalR** (section `SharedKernel:Presentation:SignalR`, `SharedKernelSignalROptions.InvocationRateLimit`) —
+`builder.AddSharedKernelSignalR()`; `Context.GetTenantId()` (`TenantId?`), `Context.GetCorrelationId()`;
+`HubErrorMessage.TryParse`; `HubGroupNaming.TenantGroup(TenantId)`. A Redis backplane is Microsoft's
+`AddStackExchangeRedis(...)`.
+
+**Grpc** (section `SharedKernel:Presentation:Grpc`, `SharedKernelGrpcOptions.ErrorDomain`) —
+`builder.AddSharedKernelGrpc()`; `GrpcErrorCodes`. Services end a failed `Result` with `Error.ToException()`
+(`SharedKernel.Core`).
+
+**GraphQL** — `services.AddSharedKernelGraphQL()` before the service's own `AddGraphQL()`; `FilterBase<T>`,
+`SortBase<T>`, `PagedResponseType<T>.FromPagedList(...)`/`FromConnection`/`FromPage`/`From`.
+
+Canonical host pipeline (`samples/OrderApi`):
 
 ```csharp
-app.UseSharedKernelRequestContext();   // 13.ServiceDefaults.Security: baggage refused, correlation id, the request's scope
-app.UseSharedKernelWebApi(p => p.BeforeAuthorization(a => a.UseMiddleware<TenantResolutionMiddleware>()));   // tenant optional
+app.UseSharedKernelRequestContext();   // 13.ServiceDefaults.Security — first: correlation id, baggage refused, scope
+app.UseSharedKernelWebApi(p => p.BeforeAuthorization(a => a.UseMiddleware<TenantResolutionMiddleware>()));
 app.MapEndpoints();
 ```
 
-The request context runs first so its scope wraps the exception handler: every response, error responses included,
-carries the id, and every log line of the request has it. `UseSharedKernelWebApi(configure)` order: `AtStart` hooks →
-HSTS (not Development) → security headers → `UseExceptionHandler()` → status code pages (not gRPC) →
-`UseRouting()` → CORS + WebSocket origin check (only with origins) → `BeforeAuthentication` hooks →
-`UseAuthentication()` (only when `IAuthenticationSchemeProvider` is registered) → `BeforeAuthorization` hooks →
-`UseRateLimiter()` (only when an `IConfigureOptions<RateLimiterOptions>` exists) → `UseAuthorization()` →
-`HeaderRequirementsMiddleware` (headers, then paging). The reasons are load-bearing:
+`UseSharedKernelWebApi` order: `AtStart` hooks → HSTS (not Development) → security headers → `UseExceptionHandler()` →
+status code pages (not gRPC) → `UseRouting()` → CORS + WebSocket origin check (only with origins) →
+`BeforeAuthentication` → `UseAuthentication()` (when schemes exist) → `BeforeAuthorization` → `UseRateLimiter()`
+(when configured) → `UseAuthorization()` → `HeaderRequirementsMiddleware` (headers, then paging).
 
-- HSTS and the security headers sit before the exception handler, which clears headers; `SecurityHeadersMiddleware`
-  remembers the HSTS value and writes it again at `OnStarting` (R11). Moving `UseHsts()` alone does not work.
-- Rate limiting sits before authorization so refused traffic is counted (R1), after authentication so policies can
-  partition by caller.
-- Header requirements sit after authorization so an anonymous caller is told to authenticate, never which header it
-  forgot (R6).
-- A second call is a no-op (`app.Properties` key); `WebApiPipelineState` feeds the 14011 warning.
+## Rules & Invariants
 
-### Authorization
-
-- **The split with 05.Application (P-563 A2).** Permissions go on the use case: `05.Application`'s
-  `[RequirePermission]` on a command or query, enforced by its pipeline on every path. This package's
-  `[RequireEndpointPermission]` (convention `.RequireEndpointPermission(…)`) is only for what sends no command: hubs,
-  gRPC services and methods, endpoints that do not call `ISender`, and `MapSharedKernelOpenApi()`. Authentication
-  strength (`RequireFreshAuthentication`, `RequireAuthenticationMethod`) stays here, because only the HTTP request knows
-  it. READMEs and samples never repeat a command's permission on its endpoint. Both layers answer `unauthorized.default`
-  (401) and `forbidden.insufficient_permission` (403); keep them identical.
-- The endpoint attribute was named `RequirePermissionAttribute` until the owner renamed it (commit `52975eed`, after
-  P-563's streams): the same name in both layers made a file importing both namespaces fail with CS0104 and blurred
-  which layer a permission belongs to. Never give an edge attribute a name a use-case attribute already has.
-- Endpoint-level authorization metadata is all OpenAPI can see: an endpoint protected only by its command documents no
-  security requirement. The OpenApi README tells services to add `.RequireAuthorization()` or a fallback policy.
-- **Where it lives (P-579).** The attributes, the conventions and the policy machinery are
-  `SharedKernel.Presentation.Core`'s, in `SharedKernel.Presentation.Authorization` — shared by WebApi, SignalR and gRPC,
-  so a gRPC host takes no WebApi. The public types are the four attributes and `AuthorizationConventionExtensions`;
-  everything else, `AddSharedKernelAuthorization()` included, is internal and visible to the four packages.
-- The four attributes derive from `AuthorizeAttribute` (SignalR authorizes hub methods only through it). The requirement
-  is encoded in the policy name, `SharedKernel:{kind}:{v1}|{v2}…` (`permission`, `role`, `fresh`, `amr`, and
-  `amr-max-age` with the age first); `SharedKernelAuthorizationPolicyProvider` decodes it and builds a policy with
-  `RequireAuthenticatedUser()` plus the requirement, so anonymous is always 401 first. `Policy` and `Roles` are hidden
-  read-only members, and the `IAuthorizeData` setters throw: the requirement cannot be replaced.
-- `SharedKernelRequirementHandler` resolves the caller with `UserContextResolver.Resolve(context.User, mappers)`, never
-  raw claims. A principal no mapper understands fails with a reason and log 14009 (R16). The clock (`IClock`, else
-  `SystemClock`) is resolved only when a freshness or max-age requirement is evaluated.
-- `AuthenticationMethodRequirement` with a max age uses `IUserContext.GetAuthenticationMethodTime` (X1, `amr_time`):
-  unknown time never passes, a time more than `UserContext.MaxFutureAuthTime` ahead never passes.
-- `SharedKernelAuthorizationResultHandler` writes every refusal: challenge (the scheme's own, or
-  `WWW-Authenticate: Bearer` without a scheme, also for gRPC — R15), step-up (only when **every** unmet requirement is
-  freshness or method; RFC 9470 challenge, smallest `max_age`, scheme `DPoP` or `Bearer` only — R26), forbid (403,
-  message never names the requirement). It writes a body only for a plain 401/403 the scheme did not redirect or
-  start, never for gRPC, and logs 14002 for every refusal. Core sets the status and headers; the body goes through the
-  internal `IAuthorizationRefusalWriter` seam, which WebApi's `AddSharedKernelWebApiAuthorization()` registers
-  (`AuthorizationRefusalProblemWriter`, the platform problem) — called by `AddSharedKernelWebApi()` and
-  `AddSharedKernelSignalR()`. A gRPC-only host registers none and answers with status and headers only, as before.
-
-### Required and accepted headers
-
-- Endpoint metadata is the single source: `IIdempotencyKeyRequiredMetadata`/`IIdempotencyKeyAcceptedMetadata`,
-  `IIfMatchRequiredMetadata`/`IIfMatchAcceptedMetadata`. The attributes and conventions only add metadata; the
-  `IdempotencyKey` and `IfMatch<TVersion>` parameters add it through `IEndpointParameterMetadataProvider`, required
-  when declared not-null, accepted when nullable, **required when nullability cannot be read** (the safe reading).
-  `HeaderRequirementsMiddleware` enforces it for every endpoint kind; OpenAPI documents the same metadata.
-- Required wins over accepted. An accepted header that is sent is validated exactly like a required one and is never
-  read as missing (J1): that would turn a conditional request unconditional, or run a retry twice.
-- `IdempotencyKey` and `IfMatch<TVersion>` are `sealed record` classes: minimal APIs read no parameter metadata from
-  `Nullable<T>`, so a struct could not express "accepted".
-- `IfMatch<TVersion>` adds an internal `IEntityTagValidator`, so a strong tag that does not parse as `TVersion` is 412
-  before binding. The attributes and conventions cannot parse, so MVC actions parse the tag themselves.
-- The parameters' `BindAsync` throws a 400 `BadHttpRequestException` for an unusable header, so a host without the
-  middleware still never binds it as missing.
-
-### Paging parameters (P-563 P4)
-
-- `Paging` (`page`, `pageSize` → `PageRequest`) and `CursorPaging` (`cursor`, `limit` → `CursorPageRequest`) are
-  `sealed record` classes implementing `IEndpointParameterMetadataProvider`: they add the internal `PagingMetadata`,
-  which `HeaderRequirementsMiddleware` enforces after the header checks and the OpenApi add-on documents. One reader,
-  `PagingQuery`, serves the middleware, `BindAsync` and OpenApi, so the three never disagree.
-- Invalid input is a 400 validation problem keyed by the query parameter: `04.Contracts`' `PaginationErrorCodes` for
-  a value out of range or a bad cursor, `validation.invalid_format` for a value that is not one whole number or a
-  parameter sent twice. The bounds are `04.Contracts`' (`PageRequest.MaxPageSize`, `CursorPageRequest.MaxLimit`,
-  `PageCursor.MaxLength`), never local constants.
-- `BindAsync` throws a 400 `BadHttpRequestException` only when the middleware is absent. Minimal APIs only; MVC binds
-  the values itself.
-
-### Conditional requests
-
-- **The 412 rule (R7).** A `Conflict` whose code is in `Problems:PreconditionFailedErrorCodes`, in a request with a
-  non-blank `If-Match` or `If-None-Match`, is 412 with its code, returned or thrown, on any endpoint. Every other
-  conflict is 409. The rule lives only in `ErrorPresentation.GetStatusCode`; `ErrorHttpResult.StatusCode` stays the
-  type's status (R28). The defaults are literals because 14 may not reference 06/08; 00.Governance pins them.
-- `If-Match` checks (RFC 9110 section 13.1.1): missing → 428 if required; `*` → 428 if required, 400 if accepted;
-  malformed or several tags → 400; weak → 412 (strong comparison); otherwise pass.
-- `OkWithETag<T>` writes a strong `ETag`, answers 304 only for `GET`/`HEAD` with a weakly matching `If-None-Match`
-  (R14), and adds `IETagResponseMetadata` (200, plus 304 only for read methods) for OpenAPI.
-
-### Correlation and baggage
-
-- **Not this domain's since P-579.** `SharedKernel.ServiceDefaults.Security`'s `UseSharedKernelRequestContext()`
-  resolves the correlation id with the one platform rule (`CorrelationIds.IsValid`: ≤ 128 characters of
-  `[A-Za-z0-9-_:.]`, else `CorrelationIds.New()`, a "D" GUID — never the trace id), sets it as baggage
-  `WellKnownBaggageKeys.CorrelationId`, echoes it at `OnStarting` and opens the request's `RequestContextScope`
-  (EventIds 13006/13007). WebApi's `CorrelationIdMiddleware`, `WebApiCorrelationIdOptions`
-  (`SharedKernel:Presentation:WebApi:CorrelationId`) and its 14000/14006 logs are deleted; the ids are retired.
-- **Readers.** `HttpContext.GetCorrelationId()` (WebApi, public), the problem `correlationId` member, the gRPC
-  `ErrorInfo` metadata and SignalR's `HubCallerContext.GetCorrelationId()` all read the scope through Core's
-  `RequestFacts.GetCorrelationId` (the registered `IRequestContextAccessor`, else `RequestContextScope.Current`).
-- **Inbound baggage** is refused twice (R3), by `SharedKernel.ServiceDefaults.Security` since P-579:
-  `AddSharedKernelRequestContext()` decorates the DI `DistributedContextPropagator` hosting reads before any middleware
-  (so hosting's first log record carries no forged item), and `UseSharedKernelRequestContext()` removes what still
-  reached the request `Activity` **before** it adds the correlation id. `RequestContextOptions.TrustInboundBaggage`
-  (code only, `AddSharedKernelRequestContext(o => …)`) replaces `SharedKernelWebApiOptions.TrustInboundBaggage`.
-  OpenTelemetry's own `Baggage.Current` is 13.ServiceDefaults' telemetry concern (X2).
-- **gRPC and SignalR.** gRPC calls run through the HTTP pipeline, so the request context middleware opens their scope;
-  no gRPC interceptor exists (D15), and a service method reads the caller from `IRequestContext`. A SignalR hub
-  invocation does not run in the connect request's flow: `RequestContextHubFilter` (internal, registered first by
-  `AddSharedKernelSignalR()`) captures the connect request's context and reopens it around every connect, invocation
-  and disconnect. The request context middleware fixes the caller when its request ends, so a long-polling
-  connection's context stays readable after that request is gone.
-
-## Composition rules (the traps)
-
-- **`UseSharedKernelRequestContext()` first, then `UseSharedKernelWebApi()`.** Anything a service must run inside the
-  WebApi pipeline goes in a hook; `AtStart` middleware runs outside the exception handler. Without
-  `UseSharedKernelWebApi()` the host still works but logs 14011; without `AddSharedKernelWebApi()` it throws
-  `InvalidOperationException`. Without the request context there is no correlation id anywhere (the `correlationId`
-  member is omitted) and nothing refuses inbound baggage — every test host and `consumer-verify` compose it.
-- **Decorate, never replace.** `AddSharedKernelAuthorization()` decorates the `IAuthorizationPolicyProvider` and
-  `IAuthorizationMiddlewareResultHandler` registered before it (`ServiceDecoration.Decorate`: last non-keyed
-  registration, in place, same lifetime); `AllowsCachingPolicies` follows the inner provider.
-  `SharedKernelAuthorizationStartupCheck.StartingAsync` throws when a later registration displaced either (a probe
-  policy name must resolve to the platform requirement; the resolved handler must be ours). Keep that check whenever
-  the decoration changes.
-- **`AddSharedKernelAuthorization()` is internal to Presentation.Core, shared and idempotent** (marker service). gRPC's
-  setup calls it directly; WebApi and SignalR call WebApi's `AddSharedKernelWebApiAuthorization()`, which adds the
-  problem-body writer. Services never call either. It calls `AddAuthorization()` first so the framework defaults exist
-  to be decorated, and `AddClock()`.
-- **Every authentication scheme needs an `IUserContextMapper`.** The startup check warns per scheme (14010), skipping
-  remote sign-in handlers (`IAuthenticationRequestHandler`) and policy schemes.
-- **Setup methods are idempotent** through a marker (`WebApiPipelineState`, `OpenApiSetupState`,
-  `SignalRServicesMarker`, `GrpcServicesMarker`); each `configure` is applied on every call.
-- **Options bind with `AddValidatedOptions` + `ISectionBoundOptions`** and a validator (`WebApiOptionsValidator`,
-  `SharedKernelOpenApiOptionsValidator`, `SharedKernelSignalROptionsValidator`, data annotations for gRPC). List options
-  with defaults are get-only lists: configuration appends. Collection defaults must stay documented as "added to".
-- **Invalid WebApi settings surface at first read**: Kestrel reads them at `Build()`, `UseSharedKernelWebApi()` reads
-  them with `TestServer`, `ValidateOnStart` at the latest (R28). Document exceptions that way, never "at startup".
-- **Chained hooks keep the service's.** `CustomizeProblemDetails` is chained in PostConfigure (platform first, service
-  after); `ApiVersioningProblems.Chain` prepends its normalization; `SuppressDiagnosticsCallback` chains the service's;
-  a service's own `OnRejected` and `InvalidModelStateResponseFactory` are kept.
-- **Global filters and interceptors nest by registration order.** SignalR: `RequestContextHubFilter` outermost (so the
-  others log with the connection's correlation id), then `HubExceptionMappingFilter`, then
-  `HubInvocationRateLimitFilter`. gRPC: `GrpcExceptionInterceptor` first, so it is outermost. Consumers must call the
-  setup before adding their own.
-- **The OpenApi add-on** registers `EntryAssemblyXmlComments`' transformer before `AddOpenApi()` (Asp.Versioning looks
-  for the XML of the assembly that called it, which would be ours), adds the platform transformers through
-  `IConfigureOptions<VersionedOpenApiOptions>` so they run after Asp.Versioning's, and reads MVC action metadata from
-  the endpoint (`EndpointMetadataLookup`) because the API Explorer omits endpoint conventions. `MapSharedKernelOpenApi()`
-  returns a `CompositeEndpointConventionBuilder` whose conventions the 14301 check reads; outside Development without
-  `ExposeInProduction` it maps nothing and returns an empty one.
-- **One public namespace per package (P-563 P3).** Every public type of WebApi is in `SharedKernel.Presentation.WebApi`,
-  options and constants included; the same for OpenApi, SignalR and Grpc. Presentation.Core's public types are in
-  `SharedKernel.Presentation.Authorization` (they are not WebApi-only, P-579), and its internal helpers in
-  `SharedKernel.Presentation`, so WebApi, SignalR and gRPC code resolves them without a `using` and a WebApi type of the
-  same name (`ErrorPresentation`, `RequestFacts`) wins inside WebApi's namespace. The folders (`Errors/`, `Http/`,
-  `Idempotency/`, `Options/`, `Pagination/`) are file organization only: a file in them declares the root namespace or
-  an internal-only one. Never add a public sub-namespace, and never create a namespace named `Results` (it shadows
-  `Microsoft.AspNetCore.Http.Results`).
-- **Add-on plumbing is internal, visible to the add-ons.** Presentation.Core grants `InternalsVisibleTo` to WebApi,
-  Grpc, SignalR and OpenApi (and their test projects, and `SharedKernel.Security.Testing.Tests`, which drives the
-  policies without a host); WebApi grants it to OpenApi and SignalR only (and their test projects) — never Grpc since
-  P-579. The packages version in lockstep (one MinVer version), so an internal signature change is safe only because
-  they always ship together: change the internal and its callers in the same commit, and never grant
-  `InternalsVisibleTo` to a production package outside this domain.
-- **The endpoint-module generator ships inside WebApi.** `SharedKernel.Presentation.WebApi.Generators` targets
-  `netstandard2.0`, is not packable, and is packed by WebApi's `_PackEndpointModuleGenerator` target under
-  `analyzers/dotnet/cs`, so `app.MapEndpoints()` comes with the WebApi package and nothing else. WebApi references it
-  with `ReferenceOutputAssembly="false"` and does not run it on itself. **An in-repo project that references WebApi by
-  `ProjectReference`** (the WebApi tests, `consumer-verify`) gets no analyzer from it and must add the generator itself
-(the samples reference the packed package and get it from there):
-  `<ProjectReference Include="…Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />`.
-- **Generated code.** `MapEndpoints(this IEndpointRouteBuilder)` is emitted `internal`, in namespace
-  `SharedKernel.Presentation.WebApi`, only into an assembly that declares a module, calling each module's static `Map`
-  in ordinal order of full names, through the interface when `Map` is implemented explicitly. SKEP001 (abstract),
-  SKEP002 (generic or nested in a generic type), SKEP003 (not reachable from the assembly) are errors; SKEP004 (inherits
-  `Map` from another module) is a warning. No reflection, no runtime discovery: keep it that way.
-- **No duplicate result extensions.** No `ToActionResult` (MVC returns typed results, R19) and no gRPC
-  `ThrowIfFailure`/`GetValueOrThrow` (they collided with `SharedKernel.Core`'s, CS0121, R32).
-- **No reflection invocation.** `HubMethodResult` reads `Result<T>` through compiled expression accessors cached per
-  closed type; never `MakeGenericMethod`.
-- **Constants, never literals** for header names (`WellKnownHeaders`, `HeaderNames`, `PresentationHeaderNames`),
-  problem members (`ProblemDetailsExtensionNames`) and codes (`PresentationErrorCodes`, `GrpcErrorCodes`, `ErrorCodes`).
-
-## Invariants
-
-- **One shape.** Every HTTP error is `application/problem+json` with `type`, `title` (reason phrase, never the code),
-  `status`, `instance`, `errorCode`, `traceId`, `correlationId`, and `Cache-Control: no-store` (R27), even when the
-  `Accept` header excludes JSON. `type` is never a third-party site.
-- **Redaction.** Server-category text is replaced outside Development on HTTP, SignalR and gRPC (including rebuilt
-  foreign `RpcException`s, R30); the `errorCode` is kept. Without a request, the environment is treated as production.
-- **Fail closed.** Unmapped principal → 403; every platform policy requires an authenticated user; policy names cannot
-  be forged; a later provider or result handler stops the host; step-up applies only when every unmet requirement is a
-  step-up requirement.
-- **No principal data or secrets in logs.** Refusals log the endpoint display name and code (14002); rejected
-  correlation ids log their length (13007, `SharedKernel.ServiceDefaults.Security`); idempotency keys are never logged
-  (14003).
-- **No caller-controlled text reaches clients or logs unvalidated.** Correlation ids are validated (by the request
-  context middleware); the step-up challenge echoes only `Bearer` or `DPoP`; 403 messages never name permissions or
-  roles.
-- **Inbound baggage is not trusted** unless `RequestContextOptions.TrustInboundBaggage` (13.ServiceDefaults.Security).
-- **One request context.** No package of this domain resolves a correlation id or opens a `RequestContextScope` for an
-  HTTP or gRPC call; the SignalR hub filter only reopens the connection's.
-- **Headers.** A declared header is validated before the endpoint runs; an accepted header is never read as missing;
-  required wins.
-- **Security headers** never overwrite an endpoint-set header; HSTS never in Development, never over HTTP, never to
-  `localhost`.
-- **CORS.** No policy without origins; startup validation refuses credentials with no or wildcard origins, the `null`
-  origin, and outside Development credentials with `http://` origins (R24); with origins, WebSocket requests from
-  disallowed origins get 403 (R25).
-- **gRPC.** Cancellation wins over every other mapping (R33); a foreign `RpcException` keeps only its code (R30); a
-  status always fits an 8 KB trailer limit (R31); the domain is never blank.
-- **SignalR.** Hub errors are `HubException("{code}: {message}")`; `GetTenantId()` is the connection context's
-  `TenantId?` — tenantless connections get `null`, and `HubGroupNaming.TenantGroup(Guid.Empty)` (or a `default`
-  `TenantId`) throws; the rate limiter is one partitioned limiter with
-  no per-bucket timer.
-- **OpenAPI** documents only what the core enforces, adds and never replaces, and maps nothing outside Development
-  unless `ExposeInProduction`.
-
-## Logging (EventId 14000–14999)
-
-`LoggingEventIdRanges.Presentation` is 14000. Each package owns a 100-wide sub-block. Every `[LoggerMessage]` has an
-explicit id, pinned with its level by a reflection test in each package (`LoggerMessageEventIdTests`). Retired ids are
-never reused; the tests assert their absence.
-
-| Range | Package | Events in use |
-| --- | --- | --- |
-| 14000–14099 | WebApi (and Presentation.Core) | 14001 Error server error from an exception · 14002 Warning authorization refused (endpoint, code) · 14003 Warning idempotency key refused (endpoint, code) · 14004 Critical CORS settings invalid · 14005 Warning rate limit rejected · 14007 Debug client error from an exception · 14008 Debug client closed the request (499) · 14009 Warning principal without `IUserContextMapper` · 14010 Warning scheme without mapper (startup) · 14011 Warning `UseSharedKernelWebApi()` never called (startup) · 14012 Warning exception details outside Development (startup) · 14013 Warning WebSocket origin refused. **Since P-579, 14002, 14009 and 14010 are emitted by `SharedKernel.Presentation.Core`**, which took over the authorization machinery and kept the numbers (pinned by `SharedKernel.Presentation.Core.Tests`' `LoggerMessageEventIdTests`; WebApi's test asserts it no longer declares them). Retired: 14000 (correlation id assigned) and 14006 (correlation id rejected) — the deleted correlation-id middleware's; `SharedKernel.ServiceDefaults.Security` logs those events as 13006/13007 |
-| 14100–14199 | SignalR | 14100 Error unhandled hub exception · 14101 Warning invocation rate limited · 14103 Error hub server error · 14104 Debug hub client error · 14106 Debug connection closed during an invocation · 14107 Error stream inside a `Result`. Retired: 14102 (CORS diagnostic), 14105 (hub-method authorization filter) |
-| 14200–14299 | Grpc | 14200 Error unhandled exception · 14202 Error server error · 14203 Debug client error · 14204 Debug call cancelled. Retired: 14201 (authorization interceptor; refusals are 14002 now) |
-| 14300–14399 | OpenApi | 14300 Information documents not mapped (environment) · 14301 Warning documents exposed without authorization (startup) |
-
-A new log statement takes the next free id of its package's sub-block and a row in that package's test.
+1. **One error decision for every protocol.** `ErrorPresentation` (internal; message half and `ErrorTypeStatusCodeMap`
+   in Core, `GetStatusCode` in WebApi) decides status and client text for HTTP, SignalR and gRPC. Never map
+   `ErrorType` in a switch of your own. HTTP: Validation 400, Unauthorized 401, Forbidden 403, NotFound 404, Conflict
+   409, BusinessRule 422, Unexpected 500, Unavailable 503 (+`Retry-After`), Timeout 504, else 500. gRPC
+   (`GrpcStatusCodeMap`, a sibling, never merged): InvalidArgument, Unauthenticated, PermissionDenied, NotFound,
+   Aborted, FailedPrecondition, Internal, Unavailable, DeadlineExceeded, else Unknown. Never renumber `ErrorType`
+   (17.Workflows persists the number).
+2. **One problem shape.** Every HTTP error is `application/problem+json` with `type`, `title` (reason phrase, never
+   the code), `status`, `instance`, `errorCode`, `traceId`, `correlationId` and `Cache-Control: no-store`, even when
+   `Accept` excludes JSON. A new error path uses `ProblemFactory` + `ProblemResponseWriter`; framework problems are
+   completed by `ProblemDetailsCustomizer`. Never write problem JSON or construct `ProblemDetails` by hand.
+3. **Redaction.** Server-category text is replaced outside Development on HTTP, SignalR and gRPC (including rebuilt
+   foreign `RpcException`s); the `errorCode` is kept. No request/environment = production.
+4. **Exception handling is the fallback** (`SharedKernelExceptionHandler`): a service's `IExceptionHandler` runs first;
+   aborted request → 499 no body; `BadHttpRequestException` → 400 `validation.invalid_format` (no .NET type names);
+   `ValidationException` identical to a returned error; `SharedKernelException` by type; timeout/non-abort
+   cancellation → 504; else 500 `unexpected.exception` (exception detail only in Development or with
+   `IncludeExceptionDetails`, which logs 14012). Each handled exception is logged once, by it.
+5. **Framework 400s are ours:** `ThrowOnBadRequest = true` everywhere; MVC's invalid-model factory is replaced only
+   when it is MVC's own; `AllowInputFormatterExceptionMessages = false`.
+6. **Field errors** are keyed by `ErrorArgumentNames.PropertyPath`, else by code; gRPC mirrors them as `BadRequest`
+   violations capped at 50 and 3 KB (`grpc.more_field_violations`); a status always fits an 8 KB trailer.
+7. **Middleware order is load-bearing:** HSTS/security headers precede the exception handler (which clears headers;
+   `SecurityHeadersMiddleware` re-applies HSTS at `OnStarting`); rate limiting sits after authentication (partition by
+   caller) and before authorization (refused traffic is counted); header requirements sit after authorization (an
+   anonymous caller is told to authenticate, not which header it forgot). `UseSharedKernelRequestContext()` runs
+   before all of it so error responses carry the correlation id.
+8. **Permissions go on the use case.** `05.Application`'s `[RequirePermission]` on a command/query applies on every
+   path; `[RequireEndpointPermission]` is only for what sends no command (hubs, gRPC methods, endpoints without
+   `ISender`, `MapSharedKernelOpenApi()`). Authentication strength (fresh/method) stays here. Both layers answer
+   `unauthorized.default` (401) and `forbidden.insufficient_permission` (403) — keep them identical. Never give an edge
+   attribute a name a use-case attribute already has (CS0104 when both namespaces are imported).
+9. **Authorization fails closed.** The four attributes derive from `AuthorizeAttribute`; the requirement is encoded in
+   the policy name `SharedKernel:{kind}:{values}` (`permission`, `role`, `fresh`, `amr`, `amr-max-age`) and cannot be
+   replaced (setters throw). Every platform policy requires an authenticated user (anonymous → 401 first). The caller
+   is resolved with `UserContextResolver`, never raw claims; an unmapped principal → 403 + log 14009. Max-age checks
+   use `IUserContext.GetAuthenticationMethodTime`: unknown or future-beyond-`MaxFutureAuthTime` never passes.
+   Step-up (RFC 9470 challenge, scheme `Bearer` or `DPoP` only) applies only when **every** unmet requirement is a
+   freshness/method one. 403 messages never name the permission or role.
+10. **Decorate, never replace.** `AddSharedKernelAuthorization()` (internal, idempotent) decorates the
+    `IAuthorizationPolicyProvider` and `IAuthorizationMiddlewareResultHandler` registered before it
+    (`ServiceDecoration.Decorate`); `SharedKernelAuthorizationStartupCheck` stops the host when a later registration
+    displaced either. Keep that check whenever the decoration changes. Refusal bodies go through the internal
+    `IAuthorizationRefusalWriter` seam (WebApi's `AddSharedKernelWebApiAuthorization()`); a gRPC-only host answers with
+    status and headers only.
+11. **Every authentication scheme needs an `IUserContextMapper`** — the startup check warns per scheme (14010).
+12. **Declared headers are validated before the endpoint runs.** Endpoint metadata is the single source; a parameter
+    declared not-null is required, nullable is accepted, unreadable nullability is required. Required wins; an accepted
+    header that is sent is validated like a required one and is never read as missing. `IdempotencyKey`/`IfMatch<T>`
+    are `sealed record` classes (minimal APIs read no metadata from `Nullable<T>`). `BindAsync` throws 400 only when
+    the middleware is absent.
+13. **`If-Match`:** missing → 428 if required; `*` → 428 if required, 400 if accepted; malformed or several → 400;
+    weak → 412; a strong tag that does not parse as `TVersion` → 412 before binding.
+14. **The 412 rule:** a `Conflict` whose code is in `Problems:PreconditionFailedErrorCodes`, in a request with a
+    non-blank `If-Match`/`If-None-Match`, is 412 — decided only in `ErrorPresentation.GetStatusCode`;
+    `ErrorHttpResult.StatusCode` stays the type's status. The defaults are literals (14 may not reference 06/08),
+    pinned by `PresentationPreconditionCodesTests`. `OkWithETag<T>` answers 304 only for `GET`/`HEAD`.
+15. **Paging input** is refused with 400 before the handler using `04.Contracts`' `PaginationErrorCodes` and bounds
+    (`PageRequest.MaxPageSize`, `CursorPageRequest.MaxLimit`, `PageCursor.MaxLength`) — never local constants. One
+    reader (`PagingQuery`) serves middleware, `BindAsync` and OpenApi. Minimal APIs only.
+16. **One request context.** No package here resolves a correlation id or opens a `RequestContextScope` for HTTP or
+    gRPC; readers go through Core's `RequestFacts.GetCorrelationId`. gRPC calls run through the HTTP pipeline (no
+    interceptor for context). SignalR's `RequestContextHubFilter` only **reopens** the connection's captured context
+    around every connect, invocation and disconnect.
+17. **Security headers** never overwrite an endpoint-set header; HSTS never in Development, over HTTP or to
+    `localhost`. **CORS:** no policy without origins; startup refuses credentials with no/wildcard origins, the `null`
+    origin, and (outside Development) credentials with `http://` origins; WebSocket requests from disallowed origins →
+    403.
+18. **gRPC:** cancellation wins over every other mapping; a foreign `RpcException` keeps only its code; the error
+    domain is never blank. No `ThrowIfFailure`/`GetValueOrThrow` extensions (they collide with `SharedKernel.Core`'s).
+19. **SignalR:** hub errors are `HubException("{code}: {message}")`; tenantless connections get `null` from
+    `GetTenantId()`; `TenantGroup(Guid.Empty)`/`default` throws; one partitioned rate limiter, no per-bucket timer.
+    Filter order: `RequestContextHubFilter` → `HubExceptionMappingFilter` → `HubInvocationRateLimitFilter`; gRPC's
+    `GrpcExceptionInterceptor` is registered first (outermost). Consumers call the setup before adding their own.
+20. **Setup is idempotent** through markers (`WebApiPipelineState`, `OpenApiSetupState`, `SignalRServicesMarker`,
+    `GrpcServicesMarker`); `configure` is applied on every call. Without `UseSharedKernelWebApi()` the host logs 14011;
+    without `AddSharedKernelWebApi()` it throws.
+21. **Options:** `AddValidatedOptions` + `ISectionBoundOptions` + a validator. List options are get-only and
+    configuration **appends** — document collection defaults as "added to". Invalid WebApi settings surface at first
+    read (Kestrel at `Build()`), `ValidateOnStart` at the latest.
+22. **Chain, never overwrite, service hooks:** `CustomizeProblemDetails` (platform first), `SuppressDiagnosticsCallback`,
+    a service's `OnRejected` and `InvalidModelStateResponseFactory` are kept.
+23. **One public namespace per package** (`SharedKernel.Presentation.WebApi`, `.OpenApi`, `.SignalR`, `.Grpc`; Core's
+    public types in `SharedKernel.Presentation.Authorization`, internals in `SharedKernel.Presentation`). Folders are
+    file organization only. Never add a public sub-namespace, never a namespace named `Results`.
+24. **Add-on plumbing is internal.** Core grants `InternalsVisibleTo` to WebApi, Grpc, SignalR, OpenApi; WebApi to
+    OpenApi and SignalR only (never Grpc). Change an internal and its callers in the same commit; never grant IVT to a
+    production package outside this domain.
+25. **Generated `MapEndpoints()`** is emitted `internal` in `SharedKernel.Presentation.WebApi`, only into an assembly
+    that declares a module, calling each module's `Map` in ordinal order of full names. SKEP001 (abstract), SKEP002
+    (generic/nested in generic), SKEP003 (unreachable) are errors, SKEP004 (inherits `Map`) a warning. No reflection or
+    runtime discovery. An in-repo project referencing WebApi by `ProjectReference` must add the generator itself:
+    `<ProjectReference Include="…Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />`.
+26. **OpenApi** adds and never replaces; registers the entry assembly's XML comments before `AddOpenApi()`, adds
+    platform transformers after Asp.Versioning's, and reads MVC metadata from the endpoint (`EndpointMetadataLookup`).
+    Endpoint-level authorization metadata is all it can see: an endpoint protected only by its command documents no
+    security requirement.
+27. **No reflection invocation** (`HubMethodResult` uses cached compiled accessors); **constants, never literals** for
+    headers (`WellKnownHeaders`, `HeaderNames`, `PresentationHeaderNames`), problem members
+    (`ProblemDetailsExtensionNames`) and codes (`PresentationErrorCodes`, `GrpcErrorCodes`, `ErrorCodes`).
+28. **Never log principal data or secrets:** refusals log endpoint and code (14002); idempotency keys are never logged
+    (14003).
 
 ## Decisions
 
-The full records: [`docs/p562/p562-design.md`](docs/p562/p562-design.md) (D0–D16),
-[`p562-final-review-findings.md`](docs/p562/p562-final-review-findings.md) (R1–R38, X1–X4, integration round 2,
-follow-ups) and [`p562-review-findings.md`](docs/p562/p562-review-findings.md) (B, R, F findings).
-
 | Decision | Why |
 | --- | --- |
-| Native authorization policies instead of endpoint filters (D3) | Filters were fail-open by omission (B1), gave anonymous callers 403 (B2), and did not reach SignalR hub methods |
-| One error pipeline through `IProblemDetailsService` and `ErrorPresentation` (D1) | Localization never ran, server text leaked, and the exception handler wrote `application/json` (B3–B6) |
-| `ErrorType.Unavailable`/`Timeout` → 503/504 and `Unavailable`/`DeadlineExceeded` (D14) | Outages were 500s; clients could not tell "retry later" from a defect (B7) |
-| OpenAPI in a separate add-on (D0, D11) | Keeps the core free of third-party packages; Asp.Versioning 10 supplies per-version documents and sunset/deprecation policies |
-| 412 decided from the error, not the endpoint (R7) | An optional conditional write got 409 where RFC 9110 answers 412 |
-| Required **and** accepted headers (J1) | Accepted headers were unvalidated, so a malformed one silently disabled a precondition or idempotency |
-| Typed results for MVC; no `ToActionResult` (R19) | The MVC family was weaker and documented wrong statuses; typed results work in controllers |
-| No gRPC result extensions (R32) | Identical signatures to `SharedKernel.Core`'s made calls ambiguous (CS0121) |
-| Foreign `RpcException`s rebuilt without trailers (R30) | Another service's `ErrorInfo`, field paths and trace ids leaked to our callers |
-| Removed: uploads, payload-limit middleware, version-lifecycle middleware, security-header option family, CORS wrapper, SignalR backplane/CORS diagnostic/`HubOptions` pins, gRPC correlation/tenant/authorization interceptors (D15) | Unused, duplicated the framework or the shared pipeline, or were defective (B9, B10, B11, B16) |
-| .NET 10 `AddValidation()` not adopted | DataAnnotations only, experimental parts, no FluentValidation hook; validation lives in the application pipeline |
-| `[AllowAnonymous]` switches off every requirement | ASP.NET Core semantics; not changed |
+| Native authorization policies behind attributes, not endpoint filters | Filters were fail-open by omission, gave anonymous callers 403, and did not reach SignalR hub methods |
+| One error pipeline through `IProblemDetailsService` and `ErrorPresentation` | Localization, redaction and media type were inconsistent across error sources |
+| `Unavailable`/`Timeout` → 503/504 (gRPC `Unavailable`/`DeadlineExceeded`) | Clients must tell "retry later" from a defect |
+| OpenAPI in a separate add-on | Keeps the core free of third-party packages; Asp.Versioning supplies per-version documents |
+| Presentation.Core holds authorization and the client-message rule | gRPC shares them with HTTP and must not reference WebApi; `GetStatusCode` stays in WebApi because it reads WebApi's precondition codes |
+| `GrpcStatusCodeMap` lives in Grpc | A WebApi host takes no `Grpc.Core.Api` |
+| Correlation id and baggage refusal belong to `ServiceDefaults.Security` | One middleware owns the request's scope and its id with one validation rule for every protocol, including gRPC-only and SignalR-only hosts |
+| 412 decided from the error, not the endpoint | An optional conditional write got 409 where RFC 9110 answers 412 |
+| Required **and** accepted headers | Unvalidated accepted headers silently disabled a precondition or idempotency |
+| Typed results for MVC; no `ToActionResult` | The MVC family was weaker; typed results work in controllers |
+| Foreign `RpcException`s rebuilt without trailers | Another service's `ErrorInfo`, field paths and trace ids leaked |
+| Endpoint modules found by a source generator | No reflection or scanning; one package reference |
+| WebApi free of MediatR and 05.Application | Any `Result`-returning code maps the same way |
+| No upload validation, payload-limit or version-lifecycle middleware, no SignalR backplane package | Presigned uploads (08.Storage) replace uploads; the rest duplicated the framework or was unused |
+| .NET 10 `AddValidation()` not adopted | DataAnnotations only, experimental parts; validation lives in the application pipeline |
+| `[AllowAnonymous]` switches off every requirement | ASP.NET Core semantics |
 | The automatic 412 carries no current `ETag` | Clients re-read, the safer choice |
-| gRPC authorization refusals carry no rich status | They are answered by the HTTP pipeline before the service runs; not changed |
-| Endpoint modules discovered by a source generator shipped in WebApi (P-563 P2) | No reflection or runtime scanning, one reference; hand-written `MapXxxEndpoints()` extensions are no longer the documented path |
-| One public namespace; add-on plumbing internal (P-563 P3) | The surface a service needs is small and in one `using`; `InternalsVisibleTo` is safe because the four packages version in lockstep |
-| `Paging`/`CursorPaging` parameters validated by the header-requirements middleware (P-563 P4) | Invalid paging is refused before the handler, with the platform problem, and documented by OpenApi from the same metadata |
-| WebApi stays free of MediatR and 05.Application (P-563 P1) | Any `Result`-returning code maps the same way; the command/query pattern is taught by the READMEs and samples, not enforced by a reference |
-| P-579: `SharedKernel.Presentation.Core` holds the authorization (attributes public in `SharedKernel.Presentation.Authorization`, machinery internal), `ErrorTypeStatusCodeMap` and the client-message rule; WebApi keeps `GetStatusCode` and writes refusal bodies through an internal seam | WO-086's intent (P-570): gRPC shares these with HTTP, so it must not reference WebApi; main's P-562 design put them in WebApi. The status half stays in WebApi because it reads WebApi's `Problems:PreconditionFailedErrorCodes` |
-| P-579: `GrpcStatusCodeMap` back in Grpc (P-570 had moved it to Core) | Main's placement: a WebApi host then takes no `Grpc.Core.Api`, which was P-570's accepted trade-off |
-| P-579: the correlation id belongs to `SharedKernel.ServiceDefaults.Security`'s `UseSharedKernelRequestContext()`; WebApi's middleware and `CorrelationId` options deleted, `GetCorrelationId()` reads the request's scope | WO-086 P-566: one middleware owns the request's scope and its id, with one validation rule (`CorrelationIds.IsValid`) for every protocol; two resolvers would disagree (main's used the trace id and a configurable pattern) |
-| P-579: inbound-baggage refusal moved with it (`RequestContextOptions.TrustInboundBaggage`) | The edge that owns the correlation id must remove caller baggage before it adds the id; in WebApi, a host without WebApi (gRPC-only, SignalR-only) had no refusal |
-| P-579: `SharedKernel.Presentation.SignalR.Redis` dropped | Main removed the backplane as unused (D15); a package with nothing in it has no reason to exist |
-| P-579: gRPC gets its scope from the HTTP pipeline, no interceptor | Main deleted the correlation/tenant/authorization interceptors (D15); with the request context middleware first, gRPC calls already run in their scope. Proven by `RequestContextTests` in `SharedKernel.Presentation.Grpc.Tests` |
-| P-579: SignalR re-adds WO-086's hub filter (`RequestContextHubFilter`) | Hub invocations do not run in the connect request's flow, so without it hub code sees no caller; `GetTenantId()` returns `TenantId?` from that context, never an `ITenantProvider` (deleted by WO-086). `HubGroupNaming.TenantGroup(Guid)` kept (owner question), `TenantGroup(TenantId)` added |
+| gRPC authorization refusals carry no rich status | The HTTP pipeline answers them before the service runs |
+
+## Logging
+
+EventId block **14000–14999** (`LoggingEventIdRanges.Presentation`). Every id is pinned with its level by a
+`LoggerMessageEventIdTests` in each package; retired ids are never reused and their absence is asserted. A new
+statement takes the next free id of its package's sub-block and a row in that test.
+
+| Sub-block | Package | In use |
+| --- | --- | --- |
+| 14000–14099 | WebApi and Core | 14001 Error server error from an exception · 14002 Warning authorization refused (Core) · 14003 Warning idempotency key refused · 14004 Critical CORS settings invalid · 14005 Warning rate limit rejected · 14007 Debug client error from an exception · 14008 Debug client closed the request (499) · 14009 Warning principal without mapper (Core) · 14010 Warning scheme without mapper (Core, startup) · 14011 Warning `UseSharedKernelWebApi()` never called · 14012 Warning exception details outside Development · 14013 Warning WebSocket origin refused. Retired: 14000, 14006 (correlation id events are now 13006/13007 in ServiceDefaults.Security) |
+| 14100–14199 | SignalR | 14100 Error unhandled hub exception · 14101 Warning invocation rate limited · 14103 Error hub server error · 14104 Debug hub client error · 14106 Debug connection closed during an invocation · 14107 Error stream inside a `Result`. Retired: 14102, 14105 |
+| 14200–14299 | Grpc | 14200 Error unhandled exception · 14202 Error server error · 14203 Debug client error · 14204 Debug call cancelled. Retired: 14201 |
+| 14300–14399 | OpenApi | 14300 Information documents not mapped (environment) · 14301 Warning documents exposed without authorization |
+| — | GraphQL | none |
 
 ## Cross-Domain Couplings
 
-- **01.Core:** `Error`, `ErrorType` (with `Unavailable = 8`, `Timeout = 9`), `ErrorCodes`, `ErrorArgumentNames`,
-  `WellKnownHeaders` (`CorrelationId`, `IdempotencyKey`), `WellKnownBaggageKeys.CorrelationId`,
-  `LoggingEventIdRanges.Presentation`, `AddValidatedOptions`/`ISectionBoundOptions`, `ILocalizationCatalog`,
-  `IClock`/`AddClock`. `Error.ToException()` (Core) is how gRPC and streaming hubs end a failed `Result`.
-- **01.Core/SharedKernel.Execution:** `IRequestContext`, `IRequestContextAccessor`, `RequestContextScope`, `TenantId`,
-  `ActorKind` — the correlation id readers (Core), SignalR's hub filter and `GetTenantId()`.
-- **12.Security:** `IUserContext` (`ActorKind`, `TenantId?`), `IUserContextMapper`, `UserContextResolver`; X1's
-  `GetAuthenticationMethodTime`, `amr_time` and `UserContext.MaxFutureAuthTime`. The attributes read only these.
-  `ITenantProvider`/`IdentityKind` no longer exist (WO-086 P-565).
-- **05.Application:** no reference in either direction. Endpoint modules send its commands and queries; its
-  `[RequirePermission]` on a use case replaces the edge attribute for that endpoint, and `AuthorizationBehavior`
-  answers with the same codes (401 `unauthorized.default`, 403 `forbidden.insufficient_permission`).
-  `IIdempotentRequest` consumes the key; both sides take the idempotency codes from `01.Core`'s
-  `ErrorCodes.Idempotency` (`PresentationErrorCodes.IdempotencyKeyRequired`/`KeyInvalid` are those constants), so no
-  drift test exists any more.
-- **04.Contracts:** `PageRequest`, `CursorPageRequest`, `PageCursor.MaxLength`, `PaginationErrorCodes` for the paging
-  parameters (WebApi only; `GrpcNeverReferencesContracts` still holds for `.Grpc`).
-- **06.Persistence / 08.Storage:** `EntityVersion` (`IParsable`, opaque sealed token since X4) is the usual `TVersion`;
-  the default `PreconditionFailedErrorCodes` are their codes, pinned by `PresentationPreconditionCodesTests`. Presigned
-  uploads (08) replace upload validation.
-- **11.Communication.Rest** reads the problem back: `errorCode` (fallback `http.{status}`, never `title`), `errors`
-  only for 400/422, 412 → Conflict, 413/415/428 → Validation, 429/503 → Unavailable, 504 → Timeout (R38).
-  `PresentationErrorCodes.ForStatus` and its fallback must stay identical.
-- **13.ServiceDefaults:** `SharedKernel.ServiceDefaults.Security`'s `AddSharedKernelRequestContext()` /
-  `UseSharedKernelRequestContext()` own the correlation id, the inbound-baggage refusal and the request's scope that
-  this domain reads (P-579); every host composes them first. `AddSharedKernelRateLimiting()` leaves `OnRejected` null
-  so our 429 body applies; the base's `BaggageLogRecordProcessor` allow-list and `RequestBaggageRefusingPropagator`
-  complete the baggage refusal (X2). `TenantResolutionMiddleware` goes in the `BeforeAuthorization` hook.
-- **16.Testing:** `SharedKernel.Presentation.Testing`'s gRPC `TestServerCallContext` (adds
-  `WellKnownHeaders.CorrelationId`; no pipeline, so a test that needs the ambient caller opens a `RequestContextScope`
-  itself); `SharedKernel.Security.Testing`'s `FakeUserContext.WithAuthenticationMethodTime` for step-up tests, proven
-  against Core's policies by `AuthenticationMethodMaxAgeTests`.
+- **01.Core:** `Error`/`ErrorType`/`ErrorCodes` (incl. `ErrorCodes.Idempotency`, shared with 05's idempotency
+  behavior)/`ErrorArgumentNames`, `WellKnownHeaders`, `LoggingEventIdRanges`, `AddValidatedOptions`,
+  `ILocalizationCatalog`, `IClock`/`AddClock`, `Error.ToException()`. **Execution:** `IRequestContextAccessor`,
+  `RequestContextScope`, `TenantId` — correlation readers, the hub filter, `GetTenantId()`.
+- **12.Security:** `IUserContext`, `IUserContextMapper`, `UserContextResolver`, `GetAuthenticationMethodTime`,
+  `UserContext.MaxFutureAuthTime` — the only inputs the attributes read.
+- **13.ServiceDefaults:** `AddSharedKernelRequestContext()`/`UseSharedKernelRequestContext()` (composed first by every
+  host); `AddSharedKernelRateLimiting()` leaves `OnRejected` null so our 429 body applies; `TenantResolutionMiddleware`
+  goes in the `BeforeAuthorization` hook.
+- **05.Application:** no reference either way; endpoint modules send its commands; same 401/403 codes.
+- **04.Contracts:** paging types and codes (WebApi and GraphQL only; never Grpc).
+- **06.Persistence / 08.Storage:** `EntityVersion` is the usual `IfMatch<TVersion>`; their conflict codes are the
+  default `PreconditionFailedErrorCodes`.
+- **11.Communication.Rest** reads our problems back (`errorCode`, fallback `http.{status}`; 412 → Conflict, 429/503 →
+  Unavailable, 504 → Timeout) — keep `PresentationErrorCodes.ForStatus` and its fallback identical.
 - **00.Governance:** `PresentationLayeringRules` (`NoDirectProblemDetailsConstructionOutsideWebApi`,
   `NoInlineResultBranchBeforeHttpResultOutsideWebApi`, `NoOpenApiStackDependencyOutsideOpenApiAddOn`,
-  `GrpcNeverReferencesContracts`); SK0022 (magic strings), SK0032 (CORS wildcard with credentials), SK0036 (raw
-  `RpcException`/`Status` outside `.Grpc`); `PresentationPreconditionCodesTests`; `OptionalDependencySatelliteRulesTests`
-  (Grpc never reaches WebApi; GraphQL is a 14 Host package). The tier check (`eng/SharedKernelTiers.targets`) makes
-  every package here Host.
-- **samples** (OrderApi, BillingApi, DocumentsApi, ShippingApi, CatalogApi) and `consumer-verify` use the one-call
-  path, endpoint modules and `ISender` (P-563 S1); a public API change updates them.
+  `GrpcNeverReferencesContracts`), SK0022, SK0032 (CORS wildcard + credentials), SK0036 (raw `RpcException`/`Status`
+  outside `.Grpc`), `PresentationPreconditionCodesTests`.
+- **samples** (OrderApi, BillingApi, DocumentsApi, ShippingApi, CatalogApi, CheckoutApi, InventoryApi) and
+  `consumer-verify` use the one-call path and endpoint modules; a public API change updates them.
 
-## Test Rules
+## Testing
 
-- Behaviour is tested through real in-process hosts built with the one-call setup (`WebApiTestHost`, `FullStackHost`
-  on `TestServer`); unit tests cover pure logic. What `TestServer` does not enforce (body limits, the `Server` header)
-  runs on Kestrel (`StartKestrelAsync`); HSTS needs an `https` base address that is not `localhost`.
-- Every HTTP error assertion goes through `ShouldBeProblemAsync`, which checks the media type, the member set and the
-  `X-Correlation-Id` header against `correlationId`.
-- SignalR tests use a real `HubConnection`; gRPC tests a real `Grpc.Net.Client` channel; OpenAPI tests generate the
-  documents. `consumer-verify` composes all four packages over Kestrel, a `HubConnection` and a gRPC channel and runs
-  in CI's required lane: keep it passing.
-- Time through `FakeClock` as `IClock`; never `Task.Delay`.
-- A security-relevant test must be able to fail: mutate the condition and confirm the assertion catches it (the R11
-  HSTS test fails without the re-apply).
-- Log assertions use `16.Testing`'s in-memory logger and check the EventId and level, never rendered text.
+- All presentation test projects are in the **Unit** lane (in-process `TestServer`/Kestrel, no Docker).
+- Behaviour is tested through real in-process hosts built with the one-call setup (`WebApiTestHost`, `FullStackHost`);
+  what `TestServer` does not enforce (body limits, `Server` header) runs on Kestrel (`StartKestrelAsync`); HSTS needs an
+  `https` non-`localhost` base address.
+- Every HTTP error assertion goes through `ShouldBeProblemAsync` (media type, member set, `X-Correlation-Id` vs
+  `correlationId`).
+- SignalR tests use a real `HubConnection`, gRPC a real `Grpc.Net.Client` channel, OpenAPI tests generate documents.
+- Time through `FakeClock` as `IClock`; never `Task.Delay`. Log assertions check EventId and level through
+  `16.Testing`'s in-memory logger, never rendered text.
+- A security-relevant test must be able to fail: mutate the condition and confirm the assertion catches it.
+- Consumer fakes: `16.Testing/SharedKernel.Presentation.Testing` (gRPC `TestServerCallContext`; open a
+  `RequestContextScope` yourself for an ambient caller) and `SharedKernel.Security.Testing`'s `FakeUserContext`
+  (`WithAuthenticationMethodTime` for step-up tests).
 
-## Changelog
+## Known Limitations
 
-> Entries before 2026-09-23 are in [`CLAUDE.history.md`](CLAUDE.history.md).
-
-- [2026-09-24] **Root P-562 — gold-standard pre-publish pass.** Breaking rewrite of the three packages and a new fourth,
-  `SharedKernel.Presentation.OpenApi` (API versioning, OpenAPI, Scalar moved out of the core, which now has no
-  third-party packages). One-call setup (`AddSharedKernelWebApi`/`UseSharedKernelWebApi` with ordered hooks), one
-  problem shape for every source through `ErrorPresentation`, typed results for `Result` (MVC included), native
-  authorization policies behind the four attributes (SignalR and gRPC included), required and accepted
-  `Idempotency-Key`/`If-Match` with parameter types, ETag/304, the error-driven 412 rule, inbound-baggage refusal,
-  503/504, coded SignalR errors with `HubErrorMessage.TryParse`, gRPC rich status with capped violations and sanitized
-  foreign statuses. Cross-domain: `ErrorType.Unavailable`/`Timeout`, step-up expiry on long-lived connections (X1),
-  baggage allow-listing (X2), idempotency per caller (X3), opaque ETags (X4). Removed types are listed in
-  `CLAUDE.history.md`. Brain rewritten to rules; READMEs, `CONFIGURATION.md` and the domain README rewritten. Not yet
-  published.
-- [2026-09-24] **Root P-563 — the thin edge in front of 05.Application's use cases (P2–P4, S1).** Endpoint modules:
-  `IEndpointModule` and a `MapEndpoints()` source generator (SKEP001–SKEP004) packed inside WebApi. One public
-  namespace per package: `.Errors`, `.Http`, `.Idempotency`, `.Options` folded into the root; `ErrorPresentation`,
-  `ErrorTypeStatusCodeMap`, `PresentationErrorCodes.ForStatus`, `GrpcStatusCodeMap`, `GrpcErrorCodes.ForStatus`,
-  `AddSharedKernelAuthorization()` and the header metadata interfaces internal, visible to the add-ons;
-  `GetIfMatchTags()` removed. `Paging`/`CursorPaging` parameters (WebApi now references `04.Contracts`). The
-  idempotency codes come from `01.Core`'s `ErrorCodes.Idempotency`. All five samples use modules and send commands
-  and queries; permissions moved to the use cases. The endpoint attribute and convention were renamed
-  `RequireEndpointPermission` (`52975eed`) so they no longer share a name with 05's `[RequirePermission]`. Docs updated
-  to the command/query path. Not yet published.
-- [2026-09-26] **Root P-579 — main's P-562/P-563 redesign merged onto the WO-086 foundation.** WO-086's architecture
-  kept, main's features re-applied on it. `SharedKernel.Presentation.Core` (Host) now holds what gRPC shares with HTTP:
-  the four authorization attributes and conventions (public, `SharedKernel.Presentation.Authorization`), the policy
-  machinery and `AddSharedKernelAuthorization()`, `ErrorTypeStatusCodeMap`, the client-message half of
-  `ErrorPresentation` and the shared request facts; Grpc references Core, never WebApi; `GrpcStatusCodeMap` back in Grpc.
-  The correlation id and the inbound-baggage refusal moved to `SharedKernel.ServiceDefaults.Security`
-  (`UseSharedKernelRequestContext()`, `RequestContextOptions.TrustInboundBaggage`); WebApi's `CorrelationIdMiddleware`,
-  `WebApiCorrelationIdOptions`, `SharedKernelWebApiOptions.CorrelationId`/`.TrustInboundBaggage` deleted; EventIds
-  14000/14006 retired; 14002/14009/14010 emitted by Core. `GetCorrelationId()` reads the request's scope. gRPC gets
-  its scope from the pipeline (no interceptor); SignalR's `RequestContextHubFilter` reopens the connection's scope around
-  every invocation and `GetTenantId()` returns `TenantId?`. `SharedKernel.Presentation.SignalR.Redis` deleted;
-  `SharedKernel.Presentation.GraphQL` (moved here by WO-086) kept. `consumer-verify` composes the request context
-  first and proves a hub method and a gRPC method read the caller and correlation id.
+- An endpoint protected only by its command's `[RequirePermission]` shows no security requirement in OpenAPI; services
+  add `.RequireAuthorization()` or a fallback policy.
+- `Paging`/`CursorPaging` and the `IfMatch<T>` tag parsing are minimal-API features; MVC actions bind and parse
+  themselves.
+- The automatic 412 carries no current `ETag`.
+- GraphQL depends on HotChocolate and is not AOT-safe; it has no PublicAPI tracking or log events.
