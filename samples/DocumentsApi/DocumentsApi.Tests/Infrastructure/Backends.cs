@@ -19,7 +19,7 @@ public sealed class Backends : IAsyncLifetime
     public const string MinIO = "minio";
     public const string Live = "live";
 
-    private const string MinioImage = "quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z";
+    private const string MinioImage = "pgsty/minio:RELEASE.2026-08-04T00-00-00Z";
     private static readonly string[] MinioBuckets = ["sample-assets", "sample-documents", "sample-archive"];
 
     private const string GotenbergImage = "gotenberg/gotenberg:8.37.0";
