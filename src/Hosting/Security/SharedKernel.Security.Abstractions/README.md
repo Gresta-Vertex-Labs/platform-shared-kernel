@@ -388,7 +388,7 @@ Assert.True(new PayoutStepUpPolicy(SystemUserContext.Instance, new FakeClock(now
 ```
 
 When a test needs a mutable caller, reference
-[`SharedKernel.Security.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Security.Testing/README.md)
+[`SharedKernel.Security.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Security/SharedKernel.Security.Testing/README.md)
 (namespace `SharedKernel.Testing.Security`): `FakeUserContext` (settable members, `WithAuthenticationMethodTime`) and
 `SecurityTestContextBuilder` (`Build()` → `ClaimsPrincipal`, `BuildUserContext()` → `FakeUserContext`). For handlers
 that read `IRequestContext`, use `TestRequestContext` from

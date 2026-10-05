@@ -392,7 +392,7 @@ Assert.True(result.IsSuccess);
 `TestRequestContext` (`SharedKernel.Testing.Execution`) covers the other callers: `ForUser`, `ForTenant`, `Service`,
 `System`, `Anonymous`, then `WithPermissions(...)`. To test the composed pipeline — authorization, validation,
 transactions — use
-[`SharedKernel.Application.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Application.Testing/README.md)'s
+[`SharedKernel.Application.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Application/SharedKernel.Application.Testing/README.md)'s
 `ApplicationPipelineTestHarness`, described in the
 [pipeline README](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Application/SharedKernel.Application.Pipeline/README.md#testing).
 

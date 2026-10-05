@@ -9,7 +9,7 @@
 > helpers, and a MassTransit test harness. It is never published.**
 
 Consuming services use the packable `SharedKernel.*.Testing` packages instead — for a PostgreSQL with the
-production role split, [`SharedKernel.Persistence.Testing`](../SharedKernel.Persistence.Testing/README.md)'s
+production role split, [`SharedKernel.Persistence.Testing`](../../Infrastructure/Persistence/SharedKernel.Persistence.Testing/README.md)'s
 `PostgresTestServer`. This project stays out of the release because it drags in Docker-only and framework-specific
 dependencies (Testcontainers for seven engines, `xunit.core` for `IAsyncLifetime`, `MassTransit.TestFramework`,
 `AWSSDK.S3`, EF Core SQLite) that a consumer's unit-test project should never pay for.
@@ -29,7 +29,7 @@ Every container fixture is an xUnit `IAsyncLifetime` with pinned image tags, so 
 Only from test projects inside this repository, as a `ProjectReference`:
 
 ```xml
-<ProjectReference Include="..\..\..\src\Testing\SharedKernel.Testing.Internal\SharedKernel.Testing.Internal.csproj" />
+<ProjectReference Include=".\SharedKernel.Testing.Internal.csproj" />
 ```
 
 Share one container per collection:

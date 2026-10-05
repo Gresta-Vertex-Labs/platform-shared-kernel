@@ -120,7 +120,7 @@ Raw certificate bytes are never logged.
 
 ## Testing
 
-Build certificates with [`SharedKernel.Security.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Security.Testing/README.md)'s
+Build certificates with [`SharedKernel.Security.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Security/SharedKernel.Security.Testing/README.md)'s
 `MtlsTestCertificateBuilder` (`WithSubjectName`, `AsSelfSigned`, `AsChainedFromEphemeralCa`, `AsRevoked`, `Build()`).
 For the forwarded-header path, send the certificate's Base64 DER in the configured header through a
 `WebApplicationFactory<Program>` client; `TestServer` requests come from no remote IP, so leave `TrustedNetworks`

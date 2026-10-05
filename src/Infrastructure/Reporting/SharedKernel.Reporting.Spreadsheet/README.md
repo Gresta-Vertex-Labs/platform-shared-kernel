@@ -151,7 +151,7 @@ No events of its own (EventId block 20200–20299 is reserved); the base class l
 ## Testing
 
 Unit tests of code that exports use
-[`SharedKernel.Reporting.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Reporting.Testing/README.md)
+[`SharedKernel.Reporting.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Reporting/SharedKernel.Reporting.Testing/README.md)
 (`AddInMemoryReporting()`, `InMemoryReportExporter<T>`). To check the workbook itself, export to a `MemoryStream` and
 open it with any `.xlsx` reader (this repository's own tests use ClosedXML).
 

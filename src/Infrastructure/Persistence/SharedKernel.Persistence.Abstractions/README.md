@@ -171,7 +171,7 @@ seams between the persistence packages, hidden from IntelliSense; application co
 
 ## Testing
 
-Reference [`SharedKernel.Persistence.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Persistence.Testing/README.md):
+Reference [`SharedKernel.Persistence.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Persistence/SharedKernel.Persistence.Testing/README.md):
 
 ```csharp
 using SharedKernel.Persistence.Testing;

@@ -165,7 +165,7 @@ whatever this setting says.
   `services.AddTestRequestContext(context)` from `SharedKernel.Persistence.Testing` or opened with
   `RequestContextScope.Begin(context)`.
 - Host tests through the real middleware: replace the user with
-  [`SharedKernel.Security.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Security.Testing/README.md)'s
+  [`SharedKernel.Security.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Security/SharedKernel.Security.Testing/README.md)'s
   `FakeUserContext` (`services.AddSingleton<IUserContext>(new FakeUserContext { TenantId = tenantId })`) in a
   `WebApplicationFactory<Program>`, then assert the `X-Correlation-Id` response header.
 

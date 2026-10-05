@@ -172,7 +172,7 @@ IRequestExecutor executor = await services.BuildServiceProvider().GetRequestExec
 IExecutionResult result = await executor.ExecuteAsync("{ orders(page: 1, pageSize: 5) { totalCount } }");
 ```
 
-[`SharedKernel.Presentation.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Presentation.Testing/README.md)'s
+[`SharedKernel.Presentation.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Presentation/SharedKernel.Presentation.Testing/README.md)'s
 `GraphQLTestExecutorFactory.Create(services)` gives a plain HotChocolate server with test-safe paging for schema tests
 that do not need the platform conventions.
 

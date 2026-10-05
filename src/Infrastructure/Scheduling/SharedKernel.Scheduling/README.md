@@ -260,7 +260,7 @@ ServiceDefaults' `builder.WithSchedulingTelemetry()`. Counters: `scheduling.job.
 
 ## Testing
 
-Reference [`SharedKernel.Scheduling.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Scheduling.Testing/README.md).
+Reference [`SharedKernel.Scheduling.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Scheduling/SharedKernel.Scheduling.Testing/README.md).
 `InMemoryScheduledJobRegistry(ISender)` records your registrations; register the jobs against it with the same code
 the host uses, then fire one explicitly:
 

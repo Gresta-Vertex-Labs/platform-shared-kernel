@@ -6,6 +6,8 @@
 
 Every project declares `<SharedKernelTier>Testing</SharedKernelTier>`; every package except `Testing.Internal` is packable and tracks `PublicAPI.Shipped.txt`/`PublicAPI.Unshipped.txt`. Namespaces are `SharedKernel.Testing.{Capability}` regardless of package id (exceptions noted).
 
+**Location.** Only `SharedKernel.Testing` and `SharedKernel.Testing.Internal` live in this folder. Each `SharedKernel.{Capability}.Testing` lives in its capability's folder, next to the contract it fakes (for example `src/Infrastructure/Caching/SharedKernel.Caching.Testing`), so a contract change and its double change in one place. This domain keeps the rules every double follows (below) and this catalogue; a new `.Testing` package is created in the capability folder of the contract it fakes.
+
 | Package | Tier | Purpose |
 |---|---|---|
 | `SharedKernel.Testing` (core) | Testing | Foundation/Model helpers only: `FakeClock`, `InMemoryLogger`/`InMemoryLoggerFactory`/`LoggerAssertions`/`AddInMemoryLoggerFactory()`, `TestRequestContext` (`.Execution`), `FakeRequestContext` (`.Application`), `EntityFaker<,>`/`SingleValueObjectFaker<,>`/`FakerSeeding`, domain assertions + `SpecificationTestBuilder<T>`/`MoneyFaker`/`FakeExchangeRateProvider`/`AddFakeDomainServices()`, aggregate fakers and spec builders (`.Persistence`: `AggregateRootFaker<,>`, `TenantedAggregateFaker<,>`, `BulkAggregateFaker<,>`, `WithDeletedSpecification<T>`, `ProjectionSpecificationBuilder<,>`), `PagedListBuilder<T>`/`PagedListAssertions`/`EventEnvelopeBuilder<TEvent>`/`IntegrationEventFaker<TEvent>`, `ValidationSampleGenerator`, `PiiMaskingAssertions`/`RecordingDataSubjectRequestHandler`, `CultureScope`, `FakeHttpMessageHandler`/`ActivityRecorder` (BCL only). |

@@ -266,7 +266,7 @@ instruments `reporting.operation.duration` (s), `reporting.rows`, `reporting.byt
 
 ## Testing
 
-Reference [`SharedKernel.Reporting.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Reporting.Testing/README.md)
+Reference [`SharedKernel.Reporting.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Reporting/SharedKernel.Reporting.Testing/README.md)
 and call `services.AddInMemoryReporting()`: it replaces `IReportExporterFactory` with `InMemoryReportExporterFactory`
 and `IHtmlToPdfConverter` with `InMemoryHtmlToPdfConverter`. `factory.Exporter<T>(ReportFormat.Csv)` returns the
 `InMemoryReportExporter<T>`, which records `LastRows`, `LastDefinition`, `LastDestination` and `ExportCount`, asserts

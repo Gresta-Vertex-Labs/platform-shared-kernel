@@ -163,7 +163,7 @@ beyond the token's claim, [`SharedKernel.MultiTenancy`](../ServiceDefaults/Share
 
 Test fakes for all five packages — `FakeUserContext`, `SecurityTestContextBuilder`, `DpopTestProofBuilder`,
 `MtlsTestCertificateBuilder`, `InMemoryApiKeyStore`, `InMemoryDpopReplayCache`, `InMemoryTotpStepUpStore`,
-`InMemoryRecoveryCodeStore` — are in [`SharedKernel.Security.Testing`](../../Testing/SharedKernel.Security.Testing/README.md).
+`InMemoryRecoveryCodeStore` — are in [`SharedKernel.Security.Testing`](./SharedKernel.Security.Testing/README.md).
 
 ## Reporting a vulnerability
 

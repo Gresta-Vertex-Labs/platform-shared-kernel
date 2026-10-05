@@ -33,7 +33,7 @@ no Hangfire.
 | --- | --- | --- |
 | [`SharedKernel.Scheduling`](SharedKernel.Scheduling/README.md) | Adapter | Any recurring or delayed single unit of work: nightly reconciliation, cleanup, digests, a trigger that starts a workflow |
 
-Test double: [`SharedKernel.Scheduling.Testing`](../../Testing/SharedKernel.Scheduling.Testing/README.md)
+Test double: [`SharedKernel.Scheduling.Testing`](./SharedKernel.Scheduling.Testing/README.md)
 (`InMemoryScheduledJobRegistry` with `TriggerAsync`).
 
 ## Scheduling or workflows?

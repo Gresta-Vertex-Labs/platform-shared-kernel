@@ -9,7 +9,7 @@
     <ProjectReference Include="..\SharedKernel.Presentation.Grpc.csproj" />
     <ProjectReference Include="..\..\..\..\Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
     <!-- TestServerCallContext for the interceptor unit tests. -->
-    <ProjectReference Include="..\..\..\..\Testing\SharedKernel.Presentation.Testing\SharedKernel.Presentation.Testing.csproj" />
+    <ProjectReference Include="..\..\SharedKernel.Presentation.Testing\SharedKernel.Presentation.Testing.csproj" />
     <!--
       The host composition a gRPC service uses (P-579): UseSharedKernelRequestContext() opens each call's context scope,
       and the WebApi pipeline authenticates and authorizes. The package itself references neither.

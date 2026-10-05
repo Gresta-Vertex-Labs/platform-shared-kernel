@@ -124,7 +124,7 @@ Block `18000`–`18999` (`LoggingEventIdRanges.Idempotency`).
   is not evidence for an atomicity claim. Each provider covers all four statuses, foreign/stale tokens,
   release-after-complete, fail-open and fail-closed against an unreachable endpoint, and DI registration (duplicate
   purpose, missing Redis connection).
-- Consumers use `FakeIdempotencyStore` / `AddFakeIdempotencyStore(purposes)` from `src/Testing/SharedKernel.Idempotency.Testing`,
+- Consumers use `FakeIdempotencyStore` / `AddFakeIdempotencyStore(purposes)` from `src/Infrastructure/Idempotency/SharedKernel.Idempotency.Testing`,
   which implements the same protocol.
 
 ## Known Limitations

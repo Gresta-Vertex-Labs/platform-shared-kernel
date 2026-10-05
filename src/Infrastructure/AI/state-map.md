@@ -16,7 +16,7 @@
 | `SharedKernel.AI.Milvus` | — | ⊘ | Retracted by WO-048 (2026-07-27): `Milvus.Client` never shipped a stable release. Never built. |
 | `SharedKernel.AI.VectorDb` | — | ⊘ | Retired at Scaffold S-01 (replaced by the Abstractions + provider split). |
 
-Test doubles: in-memory embedding/vector/kernel doubles in `src/Testing/SharedKernel.AI.Testing`; `QdrantContainerFixture` in `SharedKernel.Testing.Internal`.
+Test doubles: in-memory embedding/vector/kernel doubles in `src/Infrastructure/AI/SharedKernel.AI.Testing`; `QdrantContainerFixture` in `SharedKernel.Testing.Internal`.
 
 ## Phase Key Registry
 

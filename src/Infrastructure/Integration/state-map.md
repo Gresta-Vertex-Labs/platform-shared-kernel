@@ -15,7 +15,7 @@
 | `SharedKernel.Integration.Notifications.Email.SendGrid` | Adapter | ● | Direct SendGrid v3 REST (no vendor SDK); `NotificationDeliveryId` is correlation-only for SendGrid; recipients and template values never logged. |
 | `SharedKernel.Integration.Notifications.Sms.Twilio` | Adapter | ● | Direct Twilio Content API REST (no vendor SDK); `NotificationDeliveryId` on the `Idempotency-Key` header — a real provider-enforced dedup guarantee. |
 
-Test doubles: `InMemoryWebhookDispatcher`/`InMemoryNotificationSender` in `src/Testing/SharedKernel.Integration.Testing`. Verified by `consumer-verify`.
+Test doubles: `InMemoryWebhookDispatcher`/`InMemoryNotificationSender` in `src/Infrastructure/Integration/SharedKernel.Integration.Testing`. Verified by `consumer-verify`.
 
 ## Phase Key Registry
 

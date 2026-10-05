@@ -266,7 +266,7 @@ Tokens and secrets are never logged. Outbound spans and resilience metrics come 
 
 ## Testing
 
-Reference [`SharedKernel.Communication.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Communication.Testing/README.md)
+Reference [`SharedKernel.Communication.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Communication/SharedKernel.Communication.Testing/README.md)
 (namespace `SharedKernel.Testing.Communication`) from your test project:
 
 - `StubHttpMessageHandler` + `services.UseStubHttpMessageHandler("inventory", stub)` runs a REST client's whole

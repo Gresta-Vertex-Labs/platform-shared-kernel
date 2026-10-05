@@ -283,7 +283,7 @@ Settings of a named database, `SharedKernel:Persistence:{name}` (`NpgsqlPersiste
 
 ## Testing
 
-[`SharedKernel.Persistence.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Persistence.Testing/README.md)'s
+[`SharedKernel.Persistence.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Persistence/SharedKernel.Persistence.Testing/README.md)'s
 `PostgresTestServer.StartAsync()` starts PostgreSQL in a container and `PostgresTestDatabase` creates a database with
 the canonical roles, so RLS claims are tested through an unprivileged role (a superuser bypasses RLS even under
 `FORCE`). `FakeDbConnectionFactory` stands in for `IDbConnectionFactory` in unit tests.

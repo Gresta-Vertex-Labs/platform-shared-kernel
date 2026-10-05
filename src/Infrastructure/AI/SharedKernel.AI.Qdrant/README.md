@@ -267,7 +267,7 @@ data holds the vector count, engine version and stored schema fingerprint. Map t
 ## Testing
 
 Unit-test handlers against the in-memory doubles in
-[`SharedKernel.AI.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.AI.Testing/README.md)
+[`SharedKernel.AI.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/AI/SharedKernel.AI.Testing/README.md)
 (`services.AddInMemoryVectorCollection<TRecord>(definition)`, `services.AddInMemoryVectorProvisioning()`); they apply
 the same model, dimension and tenant checks. For integration tests, run a real `qdrant/qdrant:v1.16.0` (or later)
 container, for example with Testcontainers, and point `Intelligence:Qdrant:Host`/`Port` at it. Client construction is

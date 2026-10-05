@@ -4,7 +4,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Scheduling.csproj" />
-    <ProjectReference Include="..\..\..\..\Testing\SharedKernel.Caching.Testing\SharedKernel.Caching.Testing.csproj" />
+    <ProjectReference Include="..\..\..\Caching\SharedKernel.Caching.Testing\SharedKernel.Caching.Testing.csproj" />
     <ProjectReference Include="..\..\..\..\Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
     <ProjectReference Include="..\..\..\..\Testing\SharedKernel.Testing.Internal\SharedKernel.Testing.Internal.csproj" />
     <!--

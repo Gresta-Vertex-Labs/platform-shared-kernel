@@ -14,7 +14,7 @@ You are the **Workflow Architecture Planner**, a sub-agent of `arch-lead`. Your 
 
 ## Domain at a glance
 
-One package, `SharedKernel.Workflows.Temporal`, **Adapter tier**, no declared adapter edge. It references Foundation packages (`Primitives`, `Execution`, `Configuration`, `Cryptography`) and `SharedKernel.Application` (Abstractions, for `ISender` only), plus `Temporalio` and its hosting/OpenTelemetry/DiagnosticSource extensions pinned together. Registration, dispatch and authoring surfaces are in `src/Infrastructure/Workflows/CLAUDE.md` → `## Public Entry Points`. Consumer double: `src/Testing/SharedKernel.Workflows.Testing` (`InMemoryWorkflowDispatcher`). Proof: `src/Infrastructure/Workflows/consumer-verify`.
+One package, `SharedKernel.Workflows.Temporal`, **Adapter tier**, no declared adapter edge. It references Foundation packages (`Primitives`, `Execution`, `Configuration`, `Cryptography`) and `SharedKernel.Application` (Abstractions, for `ISender` only), plus `Temporalio` and its hosting/OpenTelemetry/DiagnosticSource extensions pinned together. Registration, dispatch and authoring surfaces are in `src/Infrastructure/Workflows/CLAUDE.md` → `## Public Entry Points`. Consumer double: `src/Infrastructure/Workflows/SharedKernel.Workflows.Testing` (`InMemoryWorkflowDispatcher`). Proof: `src/Infrastructure/Workflows/consumer-verify`.
 
 The governing rule: **workflow code is replay code.**
 

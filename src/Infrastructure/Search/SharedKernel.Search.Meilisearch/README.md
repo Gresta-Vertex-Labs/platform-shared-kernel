@@ -309,7 +309,7 @@ Expose them with `services.AddHealthChecks().AddSharedKernelReadiness()` (`Share
 ## Testing
 
 In a service's unit tests, replace the provider with the in-memory fakes of
-[`SharedKernel.Search.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Search.Testing/README.md)
+[`SharedKernel.Search.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Search/SharedKernel.Search.Testing/README.md)
 (`AddInMemorySearchIndex<TDocument>(definition)`, `AddInMemorySearchProvisioning()`). They cover the neutral contract
 only: code that uses `IInstantSearch<T>` or `ITenantSearchTokenIssuer` needs a real engine. For integration tests run
 `getmeili/meilisearch:v1.20.0` (the version this package is tested against) in a container.

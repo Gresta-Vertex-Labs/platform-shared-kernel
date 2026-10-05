@@ -12,7 +12,7 @@
 | --- | --- | :---: | --- |
 | `SharedKernel.Workflows.Temporal` | Adapter | ● | One package by design (no `.Abstractions` split: durable execution's programming model is the abstraction). `IWorkflowDispatcher`/`IWorkflowHandle<TResult>`/`IWorkflowIdFactory` with a mandatory `TenantScope` (from `SharedKernel.Execution`), `WorkflowBase` (deterministic; SK0028) / `ActivityBase`, `CommandActivity<TCommand>` over the kernel `ISender`, worker hosting, `Result<T>` ↔ failure mapping, `EncryptionPayloadCodec` (async, associated data bound), context propagation into activities (each runs in the dispatcher's `RequestContextScope`), `workflows` probe. Raw `ITemporalClient` prohibited (SK0029; gated escape hatch `ITemporalRawClientAccessor`). Verified by `consumer-verify`; real-engine tests use Temporalio's in-box `WorkflowEnvironment` (no container fixture needed). |
 
-Test double: `InMemoryWorkflowDispatcher` in `src/Testing/SharedKernel.Workflows.Testing`.
+Test double: `InMemoryWorkflowDispatcher` in `src/Infrastructure/Workflows/SharedKernel.Workflows.Testing`.
 
 ## Phase Key Registry
 

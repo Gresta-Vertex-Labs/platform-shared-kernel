@@ -290,9 +290,9 @@ on `/health/ready`. See [recipe 5](#5-report-readiness).
 ## Testing
 
 Application code never sees the connection, so unit tests replace the Redis-backed services instead: reference
-[`SharedKernel.Caching.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Caching.Testing/README.md)
+[`SharedKernel.Caching.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Caching/SharedKernel.Caching.Testing/README.md)
 (`AddFakeCachingServices()`, including `IDistributedLockService`) and
-[`SharedKernel.Caching.Redis.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Caching.Redis.Testing/README.md)
+[`SharedKernel.Caching.Redis.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Caching/SharedKernel.Caching.Redis.Testing/README.md)
 (`AddFakeRedisServices()` for the hash store and Pub/Sub). Neither needs `AddRedisConnection`.
 
 To test the real composition, start Redis with Testcontainers and point `ConnectionString` at it:

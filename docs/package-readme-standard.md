@@ -148,7 +148,7 @@ Registers the `x` readiness probe; `AddSharedKernelReadiness()` exposes it on `/
 
 ## Testing
 
-Reference [`SharedKernel.X.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.X.Testing/README.md)
+Reference [`SharedKernel.X.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/{Zone}/{Capability}/SharedKernel.X.Testing/README.md)
 from your test project and call `services.AddFakeX()`.
 
 ## Pitfalls

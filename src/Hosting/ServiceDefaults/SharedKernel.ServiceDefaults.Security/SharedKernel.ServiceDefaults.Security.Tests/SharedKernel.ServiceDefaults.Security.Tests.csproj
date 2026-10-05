@@ -8,7 +8,7 @@
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.ServiceDefaults.Security.csproj" />
     <ProjectReference Include="..\..\..\..\Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
-    <ProjectReference Include="..\..\..\..\Testing\SharedKernel.Security.Testing\SharedKernel.Security.Testing.csproj" />
+    <ProjectReference Include="..\..\..\Security\SharedKernel.Security.Testing\SharedKernel.Security.Testing.csproj" />
     <!--
       P-566 end-to-end propagation tests (Propagation/): the HTTP inbound adapter here is the first hop, and every
       outbound and inbound adapter the request passes through is the real package — REST and gRPC clients, the gRPC

@@ -323,7 +323,7 @@ Expose them with `services.AddHealthChecks().AddSharedKernelReadiness()` (`Share
 ## Testing
 
 In a service's unit tests, replace the provider with the in-memory fakes of
-[`SharedKernel.Search.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Search.Testing/README.md)
+[`SharedKernel.Search.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Search/SharedKernel.Search.Testing/README.md)
 (`AddInMemorySearchIndex<TDocument>(definition)`, `AddInMemorySearchProvisioning()`). They cover the neutral contract
 only: code that uses `IAnalyticsSearch<T>`, `ICursorSearch<T>` or `ISuggestSearch<T>` needs a real cluster, for
 example `docker.elastic.co/elasticsearch/elasticsearch:9.4.2` with `discovery.type=single-node` in a container.

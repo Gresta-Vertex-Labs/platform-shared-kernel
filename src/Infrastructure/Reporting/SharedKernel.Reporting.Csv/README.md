@@ -118,7 +118,7 @@ are logged by the base class, EventIds 20000–20006.
 ## Testing
 
 Unit tests of code that exports use
-[`SharedKernel.Reporting.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Reporting.Testing/README.md):
+[`SharedKernel.Reporting.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Reporting/SharedKernel.Reporting.Testing/README.md):
 `services.AddInMemoryReporting()` swaps the factory for `InMemoryReportExporterFactory`, whose exporters record the
 rows, definition and destination. To test the file itself, export to a `MemoryStream` with the real exporter and
 parse the text.

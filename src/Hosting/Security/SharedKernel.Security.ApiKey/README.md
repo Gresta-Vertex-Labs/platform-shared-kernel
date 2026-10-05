@@ -343,7 +343,7 @@ The key itself is never logged; the key id is not secret.
 
 ## Testing
 
-Reference [`SharedKernel.Security.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Security.Testing/README.md)
+Reference [`SharedKernel.Security.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Security/SharedKernel.Security.Testing/README.md)
 (namespace `SharedKernel.Testing.Security`) for `InMemoryApiKeyStore` (`Add(record)`,
 `Add(generatedKey, clientId, tenantId, permissions, expiresAt)`, `Revoke(keyId, revokedAt)`), and
 [`SharedKernel.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Testing/README.md)

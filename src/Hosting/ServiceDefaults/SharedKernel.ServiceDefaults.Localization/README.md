@@ -102,9 +102,9 @@ Supported cultures and the default culture are ASP.NET Core's `RequestLocalizati
 
 ## Testing
 
-- Set the user's claim with [`SharedKernel.Security.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Security.Testing/README.md)'s
+- Set the user's claim with [`SharedKernel.Security.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Security/SharedKernel.Security.Testing/README.md)'s
   `FakeUserContext` (`Claims = [new("preferred_culture", "de")]`).
-- Give a tenant a default culture with [`SharedKernel.ServiceDefaults.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.ServiceDefaults.Testing/README.md)'s
+- Give a tenant a default culture with [`SharedKernel.ServiceDefaults.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Testing/README.md)'s
   `InMemoryTenantCatalog.SeedTenant(descriptor)` and a `FakeTenantResolutionStrategy`.
 - In a `WebApplicationFactory<Program>` test, assert `CultureInfo.CurrentUICulture` in an endpoint or the language of a
   localized problem response.

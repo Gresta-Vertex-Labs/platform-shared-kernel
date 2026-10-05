@@ -71,7 +71,7 @@ Tests are nested as `{Package}/{Package}.Tests/`; `src/Infrastructure/Integratio
 - Assert exactly-once exhaustion with `SharedKernel.Messaging.Testing`'s `InMemoryEventPublisher`, outcome logs with `SharedKernel.Testing`'s `InMemoryLogger`, attachments with `SharedKernel.Storage.Testing`'s `AddInMemoryStore`/`AddInMemoryTenantStore` — never hand-rolled stubs for those assertions.
 - Keep pinned: sign/verify round trip, tamper, expiry, malformed input; fan-out isolation; resilience field mapping; delivery-id stability; span tags free of URL/secret (`WebhookTracingTests`); multi-secret rotation; header collisions; encryption round trip and cross-subscription AAD failure (`WebhookPayloadEncryptionTests`); notification PII never logged; SendGrid streaming; Twilio form encoding with `ContentVariables` as a JSON string.
 - **MAX_PATH:** check the rule from `_common.md` before adding any new project here; the notification projects have the longest names in the repo.
-- Consumer doubles (`InMemoryWebhookDispatcher`, `InMemoryWebhookDeliveryObserver`, `InMemoryNotificationSender`, `InMemoryNotificationDeliveryObserver`) live in `src/Testing/SharedKernel.Integration.Testing`; a change to the interfaces they implement is a `## Cross-Domain Dependencies` note.
+- Consumer doubles (`InMemoryWebhookDispatcher`, `InMemoryWebhookDeliveryObserver`, `InMemoryNotificationSender`, `InMemoryNotificationDeliveryObserver`) live in `src/Infrastructure/Integration/SharedKernel.Integration.Testing`; a change to the interfaces they implement is a `## Cross-Domain Dependencies` note.
 
 ---
 

@@ -256,7 +256,7 @@ statement takes the next free id of its package's sub-block and a row in that te
 - Time through `FakeClock` as `IClock`; never `Task.Delay`. Log assertions check EventId and level through
   `16.Testing`'s in-memory logger, never rendered text.
 - A security-relevant test must be able to fail: mutate the condition and confirm the assertion catches it.
-- Consumer fakes: `src/Testing/SharedKernel.Presentation.Testing` (gRPC `TestServerCallContext`; open a
+- Consumer fakes: `src/Hosting/Presentation/SharedKernel.Presentation.Testing` (gRPC `TestServerCallContext`; open a
   `RequestContextScope` yourself for an ambient caller) and `SharedKernel.Security.Testing`'s `FakeUserContext`
   (`WithAuthenticationMethodTime` for step-up tests).
 

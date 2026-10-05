@@ -12,7 +12,7 @@
 | --- | --- | :---: | --- |
 | `SharedKernel.Scheduling` | Adapter | ● | P-464/WO-073, one package by design (single provider). `IScheduledJobRegistry`, `ScheduledCommandJob<TCommand>` (kernel `ISender`), mandatory `MisfirePolicy`/`OverlapPolicy`, cross-replica single execution through an optional `IDistributedLockService` per-occurrence lease (fencing token in `ScheduledJobExecutionContext.FencingToken`), each run inside a `SystemRequestContext` scope with the job's `TenantScope` (default `TenantScope.Global`) and a new correlation id, `scheduler` probe. Quartz's `CronExpression` for parsing only (Quartz pinned directly in `Directory.Packages.props`). Verified by `consumer-verify`. |
 
-Test double: `InMemoryScheduledJobRegistry` in `src/Testing/SharedKernel.Scheduling.Testing`.
+Test double: `InMemoryScheduledJobRegistry` in `src/Infrastructure/Scheduling/SharedKernel.Scheduling.Testing`.
 
 ## Phase Key Registry
 

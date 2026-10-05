@@ -371,7 +371,7 @@ Telemetry: `ActivitySource` and `Meter` `SharedKernel.Persistence`, wired with N
 
 ## Testing
 
-Unit-test handlers with [`SharedKernel.Persistence.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Persistence.Testing/README.md):
+Unit-test handlers with [`SharedKernel.Persistence.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Persistence/SharedKernel.Persistence.Testing/README.md):
 `AddFakeRepository<T,TId>()`, `AddFakeUnitOfWork()` (`TransientFailures` proves a handler re-runnable),
 `AddFakeCrossTenantScope()`, `AddTestRequestContext()`. For the real thing, `PostgresTestServer` /
 `PostgresTestDatabase` give a PostgreSQL database with the production role split, so tenant-isolation claims are

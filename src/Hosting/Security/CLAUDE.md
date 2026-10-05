@@ -106,7 +106,7 @@ Block **12000–12999** (`LoggingEventIdRanges`), 100-wide sub-blocks:
 - Each package has a nested `*.Tests` project, all in the **Unit** lane (`Platform.SharedKernel.Unit.slnf`).
 - Authentication is tested end to end through `TestServer` with real signed tokens, DPoP proofs and certificates; a hand-built `ClaimsPrincipal` cannot catch claim renaming or handler wiring. No network: post-configure `JwtBearerOptions.Configuration` with an `OpenIdConnectConfiguration` holding the test keys.
 - Time through `FakeClock` as `IClock`; never `Task.Delay`. Security tests must be able to fail — mutate the condition and confirm the assertion catches it.
-- Consumer fakes (`src/Testing/SharedKernel.Security.Testing`): `FakeUserContext`, `SecurityTestContextBuilder`, `DpopTestProofBuilder`, `InMemoryApiKeyStore`, `InMemoryDpopReplayCache`, `InMemoryTotpStepUpStore`, `InMemoryRecoveryCodeStore`.
+- Consumer fakes (`src/Hosting/Security/SharedKernel.Security.Testing`): `FakeUserContext`, `SecurityTestContextBuilder`, `DpopTestProofBuilder`, `InMemoryApiKeyStore`, `InMemoryDpopReplayCache`, `InMemoryTotpStepUpStore`, `InMemoryRecoveryCodeStore`.
 
 ## Known Limitations
 

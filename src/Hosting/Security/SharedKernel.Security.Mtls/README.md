@@ -362,7 +362,7 @@ ServiceDefaults companion.
 
 `TestServer` has no TLS handshake: add a test-only middleware that sets `HttpContext.Connection.ClientCertificate`
 and mark the request HTTPS, then let the real handler, trust settings and validator run. Generate certificates with
-[`SharedKernel.Security.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Security.Testing/README.md)
+[`SharedKernel.Security.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Security/SharedKernel.Security.Testing/README.md)
 (namespace `SharedKernel.Testing.Security`):
 
 ```csharp

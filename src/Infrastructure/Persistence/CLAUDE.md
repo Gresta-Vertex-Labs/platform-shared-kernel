@@ -245,7 +245,7 @@ Dapper emits no spans (Npgsql traces commands). Npgsql's per-command Information
 - **Integration lane** (`Platform.SharedKernel.Integration.slnf`, Testcontainers PostgreSQL via
   `src/Testing/SharedKernel.Testing.Internal`'s `PostgreSqlContainerFixture`): `EfCore.Integration.Tests`,
   `Npgsql.Tests`, `Dapper.Tests`, `EfCore.Auditing.Tests`, `EfCore.Encryption.Tests`, and
-  `src/Testing/SharedKernel.Persistence.Testing.Tests`.
+  `src/Infrastructure/Persistence/SharedKernel.Persistence.Testing/SharedKernel.Persistence.Testing.Tests`.
 - **RLS and tenant-isolation claims are proven through an unprivileged role** (a superuser bypasses RLS even under
   `FORCE`); attack tests build the detached stub or raw SQL a hostile caller would send.
 - Concurrency, commit-order and retry claims are proven empirically (real concurrent writers, injected transient
@@ -257,7 +257,7 @@ Dapper emits no spans (Npgsql traces commands). Npgsql's per-command Information
   `ReadmeSampleTests`); `AuditFormatVectorTests` parses the packed `AUDIT-FORMAT.md`.
 - `SharedKernel.Persistence.ConsumerVerify` runs against packed packages in CI; build and pack steps are in
   `CONTRIBUTING.md` / `eng/README.md`.
-- Consumers use `src/Testing/SharedKernel.Persistence.Testing`: `AddFakeRepository<T,TId>()`, `AddFakeUnitOfWork()`
+- Consumers use `src/Infrastructure/Persistence/SharedKernel.Persistence.Testing`: `AddFakeRepository<T,TId>()`, `AddFakeUnitOfWork()`
   (`TransientFailures` proves a handler re-runnable), `AddFakeAuditTrailWriter()`, `AddFakeCrossTenantScope()`,
   `FakeDbConnectionFactory`, `PostgresTestServer`/`PostgresTestDatabase` (canonical roles); the caller is
   `SharedKernel.Testing`'s `TestRequestContext`.

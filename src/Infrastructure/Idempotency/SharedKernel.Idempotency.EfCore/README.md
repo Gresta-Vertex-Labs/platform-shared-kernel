@@ -195,7 +195,7 @@ No probe of its own. Add `ServiceDefaults.Persistence`'s database readiness chec
 
 ## Testing
 
-Unit tests use [`SharedKernel.Idempotency.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Idempotency.Testing/README.md):
+Unit tests use [`SharedKernel.Idempotency.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Idempotency/SharedKernel.Idempotency.Testing/README.md):
 `services.AddFakeIdempotencyStore()` replaces this store with an in-memory `FakeIdempotencyStore` that follows the
 same protocol. Concurrency, tenant isolation and expiry reclaim need a real PostgreSQL (for example Testcontainers).
 

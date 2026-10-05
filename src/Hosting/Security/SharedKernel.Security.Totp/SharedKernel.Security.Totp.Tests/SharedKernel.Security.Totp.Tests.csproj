@@ -5,8 +5,8 @@
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Security.Totp.csproj" />
     <ProjectReference Include="..\..\..\..\Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
-    <ProjectReference Include="..\..\..\..\Testing\SharedKernel.Cryptography.Testing\SharedKernel.Cryptography.Testing.csproj" />
-    <ProjectReference Include="..\..\..\..\Testing\SharedKernel.Security.Testing\SharedKernel.Security.Testing.csproj" />
+    <ProjectReference Include="..\..\..\..\Foundation\SharedKernel.Cryptography.Testing\SharedKernel.Cryptography.Testing.csproj" />
+    <ProjectReference Include="..\..\SharedKernel.Security.Testing\SharedKernel.Security.Testing.csproj" />
     <!--
       T-46 cross-package interop test ONLY: proves a ClaimsPrincipal transformed by
       TotpStepUpClaimsTransformation, fed into .Oidc's REAL OidcUserContext constructor, resolves

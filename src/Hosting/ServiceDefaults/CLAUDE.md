@@ -129,7 +129,7 @@ Next free: 13008 (shared block), 13102 (MultiTenancy).
 - `RateLimitRejectionRecipeTests` drive real hosts with a test-only reference to `SharedKernel.Presentation.WebApi` (platform 429 with it, bare 429 without, a service's `OnRejected` wins).
 - `RequestBaggageRefusingPropagator` tests replace the process-wide propagator, so they run in a non-parallel collection.
 - `CompositionBaseIsolationTests` must fail when a SharedKernel reference is added to the base project.
-- Consumer fakes (`src/Testing/SharedKernel.ServiceDefaults.Testing`): `FakeTenantResolutionStrategy`, `InMemoryTenantCatalog`.
+- Consumer fakes (`src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Testing`): `FakeTenantResolutionStrategy`, `InMemoryTenantCatalog`.
 
 ## Known Limitations
 

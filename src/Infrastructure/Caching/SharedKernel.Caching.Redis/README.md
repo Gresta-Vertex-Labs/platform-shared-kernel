@@ -272,7 +272,7 @@ health is the `redis` readiness probe of `AddRedisConnection`; cache health is t
 ## Testing
 
 Unit tests do not need the distributed layer: reference
-[`SharedKernel.Caching.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Caching.Testing/README.md)
+[`SharedKernel.Caching.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Caching/SharedKernel.Caching.Testing/README.md)
 and call `services.AddFakeCachingServices()` (plus `AddFakeTenantCacheService()`), which replaces `ICacheService`
 without FusionCache or Redis.
 

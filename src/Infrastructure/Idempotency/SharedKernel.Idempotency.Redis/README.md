@@ -147,7 +147,7 @@ No probe of its own: the shared connection registers the `redis` readiness probe
 
 ## Testing
 
-Unit tests use [`SharedKernel.Idempotency.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Idempotency.Testing/README.md):
+Unit tests use [`SharedKernel.Idempotency.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Idempotency/SharedKernel.Idempotency.Testing/README.md):
 `services.AddFakeIdempotencyStore()` replaces this store with an in-memory `FakeIdempotencyStore` that follows the
 same protocol. Atomicity, tenant isolation and expiry claims need a real Redis (for example Testcontainers); a fake
 is not evidence for them.

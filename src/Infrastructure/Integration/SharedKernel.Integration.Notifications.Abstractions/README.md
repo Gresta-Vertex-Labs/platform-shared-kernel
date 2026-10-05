@@ -208,7 +208,7 @@ This package does no I/O and does not log (EventId block 15100–15199 is reserv
 
 ## Testing
 
-Reference [`SharedKernel.Integration.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Integration.Testing/README.md).
+Reference [`SharedKernel.Integration.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Integration/SharedKernel.Integration.Testing/README.md).
 `services.AddInMemoryNotificationSender(NotificationChannel.Email)` registers a keyed `InMemoryNotificationSender`:
 assert with `ShouldHaveSent<TModel>(m => …)` / `ShouldNotHaveSent<TModel>()`, read `SentOf<TModel>()`, and shape
 results with `SetSendResult`. `AddInMemoryNotificationDeliveryObserver()` records attempts and completions

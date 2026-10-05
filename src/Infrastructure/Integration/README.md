@@ -39,7 +39,7 @@ over plain REST with no SDKs, and they report failures as values instead of exce
 | [`SharedKernel.Integration.Notifications.Email.SendGrid`](SharedKernel.Integration.Notifications.Email.SendGrid/README.md) | Adapter | Email through SendGrid dynamic templates, attachments from `08.Storage` |
 | [`SharedKernel.Integration.Notifications.Sms.Twilio`](SharedKernel.Integration.Notifications.Sms.Twilio/README.md) | Adapter | SMS through Twilio Content templates, deduplicated by `Idempotency-Key` |
 
-Test doubles: [`SharedKernel.Integration.Testing`](../../Testing/SharedKernel.Integration.Testing/README.md)
+Test doubles: [`SharedKernel.Integration.Testing`](./SharedKernel.Integration.Testing/README.md)
 (`AddInMemoryWebhookDispatcher()`, `AddInMemoryWebhookDeliveryObserver()`, `AddInMemoryNotificationSender(channel)`,
 `AddInMemoryNotificationDeliveryObserver()`).
 

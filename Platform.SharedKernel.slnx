@@ -21,10 +21,14 @@
     <Project Path="src/Foundation/SharedKernel.Cryptography.Argon2/SharedKernel.Cryptography.Argon2.Tests/SharedKernel.Cryptography.Argon2.Tests.csproj" />
     <Project Path="src/Foundation/SharedKernel.Cryptography.KeyVault.Azure/SharedKernel.Cryptography.KeyVault.Azure.csproj" />
     <Project Path="src/Foundation/SharedKernel.Cryptography.KeyVault.Azure/SharedKernel.Cryptography.KeyVault.Azure.Tests/SharedKernel.Cryptography.KeyVault.Azure.Tests.csproj" />
+    <Project Path="src/Foundation/SharedKernel.Cryptography.Testing/SharedKernel.Cryptography.Testing.Tests/SharedKernel.Cryptography.Testing.Tests.csproj" />
+    <Project Path="src/Foundation/SharedKernel.Cryptography.Testing/SharedKernel.Cryptography.Testing.csproj" />
     <Project Path="src/Foundation/SharedKernel.Execution/SharedKernel.Execution.csproj" />
     <Project Path="src/Foundation/SharedKernel.Execution/SharedKernel.Execution.Tests/SharedKernel.Execution.Tests.csproj" />
     <Project Path="src/Foundation/SharedKernel.DataPrivacy/SharedKernel.DataPrivacy.csproj" />
     <Project Path="src/Foundation/SharedKernel.DataPrivacy/SharedKernel.DataPrivacy.Tests/SharedKernel.DataPrivacy.Tests.csproj" />
+    <Project Path="src/Foundation/SharedKernel.FeatureManagement.Testing/SharedKernel.FeatureManagement.Testing.Tests/SharedKernel.FeatureManagement.Testing.Tests.csproj" />
+    <Project Path="src/Foundation/SharedKernel.FeatureManagement.Testing/SharedKernel.FeatureManagement.Testing.csproj" />
     <Project Path="src/Foundation/SharedKernel.FeatureManagement/SharedKernel.FeatureManagement.csproj" />
     <Project Path="src/Foundation/SharedKernel.FeatureManagement/SharedKernel.FeatureManagement.Tests/SharedKernel.FeatureManagement.Tests.csproj" />
     <Project Path="src/Foundation/SharedKernel.Localization/SharedKernel.Localization.csproj" />
@@ -51,6 +55,10 @@
     <Project Path="src/Infrastructure/Caching/SharedKernel.Caching.Redis.PubSub/SharedKernel.Caching.Redis.PubSub.Tests/SharedKernel.Caching.Redis.PubSub.Tests.csproj" />
     <Project Path="src/Infrastructure/Caching/SharedKernel.Caching.FusionCache/SharedKernel.Caching.FusionCache.csproj" />
     <Project Path="src/Infrastructure/Caching/SharedKernel.Caching.FusionCache/SharedKernel.Caching.FusionCache.Tests/SharedKernel.Caching.FusionCache.Tests.csproj" />
+    <Project Path="src/Infrastructure/Caching/SharedKernel.Caching.Redis.Testing/SharedKernel.Caching.Redis.Testing.Tests/SharedKernel.Caching.Redis.Testing.Tests.csproj" />
+    <Project Path="src/Infrastructure/Caching/SharedKernel.Caching.Redis.Testing/SharedKernel.Caching.Redis.Testing.csproj" />
+    <Project Path="src/Infrastructure/Caching/SharedKernel.Caching.Testing/SharedKernel.Caching.Testing.Tests/SharedKernel.Caching.Testing.Tests.csproj" />
+    <Project Path="src/Infrastructure/Caching/SharedKernel.Caching.Testing/SharedKernel.Caching.Testing.csproj" />
   </Folder>
   <Folder Name="/src/Model/Domain/">
     <Project Path="src/Model/Domain/SharedKernel.Domain/SharedKernel.Domain.csproj" />
@@ -67,6 +75,8 @@
     <Project Path="src/Application/SharedKernel.Application.Pipeline.Caching/SharedKernel.Application.Pipeline.Caching.Tests/SharedKernel.Application.Pipeline.Caching.Tests.csproj" />
     <Project Path="src/Application/SharedKernel.Application.Pipeline/SharedKernel.Application.Pipeline.csproj" />
     <Project Path="src/Application/SharedKernel.Application.Pipeline/SharedKernel.Application.Pipeline.Tests/SharedKernel.Application.Pipeline.Tests.csproj" />
+    <Project Path="src/Application/SharedKernel.Application.Testing/SharedKernel.Application.Testing.Tests/SharedKernel.Application.Testing.Tests.csproj" />
+    <Project Path="src/Application/SharedKernel.Application.Testing/SharedKernel.Application.Testing.csproj" />
     <Project Path="src/Application/SharedKernel.Application/SharedKernel.Application.csproj" />
     <Project Path="src/Application/SharedKernel.Application/SharedKernel.Application.Tests/SharedKernel.Application.Tests.csproj" />
   </Folder>
@@ -84,6 +94,8 @@
     <Project Path="src/Infrastructure/Persistence/SharedKernel.Persistence.EfCore.Encryption/SharedKernel.Persistence.EfCore.Encryption.Tests/SharedKernel.Persistence.EfCore.Encryption.Tests.csproj" />
     <Project Path="src/Infrastructure/Persistence/SharedKernel.Persistence.Npgsql/SharedKernel.Persistence.Npgsql.csproj" />
     <Project Path="src/Infrastructure/Persistence/SharedKernel.Persistence.Npgsql/SharedKernel.Persistence.Npgsql.Tests/SharedKernel.Persistence.Npgsql.Tests.csproj" />
+    <Project Path="src/Infrastructure/Persistence/SharedKernel.Persistence.Testing/SharedKernel.Persistence.Testing.Tests/SharedKernel.Persistence.Testing.Tests.csproj" />
+    <Project Path="src/Infrastructure/Persistence/SharedKernel.Persistence.Testing/SharedKernel.Persistence.Testing.csproj" />
   </Folder>
   <Folder Name="/src/Infrastructure/Messaging/">
     <Project Path="src/Infrastructure/Messaging/SharedKernel.Messaging.Abstractions/SharedKernel.Messaging.Abstractions.csproj" />
@@ -97,6 +109,8 @@
     <Project Path="src/Infrastructure/Messaging/SharedKernel.Messaging.MassTransit.EfCore/SharedKernel.Messaging.MassTransit.EfCore.Tests/SharedKernel.Messaging.MassTransit.EfCore.Tests.csproj" />
     <Project Path="src/Infrastructure/Messaging/SharedKernel.Messaging.MassTransit.RabbitMq/SharedKernel.Messaging.MassTransit.RabbitMq.csproj" />
     <Project Path="src/Infrastructure/Messaging/SharedKernel.Messaging.MassTransit.RabbitMq/SharedKernel.Messaging.MassTransit.RabbitMq.Tests/SharedKernel.Messaging.MassTransit.RabbitMq.Tests.csproj" />
+    <Project Path="src/Infrastructure/Messaging/SharedKernel.Messaging.Testing/SharedKernel.Messaging.Testing.Tests/SharedKernel.Messaging.Testing.Tests.csproj" />
+    <Project Path="src/Infrastructure/Messaging/SharedKernel.Messaging.Testing/SharedKernel.Messaging.Testing.csproj" />
     <Project Path="src/Infrastructure/Messaging/consumer-verify/consumer-verify.csproj" />
   </Folder>
   <Folder Name="/src/Infrastructure/Storage/">
@@ -106,6 +120,8 @@
     <Project Path="src/Infrastructure/Storage/SharedKernel.Storage.S3/SharedKernel.Storage.S3.Tests/SharedKernel.Storage.S3.Tests.csproj" />
     <Project Path="src/Infrastructure/Storage/SharedKernel.Storage.Obs/SharedKernel.Storage.Obs.csproj" />
     <Project Path="src/Infrastructure/Storage/SharedKernel.Storage.Obs/SharedKernel.Storage.Obs.Tests/SharedKernel.Storage.Obs.Tests.csproj" />
+    <Project Path="src/Infrastructure/Storage/SharedKernel.Storage.Testing/SharedKernel.Storage.Testing.Tests/SharedKernel.Storage.Testing.Tests.csproj" />
+    <Project Path="src/Infrastructure/Storage/SharedKernel.Storage.Testing/SharedKernel.Storage.Testing.csproj" />
     <Project Path="src/Infrastructure/Storage/consumer-verify/consumer-verify.csproj" />
   </Folder>
   <Folder Name="/src/Infrastructure/Search/">
@@ -115,6 +131,8 @@
     <Project Path="src/Infrastructure/Search/SharedKernel.Search.ElasticSearch/SharedKernel.Search.ElasticSearch.Tests/SharedKernel.Search.ElasticSearch.Tests.csproj" />
     <Project Path="src/Infrastructure/Search/SharedKernel.Search.Meilisearch/SharedKernel.Search.Meilisearch.csproj" />
     <Project Path="src/Infrastructure/Search/SharedKernel.Search.Meilisearch/SharedKernel.Search.Meilisearch.Tests/SharedKernel.Search.Meilisearch.Tests.csproj" />
+    <Project Path="src/Infrastructure/Search/SharedKernel.Search.Testing/SharedKernel.Search.Testing.Tests/SharedKernel.Search.Testing.Tests.csproj" />
+    <Project Path="src/Infrastructure/Search/SharedKernel.Search.Testing/SharedKernel.Search.Testing.csproj" />
     <Project Path="src/Infrastructure/Search/consumer-verify/Meilisearch/consumer-verify.Meilisearch.csproj" />
     <Project Path="src/Infrastructure/Search/consumer-verify/ElasticSearch/consumer-verify.ElasticSearch.csproj" />
     <Project Path="src/Infrastructure/Search/consumer-verify/BothProviders/consumer-verify.BothProviders.csproj" />
@@ -126,6 +144,8 @@
     <Project Path="src/Infrastructure/AI/SharedKernel.AI.Qdrant/SharedKernel.AI.Qdrant.Tests/SharedKernel.AI.Qdrant.Tests.csproj" />
     <Project Path="src/Infrastructure/AI/SharedKernel.AI.SemanticKernel/SharedKernel.AI.SemanticKernel.csproj" />
     <Project Path="src/Infrastructure/AI/SharedKernel.AI.SemanticKernel/SharedKernel.AI.SemanticKernel.Tests/SharedKernel.AI.SemanticKernel.Tests.csproj" />
+    <Project Path="src/Infrastructure/AI/SharedKernel.AI.Testing/SharedKernel.AI.Testing.Tests/SharedKernel.AI.Testing.Tests.csproj" />
+    <Project Path="src/Infrastructure/AI/SharedKernel.AI.Testing/SharedKernel.AI.Testing.csproj" />
     <Project Path="src/Infrastructure/AI/consumer-verify/Qdrant/consumer-verify.Qdrant.csproj" />
     <Project Path="src/Infrastructure/AI/consumer-verify/SemanticKernel/consumer-verify.SemanticKernel.csproj" />
   </Folder>
@@ -136,6 +156,8 @@
     <Project Path="src/Infrastructure/Communication/SharedKernel.Communication/SharedKernel.Communication.Tests/SharedKernel.Communication.Tests.csproj" />
     <Project Path="src/Infrastructure/Communication/SharedKernel.Communication.Rest/SharedKernel.Communication.Rest.csproj" />
     <Project Path="src/Infrastructure/Communication/SharedKernel.Communication.Rest/SharedKernel.Communication.Rest.Tests/SharedKernel.Communication.Rest.Tests.csproj" />
+    <Project Path="src/Infrastructure/Communication/SharedKernel.Communication.Testing/SharedKernel.Communication.Testing.Tests/SharedKernel.Communication.Testing.Tests.csproj" />
+    <Project Path="src/Infrastructure/Communication/SharedKernel.Communication.Testing/SharedKernel.Communication.Testing.csproj" />
     <Project Path="src/Infrastructure/Communication/consumer-verify/consumer-verify.csproj" />
   </Folder>
   <Folder Name="/src/Hosting/Security/">
@@ -147,6 +169,8 @@
     <Project Path="src/Hosting/Security/SharedKernel.Security.ApiKey/SharedKernel.Security.ApiKey.Tests/SharedKernel.Security.ApiKey.Tests.csproj" />
     <Project Path="src/Hosting/Security/SharedKernel.Security.Mtls/SharedKernel.Security.Mtls.csproj" />
     <Project Path="src/Hosting/Security/SharedKernel.Security.Mtls/SharedKernel.Security.Mtls.Tests/SharedKernel.Security.Mtls.Tests.csproj" />
+    <Project Path="src/Hosting/Security/SharedKernel.Security.Testing/SharedKernel.Security.Testing.Tests/SharedKernel.Security.Testing.Tests.csproj" />
+    <Project Path="src/Hosting/Security/SharedKernel.Security.Testing/SharedKernel.Security.Testing.csproj" />
     <Project Path="src/Hosting/Security/SharedKernel.Security.Totp/SharedKernel.Security.Totp.csproj" />
     <Project Path="src/Hosting/Security/SharedKernel.Security.Totp/SharedKernel.Security.Totp.Tests/SharedKernel.Security.Totp.Tests.csproj" />
   </Folder>
@@ -165,6 +189,8 @@
     <Project Path="src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Security/SharedKernel.ServiceDefaults.Security.Tests/SharedKernel.ServiceDefaults.Security.Tests.csproj" />
     <Project Path="src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Security.Mtls/SharedKernel.ServiceDefaults.Security.Mtls.csproj" />
     <Project Path="src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Security.Mtls/SharedKernel.ServiceDefaults.Security.Mtls.Tests/SharedKernel.ServiceDefaults.Security.Mtls.Tests.csproj" />
+    <Project Path="src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Testing/SharedKernel.ServiceDefaults.Testing.Tests/SharedKernel.ServiceDefaults.Testing.Tests.csproj" />
+    <Project Path="src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Testing/SharedKernel.ServiceDefaults.Testing.csproj" />
     <Project Path="src/Hosting/ServiceDefaults/consumer-verify/consumer-verify.csproj" />
   </Folder>
   <Folder Name="/src/Hosting/Presentation/">
@@ -182,6 +208,8 @@
     <Project Path="src/Hosting/Presentation/SharedKernel.Presentation.WebApi.Generators/SharedKernel.Presentation.WebApi.Generators.Tests/SharedKernel.Presentation.WebApi.Generators.Tests.csproj" />
     <Project Path="src/Hosting/Presentation/SharedKernel.Presentation.OpenApi/SharedKernel.Presentation.OpenApi.csproj" />
     <Project Path="src/Hosting/Presentation/SharedKernel.Presentation.OpenApi/SharedKernel.Presentation.OpenApi.Tests/SharedKernel.Presentation.OpenApi.Tests.csproj" />
+    <Project Path="src/Hosting/Presentation/SharedKernel.Presentation.Testing/SharedKernel.Presentation.Testing.Tests/SharedKernel.Presentation.Testing.Tests.csproj" />
+    <Project Path="src/Hosting/Presentation/SharedKernel.Presentation.Testing/SharedKernel.Presentation.Testing.csproj" />
     <Project Path="src/Hosting/Presentation/consumer-verify/consumer-verify.csproj" />
   </Folder>
   <Folder Name="/src/Infrastructure/Integration/">
@@ -193,55 +221,21 @@
     <Project Path="src/Infrastructure/Integration/SharedKernel.Integration.Notifications.Email.SendGrid/SharedKernel.Integration.Notifications.Email.SendGrid.Tests/SharedKernel.Integration.Notifications.Email.SendGrid.Tests.csproj" />
     <Project Path="src/Infrastructure/Integration/SharedKernel.Integration.Notifications.Sms.Twilio/SharedKernel.Integration.Notifications.Sms.Twilio.csproj" />
     <Project Path="src/Infrastructure/Integration/SharedKernel.Integration.Notifications.Sms.Twilio/SharedKernel.Integration.Notifications.Sms.Twilio.Tests/SharedKernel.Integration.Notifications.Sms.Twilio.Tests.csproj" />
+    <Project Path="src/Infrastructure/Integration/SharedKernel.Integration.Testing/SharedKernel.Integration.Testing.Tests/SharedKernel.Integration.Testing.Tests.csproj" />
+    <Project Path="src/Infrastructure/Integration/SharedKernel.Integration.Testing/SharedKernel.Integration.Testing.csproj" />
     <Project Path="src/Infrastructure/Integration/consumer-verify/consumer-verify.csproj" />
   </Folder>
   <Folder Name="/src/Testing/">
-    <Project Path="src/Testing/SharedKernel.AI.Testing/SharedKernel.AI.Testing.csproj" />
-    <Project Path="src/Testing/SharedKernel.Application.Testing/SharedKernel.Application.Testing.csproj" />
-    <Project Path="src/Testing/SharedKernel.Caching.Redis.Testing/SharedKernel.Caching.Redis.Testing.csproj" />
-    <Project Path="src/Testing/SharedKernel.Caching.Testing/SharedKernel.Caching.Testing.csproj" />
-    <Project Path="src/Testing/SharedKernel.Communication.Testing/SharedKernel.Communication.Testing.csproj" />
-    <Project Path="src/Testing/SharedKernel.Cryptography.Testing/SharedKernel.Cryptography.Testing.csproj" />
-    <Project Path="src/Testing/SharedKernel.FeatureManagement.Testing/SharedKernel.FeatureManagement.Testing.csproj" />
-    <Project Path="src/Testing/SharedKernel.Idempotency.Testing/SharedKernel.Idempotency.Testing.csproj" />
-    <Project Path="src/Testing/SharedKernel.Integration.Testing/SharedKernel.Integration.Testing.csproj" />
-    <Project Path="src/Testing/SharedKernel.Messaging.Testing/SharedKernel.Messaging.Testing.csproj" />
-    <Project Path="src/Testing/SharedKernel.Persistence.Testing/SharedKernel.Persistence.Testing.csproj" />
-    <Project Path="src/Testing/SharedKernel.Presentation.Testing/SharedKernel.Presentation.Testing.csproj" />
-    <Project Path="src/Testing/SharedKernel.Reporting.Testing/SharedKernel.Reporting.Testing.csproj" />
-    <Project Path="src/Testing/SharedKernel.Scheduling.Testing/SharedKernel.Scheduling.Testing.csproj" />
-    <Project Path="src/Testing/SharedKernel.Search.Testing/SharedKernel.Search.Testing.csproj" />
-    <Project Path="src/Testing/SharedKernel.Security.Testing/SharedKernel.Security.Testing.csproj" />
-    <Project Path="src/Testing/SharedKernel.ServiceDefaults.Testing/SharedKernel.ServiceDefaults.Testing.csproj" />
-    <Project Path="src/Testing/SharedKernel.Storage.Testing/SharedKernel.Storage.Testing.csproj" />
     <Project Path="src/Testing/SharedKernel.Testing.Internal/SharedKernel.Testing.Internal.csproj" />
     <Project Path="src/Testing/SharedKernel.Testing/SharedKernel.Testing.csproj" />
-    <Project Path="src/Testing/SharedKernel.Workflows.Testing/SharedKernel.Workflows.Testing.csproj" />
-    <Project Path="src/Testing/SharedKernel.AI.Testing/SharedKernel.AI.Testing.Tests/SharedKernel.AI.Testing.Tests.csproj" />
-    <Project Path="src/Testing/SharedKernel.Application.Testing/SharedKernel.Application.Testing.Tests/SharedKernel.Application.Testing.Tests.csproj" />
-    <Project Path="src/Testing/SharedKernel.Caching.Redis.Testing/SharedKernel.Caching.Redis.Testing.Tests/SharedKernel.Caching.Redis.Testing.Tests.csproj" />
-    <Project Path="src/Testing/SharedKernel.Caching.Testing/SharedKernel.Caching.Testing.Tests/SharedKernel.Caching.Testing.Tests.csproj" />
-    <Project Path="src/Testing/SharedKernel.Communication.Testing/SharedKernel.Communication.Testing.Tests/SharedKernel.Communication.Testing.Tests.csproj" />
-    <Project Path="src/Testing/SharedKernel.Cryptography.Testing/SharedKernel.Cryptography.Testing.Tests/SharedKernel.Cryptography.Testing.Tests.csproj" />
-    <Project Path="src/Testing/SharedKernel.FeatureManagement.Testing/SharedKernel.FeatureManagement.Testing.Tests/SharedKernel.FeatureManagement.Testing.Tests.csproj" />
-    <Project Path="src/Testing/SharedKernel.Idempotency.Testing/SharedKernel.Idempotency.Testing.Tests/SharedKernel.Idempotency.Testing.Tests.csproj" />
-    <Project Path="src/Testing/SharedKernel.Integration.Testing/SharedKernel.Integration.Testing.Tests/SharedKernel.Integration.Testing.Tests.csproj" />
-    <Project Path="src/Testing/SharedKernel.Messaging.Testing/SharedKernel.Messaging.Testing.Tests/SharedKernel.Messaging.Testing.Tests.csproj" />
-    <Project Path="src/Testing/SharedKernel.Persistence.Testing/SharedKernel.Persistence.Testing.Tests/SharedKernel.Persistence.Testing.Tests.csproj" />
-    <Project Path="src/Testing/SharedKernel.Presentation.Testing/SharedKernel.Presentation.Testing.Tests/SharedKernel.Presentation.Testing.Tests.csproj" />
-    <Project Path="src/Testing/SharedKernel.Reporting.Testing/SharedKernel.Reporting.Testing.Tests/SharedKernel.Reporting.Testing.Tests.csproj" />
-    <Project Path="src/Testing/SharedKernel.Scheduling.Testing/SharedKernel.Scheduling.Testing.Tests/SharedKernel.Scheduling.Testing.Tests.csproj" />
-    <Project Path="src/Testing/SharedKernel.Search.Testing/SharedKernel.Search.Testing.Tests/SharedKernel.Search.Testing.Tests.csproj" />
-    <Project Path="src/Testing/SharedKernel.Security.Testing/SharedKernel.Security.Testing.Tests/SharedKernel.Security.Testing.Tests.csproj" />
-    <Project Path="src/Testing/SharedKernel.ServiceDefaults.Testing/SharedKernel.ServiceDefaults.Testing.Tests/SharedKernel.ServiceDefaults.Testing.Tests.csproj" />
-    <Project Path="src/Testing/SharedKernel.Storage.Testing/SharedKernel.Storage.Testing.Tests/SharedKernel.Storage.Testing.Tests.csproj" />
     <Project Path="src/Testing/SharedKernel.Testing.Internal/SharedKernel.Testing.Internal.Tests/SharedKernel.Testing.Internal.Tests.csproj" />
     <Project Path="src/Testing/SharedKernel.Testing/SharedKernel.Testing.Tests/SharedKernel.Testing.Tests.csproj" />
-    <Project Path="src/Testing/SharedKernel.Workflows.Testing/SharedKernel.Workflows.Testing.Tests/SharedKernel.Workflows.Testing.Tests.csproj" />
   </Folder>
   <Folder Name="/src/Infrastructure/Workflows/">
     <Project Path="src/Infrastructure/Workflows/SharedKernel.Workflows.Temporal/SharedKernel.Workflows.Temporal.csproj" />
     <Project Path="src/Infrastructure/Workflows/SharedKernel.Workflows.Temporal/SharedKernel.Workflows.Temporal.Tests/SharedKernel.Workflows.Temporal.Tests.csproj" />
+    <Project Path="src/Infrastructure/Workflows/SharedKernel.Workflows.Testing/SharedKernel.Workflows.Testing.Tests/SharedKernel.Workflows.Testing.Tests.csproj" />
+    <Project Path="src/Infrastructure/Workflows/SharedKernel.Workflows.Testing/SharedKernel.Workflows.Testing.csproj" />
     <Project Path="src/Infrastructure/Workflows/consumer-verify/consumer-verify.csproj" />
   </Folder>
   <Folder Name="/src/Infrastructure/Idempotency/">
@@ -251,8 +245,12 @@
     <Project Path="src/Infrastructure/Idempotency/SharedKernel.Idempotency.Redis/SharedKernel.Idempotency.Redis.Tests/SharedKernel.Idempotency.Redis.Tests.csproj" />
     <Project Path="src/Infrastructure/Idempotency/SharedKernel.Idempotency.EfCore/SharedKernel.Idempotency.EfCore.csproj" />
     <Project Path="src/Infrastructure/Idempotency/SharedKernel.Idempotency.EfCore/SharedKernel.Idempotency.EfCore.Tests/SharedKernel.Idempotency.EfCore.Tests.csproj" />
+    <Project Path="src/Infrastructure/Idempotency/SharedKernel.Idempotency.Testing/SharedKernel.Idempotency.Testing.Tests/SharedKernel.Idempotency.Testing.Tests.csproj" />
+    <Project Path="src/Infrastructure/Idempotency/SharedKernel.Idempotency.Testing/SharedKernel.Idempotency.Testing.csproj" />
   </Folder>
   <Folder Name="/src/Infrastructure/Scheduling/">
+    <Project Path="src/Infrastructure/Scheduling/SharedKernel.Scheduling.Testing/SharedKernel.Scheduling.Testing.Tests/SharedKernel.Scheduling.Testing.Tests.csproj" />
+    <Project Path="src/Infrastructure/Scheduling/SharedKernel.Scheduling.Testing/SharedKernel.Scheduling.Testing.csproj" />
     <Project Path="src/Infrastructure/Scheduling/SharedKernel.Scheduling/SharedKernel.Scheduling.csproj" />
     <Project Path="src/Infrastructure/Scheduling/SharedKernel.Scheduling/SharedKernel.Scheduling.Tests/SharedKernel.Scheduling.Tests.csproj" />
     <Project Path="src/Infrastructure/Scheduling/consumer-verify/consumer-verify.csproj" />
@@ -268,6 +266,8 @@
     <Project Path="src/Infrastructure/Reporting/SharedKernel.Reporting.Spreadsheet/SharedKernel.Reporting.Spreadsheet.Tests/SharedKernel.Reporting.Spreadsheet.Tests.csproj" />
     <Project Path="src/Infrastructure/Reporting/SharedKernel.Reporting.Pdf/SharedKernel.Reporting.Pdf.csproj" />
     <Project Path="src/Infrastructure/Reporting/SharedKernel.Reporting.Pdf/SharedKernel.Reporting.Pdf.Tests/SharedKernel.Reporting.Pdf.Tests.csproj" />
+    <Project Path="src/Infrastructure/Reporting/SharedKernel.Reporting.Testing/SharedKernel.Reporting.Testing.Tests/SharedKernel.Reporting.Testing.Tests.csproj" />
+    <Project Path="src/Infrastructure/Reporting/SharedKernel.Reporting.Testing/SharedKernel.Reporting.Testing.csproj" />
     <Project Path="src/Infrastructure/Reporting/consumer-verify/consumer-verify.csproj" />
   </Folder>
 </Solution>

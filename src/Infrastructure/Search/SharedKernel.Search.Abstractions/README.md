@@ -340,7 +340,7 @@ all probes with `services.AddHealthChecks().AddSharedKernelReadiness()`.
 
 ## Testing
 
-Reference [`SharedKernel.Search.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Search.Testing/README.md)
+Reference [`SharedKernel.Search.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Search/SharedKernel.Search.Testing/README.md)
 (namespace `SharedKernel.Testing.Search`) from your test project. No engine is needed.
 
 ```csharp

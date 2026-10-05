@@ -52,8 +52,8 @@ Related packages outside this folder:
 | --- | --- |
 | [SharedKernel.Application.Pipeline.Caching](../../Application/SharedKernel.Application.Pipeline.Caching/README.md) | `app.WithCaching()` — caches `ICacheableQuery` results and evicts after `IInvalidatesCache` commands, over `ICacheService` |
 | [SharedKernel.ServiceDefaults](../../Hosting/ServiceDefaults/SharedKernel.ServiceDefaults/README.md) | `AddHealthChecks().AddSharedKernelReadiness()` maps the `cache` and `redis` probes to `/health/ready`; `WithCachingTelemetry()` exports the `SharedKernel.Caching` meter and traces |
-| [SharedKernel.Caching.Testing](../../Testing/SharedKernel.Caching.Testing/README.md) | `AddFakeCachingServices()`, `AddFakeTenantCacheService()` — in-memory cache and lock fakes, no Redis |
-| [SharedKernel.Caching.Redis.Testing](../../Testing/SharedKernel.Caching.Redis.Testing/README.md) | `AddFakeRedisServices()` — in-memory hash store and Pub/Sub fakes |
+| [SharedKernel.Caching.Testing](./SharedKernel.Caching.Testing/README.md) | `AddFakeCachingServices()`, `AddFakeTenantCacheService()` — in-memory cache and lock fakes, no Redis |
+| [SharedKernel.Caching.Redis.Testing](./SharedKernel.Caching.Redis.Testing/README.md) | `AddFakeRedisServices()` — in-memory hash store and Pub/Sub fakes |
 
 ## How it fits together
 

@@ -41,7 +41,7 @@ client method is one line.
 | [`SharedKernel.Communication.Grpc`](SharedKernel.Communication.Grpc/README.md) | Adapter | You call another service over gRPC: `AddGrpcClient<T>(name)`, `ToResultAsync()`, `google.type.Money` ↔ `Money` |
 
 All three go into a service's **Infrastructure** project and reference nothing from ASP.NET Core. Test doubles live in
-[`SharedKernel.Communication.Testing`](../../Testing/SharedKernel.Communication.Testing/README.md)
+[`SharedKernel.Communication.Testing`](./SharedKernel.Communication.Testing/README.md)
 (`StubHttpMessageHandler`, `GrpcCalls`, `TestServerCallContext`). Server-side conventions — the ProblemDetails and rich
 statuses these clients read back — live in [`14.Presentation`](../../Hosting/Presentation/README.md).
 

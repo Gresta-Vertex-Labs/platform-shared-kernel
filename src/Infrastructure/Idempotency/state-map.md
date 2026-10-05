@@ -14,7 +14,7 @@
 | `SharedKernel.Idempotency.Redis` | Adapter | ● | `RedisIdempotencyStore` (atomic Lua) for every purpose; `AddRedisIdempotency(p => …, o => …)`; message entries are hashes. Built on `Caching.Redis.Core` (declared adapter edge). |
 | `SharedKernel.Idempotency.EfCore` | Adapter | ● | `EfCoreIdempotencyStore` (`INSERT … ON CONFLICT`); `AddEfCoreIdempotency(db => …, p => …, o => …)`; table keyed `(tenant_scope, purpose, key)`. Built on `Persistence.EfCore` (declared adapter edge). |
 
-Test double: `FakeIdempotencyStore` + `AddFakeIdempotencyStore(purposes)` in `src/Testing/SharedKernel.Idempotency.Testing`. Provider tests run in the Integration lane against real Redis/PostgreSQL.
+Test double: `FakeIdempotencyStore` + `AddFakeIdempotencyStore(purposes)` in `src/Infrastructure/Idempotency/SharedKernel.Idempotency.Testing`. Provider tests run in the Integration lane against real Redis/PostgreSQL.
 
 ## Phase Key Registry
 

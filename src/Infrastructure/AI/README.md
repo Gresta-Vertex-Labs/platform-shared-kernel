@@ -184,7 +184,7 @@ configuration fails at startup. Neither needs a live server.
 
 ## Testing
 
-[`SharedKernel.AI.Testing`](../../Testing/SharedKernel.AI.Testing/README.md) has an in-memory double for every
+[`SharedKernel.AI.Testing`](./SharedKernel.AI.Testing/README.md) has an in-memory double for every
 neutral contract: a deterministic embedding generator (vectors derived from a hash of the text), a vector collection
 that applies the same model, dimension and tenant checks as Qdrant, a provisioner, descriptors, and a scripted
 `InMemorySemanticKernel`. No model, network or vector database is needed. The Qdrant adapter's own conformance suite

@@ -121,7 +121,7 @@ This package does not log and registers no probe; the bus's `messaging` probe an
 ## Testing
 
 Application code is tested against
-[`SharedKernel.Messaging.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Messaging.Testing/README.md)'s
+[`SharedKernel.Messaging.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Messaging/SharedKernel.Messaging.Testing/README.md)'s
 in-memory fakes, with no outbox involved. To test the outbox wiring, use SQLite with a kept-open
 `SqliteConnection("Data Source=:memory:")` and `Database = OutboxDatabase.Sqlite`, or PostgreSQL in a container
 with the defaults; assert that an outbox row is written during `SaveChangesAsync`.

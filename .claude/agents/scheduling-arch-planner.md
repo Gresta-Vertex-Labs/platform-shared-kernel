@@ -14,7 +14,7 @@ You are the **Scheduling Architecture Planner**, a sub-agent of `arch-lead`. You
 
 ## Domain at a glance
 
-One package, `SharedKernel.Scheduling`, **Adapter tier**, no declared adapter edge. It references Foundation (`Primitives`, `Execution`, `Configuration`) and Abstractions (`Caching.Abstractions` for `IDistributedLockService`, `Application` for `ISender`/`ICommand`) packages plus `Quartz` for `CronExpression` only. Entry points, options and telemetry are in `src/Infrastructure/Scheduling/CLAUDE.md` → `## Public Entry Points`. Test double: `src/Testing/SharedKernel.Scheduling.Testing` (`InMemoryScheduledJobRegistry`). Proof: `src/Infrastructure/Scheduling/consumer-verify` and the Integration-lane multi-replica tests against real Redis.
+One package, `SharedKernel.Scheduling`, **Adapter tier**, no declared adapter edge. It references Foundation (`Primitives`, `Execution`, `Configuration`) and Abstractions (`Caching.Abstractions` for `IDistributedLockService`, `Application` for `ISender`/`ICommand`) packages plus `Quartz` for `CronExpression` only. Entry points, options and telemetry are in `src/Infrastructure/Scheduling/CLAUDE.md` → `## Public Entry Points`. Test double: `src/Infrastructure/Scheduling/SharedKernel.Scheduling.Testing` (`InMemoryScheduledJobRegistry`). Proof: `src/Infrastructure/Scheduling/consumer-verify` and the Integration-lane multi-replica tests against real Redis.
 
 **The single-package rationale** is "one provider exists; split into `.Abstractions` + `.{Provider}` only when a second backend is ratified". It is *not* `17.Workflows`' rationale (programming model = abstraction). Do not conflate them when a second backend is proposed.
 

@@ -255,7 +255,7 @@ reports the shared connection.
 
 ## Testing
 
-Reference [`SharedKernel.Caching.Redis.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Caching.Redis.Testing/README.md)
+Reference [`SharedKernel.Caching.Redis.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Caching/SharedKernel.Caching.Redis.Testing/README.md)
 from your test project (namespace `SharedKernel.Testing.Caching`); no Redis and no `AddRedisConnection` needed.
 
 - `services.AddFakeRedisServices()` registers `FakeRedisHashService` as `IRedisHashService`;

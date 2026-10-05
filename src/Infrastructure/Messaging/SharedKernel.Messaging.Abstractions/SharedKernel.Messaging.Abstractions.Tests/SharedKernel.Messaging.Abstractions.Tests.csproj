@@ -11,7 +11,7 @@
       introduce a MassTransit dependency into the test assembly. Never referenced by the
       SharedKernel.Messaging.Abstractions production project itself.
     -->
-    <ProjectReference Include="..\..\..\..\Testing\SharedKernel.Messaging.Testing\SharedKernel.Messaging.Testing.csproj" />
+    <ProjectReference Include="..\..\SharedKernel.Messaging.Testing\SharedKernel.Messaging.Testing.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="xunit" />

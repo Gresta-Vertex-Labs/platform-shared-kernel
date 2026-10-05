@@ -333,7 +333,7 @@ No probe of its own: the `redis` readiness probe registered by `AddRedisConnecti
 
 ## Testing
 
-Reference [`SharedKernel.Caching.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Caching.Testing/README.md)
+Reference [`SharedKernel.Caching.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Caching/SharedKernel.Caching.Testing/README.md)
 from your test project and call `services.AddFakeCachingServices()` (namespace `SharedKernel.Testing.Caching`); it
 registers `FakeDistributedLockService` as `IDistributedLockService`, with no Redis.
 

@@ -295,7 +295,7 @@ Section `SharedKernel:Integration:Webhooks`, validated when the host starts; the
 
 ## Testing
 
-Reference [`SharedKernel.Integration.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Integration.Testing/README.md).
+Reference [`SharedKernel.Integration.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Integration/SharedKernel.Integration.Testing/README.md).
 `services.AddInMemoryWebhookDispatcher()` replaces the dispatcher with `InMemoryWebhookDispatcher`: assert with
 `ShouldHaveDispatched<TEvent>()`, `ShouldHaveDispatchedTo(subscriptionId)`, `ShouldHaveSentTestDelivery(…)`, and shape
 outcomes with `SetDispatchResult(…)`. `AddInMemoryWebhookDeliveryObserver()` records `Attempts` and `Completions`.
