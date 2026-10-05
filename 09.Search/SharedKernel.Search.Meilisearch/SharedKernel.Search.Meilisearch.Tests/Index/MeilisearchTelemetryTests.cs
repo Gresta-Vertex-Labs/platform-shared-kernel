@@ -69,7 +69,7 @@ public sealed class MeilisearchTelemetryTests
     public async Task SearchAsync_EmitsAClientSpanOnTheSharedSearchActivitySource()
     {
         const string indexName = TelemetryIndexName + "-span";
-        var activities = new List<Activity>();
+        var activities = new System.Collections.Concurrent.ConcurrentQueue<Activity>();
         using var listener = new ActivityListener
         {
             ShouldListenTo = source => source.Name == SearchWellKnown.ActivitySourceName,
@@ -80,7 +80,7 @@ public sealed class MeilisearchTelemetryTests
             // transport instrumentation runs in other test classes executing in parallel. Without both,
             // this test passes alone and fails in a full run.
             SampleUsingParentId = (ref ActivityCreationOptions<string> _) => ActivitySamplingResult.AllDataAndRecorded,
-            ActivityStopped = activities.Add,
+            ActivityStopped = activities.Enqueue,
         };
         ActivitySource.AddActivityListener(listener);
         Activity.Current = null;
@@ -102,7 +102,7 @@ public sealed class MeilisearchTelemetryTests
     public async Task AFailedOperation_MarksTheSpanFailed_AndTagsTheErrorCode()
     {
         const string indexName = TelemetryIndexName + "-failure";
-        var activities = new List<Activity>();
+        var activities = new System.Collections.Concurrent.ConcurrentQueue<Activity>();
         using var listener = new ActivityListener
         {
             ShouldListenTo = source => source.Name == SearchWellKnown.ActivitySourceName,
@@ -113,7 +113,7 @@ public sealed class MeilisearchTelemetryTests
             // transport instrumentation runs in other test classes executing in parallel. Without both,
             // this test passes alone and fails in a full run.
             SampleUsingParentId = (ref ActivityCreationOptions<string> _) => ActivitySamplingResult.AllDataAndRecorded,
-            ActivityStopped = activities.Add,
+            ActivityStopped = activities.Enqueue,
         };
         ActivitySource.AddActivityListener(listener);
         Activity.Current = null;
@@ -133,7 +133,9 @@ public sealed class MeilisearchTelemetryTests
     public async Task SearchAsync_RecordsTheOperationDurationHistogram()
     {
         const string indexName = TelemetryIndexName + "-histogram";
-        var measurements = new List<(double Value, string? Index, string? Operation, string? Provider)>();
+        // A concurrent queue, not a List: the meter is process-wide, so the container-backed tests in this
+        // assembly record into this callback at the same time, and a List can silently drop an Add.
+        var measurements = new System.Collections.Concurrent.ConcurrentQueue<(double Value, string? Index, string? Operation, string? Provider)>();
         using var listener = new MeterListener
         {
             InstrumentPublished = (instrument, l) =>
@@ -168,7 +170,7 @@ public sealed class MeilisearchTelemetryTests
                 }
             }
 
-            measurements.Add((value, index, operation, provider));
+            measurements.Enqueue((value, index, operation, provider));
         });
         Activity.Current = null;
 
