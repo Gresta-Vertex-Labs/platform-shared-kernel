@@ -183,6 +183,25 @@ public sealed class RedisDistributedLockLossTests
         Assert.Equal(0, _extendCalls);
     }
 
+    [Fact]
+    public async Task ExtensionCancelledByTheClient_IsAStoreFailure_AndDisposeStillReleases()
+    {
+        // ScriptEvaluateAsync takes no token, so a cancellation from it is the client giving up on a frozen
+        // store. It must be handled like a timeout: never escape the keep-alive loop and fault DisposeAsync.
+        _extend = _ => Task.FromCanceled<RedisResult>(new CancellationToken(canceled: true));
+        var handle = StartLock(requestedAt: _time.GetTimestamp());
+        await WaitUntilAsync(() => _time.ActiveTimers == 2, "the keep-alive timer to start");
+
+        _time.Advance(KeepAliveInterval);
+        await WaitUntilAsync(() => _extendCalls == 1, "the first extension");
+        Assert.True(handle.IsHeld, "One failed extension is not a loss before the deadline.");
+
+        await handle.DisposeAsync();
+
+        Assert.Equal(1, _releaseCalls);
+        Assert.Equal(0, _time.ActiveTimers);
+    }
+
     private RedisDistributedLock StartLock(long requestedAt)
     {
         var handle = new RedisDistributedLock(_database, "resource", "owner", 7, Expiry, requestedAt, _time, NullLogger.Instance);

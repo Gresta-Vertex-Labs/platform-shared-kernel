@@ -44,5 +44,8 @@ internal static class RedisLockScripts
     // PX takes whole milliseconds and rejects 0.
     internal static long ToMilliseconds(TimeSpan duration) => Math.Max(1, (long)Math.Ceiling(duration.TotalMilliseconds));
 
-    internal static bool IsStoreFailure(Exception exception) => exception is RedisException or TimeoutException;
+    // OperationCanceledException included: ScriptEvaluateAsync takes no token, so a cancellation from it is the
+    // client abandoning a frozen or dropped store, never a caller's cancellation. Every caller wraps only that call.
+    internal static bool IsStoreFailure(Exception exception) =>
+        exception is RedisException or TimeoutException or OperationCanceledException;
 }
