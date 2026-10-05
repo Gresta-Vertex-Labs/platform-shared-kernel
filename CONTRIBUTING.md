@@ -224,7 +224,9 @@ visible diff in review. Public members need XML documentation comments.
    - `Platform.SharedKernel.Unit.slnf` (every production project belongs in the Unit lane);
    - its test project in exactly one lane `.slnf`;
    - `Directory.Packages.props`: one `<PackageVersion Include="SharedKernel.X" Version="$(SharedKernelPackageVersion)" />`
-     per packable project. `eng/verify-packages.sh` fails when this list and the packable set differ.
+     per packable project. `eng/verify-packages.sh` fails when this list and the packable set differ;
+   - then run `dotnet run eng/generate-package-index.cs` to refresh `docs/packages.md`,
+     `docs/dependency-graph.md` and the per-tier filters in `eng/solution-filters/` (CI checks them).
 
 6. **Test it.** Add the nested `.Tests` project; a name ending in `.Tests` can never pack (`SKPKG004`).
 

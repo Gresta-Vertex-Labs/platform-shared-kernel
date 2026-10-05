@@ -137,6 +137,11 @@ jobs:
       - name: Check path lengths
         run: bash eng/verify-path-lengths.sh
 
+      # docs/packages.md, docs/dependency-graph.md and eng/solution-filters/ are generated from the
+      # csproj files (tiers and ProjectReferences); a stale copy fails here.
+      - name: Check generated package views
+        run: dotnet run eng/generate-package-index.cs -- --check
+
       # MinVer overwrites $(Version) unconditionally, so a hand-written <Version> is dead XML that
       # disagrees with the packed artifact. Versions come from the v* tag only.
       - name: Assert no project declares its own version

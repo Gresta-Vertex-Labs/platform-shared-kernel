@@ -1,0 +1,11 @@
+{
+  "solution": {
+    "path": "../../Platform.SharedKernel.slnx",
+    "projects": [
+      "03.Domain/SharedKernel.Domain/SharedKernel.Domain.Tests/SharedKernel.Domain.Tests.csproj",
+      "03.Domain/SharedKernel.Domain/SharedKernel.Domain.csproj",
+      "04.Contracts/SharedKernel.Contracts/SharedKernel.Contracts.Tests/SharedKernel.Contracts.Tests.csproj",
+      "04.Contracts/SharedKernel.Contracts/SharedKernel.Contracts.csproj"
+    ]
+  }
+}

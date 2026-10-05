@@ -1,0 +1,13 @@
+{
+  "solution": {
+    "path": "../../Platform.SharedKernel.slnx",
+    "projects": [
+      "00.Governance/SharedKernel.Analyzers/SharedKernel.Analyzers.Tests/SharedKernel.Analyzers.Tests.csproj",
+      "00.Governance/SharedKernel.Analyzers/SharedKernel.Analyzers.csproj",
+      "00.Governance/SharedKernel.ArchitectureTests/SharedKernel.ArchitectureTests.Tests/SharedKernel.ArchitectureTests.Tests.csproj",
+      "00.Governance/SharedKernel.ArchitectureTests/SharedKernel.ArchitectureTests.csproj",
+      "00.Governance/SharedKernel.Linter/SharedKernel.Linter.Tests/SharedKernel.Linter.Tests.csproj",
+      "00.Governance/SharedKernel.Linter/SharedKernel.Linter.csproj"
+    ]
+  }
+}
