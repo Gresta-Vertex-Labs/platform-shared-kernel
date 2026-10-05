@@ -60,13 +60,18 @@ public sealed class RedisIdempotencyConcurrencyTests(RedisContainerFixture fixtu
         var messageId = Guid.NewGuid();
 
         const int concurrency = 32;
-        using var barrier = new Barrier(concurrency);
 
-        var results = await Task.WhenAll(Enumerable.Range(0, concurrency).Select(_ => Task.Run(async () =>
+        // An async start gate, not a blocking Barrier: 32 threads parked in SignalAndWait starve a
+        // 2-core CI runner's thread pool, so the Redis completions cannot run and the calls time out.
+        var start = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var tasks = Enumerable.Range(0, concurrency).Select(_ => Task.Run(async () =>
         {
-            barrier.SignalAndWait();
+            await start.Task;
             return await store.TryBeginAsync(messageId, CancellationToken.None);
-        })));
+        })).ToArray();
+        start.SetResult();
+
+        var results = await Task.WhenAll(tasks);
 
         Assert.Single(results, r => r.Status == IdempotencyReservationStatus.Started);
         Assert.Equal(concurrency - 1, results.Count(r => r.Status == IdempotencyReservationStatus.InProgress));
@@ -143,13 +148,15 @@ public sealed class RedisIdempotencyConcurrencyTests(RedisContainerFixture fixtu
         const string fingerprint = "shared-fingerprint";
 
         const int concurrency = 32;
-        using var barrier = new Barrier(concurrency);
 
+        // Async start gate rather than a blocking Barrier (see the message-purpose test above).
+        var start = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var tasks = Enumerable.Range(0, concurrency).Select(_ => Task.Run(async () =>
         {
-            barrier.SignalAndWait();
+            await start.Task;
             return await store.TryBeginAsync(idempotencyKey, fingerprint, CancellationToken.None);
-        }));
+        })).ToArray();
+        start.SetResult();
 
         var results = await Task.WhenAll(tasks);
 

@@ -85,16 +85,19 @@ public sealed class EfCoreIdempotencyConcurrencyTests : IAsyncLifetime
         var idempotencyKey = $"concurrent-{Guid.NewGuid():N}";
         const string fingerprint = "shared-fingerprint";
         const int concurrency = 32;
-        using var barrier = new Barrier(concurrency);
 
+        // An async start gate, not a blocking Barrier: 32 threads parked in SignalAndWait starve a
+        // 2-core CI runner's thread pool, so the database completions cannot run and the calls time out.
+        var start = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var tasks = Enumerable.Range(0, concurrency).Select(_ => Task.Run(async () =>
         {
             await using var context = CreateContext(_fixture.ConnectionString);
             var store = CreateRawStore(tenantId, new FakeClock(), context);
 
-            barrier.SignalAndWait();
+            await start.Task;
             return await store.TryBeginAsync(purpose, idempotencyKey, fingerprint, DefaultTtl, CancellationToken.None);
-        }));
+        })).ToArray();
+        start.SetResult();
 
         var results = await Task.WhenAll(tasks);
 
