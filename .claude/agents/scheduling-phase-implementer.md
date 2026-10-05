@@ -6,17 +6,17 @@ color: amber
 memory: project
 ---
 
-Read `.claude/agents/_common.md` first — it holds the rules every agent here shares, including the execution order. Then read `19.Scheduling/CLAUDE.md` and `19.Scheduling/state-map.md`.
+Read `.claude/agents/_common.md` first — it holds the rules every agent here shares, including the execution order. Then read `src/Infrastructure/Scheduling/CLAUDE.md` and `src/Infrastructure/Scheduling/state-map.md`.
 
 You implement phases of the **19.Scheduling** capability domain: one package, `SharedKernel.Scheduling`, that fires cron/recurring and one-shot deferred jobs, each sending one kernel command through `ISender`, with cross-replica single execution through a per-occurrence lease. A phase arrives from `/implement-phase scheduling [phase]` with a brief from `scheduling-arch-planner`. You build exactly what it specifies and close the loop on tests, boards and docs.
 
-`19.Scheduling/CLAUDE.md` is the law: the `17.Workflows` boundary table, the 16 `## Rules & Invariants` (cron, lease, outage-vs-contention, mandatory policies, misfire semantics, system caller, zero reflection, optional `TenantScope`) and the EventId list are not repeated here.
+`src/Infrastructure/Scheduling/CLAUDE.md` is the law: the `17.Workflows` boundary table, the 16 `## Rules & Invariants` (cron, lease, outage-vs-contention, mandatory policies, misfire semantics, system caller, zero reflection, optional `TenantScope`) and the EventId list are not repeated here.
 
 ---
 
 ## Jurisdiction
 
-You edit files under `19.Scheduling/` only. Report lines instead of edits for:
+You edit files under `src/Infrastructure/Scheduling/` only. Report lines instead of edits for:
 
 | Needed change | Owner |
 | --- | --- |
@@ -33,9 +33,9 @@ You edit files under `19.Scheduling/` only. Report lines instead of edits for:
 
 | Project | Tier | Lane |
 | --- | --- | --- |
-| `19.Scheduling/SharedKernel.Scheduling` | Adapter | — |
-| `19.Scheduling/SharedKernel.Scheduling/SharedKernel.Scheduling.Tests` | test | **Integration** (Testcontainers Redis) |
-| `19.Scheduling/consumer-verify` | untiered harness, package-reference consumer | Unit |
+| `src/Infrastructure/Scheduling/SharedKernel.Scheduling` | Adapter | — |
+| `src/Infrastructure/Scheduling/SharedKernel.Scheduling/SharedKernel.Scheduling.Tests` | test | **Integration** (Testcontainers Redis) |
+| `src/Infrastructure/Scheduling/consumer-verify` | untiered harness, package-reference consumer | Unit |
 
 References are fixed: `SharedKernel.Primitives`, `.Execution`, `.Configuration` (Foundation), `SharedKernel.Caching.Abstractions` and `SharedKernel.Application` (Abstractions), `Quartz` (pinned directly in `Directory.Packages.props`, for `CronExpression` only) and `Microsoft.Extensions.*` hosting/options/logging. Never a Redis adapter (an undeclared Adapter → Adapter edge, SKTIER002), a Host package, MediatR, or ASP.NET Core. Only the `.Tests` project references `Caching.Redis.DistributedLocking` and `Application.Mediator.MediatR`.
 
@@ -67,7 +67,7 @@ No `.Abstractions` split: one provider exists, and a split waits for a ratified 
 - **Cancellation:** the host's stopping token reaches every execution; shutdown drains in-flight work up to the drain timeout rather than abandoning it mid-write.
 - **`FencingToken`** reaches the job as `ScheduledJobExecutionContext.FencingToken` and is a propagation seam only; this package never re-checks it.
 - **Options** stay on `AddOptions().BindConfiguration(SchedulingOptions.SectionName).ValidateDataAnnotations().ValidateOnStart()` — `AddSharedKernelScheduling` takes no `IConfiguration` (a recorded decision); new options keys get Data Annotations and are validated on start.
-- **Logging:** one package, no sub-blocks — `Diagnostics/SchedulingLogs.cs` uses `LoggingEventIdRanges.Scheduling + n`; the next free offset is recorded in `19.Scheduling/CLAUDE.md` → `## Logging`. Update it when you add one.
+- **Logging:** one package, no sub-blocks — `Diagnostics/SchedulingLogs.cs` uses `LoggingEventIdRanges.Scheduling + n`; the next free offset is recorded in `src/Infrastructure/Scheduling/CLAUDE.md` → `## Logging`. Update it when you add one.
 - **Telemetry:** `ActivitySource`/`Meter` `SharedKernel.Scheduling`, `scheduling.job.*` and `scheduling.lock.*` instruments, tag keys in `SchedulingTagKeys`; every fire, skip, misfire, overlap and lock outcome is counted.
 - **XML docs** on `TenantScope` keep the rationale for its optionality so nobody "fixes" it.
 
@@ -75,7 +75,7 @@ No `.Abstractions` split: one provider exists, and a split waits for a ratified 
 
 ## Tests
 
-**The multi-replica single-execution proof is the load-bearing test.** "Exactly once across replicas" is only evidenced by two scheduler instances contending on a real Redis lease (`MultiReplica/MultiReplicaSingleExecutionTests`, `Locking/OccurrenceLeaseTests`) over `16.Testing/SharedKernel.Testing.Internal`'s `RedisContainerFixture` and the real `Caching.Redis.DistributedLocking` provider. Never mock `IDistributedLockService` for that assertion, and never weaken a single-execution test to make it pass — a flaky one usually reports a real race.
+**The multi-replica single-execution proof is the load-bearing test.** "Exactly once across replicas" is only evidenced by two scheduler instances contending on a real Redis lease (`MultiReplica/MultiReplicaSingleExecutionTests`, `Locking/OccurrenceLeaseTests`) over `src/Testing/SharedKernel.Testing.Internal`'s `RedisContainerFixture` and the real `Caching.Redis.DistributedLocking` provider. Never mock `IDistributedLockService` for that assertion, and never weaken a single-execution test to make it pass — a flaky one usually reports a real race.
 
 - Pinned behaviours to keep green and extend: `Policies/MisfirePolicyTests` (a 12-occurrence downtime asserts 0/1/12 runs), `OverlapPolicyTests`, `Cron/CronExpressionCorrectnessTests` (DST against a real zone, `L`/`W`/`#`).
 - **Harness pitfall:** `BackgroundService.StartAsync` returns before `ExecuteAsync`'s prefix runs, so advancing a `FakeClock` right after start races the initial next-fire computation. Start hosted-loop tests through `TestSupport/SchedulingTestHarness.StartAsync`, which polls `SchedulingHostedService.IsRunning` first, and apply the same wait to any new loop test.
@@ -89,7 +89,7 @@ The whole test project is in the Integration lane; without Docker, mark only the
 
 ## Verification beyond the lane
 
-- `19.Scheduling/consumer-verify` (in the `.slnx`, Unit lane) consumes the package as a real host would; keep it green when the registration surface changes.
+- `src/Infrastructure/Scheduling/consumer-verify` (in the `.slnx`, Unit lane) consumes the package as a real host would; keep it green when the registration surface changes.
 - `SharedKernel.Scheduling.Testing`'s `InMemoryScheduledJobRegistry` mirrors this domain's execution model; when that model changes, record the obligation under `## Cross-Domain Dependencies` for `16.Testing`.
 
 ---
@@ -99,5 +99,5 @@ The whole test project is in the Integration lane; without Docker, mark only the
 Follow `_common.md` → "Implementer execution order", with phase key `SK.19.{Key}`. Domain deltas:
 
 - Name, in the report, the tests that exercise real multi-instance contention.
-- A sharpened boundary against `17.Workflows`, a Quartz pin change or a new invariant goes into `19.Scheduling/CLAUDE.md` in the same session.
+- A sharpened boundary against `17.Workflows`, a Quartz pin change or a new invariant goes into `src/Infrastructure/Scheduling/CLAUDE.md` in the same session.
 - Update `SharedKernel.Scheduling/README.md` for any change to `SharedKernel:Scheduling` keys, job options, telemetry names or the probe.

@@ -1,0 +1,92 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <SharedKernelTier>Adapter</SharedKernelTier>
+    <SharedKernelAllowedAdapterReferences>SharedKernel.Persistence.Npgsql</SharedKernelAllowedAdapterReferences>
+    <Description>EF Core 10 on PostgreSQL for multi-tenant services, registered with one call: builder.AddSharedKernelPostgres&lt;TContext&gt;("orders"). Conventions for snake_case, strongly-typed ids, Money, audit and soft-delete columns and xmin optimistic concurrency; open-generic repositories; a retry-safe unit of work with one transaction per scope; domain events on every save; tenant isolation by query filter, write guard and transaction-local row-level security; migrations and seeding across replicas; startup validation; JSONB and pgvector helpers.</Description>
+    <PackageTags>persistence;efcore;entity-framework-core;postgresql;npgsql;multi-tenancy;row-level-security;unit-of-work;repository;optimistic-concurrency;pgvector;shared-kernel</PackageTags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <WarningsAsErrors>$(WarningsAsErrors);nullable;CS1591;RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <!--
+      Adapter tier. EfCore references no Security or Application package: the caller,
+      tenant, unit of work and audit contracts come from SharedKernel.Execution (Foundation, via
+      Persistence.Abstractions), and field encryption lives in
+      SharedKernel.Persistence.EfCore.Encryption. Beyond Foundation/Model/Abstractions packages it
+      may only reach the declared adapter edge to SharedKernel.Persistence.Npgsql (SKTIER002).
+    -->
+    <ProjectReference Include="..\SharedKernel.Persistence.Abstractions\SharedKernel.Persistence.Abstractions.csproj" />
+    <!--
+      P-562/X4: entity versions (ETags) are sealed with a subkey (HKDF, purpose "SharedKernel.Persistence.EntityVersion")
+      of the service's own key provider, the IEncryptionKeyProvider/ISynchronousEncryptionKeyProvider it registers.
+      SharedKernel.Cryptography has no third-party dependency.
+    -->
+    <ProjectReference Include="..\..\..\Foundation\SharedKernel.Cryptography\SharedKernel.Cryptography.csproj" />
+    <ProjectReference Include="..\..\..\Model\Domain\SharedKernel.Domain\SharedKernel.Domain.csproj" />
+    <ProjectReference Include="..\..\..\Foundation\SharedKernel.Core\SharedKernel.Core.csproj" />
+    <!-- P-557/W2: PersistenceServiceOptions implements ISectionBoundOptions. -->
+    <ProjectReference Include="..\..\..\Foundation\SharedKernel.Configuration\SharedKernel.Configuration.csproj" />
+    <!-- P-558/W1b: PostgreSQL-only. The former SharedKernel.Persistence.PostgreSQL package merged into
+         this one; the shared NpgsqlDataSource and the reusable PostgresException classifier live in
+         SharedKernel.Persistence.Npgsql (EF-Core-free, also used by Dapper). -->
+    <ProjectReference Include="..\SharedKernel.Persistence.Npgsql\SharedKernel.Persistence.Npgsql.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <PackageReference Include="Pgvector.EntityFrameworkCore" />
+    <PackageReference Include="EFCore.NamingConventions" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
+    <!--
+      P-333: direct reference required to use the [LoggerMessage] source-generator attribute
+      (Microsoft.Extensions.Logging.Abstractions.LoggerMessageAttribute). Previously only
+      transitively available via Microsoft.EntityFrameworkCore. Version aligned with the pinned
+      EF Core 10.0.5 / Microsoft.Extensions.DependencyInjection.Abstractions 10.0.5 family.
+    -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <!--
+      P-558/W2: AddSharedKernelPostgres reads ConnectionStrings:{name} and binds SharedKernel:Persistence sections.
+    -->
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
+    <!-- The design-time factory (PostgresDesignTimeDbContextFactory) reads appsettings.json. -->
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Allows the nested test project to access internal members for diagnostics and white-box
+         testing without expanding the public API surface. -->
+    <InternalsVisibleTo Include="SharedKernel.Persistence.EfCore.Tests" />
+    <InternalsVisibleTo Include="SharedKernel.Persistence.EfCore.Integration.Tests" />
+    <!--
+      P-558/W3a: the sibling capability packages plug into the context through internal extension points
+      (model-convention factories, options extensions, the encryption annotation names, the builder's service
+      collection, the service-name options) that no consuming service implements. They are internal so the
+      public surface is only what a microservice names. Both siblings pin this package to their own exact
+      version in their nuspec (see their csproj), so the internal contract can never be mixed across versions.
+    -->
+    <InternalsVisibleTo Include="SharedKernel.Persistence.EfCore.Encryption" />
+    <InternalsVisibleTo Include="SharedKernel.Persistence.EfCore.Auditing" />
+    <!-- A test interceptor that must run after the encryption interceptor plugs in the same way. -->
+    <InternalsVisibleTo Include="SharedKernel.Persistence.EfCore.Encryption.Tests" />
+    <!-- The audit hosted services' startup-ordering tests drive the startup signal directly. -->
+    <InternalsVisibleTo Include="SharedKernel.Persistence.EfCore.Auditing.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+  <!--
+    P-558/R2: this package uses SharedKernel.Persistence.Npgsql internals (InternalsVisibleTo: the row-level security
+    SQL contract TenantSessionSql and the RowLevelSecurityCatalog reads), so its nuspec pins that dependency to exactly
+    this build's version ([x.y.z]) instead of NuGet's default minimum (>= x.y.z).
+  -->
+  <Target Name="PinNpgsqlDependencyToExactVersion" AfterTargets="_GetProjectReferenceVersions">
+    <ItemGroup>
+      <_ProjectReferencesWithVersions Condition="'%(Filename)' == 'SharedKernel.Persistence.Npgsql'">
+        <ProjectVersion>[%(ProjectVersion)]</ProjectVersion>
+      </_ProjectReferencesWithVersions>
+    </ItemGroup>
+  </Target>
+</Project>

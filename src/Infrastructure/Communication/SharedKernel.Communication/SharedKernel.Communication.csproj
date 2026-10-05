@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <SharedKernelTier>Adapter</SharedKernelTier>
+    <!-- NuGet packaging metadata -->
+    <Description>The shared base of SharedKernel's outbound REST and gRPC clients: services.AddSharedKernelCommunication(configuration) and the per-client options both protocols bind from SharedKernel:Communication:Clients:{name}. Service discovery through Microsoft.Extensions.ServiceDiscovery (endpoints from configuration, Kubernetes DNS or DNS SRV, round-robin across pods), outbound authentication (OAuth 2.0 client credentials with a cached, early-refreshed token; an API key; or your own IAccessTokenProvider), and mutual TLS with a client certificate and a private certificate authority. Add clients with SharedKernel.Communication.Rest or SharedKernel.Communication.Grpc.</Description>
+    <PackageReleaseNotes>First release.</PackageReleaseNotes>
+    <PackageTags>shared-kernel;http-client;grpc;service-discovery;kubernetes;oauth2;client-credentials;mtls</PackageTags>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- Publish bar: ship XML docs, and fail the build on an undocumented or untracked public member. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <WarningsAsErrors>$(WarningsAsErrors);CS1591;RS0016;RS0017;RS0024;RS0025</WarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Adapter tier: Foundation packages only. The caller comes from IRequestContextAccessor (Execution), never HttpContext. -->
+    <ProjectReference Include="..\..\..\Foundation\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+    <ProjectReference Include="..\..\..\Foundation\SharedKernel.Execution\SharedKernel.Execution.csproj" />
+    <ProjectReference Include="..\..\..\Foundation\SharedKernel.Configuration\SharedKernel.Configuration.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Http" />
+    <!-- The token endpoint's own client retries transient failures. -->
+    <PackageReference Include="Microsoft.Extensions.Http.Resilience" />
+    <!-- Service discovery (MIT, the library .NET Aspire uses): configuration, pass-through, DNS and DNS SRV providers. -->
+    <PackageReference Include="Microsoft.Extensions.ServiceDiscovery" />
+    <PackageReference Include="Microsoft.Extensions.ServiceDiscovery.Dns" />
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The protocol satellites share the handlers, the token client and the TLS setup; one release train, one version. -->
+    <InternalsVisibleTo Include="SharedKernel.Communication.Rest" />
+    <InternalsVisibleTo Include="SharedKernel.Communication.Grpc" />
+    <InternalsVisibleTo Include="SharedKernel.Communication.Tests" />
+    <InternalsVisibleTo Include="SharedKernel.Communication.Rest.Tests" />
+    <InternalsVisibleTo Include="SharedKernel.Communication.Grpc.Tests" />
+  </ItemGroup>
+</Project>

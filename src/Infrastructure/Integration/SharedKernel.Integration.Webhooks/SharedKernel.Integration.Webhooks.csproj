@@ -1,0 +1,37 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <SharedKernelTier>Adapter</SharedKernelTier>
+    <!-- NuGet packaging metadata -->
+    <Description>Outbound webhook delivery for SharedKernel microservices: signed, retried, fan-out-safe dispatch of platform integration events to externally-configured HTTP subscribers (IWebhookDispatcher, WebhookDispatcher), HMAC-SHA256 request signing with replay-resistant verification (WebhookSignatureProvider, WebhookSignatureVerifier), the subscription and delivery-observation seams implemented by the consuming service (IWebhookSubscriptionStore, IWebhookDeliveryObserver), the delivery-exhausted integration event (WebhookDeliveryExhaustedEvent), and DI registration (AddSharedKernelWebhooks/WithDeliveryObserver). P-500/WO-081: the opt-in EncryptPayload path now calls SharedKernel.Cryptography's async EncryptToStringAsync with a required associated-data (AAD) argument, via the new public WebhookPayloadAssociatedData.Build(subscriptionId, deliveryId) helper — requires SharedKernel.Cryptography's P-491 AAD-bearing ISymmetricEncryptionService floor.</Description>
+    <PackageTags>shared-kernel;webhooks;outbound-integration;hmac;signing;resilience;retry;httpclientfactory</PackageTags>
+  </PropertyGroup>
+  <ItemGroup>
+    <!--
+      Layering boundary (src/Infrastructure/Integration/CLAUDE.md): exactly these six ProjectReferences are
+      permitted. SharedKernel.Execution (Foundation) supplies the ambient caller whose correlation id
+      every delivery carries (P-566). SharedKernel.Primitives is referenced for future-proofing (D-01) plus
+      LoggingEventIdRanges (WO-041). SharedKernel.Cryptography (01.Core) was added under
+      WO-064/P-427 for ISymmetricEncryptionService (opt-in AES-GCM payload encryption) — a
+      Foundation-tier package, which this Adapter-tier package may always reference. No
+      reference to 06.Persistence, 11.Communication.*, or SharedKernel.Messaging.MassTransit is
+      permitted.
+    -->
+    <ProjectReference Include="..\..\..\Foundation\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+    <ProjectReference Include="..\..\..\Foundation\SharedKernel.Execution\SharedKernel.Execution.csproj" />
+    <ProjectReference Include="..\..\..\Foundation\SharedKernel.Configuration\SharedKernel.Configuration.csproj" />
+    <ProjectReference Include="..\..\..\Foundation\SharedKernel.Cryptography\SharedKernel.Cryptography.csproj" />
+    <ProjectReference Include="..\..\..\Model\Contracts\SharedKernel.Contracts\SharedKernel.Contracts.csproj" />
+    <ProjectReference Include="..\..\Messaging\SharedKernel.Messaging.Abstractions\SharedKernel.Messaging.Abstractions.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!--
+      Outbound HTTP delivery (IHttpClientFactory) and Polly v8 standard resilience handler.
+      Never construct new HttpClient() or inject a raw HttpClient — see CLAUDE.md hard rules.
+    -->
+    <PackageReference Include="Microsoft.Extensions.Http" />
+    <PackageReference Include="Microsoft.Extensions.Http.Resilience" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="SharedKernel.Integration.Webhooks.Tests" />
+  </ItemGroup>
+</Project>

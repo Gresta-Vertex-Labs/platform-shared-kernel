@@ -1,0 +1,26 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <!-- Not shipped — verification harness only -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <!--
+      DELIBERATELY references ONLY SharedKernel.AI.Abstractions + SharedKernel.AI.SemanticKernel —
+      never SharedKernel.AI.Qdrant (SharedKernel.AI.Milvus does not exist on disk at all, see
+      src/Infrastructure/AI/state-map.md's ## Blocked). This compilation closure is half of the P-05
+      capability-segregation build-time proof, the mirror image of consumer-verify.Qdrant:
+      IQdrantQuantizationProfileAccessor, IQdrantHybridQueryAccessor<> and IQdrantRawClientAccessor
+      (declared exclusively in SharedKernel.AI.Qdrant) are not nameable anywhere in this compilation
+      unit — see Program.cs's header comment for the verified negative-compile evidence.
+    -->
+    <ProjectReference Include="..\..\SharedKernel.AI.Abstractions\SharedKernel.AI.Abstractions.csproj" />
+    <ProjectReference Include="..\..\SharedKernel.AI.SemanticKernel\SharedKernel.AI.SemanticKernel.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Generic host — lets this harness exercise the real IHost.StartAsync() eager
+         ValidateOnStart() path (P-05), not just BuildServiceProvider(). -->
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+  </ItemGroup>
+</Project>

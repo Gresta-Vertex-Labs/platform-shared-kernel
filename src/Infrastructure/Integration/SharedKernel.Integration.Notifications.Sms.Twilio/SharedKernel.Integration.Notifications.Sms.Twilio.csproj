@@ -1,0 +1,33 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <SharedKernelTier>Adapter</SharedKernelTier>
+    <!-- NuGet packaging metadata -->
+    <Description>First shipping SMS provider for SharedKernel.Integration.Notifications.Abstractions — direct Twilio Content API (templated messaging) REST integration (no vendor SDK) via IHttpClientFactory + Microsoft.Extensions.Http.Resilience. Registers a keyed INotificationSender for NotificationChannel.Sms via AddTwilioSmsNotifications(). Propagates NotificationDeliveryId via Twilio's documented Idempotency-Key header — a genuine, provider-enforced request-level dedup guarantee.</Description>
+    <PackageTags>shared-kernel;notifications;sms;twilio;outbound-integration</PackageTags>
+  </PropertyGroup>
+  <ItemGroup>
+    <!--
+      Layering boundary (src/Infrastructure/Integration/CLAUDE.md, WO-072): this provider references only its own
+      .Abstractions contract — no SharedKernel.Storage.Abstractions reference, since SMS carries no
+      attachments — never the sibling .Email.SendGrid package, and never
+      SharedKernel.Integration.Webhooks. No vendor SDK (Twilio NuGet package) is referenced.
+    -->
+    <ProjectReference Include="..\SharedKernel.Integration.Notifications.Abstractions\SharedKernel.Integration.Notifications.Abstractions.csproj" />
+    <!-- LoggingEventIdRanges.Integration (15000-15999 domain block, 15300-15399 sub-block) -->
+    <ProjectReference Include="..\..\..\Foundation\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!--
+      Outbound HTTP delivery (IHttpClientFactory) and Polly v8 standard resilience handler — the
+      same already-pinned packages SharedKernel.Integration.Webhooks uses. No new
+      Directory.Packages.props entry required.
+    -->
+    <PackageReference Include="Microsoft.Extensions.Http" />
+    <PackageReference Include="Microsoft.Extensions.Http.Resilience" />
+    <!-- [LoggerMessage] source-generated logging (ILogger&lt;T&gt;, LogLevel, LoggerMessage attribute). -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="SharedKernel.Integration.Notifications.Sms.Twilio.Tests" />
+  </ItemGroup>
+</Project>

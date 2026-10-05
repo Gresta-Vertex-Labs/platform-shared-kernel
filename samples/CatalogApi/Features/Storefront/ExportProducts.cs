@@ -12,7 +12,7 @@ public sealed record ProductSummary(string DocumentId, string Name, double Price
 
 /// <summary>
 /// The corpus walk, as a stream query (<c>ISender.CreateStream</c>). Not <c>Result</c>-wrapped — the domain's one
-/// documented exception to the Result-first rule, following the 06.Persistence/08.Storage streaming precedent.
+/// documented exception to the Result-first rule, following the src/Infrastructure/Persistence/08.Storage streaming precedent.
 /// </summary>
 public sealed record ExportProducts(TenantId TenantId) : IStreamQuery<ProductSummary>;
 

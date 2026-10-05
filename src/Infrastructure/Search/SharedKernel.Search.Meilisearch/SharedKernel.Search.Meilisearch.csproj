@@ -1,0 +1,82 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <SharedKernelTier>Adapter</SharedKernelTier>
+    <!-- NuGet packaging metadata -->
+    <!--
+      WO-055 P-09/P-10 version-bump decision (recorded per the phase's own instruction not to silently
+      collapse two distinct bumps): P-353's internal-only GetAsync Result-discipline fix is PATCH-shaped
+      in isolation, and P-354's new SearchBulkWriteOptions overloads are MINOR-shaped in isolation, but
+      both land in the SAME work order and the SAME re-pack session with no intervening published
+      release ever consuming a standalone PATCH artifact — a real 1.0.1 pack would be immediately
+      superseded by 1.1.0 with zero consumer ever depending on the intermediate version. The two bumps
+      are therefore folded into a single MINOR release, 1.1.0, covering both fixes in one pack. This is
+      a deliberate decision, not an oversight — see src/Infrastructure/Search/state-map.md Phase: Published P-09/P-10.
+    -->
+    <Description>Meilisearch (BFF/fast) implementation of SharedKernel.Search.Abstractions: MeilisearchIndex&lt;TDocument&gt;, MeilisearchIndexProvisioner, MeilisearchProviderDescriptor, MeilisearchFilterCompiler, plus the Meilisearch-exclusive IInstantSearch&lt;TDocument&gt; (typo-tolerant/prefix instant search) and ITenantSearchTokenIssuer (engine-enforced per-tenant search tokens). Register via AddSharedKernelMeilisearchSearch(IConfiguration).</Description>
+    <PackageTags>search;full-text-search;meilisearch;shared-kernel</PackageTags>
+    <!--
+      CS8509/CS8524 are DELIBERATELY downgraded back to non-fatal warnings — never fully suppressed
+      (NoWarn) and never masked with a discard (`_ =>`) arm — on the two closed-hierarchy switches this
+      package owns (the SearchFilter translation switch in MeilisearchFilterCompiler.Compile, and the
+      SearchValueKind rendering switch in MeilisearchFilterCompiler.FormatValue). See
+      src/Infrastructure/Search/CLAUDE.md, "Reconciling switch exhaustiveness with TreatWarningsAsErrors", for the full,
+      empirically-verified reasoning: the C# compiler cannot perform closed-world exhaustiveness
+      analysis over a sealed-subtype hierarchy or a fully-covered enum, so these two diagnostics fire
+      unconditionally regardless of how completely the switch is written, and remain visible in every
+      build log rather than being hidden.
+    -->
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);CS8509;CS8524</WarningsNotAsErrors>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!--
+      Public API tracking (adopted in the pre-publish pass, mirroring 07.Messaging P-561): an addition,
+      removal or signature change fails the build until PublicAPI.*.txt is updated, so a breaking change
+      to a package hundreds of services consume is a reviewed diff rather than something noticed after
+      publish.
+    -->
+    <WarningsAsErrors>$(WarningsAsErrors);RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
+    <!-- RS0026/RS0027: optional CancellationToken and configure-callback parameters, the .NET convention. -->
+    <NoWarn>$(NoWarn);RS0026;RS0027</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel.Search.Abstractions\SharedKernel.Search.Abstractions.csproj" />
+    <ProjectReference Include="..\..\..\Foundation\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+    <ProjectReference Include="..\..\..\Foundation\SharedKernel.Configuration\SharedKernel.Configuration.csproj" />
+    <!--
+      SIBLING-PACKAGE RULE: SharedKernel.Search.Meilisearch must NEVER reference
+      SharedKernel.Search.ElasticSearch, directly or transitively. Shared implementation shape
+      (options-validation flow, the SearchFilter walker skeleton, receipt mapping, probe sequencing)
+      is duplicated deliberately across the two provider packages — see src/Infrastructure/Search/CLAUDE.md's
+      "Provider role note".
+    -->
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Meilisearch engine SDK. Official Meilisearch org, MIT, targets netstandard2.0. -->
+    <PackageReference Include="MeiliSearch" />
+    <!--
+      Microsoft.Extensions.* set — required for DI extension (DependencyInjection.Abstractions),
+      Options-pattern binding (Options), [LoggerMessage] source-generated logging
+      (Logging.Abstractions — NOT pulled in transitively by the MeiliSearch SDK or by
+      SharedKernel.Configuration; omitting it fails the build with ILogger/LoggerMessage unresolved),
+      and the named IHttpClientFactory client the MeilisearchClient is built from (Http — never
+      `new HttpClient()`, per P-159/SK0013).
+    -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Options" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Http" />
+  </ItemGroup>
+  <ItemGroup>
+    <!--
+      Allows the nested test project to white-box test internal implementation details
+      (MeilisearchFilterCompiler, MeilisearchRequestValidator, MeilisearchProviderDescriptor,
+      MeilisearchRawClientAccessor) without expanding the public API surface — mirrors the
+      06.Persistence.EfCore / 13.ServiceDefaults / 15.Integration.Webhooks precedent.
+    -->
+    <InternalsVisibleTo Include="SharedKernel.Search.Meilisearch.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+</Project>

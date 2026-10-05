@@ -7,7 +7,7 @@ body:
     attributes:
       value: |
         Performance reports are only actionable with **numbers**. A [BenchmarkDotNet](https://benchmarkdotnet.org/) result with `[MemoryDiagnoser]` is ideal —
-        `00.Governance/SharedKernel.Benchmarks` shows the project's benchmark conventions.
+        `tools/Governance/SharedKernel.Benchmarks` shows the project's benchmark conventions.
 
   - type: dropdown
     id: domain

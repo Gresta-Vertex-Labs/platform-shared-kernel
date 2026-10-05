@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <SharedKernelTier>Adapter</SharedKernelTier>
+    <SharedKernelAllowedAdapterReferences>SharedKernel.Communication</SharedKernelAllowedAdapterReferences>
+    <!-- NuGet packaging metadata -->
+    <Description>Typed gRPC clients for SharedKernel services: AddSharedKernelCommunication(configuration).AddGrpcClient&lt;Service.ServiceClient&gt;("name") over Grpc.Net.ClientFactory, with the address, deadline, retry policy, keepalive and credentials bound from SharedKernel:Communication:Clients:{name}. Every call carries the caller's correlation id, tenant, actor and client and gets a deadline; service discovery spreads calls across pods, so HTTP/2's long-lived connections do not pin one. Results, not exceptions: call.ToResultAsync() reads the rich status a platform service sends (ErrorInfo code, BadRequest field errors) back into the same Error. google.type.Money conversions for decimal and SharedKernel.Domain's Money.</Description>
+    <PackageReleaseNotes>First release.</PackageReleaseNotes>
+    <PackageTags>shared-kernel;grpc;grpc-client;client-factory;correlation-id;load-balancing;protobuf;money</PackageTags>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- Publish bar: ship XML docs, and fail the build on an undocumented or untracked public member. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <WarningsAsErrors>$(WarningsAsErrors);CS1591;RS0016;RS0017;RS0024;RS0025</WarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      The declared adapter edge: the shared client base. Never SharedKernel.Contracts — protobuf messages are the gRPC
+      wire contract (CommunicationLayeringRules.GrpcNeverReferencesContracts). SharedKernel.Domain (Model tier) for
+      the Money conversions.
+    -->
+    <ProjectReference Include="..\SharedKernel.Communication\SharedKernel.Communication.csproj" />
+    <ProjectReference Include="..\..\..\Foundation\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+    <ProjectReference Include="..\..\..\Foundation\SharedKernel.Execution\SharedKernel.Execution.csproj" />
+    <ProjectReference Include="..\..\..\Model\Domain\SharedKernel.Domain\SharedKernel.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Grpc.Net.Client" />
+    <PackageReference Include="Grpc.Net.ClientFactory" />
+    <PackageReference Include="Google.Protobuf" />
+    <!-- google.type.Money, and google.rpc.Status/ErrorInfo/BadRequest for the rich status a platform service sends. -->
+    <PackageReference Include="Google.Api.CommonProtos" />
+    <PackageReference Include="Grpc.StatusProto" />
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="SharedKernel.Communication.Grpc.Tests" />
+  </ItemGroup>
+</Project>

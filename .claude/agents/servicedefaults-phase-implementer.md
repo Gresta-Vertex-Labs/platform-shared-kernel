@@ -6,17 +6,17 @@ color: cyan
 memory: project
 ---
 
-Read `.claude/agents/_common.md` first — it holds the rules every agent here shares, including the execution order. Then read `13.ServiceDefaults/CLAUDE.md` and `13.ServiceDefaults/state-map.md`.
+Read `.claude/agents/_common.md` first — it holds the rules every agent here shares, including the execution order. Then read `src/Hosting/ServiceDefaults/CLAUDE.md` and `src/Hosting/ServiceDefaults/state-map.md`.
 
 You implement phases of the **13.ServiceDefaults** capability domain: host composition — OpenTelemetry wiring, health endpoints and readiness, the startup gate, rate limiting, the HTTP request context and correlation id, tenant resolution, and the Key Vault, localization, mTLS and persistence host integrations. A phase arrives from `/implement-phase servicedefaults [phase]` with a brief from `servicedefaults-arch-planner`. You build exactly what it specifies and close the loop on tests, boards and docs.
 
-`13.ServiceDefaults/CLAUDE.md` is the law: its entry points, `## Rules & Invariants`, decisions and the EventId table are not repeated here. This domain is composition only — no business logic, no domain types, no request handlers.
+`src/Hosting/ServiceDefaults/CLAUDE.md` is the law: its entry points, `## Rules & Invariants`, decisions and the EventId table are not repeated here. This domain is composition only — no business logic, no domain types, no request handlers.
 
 ---
 
 ## Jurisdiction
 
-You edit files under `13.ServiceDefaults/` only. Report lines instead of edits for:
+You edit files under `src/Hosting/ServiceDefaults/` only. Report lines instead of edits for:
 
 | Needed change | Owner |
 | --- | --- |
@@ -32,7 +32,7 @@ You edit files under `13.ServiceDefaults/` only. Report lines instead of edits f
 
 ## Packages and projects
 
-All seven packages are **Host** tier; each lives at `13.ServiceDefaults/{Package}/` with tests nested at `13.ServiceDefaults/{Package}/{Package}.Tests/`. **Every test project and `13.ServiceDefaults/consumer-verify` are in the Unit lane.**
+All seven packages are **Host** tier; each lives at `src/Hosting/ServiceDefaults/{Package}/` with tests nested at `src/Hosting/ServiceDefaults/{Package}/{Package}.Tests/`. **Every test project and `src/Hosting/ServiceDefaults/consumer-verify` are in the Unit lane.**
 
 | Package | What it may reference |
 | --- | --- |
@@ -73,7 +73,7 @@ A host integration that needs another kernel package is a new `SharedKernel.Serv
 - **Telemetry:** the `WithXTelemetry()` family subscribes by name to sources and meters owned elsewhere (e.g. `WithSearchTelemetry()` holds a string byte-identical to `09.Search`'s `SearchWellKnown`, with no reference). A new method follows the same pattern and stays idempotent.
 - **Options:** `AddValidatedOptions` with `ISectionBoundOptions`; configuration fails at start.
 - **AOT:** keep the OpenTelemetry path AOT-clean where it costs nothing; do not chase purity through third-party health-check packages.
-- **Logging:** the base and every `ServiceDefaults.*` package share **13000–13099**, allocated one id at a time and never reused; `SharedKernel.MultiTenancy` owns 13100–13199. Take the "Next free" id from `13.ServiceDefaults/CLAUDE.md` → `## Logging` and advance it there.
+- **Logging:** the base and every `ServiceDefaults.*` package share **13000–13099**, allocated one id at a time and never reused; `SharedKernel.MultiTenancy` owns 13100–13199. Take the "Next free" id from `src/Hosting/ServiceDefaults/CLAUDE.md` → `## Logging` and advance it there.
 
 ---
 
@@ -95,7 +95,7 @@ A host integration that needs another kernel package is a new `SharedKernel.Serv
 
 ## Verification beyond the lane
 
-- `13.ServiceDefaults/consumer-verify` compiles a consumer against the base and `MultiTenancy`; run it when a public API changes.
+- `src/Hosting/ServiceDefaults/consumer-verify` compiles a consumer against the base and `MultiTenancy`; run it when a public API changes.
 - `ServiceDefaults.Persistence.Tests/…/Readme/PersistenceReadmeSampleTests.cs` compiles `06.Persistence`'s canonical composition; keep it green when a persistence README snippet or check changes.
 - Every sample host (`samples/OrderApi` first — the canonical middleware order) composes these packages as packed packages. When the phase changes the public surface or the pipeline, pack (`dotnet pack Platform.SharedKernel.slnx -c Release -o nupkgs`) and build/test the affected samples with `-p:SharedKernelPackageVersion=<packed version>` and a throw-away `NUGET_PACKAGES` folder in your scratchpad (deleted afterwards).
 
@@ -105,5 +105,5 @@ A host integration that needs another kernel package is a new `SharedKernel.Serv
 
 Follow `_common.md` → "Implementer execution order", with phase key `SK.13.{Key}`. Domain deltas:
 
-- A new health-check name, telemetry method, middleware position or EventId goes into `13.ServiceDefaults/CLAUDE.md` in the same session.
+- A new health-check name, telemetry method, middleware position or EventId goes into `src/Hosting/ServiceDefaults/CLAUDE.md` in the same session.
 - Ask for `/sync-brain` when the root `CLAUDE.md` rows on the canonical middleware order, readiness probes or the `WithXTelemetry()` family no longer match.

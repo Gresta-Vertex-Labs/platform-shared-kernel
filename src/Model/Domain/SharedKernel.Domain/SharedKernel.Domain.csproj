@@ -1,0 +1,30 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <SharedKernelTier>Model</SharedKernelTier>
+    <!-- NuGet packaging metadata -->
+    <Description>Domain-driven design building blocks for .NET services: entities with identity equality, aggregate roots that raise timestamped domain events and enforce business rules, value objects with explicit validation, strongly-typed identifiers with JSON support, audit, soft-delete and tenant bases, query specifications with an inline builder and typed ThenInclude, domain policies, and a currency-aware Money type with loss-free allocation. Built on SharedKernel.Primitives and SharedKernel.Core.</Description>
+    <PackageReleaseNotes>First release.</PackageReleaseNotes>
+    <PackageTags>shared-kernel;ddd;domain-driven-design;aggregate;entity;value-object;domain-events;specification;money;strongly-typed-id</PackageTags>
+    <!--
+      Ship the XML documentation alongside the assembly. Not redundant with Directory.Build.targets: the SDK
+      assigns GenerateDocumentationFile=false early, so that file's empty-string-guarded default never applies.
+      CS1591 below makes an undocumented public member a build error.
+    -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Public API tracking: an addition, removal or signature change fails the build until PublicAPI.*.txt is updated. -->
+    <WarningsAsErrors>$(WarningsAsErrors);nullable;CS1591;RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
+    <!-- RS0026/RS0027 discourage optional parameters on overloads. Money's arithmetic and allocation overloads take an
+         optional rounding policy, which reads better at call sites than a second overload per method. -->
+    <NoWarn>$(NoWarn);RS0026;RS0027</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\Foundation\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+    <ProjectReference Include="..\..\..\Foundation\SharedKernel.Core\SharedKernel.Core.csproj" />
+    <ProjectReference Include="..\..\..\Foundation\SharedKernel.Execution\SharedKernel.Execution.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+</Project>

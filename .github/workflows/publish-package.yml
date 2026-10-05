@@ -31,7 +31,7 @@ on:
       project:
         description: 'Path to the .csproj to dry-run (restore, build, test, pack, dependency gate). Nothing is published; releases go through release.yml.'
         type: string
-        default: '00.Governance/SharedKernel.ArchitectureTests/SharedKernel.ArchitectureTests.csproj'
+        default: 'tools/Governance/SharedKernel.ArchitectureTests/SharedKernel.ArchitectureTests.csproj'
       version:
         description: 'Optional exact version to stamp (e.g. 1.2.3). Empty = MinVer-derived version.'
         type: string
@@ -122,7 +122,7 @@ jobs:
 
       # Convention (root CLAUDE.md "Test Project Rules"): a package's test project is nested
       # inside its own folder as "{PackageName}.Tests". For the default input that resolves to
-      # 00.Governance/SharedKernel.Analyzers/SharedKernel.Analyzers.Tests/SharedKernel.Analyzers.Tests.csproj
+      # tools/Governance/SharedKernel.Analyzers/SharedKernel.Analyzers.Tests/SharedKernel.Analyzers.Tests.csproj
       # (272 tests, confirmed by running it locally against this exact project during the pass
       # that authored this workflow). Not every packable project necessarily has one nested next
       # to it under this exact convention, so absence is a log line, not a failure.
@@ -350,7 +350,7 @@ jobs:
         if: env.PACKAGE_ID == 'SharedKernel.Analyzers'
         run: |
           set -e
-          proj="00.Governance/_verification/AnalyzerConsumer/AnalyzerConsumer.csproj"
+          proj="tools/Governance/_verification/AnalyzerConsumer/AnalyzerConsumer.csproj"
           dotnet restore "$proj" --force -p:SharedKernelPackageVersion="$PACKED_VERSION"
           echo "::group::build $proj"
           dotnet build "$proj" --no-restore --configuration Release -p:SharedKernelPackageVersion="$PACKED_VERSION" 2>&1 | tee analyzer-consumer-build.log
@@ -373,7 +373,7 @@ jobs:
         if: env.PACKAGE_ID == 'SharedKernel.ArchitectureTests'
         run: |
           set -e
-          proj="00.Governance/_verification/ArchTestConsumer/ArchTestConsumer.csproj"
+          proj="tools/Governance/_verification/ArchTestConsumer/ArchTestConsumer.csproj"
           dotnet restore "$proj" --force -p:SharedKernelPackageVersion="$PACKED_VERSION"
           dotnet run --project "$proj" --no-restore --configuration Release -p:SharedKernelPackageVersion="$PACKED_VERSION"
           echo "OK: every probed rule executed from the packed $PACKAGE_ID $PACKED_VERSION."
@@ -388,7 +388,7 @@ jobs:
         if: env.PACKAGE_ID == 'SharedKernel.Linter'
         run: |
           set -e
-          proj="00.Governance/_verification/LinterConsumer/LinterConsumer.csproj"
+          proj="tools/Governance/_verification/LinterConsumer/LinterConsumer.csproj"
           dotnet restore "$proj" --force -p:SharedKernelPackageVersion="$PACKED_VERSION"
           dotnet run --project "$proj" --no-restore --configuration Release -p:SharedKernelPackageVersion="$PACKED_VERSION"
           echo "OK: packed $PACKAGE_ID $PACKED_VERSION imports its build logic and installs its config."

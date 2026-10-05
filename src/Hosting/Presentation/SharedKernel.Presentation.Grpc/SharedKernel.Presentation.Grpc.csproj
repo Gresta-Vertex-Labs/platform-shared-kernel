@@ -1,0 +1,55 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <SharedKernelTier>Host</SharedKernelTier>
+    <!-- NuGet packaging metadata -->
+    <Description>gRPC services with the same error contract and authorization as SharedKernel HTTP APIs. One call to set up (AddSharedKernelGrpc, bound from SharedKernel:Presentation:Grpc and validated at startup) registers gRPC with an exception interceptor and the permission, role, fresh-authentication and authentication-method requirements of SharedKernel.Presentation.Core (shared with the HTTP and SignalR packages) as native ASP.NET Core authorization, usable as attributes on a service or method and as MapGrpcService conventions. Every error a service method produces becomes a rich google.rpc.Status (an authorization refusal is a bare Unauthenticated or PermissionDenied status): a status code mapped from ErrorType (including Unavailable and DeadlineExceeded), a localized message with server errors redacted outside Development, an ErrorInfo detail carrying the error code, the error domain, the trace id and the correlation id, and a BadRequest detail with the field violations, capped so the status always fits the client's header limit. A failed Result ended with SharedKernel.Core's GetValueOrThrow or ThrowIfFailure gets the same status. An RpcException from the service or from a downstream gRPC call keeps its code but never its trailers, so another service's error details and trace ids do not reach the caller. Any exception after the call is cancelled ends as Cancelled without an error log.</Description>
+    <PackageTags>shared-kernel;grpc;aspnetcore;rich-status;google-rpc;errorinfo;badrequest;rpcexception;statuscode;authorization;step-up;result</PackageTags>
+    <!--
+      Set per-project, not inherited: the SDK assigns GenerateDocumentationFile=false before
+      Directory.Build.targets' '== empty'-guarded default is evaluated. CS1591 below makes an
+      undocumented public member a build error.
+    -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Public API tracking: an addition, removal or signature change fails the build until PublicAPI.*.txt is updated. -->
+    <WarningsAsErrors>$(WarningsAsErrors);nullable;CS1591;RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <!--
+      Host tier. This package NEVER references SharedKernel.Contracts, mirroring SharedKernel.Communication.Grpc's
+      P-163 rule: protobuf messages are a gRPC service's wire contract, not Contracts DTOs
+      (GrpcNeverReferencesContracts). Nor does it reference SharedKernel.Presentation.WebApi (P-570 intent, completed
+      by P-579), so a gRPC host takes no HTTP API stack.
+
+      SharedKernel.Presentation.Core supplies what every protocol must agree on: the client message (localization,
+      redaction) and the server-error rule, AddSharedKernelAuthorization (the policies behind RequireEndpointPermission
+      and its siblings), the request's correlation id and the traceId/correlationId member names.
+      SharedKernel.Core supplies SharedKernelException, SharedKernel.Configuration the options binding.
+    -->
+    <ProjectReference Include="..\SharedKernel.Presentation.Core\SharedKernel.Presentation.Core.csproj" />
+    <ProjectReference Include="..\..\..\Foundation\SharedKernel.Core\SharedKernel.Core.csproj" />
+    <ProjectReference Include="..\..\..\Foundation\SharedKernel.Configuration\SharedKernel.Configuration.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Server-side gRPC hosting: Interceptor, ServerCallContext, RpcException, StatusCode, GetHttpContext. -->
+    <PackageReference Include="Grpc.AspNetCore" />
+    <!-- google.rpc.Status carried in the grpc-status-details-bin trailer (ToRpcException, GetRpcStatus). -->
+    <PackageReference Include="Grpc.StatusProto" />
+    <!--
+      Direct reference so the centrally pinned 2.17.0 is used rather than Grpc.StatusProto's 2.16.0 floor:
+      2.17.0 is the first version whose google.rpc.BadRequest.FieldViolation has the reason field, which
+      carries each field error's code (the gRPC counterpart of the HTTP errorCodes member).
+    -->
+    <PackageReference Include="Google.Api.CommonProtos" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="SharedKernel.Presentation.Grpc.Tests" />
+  </ItemGroup>
+</Project>

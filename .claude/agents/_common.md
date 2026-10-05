@@ -9,7 +9,7 @@ This file is not an agent. Every agent in `.claude/agents/` follows it; an agent
 ## Repository facts
 
 - **Platform.SharedKernel**: a .NET 10 mono-repo of NuGet packages (the shared kernel of a microservice ecosystem). No business logic lives here. The repository is **public**.
-- Capability domains are the numbered folders `00.Governance` … `20.Reporting`. Each has `CLAUDE.md` (maintainer rules), `README.md` (overview) and `state-map.md` (living board). Folder numbers are an address and an EventId block, **not** a dependency layer.
+- Capability domains have ids `00.Governance` … `20.Reporting`. Each lives in the folder the root `CLAUDE.md` domain table maps its id to (for example `06.Persistence` → `src/Infrastructure/Persistence`); `{folder}` in these instructions means that folder. Each has `CLAUDE.md` (maintainer rules), `README.md` (overview) and `state-map.md` (living board). Folder numbers are an address and an EventId block, **not** a dependency layer.
 - Every production project declares a `<SharedKernelTier>` (Foundation, Model, Abstractions, Adapter, Host, Testing, Tooling); `eng/SharedKernelTiers.targets` fails the build (SKTIER000–006) on an illegal reference.
 - All packages ship together at one MinVer version from a git tag. No `<Version>` in any `.csproj`.
 - Sources of truth, read them rather than recalling them:
@@ -17,8 +17,8 @@ This file is not an agent. Every agent in `.claude/agents/` follows it; an agent
 | Topic | File |
 | --- | --- |
 | Tiers, declared adapter edges, purity rules, conventions, domain map, "What Goes Where" | root `CLAUDE.md` |
-| A domain's packages, entry points, invariants, decisions | `{NN}.{Name}/CLAUDE.md` |
-| What is built and what is open | `state-map.md` (root) and `{NN}.{Name}/state-map.md` |
+| A domain's packages, entry points, invariants, decisions | `{folder}/CLAUDE.md` |
+| What is built and what is open | `state-map.md` (root) and `{folder}/state-map.md` |
 | Build, test lanes, CI, release, adding a package (for humans) | `CONTRIBUTING.md` |
 | Build internals: props/targets, tier check, MinVer, CI workflows, run settings | `eng/README.md` |
 | Package README shape | `docs/package-readme-standard.md` (enforced by `PackageReadmeStandardTests`) |
@@ -49,7 +49,7 @@ History is not kept in the repository beyond the one-line entries on the boards;
 **Packages and projects**
 - Naming: `SharedKernel.{Capability}[.Abstractions|.{Provider}|.{Provider}.Core|.{Provider}.{Role}]`; fakes in `16.Testing` as `SharedKernel.{Capability}.Testing`; tests nested as `{Project}/{Project}.Tests/`.
 - **MAX_PATH:** before scaffolding or renaming a package, check that every file of it, its `.Tests` project included, stays within 250 characters at the clone root `C:Githubplatform-shared-kernel` (`bash eng/verify-path-lengths.sh`, also run by CI). Shorten the name if it does not. Build output goes to `artifacts/` and does not count.
-- A new project goes into `Platform.SharedKernel.slnx` (solution folder = its numbered folder), `Platform.SharedKernel.Unit.slnf` (every production project), its test project into exactly one lane filter, and — if packable — `Directory.Packages.props`. The `.csproj` carries `<SharedKernelTier>`, `<Description>`, `<PackageTags>`, a `README.md`, no `<Version>`, and `PackageReference`s without versions (Central Package Management).
+- A new project goes into `Platform.SharedKernel.slnx` (solution folder = its capability folder), `Platform.SharedKernel.Unit.slnf` (every production project), its test project into exactly one lane filter, and — if packable — `Directory.Packages.props`. The `.csproj` carries `<SharedKernelTier>`, `<Description>`, `<PackageTags>`, a `README.md`, no `<Version>`, and `PackageReference`s without versions (Central Package Management).
 - A new or changed public member goes into that project's `PublicAPI.Unshipped.txt`.
 
 **Build and test**
@@ -59,9 +59,9 @@ History is not kept in the repository beyond the one-line entries on the boards;
 | Full build | `dotnet build Platform.SharedKernel.slnx -c Release` |
 | Unit lane (no Docker) | `dotnet test Platform.SharedKernel.Unit.slnf -c Release` |
 | Integration lane (Testcontainers, Docker required) | `dotnet test Platform.SharedKernel.Integration.slnf -c Release -s eng/testsettings/integration.runsettings` |
-| One project | `dotnet test {NN}.{Folder}/{Project}/{Project}.Tests -c Release` |
+| One project | `dotnet test {folder}/{Project}/{Project}.Tests -c Release` |
 
-- Run the test projects you touched, then the lane that contains them. Integration suites use the Testcontainers fixtures in `16.Testing/SharedKernel.Testing.Internal`; never hand-roll a container setup inside a `.Tests` project. If Docker is unavailable, say so in the report and mark only the container-backed tasks `⚑` with that evidence.
+- Run the test projects you touched, then the lane that contains them. Integration suites use the Testcontainers fixtures in `src/Testing/SharedKernel.Testing.Internal`; never hand-roll a container setup inside a `.Tests` project. If Docker is unavailable, say so in the report and mark only the container-backed tasks `⚑` with that evidence.
 - `TreatWarningsAsErrors` is **per project**, not central: many projects opt in, others do not. Treat every warning you introduce as an error anyway; a project you touch must stay warning-free.
 - Fix the implementation, not the test, unless the test is demonstrably wrong. Never report a phase done with a failing or skipped test you introduced.
 - Verify third-party package versions, licences and target frameworks at the time of use; never add a package version from memory.
@@ -72,7 +72,7 @@ History is not kept in the repository beyond the one-line entries on the boards;
 
 Boards are **living**: they describe what exists and what is open. Completed work collapses to one line.
 
-**Domain `{NN}.{Name}/state-map.md`**: headings exactly, in this order:
+**Domain `{folder}/state-map.md`**: headings exactly, in this order:
 
 | Heading | Content |
 | --- | --- |

@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <SharedKernelTier>Host</SharedKernelTier>
+    <!-- NuGet packaging metadata -->
+    <Description>API key authentication for machine clients in ASP.NET Core, mapped to SharedKernel's IUserContext. Managed keys have a recognizable format (prefix, key id, 190-bit secret, checksum) that secret scanners can detect, are generated from a cryptographic random source, stored only as a SHA-256 hash, and checked for expiry and revocation; a custom IApiKeyValidator can replace the managed store. Composes with a bearer token scheme as the default authentication scheme.</Description>
+    <PackageReleaseNotes>First release.</PackageReleaseNotes>
+    <PackageTags>shared-kernel;security;api-key;authentication;machine-client;service-principal</PackageTags>
+    <!--
+      Set per-project, not inherited: the SDK assigns GenerateDocumentationFile=false before
+      Directory.Build.targets' '== empty'-guarded default is evaluated. CS1591 below makes an
+      undocumented public member a build error.
+    -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Public API tracking: an addition, removal or signature change fails the build until PublicAPI.*.txt is updated. -->
+    <WarningsAsErrors>$(WarningsAsErrors);nullable;CS1591;RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel.Security.Abstractions\SharedKernel.Security.Abstractions.csproj" />
+    <ProjectReference Include="..\..\..\Foundation\SharedKernel.Cryptography\SharedKernel.Cryptography.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="SharedKernel.Security.ApiKey.Tests" />
+  </ItemGroup>
+</Project>

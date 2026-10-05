@@ -24,7 +24,7 @@ $ARGUMENTS
 
 | Field | Required | Values |
 | --- | --- | --- |
-| `phase_key` | yes | `SK.{NN}.{Key}`; `NN` selects the folder (`06` → `06.Persistence`) |
+| `phase_key` | yes | `SK.{NN}.{Key}`; `NN` selects the domain (`06` → `06.Persistence`, whose folder the root `CLAUDE.md` domain table gives) |
 | `tasks` | no | Comma-separated task IDs (`C-01, T-03`), or `all`. Omitted = `all`. |
 | `state` | yes | `○`, `◐`, `●`, `⚑` (or `—` for a task dropped as not applicable) |
 | `summary` | when the phase closes | One line: the outcome, as it will appear under `## Completed Phases` |
@@ -34,7 +34,7 @@ Missing or ambiguous required fields: list them and stop without editing.
 
 ## D2 — Read
 
-Read `{NN}.{Folder}/state-map.md` in full. Find the Open Work entry whose heading starts `### {phase_key} —`. Not found:
+Read `{folder}/state-map.md` in full. Find the Open Work entry whose heading starts `### {phase_key} —`. Not found:
 - If the key is under `## Completed Phases` → report "already closed" and stop.
 - Otherwise → report "no open entry for {phase_key}" and stop.
 

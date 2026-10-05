@@ -1,0 +1,68 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <SharedKernelTier>Host</SharedKernelTier>
+    <!-- NuGet packaging metadata -->
+    <Description>Composition base for Platform.SharedKernel microservices: AddServiceDefaults (OpenTelemetry traces, metrics, and logs with ambient CorrelationId/TenantId log enrichment, plus the startup readiness gate), liveness and readiness endpoint mapping, StartupGate, the With*Telemetry family for every SharedKernel domain, HealthCheckNames/HealthCheckTags, AddSharedKernelReadiness (every provider-registered IReadinessProbe on /health/ready), and opt-in rate limiting. References only SharedKernel.Primitives among SharedKernel packages. Database readiness checks, the request context, mutual TLS, Azure Key Vault configuration, and localization live in the SharedKernel.ServiceDefaults.* integration packages, so a service restores only the integrations it actually uses.</Description>
+    <PackageTags>shared-kernel;service-defaults;opentelemetry;health-checks;kubernetes;observability</PackageTags>
+    <!--
+      NU5104: a stable package release must not depend on a prerelease package. This package
+      depends on OpenTelemetry.Instrumentation.EntityFrameworkCore, which as of this writing has
+      never shipped a stable (non-beta) release upstream — there is no stable version to pin to.
+      Suppressed at pack time only; re-evaluate and remove this suppression once OpenTelemetry
+      ships a stable EFCore instrumentation release.
+    -->
+    <NoWarn>$(NoWarn);NU5104</NoWarn>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- Per-project: the SDK assigns false before the Directory.Build.targets default is evaluated. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <!--
+    WO-084, amended by P-569: this package references Foundation-tier SharedKernel packages only.
+    Before the WO-084 split it carried fourteen ProjectReferences, and a project referencing it alone
+    restored 25 SharedKernel projects and 73 NuGet packages — MassTransit, Azure Service Bus,
+    Microsoft.Identity.Web, EF Core, Temporalio, Quartz, and StackExchange.Redis among them.
+
+    The one reference is SharedKernel.Primitives, for IReadinessProbe: every provider registers its
+    own probe, and AddSharedKernelReadiness() maps them to health checks without knowing any provider.
+    Primitives depends on nothing but Microsoft.Extensions.DependencyInjection.Abstractions.
+
+    Every integration that needs a non-Foundation SharedKernel package lives in its own
+    SharedKernel.ServiceDefaults.* package. Adding such a reference here reintroduces the problem for
+    every service on the platform, and is locked out by two tests in SharedKernel.ServiceDefaults.Tests:
+    a type-level dependency check, and a project-file check that catches an unused reference the
+    type-level check cannot see.
+
+    The With*Telemetry extensions need no reference: each wires its domain's ActivitySource and
+    Meter by string name.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\Foundation\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" />
+    <!-- Depends on OpenTelemetry and Microsoft.Extensions only — NOT on EF Core; it observes EF Core's DiagnosticSource. -->
+    <PackageReference Include="OpenTelemetry.Instrumentation.EntityFrameworkCore" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
+    <!--
+      Activated by WithCommunicationTelemetry() only, never by AddSharedKernelTelemetry(). Depends on
+      OpenTelemetry alone. Version-aligned with SharedKernel.Communication.Grpc's pin so a service
+      using both never resolves two different beta builds. Polly's "Polly" Meter needs no reference:
+      it is reached by name (AddMeter("Polly")), and Polly creates no ActivitySource.
+    -->
+    <PackageReference Include="OpenTelemetry.Instrumentation.GrpcNetClient" />
+    <!--
+      Microsoft.Extensions.Diagnostics.HealthChecks and Microsoft.Extensions.Hosting ship in the
+      Microsoft.AspNetCore.App shared framework (see FrameworkReference above); an explicit reference
+      is flagged redundant by NU1510 and fails the build under TreatWarningsAsErrors.
+    -->
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="SharedKernel.ServiceDefaults.Tests" />
+  </ItemGroup>
+</Project>

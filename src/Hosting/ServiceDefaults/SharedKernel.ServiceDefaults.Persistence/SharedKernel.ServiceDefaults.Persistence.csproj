@@ -1,0 +1,26 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <SharedKernelTier>Host</SharedKernelTier>
+    <Description>Database readiness health checks for Platform.SharedKernel microservices: AddDatabaseReadinessCheck&lt;TContext&gt; for EF Core (via SharedKernel.Persistence.EfCore) and AddDapperDatabaseReadinessCheck for connection-factory based access (via SharedKernel.Persistence.Abstractions). Registered on /health/ready only, never /health/live. Split out of SharedKernel.ServiceDefaults (WO-084) so a service without a database does not restore the persistence stack.</Description>
+    <PackageTags>shared-kernel;service-defaults;health-checks;readiness;persistence;efcore;dapper</PackageTags>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- Per-project: the SDK assigns false before the Directory.Build.targets default is evaluated. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel.ServiceDefaults\SharedKernel.ServiceDefaults.csproj" />
+    <ProjectReference Include="..\..\..\Infrastructure\Persistence\SharedKernel.Persistence.Abstractions\SharedKernel.Persistence.Abstractions.csproj" />
+    <ProjectReference Include="..\..\..\Infrastructure\Persistence\SharedKernel.Persistence.EfCore\SharedKernel.Persistence.EfCore.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="SharedKernel.ServiceDefaults.Persistence.Tests" />
+  </ItemGroup>
+</Project>

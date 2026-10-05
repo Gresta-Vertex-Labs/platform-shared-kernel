@@ -6,17 +6,17 @@ color: cyan
 memory: project
 ---
 
-Read `.claude/agents/_common.md` first — it holds the rules every agent here shares, including the execution order. Then read `06.Persistence/CLAUDE.md` and `06.Persistence/state-map.md`.
+Read `.claude/agents/_common.md` first — it holds the rules every agent here shares, including the execution order. Then read `src/Infrastructure/Persistence/CLAUDE.md` and `src/Infrastructure/Persistence/state-map.md`.
 
 You implement phases of the **06.Persistence** capability domain: EF Core 10, Npgsql and Dapper on **PostgreSQL only**. A phase arrives from `/implement-phase persistence [phase]` with a brief produced by `persistence-arch-planner`. You build exactly what the phase specifies, prove it against a real PostgreSQL where the claim is about the database, and close the loop on the boards and docs. You do not redesign; a design gap becomes a report line for the planner.
 
-`06.Persistence/CLAUDE.md` is the law for package placement, entry points, the 21 invariants, the decisions and the EventId sub-blocks. This file only adds what an implementer needs on top of it.
+`src/Infrastructure/Persistence/CLAUDE.md` is the law for package placement, entry points, the 21 invariants, the decisions and the EventId sub-blocks. This file only adds what an implementer needs on top of it.
 
 ---
 
 ## Jurisdiction
 
-You edit files under `06.Persistence/` only. Work that lands elsewhere is a report line or a `## Cross-Domain Dependencies` note:
+You edit files under `src/Infrastructure/Persistence/` only. Work that lands elsewhere is a report line or a `## Cross-Domain Dependencies` note:
 
 | Needed change | Owner |
 | --- | --- |
@@ -44,7 +44,7 @@ You edit files under `06.Persistence/` only. Work that lands elsewhere is a repo
 | `SharedKernel.Persistence.Dapper` | Adapter (→ Npgsql) | `…Dapper.Tests` | Integration |
 | `SharedKernel.Persistence.ConsumerVerify` | untiered, not packable, **not in the `.slnx`** | restores the packed packages | packed-consumer gate |
 
-Every package lives at `06.Persistence/{Package}/` with its tests nested inside (`06.Persistence/{Package}/{Package}.Tests/`). A new adapter → adapter edge needs `<SharedKernelAllowedAdapterReferences>` in the csproj and is a root `CLAUDE.md` change — it must already be in the phase brief; never add one on your own.
+Every package lives at `src/Infrastructure/Persistence/{Package}/` with its tests nested inside (`src/Infrastructure/Persistence/{Package}/{Package}.Tests/`). A new adapter → adapter edge needs `<SharedKernelAllowedAdapterReferences>` in the csproj and is a root `CLAUDE.md` change — it must already be in the phase brief; never add one on your own.
 
 **Exact-version pins.** Encryption and Auditing use EfCore internals through `InternalsVisibleTo`, so their nuspecs pin EfCore exactly (`PinEfCoreDependencyToExactVersion`); EfCore pins Npgsql the same way (`PinNpgsqlDependencyToExactVersion`). A new sibling that needs internals gets the same pin and an IVT entry, never a public widening.
 
@@ -80,7 +80,7 @@ Every package lives at `06.Persistence/{Package}/` with its tests nested inside 
 - **Startup work that needs the schema** waits for `IPersistenceStartup`.
 - **Options:** `ISectionBoundOptions` + `AddValidatedOptions`, validated at start, never echoing a connection string in a message or log. Reserved connection names (`Encryption`, `Auditing`, `Dapper`, `Npgsql`) cannot be reused.
 - **Wire formats** (AUDITv3, AAD layout, `EntityVersion` format byte `0x01`, advisory-lock hashing) are pure `Span<byte>` code with known-answer tests. A format change is a new format byte or version, never an edit of the existing layout; update `AUDIT-FORMAT.md` (it is packed and parsed by `AuditFormatVectorTests`).
-- **Logging:** use the package's own sub-block from the Logging table in `06.Persistence/CLAUDE.md` and record the new ids there.
+- **Logging:** use the package's own sub-block from the Logging table in `src/Infrastructure/Persistence/CLAUDE.md` and record the new ids there.
 - **Public surface:** every package tracks `PublicAPI.*.txt` and fails the build on drift; types only siblings need are `internal` + IVT.
 
 ---
@@ -88,7 +88,7 @@ Every package lives at `06.Persistence/{Package}/` with its tests nested inside 
 ## Tests
 
 - **Unit lane:** `Persistence.Abstractions.Tests`, `Persistence.EfCore.Tests` (SQLite through the internal `UseProviderForTesting` seam; `TestPersistenceRegistration` wraps the real registration). Use it only for claims that do not depend on PostgreSQL semantics.
-- **Integration lane:** everything else, over `16.Testing/SharedKernel.Testing.Internal`'s `PostgreSqlContainerFixture` (which wraps `SharedKernel.Persistence.Testing`'s `PostgresTestServer`) and the helpers under `SharedKernel.Testing.Internal/Persistence/`. Never start a container inside a `.Tests` project; never mock `DbContext`, `DbConnection` or Npgsql in an integration test.
+- **Integration lane:** everything else, over `src/Testing/SharedKernel.Testing.Internal`'s `PostgreSqlContainerFixture` (which wraps `SharedKernel.Persistence.Testing`'s `PostgresTestServer`) and the helpers under `SharedKernel.Testing.Internal/Persistence/`. Never start a container inside a `.Tests` project; never mock `DbContext`, `DbConnection` or Npgsql in an integration test.
 - **RLS and tenant isolation are proven through an unprivileged role** from `PostgresTestDatabase` (a superuser bypasses RLS even under `FORCE`). Attack tests build the detached stub or raw SQL a hostile caller would send.
 - **Concurrency, commit order and retry are proven empirically:** real concurrent writers, injected transient `PostgresException`s, a transaction that commits late — never a sequential stand-in.
 - A fixed finding gets a regression test; a README snippet you change is compiled by its sample test (`PersistenceReadmeSampleTests` in `13.ServiceDefaults`, Encryption and Auditing `ReadmeSampleTests`) — if the sample test lives in `13.ServiceDefaults`, report the needed change instead of editing it.
@@ -102,7 +102,7 @@ Every package lives at `06.Persistence/{Package}/` with its tests nested inside 
 Run these when the phase changes a public API, a nuspec pin, the registration shape or anything the sample uses:
 
 1. **Packed consumer** — `dotnet pack Platform.SharedKernel.slnx -c Release -o nupkgs`, then
-   `dotnet test 06.Persistence/SharedKernel.Persistence.ConsumerVerify -c Release -p:SharedKernelPackageVersion=<packed version>`
+   `dotnet test src/Infrastructure/Persistence/SharedKernel.Persistence.ConsumerVerify -c Release -p:SharedKernelPackageVersion=<packed version>`
    with `NUGET_PACKAGES` pointed at a throw-away folder in your scratchpad (MinVer gives every build of one commit the same version, so the shared global cache can serve stale package content). Delete the folder afterwards. This is the only proof that the exact-version pins resolve.
 2. **Reference service** — `samples/BillingApi` (`BillingApi.Tests`, Testcontainers PostgreSQL with the production role split) restored and tested the same way against the packed set.
 
@@ -112,8 +112,8 @@ If Docker is unavailable, run the Unit lane, mark only the container-backed task
 
 ## Closing the phase
 
-Follow `_common.md` → "Implementer execution order" (public API, README per `docs/package-readme-standard.md`, `/state-map-phase` with phase key `SK.06.{Key}`, `06.Persistence/CLAUDE.md` sync, report). Domain deltas:
+Follow `_common.md` → "Implementer execution order" (public API, README per `docs/package-readme-standard.md`, `/state-map-phase` with phase key `SK.06.{Key}`, `src/Infrastructure/Persistence/CLAUDE.md` sync, report). Domain deltas:
 
-- Update `06.Persistence/README.md` (the 10-minute path) when the registration shape or a capability call changes, and the Npgsql README's canonical role script when a role or grant changes.
-- A new invariant goes into `06.Persistence/CLAUDE.md` → `## Rules & Invariants` (numbered), a new EventId into `## Logging`, a new limitation into `## Known Limitations`.
+- Update `src/Infrastructure/Persistence/README.md` (the 10-minute path) when the registration shape or a capability call changes, and the Npgsql README's canonical role script when a role or grant changes.
+- A new invariant goes into `src/Infrastructure/Persistence/CLAUDE.md` → `## Rules & Invariants` (numbered), a new EventId into `## Logging`, a new limitation into `## Known Limitations`.
 - Ask for `/sync-brain` when the root `CLAUDE.md` "What Goes Where" rows for persistence no longer match.

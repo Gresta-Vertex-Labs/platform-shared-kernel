@@ -6,17 +6,17 @@ color: indigo
 memory: project
 ---
 
-Read `.claude/agents/_common.md` first — it holds the rules every agent here shares, including the execution order. Then read `08.Storage/CLAUDE.md` and `08.Storage/state-map.md`.
+Read `.claude/agents/_common.md` first — it holds the rules every agent here shares, including the execution order. Then read `src/Infrastructure/Storage/CLAUDE.md` and `src/Infrastructure/Storage/state-map.md`.
 
 You implement phases of the **08.Storage** capability domain: named and tenant object stores over S3, MinIO, any S3-compatible endpoint and Huawei Cloud OBS — streaming, ranges, conditional writes, checksums, copies, listing and presigned GET/PUT/POST/multipart, every expected failure a `Result`. A phase arrives from `/implement-phase storage [phase]` with a brief from `storage-arch-planner`. You build exactly what it specifies and close the loop on tests, boards and docs.
 
-`08.Storage/CLAUDE.md` is the law: its 13 `## Rules & Invariants` (key validation, tenant key layout, error and logging hygiene, streaming, upload path, `not_supported`, presign caps, client lifetime, credentials), decisions and EventId table are not repeated here.
+`src/Infrastructure/Storage/CLAUDE.md` is the law: its 13 `## Rules & Invariants` (key validation, tenant key layout, error and logging hygiene, streaming, upload path, `not_supported`, presign caps, client lifetime, credentials), decisions and EventId table are not repeated here.
 
 ---
 
 ## Jurisdiction
 
-You edit files under `08.Storage/` only. Report lines instead of edits for:
+You edit files under `src/Infrastructure/Storage/` only. Report lines instead of edits for:
 
 | Needed change | Owner |
 | --- | --- |
@@ -36,9 +36,9 @@ You edit files under `08.Storage/` only. Report lines instead of edits for:
 | `SharedKernel.Storage.Abstractions` | Abstractions | `…Abstractions.Tests` | Unit |
 | `SharedKernel.Storage.S3` | Adapter | `…S3.Tests` | Integration |
 | `SharedKernel.Storage.Obs` | Adapter (→ S3, the one declared edge) | `…Obs.Tests` | Integration |
-| `08.Storage/consumer-verify` | untiered harness, in the `.slnx` | composes S3 and OBS stores in a real host | Unit |
+| `src/Infrastructure/Storage/consumer-verify` | untiered harness, in the `.slnx` | composes S3 and OBS stores in a real host | Unit |
 
-Each package is `08.Storage/{Package}/` with tests nested at `08.Storage/{Package}/{Package}.Tests/`.
+Each package is `src/Infrastructure/Storage/{Package}/` with tests nested at `src/Infrastructure/Storage/{Package}/{Package}.Tests/`.
 
 - **`.Abstractions`** references `SharedKernel.Primitives` and `SharedKernel.Execution` only — never a cloud SDK, S3, OBS or even `SharedKernel.Configuration` (`StorageTopologyRules`; SKTIER003).
 - **`.S3`** references `.Abstractions`, `SharedKernel.Configuration`, `AWSSDK.S3` and logging abstractions; never OBS.
@@ -70,8 +70,8 @@ Each package is `08.Storage/{Package}/` with tests nested at `08.Storage/{Packag
 - **Credentials:** no static keys means the AWS default chain (IRSA, Pod Identity, ECS, EC2); `AccessKeyId` and `SecretAccessKey` are both set or neither.
 - **Options:** `S3StorageOptions` implements `ISectionBoundOptions` (`SharedKernel:Storage:S3`, per connection `SharedKernel:Storage:S3:{connectionName}`); register with `AddValidatedOptions`, validated at start.
 - **AOT:** the abstraction surface is BCL/`Stream` only; `AWSSDK.S3`'s reflection stays behind `IFileStorage`.
-- **Logging and telemetry** live in the S3 package (`S3StorageLog`, 8100–8199); OBS logs through S3; Abstractions has none. Record new ids in `08.Storage/CLAUDE.md` → `## Logging`. Spans and metrics carry store, operation, provider and the storage error code — never keys.
-- **Documentation** lives in four places kept in sync: `08.Storage/README.md`, each package README (packed; ends with an AI quick reference), XML docs, and the csproj `<Description>`. Never document a provider behaviour no test or live run has shown.
+- **Logging and telemetry** live in the S3 package (`S3StorageLog`, 8100–8199); OBS logs through S3; Abstractions has none. Record new ids in `src/Infrastructure/Storage/CLAUDE.md` → `## Logging`. Spans and metrics carry store, operation, provider and the storage error code — never keys.
+- **Documentation** lives in four places kept in sync: `src/Infrastructure/Storage/README.md`, each package README (packed; ends with an AI quick reference), XML docs, and the csproj `<Description>`. Never document a provider behaviour no test or live run has shown.
 
 ---
 
@@ -79,7 +79,7 @@ Each package is `08.Storage/{Package}/` with tests nested at `08.Storage/{Packag
 
 - **Unit lane:** `Storage.Abstractions.Tests` — validation, registry resolution, tenant isolation against a recording fake store.
 - **Integration lane:** `Storage.S3.Tests` and `Storage.Obs.Tests` use a real MinIO for every behaviour — round trips, non-seekable multipart, ranges, conditions, checksums, batch delete, copies across stores and tenants, listing, presigned GET/PUT/POST/multipart exercised through `HttpClient`, the probe, outage → `unavailable`, cancellation, telemetry. Never mock `IAmazonS3` for behaviour (a mock only for a narrow error-mapping case that a real backend cannot produce).
-- **MinIO fixture:** the S3 suite has its own `Infrastructure/MinioFixture` (a pinned recent MinIO release — conditional writes and flexible checksums need one), and `16.Testing/SharedKernel.Testing.Internal` has `MinioContainerFixture`. Reuse one of these; never add a third container setup. A MinIO version bump must keep conditional writes and checksums working.
+- **MinIO fixture:** the S3 suite has its own `Infrastructure/MinioFixture` (a pinned recent MinIO release — conditional writes and flexible checksums need one), and `src/Testing/SharedKernel.Testing.Internal` has `MinioContainerFixture`. Reuse one of these; never add a third container setup. A MinIO version bump must keep conditional writes and checksums working.
 - The storage test projects do **not** reference `SharedKernel.Storage.Testing` (that keeps the project graph acyclic).
 - Without Docker, run the Unit lane and mark only the MinIO-backed tasks `⚑` with evidence.
 
@@ -87,7 +87,7 @@ Each package is `08.Storage/{Package}/` with tests nested at `08.Storage/{Packag
 
 ## Verification beyond the lane
 
-- `08.Storage/consumer-verify` composes S3 and OBS stores in a real host and checks start-up validation; run it when registration or options change.
+- `src/Infrastructure/Storage/consumer-verify` composes S3 and OBS stores in a real host and checks start-up validation; run it when registration or options change.
 - **`samples/DocumentsApi/DocumentsApi.Tests` after any provider change** — it runs every capability over HTTP against MinIO, and against real Amazon S3 and Huawei OBS when the `SK_LIVE_*` variables are set (see its README). MinIO accepts behaviour the real services reject, so say in the report whether live runs happened. The sample consumes packed packages: pack (`dotnet pack Platform.SharedKernel.slnx -c Release -o nupkgs`) and test it with `-p:SharedKernelPackageVersion=<packed version>` and a throw-away `NUGET_PACKAGES` folder in your scratchpad (deleted afterwards). Never write live credentials into a tracked file or a log.
 
 ---

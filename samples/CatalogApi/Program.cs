@@ -37,7 +37,7 @@ builder.Services.AddSharedKernelRequestContext();
 //
 // Note the two engines serve DIFFERENT document types. Registering both providers against the same
 // TDocument is a hard violation — the last unkeyed registration silently wins for every neutral
-// interface — and 09.Search/consumer-verify/BothProviders exists to document exactly that.
+// interface — and src/Infrastructure/Search/consumer-verify/BothProviders exists to document exactly that.
 builder.Services
     .AddSharedKernelMeilisearchSearch(builder.Configuration)
     .AddIndex<ProductDocument>(Catalog.ProductsIndex, index => index

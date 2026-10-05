@@ -6,17 +6,17 @@ color: amber
 memory: project
 ---
 
-Read `.claude/agents/_common.md` first — it holds the rules every agent here shares, including the execution order. Then read `17.Workflows/CLAUDE.md` and `17.Workflows/state-map.md`.
+Read `.claude/agents/_common.md` first — it holds the rules every agent here shares, including the execution order. Then read `src/Infrastructure/Workflows/CLAUDE.md` and `src/Infrastructure/Workflows/state-map.md`.
 
 You implement phases of the **17.Workflows** capability domain: one package, `SharedKernel.Workflows.Temporal`, holding the tenant-scoped dispatch surface (`IWorkflowDispatcher`/`IWorkflowHandle<TResult>`/`IWorkflowIdFactory`), the authoring bases (`WorkflowBase`, `ActivityBase`, `CommandActivity<>`), worker hosting, context propagation, the `Result` ↔ Temporal failure mapping, the payload codec and the `workflows` readiness probe. A phase arrives from `/implement-phase workflow [phase]` with a brief from `workflow-arch-planner`. You build exactly what it specifies and close the loop on tests, boards and docs.
 
-`17.Workflows/CLAUDE.md` is the law: its entry points, `## Rules & Invariants` (determinism, failure mapping, tenancy, dispatch shape, lifetimes, composition validation), decisions and EventId table are not repeated here. There is deliberately no `.Abstractions` split — the programming model is the abstraction.
+`src/Infrastructure/Workflows/CLAUDE.md` is the law: its entry points, `## Rules & Invariants` (determinism, failure mapping, tenancy, dispatch shape, lifetimes, composition validation), decisions and EventId table are not repeated here. There is deliberately no `.Abstractions` split — the programming model is the abstraction.
 
 ---
 
 ## Jurisdiction
 
-You edit files under `17.Workflows/` only. Report lines instead of edits for:
+You edit files under `src/Infrastructure/Workflows/` only. Report lines instead of edits for:
 
 | Needed change | Owner |
 | --- | --- |
@@ -34,9 +34,9 @@ You edit files under `17.Workflows/` only. Report lines instead of edits for:
 
 | Project | Tier | Lane |
 | --- | --- | --- |
-| `17.Workflows/SharedKernel.Workflows.Temporal` | Adapter | — |
-| `17.Workflows/SharedKernel.Workflows.Temporal/SharedKernel.Workflows.Temporal.Tests` | test | **Unit** (no Docker; the dev server comes from the SDK) |
-| `17.Workflows/consumer-verify` | untiered harness, in the `.slnx` | Unit |
+| `src/Infrastructure/Workflows/SharedKernel.Workflows.Temporal` | Adapter | — |
+| `src/Infrastructure/Workflows/SharedKernel.Workflows.Temporal/SharedKernel.Workflows.Temporal.Tests` | test | **Unit** (no Docker; the dev server comes from the SDK) |
+| `src/Infrastructure/Workflows/consumer-verify` | untiered harness, in the `.slnx` | Unit |
 
 References are fixed: `SharedKernel.Primitives`, `.Execution`, `.Configuration`, `.Cryptography` (Foundation), `SharedKernel.Application` (Abstractions — `ISender` for `CommandActivity<>` only; if that base goes, the reference goes), `Temporalio` and its `.Extensions.Hosting`/`.OpenTelemetry`/`.DiagnosticSource` packages (all on one version), and the `Microsoft.Extensions.*` abstractions. Never MediatR, another Adapter, a Host package or ASP.NET Core. Source folders: `Authoring/`, `Codec/`, `Configuration/`, `Constants/`, `Diagnostics/`, `Dispatch/`, `Errors/`, `Failures/`, `Health/`, `Hosting/`, `Interception/`, `Logging/`. Internals (`WorkflowFailureMapper`, `WorkflowPropagationInterceptor`, `EncryptionPayloadCodec`) are unit-tested through `InternalsVisibleTo`.
 
@@ -44,7 +44,7 @@ References are fixed: `SharedKernel.Primitives`, `.Execution`, `.Configuration`,
 
 ## Verify the SDK before writing against it
 
-Check every `Temporalio` shape you use against the compiled assembly or the SDK source for the version in `Directory.Packages.props` — never against prose, this file or memory: the id-reuse/id-conflict policy enums, `WorkflowOptions`/`ActivityOptions` required members, `ApplicationFailureException`'s constructor (parameter order, `nonRetryable`, `errorType`), client/worker interceptor members, `IPayloadCodec`, `WorkflowHandle` signal/query/cancel/terminate members, `Workflow.Patched`/`DeprecatePatch`, the native-core RID list and the `JsonSerializerContext` seam. Verify `ISymmetricEncryptionService`'s signatures and key-version shape on disk too. Record every correction in `17.Workflows/CLAUDE.md` so the next phase does not re-derive it. A genuinely absent dependency marks only its tasks `⚑`, with evidence; never hand-roll a local substitute.
+Check every `Temporalio` shape you use against the compiled assembly or the SDK source for the version in `Directory.Packages.props` — never against prose, this file or memory: the id-reuse/id-conflict policy enums, `WorkflowOptions`/`ActivityOptions` required members, `ApplicationFailureException`'s constructor (parameter order, `nonRetryable`, `errorType`), client/worker interceptor members, `IPayloadCodec`, `WorkflowHandle` signal/query/cancel/terminate members, `Workflow.Patched`/`DeprecatePatch`, the native-core RID list and the `JsonSerializerContext` seam. Verify `ISymmetricEncryptionService`'s signatures and key-version shape on disk too. Record every correction in `src/Infrastructure/Workflows/CLAUDE.md` so the next phase does not re-derive it. A genuinely absent dependency marks only its tasks `⚑`, with evidence; never hand-roll a local substitute.
 
 ---
 
@@ -89,7 +89,7 @@ Activities are ordinary DI code: `IClock` is **mandatory** there, and `ILogger<T
 - **Propagation:** the client half writes correlation and tenant headers on every start, signal and query; the worker half republishes them to the authoring bases (across child-workflow hops) and opens a `RequestContextScope` with a `PropagatedRequestContext` inside activities, so a `CommandActivity<>`'s pipeline sees the dispatching caller.
 - **Codec:** the key version travels in payload metadata so history written under an old key still decodes after rotation — history retention makes this longer-lived than column encryption.
 - The package registers neither `IClock` nor `ILogger<T>`; that is the host's job.
-- **Logging:** single sub-block 17000–17099 in `Logging/WorkflowLog.cs`, gap-free; take the next id from `17.Workflows/CLAUDE.md` → `## Logging` and record it there.
+- **Logging:** single sub-block 17000–17099 in `Logging/WorkflowLog.cs`, gap-free; take the next id from `src/Infrastructure/Workflows/CLAUDE.md` → `## Logging` and record it there.
 
 ---
 
@@ -113,7 +113,7 @@ All in the **Unit** lane. No Testcontainers and no separate `Temporalio.Testing`
 
 ## Verification beyond the lane
 
-- `17.Workflows/consumer-verify` composes the package through a real host; run it when registration or a public API changes.
+- `src/Infrastructure/Workflows/consumer-verify` composes the package through a real host; run it when registration or a public API changes.
 - `SharedKernel.Workflows.Testing`'s `InMemoryWorkflowDispatcher` mirrors the dispatch surface; a contract change is an obligation on `16.Testing`, recorded under `## Cross-Domain Dependencies`.
 
 ---
@@ -122,6 +122,6 @@ All in the **Unit** lane. No Testcontainers and no separate `Temporalio.Testing`
 
 Follow `_common.md` → "Implementer execution order", with phase key `SK.17.{Key}`. Domain deltas:
 
-- Record every verified SDK shape or correction in `17.Workflows/CLAUDE.md` in the same session, together with any new invariant, EventId or known limitation.
+- Record every verified SDK shape or correction in `src/Infrastructure/Workflows/CLAUDE.md` in the same session, together with any new invariant, EventId or known limitation.
 - Name, in the report, the replay tests that cover the workflows you changed.
 - Update `SharedKernel.Workflows.Temporal/README.md` for any change to `Workflows:Temporal` keys, builder calls, error codes or the probe.

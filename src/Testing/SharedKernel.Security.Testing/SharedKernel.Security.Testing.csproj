@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <SharedKernelTier>Testing</SharedKernelTier>
+    <Description>Test helpers for the SharedKernel security packages, for test projects only. FakeUserContext and SecurityTestContextBuilder for IUserContext, in-memory API-key, DPoP replay-cache and TOTP stores, and builders for DPoP proofs and mTLS test certificates.</Description>
+    <PackageTags>security;authentication;testing;test-doubles;dpop;mtls;shared-kernel</PackageTags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- A test-helper LIBRARY, not a test project: dotnet test must not try to run it. -->
+    <IsTestProject>false</IsTestProject>
+    <WarningsAsErrors>$(WarningsAsErrors);nullable;CS1591;RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\Hosting\Security\SharedKernel.Security.Abstractions\SharedKernel.Security.Abstractions.csproj" />
+    <ProjectReference Include="..\..\Hosting\Security\SharedKernel.Security.ApiKey\SharedKernel.Security.ApiKey.csproj" />
+    <ProjectReference Include="..\..\Hosting\Security\SharedKernel.Security.Oidc\SharedKernel.Security.Oidc.csproj" />
+    <ProjectReference Include="..\..\Hosting\Security\SharedKernel.Security.Totp\SharedKernel.Security.Totp.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+</Project>

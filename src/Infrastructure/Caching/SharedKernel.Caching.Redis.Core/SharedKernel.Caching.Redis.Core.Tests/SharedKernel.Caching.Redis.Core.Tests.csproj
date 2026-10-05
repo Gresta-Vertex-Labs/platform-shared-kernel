@@ -1,0 +1,27 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <!-- DI host for registration tests -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <!-- ILoggerFactory for resolving the connection -->
+    <PackageReference Include="Microsoft.Extensions.Logging" />
+    <!-- ConfigurationBuilder/AddInMemoryCollection for SharedKernel:Caching:Redis binding tests -->
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="StackExchange.Redis" />
+    <!-- A real Redis for the connection probe tests -->
+    <PackageReference Include="Testcontainers.Redis" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel.Caching.Redis.Core.csproj" />
+    <!-- SharedKernel.Testing provides InMemoryLoggerFactory and the log assertions -->
+    <ProjectReference Include="..\..\..\..\Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
+  </ItemGroup>
+</Project>
