@@ -38,14 +38,19 @@
 
     <!-- 3. build/SharedKernel.Linter.targets was imported, proven by invoking the target it
          carries. If the file was not imported this fails with MSB4057 rather than passing
-         quietly. Destination is inside obj/ so the harness tree stays clean. -->
+         quietly. Destination is inside obj/ so the harness tree stays clean. IntermediateOutputPath
+         may be relative (in-tree obj/) or absolute (artifacts/obj/), so the path is combined, never
+         concatenated. -->
+    <PropertyGroup>
+      <_SkLinterVerifyDir>$([System.IO.Path]::GetFullPath($([System.IO.Path]::Combine('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'linter-verify'))))</_SkLinterVerifyDir>
+    </PropertyGroup>
     <MSBuild
       Projects="$(MSBuildProjectFullPath)"
       Targets="InstallSharedKernelLinterConfig"
-      Properties="SharedKernelLinterConfigDestination=$(MSBuildProjectDirectory)/$(IntermediateOutputPath)linter-verify;SharedKernelLinterOverwriteConfig=true"
+      Properties="SharedKernelLinterConfigDestination=$(_SkLinterVerifyDir);SharedKernelLinterOverwriteConfig=true"
     />
     <Error
-      Condition="!Exists('$(IntermediateOutputPath)linter-verify/.editorconfig')"
+      Condition="!Exists('$(_SkLinterVerifyDir)/.editorconfig')"
       Text="SharedKernel.Linter verification FAILED: InstallSharedKernelLinterConfig ran but did not produce .editorconfig. The packed build/config/ folder is missing or empty."
     />
 
