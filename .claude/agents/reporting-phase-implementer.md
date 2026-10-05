@@ -6,17 +6,17 @@ color: green
 memory: project
 ---
 
-Read `.claude/agents/_common.md` first — it holds the rules every agent here shares, including the execution order. Then read `20.Reporting/CLAUDE.md` and `20.Reporting/state-map.md`.
+Read `.claude/agents/_common.md` first — it holds the rules every agent here shares, including the execution order. Then read `src/Infrastructure/Reporting/CLAUDE.md` and `src/Infrastructure/Reporting/state-map.md`.
 
 You implement phases of the **20.Reporting** capability domain: streaming CSV, Excel and tabular-PDF export over `IAsyncEnumerable<TRow>`, plus HTML-to-PDF through Gotenberg, delivered to a `08.Storage` store or any stream. A phase arrives from `/implement-phase reporting [phase]` with a brief from `reporting-arch-planner`. You build exactly what it specifies and close the loop on tests, boards and docs.
 
-`20.Reporting/CLAUDE.md` is the law: its `## Rules & Invariants`, the licence decisions and the EventId sub-blocks are not repeated here. The word that matters is **streaming** — this domain exists so a service never materializes a result set to build a report.
+`src/Infrastructure/Reporting/CLAUDE.md` is the law: its `## Rules & Invariants`, the licence decisions and the EventId sub-blocks are not repeated here. The word that matters is **streaming** — this domain exists so a service never materializes a result set to build a report.
 
 ---
 
 ## Jurisdiction
 
-You edit files under `20.Reporting/` only. Report lines instead of edits for:
+You edit files under `src/Infrastructure/Reporting/` only. Report lines instead of edits for:
 
 | Needed change | Owner |
 | --- | --- |
@@ -37,9 +37,9 @@ You edit files under `20.Reporting/` only. Report lines instead of edits for:
 | `SharedKernel.Reporting.Spreadsheet` | Adapter | `…Spreadsheet.Tests` | Unit |
 | `SharedKernel.Reporting.Pdf` | Adapter | `…Pdf.Tests` | Unit |
 | `SharedKernel.Reporting.Gotenberg` | Adapter | `…Gotenberg.Tests` | Integration |
-| `20.Reporting/consumer-verify` | untiered, not packable | the whole chain in a real host | Unit |
+| `src/Infrastructure/Reporting/consumer-verify` | untiered, not packable | the whole chain in a real host | Unit |
 
-Each package is `20.Reporting/{Package}/` with tests nested at `20.Reporting/{Package}/{Package}.Tests/`. All five share one public namespace, `SharedKernel.Reporting`.
+Each package is `src/Infrastructure/Reporting/{Package}/` with tests nested at `src/Infrastructure/Reporting/{Package}/{Package}.Tests/`. All five share one public namespace, `SharedKernel.Reporting`.
 
 - **`.Abstractions`** references `SharedKernel.Primitives` and `SharedKernel.Storage.Abstractions` only (third-party limited to `Microsoft.Extensions.*.Abstractions`; SKTIER003 otherwise). A format-library `using` here is a hard violation; `AbstractionsPurityTests` guards it.
 - **Providers are siblings** with no declared adapter edge: `.Csv`, `.Spreadsheet`, `.Pdf`, `.Gotenberg` never reference each other and there is no shared `.Core`. Duplication between providers is accepted. All adapters also reference `SharedKernel.Configuration`; `.Gotenberg` references `SharedKernel.Execution` for the correlation id.
@@ -69,7 +69,7 @@ Each package is `20.Reporting/{Package}/` with tests nested at `20.Reporting/{Pa
 - **Formatting is `CultureInfo`** through `ReportValueFormatting`; headers arrive already translated.
 - **Options** implement `ISectionBoundOptions` (`SharedKernel:Reporting:{Format}`) and register with `AddValidatedOptions`; invalid configuration fails at start, not first use.
 - **Errors** are `ReportingErrors`/`ReportingErrorCodes` (`reporting.*`); storage failures keep their `storage.*` codes. Exceptions from the row source, a value function or a formatter propagate.
-- **Logging:** EventIds are written as `LoggingEventIdRanges.Reporting + n` in the package's sub-block (`20.Reporting/CLAUDE.md` → `## Logging`); provider sub-blocks are reserved but unused — record the first use there.
+- **Logging:** EventIds are written as `LoggingEventIdRanges.Reporting + n` in the package's sub-block (`src/Infrastructure/Reporting/CLAUDE.md` → `## Logging`); provider sub-blocks are reserved but unused — record the first use there.
 - **Public surface:** `RS0016` and `CS1591` are errors; implementations stay internal.
 - **New third-party dependency:** verify at the time of use that the licence is unconditionally permissive, the version is current and the target frameworks fit; record the ruling in `## Decisions`. If no acceptable library serves a format, stop and flag it.
 
@@ -95,7 +95,7 @@ Run the touched projects, then `consumer-verify`, then the lane that contains th
 
 ## Verification beyond the lane
 
-- `20.Reporting/consumer-verify` (in the `.slnx`, Unit lane) runs the whole chain in a real host and reopens outputs with independent readers; keep it green whenever a public API or registration changes.
+- `src/Infrastructure/Reporting/consumer-verify` (in the `.slnx`, Unit lane) runs the whole chain in a real host and reopens outputs with independent readers; keep it green whenever a public API or registration changes.
 - `samples/DocumentsApi` (`POST /reports/{store}/listing?format=`, the PDF endpoint) proves the domain end to end against MinIO and Gotenberg as packed packages. When the phase changes the public surface, pack (`dotnet pack Platform.SharedKernel.slnx -c Release -o nupkgs`) and run `DocumentsApi.Tests` with `-p:SharedKernelPackageVersion=<packed version>` and a throw-away `NUGET_PACKAGES` folder in your scratchpad (deleted afterwards).
 
 ---
@@ -105,5 +105,5 @@ Run the touched projects, then `consumer-verify`, then the lane that contains th
 Follow `_common.md` → "Implementer execution order", with phase key `SK.20.{Key}`. Domain deltas:
 
 - Name, in the report, the tests that prove memory-boundedness for every provider you touched.
-- Any licence ruling goes into `20.Reporting/CLAUDE.md` → `## Decisions` in the same session; a new invariant into `## Rules & Invariants`; a new EventId into `## Logging`.
+- Any licence ruling goes into `src/Infrastructure/Reporting/CLAUDE.md` → `## Decisions` in the same session; a new invariant into `## Rules & Invariants`; a new EventId into `## Logging`.
 - Update each affected package README's Configuration table (`SharedKernel:Reporting:*`) and error-code list.

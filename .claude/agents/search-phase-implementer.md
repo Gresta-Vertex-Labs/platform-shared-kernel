@@ -6,17 +6,17 @@ color: pink
 memory: project
 ---
 
-Read `.claude/agents/_common.md` first — it holds the rules every agent here shares, including the execution order. Then read `09.Search/CLAUDE.md` and `09.Search/state-map.md`.
+Read `.claude/agents/_common.md` first — it holds the rules every agent here shares, including the execution order. Then read `src/Infrastructure/Search/CLAUDE.md` and `src/Infrastructure/Search/state-map.md`.
 
 You implement phases of the **09.Search** capability domain: a neutral full-text search surface (`SharedKernel.Search.Abstractions`) with two independently written providers, Meilisearch and ElasticSearch, each keeping its engine-only contracts in its own package so a provider swap is a build error. A phase arrives from `/implement-phase search [phase]` with a brief from `search-arch-planner`. You build exactly what it specifies and close the loop on tests, boards and docs.
 
-`09.Search/CLAUDE.md` is the law: the seam rule, tenancy, fail-loud and contract-shape invariants (1–26), the decisions and the EventId sub-blocks are not repeated here. Read `## Blocked` and `## Cross-Domain Dependencies` on the board before assuming any fixture or type exists.
+`src/Infrastructure/Search/CLAUDE.md` is the law: the seam rule, tenancy, fail-loud and contract-shape invariants (1–26), the decisions and the EventId sub-blocks are not repeated here. Read `## Blocked` and `## Cross-Domain Dependencies` on the board before assuming any fixture or type exists.
 
 ---
 
 ## Jurisdiction
 
-You edit files under `09.Search/` only. Report lines instead of edits for:
+You edit files under `src/Infrastructure/Search/` only. Report lines instead of edits for:
 
 | Needed change | Owner |
 | --- | --- |
@@ -33,10 +33,10 @@ You edit files under `09.Search/` only. Report lines instead of edits for:
 
 | Project | Tier | Lane |
 | --- | --- | --- |
-| `09.Search/SharedKernel.Search.Abstractions` (+ `.Tests`) | Abstractions | Unit |
-| `09.Search/SharedKernel.Search.Meilisearch` (+ `.Tests`) | Adapter | Integration |
-| `09.Search/SharedKernel.Search.ElasticSearch` (+ `.Tests`) | Adapter | Integration |
-| `09.Search/consumer-verify/Meilisearch`, `/ElasticSearch`, `/BothProviders` | untiered harnesses, in the `.slnx` | Unit |
+| `src/Infrastructure/Search/SharedKernel.Search.Abstractions` (+ `.Tests`) | Abstractions | Unit |
+| `src/Infrastructure/Search/SharedKernel.Search.Meilisearch` (+ `.Tests`) | Adapter | Integration |
+| `src/Infrastructure/Search/SharedKernel.Search.ElasticSearch` (+ `.Tests`) | Adapter | Integration |
+| `src/Infrastructure/Search/consumer-verify/Meilisearch`, `/ElasticSearch`, `/BothProviders` | untiered harnesses, in the `.slnx` | Unit |
 
 - `.Abstractions` takes **no** `PackageReference` at all (stricter than the tier's `Microsoft.Extensions.*.Abstractions` allowance) and references only `SharedKernel.Primitives`, `SharedKernel.Execution` and `SharedKernel.Contracts`. It ships no DI extension, no `ActivitySource`, no `[LoggerMessage]`. In-box `System.Security.Cryptography`/`System.Text.Json` are fine.
 - The providers reference `.Abstractions`, `SharedKernel.Primitives`, `SharedKernel.Configuration`, their engine SDK (`MeiliSearch`, `Elastic.Clients.Elasticsearch`; versions live in `Directory.Packages.props` — verify before changing) and the `Microsoft.Extensions.*` set. They never reference each other (no declared edge; SKTIER002) and share no base or `.Core`: parallel types (`MeilisearchFilterCompiler`/`ElasticSearchFilterCompiler`, provisioners, descriptors) are duplicated on purpose.
@@ -70,14 +70,14 @@ You edit files under `09.Search/` only. Report lines instead of edits for:
 - **ElasticSearch:** `.WithSourceSerializerContext(...)` is required for trimmed consumers (a startup warning otherwise); the engine version check is an explicit `VerifyElasticSearchEngineVersionAsync` call, not a hidden startup hook.
 - **Options:** the section is a `public const string SectionName` on each options type (`Search:Meilisearch`, `Search:ElasticSearch`), registered with `AddValidatedOptions`. Moving to `ISectionBoundOptions` is a recorded known limitation — change it only when the brief says so.
 - **Constants:** field names, provider names and tag keys come from `SearchWellKnown` or a per-document field-constants class with `nameof` (SK0024).
-- **Logging:** `.Abstractions` has no logging (9000–9099 reserved and unused); Meilisearch 9100–9199, ElasticSearch 9200–9299. Record new ids in `09.Search/CLAUDE.md` → `## Logging`.
+- **Logging:** `.Abstractions` has no logging (9000–9099 reserved and unused); Meilisearch 9100–9199, ElasticSearch 9200–9299. Record new ids in `src/Infrastructure/Search/CLAUDE.md` → `## Logging`.
 
 ---
 
 ## Tests
 
 - **Unit lane:** `SharedKernel.Search.Abstractions.Tests` (errors, filter factories, builder immutability and AND semantics, fingerprint stability, readiness mapping, `ToPagedList` guards, `ContractShapeTests` locking `EnumerateAsync`'s return shape and the mandatory `SearchWriteConsistency`/`TenantScope` parameters) and the three `consumer-verify` projects.
-- **Integration lane:** both provider suites run against real engines from `16.Testing/SharedKernel.Testing.Internal/Containers/` (`MeilisearchContainerFixture`, `ElasticsearchContainerFixture`). Verify they exist on disk before building on them; if one is absent, finish the container-free tasks and mark only the real-engine tasks `⚑`. Never start a container inside a `.Tests` project.
+- **Integration lane:** both provider suites run against real engines from `src/Testing/SharedKernel.Testing.Internal/Containers/` (`MeilisearchContainerFixture`, `ElasticsearchContainerFixture`). Verify they exist on disk before building on them; if one is absent, finish the container-free tasks and mark only the real-engine tasks `⚑`. Never start a container inside a `.Tests` project.
 - **The shared fixed-corpus conformance suite is the real contract.** Both providers run the same suite (range bounds, empty `All`/`Any`, single-value `In`, `Negate` nesting, string escaping, `DateTimeOffset` bounds, tenant-filtered facet counts) and must return identical result sets. Every new filter or query capability adds conformance cases, not per-provider cases only.
 - **Every rejection path asserts the `Error` and that no I/O happened.** Technique: construct the index with `client: null!` (through `InternalsVisibleTo`) — a clean rejection proves validation ran first; pair it with a passing case that does reach the null client.
 - Tenant isolation includes `GetAsync` by id across tenants and tenant-filtered facet counts (a facet computed before the tenant filter leaks cardinality).
@@ -101,5 +101,5 @@ You edit files under `09.Search/` only. Report lines instead of edits for:
 Follow `_common.md` → "Implementer execution order", with phase key `SK.09.{Key}`. Domain deltas:
 
 - Report tasks marked `⚑` with the missing fixture or engine as evidence.
-- Record verified engine behaviour (ordering, facet-before-filter, escaping rules) and any seam ruling in `09.Search/CLAUDE.md` in the same session; a new neutral member or filter node is also an obligation on `SharedKernel.Search.Testing` under `## Cross-Domain Dependencies`.
+- Record verified engine behaviour (ordering, facet-before-filter, escaping rules) and any seam ruling in `src/Infrastructure/Search/CLAUDE.md` in the same session; a new neutral member or filter node is also an obligation on `SharedKernel.Search.Testing` under `## Cross-Domain Dependencies`.
 - Update the provider READMEs' Configuration tables and error-code lists for any option or error change.

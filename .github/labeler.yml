@@ -3,67 +3,67 @@
 
 "area: 00-governance":
   - changed-files:
-      - any-glob-to-any-file: "00.Governance/**"
+      - any-glob-to-any-file: "tools/Governance/**"
 "area: 01-core":
   - changed-files:
-      - any-glob-to-any-file: "01.Core/**"
+      - any-glob-to-any-file: "src/Foundation/**"
 "area: 02-caching":
   - changed-files:
-      - any-glob-to-any-file: "02.Caching/**"
+      - any-glob-to-any-file: "src/Infrastructure/Caching/**"
 "area: 03-domain":
   - changed-files:
-      - any-glob-to-any-file: "03.Domain/**"
+      - any-glob-to-any-file: "src/Model/Domain/**"
 "area: 04-contracts":
   - changed-files:
-      - any-glob-to-any-file: "04.Contracts/**"
+      - any-glob-to-any-file: "src/Model/Contracts/**"
 "area: 05-application":
   - changed-files:
-      - any-glob-to-any-file: "05.Application/**"
+      - any-glob-to-any-file: "src/Application/**"
 "area: 06-persistence":
   - changed-files:
-      - any-glob-to-any-file: "06.Persistence/**"
+      - any-glob-to-any-file: "src/Infrastructure/Persistence/**"
 "area: 07-messaging":
   - changed-files:
-      - any-glob-to-any-file: "07.Messaging/**"
+      - any-glob-to-any-file: "src/Infrastructure/Messaging/**"
 "area: 08-storage":
   - changed-files:
-      - any-glob-to-any-file: "08.Storage/**"
+      - any-glob-to-any-file: "src/Infrastructure/Storage/**"
 "area: 09-search":
   - changed-files:
-      - any-glob-to-any-file: "09.Search/**"
+      - any-glob-to-any-file: "src/Infrastructure/Search/**"
 "area: 10-intelligence":
   - changed-files:
-      - any-glob-to-any-file: "10.Intelligence/**"
+      - any-glob-to-any-file: "src/Infrastructure/AI/**"
 "area: 11-communication":
   - changed-files:
-      - any-glob-to-any-file: "11.Communication/**"
+      - any-glob-to-any-file: "src/Infrastructure/Communication/**"
 "area: 12-security":
   - changed-files:
-      - any-glob-to-any-file: "12.Security/**"
+      - any-glob-to-any-file: "src/Hosting/Security/**"
 "area: 13-servicedefaults":
   - changed-files:
-      - any-glob-to-any-file: "13.ServiceDefaults/**"
+      - any-glob-to-any-file: "src/Hosting/ServiceDefaults/**"
 "area: 14-presentation":
   - changed-files:
-      - any-glob-to-any-file: "14.Presentation/**"
+      - any-glob-to-any-file: "src/Hosting/Presentation/**"
 "area: 15-integration":
   - changed-files:
-      - any-glob-to-any-file: "15.Integration/**"
+      - any-glob-to-any-file: "src/Infrastructure/Integration/**"
 "area: 16-testing":
   - changed-files:
-      - any-glob-to-any-file: "16.Testing/**"
+      - any-glob-to-any-file: "src/Testing/**"
 "area: 17-workflows":
   - changed-files:
-      - any-glob-to-any-file: "17.Workflows/**"
+      - any-glob-to-any-file: "src/Infrastructure/Workflows/**"
 "area: 18-idempotency":
   - changed-files:
-      - any-glob-to-any-file: "18.Idempotency/**"
+      - any-glob-to-any-file: "src/Infrastructure/Idempotency/**"
 "area: 19-scheduling":
   - changed-files:
-      - any-glob-to-any-file: "19.Scheduling/**"
+      - any-glob-to-any-file: "src/Infrastructure/Scheduling/**"
 "area: 20-reporting":
   - changed-files:
-      - any-glob-to-any-file: "20.Reporting/**"
+      - any-glob-to-any-file: "src/Infrastructure/Reporting/**"
 "area: build-ci":
   - changed-files:
       - any-glob-to-any-file:

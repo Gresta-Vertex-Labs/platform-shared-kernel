@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <SharedKernelTier>Host</SharedKernelTier>
+    <!-- NuGet packaging metadata -->
+    <Description>What the SharedKernel inbound API boundaries share, so SharedKernel.Presentation.Grpc needs no reference to SharedKernel.Presentation.WebApi: the declarative authorization attributes (RequireEndpointPermission, RequireRole, RequireFreshAuthentication, RequireAuthenticationMethod) as real ASP.NET Core [Authorize] attributes and endpoint conventions, the authorization policies behind them evaluated against IUserContext (with RFC 9470 step-up challenges), and the one ErrorType to HTTP status map and client-message rule (localized, server errors redacted outside Development) that HTTP, gRPC and SignalR responses all apply. Services get it through the WebApi, Grpc or SignalR package.</Description>
+    <PackageTags>shared-kernel;presentation;authorization;step-up;rfc9470;aspnetcore;problemdetails;statuscode</PackageTags>
+    <!--
+      Set per-project, not inherited: the SDK assigns GenerateDocumentationFile=false before
+      Directory.Build.targets' '== empty'-guarded default is evaluated. CS1591 below makes an
+      undocumented public member a build error.
+    -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Public API tracking: an addition, removal or signature change fails the build until PublicAPI.*.txt is updated. -->
+    <WarningsAsErrors>$(WarningsAsErrors);nullable;CS1591;RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <!--
+      Host tier (P-570, reshaped by P-579). Error and ErrorType (Primitives), the IUserContext the requirements are
+      evaluated against (Security.Abstractions), the optional ILocalizationCatalog client messages are translated with
+      (Localization), and the request's RequestContextScope, which holds its correlation id (Execution).
+    -->
+    <ProjectReference Include="..\..\..\Foundation\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+    <ProjectReference Include="..\..\..\Foundation\SharedKernel.Execution\SharedKernel.Execution.csproj" />
+    <ProjectReference Include="..\..\..\Foundation\SharedKernel.Localization\SharedKernel.Localization.csproj" />
+    <ProjectReference Include="..\..\Security\SharedKernel.Security.Abstractions\SharedKernel.Security.Abstractions.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The boundary packages version in lockstep with this one and share its policy machinery and error rules. -->
+    <InternalsVisibleTo Include="SharedKernel.Presentation.WebApi" />
+    <InternalsVisibleTo Include="SharedKernel.Presentation.Grpc" />
+    <InternalsVisibleTo Include="SharedKernel.Presentation.SignalR" />
+    <InternalsVisibleTo Include="SharedKernel.Presentation.OpenApi" />
+    <InternalsVisibleTo Include="SharedKernel.Presentation.Core.Tests" />
+    <InternalsVisibleTo Include="SharedKernel.Presentation.WebApi.Tests" />
+    <InternalsVisibleTo Include="SharedKernel.Presentation.Grpc.Tests" />
+    <InternalsVisibleTo Include="SharedKernel.Presentation.SignalR.Tests" />
+    <InternalsVisibleTo Include="SharedKernel.Presentation.OpenApi.Tests" />
+    <!-- 16.Testing's self-tests authorize through the platform policies without a web host. -->
+    <InternalsVisibleTo Include="SharedKernel.Security.Testing.Tests" />
+  </ItemGroup>
+</Project>

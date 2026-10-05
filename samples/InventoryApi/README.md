@@ -1,6 +1,6 @@
 # InventoryApi
 
-The service [CheckoutApi](../CheckoutApi/) calls: stock, prices and reservations over REST and over gRPC, behind an
+The service [CheckoutApi](../CheckoutApi//) calls: stock, prices and reservations over REST and over gRPC, behind an
 API key. It is the other half of the `11.Communication` sample — the side whose answers a client reads back.
 
 | Port | Protocol | Serves |

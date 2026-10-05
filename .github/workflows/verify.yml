@@ -373,7 +373,7 @@ jobs:
       - name: Assert SK0001 fires from the packed analyzer
         run: |
           set -e
-          proj="00.Governance/_verification/AnalyzerConsumer/AnalyzerConsumer.csproj"
+          proj="tools/Governance/_verification/AnalyzerConsumer/AnalyzerConsumer.csproj"
           dotnet build "$proj" --no-restore --no-incremental --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION" 2>&1 | tee analyzer-consumer-build.log
           if ! grep -q 'SK0001' analyzer-consumer-build.log; then
             echo "::error::SK0001 did not fire while building AnalyzerConsumer against the packed SharedKernel.Analyzers ($SK_VERSION). Its absence means the packed analyzer enforces nothing: check the analyzers/dotnet/cs PackagePath and the netstandard2.0 target."
@@ -386,10 +386,10 @@ jobs:
         run: |
           set -euo pipefail
           for proj in \
-            "00.Governance/_verification/AnalyzerConsumer/AnalyzerConsumer.csproj" \
-            "00.Governance/_verification/ArchTestConsumer/ArchTestConsumer.csproj" \
-            "00.Governance/_verification/LinterConsumer/LinterConsumer.csproj" \
-            "02.Caching/consumer-verify/SharedKernel.Caching.ConsumerVerify/SharedKernel.Caching.ConsumerVerify.csproj" \
+            "tools/Governance/_verification/AnalyzerConsumer/AnalyzerConsumer.csproj" \
+            "tools/Governance/_verification/ArchTestConsumer/ArchTestConsumer.csproj" \
+            "tools/Governance/_verification/LinterConsumer/LinterConsumer.csproj" \
+            "src/Infrastructure/Caching/consumer-verify/SharedKernel.Caching.ConsumerVerify/SharedKernel.Caching.ConsumerVerify.csproj" \
             ; do
             echo "::group::run $proj"
             dotnet run --project "$proj" --no-build --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION"

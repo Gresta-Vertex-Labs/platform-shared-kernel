@@ -78,14 +78,25 @@ what each of these scripts checks, are described in [`eng/README.md`](eng/README
 
 ### Capability folders
 
-Each numbered top-level folder is one capability domain: `00.Governance`, `01.Core`, `02.Caching`,
-`03.Domain`, `04.Contracts`, `05.Application`, `06.Persistence`, `07.Messaging`, `08.Storage`,
-`09.Search`, `10.Intelligence`, `11.Communication`, `12.Security`, `13.ServiceDefaults`,
-`14.Presentation`, `15.Integration`, `16.Testing`, `17.Workflows`, `18.Idempotency`,
-`19.Scheduling` and `20.Reporting`. Each has an overview `README.md`. `samples/` holds reference
-services that consume the packages the way a real service would.
+The source tree is grouped into zones that mirror the projects of a consuming service, with one
+folder per capability domain inside each zone:
 
-Folder numbers are an address, not a layer. What a package may reference is decided by its tier.
+| Zone | Mainly referenced by | Capability folders |
+| --- | --- | --- |
+| `src/Foundation/` | every project | one folder (the 01.Core packages) |
+| `src/Model/` | the Domain project | `Domain/`, `Contracts/` |
+| `src/Application/` | the Application project | one folder (the 05.Application packages) |
+| `src/Infrastructure/` | the Infrastructure project | `Caching/`, `Persistence/`, `Messaging/`, `Storage/`, `Search/`, `AI/`, `Communication/`, `Integration/`, `Workflows/`, `Idempotency/`, `Scheduling/`, `Reporting/` |
+| `src/Hosting/` | the Api / Worker project | `Security/`, `ServiceDefaults/`, `Presentation/` |
+| `src/Testing/` | test projects | one folder |
+| `tools/Governance/` | the build | one folder |
+
+Each capability folder has an overview `README.md`. A domain keeps its id (`06.Persistence`) for
+work orders, phase keys and its EventId block; the root `CLAUDE.md` maps every id to its folder.
+`samples/` holds reference services that consume the packages the way a real service would.
+
+The zone is where a capability mainly belongs, not a rule: what a package may reference is decided by
+its tier, and [`docs/packages.md`](docs/packages.md) lists every package with its tier.
 
 ### Tiers
 
@@ -117,13 +128,13 @@ Violations are build errors:
 
 A new Adapter → Adapter edge is a `.csproj` declaration and is reviewed like any other API change.
 Rules the tiers cannot express (for example, `SharedKernel.Domain` and `SharedKernel.Contracts`
-never referencing each other) are architecture tests in `00.Governance/SharedKernel.ArchitectureTests`.
+never referencing each other) are architecture tests in `tools/Governance/SharedKernel.ArchitectureTests`.
 Test projects, consumer-verify harnesses and samples declare no tier; they are consumers.
 
 ### Tests
 
 - Test projects are nested **inside the folder of the project they test**, e.g.
-  `06.Persistence/SharedKernel.Persistence.EfCore/SharedKernel.Persistence.EfCore.Tests/`. There is
+  `src/Infrastructure/Persistence/SharedKernel.Persistence.EfCore/SharedKernel.Persistence.EfCore.Tests/`. There is
   no top-level `tests/` folder.
 - A test project references `SharedKernel.Testing` plus the capability's
   `SharedKernel.{Capability}.Testing` package, and `SharedKernel.Testing.Internal` when it needs
@@ -145,7 +156,7 @@ them too.
   `ILogger.LogInformation(...)`-style calls and hand-written `LoggerMessage.Define<>()` delegates are
   not accepted.
 - Every `[LoggerMessage]` sets an **explicit `EventId`** from its domain's block:
-  `{folder number} × 1000` to `+999` (for example `05.Application` = 5000–5999). A domain with
+  `{domain number} × 1000` to `+999` (for example `05.Application` = 5000–5999). A domain with
   several packages gives each a 100-wide sub-block, recorded in that domain's `CLAUDE.md`. The
   registry of base values is `LoggingEventIdRanges` in `SharedKernel.Primitives`.
 - Message placeholders are PascalCase named properties (`{RequestName}`), never interpolated.
@@ -220,7 +231,7 @@ visible diff in review. Public members need XML documentation comments.
    without it (`SKPKG003`). See [Package READMEs](#package-readmes).
 
 5. **Register it everywhere it must appear:**
-   - `Platform.SharedKernel.slnx`, in the solution folder named after its top-level folder;
+   - `Platform.SharedKernel.slnx`, in the solution folder named after its capability folder (for example `/src/Infrastructure/Caching/`);
    - `Platform.SharedKernel.Unit.slnf` (every production project belongs in the Unit lane);
    - its test project in exactly one lane `.slnf`;
    - `Directory.Packages.props`: one `<PackageVersion Include="SharedKernel.X" Version="$(SharedKernelPackageVersion)" />`

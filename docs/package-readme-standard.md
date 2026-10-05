@@ -3,7 +3,7 @@
 Every packable `SharedKernel.*` project ships its `README.md` inside the NuGet package (`PackageReadmeFile`), so the
 same file is read in three places: on GitHub, on the package feed, and in the IDE's package manager. This standard keeps
 all of them consistent, scannable and correct. `PackageReadmeStandardTests` (in
-`00.Governance/SharedKernel.ArchitectureTests`) enforces the mechanical parts.
+`tools/Governance/SharedKernel.ArchitectureTests`) enforces the mechanical parts.
 
 ## Rules
 
@@ -148,7 +148,7 @@ Registers the `x` readiness probe; `AddSharedKernelReadiness()` exposes it on `/
 
 ## Testing
 
-Reference [`SharedKernel.X.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/16.Testing/SharedKernel.X.Testing/README.md)
+Reference [`SharedKernel.X.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.X.Testing/README.md)
 from your test project and call `services.AddFakeX()`.
 
 ## Pitfalls

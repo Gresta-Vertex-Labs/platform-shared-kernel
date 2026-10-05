@@ -1,0 +1,35 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel.Persistence.Dapper.csproj" />
+    <ProjectReference Include="..\..\..\..\Testing\SharedKernel.Testing.Internal\SharedKernel.Testing.Internal.csproj" />
+    <!-- P-557/W4: tenant-safe Dapper tests need SharedKernel.Persistence.Npgsql's
+         NpgsqlTenantSessionBinder, and the RLS/audit-trigger migration helpers + real EF Core
+         DbContext live in SharedKernel.Persistence.EfCore — needed for the
+         "Dapper command service enlists in the EF transaction" proof. Test-only references; the
+         production SharedKernel.Persistence.Dapper package itself still depends on Abstractions only. -->
+    <ProjectReference Include="..\..\SharedKernel.Persistence.Npgsql\SharedKernel.Persistence.Npgsql.csproj" />
+    <ProjectReference Include="..\..\SharedKernel.Persistence.EfCore\SharedKernel.Persistence.EfCore.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="coverlet.collector">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="NSubstitute" />
+    <!-- P-557/W1: SharedKernel.Persistence.Dapper no longer references PostgreSQL/Npgsql (it
+         depends only on Abstractions) — this test project talks to a real PostgreSQL
+         Testcontainer via Dapper, so it references Npgsql directly for NpgsqlDataSource. -->
+    <PackageReference Include="Npgsql" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
+  </ItemGroup>
+</Project>

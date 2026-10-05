@@ -19,27 +19,27 @@ Phases written by `arch-lead` take the next phase id; a user-directed phase with
 
 | # | Domain | Packages | Status | Open items |
 | --- | --- | --- | --- | --- |
-| 00 | [Governance](00.Governance/state-map.md) | 3 (Tooling) + dev-only Benchmarks | ● | None |
-| 01 | [Core](01.Core/state-map.md) | 13 (10 Foundation, 3 Adapter) | ● | None |
-| 02 | [Caching](02.Caching/state-map.md) | 7 (1 Abstractions, 6 Adapter) | ● | None |
-| 03 | [Domain](03.Domain/state-map.md) | 1 (Model) | ● | None |
-| 04 | [Contracts](04.Contracts/state-map.md) | 1 (Model) | ● | None |
-| 05 | [Application](05.Application/state-map.md) | 4 (1 Abstractions, 3 Host) | ● | None |
-| 06 | [Persistence](06.Persistence/state-map.md) | 6 (1 Abstractions, 5 Adapter) | ● | None — never published; first release is P-577 |
-| 07 | [Messaging](07.Messaging/state-map.md) | 5 (1 Abstractions, 4 Adapter) | ● | None |
-| 08 | [Storage](08.Storage/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ● | None |
-| 09 | [Search](09.Search/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ● | None |
-| 10 | [Intelligence](10.Intelligence/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ● | None |
-| 11 | [Communication](11.Communication/state-map.md) | 3 (Adapter) | ● | None |
-| 12 | [Security](12.Security/state-map.md) | 5 (1 Abstractions, 4 Host) | ● | None |
-| 13 | [ServiceDefaults](13.ServiceDefaults/state-map.md) | 7 (Host) | ● | None |
-| 14 | [Presentation](14.Presentation/state-map.md) | 6 (Host) + WebApi generator (Tooling) | ● | None |
-| 15 | [Integration](15.Integration/state-map.md) | 4 (1 Abstractions, 3 Adapter) | ● | None |
-| 16 | [Testing](16.Testing/state-map.md) | 21 (Testing; 20 packable + `Testing.Internal`) | ● | None |
-| 17 | [Workflows](17.Workflows/state-map.md) | 1 (Adapter) | ● | None |
-| 18 | [Idempotency](18.Idempotency/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ● | None |
-| 19 | [Scheduling](19.Scheduling/state-map.md) | 1 (Adapter) | ● | None |
-| 20 | [Reporting](20.Reporting/state-map.md) | 5 (1 Abstractions, 4 Adapter) | ● | None |
+| 00 | [Governance](tools/Governance/state-map.md) | 3 (Tooling) + dev-only Benchmarks | ● | None |
+| 01 | [Core](src/Foundation/state-map.md) | 13 (10 Foundation, 3 Adapter) | ● | None |
+| 02 | [Caching](src/Infrastructure/Caching/state-map.md) | 7 (1 Abstractions, 6 Adapter) | ● | None |
+| 03 | [Domain](src/Model/Domain/state-map.md) | 1 (Model) | ● | None |
+| 04 | [Contracts](src/Model/Contracts/state-map.md) | 1 (Model) | ● | None |
+| 05 | [Application](src/Application/state-map.md) | 4 (1 Abstractions, 3 Host) | ● | None |
+| 06 | [Persistence](src/Infrastructure/Persistence/state-map.md) | 6 (1 Abstractions, 5 Adapter) | ● | None — never published; first release is P-577 |
+| 07 | [Messaging](src/Infrastructure/Messaging/state-map.md) | 5 (1 Abstractions, 4 Adapter) | ● | None |
+| 08 | [Storage](src/Infrastructure/Storage/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ● | None |
+| 09 | [Search](src/Infrastructure/Search/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ● | None |
+| 10 | [Intelligence](src/Infrastructure/AI/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ● | None |
+| 11 | [Communication](src/Infrastructure/Communication/state-map.md) | 3 (Adapter) | ● | None |
+| 12 | [Security](src/Hosting/Security/state-map.md) | 5 (1 Abstractions, 4 Host) | ● | None |
+| 13 | [ServiceDefaults](src/Hosting/ServiceDefaults/state-map.md) | 7 (Host) | ● | None |
+| 14 | [Presentation](src/Hosting/Presentation/state-map.md) | 6 (Host) + WebApi generator (Tooling) | ● | None |
+| 15 | [Integration](src/Infrastructure/Integration/state-map.md) | 4 (1 Abstractions, 3 Adapter) | ● | None |
+| 16 | [Testing](src/Testing/state-map.md) | 21 (Testing; 20 packable + `Testing.Internal`) | ● | None |
+| 17 | [Workflows](src/Infrastructure/Workflows/state-map.md) | 1 (Adapter) | ● | None |
+| 18 | [Idempotency](src/Infrastructure/Idempotency/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ● | None |
+| 19 | [Scheduling](src/Infrastructure/Scheduling/state-map.md) | 1 (Adapter) | ● | None |
+| 20 | [Reporting](src/Infrastructure/Reporting/state-map.md) | 5 (1 Abstractions, 4 Adapter) | ● | None |
 | — | [samples](samples/README.md) | 7 services: OrderApi, BillingApi, ShippingApi, DocumentsApi, CatalogApi, CheckoutApi, InventoryApi | ● | None |
 
 Every package ships at one repo-wide version through the release train (`CONTRIBUTING.md`, "Versioning and releases"); nothing is released per package.
@@ -116,7 +116,7 @@ None.
 - [2026-09-23] P-560, P-561 ● — `07.Messaging` pre-first-publish pass; both packages published at `1.0.0-alpha.0.1171` (07.Messaging)
 - [2026-09-23] `09.Search` pre-publish gold-standard pass and `samples/CatalogApi` against real engines (09.Search, 13.ServiceDefaults)
 - [2026-09-22] P-559 ● — `08.Storage` pre-publish redesign verified through `samples/DocumentsApi` (08.Storage, 20.Reporting)
-- [2026-09-20] P-557 docs pass — `06.Persistence/CLAUDE.md` and state map brought current with the 7-package split (06.Persistence)
+- [2026-09-20] P-557 docs pass — `src/Infrastructure/Persistence/CLAUDE.md` and state map brought current with the 7-package split (06.Persistence)
 - [2026-09-19/20] P-557 recorded — `06.Persistence` redesigned before its first publish (06.Persistence, 05.Application, 13.ServiceDefaults, 00.Governance, 03.Domain)
 - [2026-09-19] P-556 published — `SharedKernel.Application.Behaviors.Caching` `1.0.0-alpha.0.1116`, with `.Application` and `.Application.Behaviors` republished at the same height (05.Application, 01.Core, 02.Caching, 03.Domain)
 - [2026-09-18] P-555 published — `SharedKernel.FeatureManagement` `1.0.0-alpha.0.1112`; every `01.Core` package published (01.Core)

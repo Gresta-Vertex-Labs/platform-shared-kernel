@@ -6,17 +6,17 @@ color: cyan
 memory: project
 ---
 
-Read `.claude/agents/_common.md` first — it holds the rules every agent here shares, including the execution order. Then read `14.Presentation/CLAUDE.md` and `14.Presentation/state-map.md`.
+Read `.claude/agents/_common.md` first — it holds the rules every agent here shares, including the execution order. Then read `src/Hosting/Presentation/CLAUDE.md` and `src/Hosting/Presentation/state-map.md`.
 
 You implement phases of the **14.Presentation** capability domain: the server-side HTTP, gRPC, SignalR and GraphQL surface that turns *outcomes* (`Result<T>`, `Error`, exceptions) into responses. It never produces those outcomes. A phase arrives from `/implement-phase presentation [phase]` with a brief from `presentation-arch-planner`; you build exactly what it specifies and close the loop on tests, boards and docs.
 
-`14.Presentation/CLAUDE.md` is the law — its `## Rules & Invariants` (error decision, problem shape, redaction, exception fallback, middleware order, authorization, namespaces) and "The pipeline" order are not repeated here. `14.Presentation/CONFIGURATION.md` is the reference for every `SharedKernel:Presentation:*` key; keep it in step with any options change.
+`src/Hosting/Presentation/CLAUDE.md` is the law — its `## Rules & Invariants` (error decision, problem shape, redaction, exception fallback, middleware order, authorization, namespaces) and "The pipeline" order are not repeated here. `src/Hosting/Presentation/CONFIGURATION.md` is the reference for every `SharedKernel:Presentation:*` key; keep it in step with any options change.
 
 ---
 
 ## Jurisdiction
 
-You edit files under `14.Presentation/` only. Report lines instead of edits for:
+You edit files under `src/Hosting/Presentation/` only. Report lines instead of edits for:
 
 | Needed change | Owner |
 | --- | --- |
@@ -43,7 +43,7 @@ You edit files under `14.Presentation/` only. Report lines instead of edits for:
 | `SharedKernel.Presentation.SignalR` | Host | No third-party packages, no `02.Caching`, no backplane. |
 | `SharedKernel.Presentation.GraphQL` | Host | HotChocolate conventions; `AddSharedKernelGraphQL()` lives in `SharedKernel.Presentation.GraphQL.Extensions`. |
 
-Each project is `14.Presentation/{Package}/` with tests at `14.Presentation/{Package}/{Package}.Tests/`. `14.Presentation/consumer-verify/` composes WebApi, OpenApi, Grpc and SignalR over Kestrel with a real `HubConnection` and gRPC channel; it is in the `.slnx` and the Unit lane.
+Each project is `src/Hosting/Presentation/{Package}/` with tests at `src/Hosting/Presentation/{Package}/{Package}.Tests/`. `src/Hosting/Presentation/consumer-verify/` composes WebApi, OpenApi, Grpc and SignalR over Kestrel with a real `HubConnection` and gRPC channel; it is in the `.slnx` and the Unit lane.
 
 An in-repo project that references WebApi by `ProjectReference` does not get the generator transitively; it adds `SharedKernel.Presentation.WebApi.Generators` itself with `OutputItemType="Analyzer" ReferenceOutputAssembly="false"`.
 
@@ -105,6 +105,6 @@ Run the touched test projects, then `consumer-verify` whenever a public API, an 
 
 Follow `_common.md` → "Implementer execution order", with phase key `SK.14.{Key}`. Domain deltas:
 
-- Keep `14.Presentation/CONFIGURATION.md` and each package README's Configuration table in step with any options change.
-- Record a new status mapping, generator diagnostic, pipeline position or EventId in `14.Presentation/CLAUDE.md` in the same session.
+- Keep `src/Hosting/Presentation/CONFIGURATION.md` and each package README's Configuration table in step with any options change.
+- Record a new status mapping, generator diagnostic, pipeline position or EventId in `src/Hosting/Presentation/CLAUDE.md` in the same session.
 - Ask for `/sync-brain` when the root `CLAUDE.md` rows for presentation (canonical middleware order, typed results, authorization attributes) no longer match.

@@ -1,0 +1,60 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <SharedKernelTier>Abstractions</SharedKernelTier>
+    <!-- NuGet packaging metadata -->
+    <Description>Transport-agnostic messaging abstractions for Platform.SharedKernel microservices: IMessageBus and IEventPublisher (every verb returning Result with messaging.* error codes), PublishContext, ISendEndpointResolver, IdempotencyOptions (the consumer-idempotency lease and retention; the store contract is SharedKernel.Idempotency.Abstractions' IIdempotencyStore), IMessageScheduler, IMessageHeaderPropagator, IFaultConsumer, IMessageVersionTranslator, IInboundMessageContextAccessor (the caller identity a message arrived with, as SharedKernel.Execution's IRequestContext), IMessagingBuilder and MessagingOptions. Bus readiness is reported through SharedKernel.Primitives' IReadinessProbe, which transport providers implement. Zero transport NuGet dependencies — references only Microsoft.Extensions.DependencyInjection.Abstractions, SharedKernel.Primitives (Result/Error), SharedKernel.Execution (IRequestContext, tenancy) and SharedKernel.Contracts (the IIntegrationEvent constraint on IEventPublisher).</Description>
+    <PackageTags>messaging;abstractions;message-bus;event-publisher;cloud-events;shared-kernel;masstransit</PackageTags>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!--
+      Set per-project, not inherited: the SDK assigns GenerateDocumentationFile=false before
+      Directory.Build.targets' "== empty"-guarded default is evaluated. CS1591 below makes an
+      undocumented public member a build error.
+    -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Public API tracking: an addition, removal or signature change fails the build until PublicAPI.*.txt is updated. -->
+    <WarningsAsErrors>$(WarningsAsErrors);nullable;CS1591;RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
+    <!-- RS0026/RS0027: optional CancellationToken and configure-callback parameters, the .NET convention. -->
+    <NoWarn>$(NoWarn);RS0026;RS0027</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <!--
+      Zero transport NuGet dependencies.
+      IMessageBus, IEventPublisher, and IMessagingBuilder are pure interface contracts.
+      Only DI.Abstractions is permitted here — any transport NuGet leak is a hard violation.
+    -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+  </ItemGroup>
+  <ItemGroup>
+    <!--
+      SharedKernel.Contracts — IIntegrationEvent, the constraint on IEventPublisher.PublishAsync<TEvent>.
+      An Abstractions-tier package may reference Model-tier packages (root CLAUDE.md "Tiers &amp;
+      Dependency Rules"); it references only SharedKernel.Primitives, so no transport or domain
+      dependency leaks in.
+    -->
+    <ProjectReference Include="..\..\..\Model\Contracts\SharedKernel.Contracts\SharedKernel.Contracts.csproj" />
+    <!--
+      SharedKernel.Primitives — Result and Error, the failure contract every dispatch verb returns
+      (P-560). Already arrived transitively through SharedKernel.Contracts; declared explicitly
+      because this package now compiles against those types directly at its own public API.
+    -->
+    <ProjectReference Include="..\..\..\Foundation\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+    <!--
+      SharedKernel.Execution — IRequestContext, IRequestContextAccessor and ActorKind, rebuilt on the
+      consumer from the identity headers a message arrived with (P-561, WO-086). A Foundation-tier
+      package, so no grant is needed: IRequestContext is the one platform-wide caller contract, and
+      sharing it is what lets 06.Persistence read the caller a consumer resolved. Execution itself
+      references only SharedKernel.Primitives, so the dependency graph does not grow.
+    -->
+    <ProjectReference Include="..\..\..\Foundation\SharedKernel.Execution\SharedKernel.Execution.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!--
+      Public API tracking: an addition, removal or signature change fails the build until
+      PublicAPI.*.txt is updated, so a breaking change to a package hundreds of services consume
+      is a reviewed diff rather than something noticed after publish (P-561).
+    -->
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,45 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel.Presentation.Grpc.csproj" />
+    <ProjectReference Include="..\..\..\..\Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
+    <!-- TestServerCallContext for the interceptor unit tests. -->
+    <ProjectReference Include="..\..\..\..\Testing\SharedKernel.Presentation.Testing\SharedKernel.Presentation.Testing.csproj" />
+    <!--
+      The host composition a gRPC service uses (P-579): UseSharedKernelRequestContext() opens each call's context scope,
+      and the WebApi pipeline authenticates and authorizes. The package itself references neither.
+    -->
+    <ProjectReference Include="..\..\..\ServiceDefaults\SharedKernel.ServiceDefaults.Security\SharedKernel.ServiceDefaults.Security.csproj" />
+    <ProjectReference Include="..\..\SharedKernel.Presentation.WebApi\SharedKernel.Presentation.WebApi.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="coverlet.collector">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="FluentAssertions" />
+    <!--
+      Real gRPC over an in-process TestServer (the documented "Test gRPC services in ASP.NET Core" pattern), hosted
+      the way a service is: AddSharedKernelRequestContext + AddSharedKernelWebApi + AddSharedKernelGrpc, then
+      UseSharedKernelRequestContext and UseSharedKernelWebApi. Never a mocked
+      ServerCallContext for pipeline behavior. Grpc.AspNetCore also brings Grpc.Tools for the test .proto.
+    -->
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" />
+    <PackageReference Include="Grpc.AspNetCore" />
+    <PackageReference Include="Grpc.Net.Client" />
+  </ItemGroup>
+  <ItemGroup>
+    <Protobuf Include="Integration\Protos\test.proto" GrpcServices="Both" />
+  </ItemGroup>
+</Project>

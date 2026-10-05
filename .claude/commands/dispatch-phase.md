@@ -45,7 +45,7 @@ For each entry, every `**Depends on:**` P-entry must be `◐`, `●`, listed und
 Group the remaining entries by `**Domain:**` and order the groups:
 1. **Dependencies first**: if an entry in domain A depends on one in domain B, B goes before A.
 2. **Then tier order** of the packages the entries change: Foundation → Model → Abstractions → Adapter → Host → Testing/Tooling (e.g. `SharedKernel.Execution` is Foundation although it sits in `01.Core`). A group spanning tiers takes its lowest.
-3. **Then folder number** as the tie-breaker.
+3. **Then domain number** as the tie-breaker.
 
 Planner per domain (all in `.claude/agents/`):
 
@@ -86,8 +86,8 @@ For each group, in order:
 ```
 Read .claude/agents/_common.md, then plan the following P-entries for {NN}.{Name}, in order.
 For each: follow the planner method in _common.md — analyse, give a verdict, design one phase
-(key SK.{NN}.{PascalName}), write it under ## Open Work in {NN}.{Name}/state-map.md with its
-Phase Key Registry row, and refresh {NN}.{Name}/CLAUDE.md. Report the phase key per P-entry.
+(key SK.{NN}.{PascalName}), write it under ## Open Work in {folder}/state-map.md with its
+Phase Key Registry row, and refresh {folder}/CLAUDE.md. Report the phase key per P-entry.
 
 ---
 {full text of P-NNN}

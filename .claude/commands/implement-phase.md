@@ -8,35 +8,35 @@ You are the phase implementation launcher for Platform.SharedKernel. You pick on
 **Input:**
 $ARGUMENTS
 
-> `<domain>` is required: a slug (`persistence`), a folder (`06.Persistence`), a folder number (`06` or `6`) or a folder name (`Persistence`), case-insensitive. `[phase]` is optional: a phase key (`SK.06.BulkPurge`) or its name (`BulkPurge`, or the entry title). Without it the next actionable phase is chosen.
+> `<domain>` is required: a slug (`persistence`), a domain id (`06.Persistence`), a domain number (`06` or `6`), a domain name (`Persistence`) or its folder (`src/Infrastructure/Persistence`), case-insensitive. `[phase]` is optional: a phase key (`SK.06.BulkPurge`) or its name (`BulkPurge`, or the entry title). Without it the next actionable phase is chosen.
 
 ---
 
 ## Step 1 — Resolve the domain
 
-| Slug | Folder | Implementer | Planner |
-| --- | --- | --- | --- |
-| `governance` | `00.Governance` | `governance-phase-implementer` | `governance-arch-planner` |
-| `core` | `01.Core` | `core-phase-implementer` | `core-arch-planner` |
-| `caching` | `02.Caching` | `caching-phase-implementer` | `caching-arch-planner` |
-| `domain` | `03.Domain` | `domain-phase-implementer` | `domain-arch-planner` |
-| `contracts` | `04.Contracts` | `contracts-phase-implementer` | `contracts-arch-planner` |
-| `application` | `05.Application` | `application-phase-implementer` | `application-arch-planner` |
-| `persistence` | `06.Persistence` | `persistence-phase-implementer` | `persistence-arch-planner` |
-| `messaging` | `07.Messaging` | `messaging-phase-implementer` | `messaging-arch-planner` |
-| `storage` | `08.Storage` | `storage-phase-implementer` | `storage-arch-planner` |
-| `search` | `09.Search` | `search-phase-implementer` | `search-arch-planner` |
-| `intelligence` | `10.Intelligence` | `intelligence-phase-implementer` | `intelligence-arch-planner` |
-| `communication` | `11.Communication` | `communication-phase-implementer` | `communication-arch-planner` |
-| `security` | `12.Security` | `security-phase-implementer` | `security-arch-planner` |
-| `servicedefaults` | `13.ServiceDefaults` | `servicedefaults-phase-implementer` | `servicedefaults-arch-planner` |
-| `presentation` | `14.Presentation` | `presentation-phase-implementer` | `presentation-arch-planner` |
-| `integration` | `15.Integration` | `integration-phase-implementer` | `integration-arch-planner` |
-| `testing` | `16.Testing` | `testing-phase-implementer` | `testing-arch-planner` |
-| `workflow` | `17.Workflows` | `workflow-phase-implementer` | `workflow-arch-planner` |
-| `idempotency` | `18.Idempotency` | `idempotency-phase-implementer` | `idempotency-arch-planner` |
-| `scheduling` | `19.Scheduling` | `scheduling-phase-implementer` | `scheduling-arch-planner` |
-| `reporting` | `20.Reporting` | `reporting-phase-implementer` | `reporting-arch-planner` |
+| Slug | Domain | Folder | Implementer | Planner |
+| --- | --- | --- | --- | --- |
+| `governance` | `00.Governance` | `tools/Governance` | `governance-phase-implementer` | `governance-arch-planner` |
+| `core` | `01.Core` | `src/Foundation` | `core-phase-implementer` | `core-arch-planner` |
+| `caching` | `02.Caching` | `src/Infrastructure/Caching` | `caching-phase-implementer` | `caching-arch-planner` |
+| `domain` | `03.Domain` | `src/Model/Domain` | `domain-phase-implementer` | `domain-arch-planner` |
+| `contracts` | `04.Contracts` | `src/Model/Contracts` | `contracts-phase-implementer` | `contracts-arch-planner` |
+| `application` | `05.Application` | `src/Application` | `application-phase-implementer` | `application-arch-planner` |
+| `persistence` | `06.Persistence` | `src/Infrastructure/Persistence` | `persistence-phase-implementer` | `persistence-arch-planner` |
+| `messaging` | `07.Messaging` | `src/Infrastructure/Messaging` | `messaging-phase-implementer` | `messaging-arch-planner` |
+| `storage` | `08.Storage` | `src/Infrastructure/Storage` | `storage-phase-implementer` | `storage-arch-planner` |
+| `search` | `09.Search` | `src/Infrastructure/Search` | `search-phase-implementer` | `search-arch-planner` |
+| `intelligence` | `10.Intelligence` | `src/Infrastructure/AI` | `intelligence-phase-implementer` | `intelligence-arch-planner` |
+| `communication` | `11.Communication` | `src/Infrastructure/Communication` | `communication-phase-implementer` | `communication-arch-planner` |
+| `security` | `12.Security` | `src/Hosting/Security` | `security-phase-implementer` | `security-arch-planner` |
+| `servicedefaults` | `13.ServiceDefaults` | `src/Hosting/ServiceDefaults` | `servicedefaults-phase-implementer` | `servicedefaults-arch-planner` |
+| `presentation` | `14.Presentation` | `src/Hosting/Presentation` | `presentation-phase-implementer` | `presentation-arch-planner` |
+| `integration` | `15.Integration` | `src/Infrastructure/Integration` | `integration-phase-implementer` | `integration-arch-planner` |
+| `testing` | `16.Testing` | `src/Testing` | `testing-phase-implementer` | `testing-arch-planner` |
+| `workflow` | `17.Workflows` | `src/Infrastructure/Workflows` | `workflow-phase-implementer` | `workflow-arch-planner` |
+| `idempotency` | `18.Idempotency` | `src/Infrastructure/Idempotency` | `idempotency-phase-implementer` | `idempotency-arch-planner` |
+| `scheduling` | `19.Scheduling` | `src/Infrastructure/Scheduling` | `scheduling-phase-implementer` | `scheduling-arch-planner` |
+| `reporting` | `20.Reporting` | `src/Infrastructure/Reporting` | `reporting-phase-implementer` | `reporting-arch-planner` |
 
 Aliases: `workflows` → `workflow`, `service-defaults` → `servicedefaults`, `ai` → `intelligence`.
 
@@ -102,7 +102,7 @@ Tasks: {total} total, {done} done, {remaining} remaining, {blocked} blocked.
 | --- | --- |
 | `intelligence` | The domain `CLAUDE.md` separates ratified contract from candidate shapes; never implement an unratified shape. Verify on disk that `QdrantContainerFixture` (`SharedKernel.Testing.Internal`) and the doubles in `SharedKernel.AI.Testing` exist before building on them. Verify every third-party version (existence, latest stable, frameworks, licence, maintenance) before adding a `PackageReference`. Never call a paid or live model endpoint from the default test suite, and never assert on model-generated text. |
 | `search` | Verify on disk that `MeilisearchContainerFixture`/`ElasticsearchContainerFixture` (`SharedKernel.Testing.Internal`) and the doubles in `SharedKernel.Search.Testing` exist before building on them; if one is absent, finish the container-free tasks and mark only the real-engine tasks `⚑`. |
-| `workflow` | Verify every Temporalio SDK shape (id-reuse/id-conflict policy enums, `WorkflowOptions`/`ActivityOptions` required members, `ApplicationFailureException` constructor, interceptor and `IPayloadCodec` members, `Workflow.Patched`/`DeprecatePatch`, native RID list, the `JsonSerializerContext` seam) and the `ISymmetricEncryptionService` signatures against the compiled assembly or source, and record corrections in `17.Workflows/CLAUDE.md`. No container fixture: `WorkflowEnvironment` (in-box in `Temporalio`) runs the dev server; never add Testcontainers or a separate `Temporalio.Testing` package; if the dev-server binary is unreachable, mark only real-environment tasks `⚑` with evidence. Determinism: workflow code is replay code — no clock, randomness, I/O, DI, configuration or static state inside a `[Workflow]` type (use `Workflow.UtcNow`, never `DateTimeOffset.UtcNow` or `IClock`); `IClock` stays mandatory in activities. Build against current source: Adapter tier, `TenantScope` from `SharedKernel.Execution` (never `Global` on a dispatch), `CommandActivity<>` sends through the kernel `ISender`, readiness is the internal `"workflows"` `IReadinessProbe`. |
+| `workflow` | Verify every Temporalio SDK shape (id-reuse/id-conflict policy enums, `WorkflowOptions`/`ActivityOptions` required members, `ApplicationFailureException` constructor, interceptor and `IPayloadCodec` members, `Workflow.Patched`/`DeprecatePatch`, native RID list, the `JsonSerializerContext` seam) and the `ISymmetricEncryptionService` signatures against the compiled assembly or source, and record corrections in `src/Infrastructure/Workflows/CLAUDE.md`. No container fixture: `WorkflowEnvironment` (in-box in `Temporalio`) runs the dev server; never add Testcontainers or a separate `Temporalio.Testing` package; if the dev-server binary is unreachable, mark only real-environment tasks `⚑` with evidence. Determinism: workflow code is replay code — no clock, randomness, I/O, DI, configuration or static state inside a `[Workflow]` type (use `Workflow.UtcNow`, never `DateTimeOffset.UtcNow` or `IClock`); `IClock` stays mandatory in activities. Build against current source: Adapter tier, `TenantScope` from `SharedKernel.Execution` (never `Global` on a dispatch), `CommandActivity<>` sends through the kernel `ISender`, readiness is the internal `"workflows"` `IReadinessProbe`. |
 | `testing` | For every fake or fixture of another domain's abstraction, read that domain's `CLAUDE.md` and the real interface first; never guess a signature. |
 
 ---

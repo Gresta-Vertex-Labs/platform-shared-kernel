@@ -20,27 +20,27 @@ Use this path-prefix table. The first matching prefix wins.
 
 | Path prefix | Domain scope |
 |-------------|-------------|
-| `00.Governance/` | governance |
-| `01.Core/` | core |
-| `02.Caching/` | caching |
-| `03.Domain/` | domain |
-| `04.Contracts/` | contracts |
-| `05.Application/` | application |
-| `06.Persistence/` | persistence |
-| `07.Messaging/` | messaging |
-| `08.Storage/` | storage |
-| `09.Search/` | search |
-| `10.Intelligence/` | intelligence |
-| `11.Communication/` | communication |
-| `12.Security/` | security |
-| `13.ServiceDefaults/` | service-defaults |
-| `14.Presentation/` | presentation |
-| `15.Integration/` | integration |
-| `16.Testing/` | testing |
-| `17.Workflows/` | workflows |
-| `18.Idempotency/` | idempotency |
-| `19.Scheduling/` | scheduling |
-| `20.Reporting/` | reporting |
+| `tools/Governance/` | governance |
+| `src/Foundation/` | core |
+| `src/Infrastructure/Caching/` | caching |
+| `src/Model/Domain/` | domain |
+| `src/Model/Contracts/` | contracts |
+| `src/Application/` | application |
+| `src/Infrastructure/Persistence/` | persistence |
+| `src/Infrastructure/Messaging/` | messaging |
+| `src/Infrastructure/Storage/` | storage |
+| `src/Infrastructure/Search/` | search |
+| `src/Infrastructure/AI/` | intelligence |
+| `src/Infrastructure/Communication/` | communication |
+| `src/Hosting/Security/` | security |
+| `src/Hosting/ServiceDefaults/` | service-defaults |
+| `src/Hosting/Presentation/` | presentation |
+| `src/Infrastructure/Integration/` | integration |
+| `src/Testing/` | testing |
+| `src/Infrastructure/Workflows/` | workflows |
+| `src/Infrastructure/Idempotency/` | idempotency |
+| `src/Infrastructure/Scheduling/` | scheduling |
+| `src/Infrastructure/Reporting/` | reporting |
 | `samples/` | samples |
 | `.github/`, `eng/` | ci |
 | `docs/` | docs |

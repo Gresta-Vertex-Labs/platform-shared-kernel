@@ -1,0 +1,42 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel.ServiceDefaults.Persistence.csproj" />
+    <ProjectReference Include="..\..\..\..\Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
+    <ProjectReference Include="..\..\..\..\Testing\SharedKernel.Testing.Internal\SharedKernel.Testing.Internal.csproj" />
+    <!-- P-557/W6: AuditTrailWriterBridgeTests exercises the real AuditingBehavior<,> directly. -->
+    <ProjectReference Include="..\..\..\..\Application\SharedKernel.Application.Pipeline\SharedKernel.Application.Pipeline.csproj" />
+    <!--
+      AuditTransactionWiringPostgresTests: the real Postgres-backed proof that TransactionBehavior's
+      new transactional capability and this package's bridges make a Succeeded-outcome audit record
+      commit/roll back atomically with the business write it attests to, through the unmodified
+      production pipeline (AddAuditingBehavior/AddTransactionBehavior, never a hand-resolved
+      ITransactionalUnitOfWork). Needs .WithAuditTrail()/EfAuditTrailWriter (EfCore.Auditing), real
+      UsePostgreSQL()/AddSharedKernelNpgsql() (PostgreSQL/Npgsql), and IHmacSigner (Cryptography) —
+      mirroring 06.Persistence.EfCore.Auditing.Tests' own reference set for the same reasons.
+    -->
+    <ProjectReference Include="..\..\..\..\Infrastructure\Persistence\SharedKernel.Persistence.EfCore.Auditing\SharedKernel.Persistence.EfCore.Auditing.csproj" />
+    <ProjectReference Include="..\..\..\..\Infrastructure\Persistence\SharedKernel.Persistence.EfCore\SharedKernel.Persistence.EfCore.csproj" />
+    <ProjectReference Include="..\..\..\..\Infrastructure\Persistence\SharedKernel.Persistence.Npgsql\SharedKernel.Persistence.Npgsql.csproj" />
+    <ProjectReference Include="..\..\..\..\Foundation\SharedKernel.Cryptography\SharedKernel.Cryptography.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="coverlet.collector">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="NSubstitute" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
+    <ProjectReference Include="..\..\..\..\Application\SharedKernel.Application.Mediator.MediatR\SharedKernel.Application.Mediator.MediatR.csproj" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
+  </ItemGroup>
+</Project>

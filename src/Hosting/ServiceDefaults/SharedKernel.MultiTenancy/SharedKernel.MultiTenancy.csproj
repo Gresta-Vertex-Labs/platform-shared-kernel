@@ -1,0 +1,35 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <SharedKernelTier>Host</SharedKernelTier>
+    <!-- NuGet packaging metadata -->
+    <Description>Concrete multi-tenant resolution strategies for Platform.SharedKernel microservices: HTTP header, credential tenant claim, and database tenant-directory isolation, composed via TenantResolutionMiddleware and AmbientTenantProvider.</Description>
+    <PackageTags>shared-kernel;multi-tenancy;tenant-resolution;middleware</PackageTags>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- HttpContext, middleware and logging; previously arrived transitively through SharedKernel.Security.Oidc. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\Foundation\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+    <ProjectReference Include="..\..\..\Foundation\SharedKernel.Execution\SharedKernel.Execution.csproj" />
+    <ProjectReference Include="..\..\Security\SharedKernel.Security.Abstractions\SharedKernel.Security.Abstractions.csproj" />
+    <ProjectReference Include="..\..\..\Infrastructure\Persistence\SharedKernel.Persistence.Abstractions\SharedKernel.Persistence.Abstractions.csproj" />
+    <!--
+      WO-075/P-472 (S-21): needed only for CachedTenantCatalog.WithCrossInstanceInvalidation
+      (ICacheInvalidationBus) — interface-only, never the concrete .Redis.PubSub package, so a
+      consumer who never calls .WithCrossInstanceInvalidation() pulls in no Redis surface.
+      DatabaseTenantCatalog itself needs no new reference: IDbConnectionFactory is already
+      available via the SharedKernel.Persistence.Abstractions reference above.
+    -->
+    <ProjectReference Include="..\..\..\Infrastructure\Caching\SharedKernel.Caching.Abstractions\SharedKernel.Caching.Abstractions.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!--
+      Grants SharedKernel.MultiTenancy.Tests direct access to internal types (MultiTenancyLog,
+      WO-061/P-395) so its [LoggerMessage] call sites can be exercised directly — mirrors
+      SharedKernel.ServiceDefaults.csproj's identical InternalsVisibleTo grant.
+    -->
+    <InternalsVisibleTo Include="SharedKernel.MultiTenancy.Tests" />
+  </ItemGroup>
+</Project>

@@ -30,10 +30,10 @@
 
   <PropertyGroup>
     <!--
-      Computed identity. Nested *.Tests projects (e.g. 08.Storage/SharedKernel.Storage.Abstractions/
+      Computed identity. Nested *.Tests projects (e.g. src/Infrastructure/Storage/SharedKernel.Storage.Abstractions/
       SharedKernel.Storage.Abstractions.Tests/) are detected by project-name suffix. This does NOT
       catch every non-shipping project in the repo (SharedKernel.Testing.SelfTests, and the
-      consumer-verify/*Consumer exe harnesses under 00.Governance/_verification and the
+      consumer-verify/*Consumer exe harnesses under tools/Governance/_verification and the
       per-domain consumer-verify/ folders, do not end in ".Tests") — those already declare
       <IsPackable>false</IsPackable> explicitly in their own project body, which always wins over
       anything set here because Directory.Build.props is imported first. This property only drives
@@ -67,8 +67,8 @@
       TreatWarningsAsErrors is deliberately NOT centralized here (Rule 7: a property that is not
       genuinely uniform must stay per-project). Verified against real source: only 33 of 119 csproj
       files set it, concentrated in the newer domains (04/05/07/08/09/10/11/13/17 and their
-      consumer-verify harnesses) — 00.Governance/01.Core/02.Caching/03.Domain/06.Persistence/
-      12.Security/16.Testing never opted in. A first attempt at centralizing this repo-wide
+      consumer-verify harnesses) — tools/Governance/src/Foundation/src/Infrastructure/Caching/src/Model/Domain/src/Infrastructure/Persistence/
+      src/Hosting/Security/16.Testing never opted in. A first attempt at centralizing this repo-wide
       (the build's original, never-adopted design) turned ~60 previously-dormant warnings
       (CS1574 unresolved &lt;see cref&gt; references, RS1041 analyzer-project compat warnings) into
       hard build errors across files this agent has no jurisdiction to fix (.cs source content is
@@ -171,7 +171,7 @@
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <!--
       Single consolidated pack output location (DV-004): replaces the six scattered locations found
-      on disk (nupkgs/, artifacts/nupkg/, local-feed/, 06.Persistence/nupkg/, 02.Caching/nupkgs/,
+      on disk (nupkgs/, artifacts/nupkg/, local-feed/, src/Infrastructure/Persistence/nupkg/, src/Infrastructure/Caching/nupkgs/,
       and seven per-project bin/Release/ dirs). Matches NuGet.Config's "local-shared-kernel" feed.
     -->
     <PackageOutputPath>$(MSBuildThisFileDirectory)nupkgs</PackageOutputPath>

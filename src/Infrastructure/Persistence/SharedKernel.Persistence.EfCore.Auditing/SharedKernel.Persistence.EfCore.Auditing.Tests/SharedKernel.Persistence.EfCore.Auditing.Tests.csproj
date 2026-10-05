@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel.Persistence.EfCore.Auditing.csproj" />
+    <ProjectReference Include="..\..\..\..\Testing\SharedKernel.Testing.Internal\SharedKernel.Testing.Internal.csproj" />
+    <!--
+      Real PostgreSQL (Testcontainers) is the primary target: the ledger is PostgreSQL-only (xid horizon,
+      advisory locks, NULLS NOT DISTINCT, triggers). EfCore backs the unit-of-work integration tests.
+    -->
+    <ProjectReference Include="..\..\SharedKernel.Persistence.EfCore\SharedKernel.Persistence.EfCore.csproj" />
+    <ProjectReference Include="..\..\SharedKernel.Persistence.Npgsql\SharedKernel.Persistence.Npgsql.csproj" />
+    <ProjectReference Include="..\..\..\..\Foundation\SharedKernel.Cryptography\SharedKernel.Cryptography.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="coverlet.collector">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The byte-level spec is verified against the vectors it publishes. -->
+    <None Include="..\AUDIT-FORMAT.md" Link="AUDIT-FORMAT.md" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

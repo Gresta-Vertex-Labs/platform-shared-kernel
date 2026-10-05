@@ -1,0 +1,29 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <SharedKernelTier>Adapter</SharedKernelTier>
+    <SharedKernelAllowedAdapterReferences>SharedKernel.Caching.Redis.Core</SharedKernelAllowedAdapterReferences>
+    <Description>Atomic, tenant-scoped, Redis-backed implementation of SharedKernel.Idempotency.Abstractions' IIdempotencyStore, registered keyed by purpose (AddRedisIdempotency(p => p.ForRequests().ForMessages())). Atomicity via single-round-trip Lua scripts over a per-key Redis hash (status/fingerprint/token/response); fail-closed on store unavailability by default. Built on SharedKernel.Caching.Redis.Core's shared IConnectionMultiplexer.</Description>
+    <PackageTags>idempotency;redis;deduplication;shared-kernel</PackageTags>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <!--
+      18.Idempotency layering (root CLAUDE.md / src/Infrastructure/Idempotency/CLAUDE.md): SharedKernel.Idempotency.Redis
+      may reference Foundation packages, SharedKernel.Idempotency.Abstractions and, among adapters,
+      SharedKernel.Caching.Redis.Core only. Never the application pipeline, messaging or 06.Persistence.
+    -->
+    <ProjectReference Include="..\..\..\Foundation\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+    <ProjectReference Include="..\..\Caching\SharedKernel.Caching.Redis.Core\SharedKernel.Caching.Redis.Core.csproj" />
+    <ProjectReference Include="..\SharedKernel.Idempotency.Abstractions\SharedKernel.Idempotency.Abstractions.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- No direct PackageReference to StackExchange.Redis: it flows transitively via
+         SharedKernel.Caching.Redis.Core, which owns IConnectionMultiplexer construction (S-07). -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Options" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="SharedKernel.Idempotency.Redis.Tests" />
+  </ItemGroup>
+</Project>

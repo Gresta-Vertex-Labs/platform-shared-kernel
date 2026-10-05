@@ -81,7 +81,7 @@
     <PackageVersion Include="Azure.Identity" Version="1.21.0" />
     <PackageVersion Include="Azure.Security.KeyVault.Keys" Version="4.7.0" />
     <!--
-      SharedKernel.Cryptography.KeyVault.Azure (01.Core/WO-081, P-496): the durable version registry
+      SharedKernel.Cryptography.KeyVault.Azure (src/Foundation/WO-081, P-496): the durable version registry
       stores each key version, and the shared "current version" pointer, as Key Vault Secrets — a
       second Azure SDK family alongside .Keys above. Confined to that one package; a
       .nuspec-inspection test in SharedKernel.Consumer.Tests proves it never leaks onto
@@ -101,7 +101,7 @@
     <PackageVersion Include="CSharpier.MsBuild" Version="1.3.0" />
     <!--
       Test-only: reads the .xlsx files SharedKernel.Reporting.Spreadsheet writes back, as an independent
-      reader, in its tests and in 20.Reporting/consumer-verify. MIT. No shipping package references it
+      reader, in its tests and in src/Infrastructure/Reporting/consumer-verify. MIT. No shipping package references it
       (it builds the whole workbook in memory, which is why the provider moved to SpreadCheetah).
     -->
     <PackageVersion Include="ClosedXML" Version="0.105.1" />
@@ -133,7 +133,7 @@
     <PackageVersion Include="HotChocolate.AspNetCore" Version="16.1.4" />
     <PackageVersion Include="HotChocolate.Data" Version="16.1.4" />
     <!--
-      SharedKernel.Cryptography.Argon2 (01.Core/WO-081, P-495): pure-managed MIT Argon2id, chosen
+      SharedKernel.Cryptography.Argon2 (src/Foundation/WO-081, P-495): pure-managed MIT Argon2id, chosen
       over a libsodium binding specifically to avoid a native/P-Invoke asset that would complicate
       AOT and container builds. Confined to that one package — SharedKernel.Cryptography itself
       stays zero-third-party-dependency, proven by a .nuspec-inspection test in
@@ -243,7 +243,7 @@
     <PackageVersion Include="Pgvector" Version="0.3.2" />
     <PackageVersion Include="Pgvector.EntityFrameworkCore" Version="0.3.0" />
     <!--
-      SharedKernel.Reporting.Pdf (20.Reporting/WO-077, P-480): unconditional MIT, verified directly
+      SharedKernel.Reporting.Pdf (src/Infrastructure/Reporting/WO-077, P-480): unconditional MIT, verified directly
       against the published nuspecs on nuget.org before pinning. NOTE — the domain's Design phase
       (D-09/D-10) assumed three separate package IDs ("PdfSharp" + "MigraDoc.DocumentObjectModel" +
       "MigraDoc.Rendering"), reflecting the pre-6.x PDFsharp/MigraDoc package split. That three-way
@@ -265,7 +265,7 @@
       Quartz.CronExpression at compile time, independent of 07.Messaging's MassTransit.Quartz
       reference above (which currently resolves this same 3.18.1 transitively). Pinning directly
       means 07.Messaging bumping/dropping MassTransit.Quartz can never silently break this domain's
-      build (19.Scheduling/state-map.md D-06, WO-073/P-464).
+      build (src/Infrastructure/Scheduling/state-map.md D-06, WO-073/P-464).
     -->
     <PackageVersion Include="Quartz" Version="3.18.1" />
     <!-- Test-only, SharedKernel.Analyzers.Tests (SK0033/WO-079/P-486): fixture compilation proving

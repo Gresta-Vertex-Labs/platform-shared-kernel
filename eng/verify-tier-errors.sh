@@ -55,7 +55,7 @@ EOF
 }
 
 probe ModelReferencesAbstractions Model \
-  '    <ProjectReference Include="../../../02.Caching/SharedKernel.Caching.Abstractions/SharedKernel.Caching.Abstractions.csproj" />' \
+  '    <ProjectReference Include="../../../src/Infrastructure/Caching/SharedKernel.Caching.Abstractions/SharedKernel.Caching.Abstractions.csproj" />' \
   SKTIER001
 
 probe AdapterReferencesAspNetCore Adapter \

@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <SharedKernelTier>Foundation</SharedKernelTier>
+    <!-- NuGet packaging metadata -->
+    <Description>Feature flags on the OpenFeature standard, backed by Microsoft.FeatureManagement. Services inject OpenFeature's IFeatureClient and evaluate typed FeatureFlag&lt;T&gt; constants (boolean, string, number or a JSON object read through a source-generated JsonTypeInfo). The caller's user, tenant and groups are applied automatically through IFeatureTargetingContextAccessor, so percentage rollouts and user, group or tenant targeting work without passing context on every call. Each flag is evaluated once per request scope, so it cannot change halfway through a request. Evaluation never throws: an unknown flag or a failure returns the caller's default with the reason. Declared flags and every variant are checked at startup, and flags with telemetry enabled emit the OpenTelemetry feature_flag.evaluation event.</Description>
+    <PackageReleaseNotes>First release.</PackageReleaseNotes>
+    <PackageTags>shared-kernel;feature-flags;feature-management;openfeature;feature-toggles;a-b-testing;progressive-delivery;targeting;opentelemetry</PackageTags>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- Publish bar: ship XML docs, and fail the build on an undocumented or untracked public member. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <WarningsAsErrors>$(WarningsAsErrors);CS1591;RS0016;RS0017;RS0024;RS0025</WarningsAsErrors>
+    <!-- Overloads with optional parameters (GetValueAsync, GetDetailsAsync, IsEnabledAsync) are intentional. -->
+    <NoWarn>$(NoWarn);RS0026;RS0027</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+    <ProjectReference Include="..\SharedKernel.Execution\SharedKernel.Execution.csproj" />
+    <PackageReference Include="OpenFeature" />
+    <PackageReference Include="OpenFeature.Hosting" />
+    <PackageReference Include="Microsoft.FeatureManagement" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+</Project>

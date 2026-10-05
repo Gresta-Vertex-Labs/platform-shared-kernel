@@ -1,0 +1,17 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <!-- Not shipped — verification harness only -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel.Integration.Webhooks\SharedKernel.Integration.Webhooks.csproj" />
+    <ProjectReference Include="..\..\Messaging\SharedKernel.Messaging.Abstractions\SharedKernel.Messaging.Abstractions.csproj" />
+    <!-- WO-072: verifies both Notifications providers coexist with unambiguous keyed-DI resolution. -->
+    <ProjectReference Include="..\SharedKernel.Integration.Notifications.Abstractions\SharedKernel.Integration.Notifications.Abstractions.csproj" />
+    <ProjectReference Include="..\SharedKernel.Integration.Notifications.Email.SendGrid\SharedKernel.Integration.Notifications.Email.SendGrid.csproj" />
+    <ProjectReference Include="..\SharedKernel.Integration.Notifications.Sms.Twilio\SharedKernel.Integration.Notifications.Sms.Twilio.csproj" />
+    <ProjectReference Include="..\..\Storage\SharedKernel.Storage.Abstractions\SharedKernel.Storage.Abstractions.csproj" />
+  </ItemGroup>
+</Project>

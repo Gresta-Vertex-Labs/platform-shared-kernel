@@ -4,5 +4,5 @@
 Directory.Build.props   @Gresta-Vertex-Labs/infrastructure
 Directory.Packages.props @Gresta-Vertex-Labs/infrastructure
 /SECURITY.md            @Gresta-Vertex-Labs/security
-/12.Security/           @Gresta-Vertex-Labs/security @Gresta-Vertex-Labs/platform-maintainers
-/00.Governance/         @Gresta-Vertex-Labs/platform-maintainers
+/src/Hosting/Security/           @Gresta-Vertex-Labs/security @Gresta-Vertex-Labs/platform-maintainers
+/tools/Governance/         @Gresta-Vertex-Labs/platform-maintainers

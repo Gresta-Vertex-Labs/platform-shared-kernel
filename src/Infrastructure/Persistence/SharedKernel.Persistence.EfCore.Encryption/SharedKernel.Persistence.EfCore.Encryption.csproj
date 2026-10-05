@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <SharedKernelTier>Adapter</SharedKernelTier>
+    <SharedKernelAllowedAdapterReferences>SharedKernel.Persistence.EfCore</SharedKernelAllowedAdapterReferences>
+    <Description>Field-level AES-256-GCM encryption for SharedKernel.Persistence.EfCore: mark a property with .Encrypt("purpose") and it is stored as ciphertext bound to its row, column and tenant. Blind indexes for equality lookups (WhereEncryptedEquals), a guard that refuses queries leaking encrypted columns, KMS key providers, key rotation and plaintext migration jobs, and per-tenant data keys with crypto-shredding for GDPR/KVKK erasure.</Description>
+    <PackageTags>persistence;efcore;encryption;field-level-encryption;aes-gcm;blind-index;crypto-shredding;gdpr;postgresql;shared-kernel</PackageTags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <WarningsAsErrors>$(WarningsAsErrors);nullable;CS1591;RS0016;RS0017;RS0022;RS0024;RS0025;RS0036;RS0037</WarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel.Persistence.EfCore\SharedKernel.Persistence.EfCore.csproj" />
+    <ProjectReference Include="..\..\..\Foundation\SharedKernel.Cryptography\SharedKernel.Cryptography.csproj" />
+    <ProjectReference Include="..\..\..\Foundation\SharedKernel.Configuration\SharedKernel.Configuration.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="SharedKernel.Persistence.EfCore.Encryption.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+  <!--
+    P-558/W3a: this package uses SharedKernel.Persistence.EfCore internals (InternalsVisibleTo), so its nuspec
+    pins that dependency to exactly this build's version ([x.y.z]) instead of NuGet's default minimum (>= x.y.z):
+    a newer EfCore with changed internals can never be combined with this package.
+  -->
+  <Target Name="PinEfCoreDependencyToExactVersion" AfterTargets="_GetProjectReferenceVersions">
+    <ItemGroup>
+      <_ProjectReferencesWithVersions Condition="'%(Filename)' == 'SharedKernel.Persistence.EfCore'">
+        <ProjectVersion>[%(ProjectVersion)]</ProjectVersion>
+      </_ProjectReferencesWithVersions>
+    </ItemGroup>
+  </Target>
+</Project>

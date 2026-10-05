@@ -1,0 +1,39 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <SharedKernelTier>Abstractions</SharedKernelTier>
+    <!-- NuGet packaging metadata -->
+    <Description>Report and document export contracts for Platform.SharedKernel services. IReportExporter&lt;TRow&gt; streams an IAsyncEnumerable&lt;TRow&gt; into CSV, Excel or PDF and delivers it to a named SharedKernel.Storage store (with an optional presigned download link) or to any Stream; IReportExporterFactory picks the format at runtime; IHtmlToPdfConverter renders an HTML string to PDF. Includes the fluent ReportDefinition builder, the ReportExporterBase&lt;TRow&gt; and HtmlToPdfConverterBase bases for custom formats, and built-in tracing, metrics and logging. No third-party dependencies. Providers: SharedKernel.Reporting.Csv, .Spreadsheet, .Pdf and .Gotenberg.</Description>
+    <PackageReleaseNotes>First release.</PackageReleaseNotes>
+    <PackageTags>shared-kernel;reporting;export;csv;xlsx;pdf;html-to-pdf;streaming</PackageTags>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- Publish bar: ship XML docs, and fail the build on an undocumented or untracked public member. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <WarningsAsErrors>$(WarningsAsErrors);CS1591;RS0016;RS0017;RS0024;RS0025</WarningsAsErrors>
+    <!-- Shared optional parameters are intentional on this surface (options, cancellation token). -->
+    <NoWarn>$(NoWarn);RS0026;RS0027</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Never a format library (ClosedXML, SpreadCheetah, PdfSharp, MigraDoc): those live in the provider packages. -->
+    <ProjectReference Include="..\..\..\Foundation\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+    <ProjectReference Include="..\..\Storage\SharedKernel.Storage.Abstractions\SharedKernel.Storage.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="SharedKernel.Reporting.Abstractions.Tests" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,58 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Analyzer.Testing.XUnit" />
+    <!-- Pin Roslyn to same version used by SharedKernel.Analyzers to avoid version conflict -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
+    <!-- SK0033 (WO-079/P-486): test-only fixture compilation packages, never a production
+         dependency of any SharedKernel.* package. -->
+    <PackageReference Include="AutoMapper" />
+    <PackageReference Include="Riok.Mapperly" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <!-- SK0036 (WO-074/P-469): test-only fixture compilation against the real, lightweight
+         Grpc.Core.Api package (RpcException/Status/StatusCode only, not the full Grpc.AspNetCore
+         server hosting stack) — never a production dependency of any SharedKernel.* package. -->
+    <PackageReference Include="Grpc.Core.Api" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel.Analyzers.csproj" />
+    <!-- SK0035 (WO-076/P-476) T-355: real-assembly re-verification only — never a shipped/packed
+         dependency of SharedKernel.Analyzers itself, hence PrivateAssets="all". -->
+    <ProjectReference
+      Include="..\..\..\..\src\Foundation\SharedKernel.DataPrivacy\SharedKernel.DataPrivacy.csproj"
+      PrivateAssets="all"
+    />
+    <!-- Real-type name locks: SK0002's message names this package's IFeatureManager, and a test
+         asserts that name against the compiled type so the message cannot drift from it again. -->
+    <ProjectReference
+      Include="..\..\..\..\src\Foundation\SharedKernel.FeatureManagement\SharedKernel.FeatureManagement.csproj"
+      PrivateAssets="all"
+    />
+    <!-- RealKernelTypeNameTests: every analyzer that matches a SharedKernel type name, metadata name or
+         namespace prefix is also run against the compiled kernel package that owns the name, so a type
+         moved or renamed by a refactor fails a test instead of silently disabling the rule. Test-only;
+         never a dependency of SharedKernel.Analyzers itself, hence PrivateAssets="all". -->
+    <ProjectReference Include="..\..\..\..\src\Foundation\SharedKernel.Primitives\SharedKernel.Primitives.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\..\src\Foundation\SharedKernel.Core\SharedKernel.Core.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\..\src\Foundation\SharedKernel.Execution\SharedKernel.Execution.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\..\src\Infrastructure\Caching\SharedKernel.Caching.Redis.PubSub\SharedKernel.Caching.Redis.PubSub.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\..\src\Model\Domain\SharedKernel.Domain\SharedKernel.Domain.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\..\src\Model\Contracts\SharedKernel.Contracts\SharedKernel.Contracts.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\..\src\Application\SharedKernel.Application\SharedKernel.Application.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\..\src\Infrastructure\Persistence\SharedKernel.Persistence.Dapper\SharedKernel.Persistence.Dapper.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\..\src\Infrastructure\Persistence\SharedKernel.Persistence.EfCore\SharedKernel.Persistence.EfCore.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\..\src\Infrastructure\Messaging\SharedKernel.Messaging.Abstractions\SharedKernel.Messaging.Abstractions.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\..\src\Infrastructure\Search\SharedKernel.Search.Abstractions\SharedKernel.Search.Abstractions.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\..\src\Infrastructure\AI\SharedKernel.AI.Abstractions\SharedKernel.AI.Abstractions.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\..\src\Hosting\Security\SharedKernel.Security.Abstractions\SharedKernel.Security.Abstractions.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\..\src\Hosting\Security\SharedKernel.Security.Oidc\SharedKernel.Security.Oidc.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\..\src\Hosting\Security\SharedKernel.Security.ApiKey\SharedKernel.Security.ApiKey.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\..\src\Hosting\Presentation\SharedKernel.Presentation.Grpc\SharedKernel.Presentation.Grpc.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\..\src\Infrastructure\Workflows\SharedKernel.Workflows.Temporal\SharedKernel.Workflows.Temporal.csproj" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

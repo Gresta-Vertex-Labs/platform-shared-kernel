@@ -1,0 +1,30 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel.Messaging.Abstractions.csproj" />
+    <!--
+      Test-only reference (T-19/P-191): SharedKernel.Testing supplies InMemoryMessageBus/
+      InMemoryEventPublisher test doubles used by ConsumerVerifyTests. SharedKernel.Testing itself
+      references only SharedKernel.Messaging.Abstractions (not MassTransit), so this does not
+      introduce a MassTransit dependency into the test assembly. Never referenced by the
+      SharedKernel.Messaging.Abstractions production project itself.
+    -->
+    <ProjectReference Include="..\..\..\..\Testing\SharedKernel.Messaging.Testing\SharedKernel.Messaging.Testing.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="coverlet.collector">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+  </ItemGroup>
+</Project>

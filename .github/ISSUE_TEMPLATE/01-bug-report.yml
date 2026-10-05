@@ -27,7 +27,7 @@ body:
     id: domain
     attributes:
       label: Affected domain
-      description: The numbered folder the package lives in. Used to route the issue automatically.
+      description: The capability domain the package belongs to. Used to route the issue automatically.
       options:
         - 00.Governance — analyzers, architecture tests
         - 01.Core — primitives, execution context, Result, configuration, cryptography, validation

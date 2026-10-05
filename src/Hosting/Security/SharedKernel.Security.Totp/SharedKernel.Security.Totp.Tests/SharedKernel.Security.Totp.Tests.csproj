@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel.Security.Totp.csproj" />
+    <ProjectReference Include="..\..\..\..\Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
+    <ProjectReference Include="..\..\..\..\Testing\SharedKernel.Cryptography.Testing\SharedKernel.Cryptography.Testing.csproj" />
+    <ProjectReference Include="..\..\..\..\Testing\SharedKernel.Security.Testing\SharedKernel.Security.Testing.csproj" />
+    <!--
+      T-46 cross-package interop test ONLY: proves a ClaimsPrincipal transformed by
+      TotpStepUpClaimsTransformation, fed into .Oidc's REAL OidcUserContext constructor, resolves
+      WasAuthenticatedWith("otp") == true. A test-project-only exception to the sibling-packages-never-
+      reference-each-other production rule (src/Hosting/Security/CLAUDE.md) — the main SharedKernel.Security.Totp
+      project itself never references .Oidc, mirroring how .Oidc.Tests already references 16.Testing for
+      a cross-cutting concern the main .Oidc project doesn't need.
+    -->
+    <ProjectReference Include="..\..\SharedKernel.Security.Oidc\SharedKernel.Security.Oidc.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" />
+    <!--
+      Pinned to 10.0.9, not a lower floor — SharedKernel.Testing (referenced above) already pulls
+      Microsoft.Extensions.DependencyInjection >= 10.0.9 transitively; a lower explicit pin here is an
+      NU1605 downgrade error (mirrors SharedKernel.Security.ApiKey.Tests's/.Mtls.Tests's identical pin).
+    -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+  </ItemGroup>
+</Project>

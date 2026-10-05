@@ -57,7 +57,7 @@ body:
     attributes:
       label: Where is it?
       description: A link, file path, or type/member name.
-      placeholder: 02.Caching/SharedKernel.Caching.FusionCache/README.md — or — ICacheService.GetOrSetAsync XML docs
+      placeholder: src/Infrastructure/Caching/SharedKernel.Caching.FusionCache/README.md — or — ICacheService.GetOrSetAsync XML docs
     validations:
       required: true
 

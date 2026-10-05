@@ -1,0 +1,20 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <SharedKernelTier>Host</SharedKernelTier>
+    <Description>Mutual-TLS host composition for Platform.SharedKernel microservices: AddMtlsClientCertificate negotiates client certificates in Kestrel, and AddMtlsForwardedHeaderCertificate accepts a certificate forwarded by a TLS-terminating proxy behind an opt-in TrustedNetworks allowlist. Acceptance is always delegated to SharedKernel.Security.Mtls IMtlsCertificateValidator; this package never reimplements X.509 chain or revocation validation. Split out of SharedKernel.ServiceDefaults (WO-084).</Description>
+    <PackageTags>shared-kernel;service-defaults;mtls;client-certificates;kestrel;security</PackageTags>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- Per-project: the SDK assigns false before the Directory.Build.targets default is evaluated. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel.ServiceDefaults\SharedKernel.ServiceDefaults.csproj" />
+    <ProjectReference Include="..\..\Security\SharedKernel.Security.Mtls\SharedKernel.Security.Mtls.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="SharedKernel.ServiceDefaults.Security.Mtls.Tests" />
+  </ItemGroup>
+</Project>

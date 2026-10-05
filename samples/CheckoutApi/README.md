@@ -1,6 +1,6 @@
 # CheckoutApi
 
-A checkout service that calls another service — [InventoryApi](../InventoryApi/) — over gRPC for the price and over
+A checkout service that calls another service — [InventoryApi](../InventoryApi//) — over gRPC for the price and over
 REST for the reservation, with the `11.Communication` packages. It is the reference for **calling another service**:
 where the clients are registered, what goes in configuration, and how the other service's answers come back.
 

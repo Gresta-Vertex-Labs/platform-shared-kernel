@@ -12,33 +12,49 @@ All packages ship together at one version through a single release train.
 
 ## Where Things Are
 
-Each numbered folder is a capability domain with three files: **`CLAUDE.md`** (maintainer rules — read it before editing that domain), **`README.md`** (overview) and **`state-map.md`** (living board: Package Board, Phase Key Registry, Open Work, Blocked, Cross-Domain Dependencies). Completed history is not kept in the repo; `git log` is the record. **Folder numbers are an address and an EventId block, not a layer** — the tier decides references.
+The source tree is grouped into **zones that mirror a consuming service's projects**, and each capability domain is one folder inside its zone:
+
+```
+src/Foundation/       every project (Primitives, Execution, Core, Cryptography, …)
+src/Model/            the Domain project (Domain/, Contracts/)
+src/Application/      the Application project (kernel CQRS contracts and pipeline)
+src/Infrastructure/   the Infrastructure project, one folder per capability (Caching/, Persistence/, Messaging/, …)
+src/Hosting/          the Api / Worker project (Security/, ServiceDefaults/, Presentation/)
+src/Testing/          SharedKernel.Testing and the Testcontainers fixtures
+tools/Governance/     analyzers, architecture tests, linter
+```
+
+The zone is where a capability mainly belongs, not a rule: a capability keeps its `.Abstractions` package (referenced by the Application project) and its providers together. **The tier decides references**, and the build enforces it. [`docs/packages.md`](docs/packages.md) (generated) lists every package with its tier and the service project that references it.
+
+Each capability folder holds three files: **`CLAUDE.md`** (maintainer rules — read it before editing that domain), **`README.md`** (overview) and **`state-map.md`** (living board: Package Board, Phase Key Registry, Open Work, Blocked, Cross-Domain Dependencies). Completed history is not kept in the repo; `git log` is the record.
+
+**Domain ids.** A domain keeps its id (`06.Persistence`) even though its folder has no number: the id names the domain in work orders and phase keys (`SK.06.…`), and its number is the domain's EventId block (`6000`–`6999`, registry `LoggingEventIdRanges`). The table below is the **registry from domain id to folder**; commands and agents resolve `{NN}.{Name}` through it.
 
 Counts are **packable packages** (tests, `consumer-verify` harnesses, benchmarks and `SharedKernel.Testing.Internal` excluded). Tiers: **F** Foundation · **M** Model · **Ab** Abstractions · **Ad** Adapter · **H** Host · **T** Testing · **To** Tooling.
 
-| Folder | Pkgs | Scope | Tiers |
-| --- | ---: | --- | --- |
-| `00.Governance` | 3 | Roslyn analyzers (SK rules), NetArchTest architecture tests, EditorConfig/CSharpier linter | To |
-| `01.Core` | 13 | Primitives (`Result<T>`, `Error`, `IClock`, health probes, well-known headers), Execution (`IRequestContext`, tenancy, unit of work), Core, Configuration, FeatureManagement, Compression, Validation, DataPrivacy, Localization, Cryptography | F, Ad (Argon2, KeyVault.Azure, Validation.FluentValidation) |
-| `02.Caching` | 7 | Cache and lock abstractions; FusionCache; Redis core + L2, locking, hash store, pub/sub | Ab, Ad |
-| `03.Domain` | 1 | Entities, aggregates (audited/soft-delete/tenanted), value objects, ids, specifications, `Money` | M |
-| `04.Contracts` | 1 | Integration events, CloudEvents envelope, paging DTOs and cursors | M |
-| `05.Application` | 4 | Kernel CQRS contracts + markers; pipeline; query caching; MediatR adapter | Ab, H |
-| `06.Persistence` | 6 | PostgreSQL only: abstractions, Npgsql, EF Core, Dapper, audit ledger, field encryption | Ab, Ad |
-| `07.Messaging` | 5 | Message bus abstractions; MassTransit core + RabbitMQ, Azure Service Bus, EF Core outbox | Ab, Ad |
-| `08.Storage` | 3 | Named/tenant file stores; S3 (and compatibles), Huawei OBS | Ab, Ad |
-| `09.Search` | 3 | Search index abstractions; Meilisearch, ElasticSearch | Ab, Ad |
-| `10.Intelligence` | 3 | Embeddings, vector collections, orchestration; Qdrant, Semantic Kernel | Ab, Ad |
-| `11.Communication` | 3 | Outbound calls: discovery/auth/mTLS base, REST client, gRPC client | Ad |
-| `12.Security` | 5 | `IUserContext`; OIDC/JWT, API key, mTLS, TOTP step-up | Ab, H |
-| `13.ServiceDefaults` | 7 | Host composition: OTel, health, readiness, rate limiting, request context, multi-tenancy, Key Vault config, localization | H |
-| `14.Presentation` | 6 | Presentation.Core, WebApi, OpenApi, Grpc, SignalR, GraphQL (+ a Tooling source generator packed inside WebApi) | H |
-| `15.Integration` | 4 | Webhooks; notification abstractions, SendGrid email, Twilio SMS | Ab, Ad |
-| `16.Testing` | 20 | `SharedKernel.Testing` + 19 `SharedKernel.{Capability}.Testing` fakes (plus non-packable `Testing.Internal` fixtures) | T |
-| `17.Workflows` | 1 | Temporal durable workflows (one package by design) | Ad |
-| `18.Idempotency` | 3 | `IIdempotencyStore`; Redis, EF Core | Ab, Ad |
-| `19.Scheduling` | 1 | Cron/recurring/one-shot jobs, single execution across replicas | Ad |
-| `20.Reporting` | 5 | Streaming CSV/Excel/PDF export, HTML → PDF (Gotenberg) | Ab, Ad |
+| Domain | Folder | Pkgs | Scope | Tiers |
+| --- | --- | ---: | --- | --- |
+| `00.Governance` | [`tools/Governance`](tools/Governance/) | 3 | Roslyn analyzers (SK rules), NetArchTest architecture tests, EditorConfig/CSharpier linter | To |
+| `01.Core` | [`src/Foundation`](src/Foundation/) | 13 | Primitives (`Result<T>`, `Error`, `IClock`, health probes, well-known headers), Execution (`IRequestContext`, tenancy, unit of work), Core, Configuration, FeatureManagement, Compression, Validation, DataPrivacy, Localization, Cryptography | F, Ad (Argon2, KeyVault.Azure, Validation.FluentValidation) |
+| `02.Caching` | [`src/Infrastructure/Caching`](src/Infrastructure/Caching/) | 7 | Cache and lock abstractions; FusionCache; Redis core + L2, locking, hash store, pub/sub | Ab, Ad |
+| `03.Domain` | [`src/Model/Domain`](src/Model/Domain/) | 1 | Entities, aggregates (audited/soft-delete/tenanted), value objects, ids, specifications, `Money` | M |
+| `04.Contracts` | [`src/Model/Contracts`](src/Model/Contracts/) | 1 | Integration events, CloudEvents envelope, paging DTOs and cursors | M |
+| `05.Application` | [`src/Application`](src/Application/) | 4 | Kernel CQRS contracts + markers; pipeline; query caching; MediatR adapter | Ab, H |
+| `06.Persistence` | [`src/Infrastructure/Persistence`](src/Infrastructure/Persistence/) | 6 | PostgreSQL only: abstractions, Npgsql, EF Core, Dapper, audit ledger, field encryption | Ab, Ad |
+| `07.Messaging` | [`src/Infrastructure/Messaging`](src/Infrastructure/Messaging/) | 5 | Message bus abstractions; MassTransit core + RabbitMQ, Azure Service Bus, EF Core outbox | Ab, Ad |
+| `08.Storage` | [`src/Infrastructure/Storage`](src/Infrastructure/Storage/) | 3 | Named/tenant file stores; S3 (and compatibles), Huawei OBS | Ab, Ad |
+| `09.Search` | [`src/Infrastructure/Search`](src/Infrastructure/Search/) | 3 | Search index abstractions; Meilisearch, ElasticSearch | Ab, Ad |
+| `10.Intelligence` | [`src/Infrastructure/AI`](src/Infrastructure/AI/) | 3 | Embeddings, vector collections, orchestration; Qdrant, Semantic Kernel | Ab, Ad |
+| `11.Communication` | [`src/Infrastructure/Communication`](src/Infrastructure/Communication/) | 3 | Outbound calls: discovery/auth/mTLS base, REST client, gRPC client | Ad |
+| `12.Security` | [`src/Hosting/Security`](src/Hosting/Security/) | 5 | `IUserContext`; OIDC/JWT, API key, mTLS, TOTP step-up | Ab, H |
+| `13.ServiceDefaults` | [`src/Hosting/ServiceDefaults`](src/Hosting/ServiceDefaults/) | 7 | Host composition: OTel, health, readiness, rate limiting, request context, multi-tenancy, Key Vault config, localization | H |
+| `14.Presentation` | [`src/Hosting/Presentation`](src/Hosting/Presentation/) | 6 | Presentation.Core, WebApi, OpenApi, Grpc, SignalR, GraphQL (+ a Tooling source generator packed inside WebApi) | H |
+| `15.Integration` | [`src/Infrastructure/Integration`](src/Infrastructure/Integration/) | 4 | Webhooks; notification abstractions, SendGrid email, Twilio SMS | Ab, Ad |
+| `16.Testing` | [`src/Testing`](src/Testing/) | 20 | `SharedKernel.Testing` + 19 `SharedKernel.{Capability}.Testing` fakes (plus non-packable `Testing.Internal` fixtures) | T |
+| `17.Workflows` | [`src/Infrastructure/Workflows`](src/Infrastructure/Workflows/) | 1 | Temporal durable workflows (one package by design) | Ad |
+| `18.Idempotency` | [`src/Infrastructure/Idempotency`](src/Infrastructure/Idempotency/) | 3 | `IIdempotencyStore`; Redis, EF Core | Ab, Ad |
+| `19.Scheduling` | [`src/Infrastructure/Scheduling`](src/Infrastructure/Scheduling/) | 1 | Cron/recurring/one-shot jobs, single execution across replicas | Ad |
+| `20.Reporting` | [`src/Infrastructure/Reporting`](src/Infrastructure/Reporting/) | 5 | Streaming CSV/Excel/PDF export, HTML → PDF (Gotenberg) | Ab, Ad |
 
 Other top-level locations:
 
@@ -86,7 +102,7 @@ A new edge is a csproj declaration reviewed like any API change; sibling role pa
 - `SharedKernel.Messaging.*` and `SharedKernel.Caching.*` never reference each other (Redis Pub/Sub is caching, not messaging).
 - Redis role packages reference only `Redis.Core`; MassTransit satellites only the MassTransit core.
 - Testing-tier packages are never referenced by production code, including the packable ones.
-- Plus the topology, cryptography-isolation, persistence, pipeline-order and health-tag rules in `00.Governance/CLAUDE.md`.
+- Plus the topology, cryptography-isolation, persistence, pipeline-order and health-tag rules in `tools/Governance/CLAUDE.md`.
 
 **What a consuming service references** (enforced for `samples/OrderApi` by its `ArchitectureTests`): **Domain** → `SharedKernel.Domain`; **Application** → `SharedKernel.Application` (+ `Idempotency.Abstractions`/`Caching.Abstractions` when it uses those markers); **Infrastructure** → adapters; **Api/Worker** → Host packages plus its own Application and Infrastructure projects.
 
@@ -96,7 +112,7 @@ A new edge is a csproj declaration reviewed like any API change; sibling role pa
 
 ### Logging (enforced by `00.Governance`)
 - Only the `[LoggerMessage]` source-generated partial-method pattern. No `ILogger.LogXxx(...)` calls, no `LoggerMessage.Define<>()`.
-- Every `[LoggerMessage]` sets an explicit `EventId` from its domain's block: `{folder number} * 1000` to `+999` (registry: `LoggingEventIdRanges` in `SharedKernel.Primitives`). A multi-package domain splits its block into 100-wide sub-blocks, recorded in its `CLAUDE.md`.
+- Every `[LoggerMessage]` sets an explicit `EventId` from its domain's block: `{domain number} * 1000` to `+999` (registry: `LoggingEventIdRanges` in `SharedKernel.Primitives`). A multi-package domain splits its block into 100-wide sub-blocks, recorded in its `CLAUDE.md`.
 - Placeholders are PascalCase named properties (`{RequestName}`), never positional or interpolated.
 - Never pass CorrelationId, TraceId/SpanId or TenantId as placeholders — they flow ambiently from the request context through OpenTelemetry.
 - Structured payloads that may carry sensitive fields expose their own loggable fields (`ILoggableRequest<TResponse>`); never `{@Object}` destructuring or reflection walks. Personal data is marked with `SharedKernel.DataPrivacy` attributes and redacted.
@@ -125,12 +141,12 @@ SharedKernel.{Capability}.Tests           test project, nested in the project it
 One version for every package, derived from a git tag by MinVer — no `<Version>` in any `.csproj` (CI fails on one). A `vX.Y.Z` tag on `main` runs every gate, packs all packages and publishes them together to GitHub Packages. Consumers pin one `SharedKernelVersion`. Details: [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ### Test projects
-- Nested inside the project folder they test (e.g. `06.Persistence/SharedKernel.Persistence.EfCore/SharedKernel.Persistence.EfCore.Tests/`).
+- Nested inside the project folder they test (e.g. `src/Infrastructure/Persistence/SharedKernel.Persistence.EfCore/SharedKernel.Persistence.EfCore.Tests/`).
 - Reference `SharedKernel.Testing`, the capability's `SharedKernel.{Capability}.Testing`, and `SharedKernel.Testing.Internal` for Testcontainers fixtures.
 - `classlib`, `net10.0`, in exactly one lane: `Platform.SharedKernel.Unit.slnf` (no Docker) or `Platform.SharedKernel.Integration.slnf` (Testcontainers).
 
 ### Solution
-- `Platform.SharedKernel.slnx`; each numbered folder is a solution folder of the same name. `eng/verify-solution-filters.sh` keeps every test project in exactly one lane filter.
+- `Platform.SharedKernel.slnx`; each capability folder (for example `src/Infrastructure/Caching`) is a solution folder of the same path. `eng/verify-solution-filters.sh` keeps every test project in exactly one lane filter.
 - `net10.0` everywhere; Central Package Management in `Directory.Packages.props`; build-wide settings in `Directory.Build.props`/`.targets`, `global.json`, `NuGet.Config` (see [`eng/README.md`](eng/README.md)).
 - A new project goes into the `.slnx`, the right `.slnf` and, if packable, `Directory.Packages.props`; then run `dotnet run eng/generate-package-index.cs` (CI fails on stale generated views). Per-tier IDE views: `eng/solution-filters/Platform.SharedKernel.{Tier}.slnf`.
 

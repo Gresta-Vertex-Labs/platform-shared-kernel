@@ -1,0 +1,29 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <SharedKernelTier>Adapter</SharedKernelTier>
+    <SharedKernelAllowedAdapterReferences>SharedKernel.Persistence.EfCore</SharedKernelAllowedAdapterReferences>
+    <Description>Atomic, tenant-scoped, PostgreSQL-backed implementation of SharedKernel.Idempotency.Abstractions' IIdempotencyStore, registered keyed by purpose (AddEfCoreIdempotency(..., p => p.ForRequests().ForMessages())). Atomicity via INSERT ... ON CONFLICT DO UPDATE ... RETURNING on a unique (tenant scope, purpose, key) primary key, with a per-reservation token guarding confirm/release against a reclaimed row; fail-closed on store unavailability by default. Ships its own minimal IdempotencyDbContext, deliberately not SharedKernelDbContext.</Description>
+    <PackageTags>idempotency;efcore;postgresql;deduplication;shared-kernel</PackageTags>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <!--
+      18.Idempotency layering (root CLAUDE.md / src/Infrastructure/Idempotency/CLAUDE.md): SharedKernel.Idempotency.EfCore
+      may reference Foundation packages, SharedKernel.Idempotency.Abstractions and, among adapters,
+      SharedKernel.Persistence.EfCore only. Never the application pipeline, messaging or 02.Caching.
+    -->
+    <ProjectReference Include="..\..\..\Foundation\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+    <ProjectReference Include="..\..\Persistence\SharedKernel.Persistence.EfCore\SharedKernel.Persistence.EfCore.csproj" />
+    <ProjectReference Include="..\SharedKernel.Idempotency.Abstractions\SharedKernel.Idempotency.Abstractions.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- No direct PackageReference to EF Core/Npgsql: both flow transitively via
+         SharedKernel.Persistence.EfCore (S-07). -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Options" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="SharedKernel.Idempotency.EfCore.Tests" />
+  </ItemGroup>
+</Project>

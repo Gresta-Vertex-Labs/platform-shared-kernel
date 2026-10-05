@@ -1,0 +1,39 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <SharedKernelTier>Host</SharedKernelTier>
+    <!--
+      IMPORTANT: <IsAotCompatible>true</IsAotCompatible> must NEVER be added here.
+      HotChocolate v16 (14.x architecture) is NOT AOT-safe. Adding this flag is a hard violation.
+    -->
+    <!-- NuGet packaging metadata -->
+    <Description>HotChocolate server-side GraphQL conventions for Platform.SharedKernel: SharedKernelFilterConvention (snake_case), FilterBase&lt;T&gt;/SortBase&lt;T&gt; abstract wrappers, PagedResponseType&lt;T&gt;, SharedKernelErrorFilter (ProblemDetails shape), and AddSharedKernelGraphQL DI entry point. NOT AOT-safe (HotChocolate constraint).</Description>
+    <PackageTags>graphql;hotchocolate;filtering;sorting;paging;error-filter;snake-case;shared-kernel</PackageTags>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <!--
+      Host tier (P-570): moved from 11.Communication (SharedKernel.Communication.GraphQL) because a GraphQL
+      server is an inbound API boundary, the same concern as WebApi and Grpc, not outbound calling.
+      The GraphQL package only needs 01.Core and 04.Contracts (no 12.Security dependency).
+    -->
+    <ProjectReference Include="..\..\..\Foundation\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+    <ProjectReference Include="..\..\..\Model\Contracts\SharedKernel.Contracts\SharedKernel.Contracts.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!--
+      HotChocolate.Data 16.1.4: filtering, sorting, and pagination conventions.
+        Note: Architecture originally specified HotChocolate 14.x but 14.x is not available for net10.0.
+        16.1.4 is the latest stable compatible with net10.0 and carries the same AOT-unsafe constraint.
+      HotChocolate.AspNetCore 16.1.4: IRequestExecutorBuilder, IErrorFilter, schema wiring.
+        NOT AOT-safe — do not add <IsAotCompatible>true</IsAotCompatible> to this project.
+    -->
+    <PackageReference Include="HotChocolate.Data" />
+    <PackageReference Include="HotChocolate.AspNetCore" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Allow test project to access internal types (SharedKernelFilterConvention, SharedKernelErrorFilter) -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>SharedKernel.Presentation.GraphQL.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+</Project>

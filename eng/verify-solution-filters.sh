@@ -9,7 +9,7 @@
 #     so they run twice;
 #   - a production project in the solution is missing from the Unit lane;
 #   - a lane lists a project the solution does not contain;
-#   - a project sits in a solution folder other than the top-level folder it lives in on disk.
+#   - a solution folder is not a capability folder on disk, or holds a project that lives elsewhere.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -50,12 +50,18 @@ for lane in unit integration; do
   [ -s "$work/$lane-dup.txt" ] && report "Project(s) listed twice in the $lane lane:" "$work/$lane-dup.txt"
 done
 
-# Solution folder "/NN.Domain/" must match the first path segment of every project inside it.
-awk -F'"' '/<Folder Name=/ { folder = $2; gsub("/", "", folder) }
-           /<Project Path=/ { path = $2; gsub("\\\\", "/", path); split(path, part, "/");
-                              if (part[1] != folder) print path " is in solution folder /" folder "/" }' \
-  "$slnx" > "$work/misplaced.txt"
+# A solution folder is a capability folder on disk (e.g. "/src/Infrastructure/Caching/", the folder
+# holding that capability's CLAUDE.md), and every project inside it lives under that folder.
+awk -F'"' '/<Folder Name=/ { folder = $2; sub("^/", "", folder); sub("/$", "", folder); print "FOLDER " folder }
+           /<Project Path=/ { path = $2; gsub("\\\\", "/", path);
+                              if (index(path, folder "/") != 1) print "MISPLACED " path " is in solution folder /" folder "/" }' \
+  "$slnx" > "$work/folders.txt"
+grep '^MISPLACED ' "$work/folders.txt" | sed 's/^MISPLACED //' > "$work/misplaced.txt" || true
 [ -s "$work/misplaced.txt" ] && report "Project(s) in the wrong solution folder:" "$work/misplaced.txt"
+grep '^FOLDER ' "$work/folders.txt" | sed 's/^FOLDER //' | while read -r folder; do
+  [ -f "$folder/CLAUDE.md" ] || echo "/$folder/"
+done > "$work/not-capability.txt"
+[ -s "$work/not-capability.txt" ] && report "Solution folder(s) that are not a capability folder (no CLAUDE.md on disk):" "$work/not-capability.txt"
 
 if [ "$failed" -ne 0 ]; then
   exit 1
