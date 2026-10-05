@@ -122,14 +122,18 @@ jobs:
           path: release-packages
 
       # Same check packaging-verify ran, against the downloaded files and the expected list that
-      # run derived: the complete set, one version, equal to the tag.
+      # run derived: the complete set, one version, equal to the tag. The script exports SK_VERSION
+      # through $GITHUB_ENV, which reaches later steps only, so the comparison is a step of its own.
       - name: Re-verify the package set
         env:
           EXPECTED_PACKAGES_FILE: release-packages/expected-packages.txt
+        run: bash eng/verify-packages.sh release-packages "$GITHUB_REF_NAME"
+
+      - name: Downloaded version equals the verified version
+        env:
           VERIFIED_VERSION: ${{ needs.verify.outputs.version }}
         run: |
           set -euo pipefail
-          bash eng/verify-packages.sh release-packages "$GITHUB_REF_NAME"
           if [ "$SK_VERSION" != "$VERIFIED_VERSION" ]; then
             echo "::error::Downloaded packages are $SK_VERSION but verify packed $VERIFIED_VERSION."
             exit 1
