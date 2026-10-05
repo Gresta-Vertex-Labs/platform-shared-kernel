@@ -38,7 +38,10 @@ public sealed class DiagnosticsCoverageTests
     [Fact]
     public async Task SendAsync_ProducesMessageBusSendActivity_WithMessageTypeTag()
     {
-        var capturedActivities = new List<Activity>();
+        // ConcurrentBag throughout this class, never List: ActivityListener and MeterListener callbacks
+        // are process-wide, so parallel test classes call them concurrently. A List throws "Collection
+        // was modified", and an exception from ActivityStopped faults another test's consume pipeline.
+        var capturedActivities = new System.Collections.Concurrent.ConcurrentBag<Activity>();
         var activityStopped = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         using var listener = new ActivityListener
@@ -87,7 +90,7 @@ public sealed class DiagnosticsCoverageTests
     [Fact]
     public async Task EventPublisher_PublishAsync_RecordsPublishCounter_TaggedWithEventType()
     {
-        var measurements = new List<(string InstrumentName, long Value, KeyValuePair<string, object?>[] Tags)>();
+        var measurements = new System.Collections.Concurrent.ConcurrentBag<(string InstrumentName, long Value, KeyValuePair<string, object?>[] Tags)>();
 
         using var listener = new MeterListener();
         listener.InstrumentPublished = (instrument, l) =>
@@ -131,7 +134,7 @@ public sealed class DiagnosticsCoverageTests
     [Fact]
     public async Task MessageBus_PublishAsync_RecordsPublishCounter_TaggedWithMessageType()
     {
-        var measurements = new List<(string InstrumentName, long Value, KeyValuePair<string, object?>[] Tags)>();
+        var measurements = new System.Collections.Concurrent.ConcurrentBag<(string InstrumentName, long Value, KeyValuePair<string, object?>[] Tags)>();
 
         using var listener = new MeterListener();
         listener.InstrumentPublished = (instrument, l) =>
@@ -173,8 +176,8 @@ public sealed class DiagnosticsCoverageTests
     [Fact]
     public async Task ConsumerBase_Consume_RecordsConsumeCounterAndDuration_TaggedWithMessageType()
     {
-        var longMeasurements = new List<(string InstrumentName, long Value, KeyValuePair<string, object?>[] Tags)>();
-        var doubleMeasurements = new List<(string InstrumentName, double Value, KeyValuePair<string, object?>[] Tags)>();
+        var longMeasurements = new System.Collections.Concurrent.ConcurrentBag<(string InstrumentName, long Value, KeyValuePair<string, object?>[] Tags)>();
+        var doubleMeasurements = new System.Collections.Concurrent.ConcurrentBag<(string InstrumentName, double Value, KeyValuePair<string, object?>[] Tags)>();
 
         using var listener = new MeterListener();
         listener.InstrumentPublished = (instrument, l) =>
@@ -220,7 +223,7 @@ public sealed class DiagnosticsCoverageTests
     [Fact]
     public async Task ConsumerBase_Consume_RecordsRetryCounter_WhenRetryFilterRedeliversMessage()
     {
-        var measurements = new List<(string InstrumentName, long Value, KeyValuePair<string, object?>[] Tags)>();
+        var measurements = new System.Collections.Concurrent.ConcurrentBag<(string InstrumentName, long Value, KeyValuePair<string, object?>[] Tags)>();
 
         using var listener = new MeterListener();
         listener.InstrumentPublished = (instrument, l) =>
@@ -268,7 +271,7 @@ public sealed class DiagnosticsCoverageTests
     [Fact]
     public async Task FaultConsumerAdapter_Consume_RecordsFaultCounter_TaggedWithMessageType()
     {
-        var measurements = new List<(string InstrumentName, long Value, KeyValuePair<string, object?>[] Tags)>();
+        var measurements = new System.Collections.Concurrent.ConcurrentBag<(string InstrumentName, long Value, KeyValuePair<string, object?>[] Tags)>();
 
         using var listener = new MeterListener();
         listener.InstrumentPublished = (instrument, l) =>

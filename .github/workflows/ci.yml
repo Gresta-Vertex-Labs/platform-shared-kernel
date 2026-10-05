@@ -93,6 +93,8 @@ jobs:
       issues: write
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # No checkout, so gh cannot infer the repository from .git; name it explicitly.
+      GH_REPO: ${{ github.repository }}
       INTEGRATION_RESULT: ${{ needs.integration.result }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       TRACKING_TITLE: 'CI: Integration Test (Testcontainers) lane is failing'
