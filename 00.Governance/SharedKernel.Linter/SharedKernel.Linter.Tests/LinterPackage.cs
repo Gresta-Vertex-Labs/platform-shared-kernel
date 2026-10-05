@@ -86,8 +86,10 @@ internal static class LinterPackage
     // The test binary builds under artifacts/, outside the source tree, so the walk starts at this test
     // project's own folder (recorded at build time by the root Directory.Build.props).
     private static string WalkStart() =>
-        typeof(LinterPackage).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
-            .FirstOrDefault(attribute => attribute.Key == "SharedKernel.TestProjectDirectory")?.Value
+        typeof(LinterPackage)
+            .Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
+            .FirstOrDefault(attribute => attribute.Key == "SharedKernel.TestProjectDirectory")
+            ?.Value
         ?? AppContext.BaseDirectory;
 
     private static DirectoryInfo Locate()
