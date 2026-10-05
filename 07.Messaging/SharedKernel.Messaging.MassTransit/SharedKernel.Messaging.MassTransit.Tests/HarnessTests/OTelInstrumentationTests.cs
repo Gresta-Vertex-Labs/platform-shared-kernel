@@ -92,7 +92,7 @@ public sealed class OTelInstrumentationTests
     [Fact]
     public async Task PublishAsync_ProducesEventPublisherPublishActivity_WithEventTypeTag()
     {
-        var capturedActivities = new List<Activity>();
+        var capturedActivities = new System.Collections.Concurrent.ConcurrentBag<Activity>();
         var activityStopped = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         using var listener = new ActivityListener
@@ -139,7 +139,7 @@ public sealed class OTelInstrumentationTests
     [Fact]
     public async Task PublishAsync_WhenEnvelopeConstructionFails_StillDisposesActivity()
     {
-        var capturedActivities = new List<Activity>();
+        var capturedActivities = new System.Collections.Concurrent.ConcurrentBag<Activity>();
         var activityStopped = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         using var listener = new ActivityListener
