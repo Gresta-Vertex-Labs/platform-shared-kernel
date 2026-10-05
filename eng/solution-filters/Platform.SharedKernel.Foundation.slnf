@@ -1,0 +1,27 @@
+{
+  "solution": {
+    "path": "../../Platform.SharedKernel.slnx",
+    "projects": [
+      "01.Core/SharedKernel.Compression/SharedKernel.Compression.Tests/SharedKernel.Compression.Tests.csproj",
+      "01.Core/SharedKernel.Compression/SharedKernel.Compression.csproj",
+      "01.Core/SharedKernel.Configuration/SharedKernel.Configuration.Tests/SharedKernel.Configuration.Tests.csproj",
+      "01.Core/SharedKernel.Configuration/SharedKernel.Configuration.csproj",
+      "01.Core/SharedKernel.Core/SharedKernel.Core.Tests/SharedKernel.Core.Tests.csproj",
+      "01.Core/SharedKernel.Core/SharedKernel.Core.csproj",
+      "01.Core/SharedKernel.Cryptography/SharedKernel.Cryptography.Tests/SharedKernel.Cryptography.Tests.csproj",
+      "01.Core/SharedKernel.Cryptography/SharedKernel.Cryptography.csproj",
+      "01.Core/SharedKernel.DataPrivacy/SharedKernel.DataPrivacy.Tests/SharedKernel.DataPrivacy.Tests.csproj",
+      "01.Core/SharedKernel.DataPrivacy/SharedKernel.DataPrivacy.csproj",
+      "01.Core/SharedKernel.Execution/SharedKernel.Execution.Tests/SharedKernel.Execution.Tests.csproj",
+      "01.Core/SharedKernel.Execution/SharedKernel.Execution.csproj",
+      "01.Core/SharedKernel.FeatureManagement/SharedKernel.FeatureManagement.Tests/SharedKernel.FeatureManagement.Tests.csproj",
+      "01.Core/SharedKernel.FeatureManagement/SharedKernel.FeatureManagement.csproj",
+      "01.Core/SharedKernel.Localization/SharedKernel.Localization.Tests/SharedKernel.Localization.Tests.csproj",
+      "01.Core/SharedKernel.Localization/SharedKernel.Localization.csproj",
+      "01.Core/SharedKernel.Primitives/SharedKernel.Primitives.Tests/SharedKernel.Primitives.Tests.csproj",
+      "01.Core/SharedKernel.Primitives/SharedKernel.Primitives.csproj",
+      "01.Core/SharedKernel.Validation/SharedKernel.Validation.Tests/SharedKernel.Validation.Tests.csproj",
+      "01.Core/SharedKernel.Validation/SharedKernel.Validation.csproj"
+    ]
+  }
+}

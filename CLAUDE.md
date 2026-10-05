@@ -46,7 +46,7 @@ Other top-level locations:
 | --- | --- |
 | `samples/` | Seven reference services: `OrderApi` (the four-project shape with per-project architecture tests), `BillingApi` (persistence), `ShippingApi` (messaging over RabbitMQ), `DocumentsApi` (storage), `CatalogApi` (search), `CheckoutApi` → `InventoryApi` (11.Communication, REST + gRPC). `samples/README.md` is the "how to consume the kernel" guide. |
 | `eng/` | Build internals: `SharedKernelTiers.targets` (tier check), `PackageInventory.proj`, `verify-*.sh` scripts, test settings. See [`eng/README.md`](eng/README.md). |
-| `docs/` | `package-readme-standard.md` — the shape every package `README.md` follows. |
+| `docs/` | [`packages.md`](docs/packages.md) (generated: every package by tier and the service project that references it), [`dependency-graph.md`](docs/dependency-graph.md) (generated Mermaid graphs), `package-readme-standard.md` (the shape every package `README.md` follows). |
 | `.claude/` | Commands, agents and settings for Claude Code (see "Working in This Repo with Claude Code"). |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Contributor guide: build, test lanes, CI, release. |
 
@@ -132,7 +132,7 @@ One version for every package, derived from a git tag by MinVer — no `<Version
 ### Solution
 - `Platform.SharedKernel.slnx`; each numbered folder is a solution folder of the same name. `eng/verify-solution-filters.sh` keeps every test project in exactly one lane filter.
 - `net10.0` everywhere; Central Package Management in `Directory.Packages.props`; build-wide settings in `Directory.Build.props`/`.targets`, `global.json`, `NuGet.Config` (see [`eng/README.md`](eng/README.md)).
-- A new project goes into the `.slnx`, the right `.slnf` and, if packable, `Directory.Packages.props`.
+- A new project goes into the `.slnx`, the right `.slnf` and, if packable, `Directory.Packages.props`; then run `dotnet run eng/generate-package-index.cs` (CI fails on stale generated views). Per-tier IDE views: `eng/solution-filters/Platform.SharedKernel.{Tier}.slnf`.
 
 ---
 
