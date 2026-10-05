@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Xml.Linq;
 using SharedKernel.ServiceDefaults.Extensions;
 
@@ -160,9 +161,16 @@ public sealed class CompositionBaseIsolationTests
             .ToList();
     }
 
+    // The test binary builds under artifacts/, outside the source tree, so the walk starts at this test
+    // project's own folder (recorded at build time by the root Directory.Build.props).
+    private static string WalkStart() =>
+        typeof(CompositionBaseIsolationTests).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
+            .FirstOrDefault(attribute => attribute.Key == "SharedKernel.TestProjectDirectory")?.Value
+        ?? AppContext.BaseDirectory;
+
     private static string FindProjectFile()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        var directory = new DirectoryInfo(WalkStart());
 
         while (directory is not null)
         {
@@ -176,7 +184,7 @@ public sealed class CompositionBaseIsolationTests
         }
 
         throw new FileNotFoundException(
-            $"Walked up from '{AppContext.BaseDirectory}' without finding '{ProjectFileName}'. This test reads "
+            $"Walked up from '{WalkStart()}' without finding '{ProjectFileName}'. This test reads "
             + "the package's own project file and cannot run without it.");
     }
 }

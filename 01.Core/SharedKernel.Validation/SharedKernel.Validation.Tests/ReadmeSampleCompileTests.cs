@@ -195,7 +195,14 @@ public sealed class ReadmeCoverageTests
 {
     private static string Readme()
     {
-        for (DirectoryInfo? dir = new(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
+        // The test binary builds under artifacts/, outside the source tree, so the walk starts at this
+        // test project's own folder (recorded at build time by the root Directory.Build.props).
+        string start = System.Reflection.CustomAttributeExtensions
+            .GetCustomAttributes<System.Reflection.AssemblyMetadataAttribute>(typeof(ReadmeCoverageTests).Assembly)
+            .FirstOrDefault(attribute => attribute.Key == "SharedKernel.TestProjectDirectory")?.Value
+            ?? AppContext.BaseDirectory;
+
+        for (DirectoryInfo? dir = new(start); dir is not null; dir = dir.Parent)
         {
             string candidate = Path.Combine(dir.FullName, "README.md");
             if (File.Exists(candidate) && File.Exists(Path.Combine(dir.FullName, "SharedKernel.Validation.csproj")))
@@ -204,7 +211,7 @@ public sealed class ReadmeCoverageTests
             }
         }
 
-        throw new InvalidOperationException("README.md not found above the test output directory.");
+        throw new InvalidOperationException($"README.md not found above '{start}'.");
     }
 
     private static string[] CodesInSection(string readme, string heading, string nextHeading)

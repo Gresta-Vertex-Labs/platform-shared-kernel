@@ -27,7 +27,7 @@ Delivery plumbing to destinations the platform does **not** control. Two familie
 | A webhook dispatch, signing, verification, SSRF, retry or encryption change | `SharedKernel.Integration.Webhooks` |
 | A second webhook **mechanism** (Event Grid, SNS, a queue to a partner) | the recorded split trigger: `SharedKernel.Integration.Webhooks.Abstractions` + `.{Provider}` siblings — a new-package decision for arch-lead's root `CLAUDE.md`; check MAX_PATH |
 | A provider-neutral notification contract change | `Notifications.Abstractions` (Abstractions tier: `Primitives`, `Configuration`, `Storage.Abstractions` only; zero I/O) — obliges both providers and `16.Testing` |
-| A new email/SMS provider | a new sibling `SharedKernel.Integration.Notifications.{Channel}.{Provider}` (check MAX_PATH — the notification test projects already need redirected output paths) |
+| A new email/SMS provider | a new sibling `SharedKernel.Integration.Notifications.{Channel}.{Provider}` (check MAX_PATH — the notification projects already have the longest paths in the repo) |
 | A new channel (push, chat) | a new `NotificationChannel` value + provider; `Push` was declined by decision — re-opening it needs arch-lead |
 | Subscription storage, delivery ledger, sender identity | the consuming service, through the seams here (`IWebhookSubscriptionStore`, observers, `INotificationSenderIdentityResolver`) |
 | Receiving and verifying inbound webhooks | a `14.Presentation` endpoint calling `WebhookSignatureVerifier` |

@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Xml.Linq;
 
 namespace SharedKernel.Linter.Tests;
@@ -82,9 +83,18 @@ internal static class LinterPackage
         return XDocument.Load(file.FullName, LoadOptions.PreserveWhitespace);
     }
 
+    // The test binary builds under artifacts/, outside the source tree, so the walk starts at this test
+    // project's own folder (recorded at build time by the root Directory.Build.props).
+    private static string WalkStart() =>
+        typeof(LinterPackage)
+            .Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
+            .FirstOrDefault(attribute => attribute.Key == "SharedKernel.TestProjectDirectory")
+            ?.Value
+        ?? AppContext.BaseDirectory;
+
     private static DirectoryInfo Locate()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        var directory = new DirectoryInfo(WalkStart());
 
         while (directory is not null)
         {
@@ -97,7 +107,7 @@ internal static class LinterPackage
         }
 
         throw new DirectoryNotFoundException(
-            $"Walked up from '{AppContext.BaseDirectory}' without finding '{ProjectFileName}'. These tests "
+            $"Walked up from '{WalkStart()}' without finding '{ProjectFileName}'. These tests "
                 + "read the package's shipped files directly and cannot run without them."
         );
     }
