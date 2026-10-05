@@ -119,7 +119,7 @@ SharedKernel.{Capability}.Tests           test project, nested in the project it
 - More than one provider → split into `.Abstractions` + `.{Provider}`.
 - **Role split:** one technology serving several roles → `.{Provider}.Core` (connection, health, resilience) + `.{Provider}.{Role}` packages depending only on `.Core` and `.Abstractions` (e.g. `Caching.Redis.*`).
 - **Satellite:** an optional feature with a heavy dependency extends the core's builder from its own package, keeping the core's namespaces (e.g. `Messaging.MassTransit.RabbitMq`).
-- **MAX_PATH:** `…\{Name}\{Name}.Tests\obj\Release\net10.0\{Name}.Tests.dll` must stay within 245 characters when the repo is cloned at a short root (e.g. `C:\Github\platform-shared-kernel`). Check every new or renamed package before scaffolding.
+- **MAX_PATH:** every tracked path must stay within 250 characters when the repo is cloned at `C:\Github\platform-shared-kernel\` (`eng/verify-path-lengths.sh`, run by CI). Build output does not count: it goes to `artifacts/{bin,obj}/{project}/`, so its length depends on the project name only. Check every new or renamed package before scaffolding.
 
 ### Versioning and release
 One version for every package, derived from a git tag by MinVer — no `<Version>` in any `.csproj` (CI fails on one). A `vX.Y.Z` tag on `main` runs every gate, packs all packages and publishes them together to GitHub Packages. Consumers pin one `SharedKernelVersion`. Details: [`CONTRIBUTING.md`](CONTRIBUTING.md).

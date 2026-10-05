@@ -201,9 +201,10 @@ visible diff in review. Public members need XML documentation comments.
 
    A capability with more than one provider splits into `.Abstractions` + `.{Provider}`.
 
-2. **Check the path length.** The test assembly path
-   `…\{Name}\{Name}.Tests\obj\Release\net10.0\{Name}.Tests.dll` must stay within 245 characters
-   when the repository is cloned at `C:\Github\platform-shared-kernel` (Windows MAX_PATH).
+2. **Check the path length.** Every file of the new project, its test project included, must stay
+   within 250 characters when the repository is cloned at `C:\Github\platform-shared-kernel\`
+   (Windows MAX_PATH). `bash eng/verify-path-lengths.sh` checks it, and CI runs it. Build output does
+   not count: it goes to `artifacts/`.
 
 3. **Create the project** in its capability folder. The `.csproj` declares:
    - `<SharedKernelTier>` (and `<SharedKernelAllowedAdapterReferences>` if it is an adapter built on

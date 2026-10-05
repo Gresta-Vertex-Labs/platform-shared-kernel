@@ -48,7 +48,7 @@ History is not kept in the repository beyond the one-line entries on the boards;
 
 **Packages and projects**
 - Naming: `SharedKernel.{Capability}[.Abstractions|.{Provider}|.{Provider}.Core|.{Provider}.{Role}]`; fakes in `16.Testing` as `SharedKernel.{Capability}.Testing`; tests nested as `{Project}/{Project}.Tests/`.
-- **MAX_PATH:** before scaffolding or renaming a package, check that `{clone root}\{NN}.{Folder}\{Name}\{Name}.Tests\obj\Release\net10.0\{Name}.Tests.dll` stays within 245 characters for a 32-character clone root. Shorten the name if it does not.
+- **MAX_PATH:** before scaffolding or renaming a package, check that every file of it, its `.Tests` project included, stays within 250 characters at the clone root `C:Githubplatform-shared-kernel` (`bash eng/verify-path-lengths.sh`, also run by CI). Shorten the name if it does not. Build output goes to `artifacts/` and does not count.
 - A new project goes into `Platform.SharedKernel.slnx` (solution folder = its numbered folder), `Platform.SharedKernel.Unit.slnf` (every production project), its test project into exactly one lane filter, and — if packable — `Directory.Packages.props`. The `.csproj` carries `<SharedKernelTier>`, `<Description>`, `<PackageTags>`, a `README.md`, no `<Version>`, and `PackageReference`s without versions (Central Package Management).
 - A new or changed public member goes into that project's `PublicAPI.Unshipped.txt`.
 

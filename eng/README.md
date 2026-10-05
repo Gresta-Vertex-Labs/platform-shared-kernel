@@ -12,6 +12,7 @@ contribution (commands, conventions, adding a package) see [`CONTRIBUTING.md`](.
 | [`PackageInventory.proj`](PackageInventory.proj) | Writes the release train's expected package set: one `PackageId` per line for every `.csproj` on disk that packs (default output `artifacts/expected-packages.txt`). Asks each project through the `GetSharedKernelPackageIdentity` target, so the answer is MSBuild's evaluated `IsPackable`/`PackageId`, not a naming guess. Every `.csproj` is asked, not only those in the `.slnx`, so a packable project that fell out of the solution still fails the release. Run with `dotnet msbuild eng/PackageInventory.proj -nologo -v:q -p:InventoryFile=<path>`. |
 | [`verify-packages.sh`](verify-packages.sh) | `eng/verify-packages.sh <package-dir> [expected-version]`. Fails when a package is missing or unexpected, when the packages carry more than one version or the `0.0.0` MinVer floor, when the version differs from the expected one (a `v`-prefixed tag is accepted), or when the `SharedKernel.*` `<PackageVersion>` entries in `Directory.Packages.props` differ from the packable set. On success prints the version and, under GitHub Actions, exports `SK_VERSION`. `EXPECTED_PACKAGES_FILE` reuses an earlier inventory; `WRITE_EXPECTED_TO` saves this one. |
 | [`verify-solution-filters.sh`](verify-solution-filters.sh) | Build-free check of `Platform.SharedKernel.slnx` against the two lanes: every test project (`*.Tests`, `*SelfTests`) in exactly one lane, every production project in the Unit lane, no lane entry missing from the solution, and every project in the solution folder named after its top-level directory. |
+| [`verify-path-lengths.sh`](verify-path-lengths.sh) | Build-free check that every tracked path stays within 250 characters when the repository is cloned at `C:\Github\platform-shared-kernel\`, so a Windows checkout and build stay under the 260-character `MAX_PATH`. Build output is not measured: it lives in `artifacts/`. Prints the longest path on success. |
 | [`verify-tier-errors.sh`](verify-tier-errors.sh) | Proves the tier check still fails the build. Generates two throw-away probe projects under `eng/.tier-probe` (deleted on exit): a Model project referencing an Abstractions project, which must fail with `SKTIER001`, and an Adapter taking `Microsoft.AspNetCore.App`, which must fail with `SKTIER006`. Catches a downgrade to a warning or a target that silently stopped running. |
 | [`testsettings/integration.runsettings`](testsettings/integration.runsettings) | VSTest settings for the Integration lane only: `MaxCpuCount=2` caps concurrent test-project hosts so many Testcontainers suites don't start containers at once, and `TestSessionTimeout` is 25 minutes. The Unit lane needs no settings file. |
 
@@ -28,6 +29,11 @@ Pins SDK `10.0.300` with `rollForward: latestFeature` and `allowPrerelease: fals
 
 ### `Directory.Build.props` (evaluated before the project body)
 
+- **Build output:** `UseArtifactsOutput` sends every project's `bin` and `obj` to
+  `artifacts/{bin,obj}/{project}/{pivot}/` (for example `artifacts/bin/SharedKernel.Primitives/release/`).
+  Output path length then depends on the project name only, never on folder depth. The nine
+  `consumer-verify` harnesses share a project name, so their `ArtifactsProjectName` is suffixed with
+  their parent folder.
 - **Identity:** `IsTestProject` is `true` for a project whose name ends in `.Tests`.
 - **Language:** `net10.0`, `ImplicitUsings`, `Nullable`, `LangVersion=latest` for every project.
   `TreatWarningsAsErrors` is deliberately per-project, not central.

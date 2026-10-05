@@ -12,6 +12,22 @@
     eng/README.md "Root build files".
   -->
 
+  <!--
+    Build output lives outside the source tree: artifacts/{bin,obj}/{project}/{pivot}/. The length of
+    an output path then depends on the project name only, never on how deep the project sits in the
+    folder tree, so moving or nesting folders cannot push a build over Windows' 260-character
+    MAX_PATH. This replaces the per-project %TEMP% redirects the deepest 15.Integration test
+    projects used to need. PackageOutputPath (nupkgs/) is set explicitly below and is unaffected.
+
+    ArtifactsProjectName must be unique per project. Nine harnesses share the project name
+    "consumer-verify", so each one is suffixed with the name of the folder that contains it.
+  -->
+  <PropertyGroup>
+    <UseArtifactsOutput>true</UseArtifactsOutput>
+    <ArtifactsPath>$(MSBuildThisFileDirectory)artifacts</ArtifactsPath>
+    <ArtifactsProjectName Condition="'$(MSBuildProjectName)' == 'consumer-verify'">consumer-verify.$([System.IO.Path]::GetFileName($([System.IO.Path]::GetDirectoryName($(MSBuildProjectDirectory)))))</ArtifactsProjectName>
+  </PropertyGroup>
+
   <PropertyGroup>
     <!--
       Computed identity. Nested *.Tests projects (e.g. 08.Storage/SharedKernel.Storage.Abstractions/
@@ -26,6 +42,20 @@
     <IsTestProject Condition="$(MSBuildProjectName.EndsWith('.Tests'))">true</IsTestProject>
     <IsTestProject Condition="'$(IsTestProject)' == ''">false</IsTestProject>
   </PropertyGroup>
+
+  <!--
+    A test that reads its package's own files (csproj, README, shipped config) needs the source folder,
+    and with artifacts output (above) the test binary no longer sits inside it. Every test assembly
+    records its project directory as AssemblyMetadata("SharedKernel.TestProjectDirectory"); tests walk
+    up from there instead of from AppContext.BaseDirectory. The path is never packed: test projects
+    are not packable.
+  -->
+  <ItemGroup Condition="'$(IsTestProject)' == 'true'">
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>SharedKernel.TestProjectDirectory</_Parameter1>
+      <_Parameter2>$(MSBuildProjectDirectory)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
 
   <!-- Language / compilation — every project. -->
   <PropertyGroup>

@@ -133,6 +133,10 @@ jobs:
       - name: Check solution filters and folders
         run: bash eng/verify-solution-filters.sh
 
+      # Build output lives in artifacts/, so only source paths can still hit Windows' MAX_PATH.
+      - name: Check path lengths
+        run: bash eng/verify-path-lengths.sh
+
       # MinVer overwrites $(Version) unconditionally, so a hand-written <Version> is dead XML that
       # disagrees with the packed artifact. Versions come from the v* tag only.
       - name: Assert no project declares its own version
