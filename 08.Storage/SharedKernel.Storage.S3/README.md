@@ -210,7 +210,7 @@ A store never sees keys outside its prefix, and copies between the two run serve
 ```yaml
 # docker-compose.yml
 minio:
-  image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+  image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
   command: server /data
   ports: ["9000:9000"]
 ```

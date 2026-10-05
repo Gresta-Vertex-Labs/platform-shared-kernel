@@ -17,7 +17,7 @@ public sealed class MinioFixture : IAsyncLifetime
 {
     public const string Bucket = "obs-bucket";
 
-    private readonly MinioContainer _container = new MinioBuilder("quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z").Build();
+    private readonly MinioContainer _container = new MinioBuilder("pgsty/minio:RELEASE.2026-08-04T00-00-00Z").Build();
 
     public string ServiceUrl => _container.GetConnectionString();
 

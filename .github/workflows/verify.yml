@@ -323,15 +323,19 @@ jobs:
 
       # The complete set (derived by asking every csproj whether it packs), one version, the tag's
       # version when one is expected, and Directory.Packages.props pinning exactly that set.
-      # Exports SK_VERSION for the steps below, so they consume the bits this run packed.
+      # Exports SK_VERSION for the steps below, so they consume the bits this run packed. It is
+      # exported through $GITHUB_ENV, which GitHub applies to LATER steps only, so the job output is
+      # recorded in a step of its own rather than read here.
       - name: Verify the package set
-        id: package-set
         env:
           EXPECTED_VERSION: ${{ inputs.expected-version }}
           WRITE_EXPECTED_TO: nupkgs/expected-packages.txt
+        run: bash eng/verify-packages.sh nupkgs "$EXPECTED_VERSION"
+
+      - name: Record the packed version
+        id: package-set
         run: |
           set -euo pipefail
-          bash eng/verify-packages.sh nupkgs "$EXPECTED_VERSION"
           echo "version=$SK_VERSION" >> "$GITHUB_OUTPUT"
 
       # Every csproj outside the .slnx consumes SharedKernel through PackageReference: the
