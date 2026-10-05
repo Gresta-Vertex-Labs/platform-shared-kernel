@@ -70,7 +70,9 @@ public sealed class BatchConsumerTests
                     configurator.Options<global::MassTransit.BatchOptions>(o =>
                     {
                         o.MessageLimit = 10;           // won't be reached
-                        o.TimeLimit = TimeSpan.FromMilliseconds(100);
+                        // Wide enough that both messages land in one window on a loaded 2-core CI
+                        // runner: at 100 ms the gap between two publishes split them into two batches.
+                        o.TimeLimit = TimeSpan.FromSeconds(1);
                         o.ConcurrencyLimit = 1;
                     }));
             })
@@ -80,12 +82,14 @@ public sealed class BatchConsumerTests
         await harness.Start();
 
         // Publish only 2 messages — won't reach MessageLimit=10.
-        await harness.Bus.Publish(new BatchTimeLimitMessage("a"));
-        await harness.Bus.Publish(new BatchTimeLimitMessage("b"));
+        await Task.WhenAll(
+            harness.Bus.Publish(new BatchTimeLimitMessage("a")),
+            harness.Bus.Publish(new BatchTimeLimitMessage("b")));
 
-        // Wait for the partial batch to be delivered after the TimeLimit elapses.
-        // InactivityTask waits until all bus activity completes.
-        await harness.InactivityTask;
+        // Wait for the partial batch itself rather than for harness inactivity, then one more window
+        // so that a second, split-off batch would still be counted.
+        await BatchTimeLimitConsumer.FirstBatch.Task.WaitAsync(TimeSpan.FromSeconds(30));
+        await Task.Delay(TimeSpan.FromSeconds(1.5));
 
         BatchTimeLimitConsumer.InvocationCount.Should().Be(1,
             "partial batch must be delivered as one ConsumeAsync call after TimeLimit elapses");
@@ -197,8 +201,14 @@ internal sealed class BatchTimeLimitConsumer : BatchConsumerBase<BatchTimeLimitM
 {
     public static int InvocationCount;
     public static int LastBatchSize;
+    public static TaskCompletionSource FirstBatch = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-    public static void Reset() { InvocationCount = 0; LastBatchSize = 0; }
+    public static void Reset()
+    {
+        InvocationCount = 0;
+        LastBatchSize = 0;
+        FirstBatch = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
 
     public BatchTimeLimitConsumer() : base(NullLogger.Instance) { }
 
@@ -206,6 +216,7 @@ internal sealed class BatchTimeLimitConsumer : BatchConsumerBase<BatchTimeLimitM
     {
         System.Threading.Interlocked.Increment(ref InvocationCount);
         System.Threading.Volatile.Write(ref LastBatchSize, messages.Count);
+        FirstBatch.TrySetResult();
         return Task.CompletedTask;
     }
 }
