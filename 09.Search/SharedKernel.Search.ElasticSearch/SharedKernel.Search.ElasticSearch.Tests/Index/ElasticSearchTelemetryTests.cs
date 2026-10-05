@@ -66,7 +66,7 @@ public sealed class ElasticSearchTelemetryTests
     public async Task SearchAsync_EmitsAClientSpanTaggedWithIndexOperationAndProvider()
     {
         const string indexName = TelemetryIndexName + "-span";
-        var activities = new List<Activity>();
+        var activities = new System.Collections.Concurrent.ConcurrentQueue<Activity>();
         using var listener = new ActivityListener
         {
             ShouldListenTo = source => source.Name == SearchWellKnown.ActivitySourceName,
@@ -77,7 +77,7 @@ public sealed class ElasticSearchTelemetryTests
             // transport instrumentation runs in other test classes executing in parallel. Without both,
             // this test passes alone and fails in a full run.
             SampleUsingParentId = (ref ActivityCreationOptions<string> _) => ActivitySamplingResult.AllDataAndRecorded,
-            ActivityStopped = activities.Add,
+            ActivityStopped = activities.Enqueue,
         };
         ActivitySource.AddActivityListener(listener);
         Activity.Current = null;

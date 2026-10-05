@@ -168,7 +168,7 @@ public sealed class CrossTenantScopeTests
     [Fact]
     public void Enter_CalledTwice_RecordsTwoEntriesTaggedWithActorKind()
     {
-        var recorded = new List<(long Value, string? ActorKind)>();
+        var recorded = new System.Collections.Concurrent.ConcurrentQueue<(long Value, string? ActorKind)>();
         using var listener = CreateListener(recorded);
 
         var scope = NewScope("meter-actor-unique");
@@ -205,7 +205,7 @@ public sealed class CrossTenantScopeTests
         provider.GetRequiredService<IRequestContext>().Should().BeSameAs(existing);
     }
 
-    private static MeterListener CreateListener(List<(long Value, string? ActorKind)> into)
+    private static MeterListener CreateListener(System.Collections.Concurrent.ConcurrentQueue<(long Value, string? ActorKind)> into)
     {
         var listener = new MeterListener
         {
@@ -228,8 +228,9 @@ public sealed class CrossTenantScopeTests
                     actorKind = tag.Value as string;
             }
 
-            lock (into)
-                into.Add((measurement, actorKind));
+            // A concurrent queue, not a locked List: the meter is process-wide, so other tests add while
+            // the assertions enumerate without the lock.
+            into.Enqueue((measurement, actorKind));
         });
 
         listener.Start();

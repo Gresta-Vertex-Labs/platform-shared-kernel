@@ -128,12 +128,12 @@ public sealed class RegistrationTests(MinioFixture minio)
     {
         using ServiceProvider host = minio.CreateHost();
         IFileStorage files = host.GetRequiredKeyedService<IFileStorage>("files");
-        var activities = new List<Activity>();
+        var activities = new System.Collections.Concurrent.ConcurrentQueue<Activity>();
         using var listener = new ActivityListener
         {
             ShouldListenTo = source => source.Name == "SharedKernel.Storage",
             Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
-            ActivityStopped = activities.Add,
+            ActivityStopped = activities.Enqueue,
         };
         ActivitySource.AddActivityListener(listener);
         string key = TestData.UniqueKey("secret-name.txt");
