@@ -202,6 +202,45 @@ public sealed class RedisDistributedLockLossTests
         Assert.Equal(0, _time.ActiveTimers);
     }
 
+    public static TheoryData<Exception> UnwrappedClientFailures() => new()
+    {
+        // What StackExchange.Redis threw from ScriptEvaluateAsync when the Testcontainers Redis was frozen
+        // under a held lock (issue #22): its socket pipe completed under the in-flight call.
+        new InvalidOperationException("Reading is not allowed after reader was completed."),
+        new ObjectDisposedException("ConnectionMultiplexer"),
+        new IOException("Connection reset by peer"),
+        new System.Net.Sockets.SocketException(10054),
+    };
+
+    [Theory]
+    [MemberData(nameof(UnwrappedClientFailures))]
+    public async Task ExtensionFailingWithAnUnwrappedClientError_IsAStoreFailure_AndDisposeStillReleases(Exception failure)
+    {
+        // Not every transport failure arrives as a RedisException. It must still be an extension failure — never
+        // escape the keep-alive loop and fault DisposeAsync — and the release must still be attempted.
+        _extend = _ => Task.FromException<RedisResult>(failure);
+        var handle = StartLock(requestedAt: _time.GetTimestamp());
+        await WaitUntilAsync(() => _time.ActiveTimers == 2, "the keep-alive timer to start");
+
+        _time.Advance(KeepAliveInterval);
+        await WaitUntilAsync(() => _extendCalls == 1, "the first extension");
+        Assert.True(handle.IsHeld, "One failed extension is not a loss before the deadline.");
+
+        await handle.DisposeAsync();
+
+        Assert.Equal(1, _releaseCalls);
+        Assert.Equal(0, _time.ActiveTimers);
+    }
+
+    [Theory]
+    [MemberData(nameof(UnwrappedClientFailures))]
+    public void AnUnwrappedClientError_IsClassifiedAsAStoreFailure(Exception failure) =>
+        Assert.True(RedisLockScripts.IsStoreFailure(failure));
+
+    [Fact]
+    public void AnArgumentError_IsNotClassifiedAsAStoreFailure() =>
+        Assert.False(RedisLockScripts.IsStoreFailure(new ArgumentException("not a transport failure")));
+
     private RedisDistributedLock StartLock(long requestedAt)
     {
         var handle = new RedisDistributedLock(_database, "resource", "owner", 7, Expiry, requestedAt, _time, NullLogger.Instance);

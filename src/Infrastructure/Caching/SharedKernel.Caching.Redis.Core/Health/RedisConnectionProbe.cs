@@ -32,7 +32,9 @@ internal sealed class RedisConnectionProbe(IServiceProvider services) : IReadine
             var latency = await multiplexer.GetDatabase().PingAsync().WaitAsync(cancellationToken).ConfigureAwait(false);
             return ReadinessReport.Healthy(latency: latency);
         }
-        catch (Exception ex) when (ex is RedisException or TimeoutException)
+        // A dropped connection can also surface unwrapped: InvalidOperationException from a completed socket pipe or a
+        // disposed multiplexer, IOException from the transport. Each is "Redis did not answer", not a probe bug.
+        catch (Exception ex) when (ex is RedisException or TimeoutException or InvalidOperationException or IOException)
         {
             return ReadinessReport.Unhealthy(
                 $"Redis did not answer PING ({ex.GetType().Name}).");
