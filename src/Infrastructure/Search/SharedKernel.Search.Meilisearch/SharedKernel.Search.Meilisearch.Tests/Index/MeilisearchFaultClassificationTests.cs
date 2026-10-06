@@ -149,7 +149,7 @@ public sealed class MeilisearchFaultClassificationTests
     public async Task EnumerateAsync_AgainstAnUnreachableInstance_ThrowsSearchStreamExceptionCarryingUnreachable()
     {
         // EnumerateAsync is the domain's one documented exception to the Result-first rule, following
-        // the src/Infrastructure/Persistence/08.Storage streaming-read precedent — but the error it carries is now
+        // the 06.Persistence/08.Storage streaming-read precedent — but the error it carries is now
         // classified identically to every other member's.
         var index = CreateIndexAgainstUnreachableInstance();
 

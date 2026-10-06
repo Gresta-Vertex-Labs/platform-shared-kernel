@@ -14,6 +14,8 @@ what it cost, and a provider swap is a build error instead of a production surpr
 
 [Packages](#packages) · [Get started](#get-started) · [Guarantees](#guarantees) · [Testing](#testing)
 
+<sub>📂 <code>src/Infrastructure/AI</code> · domain <code>10.Intelligence</code> · <a href="../../../docs/packages.md">all packages by tier</a></sub>
+
 </div>
 
 ---

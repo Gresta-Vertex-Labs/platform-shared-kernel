@@ -16,7 +16,7 @@ enforces the architecture.
 [![CI](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/actions/workflows/ci.yml/badge.svg)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/actions/workflows/ci.yml)
 
 [What it is](#-what-it-is) · [Get started](#-get-started) · [Architecture](#-architecture) ·
-[Package tree](#-the-package-tree) · [Samples](#-sample-services) · [Status](#-status--roadmap) ·
+[Layout](#-repository-layout) · [Package tree](#-the-package-tree) · [Samples](#-sample-services) · [Status](#-status--roadmap) ·
 [Using it](#using-the-packages) · [Building](#-building-this-repository) · [Contributing](#-contributing)
 
 </div>
@@ -41,8 +41,9 @@ plumbing once, as small packages with narrow jobs, so a service only has to writ
 
 ### Principles
 
-- **Capability-oriented.** One folder per capability. A capability with several providers splits into
-  `.Abstractions` + `.{Provider}`, so application code never depends on a vendor.
+- **Capability-oriented.** One folder per capability, grouped into zones that mirror a service's projects
+  ([layout](#-repository-layout)). A capability with several providers splits into `.Abstractions` +
+  `.{Provider}`, so application code never depends on a vendor.
 - **Tier-enforced.** What a package may reference is checked by MSBuild before compile
   (`SKTIER001`–`SKTIER006`) and again by architecture tests. ASP.NET Core never leaks below the Host tier.
 - **Results, not exceptions.** Expected failures are `Result<T>` values with typed `Error`s, mapped once to
@@ -140,20 +141,54 @@ flowchart LR
 
 The full rules, including the purity rules that tiers cannot express, are in
 [`CONTRIBUTING.md`](CONTRIBUTING.md#tiers). Build internals are in [`eng/README.md`](eng/README.md).
+To see what depends on what, open [`docs/dependency-graph.md`](docs/dependency-graph.md) (generated, rendered by GitHub).
+
+---
+
+## 🗂️ Repository layout
+
+The source tree mirrors the projects of a consuming service. Each **zone** holds one folder per
+capability, and a capability keeps its contracts, its providers and its test doubles side by side.
+
+```text
+src/
+├── Foundation/        every project           Result, request context, configuration, crypto, validation
+├── Model/             the Domain project      Domain/ (DDD building blocks) · Contracts/ (wire contracts)
+├── Application/       the Application project CQRS contracts and the request pipeline
+├── Infrastructure/    the Infrastructure project
+│   ├── Caching/  Persistence/  Messaging/  Storage/  Search/  AI/
+│   └── Communication/  Integration/  Workflows/  Idempotency/  Scheduling/  Reporting/
+├── Hosting/           the Api / Worker project   Security/ · ServiceDefaults/ · Presentation/
+└── Testing/           test projects           SharedKernel.Testing + Testcontainers fixtures
+tools/Governance/      the build               analyzers, architecture tests, linter
+samples/               seven reference services built from the packed packages
+docs/  eng/            generated package views, build internals, CI scripts
+```
+
+A zone says where a capability mainly belongs; the **tier** of each package decides what may reference it.
+A capability's `.Abstractions` package, for example, is referenced from the Application project even though
+the capability lives under `Infrastructure/`. Inside a capability folder:
+
+```text
+src/Infrastructure/Caching/
+├── README.md, CLAUDE.md, state-map.md          overview, maintainer rules, work board
+├── SharedKernel.Caching.Abstractions/          the contracts (Abstractions tier)
+│   └── SharedKernel.Caching.Abstractions.Tests/   tests sit inside the project they test
+├── SharedKernel.Caching.FusionCache/  …        the providers (Adapter tier)
+└── SharedKernel.Caching.Testing/               the test doubles (Testing tier)
+```
 
 ---
 
 ## 🌳 The package tree
 
-All 104 packages. Every name links to the package's README, and every domain links to its overview.
-The badge after each name is the package's tier.
+All 104 packages, grouped by zone and capability folder. Every name links to the package's README, every
+folder to its overview, and the badge after each name is the package's tier. Each capability's `Testing` package
+(its test doubles) sits in the same folder. The same list, by tier, is generated in [`docs/packages.md`](docs/packages.md).
 
-- 📁 **[00.Governance](tools/Governance/README.md)** — the rules the rest of the repo is held to · *3 packages*
-  - [SharedKernel.Analyzers](tools/Governance/SharedKernel.Analyzers/README.md) `Tooling` — 45 Roslyn rules for the platform conventions, compiler-only
-  - [SharedKernel.ArchitectureTests](tools/Governance/SharedKernel.ArchitectureTests/README.md) `Tooling` — prebuilt NetArchTest rules for dependency purity, provider isolation and secure defaults
-  - [SharedKernel.Linter](tools/Governance/SharedKernel.Linter/README.md) `Tooling` — CSharpier format check for CI plus the shared `.editorconfig`
+### `src/Foundation/` — referenced from every project
 
-- 📁 **[01.Core](src/Foundation/README.md)** — primitives, the execution context and cross-cutting utilities · *13 packages*
+- 📁 **[Foundation](src/Foundation/README.md)** — primitives, the execution context and cross-cutting utilities · *15 packages*
   - [SharedKernel.Primitives](src/Foundation/SharedKernel.Primitives/README.md) `Foundation` — `Result<T>`, `Error`, `IClock`, `IIdGenerator`, SmartEnum, well-known headers, readiness probes
   - [SharedKernel.Execution](src/Foundation/SharedKernel.Execution/README.md) `Foundation` — `IRequestContext`, `TenantId`/`TenantScope`, `IUnitOfWork`: the caller on every channel
   - [SharedKernel.Core](src/Foundation/SharedKernel.Core/README.md) `Foundation` — railway extensions for `Result`, `ResultTry`, guard clauses, base exceptions
@@ -167,8 +202,29 @@ The badge after each name is the package's tier.
   - [SharedKernel.Localization](src/Foundation/SharedKernel.Localization/README.md) `Foundation` — translated error messages with typed arguments
   - [SharedKernel.Validation](src/Foundation/SharedKernel.Validation/README.md) `Foundation` — parsed value types: IBAN, BIC, card number, VAT, LEI, phone, national id…
   - [SharedKernel.Validation.FluentValidation](src/Foundation/SharedKernel.Validation.FluentValidation/README.md) `Adapter` — FluentValidation rules for those types
+  - [SharedKernel.Cryptography.Testing](src/Foundation/SharedKernel.Cryptography.Testing/README.md) `Testing` — recording crypto fakes with failure simulation
+  - [SharedKernel.FeatureManagement.Testing](src/Foundation/SharedKernel.FeatureManagement.Testing/README.md) `Testing` — a feature client with per-test flags
 
-- 📁 **[02.Caching](src/Infrastructure/Caching/README.md)** — hybrid caching, distributed locks and Redis · *7 packages*
+### `src/Model/` — the Domain project
+
+- 📁 **[Domain](src/Model/Domain/README.md)** — domain-driven design building blocks · *1 package*
+  - [SharedKernel.Domain](src/Model/Domain/SharedKernel.Domain/README.md) `Model` — entities, aggregates, value objects, strongly typed ids, specifications, `Money`
+
+- 📁 **[Contracts](src/Model/Contracts/README.md)** — cross-service wire contracts · *1 package*
+  - [SharedKernel.Contracts](src/Model/Contracts/SharedKernel.Contracts/README.md) `Model` — versioned integration events in a CloudEvents envelope, offset and cursor paging
+
+### `src/Application/` — the Application project
+
+- 📁 **[Application](src/Application/README.md)** — CQRS and the request pipeline · *5 packages*
+  - [SharedKernel.Application](src/Application/SharedKernel.Application/README.md) `Abstractions` — commands, queries, handlers, `ISender` and pipeline markers, owned by the kernel
+  - [SharedKernel.Application.Pipeline](src/Application/SharedKernel.Application.Pipeline/README.md) `Host` — one registration call: tracing, logging, metrics, authorization, validation, idempotency, auditing, transactions
+  - [SharedKernel.Application.Pipeline.Caching](src/Application/SharedKernel.Application.Pipeline.Caching/README.md) `Host` — query caching and post-commit eviction
+  - [SharedKernel.Application.Mediator.MediatR](src/Application/SharedKernel.Application.Mediator.MediatR/README.md) `Host` — MediatR 12.4.1 behind `ISender`, swappable
+  - [SharedKernel.Application.Testing](src/Application/SharedKernel.Application.Testing/README.md) `Testing` — runs a request through the real pipeline, no mediator needed
+
+### `src/Infrastructure/` — the Infrastructure project
+
+- 📁 **[Caching](src/Infrastructure/Caching/README.md)** — hybrid caching, distributed locks and Redis · *9 packages*
   - [SharedKernel.Caching.Abstractions](src/Infrastructure/Caching/SharedKernel.Caching.Abstractions/README.md) `Abstractions` — `ICacheService`, `ITenantCacheService`, `IDistributedLockService`
   - [SharedKernel.Caching.FusionCache](src/Infrastructure/Caching/SharedKernel.Caching.FusionCache/README.md) `Adapter` — the cache: stampede protection, fail-safe, optional encryption
   - [SharedKernel.Caching.Redis.Core](src/Infrastructure/Caching/SharedKernel.Caching.Redis.Core/README.md) `Adapter` — the one shared Redis connection, TLS and readiness
@@ -176,62 +232,90 @@ The badge after each name is the package's tier.
   - [SharedKernel.Caching.Redis.DistributedLocking](src/Infrastructure/Caching/SharedKernel.Caching.Redis.DistributedLocking/README.md) `Adapter` — locks, leases and fencing tokens
   - [SharedKernel.Caching.Redis.HashStore](src/Infrastructure/Caching/SharedKernel.Caching.Redis.HashStore/README.md) `Adapter` — typed Redis hash storage
   - [SharedKernel.Caching.Redis.PubSub](src/Infrastructure/Caching/SharedKernel.Caching.Redis.PubSub/README.md) `Adapter` — loss-tolerant Redis Pub/Sub signals
+  - [SharedKernel.Caching.Testing](src/Infrastructure/Caching/SharedKernel.Caching.Testing/README.md) `Testing` — fake cache, tenant cache and distributed locks
+  - [SharedKernel.Caching.Redis.Testing](src/Infrastructure/Caching/SharedKernel.Caching.Redis.Testing/README.md) `Testing` — fake Redis hashes and Pub/Sub
 
-- 📁 **[03.Domain](src/Model/Domain/README.md)** — domain-driven design building blocks · *1 package*
-  - [SharedKernel.Domain](src/Model/Domain/SharedKernel.Domain/README.md) `Model` — entities, aggregates, value objects, strongly typed ids, specifications, `Money`
-
-- 📁 **[04.Contracts](src/Model/Contracts/README.md)** — cross-service wire contracts · *1 package*
-  - [SharedKernel.Contracts](src/Model/Contracts/SharedKernel.Contracts/README.md) `Model` — versioned integration events in a CloudEvents envelope, offset and cursor paging
-
-- 📁 **[05.Application](src/Application/README.md)** — CQRS and the request pipeline · *4 packages*
-  - [SharedKernel.Application](src/Application/SharedKernel.Application/README.md) `Abstractions` — commands, queries, handlers, `ISender` and pipeline markers, owned by the kernel
-  - [SharedKernel.Application.Pipeline](src/Application/SharedKernel.Application.Pipeline/README.md) `Host` — one registration call: tracing, logging, metrics, authorization, validation, idempotency, auditing, transactions
-  - [SharedKernel.Application.Pipeline.Caching](src/Application/SharedKernel.Application.Pipeline.Caching/README.md) `Host` — query caching and post-commit eviction
-  - [SharedKernel.Application.Mediator.MediatR](src/Application/SharedKernel.Application.Mediator.MediatR/README.md) `Host` — MediatR 12.4.1 behind `ISender`, swappable
-
-- 📁 **[06.Persistence](src/Infrastructure/Persistence/README.md)** — PostgreSQL through EF Core and Dapper · *6 packages*
+- 📁 **[Persistence](src/Infrastructure/Persistence/README.md)** — PostgreSQL through EF Core and Dapper · *7 packages*
   - [SharedKernel.Persistence.Abstractions](src/Infrastructure/Persistence/SharedKernel.Persistence.Abstractions/README.md) `Abstractions` — ORM-free repositories, paging, bulk mutations, cross-tenant scope
   - [SharedKernel.Persistence.Npgsql](src/Infrastructure/Persistence/SharedKernel.Persistence.Npgsql/README.md) `Adapter` — data sources, TLS, database roles, SQLSTATE classification
   - [SharedKernel.Persistence.EfCore](src/Infrastructure/Persistence/SharedKernel.Persistence.EfCore/README.md) `Adapter` — EF Core 10 in one call: conventions, unit of work, tenant filter, row-level security
   - [SharedKernel.Persistence.Dapper](src/Infrastructure/Persistence/SharedKernel.Persistence.Dapper/README.md) `Adapter` — hand-written SQL that joins the same transaction and tenant
   - [SharedKernel.Persistence.EfCore.Auditing](src/Infrastructure/Persistence/SharedKernel.Persistence.EfCore.Auditing/README.md) `Adapter` — tamper-evident, HMAC-chained audit ledger
   - [SharedKernel.Persistence.EfCore.Encryption](src/Infrastructure/Persistence/SharedKernel.Persistence.EfCore.Encryption/README.md) `Adapter` — field-level encryption, blind indexes, key rotation, crypto-shredding
+  - [SharedKernel.Persistence.Testing](src/Infrastructure/Persistence/SharedKernel.Persistence.Testing/README.md) `Testing` — fake repositories and unit of work, PostgreSQL test servers
 
-- 📁 **[07.Messaging](src/Infrastructure/Messaging/README.md)** — integration events over MassTransit · *5 packages*
+- 📁 **[Messaging](src/Infrastructure/Messaging/README.md)** — integration events over MassTransit · *6 packages*
   - [SharedKernel.Messaging.Abstractions](src/Infrastructure/Messaging/SharedKernel.Messaging.Abstractions/README.md) `Abstractions` — `IMessageBus`, `IEventPublisher`, scheduling and version translation
   - [SharedKernel.Messaging.MassTransit](src/Infrastructure/Messaging/SharedKernel.Messaging.MassTransit/README.md) `Adapter` — one fluent chain: retry, circuit breaker, idempotency, ordering, payload encryption
   - [SharedKernel.Messaging.MassTransit.RabbitMq](src/Infrastructure/Messaging/SharedKernel.Messaging.MassTransit.RabbitMq/README.md) `Adapter` — RabbitMQ transport with delayed delivery
   - [SharedKernel.Messaging.MassTransit.AzureServiceBus](src/Infrastructure/Messaging/SharedKernel.Messaging.MassTransit.AzureServiceBus/README.md) `Adapter` — Azure Service Bus transport
   - [SharedKernel.Messaging.MassTransit.EfCore](src/Infrastructure/Messaging/SharedKernel.Messaging.MassTransit.EfCore/README.md) `Adapter` — transactional outbox on the service's own DbContext
+  - [SharedKernel.Messaging.Testing](src/Infrastructure/Messaging/SharedKernel.Messaging.Testing/README.md) `Testing` — in-memory bus and publisher with assertions
 
-- 📁 **[08.Storage](src/Infrastructure/Storage/README.md)** — object storage · *3 packages*
+- 📁 **[Storage](src/Infrastructure/Storage/README.md)** — object storage · *4 packages*
   - [SharedKernel.Storage.Abstractions](src/Infrastructure/Storage/SharedKernel.Storage.Abstractions/README.md) `Abstractions` — named and tenant stores, streaming, presigned URLs, conditional writes
   - [SharedKernel.Storage.S3](src/Infrastructure/Storage/SharedKernel.Storage.S3/README.md) `Adapter` — Amazon S3, MinIO and S3-compatible storage
   - [SharedKernel.Storage.Obs](src/Infrastructure/Storage/SharedKernel.Storage.Obs/README.md) `Adapter` — Huawei Cloud OBS
+  - [SharedKernel.Storage.Testing](src/Infrastructure/Storage/SharedKernel.Storage.Testing/README.md) `Testing` — in-memory named and tenant stores
 
-- 📁 **[09.Search](src/Infrastructure/Search/README.md)** — full-text search · *3 packages*
+- 📁 **[Search](src/Infrastructure/Search/README.md)** — full-text search · *4 packages*
   - [SharedKernel.Search.Abstractions](src/Infrastructure/Search/SharedKernel.Search.Abstractions/README.md) `Abstractions` — `ISearchIndex<T>`, a provider-neutral filter AST, index provisioning
   - [SharedKernel.Search.Meilisearch](src/Infrastructure/Search/SharedKernel.Search.Meilisearch/README.md) `Adapter` — Meilisearch: instant search, tenant search tokens
   - [SharedKernel.Search.ElasticSearch](src/Infrastructure/Search/SharedKernel.Search.ElasticSearch/README.md) `Adapter` — Elasticsearch: aggregations, cursor export, suggestions
+  - [SharedKernel.Search.Testing](src/Infrastructure/Search/SharedKernel.Search.Testing/README.md) `Testing` — an in-memory search index that evaluates the filter AST
 
-- 📁 **[10.Intelligence](src/Infrastructure/AI/README.md)** — embeddings, vectors and LLMs · *3 packages*
+- 📁 **[AI](src/Infrastructure/AI/README.md)** — embeddings, vectors and LLMs · *4 packages*
   - [SharedKernel.AI.Abstractions](src/Infrastructure/AI/SharedKernel.AI.Abstractions/README.md) `Abstractions` — embedding generation, tenant-scoped vector collections, orchestration
   - [SharedKernel.AI.Qdrant](src/Infrastructure/AI/SharedKernel.AI.Qdrant/README.md) `Adapter` — Qdrant vector database
   - [SharedKernel.AI.SemanticKernel](src/Infrastructure/AI/SharedKernel.AI.SemanticKernel/README.md) `Adapter` — LLM orchestration on Microsoft Semantic Kernel
+  - [SharedKernel.AI.Testing](src/Infrastructure/AI/SharedKernel.AI.Testing/README.md) `Testing` — deterministic embeddings and an in-memory vector store
 
-- 📁 **[11.Communication](src/Infrastructure/Communication/README.md)** — outbound service-to-service calls · *3 packages*
+- 📁 **[Communication](src/Infrastructure/Communication/README.md)** — outbound service-to-service calls · *4 packages*
   - [SharedKernel.Communication](src/Infrastructure/Communication/SharedKernel.Communication/README.md) `Adapter` — the shared base: per-client settings, service discovery, outbound auth, mutual TLS
   - [SharedKernel.Communication.Rest](src/Infrastructure/Communication/SharedKernel.Communication.Rest/README.md) `Adapter` — typed `HttpClient`s: safe retries, caller propagation, `Result<T>` instead of exceptions
   - [SharedKernel.Communication.Grpc](src/Infrastructure/Communication/SharedKernel.Communication.Grpc/README.md) `Adapter` — gRPC clients: deadline, retry policy, load balancing, rich status → `Result<T>`
+  - [SharedKernel.Communication.Testing](src/Infrastructure/Communication/SharedKernel.Communication.Testing/README.md) `Testing` — a stub HTTP handler for REST clients and gRPC call fakes
 
-- 📁 **[12.Security](src/Hosting/Security/README.md)** — authentication · *5 packages*
+- 📁 **[Integration](src/Infrastructure/Integration/README.md)** — delivery to destinations outside the platform · *5 packages*
+  - [SharedKernel.Integration.Webhooks](src/Infrastructure/Integration/SharedKernel.Integration.Webhooks/README.md) `Adapter` — signed, retried, SSRF-guarded webhooks with secret rotation
+  - [SharedKernel.Integration.Notifications.Abstractions](src/Infrastructure/Integration/SharedKernel.Integration.Notifications.Abstractions/README.md) `Abstractions` — `INotificationSender` for email and SMS
+  - [SharedKernel.Integration.Notifications.Email.SendGrid](src/Infrastructure/Integration/SharedKernel.Integration.Notifications.Email.SendGrid/README.md) `Adapter` — SendGrid email over REST
+  - [SharedKernel.Integration.Notifications.Sms.Twilio](src/Infrastructure/Integration/SharedKernel.Integration.Notifications.Sms.Twilio/README.md) `Adapter` — Twilio SMS over REST
+  - [SharedKernel.Integration.Testing](src/Infrastructure/Integration/SharedKernel.Integration.Testing/README.md) `Testing` — in-memory webhook dispatcher and notification sender
+
+- 📁 **[Workflows](src/Infrastructure/Workflows/README.md)** — durable execution · *2 packages*
+  - [SharedKernel.Workflows.Temporal](src/Infrastructure/Workflows/SharedKernel.Workflows.Temporal/README.md) `Adapter` — Temporal workflows and activities, tenant-scoped dispatch, payload encryption
+  - [SharedKernel.Workflows.Testing](src/Infrastructure/Workflows/SharedKernel.Workflows.Testing/README.md) `Testing` — in-memory workflow dispatcher
+
+- 📁 **[Idempotency](src/Infrastructure/Idempotency/README.md)** — duplicate-request and duplicate-message protection · *4 packages*
+  - [SharedKernel.Idempotency.Abstractions](src/Infrastructure/Idempotency/SharedKernel.Idempotency.Abstractions/README.md) `Abstractions` — one atomic reservation contract, `IIdempotencyStore`
+  - [SharedKernel.Idempotency.Redis](src/Infrastructure/Idempotency/SharedKernel.Idempotency.Redis/README.md) `Adapter` — Redis store with atomic Lua
+  - [SharedKernel.Idempotency.EfCore](src/Infrastructure/Idempotency/SharedKernel.Idempotency.EfCore/README.md) `Adapter` — PostgreSQL store with `INSERT … ON CONFLICT`
+  - [SharedKernel.Idempotency.Testing](src/Infrastructure/Idempotency/SharedKernel.Idempotency.Testing/README.md) `Testing` — an in-memory idempotency store
+
+- 📁 **[Scheduling](src/Infrastructure/Scheduling/README.md)** — background jobs · *2 packages*
+  - [SharedKernel.Scheduling](src/Infrastructure/Scheduling/SharedKernel.Scheduling/README.md) `Adapter` — cron, recurring and one-shot jobs that run once across replicas
+  - [SharedKernel.Scheduling.Testing](src/Infrastructure/Scheduling/SharedKernel.Scheduling.Testing/README.md) `Testing` — a recording job registry
+
+- 📁 **[Reporting](src/Infrastructure/Reporting/README.md)** — exports and documents · *6 packages*
+  - [SharedKernel.Reporting.Abstractions](src/Infrastructure/Reporting/SharedKernel.Reporting.Abstractions/README.md) `Abstractions` — streaming `IReportExporter<TRow>` and `IHtmlToPdfConverter`
+  - [SharedKernel.Reporting.Csv](src/Infrastructure/Reporting/SharedKernel.Reporting.Csv/README.md) `Adapter` — RFC 4180 CSV in constant memory, formula-injection guard
+  - [SharedKernel.Reporting.Spreadsheet](src/Infrastructure/Reporting/SharedKernel.Reporting.Spreadsheet/README.md) `Adapter` — streamed Excel (.xlsx) on SpreadCheetah
+  - [SharedKernel.Reporting.Pdf](src/Infrastructure/Reporting/SharedKernel.Reporting.Pdf/README.md) `Adapter` — tabular PDF on PDFsharp/MigraDoc
+  - [SharedKernel.Reporting.Gotenberg](src/Infrastructure/Reporting/SharedKernel.Reporting.Gotenberg/README.md) `Adapter` — HTML → PDF through a Gotenberg container
+  - [SharedKernel.Reporting.Testing](src/Infrastructure/Reporting/SharedKernel.Reporting.Testing/README.md) `Testing` — in-memory exporters and HTML-to-PDF converter
+
+### `src/Hosting/` — the Api / Worker project
+
+- 📁 **[Security](src/Hosting/Security/README.md)** — authentication · *6 packages*
   - [SharedKernel.Security.Abstractions](src/Hosting/Security/SharedKernel.Security.Abstractions/README.md) `Abstractions` — `IUserContext`: subject, tenant, roles, permissions, step-up signals
   - [SharedKernel.Security.Oidc](src/Hosting/Security/SharedKernel.Security.Oidc/README.md) `Host` — JWT bearer for any OIDC provider, DPoP, certificate-bound tokens, revocation
   - [SharedKernel.Security.ApiKey](src/Hosting/Security/SharedKernel.Security.ApiKey/README.md) `Host` — managed API keys for machine clients
   - [SharedKernel.Security.Mtls](src/Hosting/Security/SharedKernel.Security.Mtls/README.md) `Host` — client-certificate authentication, private CA trust
   - [SharedKernel.Security.Totp](src/Hosting/Security/SharedKernel.Security.Totp/README.md) `Host` — TOTP enrollment, step-up and recovery codes
+  - [SharedKernel.Security.Testing](src/Hosting/Security/SharedKernel.Security.Testing/README.md) `Testing` — fake user context, test certificates and DPoP proofs
 
-- 📁 **[13.ServiceDefaults](src/Hosting/ServiceDefaults/README.md)** — host composition · *7 packages*
+- 📁 **[ServiceDefaults](src/Hosting/ServiceDefaults/README.md)** — host composition · *8 packages*
   - [SharedKernel.ServiceDefaults](src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults/README.md) `Host` — OpenTelemetry, health endpoints, readiness, startup gate, rate limiting
   - [SharedKernel.ServiceDefaults.Security](src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Security/README.md) `Host` — the HTTP request context and correlation id middleware
   - [SharedKernel.ServiceDefaults.Persistence](src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Persistence/README.md) `Host` — database readiness checks
@@ -239,60 +323,29 @@ The badge after each name is the package's tier.
   - [SharedKernel.ServiceDefaults.Configuration.KeyVault](src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Configuration.KeyVault/README.md) `Host` — Azure Key Vault as a configuration source
   - [SharedKernel.ServiceDefaults.Localization](src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Localization/README.md) `Host` — request culture from user, tenant or `Accept-Language`
   - [SharedKernel.MultiTenancy](src/Hosting/ServiceDefaults/SharedKernel.MultiTenancy/README.md) `Host` — tenant resolution (claim → header → database) and the tenant catalog
+  - [SharedKernel.ServiceDefaults.Testing](src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Testing/README.md) `Testing` — in-memory tenant catalog and health-check assertions
 
-- 📁 **[14.Presentation](src/Hosting/Presentation/README.md)** — inbound APIs · *6 packages*
+- 📁 **[Presentation](src/Hosting/Presentation/README.md)** — inbound APIs · *7 packages*
   - [SharedKernel.Presentation.Core](src/Hosting/Presentation/SharedKernel.Presentation.Core/README.md) `Host` — authorization attributes and error presentation shared by HTTP and gRPC
   - [SharedKernel.Presentation.WebApi](src/Hosting/Presentation/SharedKernel.Presentation.WebApi/README.md) `Host` — minimal APIs: one ProblemDetails shape, typed results, endpoint modules, ETags, idempotency keys
   - [SharedKernel.Presentation.OpenApi](src/Hosting/Presentation/SharedKernel.Presentation.OpenApi/README.md) `Host` — API versioning, one OpenAPI document per version, Scalar
   - [SharedKernel.Presentation.Grpc](src/Hosting/Presentation/SharedKernel.Presentation.Grpc/README.md) `Host` — gRPC services with the same errors and authorization
   - [SharedKernel.Presentation.SignalR](src/Hosting/Presentation/SharedKernel.Presentation.SignalR/README.md) `Host` — hub error contract, request context and rate limiting
   - [SharedKernel.Presentation.GraphQL](src/Hosting/Presentation/SharedKernel.Presentation.GraphQL/README.md) `Host` — HotChocolate conventions
-
-- 📁 **[15.Integration](src/Infrastructure/Integration/README.md)** — delivery to destinations outside the platform · *4 packages*
-  - [SharedKernel.Integration.Webhooks](src/Infrastructure/Integration/SharedKernel.Integration.Webhooks/README.md) `Adapter` — signed, retried, SSRF-guarded webhooks with secret rotation
-  - [SharedKernel.Integration.Notifications.Abstractions](src/Infrastructure/Integration/SharedKernel.Integration.Notifications.Abstractions/README.md) `Abstractions` — `INotificationSender` for email and SMS
-  - [SharedKernel.Integration.Notifications.Email.SendGrid](src/Infrastructure/Integration/SharedKernel.Integration.Notifications.Email.SendGrid/README.md) `Adapter` — SendGrid email over REST
-  - [SharedKernel.Integration.Notifications.Sms.Twilio](src/Infrastructure/Integration/SharedKernel.Integration.Notifications.Sms.Twilio/README.md) `Adapter` — Twilio SMS over REST
-
-- 📁 **[16.Testing](src/Testing/README.md)** — test doubles for every capability · *20 packages*
-  - [SharedKernel.Testing](src/Testing/SharedKernel.Testing/README.md) `Testing` — `FakeClock`, in-memory logger, `TestRequestContext`, fakers, assertions
-  - [SharedKernel.AI.Testing](src/Infrastructure/AI/SharedKernel.AI.Testing/README.md) `Testing` — deterministic embeddings and an in-memory vector store
-  - [SharedKernel.Application.Testing](src/Application/SharedKernel.Application.Testing/README.md) `Testing` — runs a request through the real pipeline, no mediator needed
-  - [SharedKernel.Caching.Testing](src/Infrastructure/Caching/SharedKernel.Caching.Testing/README.md) `Testing` — fake cache, tenant cache and distributed locks
-  - [SharedKernel.Caching.Redis.Testing](src/Infrastructure/Caching/SharedKernel.Caching.Redis.Testing/README.md) `Testing` — fake Redis hashes and Pub/Sub
-  - [SharedKernel.Communication.Testing](src/Infrastructure/Communication/SharedKernel.Communication.Testing/README.md) `Testing` — a stub HTTP handler for REST clients and gRPC call fakes
-  - [SharedKernel.Cryptography.Testing](src/Foundation/SharedKernel.Cryptography.Testing/README.md) `Testing` — recording crypto fakes with failure simulation
-  - [SharedKernel.FeatureManagement.Testing](src/Foundation/SharedKernel.FeatureManagement.Testing/README.md) `Testing` — a feature client with per-test flags
-  - [SharedKernel.Idempotency.Testing](src/Infrastructure/Idempotency/SharedKernel.Idempotency.Testing/README.md) `Testing` — an in-memory idempotency store
-  - [SharedKernel.Integration.Testing](src/Infrastructure/Integration/SharedKernel.Integration.Testing/README.md) `Testing` — in-memory webhook dispatcher and notification sender
-  - [SharedKernel.Messaging.Testing](src/Infrastructure/Messaging/SharedKernel.Messaging.Testing/README.md) `Testing` — in-memory bus and publisher with assertions
-  - [SharedKernel.Persistence.Testing](src/Infrastructure/Persistence/SharedKernel.Persistence.Testing/README.md) `Testing` — fake repositories and unit of work, PostgreSQL test servers
   - [SharedKernel.Presentation.Testing](src/Hosting/Presentation/SharedKernel.Presentation.Testing/README.md) `Testing` — gRPC and GraphQL test helpers
-  - [SharedKernel.Reporting.Testing](src/Infrastructure/Reporting/SharedKernel.Reporting.Testing/README.md) `Testing` — in-memory exporters and HTML-to-PDF converter
-  - [SharedKernel.Scheduling.Testing](src/Infrastructure/Scheduling/SharedKernel.Scheduling.Testing/README.md) `Testing` — a recording job registry
-  - [SharedKernel.Search.Testing](src/Infrastructure/Search/SharedKernel.Search.Testing/README.md) `Testing` — an in-memory search index that evaluates the filter AST
-  - [SharedKernel.Security.Testing](src/Hosting/Security/SharedKernel.Security.Testing/README.md) `Testing` — fake user context, test certificates and DPoP proofs
-  - [SharedKernel.ServiceDefaults.Testing](src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Testing/README.md) `Testing` — in-memory tenant catalog and health-check assertions
-  - [SharedKernel.Storage.Testing](src/Infrastructure/Storage/SharedKernel.Storage.Testing/README.md) `Testing` — in-memory named and tenant stores
-  - [SharedKernel.Workflows.Testing](src/Infrastructure/Workflows/SharedKernel.Workflows.Testing/README.md) `Testing` — in-memory workflow dispatcher
 
-- 📁 **[17.Workflows](src/Infrastructure/Workflows/README.md)** — durable execution · *1 package*
-  - [SharedKernel.Workflows.Temporal](src/Infrastructure/Workflows/SharedKernel.Workflows.Temporal/README.md) `Adapter` — Temporal workflows and activities, tenant-scoped dispatch, payload encryption
+### `src/Testing/` — test projects
 
-- 📁 **[18.Idempotency](src/Infrastructure/Idempotency/README.md)** — duplicate-request and duplicate-message protection · *3 packages*
-  - [SharedKernel.Idempotency.Abstractions](src/Infrastructure/Idempotency/SharedKernel.Idempotency.Abstractions/README.md) `Abstractions` — one atomic reservation contract, `IIdempotencyStore`
-  - [SharedKernel.Idempotency.Redis](src/Infrastructure/Idempotency/SharedKernel.Idempotency.Redis/README.md) `Adapter` — Redis store with atomic Lua
-  - [SharedKernel.Idempotency.EfCore](src/Infrastructure/Idempotency/SharedKernel.Idempotency.EfCore/README.md) `Adapter` — PostgreSQL store with `INSERT … ON CONFLICT`
+- 📁 **[Testing](src/Testing/README.md)** — test doubles for every capability · *1 package*
+  - [SharedKernel.Testing](src/Testing/SharedKernel.Testing/README.md) `Testing` — `FakeClock`, in-memory logger, `TestRequestContext`, fakers, assertions
 
-- 📁 **[19.Scheduling](src/Infrastructure/Scheduling/README.md)** — background jobs · *1 package*
-  - [SharedKernel.Scheduling](src/Infrastructure/Scheduling/SharedKernel.Scheduling/README.md) `Adapter` — cron, recurring and one-shot jobs that run once across replicas
+### `tools/Governance/` — the build
 
-- 📁 **[20.Reporting](src/Infrastructure/Reporting/README.md)** — exports and documents · *5 packages*
-  - [SharedKernel.Reporting.Abstractions](src/Infrastructure/Reporting/SharedKernel.Reporting.Abstractions/README.md) `Abstractions` — streaming `IReportExporter<TRow>` and `IHtmlToPdfConverter`
-  - [SharedKernel.Reporting.Csv](src/Infrastructure/Reporting/SharedKernel.Reporting.Csv/README.md) `Adapter` — RFC 4180 CSV in constant memory, formula-injection guard
-  - [SharedKernel.Reporting.Spreadsheet](src/Infrastructure/Reporting/SharedKernel.Reporting.Spreadsheet/README.md) `Adapter` — streamed Excel (.xlsx) on SpreadCheetah
-  - [SharedKernel.Reporting.Pdf](src/Infrastructure/Reporting/SharedKernel.Reporting.Pdf/README.md) `Adapter` — tabular PDF on PDFsharp/MigraDoc
-  - [SharedKernel.Reporting.Gotenberg](src/Infrastructure/Reporting/SharedKernel.Reporting.Gotenberg/README.md) `Adapter` — HTML → PDF through a Gotenberg container
+- 📁 **[Governance](tools/Governance/README.md)** — the rules the rest of the repo is held to · *3 packages*
+  - [SharedKernel.Analyzers](tools/Governance/SharedKernel.Analyzers/README.md) `Tooling` — 45 Roslyn rules for the platform conventions, compiler-only
+  - [SharedKernel.ArchitectureTests](tools/Governance/SharedKernel.ArchitectureTests/README.md) `Tooling` — prebuilt NetArchTest rules for dependency purity, provider isolation and secure defaults
+  - [SharedKernel.Linter](tools/Governance/SharedKernel.Linter/README.md) `Tooling` — CSharpier format check for CI plus the shared `.editorconfig`
+
 
 ---
 
@@ -316,21 +369,20 @@ to consuming the kernel.
 ## 📍 Status & roadmap
 
 > [!NOTE]
-> **Pre-release.** The architecture and the 104 packages are in place on `main`. The first release
-> under the one-version train, `v1.0.0-alpha.1`, has not been tagged yet. Until then, expect breaking
-> changes between commits.
+> **Release candidate.** All 104 packages are published to GitHub Packages at **`1.0.0-rc.2`**
+> (October 2026). The public API is settling; breaking changes are still possible before `1.0.0`.
 
 **Done**
 - Tiered foundation: the seven tiers are enforced by the build, and one execution context covers every channel (HTTP, gRPC, messages, workflows, jobs)
 - A kernel-owned CQRS model with a mediator-agnostic pipeline
 - Pre-publish reviews of persistence, storage, messaging, application/presentation and reporting, each verified by a sample service
-- A release train: one tag gates on every test suite, consumer harness and sample, then publishes all packages together
-
+- A release train: one tag gates on every test suite, consumer harness and sample, then publishes all packages together; `v1.0.0-rc.2` shipped through it
+- A source tree grouped by consumer project, with generated views of every package by tier and of the dependency graph
 - One README standard across every package, checked by an architecture test
 
 **Next**
-- 🏷️ Tag `v1.0.0-alpha.1` and publish the full package set
-- 🔍 Pre-publish reviews of the remaining domains
+- 🏷️ The next release candidate, which also points the analyzer help links at the new `tools/Governance/` location
+- 🔍 Pre-publish reviews of the remaining domains, then `1.0.0`
 
 ---
 
@@ -347,7 +399,7 @@ never end up at mixed versions.
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <!-- The one SharedKernel release this service builds against. -->
-    <SharedKernelVersion>1.0.0-alpha.1</SharedKernelVersion>
+    <SharedKernelVersion>1.0.0-rc.2</SharedKernelVersion>
   </PropertyGroup>
   <ItemGroup>
     <PackageVersion Include="SharedKernel.Primitives" Version="$(SharedKernelVersion)" />
@@ -374,9 +426,23 @@ also needs Docker.
 dotnet build Platform.SharedKernel.slnx -c Release
 dotnet test  Platform.SharedKernel.Unit.slnf -c Release --no-build          # no Docker needed
 dotnet test  Platform.SharedKernel.Integration.slnf -c Release --no-build   # Testcontainers
-dotnet pack  Platform.SharedKernel.slnx -c Release --no-build -o artifacts/packages
-eng/verify-packages.sh artifacts/packages   # checks the release set; the folder must hold one pack only
+dotnet pack  Platform.SharedKernel.slnx -c Release --no-build               # into nupkgs/
+bash eng/verify-packages.sh nupkgs   # checks the release set; the folder must hold one pack only
 ```
+
+Build output goes to `artifacts/{bin,obj}/{project}/`, not next to the sources, and packages to `nupkgs/`
+(the local feed the samples and consumer harnesses restore from). To work on one tier only, open its
+solution filter, for example `eng/solution-filters/Platform.SharedKernel.Adapter.slnf`.
+
+CI also runs these build-free checks; each takes seconds locally:
+
+| Check | What it catches |
+|-------|-----------------|
+| `bash eng/verify-solution-filters.sh` | a test project in no lane or both, a project in the wrong solution folder |
+| `bash eng/verify-path-lengths.sh` | a path too long for a Windows checkout (250 characters at `C:\Github\platform-shared-kernel\`) |
+| `bash eng/verify-markdown-links.sh` | a README link left pointing at a moved or renamed file |
+| `dotnet run eng/generate-package-index.cs -- --check` | `docs/packages.md`, `docs/dependency-graph.md` or a tier filter out of date — run it without `--check` to regenerate |
+| `bash eng/verify-tier-errors.sh` | the tier check no longer failing the build |
 
 **Releasing:** push a `v<major>.<minor>.<patch>[-prerelease]` tag on `main`.
 [`release.yml`](.github/workflows/release.yml) runs every gate: the tier check, the build, both test
@@ -390,6 +456,9 @@ whole set at the tag's version. No package can be published on its own. Details 
 |------|--------------|
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | How to build, test, add a package and open a pull request |
 | [`eng/README.md`](eng/README.md) | Build internals: tier check, package checks, versioning, CI workflows |
+| [`docs/packages.md`](docs/packages.md) | Generated: every package by tier, with the service project that references it |
+| [`docs/dependency-graph.md`](docs/dependency-graph.md) | Generated: Mermaid graphs, folder to folder and inside each capability |
+| [`eng/solution-filters/`](eng/solution-filters/) | Generated: one solution filter per tier, for the IDE |
 | [`docs/package-readme-standard.md`](docs/package-readme-standard.md) | The shape every package README follows |
 | `src/{Zone}/{Capability}/README.md` | The overview of one capability domain |
 | [`CLAUDE.md`](CLAUDE.md), `src/{Zone}/{Capability}/CLAUDE.md` | Maintainer rules: architecture, conventions, "what goes where" |

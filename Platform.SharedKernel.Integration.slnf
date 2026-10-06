@@ -2,6 +2,7 @@
   "solution": {
     "path": "Platform.SharedKernel.slnx",
     "projects": [
+      "src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Persistence/SharedKernel.ServiceDefaults.Persistence.Tests/SharedKernel.ServiceDefaults.Persistence.Tests.csproj",
       "src/Infrastructure/Caching/SharedKernel.Caching.Redis.Core/SharedKernel.Caching.Redis.Core.Tests/SharedKernel.Caching.Redis.Core.Tests.csproj",
       "src/Infrastructure/Caching/SharedKernel.Caching.Redis.DistributedLocking/SharedKernel.Caching.Redis.DistributedLocking.Tests/SharedKernel.Caching.Redis.DistributedLocking.Tests.csproj",
       "src/Infrastructure/Caching/SharedKernel.Caching.Redis.HashStore/SharedKernel.Caching.Redis.HashStore.Tests/SharedKernel.Caching.Redis.HashStore.Tests.csproj",

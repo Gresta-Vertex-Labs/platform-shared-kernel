@@ -15,6 +15,8 @@ connection.**
 [Packages](#packages) · [How it fits together](#how-it-fits-together) · [Get started](#get-started) ·
 [See it run](#see-it-run) · [Guarantees](#guarantees)
 
+<sub>📂 <code>src/Infrastructure/Caching</code> · domain <code>02.Caching</code> · <a href="../../../docs/packages.md">all packages by tier</a></sub>
+
 </div>
 
 ---
@@ -46,7 +48,7 @@ connection.**
 | [SharedKernel.Caching.Redis.HashStore](SharedKernel.Caching.Redis.HashStore/README.md) | Adapter | Sessions, settings snapshots or counters stored as Redis hashes (`IRedisHashService`, `ITypedHashStore<T>`) |
 | [SharedKernel.Caching.Redis.PubSub](SharedKernel.Caching.Redis.PubSub/README.md) | Adapter | Loss-tolerant, at-most-once signals between instances (`IRedisChannelService`) — never for work that must happen |
 
-Related packages outside this folder:
+Related packages (the `.Testing` test double lives in this folder):
 
 | Package | Adds |
 | --- | --- |

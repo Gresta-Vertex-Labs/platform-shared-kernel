@@ -14,6 +14,8 @@ tenant travelling with the message, at-most-once consumption, and failures you h
 
 [Packages](#packages) · [How they fit](#how-the-packages-fit-together) · [Get started](#get-started) · [Sample](#see-it-run) · [Guarantees](#guarantees)
 
+<sub>📂 <code>src/Infrastructure/Messaging</code> · domain <code>07.Messaging</code> · <a href="../../../docs/packages.md">all packages by tier</a></sub>
+
 </div>
 
 ---

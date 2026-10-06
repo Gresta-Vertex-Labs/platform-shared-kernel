@@ -13,6 +13,8 @@ business rules, specifications and money — as pure domain code with no I/O, no
 [Package](#package) · [How it fits together](#how-it-fits-together) · [Get started](#get-started) ·
 [See it run](#see-it-run) · [Guarantees](#guarantees)
 
+<sub>📂 <code>src/Model/Domain</code> · domain <code>03.Domain</code> · <a href="../../../docs/packages.md">all packages by tier</a></sub>
+
 </div>
 
 ---

@@ -1,6 +1,6 @@
 <div align="center">
 
-# 13.ServiceDefaults
+# SharedKernel ServiceDefaults
 
 **Host composition for .NET services: OpenTelemetry, health endpoints and readiness, the request context every layer
 reads, tenant resolution, mutual TLS, vault-backed configuration and request culture — each one call in `Program.cs`.**
@@ -8,6 +8,8 @@ reads, tenant resolution, mutual TLS, vault-backed configuration and request cul
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](../../../LICENSE)
 ![Packages: 7](https://img.shields.io/badge/packages-7-informational)
+
+<sub>📂 <code>src/Hosting/ServiceDefaults</code> · domain <code>13.ServiceDefaults</code> · <a href="../../../docs/packages.md">all packages by tier</a></sub>
 
 </div>
 

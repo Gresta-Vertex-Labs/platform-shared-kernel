@@ -105,7 +105,7 @@ public sealed class LoggingEventIdRangesTests
 
     /// <summary>
     /// T-62: the three new domain base constants introduced this phase, matching the root
-    /// CLAUDE.md folder map's src/Infrastructure/Idempotency/src/Infrastructure/Scheduling/20.Reporting entries exactly.
+    /// CLAUDE.md folder map's 18.Idempotency/19.Scheduling/20.Reporting entries exactly.
     /// </summary>
     [Fact]
     public void NewDomainConstants_MatchRootFolderMap()

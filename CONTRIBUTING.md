@@ -65,11 +65,18 @@ Optional checks that CI also runs:
 
 ```bash
 bash eng/verify-solution-filters.sh     # every test project in exactly one lane
+bash eng/verify-path-lengths.sh         # every path fits a Windows checkout
+bash eng/verify-markdown-links.sh       # no README links to a moved or missing file
+dotnet run eng/generate-package-index.cs -- --check   # docs/packages.md, dependency graph, tier filters current
 bash eng/verify-tier-errors.sh          # the tier check still rejects violations
 
 dotnet pack Platform.SharedKernel.slnx -c Release --no-build   # writes to ./nupkgs
 bash eng/verify-packages.sh nupkgs      # the packed set is complete and at one version
 ```
+
+Build output goes to `artifacts/{bin,obj}/{project}/`, never next to the sources; packages go to `nupkgs/`.
+To work on one tier only, open its filter in `eng/solution-filters/` (for example
+`Platform.SharedKernel.Host.slnf`).
 
 Run `verify-packages.sh` against a folder holding a single pack only. Build internals, including
 what each of these scripts checks, are described in [`eng/README.md`](eng/README.md).
@@ -281,7 +288,7 @@ complete; it re-runs when you edit the description.
 
 | Check | What it covers |
 |-------|----------------|
-| **CI Gate** | tier-violation probes, solution-filter check, full build, Unit lane, consumer-verify harnesses, pack + package-set check, packed-package consumers and samples, workflow lint, PR title lint |
+| **CI Gate** | tier-violation probes, solution-filter, path-length, Markdown-link and generated-view checks, full build, Unit lane, consumer-verify harnesses, pack + package-set check, packed-package consumers and samples, workflow lint, PR title lint |
 | **PR template** | the description is complete |
 
 The Integration lane does not run on pull requests. It runs on every push to `main`, nightly and on

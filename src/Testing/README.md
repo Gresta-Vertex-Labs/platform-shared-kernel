@@ -1,6 +1,6 @@
 <div align="center">
 
-# 16.Testing
+# SharedKernel Testing
 
 **The test doubles of Platform.SharedKernel — one lightweight core and one package per capability, so a test
 project takes only what it tests.**
@@ -9,6 +9,8 @@ project takes only what it tests.**
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
 ![Packages: 20](https://img.shields.io/badge/packages-20-informational)
 ![Tier: Testing](https://img.shields.io/badge/tier-Testing-e36209)
+
+<sub>📂 <code>src/Testing</code> · domain <code>16.Testing</code> · <a href="../../docs/packages.md">all packages by tier</a></sub>
 
 </div>
 
@@ -30,30 +32,32 @@ project takes only what it tests.**
 
 ## The packages
 
-Twenty packable packages, all in the **Testing** tier — reference them from **test projects only**.
+Twenty packable packages, all in the **Testing** tier — reference them from **test projects only**. The core
+lives in this folder; each capability's package lives next to the contracts it fakes (for example
+`src/Infrastructure/Caching/SharedKernel.Caching.Testing`), so the links below lead into those folders.
 
 | Package | Fakes | Register / create |
 | --- | --- | --- |
 | [`SharedKernel.Testing`](SharedKernel.Testing/README.md) | **The core.** `IClock` (`FakeClock`), `IRequestContext` (`TestRequestContext`), in-memory `ILogger` + `LoggerAssertions`, Bogus fakers, domain/contract/validation/privacy assertions | `new FakeClock(...)`, `TestRequestContext.ForTenant(...)`, `AddInMemoryLoggerFactory()`, `AddFakeDomainServices()` |
-| [`SharedKernel.Application.Testing`](SharedKernel.Application.Testing/README.md) | The kernel request pipeline and its seams | `new ApplicationPipelineTestHarness()`, `AddFakeApplicationBehaviorServices()` |
-| [`SharedKernel.Persistence.Testing`](SharedKernel.Persistence.Testing/README.md) | `IRepository<,>`, `IUnitOfWork`, `IAuditTrailWriter`, `ICrossTenantScope`, `IDbConnectionFactory`; PostgreSQL with the production role split | `AddFakeRepository<T,TId>()`, `AddFakeUnitOfWork()`, `AddFakeAuditTrailWriter()`, `AddFakeCrossTenantScope()`, `AddTestRequestContext()` |
-| [`SharedKernel.Caching.Testing`](SharedKernel.Caching.Testing/README.md) | `ICacheService`, `ITenantCacheService`, `IDistributedLockService`, warmup, tenant key provider | `AddFakeCachingServices()`, `AddFakeTenantCacheService()`, `AddFakeCacheWarmupStrategy()` |
-| [`SharedKernel.Caching.Redis.Testing`](SharedKernel.Caching.Redis.Testing/README.md) | `IRedisChannelService`, `IRedisHashService`, `ITypedHashStore<T>` | `AddFakeRedisServices()`, `AddFakeTypedHashStore<T>()` |
-| [`SharedKernel.Communication.Testing`](SharedKernel.Communication.Testing/README.md) | Typed REST clients (the whole handler pipeline) and gRPC unary calls | `UseStubHttpMessageHandler(clientName, stub)`, `GrpcCalls` |
-| [`SharedKernel.Cryptography.Testing`](SharedKernel.Cryptography.Testing/README.md) | Encryption, hashing, HMAC, signing, key providers, secure random, TOTP replay guard | `AddFakeCryptography()` |
-| [`SharedKernel.FeatureManagement.Testing`](SharedKernel.FeatureManagement.Testing/README.md) | OpenFeature `IFeatureClient` | `AddFakeFeatureFlags()` |
-| [`SharedKernel.Idempotency.Testing`](SharedKernel.Idempotency.Testing/README.md) | `IIdempotencyStore` (request and message purposes) | `AddFakeIdempotencyStore(purposes)` |
-| [`SharedKernel.Integration.Testing`](SharedKernel.Integration.Testing/README.md) | `IWebhookDispatcher`, `INotificationSender` and their delivery observers | `AddInMemoryWebhookDispatcher()`, `AddInMemoryNotificationSender()` |
-| [`SharedKernel.Messaging.Testing`](SharedKernel.Messaging.Testing/README.md) | `IMessageBus`, `IEventPublisher` | `AddInMemoryMessageBus()`, `AddInMemoryEventPublisher()` |
-| [`SharedKernel.Storage.Testing`](SharedKernel.Storage.Testing/README.md) | `IFileStorage`, `ITenantFileStorage` — named and tenant stores in memory | `AddSharedKernelStorage().AddInMemoryStore(name)`, `.AddInMemoryTenantStore(name)` |
-| [`SharedKernel.Search.Testing`](SharedKernel.Search.Testing/README.md) | `ISearchIndex<T>`, `ISearchIndexProvisioner`, `ISearchProviderDescriptor` | `AddInMemorySearchIndex<T>()`, `AddInMemorySearchProvisioning()` |
-| [`SharedKernel.AI.Testing`](SharedKernel.AI.Testing/README.md) | Embedding generator, vector collections, provisioner, semantic kernel | `AddInMemoryEmbeddingGenerator()`, `AddInMemoryVectorCollection<T>()`, `AddInMemoryVectorProvisioning()`, `AddInMemorySemanticKernel()` |
-| [`SharedKernel.Workflows.Testing`](SharedKernel.Workflows.Testing/README.md) | `IWorkflowDispatcher`, `IWorkflowHandle<TResult>` | `AddInMemoryWorkflowDispatcher()` |
-| [`SharedKernel.Scheduling.Testing`](SharedKernel.Scheduling.Testing/README.md) | `IScheduledJobRegistry` — ticks fired by the test | `new InMemoryScheduledJobRegistry(sender)` |
-| [`SharedKernel.Reporting.Testing`](SharedKernel.Reporting.Testing/README.md) | `IReportExporter<TRow>`, `IReportExporterFactory`, `IHtmlToPdfConverter` | `AddInMemoryReporting()` |
-| [`SharedKernel.Security.Testing`](SharedKernel.Security.Testing/README.md) | `IUserContext`, API-key, DPoP and TOTP stores; DPoP proofs and mTLS certificates | `new FakeUserContext()`, `new SecurityTestContextBuilder()` |
-| [`SharedKernel.Presentation.Testing`](SharedKernel.Presentation.Testing/README.md) | gRPC `ServerCallContext` with an `HttpContext`, HotChocolate executor, `IHttpContextAccessor` | `TestServerCallContext.Create(...)`, `GraphQLTestExecutorFactory.Create(services)` |
-| [`SharedKernel.ServiceDefaults.Testing`](SharedKernel.ServiceDefaults.Testing/README.md) | `ITenantCatalog`, tenant resolution strategies, health-check registration assertions | `new InMemoryTenantCatalog()`, `new FakeTenantResolutionStrategy(tenantId)` |
+| [`SharedKernel.Application.Testing`](../Application/SharedKernel.Application.Testing/README.md) | The kernel request pipeline and its seams | `new ApplicationPipelineTestHarness()`, `AddFakeApplicationBehaviorServices()` |
+| [`SharedKernel.Persistence.Testing`](../Infrastructure/Persistence/SharedKernel.Persistence.Testing/README.md) | `IRepository<,>`, `IUnitOfWork`, `IAuditTrailWriter`, `ICrossTenantScope`, `IDbConnectionFactory`; PostgreSQL with the production role split | `AddFakeRepository<T,TId>()`, `AddFakeUnitOfWork()`, `AddFakeAuditTrailWriter()`, `AddFakeCrossTenantScope()`, `AddTestRequestContext()` |
+| [`SharedKernel.Caching.Testing`](../Infrastructure/Caching/SharedKernel.Caching.Testing/README.md) | `ICacheService`, `ITenantCacheService`, `IDistributedLockService`, warmup, tenant key provider | `AddFakeCachingServices()`, `AddFakeTenantCacheService()`, `AddFakeCacheWarmupStrategy()` |
+| [`SharedKernel.Caching.Redis.Testing`](../Infrastructure/Caching/SharedKernel.Caching.Redis.Testing/README.md) | `IRedisChannelService`, `IRedisHashService`, `ITypedHashStore<T>` | `AddFakeRedisServices()`, `AddFakeTypedHashStore<T>()` |
+| [`SharedKernel.Communication.Testing`](../Infrastructure/Communication/SharedKernel.Communication.Testing/README.md) | Typed REST clients (the whole handler pipeline) and gRPC unary calls | `UseStubHttpMessageHandler(clientName, stub)`, `GrpcCalls` |
+| [`SharedKernel.Cryptography.Testing`](../Foundation/SharedKernel.Cryptography.Testing/README.md) | Encryption, hashing, HMAC, signing, key providers, secure random, TOTP replay guard | `AddFakeCryptography()` |
+| [`SharedKernel.FeatureManagement.Testing`](../Foundation/SharedKernel.FeatureManagement.Testing/README.md) | OpenFeature `IFeatureClient` | `AddFakeFeatureFlags()` |
+| [`SharedKernel.Idempotency.Testing`](../Infrastructure/Idempotency/SharedKernel.Idempotency.Testing/README.md) | `IIdempotencyStore` (request and message purposes) | `AddFakeIdempotencyStore(purposes)` |
+| [`SharedKernel.Integration.Testing`](../Infrastructure/Integration/SharedKernel.Integration.Testing/README.md) | `IWebhookDispatcher`, `INotificationSender` and their delivery observers | `AddInMemoryWebhookDispatcher()`, `AddInMemoryNotificationSender()` |
+| [`SharedKernel.Messaging.Testing`](../Infrastructure/Messaging/SharedKernel.Messaging.Testing/README.md) | `IMessageBus`, `IEventPublisher` | `AddInMemoryMessageBus()`, `AddInMemoryEventPublisher()` |
+| [`SharedKernel.Storage.Testing`](../Infrastructure/Storage/SharedKernel.Storage.Testing/README.md) | `IFileStorage`, `ITenantFileStorage` — named and tenant stores in memory | `AddSharedKernelStorage().AddInMemoryStore(name)`, `.AddInMemoryTenantStore(name)` |
+| [`SharedKernel.Search.Testing`](../Infrastructure/Search/SharedKernel.Search.Testing/README.md) | `ISearchIndex<T>`, `ISearchIndexProvisioner`, `ISearchProviderDescriptor` | `AddInMemorySearchIndex<T>()`, `AddInMemorySearchProvisioning()` |
+| [`SharedKernel.AI.Testing`](../Infrastructure/AI/SharedKernel.AI.Testing/README.md) | Embedding generator, vector collections, provisioner, semantic kernel | `AddInMemoryEmbeddingGenerator()`, `AddInMemoryVectorCollection<T>()`, `AddInMemoryVectorProvisioning()`, `AddInMemorySemanticKernel()` |
+| [`SharedKernel.Workflows.Testing`](../Infrastructure/Workflows/SharedKernel.Workflows.Testing/README.md) | `IWorkflowDispatcher`, `IWorkflowHandle<TResult>` | `AddInMemoryWorkflowDispatcher()` |
+| [`SharedKernel.Scheduling.Testing`](../Infrastructure/Scheduling/SharedKernel.Scheduling.Testing/README.md) | `IScheduledJobRegistry` — ticks fired by the test | `new InMemoryScheduledJobRegistry(sender)` |
+| [`SharedKernel.Reporting.Testing`](../Infrastructure/Reporting/SharedKernel.Reporting.Testing/README.md) | `IReportExporter<TRow>`, `IReportExporterFactory`, `IHtmlToPdfConverter` | `AddInMemoryReporting()` |
+| [`SharedKernel.Security.Testing`](../Hosting/Security/SharedKernel.Security.Testing/README.md) | `IUserContext`, API-key, DPoP and TOTP stores; DPoP proofs and mTLS certificates | `new FakeUserContext()`, `new SecurityTestContextBuilder()` |
+| [`SharedKernel.Presentation.Testing`](../Hosting/Presentation/SharedKernel.Presentation.Testing/README.md) | gRPC `ServerCallContext` with an `HttpContext`, HotChocolate executor, `IHttpContextAccessor` | `TestServerCallContext.Create(...)`, `GraphQLTestExecutorFactory.Create(services)` |
+| [`SharedKernel.ServiceDefaults.Testing`](../Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Testing/README.md) | `ITenantCatalog`, tenant resolution strategies, health-check registration assertions | `new InMemoryTenantCatalog()`, `new FakeTenantResolutionStrategy(tenantId)` |
 
 One more project lives here but is **not published**:
 [`SharedKernel.Testing.Internal`](SharedKernel.Testing.Internal/README.md) — Testcontainers fixtures, EF Core/Npgsql

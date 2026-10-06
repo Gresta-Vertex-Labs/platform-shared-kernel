@@ -14,6 +14,8 @@ tenant isolation, safe concurrent writes and presigned uploads that clients cann
 
 [Packages](#packages) · [How it fits together](#how-it-fits-together) · [Get started](#get-started) · [Providers](#what-each-provider-supports) · [Sample](#see-it-run) · [Guarantees](#guarantees)
 
+<sub>📂 <code>src/Infrastructure/Storage</code> · domain <code>08.Storage</code> · <a href="../../../docs/packages.md">all packages by tier</a></sub>
+
 </div>
 
 ---
@@ -39,7 +41,7 @@ tenant isolation, safe concurrent writes and presigned uploads that clients cann
 | [SharedKernel.Storage.S3](SharedKernel.Storage.S3/README.md) | Adapter | Your buckets are on Amazon S3, MinIO or another S3-compatible service |
 | [SharedKernel.Storage.Obs](SharedKernel.Storage.Obs/README.md) | Adapter | Your buckets are on Huawei Cloud OBS (built on the S3 package; both can be used together) |
 
-Related packages outside this folder:
+Related packages (the `.Testing` test double lives in this folder):
 
 | Package | Adds |
 | --- | --- |

@@ -1,6 +1,6 @@
 <div align="center">
 
-# 20.Reporting
+# SharedKernel Reporting
 
 **Stream any query into CSV, Excel or PDF — or render HTML to PDF — straight into object storage, without ever
 holding the whole report in memory.**
@@ -8,6 +8,8 @@ holding the whole report in memory.**
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](../../../LICENSE)
 ![Packages: 5](https://img.shields.io/badge/packages-5-informational)
+
+<sub>📂 <code>src/Infrastructure/Reporting</code> · domain <code>20.Reporting</code> · <a href="../../../docs/packages.md">all packages by tier</a></sub>
 
 </div>
 

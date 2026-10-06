@@ -117,7 +117,6 @@
       "src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Configuration.KeyVault/SharedKernel.ServiceDefaults.Configuration.KeyVault.csproj",
       "src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Localization/SharedKernel.ServiceDefaults.Localization.Tests/SharedKernel.ServiceDefaults.Localization.Tests.csproj",
       "src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Localization/SharedKernel.ServiceDefaults.Localization.csproj",
-      "src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Persistence/SharedKernel.ServiceDefaults.Persistence.Tests/SharedKernel.ServiceDefaults.Persistence.Tests.csproj",
       "src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Persistence/SharedKernel.ServiceDefaults.Persistence.csproj",
       "src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Security/SharedKernel.ServiceDefaults.Security.Tests/SharedKernel.ServiceDefaults.Security.Tests.csproj",
       "src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Security/SharedKernel.ServiceDefaults.Security.csproj",

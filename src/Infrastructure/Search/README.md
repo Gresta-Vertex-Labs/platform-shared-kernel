@@ -13,6 +13,8 @@ on every read, and no engine allowed to answer approximately while claiming to b
 
 [Packages](#packages) · [Architecture](#architecture) · [Get started](#get-started) · [Sample](#sample-catalogapi) · [Guarantees](#guarantees)
 
+<sub>📂 <code>src/Infrastructure/Search</code> · domain <code>09.Search</code> · <a href="../../../docs/packages.md">all packages by tier</a></sub>
+
 </div>
 
 ---

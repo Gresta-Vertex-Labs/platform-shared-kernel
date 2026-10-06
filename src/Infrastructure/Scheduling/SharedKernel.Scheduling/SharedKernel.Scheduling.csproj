@@ -47,8 +47,8 @@
     <!--
       Allows the nested test project to white-box test internal implementation details
       (SchedulingHostedService's tick loop, ScheduledJobRegistry, policy enforcement) without
-      expanding the public API surface — mirrors the 06.Persistence.EfCore/src/Hosting/ServiceDefaults/
-      15.Integration.Webhooks/src/Infrastructure/Search/17.Workflows precedent.
+      expanding the public API surface — mirrors the 06.Persistence.EfCore/13.ServiceDefaults/
+      15.Integration.Webhooks/09.Search/17.Workflows precedent.
     -->
     <InternalsVisibleTo Include="SharedKernel.Scheduling.Tests" />
   </ItemGroup>

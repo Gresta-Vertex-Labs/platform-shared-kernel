@@ -1,6 +1,6 @@
 <div align="center">
 
-# 17.Workflows
+# SharedKernel Workflows
 
 **Durable, crash-proof business processes on Temporal — start a process that may run for thirty days, survive every
 deploy and restart on the way, and address it safely by tenant and business key.**
@@ -9,6 +9,8 @@ deploy and restart on the way, and address it safely by tenant and business key.
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](../../../LICENSE)
 ![Packages: 1](https://img.shields.io/badge/packages-1-informational)
 [![Temporalio 1.17](https://img.shields.io/badge/Temporalio-1.17-000000)](SharedKernel.Workflows.Temporal/README.md)
+
+<sub>📂 <code>src/Infrastructure/Workflows</code> · domain <code>17.Workflows</code> · <a href="../../../docs/packages.md">all packages by tier</a></sub>
 
 </div>
 

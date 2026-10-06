@@ -1,6 +1,6 @@
 <div align="center">
 
-# 11.Communication
+# SharedKernel Communication
 
 **Outbound service-to-service calls: typed REST and gRPC clients configured from `appsettings.json`, resilient by
 default, that carry the caller to the next service and return `Result` instead of throwing.**
@@ -8,6 +8,8 @@ default, that carry the caller to the next service and return `Result` instead o
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](../../../LICENSE)
 ![Packages: 3](https://img.shields.io/badge/packages-3-informational)
+
+<sub>📂 <code>src/Infrastructure/Communication</code> · domain <code>11.Communication</code> · <a href="../../../docs/packages.md">all packages by tier</a></sub>
 
 </div>
 

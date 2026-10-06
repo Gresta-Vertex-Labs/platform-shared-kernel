@@ -1,6 +1,6 @@
 <div align="center">
 
-# 14.Presentation
+# SharedKernel Presentation
 
 **The inbound boundary of a .NET service: one RFC 9457 error shape over HTTP, the same codes over gRPC and SignalR,
 declarative authorization on every protocol, endpoint modules mapped at compile time, and versioned OpenAPI documents.**
@@ -8,6 +8,8 @@ declarative authorization on every protocol, endpoint modules mapped at compile 
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](../../../LICENSE)
 ![Packages: 6](https://img.shields.io/badge/packages-6-informational)
+
+<sub>📂 <code>src/Hosting/Presentation</code> · domain <code>14.Presentation</code> · <a href="../../../docs/packages.md">all packages by tier</a></sub>
 
 </div>
 

@@ -1,6 +1,6 @@
 <div align="center">
 
-# 01.Core
+# SharedKernel Foundation
 
 **The foundation every Platform.SharedKernel service builds on — results instead of exceptions, one execution context,
 validated configuration, and cryptography with nothing to get wrong.**
@@ -10,6 +10,8 @@ validated configuration, and cryptography with nothing to get wrong.**
 ![Packages: 13](https://img.shields.io/badge/packages-13-success)
 ![Tier: Foundation](https://img.shields.io/badge/tier-Foundation%20%C3%97%2010-2ea44f)
 ![Tier: Adapter](https://img.shields.io/badge/tier-Adapter%20%C3%97%203-6f42c1)
+
+<sub>📂 <code>src/Foundation</code> · domain <code>01.Core</code> · <a href="../../docs/packages.md">all packages by tier</a></sub>
 
 </div>
 
@@ -48,6 +50,16 @@ validated configuration, and cryptography with nothing to get wrong.**
 Foundation packages reference only other Foundation packages and may be referenced from any project of a service. The
 three Adapter packages each wrap one third-party library (Konscious, the Azure SDK, FluentValidation) so it never
 becomes a transitive dependency of the base package; reference them from Infrastructure (or the host).
+
+Test doubles in this folder (Testing tier — reference them from test projects only):
+
+| Package | Adds |
+| --- | --- |
+| [SharedKernel.Cryptography.Testing](SharedKernel.Cryptography.Testing/README.md) | `AddFakeCryptography()` — fakes that run the real algorithms, with call recording, in-test key rotation and failure simulation |
+| [SharedKernel.FeatureManagement.Testing](SharedKernel.FeatureManagement.Testing/README.md) | `FakeFeatureClient` / `AddFakeFeatureFlags()` — an `IFeatureClient` whose flags a test sets directly |
+
+The caller, clock and logger doubles (`TestRequestContext`, `FakeClock`, `InMemoryLogger`) are in
+[SharedKernel.Testing](../Testing/SharedKernel.Testing/README.md).
 
 ## How the packages fit together
 

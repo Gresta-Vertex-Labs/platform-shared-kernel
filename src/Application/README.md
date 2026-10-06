@@ -14,6 +14,8 @@ idempotency, transactions, auditing, caching) composed in one fixed order.**
 [Packages](#packages) · [How it fits together](#how-it-fits-together) · [Get started](#get-started) ·
 [See it run](#see-it-run) · [Guarantees](#guarantees)
 
+<sub>📂 <code>src/Application</code> · domain <code>05.Application</code> · <a href="../../docs/packages.md">all packages by tier</a></sub>
+
 </div>
 
 ---
@@ -42,7 +44,7 @@ idempotency, transactions, auditing, caching) composed in one fixed order.**
 | [SharedKernel.Application.Mediator.MediatR](SharedKernel.Application.Mediator.MediatR/README.md) | Host | In the **Api**/**Worker** project — `app.UseMediatR()`, the `ISender` transport |
 | [SharedKernel.Application.Pipeline.Caching](SharedKernel.Application.Pipeline.Caching/README.md) | Host | When a measured read is worth caching — `app.WithCaching()`: `ICacheableQuery<T>` caching and post-commit `IInvalidatesCache` eviction |
 
-Related packages outside this folder:
+Related packages (the `.Testing` test double lives in this folder):
 
 | Package | Adds |
 | --- | --- |
