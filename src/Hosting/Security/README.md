@@ -1,6 +1,6 @@
 <div align="center">
 
-# 12.Security
+# SharedKernel Security
 
 **Authentication for .NET services that turns every kind of caller into one `IUserContext`.**
 
@@ -9,6 +9,8 @@
 ![Packages: 5](https://img.shields.io/badge/packages-5-informational)
 ![Tier: Abstractions](https://img.shields.io/badge/tier-Abstractions-1f6feb)
 ![Tier: Host](https://img.shields.io/badge/tier-Host-d73a49)
+
+<sub>📂 <code>src/Hosting/Security</code> · domain <code>12.Security</code> · <a href="../../../docs/packages.md">all packages by tier</a></sub>
 
 </div>
 

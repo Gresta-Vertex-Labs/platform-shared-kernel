@@ -1,12 +1,14 @@
 <div align="center">
 
-# 19.Scheduling
+# SharedKernel Scheduling
 
 **Cron and one-shot jobs that run once per occurrence — however many replicas you deploy.**
 
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](../../../LICENSE)
 ![Packages: 1](https://img.shields.io/badge/packages-1-informational)
+
+<sub>📂 <code>src/Infrastructure/Scheduling</code> · domain <code>19.Scheduling</code> · <a href="../../../docs/packages.md">all packages by tier</a></sub>
 
 </div>
 

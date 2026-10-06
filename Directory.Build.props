@@ -32,9 +32,9 @@
     <!--
       Computed identity. Nested *.Tests projects (e.g. src/Infrastructure/Storage/SharedKernel.Storage.Abstractions/
       SharedKernel.Storage.Abstractions.Tests/) are detected by project-name suffix. This does NOT
-      catch every non-shipping project in the repo (SharedKernel.Testing.SelfTests, and the
-      consumer-verify/*Consumer exe harnesses under tools/Governance/_verification and the
-      per-domain consumer-verify/ folders, do not end in ".Tests") — those already declare
+      catch every non-shipping project in the repo (the *Consumer harnesses under
+      tools/Governance/_verification and the consumer-verify/ folders inside capability folders do
+      not end in ".Tests") — those already declare
       <IsPackable>false</IsPackable> explicitly in their own project body, which always wins over
       anything set here because Directory.Build.props is imported first. This property only drives
       the mechanical, low-risk defaults below; it is never the sole gate on IsPackable.
@@ -65,16 +65,12 @@
     <LangVersion>latest</LangVersion>
     <!--
       TreatWarningsAsErrors is deliberately NOT centralized here (Rule 7: a property that is not
-      genuinely uniform must stay per-project). Verified against real source: only 33 of 119 csproj
-      files set it, concentrated in the newer domains (04/05/07/08/09/10/11/13/17 and their
-      consumer-verify harnesses) — tools/Governance/src/Foundation/src/Infrastructure/Caching/src/Model/Domain/src/Infrastructure/Persistence/
-      src/Hosting/Security/16.Testing never opted in. A first attempt at centralizing this repo-wide
-      (the build's original, never-adopted design) turned ~60 previously-dormant warnings
-      (CS1574 unresolved &lt;see cref&gt; references, RS1041 analyzer-project compat warnings) into
-      hard build errors across files this agent has no jurisdiction to fix (.cs source content is
-      owned by each domain's phase-implementers, never devops-lead). Reverted: each of the original
-      33 files keeps its own explicit &lt;TreatWarningsAsErrors&gt;true&lt;/TreatWarningsAsErrors&gt;
-      unchanged; this is a per-project opt-in, like Description/PackageTags, not a centralized default.
+      genuinely uniform must stay per-project). 64 of the 253 csproj files set it (October 2026).
+      A first attempt at centralizing it turned ~60 dormant warnings (CS1574 unresolved
+      &lt;see cref&gt; references, RS1041 analyzer-project compat warnings) into build errors in source
+      owned by the domain implementers, so it stays a per-project opt-in, like
+      Description/PackageTags. Each project that opts in declares
+      &lt;TreatWarningsAsErrors&gt;true&lt;/TreatWarningsAsErrors&gt; itself.
     -->
     <!--
       .NET 10 defaults NuGetAuditMode to "all" (was "direct"). Combined with a project's own

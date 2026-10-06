@@ -13,6 +13,8 @@ offset and cursor pages, validated page requests and opaque cursors — with no 
 [Package](#package) · [How it fits together](#how-it-fits-together) · [Get started](#get-started) ·
 [See it run](#see-it-run) · [Guarantees](#guarantees)
 
+<sub>📂 <code>src/Model/Contracts</code> · domain <code>04.Contracts</code> · <a href="../../../docs/packages.md">all packages by tier</a></sub>
+
 </div>
 
 ---

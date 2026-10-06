@@ -1,6 +1,6 @@
 <div align="center">
 
-# 15.Integration
+# SharedKernel Integration
 
 **Outbound delivery to destinations outside your control — signed, retried, SSRF-guarded webhooks and
 customer-facing email and SMS — where nothing about the caller except a correlation id leaves the platform, and a
@@ -9,6 +9,8 @@ retry never delivers twice.**
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](../../../LICENSE)
 ![Packages: 4](https://img.shields.io/badge/packages-4-informational)
+
+<sub>📂 <code>src/Infrastructure/Integration</code> · domain <code>15.Integration</code> · <a href="../../../docs/packages.md">all packages by tier</a></sub>
 
 </div>
 

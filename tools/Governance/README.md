@@ -1,6 +1,6 @@
 <div align="center">
 
-# 00.Governance
+# SharedKernel Governance
 
 **Automated guardrails for Platform.SharedKernel — conventions that fail the build, not the code review.**
 
@@ -9,6 +9,8 @@
 ![Tier: Tooling](https://img.shields.io/badge/tier-Tooling-6a737d)
 ![Analyzer rules: 44](https://img.shields.io/badge/analyzer%20rules-44-informational)
 ![Architecture rules: 79](https://img.shields.io/badge/architecture%20rules-79-informational)
+
+<sub>📂 <code>tools/Governance</code> · domain <code>00.Governance</code> · <a href="../../docs/packages.md">all packages by tier</a></sub>
 
 </div>
 

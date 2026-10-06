@@ -5,7 +5,7 @@
 #   eng/verify-solution-filters.sh
 #
 # Fails when:
-#   - a test project (*.Tests, *SelfTests) is in neither lane, so its tests never run, or in both,
+#   - a test project (*.Tests) is in neither lane, so its tests never run, or in both,
 #     so they run twice;
 #   - a production project in the solution is missing from the Unit lane;
 #   - a lane lists a project the solution does not contain;
@@ -26,8 +26,8 @@ projects 'Path="[^"]*\.csproj"' "$slnx" > "$work/solution.txt"
 projects '"[^"]*\.csproj"' "$unit" > "$work/unit.txt"
 projects '"[^"]*\.csproj"' "$integration" > "$work/integration.txt"
 
-grep -E '\.(Tests|SelfTests)\.csproj$' "$work/solution.txt" > "$work/tests.txt" || true
-grep -vE '\.(Tests|SelfTests)\.csproj$' "$work/solution.txt" > "$work/production.txt" || true
+grep -E '\.Tests\.csproj$' "$work/solution.txt" > "$work/tests.txt" || true
+grep -vE '\.Tests\.csproj$' "$work/solution.txt" > "$work/production.txt" || true
 sort -u "$work/unit.txt" "$work/integration.txt" > "$work/either.txt"
 comm -12 "$work/unit.txt" "$work/integration.txt" > "$work/both.txt"
 

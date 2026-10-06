@@ -13,6 +13,8 @@ a tamper-evident audit trail, registered with one call.**
 
 [Packages](#packages) · [How they fit](#how-the-packages-fit-together) · [Get started](#get-started) · [Sample](#see-it-run) · [Guarantees](#guarantees)
 
+<sub>📂 <code>src/Infrastructure/Persistence</code> · domain <code>06.Persistence</code> · <a href="../../../docs/packages.md">all packages by tier</a></sub>
+
 </div>
 
 ---

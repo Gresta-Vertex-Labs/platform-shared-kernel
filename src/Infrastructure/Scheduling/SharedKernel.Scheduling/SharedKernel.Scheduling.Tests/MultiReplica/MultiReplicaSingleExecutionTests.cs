@@ -99,21 +99,27 @@ public sealed class MultiReplicaSingleExecutionTests : IAsyncLifetime
             // Advance the shared clock through several due ticks. Both replicas observe the same
             // IClock, so both consider the job due at the same instants — real Redis-backed fencing
             // is the only thing standing between that and a duplicate fire.
+            //
+            // Each tick is fired before the clock moves on. A fixed real-time pause per tick was not
+            // enough on a loaded runner: a replica whose loop ran late saw the occurrence more than one
+            // TickInterval overdue, MisfirePolicy.Skip discarded it, and the run fell short of five
+            // fires without any duplicate — a timing artefact, not a fencing failure.
             DateTimeOffset current = clock.UtcNow;
             for (var i = 1; i <= 5; i++)
             {
                 current = current.AddSeconds(1);
                 clock.Set(current);
 
-                // Let both replicas' loops observe this instant before advancing again.
+                int expected = i;
+                bool fired = await Eventually.UntilAsync(
+                    () => recorder.InvocationCount >= expected,
+                    timeout: TimeSpan.FromSeconds(15));
+                fired.Should().BeTrue($"due tick {expected} of 5 should fire once across the two replicas combined");
+
+                // Give the losing replica time to observe this instant and lose the race for it, so a
+                // duplicate fire for this tick would show up before the next advance.
                 await Task.Delay(400);
             }
-
-            bool reachedFive = await Eventually.UntilAsync(
-                () => recorder.InvocationCount >= 5,
-                timeout: TimeSpan.FromSeconds(15));
-
-            reachedFive.Should().BeTrue("every one of the 5 due ticks should fire exactly once across the two replicas combined");
             recorder.InvocationCount.Should().Be(5, "a real fencing lock must prevent both replicas from firing the same tick");
             recorder.MaxConcurrentObserved.Should().Be(1, "no two executions — from either replica — may run concurrently for the same tick");
         }

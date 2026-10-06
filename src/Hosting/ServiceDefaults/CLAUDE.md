@@ -121,7 +121,7 @@ Next free: 13008 (shared block), 13102 (MultiTenancy).
 
 ## Testing
 
-- Nested `{Package}.Tests` projects, all in the **Unit** lane; `consumer-verify` is in the Unit lane too.
+- Nested `{Package}.Tests` projects in the **Unit** lane, except `SharedKernel.ServiceDefaults.Persistence.Tests` (Testcontainers PostgreSQL), which is in the **Integration** lane; `consumer-verify` is in the Unit lane.
 - Every readiness check is asserted tagged `ready` (never `live`) with its `HealthCheckNames` default. `AddSharedKernelReadiness()` is covered with test-double probes (mapping, exclusion, timeout, duplicate name, throwing probe).
 - `WithXTelemetry()`: a span or measurement from the named source is captured; a second call adds no duplicate.
 - Endpoint tests use `HostBuilder().ConfigureWebHost(w => w.UseTestServer())` + `GetTestClient()`.
