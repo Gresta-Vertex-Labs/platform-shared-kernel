@@ -65,8 +65,10 @@ var app = builder.Build();
 app.MapGraphQL();
 ```
 
-`AddSharedKernelGraphQL` returns HotChocolate's `IRequestExecutorBuilder`; call it **before** any service-specific
-`AddGraphQL()`/`AddTypes()` so every type inherits the conventions.
+`AddSharedKernelGraphQL` registers HotChocolate's server (`AddGraphQLServer()`, with its default security policy: cost
+analysis and request limits) and returns its `IRequestExecutorBuilder`; call it **before** any service-specific
+`AddGraphQLServer()`/`AddTypes()` so every type inherits the conventions. `AllowIntrospection` decides introspection in
+every environment; HotChocolate's own policy would otherwise disable it outside Development.
 
 ## How it works
 

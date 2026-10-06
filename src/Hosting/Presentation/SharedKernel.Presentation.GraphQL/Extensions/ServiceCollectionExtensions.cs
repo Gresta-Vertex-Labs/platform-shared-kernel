@@ -30,8 +30,11 @@ public static class ServiceCollectionExtensions
     /// <c>SharedKernelErrorFilter</c>, and the <c>AllowIntrospection</c> gate.
     /// </summary>
     /// <remarks>
-    /// Must be called <b>before</b> any service-specific <c>AddGraphQL()</c> / <c>AddTypes()</c>
+    /// Must be called <b>before</b> any service-specific <c>AddGraphQLServer()</c> / <c>AddTypes()</c>
     /// calls. Idempotent — a second call returns the same builder and is otherwise a no-op.
+    /// Registers the executor through HotChocolate's <c>AddGraphQLServer()</c>, so the ASP.NET Core
+    /// server services <c>app.MapGraphQL()</c> resolves per request are present; <c>AddGraphQL()</c>
+    /// alone registers only the executor and every HTTP request then fails.
     /// HotChocolate v16 is NOT AOT-safe — do not add
     /// <c>&lt;IsAotCompatible&gt;true&lt;/IsAotCompatible&gt;</c> to any project that references
     /// this package.
@@ -49,7 +52,7 @@ public static class ServiceCollectionExtensions
         if (services.Any(d => d.ServiceType == typeof(SharedKernelGraphQLRegistrationMarker)))
         {
             // Return the existing builder (already registered).
-            return services.AddGraphQL();
+            return services.AddGraphQLServer();
         }
 
         services.AddSingleton<SharedKernelGraphQLRegistrationMarker>();
@@ -87,7 +90,7 @@ public static class ServiceCollectionExtensions
 
         // Build the IRequestExecutorBuilder with platform conventions.
         var builder = services
-            .AddGraphQL()
+            .AddGraphQLServer()
             .AddErrorFilter<SharedKernelErrorFilter>();
 
         // Register SharedKernelFilterConvention as IFilterConvention.
@@ -115,11 +118,9 @@ public static class ServiceCollectionExtensions
                 });
         }
 
-        // Introspection gate: disable when AllowIntrospection = false.
-        if (!options.AllowIntrospection)
-        {
-            builder = builder.DisableIntrospection();
-        }
+        // Introspection gate, in both directions: AddGraphQLServer's default security policy disables introspection
+        // outside the Development environment, so AllowIntrospection = true must re-enable it explicitly.
+        builder = builder.DisableIntrospection(!options.AllowIntrospection);
 
         return builder;
     }
