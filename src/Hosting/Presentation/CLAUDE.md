@@ -62,7 +62,7 @@ and `app.MapSharedKernelOpenApi()` (maps nothing outside Development unless `Exp
 `builder.AddSharedKernelGrpc()`; `GrpcErrorCodes`. Services end a failed `Result` with `Error.ToException()`
 (`SharedKernel.Core`).
 
-**GraphQL** — `services.AddSharedKernelGraphQL()` before the service's own `AddGraphQL()`; `FilterBase<T>`,
+**GraphQL** — `services.AddSharedKernelGraphQL()` (HotChocolate's `AddGraphQLServer()`, so `app.MapGraphQL()` works) before the service's own `AddGraphQLServer()`; `FilterBase<T>`,
 `SortBase<T>`, `PagedResponseType<T>.FromPagedList(...)`/`FromConnection`/`FromPage`/`From`.
 
 Canonical host pipeline (`samples/OrderApi`):
