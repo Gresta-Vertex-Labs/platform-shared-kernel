@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    The Catalog's Infrastructure project: the adapters behind the Application's ports. It references Adapter-tier
+    kernel packages (and Foundation), never a Host-tier one; Shop.Catalog.Tests enforces it.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\Shop.Catalog.Application\Shop.Catalog.Application.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SharedKernel.Persistence.EfCore" />
+    <PackageReference Include="SharedKernel.Persistence.Npgsql" />
+    <PackageReference Include="SharedKernel.Caching.FusionCache" />
+    <PackageReference Include="SharedKernel.Caching.Redis" />
+    <PackageReference Include="SharedKernel.Caching.Redis.Core" />
+    <PackageReference Include="SharedKernel.Caching.Redis.PubSub" />
+    <PackageReference Include="SharedKernel.Search.Meilisearch" />
+    <PackageReference Include="SharedKernel.Search.ElasticSearch" />
+    <PackageReference Include="SharedKernel.AI.Qdrant" />
+    <PackageReference Include="SharedKernel.AI.SemanticKernel" />
+    <PackageReference Include="SharedKernel.Storage.S3" />
+    <PackageReference Include="SharedKernel.Validation.FluentValidation" />
+    <PackageReference Include="SharedKernel.Cryptography" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+</Project>

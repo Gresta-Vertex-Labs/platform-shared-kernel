@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    The Catalog's Application project: use cases and the ports they need. It references the kernel's CONTRACTS only
+    (Abstractions-tier packages and Foundation), never an adapter or a host package; Shop.Catalog.Tests enforces it.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\Shop.Catalog.Domain\Shop.Catalog.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SharedKernel.Application" />
+    <PackageReference Include="SharedKernel.Caching.Abstractions" />
+    <PackageReference Include="SharedKernel.Persistence.Abstractions" />
+    <PackageReference Include="SharedKernel.Search.Abstractions" />
+    <PackageReference Include="SharedKernel.AI.Abstractions" />
+    <PackageReference Include="SharedKernel.Storage.Abstractions" />
+    <PackageReference Include="SharedKernel.FeatureManagement" />
+    <PackageReference Include="SharedKernel.Localization" />
+    <PackageReference Include="FluentValidation" />
+  </ItemGroup>
+</Project>

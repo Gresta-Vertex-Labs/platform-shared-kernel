@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <!--
+    The Catalog's Api project: the composition root and the HTTP/GraphQL boundary. The only project of the service
+    that references Host-tier kernel packages. It references its own Application (to send commands) and
+    Infrastructure (to register the adapters).
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\Shop.Catalog.Application\Shop.Catalog.Application.csproj" />
+    <ProjectReference Include="..\Shop.Catalog.Infrastructure\Shop.Catalog.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SharedKernel.ServiceDefaults" />
+    <PackageReference Include="SharedKernel.ServiceDefaults.Security" />
+    <PackageReference Include="SharedKernel.ServiceDefaults.Localization" />
+    <PackageReference Include="SharedKernel.Security.Oidc" />
+    <PackageReference Include="SharedKernel.Application.Pipeline" />
+    <PackageReference Include="SharedKernel.Application.Pipeline.Caching" />
+    <PackageReference Include="SharedKernel.Application.Mediator.MediatR" />
+    <PackageReference Include="SharedKernel.Presentation.WebApi" />
+    <PackageReference Include="SharedKernel.Presentation.OpenApi" />
+    <PackageReference Include="SharedKernel.Presentation.GraphQL" />
+  </ItemGroup>
+</Project>

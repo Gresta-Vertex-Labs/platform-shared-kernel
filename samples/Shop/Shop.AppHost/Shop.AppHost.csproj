@@ -1,0 +1,21 @@
+<Project Sdk="Aspire.AppHost.Sdk/13.6.0">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <UserSecretsId>shop-apphost</UserSecretsId>
+    <!-- The dashboard and orchestrator come from their NuGet packages; the Aspire CLI bundle is not used. -->
+    <NoWarn>$(NoWarn);ASPIRE010</NoWarn>
+  </PropertyGroup>
+
+  <!-- The services the AppHost runs; Aspire generates Projects.* from these references. -->
+  <ItemGroup>
+    <ProjectReference Include="..\Catalog\Shop.Catalog.Api\Shop.Catalog.Api.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Aspire.Hosting.PostgreSQL" />
+    <PackageReference Include="Aspire.Hosting.Redis" />
+    <PackageReference Include="CommunityToolkit.Aspire.Hosting.Ollama" />
+    <!-- Creates the MinIO buckets once MinIO is ready. -->
+    <PackageReference Include="AWSSDK.S3" />
+  </ItemGroup>
+</Project>

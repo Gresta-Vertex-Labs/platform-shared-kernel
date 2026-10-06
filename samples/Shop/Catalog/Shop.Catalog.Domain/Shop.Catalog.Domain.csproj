@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The Catalog's Domain project: references SharedKernel.Domain and nothing else (enforced by Shop.Catalog.Tests). -->
+  <ItemGroup>
+    <PackageReference Include="SharedKernel.Domain" />
+  </ItemGroup>
+</Project>
