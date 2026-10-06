@@ -39,13 +39,9 @@ public sealed class MultiTenancyLogWiringTests
         var context = new DefaultHttpContext();
         context.Request.Headers["X-Tenant-Id"] = expectedTenantId.ToString();
 
-        var middleware = new TenantResolutionMiddleware(
-            _ => Task.CompletedTask,
-            [new HeaderTenantResolutionStrategy()],
-            Options(TenantResolutionStrategyNames.Header),
-            logger);
+        var middleware = new TenantResolutionMiddleware(_ => Task.CompletedTask, Options(TenantResolutionStrategyNames.Header), logger);
 
-        await middleware.InvokeAsync(context);
+        await middleware.InvokeAsync(context, [new HeaderTenantResolutionStrategy()]);
 
         var inMemoryLogger = factory.GetLogger(typeof(TenantResolutionMiddleware).FullName!);
         var record = inMemoryLogger.Records.ShouldHaveLogged(13100, LogLevel.Debug);
@@ -61,13 +57,9 @@ public sealed class MultiTenancyLogWiringTests
         var (factory, logger) = CreateLogging();
         var context = new DefaultHttpContext();
 
-        var middleware = new TenantResolutionMiddleware(
-            _ => Task.CompletedTask,
-            [new HeaderTenantResolutionStrategy()],
-            Options(TenantResolutionStrategyNames.Header),
-            logger);
+        var middleware = new TenantResolutionMiddleware(_ => Task.CompletedTask, Options(TenantResolutionStrategyNames.Header), logger);
 
-        await middleware.InvokeAsync(context);
+        await middleware.InvokeAsync(context, [new HeaderTenantResolutionStrategy()]);
 
         var inMemoryLogger = factory.GetLogger(typeof(TenantResolutionMiddleware).FullName!);
         inMemoryLogger.Records.ShouldHaveLogged(13101, LogLevel.Trace);
@@ -85,13 +77,9 @@ public sealed class MultiTenancyLogWiringTests
         var context = new DefaultHttpContext { RequestServices = services.BuildServiceProvider() };
         context.Request.Headers["X-Tenant-Id"] = Guid.NewGuid().ToString();
 
-        var middleware = new TenantResolutionMiddleware(
-            _ => Task.CompletedTask,
-            [new HeaderTenantResolutionStrategy()],
-            Options(TenantResolutionStrategyNames.Header),
-            logger);
+        var middleware = new TenantResolutionMiddleware(_ => Task.CompletedTask, Options(TenantResolutionStrategyNames.Header), logger);
 
-        await middleware.InvokeAsync(context);
+        await middleware.InvokeAsync(context, [new HeaderTenantResolutionStrategy()]);
 
         var inMemoryLogger = factory.GetLogger(typeof(TenantResolutionMiddleware).FullName!);
         inMemoryLogger.Records.ShouldHaveLogged(13101, LogLevel.Trace);

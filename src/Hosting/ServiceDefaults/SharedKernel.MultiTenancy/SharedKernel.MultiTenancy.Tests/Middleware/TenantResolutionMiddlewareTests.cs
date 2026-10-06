@@ -40,13 +40,9 @@ public sealed class TenantResolutionMiddlewareTests
             return capture.Next(ctx);
         };
 
-        var middleware = new TenantResolutionMiddleware(
-            next,
-            [new HeaderTenantResolutionStrategy(), claim],
-            Options("Header", "Claim"),
-            Logger());
+        var middleware = new TenantResolutionMiddleware(next, Options("Header", "Claim"), Logger());
 
-        await middleware.InvokeAsync(context);
+        await middleware.InvokeAsync(context, [new HeaderTenantResolutionStrategy(), claim]);
 
         Assert.Equal(expectedTenantId, capture.TenantId?.Value);
         Assert.False(claimInvoked);
@@ -60,13 +56,9 @@ public sealed class TenantResolutionMiddlewareTests
         var capture = new TenantCapture();
         RequestDelegate next = capture.Next;
 
-        var middleware = new TenantResolutionMiddleware(
-            next,
-            [new HeaderTenantResolutionStrategy()],
-            Options("Header"),
-            Logger());
+        var middleware = new TenantResolutionMiddleware(next, Options("Header"), Logger());
 
-        await middleware.InvokeAsync(context);
+        await middleware.InvokeAsync(context, [new HeaderTenantResolutionStrategy()]);
 
         Assert.Null(capture.TenantId);
     }
@@ -78,9 +70,9 @@ public sealed class TenantResolutionMiddlewareTests
         var capture = new TenantCapture();
         RequestDelegate next = capture.Next;
 
-        var middleware = new TenantResolutionMiddleware(next, [], Options(), Logger());
+        var middleware = new TenantResolutionMiddleware(next, Options(), Logger());
 
-        await middleware.InvokeAsync(context);
+        await middleware.InvokeAsync(context, []);
 
         Assert.Null(capture.TenantId);
     }
@@ -103,13 +95,9 @@ public sealed class TenantResolutionMiddlewareTests
         // named, registered strategy (not a structurally-unreachable test double), so the
         // assertion proves the omission logic itself, not merely that an unnamed double was
         // never reachable regardless of configuration.
-        var middleware = new TenantResolutionMiddleware(
-            next,
-            [new HeaderTenantResolutionStrategy(), database],
-            Options("Header"),
-            Logger());
+        var middleware = new TenantResolutionMiddleware(next, Options("Header"), Logger());
 
-        await middleware.InvokeAsync(context);
+        await middleware.InvokeAsync(context, [new HeaderTenantResolutionStrategy(), database]);
 
         Assert.False(databaseInvoked);
     }
@@ -126,13 +114,9 @@ public sealed class TenantResolutionMiddlewareTests
         var capture = new TenantCapture();
         RequestDelegate next = capture.Next;
 
-        var middleware = new TenantResolutionMiddleware(
-            next,
-            [custom],
-            Options("Gateway"),
-            Logger());
+        var middleware = new TenantResolutionMiddleware(next, Options("Gateway"), Logger());
 
-        await middleware.InvokeAsync(context);
+        await middleware.InvokeAsync(context, [custom]);
 
         Assert.Equal(expectedTenantId, capture.TenantId?.Value);
     }
@@ -148,13 +132,9 @@ public sealed class TenantResolutionMiddlewareTests
 
         var capture = new TenantCapture();
         RequestDelegate next = capture.Next;
-        var middleware = new TenantResolutionMiddleware(
-            next,
-            [new HeaderTenantResolutionStrategy()],
-            Options("Header"),
-            Logger());
+        var middleware = new TenantResolutionMiddleware(next, Options("Header"), Logger());
 
-        await middleware.InvokeAsync(context);
+        await middleware.InvokeAsync(context, [new HeaderTenantResolutionStrategy()]);
 
         Assert.Equal(expectedTenantId.ToString(), Activity.Current!.GetBaggageItem(WellKnownBaggageKeys.TenantId));
     }
@@ -168,13 +148,9 @@ public sealed class TenantResolutionMiddlewareTests
         var capture = new TenantCapture();
         RequestDelegate next = capture.Next;
 
-        var middleware = new TenantResolutionMiddleware(
-            next,
-            [new HeaderTenantResolutionStrategy()],
-            Options("Header"),
-            Logger());
+        var middleware = new TenantResolutionMiddleware(next, Options("Header"), Logger());
 
-        await middleware.InvokeAsync(context);
+        await middleware.InvokeAsync(context, [new HeaderTenantResolutionStrategy()]);
 
         // No tenant is never written as a Guid.Empty sentinel.
         Assert.Null(Activity.Current!.GetBaggageItem(WellKnownBaggageKeys.TenantId));
@@ -190,13 +166,9 @@ public sealed class TenantResolutionMiddlewareTests
         var capture = new TenantCapture();
         RequestDelegate next = capture.Next;
 
-        var middleware = new TenantResolutionMiddleware(
-            next,
-            [new HeaderTenantResolutionStrategy()],
-            Options("Header"),
-            Logger());
+        var middleware = new TenantResolutionMiddleware(next, Options("Header"), Logger());
 
-        var exception = await Record.ExceptionAsync(() => middleware.InvokeAsync(context));
+        var exception = await Record.ExceptionAsync(() => middleware.InvokeAsync(context, [new HeaderTenantResolutionStrategy()]));
 
         Assert.Null(exception);
     }
@@ -219,13 +191,9 @@ public sealed class TenantResolutionMiddlewareTests
 
         var capture = new TenantCapture();
         RequestDelegate next = capture.Next;
-        var middleware = new TenantResolutionMiddleware(
-            next,
-            [claim, header],
-            Options(TenantResolutionStrategyNames.Claim, TenantResolutionStrategyNames.Header),
-            Logger());
+        var middleware = new TenantResolutionMiddleware(next, Options(TenantResolutionStrategyNames.Claim, TenantResolutionStrategyNames.Header), Logger());
 
-        await middleware.InvokeAsync(context);
+        await middleware.InvokeAsync(context, [claim, header]);
 
         Assert.Equal(claimTenantId, capture.TenantId?.Value);
     }
@@ -245,13 +213,9 @@ public sealed class TenantResolutionMiddlewareTests
 
         var capture = new TenantCapture();
         RequestDelegate next = capture.Next;
-        var middleware = new TenantResolutionMiddleware(
-            next,
-            [claim, header],
-            Options(TenantResolutionStrategyNames.Claim, TenantResolutionStrategyNames.Header),
-            Logger());
+        var middleware = new TenantResolutionMiddleware(next, Options(TenantResolutionStrategyNames.Claim, TenantResolutionStrategyNames.Header), Logger());
 
-        await middleware.InvokeAsync(context);
+        await middleware.InvokeAsync(context, [claim, header]);
 
         Assert.Equal(expectedTenantId, capture.TenantId?.Value);
     }
@@ -268,13 +232,9 @@ public sealed class TenantResolutionMiddlewareTests
 
         var capture = new TenantCapture();
         RequestDelegate next = capture.Next;
-        var middleware = new TenantResolutionMiddleware(
-            next,
-            [new HeaderTenantResolutionStrategy()],
-            Options("Header"),
-            Logger());
+        var middleware = new TenantResolutionMiddleware(next, Options("Header"), Logger());
 
-        await middleware.InvokeAsync(context);
+        await middleware.InvokeAsync(context, [new HeaderTenantResolutionStrategy()]);
 
         Assert.Equal(expectedTenantId, capture.TenantId?.Value);
     }
@@ -290,13 +250,9 @@ public sealed class TenantResolutionMiddlewareTests
 
         var capture = new TenantCapture();
         RequestDelegate next = capture.Next;
-        var middleware = new TenantResolutionMiddleware(
-            next,
-            [new HeaderTenantResolutionStrategy()],
-            Options("Header"),
-            Logger());
+        var middleware = new TenantResolutionMiddleware(next, Options("Header"), Logger());
 
-        await middleware.InvokeAsync(context);
+        await middleware.InvokeAsync(context, [new HeaderTenantResolutionStrategy()]);
 
         Assert.Equal(expectedTenantId, capture.TenantId?.Value);
     }
@@ -314,13 +270,9 @@ public sealed class TenantResolutionMiddlewareTests
 
         var capture = new TenantCapture();
         RequestDelegate next = capture.Next;
-        var middleware = new TenantResolutionMiddleware(
-            next,
-            [new HeaderTenantResolutionStrategy()],
-            Options("Header"),
-            Logger());
+        var middleware = new TenantResolutionMiddleware(next, Options("Header"), Logger());
 
-        await middleware.InvokeAsync(context);
+        await middleware.InvokeAsync(context, [new HeaderTenantResolutionStrategy()]);
 
         Assert.Null(capture.TenantId);
     }
@@ -337,13 +289,9 @@ public sealed class TenantResolutionMiddlewareTests
 
         var capture = new TenantCapture();
         RequestDelegate next = capture.Next;
-        var middleware = new TenantResolutionMiddleware(
-            next,
-            [new HeaderTenantResolutionStrategy()],
-            Options("Header"),
-            Logger());
+        var middleware = new TenantResolutionMiddleware(next, Options("Header"), Logger());
 
-        await middleware.InvokeAsync(context);
+        await middleware.InvokeAsync(context, [new HeaderTenantResolutionStrategy()]);
 
         Assert.Null(Activity.Current!.GetBaggageItem(WellKnownBaggageKeys.TenantId));
     }

@@ -102,7 +102,7 @@ Without `SharedKernel.Presentation.WebApi`: `UseSharedKernelRequestContext()`, `
 | --- | --- | --- |
 | `ClaimTenantResolutionStrategy` | `Claim` | The authenticated credential's tenant, through the scheme's `IUserContextMapper` |
 | `HeaderTenantResolutionStrategy` | `Header` | `X-Tenant-Id` (`WellKnownHeaders.TenantId`) via `TenantId.TryParse`; malformed → no tenant, never an exception |
-| `DatabaseTenantResolutionStrategy` | `Database` | `SELECT tenant_id FROM tenant_directory WHERE host = @host` through `IDbConnectionFactory` |
+| `DatabaseTenantResolutionStrategy` | `Database` | `SELECT tenant_id FROM tenant_directory WHERE host = @host` through `IDbConnectionFactory`. Without a registered `IDbConnectionFactory` the slot holds a placeholder and startup fails only if `StrategyOrder` (or the default order) names `Database` — a service without a tenant directory sets `StrategyOrder` without it |
 
 **Why Claim → Header → Database?** A JWT tenant claim is signature-verified; the header is caller-supplied and trivially
 forged. Putting `Header` first would let any caller override a verified identity — a cross-tenant impersonation
@@ -168,7 +168,7 @@ The `tenant_directory` table (`tenant_id`, `host`, `resolution_key`, `display_na
 
 | Type | Purpose |
 | --- | --- |
-| `TenantResolutionMiddleware` | Resolves the tenant and opens the inner scope |
+| `TenantResolutionMiddleware` | Resolves the tenant and opens the inner scope. The strategies are scoped and injected per request into `InvokeAsync(HttpContext, IEnumerable<ITenantResolutionStrategy>)`, never captured by the middleware |
 | `ITenantResolutionStrategy`, `TenantResolutionStrategyNames` | Strategy contract; `Claim`, `Header`, `Database` |
 | `ITenantStatusValidator` | `IsActiveAsync(TenantId, ct)`; optional gate |
 | `ITenantCatalog` | `GetByIdAsync(TenantId, ct)`, `GetByResolutionKeyAsync(string, ct)` → `TenantDescriptor?` |
