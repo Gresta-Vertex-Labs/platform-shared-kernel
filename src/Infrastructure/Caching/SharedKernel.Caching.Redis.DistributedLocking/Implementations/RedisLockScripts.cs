@@ -44,8 +44,18 @@ internal static class RedisLockScripts
     // PX takes whole milliseconds and rejects 0.
     internal static long ToMilliseconds(TimeSpan duration) => Math.Max(1, (long)Math.Ceiling(duration.TotalMilliseconds));
 
-    // OperationCanceledException included: ScriptEvaluateAsync takes no token, so a cancellation from it is the
-    // client abandoning a frozen or dropped store, never a caller's cancellation. Every caller wraps only that call.
+    // Every caller wraps only one ScriptEvaluateAsync call, so whatever it throws is the client failing to reach the
+    // store, never this package's own logic. StackExchange.Redis does not always wrap that in a RedisException:
+    // - OperationCanceledException: the call takes no token, so a cancellation is the client abandoning a frozen or
+    //   dropped store, never a caller's cancellation;
+    // - InvalidOperationException (incl. ObjectDisposedException): the socket pipe was completed or the multiplexer
+    //   disposed under an in-flight call ("Reading is not allowed after reader was completed");
+    // - IOException / SocketException: a transport error that surfaced unwrapped.
     internal static bool IsStoreFailure(Exception exception) =>
-        exception is RedisException or TimeoutException or OperationCanceledException;
+        exception is RedisException
+            or TimeoutException
+            or OperationCanceledException
+            or InvalidOperationException
+            or IOException
+            or System.Net.Sockets.SocketException;
 }

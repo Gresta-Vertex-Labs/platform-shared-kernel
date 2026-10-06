@@ -55,7 +55,9 @@ internal sealed partial class RedisChannelSubscription : IAsyncDisposable
             // Completes the queue, which ends the read loop after the current message.
             await _queue.UnsubscribeAsync().ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is RedisException or TimeoutException)
+        // StackExchange.Redis does not always wrap a dropped connection in a RedisException: a completed socket pipe
+        // or a disposed multiplexer surfaces as InvalidOperationException, a transport error as IOException.
+        catch (Exception ex) when (ex is RedisException or TimeoutException or InvalidOperationException or IOException)
         {
             // The server forgets the subscription when the connection drops; nothing is left to clean up.
             Log.UnsubscribeFailed(_logger, _channel, ex);
