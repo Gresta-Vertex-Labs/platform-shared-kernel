@@ -49,7 +49,7 @@ Related packages outside this folder:
 | [SharedKernel.Execution](../Foundation/SharedKernel.Execution/README.md) | The contracts the behaviors consume: `IRequestContext` (the caller), `IUnitOfWork`, `IAuditTrailWriter` |
 | [SharedKernel.Validation.FluentValidation](../Foundation/SharedKernel.Validation.FluentValidation/README.md) | `AddFluentValidationRequestValidators(assembly)` — FluentValidation validators as `IRequestValidator<T>` |
 | [SharedKernel.Idempotency.Abstractions](../Infrastructure/Idempotency/SharedKernel.Idempotency.Abstractions/README.md) | `IIdempotencyStore`, implemented by `Idempotency.Redis` and `Idempotency.EfCore` |
-| [SharedKernel.Application.Testing](../Testing/SharedKernel.Application.Testing/README.md) | `ApplicationPipelineTestHarness` — the composed pipeline in a unit test, with or without a mediator |
+| [SharedKernel.Application.Testing](./SharedKernel.Application.Testing/README.md) | `ApplicationPipelineTestHarness` — the composed pipeline in a unit test, with or without a mediator |
 
 ## How it fits together
 

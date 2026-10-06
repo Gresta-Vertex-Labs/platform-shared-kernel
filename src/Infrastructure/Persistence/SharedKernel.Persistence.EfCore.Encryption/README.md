@@ -290,7 +290,7 @@ skipped, tenant keys shredded. No metric or log carries key material, a value, a
 
 Use a static key source in tests — `k.FromConfiguration()` with keys from an in-memory configuration — and run
 encryption against real PostgreSQL through
-[`SharedKernel.Persistence.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Persistence.Testing/README.md)'s
+[`SharedKernel.Persistence.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Persistence/SharedKernel.Persistence.Testing/README.md)'s
 `PostgresTestServer`/`PostgresTestDatabase`. `AddFakeCrossTenantScope()` covers handler tests that only enter a scope.
 The query guard and the model checks run without a database.
 

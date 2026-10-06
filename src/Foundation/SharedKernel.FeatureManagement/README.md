@@ -422,7 +422,7 @@ Behaviour options are set in code on `FeatureFlagOptions` (not bound from config
 
 ## Testing
 
-Reference [`SharedKernel.FeatureManagement.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.FeatureManagement.Testing/README.md)
+Reference [`SharedKernel.FeatureManagement.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Foundation/SharedKernel.FeatureManagement.Testing/README.md)
 (namespace `SharedKernel.Testing.FeatureManagement`):
 
 ```csharp

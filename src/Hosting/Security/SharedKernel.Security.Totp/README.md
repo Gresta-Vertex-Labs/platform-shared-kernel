@@ -355,9 +355,9 @@ Codes, secrets and recovery codes are never logged.
 
 Everything reads `IClock`: register a movable clock **before** `AddSharedKernelCryptography` and generate codes with
 `TotpGenerator` over the same clock.
-[`SharedKernel.Security.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Security.Testing/README.md)
+[`SharedKernel.Security.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Security/SharedKernel.Security.Testing/README.md)
 provides `InMemoryTotpStepUpStore` and `InMemoryRecoveryCodeStore` (`Save(subjectId, codes)`);
-[`SharedKernel.Cryptography.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Cryptography.Testing/README.md)
+[`SharedKernel.Cryptography.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Foundation/SharedKernel.Cryptography.Testing/README.md)
 provides `FakeTotpReplayGuard`.
 
 ```csharp

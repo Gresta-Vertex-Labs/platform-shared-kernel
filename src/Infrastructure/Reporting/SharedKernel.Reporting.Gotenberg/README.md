@@ -183,7 +183,7 @@ connection failure is unhealthy. `AddSharedKernelReadiness()` exposes it on `/he
 
 ## Testing
 
-Reference [`SharedKernel.Reporting.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Reporting.Testing/README.md)
+Reference [`SharedKernel.Reporting.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Reporting/SharedKernel.Reporting.Testing/README.md)
 and call `services.AddInMemoryReporting()`: `InMemoryHtmlToPdfConverter` replaces the converter, records every
 document (`Conversions`, `LastConversion` with the HTML, options and destination), writes `PlaceholderPdf`, and fails on
 demand (`SimulateFailure`, `SimulatedError`). For the real rendering, run `gotenberg/gotenberg:8` in a container.

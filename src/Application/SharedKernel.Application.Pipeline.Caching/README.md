@@ -441,7 +441,7 @@ No tenant id, user id, cache key or cached value is ever a log or metric paramet
 
 ## Testing
 
-Reference [`SharedKernel.Caching.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Caching.Testing/README.md): its
+Reference [`SharedKernel.Caching.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Caching/SharedKernel.Caching.Testing/README.md): its
 `FakeCacheService` reproduces the per-key stampede gate and the `SkipCaching()` split this package relies on, so a
 test against it fails on the same regressions a real cache would.
 
@@ -458,7 +458,7 @@ cache.FactoryInvocationCount.Should().Be(1);      // second dispatch was a hit
 ```
 
 For a full composition without a mediator, `ApplicationPipelineTestHarness` from
-[`SharedKernel.Application.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Application.Testing/README.md) accepts
+[`SharedKernel.Application.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Application/SharedKernel.Application.Testing/README.md) accepts
 `Configure(app => app.WithCaching())`.
 
 ## Pitfalls

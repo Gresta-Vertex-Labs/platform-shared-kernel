@@ -146,7 +146,7 @@ No events of its own (EventId block 20300–20399 is reserved); the base class l
 ## Testing
 
 Unit tests of code that exports use
-[`SharedKernel.Reporting.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Reporting.Testing/README.md)
+[`SharedKernel.Reporting.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Reporting/SharedKernel.Reporting.Testing/README.md)
 (`AddInMemoryReporting()`, `InMemoryReportExporter<T>`). To check the document itself, export to a `MemoryStream` and
 open it with PDFsharp's reader or any PDF text extractor.
 

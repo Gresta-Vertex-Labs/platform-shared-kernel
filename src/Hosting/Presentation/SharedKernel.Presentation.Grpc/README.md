@@ -183,7 +183,7 @@ refusals are logged by `Presentation.Core` (14002).
 
 ## Testing
 
-Call a method directly with [`SharedKernel.Presentation.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Presentation.Testing/README.md)'s
+Call a method directly with [`SharedKernel.Presentation.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Presentation/SharedKernel.Presentation.Testing/README.md)'s
 `TestServerCallContext` (namespace `SharedKernel.Testing.Grpc`). It runs without the interceptor, so a failed result
 is the exception `GetValueOrThrow()` threw — assert its `Error`:
 

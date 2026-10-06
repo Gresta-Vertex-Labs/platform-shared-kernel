@@ -71,7 +71,7 @@ Record each as a `⊘` registry row plus a Completed Phases line with the reason
 
 ## Phase-design conventions for this domain
 
-- **Contract first.** A change touching `Caching.Abstractions` is a public-API change for every consumer, every fake in `src/Testing/SharedKernel.Caching.Testing`, and `consumer-verify/SharedKernel.Caching.ConsumerVerify`. Put a D-task on the contract shape before C-tasks, and add a cross-domain note for `16.Testing` when a fake must follow.
+- **Contract first.** A change touching `Caching.Abstractions` is a public-API change for every consumer, every fake in `src/Infrastructure/Caching/SharedKernel.Caching.Testing`, and `consumer-verify/SharedKernel.Caching.ConsumerVerify`. Put a D-task on the contract shape before C-tasks, and add a cross-domain note for `16.Testing` when a fake must follow.
 - **Lane placement.** Anything needing Redis is Integration lane (Testcontainers Redis via `SharedKernel.Testing.Internal`); FusionCache L1-only behaviour is Unit lane. Say which in the T-tasks.
 - **Test obligations to name in T-tasks** when the area is touched: hit vs miss, stampede, `SkipCaching`, expire vs remove under fail-safe, tenant isolation, lock outcomes and fencing monotonicity, encryption tamper/replay/cross-tenant, cross-instance behaviour with two independent `ServiceProvider`s and bounded polling (never a fixed delay).
 - **Registration order.** A new `ICachingBuilder` extension states where it sits relative to `AddBrotliCompression()` → `AddCacheEncryption()` (encryption last) and whether it needs `AddRedisConnection` first.

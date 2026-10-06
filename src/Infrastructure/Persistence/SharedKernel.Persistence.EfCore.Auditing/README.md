@@ -292,7 +292,7 @@ duplicates, sealed records, seal duration and lag, verification failures by kind
 ## Testing
 
 In handler unit tests, replace the writer with
-[`SharedKernel.Persistence.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Persistence.Testing/README.md)'s
+[`SharedKernel.Persistence.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Persistence/SharedKernel.Persistence.Testing/README.md)'s
 `services.AddFakeAuditTrailWriter()` and assert on the entries it recorded. To test the ledger itself, use
 `PostgresTestServer`/`PostgresTestDatabase` (the production role split) and `IAuditLedgerMaintenance.SealPendingAsync()`
 to seal without waiting for the background interval.

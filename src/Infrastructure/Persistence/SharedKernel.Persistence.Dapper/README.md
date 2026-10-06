@@ -189,7 +189,7 @@ pgvector `Vector`, `HalfVector`, `SparseVector` (with `UseVector: true` on the d
 ## Testing
 
 Test Dapper sessions against real PostgreSQL:
-[`SharedKernel.Persistence.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Persistence.Testing/README.md)'s
+[`SharedKernel.Persistence.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Persistence/SharedKernel.Persistence.Testing/README.md)'s
 `PostgresTestServer.StartAsync()` / `PostgresTestDatabase` create a database with the production role split, so
 row-level-security claims are proven through an unprivileged role. For handler unit tests that only need a
 connection, `FakeDbConnectionFactory` wraps a connection you supply.

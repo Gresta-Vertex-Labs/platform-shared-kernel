@@ -172,7 +172,7 @@ those of [`SharedKernel.Storage.S3`](https://github.com/Gresta-Vertex-Labs/platf
 ## Testing
 
 Application code is tested with the in-memory stores of
-[`SharedKernel.Storage.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Storage.Testing/README.md)
+[`SharedKernel.Storage.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Storage/SharedKernel.Storage.Testing/README.md)
 (`AddSharedKernelStorage().AddInMemoryStore("archive")`). They support conditions and checksums that OBS refuses, so
 cover the `storage.not_supported` path of OBS-backed code with a test of its own. The OBS wiring itself can only be
 verified against a real OBS bucket; the `DocumentsApi` sample runs its scenarios there when credentials are supplied.

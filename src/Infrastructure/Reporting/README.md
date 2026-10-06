@@ -40,7 +40,7 @@ query databases, template HTML, translate headers or schedule jobs — the servi
 | [`SharedKernel.Reporting.Pdf`](SharedKernel.Reporting.Pdf/README.md) | Adapter | A tabular PDF (title + table) for statements and lists, capped by `MaxRows` (PDFsharp/MigraDoc) |
 | [`SharedKernel.Reporting.Gotenberg`](SharedKernel.Reporting.Gotenberg/README.md) | Adapter | Free-form PDFs from HTML — invoices, letters — through a Gotenberg container |
 
-Test doubles: [`SharedKernel.Reporting.Testing`](../../Testing/SharedKernel.Reporting.Testing/README.md)
+Test doubles: [`SharedKernel.Reporting.Testing`](./SharedKernel.Reporting.Testing/README.md)
 (`AddInMemoryReporting()`, `InMemoryReportExporter<T>`, `InMemoryReportExporterFactory`, `InMemoryHtmlToPdfConverter`).
 
 ## How it fits together

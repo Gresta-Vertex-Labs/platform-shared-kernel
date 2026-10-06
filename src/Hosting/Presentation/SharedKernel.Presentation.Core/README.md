@@ -124,9 +124,9 @@ public override Task<Reply> CloseAccount(CloseRequest request, ServerCallContext
 ## Testing
 
 Drive the attributes through a `WebApplicationFactory<Program>` host with a test authentication scheme, or register
-[`SharedKernel.Security.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Security.Testing/README.md)'s
+[`SharedKernel.Security.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Security/SharedKernel.Security.Testing/README.md)'s
 `FakeUserContext` with the `Permissions`, `Roles`, `AuthenticationMethods` and `AuthTime` the case needs. For gRPC
-methods called directly, [`SharedKernel.Presentation.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Presentation.Testing/README.md)'s
+methods called directly, [`SharedKernel.Presentation.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Presentation/SharedKernel.Presentation.Testing/README.md)'s
 `TestServerCallContext.Create(...)` supplies a `ServerCallContext`.
 
 ## Pitfalls

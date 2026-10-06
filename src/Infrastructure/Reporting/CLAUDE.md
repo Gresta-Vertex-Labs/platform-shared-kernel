@@ -125,10 +125,10 @@ EventIds are written as `LoggingEventIdRanges.Reporting + n`. Telemetry: `Activi
 - Unit lane (`Platform.SharedKernel.Unit.slnf`): `.Abstractions.Tests` (pipeline: nothing stored on failure, early
   upload stop, tenant stores, content disposition, spans, `AbstractionsPurityTests`), `.Csv.Tests`, `.Spreadsheet.Tests`
   (read back with ClosedXML), `.Pdf.Tests` (layout fits the page, read back with PDFsharp), `consumer-verify`,
-  `src/Testing/SharedKernel.Reporting.Testing.Tests`.
+  `src/Infrastructure/Reporting/SharedKernel.Reporting.Testing/SharedKernel.Reporting.Testing.Tests`.
 - Integration lane (`Platform.SharedKernel.Integration.slnf`): `.Gotenberg.Tests` — stub-handler tests of every form
   field and error mapping, plus a real `gotenberg/gotenberg:8.x` container via Testcontainers.
-- Consumer fakes: `src/Testing/SharedKernel.Reporting.Testing` — `InMemoryReportExporter<T>`,
+- Consumer fakes: `src/Infrastructure/Reporting/SharedKernel.Reporting.Testing` — `InMemoryReportExporter<T>`,
   `InMemoryReportExporterFactory`, `InMemoryHtmlToPdfConverter`, `AddInMemoryReporting()`.
 - End to end: `samples/DocumentsApi` (`POST /reports/{store}/listing?format=`, the PDF endpoint) against MinIO + Gotenberg.
 

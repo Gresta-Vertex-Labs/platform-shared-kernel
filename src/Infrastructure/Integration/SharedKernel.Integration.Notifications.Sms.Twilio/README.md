@@ -122,7 +122,7 @@ Spans come from `NotificationIntegrationActivitySource` (`SharedKernel.Integrati
 ## Testing
 
 Unit tests of code that sends SMS use
-[`SharedKernel.Integration.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Integration.Testing/README.md):
+[`SharedKernel.Integration.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Integration/SharedKernel.Integration.Testing/README.md):
 `services.AddInMemoryNotificationSender(NotificationChannel.Sms)` replaces this sender and records every message
 (`ShouldHaveSent<TModel>(…)`). To test this provider itself, stub the named client with a `DelegatingHandler` and
 assert the form body and the `Idempotency-Key` header.

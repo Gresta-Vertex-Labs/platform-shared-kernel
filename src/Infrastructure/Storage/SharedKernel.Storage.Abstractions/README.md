@@ -392,7 +392,7 @@ checks that the store's bucket is reachable with the configured credentials. The
 
 ## Testing
 
-Reference [`SharedKernel.Storage.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Storage.Testing/README.md)
+Reference [`SharedKernel.Storage.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Storage/SharedKernel.Storage.Testing/README.md)
 from your test project. Its in-memory store applies the same key, option and tenant rules as the real providers:
 
 ```csharp

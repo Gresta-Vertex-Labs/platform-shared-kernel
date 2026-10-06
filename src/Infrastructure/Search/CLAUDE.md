@@ -215,7 +215,7 @@ Take the next free id in the package's sub-block. Telemetry: `ActivitySource`/`M
 - Unit lane (`Platform.SharedKernel.Unit.slnf`): `SharedKernel.Search.Abstractions.Tests` (errors, filter factories,
   builder immutability and AND semantics, fingerprint stability, readiness mapping, `ToPagedList` guards,
   `ContractShapeTests` locking `EnumerateAsync`'s shape and the mandatory `SearchWriteConsistency`/`TenantScope`
-  parameters), the three `consumer-verify` projects, `src/Testing/SharedKernel.Search.Testing.Tests`.
+  parameters), the three `consumer-verify` projects, `src/Infrastructure/Search/SharedKernel.Search.Testing/SharedKernel.Search.Testing.Tests`.
 - Integration lane (`Platform.SharedKernel.Integration.slnf`): `SharedKernel.Search.Meilisearch.Tests` and
   `SharedKernel.Search.ElasticSearch.Tests` against real containers. Both run the same fixed-corpus conformance suite
   (range bounds, empty `All`/`Any`, single-value `In`, `Negate` nesting, string escaping, `DateTimeOffset` bounds,

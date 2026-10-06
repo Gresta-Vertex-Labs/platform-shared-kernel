@@ -22,7 +22,7 @@ Three packages (details in `src/Infrastructure/Storage/CLAUDE.md` → `## Packag
 | `SharedKernel.Storage.S3` | Adapter | the S3 implementation (AWS, MinIO, any S3-compatible) over `AWSSDK.S3`; `S3Compatibility` |
 | `SharedKernel.Storage.Obs` | Adapter | Huawei OBS as configuration + a compatibility profile over S3 — **declared edge Obs → S3** (S3 never references Obs) |
 
-Public types live in the flat namespace `SharedKernel.Storage` (option types in `SharedKernel.Storage.S3` / `.Obs`). Consumer fakes: `src/Testing/SharedKernel.Storage.Testing`. Proof: `consumer-verify/` and `samples/DocumentsApi` (MinIO, plus live AWS S3 and OBS runs with `SK_LIVE_*`).
+Public types live in the flat namespace `SharedKernel.Storage` (option types in `SharedKernel.Storage.S3` / `.Obs`). Consumer fakes: `src/Infrastructure/Storage/SharedKernel.Storage.Testing`. Proof: `consumer-verify/` and `samples/DocumentsApi` (MinIO, plus live AWS S3 and OBS runs with `SK_LIVE_*`).
 
 A new provider plugs in through `IStorageBuilder` + `FileStoreRegistration(name, tenantScoped, factory, probe)`; tenant isolation, validation and probes come from Abstractions, so the provider only sees validated, prefixed keys.
 

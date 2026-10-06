@@ -251,7 +251,7 @@ probes with `services.AddHealthChecks().AddSharedKernelReadiness()`. There is no
 
 ## Testing
 
-Reference [`SharedKernel.AI.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.AI.Testing/README.md)
+Reference [`SharedKernel.AI.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/AI/SharedKernel.AI.Testing/README.md)
 from your test project (namespace `SharedKernel.Testing.Intelligence`):
 
 ```csharp

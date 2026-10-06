@@ -40,7 +40,7 @@ on every read, and no engine allowed to answer approximately while claiming to b
 | [`SharedKernel.Search.Meilisearch`](SharedKernel.Search.Meilisearch/README.md) | Adapter | User-facing, typo-tolerant search; instant search; tenant tokens a browser can hold |
 | [`SharedKernel.Search.ElasticSearch`](SharedKernel.Search.ElasticSearch/README.md) | Adapter | Analytics and large corpora: aggregations, point-in-time paging, completion suggestions |
 
-In-memory fakes for unit tests: [`SharedKernel.Search.Testing`](../../Testing/SharedKernel.Search.Testing/README.md).
+In-memory fakes for unit tests: [`SharedKernel.Search.Testing`](./SharedKernel.Search.Testing/README.md).
 
 ## Architecture
 

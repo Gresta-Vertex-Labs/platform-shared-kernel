@@ -469,7 +469,7 @@ string token = new JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor
 ```
 
 Replacing only the metadata source is fine; changing a pinned setting in that `PostConfigure` stops the host.
-[`SharedKernel.Security.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Security.Testing/README.md)
+[`SharedKernel.Security.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Security/SharedKernel.Security.Testing/README.md)
 (namespace `SharedKernel.Testing.Security`) adds `DpopTestProofBuilder` (valid and deliberately broken proofs),
 `InMemoryDpopReplayCache` (single process only), `MtlsTestCertificateBuilder` for certificate-bound tokens, and
 `FakeUserContext`/`SecurityTestContextBuilder` for code that only reads the caller.

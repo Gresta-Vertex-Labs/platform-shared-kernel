@@ -312,7 +312,7 @@ check for the configured bus; `AddSharedKernelReadiness()` exposes it on `/healt
 ## Testing
 
 In a service's unit tests, replace the bus with
-[`SharedKernel.Messaging.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Messaging.Testing/README.md):
+[`SharedKernel.Messaging.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Messaging/SharedKernel.Messaging.Testing/README.md):
 `services.AddInMemoryMessageBus().AddInMemoryEventPublisher()` and assert with `ShouldHavePublished<T>()` /
 `ShouldHaveSent<T>()`. A consumer body is tested by calling it directly or through MassTransit's
 `AddMassTransitTestHarness()` (package `MassTransit.TestFramework`), waiting on `harness.InactivityTask`. For

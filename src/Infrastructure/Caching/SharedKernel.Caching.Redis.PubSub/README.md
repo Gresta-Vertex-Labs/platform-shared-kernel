@@ -267,7 +267,7 @@ No probe of its own: the `redis` readiness probe registered by `AddRedisConnecti
 
 ## Testing
 
-Reference [`SharedKernel.Caching.Redis.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Caching.Redis.Testing/README.md)
+Reference [`SharedKernel.Caching.Redis.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Caching/SharedKernel.Caching.Redis.Testing/README.md)
 from your test project and call `services.AddFakeRedisServices()` (namespace `SharedKernel.Testing.Caching`); no Redis
 and no `AddRedisConnection` needed.
 

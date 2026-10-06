@@ -184,7 +184,7 @@ The `tenant_directory` table (`tenant_id`, `host`, `resolution_key`, `display_na
 
 ## Testing
 
-Reference [`SharedKernel.ServiceDefaults.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.ServiceDefaults.Testing/README.md)
+Reference [`SharedKernel.ServiceDefaults.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Testing/README.md)
 (namespace `SharedKernel.Testing.ServiceDefaults`):
 
 - `new FakeTenantResolutionStrategy(tenantId)` (or a resolver delegate), `StrategyName` settable — drive the middleware

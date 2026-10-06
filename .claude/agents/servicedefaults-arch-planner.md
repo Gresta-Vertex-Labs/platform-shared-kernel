@@ -26,7 +26,7 @@ Seven packages, **all Host tier** (details in `src/Hosting/ServiceDefaults/CLAUD
 | `SharedKernel.ServiceDefaults.Localization` | request-culture resolution |
 | `SharedKernel.MultiTenancy` | `TenantResolutionMiddleware`, strategies, `ITenantStatusValidator`, read-only `ITenantCatalog` |
 
-Consumer fakes: `src/Testing/SharedKernel.ServiceDefaults.Testing`. Compiled reference host: `samples/OrderApi/OrderApi.Api/Program.cs`. Philosophy: composition-only, opt-in by default, live ≠ ready, one request context.
+Consumer fakes: `src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Testing`. Compiled reference host: `samples/OrderApi/OrderApi.Api/Program.cs`. Philosophy: composition-only, opt-in by default, live ≠ ready, one request context.
 
 ---
 

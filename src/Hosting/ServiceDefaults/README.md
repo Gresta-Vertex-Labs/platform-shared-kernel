@@ -41,7 +41,7 @@ not use — each integration that needs another kernel package lives in a `Share
 | [`SharedKernel.ServiceDefaults.Configuration.KeyVault`](SharedKernel.ServiceDefaults.Configuration.KeyVault/README.md) | Host | Secrets live in Azure Key Vault — `AddSharedKernelKeyVaultConfiguration(vaultUri)` |
 | [`SharedKernel.ServiceDefaults.Localization`](SharedKernel.ServiceDefaults.Localization/README.md) | Host | Responses are localized — user preference → tenant default → `Accept-Language` |
 
-Test doubles: [`SharedKernel.ServiceDefaults.Testing`](../../Testing/SharedKernel.ServiceDefaults.Testing/README.md)
+Test doubles: [`SharedKernel.ServiceDefaults.Testing`](./SharedKernel.ServiceDefaults.Testing/README.md)
 (`FakeTenantResolutionStrategy`, `InMemoryTenantCatalog`, health-check tag assertions).
 
 ## How a request is composed

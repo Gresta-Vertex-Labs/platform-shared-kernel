@@ -10,7 +10,7 @@
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Communication.Grpc.csproj" />
     <ProjectReference Include="..\..\..\..\Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
-    <ProjectReference Include="..\..\..\..\Testing\SharedKernel.Communication.Testing\SharedKernel.Communication.Testing.csproj" />
+    <ProjectReference Include="..\..\SharedKernel.Communication.Testing\SharedKernel.Communication.Testing.csproj" />
     <!-- Test-only: the real-assembly EventId integrity check. -->
     <ProjectReference Include="..\..\..\..\..\tools\Governance\SharedKernel.ArchitectureTests\SharedKernel.ArchitectureTests.csproj" />
   </ItemGroup>

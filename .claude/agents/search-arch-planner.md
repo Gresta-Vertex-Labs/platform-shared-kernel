@@ -22,7 +22,7 @@ Three packages (details in `src/Infrastructure/Search/CLAUDE.md` → `## Package
 | `SharedKernel.Search.Meilisearch` | Adapter | BFF/fast; `MeiliSearch` SDK (non-AOT-safe, contained); exclusive `IInstantSearch<T>`, `ITenantSearchTokenIssuer`, `MeilisearchRankingRule` |
 | `SharedKernel.Search.ElasticSearch` | Adapter | analytics/heavy; `Elastic.Clients.Elasticsearch` 9.x (server 9.x/10.x); exclusive `IAnalyticsSearch<T>`, `ICursorSearch<T>`, `ISuggestSearch<T>` |
 
-**No declared adapter edges**: the providers never reference each other and share no base or `.Core` — shared shape is duplicated deliberately. Consumer fakes: `src/Testing/SharedKernel.Search.Testing`; container fixtures in `SharedKernel.Testing.Internal`; proof: `src/Infrastructure/Search/consumer-verify/{Meilisearch,ElasticSearch,BothProviders}` and `samples/CatalogApi`.
+**No declared adapter edges**: the providers never reference each other and share no base or `.Core` — shared shape is duplicated deliberately. Consumer fakes: `src/Infrastructure/Search/SharedKernel.Search.Testing`; container fixtures in `SharedKernel.Testing.Internal`; proof: `src/Infrastructure/Search/consumer-verify/{Meilisearch,ElasticSearch,BothProviders}` and `samples/CatalogApi`.
 
 Philosophy: **intersection-only, fail-loud, typed escape at the package seam, no silent degradation.**
 

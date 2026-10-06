@@ -24,7 +24,7 @@ Five packages (details in `src/Hosting/Security/CLAUDE.md` → `## Packages`, `#
 | `SharedKernel.Security.Mtls` | Host | client-certificate authentication, private-CA trust |
 | `SharedKernel.Security.Totp` | Host | session-bound step-up, enrollment, recovery codes |
 
-The four scheme packages are Host tier because they use ASP.NET Core authentication; they **never reference each other**. Consumer fakes: `src/Testing/SharedKernel.Security.Testing`.
+The four scheme packages are Host tier because they use ASP.NET Core authentication; they **never reference each other**. Consumer fakes: `src/Hosting/Security/SharedKernel.Security.Testing`.
 
 **What this domain does not own** (redirect, never plan here): the execution context every project reads (`IRequestContext`, `01.Core` Execution, built over `IUserContext` by `13.ServiceDefaults.Security`); endpoint authorization attributes (`14.Presentation.Core`); use-case permissions (`05.Application` `[RequirePermission]`); tenant resolution middleware (`13.ServiceDefaults` `SharedKernel.MultiTenancy`); cryptographic primitives (`01.Core` `SharedKernel.Cryptography`); Kestrel certificate negotiation (`ServiceDefaults.Security.Mtls`).
 

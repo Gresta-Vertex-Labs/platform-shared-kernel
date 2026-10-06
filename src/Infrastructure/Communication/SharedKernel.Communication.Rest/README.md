@@ -207,7 +207,7 @@ metrics come from `13.ServiceDefaults`' `WithCommunicationTelemetry()`.
 
 ## Testing
 
-Reference [`SharedKernel.Communication.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Communication.Testing/README.md):
+Reference [`SharedKernel.Communication.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Communication/SharedKernel.Communication.Testing/README.md):
 
 ```csharp
 using System.Net;

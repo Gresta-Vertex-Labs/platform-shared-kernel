@@ -50,7 +50,7 @@ Counts are **packable packages** (tests, `consumer-verify` harnesses, benchmarks
 | `13.ServiceDefaults` | [`src/Hosting/ServiceDefaults`](src/Hosting/ServiceDefaults/) | 7 | Host composition: OTel, health, readiness, rate limiting, request context, multi-tenancy, Key Vault config, localization | H |
 | `14.Presentation` | [`src/Hosting/Presentation`](src/Hosting/Presentation/) | 6 | Presentation.Core, WebApi, OpenApi, Grpc, SignalR, GraphQL (+ a Tooling source generator packed inside WebApi) | H |
 | `15.Integration` | [`src/Infrastructure/Integration`](src/Infrastructure/Integration/) | 4 | Webhooks; notification abstractions, SendGrid email, Twilio SMS | Ab, Ad |
-| `16.Testing` | [`src/Testing`](src/Testing/) | 20 | `SharedKernel.Testing` + 19 `SharedKernel.{Capability}.Testing` fakes (plus non-packable `Testing.Internal` fixtures) | T |
+| `16.Testing` | [`src/Testing`](src/Testing/) | 20 | `SharedKernel.Testing` + 19 `SharedKernel.{Capability}.Testing` fakes (each lives in its capability folder; this domain keeps their rules and catalogue) + non-packable `Testing.Internal` fixtures | T |
 | `17.Workflows` | [`src/Infrastructure/Workflows`](src/Infrastructure/Workflows/) | 1 | Temporal durable workflows (one package by design) | Ad |
 | `18.Idempotency` | [`src/Infrastructure/Idempotency`](src/Infrastructure/Idempotency/) | 3 | `IIdempotencyStore`; Redis, EF Core | Ab, Ad |
 | `19.Scheduling` | [`src/Infrastructure/Scheduling`](src/Infrastructure/Scheduling/) | 1 | Cron/recurring/one-shot jobs, single execution across replicas | Ad |
@@ -129,7 +129,7 @@ No raw literal at a call site for an identifier used from more than one place or
 SharedKernel.{Capability}                 main package (interfaces + default impl if single-provider)
 SharedKernel.{Capability}.Abstractions    interfaces only, Abstractions tier
 SharedKernel.{Capability}.{Provider}      a technology implementation, Adapter tier
-SharedKernel.{Capability}.Testing         fakes, Testing tier, in 16.Testing
+SharedKernel.{Capability}.Testing         fakes, Testing tier, in the capability folder (rules: 16.Testing)
 SharedKernel.{Capability}.Tests           test project, nested in the project it tests
 ```
 - More than one provider → split into `.Abstractions` + `.{Provider}`.

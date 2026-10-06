@@ -19,7 +19,7 @@
 | `SharedKernel.MultiTenancy` | Host | ● | `TenantResolutionMiddleware` (Claim → Header → Database, returning `TenantId?`, inner scope replaces only the tenant), `ITenantCatalog`/`TenantDescriptor`, `DatabaseTenantCatalog`/`CachedTenantCatalog`, `ITenantStatusValidator`/`CatalogTenantStatusValidator`. |
 | `SharedKernel.ServiceDefaults.{AI, Caching, Caching.Redis, Messaging, Scheduling, Search, Storage, Workflows.Temporal, Cryptography.KeyVault}` | — | ⊘ | Created by WO-084, deleted by WO-086 (P-569): providers now register their own `IReadinessProbe`. |
 
-Test doubles: `FakeTenantResolutionStrategy`, `InMemoryTenantCatalog` in `src/Testing/SharedKernel.ServiceDefaults.Testing`. Verified by `consumer-verify`.
+Test doubles: `FakeTenantResolutionStrategy`, `InMemoryTenantCatalog` in `src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Testing`. Verified by `consumer-verify`.
 
 ## Phase Key Registry
 

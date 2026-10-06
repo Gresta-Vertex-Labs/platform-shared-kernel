@@ -6,8 +6,8 @@
     <ProjectReference Include="..\SharedKernel.Messaging.MassTransit.csproj" />
     <!-- A transport, so Build() succeeds; the builder tests never connect to a broker (P-570). -->
     <ProjectReference Include="..\..\SharedKernel.Messaging.MassTransit.RabbitMq\SharedKernel.Messaging.MassTransit.RabbitMq.csproj" />
-    <ProjectReference Include="..\..\..\..\Testing\SharedKernel.Cryptography.Testing\SharedKernel.Cryptography.Testing.csproj" />
-    <ProjectReference Include="..\..\..\..\Testing\SharedKernel.Idempotency.Testing\SharedKernel.Idempotency.Testing.csproj" />
+    <ProjectReference Include="..\..\..\..\Foundation\SharedKernel.Cryptography.Testing\SharedKernel.Cryptography.Testing.csproj" />
+    <ProjectReference Include="..\..\..\Idempotency\SharedKernel.Idempotency.Testing\SharedKernel.Idempotency.Testing.csproj" />
     <ProjectReference Include="..\..\..\..\Foundation\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
     <ProjectReference Include="..\..\..\..\..\tools\Governance\SharedKernel.ArchitectureTests\SharedKernel.ArchitectureTests.csproj" />
   </ItemGroup>

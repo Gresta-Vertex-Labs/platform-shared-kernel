@@ -321,7 +321,7 @@ fails — memory and fail-safe values may still serve.
 
 ## Testing
 
-Reference [`SharedKernel.Caching.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Caching.Testing/README.md)
+Reference [`SharedKernel.Caching.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Caching/SharedKernel.Caching.Testing/README.md)
 from your test project (namespace `SharedKernel.Testing.Caching`) instead of registering FusionCache:
 
 ```csharp

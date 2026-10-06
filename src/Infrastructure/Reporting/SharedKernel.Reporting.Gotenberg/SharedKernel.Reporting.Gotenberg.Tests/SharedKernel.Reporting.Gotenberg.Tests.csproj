@@ -10,7 +10,7 @@
   -->
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Reporting.Gotenberg.csproj" />
-    <ProjectReference Include="..\..\..\..\Testing\SharedKernel.Storage.Testing\SharedKernel.Storage.Testing.csproj" />
+    <ProjectReference Include="..\..\..\Storage\SharedKernel.Storage.Testing\SharedKernel.Storage.Testing.csproj" />
   </ItemGroup>
 
   <ItemGroup>

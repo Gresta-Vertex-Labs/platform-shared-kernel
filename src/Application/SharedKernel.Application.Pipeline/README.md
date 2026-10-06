@@ -493,7 +493,7 @@ which also registers the seconds-based bucket boundaries this histogram needs.
 
 ## Testing
 
-[`SharedKernel.Application.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Application.Testing/README.md)'s `ApplicationPipelineTestHarness` (`SharedKernel.Testing.Application`)
+[`SharedKernel.Application.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Application/SharedKernel.Application.Testing/README.md)'s `ApplicationPipelineTestHarness` (`SharedKernel.Testing.Application`)
 runs `AddSharedKernelApplication` with the behaviors you choose and the same host-start seam check — `Build()` needs no
 mediator (handlers registered on `Services`, sent through `RequestPipeline<,>`), `Build<TMarker>()` adds `UseMediatR()`
 over the marker's assembly. `FakeRequestContext`

@@ -18,7 +18,7 @@
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Testing\SharedKernel.Testing.csproj" />
     <!-- PostgreSqlContainerFixture wraps PostgresTestServer; FakeAuditActorContext derives from TestRequestContext. -->
-    <ProjectReference Include="..\SharedKernel.Persistence.Testing\SharedKernel.Persistence.Testing.csproj" />
+    <ProjectReference Include="..\..\Infrastructure\Persistence\SharedKernel.Persistence.Testing\SharedKernel.Persistence.Testing.csproj" />
     <ProjectReference Include="..\..\Infrastructure\Persistence\SharedKernel.Persistence.Abstractions\SharedKernel.Persistence.Abstractions.csproj" />
     <ProjectReference Include="..\..\Infrastructure\Persistence\SharedKernel.Persistence.EfCore\SharedKernel.Persistence.EfCore.csproj" />
     <ProjectReference Include="..\..\Infrastructure\Persistence\SharedKernel.Persistence.EfCore.Auditing\SharedKernel.Persistence.EfCore.Auditing.csproj" />

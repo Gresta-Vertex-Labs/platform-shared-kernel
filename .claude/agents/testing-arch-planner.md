@@ -33,7 +33,7 @@ Philosophy: **deterministic, dependency-light, conformance-first** — a double 
 | A container fixture, EF Core helper, MassTransit harness for this repo | `SharedKernel.Testing.Internal` |
 | A PostgreSQL helper for **consumers** | `SharedKernel.Persistence.Testing` (`PostgresTestServer` is the one packable Docker-bound exception) |
 
-A new `.Testing` package: Testing tier, packable, `PublicAPI.*.txt`, README, nested `.Tests` project, entries in `Platform.SharedKernel.slnx` and the right lane `.slnf`, `PackageVersion` for any new dependency, and the MAX_PATH check. Audit the existing surface before adding anything — most requests are extensions of an existing double.
+A new `.Testing` package goes in the capability folder of the contract it fakes (for example `src/Infrastructure/Caching/SharedKernel.Caching.Testing`), never in `src/Testing/`, which holds only the core and `Testing.Internal`. It is Testing tier, packable, `PublicAPI.*.txt`, README, nested `.Tests` project, entries in `Platform.SharedKernel.slnx` and the right lane `.slnf`, `PackageVersion` for any new dependency, and the MAX_PATH check. Audit the existing surface before adding anything — most requests are extensions of an existing double.
 
 ---
 

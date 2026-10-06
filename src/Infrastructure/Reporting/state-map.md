@@ -16,7 +16,7 @@
 | `SharedKernel.Reporting.Pdf` | Adapter | ● | P-480. PDFsharp/MigraDoc (MIT) — simple tabular layout, page numbers, `MaxRows`. |
 | `SharedKernel.Reporting.Gotenberg` | Adapter | ● | HTML → PDF over Gotenberg 8 (Chromium in its own container); resilience handler, basic auth, `gotenberg` probe; Integration-lane tests. |
 
-Test doubles: `InMemoryReportExporter`/`InMemoryReportExporterFactory`/`InMemoryHtmlToPdfConverter` + `AddInMemoryReporting()` in `src/Testing/SharedKernel.Reporting.Testing`. EPPlus, QuestPDF and iText7 declined on licensing.
+Test doubles: `InMemoryReportExporter`/`InMemoryReportExporterFactory`/`InMemoryHtmlToPdfConverter` + `AddInMemoryReporting()` in `src/Infrastructure/Reporting/SharedKernel.Reporting.Testing`. EPPlus, QuestPDF and iText7 declined on licensing.
 
 ## Phase Key Registry
 

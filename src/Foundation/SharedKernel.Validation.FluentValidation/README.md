@@ -245,7 +245,7 @@ Validators are plain classes: call `Validate(…)` and assert on `ErrorCode` and
 5), not the English text, which may be reworded or translated. For sample inputs use `ValidationSampleGenerator` from
 [`SharedKernel.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Testing/README.md).
 To run the pipeline with the bridge, see `ApplicationPipelineTestHarness` in
-[`SharedKernel.Application.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Application.Testing/README.md).
+[`SharedKernel.Application.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Application/SharedKernel.Application.Testing/README.md).
 
 ## Pitfalls
 

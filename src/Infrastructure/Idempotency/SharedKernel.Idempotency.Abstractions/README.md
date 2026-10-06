@@ -226,7 +226,7 @@ This package does not log.
 
 ## Testing
 
-Reference [`SharedKernel.Idempotency.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Idempotency.Testing/README.md)
+Reference [`SharedKernel.Idempotency.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Idempotency/SharedKernel.Idempotency.Testing/README.md)
 from your test project. `services.AddFakeIdempotencyStore()` registers one singleton `FakeIdempotencyStore` for both
 purposes (or the ones you pass), replacing any real store. It implements the same protocol — the four statuses and
 the stale-token rule — and adds `Expire(purpose, key)` to model a lease running out, `Calls`, `LastTtl`,

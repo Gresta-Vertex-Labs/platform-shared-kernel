@@ -114,7 +114,7 @@ None: the adapter writes no log events (EventIds 5300–5399 are reserved for it
 ## Testing
 
 Unit tests of a handler need no mediator. For the composed pipeline, reference
-[`SharedKernel.Application.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Application.Testing/README.md):
+[`SharedKernel.Application.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Application/SharedKernel.Application.Testing/README.md):
 `new ApplicationPipelineTestHarness().Build<TMarker>()` registers `AddSharedKernelApplication` over the marker's
 assembly **with `UseMediatR()`**, so `SendAsync` goes through the kernel `ISender` exactly as a service's does;
 `Build()` runs the same behaviors without a mediator.

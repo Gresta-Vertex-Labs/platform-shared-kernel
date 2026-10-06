@@ -7,7 +7,7 @@
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Communication.Rest.csproj" />
     <ProjectReference Include="..\..\..\..\Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
-    <ProjectReference Include="..\..\..\..\Testing\SharedKernel.Communication.Testing\SharedKernel.Communication.Testing.csproj" />
+    <ProjectReference Include="..\..\SharedKernel.Communication.Testing\SharedKernel.Communication.Testing.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="xunit" />

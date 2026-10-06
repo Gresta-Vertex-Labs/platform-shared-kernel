@@ -59,7 +59,7 @@ You write inside `src/Infrastructure/AI/` only.
 - No reflection in this domain's own code (`SK0012` does not catch `MakeGenericType` — do not rely on it); no static mutable state; no `<IsAotCompatible>`.
 
 **Verify before building**
-- Check on disk that `QdrantContainerFixture` (`src/Testing/SharedKernel.Testing.Internal`) and the doubles in `src/Testing/SharedKernel.AI.Testing` exist before building on them. If one is absent, finish the container-free tasks and mark only the dependent tasks `⚑` with evidence; never hand-roll a container setup in a `.Tests` project.
+- Check on disk that `QdrantContainerFixture` (`src/Testing/SharedKernel.Testing.Internal`) and the doubles in `src/Infrastructure/AI/SharedKernel.AI.Testing` exist before building on them. If one is absent, finish the container-free tasks and mark only the dependent tasks `⚑` with evidence; never hand-roll a container setup in a `.Tests` project.
 - Verify every third-party package (existence, latest stable, target frameworks, licence, maintenance) before adding or bumping a `PackageReference` — a Milvus provider was declined because `Milvus.Client` had no stable release.
 - Verify an unfamiliar SDK shape against the compiled assembly (a scratch project) before coding against it.
 

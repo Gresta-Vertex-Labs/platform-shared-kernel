@@ -173,7 +173,7 @@ Kernel probe names: `messaging`, `redis`, `cache`, `encryption-key-provider`, `f
 
 ## Testing
 
-Reference [`SharedKernel.ServiceDefaults.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.ServiceDefaults.Testing/README.md)
+Reference [`SharedKernel.ServiceDefaults.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Testing/README.md)
 (namespace `SharedKernel.Testing.ServiceDefaults`): `registration.ShouldBeTaggedReady()` and
 `ShouldNotBeTaggedLive()` assert a `HealthCheckRegistration` lands on the right endpoint. For an end-to-end check,
 host the service with `WebApplicationFactory<Program>` and request `/health/ready`; call `StartupGate.MarkReady()`

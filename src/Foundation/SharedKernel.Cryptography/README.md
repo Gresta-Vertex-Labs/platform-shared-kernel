@@ -426,7 +426,7 @@ The package does not log. Never log plaintext, keys, secrets, codes or full payl
 
 ## Testing
 
-Reference [`SharedKernel.Cryptography.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Cryptography.Testing/README.md)
+Reference [`SharedKernel.Cryptography.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Foundation/SharedKernel.Cryptography.Testing/README.md)
 (namespace `SharedKernel.Testing.Cryptography`). `services.AddFakeCryptography()` replaces every contract, even on top of
 the real registration:
 

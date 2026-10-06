@@ -139,26 +139,26 @@ Reference from test projects only.
 
 | Package | Folder | SharedKernel dependencies |
 |---|---|---|
-| [`SharedKernel.AI.Testing`](../src/Testing/SharedKernel.AI.Testing/README.md) | `src/Testing` | `SharedKernel.AI.Abstractions` |
-| [`SharedKernel.Application.Testing`](../src/Testing/SharedKernel.Application.Testing/README.md) | `src/Testing` | `SharedKernel.Application.Mediator.MediatR`, `SharedKernel.Application.Pipeline`, `SharedKernel.Idempotency.Testing`, `SharedKernel.Persistence.Testing`, `SharedKernel.Testing` |
-| [`SharedKernel.Caching.Redis.Testing`](../src/Testing/SharedKernel.Caching.Redis.Testing/README.md) | `src/Testing` | `SharedKernel.Caching.Redis.HashStore`, `SharedKernel.Caching.Redis.PubSub` |
-| [`SharedKernel.Caching.Testing`](../src/Testing/SharedKernel.Caching.Testing/README.md) | `src/Testing` | `SharedKernel.Caching.Abstractions` |
-| [`SharedKernel.Communication.Testing`](../src/Testing/SharedKernel.Communication.Testing/README.md) | `src/Testing` | `SharedKernel.Communication`, `SharedKernel.Primitives` |
-| [`SharedKernel.Cryptography.Testing`](../src/Testing/SharedKernel.Cryptography.Testing/README.md) | `src/Testing` | `SharedKernel.Cryptography`, `SharedKernel.Testing` |
-| [`SharedKernel.FeatureManagement.Testing`](../src/Testing/SharedKernel.FeatureManagement.Testing/README.md) | `src/Testing` | `SharedKernel.FeatureManagement` |
-| [`SharedKernel.Idempotency.Testing`](../src/Testing/SharedKernel.Idempotency.Testing/README.md) | `src/Testing` | `SharedKernel.Idempotency.Abstractions` |
-| [`SharedKernel.Integration.Testing`](../src/Testing/SharedKernel.Integration.Testing/README.md) | `src/Testing` | `SharedKernel.Contracts`, `SharedKernel.Integration.Notifications.Abstractions`, `SharedKernel.Integration.Webhooks` |
-| [`SharedKernel.Messaging.Testing`](../src/Testing/SharedKernel.Messaging.Testing/README.md) | `src/Testing` | `SharedKernel.Contracts`, `SharedKernel.Messaging.Abstractions` |
-| [`SharedKernel.Persistence.Testing`](../src/Testing/SharedKernel.Persistence.Testing/README.md) | `src/Testing` | `SharedKernel.Persistence.Abstractions`, `SharedKernel.Persistence.EfCore`, `SharedKernel.Persistence.EfCore.Auditing`, `SharedKernel.Persistence.EfCore.Encryption`, `SharedKernel.Testing` |
-| [`SharedKernel.Presentation.Testing`](../src/Testing/SharedKernel.Presentation.Testing/README.md) | `src/Testing` | `SharedKernel.Execution`, `SharedKernel.Presentation.Grpc` |
-| [`SharedKernel.Reporting.Testing`](../src/Testing/SharedKernel.Reporting.Testing/README.md) | `src/Testing` | `SharedKernel.Reporting.Abstractions`, `SharedKernel.Storage.Abstractions`, `SharedKernel.Testing` |
-| [`SharedKernel.Scheduling.Testing`](../src/Testing/SharedKernel.Scheduling.Testing/README.md) | `src/Testing` | `SharedKernel.Scheduling` |
-| [`SharedKernel.Search.Testing`](../src/Testing/SharedKernel.Search.Testing/README.md) | `src/Testing` | `SharedKernel.Search.Abstractions` |
-| [`SharedKernel.Security.Testing`](../src/Testing/SharedKernel.Security.Testing/README.md) | `src/Testing` | `SharedKernel.Security.Abstractions`, `SharedKernel.Security.ApiKey`, `SharedKernel.Security.Oidc`, `SharedKernel.Security.Totp` |
-| [`SharedKernel.ServiceDefaults.Testing`](../src/Testing/SharedKernel.ServiceDefaults.Testing/README.md) | `src/Testing` | `SharedKernel.MultiTenancy` |
-| [`SharedKernel.Storage.Testing`](../src/Testing/SharedKernel.Storage.Testing/README.md) | `src/Testing` | `SharedKernel.Storage.Abstractions` |
+| [`SharedKernel.AI.Testing`](../src/Infrastructure/AI/SharedKernel.AI.Testing/README.md) | `src/Infrastructure/AI` | `SharedKernel.AI.Abstractions` |
+| [`SharedKernel.Application.Testing`](../src/Application/SharedKernel.Application.Testing/README.md) | `src/Application` | `SharedKernel.Application.Mediator.MediatR`, `SharedKernel.Application.Pipeline`, `SharedKernel.Idempotency.Testing`, `SharedKernel.Persistence.Testing`, `SharedKernel.Testing` |
+| [`SharedKernel.Caching.Redis.Testing`](../src/Infrastructure/Caching/SharedKernel.Caching.Redis.Testing/README.md) | `src/Infrastructure/Caching` | `SharedKernel.Caching.Redis.HashStore`, `SharedKernel.Caching.Redis.PubSub` |
+| [`SharedKernel.Caching.Testing`](../src/Infrastructure/Caching/SharedKernel.Caching.Testing/README.md) | `src/Infrastructure/Caching` | `SharedKernel.Caching.Abstractions` |
+| [`SharedKernel.Communication.Testing`](../src/Infrastructure/Communication/SharedKernel.Communication.Testing/README.md) | `src/Infrastructure/Communication` | `SharedKernel.Communication`, `SharedKernel.Primitives` |
+| [`SharedKernel.Cryptography.Testing`](../src/Foundation/SharedKernel.Cryptography.Testing/README.md) | `src/Foundation` | `SharedKernel.Cryptography`, `SharedKernel.Testing` |
+| [`SharedKernel.FeatureManagement.Testing`](../src/Foundation/SharedKernel.FeatureManagement.Testing/README.md) | `src/Foundation` | `SharedKernel.FeatureManagement` |
+| [`SharedKernel.Idempotency.Testing`](../src/Infrastructure/Idempotency/SharedKernel.Idempotency.Testing/README.md) | `src/Infrastructure/Idempotency` | `SharedKernel.Idempotency.Abstractions` |
+| [`SharedKernel.Integration.Testing`](../src/Infrastructure/Integration/SharedKernel.Integration.Testing/README.md) | `src/Infrastructure/Integration` | `SharedKernel.Contracts`, `SharedKernel.Integration.Notifications.Abstractions`, `SharedKernel.Integration.Webhooks` |
+| [`SharedKernel.Messaging.Testing`](../src/Infrastructure/Messaging/SharedKernel.Messaging.Testing/README.md) | `src/Infrastructure/Messaging` | `SharedKernel.Contracts`, `SharedKernel.Messaging.Abstractions` |
+| [`SharedKernel.Persistence.Testing`](../src/Infrastructure/Persistence/SharedKernel.Persistence.Testing/README.md) | `src/Infrastructure/Persistence` | `SharedKernel.Persistence.Abstractions`, `SharedKernel.Persistence.EfCore`, `SharedKernel.Persistence.EfCore.Auditing`, `SharedKernel.Persistence.EfCore.Encryption`, `SharedKernel.Testing` |
+| [`SharedKernel.Presentation.Testing`](../src/Hosting/Presentation/SharedKernel.Presentation.Testing/README.md) | `src/Hosting/Presentation` | `SharedKernel.Execution`, `SharedKernel.Presentation.Grpc` |
+| [`SharedKernel.Reporting.Testing`](../src/Infrastructure/Reporting/SharedKernel.Reporting.Testing/README.md) | `src/Infrastructure/Reporting` | `SharedKernel.Reporting.Abstractions`, `SharedKernel.Storage.Abstractions`, `SharedKernel.Testing` |
+| [`SharedKernel.Scheduling.Testing`](../src/Infrastructure/Scheduling/SharedKernel.Scheduling.Testing/README.md) | `src/Infrastructure/Scheduling` | `SharedKernel.Scheduling` |
+| [`SharedKernel.Search.Testing`](../src/Infrastructure/Search/SharedKernel.Search.Testing/README.md) | `src/Infrastructure/Search` | `SharedKernel.Search.Abstractions` |
+| [`SharedKernel.Security.Testing`](../src/Hosting/Security/SharedKernel.Security.Testing/README.md) | `src/Hosting/Security` | `SharedKernel.Security.Abstractions`, `SharedKernel.Security.ApiKey`, `SharedKernel.Security.Oidc`, `SharedKernel.Security.Totp` |
+| [`SharedKernel.ServiceDefaults.Testing`](../src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Testing/README.md) | `src/Hosting/ServiceDefaults` | `SharedKernel.MultiTenancy` |
+| [`SharedKernel.Storage.Testing`](../src/Infrastructure/Storage/SharedKernel.Storage.Testing/README.md) | `src/Infrastructure/Storage` | `SharedKernel.Storage.Abstractions` |
 | [`SharedKernel.Testing`](../src/Testing/SharedKernel.Testing/README.md) | `src/Testing` | `SharedKernel.Contracts`, `SharedKernel.DataPrivacy`, `SharedKernel.Domain`, `SharedKernel.Execution`, `SharedKernel.Primitives`, `SharedKernel.Validation` |
-| [`SharedKernel.Workflows.Testing`](../src/Testing/SharedKernel.Workflows.Testing/README.md) | `src/Testing` | `SharedKernel.Workflows.Temporal` |
+| [`SharedKernel.Workflows.Testing`](../src/Infrastructure/Workflows/SharedKernel.Workflows.Testing/README.md) | `src/Infrastructure/Workflows` | `SharedKernel.Workflows.Temporal` |
 
 ## Tooling
 

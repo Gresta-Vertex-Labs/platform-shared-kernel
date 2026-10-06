@@ -256,25 +256,25 @@ The badge after each name is the package's tier.
 
 - 📁 **[16.Testing](src/Testing/README.md)** — test doubles for every capability · *20 packages*
   - [SharedKernel.Testing](src/Testing/SharedKernel.Testing/README.md) `Testing` — `FakeClock`, in-memory logger, `TestRequestContext`, fakers, assertions
-  - [SharedKernel.AI.Testing](src/Testing/SharedKernel.AI.Testing/README.md) `Testing` — deterministic embeddings and an in-memory vector store
-  - [SharedKernel.Application.Testing](src/Testing/SharedKernel.Application.Testing/README.md) `Testing` — runs a request through the real pipeline, no mediator needed
-  - [SharedKernel.Caching.Testing](src/Testing/SharedKernel.Caching.Testing/README.md) `Testing` — fake cache, tenant cache and distributed locks
-  - [SharedKernel.Caching.Redis.Testing](src/Testing/SharedKernel.Caching.Redis.Testing/README.md) `Testing` — fake Redis hashes and Pub/Sub
-  - [SharedKernel.Communication.Testing](src/Testing/SharedKernel.Communication.Testing/README.md) `Testing` — a stub HTTP handler for REST clients and gRPC call fakes
-  - [SharedKernel.Cryptography.Testing](src/Testing/SharedKernel.Cryptography.Testing/README.md) `Testing` — recording crypto fakes with failure simulation
-  - [SharedKernel.FeatureManagement.Testing](src/Testing/SharedKernel.FeatureManagement.Testing/README.md) `Testing` — a feature client with per-test flags
-  - [SharedKernel.Idempotency.Testing](src/Testing/SharedKernel.Idempotency.Testing/README.md) `Testing` — an in-memory idempotency store
-  - [SharedKernel.Integration.Testing](src/Testing/SharedKernel.Integration.Testing/README.md) `Testing` — in-memory webhook dispatcher and notification sender
-  - [SharedKernel.Messaging.Testing](src/Testing/SharedKernel.Messaging.Testing/README.md) `Testing` — in-memory bus and publisher with assertions
-  - [SharedKernel.Persistence.Testing](src/Testing/SharedKernel.Persistence.Testing/README.md) `Testing` — fake repositories and unit of work, PostgreSQL test servers
-  - [SharedKernel.Presentation.Testing](src/Testing/SharedKernel.Presentation.Testing/README.md) `Testing` — gRPC and GraphQL test helpers
-  - [SharedKernel.Reporting.Testing](src/Testing/SharedKernel.Reporting.Testing/README.md) `Testing` — in-memory exporters and HTML-to-PDF converter
-  - [SharedKernel.Scheduling.Testing](src/Testing/SharedKernel.Scheduling.Testing/README.md) `Testing` — a recording job registry
-  - [SharedKernel.Search.Testing](src/Testing/SharedKernel.Search.Testing/README.md) `Testing` — an in-memory search index that evaluates the filter AST
-  - [SharedKernel.Security.Testing](src/Testing/SharedKernel.Security.Testing/README.md) `Testing` — fake user context, test certificates and DPoP proofs
-  - [SharedKernel.ServiceDefaults.Testing](src/Testing/SharedKernel.ServiceDefaults.Testing/README.md) `Testing` — in-memory tenant catalog and health-check assertions
-  - [SharedKernel.Storage.Testing](src/Testing/SharedKernel.Storage.Testing/README.md) `Testing` — in-memory named and tenant stores
-  - [SharedKernel.Workflows.Testing](src/Testing/SharedKernel.Workflows.Testing/README.md) `Testing` — in-memory workflow dispatcher
+  - [SharedKernel.AI.Testing](src/Infrastructure/AI/SharedKernel.AI.Testing/README.md) `Testing` — deterministic embeddings and an in-memory vector store
+  - [SharedKernel.Application.Testing](src/Application/SharedKernel.Application.Testing/README.md) `Testing` — runs a request through the real pipeline, no mediator needed
+  - [SharedKernel.Caching.Testing](src/Infrastructure/Caching/SharedKernel.Caching.Testing/README.md) `Testing` — fake cache, tenant cache and distributed locks
+  - [SharedKernel.Caching.Redis.Testing](src/Infrastructure/Caching/SharedKernel.Caching.Redis.Testing/README.md) `Testing` — fake Redis hashes and Pub/Sub
+  - [SharedKernel.Communication.Testing](src/Infrastructure/Communication/SharedKernel.Communication.Testing/README.md) `Testing` — a stub HTTP handler for REST clients and gRPC call fakes
+  - [SharedKernel.Cryptography.Testing](src/Foundation/SharedKernel.Cryptography.Testing/README.md) `Testing` — recording crypto fakes with failure simulation
+  - [SharedKernel.FeatureManagement.Testing](src/Foundation/SharedKernel.FeatureManagement.Testing/README.md) `Testing` — a feature client with per-test flags
+  - [SharedKernel.Idempotency.Testing](src/Infrastructure/Idempotency/SharedKernel.Idempotency.Testing/README.md) `Testing` — an in-memory idempotency store
+  - [SharedKernel.Integration.Testing](src/Infrastructure/Integration/SharedKernel.Integration.Testing/README.md) `Testing` — in-memory webhook dispatcher and notification sender
+  - [SharedKernel.Messaging.Testing](src/Infrastructure/Messaging/SharedKernel.Messaging.Testing/README.md) `Testing` — in-memory bus and publisher with assertions
+  - [SharedKernel.Persistence.Testing](src/Infrastructure/Persistence/SharedKernel.Persistence.Testing/README.md) `Testing` — fake repositories and unit of work, PostgreSQL test servers
+  - [SharedKernel.Presentation.Testing](src/Hosting/Presentation/SharedKernel.Presentation.Testing/README.md) `Testing` — gRPC and GraphQL test helpers
+  - [SharedKernel.Reporting.Testing](src/Infrastructure/Reporting/SharedKernel.Reporting.Testing/README.md) `Testing` — in-memory exporters and HTML-to-PDF converter
+  - [SharedKernel.Scheduling.Testing](src/Infrastructure/Scheduling/SharedKernel.Scheduling.Testing/README.md) `Testing` — a recording job registry
+  - [SharedKernel.Search.Testing](src/Infrastructure/Search/SharedKernel.Search.Testing/README.md) `Testing` — an in-memory search index that evaluates the filter AST
+  - [SharedKernel.Security.Testing](src/Hosting/Security/SharedKernel.Security.Testing/README.md) `Testing` — fake user context, test certificates and DPoP proofs
+  - [SharedKernel.ServiceDefaults.Testing](src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Testing/README.md) `Testing` — in-memory tenant catalog and health-check assertions
+  - [SharedKernel.Storage.Testing](src/Infrastructure/Storage/SharedKernel.Storage.Testing/README.md) `Testing` — in-memory named and tenant stores
+  - [SharedKernel.Workflows.Testing](src/Infrastructure/Workflows/SharedKernel.Workflows.Testing/README.md) `Testing` — in-memory workflow dispatcher
 
 - 📁 **[17.Workflows](src/Infrastructure/Workflows/README.md)** — durable execution · *1 package*
   - [SharedKernel.Workflows.Temporal](src/Infrastructure/Workflows/SharedKernel.Workflows.Temporal/README.md) `Adapter` — Temporal workflows and activities, tenant-scoped dispatch, payload encryption

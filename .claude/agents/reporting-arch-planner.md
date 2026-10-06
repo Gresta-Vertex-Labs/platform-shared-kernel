@@ -24,7 +24,7 @@ Five packages, one namespace `SharedKernel.Reporting`, one registration chain `A
 | `SharedKernel.Reporting.Pdf` | Adapter | PDFsharp + PDFsharp-MigraDoc (MIT), embedded Roboto (Apache-2.0) |
 | `SharedKernel.Reporting.Gotenberg` | Adapter | `Microsoft.Extensions.Http.Resilience`; talks HTTP to a Gotenberg container |
 
-**No declared adapter edges**: providers are siblings, never reference each other, and share no `.Core`. The extension points are `ReportExporterBase<T>` + `AddExporter(format, typeof(MyExporter<>))` and `HtmlToPdfConverterBase` + `AddHtmlToPdfConverter<T>()` — a new format or converter builds on them. Consumer fakes live in `src/Testing/SharedKernel.Reporting.Testing`; end-to-end proof is `samples/DocumentsApi` and `src/Infrastructure/Reporting/consumer-verify`.
+**No declared adapter edges**: providers are siblings, never reference each other, and share no `.Core`. The extension points are `ReportExporterBase<T>` + `AddExporter(format, typeof(MyExporter<>))` and `HtmlToPdfConverterBase` + `AddHtmlToPdfConverter<T>()` — a new format or converter builds on them. Consumer fakes live in `src/Infrastructure/Reporting/SharedKernel.Reporting.Testing`; end-to-end proof is `samples/DocumentsApi` and `src/Infrastructure/Reporting/consumer-verify`.
 
 ---
 

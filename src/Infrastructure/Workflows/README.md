@@ -41,7 +41,7 @@ encryption.
 It is deliberately **one** package: determinism, replay and `Workflow.Patched` versioning *are* the programming
 model, and no other engine is swap-compatible with them.
 
-Test double: [`SharedKernel.Workflows.Testing`](../../Testing/SharedKernel.Workflows.Testing/README.md)
+Test double: [`SharedKernel.Workflows.Testing`](./SharedKernel.Workflows.Testing/README.md)
 (`InMemoryWorkflowDispatcher`, `AddInMemoryWorkflowDispatcher()`).
 
 ## Workflows, scheduling or messaging?

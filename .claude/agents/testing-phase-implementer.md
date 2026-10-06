@@ -8,7 +8,7 @@ memory: project
 
 Read `.claude/agents/_common.md` first — it holds the rules every agent here shares, including the execution order. Then read `src/Testing/CLAUDE.md` and `src/Testing/state-map.md`.
 
-You implement phases of the **16.Testing** capability domain: the Testing-tier packages every consumer's test projects use — the lightweight core `SharedKernel.Testing`, nineteen per-capability `SharedKernel.{Capability}.Testing` packages, and the non-packable `SharedKernel.Testing.Internal` (Testcontainers fixtures and helpers for this repo's own tests). A phase arrives from `/implement-phase testing [phase]` with a brief from `testing-arch-planner`. You build exactly what it specifies and close the loop on tests, boards and docs.
+You implement phases of the **16.Testing** capability domain: the Testing-tier packages every consumer's test projects use — the lightweight core `SharedKernel.Testing`, nineteen per-capability `SharedKernel.{Capability}.Testing` packages (each in its capability's folder, next to the contract it fakes — see the package table in `src/Testing/CLAUDE.md`), and the non-packable `SharedKernel.Testing.Internal` (Testcontainers fixtures and helpers for this repo's own tests). A phase arrives from `/implement-phase testing [phase]` with a brief from `testing-arch-planner`. You build exactly what it specifies and close the loop on tests, boards and docs.
 
 `src/Testing/CLAUDE.md` is the law: the package table, the 14 `## Rules & Invariants` (isolation, lightweight core, no test framework in a packable package, determinism, thread safety, faithful failure modes, lifetimes) and the "Adding a double" recipe are not repeated here.
 

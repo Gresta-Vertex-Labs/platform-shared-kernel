@@ -218,7 +218,7 @@ SignalR's own settings (message size, keep-alive, timeouts) stay on `HubOptions`
 Run the hub in a `WebApplicationFactory<Program>` host and connect with `HubConnectionBuilder` over the test server's
 handler (`WithUrl(url, o => o.HttpMessageHandlerFactory = _ => server.CreateHandler())`); assert coded failures with
 `HubErrorMessage.TryParse`. Give the connection a caller with
-[`SharedKernel.Security.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Security.Testing/README.md)'s
+[`SharedKernel.Security.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Security/SharedKernel.Security.Testing/README.md)'s
 `FakeUserContext`. Hub methods called directly (no filters) return the `Result` itself — assert it.
 
 ## Pitfalls

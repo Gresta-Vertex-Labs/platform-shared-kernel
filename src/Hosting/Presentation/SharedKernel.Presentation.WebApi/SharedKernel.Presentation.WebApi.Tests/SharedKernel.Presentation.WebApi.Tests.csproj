@@ -16,7 +16,7 @@
     <!-- The request context that owns the correlation id and the refusal of inbound baggage (P-579): every test host
          composes it the way a service does, UseSharedKernelRequestContext() before UseSharedKernelWebApi(). -->
     <ProjectReference Include="..\..\..\ServiceDefaults\SharedKernel.ServiceDefaults.Security\SharedKernel.ServiceDefaults.Security.csproj" />
-    <ProjectReference Include="..\..\..\..\Testing\SharedKernel.Security.Testing\SharedKernel.Security.Testing.csproj" />
+    <ProjectReference Include="..\..\..\Security\SharedKernel.Security.Testing\SharedKernel.Security.Testing.csproj" />
     <!-- EntityVersion, the version type of the If-Match and ETag tests. -->
     <ProjectReference Include="..\..\..\..\Infrastructure\Persistence\SharedKernel.Persistence.Abstractions\SharedKernel.Persistence.Abstractions.csproj" />
   </ItemGroup>

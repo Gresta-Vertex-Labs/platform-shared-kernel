@@ -46,7 +46,7 @@ a tamper-evident audit trail, registered with one call.**
 Related packages elsewhere: [`SharedKernel.Execution`](../../Foundation/SharedKernel.Execution/README.md) owns `IUnitOfWork`,
 `IRequestContext`, `IAuditTrailWriter` and `TenantId`, which these packages implement or read;
 [`SharedKernel.ServiceDefaults.Persistence`](../../Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Persistence/README.md)
-provides the readiness checks; [`SharedKernel.Persistence.Testing`](../../Testing/SharedKernel.Persistence.Testing/README.md)
+provides the readiness checks; [`SharedKernel.Persistence.Testing`](./SharedKernel.Persistence.Testing/README.md)
 provides fakes and a PostgreSQL fixture with the production role split.
 
 ## How the packages fit together
@@ -310,7 +310,7 @@ context, lazy loading, and the messaging outbox (owned by [07.Messaging](../Mess
 | --- | --- |
 | Registration options, transactions, several contexts, ETags, cross-tenant access | [EfCore](SharedKernel.Persistence.EfCore/README.md) |
 | Connection names, TLS, PgBouncer, roles, advisory locks, error classification | [Npgsql](SharedKernel.Persistence.Npgsql/README.md) |
-| Unit and integration testing | [Persistence.Testing](../../Testing/SharedKernel.Persistence.Testing/README.md) |
+| Unit and integration testing | [Persistence.Testing](./SharedKernel.Persistence.Testing/README.md) |
 | How to contribute | [CONTRIBUTING.md](../../../CONTRIBUTING.md) |
 
 ---

@@ -25,7 +25,7 @@ Six packages, **PostgreSQL only** (the package table, entry points and namespace
 | `SharedKernel.Persistence.EfCore.Auditing` | Adapter | → EfCore |
 | `SharedKernel.Persistence.EfCore.Encryption` | Adapter | → EfCore |
 
-Inbound edge from another domain: `SharedKernel.Idempotency.EfCore` → `Persistence.EfCore`. Test helpers live in `src/Testing/SharedKernel.Persistence.Testing`; the reference service is `samples/BillingApi`; `SharedKernel.Persistence.ConsumerVerify` runs the packed packages.
+Inbound edge from another domain: `SharedKernel.Idempotency.EfCore` → `Persistence.EfCore`. Test helpers live in `src/Infrastructure/Persistence/SharedKernel.Persistence.Testing`; the reference service is `samples/BillingApi`; `SharedKernel.Persistence.ConsumerVerify` runs the packed packages.
 
 ---
 

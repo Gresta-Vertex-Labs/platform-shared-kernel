@@ -16,7 +16,7 @@
 | `SharedKernel.Security.Mtls` | Host | ● | Client-certificate authentication (`AddMtlsAuthentication<TValidator>`), `IMtlsCertificateValidator`, private-CA trust (`CustomRootTrust` + `CustomTrustStore`), RFC 8705 binding. |
 | `SharedKernel.Security.Totp` | Host | ● | `TotpEnrollmentService`, `TotpChallengeService` over `ITotpChallengeStore`, `TotpStepUpClaimsTransformation` (session-bound `amr=otp` for `FreshnessWindow`), recovery codes; built on `SharedKernel.Cryptography`'s TOTP primitives. |
 
-Test doubles: `FakeUserContext`, test certificates and DPoP proofs in `src/Testing/SharedKernel.Security.Testing`. Application code reads `IRequestContext` (built over `IUserContext` by `13.ServiceDefaults`' `AddSharedKernelRequestContext()`), never `IUserContext` for the tenant.
+Test doubles: `FakeUserContext`, test certificates and DPoP proofs in `src/Hosting/Security/SharedKernel.Security.Testing`. Application code reads `IRequestContext` (built over `IUserContext` by `13.ServiceDefaults`' `AddSharedKernelRequestContext()`), never `IUserContext` for the tenant.
 
 ## Phase Key Registry
 

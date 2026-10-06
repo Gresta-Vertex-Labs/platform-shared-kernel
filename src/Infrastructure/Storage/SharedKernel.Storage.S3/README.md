@@ -368,7 +368,7 @@ Scope a store's policy to its `KeyPrefix` when several stores share a bucket.
 ## Testing
 
 Unit tests of application code need no bucket: use the in-memory stores of
-[`SharedKernel.Storage.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Storage.Testing/README.md)
+[`SharedKernel.Storage.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Storage/SharedKernel.Storage.Testing/README.md)
 (`AddSharedKernelStorage().AddInMemoryStore("invoices")`), which apply the same key, option and tenant rules.
 
 To test the S3 wiring itself, run MinIO in a container (Testcontainers or the compose file of recipe 5) and point the

@@ -301,7 +301,7 @@ Registers the `encryption-key-provider` readiness probe (`AzureKeyVaultEncryptio
 ## Testing
 
 Unit-test application code with the fakes in
-[`SharedKernel.Cryptography.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Cryptography.Testing/README.md):
+[`SharedKernel.Cryptography.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Foundation/SharedKernel.Cryptography.Testing/README.md):
 `FakeRemoteEncryptionKeyProvider` (call counts, `AddKey`/`SetCurrentKey`/`RemoveKey`) stands in for this provider and
 `FakeEnvelopeEncryptionProvider` (`SimulateUnwrapFailure`) for its envelope role. To test the provider itself without a
 network, construct it over subclasses of the SDK's `KeyClient` and `SecretClient` (its public constructor takes both).

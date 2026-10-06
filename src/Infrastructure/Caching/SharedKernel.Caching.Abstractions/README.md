@@ -409,7 +409,7 @@ Presets: `CachePolicy.Default`, and `CachePolicy.NeverExpire` (no time-based exp
 
 ## Testing
 
-Reference [`SharedKernel.Caching.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Caching.Testing/README.md)
+Reference [`SharedKernel.Caching.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Caching/SharedKernel.Caching.Testing/README.md)
 from your test project (namespace `SharedKernel.Testing.Caching`):
 
 ```csharp
@@ -424,7 +424,7 @@ services.AddFakeCachingServices()          // ICacheService, ICacheKeyProvider, 
   `FakeDistributedLock` can `SimulateLoss()`.
 - `AddFakeCacheWarmupStrategy(name, order, executionLog)` registers a recording `ICacheWarmupStrategy`.
 - Redis-specific fakes (hash store, Pub/Sub) are in
-  [`SharedKernel.Caching.Redis.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Caching.Redis.Testing/README.md).
+  [`SharedKernel.Caching.Redis.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Caching/SharedKernel.Caching.Redis.Testing/README.md).
 
 ## Pitfalls
 

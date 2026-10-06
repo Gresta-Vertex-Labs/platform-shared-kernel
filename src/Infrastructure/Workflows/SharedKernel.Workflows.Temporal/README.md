@@ -441,7 +441,7 @@ name `SharedKernel.Workflows`; subscribe with ServiceDefaults' `WithWorkflowTele
 ## Testing
 
 Code that **dispatches** workflows: reference
-[`SharedKernel.Workflows.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Workflows.Testing/README.md)
+[`SharedKernel.Workflows.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Workflows/SharedKernel.Workflows.Testing/README.md)
 and call `services.AddInMemoryWorkflowDispatcher()`. `InMemoryWorkflowDispatcher` applies the same tenant and id rules,
 records starts (`ShouldHaveStarted<TWorkflow>()`, `ShouldHaveStartedOnce<TWorkflow>()`), lets you complete or fail a
 workflow (`CompleteWorkflow`, `FailWorkflow`, `ConfigureQueryHandler`), and its handles assert signals, queries,

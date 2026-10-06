@@ -94,9 +94,9 @@ builder.Services.AddHealthChecks()
 
 ## Testing
 
-Test against a real PostgreSQL with [`SharedKernel.Persistence.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Persistence.Testing/README.md)'s
+Test against a real PostgreSQL with [`SharedKernel.Persistence.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Persistence/SharedKernel.Persistence.Testing/README.md)'s
 `PostgresTestServer`/`PostgresTestDatabase`, host the service with `WebApplicationFactory<Program>`, and request
-`/health/ready`. [`SharedKernel.ServiceDefaults.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.ServiceDefaults.Testing/README.md)'s
+`/health/ready`. [`SharedKernel.ServiceDefaults.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Testing/README.md)'s
 `ShouldBeTaggedReady()` / `ShouldNotBeTaggedLive()` assert a registration's tags without a database.
 
 ## Pitfalls

@@ -26,7 +26,7 @@ You write inside `src/Infrastructure/Communication/` only.
 
 All three share one namespace, `SharedKernel.Communication`. Tests are nested (`{Package}/{Package}.Tests/`). `src/Infrastructure/Communication/consumer-verify` (in the solution, Unit lane) composes both satellites through a real generic host.
 
-**Boundaries:** `.Rest` and `.Grpc` never reference each other; no Host package and no ASP.NET Core reference in production code (SKTIER006). `SharedKernel.Communication.Grpc` never references `SharedKernel.Contracts` — protobuf messages are the gRPC wire contract (`CommunicationLayeringRules`). Consumer-side doubles (`StubHttpMessageHandler`, `UseStubHttpMessageHandler`, `GrpcCalls`, `TestServerCallContext`) live in `src/Testing/SharedKernel.Communication.Testing` — not yours to edit; a change they need is a cross-domain note.
+**Boundaries:** `.Rest` and `.Grpc` never reference each other; no Host package and no ASP.NET Core reference in production code (SKTIER006). `SharedKernel.Communication.Grpc` never references `SharedKernel.Contracts` — protobuf messages are the gRPC wire contract (`CommunicationLayeringRules`). Consumer-side doubles (`StubHttpMessageHandler`, `UseStubHttpMessageHandler`, `GrpcCalls`, `TestServerCallContext`) live in `src/Infrastructure/Communication/SharedKernel.Communication.Testing` — not yours to edit; a change they need is a cross-domain note.
 
 ---
 

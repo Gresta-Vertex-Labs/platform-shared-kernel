@@ -34,7 +34,7 @@ two production stores: Redis (Lua scripts) and PostgreSQL (`INSERT … ON CONFLI
 | [`SharedKernel.Idempotency.Redis`](SharedKernel.Idempotency.Redis/README.md) | Adapter | You already run Redis (`AddRedisConnection`); entries expire on their own |
 | [`SharedKernel.Idempotency.EfCore`](SharedKernel.Idempotency.EfCore/README.md) | Adapter | You run PostgreSQL and want deduplication next to your data or outbox, without Redis |
 
-Test double: [`SharedKernel.Idempotency.Testing`](../../Testing/SharedKernel.Idempotency.Testing/README.md)
+Test double: [`SharedKernel.Idempotency.Testing`](./SharedKernel.Idempotency.Testing/README.md)
 (`FakeIdempotencyStore`, `AddFakeIdempotencyStore()`).
 
 ## How it fits together

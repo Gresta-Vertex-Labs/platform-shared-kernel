@@ -109,7 +109,7 @@ public sealed class InvoiceServiceTests
 - **Simplifications.** `InMemoryLoggerFactory` is the whole logging pipeline (`AddProvider` is a no-op).
   `SpecificationAssert` and `SpecificationTestBuilder` evaluate `Criteria` only — no ordering, paging or soft-delete
   filter (for those, use `FakeRepository` in
-  [`SharedKernel.Persistence.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Persistence.Testing/README.md)).
+  [`SharedKernel.Persistence.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Persistence/SharedKernel.Persistence.Testing/README.md)).
   `HttpClientHandlerTestFactory`'s header handlers are stand-ins, not the platform's propagation handlers.
 - **Lifetimes.** `AddInMemoryLoggerFactory()` and `AddFakeDomainServices()` register singletons, so captured state
   outlives any DI scope.
@@ -267,7 +267,7 @@ Assert.NotEmpty(spans.RecordedActivities);
 
 `AmbientActivityTestHelper.Start(traceId)` sets `Activity.Current` for a block and restores it on dispose. For a typed
 REST client with the platform's resilience and propagation, use `StubHttpMessageHandler` from
-[`SharedKernel.Communication.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Communication.Testing/README.md).
+[`SharedKernel.Communication.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Communication/SharedKernel.Communication.Testing/README.md).
 
 ## Reference
 

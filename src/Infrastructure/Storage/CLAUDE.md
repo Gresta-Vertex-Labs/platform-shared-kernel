@@ -148,7 +148,7 @@ Telemetry (S3 package): `ActivitySource`/`Meter` `"SharedKernel.Storage"`; spans
   (Testcontainers) for every behaviour — round trips, non-seekable multipart, ranges, conditions, checksums, batch
   delete, copies across stores and tenants, listing, presigned GET/PUT/POST/multipart through `HttpClient`, probe,
   outage → `unavailable`, cancellation, telemetry. Never mock `IAmazonS3` for behaviour.
-- Consumers: `src/Testing/SharedKernel.Storage.Testing` (`AddInMemoryStore`/`AddInMemoryTenantStore`, namespace
+- Consumers: `src/Infrastructure/Storage/SharedKernel.Storage.Testing` (`AddInMemoryStore`/`AddInMemoryTenantStore`, namespace
   `SharedKernel.Testing.Storage`). The storage test projects do not reference it (keeps the graph acyclic).
 - `consumer-verify/` composes S3 and OBS stores in a real host and checks start-up validation.
 - `samples/DocumentsApi/DocumentsApi.Tests` runs every capability over HTTP against MinIO, and against real Amazon S3

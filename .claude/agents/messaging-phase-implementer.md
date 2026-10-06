@@ -73,7 +73,7 @@ Each satellite declares exactly one `<SharedKernelAllowedAdapterReferences>` edg
 - Gate on readiness, never a sleep — the bus starts in the background and a message published before bindings exist is silently dropped by the broker.
 - Diagnostics listeners are process-wide: filter by a test-unique tag value. Assert logs by `EventId`, never message text.
 - Keep the MassTransit traps listed in the domain brain in mind (no `file` modifier on consumer/message/`DbContext` types, NSubstitute and internal generic closures, `BusHealthCheck` registration, the licence gate outside the harness, `PublishContext`/`IMessageScheduler` aliasing, custom serializer `ClearSerialization()`).
-- Consumer fakes (`InMemoryMessageBus`, `InMemoryEventPublisher`) live in `src/Testing/SharedKernel.Messaging.Testing`; a contract change that breaks them is a `## Cross-Domain Dependencies` note.
+- Consumer fakes (`InMemoryMessageBus`, `InMemoryEventPublisher`) live in `src/Infrastructure/Messaging/SharedKernel.Messaging.Testing`; a contract change that breaks them is a `## Cross-Domain Dependencies` note.
 
 ---
 

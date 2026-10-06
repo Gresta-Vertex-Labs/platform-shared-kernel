@@ -386,7 +386,7 @@ Assert.Equal(404, error.StatusCode);
 `new IdempotencyKey("order-17")`, `new IfMatch<EntityVersion>(version)` and `new Paging(PageRequest.First)` build the
 parameters for a handler test. For the pipeline itself (problems, headers, authorization), host the service with
 `WebApplicationFactory<Program>`, as `samples/OrderApi`'s tests do.
-[`SharedKernel.Presentation.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Presentation.Testing/README.md)'s
+[`SharedKernel.Presentation.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Presentation/SharedKernel.Presentation.Testing/README.md)'s
 `FakeHttpContextAccessor` supplies an `IHttpContextAccessor` for code that reads one.
 
 ## Pitfalls

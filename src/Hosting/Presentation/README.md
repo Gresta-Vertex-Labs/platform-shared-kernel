@@ -42,7 +42,7 @@ service's Api project.
 | [`SharedKernel.Presentation.GraphQL`](SharedKernel.Presentation.GraphQL/README.md) | Host | You serve GraphQL with HotChocolate — `AddSharedKernelGraphQL()` |
 
 Every configuration key of the domain, with its rules, is in [CONFIGURATION.md](CONFIGURATION.md). Test helpers:
-[`SharedKernel.Presentation.Testing`](../../Testing/SharedKernel.Presentation.Testing/README.md). The client side of
+[`SharedKernel.Presentation.Testing`](./SharedKernel.Presentation.Testing/README.md). The client side of
 these contracts is [`11.Communication`](../../Infrastructure/Communication/README.md).
 
 ## The canonical HTTP pipeline

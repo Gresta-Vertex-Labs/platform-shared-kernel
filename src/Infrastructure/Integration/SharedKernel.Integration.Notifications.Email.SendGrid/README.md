@@ -124,7 +124,7 @@ Spans come from `NotificationIntegrationActivitySource` (`SharedKernel.Integrati
 ## Testing
 
 Unit tests of code that sends email use
-[`SharedKernel.Integration.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Integration.Testing/README.md):
+[`SharedKernel.Integration.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Integration/SharedKernel.Integration.Testing/README.md):
 `services.AddInMemoryNotificationSender(NotificationChannel.Email)` replaces this sender and records every message
 (`ShouldHaveSent<TModel>(…)`). To test this provider itself, stub the named client with a `DelegatingHandler` and use
 `SharedKernel.Storage.Testing`'s in-memory stores for attachments.

@@ -281,7 +281,7 @@ var handler = new CloseAccount(caller, accounts);
 
 Other factories: `ForUser`, `Service(clientId)`, `System(identity)`, `Anonymous()`. For persistence fakes of
 `IUnitOfWork` and `IAuditTrailWriter`, see
-[`SharedKernel.Persistence.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Persistence.Testing/README.md)
+[`SharedKernel.Persistence.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Persistence/SharedKernel.Persistence.Testing/README.md)
 (`AddFakeUnitOfWork()`, `AddFakeAuditTrailWriter()`).
 
 ## Pitfalls

@@ -114,7 +114,7 @@ Error codes, the other log events and the `messaging` readiness probe belong to 
 ## Testing
 
 Application code is tested against
-[`SharedKernel.Messaging.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Messaging.Testing/README.md)'s
+[`SharedKernel.Messaging.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Messaging/SharedKernel.Messaging.Testing/README.md)'s
 in-memory fakes. Azure Service Bus has no container image, so this package's own tests assert the configuration it
 applies (option guards, concurrency, session ids, the advisory); end-to-end tests need a real namespace.
 

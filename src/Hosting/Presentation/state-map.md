@@ -19,7 +19,7 @@
 | `SharedKernel.Presentation.GraphQL` | Host | ● | HotChocolate conventions (`FilterBase<T>`/`SortBase<T>`, `PagedResponseType<T>.FromPagedList`); moved from `11.Communication` (WO-086 P-570). |
 | `SharedKernel.Presentation.SignalR.Redis` | — | ⊘ | Created by WO-086 (P-570), deleted by P-579; use SignalR's own `AddStackExchangeRedis(…)`. |
 
-Test helpers: `src/Testing/SharedKernel.Presentation.Testing`. Configuration reference: `CONFIGURATION.md`. `consumer-verify` composes the request context first and exercises a hub method and a gRPC method.
+Test helpers: `src/Hosting/Presentation/SharedKernel.Presentation.Testing`. Configuration reference: `CONFIGURATION.md`. `consumer-verify` composes the request context first and exercises a hub method and a gRPC method.
 
 ## Phase Key Registry
 

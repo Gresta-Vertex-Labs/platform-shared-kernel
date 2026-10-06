@@ -237,7 +237,7 @@ No readiness probe, by design: the only honest check of an LLM endpoint is a rea
 ## Testing
 
 In a service's tests, use
-[`SharedKernel.AI.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.AI.Testing/README.md):
+[`SharedKernel.AI.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/AI/SharedKernel.AI.Testing/README.md):
 `services.AddInMemorySemanticKernel()` and `services.AddInMemoryEmbeddingGenerator(modelId, dimension)`. Script
 answers with `InMemorySemanticKernel.EnqueueResponse`, `EnqueueStreamingResponse` or `EnqueueStreamingFailure`, and
 assert on `SentRequests`. Never call a paid endpoint by default and never assert on generated text. A host with this

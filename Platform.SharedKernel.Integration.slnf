@@ -20,7 +20,7 @@
       "src/Infrastructure/Search/SharedKernel.Search.ElasticSearch/SharedKernel.Search.ElasticSearch.Tests/SharedKernel.Search.ElasticSearch.Tests.csproj",
       "src/Infrastructure/Search/SharedKernel.Search.Meilisearch/SharedKernel.Search.Meilisearch.Tests/SharedKernel.Search.Meilisearch.Tests.csproj",
       "src/Infrastructure/AI/SharedKernel.AI.Qdrant/SharedKernel.AI.Qdrant.Tests/SharedKernel.AI.Qdrant.Tests.csproj",
-      "src/Testing/SharedKernel.Persistence.Testing/SharedKernel.Persistence.Testing.Tests/SharedKernel.Persistence.Testing.Tests.csproj",
+      "src/Infrastructure/Persistence/SharedKernel.Persistence.Testing/SharedKernel.Persistence.Testing.Tests/SharedKernel.Persistence.Testing.Tests.csproj",
       "src/Testing/SharedKernel.Testing.Internal/SharedKernel.Testing.Internal.Tests/SharedKernel.Testing.Internal.Tests.csproj",
       "src/Infrastructure/Idempotency/SharedKernel.Idempotency.EfCore/SharedKernel.Idempotency.EfCore.Tests/SharedKernel.Idempotency.EfCore.Tests.csproj",
       "src/Infrastructure/Idempotency/SharedKernel.Idempotency.Redis/SharedKernel.Idempotency.Redis.Tests/SharedKernel.Idempotency.Redis.Tests.csproj",

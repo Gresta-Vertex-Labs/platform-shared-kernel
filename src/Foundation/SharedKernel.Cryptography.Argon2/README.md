@@ -197,7 +197,7 @@ The package does not log.
 ## Testing
 
 Use `FakeOneWayHasher` from
-[`SharedKernel.Cryptography.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Cryptography.Testing/README.md)
+[`SharedKernel.Cryptography.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Foundation/SharedKernel.Cryptography.Testing/README.md)
 for fast sign-in tests (it is PBKDF2-based). To exercise Argon2id itself, register it with the minimum costs
 (`MemorySizeKb = 7168`, `Iterations = 2`) to keep tests quick.
 

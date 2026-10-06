@@ -110,7 +110,7 @@ EventId block **11000–11999**.
 
 ## Testing
 
-- Unit lane only (no Docker): `SharedKernel.Communication.Tests`, `.Rest.Tests`, `.Grpc.Tests` (nested in each package), plus `src/Testing/SharedKernel.Communication.Testing/SharedKernel.Communication.Testing.Tests`.
+- Unit lane only (no Docker): `SharedKernel.Communication.Tests`, `.Rest.Tests`, `.Grpc.Tests` (nested in each package), plus `src/Infrastructure/Communication/SharedKernel.Communication.Testing/SharedKernel.Communication.Testing.Tests`.
 - Consumer doubles: `StubHttpMessageHandler` + `UseStubHttpMessageHandler(clientName, stub)`, `GrpcCalls`, `TestServerCallContext`.
 - REST tests register a real client over a `StubHttpMessageHandler`, so the whole pipeline runs; settings through in-memory configuration validated with `IStartupValidator.Validate()`; `Retry:BaseDelay` 0.
 - The resolving handler restores the original request URI after the call — a test inspecting the URI must copy it at send time (`StubHttpMessageHandler` does).

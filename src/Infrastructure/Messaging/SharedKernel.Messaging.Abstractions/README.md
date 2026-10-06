@@ -170,7 +170,7 @@ This package does not log. The implementation's events (7000–7099) are listed 
 
 ## Testing
 
-Reference [`SharedKernel.Messaging.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Messaging.Testing/README.md)
+Reference [`SharedKernel.Messaging.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Messaging/SharedKernel.Messaging.Testing/README.md)
 from your test project:
 
 ```csharp

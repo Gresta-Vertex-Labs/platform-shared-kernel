@@ -5,7 +5,7 @@
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Integration.Notifications.Email.SendGrid.csproj" />
     <ProjectReference Include="..\..\..\..\Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
-    <ProjectReference Include="..\..\..\..\Testing\SharedKernel.Storage.Testing\SharedKernel.Storage.Testing.csproj" />
+    <ProjectReference Include="..\..\..\Storage\SharedKernel.Storage.Testing\SharedKernel.Storage.Testing.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="xunit" />

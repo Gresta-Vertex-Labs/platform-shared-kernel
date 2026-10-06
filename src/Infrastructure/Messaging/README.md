@@ -201,7 +201,7 @@ Kafka or Amazon SQS (no adapter today).
 | The idempotency store contract and its Redis and PostgreSQL stores | [18.Idempotency](../Idempotency/SharedKernel.Idempotency.Abstractions/README.md) |
 | The CloudEvents envelope and integration event contracts | [04.Contracts](../../Model/Contracts/README.md) |
 | Readiness endpoints and telemetry (`AddSharedKernelReadiness`, `WithMessagingTelemetry`) | [13.ServiceDefaults](../../Hosting/ServiceDefaults/SharedKernel.ServiceDefaults/README.md) |
-| In-memory fakes for tests | [SharedKernel.Messaging.Testing](../../Testing/SharedKernel.Messaging.Testing/README.md) |
+| In-memory fakes for tests | [SharedKernel.Messaging.Testing](./SharedKernel.Messaging.Testing/README.md) |
 | How to contribute | [CONTRIBUTING.md](../../../CONTRIBUTING.md) |
 
 ---

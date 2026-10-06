@@ -44,7 +44,7 @@ Related packages outside this folder:
 | Package | Adds |
 | --- | --- |
 | [SharedKernel.ServiceDefaults](../../Hosting/ServiceDefaults/SharedKernel.ServiceDefaults/README.md) | `AddHealthChecks().AddSharedKernelReadiness()` maps every `storage-{store}` probe to `/health/ready`; `WithStorageTelemetry()` exports the `SharedKernel.Storage` traces and metrics |
-| [SharedKernel.Storage.Testing](../../Testing/SharedKernel.Storage.Testing/README.md) | `AddInMemoryStore(name)` / `AddInMemoryTenantStore(name)` — an in-memory store with the production rules, for unit tests |
+| [SharedKernel.Storage.Testing](./SharedKernel.Storage.Testing/README.md) | `AddInMemoryStore(name)` / `AddInMemoryTenantStore(name)` — an in-memory store with the production rules, for unit tests |
 
 ## How it fits together
 

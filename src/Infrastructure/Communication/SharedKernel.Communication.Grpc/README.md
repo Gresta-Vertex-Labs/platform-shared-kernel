@@ -164,7 +164,7 @@ an uncoded failure is `grpc.{status}`.
 
 ## Testing
 
-Reference [`SharedKernel.Communication.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Communication.Testing/README.md).
+Reference [`SharedKernel.Communication.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Communication/SharedKernel.Communication.Testing/README.md).
 `GrpcCalls` returns what a generated client's method returns, for a mocked client:
 
 ```csharp
