@@ -96,7 +96,9 @@ public sealed partial class TwilioSmsNotificationSender : INotificationSender
             formFields.Add(new KeyValuePair<string, string>("From", _options.From!));
         }
 
-        var endpoint = $"https://api.twilio.com/2010-04-01/Accounts/{_options.AccountSid}/Messages.json";
+        // A trailing slash keeps a base address with a path prefix (a stand-in server's mount point) in the result.
+        var baseAddress = _options.BaseAddress.AbsoluteUri.EndsWith('/') ? _options.BaseAddress : new Uri(_options.BaseAddress.AbsoluteUri + "/");
+        var endpoint = new Uri(baseAddress, $"2010-04-01/Accounts/{Uri.EscapeDataString(_options.AccountSid)}/Messages.json");
 
         using var httpClient = _httpClientFactory.CreateClient(TwilioHttpClientName.Name);
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, endpoint)

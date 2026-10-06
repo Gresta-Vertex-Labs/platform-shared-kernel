@@ -1,5 +1,7 @@
 using Azure.Core;
+using Azure.Extensions.AspNetCore.Configuration.Secrets;
 using Azure.Identity;
+using Azure.Security.KeyVault.Secrets;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 
@@ -63,6 +65,39 @@ public static class KeyVaultConfigurationExtensions
         ArgumentNullException.ThrowIfNull(vaultUri);
 
         builder.Configuration.AddAzureKeyVault(vaultUri, credential ?? new DefaultAzureCredential());
+
+        return builder;
+    }
+
+    /// <summary>
+    /// Adds Azure Key Vault as an additional <see cref="IConfiguration"/> source, with explicit client options.
+    /// </summary>
+    /// <param name="builder">The host application builder.</param>
+    /// <param name="vaultUri">The Azure Key Vault URI, e.g. <c>https://my-vault.vault.azure.net/</c>.</param>
+    /// <param name="credential">
+    /// The credential used to authenticate against the vault. Defaults to
+    /// <see cref="DefaultAzureCredential"/> when <see langword="null"/>.
+    /// </param>
+    /// <param name="clientOptions">
+    /// The options of the <see cref="SecretClient"/> that reads the vault: its transport, retries and diagnostics. A local
+    /// emulator such as Lowkey Vault needs its TLS certificate trusted through
+    /// <see cref="ClientOptions.Transport"/> and <see cref="SecretClientOptions.DisableChallengeResourceVerification"/>
+    /// set, because its host is not <c>*.vault.azure.net</c>.
+    /// </param>
+    /// <returns>The same <paramref name="builder"/> instance, for fluent chaining.</returns>
+    /// <remarks>Fails fast exactly as the overload without client options does.</remarks>
+    public static IHostApplicationBuilder AddSharedKernelKeyVaultConfiguration(
+        this IHostApplicationBuilder builder,
+        Uri vaultUri,
+        TokenCredential? credential,
+        SecretClientOptions clientOptions)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(vaultUri);
+        ArgumentNullException.ThrowIfNull(clientOptions);
+
+        var client = new SecretClient(vaultUri, credential ?? new DefaultAzureCredential(), clientOptions);
+        builder.Configuration.AddAzureKeyVault(client, new AzureKeyVaultConfigurationOptions());
 
         return builder;
     }

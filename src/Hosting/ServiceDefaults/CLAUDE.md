@@ -45,7 +45,7 @@ Empty folders such as `SharedKernel.ServiceDefaults.Messaging`, `.Caching`, `.AI
 
 **`SharedKernel.ServiceDefaults.Security.Mtls`** — `builder.AddMtlsClientCertificate(ClientCertificateMode)`; `builder.AddMtlsForwardedHeaderCertificate(o => …)` (`MtlsForwardedHeaderOptions`, section `SharedKernel:ServiceDefaults:MtlsForwardedHeader`, `HeaderName` required, `AddTrustedNetwork`/`AddTrustedProxy`) + `app.UseMiddleware<MtlsForwardedHeaderMiddleware>()`.
 
-**`SharedKernel.ServiceDefaults.Configuration.KeyVault`** — `builder.AddSharedKernelKeyVaultConfiguration(vaultUri, credential?)` (`DefaultAzureCredential` by default; an unreachable vault throws at startup).
+**`SharedKernel.ServiceDefaults.Configuration.KeyVault`** — `builder.AddSharedKernelKeyVaultConfiguration(vaultUri, credential?)` (`DefaultAzureCredential` by default; an unreachable vault throws at startup); an overload adds `SecretClientOptions` for the transport (emulators such as Lowkey Vault).
 
 **`SharedKernel.ServiceDefaults.Localization`** — `builder.AddSharedKernelLocalization(o => …)` (`LocalizationResolutionOptions`: `StrategyOrder` default `UserPreference → TenantDefault → AcceptLanguageHeader`, `UserPreferenceClaimType`); the service still calls `app.UseRequestLocalization()`.
 

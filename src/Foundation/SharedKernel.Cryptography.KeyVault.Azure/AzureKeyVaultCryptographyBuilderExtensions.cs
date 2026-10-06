@@ -22,6 +22,12 @@ namespace SharedKernel.Cryptography.KeyVault.Azure;
 /// Both methods authenticate with the <see cref="TokenCredential"/> registered in the container, or a shared
 /// <see cref="DefaultAzureCredential"/> when none is. In production, register a specific credential such as
 /// <see cref="ManagedIdentityCredential"/> first; it starts faster and cannot pick up a developer's identity.
+/// <para>
+/// The Key Vault clients use the <see cref="KeyClientOptions"/> and <see cref="SecretClientOptions"/> registered in the
+/// container, or the SDK defaults when none are. Register them to change the transport, retries or diagnostics, for
+/// example to reach a local emulator such as Lowkey Vault, which needs its own TLS certificate trusted and
+/// <c>DisableChallengeResourceVerification</c> set because its host is not <c>*.vault.azure.net</c>.
+/// </para>
 /// </remarks>
 public static class AzureKeyVaultCryptographyBuilderExtensions
 {
@@ -69,8 +75,8 @@ public static class AzureKeyVaultCryptographyBuilderExtensions
             TokenCredential credential = sp.GetRequiredService<TokenCredential>();
             return new AzureKeyVaultEncryptionKeyProvider(
                 Microsoft.Extensions.Options.Options.Create(options),
-                new KeyClient(options.VaultUri!, credential),
-                new SecretClient(options.VaultUri!, credential),
+                new KeyClient(options.VaultUri!, credential, sp.GetService<KeyClientOptions>()),
+                new SecretClient(options.VaultUri!, credential, sp.GetService<SecretClientOptions>()),
                 sp.GetRequiredService<ISecureRandomGenerator>(),
                 sp.GetRequiredService<TimeProvider>());
         });
@@ -114,7 +120,7 @@ public static class AzureKeyVaultCryptographyBuilderExtensions
             AzureKeyVaultSigningOptions options = sp.GetRequiredService<IOptions<AzureKeyVaultSigningOptions>>().Value;
             return new AzureKeyVaultSigningKeyProvider(
                 Microsoft.Extensions.Options.Options.Create(options),
-                new KeyClient(options.VaultUri!, sp.GetRequiredService<TokenCredential>()),
+                new KeyClient(options.VaultUri!, sp.GetRequiredService<TokenCredential>(), sp.GetService<KeyClientOptions>()),
                 sp.GetRequiredService<TimeProvider>());
         });
         services.TryAddSingleton<ISigningKeyProvider>(sp => sp.GetRequiredService<AzureKeyVaultSigningKeyProvider>());

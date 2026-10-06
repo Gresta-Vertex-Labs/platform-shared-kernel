@@ -1,4 +1,9 @@
+using System.Collections.Concurrent;
+using System.Net;
+using System.Text;
 using Azure.Core;
+using Azure.Core.Pipeline;
+using Azure.Security.KeyVault.Secrets;
 using FluentAssertions;
 using Microsoft.Extensions.Hosting;
 using SharedKernel.ServiceDefaults.Configuration;
@@ -75,6 +80,34 @@ public sealed class KeyVaultConfigurationExtensionsTests
     }
 
     [Fact]
+    public void AddSharedKernelKeyVaultConfiguration_NullClientOptions_ThrowsArgumentNullException()
+    {
+        var builder = Host.CreateApplicationBuilder();
+
+        var act = () => builder.AddSharedKernelKeyVaultConfiguration(
+            new Uri("https://my-vault.vault.azure.net/"), new InstantFakeTokenCredential(), null!);
+
+        act.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
+    public void AddSharedKernelKeyVaultConfiguration_WithClientOptions_ReadsSecretsThroughTheirTransport()
+    {
+        // The client options' transport is what reaches the vault, so a host can trust a local emulator's
+        // certificate. The secret name's "--" becomes the configuration key separator, as with the plain overload.
+        var handler = new VaultHandler();
+        var clientOptions = new SecretClientOptions { Transport = new HttpClientTransport(new HttpClient(handler)) };
+        clientOptions.Retry.MaxRetries = 0;
+        var builder = Host.CreateApplicationBuilder();
+
+        builder.AddSharedKernelKeyVaultConfiguration(
+            new Uri("https://my-vault.vault.azure.net/"), new InstantFakeTokenCredential(), clientOptions);
+
+        builder.Configuration["Shop:Greeting"].Should().Be("merhaba");
+        handler.Requests.Should().Contain(path => path.StartsWith("/secrets", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task AddSharedKernelKeyVaultConfiguration_NeverCalled_HostBuildsAndStartsWithoutAnyBehaviorChange()
     {
         // T-61 no-op regression: a host that never calls AddSharedKernelKeyVaultConfiguration() has
@@ -88,6 +121,33 @@ public sealed class KeyVaultConfigurationExtensionsTests
 
         exception.Should().BeNull();
         await host.StopAsync();
+    }
+
+    /// <summary>A vault holding one secret, <c>Shop--Greeting</c>, answering the list and get calls.</summary>
+    private sealed class VaultHandler : HttpMessageHandler
+    {
+        private const string Vault = "https://my-vault.vault.azure.net";
+
+        public ConcurrentQueue<string> Requests { get; } = new();
+
+        // The configuration provider loads synchronously, so the Azure pipeline calls Send, not SendAsync.
+        protected override HttpResponseMessage Send(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            string path = request.RequestUri!.AbsolutePath;
+            Requests.Enqueue(path);
+
+            string body = path.TrimEnd('/') == "/secrets"
+                ? $$$"""{"value":[{"id":"{{{Vault}}}/secrets/Shop--Greeting","attributes":{"enabled":true}}],"nextLink":null}"""
+                : $$$"""{"value":"merhaba","id":"{{{Vault}}}/secrets/Shop--Greeting/0123456789abcdef0123456789abcdef","attributes":{"enabled":true}}""";
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(body, Encoding.UTF8, "application/json"),
+            };
+        }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(Send(request, cancellationToken));
     }
 
     /// <summary>

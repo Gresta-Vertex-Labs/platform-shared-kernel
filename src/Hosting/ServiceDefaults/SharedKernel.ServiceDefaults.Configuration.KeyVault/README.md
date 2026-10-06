@@ -97,6 +97,7 @@ Use user secrets (`dotnet user-secrets`) for the same keys locally.
 | Method | Does |
 | --- | --- |
 | `IHostApplicationBuilder.AddSharedKernelKeyVaultConfiguration(Uri vaultUri, TokenCredential? credential = null)` | Adds Key Vault as a configuration source; `DefaultAzureCredential` when `credential` is `null`. Throws `ArgumentNullException` for a null builder or URI, and the Azure SDK's exception when the vault cannot be read |
+| `IHostApplicationBuilder.AddSharedKernelKeyVaultConfiguration(Uri vaultUri, TokenCredential? credential, SecretClientOptions clientOptions)` | The same, reading the vault with a `SecretClient` built from `clientOptions` (transport, retries, diagnostics). Use it to reach a local emulator such as Lowkey Vault: trust its TLS certificate through `Transport` and set `DisableChallengeResourceVerification = true` |
 
 The package logs nothing of its own and registers no readiness probe.
 

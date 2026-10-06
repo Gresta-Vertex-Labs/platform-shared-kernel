@@ -33,6 +33,7 @@ Also in the folder: nested `.Tests` projects and `consumer-verify/` (resolves ev
 - `services.WithNotificationDeliveryObserver<T>()`.
 - `services.AddSendGridEmailNotifications(o => o.ApiKey = …)` → keyed `INotificationSender` for `NotificationChannel.Email`; needs `AddSharedKernelStorage()` for attachments (`IFileStorageFactory`).
 - `services.AddTwilioSmsNotifications(o => { o.AccountSid; o.AuthToken; o.From / o.MessagingServiceSid })` → keyed sender for `NotificationChannel.Sms` (at least one of `From`/`MessagingServiceSid`).
+- Both provider options carry `BaseAddress` (default: the vendor API). It exists so local and end-to-end environments can point at a stand-in such as WireMock; endpoint paths are resolved below it, keeping any path prefix. Never hard-code a vendor URL in a sender.
 - Send: `GetRequiredKeyedService<INotificationSender>(channel).SendAsync(NotificationMessage<T> { NotificationDeliveryId, Channel, Recipient, TemplateId, TemplateModel, Attachments, Locale }, ct)`.
 - Telemetry: every family's `ActivitySource` is named `SharedKernel.Integration`; the host subscribes with ServiceDefaults' `WithIntegrationTelemetry()`.
 
