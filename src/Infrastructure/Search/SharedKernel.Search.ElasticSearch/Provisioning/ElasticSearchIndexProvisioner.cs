@@ -24,6 +24,9 @@ internal sealed class ElasticSearchIndexProvisioner : ISearchIndexProvisioner
     private const string FingerprintMetaKey = "sk_schema_fingerprint";
     private const string TextAnalysisMetaKey = "sk_text_analysis_fingerprint";
 
+    /// <summary>Elasticsearch's error type for creating an index that already exists.</summary>
+    private const string IndexAlreadyExistsErrorType = "resource_already_exists_exception";
+
     /// <summary>
     /// The name of the custom analyzer this provider installs on an index that declares synonyms or
     /// stop words, and assigns to every <see cref="SearchFieldKind.Text"/> field.
@@ -117,20 +120,29 @@ internal sealed class ElasticSearchIndexProvisioner : ISearchIndexProvisioner
             };
 
             var createResponse = await _client.Indices.CreateAsync(createRequest, cancellationToken).ConfigureAwait(false);
-            if (!createResponse.IsValidResponse)
+            if (createResponse.IsValidResponse)
+            {
+                _logger.ElasticSearchIndexEnsured(definition.Name, definition.Fields.Count, definition.MaxTotalHits);
+                if (hasTextAnalysis)
+                {
+                    _logger.ElasticSearchTextAnalysisApplied(
+                        definition.Name, definition.Synonyms.Count, definition.StopWords.Count);
+                }
+
+                return Result.Success();
+            }
+
+            // Replicas starting together all see "no index" and all create it; every one but the first is told
+            // resource_already_exists_exception. The index (created whole: mappings and analysis in one request)
+            // is there, so continue as on an existing one below.
+            if (!string.Equals(
+                    createResponse.ElasticsearchServerError?.Error?.Type,
+                    IndexAlreadyExistsErrorType,
+                    StringComparison.Ordinal))
             {
                 return Result.Failure(SearchErrors.EngineFault(
                     SearchWellKnown.ElasticSearchProviderName, "EnsureIndexAsync", createResponse.DebugInformation));
             }
-
-            _logger.ElasticSearchIndexEnsured(definition.Name, definition.Fields.Count, definition.MaxTotalHits);
-            if (hasTextAnalysis)
-            {
-                _logger.ElasticSearchTextAnalysisApplied(
-                    definition.Name, definition.Synonyms.Count, definition.StopWords.Count);
-            }
-
-            return Result.Success();
         }
 
         // ElasticSearch cannot change an open index's analysis settings at all, so a changed synonym or

@@ -28,7 +28,9 @@
   `GetAsync`, `CountAsync` → `SearchCount`, `EnumerateAsync` → `IAsyncEnumerable<TDocument>`, `IndexName`.
 - `ISearchIndexProvisioner` (singleton, keyed + unkeyed) — `EnsureIndexAsync`, `IndexExistsAsync`, `DeleteIndexAsync`,
   `CutoverAsync(IndexCutoverRequest)` (`LiveIndexName`, `StagingIndexName`, `DeleteStagingAfterCutover`),
-  `VerifyRegisteredIndexesAsync`.
+  `VerifyRegisteredIndexesAsync`. `EnsureIndexAsync` is safe to run from every replica at once: a lost create race
+  (`index_already_exists` / `resource_already_exists_exception`) continues as on an existing index, and a Meilisearch
+  index another replica created but has not configured yet (no fingerprint, no documents) is configured, not refused.
 - `ISearchProviderDescriptor` (singleton, keyed + unkeyed, zero I/O) — `ProviderName`, `MaxTotalHits`,
   `MaxFacetValues`, `RegisteredIndexes`, `Validate`.
 - `SearchQuery.New()` → `IQueryBuilder` (`Matching`, `MatchAllTerms`, `SearchingIn`, `Where`, `OrderBy`,

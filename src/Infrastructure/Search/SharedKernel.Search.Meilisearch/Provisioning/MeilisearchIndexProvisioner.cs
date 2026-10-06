@@ -19,6 +19,9 @@ internal sealed class MeilisearchIndexProvisioner : ISearchIndexProvisioner
 {
     private const string FingerprintDictionaryPrefix = "__sk_schema_fingerprint__:";
 
+    /// <summary>Meilisearch's error code for creating an index that already exists.</summary>
+    private const string IndexAlreadyExistsCode = "index_already_exists";
+
     private readonly global::Meilisearch.MeilisearchClient _client;
     private readonly MeilisearchOptions _options;
     private readonly IReadOnlyDictionary<string, SearchIndexDefinition> _registeredDefinitions;
@@ -66,17 +69,27 @@ internal sealed class MeilisearchIndexProvisioner : ISearchIndexProvisioner
         IReadOnlyList<string> existingFilterable = [];
         IReadOnlyList<string> existingSortable = [];
 
-        if (!existsResult.Value)
+        var exists = existsResult.Value;
+        if (!exists)
         {
             var createTask = await _client.CreateIndexAsync(definition.Name, definition.PrimaryKeyField, cancellationToken)
                 .ConfigureAwait(false);
-            var createWait = await WaitAsync(createTask.TaskUid, cancellationToken).ConfigureAwait(false);
+            var (createWait, engineErrorCode) = await WaitForTaskAsync(createTask.TaskUid, cancellationToken)
+                .ConfigureAwait(false);
             if (createWait.IsFailure)
             {
-                return createWait;
+                // Replicas starting together all see "no index" and all create it; every one but the first fails
+                // with index_already_exists. The index is there, so continue as on an existing one.
+                if (!string.Equals(engineErrorCode, IndexAlreadyExistsCode, StringComparison.Ordinal))
+                {
+                    return createWait;
+                }
+
+                exists = true;
             }
         }
-        else
+
+        if (exists)
         {
             var currentSettings = await index.GetSettingsAsync(cancellationToken).ConfigureAwait(false);
             existingSearchable = (currentSettings.SearchableAttributes ?? []).ToArray();
@@ -94,10 +107,18 @@ internal sealed class MeilisearchIndexProvisioner : ISearchIndexProvisioner
             // domain exists to prevent. Both providers therefore refuse, and the documented remedy is the
             // same one an incompatible field mapping already has: provision a staging index, bulk-load it,
             // then CutoverAsync.
-            var textAnalysisConflict = DetectTextAnalysisConflict(definition, currentSettings);
-            if (textAnalysisConflict is not null)
+            //
+            // Creating an index and configuring it are two Meilisearch tasks, so a replica can find an index another
+            // replica has just created but not yet configured: no fingerprint, no documents, empty lists. That index
+            // is unclaimed, and configuring it changes nothing anyone has indexed; only a claimed (fingerprinted) or
+            // populated index is held to its live text analysis.
+            if (!await IsUnclaimedAndEmptyAsync(index, currentSettings, cancellationToken).ConfigureAwait(false))
             {
-                return Result.Failure(textAnalysisConflict);
+                var textAnalysisConflict = DetectTextAnalysisConflict(definition, currentSettings);
+                if (textAnalysisConflict is not null)
+                {
+                    return Result.Failure(textAnalysisConflict);
+                }
             }
         }
 
@@ -451,7 +472,11 @@ internal sealed class MeilisearchIndexProvisioner : ISearchIndexProvisioner
         return entry?[FingerprintDictionaryPrefix.Length..];
     }
 
-    private async Task<Result> WaitAsync(int taskUid, CancellationToken cancellationToken)
+    private async Task<Result> WaitAsync(int taskUid, CancellationToken cancellationToken) =>
+        (await WaitForTaskAsync(taskUid, cancellationToken).ConfigureAwait(false)).Result;
+
+    /// <summary>Waits for a task; on failure also returns Meilisearch's own error code (e.g. <c>index_already_exists</c>).</summary>
+    private async Task<(Result Result, string? EngineErrorCode)> WaitForTaskAsync(int taskUid, CancellationToken cancellationToken)
     {
         try
         {
@@ -465,16 +490,32 @@ internal sealed class MeilisearchIndexProvisioner : ISearchIndexProvisioner
                 var code = resource.Error is { } error && error.TryGetValue("code", out var codeValue)
                     ? codeValue?.ToString() ?? "unknown"
                     : "unknown";
-                return Result.Failure(MeilisearchErrors.IndexingTaskFailed(taskUid.ToString(CultureInfo.InvariantCulture), code));
+                return (Result.Failure(MeilisearchErrors.IndexingTaskFailed(taskUid.ToString(CultureInfo.InvariantCulture), code)), code);
             }
 
-            return Result.Success();
+            return (Result.Success(), null);
         }
         catch (global::Meilisearch.MeilisearchTimeoutError)
         {
-            return Result.Failure(SearchErrors.Timeout(
-                "Provisioning", TimeSpan.FromSeconds(_options.TaskWaitTimeoutSeconds)));
+            return (Result.Failure(SearchErrors.Timeout(
+                "Provisioning", TimeSpan.FromSeconds(_options.TaskWaitTimeoutSeconds))), null);
         }
+    }
+
+    /// <summary>
+    /// An index no provisioner has configured yet (no schema fingerprint) and that holds no documents: one another
+    /// replica created a moment ago, or an empty index created by hand.
+    /// </summary>
+    private static async Task<bool> IsUnclaimedAndEmptyAsync(
+        global::Meilisearch.Index index, global::Meilisearch.Settings currentSettings, CancellationToken cancellationToken)
+    {
+        if (ExtractFingerprint(currentSettings.Dictionary) is not null)
+        {
+            return false;
+        }
+
+        var stats = await index.GetStatsAsync(cancellationToken).ConfigureAwait(false);
+        return stats.NumberOfDocuments == 0;
     }
 
     /// <inheritdoc />

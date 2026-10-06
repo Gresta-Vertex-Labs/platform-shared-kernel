@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Grpc.Core;
 using Microsoft.Extensions.Logging;
 using Qdrant.Client;
 using Qdrant.Client.Grpc;
@@ -61,19 +62,8 @@ internal sealed class QdrantCollectionProvisioner : IVectorCollectionProvisioner
         try
         {
             var exists = await _client.CollectionExistsAsync(definition.Name, cancellationToken).ConfigureAwait(false);
-            if (!exists)
+            if (!exists && await TryCreateCollectionAsync(definition, cancellationToken).ConfigureAwait(false))
             {
-                var metadata = new Dictionary<string, Value> { [QdrantWellKnown.FingerprintMetadataKey] = definition.Fingerprint };
-                var vectorParams = new VectorParams
-                {
-                    Size = (ulong)definition.Dimension,
-                    Distance = MapMetric(definition.DistanceMetric),
-                };
-
-                await _client
-                    .CreateCollectionAsync(definition.Name, vectorParams, metadata, cancellationToken: cancellationToken)
-                    .ConfigureAwait(false);
-
                 foreach (var field in definition.Fields.Where(f => f.Filterable))
                 {
                     await _client
@@ -118,6 +108,33 @@ internal sealed class QdrantCollectionProvisioner : IVectorCollectionProvisioner
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             return Result.Failure(QdrantErrors.FromException(ex, ProviderName, nameof(EnsureCollectionAsync), definition.Name));
+        }
+    }
+
+    /// <summary>
+    /// Creates the collection with its fingerprint. <see langword="false"/> when it already exists: replicas starting
+    /// together all see "no collection" and all create it, and every one but the first is told AlreadyExists — the
+    /// collection is there, so the caller continues as on an existing one.
+    /// </summary>
+    private async Task<bool> TryCreateCollectionAsync(VectorCollectionDefinition definition, CancellationToken cancellationToken)
+    {
+        var metadata = new Dictionary<string, Value> { [QdrantWellKnown.FingerprintMetadataKey] = definition.Fingerprint };
+        var vectorParams = new VectorParams
+        {
+            Size = (ulong)definition.Dimension,
+            Distance = MapMetric(definition.DistanceMetric),
+        };
+
+        try
+        {
+            await _client
+                .CreateCollectionAsync(definition.Name, vectorParams, metadata, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+            return true;
+        }
+        catch (RpcException ex) when (ex.StatusCode == StatusCode.AlreadyExists)
+        {
+            return false;
         }
     }
 
