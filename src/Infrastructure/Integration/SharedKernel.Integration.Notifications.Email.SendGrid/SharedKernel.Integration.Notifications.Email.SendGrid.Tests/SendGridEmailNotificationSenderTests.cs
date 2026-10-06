@@ -271,4 +271,55 @@ public sealed class SendGridEmailNotificationSenderTests
         var logger = harness.LoggerFactory.GetLogger(typeof(SendGridEmailNotificationSender).FullName!);
         logger.Records.Should().Contain(r => r.EventId == LoggingEventIdRanges.Integration + 201);
     }
+
+    [Fact]
+    public async Task SendAsync_DefaultBaseAddress_PostsToTheSendGridApi()
+    {
+        Uri? requestUri = null;
+        using var handler = new StubHttpMessageHandler((request, _) =>
+        {
+            requestUri = request.RequestUri;
+            return new HttpResponseMessage(HttpStatusCode.Accepted);
+        });
+        using var harness = new SendGridTestHarness(handler);
+
+        await harness.Sender.SendAsync(Message(), CancellationToken.None);
+
+        requestUri.Should().Be(new Uri("https://api.sendgrid.com/v3/mail/send"));
+    }
+
+    [Theory]
+    [InlineData("http://wiremock:8080/sendgrid")]
+    [InlineData("http://wiremock:8080/sendgrid/")]
+    public async Task SendAsync_CustomBaseAddress_PostsBelowItKeepingItsPath(string baseAddress)
+    {
+        Uri? requestUri = null;
+        using var handler = new StubHttpMessageHandler((request, _) =>
+        {
+            requestUri = request.RequestUri;
+            return new HttpResponseMessage(HttpStatusCode.Accepted);
+        });
+        using var harness = new SendGridTestHarness(
+            handler,
+            configureServices: services => Microsoft.Extensions.DependencyInjection.OptionsServiceCollectionExtensions
+                .Configure<Options.SendGridNotificationOptions>(services, o => o.BaseAddress = new Uri(baseAddress)));
+
+        var result = await harness.Sender.SendAsync(Message(), CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        requestUri.Should().Be(new Uri("http://wiremock:8080/sendgrid/v3/mail/send"));
+    }
+
+    [Fact]
+    public void Options_RelativeBaseAddress_FailValidation()
+    {
+        var options = new Options.SendGridNotificationOptions { ApiKey = "key", BaseAddress = new Uri("sendgrid/", UriKind.Relative) };
+
+        var results = new List<System.ComponentModel.DataAnnotations.ValidationResult>();
+        bool valid = System.ComponentModel.DataAnnotations.Validator.TryValidateObject(
+            options, new System.ComponentModel.DataAnnotations.ValidationContext(options), results, validateAllProperties: true);
+
+        valid.Should().BeFalse();
+        results.Should().ContainSingle(r => r.MemberNames.Contains("BaseAddress"));
+    }
 }

@@ -89,6 +89,7 @@ configuration section is bound — read the key from your secret store yourself.
 | Option | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `SendGridNotificationOptions.ApiKey` | `string` | — (required) | SendGrid API key with Mail Send permission |
+| `SendGridNotificationOptions.BaseAddress` | `Uri` | `https://api.sendgrid.com/` | Where `v3/mail/send` is sent. Change it only to reach a stand-in (WireMock) in local or end-to-end environments; the API key goes to this address |
 
 Retry, timeout and concurrency come from `SharedKernel:Integration:Notifications` — see
 [`SharedKernel.Integration.Notifications.Abstractions`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Integration/SharedKernel.Integration.Notifications.Abstractions/README.md#configuration).

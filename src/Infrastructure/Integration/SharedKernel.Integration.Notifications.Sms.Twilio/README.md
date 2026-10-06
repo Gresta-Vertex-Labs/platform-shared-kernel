@@ -95,6 +95,7 @@ configuration section is bound — read the credentials from your secret store y
 | `TwilioNotificationOptions.AuthToken` | `string` | — (required) | Twilio auth token |
 | `TwilioNotificationOptions.From` | `string?` | `null` | Sender phone number (E.164); used when no `MessagingServiceSid` is set |
 | `TwilioNotificationOptions.MessagingServiceSid` | `string?` | `null` | Messaging Service SID; takes precedence over `From` |
+| `TwilioNotificationOptions.BaseAddress` | `Uri` | `https://api.twilio.com/` | Where `2010-04-01/Accounts/{AccountSid}/Messages.json` is sent. Change it only to reach a stand-in (WireMock) in local or end-to-end environments; the credentials go to this address |
 
 At least one of `From` and `MessagingServiceSid` must be set. Retry, timeout and concurrency come from
 `SharedKernel:Integration:Notifications` — see

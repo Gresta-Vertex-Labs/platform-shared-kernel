@@ -77,7 +77,8 @@ register an `IFeatureTargetingContextAccessor` (default reads the open `RequestC
 `.AddSynchronousSymmetricEncryption()`, `.AddEnvelopeEncryption()`, `.AddAsymmetricSigning()`, `.AddTotpVerification()`,
 `.AddOneWayHashAlgorithm<T>()`. Adapters extend the builder: `.AddArgon2id(configuration)` (`SharedKernel:Cryptography:Argon2`),
 `.AddAzureKeyVaultEncryption(configuration)` (`SharedKernel:Cryptography:KeyVault:Azure:Encryption`),
-`.AddAzureKeyVaultSigning(configuration)` (`…:Azure:Signing`). Key providers are registered by the service
+`.AddAzureKeyVaultSigning(configuration)` (`…:Azure:Signing`); the Key Vault clients take a `TokenCredential`, `KeyClientOptions`
+and `SecretClientOptions` from DI when registered (the options reach emulators such as Lowkey Vault). Key providers are registered by the service
 (`StaticEncryptionKeyProvider`, `InMemorySigningKeyProvider`, `CachedEncryptionKeyProvider`, a consumer `ITotpReplayGuard`).
 
 ### Compression (section `SharedKernel:Compression`)

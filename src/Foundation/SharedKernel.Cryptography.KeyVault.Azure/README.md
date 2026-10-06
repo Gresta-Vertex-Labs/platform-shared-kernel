@@ -273,6 +273,7 @@ Both sections are validated when the host starts; invalid configuration stops th
 | `ICryptographyBuilder.AddAzureKeyVaultEncryption(IConfiguration)` | `AzureKeyVaultEncryptionKeyProvider` as itself, `IEncryptionKeyProvider`, `IEnvelopeEncryptionProvider` and `IReadinessProbe` |
 | `ICryptographyBuilder.AddAzureKeyVaultSigning(IConfiguration)` | `AzureKeyVaultSigningKeyProvider` as itself and `ISigningKeyProvider` |
 | Both | `TokenCredential` (`DefaultAzureCredential` if you registered none), `TimeProvider.System`, `ISecureRandomGenerator` |
+| Both (read, not registered) | `KeyClientOptions` and `SecretClientOptions`, when you registered them: the Key Vault clients use their transport, retries and diagnostics. A local emulator such as Lowkey Vault needs both, with its TLS certificate trusted through `Transport` and `DisableChallengeResourceVerification = true` |
 
 All registrations use `TryAdd`, so anything you register first wins.
 

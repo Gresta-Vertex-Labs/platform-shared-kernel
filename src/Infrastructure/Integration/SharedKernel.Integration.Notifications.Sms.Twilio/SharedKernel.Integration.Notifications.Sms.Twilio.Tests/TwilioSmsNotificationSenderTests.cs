@@ -201,4 +201,61 @@ public sealed class TwilioSmsNotificationSenderTests
         var logger = harness.LoggerFactory.GetLogger(typeof(TwilioSmsNotificationSender).FullName!);
         logger.Records.Should().Contain(r => r.EventId == LoggingEventIdRanges.Integration + 301);
     }
+
+    [Fact]
+    public async Task SendAsync_DefaultBaseAddress_PostsToTheTwilioApi()
+    {
+        Uri? requestUri = null;
+        using var handler = new StubHttpMessageHandler((request, _) =>
+        {
+            requestUri = request.RequestUri;
+            return TwilioSuccessResponse();
+        });
+        using var harness = new TwilioTestHarness(handler);
+
+        await harness.Sender.SendAsync(Message(), CancellationToken.None);
+
+        requestUri.Should().Be(new Uri("https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages.json"));
+    }
+
+    [Theory]
+    [InlineData("http://wiremock:8080/twilio")]
+    [InlineData("http://wiremock:8080/twilio/")]
+    public async Task SendAsync_CustomBaseAddress_PostsBelowItKeepingItsPath(string baseAddress)
+    {
+        Uri? requestUri = null;
+        using var handler = new StubHttpMessageHandler((request, _) =>
+        {
+            requestUri = request.RequestUri;
+            return TwilioSuccessResponse();
+        });
+        using var harness = new TwilioTestHarness(
+            handler,
+            configureServices: services => Microsoft.Extensions.DependencyInjection.OptionsServiceCollectionExtensions
+                .Configure<Options.TwilioNotificationOptions>(services, o => o.BaseAddress = new Uri(baseAddress)));
+
+        var result = await harness.Sender.SendAsync(Message(), CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        requestUri.Should().Be(new Uri("http://wiremock:8080/twilio/2010-04-01/Accounts/ACtest/Messages.json"));
+    }
+
+    [Fact]
+    public void Options_RelativeBaseAddress_FailValidation()
+    {
+        var options = new Options.TwilioNotificationOptions
+        {
+            AccountSid = "ACtest",
+            AuthToken = "token",
+            From = "+15005550006",
+            BaseAddress = new Uri("twilio/", UriKind.Relative),
+        };
+
+        var results = new List<System.ComponentModel.DataAnnotations.ValidationResult>();
+        bool valid = System.ComponentModel.DataAnnotations.Validator.TryValidateObject(
+            options, new System.ComponentModel.DataAnnotations.ValidationContext(options), results, validateAllProperties: true);
+
+        valid.Should().BeFalse();
+        results.Should().ContainSingle(r => r.MemberNames.Contains("BaseAddress"));
+    }
 }

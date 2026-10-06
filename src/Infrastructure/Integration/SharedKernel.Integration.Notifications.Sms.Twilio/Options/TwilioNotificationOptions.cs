@@ -11,6 +11,9 @@ namespace SharedKernel.Integration.Notifications.Sms.Twilio.Options;
 /// </remarks>
 public sealed class TwilioNotificationOptions : IValidatableObject
 {
+    /// <summary>The default <see cref="BaseAddress"/>: the Twilio REST API.</summary>
+    public static readonly Uri DefaultBaseAddress = new("https://api.twilio.com/");
+
     /// <summary>The Twilio Account SID used for HTTP Basic authentication.</summary>
     [Required(AllowEmptyStrings = false)]
     public string AccountSid { get; set; } = string.Empty;
@@ -31,9 +34,22 @@ public sealed class TwilioNotificationOptions : IValidatableObject
     /// </summary>
     public string? MessagingServiceSid { get; set; }
 
+    /// <summary>
+    /// The base address the Messages call (<c>2010-04-01/Accounts/{AccountSid}/Messages.json</c>) is resolved against.
+    /// Defaults to <see cref="DefaultBaseAddress"/>; change it only to reach a stand-in such as a WireMock server in
+    /// local and end-to-end environments. The credentials are sent to this address, so it must be one you control.
+    /// </summary>
+    [Required]
+    public Uri BaseAddress { get; set; } = DefaultBaseAddress;
+
     /// <inheritdoc />
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
+        if (BaseAddress is { IsAbsoluteUri: false })
+        {
+            yield return new ValidationResult($"{nameof(BaseAddress)} must be an absolute URI.", [nameof(BaseAddress)]);
+        }
+
         if (string.IsNullOrEmpty(From) && string.IsNullOrEmpty(MessagingServiceSid))
         {
             yield return new ValidationResult(

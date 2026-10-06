@@ -23,7 +23,7 @@ namespace SharedKernel.Integration.Notifications.Email.SendGrid;
 /// </summary>
 public sealed partial class SendGridEmailNotificationSender : INotificationSender
 {
-    private const string MailSendEndpoint = "https://api.sendgrid.com/v3/mail/send";
+    private const string MailSendPath = "v3/mail/send";
     private const string NotificationDeliveryIdCustomArgKey = "notification_delivery_id";
     private const string UnresolvableAttachmentCode = "notifications.attachment_unresolvable";
 
@@ -124,7 +124,9 @@ public sealed partial class SendGridEmailNotificationSender : INotificationSende
         };
 
         using var httpClient = _httpClientFactory.CreateClient(SendGridHttpClientName.Name);
-        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, MailSendEndpoint)
+        // A trailing slash keeps a base address with a path prefix (a stand-in server's mount point) in the result.
+        var baseAddress = _options.BaseAddress.AbsoluteUri.EndsWith('/') ? _options.BaseAddress : new Uri(_options.BaseAddress.AbsoluteUri + "/");
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, new Uri(baseAddress, MailSendPath))
         {
             Content = new ByteArrayContent(JsonSerializer.SerializeToUtf8Bytes(request, SendGridJsonContext.Default.SendGridMailRequest)),
         };
