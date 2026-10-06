@@ -45,6 +45,7 @@ Also in the folder: nested `.Tests` projects and `consumer-verify/Qdrant`, `cons
 20. **No reflection in this domain's own code** (`Activator.CreateInstance`, `MakeGenericMethod`/`MakeGenericType`, `dynamic`; `SK0012` does not catch `MakeGenericType`). SemanticKernel's internal reflection stays inside its package; `ToolDefinition.ParametersJsonSchema` is a string to keep it contained. No `<IsAotCompatible>`.
 21. **Named constants:** config sections on the options types, collection/field/model identifiers as constants (`SK0027`), tag keys from `IntelligenceWellKnown`. No `new HttpClient()`; no static mutable state.
 22. A type constructed from raw `TOptions` must be registered through a factory unwrapping `IOptions<TOptions>.Value` — `AddValidatedOptions` registers only `IOptions<T>`.
+23. **`EnsureCollectionAsync` is safe to run from every replica at once.** A create that loses the race (gRPC `AlreadyExists`) continues as on an existing collection: fingerprint check, then any missing payload index.
 
 ## Decisions
 
