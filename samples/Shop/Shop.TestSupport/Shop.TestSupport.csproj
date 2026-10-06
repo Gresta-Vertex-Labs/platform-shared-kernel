@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Shared by every Shop test project: the kernel package index (read from the repository's generated
+    docs/packages.md), the restore graph of a test assembly, and the four-project shape assertions.
+  -->
+  <ItemGroup>
+    <PackageReference Include="FluentAssertions" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,10 @@
+{
+  "catalog": {
+    "tenant_required": "Katalog yalnızca bir kiracıya bağlı kullanıcılar içindir.",
+    "product": {
+      "not_found": "{productId} numaralı ürün bulunamadı.",
+      "sku_taken": "{sku} stok kodlu bir ürün zaten var.",
+      "no_image": "Ürünün görseli yok."
+    }
+  }
+}

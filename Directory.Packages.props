@@ -72,6 +72,14 @@
     <!-- SharedKernel.Presentation.OpenApi (P-562): one OpenAPI document per API version without a second
          service provider. Requires Microsoft.AspNetCore.OpenApi >= 10.0.10 and Microsoft.OpenApi [2.7.5, 3.0.0). -->
     <PackageVersion Include="Asp.Versioning.OpenApi" Version="10.2.3" />
+    <!--
+      samples/Shop only: the Aspire AppHost that composes the reference platform and its end-to-end tests.
+      Never referenced by a SharedKernel package.
+    -->
+    <PackageVersion Include="Aspire.Hosting.PostgreSQL" Version="13.6.0" />
+    <PackageVersion Include="Aspire.Hosting.Redis" Version="13.6.0" />
+    <PackageVersion Include="Aspire.Hosting.Testing" Version="13.6.0" />
+    <PackageVersion Include="CommunityToolkit.Aspire.Hosting.Ollama" Version="13.6.0" />
     <!-- Test-only, SharedKernel.Analyzers.Tests (SK0033/WO-079/P-486): fixture compilation proving
          the reflection-based-mapper-usage analyzer fires against the real AutoMapper assembly.
          Never a production PackageReference of any SharedKernel.* package. -->

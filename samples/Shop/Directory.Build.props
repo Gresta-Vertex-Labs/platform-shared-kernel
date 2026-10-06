@@ -1,0 +1,24 @@
+<Project>
+
+  <!--
+    The Shop reference platform consumes the kernel exactly as an outside service does: every SharedKernel package
+    is a PackageReference resolved from the locally packed nupkgs/ feed (NuGet.Config maps SharedKernel.* there),
+    never a ProjectReference. The repository's root build files still apply (artifacts output, central package
+    versions), so this file imports them first.
+  -->
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsPublishable>false</IsPublishable>
+    <!-- Held to the same bar as shipped code: the kernel's analyzers must pass with warnings as errors. -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <!-- The two Tooling packages every consuming service references: the SK analyzer rules and the CSharpier check. -->
+  <ItemGroup>
+    <PackageReference Include="SharedKernel.Analyzers" PrivateAssets="all" />
+    <PackageReference Include="SharedKernel.Linter" PrivateAssets="all" />
+  </ItemGroup>
+
+</Project>
