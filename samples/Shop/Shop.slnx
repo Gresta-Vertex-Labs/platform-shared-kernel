@@ -6,7 +6,12 @@
     <Project Path="Catalog/Shop.Catalog.Infrastructure/Shop.Catalog.Infrastructure.csproj" />
     <Project Path="Catalog/Shop.Catalog.Tests/Shop.Catalog.Tests.csproj" />
   </Folder>
+  <Folder Name="/Inventory/">
+    <Project Path="Inventory/Shop.Inventory.Api/Shop.Inventory.Api.csproj" />
+    <Project Path="Inventory/Shop.Inventory.Tests/Shop.Inventory.Tests.csproj" />
+  </Folder>
   <Project Path="Shop.AppHost/Shop.AppHost.csproj" />
+  <Project Path="Shop.Contracts/Shop.Contracts.csproj" />
   <Project Path="Shop.Coverage.Tests/Shop.Coverage.Tests.csproj" />
   <Project Path="Shop.E2E/Shop.E2E.csproj" />
   <Project Path="Shop.TestSupport/Shop.TestSupport.csproj" />

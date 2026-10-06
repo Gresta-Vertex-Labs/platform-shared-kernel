@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+option csharp_namespace = "Shop.Contracts.Inventory";
+
+package shop.inventory.v1;
+
+// Stock reservations for orders. Called by Ordering over mutual TLS; the caller's tenant travels in the
+// X-Tenant-Id header the kernel's outbound propagation adds.
+service InventoryService {
+  // Holds stock for every line of an order, all or nothing. Idempotent per order id.
+  rpc ReserveStock (ReserveStockRequest) returns (ReserveStockReply);
+  // Releases what an order holds (compensation). Idempotent; releasing nothing succeeds.
+  rpc ReleaseStock (ReleaseStockRequest) returns (ReleaseStockReply);
+}
+
+message StockLine {
+  string sku = 1;
+  int32 quantity = 2;
+}
+
+message ReserveStockRequest {
+  string order_id = 1;
+  repeated StockLine lines = 2;
+}
+
+message ReserveStockReply {
+  string reservation_id = 1;
+}
+
+message ReleaseStockRequest {
+  string order_id = 1;
+}
+
+message ReleaseStockReply {
+  int32 released_lines = 1;
+}

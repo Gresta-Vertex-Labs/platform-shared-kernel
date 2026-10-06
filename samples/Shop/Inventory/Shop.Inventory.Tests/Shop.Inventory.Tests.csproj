@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Inventory's tests, without Docker: its dependency graph, the service-only tenant strategy, the certificate
+    allow-list, the SKU lock helper and the job schedule, over the kernel's Security, Caching and Scheduling fakes.
+    The SQL, the locks across replicas and mutual TLS on the wire are Shop.E2E's job.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\Shop.Inventory.Api\Shop.Inventory.Api.csproj" />
+    <ProjectReference Include="..\..\Shop.TestSupport\Shop.TestSupport.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SharedKernel.Testing" />
+    <PackageReference Include="SharedKernel.Security.Testing" />
+    <PackageReference Include="SharedKernel.Caching.Testing" />
+    <PackageReference Include="SharedKernel.Scheduling.Testing" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+</Project>

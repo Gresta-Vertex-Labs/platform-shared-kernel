@@ -14,6 +14,17 @@ public static class ShopResources
 
     public const string Catalog = "catalog-api";
     public const string Catalog2 = "catalog-api-2";
+    public const string Inventory = "inventory-api";
+    public const string Inventory2 = "inventory-api-2";
+
+    /// <summary>The clients of the Shop's development PKI (mutual TLS between services).</summary>
+    public static class Clients
+    {
+        public const string Ordering = "ordering-api";
+
+        /// <summary>Signed by the Shop's CA but on no allow-list: proves the allow-list, not just the chain, decides.</summary>
+        public const string Rogue = "rogue-service";
+    }
 
     /// <summary>The Keycloak realm, client and test users (see keycloak/shop-realm.json).</summary>
     public static class Identity
