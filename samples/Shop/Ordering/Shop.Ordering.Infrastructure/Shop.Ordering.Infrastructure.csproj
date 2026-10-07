@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The adapters behind Ordering's ports: Adapter-tier kernel packages (and Foundation), never a Host package. -->
+  <ItemGroup>
+    <ProjectReference Include="..\Shop.Ordering.Application\Shop.Ordering.Application.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SharedKernel.Persistence.EfCore" />
+    <PackageReference Include="SharedKernel.Persistence.EfCore.Auditing" />
+    <PackageReference Include="SharedKernel.Persistence.EfCore.Encryption" />
+    <PackageReference Include="SharedKernel.Persistence.Npgsql" />
+    <PackageReference Include="SharedKernel.Messaging.MassTransit" />
+    <PackageReference Include="SharedKernel.Messaging.MassTransit.RabbitMq" />
+    <PackageReference Include="SharedKernel.Messaging.MassTransit.EfCore" />
+    <PackageReference Include="SharedKernel.Idempotency.Redis" />
+    <PackageReference Include="SharedKernel.Idempotency.EfCore" />
+    <PackageReference Include="SharedKernel.Caching.Redis.Core" />
+    <PackageReference Include="SharedKernel.Caching.Redis.HashStore" />
+    <PackageReference Include="SharedKernel.Workflows.Temporal" />
+    <PackageReference Include="SharedKernel.Communication" />
+    <PackageReference Include="SharedKernel.Communication.Grpc" />
+    <PackageReference Include="SharedKernel.Validation.FluentValidation" />
+    <PackageReference Include="SharedKernel.Cryptography" />
+    <PackageReference Include="SharedKernel.Cryptography.Argon2" />
+    <!-- OrderStorageInspector reads raw rows (ciphertext, audit actions) with plain SQL. -->
+    <PackageReference Include="Dapper" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+</Project>

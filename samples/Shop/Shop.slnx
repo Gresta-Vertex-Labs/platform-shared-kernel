@@ -10,6 +10,13 @@
     <Project Path="Inventory/Shop.Inventory.Api/Shop.Inventory.Api.csproj" />
     <Project Path="Inventory/Shop.Inventory.Tests/Shop.Inventory.Tests.csproj" />
   </Folder>
+  <Folder Name="/Ordering/">
+    <Project Path="Ordering/Shop.Ordering.Api/Shop.Ordering.Api.csproj" />
+    <Project Path="Ordering/Shop.Ordering.Application/Shop.Ordering.Application.csproj" />
+    <Project Path="Ordering/Shop.Ordering.Domain/Shop.Ordering.Domain.csproj" />
+    <Project Path="Ordering/Shop.Ordering.Infrastructure/Shop.Ordering.Infrastructure.csproj" />
+    <Project Path="Ordering/Shop.Ordering.Tests/Shop.Ordering.Tests.csproj" />
+  </Folder>
   <Project Path="Shop.AppHost/Shop.AppHost.csproj" />
   <Project Path="Shop.Contracts/Shop.Contracts.csproj" />
   <Project Path="Shop.Coverage.Tests/Shop.Coverage.Tests.csproj" />

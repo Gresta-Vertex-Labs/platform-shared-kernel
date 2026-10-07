@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <!-- Ordering's composition root and its HTTP and SignalR boundary; the only project with Host-tier packages. -->
+  <ItemGroup>
+    <ProjectReference Include="..\Shop.Ordering.Application\Shop.Ordering.Application.csproj" />
+    <ProjectReference Include="..\Shop.Ordering.Infrastructure\Shop.Ordering.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SharedKernel.ServiceDefaults" />
+    <PackageReference Include="SharedKernel.ServiceDefaults.Security" />
+    <PackageReference Include="SharedKernel.ServiceDefaults.Persistence" />
+    <PackageReference Include="SharedKernel.MultiTenancy" />
+    <PackageReference Include="SharedKernel.Security.Oidc" />
+    <PackageReference Include="SharedKernel.Security.Totp" />
+    <PackageReference Include="SharedKernel.Application.Pipeline" />
+    <PackageReference Include="SharedKernel.Application.Mediator.MediatR" />
+    <PackageReference Include="SharedKernel.Presentation.WebApi" />
+    <PackageReference Include="SharedKernel.Presentation.SignalR" />
+  </ItemGroup>
+</Project>
