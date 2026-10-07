@@ -149,6 +149,8 @@ ipch/
 
 # Visual Studio Trace Files
 *.e2e
+# ...but not the Shop's end-to-end test project: on Windows (core.ignorecase) "*.e2e" also matches "Shop.E2E".
+!samples/Shop/Shop.E2E/
 
 # TFS 2012 Local Workspace
 $tf/

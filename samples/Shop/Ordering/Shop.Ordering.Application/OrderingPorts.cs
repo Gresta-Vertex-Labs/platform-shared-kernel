@@ -26,6 +26,25 @@ public interface IInventoryReservations
     Task<Result<int>> ReleaseAsync(OrderId orderId, CancellationToken ct);
 }
 
+/// <summary>What Billing needs to take payment for an order.</summary>
+public sealed record PaymentRequest(
+    OrderId OrderId,
+    decimal Amount,
+    string Currency,
+    string CustomerEmail,
+    string PaymentToken
+);
+
+/// <summary>Payments in the Billing service (REST with an API key in production).</summary>
+public interface IPayments
+{
+    /// <summary>Takes payment; idempotent per order. A declined card is a business-rule failure.</summary>
+    Task<Result<Guid>> ChargeAsync(PaymentRequest request, CancellationToken ct);
+
+    /// <summary>Refunds the order's payment; idempotent.</summary>
+    Task<Result> RefundAsync(OrderId orderId, CancellationToken ct);
+}
+
 /// <summary>An order's new status, for whoever is watching (SignalR clients in production).</summary>
 public sealed record OrderStatusNotice(Guid OrderId, Guid TenantId, string Status);
 

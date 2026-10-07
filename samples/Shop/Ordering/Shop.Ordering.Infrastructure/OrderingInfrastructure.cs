@@ -17,6 +17,7 @@ using SharedKernel.Validation.FluentValidation;
 using SharedKernel.Workflows.Temporal.Hosting;
 using Shop.Contracts.Inventory;
 using Shop.Ordering.Application;
+using Shop.Ordering.Infrastructure.Billing;
 using Shop.Ordering.Infrastructure.Fulfilment;
 using Shop.Ordering.Infrastructure.Inventory;
 using Shop.Ordering.Infrastructure.Persistence;
@@ -87,18 +88,22 @@ public static class OrderingInfrastructure
             .AddSharedKernelTemporalWorkflows(configuration)
             .AddWorkflow<OrderFulfilmentWorkflow>()
             .AddActivities<ReserveStockActivity>()
+            .AddActivities<ChargeOrderActivity>()
+            .AddActivities<ReleaseOrderStockActivity>()
             .AddActivities<ConfirmOrderActivity>()
             .AddActivities<RejectOrderActivity>()
             .WithWorker(FulfilmentQueues.TaskQueue)
             .WithOpenTelemetry()
             .Build();
 
-        // 11.Communication: Inventory over gRPC with mutual TLS (SharedKernel:Communication:Clients:inventory).
+        // 11.Communication: Inventory over gRPC with mutual TLS, Billing over REST with an API key
+        // (SharedKernel:Communication:Clients:inventory and :billing).
         services
             .AddSharedKernelCommunication(configuration)
             .AddGrpcClient<InventoryService.InventoryServiceClient>(
                 GrpcInventoryReservations.ClientName
-            );
+            )
+            .AddRestClient<IPayments, RestPayments>(RestPayments.ClientName);
         services.AddScoped<IInventoryReservations, GrpcInventoryReservations>();
 
         services.AddFluentValidationRequestValidators(typeof(PlaceOrderCommand).Assembly);

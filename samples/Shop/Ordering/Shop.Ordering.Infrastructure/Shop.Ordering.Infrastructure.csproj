@@ -19,6 +19,7 @@
     <PackageReference Include="SharedKernel.Workflows.Temporal" />
     <PackageReference Include="SharedKernel.Communication" />
     <PackageReference Include="SharedKernel.Communication.Grpc" />
+    <PackageReference Include="SharedKernel.Communication.Rest" />
     <PackageReference Include="SharedKernel.Validation.FluentValidation" />
     <PackageReference Include="SharedKernel.Cryptography" />
     <PackageReference Include="SharedKernel.Cryptography.Argon2" />

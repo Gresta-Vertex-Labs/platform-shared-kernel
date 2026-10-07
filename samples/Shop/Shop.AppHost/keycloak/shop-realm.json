@@ -109,7 +109,9 @@
           "orders.cancel",
           "reports.export",
           "inventory.read",
-          "inventory.manage"
+          "inventory.manage",
+          "billing.read",
+          "billing.manage"
         ]
       }
     },
@@ -124,7 +126,7 @@
       "realmRoles": [ "merchant" ],
       "attributes": {
         "tenant_id": [ "b2f4a6c8-1d3e-4a5b-8c7d-9e0f1a2b3c4d" ],
-        "permissions": [ "catalog.read", "catalog.manage", "orders.place", "orders.read", "inventory.read", "inventory.manage" ]
+        "permissions": [ "catalog.read", "catalog.manage", "orders.place", "orders.read", "inventory.read", "inventory.manage", "billing.read", "billing.manage" ]
       }
     },
     {

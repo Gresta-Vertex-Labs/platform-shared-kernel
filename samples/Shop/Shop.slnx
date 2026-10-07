@@ -1,4 +1,8 @@
 <Solution>
+  <Folder Name="/Billing/">
+    <Project Path="Billing/Shop.Billing.Api/Shop.Billing.Api.csproj" />
+    <Project Path="Billing/Shop.Billing.Tests/Shop.Billing.Tests.csproj" />
+  </Folder>
   <Folder Name="/Catalog/">
     <Project Path="Catalog/Shop.Catalog.Api/Shop.Catalog.Api.csproj" />
     <Project Path="Catalog/Shop.Catalog.Application/Shop.Catalog.Application.csproj" />
@@ -9,6 +13,9 @@
   <Folder Name="/Inventory/">
     <Project Path="Inventory/Shop.Inventory.Api/Shop.Inventory.Api.csproj" />
     <Project Path="Inventory/Shop.Inventory.Tests/Shop.Inventory.Tests.csproj" />
+  </Folder>
+  <Folder Name="/Merchant/">
+    <Project Path="Merchant/Shop.Merchant.Api/Shop.Merchant.Api.csproj" />
   </Folder>
   <Folder Name="/Ordering/">
     <Project Path="Ordering/Shop.Ordering.Api/Shop.Ordering.Api.csproj" />

@@ -9,12 +9,16 @@ using Shop.Ordering.Infrastructure.Persistence;
 
 namespace Shop.Ordering.Api;
 
-/// <summary>The body of a new order; the <c>Idempotency-Key</c> header is required.</summary>
+/// <summary>
+/// The body of a new order; the <c>Idempotency-Key</c> header is required. <c>PaymentToken</c> is the card the payment
+/// provider tokenized in the customer's browser.
+/// </summary>
 public sealed record PlaceOrderRequest(
     string CustomerEmail,
     string ShippingAddress,
     string Currency,
-    List<PlaceOrderLine> Lines
+    List<PlaceOrderLine> Lines,
+    string PaymentToken
 );
 
 public sealed record OrderPlacedResponse(Guid Id);
@@ -47,6 +51,7 @@ public sealed class OrderEndpoints : IEndpointModule
                                 body.ShippingAddress,
                                 body.Currency,
                                 body.Lines,
+                                body.PaymentToken,
                                 key.Value
                             ),
                             ct

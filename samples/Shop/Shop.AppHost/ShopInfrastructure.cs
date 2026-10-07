@@ -2,6 +2,7 @@ using Amazon.Runtime;
 using Amazon.S3;
 using Amazon.S3.Util;
 using Aspire.Hosting.ApplicationModel;
+using Aspire.Hosting.Azure;
 using CommunityToolkit.Aspire.Hosting.Ollama;
 
 namespace Shop.AppHost;
@@ -32,6 +33,8 @@ public sealed class ShopInfrastructure
     public required IResourceBuilder<ContainerResource> Keycloak { get; init; }
     public required IResourceBuilder<RabbitMQServerResource> RabbitMq { get; init; }
     public required IResourceBuilder<ContainerResource> Temporal { get; init; }
+    public required IResourceBuilder<ContainerResource> KeyVault { get; init; }
+    public required IResourceBuilder<AzureServiceBusResource> ServiceBus { get; init; }
 
     /// <summary>A connection string to one Shop database as one of the roles of postgres/01-roles.sql.</summary>
     public ReferenceExpression Database(string database, string role, string password)
@@ -42,7 +45,7 @@ public sealed class ShopInfrastructure
         );
     }
 
-    public static ShopInfrastructure Add(IDistributedApplicationBuilder builder)
+    public static ShopInfrastructure Add(IDistributedApplicationBuilder builder, ShopPki pki)
     {
         var postgres = builder
             .AddPostgres(ShopResources.Postgres)
@@ -151,6 +154,9 @@ public sealed class ShopInfrastructure
             Keycloak = keycloak,
             RabbitMq = rabbitMq,
             Temporal = temporal,
+            KeyVault = ShopKeyVault.Add(builder, pki),
+            // Microsoft's Service Bus emulator (with the SQL Server container it stores its state in).
+            ServiceBus = builder.AddAzureServiceBus(ShopResources.ServiceBus).RunAsEmulator(),
         };
     }
 }

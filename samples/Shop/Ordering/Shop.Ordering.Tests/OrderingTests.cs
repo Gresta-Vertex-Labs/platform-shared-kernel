@@ -1,7 +1,10 @@
 using FluentAssertions;
 using Grpc.Core;
+using MassTransit;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
+using SharedKernel.Contracts.Events;
 using SharedKernel.Execution.Context;
 using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence.Testing;
@@ -14,12 +17,14 @@ using SharedKernel.Testing.Clocks;
 using SharedKernel.Testing.Communication;
 using SharedKernel.Testing.Execution;
 using SharedKernel.Testing.Messaging;
+using SharedKernel.Testing.Workflows;
 using Shop.Contracts.Inventory;
 using Shop.Contracts.Ordering;
 using Shop.Ordering.Api;
 using Shop.Ordering.Application;
 using Shop.Ordering.Domain;
 using Shop.Ordering.Infrastructure;
+using Shop.Ordering.Infrastructure.Fulfilment;
 using Shop.Ordering.Infrastructure.Inventory;
 using Shop.TestSupport;
 using Xunit;
@@ -69,6 +74,7 @@ public sealed class OrderingPipelineTests : IDisposable
     private readonly FakeAuditTrailWriter _audit;
     private readonly InMemoryEventPublisher _events = new();
     private readonly IInventoryReservations _inventory = Substitute.For<IInventoryReservations>();
+    private readonly IPayments _payments = Substitute.For<IPayments>();
 
     public OrderingPipelineTests()
     {
@@ -90,6 +96,7 @@ public sealed class OrderingPipelineTests : IDisposable
             _events
         );
         services.AddSingleton(_inventory);
+        services.AddSingleton(_payments);
         services.AddSingleton(Substitute.For<IOrderStatusNotifier>());
         _harness
             .Configure(app => app.WithIdempotency().WithTransactions().WithAuditing())
@@ -132,12 +139,15 @@ public sealed class OrderingPipelineTests : IDisposable
     }
 
     [Fact]
-    public async Task CancelConfirmedOrder_ReleasesTheStock_AndAnnouncesIt()
+    public async Task CancelConfirmedOrder_RefundsThePayment_ReleasesTheStock_AndAnnouncesIt()
     {
         var id = (await _harness.SendAsync(Place("key-cancel"))).Value;
         (await _harness.SendAsync(new ConfirmOrderCommand(id, Guid.NewGuid())))
             .IsSuccess.Should()
             .BeTrue();
+        _payments
+            .RefundAsync(Arg.Any<OrderId>(), Arg.Any<CancellationToken>())
+            .Returns(Result.Success());
         _inventory
             .ReleaseAsync(Arg.Any<OrderId>(), Arg.Any<CancellationToken>())
             .Returns(Result<int>.Success(1));
@@ -145,6 +155,7 @@ public sealed class OrderingPipelineTests : IDisposable
         var cancelled = await _harness.SendAsync(new CancelOrderCommand(id));
 
         cancelled.IsSuccess.Should().BeTrue();
+        _ = _payments.Received(1).RefundAsync(new OrderId(id), Arg.Any<CancellationToken>());
         _ = _inventory.Received(1).ReleaseAsync(new OrderId(id), Arg.Any<CancellationToken>());
         _events.PublishedOf<OrderCancelled>().Should().ContainSingle();
     }
@@ -160,6 +171,54 @@ public sealed class OrderingPipelineTests : IDisposable
         _ = _inventory.DidNotReceiveWithAnyArgs().ReleaseAsync(default!, default);
     }
 
+    [Fact]
+    public async Task Cancel_WhenTheRefundFails_FailsWithoutReleasingTheStock()
+    {
+        var id = (await _harness.SendAsync(Place("key-refund-fails"))).Value;
+        (await _harness.SendAsync(new ConfirmOrderCommand(id, Guid.NewGuid())))
+            .IsSuccess.Should()
+            .BeTrue();
+        _payments
+            .RefundAsync(Arg.Any<OrderId>(), Arg.Any<CancellationToken>())
+            .Returns(Result.Failure(Error.Unavailable("billing.unavailable", "Billing is down.")));
+
+        var cancelled = await _harness.SendAsync(new CancelOrderCommand(id));
+
+        cancelled.Error.Code.Should().Be("billing.unavailable");
+        // The command fails, so its transaction rolls back (the fake repository cannot show that; Shop.E2E can).
+        _ = _inventory.DidNotReceiveWithAnyArgs().ReleaseAsync(default!, default);
+    }
+
+    [Fact]
+    public async Task Charge_TakesTheOrdersTotalAndEmail_AndADeclineStaysABusinessRule()
+    {
+        var id = (await _harness.SendAsync(Place("key-charge"))).Value;
+        _payments
+            .ChargeAsync(Arg.Any<PaymentRequest>(), Arg.Any<CancellationToken>())
+            .Returns(
+                Result<Guid>.Failure(
+                    Error.BusinessRule("billing.payment_declined", "The card was declined.")
+                )
+            );
+
+        var charged = await _harness.SendAsync(new ChargeOrderCommand(id, "tok_declined"));
+
+        // The workflow tells a refusal from an outage by this type: business rules are not retried.
+        charged.Error.Type.Should().Be(ErrorType.BusinessRule);
+        _ = _payments
+            .Received(1)
+            .ChargeAsync(
+                new PaymentRequest(
+                    new OrderId(id),
+                    25.00m,
+                    "EUR",
+                    "customer@contoso.example",
+                    "tok_declined"
+                ),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
     public void Dispose() => _harness.Dispose();
 
     private static PlaceOrderCommand Place(string key) =>
@@ -168,6 +227,7 @@ public sealed class OrderingPipelineTests : IDisposable
             "1 Main Street",
             "EUR",
             [new PlaceOrderLine("SKU-1", 2, 12.50m)],
+            "tok_visa",
             key
         );
 }
@@ -281,5 +341,46 @@ public sealed class TotpStoreTests
         (await store.GetLastVerifiedAsync("alice", "session-2", CancellationToken.None))
             .Should()
             .BeNull();
+    }
+}
+
+public sealed class OrderPlacedConsumerTests
+{
+    private static readonly TenantId Contoso = new(
+        Guid.Parse("6c1d7e1a-3b52-4f8e-9a41-2f6b8c0d9e11")
+    );
+
+    [Fact]
+    public async Task PlacedOrder_StartsOneFulfilment_WithItsLinesAndPaymentToken_ForItsTenant()
+    {
+        var workflows = new InMemoryWorkflowDispatcher();
+        var consumer = new OrderPlacedConsumer(
+            workflows,
+            TestRequestContext.ForTenant(Contoso),
+            NullLogger<OrderPlacedConsumer>.Instance
+        );
+        var placed = new OrderPlaced(
+            Guid.NewGuid(),
+            DateTimeOffset.UnixEpoch,
+            Guid.NewGuid(),
+            [new OrderLineContract("SKU-1", 2, 12.50m)],
+            25.00m,
+            "EUR",
+            "tok_visa"
+        );
+        var context = Substitute.For<ConsumeContext<EventEnvelope<OrderPlaced>>>();
+        context.Message.Returns(EventEnvelope.Wrap(placed, "ordering"));
+
+        await consumer.Consume(context);
+        // A redelivery finds the workflow already started and is acknowledged, not started twice.
+        await consumer.Consume(context);
+
+        var started = workflows.ShouldHaveStartedOnce<OrderFulfilmentWorkflow>();
+        started.TenantScope.Should().Be(TenantScope.For(Contoso));
+        started
+            .Args.Should()
+            .BeEquivalentTo(
+                new FulfilmentRequest(placed.OrderId, [new FulfilmentLine("SKU-1", 2)], "tok_visa")
+            );
     }
 }

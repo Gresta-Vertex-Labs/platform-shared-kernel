@@ -30,6 +30,7 @@ public sealed record PlaceOrderCommand(
     string ShippingAddress,
     string Currency,
     IReadOnlyList<PlaceOrderLine> Lines,
+    string PaymentToken,
     string IdempotencyKey
 ) : ICommand<Guid>, IIdempotentRequest, IAuditableRequest<Result<Guid>>
 {
@@ -54,6 +55,7 @@ public sealed class PlaceOrderCommandValidator : AbstractValidator<PlaceOrderCom
         RuleFor(c => c.ShippingAddress).NotEmpty().MaximumLength(500);
         RuleFor(c => c.Currency).NotEmpty().Length(3);
         RuleFor(c => c.Lines).NotEmpty();
+        RuleFor(c => c.PaymentToken).NotEmpty().MaximumLength(64);
         RuleForEach(c => c.Lines)
             .ChildRules(line =>
             {
@@ -126,7 +128,8 @@ public sealed class PlaceOrderHandler(
                     )),
                 ],
                 order.Total.Amount,
-                order.Total.Currency.Code
+                order.Total.Currency.Code,
+                command.PaymentToken
             ),
             ct
         );
@@ -229,8 +232,8 @@ public sealed class RejectOrderHandler(
 }
 
 /// <summary>
-/// The customer cancels a confirmed order: the stock is released and the cancellation announced. The endpoint also
-/// requires a fresh authenticator-app step-up.
+/// The customer cancels a confirmed order: the payment is refunded, the stock released and the cancellation
+/// announced. The endpoint also requires a fresh authenticator-app step-up.
 /// </summary>
 [RequirePermission(OrderingPermissions.Cancel)]
 public sealed record CancelOrderCommand(Guid OrderId) : ICommand, IAuditableRequest<Result>
@@ -249,6 +252,7 @@ public sealed record CancelOrderCommand(Guid OrderId) : ICommand, IAuditableRequ
 public sealed class CancelOrderHandler(
     IRepository<Order, OrderId> orders,
     IInventoryReservations inventory,
+    IPayments payments,
     IEventPublisher events,
     IClock clock
 ) : ICommandHandler<CancelOrderCommand>
@@ -270,6 +274,12 @@ public sealed class CancelOrderHandler(
         if (cancelled.IsFailure)
         {
             return cancelled;
+        }
+
+        var refunded = await payments.RefundAsync(order.Id, ct);
+        if (refunded.IsFailure)
+        {
+            return refunded;
         }
 
         var released = await inventory.ReleaseAsync(order.Id, ct);
@@ -330,6 +340,55 @@ public sealed class GetOrderHandler(IReadRepository<Order, OrderId> orders)
                     ]
                 )
             );
+    }
+}
+
+/// <summary>
+/// Takes payment for a placed order through Billing. Sent by the fulfilment workflow once the stock is held; a declined
+/// card fails as a business rule, which the workflow answers by releasing the stock and rejecting the order.
+/// </summary>
+public sealed record ChargeOrderCommand(Guid OrderId, string PaymentToken) : ICommand;
+
+public sealed class ChargeOrderHandler(IReadRepository<Order, OrderId> orders, IPayments payments)
+    : ICommandHandler<ChargeOrderCommand>
+{
+    public async Task<Result> Handle(ChargeOrderCommand command, CancellationToken ct)
+    {
+        var order = await orders.GetByIdAsync(new OrderId(command.OrderId), ct);
+        if (order is null)
+        {
+            return Result.Failure(
+                Error.NotFound(
+                    "ordering.order.not_found",
+                    $"Order {command.OrderId} was not found."
+                )
+            );
+        }
+
+        var charged = await payments.ChargeAsync(
+            new PaymentRequest(
+                order.Id,
+                order.Total.Amount,
+                order.Total.Currency.Code,
+                order.CustomerEmail,
+                command.PaymentToken
+            ),
+            ct
+        );
+        return charged.IsFailure ? Result.Failure(charged.Error) : Result.Success();
+    }
+}
+
+/// <summary>The workflow's compensation when payment fails: give the held stock back.</summary>
+public sealed record ReleaseOrderStockCommand(Guid OrderId) : ICommand;
+
+public sealed class ReleaseOrderStockHandler(IInventoryReservations inventory)
+    : ICommandHandler<ReleaseOrderStockCommand>
+{
+    public async Task<Result> Handle(ReleaseOrderStockCommand command, CancellationToken ct)
+    {
+        var released = await inventory.ReleaseAsync(new OrderId(command.OrderId), ct);
+        return released.IsFailure ? Result.Failure(released.Error) : Result.Success();
     }
 }
 
