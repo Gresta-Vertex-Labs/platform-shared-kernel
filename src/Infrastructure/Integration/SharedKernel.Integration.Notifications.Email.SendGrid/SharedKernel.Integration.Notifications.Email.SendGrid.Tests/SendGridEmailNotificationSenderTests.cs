@@ -142,6 +142,39 @@ public sealed class SendGridEmailNotificationSenderTests
         result.Subject.Error.Should().NotBeNullOrEmpty();
     }
 
+    // Regression (Shop platform, Notify): the sender required IFileStorageFactory unconditionally, so a host that sends
+    // email without attachments and registers no storage failed at startup in Development (ValidateOnBuild) and at the
+    // first send elsewhere — although the README asked for storage only "when you send attachments".
+    [Fact]
+    public async Task HostWithoutStorage_BuildsAndSendsMessagesWithoutAttachments()
+    {
+        using var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.Accepted));
+        using var harness = new SendGridTestHarness(handler, withStorage: false);
+
+        var result = await harness.Sender.SendAsync(Message(), CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        handler.Requests.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task HostWithoutStorage_MessageWithAttachments_FailsAsUnresolvable_WithoutCallingSendGrid()
+    {
+        using var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.Accepted));
+        using var harness = new SendGridTestHarness(handler, withStorage: false);
+        var attachment = new NotificationAttachment
+        {
+            FileReference = new FileReference { Store = "invoices", Key = "invoice-1.pdf" },
+            FileName = "invoice.pdf",
+        };
+
+        var result = await harness.Sender.SendAsync(Message(attachments: [attachment]), CancellationToken.None);
+
+        result.IsSuccess.Should().BeFalse();
+        result.Error.Should().Contain("AddSharedKernelStorage");
+        handler.Requests.Should().BeEmpty();
+    }
+
     [Fact]
     public async Task SendAsync_TenantAttachment_IsReadThroughThatTenantsView()
     {

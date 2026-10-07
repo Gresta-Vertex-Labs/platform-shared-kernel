@@ -23,11 +23,11 @@ public static class ServiceCollectionExtensions
     /// <returns>The same <paramref name="services"/> for chaining.</returns>
     /// <remarks>
     /// Requires <see cref="SharedKernel.Integration.Notifications.Abstractions.Observability.INotificationSenderIdentityResolver"/>
-    /// and <see cref="SharedKernel.Storage.IFileStorageFactory"/> (from
-    /// <c>services.AddSharedKernelStorage()</c> plus a provider and the stores attachments live in) to
-    /// already be registered by the consuming service — this method does not register either; DI
-    /// resolution fails at first send if either is missing. Each attachment is read from the store its
-    /// <c>FileReference</c> names, through that reference's tenant view when it carries a tenant.
+    /// to be registered by the consuming service (this method does not register it). Attachments additionally need
+    /// <see cref="SharedKernel.Storage.IFileStorageFactory"/> (<c>services.AddSharedKernelStorage()</c> plus a provider
+    /// and the stores they live in); without it every message without attachments is still sent, and one with
+    /// attachments fails with <c>notifications.attachment_unresolvable</c>. Each attachment is read from the store
+    /// its <c>FileReference</c> names, through that reference's tenant view when it carries a tenant.
     /// </remarks>
     public static IServiceCollection AddSendGridEmailNotifications(
         this IServiceCollection services,

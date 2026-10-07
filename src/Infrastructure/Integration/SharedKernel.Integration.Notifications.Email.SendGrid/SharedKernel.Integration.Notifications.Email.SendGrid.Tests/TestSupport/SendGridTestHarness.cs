@@ -28,11 +28,16 @@ internal sealed class SendGridTestHarness : IDisposable
     public SendGridTestHarness(
         HttpMessageHandler handler,
         Action<NotificationDeliveryOptions>? configureDelivery = null,
-        Action<IServiceCollection>? configureServices = null)
+        Action<IServiceCollection>? configureServices = null,
+        bool withStorage = true)
     {
         var services = new ServiceCollection();
         services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
-        services.AddSharedKernelStorage().AddInMemoryStore(FileStorage).AddInMemoryTenantStore(TenantFileStorage);
+        if (withStorage)
+        {
+            services.AddSharedKernelStorage().AddInMemoryStore(FileStorage).AddInMemoryTenantStore(TenantFileStorage);
+        }
+
         services.AddSingleton<INotificationSenderIdentityResolver, FakeNotificationSenderIdentityResolver>();
         services.AddInMemoryLoggerFactory();
 
@@ -45,7 +50,9 @@ internal sealed class SendGridTestHarness : IDisposable
 
         configureServices?.Invoke(services);
 
-        _provider = services.BuildServiceProvider();
+        // Validated like a Development host: every registration must be constructible at startup.
+        _provider = services.BuildServiceProvider(
+            new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
         _scope = _provider.CreateScope();
     }
 
