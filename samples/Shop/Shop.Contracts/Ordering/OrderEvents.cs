@@ -13,7 +13,8 @@ public sealed record OrderPlaced(
     Guid OrderId,
     IReadOnlyList<OrderLineContract> Lines,
     decimal Total,
-    string Currency
+    string Currency,
+    string PaymentToken
 ) : IIntegrationEvent;
 
 /// <summary>Stock is held for every line of the order.</summary>

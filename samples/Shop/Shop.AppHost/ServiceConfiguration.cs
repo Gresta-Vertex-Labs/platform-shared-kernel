@@ -246,4 +246,70 @@ public static class ServiceConfiguration
             )
             .WaitFor(inventory);
     }
+
+    /// <summary>Ordering calls Billing over REST with its API key (11.Communication's ApiKey authentication mode).</summary>
+    public static IResourceBuilder<ProjectResource> WithBillingClient(
+        this IResourceBuilder<ProjectResource> service,
+        IResourceBuilder<ProjectResource> billing
+    ) =>
+        service
+            .WithEnvironment(
+                "SharedKernel__Communication__Clients__billing__BaseAddress",
+                ReferenceExpression.Create($"{billing.GetEndpoint("http")}/")
+            )
+            .WithEnvironment(
+                "SharedKernel__Communication__Clients__billing__Authentication__Mode",
+                "ApiKey"
+            )
+            .WithEnvironment(
+                "SharedKernel__Communication__Clients__billing__Authentication__ApiKey__Value",
+                ShopResources.ApiKeys.OrderingService
+            )
+            .WaitFor(billing);
+
+    /// <summary>
+    /// The Billing service: its database, the Key Vault emulator (secrets as configuration, invoice signing, the IBAN's
+    /// master key; only the Shop CA trusted), and the Contoso merchant's webhook endpoint.
+    /// </summary>
+    public static IResourceBuilder<ProjectResource> WithBillingConfiguration(
+        this IResourceBuilder<ProjectResource> service,
+        ShopInfrastructure infra,
+        ShopPki pki,
+        IResourceBuilder<ProjectResource> merchant
+    )
+    {
+        var vault = infra.KeyVault.GetEndpoint("https");
+        return service
+            .WithIdentity(infra)
+            .WithDatabase(infra, "billing")
+            // 07.Messaging over Azure Service Bus (the emulator); the connection string carries UseDevelopmentEmulator.
+            .WithReference(infra.ServiceBus)
+            .WaitFor(infra.ServiceBus)
+            .WithEnvironment("Billing__KeyVault__Uri", vault)
+            .WithEnvironment("Billing__KeyVault__CaCertificatePath", pki.CaCertificatePath)
+            .WithEnvironment(
+                "SharedKernel__Cryptography__KeyVault__Azure__Signing__VaultUri",
+                vault
+            )
+            .WithEnvironment(
+                "SharedKernel__Cryptography__KeyVault__Azure__Encryption__VaultUri",
+                vault
+            )
+            .WaitFor(infra.KeyVault)
+            // 15.Integration: the merchant runs on localhost, a private address the dispatcher refuses by default.
+            .WithEnvironment(
+                $"Billing__Webhooks__{ShopResources.Identity.ContosoTenant}__Url",
+                ReferenceExpression.Create($"{merchant.GetEndpoint("http")}/webhooks/billing")
+            )
+            .WithEnvironment(
+                "SharedKernel__Integration__Webhooks__AllowPrivateNetworkTargets",
+                "true"
+            )
+            .WaitFor(merchant);
+    }
+
+    /// <summary>The merchant verifies Billing's webhooks with the secret Billing signs them with.</summary>
+    public static IResourceBuilder<ProjectResource> WithMerchantConfiguration(
+        this IResourceBuilder<ProjectResource> service
+    ) => service.WithEnvironment("Merchant__Webhooks__Secret", ShopKeyVault.MerchantWebhookSecret);
 }

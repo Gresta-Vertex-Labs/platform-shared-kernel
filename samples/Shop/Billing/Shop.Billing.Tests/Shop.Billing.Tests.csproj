@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Billing's tests, without Docker: its dependency graph, the API-key store and the key-only tenant strategy, invoices
+    (signed with the Cryptography fakes, compressed for real), profile validation, the payment announcement and webhook
+    subscriptions (Integration fakes), and payment state rules. Key Vault, PostgreSQL and the webhook on the wire are
+    Shop.E2E's job.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\Shop.Billing.Api\Shop.Billing.Api.csproj" />
+    <ProjectReference Include="..\..\Shop.TestSupport\Shop.TestSupport.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SharedKernel.Testing" />
+    <PackageReference Include="SharedKernel.Cryptography.Testing" />
+    <PackageReference Include="SharedKernel.Integration.Testing" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+</Project>

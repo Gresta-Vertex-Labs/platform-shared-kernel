@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    End-to-end flows over the whole platform: Shop.AppHost started by Aspire.Hosting.Testing, every container real.
+    Local only — every test is skipped unless SHOP_E2E=1 (CI builds this project and runs it, so it must skip there).
+  -->
+  <PropertyGroup>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Shop.AppHost\Shop.AppHost.csproj" />
+    <ProjectReference Include="..\Shop.Contracts\Shop.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Aspire.Hosting.Testing" />
+    <!-- The wire names the services agree on (WellKnownHeaders), as any client of a Shop service would use them. -->
+    <PackageReference Include="SharedKernel.Primitives" />
+    <!-- The authenticator app's side of step-up: TOTP codes from the enrolled secret. -->
+    <PackageReference Include="SharedKernel.Cryptography" />
+    <!-- The API-key header name, as a payment provider calling Billing would use it. -->
+    <PackageReference Include="SharedKernel.Security.ApiKey" />
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+</Project>

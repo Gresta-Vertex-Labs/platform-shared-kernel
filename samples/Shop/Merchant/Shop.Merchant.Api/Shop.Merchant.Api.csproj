@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <!--
+    A merchant's own system, standing in for a third party: it receives Billing's webhooks and accepts only deliveries
+    whose signature verifies (15.Integration Webhooks' receiver-side verifier).
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\Shop.Contracts\Shop.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SharedKernel.ServiceDefaults" />
+    <PackageReference Include="SharedKernel.Integration.Webhooks" />
+  </ItemGroup>
+</Project>

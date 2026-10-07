@@ -18,7 +18,11 @@ using Temporalio.Workflows;
 namespace Shop.Ordering.Infrastructure.Fulfilment;
 
 /// <summary>The workflow's input: the order and what it needs from the warehouse.</summary>
-public sealed record FulfilmentRequest(Guid OrderId, List<FulfilmentLine> Lines);
+public sealed record FulfilmentRequest(
+    Guid OrderId,
+    List<FulfilmentLine> Lines,
+    string PaymentToken
+);
 
 public sealed record FulfilmentLine(string Sku, int Quantity);
 
@@ -29,8 +33,9 @@ public static class FulfilmentQueues
 }
 
 /// <summary>
-/// Fulfils one order: hold the stock in Inventory, then confirm the order; when Inventory refuses (not enough stock, an
-/// unknown SKU), reject it instead. Durable: a crash at any point resumes from the last completed step on any worker.
+/// Fulfils one order: hold the stock in Inventory, take payment in Billing, then confirm the order. When Inventory refuses
+/// (not enough stock, an unknown SKU) the order is rejected; when the card is declined, the held stock is released first
+/// (compensation). Durable: a crash at any point resumes from the last completed step on any worker.
 /// </summary>
 [Workflow]
 public sealed class OrderFulfilmentWorkflow : WorkflowBase
@@ -55,6 +60,27 @@ public sealed class OrderFulfilmentWorkflow : WorkflowBase
                 new RejectOrderCommand(request.OrderId, refused.ErrorType ?? "inventory.refused")
             );
             return "rejected";
+        }
+
+        try
+        {
+            await ExecuteAsync<ChargeOrderActivity, ChargeOrderCommand, object?>(
+                new ChargeOrderCommand(request.OrderId, request.PaymentToken)
+            );
+        }
+        catch (ActivityFailureException failure)
+            when (failure.InnerException
+                    is ApplicationFailureException { NonRetryable: true } declined
+            )
+        {
+            // Compensation: the stock is held for an order that will not be paid.
+            await ExecuteAsync<ReleaseOrderStockActivity, ReleaseOrderStockCommand, object?>(
+                new ReleaseOrderStockCommand(request.OrderId)
+            );
+            await ExecuteAsync<RejectOrderActivity, RejectOrderCommand, object?>(
+                new RejectOrderCommand(request.OrderId, declined.ErrorType ?? "billing.refused")
+            );
+            return "payment-declined";
         }
 
         await ExecuteAsync<ConfirmOrderActivity, ConfirmOrderCommand, object?>(
@@ -104,6 +130,30 @@ public sealed class ConfirmOrderActivity(
     ) => base.ExecuteAsync(command, ct);
 }
 
+public sealed class ChargeOrderActivity(
+    ISender sender,
+    ILogger<ChargeOrderActivity> logger,
+    IClock clock
+) : CommandActivity<ChargeOrderCommand>(sender, logger, clock)
+{
+    [Activity(nameof(ChargeOrderActivity))]
+    public override Task ExecuteAsync(ChargeOrderCommand command, CancellationToken ct = default) =>
+        base.ExecuteAsync(command, ct);
+}
+
+public sealed class ReleaseOrderStockActivity(
+    ISender sender,
+    ILogger<ReleaseOrderStockActivity> logger,
+    IClock clock
+) : CommandActivity<ReleaseOrderStockCommand>(sender, logger, clock)
+{
+    [Activity(nameof(ReleaseOrderStockActivity))]
+    public override Task ExecuteAsync(
+        ReleaseOrderStockCommand command,
+        CancellationToken ct = default
+    ) => base.ExecuteAsync(command, ct);
+}
+
 public sealed class RejectOrderActivity(
     ISender sender,
     ILogger<RejectOrderActivity> logger,
@@ -134,7 +184,8 @@ public sealed class OrderPlacedConsumer(
         var started = await workflows.StartAsync<OrderFulfilmentWorkflow, FulfilmentRequest>(
             new FulfilmentRequest(
                 placed.OrderId,
-                [.. placed.Lines.Select(l => new FulfilmentLine(l.Sku, l.Quantity))]
+                [.. placed.Lines.Select(l => new FulfilmentLine(l.Sku, l.Quantity))],
+                placed.PaymentToken
             ),
             new WorkflowStartOptions
             {

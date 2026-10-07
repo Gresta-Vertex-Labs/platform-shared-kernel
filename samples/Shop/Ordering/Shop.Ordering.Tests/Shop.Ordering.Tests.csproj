@@ -17,6 +17,7 @@
     <PackageReference Include="SharedKernel.Idempotency.Testing" />
     <PackageReference Include="SharedKernel.Communication.Testing" />
     <PackageReference Include="SharedKernel.Caching.Redis.Testing" />
+    <PackageReference Include="SharedKernel.Workflows.Testing" />
     <PackageReference Include="NSubstitute" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="FluentAssertions" />

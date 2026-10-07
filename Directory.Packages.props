@@ -76,6 +76,7 @@
       samples/Shop only: the Aspire AppHost that composes the reference platform and its end-to-end tests.
       Never referenced by a SharedKernel package.
     -->
+    <PackageVersion Include="Aspire.Hosting.Azure.ServiceBus" Version="13.6.0" />
     <PackageVersion Include="Aspire.Hosting.PostgreSQL" Version="13.6.0" />
     <PackageVersion Include="Aspire.Hosting.RabbitMQ" Version="13.6.0" />
     <PackageVersion Include="Aspire.Hosting.Redis" Version="13.6.0" />
