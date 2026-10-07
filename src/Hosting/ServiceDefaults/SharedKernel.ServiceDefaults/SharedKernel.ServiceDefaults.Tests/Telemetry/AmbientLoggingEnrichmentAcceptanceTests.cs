@@ -51,13 +51,12 @@ public sealed class AmbientLoggingEnrichmentAcceptanceTests
 
         var middleware = new TenantResolutionMiddleware(
             _ => Task.CompletedTask,
-            [new HeaderTenantResolutionStrategy()],
             options,
             NullLogger<TenantResolutionMiddleware>.Instance);
 
         // Runs the real TenantResolutionMiddleware, which sets WellKnownBaggageKeys.TenantId on
         // Activity.Current as a side effect of resolving the tenant (WO-041/P-251, C-33).
-        await middleware.InvokeAsync(context);
+        await middleware.InvokeAsync(context, [new HeaderTenantResolutionStrategy()]);
 
         // Simulates 14.Presentation's independent correlation-id enrichment on the same Activity.
         activity.SetBaggage(WellKnownBaggageKeys.CorrelationId, "corr-e2e-002");
@@ -85,11 +84,10 @@ public sealed class AmbientLoggingEnrichmentAcceptanceTests
             new TenantResolutionOptions { StrategyOrder = [TenantResolutionStrategyNames.Header] });
         var middleware = new TenantResolutionMiddleware(
             _ => Task.CompletedTask,
-            [new HeaderTenantResolutionStrategy()],
             options,
             NullLogger<TenantResolutionMiddleware>.Instance);
 
-        await middleware.InvokeAsync(context);
+        await middleware.InvokeAsync(context, [new HeaderTenantResolutionStrategy()]);
 
         var captured = await EmitAndCaptureAsync(logger => logger.LogInformation("request handled"));
 

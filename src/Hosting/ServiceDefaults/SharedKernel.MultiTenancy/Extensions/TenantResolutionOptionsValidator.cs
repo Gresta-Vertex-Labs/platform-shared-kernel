@@ -64,10 +64,18 @@ public sealed class TenantResolutionOptionsValidator(IServiceProvider servicePro
         }
 
         using var scope = serviceProvider.CreateScope();
-        var registeredNames = scope.ServiceProvider
-            .GetServices<ITenantResolutionStrategy>()
+        var registered = scope.ServiceProvider.GetServices<ITenantResolutionStrategy>().ToList();
+        var registeredNames = registered
             .Select(s => s.StrategyName)
             .ToHashSet(StringComparer.Ordinal);
+
+        // "Database" is always registered, but without an IDbConnectionFactory only as a placeholder: an order that
+        // names it would fail every request it reaches, so it fails startup instead.
+        if (registered.Any(s => s is UnavailableDatabaseTenantResolutionStrategy)
+            && strategyOrder.Contains(TenantResolutionStrategyNames.Database, StringComparer.Ordinal))
+        {
+            return ValidateOptionsResult.Fail(UnavailableDatabaseTenantResolutionStrategy.Reason);
+        }
 
         var unmatched = strategyOrder
             .Where(strategyName => !registeredNames.Contains(strategyName))

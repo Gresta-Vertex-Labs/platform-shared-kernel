@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using SharedKernel.MultiTenancy.Middleware;
 using SharedKernel.MultiTenancy.Resolution;
 using SharedKernel.Execution.Context;
+using SharedKernel.Persistence.Abstractions.Connections;
 
 namespace SharedKernel.MultiTenancy.Extensions;
 
@@ -59,7 +60,15 @@ public static class MultiTenancyExtensions
 
         services.AddScoped<ITenantResolutionStrategy, HeaderTenantResolutionStrategy>();
         services.AddScoped<ITenantResolutionStrategy, ClaimTenantResolutionStrategy>();
-        services.AddScoped<ITenantResolutionStrategy, DatabaseTenantResolutionStrategy>();
+
+        // The directory strategy needs a database (IDbConnectionFactory, from 06.Persistence); a service without one
+        // omits "Database" from StrategyOrder. Without a connection factory the slot holds a placeholder, so the
+        // container still builds and the other strategies work; the options validator fails startup only when the
+        // configured order actually names "Database".
+        services.AddScoped<ITenantResolutionStrategy>(sp =>
+            sp.GetService<IDbConnectionFactory>() is { } connectionFactory
+                ? new DatabaseTenantResolutionStrategy(connectionFactory)
+                : new UnavailableDatabaseTenantResolutionStrategy());
 
         return services;
     }

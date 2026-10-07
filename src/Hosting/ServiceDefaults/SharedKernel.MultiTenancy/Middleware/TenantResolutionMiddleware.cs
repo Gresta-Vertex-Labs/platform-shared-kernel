@@ -1,4 +1,3 @@
-using System.Collections.Frozen;
 using System.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -50,38 +49,36 @@ namespace SharedKernel.MultiTenancy.Middleware;
 /// </remarks>
 public sealed class TenantResolutionMiddleware(
     RequestDelegate next,
-    IEnumerable<ITenantResolutionStrategy> strategies,
     Microsoft.Extensions.Options.IOptions<TenantResolutionOptions> options,
     ILogger<TenantResolutionMiddleware> logger)
 {
-    /// <summary>
-    /// The <see cref="ITenantResolutionStrategy.StrategyName"/> → strategy lookup, computed once
-    /// against the fixed strategy set supplied to this middleware instance rather than rebuilt as
-    /// a fresh allocation on every <see cref="InvokeAsync"/> call. Matches each
-    /// <see cref="TenantResolutionOptions.StrategyOrder"/> entry against each strategy's declared
-    /// <see cref="ITenantResolutionStrategy.StrategyName"/> — never against the implementing
-    /// type's CLR type name.
-    /// </summary>
-    private readonly FrozenDictionary<string, ITenantResolutionStrategy> _strategiesByName =
-        strategies.ToFrozenDictionary(s => s.StrategyName);
-
     /// <summary>
     /// Resolves the tenant for the current request and invokes the next middleware in the
     /// pipeline inside a request-context scope carrying it. Never throws when zero strategies resolve a
     /// tenant, or when zero strategies are configured.
     /// </summary>
     /// <param name="context">The current HTTP context.</param>
+    /// <param name="strategies">
+    /// The registered strategies, resolved from the request's scope. They are scoped
+    /// (<c>AddSharedKernelMultiTenancy</c>), so they are injected here, per request, never into the constructor:
+    /// ASP.NET Core builds a conventional middleware once, from the root provider, where a scoped strategy would
+    /// either fail scope validation or be captured for the life of the process. Each
+    /// <see cref="TenantResolutionOptions.StrategyOrder"/> entry is matched against a strategy's declared
+    /// <see cref="ITenantResolutionStrategy.StrategyName"/> — never against its CLR type name.
+    /// </param>
     /// <returns>A task that completes when the rest of the pipeline has run.</returns>
-    public async Task InvokeAsync(HttpContext context)
+    public async Task InvokeAsync(HttpContext context, IEnumerable<ITenantResolutionStrategy> strategies)
     {
         ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(strategies);
 
         TenantId? resolvedTenantId = null;
         string? resolvedStrategyName = null;
+        var strategiesByName = strategies.ToDictionary(s => s.StrategyName, StringComparer.Ordinal);
 
         foreach (var strategyName in options.Value.EffectiveStrategyOrder)
         {
-            if (!_strategiesByName.TryGetValue(strategyName, out var strategy))
+            if (!strategiesByName.TryGetValue(strategyName, out var strategy))
             {
                 continue;
             }

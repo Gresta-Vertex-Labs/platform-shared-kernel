@@ -29,5 +29,10 @@
       IOptions<T>.Value.
     -->
     <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <!-- TenantResolutionMiddlewarePipelineTests: the middleware through a real ASP.NET Core pipeline. -->
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" />
+  </ItemGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 </Project>

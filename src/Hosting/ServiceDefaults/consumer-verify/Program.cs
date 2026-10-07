@@ -60,11 +60,12 @@ using (var scope = app.Services.CreateScope())
 
 Console.WriteLine("Surface 4 PASS: MultiTenancy services resolve (IRequestContextAccessor, ITenantResolutionStrategy x3)");
 
-// ── Surface 5: TenantResolutionMiddleware is constructible from the composed container ──
-using (var scope = app.Services.CreateScope())
+// ── Surface 5: TenantResolutionMiddleware is constructible from the ROOT provider ──
+// UseMiddleware<T>() builds a conventional middleware once, from the root provider, so that is what is checked here;
+// the scoped strategies reach it per request through InvokeAsync.
 {
     var middleware = ActivatorUtilities.CreateInstance<TenantResolutionMiddleware>(
-        scope.ServiceProvider,
+        app.Services,
         (RequestDelegate)(_ => Task.CompletedTask));
     Verify(middleware is not null, "TenantResolutionMiddleware constructs from the composed container");
 }
