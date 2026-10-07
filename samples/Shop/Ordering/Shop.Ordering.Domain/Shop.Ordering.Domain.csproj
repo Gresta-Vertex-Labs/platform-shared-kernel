@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The Ordering service's Domain project: references SharedKernel.Domain and nothing else. -->
+  <ItemGroup>
+    <PackageReference Include="SharedKernel.Domain" />
+  </ItemGroup>
+</Project>

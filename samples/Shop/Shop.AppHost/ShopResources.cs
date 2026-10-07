@@ -11,11 +11,14 @@ public static class ShopResources
     public const string Ollama = "ollama";
     public const string Minio = "minio";
     public const string Keycloak = "keycloak";
+    public const string RabbitMq = "rabbitmq";
+    public const string Temporal = "temporal";
 
     public const string Catalog = "catalog-api";
     public const string Catalog2 = "catalog-api-2";
     public const string Inventory = "inventory-api";
     public const string Inventory2 = "inventory-api-2";
+    public const string Ordering = "ordering-api";
 
     /// <summary>The clients of the Shop's development PKI (mutual TLS between services).</summary>
     public static class Clients

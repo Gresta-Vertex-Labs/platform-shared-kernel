@@ -19,12 +19,19 @@ foreach (string name in new[] { ShopResources.Catalog, ShopResources.Catalog2 })
 }
 
 // Inventory runs twice too: its reconciliation job is scheduled on both, and must run once per occurrence.
-foreach (string name in new[] { ShopResources.Inventory, ShopResources.Inventory2 })
-{
-    builder
-        .AddProject<Projects.Shop_Inventory_Api>(name, launchProfileName: "https")
-        .WithInventoryConfiguration(infra, pki, name)
-        .WithHttpHealthCheck("/health/ready", endpointName: "http");
-}
+var inventories = new[] { ShopResources.Inventory, ShopResources.Inventory2 }
+    .Select(name =>
+        builder
+            .AddProject<Projects.Shop_Inventory_Api>(name, launchProfileName: "https")
+            .WithInventoryConfiguration(infra, pki, name)
+            .WithHttpHealthCheck("/health/ready", endpointName: "http")
+    )
+    .ToList();
+
+// Ordering: one replica (its SignalR hub has no backplane), calling the first Inventory replica.
+builder
+    .AddProject<Projects.Shop_Ordering_Api>(ShopResources.Ordering)
+    .WithOrderingConfiguration(infra, pki, inventories[0])
+    .WithHttpHealthCheck("/health/ready");
 
 await builder.Build().RunAsync();

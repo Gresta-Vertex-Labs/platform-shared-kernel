@@ -30,6 +30,8 @@ public sealed class ShopInfrastructure
     public required IResourceBuilder<OllamaModelResource> ChatModelResource { get; init; }
     public required IResourceBuilder<ContainerResource> Minio { get; init; }
     public required IResourceBuilder<ContainerResource> Keycloak { get; init; }
+    public required IResourceBuilder<RabbitMQServerResource> RabbitMq { get; init; }
+    public required IResourceBuilder<ContainerResource> Temporal { get; init; }
 
     /// <summary>A connection string to one Shop database as one of the roles of postgres/01-roles.sql.</summary>
     public ReferenceExpression Database(string database, string role, string password)
@@ -111,6 +113,19 @@ public sealed class ShopInfrastructure
             }
         );
 
+        // RabbitMQ with the delayed-message exchange plugin MassTransit's delayed delivery needs.
+        var rabbitMq = builder
+            .AddRabbitMQ(ShopResources.RabbitMq)
+            .WithImage("masstransit/rabbitmq", "4.3.1");
+
+        // The Temporal CLI's single-process development server (frontend, history, matching and an in-memory store).
+        var temporal = builder
+            .AddContainer(ShopResources.Temporal, "temporalio/temporal", "1.9.1")
+            .WithArgs("server", "start-dev", "--ip", "0.0.0.0")
+            .WithEndpoint(targetPort: 7233, name: "grpc", scheme: "http")
+            .WithHttpEndpoint(targetPort: 8233, name: "ui")
+            .WithHttpHealthCheck("/", endpointName: "ui");
+
         var keycloak = builder
             .AddContainer(ShopResources.Keycloak, "quay.io/keycloak/keycloak", "26.8.0")
             .WithArgs("start-dev", "--import-realm")
@@ -134,6 +149,8 @@ public sealed class ShopInfrastructure
             ChatModelResource = chatModel,
             Minio = minio,
             Keycloak = keycloak,
+            RabbitMq = rabbitMq,
+            Temporal = temporal,
         };
     }
 }

@@ -21,6 +21,9 @@ public sealed class ShopPki
     /// <summary>The CA certificate (public part, DER).</summary>
     public string CaCertificatePath => Path.Combine(Directory, "ca.cer");
 
+    /// <summary>The CA certificate as PEM, for clients that read a PEM trust bundle.</summary>
+    public string CaPemPath => Path.Combine(Directory, "ca.pem");
+
     /// <summary>The <c>localhost</c> server certificate with its key (PFX, <see cref="Password"/>).</summary>
     public string ServerCertificatePath => Path.Combine(Directory, "server.pfx");
 
@@ -46,11 +49,16 @@ public sealed class ShopPki
         {
             System.IO.Directory.CreateDirectory(pki.Directory);
             string caPfx = Path.Combine(pki.Directory, "ca.pfx");
-            if (!File.Exists(caPfx) || !File.Exists(pki.ServerCertificatePath))
+            if (
+                !File.Exists(caPfx)
+                || !File.Exists(pki.ServerCertificatePath)
+                || !File.Exists(pki.CaPemPath)
+            )
             {
                 using var ca = CreateCa();
                 File.WriteAllBytes(caPfx, ca.Export(X509ContentType.Pfx, Password));
                 File.WriteAllBytes(pki.CaCertificatePath, ca.Export(X509ContentType.Cert));
+                File.WriteAllText(pki.CaPemPath, ca.ExportCertificatePem());
                 using var server = Issue(ca, "localhost", server: true);
                 File.WriteAllBytes(
                     pki.ServerCertificatePath,

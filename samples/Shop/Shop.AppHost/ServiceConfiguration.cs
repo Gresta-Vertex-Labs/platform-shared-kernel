@@ -175,4 +175,75 @@ public static class ServiceConfiguration
                 $"Inventory__Mtls__Clients__{pki.ClientThumbprint(ShopResources.Clients.Ordering)}",
                 ShopResources.Clients.Ordering
             );
+
+    /// <summary>
+    /// The Ordering service: its database (row-level security, the audit ledger with its sealer role, field encryption),
+    /// Redis, RabbitMQ, Temporal, and Inventory over gRPC with the Ordering client certificate.
+    /// </summary>
+    public static IResourceBuilder<ProjectResource> WithOrderingConfiguration(
+        this IResourceBuilder<ProjectResource> service,
+        ShopInfrastructure infra,
+        ShopPki pki,
+        IResourceBuilder<ProjectResource> inventory
+    )
+    {
+        var temporal = infra.Temporal.GetEndpoint("grpc");
+        return service
+            .WithIdentity(infra)
+            .WithRedis(infra)
+            .WithDatabase(infra, "ordering")
+            .WithEnvironment(
+                "ConnectionStrings__audit-sealer",
+                infra.Database("ordering", "app_audit_sealer", "sealer-dev")
+            )
+            // DEVELOPMENT-ONLY keys: the audit ledger's HMAC key, the field-encryption root key and blind-index key.
+            .WithEnvironment(
+                "SharedKernel__Persistence__Auditing__Keys__k1__Material",
+                "H01/neWL3422YSnGQOTmM1Td15lOJYeYDsrj2UOSGt8="
+            )
+            .WithEnvironment("SharedKernel__Persistence__Auditing__Keys__k1__Order", "1")
+            .WithEnvironment("SharedKernel__Persistence__Encryption__Keys__CurrentKeyId", "root1")
+            .WithEnvironment(
+                "SharedKernel__Persistence__Encryption__Keys__Keys__root1",
+                "+vPQGz9zMkR9gSJzRGn36uuP1mkZZGeUi2YWStgLQgY="
+            )
+            .WithEnvironment(
+                "SharedKernel__Persistence__Encryption__BlindIndexKeys__CurrentVersion",
+                "v1"
+            )
+            .WithEnvironment(
+                "SharedKernel__Persistence__Encryption__BlindIndexKeys__Keys__v1",
+                "H95n4aIXS7S5WLI6SnwxNGQxbK4tuKxULEi9+hN7xKs="
+            )
+            .WithEnvironment(
+                "ConnectionStrings__rabbitmq",
+                infra.RabbitMq.Resource.ConnectionStringExpression
+            )
+            .WaitFor(infra.RabbitMq)
+            .WithEnvironment(
+                "Workflows__Temporal__TargetHost",
+                ReferenceExpression.Create(
+                    $"{temporal.Property(EndpointProperty.Host)}:{temporal.Property(EndpointProperty.Port)}"
+                )
+            )
+            .WaitFor(infra.Temporal)
+            // 11.Communication: Inventory's HTTPS endpoint, the Ordering client certificate, only the Shop's CA trusted.
+            .WithEnvironment(
+                "SharedKernel__Communication__Clients__inventory__Address",
+                inventory.GetEndpoint("https")
+            )
+            .WithEnvironment(
+                "SharedKernel__Communication__Clients__inventory__Tls__CertificatePath",
+                pki.ClientCertificatePath(ShopResources.Clients.Ordering)
+            )
+            .WithEnvironment(
+                "SharedKernel__Communication__Clients__inventory__Tls__CertificatePassword",
+                ShopPki.Password
+            )
+            .WithEnvironment(
+                "SharedKernel__Communication__Clients__inventory__Tls__TrustedCertificateAuthoritiesPath",
+                pki.CaPemPath
+            )
+            .WaitFor(inventory);
+    }
 }

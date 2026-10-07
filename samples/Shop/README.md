@@ -5,8 +5,9 @@ A commerce platform built only from SharedKernel packages, consumed the way an o
 containers, local stand-ins only, orchestrated by a .NET Aspire AppHost. Its purpose is to prove the packages work
 together, and it has already found kernel bugs that unit tests did not.
 
-> **Status.** The platform is being built service by service. It contains the AppHost, Catalog, Inventory and the
-> end-to-end harness; Ordering, Billing, Notify, Reports and Merchant follow, and then the older samples are retired. `Shop.Coverage.Tests` reports which kernel packages are not used yet.
+> **Status.** The platform is being built service by service. It contains the AppHost, Catalog, Inventory, Ordering
+> and the end-to-end harness; Billing, Notify, Reports and Merchant follow, and then the older samples are retired.
+> `Shop.Coverage.Tests` reports which kernel packages are not used yet.
 
 ## What runs
 
@@ -14,6 +15,9 @@ together, and it has already found kernel bugs that unit tests did not.
 | --- | --- | --- |
 | `catalog-api`, `catalog-api-2` | The Catalog service, two replicas (four-project shape) | Domain, Application + Pipeline + Pipeline.Caching + MediatR, Persistence.EfCore/Npgsql (RLS), Caching.FusionCache + Redis L2 + Redis.PubSub, Search.Meilisearch + Search.ElasticSearch, AI.Qdrant + AI.SemanticKernel, Storage.S3, FeatureManagement, Localization, Security.Oidc, Presentation.WebApi + OpenApi + GraphQL, ServiceDefaults (+ Localization, Security) |
 | `inventory-api`, `inventory-api-2` | The Inventory service, two replicas (one project): gRPC over mutual TLS for Ordering, REST for merchants, a reconciliation job | Persistence.Npgsql + Dapper under RLS (schema created under the migration lock), Caching.Redis.Core + HashStore + DistributedLocking, Scheduling, Security.Mtls + ServiceDefaults.Security.Mtls, Security.Oidc, MultiTenancy (with a service-only header strategy), Presentation.Grpc + WebApi, Application + Pipeline + MediatR |
+| `ordering-api` | The Ordering service (four-project shape): orders placed once however often they are submitted, fulfilled by a Temporal workflow that reserves stock in Inventory, status pushed over SignalR, cancelling behind an authenticator step-up | Persistence.EfCore + Auditing + Encryption under RLS, ServiceDefaults.Persistence, Messaging.MassTransit + RabbitMq + EfCore outbox, Idempotency.Redis (requests) + Idempotency.EfCore (messages), Workflows.Temporal, Communication.Grpc over mutual TLS, Caching.Redis.HashStore, Cryptography + Argon2, Security.Oidc + Totp, MultiTenancy, Presentation.WebApi + SignalR, Application + Pipeline + MediatR, Validation.FluentValidation |
+| `rabbitmq` | RabbitMQ 4.3 with the delayed-exchange plugin (`masstransit/rabbitmq`) | |
+| `temporal` | The Temporal development server (gRPC 7233, UI 8233) | |
 | `postgres` | PostgreSQL 16 with pgvector; the production role split (`postgres/`) | |
 | `redis` | Redis 7.4 | |
 | `meilisearch`, `elasticsearch` | The storefront and back-office search engines | |
@@ -46,7 +50,8 @@ samples/Shop/build.sh --e2e                # end-to-end flows against the runnin
 | --- | --- |
 | `Shop.Catalog.Tests` | The four-project shape over the real restore graph, the kernel's architecture rules, the use cases through the real pipeline with the `*.Testing` fakes |
 | `Shop.Inventory.Tests` | Inventory's dependency graph, the service-only tenant strategy, the certificate allow-list, the SKU locks and the job schedule, over the kernel's Security, Caching and Scheduling fakes |
-| `Shop.E2E` | Whole flows through the real AppHost: sign-in, cache and backplane across replicas, Redis Pub/Sub, search, semantic search, the chat model, presigned downloads, tenant isolation, permissions, localization, GraphQL; reservations over mutual TLS (allow-list, rogue certificate, no certificate), no overselling under concurrency across replicas, a job that runs once per occurrence on two replicas. Skipped unless `SHOP_E2E=1`; CI builds it but does not run it |
+| `Shop.Ordering.Tests` | Ordering's four-project shape, idempotent placement, auditing, validation and cancellation through the real pipeline over the Persistence, Messaging and Application fakes, the gRPC adapter's error mapping (Communication fakes), the TOTP stores over the fake Redis services |
+| `Shop.E2E` | Whole flows through the real AppHost: sign-in, cache and backplane across replicas, Redis Pub/Sub, search, semantic search, the chat model, presigned downloads, tenant isolation, permissions, localization, GraphQL; reservations over mutual TLS (allow-list, rogue certificate, no certificate), no overselling under concurrency across replicas, a job that runs once per occurrence on two replicas; an order placed once per idempotency key, fulfilled or rejected by the Temporal workflow through the outbox and RabbitMQ, SignalR status pushes, another tenant's orders invisible, ciphertext at rest and the audit ledger, cancelling only after a TOTP step-up. Skipped unless `SHOP_E2E=1`; CI builds it but does not run it |
 | `Shop.Coverage.Tests` | Which kernel packages a Shop project references directly (strict once every service exists) |
 
 CI builds every Shop project against the packages of the same run and runs the unit tests; the end-to-end flows are

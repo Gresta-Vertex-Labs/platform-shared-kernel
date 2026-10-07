@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Ordering's use cases and the ports they need; kernel contracts only (Abstractions tier and Foundation). -->
+  <ItemGroup>
+    <ProjectReference Include="..\Shop.Ordering.Domain\Shop.Ordering.Domain.csproj" />
+    <ProjectReference Include="..\..\Shop.Contracts\Shop.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SharedKernel.Application" />
+    <PackageReference Include="SharedKernel.Persistence.Abstractions" />
+    <PackageReference Include="SharedKernel.Messaging.Abstractions" />
+    <PackageReference Include="SharedKernel.Idempotency.Abstractions" />
+    <PackageReference Include="FluentValidation" />
+  </ItemGroup>
+</Project>
