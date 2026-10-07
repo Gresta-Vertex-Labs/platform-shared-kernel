@@ -9,6 +9,7 @@
   <!-- The services the AppHost runs; Aspire generates Projects.* from these references. -->
   <ItemGroup>
     <ProjectReference Include="..\Catalog\Shop.Catalog.Api\Shop.Catalog.Api.csproj" />
+    <ProjectReference Include="..\Inventory\Shop.Inventory.Api\Shop.Inventory.Api.csproj" />
   </ItemGroup>
 
   <ItemGroup>

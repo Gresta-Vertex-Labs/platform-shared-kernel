@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <!--
+    Inventory: a small service in one project. gRPC (mutual TLS) for Ordering, REST (OIDC) for merchants,
+    hand-written SQL through Dapper under row-level security, stock levels cached in Redis hashes, a distributed lock per
+    SKU, and a reconciliation job that runs once per tick across replicas.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\Shop.Contracts\Shop.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SharedKernel.ServiceDefaults" />
+    <PackageReference Include="SharedKernel.ServiceDefaults.Security" />
+    <PackageReference Include="SharedKernel.ServiceDefaults.Security.Mtls" />
+    <PackageReference Include="SharedKernel.Security.Oidc" />
+    <PackageReference Include="SharedKernel.Security.Mtls" />
+    <PackageReference Include="SharedKernel.MultiTenancy" />
+    <PackageReference Include="SharedKernel.Application" />
+    <PackageReference Include="SharedKernel.Application.Pipeline" />
+    <PackageReference Include="SharedKernel.Application.Mediator.MediatR" />
+    <PackageReference Include="SharedKernel.Presentation.WebApi" />
+    <PackageReference Include="SharedKernel.Presentation.Grpc" />
+    <PackageReference Include="SharedKernel.Persistence.Npgsql" />
+    <PackageReference Include="SharedKernel.Persistence.Dapper" />
+    <PackageReference Include="SharedKernel.Caching.Redis.Core" />
+    <PackageReference Include="SharedKernel.Caching.Redis.HashStore" />
+    <PackageReference Include="SharedKernel.Caching.Redis.DistributedLocking" />
+    <PackageReference Include="SharedKernel.Scheduling" />
+    <PackageReference Include="Dapper" />
+  </ItemGroup>
+</Project>

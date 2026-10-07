@@ -152,4 +152,27 @@ public static class ServiceConfiguration
             .WaitFor(infra.EmbeddingModelResource)
             .WaitFor(infra.ChatModelResource);
     }
+
+    /// <summary>
+    /// The Inventory service: Dapper over its database under row-level security, Redis, and gRPC over mutual TLS with
+    /// the Shop's development PKI (Kestrel serves the PKI's <c>localhost</c> certificate; Ordering is allow-listed).
+    /// </summary>
+    public static IResourceBuilder<ProjectResource> WithInventoryConfiguration(
+        this IResourceBuilder<ProjectResource> service,
+        ShopInfrastructure infra,
+        ShopPki pki,
+        string replica
+    ) =>
+        service
+            .WithIdentity(infra)
+            .WithRedis(infra)
+            .WithDatabase(infra, "inventory")
+            .WithEnvironment("Inventory__Replica", replica)
+            .WithEnvironment("Kestrel__Certificates__Default__Path", pki.ServerCertificatePath)
+            .WithEnvironment("Kestrel__Certificates__Default__Password", ShopPki.Password)
+            .WithEnvironment("Inventory__Mtls__CaCertificatePath", pki.CaCertificatePath)
+            .WithEnvironment(
+                $"Inventory__Mtls__Clients__{pki.ClientThumbprint(ShopResources.Clients.Ordering)}",
+                ShopResources.Clients.Ordering
+            );
 }
