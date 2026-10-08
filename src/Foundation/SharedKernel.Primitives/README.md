@@ -106,8 +106,8 @@ No configuration section: the package has no options.
 - **`Message` may reach an end user** as the fallback when no translation exists — no secrets, raw exception text or
   "see logs".
 - **`Details`** holds field errors (`Error.Validation(errors)` → code `validation.failed`). It survives
-  `System.Text.Json`, so `14.Presentation` maps it to the ProblemDetails `errors` map and `11.Communication.Rest`
-  rebuilds it on the calling side.
+  `System.Text.Json`, so `SharedKernel.Presentation.WebApi` maps it to the ProblemDetails `errors` map and
+  `SharedKernel.Communication.Rest` rebuilds it on the calling side.
 - **`MessageArguments`** holds translation values, filled only by `SharedKernel.Localization`'s `LocalizedMessage.ToError`.
   It is not part of equality and not serialized — `Message` already contains the values in the default text.
 - `ValidationResult` snapshots the errors you pass and compares by value; `Failure` rejects an empty sequence and a
@@ -154,7 +154,7 @@ turns every probe into a `ready`-tagged check. A host without ASP.NET Core resol
 
 `SharedKernel.Execution`'s `RequestContextPropagation` writes and reads the correlation, tenant and caller headers on every
 hop. Tags are span-local; baggage crosses process boundaries on every outbound call, so its registry stays small. The
-tenant **baggage** key is `"TenantId"` while the tenant **tag** key is `"tenant.id"` on purpose: `13.ServiceDefaults`
+tenant **baggage** key is `"TenantId"` while the tenant **tag** key is `"tenant.id"` on purpose: `SharedKernel.ServiceDefaults`
 copies baggage onto log records under its own key, so the baggage string is the emitted log property name.
 
 ## Recipes
@@ -290,6 +290,9 @@ Reference [`SharedKernel.Testing`](https://github.com/Gresta-Vertex-Labs/platfor
 from your test project. It ships `FakeClock` (`SharedKernel.Testing.Clocks`: `Set`, `Advance`, settable `UtcNow`):
 
 ```csharp
+using SharedKernel.Primitives.Clocks;
+using SharedKernel.Testing.Clocks;
+
 var clock = new FakeClock(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
 services.AddSingleton<IClock>(clock);
 clock.Advance(TimeSpan.FromHours(2));
@@ -334,5 +337,5 @@ lists built at type initialization and are verified under a `TrimMode=full` publ
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Core domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Foundation/README.md) ·
+[Foundation packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Foundation/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

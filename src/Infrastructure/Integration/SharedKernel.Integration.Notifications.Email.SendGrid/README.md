@@ -4,9 +4,10 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
 ![Tier: Adapter](https://img.shields.io/badge/tier-Adapter-6f42c1)
 
-> **The email provider for `SharedKernel.Integration.Notifications`: sends SendGrid dynamic-template emails over the
-> v3 Mail Send REST API — no vendor SDK — with attachments streamed from object storage and failures returned as
-> results.**
+> **The email provider behind `INotificationSender`: sends SendGrid dynamic-template emails over the v3 Mail Send
+> REST API (no vendor SDK), with attachments streamed from object storage and failures returned as results.**
+> Reference it from your Infrastructure project; application code depends only on
+> `SharedKernel.Integration.Notifications.Abstractions`. For SMS, add `SharedKernel.Integration.Notifications.Sms.Twilio`.
 
 | You get | So that |
 | --- | --- |
@@ -37,7 +38,9 @@ version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform
 
 ```csharp
 using SharedKernel.Integration.Notifications.Abstractions.Extensions;
+using SharedKernel.Integration.Notifications.Abstractions.Observability;
 using SharedKernel.Integration.Notifications.Email.SendGrid.Extensions;
+using SharedKernel.Storage;
 
 builder.Services.AddSharedKernelNotifications();                                   // retry / timeout settings
 builder.Services.AddScoped<INotificationSenderIdentityResolver, TenantSenderIdentityResolver>();
@@ -47,6 +50,8 @@ builder.Services.AddSharedKernelStorage().AddS3(builder.Configuration).AddStore(
 ```
 
 ```csharp
+using SharedKernel.Integration.Notifications.Abstractions.Notifications;
+
 var result = await email.SendAsync(                         // [FromKeyedServices(NotificationChannel.Email)] INotificationSender
     new NotificationMessage<OrderReceiptModel>
     {
@@ -148,5 +153,5 @@ platform's resilience pipeline and add an unaudited dependency.
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Integration domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Integration/README.md) ·
+[Integration packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Integration/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

@@ -9,6 +9,11 @@
 > leases with fencing tokens, key providers and a recording warmup strategy — so caching code is unit-tested
 > without FusionCache or Redis.**
 
+Use it in unit tests of code that injects `ICacheService`, `ITenantCacheService` or `IDistributedLockService`. For
+`IRedisHashService`, `ITypedHashStore<T>` or `IRedisChannelService`, use
+[`SharedKernel.Caching.Redis.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Caching/SharedKernel.Caching.Redis.Testing/README.md).
+Expiry, fail-safe and Redis behaviour need an integration test against the real packages.
+
 | You get | So that |
 | --- | --- |
 | `FakeCacheService` with real hit/miss, tags and stampede protection | A test proves "the second read was a hit" with `FactoryInvocationCount` |
@@ -37,8 +42,7 @@
 The version comes from your central `SharedKernelVersion` property — every SharedKernel package ships at the same
 version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel#using-the-packages).
 
-Reference it from a **test project only**. Production code must never reference a Testing package;
-`TestingNeverReferencedByProduction` fails the build's architecture tests when it does.
+Reference it from a **test project only**; production code must never reference a Testing package.
 
 | Requirement | Value |
 | --- | --- |
@@ -107,6 +111,10 @@ services.AddFakeTenantCacheService();    // ITenantCacheService (separate call)
 ### 1. Prove a tenant cannot read another tenant's entry
 
 ```csharp
+using SharedKernel.Caching.Abstractions;
+using SharedKernel.Execution.Tenancy;
+using SharedKernel.Testing.Caching;
+
 var cache = new FakeTenantCacheService();
 var tenantA = new TenantId(Guid.NewGuid());
 var tenantB = new TenantId(Guid.NewGuid());
@@ -116,8 +124,6 @@ await cache.SetAsync(tenantA, "invoice", "42", 100, CachePolicy.Default);
 Assert.True((await cache.TryGetAsync<int>(tenantA, "invoice", "42")).IsHit);
 Assert.False((await cache.TryGetAsync<int>(tenantB, "invoice", "42")).IsHit);
 ```
-
-`TenantId` lives in `SharedKernel.Execution.Tenancy`.
 
 ### 2. Test the "another replica holds the lock" path
 
@@ -147,6 +153,9 @@ Assert.True(handle.LostToken.IsCancellationRequested);
 Pass any `TimeProvider` you can advance (for example `FakeTimeProvider` from `Microsoft.Extensions.TimeProvider.Testing`):
 
 ```csharp
+using Microsoft.Extensions.Time.Testing;
+using SharedKernel.Testing.Caching;
+
 var time = new FakeTimeProvider();
 var locks = new FakeDistributedLockService(time);
 
@@ -164,6 +173,9 @@ Under `AddFakeCachingServices()`, the lock service uses a `TimeProvider` registe
 ### 5. Assert warmup order and failure isolation
 
 ```csharp
+using System.Collections.Concurrent;
+using SharedKernel.Testing.Caching;
+
 var log = new ConcurrentQueue<string>();
 services.AddFakeCacheWarmupStrategy("products", order: 1, log);
 services.AddFakeCacheWarmupStrategy("prices", order: 2, log);
@@ -222,4 +234,6 @@ for `FakeClock`, `TestRequestContext` and the in-memory logger. The Redis-specif
 
 ---
 
-Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) · [16.Testing domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/README.md) · [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
+[Caching packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Caching/README.md) ·
+[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

@@ -7,7 +7,10 @@
 
 > **Deliver integration events to external HTTP subscribers as signed, retried, SSRF-guarded webhooks — and verify
 > them on the receiving side. You supply the subscriptions; the package handles signing, fan-out, retries, secret
-> rotation, optional payload encryption and the "delivery exhausted" signal.**
+> rotation, optional payload encryption and the "delivery exhausted" signal.** Pick it for machine subscribers
+> outside the platform. Services inside the platform consume the same events over the message bus
+> (`SharedKernel.Messaging.Abstractions`); email and SMS to people go through
+> `SharedKernel.Integration.Notifications.Abstractions`.
 
 | You get | So that |
 | --- | --- |
@@ -72,6 +75,9 @@ builder.Services.AddScoped<IWebhookSubscriptionStore, EfWebhookSubscriptionStore
 The store is yours, over your own persistence; it owns the "active and subscribed to this event" filter:
 
 ```csharp
+using Microsoft.EntityFrameworkCore;
+using SharedKernel.Integration.Webhooks.Subscriptions;
+
 public sealed class EfWebhookSubscriptionStore(AppDbContext db) : IWebhookSubscriptionStore
 {
     public async Task<IReadOnlyList<WebhookSubscription>> GetActiveSubscriptionsAsync(string eventType, CancellationToken ct)
@@ -90,6 +96,7 @@ Dispatch an integration event:
 ```csharp
 using SharedKernel.Contracts.Events;
 using SharedKernel.Integration.Webhooks.Dispatch;
+using SharedKernel.Primitives.Clocks;
 
 [IntegrationEvent("orders.order-shipped")]
 public sealed record OrderShipped(Guid EventId, DateTimeOffset OccurredOn, Guid OrderId) : IIntegrationEvent;
@@ -187,7 +194,9 @@ app.MapPost("/webhooks/inbound/{subscriptionId:guid}", async (Guid subscriptionI
 ### 3. Add static headers to one subscription
 
 ```csharp
-var subscription = new WebhookSubscription(id, url, secrets, eventTypes, isActive: true,
+using SharedKernel.Integration.Webhooks.Subscriptions;
+
+var subscription = new WebhookSubscription(id, url, secrets, eventTypes, IsActive: true,
     Headers: new Dictionary<string, string> { ["X-Partner-Id"] = "acme-corp" });
 ```
 
@@ -197,6 +206,10 @@ any HTTP call.
 ### 4. Encrypt payloads
 
 ```csharp
+using SharedKernel.Cryptography.Extensions;
+using SharedKernel.Cryptography.Symmetric;
+using SharedKernel.Integration.Webhooks.Extensions;
+
 builder.Services.AddSingleton<IEncryptionKeyProvider, YourEncryptionKeyProvider>();
 builder.Services.AddSharedKernelCryptography(builder.Configuration).AddSymmetricEncryption();
 builder.Services.AddSharedKernelWebhooks(o => o.EncryptPayload = true);
@@ -209,6 +222,10 @@ captured ciphertext cannot be replayed with attacker-supplied associated data. A
 then decrypts:
 
 ```csharp
+using SharedKernel.Cryptography.Symmetric;          // ISymmetricEncryptionService encryption
+using SharedKernel.Integration.Webhooks.Signing;
+using SharedKernel.Primitives.Results;
+
 var associatedData = WebhookPayloadAssociatedData.Build(subscription.SubscriptionId, Guid.Parse(deliveryIdHeader));
 Result<string> plaintext = await encryption.DecryptToStringAsync(rawBody, associatedData);
 ```
@@ -219,6 +236,8 @@ delivery.
 ### 5. Send a test delivery to a new subscriber
 
 ```csharp
+using SharedKernel.Integration.Webhooks.Dispatch;   // IWebhookDispatcher webhooks
+
 WebhookDeliveryResult result = await webhooks.SendTestDeliveryAsync(subscription, ct);
 ```
 
@@ -233,6 +252,8 @@ Consume `WebhookDeliveryExhaustedEvent` (`sharedkernel.webhooks.delivery-exhaust
 ### 7. Allow internal targets, or apply your own policy
 
 ```csharp
+using SharedKernel.Integration.Webhooks.Extensions;
+
 builder.Services.AddSharedKernelWebhooks(o => o.AllowPrivateNetworkTargets = true);   // staging only
 builder.Services.WithUrlValidator<PartnerAllowlistValidator>();                          // replaces the default
 ```
@@ -327,5 +348,5 @@ by the service's own persistence.
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Integration domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Integration/README.md) ·
+[Integration packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Integration/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

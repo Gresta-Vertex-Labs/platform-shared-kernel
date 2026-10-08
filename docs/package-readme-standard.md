@@ -16,10 +16,15 @@ all of them consistent, scannable and correct. `PackageReadmeStandardTests` (in
    `using` lines it needs. Where a `ReadmeSample*Tests.cs` exists, it mirrors the snippets.
 4. **Configuration is a table.** Every options key a consumer can set appears in the Configuration table with its full
    section path, type, default and meaning.
-5. **Length follows substance.** A small package is 80–150 lines; a large one should stay under about 500. Deep
-   background belongs in the domain README.
+5. **Length follows substance.** A small package is 80–150 lines; a large one stays under about 500 (the test fails
+   above 550). End-to-end walkthroughs belong in the domain README or a `samples/` service, linked from here.
 6. **Write for the reader who has 30 seconds.** The callout and the "You get / So that" table must answer "what is
    this and why would I use it" on their own.
+7. **Name capabilities, not domain ids.** Write "Persistence" or "the Caching packages" and link the folder. Domain
+   ids (`06.Persistence`) are maintainer vocabulary and the test rejects them outside code blocks.
+8. **Write for AI assistants too.** Copilot, Claude and other assistants read this file to use the package. Use exact
+   type and method names in backticks, keep every recipe self-contained (its `using` lines, registration and call),
+   and say in the callout when to reach for this package and when a sibling is the better fit.
 
 ## Section order
 
@@ -39,7 +44,7 @@ all of them consistent, scannable and correct. `PackageReadmeStandardTests` (in
 | 12 | `## Testing` | yes | The `SharedKernel.*.Testing` package and fakes to use in a service's tests, or how to test against it. |
 | 13 | `## Pitfalls` | yes | A `Don't` · `Do` · `Why` table. |
 | 14 | `## Design decisions` | optional | "Why X?" paragraphs for choices a reader would otherwise question. |
-| 15 | Footer | yes | A rule (`---`) and the "Part of Platform.SharedKernel" line. |
+| 15 | Footer | yes | A rule (`---`) and the "Part of Platform.SharedKernel · {Capability} packages · MIT license" line. A `.Testing` package links the capability folder it sits in. |
 
 ## Skeleton
 
@@ -164,7 +169,7 @@ from your test project and call `services.AddFakeX()`.
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[X domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/NN.X/README.md) ·
+[X packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/{Zone}/{Capability}/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
 ````
 

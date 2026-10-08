@@ -14,7 +14,9 @@ This package implements the locking contract from
 [`SharedKernel.Caching.Abstractions`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Caching/SharedKernel.Caching.Abstractions/README.md#locks-and-leases)
 with a few server-side Lua scripts over the shared connection from
 [`SharedKernel.Caching.Redis.Core`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Caching/SharedKernel.Caching.Redis.Core/README.md).
-Application code depends only on `IDistributedLockService`.
+Application code depends only on `IDistributedLockService`. Use it to keep one process in a critical section or to
+claim one run of a job across replicas; it is not a cache and not a duplicate-request guard (for that, see the
+Idempotency packages). In unit tests, use `FakeDistributedLockService` from `SharedKernel.Caching.Testing`.
 
 | You get | So that |
 | --- | --- |
@@ -69,6 +71,11 @@ builder.Services
 A host that also uses the cache chains it on the caching builder; both overloads register the same services:
 
 ```csharp
+using SharedKernel.Caching.FusionCache.Extensions;
+using SharedKernel.Caching.Redis.Core.Extensions;
+using SharedKernel.Caching.Redis.DistributedLocking.Extensions;
+using SharedKernel.Caching.Redis.Extensions;
+
 builder.Services.AddRedisConnection(builder.Configuration);
 builder.Services
     .AddSharedKernelCaching(builder.Configuration)
@@ -79,6 +86,10 @@ builder.Services
 Then inject `IDistributedLockService`:
 
 ```csharp
+using SharedKernel.Caching.Abstractions;
+using SharedKernel.Primitives.Errors;
+using SharedKernel.Primitives.Results;
+
 public sealed class InvoiceSettlement(IDistributedLockService locks, IInvoiceStore invoices)
 {
     public async Task<Result> SettleAsync(Guid invoiceId, CancellationToken ct)
@@ -277,8 +288,9 @@ catch (DistributedLockUnavailableException ex)
 }
 ```
 
-The exception wraps the `RedisException` or `TimeoutException` as `InnerException` and names the resource. With the
-connection's default `FailFastWhenDisconnected`, it is thrown at once while Redis is disconnected.
+The exception names the resource and carries the client failure as `InnerException`: a `RedisException`,
+`TimeoutException`, or a socket, I/O or client-side cancellation error that StackExchange.Redis surfaced unwrapped.
+With the connection's default `FailFastWhenDisconnected`, it is thrown at once while Redis is disconnected.
 
 ## Reference
 
@@ -306,7 +318,7 @@ Both require `AddRedisConnection` first and are idempotent.
 | `InvalidOperationException` | Registration | `AddRedisConnection` has not been called |
 | `ArgumentException` | `TryAcquireAsync`, `TryAcquireLeaseAsync` | The resource is null or whitespace |
 | `ArgumentOutOfRangeException` | `TryAcquireLeaseAsync`, `DistributedLockOptions` | A duration is out of range |
-| `DistributedLockUnavailableException` | `TryAcquireAsync`, `TryAcquireLeaseAsync` | Redis failed with `RedisException` or `TimeoutException` |
+| `DistributedLockUnavailableException` | `TryAcquireAsync`, `TryAcquireLeaseAsync` | The Redis call failed (`RedisException`, `TimeoutException`, or a transport error) |
 | `OperationCanceledException` | `TryAcquireAsync`, `TryAcquireLeaseAsync` | The token was cancelled before an attempt or during a wait |
 
 ### Logging
@@ -365,8 +377,8 @@ To test against a real Redis, run the service with Testcontainers and the produc
 lock, or a token can be issued to a holder that never acquired. RedLock.net cannot do that. Three short scripts can,
 with no third-party lock library.
 
-**Why report loss at five sixths of the expiry?** Reporting loss only after the expiry had passed left a window in which
-Redis had already expired the key, another replica held it, and the first holder still saw `IsHeld = true`. Measuring
+**Why report loss at five sixths of the expiry?** Reporting loss only after the expiry has passed leaves a window in which
+Redis has already expired the key, another replica holds it, and the first holder still sees `IsHeld = true`. Measuring
 from the send time of the last successful extension and stopping a sixth early means the holder hears about the loss
 while the key still exists. Waiting less would report loss on ordinary latency spikes.
 
@@ -386,5 +398,5 @@ and nobody notices. An exception makes the outage visible.
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Caching domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Caching/README.md) ·
+[Caching packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Caching/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

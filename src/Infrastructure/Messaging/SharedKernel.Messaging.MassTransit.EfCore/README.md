@@ -33,11 +33,13 @@ version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
-| Tier | Adapter — reference it from your **Api/Worker** (startup) project |
+| Tier | Adapter — reference it from your **Infrastructure** project, next to the MassTransit core |
 | Depends on | `SharedKernel.Messaging.MassTransit` (declared adapter edge), `MassTransit.EntityFrameworkCore` 8.5.x, `Microsoft.EntityFrameworkCore` |
 | Namespaces | `SharedKernel.Messaging.MassTransit.Extensions` (`WithEntityFrameworkOutbox`), `SharedKernel.Messaging.MassTransit.Options` (`OutboxOptions`, `OutboxDatabase`) |
 
-It does **not** reference `06.Persistence`: your `DbContext` arrives as a type parameter.
+It does **not** reference the
+[Persistence packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Persistence/README.md):
+your `DbContext` (a `SharedKernelDbContext` or any other) arrives as a type parameter.
 
 ## Quick start
 
@@ -138,10 +140,10 @@ with the defaults; assert that an outbox row is written during `SaveChangesAsync
 ## Design decisions
 
 **Why MassTransit's outbox and no kernel outbox?** One implementation, maintained with the bus it feeds;
-`06.Persistence` stays free of messaging. **Why MassTransit 8.5.x?** It is the last Apache-2.0 release.
+the Persistence packages stay free of messaging. **Why MassTransit 8.5.x?** It is the last Apache-2.0 release.
 
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Messaging domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Messaging/README.md) ·
+[Messaging packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Messaging/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

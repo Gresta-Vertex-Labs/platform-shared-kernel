@@ -7,7 +7,8 @@
 
 > **SignalR on the platform's error contract: hub errors carry the error code and the same message an HTTP problem
 > would, hub methods may return `Result`, the shared authorization attributes guard hubs and hub methods, and every
-> hub method runs in the caller's request context.**
+> hub method runs in the caller's request context.** Use it for real-time hubs in a host that already runs
+> `SharedKernel.Presentation.WebApi`; plain request/response endpoints stay in WebApi.
 
 | You get | So that |
 | --- | --- |
@@ -41,7 +42,7 @@ version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
-| Tier | Host — reference it from your **Api** project |
+| Tier | Host — reference it from your **Api** / **Worker** project |
 | Depends on | [`SharedKernel.Presentation.WebApi`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Presentation/SharedKernel.Presentation.WebApi/README.md), `SharedKernel.Presentation.Core`, `SharedKernel.Core`, `SharedKernel.Configuration`, `SharedKernel.Execution`; no third-party packages |
 | Namespaces | `SharedKernel.Presentation.SignalR` |
 
@@ -235,5 +236,5 @@ handler (`WithUrl(url, o => o.HttpMessageHandlerFactory = _ => server.CreateHand
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Presentation domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Presentation/README.md) ·
+[Presentation packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Presentation/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

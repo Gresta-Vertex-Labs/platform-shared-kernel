@@ -27,8 +27,8 @@
 The version comes from your central `SharedKernelVersion` property — every SharedKernel package ships at the same
 version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel#using-the-packages).
 
-Reference it from a **test project only**. `TestingNeverReferencedByProduction` fails any production project that
-references a testing package.
+Reference it from a **test project only**: the `SharedKernelLayeringRules.TestingNeverReferencedByProduction` rule of
+`SharedKernel.ArchitectureTests` flags a production assembly that references a testing package.
 
 | Requirement | Value |
 | --- | --- |
@@ -196,7 +196,7 @@ the start-time check. Pair it with
 
 | Don't | Do | Why |
 | --- | --- | --- |
-| Reference it from production code | Reference it from test projects only | `TestingNeverReferencedByProduction` fails the build |
+| Reference it from production code | Reference it from test projects only | The `TestingNeverReferencedByProduction` architecture rule fails it |
 | Register services after `Build()` | Register everything on `Services`, then build | The provider is built once; later registrations are never seen |
 | Expect `Build()` to find your handlers | Register them yourself, or use `Build<TMarker>()` | `Build()` scans only the harness's own assembly |
 | Look for the harness's service provider | Register your own fake instance and keep the reference | Only `Services` is public |
@@ -206,4 +206,6 @@ the start-time check. Pair it with
 
 ---
 
-Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) · [16.Testing domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/README.md) · [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
+[Application packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Application/README.md) ·
+[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

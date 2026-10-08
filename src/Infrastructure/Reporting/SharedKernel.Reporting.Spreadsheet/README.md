@@ -6,9 +6,10 @@
 ![Public API: tracked](https://img.shields.io/badge/public%20API-tracked-informational)
 ![Memory: constant](https://img.shields.io/badge/memory-constant-success)
 
-> **Excel (`.xlsx`) exports for `SharedKernel.Reporting`, streamed in constant memory with typed cells — numbers,
+> **Excel (`.xlsx`) exports behind `IReportExporter<TRow>`, streamed in constant memory with typed cells, so numbers,
 > dates and booleans stay sortable and summable in Excel. Built on [SpreadCheetah](https://github.com/sveinungf/spreadcheetah)
-> (MIT, no dependencies).**
+> (MIT, no dependencies).** Pick it when people open the export in Excel; use `SharedKernel.Reporting.Csv` for
+> machine feeds or more than 1,048,575 rows, and `SharedKernel.Reporting.Pdf` for a printable table.
 
 | You get | So that |
 | --- | --- |
@@ -42,7 +43,7 @@ version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
-| Tier | Adapter — reference it from your **Infrastructure** (or Api) project |
+| Tier | Adapter — reference it from your **Infrastructure** project |
 | Depends on | `SharedKernel.Reporting.Abstractions`, `SharedKernel.Configuration`, SpreadCheetah (MIT) |
 | Namespaces | `SharedKernel.Reporting` (`AddSpreadsheet`), `SharedKernel.Reporting.Spreadsheet` (`ISpreadsheetReportExporter<T>`, `SpreadsheetExportOptions`) |
 
@@ -50,6 +51,7 @@ version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform
 
 ```csharp
 using SharedKernel.Reporting;
+using SharedKernel.Storage;
 
 builder.Services.AddSharedKernelStorage().AddS3(builder.Configuration).AddStore("reports");
 builder.Services.AddSharedKernelReporting().AddSpreadsheet(builder.Configuration);   // SharedKernel:Reporting:Spreadsheet
@@ -66,6 +68,7 @@ builder.Services.AddSharedKernelReporting().AddSpreadsheet(builder.Configuration
 ```
 
 ```csharp
+using SharedKernel.Primitives.Results;
 using SharedKernel.Reporting;
 using SharedKernel.Reporting.Spreadsheet;
 
@@ -172,5 +175,5 @@ the whole workbook in memory and saves synchronously; EPPlus is not free for com
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Reporting domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Reporting/README.md) ·
+[Reporting packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Reporting/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

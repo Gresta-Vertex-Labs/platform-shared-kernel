@@ -108,9 +108,6 @@ flowchart LR
     P --> D["IDomainEventDispatcher<br/>handlers run before the save"]
 ```
 
-_Construction either yields a valid aggregate or a `ValidationResult<T>` holding every error; state changes raise
-events that infrastructure dispatches. The domain itself performs no I/O._
-
 ### Which type do I need?
 
 | I need to model… | Use | Namespace |
@@ -130,7 +127,7 @@ events that infrastructure dispatches. The domain itself performs no I/O._
 | Creation that needs collaborators (uniqueness check, ID generator) | A class implementing `IAggregateFactory<TAggregate, TId>` | `Abstractions` |
 | A monetary amount | `Money` and `Currency` | `Monetary` |
 
-The difference between the three decision types is the question they answer:
+Rules, policies and specifications differ by the question they answer:
 
 | Type | Answers | Bound to |
 | --- | --- | --- |
@@ -151,34 +148,34 @@ The difference between the three decision types is the question they answer:
 - Every concrete event declares `[DomainEventVersion(n)]`; analyzer `SK0009` reports a missing one.
 - An aggregate never clears its own events. Persistence hands them to `IDomainEventDispatcher` before each save,
   inside the same transaction, then clears them.
-
-### Loading: attaching the clock
-
-An ORM creates an aggregate through its parameterless constructor, which cannot receive a clock. Until
-infrastructure calls `IHasClock.AttachClock`, anything that reads the time throws `InvalidOperationException`.
-
-`SharedKernel.Persistence.EfCore` attaches the clock as each aggregate is materialized. If you load aggregates
-another way, call `((IHasClock)aggregate).AttachClock(clock)` yourself. Failing loudly is deliberate: the
-alternative is an event stamped `0001-01-01`.
-
-### Entity equality
-
-Two entities are equal when they have the same concrete type and the same non-default `Id`. An entity whose
-`Id` is still the default is **transient**: it equals only itself, and its hash code changes once the database
-assigns its key.
+- **Loading.** An ORM builds an aggregate through its parameterless constructor, which gets no clock: until
+  `IHasClock.AttachClock` runs, reading the time throws `InvalidOperationException`. `SharedKernel.Persistence.EfCore`
+  attaches it on materialization; any other loader calls `((IHasClock)aggregate).AttachClock(clock)` itself.
+- **Entity equality.** Same concrete type and same non-default `Id`. An entity whose `Id` is still the default is
+  **transient**: it equals only itself, and its hash code changes once the database assigns its key.
 
 ## Recipes
 
-### 1. Model an order domain
+### 1. Model an aggregate with value objects and rules
 
-Six steps build a small, complete ordering model, with `OrderId` and `CustomerId` declared like `InvoiceId` in
-the [Quick start](#quick-start).
-
-**1. Value objects**
-
-A single-value wrapper only implements `Validate()`; the base class calls `EnsureValid()` for you.
+A focused slice of an ordering model. The full four-project service (Domain, Application, Infrastructure, Api) is
+[`samples/OrderApi`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/samples/OrderApi).
 
 ```csharp
+using SharedKernel.Domain.Aggregates;
+using SharedKernel.Domain.BusinessRules;
+using SharedKernel.Domain.Events;
+using SharedKernel.Domain.Monetary;
+using SharedKernel.Domain.StronglyTypedIds;
+using SharedKernel.Domain.ValueObjects;
+using SharedKernel.Execution.Tenancy;
+using SharedKernel.Primitives.Clocks;
+using SharedKernel.Primitives.Errors;
+using SharedKernel.Primitives.Results;
+
+public sealed record OrderId(Guid Value) : StronglyTypedId<Guid>(Value);
+
+// A single-value wrapper only implements Validate(); the base class calls EnsureValid() for you.
 public sealed class Quantity : SingleValueObject<int>
 {
     public Quantity(int value) : base(value) { }
@@ -189,77 +186,6 @@ public sealed class Quantity : SingleValueObject<int>
             yield return Error.Validation("quantity.out_of_range", "Quantity must be between 1 and 999.");
     }
 }
-```
-
-A multi-value object assigns every member, then calls `EnsureValid()` as the constructor's last statement.
-
-```csharp
-public sealed class ShippingAddress : ValueObject
-{
-    private ShippingAddress(string countryCode, string city, string street)
-    {
-        CountryCode = countryCode;
-        City = city;
-        Street = street;
-        EnsureValid(); // always the last statement
-    }
-
-    public string CountryCode { get; }
-    public string City { get; }
-    public string Street { get; }
-
-    public static ValidationResult<ShippingAddress> Create(string countryCode, string city, string street) =>
-        TryCreate(() => new ShippingAddress(countryCode, city, street));
-
-    protected override IEnumerable<object?> GetEqualityComponents()
-    {
-        yield return CountryCode;
-        yield return City;
-        yield return Street;
-    }
-
-    protected override IEnumerable<Error> Validate()
-    {
-        if (CountryCode is not { Length: 2 })
-            yield return Error.Validation("address.country_code", "Use a two-letter ISO 3166 country code.");
-        if (string.IsNullOrWhiteSpace(City))
-            yield return Error.Validation("address.city_required", "City is required.");
-        if (string.IsNullOrWhiteSpace(Street))
-            yield return Error.Validation("address.street_required", "Street is required.");
-    }
-}
-```
-
-**2. A child entity**
-
-```csharp
-public sealed class OrderLine : Entity<Guid>
-{
-    public OrderLine(Guid id, string sku, Quantity quantity, Money unitPrice) : base(id)
-    {
-        Sku = sku;
-        Quantity = quantity;
-        UnitPrice = unitPrice;
-    }
-
-    private OrderLine() { } // ORM
-
-    public string Sku { get; private set; } = string.Empty;
-    public Quantity Quantity { get; private set; } = null!;
-    public Money UnitPrice { get; private set; } = null!;
-    public Money Total => UnitPrice * Quantity.Value;
-}
-```
-
-**3. Rules and events**
-
-```csharp
-public sealed class OrderMustHaveLines(int lineCount) : IBusinessRule
-{
-    public string Code => "order.no_lines";
-    public string Message => "An order needs at least one line.";
-    public bool IsBroken() => lineCount == 0;
-}
 
 public sealed class OrderMustNotBeShipped(DateTimeOffset? shippedOn) : IBusinessRule
 {
@@ -269,48 +195,26 @@ public sealed class OrderMustNotBeShipped(DateTimeOffset? shippedOn) : IBusiness
 }
 
 [DomainEventVersion(1)]
-public sealed record OrderPlaced(OrderId OrderId, Money Total) : DomainEvent;
-
-[DomainEventVersion(1)]
 public sealed record OrderShipped(OrderId OrderId) : DomainEvent;
-```
 
-**4. The aggregate**
-
-`TenantId` is `SharedKernel.Execution.Tenancy.TenantId`, the platform's one tenant identifier.
-
-```csharp
 public sealed class Order : TenantedAuditableAggregateRoot<OrderId>
 {
-    private readonly List<OrderLine> _lines = [];
-
-    private Order(
-        OrderId id, TenantId tenantId, CustomerId customerId, ShippingAddress shipTo,
-        IReadOnlyList<OrderLine> lines, IClock clock)
+    private Order(OrderId id, TenantId tenantId, Quantity quantity, Money unitPrice, IClock clock)
         : base(id, tenantId, clock)
     {
-        CheckRule(new OrderMustHaveLines(lines.Count));
-
-        CustomerId = customerId;
-        ShipTo = shipTo;
-        _lines.AddRange(lines);
-        Total = lines.Select(line => line.Total).Sum();
-
-        RaiseDomainEvent(at => new OrderPlaced(id, Total) { OccurredOn = at });
+        Quantity = quantity;
+        Total = unitPrice * quantity.Value;
     }
 
     private Order() { } // ORM
 
-    public CustomerId CustomerId { get; private set; } = null!;
-    public ShippingAddress ShipTo { get; private set; } = null!;
+    public Quantity Quantity { get; private set; } = null!;
     public Money Total { get; private set; } = null!;
     public DateTimeOffset? ShippedOn { get; private set; }
-    public IReadOnlyList<OrderLine> Lines => _lines;
 
     public static ValidationResult<Order> Place(
-        OrderId id, TenantId tenantId, CustomerId customerId, ShippingAddress shipTo,
-        IReadOnlyList<OrderLine> lines, IClock clock) =>
-        TryCreate(() => new Order(id, tenantId, customerId, shipTo, lines, clock));
+        OrderId id, TenantId tenantId, Quantity quantity, Money unitPrice, IClock clock) =>
+        TryCreate(() => new Order(id, tenantId, quantity, unitPrice, clock));
 
     public void Ship()
     {
@@ -321,69 +225,38 @@ public sealed class Order : TenantedAuditableAggregateRoot<OrderId>
 }
 ```
 
-What the base class gives this aggregate: `TenantId` (a `SharedKernel.Execution.Tenancy.TenantId`, never `default`), `CreatedBy`/`CreatedOn`/`ModifiedBy`/`ModifiedOn`
-filled by persistence, `DomainEvents`, and `Version`, the event sequence number.
+```csharp
+var price = Money.Create(19.99m, Currency.Usd).Value;
+var order = Order.Place(orderId, tenantId, new Quantity(3), price, clock).Value; // Total 59.97 USD
 
-**5. Queries**
+order.Ship();   // 1 event, Version 1
+order.Ship();   // throws BusinessRuleViolationException, Rule.Code "order.already_shipped"
+```
+
+- A **multi-value** object assigns every member, calls `EnsureValid()` as its constructor's last statement, exposes a
+  `Create` factory over `TryCreate(() => new …)` and yields its members from `GetEqualityComponents()`. Its
+  `ValidationResult<T>` then carries every failed check at once.
+- The `Tenanted…` base gives the aggregate `TenantId` (never `default`), `CreatedBy`/`CreatedOn`/`ModifiedBy`/
+  `ModifiedOn` (filled by persistence), `DomainEvents` and `Version`.
+- Query it with a specification, subclassed or inline. Paging is a `PageRequest`/`CursorPageRequest` (from
+  `SharedKernel.Contracts`) at the repository call site, never inside the specification:
 
 ```csharp
-public sealed class OrdersOfCustomer : Specification<Order>
-{
-    public OrdersOfCustomer(TenantId tenantId, CustomerId customerId)
-    {
-        AddCriteria(order => order.TenantId == tenantId);
-        AddCriteria(order => order.CustomerId == customerId); // combined with AND
-        AddInclude(order => order.Lines); // continue a path with .ThenInclude(line => line.Nav)
-        ApplyOrderByDescending(order => order.CreatedOn);
-        ApplyThenByDescending(order => order.Id);
-    }
-}
+using SharedKernel.Domain.Specifications;
 
-// The same thing inline, for a one-off query:
 var spec = Spec.For<Order>()
-    .Where(order => order.CustomerId == customerId)
-    .Include(order => order.Lines)
+    .Where(order => order.TenantId == tenantId)
     .OrderByDescending(order => order.CreatedOn)
     .ThenByDescending(order => order.Id);
 ```
 
-Paging is decided at the call site, not in the specification: the persistence repositories take a
-`PageRequest` (offset pages) or a `CursorPageRequest` plus a key selector (keyset pages) from
-`SharedKernel.Contracts`.
-
-**6. Use it**
-
-```csharp
-var address = ShippingAddress.Create("Turkey", "", "Bagdat Cd. 1");
-// address.IsValid == false, with two errors:
-//   address.country_code: Use a two-letter ISO 3166 country code.
-//   address.city_required: City is required.
-
-var price = Money.Create(19.99m, Currency.Usd).Value;
-var lines = new[] { new OrderLine(Guid.CreateVersion7(), "SKU-1", new Quantity(3), price) };
-
-var placed = Order.Place(orderId, tenantId, customerId, shipTo, lines, clock);
-var order = placed.Value;           // Total 59.97 USD, 1 event, Version 1
-
-order.Ship();                       // 2 events, Version 2
-order.Ship();                       // throws BusinessRuleViolationException, Rule.Code "order.already_shipped"
-
-var empty = Order.Place(orderId, tenantId, customerId, shipTo, [], clock);
-// empty.IsValid == false, Errors[0].Code "order.no_lines", Errors[0].Type ErrorType.BusinessRule
-```
-
 ### 2. Persist and load with EF Core
 
-With [`SharedKernel.Persistence.EfCore`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Persistence/SharedKernel.Persistence.EfCore/README.md)
-the infrastructure concerns of this model are handled for you:
-
-| Concern | Handled by |
-| --- | --- |
-| Filling `CreatedBy`, `CreatedOn`, `ModifiedBy`, `ModifiedOn` | The audit interceptor, on save |
-| Attaching the clock to an aggregate the database loads | The clock materialization interceptor, on load |
-| Mapping `Version` so event numbering continues after a reload | The entity type configuration base |
-| Dispatching `DomainEvents` before each save, in the same transaction, then clearing them | The context, through `IDomainEventDispatcher` |
-| Tenant isolation | `TenantedDbContext`'s global query filter |
+With [`SharedKernel.Persistence.EfCore`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Persistence/SharedKernel.Persistence.EfCore/README.md),
+the audit interceptor fills `CreatedBy`/`CreatedOn`/`ModifiedBy`/`ModifiedOn` on save, the materialization interceptor
+attaches the clock on load, the entity configuration base maps `Version` so numbering continues after a reload, the
+context dispatches `DomainEvents` through `IDomainEventDispatcher` before each save (same transaction), and
+`TenantedDbContext`'s query filter isolates tenants.
 
 ```csharp
 var order = await orders.GetByIdAsync(orderId, ct); // clock attached as the row is materialized
@@ -405,13 +278,11 @@ public sealed class Customer : SoftDeletableAggregateRoot<CustomerId>
 
 | Case | Behaviour |
 | --- | --- |
-| First delete | Records the actor and the clock's time, then calls `OnDelete` once |
+| First delete | Records the actor and the clock's time, then calls `OnDelete` once (a no-op unless overridden to raise an event) |
 | Already deleted | Changes nothing and raises no second event |
 | Blank actor | Throws `DomainException` |
 | Entity (no clock) | `MarkAsDeleted(deletedBy, deletedOn)` takes the owning aggregate's time, which must be UTC |
 | Restore | `Restore()` clears `IsDeleted`, `DeletedOn` and `DeletedBy`, then calls `OnRestore`; load the aggregate with a specification that includes deleted rows first |
-
-`OnDelete` and `OnRestore` do nothing unless overridden; override them only to raise an event.
 
 ## Reference
 
@@ -475,24 +346,18 @@ Reading `Value` on an invalid result throws `InvalidOperationException`; check `
 
 ### Strongly-typed identifiers
 
-```csharp
-public sealed record OrderId(Guid Value) : StronglyTypedId<Guid>(Value);
-
-Guid raw = orderId.Value;   // or (Guid)orderId
-```
-
-There is no implicit conversion, so an identifier never flows silently into a parameter that expects another
-concept's `Guid`. Register the converter factory once and every identifier serializes as its bare value,
-including as a dictionary key:
+There is no implicit conversion (`orderId.Value` or `(Guid)orderId`), so an identifier never flows silently into a
+parameter that expects another concept's `Guid`. Register the converter factory once and every identifier serializes
+as its bare value, dictionary keys included; any `TValue` System.Text.Json can serialize is supported:
 
 ```csharp
+using SharedKernel.Domain.StronglyTypedIds;
+
 var options = new JsonSerializerOptions();
 options.Converters.Add(new StronglyTypedIdJsonConverterFactory());
 
 JsonSerializer.Serialize(new { order.Id }, options); // {"Id":"01a0a4d5-b229-7b13-a618-37a291ff0bcf"}
 ```
-
-The factory supports any `TValue` that System.Text.Json can serialize.
 
 ### Specifications
 
@@ -556,6 +421,7 @@ total.ToString("N2", CultureInfo.GetCultureInfo("tr-TR"));  // "59,97 USD"
 | --- | --- |
 | The rule's own `Code` | `BusinessRuleViolationException` from `CheckRule` |
 | `money.currency_mismatch` | Money operations across currencies |
+| `money.stored_precision_exceeded` | Materializing a stored amount with more decimals than the currency's minor unit |
 | `currency.code.invalid_format` | `Currency.Create` with input that is not three letters |
 | `currency.code.unknown` | `Currency.Create` with a code outside the catalog |
 | `validation.required` | A null strongly-typed identifier or single value, and guard violations |
@@ -584,7 +450,7 @@ from your test project. Domain code needs no fakes beyond a clock:
 
 ```csharp
 var clock = new FakeClock();
-var order = Order.Place(orderId, tenantId, customerId, shipTo, lines, clock).Value;
+var order = Order.Place(orderId, tenantId, new Quantity(3), price, clock).Value;
 
 order.Ship();
 
@@ -605,46 +471,30 @@ new OrderMustNotBeShipped(order.ShippedOn).ShouldBeBroken();
 | Rely on events being handled without a dispatcher | Register one — `AddSharedKernelApplication(...)` from `SharedKernel.Application.Pipeline` does | Persistence discards undispatched events at the save, with a warning |
 | Compare or add `Money` of possibly different currencies | Check `Currency` first, or convert with `ConvertAsync` | Mismatches throw `BusinessRuleViolationException` |
 | Call `.Sum()` on a possibly empty list of `Money` | Call `.Sum(currency)` | An empty sequence has no currency to return |
-| Read `result.Value` without checking | Check `result.IsValid` first | `Value` on an invalid result throws |
-| Read `DateTime.UtcNow` in domain code | Use `Now` or the event factory's timestamp | Time must come from the clock; `SK0001` reports it |
-| Clear events inside the aggregate | Leave it to infrastructure | Clearing before dispatch loses them |
 
 ## Design decisions
 
 **Why must a value object call `EnsureValid()` itself?** Validation in the base constructor would run before the
-subclass assigns its members, and records' generated constructors and `with` bypass validation. An explicit last call is
-the only reliable point; `SK0037` catches an omission.
+subclass assigns its members. An explicit last call is the only reliable point; `SK0037` catches an omission.
 
-**Why does `Now` throw when no clock is attached?** A null or sentinel clock stamps `0001-01-01` on loaded aggregates
-without anyone noticing. Failing loudly turns a missing attach into a defect found by the first test.
+**Why does `Now` throw when no clock is attached?** A sentinel clock would stamp `0001-01-01` on loaded aggregates
+unnoticed; failing loudly makes a missing attach a defect the first test finds.
 
-**Why does `TryCreate` return `ValidationResult<T>`, not `Result<T>`?** It keeps every error a value object reports;
-`Result<T>` holds one.
+**Why `ValidationResult<T>`, not `Result<T>`?** It keeps every error a value object reports; `Result<T>` holds one.
 
-**Why is `IBusinessRule.Code` required?** Clients branch on codes and localization looks messages up by them; a default
-code would make every rule look the same.
+**Why explicit conversions only?** An implicit operator would let an `OrderId` flow into any `Guid` parameter — the
+mistake strongly-typed identifiers exist to prevent.
 
-**Why explicit conversions only on identifiers and single value objects?** An implicit operator lets an `OrderId` flow
-into any `Guid` parameter, which is the mistake strongly-typed identifiers exist to prevent.
+**Why is `Version` an event sequence, not a concurrency token?** Optimistic concurrency is PostgreSQL `xmin`, exposed
+as `EntityVersion` by the persistence packages; `Version` counts events so consumers can detect a gap.
 
-**Why is `Version` an event sequence, not a concurrency token?** Optimistic concurrency is PostgreSQL `xmin`, exposed as
-`EntityVersion` by the persistence packages. `Version` counts events so consumers can detect a gap.
-
-**Why are paging and tracking not on specifications?** One place, the repository call site, validates page input, and
-the same specification serves tracked and untracked reads.
-
-**What is deliberately not included?**
-
-- **No event handlers or dispatcher implementation.** Handlers (`IDomainEventHandler<T>`, in `SharedKernel.Application`)
-  and the dispatcher (registered by `AddSharedKernelApplication(...)` in `SharedKernel.Application.Pipeline`) live in
-  the application packages; this package defines `IDomainEventDispatcher` only.
-- **No persistence.** Repositories, EF Core mappings and the clock-attaching interceptor live in the persistence
-  packages; the domain never references them.
-- **No exchange rates.** `IExchangeRateProvider` is a port; your service supplies the rate source.
-- **No trimming or NativeAOT promise.** The strongly-typed id JSON factory and the event-version lookup use reflection.
+**What is deliberately not here?** Event handlers and the dispatcher (`SharedKernel.Application` and
+`SharedKernel.Application.Pipeline`; this package defines `IDomainEventDispatcher` only), persistence, exchange rates
+(`IExchangeRateProvider` is your port), and a NativeAOT promise (the id JSON factory and the event-version lookup use
+reflection).
 
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Domain building blocks](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Model/Domain/README.md) ·
+[Domain packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Model/Domain/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

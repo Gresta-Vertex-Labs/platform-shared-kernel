@@ -47,7 +47,7 @@ version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform
 | --- | --- |
 | Target framework | `net10.0` |
 | Tier | Host — reference it from your **Api** / **Worker** project; the Application project needs only [`SharedKernel.Application`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Application/SharedKernel.Application/README.md) |
-| Depends on | `SharedKernel.Application`, `SharedKernel.Execution`, `SharedKernel.Primitives`, `SharedKernel.Core`, `SharedKernel.Idempotency.Abstractions`, first-party `Microsoft.Extensions.*`; no mediator, FluentValidation, cache, Polly or hosting |
+| Depends on | `SharedKernel.Application`, `SharedKernel.Execution`, `SharedKernel.Primitives`, `SharedKernel.Idempotency.Abstractions`, first-party `Microsoft.Extensions.*`; no mediator, FluentValidation, cache, Polly or hosting |
 | Namespaces | `SharedKernel.Application.Pipeline` |
 
 The transport is [`SharedKernel.Application.Mediator.MediatR`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Application/SharedKernel.Application.Mediator.MediatR/README.md)
@@ -117,42 +117,9 @@ Tracing is outermost so every log line below it carries the trace id. **Authoriz
 deliberately: a caller who may not perform an operation should not learn its validation rules, and validators
 often hit the database.
 
-Here is one successful command, end to end:
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant Caller
-    participant Tracing
-    participant Logging as Logging + Metrics
-    participant Authz as Authorization
-    participant Valid as Validation
-    participant Scope as Command scope
-    participant Idem as Idempotency
-    participant Audit as Auditing
-    participant Tx as Transaction
-    participant Handler
-
-    Caller->>Tracing: Send(command)
-    Tracing->>Logging: span started
-    Logging->>Authz: timer started
-    Authz->>Valid: permissions satisfied
-    Valid->>Scope: no validation errors
-    Scope->>Idem: scope entered, depth 1
-    Idem->>Audit: key reserved, token issued
-    Audit->>Tx: (records a failure on the way back, after rollback)
-    Tx->>Handler: ExecuteInTransactionAsync — the rest runs inside the transaction
-    Handler-->>Tx: Result.Success (the Succeeded audit entry is queued on OnBeforeCommit)
-    Tx-->>Audit: saved, audit entry written, committed
-    Audit-->>Idem: nothing to record (success was recorded inside the transaction)
-    Idem-->>Scope: key completed with the response
-    Note over Scope: OnCompleted callbacks run here, after the commit
-    Scope-->>Caller: Result.Success
-```
-
-Read the arrows down as "before the handler" and up as "after it". The `Succeeded` audit entry lands
-**inside** the transaction, a `Failed` one after the rollback, the idempotency key is completed **after** the
-commit, and post-commit callbacks run last of all.
+For one successful command, read the table down as "before the handler" and back up as "after it": the `Succeeded`
+audit entry is written **inside** the transaction (queued on `OnBeforeCommit`), a `Failed` one after the rollback, the
+idempotency key is completed **after** the commit, and `ICommandScope.OnCompleted` callbacks run last of all.
 
 ### Which markers do I implement?
 
@@ -197,8 +164,6 @@ public sealed record PlaceOrderCommand(string Customer, string CardNumber, decim
 }
 ```
 
-Configure the threshold with `services.Configure<ApplicationLoggingOptions>(o => …)`; see [Configuration](#configuration).
-
 #### `MetricsBehavior`
 
 Records one histogram measurement per request — `sharedkernel.application.request.duration`, **in seconds**,
@@ -234,17 +199,11 @@ the permission (`SharedKernel.Presentation.Core`'s `[RequireEndpointPermission]`
 
 #### `ValidationBehavior`
 
-Runs every registered `IRequestValidator<TRequest>` (`SharedKernel.Application.Validation`) **sequentially** —
-not in parallel, because two async validators sharing a scoped `DbContext` would throw — collects every error,
-and returns
-`Error.Validation(errors)`: one error with code `validation.failed` carrying each field failure in
-`Error.Details`. It does not throw. At the HTTP boundary `SharedKernel.Presentation.WebApi` renders that as a 400 with a
-per-field `errors` map; `SharedKernel.Communication.Rest` rebuilds the same detail on the calling side.
-
-The pipeline carries no validation library. Implement `IRequestValidator<TRequest>` yourself, or keep writing
-FluentValidation validators and bridge them with `services.AddFluentValidationRequestValidators(typeof(Program).Assembly)`
-(`SharedKernel.Validation.FluentValidation`), which registers the assembly's validators and adapts every `IValidator<T>` and keeps each
-failure's error code and property path.
+Runs every registered `IRequestValidator<TRequest>` **sequentially** (two async validators sharing a scoped
+`DbContext` would throw in parallel) and returns one `Error.Validation(errors)` — code `validation.failed`, each field
+failure in `Error.Details` — without throwing. `SharedKernel.Presentation.WebApi` renders it as a 400 with a per-field
+`errors` map. FluentValidation validators are bridged by `AddFluentValidationRequestValidators(assembly)`
+(`SharedKernel.Validation.FluentValidation`), keeping each failure's code and property path.
 
 #### `IdempotencyBehavior`
 
@@ -331,29 +290,15 @@ correlation are never in `AuditEntry`: the writer resolves them from `IRequestCo
 
 ### What happens when something fails
 
-```mermaid
-flowchart TD
-    R{"How did the request end?"}
-    R -- "invalid input" --> V["Error.Validation with every field<br/>handler never ran"]
-    R -- "denied" --> A["Error.Unauthorized 401<br/>or Error.Forbidden 403"]
-    R -- "handler returned a failure" --> F["the failure, unchanged"]
-    R -- "handler threw" --> E["the exception, rethrown"]
-    R -- "success" --> S["the value"]
+| The request ended… | Caller gets | Commit | Audit entry | Idempotency key |
+| --- | --- | --- | --- | --- |
+| with invalid input | `Error.Validation` with every field; the handler never ran | no | no | released |
+| denied | `Error.Unauthorized` (401) or `Error.Forbidden` (403) | no | no | released |
+| with a failed `Result` from the handler | the failure, unchanged | no | written | released |
+| with a handler exception | the exception, rethrown | no | written | released |
+| successfully | the value | yes | written | completed, then `OnCompleted` callbacks |
 
-    V --> N1["no commit · no audit · key released"]
-    A --> N2["no commit · no audit · key released"]
-    F --> N3["no commit · audit written · key released"]
-    E --> N4["no commit · audit written · key released"]
-    S --> N5["commit · audit written · key completed<br/>then OnCompleted callbacks"]
-
-    style S fill:#e8f5e9
-    style N5 fill:#e8f5e9
-    style E fill:#ffebee
-    style N4 fill:#ffebee
-```
-
-The rule in one sentence: **only a successful outcome persists anything.** The exception is the audit trail,
-which records the attempt either way.
+**Only a successful outcome persists anything** — except the audit trail, which records the attempt either way.
 
 ### Nested commands and `ICommandScope`
 
@@ -392,8 +337,6 @@ A callback that throws is logged and does not change the response — the work i
 ## Recipes
 
 ### 1. Add your own behavior in a named stage
-
-Your own behavior goes into a named stage instead of wherever it happened to be registered:
 
 ```csharp
 builder.Services.AddSharedKernelApplication(typeof(Program).Assembly, app => app
@@ -461,11 +404,6 @@ keeps this package from referencing persistence, security or a cache.
 | `IAuditTrailWriter` | `SharedKernel.Execution` (`.Auditing`) | Auditing | `SharedKernel.Persistence.EfCore.Auditing` (`UseAuditTrail()`), directly |
 | `ISender` | `SharedKernel.Application` | Sending (always required) | `SharedKernel.Application.Mediator.MediatR`'s `app.UseMediatR()` |
 
-Each is checked when the host starts, so the order of the registrations does not matter.
-
-The persistence packages implement the same `IUnitOfWork`/`IAuditTrailWriter` the behaviors consume and reads the same
-`IRequestContext`; there is exactly one of each.
-
 ### Telemetry
 
 | Signal | Name | Detail |
@@ -512,21 +450,9 @@ var result = await harness.SendAsync(new RefundOrderCommand(orderId, 10m));
 Assert.True(result.IsSuccess);
 ```
 
-Useful assertions from there:
-
-```csharp
-// A denial, not an exception:
-harness.Services.AddSingleton<IRequestContext>(new FakeRequestContext { Permissions = [] });
-Assert.Equal(ErrorType.Forbidden, result.Error.Type);
-
-// A failed command commits nothing:
-Assert.Equal(0, fakeUnitOfWork.SaveChangesCallCount);
-
-// What the pipeline emitted:
-harness.WithActivityCapture();
-Assert.Contains(harness.CapturedActivities, a => a.DisplayName == "RefundOrderCommand");
-Assert.Contains(harness.CapturedMeasurements, m => m.InstrumentName == "sharedkernel.application.request.duration");
-```
+A caller without the permission gets `result.Error.Type == ErrorType.Forbidden`, not an exception; a failed command
+leaves `FakeUnitOfWork.SaveChangesCallCount` at 0; and after `WithActivityCapture()` the emitted spans and the
+`sharedkernel.application.request.duration` measurements are in `CapturedActivities` / `CapturedMeasurements`.
 
 `AddFakeApplicationBehaviorServices()` registers `IRequestContext`, `IUnitOfWork` and
 `IIdempotencyStore` (request purpose) fakes in one call. `FakeIdempotencyStore`
@@ -554,12 +480,8 @@ EF Core stores produce.
 precede validation (a caller who may not act should not learn the rules, and validators often hit the database), and a
 commit must precede a cache eviction. Two services compose the same request the same way.
 
-**Why is authorization always on?** An opt-in authorization behavior can be forgotten. `[RequirePermission]` on the use
-case is enforced on every path — HTTP, message consumer, scheduled job, workflow activity — so endpoints do not repeat
-it.
-
-**Why are seams checked at host start, not at registration?** Seams may be registered before or after the call; one
-`OptionsValidationException` then names every missing service at once, never the first request.
+**Why is authorization always on?** An opt-in authorization behavior can be forgotten; a marked use case is checked
+on every path, so endpoints do not repeat it.
 
 **Why are idempotency keys scoped per tenant and caller?** Tenant-only keys would let one caller replay another's
 response. The store sees a SHA-256 digest of tenant, caller and key, never the raw key.
@@ -571,5 +493,5 @@ behavior (approval is a domain aggregate) and a response envelope.
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Application domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Application/README.md) ·
+[Application packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Application/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

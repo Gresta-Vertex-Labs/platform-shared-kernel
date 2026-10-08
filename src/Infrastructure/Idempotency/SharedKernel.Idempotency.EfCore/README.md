@@ -9,6 +9,10 @@
 > for deduplication: one `INSERT … ON CONFLICT … RETURNING` classifies a duplicate command or message atomically,
 > scoped by tenant.**
 
+Pick it when entries should live in the service's PostgreSQL database, for example next to an EF Core outbox. Pick
+[`SharedKernel.Idempotency.Redis`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Idempotency/SharedKernel.Idempotency.Redis/README.md)
+when the service already runs Redis and wants expiry handled by the server, with no table and no cleanup job.
+
 | You get | So that |
 | --- | --- |
 | `AddEfCoreIdempotency(db => db.UsePostgres(dataSource), p => …)` | One call backs command idempotency, consumer deduplication, or both |
@@ -141,6 +145,12 @@ The store never prunes rows. Run a periodic delete — a `BackgroundService`, or
 [`SharedKernel.Scheduling`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Scheduling/SharedKernel.Scheduling/README.md) job:
 
 ```csharp
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using SharedKernel.Idempotency.EfCore.Context;
+using SharedKernel.Primitives.Clocks;
+
 public sealed class IdempotencyCleanupService(IServiceScopeFactory scopes, IClock clock) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -191,7 +201,8 @@ Anything else propagates regardless of the option.
 
 ### Health
 
-No probe of its own. Add `ServiceDefaults.Persistence`'s database readiness check for the connection if you need one.
+No probe of its own. The table lives in the service's database, so the service's own database readiness check
+(`AddDatabaseReadinessCheck<TContext>()` from `SharedKernel.ServiceDefaults.Persistence`) covers the connection.
 
 ## Testing
 
@@ -227,5 +238,5 @@ guards. With the default retry policy an unreachable store would back off for mi
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Idempotency domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Idempotency/README.md) ·
+[Idempotency packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Idempotency/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

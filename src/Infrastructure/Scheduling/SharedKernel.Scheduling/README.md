@@ -6,7 +6,10 @@
 ![Single execution](https://img.shields.io/badge/cross--replica-once%20per%20occurrence-success)
 
 > **Cron and one-shot jobs that send a kernel command through `ISender` — once per occurrence across every replica
-> of the service, with explicit misfire and overlap policies and no job database.**
+> of the service, with explicit misfire and overlap policies and no job database.** Pick it for a single unit of
+> work on a time trigger. A process with several steps, signals or crash recovery belongs in
+> `SharedKernel.Workflows.Temporal` (a job here may start one); a delayed message is `IMessageScheduler` in the
+> Messaging packages.
 
 | You get | So that |
 | --- | --- |
@@ -41,7 +44,7 @@ version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
-| Tier | Adapter — reference it from your **Infrastructure** project (or the Worker that hosts the jobs) |
+| Tier | Adapter — reference it from your **Infrastructure** project |
 | Depends on | `SharedKernel.Application` (`ISender`, `ICommand`), `SharedKernel.Caching.Abstractions` (`IDistributedLockService`), `SharedKernel.Execution`, `SharedKernel.Primitives`, `SharedKernel.Configuration`, Quartz (`CronExpression` parser only) |
 | Namespaces | `SharedKernel.Scheduling.Extensions`, `.Registry`, `.Policies`, `.Jobs`, `.Options`, `.Probes` |
 | Needs in the host | A mediator adapter (`app.UseMediatR()`), an `IClock`, and for more than one replica an `IDistributedLockService` |
@@ -53,6 +56,7 @@ using SharedKernel.Caching.Redis.Core.Extensions;
 using SharedKernel.Caching.Redis.DistributedLocking.Extensions;
 using SharedKernel.Scheduling.Extensions;
 using SharedKernel.Scheduling.Policies;
+using SharedKernel.ServiceDefaults.HealthChecks;
 
 builder.Services.AddRedisConnection(builder.Configuration);   // SharedKernel:Caching:Redis
 builder.Services.AddRedisDistributedLocking();                // cross-replica single execution
@@ -82,6 +86,9 @@ builder.Services.AddHealthChecks().AddSharedKernelReadiness();  // exposes the "
 The command is ordinary application code:
 
 ```csharp
+using SharedKernel.Application.Messaging;
+using SharedKernel.Primitives.Results;
+
 public sealed record RunNightlyReconciliation(DateTimeOffset BusinessDate) : ICommand;
 
 internal sealed class RunNightlyReconciliationHandler(ILedger ledger) : ICommandHandler<RunNightlyReconciliation>
@@ -149,6 +156,9 @@ sequenceDiagram
 ### 1. Run a job for one tenant
 
 ```csharp
+using SharedKernel.Execution.Tenancy;
+using SharedKernel.Scheduling.Policies;
+
 scheduling.AddRecurring<RebuildTenantIndex>("acme-index-rebuild", "0 30 3 * * ?",
     ctx => new RebuildTenantIndex(),
     o =>
@@ -168,6 +178,8 @@ The job's context carries no permissions, and `[RequirePermission]` is always en
 permission the command needs, from a small unpermissioned wrapper command's handler:
 
 ```csharp
+using SharedKernel.Execution.Context;
+
 using (RequestContextScope.Begin(new SystemRequestContext(["reports.generate"], "nightly-reports", tenantId)))
 {
     return await sender.Send(new GenerateReports(), ct);
@@ -177,14 +189,16 @@ using (RequestContextScope.Begin(new SystemRequestContext(["reports.generate"], 
 ### 3. Fire once, later
 
 ```csharp
+using SharedKernel.Scheduling.Policies;
+
 scheduling.AddDeferred<PurgeImportStaging>("purge-import-staging", clock.UtcNow.AddHours(1),
     _ => new PurgeImportStaging(),
     o => { o.MisfirePolicy = MisfirePolicy.FireOnce; o.OverlapPolicy = OverlapPolicy.Skip; });
 ```
 
 Deferred jobs are registered at composition time and are not persisted: a restart forgets one unless the
-composition root registers it again. For a durable delay use `17.Workflows`, or `IMessageScheduler` for a delayed
-message.
+composition root registers it again. For a durable delay use a workflow (`SharedKernel.Workflows.Temporal`), or
+`IMessageScheduler` for a delayed message.
 
 ### 4. Start a workflow on a schedule
 
@@ -265,6 +279,8 @@ Reference [`SharedKernel.Scheduling.Testing`](https://github.com/Gresta-Vertex-L
 the host uses, then fire one explicitly:
 
 ```csharp
+using SharedKernel.Testing.Scheduling;
+
 var registry = new InMemoryScheduledJobRegistry(sender);
 RegisterJobs(registry);                                             // your composition code, taking IScheduledJobRegistry
 
@@ -284,7 +300,7 @@ Multi-replica claims need a real Redis.
 | Write a five-field Unix cron | Use Quartz syntax, seconds first (`0 0 2 * * ?`) | The parser is Quartz's `CronExpression` |
 | Expect local time | Write cron in UTC | Evaluation is always UTC; there is no per-job time zone |
 | Send a `[RequirePermission]` command directly | Open a scope with exactly the permission it needs (recipe 2) | The job context has no permissions; the command fails with `Forbidden` |
-| Build a multi-step, resumable process from jobs | Start a workflow from the job | Crash-resumable steps are `17.Workflows` |
+| Build a multi-step, resumable process from jobs | Start a workflow from the job | Crash-resumable steps belong in `SharedKernel.Workflows.Temporal` |
 | Rely on a deferred job surviving a restart | Re-register it at start, or use a workflow | Nothing is persisted |
 | Set `LockExpiry` below the replicas' clock and tick skew | Keep it comfortably above | An expired lease no longer excludes a lagging replica |
 | Read `DateTime.UtcNow` in the factory | Use `ctx.ScheduledFireTimeUtc` or `IClock` | Keeps runs deterministic and testable |
@@ -307,5 +323,5 @@ from the execution context.
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Scheduling domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Scheduling/README.md) ·
+[Scheduling packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Scheduling/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

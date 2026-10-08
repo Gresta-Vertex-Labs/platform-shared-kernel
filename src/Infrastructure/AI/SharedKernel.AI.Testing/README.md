@@ -7,7 +7,8 @@
 
 > **In-memory doubles for every `SharedKernel.AI.Abstractions` contract, so embedding, retrieval and completion code
 > runs in a unit test without a model, a network or a vector database — deterministically, and with the same model,
-> dimension and tenant checks as production.**
+> dimension and tenant checks as production.** Use it for a service's unit tests; retrieval quality and real model
+> behaviour still need `SharedKernel.AI.Qdrant` and `SharedKernel.AI.SemanticKernel` against real servers.
 
 | You get | So that |
 | --- | --- |
@@ -240,4 +241,6 @@ real model behaviour need the real provider.
 
 ---
 
-Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) · [16.Testing domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/README.md) · [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
+[AI packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/AI/README.md) ·
+[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

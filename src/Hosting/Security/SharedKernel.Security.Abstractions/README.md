@@ -365,7 +365,7 @@ The authentication packages turn off ASP.NET Core's inbound claim renaming, so t
 
 ### Logging and errors
 
-This package writes no logs and returns no `Result` values. Its event-id sub-block (12000–12099) is unused.
+This package writes no logs and returns no `Result` values.
 
 ## Testing
 
@@ -435,5 +435,5 @@ high-impact actions when one issuer serves several tenants. `SubjectId` is uniqu
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Security domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Security/README.md) ·
+[Security packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Security/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

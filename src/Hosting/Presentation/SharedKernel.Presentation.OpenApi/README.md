@@ -7,7 +7,8 @@
 
 > **API versioning and one OpenAPI 3.1 document per version for a SharedKernel HTTP API, in two calls. The documents
 > describe what `SharedKernel.Presentation.WebApi` enforces — its error shape, which operations need a caller, and
-> which headers they require — and are published outside Development only by decision.**
+> which headers they require — and are published outside Development only by decision.** It is an add-on to
+> `SharedKernel.Presentation.WebApi`: add it when a REST API needs versions or a published description.
 
 | You get | So that |
 | --- | --- |
@@ -43,7 +44,7 @@ version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
-| Tier | Host — reference it from your **Api** project |
+| Tier | Host — reference it from your **Api** / **Worker** project |
 | Depends on | [`SharedKernel.Presentation.WebApi`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Presentation/SharedKernel.Presentation.WebApi/README.md), `SharedKernel.Presentation.Core`, `Asp.Versioning.Http`, `Asp.Versioning.Mvc.ApiExplorer`, `Asp.Versioning.OpenApi`, `Microsoft.AspNetCore.OpenApi`, `Scalar.AspNetCore` |
 | Namespaces | `SharedKernel.Presentation.OpenApi` |
 
@@ -196,8 +197,7 @@ Section `SharedKernel:Presentation:OpenApi` (`SharedKernelOpenApiOptions`), vali
 ## Testing
 
 Host the service with `WebApplicationFactory<Program>` in the `Development` environment and fetch
-`/openapi/v1.json`; assert on the operations, security requirements and headers. `src/Hosting/Presentation/consumer-verify`
-does the same in CI with two versioned documents.
+`/openapi/v1.json`; assert on the operations, security requirements and headers of each version's document.
 
 ## Pitfalls
 
@@ -212,5 +212,5 @@ does the same in CI with two versioned documents.
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Presentation domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Presentation/README.md) ·
+[Presentation packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Presentation/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

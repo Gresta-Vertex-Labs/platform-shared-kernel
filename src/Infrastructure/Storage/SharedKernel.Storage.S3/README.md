@@ -11,9 +11,12 @@
 > IAM-role credentials, KMS encryption, streaming multipart uploads, conditional writes and presigned uploads, with
 > nothing S3-specific in your application code.**
 
-Application code injects `IFileStorage` / `ITenantFileStorage` — the Abstractions README explains the programming
-model. This package connects named stores to buckets: configuration, credentials, encryption, and the translation of
-every call into S3 requests and of every S3 answer into a `storage.*` result.
+Reference it from your **Infrastructure** (or Api/Worker) project; application code keeps injecting `IFileStorage` /
+`ITenantFileStorage` from the Abstractions package. This package connects named stores to buckets: configuration,
+credentials, encryption, and the translation of every call into S3 requests and of every S3 answer into a `storage.*`
+result. For Huawei Cloud OBS, use
+[`SharedKernel.Storage.Obs`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Storage/SharedKernel.Storage.Obs/README.md)
+instead — it builds on this package with a verified OBS profile.
 
 | You get | So that |
 | --- | --- |
@@ -84,6 +87,10 @@ builder.WithStorageTelemetry();                                  // SharedKernel
 ```
 
 ```csharp
+using Microsoft.Extensions.DependencyInjection;
+using SharedKernel.Primitives.Results;
+using SharedKernel.Storage;
+
 public sealed class InvoiceFiles([FromKeyedServices("invoices")] IFileStorage invoices)
 {
     public Task<Result<FileReference>> SaveAsync(Guid id, Stream pdf, CancellationToken ct) =>
@@ -177,6 +184,8 @@ configuration.
 ```
 
 ```csharp
+using SharedKernel.Storage;
+
 IStorageBuilder storage = builder.Services.AddSharedKernelStorage();
 storage.AddS3(builder.Configuration, "Public").AddStore("assets");
 storage.AddS3(builder.Configuration, "Private").AddTenantStore("documents");
@@ -229,6 +238,8 @@ minio:
 ### 7. Configure a connection or store in code
 
 ```csharp
+using SharedKernel.Storage;
+
 builder.Services.AddSharedKernelStorage()
     .AddS3(builder.Configuration, s3 => s3.MaxRetries = 5)
     .AddStore("reports", store =>
@@ -241,6 +252,11 @@ builder.Services.AddSharedKernelStorage()
 ### 8. Bring your own client
 
 ```csharp
+using Amazon.Runtime;
+using Amazon.S3;
+using SharedKernel.Storage;
+using SharedKernel.Storage.S3;
+
 storage.AddS3Compatible("Backup", builder.Configuration, sp =>
 {
     var client = new AmazonS3Client(credentials, new AmazonS3Config
@@ -405,5 +421,5 @@ needs the length; multipart checksums are checksums of parts. Asking for `Conten
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Storage domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Storage/README.md) ·
+[Storage packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Storage/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

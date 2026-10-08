@@ -9,6 +9,10 @@
 > a duplicate command or message is classified in one atomic round trip, scoped by tenant, over the service's shared
 > Redis connection.**
 
+Pick it when the service already runs Redis: entries expire on the server, so there is no table, migration or cleanup
+job. Pick [`SharedKernel.Idempotency.EfCore`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Idempotency/SharedKernel.Idempotency.EfCore/README.md)
+when entries must live in PostgreSQL, or when Redis runs under an eviction policy that could drop them.
+
 | You get | So that |
 | --- | --- |
 | `AddRedisIdempotency(p => p.ForRequests().ForMessages())` | One call backs command idempotency, consumer deduplication, or both |
@@ -114,6 +118,8 @@ Options are set through the `configure` delegate; the registration does not bind
 | `RedisIdempotencyOptions.AllowExecutionOnStoreUnavailable` | `bool` | `false` | On a Redis connectivity or timeout failure, `TryBeginAsync` returns `Started` and `CompleteAsync`/`ReleaseAsync` return `false`, instead of throwing. Applies to every purpose of the registration |
 
 ```csharp
+using SharedKernel.Idempotency.Redis.Extensions;
+
 builder.Services.AddRedisIdempotency(p => p.ForMessages(), o => o.AllowExecutionOnStoreUnavailable = true);
 ```
 
@@ -176,5 +182,5 @@ readiness probe in one place (`SharedKernel.Caching.Redis.Core`).
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Idempotency domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Idempotency/README.md) ·
+[Idempotency packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Idempotency/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

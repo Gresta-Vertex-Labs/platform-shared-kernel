@@ -10,7 +10,7 @@
 
 | You get | So that |
 | --- | --- |
-| `AddSharedKernelRequestContext()` | `IRequestContext` (`SharedKernel.Execution`) is built over `12.Security`'s `IUserContext` — one contract for every layer |
+| `AddSharedKernelRequestContext()` | `IRequestContext` (`SharedKernel.Execution`) is built over the Security packages' `IUserContext` — one contract for every layer |
 | `app.UseSharedKernelRequestContext()` | Each request runs in a `RequestContextScope`: handlers, repositories, audit, messages and outbound calls see one caller |
 | A validated `X-Correlation-Id` | Kept end to end when valid, replaced when missing or malformed, echoed on every response — errors included |
 | Inbound W3C baggage refused | A caller cannot plant a tenant or user id that downstream services and log queries would trust |
@@ -53,7 +53,7 @@ using SharedKernel.ServiceDefaults.Extensions;
 using SharedKernel.ServiceDefaults.Security;
 
 builder.AddServiceDefaults();
-builder.Services.AddOidcAuthentication(builder.Configuration);   // any 12.Security scheme that registers IUserContext
+builder.Services.AddOidcAuthentication(builder.Configuration);   // any Security scheme that registers IUserContext
 builder.Services.AddSharedKernelRequestContext();
 builder.AddSharedKernelWebApi();
 
@@ -71,7 +71,10 @@ Without `SharedKernel.Presentation.WebApi` the order is `UseSharedKernelRequestC
 Read the caller anywhere through `IRequestContext` (injected) or `IRequestContextAccessor.Current` (in a singleton):
 
 ```csharp
+using SharedKernel.Application.Messaging;
 using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
+using SharedKernel.Primitives.Results;
 
 public sealed class PlaceOrderHandler(IRequestContext caller) : ICommandHandler<PlaceOrder, OrderId>
 {
@@ -126,9 +129,9 @@ public sealed class PlaceOrderHandler(IRequestContext caller) : ICommandHandler<
   opened a scope (this middleware, the SignalR hub filter, the MassTransit consume filter, the Temporal activity
   interceptor, the scheduler's job runner). The registration uses `Add`, so it replaces the fail-closed
   `AnonymousRequestContext` default `SharedKernel.Persistence.EfCore` registers, whatever the call order.
-- **Who reads it:** `05.Application`'s `[RequirePermission]` check and cache-key scope, `18.Idempotency`'s key scope,
-  `06.Persistence`'s audit columns, tenant filters and row-level security, `11.Communication`/`07.Messaging`/
-  `17.Workflows` propagation, and `14.Presentation`'s problem `correlationId` and gRPC `ErrorInfo`.
+- **Who reads it:** the Application pipeline's `[RequirePermission]` check and cache-key scope, the Idempotency key
+  scope, Persistence's audit columns, tenant filters and row-level security, Communication, Messaging and Workflows
+  propagation, and Presentation's problem `correlationId` and gRPC `ErrorInfo`.
 
 ## Configuration
 
@@ -192,5 +195,5 @@ explicit permission set.
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[ServiceDefaults domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/ServiceDefaults/README.md) ·
+[ServiceDefaults packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/ServiceDefaults/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

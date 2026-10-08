@@ -13,7 +13,8 @@ A Redis hash stores named fields under one key. This package reads and writes th
 from
 [`SharedKernel.Caching.Redis.Core`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Caching/SharedKernel.Caching.Redis.Core/README.md),
 serializing values with a `JsonTypeInfo<T>` you supply. It is data storage with explicit keys, not a cache: for cached
-values use `ICacheService`.
+values use `ICacheService` (`SharedKernel.Caching.FusionCache`), and for durable records use a database. Pick it for
+small, expiring, per-key state that several instances read and change field by field.
 
 | You get | So that |
 | --- | --- |
@@ -57,6 +58,8 @@ version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform
 Declare a source-generated JSON context for the stored types:
 
 ```csharp
+using System.Text.Json.Serialization;
+
 [JsonSerializable(typeof(SessionDto))]
 [JsonSerializable(typeof(long))]
 [JsonSerializable(typeof(string))]
@@ -78,6 +81,9 @@ builder.Services
 Inject and use:
 
 ```csharp
+using SharedKernel.Caching.Abstractions;      // CacheLookup<T>
+using SharedKernel.Caching.Redis.HashStore;
+
 public sealed class SessionStore(ITypedHashStore<SessionDto> sessions)
 {
     private static readonly TimeSpan IdleTimeout = TimeSpan.FromMinutes(30);
@@ -131,6 +137,9 @@ its expiry, and a write that fails (for example on a key of another type) sets n
 ### 1. Store a session with a sliding expiry
 
 ```csharp
+using SharedKernel.Caching.Redis.HashStore;
+using SharedKernel.Execution.Tenancy;
+
 public sealed class SessionStore(ITypedHashStore<SessionDto> sessions)
 {
     private static readonly TimeSpan IdleTimeout = TimeSpan.FromMinutes(20);
@@ -282,12 +291,12 @@ from your test project (namespace `SharedKernel.Testing.Caching`); no Redis and 
 
 ## Design decisions
 
-**Why is the expiry set atomically with the write?** Setting it in a second command left a window in which the hash
-existed without an expiry; a crash in that window leaked the session forever. A Lua script runs both atomically. Not
-`MULTI`/`EXEC`: Redis does not roll back a transaction, so a failed `HSET` would still have applied the expiry to a key
-that was never written.
+**Why is the expiry set atomically with the write?** Setting it in a second command leaves a window in which the hash
+exists without an expiry; a crash in that window leaks the session forever. A Lua script runs both atomically. Not
+`MULTI`/`EXEC`: Redis does not roll back a transaction, so a failed `HSET` would still apply the expiry to a key that was
+never written.
 
-**Why return `CacheLookup<T>` from `GetFieldAsync`?** Returning `T?` made a missing counter and a counter of zero the same
+**Why return `CacheLookup<T>` from `GetFieldAsync`?** A `T?` would make a missing counter and a counter of zero the same
 value for value types. `CacheLookup<T>` is the same hit-or-miss type the cache contracts use.
 
 **Why pass a `JsonTypeInfo<T>`?** The stored JSON contract is explicit at every call or registration, generated at
@@ -302,5 +311,5 @@ values here are usually small. Callers that need encryption or compression apply
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Caching domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Caching/README.md) ·
+[Caching packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Caching/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

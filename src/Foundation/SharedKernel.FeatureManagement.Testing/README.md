@@ -76,6 +76,8 @@ public sealed class CheckoutLayoutTests
 In a real host or `WebApplicationFactory`:
 
 ```csharp
+using SharedKernel.Testing.FeatureManagement;
+
 services.AddFakeFeatureFlags(flags => flags.SetEnabled(Flags.NewCheckout));
 ```
 
@@ -97,7 +99,11 @@ services.AddFakeFeatureFlags(flags => flags.SetEnabled(Flags.NewCheckout));
 ### 1. Turn a flag on for one tenant only
 
 ```csharp
-var acme = new TenantId(Guid.NewGuid());   // SharedKernel.Execution.Tenancy
+using SharedKernel.Execution.Tenancy;
+using SharedKernel.FeatureManagement;
+using SharedKernel.Testing.FeatureManagement;
+
+var acme = new TenantId(Guid.NewGuid());
 var flags = new FakeFeatureClient()
     .Set(Flags.NewCheckout, ctx => ctx.GetValue(FeatureContextKeys.TenantId)?.AsString == acme.ToString());
 
@@ -115,10 +121,14 @@ Pass the same `JsonTypeInfo<T>` the flag was declared with. `Set` on an object f
 ### 3. Prove the default path
 
 ```csharp
+using OpenFeature.Constant;
+using SharedKernel.FeatureManagement;
+using SharedKernel.Testing.FeatureManagement;
+
 var details = await new FakeFeatureClient().GetDetailsAsync(Flags.CheckoutTheme);
 
 Assert.Equal("classic", details.Value);
-Assert.Equal(ErrorType.FlagNotFound, details.ErrorType);   // OpenFeature.Constant
+Assert.Equal(ErrorType.FlagNotFound, details.ErrorType);
 ```
 
 ## Reference
@@ -168,4 +178,6 @@ itself.
 
 ---
 
-Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) · [16.Testing domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/README.md) · [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
+[Foundation packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Foundation/README.md) ·
+[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

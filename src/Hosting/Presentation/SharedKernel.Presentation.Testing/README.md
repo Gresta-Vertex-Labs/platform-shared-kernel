@@ -7,7 +7,8 @@
 
 > **Test helpers for the inbound API boundary: a gRPC `ServerCallContext` that carries a real `HttpContext`, a
 > HotChocolate request executor with small paging defaults, and a fixed `IHttpContextAccessor`.** Unit-test gRPC
-> service methods, your own server interceptors and GraphQL schemas without standing up a host.
+> service methods, your own server interceptors and GraphQL schemas without standing up a host. For the client side
+> of a gRPC call, use `SharedKernel.Communication.Testing` instead.
 
 | You get | So that |
 | --- | --- |
@@ -37,6 +38,10 @@ version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform
 | Tier | Testing — reference it from your **test projects** only |
 | Depends on | `SharedKernel.Execution`, `SharedKernel.Presentation.Grpc` (and through it ASP.NET Core and `SharedKernel.Presentation.Core`), `Grpc.Core.Api`, `Grpc.Core.Testing`, `HotChocolate.AspNetCore`, `HotChocolate.Data`, `Microsoft.Extensions.DependencyInjection` |
 | Namespaces | `SharedKernel.Testing.Grpc` (`TestServerCallContext`), `SharedKernel.Testing.Communication` (`GraphQLTestExecutorFactory`, `FakeHttpContextAccessor`) |
+
+The snippets below also use `TestRequestContext` (`SharedKernel.Testing.Execution`), from
+[`SharedKernel.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Testing/README.md);
+reference it too.
 
 ## Quick start
 
@@ -189,10 +194,7 @@ The helpers return no `Error` codes and register nothing in your container; they
 
 ## Testing
 
-This package is the test double; its self-tests live in
-[`SharedKernel.Presentation.Testing.Tests`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Presentation/SharedKernel.Presentation.Testing/SharedKernel.Presentation.Testing.Tests),
-which prove that a hand-built context gives a service method what hosting would (headers, `GetHttpContext()`,
-services, endpoint metadata, call options, trailers). Pair it with
+This package is the test helper; nothing tests it from your side. Pair it with
 [`SharedKernel.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Testing/README.md)
 for `TestRequestContext`, and with
 [`SharedKernel.Security.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Security/SharedKernel.Security.Testing/README.md)
@@ -212,4 +214,6 @@ for `FakeUserContext`. A client-side `ServerCallContext` without an `HttpContext
 
 ---
 
-Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) · [16.Testing domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/README.md) · [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
+[Presentation packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Presentation/README.md) ·
+[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

@@ -7,7 +7,7 @@
 
 > **gRPC services with the same error contract and authorization as a SharedKernel HTTP API, in one call. Every error a
 > service method produces reaches the client as a rich `google.rpc.Status`, and nothing from another service's status
-> leaks through.**
+> leaks through.** Use it to host gRPC services; to call one, use `SharedKernel.Communication.Grpc`.
 
 | You get | So that |
 | --- | --- |
@@ -42,7 +42,7 @@ version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
-| Tier | Host — reference it from your **Api** project |
+| Tier | Host — reference it from your **Api** / **Worker** project |
 | Depends on | [`SharedKernel.Presentation.Core`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Presentation/SharedKernel.Presentation.Core/README.md), `SharedKernel.Core`, `SharedKernel.Configuration`, `Grpc.AspNetCore`, `Grpc.StatusProto`, `Google.Api.CommonProtos` — never `SharedKernel.Presentation.WebApi` or `SharedKernel.Contracts` |
 | Namespaces | `SharedKernel.Presentation.Grpc` |
 
@@ -222,5 +222,5 @@ has no gRPC counterpart, so a version conflict is `Aborted`.
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Presentation domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Presentation/README.md) ·
+[Presentation packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Presentation/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

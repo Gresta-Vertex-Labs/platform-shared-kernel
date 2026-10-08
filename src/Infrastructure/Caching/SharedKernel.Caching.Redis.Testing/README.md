@@ -9,6 +9,11 @@
 > `IRedisChannelService` — so code that uses Redis hashes or Pub/Sub is unit-tested without Redis and without
 > `AddRedisConnection`.**
 
+Use it in unit tests of code that injects the hash store or the channel service from
+`SharedKernel.Caching.Redis.HashStore` and `SharedKernel.Caching.Redis.PubSub`. For `ICacheService`,
+`ITenantCacheService` or `IDistributedLockService`, use
+[`SharedKernel.Caching.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Caching/SharedKernel.Caching.Testing/README.md).
+
 | You get | So that |
 | --- | --- |
 | `FakeRedisHashService` storing the JSON the real service would write | Serialization mismatches fail in the test the way they fail against Redis |
@@ -37,8 +42,7 @@
 The version comes from your central `SharedKernelVersion` property — every SharedKernel package ships at the same
 version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel#using-the-packages).
 
-Reference it from a **test project only**. Production code must never reference a Testing package;
-`TestingNeverReferencedByProduction` fails the build's architecture tests when it does.
+Reference it from a **test project only**; production code must never reference a Testing package.
 
 | Requirement | Value |
 | --- | --- |
@@ -116,7 +120,10 @@ services.AddFakeTypedHashStore<SessionState>();   // once per DTO type
 ### 1. Expire a hash by advancing time
 
 ```csharp
-var time = new FakeTimeProvider();            // Microsoft.Extensions.TimeProvider.Testing
+using Microsoft.Extensions.Time.Testing;     // Microsoft.Extensions.TimeProvider.Testing package
+using SharedKernel.Testing.Caching;
+
+var time = new FakeTimeProvider();
 var hashes = new FakeRedisHashService(time);
 
 await hashes.SetFieldAsync("session:42", "user", "ada", MyJson.Default.String, TimeSpan.FromMinutes(20));
@@ -132,6 +139,9 @@ container, else `TimeProvider.System`.
 ### 2. Read a value stored in an outdated format
 
 ```csharp
+using System.Text.Json;
+using SharedKernel.Testing.Caching;
+
 var hashes = new FakeRedisHashService();
 hashes.SeedRaw("profile:42", "settings", "{\"legacy\":true}");
 
@@ -214,4 +224,6 @@ connection counts) against a real Redis in an integration test.
 
 ---
 
-Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) · [16.Testing domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/README.md) · [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
+[Caching packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Caching/README.md) ·
+[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

@@ -7,6 +7,7 @@
 
 > **Doubles for `SharedKernel.Cryptography` that run the real algorithms and add call recording, in-test key
 > rotation and failure simulation — nothing is stubbed to "always true", so a passing test proves the wiring.**
+> Use it in a service's tests in place of the production registration and of the Argon2 and Azure Key Vault providers.
 
 | You get | So that |
 | --- | --- |
@@ -81,6 +82,8 @@ public sealed class CustomerSecretTests
 In a real host or `WebApplicationFactory`, replace the cryptography registrations:
 
 ```csharp
+using SharedKernel.Testing.Cryptography;
+
 services.AddFakeCryptography();   // works after AddSharedKernelCryptography(...): earlier registrations are removed
 ```
 
@@ -107,6 +110,9 @@ services.AddFakeCryptography();   // works after AddSharedKernelCryptography(...
 ### 1. Test the "decryption failed" branch
 
 ```csharp
+using SharedKernel.Cryptography;
+using SharedKernel.Testing.Cryptography;
+
 var encryption = new FakeSymmetricEncryptionService { SimulateDecryptFailure = true };
 var payload = encryption.Encrypt("data"u8, context);
 
@@ -120,6 +126,9 @@ Assert.Equal(CryptographyErrorCodes.DecryptionFailed, result.Error.Code);   // S
 ### 2. Retire a key and prove old data is unreadable
 
 ```csharp
+using SharedKernel.Cryptography;
+using SharedKernel.Testing.Cryptography;
+
 var keys = new FakeEncryptionKeyProvider("v1");
 var encryption = new FakeSymmetricEncryptionService(keys);
 var payload = encryption.Encrypt("data"u8, context);
@@ -134,6 +143,9 @@ Assert.Equal(CryptographyErrorCodes.UnknownKeyId, encryption.Decrypt(payload, co
 ### 3. Exercise password rehashing
 
 ```csharp
+using SharedKernel.Cryptography.Hashing;
+using SharedKernel.Testing.Cryptography;
+
 var hasher = new FakeOneWayHasher();
 string hash = hasher.Hash("correct horse");
 
@@ -145,6 +157,8 @@ Assert.Equal(HashVerificationResult.SuccessRehashNeeded, hasher.Verify(hash, "co
 ### 4. Get reproducible tokens
 
 ```csharp
+using SharedKernel.Testing.Cryptography;
+
 var a = new FakeSecureRandomGenerator(seed: 42).GetToken();
 var b = new FakeSecureRandomGenerator(seed: 42).GetToken();
 Assert.Equal(a, b);
@@ -155,6 +169,9 @@ Without a seed the generator uses `RandomNumberGenerator`.
 ### 5. Prove code works with a KMS-style async provider
 
 ```csharp
+using SharedKernel.Cryptography.Symmetric;
+using SharedKernel.Testing.Cryptography;
+
 var provider = new FakeRemoteEncryptionKeyProvider();
 var encryption = new AesGcmEncryptionService(provider);   // the production service
 
@@ -235,4 +252,6 @@ providers have no fakes; the doubles above stand in for the contracts they imple
 
 ---
 
-Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) · [16.Testing domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/README.md) · [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
+[Foundation packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Foundation/README.md) ·
+[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

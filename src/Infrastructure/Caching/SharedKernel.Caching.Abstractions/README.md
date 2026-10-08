@@ -16,14 +16,16 @@ Caching goes wrong in ways that only show up under load or in production:
 - a cached "not found" looks exactly like a miss;
 - a lock that fails because Redis is down is read as "someone else has it", and a job silently never runs.
 
-This package defines the contracts that make those mistakes hard to write. Application code depends only on it; the
-composition root picks the implementation.
+This package defines the contracts that make those mistakes hard to write. Reference it from your **Application**
+project and inject the interfaces; the host picks the implementation (`SharedKernel.Caching.FusionCache` for the
+cache, `SharedKernel.Caching.Redis.DistributedLocking` for locks). Reach for `SharedKernel.Caching.Redis.HashStore` or
+`SharedKernel.Caching.Redis.PubSub` only when you need a Redis hash or channel rather than a cache.
 
 | You get | So that |
 | --- | --- |
 | `ICacheService.GetOrSetAsync` | A missing value is computed once per key, however many callers miss at the same time |
 | `CacheFactoryContext` | The factory decides per result whether to cache it, for example never caching a failure |
-| `CacheLookup<T>` from `TryGetAsync` | A cached `null` or `0` is never confused with a miss |
+| `CacheLookup<T>` from `TryGetAsync` / `TryGetManyAsync` | A cached `null` or `0` is never confused with a miss |
 | `ITenantCacheService` and `CacheKeyFormat` | No tenant can read, overwrite or evict another tenant's entries |
 | `CachePolicy` | Durations, fail-safe, timeouts, jitter and tags are one immutable, validated value |
 | `IDistributedLockService` | Locks stay held until released, report loss, carry fencing tokens, and throw on an outage instead of returning "busy" |
@@ -54,18 +56,32 @@ version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform
 | Tier | Abstractions — reference it from your **Application** project |
 | Depends on | `SharedKernel.Execution` (for `TenantId`) and `Microsoft.Extensions.DependencyInjection.Abstractions` only |
 | Registration | None in this package; the host registers a provider (see [Providers](#providers)) |
-| Namespace | `SharedKernel.Caching.Abstractions` |
+| Namespaces | `SharedKernel.Caching.Abstractions` |
 
 ## Quick start
 
 Register a provider once, in the host:
 
 ```csharp
-builder.Services.AddRedisConnection(builder.Configuration);   // SharedKernel.Caching.Redis.Core (with Redis only)
+using SharedKernel.Caching.FusionCache.Extensions;   // SharedKernel.Caching.FusionCache
+using SharedKernel.Caching.Redis.Core.Extensions;    // SharedKernel.Caching.Redis.Core
+using SharedKernel.Caching.Redis.Extensions;         // SharedKernel.Caching.Redis
+
+builder.Services.AddRedisConnection(builder.Configuration);   // SharedKernel:Caching:Redis (with Redis only)
 
 builder.Services
     .AddSharedKernelCaching(o => o.ServiceName = "orders")   // SharedKernel.Caching.FusionCache
-    .AddRedisL2();                                           // SharedKernel.Caching.Redis (optional)
+    .AddRedisL2();                                           // optional distributed layer + backplane
+```
+
+```json
+{
+  "SharedKernel": {
+    "Caching": {
+      "Redis": { "ConnectionString": "localhost:6379" }
+    }
+  }
+}
 ```
 
 Then depend on the contracts:
@@ -78,13 +94,11 @@ public sealed class ProductReader(ICacheService cache, ICacheKeyProvider keys, I
     public ValueTask<Product?> GetAsync(Guid id, CancellationToken ct) =>
         cache.GetOrSetAsync(
             keys.BuildKey("product", id.ToString("D")),   // "orders:product:3f2c…"
-            token => products.FindAsync(id, token),       // runs once per key, even under a stampede
+            token => products.FindAsync(id, token),       // once per key, even under a stampede; null is cached too
             CachePolicy.Default.WithTags("products"),
             ct);
 }
 ```
-
-A missing product is cached as `null`, so it isn't looked up again until the entry expires.
 
 ## How it works
 
@@ -95,8 +109,8 @@ A missing product is cached as `null`, so it isn't looked up again until the ent
 | Read a value, computing it on a miss | `ICacheService.GetOrSetAsync` |
 | Read tenant data | `ITenantCacheService.GetOrSetAsync` |
 | Decide after computing whether to cache | The `GetOrSetAsync` overload with `CacheFactoryContext` |
-| Check whether something is cached, without computing | `ICacheService.TryGetAsync` → `CacheLookup<T>` |
-| Store a value I already have | `ICacheService.SetAsync` |
+| Check whether something is cached, without computing | `ICacheService.TryGetAsync` → `CacheLookup<T>` (several keys: `TryGetManyAsync`) |
+| Store a value I already have | `ICacheService.SetAsync` (several with one policy: `SetManyAsync`, not atomic) |
 | Build a key | `ICacheKeyProvider.BuildKey` (tenant: `ITenantCacheKeyProvider.BuildTenantKey`) |
 | Configure durations, tags, fail-safe, timeouts | `CachePolicy` |
 | Drop one entry / a group / a tenant / everything | `RemoveAsync` or `ExpireAsync` / `RemoveByTagAsync` / `RemoveTenantAsync` / `ClearAsync` |
@@ -122,11 +136,10 @@ flowchart LR
     H -- no --> X[Exception to every waiting caller]
 ```
 
-*Read path: memory first, then the distributed layer, then the factory. Concurrent callers for the same key wait for
-one factory run. A failing factory falls back to the stale value when fail-safe allows it.*
+*Read path: memory first, then the distributed layer, then the factory. Concurrent callers for a key share one
+factory run and all receive its value; `CacheFactoryContext` only changes what is written.*
 
-Concurrent callers for a key share one factory run and all receive its value. `CacheFactoryContext` only changes
-what is written. **Eager refresh** recomputes a value in the background shortly before it expires, so readers keep
+**Eager refresh** recomputes a value in the background shortly before it expires, so readers keep
 getting fast hits. A **soft timeout** lets a slow factory finish in the background while callers get the stale value.
 
 ### Layers and instances
@@ -146,11 +159,9 @@ flowchart TB
     A1 -- remove / expire / tags / clear --> BP --> B1
 ```
 
-*Each instance keeps its own memory layer. The distributed layer is shared. Removals, expirations, tag evictions and
-clears travel over the backplane so every instance drops its memory copy.*
-
-Without a distributed layer, the cache is per process and every operation is local. With one, you need no
-invalidation messages of your own.
+*Each instance keeps its own memory layer; the distributed layer is shared. Removals, expirations, tag evictions and
+clears travel over the backplane, so you need no invalidation messages of your own. Without a distributed layer the
+cache is per process.*
 
 ### Locks and leases
 
@@ -190,6 +201,11 @@ No Redis registration other than `AddRedisConnection` takes a connection string;
 A typical service:
 
 ```csharp
+using SharedKernel.Caching.FusionCache.Extensions;
+using SharedKernel.Caching.Redis.Core.Extensions;
+using SharedKernel.Caching.Redis.DistributedLocking.Extensions;
+using SharedKernel.Caching.Redis.Extensions;
+
 builder.Services.AddRedisConnection(builder.Configuration);
 
 builder.Services
@@ -199,13 +215,7 @@ builder.Services
     .AddRedisDistributedLocking();
 ```
 
-A worker that only needs locks:
-
-```csharp
-builder.Services
-    .AddRedisConnection(builder.Configuration)
-    .AddRedisDistributedLocking();
-```
+A worker that only needs locks: `builder.Services.AddRedisConnection(builder.Configuration).AddRedisDistributedLocking();`
 
 `ServiceName` is required. It prefixes every key, so services that share a Redis instance never collide, and startup
 fails if it is missing or invalid. Optional features such as compression, encryption and warmup are documented in the
@@ -220,14 +230,13 @@ provider READMEs.
 ### 1. Cache a query
 
 ```csharp
+// Policies are immutable and thread-safe: keep them in static readonly fields.
 private static readonly CachePolicy CustomerPolicy =
     CachePolicy.For(TimeSpan.FromMinutes(2), TimeSpan.FromMinutes(30)).WithTags("customers");
 
 public ValueTask<CustomerDto?> GetCustomerAsync(Guid id, CancellationToken ct) =>
     cache.GetOrSetAsync(keys.BuildKey("customer", id.ToString("D")), t => LoadAsync(id, t), CustomerPolicy, ct);
 ```
-
-Keep policies in `static readonly` fields. They are immutable and thread-safe.
 
 ### 2. Never cache a failure
 
@@ -354,7 +363,7 @@ Tokens for a resource strictly increase across all locks and leases on it; gaps 
 
 | Type | Kind | Purpose |
 | --- | --- | --- |
-| `ICacheService` | Interface | Hybrid cache: get-or-set, read, write, remove, expire, tag removal, clear |
+| `ICacheService` | Interface | Hybrid cache: get-or-set, read and write (one or many), remove, expire, tag removal, clear |
 | `ITenantCacheService` | Interface | Tenant-isolated cache with `RemoveTenantAsync` |
 | `CacheLookup<T>` | Struct | Hit (with a value that may be `null`) or miss |
 | `CacheFactoryContext` | Class | A factory's caching decision: `SkipCaching`, `SetDurations` |
@@ -464,8 +473,7 @@ occurrence and must *not* end when the work ends: releasing it lets a slower rep
 same key, and a global tag named `tenant-a:orders` equals tenant A's `orders` tag. Escaping plus a reserved marker
 makes every key and tag unambiguous.
 
-**Why does `CachePolicy` reject `L1 > L2`?** A memory entry that outlives the distributed entry lets instances
-disagree for longer than the shared layer allows, which is never what a service wants.
+**Why does `CachePolicy` reject `L1 > L2`?** A memory entry that outlives the distributed entry lets instances disagree.
 
 **Why no `KeyVersion` or sliding expiration?** A version belongs in the key (`"invoice-v2"`), not in a policy that
 the cache ignores. Sliding expiration cannot be honoured by the distributed layer, so it would behave differently per
@@ -473,24 +481,20 @@ layer.
 
 **What is guaranteed?**
 
-- **Provider-neutral by rule.** Architecture tests fail CI if this package references anything but
-  `SharedKernel.Execution` and `Microsoft.Extensions.DependencyInjection.Abstractions`, or declares a provider-specific
-  type.
+- **Provider-neutral.** The package references only `SharedKernel.Execution` and
+  `Microsoft.Extensions.DependencyInjection.Abstractions`; no FusionCache, Redis or RedLock type appears in it.
 - **Always-valid values.** `CachePolicy`, `DistributedLockOptions` and `DistributedLease` validate on construction;
   `CachePolicy` copies caller arrays and compares tags by value.
 - **Stable formats.** The key and tag format is part of the contract; a change is a breaking change.
 
 **What is deliberately not included?**
 
-- **No implementation.** Providers live in `SharedKernel.Caching.FusionCache`, `SharedKernel.Caching.Redis` and
-  `SharedKernel.Caching.Redis.DistributedLocking`.
-- **No Redis-specific contracts.** Hash storage and Pub/Sub live in `SharedKernel.Caching.Redis.HashStore` and
-  `SharedKernel.Caching.Redis.PubSub`.
+- **No implementation, no Redis-specific contracts.** See [Providers](#providers) and the callout.
 - **No ambient tenant.** Tenant identity is always an explicit `TenantId` argument, resolved at the edge.
 - **No lock renewal API.** Locks are kept alive by the provider until disposed; there is nothing to renew by hand.
 
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Caching domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Caching/README.md) ·
+[Caching packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Caching/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

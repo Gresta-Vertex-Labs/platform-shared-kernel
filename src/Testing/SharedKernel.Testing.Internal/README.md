@@ -9,7 +9,8 @@
 > helpers, and a MassTransit test harness. It is never published.**
 
 Consuming services use the packable `SharedKernel.*.Testing` packages instead — for a PostgreSQL with the
-production role split, [`SharedKernel.Persistence.Testing`](../../Infrastructure/Persistence/SharedKernel.Persistence.Testing/README.md)'s
+production role split,
+[`SharedKernel.Persistence.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Persistence/SharedKernel.Persistence.Testing/README.md)'s
 `PostgresTestServer`. This project stays out of the release because it drags in Docker-only and framework-specific
 dependencies (Testcontainers for seven engines, `xunit.core` for `IAsyncLifetime`, `MassTransit.TestFramework`,
 `AWSSDK.S3`, EF Core SQLite) that a consumer's unit-test project should never pay for.
@@ -18,18 +19,19 @@ dependencies (Testcontainers for seven engines, `xunit.core` for `IAsyncLifetime
 
 | Namespace | Types |
 | --- | --- |
-| `SharedKernel.Testing.Containers` | `PostgreSqlContainerFixture` (wraps `PostgresTestServer`), `RedisContainerFixture` (`redis:7.4`), `RabbitMqContainerFixture` (`rabbitmq:3.13-management`), `MinioContainerFixture`, `ElasticsearchContainerFixture` (`elasticsearch:9.4.2`), `MeilisearchContainerFixture` (`getmeili/meilisearch:v1.20.0`, a generic container — there is no Testcontainers module), `QdrantContainerFixture` (`qdrant/qdrant:v1.16.0` — collection metadata needs 1.16+) |
+| `SharedKernel.Testing.Containers` | `PostgreSqlContainerFixture` (wraps `PostgresTestServer`), `RedisContainerFixture` (`redis:7.4`), `RabbitMqContainerFixture` (`rabbitmq:3.13-management`), `MinioContainerFixture` (`pgsty/minio`, a community rebuild of MinIO, which no longer publishes public images), `ElasticsearchContainerFixture` (`docker.elastic.co/elasticsearch/elasticsearch:9.4.2`), `MeilisearchContainerFixture` (`getmeili/meilisearch:v1.20.0`, a generic container — there is no Testcontainers module), `QdrantContainerFixture` (`qdrant/qdrant:v1.16.0` — collection metadata needs 1.16+) |
 | `SharedKernel.Testing.Persistence` | `TestSharedKernelDbContext`, `EfContextExtensions` (`DetachAll`, `ReloadAsync`, `RegisterOptions`), `PersistenceTestHelpers` (`AssertEntityTracked`/`AssertEntityNotTracked`), `TestNpgsqlConfiguration`, `TestNpgsqlDataSources`, `FakeAuditTrailWriter`, `FakeAuditQueryService`, `FakeAuditActorContext` |
 | `SharedKernel.Testing.Messaging` | `TestHarnessFactory.CreateAsync(serviceName, configure)` — a started MassTransit `ITestHarness` with the kebab-case endpoint formatter |
 
-Every container fixture is an xUnit `IAsyncLifetime` with pinned image tags, so CI is reproducible.
+Every container fixture is an xUnit `IAsyncLifetime` with a pinned image tag, so CI is reproducible.
 
 ## Use
 
-Only from test projects inside this repository, as a `ProjectReference`:
+Only from test projects inside this repository, as a `ProjectReference` (the path from a test project nested in a
+capability package):
 
 ```xml
-<ProjectReference Include=".\SharedKernel.Testing.Internal.csproj" />
+<ProjectReference Include="..\..\..\..\Testing\SharedKernel.Testing.Internal\SharedKernel.Testing.Internal.csproj" />
 ```
 
 Share one container per collection:
@@ -52,11 +54,11 @@ public sealed class RedisLockTests(RedisContainerFixture redis)
 
 - Never hand-roll a competing container setup inside a `.Tests` project; add the fixture here.
 - Never reference this project from a packable package or from production code.
-- Its own tests (`SharedKernel.Testing.Internal.Tests`) run in the Integration lane
-  (`Platform.SharedKernel.Integration.slnf`) and need Docker.
+- Its own tests, like every suite that uses a container fixture, run in the Integration lane (`Platform.SharedKernel.Integration.slnf`) and need
+  Docker.
 
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[16.Testing domain](../README.md) ·
+[Testing packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

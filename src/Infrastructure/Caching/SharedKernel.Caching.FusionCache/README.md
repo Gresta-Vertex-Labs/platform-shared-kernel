@@ -12,8 +12,8 @@
 
 Application code depends on [`SharedKernel.Caching.Abstractions`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Caching/SharedKernel.Caching.Abstractions/README.md)
 (`ICacheService`, `ITenantCacheService`, `CachePolicy`). This package makes those contracts work. Register it once at
-the composition root, and add [`SharedKernel.Caching.Redis`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Caching/SharedKernel.Caching.Redis/README.md) when instances
-should share entries.
+the composition root. On its own it is an in-process cache; add [`SharedKernel.Caching.Redis`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Caching/SharedKernel.Caching.Redis/README.md)
+when instances should share entries. It does not provide locks: use `SharedKernel.Caching.Redis.DistributedLocking`.
 
 | You get | So that |
 | --- | --- |
@@ -129,6 +129,10 @@ writes distributed entries._
 ### 1. Share the cache across instances
 
 ```csharp
+using SharedKernel.Caching.FusionCache.Extensions;
+using SharedKernel.Caching.Redis.Core.Extensions;   // SharedKernel.Caching.Redis.Core
+using SharedKernel.Caching.Redis.Extensions;        // SharedKernel.Caching.Redis
+
 builder.Services.AddRedisConnection(builder.Configuration);   // SharedKernel:Caching:Redis, once
 
 builder.Services
@@ -138,8 +142,8 @@ builder.Services
 
 The Redis connection (connection string, TLS, timeouts) is configured once with `AddRedisConnection` from
 [`SharedKernel.Caching.Redis.Core`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Caching/SharedKernel.Caching.Redis.Core/README.md);
-`AddRedisL2` takes no connection string. Entries are shared by every instance of the service. Removals, expirations, tag evictions and clears reach every
-instance through the backplane. See [`SharedKernel.Caching.Redis`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Caching/SharedKernel.Caching.Redis/README.md).
+`AddRedisL2` takes no connection string. Entries are shared by every instance of the service; removals, expirations,
+tag evictions and clears reach every instance through the backplane. See [`SharedKernel.Caching.Redis`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Caching/SharedKernel.Caching.Redis/README.md).
 
 ### 2. Bound the cost of a slow Redis
 
@@ -164,6 +168,9 @@ instance through the backplane. See [`SharedKernel.Caching.Redis`](https://githu
 ### 3. Compress large entries
 
 ```csharp
+using SharedKernel.Caching.FusionCache.Extensions;
+using SharedKernel.Caching.Redis.Extensions;
+
 builder.Services
     .AddSharedKernelCaching(builder.Configuration)
     .AddRedisL2()
@@ -177,7 +184,12 @@ compressed.
 ### 4. Encrypt cached values
 
 ```csharp
-builder.Services.AddSingleton<IEncryptionKeyProvider>(keyProvider);
+using SharedKernel.Caching.FusionCache.Extensions;
+using SharedKernel.Caching.Redis.Extensions;
+using SharedKernel.Cryptography.Extensions;
+using SharedKernel.Cryptography.Symmetric;
+
+builder.Services.AddSingleton<IEncryptionKeyProvider>(keyProvider);   // your key source
 builder.Services.AddSharedKernelCryptography(builder.Configuration).AddSymmetricEncryption();
 
 builder.Services
@@ -197,6 +209,9 @@ builder.Services
 ### 5. Warm the cache before taking traffic
 
 ```csharp
+using SharedKernel.Caching.Abstractions;
+using SharedKernel.Caching.FusionCache.Extensions;
+
 public sealed class CurrencyWarmup(ICurrencyRepository currencies, ICacheKeyProvider keys) : ICacheWarmupStrategy
 {
     public string Name => "currencies";
@@ -223,6 +238,9 @@ builder.Services
 ### 6. Trim or publish as NativeAOT
 
 ```csharp
+using System.Text.Json.Serialization;
+using SharedKernel.Caching.FusionCache.Extensions;
+
 [JsonSerializable(typeof(Currency))]
 [JsonSerializable(typeof(OrderSummary))]
 internal sealed partial class CacheJsonContext : JsonSerializerContext;
@@ -273,7 +291,7 @@ must be positive) and `Level` (default `CompressionLevel.Fastest`).
 | `ICacheKeyProvider`, `ITenantCacheKeyProvider` | Singleton, one instance for both |
 | `ITenantCacheService` | Singleton, with `AddTenantCacheService` |
 | `IFusionCache` | Singleton; not for application code |
-| `IReadinessProbe` named `cache` (`CacheReadinessProbeNames.Cache`) | Singleton; reads a synthetic key through `ICacheService` with a 2 s timeout and reports `Degraded` (never `Unhealthy`) when that fails, because memory and fail-safe may still serve |
+| `IReadinessProbe` named `cache` (`CacheReadinessProbeNames.Cache`) | Singleton; see [Health](#health) |
 
 ### Exceptions at registration
 
@@ -287,7 +305,7 @@ must be positive) and `Level` (default `CompressionLevel.Fastest`).
 ### Telemetry
 
 Instrumentation name `SharedKernel.Caching` for both the meter and the activity source.
-`SharedKernel.ServiceDefaults`' `WithCachingTelemetry()` subscribes to it.
+`builder.WithCachingTelemetry()` from `SharedKernel.ServiceDefaults` subscribes to it.
 
 | Instrument | Type | Tags |
 | --- | --- | --- |
@@ -367,5 +385,5 @@ reaches telemetry.
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Caching domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Caching/README.md) ·
+[Caching packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Caching/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

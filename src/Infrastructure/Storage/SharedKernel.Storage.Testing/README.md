@@ -9,6 +9,10 @@
 > test with named stores, tenant views, validation, conditional writes and presigned URLs — without MinIO or a cloud
 > account.**
 
+Use it for unit tests of application code that injects `IFileStorage`, `ITenantFileStorage` or
+`IFileStorageFactory`. To test provider wiring (credentials, buckets, S3 or OBS behaviour), run against MinIO or the
+real service with `SharedKernel.Storage.S3` / `SharedKernel.Storage.Obs` instead.
+
 | You get | So that |
 | --- | --- |
 | `AddInMemoryStore(name)` / `AddInMemoryTenantStore(name)` on `AddSharedKernelStorage()` | Code under test resolves `[FromKeyedServices(name)] IFileStorage`, `ITenantFileStorage` and `IFileStorageFactory` as in production |
@@ -97,6 +101,16 @@ public sealed class InvoiceArchiveTests
 - **Thread-safe.** Every operation and recording is guarded by a lock; recordings are returned as snapshots.
 
 ## Recipes
+
+The recipes build `provider` as in the Quick start, call your class under test `sut`, and use these `using` lines:
+
+```csharp
+using Microsoft.Extensions.DependencyInjection;
+using SharedKernel.Execution.Tenancy;   // TenantId
+using SharedKernel.Storage;
+using SharedKernel.Testing.Storage;
+using Xunit;
+```
 
 ### 1. Arrange an existing file and assert a download
 
@@ -201,13 +215,11 @@ The store returns `StorageErrorCodes` from `SharedKernel.Storage.Abstractions`: 
 
 ## Testing
 
-This package is the test double; its own self-tests live in
-[`SharedKernel.Storage.Testing.Tests`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Storage/SharedKernel.Storage.Testing/SharedKernel.Storage.Testing.Tests),
-which prove the store and its registration against the `IFileStorage` contract (conditions, checksums, listing,
-multipart, tenant isolation, the readiness probe). Pair it with
+This package is the test double; it is itself tested against the `IFileStorage` contract (conditions, checksums,
+listing, multipart, tenant isolation, the readiness probe). Pair it with
 [`SharedKernel.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Testing/README.md)
 — pass its `FakeClock` as `InMemoryFileStorageOptions.Clock` to control `LastModified` and presign expiry, and use
-`TestRequestContext` for the caller. Test S3-specific behaviour against the real provider.
+`TestRequestContext` for the caller. Test S3- or OBS-specific behaviour against the real provider.
 
 ## Pitfalls
 
@@ -222,4 +234,6 @@ multipart, tenant isolation, the readiness probe). Pair it with
 
 ---
 
-Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) · [16.Testing domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/README.md) · [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
+[Storage packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Storage/README.md) ·
+[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

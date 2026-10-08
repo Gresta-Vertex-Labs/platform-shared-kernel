@@ -102,7 +102,7 @@ assembly's name.
   the request's `Activity` is done by `SharedKernel.ServiceDefaults.Security`'s `UseSharedKernelRequestContext()`.
 - **Rate limiting.** `AddSharedKernelRateLimiting()` sets a global fixed-window limiter partitioned by remote IP (100
   requests per minute, no queue) and a fixed-window policy named `authentication` (10 per minute), with status 429.
-  It leaves `OnRejected` unset and takes no reference to `14.Presentation`; with `UseSharedKernelWebApi()` the 429 is
+  It leaves `OnRejected` unset and takes no reference to the Presentation packages; with `UseSharedKernelWebApi()` the 429 is
   the platform's RFC 9457 problem (`rate_limit.exceeded`, `Retry-After`) and `UseRateLimiter()` is added for you.
 
 ## Recipes
@@ -202,5 +202,5 @@ provider.
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[ServiceDefaults domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/ServiceDefaults/README.md) ·
+[ServiceDefaults packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/ServiceDefaults/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

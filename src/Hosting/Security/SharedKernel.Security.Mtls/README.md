@@ -7,6 +7,9 @@
 
 > **Client-certificate (mutual TLS) authentication for partners and services: the framework checks the chain, your
 > validator decides who the client is, and the caller becomes a `Service` `IUserContext`.**
+>
+> Pick it when clients prove who they are with a certificate. For bearer tokens bound to a certificate (RFC 8705) use
+> `SharedKernel.Security.Oidc`; for shared-secret clients use `SharedKernel.Security.ApiKey`.
 
 | You get | So that |
 | --- | --- |
@@ -355,8 +358,8 @@ Read the thumbprint with `IUserContext.FindClaim(MtlsAuthenticationDefaults.Cert
 | 12300 | Warning | Client certificate rejected by the validator (reason: `{Reason}`, thumbprint: `{Thumbprint}`) |
 | 12301 | Error | The certificate validator failed; the client certificate was rejected (thumbprint: `{Thumbprint}`) |
 
-The thumbprint is public; the certificate is never logged. Handshake-time events (13000–13003) are logged by the
-ServiceDefaults companion.
+The thumbprint is public; the certificate is never logged. Handshake and forwarded-header events (13000, 13001,
+13003) are logged by the ServiceDefaults companion.
 
 ## Testing
 
@@ -412,5 +415,5 @@ A later `PostConfigure` or `EventsType` could otherwise remove it silently; fail
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Security domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Security/README.md) ·
+[Security packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Security/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

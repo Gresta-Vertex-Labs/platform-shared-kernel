@@ -7,7 +7,9 @@
 
 > **The contracts your application code uses for embeddings, tenant-scoped vector retrieval and chat completion.
 > Every vector is checked against the model that produced it, every call reports its token cost, and switching
-> providers never touches a handler.**
+> providers never touches a handler.** Reference this package from your Application project; register a provider
+> in Infrastructure: `SharedKernel.AI.Qdrant` for vector collections, `SharedKernel.AI.SemanticKernel` for embeddings
+> and chat completion.
 
 | You get | So that |
 | --- | --- |
@@ -300,5 +302,5 @@ non-portable call site.
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Intelligence domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/AI/README.md) ·
+[AI packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/AI/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

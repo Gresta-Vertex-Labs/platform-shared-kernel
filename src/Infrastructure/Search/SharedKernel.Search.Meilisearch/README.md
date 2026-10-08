@@ -8,6 +8,8 @@
 
 > **The Meilisearch provider for `SharedKernel.Search.Abstractions`: fast, typo-tolerant user-facing search behind
 > `ISearchIndex<TDocument>`, plus instant search and engine-enforced tenant tokens a browser can hold.**
+> Pick it for storefront and type-ahead search; pick `SharedKernel.Search.ElasticSearch` when you need aggregations,
+> paging past `MaxTotalHits` or analytics over large corpora.
 
 | You get | So that |
 | --- | --- |
@@ -342,5 +344,5 @@ behind `ISearchIndex<T>` and can be replaced without touching application code.
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Search domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Search/README.md) ·
+[Search packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Search/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

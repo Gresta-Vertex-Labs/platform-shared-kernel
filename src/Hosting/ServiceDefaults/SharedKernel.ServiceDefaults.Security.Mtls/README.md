@@ -54,6 +54,7 @@ No middleware is needed; this configures `KestrelServerOptions.ConfigureHttpsDef
 
 ```csharp
 using System.Net;
+using SharedKernel.Presentation.WebApi;
 using SharedKernel.ServiceDefaults.Security;
 
 builder.AddMtlsForwardedHeaderCertificate(o =>
@@ -139,5 +140,5 @@ empty in that test host or assert the untrusted path.
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[ServiceDefaults domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/ServiceDefaults/README.md) ·
+[ServiceDefaults packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/ServiceDefaults/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

@@ -7,7 +7,9 @@
 
 > **Generated gRPC clients registered in one line over `Grpc.Net.ClientFactory`: address, deadline, retry policy,
 > keepalive and credentials from configuration, the caller on every call, and `ToResultAsync()` to read a failure
-> back into the `Error` the other service returned.**
+> back into the `Error` the other service returned.** Use it to call a gRPC service; for HTTP/JSON use
+> [`SharedKernel.Communication.Rest`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Communication/SharedKernel.Communication.Rest/README.md).
+> To host a gRPC service, use `SharedKernel.Presentation.Grpc` instead.
 
 | You get | So that |
 | --- | --- |
@@ -41,7 +43,7 @@ version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform
 | --- | --- |
 | Target framework | `net10.0` |
 | Tier | Adapter — reference it from your **Infrastructure** project |
-| Depends on | [`SharedKernel.Communication`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Communication/SharedKernel.Communication/README.md), `SharedKernel.Domain` (for `Money`), `Grpc.Net.ClientFactory`, `Google.Api.CommonProtos`, `Grpc.StatusProto` |
+| Depends on | [`SharedKernel.Communication`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Communication/SharedKernel.Communication/README.md), `SharedKernel.Primitives`, `SharedKernel.Execution`, `SharedKernel.Domain` (for `Money`), `Grpc.Net.Client`, `Grpc.Net.ClientFactory`, `Google.Protobuf`, `Google.Api.CommonProtos`, `Grpc.StatusProto` |
 | Namespaces | `SharedKernel.Communication` |
 
 ## Quick start
@@ -94,7 +96,7 @@ public sealed class StockReader(Inventory.InventoryClient client)
 
   | Status | Error |
   | --- | --- |
-  | A platform rich status (`14.Presentation`'s `AddSharedKernelGrpc()`) | The service's error: `ErrorInfo.reason` → `Code`, status message → `Message` |
+  | A platform rich status (`AddSharedKernelGrpc()` in `SharedKernel.Presentation.Grpc`) | The service's error: `ErrorInfo.reason` → `Code`, status message → `Message` |
   | `InvalidArgument` with a `BadRequest` detail | `Error.Validation` of the field violations |
   | No `ErrorInfo` | `grpc.{status}` (`grpc.failed_precondition`) with the status's `ErrorType` |
   | Never reached the service (refused, reset, TLS) | `communication.unreachable` |
@@ -105,7 +107,7 @@ public sealed class StockReader(Inventory.InventoryClient client)
   Status → `ErrorType`: InvalidArgument and OutOfRange → Validation, Unauthenticated → Unauthorized, PermissionDenied
   → Forbidden, NotFound → NotFound, Aborted and AlreadyExists → Conflict, FailedPrecondition → BusinessRule,
   Unavailable and ResourceExhausted → Unavailable, DeadlineExceeded → Timeout, anything else → Unexpected — the reverse
-  of `14.Presentation`'s map.
+  of `SharedKernel.Presentation.Grpc`'s map.
 
 ## Configuration
 
@@ -162,14 +164,22 @@ an uncoded failure is `grpc.{status}`.
 | --- | --- | --- |
 | 11100 | Error | The caller could not be written onto the gRPC call `{GrpcMethod}`; it goes out without the caller's metadata |
 
+Credential events (11000–11004) come from `SharedKernel.Communication`. Client spans come from
+`WithCommunicationTelemetry()` in
+[`SharedKernel.ServiceDefaults`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults/README.md).
+
 ## Testing
 
 Reference [`SharedKernel.Communication.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Communication/SharedKernel.Communication.Testing/README.md).
 `GrpcCalls` returns what a generated client's method returns, for a mocked client:
 
 ```csharp
+using Grpc.Core;
+using NSubstitute;                       // any mocking library works; generated client methods are virtual
+using SharedKernel.Primitives.Errors;
 using SharedKernel.Testing.Communication;
 
+var client = Substitute.For<Inventory.InventoryClient>();
 client.GetStockAsync(Arg.Any<GetStockRequest>(), Arg.Any<CallOptions>())
     .Returns(GrpcCalls.Failure<StockReply>(Error.NotFound("inventory.sku_not_found", "No such SKU.")));
 ```
@@ -190,5 +200,5 @@ client.GetStockAsync(Arg.Any<GetStockRequest>(), Arg.Any<CallOptions>())
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Communication domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Communication/README.md) ·
+[Communication packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Communication/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

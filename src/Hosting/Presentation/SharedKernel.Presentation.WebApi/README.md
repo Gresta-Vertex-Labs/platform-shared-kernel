@@ -7,7 +7,8 @@
 
 > **The HTTP boundary of a SharedKernel service: one call to register it, one to add it to the pipeline, and one
 > RFC 9457 `application/problem+json` error shape for every failure — with security headers, CORS, request limits and
-> the `Idempotency-Key`, `ETag` and `If-Match` headers handled at the edge.**
+> the `Idempotency-Key`, `ETag` and `If-Match` headers handled at the edge.** Every SharedKernel REST API starts
+> here; add `.OpenApi` for versioning and documents, `.SignalR` for hubs, and use `.Grpc` for gRPC services.
 
 | You get | So that |
 | --- | --- |
@@ -42,12 +43,12 @@ version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
-| Tier | Host — reference it from your **Api** project |
+| Tier | Host — reference it from your **Api** / **Worker** project |
 | Depends on | [`SharedKernel.Presentation.Core`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Presentation/SharedKernel.Presentation.Core/README.md), `SharedKernel.Primitives`, `SharedKernel.Core`, `SharedKernel.Configuration`, `SharedKernel.Contracts` (paging); no third-party packages |
 | Namespaces | `SharedKernel.Presentation.WebApi` (every public type); the authorization attributes are in `SharedKernel.Presentation.Authorization` |
 | Ships with it | The endpoint-module source generator, under `analyzers/dotnet/cs` |
 
-It does not reference MediatR or `05.Application`: any code that returns `Result`/`Result<T>` maps the same way. The
+It does not reference MediatR or the Application packages: any code that returns `Result`/`Result<T>` maps the same way. The
 [OpenAPI add-on](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Presentation/SharedKernel.Presentation.OpenApi/README.md)
 and [SignalR](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Presentation/SharedKernel.Presentation.SignalR/README.md)
 build on it.
@@ -92,7 +93,8 @@ public sealed class InvoiceEndpoints : IEndpointModule
 }
 ```
 
-`samples/OrderApi` is the compiled reference for this setup.
+[`samples/OrderApi`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/samples/OrderApi) is the
+compiled reference for this setup.
 
 ## How it works
 
@@ -198,7 +200,7 @@ A gRPC call gets the status without a body. An `IExceptionHandler` the service r
 
 ### Authorization, headers and paging
 
-- **Permissions go on the use case** (`[RequirePermission]`, `05.Application`). `[RequireEndpointPermission]`,
+- **Permissions go on the use case** (`[RequirePermission]`, `SharedKernel.Application`). `[RequireEndpointPermission]`,
   `[RequireRole]`, `[RequireFreshAuthentication]` and `[RequireAuthenticationMethod]` (from `Presentation.Core`) are
   for endpoints that send no command and for step-up; this package writes the problem body of every refusal: 401
   `unauthorized.default`, 401 `unauthorized.step_up_required` with an RFC 9470 challenge, 403
@@ -400,11 +402,11 @@ parameters for a handler test. For the pipeline itself (problems, headers, autho
 | Read `Idempotency-Key` / `If-Match` raw | Declare the header (parameter, convention or attribute) | Undeclared, `GetIdempotencyKey()`/`GetIfMatch()` return `null` for invalid values too |
 | Assert 412 on `ErrorHttpResult.StatusCode` | Assert the error code, or test through the host | The 412 rule depends on the request; the result alone says 409 |
 | Test body limits with `TestServer` | Test them against Kestrel | `TestServer` enforces none |
-| Branch on `IsSuccess` to build a response, or construct `ProblemDetails` | Use the typed results or `ToErrorResult()` | 00.Governance flags both |
+| Branch on `IsSuccess` to build a response, or construct `ProblemDetails` | Use the typed results or `ToErrorResult()` | The Governance architecture rules (`PresentationLayeringRules`) flag both |
 | Expect configured `Cors:ExposedHeaders` / `PreconditionFailedErrorCodes` to replace the defaults | Clear the list in `configure` | Configured values are added to the defaults |
 
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Presentation domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Presentation/README.md) ·
+[Presentation packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Presentation/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

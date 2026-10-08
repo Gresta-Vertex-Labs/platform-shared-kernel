@@ -5,9 +5,10 @@
 ![Tier: Adapter](https://img.shields.io/badge/tier-Adapter-6f42c1)
 ![Dedup: provider enforced](https://img.shields.io/badge/dedup-Idempotency--Key-success)
 
-> **The SMS provider for `SharedKernel.Integration.Notifications`: sends Twilio Content-template messages over the
-> Messages REST API — no vendor SDK — with the caller's `NotificationDeliveryId` as Twilio's `Idempotency-Key`, so a
-> retried send never texts the customer twice.**
+> **The SMS provider behind `INotificationSender`: sends Twilio Content-template messages over the Messages REST API
+> (no vendor SDK), with the caller's `NotificationDeliveryId` as Twilio's `Idempotency-Key`, so a retried send never
+> texts the customer twice.** Reference it from your Infrastructure project; application code depends only on
+> `SharedKernel.Integration.Notifications.Abstractions`. For email, add `SharedKernel.Integration.Notifications.Email.SendGrid`.
 
 | You get | So that |
 | --- | --- |
@@ -51,6 +52,8 @@ builder.Services.AddTwilioSmsNotifications(o =>
 ```
 
 ```csharp
+using SharedKernel.Integration.Notifications.Abstractions.Notifications;
+
 public sealed record OtpModel(string Code);
 
 var result = await sms.SendAsync(                           // [FromKeyedServices(NotificationChannel.Sms)] INotificationSender
@@ -146,5 +149,5 @@ bypass the platform's resilience pipeline and add an unaudited dependency.
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Integration domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Integration/README.md) ·
+[Integration packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Integration/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

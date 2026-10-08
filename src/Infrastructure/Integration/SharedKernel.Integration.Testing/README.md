@@ -7,7 +7,8 @@
 
 > **In-memory doubles for outbound webhooks and customer notifications (email, SMS), so the code that sends them is
 > tested without HTTP, SendGrid or Twilio.** Every dispatch and send is recorded, and the result each call returns
-> can be scripted to drive failure paths.
+> can be scripted to drive failure paths. Use it in a service's unit tests; to test signing, SSRF or retries, test
+> against the real `SharedKernel.Integration.Webhooks` with a stubbed HTTP handler instead.
 
 | You get | So that |
 | --- | --- |
@@ -16,6 +17,15 @@
 | `SetDispatchResult` / `SetTestDeliveryResult` / `SetSendResult` | Delivery failures are scripted as returned results, exactly as production reports them |
 | `InMemoryWebhookDeliveryObserver`, `InMemoryNotificationDeliveryObserver` | You record the attempt/completion callbacks a real dispatcher or sender makes |
 | `AddInMemory…()` singletons, keyed senders | The recorder outlives the SUT's scope and resolves exactly as production code resolves it |
+
+## Contents
+
+- [Install](#install)
+- [Quick start](#quick-start)
+- [How it works](#how-it-works)
+- [Reference](#reference)
+- [Testing](#testing)
+- [Pitfalls](#pitfalls)
 
 ## Install
 
@@ -192,8 +202,10 @@ proving each double against the `IWebhookDispatcher`, `INotificationSender` and 
 | Register the observer double next to the in-memory sender and expect callbacks | Use the observer doubles with a real dispatcher or sender | The in-memory dispatcher and sender never call observers |
 | Resolve `INotificationSender` without a key | Resolve by `NotificationChannel`, as production does | Senders are keyed by channel |
 | Rely on the fake to reject an event without `[IntegrationEvent]` | Declare a valid `[IntegrationEvent("name", Version = n)]` | Only the real dispatcher reads the descriptor |
-| Assert signing, SSRF, retries or attachment resolution here | Test those against the real `15.Integration` packages | The doubles only record and return results |
+| Assert signing, SSRF, retries or attachment resolution here | Test those against the real Integration packages | The doubles only record and return results |
 
 ---
 
-Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) · [16.Testing domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/README.md) · [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
+[Integration packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Integration/README.md) ·
+[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

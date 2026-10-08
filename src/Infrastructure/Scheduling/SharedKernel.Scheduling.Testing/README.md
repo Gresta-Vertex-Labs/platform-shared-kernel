@@ -6,7 +6,9 @@
 ![Public API: tracked](https://img.shields.io/badge/public%20API-tracked-informational)
 
 > **`InMemoryScheduledJobRegistry` implements `SharedKernel.Scheduling`'s `IScheduledJobRegistry` without a clock, a
-> hosted loop or a lock store: registrations are recorded, and your test fires each tick with `TriggerAsync`.**
+> hosted loop or a lock store: registrations are recorded, and your test fires each tick with `TriggerAsync`.** Use
+> it to unit-test which command a job sends and how its policies behave; cross-replica claims, cron parsing and the
+> job's caller context are tested against the real `SharedKernel.Scheduling` with Redis.
 
 | You get | So that |
 | --- | --- |
@@ -15,6 +17,15 @@
 | `BeginInFlight(jobName)` + `simulatedMisfire: true` | `OverlapPolicy` and `MisfirePolicy` are asserted deterministically |
 | The job's command sent through your `ISender` | You assert what was dispatched, with a stub sender or a real pipeline |
 | `Fired`/`Skipped`/`Misfired` + `ShouldHave…` assertions | Readable failures, no test framework required |
+
+## Contents
+
+- [Install](#install)
+- [Quick start](#quick-start)
+- [How it works](#how-it-works)
+- [Reference](#reference)
+- [Testing](#testing)
+- [Pitfalls](#pitfalls)
 
 ## Install
 
@@ -156,4 +167,6 @@ for `FakeClock` (derive `simulatedNowUtc` from it) and `TestRequestContext`.
 
 ---
 
-Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) · [16.Testing domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/README.md) · [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
+[Scheduling packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Scheduling/README.md) ·
+[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

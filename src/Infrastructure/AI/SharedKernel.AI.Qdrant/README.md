@@ -7,6 +7,8 @@
 
 > **The Qdrant provider for `SharedKernel.AI.Abstractions`: tenant-scoped vector collections, payload filters and
 > alias-based cutover over the official gRPC client, with model, dimension and tenant checks before every call.**
+> Pick it for vector storage and retrieval. It does not generate embeddings or completions: pair it with
+> `SharedKernel.AI.SemanticKernel` for those, and use `SharedKernel.AI.Testing` in unit tests.
 
 | You get | So that |
 | --- | --- |
@@ -181,7 +183,7 @@ filter is deeper than `MaxFilterDepth`. It does no I/O. Split bulk writes by `de
 ```csharp
 builder.Services.AddSharedKernelQdrant(builder.Configuration)
     .AddCollection<ProductChunk>(ProductChunkCollection.Name, ProductChunkCollection.Configure)
-    .AllowRawClientAccess()   // logs a startup warning
+    .AllowRawClientAccess()   // logs a warning (10110) when the accessor is first resolved
     .Build();
 ```
 
@@ -304,5 +306,5 @@ registered once as a singleton, so one pooled channel serves the process.
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Intelligence domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/AI/README.md) ·
+[AI packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/AI/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

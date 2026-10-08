@@ -8,7 +8,8 @@
 
 > **Stream rows into CSV, Excel or PDF — or render HTML to PDF — and deliver the file to a named storage store with a
 > presigned download link, or to any stream. The export is written while it is produced, never held as a whole in
-> memory, and never stored half-written.**
+> memory, and never stored half-written.** Reference it from your Application project; add the format packages
+> (`.Csv`, `.Spreadsheet`, `.Pdf`, `.Gotenberg` for HTML → PDF) in Infrastructure.
 
 | You get | So that |
 | --- | --- |
@@ -55,6 +56,8 @@ Register storage, then the formats you use (each provider package adds its `Add�
 
 ```csharp
 using SharedKernel.Reporting;
+using SharedKernel.ServiceDefaults.Telemetry;
+using SharedKernel.Storage;
 
 builder.Services.AddSharedKernelStorage().AddS3(builder.Configuration).AddStore("reports");
 
@@ -144,6 +147,9 @@ flowchart LR
 ### 1. Stream an export into the HTTP response
 
 ```csharp
+using SharedKernel.Primitives.Results;
+using SharedKernel.Reporting;   // IReportExporter<Order> exporter
+
 Result<ReportStreamOutcome> written = await exporter.ExportToStreamAsync(rows, Definition, httpContext.Response.Body, ct);
 ```
 
@@ -153,6 +159,9 @@ explaining `InvalidOperationException`.
 ### 2. Store a statement once, in a tenant store
 
 ```csharp
+using SharedKernel.Reporting;
+using SharedKernel.Storage;
+
 new ReportDestination
 {
     Store = "statements",                       // registered with AddTenantStore("statements")
@@ -165,6 +174,10 @@ new ReportDestination
 ### 3. Render an invoice from HTML
 
 ```csharp
+using SharedKernel.Primitives.Results;
+using SharedKernel.Reporting;
+using SharedKernel.Storage;
+
 Result<PdfDocumentOutcome> stored = await converter.ConvertAsync(       // IHtmlToPdfConverter
     html,                                                               // HTML-encode every user value first
     new ReportDestination { Store = "invoices", Key = "2026-0042.pdf", Condition = WriteCondition.IfNotExists },
@@ -180,6 +193,9 @@ file name). The implementation is [`SharedKernel.Reporting.Gotenberg`](https://g
 ### 4. Add a custom format
 
 ```csharp
+using SharedKernel.Primitives.Results;
+using SharedKernel.Reporting;
+
 internal sealed class JsonLinesExporter<TRow>(ReportingDependencies dependencies) : ReportExporterBase<TRow>(dependencies)
 {
     public static readonly ReportFormat JsonLines = new("jsonl", "application/x-ndjson", ".jsonl");
@@ -222,7 +238,7 @@ builder.Services.AddSharedKernelReporting()
 | `ReportDefinition.For<T>()` → `ReportDefinitionBuilder<T>` | `Title`, `Culture`, `Column(header, value, format:, alignment:, relativeWidth:)`, `Column(header, value, formatter)`, `Build()` |
 | `ReportColumnAlignment` | `Auto` (numbers right), `Left`, `Center`, `Right` — PDF and Excel; CSV ignores it |
 | `IReportExporter<TRow>` | `ExportAsync` (to a `ReportDestination`) → `ReportExportOutcome`; `ExportToStreamAsync` → `ReportStreamOutcome` |
-| `IReportExporterFactory` | `Formats`, `ParseFormat(name, extension or content type)` → `Result<ReportFormat>`, `GetExporter<T>(format)` |
+| `IReportExporterFactory` | `Formats`, `ParseFormat(value)` (a name, extension or content type) → `Result<ReportFormat>`, `GetExporter<T>(format)` |
 | `ReportFormat` | `Csv`, `Xlsx`, `Pdf`, or your own; `WithExtension(fileName)` |
 | `ReportDestination` | `Store`, `Key` (required), `TenantId`, `DownloadFileName`, `Condition`, `Metadata`, `PresignedDownloadUrlExpiry` |
 | `IHtmlToPdfConverter` | `ConvertAsync` → `PdfDocumentOutcome`; `ConvertToStreamAsync` |
@@ -301,5 +317,5 @@ and a failure aborts the upload, so no partial object is ever visible.
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Reporting domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Reporting/README.md) ·
+[Reporting packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Reporting/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

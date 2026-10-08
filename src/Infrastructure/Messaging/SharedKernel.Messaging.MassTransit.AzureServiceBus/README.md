@@ -32,7 +32,7 @@ version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
-| Tier | Adapter — reference it from your **Api/Worker** (startup) project, next to the MassTransit core |
+| Tier | Adapter — reference it from your **Infrastructure** project, next to the MassTransit core |
 | Depends on | `SharedKernel.Messaging.MassTransit` (declared adapter edge), `MassTransit.Azure.ServiceBus.Core` 8.5.x, `Azure.Identity` |
 | Namespaces | `SharedKernel.Messaging.MassTransit.Extensions` (`UseAzureServiceBus`), `SharedKernel.Messaging.MassTransit.Options` (`AzureServiceBusOptions`) |
 
@@ -136,5 +136,5 @@ applies (option guards, concurrency, session ids, the advisory); end-to-end test
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Messaging domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Messaging/README.md) ·
+[Messaging packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Messaging/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

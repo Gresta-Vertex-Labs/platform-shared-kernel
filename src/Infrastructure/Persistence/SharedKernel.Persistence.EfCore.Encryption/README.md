@@ -45,7 +45,7 @@ version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform
 | Tier | Adapter — reference it from your **Infrastructure** project |
 | Depends on | `SharedKernel.Persistence.EfCore` (declared adapter edge, pinned to the exact version), `SharedKernel.Cryptography` |
 | Key source | Any `IEncryptionKeyProvider` — Azure Key Vault (`SharedKernel.Cryptography.KeyVault.Azure`), configuration, or your own |
-| Namespaces | `SharedKernel.Persistence` (`UseFieldEncryption`), `SharedKernel.Persistence.EfCore` (`Encrypt`, `WithBlindIndex`, `WhereEncryptedEquals`), `SharedKernel.Persistence.EfCore.Encryption` (options, `.Maintenance`, `.TenantKeys`) |
+| Namespaces | `SharedKernel.Persistence` (`UseFieldEncryption`), `SharedKernel.Persistence.EfCore` (`Encrypt`, `WithBlindIndex`, `WhereEncryptedEquals`), `SharedKernel.Persistence.EfCore.Encryption` (options, `.BlindIndex`, `.Maintenance`, `.TenantKeys`) |
 
 ## Quick start
 
@@ -253,7 +253,7 @@ Keep key material in a secret store (Key Vault configuration, a mounted secret),
 | `EfCorePersistenceBuilder<T>.UseFieldEncryption(Action<FieldEncryptionBuilder>?)` | Registers the interceptors, query guard, maintenance job and probe |
 | `FieldEncryptionBuilder` | `FromConfiguration()`, `UseKeyProvider<T>()` / `UseKeyProvider(factory)`, `UseTenantDataKeys()` / `UseTenantDataKeys<TEnvelopeProvider>()`, `UseBlindIndexKeys<TProvider>()`, `UseMaintenanceDataSource(factory)`, `AddBlindIndexNormalizer<T>()`, `Configure(Action<EncryptionOptions>)` |
 | `.Encrypt("purpose")`, `.WithBlindIndex(BlindIndexNormalization, normalizer?)` | Mark a property (in `IEntityTypeConfiguration<T>`) |
-| `WhereEncryptedEquals(x => x.P, value[, tenantId])` | Blind-index lookup (`IQueryable` overload takes a `TenantId` for cross-tenant jobs) |
+| `dbSet.WhereEncryptedEquals(x => x.P, value)`, `query.WhereEncryptedEquals(db, x => x.P, value, tenantId?)` | Blind-index lookup; the `IQueryable` overload takes the context and, for cross-tenant jobs, a `TenantId` |
 | `IEncryptionRotationJob.RunAsync(EncryptionMaintenanceRequest, progress, ct)` | Maintenance; `Mode`, `ExpectedCurrentKeyId`, `CheckpointToken`, `BatchSize` (500) |
 | `ITenantEncryptionKeyManager.ShredTenantAsync(tenantId, options?, ct)` | Crypto-shreds a tenant |
 | `CreateTenantEncryptionKeyTable()` | Migration helper for tenant keys |
@@ -326,5 +326,5 @@ application process (it holds the keys), equality inference through blind indexe
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Persistence domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Persistence/README.md) ·
+[Persistence packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Persistence/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

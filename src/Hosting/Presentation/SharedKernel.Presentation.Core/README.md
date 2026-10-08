@@ -7,7 +7,8 @@
 
 > **What every inbound boundary shares — HTTP, gRPC and SignalR: declarative authorization attributes over
 > `IUserContext`, and one set of error rules, so an error or a refusal reads the same on every protocol and a gRPC host
-> needs no HTTP API stack.**
+> needs no HTTP API stack.** You rarely reference it yourself: `SharedKernel.Presentation.WebApi`, `.Grpc` and
+> `.SignalR` bring it in.
 
 | You get | So that |
 | --- | --- |
@@ -41,7 +42,7 @@ version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
-| Tier | Host — reference it from your **Api** project |
+| Tier | Host — reference it from your **Api** / **Worker** project |
 | Depends on | `SharedKernel.Primitives`, `SharedKernel.Execution`, `SharedKernel.Localization`, `SharedKernel.Security.Abstractions`, ASP.NET Core |
 | Namespaces | `SharedKernel.Presentation.Authorization` |
 
@@ -133,7 +134,7 @@ methods called directly, [`SharedKernel.Presentation.Testing`](https://github.co
 
 | Don't | Do | Why |
 | --- | --- | --- |
-| Repeat a command's permission on the endpoint | Put `[RequirePermission]` on the command (`05.Application`) | It is enforced on every path — HTTP, messages, jobs, workflows |
+| Repeat a command's permission on the endpoint | Put `[RequirePermission]` on the command ([`SharedKernel.Application`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Application/SharedKernel.Application/README.md)) | It is enforced on every path — HTTP, messages, jobs, workflows |
 | Use `[Authorize(Roles = "...")]` | Use `[RequireRole]` | ASP.NET Core's roles read claims directly and bypass the mapper |
 | Register an authentication scheme without an `IUserContextMapper` | Use a SharedKernel scheme or register a mapper | Its callers are refused with 403 |
 | Name the missing permission in a custom 403 message | Keep the platform's refusal | The message must not disclose the authorization model |
@@ -142,5 +143,5 @@ methods called directly, [`SharedKernel.Presentation.Testing`](https://github.co
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Presentation domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Presentation/README.md) ·
+[Presentation packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Presentation/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

@@ -6,7 +6,9 @@
 ![Test only](https://img.shields.io/badge/scope-test%20only-informational)
 
 > **Ready-made NetArchTest and Mono.Cecil rules you assert from your own test suite: domain purity, provider
-> isolation, forbidden injection patterns and IL-level secure-default checks that no compiler warning can express.**
+> isolation, forbidden injection patterns and IL-level secure-default checks that no compiler warning can express.
+> Reach for it when a rule needs a whole assembly; a rule about one line of code belongs to
+> [`SharedKernel.Analyzers`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/tools/Governance/SharedKernel.Analyzers/README.md).**
 
 | You get | So that |
 | --- | --- |
@@ -128,9 +130,12 @@ PipelineOrderAssertion.AssertRegistrationOrder(services, typeof(MyAuditBehavior<
 ### 3. Compose your own rule
 
 ```csharp
-Types.InAssembly(myAssembly)
+using NetArchTest.Rules;
+using SharedKernel.ArchitectureTests.Predicates;
+
+AssertRule(Types.InAssembly(myAssembly)
      .That().ImplementInterface(typeof(IMyMarker))
-     .Should().MeetCustomRule(new SingleConstructorPredicate());
+     .Should().MeetCustomRule(new SingleConstructorPredicate()));
 ```
 
 Or implement NetArchTest's `ICustomRule` — `MeetsRule(TypeDefinition)` receives the Mono.Cecil type, so bodies,
@@ -239,5 +244,5 @@ your own marker interfaces.
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[00.Governance domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/tools/Governance/README.md) ·
+[Governance packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/tools/Governance/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

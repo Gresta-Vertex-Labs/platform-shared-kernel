@@ -8,6 +8,10 @@
 > **`FakeIdempotencyStore` is an in-memory `IIdempotencyStore` with the same reservation protocol as the Redis and
 > EF Core stores, so a duplicate command or a redelivered message is tested without Redis or PostgreSQL.**
 
+Use it in unit tests of handlers, pipelines and consumers that rely on `IIdempotencyStore`. Atomicity under real
+concurrency, expiry and tenant isolation in storage are properties of the real stores: prove those against
+`SharedKernel.Idempotency.Redis` or `.EfCore` in an integration test.
+
 | You get | So that |
 | --- | --- |
 | The real `Started` / `InProgress` / `Completed` / `FingerprintMismatch` protocol under one lock | Two concurrent duplicates never both start, exactly as in production |
@@ -16,6 +20,16 @@
 | `Expire(purpose, key)` | A TTL running out is modelled without a clock |
 | `Calls`, `LastTtl`, `LastRetention` | You assert what the pipeline or consumer asked of the store |
 | `AddFakeIdempotencyStore(purposes)` | One call replaces the keyed store for `Request`, `Message` or both |
+
+## Contents
+
+- [Install](#install)
+- [Quick start](#quick-start)
+- [How it works](#how-it-works)
+- [Recipes](#recipes)
+- [Reference](#reference)
+- [Testing](#testing)
+- [Pitfalls](#pitfalls)
 
 ## Install
 
@@ -26,8 +40,7 @@
 The version comes from your central `SharedKernelVersion` property — every SharedKernel package ships at the same
 version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel#using-the-packages).
 
-Reference it from a **test project only**. Production code must never reference a Testing package;
-`TestingNeverReferencedByProduction` fails the build's architecture tests when it does.
+Reference it from a **test project only**; production code must never reference a Testing package.
 
 | Requirement | Value |
 | --- | --- |
@@ -99,7 +112,13 @@ services.AddFakeIdempotencyStore(IdempotencyPurpose.Request);   // only the pipe
 ### 1. Prove tenants do not share keys
 
 ```csharp
+using SharedKernel.Execution.Context;     // RequestContextScope, SystemRequestContext
+using SharedKernel.Execution.Tenancy;     // TenantId
+using SharedKernel.Idempotency.Abstractions;
+using SharedKernel.Testing.Idempotency;
+
 var store = new FakeIdempotencyStore();
+var Ttl = TimeSpan.FromMinutes(1);
 
 using (RequestContextScope.Begin(new SystemRequestContext([], tenantId: new TenantId(Guid.NewGuid()))))
     Assert.Equal(IdempotencyReservationStatus.Started,
@@ -109,9 +128,6 @@ using (RequestContextScope.Begin(new SystemRequestContext([], tenantId: new Tena
     Assert.Equal(IdempotencyReservationStatus.Started,
         (await store.TryBeginAsync(IdempotencyPurpose.Message, "msg-1", "fp", Ttl, CancellationToken.None)).Status);
 ```
-
-`RequestContextScope` and `SystemRequestContext` are in `SharedKernel.Execution.Context`, `TenantId` in
-`SharedKernel.Execution.Tenancy`.
 
 ### 2. Model an expired reservation
 
@@ -125,6 +141,10 @@ Assert.False(await store.ReleaseAsync(IdempotencyPurpose.Request, "k", begin.Tok
 ### 3. Assert what the pipeline did
 
 ```csharp
+using Microsoft.Extensions.DependencyInjection;
+using SharedKernel.Idempotency.Abstractions;
+using SharedKernel.Testing.Idempotency;
+
 var store = provider.GetRequiredService<FakeIdempotencyStore>();
 
 Assert.Contains(store.Calls, c => c.Member == "CompleteAsync" && c.Purpose == IdempotencyPurpose.Request);
@@ -173,4 +193,6 @@ whose `AddFakeApplicationBehaviorServices()` registers this store for `Idempoten
 
 ---
 
-Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) · [16.Testing domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/README.md) · [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
+[Idempotency packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Idempotency/README.md) ·
+[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

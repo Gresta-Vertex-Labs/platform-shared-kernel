@@ -123,6 +123,13 @@ flowchart TD
 Raise memory first, then passes, while sign-in stays within your latency budget under peak concurrency:
 
 ```csharp
+using System.Diagnostics;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using SharedKernel.Cryptography.Argon2;
+using SharedKernel.Cryptography.Extensions;
+using SharedKernel.Cryptography.Hashing;
+
 IConfiguration configuration = new ConfigurationBuilder()
     .AddInMemoryCollection(new Dictionary<string, string?>
     {
@@ -226,5 +233,5 @@ vulnerabilities privately as described in the
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Core domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Foundation/README.md) ·
+[Foundation packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Foundation/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

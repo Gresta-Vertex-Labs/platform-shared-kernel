@@ -13,7 +13,9 @@
 alone keeps a cache per process. Add this package and the same `ICacheService` calls read and write Redis too, over the
 shared connection from
 [`SharedKernel.Caching.Redis.Core`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Caching/SharedKernel.Caching.Redis.Core/README.md).
-Application code does not change.
+Application code does not change. Add it when a service runs more than one instance; a single-instance service or a
+per-process cache does not need it. For locks, hashes or Pub/Sub over the same connection, use the sibling
+`SharedKernel.Caching.Redis.*` packages instead.
 
 | You get | So that |
 | --- | --- |
@@ -51,7 +53,7 @@ version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform
 | Tier | Adapter — reference it from your **Infrastructure** project |
 | Depends on | `SharedKernel.Caching.Abstractions`, `SharedKernel.Caching.Redis.Core`, `SharedKernel.Configuration`, `ZiggyCreatures.FusionCache`, `ZiggyCreatures.FusionCache.Backplane.StackExchangeRedis` |
 | Also needs | `SharedKernel.Caching.FusionCache` (`AddSharedKernelCaching` returns the builder this package extends) |
-| Namespace | `SharedKernel.Caching.Redis.Extensions` |
+| Namespaces | `SharedKernel.Caching.Redis.Extensions` |
 
 ## Quick start
 
@@ -140,6 +142,11 @@ when the notification arrives._
 ### 1. A typical service
 
 ```csharp
+using SharedKernel.Caching.FusionCache.Extensions;
+using SharedKernel.Caching.Redis.Core.Extensions;
+using SharedKernel.Caching.Redis.DistributedLocking.Extensions;
+using SharedKernel.Caching.Redis.Extensions;
+
 builder.Services.AddRedisConnection(builder.Configuration);
 
 builder.Services
@@ -192,6 +199,8 @@ capacity.
 ### 4. Keep an entry on one instance
 
 ```csharp
+using SharedKernel.Caching.Abstractions;
+
 private static readonly CachePolicy PerInstance = CachePolicy.For(TimeSpan.FromSeconds(30)).LocalOnly();
 
 await cache.SetAsync(keys.BuildKey("rate-window", clientId), window, PerInstance, ct);
@@ -301,8 +310,8 @@ extra connections that ignore TLS, mutual TLS, the connect timeout and health ch
 `AddRedisConnection`, and neither can close it.
 
 **Why our own distributed cache instead of `Microsoft.Extensions.Caching.StackExchangeRedis`?** Its `RedisCache` assumes
-it owns its connection: disposing it closed the multiplexer it reached through `IDatabase.Multiplexer`, which is the
-shared connection every Redis package uses. The replacement is a small `IDistributedCache` that stores one Redis string
+it owns its connection: disposing it closes the multiplexer it reaches through `IDatabase.Multiplexer`, which is the
+shared connection every Redis package uses. This package uses a small `IDistributedCache` that stores one Redis string
 per entry, never closes the connection, and is handed only to FusionCache, so nothing else can resolve and dispose it.
 FusionCache only needs absolute expiration, so sliding expiration and `Refresh` are not implemented.
 
@@ -327,5 +336,5 @@ leaves it unclear which options apply.
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Caching domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Caching/README.md) ·
+[Caching packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Caching/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

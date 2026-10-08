@@ -149,6 +149,10 @@ Encrypted bytes look random and do not compress, so always compress first. With 
 `ISymmetricEncryptionService`:
 
 ```csharp
+using SharedKernel.Compression;
+using SharedKernel.Cryptography.Symmetric;
+using SharedKernel.Primitives.Results;
+
 byte[] packed = compressor.Compress(plaintext);
 EncryptedPayload stored = await encryption.EncryptAsync(packed, associatedData, ct);
 
@@ -162,6 +166,10 @@ Result<byte[]> original = compressor.Decompress(decrypted.Value);
 ### 2. Send a `.gz` body to an external system
 
 ```csharp
+using Microsoft.Extensions.DependencyInjection;
+using SharedKernel.Compression;
+using SharedKernel.Compression.Extensions;
+
 public sealed class PartnerExport(
     [FromKeyedServices(CompressionServiceCollectionExtensions.RawGZipPayloadCompressorKey)] IPayloadCompressor gzip)
 {
@@ -182,6 +190,8 @@ await compressor.CompressAsync(source, target, ct);
 `Compress(byte[])` builds its output in a growing buffer and copies it out. Write into a buffer you control instead:
 
 ```csharp
+using System.Buffers;
+
 var buffer = new ArrayBufferWriter<byte>();
 compressor.Compress(payloadSpan, buffer);
 Send(buffer.WrittenMemory);
@@ -192,6 +202,9 @@ Send(buffer.WrittenMemory);
 Keep the global limit strict and give the one path that needs more its own compressor:
 
 ```csharp
+using SharedKernel.Compression;
+using SharedKernel.Compression.Options;
+
 builder.Services.AddKeyedSingleton<IPayloadCompressor>("LargeExports", (_, _) =>
     new BrotliPayloadCompressor(Microsoft.Extensions.Options.Options.Create(
         new CompressionOptions { MaxDecompressedSize = 1L * 1024 * 1024 * 1024 })));   // 1 GiB
@@ -269,6 +282,9 @@ The package does not log.
 There is no fake: the compressors are pure, in-memory and fast, so use the real ones in unit tests.
 
 ```csharp
+using SharedKernel.Compression;
+using SharedKernel.Compression.Options;
+
 var compressor = new BrotliPayloadCompressor(
     Microsoft.Extensions.Options.Options.Create(new CompressionOptions()));
 ```
@@ -308,5 +324,5 @@ small and closed, and there is nothing to swap — one package with keyed regist
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Core domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Foundation/README.md) ·
+[Foundation packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Foundation/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

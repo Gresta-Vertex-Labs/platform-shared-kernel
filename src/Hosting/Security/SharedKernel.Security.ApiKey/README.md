@@ -7,6 +7,9 @@
 
 > **API key authentication for machine clients: generated, hashed at rest, expiring and revocable keys — or your own
 > validator — surfaced as the same `IUserContext` as every other caller.**
+>
+> Pick it for partners and scripts that cannot run an OAuth flow. Callers with an identity provider use
+> `SharedKernel.Security.Oidc`; callers that hold a client certificate use `SharedKernel.Security.Mtls`.
 
 | You get | So that |
 | --- | --- |
@@ -410,5 +413,5 @@ scheme per endpoint, and it captures the previous default whatever the registrat
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Security domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Security/README.md) ·
+[Security packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Security/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

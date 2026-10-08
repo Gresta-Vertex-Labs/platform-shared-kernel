@@ -11,7 +11,8 @@
 
 The distributed cache, its backplane, distributed locks, the hash store and Pub/Sub all run over the connection this
 package registers. You configure Redis in exactly one place, so TLS, timeouts and health apply to all of them, and no
-other registration takes a connection string.
+other registration takes a connection string. This package has no caching or locking API of its own: call
+`AddRedisConnection` once, then add the capability packages you need.
 
 | You get | So that |
 | --- | --- |
@@ -71,7 +72,12 @@ version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform
 ```
 
 ```csharp
+using SharedKernel.Caching.FusionCache.Extensions;
 using SharedKernel.Caching.Redis.Core.Extensions;
+using SharedKernel.Caching.Redis.DistributedLocking.Extensions;
+using SharedKernel.Caching.Redis.Extensions;
+using SharedKernel.Caching.Redis.HashStore.Extensions;
+using SharedKernel.Caching.Redis.PubSub.Extensions;
 
 builder.Services.AddRedisConnection(builder.Configuration);   // call once, before any other Redis registration
 
@@ -153,6 +159,10 @@ service mesh or sidecar terminates TLS in front of Redis.
 ### 3. Mutual TLS with a private certificate authority
 
 ```csharp
+using System.Net.Security;
+using System.Security.Cryptography.X509Certificates;
+using SharedKernel.Caching.Redis.Core.Extensions;
+
 X509Certificate2 clientCertificate = X509CertificateLoader.LoadPkcs12FromFile(certPath, certPassword);
 X509Certificate2 privateRoot = X509CertificateLoader.LoadCertificateFromFile(caPath);
 
@@ -340,5 +350,5 @@ of Redis, where the application legitimately connects without TLS.
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Caching domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Caching/README.md) ·
+[Caching packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Caching/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

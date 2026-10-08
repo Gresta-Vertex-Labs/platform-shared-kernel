@@ -5,7 +5,8 @@
 ![Tier: Host](https://img.shields.io/badge/tier-Host-d73a49)
 ![Public API: tracked](https://img.shields.io/badge/public%20API-tracked-informational)
 
-> **Database readiness for the `06.Persistence` stack: `/health/ready` stays unhealthy until startup migrations and
+> **Database readiness for the
+> [Persistence packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Persistence/README.md): `/health/ready` stays unhealthy until startup migrations and
 > seeders have finished, and while the database cannot be reached — for EF Core, Dapper, or both.**
 
 | You get | So that |
@@ -111,5 +112,5 @@ Test against a real PostgreSQL with [`SharedKernel.Persistence.Testing`](https:/
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[ServiceDefaults domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/ServiceDefaults/README.md) ·
+[ServiceDefaults packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/ServiceDefaults/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

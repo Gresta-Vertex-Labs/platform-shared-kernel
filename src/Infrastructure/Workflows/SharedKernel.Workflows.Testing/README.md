@@ -7,7 +7,8 @@
 
 > **An in-memory `IWorkflowDispatcher` that records starts, signals, queries, cancellations and terminations per
 > tenant, so code that dispatches Temporal workflows is unit-tested without a Temporal server — and the test decides
-> how each workflow ends.**
+> how each workflow ends.** Use it for code that starts or drives workflows; test the workflow and activity code
+> itself with Temporal's own test environment (`Temporalio.Testing`).
 
 | You get | So that |
 | --- | --- |
@@ -103,6 +104,8 @@ public sealed class TenantOnboardingTests
 ### 1. Drive the result the caller awaits
 
 ```csharp
+using SharedKernel.Testing.Workflows;
+
 var dispatcher = new InMemoryWorkflowDispatcher();
 var sut = new ReportRequester(dispatcher);   // starts ReportWorkflow, then awaits its handle
 
@@ -118,6 +121,9 @@ Assert.Equal("r-1", report.Value.ReportId);
 ### 2. Assert a signal and its payload
 
 ```csharp
+using SharedKernel.Execution.Tenancy;
+using SharedKernel.Testing.Workflows;
+
 var handle = (InMemoryWorkflowHandle)dispatcher.GetHandle(workflowId, runId: null, TenantScope.For(Tenant));
 
 await new ApprovalService(dispatcher).ApproveAsync(workflowId, Tenant, CancellationToken.None);
@@ -140,6 +146,8 @@ An unconfigured query name returns `workflow.query_failed`.
 ### 4. Assert cancellation or termination
 
 ```csharp
+using SharedKernel.Testing.Workflows;
+
 await sut.AbortAsync(workflowId, CancellationToken.None);
 
 handle.ShouldHaveBeenTerminated(expectedReason: "operator abort");
@@ -237,4 +245,6 @@ environment, which runs the real worker and replays history.
 
 ---
 
-Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) · [16.Testing domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/README.md) · [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
+[Workflows packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Workflows/README.md) ·
+[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
