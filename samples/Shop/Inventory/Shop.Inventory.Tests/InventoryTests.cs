@@ -6,12 +6,15 @@ using Microsoft.Extensions.Configuration;
 using SharedKernel.Application.Messaging;
 using SharedKernel.Application.Streaming;
 using SharedKernel.Execution.Tenancy;
+using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Propagation;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Security.Mtls;
 using SharedKernel.Testing.Caching;
+using SharedKernel.Testing.Grpc;
 using SharedKernel.Testing.Scheduling;
 using SharedKernel.Testing.Security;
+using Shop.Contracts.Inventory;
 using Shop.Inventory.Api.Reconciliation;
 using Shop.Inventory.Api.Security;
 using Shop.Inventory.Api.Stock;
@@ -223,6 +226,77 @@ public sealed class InventoryJobsTests
         {
             Sent.Add(request);
             return Task.FromResult((TResponse)(object)Result.Success());
+        }
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(
+            IStreamQuery<TResponse> request,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
+    }
+}
+
+/// <summary>
+/// The gRPC service over a real <c>ServerCallContext</c> (Presentation.Testing's <c>TestServerCallContext</c>): what it
+/// sends for a reservation, and that a refusal leaves as an exception for the kernel's interceptor to map to a status.
+/// </summary>
+public sealed class InventoryGrpcServiceTests
+{
+    [Fact]
+    public async Task ReserveStock_SendsTheOrdersLines_AndAnswersWithTheReservation()
+    {
+        var reservation = Guid.NewGuid();
+        var sender = new AnsweringSender(Result<Guid>.Success(reservation));
+        var orderId = Guid.NewGuid();
+        var request = new ReserveStockRequest { OrderId = orderId.ToString("D") };
+        request.Lines.Add(new StockLine { Sku = "SKU-1", Quantity = 2 });
+
+        var reply = await new Shop.Inventory.Api.InventoryGrpcService(sender).ReserveStock(
+            request,
+            TestServerCallContext.Create(correlationId: "corr-1")
+        );
+
+        reply.ReservationId.Should().Be(reservation.ToString("D"));
+        var sent = sender
+            .Sent.Should()
+            .ContainSingle()
+            .Which.Should()
+            .BeOfType<ReserveStockCommand>()
+            .Subject;
+        sent.OrderId.Should().Be(orderId);
+        sent.Lines.Should().Equal(new ReservationLine("SKU-1", 2));
+    }
+
+    [Fact]
+    public async Task ReserveStock_Refused_ThrowsForTheInterceptor()
+    {
+        var sender = new AnsweringSender(
+            Result<Guid>.Failure(Error.BusinessRule("inventory.insufficient_stock", "Not enough."))
+        );
+        var request = new ReserveStockRequest { OrderId = Guid.NewGuid().ToString("D") };
+        request.Lines.Add(new StockLine { Sku = "SKU-1", Quantity = 9 });
+
+        var reserve = () =>
+            new Shop.Inventory.Api.InventoryGrpcService(sender).ReserveStock(
+                request,
+                TestServerCallContext.Create()
+            );
+
+        (await reserve.Should().ThrowAsync<Exception>())
+            .Which.Message.Should()
+            .Contain("Not enough");
+    }
+
+    private sealed class AnsweringSender(object answer) : ISender
+    {
+        public List<object> Sent { get; } = [];
+
+        public Task<TResponse> Send<TResponse>(
+            IRequest<TResponse> request,
+            CancellationToken cancellationToken = default
+        )
+        {
+            Sent.Add(request);
+            return Task.FromResult((TResponse)answer);
         }
 
         public IAsyncEnumerable<TResponse> CreateStream<TResponse>(

@@ -15,6 +15,7 @@ public static class ShopResources
     public const string Temporal = "temporal";
     public const string KeyVault = "keyvault";
     public const string WireMock = "wiremock";
+    public const string Gotenberg = "gotenberg";
 
     public const string Catalog = "catalog-api";
     public const string Catalog2 = "catalog-api-2";
@@ -24,6 +25,7 @@ public static class ShopResources
     public const string Billing = "billing-api";
     public const string Merchant = "merchant-api";
     public const string Notify = "notify-worker";
+    public const string Reports = "reports-api";
 
     /// <summary>DEVELOPMENT-ONLY provider credentials; WireMock only accepts these (wiremock/mappings).</summary>
     public static class Providers

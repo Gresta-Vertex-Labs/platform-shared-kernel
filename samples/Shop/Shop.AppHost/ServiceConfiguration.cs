@@ -361,4 +361,38 @@ public static class ServiceConfiguration
             )
             .WaitFor(infra.WireMock);
     }
+
+    /// <summary>
+    /// Reports: its database, RabbitMQ, Gotenberg, the downloads store on S3 and the archive on Huawei OBS. Both stores
+    /// are MinIO buckets: OBS speaks the S3 protocol, so the OBS provider (with its own compatibility profile: no
+    /// conditional writes, no SHA-256 checksums) runs against MinIO through a path-style endpoint and an explicit region.
+    /// </summary>
+    public static IResourceBuilder<ProjectResource> WithReportsConfiguration(
+        this IResourceBuilder<ProjectResource> service,
+        ShopInfrastructure infra
+    ) =>
+        service
+            .WithIdentity(infra)
+            .WithDatabase(infra, "reports")
+            .WithRabbitMq(infra)
+            .WithObjectStorage(infra, "reports", "reports-archive")
+            .WithEnvironment(
+                "SharedKernel__Storage__Obs__Endpoint",
+                infra.Minio.GetEndpoint("http")
+            )
+            .WithEnvironment("SharedKernel__Storage__Obs__Region", "us-east-1")
+            .WithEnvironment("SharedKernel__Storage__Obs__ForcePathStyle", "true")
+            .WithEnvironment(
+                "SharedKernel__Storage__Obs__AccessKeyId",
+                ShopInfrastructure.MinioUser
+            )
+            .WithEnvironment(
+                "SharedKernel__Storage__Obs__SecretAccessKey",
+                ShopInfrastructure.MinioPassword
+            )
+            .WithEnvironment(
+                "SharedKernel__Reporting__Gotenberg__BaseUrl",
+                infra.Gotenberg.GetEndpoint("http")
+            )
+            .WaitFor(infra.Gotenberg);
 }
