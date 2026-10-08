@@ -81,7 +81,7 @@ No package here references an Adapter-tier package or `12.Security`. `IRequestCo
 
 In addition to the common build and test steps:
 
-1. `ISender` and the request/handler/behavior shapes are used by `17.Workflows` (`CommandActivity<>`), `19.Scheduling` (`ScheduledCommandJob<>`), `14.Presentation` endpoints and `samples/OrderApi`; a shape change requires the full `dotnet build Platform.SharedKernel.slnx -c Release` and a report line for each affected domain.
+1. `ISender` and the request/handler/behavior shapes are used by `17.Workflows` (`CommandActivity<>`), `19.Scheduling` (`ScheduledCommandJob<>`), `14.Presentation` endpoints and every Shop service (`samples/Shop`; Ordering also through `CommandActivity<>`); a shape change requires the full `dotnet build Platform.SharedKernel.slnx -c Release` and a report line for each affected domain.
 2. `00.Governance`'s `ApplicationPipelineRules`, `UnitOfWorkSeamRules` and `DependencyGraphRulesTests` (Unit lane) must stay green.
 3. A public API change updates `PublicAPI.Unshipped.txt`, the package README (`docs/package-readme-standard.md`) and — when the registration shape changes — `SharedKernel.Application.ConsumerVerify` (run by hand against a packed feed; say in the report whether you ran it).
 

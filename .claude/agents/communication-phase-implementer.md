@@ -73,7 +73,7 @@ All three share one namespace, `SharedKernel.Communication`. Tests are nested (`
 In addition to the common build and test steps:
 
 1. Build and run `src/Infrastructure/Communication/consumer-verify` when a public surface or registration changes.
-2. When propagation or result mapping changes, run `13.ServiceDefaults.Security`'s `EndToEndPropagationTests` and `samples/CheckoutApi/CheckoutApi.Tests` (two real services: `CheckoutApi` → `InventoryApi`) and say in the report whether they passed.
+2. When propagation or result mapping changes, run `13.ServiceDefaults.Security`'s `EndToEndPropagationTests` and the Shop's `Shop.Ordering.Tests` (`GrpcInventoryReservationsTests`) plus, when the wire behaviour changes, its `Shop.E2E` Ordering and Billing flows (`samples/Shop/build.sh --e2e`: Ordering → Inventory over gRPC, Ordering → Billing over REST) and say in the report whether they passed.
 3. `00.Governance`'s `CommunicationLayeringRules` stay green; `PublicAPI.Unshipped.txt` (RS0016/RS0017 and CS1591 are errors) and the package README — configuration table with full paths such as `SharedKernel:Communication:Clients:{name}:Retry:MaxRetryAttempts` — move with every public or configuration change.
 
 ---

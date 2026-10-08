@@ -65,7 +65,7 @@ and `app.MapSharedKernelOpenApi()` (maps nothing outside Development unless `Exp
 **GraphQL** — `services.AddSharedKernelGraphQL()` (HotChocolate's `AddGraphQLServer()`, so `app.MapGraphQL()` works) before the service's own `AddGraphQLServer()`; `FilterBase<T>`,
 `SortBase<T>`, `PagedResponseType<T>.FromPagedList(...)`/`FromConnection`/`FromPage`/`From`.
 
-Canonical host pipeline (`samples/OrderApi`):
+Canonical host pipeline (`samples/Shop/Ordering/Shop.Ordering.Api/Program.cs`, `samples/Shop/Catalog/Shop.Catalog.Api/Program.cs`):
 
 ```csharp
 app.UseSharedKernelRequestContext();   // 13.ServiceDefaults.Security — first: correlation id, baggage refused, scope
@@ -241,7 +241,7 @@ statement takes the next free id of its package's sub-block and a row in that te
   `NoInlineResultBranchBeforeHttpResultOutsideWebApi`, `NoOpenApiStackDependencyOutsideOpenApiAddOn`,
   `GrpcNeverReferencesContracts`), SK0022, SK0032 (CORS wildcard + credentials), SK0036 (raw `RpcException`/`Status`
   outside `.Grpc`), `PresentationPreconditionCodesTests`.
-- **samples** (OrderApi, BillingApi, DocumentsApi, ShippingApi, CatalogApi, CheckoutApi, InventoryApi) and
+- **samples** (the Shop's services in `samples/Shop`: Catalog, Ordering, Inventory, Billing, Merchant, Notify, Reports) and
   `consumer-verify` use the one-call path and endpoint modules; a public API change updates them.
 
 ## Testing

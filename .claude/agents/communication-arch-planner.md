@@ -81,7 +81,7 @@ Cite the rule number from `src/Infrastructure/Communication/CLAUDE.md` "Rules & 
 - **Configuration first.** A new option gets a D-task fixing its full section path, default, validation (startup error vs. ignored) and whether it is read per call; the package README Configuration table follows as a DO-task.
 - **Test style to prescribe** (all Unit lane): REST through a real registered client over `StubHttpMessageHandler` with in-memory configuration and `IStartupValidator.Validate()`, `Retry:BaseDelay` 0; gRPC against a real service on `TestServer` (`GrpcHarness`); transport failures as `HttpRequestException` with a `SocketException` inner; token lifetimes with `FakeClock`; certificates made in memory. Name the failure paths the phase must cover (each `communication.*` code touched, caller-supplied header preserved, non-idempotent method not repeated).
 - **Doubles.** A new public seam that consumers must fake is a cross-domain note for `16.Testing`'s `SharedKernel.Communication.Testing`.
-- **Samples.** A change to how a consumer registers or calls a client adds a note to keep `samples/CheckoutApi` → `samples/InventoryApi` and `consumer-verify` compiling.
+- **Samples.** A change to how a consumer registers or calls a client adds a note to keep the Shop's Ordering (`samples/Shop/Ordering/Shop.Ordering.Infrastructure`: gRPC to Inventory over mutual TLS, REST to Billing with an API key) and `consumer-verify` compiling.
 - **Package versions.** A newer `Microsoft.Extensions.Http.Resilience`, `ServiceDiscovery` or `Grpc.Net.*` requirement is recorded with the reason; the bump itself is a `Directory.Packages.props` change (cross-domain note for devops-lead).
 
 ---
@@ -94,7 +94,7 @@ Cite the rule number from `src/Infrastructure/Communication/CLAUDE.md` "Rules & 
 - **13.ServiceDefaults** — `WithCommunicationTelemetry()`; `ServiceDefaults.Security`'s end-to-end propagation tests exercise this domain.
 - **16.Testing** — `StubHttpMessageHandler`, `UseStubHttpMessageHandler`, `GrpcCalls`, `TestServerCallContext`.
 - **00.Governance** — `CommunicationLayeringRules`, SK0013, SK0022; the gRPC-interceptor inheritance rule exempts only `SharedKernel.Communication.Grpc`.
-- **samples** — `CheckoutApi` → `InventoryApi` over both protocols.
+- **samples** — the Shop: Ordering → Inventory over gRPC with mutual TLS, Ordering → Billing over REST with an API key (`samples/Shop`).
 
 ---
 

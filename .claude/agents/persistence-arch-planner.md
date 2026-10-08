@@ -25,7 +25,7 @@ Six packages, **PostgreSQL only** (the package table, entry points and namespace
 | `SharedKernel.Persistence.EfCore.Auditing` | Adapter | → EfCore |
 | `SharedKernel.Persistence.EfCore.Encryption` | Adapter | → EfCore |
 
-Inbound edge from another domain: `SharedKernel.Idempotency.EfCore` → `Persistence.EfCore`. Test helpers live in `src/Infrastructure/Persistence/SharedKernel.Persistence.Testing`; the reference service is `samples/BillingApi`; `SharedKernel.Persistence.ConsumerVerify` runs the packed packages.
+Inbound edge from another domain: `SharedKernel.Idempotency.EfCore` → `Persistence.EfCore`. Test helpers live in `src/Infrastructure/Persistence/SharedKernel.Persistence.Testing`; the reference services are the Shop's Ordering (`samples/Shop/Ordering/Shop.Ordering.Infrastructure/Persistence`: EF Core, RLS, field encryption, audit ledger) and Billing (EF Core, RLS), with Dapper in Inventory and Reports; `SharedKernel.Persistence.ConsumerVerify` runs the packed packages.
 
 ---
 

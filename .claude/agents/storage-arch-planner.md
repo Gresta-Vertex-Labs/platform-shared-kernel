@@ -22,7 +22,7 @@ Three packages (details in `src/Infrastructure/Storage/CLAUDE.md` → `## Packag
 | `SharedKernel.Storage.S3` | Adapter | the S3 implementation (AWS, MinIO, any S3-compatible) over `AWSSDK.S3`; `S3Compatibility` |
 | `SharedKernel.Storage.Obs` | Adapter | Huawei OBS as configuration + a compatibility profile over S3 — **declared edge Obs → S3** (S3 never references Obs) |
 
-Public types live in the flat namespace `SharedKernel.Storage` (option types in `SharedKernel.Storage.S3` / `.Obs`). Consumer fakes: `src/Infrastructure/Storage/SharedKernel.Storage.Testing`. Proof: `consumer-verify/` and `samples/DocumentsApi` (MinIO, plus live AWS S3 and OBS runs with `SK_LIVE_*`).
+Public types live in the flat namespace `SharedKernel.Storage` (option types in `SharedKernel.Storage.S3` / `.Obs`). Consumer fakes: `src/Infrastructure/Storage/SharedKernel.Storage.Testing`. Proof: `consumer-verify/`, the provider integration tests (MinIO) and the Shop's Catalog and Reports (`samples/Shop`: S3 and the OBS provider against MinIO, `Shop.E2E`). No harness runs against real AWS S3 or OBS any more.
 
 A new provider plugs in through `IStorageBuilder` + `FileStoreRegistration(name, tenantScoped, factory, probe)`; tenant isolation, validation and probes come from Abstractions, so the provider only sees validated, prefixed keys.
 
@@ -47,7 +47,7 @@ Authoritative wording: `src/Infrastructure/Storage/CLAUDE.md` → `## Rules & In
 - Flipping a process-wide SDK switch (the `ETagIsContentMd5` decision) — a library must not change global SDK state.
 
 **Judgment calls to make explicitly in D-tasks:**
-- **Provider matrix.** Every new verb or option states its behaviour on AWS S3, MinIO and OBS, and which `S3Compatibility` flag gates it. Never document a behaviour that no test or live run has shown — MinIO accepts things the real services reject, so plan a `samples/DocumentsApi` live-run task for provider-visible changes.
+- **Provider matrix.** Every new verb or option states its behaviour on AWS S3, MinIO and OBS, and which `S3Compatibility` flag gates it. Never document a behaviour that no test or live run has shown — MinIO accepts things the real services reject, so plan a manual live-run task against real AWS S3 / OBS for provider-visible changes.
 - **Seam placement.** Anything every provider can honour goes in Abstractions (and the in-memory fake must honour it too); a provider-specific knob goes on that provider's options, never on `IFileStorage`.
 - **New provider shape.** A non-S3 backend (Azure Blob, GCS) is a sibling Adapter package with no edge to S3; OBS-style reuse (a declared edge) is justified only when the service speaks the S3 API and differs only in configuration. A new edge needs an arch-lead note for the root `CLAUDE.md`.
 - **Tenant stores.** State how the change behaves on a tenant view (`ForTenant(TenantId)`), including copies across tenants and `IFileStorageFactory.Open(FileReference)`.

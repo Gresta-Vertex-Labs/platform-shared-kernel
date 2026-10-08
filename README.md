@@ -61,7 +61,8 @@ plumbing once, as small packages with narrow jobs, so a service only has to writ
 ## ⚡ Get started
 
 A service built on the kernel has four projects, and each one references only the tier made for it.
-[`samples/OrderApi`](samples/OrderApi/) is exactly this shape, with an architecture test that keeps it so.
+The Shop's [`Ordering`](samples/Shop/Ordering/) and [`Catalog`](samples/Shop/Catalog/) services are exactly this
+shape, with architecture tests that keep them so.
 
 **1. Pin the version once** — see [Using the packages](#using-the-packages) for the full `Directory.Packages.props`.
 
@@ -351,18 +352,18 @@ folder to its overview, and the badge after each name is the package's tier. Eac
 
 ## 🚀 Sample services
 
-Runnable services built only from the **packed** packages. Each one is the reference for one area, and
-CI runs them against real infrastructure. Start with [`samples/README.md`](samples/README.md), the guide
-to consuming the kernel.
+[`samples/Shop`](samples/Shop/README.md) is one reference platform built only from the **packed** packages: seven
+services under a .NET Aspire AppHost, run against real infrastructure in containers, with end-to-end flows across
+them. Start with [`samples/README.md`](samples/README.md), the guide to consuming the kernel.
 
-| Sample | Reference for | Runs against |
+| Shop service | Reference for | Runs against |
 |--------|---------------|--------------|
-| [OrderApi](samples/OrderApi/) | The four-project service shape (Domain / Application / Infrastructure / Api), enforced by an architecture test | nothing external |
-| [BillingApi](samples/BillingApi/) | The full persistence stack: EF Core + Dapper, row-level security, field encryption, audit ledger | PostgreSQL |
-| [ShippingApi](samples/ShippingApi/) | Messaging: publish/send, delayed delivery, consumer idempotency, caller context across the bus | RabbitMQ |
-| [DocumentsApi](samples/DocumentsApi/) | Object storage and reporting: named/tenant stores, presigned links, CSV/Excel/PDF exports | MinIO, Gotenberg |
-| [CatalogApi](samples/CatalogApi/) | Search: Meilisearch and Elasticsearch side by side | Meilisearch, Elasticsearch |
-| [CheckoutApi](samples/CheckoutApi/) → [InventoryApi](samples/InventoryApi/) | Two services talking: typed REST and gRPC clients, service discovery, an API key, safe retries with `Idempotency-Key`, the caller carried across, downstream errors returned as `Result` | nothing external (loopback ports) |
+| [Catalog](samples/Shop/Catalog/) | The four-project shape with architecture tests; caching with Redis L2 and a backplane, Meilisearch and Elasticsearch side by side, semantic search, presigned S3 uploads, GraphQL | PostgreSQL, Redis, Meilisearch, Elasticsearch, Qdrant, MinIO |
+| [Ordering](samples/Shop/Ordering/) | The four-project shape with the full persistence stack (row-level security, field encryption, audit ledger), the EF Core outbox on RabbitMQ, idempotent submissions, a Temporal workflow, gRPC over mutual TLS to Inventory and REST with an API key to Billing | PostgreSQL, RabbitMQ, Redis, Temporal |
+| [Inventory](samples/Shop/Inventory/) | Dapper under row-level security, a gRPC server behind mutual TLS, Redis hashes and distributed locks, a scheduled job | PostgreSQL, Redis |
+| [Billing](samples/Shop/Billing/) | Key Vault, API-key authentication, validated IBAN/VAT, personal data and GDPR requests, signed webhooks, an outbox | PostgreSQL, RabbitMQ, Key Vault emulator |
+| [Notify](samples/Shop/Notify/) | A worker host: messaging consumers, email and SMS notifications | RabbitMQ, WireMock |
+| [Reports](samples/Shop/Reports/) | Streaming CSV/Excel/PDF exports into S3 and OBS stores behind presigned downloads, HTML to PDF | PostgreSQL, MinIO, Gotenberg |
 
 ---
 

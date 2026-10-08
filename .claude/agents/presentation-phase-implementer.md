@@ -96,7 +96,7 @@ Run the touched test projects, then `consumer-verify` whenever a public API, an 
 
 ## Verification beyond the lane
 
-- `samples/OrderApi` (the canonical middleware order and endpoint modules) and `samples/CheckoutApi`/`samples/InventoryApi` (gRPC + REST) consume these packages as packed packages. When the phase changes the public surface or the pipeline, pack (`dotnet pack Platform.SharedKernel.slnx -c Release -o nupkgs`) and run the affected sample's tests with `-p:SharedKernelPackageVersion=<packed version>` and a throw-away `NUGET_PACKAGES` folder in your scratchpad (deleted afterwards). A sample edit is a report line unless the brief includes it.
+- The Shop (`samples/Shop`: Catalog and Ordering for the canonical middleware order and endpoint modules, GraphQL in Catalog, SignalR in Ordering, gRPC + REST in Inventory) consumes these packages as packed packages. When the phase changes the public surface or the pipeline, run `samples/Shop/build.sh --test` (packs, builds, runs the unit tests; `--e2e` adds the end-to-end flows) with a throw-away `NUGET_PACKAGES` folder in your scratchpad (deleted afterwards). A sample edit is a report line unless the brief includes it.
 - `00.Governance`'s `PresentationLayeringRules` tests pin the references; run `SharedKernel.ArchitectureTests.Tests` when you add a reference.
 
 ---

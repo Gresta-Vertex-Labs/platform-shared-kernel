@@ -24,7 +24,7 @@ You edit files under `src/Infrastructure/Reporting/` only. Report lines instead 
 | `SharedKernel.Reporting.Testing` doubles, `SharedKernel.Storage.Testing`'s in-memory store | `16.Testing` |
 | `WithReportingTelemetry()`, `AddSharedKernelReadiness()` | `13.ServiceDefaults` |
 | `LoggingEventIdRanges`, `Result`/`Error`, `AddValidatedOptions` | `01.Core` |
-| `samples/DocumentsApi` report endpoints | report line unless the brief includes them |
+| `samples/Shop/Reports` endpoints | report line unless the brief includes them |
 
 ---
 
@@ -96,7 +96,7 @@ Run the touched projects, then `consumer-verify`, then the lane that contains th
 ## Verification beyond the lane
 
 - `src/Infrastructure/Reporting/consumer-verify` (in the `.slnx`, Unit lane) runs the whole chain in a real host and reopens outputs with independent readers; keep it green whenever a public API or registration changes.
-- `samples/DocumentsApi` (`POST /reports/{store}/listing?format=`, the PDF endpoint) proves the domain end to end against MinIO and Gotenberg as packed packages. When the phase changes the public surface, pack (`dotnet pack Platform.SharedKernel.slnx -c Release -o nupkgs`) and run `DocumentsApi.Tests` with `-p:SharedKernelPackageVersion=<packed version>` and a throw-away `NUGET_PACKAGES` folder in your scratchpad (deleted afterwards).
+- The Shop's Reports service (`samples/Shop/Reports`: sales exports and the HTML-to-PDF statement) proves the domain end to end against MinIO and Gotenberg as packed packages. When the phase changes the public surface, run `samples/Shop/build.sh --test` (`Shop.Reports.Tests`), and `--e2e` for the `ReportsFlowTests`, with a throw-away `NUGET_PACKAGES` folder in your scratchpad (deleted afterwards).
 
 ---
 

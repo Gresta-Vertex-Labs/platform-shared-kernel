@@ -135,10 +135,12 @@ beyond the token's claim, [`SharedKernel.MultiTenancy`](../ServiceDefaults/Share
 
 ## Samples
 
-- [`samples/InventoryApi`](../../../samples/InventoryApi/README.md) — API key authentication with a custom
-  `IApiKeyValidator` (`ConfiguredApiKeyValidator`) and `AddSharedKernelRequestContext()`.
-- [`samples/OrderApi`](../../../samples/OrderApi/README.md) — the four-project service shape; its host notes where
-  `AddOidcAuthentication(configuration)` replaces the development identity, and its tests cover `[RequirePermission]`.
+The Shop ([`samples/Shop`](../../../samples/Shop/README.md)) signs every API in through Keycloak:
+- [`Billing`](../../../samples/Shop/Billing/) — API key authentication over a custom `IApiKeyStore`
+  (`ConfigurationApiKeyStore`, key hashes from Key Vault) next to `AddOidcAuthentication(configuration)`.
+- [`Inventory`](../../../samples/Shop/Inventory/) — mutual TLS with a certificate allow-list for Ordering.
+- [`Ordering`](../../../samples/Shop/Ordering/) — `AddOidcAuthentication(configuration)`, `[RequirePermission]` and a
+  TOTP step-up before cancelling.
 
 ## Guarantees
 

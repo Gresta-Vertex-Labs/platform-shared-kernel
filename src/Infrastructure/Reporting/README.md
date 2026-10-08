@@ -107,9 +107,9 @@ Result<ReportExportOutcome> export = await exporters.GetExporter<Order>(format.V
 
 ## Sample
 
-[`samples/DocumentsApi`](../../../samples/DocumentsApi) exposes `POST /reports/{store}/listing?format=` — a CSV, Excel or
-PDF listing chosen at runtime through `IReportExporterFactory` — and an HTML-to-PDF endpoint through Gotenberg, both
-stored in MinIO and returned as presigned links, with end-to-end tests against real MinIO and Gotenberg containers.
+The Shop's [`Reports`](../../../samples/Shop/Reports/) exposes `POST /reports/sales?format=&store=` — a CSV, Excel or
+PDF export of the tenant's sales chosen at runtime through `IReportExporterFactory` — and an HTML-to-PDF statement through Gotenberg, both
+stored in MinIO (an S3 store and an OBS archive) and returned as presigned links, with end-to-end flows against real MinIO and Gotenberg containers.
 
 ## Guarantees
 

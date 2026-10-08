@@ -78,7 +78,7 @@ Cite the rule number from `src/Application/CLAUDE.md` "Rules & Invariants".
 - **Test style to prescribe.** Real `ServiceCollection` + `AddSharedKernelApplication` + `RequestPipeline<,>` (or `ISender` via `UseMediatR()` when the mediator path is under test) — never a hand-rolled continuation. Name in T-tasks: success / failed-`Result` / exception path per behavior; outermost-only and nested merge/discard; host-start seam check and double-call guard; `PipelineOrderAssertion` for placement; concurrency against real FusionCache for caching changes. All four test projects are Unit lane.
 - **Options.** Behavior options use DataAnnotations + `ValidateOnStart` with no configuration section (a ratified decision); a proposal that needs configuration binding must justify the switch to `AddValidatedOptions` in a D-task.
 - **Public API.** The public surface is the registration call, builder, options and pipelines; every change lists the `PublicAPI.Unshipped.txt` and README DO-tasks.
-- **Consumer verify.** A change to what a consumer writes (registration, markers) adds a task to keep `SharedKernel.Application.ConsumerVerify` and `samples/OrderApi` compiling (the sample edit is a cross-domain note if it is not this domain's file).
+- **Consumer verify.** A change to what a consumer writes (registration, markers) adds a task to keep `SharedKernel.Application.ConsumerVerify` and the Shop (`samples/Shop`, every service sends through `ISender`; Ordering and Catalog carry the markers) compiling (the sample edit is a cross-domain note if it is not this domain's file).
 
 ---
 

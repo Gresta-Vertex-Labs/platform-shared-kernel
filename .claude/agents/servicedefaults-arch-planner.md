@@ -26,7 +26,7 @@ Seven packages, **all Host tier** (details in `src/Hosting/ServiceDefaults/CLAUD
 | `SharedKernel.ServiceDefaults.Localization` | request-culture resolution |
 | `SharedKernel.MultiTenancy` | `TenantResolutionMiddleware`, strategies, `ITenantStatusValidator`, read-only `ITenantCatalog` |
 
-Consumer fakes: `src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Testing`. Compiled reference host: `samples/OrderApi/OrderApi.Api/Program.cs`. Philosophy: composition-only, opt-in by default, live ≠ ready, one request context.
+Consumer fakes: `src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Testing`. Compiled reference hosts: `samples/Shop/Ordering/Shop.Ordering.Api/Program.cs` and `samples/Shop/Catalog/Shop.Catalog.Api/Program.cs`. Philosophy: composition-only, opt-in by default, live ≠ ready, one request context.
 
 ---
 
@@ -79,7 +79,7 @@ Authoritative wording: `src/Hosting/ServiceDefaults/CLAUDE.md` → `## Rules & I
 - **Propagation claims** extend `EndToEndPropagationTests` (HTTP → REST/gRPC/bus → consumer, job → REST) rather than adding isolated tests.
 - **Composition-base changes** keep `CompositionBaseIsolationTests` able to fail.
 - **Test-only references** to other domains (e.g. WebApi for the 429 recipe) are allowed in `.Tests` projects only — never in production packages.
-- Update `consumer-verify/` when the base or `MultiTenancy` public surface changes, and note the `samples/OrderApi` composition if the canonical order changes.
+- Update `consumer-verify/` when the base or `MultiTenancy` public surface changes, and note the Shop hosts' composition (`samples/Shop`, Ordering and Catalog first) if the canonical order changes.
 
 ---
 

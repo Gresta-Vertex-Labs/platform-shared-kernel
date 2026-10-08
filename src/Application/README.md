@@ -135,11 +135,11 @@ its failure semantics.
 
 ## See it run
 
-[samples/OrderApi](../../samples/OrderApi/README.md) is the reference layout: `OrderApi.Application` references only
-`SharedKernel.Application` and holds `PlaceOrderCommand`, `GetOrderQuery` and a `CancelOrderCommand` protected by
-`[RequirePermission("orders.cancel")]`, each next to its handler; `OrderApi.Api` composes the pipeline with
-`AddSharedKernelApplication(..., app => app.UseMediatR())` and its tests prove the 401/403/204 outcomes over HTTP. An
-architecture test fails the build if a project reaches beyond its tier.
+The Shop's [Ordering](../../samples/Shop/Ordering/) service is the reference layout: `Shop.Ordering.Application` holds
+`PlaceOrderCommand`, `GetOrderQuery` and a `CancelOrderCommand`, each protected by `[RequirePermission]` and next to
+its handler; `Shop.Ordering.Api` composes the pipeline with
+`AddSharedKernelApplication(..., app => app.UseMediatR().WithIdempotency().WithTransactions().WithAuditing())`.
+`OrderingArchitectureTests` fails the build if a project reaches beyond its tier.
 
 ## Guarantees
 

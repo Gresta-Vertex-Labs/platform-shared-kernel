@@ -77,7 +77,7 @@ Cite the rule number from `src/Model/Domain/CLAUDE.md` "Rules & Invariants".
 - **Persistence impact D-task.** Any change to a base class, interface, id, `Money`, tenant or specification shape starts with a D-task walking the "If you change…" table in `src/Model/Domain/CLAUDE.md`; the `06.Persistence` consequences (conventions, value converters, interceptors, `SpecificationEvaluator`, keyset seek) become `## Cross-Domain Dependencies` notes. A change that would break a mapping at **runtime** (reflection on `op_Explicit`, materialization interceptors) must be called out explicitly.
 - **Analyzer impact.** New construction or naming rules may need a `00.Governance` analyzer (like SK0037, SK0009, SK0034); record that as a note, never plan the analyzer here.
 - **Test obligations to name in T-tasks:** equality (same type, transient, cross-type), validation reporting every error, `TryCreate` result paths, event sequencing, soft-delete idempotency, rounding/allocation invariants with property-style cases; every behaviour fix goes into `DomainHardeningTests`/`MoneyHardeningTests` with the pre-fix behaviour noted. Unit lane only.
-- **Consumer surface.** Every public change carries tasks for `PublicAPI.Unshipped.txt`, the package README (compiled snippets with real outputs) and `SharedKernel.Domain.ConsumerVerify`; a change consumers write against (`samples/OrderApi`, `16.Testing` assertions and fakers) is a cross-domain note.
+- **Consumer surface.** Every public change carries tasks for `PublicAPI.Unshipped.txt`, the package README (compiled snippets with real outputs) and `SharedKernel.Domain.ConsumerVerify`; a change consumers write against (the Shop's `Shop.Catalog.Domain` and `Shop.Ordering.Domain`, `16.Testing` assertions and fakers) is a cross-domain note.
 - **Additive by default.** Existing aggregates in consuming services cannot be changed together with the kernel; prefer new optional members and new types over altered semantics, and state the migration for any breaking change.
 
 ---
@@ -90,7 +90,7 @@ Cite the rule number from `src/Model/Domain/CLAUDE.md` "Rules & Invariants".
 - **04.Contracts** — no reference in either direction; paging contracts are what repositories return.
 - **16.Testing** — `MoneyFaker`, `FakeExchangeRateProvider`, domain assertions, `SpecificationTestBuilder`.
 - **00.Governance** — SK0009, SK0034, SK0037, `AggregateFactoriesMustCreateValidationResults`, `SharedKernelLayeringRules`.
-- **samples** — `samples/OrderApi` Domain project.
+- **samples** — the Shop's Domain projects (`samples/Shop/Catalog/Shop.Catalog.Domain`, `samples/Shop/Ordering/Shop.Ordering.Domain`).
 
 ---
 

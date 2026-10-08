@@ -22,7 +22,7 @@ This file is not an agent. Every agent in `.claude/agents/` follows it; an agent
 | Build, test lanes, CI, release, adding a package (for humans) | `CONTRIBUTING.md` |
 | Build internals: props/targets, tier check, MinVer, CI workflows, run settings | `eng/README.md` |
 | Package README shape | `docs/package-readme-standard.md` (enforced by `PackageReadmeStandardTests`) |
-| Reference services | `samples/README.md`, `samples/OrderApi` |
+| Reference services | `samples/README.md`, `samples/Shop/README.md` (Ordering and Catalog show the four-project shape) |
 
 History is not kept in the repository beyond the one-line entries on the boards; `git log` is the record.
 

@@ -92,7 +92,7 @@ Each package is `src/Hosting/Security/{Package}/` with its tests nested at `src/
 
 - `src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Security.Tests` builds `IRequestContext` over `IUserContext`, and `14.Presentation`'s authorization tests evaluate the attributes against it; run both when `IUserContext`, a mapper or `SecurityClaimTypes` changes.
 - `00.Governance`'s `SecureDefaultsAssertionTests` pins the secure defaults; run `SharedKernel.ArchitectureTests.Tests` when an option default changes.
-- The samples wire these handlers (`OrderApi`, `InventoryApi`'s API key validator, `BillingApi`'s demo authentication) as packed packages. When the public surface changes, pack (`dotnet pack Platform.SharedKernel.slnx -c Release -o nupkgs`) and build the affected samples with `-p:SharedKernelPackageVersion=<packed version>` and a throw-away `NUGET_PACKAGES` folder in your scratchpad (deleted afterwards). A sample edit is a report line unless the brief includes it.
+- The Shop wires these handlers as packed packages (`samples/Shop`: OIDC in every API, Billing's API key store, Inventory's mTLS allow-list, Ordering's TOTP step-up). When the public surface changes, run `samples/Shop/build.sh --test` (and `--e2e` for the sign-in, API-key, mTLS and step-up flows) with a throw-away `NUGET_PACKAGES` folder in your scratchpad (deleted afterwards). A sample edit is a report line unless the brief includes it.
 
 ---
 

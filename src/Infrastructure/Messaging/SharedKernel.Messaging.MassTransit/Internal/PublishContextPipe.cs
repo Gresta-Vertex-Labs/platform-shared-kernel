@@ -19,7 +19,7 @@ namespace SharedKernel.Messaging.MassTransit.Internal;
 /// and nothing else — leaving the consumer's <c>IRequestContext</c> with no tenant, which
 /// <c>06.Persistence</c> fails closed on. It also set the transport correlation id only when the
 /// caller happened to supply a custom header or a partition key. Both were found by
-/// <c>samples/ShippingApi</c> running against a real broker (P-561).
+/// a sample service running against a real broker (P-561).
 /// </para>
 /// <para>
 /// The envelope's own <c>TenantId</c> field is not a substitute for the header: it exists inside
