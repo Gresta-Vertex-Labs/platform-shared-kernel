@@ -1,5 +1,6 @@
 ---
-description: Hand an architecture request to the arch-lead agent (plans work orders; never writes code)
+name: arch
+description: Hand an architecture request to the arch-lead agent, which evaluates it against the SharedKernel architecture and writes a work order on the root state-map; it plans and never writes code. Use when the user proposes a new capability, package, pattern or architectural change.
 argument-hint: <capability request>
 ---
 

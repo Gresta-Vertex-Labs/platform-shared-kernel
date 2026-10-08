@@ -107,6 +107,8 @@ flowchart LR
 ```
 
 ```csharp
+using SharedKernel.Core.Extensions;
+
 Result<ReceiptDto> receipt = await orders.FindAsync(orderId, ct)     // Task<Result<Order>>
     .Ensure(order => order.IsOpen, OrderErrors.Closed)
     .Bind(order => payments.ChargeAsync(order, ct))                   // Task<Result<Payment>>
@@ -159,6 +161,9 @@ propagates, and the `CancellationToken` overloads do not call the delegate when 
 ### 1. Stop at the first guard violation
 
 ```csharp
+using SharedKernel.Guards;
+using SharedKernel.Primitives.Results;
+
 public static Result<Money> Create(decimal amount, string? currency) =>
     (Guard.Against.Negative(amount)
      ?? Guard.Against.NullOrWhiteSpace(currency)
@@ -172,6 +177,11 @@ factory only when every guard passed — use it when building the value would th
 ### 2. Report every violation at once
 
 ```csharp
+using SharedKernel.Core.Extensions;
+using SharedKernel.Guards;
+using SharedKernel.Primitives.Errors;
+using SharedKernel.Primitives.Results;
+
 ValidationResult validation = Guard.Collect(
     Guard.Against.NullOrWhiteSpace(request.Name),
     Guard.Against.Email(request.Email),
@@ -191,6 +201,10 @@ every value in order.
 ### 3. Map a known exception to a specific error
 
 ```csharp
+using SharedKernel.Core.Extensions;
+using SharedKernel.Primitives.Errors;
+using SharedKernel.Primitives.Results;
+
 Result<Customer> customer = ResultTry.Try(
     () => crm.GetCustomer(customerId),
     ex => ex is CrmNotFoundException
@@ -356,5 +370,5 @@ BCL has them: `string.IsNullOrWhiteSpace`, `Enumerable.Chunk`, `ToUnixTimeMillis
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Core domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Foundation/README.md) ·
+[Foundation packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Foundation/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

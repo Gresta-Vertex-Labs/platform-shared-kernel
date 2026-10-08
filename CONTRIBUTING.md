@@ -388,7 +388,7 @@ uphold it.
 ## AI-assisted development
 
 The repository ships a root `CLAUDE.md`, a `CLAUDE.md` per capability folder and a `.claude/`
-directory of agents and commands, which [Claude Code](https://claude.com/claude-code) uses to plan
+directory of agents and skills, which [Claude Code](https://claude.com/claude-code) uses to plan
 and implement changes within the rules above. They are optional: you don't need Claude Code or any
 AI tool to contribute, and contributions are reviewed the same way however they were written. The
 `CLAUDE.md` files are also a dense reference for the rules of each capability folder, if you want the

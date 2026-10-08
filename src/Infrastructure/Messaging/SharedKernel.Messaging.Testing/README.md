@@ -187,7 +187,7 @@ declares a valid `[IntegrationEvent]`.
 ## Testing
 
 This package is the test double; its own self-tests live in
-[`SharedKernel.Messaging.Testing.Tests`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Messaging/SharedKernel.Messaging.Testing/SharedKernel.Messaging.Testing.Tests),
+[`SharedKernel.Messaging.Testing.Tests`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/src/Infrastructure/Messaging/SharedKernel.Messaging.Testing/SharedKernel.Messaging.Testing.Tests),
 which prove recording, propagator order and context precedence against the `IMessageBus`/`IEventPublisher` contract.
 Pair it with [`SharedKernel.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Testing/README.md)
 (`TestRequestContext`, `FakeClock`, `EventEnvelopeBuilder<TEvent>` for envelope-shaped assertions) and, for consumer
@@ -207,4 +207,6 @@ Consumer and broker-fidelity tests use MassTransit's own test harness (`AddMassT
 
 ---
 
-Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) · [16.Testing domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/README.md) · [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
+[Messaging packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Messaging/README.md) ·
+[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

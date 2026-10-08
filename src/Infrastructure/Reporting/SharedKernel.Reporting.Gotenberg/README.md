@@ -5,9 +5,10 @@
 ![Tier: Adapter](https://img.shields.io/badge/tier-Adapter-6f42c1)
 ![Public API: tracked](https://img.shields.io/badge/public%20API-tracked-informational)
 
-> **HTML-to-PDF for `SharedKernel.Reporting`, rendered by [Gotenberg](https://gotenberg.dev) — a stateless container
+> **The `IHtmlToPdfConverter` implementation, rendered by [Gotenberg](https://gotenberg.dev), a stateless container
 > running headless Chromium. Send a finished HTML string; get a PDF streamed into object storage (with a presigned
-> link) or any stream, with Chromium kept out of your service's process.**
+> link) or any stream, with Chromium kept out of your service's process.** Pick it for free-form documents
+> (invoices, letters); for a title plus one table from rows, `SharedKernel.Reporting.Pdf` needs no container.
 
 | You get | So that |
 | --- | --- |
@@ -42,7 +43,7 @@ version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
-| Tier | Adapter — reference it from your **Infrastructure** (or Api) project |
+| Tier | Adapter — reference it from your **Infrastructure** project |
 | Depends on | `SharedKernel.Reporting.Abstractions`, `SharedKernel.Configuration`, `SharedKernel.Execution`, `Microsoft.Extensions.Http.Resilience` — no vendor SDK |
 | Namespaces | `SharedKernel.Reporting` (`AddGotenberg`), `SharedKernel.Reporting.Gotenberg` (`GotenbergOptions`) |
 | Runtime | A Gotenberg 8 container (`gotenberg/gotenberg:8`, port 3000) |
@@ -51,6 +52,9 @@ version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform
 
 ```csharp
 using SharedKernel.Reporting;
+using SharedKernel.ServiceDefaults.HealthChecks;
+using SharedKernel.ServiceDefaults.Telemetry;
+using SharedKernel.Storage;
 
 builder.Services.AddSharedKernelStorage().AddS3(builder.Configuration).AddStore("invoices");
 builder.Services.AddSharedKernelReporting().AddGotenberg(builder.Configuration);   // SharedKernel:Reporting:Gotenberg
@@ -69,9 +73,11 @@ builder.WithReportingTelemetry();
 ```
 
 ```csharp
+using SharedKernel.Primitives.Results;
 using SharedKernel.Reporting;
 using SharedKernel.Storage;
 
+// IHtmlToPdfConverter converter, IRequestContext requestContext (SharedKernel.Execution.Context)
 Result<PdfDocumentOutcome> stored = await converter.ConvertAsync(      // IHtmlToPdfConverter
     html,                                                              // a complete document; <title> sets the PDF title
     new ReportDestination
@@ -124,6 +130,9 @@ sequenceDiagram
 ### 1. Stream a PDF into the HTTP response
 
 ```csharp
+using SharedKernel.Primitives.Results;
+using SharedKernel.Reporting;
+
 Result<ReportStreamOutcome> written = await converter.ConvertToStreamAsync(html, httpContext.Response.Body, options, ct);
 ```
 
@@ -210,5 +219,5 @@ be added as another `IHtmlToPdfConverter`).
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Reporting domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Reporting/README.md) ·
+[Reporting packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Reporting/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

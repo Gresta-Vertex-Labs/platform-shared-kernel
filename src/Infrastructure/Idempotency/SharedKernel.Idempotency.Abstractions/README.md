@@ -9,6 +9,11 @@
 > idempotency in the application pipeline and consumer deduplication in messaging. Stores are registered per purpose,
 > scope every key by tenant, and classify a key in one atomic round trip.**
 
+Reference it from your **Application** project when you write your own store or call the contract directly; the host
+picks the provider (`SharedKernel.Idempotency.Redis` for fast, short-lived keys, `SharedKernel.Idempotency.EfCore` to
+keep entries in PostgreSQL next to your data). It guards against running the same command or message twice; to keep
+two processes out of one critical section at the same time, use `IDistributedLockService` from the Caching packages.
+
 | You get | So that |
 | --- | --- |
 | `IIdempotencyStore` — `TryBeginAsync` / `CompleteAsync` / `ReleaseAsync` | Commands and messages share one protocol and one set of stores |
@@ -68,6 +73,7 @@ builder.Services.AddEfCoreIdempotency(db => db.UsePostgres(dataSource), p => p.F
 Using the contract directly:
 
 ```csharp
+using Microsoft.Extensions.DependencyInjection;   // [FromKeyedServices]
 using SharedKernel.Idempotency.Abstractions;
 
 public sealed class ImportGuard([FromKeyedServices(IdempotencyPurpose.Request)] IIdempotencyStore store)
@@ -147,6 +153,10 @@ Register each purpose once. A second registration for the same purpose throws �
 unused.
 
 ```csharp
+using SharedKernel.Idempotency.EfCore.Extensions;
+using SharedKernel.Idempotency.Redis.Extensions;
+using SharedKernel.Persistence;   // UsePostgres
+
 builder.Services.AddRedisIdempotency(p => p.ForRequests());
 builder.Services.AddEfCoreIdempotency(db => db.UsePostgres(dataSource), p => p.ForMessages());
 ```
@@ -156,6 +166,10 @@ builder.Services.AddEfCoreIdempotency(db => db.UsePostgres(dataSource), p => p.F
 A third backend implements the three members with the same semantics and registers itself per purpose.
 
 ```csharp
+using Microsoft.Extensions.DependencyInjection;
+using SharedKernel.Execution.Context;          // IRequestContextAccessor
+using SharedKernel.Idempotency.Abstractions;
+
 public sealed class DynamoIdempotencyStore(IAmazonDynamoDB dynamo, IRequestContextAccessor context) : IIdempotencyStore
 {
     public async Task<IdempotencyReservation> TryBeginAsync(
@@ -258,5 +272,5 @@ useful, so providers have no TTL settings.
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Idempotency domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Idempotency/README.md) ·
+[Idempotency packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Idempotency/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

@@ -8,7 +8,8 @@
 
 > **The embedding and chat-completion provider for `SharedKernel.AI.Abstractions`, over any OpenAI-compatible
 > endpoint. It reports token usage on every call, hands tool calls back to you, and never retries or caches a
-> completion unless you ask.**
+> completion unless you ask.** Pick it for embeddings and chat completion. It stores no vectors: pair it with
+> `SharedKernel.AI.Qdrant` for retrieval, and use `SharedKernel.AI.Testing` in unit tests.
 
 | You get | So that |
 | --- | --- |
@@ -271,5 +272,5 @@ cache.
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Intelligence domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/AI/README.md) ·
+[AI packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/AI/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

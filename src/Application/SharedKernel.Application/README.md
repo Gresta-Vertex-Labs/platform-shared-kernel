@@ -19,7 +19,7 @@
 | Every handler returns `Result`/`Result<T>` | An expected failure is a value the caller must handle, not an exception thrown past it |
 | `IStreamQuery<TResponse>` and its handler | A large read streams item by item instead of materializing in memory |
 | `IRequestValidator<TRequest>` | Validation is a kernel port; FluentValidation is one optional implementation |
-| `IDomainEventHandler<TDomainEvent>` | A domain event from `03.Domain` is handled against the raw event type, with no wrapper |
+| `IDomainEventHandler<TDomainEvent>` | A domain event from `SharedKernel.Domain` is handled against the raw event type, with no wrapper |
 | `[RequirePermission]` (always enforced) and the request markers (`IIdempotentRequest`, `IAuditableRequest<T>`, `ILoggableRequest<T>`, `ICacheableQuery<T>`, `IInvalidatesCache`) and `ICommandScope` | A request opts into a behavior by declaring an interface; the handler body never changes |
 
 ## Contents
@@ -201,17 +201,23 @@ public sealed class ListMyOrdersHandler(IOrderReadService reads, IRequestContext
 ```
 
 An HTTP service registers it with `SharedKernel.ServiceDefaults.Security`'s `AddSharedKernelRequestContext()`
-(over `SharedKernel.Security.Abstractions`' `IUserContext`). A caller with no HTTP request uses one of `SharedKernel.Execution`'s own
-implementations:
+(over `SharedKernel.Security.Abstractions`' `IUserContext`). A caller with no inbound request (a scheduled job, a
+startup task, a test) opens an ambient scope with one of `SharedKernel.Execution`'s own contexts; `IRequestContext`
+resolves to it for everything awaited inside:
 
 ```csharp
-// A Temporal activity or a scheduled job: a named identity with exactly the permissions it needs.
-services.AddScoped<IRequestContext>(_ => new SystemRequestContext(
-    permissions: ["orders.expire", "invoices.issue"],
-    identity: "billing-worker"));
+using SharedKernel.Execution.Context;
 
-// An unauthenticated path: not authenticated, no user, no tenant, no permissions.
-services.AddScoped<IRequestContext>(_ => AnonymousRequestContext.Instance);
+// A named identity with exactly the permissions it needs (optionally a tenant and a correlation id).
+var worker = new SystemRequestContext(["orders.expire", "invoices.issue"], identity: "billing-worker", tenantId: tenantId);
+
+using (RequestContextScope.Begin(worker))
+{
+    await sender.Send(new ExpireStaleOrdersCommand(), ct);
+}
+
+// An unauthenticated path: no user, no tenant, no permissions.
+using (RequestContextScope.Begin(AnonymousRequestContext.Instance)) { /* … */ }
 ```
 
 `SystemRequestContext` takes an explicit permission list on purpose. There is no "system bypasses
@@ -432,5 +438,5 @@ registration — the host calls `AddSharedKernelApplication` from `SharedKernel.
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Application domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Application/README.md) ·
+[Application packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Application/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

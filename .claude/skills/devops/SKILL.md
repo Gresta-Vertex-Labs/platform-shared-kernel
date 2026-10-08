@@ -1,5 +1,6 @@
 ---
-description: Hand a build, CI, packaging, versioning or container request to the devops-lead agent
+name: devops
+description: Hand a build, CI, packaging, versioning, release, secrets or container request to the devops-lead agent, which executes it; with no input it reviews the build posture. Use for anything about how the code is built, checked, packed or published.
 argument-hint: <request, or empty for a posture review>
 ---
 
@@ -42,7 +43,7 @@ If the Agent tool call fails, output the error and leave every file unchanged.
 
 ## Format Contract
 
-- This command modifies **no file directly** — every write is performed by the `devops-lead` agent.
+- This skill modifies **no file directly** — every write is performed by the `devops-lead` agent.
 - The user's input is forwarded verbatim. It is never rewritten, expanded, scoped down, or interpreted before dispatch.
 - The agent's jurisdiction is enforced by the agent itself: `.github/**`, MSBuild build-configuration files, `NuGet.Config`, `global.json`, `Dockerfile*`/`.dockerignore`/`deploy/**`, `eng/**`, the build sections of `CONTRIBUTING.md`, and narrow packaging-only `.csproj` edits.
 - The agent never touches root or domain `CLAUDE.md`, any domain `state-map.md`, any `.cs` file, or any `00.Governance` authored artifact. On the root `state-map.md` it only adds and closes its own `eng` work orders.

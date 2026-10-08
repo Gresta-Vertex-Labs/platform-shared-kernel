@@ -7,7 +7,10 @@
 
 > **Typed REST clients in one line each: address, timeouts, retries and credentials from configuration, the caller on
 > every call, and methods that return `Result<T>` — the other service's own `Error`, or a coded failure when it did
-> not answer — instead of throwing.**
+> not answer — instead of throwing.** Use it to call another service over HTTP/JSON; for a gRPC service use
+> [`SharedKernel.Communication.Grpc`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Communication/SharedKernel.Communication.Grpc/README.md).
+> Discovery, credentials and mTLS come from
+> [`SharedKernel.Communication`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Communication/SharedKernel.Communication/README.md).
 
 | You get | So that |
 | --- | --- |
@@ -87,8 +90,9 @@ public sealed class InventoryClient(HttpClient http) : IInventoryClient
 }
 ```
 
-`InventoryJson` is your `JsonSerializerContext`; each verb also has a reflection overload
-(`JsonSerializerOptions.Web`). The Shop sample's Ordering service (`RestPayments` in `samples/Shop`) uses the source-generated form.
+`InventoryJson` is your `JsonSerializerContext`; each verb with a body also has a reflection overload
+(`JsonSerializerOptions.Web`). The Shop's Ordering service uses the source-generated form for its call to Billing
+([`RestPayments`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/samples/Shop/Ordering/Shop.Ordering.Infrastructure/Billing/RestPayments.cs)).
 
 ## How it works
 
@@ -100,7 +104,7 @@ flowchart LR
     Y --> R["Resilience<br/>timeout · retry/hedge · breaker"]
     R --> A["Credential<br/>(per attempt)"]
     A --> D["Service discovery"]
-    D --> S["The called service"]
+    D --> S["Inventory service"]
 ```
 
 - **What every call carries**, outermost first: the caller's correlation id, tenant, actor and client
@@ -122,7 +126,7 @@ flowchart LR
   | No response | `communication.unreachable`, `.timeout`, `.circuit_open`, `.access_token_unavailable` |
   | The caller's own cancellation | Thrown (`OperationCanceledException`) |
 
-  Status → `ErrorType` is the reverse of `14.Presentation`'s map: 400 Validation, 401 Unauthorized, 403 Forbidden, 404
+  Status → `ErrorType` is the reverse of the map `SharedKernel.Presentation.Core` applies on the server: 400 Validation, 401 Unauthorized, 403 Forbidden, 404
   NotFound, 409 and 412 Conflict, 413/415/428 Validation, 422 BusinessRule, 429 and 503 Unavailable, 504 Timeout,
   anything else Unexpected. The code is never `title` (a reason phrase) or `type` (a URI).
 
@@ -191,8 +195,8 @@ are Microsoft.Extensions.Http.Resilience's standard pipeline.
 
 | Type | Methods |
 | --- | --- |
-| `HttpClientResultExtensions` | `GetResultAsync`, `PostResultAsync`, `PutResultAsync`, `DeleteResultAsync`, `SendResultAsync` — each with a `JsonTypeInfo<T>` overload (trimming- and AOT-safe) and a reflection one |
-| `HttpResponseMessageResultExtensions` | `ToResultAsync`, `ReadResultAsync<T>` |
+| `HttpClientResultExtensions` | `GetResultAsync<T>`, `PostResultAsync`, `PutResultAsync`, `SendResultAsync` — each with a `JsonTypeInfo<T>` overload (trimming- and AOT-safe) and a reflection one; `PostResultAsync`/`PutResultAsync`/`SendResultAsync` also return a plain `Result` when no body is read. `DeleteResultAsync(uri, ct)` → `Result` |
+| `HttpResponseMessageResultExtensions` | `ToResultAsync` → `Result`, `ReadResultAsync<T>` → `Result<T>` (`JsonTypeInfo<T>` or reflection) |
 
 ### Errors
 
@@ -202,8 +206,9 @@ an uncoded failure is `http.{status}` (`http.503`).
 
 ### Logging
 
-EventIds 11200–11299 are reserved for this package; it logs nothing of its own. Outbound HTTP spans and resilience
-metrics come from `13.ServiceDefaults`' `WithCommunicationTelemetry()`.
+EventIds 11200–11299 are reserved for this package; it logs nothing of its own (credential events, 11000–11004, come
+from `SharedKernel.Communication`). Outbound HTTP spans and resilience metrics come from `WithCommunicationTelemetry()`
+in [`SharedKernel.ServiceDefaults`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults/README.md).
 
 ## Testing
 
@@ -235,5 +240,5 @@ every attempt it sent.
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Communication domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Communication/README.md) ·
+[Communication packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Communication/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

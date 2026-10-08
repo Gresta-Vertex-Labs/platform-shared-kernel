@@ -7,7 +7,8 @@
 
 > **In-memory doubles for `SharedKernel.Reporting.Abstractions`, so export and HTML-to-PDF code is tested without a
 > format provider, a Gotenberg container or object storage.** Each double records what it was given and fabricates
-> a realistic outcome.
+> a realistic outcome. Use it in a service's unit tests; to check the bytes of a file, export with the real format
+> package into a `MemoryStream` instead.
 
 | You get | So that |
 | --- | --- |
@@ -16,6 +17,15 @@
 | `InMemoryHtmlToPdfConverter` (`IHtmlToPdfConverter`) | You assert the HTML and `HtmlToPdfOptions` a PDF was rendered from |
 | `SimulateFailure` / `SimulatedError` | Failure paths return a real `Error`, as production would |
 | `AddInMemoryReporting()` | One call swaps the factory and converter in a test host |
+
+## Contents
+
+- [Install](#install)
+- [Quick start](#quick-start)
+- [How it works](#how-it-works)
+- [Reference](#reference)
+- [Testing](#testing)
+- [Pitfalls](#pitfalls)
 
 ## Install
 
@@ -207,11 +217,13 @@ when the code under test also reads the stored report back.
 | --- | --- | --- |
 | Reference it from a production project | Reference it from test projects only | `TestingNeverReferencedByProduction` fails the build's architecture tests |
 | Expect the stored file to exist after `ExportAsync` | Assert on `LastDestination` / the outcome | The exporter never writes to storage |
-| Rely on it to reject a bad definition, destination or row count | Test validation and `MaxRows` against a real `20.Reporting` provider | The fake validates nothing |
+| Rely on it to reject a bad definition, destination or row count | Test validation and `MaxRows` against a real Reporting provider | The fake validates nothing |
 | Expect `AddInMemoryReporting()` to replace `ICsvReportExporter<T>` and friends | Construct an `InMemoryReportExporter<TRow>` for code that injects one | Only the factory and the converter are swapped |
 | Assert on an earlier export after a second one | Assert between exports, or use one exporter per export | `LastRows` holds only the last export |
 | Parse `PlaceholderPdf` as a real PDF | Assert on `HtmlConversion.Html` and `Options` | It is a marker, not a rendered document |
 
 ---
 
-Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) · [16.Testing domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/README.md) · [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
+[Reporting packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Reporting/README.md) ·
+[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

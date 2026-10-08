@@ -33,7 +33,7 @@ version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
-| Tier | Adapter — reference it from your **Api/Worker** (startup) project, next to the MassTransit core |
+| Tier | Adapter — reference it from your **Infrastructure** project, next to the MassTransit core |
 | Depends on | `SharedKernel.Messaging.MassTransit` (declared adapter edge), `MassTransit.RabbitMQ` 8.5.x |
 | Namespaces | `SharedKernel.Messaging.MassTransit.Extensions` (`UseRabbitMq`), `SharedKernel.Messaging.MassTransit.Options` (`RabbitMqBusOptions`) |
 
@@ -149,5 +149,5 @@ is MIT.
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Messaging domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Messaging/README.md) ·
+[Messaging packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Messaging/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

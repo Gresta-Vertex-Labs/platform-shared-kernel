@@ -212,10 +212,8 @@ The doubles return no `Error` codes of their own: the production handlers that c
 
 ## Testing
 
-This package is the test double; its self-tests live in
-[`SharedKernel.Security.Testing.Tests`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Security/SharedKernel.Security.Testing/SharedKernel.Security.Testing.Tests),
-which prove each double against the production contract — including a step-up evaluated by the platform's own
-`[RequireAuthenticationMethod]` authorization handler. Pair it with
+This package is the test double. Each double is checked against the production contract it stands in for — a step-up
+built with it is evaluated by the real `[RequireAuthenticationMethod]` authorization handler. Pair it with
 [`SharedKernel.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Testing/README.md):
 `FakeClock` for `auth_time` and step-up ages, and `TestRequestContext` when the code under test reads
 `IRequestContext` rather than `IUserContext` (application code should).
@@ -233,4 +231,6 @@ which prove each double against the production contract — including a step-up 
 
 ---
 
-Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) · [16.Testing domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/README.md) · [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
+[Security packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Security/README.md) ·
+[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

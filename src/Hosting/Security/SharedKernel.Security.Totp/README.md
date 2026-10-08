@@ -7,6 +7,9 @@
 
 > **Authenticator-app enrollment, recovery codes and session-bound step-up: a verified one-time code adds `amr=otp`
 > to one sign-in session for a bounded window, so sensitive endpoints can demand a fresh second factor.**
+>
+> Pick it when your service, not the identity provider, owns the second factor. It sits on top of an authentication
+> package (usually `SharedKernel.Security.Oidc`); the TOTP algorithms themselves live in `SharedKernel.Cryptography`.
 
 | You get | So that |
 | --- | --- |
@@ -427,5 +430,5 @@ ten. The lookup reveals 10 of 50 bits; the remaining 40 stay behind the slow has
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Security domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Security/README.md) ·
+[Security packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Security/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

@@ -5,9 +5,8 @@
 > domain-event dispatcher (`.Pipeline`), query caching and post-commit eviction (`.Pipeline.Caching`), and one adapter
 > that uses MediatR as the transport behind `ISender` (`.Mediator.MediatR`). Handlers return `Result`/`Result<T>`
 > exclusively. This domain does **not** own the caller, transaction or audit contracts (`IRequestContext`,
-> `IUnitOfWork`, `IAuditTrailWriter` — `01.Core`'s `SharedKernel.Execution`), the idempotency store
-> (`18.Idempotency`), the cache (`02.Caching`), validation libraries (`01.Core`'s `SharedKernel.Validation.FluentValidation`)
-> or any response envelope (there is none). Consumers read each package's `README.md` and the folder `README.md`.
+> `IUnitOfWork`, `IAuditTrailWriter` — `SharedKernel.Execution`), the idempotency store (`18.Idempotency`), the cache
+> (`02.Caching`), validation libraries (`SharedKernel.Validation.FluentValidation`) or any response envelope (there is none).
 
 ## Packages
 
@@ -18,9 +17,8 @@
 | `SharedKernel.Application.Pipeline.Caching` | Host | `app.WithCaching()` — internal `CachingBehavior<,>` (query stage) and `CacheInvalidationBehavior<,>` (command stage) |
 | `SharedKernel.Application.Mediator.MediatR` | Host | `app.UseMediatR()` — MediatR 12.4.1 as the transport behind `ISender` |
 
-`SharedKernel.Application.ConsumerVerify` (not packable, not in the solution) references the packed `Application`,
-`.Pipeline` and `.Mediator.MediatR` packages (plus `Idempotency.Abstractions` and `Validation.FluentValidation`) by
-`PackageReference` pinned with `-p:SharedKernelPackageVersion=…`, and runs a command end to end against them.
+`SharedKernel.Application.ConsumerVerify` (not packable, not in the solution) runs a command end to end against the
+packed packages (`-p:SharedKernelPackageVersion=…`).
 
 ## Public Entry Points
 
@@ -35,17 +33,25 @@ services.AddSharedKernelApplication(typeof(PlaceOrderHandler).Assembly, app => a
 services.AddFluentValidationRequestValidators(typeof(PlaceOrderHandler).Assembly); // optional FluentValidation bridge
 ```
 
-- **`SharedKernel.Application.Pipeline`** — `AddSharedKernelApplication(params Assembly[])`, `(Assembly, Action<ApplicationPipelineBuilder>)`, `(Assembly[], Action<ApplicationPipelineBuilder>)`; `AddDomainEventHandler<TDomainEvent, THandler>()` for a handler outside the scanned assemblies. `ApplicationPipelineBuilder` (`Services`, `Assemblies`, `WithIdempotency(Action<IdempotencyBehaviorOptions>?)`, `WithTransactions()`, `WithAuditing()`, `WithBehavior(type, stage, params requiredServices)`). `PipelineStage` (`Observability`, `Authorization`, `Validation`, `Query`, `Command`). Options: `ApplicationLoggingOptions.SlowRequestThreshold` (500 ms), `IdempotencyBehaviorOptions` (`LeaseDuration` 30 s, `RetentionWindow` 24 h, lease < retention) — DataAnnotations + `ValidateOnStart`, no configuration section. `RequestPipeline<TRequest,TResponse>.HandleAsync` and `StreamRequestPipeline<,>` are public because a mediator adapter (and tests) resolve them.
-- **Always registered**: every `IRequestHandler<,>`/`IStreamQueryHandler<,>` (transient), `IRequestValidator<>` and `IDomainEventHandler<>` (scoped) of the assemblies, public or internal; `DomainEventDispatcher` as `IDomainEventDispatcher`; `ICommandScope`; Tracing, Logging, Metrics, Authorization (+ stream twin) and Validation behaviors.
-- **`SharedKernel.Application.Pipeline.Caching`** — `app.WithCaching()` (`CachingPipelineExtensions`).
-- **`SharedKernel.Application.Mediator.MediatR`** — `app.UseMediatR()`: `ISender` → internal `MediatRSender` (transient, so a nested send stays in the caller's scope); per scanned request type an internal `RequestEnvelope<TRequest,TResponse>` MediatR handler that runs `RequestPipeline<,>` and a keyed `RequestDispatcher` singleton.
+Overloads, options and defaults: the `SharedKernel.Application.*` READMEs.
+
+- **`.Pipeline`** — `AddSharedKernelApplication(...)`; `AddDomainEventHandler<TDomainEvent, THandler>()` for a handler
+  outside the scanned assemblies; `ApplicationPipelineBuilder`; `PipelineStage` (`Observability`, `Authorization`,
+  `Validation`, `Query`, `Command`); `ApplicationLoggingOptions`, `IdempotencyBehaviorOptions`.
+  `RequestPipeline<,>`/`StreamRequestPipeline<,>` are public because a mediator adapter (and tests) resolve them.
+- **Always registered**: every `IRequestHandler<,>`/`IStreamQueryHandler<,>` (transient), `IRequestValidator<>` and
+  `IDomainEventHandler<>` (scoped) of the assemblies, public or internal; `DomainEventDispatcher` as
+  `IDomainEventDispatcher`; `ICommandScope`; Tracing, Logging, Metrics, Authorization (+ stream twin) and Validation behaviors.
+- **`.Mediator.MediatR`** — `ISender` → internal `MediatRSender` (transient, so a nested send stays in the caller's
+  scope); per scanned request type an internal `RequestEnvelope<TRequest,TResponse>` MediatR handler that runs
+  `RequestPipeline<,>` and a keyed `RequestDispatcher` singleton.
 - Application code injects `ISender` (`Send`, `CreateStream`) and `ICommandScope` (`IsActive`, `IsNested`, `OnCompleted`).
 
 ## Rules & Invariants
 
 1. `SharedKernel.Application` stays MediatR-free, FluentValidation-free and free of `Microsoft.Extensions.*` implementation packages. A service's Application project references only it.
 2. **MediatR is referenced only by `SharedKernel.Application.Mediator.MediatR`** (`DependencyGraphRulesTests.MediatR_IsReferencedOnlyByTheMediatorAdapter`) and is **pinned to 12.4.1, the last MIT-licensed release. Never bump it** without a recorded licensing decision. MediatR's own pipeline stays empty; MediatR `IRequestHandler`/`INotificationHandler` implementations are not discovered.
-3. `.Pipeline` references only `SharedKernel.Application`, `.Execution`, `.Primitives`, `.Core`, `.Idempotency.Abstractions` and first-party `Microsoft.Extensions.*` — never a cache, Polly, hosting, FluentValidation or a mediator (`ApplicationPipelineRules`). The `Caching.Abstractions` dependency of the behaviors belongs only to `.Pipeline.Caching`.
+3. `.Pipeline` references only `SharedKernel.Application`, `.Execution`, `.Primitives`, `.Idempotency.Abstractions` and first-party `Microsoft.Extensions.*` — never a cache, Polly, hosting, FluentValidation or a mediator (`ApplicationPipelineRules.PipelineNeverReferencesCachingPollyOrHosting`). The `Caching.Abstractions` dependency of the behaviors belongs only to `.Pipeline.Caching`.
 4. Never redeclare `IRequestContext`, `IUnitOfWork`, `IAuditTrailWriter` or `IIdempotencyStore` here (`UnitOfWorkSeamRules.SharedContractsAreNotRedeclared`).
 5. **No response envelope, ever.** `14.Presentation` maps a failed `Result` to RFC 9457; `11.Communication`'s REST client maps it back.
 6. **One registration call.** A second `AddSharedKernelApplication` throws; so do no/`null` assemblies and two different handlers for one request type (a hand-registered handler is kept). `WithBehavior` rejects a type that is not an open generic `IPipelineBehavior<,>` and ignores duplicates.
@@ -64,9 +70,9 @@ services.AddFluentValidationRequestValidators(typeof(PlaceOrderHandler).Assembly
 19. **`CachingBehavior` caches the `TValue`, not the `Result`**, via the context overload of `ICacheService.GetOrSetAsync`; a failed `Result` is `SkipCaching()`'d and never handed to concurrent waiters (each waiter runs the handler itself — pinned by `CachingBehaviorConcurrencyTests` against real FusionCache). Policy forced to `WithoutEagerRefresh()` and no factory timeouts (both would run the handler after the scope is disposed). `TValue` must round-trip through System.Text.Json.
 20. `CacheInvalidationBehavior` builds and validates keys/tags **before** the handler and evicts in an `OnCompleted` callback (post-commit).
 21. `DomainEventDispatcher` is serial: events in list order, handlers in registration order, exact runtime type only; an exception stops dispatch; no handler = skipped. External side effects go behind the outbox or `ICommandScope.OnCompleted`.
-22. **Reflection** is allowed where clearest (AOT/trimming are not constraints here) but always cached once per closed type or done only at registration: `FailureResponse`/`ResponseOutcome` delegates, the dispatcher's per-event-type invoker, `RequirePermission` lookup (`PermissionRequirements<TRequest>`), the registration-time assembly scans. Nothing reflective per send.
+22. **Reflection** is allowed where clearest but always cached once per closed type or done only at registration: `FailureResponse`/`ResponseOutcome` delegates, the dispatcher's per-event-type invoker, `RequirePermission` lookup (`PermissionRequirements<TRequest>`), the registration-time assembly scans. Nothing reflective per send.
 23. Behaviors and `DomainEventDispatcher` are **internal** (`InternalsVisibleTo` the test project only); the public surface is the registration call, builder, options and pipelines. Every public change updates `PublicAPI.Unshipped.txt` and the package README.
-24. `SK0040` requires a request with `[RequirePermission]` or `IIdempotentRequest` to return `Result`/`Result<T>`; `SK0041` flags two cacheable queries sharing a simple type name.
+24. Marker shape rules: SK0040 (`[RequirePermission]`/`IIdempotentRequest` need a `Result` response), SK0041 (cacheable query names unique), SK0017/SK0018 (caching markers on the right request kind).
 
 ## Decisions
 
@@ -74,19 +80,19 @@ services.AddFluentValidationRequestValidators(typeof(PlaceOrderHandler).Assembly
 | --- | --- |
 | Kernel-owned `IRequest`/`ISender`/`IPipelineBehavior`; MediatR only as transport | Application projects stay MediatR-free; replacing MediatR is one new `ISender` adapter |
 | Argument-less `RequestHandlerContinuation<T>` (`await next()`) | Behavior bodies keep MediatR's familiar shape |
-| One `AddSharedKernelApplication` with builder opt-ins; mediator plugs in as `UseMediatR()` | No ordering traps; a seam registered after the call is still accepted; mirrors messaging's `UseRabbitMq()` |
-| `[RequirePermission]` on the use case, always enforced | An opt-in authorization behavior could be forgotten; endpoints no longer repeat command permissions |
+| One `AddSharedKernelApplication` with builder opt-ins; mediator plugs in as `UseMediatR()` | No ordering traps; a seam registered after the call is still accepted |
+| `[RequirePermission]` on the use case, always enforced | An opt-in authorization behavior could be forgotten; endpoints need not repeat command permissions |
 | Validation port `IRequestValidator<T>`; FluentValidation bridged in `01.Core` | The pipeline carries no validation library |
 | Native `DomainEventDispatcher` over `IDomainEventHandler<T>` | No MediatR notification wrapper type |
 | Purpose-keyed `IIdempotencyStore` shared with messaging | One store contract; the behavior owns lease and retention |
 | Idempotency scoped per tenant + caller | Tenant-only keys let one caller replay another's response |
 | Cache the value, not `Result` | Keeps `Result` free of serialization concerns; failures never cached |
-| Declined: fire-and-forget dispatch, a resilience behavior, parallel domain-event dispatch, a generic dual-approval behavior, a response envelope | Retries belong to the unit of work and outbound clients; ordering and transactions need serial dispatch; approval is a domain aggregate |
-| Options validated with DataAnnotations + `ValidateOnStart`, not `AddValidatedOptions` | Behavior options have no configuration section; no extra project reference |
+| No fire-and-forget dispatch, resilience behavior, parallel domain-event dispatch, generic dual-approval behavior or response envelope | Retries belong to the unit of work and outbound clients; ordering and transactions need serial dispatch; approval is a domain aggregate |
+| Behavior options validated with DataAnnotations + `ValidateOnStart`, not `AddValidatedOptions` | They have no configuration section; no extra project reference |
 
 ## Logging
 
-Block **5000–5999** (`LoggingEventIdRanges.Application`), 100-wide sub-blocks by package order; constants in internal `ApplicationBehaviorsLoggingEventIds` / `CachingBehaviorsLoggingEventIds`.
+100-wide sub-blocks by package; constants in internal `ApplicationBehaviorsLoggingEventIds` / `CachingBehaviorsLoggingEventIds`.
 
 | Range | Package | Events |
 | --- | --- | --- |
@@ -109,16 +115,14 @@ Tracing: `ActivitySource` `SharedKernel.Application` (process-lifetime static �
 | `IRequestValidator<T>` | here | Bridged from FluentValidation by `01.Core`'s `AddFluentValidationRequestValidators` |
 | `ISender` | here | Used by `17.Workflows`' `CommandActivity<>`, `19.Scheduling`'s `ScheduledCommandJob<>`, `14.Presentation` endpoints, every Shop service (`samples/Shop`) |
 
-Changing a request/handler/sender/behavior shape → also check `.Mediator.MediatR` envelopes, `CommandActivity<>`, `ScheduledCommandJob<>`, `16.Testing`'s `ApplicationPipelineTestHarness`. Changing stage order → `PipelineOrderTests` and `00.Governance`'s `ApplicationPipelineRules`.
+Changing a request/handler/sender/behavior shape → also check `.Mediator.MediatR` envelopes, `CommandActivity<>`, `ScheduledCommandJob<>`, `SharedKernel.Application.Testing`'s `ApplicationPipelineTestHarness`. Changing stage order → `PipelineOrderTests` and `00.Governance`'s `ApplicationPipelineRules`/`PipelineOrderAssertion`.
 
 ## Testing
 
-- Nested `*.Tests` projects for all four packages, all in the **Unit** lane.
+- **Unit** lane only: the nested `*.Tests` project of each of the four packages, plus `SharedKernel.Application.Testing.Tests`. No container fixtures; `.Pipeline.Caching` concurrency runs against a real in-process FusionCache.
 - Prove order and cross-behavior interaction through a real `ServiceCollection` + `AddSharedKernelApplication` + `RequestPipeline<,>` (or `ISender` via `UseMediatR()`), never a hand-rolled continuation.
-- Every behavior's success, `Result`-failure and exception path is tested; nested-command merge/discard; idempotency `Started`/`InProgress`/`Completed`/`FingerprintMismatch`, per-caller scoping and the key layout; authorization (unmarked unchecked, 401, 403, alternatives, multiple attributes, inheritance, stream); host-start seam check and double-call guard; `PipelineOrderAssertion` inspects registrations by type name.
-- `.Mediator.MediatR`: discovery of commands/queries/streams/domain-event handlers, hand-registered handler kept, duplicates rejected, missing handler error.
-- `.Pipeline.Caching` concurrency is proven against a real FusionCache, not only the fake.
-- Consumer helpers (`16.Testing`): `SharedKernel.Application.Testing` (`ApplicationPipelineTestHarness.Build()` runs the kernel pipeline without a mediator), `SharedKernel.Idempotency.Testing` (`FakeIdempotencyStore`), `SharedKernel.Caching.Testing` (`FakeCacheService`, with the same per-key skip semantics), `SharedKernel.Persistence.Testing` (`AddFakeUnitOfWork()` with `TransientFailures` proves a handler re-runnable), `SharedKernel.Testing` (`TestRequestContext`).
+- Every behavior's success, `Result`-failure and exception path is tested, plus nested commands, every idempotency outcome and the key layout, every authorization case, the host-start seam check and the double-call guard.
+- Fakes: `SharedKernel.Application.Testing` (`ApplicationPipelineTestHarness`) and the capability fakes it composes — catalogue in `src/Testing/CLAUDE.md`. `FakeCacheService` keeps the same per-key skip semantics as `CachingBehavior` relies on.
 
 ## Known Limitations
 

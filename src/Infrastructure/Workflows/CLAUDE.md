@@ -6,30 +6,25 @@
 > with tenant-scoped workflow ids, caller propagation into activities, `Result`↔Temporal-failure mapping and payload
 > encryption wired in. It does **not** own message-shaped reactions (`07.Messaging` — no sagas there either), recurring
 > triggers (`19.Scheduling`; a trigger that starts a workflow composes both) or health endpoints (`13.ServiceDefaults`).
-> The governing rule: **workflow code is replay code.** Consumers read `SharedKernel.Workflows.Temporal/README.md`; the
-> living board is `state-map.md`.
+> The governing rule: **workflow code is replay code.**
 
 ## Packages
 
 | Package | Tier | Purpose |
 | --- | --- | --- |
-| `SharedKernel.Workflows.Temporal` | Adapter | The whole domain: dispatch surface, authoring bases, worker hosting, propagation interceptor, failure mapper, payload codec, readiness probe, `TemporalOptions`, `WorkflowErrors`, `WorkflowWellKnown`. References `Primitives`, `Execution`, `Configuration`, `Cryptography` (Foundation) and `SharedKernel.Application` (Abstractions, for `ISender` only); `Temporalio`, `.Extensions.Hosting`, `.Extensions.OpenTelemetry`, `.Extensions.DiagnosticSource` (all 1.17.0) |
+| `SharedKernel.Workflows.Temporal` | Adapter | The whole domain: dispatch surface, authoring bases, worker hosting, propagation interceptor, failure mapper, payload codec, readiness probe, `TemporalOptions`, `WorkflowErrors`, `WorkflowWellKnown`. References `Primitives`, `Execution`, `Configuration`, `Cryptography` and `SharedKernel.Application` (for `ISender` only); `Temporalio`, `.Extensions.Hosting`, `.Extensions.OpenTelemetry`, `.Extensions.DiagnosticSource` (all 1.17.0) |
 
 `consumer-verify/` composes the package through a real host. There is deliberately **no**
 `SharedKernel.Workflows.Abstractions` (see Decisions).
 
 ## Public Entry Points
 
-**Registration** — `services.AddSharedKernelTemporalWorkflows(configuration)` → `ITemporalWorkflowsBuilder`:
-`.AddWorkflow<TWorkflow>()` (`TWorkflow : WorkflowBase`), `.AddActivities<TActivities>()` (scoped),
-`.WithWorker(taskQueue, tune?)` (`WorkerTuningOptions`), `.AsClientOnly()`, `.WithPayloadEncryption()`,
-`.WithOpenTelemetry()`, `.WithMetrics()`, `.AllowRawClientAccess()`, `.Build()`.
+API detail, option keys and defaults: `SharedKernel.Workflows.Temporal/README.md`.
 
-- Section `Workflows:Temporal` (`TemporalOptions.SectionName`, not under `SharedKernel:`): `TargetHost` and
-  `Namespace` (required), `TaskQueue`, `Tls`, `ApiKey`, `IdentityPrefix`, plus `DefaultActivityStartToCloseTimeoutSeconds`,
-  `DefaultWorkflowExecutionTimeoutSeconds`, `DefaultRetryMaximumAttempts`, `ValidateNamespaceOnStart` (see Known Limitations).
-- Lifetimes: `IWorkflowDispatcher` scoped; `IWorkflowIdFactory`, the Temporal client, the codec and the probe singletons;
-  activities scoped (one DI scope per activity task).
+**Registration** — `services.AddSharedKernelTemporalWorkflows(configuration)` → `ITemporalWorkflowsBuilder`:
+`.AddWorkflow<TWorkflow>()`, `.AddActivities<TActivities>()`, `.WithWorker(taskQueue, tune?)`, `.AsClientOnly()`,
+`.WithPayloadEncryption()`, `.WithOpenTelemetry()`, `.WithMetrics()`, `.AllowRawClientAccess()`, `.Build()`.
+Section `Workflows:Temporal` (`TemporalOptions.SectionName`); `TargetHost` and `Namespace` are required.
 
 ```csharp
 services.AddSharedKernelTemporalWorkflows(configuration)       // worker-hosting service
@@ -44,29 +39,21 @@ services.AddSharedKernelTemporalWorkflows(configuration)       // dispatch-only 
         .Build();
 ```
 
-**Dispatch** (namespace `SharedKernel.Workflows.Temporal.Dispatch`)
+Lifetimes: `IWorkflowDispatcher` scoped; `IWorkflowIdFactory`, the Temporal client, the codec and the probe singletons;
+activities scoped (one DI scope per activity task).
 
-- `IWorkflowDispatcher.StartAsync<TWorkflow>` / `<TWorkflow, TArgs>` / `<TWorkflow, TArgs, TResult>`
-  `(…, WorkflowStartOptions options, TenantScope tenantScope, ct)` → `Result<IWorkflowHandle[<TResult>]>`;
-  `GetHandle(workflowId, runId, tenantScope)`; `DescribeAsync(workflowId, tenantScope, ct)` → `WorkflowExecutionDescription`.
-- `WorkflowStartOptions`: required `TaskQueue`, `BusinessKey`, `IdReusePolicy`, `IdConflictPolicy`; optional
-  `ExecutionTimeout`, `RunTimeout`, `TaskTimeout`, `RetryPolicy`.
-- `IWorkflowHandle`: `SignalAsync`, `QueryAsync<T>`, `CancelAsync`, `TerminateAsync(reason)`; `IWorkflowHandle<TResult>.GetResultAsync`.
-- `IWorkflowIdFactory.Create(workflowTypeName, businessKey, tenantScope)` → `"{tenant}:{workflowType}:{businessKey}"`.
+**Dispatch** (`SharedKernel.Workflows.Temporal.Dispatch`) — `IWorkflowDispatcher` (`StartAsync` → `Result<IWorkflowHandle>`,
+`GetHandle`, `DescribeAsync`), `WorkflowStartOptions`, `IWorkflowHandle` / `IWorkflowHandle<TResult>`,
+`IWorkflowIdFactory` (`"{tenant}:{workflowType}:{businessKey}"`).
 
-**Authoring** (namespace `SharedKernel.Workflows.Temporal.Authoring`)
+**Authoring** (`SharedKernel.Workflows.Temporal.Authoring`) — `WorkflowBase` (replay-safe `Logger`, `UtcNow`, `NewId()`,
+header-derived `TenantScope`/`CorrelationId`, `ExecuteAsync<TActivity, TArgs, TResult>`), `ActivityBase(ILogger, IClock)`
+(`Heartbeat`, `Fail(Error)`, `FailFrom(Result)`), `CommandActivity<TCommand>` / `<TCommand, TResult>` (sends through
+`ISender`, maps a failed `Result`), `ActivityDispatchOptions`.
 
-- `WorkflowBase`: `Logger` (= `Workflow.Logger`), `UtcNow` (= `Workflow.UtcNow`), `NewId()`, `TenantScope` and
-  `CorrelationId` (read from the Temporal headers), `ExecuteAsync<TActivity, TArgs, TResult>(args, ActivityDispatchOptions?)`.
-- `ActivityBase(ILogger, IClock)`: `Logger`, `Clock`, `TenantScope`, `Heartbeat(...)`, `Fail(Error)`, `FailFrom(Result)`.
-- `CommandActivity<TCommand>` / `CommandActivity<TCommand, TResult>(ISender, ILogger, IClock)` — sends a kernel
-  command through `ISender` and maps a failed `Result` to a Temporal failure.
-- `ActivityDispatchOptions`: timeouts, `HeartbeatTimeout`, `RetryPolicy`, `CancellationToken`.
-
-**Other** — `WorkflowErrors` (every `Error` this domain returns), `WorkflowWellKnown` (`ActivitySourceName`/`MeterName`
-= `"SharedKernel.Workflows"`, `IdSeparator`, header keys, default timeouts/attempts), `WorkflowReadiness`
-(`ProbeName = "workflows"`, detail keys `Reachable`, `NamespaceAddressable`, `WorkerPollersActive`),
-`ITemporalRawClientAccessor` (gated escape hatch).
+**Other** — `WorkflowErrors`, `WorkflowWellKnown` (`ActivitySourceName`/`MeterName` = `"SharedKernel.Workflows"`,
+header keys, default timeouts/attempts), `WorkflowReadiness` (`ProbeName = "workflows"`), `ITemporalRawClientAccessor`
+(gated escape hatch).
 
 ## Rules & Invariants
 
@@ -74,10 +61,10 @@ services.AddSharedKernelTemporalWorkflows(configuration)       // dispatch-only 
 
 1. Nothing inside a `[Workflow]` type may read a clock, random source, network, database, filesystem, environment variable, ambient DI or thread pool. Those belong in activities.
 2. **No constructor injection** into a workflow and no field initialised from DI, statics or configuration — the worker, not the container, constructs workflows.
-3. Use `Workflow.UtcNow`, `Workflow.NewGuid()`, `Workflow.Random`, `Workflow.DelayAsync`, `Workflow.WaitConditionAsync`. `IClock` is **wrong inside a workflow** (the SK0001 inversion) and mandatory inside activities. SK0028 enforces this.
+3. Use `Workflow.UtcNow`, `Workflow.NewGuid()`, `Workflow.Random`, `Workflow.DelayAsync`, `Workflow.WaitConditionAsync`. `IClock` is **wrong inside a workflow** (the SK0001 inversion) and mandatory inside activities. Enforced by SK0028.
 4. No `Task.Run`, `Task.Delay`, `ContinueWith`, `ConfigureAwait(false)`, `Thread.Sleep`, `lock`, `Parallel.*` or custom schedulers in workflow code; never suppress `InvalidWorkflowOperationException`.
 5. No `System.Diagnostics.Activity` API inside workflow code — tracing is the `TracingInterceptor`'s job.
-6. Workflow logging is `[LoggerMessage]` methods called **on `Workflow.Logger`** — never an injected `ILogger<T>`, never a direct `LogXxx` call.
+6. Workflow `[LoggerMessage]` methods are called **on `Workflow.Logger`** — never an injected `ILogger<T>`.
 7. Changing the code path of a workflow with running executions requires `Workflow.Patched`/`DeprecatePatch` (introduce → deploy → drain → deprecate → remove).
 
 ### Failures
@@ -91,7 +78,7 @@ services.AddSharedKernelTemporalWorkflows(configuration)       // dispatch-only 
 
 12. `TenantScope` is a required separate parameter on every dispatch member — never optional, nullable, defaulted, or a `WorkflowStartOptions` member. `TenantScope.Global` is refused (`WorkflowErrors.TenantScopeMissing()`, log 17001) before any I/O.
 13. Every start routes through `IWorkflowIdFactory`; no dispatch member accepts a raw caller-supplied workflow id.
-14. Propagation uses `SharedKernel.Execution`'s `RequestContextPropagation` and `WellKnownHeaders` (never literals). The worker-side interceptor rebuilds a `PropagatedRequestContext` and opens a `RequestContextScope` for each activity, so `IRequestContext` and outbound calls carry the dispatcher's tenant and correlation id. Correlation is never `Activity.Current.Id`.
+14. Propagation uses `RequestContextPropagation` and `WellKnownHeaders`. The worker-side interceptor rebuilds a `PropagatedRequestContext` and opens a `RequestContextScope` for each activity, so `IRequestContext` and outbound calls carry the dispatcher's tenant and correlation id. Correlation is never `Activity.Current.Id`.
 
 ### Composition
 
@@ -99,15 +86,15 @@ services.AddSharedKernelTemporalWorkflows(configuration)       // dispatch-only 
 16. Registration is explicit (`AddWorkflow<T>`/`AddActivities<T>`) — no assembly scanning, no reflection (`Activator`, `MakeGenericType`, `dynamic`) in this package. One closed `CommandActivity<TCommand>` per command; never a reflective "dispatch any command" activity.
 17. This package does not register `IClock` or `ILogger<T>`; the host does. Types take `IOptions<TemporalOptions>`, never raw `TemporalOptions`.
 18. The obsolete `AddHostedTemporalWorker(taskQueue, buildId)` overload is used deliberately with a scoped `#pragma warning disable CS0618`; worker deployment versioning is not modelled.
-19. Allowed references: Foundation packages and `SharedKernel.Application` only — no MediatR, pipeline, persistence, messaging, caching, security, host packages or ASP.NET Core.
+19. Allowed references: Foundation packages and `SharedKernel.Application` only — no MediatR, pipeline, persistence, messaging, caching, security or host packages.
+20. No static mutable state.
 
 ### Readiness, encryption, raw access
 
-20. Readiness is the `workflows` `IReadinessProbe` only — no `IHealthCheck`, no `Microsoft.Extensions.Diagnostics.HealthChecks` (`WorkflowTopologyRules.NoHealthChecksDependencyInWorkflows`). The probe resolves the client lazily. A deep task-queue backlog is not a readiness failure; `WorkerPollersActive == false` on a worker is.
-21. `WithPayloadEncryption()` wraps `ISymmetricEncryptionService` (async members only) as an `IPayloadCodec`; AES-GCM associated data is the UTF-8 **WorkflowId** (never RunId, which changes across continue-as-new/retries). Every payload lives in server history in full — encrypt sensitive workflows.
-22. `ITemporalRawClientAccessor` exists only after `.AllowRawClientAccess()` (logs Warning 17012) and is never consumed in this repo (`NoRawClientAccessorConsumptionInRepo`). It **bypasses tenant scoping and id composition**. Application code never injects a `Temporalio.*` type (SK0029).
-23. Do not add a `StartAndWaitAsync`-style member (an unbounded wait behind a start-shaped name) or a Visibility-API list/search member (depends on the server deployment).
-24. No `<IsAotCompatible>` tag; no static mutable state.
+21. Readiness is the `workflows` `IReadinessProbe` only — no `IHealthCheck` (`WorkflowTopologyRules.NoHealthChecksDependencyInWorkflows`). The probe resolves the client lazily. A deep task-queue backlog is not a readiness failure; `WorkerPollersActive == false` on a worker is.
+22. `WithPayloadEncryption()` wraps `ISymmetricEncryptionService` (async members only) as an `IPayloadCodec`; AES-GCM associated data is the UTF-8 **WorkflowId** (never RunId, which changes across continue-as-new/retries). Every payload lives in server history in full — encrypt sensitive workflows.
+23. `ITemporalRawClientAccessor` exists only after `.AllowRawClientAccess()` (Warning 17012) and is never consumed in this repo (`WorkflowTopologyRules.NoRawClientAccessorConsumptionInRepo`). It **bypasses tenant scoping and id composition**. Application code never injects a `Temporalio.*` type (SK0029).
+24. Do not add a `StartAndWaitAsync`-style member (an unbounded wait behind a start-shaped name) or a Visibility-API list/search member (depends on the server deployment).
 
 ## Decisions
 
@@ -143,16 +130,16 @@ services.AddSharedKernelTemporalWorkflows(configuration)       // dispatch-only 
 
 ## Cross-Domain Couplings
 
-- **01.Core** — `Result`/`Error`, `IClock`, `LoggingEventIdRanges`, `IReadinessProbe` (`Primitives`); `TenantScope`, `RequestContextScope`, `RequestContextPropagation`, `WellKnownHeaders` (`Execution`/`Primitives`); `AddValidatedOptions` (`Configuration`); `ISymmetricEncryptionService` (`Cryptography`).
+- **01.Core** — `Result`/`Error`, `IClock`, `IReadinessProbe`; `TenantScope`, `RequestContextScope`, `RequestContextPropagation`, `WellKnownHeaders`; `AddValidatedOptions`; `ISymmetricEncryptionService` (`Cryptography`).
 - **05.Application** — `ISender` for `CommandActivity<>`; the host picks the mediator.
 - **13.ServiceDefaults** — `WithWorkflowTelemetry()` subscribes to `"SharedKernel.Workflows"` by name; `AddSharedKernelReadiness()` maps the `workflows` probe.
-- **16.Testing** — `SharedKernel.Workflows.Testing` (`InMemoryWorkflowDispatcher`, `InMemoryWorkflowHandle`, `AddInMemoryWorkflowDispatcher()`).
+- **16.Testing** — `SharedKernel.Workflows.Testing` doubles `IWorkflowDispatcher`; a dispatch-surface change needs the matching change there.
 - **19.Scheduling** — a scheduled trigger may start a workflow through `IWorkflowDispatcher`; the two compose, neither references the other.
-- **00.Governance** — `WorkflowTopologyRules`, SK0028, SK0029, the tier check.
+- **00.Governance** — `WorkflowTopologyRules`, SK0028, SK0029.
 
 ## Testing
 
-- `SharedKernel.Workflows.Temporal.Tests` (nested), Unit lane. No Testcontainers: `Temporalio.Testing`'s `WorkflowEnvironment` downloads and runs a dev server itself (`StartTimeSkippingAsync()` by default, `StartLocalAsync()` when real server behaviour is needed); `ActivityEnvironment` for isolated activities. Real-engine tests live under `RealEnvironment/`.
+- `SharedKernel.Workflows.Temporal.Tests`, Unit lane. No Testcontainers: `Temporalio.Testing`'s `WorkflowEnvironment` downloads and runs a dev server itself (`StartTimeSkippingAsync()` by default, `StartLocalAsync()` when real server behaviour is needed); `ActivityEnvironment` for isolated activities. Real-engine tests live under `RealEnvironment/`.
 - **Time-skipping only works through `WorkflowEnvironment.Client`**: a separately connected client (what `AddSharedKernelTemporalWorkflows` builds) never auto-skips, so timer-driven tests start/await via `fixture.Environment.Client`; the worker may still be the production composition.
 - **Replay determinism tests are mandatory** (`ReplayDeterminismTests`, `WorkflowReplayer`) for every sample workflow and base-type behaviour.
 - The failure-mapping table is asserted one test per `ErrorType`, plus the round trip back to the same `Error.Code`.
@@ -161,10 +148,11 @@ services.AddSharedKernelTemporalWorkflows(configuration)       // dispatch-only 
 - Propagation tests assert tenant and correlation reach `WorkflowBase` and `ActivityBase`, including across a child-workflow hop, against `WellKnownHeaders` constants.
 - Codec tests assert no plaintext in captured history and decode after key rotation.
 - DI tests register `NullLogger<>` and a clock explicitly. Mocking (NSubstitute) is limited to `ISender` and the dispatch surface; workflow behaviour always runs against a real `WorkflowEnvironment`.
+- Fakes: `SharedKernel.Workflows.Testing` — catalogue in `src/Testing/CLAUDE.md`.
 
 ## Known Limitations
 
-- `TemporalOptions.DefaultActivityStartToCloseTimeoutSeconds`, `DefaultWorkflowExecutionTimeoutSeconds`, `DefaultRetryMaximumAttempts` and `ValidateNamespaceOnStart` are bound and validated but not read by any code: `WorkflowBase.ExecuteAsync` applies the `WorkflowWellKnown` constants (30 s start-to-close, 30 s heartbeat, 5 attempts). Either wire them or remove them.
+- `TemporalOptions.DefaultActivityStartToCloseTimeoutSeconds`, `DefaultWorkflowExecutionTimeoutSeconds`, `DefaultRetryMaximumAttempts` and `ValidateNamespaceOnStart` are bound and validated but read by no code: `WorkflowBase.ExecuteAsync` applies the `WorkflowWellKnown` constants (30 s start-to-close, 30 s heartbeat, 5 attempts). Either wire them or remove them.
 - No workflow Update, list/search, schedules or worker deployment versioning; reach them only through the gated raw accessor.
 - `Temporalio` is not AOT-safe: a native Rust core per RID (publish with an explicit RID) and reflection-based STJ in the default data converter (a trimmed consumer must supply a source-generated context).
 - One worker composition (one task queue) per builder.

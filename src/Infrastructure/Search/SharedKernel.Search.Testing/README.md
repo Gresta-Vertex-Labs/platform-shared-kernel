@@ -7,7 +7,8 @@
 
 > **In-memory `ISearchIndex<TDocument>`, provisioner and provider descriptor, so indexing and search code runs in a
 > unit test without Meilisearch or Elasticsearch — with the same definition checks and tenant fail-closed rule as the
-> real engines.**
+> real engines.** Use it for a service's unit tests; relevance, estimated counts and engine-only features
+> (`IInstantSearch<T>`, `IAnalyticsSearch<T>`, …) still need a real engine.
 
 | You get | So that |
 | --- | --- |
@@ -226,4 +227,6 @@ for `TestRequestContext` and fakers. Relevance, estimated counts and engine-spec
 
 ---
 
-Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) · [16.Testing domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/README.md) · [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
+[Search packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Search/README.md) ·
+[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

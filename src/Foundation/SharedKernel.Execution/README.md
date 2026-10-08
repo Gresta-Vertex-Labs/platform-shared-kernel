@@ -57,6 +57,8 @@ The package has no registration method. In an HTTP host the request context come
 `SharedKernel.ServiceDefaults.Security`:
 
 ```csharp
+using SharedKernel.ServiceDefaults.Security;
+
 builder.Services.AddSharedKernelRequestContext();   // IRequestContext over IUserContext
 
 var app = builder.Build();
@@ -171,6 +173,8 @@ itself. `Succeeded` is written inside the business transaction; `Failed` on its 
 ### 1. Open a scope in your own inbound adapter or background loop
 
 ```csharp
+using SharedKernel.Execution.Context;
+
 var context = new SystemRequestContext([], identity: "outbox-relay", correlationId: CorrelationIds.New());
 
 using (RequestContextScope.Begin(context))
@@ -182,6 +186,8 @@ using (RequestContextScope.Begin(context))
 ### 2. Read the caller from a singleton
 
 ```csharp
+using SharedKernel.Execution.Context;
+
 public sealed class AuditEnricher(IRequestContextAccessor accessor)
 {
     public string? CurrentTenant() => accessor.Current?.TenantId?.ToString();
@@ -191,6 +197,8 @@ public sealed class AuditEnricher(IRequestContextAccessor accessor)
 ### 3. Propagate the caller over a custom transport
 
 ```csharp
+using SharedKernel.Execution.Context;
+
 // Outbound: keep a value the caller already set.
 RequestContextPropagation.WriteHeaders(
     accessor.Current,
@@ -275,6 +283,8 @@ Reference [`SharedKernel.Testing`](https://github.com/Gresta-Vertex-Labs/platfor
 and use `TestRequestContext` (`SharedKernel.Testing.Execution`) — settable tenant, actor and permissions:
 
 ```csharp
+using SharedKernel.Testing.Execution;
+
 var caller = TestRequestContext.ForTenant(tenant).WithPermissions("accounts.close");
 var handler = new CloseAccount(caller, accounts);
 ```
@@ -312,5 +322,5 @@ workflows, jobs — needs the same caller, and every tier must be able to read i
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Core domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Foundation/README.md) ·
+[Foundation packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Foundation/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

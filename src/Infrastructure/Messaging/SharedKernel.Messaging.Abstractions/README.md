@@ -49,7 +49,7 @@ version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform
 
 The implementations come from
 [`SharedKernel.Messaging.MassTransit`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Messaging/SharedKernel.Messaging.MassTransit/README.md)
-plus one transport satellite, referenced by the **Api/Worker** project only.
+plus one transport satellite, referenced by the **Infrastructure** project only.
 
 ## Quick start
 
@@ -220,5 +220,5 @@ message would be a permission granted by the wire.
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Messaging domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Messaging/README.md) ·
+[Messaging packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Messaging/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

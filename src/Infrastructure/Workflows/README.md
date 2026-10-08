@@ -2,92 +2,88 @@
 
 # SharedKernel Workflows
 
-**Durable, crash-proof business processes on Temporal — start a process that may run for thirty days, survive every
-deploy and restart on the way, and address it safely by tenant and business key.**
+**Durable business processes on Temporal: start one that runs for thirty days, survives every deploy and crash on
+the way, and can only ever be addressed within its own tenant.**
 
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](../../../LICENSE)
 ![Packages: 1](https://img.shields.io/badge/packages-1-informational)
-[![Temporalio 1.17](https://img.shields.io/badge/Temporalio-1.17-000000)](SharedKernel.Workflows.Temporal/README.md)
+![Tier: Adapter](https://img.shields.io/badge/tier-Adapter-6f42c1)
+![Tier: Testing](https://img.shields.io/badge/tier-Testing-e36209)
+[![Temporalio 1.17](https://img.shields.io/badge/Temporalio-1.17-000000)](https://github.com/temporalio/sdk-dotnet)
 
-<sub>📂 <code>src/Infrastructure/Workflows</code> · domain <code>17.Workflows</code> · <a href="../../../docs/packages.md">all packages by tier</a></sub>
+[What you get](#what-you-get) · [Packages](#packages) · [How it fits together](#how-it-fits-together) · [Get started](#get-started) · [See it run](#see-it-run) · [Guarantees](#guarantees)
+
+<sub>📂 <code>src/Infrastructure/Workflows</code> · <a href="../../../docs/packages.md">all packages by tier</a> · <a href="../../../README.md">Platform.SharedKernel</a></sub>
 
 </div>
 
-`SharedKernel.Workflows.Temporal` is how a SharedKernel service runs a multi-step process that must finish even when
-pods die mid-way: "reserve stock, charge the card, wait up to 30 days for delivery, then settle — or compensate". It
-wraps the official Temporal .NET SDK with the platform's rules: a mandatory tenant scope, `Result`-shaped dispatch,
-caller propagation into activities, error mapping that fails fast on expected errors, and optional payload
-encryption.
+---
 
-## What this domain gives you
+## What you get
 
-- **A dispatch surface for application code** — `IWorkflowDispatcher` and `IWorkflowHandle<TResult>` return `Result`
-  values; no `Temporalio.*` type leaks into handlers.
-- **Tenant-safe workflow ids** — every id is composed as `{tenant}:{workflowType}:{businessKey}`; a global scope is
-  refused before any I/O.
-- **Authoring bases that keep you deterministic** — `WorkflowBase` (replay-safe time, ids and logging),
-  `ActivityBase` (ordinary DI code with explicit failure mapping), `CommandActivity<TCommand>` (a kernel command sent
-  through `ISender`).
-- **The caller travels with the work** — the dispatcher's tenant and correlation id reach every activity as its
-  `IRequestContext`, and from there every outbound call.
-- **Operable by default** — eager composition checks, the `workflows` readiness probe, OpenTelemetry tracing and
-  metrics, EventIds 17000–17012.
+- **A `Result`-shaped dispatch surface.** `IWorkflowDispatcher` and `IWorkflowHandle<TResult>` start, signal, query,
+  cancel and await workflows and return `Result` values; no `Temporalio.*` type reaches a command handler.
+- **Tenant-safe workflow ids.** Every dispatch call takes a `TenantScope`, and `IWorkflowIdFactory` composes
+  `{tenant}:{workflowType}:{businessKey}`; `TenantScope.Global` is refused before any I/O.
+- **Authoring bases that keep you deterministic.** `WorkflowBase` exposes replay-safe time, ids and logging;
+  `ActivityBase` is ordinary DI code with explicit failure mapping; `CommandActivity<TCommand>` sends a kernel
+  command through `ISender` as one activity.
+- **Failures mapped by `ErrorType`.** Validation, NotFound, Conflict, Unauthorized, Forbidden and BusinessRule become
+  non-retryable failures so the workflow can compensate at once; Unexpected, Unavailable and Timeout retry.
+- **The caller travels with the work.** The dispatcher's tenant and correlation id reach every activity as its
+  `IRequestContext`, and from there every outbound call; `.WithPayloadEncryption()` keeps inputs and outputs out of
+  server history in plaintext.
 
 ## Packages
 
-| Package | Tier | When you need it |
-| --- | --- | --- |
-| [`SharedKernel.Workflows.Temporal`](SharedKernel.Workflows.Temporal/README.md) | Adapter | Any process with several steps, long waits, signals or compensation that must survive restarts |
+| Package | Tier | Reference it from | Use it for |
+| --- | --- | --- | --- |
+| [SharedKernel.Workflows.Temporal](SharedKernel.Workflows.Temporal/README.md) | Adapter | Infrastructure | Workflows, activities, the client and the worker registration |
+| [SharedKernel.Workflows.Testing](SharedKernel.Workflows.Testing/README.md) | Testing | test projects | `InMemoryWorkflowDispatcher`: records starts, signals and queries per tenant; the test decides how each workflow ends |
 
-It is deliberately **one** package: determinism, replay and `Workflow.Patched` versioning *are* the programming
-model, and no other engine is swap-compatible with them.
-
-Test double: [`SharedKernel.Workflows.Testing`](./SharedKernel.Workflows.Testing/README.md)
-(`InMemoryWorkflowDispatcher`, `AddInMemoryWorkflowDispatcher()`).
-
-## Workflows, scheduling or messaging?
-
-| You need… | Use |
-| --- | --- |
-| Several steps, long waits, signals, compensation, crash-resumable | **`17.Workflows`** |
-| One unit of work on a timer, once across replicas | [`19.Scheduling`](../Scheduling/README.md) — a job may *start* a workflow |
-| React to an event another service published | [`07.Messaging`](../Messaging/README.md) — no sagas there |
+Take it for several steps, long waits, signals or compensation that must survive restarts. One unit of work on a
+timer is [Scheduling](../Scheduling/README.md) (a job may start a workflow); reacting to another service's event is
+a consumer in [Messaging](../Messaging/README.md), which deliberately has no sagas.
 
 ## How it fits together
 
 ```mermaid
 flowchart LR
-    subgraph Api["API service (.AsClientOnly())"]
-        H["Command handler"] --> D["IWorkflowDispatcher<br/>TenantScope required"]
+    subgraph Api["API service: AsClientOnly"]
+        H["Command handler"] --> D["IWorkflowDispatcher - TenantScope required"]
     end
-    D -- "start / signal / query<br/>tenant + correlation headers<br/>encrypted payloads" --> T[("Temporal server<br/>event history")]
-    subgraph Worker["Worker service (.WithWorker(queue))"]
-        W["WorkflowBase<br/>deterministic, replayed"] --> A["ActivityBase / CommandActivity<br/>RequestContextScope per activity"]
-        A --> S["ISender → application pipeline"]
+    D -- "start, signal, query; tenant and correlation headers; encrypted payloads" --> T[("Temporal server - event history")]
+    subgraph Worker["Worker service: WithWorker"]
+        W["WorkflowBase - deterministic, replayed"] --> A["ActivityBase or CommandActivity"]
+        A --> S["ISender - application pipeline"]
     end
     T <--> W
-    P["'workflows' readiness probe"] -.-> T
+    P["workflows readiness probe"] -.-> T
 ```
+
+- **Workflow code is replay code.** Every statement in a workflow re-executes from history, possibly months later
+  on another pod; clocks, randomness, I/O and DI belong in activities. Analyzer SK0028 flags the common violations.
+- **API pods dispatch, worker pods run.** `.AsClientOnly()` registers the client with no hosted worker, so an API
+  rolling deploy never becomes a workflow outage.
+- **The workflow id is the idempotency key.** No dispatch member takes a raw id; with `IdConflictPolicy.Fail` a
+  duplicate start returns `workflow.already_started`.
+- **A propagated caller is attribution only.** It grants no permission: an activity that sends a `[RequirePermission]`
+  command opens a `SystemRequestContext` scope with exactly the permission it needs.
 
 ## Get started
 
-The API that starts the process:
+```xml
+<PackageReference Include="SharedKernel.Workflows.Temporal" />
+```
 
 ```csharp
+// API: starts workflows, hosts no worker
 builder.Services.AddSharedKernelTemporalWorkflows(builder.Configuration)   // Workflows:Temporal
     .AsClientOnly()
     .WithPayloadEncryption()
     .Build();
 
-builder.Services.AddHealthChecks().AddSharedKernelReadiness();
-```
-
-```json
-{ "Workflows": { "Temporal": { "TargetHost": "temporal-frontend:7233", "Namespace": "orders" } } }
-```
-
-```csharp
 Result<IWorkflowHandle> started = await workflows.StartAsync<OrderFulfilmentWorkflow, string>(
     orderId,
     new WorkflowStartOptions
@@ -97,46 +93,51 @@ Result<IWorkflowHandle> started = await workflows.StartAsync<OrderFulfilmentWork
         IdReusePolicy = WorkflowIdReusePolicy.RejectDuplicate,
         IdConflictPolicy = WorkflowIdConflictPolicy.Fail,
     },
-    TenantScope.For(tenantId),
+    TenantScope.FromNullable(caller.TenantId),
     ct);
-```
 
-The worker that runs it:
-
-```csharp
+// Worker: runs them
 builder.Services.AddSharedKernelTemporalWorkflows(builder.Configuration)
     .AddWorkflow<OrderFulfilmentWorkflow>()
     .AddActivities<ChargeCardActivity>()
-    .AddActivities<ApproveOrderActivity>()          // CommandActivity<ApproveOrderCommand>
     .WithWorker("orders-fulfilment")
     .WithPayloadEncryption()
-    .WithOpenTelemetry()
     .Build();
 ```
 
-The [package README](SharedKernel.Workflows.Temporal/README.md) has the full workflow and activity example, the
-determinism rules, the `Workflow.Patched` procedure and the encryption trade-offs.
+```json
+{ "Workflows": { "Temporal": { "TargetHost": "temporal-frontend:7233", "Namespace": "orders" } } }
+```
+
+The [Quick start](SharedKernel.Workflows.Temporal/README.md#quick-start) has the full workflow and activity example,
+the determinism table, the `Workflow.Patched` procedure for changing a deployed workflow, and the encryption costs.
+
+## See it run
+
+No reference service under `samples/` uses Workflows yet. The [`consumer-verify`](consumer-verify/Program.cs)
+harness composes the package through a real host: the client-only shape, a worker that completes a full
+start → activity → result round trip against a `Temporalio.Testing` `WorkflowEnvironment` (never a live cluster),
+and the startup failures for a missing configuration section or an empty worker.
+
+```bash
+dotnet run --project src/Infrastructure/Workflows/consumer-verify
+```
 
 ## Guarantees
 
-| Guarantee | How |
+| Guarantee | How it is held |
 | --- | --- |
-| A workflow can only be addressed within its tenant | `IWorkflowIdFactory` puts the tenant in every id; `TenantScope.Global` returns `workflow.tenant_scope_missing` with no I/O |
-| The workflow id is the durable idempotency key | No dispatch member takes a raw id; with `IdConflictPolicy.Fail` a duplicate start returns `workflow.already_started` |
-| Expected errors fail fast | Validation, NotFound, Conflict, Unauthorized, Forbidden and BusinessRule map to non-retryable failures; Unexpected, Unavailable and Timeout retry |
-| An activity cannot silently swallow a failure | `ActivityBase.Fail`/`FailFrom` and `CommandActivity<>` map every failed `Result`; the test suite checks the swallowed-failure defect |
-| Activities know who started them | A `PropagatedRequestContext` per activity carries the tenant and correlation id — attribution only, never permissions |
-| A mis-wired worker fails at startup | `Build()` rejects an empty worker, client-only plus workflows, a second worker or build, missing `TargetHost`/`Namespace` |
-| Payloads can stay private in history | `.WithPayloadEncryption()`: AES-256-GCM bound to the workflow id; a bad ciphertext throws, never passes through |
-| Dead workers stop taking traffic | The `workflows` probe fails when a worker's pollers stop; a backlog alone never does |
-| Workflow code stays deterministic | `WorkflowBase` exposes replay-safe APIs; analyzer SK0028 flags clocks, randomness and DI in workflows; SK0029 flags raw client injection |
-
-## Limits
-
-- No workflow Update, list/search, schedules or worker deployment versioning in the dispatch surface.
-- One worker (one task queue) per builder.
-- `Temporalio` is not AOT-safe (native core per runtime identifier, reflection-based JSON by default).
+| A workflow is only addressable within its tenant | `DispatchFailClosedTests`: every dispatch member given `TenantScope.Global` returns `workflow.tenant_scope_missing` with no I/O; `WorkflowIdFactoryTests` pins the tenant segment |
+| A duplicate start never creates a second execution | `IdempotencyTests` (`RejectDuplicate` + `Fail` returns `workflow.already_started`, no second execution) |
+| Expected errors fail fast, transient ones retry | `WorkflowFailureMapperTests` |
+| `CommandActivity<>` never swallows a failed `Result` | `CommandActivitySwallowFailureTests` |
+| Activities and child workflows know who started them | `PropagationTests` (tenant and correlation id reach the activity and the child workflow) |
+| Ciphertext is never passed through as plaintext | `EncryptionPayloadCodecTests` and `EncryptionPayloadCodecAadBindingTests`: tampered data, an unknown key or another workflow's id throws |
+| A mis-wired worker fails at startup | `BuildCompositionValidationTests` |
+| Workflow code stays deterministic; the raw client stays fenced | Analyzers SK0028 (clocks, randomness, I/O in a workflow) and SK0029 (injected raw Temporal client); `ReplayDeterminismTests` |
 
 ---
 
-For maintainers: [CLAUDE.md](CLAUDE.md) (domain rules and invariants) · [state-map.md](state-map.md) (phase history).
+<div align="center">
+<sub>Part of <a href="../../../README.md">Platform.SharedKernel</a> · <a href="../../../docs/packages.md">all packages</a> · MIT license</sub>
+</div>

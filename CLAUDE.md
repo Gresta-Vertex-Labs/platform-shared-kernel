@@ -26,35 +26,35 @@ tools/Governance/     analyzers, architecture tests, linter
 
 The zone is where a capability mainly belongs, not a rule: a capability keeps its `.Abstractions` package (referenced by the Application project) and its providers together. **The tier decides references**, and the build enforces it. [`docs/packages.md`](docs/packages.md) (generated) lists every package with its tier and the service project that references it.
 
-Each capability folder holds three files: **`CLAUDE.md`** (maintainer rules — read it before editing that domain), **`README.md`** (overview) and **`state-map.md`** (living board: Package Board, Phase Key Registry, Open Work, Blocked, Cross-Domain Dependencies). Completed history is not kept in the repo; `git log` is the record.
+Each capability folder holds three files: **`CLAUDE.md`** (maintainer rules — read it before editing that domain), **`README.md`** (overview) and **`state-map.md`** (living board: Package Board, open Phase Keys, Open Work, Blocked, Cross-Domain Dependencies). Completed work is removed from the board; `git log` is the record.
 
-**Domain ids.** A domain keeps its id (`06.Persistence`) even though its folder has no number: the id names the domain in work orders and phase keys (`SK.06.…`), and its number is the domain's EventId block (`6000`–`6999`, registry `LoggingEventIdRanges`). The table below is the **registry from domain id to folder**; commands and agents resolve `{NN}.{Name}` through it.
+**Domain ids.** A domain keeps its id (`06.Persistence`) even though its folder has no number: the id names the domain in work orders and phase keys (`SK.06.…`), and its number is the domain's EventId block (`6000`–`6999`, registry `LoggingEventIdRanges`). The table below is the **registry**: domain id ↔ slug ↔ folder. The slug names the agent pair (`{slug}-arch-planner`, `{slug}-phase-implementer`) and is what `/implement-phase` takes; skills and agents resolve every domain through this table, never their own copy.
 
 Counts are **packable packages** (tests, `consumer-verify` harnesses, benchmarks and `SharedKernel.Testing.Internal` excluded). Tiers: **F** Foundation · **M** Model · **Ab** Abstractions · **Ad** Adapter · **H** Host · **T** Testing · **To** Tooling.
 
-| Domain | Folder | Pkgs | Scope | Tiers |
-| --- | --- | ---: | --- | --- |
-| `00.Governance` | [`tools/Governance`](tools/Governance/) | 3 | Roslyn analyzers (SK rules), NetArchTest architecture tests, EditorConfig/CSharpier linter | To |
-| `01.Core` | [`src/Foundation`](src/Foundation/) | 13 | Primitives (`Result<T>`, `Error`, `IClock`, health probes, well-known headers), Execution (`IRequestContext`, tenancy, unit of work), Core, Configuration, FeatureManagement, Compression, Validation, DataPrivacy, Localization, Cryptography | F, Ad (Argon2, KeyVault.Azure, Validation.FluentValidation) |
-| `02.Caching` | [`src/Infrastructure/Caching`](src/Infrastructure/Caching/) | 7 | Cache and lock abstractions; FusionCache; Redis core + L2, locking, hash store, pub/sub | Ab, Ad |
-| `03.Domain` | [`src/Model/Domain`](src/Model/Domain/) | 1 | Entities, aggregates (audited/soft-delete/tenanted), value objects, ids, specifications, `Money` | M |
-| `04.Contracts` | [`src/Model/Contracts`](src/Model/Contracts/) | 1 | Integration events, CloudEvents envelope, paging DTOs and cursors | M |
-| `05.Application` | [`src/Application`](src/Application/) | 4 | Kernel CQRS contracts + markers; pipeline; query caching; MediatR adapter | Ab, H |
-| `06.Persistence` | [`src/Infrastructure/Persistence`](src/Infrastructure/Persistence/) | 6 | PostgreSQL only: abstractions, Npgsql, EF Core, Dapper, audit ledger, field encryption | Ab, Ad |
-| `07.Messaging` | [`src/Infrastructure/Messaging`](src/Infrastructure/Messaging/) | 5 | Message bus abstractions; MassTransit core + RabbitMQ, Azure Service Bus, EF Core outbox | Ab, Ad |
-| `08.Storage` | [`src/Infrastructure/Storage`](src/Infrastructure/Storage/) | 3 | Named/tenant file stores; S3 (and compatibles), Huawei OBS | Ab, Ad |
-| `09.Search` | [`src/Infrastructure/Search`](src/Infrastructure/Search/) | 3 | Search index abstractions; Meilisearch, ElasticSearch | Ab, Ad |
-| `10.Intelligence` | [`src/Infrastructure/AI`](src/Infrastructure/AI/) | 3 | Embeddings, vector collections, orchestration; Qdrant, Semantic Kernel | Ab, Ad |
-| `11.Communication` | [`src/Infrastructure/Communication`](src/Infrastructure/Communication/) | 3 | Outbound calls: discovery/auth/mTLS base, REST client, gRPC client | Ad |
-| `12.Security` | [`src/Hosting/Security`](src/Hosting/Security/) | 5 | `IUserContext`; OIDC/JWT, API key, mTLS, TOTP step-up | Ab, H |
-| `13.ServiceDefaults` | [`src/Hosting/ServiceDefaults`](src/Hosting/ServiceDefaults/) | 7 | Host composition: OTel, health, readiness, rate limiting, request context, multi-tenancy, Key Vault config, localization | H |
-| `14.Presentation` | [`src/Hosting/Presentation`](src/Hosting/Presentation/) | 6 | Presentation.Core, WebApi, OpenApi, Grpc, SignalR, GraphQL (+ a Tooling source generator packed inside WebApi) | H |
-| `15.Integration` | [`src/Infrastructure/Integration`](src/Infrastructure/Integration/) | 4 | Webhooks; notification abstractions, SendGrid email, Twilio SMS | Ab, Ad |
-| `16.Testing` | [`src/Testing`](src/Testing/) | 20 | `SharedKernel.Testing` + 19 `SharedKernel.{Capability}.Testing` fakes (each lives in its capability folder; this domain keeps their rules and catalogue) + non-packable `Testing.Internal` fixtures | T |
-| `17.Workflows` | [`src/Infrastructure/Workflows`](src/Infrastructure/Workflows/) | 1 | Temporal durable workflows (one package by design) | Ad |
-| `18.Idempotency` | [`src/Infrastructure/Idempotency`](src/Infrastructure/Idempotency/) | 3 | `IIdempotencyStore`; Redis, EF Core | Ab, Ad |
-| `19.Scheduling` | [`src/Infrastructure/Scheduling`](src/Infrastructure/Scheduling/) | 1 | Cron/recurring/one-shot jobs, single execution across replicas | Ad |
-| `20.Reporting` | [`src/Infrastructure/Reporting`](src/Infrastructure/Reporting/) | 5 | Streaming CSV/Excel/PDF export, HTML → PDF (Gotenberg) | Ab, Ad |
+| Domain | Slug | Folder | Pkgs | Scope | Tiers |
+| --- | --- | --- | ---: | --- | --- |
+| `00.Governance` | `governance` | [`tools/Governance`](tools/Governance/) | 3 | Roslyn analyzers (SK rules), NetArchTest architecture tests, EditorConfig/CSharpier linter | To |
+| `01.Core` | `core` | [`src/Foundation`](src/Foundation/) | 13 | Primitives (`Result<T>`, `Error`, `IClock`, health probes, well-known headers), Execution (`IRequestContext`, tenancy, unit of work), Core, Configuration, FeatureManagement, Compression, Validation, DataPrivacy, Localization, Cryptography | F, Ad (Argon2, KeyVault.Azure, Validation.FluentValidation) |
+| `02.Caching` | `caching` | [`src/Infrastructure/Caching`](src/Infrastructure/Caching/) | 7 | Cache and lock abstractions; FusionCache; Redis core + L2, locking, hash store, pub/sub | Ab, Ad |
+| `03.Domain` | `domain` | [`src/Model/Domain`](src/Model/Domain/) | 1 | Entities, aggregates (audited/soft-delete/tenanted), value objects, ids, specifications, `Money` | M |
+| `04.Contracts` | `contracts` | [`src/Model/Contracts`](src/Model/Contracts/) | 1 | Integration events, CloudEvents envelope, paging DTOs and cursors | M |
+| `05.Application` | `application` | [`src/Application`](src/Application/) | 4 | Kernel CQRS contracts + markers; pipeline; query caching; MediatR adapter | Ab, H |
+| `06.Persistence` | `persistence` | [`src/Infrastructure/Persistence`](src/Infrastructure/Persistence/) | 6 | PostgreSQL only: abstractions, Npgsql, EF Core, Dapper, audit ledger, field encryption | Ab, Ad |
+| `07.Messaging` | `messaging` | [`src/Infrastructure/Messaging`](src/Infrastructure/Messaging/) | 5 | Message bus abstractions; MassTransit core + RabbitMQ, Azure Service Bus, EF Core outbox | Ab, Ad |
+| `08.Storage` | `storage` | [`src/Infrastructure/Storage`](src/Infrastructure/Storage/) | 3 | Named/tenant file stores; S3 (and compatibles), Huawei OBS | Ab, Ad |
+| `09.Search` | `search` | [`src/Infrastructure/Search`](src/Infrastructure/Search/) | 3 | Search index abstractions; Meilisearch, ElasticSearch | Ab, Ad |
+| `10.Intelligence` | `intelligence` | [`src/Infrastructure/AI`](src/Infrastructure/AI/) | 3 | Embeddings, vector collections, orchestration; Qdrant, Semantic Kernel | Ab, Ad |
+| `11.Communication` | `communication` | [`src/Infrastructure/Communication`](src/Infrastructure/Communication/) | 3 | Outbound calls: discovery/auth/mTLS base, REST client, gRPC client | Ad |
+| `12.Security` | `security` | [`src/Hosting/Security`](src/Hosting/Security/) | 5 | `IUserContext`; OIDC/JWT, API key, mTLS, TOTP step-up | Ab, H |
+| `13.ServiceDefaults` | `servicedefaults` | [`src/Hosting/ServiceDefaults`](src/Hosting/ServiceDefaults/) | 7 | Host composition: OTel, health, readiness, rate limiting, request context, multi-tenancy, Key Vault config, localization | H |
+| `14.Presentation` | `presentation` | [`src/Hosting/Presentation`](src/Hosting/Presentation/) | 6 | Presentation.Core, WebApi, OpenApi, Grpc, SignalR, GraphQL (+ a Tooling source generator packed inside WebApi) | H |
+| `15.Integration` | `integration` | [`src/Infrastructure/Integration`](src/Infrastructure/Integration/) | 4 | Webhooks; notification abstractions, SendGrid email, Twilio SMS | Ab, Ad |
+| `16.Testing` | `testing` | [`src/Testing`](src/Testing/) | 20 | `SharedKernel.Testing` + 19 `SharedKernel.{Capability}.Testing` fakes (each lives in its capability folder; this domain keeps their rules and catalogue) + non-packable `Testing.Internal` fixtures | T |
+| `17.Workflows` | `workflow` | [`src/Infrastructure/Workflows`](src/Infrastructure/Workflows/) | 1 | Temporal durable workflows (one package by design) | Ad |
+| `18.Idempotency` | `idempotency` | [`src/Infrastructure/Idempotency`](src/Infrastructure/Idempotency/) | 3 | `IIdempotencyStore`; Redis, EF Core | Ab, Ad |
+| `19.Scheduling` | `scheduling` | [`src/Infrastructure/Scheduling`](src/Infrastructure/Scheduling/) | 1 | Cron/recurring/one-shot jobs, single execution across replicas | Ad |
+| `20.Reporting` | `reporting` | [`src/Infrastructure/Reporting`](src/Infrastructure/Reporting/) | 5 | Streaming CSV/Excel/PDF export, HTML → PDF (Gotenberg) | Ab, Ad |
 
 Other top-level locations:
 
@@ -278,9 +278,9 @@ What a service's Application and Domain projects depend on — never the concret
 
 Work flows from intent → work order → domain phase → code, with `state-map.md` as the hand-off point.
 
-| Command | What it does |
+| Skill | What it does |
 | --- | --- |
-| `/arch <request>` | `arch-lead` evaluates the request against the architecture and writes work orders into the affected `state-map.md` files. Plans; never writes code. |
+| `/arch <request>` | `arch-lead` evaluates the request against the architecture and writes a work order (WO + P-entries) into the root `state-map.md`. Plans; never writes code. |
 | `/dispatch-phase` | Fans a work order out to the affected domains' `{domain}-arch-planner` agents, which author phases in their `state-map.md` and refresh their `CLAUDE.md`. |
 | `/implement-phase <domain> [phase]` | Runs `{domain}-phase-implementer` on a phase: code, tests, state-map update. |
 | `/implement-next-phase` | Picks the next ready phase across domains and implements it. |
@@ -289,6 +289,7 @@ Work flows from intent → work order → domain phase → code, with `state-map
 | `/commit` | Reviews the working tree and writes a conventional commit. |
 | `/devops <request>` | `devops-lead`: CI, packaging, versioning, containers, build configuration. |
 
-- Agents: `arch-lead`, `devops-lead`, and one `{domain}-arch-planner` + `{domain}-phase-implementer` pair per domain (in `.claude/agents/`).
+- Skills live in `.claude/skills/{name}/SKILL.md`; the side-effecting ones (`/commit`, `/dispatch-phase`, `/implement-*`, `/state-map-phase`, `/sync-brain`) run only when you invoke them.
+- Agents: `arch-lead`, `devops-lead`, and one `{slug}-arch-planner` + `{slug}-phase-implementer` pair per domain (in `.claude/agents/`), the slug taken from the domain table above.
 - Rules shared by every agent live in `.claude/agents/_common.md`.
 - Agent memory under `.claude/agent-memory/` is local to each developer and gitignored.

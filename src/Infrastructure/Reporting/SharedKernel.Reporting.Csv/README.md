@@ -6,8 +6,10 @@
 ![Public API: tracked](https://img.shields.io/badge/public%20API-tracked-informational)
 ![Memory: constant](https://img.shields.io/badge/memory-constant-success)
 
-> **RFC 4180 CSV exports for `SharedKernel.Reporting`, written one row at a time so a million-row export costs no more
-> memory than a ten-row one — with a CSV-injection guard on by default and no third-party dependency.**
+> **RFC 4180 CSV exports behind `IReportExporter<TRow>`, written one row at a time so a million-row export costs no
+> more memory than a ten-row one, with a CSV-injection guard on by default and no third-party dependency.** Pick CSV
+> for bulk data and machine feeds; use `SharedKernel.Reporting.Spreadsheet` when people want typed Excel cells, and
+> `SharedKernel.Reporting.Pdf` for a printable table.
 
 | You get | So that |
 | --- | --- |
@@ -29,7 +31,7 @@ version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
-| Tier | Adapter — reference it from your **Infrastructure** (or Api) project |
+| Tier | Adapter — reference it from your **Infrastructure** project |
 | Depends on | `SharedKernel.Reporting.Abstractions`, `SharedKernel.Configuration` — no third-party packages |
 | Namespaces | `SharedKernel.Reporting` (`AddCsv`), `SharedKernel.Reporting.Csv` (`ICsvReportExporter<T>`, `CsvExportOptions`) |
 
@@ -37,6 +39,7 @@ version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform
 
 ```csharp
 using SharedKernel.Reporting;
+using SharedKernel.Storage;
 
 builder.Services.AddSharedKernelStorage().AddS3(builder.Configuration).AddStore("reports");
 builder.Services.AddSharedKernelReporting().AddCsv(builder.Configuration);   // SharedKernel:Reporting:Csv
@@ -56,6 +59,7 @@ Application code uses the format-neutral contract (`IReportExporterFactory.GetEx
 typed exporter:
 
 ```csharp
+using SharedKernel.Primitives.Results;
 using SharedKernel.Reporting;
 using SharedKernel.Reporting.Csv;
 
@@ -135,5 +139,5 @@ parse the text.
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Reporting domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Reporting/README.md) ·
+[Reporting packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Reporting/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

@@ -151,6 +151,11 @@ Rotate from one place — a deployment step, a scheduled job (for example a Kube
 never from every replica at startup.
 
 ```csharp
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using SharedKernel.Cryptography.Extensions;
+using SharedKernel.Cryptography.KeyVault.Azure;
+
 HostApplicationBuilder builder = Host.CreateApplicationBuilder(args);
 builder.Services.AddSharedKernelCryptography(builder.Configuration)
     .AddAzureKeyVaultEncryption(builder.Configuration);
@@ -195,7 +200,9 @@ that purpose — never any configured id, or a token signed with `partner-api` w
 ### 4. Report readiness
 
 ```csharp
-builder.Services.AddHealthChecks().AddSharedKernelReadiness();   // SharedKernel.ServiceDefaults; includes "encryption-key-provider"
+using SharedKernel.ServiceDefaults.HealthChecks;   // SharedKernel.ServiceDefaults
+
+builder.Services.AddHealthChecks().AddSharedKernelReadiness();   // includes "encryption-key-provider"
 ```
 
 ### 5. Develop locally
@@ -203,6 +210,11 @@ builder.Services.AddHealthChecks().AddSharedKernelReadiness();   // SharedKernel
 Use a development vault with `new AzureCliCredential()` after `az login`, or skip Key Vault on a developer machine:
 
 ```csharp
+using System.Security.Cryptography;
+using SharedKernel.Cryptography.Extensions;
+using SharedKernel.Cryptography.KeyVault.Azure;
+using SharedKernel.Cryptography.Symmetric;
+
 var cryptography = builder.Services.AddSharedKernelCryptography(builder.Configuration);
 
 if (builder.Environment.IsDevelopment())
@@ -337,5 +349,5 @@ protection). Report vulnerabilities privately as described in the
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Core domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Foundation/README.md) ·
+[Foundation packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Foundation/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

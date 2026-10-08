@@ -26,6 +26,9 @@ public sealed partial class PackageReadmeStandardTests
         "Pitfalls", "Design decisions",
     ];
 
+    // The standard asks for about 500 lines; the hard limit leaves room for a growing package before it must be split.
+    private const int MaxPackageReadmeLines = 550;
+
     [Fact]
     public void PackableProjects_AreFound()
     {
@@ -77,12 +80,84 @@ public sealed partial class PackageReadmeStandardTests
         if (!markdown.Contains("Part of [Platform.SharedKernel]", StringComparison.Ordinal))
             problems.Add("the footer 'Part of [Platform.SharedKernel](…)' is missing");
 
+        var lines = File.ReadAllLines(readmePath).Length;
+        if (lines > MaxPackageReadmeLines)
+            problems.Add($"the README is {lines} lines; keep it under {MaxPackageReadmeLines} and move walkthroughs to the domain README or samples/");
+
         problems.Should().BeEmpty($"{Path.GetRelativePath(FindRepositoryRoot().FullName, readmePath)} follows docs/package-readme-standard.md");
+    }
+
+    [Theory]
+    [MemberData(nameof(PublicReadmes))]
+    public void PublicReadme_NamesCapabilities_NotDomainIds(string relativePath)
+    {
+        var markdown = StripCodeBlocks(File.ReadAllText(Path.Combine(FindRepositoryRoot().FullName, relativePath)));
+
+        var ids = DomainId().Matches(markdown).Select(m => m.Value).Distinct().ToList();
+
+        ids.Should().BeEmpty($"{relativePath} is read on GitHub and the package feed, where a capability is named by its folder (Persistence), not its domain id (06.Persistence)");
+    }
+
+    [Theory]
+    [MemberData(nameof(DomainReadmes))]
+    public void DomainReadme_PackagesBadge_MatchesThePackagesItOwns(string relativePath, int expected)
+    {
+        var markdown = File.ReadAllText(Path.Combine(FindRepositoryRoot().FullName, relativePath));
+
+        var badge = PackagesBadge().Match(markdown);
+
+        badge.Success.Should().BeTrue($"{relativePath} shows a packages-N badge");
+        int.Parse(badge.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture)
+            .Should().Be(expected, $"{relativePath} counts the packable packages it owns (capability fakes count under src/Testing)");
     }
 
     /// <summary>One row per packable production project.</summary>
     /// <returns>The package ids.</returns>
     public static IEnumerable<object[]> Packages() => PackableProjects().Select(p => new object[] { p.PackageId });
+
+    /// <summary>Every README a GitHub or package-feed reader sees: packages, domains, samples and the root.</summary>
+    /// <returns>Repository-relative README paths.</returns>
+    public static IEnumerable<object[]> PublicReadmes()
+    {
+        var root = FindRepositoryRoot().FullName;
+        return Directory.EnumerateFiles(root, "README.md", SearchOption.AllDirectories)
+            .Where(p => !IgnoredPath().IsMatch(p) && !MaintainerTree().IsMatch(p))
+            .Select(p => Path.GetRelativePath(root, p).Replace('\\', '/'))
+            .Order(StringComparer.Ordinal)
+            .Select(p => new object[] { p });
+    }
+
+    /// <summary>
+    /// Every domain README (a folder that also holds a <c>state-map.md</c>) with the package count its badge must show:
+    /// the root counts every package, <c>src/Testing</c> every Testing-tier package, and a capability folder its own
+    /// packages except the <c>.Testing</c> fakes kept beside them.
+    /// </summary>
+    /// <returns>Repository-relative README path and expected count.</returns>
+    public static IEnumerable<object[]> DomainReadmes()
+    {
+        var root = FindRepositoryRoot().FullName;
+        var projects = PackableProjects().ToList();
+
+        foreach (var stateMap in Directory.EnumerateFiles(root, "state-map.md", SearchOption.AllDirectories)
+                     .Where(p => !IgnoredPath().IsMatch(p))
+                     .Order(StringComparer.Ordinal))
+        {
+            var folder = Path.GetDirectoryName(stateMap)!;
+            if (!File.Exists(Path.Combine(folder, "README.md")))
+                continue;
+
+            var relative = Path.GetRelativePath(root, folder).Replace('\\', '/');
+            var inFolder = projects.Where(p => p.Path.StartsWith(folder + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase));
+            var expected = relative switch
+            {
+                "." => projects.Count,
+                "src/Testing" => projects.Count(p => p.Tier == "Testing"),
+                _ => inFolder.Count(p => p.Tier != "Testing"),
+            };
+
+            yield return [relative == "." ? "README.md" : $"{relative}/README.md", expected];
+        }
+    }
 
     private static IEnumerable<(string Path, string PackageId, string Tier)> PackableProjects()
     {
@@ -132,4 +207,15 @@ public sealed partial class PackageReadmeStandardTests
 
     [GeneratedRegex(@"(CLAUDE\.md|state-map\.md|/blob/[^/]+/docs/)", RegexOptions.IgnoreCase)]
     private static partial Regex MaintainerDocument();
+
+    // Agent and generated trees are not read on GitHub as documentation.
+    [GeneratedRegex(@"[\\/](\.claude|\.github|graphify-out|archive|artifacts)[\\/]", RegexOptions.IgnoreCase)]
+    private static partial Regex MaintainerTree();
+
+    // A domain id such as 06.Persistence or 16.Testing.
+    [GeneratedRegex(@"(?<![\w.])\d{2}\.[A-Z][A-Za-z]+")]
+    private static partial Regex DomainId();
+
+    [GeneratedRegex(@"badge/packages-(\d+)-")]
+    private static partial Regex PackagesBadge();
 }

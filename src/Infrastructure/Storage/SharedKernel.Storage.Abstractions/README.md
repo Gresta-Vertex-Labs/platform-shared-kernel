@@ -9,11 +9,13 @@
 > **Provider-neutral object-storage contracts: named stores, tenant isolation by construction, conditional writes,
 > and presigned uploads that clients cannot abuse. Expected failures are `Result` values, never exceptions.**
 
-Application code depends only on this package; the host picks a provider —
+Reference this package from your **Application** project and inject a named store; you never touch a cloud SDK,
+a bucket name or a tenant prefix. The host picks the provider —
 [`SharedKernel.Storage.S3`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Storage/SharedKernel.Storage.S3/README.md)
 for Amazon S3, MinIO and other S3-compatible services, or
 [`SharedKernel.Storage.Obs`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Storage/SharedKernel.Storage.Obs/README.md)
-for Huawei Cloud OBS.
+for Huawei Cloud OBS — and tests use
+[`SharedKernel.Storage.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Storage/SharedKernel.Storage.Testing/README.md).
 
 | You get | So that |
 | --- | --- |
@@ -166,9 +168,19 @@ store "documents"  (bucket acme-docs, prefix documents/)
 
 ## Recipes
 
+Every recipe assumes the stores from the Quick start and these `using` lines; a recipe that needs more lists them.
+
+```csharp
+using Microsoft.Extensions.DependencyInjection;   // [FromKeyedServices]
+using SharedKernel.Primitives.Results;            // Result, Result<T>
+using SharedKernel.Storage;
+```
+
 ### 1. Accept an upload in an API endpoint
 
 ```csharp
+using SharedKernel.Presentation.WebApi;   // ToCreated (Api project only)
+
 app.MapPut("/files/{**key}", async (string key, HttpRequest request,
     [FromKeyedServices("uploads")] IFileStorage store, CancellationToken ct) =>
 {
@@ -200,6 +212,8 @@ Result<FileReference> saved = await store.UploadAsync(key, updated,
 ### 3. Verify integrity end to end
 
 ```csharp
+using System.Security.Cryptography;
+
 string sha256 = Convert.ToBase64String(SHA256.HashData(bytes));
 Result<FileReference> saved = await store.UploadAsync(key, new MemoryStream(bytes),
     new FileUploadOptions { ChecksumSha256 = sha256 }, ct);
@@ -461,5 +475,5 @@ provider's server-side encryption, or `SharedKernel.Cryptography`'s envelope enc
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Storage domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Storage/README.md) ·
+[Storage packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Storage/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

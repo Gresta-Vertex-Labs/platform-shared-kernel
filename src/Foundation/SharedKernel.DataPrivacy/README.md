@@ -317,10 +317,10 @@ There is no `IServiceCollection` extension; the host calls Microsoft's `AddRedac
 
 ### Errors
 
-| Code constant | Type | When |
+| Code | Type | When |
 | --- | --- | --- |
-| `DataPrivacyErrorCodes.RequestIdConflict` | Conflict | A `RequestId` reused for another subject |
-| `DataPrivacyErrorCodes.TemporarilyUnavailable` | Unexpected | The handler cannot act right now; retry |
+| `data_privacy.request_id_conflict` (`DataPrivacyErrorCodes.RequestIdConflict`) | Conflict | A `RequestId` reused for another subject |
+| `data_privacy.temporarily_unavailable` (`DataPrivacyErrorCodes.TemporarilyUnavailable`) | Unexpected | The handler cannot act right now; retry |
 
 ### Logging
 
@@ -377,5 +377,5 @@ management, no encryption (`SharedKernel.Cryptography`, or persistence's column 
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Core domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Foundation/README.md) ·
+[Foundation packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Foundation/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

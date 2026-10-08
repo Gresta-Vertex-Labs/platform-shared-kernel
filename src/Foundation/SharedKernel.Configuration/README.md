@@ -75,6 +75,8 @@ builder.Services.AddValidatedOptions<DatabaseOptions>(
 ```
 
 ```csharp
+using Microsoft.Extensions.Options;
+
 public sealed class Repository(IOptions<DatabaseOptions> options)
 {
     private readonly string connectionString = options.Value.ConnectionString;
@@ -114,6 +116,10 @@ With this registration, each of these stops the host from starting:
 ### 1. A rule Data Annotations cannot express
 
 ```csharp
+using System.ComponentModel.DataAnnotations;
+using Microsoft.Extensions.Options;
+using SharedKernel.Configuration.Extensions;
+
 public sealed class PoolOptions
 {
     [Range(1, 1000)] public int MinSize { get; set; } = 1;
@@ -137,6 +143,9 @@ builder.Services.AddValidatedOptions<PoolOptions, PoolOptionsValidator>(
 ### 2. Validate with no reflection
 
 ```csharp
+using Microsoft.Extensions.Options;
+using SharedKernel.Configuration.Extensions;
+
 [OptionsValidator]
 public sealed partial class DatabaseOptionsValidator : IValidateOptions<DatabaseOptions>
 {
@@ -153,6 +162,9 @@ same attributes. Leave `validateDataAnnotations` at `false` here, or every failu
 Data Annotations on a nested object's properties, or on collection items, **are not validated by default**. Mark them:
 
 ```csharp
+using System.ComponentModel.DataAnnotations;
+using Microsoft.Extensions.Options;
+
 public sealed class Endpoint
 {
     [Required] public string? Host { get; set; }
@@ -168,6 +180,9 @@ public sealed class GatewayOptions
 ### 4. Register named instances
 
 ```csharp
+using Microsoft.Extensions.Options;
+using SharedKernel.Configuration.Extensions;
+
 builder.Services.AddValidatedOptions<ClientOptions>(
     builder.Configuration.GetSection("Clients:Primary"), name: "primary");
 builder.Services.AddValidatedOptions<ClientOptions>(
@@ -220,6 +235,11 @@ Validation is armed by `ValidateOnStart`, which runs only under a real host. Ass
 `StartAsync`:
 
 ```csharp
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
+using SharedKernel.Configuration.Extensions;
+
 var builder = Host.CreateApplicationBuilder();
 builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
 {
@@ -269,5 +289,5 @@ a configuration source is `SharedKernel.ServiceDefaults.Configuration.KeyVault`)
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Core domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Foundation/README.md) ·
+[Foundation packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Foundation/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

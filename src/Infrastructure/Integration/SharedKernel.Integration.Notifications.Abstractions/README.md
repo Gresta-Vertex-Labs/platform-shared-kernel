@@ -5,9 +5,10 @@
 ![Tier: Abstractions](https://img.shields.io/badge/tier-Abstractions-1f6feb)
 ![Zero I/O](https://img.shields.io/badge/I%2FO-none-informational)
 
-> **One provider-neutral contract for human-facing notifications — a receipt by email, a one-time passcode by SMS —
-> so application code sends a templated message through `INotificationSender` and never touches a vendor API. The
-> providers live in their own packages.**
+> **One provider-neutral contract for human-facing notifications (a receipt by email, a one-time passcode by SMS):
+> application code sends a templated message through `INotificationSender` and never touches a vendor API.**
+> Reference it from your Application project and add a provider (`…Email.SendGrid`, `…Sms.Twilio`) in
+> Infrastructure. For signed HTTP callbacks to a machine subscriber, use `SharedKernel.Integration.Webhooks` instead.
 
 | You get | So that |
 | --- | --- |
@@ -18,6 +19,18 @@
 | `INotificationDeliveryObserver` | A delivery ledger or metrics hook without the package owning persistence |
 | `INotificationSenderIdentityResolver` | The "from" address (per tenant, if you like) is your decision |
 | Shared retry, timeout and concurrency options | Every provider behaves the same under failure |
+
+## Contents
+
+- [Install](#install)
+- [Quick start](#quick-start)
+- [How it works](#how-it-works)
+- [Recipes](#recipes)
+- [Configuration](#configuration)
+- [Reference](#reference)
+- [Testing](#testing)
+- [Pitfalls](#pitfalls)
+- [Design decisions](#design-decisions)
 
 ## Install
 
@@ -42,6 +55,7 @@ Register the shared options and the providers you need (in the composition root)
 
 ```csharp
 using SharedKernel.Integration.Notifications.Abstractions.Extensions;
+using SharedKernel.Integration.Notifications.Abstractions.Observability;
 using SharedKernel.Integration.Notifications.Email.SendGrid.Extensions;
 using SharedKernel.Integration.Notifications.Sms.Twilio.Extensions;
 
@@ -70,6 +84,7 @@ builder.Services.AddTwilioSmsNotifications(o =>
 Send from application code:
 
 ```csharp
+using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Integration.Notifications.Abstractions.Delivery;
 using SharedKernel.Integration.Notifications.Abstractions.Notifications;
 
@@ -126,7 +141,12 @@ flowchart LR
 Used by the email provider for the `From`, display name and default reply-to (SMS uses the Twilio options):
 
 ```csharp
-public sealed class TenantSenderIdentityResolver(ITenantDirectory tenants, IRequestContext caller)
+using SharedKernel.Execution.Context;
+using SharedKernel.Integration.Notifications.Abstractions.Notifications;
+using SharedKernel.Integration.Notifications.Abstractions.Observability;
+
+// ITenantProfiles is your service's own lookup of per-tenant sender settings.
+public sealed class TenantSenderIdentityResolver(ITenantProfiles tenants, IRequestContext caller)
     : INotificationSenderIdentityResolver
 {
     public async Task<NotificationSenderIdentity> ResolveAsync(NotificationChannel channel, CancellationToken ct)
@@ -141,6 +161,8 @@ public sealed class TenantSenderIdentityResolver(ITenantDirectory tenants, IRequ
 ### 2. Attach a stored file
 
 ```csharp
+using SharedKernel.Integration.Notifications.Abstractions.Notifications;
+
 Attachments = [new NotificationAttachment
 {
     FileReference = invoiceFileReference,     // SharedKernel.Storage.FileReference
@@ -154,6 +176,10 @@ There is no inline-bytes overload; the provider opens the object with `IFileStor
 ### 3. Keep a delivery ledger
 
 ```csharp
+using SharedKernel.Integration.Notifications.Abstractions.Delivery;
+using SharedKernel.Integration.Notifications.Abstractions.Extensions;
+using SharedKernel.Integration.Notifications.Abstractions.Observability;
+
 builder.Services.WithNotificationDeliveryObserver<NotificationLedger>();
 
 public sealed class NotificationLedger(AppDbContext db) : INotificationDeliveryObserver
@@ -239,5 +265,5 @@ dependency surface.
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Integration domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Integration/README.md) ·
+[Integration packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Integration/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

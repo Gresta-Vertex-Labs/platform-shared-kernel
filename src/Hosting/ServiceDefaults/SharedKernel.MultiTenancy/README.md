@@ -54,6 +54,7 @@ suspended tenant must be rejected.
 using SharedKernel.MultiTenancy.Extensions;
 using SharedKernel.MultiTenancy.Middleware;
 using SharedKernel.MultiTenancy.Resolution;
+using SharedKernel.Presentation.WebApi;
 using SharedKernel.ServiceDefaults.Security;
 
 builder.Services.AddSharedKernelRequestContext();
@@ -79,6 +80,9 @@ app.MapEndpoints();
 Read the tenant through the request context, never from `HttpContext`:
 
 ```csharp
+using SharedKernel.Execution.Context;
+using SharedKernel.Execution.Tenancy;
+
 public sealed class OrderService(IRequestContext caller)
 {
     public TenantId? CurrentTenant => caller.TenantId;   // null → tenant-scoped code fails closed
@@ -106,7 +110,7 @@ Without `SharedKernel.Presentation.WebApi`: `UseSharedKernelRequestContext()`, `
 
 **Why Claim → Header → Database?** A JWT tenant claim is signature-verified; the header is caller-supplied and trivially
 forged. Putting `Header` first would let any caller override a verified identity — a cross-tenant impersonation
-vector. The default order is locked by an architecture test in `00.Governance`.
+vector. The default order is locked by a Governance architecture test.
 
 ## Recipes
 
@@ -205,5 +209,5 @@ Reference [`SharedKernel.ServiceDefaults.Testing`](https://github.com/Gresta-Ver
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[ServiceDefaults domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/ServiceDefaults/README.md) ·
+[ServiceDefaults packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/ServiceDefaults/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

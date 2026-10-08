@@ -1,6 +1,8 @@
 ---
-description: Implement the next (or a named) open phase of one capability domain with its phase-implementer agent
+name: implement-phase
+description: Implement the next (or a named) open phase of one SharedKernel capability domain by handing it to that domain's {slug}-phase-implementer agent. Use when the user asks to build, implement or continue a planned phase in a domain such as caching, persistence or messaging.
 argument-hint: <domain> [phase]
+disable-model-invocation: true
 ---
 
 You are the phase implementation launcher for Platform.SharedKernel. You pick one open phase from a domain's `state-map.md` and hand it to that domain's `{slug}-phase-implementer` agent. You never edit a file yourself.
@@ -14,51 +16,28 @@ $ARGUMENTS
 
 ## Step 1 — Resolve the domain
 
-| Slug | Domain | Folder | Implementer | Planner |
-| --- | --- | --- | --- | --- |
-| `governance` | `00.Governance` | `tools/Governance` | `governance-phase-implementer` | `governance-arch-planner` |
-| `core` | `01.Core` | `src/Foundation` | `core-phase-implementer` | `core-arch-planner` |
-| `caching` | `02.Caching` | `src/Infrastructure/Caching` | `caching-phase-implementer` | `caching-arch-planner` |
-| `domain` | `03.Domain` | `src/Model/Domain` | `domain-phase-implementer` | `domain-arch-planner` |
-| `contracts` | `04.Contracts` | `src/Model/Contracts` | `contracts-phase-implementer` | `contracts-arch-planner` |
-| `application` | `05.Application` | `src/Application` | `application-phase-implementer` | `application-arch-planner` |
-| `persistence` | `06.Persistence` | `src/Infrastructure/Persistence` | `persistence-phase-implementer` | `persistence-arch-planner` |
-| `messaging` | `07.Messaging` | `src/Infrastructure/Messaging` | `messaging-phase-implementer` | `messaging-arch-planner` |
-| `storage` | `08.Storage` | `src/Infrastructure/Storage` | `storage-phase-implementer` | `storage-arch-planner` |
-| `search` | `09.Search` | `src/Infrastructure/Search` | `search-phase-implementer` | `search-arch-planner` |
-| `intelligence` | `10.Intelligence` | `src/Infrastructure/AI` | `intelligence-phase-implementer` | `intelligence-arch-planner` |
-| `communication` | `11.Communication` | `src/Infrastructure/Communication` | `communication-phase-implementer` | `communication-arch-planner` |
-| `security` | `12.Security` | `src/Hosting/Security` | `security-phase-implementer` | `security-arch-planner` |
-| `servicedefaults` | `13.ServiceDefaults` | `src/Hosting/ServiceDefaults` | `servicedefaults-phase-implementer` | `servicedefaults-arch-planner` |
-| `presentation` | `14.Presentation` | `src/Hosting/Presentation` | `presentation-phase-implementer` | `presentation-arch-planner` |
-| `integration` | `15.Integration` | `src/Infrastructure/Integration` | `integration-phase-implementer` | `integration-arch-planner` |
-| `testing` | `16.Testing` | `src/Testing` | `testing-phase-implementer` | `testing-arch-planner` |
-| `workflow` | `17.Workflows` | `src/Infrastructure/Workflows` | `workflow-phase-implementer` | `workflow-arch-planner` |
-| `idempotency` | `18.Idempotency` | `src/Infrastructure/Idempotency` | `idempotency-phase-implementer` | `idempotency-arch-planner` |
-| `scheduling` | `19.Scheduling` | `src/Infrastructure/Scheduling` | `scheduling-phase-implementer` | `scheduling-arch-planner` |
-| `reporting` | `20.Reporting` | `src/Infrastructure/Reporting` | `reporting-phase-implementer` | `reporting-arch-planner` |
+Read the domain table in the root `CLAUDE.md` (columns Domain · Slug · Folder). It is the only registry; never use a copy. Match `<domain>` case-insensitively against the slug, the domain id, its number, the name part of the id, or the folder (or the folder's last segment). Aliases: `workflows` → `workflow`, `service-defaults` → `servicedefaults`, `ai` → `intelligence`, `foundation` → `core`.
 
-Aliases: `workflows` → `workflow`, `service-defaults` → `servicedefaults`, `ai` → `intelligence`.
+From the matched row: `{Folder}`, `{NN}`, the implementer `{slug}-phase-implementer` and the planner `{slug}-arch-planner`.
 
-If `<domain>` is missing or matches no row, output the slug list and stop:
+If `<domain>` is missing or matches no row, output the slugs and stop:
 ```
-implement-phase: unknown domain "{input}". Use one of: governance, core, caching, … reporting (or a folder such as 06.Persistence).
+implement-phase: unknown domain "{input}". Use one of: {every slug from the table} (or a domain id or folder).
 ```
 
 ---
 
 ## Step 2 — Pick the phase
 
-Read `{Folder}/state-map.md` in full. Open phases are the `### SK.{NN}.{Key} — {title} {state}` entries under `## Open Work`; closed ones are lines under `## Completed Phases` and `●`/`⊘` rows in `## Phase Key Registry`.
+Read `{Folder}/state-map.md` in full. Open phases are the `### SK.{NN}.{Key} — {title} {state}` entries under `## Open Work`. Closed phases are removed from the board (`git log` holds them).
 
 **With `[phase]`:** match the phase key exactly, else the key's name part or the entry title case-insensitively.
-- Found under `## Completed Phases` or registry `●`/`⊘` → `Phase {key} is already complete in {Folder}. Nothing to do.` Stop.
-- Not found anywhere → `Phase {input} not found in {Folder}/state-map.md. Open phases: {keys under ## Open Work, or "none"}.` Stop.
+- Not under `## Open Work` → if `git log --oneline -S"{key}"` finds it: `Phase {key} is already complete in {Folder}. Nothing to do.`; otherwise `Phase {input} not found in {Folder}/state-map.md. Open phases: {keys under ## Open Work, or "none"}.` Stop.
 - Its state is `⚑` → report the matching `## Blocked` entry and stop.
 
 **Without `[phase]`**, in order:
 1. The first Open Work entry marked `◐` (resume).
-2. Otherwise the first entry marked `○` whose `**Depends on:**` items are all done: a domain phase key is done when it is `●` in its domain's registry; a `P-NNN` is done when it is `●` on the root board or listed under root `## Completed Work Orders`. Skip entries whose dependencies are open and name them in the stop message if nothing else qualifies.
+2. Otherwise the first entry marked `○` whose `**Depends on:**` items are all done: a domain phase key is done when it is no longer open on its domain board (not under `## Open Work`, or its registry row is `●`); a `P-NNN` is done when it is `●` on the root board or no longer on it (finished work orders are deleted). Skip entries whose dependencies are open and name them in the stop message if nothing else qualifies.
 3. `⚑` entries are never auto-selected.
 
 Stop conditions:

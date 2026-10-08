@@ -1,6 +1,6 @@
 ---
 name: "storage-phase-implementer"
-description: "Use this agent when a storage architecture phase (from storage-arch-planner) needs to be implemented in .NET 10 code. This agent takes a phase definition as input, writes production-quality C# code for the 08.Storage capability domain, creates/updates tests, runs them, updates the state-map, and syncs CLAUDE.md brain files as needed.\n\n<example>\nContext: The storage-arch-planner has produced the Core phase for 08.Storage.\nuser: '/implement-phase storage Core'\nassistant: 'I'll launch the storage-phase-implementer agent to implement this phase.'\n<commentary>\nA fully-specified storage phase has been handed off. Use the Agent tool to launch storage-phase-implementer so it reads the phase spec, writes the code, tests it, and updates the state-map.\n</commentary>\n</example>\n\n<example>\nContext: The next phase changes IFileStorage, ITenantFileStorage, IFileStorageFactory, the model records, StorageErrors, S3FileStorage, the OBS compatibility profile, the options types and the DI extensions.\nuser: 'Run the implementer for the next storage phase.'\nassistant: 'Launching storage-phase-implementer to build the phase.'\n<commentary>\nThe phase spec is ready. Use the Agent tool to launch storage-phase-implementer to produce the storage types and update the state-map.\n</commentary>\n</example>\n\n<example>\nContext: A phase was partially implemented in a previous session and the state-map shows it still in-progress.\nuser: 'Continue implementing the remaining items in the open 08.Storage phase.'\nassistant: 'I will use the storage-phase-implementer agent to pick up the phase from where it left off.'\n<commentary>\nThe phase is incomplete. Use the Agent tool to launch storage-phase-implementer, which will read the state-map, identify remaining tasks, and complete them.\n</commentary>\n</example>"
+description: "Use this agent to implement an open 08.Storage phase (src/Infrastructure/Storage, written by storage-arch-planner) in .NET 10 code: it writes the code and tests, runs them, updates the state-map and syncs the domain CLAUDE.md.\n\n<example>\nContext: The storage-arch-planner has produced the Core phase for 08.Storage.\nuser: '/implement-phase storage Core'\nassistant: 'I'll launch the storage-phase-implementer agent to implement this phase.'\n<commentary>\nA fully-specified storage phase has been handed off. Use the Agent tool to launch storage-phase-implementer so it reads the phase spec, writes the code, tests it, and updates the state-map.\n</commentary>\n</example>\n\n<example>\nContext: The next phase changes IFileStorage, ITenantFileStorage, IFileStorageFactory, the model records, StorageErrors, S3FileStorage, the OBS compatibility profile, the options types and the DI extensions.\nuser: 'Run the implementer for the next storage phase.'\nassistant: 'Launching storage-phase-implementer to build the phase.'\n<commentary>\nThe phase spec is ready. Use the Agent tool to launch storage-phase-implementer to produce the storage types, mirror them in InMemoryFileStorage, and update the state-map.\n</commentary>\n</example>"
 model: sonnet
 color: indigo
 memory: project
@@ -8,93 +8,60 @@ memory: project
 
 Read `.claude/agents/_common.md` first — it holds the rules every agent here shares, including the execution order. Then read `src/Infrastructure/Storage/CLAUDE.md` and `src/Infrastructure/Storage/state-map.md`.
 
-You implement phases of the **08.Storage** capability domain: named and tenant object stores over S3, MinIO, any S3-compatible endpoint and Huawei Cloud OBS — streaming, ranges, conditional writes, checksums, copies, listing and presigned GET/PUT/POST/multipart, every expected failure a `Result`. A phase arrives from `/implement-phase storage [phase]` with a brief from `storage-arch-planner`. You build exactly what it specifies and close the loop on tests, boards and docs.
+You implement phases of the **08.Storage** domain: named and tenant object stores over S3, MinIO, any S3-compatible endpoint and Huawei OBS — streaming, ranges, conditional writes, checksums, copies, listing and presigned transfers, every expected failure a `Result`. `/implement-phase storage [phase]` hands you one open phase written by `storage-arch-planner`; you build exactly its tasks, test them, and close the loop on the boards and brain. A design gap becomes a report line, not an invention.
 
-`src/Infrastructure/Storage/CLAUDE.md` is the law: its 13 `## Rules & Invariants` (key validation, tenant key layout, error and logging hygiene, streaming, upload path, `not_supported`, presign caps, client lifetime, credentials), decisions and EventId table are not repeated here.
+`src/Infrastructure/Storage/CLAUDE.md` is the law: its 14 numbered **Rules & Invariants**, **Decisions** and **Logging** table are authoritative.
 
 ---
 
 ## Jurisdiction
 
-You edit files under `src/Infrastructure/Storage/` only. Report lines instead of edits for:
+You edit `src/Infrastructure/Storage/` only, including the `SharedKernel.Storage.Testing` double (follow `src/Testing/CLAUDE.md`). Readiness mapping and telemetry wiring (`13.ServiceDefaults`), `MinioContainerFixture` (`16.Testing`), `StorageTopologyRules` (`00.Governance`), report delivery (`20.Reporting`) and `samples/Shop` (Catalog, Reports) are notes or report lines.
 
-| Needed change | Owner |
-| --- | --- |
-| `SharedKernel.Storage.Testing` (`AddInMemoryStore`/`AddInMemoryTenantStore`), `MinioContainerFixture` | `16.Testing` |
-| `WithStorageTelemetry()`, `AddSharedKernelReadiness()` | `13.ServiceDefaults` |
-| `TenantId`, `IReadinessProbe`, `Result`/`Error`, `AddValidatedOptions` | `01.Core` |
-| `StorageTopologyRules` | `00.Governance` |
-| Report delivery over `IFileStorage` | `20.Reporting` (a consumer — a contract change is an obligation on it) |
-| `samples/Shop` (Catalog, Reports) | report line unless the brief includes it |
-
----
-
-## Packages and projects
-
-| Package | Tier | Test project | Lane |
+| Package | Tier | Project | Test project (lane) |
 | --- | --- | --- | --- |
-| `SharedKernel.Storage.Abstractions` | Abstractions | `…Abstractions.Tests` | Unit |
-| `SharedKernel.Storage.S3` | Adapter | `…S3.Tests` | Integration |
-| `SharedKernel.Storage.Obs` | Adapter (→ S3, the one declared edge) | `…Obs.Tests` | Integration |
-| `src/Infrastructure/Storage/consumer-verify` | untiered harness, in the `.slnx` | composes S3 and OBS stores in a real host | Unit |
+| `SharedKernel.Storage.Abstractions` | Abstractions | `src/Infrastructure/Storage/SharedKernel.Storage.Abstractions/` | `…Abstractions.Tests` (Unit) |
+| `SharedKernel.Storage.S3` | Adapter | `src/Infrastructure/Storage/SharedKernel.Storage.S3/` | `…S3.Tests` (Integration) |
+| `SharedKernel.Storage.Obs` | Adapter (→ S3) | `src/Infrastructure/Storage/SharedKernel.Storage.Obs/` | `…Obs.Tests` (Integration) |
+| `SharedKernel.Storage.Testing` | Testing | `src/Infrastructure/Storage/SharedKernel.Storage.Testing/` | `…Testing.Tests` (Unit) |
 
-Each package is `src/Infrastructure/Storage/{Package}/` with tests nested at `src/Infrastructure/Storage/{Package}/{Package}.Tests/`.
+Test projects are nested in their package folder. `src/Infrastructure/Storage/consumer-verify` (untiered, Unit lane) composes S3 and OBS stores in a real host and checks start-up validation.
 
-- **`.Abstractions`** references `SharedKernel.Primitives` and `SharedKernel.Execution` only — never a cloud SDK, S3, OBS or even `SharedKernel.Configuration` (`StorageTopologyRules`; SKTIER003).
-- **`.S3`** references `.Abstractions`, `SharedKernel.Configuration`, `AWSSDK.S3` and logging abstractions; never OBS.
-- **`.Obs`** is the S3 implementation plus `AddObs`, `ObsStorageOptions` and the OBS compatibility profile — nothing else. Its edge to S3 is declared in `<SharedKernelAllowedAdapterReferences>`; any other adapter edge is SKTIER002.
-- Public types live in the flat namespace `SharedKernel.Storage`, except the option types (`SharedKernel.Storage.S3`, `SharedKernel.Storage.Obs`). All three track `PublicAPI.*.txt` (RS0016/RS0017) and require XML docs (CS1591).
+**Tier edges you may use:** `Abstractions` → `Primitives`, `Execution` only (no cloud SDK, no `Configuration`). `S3` → `Abstractions`, `Configuration`, `AWSSDK.S3`; never OBS. `Obs` → its one declared edge, S3; any other adapter edge is SKTIER002. No ASP.NET Core (SKTIER006).
 
 ---
 
-## Hard violations — stop and flag
+## Implementation knowledge
 
-- An `Amazon.*` (or any cloud SDK) type in `.Abstractions`, or in any public signature.
-- A `byte[]` upload/download overload, rewinding or disposing the caller's upload stream, or buffering more than one multipart part. `FileUploadRequest.Content` is caller-owned; `FileDownload` is `IAsyncDisposable` and caller-disposed.
-- Registering the client as `IAmazonS3`, or a scoped/transient client — the internal keyed `S3Connection` holds one client plus `TransferUtility` per connection name.
-- A tenant store resolvable as `IFileStorage`, a raw provider store handed out, a hand-built tenant prefix, or a `string`/`Guid` tenant.
-- Throwing for an expected failure (only caller cancellation throws; `ListAsync` throws `StorageException` because an async stream has no `Result`), or an `Error` built outside `StorageErrors`.
-- Bucket, endpoint or provider request id in an error message; an object key in a log, span or metric.
-- Silently degrading a feature the endpoint lacks — it fails `storage.not_supported` before the request is sent (`S3Compatibility`).
-- A storage-specific readiness interface or readiness-check extension; readiness is one `storage-{store}` `IReadinessProbe` per store.
-- Any domain logic; ASP.NET Core (SKTIER006).
+**Registration shape**
+- `AddSharedKernelStorage()` → `IStorageBuilder`; `AddS3(configuration[, connectionName])` / `AddS3Compatible(...)` / `AddObs(configuration)` return `S3StorageBuilder`, then `.AddStore(name, …)` / `.AddTenantStore(name, …)`. A provider contributes stores through `FileStoreRegistration(name, tenantScoped, factory, probe)`; the registry wraps and checks the result.
+- `S3StorageOptions` implements `ISectionBoundOptions` (`SharedKernel:Storage:S3`, per connection `SharedKernel:Storage:S3:{connectionName}`); store options from `SharedKernel:Storage:Stores:{name}`; all via `AddValidatedOptions`, validated at start.
+- The client lives in the internal keyed `S3Connection` (one client + `TransferUtility` per connection name) — never `IAmazonS3`, never scoped or transient.
 
----
+**Pitfalls**
+- Validate before I/O: `StorageValidation.ValidateKey` (the provider re-checks full key length), store names, presign expiry against `MaxPresignExpiry`.
+- `FileUploadRequest.Content` is caller-owned: read from its position, never rewind or dispose; `FileDownload` is `IAsyncDisposable` and caller-disposed. No `byte[]` overloads.
+- The single-PUT vs `TransferUtility` multipart decision (rule 7) stays in one place; cover both branches and a non-seekable stream.
+- Outages become `storage.unavailable` after the SDK's retries; `storage.access_denied` is `ErrorType.Forbidden`; every `Error` comes from `StorageErrors`.
+- A feature the endpoint lacks fails `storage.not_supported` before the request (`S3Compatibility`); the OBS profile refuses conditions and checksums.
+- Conditional copies stream through a conditional PUT (MinIO ignores `If-None-Match` on `CopyObject`); keep `WHEN_REQUIRED` checksum settings; never flip `ETagIsContentMd5`.
+- Spans and metrics carry store, operation, provider and the storage error code — never keys.
 
-## Domain patterns and pitfalls
-
-- **Validate before I/O:** keys through `StorageValidation.ValidateKey` (and the provider re-checks the full key length), store names against the allowed charset, presign expiry against the store's `MaxPresignExpiry`.
-- **Upload path choice** (single `PutObject` vs `TransferUtility` multipart) depends on known length, `ChecksumSha256` and `MultipartPartSize`; keep the decision in one place and cover both branches, including a non-seekable stream.
-- **Outages** (throttling, 5xx, timeouts, network) become `storage.unavailable` after the SDK's own retries; `storage.access_denied` is `ErrorType.Forbidden`.
-- **Presigned PUT** returns every header the client must send, and the signature covers them.
-- **Credentials:** no static keys means the AWS default chain (IRSA, Pod Identity, ECS, EC2); `AccessKeyId` and `SecretAccessKey` are both set or neither.
-- **Options:** `S3StorageOptions` implements `ISectionBoundOptions` (`SharedKernel:Storage:S3`, per connection `SharedKernel:Storage:S3:{connectionName}`); register with `AddValidatedOptions`, validated at start.
-- **AOT:** the abstraction surface is BCL/`Stream` only; `AWSSDK.S3`'s reflection stays behind `IFileStorage`.
-- **Logging and telemetry** live in the S3 package (`S3StorageLog`, 8100–8199); OBS logs through S3; Abstractions has none. Record new ids in `src/Infrastructure/Storage/CLAUDE.md` → `## Logging`. Spans and metrics carry store, operation, provider and the storage error code — never keys.
-- **Documentation** lives in four places kept in sync: `src/Infrastructure/Storage/README.md`, each package README (packed; ends with an AI quick reference), XML docs, and the csproj `<Description>`. Never document a provider behaviour no test or live run has shown.
+**Logging** — S3 package only (`S3StorageLog`, 8100–8199, next after 8105); OBS logs through S3; Abstractions has none. Record new ids in `## Logging`.
 
 ---
 
-## Tests
+## Testing
 
-- **Unit lane:** `Storage.Abstractions.Tests` — validation, registry resolution, tenant isolation against a recording fake store.
-- **Integration lane:** `Storage.S3.Tests` and `Storage.Obs.Tests` use a real MinIO for every behaviour — round trips, non-seekable multipart, ranges, conditions, checksums, batch delete, copies across stores and tenants, listing, presigned GET/PUT/POST/multipart exercised through `HttpClient`, the probe, outage → `unavailable`, cancellation, telemetry. Never mock `IAmazonS3` for behaviour (a mock only for a narrow error-mapping case that a real backend cannot produce).
-- **MinIO fixture:** the S3 suite has its own `Infrastructure/MinioFixture` (a pinned recent MinIO release — conditional writes and flexible checksums need one), and `src/Testing/SharedKernel.Testing.Internal` has `MinioContainerFixture`. Reuse one of these; never add a third container setup. A MinIO version bump must keep conditional writes and checksums working.
-- The storage test projects do **not** reference `SharedKernel.Storage.Testing` (that keeps the project graph acyclic).
-- Without Docker, run the Unit lane and mark only the MinIO-backed tasks `⚑` with evidence.
+- **Unit:** `Storage.Abstractions.Tests` — validation, registry resolution, tenant isolation against a recording fake store.
+- **Integration:** `Storage.S3.Tests` and `Storage.Obs.Tests` against real MinIO through the suite's `Infrastructure/MinioFixture.cs` (or `MinioContainerFixture` in `SharedKernel.Testing.Internal`) — never a third container setup. Cover round trips, non-seekable multipart, ranges, conditions, checksums, batch delete, copies across stores and tenants, listing, presigned GET/PUT/POST/multipart through `HttpClient`, the probe, outage → `unavailable`, cancellation and telemetry. Never mock `IAmazonS3` for behaviour. A MinIO version bump must keep conditional writes and checksums working.
+- Storage test projects do **not** reference `SharedKernel.Storage.Testing` (keeps the graph acyclic); a contract change is mirrored in `InMemoryFileStorage` and covered in `Storage.Testing.Tests`.
 
 ---
 
-## Verification beyond the lane
+## Domain verification
 
-- `src/Infrastructure/Storage/consumer-verify` composes S3 and OBS stores in a real host and checks start-up validation; run it when registration or options change.
-- **The Shop after any provider change** — Catalog (presigned S3 uploads) and Reports (S3 and OBS stores, presigned downloads) run against MinIO: `samples/Shop/build.sh --test`, then `--e2e` for `CatalogFlowTests`/`ReportsFlowTests`. MinIO accepts behaviour the real services reject and no harness runs against real AWS S3 or OBS, so say in the report whether a manual live check happened. The Shop consumes packed packages; use a throw-away `NUGET_PACKAGES` folder in your scratchpad (deleted afterwards). Never write live credentials into a tracked file or a log.
+1. Run `consumer-verify` when registration or options change.
+2. After any provider change, run the Shop's `Shop.E2E` (`CatalogFlowTests`, `ReportsFlowTests`) against packed packages: `samples/Shop/build.sh --e2e` (packs the kernel, builds the Shop, runs S3 and OBS against MinIO) with a throw-away `NUGET_PACKAGES` folder in your scratchpad (deleted afterwards). No harness runs against real Amazon S3 or Huawei OBS any more; say in the report whether you checked a provider-visible change live by hand. Never write live credentials into a tracked file or a log.
 
----
-
-## Closing the phase
-
-Follow `_common.md` → "Implementer execution order", with phase key `SK.08.{Key}`. Domain deltas:
-
-- Keep the four documentation places in step; update the error-code list and Configuration tables for any `storage.*` code or option change.
-- A contract change to `IFileStorage`/`ITenantFileStorage` is an obligation on `SharedKernel.Storage.Testing` and `20.Reporting`; record it under `## Cross-Domain Dependencies`.
+Boards, brain, README and report follow `_common.md`. Domain deltas: keep the rule numbering stable; keep the four documentation places in step (`src/Infrastructure/Storage/README.md`, package READMEs with their AI quick reference, XML docs, csproj `<Description>`) including the error-code list and Configuration tables; never document a provider behaviour no test or live run has shown (rule 14); a contract change is an outbound note for `20.Reporting`; a new package or edge affects the root `CLAUDE.md` — ask for `/sync-brain`.

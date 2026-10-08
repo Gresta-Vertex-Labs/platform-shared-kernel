@@ -8,7 +8,9 @@
 > **Durable, crash-proof workflows on [Temporal](https://github.com/temporalio/sdk-dotnet): start, signal, query and
 > await them from application code, author them on platform base types, and host the worker in the generic host —
 > with tenant-scoped workflow ids, caller propagation into activities, `Result`-to-failure mapping and payload
-> encryption already wired.**
+> encryption already wired.** Pick it for a multi-step process that must survive crashes, wait for days or
+> compensate. A single job on a time trigger is `SharedKernel.Scheduling` (which may start a workflow); reacting to
+> an event is a consumer in the Messaging packages.
 
 | You get | So that |
 | --- | --- |
@@ -45,14 +47,11 @@ version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
-| Tier | Adapter — reference it from your **Infrastructure** project (workflows and activities) and compose it in the **Api** / **Worker** |
+| Tier | Adapter — reference it from your **Infrastructure** project (workflows, activities and the registration) |
 | Depends on | `SharedKernel.Primitives`, `.Execution`, `.Configuration`, `.Cryptography`, `SharedKernel.Application` (`ISender` only); `Temporalio` 1.17 (+ `.Extensions.Hosting`, `.Extensions.OpenTelemetry`, `.Extensions.DiagnosticSource`) |
 | Namespaces | `SharedKernel.Workflows.Temporal.Dispatch`, `.Authoring`, `.Hosting`, `.Configuration`, `.Errors`, `.Health`, `.Constants` |
 | Needs in the host | `IClock` and logging; a mediator adapter (`app.UseMediatR()`) when you use `CommandActivity<>`; `ISymmetricEncryptionService` when you use `.WithPayloadEncryption()` |
 | Temporal server | Any Temporal server or Temporal Cloud namespace |
-
-There is deliberately no `SharedKernel.Workflows.Abstractions`: the determinism and replay programming model is the
-abstraction (see [Design decisions](#design-decisions)).
 
 ## Quick start
 
@@ -109,6 +108,9 @@ public sealed class StartFulfilmentHandler(IWorkflowDispatcher workflows, IReque
 The service that **runs** the workflow registers it with a worker:
 
 ```csharp
+using SharedKernel.ServiceDefaults.HealthChecks;
+using SharedKernel.Workflows.Temporal.Hosting;
+
 builder.Services.AddSharedKernelTemporalWorkflows(builder.Configuration)
     .AddWorkflow<OrderFulfilmentWorkflow>()
     .AddActivities<ChargeCardActivity>()
@@ -146,7 +148,8 @@ sequenceDiagram
 **Workflow code is replay code.** Every statement in a `[Workflow]` type is re-executed from history — possibly on
 another process, possibly months later — and must issue the same commands every time. Anything that reads a clock, a
 random source, the network, a database, configuration or DI belongs in an **activity**. Many violations compile and
-only fail on replay, in production; review and replay tests are the backstop.
+only fail on replay, in production; review and replay tests are the backstop. This **inverts** the platform rule that
+mandates `IClock` (SK0001) — an injected clock cannot exist on replay; analyzer SK0028 flags the common violations.
 
 | Inside a workflow (`WorkflowBase`) | Inside an activity (`ActivityBase`) |
 | --- | --- |
@@ -158,9 +161,6 @@ only fail on replay, in production; review and replay tests are the backstop.
 | `[LoggerMessage]` methods called on `Logger` (= `Workflow.Logger`, replay-aware) | `[LoggerMessage]` methods on the injected logger |
 | No `System.Diagnostics.Activity` API — `.WithOpenTelemetry()` traces | Fine |
 
-Inside a workflow this **inverts** the platform rule that mandates `IClock` (SK0001): an injected clock cannot exist on
-replay. Analyzer SK0028 flags the common violations.
-
 ### Failure mapping
 
 `WorkflowFailureMapper` turns an `Error` into an `ApplicationFailureException` whose `errorType` is `Error.Code`:
@@ -170,9 +170,9 @@ replay. Analyzer SK0028 flags the common violations.
 | Validation, NotFound, Conflict, Unauthorized, Forbidden, BusinessRule | **non-retryable** — the workflow can compensate at once |
 | Unexpected, Unavailable, Timeout | retryable |
 
-An exception that escapes an activity unmapped is retryable, as in Temporal. The one bug this domain cannot catch for
+An exception that escapes an activity unmapped is retryable, as in Temporal. The one bug the package cannot catch for
 you: an activity that receives a failed `Result` and **returns normally** reports success, and the workflow continues
-down the happy path. Every activity path ends in `throw Fail(error)` / `throw FailFrom(result)` or uses
+down the happy path. End every failure path in `throw Fail(error)` / `throw FailFrom(result)`, or use
 `CommandActivity<>`, which maps for you.
 
 ### Tenancy, ids and propagation
@@ -200,6 +200,8 @@ down the happy path. Every activity path ends in `throw Fail(error)` / `throw Fa
 
 ```csharp
 using Microsoft.Extensions.Logging;
+using SharedKernel.Application.Messaging;
+using SharedKernel.Primitives.Clocks;
 using SharedKernel.Workflows.Temporal.Authoring;
 using Temporalio.Activities;
 using Temporalio.Workflows;
@@ -214,7 +216,7 @@ public sealed class ChargeCardActivity(IPaymentGateway gateway, ILogger<ChargeCa
         Heartbeat("charging");                      // long activities must heartbeat or they are retried while running
         var result = await gateway.ChargeAsync(request.CardToken, request.Amount, ct);
         if (result.IsFailure)
-            throw FailFrom(result);                 // never let a failed Result reach the end of the body
+            throw Fail(result.Error);               // never let a failed Result reach the end of the body
         return result.Value.ReceiptId;
     }
 }
@@ -259,6 +261,10 @@ Without `ActivityDispatchOptions`, `ExecuteAsync` applies the `WorkflowWellKnown
 ### 2. Signal, query and await a running workflow
 
 ```csharp
+using SharedKernel.Execution.Tenancy;
+using SharedKernel.Primitives.Results;
+using SharedKernel.Workflows.Temporal.Dispatch;   // IWorkflowDispatcher workflows
+
 var handle = workflows.GetHandle<string>(workflowId, runId: null, TenantScope.For(tenantId));
 await handle.SignalAsync("CancelByCustomer", args: (object?)null, ct);
 Result<bool> cancelled = await handle.QueryAsync<bool>("WasCancelledByCustomer", ct);
@@ -271,6 +277,8 @@ A propagated context grants no permission, so a `[RequirePermission]` command fa
 exactly the permissions the activity needs:
 
 ```csharp
+using SharedKernel.Execution.Context;
+
 [Activity(nameof(ApproveOrderActivity))]
 public override async Task ExecuteAsync(ApproveOrderCommand command, CancellationToken ct = default)
 {
@@ -305,10 +313,7 @@ deploys:
 2. **Deploy.** Old executions replay down `else`; new ones record the patch marker.
 3. **Drain.** Wait until no execution started before the patch can still be running.
 4. **Deprecate.** Replace `Patched` with `Workflow.DeprecatePatch("charge-before-approve")` and delete the `else`.
-5. **Remove** the `DeprecatePatch` call once that generation has drained too.
-
-Replay tests (`WorkflowReplayer` over recorded histories) are the only thing that catches a missed patch before
-production.
+5. **Remove** the `DeprecatePatch` call once that generation has drained too. Only replay tests catch a missed patch.
 
 ### 5. Encrypt workflow payloads
 
@@ -316,6 +321,10 @@ Temporal stores every workflow input, output, signal and activity argument in se
 namespace access. `.WithPayloadEncryption()` wraps `ISymmetricEncryptionService` (AES-256-GCM) as an `IPayloadCodec`:
 
 ```csharp
+using SharedKernel.Cryptography.Extensions;
+using SharedKernel.Cryptography.Symmetric;
+using SharedKernel.Workflows.Temporal.Hosting;
+
 builder.Services.AddSingleton<IEncryptionKeyProvider, YourEncryptionKeyProvider>();
 builder.Services.AddSharedKernelCryptography(builder.Configuration).AddSymmetricEncryption();
 
@@ -343,7 +352,7 @@ host starts.
 | --- | --- | --- | --- |
 | `Workflows:Temporal:TargetHost` | `string` | — (required) | Temporal frontend, e.g. `localhost:7233` |
 | `Workflows:Temporal:Namespace` | `string` | — (required) | Temporal namespace |
-| `Workflows:Temporal:TaskQueue` | `string?` | `null` | Default task queue when `.WithWorker(...)` names none |
+| `Workflows:Temporal:TaskQueue` | `string?` | `null` | Bound, **not yet applied** — pass the queue to `.WithWorker(taskQueue)` and `WorkflowStartOptions.TaskQueue` |
 | `Workflows:Temporal:Tls` | `bool` | `false` | Connect with TLS |
 | `Workflows:Temporal:ApiKey` | `string?` | `null` | Temporal Cloud API key |
 | `Workflows:Temporal:IdentityPrefix` | `string?` | `null` | Prefix of the reported worker identity (`{prefix}-{MachineName}`) |
@@ -375,7 +384,6 @@ Worker tuning (`.WithWorker(taskQueue, t => t with { … })`, `WorkerTuningOptio
 
 `Build()` throws for: client-only combined with a workflow, activity or worker; no worker and not client-only; a worker
 with no workflows and no activities; a second `WithWorker`; a second `Build()`; a missing `TargetHost`/`Namespace`.
-
 Lifetimes: `IWorkflowDispatcher` scoped; `IWorkflowIdFactory`, the Temporal client, the codec and the probe
 singletons. The package registers no `IClock` or `ILogger<T>`.
 
@@ -488,5 +496,5 @@ and uses reflection-based JSON, so it is not AOT-safe.
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Workflows domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Workflows/README.md) ·
+[Workflows packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Workflows/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

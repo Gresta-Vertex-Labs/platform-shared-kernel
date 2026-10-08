@@ -6,7 +6,7 @@
 ![Public API: tracked](https://img.shields.io/badge/public%20API-tracked-informational)
 ![Memory: capped by MaxRows](https://img.shields.io/badge/memory-capped%20by%20MaxRows-yellow)
 
-> **Tabular PDF exports for `SharedKernel.Reporting` — statements, lists, extracts: an optional title and one table
+> **Tabular PDF exports behind `IReportExporter<TRow>` (statements, lists, extracts): an optional title and one table
 > that always fits the page, with repeated headers and page numbers. Built on [PDFsharp/MigraDoc](https://docs.pdfsharp.net/)
 > (MIT) with an embedded font, so it renders identically on Windows and in Linux containers.**
 
@@ -44,7 +44,7 @@ version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
-| Tier | Adapter — reference it from your **Infrastructure** (or Api) project |
+| Tier | Adapter — reference it from your **Infrastructure** project |
 | Depends on | `SharedKernel.Reporting.Abstractions`, `SharedKernel.Configuration`, PDFsharp + PDFsharp-MigraDoc (MIT) |
 | Namespaces | `SharedKernel.Reporting` (`AddPdf`), `SharedKernel.Reporting.Pdf` (`IPdfReportExporter<T>`, `PdfExportOptions`, `PdfPaperSize`) |
 
@@ -52,6 +52,7 @@ version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform
 
 ```csharp
 using SharedKernel.Reporting;
+using SharedKernel.Storage;
 
 builder.Services.AddSharedKernelStorage().AddS3(builder.Configuration).AddStore("statements");
 builder.Services.AddSharedKernelReporting().AddPdf(builder.Configuration);   // SharedKernel:Reporting:Pdf
@@ -68,8 +69,10 @@ builder.Services.AddSharedKernelReporting().AddPdf(builder.Configuration);   // 
 ```
 
 ```csharp
+using SharedKernel.Primitives.Results;
 using SharedKernel.Reporting;
 using SharedKernel.Reporting.Pdf;
+using SharedKernel.Storage;
 
 public sealed class RenderStatement(IPdfReportExporter<StatementLine> pdf, IStatementQueries statements)
 {
@@ -171,5 +174,5 @@ embedded font makes the output byte-for-byte portable.
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Reporting domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Reporting/README.md) ·
+[Reporting packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Reporting/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

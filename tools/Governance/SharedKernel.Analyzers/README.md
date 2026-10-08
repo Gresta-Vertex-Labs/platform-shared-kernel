@@ -3,10 +3,11 @@
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
 ![Tier: Tooling](https://img.shields.io/badge/tier-Tooling-6a737d)
-![Rules: 44](https://img.shields.io/badge/rules-44-informational)
+![Rules: 45](https://img.shields.io/badge/rules-45-informational)
 
-> **44 Roslyn rules that turn the Platform.SharedKernel conventions into compiler warnings in your own build. Every
-> diagnostic names the fix, so a violation explains itself in the IDE instead of waiting for a reviewer to notice.**
+> **45 Roslyn rules that turn the Platform.SharedKernel conventions into compiler warnings in your own build. Every
+> diagnostic names the fix, so a violation explains itself in the IDE instead of waiting for a reviewer to notice.
+> Rules that need a whole assembly live in `SharedKernel.ArchitectureTests`; formatting in `SharedKernel.Linter`.**
 
 | You get | So that |
 | --- | --- |
@@ -83,7 +84,7 @@ Make the rules you consider non-negotiable fail the build:
 # .editorconfig
 [*.cs]
 dotnet_diagnostic.SK0030.severity = error
-dotnet_analyzer_diagnostic.category-Security.severity = error
+dotnet_analyzer_diagnostic.category-Security.severity = error   # SK0032, SK0035, SK0042: adopt these first
 ```
 
 ## How it works
@@ -91,7 +92,7 @@ dotnet_analyzer_diagnostic.category-Security.severity = error
 ```mermaid
 flowchart LR
     code["Your .cs files"] --> roslyn["Roslyn compiler<br/>(IDE + dotnet build)"]
-    roslyn --> an["SharedKernel.Analyzers<br/>44 rules"]
+    roslyn --> an["SharedKernel.Analyzers<br/>45 rules"]
     an -->|Warning by default| out["Build output / IDE squiggle"]
     cfg[".editorconfig severities"] --> out
     out -->|help link| docs["Rule documentation"]
@@ -104,23 +105,15 @@ flowchart LR
   `SK0001` inside `SharedKernel.Primitives`). Rules unsafe anywhere (`SK0011`, `SK0014`, `SK0022`, `SK0023`, `SK0030`,
   `SK0703`) have no exemption.
 - **Generated code** is skipped wherever it would false-positive (the `[LoggerMessage]` generator's output, for one).
-- **Only what you use fires.** A service with no MassTransit bus never sees `SK0703`–`SK0708`; one without Temporal
-  never sees `SK0028`/`SK0029`. The rules that apply to almost any project are `SK0001`, `SK0003`–`SK0005`, `SK0011`,
-  `SK0020`/`SK0021`, `SK0022`, `SK0030` and `SK0033`.
-- **Help links.** Each diagnostic's help link opens the rule index of the
-  [00.Governance README](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/tools/Governance/README.md#analyzer-rule-index),
+- **Only what you use fires.** No MassTransit bus, no `SK0703`–`SK0708`; no Temporal, no `SK0028`/`SK0029`. Almost
+  any project meets `SK0001`, `SK0003`–`SK0005`, `SK0011`, `SK0020`–`SK0022`, `SK0030` and `SK0033`.
+- **Help links.** Each diagnostic's help link opens its row in the
+  [Governance rule index](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/tools/Governance/README.md#analyzer-rule-index),
   which links to the rule's entry below.
 
 ## Recipes
 
-### 1. Adopt the security rules first
-
-```ini
-[*.cs]
-dotnet_analyzer_diagnostic.category-Security.severity = error   # SK0032, SK0035, SK0042
-```
-
-### 2. Suppress one occurrence, with the reason
+### 1. Suppress one occurrence, with the reason
 
 ```csharp
 #pragma warning disable SK0202 // Cross-tenant retention purge, approved in INF-4421
@@ -131,7 +124,7 @@ var expired = await db.AuditLogs.IgnoreQueryFilters().Where(x => x.CreatedAt < c
 For a member or type, use `[SuppressMessage("Usage", "SK0001", Justification = "…")]`. A per-site suppression
 records one decision; `severity = none` erases the rule for everyone.
 
-### 3. Relax a rule for part of the tree
+### 2. Relax a rule for part of the tree
 
 ```ini
 [tests/**/*.cs]
@@ -140,66 +133,65 @@ dotnet_diagnostic.SK0001.severity = none
 
 ## Reference
 
-### Categories
-
-| Category | Meaning |
-| --- | --- |
-| `Usage` | An API is used in a way the platform does not support |
-| `Design` | The shape of a type, method or registration is wrong |
-| `Security` | A direct security consequence — `SK0032`, `SK0035`, `SK0042`. Escalate these first |
-| `Advisory` | A heuristic nudge, never a prohibition — `SK0034` only; keep it at Warning |
-
-Every rule's default severity is **Warning**.
-
 ### Rule index
 
-| Rule | Category | Title |
-| --- | --- | --- |
-| [SK0001](#sk0001) | Usage | Direct DateTime/DateTimeOffset usage |
-| [SK0002](#sk0002) | Usage | Direct Microsoft.FeatureManagement / ambient OpenFeature API usage |
-| [SK0003](#sk0003) | Design | Raw Exception or ApplicationException throw |
-| [SK0004](#sk0004) | Design | Null return for Error type |
-| [SK0005](#sk0005) | Design | SharedKernelException subclass constructed with string only |
-| [SK0006](#sk0006) | Design | Guard clause functional-path method must not throw |
-| [SK0007](#sk0007) | Design | IRedisChannelService used as a messaging substitute |
-| [SK0008](#sk0008) | Design | Dispatch code should not couple to IAggregateRoot |
-| [SK0009](#sk0009) | Design | Domain event missing version attribute |
-| [SK0010](#sk0010) | Design | Specification constructor has conflicting ordering calls |
-| [SK0011](#sk0011) | Design | Guid.ToString called with non-canonical format code |
-| [SK0013](#sk0013) | Usage | Raw HttpClient injection in constructor |
-| [SK0014](#sk0014) | Usage | Closed-generic ResiliencePipeline&lt;T&gt; registration |
-| [SK0016](#sk0016) | Design | typeof(X).Name used without a FullName companion |
-| [SK0017](#sk0017) | Design | Command implements ICacheableQuery&lt;TResponse&gt; |
-| [SK0018](#sk0018) | Design | Query implements IInvalidatesCache |
-| [SK0020](#sk0020) | Design | Direct ILogger extension-method usage |
-| [SK0021](#sk0021) | Design | Hand-written LoggerMessage.Define delegate |
-| [SK0022](#sk0022) | Usage | Raw string literal at a cross-cutting call site |
-| [SK0023](#sk0023) | Usage | IAmazonS3 registered as Scoped or Transient |
-| [SK0024](#sk0024) | Usage | Raw string literal in a search field-name position |
-| [SK0025](#sk0025) | Usage | Obsolete NEST/Elasticsearch.Net client usage |
-| [SK0026](#sk0026) | Usage | Raw vector-DB/model-SDK client injected outside its owning provider package |
-| [SK0027](#sk0027) | Usage | Raw string literal in a vector-collection identifier position |
-| [SK0028](#sk0028) | Design | Non-deterministic or side-effecting API used inside workflow |
-| [SK0029](#sk0029) | Usage | Raw Temporal client type injected outside SharedKernel.Workflows.Temporal |
-| [SK0030](#sk0030) | Usage | Result outcome discarded |
-| [SK0031](#sk0031) | Usage | Raw security-context constructor injection |
-| [SK0032](#sk0032) | Security | CORS policy combines a wildcard/always-allow origin with AllowCredentials |
-| [SK0033](#sk0033) | Usage | Reflection-based object mapper (AutoMapper) usage |
-| [SK0034](#sk0034) | Advisory | Raw decimal amount + string currency-code pair |
-| [SK0035](#sk0035) | Security | Unmasked classified data reaches a logging call site |
-| [SK0036](#sk0036) | Usage | Raw RpcException/Status construction outside SharedKernel.Presentation.Grpc |
-| [SK0037](#sk0037) | Design | Value object constructor never calls EnsureValid |
-| [SK0038](#sk0038) | Design | Integration event missing [IntegrationEvent] attribute |
-| [SK0039](#sk0039) | Design | Invalid [IntegrationEvent] attribute |
-| [SK0040](#sk0040) | Design | Pipeline marker interface requires a Result-shaped response |
-| [SK0041](#sk0041) | Design | Two cacheable queries share a simple type name |
-| [SK0042](#sk0042) | Security | Non-constant SQL argument passed to a Dapper query/command method |
-| [SK0201](#sk0201) | Design | TenantedDbContext.OnModelCreating override missing base call |
-| [SK0202](#sk0202) | Design | IgnoreQueryFilters() called outside permitted persistence scope |
-| [SK0703](#sk0703) | Usage | IMessageBus or IEventPublisher registered as Singleton |
-| [SK0704](#sk0704) | Usage | Hardcoded queue or exchange URI in GetSendEndpoint |
-| [SK0705](#sk0705) | Usage | IFaultConsumer registered directly via AddScoped or AddSingleton |
-| [SK0708](#sk0708) | Usage | Batch consumer registered via AddConsumer instead of AddBatchConsumer |
+45 active rules, each shipped at **Warning**; escalate in `.editorconfig`. Categories: `Usage` (an API used in a way
+the platform does not support), `Design` (a wrong type, method or registration shape), `Security` (escalate these
+first) and `Advisory` (a heuristic nudge — keep `SK0034` at Warning).
+
+| Rule | Title | Category | Severity | Flags |
+| --- | --- | --- | --- | --- |
+| [SK0001](#sk0001) | Direct DateTime/DateTimeOffset usage | Usage | Warning | `DateTime`/`DateTimeOffset` `.Now`/`.UtcNow` → inject `IClock` |
+| [SK0002](#sk0002) | Direct Microsoft.FeatureManagement / ambient OpenFeature API usage | Usage | Warning | `IFeatureManager` family or `OpenFeature.Api.Instance` → `IFeatureClient` |
+| [SK0003](#sk0003) | Raw Exception or ApplicationException throw | Design | Warning | `throw new Exception(…)` → `Result` failure or a typed kernel exception |
+| [SK0004](#sk0004) | Null return for Error type | Design | Warning | `return null;` from an `Error` member → `Error.None` |
+| [SK0005](#sk0005) | SharedKernelException subclass constructed with string only | Design | Warning | A kernel exception built from a message only → pass an `Error` |
+| [SK0006](#sk0006) | Guard clause functional-path method must not throw | Design | Warning | `throw` on an `IGuardClause` path → return `Error?` |
+| [SK0007](#sk0007) | IRedisChannelService used as a messaging substitute | Design | Warning | Redis Pub/Sub in command/event code → `IMessageBus` |
+| [SK0008](#sk0008) | Dispatch code should not couple to IAggregateRoot | Design | Warning | `IAggregateRoot` in dispatchers/outboxes → `IHasDomainEvents` |
+| [SK0009](#sk0009) | Domain event missing version attribute | Design | Warning | An `IDomainEvent` without `[DomainEventVersion]` |
+| [SK0010](#sk0010) | Specification constructor has conflicting ordering calls | Design | Warning | `ApplyOrderBy` and `ApplyOrderByDescending` in one constructor |
+| [SK0011](#sk0011) | Guid.ToString called with non-canonical format code | Design | Warning | `guid.ToString("N"/"B"/"P"/"X")` → `ToString()` |
+| [SK0013](#sk0013) | Raw HttpClient injection in constructor | Usage | Warning | An explicit constructor taking `HttpClient` → typed REST client |
+| [SK0014](#sk0014) | Closed-generic ResiliencePipeline&lt;T&gt; registration | Usage | Warning | Any `ResiliencePipeline<T>` → non-generic, string-keyed pipeline |
+| [SK0016](#sk0016) | typeof(X).Name used without a FullName companion | Design | Warning | `typeof(X).Name` as a key in `SharedKernel.Application*` |
+| [SK0017](#sk0017) | Command implements ICacheableQuery&lt;TResponse&gt; | Design | Warning | A command carrying the query-caching marker |
+| [SK0018](#sk0018) | Query implements IInvalidatesCache | Design | Warning | A query carrying the invalidation marker |
+| [SK0020](#sk0020) | Direct ILogger extension-method usage | Design | Warning | `logger.LogXxx(…)` → `[LoggerMessage]` partial method |
+| [SK0021](#sk0021) | Hand-written LoggerMessage.Define delegate | Design | Warning | `LoggerMessage.Define*(…)` → `[LoggerMessage]` partial method |
+| [SK0022](#sk0022) | Raw string literal at a cross-cutting call site | Usage | Warning | Literal header, baggage/tag, config-section or claim-type names |
+| [SK0023](#sk0023) | IAmazonS3 registered as Scoped or Transient | Usage | Warning | `AddScoped`/`AddTransient<IAmazonS3>` → singleton |
+| [SK0024](#sk0024) | Raw string literal in a search field-name position | Usage | Warning | Literal field names in search query builders and filters |
+| [SK0025](#sk0025) | Obsolete NEST/Elasticsearch.Net client usage | Usage | Warning | Any `NEST`/`Elasticsearch.Net` type |
+| [SK0026](#sk0026) | Raw vector-DB/model-SDK client injected outside its owning provider package | Usage | Warning | Injected `QdrantClient`/`Kernel` → `SharedKernel.AI.Abstractions` |
+| [SK0027](#sk0027) | Raw string literal in a vector-collection identifier position | Usage | Warning | Literal collection, field or model ids in AI APIs |
+| [SK0028](#sk0028) | Non-deterministic or side-effecting API used inside workflow | Design | Warning | Clock, `Guid.NewGuid`, `Random`, I/O or `Task.Run` in a workflow |
+| [SK0029](#sk0029) | Raw Temporal client type injected outside SharedKernel.Workflows.Temporal | Usage | Warning | Injected Temporal client/worker/handle → `IWorkflowDispatcher` |
+| [SK0030](#sk0030) | Result outcome discarded | Usage | Warning | A `Result`/`Result<T>` call whose outcome nobody reads |
+| [SK0031](#sk0031) | Raw security-context constructor injection | Usage | Warning | Injected `IHttpContextAccessor`/`ClaimsPrincipal`/`HttpContext` |
+| [SK0032](#sk0032) | CORS policy combines a wildcard/always-allow origin with AllowCredentials | Security | Warning | `AllowAnyOrigin()` (or allow-all) with `AllowCredentials()` |
+| [SK0033](#sk0033) | Reflection-based object mapper (AutoMapper) usage | Usage | Warning | AutoMapper profiles and registration → Mapperly or hand-written |
+| [SK0034](#sk0034) | Raw decimal amount + string currency-code pair | Advisory | Warning | A `decimal …Amount` next to a `string …Currency` → consider `Money` |
+| [SK0035](#sk0035) | Unmasked classified data reaches a logging call site | Security | Warning | Classified data passed to an unclassified `[LoggerMessage]` parameter |
+| [SK0036](#sk0036) | Raw RpcException/Status construction outside SharedKernel.Presentation.Grpc | Usage | Warning | `new RpcException`/`new Status` → return a `Result` |
+| [SK0037](#sk0037) | Value object constructor never calls EnsureValid | Design | Warning | A `ValueObject` constructor finishing without `EnsureValid()` |
+| [SK0038](#sk0038) | Integration event missing [IntegrationEvent] attribute | Design | Warning | An `IIntegrationEvent` without `[IntegrationEvent]` |
+| [SK0039](#sk0039) | Invalid [IntegrationEvent] attribute | Design | Warning | A malformed event name or a `Version` below 1 |
+| [SK0040](#sk0040) | Pipeline marker interface requires a Result-shaped response | Design | Warning | `[RequirePermission]`/`IIdempotentRequest` on a non-`Result` response |
+| [SK0041](#sk0041) | Two cacheable queries share a simple type name | Design | Warning | Cacheable queries whose cache namespaces would collide |
+| [SK0042](#sk0042) | Non-constant SQL argument passed to a Dapper query/command method | Security | Warning | Interpolated or non-constant SQL to `IDbSession`/Dapper |
+| [SK0201](#sk0201) | TenantedDbContext.OnModelCreating override missing base call | Design | Warning | An override that skips `base.OnModelCreating` |
+| [SK0202](#sk0202) | IgnoreQueryFilters() called outside permitted persistence scope | Design | Warning | Parameterless `IgnoreQueryFilters()` in service code |
+| [SK0703](#sk0703) | IMessageBus or IEventPublisher registered as Singleton | Usage | Warning | `AddSingleton<IMessageBus>`/`<IEventPublisher>` → scoped |
+| [SK0704](#sk0704) | Hardcoded queue or exchange URI in GetSendEndpoint | Usage | Warning | `GetSendEndpoint(new Uri("queue:…"))` literals |
+| [SK0705](#sk0705) | IFaultConsumer registered directly via AddScoped or AddSingleton | Usage | Warning | Direct `IFaultConsumer<>` registration → `AddFaultConsumer` |
+| [SK0708](#sk0708) | Batch consumer registered via AddConsumer instead of AddBatchConsumer | Usage | Warning | `AddConsumer<…BatchConsumer>()` → `AddBatchConsumer` |
+
+IDs are never reused. Retired: `SK0015` (stream behaviors now have their own kernel contract), `SK0019` (its target
+type was removed) and `SK0707` — delete any suppression or `.editorconfig` entry that names them. `SK0012`,
+`SK0301`–`SK0303`, `SK0701`–`SK0702` and `SK0706` are architecture tests in
+[SharedKernel.ArchitectureTests](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/tools/Governance/SharedKernel.ArchitectureTests/README.md),
+because they need a whole assembly rather than one line.
 
 ### Rules
 
@@ -492,22 +484,11 @@ the `Fault<T>` adapter chain.
 type name contains `BatchConsumer` (a naming heuristic). **Fix:** `MessagingBusBuilder.AddBatchConsumer<T>()`, which
 applies the message and time limits; name batch consumers `{Purpose}BatchConsumer` to stay covered.
 
-### Retired and reserved IDs
-
-IDs are never reused. Retired: `SK0015` (stream behaviors now have their own kernel contract), `SK0019` (its target
-type was removed) and `SK0707` — delete any suppression or `.editorconfig` entry that names them. `SK0012`,
-`SK0301`–`SK0303`, `SK0701`–`SK0702` and `SK0706` are architecture tests in
-[SharedKernel.ArchitectureTests](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/tools/Governance/SharedKernel.ArchitectureTests/README.md),
-because they need a whole assembly rather than one line.
-
 ## Testing
 
-The analyzers run inside your test projects too. Relax the rules that do not suit test code in a scoped
-`.editorconfig` section (see [Recipes](#3-relax-a-rule-for-part-of-the-tree)), rather than removing the reference.
-
-To prove your own escalations hold, build with `-warnaserror` in CI or add a canary: a file that deliberately violates
-`SK0001` in a throwaway project whose build is expected to report it. Each rule in this package is tested with a firing
-and a non-firing case, and against the real kernel types it matches by name.
+The analyzers run in your test projects too: relax what does not suit test code in a scoped `.editorconfig` section
+([Recipes](#2-relax-a-rule-for-part-of-the-tree)) rather than removing the reference. To prove an escalation holds,
+build with `-warnaserror` in CI, or keep a canary project that deliberately violates `SK0001` and must fail.
 
 ## Pitfalls
 
@@ -525,9 +506,6 @@ and a non-firing case, and against the real kernel types it matches by name.
 **Why Warning by default?** Consumers adopt incrementally and escalate in `.editorconfig`, where the decision is
 versioned with their code.
 
-**Why syntax-shape matching for the literal rules?** `SK0022`, `SK0024` and `SK0027` fire on a `LiteralExpressionSyntax`
-only, so any named constant passes regardless of which class declares it.
-
 **Why no reference to the kernel?** An analyzer must load in the compiler host on `netstandard2.0`; kernel types are
 matched by metadata name, and tests compile fixtures against the real kernel assemblies so a rename breaks a test
 instead of silently disabling a rule.
@@ -535,5 +513,5 @@ instead of silently disabling a rule.
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[00.Governance domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/tools/Governance/README.md) ·
+[Governance packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/tools/Governance/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

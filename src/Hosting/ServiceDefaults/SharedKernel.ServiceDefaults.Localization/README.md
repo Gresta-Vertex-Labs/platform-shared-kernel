@@ -37,7 +37,9 @@ version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform
 ```csharp
 using Microsoft.AspNetCore.Builder;
 using SharedKernel.MultiTenancy.Middleware;
+using SharedKernel.Presentation.WebApi;
 using SharedKernel.ServiceDefaults.Localization;
+using SharedKernel.ServiceDefaults.Security;
 
 builder.AddSharedKernelLocalization(o => o.UserPreferenceClaimType = "preferred_culture");
 
@@ -122,5 +124,5 @@ Supported cultures and the default culture are ASP.NET Core's `RequestLocalizati
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[ServiceDefaults domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/ServiceDefaults/README.md) ·
+[ServiceDefaults packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/ServiceDefaults/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

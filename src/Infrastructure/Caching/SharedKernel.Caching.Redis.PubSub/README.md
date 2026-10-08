@@ -11,8 +11,8 @@
 
 **At most once, not durable.** A message reaches only the subscribers connected when it is published. Use this package
 for hints that are harmless to miss, such as "reload your price list" or "a user's presence changed". Work that must
-happen belongs in [`SharedKernel.Messaging`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Messaging/README.md),
-which has an outbox, retries and dead-lettering. Cache invalidation needs no Pub/Sub at all: the backplane of
+happen belongs in the [Messaging packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Messaging/README.md)
+(`IMessageBus`), which have an outbox, retries and dead-lettering. Cache invalidation needs no Pub/Sub at all: the backplane of
 [`SharedKernel.Caching.Redis`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Caching/SharedKernel.Caching.Redis/README.md)
 already reaches every instance.
 
@@ -137,6 +137,9 @@ sequenceDiagram
 ### 1. Subscribe for the lifetime of the host
 
 ```csharp
+using Microsoft.Extensions.Hosting;
+using SharedKernel.Caching.Redis.PubSub;
+
 public sealed class PriceListChangeListener(IRedisChannelService channels, PriceListCache priceLists) : IHostedService
 {
     private IAsyncDisposable? _subscription;
@@ -164,6 +167,9 @@ subscribing.
 ### 2. Publish a typed signal
 
 ```csharp
+using System.Text.Json.Serialization;
+using SharedKernel.Caching.Redis.PubSub;
+
 public sealed record PresenceChanged(string UserId, bool Online);
 
 [JsonSerializable(typeof(PresenceChanged))]
@@ -189,6 +195,8 @@ A handler that takes longer than the interval between messages builds an unbound
 queue and let the handler return at once:
 
 ```csharp
+using System.Threading.Channels;
+
 Channel<string> work = Channel.CreateBounded<string>(new BoundedChannelOptions(1_000)
 {
     FullMode = BoundedChannelFullMode.DropOldest,   // signals are loss-tolerant by definition
@@ -282,7 +290,7 @@ receiver count is the number of subscriptions, not connections.
 
 | Don't | Do | Why |
 | --- | --- | --- |
-| Send commands, payments, emails or anything that must happen | Use `SharedKernel.Messaging` | A message published while a subscriber is disconnected or restarting is gone |
+| Send commands, payments, emails or anything that must happen | Use `IMessageBus` from the Messaging packages | A message published while a subscriber is disconnected or restarting is gone |
 | Publish cache invalidations | Call `RemoveAsync`, `ExpireAsync` or `RemoveByTagAsync` on the cache | The backplane already reaches every instance |
 | Rely on the receiver count as an acknowledgement | Treat it as a hint | It counts delivery to a socket, not handling; on Cluster it covers one node |
 | Use a generic channel name such as `"updated"` | `"{service}:tenant:{tenantId}:{signal}"` | Channel names are global to the Redis server, across services and databases |
@@ -304,12 +312,12 @@ handled twice after each reconnect.
 **Why a disposable instead of `UnsubscribeAsync(channel)`?** Unsubscribing by channel name cannot say which of several
 subscribers is leaving. The returned handle can.
 
-**Why does this stay in `02.Caching` instead of `07.Messaging`?** Its contract is deliberately weaker than messaging:
-no durability, no retries, no ordering across restarts. Placing it beside durable messaging would invite code to
-assume guarantees it does not have. The `SK0007` analyzer flags Pub/Sub use in messaging code.
+**Why does this live with the Caching packages instead of the Messaging packages?** Its contract is deliberately
+weaker than messaging: no durability, no retries, no ordering across restarts. Placing it beside durable messaging
+would invite code to assume guarantees it does not have. The `SK0007` analyzer flags Pub/Sub use in messaging code.
 
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Caching domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Caching/README.md) ·
+[Caching packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Caching/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

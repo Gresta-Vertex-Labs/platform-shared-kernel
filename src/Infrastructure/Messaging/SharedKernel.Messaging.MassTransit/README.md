@@ -49,9 +49,9 @@ version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
-| Tier | Adapter — reference it from your **Api/Worker** (startup) project; application code references only the Abstractions |
+| Tier | Adapter — reference it from your **Infrastructure** project; application code references only the Abstractions |
 | Depends on | `SharedKernel.Messaging.Abstractions`, `SharedKernel.Idempotency.Abstractions`, `SharedKernel.Contracts`, `SharedKernel.Configuration`, `SharedKernel.Compression`, `SharedKernel.Cryptography`, `MassTransit` 8.5.x |
-| Namespaces | `SharedKernel.Messaging.MassTransit.Extensions` (builder; satellites extend it here), `.Consumers`, `.Options`, `.MessageBus`, `.Transports`, `.Diagnostics` |
+| Namespaces | `SharedKernel.Messaging.MassTransit.Extensions` (builder; satellites extend it here), `.Consumers`, `.Options`, `.HeaderPropagation`, `.MessageBus`, `.Serialization`, `.Transports` |
 
 ## Quick start
 
@@ -72,7 +72,7 @@ using SharedKernel.ServiceDefaults.Telemetry;
 // The service's own IRequestContext FIRST: WithInboundRequestContext() wraps whatever is registered before it.
 builder.Services.AddSharedKernelRequestContext();
 
-// The store WithIdempotency() needs, for IdempotencyPurpose.Message (18.Idempotency).
+// The store WithIdempotency() needs, for IdempotencyPurpose.Message (SharedKernel.Idempotency.Redis).
 builder.Services.AddRedisIdempotency(p => p.ForMessages());
 
 builder.Services
@@ -122,7 +122,8 @@ flowchart LR
 
 - **Nothing is wired until `Build()`.** It fails fast with the fix in the message: no transport, a second
   transport, `WithIdempotency()` without a store for `IdempotencyPurpose.Message`, a lease not shorter than the
-  expiry window, or payload compression/encryption without the matching `01.Core` service.
+  expiry window, or payload compression/encryption without `IPayloadCompressor` (`SharedKernel.Compression`) or
+  `ISynchronousSymmetricEncryptionService` (`SharedKernel.Cryptography`) registered.
 - **Dispatch.** Propagators run on every publish and send in registration order; the publish callback runs last and
   wins. `IEventPublisher` wraps the event with `EventEnvelope.Wrap` (source = `ServiceName`, type and data version
   from `[IntegrationEvent]`), so its consumers consume `EventEnvelope<TEvent>`; `IMessageBus` messages travel as
@@ -194,7 +195,7 @@ Guid token = await scheduler.ScheduleAsync(new ChaseShipment(id), clock.UtcNow.A
 ```
 
 The broker holds the message. On RabbitMQ this needs the delayed-message exchange plugin. For recurring work use
-`19.Scheduling`.
+[`SharedKernel.Scheduling`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Scheduling/README.md).
 
 ### 4. Accept an old message shape during a rolling deploy
 
@@ -299,10 +300,10 @@ and `messaging.publish_rejected` (Unexpected), `messaging.invalid_message` and `
 
 ### Telemetry
 
-`ActivitySource` and `Meter` named `SharedKernel.Messaging` (`MessagingDiagnostics`), wired by
-`WithMessagingTelemetry()`. Spans `MessageBus.Publish`, `MessageBus.Send`, `EventPublisher.Publish`,
+`ActivitySource` and `Meter` named `SharedKernel.Messaging`, wired by `WithMessagingTelemetry()`
+(`SharedKernel.ServiceDefaults`). Spans `MessageBus.Publish`, `MessageBus.Send`, `EventPublisher.Publish`,
 `Consumer.Consume`; instruments `messaging.publish.count`, `messaging.send.count`, `messaging.consume.count`,
-`messaging.consume.duration`, `messaging.retry.count`, `messaging.fault.count`; tags from `MessagingTagKeys`.
+`messaging.consume.duration`, `messaging.retry.count`, `messaging.fault.count`.
 
 ### Health
 
@@ -345,8 +346,10 @@ update — it needs a recorded licensing decision.
 **Why satellites for transports and the outbox?** The core carries no broker client or EF Core, so a service
 restores only what it runs; a new broker is a new satellite, never a branch in the core.
 
-**Why no sagas, routing slips or request/response?** Long-running coordination belongs to `17.Workflows`, synchronous
-calls to `11.Communication`.
+**Why no sagas, routing slips or request/response?** Long-running coordination with compensation belongs to the
+[Workflows packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Workflows/README.md)
+(Temporal), synchronous calls to the
+[Communication packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Communication/README.md).
 
 **Why does the idempotency key include the endpoint and consumer?** Two consumers of one message must each process
 it once; a key on `MessageId` alone would let the first suppress the second.
@@ -356,5 +359,5 @@ it once; a key on `MessageId` alone would let the first suppress the second.
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Messaging domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Messaging/README.md) ·
+[Messaging packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Messaging/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

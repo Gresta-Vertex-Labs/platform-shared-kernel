@@ -6,8 +6,12 @@
 ![Public API: tracked](https://img.shields.io/badge/public%20API-tracked-informational)
 
 > **The shared base of every outbound client: service discovery, outbound credentials, mutual TLS and the caller's
-> context, configured per client and validated at startup. You rarely reference it directly — the REST and gRPC
-> packages bring it.**
+> context, configured per client and validated at startup — so no service hand-writes token handlers, certificate
+> loading or endpoint lookup.** You rarely reference it directly: pick
+> [`SharedKernel.Communication.Rest`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Communication/SharedKernel.Communication.Rest/README.md)
+> for HTTP/JSON services or
+> [`SharedKernel.Communication.Grpc`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Communication/SharedKernel.Communication.Grpc/README.md)
+> for gRPC services; both bring this package. Read this README for the settings they share.
 
 | You get | So that |
 | --- | --- |
@@ -38,15 +42,13 @@
 
 The version comes from your central `SharedKernelVersion` property — every SharedKernel package ships at the same
 version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel#using-the-packages).
-Usually you reference [`SharedKernel.Communication.Rest`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Communication/SharedKernel.Communication.Rest/README.md)
-or [`SharedKernel.Communication.Grpc`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Communication/SharedKernel.Communication.Grpc/README.md)
-instead, which bring this package.
+Usually you reference the Rest or Grpc package instead, which brings this one.
 
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
 | Tier | Adapter — reference it from your **Infrastructure** project |
-| Depends on | `SharedKernel.Primitives`, `SharedKernel.Execution`, `SharedKernel.Configuration`, `Microsoft.Extensions.Http.Resilience`, `Microsoft.Extensions.ServiceDiscovery(.Dns)` |
+| Depends on | `SharedKernel.Primitives`, `SharedKernel.Execution`, `SharedKernel.Configuration`, `Microsoft.Extensions.Http`, `Microsoft.Extensions.Http.Resilience`, `Microsoft.Extensions.ServiceDiscovery`, `Microsoft.Extensions.ServiceDiscovery.Dns` |
 | Namespaces | `SharedKernel.Communication` |
 
 ## Quick start
@@ -148,22 +150,38 @@ The header defaults to `X-Api-Key`, the one `SharedKernel.Security.ApiKey` reads
 
 ```csharp
 using SharedKernel.Communication;
+using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 
-public sealed class ManagedIdentityTokenProvider : IAccessTokenProvider
+// IManagedIdentityTokenSource is your own wrapper over the identity SDK you use.
+public sealed class ManagedIdentityTokenProvider(IManagedIdentityTokenSource source) : IAccessTokenProvider
 {
-    public ValueTask<Result<AccessToken>> GetAccessTokenAsync(AccessTokenContext context, CancellationToken cancellationToken)
+    private AccessToken? _cached;
+
+    public async ValueTask<Result<AccessToken>> GetAccessTokenAsync(AccessTokenContext context, CancellationToken cancellationToken)
     {
-        // Cache the token yourself; context.ForceRefresh is true after the service answered 401.
-        ...
+        // Called for every attempt: cache, and fetch again when the service refused the last token (ForceRefresh).
+        if (!context.ForceRefresh && _cached is { ExpiresAt: { } expiresAt } cached && expiresAt > DateTimeOffset.UtcNow.AddMinutes(1))
+            return cached;
+
+        (string Value, DateTimeOffset ExpiresOn)? token = await source.TryGetAsync("api://inventory/.default", cancellationToken);
+        if (token is null)
+            return Error.Unavailable("checkout.identity_unavailable", "No managed-identity token.");
+
+        _cached = new AccessToken(token.Value.Value, token.Value.ExpiresOn);
+        return _cached;
     }
 }
-
-.AddRestClient<IInventoryClient, InventoryClient>("inventory", client => client
-    .UseAccessTokenProvider<ManagedIdentityTokenProvider>())
 ```
 
-The provider is called for every attempt. A failed `Result` fails the call with
+```csharp
+builder.Services.AddSharedKernelCommunication(builder.Configuration)
+    .AddRestClient<IInventoryClient, InventoryClient>("inventory", client => client
+        .UseAccessTokenProvider<ManagedIdentityTokenProvider>());   // also on IGrpcClientBuilder
+```
+
+`UseAccessTokenProvider<T>()` registers the provider as a keyed singleton for that client and sets
+`Authentication:Mode` to `AccessTokenProvider`. A failed `Result` fails the call with
 `communication.access_token_unavailable`. `AccessToken.ToString()` is redacted, so a token never reaches a log.
 
 ### 4. Present a client certificate to a private-PKI service
@@ -261,8 +279,8 @@ A failure the called service reported keeps the service's own code; one without 
 | 11003 | Warning | Client `{ClientName}` has no access token (`{ErrorCode}`); the request was not sent |
 | 11004 | Debug | Client `{ClientName}` was answered 401; sending once more with a new token |
 
-Tokens and secrets are never logged. Outbound spans and resilience metrics come from `13.ServiceDefaults`'
-`WithCommunicationTelemetry()`.
+Tokens and secrets are never logged. Outbound spans and resilience metrics come from `WithCommunicationTelemetry()` in
+[`SharedKernel.ServiceDefaults`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults/README.md).
 
 ## Testing
 
@@ -295,5 +313,5 @@ the caller did not mean to send anonymously; a coded `Result` failure is easier 
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Communication domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Communication/README.md) ·
+[Communication packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Communication/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

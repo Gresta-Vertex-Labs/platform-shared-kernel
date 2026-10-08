@@ -68,7 +68,7 @@ var envelope = EventEnvelope.Wrap(
     tenantId: tenantId,
     correlationId: "4bf92f3577b34da6a3ce929d0e0e4736");
 
-string json = JsonSerializer.Serialize(envelope);
+string json = JsonSerializer.Serialize(envelope, new JsonSerializerOptions(JsonSerializerDefaults.Web));
 ```
 
 ```json
@@ -95,7 +95,7 @@ string json = JsonSerializer.Serialize(envelope);
 ```
 
 The envelope's member names are fixed and the same whatever naming policy you serialize with. The `data` members
-follow your serializer options (camelCase above, from `JsonSerializerDefaults.Web`).
+follow your serializer options (camelCase here, from `JsonSerializerDefaults.Web`).
 
 ## How it works
 
@@ -123,7 +123,7 @@ constructor enforces what the factory enforces._
 | I need to… | Use |
 | --- | --- |
 | Tell other services that something happened | A `sealed record` implementing `IIntegrationEvent`, marked `[IntegrationEvent]` |
-| Put that event on a broker, an outbox row or an HTTP body | `EventEnvelope.Wrap(...)`; `07.Messaging`'s `IEventPublisher` calls it for you |
+| Put that event on a broker, an outbox row or an HTTP body | `EventEnvelope.Wrap(...)`; the Messaging packages' `IEventPublisher` calls it for you |
 | Read an event's wire name outside an envelope (routing key, telemetry tag) | `IntegrationEventDescriptor.For<TEvent>()` |
 | Return a page with "page 3 of 12" and a total | `PagedList<T>` |
 | Return a page from a large, live or infinite-scroll list | `CursorPagedList<T>` |
@@ -167,7 +167,7 @@ public sealed record OrderPlaced(
 
 ### 2. Publish it
 
-With `07.Messaging`, the publisher wraps the event for you. There `tenantId` is the platform's
+With the [Messaging packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Messaging/README.md), `IEventPublisher` wraps the event for you. There `tenantId` is the platform's
 `SharedKernel.Execution.Tenancy.TenantId`, normally taken from the caller's `IRequestContext.TenantId`:
 
 ```csharp
@@ -256,32 +256,21 @@ pagination.page_size.out_of_range: Page size must be between 1 and 1000.
 
 ### 6. A cursor-paged endpoint
 
+With the persistence repositories, `ListKeysetAsync` seeks, fetches the look-ahead row and encodes `nextCursor`:
+
 ```csharp
+using SharedKernel.Contracts.Pagination;
+
 app.MapGet("/orders/recent", async (string? cursor, int? limit, IReadRepository<Order, OrderId> orders, CancellationToken ct) =>
 {
     var request = CursorPageRequest.Create(cursor, limit);
     if (!request.IsValid)
-        return Results.ValidationProblem(...);
+        return Results.ValidationProblem(request.Errors.ToDictionary(e => e.Code, e => new[] { e.Message }));
 
-    DateTimeOffset? afterCreatedOn = null;
-    OrderId? afterId = null;
-    if (request.Value.Cursor is { } token)
-    {
-        var position = PageCursor.Decode<DateTimeOffset, Guid>(token);
-        if (position.IsFailure)
-            return Results.ValidationProblem(...);   // pagination.cursor.invalid
-        (afterCreatedOn, afterId) = (position.Value.Key, new OrderId(position.Value.Id));
-    }
+    CursorPagedList<Order> page = await orders.ListKeysetAsync(
+        new RecentOrdersSpec(), request.Value, o => o.CreatedOn, descending: true, ct);
 
-    // Ask for one row more than the limit; FromLookahead uses it to decide whether a next page exists.
-    var rows = await orders.ListAsync(
-        new RecentOrdersSpec(afterCreatedOn, afterId, take: request.Value.Limit + 1), ct);
-
-    var page = CursorPagedList<Order>
-        .FromLookahead(rows, request.Value.Limit, last => PageCursor.Encode(last.CreatedOn, last.Id.Value))
-        .Map(o => new OrderSummary(o.Id.Value, o.Status.Name));
-
-    return Results.Ok(page);
+    return Results.Ok(page.Map(o => new OrderSummary(o.Id.Value, o.Status.Name)));
 });
 ```
 
@@ -293,8 +282,10 @@ app.MapGet("/orders/recent", async (string? cursor, int? limit, IReadRepository<
 }
 ```
 
-The client sends `nextCursor` back verbatim as `?cursor=`. On the last page `nextCursor` is `null` and `hasMore`
-is `false`.
+The client sends `nextCursor` back verbatim as `?cursor=`; on the last page it is `null` and `hasMore` is `false`.
+Over your own query (Dapper, a search engine), decode the position with `PageCursor.Decode<TKey, TId>(token)` (a
+failure is `pagination.cursor.invalid`), fetch `limit + 1` rows after it, and build the page with
+`CursorPagedList<T>.FromLookahead(rows, limit, last => PageCursor.Encode(last.CreatedOn, last.Id.Value))`.
 
 ## Reference
 
@@ -475,5 +466,5 @@ stays decodable for at least one release.
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Contracts domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Model/Contracts/README.md) ·
+[Contracts packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Model/Contracts/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

@@ -7,7 +7,9 @@
 ![PostgreSQL 15+](https://img.shields.io/badge/PostgreSQL-15%2B-4169E1?logo=postgresql&logoColor=white)
 
 > **EF Core on PostgreSQL the way a multi-tenant production service needs it — registered with one call, correct by
-> convention, and safe under retries, concurrency and row-level security.**
+> convention, and safe under retries, concurrency and row-level security.** It implements the repositories of
+> `SharedKernel.Persistence.Abstractions`; add `.Dapper` for hand-written SQL in the same transaction, `.Auditing`
+> for a tamper-evident ledger and `.Encryption` for column encryption.
 
 | You get | So that |
 | --- | --- |
@@ -412,5 +414,5 @@ loading.
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Persistence domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Persistence/README.md) ·
+[Persistence packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Persistence/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

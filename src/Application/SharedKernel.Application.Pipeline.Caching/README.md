@@ -344,30 +344,7 @@ public sealed record RebuildOrderProjectionsCommand : ICommand, IInvalidatesCach
 }
 ```
 
-### 4. Give a "reload" button a real refresh
-
-```csharp
-public sealed record GetDashboardQuery(bool Reload = false) : ICacheableQuery<DashboardDto>
-{
-    public CachePolicy CachePolicy => CachePolicy.For(TimeSpan.FromMinutes(2));
-    public string CacheKey => "dashboard";
-    public bool RefreshCache => Reload;
-}
-```
-
-### 5. Do not cache an empty page
-
-```csharp
-public sealed record SearchOrdersQuery(string Term) : ICacheableQuery<IReadOnlyList<OrderDto>>
-{
-    public CachePolicy CachePolicy => CachePolicy.For(TimeSpan.FromMinutes(1));
-    public string CacheKey => Term;
-
-    public bool ShouldCache(IReadOnlyList<OrderDto> value) => value.Count > 0;
-}
-```
-
-### 6. Compose a key from more than one parameter
+### 4. Compose a key from more than one parameter
 
 ```csharp
 public sealed record GetOrderTotalQuery(Guid OrderId, CurrencyCode Currency) : ICacheableQuery<MoneyDto>
@@ -377,7 +354,7 @@ public sealed record GetOrderTotalQuery(Guid OrderId, CurrencyCode Currency) : I
 }
 ```
 
-### 7. Survive a Redis outage with fail-safe
+### 5. Survive a Redis outage with fail-safe
 
 ```csharp
 public CachePolicy CachePolicy =>
@@ -446,7 +423,7 @@ Reference [`SharedKernel.Caching.Testing`](https://github.com/Gresta-Vertex-Labs
 test against it fails on the same regressions a real cache would.
 
 ```csharp
-var cache = new FakeCacheService();               // SharedKernel.Caching.Testing
+var cache = new FakeCacheService();               // SharedKernel.Testing.Caching (package SharedKernel.Caching.Testing)
 services.AddSingleton<ICacheService>(cache);
 services.AddSingleton<ITenantCacheKeyProvider>(new FakeTenantCacheKeyProvider());
 services.AddSharedKernelApplication(typeof(GetOrderQuery).Assembly, app => app.UseMediatR().WithCaching());
@@ -490,15 +467,9 @@ For a full composition without a mediator, `ApplicationPipelineTestHarness` from
 | Instruments on the existing `"SharedKernel.Application"` meter | A new meter name would need its own `AddMeter` call and would silently export nothing until a host added it |
 | Behaviors internal | Nothing outside should construct them, and it keeps the public surface to the contract |
 
-**Why is the value cached and not the `Result`?**
-`Result` and `Result<T>` have private constructors and `Value`/`Error` properties that throw in the opposite state,
-so a reflection-based JSON serializer cannot write one — FusionCache's serializer throws
-`FusionCacheSerializationException` on the L2 write. Caching the `TValue` and rebuilding
-`Result<TValue>.Success(value)` on a hit sidesteps that entirely, and keeps `SharedKernel.Primitives`' `Result` free of any
-serialization concern.
-
-The consequence for you: **`TValue` must round-trip through `System.Text.Json`.** If your service registers a
-`JsonSerializerContext` for the cache, add `TValue` to it.
+**Consequence of caching the value:** `TValue` must round-trip through `System.Text.Json` (FusionCache's L2
+serializer would otherwise throw on the write). If your service registers a `JsonSerializerContext` for the cache, add
+`TValue` to it.
 
 **What is deliberately not included?**
 
@@ -514,5 +485,5 @@ The consequence for you: **`TValue` must round-trip through `System.Text.Json`.*
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Application domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Application/README.md) ·
+[Application packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Application/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

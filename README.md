@@ -2,108 +2,95 @@
 
 # Platform.SharedKernel
 
-**The building blocks of a .NET 10 microservice platform, as 104 NuGet packages.**
+### The building blocks of a .NET 10 microservice platform — 104 NuGet packages, one version, an architecture the build enforces.
 
-Primitives and the request context, DDD, CQRS, PostgreSQL, messaging, caching, storage, search, AI,
-security, presentation, workflows, scheduling and reporting. No business logic, and a build that
-enforces the architecture.
+Write the business. The kernel brings the request context and tenancy, CQRS, PostgreSQL, messaging, caching,
+storage, search, AI, security, APIs, workflows, jobs and reports — tested, observable and Kubernetes-ready.
 
 [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)](global.json)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Packages](https://img.shields.io/badge/packages-104-blue)](#-the-package-tree)
-[![Domains](https://img.shields.io/badge/domains-21-blue)](#-the-package-tree)
-[![Status](https://img.shields.io/badge/status-pre--release-orange)](#-status--roadmap)
+[![Packages](https://img.shields.io/badge/packages-104-blue)](#-the-package-catalogue)
+[![Capabilities](https://img.shields.io/badge/capabilities-21-blue)](#-the-package-catalogue)
+[![Analyzer rules](https://img.shields.io/badge/analyzer%20rules-45-8250df)](tools/Governance/README.md)
+[![Release](https://img.shields.io/badge/release-1.0.0--rc.3-orange)](#-status)
 [![CI](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/actions/workflows/ci.yml/badge.svg)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/actions/workflows/ci.yml)
 
-[What it is](#-what-it-is) · [Get started](#-get-started) · [Architecture](#-architecture) ·
-[Layout](#-repository-layout) · [Package tree](#-the-package-tree) · [Samples](#-sample-services) · [Status](#-status--roadmap) ·
-[Using it](#using-the-packages) · [Building](#-building-this-repository) · [Contributing](#-contributing)
+[Why](#-why-sharedkernel) · [Architecture](#-architecture) · [Packages](#-the-package-catalogue) ·
+[Quick start](#-quick-start) · [Shop](#-the-shop-reference-platform) · [Governance](#-governance-built-in) ·
+[Build](#-building-this-repository) · [Contribute](#-contributing)
 
 </div>
 
 ---
 
-## 🧭 What it is
+## ✨ Why SharedKernel
 
-Every service in a microservice platform needs the same plumbing: who is calling and for which tenant,
-how a command is validated, authorized and committed, how an event reaches another service, how errors
-become HTTP responses, how a dependency reports that it is ready. **Platform.SharedKernel** writes that
-plumbing once, as small packages with narrow jobs, so a service only has to write its own business.
+Every service in a microservice platform needs the same plumbing: who is calling and for which tenant, how a
+command is validated, authorized and committed, how an event reaches another service, how an error becomes an HTTP
+response, how a dependency reports that it is ready. **Platform.SharedKernel writes that plumbing once**, as small
+packages with narrow jobs, so each service only writes its own business.
 
-| | |
-|---|---|
-| 📦 **104 packages** | in 21 capability domains, released together at one version |
-| 🧱 **7 tiers** | every package is Foundation, Model, Abstractions, Adapter, Host, Testing or Tooling, and the build rejects a reference its tier may not take |
-| 🧪 **A test double for every contract** | 20 `*.Testing` packages, so a service's unit tests need no containers |
-| 🛡️ **45 analyzer rules** | Roslyn rules for the conventions: `[LoggerMessage]`-only logging, no discarded `Result`, no raw SDK clients, no magic strings, deterministic workflows |
-| 🚀 **7 sample services** | built only from the packed packages and run in CI against real PostgreSQL, RabbitMQ, MinIO, Meilisearch and Elasticsearch |
-| 📖 **One README standard** | every package README has the same shape — install, quick start, configuration, reference, testing, pitfalls — [checked by a test](docs/package-readme-standard.md) |
+<table>
+<tr>
+<td width="50%" valign="top">
 
-### Principles
+**🎯 Results, not exceptions**<br/>
+Expected failures are `Result<T>` values with typed `Error`s, mapped once to RFC 9457 ProblemDetails, a gRPC
+status or a message fault — the same answer on every channel.
 
-- **Capability-oriented.** One folder per capability, grouped into zones that mirror a service's projects
-  ([layout](#-repository-layout)). A capability with several providers splits into `.Abstractions` +
-  `.{Provider}`, so application code never depends on a vendor.
-- **Tier-enforced.** What a package may reference is checked by MSBuild before compile
-  (`SKTIER001`–`SKTIER006`) and again by architecture tests. ASP.NET Core never leaks below the Host tier.
-- **Results, not exceptions.** Expected failures are `Result<T>` values with typed `Error`s, mapped once to
-  RFC 9457 ProblemDetails, gRPC status or a message fault.
-- **Multi-tenant by default.** One `TenantId` type flows from the HTTP edge through the pipeline, the
-  database (row-level security), the cache, storage, search and the message bus, and code fails closed
-  when it is missing.
-- **Kubernetes-native.** OpenTelemetry built in, `/health/live` + `/health/ready`, and every provider
-  registers its own readiness probe.
-- **Licence-conscious.** MassTransit is pinned to 8.5.x (the last Apache-2.0 release) and MediatR to 12.4.1
-  (the last MIT release). EPPlus, QuestPDF and iText7 were declined on licensing.
+</td>
+<td width="50%" valign="top">
 
----
+**🏢 Multi-tenant end to end**<br/>
+One `TenantId` flows from the HTTP edge through the pipeline, PostgreSQL row-level security, the cache, storage,
+search and the message bus. A missing tenant fails closed.
 
-## ⚡ Get started
+</td>
+</tr>
+<tr>
+<td valign="top">
 
-A service built on the kernel has four projects, and each one references only the tier made for it.
-The Shop's [`Ordering`](samples/Shop/Ordering/) and [`Catalog`](samples/Shop/Catalog/) services are exactly this
-shape, with architecture tests that keep them so.
+**🧱 Architecture the build enforces**<br/>
+Every package has a tier. MSBuild rejects an illegal reference before compile (`SKTIER001`–`006`), and
+architecture tests check the rules tiers cannot express.
 
-**1. Pin the version once** — see [Using the packages](#using-the-packages) for the full `Directory.Packages.props`.
+</td>
+<td valign="top">
 
-**2. Reference by project:**
+**🧪 A test double for every contract**<br/>
+20 `*.Testing` packages fake each capability faithfully — failure modes and tenant scope included — so a
+service's unit tests need no containers.
 
-| Project | References | For example |
-|---------|------------|-------------|
-| `Orders.Domain` | Model tier | `SharedKernel.Domain` |
-| `Orders.Application` | Abstractions tier | `SharedKernel.Application` |
-| `Orders.Infrastructure` | Adapter tier | `SharedKernel.Persistence.EfCore`, `SharedKernel.Messaging.MassTransit.RabbitMq` |
-| `Orders.Api` | Host tier | `SharedKernel.ServiceDefaults`, `SharedKernel.Presentation.WebApi`, `SharedKernel.Application.Pipeline` |
+</td>
+</tr>
+<tr>
+<td valign="top">
 
-**3. Write the business, not the plumbing:**
+**☸️ Kubernetes-native**<br/>
+OpenTelemetry built in, `/health/live` and `/health/ready`, a startup gate, and every provider registers its own
+readiness probe.
 
-```csharp
-// Application — a command, its handler and the permission it needs
-[RequirePermission("orders.create")]
-public sealed record PlaceOrder(Guid CustomerId, decimal Amount, string IdempotencyKey)
-    : ICommand<Guid>, IIdempotentRequest;
+</td>
+<td valign="top">
 
-// Api — one registration call for the whole request pipeline
-builder.AddServiceDefaults();
-builder.Services.AddSharedKernelApplication(
-    typeof(PlaceOrderHandler).Assembly,
-    app => app.UseMediatR().WithIdempotency().WithTransactions());
-```
+**⚖️ Licence-conscious**<br/>
+MassTransit pinned to 8.5.x (Apache-2.0) and MediatR to 12.4.1 (MIT), behind the kernel's own contracts.
+EPPlus, QuestPDF and iText7 were declined on licensing.
 
-Tracing, logging, metrics, authorization and validation run on every request; the `With…` stages are
-opt-in, and the host refuses to start if a stage's dependency is missing. The
-[samples guide](samples/README.md) walks through a complete service.
+</td>
+</tr>
+</table>
 
 ---
 
 ## 🏛️ Architecture
 
-Each package has a **tier**. The tier says which project of a consuming service may reference it, and
-which other packages the package itself may reference.
+A consuming service has four projects, and each references only the **tier** made for it. The source tree is
+grouped the same way: each **zone** mirrors a service project and holds one folder per capability.
 
 ```mermaid
 flowchart LR
-    subgraph service["A consuming service"]
+    subgraph service["Your service"]
         direction TB
         Api["Api / Worker"]
         Infra["Infrastructure"]
@@ -130,64 +117,95 @@ flowchart LR
     Dom --> Model
 ```
 
-| Tier | May reference | Consumed by |
-|------|---------------|-------------|
-| **Foundation** | Foundation | every project |
-| **Model** | Foundation, Model (`Microsoft.Extensions.*.Abstractions` only) | the Domain project |
-| **Abstractions** | Foundation, Model, Abstractions (`Microsoft.Extensions.*.Abstractions` only) | the Application project |
-| **Adapter** | the tiers above, plus declared adapter edges; never ASP.NET Core | the Infrastructure project |
-| **Host** | everything except Testing and Tooling | the Api / Worker project |
-| **Testing** | everything except Tooling | test projects only |
-| **Tooling** | nothing | the build |
+| Tier | Packages | May reference | Referenced from |
+|------|---:|---------------|-----------------|
+| **Foundation** | 10 | Foundation | any project |
+| **Model** | 2 | Foundation, Model · `Microsoft.Extensions.*.Abstractions` only | the **Domain** project |
+| **Abstractions** | 11 | Foundation, Model, Abstractions · `Microsoft.Extensions.*.Abstractions` only | the **Application** project |
+| **Adapter** | 38 | the tiers above + declared adapter edges · never ASP.NET Core | the **Infrastructure** project |
+| **Host** | 20 | everything except Testing and Tooling | the **Api / Worker** project |
+| **Testing** | 20 | everything except Tooling | test projects only |
+| **Tooling** | 3 | nothing | the build |
 
-The full rules, including the purity rules that tiers cannot express, are in
-[`CONTRIBUTING.md`](CONTRIBUTING.md#tiers). Build internals are in [`eng/README.md`](eng/README.md).
-To see what depends on what, open [`docs/dependency-graph.md`](docs/dependency-graph.md) (generated, rendered by GitHub).
+```text
+src/Foundation/       → any project        primitives, request context, configuration, crypto, validation
+src/Model/            → Domain             Domain/ (DDD building blocks) · Contracts/ (wire contracts)
+src/Application/      → Application        kernel-owned CQRS and the request pipeline
+src/Infrastructure/   → Infrastructure     Caching · Persistence · Messaging · Storage · Search · AI ·
+                                           Communication · Integration · Workflows · Idempotency · Scheduling · Reporting
+src/Hosting/          → Api / Worker       Security · ServiceDefaults · Presentation
+src/Testing/          → test projects      SharedKernel.Testing + Testcontainers fixtures for this repo
+tools/Governance/     → the build          analyzers, architecture tests, linter
+samples/Shop/                              the reference platform: seven services on the packed packages
+```
+
+A capability keeps its contracts, providers and test doubles side by side — `src/Infrastructure/Caching/` holds
+`SharedKernel.Caching.Abstractions`, the FusionCache and Redis providers, and `SharedKernel.Caching.Testing`. The
+zone says where a capability mainly belongs; the **tier** of each package decides what may reference it. Full rules:
+[`CONTRIBUTING.md`](CONTRIBUTING.md#tiers) · what depends on what: [`docs/dependency-graph.md`](docs/dependency-graph.md).
 
 ---
 
-## 🗂️ Repository layout
+## 📦 The package catalogue
 
-The source tree mirrors the projects of a consuming service. Each **zone** holds one folder per
-capability, and a capability keeps its contracts, its providers and its test doubles side by side.
+**104 packages in 21 capability areas.** Pick a capability, open its page, take the packages you need. Every
+capability page explains how its packages fit, how to start and what it guarantees.
 
-```text
-src/
-├── Foundation/        every project           Result, request context, configuration, crypto, validation
-├── Model/             the Domain project      Domain/ (DDD building blocks) · Contracts/ (wire contracts)
-├── Application/       the Application project CQRS contracts and the request pipeline
-├── Infrastructure/    the Infrastructure project
-│   ├── Caching/  Persistence/  Messaging/  Storage/  Search/  AI/
-│   └── Communication/  Integration/  Workflows/  Idempotency/  Scheduling/  Reporting/
-├── Hosting/           the Api / Worker project   Security/ · ServiceDefaults/ · Presentation/
-└── Testing/           test projects           SharedKernel.Testing + Testcontainers fixtures
-tools/Governance/      the build               analyzers, architecture tests, linter
-samples/               seven reference services built from the packed packages
-docs/  eng/            generated package views, build internals, CI scripts
-```
+### Every project
 
-A zone says where a capability mainly belongs; the **tier** of each package decides what may reference it.
-A capability's `.Abstractions` package, for example, is referenced from the Application project even though
-the capability lives under `Infrastructure/`. Inside a capability folder:
+| Capability | Pkgs | What it gives a service |
+|------------|---:|-------------------------|
+| 🧩 [**Foundation**](src/Foundation/README.md) | 15 | `Result<T>` and `Error`, the request context and tenancy, validated options, feature flags, cryptography, validation of IBAN/VAT/card numbers, personal-data redaction, localized errors |
 
-```text
-src/Infrastructure/Caching/
-├── README.md, CLAUDE.md, state-map.md          overview, maintainer rules, work board
-├── SharedKernel.Caching.Abstractions/          the contracts (Abstractions tier)
-│   └── SharedKernel.Caching.Abstractions.Tests/   tests sit inside the project they test
-├── SharedKernel.Caching.FusionCache/  …        the providers (Adapter tier)
-└── SharedKernel.Caching.Testing/               the test doubles (Testing tier)
-```
+### The Domain project
 
----
+| Capability | Pkgs | What it gives a service |
+|------------|---:|-------------------------|
+| 🏗️ [**Domain**](src/Model/Domain/README.md) | 1 | Entities, aggregates (audited, soft-delete, tenanted), value objects, strongly typed ids, specifications, `Money` |
+| 📨 [**Contracts**](src/Model/Contracts/README.md) | 1 | Versioned integration events in a CloudEvents envelope, offset and cursor paging |
 
-## 🌳 The package tree
+### The Application project
 
-All 104 packages, grouped by zone and capability folder. Every name links to the package's README, every
-folder to its overview, and the badge after each name is the package's tier. Each capability's `Testing` package
-(its test doubles) sits in the same folder. The same list, by tier, is generated in [`docs/packages.md`](docs/packages.md).
+| Capability | Pkgs | What it gives a service |
+|------------|---:|-------------------------|
+| ⚙️ [**Application**](src/Application/README.md) | 5 | Kernel-owned commands and queries behind `ISender`, and a pipeline that traces, logs, authorizes, validates — and on request makes idempotent, transactional, audited and cached |
 
-### `src/Foundation/` — referenced from every project
+### The Infrastructure project
+
+| Capability | Pkgs | What it gives a service |
+|------------|---:|-------------------------|
+| 🗄️ [**Persistence**](src/Infrastructure/Persistence/README.md) | 7 | PostgreSQL through EF Core and Dapper: one transaction, row-level security, optimistic concurrency, an HMAC-chained audit ledger, field encryption |
+| ⚡ [**Caching**](src/Infrastructure/Caching/README.md) | 9 | Hybrid L1 + Redis caching with stampede protection, tenant-isolated keys, locks with fencing tokens, Redis hashes and Pub/Sub |
+| 📬 [**Messaging**](src/Infrastructure/Messaging/README.md) | 6 | Integration events over MassTransit on RabbitMQ or Azure Service Bus, with a transactional outbox, retries, idempotent consumers and payload encryption |
+| 🔁 [**Idempotency**](src/Infrastructure/Idempotency/README.md) | 4 | One atomic reservation contract for duplicate requests and messages, on Redis or PostgreSQL |
+| 🪣 [**Storage**](src/Infrastructure/Storage/README.md) | 4 | Named and tenant file stores on S3, MinIO or Huawei OBS: streaming, presigned URLs, conditional writes |
+| 🔎 [**Search**](src/Infrastructure/Search/README.md) | 4 | One search contract and filter language over Meilisearch and Elasticsearch, with safe index provisioning |
+| 🤖 [**AI**](src/Infrastructure/AI/README.md) | 4 | Embeddings, tenant-scoped vector collections on Qdrant, and LLM orchestration on Semantic Kernel |
+| 🔌 [**Communication**](src/Infrastructure/Communication/README.md) | 4 | Typed REST and gRPC clients with service discovery, outbound auth, mutual TLS, safe retries and `Result<T>` answers |
+| 🌐 [**Integration**](src/Infrastructure/Integration/README.md) | 5 | Signed, retried, SSRF-guarded webhooks; email over SendGrid and SMS over Twilio |
+| 🕰️ [**Workflows**](src/Infrastructure/Workflows/README.md) | 2 | Durable, tenant-scoped Temporal workflows whose activities send kernel commands |
+| ⏱️ [**Scheduling**](src/Infrastructure/Scheduling/README.md) | 2 | Cron, recurring and one-shot jobs that run once across replicas |
+| 📊 [**Reporting**](src/Infrastructure/Reporting/README.md) | 6 | Streaming CSV, Excel and PDF exports in constant memory, and HTML → PDF through Gotenberg |
+
+### The Api / Worker project
+
+| Capability | Pkgs | What it gives a service |
+|------------|---:|-------------------------|
+| 🔐 [**Security**](src/Hosting/Security/README.md) | 6 | OIDC/JWT with DPoP, managed API keys, client certificates and TOTP step-up, all behind one `IUserContext` |
+| 🩺 [**ServiceDefaults**](src/Hosting/ServiceDefaults/README.md) | 8 | OpenTelemetry, health and readiness, rate limiting, the HTTP request context, tenant resolution, Key Vault configuration, request culture |
+| 🖥️ [**Presentation**](src/Hosting/Presentation/README.md) | 7 | Minimal APIs with one ProblemDetails shape, ETags and endpoint modules; OpenAPI and versioning; gRPC, SignalR and GraphQL |
+
+### Test projects and the build
+
+| Capability | Pkgs | What it gives a service |
+|------------|---:|-------------------------|
+| 🧪 [**Testing**](src/Testing/README.md) | 1 + 19 | `FakeClock`, `TestRequestContext`, fakers — plus the catalogue of all 20 test-double packages kept beside their capabilities |
+| 🛡️ [**Governance**](tools/Governance/README.md) | 3 | 45 Roslyn analyzer rules, ready-made architecture tests, and the shared `.editorconfig` + CSharpier format check |
+
+<details>
+<summary><b>Every package, one line each</b></summary>
+
+#### `src/Foundation/` — referenced from every project
 
 - 📁 **[Foundation](src/Foundation/README.md)** — primitives, the execution context and cross-cutting utilities · *15 packages*
   - [SharedKernel.Primitives](src/Foundation/SharedKernel.Primitives/README.md) `Foundation` — `Result<T>`, `Error`, `IClock`, `IIdGenerator`, SmartEnum, well-known headers, readiness probes
@@ -206,7 +224,7 @@ folder to its overview, and the badge after each name is the package's tier. Eac
   - [SharedKernel.Cryptography.Testing](src/Foundation/SharedKernel.Cryptography.Testing/README.md) `Testing` — recording crypto fakes with failure simulation
   - [SharedKernel.FeatureManagement.Testing](src/Foundation/SharedKernel.FeatureManagement.Testing/README.md) `Testing` — a feature client with per-test flags
 
-### `src/Model/` — the Domain project
+#### `src/Model/` — the Domain project
 
 - 📁 **[Domain](src/Model/Domain/README.md)** — domain-driven design building blocks · *1 package*
   - [SharedKernel.Domain](src/Model/Domain/SharedKernel.Domain/README.md) `Model` — entities, aggregates, value objects, strongly typed ids, specifications, `Money`
@@ -214,7 +232,7 @@ folder to its overview, and the badge after each name is the package's tier. Eac
 - 📁 **[Contracts](src/Model/Contracts/README.md)** — cross-service wire contracts · *1 package*
   - [SharedKernel.Contracts](src/Model/Contracts/SharedKernel.Contracts/README.md) `Model` — versioned integration events in a CloudEvents envelope, offset and cursor paging
 
-### `src/Application/` — the Application project
+#### `src/Application/` — the Application project
 
 - 📁 **[Application](src/Application/README.md)** — CQRS and the request pipeline · *5 packages*
   - [SharedKernel.Application](src/Application/SharedKernel.Application/README.md) `Abstractions` — commands, queries, handlers, `ISender` and pipeline markers, owned by the kernel
@@ -223,7 +241,7 @@ folder to its overview, and the badge after each name is the package's tier. Eac
   - [SharedKernel.Application.Mediator.MediatR](src/Application/SharedKernel.Application.Mediator.MediatR/README.md) `Host` — MediatR 12.4.1 behind `ISender`, swappable
   - [SharedKernel.Application.Testing](src/Application/SharedKernel.Application.Testing/README.md) `Testing` — runs a request through the real pipeline, no mediator needed
 
-### `src/Infrastructure/` — the Infrastructure project
+#### `src/Infrastructure/` — the Infrastructure project
 
 - 📁 **[Caching](src/Infrastructure/Caching/README.md)** — hybrid caching, distributed locks and Redis · *9 packages*
   - [SharedKernel.Caching.Abstractions](src/Infrastructure/Caching/SharedKernel.Caching.Abstractions/README.md) `Abstractions` — `ICacheService`, `ITenantCacheService`, `IDistributedLockService`
@@ -306,7 +324,7 @@ folder to its overview, and the badge after each name is the package's tier. Eac
   - [SharedKernel.Reporting.Gotenberg](src/Infrastructure/Reporting/SharedKernel.Reporting.Gotenberg/README.md) `Adapter` — HTML → PDF through a Gotenberg container
   - [SharedKernel.Reporting.Testing](src/Infrastructure/Reporting/SharedKernel.Reporting.Testing/README.md) `Testing` — in-memory exporters and HTML-to-PDF converter
 
-### `src/Hosting/` — the Api / Worker project
+#### `src/Hosting/` — the Api / Worker project
 
 - 📁 **[Security](src/Hosting/Security/README.md)** — authentication · *6 packages*
   - [SharedKernel.Security.Abstractions](src/Hosting/Security/SharedKernel.Security.Abstractions/README.md) `Abstractions` — `IUserContext`: subject, tenant, roles, permissions, step-up signals
@@ -335,155 +353,208 @@ folder to its overview, and the badge after each name is the package's tier. Eac
   - [SharedKernel.Presentation.GraphQL](src/Hosting/Presentation/SharedKernel.Presentation.GraphQL/README.md) `Host` — HotChocolate conventions
   - [SharedKernel.Presentation.Testing](src/Hosting/Presentation/SharedKernel.Presentation.Testing/README.md) `Testing` — gRPC and GraphQL test helpers
 
-### `src/Testing/` — test projects
+#### `src/Testing/` — test projects
 
 - 📁 **[Testing](src/Testing/README.md)** — test doubles for every capability · *1 package*
   - [SharedKernel.Testing](src/Testing/SharedKernel.Testing/README.md) `Testing` — `FakeClock`, in-memory logger, `TestRequestContext`, fakers, assertions
 
-### `tools/Governance/` — the build
+#### `tools/Governance/` — the build
 
 - 📁 **[Governance](tools/Governance/README.md)** — the rules the rest of the repo is held to · *3 packages*
   - [SharedKernel.Analyzers](tools/Governance/SharedKernel.Analyzers/README.md) `Tooling` — 45 Roslyn rules for the platform conventions, compiler-only
   - [SharedKernel.ArchitectureTests](tools/Governance/SharedKernel.ArchitectureTests/README.md) `Tooling` — prebuilt NetArchTest rules for dependency purity, provider isolation and secure defaults
   - [SharedKernel.Linter](tools/Governance/SharedKernel.Linter/README.md) `Tooling` — CSharpier format check for CI plus the shared `.editorconfig`
 
+The same list by tier, with the service project that references each package, is generated in
+[`docs/packages.md`](docs/packages.md).
+
+</details>
 
 ---
 
-## 🚀 Sample services
+## ⚡ Quick start
 
-[`samples/Shop`](samples/Shop/README.md) is one reference platform built only from the **packed** packages: seven
-services under a .NET Aspire AppHost, run against real infrastructure in containers, with end-to-end flows across
-them. Start with [`samples/README.md`](samples/README.md), the guide to consuming the kernel.
-
-| Shop service | Reference for | Runs against |
-|--------|---------------|--------------|
-| [Catalog](samples/Shop/Catalog/) | The four-project shape with architecture tests; caching with Redis L2 and a backplane, Meilisearch and Elasticsearch side by side, semantic search, presigned S3 uploads, GraphQL | PostgreSQL, Redis, Meilisearch, Elasticsearch, Qdrant, MinIO |
-| [Ordering](samples/Shop/Ordering/) | The four-project shape with the full persistence stack (row-level security, field encryption, audit ledger), the EF Core outbox on RabbitMQ, idempotent submissions, a Temporal workflow, gRPC over mutual TLS to Inventory and REST with an API key to Billing | PostgreSQL, RabbitMQ, Redis, Temporal |
-| [Inventory](samples/Shop/Inventory/) | Dapper under row-level security, a gRPC server behind mutual TLS, Redis hashes and distributed locks, a scheduled job | PostgreSQL, Redis |
-| [Billing](samples/Shop/Billing/) | Key Vault, API-key authentication, validated IBAN/VAT, personal data and GDPR requests, signed webhooks, an outbox | PostgreSQL, RabbitMQ, Key Vault emulator |
-| [Notify](samples/Shop/Notify/) | A worker host: messaging consumers, email and SMS notifications | RabbitMQ, WireMock |
-| [Reports](samples/Shop/Reports/) | Streaming CSV/Excel/PDF exports into S3 and OBS stores behind presigned downloads, HTML to PDF | PostgreSQL, MinIO, Gotenberg |
-
----
-
-## 📍 Status & roadmap
-
-> [!NOTE]
-> **Release candidate.** All 104 packages are published to GitHub Packages at **`1.0.0-rc.2`**
-> (October 2026). The public API is settling; breaking changes are still possible before `1.0.0`.
-
-**Done**
-- Tiered foundation: the seven tiers are enforced by the build, and one execution context covers every channel (HTTP, gRPC, messages, workflows, jobs)
-- A kernel-owned CQRS model with a mediator-agnostic pipeline
-- Pre-publish reviews of persistence, storage, messaging, application/presentation and reporting, each verified by a sample service
-- A release train: one tag gates on every test suite, consumer harness and sample, then publishes all packages together; `v1.0.0-rc.2` shipped through it
-- A source tree grouped by consumer project, with generated views of every package by tier and of the dependency graph
-- One README standard across every package, checked by an architecture test
-
-**Next**
-- 🏷️ The next release candidate, which also points the analyzer help links at the new `tools/Governance/` location
-- 🔍 Pre-publish reviews of the remaining domains, then `1.0.0`
-
----
-
-<a id="using-the-packages"></a>
-
-## 📦 Using the packages
-
-Every package ships at **the same version**. Pin that version once, in your `Directory.Packages.props`,
-and point every `SharedKernel.*` package at it. Upgrading is then a one-line change, and the packages can
-never end up at mixed versions.
+**1. Pin one version for every package** in your `Directory.Packages.props`:
 
 ```xml
 <Project>
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
-    <!-- The one SharedKernel release this service builds against. -->
-    <SharedKernelVersion>1.0.0-rc.2</SharedKernelVersion>
+    <SharedKernelVersion>1.0.0-rc.3</SharedKernelVersion>
   </PropertyGroup>
   <ItemGroup>
-    <PackageVersion Include="SharedKernel.Primitives" Version="$(SharedKernelVersion)" />
+    <PackageVersion Include="SharedKernel.Domain" Version="$(SharedKernelVersion)" />
     <PackageVersion Include="SharedKernel.Application" Version="$(SharedKernelVersion)" />
+    <PackageVersion Include="SharedKernel.Application.Pipeline" Version="$(SharedKernelVersion)" />
     <PackageVersion Include="SharedKernel.ServiceDefaults" Version="$(SharedKernelVersion)" />
-    <!-- One line per SharedKernel package you reference, always $(SharedKernelVersion). -->
+    <!-- one line per SharedKernel package you reference, always $(SharedKernelVersion) -->
   </ItemGroup>
 </Project>
 ```
 
-Don't pin one `SharedKernel.*` package to a different version, and don't float the version (`*`).
-The package feed and its `NuGet.Config` setup are in
-[`CONTRIBUTING.md` → Consuming the packages](CONTRIBUTING.md#consuming-the-packages). Which package goes in
-which project of your service is in [`samples/README.md`](samples/README.md).
+The feed and its `NuGet.Config` are in [`CONTRIBUTING.md` → Consuming the packages](CONTRIBUTING.md#consuming-the-packages).
+
+**2. Reference each tier from its project:**
+
+| Project | Takes | For example |
+|---------|-------|-------------|
+| `Orders.Domain` | Model | `SharedKernel.Domain` |
+| `Orders.Application` | Abstractions | `SharedKernel.Application` |
+| `Orders.Infrastructure` | Adapter | `SharedKernel.Persistence.EfCore`, `SharedKernel.Messaging.MassTransit.RabbitMq` |
+| `Orders.Api` | Host | `SharedKernel.ServiceDefaults`, `SharedKernel.Presentation.WebApi`, `SharedKernel.Application.Pipeline` |
+
+**3. Write the use case — the pipeline does the rest.** From the Shop's [Ordering](samples/Shop/Ordering/) service:
+
+```csharp
+// Application: the permission belongs to the use case and is checked on every path it is sent from.
+[RequirePermission(OrderingPermissions.Read)]
+public sealed record GetOrderQuery(Guid OrderId) : IQuery<OrderDto>;
+
+public sealed class GetOrderHandler(IReadRepository<Order, OrderId> orders)
+    : IQueryHandler<GetOrderQuery, OrderDto>
+{
+    public async Task<Result<OrderDto>> Handle(GetOrderQuery query, CancellationToken ct)
+    {
+        var order = await orders.GetByIdAsync(new OrderId(query.OrderId), ct);
+        return order is null
+            ? Result<OrderDto>.Failure(
+                Error.NotFound("ordering.order.not_found", $"Order {query.OrderId} was not found."))
+            : Result<OrderDto>.Success(OrderDto.From(order));
+    }
+}
+```
+
+```csharp
+// Api: telemetry, the caller, tenancy, the pipeline and the HTTP boundary, each in one call.
+builder.AddServiceDefaults();
+builder.Services.AddOidcAuthentication(builder.Configuration);
+builder.Services.AddSharedKernelRequestContext();
+builder.Services.AddSharedKernelMultiTenancy(o => builder.Configuration.GetSection(TenantResolutionOptions.SectionName).Bind(o));
+builder.Services.AddSharedKernelApplication(
+    typeof(PlaceOrderCommand).Assembly,
+    app => app.UseMediatR().WithIdempotency().WithTransactions().WithAuditing());
+builder.Services.AddHealthChecks().AddDatabaseReadinessCheck<OrderingDbContext>().AddSharedKernelReadiness();
+builder.AddSharedKernelWebApi();
+
+var app = builder.Build();
+app.UseSharedKernelRequestContext();
+app.UseSharedKernelWebApi(pipeline => pipeline.BeforeAuthorization(a => a.UseMiddleware<TenantResolutionMiddleware>()));
+app.MapDefaultHealthCheckEndpoints();
+app.MapEndpoints();
+```
+
+Tracing, logging, metrics, authorization and validation run on every request. Idempotency, transactions, auditing
+and caching are one `With…()` each, and the host refuses to start when a stage's dependency is missing. An anonymous
+caller gets a 401, a caller without the permission a 403, a missing order a 404 — all as RFC 9457 problem details.
+The handler above is shortened (`OrderDto.From` stands for the mapping); the
+[samples guide](samples/README.md) walks through a whole service.
+
+---
+
+## 🚀 The Shop reference platform
+
+[**`samples/Shop`**](samples/Shop/) is one commerce platform built only from the **packed** packages: seven services
+that reference 103 of the 104 packages, running against real infrastructure in containers under a
+[.NET Aspire](https://learn.microsoft.com/dotnet/aspire/) AppHost, with end-to-end flows across all of them. Start
+with the [samples guide](samples/README.md), then the [Shop README](samples/Shop/README.md) to run it.
+
+| Service | Reference for |
+|---------|---------------|
+| [**Catalog**](samples/Shop/Catalog/) | The four-project shape pinned by architecture tests; L1 + Redis caching across replicas, Pub/Sub, Meilisearch and Elasticsearch, semantic search and a chat model |
+| [**Ordering**](samples/Shop/Ordering/) | The four-project shape with the full persistence stack (row-level security, field encryption, audit ledger), the outbox on RabbitMQ, idempotent submissions, a Temporal workflow, SignalR, TOTP step-up |
+| [**Inventory**](samples/Shop/Inventory/) | Dapper under row-level security, a gRPC server behind mutual TLS, Redis hashes and locks, a job that runs once per occurrence |
+| [**Billing**](samples/Shop/Billing/) | Key Vault secrets, signing and envelope encryption; API-key clients; validated IBAN/VAT; personal data redacted; GDPR export and erasure; signed webhooks |
+| [**Merchant**](samples/Shop/Merchant/) | Receiving a webhook and verifying its signature |
+| [**Notify**](samples/Shop/Notify/) | A worker host: messaging consumers, SendGrid email and Twilio SMS |
+| [**Reports**](samples/Shop/Reports/) | Streaming CSV, Excel and PDF exports into S3 and OBS behind presigned downloads; HTML to PDF through Gotenberg |
+
+---
+
+## 🛡️ Governance, built in
+
+The conventions are not a wiki page — the build and the test suites hold them.
+
+| Layer | What it catches |
+|-------|-----------------|
+| **Tier check** (`eng/SharedKernelTiers.targets`) | An illegal reference fails the build before compile: `SKTIER000`–`SKTIER006`, ASP.NET Core below Host included |
+| **45 analyzer rules** ([`SharedKernel.Analyzers`](tools/Governance/SharedKernel.Analyzers/README.md)) | `[LoggerMessage]`-only logging, no discarded `Result`, `IClock` instead of `DateTime.UtcNow`, no raw SDK clients, no magic strings, deterministic workflows |
+| **Architecture tests** ([`SharedKernel.ArchitectureTests`](tools/Governance/SharedKernel.ArchitectureTests/README.md)) | Purity rules tiers cannot express — provider isolation, no Contracts ↔ Domain, secure defaults — reusable from your own test suite |
+| **Public API tracking** | Every public member is recorded in `PublicAPI.*.txt`; an unrecorded change fails the build |
+| **One README standard** ([`docs/package-readme-standard.md`](docs/package-readme-standard.md)) | Every package README has the same shape, absolute links and current API, checked by a test |
+| **Release train** | One `vX.Y.Z` tag runs every gate — tier check, both test lanes, every consumer harness and the Shop — then publishes all 104 packages together |
+
+---
+
+## 📍 Status
+
+> [!NOTE]
+> **Release candidate.** All 104 packages are published to GitHub Packages at **`1.0.0-rc.3`**. The public API is
+> settling; breaking changes are still possible before `1.0.0`.
+
+- ✅ Seven tiers enforced by the build; one execution context across HTTP, gRPC, messages, workflows and jobs
+- ✅ Kernel-owned CQRS with a mediator-agnostic pipeline
+- ✅ A release train that gates on every suite, consumer harness and sample before publishing the whole set
+- ✅ The Aspire-orchestrated `Shop` platform: seven services, 103 of 104 packages, end-to-end flows on real infrastructure
+- 🔜 Pre-publish reviews of the remaining capabilities, then `1.0.0`
 
 ---
 
 ## 🛠️ Building this repository
 
-You need the .NET 10 SDK (10.0.300 or newer, see [`global.json`](global.json)). The Integration lane
-also needs Docker.
+You need the .NET 10 SDK ([`global.json`](global.json)); the Integration lane also needs Docker.
 
 ```bash
 dotnet build Platform.SharedKernel.slnx -c Release
-dotnet test  Platform.SharedKernel.Unit.slnf -c Release --no-build          # no Docker needed
+dotnet test  Platform.SharedKernel.Unit.slnf -c Release --no-build          # no Docker
 dotnet test  Platform.SharedKernel.Integration.slnf -c Release --no-build   # Testcontainers
 dotnet pack  Platform.SharedKernel.slnx -c Release --no-build               # into nupkgs/
-bash eng/verify-packages.sh nupkgs   # checks the release set; the folder must hold one pack only
 ```
 
-Build output goes to `artifacts/{bin,obj}/{project}/`, not next to the sources, and packages to `nupkgs/`
-(the local feed the samples and consumer harnesses restore from). To work on one tier only, open its
-solution filter, for example `eng/solution-filters/Platform.SharedKernel.Adapter.slnf`.
-
-CI also runs these build-free checks; each takes seconds locally:
+<details>
+<summary><b>Build-free checks CI runs (seconds each)</b></summary>
 
 | Check | What it catches |
 |-------|-----------------|
 | `bash eng/verify-solution-filters.sh` | a test project in no lane or both, a project in the wrong solution folder |
 | `bash eng/verify-path-lengths.sh` | a path too long for a Windows checkout (250 characters at `C:\Github\platform-shared-kernel\`) |
-| `bash eng/verify-markdown-links.sh` | a README link left pointing at a moved or renamed file |
-| `dotnet run eng/generate-package-index.cs -- --check` | `docs/packages.md`, `docs/dependency-graph.md` or a tier filter out of date — run it without `--check` to regenerate |
+| `bash eng/verify-markdown-links.sh` | a Markdown link pointing at a moved or renamed file |
+| `dotnet run eng/generate-package-index.cs -- --check` | a stale `docs/packages.md`, `docs/dependency-graph.md` or tier filter (run without `--check` to regenerate) |
 | `bash eng/verify-tier-errors.sh` | the tier check no longer failing the build |
+| `bash eng/verify-packages.sh nupkgs` | a packed set that is not exactly the release set |
 
-**Releasing:** push a `v<major>.<minor>.<patch>[-prerelease]` tag on `main`.
-[`release.yml`](.github/workflows/release.yml) runs every gate: the tier check, the build, both test
-lanes, and every consumer harness and sample against the packed packages. Only then does it publish the
-whole set at the tag's version. No package can be published on its own. Details are in
-[`CONTRIBUTING.md`](CONTRIBUTING.md#versioning-and-releases).
+</details>
 
-### Repository map
+Build output goes to `artifacts/`, packages to `nupkgs/`. To work on one tier, open its solution filter in
+[`eng/solution-filters/`](eng/solution-filters/). **Releasing** is pushing a `v<major>.<minor>.<patch>[-prerelease]`
+tag on `main` — [`CONTRIBUTING.md` → Versioning and releases](CONTRIBUTING.md#versioning-and-releases).
 
-| File | What's in it |
-|------|--------------|
-| [`CONTRIBUTING.md`](CONTRIBUTING.md) | How to build, test, add a package and open a pull request |
+| Where | What |
+|-------|------|
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Build, test, add a package, open a pull request |
 | [`eng/README.md`](eng/README.md) | Build internals: tier check, package checks, versioning, CI workflows |
-| [`docs/packages.md`](docs/packages.md) | Generated: every package by tier, with the service project that references it |
-| [`docs/dependency-graph.md`](docs/dependency-graph.md) | Generated: Mermaid graphs, folder to folder and inside each capability |
-| [`eng/solution-filters/`](eng/solution-filters/) | Generated: one solution filter per tier, for the IDE |
-| [`docs/package-readme-standard.md`](docs/package-readme-standard.md) | The shape every package README follows |
-| `src/{Zone}/{Capability}/README.md` | The overview of one capability domain |
-| [`CLAUDE.md`](CLAUDE.md), `src/{Zone}/{Capability}/CLAUDE.md` | Maintainer rules: architecture, conventions, "what goes where" |
-| [`state-map.md`](state-map.md), `src/{Zone}/{Capability}/state-map.md` | The living work board: packages, open work, completed phases |
+| [`docs/packages.md`](docs/packages.md) · [`docs/dependency-graph.md`](docs/dependency-graph.md) | Generated: every package by tier · Mermaid dependency graphs |
+| `src/{Zone}/{Capability}/README.md` | The page of one capability |
+| [`CLAUDE.md`](CLAUDE.md) · `src/{Zone}/{Capability}/CLAUDE.md` · `state-map.md` | Maintainer rules and the living work board |
 
 ---
 
 ## 🤝 Contributing
 
-Contributions are welcome. Read [`CONTRIBUTING.md`](CONTRIBUTING.md) first: it covers the tier rules the
-build enforces, the conventions the analyzers check, and what must pass before a pull request can merge.
-Everyone taking part is expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+Contributions are welcome. Read [`CONTRIBUTING.md`](CONTRIBUTING.md) first: the tier rules the build enforces, the
+conventions the analyzers check, and what must pass before a pull request can merge. Everyone taking part follows
+the [Code of Conduct](CODE_OF_CONDUCT.md).
 
-### AI-assisted development
-
-The repository is set up for [Claude Code](https://claude.com/claude-code). Every domain has a
-`CLAUDE.md` with its rules, and `.claude/` holds a team of agents (an architecture lead, a planner and an
-implementer per domain, a DevOps lead) with commands such as `/arch`, `/implement-phase <domain>` and
-`/sync-brain`. Using it is optional; the rules it follows are the same ones in `CONTRIBUTING.md`.
+**AI-assisted development.** The repository is set up for [Claude Code](https://claude.com/claude-code): every
+capability has a `CLAUDE.md` with its rules, and `.claude/` holds an architecture lead, a DevOps lead, and a planner
+and implementer per capability, driven by skills such as `/arch`, `/dispatch-phase`, `/implement-phase <domain>` and
+`/sync-brain`. It is optional — the rules it follows are the ones in `CONTRIBUTING.md`.
 
 ---
 
-## 🔒 Security & license
+<div align="center">
 
-Please report vulnerabilities privately, as described in [`SECURITY.md`](SECURITY.md).
+**🔒 Security** — report vulnerabilities privately, as described in [`SECURITY.md`](SECURITY.md).
 
-Released under the [MIT License](LICENSE) © 2026 Gresta-Vertex-Labs.
+Released under the [MIT License](LICENSE) · © 2026 Gresta-Vertex-Labs
+
+</div>

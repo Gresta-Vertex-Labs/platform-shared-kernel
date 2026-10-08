@@ -7,7 +7,8 @@
 
 > **The lightweight core of the SharedKernel test packages: a controllable clock, structured-log capture, a
 > configurable caller, deterministic fakers and framework-free assertions for the domain and contract types — with
-> no infrastructure and no test-framework dependency.**
+> no infrastructure and no test-framework dependency.** Start every service test project with it; add a
+> capability's `SharedKernel.{Capability}.Testing` package when you need that capability's fakes.
 
 | You get | So that |
 | --- | --- |
@@ -314,12 +315,10 @@ REST client with the platform's resilience and propagation, use `StubHttpMessage
 
 ## Testing
 
-This package is the test toolkit; its self-tests live in
-[`SharedKernel.Testing.Tests`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/src/Testing/SharedKernel.Testing/SharedKernel.Testing.Tests)
-and prove each helper against the real domain, contract, validation and privacy types. For a capability's fakes add
-its own package — `SharedKernel.Application.Testing`, `SharedKernel.Persistence.Testing`,
-`SharedKernel.Messaging.Testing`, `SharedKernel.Caching.Testing` and the rest, listed in the
-[16.Testing overview](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/README.md).
+This package is the test toolkit; nothing tests it from your side. For a capability's fakes add its own package —
+`SharedKernel.Application.Testing`, `SharedKernel.Persistence.Testing`, `SharedKernel.Messaging.Testing`,
+`SharedKernel.Caching.Testing` and the rest, listed in the
+[Testing packages overview](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/README.md).
 
 ## Pitfalls
 
@@ -336,4 +335,6 @@ its own package — `SharedKernel.Application.Testing`, `SharedKernel.Persistenc
 
 ---
 
-Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) · [16.Testing domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/README.md) · [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
+[Testing packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/README.md) ·
+[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

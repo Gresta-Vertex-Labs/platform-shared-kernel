@@ -5,56 +5,43 @@
 > root, and failures returned as `Result` (the other service's own `Error`) instead of exceptions. This domain owns
 > **outgoing calls only** — inbound middleware and server-side gRPC/GraphQL conventions are `14.Presentation`, bus
 > publishing is `07.Messaging`, webhooks and notifications to parties outside the platform are `15.Integration`.
-> Consumers read each package's `README.md`; the folder overview is `README.md`; the living board is `state-map.md`.
 
 ## Packages
 
 | Package | Tier | Purpose |
 | --- | --- | --- |
-| `SharedKernel.Communication` | Adapter | Base: `AddSharedKernelCommunication(configuration)`, service discovery (`Microsoft.Extensions.ServiceDiscovery` + `.Dns`), outbound authentication (client credentials, API key, `IAccessTokenProvider`), client TLS, `CommunicationErrorCodes`. Internals shared with the satellites through `InternalsVisibleTo` (`ClientPipeline`, `ClientAuthenticationHandler`, `ClientCredentialsTokenClient`, `ClientTls`, `CommunicationClientRegistry`). |
-| `SharedKernel.Communication.Rest` | Adapter | Typed `HttpClient`s: `AddRestClient`, resilience mapped onto `Microsoft.Extensions.Http.Resilience`, caller and `Idempotency-Key` propagation, `Result<T>` verbs, ProblemDetails → `Error`. Declared edge → base. |
-| `SharedKernel.Communication.Grpc` | Adapter | Typed gRPC clients: `AddGrpcClient<T>`, deadline, channel retry policy, keepalive, rich status → `Error`, `google.type.Money` ↔ `Money`. Declared edge → base; references `SharedKernel.Domain` (Model) for `Money`. |
+| `SharedKernel.Communication` | Adapter | Base: `AddSharedKernelCommunication(configuration)`, service discovery (`Microsoft.Extensions.ServiceDiscovery` + `.Dns`), outbound authentication (client credentials, API key, `IAccessTokenProvider`), client TLS, `CommunicationErrorCodes`. Internals shared with the satellites through `InternalsVisibleTo` (`ClientPipeline`, `ClientAuthenticationHandler`, `ClientCredentialsTokenClient`, `ClientTls`, `CommunicationClientRegistry`) |
+| `SharedKernel.Communication.Rest` | Adapter | Typed `HttpClient`s: `AddRestClient`, resilience mapped onto `Microsoft.Extensions.Http.Resilience`, caller and `Idempotency-Key` propagation, `Result<T>` verbs, ProblemDetails → `Error`. Declared edge → base |
+| `SharedKernel.Communication.Grpc` | Adapter | Typed gRPC clients: `AddGrpcClient<T>`, deadline, channel retry policy, keepalive, rich status → `Error`, `google.type.Money` ↔ `Money`. Declared edge → base; references `SharedKernel.Domain` (Model) for `Money` |
 
 `consumer-verify/` composes both satellites through a real generic host. Every public type is in namespace
 `SharedKernel.Communication`; internals are in `SharedKernel.Communication.Internal`, `.Rest.Internal`, `.Grpc.Internal`.
 
 ## Public Entry Points
 
-**Base** — `services.AddSharedKernelCommunication(configuration)` → `ICommunicationBuilder` (idempotent: a second call
-returns a builder over the same registrations; `TryAdd`s `IRequestContextAccessor`, `IClock` and the `IConfiguration`).
+Overloads, options and defaults: each package's `README.md`.
 
-- `SharedKernel:Communication` → `CommunicationOptions` (`ISectionBoundOptions`): `ServiceDiscovery` →
-  `CommunicationDiscoveryOptions` (`Mode` `Configuration`/`Dns`/`DnsSrv`, `RefreshPeriod`, `DnsSrvQuerySuffix`).
-- `Services:{service}:{endpoint}` — Microsoft.Extensions.ServiceDiscovery's own section (the shape Aspire emits). Keep it
-  there, never under `SharedKernel:`.
-- Per client (`CommunicationClientOptions`): `Authentication` → `ClientAuthenticationOptions` (`Mode` ClientCredentials /
-  ApiKey / AccessTokenProvider; `ClientCredentialsOptions`, `ClientApiKeyOptions`), `Tls` → `ClientTlsOptions`
-  (client certificate, `TrustedCertificateAuthoritiesPath`).
+- `services.AddSharedKernelCommunication(configuration)` → `ICommunicationBuilder` (idempotent; `TryAdd`s
+  `IRequestContextAccessor`, `IClock`, `IConfiguration`). `CommunicationOptions` at `SharedKernel:Communication`
+  (discovery mode); per-client settings at `SharedKernel:Communication:Clients:{name}` (`Authentication`, `Tls`, plus
+  the protocol options below).
+- Endpoints live in Microsoft.Extensions.ServiceDiscovery's own `Services:{service}:{endpoint}` section (the shape
+  Aspire emits) — never under `SharedKernel:`.
 - `IAccessTokenProvider` / `AccessToken` / `AccessTokenUnavailableException`; `CommunicationErrorCodes`
   (`communication.unreachable`, `.timeout`, `.circuit_open`, `.access_token_unavailable`, `.empty_body`, `.invalid_body`).
-
-**Rest** — `.AddRestClient<TClient, TImpl>("name")` / `.AddRestClient<TClient>("name")` → `IRestClientBuilder`
-(`UseHedging()`, `UseAccessTokenProvider<T>()`, `Configure(...)`, `HttpClientBuilder`).
-
-- `SharedKernel:Communication:Clients:{name}` → `RestClientOptions` (`Retry` → `RestRetryOptions`,
-  `CircuitBreaker` → `RestCircuitBreakerOptions`, `Hedging` → `RestHedgingOptions`, `PropagateIdempotencyKey`).
-- `HttpClientResultExtensions`: `GetResultAsync`, `PostResultAsync`, `PutResultAsync`, `DeleteResultAsync`,
-  `SendResultAsync` → `Result<T>`; `HttpResponseMessageResultExtensions`: `ToResultAsync`, `ReadResultAsync<T>`.
-
-**Grpc** — `.AddGrpcClient<Service.ServiceClient>("name")` → `IGrpcClientBuilder`.
-
-- `SharedKernel:Communication:Clients:{name}` → `GrpcClientOptions` (`Address`, `Deadline`, `Retry` →
-  `GrpcRetryOptions`, `KeepAlive` → `GrpcKeepAliveOptions`).
-- `GrpcResultExtensions`: `call.ToResultAsync(ct)`, `RpcException.ToError()`; `MoneyProtoExtensions`: `ToMoneyProto`,
-  `ToMoney`, `ToDecimal`.
+- **Rest** — `.AddRestClient<TClient, TImpl>("name")` → `IRestClientBuilder` (`UseHedging()`,
+  `UseAccessTokenProvider<T>()`); `RestClientOptions`. `HttpClientResultExtensions` (`GetResultAsync`,
+  `PostResultAsync`, …) and `HttpResponseMessageResultExtensions` (`ToResultAsync`, `ReadResultAsync<T>`) → `Result<T>`.
+- **Grpc** — `.AddGrpcClient<Service.ServiceClient>("name")` → `IGrpcClientBuilder`; `GrpcClientOptions`.
+  `call.ToResultAsync(ct)`, `RpcException.ToError()`; `MoneyProtoExtensions` (`ToMoneyProto`, `ToMoney`, `ToDecimal`).
 
 ## Rules & Invariants
 
-1. **No ASP.NET Core, no `IHttpContextAccessor`** (SKTIER006). The caller is `IRequestContextAccessor.Current`, read at call time.
+1. **No `IHttpContextAccessor`** (ASP.NET Core is SKTIER006 here). The caller is `IRequestContextAccessor.Current`, read at call time.
 2. **No `SharedKernel.Security.*`**: identity arrives only as `IRequestContext`; outbound credentials are this domain's own options.
 3. `.Grpc` never references `SharedKernel.Contracts` (`CommunicationLayeringRules.GrpcNeverReferencesContracts`) — protobuf is the wire contract. `.Rest` and `.Grpc` never reference each other.
-4. gRPC interceptors live under `SharedKernel.Communication.Grpc` only (`NoDirectGrpcInterceptorInheritanceOutsideCommunicationGrpc` exempts that prefix).
-5. **One propagation mapping**: headers come from `SharedKernel.Execution`'s `RequestContextPropagation.WriteHeaders` and `WellKnownHeaders` — never a literal header name.
+4. gRPC interceptors live under `SharedKernel.Communication.Grpc` only (`CommunicationLayeringRules.NoDirectGrpcInterceptorInheritanceOutsideCommunicationGrpc`).
+5. **One propagation mapping**: headers come from `SharedKernel.Execution`'s `RequestContextPropagation.WriteHeaders` — never a hand-built header set.
 6. **Caller-supplied header or metadata always wins**; propagation never overwrites, never throws, never holds request state (gRPC logs 11100 and continues).
 7. **Propagate once per call, before retries**: the REST propagation and idempotency-key handlers sit outside the resilience handler; the gRPC interceptor runs before the channel's retries.
 8. **Correlation id** = `CorrelationIds.Current(caller)`, else `CorrelationIds.New()`; never `Activity.Id`/`TraceId`. Never write `traceparent`/`tracestate` by hand — the `System.Net.Http` diagnostics handler writes them from the client span.
@@ -63,19 +50,19 @@ returns a builder over the same registrations; `TryAdd`s `IRequestContextAccesso
 11. **Switches must switch**: `MaxRetryAttempts = 0` keeps the strategy with `ShouldHandle = false`; `CircuitBreaker:Enabled = false` disables the breaker (and raises its sampling window to the validated floor). An enabled breaker with a too-short window is a startup validation error.
 12. **Resilience is mapped, never hand-built** (`RestResilience`). `HttpClient.Timeout` is infinite; the pipeline owns every timeout. Do not wrap the hedging `ActionGenerator` (the standard handler replaces it).
 13. **Results, not exceptions**: `HttpFailure.TryMap` maps `AccessTokenUnavailableException` → its error, `BrokenCircuitException` → `CircuitOpen`, timeout/non-caller cancellation → `Timeout`, `HttpRequestException` → `Unreachable`; only the caller's own cancellation and unrelated exceptions pass through.
-14. **ProblemDetails → `Error`**: `errorCode` → `Code`, else `http.{status}` — never `title` or `type`. `detail` → `Message`. Status → `ErrorType` via `HttpStatusErrorTypeMap` (hand-kept reverse of `14.Presentation`'s map; do not reference `14.Presentation`). Only 400/422 rebuild `errors`/`errorCodes` into `Error.Validation`. `ProblemDetailsDto` binds only `detail`, `errorCode`, `errors`, `errorCodes`.
+14. **ProblemDetails → `Error`**: `errorCode` → `Code`, else `http.{status}` — never `title` or `type`. `detail` → `Message`. Status → `ErrorType` via `HttpStatusErrorTypeMap` (hand-kept reverse of `14.Presentation`'s map; never reference `14.Presentation`). Only 400/422 rebuild `errors`/`errorCodes` into `Error.Validation`. `ProblemDetailsDto` binds only `detail`, `errorCode`, `errors`, `errorCodes`.
 15. **gRPC**: deadline = `IClock.UtcNow + Deadline` only when the call has none; retries are the channel `ServiceConfig` policy (`MaxAttempts` 1–5, `Unavailable` by default), never `DeadlineExceeded`; `Address` must be `http`/`https`.
 16. **Money**: round to nine places, then split units/nanos; refuse invalid wire messages (`money.proto.invalid`).
 17. A client name is reserved once across REST and gRPC (`CommunicationClientRegistry`); no `:` in a name.
 18. Option collections default to `null` (the binder appends to non-null defaults).
 19. **Credentials never leave the process**: no token, secret or API key in a log, exception message or `ToString()` (`AccessToken.ToString()` redacts).
-20. `IClock`, never `DateTime.UtcNow` (SK0001); `[LoggerMessage]` only.
+20. A typed client takes `HttpClient` in its primary constructor and is registered with `AddRestClient` (SK0013 flags an explicit constructor taking `HttpClient`).
 
 ## Decisions
 
 | Decision | Why |
 | --- | --- |
-| Service discovery is `Microsoft.Extensions.ServiceDiscovery` (Configuration → DNS/DNS SRV → pass-through) | The library Aspire uses; a home-grown resolver never queried DNS and broke on relative URIs |
+| Service discovery is `Microsoft.Extensions.ServiceDiscovery` (Configuration → DNS/DNS SRV → pass-through) | The library Aspire uses; it queries DNS and handles relative URIs, so no kernel-owned resolver |
 | DNS providers set `ShouldApplyHostNameMetadata` | A pod address keeps the service host name for TLS/SNI |
 | Handler order (outer → inner): propagation → idempotency key → service handlers → resilience/hedging → `ClientAuthenticationHandler` → `AddServiceDiscovery()` → `SocketsHttpHandler` + `ClientTls.Apply` | Headers once per call; token and address resolved per attempt so a retry can reach another pod |
 | Microsoft's standard-pipeline defaults, except `Retry:BaseDelay` 500 ms | Well-known behaviour; no bespoke Polly pipeline to maintain |
@@ -89,7 +76,7 @@ returns a builder over the same registrations; `TryAdd`s `IRequestContextAccesso
 
 ## Logging
 
-EventId block **11000–11999**.
+`LoggingEventIdRanges.Communication` (11000–11999).
 
 | Sub-block | Package | Events |
 | --- | --- | --- |
@@ -100,18 +87,17 @@ EventId block **11000–11999**.
 
 ## Cross-Domain Couplings
 
-- **01.Core** — `Primitives` (`Result`, `Error`, `IClock`, `WellKnownHeaders`), `Execution` (`IRequestContextAccessor`, `RequestContextPropagation`, `CorrelationIds`), `Configuration` (`AddValidatedOptions`).
+- **01.Core** — `Primitives` (`Result`, `Error`, `IClock`, `WellKnownHeaders`), `Execution` (`IRequestContextAccessor`, `RequestContextPropagation`, `CorrelationIds`), `Configuration`.
 - **03.Domain** — `.Grpc` uses `Money` (`SharedKernel.Domain.Monetary`).
 - **13.ServiceDefaults** — `WithCommunicationTelemetry()`; `ServiceDefaults.Security`'s `EndToEndPropagationTests` prove HTTP → REST/gRPC, consumer → REST and job → REST propagation.
 - **14.Presentation** — the server side of the same contracts: ProblemDetails shape and `GrpcErrorCodes.ForStatus` names; mirrored here by hand, never referenced.
-- **16.Testing** — `SharedKernel.Communication.Testing` supplies the doubles below.
-- **00.Governance** — `CommunicationLayeringRules`; SK0013 (no explicit constructor taking `HttpClient` in a typed client).
+- **00.Governance** — `CommunicationLayeringRules`; SK0013.
 - **samples** — the Shop (`samples/Shop`): Ordering → Inventory over gRPC with mutual TLS, Ordering → Billing over REST with an API key.
 
 ## Testing
 
-- Unit lane only (no Docker): `SharedKernel.Communication.Tests`, `.Rest.Tests`, `.Grpc.Tests` (nested in each package), plus `src/Infrastructure/Communication/SharedKernel.Communication.Testing/SharedKernel.Communication.Testing.Tests`.
-- Consumer doubles: `StubHttpMessageHandler` + `UseStubHttpMessageHandler(clientName, stub)`, `GrpcCalls`, `TestServerCallContext`.
+- Unit lane only (no Docker): `SharedKernel.Communication.Tests`, `.Rest.Tests`, `.Grpc.Tests` (nested in each package), plus `SharedKernel.Communication.Testing.Tests`.
+- Fakes: `SharedKernel.Communication.Testing` — catalogue in `src/Testing/CLAUDE.md`.
 - REST tests register a real client over a `StubHttpMessageHandler`, so the whole pipeline runs; settings through in-memory configuration validated with `IStartupValidator.Validate()`; `Retry:BaseDelay` 0.
 - The resolving handler restores the original request URI after the call — a test inspecting the URI must copy it at send time (`StubHttpMessageHandler` does).
 - gRPC tests run a real service on `TestServer` (test proto) as the client's primary handler (`GrpcHarness`). Transport failures: a stub that throws `HttpRequestException` with a `SocketException` inner.

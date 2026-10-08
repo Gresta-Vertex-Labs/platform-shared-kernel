@@ -7,19 +7,22 @@
 | Package | Tier | Purpose |
 |---|---|---|
 | `SharedKernel.AI.Abstractions` | Abstractions | `IEmbeddingGenerator`, `IVectorCollection<TRecord>`, `IVectorCollectionProvisioner`, `IVectorProviderDescriptor`, `ISemanticKernel`, `ICompletionProviderDescriptor`, `IVectorRecord`, the closed 8-node `VectorFilter` AST over the five-kind `VectorValue`, `VectorCollectionDefinition` (+ builder, fingerprint), request/result models, `VectorCollectionReadinessProbe`, `IntelligenceErrors`, `IntelligenceWellKnown`, `IntelligenceStreamException`. References `Primitives` and `Execution` only; **zero third-party packages**; no DI extension, no logging, no `ActivitySource`. |
-| `SharedKernel.AI.Qdrant` | Adapter | `IVectorCollection<TRecord>`, `IVectorCollectionProvisioner`, `IVectorProviderDescriptor` over `Qdrant.Client` (gRPC); Qdrant-exclusive `IQdrantHybridQueryAccessor<TRecord>` (dense+sparse RRF), `IQdrantQuantizationProfileAccessor`, gated `IQdrantRawClientAccessor`; one readiness probe per collection. |
-| `SharedKernel.AI.SemanticKernel` | Adapter | `IEmbeddingGenerator` (on `OpenAI.Embeddings.EmbeddingClient`), `ISemanticKernel` (on SK's `IChatCompletionService`), `ICompletionProviderDescriptor`; SK-exclusive `IKernelPluginAccessor`, gated `IKernelRawClientAccessor`; opt-in `WithBoundedRetry`. Uses `Microsoft.SemanticKernel` (+ `Connectors.OpenAI`, `OpenAI`, `System.ClientModel`, `Microsoft.Extensions.Http`). |
+| `SharedKernel.AI.Qdrant` | Adapter | Vector contracts over `Qdrant.Client` (gRPC); Qdrant-exclusive `IQdrantHybridQueryAccessor<TRecord>` (dense+sparse RRF), `IQdrantQuantizationProfileAccessor`, gated `IQdrantRawClientAccessor`; one readiness probe per collection. |
+| `SharedKernel.AI.SemanticKernel` | Adapter | `IEmbeddingGenerator` (on `OpenAI.Embeddings.EmbeddingClient`), `ISemanticKernel` (on SK's `IChatCompletionService`), `ICompletionProviderDescriptor`; SK-exclusive `IKernelPluginAccessor`, gated `IKernelRawClientAccessor`; opt-in `WithBoundedRetry`. |
+| `SharedKernel.AI.Testing` | Testing | In-memory doubles of every neutral contract. |
 
-Also in the folder: nested `.Tests` projects and `consumer-verify/Qdrant`, `consumer-verify/SemanticKernel` (one harness per provider, each unable to name the other's exclusive types).
+Also in the folder: `consumer-verify/Qdrant`, `consumer-verify/SemanticKernel` (one harness per provider, each unable to name the other's exclusive types).
 
 ## Public Entry Points
 
-- **Application code injects only** `IEmbeddingGenerator`, `IVectorCollection<TRecord>`, `IVectorCollectionProvisioner`, `IVectorProviderDescriptor`, `ISemanticKernel`, `ICompletionProviderDescriptor` — never `QdrantClient`, `Kernel` or an `OpenAIClient` (analyzer `SK0026`).
+Options, defaults and examples: `SharedKernel.AI.Qdrant` README, `SharedKernel.AI.SemanticKernel` README.
+
+- **Application code injects only** the six neutral contracts (`IEmbeddingGenerator`, `IVectorCollection<TRecord>`, `IVectorCollectionProvisioner`, `IVectorProviderDescriptor`, `ISemanticKernel`, `ICompletionProviderDescriptor`) — never `QdrantClient`, `Kernel` or an `OpenAIClient` (`SK0026`).
 - **Records:** implement `IVectorRecord` (`Id`, `Vector`, `ModelId`, `Metadata` of `VectorValue`).
-- **Qdrant:** `services.AddSharedKernelQdrant(configuration)` (section `Intelligence:Qdrant`, `QdrantOptions.SectionName`; an `IConfigurationSection` overload exists) → `QdrantBuilder.AddCollection<TRecord>(collectionName, c => c.EmbeddingModel(modelId, dimension).DistanceMetric(...).TenantField("tenantId").Field(name, kind, filterable))`, optional `.AllowRawClientAccess()`, then `.Build()`. Options: `Host` (required), `Port` 6334, `UseTls`, `ApiKey`, `GrpcTimeoutSeconds` 30, `MaxBatchSize` 1000, `MaxVectorDimension` 4096, `MaxFilterDepth` 10. `AddCollection` registers scoped `IVectorCollection<TRecord>` and `IQdrantHybridQueryAccessor<TRecord>`; provisioner, descriptor and quantization accessor are singletons; the client is a singleton.
-- **SemanticKernel:** `services.AddSharedKernelSemanticKernel(configuration)` (section `Intelligence:SemanticKernel`, `SemanticKernelOptions.SectionName`) → optional `.WithBoundedRetry(maxAttempts, baseDelay)`, `.AllowRawClientAccess()`, then `.Build()`. Options: `ApiKey`, `ChatModelId`, `EmbeddingModelId` (required), `Endpoint`, `Organization`, `EmbeddingDimension` 1536, `ContextWindowTokens` 128000, `MaxOutputTokens` 4096, `MaxEmbeddingBatchSize` 2048, `HttpTimeoutSeconds` 60. Registers the three contracts as singletons; the `OpenAIClient` is built once over a named `IHttpClientFactory` client.
-- **Readiness:** each vector collection gets a `VectorCollectionReadinessProbe` named `vector-store-{provider}-{collection}` (`VectorCollectionReadinessProbe.ProbeNameFor`); the host maps them with `services.AddHealthChecks().AddSharedKernelReadiness()`.
-- **Telemetry:** `ActivitySource`/`Meter` named `SharedKernel.AI` (`IntelligenceWellKnown.ActivitySourceName`/`.MeterName`); tags `ai.provider`, `ai.collection`, `ai.model`. The host subscribes with ServiceDefaults' `WithIntelligenceTelemetry()`.
+- **Qdrant:** `services.AddSharedKernelQdrant(configuration)` (section `Intelligence:Qdrant`) → `.AddCollection<TRecord>(name, c => c.EmbeddingModel(modelId, dimension).DistanceMetric(...).TenantField(...).Field(...))`, optional `.AllowRawClientAccess()`, `.Build()`. Collections and the hybrid accessor are scoped; client, provisioner, descriptor and quantization accessor are singletons.
+- **SemanticKernel:** `services.AddSharedKernelSemanticKernel(configuration)` (section `Intelligence:SemanticKernel`) → optional `.WithBoundedRetry(maxAttempts, baseDelay)`, `.AllowRawClientAccess()`, `.Build()`. The three contracts are singletons; the `OpenAIClient` is built once over a named `IHttpClientFactory` client.
+- **Readiness:** one `VectorCollectionReadinessProbe` per collection, named `vector-store-{provider}-{collection}` (`ProbeNameFor`); mapped by `AddSharedKernelReadiness()`.
+- **Telemetry:** `ActivitySource`/`Meter` `SharedKernel.AI` (`IntelligenceWellKnown`); tags `ai.provider`, `ai.collection`, `ai.model`; subscribed by ServiceDefaults' `WithIntelligenceTelemetry()`.
 
 ## Rules & Invariants
 
@@ -35,15 +38,15 @@ Also in the folder: nested `.Tests` projects and `consumer-verify/Qdrant`, `cons
 10. **Content is never logged or tagged:** `ChatMessage.Content`, `CompletionChunk.DeltaContent`, retrieved `Metadata` values, raw vectors, API keys. Log ids, model ids, token counts, latencies, outcome codes. Retrieved text is untrusted input; this layer is not a sanitizer and never adds hidden prompt enrichment.
 11. **`Score` is provider- and metric-specific** (cosine bounded, dot unbounded, Euclidean smaller-is-better). Keep the loud XML docs on `VectorHit<TRecord>.Score`/`VectorQuery.MinScore`; `Rank` is the portable ordering.
 12. **No write-consistency parameter.** Engines disagree on write visibility; `WaitUntilQueryableAsync` is the explicit barrier (a documented no-op on Qdrant, whose writes use `wait: true`).
-13. **Siblings never reference each other** and never expose another SDK's types. Provider-exclusive contracts live only in their provider package.
+13. **Siblings never reference each other** and never expose another SDK's types (`IntelligenceTopologyRules.ProviderPackagesNeverReferenceEachOther`). Provider-exclusive contracts live only in their provider package.
 14. **Raw-client hatches are gated:** registered only after `.AllowRawClientAccess()`, which logs a startup Warning, with an XML doc stating in capitals that the raw client **BYPASSES TENANT SCOPING** (SemanticKernel: bypasses the package's retry/observability seam).
 15. **One registration per `TRecord`** — a second unkeyed `AddCollection<TRecord>` silently wins.
 16. **Qdrant record ids** must be an unsigned 64-bit integer string or a `"D"` UUID; `QdrantRecordMapper.ToPointId` rejects anything else as `InvalidRecordId` before I/O.
 17. **The Qdrant fingerprint needs server v1.16.0+** (collection `metadata`); older servers silently drop it. The metadata overloads exist only on the concrete `QdrantClient`; everything else goes through `IQdrantClient`.
 18. **`QdrantFilterCompiler` switches exhaustively with no discard arm** (`CS8509;CS8524` kept visible as `WarningsNotAsErrors`); a new filter node must be translated, never ignored.
-19. **Readiness:** vector probes only; ready = reachable, addressable and queryable (a write backlog never fails it). No `IHealthCheck` and no `Microsoft.Extensions.Diagnostics.HealthChecks` reference anywhere here. No LLM probe (it would be a billed call).
-20. **No reflection in this domain's own code** (`Activator.CreateInstance`, `MakeGenericMethod`/`MakeGenericType`, `dynamic`; `SK0012` does not catch `MakeGenericType`). SemanticKernel's internal reflection stays inside its package; `ToolDefinition.ParametersJsonSchema` is a string to keep it contained. No `<IsAotCompatible>`.
-21. **Named constants:** config sections on the options types, collection/field/model identifiers as constants (`SK0027`), tag keys from `IntelligenceWellKnown`. No `new HttpClient()`; no static mutable state.
+19. **Readiness:** vector probes only; ready = reachable, addressable and queryable (a write backlog never fails it). No `IHealthCheck` and no `Microsoft.Extensions.Diagnostics.HealthChecks` reference anywhere here (`IntelligenceTopologyRules.NoHealthChecksDependencyAcrossIntelligencePackages`). No LLM probe (it would be a billed call).
+20. **No reflection in this domain's own code** (`Activator.CreateInstance`, `MakeGenericMethod`/`MakeGenericType`, `dynamic`; `SK0012` does not catch `MakeGenericType`). SemanticKernel's internal reflection stays inside its package; `ToolDefinition.ParametersJsonSchema` is a string to keep it contained.
+21. **Collection, field and model identifiers are named constants** (`SK0027`); tag keys come from `IntelligenceWellKnown`. No `new HttpClient()`; no static mutable state.
 22. A type constructed from raw `TOptions` must be registered through a factory unwrapping `IOptions<TOptions>.Value` — `AddValidatedOptions` registers only `IOptions<T>`.
 23. **`EnsureCollectionAsync` is safe to run from every replica at once.** A create that loses the race (gRPC `AlreadyExists`) continues as on an existing collection: fingerprint check, then any missing payload index.
 
@@ -76,12 +79,12 @@ Block **10000–10999** (`LoggingEventIdRanges.Intelligence`), 100-wide sub-bloc
 
 - **01.Core:** `Result`/`Error`, `IReadinessProbe`, `LoggingEventIdRanges` (Primitives); `TenantScope`/`TenantId` (Execution); `AddValidatedOptions` (Configuration, providers only).
 - **13.ServiceDefaults:** `WithIntelligenceTelemetry()` subscribes to `SharedKernel.AI` by name (no project reference to this domain); `AddSharedKernelReadiness()` maps the `vector-store-*` probes.
-- **16.Testing:** `SharedKernel.AI.Testing` — `InMemoryEmbeddingGenerator` (deterministic hash-derived vectors), `InMemoryVectorCollection<TRecord>`, `InMemoryVectorCollectionProvisioner`, `InMemoryVectorProviderDescriptor`, `InMemorySemanticKernel`, `InMemoryCompletionProviderDescriptor`. A new neutral member needs the double updated. `QdrantContainerFixture` (`qdrant/qdrant:v1.16.0`) lives in `SharedKernel.Testing.Internal`.
-- **00.Governance:** tier check; `IntelligenceTopologyRules` (`AbstractionsHasNoThirdPartyDependencies`, `ProviderPackagesNeverReferenceEachOther`, `NoHealthChecksDependencyAcrossIntelligencePackages`); `SK0026` (raw provider client injection), `SK0027` (raw identifier literals).
+- **16.Testing:** a new neutral member needs its `SharedKernel.AI.Testing` double updated; `QdrantContainerFixture` (`qdrant/qdrant:v1.16.0`) lives in `SharedKernel.Testing.Internal`.
+- **00.Governance:** `IntelligenceTopologyRules` (`AbstractionsHasNoThirdPartyDependencies`, `ProviderPackagesNeverReferenceEachOther`, `NoHealthChecksDependencyAcrossIntelligencePackages`); `SK0026` (raw provider client injection), `SK0027` (raw identifier literals).
 
 ## Testing
 
-- `SharedKernel.AI.Abstractions.Tests`, `SharedKernel.AI.SemanticKernel.Tests` and both `consumer-verify` harnesses: **Unit lane**. `SharedKernel.AI.Qdrant.Tests`: **Integration lane** (real Qdrant container via `QdrantContainerFixture`, shared with `[CollectionDefinition]` + `ICollectionFixture<T>`).
+- **Unit lane:** `AI.Abstractions.Tests`, `AI.SemanticKernel.Tests`, `AI.Testing.Tests` and both `consumer-verify` harnesses. **Integration lane:** `AI.Qdrant.Tests` (real Qdrant via `QdrantContainerFixture`, shared with `[CollectionDefinition]` + `ICollectionFixture<T>`).
 - **Never assert on generated text; never call a paid or live endpoint by default.** A live-model test, if any, is opt-in and environment-gated.
 - Vector behaviour (filter translation, tenant injection) is proven against the real container, never a mocked client. The Qdrant conformance suite (`QdrantConformanceCollection`) is written so a future vector provider runs the same corpus and assertions (identity, count, filter matches — not `Score`). Corpus ids must be Qdrant-legal (numeric strings or UUIDs).
 - **Fail-loud tests:** every rejection path asserts the `Error` **and** that no I/O occurred — with `Substitute.For<IQdrantClient>()` check `ReceivedCalls()` is empty, plus a companion guard-satisfied test asserting calls were made (an unconfigured substitute returns empty protobuf messages rather than throwing). Where no interface exists (`EmbeddingClient`), construct with a `null!` client and assert the distinguishing failure code, since the adapter maps any exception to a `Result`.
@@ -89,10 +92,11 @@ Block **10000–10999** (`LoggingEventIdRanges.Intelligence`), 100-wide sub-bloc
 - When capturing an outbound request body through `FakeHttpMessageHandler`, read it inside the response factory; `System.ClientModel` disposes the content after the call.
 - DI tests need no container: missing required options fail at start naming the property; exclusive contracts resolve only from their provider's builder; raw accessors resolve only after `.AllowRawClientAccess()`. Client construction is lazy, so consumer-verify needs no live server.
 - `InternalsVisibleTo` exposes translators, validators and descriptors to each provider's own `.Tests`.
+- Fakes: `SharedKernel.AI.Testing` — catalogue in `src/Testing/CLAUDE.md`.
 
 ## Known Limitations
 
-- `intelligence.unreachable` and `intelligence.timeout` are still `ErrorType.Unexpected`; `Error.Unavailable`/`Error.Timeout` (HTTP 503/504) would be the accurate types.
+- `intelligence.unreachable` and `intelligence.timeout` are `ErrorType.Unexpected`; `Error.Unavailable`/`Error.Timeout` (HTTP 503/504) would be accurate.
 - Qdrant is the only vector provider, so the conformance suite runs solo.
 - `Microsoft.SemanticKernel` is reflection-heavy and not AOT-safe (contained in its package); `Qdrant.Client`'s trim behaviour is unverified.
-- `SK0027`'s XML doc still lists a provisioner `ProbeAsync` call shape that no longer exists on `IVectorCollectionProvisioner` (fix in `00.Governance`).
+- `SK0027`'s XML doc and `ProvisionerMethods` set still name a provisioner `ProbeAsync` that no longer exists on `IVectorCollectionProvisioner` (harmless; fix in `00.Governance`).

@@ -8,6 +8,9 @@
 
 > **The provider-neutral full-text search contract: index, search, count, walk and rebuild documents with an explicit
 > tenant scope on every read, without your application code ever touching a Meilisearch or Elasticsearch SDK.**
+> Reference it from the project that searches; the host adds one provider —
+> `SharedKernel.Search.Meilisearch` for typo-tolerant user-facing search, `SharedKernel.Search.ElasticSearch` for
+> aggregations, deep pagination and analytics.
 
 | You get | So that |
 | --- | --- |
@@ -356,8 +359,8 @@ services.AddInMemorySearchProvisioning();                         // ISearchInde
 
 `InMemorySearchIndex<TDocument>` evaluates the full `SearchFilter` tree and the tenant scope, and exposes `Seed`,
 `WasIndexed`, `WasDeleted`, `IsSearchable`, `IndexedDocumentIds`, `DeletedDocumentIds`, `LastBulkWriteOptions`,
-`SimulateFailure` and `Reset`. `InMemorySearchIndexProvisioner` and `InMemorySearchProviderDescriptor` have
-`SimulateFailure`/`Reset` and `RegisterIndex` respectively.
+`SimulateFailure` and `Reset`. `InMemorySearchIndexProvisioner` exposes `RegisteredIndexNames`, `SimulateFailure`
+and `Reset`; `InMemorySearchProviderDescriptor` exposes `RegisterIndex`, settable ceilings and `Reset`.
 
 ## Pitfalls
 
@@ -392,5 +395,5 @@ with the number.
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Search domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Search/README.md) ·
+[Search packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Search/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

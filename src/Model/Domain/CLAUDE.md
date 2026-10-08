@@ -5,8 +5,8 @@
 > types here. It is pure domain code — no I/O, no system clock, no logging, no DI, no persistence, messaging or HTTP
 > types. Invalid input is a result, validation reports every error, and the package fails loudly rather than silently.
 > It deliberately does not own paging (the repository call site does), wire contracts (`04.Contracts`), domain-event
-> dispatch (`05.Application`) or ORM mapping (`06.Persistence`). Consumers read `SharedKernel.Domain/README.md`; this
-> brain holds only the rules, traps, couplings and decisions the source does not make obvious.
+> dispatch (`05.Application`) or ORM mapping (`06.Persistence`). The API manual is `SharedKernel.Domain/README.md`;
+> this brain holds only the rules, traps, couplings and decisions the source does not make obvious.
 
 ## Packages
 
@@ -15,13 +15,10 @@
 | `SharedKernel.Domain` | Model | All DDD building blocks. References `SharedKernel.Primitives`, `SharedKernel.Core` (guards) and `SharedKernel.Execution` (`TenantId`) only; zero third-party packages (only the private `PublicApiAnalyzers`). |
 | `SharedKernel.Domain.ConsumerVerify` | — (not packable) | Restores the packed `SharedKernel.Domain` through a `PackageReference` and exercises the public API. |
 
-Build settings: `nullable`, `CS1591` and the PublicApiAnalyzers `RS00xx` rules are errors; XML docs and `README.md`
-ship in the package.
-
 ## Public Entry Points
 
 No DI registration and no configuration section — everything is a base class, an interface, an extension method or a
-static factory.
+static factory. Members and examples: `SharedKernel.Domain/README.md`.
 
 | Namespace (`SharedKernel.Domain.`) | Key types |
 | --- | --- |
@@ -54,11 +51,10 @@ implements the interfaces, which is all persistence reads):
 
 **Package boundary**
 
-1. Stay Model tier: reference Foundation packages only, no third-party package (SKTIER001/003). Never reference
-   `SharedKernel.Contracts` (`DomainNeverReferencesContracts`), logging, DI, persistence, messaging or HTTP types.
+1. Reference only `Primitives`, `Core` and `Execution`; never `SharedKernel.Contracts`
+   (`DomainNeverReferencesContracts`), logging, DI, persistence, messaging or HTTP types.
 2. Never read `DateTime.UtcNow`/`DateTimeOffset.UtcNow`; time comes from `IClock`.
-3. Record every public API change in `PublicAPI.Unshipped.txt`; every public member has XML docs. Shipped docs and XML
-   comments never contain work-order IDs or change history.
+3. XML docs and the README never contain work-order IDs or change history.
 4. No static mutable state except the `DomainEventVersionHelper` cache.
 
 **Entities and aggregates**
@@ -144,13 +140,13 @@ implements the interfaces, which is all persistence reads):
 | --- | --- |
 | Value objects validate by an explicit `EnsureValid()` last in the constructor | Base-constructor validation runs before members are assigned; records' generated constructors bypass validation. SK0037 catches the omission |
 | Abstract classes + `GetEqualityComponents()` for value objects, not records | Records' generated equality and `with` bypass validation |
-| Loaded aggregates get their clock attached via `IHasClock`; `Now` throws when absent | Passing time into every method was the largest break; a null clock produces silent wrong data |
+| Loaded aggregates get their clock attached via `IHasClock`; `Now` throws when absent | Aggregate methods need no time parameter; a null clock would produce silent wrong data |
 | `TryCreate` returns `ValidationResult<T>` | Keeps every error; `Result<T>` holds one |
 | `IBusinessRule.Code` is required | Clients branch on codes and localization looks messages up by them |
 | Explicit conversions only on ids and single value objects | Implicit operators let an `OrderId` flow into any `Guid` |
 | `IHasVersion` is the event sequence, not a concurrency token | Concurrency is `xmin`/`EntityVersion` in 06.Persistence |
 | Paging and tracking are repository concerns, not specification concerns | One place validates page input; the same spec serves tracked and untracked reads |
-| `IAggregateFactory`, `IPolicy<T>` and the full audit/soft-delete/tenant base matrix are kept | Explicit user ruling; `AggregateFactoriesMustCreateValidationResults` enforces the factory shape |
+| `IAggregateFactory`, `IPolicy<T>` and the full audit/soft-delete/tenant base matrix are kept | Owner ruling: consumers get every combination without hand-wiring; `AggregateFactoriesMustCreateValidationResults` enforces the factory shape |
 | AOT/trimming is not a constraint here | The JSON factory uses `MakeGenericType` + a compiled constructor delegate; `DomainEventVersionHelper` uses cached attribute lookup. Choose the best consumer API |
 | Domain-event dispatch contract here, implementation in 05.Application | The domain declares `IDomainEventDispatcher`; `AddSharedKernelApplication` registers the native dispatcher |
 
@@ -181,15 +177,12 @@ Inbound references: every Application/Infrastructure package that touches aggreg
 
 ## Testing
 
-- `SharedKernel.Domain/SharedKernel.Domain.Tests` — Unit lane (`Platform.SharedKernel.Unit.slnf`), no Docker.
-  `DomainHardeningTests` and `MoneyHardeningTests` pin previously fixed defects; add to them for every behaviour fix,
-  noting the pre-fix behaviour, and prove the test fails when the fix is reverted.
+- `SharedKernel.Domain/SharedKernel.Domain.Tests` — Unit lane only, no fixtures. Every behaviour fix adds a case to
+  `DomainHardeningTests` or `MoneyHardeningTests` that fails when the fix is reverted.
 - Test rules use their own `Code` (`"test.rule"` where the code is irrelevant); value-object fixtures call `EnsureValid()`.
 - Code snippets in the package README compile and their shown outputs come from running them.
 - `SharedKernel.Domain.ConsumerVerify` consumes the packed package; update it with every public API change.
-- Consumers' helpers live in `src/Testing/SharedKernel.Testing` (`Domain/`): `MoneyFaker`, `FakeExchangeRateProvider`,
-  `BusinessRuleAssertions`, `DomainEventAssertions`, `DomainVersionAssertions`, `SpecificationAssert`,
-  `SpecificationTestBuilder`, plus `FakeClock` for aggregate time.
+- Fakes: `SharedKernel.Testing` (`Domain/` helpers, `FakeClock`) — catalogue in `src/Testing/CLAUDE.md`.
 
 ## Known Limitations
 

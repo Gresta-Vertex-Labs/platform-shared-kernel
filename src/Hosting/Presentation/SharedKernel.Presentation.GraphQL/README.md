@@ -6,7 +6,8 @@
 
 > **HotChocolate v16 server conventions in one call: snake_case filter operations, capped paging, a
 > ProblemDetails-shaped error extension, an introspection switch, and a paged response type that matches
-> `SharedKernel.Contracts`' `PagedList<T>`.**
+> `SharedKernel.Contracts`' `PagedList<T>`.** Pick it when a service exposes a GraphQL schema next to (or instead of)
+> its REST API; REST endpoints use `SharedKernel.Presentation.WebApi`.
 
 | You get | So that |
 | --- | --- |
@@ -40,7 +41,7 @@ version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform
 | Requirement | Value |
 | --- | --- |
 | Target framework | `net10.0` |
-| Tier | Host — reference it from your **Api** project |
+| Tier | Host — reference it from your **Api** / **Worker** project |
 | Depends on | `SharedKernel.Primitives`, `SharedKernel.Contracts`, `HotChocolate.AspNetCore`, `HotChocolate.Data` |
 | Namespaces | `SharedKernel.Presentation.GraphQL.Extensions`, `.Options`, `.Types`, `.Pagination` |
 
@@ -191,5 +192,5 @@ that do not need the platform conventions.
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Presentation domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Presentation/README.md) ·
+[Presentation packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Presentation/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

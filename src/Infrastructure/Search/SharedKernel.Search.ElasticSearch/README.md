@@ -8,6 +8,8 @@
 
 > **The Elasticsearch provider for `SharedKernel.Search.Abstractions`: `ISearchIndex<TDocument>` over read and write
 > aliases, plus aggregations, point-in-time deep pagination and completion suggestions for analytics-heavy work.**
+> Pick it for reporting, exports and large corpora; pick `SharedKernel.Search.Meilisearch` for typo-tolerant
+> user-facing search with browser-held tenant tokens.
 
 | You get | So that |
 | --- | --- |
@@ -357,5 +359,5 @@ that will never move can raise its own ceiling.
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Search domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Search/README.md) ·
+[Search packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Search/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

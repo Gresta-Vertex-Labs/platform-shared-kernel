@@ -1,4 +1,4 @@
-# 14.Presentation — Configuration Reference
+# Presentation — Configuration Reference
 
 Every setting of the four packages, read from the options classes and their validators. Usage is in each package's
 `README.md`; the rules for maintainers are in [`CLAUDE.md`](CLAUDE.md).
@@ -10,7 +10,7 @@ Every setting of the four packages, read from the options classes and their vali
 | [`SharedKernel:Presentation:SignalR`](#sharedkernelpresentationsignalr) | `SharedKernel.Presentation.SignalR.SharedKernelSignalROptions` | `builder.AddSharedKernelSignalR(configure)` |
 | [`SharedKernel:Presentation:Grpc`](#sharedkernelpresentationgrpc) | `SharedKernel.Presentation.Grpc.SharedKernelGrpcOptions` | `builder.AddSharedKernelGrpc(configure)` |
 
-The request context (correlation id, inbound baggage) is configured in `13.ServiceDefaults`, not here: see
+The request context (correlation id, inbound baggage) is configured in `SharedKernel.ServiceDefaults.Security`, not here: see
 [The request context](#the-request-context-sharedkernelservicedefaultssecurity). `SharedKernel.Presentation.Core` has no
 settings. `SharedKernel.Presentation.GraphQL` has no configuration section: `AddSharedKernelGraphQL(options => …)` sets
 `GraphQLOptions` (`EnableFiltering`, `EnableSorting`, `EnablePaging`, `MaxPageSize` 100, `AllowIntrospection`) in code;
@@ -141,8 +141,8 @@ A `null` or empty value turns that header off. A header the endpoint set itself 
 | `UnavailableRetryAfter` | `TimeSpan?` | `null` | Not negative | `Retry-After` on a 503, in whole seconds rounded up; `null` sends none |
 | `PreconditionFailedErrorCodes` | `string[]` | `persistence.concurrency_conflict`, `storage.precondition_failed`, `storage.already_exists` | No empty entry | A `Conflict` with one of these codes, in a request carrying `If-Match` or `If-None-Match`, is answered 412 with its code; every other conflict stays 409. Codes compare ordinally; configured values are added to the defaults |
 
-The three default codes are owned by 06.Persistence (`ConcurrencyVersion.ConflictErrorCode`) and 08.Storage
-(`StorageErrorCodes`); a 00.Governance test pins the literals to those constants.
+The three default codes are owned by Persistence (`ConcurrencyVersion.ConflictErrorCode`) and Storage
+(`StorageErrorCodes`); a Governance test pins the literals to those constants.
 
 ### Constants
 
@@ -265,7 +265,7 @@ These are code, per endpoint or per host, and have no configuration key:
 | Authorization requirements | `[RequireEndpointPermission]`, `[RequireRole]`, `[RequireFreshAuthentication]`, `[RequireAuthenticationMethod]` and their conventions |
 | Required or accepted headers | `RequireIdempotencyKey()`, `AcceptIdempotencyKey()`, `RequireIfMatch()`, `AcceptIfMatch()`, their attributes, the `IdempotencyKey` and `IfMatch<TVersion>` parameters |
 | A body limit or CSP of one endpoint | `WithRequestSizeLimit(bytes)`, `DisableRequestSizeLimit()`, `WithContentSecurityPolicy(policy)` |
-| Rate limiting policies | ASP.NET Core `AddRateLimiter()`, or 13.ServiceDefaults' `AddSharedKernelRateLimiting()` |
+| Rate limiting policies | ASP.NET Core `AddRateLimiter()`, or ServiceDefaults' `AddSharedKernelRateLimiting()` |
 | Request localization | `UseRequestLocalization()` in the `BeforeAuthorization` hook, and an `ILocalizationCatalog` |
 
 `WebApiCorrelationIdOptions` (`SharedKernel:Presentation:WebApi:CorrelationId`) and `SharedKernelWebApiOptions.TrustInboundBaggage`

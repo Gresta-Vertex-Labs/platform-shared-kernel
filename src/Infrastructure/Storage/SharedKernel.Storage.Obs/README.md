@@ -13,7 +13,9 @@
 Application code injects `IFileStorage` / `ITenantFileStorage` exactly as it would for S3. This package adds the OBS
 connection settings and a compatibility profile verified against a live OBS region, on top of the
 [`SharedKernel.Storage.S3`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Storage/SharedKernel.Storage.S3/README.md)
-implementation. OBS and S3 stores can be registered side by side in one service.
+implementation. OBS and S3 stores can be registered side by side in one service. Reference it from your
+**Infrastructure** (or Api/Worker) project when a bucket lives on OBS; for Amazon S3, MinIO and other S3-compatible
+services use `SharedKernel.Storage.S3` directly.
 
 | You get | So that |
 | --- | --- |
@@ -70,6 +72,10 @@ builder.Services.AddHealthChecks().AddSharedKernelReadiness();   // "storage-arc
 ```
 
 ```csharp
+using Microsoft.Extensions.DependencyInjection;
+using SharedKernel.Primitives.Results;
+using SharedKernel.Storage;
+
 public sealed class Archive([FromKeyedServices("archive")] IFileStorage archive)
 {
     public Task<Result<FileReference>> KeepAsync(string key, Stream content, CancellationToken ct) =>
@@ -107,12 +113,22 @@ The profile was verified against a real OBS bucket in `tr-west-1`.
 ### 1. Keep an OBS archive next to S3 stores
 
 ```csharp
+using Microsoft.Extensions.DependencyInjection;
+using SharedKernel.Primitives.Results;
+using SharedKernel.Storage;
+
 IStorageBuilder storage = builder.Services.AddSharedKernelStorage();
 storage.AddS3(builder.Configuration).AddStore("uploads");
 storage.AddObs(builder.Configuration).AddStore("archive");
 
-// Copies between the two stream through the service (different connections):
-Result<FileReference> archived = await uploads.CopyToAsync(key, archive, $"2026/{key}", cancellationToken: ct);
+public sealed class Archiver(
+    [FromKeyedServices("uploads")] IFileStorage uploads,
+    [FromKeyedServices("archive")] IFileStorage archive)
+{
+    // Copies between the two stream through the service (different connections).
+    public Task<Result<FileReference>> ArchiveAsync(string key, CancellationToken ct) =>
+        uploads.CopyToAsync(key, archive, $"2026/{key}", cancellationToken: ct);
+}
 ```
 
 ### 2. Create-only semantics on OBS
@@ -128,6 +144,8 @@ plain `filename`, as browsers do: OBS rejects the `filename*=` form that .NET's
 yourself:
 
 ```csharp
+using System.Net.Http.Headers;
+
 var file = new ByteArrayContent(bytes);
 file.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data") { Name = "\"file\"", FileName = "\"photo.png\"" };
 ```
@@ -198,5 +216,5 @@ and a client-side checksum proves nothing about what OBS stored. Refusing is the
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Storage domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Storage/README.md) ·
+[Storage packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Storage/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

@@ -6,7 +6,9 @@
 ![No DLL](https://img.shields.io/badge/ships-MSBuild%20only-informational)
 
 > **A CSharpier format check that fails CI on unformatted code and stays silent locally, a one-command local format,
-> and the platform's shared `.editorconfig`. Ships no DLL and no analyzers.**
+> and the platform's shared `.editorconfig`. Ships no DLL and no analyzers: it governs layout and style, while
+> [`SharedKernel.Analyzers`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/tools/Governance/SharedKernel.Analyzers/README.md)
+> checks how the kernel APIs are used.**
 
 | You get | So that |
 | --- | --- |
@@ -29,7 +31,7 @@ version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform
 | --- | --- |
 | Target framework | Any; the package ships MSBuild files only (.NET SDK 8 or later) |
 | Tier | Tooling — build only; reference it from every project, usually through `Directory.Build.props` |
-| Depends on | `CSharpier.MsBuild` (MIT) |
+| Depends on | `CSharpier.MsBuild` 1.3.0 (MIT) |
 | Package content | `build/SharedKernel.Linter.props`, `build/SharedKernel.Linter.targets`, `build/config/.editorconfig` |
 
 ## Quick start
@@ -163,5 +165,5 @@ and an `.editorconfig` outside that tree matches nothing. Your committed copy ca
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[00.Governance domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/tools/Governance/README.md) ·
+[Governance packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/tools/Governance/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

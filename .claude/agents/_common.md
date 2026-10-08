@@ -9,7 +9,7 @@ This file is not an agent. Every agent in `.claude/agents/` follows it; an agent
 ## Repository facts
 
 - **Platform.SharedKernel**: a .NET 10 mono-repo of NuGet packages (the shared kernel of a microservice ecosystem). No business logic lives here. The repository is **public**.
-- Capability domains have ids `00.Governance` … `20.Reporting`. Each lives in the folder the root `CLAUDE.md` domain table maps its id to (for example `06.Persistence` → `src/Infrastructure/Persistence`); `{folder}` in these instructions means that folder. Each has `CLAUDE.md` (maintainer rules), `README.md` (overview) and `state-map.md` (living board). Folder numbers are an address and an EventId block, **not** a dependency layer.
+- Capability domains have ids `00.Governance` … `20.Reporting` and a slug (`persistence`). The root `CLAUDE.md` domain table is the only registry: id ↔ slug ↔ folder (for example `06.Persistence` ↔ `persistence` ↔ `src/Infrastructure/Persistence`). `{folder}` in these instructions means that folder; `{slug}` names the agent pair `{slug}-arch-planner` / `{slug}-phase-implementer`. Each has `CLAUDE.md` (maintainer rules), `README.md` (overview) and `state-map.md` (living board). Folder numbers are an address and an EventId block, **not** a dependency layer.
 - Every production project declares a `<SharedKernelTier>` (Foundation, Model, Abstractions, Adapter, Host, Testing, Tooling); `eng/SharedKernelTiers.targets` fails the build (SKTIER000–006) on an illegal reference.
 - All packages ship together at one MinVer version from a git tag. No `<Version>` in any `.csproj`.
 - Sources of truth, read them rather than recalling them:
@@ -24,7 +24,7 @@ This file is not an agent. Every agent in `.claude/agents/` follows it; an agent
 | Package README shape | `docs/package-readme-standard.md` (enforced by `PackageReadmeStandardTests`) |
 | Reference services | `samples/README.md`, `samples/Shop/README.md` (Ordering and Catalog show the four-project shape) |
 
-History is not kept in the repository beyond the one-line entries on the boards; `git log` is the record.
+History is not kept in the repository; `git log` is the record.
 
 ---
 
@@ -32,7 +32,7 @@ History is not kept in the repository beyond the one-line entries on the boards;
 
 **Editing**
 - Edit files with the Read/Edit/Write tools. Never round-trip a repo file through PowerShell `Get-Content`/`Set-Content` (it garbles UTF-8: `●`, `—`, `→`). For scripted edits use Bash tools or .NET with explicit UTF-8.
-- Never commit, push, tag or open a PR unless the user explicitly asks. `/commit` is the commit path.
+- Never commit, push, tag or open a PR unless the user explicitly asks. The `/commit` skill is the commit path.
 - No absolute machine paths, user names, e-mail addresses or other personal data in any tracked file. Paths are repo-relative.
 - Never write a secret, token or real connection string into a tracked file or a log.
 - Stay inside your jurisdiction (the agent file names it). Work that belongs to another domain becomes a note under `## Cross-Domain Dependencies` or a report line for the caller, never an edit.
@@ -47,8 +47,9 @@ History is not kept in the repository beyond the one-line entries on the boards;
 - Public members carry XML doc comments; concrete classes are `sealed` unless designed for inheritance; `CancellationToken` on every async method; no static mutable state.
 
 **Packages and projects**
-- Naming: `SharedKernel.{Capability}[.Abstractions|.{Provider}|.{Provider}.Core|.{Provider}.{Role}]`; fakes in `16.Testing` as `SharedKernel.{Capability}.Testing`; tests nested as `{Project}/{Project}.Tests/`.
-- **MAX_PATH:** before scaffolding or renaming a package, check that every file of it, its `.Tests` project included, stays within 250 characters at the clone root `C:Githubplatform-shared-kernel` (`bash eng/verify-path-lengths.sh`, also run by CI). Shorten the name if it does not. Build output goes to `artifacts/` and does not count.
+- Naming: `SharedKernel.{Capability}[.Abstractions|.{Provider}|.{Provider}.Core|.{Provider}.{Role}]`; fakes as `SharedKernel.{Capability}.Testing` **in the capability folder**, next to the contract they fake; tests nested as `{Project}/{Project}.Tests/`.
+- **Who edits a `.Testing` double:** the capability's own implementer, in the same phase as the contract change it mirrors, following the double rules in `src/Testing/CLAUDE.md` (determinism, faithful failure modes, mandatory tenant scope, no test framework). The `testing` pair owns those rules, the catalogue, `SharedKernel.Testing` and `SharedKernel.Testing.Internal`.
+- **MAX_PATH:** before scaffolding or renaming a package, check that every file of it, its `.Tests` project included, stays within 250 characters with the repo cloned at the reference root the root `CLAUDE.md` names (`bash eng/verify-path-lengths.sh` measures it; CI runs it too). Shorten the name if it does not. Build output goes to `artifacts/` and does not count.
 - A new project goes into `Platform.SharedKernel.slnx` (solution folder = its capability folder), `Platform.SharedKernel.Unit.slnf` (every production project), its test project into exactly one lane filter, and — if packable — `Directory.Packages.props`. The `.csproj` carries `<SharedKernelTier>`, `<Description>`, `<PackageTags>`, a `README.md`, no `<Version>`, and `PackageReference`s without versions (Central Package Management).
 - A new or changed public member goes into that project's `PublicAPI.Unshipped.txt`.
 
@@ -70,7 +71,7 @@ History is not kept in the repository beyond the one-line entries on the boards;
 
 ## The state-map protocol
 
-Boards are **living**: they describe what exists and what is open. Completed work collapses to one line.
+Boards are **living**: they describe what exists and what is open. Completed work is removed, not collapsed; `git log` is the record.
 
 **Domain `{folder}/state-map.md`**: headings exactly, in this order:
 
@@ -78,12 +79,10 @@ Boards are **living**: they describe what exists and what is open. Completed wor
 | --- | --- |
 | `## Legend` | `○` Not started · `◐` In progress · `●` Done · `⚑` Blocked · `⊘` Declined / superseded |
 | `## Package Board` | `\| Package \| Tier \| Status \| Notes \|` — one row per package (planned ones `○`) |
-| `## Phase Key Registry` | `\| Phase key \| Phase \| Status \|` — one row per phase key `SK.{NN}.{PascalName}` |
+| `## Phase Key Registry` | `\| Phase key \| Phase \| Status \|` — one row per **open** phase key `SK.{NN}.{PascalName}`, or `No open phase keys. …` |
 | `## Open Work` | one full entry per open phase (format below), or `None — every phase in this domain is complete.` |
 | `## Blocked` | each blocker with on-disk evidence and what it waits on, or `None.` |
 | `## Cross-Domain Dependencies` | inbound/outbound obligations still open, or `None open.` |
-| `## Completed Phases` | one line per phase, newest first: `- SK.{NN}.{Key} ● {one-line outcome} (WO-NNN/P-NNN) (YYYY-MM-DD)` |
-| `## Changelog` | the **last 5** entries: `- [YYYY-MM-DD] {one line}`; trim the oldest when adding |
 
 Open Work entry:
 
@@ -104,9 +103,11 @@ Open Work entry:
 - [ ] {verifiable criterion}
 ```
 
-Task ID prefixes: `D` design, `S` scaffold, `C` core code, `T` tests, `DO` docs/README. IDs continue from the highest of that prefix already used in the domain (the Phase Key Registry lists ranges).
+Task ID prefixes: `D` design, `S` scaffold, `C` core code, `T` tests, `DO` docs/README. IDs are scoped to the phase and start at `01`.
 
-**Root `state-map.md`**: headings exactly: `## Legend`, `## ID Counters` (next `P-` and next `WO-` id), `## Domain Summary Board` (one row per domain, cells one sentence), `## Open Work`, `## Blocked`, `## Completed Work Orders` (one line per work order, newest first: `- WO-NNN ● {title} (P-aaa–P-bbb) (YYYY-MM-DD)`), `## Changelog` (the **last 10** entries).
+A new phase key must never reuse a closed one. Closed keys are not on the board, so check `git log --oneline -S"SK.{NN}.{PascalName}"` returns nothing before assigning it.
+
+**Root `state-map.md`**: headings exactly: `## Legend`, `## ID Counters` (next `P-` and next `WO-` id), `## Domain Summary Board` (one row per domain, cells one sentence), `## Open Work`, `## Blocked`. No completed or changelog sections.
 
 Root Open Work entry:
 
@@ -123,19 +124,19 @@ Root Open Work entry:
 {What is needed and why; acceptance criteria as `- [ ]` bullets. No file or class names.}
 ```
 
-P-entry status: `○` Pending → `◐` Dispatched (planner wrote the domain phase; `**Phase key:**` filled in) → `●` Complete (domain phase done), or `⊘` Declined (planner or arch-lead, with a one-line reason). When every P-entry of a work order is `●` or `⊘`, the whole WO block is replaced by one line under `## Completed Work Orders`. The root `## Legend` uses the same symbols as the domain boards.
+P-entry status: `○` Pending → `◐` Dispatched (planner wrote the domain phase; `**Phase key:**` filled in) → `●` Complete (domain phase done), or `⊘` Declined (planner or arch-lead, with a one-line reason). When every P-entry of a work order is `●` or `⊘`, the whole WO block is deleted. The root `## Legend` uses the same symbols as the domain boards.
 
 **Who writes what**
 
 | Writer | Writes |
 | --- | --- |
-| `arch-lead` | root `## Open Work` (new WO + P-entries), `## ID Counters` (advance after allocating), root `## Changelog`; root `CLAUDE.md` when a rule, package or edge changes |
+| `arch-lead` | root `## Open Work` (new WO + P-entries), `## ID Counters` (advance after allocating); root `CLAUDE.md` when a rule, package or edge changes |
 | `/dispatch-phase` | root P-entry `○` → `◐` and its `**Phase key:**`, after the planner returns |
-| `{domain}-arch-planner` | its domain `## Open Work` entry, `## Phase Key Registry` row (`○`), planned `## Package Board` rows, `## Cross-Domain Dependencies`, `## Blocked` (with evidence), domain `## Changelog` |
-| `{domain}-phase-implementer` (through `/state-map-phase`) | task states; when the phase is done: removes the Open Work entry, adds the `## Completed Phases` line, sets the registry row `●`, updates `## Package Board`, trims `## Changelog` to 5; then on root: P-entry `●`, collapses a finished WO into `## Completed Work Orders`, refreshes the domain's Summary Board row, trims root `## Changelog` to 10 |
+| `{domain}-arch-planner` | its domain `## Open Work` entry, `## Phase Key Registry` row (`○`), planned `## Package Board` rows, `## Cross-Domain Dependencies`, `## Blocked` (with evidence) |
+| `{domain}-phase-implementer` (through `/state-map-phase`) | task states; when the phase is done: removes the Open Work entry and its registry row, updates `## Package Board`; then on root: P-entry `●`, deletes a finished WO block, refreshes the domain's Summary Board row |
 | `devops-lead` | build work that needs tracking goes into root `## Open Work` as a WO with Domain `eng` (next id from `## ID Counters`) |
 
-Never rewrite another writer's section beyond what this table allows. Never re-expand collapsed history.
+Never rewrite another writer's section beyond what this table allows. Never add history back: outcomes go in the commit message.
 
 ---
 
@@ -158,13 +159,36 @@ Domain `CLAUDE.md` headings, in this order: `## Packages`, `## Public Entry Poin
 
 ---
 
+## Agent file templates
+
+Every domain agent file has the frontmatter `name`, `description` (one paragraph plus **two** `<example>` blocks), `model`, `color`, `memory: project`, then this body. Sections hold only what is specific to the domain; everything shared lives here.
+
+**`{slug}-arch-planner`**
+1. Opening paragraph: read `_common.md`, then `{folder}/CLAUDE.md` and `{folder}/state-map.md`; role (sub-agent of `arch-lead`, jurisdiction `{folder}/`, phase keys `SK.{NN}.*`); one expertise line.
+2. `## Packages and where a proposal lands`: placement table (the proposal is… → it belongs in…), and what never goes into the Abstractions package.
+3. `## Guardrails`: the checks a proposal must pass, citing rule numbers of `{folder}/CLAUDE.md`.
+4. `## Decline patterns`: `Proposal | Why | Redirect`. Declines follow the Planner method below (no board entry).
+5. `## Phase-design conventions`: contract-first, lane placement, test obligations, configuration, version pins, wire formats, README tasks — whatever applies to this domain.
+6. `## Cross-domain couplings`: one line per coupled domain, naming the shared type or name.
+7. Closing line: "Report in the `_common.md` format, with the phase key, task count by prefix, any decline and its rule, blockers and cross-domain notes."
+
+**`{slug}-phase-implementer`**
+1. Opening paragraph: read `_common.md`, then `{folder}/CLAUDE.md` and `{folder}/state-map.md`; role (`/implement-phase {slug} [phase]` hands over one phase; build exactly its tasks); "`{folder}/CLAUDE.md` is the law".
+2. `## Jurisdiction`: what you may edit (`{folder}/`, including the capability's `.Testing` double), the `Package | Tier | Project | Test project (lane)` table, the tier edges you may use.
+3. `## Implementation knowledge`: registration shape, pitfalls that have bitten this domain, logging sub-block.
+4. `## Testing`: lanes, fixtures from `SharedKernel.Testing.Internal`, must-cover behaviours, contract tests.
+5. `## Domain verification`: checks beyond the common build and test steps (consumer-verify harness, samples, integration lane).
+6. Closing line: "Boards, brain, README and report follow `_common.md`. Domain deltas: …" (rule-numbering stability, Logging table, root `CLAUDE.md` changes → ask for `/sync-brain`).
+
+---
+
 ## Planner method (`{domain}-arch-planner`)
 
 1. **Read** the domain `CLAUDE.md` and `state-map.md` in full, and the root `CLAUDE.md` sections the request touches. Confirm the P-entry's intent.
 2. **Analyse**: the capability requested; which package(s) it belongs in; the files that would be created, changed or deleted; dependencies on other phases or domains; risks. Check it against: the tier matrix and declared edges (no SKTIER error), the purity rules, the domain's invariants and hard violations, the logging sub-block, magic-string and options conventions, AOT, the MAX_PATH rule for any new package, and the licence/version of any new third-party dependency.
-3. **Verdict**: accept, reshape, or decline with the rule it violates. A declined request is still recorded (a `⊘` registry row and a Completed Phases line saying why).
+3. **Verdict**: accept, reshape, or decline with the rule it violates. A declined request writes no board entry: report the verdict and the rule, and when the ruling should stop the same request coming back, add a row to the domain `CLAUDE.md` `## Decisions` table.
 4. **Design** the phase: a new phase key `SK.{NN}.{PascalName}`, goal, task table (D/S/C/T/DO), file-level plan where useful, acceptance criteria, and downstream obligations on other domains as notes only; never plan another domain's work.
-5. **Write** the Open Work entry, registry row, planned Package Board rows, Cross-Domain Dependencies and Blocked (with evidence) into the domain `state-map.md`, and one Changelog line.
+5. **Write** the Open Work entry, registry row, planned Package Board rows, Cross-Domain Dependencies and Blocked (with evidence) into the domain `state-map.md`.
 6. **Refresh** the domain `CLAUDE.md` per the protocol above.
 7. **Stay in bounds**: no production code, no test projects, no files outside the domain folder, no root files.
 8. **Report** the phase key, task count, blockers and cross-domain notes (the caller records the phase key on the root P-entry).

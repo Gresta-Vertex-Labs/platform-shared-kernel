@@ -7,6 +7,9 @@
 
 > **JWT bearer authentication for access tokens from any OpenID Connect provider — validation rules pinned,
 > sender-constrained tokens enforced, and the caller exposed as `IUserContext`.**
+>
+> Pick it whenever callers bring an access token from an identity provider. Shared-secret clients use
+> `SharedKernel.Security.ApiKey`, certificate-only clients `SharedKernel.Security.Mtls`.
 
 | You get | So that |
 | --- | --- |
@@ -117,24 +120,16 @@ flowchart TD
     RC -->|"not revoked"| OK
 ```
 
-- **Pinned settings.** `Configure` copies your settings into `JwtBearerOptions` (so a later `Configure` can still add an
-  `IssuerValidator`). `PostConfigure` then pins `MapInboundClaims = false`, `UseSecurityTokenValidators = false`,
-  `ValidateIssuer`, `ValidateAudience`, `ValidateLifetime`, `RequireExpirationTime`, `RequireSignedTokens` and the
-  algorithm allow-list; a validator running after every `PostConfigure` fails startup if any was weakened again (or a
-  `SignatureValidator` was set).
+- **Pinned settings.** `Configure` copies your settings into `JwtBearerOptions` (a later `Configure` can still add an
+  `IssuerValidator`); `PostConfigure` pins `MapInboundClaims = false`, `UseSecurityTokenValidators = false`, the
+  `Validate*`/`Require*` flags and the algorithm allow-list, and startup fails if any is weakened again afterwards.
 - **Discovery is lazy.** Signing keys and the issuer come from `{Authority}/.well-known/openid-configuration` on the first
   request, not at startup.
-- **`IUserContext` is mapped on first use** in the request by the OIDC `IUserContextMapper`, from the claim types in
-  `Claims`. A token is `ActorKind.Service` when a claim matches `ApplicationTokenClaims`, when the subject equals the
-  client id, or when there is a client id but no subject.
-- **Sender constraints are always enforced.** A `cnf.jkt` token needs `Authorization: DPoP` and a valid proof (without
-  `AddDpop` it is rejected); an unbound token sent as `DPoP` is rejected; `Dpop:Mode = Required` rejects unbound
-  tokens. A `cnf.x5t#S256` token needs the same client certificate on the connection, compared in fixed time.
-- **Fail closed.** A throwing replay cache or revocation check rejects the request. A failing revocation *cache* is
-  logged (12106) and bypassed; the check still runs.
-- **Configured lists replace defaults.** Binding appends to a non-empty list, so every collection option starts empty
-  and the documented defaults apply only while it stays empty. `Claims:PermissionClaimTypes = ["permissions"]` stops
-  reading `scope` and `scp`.
+- **`IUserContext` is mapped on first use** from the claim types in `Claims`. A token is `ActorKind.Service` when a claim
+  matches `ApplicationTokenClaims`, when the subject equals the client id, or when there is a client id but no subject.
+- **Sender constraints are always enforced**, with or without `AddDpop`; the `cnf.x5t#S256` certificate comparison runs
+  in fixed time.
+- **Fail closed.** A throwing replay cache or revocation check rejects the request.
 
 ### DPoP proof checks
 
@@ -228,11 +223,7 @@ before `UseAuthentication()`, or every proof fails with `UriMismatch`.
 {
   "SharedKernel": {
     "Security": {
-      "Oidc": {
-        "Authority": "https://idp.example.com",
-        "Audiences": [ "api://payments" ],
-        "Dpop": { "Mode": "Required", "RequireNonce": true, "ProofLifetime": "00:00:30" }
-      }
+      "Oidc": { "Dpop": { "Mode": "Required", "RequireNonce": true, "ProofLifetime": "00:00:30" } }
     }
   }
 }
@@ -264,7 +255,6 @@ builder.Services.AddOidcAuthentication(builder.Configuration);
 var app = builder.Build();
 app.UseMiddleware<MtlsForwardedHeaderMiddleware>();   // before UseAuthentication
 app.UseAuthentication();
-app.UseAuthorization();
 ```
 
 With TLS at Kestrel, use `builder.AddMtlsClientCertificate()` instead. A token bound to a DPoP key and a certificate
@@ -288,12 +278,7 @@ public sealed class RevokedSessionCheck(IRevokedSessionStore sessions) : ITokenR
 public sealed class DistributedTokenRevocationCache(IDistributedCache cache) : ITokenRevocationCache
 {
     public async ValueTask<bool?> GetAsync(string tokenHash, CancellationToken cancellationToken) =>
-        await cache.GetStringAsync($"token-revocation:{tokenHash}", cancellationToken) switch
-        {
-            "1" => true,
-            "0" => false,
-            _ => null,
-        };
+        await cache.GetStringAsync($"token-revocation:{tokenHash}", cancellationToken) switch { "1" => true, "0" => false, _ => null };
 
     public async ValueTask SetAsync(string tokenHash, bool isRevoked, DateTimeOffset expiresAt, CancellationToken cancellationToken) =>
         await cache.SetStringAsync($"token-revocation:{tokenHash}", isRevoked ? "1" : "0",
@@ -318,8 +303,7 @@ For introspection, `TokenRevocationRequest.Token` is the encoded token — a liv
 
 ### 6. Authorize endpoints
 
-Authentication only establishes who is calling. `SharedKernel.Presentation.Core`'s conventions check what the caller
-holds, through `IUserContext`:
+Authentication says who is calling; `SharedKernel.Presentation.Core`'s conventions check what the caller holds:
 
 ```csharp
 using SharedKernel.Presentation.Authorization;
@@ -490,7 +474,6 @@ Replacing only the metadata source is fine; changing a pinned setting in that `P
 | Log `TokenRevocationRequest.Token` | Log `TokenHash` | The token is a live credential |
 | Issue a non-GUID tenant claim | Issue a GUID | Non-GUID values give no tenant (12101) |
 | `RequireHttpsMetadata = false` outside development | Keep `true` | Signing keys could be substituted |
-| Forward client certificates without trusted networks | Restrict the header to the ingress | Any direct path could forge the certificate |
 
 ## Design decisions
 
@@ -503,9 +486,7 @@ added nothing the configuration cannot express and dragged in extra dependencies
 **Why is the RFC 8705 check here and not in the mTLS package?** Certificate binding is a property of the token being
 validated, and it keeps the mTLS package free of token concerns.
 
-**Why DPoP nonces through Data Protection?** Services already share a key ring; there is no second secret to manage.
-
-**Why one issuer per scheme?** Not requested so far. A service that needs several issuers registers another JWT bearer
+**Why one issuer per scheme?** It keeps one mapper per scheme. A service that needs several issuers registers another JWT bearer
 scheme with its own `IUserContextMapper`.
 
 **Limits.** A signed tenant claim proves the issuer asserted it, not that the subject belongs to the tenant. With
@@ -515,5 +496,5 @@ pinned list (`IssuerValidator`, `IssuerSigningKeyResolver`, the metadata source)
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Security domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Security/README.md) ·
+[Security packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Security/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

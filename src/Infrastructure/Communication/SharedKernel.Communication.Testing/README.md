@@ -7,7 +7,9 @@
 
 > **Test doubles for a service's own REST and gRPC clients: a stub server that runs a typed client's whole pipeline
 > with no network, fake unary calls for a mocked gRPC client, and a gRPC `ServerCallContext`.** Test retries,
-> idempotency keys, caller headers and error mapping exactly as they run in production.
+> idempotency keys, caller headers and error mapping exactly as they run in production. To test one
+> `DelegatingHandler` on its own, `FakeHttpMessageHandler` in `SharedKernel.Testing` is the lighter fit; to test a
+> server-side gRPC method that reads `HttpContext`, use `SharedKernel.Presentation.Testing`.
 
 | You get | So that |
 | --- | --- |
@@ -176,6 +178,13 @@ stub.RespondAsync(HttpMethod.Get, "/stock/sku-2", async (_, _, ct) =>
 ### 4. Mock a generated gRPC client
 
 ```csharp
+using Grpc.Core;
+using NSubstitute;
+using SharedKernel.Communication;                  // ToResultAsync()
+using SharedKernel.Primitives.Errors;
+using SharedKernel.Primitives.Results;
+using SharedKernel.Testing.Communication;
+
 var client = Substitute.For<Inventory.InventoryClient>();   // generated methods are virtual; any mocking library works
 client.GetStockAsync(Arg.Any<GetStockRequest>(), Arg.Any<CallOptions>())
     .Returns(GrpcCalls.Failure<StockReply>(Error.NotFound("inventory.sku_not_found", "No such SKU.")));
@@ -236,7 +245,7 @@ Every `Respond*`/`Throw` returns the stub, for chaining.
 ## Testing
 
 This package is the test double; its self-tests live in
-[`SharedKernel.Communication.Testing.Tests`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Communication/SharedKernel.Communication.Testing/SharedKernel.Communication.Testing.Tests),
+[`SharedKernel.Communication.Testing.Tests`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/src/Infrastructure/Communication/SharedKernel.Communication.Testing/SharedKernel.Communication.Testing.Tests),
 which run the stub under a real `AddRestClient` client and read the gRPC fakes back through the real
 `ToResultAsync()`. Pair it with
 [`SharedKernel.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Testing/README.md):
@@ -257,4 +266,6 @@ which run the stub under a real `AddRestClient` client and read the gRPC fakes b
 
 ---
 
-Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) · [16.Testing domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/README.md) · [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
+Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
+[Communication packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Communication/README.md) ·
+[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)

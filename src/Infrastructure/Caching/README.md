@@ -3,25 +3,26 @@
 # SharedKernel Caching
 
 **Hybrid in-memory + Redis caching for multi-tenant .NET services — each value computed once, tenants kept apart by
-construction — plus Redis locks with fencing tokens, hash storage and loss-tolerant Pub/Sub over one shared
-connection.**
+construction — plus Redis locks with fencing tokens, hash storage and Pub/Sub over one shared connection.**
 
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](../../../LICENSE)
 ![Packages: 7](https://img.shields.io/badge/packages-7-informational)
-[![FusionCache](https://img.shields.io/badge/FusionCache-2.6-orange)](https://github.com/ZiggyCreatures/FusionCache)
-[![StackExchange.Redis](https://img.shields.io/badge/StackExchange.Redis-2.13-DC382D?logo=redis&logoColor=white)](https://github.com/StackExchange/StackExchange.Redis)
+![Tier: Abstractions](https://img.shields.io/badge/tier-Abstractions-1f6feb)
+![Tier: Adapter](https://img.shields.io/badge/tier-Adapter-6f42c1)
+![Tier: Testing](https://img.shields.io/badge/tier-Testing-e36209)
+[![FusionCache 2.6](https://img.shields.io/badge/FusionCache-2.6-orange)](https://github.com/ZiggyCreatures/FusionCache)
+[![StackExchange.Redis 2.13](https://img.shields.io/badge/StackExchange.Redis-2.13-DC382D?logo=redis&logoColor=white)](https://github.com/StackExchange/StackExchange.Redis)
 
-[Packages](#packages) · [How it fits together](#how-it-fits-together) · [Get started](#get-started) ·
-[See it run](#see-it-run) · [Guarantees](#guarantees)
+[What you get](#what-you-get) · [Packages](#packages) · [How it fits together](#how-it-fits-together) · [Get started](#get-started) · [See it run](#see-it-run) · [Guarantees](#guarantees)
 
-<sub>📂 <code>src/Infrastructure/Caching</code> · domain <code>02.Caching</code> · <a href="../../../docs/packages.md">all packages by tier</a></sub>
+<sub>📂 <code>src/Infrastructure/Caching</code> · <a href="../../../docs/packages.md">all packages by tier</a> · <a href="../../../README.md">Platform.SharedKernel</a></sub>
 
 </div>
 
 ---
 
-## What this domain gives you
+## What you get
 
 - **One read path that survives load.** `ICacheService.GetOrSetAsync` runs the factory once per key however many
   callers miss together, keeps a cached `null` or `0` distinct from a miss (`CacheLookup<T>`), and can serve a stale
@@ -38,24 +39,21 @@ connection.**
 
 ## Packages
 
-| Package | Tier | When you need it |
-| --- | --- | --- |
-| [SharedKernel.Caching.Abstractions](SharedKernel.Caching.Abstractions/README.md) | Abstractions | Always — application code injects `ICacheService`, `ITenantCacheService`, `ICacheKeyProvider` and `IDistributedLockService` from here. No provider dependency |
-| [SharedKernel.Caching.FusionCache](SharedKernel.Caching.FusionCache/README.md) | Adapter | The cache itself: memory layer, stampede protection, fail-safe, Brotli compression, encryption at rest, startup warmup, the `cache` probe |
-| [SharedKernel.Caching.Redis.Core](SharedKernel.Caching.Redis.Core/README.md) | Adapter | Any Redis package — the one shared connection (`AddRedisConnection`) and the `redis` probe |
-| [SharedKernel.Caching.Redis](SharedKernel.Caching.Redis/README.md) | Adapter | Instances of a service should share entries: Redis as the distributed layer and backplane (`AddRedisL2`) |
-| [SharedKernel.Caching.Redis.DistributedLocking](SharedKernel.Caching.Redis.DistributedLocking/README.md) | Adapter | Only one replica may run a section or claim a job occurrence (`AddRedisDistributedLocking`) |
-| [SharedKernel.Caching.Redis.HashStore](SharedKernel.Caching.Redis.HashStore/README.md) | Adapter | Sessions, settings snapshots or counters stored as Redis hashes (`IRedisHashService`, `ITypedHashStore<T>`) |
-| [SharedKernel.Caching.Redis.PubSub](SharedKernel.Caching.Redis.PubSub/README.md) | Adapter | Loss-tolerant, at-most-once signals between instances (`IRedisChannelService`) — never for work that must happen |
+| Package | Tier | Reference it from | Use it for |
+| --- | --- | --- | --- |
+| [SharedKernel.Caching.Abstractions](SharedKernel.Caching.Abstractions/README.md) | Abstractions | Application | `ICacheService`, `ITenantCacheService`, `CachePolicy`, `ICacheKeyProvider`, `IDistributedLockService` — no provider dependency |
+| [SharedKernel.Caching.FusionCache](SharedKernel.Caching.FusionCache/README.md) | Adapter | Infrastructure | The cache: memory layer, stampede protection, fail-safe, Brotli compression, encryption at rest, warmup, the `cache` probe |
+| [SharedKernel.Caching.Redis.Core](SharedKernel.Caching.Redis.Core/README.md) | Adapter | Infrastructure | The one shared Redis connection (`AddRedisConnection`) and the `redis` probe — needed by every Redis package |
+| [SharedKernel.Caching.Redis](SharedKernel.Caching.Redis/README.md) | Adapter | Infrastructure | Redis as the distributed layer and backplane, so instances share entries (`AddRedisL2`) |
+| [SharedKernel.Caching.Redis.DistributedLocking](SharedKernel.Caching.Redis.DistributedLocking/README.md) | Adapter | Infrastructure | Only one replica runs a section or claims a job occurrence (`AddRedisDistributedLocking`) |
+| [SharedKernel.Caching.Redis.HashStore](SharedKernel.Caching.Redis.HashStore/README.md) | Adapter | Infrastructure | Sessions, settings snapshots or counters as Redis hashes (`IRedisHashService`, `ITypedHashStore<T>`) |
+| [SharedKernel.Caching.Redis.PubSub](SharedKernel.Caching.Redis.PubSub/README.md) | Adapter | Infrastructure | Loss-tolerant, at-most-once signals between instances (`IRedisChannelService`) — never for work that must happen |
+| [SharedKernel.Caching.Testing](SharedKernel.Caching.Testing/README.md) | Testing | test projects | `AddFakeCachingServices()`, `AddFakeTenantCacheService()` — in-memory cache and lock fakes |
+| [SharedKernel.Caching.Redis.Testing](SharedKernel.Caching.Redis.Testing/README.md) | Testing | test projects | `AddFakeRedisServices()` — in-memory hash store and Pub/Sub fakes |
 
-Related packages (the `.Testing` test double lives in this folder):
-
-| Package | Adds |
-| --- | --- |
-| [SharedKernel.Application.Pipeline.Caching](../../Application/SharedKernel.Application.Pipeline.Caching/README.md) | `app.WithCaching()` — caches `ICacheableQuery` results and evicts after `IInvalidatesCache` commands, over `ICacheService` |
-| [SharedKernel.ServiceDefaults](../../Hosting/ServiceDefaults/SharedKernel.ServiceDefaults/README.md) | `AddHealthChecks().AddSharedKernelReadiness()` maps the `cache` and `redis` probes to `/health/ready`; `WithCachingTelemetry()` exports the `SharedKernel.Caching` meter and traces |
-| [SharedKernel.Caching.Testing](./SharedKernel.Caching.Testing/README.md) | `AddFakeCachingServices()`, `AddFakeTenantCacheService()` — in-memory cache and lock fakes, no Redis |
-| [SharedKernel.Caching.Redis.Testing](./SharedKernel.Caching.Redis.Testing/README.md) | `AddFakeRedisServices()` — in-memory hash store and Pub/Sub fakes |
+Start with `Caching.FusionCache`; add `Redis.Core` and `Redis` when instances should share entries, and a Redis role
+package only for the role you need. Query caching in the request pipeline is
+[`SharedKernel.Application.Pipeline.Caching`](../../Application/SharedKernel.Application.Pipeline.Caching/README.md).
 
 ## How it fits together
 
@@ -83,35 +81,26 @@ flowchart TB
     Locks --> Core
     Hash --> Core
     PubSub --> Core
-    Core --> R[(Redis)]
+    Core --> R[("Redis")]
 ```
 
 - **Any subset.** A service with only an in-process cache references no Redis package; a lock-only worker needs no
   cache. Every Redis registration throws at startup when `AddRedisConnection` has not been called first.
-- **Role packages never reference each other.** Each Redis package depends only on `Redis.Core` (and the abstractions);
-  `Redis` and `FusionCache` never reference each other. The build enforces it.
-- **Caching is not messaging.** No caching package references `SharedKernel.Messaging.*` and vice versa. Pub/Sub stays
-  here because its contract is deliberately weaker than durable messaging.
+- **Redis down is not the service down.** The cache continues from memory behind FusionCache's circuit breakers; locks
+  throw `DistributedLockUnavailableException` instead of pretending the lock is held elsewhere.
+- **Role packages never reference each other.** Each Redis package depends only on `Redis.Core` and the abstractions.
+- **Caching is not messaging.** Pub/Sub stays here because its contract is deliberately weaker than the durable
+  [Messaging](../Messaging/README.md) packages.
 
 ## Get started
 
-```json
-{
-  "SharedKernel": {
-    "Caching": {
-      "ServiceName": "orders",
-      "Redis": { "ConnectionString": "redis.internal:6380", "Ssl": true }
-    }
-  }
-}
+```xml
+<PackageReference Include="SharedKernel.Caching.FusionCache" />
+<PackageReference Include="SharedKernel.Caching.Redis" />
+<PackageReference Include="SharedKernel.Caching.Redis.DistributedLocking" />
 ```
 
 ```csharp
-using SharedKernel.Caching.FusionCache.Extensions;
-using SharedKernel.Caching.Redis.Core.Extensions;
-using SharedKernel.Caching.Redis.DistributedLocking.Extensions;
-using SharedKernel.Caching.Redis.Extensions;
-
 builder.Services.AddRedisConnection(builder.Configuration);    // SharedKernel:Caching:Redis — once
 
 builder.Services
@@ -121,11 +110,6 @@ builder.Services
     .AddRedisDistributedLocking();                             // IDistributedLockService
 
 builder.Services.AddHealthChecks().AddSharedKernelReadiness(); // "cache" and "redis" on /health/ready
-```
-
-```csharp
-using SharedKernel.Caching.Abstractions;
-using SharedKernel.Execution.Tenancy;
 
 public sealed class InvoiceReader(ITenantCacheService cache, IInvoiceRepository invoices)
 {
@@ -136,33 +120,43 @@ public sealed class InvoiceReader(ITenantCacheService cache, IInvoiceRepository 
 }
 ```
 
-Each package README has the full configuration table, recipes and pitfalls. Start with
-[SharedKernel.Caching.Abstractions](SharedKernel.Caching.Abstractions/README.md) for the contracts.
+Configuration is `SharedKernel:Caching` (`ServiceName`, required) and `SharedKernel:Caching:Redis`
+(`ConnectionString`, `Ssl`, …). The full setup is in the
+[SharedKernel.Caching.FusionCache Quick start](SharedKernel.Caching.FusionCache/README.md#quick-start).
 
 ## See it run
 
-The Shop's [Catalog](../../../samples/Shop/Catalog/) runs two replicas on FusionCache with a Redis L2 and backplane,
-Redis Pub/Sub and the query-caching pipeline stage (`WithCaching()`); [Inventory](../../../samples/Shop/Inventory/)
-uses the hash store and distributed locks. [`consumer-verify/SharedKernel.Caching.ConsumerVerify`](consumer-verify/SharedKernel.Caching.ConsumerVerify/Program.cs)
-consumes all seven packages as packed NuGet packages and starts five real hosts against a Testcontainers Redis: L1
-only, L1 + Redis L2, locking only, hash store only and Pub/Sub only.
+- [samples/Shop](../../../samples/Shop/README.md) — Catalog runs two replicas on FusionCache with the Redis layer and
+  Redis Pub/Sub, and its end-to-end tests prove the backplane across replicas; Inventory uses `Redis.Core`, the hash
+  store and distributed locks so no SKU is oversold under concurrency across replicas.
+
+  ```bash
+  samples/Shop/build.sh                      # pack the kernel, build the Shop  (build.ps1 on Windows)
+  dotnet run --project samples/Shop/Shop.AppHost --launch-profile http
+  ```
+
+- [`consumer-verify/SharedKernel.Caching.ConsumerVerify`](consumer-verify/SharedKernel.Caching.ConsumerVerify/Program.cs)
+  consumes all seven packages as packed NuGet packages and starts five hosts against a real Redis: L1 only, L1 +
+  Redis L2, locking only, hash store only and Pub/Sub only.
 
 ## Guarantees
 
-| Guarantee | How |
+| Guarantee | How it is held |
 | --- | --- |
-| **One factory run per key** | `GetOrSetAsync` serialises concurrent misses; a value the factory marks with `SkipCaching()` is returned only to the caller whose factory ran, never to waiters |
-| **No cross-tenant reads or evictions** | Tenant keys are `{service}:@{tenant}:{entity}:{id}`, tenant tags `@{tenant}:{tag}`; caller parts are escaped and global tags may not start with `@` |
-| **No key collisions between services** | `ServiceName` has no default and is validated at startup; it prefixes every key |
-| **No silent outages** | Locks throw `DistributedLockUnavailableException`; an unreachable Redis is logged, fails fast by default, and the cache continues from memory behind FusionCache's circuit breakers |
-| **Loss before expiry** | A lock that cannot be extended is reported lost at five sixths of its expiry, before the key can expire on the server |
-| **No secrets or ids in telemetry** | Metrics, spans and logs carry `{service}:{entity}` only; connection strings never appear in logs, validation messages or probe descriptions |
-| **Values bound to their key** | `AddCacheEncryption()` encrypts with AES-256-GCM using the cache key as associated data; a value copied to another key or tenant fails to decrypt and is a miss |
+| **One factory run per key**, however many callers miss together | `FusionCacheServiceTests` (`GetOrSetAsync_StampedeProtection_FactoryCalledExactlyOnce`), `NullableFactoryTests` |
+| **No cross-tenant reads or evictions** — tenant keys are `{service}:@{tenant}:{entity}:{id}`, caller parts escaped | `TenantCacheServiceTests`, `CacheKeyFormatTests` |
+| **No key collisions between services** — `ServiceName` has no default and is validated at startup | `CachingDiRegistrationTests`, `CacheKeyFormatTests` |
+| **Invalidation reaches every instance** | `CrossInstanceTagInvalidationTests`, `RedisL2IntegrationTests` against a real Redis |
+| **Locks report outages and loss**, before the key can expire on the server | `LockStoreUnavailableTests`, `RedisDistributedLockLossTests`, `RedisDistributedLockServiceContractTests` |
+| **No secrets or ids in telemetry** | `TelemetryRedactionTests` |
+| **Values bound to their key** — AES-256-GCM with the cache key as associated data | `CacheEncryptionAtRestTests` |
+| **Redis packages stay in their lane** — role packages reference only `Redis.Core`; Pub/Sub never stands in for messaging | Architecture rules in `RedisTopologyRules` (incl. `PubSubNeverReferencesMessaging`); analyzer `SK0007` |
 
-**Deliberately out of scope:** an invalidation bus (the backplane does it), sliding expiration, RedLock, and durable
-messaging (see [07.Messaging](../Messaging/README.md)).
+**Out of scope:** an invalidation bus (the backplane does it), sliding expiration, RedLock, and durable messaging (see
+[Messaging](../Messaging/README.md)).
 
 ---
 
-**For maintainers:** design rules and invariants live in [CLAUDE.md](CLAUDE.md); phase history in
-[state-map.md](state-map.md).
+<div align="center">
+<sub>Part of <a href="../../../README.md">Platform.SharedKernel</a> · <a href="../../../docs/packages.md">all packages</a> · MIT license</sub>
+</div>

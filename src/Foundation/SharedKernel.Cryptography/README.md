@@ -9,10 +9,11 @@
 > **Encryption, signing, password hashing, secure randomness and one-time passwords for .NET services, with safe
 > defaults and nothing to tune by accident.**
 
-Cryptography goes wrong in the details: a reused nonce, a missing authentication tag, a fast hash on a password, a `==`
-on a token, an algorithm chosen by the attacker. Every primitive here picks a vetted algorithm, hides its parameters and
-returns failures as values. Keys come from providers you register, so the same code runs with in-memory keys in a test
-and a key management service in production.
+Every primitive picks a vetted algorithm, hides its parameters and returns failures as values; keys come from providers
+you register, so the same code runs on in-memory keys in a test and a key service in production. Reach for the
+[Argon2](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Foundation/SharedKernel.Cryptography.Argon2/README.md)
+or [Azure Key Vault](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Foundation/SharedKernel.Cryptography.KeyVault.Azure/README.md)
+companions only for Argon2id hashing or keys held in Key Vault.
 
 | You get | So that |
 | --- | --- |
@@ -50,11 +51,7 @@ version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform
 | Tier | Foundation — reference it from **any** project |
 | Depends on | `SharedKernel.Primitives`, `SharedKernel.Configuration`; nothing outside the .NET base class library |
 | Namespaces | `SharedKernel.Cryptography` (+ `.Extensions`, `.Symmetric`, `.Envelope`, `.KeyDerivation`, `.Signing`, `.Hashing`, `.Random`, `.Totp`, `.Options`) |
-
-| Companion package | Adds |
-| --- | --- |
-| [`SharedKernel.Cryptography.Argon2`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Foundation/SharedKernel.Cryptography.Argon2/README.md) | Argon2id password hashing |
-| [`SharedKernel.Cryptography.KeyVault.Azure`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Foundation/SharedKernel.Cryptography.KeyVault.Azure/README.md) | Encryption and signing keys held in Azure Key Vault |
+| Companions | `SharedKernel.Cryptography.Argon2` (Argon2id hashing), `SharedKernel.Cryptography.KeyVault.Azure` (keys in Azure Key Vault) |
 
 ## Quick start
 
@@ -169,6 +166,9 @@ Report vulnerabilities privately as described in the
 Add the new key to your provider and make it current, then move stored payloads in a background job:
 
 ```csharp
+using SharedKernel.Cryptography.Symmetric;
+using SharedKernel.Primitives.Results;
+
 await foreach ((Guid patientId, string stored) in store.ReadAllAsync(stoppingToken))
 {
     if (!EncryptedPayload.TryParse(stored, out EncryptedPayload? payload)
@@ -189,6 +189,7 @@ Retire the old key only when nothing is left on it; a payload whose key is gone 
 
 ```csharp
 using SharedKernel.Cryptography.KeyDerivation;
+using SharedKernel.Cryptography.Symmetric;
 
 public sealed class TenantEncryption(IEncryptionKeyProvider rootKeys)
 {
@@ -282,6 +283,10 @@ during a rotation window).
 ### 6. Sign and verify with an asymmetric key
 
 ```csharp
+using System.Security.Cryptography;
+using SharedKernel.Cryptography.Extensions;
+using SharedKernel.Cryptography.Signing;
+
 builder.Services.AddSingleton<ISigningKeyProvider>(new InMemorySigningKeyProvider(
 [
     SigningKey.FromECDsa("receipts", ECDsa.Create(ECCurve.NamedCurves.nistP256)),     // ES256
@@ -302,6 +307,10 @@ service for keys and signatures.
 ### 7. Add authenticator-app two-factor
 
 ```csharp
+using System.Security.Cryptography;
+using SharedKernel.Cryptography.Symmetric;
+using SharedKernel.Cryptography.Totp;
+
 byte[] secret = TotpSecret.Generate(random);                                  // 20 bytes
 Uri qrCode = TotpProvisioningUri.Build("Contoso", email, secret);             // otpauth:// for a QR code
 EncryptedPayload stored = await encryption.EncryptAsync(secret, SecretContext(userId), ct);   // never store it plain
@@ -332,6 +341,8 @@ Wrap your client in an `IEncryptionKeyProvider` (reject key ids your service nev
 payloads and may be forged), then cache it:
 
 ```csharp
+using SharedKernel.Cryptography.Symmetric;
+
 builder.Services.AddSingleton<KeyServiceEncryptionKeyProvider>();
 builder.Services.AddSingleton<IEncryptionKeyProvider>(sp => new CachedEncryptionKeyProvider(
     sp.GetRequiredService<KeyServiceEncryptionKeyProvider>(),
@@ -441,6 +452,9 @@ the real registration:
 Or use a real service with a random in-memory key:
 
 ```csharp
+using System.Security.Cryptography;
+using SharedKernel.Cryptography.Symmetric;
+
 var encryption = new AesGcmEncryptionService(new StaticEncryptionKeyProvider(
     "test", [new CryptographicKey("test", RandomNumberGenerator.GetBytes(32))]));
 ```
@@ -482,5 +496,5 @@ and attempt throttling or replay stores (they need a shared store your service o
 ---
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[Core domain](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Foundation/README.md) ·
+[Foundation packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Foundation/README.md) ·
 [MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
