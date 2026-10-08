@@ -6,7 +6,6 @@
 > built over `IUserContext` by `13.ServiceDefaults`' `AddSharedKernelRequestContext()`. It does not own endpoint
 > authorization attributes (`14.Presentation`'s `SharedKernel.Presentation.Core`), tenant resolution middleware
 > (`13.ServiceDefaults`' `SharedKernel.MultiTenancy`) or cryptographic primitives (`01.Core`'s `SharedKernel.Cryptography`).
-> Consumers read each package's `README.md`; this file holds the rules, traps and couplings the source does not make obvious.
 
 ## Packages
 
@@ -18,28 +17,26 @@
 | `SharedKernel.Security.Mtls` | Host | Client-certificate authentication through an `IMtlsCertificateValidator`; private-CA trust |
 | `SharedKernel.Security.Totp` | Host | TOTP enrollment, challenge and recovery-code redemption; session-bound step-up claims transformation |
 
-Provider packages never reference each other. Every package tracks its public API (`PublicAPI.*.txt`, RS0016/RS0017 as errors).
+Provider packages never reference each other. Every package tracks `PublicAPI.*.txt`.
 
 ## Public Entry Points
 
+Overloads, options and defaults: each package's `README.md`.
+
 - **Abstractions** — inject `IUserContext` only at the HTTP edge; `UserContextResolver.Resolve` maps a principal through
   the registered `IUserContextMapper`s. Placeholders: `AnonymousUserContext.Instance`, `SystemUserContext` for worker hosts.
-- **Oidc** — `services.AddOidcAuthentication(configuration)` binds `OidcAuthenticationOptions`
-  (`SharedKernel:Security:Oidc`: `Authority`, `Audiences`, `ValidIssuers`, `ValidAlgorithms`, `ValidTokenTypes`,
-  `ClockSkew`, `Claims` (`OidcClaimOptions`, incl. `TenantClaimType`, `PermissionClaimTypes`, `ApplicationTokenClaims`),
-  `Dpop` (`DpopOptions`: `Mode`, `RequireNonce`, `ProofLifetime`), `Revocation` (`NotRevokedCacheDuration`)). Returns
-  `OidcAuthenticationBuilder`: `.AddDpop<TReplayCache>()` (`IDpopReplayCache`), `.AddTokenRevocation<TCheck>()`
-  (`ITokenRevocationCheck`), `.AddTokenRevocationCache<TCache>()` (`ITokenRevocationCache`). Scheme `Bearer`
-  (`OidcAuthenticationDefaults`).
-- **ApiKey** — `AddManagedApiKeyAuthentication<TStore>(k => k.Prefix = "…")` (`IApiKeyStore`, `ApiKeyGenerator`,
-  `ManagedApiKeyOptions`) or `AddApiKeyAuthentication<TValidator>()` (`IApiKeyValidator`). Scheme `ApiKey`, forwarding
-  scheme `ApiKeyOrDefault` becomes the default, header `X-Api-Key` (`ApiKeyAuthenticationDefaults`).
-- **Mtls** — `AddMtlsAuthentication<TValidator>(o => …)` (`IMtlsCertificateValidator`, `MtlsAuthenticationOptions`).
-  Scheme `Certificate`; never made the default — select it per endpoint.
+- **Oidc** — `services.AddOidcAuthentication(configuration)` (`OidcAuthenticationOptions` at `SharedKernel:Security:Oidc`)
+  → `OidcAuthenticationBuilder`: `.AddDpop<TReplayCache>()`, `.AddTokenRevocation<TCheck>()`,
+  `.AddTokenRevocationCache<TCache>()`. Scheme `Bearer` (`OidcAuthenticationDefaults`).
+- **ApiKey** — `AddManagedApiKeyAuthentication<TStore>(k => k.Prefix = "…")` (`IApiKeyStore`) or
+  `AddApiKeyAuthentication<TValidator>()` (`IApiKeyValidator`). Scheme `ApiKey`; forwarding scheme `ApiKeyOrDefault`
+  becomes the default; header `X-Api-Key` (`ApiKeyAuthenticationDefaults`).
+- **Mtls** — `AddMtlsAuthentication<TValidator>(o => …)` (`IMtlsCertificateValidator`). Scheme `Certificate`; never the
+  default — select it per endpoint.
 - **Totp** — `AddSharedKernelCryptography(configuration).AddTotpStepUp<TStepUpStore, TRecoveryCodeStore>(o => …)`
-  (`ITotpStepUpStore`, `IRecoveryCodeStore`, `TotpStepUpOptions.FreshnessWindow` 1 min–24 h); then
-  `TotpEnrollmentService`, `TotpChallengeService`, `TotpStepUpClaimsTransformation`. The consumer also registers an
-  `ITotpReplayGuard` (shared by every replica) and optionally an `ITotpAttemptThrottle`.
+  (`TotpStepUpOptions.FreshnessWindow`, 1 min–24 h); then `TotpEnrollmentService`, `TotpChallengeService`. The consumer
+  also registers an `ITotpReplayGuard` (shared by every replica) and optionally an `ITotpAttemptThrottle`
+  (both `SharedKernel.Cryptography`).
 
 ## Rules & Invariants
 
@@ -72,7 +69,7 @@ Provider packages never reference each other. Every package tracks its public AP
 
 | Decision | Why |
 | --- | --- |
-| Generic OIDC only; no Azure B2C / Microsoft.Identity.Web helper | `Authority` covers Entra ID, B2C and External ID; the dependency dragged a vulnerable Data Protection version |
+| Generic OIDC only; no Azure B2C / Microsoft.Identity.Web helper | `Authority` covers Entra ID, B2C and External ID; Microsoft.Identity.Web would add a dependency (and its Data Protection version) for nothing |
 | No multi-issuer support | Not requested; a service needing several issuers registers a second JWT scheme itself |
 | `IUserContextMapper` per scheme instead of chained `IUserContext` factories | A descriptor-capture chain is order dependent and drops type- or instance-registered contexts |
 | Managed API keys hash with SHA-256, not a password hash | 190-bit secret; a slow hash adds per-request latency and no security |
@@ -95,18 +92,18 @@ Block **12000–12999** (`LoggingEventIdRanges`), 100-wide sub-blocks:
 
 ## Cross-Domain Couplings
 
-- **01.Core** — `SharedKernel.Execution` (`ActorKind`, `TenantId`); `SharedKernel.Cryptography` (ApiKey random/hash, Totp `ITotpVerifier`, `IOneWayHasher`); `SharedKernel.Configuration` (`ISectionBoundOptions`); `IClock`.
+- **01.Core** — `SharedKernel.Execution` (`ActorKind`, `TenantId`); `SharedKernel.Cryptography` (ApiKey random/hash, Totp `ITotpVerifier`, `ITotpReplayGuard`, `ITotpAttemptThrottle`, `IOneWayHasher`); `IClock`.
 - **13.ServiceDefaults** — `ServiceDefaults.Security`'s `AddSharedKernelRequestContext()` builds `IRequestContext` from `IUserContext` (`UserId = SubjectId ?? ClientId`, same `ActorKind` and `TenantId?`). `SharedKernel.MultiTenancy`'s claim strategy resolves the tenant through the registered mappers (no Oidc reference). `ServiceDefaults.Security.Mtls` calls `IMtlsCertificateValidator` during the TLS handshake and forwards certificates that Oidc's RFC 8705 check reads.
 - **14.Presentation** — `SharedKernel.Presentation.Core`'s `[RequireRole]`, `[RequireEndpointPermission]`, `[RequireFreshAuthentication]`, `[RequireAuthenticationMethod(…, MaxAgeSeconds = n)]` resolve an `IUserContext` from the principal being authorized via `UserContextResolver.Resolve` (not the scoped registration). On a SignalR connection, only a hub-method requirement with a maximum age ends a step-up; a gRPC stream is authorized once and checks `GetAuthenticationMethodTime` itself.
 - **06.Persistence** — audit columns store `SubjectId` (256 chars) or the service name.
-- **00.Governance** — DPoP parsing only in `SharedKernel.Security.Oidc`; `ConnectionInfo.ClientCertificate` getter only in `SharedKernel.Security.Mtls`; secure-default tests on `MtlsAuthenticationOptions` and the configured `JwtBearerOptions`; no singleton security context.
+- **00.Governance** — `SecurityArchitectureRules`: `DpopProofValidationNeverDuplicatedOutsideOidc`, `ClientCertificateAccessNeverDuplicatedOutsideMtls`, `NoSingletonRegistrationOfSecurityContextTypes`; `SecureDefaultsAssertion` tests on `MtlsAuthenticationOptions` and the configured `JwtBearerOptions`; SK0031 (raw security-context constructor injection).
 
 ## Testing
 
 - Each package has a nested `*.Tests` project, all in the **Unit** lane (`Platform.SharedKernel.Unit.slnf`).
 - Authentication is tested end to end through `TestServer` with real signed tokens, DPoP proofs and certificates; a hand-built `ClaimsPrincipal` cannot catch claim renaming or handler wiring. No network: post-configure `JwtBearerOptions.Configuration` with an `OpenIdConnectConfiguration` holding the test keys.
 - Time through `FakeClock` as `IClock`; never `Task.Delay`. Security tests must be able to fail — mutate the condition and confirm the assertion catches it.
-- Consumer fakes (`src/Hosting/Security/SharedKernel.Security.Testing`): `FakeUserContext`, `SecurityTestContextBuilder`, `DpopTestProofBuilder`, `InMemoryApiKeyStore`, `InMemoryDpopReplayCache`, `InMemoryTotpStepUpStore`, `InMemoryRecoveryCodeStore`.
+- Fakes: `SharedKernel.Security.Testing` — catalogue in `src/Testing/CLAUDE.md`.
 
 ## Known Limitations
 

@@ -1,6 +1,6 @@
 # 14.Presentation — State Map
 
-> Living board for this domain: what exists, what is open. Completed phase detail is archived outside the repository; `git log` records every change.
+> Living board for this domain: what exists and what is open. Completed work is not kept here; `git log` is the record.
 
 ## Legend
 
@@ -23,16 +23,7 @@ Test helpers: `src/Hosting/Presentation/SharedKernel.Presentation.Testing`. Conf
 
 ## Phase Key Registry
 
-| Phase key | Phase | Status |
-| --- | --- | :---: |
-| `SK.14.Design` | Design (D-01–D-86; WO-031, WO-041, WO-042, WO-058, WO-062, WO-063, WO-074, WO-078) | ● |
-| `SK.14.Scaffold` | Scaffold (S-01–S-35) | ● |
-| `SK.14.Core` | Core (C-01–C-87) | ● |
-| `SK.14.Tests` | Tests (T-01–T-80) | ● |
-| `SK.14.Docs` | Docs (DO-01–DO-34) | ● |
-| `SK.14.Published` | Published (P-01–P-28) | ● |
-| `SK.14.P563` | P-563 thin HTTP edge (P1–P4, S1, REN, DOC ●; PUB ⊘ — superseded by the repo-wide release train) | ● |
-| `SK.14.P579` | P-579 main's P-562/P-563 redesign on the WO-086 foundation (R1–R9 ●; PUB ⊘ — superseded by the repo-wide release train) | ● |
+No open phase keys. Closed keys live in `git log`: check a new key is unused with `git log --oneline -S"SK.NN.Key"`.
 
 ## Open Work
 
@@ -45,26 +36,3 @@ None.
 ## Cross-Domain Dependencies
 
 None open. (`01.Core`'s `LoggingEventIdRanges`, `WellKnownHeaders`, `Error.Forbidden` and `SharedKernel.Localization` all shipped. `ErrorType.PreconditionFailed` was declined by design: 412 is an HTTP-native outcome.)
-
-## Completed Phases
-
-- P-579 ● main's P-562/P-563 redesign re-applied on WO-086: `Presentation.Core`, correlation id and baggage refusal owned by `ServiceDefaults.Security`, gRPC scope from the pipeline, `SignalR.Redis` deleted (2026-09-26)
-- WO-086 ● Every package Host tier; `Presentation.Core` and `.GraphQL` added (P-565–P-567, P-570, P-571, P-573, P-574) (2026-09-26)
-- P-563 ● Thin HTTP edge: endpoint modules + generator, one public namespace per package, `Paging`/`CursorPaging`, `RequireEndpointPermission` rename (2026-09-24)
-- P-562 ● Gold-standard pre-publish pass: WebApi/SignalR/Grpc rewritten, OpenApi split out (ran without state-map phases; decisions in `docs/p562/`) (2026-09-24)
-- WO-078 ● Localized `Error.ToProblemDetails()` (P-484) (2026-08)
-- WO-074 ● `SharedKernel.Presentation.Grpc` created (P-468) (2026-08)
-- WO-063 ● Resource-exhaustion, OpenAPI security schemes, sunset headers, audit logging (P-411–P-418) (2026-08-21)
-- WO-062 ● Multi-field validation problems, security headers, CORS, idempotency key, step-up attributes, ETag/412, 429 shaping (P-402–P-409) (2026-08-20)
-- WO-058 ● Declarative role/permission endpoint authorization (P-381) (2026-08-17)
-- WO-042 ● Shared `WellKnownHeaders` constants (P-262) (2026-07-16)
-- WO-041 ● Explicit `[LoggerMessage]` EventIds (P-256) (2026-07-14)
-- Earlier phases (WO-031 Design → Published, P-192–P-198) — archived.
-
-## Changelog
-
-- [2026-09-28] State map rewritten as a living board; stale pending counts and per-domain PUB rows closed.
-- [2026-09-26] P-579 recorded as `SK.14.P579`.
-- [2026-09-26] WO-086 recorded (P-565/P-566/P-567/P-570/P-571/P-573/P-574).
-- [2026-09-24] P-563 recorded as `SK.14.P563` (docs stream D1).
-- [2026-09-24] P-562 gold-standard pre-publish pass shipped; `CLAUDE.md` rewritten to rules, old brain moved to `CLAUDE.history.md`.

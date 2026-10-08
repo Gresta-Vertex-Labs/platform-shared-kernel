@@ -21,41 +21,41 @@
 | `SharedKernel.MultiTenancy` | Host | `TenantResolutionMiddleware`, Claim/Header/Database strategies, `ITenantStatusValidator`, the read-only tenant catalog |
 
 `consumer-verify/` (not packable, Unit lane) compiles a consumer against the base and `MultiTenancy` packages.
-Empty folders such as `SharedKernel.ServiceDefaults.Messaging`, `.Caching`, `.AI` hold only stale `bin`/`obj` output — no project.
 
 ## Public Entry Points
 
+Overloads, option keys and defaults: each package's `README.md` (`SharedKernel.ServiceDefaults*/README.md`,
+`SharedKernel.MultiTenancy/README.md`).
+
 **Composition base (`SharedKernel.ServiceDefaults`)**
 - `builder.AddServiceDefaults()` — first call: `AddSharedKernelTelemetry(entry-assembly name)` + `AddSharedKernelHealthChecks()`. Registers no dependency-specific check.
-- `builder.AddSharedKernelTelemetry(serviceName)` — tracing (ASP.NET Core, HttpClient, EF Core), metrics (ASP.NET Core, HttpClient, runtime), logs with scopes, `BaggageLogRecordProcessor`, OTLP exporter configured only by the standard `OTEL_EXPORTER_OTLP_*` environment variables; installs `RequestBaggageRefusingPropagator` when the tracer provider is built.
-- `services.AddSharedKernelHealthChecks()` — `StartupGate` + `StartupGateHealthCheck` (`startup`, tag `ready`). Called by `AddServiceDefaults()`; a second call duplicates `startup` and the host throws.
-- `healthChecks.AddSharedKernelReadiness(o => …)` — one `ready` check per registered `IReadinessProbe`, named after the probe; `ReadinessHealthCheckOptions` (`Timeout`, `Exclude(name)`); a throwing probe → Unhealthy with the exception type only (13005); duplicate names throw.
-- `app.MapDefaultHealthCheckEndpoints(requireAuthorization: false)` — `/health/live` (`live` tag) and `/health/ready` (`ready` tag).
+- `builder.AddSharedKernelTelemetry(serviceName)` — tracing, metrics, logs, `BaggageLogRecordProcessor`; OTLP exporter configured only by the standard `OTEL_EXPORTER_OTLP_*` variables; installs `RequestBaggageRefusingPropagator`.
+- `services.AddSharedKernelHealthChecks()` — `StartupGate` + `startup` check (tag `ready`). A second call duplicates `startup` and the host throws.
+- `healthChecks.AddSharedKernelReadiness(o => …)` — one `ready` check per registered `IReadinessProbe`, named after the probe; a throwing probe → Unhealthy with the exception type only (13005); duplicate names throw.
+- `app.MapDefaultHealthCheckEndpoints()` — `/health/live` (`live` tag) and `/health/ready` (`ready` tag).
 - `StartupGate.MarkReady()`; `HealthCheckNames`, `HealthCheckTags`, `HealthCheckRegistrationLogging.LogRegistration` (public so a service's own check logs 13002).
-- `builder.With{Application,Caching,Communication,Integration,Intelligence,Messaging,Persistence,Reporting,Scheduling,Search,Storage,Workflow}Telemetry()` — subscribe to each domain's `ActivitySource`/`Meter` **by name**; reference nothing; idempotent. `WithCommunicationTelemetry` adds gRPC client instrumentation and the `Polly` meter; `WithApplicationTelemetry` adds a seconds-based bucket view.
-- `builder.AddSharedKernelRateLimiting(o => …)` — BCL rate limiter: global fixed window per remote IP (100/min) + `RateLimitPolicyNames.Authentication` (10/min); `configure` runs last.
+- `builder.With{Application,Caching,Communication,Integration,Intelligence,Messaging,Persistence,Reporting,Scheduling,Search,Storage,Workflow}Telemetry()` — subscribe to each domain's `ActivitySource`/`Meter` **by name**; reference nothing; idempotent.
+- `builder.AddSharedKernelRateLimiting(o => …)` — global fixed window per remote IP + `RateLimitPolicyNames.Authentication`; `configure` runs last.
 
-**`SharedKernel.ServiceDefaults.Security`**
-- `services.AddSharedKernelRequestContext(o => …)` (`RequestContextOptions.TrustInboundBaggage`, default `false`) — `IRequestContextAccessor`, scoped `SecurityRequestContext`, transient `IRequestContext = RequestContextScope.Current ?? SecurityRequestContext`. Needs an `IUserContext` registration from `12.Security`.
-- `app.UseSharedKernelRequestContext()` — the first middleware; throws if the services were not added.
+**`.Security`** — `services.AddSharedKernelRequestContext(o => …)` (`RequestContextOptions.TrustInboundBaggage`, default `false`; needs an `IUserContext` from `12.Security`) and `app.UseSharedKernelRequestContext()` (the first middleware; throws if the services were not added).
 
-**`SharedKernel.ServiceDefaults.Persistence`** — `AddDatabaseReadinessCheck<TContext>(name = "database")`, `AddDapperDatabaseReadinessCheck(name = "database-dapper")`, `AddPersistenceStartupReadinessCheck(name = "persistence-startup")`; all tagged `ready`, `db`.
+**`.Persistence`** — `AddDatabaseReadinessCheck<TContext>()`, `AddDapperDatabaseReadinessCheck()`, `AddPersistenceStartupReadinessCheck()`; tagged `ready`, `db`.
 
-**`SharedKernel.MultiTenancy`** — `services.AddSharedKernelMultiTenancy(o => …)` (`TenantResolutionOptions`, section `SharedKernel:MultiTenancy`, `StrategyOrder`) then `app.UseMiddleware<TenantResolutionMiddleware>()` after authentication. The middleware takes the scoped strategies per request (`InvokeAsync` parameter), never in its constructor: ASP.NET Core builds it once from the root provider. `Database` needs an `IDbConnectionFactory`; without one, an order that names it fails startup. Catalog: `ITenantCatalog` (`GetByIdAsync`, `GetByResolutionKeyAsync`), `TenantDescriptor`, `DatabaseTenantCatalog`, `CachedTenantCatalog` (`InvalidateTenantAsync`), `CatalogTenantStatusValidator`.
+**`SharedKernel.MultiTenancy`** — `services.AddSharedKernelMultiTenancy(o => …)` (`TenantResolutionOptions`, section `SharedKernel:MultiTenancy`) then `app.UseMiddleware<TenantResolutionMiddleware>()` after authentication. `Database` needs an `IDbConnectionFactory`; without one, an order that names it fails startup. Catalog: `ITenantCatalog`, `TenantDescriptor`, `DatabaseTenantCatalog`, `CachedTenantCatalog`, `CatalogTenantStatusValidator`.
 
-**`SharedKernel.ServiceDefaults.Security.Mtls`** — `builder.AddMtlsClientCertificate(ClientCertificateMode)`; `builder.AddMtlsForwardedHeaderCertificate(o => …)` (`MtlsForwardedHeaderOptions`, section `SharedKernel:ServiceDefaults:MtlsForwardedHeader`, `HeaderName` required, `AddTrustedNetwork`/`AddTrustedProxy`) + `app.UseMiddleware<MtlsForwardedHeaderMiddleware>()`.
+**`.Security.Mtls`** — `builder.AddMtlsClientCertificate(ClientCertificateMode)`; `builder.AddMtlsForwardedHeaderCertificate(o => …)` (section `SharedKernel:ServiceDefaults:MtlsForwardedHeader`) + `app.UseMiddleware<MtlsForwardedHeaderMiddleware>()`.
 
-**`SharedKernel.ServiceDefaults.Configuration.KeyVault`** — `builder.AddSharedKernelKeyVaultConfiguration(vaultUri, credential?)` (`DefaultAzureCredential` by default; an unreachable vault throws at startup); an overload adds `SecretClientOptions` for the transport (emulators such as Lowkey Vault).
+**`.Configuration.KeyVault`** — `builder.AddSharedKernelKeyVaultConfiguration(vaultUri, credential?)`; an unreachable vault throws at startup.
 
-**`SharedKernel.ServiceDefaults.Localization`** — `builder.AddSharedKernelLocalization(o => …)` (`LocalizationResolutionOptions`: `StrategyOrder` default `UserPreference → TenantDefault → AcceptLanguageHeader`, `UserPreferenceClaimType`); the service still calls `app.UseRequestLocalization()`.
+**`.Localization`** — `builder.AddSharedKernelLocalization(o => …)` (default order `UserPreference → TenantDefault → AcceptLanguageHeader`); the service still calls `app.UseRequestLocalization()`.
 
 **Canonical order** (compiled reference: `samples/OrderApi/OrderApi.Api/Program.cs`): `AddServiceDefaults()` → authentication (`12.Security`) → `AddSharedKernelRequestContext()` → optional `AddSharedKernelMultiTenancy()` / `AddSharedKernelRateLimiting()` → `AddHealthChecks().AddDatabaseReadinessCheck<T>().AddSharedKernelReadiness()` → the `WithXTelemetry()` the service needs. Pipeline: `UseSharedKernelRequestContext()` first → `UseSharedKernelWebApi(p => p.BeforeAuthorization(a => a.UseMiddleware<TenantResolutionMiddleware>()))` (or by hand: `UseExceptionHandler`, `UseAuthentication`, tenant middleware, `UseRateLimiter`, `UseAuthorization`) → `MapDefaultHealthCheckEndpoints()`.
 
 ## Rules & Invariants
 
-1. **The base references `SharedKernel.Primitives` and OpenTelemetry only.** `CompositionBaseIsolationTests` locks it by assembly references and by project file. Anything needing another kernel package goes in a `SharedKernel.ServiceDefaults.{Capability}` package or behind a provider-registered `IReadinessProbe`.
+1. **The base references `SharedKernel.Primitives` and OpenTelemetry only** (`CompositionBaseIsolationTests`, by assembly references and by project file). Anything needing another kernel package goes in a `SharedKernel.ServiceDefaults.{Capability}` package or behind a provider-registered `IReadinessProbe`.
 2. **Never add a per-dependency readiness package or `Add*ReadinessCheck` for a provider.** The provider owns its probe; `AddSharedKernelReadiness()` maps it. A probe constructor is cheap and resolves clients inside `ProbeAsync`.
-3. An integration package references the base plus what its own integration needs, **never another integration package**; XML docs name a sibling's types as `<c>Name</c>`, never `<see cref>`.
+3. An integration package references the base plus what its own integration needs, **never another `ServiceDefaults.*` integration package** (`.Localization` → `SharedKernel.MultiTenancy`, for the tenant-default culture via `ITenantCatalog`, is the one sibling edge); XML docs name a sibling's types as `<c>Name</c>`, never `<see cref>`.
 4. Readiness checks chain onto `services.AddHealthChecks()` — never a second `AddSharedKernelHealthChecks()`.
 5. **Live ≠ ready.** Anything depending on an external system is tagged `ready`, never `live`. A backlog, queue depth or job count is data, never a failure.
 6. Helpers an integration package needs from the base are public API, never `InternalsVisibleTo`.
@@ -65,20 +65,20 @@ Empty folders such as `SharedKernel.ServiceDefaults.Messaging`, `.Caching`, `.AI
 10. `AddSharedKernelRequestContext()` uses `Add` (not `TryAdd`) for `IRequestContext` so it replaces `Persistence.EfCore`'s fail-closed `AnonymousRequestContext` in any order. Mapping: `UserId = SubjectId ?? ClientId`; `TenantId` = `IUserContext.TenantId`; `ActorKind` from `IUserContext` when authenticated, else `Anonymous` (never `System`); `HasPermissionAsync` ordinal.
 11. **Tenant resolution only replaces the tenant**, in an inner `RequestContextScope` (`WithTenant`); caller and correlation id stay the outer scope's. The middleware also sets `WellKnownBaggageKeys.TenantId` baggage.
 12. **Tenant strategy order is a security default**: `[Claim, Header, Database]` puts the signed claim before the forgeable header. Never reorder without a security review. `StrategyOrder` defaults to empty (binding appends to a non-empty list); empty means `DefaultStrategyOrder`.
-13. The claim strategy resolves through `UserContextResolver.Resolve` and the registered mappers — never parse claims here. The header strategy uses `WellKnownHeaders.TenantId` and `TenantId.TryParse`; malformed → `null`, never throws.
-14. **Fail closed on tenants.** Unresolved, inactive (`ITenantStatusValidator.IsActiveAsync` false) and catalog miss all mean `TenantId = null`. `ITenantStatusValidator` is optional.
-15. `DatabaseTenantResolutionStrategy` and `DatabaseTenantCatalog` use parameterized SQL only, async with the `CancellationToken` threaded through.
-16. `ITenantCatalog` is read-only — never add provisioning. `CachedTenantCatalog`'s TTL (30 s default) stays short; call `InvalidateTenantAsync` after a status change.
-17. **`BaggageLogRecordProcessor` copies only the platform's own keys** (`PlatformBaggageKeys`, pinned by a test to `WellKnownBaggageKeys`: correlation id and tenant) and never a value with a control character or U+2028/U+2029; an explicit record attribute wins. A key joins the list only if platform middleware writes *and replaces* it.
-18. **`Baggage.Current` is never filled from an incoming request**: `RequestBaggageRefusingPropagator` decorates the default propagator; HTTP-request extraction keeps trace context and drops baggage. Never remove it; never read a caller's identity from baggage. `TrustInboundBaggage` governs only the request `Activity`'s baggage.
-19. **`AddSharedKernelRateLimiting()` never sets `OnRejected`**, is never called by `AddServiceDefaults()`, and never references `14.Presentation`; `AddSharedKernelWebApi()` fills `OnRejected` with the platform 429 only when nothing else has.
-20. Keep `AddSharedKernelKeyVaultConfiguration()` (secrets as configuration) distinct from `AddAzureKeyVaultEncryption` (keys for encryption).
-21. `requireAuthorization: true` on health endpoints is defense in depth only (it breaks kubelet probes); endpoints must be network-restricted.
-22. mTLS: the validator is resolved per handshake from a fresh scope; `MtlsForwardedHeaderOptions.HeaderName` has no vendor default; without `TrustedNetworks` a one-time warning (13003) fires.
-23. **Never log** certificate bytes, raw tokens, raw header values or a rejected correlation id — lengths, thumbprints and subjects only.
-24. Propagation identifiers come from `01.Core` (`WellKnownHeaders`, `WellKnownBaggageKeys`), never a local literal.
-25. New packages: `SharedKernel.ServiceDefaults.{Capability}[.{Provider}]`, within the path-length budget (see MAX_PATH in the root CLAUDE.md).
-26. AOT: OTel, health checks, rate limiting, `StartupGate`, strategies and middleware are reflection-free; configuration-bound options and the Key Vault configuration provider are not claimed trim-clean. `StartupGate` is the only mutable singleton state.
+13. `TenantResolutionMiddleware` takes the scoped strategies per request (`InvokeAsync` parameter), never in its constructor — ASP.NET Core builds it once from the root provider.
+14. The claim strategy resolves through `UserContextResolver.Resolve` and the registered mappers — never parse claims here. The header strategy uses `WellKnownHeaders.TenantId` and `TenantId.TryParse`; malformed → `null`, never throws.
+15. **Fail closed on tenants.** Unresolved, inactive (`ITenantStatusValidator.IsActiveAsync` false) and catalog miss all mean `TenantId = null`. `ITenantStatusValidator` is optional.
+16. `DatabaseTenantResolutionStrategy` and `DatabaseTenantCatalog` use parameterized SQL only, async with the `CancellationToken` threaded through.
+17. `ITenantCatalog` is read-only — never add provisioning. `CachedTenantCatalog`'s TTL (30 s default) stays short; call `InvalidateTenantAsync` after a status change.
+18. **`BaggageLogRecordProcessor` copies only the platform's own keys** (`PlatformBaggageKeys`, pinned by a test to `WellKnownBaggageKeys`: correlation id and tenant) and never a value with a control character or U+2028/U+2029; an explicit record attribute wins. A key joins the list only if platform middleware writes *and replaces* it.
+19. **`Baggage.Current` is never filled from an incoming request**: `RequestBaggageRefusingPropagator` decorates the default propagator; HTTP-request extraction keeps trace context and drops baggage. Never remove it; never read a caller's identity from baggage. `TrustInboundBaggage` governs only the request `Activity`'s baggage.
+20. **`AddSharedKernelRateLimiting()` never sets `OnRejected`**, is never called by `AddServiceDefaults()`, and never references `14.Presentation`; `AddSharedKernelWebApi()` fills `OnRejected` with the platform 429 only when nothing else has.
+21. Keep `AddSharedKernelKeyVaultConfiguration()` (secrets as configuration) distinct from `AddAzureKeyVaultEncryption` (keys for encryption).
+22. `requireAuthorization: true` on health endpoints is defense in depth only (it breaks kubelet probes); endpoints must be network-restricted.
+23. mTLS: the validator is resolved per handshake from a fresh scope; `MtlsForwardedHeaderOptions.HeaderName` has no vendor default; without `TrustedNetworks` a one-time warning (13003) fires.
+24. **Never log** certificate bytes, raw tokens, raw header values or a rejected correlation id — lengths, thumbprints and subjects only.
+25. New packages are named `SharedKernel.ServiceDefaults.{Capability}[.{Provider}]`.
+26. `StartupGate` is the only mutable singleton state. OTel, health checks, rate limiting, strategies and middleware stay reflection-free.
 
 ## Decisions
 
@@ -87,7 +87,7 @@ Empty folders such as `SharedKernel.ServiceDefaults.Messaging`, `.Caching`, `.AI
 | Providers register `IReadinessProbe`; one `AddSharedKernelReadiness()` maps them | No per-dependency packages; the host cannot forget a dependency it configured |
 | Base references Foundation only | Every service restores the base; heavy dependencies stay opt-in |
 | `WithXTelemetry()` subscribe by source name | No reference from the base to any capability package |
-| Baggage allow-list on log records (correlation id, tenant only) | Copying every baggage item let an anonymous caller stamp any property on every log record of its request |
+| Baggage allow-list on log records (correlation id, tenant only) | Copying every baggage item would let an anonymous caller stamp any property on every log record of its request |
 | Inbound baggage refused by default at two stores (propagator + request `Activity`) | Baggage flows to every outbound call; a caller could plant a tenant or user id downstream services trust |
 | No default `OnRejected` in rate limiting | A default here would override `14.Presentation`'s platform 429 problem body |
 | Claim → Header → Database default order | A signature-verified claim outranks an unsigned header |
@@ -129,7 +129,7 @@ Next free: 13008 (shared block), 13102 (MultiTenancy).
 - `RateLimitRejectionRecipeTests` drive real hosts with a test-only reference to `SharedKernel.Presentation.WebApi` (platform 429 with it, bare 429 without, a service's `OnRejected` wins).
 - `RequestBaggageRefusingPropagator` tests replace the process-wide propagator, so they run in a non-parallel collection.
 - `CompositionBaseIsolationTests` must fail when a SharedKernel reference is added to the base project.
-- Consumer fakes (`src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Testing`): `FakeTenantResolutionStrategy`, `InMemoryTenantCatalog`.
+- Fakes: `SharedKernel.ServiceDefaults.Testing` — catalogue in `src/Testing/CLAUDE.md`.
 
 ## Known Limitations
 

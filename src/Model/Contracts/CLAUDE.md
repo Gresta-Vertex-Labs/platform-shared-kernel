@@ -20,12 +20,10 @@ Test project: `SharedKernel.Contracts/SharedKernel.Contracts.Tests/`.
 
 ## Public Entry Points
 
-No DI registration and no configuration section.
+No DI registration and no configuration section. Members, factories and samples: `SharedKernel.Contracts/README.md`.
 
-| Namespace (`SharedKernel.Contracts.`) | Types |
-| --- | --- |
-| `Events` | `IIntegrationEvent` (`EventId`, `OccurredOn`); `IntegrationEventAttribute` (`[IntegrationEvent("name", Version = n)]`); `IntegrationEventDescriptor` (`For<TEvent>()`, `For(Type)`, `.Name`); `EventEnvelope<TEvent>` (`where TEvent : class, IIntegrationEvent`; `SpecVersion`, `Id`, `Source`, `Type`, `DataVersion`, `Time`, `Subject`, `DataContentType`, `TenantId` (`Guid?`), `CorrelationId`, `CausationId`, `Data`); `EventEnvelope` (`Wrap(evt, source:, subject:, tenantId:, correlationId:, causationId:)`, `CloudEventsSpecVersion`, `JsonContentType`); `CloudEventAttributeNames` |
-| `Pagination` | `PagedList<T>` (`Create`, `Empty`, `Map`; `TotalCount`/`TotalPages` are `long`); `CursorPagedList<T>` (`Create`, `Empty`, `Map`, `FromLookahead`; `HasMore` derived from `NextCursor`); `PageRequest` (`Create` → `ValidationResult<PageRequest>`, `MaxPageSize` = 1000); `CursorPageRequest` (`Create`, `MaxLimit` = 1000); `PageCursor` (`Encode<TKey, TId>`, `Decode<TKey, TId>` → `Result<CursorPosition<TKey, TId>>`, `MaxLength` = 512); `CursorPosition<TKey, TId>`; `PaginationErrorCodes` (`pagination.page.out_of_range`, `pagination.page_size.out_of_range`, `pagination.limit.out_of_range`, `pagination.cursor.invalid`) |
+- `SharedKernel.Contracts.Events`: `IIntegrationEvent`, `[IntegrationEvent("name", Version = n)]`, `IntegrationEventDescriptor.For<TEvent>().Name`, `EventEnvelope<TEvent>` built only by `EventEnvelope.Wrap(...)`, `CloudEventAttributeNames`.
+- `SharedKernel.Contracts.Pagination`: `PagedList<T>`, `CursorPagedList<T>` (`FromLookahead`), `PageRequest`/`CursorPageRequest` (`Create` → `ValidationResult<T>`), `PageCursor` (`Encode`/`Decode` → `Result<CursorPosition<TKey, TId>>`, `MaxLength` = 512), `PaginationErrorCodes`.
 
 ## Rules & Invariants
 
@@ -57,8 +55,8 @@ No DI registration and no configuration section.
     `NotSupportedException`, `InvalidOperationException`. Cursor format is `v1.` + base64url(`[key, id]` JSON).
 15. **Cursor format changes** go behind a new prefix (`v2.`) and `Decode` keeps reading `v1.` for at least one release.
 16. Error codes live in `PaginationErrorCodes`; never retype them.
-17. Every public API change goes in `PublicAPI.Unshipped.txt` with XML docs (`CS1591`, RS0016/17/22/24/25/36/37 and
-    `nullable` are errors). Shipped docs and XML comments never contain work-order ids or change history.
+17. Every public API change goes in `PublicAPI.Unshipped.txt` with XML docs (`CS1591` and the PublicAPI analyzer rules are
+    errors). XML comments never contain work-order ids or change history.
 18. Keep `README.md` sample outputs real — produced by running the snippets.
 
 ## Decisions
@@ -104,9 +102,8 @@ EventId block `4000`–`4999` (`LoggingEventIdRanges.Contracts`) is reserved but
 - Test events declare unique name+version pairs — the descriptor cache is process-wide, so a duplicate in one test file
   breaks another.
 - `SharedKernel.Contracts.ConsumerVerify` is updated with every public API change; it builds against a packed version
-  (`-p:SharedKernelPackageVersion=<version>`). Build and CI topics: `eng/README.md`, `CONTRIBUTING.md`.
-- Service tests use `16.Testing` helpers: `EventEnvelopeBuilder`, `IntegrationEventFaker`, `PagedListBuilder`,
-  `PagedListAssertions` (`SharedKernel.Testing`).
+  (`-p:SharedKernelPackageVersion=<version>`); CI's `packaging-verify` job discovers it automatically.
+- Fakes: `SharedKernel.Testing` (`EventEnvelopeBuilder`, `IntegrationEventFaker`, `PagedListBuilder`, `PagedListAssertions`) — catalogue in `src/Testing/CLAUDE.md`.
 
 ## Known Limitations
 

@@ -1,6 +1,6 @@
 # Platform.SharedKernel — State Map
 
-> Living cross-domain board: what exists, what is open, and the next free IDs. Each domain's own `state-map.md` holds its package board and phase keys. Completed phase and work-order detail is archived outside the repository; `git log` records every change.
+> Living cross-domain board: what exists, what is open, and the next free IDs. Each domain's own `state-map.md` holds its package board and open phase keys. Completed work is not kept here; `git log` is the record.
 
 ## Legend
 
@@ -40,7 +40,7 @@ Phases written by `arch-lead` take the next phase id; a user-directed phase with
 | 18 | [Idempotency](src/Infrastructure/Idempotency/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ● | None |
 | 19 | [Scheduling](src/Infrastructure/Scheduling/state-map.md) | 1 (Adapter) | ● | None |
 | 20 | [Reporting](src/Infrastructure/Reporting/state-map.md) | 5 (1 Abstractions, 4 Adapter) | ● | None |
-| — | [samples](samples/README.md) | 7 services: OrderApi, BillingApi, ShippingApi, DocumentsApi, CatalogApi, CheckoutApi, InventoryApi | ● | None |
+| — | [samples](samples/README.md) | 8: OrderApi, BillingApi, ShippingApi, DocumentsApi, CatalogApi, CheckoutApi, InventoryApi, Shop (Aspire platform) | ● | None |
 
 Every package ships at one repo-wide version through the release train (`CONTRIBUTING.md`, "Versioning and releases"); nothing is released per package.
 
@@ -81,42 +81,3 @@ After P-577 is on the feed, delete the package IDs that WO-086 and the pre-publi
 ## Blocked
 
 None.
-
-## Completed Work Orders
-
-- WO-086 ● Foundation refactor — tiered packages, `SharedKernel.Execution` context, kernel mediator abstraction, unified idempotency and readiness probes, optional-dependency satellites, packable `*.Testing` packages, release train, samples as reference architecture (P-562–P-576, P-579; P-577/P-578 open)
-- WO-085 ● Messaging pre-first-publish pass and first publish (P-560, P-561)
-- — ● User-directed pre-first-publish passes, no work order (P-529, P-530, P-538–P-557, P-558, P-559)
-- WO-084 ● ServiceDefaults per-integration package split (P-531–P-537)
-- WO-083 ● 01.Core gold-standard audit fixes and TOTP cascades (P-510–P-528)
-- WO-082 ● `SharedKernel.Guards` merged into `SharedKernel.Core` (P-505–P-509)
-- WO-081 ● Cryptography redesign — AAD, sync-provider gate, async signing, Argon2, Key Vault hardening, consumer cascades (P-491–P-504)
-- WO-080 ● Coordinated-pass findings — Key Vault probe, post-commit eviction ordering and locks (P-487–P-490)
-- WO-079 ● Mapperly endorsed, reflection-based mapping forbidden (P-486)
-- WO-078 ● Localization (P-482–P-485)
-- WO-077 ● Reporting (P-477–P-481)
-- WO-076 ● DataPrivacy (P-474–P-476)
-- WO-075 ● Tenant catalog (P-471–P-473)
-- WO-074 ● gRPC server error mapping (P-468–P-470)
-- WO-073 ● Scheduling (P-464–P-467)
-- WO-072 ● Notifications — SendGrid email, Twilio SMS (P-460–P-463)
-- WO-071 ● Append-only audit trail (P-456–P-459)
-- WO-070 ● Idempotency stores — Redis, EF Core (P-454, P-455)
-- WO-069 ● TOTP/HOTP and step-up (P-451–P-453)
-- WO-068 ● Async key provider, envelope encryption, Azure Key Vault (P-446–P-450)
-- WO-067 ● Format validators (P-443–P-445)
-- WO-066 ● `Money` (P-439–P-442)
-- Earlier work orders (WO-001–WO-065, 437 phases P-001–P-438: 422 ●, 15 ⊘) — archived.
-
-## Changelog
-
-- [2026-09-28] Root and domain state maps slimmed to living boards for the public release; ID counters recomputed (next P-580, WO-087); P-544 and P-557 closed — their remaining publish steps are superseded by the P-577 release train
-- [2026-09-26] P-579 ● — `origin/main`'s application model (P-563) merged onto WO-086's packages (05.Application, 14.Presentation, samples)
-- [2026-09-26] WO-086 P-562–P-576 ● — tier enforcement, `SharedKernel.Execution`, tenant/caller unification, context propagation, kernel mediator, unified idempotency, readiness probes, satellites, `*.Testing` packages, release train and CI, samples, governance cleanup, docs, agents and commands (all domains)
-- [2026-09-23] P-560, P-561 ● — `07.Messaging` pre-first-publish pass; both packages published at `1.0.0-alpha.0.1171` (07.Messaging)
-- [2026-09-23] `09.Search` pre-publish gold-standard pass and `samples/CatalogApi` against real engines (09.Search, 13.ServiceDefaults)
-- [2026-09-22] P-559 ● — `08.Storage` pre-publish redesign verified through `samples/DocumentsApi` (08.Storage, 20.Reporting)
-- [2026-09-20] P-557 docs pass — `src/Infrastructure/Persistence/CLAUDE.md` and state map brought current with the 7-package split (06.Persistence)
-- [2026-09-19/20] P-557 recorded — `06.Persistence` redesigned before its first publish (06.Persistence, 05.Application, 13.ServiceDefaults, 00.Governance, 03.Domain)
-- [2026-09-19] P-556 published — `SharedKernel.Application.Behaviors.Caching` `1.0.0-alpha.0.1116`, with `.Application` and `.Application.Behaviors` republished at the same height (05.Application, 01.Core, 02.Caching, 03.Domain)
-- [2026-09-18] P-555 published — `SharedKernel.FeatureManagement` `1.0.0-alpha.0.1112`; every `01.Core` package published (01.Core)

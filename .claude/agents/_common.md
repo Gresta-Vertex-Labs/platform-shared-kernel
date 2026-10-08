@@ -70,7 +70,7 @@ History is not kept in the repository beyond the one-line entries on the boards;
 
 ## The state-map protocol
 
-Boards are **living**: they describe what exists and what is open. Completed work collapses to one line.
+Boards are **living**: they describe what exists and what is open. Completed work is removed, not collapsed; `git log` is the record.
 
 **Domain `{folder}/state-map.md`**: headings exactly, in this order:
 
@@ -78,12 +78,10 @@ Boards are **living**: they describe what exists and what is open. Completed wor
 | --- | --- |
 | `## Legend` | `○` Not started · `◐` In progress · `●` Done · `⚑` Blocked · `⊘` Declined / superseded |
 | `## Package Board` | `\| Package \| Tier \| Status \| Notes \|` — one row per package (planned ones `○`) |
-| `## Phase Key Registry` | `\| Phase key \| Phase \| Status \|` — one row per phase key `SK.{NN}.{PascalName}` |
+| `## Phase Key Registry` | `\| Phase key \| Phase \| Status \|` — one row per **open** phase key `SK.{NN}.{PascalName}`, or `No open phase keys. …` |
 | `## Open Work` | one full entry per open phase (format below), or `None — every phase in this domain is complete.` |
 | `## Blocked` | each blocker with on-disk evidence and what it waits on, or `None.` |
 | `## Cross-Domain Dependencies` | inbound/outbound obligations still open, or `None open.` |
-| `## Completed Phases` | one line per phase, newest first: `- SK.{NN}.{Key} ● {one-line outcome} (WO-NNN/P-NNN) (YYYY-MM-DD)` |
-| `## Changelog` | the **last 5** entries: `- [YYYY-MM-DD] {one line}`; trim the oldest when adding |
 
 Open Work entry:
 
@@ -104,9 +102,11 @@ Open Work entry:
 - [ ] {verifiable criterion}
 ```
 
-Task ID prefixes: `D` design, `S` scaffold, `C` core code, `T` tests, `DO` docs/README. IDs continue from the highest of that prefix already used in the domain (the Phase Key Registry lists ranges).
+Task ID prefixes: `D` design, `S` scaffold, `C` core code, `T` tests, `DO` docs/README. IDs are scoped to the phase and start at `01`.
 
-**Root `state-map.md`**: headings exactly: `## Legend`, `## ID Counters` (next `P-` and next `WO-` id), `## Domain Summary Board` (one row per domain, cells one sentence), `## Open Work`, `## Blocked`, `## Completed Work Orders` (one line per work order, newest first: `- WO-NNN ● {title} (P-aaa–P-bbb) (YYYY-MM-DD)`), `## Changelog` (the **last 10** entries).
+A new phase key must never reuse a closed one. Closed keys are not on the board, so check `git log --oneline -S"SK.{NN}.{PascalName}"` returns nothing before assigning it.
+
+**Root `state-map.md`**: headings exactly: `## Legend`, `## ID Counters` (next `P-` and next `WO-` id), `## Domain Summary Board` (one row per domain, cells one sentence), `## Open Work`, `## Blocked`. No completed or changelog sections.
 
 Root Open Work entry:
 
@@ -123,19 +123,19 @@ Root Open Work entry:
 {What is needed and why; acceptance criteria as `- [ ]` bullets. No file or class names.}
 ```
 
-P-entry status: `○` Pending → `◐` Dispatched (planner wrote the domain phase; `**Phase key:**` filled in) → `●` Complete (domain phase done), or `⊘` Declined (planner or arch-lead, with a one-line reason). When every P-entry of a work order is `●` or `⊘`, the whole WO block is replaced by one line under `## Completed Work Orders`. The root `## Legend` uses the same symbols as the domain boards.
+P-entry status: `○` Pending → `◐` Dispatched (planner wrote the domain phase; `**Phase key:**` filled in) → `●` Complete (domain phase done), or `⊘` Declined (planner or arch-lead, with a one-line reason). When every P-entry of a work order is `●` or `⊘`, the whole WO block is deleted. The root `## Legend` uses the same symbols as the domain boards.
 
 **Who writes what**
 
 | Writer | Writes |
 | --- | --- |
-| `arch-lead` | root `## Open Work` (new WO + P-entries), `## ID Counters` (advance after allocating), root `## Changelog`; root `CLAUDE.md` when a rule, package or edge changes |
+| `arch-lead` | root `## Open Work` (new WO + P-entries), `## ID Counters` (advance after allocating); root `CLAUDE.md` when a rule, package or edge changes |
 | `/dispatch-phase` | root P-entry `○` → `◐` and its `**Phase key:**`, after the planner returns |
-| `{domain}-arch-planner` | its domain `## Open Work` entry, `## Phase Key Registry` row (`○`), planned `## Package Board` rows, `## Cross-Domain Dependencies`, `## Blocked` (with evidence), domain `## Changelog` |
-| `{domain}-phase-implementer` (through `/state-map-phase`) | task states; when the phase is done: removes the Open Work entry, adds the `## Completed Phases` line, sets the registry row `●`, updates `## Package Board`, trims `## Changelog` to 5; then on root: P-entry `●`, collapses a finished WO into `## Completed Work Orders`, refreshes the domain's Summary Board row, trims root `## Changelog` to 10 |
+| `{domain}-arch-planner` | its domain `## Open Work` entry, `## Phase Key Registry` row (`○`), planned `## Package Board` rows, `## Cross-Domain Dependencies`, `## Blocked` (with evidence) |
+| `{domain}-phase-implementer` (through `/state-map-phase`) | task states; when the phase is done: removes the Open Work entry and its registry row, updates `## Package Board`; then on root: P-entry `●`, deletes a finished WO block, refreshes the domain's Summary Board row |
 | `devops-lead` | build work that needs tracking goes into root `## Open Work` as a WO with Domain `eng` (next id from `## ID Counters`) |
 
-Never rewrite another writer's section beyond what this table allows. Never re-expand collapsed history.
+Never rewrite another writer's section beyond what this table allows. Never add history back: outcomes go in the commit message.
 
 ---
 
@@ -162,9 +162,9 @@ Domain `CLAUDE.md` headings, in this order: `## Packages`, `## Public Entry Poin
 
 1. **Read** the domain `CLAUDE.md` and `state-map.md` in full, and the root `CLAUDE.md` sections the request touches. Confirm the P-entry's intent.
 2. **Analyse**: the capability requested; which package(s) it belongs in; the files that would be created, changed or deleted; dependencies on other phases or domains; risks. Check it against: the tier matrix and declared edges (no SKTIER error), the purity rules, the domain's invariants and hard violations, the logging sub-block, magic-string and options conventions, AOT, the MAX_PATH rule for any new package, and the licence/version of any new third-party dependency.
-3. **Verdict**: accept, reshape, or decline with the rule it violates. A declined request is still recorded (a `⊘` registry row and a Completed Phases line saying why).
+3. **Verdict**: accept, reshape, or decline with the rule it violates. A declined request writes no board entry: report the verdict and the rule, and when the ruling should stop the same request coming back, add a row to the domain `CLAUDE.md` `## Decisions` table.
 4. **Design** the phase: a new phase key `SK.{NN}.{PascalName}`, goal, task table (D/S/C/T/DO), file-level plan where useful, acceptance criteria, and downstream obligations on other domains as notes only; never plan another domain's work.
-5. **Write** the Open Work entry, registry row, planned Package Board rows, Cross-Domain Dependencies and Blocked (with evidence) into the domain `state-map.md`, and one Changelog line.
+5. **Write** the Open Work entry, registry row, planned Package Board rows, Cross-Domain Dependencies and Blocked (with evidence) into the domain `state-map.md`.
 6. **Refresh** the domain `CLAUDE.md` per the protocol above.
 7. **Stay in bounds**: no production code, no test projects, no files outside the domain folder, no root files.
 8. **Report** the phase key, task count, blockers and cross-domain notes (the caller records the phase key on the root P-entry).

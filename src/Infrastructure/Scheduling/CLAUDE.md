@@ -16,21 +16,20 @@ Composition is expected: a recurring trigger here may *start* a Temporal workflo
 |---|---|---|
 | `SharedKernel.Scheduling` | Adapter | Job registry, hosted scheduling loop, `ScheduledCommandJob<TCommand>` bridge to `ISender`, misfire/overlap policies, per-occurrence distributed lease, `scheduler` readiness probe, telemetry. |
 
-Also in the folder (not packages): `SharedKernel.Scheduling/SharedKernel.Scheduling.Tests` and `consumer-verify/` (a package-reference consumer harness).
+Also in the folder: `SharedKernel.Scheduling.Testing` (Testing tier, catalogued by `16.Testing`), `SharedKernel.Scheduling/SharedKernel.Scheduling.Tests`, and `consumer-verify/` (package-reference consumer harness).
 
-References: `SharedKernel.Primitives`, `.Execution`, `.Configuration` (Foundation), `SharedKernel.Caching.Abstractions` (`IDistributedLockService`) and `SharedKernel.Application` (kernel `ISender`, `ICommand`) (Abstractions), `Quartz` (for `CronExpression` only, pinned directly in `Directory.Packages.props`), `Microsoft.Extensions.*` hosting/options/logging.
+References: `SharedKernel.Primitives`, `.Execution`, `.Configuration`; `SharedKernel.Caching.Abstractions` (`IDistributedLockService`); `SharedKernel.Application` (`ISender`, `ICommand`); `Quartz` (`CronExpression` only, pinned directly in `Directory.Packages.props`).
 
 ## Public Entry Points
 
-- **Registration:** `services.AddSharedKernelScheduling(Action<SchedulingOptions>? configure = null)` → `ISchedulingBuilder` (an `IScheduledJobRegistry` with `Services`). Registers the `IScheduledJobRegistry` singleton, the `SchedulingHostedService` (`IHostedService`) and the `scheduler` readiness probe.
-- **Configuration:** `SchedulingOptions` bound from `SharedKernel:Scheduling` (`SchedulingOptions.SectionName`) — `TickInterval` (default 1 s, range 100 ms–10 min), `DefaultLockExpiry` (default 5 min, range 1 s–1 day). Data Annotations, validated on start; the `configure` delegate runs as a post-configure.
-- **Jobs:** `IScheduledJobRegistry.AddRecurring<TCommand>(jobName, cronExpression, commandFactory, configure)` and `.AddDeferred<TCommand>(jobName, fireAtUtc, commandFactory, configure)`, `TCommand : class, ICommand`; `commandFactory` is `Func<ScheduledJobExecutionContext, TCommand>`.
-- **`ScheduledJobOptions`:** `MisfirePolicy` (`FireOnce`/`Skip`/`RunImmediatelyThenReschedule`), `OverlapPolicy` (`Skip`/`Queue`/`Allow`) — both mandatory; `TenantScope` (default `TenantScope.Global`); `LockExpiry` (overrides `DefaultLockExpiry`).
-- **`ScheduledJobExecutionContext`:** `JobName`, `ScheduledFireTimeUtc`, `ActualFireTimeUtc`, `TenantScope`, `FencingToken` (`long?`, `null` in single-replica mode).
-- **`ScheduledCommandJob<TCommand>`:** the sealed closed-generic bridge that sends the command through `ISender` in a fresh DI scope.
-- **Readiness:** `SchedulerReadiness.ProbeName` = `"scheduler"`; mapped by the host's `services.AddHealthChecks().AddSharedKernelReadiness()`.
-- **Telemetry:** `ActivitySource` and `Meter` named `SharedKernel.Scheduling` (`scheduling.job.*` and `scheduling.lock.*` counters); the host subscribes with ServiceDefaults' `WithSchedulingTelemetry()`.
-- **Cross-replica lock:** register an `IDistributedLockService` (e.g. `AddRedisConnection(configuration).AddRedisDistributedLocking()`) in the host.
+Overloads, option defaults and the configuration table: `SharedKernel.Scheduling/README.md`.
+
+- `services.AddSharedKernelScheduling(Action<SchedulingOptions>? configure = null)` → `ISchedulingBuilder` (`IScheduledJobRegistry` + `Services`); registers the registry, `SchedulingHostedService` and the `scheduler` readiness probe. `SchedulingOptions` (`SharedKernel:Scheduling`: `TickInterval`, `DefaultLockExpiry`); `configure` runs as a post-configure.
+- `IScheduledJobRegistry.AddRecurring<TCommand>(jobName, cron, commandFactory, configure)` / `.AddDeferred<TCommand>(jobName, fireAtUtc, commandFactory, configure)`; `commandFactory` is `Func<ScheduledJobExecutionContext, TCommand>`.
+- `ScheduledJobOptions`: `MisfirePolicy`, `OverlapPolicy` (both mandatory), `TenantScope`, `LockExpiry`.
+- `ScheduledJobExecutionContext` (job name, scheduled/actual fire time, tenant scope, `FencingToken` — `null` in single-replica mode); `ScheduledCommandJob<TCommand>` (closed-generic `ISender` bridge).
+- `SchedulerReadiness.ProbeName` = `"scheduler"`; `SchedulingTelemetry.Name` = `SharedKernel.Scheduling` (`ActivitySource` + `Meter`, `scheduling.job.*`/`scheduling.lock.*` counters), subscribed by ServiceDefaults' `WithSchedulingTelemetry()`.
+- Cross-replica single execution: the host registers an `IDistributedLockService` (e.g. `AddRedisConnection(configuration).AddRedisDistributedLocking()`).
 
 ## Rules & Invariants
 
@@ -79,11 +78,10 @@ EventId block **19000–19999** (`LoggingEventIdRanges.Scheduling`). Single pack
 
 ## Testing
 
-- `SharedKernel.Scheduling.Tests` — **Integration lane** (`Platform.SharedKernel.Integration.slnf`; Testcontainers Redis for `MultiReplica/MultiReplicaSingleExecutionTests` and the lease tests). Uses `SharedKernel.Testing` (`FakeClock`), `SharedKernel.Caching.Testing`, `SharedKernel.Testing.Internal`, and MediatR via `Application.Mediator.MediatR`. Never mock `IDistributedLockService` for the multi-replica assertion.
-- Pinned behaviours: `Policies/MisfirePolicyTests` (a 12-occurrence downtime asserts 0/1/12 runs), `OverlapPolicyTests`, `Locking/OccurrenceLeaseTests`, `Cron/CronExpressionCorrectnessTests` (DST correctness against a real DST zone).
-- `TestSupport/SchedulingTestHarness.StartAsync` polls `SchedulingHostedService.IsRunning` before returning: `BackgroundService.StartAsync` returns before `ExecuteAsync`'s prefix runs, so advancing a `FakeClock` immediately after it races the initial next-fire computation. Apply the same wait to any hosted-loop test.
-- `consumer-verify/` is in the Unit lane.
-- Consumers use `SharedKernel.Scheduling.Testing`'s `InMemoryScheduledJobRegistry` and fire ticks with `TriggerAsync`.
+- `SharedKernel.Scheduling.Tests` — **Integration lane**: Testcontainers Redis (`SharedKernel.Testing.Internal`) for `MultiReplica/MultiReplicaSingleExecutionTests` and the lease tests; also `FakeClock`, `SharedKernel.Caching.Testing`, `Application.Mediator.MediatR`. Never mock `IDistributedLockService` for the multi-replica assertion. `consumer-verify/` is in the Unit lane.
+- Pinned behaviours: `Policies/MisfirePolicyTests` (12-occurrence downtime → 0/1/12 runs), `Policies/OverlapPolicyTests`, `Locking/OccurrenceLeaseTests`, `Cron/CronExpressionCorrectnessTests` (DST against a real zone).
+- `TestSupport/SchedulingTestHarness.StartAsync` waits for `SchedulingHostedService.IsRunning`: `BackgroundService.StartAsync` returns before `ExecuteAsync` computes the first fire, so advancing `FakeClock` at once races it. Apply the same wait to any hosted-loop test.
+- Fakes: `SharedKernel.Scheduling.Testing` — catalogue in `src/Testing/CLAUDE.md`.
 
 ## Known Limitations
 

@@ -34,13 +34,18 @@ builder.Services.AddSharedKernelReporting()           // IReportingBuilder, IRep
 builder.WithReportingTelemetry();                     // SharedKernel.ServiceDefaults
 ```
 
-| Package | Consumer touches |
-| --- | --- |
-| `.Abstractions` | `ReportDefinition.For<T>().Title(…).Culture(…).Column(header, value, format:, alignment:, relativeWidth:).Build()` → `ReportColumn<T>`; `IReportExporter<TRow>` (`ExportAsync` to a `ReportDestination`, `ExportToStreamAsync`); `IReportExporterFactory` (`Formats`, `ParseFormat` by name/extension/content type → `Result`, `GetExporter<T>`); keyed `[FromKeyedServices("xlsx")] IReportExporter<T>`; `ReportFormat` (`Csv`/`Xlsx`/`Pdf`, `WithExtension`); `ReportDestination` (`Store`, `TenantId?`, `Key`, `DownloadFileName`, `Condition`, `Metadata`, `PresignedDownloadUrlExpiry`); outcomes `ReportExportOutcome`, `ReportStreamOutcome`, `PdfDocumentOutcome`; `IHtmlToPdfConverter` (`ConvertAsync`, `ConvertToStreamAsync`) + `HtmlToPdfOptions` (`PageNumberFooter`); extension points `ReportExporterBase<T>` + `AddExporter(format, typeof(MyExporter<>))`, `HtmlToPdfConverterBase` + `AddHtmlToPdfConverter<T>()`; `ReportingErrorCodes`/`ReportingErrors` |
-| `.Csv` | `ICsvReportExporter<T>`; `CsvExportOptions` (`Delimiter`, `IncludeUtf8Bom`, `IncludeHeaderRow`, `EscapeFormulas`) |
-| `.Spreadsheet` | `ISpreadsheetReportExporter<T>`; `SpreadsheetExportOptions` (`DefaultSheetName`, `BoldHeaderRow`, `FreezeHeaderRow`, `AutoFilter`, `MaxRows` ≤ 1,048,575) |
-| `.Pdf` | `IPdfReportExporter<T>`; `PdfExportOptions` (`PaperSize`, `Landscape`, `MarginMillimeters`, `FontSize`, `ShowPageNumbers`, `AlternateRowShading`, `MaxRows` default 10,000) |
-| `.Gotenberg` | `GotenbergOptions` (`BaseUrl`, `Timeout` default 60 s, `MaxRetryAttempts` default 2, `Username`/`Password` together); registers the `gotenberg` readiness probe (`GET /health`) |
+Key types (members, options and defaults: the `SharedKernel.Reporting.*` READMEs):
+
+- `ReportDefinition.For<T>()…Build()` — the column model; `ReportFormat` (`Csv`/`Xlsx`/`Pdf`); `ReportDestination`
+  (named or tenant store, key, download file name, presigned-link expiry).
+- `IReportExporter<TRow>` — `ExportAsync` (to a `ReportDestination`) / `ExportToStreamAsync`; also keyed by format
+  (`[FromKeyedServices("xlsx")]`) and typed per provider (`ICsvReportExporter<T>`, `ISpreadsheetReportExporter<T>`,
+  `IPdfReportExporter<T>`).
+- `IReportExporterFactory` — runtime format choice (`ParseFormat` → `Result`, `GetExporter<T>`).
+- `IHtmlToPdfConverter` — `ConvertAsync` / `ConvertToStreamAsync`.
+- Extension points: `ReportExporterBase<T>` + `AddExporter(format, typeof(MyExporter<>))`; `HtmlToPdfConverterBase` +
+  `AddHtmlToPdfConverter<T>()`.
+- `.Gotenberg` registers the `gotenberg` readiness probe (`GET /health`).
 
 ## Rules & Invariants
 
@@ -73,8 +78,7 @@ builder.WithReportingTelemetry();                     // SharedKernel.ServiceDef
     (attempt timeout = `Timeout`, circuit-breaker sampling ≥ 2× timeout). Form values are written in invariant culture;
     the correlation id goes out as `Gotenberg-Trace`.
 12. Only `.Gotenberg` registers a readiness probe; exporters are stateless libraries and have none.
-13. Every public member is in `PublicAPI.Shipped/Unshipped.txt` (`RS0016`, `CS1591` are errors); implementations stay
-    internal.
+13. Every public member is in `PublicAPI.Shipped/Unshipped.txt` (`RS0016` is an error); implementations stay internal.
 14. Never ship a copyleft or revenue-gated dependency; if no acceptably licensed library serves a format, scope it out.
 
 ## Decisions
@@ -118,18 +122,16 @@ EventIds are written as `LoggingEventIdRanges.Reporting + n`. Telemetry: `Activi
 | `06.Persistence` | None by reference; callers compose `StreamAsync`/`ListKeysetAsync` into the row source |
 | `13.ServiceDefaults` | `WithReportingTelemetry()` subscribes the `SharedKernel.Reporting` source and meter; `AddSharedKernelReadiness()` maps the `gotenberg` probe |
 | `17.Workflows`, `19.Scheduling` | Compose in consumer code (a job or activity calls an exporter); no reference either way |
-| `16.Testing` | `SharedKernel.Reporting.Testing` implements the contracts |
 
 ## Testing
 
-- Unit lane (`Platform.SharedKernel.Unit.slnf`): `.Abstractions.Tests` (pipeline: nothing stored on failure, early
-  upload stop, tenant stores, content disposition, spans, `AbstractionsPurityTests`), `.Csv.Tests`, `.Spreadsheet.Tests`
-  (read back with ClosedXML), `.Pdf.Tests` (layout fits the page, read back with PDFsharp), `consumer-verify`,
-  `src/Infrastructure/Reporting/SharedKernel.Reporting.Testing/SharedKernel.Reporting.Testing.Tests`.
-- Integration lane (`Platform.SharedKernel.Integration.slnf`): `.Gotenberg.Tests` — stub-handler tests of every form
-  field and error mapping, plus a real `gotenberg/gotenberg:8.x` container via Testcontainers.
-- Consumer fakes: `src/Infrastructure/Reporting/SharedKernel.Reporting.Testing` — `InMemoryReportExporter<T>`,
-  `InMemoryReportExporterFactory`, `InMemoryHtmlToPdfConverter`, `AddInMemoryReporting()`.
+- **Unit** lane: `.Abstractions.Tests` (pipeline: nothing stored on failure, early upload stop, tenant stores,
+  content disposition, spans, `AbstractionsPurityTests`), `.Csv.Tests`, `.Spreadsheet.Tests` (read back with
+  ClosedXML), `.Pdf.Tests` (layout fits the page, read back with PDFsharp), `consumer-verify`,
+  `SharedKernel.Reporting.Testing.Tests`.
+- **Integration** lane: `.Gotenberg.Tests` — stub-handler tests of every form field and error mapping, plus a real
+  container through the suite's own `GotenbergFixture` (pinned `gotenberg/gotenberg:8.37.0`, in `GotenbergContainerTests.cs`).
+- Fakes: `SharedKernel.Reporting.Testing` — catalogue in `src/Testing/CLAUDE.md`.
 - End to end: `samples/DocumentsApi` (`POST /reports/{store}/listing?format=`, the PDF endpoint) against MinIO + Gotenberg.
 
 ## Known Limitations
