@@ -1,3 +1,4 @@
+using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SharedKernel.Persistence;
@@ -9,7 +10,10 @@ using Shop.Billing.Api.Profiles;
 
 namespace Shop.Billing.Api.Persistence;
 
-/// <summary>Billing's context: payments and merchant billing profiles, both tenant data under row-level security.</summary>
+/// <summary>
+/// Billing's context: payments and merchant billing profiles (tenant data under row-level security), and MassTransit's
+/// inbox and outbox.
+/// </summary>
 public sealed class BillingDbContext(
     DbContextOptions<BillingDbContext> options,
     PersistenceContextDependencies dependencies
@@ -18,6 +22,26 @@ public sealed class BillingDbContext(
     public DbSet<Payment> Payments => Set<Payment>();
 
     public DbSet<BillingProfile> Profiles => Set<BillingProfile>();
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        base.OnModelCreating(modelBuilder);
+
+        // MassTransit's outbox: an event commits with the payment that raised it. Its bookkeeping spans tenants (the
+        // delivery service sends every tenant's messages), so it is not tenant data.
+        modelBuilder.AddInboxStateEntity();
+        modelBuilder.AddOutboxMessageEntity();
+        modelBuilder.AddOutboxStateEntity();
+        modelBuilder
+            .Entity<MassTransit.EntityFrameworkCoreIntegration.InboxState>()
+            .IsTenantShared();
+        modelBuilder
+            .Entity<MassTransit.EntityFrameworkCoreIntegration.OutboxMessage>()
+            .IsTenantShared();
+        modelBuilder
+            .Entity<MassTransit.EntityFrameworkCoreIntegration.OutboxState>()
+            .IsTenantShared();
+    }
 }
 
 public sealed class PaymentConfiguration : IEntityTypeConfiguration<Payment>

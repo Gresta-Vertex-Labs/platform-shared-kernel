@@ -5,6 +5,7 @@ using SharedKernel.Application.Messaging;
 using SharedKernel.Domain.Monetary;
 using SharedKernel.Execution.Context;
 using SharedKernel.Execution.Tenancy;
+using SharedKernel.Messaging.Abstractions.EventPublisher;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
@@ -64,6 +65,7 @@ public sealed class ChargeHandler(
     IRequestContext caller,
     BillingDbContext db,
     InvoiceIssuer invoices,
+    IEventPublisher events,
     IClock clock
 ) : ICommandHandler<ChargeCommand, PaymentView>
 {
@@ -125,7 +127,24 @@ public sealed class ChargeHandler(
         }
 
         db.Payments.Add(payment);
-        return Result<PaymentView>.Success(payment.ToView());
+
+        // Written to the outbox in this transaction; RabbitMQ gets it after the commit, so a receipt is owed
+        // exactly when the payment exists. The payment's id is the event's: a redelivery repeats the same event.
+        var published = await events.PublishAsync(
+            new ReceiptDue(
+                payment.Id.Value,
+                clock.UtcNow,
+                payment.Id.Value,
+                payment.OrderId,
+                request.CustomerEmail,
+                payment.Amount.Amount,
+                payment.Amount.Currency.Code
+            ),
+            ct
+        );
+        return published.IsFailure
+            ? Result<PaymentView>.Failure(published.Error)
+            : Result<PaymentView>.Success(payment.ToView());
     }
 }
 

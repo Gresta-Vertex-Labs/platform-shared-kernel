@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "Shop.Notify.Worker": {
+      "commandName": "Project",
+      "launchBrowser": false,
+      "applicationUrl": "http://localhost:5351",
+      "environmentVariables": { "ASPNETCORE_ENVIRONMENT": "Development" }
+    }
+  }
+}

@@ -25,6 +25,21 @@ public static class ServiceConfiguration
             .WaitFor(infra.Keycloak);
     }
 
+    /// <summary>
+    /// The shared RabbitMQ of 07.Messaging. (Billing and Notify were meant for Azure Service Bus, but the emulator serves
+    /// AMQP and its management API on different ports, and MassTransit 8.5 reaches both through one connection string.)
+    /// </summary>
+    public static IResourceBuilder<ProjectResource> WithRabbitMq(
+        this IResourceBuilder<ProjectResource> service,
+        ShopInfrastructure infra
+    ) =>
+        service
+            .WithEnvironment(
+                "ConnectionStrings__rabbitmq",
+                infra.RabbitMq.Resource.ConnectionStringExpression
+            )
+            .WaitFor(infra.RabbitMq);
+
     /// <summary>The shared Redis connection of 02.Caching (cache L2, backplane, locks, hashes, Pub/Sub).</summary>
     public static IResourceBuilder<ProjectResource> WithRedis(
         this IResourceBuilder<ProjectResource> service,
@@ -215,11 +230,7 @@ public static class ServiceConfiguration
                 "SharedKernel__Persistence__Encryption__BlindIndexKeys__Keys__v1",
                 "H95n4aIXS7S5WLI6SnwxNGQxbK4tuKxULEi9+hN7xKs="
             )
-            .WithEnvironment(
-                "ConnectionStrings__rabbitmq",
-                infra.RabbitMq.Resource.ConnectionStringExpression
-            )
-            .WaitFor(infra.RabbitMq)
+            .WithRabbitMq(infra)
             .WithEnvironment(
                 "Workflows__Temporal__TargetHost",
                 ReferenceExpression.Create(
@@ -282,9 +293,7 @@ public static class ServiceConfiguration
         return service
             .WithIdentity(infra)
             .WithDatabase(infra, "billing")
-            // 07.Messaging over Azure Service Bus (the emulator); the connection string carries UseDevelopmentEmulator.
-            .WithReference(infra.ServiceBus)
-            .WaitFor(infra.ServiceBus)
+            .WithRabbitMq(infra)
             .WithEnvironment("Billing__KeyVault__Uri", vault)
             .WithEnvironment("Billing__KeyVault__CaCertificatePath", pki.CaCertificatePath)
             .WithEnvironment(
@@ -312,4 +321,44 @@ public static class ServiceConfiguration
     public static IResourceBuilder<ProjectResource> WithMerchantConfiguration(
         this IResourceBuilder<ProjectResource> service
     ) => service.WithEnvironment("Merchant__Webhooks__Secret", ShopKeyVault.MerchantWebhookSecret);
+
+    /// <summary>
+    /// Notify: Billing's bus, and SendGrid and Twilio at the WireMock stand-in (the kernel's <c>BaseAddress</c> options,
+    /// with a path prefix per provider).
+    /// </summary>
+    public static IResourceBuilder<ProjectResource> WithNotifyConfiguration(
+        this IResourceBuilder<ProjectResource> service,
+        ShopInfrastructure infra
+    )
+    {
+        var wireMock = infra.WireMock.GetEndpoint("http");
+        return service
+            .WithRabbitMq(infra)
+            .WithEnvironment(
+                "Notify__Providers__SendGrid__BaseAddress",
+                ReferenceExpression.Create($"{wireMock}/sendgrid/")
+            )
+            .WithEnvironment(
+                "Notify__Providers__SendGrid__ApiKey",
+                ShopResources.Providers.SendGridApiKey
+            )
+            .WithEnvironment(
+                "Notify__Providers__Twilio__BaseAddress",
+                ReferenceExpression.Create($"{wireMock}/twilio/")
+            )
+            .WithEnvironment(
+                "Notify__Providers__Twilio__AccountSid",
+                ShopResources.Providers.TwilioAccountSid
+            )
+            .WithEnvironment(
+                "Notify__Providers__Twilio__AuthToken",
+                ShopResources.Providers.TwilioAuthToken
+            )
+            .WithEnvironment("Notify__Providers__Twilio__From", ShopResources.Providers.TwilioFrom)
+            .WithEnvironment(
+                $"Notify__MerchantPhones__{ShopResources.Identity.ContosoTenant}",
+                ShopResources.Providers.ContosoMerchantPhone
+            )
+            .WaitFor(infra.WireMock);
+    }
 }
