@@ -38,8 +38,9 @@ public sealed class PackageCoverageTests(ITestOutputHelper output)
         var referenced = ReferencedByShop();
         var missing = Missing(referenced);
 
+        int used = KernelPackageIndex.Instance.Tiers.Keys.Count(referenced.Contains);
         output.WriteLine(
-            $"{KernelPackageIndex.Instance.Tiers.Count - missing.Count} of {KernelPackageIndex.Instance.Tiers.Count} packages referenced directly."
+            $"{used} of {KernelPackageIndex.Instance.Tiers.Count} packages referenced directly; {KnownGaps.Count} known gap(s)."
         );
         foreach (var (package, reason) in KnownGaps)
         {
@@ -58,11 +59,20 @@ public sealed class PackageCoverageTests(ITestOutputHelper output)
         referenced.Should().NotBeEmpty();
     }
 
-    [Fact(Skip = "Strict once every Shop service exists (the last PR of the Shop switches it on).")]
+    /// <summary>
+    /// Strict: a new kernel package fails this until a Shop project uses it (or it is added to <see cref="KnownGaps"/>
+    /// with the reason it cannot be proven here).
+    /// </summary>
+    [Fact]
     public void EveryPackage_IsReferencedDirectly_BySomeShopProject() =>
         Missing(ReferencedByShop())
             .Should()
             .BeEmpty("every kernel package needs a home in the Shop");
+
+    /// <summary>A known gap the Shop starts using is no longer a gap: the list must not go stale.</summary>
+    [Fact]
+    public void KnownGaps_AreReallyNotReferenced() =>
+        KnownGaps.Keys.Where(ReferencedByShop().Contains).Should().BeEmpty();
 
     private static List<string> Missing(IReadOnlySet<string> referenced) =>
         KernelPackageIndex

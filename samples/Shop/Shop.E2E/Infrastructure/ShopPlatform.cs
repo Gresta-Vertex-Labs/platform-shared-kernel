@@ -6,6 +6,7 @@ using Aspire.Hosting;
 using Aspire.Hosting.ApplicationModel;
 using Aspire.Hosting.Testing;
 using Grpc.Net.Client;
+using Microsoft.Extensions.DependencyInjection;
 using Shop.AppHost;
 using Xunit;
 
@@ -60,6 +61,7 @@ public sealed class ShopPlatform : IAsyncLifetime
                     ShopResources.Billing,
                     ShopResources.Merchant,
                     ShopResources.Notify,
+                    ShopResources.Reports,
                 }
             )
             {
@@ -192,6 +194,38 @@ public sealed class ShopPlatform : IAsyncLifetime
     }
 
     /// <summary>A Keycloak access token for one of the realm's test users (resource-owner password grant).</summary>
+    /// <summary>
+    /// The lines <paramref name="resource"/> has logged so far that contain <paramref name="filter"/>: for a failing
+    /// test to say what the service itself saw, since a test host keeps no per-process log files.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> LogsAsync(string resource, string filter)
+    {
+        var logs = App.Services.GetRequiredService<ResourceLoggerService>();
+        var lines = new List<string>();
+        foreach (
+            var resourceInstance in App
+                .Services.GetRequiredService<DistributedApplicationModel>()
+                .Resources
+        )
+        {
+            if (!resourceInstance.Name.StartsWith(resource, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            await foreach (var batch in logs.GetAllAsync(resourceInstance))
+            {
+                lines.AddRange(
+                    batch
+                        .Select(line => line.Content)
+                        .Where(line => line.Contains(filter, StringComparison.OrdinalIgnoreCase))
+                );
+            }
+        }
+
+        return lines;
+    }
+
     public async Task<string> TokenAsync(string user)
     {
         await _tokenLock.WaitAsync();

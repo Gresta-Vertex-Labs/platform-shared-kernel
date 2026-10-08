@@ -28,6 +28,10 @@
     <Project Path="Ordering/Shop.Ordering.Infrastructure/Shop.Ordering.Infrastructure.csproj" />
     <Project Path="Ordering/Shop.Ordering.Tests/Shop.Ordering.Tests.csproj" />
   </Folder>
+  <Folder Name="/Reports/">
+    <Project Path="Reports/Shop.Reports.Api/Shop.Reports.Api.csproj" />
+    <Project Path="Reports/Shop.Reports.Tests/Shop.Reports.Tests.csproj" />
+  </Folder>
   <Project Path="Shop.AppHost/Shop.AppHost.csproj" />
   <Project Path="Shop.Contracts/Shop.Contracts.csproj" />
   <Project Path="Shop.Coverage.Tests/Shop.Coverage.Tests.csproj" />

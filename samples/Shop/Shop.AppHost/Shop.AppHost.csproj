@@ -14,6 +14,7 @@
     <ProjectReference Include="..\Billing\Shop.Billing.Api\Shop.Billing.Api.csproj" />
     <ProjectReference Include="..\Merchant\Shop.Merchant.Api\Shop.Merchant.Api.csproj" />
     <ProjectReference Include="..\Notify\Shop.Notify.Worker\Shop.Notify.Worker.csproj" />
+    <ProjectReference Include="..\Reports\Shop.Reports.Api\Shop.Reports.Api.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -40,6 +40,12 @@ var billing = builder
     .WithBillingConfiguration(infra, pki, merchant)
     .WithHttpHealthCheck("/health/ready");
 
+// Reports: sales exports (CSV, Excel, PDF) and statements (HTML to PDF), into S3 and OBS stores.
+builder
+    .AddProject<Projects.Shop_Reports_Api>(ShopResources.Reports)
+    .WithReportsConfiguration(infra)
+    .WithHttpHealthCheck("/health/ready");
+
 // Notify: emails receipts and texts merchants, from Billing's events on RabbitMQ.
 builder
     .AddProject<Projects.Shop_Notify_Worker>(ShopResources.Notify)

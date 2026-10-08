@@ -18,7 +18,7 @@ public sealed class ShopInfrastructure
     public const string ChatModel = "qwen2.5:0.5b";
 
     /// <summary>The buckets the platform's file stores use.</summary>
-    public static readonly string[] Buckets = ["product-images"];
+    public static readonly string[] Buckets = ["product-images", "reports", "reports-archive"];
 
     public required IResourceBuilder<PostgresServerResource> Postgres { get; init; }
     public required IResourceBuilder<RedisResource> Redis { get; init; }
@@ -34,6 +34,7 @@ public sealed class ShopInfrastructure
     public required IResourceBuilder<ContainerResource> Temporal { get; init; }
     public required IResourceBuilder<ContainerResource> KeyVault { get; init; }
     public required IResourceBuilder<ContainerResource> WireMock { get; init; }
+    public required IResourceBuilder<ContainerResource> Gotenberg { get; init; }
 
     /// <summary>A connection string to one Shop database as one of the roles of postgres/01-roles.sql.</summary>
     public ReferenceExpression Database(string database, string role, string password)
@@ -161,6 +162,11 @@ public sealed class ShopInfrastructure
                 .WithArgs("--global-response-templating", "--disable-banner")
                 .WithHttpEndpoint(targetPort: 8080, name: "http")
                 .WithHttpHealthCheck("/__admin/health", endpointName: "http"),
+            // HTML to PDF: headless Chromium behind Gotenberg's HTTP API.
+            Gotenberg = builder
+                .AddContainer(ShopResources.Gotenberg, "gotenberg/gotenberg", "8.37.0")
+                .WithHttpEndpoint(targetPort: 3000, name: "http")
+                .WithHttpHealthCheck("/health", endpointName: "http"),
         };
     }
 }
