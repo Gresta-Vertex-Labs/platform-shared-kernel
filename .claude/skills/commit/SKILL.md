@@ -1,3 +1,9 @@
+---
+name: commit
+description: Review the working tree, group the changes by SharedKernel domain, and write one conventional commit per group after the user confirms the plan. Use when the user asks to commit their changes.
+disable-model-invocation: true
+---
+
 You are executing a smart git commit workflow for Platform.SharedKernel. Your job is to read every changed file, understand what actually changed, group by domain, determine the commit type, and produce clean conventional commits — one per domain group.
 
 ---
@@ -60,10 +66,11 @@ Files that share a domain scope form one commit group.
 | `SharedKernel.Messaging.MassTransit.RabbitMq` / `.AzureServiceBus` / `.EfCore` (outbox) | `messaging/rabbitmq`, `messaging/azureservicebus`, `messaging/outbox` |
 | `SharedKernel.Presentation.Core` / `.OpenApi` / `.GraphQL` | `presentation/core`, `presentation/openapi`, `presentation/graphql` |
 | `SharedKernel.Presentation.WebApi` and `SharedKernel.Presentation.WebApi.Generators` (packed inside WebApi) | `presentation/webapi` |
-| `SharedKernel.{Capability}.Testing`, `SharedKernel.Testing.Internal` | `testing/{capability}` (e.g. `testing/persistence`), `testing/internal` |
+| `SharedKernel.{Capability}.Testing` (in its capability folder) | `{capability}/testing` (e.g. `persistence/testing`) |
+| `SharedKernel.Testing`, `SharedKernel.Testing.Internal` (in `src/Testing/`) | `testing`, `testing/internal` |
 | `eng/SharedKernelTiers.targets` and the tier rules in `SharedKernel.ArchitectureTests` | `governance` (tier rules are governance even though the target lives in `eng/`) |
 
-GraphQL is a `presentation` package (it moved out of 11.Communication). There is no `application-abstractions`, `behaviors`, `communication/graphql` or `presentation/signalr-redis` scope any more (`SharedKernel.Presentation.SignalR.Redis` was deleted), and the probe-only `SharedKernel.ServiceDefaults.*` packages (AI, Caching, Caching.Redis, Messaging, Scheduling, Search, Storage, Workflows.Temporal, Cryptography.KeyVault) no longer exist — a change to a remaining ServiceDefaults package is `service-defaults`.  
+Scopes follow this table, not the domain slugs: `service-defaults` and `workflows` are the established scopes in this repo's history.
 If a group has only `.md` / documentation files and no code, mark it `docs-only`.
 
 ---
@@ -87,7 +94,7 @@ When a group has mixed signals, pick the highest-impact type: `feat` > `fix` > `
 Special cases:
 - `state-map.md` files (any domain folder) → `docs` with that domain's scope
 - Root `state-map.md` alone → `docs(root)`  
-- `.claude/` files (commands, agents) → `chore(tooling)`
+- `.claude/` files (skills, agents) → `chore(tooling)`
 - `docs/` files → `docs(docs)`; `CONTRIBUTING.md`, `README.md` and other root markdown → `docs(root)`
 - Test projects (`.Tests/` path segment) → `test` unless they contain new test subjects that are themselves the feature
 
@@ -115,7 +122,7 @@ feat(governance): reflection guard rules and no-make-generic predicate
 fix(persistence): encryption key rotation job skips already-rotated rows
 refactor(domain): extract domain event version helper to separate class
 docs(persistence): mark bulk-actions phase complete in state-map
-chore(tooling): add smart commit command
+chore(tooling): add smart commit skill
 ```
 
 ---

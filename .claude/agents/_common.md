@@ -9,7 +9,7 @@ This file is not an agent. Every agent in `.claude/agents/` follows it; an agent
 ## Repository facts
 
 - **Platform.SharedKernel**: a .NET 10 mono-repo of NuGet packages (the shared kernel of a microservice ecosystem). No business logic lives here. The repository is **public**.
-- Capability domains have ids `00.Governance` … `20.Reporting`. Each lives in the folder the root `CLAUDE.md` domain table maps its id to (for example `06.Persistence` → `src/Infrastructure/Persistence`); `{folder}` in these instructions means that folder. Each has `CLAUDE.md` (maintainer rules), `README.md` (overview) and `state-map.md` (living board). Folder numbers are an address and an EventId block, **not** a dependency layer.
+- Capability domains have ids `00.Governance` … `20.Reporting` and a slug (`persistence`). The root `CLAUDE.md` domain table is the only registry: id ↔ slug ↔ folder (for example `06.Persistence` ↔ `persistence` ↔ `src/Infrastructure/Persistence`). `{folder}` in these instructions means that folder; `{slug}` names the agent pair `{slug}-arch-planner` / `{slug}-phase-implementer`. Each has `CLAUDE.md` (maintainer rules), `README.md` (overview) and `state-map.md` (living board). Folder numbers are an address and an EventId block, **not** a dependency layer.
 - Every production project declares a `<SharedKernelTier>` (Foundation, Model, Abstractions, Adapter, Host, Testing, Tooling); `eng/SharedKernelTiers.targets` fails the build (SKTIER000–006) on an illegal reference.
 - All packages ship together at one MinVer version from a git tag. No `<Version>` in any `.csproj`.
 - Sources of truth, read them rather than recalling them:
@@ -24,7 +24,7 @@ This file is not an agent. Every agent in `.claude/agents/` follows it; an agent
 | Package README shape | `docs/package-readme-standard.md` (enforced by `PackageReadmeStandardTests`) |
 | Reference services | `samples/README.md`, `samples/OrderApi` |
 
-History is not kept in the repository beyond the one-line entries on the boards; `git log` is the record.
+History is not kept in the repository; `git log` is the record.
 
 ---
 
@@ -32,7 +32,7 @@ History is not kept in the repository beyond the one-line entries on the boards;
 
 **Editing**
 - Edit files with the Read/Edit/Write tools. Never round-trip a repo file through PowerShell `Get-Content`/`Set-Content` (it garbles UTF-8: `●`, `—`, `→`). For scripted edits use Bash tools or .NET with explicit UTF-8.
-- Never commit, push, tag or open a PR unless the user explicitly asks. `/commit` is the commit path.
+- Never commit, push, tag or open a PR unless the user explicitly asks. The `/commit` skill is the commit path.
 - No absolute machine paths, user names, e-mail addresses or other personal data in any tracked file. Paths are repo-relative.
 - Never write a secret, token or real connection string into a tracked file or a log.
 - Stay inside your jurisdiction (the agent file names it). Work that belongs to another domain becomes a note under `## Cross-Domain Dependencies` or a report line for the caller, never an edit.
@@ -47,8 +47,9 @@ History is not kept in the repository beyond the one-line entries on the boards;
 - Public members carry XML doc comments; concrete classes are `sealed` unless designed for inheritance; `CancellationToken` on every async method; no static mutable state.
 
 **Packages and projects**
-- Naming: `SharedKernel.{Capability}[.Abstractions|.{Provider}|.{Provider}.Core|.{Provider}.{Role}]`; fakes in `16.Testing` as `SharedKernel.{Capability}.Testing`; tests nested as `{Project}/{Project}.Tests/`.
-- **MAX_PATH:** before scaffolding or renaming a package, check that every file of it, its `.Tests` project included, stays within 250 characters at the clone root `C:Githubplatform-shared-kernel` (`bash eng/verify-path-lengths.sh`, also run by CI). Shorten the name if it does not. Build output goes to `artifacts/` and does not count.
+- Naming: `SharedKernel.{Capability}[.Abstractions|.{Provider}|.{Provider}.Core|.{Provider}.{Role}]`; fakes as `SharedKernel.{Capability}.Testing` **in the capability folder**, next to the contract they fake; tests nested as `{Project}/{Project}.Tests/`.
+- **Who edits a `.Testing` double:** the capability's own implementer, in the same phase as the contract change it mirrors, following the double rules in `src/Testing/CLAUDE.md` (determinism, faithful failure modes, mandatory tenant scope, no test framework). The `testing` pair owns those rules, the catalogue, `SharedKernel.Testing` and `SharedKernel.Testing.Internal`.
+- **MAX_PATH:** before scaffolding or renaming a package, check that every file of it, its `.Tests` project included, stays within 250 characters with the repo cloned at the reference root the root `CLAUDE.md` names (`bash eng/verify-path-lengths.sh` measures it; CI runs it too). Shorten the name if it does not. Build output goes to `artifacts/` and does not count.
 - A new project goes into `Platform.SharedKernel.slnx` (solution folder = its capability folder), `Platform.SharedKernel.Unit.slnf` (every production project), its test project into exactly one lane filter, and — if packable — `Directory.Packages.props`. The `.csproj` carries `<SharedKernelTier>`, `<Description>`, `<PackageTags>`, a `README.md`, no `<Version>`, and `PackageReference`s without versions (Central Package Management).
 - A new or changed public member goes into that project's `PublicAPI.Unshipped.txt`.
 
@@ -155,6 +156,29 @@ Domain `CLAUDE.md` headings, in this order: `## Packages`, `## Public Entry Poin
 - Every packable project has a `README.md` next to its `.csproj` (packing fails without it) following `docs/package-readme-standard.md`: fixed section order, absolute GitHub links, snippets that compile against the current public API, a Configuration table with full section paths, and never a link to `CLAUDE.md`, `state-map.md` or `docs/`.
 - Update the package README in the same change as any public API, configuration key, error code, EventId or readiness-probe change. Where a `ReadmeSample*Tests.cs` exists, keep it in step with the snippets.
 - The domain `README.md` keeps its package list and counts true.
+
+---
+
+## Agent file templates
+
+Every domain agent file has the frontmatter `name`, `description` (one paragraph plus **two** `<example>` blocks), `model`, `color`, `memory: project`, then this body. Sections hold only what is specific to the domain; everything shared lives here.
+
+**`{slug}-arch-planner`**
+1. Opening paragraph: read `_common.md`, then `{folder}/CLAUDE.md` and `{folder}/state-map.md`; role (sub-agent of `arch-lead`, jurisdiction `{folder}/`, phase keys `SK.{NN}.*`); one expertise line.
+2. `## Packages and where a proposal lands`: placement table (the proposal is… → it belongs in…), and what never goes into the Abstractions package.
+3. `## Guardrails`: the checks a proposal must pass, citing rule numbers of `{folder}/CLAUDE.md`.
+4. `## Decline patterns`: `Proposal | Why | Redirect`. Declines follow the Planner method below (no board entry).
+5. `## Phase-design conventions`: contract-first, lane placement, test obligations, configuration, version pins, wire formats, README tasks — whatever applies to this domain.
+6. `## Cross-domain couplings`: one line per coupled domain, naming the shared type or name.
+7. Closing line: "Report in the `_common.md` format, with the phase key, task count by prefix, any decline and its rule, blockers and cross-domain notes."
+
+**`{slug}-phase-implementer`**
+1. Opening paragraph: read `_common.md`, then `{folder}/CLAUDE.md` and `{folder}/state-map.md`; role (`/implement-phase {slug} [phase]` hands over one phase; build exactly its tasks); "`{folder}/CLAUDE.md` is the law".
+2. `## Jurisdiction`: what you may edit (`{folder}/`, including the capability's `.Testing` double), the `Package | Tier | Project | Test project (lane)` table, the tier edges you may use.
+3. `## Implementation knowledge`: registration shape, pitfalls that have bitten this domain, logging sub-block.
+4. `## Testing`: lanes, fixtures from `SharedKernel.Testing.Internal`, must-cover behaviours, contract tests.
+5. `## Domain verification`: checks beyond the common build and test steps (consumer-verify harness, samples, integration lane).
+6. Closing line: "Boards, brain, README and report follow `_common.md`. Domain deltas: …" (rule-numbering stability, Logging table, root `CLAUDE.md` changes → ask for `/sync-brain`).
 
 ---
 

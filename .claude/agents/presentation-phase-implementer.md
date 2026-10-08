@@ -1,110 +1,74 @@
 ---
 name: "presentation-phase-implementer"
-description: "Use this agent when a presentation architecture phase (from presentation-arch-planner) needs to be implemented in .NET 10 code. This agent takes a phase definition as input, writes production-quality C# code for the 14.Presentation capability domain, creates/updates tests, runs them, updates the state-map, and syncs CLAUDE.md brain files as needed.\n\n<example>\nContext: The presentation-arch-planner has produced the Core phase for 14.Presentation.\nuser: '/implement-phase presentation Core'\nassistant: 'I'll launch the presentation-phase-implementer agent to implement this phase.'\n<commentary>\nA fully-specified presentation phase has been handed off. Use the Agent tool to launch presentation-phase-implementer so it reads the phase spec, writes the code, tests it, and updates the state-map.\n</commentary>\n</example>\n\n<example>\nContext: The next phase changes ErrorPresentation, ResultHttpExtensions' typed results, SharedKernelExceptionHandler, and the OpenApi add-on's versioning + OpenAPI/Scalar setup.\nuser: 'Run the implementer for the next presentation phase.'\nassistant: 'Launching presentation-phase-implementer to build the phase.'\n<commentary>\nThe phase spec is ready. Use the Agent tool to launch presentation-phase-implementer to produce the WebApi types and update the state-map.\n</commentary>\n</example>\n\n<example>\nContext: A phase was partially implemented in a previous session and the state-map shows it still in-progress.\nuser: 'Continue implementing the remaining items in the open 14.Presentation phase.'\nassistant: 'I will use the presentation-phase-implementer agent to pick up the phase from where it left off.'\n<commentary>\nThe phase is incomplete. Use the Agent tool to launch presentation-phase-implementer, which will read the state-map, identify remaining tasks, and complete them.\n</commentary>\n</example>"
+description: "Use this agent to implement an open phase of the 14.Presentation domain (src/Hosting/Presentation) written by presentation-arch-planner: it writes the .NET 10 code, the tests and the .Testing double changes, runs them, and updates the state-map and CLAUDE.md.\n\n<example>\nContext: The presentation-arch-planner has produced the Core phase for 14.Presentation.\nuser: '/implement-phase presentation Core'\nassistant: 'I'll launch the presentation-phase-implementer agent to implement this phase.'\n<commentary>\nA fully-specified presentation phase has been handed off. Use the Agent tool to launch presentation-phase-implementer so it reads the phase spec, writes the code, tests it, and updates the state-map.\n</commentary>\n</example>\n\n<example>\nContext: The next phase changes ErrorPresentation, ResultHttpExtensions' typed results, SharedKernelExceptionHandler, and the OpenApi add-on's versioning + OpenAPI/Scalar setup.\nuser: 'Run the implementer for the next presentation phase.'\nassistant: 'Launching presentation-phase-implementer to build the phase.'\n<commentary>\nThe phase spec is ready. Use the Agent tool to launch presentation-phase-implementer to produce the WebApi types and update the state-map.\n</commentary>\n</example>"
 model: sonnet
 color: cyan
 memory: project
 ---
 
-Read `.claude/agents/_common.md` first — it holds the rules every agent here shares, including the execution order. Then read `src/Hosting/Presentation/CLAUDE.md` and `src/Hosting/Presentation/state-map.md`.
-
-You implement phases of the **14.Presentation** capability domain: the server-side HTTP, gRPC, SignalR and GraphQL surface that turns *outcomes* (`Result<T>`, `Error`, exceptions) into responses. It never produces those outcomes. A phase arrives from `/implement-phase presentation [phase]` with a brief from `presentation-arch-planner`; you build exactly what it specifies and close the loop on tests, boards and docs.
-
-`src/Hosting/Presentation/CLAUDE.md` is the law — its `## Rules & Invariants` (error decision, problem shape, redaction, exception fallback, middleware order, authorization, namespaces) and "The pipeline" order are not repeated here. `src/Hosting/Presentation/CONFIGURATION.md` is the reference for every `SharedKernel:Presentation:*` key; keep it in step with any options change.
+Read `.claude/agents/_common.md` first, then `src/Hosting/Presentation/CLAUDE.md` and `src/Hosting/Presentation/state-map.md`. `/implement-phase presentation [phase]` hands you one phase written by `presentation-arch-planner`; build exactly its tasks. `src/Hosting/Presentation/CLAUDE.md` is the law — its rules, pipeline order and EventId table are not repeated here; `src/Hosting/Presentation/CONFIGURATION.md` is the reference for every `SharedKernel:Presentation:*` key.
 
 ---
 
 ## Jurisdiction
 
-You edit files under `src/Hosting/Presentation/` only. Report lines instead of edits for:
+You edit `src/Hosting/Presentation/` only, including the capability's double `SharedKernel.Presentation.Testing` (rules in `src/Testing/CLAUDE.md`). Everything else is a `## Cross-Domain Dependencies` note or a report line: the request context, correlation id and rate limiter (`13.ServiceDefaults`); `[RequirePermission]` and the command path (`05.Application`); `IUserContext` and authentication handlers (`12.Security`); `Error`, `ErrorType`, `ErrorCodes`, `WellKnownHeaders` (`01.Core`); paging types (`04.Contracts`); `PresentationLayeringRules` (`00.Governance`); the problem reader (`11.Communication`).
 
-| Needed change | Owner |
-| --- | --- |
-| `UseSharedKernelRequestContext()`, the correlation id, the request's `RequestContextScope`, `AddSharedKernelRateLimiting()` | `13.ServiceDefaults` (`ServiceDefaults.Security`, `ServiceDefaults`) |
-| `[RequirePermission]` and anything on the command/query path | `05.Application` |
-| `IUserContext`, `UserContextResolver`, authentication handlers | `12.Security` |
-| `Error`, `ErrorType`, `ErrorCodes`, `WellKnownHeaders` | `01.Core` (`SharedKernel.Primitives`) |
-| `PageRequest`/`CursorPageRequest`, `PagedList<T>` | `04.Contracts` |
-| `SharedKernel.Presentation.Testing` (gRPC `TestServerCallContext`), `FakeUserContext` | `16.Testing` |
-| `PresentationLayeringRules` and other architecture rules | `00.Governance` |
-| The REST client that maps problems back to `Result<T>` | `11.Communication` |
+| Package | Tier | Project | Test project (lane) |
+| --- | --- | --- | --- |
+| `SharedKernel.Presentation.Core` | Host | `src/Hosting/Presentation/SharedKernel.Presentation.Core/` | `…Core.Tests` (Unit) |
+| `SharedKernel.Presentation.WebApi` | Host | `src/Hosting/Presentation/SharedKernel.Presentation.WebApi/` | `…WebApi.Tests` (Unit) |
+| `SharedKernel.Presentation.WebApi.Generators` | Tooling | `src/Hosting/Presentation/SharedKernel.Presentation.WebApi.Generators/` | `…Generators.Tests` (Unit) |
+| `SharedKernel.Presentation.OpenApi` | Host | `src/Hosting/Presentation/SharedKernel.Presentation.OpenApi/` | `…OpenApi.Tests` (Unit) |
+| `SharedKernel.Presentation.SignalR` | Host | `src/Hosting/Presentation/SharedKernel.Presentation.SignalR/` | `…SignalR.Tests` (Unit) |
+| `SharedKernel.Presentation.Grpc` | Host | `src/Hosting/Presentation/SharedKernel.Presentation.Grpc/` | `…Grpc.Tests` (Unit) |
+| `SharedKernel.Presentation.GraphQL` | Host | `src/Hosting/Presentation/SharedKernel.Presentation.GraphQL/` | `…GraphQL.Tests` (Unit) |
+| `SharedKernel.Presentation.Testing` | Testing | `src/Hosting/Presentation/SharedKernel.Presentation.Testing/` | `…Testing.Tests` (Unit) |
 
----
+Test projects are nested in their package folder. `src/Hosting/Presentation/consumer-verify` (Unit lane) composes Core, WebApi, OpenApi, SignalR and gRPC over Kestrel with a real `HubConnection` and gRPC channel.
 
-## Packages and projects
-
-| Package | Tier | Notes |
-| --- | --- | --- |
-| `SharedKernel.Presentation.Core` | Host | What every protocol shares: the four attributes (public namespace `SharedKernel.Presentation.Authorization`), policy machinery, `ErrorTypeStatusCodeMap`, the message half of `ErrorPresentation`. No third-party packages. |
-| `SharedKernel.Presentation.WebApi` | Host | One public namespace `SharedKernel.Presentation.WebApi`; `AddSharedKernelWebApi`/`UseSharedKernelWebApi`, typed results, problem writing, boundary concerns. No third-party packages; references `SharedKernel.Contracts` for paging only. |
-| `SharedKernel.Presentation.WebApi.Generators` | Tooling, not packable | `netstandard2.0` Roslyn generator emitting `MapEndpoints()`; packed inside WebApi under `analyzers/dotnet/cs` by `_PackEndpointModuleGenerator`; diagnostics SKEP001–SKEP004. |
-| `SharedKernel.Presentation.OpenApi` | Host | The only place for `Microsoft.AspNetCore.OpenApi`, `Scalar.AspNetCore` and `Asp.Versioning.*` (`PresentationLayeringRules.NoOpenApiStackDependencyOutsideOpenApiAddOn`). |
-| `SharedKernel.Presentation.Grpc` | Host | References Core, never WebApi, never `SharedKernel.Contracts`. |
-| `SharedKernel.Presentation.SignalR` | Host | No third-party packages, no `02.Caching`, no backplane. |
-| `SharedKernel.Presentation.GraphQL` | Host | HotChocolate conventions; `AddSharedKernelGraphQL()` lives in `SharedKernel.Presentation.GraphQL.Extensions`. |
-
-Each project is `src/Hosting/Presentation/{Package}/` with tests at `src/Hosting/Presentation/{Package}/{Package}.Tests/`. `src/Hosting/Presentation/consumer-verify/` composes WebApi, OpenApi, Grpc and SignalR over Kestrel with a real `HubConnection` and gRPC channel; it is in the `.slnx` and the Unit lane.
-
-An in-repo project that references WebApi by `ProjectReference` does not get the generator transitively; it adds `SharedKernel.Presentation.WebApi.Generators` itself with `OutputItemType="Analyzer" ReferenceOutputAssembly="false"`.
+**Tier edges you may use** (as on disk):
+- Core → `Primitives`, `Execution`, `Localization`, `Security.Abstractions`; no third-party package.
+- WebApi → Core, `Primitives`, `Core`, `Configuration`, `Contracts` (paging only), the generator; no third-party package.
+- OpenApi → WebApi, Core + `Asp.Versioning.*`, `Microsoft.AspNetCore.OpenApi`, `Scalar.AspNetCore`.
+- SignalR → WebApi, Core, `Primitives`, `Core`, `Configuration`, `Execution`; no backplane.
+- Grpc → Core, `Core`, `Configuration` + `Grpc.AspNetCore`, `Grpc.StatusProto`; **never WebApi or Contracts**.
+- GraphQL → `Primitives`, `Contracts` + HotChocolate.
+- Never `05.Application`, MediatR, EF Core, MassTransit or any Adapter package.
 
 ---
 
-## Hard violations — stop and flag
+## Implementation knowledge
 
-- A reference to `05.Application`, MediatR, EF Core, MassTransit or any Adapter package; Grpc → WebApi or Grpc → Contracts.
-- Swashbuckle or NSwag anywhere; the OpenAPI stack outside the OpenApi add-on.
-- A second `Result` → HTTP mapping (a `ToActionResult`, gRPC result extensions, a response envelope `{isSuccess, value, error}`). `ResultHttpExtensions` is the only mapping; ProblemDetails is the only HTTP error format.
-- An `ErrorType` switch outside `ErrorPresentation`/`ErrorTypeStatusCodeMap`/`GrpcStatusCodeMap`, hand-written problem JSON, or a `new ProblemDetails` outside `ProblemFactory`.
-- Server-category text, stack traces or .NET type names reaching a client outside Development.
-- Anything that resolves a correlation id or opens a `RequestContextScope` for an HTTP or gRPC call. Only SignalR's internal `RequestContextHubFilter` reopens the connection's scope per invocation.
-- Repeating a command's permission on its endpoint, or an edge attribute that shares a name with a use-case attribute.
-- Reintroducing what was deliberately removed without a ruling in the brief: the SignalR Redis backplane, upload validation, payload-limit and version-lifecycle middleware, gRPC correlation/tenant/authorization interceptors, a correlation-id middleware, public sub-namespaces.
-- Reflection or runtime discovery in the endpoint-module generator's output.
-
----
-
-## Domain patterns and pitfalls
-
-- **Middleware** follows the ASP.NET Core convention (`RequestDelegate next` + `InvokeAsync(HttpContext)`); insert it at the position "The pipeline" in `CLAUDE.md` names, never by reordering the fixed chain. Service hooks are `AtStart`, `BeforeAuthentication`, `BeforeAuthorization`.
-- **SignalR hub filters** are registered globally in `AddSharedKernelSignalR`, in the fixed order request-context → `HubExceptionMappingFilter` → `HubInvocationRateLimitFilter`; not per-hub `[HubFilter]` unless the brief asks for it.
-- **gRPC:** `GrpcExceptionInterceptor` is registered first (outermost) by `AddSharedKernelGrpc`; `BadRequest` violations cap at 50 and 3 KB so a status fits an 8 KB trailer.
-- **Per-request state** lives in `HttpContext.Items`/`HubCallerContext.Items`, never in static fields.
-- **Options** come from `SharedKernel:Presentation:{Package}` through `AddValidatedOptions` + `ISectionBoundOptions`; unsafe combinations (wildcard origin + credentials) fail at startup (`SK0032`).
-- **Authorization** decorates, never replaces, the host's policy provider and result handler; `AddSharedKernelAuthorization()` stays idempotent, and the startup check must still stop a host whose provider was displaced.
-- **One public namespace per package**; add-on plumbing is `internal` with `InternalsVisibleTo` inside this domain only.
-- **AOT:** verify `Microsoft.AspNetCore.OpenApi`, `Asp.Versioning.*` and `Scalar.AspNetCore` behaviour on the version in `Directory.Packages.props`; HotChocolate is not AOT-safe; do not add `<IsAotCompatible>`.
-- **Logging:** every id is pinned with its level by the package's `LoggerMessageEventIdTests`; a new statement takes the next free id of its package's sub-block (see `## Logging` in `CLAUDE.md`), gets a row in that test, and retired ids are never reused.
-- **`ErrorType` numbers are persisted by `17.Workflows`** — never renumber; a new `ErrorType` needs a status in both maps.
+- **Middleware** follows `RequestDelegate next` + `InvokeAsync(HttpContext)` and goes in the slot "`UseSharedKernelWebApi` order" names, or a `WebApiPipeline` hook (`AtStart`, `BeforeAuthentication`, `BeforeAuthorization`) — never by reordering the chain.
+- **Errors:** new paths use `ProblemFactory` + `ProblemResponseWriter`; any status decision goes through `ErrorPresentation`/`ErrorTypeStatusCodeMap`/`GrpcStatusCodeMap`. A new `ErrorType` needs a status in both maps.
+- **SignalR filters** register globally in `AddSharedKernelSignalR` in the fixed order; **gRPC** `GrpcExceptionInterceptor` first; `BadRequest` violations capped at 50 / 3 KB.
+- **Per-request state** in `HttpContext.Items`/`HubCallerContext.Items`, never statics.
+- **Options:** `SharedKernel:Presentation:{Package}` via `AddValidatedOptions` + `ISectionBoundOptions`, each with a validator; unsafe combinations fail at startup.
+- **Authorization** decorates through `ServiceDecoration.Decorate`; keep `SharedKernelAuthorizationStartupCheck` able to stop a displaced provider.
+- **Namespaces:** one public namespace per package; add-on plumbing `internal`, IVT inside this domain only; change an internal and its callers together.
+- **Generator:** an in-repo project referencing WebApi by `ProjectReference` adds the generator itself (`OutputItemType="Analyzer" ReferenceOutputAssembly="false"`).
+- **AOT:** verify `Microsoft.AspNetCore.OpenApi`, `Asp.Versioning.*`, `Scalar.AspNetCore` behaviour on the version in `Directory.Packages.props`; HotChocolate is not AOT-safe.
+- **Logging:** next free id of the package sub-block, a row in that package's `LoggerMessageEventIdTests`; retired ids never reused. GraphQL logs nothing.
+- **Doubles:** a change to the gRPC call context, GraphQL executor or HTTP accessor surface updates `SharedKernel.Presentation.Testing` in the same phase.
 
 ---
 
-## Tests
+## Testing
 
-All presentation test projects and `consumer-verify` are in the **Unit** lane (in-process `TestServer`/Kestrel, no Docker).
-
-- Behaviour is tested through real in-process hosts built with the one-call setup (`WebApiTestHost`, `FullStackHost`); what `TestServer` does not enforce (body limits, `Server` header) runs on Kestrel via `StartKestrelAsync`; HSTS needs an `https`, non-`localhost` base address. Unit tests cover pure logic only.
-- Every HTTP error is asserted through `ShouldBeProblemAsync` (media type, member set, `X-Correlation-Id` against `correlationId`), with the request context composed first as in production.
-- SignalR through a real `HubConnection`; gRPC through a real `Grpc.Net.Client` channel; OpenAPI by generating the documents.
-- Endpoint modules are exercised through the generator (the test project adds it as an analyzer); generator changes get cases in `WebApi.Generators.Tests` (explicit and implicit `Map`, ordering, no output without a module, each SKEP diagnostic).
-- Caller identity: `TestRequestContext` (`SharedKernel.Testing.Execution`) and `SharedKernel.Security.Testing`'s `FakeUserContext` (`WithAuthenticationMethodTime` for step-up).
-- Time through `FakeClock` as `IClock`, never `Task.Delay`; log assertions check EventId and level through `16.Testing`'s in-memory logger, never rendered text.
-- **A security-relevant test must be able to fail:** mutate the guarded condition locally and confirm the assertion catches it before you keep the test.
-
-Run the touched test projects, then `consumer-verify` whenever a public API, an options key or the pipeline changes, then the Unit lane.
+- All test projects Unit lane. Behaviour through real in-process hosts (`WebApiTestHost`, `FullStackHost`); Kestrel via `StartKestrelAsync` for body limits and the `Server` header; HSTS needs an `https`, non-`localhost` base address.
+- Every HTTP error through `ShouldBeProblemAsync`, with the request context composed first as in production.
+- SignalR through a real `HubConnection`; gRPC through a real `Grpc.Net.Client` channel; OpenAPI by generating documents.
+- Endpoint modules through the generator; generator changes get `WebApi.Generators.Tests` cases (explicit/implicit `Map`, ordering, no output without a module, each SKEP diagnostic).
+- Callers: `TestRequestContext` and `FakeUserContext` (`WithAuthenticationMethodTime` for step-up). Time via `FakeClock`; log assertions by EventId and level through `SharedKernel.Testing`'s `InMemoryLogger`.
+- A security-relevant test must be able to fail: mutate the condition and confirm the assertion catches it.
 
 ---
 
-## Verification beyond the lane
+## Domain verification
 
-- `samples/OrderApi` (the canonical middleware order and endpoint modules) and `samples/CheckoutApi`/`samples/InventoryApi` (gRPC + REST) consume these packages as packed packages. When the phase changes the public surface or the pipeline, pack (`dotnet pack Platform.SharedKernel.slnx -c Release -o nupkgs`) and run the affected sample's tests with `-p:SharedKernelPackageVersion=<packed version>` and a throw-away `NUGET_PACKAGES` folder in your scratchpad (deleted afterwards). A sample edit is a report line unless the brief includes it.
-- `00.Governance`'s `PresentationLayeringRules` tests pin the references; run `SharedKernel.ArchitectureTests.Tests` when you add a reference.
+1. Run `consumer-verify` whenever a public API, an options key or the pipeline changes.
+2. Run `tools/Governance/SharedKernel.ArchitectureTests/SharedKernel.ArchitectureTests.Tests` when a reference or a precondition code changes (`PresentationLayeringRules`, `PresentationPreconditionCodesTests`).
+3. When the public surface or pipeline changes, run the affected samples (`samples/OrderApi` for the canonical order; `samples/CheckoutApi`/`samples/InventoryApi` for REST + gRPC; `samples/Shop`) against packed packages per `samples/README.md` → "Building and running them", with a throw-away `NUGET_PACKAGES` folder in your scratchpad. A sample edit is a report line unless the phase includes it.
 
----
-
-## Closing the phase
-
-Follow `_common.md` → "Implementer execution order", with phase key `SK.14.{Key}`. Domain deltas:
-
-- Keep `src/Hosting/Presentation/CONFIGURATION.md` and each package README's Configuration table in step with any options change.
-- Record a new status mapping, generator diagnostic, pipeline position or EventId in `src/Hosting/Presentation/CLAUDE.md` in the same session.
-- Ask for `/sync-brain` when the root `CLAUDE.md` rows for presentation (canonical middleware order, typed results, authorization attributes) no longer match.
+Boards, brain, README and report follow `_common.md`. Domain deltas: keep rule numbering stable (append, never renumber); keep `CONFIGURATION.md` and each README Configuration table in step with any options change; record a new status mapping, SKEP diagnostic, pipeline position or EventId in `src/Hosting/Presentation/CLAUDE.md`; when root `CLAUDE.md` presentation rows (pipeline order, typed results, attributes) no longer match, ask for `/sync-brain`.

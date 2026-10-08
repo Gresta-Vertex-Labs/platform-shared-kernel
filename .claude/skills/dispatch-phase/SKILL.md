@@ -1,6 +1,8 @@
 ---
-description: Hand pending root work-order phases to their domain arch-planner agents, in dependency order
+name: dispatch-phase
+description: Hand the pending P-entries of the root state-map's work orders to their domain {slug}-arch-planner agents, in dependency order, and mark them dispatched. Use after /arch has written a work order and the user wants the domains to plan their phases.
 argument-hint: "[P-NNN | WO-NNN]"
+disable-model-invocation: true
 ---
 
 You are the cross-domain phase dispatcher for Platform.SharedKernel. You take the `○` Pending P-entries from the root `state-map.md` `## Open Work`, hand each domain's entries to its `{slug}-arch-planner` agent (one domain at a time, producers before consumers), and mark them `◐` Dispatched with the phase key the planner created.
@@ -36,7 +38,7 @@ Stop.
 
 ## Step 2 — Check dependencies
 
-For each entry, every `**Depends on:**` P-entry must be `◐`, `●`, listed under `## Completed Work Orders`, or `○` but in this same batch (Step 3 orders it first). Otherwise hold the entry back for this run and report it as blocked.
+For each entry, every `**Depends on:**` P-entry must be `◐`, `●`, no longer on the board (finished work orders are deleted), or `○` but in this same batch (Step 3 orders it first). Otherwise hold the entry back for this run and report it as blocked.
 
 ---
 
@@ -47,31 +49,7 @@ Group the remaining entries by `**Domain:**` and order the groups:
 2. **Then tier order** of the packages the entries change: Foundation → Model → Abstractions → Adapter → Host → Testing/Tooling (e.g. `SharedKernel.Execution` is Foundation although it sits in `01.Core`). A group spanning tiers takes its lowest.
 3. **Then domain number** as the tie-breaker.
 
-Planner per domain (all in `.claude/agents/`):
-
-| Folder | Planner |
-| --- | --- |
-| `00.Governance` | `governance-arch-planner` |
-| `01.Core` | `core-arch-planner` |
-| `02.Caching` | `caching-arch-planner` |
-| `03.Domain` | `domain-arch-planner` |
-| `04.Contracts` | `contracts-arch-planner` |
-| `05.Application` | `application-arch-planner` |
-| `06.Persistence` | `persistence-arch-planner` |
-| `07.Messaging` | `messaging-arch-planner` |
-| `08.Storage` | `storage-arch-planner` |
-| `09.Search` | `search-arch-planner` |
-| `10.Intelligence` | `intelligence-arch-planner` |
-| `11.Communication` | `communication-arch-planner` |
-| `12.Security` | `security-arch-planner` |
-| `13.ServiceDefaults` | `servicedefaults-arch-planner` |
-| `14.Presentation` | `presentation-arch-planner` |
-| `15.Integration` | `integration-arch-planner` |
-| `16.Testing` | `testing-arch-planner` |
-| `17.Workflows` | `workflow-arch-planner` |
-| `18.Idempotency` | `idempotency-arch-planner` |
-| `19.Scheduling` | `scheduling-arch-planner` |
-| `20.Reporting` | `reporting-arch-planner` |
+The planner for a domain is `{slug}-arch-planner`, with the slug and folder read from the domain table in the root `CLAUDE.md` (match the entry's `**Domain:**` id against the Domain column). Never keep a copy of that table here.
 
 A Domain of `eng` is build work for `devops-lead`: do not dispatch it; report it as "run /devops".
 
@@ -87,7 +65,8 @@ For each group, in order:
 Read .claude/agents/_common.md, then plan the following P-entries for {NN}.{Name}, in order.
 For each: follow the planner method in _common.md — analyse, give a verdict, design one phase
 (key SK.{NN}.{PascalName}), write it under ## Open Work in {folder}/state-map.md with its
-Phase Key Registry row, and refresh {folder}/CLAUDE.md. Report the phase key per P-entry.
+Phase Key Registry row, and refresh {folder}/CLAUDE.md. A declined entry writes no board
+entry; give the verdict and the rule. Report the phase key per P-entry.
 
 ---
 {full text of P-NNN}
@@ -98,8 +77,7 @@ Phase Key Registry row, and refresh {folder}/CLAUDE.md. Report the phase key per
 
 **4b. Record the result** in the root `state-map.md`, only after the planner returns successfully:
 - For each planned entry: `**Status:** `○` Pending` → `**Status:** `◐` Dispatched`, and `**Phase key:** —` → the key the planner reported.
-- An entry the planner declined: `**Status:** `⊘` Declined` with the reason in one line under it. If every entry of the work order is now `●` or `⊘`, collapse the WO block to one line under `## Completed Work Orders`.
-- Add one line to `## Changelog` (`- [YYYY-MM-DD] P-NNN, … dispatched to {planner} ({NN}.{Name}) (dispatch-phase)`) and trim the section to its last 10 entries.
+- An entry the planner declined: `**Status:** `⊘` Declined` with the reason in one line under it. If every entry of the work order is now `●` or `⊘`, delete the WO block (the outcome belongs in the commit message, not the board).
 
 If the planner fails or reports no phase key, leave its entries `○` Pending and record the failure for the report.
 
@@ -130,6 +108,6 @@ Omit empty sections.
 
 ## Format contract
 
-- Writes only the root `state-map.md` (`## Open Work` statuses and phase keys, `## Completed Work Orders`, `## Changelog`). Domain boards and `CLAUDE.md` files are written by the planners.
+- Writes only the root `state-map.md` (`## Open Work` statuses and phase keys; deletes a finished WO block). Domain boards and `CLAUDE.md` files are written by the planners.
 - Status transitions here: `○` Pending → `◐` Dispatched or `⊘` Declined. Never re-dispatches a `◐`/`●` entry.
 - Never dispatches out of dependency order.

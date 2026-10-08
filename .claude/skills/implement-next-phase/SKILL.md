@@ -1,5 +1,7 @@
 ---
-description: Implement the lowest dispatched phase on the root board through /implement-phase
+name: implement-next-phase
+description: Implement the lowest-numbered dispatched P-entry on the root state-map by handing it to /implement-phase. Use when the user says "implement the next phase" without naming a domain.
+disable-model-invocation: true
 ---
 
 You are the next-phase implementation launcher for Platform.SharedKernel. You find the lowest-numbered dispatched P-entry on the root board and hand it to `/implement-phase`. You never edit a file yourself.
@@ -7,7 +9,7 @@ You are the next-phase implementation launcher for Platform.SharedKernel. You fi
 **Input:**
 $ARGUMENTS
 
-> Ignored: this command always targets the lowest dispatched Phase ID.
+> Ignored: this skill always targets the lowest dispatched Phase ID.
 
 ---
 
@@ -34,7 +36,7 @@ Stop.
 
 ## Step 2 — Select the target
 
-Sort by Phase ID ascending. Take the first entry whose `**Depends on:**` P-entries are all `●` (or listed under `## Completed Work Orders`). If none qualifies, list each dispatched entry with the dependency it waits on and stop.
+Sort by Phase ID ascending. Take the first entry whose `**Depends on:**` P-entries are all `●` or no longer on the board (finished work orders are deleted). If none qualifies, list each dispatched entry with the dependency it waits on and stop.
 
 Output one line:
 ```
@@ -47,29 +49,7 @@ If `**Phase key:**` is `—`, the planner's key was never recorded: pass no phas
 
 ## Step 3 — Map the domain to its slug
 
-| Folder | Slug |
-| --- | --- |
-| `00.Governance` | `governance` |
-| `01.Core` | `core` |
-| `02.Caching` | `caching` |
-| `03.Domain` | `domain` |
-| `04.Contracts` | `contracts` |
-| `05.Application` | `application` |
-| `06.Persistence` | `persistence` |
-| `07.Messaging` | `messaging` |
-| `08.Storage` | `storage` |
-| `09.Search` | `search` |
-| `10.Intelligence` | `intelligence` |
-| `11.Communication` | `communication` |
-| `12.Security` | `security` |
-| `13.ServiceDefaults` | `servicedefaults` |
-| `14.Presentation` | `presentation` |
-| `15.Integration` | `integration` |
-| `16.Testing` | `testing` |
-| `17.Workflows` | `workflow` |
-| `18.Idempotency` | `idempotency` |
-| `19.Scheduling` | `scheduling` |
-| `20.Reporting` | `reporting` |
+Look the entry's `**Domain:**` id up in the domain table of the root `CLAUDE.md` and take its Slug column. Never keep a copy of that table here.
 
 A domain of `eng` (build work) has no implementer: output `implement-next-phase: P-NNN is build work; run /devops with its text.` and stop.
 

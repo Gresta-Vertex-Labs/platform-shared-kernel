@@ -28,7 +28,7 @@ The zone is where a capability mainly belongs, not a rule: a capability keeps it
 
 Each capability folder holds three files: **`CLAUDE.md`** (maintainer rules — read it before editing that domain), **`README.md`** (overview) and **`state-map.md`** (living board: Package Board, open Phase Keys, Open Work, Blocked, Cross-Domain Dependencies). Completed work is removed from the board; `git log` is the record.
 
-**Domain ids.** A domain keeps its id (`06.Persistence`) even though its folder has no number: the id names the domain in work orders and phase keys (`SK.06.…`), and its number is the domain's EventId block (`6000`–`6999`, registry `LoggingEventIdRanges`). The table below is the **registry**: domain id ↔ slug ↔ folder. The slug names the agent pair (`{slug}-arch-planner`, `{slug}-phase-implementer`) and is what `/implement-phase` takes; commands and agents resolve every domain through this table, never their own copy.
+**Domain ids.** A domain keeps its id (`06.Persistence`) even though its folder has no number: the id names the domain in work orders and phase keys (`SK.06.…`), and its number is the domain's EventId block (`6000`–`6999`, registry `LoggingEventIdRanges`). The table below is the **registry**: domain id ↔ slug ↔ folder. The slug names the agent pair (`{slug}-arch-planner`, `{slug}-phase-implementer`) and is what `/implement-phase` takes; skills and agents resolve every domain through this table, never their own copy.
 
 Counts are **packable packages** (tests, `consumer-verify` harnesses, benchmarks and `SharedKernel.Testing.Internal` excluded). Tiers: **F** Foundation · **M** Model · **Ab** Abstractions · **Ad** Adapter · **H** Host · **T** Testing · **To** Tooling.
 
@@ -278,7 +278,7 @@ What a service's Application and Domain projects depend on — never the concret
 
 Work flows from intent → work order → domain phase → code, with `state-map.md` as the hand-off point.
 
-| Command | What it does |
+| Skill | What it does |
 | --- | --- |
 | `/arch <request>` | `arch-lead` evaluates the request against the architecture and writes a work order (WO + P-entries) into the root `state-map.md`. Plans; never writes code. |
 | `/dispatch-phase` | Fans a work order out to the affected domains' `{domain}-arch-planner` agents, which author phases in their `state-map.md` and refresh their `CLAUDE.md`. |
@@ -289,6 +289,7 @@ Work flows from intent → work order → domain phase → code, with `state-map
 | `/commit` | Reviews the working tree and writes a conventional commit. |
 | `/devops <request>` | `devops-lead`: CI, packaging, versioning, containers, build configuration. |
 
-- Agents: `arch-lead`, `devops-lead`, and one `{domain}-arch-planner` + `{domain}-phase-implementer` pair per domain (in `.claude/agents/`).
+- Skills live in `.claude/skills/{name}/SKILL.md`; the side-effecting ones (`/commit`, `/dispatch-phase`, `/implement-*`, `/state-map-phase`, `/sync-brain`) run only when you invoke them.
+- Agents: `arch-lead`, `devops-lead`, and one `{slug}-arch-planner` + `{slug}-phase-implementer` pair per domain (in `.claude/agents/`), the slug taken from the domain table above.
 - Rules shared by every agent live in `.claude/agents/_common.md`.
 - Agent memory under `.claude/agent-memory/` is local to each developer and gitignored.
