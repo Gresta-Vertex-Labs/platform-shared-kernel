@@ -26,7 +26,7 @@ namespace SharedKernel.Messaging.MassTransit.Tests.HarnessTests;
 /// happened to supply a custom header or a partition key, so the ordinary publish lost it.
 /// </para>
 /// <para>
-/// Found by <c>samples/ShippingApi</c> against a real broker, because both paths still looked
+/// Found by a sample service against a real broker, because both paths still looked
 /// correct in isolation: the envelope carried the right tenant, and the consumer simply had none.
 /// These tests are the guard that keeps the two verbs in step.
 /// </para>

@@ -162,9 +162,10 @@ silently overwrite data or store unchecked bytes.
 
 ## See it run
 
-[**samples/DocumentsApi**](../../../samples/DocumentsApi/README.md) is a file service on all three packages: two S3
-connections with separate IAM users, a tenant store and an OBS store, behind an HTTP API. Its scenarios run against
-MinIO in CI, and against real Amazon S3 and Huawei OBS when credentials are supplied.
+The [**Shop**](../../../samples/Shop/README.md) uses all three packages against MinIO:
+[Catalog](../../../samples/Shop/Catalog/) takes product images through presigned S3 uploads, and
+[Reports](../../../samples/Shop/Reports/) writes exports to an S3 store and an OBS archive (the OBS provider runs
+path-style against MinIO) behind presigned downloads. `Shop.E2E` drives both end to end.
 
 ## Guarantees
 

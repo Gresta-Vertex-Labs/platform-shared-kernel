@@ -28,7 +28,7 @@ You edit files under `src/Infrastructure/Persistence/` only. Work that lands els
 | The EF Core outbox | `07.Messaging` (`Messaging.MassTransit.EfCore`) |
 | `Idempotency.EfCore` | `18.Idempotency` |
 | Governance rules (`PersistenceNamespaceConventionRules`, `UnitOfWorkSeamRules`, SK0042, SK0201) | `00.Governance` |
-| `samples/BillingApi` | report line; the sample is the domain's end-to-end proof, changed only when the phase says so |
+| `samples/Shop` (Ordering, Billing, Inventory, Reports) | report line; the Shop is the domain's end-to-end proof, changed only when the phase says so |
 
 ---
 
@@ -104,7 +104,7 @@ Run these when the phase changes a public API, a nuspec pin, the registration sh
 1. **Packed consumer** — `dotnet pack Platform.SharedKernel.slnx -c Release -o nupkgs`, then
    `dotnet test src/Infrastructure/Persistence/SharedKernel.Persistence.ConsumerVerify -c Release -p:SharedKernelPackageVersion=<packed version>`
    with `NUGET_PACKAGES` pointed at a throw-away folder in your scratchpad (MinVer gives every build of one commit the same version, so the shared global cache can serve stale package content). Delete the folder afterwards. This is the only proof that the exact-version pins resolve.
-2. **Reference service** — `samples/BillingApi` (`BillingApi.Tests`, Testcontainers PostgreSQL with the production role split) restored and tested the same way against the packed set.
+2. **Reference services** — the Shop (`samples/Shop/build.sh --test`, then `--e2e` for the Ordering, Billing, Inventory and Reports flows against PostgreSQL with the production role split) built and tested against the packed set.
 
 If Docker is unavailable, run the Unit lane, mark only the container-backed tasks `⚑` with the evidence, and say so in the report (see `_common.md`).
 

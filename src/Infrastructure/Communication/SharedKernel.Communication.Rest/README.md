@@ -88,7 +88,7 @@ public sealed class InventoryClient(HttpClient http) : IInventoryClient
 ```
 
 `InventoryJson` is your `JsonSerializerContext`; each verb also has a reflection overload
-(`JsonSerializerOptions.Web`) — see `samples/CheckoutApi`.
+(`JsonSerializerOptions.Web`). The Shop sample's Ordering service (`RestPayments` in `samples/Shop`) uses the source-generated form.
 
 ## How it works
 
@@ -100,7 +100,7 @@ flowchart LR
     Y --> R["Resilience<br/>timeout · retry/hedge · breaker"]
     R --> A["Credential<br/>(per attempt)"]
     A --> D["Service discovery"]
-    D --> S["InventoryApi"]
+    D --> S["The called service"]
 ```
 
 - **What every call carries**, outermost first: the caller's correlation id, tenant, actor and client

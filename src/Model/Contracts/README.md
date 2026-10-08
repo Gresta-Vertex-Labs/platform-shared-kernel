@@ -94,10 +94,10 @@ if (!request.IsValid) { /* request.Errors: pagination.page.out_of_range, paginat
 
 ## See it run
 
-- [samples/ShippingApi](../../../samples/ShippingApi/README.md) publishes a `[IntegrationEvent("shipping.shipment-dispatched", Version = 1)]`
-  record through `IEventPublisher` over a real RabbitMQ broker.
-- [samples/BillingApi](../../../samples/BillingApi/README.md) returns `PagedList<InvoiceView>` from a `PageRequest` and
-  `CursorPagedList<InvoiceView>` from a `CursorPageRequest`, both through the persistence repositories.
+- The Shop's [Ordering](../../../samples/Shop/Ordering/) publishes `[IntegrationEvent("ordering.order-placed", Version = 1)]`
+  and its sibling records (in [`Shop.Contracts`](../../../samples/Shop/Shop.Contracts/)) through `IEventPublisher` and
+  the EF Core outbox over a real RabbitMQ broker; [Billing](../../../samples/Shop/Billing/) publishes
+  `billing.receipt-due`, consumed by Notify and Reports.
 
 ## Guarantees
 

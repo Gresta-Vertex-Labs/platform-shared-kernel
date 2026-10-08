@@ -168,8 +168,9 @@ bound to its payout, so it cannot be copied to another row.
 
 ## Where it is used
 
-Every service in [`samples/`](../../samples/README.md) is built on these packages; [`samples/OrderApi`](../../samples/OrderApi)
-is the reference for wiring a new service, with an architecture test on each project's kernel references. Request context
+Every service in [`samples/`](../../samples/README.md) is built on these packages; the Shop's
+[`Ordering`](../../samples/Shop/Ordering) is the reference for wiring a new service, with an architecture test on each
+project's kernel references. Request context
 and correlation propagation are proven end to end across HTTP, gRPC, messaging and workflows by the platform's own
 integration tests.
 

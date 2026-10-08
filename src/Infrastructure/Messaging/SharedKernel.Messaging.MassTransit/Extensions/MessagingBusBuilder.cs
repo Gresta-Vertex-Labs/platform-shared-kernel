@@ -894,7 +894,7 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
         // SharedKernel:Messaging section got an EMPTY prefix and queues named "hold-shipment"
         // instead of "orders-api-hold-shipment". Two services in one broker would then contend for
         // the same queue. Nothing failed; the wrong queues were simply declared, which is why it
-        // survived until samples/ShippingApi ran against a real broker and the names were visible.
+        // survived until a sample service ran against a real broker and the names were visible.
         //
         // The factory runs when the container is built, by which point configuration binding has
         // happened, so both registration paths now produce the same name.

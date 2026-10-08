@@ -102,9 +102,9 @@ The EF Core store ships no migrations and no cleanup job — its README has both
 
 ## Sample
 
-[`samples/ShippingApi`](../../../samples/ShippingApi) enables consumer idempotency with `WithIdempotency()` over RabbitMQ,
-registering an in-process store through `AddIdempotencyStore<T>(IdempotencyPurpose.Message, ServiceLifetime.Singleton)`
-— the same seam a production service fills with the Redis or EF Core store.
+The Shop's [`Ordering`](../../../samples/Shop/Ordering/) uses both stores: `AddRedisIdempotency(p => p.ForRequests())`
+behind `app.WithIdempotency()` for order submissions, and `AddEfCoreIdempotency(...)` for messages, with
+`WithIdempotency()` on its RabbitMQ consumers (`Shop.Ordering.Infrastructure/OrderingInfrastructure.cs`).
 
 ## Guarantees
 

@@ -116,11 +116,12 @@ problem (404, 400 with `errors`/`errorCodes`, 412) with no code in the endpoint.
 
 ## The sample
 
-[`samples/OrderApi`](../../../samples/OrderApi//) is the reference service: four projects (Domain, Application,
-Infrastructure, Api), each referencing only its tier. `OrderApi.Api/Program.cs` wires `AddSharedKernelWebApi()`,
-`AddSharedKernelOpenApi()`, `UseSharedKernelRequestContext()` first, `UseSharedKernelWebApi()`, `MapEndpoints()` and
-`MapSharedKernelOpenApi()`; its tests swap in a test authentication scheme to prove the 401/403/204 answers of a
-command carrying `[RequirePermission]`. [`samples/InventoryApi`](../../../samples/InventoryApi//) serves the same errors over REST and gRPC.
+The Shop's [`Catalog`](../../../samples/Shop/Catalog/) is the reference service: four projects (Domain, Application,
+Infrastructure, Api), each referencing only its tier. `Shop.Catalog.Api/Program.cs` wires `AddSharedKernelWebApi()`,
+`AddSharedKernelOpenApi()`, `UseSharedKernelRequestContext()` first, `UseSharedKernelWebApi()`, `MapEndpoints()`,
+`MapSharedKernelOpenApi()` and GraphQL; Ordering adds SignalR, and
+[`Inventory`](../../../samples/Shop/Inventory/) serves the same errors over REST and gRPC. The `Shop.E2E` flows prove
+the 401/403 answers of a command carrying `[RequirePermission]`.
 
 ## Guarantees
 

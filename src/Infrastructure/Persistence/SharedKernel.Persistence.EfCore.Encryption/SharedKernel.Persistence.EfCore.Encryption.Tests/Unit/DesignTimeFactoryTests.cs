@@ -12,7 +12,7 @@ namespace SharedKernel.Persistence.EfCore.Encryption.Tests.Unit;
 
 /// <summary>
 /// <c>dotnet ef migrations add</c> builds the context through <see cref="PostgresDesignTimeDbContextFactory{TContext}"/>.
-/// Found by the BillingApi sample: the factory built the model without the capability conventions, so a model with
+/// Found by a sample service: the factory built the model without the capability conventions, so a model with
 /// <c>.Encrypt(...)</c> could not produce a migration at all (and without the guard, the migration would have lacked
 /// the blind-index columns the running service uses).
 /// </summary>

@@ -111,10 +111,10 @@ Ordering rules:
 
 ## The sample
 
-[`samples/OrderApi`](../../../samples/OrderApi//) is the compiled reference: `OrderApi.Api/Program.cs` calls
-`AddServiceDefaults()`, `AddSharedKernelRequestContext()`, `AddSharedKernelReadiness()` (its infrastructure registers
-an `order-store` probe), `UseSharedKernelRequestContext()` first, `MapDefaultHealthCheckEndpoints()` and
-`StartupGate.MarkReady()`. Its tests swap in a test authentication scheme to prove the 401/403/204 answers.
+The Shop's [`Ordering`](../../../samples/Shop/Ordering/) is the compiled reference: `Shop.Ordering.Api/Program.cs`
+calls `AddServiceDefaults()`, `AddSharedKernelRequestContext()`, `AddSharedKernelMultiTenancy()`,
+`AddDatabaseReadinessCheck<OrderingDbContext>().AddSharedKernelReadiness()`, `UseSharedKernelRequestContext()` first,
+`MapDefaultHealthCheckEndpoints()` and `StartupGate.MarkReady()`.
 
 ## Guarantees
 

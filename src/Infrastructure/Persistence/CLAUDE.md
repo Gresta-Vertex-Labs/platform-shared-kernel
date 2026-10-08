@@ -235,7 +235,7 @@ Dapper emits no spans (Npgsql traces commands). Npgsql's per-command Information
 - **00.Governance:** `PersistenceNamespaceConventionRules`, `PersistenceInterfaceOwnershipRules`
   (`ReadOnlyRepositoriesNeverTrack`, IL scan), `UnitOfWorkSeamRules`, `TestingNeverReferencedByProduction`, SK0042,
   SK0201.
-- Reference service: `samples/BillingApi`.
+- Reference services: the Shop (`samples/Shop`) — Ordering (EF Core, RLS, field encryption, audit ledger), Billing (EF Core, RLS), Inventory and Reports (Dapper).
 
 ## Testing
 

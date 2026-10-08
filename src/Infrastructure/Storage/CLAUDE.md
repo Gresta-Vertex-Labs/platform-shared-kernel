@@ -138,7 +138,7 @@ Telemetry (S3 package): `ActivitySource`/`Meter` `"SharedKernel.Storage"`; spans
   link.
 - **14.Presentation:** no dependency; endpoints hand out presigned URLs instead of accepting uploads.
 - **16.Testing:** `SharedKernel.Storage.Testing` implements the abstractions in memory.
-- Verified end to end by `samples/DocumentsApi`; `samples/OrderApi.Infrastructure` also wires a store.
+- Verified end to end by the Shop (`samples/Shop`): Catalog (presigned S3 uploads) and Reports (an S3 store and an OBS archive, presigned downloads).
 
 ## Testing
 
@@ -151,9 +151,9 @@ Telemetry (S3 package): `ActivitySource`/`Meter` `"SharedKernel.Storage"`; spans
 - Consumers: `src/Infrastructure/Storage/SharedKernel.Storage.Testing` (`AddInMemoryStore`/`AddInMemoryTenantStore`, namespace
   `SharedKernel.Testing.Storage`). The storage test projects do not reference it (keeps the graph acyclic).
 - `consumer-verify/` composes S3 and OBS stores in a real host and checks start-up validation.
-- `samples/DocumentsApi/DocumentsApi.Tests` runs every capability over HTTP against MinIO, and against real Amazon S3
-  and Huawei OBS when the `SK_LIVE_*` variables are set (see its README). Run it after any provider change — MinIO
-  accepts behaviour the real services reject.
+- The Shop's `Shop.E2E` (`CatalogFlowTests`, `ReportsFlowTests`; `samples/Shop/build.sh --e2e`) runs S3 and OBS over
+  HTTP against MinIO. Run it after any provider change. No harness runs against real Amazon S3 or Huawei OBS any
+  more, and MinIO accepts behaviour the real services reject — check provider-visible changes live by hand.
 
 Documentation lives in four places, kept in sync with the code: `src/Infrastructure/Storage/README.md` (relative links), each package
 `README.md` (packed; absolute GitHub links; ends with an AI quick reference), XML docs on every public member, and the

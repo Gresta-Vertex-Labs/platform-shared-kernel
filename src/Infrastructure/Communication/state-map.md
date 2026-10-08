@@ -16,7 +16,7 @@
 | `SharedKernel.Communication.Internal` | — | ⊘ | Deleted 2026-09-27; replaced by the `SharedKernel.Communication` base. |
 | `SharedKernel.Communication.GraphQL` | — | ⊘ | Moved to `14.Presentation` as `SharedKernel.Presentation.GraphQL` (WO-086, P-570). |
 
-Test kit: `src/Infrastructure/Communication/SharedKernel.Communication.Testing` (`StubHttpMessageHandler` + `UseStubHttpMessageHandler`, `GrpcCalls`). Worked example: `samples/CheckoutApi` → `samples/InventoryApi`; `consumer-verify` covers 5 surfaces.
+Test kit: `src/Infrastructure/Communication/SharedKernel.Communication.Testing` (`StubHttpMessageHandler` + `UseStubHttpMessageHandler`, `GrpcCalls`). Worked example: the Shop (`samples/Shop`), Ordering → Inventory over gRPC with mutual TLS and Ordering → Billing over REST with an API key; `consumer-verify` covers 5 surfaces.
 
 ## Phase Key Registry
 

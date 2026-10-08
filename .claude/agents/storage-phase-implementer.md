@@ -25,7 +25,7 @@ You edit files under `src/Infrastructure/Storage/` only. Report lines instead of
 | `TenantId`, `IReadinessProbe`, `Result`/`Error`, `AddValidatedOptions` | `01.Core` |
 | `StorageTopologyRules` | `00.Governance` |
 | Report delivery over `IFileStorage` | `20.Reporting` (a consumer — a contract change is an obligation on it) |
-| `samples/DocumentsApi` | report line unless the brief includes it |
+| `samples/Shop` (Catalog, Reports) | report line unless the brief includes it |
 
 ---
 
@@ -88,7 +88,7 @@ Each package is `src/Infrastructure/Storage/{Package}/` with tests nested at `sr
 ## Verification beyond the lane
 
 - `src/Infrastructure/Storage/consumer-verify` composes S3 and OBS stores in a real host and checks start-up validation; run it when registration or options change.
-- **`samples/DocumentsApi/DocumentsApi.Tests` after any provider change** — it runs every capability over HTTP against MinIO, and against real Amazon S3 and Huawei OBS when the `SK_LIVE_*` variables are set (see its README). MinIO accepts behaviour the real services reject, so say in the report whether live runs happened. The sample consumes packed packages: pack (`dotnet pack Platform.SharedKernel.slnx -c Release -o nupkgs`) and test it with `-p:SharedKernelPackageVersion=<packed version>` and a throw-away `NUGET_PACKAGES` folder in your scratchpad (deleted afterwards). Never write live credentials into a tracked file or a log.
+- **The Shop after any provider change** — Catalog (presigned S3 uploads) and Reports (S3 and OBS stores, presigned downloads) run against MinIO: `samples/Shop/build.sh --test`, then `--e2e` for `CatalogFlowTests`/`ReportsFlowTests`. MinIO accepts behaviour the real services reject and no harness runs against real AWS S3 or OBS, so say in the report whether a manual live check happened. The Shop consumes packed packages; use a throw-away `NUGET_PACKAGES` folder in your scratchpad (deleted afterwards). Never write live credentials into a tracked file or a log.
 
 ---
 

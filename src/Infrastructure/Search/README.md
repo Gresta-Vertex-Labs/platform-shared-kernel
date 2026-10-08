@@ -140,18 +140,14 @@ var results = await index.SearchAsync(request.Value, TenantScope.For(tenantId), 
 Switching to Elasticsearch changes step 3 only (`AddSharedKernelElasticSearchSearch(...).AddIndex<T>(readAlias,
 writeAlias, …)`). Each package README has the full configuration table, error codes and log events.
 
-## Sample: CatalogApi
+## Sample: the Shop's Catalog
 
-[`samples/CatalogApi`](../../../samples/CatalogApi/README.md) runs **both** engines in one service against real containers:
+The Shop's [`Catalog`](../../../samples/Shop/Catalog/) runs **both** engines in one service against real containers:
 
-- a Meilisearch storefront — search with facets and highlighting, instant search, tenant tokens, ranking rules, and a
-  deliberately low `MaxTotalHits` that shows a lower-bound count;
-- an Elasticsearch back office — revenue aggregations, cursor streaming and resumable cursors, completion
-  suggestions, exact counts;
-- operations endpoints — provisioning, seeding, `VerifyRegisteredIndexesAsync`, per-index readiness probes and
-  telemetry;
-- every endpoint sending a query through the kernel's `ISender`, with failures as RFC 9457 problems (503 for an
-  outage, 504 for a timeout).
+- a Meilisearch storefront — tenant-scoped search by word and by synonym, filtered by category;
+- an Elasticsearch back office — products counted per brand;
+- both indexes declared once (`CatalogDefinitions`) and provisioned at startup, safely across two replicas;
+- every query sent through the kernel's `ISender`, proven end to end by `Shop.E2E`'s `CatalogFlowTests`.
 
 ## Guarantees
 

@@ -126,7 +126,7 @@ Application code is tested against
 [`SharedKernel.Messaging.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Messaging/SharedKernel.Messaging.Testing/README.md)'s
 in-memory fakes; no broker needed. To test the wiring itself, run a `masstransit/rabbitmq` container
 (Testcontainers) and gate the test on the `messaging` readiness probe before publishing.
-[`samples/ShippingApi`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/samples/ShippingApi/README.md)
+The [Shop sample](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/samples/Shop/README.md)
 runs the packages end to end against real RabbitMQ.
 
 ## Pitfalls

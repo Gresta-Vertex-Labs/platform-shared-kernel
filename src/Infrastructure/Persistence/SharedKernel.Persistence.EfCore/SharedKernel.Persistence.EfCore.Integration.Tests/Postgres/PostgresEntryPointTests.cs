@@ -209,7 +209,7 @@ public sealed class PostgresEntryPointTests(PostgreSqlContainerFixture fixture)
     [Fact]
     public async Task Version_OfAnUntrackedAggregate_IsRefused_NeverReportedAsZero()
     {
-        // Found by the BillingApi sample: GET via IReadRepository + ConcurrencyVersion.Get answered ETag "0", and the
+        // Found by a sample service: GET via IReadRepository + ConcurrencyVersion.Get answered ETag "0", and the
         // client's following If-Match then failed every time with 412.
         await using var provider = await OrdersAsync(NewDatabase());
         var id = EntryOrderId.New();

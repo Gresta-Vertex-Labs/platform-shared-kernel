@@ -81,7 +81,7 @@ Authoritative wording: `src/Hosting/Presentation/CLAUDE.md` → `## Rules & Inva
 
 - **Tests are Unit lane** and run against real in-process hosts built with the one-call setup (`WebApiTestHost`, `FullStackHost`); Kestrel (`StartKestrelAsync`) for what `TestServer` does not enforce. SignalR uses a real `HubConnection`, gRPC a real channel, OpenAPI tests generate documents. Every HTTP error assertion goes through `ShouldBeProblemAsync`. A security-relevant test must be shown able to fail (mutation check).
 - **Public API**: Core/WebApi/OpenApi/SignalR/Grpc track `PublicAPI.*.txt` with RS0016/RS0017 and CS1591 as errors — plan the Unshipped entries.
-- **Consumers**: a public API change updates `consumer-verify/` and every affected sample (OrderApi, BillingApi, DocumentsApi, ShippingApi, CatalogApi, CheckoutApi, InventoryApi) — record sample updates as tasks only where this domain's docs own them, otherwise as notes.
+- **Consumers**: a public API change updates `consumer-verify/` and every affected Shop service (`samples/Shop`: Catalog, Ordering, Inventory, Billing, Merchant, Notify, Reports) — record sample updates as tasks only where this domain's docs own them, otherwise as notes.
 - **Docs**: a new setting gets a DO-task for `CONFIGURATION.md` (full section path under `SharedKernel:Presentation:*`) and the package README.
 - **Generator changes** state the SKEP diagnostic added or changed and its severity.
 

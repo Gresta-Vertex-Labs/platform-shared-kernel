@@ -141,10 +141,11 @@ Each package README has the full configuration table, recipes and pitfalls. Star
 
 ## See it run
 
-No reference service uses caching yet. [`consumer-verify/SharedKernel.Caching.ConsumerVerify`](consumer-verify/SharedKernel.Caching.ConsumerVerify/Program.cs)
+The Shop's [Catalog](../../../samples/Shop/Catalog/) runs two replicas on FusionCache with a Redis L2 and backplane,
+Redis Pub/Sub and the query-caching pipeline stage (`WithCaching()`); [Inventory](../../../samples/Shop/Inventory/)
+uses the hash store and distributed locks. [`consumer-verify/SharedKernel.Caching.ConsumerVerify`](consumer-verify/SharedKernel.Caching.ConsumerVerify/Program.cs)
 consumes all seven packages as packed NuGet packages and starts five real hosts against a Testcontainers Redis: L1
-only, L1 + Redis L2, locking only, hash store only and Pub/Sub only. The query-caching pipeline stage that builds on
-this domain is shown in [samples/OrderApi](../../../samples/OrderApi/README.md)'s registration.
+only, L1 + Redis L2, locking only, hash store only and Pub/Sub only.
 
 ## Guarantees
 

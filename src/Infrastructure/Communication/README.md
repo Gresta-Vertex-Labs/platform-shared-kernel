@@ -49,24 +49,25 @@ statuses these clients read back — live in [`14.Presentation`](../../Hosting/P
 
 ## How a call travels
 
-The call path of the sample: CheckoutApi reserves stock over REST and reads it over gRPC from InventoryApi.
+The call path in the Shop sample: Ordering reserves stock in Inventory over gRPC and charges the payment in Billing
+over REST.
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant H as CheckoutApi handler
-    participant C as InventoryClient / Inventory.InventoryClient
+    participant H as Ordering handler
+    participant C as GrpcInventoryReservations / RestPayments
     participant P as Client pipeline
-    participant I as InventoryApi
-    H->>C: ReserveAsync(sku, qty) / GetStockAsync(...)
+    participant I as Inventory / Billing
+    H->>C: ReserveAsync(...) / ChargeAsync(...)
     C->>P: request
     Note over P: once per call — caller headers<br/>(X-Correlation-Id, X-Tenant-Id, x-sk-actor-*),<br/>Idempotency-Key on POST, gRPC deadline
-    Note over P: per attempt — timeout, retry / breaker,<br/>API key or bearer token, service discovery
-    P->>I: HTTP POST /reservations · gRPC GetStock
+    Note over P: per attempt — timeout, retry / breaker,<br/>API key, client certificate or bearer token, service discovery
+    P->>I: gRPC ReserveStock · HTTP POST /payments
     Note over I: UseSharedKernelRequestContext()<br/>rebuilds the caller from the same headers
     I-->>P: 2xx body · ProblemDetails · rich status
     P-->>C: response
-    C-->>H: Result<T> — the body, InventoryApi's own Error,<br/>or communication.unreachable / timeout
+    C-->>H: Result<T> — the body, the callee's own Error,<br/>or communication.unreachable / timeout
 ```
 
 ## Get started
@@ -114,16 +115,18 @@ For the caller to travel, the host opens a request context — `AddSharedKernelR
 
 ## The sample
 
-[`samples/CheckoutApi`](../../../samples/CheckoutApi//) → [`samples/InventoryApi`](../../../samples/InventoryApi//) are two services
-talking over both protocols:
+In the Shop ([`samples/Shop`](../../../samples/Shop/README.md)), [Ordering](../../../samples/Shop/Ordering/) calls two
+services, one per protocol:
 
-- CheckoutApi registers `inventory` (REST, `http://inventory`, `PropagateIdempotencyKey`) and `inventory-grpc` (gRPC,
-  `http://_grpc.inventory`), both resolved through the `Services` section and both sending InventoryApi's API key.
-- InventoryApi authenticates the key (`SharedKernel.Security.ApiKey`), rebuilds the caller with
-  `UseSharedKernelRequestContext()`, and answers errors as RFC 9457 problems over REST and rich statuses over gRPC.
-- `CheckoutApi.Tests` runs the scenarios end to end: a retried reservation made once, no stock arriving as the
-  inventory's 409, a bad quantity as its field error, an unknown SKU as the 404 from its gRPC status, the inventory
-  down as a 503 rather than an exception, and the caller's correlation id and idempotency key reaching the inventory.
+- `inventory` (gRPC, `GrpcInventoryReservations`) reaches [Inventory](../../../samples/Shop/Inventory/) over mutual TLS
+  with Ordering's client certificate; `billing` (REST, `RestPayments`) reaches [Billing](../../../samples/Shop/Billing/)
+  with Ordering's API key. Both are registered in `Shop.Ordering.Infrastructure` and configured by the AppHost.
+- Inventory and Billing rebuild the caller with `UseSharedKernelRequestContext()` and answer errors as rich statuses
+  over gRPC and RFC 9457 problems over REST, which arrive in Ordering as the matching `Error` (a declined card as
+  Billing's business-rule failure).
+- `Shop.Ordering.Tests` (`GrpcInventoryReservationsTests`) covers the gRPC error mapping over the Communication fakes;
+  the `Shop.E2E` flows cover the certificate allow-list, a rogue or missing certificate, the API key enforced and a
+  declined card compensated.
 
 ## Guarantees
 

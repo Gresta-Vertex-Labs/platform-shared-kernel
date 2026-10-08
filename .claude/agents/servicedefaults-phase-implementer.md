@@ -97,7 +97,7 @@ A host integration that needs another kernel package is a new `SharedKernel.Serv
 
 - `src/Hosting/ServiceDefaults/consumer-verify` compiles a consumer against the base and `MultiTenancy`; run it when a public API changes.
 - `ServiceDefaults.Persistence.Tests/…/Readme/PersistenceReadmeSampleTests.cs` compiles `06.Persistence`'s canonical composition; keep it green when a persistence README snippet or check changes.
-- Every sample host (`samples/OrderApi` first — the canonical middleware order) composes these packages as packed packages. When the phase changes the public surface or the pipeline, pack (`dotnet pack Platform.SharedKernel.slnx -c Release -o nupkgs`) and build/test the affected samples with `-p:SharedKernelPackageVersion=<packed version>` and a throw-away `NUGET_PACKAGES` folder in your scratchpad (deleted afterwards).
+- Every Shop host (`samples/Shop`; Ordering and Catalog first — the canonical middleware order) composes these packages as packed packages. When the phase changes the public surface or the pipeline, run `samples/Shop/build.sh --test` (and `--e2e` for readiness, tenancy and request-context flows) with a throw-away `NUGET_PACKAGES` folder in your scratchpad (deleted afterwards).
 
 ---
 

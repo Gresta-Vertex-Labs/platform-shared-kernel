@@ -168,14 +168,14 @@ Anything not recognised as a transport fault is rethrown unchanged, so a bug is 
 
 ## See it run
 
-[samples/ShippingApi](../../../samples/ShippingApi/README.md) is a service on the packed packages — publish, send,
-delayed delivery, idempotency, inbound caller identity, retry, a fault consumer and the readiness probe — with
-end-to-end scenarios against a real RabbitMQ broker (`masstransit/rabbitmq`, which ships the delayed-message
-plugin).
+The [Shop](../../../samples/Shop/README.md) runs the packed packages against a real RabbitMQ broker
+(`masstransit/rabbitmq`, which ships the delayed-message plugin): [Ordering](../../../samples/Shop/Ordering/) publishes
+through the EF Core outbox and consumes its own `OrderPlaced` with consumer idempotency and the inbound caller;
+[Billing](../../../samples/Shop/Billing/) publishes through its outbox; [Notify](../../../samples/Shop/Notify/) (a
+worker) and [Reports](../../../samples/Shop/Reports/) consume Billing's receipts.
 
 ```bash
-dotnet pack Platform.SharedKernel.slnx -c Release -o ./nupkgs -p:MinVerVersionOverride=1.0.0-local.1
-dotnet test samples/ShippingApi/ShippingApi.Tests -p:SharedKernelPackageVersion=1.0.0-local.1
+samples/Shop/build.sh --e2e      # pack the kernel, build the Shop, run its end-to-end flows (Docker)
 ```
 
 ## Guarantees

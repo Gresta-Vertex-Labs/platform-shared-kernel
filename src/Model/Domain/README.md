@@ -111,10 +111,10 @@ returns the aggregate with one pending `InvoiceIssued` event and `Version` 1.
 
 ## See it run
 
-[samples/OrderApi](../../../samples/OrderApi/README.md) keeps its domain in `OrderApi.Domain`, a project that references
-only `SharedKernel.Domain`: an `Order` aggregate (`AggregateRoot<OrderId>` with `Place` and `Cancel`), a
-`ValueObject`, a `StronglyTypedId<Guid>` and two domain events. Its architecture test fails the build if the Domain
-project reaches for anything else.
+The Shop's [Ordering](../../../samples/Shop/Ordering/) keeps its domain in `Shop.Ordering.Domain`, a project that
+references only `SharedKernel.Domain`: an `Order` aggregate (`TenantedAuditableAggregateRoot<OrderId>` with `Place`,
+`Confirm`, `Reject` and `Cancel`), `IBusinessRule`s, a `StronglyTypedId<Guid>` and an `OrderStatusChanged` domain
+event. `OrderingArchitectureTests` fails the build if the Domain project reaches for anything else.
 
 ## Guarantees
 

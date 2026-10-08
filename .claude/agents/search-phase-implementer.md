@@ -25,7 +25,7 @@ You edit files under `src/Infrastructure/Search/` only. Report lines instead of 
 | `TenantScope`, `TenantId` | `01.Core` (`SharedKernel.Execution`) |
 | `PagedList<T>` | `04.Contracts` |
 | `SearchTopologyRules`, SK0013/SK0022/SK0024/SK0025 | `00.Governance` |
-| `samples/CatalogApi` | report line unless the brief includes it |
+| `samples/Shop/Catalog` | report line unless the brief includes it |
 
 ---
 
@@ -92,7 +92,7 @@ You edit files under `src/Infrastructure/Search/` only. Report lines instead of 
 ## Verification beyond the lane
 
 - The three `consumer-verify` harnesses prove each provider's surface and two-provider keyed resolution; run them whenever registration or a public API changes.
-- `samples/CatalogApi` (both engines, tenant storefront vs back office) is built and smoke-run by CI's packaging gate against the packed packages. When the phase changes the public surface, pack (`dotnet pack Platform.SharedKernel.slnx -c Release -o nupkgs`) and build it with `-p:SharedKernelPackageVersion=<packed version>` and a throw-away `NUGET_PACKAGES` folder in your scratchpad (deleted afterwards).
+- The Shop's Catalog (`samples/Shop/Catalog`: both engines, storefront vs back office) is built and unit-tested by CI's packaging gate against the packed packages. When the phase changes the public surface, run `samples/Shop/build.sh --test`, and `--e2e` for the `CatalogFlowTests` search flows, with a throw-away `NUGET_PACKAGES` folder in your scratchpad (deleted afterwards).
 
 ---
 

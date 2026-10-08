@@ -67,7 +67,7 @@ You write inside `src/Model/Domain/` only.
 In addition to the common build and test steps:
 
 1. Any public API change: `PublicAPI.Unshipped.txt` (nullable, CS1591 and RS00xx are errors), the package README, and `src/Model/Domain/SharedKernel.Domain.ConsumerVerify` updated to exercise the new surface.
-2. Because `06.Persistence`, `05.Application`, `16.Testing` and `samples/OrderApi` compile against this package, a public-surface change requires the full `dotnet build Platform.SharedKernel.slnx -c Release`; report any break in another domain rather than fixing it.
+2. Because `06.Persistence`, `05.Application`, `16.Testing` and the Shop (`samples/Shop`) compile against this package, a public-surface change requires the full `dotnet build Platform.SharedKernel.slnx -c Release`; report any break in another domain rather than fixing it.
 3. Analyzer-backed rules (SK0009, SK0034, SK0037) and `AggregateFactoriesMustCreateValidationResults` live in `00.Governance`; if a phase changes a shape they check, name them in the report.
 
 ---

@@ -130,7 +130,7 @@ EventIds are written as `LoggingEventIdRanges.Reporting + n`. Telemetry: `Activi
   field and error mapping, plus a real `gotenberg/gotenberg:8.x` container via Testcontainers.
 - Consumer fakes: `src/Infrastructure/Reporting/SharedKernel.Reporting.Testing` — `InMemoryReportExporter<T>`,
   `InMemoryReportExporterFactory`, `InMemoryHtmlToPdfConverter`, `AddInMemoryReporting()`.
-- End to end: `samples/DocumentsApi` (`POST /reports/{store}/listing?format=`, the PDF endpoint) against MinIO + Gotenberg.
+- End to end: the Shop's Reports (`samples/Shop/Reports`: `POST /reports/sales?format=&store=`, `POST /reports/sales/statement`) against MinIO + Gotenberg (`Shop.E2E` `ReportsFlowTests`).
 
 ## Known Limitations
 

@@ -288,7 +288,8 @@ jobs:
   # compiles. Packs every package, checks the set against the repository (eng/verify-packages.sh),
   # then restores, builds and runs every project that consumes SharedKernel through
   # PackageReference against that feed: the harnesses kept out of the .slnx on purpose, and every
-  # sample. Needs Docker for the Testcontainers-backed consumers and the CatalogApi engines.
+  # sample (the Shop's unit-test projects; its end-to-end flows skip without SHOP_E2E=1). Needs Docker for the
+  # Testcontainers-backed consumers.
   # ---------------------------------------------------------------------------------------------
   packaging-verify:
     name: Packaging & Consumer-Verify
@@ -401,9 +402,8 @@ jobs:
           done
 
       # Every consumer that is a test project: the 01/03/04/05/06 consumer suites and every
-      # samples/**/*.Tests project. The sample suites are end to end through HTTP against real
-      # infrastructure (Testcontainers PostgreSQL with the production role split for BillingApi,
-      # MinIO for DocumentsApi, RabbitMQ with the delayed-message plugin for ShippingApi).
+      # samples/**/*.Tests project: the Shop's unit tests (its end-to-end flows run locally, with
+      # SHOP_E2E=1, against the full Aspire platform; here they skip).
       - name: Test every packed-package consumer test project
         run: |
           set -euo pipefail
@@ -412,88 +412,6 @@ jobs:
             dotnet test "$proj" --no-build --no-restore --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION"
             echo "::endgroup::"
           done < "$RUNNER_TEMP/consumer-tests.txt"
-
-      # The web host is found rather than named, so this survives OrderApi being split into
-      # Domain/Application/Infrastructure/Api projects: exactly one Web-SDK project under
-      # samples/OrderApi that is not a test project.
-      - name: Smoke-test the OrderApi sample
-        env:
-          ASPNETCORE_URLS: http://localhost:5199
-        run: |
-          set -euo pipefail
-          mapfile -t hosts < <(git ls-files 'samples/OrderApi/*.csproj' | grep -v '\.Tests\.csproj$' | xargs grep -l 'Sdk="Microsoft.NET.Sdk.Web"' || true)
-          if [ "${#hosts[@]}" -ne 1 ]; then
-            echo "::error::Expected exactly one web host project under samples/OrderApi, found ${#hosts[@]}: ${hosts[*]:-none}"
-            exit 1
-          fi
-          echo "OrderApi host: ${hosts[0]}"
-          dotnet run --project "${hosts[0]}" --no-build --no-restore --no-launch-profile --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION" &
-          pid=$!
-          trap 'kill $pid 2>/dev/null || true' EXIT
-          for _ in $(seq 1 60); do
-            curl -sf http://localhost:5199/health/ready >/dev/null 2>&1 && break
-            sleep 1
-          done
-          curl -sf http://localhost:5199/health/live  | grep -q Healthy
-          curl -sf http://localhost:5199/health/ready | grep -q Healthy
-          id=$(curl -sf -X POST http://localhost:5199/orders -H 'Content-Type: application/json' -d '{"customer":"CI","amount":10.00,"currency":"eur","lines":["item"]}' | sed 's/.*"id":"//;s/".*//')
-          test -n "$id"
-          curl -sf "http://localhost:5199/orders/$id" | grep -q '"currency":"EUR"'
-          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:5199/orders/01999999-0000-7000-8000-000000000000)" = 404
-          # Cancelling declares [RequirePermission("orders.cancel")] on the command; the pipeline refuses an anonymous caller.
-          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:5199/orders/$id/cancel")" = 401
-          # No launch profile, so this runs in Production: the API documents must not be published by default (P-562).
-          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:5199/openapi/v1.json)" = 404
-          echo "OrderApi sample smoke test passed"
-
-      # CatalogApi runs both search engines at once, so it needs both: started here as plain
-      # containers pinned by digest (the same images as the sample README), then provisioned,
-      # seeded and queried on both providers, with /ops/verify proving the live indexes match the
-      # definitions this build declares.
-      - name: Smoke-test the CatalogApi sample (Meilisearch + Elasticsearch)
-        env:
-          ASPNETCORE_URLS: http://localhost:5198
-          # Catalog.TenantNorth in samples/CatalogApi/Catalog.cs.
-          NORTH: 6f1c2a4e-0b7d-4c3e-9a51-3d2e8f7b1a01
-          MEILI_IMAGE: getmeili/meilisearch:v1.20.0@sha256:90e5fe0d0bd83fea01120870bf6e01507097c706e1583fad1d56ef0cc6c41af8
-          ES_IMAGE: docker.elastic.co/elasticsearch/elasticsearch:9.4.2@sha256:be5f49784ff5ec8a5b5d7ba17f944d9d6b10c067f596ee93e6b6cb82d2dd874c
-        run: |
-          set -euo pipefail
-          docker run -d --name sk-catalog-meili -p 7700:7700 \
-            -e MEILI_MASTER_KEY=sk-sample-master-key -e MEILI_NO_ANALYTICS=true "$MEILI_IMAGE"
-          docker run -d --name sk-catalog-es -p 9200:9200 \
-            -e discovery.type=single-node -e xpack.security.enabled=false \
-            -e "ES_JAVA_OPTS=-Xms1g -Xmx1g" "$ES_IMAGE"
-          pid=""
-          cleanup() {
-            if [ -n "$pid" ]; then kill "$pid" 2>/dev/null || true; fi
-            docker rm -f sk-catalog-meili sk-catalog-es >/dev/null 2>&1 || true
-          }
-          trap cleanup EXIT
-          for _ in $(seq 1 120); do
-            curl -sf http://localhost:7700/health >/dev/null 2>&1 \
-              && curl -sf 'http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=1s' >/dev/null 2>&1 \
-              && break
-            sleep 1
-          done
-          curl -sf http://localhost:7700/health >/dev/null
-          curl -sf 'http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s' >/dev/null
-
-          dotnet run --project samples/CatalogApi/CatalogApi.csproj --no-build --no-restore --no-launch-profile --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION" &
-          pid=$!
-          for _ in $(seq 1 60); do
-            curl -sf http://localhost:5198/health/live >/dev/null 2>&1 && break
-            sleep 1
-          done
-          curl -sf http://localhost:5198/health/live | grep -q Healthy
-          curl -sf -X POST http://localhost:5198/ops/provision >/dev/null
-          curl -sf -X POST http://localhost:5198/ops/seed >/dev/null
-          curl -sf http://localhost:5198/ops/verify >/dev/null
-          curl -sf http://localhost:5198/health/ready | grep -q Healthy
-          curl -sf "http://localhost:5198/storefront/$NORTH/products?q=mouse" | grep -q 'Wireless Mouse'
-          curl -sf "http://localhost:5198/storefront/$NORTH/products/count" | grep -q '"accuracy"'
-          curl -sf "http://localhost:5198/back-office/$NORTH/order-lines/count" | grep -q '"isExact":true'
-          echo "CatalogApi sample smoke test passed"
 
       - name: Upload the verified packages
         if: inputs.upload-packages
