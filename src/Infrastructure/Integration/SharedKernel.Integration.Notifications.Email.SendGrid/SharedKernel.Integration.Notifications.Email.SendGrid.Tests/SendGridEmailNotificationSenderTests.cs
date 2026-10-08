@@ -2,8 +2,13 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using SharedKernel.Execution.Tenancy;
+using SharedKernel.Integration.Notifications.Abstractions.Extensions;
 using SharedKernel.Integration.Notifications.Abstractions.Notifications;
+using SharedKernel.Integration.Notifications.Email.SendGrid.Extensions;
+using SharedKernel.Integration.Notifications.Email.SendGrid.Options;
 using SharedKernel.Integration.Notifications.Email.SendGrid.Tests.TestSupport;
 using SharedKernel.Primitives.Logging;
 using SharedKernel.Storage;
@@ -140,6 +145,54 @@ public sealed class SendGridEmailNotificationSenderTests
         var result = await act.Should().NotThrowAsync();
         result.Subject.IsSuccess.Should().BeFalse();
         result.Subject.Error.Should().NotBeNullOrEmpty();
+    }
+
+    // Regression (Shop platform, Notify): the sender required IFileStorageFactory unconditionally, so a host that sends
+    // email without attachments and registers no storage failed at startup in Development (ValidateOnBuild) and at the
+    // first send elsewhere — although the README asked for storage only "when you send attachments".
+    [Fact]
+    public async Task HostWithoutStorage_BuildsAndSendsMessagesWithoutAttachments()
+    {
+        using var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.Accepted));
+        using var harness = new SendGridTestHarness(handler, withStorage: false);
+
+        var result = await harness.Sender.SendAsync(Message(), CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        handler.Requests.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task HostWithoutStorage_MessageWithAttachments_FailsAsUnresolvable_WithoutCallingSendGrid()
+    {
+        using var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.Accepted));
+        using var harness = new SendGridTestHarness(handler, withStorage: false);
+        var attachment = new NotificationAttachment
+        {
+            FileReference = new FileReference { Store = "invoices", Key = "invoice-1.pdf" },
+            FileName = "invoice.pdf",
+        };
+
+        var result = await harness.Sender.SendAsync(Message(attachments: [attachment]), CancellationToken.None);
+
+        result.IsSuccess.Should().BeFalse();
+        result.Error.Should().Contain("AddSharedKernelStorage");
+        handler.Requests.Should().BeEmpty();
+    }
+
+    // The sender is built by a factory, which ValidateOnBuild cannot inspect; the options validation stands in for it,
+    // so a host without a sender identity still fails at startup, and says what is missing.
+    [Fact]
+    public void HostWithoutASenderIdentity_FailsAtStartup_NamingTheResolver()
+    {
+        var services = new ServiceCollection();
+        services.AddSharedKernelNotifications();
+        services.AddSendGridEmailNotifications(o => o.ApiKey = "test-api-key");
+        using var provider = services.BuildServiceProvider();
+
+        var startup = () => provider.GetRequiredService<IOptions<SendGridNotificationOptions>>().Value;
+
+        startup.Should().Throw<OptionsValidationException>().WithMessage("*INotificationSenderIdentityResolver*");
     }
 
     [Fact]

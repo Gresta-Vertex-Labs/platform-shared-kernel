@@ -1,10 +1,14 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Http.Resilience;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Polly;
+using SharedKernel.Integration.Notifications.Abstractions.Delivery;
 using SharedKernel.Integration.Notifications.Abstractions.Notifications;
+using SharedKernel.Integration.Notifications.Abstractions.Observability;
 using SharedKernel.Integration.Notifications.Abstractions.Options;
 using SharedKernel.Integration.Notifications.Email.SendGrid.Options;
+using SharedKernel.Storage;
 
 namespace SharedKernel.Integration.Notifications.Email.SendGrid.Extensions;
 
@@ -23,11 +27,11 @@ public static class ServiceCollectionExtensions
     /// <returns>The same <paramref name="services"/> for chaining.</returns>
     /// <remarks>
     /// Requires <see cref="SharedKernel.Integration.Notifications.Abstractions.Observability.INotificationSenderIdentityResolver"/>
-    /// and <see cref="SharedKernel.Storage.IFileStorageFactory"/> (from
-    /// <c>services.AddSharedKernelStorage()</c> plus a provider and the stores attachments live in) to
-    /// already be registered by the consuming service — this method does not register either; DI
-    /// resolution fails at first send if either is missing. Each attachment is read from the store its
-    /// <c>FileReference</c> names, through that reference's tenant view when it carries a tenant.
+    /// to be registered by the consuming service (this method does not register it). Attachments additionally need
+    /// <see cref="SharedKernel.Storage.IFileStorageFactory"/> (<c>services.AddSharedKernelStorage()</c> plus a provider
+    /// and the stores they live in); without it every message without attachments is still sent, and one with
+    /// attachments fails with <c>notifications.attachment_unresolvable</c>. Each attachment is read from the store
+    /// its <c>FileReference</c> names, through that reference's tenant view when it carries a tenant.
     /// </remarks>
     public static IServiceCollection AddSendGridEmailNotifications(
         this IServiceCollection services,
@@ -40,9 +44,24 @@ public static class ServiceCollectionExtensions
             .AddOptions<SendGridNotificationOptions>()
             .Configure(configure)
             .ValidateDataAnnotations()
+            // The sender is built by a factory (below), which the container's ValidateOnBuild cannot see into; the
+            // one dependency a host must supply is checked here instead, at startup in every environment.
+            .Validate<IServiceProviderIsService>(
+                static (_, isService) => isService.IsService(typeof(INotificationSenderIdentityResolver)),
+                "AddSendGridEmailNotifications needs an INotificationSenderIdentityResolver (the From address); register one.")
             .ValidateOnStart();
 
-        services.AddKeyedScoped<INotificationSender, SendGridEmailNotificationSender>(NotificationChannel.Email);
+        // A factory, so storage stays optional (GetService) while every required dependency still fails with its
+        // own name (GetRequiredService) when it is missing.
+        services.AddKeyedScoped<INotificationSender>(
+            NotificationChannel.Email,
+            static (serviceProvider, _) => new SendGridEmailNotificationSender(
+                serviceProvider.GetRequiredService<IHttpClientFactory>(),
+                serviceProvider.GetService<IFileStorageFactory>(),
+                serviceProvider.GetRequiredService<INotificationSenderIdentityResolver>(),
+                serviceProvider.GetServices<INotificationDeliveryObserver>(),
+                serviceProvider.GetRequiredService<IOptions<SendGridNotificationOptions>>(),
+                serviceProvider.GetRequiredService<ILogger<SendGridEmailNotificationSender>>()));
 
         services
             .AddHttpClient(SendGridHttpClientName.Name)

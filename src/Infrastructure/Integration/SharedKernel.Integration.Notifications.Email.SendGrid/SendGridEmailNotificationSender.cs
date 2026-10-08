@@ -28,23 +28,32 @@ public sealed partial class SendGridEmailNotificationSender : INotificationSende
     private const string UnresolvableAttachmentCode = "notifications.attachment_unresolvable";
 
     private readonly IHttpClientFactory _httpClientFactory;
-    private readonly IFileStorageFactory _storageFactory;
+    private readonly IFileStorageFactory? _storageFactory;
     private readonly INotificationSenderIdentityResolver _senderIdentityResolver;
     private readonly IEnumerable<INotificationDeliveryObserver> _observers;
     private readonly SendGridNotificationOptions _options;
     private readonly ILogger<SendGridEmailNotificationSender> _logger;
 
     /// <summary>Initializes a new instance of <see cref="SendGridEmailNotificationSender"/>.</summary>
+    /// <param name="httpClientFactory">Creates the named SendGrid client.</param>
+    /// <param name="storageFactory">
+    /// Opens the stores attachments are read from; <see langword="null"/> when the host registers no
+    /// <c>SharedKernel.Storage</c>. Then every message without attachments is still sent, and a message with
+    /// attachments fails with <c>notifications.attachment_unresolvable</c>.
+    /// </param>
+    /// <param name="senderIdentityResolver">Supplies the <c>From</c> address.</param>
+    /// <param name="observers">Told of every delivery outcome.</param>
+    /// <param name="options">The SendGrid options.</param>
+    /// <param name="logger">The sender's logger.</param>
     public SendGridEmailNotificationSender(
         IHttpClientFactory httpClientFactory,
-        IFileStorageFactory storageFactory,
+        IFileStorageFactory? storageFactory,
         INotificationSenderIdentityResolver senderIdentityResolver,
         IEnumerable<INotificationDeliveryObserver> observers,
         IOptions<SendGridNotificationOptions> options,
         ILogger<SendGridEmailNotificationSender> logger)
     {
         ArgumentNullException.ThrowIfNull(httpClientFactory);
-        ArgumentNullException.ThrowIfNull(storageFactory);
         ArgumentNullException.ThrowIfNull(senderIdentityResolver);
         ArgumentNullException.ThrowIfNull(observers);
         ArgumentNullException.ThrowIfNull(options);
@@ -157,6 +166,15 @@ public sealed partial class SendGridEmailNotificationSender : INotificationSende
         if (attachments is null || attachments.Count == 0)
         {
             return Result<IReadOnlyList<SendGridAttachment>>.Success([]);
+        }
+
+        if (_storageFactory is null)
+        {
+            // Attachments live in object storage; a host without SharedKernel.Storage cannot read them.
+            return Result<IReadOnlyList<SendGridAttachment>>.Failure(
+                Error.Validation(
+                    UnresolvableAttachmentCode,
+                    "The message has attachments, but no SharedKernel.Storage is registered (AddSharedKernelStorage)."));
         }
 
         var resolved = new List<SendGridAttachment>(attachments.Count);
