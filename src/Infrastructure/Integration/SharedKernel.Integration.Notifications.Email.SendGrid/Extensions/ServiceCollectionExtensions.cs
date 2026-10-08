@@ -1,10 +1,14 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Http.Resilience;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Polly;
+using SharedKernel.Integration.Notifications.Abstractions.Delivery;
 using SharedKernel.Integration.Notifications.Abstractions.Notifications;
+using SharedKernel.Integration.Notifications.Abstractions.Observability;
 using SharedKernel.Integration.Notifications.Abstractions.Options;
 using SharedKernel.Integration.Notifications.Email.SendGrid.Options;
+using SharedKernel.Storage;
 
 namespace SharedKernel.Integration.Notifications.Email.SendGrid.Extensions;
 
@@ -40,9 +44,24 @@ public static class ServiceCollectionExtensions
             .AddOptions<SendGridNotificationOptions>()
             .Configure(configure)
             .ValidateDataAnnotations()
+            // The sender is built by a factory (below), which the container's ValidateOnBuild cannot see into; the
+            // one dependency a host must supply is checked here instead, at startup in every environment.
+            .Validate<IServiceProviderIsService>(
+                static (_, isService) => isService.IsService(typeof(INotificationSenderIdentityResolver)),
+                "AddSendGridEmailNotifications needs an INotificationSenderIdentityResolver (the From address); register one.")
             .ValidateOnStart();
 
-        services.AddKeyedScoped<INotificationSender, SendGridEmailNotificationSender>(NotificationChannel.Email);
+        // A factory, so storage stays optional (GetService) while every required dependency still fails with its
+        // own name (GetRequiredService) when it is missing.
+        services.AddKeyedScoped<INotificationSender>(
+            NotificationChannel.Email,
+            static (serviceProvider, _) => new SendGridEmailNotificationSender(
+                serviceProvider.GetRequiredService<IHttpClientFactory>(),
+                serviceProvider.GetService<IFileStorageFactory>(),
+                serviceProvider.GetRequiredService<INotificationSenderIdentityResolver>(),
+                serviceProvider.GetServices<INotificationDeliveryObserver>(),
+                serviceProvider.GetRequiredService<IOptions<SendGridNotificationOptions>>(),
+                serviceProvider.GetRequiredService<ILogger<SendGridEmailNotificationSender>>()));
 
         services
             .AddHttpClient(SendGridHttpClientName.Name)

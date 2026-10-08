@@ -34,50 +34,24 @@ public sealed partial class SendGridEmailNotificationSender : INotificationSende
     private readonly SendGridNotificationOptions _options;
     private readonly ILogger<SendGridEmailNotificationSender> _logger;
 
-    /// <summary>
-    /// Initializes a new instance of <see cref="SendGridEmailNotificationSender"/> that can send attachments, read from
-    /// <paramref name="storageFactory"/>. The container uses this constructor when the host registers
-    /// <c>SharedKernel.Storage</c>.
-    /// </summary>
+    /// <summary>Initializes a new instance of <see cref="SendGridEmailNotificationSender"/>.</summary>
+    /// <param name="httpClientFactory">Creates the named SendGrid client.</param>
+    /// <param name="storageFactory">
+    /// Opens the stores attachments are read from; <see langword="null"/> when the host registers no
+    /// <c>SharedKernel.Storage</c>. Then every message without attachments is still sent, and a message with
+    /// attachments fails with <c>notifications.attachment_unresolvable</c>.
+    /// </param>
+    /// <param name="senderIdentityResolver">Supplies the <c>From</c> address.</param>
+    /// <param name="observers">Told of every delivery outcome.</param>
+    /// <param name="options">The SendGrid options.</param>
+    /// <param name="logger">The sender's logger.</param>
     public SendGridEmailNotificationSender(
         IHttpClientFactory httpClientFactory,
-        IFileStorageFactory storageFactory,
+        IFileStorageFactory? storageFactory,
         INotificationSenderIdentityResolver senderIdentityResolver,
         IEnumerable<INotificationDeliveryObserver> observers,
         IOptions<SendGridNotificationOptions> options,
         ILogger<SendGridEmailNotificationSender> logger)
-        : this(
-            httpClientFactory,
-            senderIdentityResolver,
-            observers,
-            options,
-            logger,
-            storageFactory ?? throw new ArgumentNullException(nameof(storageFactory)))
-    {
-    }
-
-    /// <summary>
-    /// Initializes a new instance of <see cref="SendGridEmailNotificationSender"/> without object storage. The
-    /// container uses this constructor when the host registers no <c>SharedKernel.Storage</c>; a message with
-    /// attachments then fails with <c>notifications.attachment_unresolvable</c>, and every other message is sent.
-    /// </summary>
-    public SendGridEmailNotificationSender(
-        IHttpClientFactory httpClientFactory,
-        INotificationSenderIdentityResolver senderIdentityResolver,
-        IEnumerable<INotificationDeliveryObserver> observers,
-        IOptions<SendGridNotificationOptions> options,
-        ILogger<SendGridEmailNotificationSender> logger)
-        : this(httpClientFactory, senderIdentityResolver, observers, options, logger, storageFactory: null)
-    {
-    }
-
-    private SendGridEmailNotificationSender(
-        IHttpClientFactory httpClientFactory,
-        INotificationSenderIdentityResolver senderIdentityResolver,
-        IEnumerable<INotificationDeliveryObserver> observers,
-        IOptions<SendGridNotificationOptions> options,
-        ILogger<SendGridEmailNotificationSender> logger,
-        IFileStorageFactory? storageFactory)
     {
         ArgumentNullException.ThrowIfNull(httpClientFactory);
         ArgumentNullException.ThrowIfNull(senderIdentityResolver);

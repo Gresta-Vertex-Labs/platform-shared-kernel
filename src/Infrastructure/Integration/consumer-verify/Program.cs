@@ -95,9 +95,7 @@ Console.WriteLine("Surface 2 PASS: omitting IWebhookSubscriptionStore produces a
     var services = new ServiceCollection();
     services.AddLogging();
     services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
-    // An empty storage registry: the SendGrid sender needs IFileStorageFactory, but these surfaces
-    // only prove DI composition and never resolve an attachment.
-    services.AddSharedKernelStorage();
+    // No SharedKernel.Storage: SendGrid needs it only to send attachments, so the providers compose without it.
     services.AddScoped<INotificationSenderIdentityResolver, NoOpSenderIdentityResolver>();
 
     services.AddSharedKernelNotifications();
@@ -128,9 +126,6 @@ Console.WriteLine("Surface 3 PASS: both Notifications providers registered toget
     var services = new ServiceCollection();
     services.AddLogging();
     services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
-    // An empty storage registry: the SendGrid sender needs IFileStorageFactory, but these surfaces
-    // only prove DI composition and never resolve an attachment.
-    services.AddSharedKernelStorage();
     services.AddSharedKernelNotifications();
     services.AddSendGridEmailNotifications(o => o.ApiKey = "consumer-verify-key");
     // Deliberately no INotificationSenderIdentityResolver registration.

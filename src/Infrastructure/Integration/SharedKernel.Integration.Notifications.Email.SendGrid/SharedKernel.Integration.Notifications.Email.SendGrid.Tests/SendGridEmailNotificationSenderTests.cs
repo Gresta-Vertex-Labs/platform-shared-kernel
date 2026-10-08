@@ -2,8 +2,13 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using SharedKernel.Execution.Tenancy;
+using SharedKernel.Integration.Notifications.Abstractions.Extensions;
 using SharedKernel.Integration.Notifications.Abstractions.Notifications;
+using SharedKernel.Integration.Notifications.Email.SendGrid.Extensions;
+using SharedKernel.Integration.Notifications.Email.SendGrid.Options;
 using SharedKernel.Integration.Notifications.Email.SendGrid.Tests.TestSupport;
 using SharedKernel.Primitives.Logging;
 using SharedKernel.Storage;
@@ -173,6 +178,21 @@ public sealed class SendGridEmailNotificationSenderTests
         result.IsSuccess.Should().BeFalse();
         result.Error.Should().Contain("AddSharedKernelStorage");
         handler.Requests.Should().BeEmpty();
+    }
+
+    // The sender is built by a factory, which ValidateOnBuild cannot inspect; the options validation stands in for it,
+    // so a host without a sender identity still fails at startup, and says what is missing.
+    [Fact]
+    public void HostWithoutASenderIdentity_FailsAtStartup_NamingTheResolver()
+    {
+        var services = new ServiceCollection();
+        services.AddSharedKernelNotifications();
+        services.AddSendGridEmailNotifications(o => o.ApiKey = "test-api-key");
+        using var provider = services.BuildServiceProvider();
+
+        var startup = () => provider.GetRequiredService<IOptions<SendGridNotificationOptions>>().Value;
+
+        startup.Should().Throw<OptionsValidationException>().WithMessage("*INotificationSenderIdentityResolver*");
     }
 
     [Fact]
