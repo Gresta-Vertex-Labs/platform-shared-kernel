@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <!--
+    Notify: a worker with no API of its own (HTTP only for its Kubernetes probes). It consumes Billing's receipts owed from RabbitMQ and sends the customer's receipt by email (SendGrid) and the merchant a text (Twilio), each
+    under a delivery id derived from the event, so a redelivered event does not notify twice.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\Shop.Contracts\Shop.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SharedKernel.ServiceDefaults" />
+    <PackageReference Include="SharedKernel.Configuration" />
+    <PackageReference Include="SharedKernel.Execution" />
+    <PackageReference Include="SharedKernel.Validation" />
+    <PackageReference Include="SharedKernel.Messaging.MassTransit" />
+    <PackageReference Include="SharedKernel.Messaging.MassTransit.RabbitMq" />
+    <PackageReference Include="SharedKernel.Integration.Notifications.Abstractions" />
+    <PackageReference Include="SharedKernel.Integration.Notifications.Email.SendGrid" />
+    <PackageReference Include="SharedKernel.Integration.Notifications.Sms.Twilio" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,12 @@
+{
+  "request": {
+    "method": "POST",
+    "urlPath": "/sendgrid/v3/mail/send",
+    "headers": { "Authorization": { "equalTo": "Bearer SG.shop-dev-sendgrid-key" } }
+  },
+  "response": {
+    "status": 202,
+    "headers": { "X-Message-Id": "{{randomValue length=22 type='ALPHANUMERIC'}}" },
+    "transformers": [ "response-template" ]
+  }
+}

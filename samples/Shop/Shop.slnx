@@ -17,6 +17,10 @@
   <Folder Name="/Merchant/">
     <Project Path="Merchant/Shop.Merchant.Api/Shop.Merchant.Api.csproj" />
   </Folder>
+  <Folder Name="/Notify/">
+    <Project Path="Notify/Shop.Notify.Tests/Shop.Notify.Tests.csproj" />
+    <Project Path="Notify/Shop.Notify.Worker/Shop.Notify.Worker.csproj" />
+  </Folder>
   <Folder Name="/Ordering/">
     <Project Path="Ordering/Shop.Ordering.Api/Shop.Ordering.Api.csproj" />
     <Project Path="Ordering/Shop.Ordering.Application/Shop.Ordering.Application.csproj" />

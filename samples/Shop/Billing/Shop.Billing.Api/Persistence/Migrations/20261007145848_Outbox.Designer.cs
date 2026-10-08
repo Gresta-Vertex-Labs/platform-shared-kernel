@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Shop.Billing.Api.Persistence;
@@ -12,9 +13,11 @@ using Shop.Billing.Api.Persistence;
 namespace Shop.Billing.Api.Persistence.Migrations
 {
     [DbContext(typeof(BillingDbContext))]
-    partial class BillingDbContextModelSnapshot : ModelSnapshot
+    [Migration("20261007145848_Outbox")]
+    partial class Outbox
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

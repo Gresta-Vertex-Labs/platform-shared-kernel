@@ -83,16 +83,21 @@ builder.Services.AddScoped<IDataSubjectRequestHandler, BillingDataSubjectHandler
 builder.Services.AddSharedKernelWebhooks();
 builder.Services.AddScoped<IWebhookSubscriptionStore, ConfigurationWebhookSubscriptionStore>();
 
-// 07.Messaging over Azure Service Bus: the dispatcher publishes WebhookDeliveryExhausted when a merchant stays down.
+// 07.Messaging over RabbitMQ: receipts owed (through the EF Core outbox, so one commits with its payment), and
+// WebhookDeliveryExhausted when a merchant stays down.
 builder
     .Services.AddSharedKernelMessaging(builder.Configuration)
-    .UseAzureServiceBus(
+    .UseRabbitMq(
         builder.Configuration.GetConnectionString(BillingMessaging.ConnectionName)
             ?? throw new InvalidOperationException(
                 $"ConnectionStrings:{BillingMessaging.ConnectionName} is not configured."
             )
     )
+    .WithEntityFrameworkOutbox<BillingDbContext>()
     .WithRetry()
+    // Billing only publishes, but this is also what writes the caller (tenant, actor, correlation id) onto outgoing
+    // messages: without it Notify would receive a receipt with no tenant.
+    .WithInboundRequestContext()
     .Build();
 
 builder.Services.AddFluentValidationRequestValidators(typeof(Program).Assembly);
@@ -127,8 +132,8 @@ await app.RunAsync();
 /// <summary>Exposed for <c>WebApplicationFactory</c>.</summary>
 public partial class Program;
 
-/// <summary>Billing's bus connection (<c>ConnectionStrings:servicebus</c>, set by the AppHost).</summary>
+/// <summary>Billing's bus connection (<c>ConnectionStrings:rabbitmq</c>, set by the AppHost).</summary>
 internal static class BillingMessaging
 {
-    public const string ConnectionName = "servicebus";
+    public const string ConnectionName = "rabbitmq";
 }

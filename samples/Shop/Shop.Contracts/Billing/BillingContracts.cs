@@ -52,6 +52,21 @@ public sealed record PaymentCaptured(
     string Currency
 ) : IIntegrationEvent;
 
+/// <summary>
+/// A captured payment owes its customer a receipt. Published on Billing's bus (RabbitMQ, through its outbox) for Notify, never to a
+/// merchant: unlike <see cref="PaymentCaptured"/> it carries the customer's email.
+/// </summary>
+[IntegrationEvent("billing.receipt-due", Version = 1)]
+public sealed record ReceiptDue(
+    Guid EventId,
+    DateTimeOffset OccurredOn,
+    Guid PaymentId,
+    Guid OrderId,
+    string CustomerEmail,
+    decimal Amount,
+    string Currency
+) : IIntegrationEvent;
+
 [JsonSerializable(typeof(ChargeRequest))]
 [JsonSerializable(typeof(PaymentView))]
 [JsonSerializable(typeof(PaymentCaptured))]

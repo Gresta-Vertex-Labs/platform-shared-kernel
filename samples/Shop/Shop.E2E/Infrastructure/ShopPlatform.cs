@@ -59,6 +59,7 @@ public sealed class ShopPlatform : IAsyncLifetime
                     ShopResources.Ordering,
                     ShopResources.Billing,
                     ShopResources.Merchant,
+                    ShopResources.Notify,
                 }
             )
             {

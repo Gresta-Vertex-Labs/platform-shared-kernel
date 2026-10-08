@@ -40,6 +40,12 @@ var billing = builder
     .WithBillingConfiguration(infra, pki, merchant)
     .WithHttpHealthCheck("/health/ready");
 
+// Notify: emails receipts and texts merchants, from Billing's events on RabbitMQ.
+builder
+    .AddProject<Projects.Shop_Notify_Worker>(ShopResources.Notify)
+    .WithNotifyConfiguration(infra)
+    .WithHttpHealthCheck("/health/ready");
+
 // Ordering: one replica (its SignalR hub has no backplane), calling the first Inventory replica and Billing.
 builder
     .AddProject<Projects.Shop_Ordering_Api>(ShopResources.Ordering)

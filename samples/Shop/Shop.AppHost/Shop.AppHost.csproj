@@ -13,10 +13,10 @@
     <ProjectReference Include="..\Ordering\Shop.Ordering.Api\Shop.Ordering.Api.csproj" />
     <ProjectReference Include="..\Billing\Shop.Billing.Api\Shop.Billing.Api.csproj" />
     <ProjectReference Include="..\Merchant\Shop.Merchant.Api\Shop.Merchant.Api.csproj" />
+    <ProjectReference Include="..\Notify\Shop.Notify.Worker\Shop.Notify.Worker.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Aspire.Hosting.Azure.ServiceBus" />
     <PackageReference Include="Aspire.Hosting.PostgreSQL" />
     <PackageReference Include="Aspire.Hosting.RabbitMQ" />
     <PackageReference Include="Aspire.Hosting.Redis" />

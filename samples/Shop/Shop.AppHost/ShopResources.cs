@@ -14,7 +14,7 @@ public static class ShopResources
     public const string RabbitMq = "rabbitmq";
     public const string Temporal = "temporal";
     public const string KeyVault = "keyvault";
-    public const string ServiceBus = "servicebus";
+    public const string WireMock = "wiremock";
 
     public const string Catalog = "catalog-api";
     public const string Catalog2 = "catalog-api-2";
@@ -23,6 +23,19 @@ public static class ShopResources
     public const string Ordering = "ordering-api";
     public const string Billing = "billing-api";
     public const string Merchant = "merchant-api";
+    public const string Notify = "notify-worker";
+
+    /// <summary>DEVELOPMENT-ONLY provider credentials; WireMock only accepts these (wiremock/mappings).</summary>
+    public static class Providers
+    {
+        public const string SendGridApiKey = "SG.shop-dev-sendgrid-key";
+        public const string TwilioAccountSid = "AC00000000000000000000000000000000";
+        public const string TwilioAuthToken = "shop-dev-twilio-token";
+        public const string TwilioFrom = "+15005550006";
+
+        /// <summary>The Contoso merchant's phone (Notify texts it on every paid order).</summary>
+        public const string ContosoMerchantPhone = "+31201234567";
+    }
 
     /// <summary>
     /// Billing's DEVELOPMENT-ONLY API keys, minted with SharedKernel.Security.ApiKey's generator (prefix <c>shop_dev</c>).
