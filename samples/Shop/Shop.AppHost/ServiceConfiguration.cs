@@ -25,6 +25,21 @@ public static class ServiceConfiguration
             .WaitFor(infra.Keycloak);
     }
 
+    /// <summary>
+    /// The shared RabbitMQ of 07.Messaging. (Billing and Notify were meant for Azure Service Bus, but the emulator serves
+    /// AMQP and its management API on different ports, and MassTransit 8.5 reaches both through one connection string.)
+    /// </summary>
+    public static IResourceBuilder<ProjectResource> WithRabbitMq(
+        this IResourceBuilder<ProjectResource> service,
+        ShopInfrastructure infra
+    ) =>
+        service
+            .WithEnvironment(
+                "ConnectionStrings__rabbitmq",
+                infra.RabbitMq.Resource.ConnectionStringExpression
+            )
+            .WaitFor(infra.RabbitMq);
+
     /// <summary>The shared Redis connection of 02.Caching (cache L2, backplane, locks, hashes, Pub/Sub).</summary>
     public static IResourceBuilder<ProjectResource> WithRedis(
         this IResourceBuilder<ProjectResource> service,
@@ -175,4 +190,209 @@ public static class ServiceConfiguration
                 $"Inventory__Mtls__Clients__{pki.ClientThumbprint(ShopResources.Clients.Ordering)}",
                 ShopResources.Clients.Ordering
             );
+
+    /// <summary>
+    /// The Ordering service: its database (row-level security, the audit ledger with its sealer role, field encryption),
+    /// Redis, RabbitMQ, Temporal, and Inventory over gRPC with the Ordering client certificate.
+    /// </summary>
+    public static IResourceBuilder<ProjectResource> WithOrderingConfiguration(
+        this IResourceBuilder<ProjectResource> service,
+        ShopInfrastructure infra,
+        ShopPki pki,
+        IResourceBuilder<ProjectResource> inventory
+    )
+    {
+        var temporal = infra.Temporal.GetEndpoint("grpc");
+        return service
+            .WithIdentity(infra)
+            .WithRedis(infra)
+            .WithDatabase(infra, "ordering")
+            .WithEnvironment(
+                "ConnectionStrings__audit-sealer",
+                infra.Database("ordering", "app_audit_sealer", "sealer-dev")
+            )
+            // DEVELOPMENT-ONLY keys: the audit ledger's HMAC key, the field-encryption root key and blind-index key.
+            .WithEnvironment(
+                "SharedKernel__Persistence__Auditing__Keys__k1__Material",
+                "H01/neWL3422YSnGQOTmM1Td15lOJYeYDsrj2UOSGt8="
+            )
+            .WithEnvironment("SharedKernel__Persistence__Auditing__Keys__k1__Order", "1")
+            .WithEnvironment("SharedKernel__Persistence__Encryption__Keys__CurrentKeyId", "root1")
+            .WithEnvironment(
+                "SharedKernel__Persistence__Encryption__Keys__Keys__root1",
+                "+vPQGz9zMkR9gSJzRGn36uuP1mkZZGeUi2YWStgLQgY="
+            )
+            .WithEnvironment(
+                "SharedKernel__Persistence__Encryption__BlindIndexKeys__CurrentVersion",
+                "v1"
+            )
+            .WithEnvironment(
+                "SharedKernel__Persistence__Encryption__BlindIndexKeys__Keys__v1",
+                "H95n4aIXS7S5WLI6SnwxNGQxbK4tuKxULEi9+hN7xKs="
+            )
+            .WithRabbitMq(infra)
+            .WithEnvironment(
+                "Workflows__Temporal__TargetHost",
+                ReferenceExpression.Create(
+                    $"{temporal.Property(EndpointProperty.Host)}:{temporal.Property(EndpointProperty.Port)}"
+                )
+            )
+            .WaitFor(infra.Temporal)
+            // 11.Communication: Inventory's HTTPS endpoint, the Ordering client certificate, only the Shop's CA trusted.
+            .WithEnvironment(
+                "SharedKernel__Communication__Clients__inventory__Address",
+                inventory.GetEndpoint("https")
+            )
+            .WithEnvironment(
+                "SharedKernel__Communication__Clients__inventory__Tls__CertificatePath",
+                pki.ClientCertificatePath(ShopResources.Clients.Ordering)
+            )
+            .WithEnvironment(
+                "SharedKernel__Communication__Clients__inventory__Tls__CertificatePassword",
+                ShopPki.Password
+            )
+            .WithEnvironment(
+                "SharedKernel__Communication__Clients__inventory__Tls__TrustedCertificateAuthoritiesPath",
+                pki.CaPemPath
+            )
+            .WaitFor(inventory);
+    }
+
+    /// <summary>Ordering calls Billing over REST with its API key (11.Communication's ApiKey authentication mode).</summary>
+    public static IResourceBuilder<ProjectResource> WithBillingClient(
+        this IResourceBuilder<ProjectResource> service,
+        IResourceBuilder<ProjectResource> billing
+    ) =>
+        service
+            .WithEnvironment(
+                "SharedKernel__Communication__Clients__billing__BaseAddress",
+                ReferenceExpression.Create($"{billing.GetEndpoint("http")}/")
+            )
+            .WithEnvironment(
+                "SharedKernel__Communication__Clients__billing__Authentication__Mode",
+                "ApiKey"
+            )
+            .WithEnvironment(
+                "SharedKernel__Communication__Clients__billing__Authentication__ApiKey__Value",
+                ShopResources.ApiKeys.OrderingService
+            )
+            .WaitFor(billing);
+
+    /// <summary>
+    /// The Billing service: its database, the Key Vault emulator (secrets as configuration, invoice signing, the IBAN's
+    /// master key; only the Shop CA trusted), and the Contoso merchant's webhook endpoint.
+    /// </summary>
+    public static IResourceBuilder<ProjectResource> WithBillingConfiguration(
+        this IResourceBuilder<ProjectResource> service,
+        ShopInfrastructure infra,
+        ShopPki pki,
+        IResourceBuilder<ProjectResource> merchant
+    )
+    {
+        var vault = infra.KeyVault.GetEndpoint("https");
+        return service
+            .WithIdentity(infra)
+            .WithDatabase(infra, "billing")
+            .WithRabbitMq(infra)
+            .WithEnvironment("Billing__KeyVault__Uri", vault)
+            .WithEnvironment("Billing__KeyVault__CaCertificatePath", pki.CaCertificatePath)
+            .WithEnvironment(
+                "SharedKernel__Cryptography__KeyVault__Azure__Signing__VaultUri",
+                vault
+            )
+            .WithEnvironment(
+                "SharedKernel__Cryptography__KeyVault__Azure__Encryption__VaultUri",
+                vault
+            )
+            .WaitFor(infra.KeyVault)
+            // 15.Integration: the merchant runs on localhost, a private address the dispatcher refuses by default.
+            .WithEnvironment(
+                $"Billing__Webhooks__{ShopResources.Identity.ContosoTenant}__Url",
+                ReferenceExpression.Create($"{merchant.GetEndpoint("http")}/webhooks/billing")
+            )
+            .WithEnvironment(
+                "SharedKernel__Integration__Webhooks__AllowPrivateNetworkTargets",
+                "true"
+            )
+            .WaitFor(merchant);
+    }
+
+    /// <summary>The merchant verifies Billing's webhooks with the secret Billing signs them with.</summary>
+    public static IResourceBuilder<ProjectResource> WithMerchantConfiguration(
+        this IResourceBuilder<ProjectResource> service
+    ) => service.WithEnvironment("Merchant__Webhooks__Secret", ShopKeyVault.MerchantWebhookSecret);
+
+    /// <summary>
+    /// Notify: Billing's bus, and SendGrid and Twilio at the WireMock stand-in (the kernel's <c>BaseAddress</c> options,
+    /// with a path prefix per provider).
+    /// </summary>
+    public static IResourceBuilder<ProjectResource> WithNotifyConfiguration(
+        this IResourceBuilder<ProjectResource> service,
+        ShopInfrastructure infra
+    )
+    {
+        var wireMock = infra.WireMock.GetEndpoint("http");
+        return service
+            .WithRabbitMq(infra)
+            .WithEnvironment(
+                "Notify__Providers__SendGrid__BaseAddress",
+                ReferenceExpression.Create($"{wireMock}/sendgrid/")
+            )
+            .WithEnvironment(
+                "Notify__Providers__SendGrid__ApiKey",
+                ShopResources.Providers.SendGridApiKey
+            )
+            .WithEnvironment(
+                "Notify__Providers__Twilio__BaseAddress",
+                ReferenceExpression.Create($"{wireMock}/twilio/")
+            )
+            .WithEnvironment(
+                "Notify__Providers__Twilio__AccountSid",
+                ShopResources.Providers.TwilioAccountSid
+            )
+            .WithEnvironment(
+                "Notify__Providers__Twilio__AuthToken",
+                ShopResources.Providers.TwilioAuthToken
+            )
+            .WithEnvironment("Notify__Providers__Twilio__From", ShopResources.Providers.TwilioFrom)
+            .WithEnvironment(
+                $"Notify__MerchantPhones__{ShopResources.Identity.ContosoTenant}",
+                ShopResources.Providers.ContosoMerchantPhone
+            )
+            .WaitFor(infra.WireMock);
+    }
+
+    /// <summary>
+    /// Reports: its database, RabbitMQ, Gotenberg, the downloads store on S3 and the archive on Huawei OBS. Both stores
+    /// are MinIO buckets: OBS speaks the S3 protocol, so the OBS provider (with its own compatibility profile: no
+    /// conditional writes, no SHA-256 checksums) runs against MinIO through a path-style endpoint and an explicit region.
+    /// </summary>
+    public static IResourceBuilder<ProjectResource> WithReportsConfiguration(
+        this IResourceBuilder<ProjectResource> service,
+        ShopInfrastructure infra
+    ) =>
+        service
+            .WithIdentity(infra)
+            .WithDatabase(infra, "reports")
+            .WithRabbitMq(infra)
+            .WithObjectStorage(infra, "reports", "reports-archive")
+            .WithEnvironment(
+                "SharedKernel__Storage__Obs__Endpoint",
+                infra.Minio.GetEndpoint("http")
+            )
+            .WithEnvironment("SharedKernel__Storage__Obs__Region", "us-east-1")
+            .WithEnvironment("SharedKernel__Storage__Obs__ForcePathStyle", "true")
+            .WithEnvironment(
+                "SharedKernel__Storage__Obs__AccessKeyId",
+                ShopInfrastructure.MinioUser
+            )
+            .WithEnvironment(
+                "SharedKernel__Storage__Obs__SecretAccessKey",
+                ShopInfrastructure.MinioPassword
+            )
+            .WithEnvironment(
+                "SharedKernel__Reporting__Gotenberg__BaseUrl",
+                infra.Gotenberg.GetEndpoint("http")
+            )
+            .WaitFor(infra.Gotenberg);
 }

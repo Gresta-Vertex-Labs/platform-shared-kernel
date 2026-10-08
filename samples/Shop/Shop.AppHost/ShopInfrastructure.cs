@@ -18,7 +18,7 @@ public sealed class ShopInfrastructure
     public const string ChatModel = "qwen2.5:0.5b";
 
     /// <summary>The buckets the platform's file stores use.</summary>
-    public static readonly string[] Buckets = ["product-images"];
+    public static readonly string[] Buckets = ["product-images", "reports", "reports-archive"];
 
     public required IResourceBuilder<PostgresServerResource> Postgres { get; init; }
     public required IResourceBuilder<RedisResource> Redis { get; init; }
@@ -30,6 +30,11 @@ public sealed class ShopInfrastructure
     public required IResourceBuilder<OllamaModelResource> ChatModelResource { get; init; }
     public required IResourceBuilder<ContainerResource> Minio { get; init; }
     public required IResourceBuilder<ContainerResource> Keycloak { get; init; }
+    public required IResourceBuilder<RabbitMQServerResource> RabbitMq { get; init; }
+    public required IResourceBuilder<ContainerResource> Temporal { get; init; }
+    public required IResourceBuilder<ContainerResource> KeyVault { get; init; }
+    public required IResourceBuilder<ContainerResource> WireMock { get; init; }
+    public required IResourceBuilder<ContainerResource> Gotenberg { get; init; }
 
     /// <summary>A connection string to one Shop database as one of the roles of postgres/01-roles.sql.</summary>
     public ReferenceExpression Database(string database, string role, string password)
@@ -40,7 +45,7 @@ public sealed class ShopInfrastructure
         );
     }
 
-    public static ShopInfrastructure Add(IDistributedApplicationBuilder builder)
+    public static ShopInfrastructure Add(IDistributedApplicationBuilder builder, ShopPki pki)
     {
         var postgres = builder
             .AddPostgres(ShopResources.Postgres)
@@ -111,6 +116,19 @@ public sealed class ShopInfrastructure
             }
         );
 
+        // RabbitMQ with the delayed-message exchange plugin MassTransit's delayed delivery needs.
+        var rabbitMq = builder
+            .AddRabbitMQ(ShopResources.RabbitMq)
+            .WithImage("masstransit/rabbitmq", "4.3.1");
+
+        // The Temporal CLI's single-process development server (frontend, history, matching and an in-memory store).
+        var temporal = builder
+            .AddContainer(ShopResources.Temporal, "temporalio/temporal", "1.9.1")
+            .WithArgs("server", "start-dev", "--ip", "0.0.0.0")
+            .WithEndpoint(targetPort: 7233, name: "grpc", scheme: "http")
+            .WithHttpEndpoint(targetPort: 8233, name: "ui")
+            .WithHttpHealthCheck("/", endpointName: "ui");
+
         var keycloak = builder
             .AddContainer(ShopResources.Keycloak, "quay.io/keycloak/keycloak", "26.8.0")
             .WithArgs("start-dev", "--import-realm")
@@ -134,6 +152,21 @@ public sealed class ShopInfrastructure
             ChatModelResource = chatModel,
             Minio = minio,
             Keycloak = keycloak,
+            RabbitMq = rabbitMq,
+            Temporal = temporal,
+            KeyVault = ShopKeyVault.Add(builder, pki),
+            // SendGrid and Twilio, stubbed: the mappings answer like the real APIs and record every request.
+            WireMock = builder
+                .AddContainer(ShopResources.WireMock, "wiremock/wiremock", "3.13.2")
+                .WithBindMount("./wiremock/mappings", "/home/wiremock/mappings", isReadOnly: true)
+                .WithArgs("--global-response-templating", "--disable-banner")
+                .WithHttpEndpoint(targetPort: 8080, name: "http")
+                .WithHttpHealthCheck("/__admin/health", endpointName: "http"),
+            // HTML to PDF: headless Chromium behind Gotenberg's HTTP API.
+            Gotenberg = builder
+                .AddContainer(ShopResources.Gotenberg, "gotenberg/gotenberg", "8.37.0")
+                .WithHttpEndpoint(targetPort: 3000, name: "http")
+                .WithHttpHealthCheck("/health", endpointName: "http"),
         };
     }
 }

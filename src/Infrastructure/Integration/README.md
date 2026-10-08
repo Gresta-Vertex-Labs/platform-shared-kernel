@@ -116,8 +116,16 @@ The full setup (the subscription store, receiving-side verification, secret rota
 
 ## See it run
 
-No reference service under `samples/` uses these packages yet; [Messaging](../Messaging/README.md)'s
-[ShippingApi](../../../samples/ShippingApi/) is the closest, publishing the integration events a webhook would carry.
+In the [**Shop**](../../../samples/Shop/README.md), [Billing](../../../samples/Shop/Billing/) sends signed webhooks to
+[Merchant](../../../samples/Shop/Merchant/), a merchant's own system that accepts only those whose signature verifies,
+and the [Notify](../../../samples/Shop/Notify/) worker emails the customer a receipt through SendGrid and texts the
+merchant through Twilio (both stubbed by WireMock, which records every request for the tests). `Shop.Billing.Tests` and
+`Shop.Notify.Tests` run over the Integration fakes; `Shop.E2E` drives the real flows:
+
+```bash
+samples/Shop/build.sh --e2e      # pack the kernel, build the Shop, run its end-to-end flows (Docker)
+```
+
 The [`consumer-verify`](consumer-verify/Program.cs) harness composes webhooks and both notification providers the way
 a service does and proves that a missing `IWebhookSubscriptionStore` fails loudly at first dispatch:
 

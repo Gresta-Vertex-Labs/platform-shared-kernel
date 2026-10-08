@@ -168,7 +168,7 @@ Changes here that silently break another domain:
 | Specification shape (`Skip`/`Take`, includes, flags, ordering) | `06.Persistence` `SpecificationEvaluator`, `PagingGuard`, `BulkSpecificationGuard`; keyset seek flips both comparisons when descending |
 | `CurrencyCatalog` codes or minor units | `01.Core` `SharedKernel.Validation` has a second ISO 4217 table (`CurrencyCode`, `Internal/IsoData`) — keep them consistent |
 | `Money`/`Currency` factories or the private persistence constructor | `06.Persistence` `MoneyMapping`/`CurrencyValueConverter`; `16.Testing` `MoneyFaker`; `00.Governance` SK0034 |
-| `IBusinessRule`, `ValueObject` validation or `TryCreate` | `16.Testing` domain assertions; `samples/OrderApi`; `00.Governance` SK0037 and `AggregateFactoriesMustCreateValidationResults` |
+| `IBusinessRule`, `ValueObject` validation or `TryCreate` | `16.Testing` domain assertions; the Shop's `Shop.Ordering.Domain` (`samples/Shop`); `00.Governance` SK0037 and `AggregateFactoriesMustCreateValidationResults` |
 | `IDomainEventDispatcher` | `05.Application` `SharedKernel.Application.Pipeline` `DomainEventDispatcher`; 06.Persistence dispatches before each save |
 | Any public API | `PublicAPI.Unshipped.txt`, `SharedKernel.Domain.ConsumerVerify`, the package README |
 

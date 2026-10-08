@@ -73,7 +73,7 @@ Cite the rule number from `src/Infrastructure/Communication/CLAUDE.md` → `## R
 - **Configuration first.** A new option gets a D-task fixing its full section path, default, validation (startup error vs. ignored) and whether it is read per call; the package README Configuration table follows as a DO-task.
 - **Test style (all Unit lane):** REST through a real registered client over `StubHttpMessageHandler` with in-memory configuration and `IStartupValidator.Validate()`, `Retry:BaseDelay` 0; gRPC against a real service on `TestServer` (`GrpcHarness`); transport failures as `HttpRequestException` with a `SocketException` inner; tokens with `FakeClock`; certificates in memory. Name the failure paths to cover (each `communication.*` code touched, caller-supplied header preserved, non-idempotent method not repeated).
 - **Double in the same phase.** A new public seam consumers must fake includes a C/T task for `SharedKernel.Communication.Testing`, following `src/Testing/CLAUDE.md` double rules.
-- **Samples.** A change to how a consumer registers or calls a client keeps `samples/CheckoutApi` → `samples/InventoryApi` and `consumer-verify` compiling (a T-task).
+- **Samples.** A change to how a consumer registers or calls a client keeps the Shop (`samples/Shop`: Ordering → Inventory over gRPC, Ordering → Billing over REST) and `consumer-verify` compiling (a T-task).
 - **Package versions.** A newer `Microsoft.Extensions.Http.Resilience`, `ServiceDiscovery` or `Grpc.Net.*` requirement is recorded with the reason; the `Directory.Packages.props` bump is a note for devops-lead.
 
 ---
@@ -86,6 +86,6 @@ Cite the rule number from `src/Infrastructure/Communication/CLAUDE.md` → `## R
 - **14.Presentation** — server-side ProblemDetails shape and `GrpcErrorCodes.ForStatus` names, mirrored by hand in `HttpStatusErrorTypeMap` and the gRPC status map.
 - **16.Testing** — owns the double rules and catalogue.
 - **00.Governance** — `CommunicationLayeringRules`, SK0013, SK0022.
-- **samples** — `CheckoutApi` → `InventoryApi` over both protocols.
+- **samples** — the Shop (`samples/Shop`): Ordering → Inventory over gRPC with mutual TLS, Ordering → Billing over REST with an API key.
 
 Report in the `_common.md` format, with the phase key, task count by prefix, any new configuration keys or error codes, any decline and its rule, blockers and cross-domain notes.

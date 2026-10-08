@@ -14,6 +14,7 @@
     <PackageReference Include="SharedKernel.Security.Testing" />
     <PackageReference Include="SharedKernel.Caching.Testing" />
     <PackageReference Include="SharedKernel.Scheduling.Testing" />
+    <PackageReference Include="SharedKernel.Presentation.Testing" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="xunit" />

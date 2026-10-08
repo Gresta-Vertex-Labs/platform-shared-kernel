@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Notify's tests, without Docker: its dependency graph, and the receipt consumer over the Integration fakes (who is
+    emailed and texted, with which template, under which delivery id, and what a refusing provider does). The bus and
+    the providers on the wire (WireMock) are Shop.E2E's job.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\Shop.Notify.Worker\Shop.Notify.Worker.csproj" />
+    <ProjectReference Include="..\..\Shop.TestSupport\Shop.TestSupport.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SharedKernel.Testing" />
+    <PackageReference Include="SharedKernel.Integration.Testing" />
+    <PackageReference Include="NSubstitute" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+</Project>

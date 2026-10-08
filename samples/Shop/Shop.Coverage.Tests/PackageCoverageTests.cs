@@ -18,15 +18,35 @@ public sealed class PackageCoverageTests(ITestOutputHelper output)
         "Shop"
     );
 
+    /// <summary>
+    /// Packages the Shop cannot prove with a local stand-in, and why. Each is a known gap, not a forgotten one: it is
+    /// reported, and the strict test does not demand it.
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, string> KnownGaps = new Dictionary<
+        string,
+        string
+    >(StringComparer.Ordinal)
+    {
+        ["SharedKernel.Messaging.MassTransit.AzureServiceBus"] =
+            "The Service Bus emulator serves AMQP and its management API on different ports, and MassTransit 8.5 "
+            + "reaches both through one connection string, so no consumer can start against it. Needs a real namespace.",
+    };
+
     [Fact]
     public void Report_WhichPackagesTheShopReferences()
     {
         var referenced = ReferencedByShop();
         var missing = Missing(referenced);
 
+        int used = KernelPackageIndex.Instance.Tiers.Keys.Count(referenced.Contains);
         output.WriteLine(
-            $"{KernelPackageIndex.Instance.Tiers.Count - missing.Count} of {KernelPackageIndex.Instance.Tiers.Count} packages referenced directly."
+            $"{used} of {KernelPackageIndex.Instance.Tiers.Count} packages referenced directly; {KnownGaps.Count} known gap(s)."
         );
+        foreach (var (package, reason) in KnownGaps)
+        {
+            output.WriteLine($"Known gap: {package} — {reason}");
+        }
+
         foreach (
             var group in missing
                 .GroupBy(KernelPackageIndex.Instance.TierOf)
@@ -39,15 +59,26 @@ public sealed class PackageCoverageTests(ITestOutputHelper output)
         referenced.Should().NotBeEmpty();
     }
 
-    [Fact(Skip = "Strict once every Shop service exists (the last PR of the Shop switches it on).")]
+    /// <summary>
+    /// Strict: a new kernel package fails this until a Shop project uses it (or it is added to <see cref="KnownGaps"/>
+    /// with the reason it cannot be proven here).
+    /// </summary>
+    [Fact]
     public void EveryPackage_IsReferencedDirectly_BySomeShopProject() =>
         Missing(ReferencedByShop())
             .Should()
             .BeEmpty("every kernel package needs a home in the Shop");
 
+    /// <summary>A known gap the Shop starts using is no longer a gap: the list must not go stale.</summary>
+    [Fact]
+    public void KnownGaps_AreReallyNotReferenced() =>
+        KnownGaps.Keys.Where(ReferencedByShop().Contains).Should().BeEmpty();
+
     private static List<string> Missing(IReadOnlySet<string> referenced) =>
         KernelPackageIndex
-            .Instance.Tiers.Keys.Where(package => !referenced.Contains(package))
+            .Instance.Tiers.Keys.Where(package =>
+                !referenced.Contains(package) && !KnownGaps.ContainsKey(package)
+            )
             .OrderBy(package => package, StringComparer.Ordinal)
             .ToList();
 

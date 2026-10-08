@@ -106,8 +106,7 @@ and this fixed compatibility profile:
 - **The signing region** is read from standard endpoints (`obs.{region}.myhuaweicloud.com`).
 - **Credentials** are AK/SK, with `SecurityToken` for temporary (STS) credentials.
 
-The profile was verified against OBS `tr-west-1` with the
-[`DocumentsApi` sample](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/samples/DocumentsApi/README.md).
+The profile was verified against a real OBS bucket in `tr-west-1`.
 
 ## Recipes
 
@@ -193,7 +192,7 @@ Application code is tested with the in-memory stores of
 [`SharedKernel.Storage.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Storage/SharedKernel.Storage.Testing/README.md)
 (`AddSharedKernelStorage().AddInMemoryStore("archive")`). They support conditions and checksums that OBS refuses, so
 cover the `storage.not_supported` path of OBS-backed code with a test of its own. The OBS wiring itself can only be
-verified against a real OBS bucket; the `DocumentsApi` sample runs its scenarios there when credentials are supplied.
+verified against a real OBS bucket; the [Shop sample](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/samples/Shop/README.md)'s Reports runs the OBS provider against MinIO.
 
 ## Pitfalls
 

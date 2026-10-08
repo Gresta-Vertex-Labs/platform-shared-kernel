@@ -67,7 +67,7 @@ Cite the rule number from `src/Infrastructure/Storage/CLAUDE.md` → `## Rules &
 
 - **Contract first.** A change to `IFileStorage`/`ITenantFileStorage` gets a D-task on the shape, a C-task for `InMemoryFileStorage` in `SharedKernel.Storage.Testing`, a `consumer-verify` task, and an outbound note for `20.Reporting`.
 - **Lanes.** Unit: `Storage.Abstractions.Tests` (recording fake store), `Storage.Testing.Tests`, `consumer-verify`. Integration: `Storage.S3.Tests`, `Storage.Obs.Tests` against real MinIO (the suite's `MinioFixture`); presigned flows through `HttpClient`; never a mocked `IAmazonS3` for behaviour. Storage test projects do not reference `SharedKernel.Storage.Testing` (keeps the graph acyclic).
-- **Live runs.** A provider-visible change gets a task to run `samples/DocumentsApi` with the `SK_LIVE_*` variables — MinIO accepts what real services reject.
+- **Live runs.** A provider-visible change gets a task to run the Shop's `Shop.E2E` (`CatalogFlowTests`, `ReportsFlowTests`; `samples/Shop/build.sh --e2e`) and to check it by hand against real Amazon S3 or Huawei OBS — no harness runs live any more, and MinIO accepts what real services reject.
 - **Options.** Connections under `SharedKernel:Storage:{Provider}[:{name}]`, stores under `SharedKernel:Storage:Stores:{name}`, via `AddValidatedOptions`, validated on start.
 - **Documentation** lives in four places kept in step: `src/Infrastructure/Storage/README.md`, each package README (ends with an AI quick reference), XML docs, and the csproj `<Description>` — a DO-task for each that changes.
 

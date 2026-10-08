@@ -108,14 +108,16 @@ are in the [SharedKernel.ServiceDefaults Quick start](SharedKernel.ServiceDefaul
 
 ## See it run
 
-- [samples/OrderApi](../../../samples/OrderApi/README.md) — the compiled reference: `AddServiceDefaults()`,
-  `UseSharedKernelRequestContext()` first, `AddSharedKernelReadiness()` over its own `order-store` probe, and
-  `StartupGate.MarkReady()`.
+- The Shop's [Ordering](../../../samples/Shop/Ordering/) — the compiled reference: `Shop.Ordering.Api/Program.cs`
+  calls `AddServiceDefaults()`, `AddSharedKernelRequestContext()`, `AddSharedKernelMultiTenancy()`,
+  `AddDatabaseReadinessCheck<OrderingDbContext>().AddSharedKernelReadiness()` (database readiness with `.Persistence`),
+  `UseSharedKernelRequestContext()` first, `MapDefaultHealthCheckEndpoints()` and `StartupGate.MarkReady()`.
 - [samples/Shop](../../../samples/Shop/README.md) — Inventory resolves tenants with `.MultiTenancy` (including a
   service-only header strategy) and accepts Ordering's certificates through `.Security.Mtls`; Catalog adds
   `.Localization`. Run with `dotnet run --project samples/Shop/Shop.AppHost --launch-profile http` after
   `samples/Shop/build.sh`; the Aspire dashboard shows the traces across services.
-- [samples/BillingApi](../../../samples/BillingApi/README.md) — database readiness with `.Persistence`.
+- The Shop's [Billing](../../../samples/Shop/Billing/) — API key hashes and webhook secrets loaded from Key Vault as
+  configuration with `.Configuration.KeyVault`.
 
 ## Guarantees
 

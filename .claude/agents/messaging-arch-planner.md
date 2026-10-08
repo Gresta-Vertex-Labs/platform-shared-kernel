@@ -73,7 +73,7 @@ Cite the rule number from `src/Infrastructure/Messaging/CLAUDE.md` → `## Rules
 - **Contract first.** A change to `.Abstractions` gets a D-task on the shape, a C-task for `InMemoryMessageBus`/`InMemoryEventPublisher` in `SharedKernel.Messaging.Testing`, a `consumer-verify` task, and `PublicAPI`/README DO-tasks.
 - **Tests to prescribe.** Through the real builder with `AddMassTransitTestHarness()` and `harness.InactivityTask`; round trips, not halves; parity tests when `PublishContext` changes; logs asserted by `EventId`; listeners filtered by a test-unique tag; readiness gating, never a sleep.
 - **Lanes.** Unit: `Abstractions.Tests`, `AzureServiceBus.Tests`, `EfCore.Tests` (SQLite), `Messaging.Testing.Tests`, `consumer-verify`. Integration: `MassTransit.Tests`, `RabbitMq.Tests`, `EfCore.Integration.Tests` (`RabbitMqContainerFixture`, `PostgreSqlContainerFixture`).
-- **End-to-end.** A change to dispatch, propagation or a transport adds a task to run `samples/ShippingApi` against real RabbitMQ (sample edits are a report line).
+- **End-to-end.** A change to dispatch, propagation or a transport adds a task to run the Shop's messaging flows against real RabbitMQ (`samples/Shop/build.sh --e2e`) (sample edits are a report line).
 - **Configuration.** New options bind under `SharedKernel:Messaging[:…]` via `AddValidatedOptions` in the core.
 
 ---

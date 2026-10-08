@@ -64,7 +64,7 @@ Cite the rule number of `src/Model/Domain/CLAUDE.md` → Rules & Invariants.
 - **Persistence-impact D-task.** Any change to a base class, interface, id, `Money`, tenant or specification shape starts with a D-task walking the "If you change…" table in `## Cross-Domain Couplings`; `06.Persistence` consequences become `## Cross-Domain Dependencies` notes. Call out any change that breaks a mapping at **runtime** (`op_Explicit` reflection, materialization interceptor).
 - **Analyzer impact.** A new construction or naming rule may need a `00.Governance` analyzer (like SK0009, SK0034, SK0037) — a note, never planned here.
 - **Tests.** Unit lane only. Name in T-tasks: equality (same type, transient, cross-type), validation reporting every error, `TryCreate` paths, event sequencing, soft-delete idempotency, rounding/allocation invariants; every behaviour fix goes into `DomainHardeningTests`/`MoneyHardeningTests`.
-- **Consumer surface.** Every public change carries tasks for `PublicAPI.Unshipped.txt`, the package README (compiled snippets with real outputs) and `SharedKernel.Domain.ConsumerVerify`; changes to `samples/OrderApi` or `SharedKernel.Testing` helpers are cross-domain notes.
+- **Consumer surface.** Every public change carries tasks for `PublicAPI.Unshipped.txt`, the package README (compiled snippets with real outputs) and `SharedKernel.Domain.ConsumerVerify`; changes to the Shop's Domain projects (`Shop.Ordering.Domain`, `Shop.Catalog.Domain`) or `SharedKernel.Testing` helpers are cross-domain notes.
 - **Additive by default.** Prefer new optional members and new types over altered semantics; state the migration for any breaking change.
 
 ---
@@ -77,6 +77,6 @@ Cite the rule number of `src/Model/Domain/CLAUDE.md` → Rules & Invariants.
 - **04.Contracts** — no reference either way; paging contracts are what repositories return.
 - **16.Testing** — `MoneyFaker`, `FakeExchangeRateProvider`, domain assertions, `SpecificationTestBuilder` in `SharedKernel.Testing`.
 - **00.Governance** — SK0009, SK0034, SK0037, `AggregateFactoriesMustCreateValidationResults`, `DomainNeverReferencesContracts`.
-- **samples** — `samples/OrderApi` Domain project.
+- **samples** — the Shop's `samples/Shop/Ordering/Shop.Ordering.Domain` and `samples/Shop/Catalog/Shop.Catalog.Domain` projects.
 
 Report in the `_common.md` format, with the phase key, task count by prefix, any decline and its rule, blockers and cross-domain notes.

@@ -92,7 +92,7 @@ Overloads, options and defaults: each package's `README.md`.
 - **13.ServiceDefaults** — `WithCommunicationTelemetry()`; `ServiceDefaults.Security`'s `EndToEndPropagationTests` prove HTTP → REST/gRPC, consumer → REST and job → REST propagation.
 - **14.Presentation** — the server side of the same contracts: ProblemDetails shape and `GrpcErrorCodes.ForStatus` names; mirrored here by hand, never referenced.
 - **00.Governance** — `CommunicationLayeringRules`; SK0013.
-- **samples** — `samples/CheckoutApi` → `samples/InventoryApi` over both protocols.
+- **samples** — the Shop (`samples/Shop`): Ordering → Inventory over gRPC with mutual TLS, Ordering → Billing over REST with an API key.
 
 ## Testing
 

@@ -122,13 +122,13 @@ with `errors`, 412) with no code in the endpoint. The full setup is in the
 
 ## See it run
 
-- [samples/OrderApi](../../../samples/OrderApi/README.md) — the reference: `AddSharedKernelWebApi()`,
-  `AddSharedKernelOpenApi()`, `MapEndpoints()` and `MapSharedKernelOpenApi()`; its tests prove the 401/403/204 answers
-  of a command carrying `[RequirePermission]`. Its README gives the `dotnet run` command against the packed packages.
-- [samples/InventoryApi](../../../samples/InventoryApi/README.md) — the same errors over REST and gRPC.
-- [samples/Shop](../../../samples/Shop/README.md) — Catalog serves REST, OpenAPI and GraphQL; Inventory serves gRPC
-  over mutual TLS next to REST. `dotnet run --project samples/Shop/Shop.AppHost --launch-profile http` after
-  `samples/Shop/build.sh`.
+- The Shop's [Catalog](../../../samples/Shop/Catalog/) — the reference: `Shop.Catalog.Api/Program.cs` wires
+  `AddSharedKernelWebApi()`, `AddSharedKernelOpenApi()`, `UseSharedKernelRequestContext()` first,
+  `UseSharedKernelWebApi()`, `MapEndpoints()`, `MapSharedKernelOpenApi()` and GraphQL.
+- The Shop's [Ordering](../../../samples/Shop/Ordering/) adds SignalR status pushes, and the `Shop.E2E` flows prove the
+  401/403 answers of a command carrying `[RequirePermission]`.
+- The Shop's [Inventory](../../../samples/Shop/Inventory/) — the same errors over REST and over gRPC with mutual TLS.
+  `dotnet run --project samples/Shop/Shop.AppHost --launch-profile http` after `samples/Shop/build.sh`.
 
 ## Guarantees
 

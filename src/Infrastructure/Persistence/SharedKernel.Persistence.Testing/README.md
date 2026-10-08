@@ -209,9 +209,9 @@ var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(host =>
 // migrations run at startup as app_migrator; poll /health/ready, then call the API
 ```
 
-The [BillingApi sample](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/samples/BillingApi)'s
-`BillingApi.Tests` is a complete example: tenant isolation, blind indexes, ETags, Dapper and EF Core in one
-transaction, the sealed audit chain and crypto-shredding — all over HTTP.
+The [Shop sample](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/samples/Shop)'s
+`Shop.Ordering.Tests` runs Ordering's use cases through the real pipeline over these fakes, and its `Shop.E2E` flows
+prove the rest against PostgreSQL over HTTP: tenant isolation, ciphertext at rest and the audit ledger.
 
 ### 4. Prove a cross-tenant path was entered with a reason
 

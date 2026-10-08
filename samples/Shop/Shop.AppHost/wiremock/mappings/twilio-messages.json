@@ -1,0 +1,13 @@
+{
+  "request": {
+    "method": "POST",
+    "urlPath": "/twilio/2010-04-01/Accounts/AC00000000000000000000000000000000/Messages.json",
+    "basicAuthCredentials": { "username": "AC00000000000000000000000000000000", "password": "shop-dev-twilio-token" }
+  },
+  "response": {
+    "status": 201,
+    "headers": { "Content-Type": "application/json" },
+    "body": "{ \"sid\": \"SM{{randomValue length=32 type='HEXADECIMAL'}}\", \"status\": \"queued\" }",
+    "transformers": [ "response-template" ]
+  }
+}

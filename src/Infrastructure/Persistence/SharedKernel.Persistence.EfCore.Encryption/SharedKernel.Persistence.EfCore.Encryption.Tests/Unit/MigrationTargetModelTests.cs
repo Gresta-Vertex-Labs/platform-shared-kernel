@@ -16,7 +16,7 @@ using SharedKernel.Persistence.EfCore.Encryption.Tests.Fixtures;
 namespace SharedKernel.Persistence.EfCore.Encryption.Tests.Unit;
 
 /// <summary>
-/// Found by the BillingApi sample: <c>migrationBuilder.EnableTenantRowLevelSecurityForModel(TargetModel!)</c> — the call
+/// Found by a sample service: <c>migrationBuilder.EnableTenantRowLevelSecurityForModel(TargetModel!)</c> — the call
 /// every README prescribes — created no policy at all in a real migration. A migration's <c>TargetModel</c> is rebuilt
 /// from its Designer file as property bags without CLR types, so the <c>IHasTenant</c> type test never matched. The
 /// tests before this one passed the live model instead. This test compiles a scaffolded migration and uses its own

@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Reports' tests, without Docker: its dependency graph, the export and statement use cases over the Reporting fakes
+    (what is exported, where, for which tenant, and what an unknown store or format does), and that a Gotenberg outage
+    takes Reports out of readiness without failing its liveness (ServiceDefaults.Testing). PostgreSQL, MinIO and
+    Gotenberg on the wire are Shop.E2E's job.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\Shop.Reports.Api\Shop.Reports.Api.csproj" />
+    <ProjectReference Include="..\..\Shop.TestSupport\Shop.TestSupport.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SharedKernel.Testing" />
+    <PackageReference Include="SharedKernel.Reporting.Testing" />
+    <PackageReference Include="SharedKernel.ServiceDefaults.Testing" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+</Project>

@@ -43,7 +43,7 @@ Overloads, options and defaults: each package's `README.md` and [`CONFIGURATION.
 - **GraphQL** — `services.AddSharedKernelGraphQL()` (calls HotChocolate's `AddGraphQLServer()`, so `app.MapGraphQL()`
   works) before the service's own `AddGraphQLServer()`.
 
-Canonical host pipeline (`samples/OrderApi`):
+Canonical host pipeline (`samples/Shop/Ordering/Shop.Ordering.Api/Program.cs`, `samples/Shop/Catalog/Shop.Catalog.Api/Program.cs`):
 
 ```csharp
 app.UseSharedKernelRequestContext();   // 13.ServiceDefaults.Security — first: correlation id, baggage refused, scope

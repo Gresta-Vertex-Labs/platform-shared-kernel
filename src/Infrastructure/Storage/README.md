@@ -120,17 +120,15 @@ configuration keys, named connections, presigned uploads — is in the
 
 ## See it run
 
-- [**samples/DocumentsApi**](../../../samples/DocumentsApi/README.md) — a file service on all three packages: two S3
-  connections with separate IAM users, a tenant store and an OBS store behind an HTTP API. Its scenarios run against
-  MinIO, and against real Amazon S3 and Huawei OBS when the `SK_LIVE_*` variables are set:
+The [**Shop**](../../../samples/Shop/README.md) uses all three packages against MinIO:
+[Catalog](../../../samples/Shop/Catalog/) keeps product images in a tenant store on `SharedKernel.Storage.S3` and hands
+them out through presigned downloads, and [Reports](../../../samples/Shop/Reports/) writes exports to an S3 tenant store
+and an OBS archive (the OBS provider runs path-style against MinIO) behind presigned downloads. `Shop.E2E` drives both
+end to end:
 
-  ```bash
-  dotnet pack Platform.SharedKernel.slnx -c Release -o ./nupkgs -p:MinVerVersionOverride=1.0.0-local.1
-  dotnet test samples/DocumentsApi/DocumentsApi.Tests -p:SharedKernelPackageVersion=1.0.0-local.1
-  ```
-
-- [**samples/Shop**](../../../samples/Shop/README.md) — the Catalog service keeps product images in MinIO through
-  `SharedKernel.Storage.S3` and hands out presigned downloads (`dotnet run --project samples/Shop/Shop.AppHost --launch-profile http`).
+```bash
+samples/Shop/build.sh --e2e      # pack the kernel, build the Shop, run its end-to-end flows (Docker)
+```
 
 ## Guarantees
 

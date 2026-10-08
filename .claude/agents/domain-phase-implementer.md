@@ -53,7 +53,7 @@ Verify each shape against the source before extending it.
 ## Domain verification
 
 1. Public API change: `PublicAPI.Unshipped.txt`, the package README (snippets compile; shown outputs come from running them) and `SharedKernel.Domain.ConsumerVerify` exercising the new surface.
-2. 05, 06, 16 and `samples/OrderApi` compile against this package: after a public-surface change run the full solution build and report any break in another domain rather than fixing it.
+2. 05, 06, 16 and the Shop (`samples/Shop`) compile against this package: after a public-surface change run the full solution build and report any break in another domain rather than fixing it.
 3. If a phase changes a shape SK0009, SK0034, SK0037 or `AggregateFactoriesMustCreateValidationResults` checks, name them in the report.
 
 Boards, brain, README and report follow `_common.md`. Domain deltas: keep rule numbering stable (append, never renumber); keep the namespace table in `## Public Entry Points` and the Cross-Domain Couplings table true; root `CLAUDE.md` changes → ask for `/sync-brain`.

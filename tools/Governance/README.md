@@ -64,7 +64,8 @@ flowchart LR
   checked only when `ContinuousIntegrationBuild=true` or `SharedKernelLinterEnforceFormatting=true`.
 - **The tier check is MSBuild, not a package.** Inside this repository `eng/SharedKernelTiers.targets` fails a
   reference a tier may not take (`SKTIER000`–`SKTIER006`) before compile. A service gets the same layering from its
-  own architecture test, as [`samples/OrderApi`](../../samples/OrderApi/) shows.
+  own architecture test, as the Shop's [`Catalog`](../../samples/Shop/Catalog/) and
+  [`Ordering`](../../samples/Shop/Ordering/) show.
 - **Kernel types are matched by name.** The analyzers reference no SharedKernel assembly; they match kernel types by
   metadata name, so they run in any project, and tests compiled against the real kernel catch a rename.
 - **Rule ids are never reused.** A retired rule keeps a row below, telling you to delete any suppression that names it.
@@ -176,8 +177,9 @@ and format with `dotnet build -t:SharedKernelLinterFormat`. Full setup:
   puts the Analyzers and the Linter on every project, and `Shop.Catalog.Tests/CatalogArchitectureTests.cs` derives from
   `ArchitectureRuleBase` to pin the four-project shape and apply the kernel's own domain-purity rules to the Catalog's
   assemblies. Run it with `samples/Shop/build.sh --test`.
-- [**OrderApi**](../../samples/OrderApi/) — `OrderApi.Tests/ArchitectureTests.cs` asserts the four-project shape against
-  the real restore graph; the template to copy into a new service.
+- [**Shop Ordering**](../../samples/Shop/Ordering/) — `OrderingArchitectureTests` (in `Shop.Ordering.Tests`) asserts
+  the four-project shape against the real restore graph through `Shop.TestSupport`'s `ServiceShape`; every other Shop
+  service pins its own dependency graph the same way. The template to copy into a new service.
 
 ## Guarantees
 

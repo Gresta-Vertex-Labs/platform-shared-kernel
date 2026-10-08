@@ -72,7 +72,7 @@ Cite the rule number from `src/Hosting/ServiceDefaults/CLAUDE.md` → `## Rules 
 - **Process-wide state** (propagators, `StartupGate`) needs a non-parallel test collection.
 - **Lanes.** Unit lane (`TestServer`), except `ServiceDefaults.Persistence.Tests` (Integration, Testcontainers PostgreSQL). Propagation claims extend `EndToEndPropagationTests`; base changes keep `CompositionBaseIsolationTests` able to fail.
 - **EventIds.** Shared block 13000–13099 allocated one id at a time, `MultiTenancy` 13100–13199; take "Next free" from `## Logging`, never reuse.
-- **Consumers.** A public-surface change to the base or `MultiTenancy` updates `consumer-verify/`; a canonical-order change is a note for `samples/OrderApi`. Every API/option/EventId change carries a README DO-task.
+- **Consumers.** A public-surface change to the base or `MultiTenancy` updates `consumer-verify/`; a canonical-order change is a note for the Shop (`samples/Shop/Ordering/Shop.Ordering.Api/Program.cs`, `samples/Shop/Catalog/Shop.Catalog.Api/Program.cs`). Every API/option/EventId change carries a README DO-task.
 
 ---
 

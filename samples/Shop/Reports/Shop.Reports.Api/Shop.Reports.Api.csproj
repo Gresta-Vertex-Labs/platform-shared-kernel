@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <!--
+    Reports: each tenant's sales (fed by Billing's receipts over RabbitMQ, kept with Dapper under row-level security)
+    exported as CSV, Excel or PDF, streamed straight into object storage (S3, or Huawei OBS; both MinIO here) behind a
+    presigned download, and a sales statement rendered from HTML to PDF by Gotenberg.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\Shop.Contracts\Shop.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SharedKernel.ServiceDefaults" />
+    <PackageReference Include="SharedKernel.ServiceDefaults.Security" />
+    <PackageReference Include="SharedKernel.Security.Oidc" />
+    <PackageReference Include="SharedKernel.MultiTenancy" />
+    <PackageReference Include="SharedKernel.Application" />
+    <PackageReference Include="SharedKernel.Application.Pipeline" />
+    <PackageReference Include="SharedKernel.Application.Mediator.MediatR" />
+    <PackageReference Include="SharedKernel.Presentation.WebApi" />
+    <PackageReference Include="SharedKernel.Persistence.Npgsql" />
+    <PackageReference Include="SharedKernel.Persistence.Dapper" />
+    <PackageReference Include="SharedKernel.Messaging.MassTransit" />
+    <PackageReference Include="SharedKernel.Messaging.MassTransit.RabbitMq" />
+    <PackageReference Include="SharedKernel.Storage.S3" />
+    <PackageReference Include="SharedKernel.Storage.Obs" />
+    <PackageReference Include="SharedKernel.Reporting.Abstractions" />
+    <PackageReference Include="SharedKernel.Reporting.Csv" />
+    <PackageReference Include="SharedKernel.Reporting.Spreadsheet" />
+    <PackageReference Include="SharedKernel.Reporting.Pdf" />
+    <PackageReference Include="SharedKernel.Reporting.Gotenberg" />
+    <PackageReference Include="Dapper" />
+  </ItemGroup>
+</Project>

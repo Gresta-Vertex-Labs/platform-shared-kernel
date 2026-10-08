@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Ordering's tests, without Docker: the four-project shape, the use cases through the real pipeline (idempotency,
+    transactions, auditing) over the kernel's fakes, the gRPC adapter's error mapping, and the TOTP stores over the
+    fake Redis services. The outbox, RabbitMQ, Temporal and mutual TLS are Shop.E2E's job.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\Shop.Ordering.Api\Shop.Ordering.Api.csproj" />
+    <ProjectReference Include="..\..\Shop.TestSupport\Shop.TestSupport.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SharedKernel.Testing" />
+    <PackageReference Include="SharedKernel.Application.Testing" />
+    <PackageReference Include="SharedKernel.Persistence.Testing" />
+    <PackageReference Include="SharedKernel.Messaging.Testing" />
+    <PackageReference Include="SharedKernel.Idempotency.Testing" />
+    <PackageReference Include="SharedKernel.Communication.Testing" />
+    <PackageReference Include="SharedKernel.Caching.Redis.Testing" />
+    <PackageReference Include="SharedKernel.Workflows.Testing" />
+    <PackageReference Include="NSubstitute" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+</Project>

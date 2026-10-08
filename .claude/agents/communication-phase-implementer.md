@@ -73,7 +73,7 @@ Harness: `src/Infrastructure/Communication/consumer-verify` (Unit lane) composes
 ## Domain verification
 
 1. `src/Infrastructure/Communication/consumer-verify` when a public surface or registration changes.
-2. When propagation or result mapping changes, run `src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Security/SharedKernel.ServiceDefaults.Security.Tests` (`EndToEndPropagationTests`) and `samples/CheckoutApi/CheckoutApi.Tests` (`CheckoutApi` → `InventoryApi`); say in the report whether they passed.
+2. When propagation or result mapping changes, run `src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Security/SharedKernel.ServiceDefaults.Security.Tests` (`EndToEndPropagationTests`) and the Shop's `Shop.Ordering.Tests` (`GrpcInventoryReservationsTests`) plus, when the wire behaviour changes, its `Shop.E2E` Ordering and Billing flows (`samples/Shop/build.sh --e2e`: Ordering → Inventory over gRPC, Ordering → Billing over REST); say in the report whether they passed.
 3. `00.Governance`'s `CommunicationLayeringRules` stay green; `PublicAPI.Unshipped.txt` (RS0016/RS0017 and CS1591 are errors here) moves with every public change.
 
 Boards, brain, README and report follow `_common.md`. Domain deltas: keep the handler order and rule numbering true (append, never renumber); update `## Public Entry Points` for new builder methods or options, `## Logging` for every EventId, and `## Decisions` for version pins (`Microsoft.Extensions.Http.Resilience`, `Grpc.Net.Client`, `Microsoft.Extensions.ServiceDiscovery`); README configuration tables use full paths such as `SharedKernel:Communication:Clients:{name}:Retry:MaxRetryAttempts`; a new package or edge affects the root `CLAUDE.md` — ask for `/sync-brain`.

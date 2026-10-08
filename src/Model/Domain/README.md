@@ -111,10 +111,10 @@ walkthrough are in the [SharedKernel.Domain Quick start](SharedKernel.Domain/REA
 
 ## See it run
 
-- [samples/OrderApi](../../../samples/OrderApi/README.md) — `OrderApi.Domain` references only `SharedKernel.Domain`:
-  an `Order` aggregate with `Place` and `Cancel`, a `ValueObject`, a `StronglyTypedId<Guid>` and two domain events; an
-  architecture test fails the build if the project reaches for anything else.
-  `dotnet test samples/OrderApi/OrderApi.Tests -p:SharedKernelPackageVersion=<the packed version>`
+- The Shop's [Ordering](../../../samples/Shop/Ordering/) — `Shop.Ordering.Domain` references only
+  `SharedKernel.Domain`: an `Order` aggregate (`TenantedAuditableAggregateRoot<OrderId>` with `Place`, `Confirm`,
+  `Reject` and `Cancel`), `IBusinessRule`s, a `StronglyTypedId<Guid>` and an `OrderStatusChanged` domain event;
+  `OrderingArchitectureTests` fails the build if the project reaches for anything else. `samples/Shop/build.sh --test`
 - [samples/Shop](../../../samples/Shop/README.md) — `Shop.Catalog.Domain` models a tenant-owned `Product` on
   `TenantedAuditableAggregateRoot<ProductId>`, persisted under row-level security.
 

@@ -16,7 +16,7 @@ You implement phases of the **06.Persistence** domain: EF Core 10, Npgsql and Da
 
 ## Jurisdiction
 
-You edit `src/Infrastructure/Persistence/` only, including the `SharedKernel.Persistence.Testing` double (follow `src/Testing/CLAUDE.md`). Readiness checks and `PersistenceReadmeSampleTests` (`13.ServiceDefaults`), `IUnitOfWork`/`IRequestContext`/`IAuditTrailWriter` (`01.Core`), specifications (`03.Domain`), paging DTOs (`04.Contracts`), the outbox (`07.Messaging`), `Idempotency.EfCore` (`18`), governance rules (`00`), `SharedKernel.Testing.Internal` fixtures (`16`) and `samples/BillingApi` are notes or report lines.
+You edit `src/Infrastructure/Persistence/` only, including the `SharedKernel.Persistence.Testing` double (follow `src/Testing/CLAUDE.md`). Readiness checks and `PersistenceReadmeSampleTests` (`13.ServiceDefaults`), `IUnitOfWork`/`IRequestContext`/`IAuditTrailWriter` (`01.Core`), specifications (`03.Domain`), paging DTOs (`04.Contracts`), the outbox (`07.Messaging`), `Idempotency.EfCore` (`18`), governance rules (`00`), `SharedKernel.Testing.Internal` fixtures (`16`) and `samples/Shop` (Ordering, Billing, Inventory, Reports) are notes or report lines.
 
 | Package | Tier | Project | Test project (lane) |
 | --- | --- | --- | --- |
@@ -72,6 +72,6 @@ Test projects are nested in their package folder. `src/Infrastructure/Persistenc
 When the phase changes a public API, a nuspec pin, the registration shape or anything the sample uses:
 
 1. **Packed consumer** — `dotnet pack Platform.SharedKernel.slnx -c Release -o nupkgs`, then `dotnet test src/Infrastructure/Persistence/SharedKernel.Persistence.ConsumerVerify -c Release -p:SharedKernelPackageVersion=<packed version>` with `NUGET_PACKAGES` pointed at a throw-away scratchpad folder (MinVer reuses one version per commit, so the global cache can serve stale content); delete it afterwards. This is the only proof the exact-version pins resolve.
-2. **Reference service** — `samples/BillingApi` tests against the packed set the same way.
+2. **Reference services** — the Shop (`samples/Shop/build.sh --test`, then `--e2e` for the Ordering, Billing, Inventory and Reports flows against PostgreSQL with the production role split) built and tested against the packed set.
 
 Boards, brain, README and report follow `_common.md`. Domain deltas: keep the `## Rules & Invariants` numbering stable (append, never renumber); record new EventIds in `## Logging`; update `src/Infrastructure/Persistence/README.md` when the registration shape changes and the Npgsql README role script when a role or grant changes; ask for `/sync-brain` when a package, edge or "What Goes Where" row in the root `CLAUDE.md` is affected.

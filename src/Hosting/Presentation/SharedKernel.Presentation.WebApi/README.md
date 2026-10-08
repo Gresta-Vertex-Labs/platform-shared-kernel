@@ -93,8 +93,10 @@ public sealed class InvoiceEndpoints : IEndpointModule
 }
 ```
 
-[`samples/OrderApi`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/samples/OrderApi) is the
-compiled reference for this setup.
+The Shop's Catalog and Ordering hosts
+([`Shop.Catalog.Api/Program.cs`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/samples/Shop/Catalog/Shop.Catalog.Api/Program.cs),
+[`Shop.Ordering.Api/Program.cs`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/samples/Shop/Ordering/Shop.Ordering.Api/Program.cs))
+are the compiled reference for this setup.
 
 ## How it works
 
@@ -387,7 +389,7 @@ Assert.Equal(404, error.StatusCode);
 
 `new IdempotencyKey("order-17")`, `new IfMatch<EntityVersion>(version)` and `new Paging(PageRequest.First)` build the
 parameters for a handler test. For the pipeline itself (problems, headers, authorization), host the service with
-`WebApplicationFactory<Program>`, as `samples/OrderApi`'s tests do.
+`WebApplicationFactory<Program>`, or drive the running host end to end as the Shop's `Shop.E2E` flows do.
 [`SharedKernel.Presentation.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Hosting/Presentation/SharedKernel.Presentation.Testing/README.md)'s
 `FakeHttpContextAccessor` supplies an `IHttpContextAccessor` for code that reads one.
 

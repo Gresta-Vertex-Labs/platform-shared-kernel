@@ -142,11 +142,13 @@ is bound to its payout. The key provider and every `using` are in the
 Every service in [`samples/`](../../samples/README.md) is built on Primitives, Core and Execution. The ones that go further:
 
 - [samples/Shop](../../samples/Shop/README.md) — the Catalog service evaluates OpenFeature flags, translates its
-  errors through Localization, supplies Cryptography keys for field encryption and validates with FluentValidation, against real
-  infrastructure. `dotnet run --project samples/Shop/Shop.AppHost --launch-profile http`
-- [samples/BillingApi](../../samples/BillingApi/README.md) — field encryption over Cryptography keys.
-- [samples/OrderApi](../../samples/OrderApi/README.md) — FluentValidation validators bridged into the request pipeline
-  from the Infrastructure project.
+  errors through Localization and validates with FluentValidation, against real infrastructure.
+  `dotnet run --project samples/Shop/Shop.AppHost --launch-profile http`
+- The Shop's [Ordering](../../samples/Shop/Ordering/) — field encryption over Cryptography keys, Argon2 hashing, and
+  FluentValidation validators bridged into the request pipeline from its Infrastructure project.
+- The Shop's [Billing](../../samples/Shop/Billing/) — invoices signed and an IBAN envelope-encrypted under Key Vault keys
+  (Cryptography.KeyVault.Azure), invoices compressed, IBAN/BIC/VAT checked by Validation, and personal data marked,
+  redacted and served to GDPR export and erasure through DataPrivacy.
 
 ## Guarantees
 

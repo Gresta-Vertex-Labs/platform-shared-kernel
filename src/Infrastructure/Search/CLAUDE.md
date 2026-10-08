@@ -195,7 +195,7 @@ Take the next free id in the package's sub-block. Telemetry: `ActivitySource`/`M
 | `16.Testing` | `SharedKernel.Search.Testing` doubles `ISearchIndex<T>` (full `SearchFilter` evaluation) — any change to `ISearchIndex<T>` needs the matching change there |
 | `00.Governance` | `SearchTopologyRules`; analyzers SK0013, SK0024, SK0025 |
 | `10.Intelligence` | Shares the `TenantScope` convention and `IReadinessProbe` naming shape; no reference either way |
-| `samples/CatalogApi` | End-to-end reference service |
+| `samples/Shop/Catalog` | End-to-end reference service (the Shop's Catalog: both engines) |
 
 ## Testing
 

@@ -60,7 +60,7 @@ Other top-level locations:
 
 | Path | What |
 | --- | --- |
-| `samples/` | Eight reference services: `OrderApi` (the four-project shape with per-project architecture tests), `BillingApi` (persistence), `ShippingApi` (messaging over RabbitMQ), `DocumentsApi` (storage), `CatalogApi` (search), `CheckoutApi` → `InventoryApi` (11.Communication, REST + gRPC), and `Shop` (an Aspire-orchestrated platform composing most of the kernel). `samples/README.md` is the "how to consume the kernel" guide. |
+| `samples/` | `Shop`: one reference platform on the packed packages under a .NET Aspire AppHost — Catalog and Ordering (the four-project shape, architecture tests over `Shop.TestSupport`'s `ServiceShape`), Inventory, Billing, Merchant, Notify, Reports; `Shop.E2E` flows against real containers; `Shop.Coverage.Tests` keeps every package referenced. `samples/README.md` is the "how to consume the kernel" guide. |
 | `eng/` | Build internals: `SharedKernelTiers.targets` (tier check), `PackageInventory.proj`, `verify-*.sh` scripts, test settings. See [`eng/README.md`](eng/README.md). |
 | `docs/` | [`packages.md`](docs/packages.md) (generated: every package by tier and the service project that references it), [`dependency-graph.md`](docs/dependency-graph.md) (generated Mermaid graphs), `package-readme-standard.md` (the shape every package `README.md` follows). |
 | `.claude/` | Commands, agents and settings for Claude Code (see "Working in This Repo with Claude Code"). |
@@ -104,7 +104,7 @@ A new edge is a csproj declaration reviewed like any API change; sibling role pa
 - Testing-tier packages are never referenced by production code, including the packable ones.
 - Plus the topology, cryptography-isolation, persistence, pipeline-order and health-tag rules in `tools/Governance/CLAUDE.md`.
 
-**What a consuming service references** (enforced for `samples/OrderApi` by its `ArchitectureTests`): **Domain** → `SharedKernel.Domain`; **Application** → `SharedKernel.Application` (+ `Idempotency.Abstractions`/`Caching.Abstractions` when it uses those markers); **Infrastructure** → adapters; **Api/Worker** → Host packages plus its own Application and Infrastructure projects.
+**What a consuming service references** (enforced for the Shop's Catalog and Ordering by `OrderingArchitectureTests`/`CatalogArchitectureTests` over `Shop.TestSupport`): **Domain** → `SharedKernel.Domain`; **Application** → `SharedKernel.Application` (+ `Idempotency.Abstractions`/`Caching.Abstractions` when it uses those markers); **Infrastructure** → adapters; **Api/Worker** → Host packages plus its own Application and Infrastructure projects.
 
 ---
 
@@ -248,7 +248,7 @@ Routing only — the domain `CLAUDE.md` holds the rules and details.
 | A Roslyn analyzer | `SharedKernel.Analyzers` | 00 |
 | Fakes for a service's unit tests | `SharedKernel.{Capability}.Testing`; caller: `TestRequestContext`; pipeline: `ApplicationPipelineTestHarness` | 16 |
 | Testcontainers fixtures (this repo) | `SharedKernel.Testing.Internal` | 16 |
-| Wiring a new service | `samples/README.md`, `samples/OrderApi` | — |
+| Wiring a new service | `samples/README.md`, `samples/Shop/Ordering` | — |
 
 ---
 

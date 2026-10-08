@@ -1,7 +1,7 @@
 // consumer-verify — composes 07.Messaging the way a downstream service does: a real generic host,
 // a configuration section, IHost.StartAsync() (which runs every ValidateOnStart check), and
 // resolution through DI. No broker I/O: transport behaviour is covered by the RabbitMQ suites and
-// by samples/ShippingApi. What is proved here is that the packages compose, that the contracts a
+// by the Shop sample (samples/Shop). What is proved here is that the packages compose, that the contracts a
 // consuming service depends on resolve, and that a misconfigured host fails at startup.
 //   1. The whole surface a service injects resolves from one AddSharedKernelMessaging chain.
 //   2. Configuration binding reads ServiceName from SharedKernel:Messaging.

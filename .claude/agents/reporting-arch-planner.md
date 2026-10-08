@@ -74,7 +74,7 @@ Cite rule numbers from `src/Infrastructure/Reporting/CLAUDE.md` → `## Rules & 
 - **New provider.** Sibling with no adapter edge; added to `consumer-verify`; keyed by its format name so `IReportExporterFactory.ParseFormat`/`GetExporter<T>` find it (plan the factory test); DO-task for its README (Configuration table with full section path, licence attribution).
 - **Configuration.** Options implement `ISectionBoundOptions` under `SharedKernel:Reporting:{Provider}` and register with `AddValidatedOptions`.
 - **EventIds.** `.Abstractions` uses 20000–20099 (in use to 20006); provider sub-blocks (Csv 20100, Spreadsheet 20200, Pdf 20300, Gotenberg 20400) are reserved and unused; a new provider takes the next 100-wide block, recorded in `## Logging`.
-- **End to end.** A public-surface change carries a T-task for `samples/DocumentsApi` against the packed packages, or a note when it is out of the phase's scope.
+- **End to end.** A public-surface change carries a T-task for the Shop's Reports (`samples/Shop/Reports`, `Shop.E2E` `ReportsFlowTests`) against the packed packages, or a note when it is out of the phase's scope.
 
 ---
 

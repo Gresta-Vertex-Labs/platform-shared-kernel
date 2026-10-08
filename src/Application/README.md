@@ -112,13 +112,14 @@ in the [SharedKernel.Application.Pipeline Quick start](SharedKernel.Application.
 
 ## See it run
 
-- [samples/OrderApi](../../samples/OrderApi/README.md) — the reference layout: `OrderApi.Application` references only
-  `SharedKernel.Application`, `OrderApi.Api` composes the pipeline, and its tests prove the 401/403/204 outcomes over
-  HTTP. `dotnet test samples/OrderApi/OrderApi.Tests -p:SharedKernelPackageVersion=<the packed version>`
-- [samples/Shop](../../samples/Shop/README.md) — the Catalog service adds `WithCaching()`: cacheable product queries
-  and post-commit eviction across two replicas. `dotnet run --project samples/Shop/Shop.AppHost --launch-profile http`
-- Every other sample (BillingApi, ShippingApi, DocumentsApi, CatalogApi, CheckoutApi, InventoryApi) sends its use
-  cases through the same pipeline.
+- The Shop's [Ordering](../../samples/Shop/Ordering/) — the reference layout: `Shop.Ordering.Application` holds
+  `PlaceOrderCommand`, `CancelOrderCommand` and `GetOrderQuery`, each behind `[RequirePermission]`, and
+  `Shop.Ordering.Api` composes `UseMediatR().WithIdempotency().WithTransactions().WithAuditing()`;
+  `OrderingArchitectureTests` fails the build if a project reaches beyond its tier, and the `Shop.E2E` flows prove the
+  401/403 outcomes over HTTP. `samples/Shop/build.sh --e2e`
+- The Shop's [Catalog](../../samples/Shop/Catalog/) adds `WithCaching()`: cacheable product queries and post-commit
+  eviction across two replicas. `dotnet run --project samples/Shop/Shop.AppHost --launch-profile http`
+- Inventory, Billing and Reports send their use cases through the same pipeline.
 
 ## Guarantees
 

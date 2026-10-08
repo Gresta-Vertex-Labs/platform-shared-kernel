@@ -196,7 +196,7 @@ public sealed class ConfigurationBindingTests
     /// The endpoint name formatter uses the ServiceName bound from configuration.
     /// </summary>
     /// <remarks>
-    /// The regression guard for a defect <c>samples/ShippingApi</c> found against a real broker: the
+    /// The regression guard for a defect a sample service found against a real broker: the
     /// formatter used to be built from the inline-action value captured at registration, which is
     /// null on the configuration path — so a service configured through
     /// <c>SharedKernel:Messaging</c> declared queues with NO prefix (<c>hold-shipment</c> rather

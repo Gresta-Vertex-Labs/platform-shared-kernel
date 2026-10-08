@@ -389,8 +389,8 @@ Unit tests of application code need no bucket: use the in-memory stores of
 
 To test the S3 wiring itself, run MinIO in a container (Testcontainers or the compose file of recipe 5) and point the
 connection at it with `ServiceUrl`, `ForcePathStyle` and static keys. The
-[`DocumentsApi` sample](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/samples/DocumentsApi/README.md)
-does exactly that, and runs the same scenarios against real Amazon S3 when credentials are supplied.
+[Shop sample](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/samples/Shop/README.md)
+does exactly that (Catalog and Reports, under its Aspire AppHost).
 
 ## Pitfalls
 

@@ -116,9 +116,10 @@ more registration, described in its own README.
   Inventory serves Ordering over gRPC with `.Mtls`, a certificate allow-list and a rogue certificate the end-to-end
   flows prove is refused. `dotnet run --project samples/Shop/Shop.AppHost --launch-profile http` after
   `samples/Shop/build.sh`.
-- [samples/InventoryApi](../../../samples/InventoryApi/README.md) — API key authentication with a custom
-  `IApiKeyValidator`.
-- [samples/BillingApi](../../../samples/BillingApi/README.md) — reads the caller through `.Abstractions`.
+- The Shop's [Billing](../../../samples/Shop/Billing/) — API key authentication over a custom `IApiKeyStore`
+  (`ConfigurationApiKeyStore`, key hashes from Key Vault) next to `AddOidcAuthentication(configuration)`.
+- The Shop's [Ordering](../../../samples/Shop/Ordering/) — `AddOidcAuthentication(configuration)` and a TOTP step-up
+  with `.Totp` before cancelling an order.
 - `Shop.Inventory.Tests` proves Inventory's certificate allow-list against CA-chained certificates from
   `SharedKernel.Security.Testing`'s `MtlsTestCertificateBuilder`.
 

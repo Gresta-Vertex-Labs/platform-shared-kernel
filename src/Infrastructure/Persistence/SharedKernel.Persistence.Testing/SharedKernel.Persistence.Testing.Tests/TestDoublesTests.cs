@@ -134,7 +134,7 @@ public sealed class PersistenceTestingServiceCollectionExtensionsTests
 }
 
 /// <summary>
-/// Found by the BillingApi sample: a replay forced by TransientFailures found the first attempt's aggregate still in the
+/// Found by a sample service: a replay forced by TransientFailures found the first attempt's aggregate still in the
 /// fake repository, so a correct handler that adds with a command-supplied id failed with "already exists" — and a
 /// failed command left its writes behind. The real unit of work rolls back the database and resets the change tracker.
 /// </summary>

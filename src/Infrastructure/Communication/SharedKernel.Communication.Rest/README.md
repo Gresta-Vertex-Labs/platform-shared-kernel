@@ -91,8 +91,8 @@ public sealed class InventoryClient(HttpClient http) : IInventoryClient
 ```
 
 `InventoryJson` is your `JsonSerializerContext`; each verb with a body also has a reflection overload
-(`JsonSerializerOptions.Web`) — see the
-[CheckoutApi sample](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/samples/CheckoutApi).
+(`JsonSerializerOptions.Web`). The Shop's Ordering service uses the source-generated form for its call to Billing
+([`RestPayments`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/samples/Shop/Ordering/Shop.Ordering.Infrastructure/Billing/RestPayments.cs)).
 
 ## How it works
 
@@ -104,7 +104,7 @@ flowchart LR
     Y --> R["Resilience<br/>timeout · retry/hedge · breaker"]
     R --> A["Credential<br/>(per attempt)"]
     A --> D["Service discovery"]
-    D --> S["InventoryApi"]
+    D --> S["Inventory service"]
 ```
 
 - **What every call carries**, outermost first: the caller's correlation id, tenant, actor and client

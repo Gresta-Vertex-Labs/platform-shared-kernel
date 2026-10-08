@@ -319,7 +319,7 @@ In a service's unit tests, replace the bus with
 `AddMassTransitTestHarness()` (package `MassTransit.TestFramework`), waiting on `harness.InactivityTask`. For
 idempotent consumers, `SharedKernel.Idempotency.Testing`'s `AddFakeIdempotencyStore(IdempotencyPurpose.Message)`
 satisfies `Build()`.
-[`samples/ShippingApi`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/samples/ShippingApi/README.md)
+The [Shop sample](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/samples/Shop/README.md)
 runs the whole chain against real RabbitMQ.
 
 ## Pitfalls

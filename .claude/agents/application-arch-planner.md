@@ -71,7 +71,7 @@ Cite the rule number of `src/Application/CLAUDE.md` → Rules & Invariants.
 - **Tests (Unit lane, all five test projects).** Prescribe a real `ServiceCollection` + `AddSharedKernelApplication` + `RequestPipeline<,>` (or `ISender` via `UseMediatR()`), never a hand-rolled continuation. Name: success / failed-`Result` / exception per behavior; outermost-only and nested merge/discard; host-start seam check and double-call guard; `PipelineOrderAssertion` for placement; concurrency against real FusionCache for caching changes.
 - **Doubles.** A contract change that `ApplicationPipelineTestHarness` must follow is a task on `SharedKernel.Application.Testing` in the same phase; doubles in other capabilities' `.Testing` packages (`Idempotency.Testing`, `Persistence.Testing`, `Caching.Testing`) are cross-domain notes.
 - **Options.** DataAnnotations + `ValidateOnStart`, no configuration section (Decision); switching to `AddValidatedOptions` needs a D-task.
-- **Consumer surface.** Every public change lists `PublicAPI.Unshipped.txt` and README DO-tasks; a change to what consumers write adds a task for `SharedKernel.Application.ConsumerVerify` and a note for `samples/OrderApi`.
+- **Consumer surface.** Every public change lists `PublicAPI.Unshipped.txt` and README DO-tasks; a change to what consumers write adds a task for `SharedKernel.Application.ConsumerVerify` and a note for the Shop (`samples/Shop`).
 
 ---
 

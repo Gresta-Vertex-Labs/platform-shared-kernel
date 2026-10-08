@@ -49,7 +49,7 @@ Overloads, option keys and defaults: each package's `README.md` (`SharedKernel.S
 
 **`.Localization`** — `builder.AddSharedKernelLocalization(o => …)` (default order `UserPreference → TenantDefault → AcceptLanguageHeader`); the service still calls `app.UseRequestLocalization()`.
 
-**Canonical order** (compiled reference: `samples/OrderApi/OrderApi.Api/Program.cs`): `AddServiceDefaults()` → authentication (`12.Security`) → `AddSharedKernelRequestContext()` → optional `AddSharedKernelMultiTenancy()` / `AddSharedKernelRateLimiting()` → `AddHealthChecks().AddDatabaseReadinessCheck<T>().AddSharedKernelReadiness()` → the `WithXTelemetry()` the service needs. Pipeline: `UseSharedKernelRequestContext()` first → `UseSharedKernelWebApi(p => p.BeforeAuthorization(a => a.UseMiddleware<TenantResolutionMiddleware>()))` (or by hand: `UseExceptionHandler`, `UseAuthentication`, tenant middleware, `UseRateLimiter`, `UseAuthorization`) → `MapDefaultHealthCheckEndpoints()`.
+**Canonical order** (compiled reference: `samples/Shop/Ordering/Shop.Ordering.Api/Program.cs`): `AddServiceDefaults()` → authentication (`12.Security`) → `AddSharedKernelRequestContext()` → optional `AddSharedKernelMultiTenancy()` / `AddSharedKernelRateLimiting()` → `AddHealthChecks().AddDatabaseReadinessCheck<T>().AddSharedKernelReadiness()` → the `WithXTelemetry()` the service needs. Pipeline: `UseSharedKernelRequestContext()` first → `UseSharedKernelWebApi(p => p.BeforeAuthorization(a => a.UseMiddleware<TenantResolutionMiddleware>()))` (or by hand: `UseExceptionHandler`, `UseAuthentication`, tenant middleware, `UseRateLimiter`, `UseAuthorization`) → `MapDefaultHealthCheckEndpoints()`.
 
 ## Rules & Invariants
 

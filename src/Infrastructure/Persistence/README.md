@@ -294,21 +294,16 @@ own connection; the background sealer later links the record into its tenant's H
 
 ## See it run
 
-- [samples/BillingApi](../../../samples/BillingApi/README.md) — a multi-tenant billing API on every package, built
-  from the packed NuGet packages: encrypted, searchable emails; `Money` invoice lines; payments written by Dapper and
-  EF Core in one transaction; ETags; soft delete; bulk updates; a sealed audit history; a cross-tenant report; tenant
-  erasure.
+The [**Shop**](../../../samples/Shop/README.md) runs every package from the packed NuGet packages against PostgreSQL
+with the four production roles ([`postgres/`](../../../samples/Shop/Shop.AppHost/postgres/)):
+[Ordering](../../../samples/Shop/Ordering/) on EF Core with row-level security, field encryption, the sealed audit
+ledger and `WithTransactions().WithAuditing()` in the pipeline; [Catalog](../../../samples/Shop/Catalog/) and
+[Billing](../../../samples/Shop/Billing/) on EF Core under RLS; [Inventory](../../../samples/Shop/Inventory/) and
+[Reports](../../../samples/Shop/Reports/) on Dapper under RLS.
 
-  ```bash
-  cd samples/BillingApi
-  dotnet publish -c Release -t:PublishContainer -p:ContainerRepository=billing-api -p:ContainerImageTag=local
-  docker compose up -d        # PostgreSQL with the four roles + the API, Production mode
-  ./smoke-test.sh             # checks over HTTP
-  ```
-
-- [samples/Shop](../../../samples/Shop/README.md) — Catalog on EF Core with row-level security and Inventory on Dapper
-  under RLS, two replicas each, run by an Aspire AppHost (`samples/Shop/build.sh`, then
-  `dotnet run --project samples/Shop/Shop.AppHost --launch-profile http`).
+```bash
+samples/Shop/build.sh --e2e   # pack, build, run the end-to-end flows (ciphertext at rest, the audit ledger, isolation)
+```
 
 ## Guarantees
 

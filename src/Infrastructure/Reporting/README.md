@@ -121,14 +121,14 @@ response, tenant stores, custom formats and HTML to PDF (`AddGotenberg`, `BaseUr
 
 ## See it run
 
-[DocumentsApi](../../../samples/DocumentsApi/README.md) exposes `POST /reports/{store}/listing?format=` (a CSV, Excel
-or PDF listing chosen at runtime through `IReportExporterFactory`) and `POST /pdf/{store}/{**key}` (HTML to PDF
-through Gotenberg, create-only), both stored in a store and answered with a download link. Its tests run against
-MinIO and Gotenberg containers (Docker required):
+The Shop's [Reports](../../../samples/Shop/Reports/) exposes `POST /reports/sales?format=&store=` (a CSV, Excel or PDF
+export of the tenant's sales, chosen at runtime through `IReportExporterFactory`) and `POST /reports/sales/statement`
+(an HTML statement rendered to PDF through Gotenberg), both written to a tenant store (S3, or the OBS archive) and
+answered with a presigned download link. `Shop.Reports.Tests` runs over the Reporting fakes; `Shop.E2E` runs against
+real MinIO and Gotenberg containers (Docker required):
 
 ```bash
-dotnet pack Platform.SharedKernel.slnx -c Release -o ./nupkgs -p:MinVerVersionOverride=1.0.0-local.1
-dotnet test samples/DocumentsApi/DocumentsApi.Tests -p:SharedKernelPackageVersion=1.0.0-local.1
+samples/Shop/build.sh --e2e      # pack the kernel, build the Shop, run its end-to-end flows (Docker)
 ```
 
 ## Guarantees

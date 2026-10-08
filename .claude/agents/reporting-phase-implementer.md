@@ -61,7 +61,7 @@ You edit `src/Infrastructure/Reporting/` only, including the `SharedKernel.Repor
 ## Domain verification
 
 1. `consumer-verify/` (Unit lane) runs the whole chain in a real host and reopens outputs with independent readers; keep it green whenever a public API or registration changes.
-2. `samples/DocumentsApi` (`POST /reports/{store}/listing?format=`, the PDF endpoint) consumes the packed packages against MinIO and Gotenberg. When the phase changes the public surface, pack (`dotnet pack Platform.SharedKernel.slnx -c Release -o nupkgs`) and run `samples/DocumentsApi/DocumentsApi.Tests` with `-p:SharedKernelPackageVersion=<packed version>` and a throw-away `NUGET_PACKAGES` folder in your scratchpad (deleted afterwards). Editing the sample itself is a report line unless the phase includes it.
+2. The Shop's Reports (`samples/Shop/Reports`: `POST /reports/sales?format=&store=`, `POST /reports/sales/statement`) consumes the packed packages against MinIO and Gotenberg. When the phase changes the public surface, run `samples/Shop/build.sh --e2e` (packs the kernel, builds the Shop, runs `Shop.E2E` including `ReportsFlowTests`) with a throw-away `NUGET_PACKAGES` folder in your scratchpad (deleted afterwards). Editing the sample itself is a report line unless the phase includes it.
 3. Each affected package README's Configuration table (`SharedKernel:Reporting:*`) and error-code list move with the change.
 4. In the report, name the tests that prove memory-boundedness for every provider you touched.
 

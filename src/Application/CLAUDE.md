@@ -113,7 +113,7 @@ Tracing: `ActivitySource` `SharedKernel.Application` (process-lifetime static �
 | `ICacheService`, `ITenantCacheKeyProvider`, `CachePolicy`, `CacheKeyFormat` | `02.Caching` Abstractions | Implemented by `Caching.FusionCache` (`AddSharedKernelCaching`) |
 | `IDomainEventDispatcher` | `03.Domain` | Implemented here; called by `06.Persistence`'s `SharedKernelDbContext.SaveChangesAsync` before the physical save |
 | `IRequestValidator<T>` | here | Bridged from FluentValidation by `01.Core`'s `AddFluentValidationRequestValidators` |
-| `ISender` | here | Used by `17.Workflows`' `CommandActivity<>`, `19.Scheduling`'s `ScheduledCommandJob<>`, `14.Presentation` endpoints, `samples/OrderApi` |
+| `ISender` | here | Used by `17.Workflows`' `CommandActivity<>`, `19.Scheduling`'s `ScheduledCommandJob<>`, `14.Presentation` endpoints, every Shop service (`samples/Shop`) |
 
 Changing a request/handler/sender/behavior shape → also check `.Mediator.MediatR` envelopes, `CommandActivity<>`, `ScheduledCommandJob<>`, `SharedKernel.Application.Testing`'s `ApplicationPipelineTestHarness`. Changing stage order → `PipelineOrderTests` and `00.Governance`'s `ApplicationPipelineRules`/`PipelineOrderAssertion`.
 

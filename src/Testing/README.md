@@ -119,11 +119,9 @@ full; each capability package's README has its own.
 
 ## See it run
 
-- [samples/OrderApi](../../samples/OrderApi/README.md) — `OrderApi.Tests` drives the real pipeline through
-  `ApplicationPipelineTestHarness` with a `FakeClock` and `TestRequestContext.ForUser("clerk-1")`.
-  `dotnet test samples/OrderApi/OrderApi.Tests -p:SharedKernelPackageVersion=<the packed version>`.
-- [samples/BillingApi](../../samples/BillingApi/README.md) — handler tests over `AddFakeRepository<,>` and
-  `AddTestRequestContext(...)`, plus end-to-end tests against `PostgresTestServer`.
+- The Shop's [Ordering](../../samples/Shop/Ordering/) — `Shop.Ordering.Tests` drives the real pipeline through
+  `ApplicationPipelineTestHarness` with a `FakeClock`, `TestRequestContext.ForTenant(...)`, `AddFakeRepository<,>`
+  and an `InMemoryEventPublisher`.
 - [samples/Shop](../../samples/Shop/README.md) — `Shop.Catalog.Tests` runs the use cases over `FakeRepository<,>`,
   `InMemorySearchIndex<T>` and `InMemoryVectorCollection<T>`; `Shop.Inventory.Tests` covers locks with
   `FakeDistributedLockService`, the job schedule with `InMemoryScheduledJobRegistry` and the certificate allow-list

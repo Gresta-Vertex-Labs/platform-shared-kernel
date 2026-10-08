@@ -28,7 +28,7 @@ Harnesses: `src/Infrastructure/Search/consumer-verify/{Meilisearch,ElasticSearch
 **Tier edges:**
 - `.Abstractions` takes **no** `PackageReference` and references only `SharedKernel.Primitives`, `.Execution`, `.Contracts`; no DI extension, `ActivitySource` or `[LoggerMessage]`.
 - Providers reference `.Abstractions`, `Primitives`, `Configuration`, their engine SDK (`MeiliSearch`, `Elastic.Clients.Elasticsearch`; versions in `Directory.Packages.props`) and `Microsoft.Extensions.*`. **No declared adapter edge**: never each other, no shared base or `.Core` — parallel types are duplicated on purpose.
-- Fixtures (`MeilisearchContainerFixture`, `ElasticsearchContainerFixture`) belong to `16.Testing`; `WithSearchTelemetry()` to `13.ServiceDefaults`; `samples/CatalogApi` is a report line unless the phase includes it.
+- Fixtures (`MeilisearchContainerFixture`, `ElasticsearchContainerFixture`) belong to `16.Testing`; `WithSearchTelemetry()` to `13.ServiceDefaults`; `samples/Shop/Catalog` is a report line unless the phase includes it.
 
 ---
 
@@ -67,7 +67,7 @@ Harnesses: `src/Infrastructure/Search/consumer-verify/{Meilisearch,ElasticSearch
 
 1. Integration lane for any provider change (Docker required; otherwise mark only the container-backed tasks `⚑` with evidence).
 2. The three `consumer-verify` harnesses when registration or a public API changes.
-3. When the public surface changes, pack (`dotnet pack Platform.SharedKernel.slnx -c Release -o nupkgs`) and build `samples/CatalogApi` with `-p:SharedKernelPackageVersion=<packed version>` and a throw-away `NUGET_PACKAGES` folder in your scratchpad (deleted afterwards); CI's packaging gate does the same.
+3. When the public surface changes, run `samples/Shop/build.sh` (packs the kernel and builds the Shop, whose Catalog uses both engines; `--e2e` adds `CatalogFlowTests`) with a throw-away `NUGET_PACKAGES` folder in your scratchpad (deleted afterwards); CI's packaging gate does the same.
 4. `00.Governance`'s `SearchTopologyRules` stay green.
 
 Boards, brain, README and report follow `_common.md`. Domain deltas: keep the rule numbering stable (append, never renumber); record verified engine behaviour (ordering, facet-before-filter, escaping) and seam rulings in `src/Infrastructure/Search/CLAUDE.md`; update the `## Logging` table and the provider READMEs' Configuration tables and error-code lists; a new package or edge affects the root `CLAUDE.md` — ask for `/sync-brain`.

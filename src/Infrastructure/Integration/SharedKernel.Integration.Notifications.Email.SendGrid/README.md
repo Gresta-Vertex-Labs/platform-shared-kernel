@@ -77,7 +77,9 @@ var result = await email.SendAsync(                         // [FromKeyedService
   base64-encoded through a `CryptoStream` + `ToBase64Transform`, so the raw bytes are never one contiguous array (the
   Mail Send API still needs the base64 text as one JSON field). A reference the storage factory cannot open (a store
   that is not registered, a tenant the store does not have) fails the send with
-  `notifications.attachment_unresolvable`; a failed download fails it with the storage error (`storage.*`).
+  `notifications.attachment_unresolvable`; a failed download fails it with the storage error (`storage.*`). Storage
+  is needed only for attachments: a host without `AddSharedKernelStorage()` sends every other message, and a message
+  with attachments fails with `notifications.attachment_unresolvable`.
 - **Resilience.** The named client `SharedKernel.Integration.Notifications.Email.SendGrid` uses the standard
   resilience handler configured from `NotificationDeliveryOptions`: `MaxAttempts - 1` exponential retries between
   `BaseBackoffDelay` and `MaxBackoffDelay`, `RequestTimeout` per attempt, and a rate limiter of `MaxConcurrentSends`.

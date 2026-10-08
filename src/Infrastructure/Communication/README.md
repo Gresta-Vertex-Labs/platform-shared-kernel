@@ -118,15 +118,17 @@ Credentials, TLS, hedging and every option are in the
 
 ## See it run
 
-[**samples/CheckoutApi**](../../../samples/CheckoutApi/README.md) → [**samples/InventoryApi**](../../../samples/InventoryApi/)
-are two services talking over both protocols: CheckoutApi prices over gRPC and reserves over REST, both resolved
-through the `Services` section and both sending InventoryApi's API key. `CheckoutApi.Tests` (no Docker) proves a
-replayed reservation is made once, InventoryApi's 404, 409 and field errors come back unchanged, and an outage is a
-503 rather than an exception. After packing the kernel:
+In the [**Shop**](../../../samples/Shop/README.md), [Ordering](../../../samples/Shop/Ordering/) calls two services, one
+per protocol, both resolved through the `Services` section the AppHost fills: `inventory` (gRPC,
+`GrpcInventoryReservations`) reaches [Inventory](../../../samples/Shop/Inventory/) over mutual TLS with Ordering's
+client certificate, and `billing` (REST, `RestPayments`) reaches [Billing](../../../samples/Shop/Billing/) with
+Ordering's API key. Inventory's and Billing's errors arrive in Ordering as the matching `Error` (a declined card as
+Billing's business-rule failure). `Shop.Ordering.Tests` covers the gRPC error mapping over the Communication fakes;
+`Shop.E2E` covers the certificate allow-list, a rogue or missing certificate, the API key enforced and a declined card
+compensated:
 
 ```bash
-dotnet run --project samples/InventoryApi -p:SharedKernelPackageVersion=$V --environment Development
-dotnet run --project samples/CheckoutApi -p:SharedKernelPackageVersion=$V --environment Development
+samples/Shop/build.sh --e2e      # pack the kernel, build the Shop, run its end-to-end flows (Docker)
 ```
 
 ## Guarantees

@@ -69,6 +69,6 @@ Test projects are nested in their package folder. `src/Hosting/ServiceDefaults/c
 
 1. Run `consumer-verify` when a public API of the base or `MultiTenancy` changes.
 2. Keep `SharedKernel.ServiceDefaults.Persistence.Tests/Readme/PersistenceReadmeSampleTests.cs` green when a persistence README snippet or check changes (Integration lane; mark `⚑` with evidence if Docker is unavailable).
-3. When the public surface or the pipeline changes, build and test the affected samples (`samples/OrderApi` first — the canonical order) against packed packages per `samples/README.md` → "Building and running them", with a throw-away `NUGET_PACKAGES` folder in your scratchpad. A sample edit is a report line unless the phase includes it.
+3. When the public surface or the pipeline changes, build and test the affected samples (the Shop's Ordering and Catalog first — the canonical order) against packed packages per `samples/README.md` → "Building and running", with a throw-away `NUGET_PACKAGES` folder in your scratchpad. A sample edit is a report line unless the phase includes it.
 
 Boards, brain, README and report follow `_common.md`. Domain deltas: keep rule numbering stable (append, never renumber); a new health-check name, telemetry method, middleware position or EventId (and its "Next free") goes into `src/Hosting/ServiceDefaults/CLAUDE.md` in the same session; when the root `CLAUDE.md` rows on middleware order, readiness or the `WithXTelemetry()` family no longer match, ask for `/sync-brain`.

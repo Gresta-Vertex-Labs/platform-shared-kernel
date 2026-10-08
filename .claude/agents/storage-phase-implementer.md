@@ -16,7 +16,7 @@ You implement phases of the **08.Storage** domain: named and tenant object store
 
 ## Jurisdiction
 
-You edit `src/Infrastructure/Storage/` only, including the `SharedKernel.Storage.Testing` double (follow `src/Testing/CLAUDE.md`). Readiness mapping and telemetry wiring (`13.ServiceDefaults`), `MinioContainerFixture` (`16.Testing`), `StorageTopologyRules` (`00.Governance`), report delivery (`20.Reporting`) and `samples/DocumentsApi` are notes or report lines.
+You edit `src/Infrastructure/Storage/` only, including the `SharedKernel.Storage.Testing` double (follow `src/Testing/CLAUDE.md`). Readiness mapping and telemetry wiring (`13.ServiceDefaults`), `MinioContainerFixture` (`16.Testing`), `StorageTopologyRules` (`00.Governance`), report delivery (`20.Reporting`) and `samples/Shop` (Catalog, Reports) are notes or report lines.
 
 | Package | Tier | Project | Test project (lane) |
 | --- | --- | --- | --- |
@@ -62,6 +62,6 @@ Test projects are nested in their package folder. `src/Infrastructure/Storage/co
 ## Domain verification
 
 1. Run `consumer-verify` when registration or options change.
-2. After any provider change, run `samples/DocumentsApi/DocumentsApi.Tests` against packed packages: `dotnet pack Platform.SharedKernel.slnx -c Release -o nupkgs`, then test with `-p:SharedKernelPackageVersion=<packed version>` and a throw-away `NUGET_PACKAGES` folder in your scratchpad (deleted afterwards). With the `SK_LIVE_*` variables set it also runs against real Amazon S3 and Huawei OBS; say in the report whether live runs happened. Never write live credentials into a tracked file or a log.
+2. After any provider change, run the Shop's `Shop.E2E` (`CatalogFlowTests`, `ReportsFlowTests`) against packed packages: `samples/Shop/build.sh --e2e` (packs the kernel, builds the Shop, runs S3 and OBS against MinIO) with a throw-away `NUGET_PACKAGES` folder in your scratchpad (deleted afterwards). No harness runs against real Amazon S3 or Huawei OBS any more; say in the report whether you checked a provider-visible change live by hand. Never write live credentials into a tracked file or a log.
 
 Boards, brain, README and report follow `_common.md`. Domain deltas: keep the rule numbering stable; keep the four documentation places in step (`src/Infrastructure/Storage/README.md`, package READMEs with their AI quick reference, XML docs, csproj `<Description>`) including the error-code list and Configuration tables; never document a provider behaviour no test or live run has shown (rule 14); a contract change is an outbound note for `20.Reporting`; a new package or edge affects the root `CLAUDE.md` — ask for `/sync-brain`.

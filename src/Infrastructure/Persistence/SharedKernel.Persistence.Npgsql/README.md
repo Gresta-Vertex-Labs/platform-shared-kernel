@@ -191,8 +191,8 @@ docker run -d --name orders-db -p 5432:5432 -e POSTGRES_PASSWORD=dev -e POSTGRES
 ```
 
 `ConnectionStrings:orders` = `Host=localhost;Database=orders;Username=postgres;Password=dev` (a loopback host needs no
-TLS settings). The [BillingApi sample](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/samples/BillingApi/README.md)
-ships a Docker Compose file that runs the role script on first start.
+TLS settings). The [Shop sample](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/samples/Shop/Shop.AppHost/postgres)
+runs the role script on the first start of its PostgreSQL container.
 
 ### 3. Map enums or use short-lived tokens
 

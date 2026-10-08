@@ -101,11 +101,13 @@ The offset-versus-cursor comparison and the full walkthrough are in the
 
 ## See it run
 
-- [samples/ShippingApi](../../../samples/ShippingApi/README.md) — publishes a
-  `[IntegrationEvent("shipping.shipment-dispatched", Version = 1)]` record through `IEventPublisher` over a real
-  RabbitMQ broker. `dotnet test samples/ShippingApi/ShippingApi.Tests -p:SharedKernelPackageVersion=1.0.0-local.1`
-- [samples/BillingApi](../../../samples/BillingApi/README.md) — returns `PagedList<InvoiceView>` from a `PageRequest`
-  and `CursorPagedList<InvoiceView>` from a `CursorPageRequest`, both through the persistence repositories.
+- The Shop's [Ordering](../../../samples/Shop/Ordering/) publishes
+  `[IntegrationEvent("ordering.order-placed", Version = 1)]` and its sibling records (in
+  [`Shop.Contracts`](../../../samples/Shop/Shop.Contracts/)) through `IEventPublisher` and the EF Core outbox over a
+  real RabbitMQ broker, and consumes `EventEnvelope<OrderPlaced>` to start fulfilment.
+- The Shop's [Billing](../../../samples/Shop/Billing/) publishes `billing.receipt-due`, consumed as
+  `EventEnvelope<ReceiptDue>` by [Notify](../../../samples/Shop/Notify/) and [Reports](../../../samples/Shop/Reports/).
+  `samples/Shop/build.sh --e2e`
 
 ## Guarantees
 

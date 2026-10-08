@@ -23,7 +23,7 @@ namespace SharedKernel.Search.Meilisearch.Tests.Extensions;
 /// <c>ISearchIndex&lt;TDocument&gt;</c> and nothing else, so it does not help here at all.
 /// </para>
 /// <para>
-/// Found by the CatalogApi sample, where it made <c>AddSearchReadinessCheck("products")</c> probe
+/// Found by a sample service, where it made <c>AddSearchReadinessCheck("products")</c> probe
 /// ElasticSearch for a Meilisearch index and report a healthy service permanently unready — a symptom
 /// with no visible connection to its cause.
 /// </para>

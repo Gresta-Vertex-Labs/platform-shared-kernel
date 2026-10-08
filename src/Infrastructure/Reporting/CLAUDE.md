@@ -132,7 +132,7 @@ EventIds are written as `LoggingEventIdRanges.Reporting + n`. Telemetry: `Activi
 - **Integration** lane: `.Gotenberg.Tests` — stub-handler tests of every form field and error mapping, plus a real
   container through the suite's own `GotenbergFixture` (pinned `gotenberg/gotenberg:8.37.0`, in `GotenbergContainerTests.cs`).
 - Fakes: `SharedKernel.Reporting.Testing` — catalogue in `src/Testing/CLAUDE.md`.
-- End to end: `samples/DocumentsApi` (`POST /reports/{store}/listing?format=`, the PDF endpoint) against MinIO + Gotenberg.
+- End to end: the Shop's Reports (`samples/Shop/Reports`: `POST /reports/sales?format=&store=`, `POST /reports/sales/statement`) against MinIO + Gotenberg (`Shop.E2E` `ReportsFlowTests`).
 
 ## Known Limitations
 

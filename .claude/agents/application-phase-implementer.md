@@ -73,7 +73,7 @@ Test projects are nested in their package folder. `src/Application/SharedKernel.
 
 ## Domain verification
 
-1. `ISender` and the request/handler/behavior shapes are used by `17.Workflows`, `19.Scheduling`, `14.Presentation` and `samples/OrderApi`: after a shape change run the full solution build and add a report line per affected domain.
+1. `ISender` and the request/handler/behavior shapes are used by `17.Workflows`, `19.Scheduling`, `14.Presentation` and every Shop service (`samples/Shop`; Ordering also through `CommandActivity<>`): after a shape change run the full solution build and add a report line per affected domain.
 2. `ApplicationPipelineRules`, `UnitOfWorkSeamRules` and `DependencyGraphRulesTests` (`00.Governance`, Unit lane) stay green.
 3. When the registration shape changes, update `SharedKernel.Application.ConsumerVerify` and say in the report whether you ran it against a packed feed.
 

@@ -126,17 +126,17 @@ write alias). The document type, field constants and every option are in the
 
 ## See it run
 
-- [**samples/CatalogApi**](../../../samples/CatalogApi/README.md) — **both** engines in one service: a Meilisearch
-  storefront (facets, highlighting, instant search, tenant tokens, a lower-bound count) and an Elasticsearch back
-  office (aggregations, resumable cursors, suggestions, exact counts), with failures as RFC 9457 problems. Start the
-  two containers its README lists, then:
+The Shop's [**Catalog**](../../../samples/Shop/Catalog/) runs **both** engines in one service, across two replicas,
+against real containers:
 
-  ```bash
-  dotnet run --project samples/CatalogApi -p:SharedKernelPackageVersion=<the packed version> -- --urls http://localhost:5199
-  ```
+- a Meilisearch storefront — tenant-scoped search by word and by synonym, filtered by category;
+- an Elasticsearch back office — products counted per brand;
+- both indexes declared once (`CatalogDefinitions`) and provisioned at startup, safely across both replicas;
+- every query sent through the kernel's `ISender`, proven end to end by `Shop.E2E`'s `CatalogFlowTests`.
 
-- [**samples/Shop**](../../../samples/Shop/README.md) — the Catalog service indexes products into Meilisearch and
-  Elasticsearch across two replicas (`dotnet run --project samples/Shop/Shop.AppHost --launch-profile http`).
+```bash
+samples/Shop/build.sh --e2e      # pack the kernel, build the Shop, run its end-to-end flows (Docker)
+```
 
 ## Guarantees
 

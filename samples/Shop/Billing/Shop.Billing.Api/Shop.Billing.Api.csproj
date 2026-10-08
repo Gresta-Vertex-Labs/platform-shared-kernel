@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <!--
+    Billing: payments for Ordering (REST, API-key callers), invoices signed in Key Vault and compressed, merchant billing
+    profiles (IBAN and VAT validated, the IBAN envelope-encrypted under a Key Vault master key), personal data marked
+    and redacted, data-subject export and erasure, signed webhooks to the merchant, and the payment provider's
+    callbacks. One project: its secrets come from Key Vault as configuration.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\Shop.Contracts\Shop.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SharedKernel.ServiceDefaults" />
+    <PackageReference Include="SharedKernel.ServiceDefaults.Security" />
+    <PackageReference Include="SharedKernel.ServiceDefaults.Persistence" />
+    <PackageReference Include="SharedKernel.ServiceDefaults.Configuration.KeyVault" />
+    <PackageReference Include="SharedKernel.MultiTenancy" />
+    <PackageReference Include="SharedKernel.Security.Abstractions" />
+    <PackageReference Include="SharedKernel.Security.Oidc" />
+    <PackageReference Include="SharedKernel.Security.ApiKey" />
+    <PackageReference Include="SharedKernel.Configuration" />
+    <PackageReference Include="SharedKernel.Core" />
+    <PackageReference Include="SharedKernel.Execution" />
+    <PackageReference Include="SharedKernel.Domain" />
+    <PackageReference Include="SharedKernel.Application" />
+    <PackageReference Include="SharedKernel.Application.Pipeline" />
+    <PackageReference Include="SharedKernel.Application.Mediator.MediatR" />
+    <PackageReference Include="SharedKernel.Presentation.Core" />
+    <PackageReference Include="SharedKernel.Presentation.WebApi" />
+    <PackageReference Include="SharedKernel.Persistence.EfCore" />
+    <PackageReference Include="SharedKernel.Cryptography" />
+    <PackageReference Include="SharedKernel.Cryptography.KeyVault.Azure" />
+    <PackageReference Include="SharedKernel.Compression" />
+    <PackageReference Include="SharedKernel.Validation" />
+    <PackageReference Include="SharedKernel.Validation.FluentValidation" />
+    <PackageReference Include="SharedKernel.DataPrivacy" />
+    <PackageReference Include="SharedKernel.Integration.Webhooks" />
+    <!-- RabbitMQ: receipts owed (through the EF Core outbox), exhausted webhook deliveries. -->
+    <PackageReference Include="SharedKernel.Messaging.MassTransit" />
+    <PackageReference Include="SharedKernel.Messaging.MassTransit.RabbitMq" />
+    <PackageReference Include="SharedKernel.Messaging.MassTransit.EfCore" />
+    <!-- Log redaction of the personal data marked with SharedKernel.DataPrivacy attributes. -->
+    <PackageReference Include="Microsoft.Extensions.Compliance.Redaction" />
+    <PackageReference Include="Microsoft.Extensions.Telemetry" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+</Project>

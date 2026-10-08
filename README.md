@@ -16,7 +16,7 @@ storage, search, AI, security, APIs, workflows, jobs and reports — tested, obs
 [![CI](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/actions/workflows/ci.yml/badge.svg)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/actions/workflows/ci.yml)
 
 [Why](#-why-sharedkernel) · [Architecture](#-architecture) · [Packages](#-the-package-catalogue) ·
-[Quick start](#-quick-start) · [Samples](#-sample-services) · [Governance](#-governance-built-in) ·
+[Quick start](#-quick-start) · [Shop](#-the-shop-reference-platform) · [Governance](#-governance-built-in) ·
 [Build](#-building-this-repository) · [Contribute](#-contributing)
 
 </div>
@@ -136,7 +136,7 @@ src/Infrastructure/   → Infrastructure     Caching · Persistence · Messaging
 src/Hosting/          → Api / Worker       Security · ServiceDefaults · Presentation
 src/Testing/          → test projects      SharedKernel.Testing + Testcontainers fixtures for this repo
 tools/Governance/     → the build          analyzers, architecture tests, linter
-samples/                                   eight reference services built from the packed packages
+samples/Shop/                              the reference platform: seven services on the packed packages
 ```
 
 A capability keeps its contracts, providers and test doubles side by side — `src/Infrastructure/Caching/` holds
@@ -403,67 +403,70 @@ The feed and its `NuGet.Config` are in [`CONTRIBUTING.md` → Consuming the pack
 | `Orders.Infrastructure` | Adapter | `SharedKernel.Persistence.EfCore`, `SharedKernel.Messaging.MassTransit.RabbitMq` |
 | `Orders.Api` | Host | `SharedKernel.ServiceDefaults`, `SharedKernel.Presentation.WebApi`, `SharedKernel.Application.Pipeline` |
 
-**3. Write the use case — the pipeline does the rest.** From [`samples/OrderApi`](samples/OrderApi/):
+**3. Write the use case — the pipeline does the rest.** From the Shop's [Ordering](samples/Shop/Ordering/) service:
 
 ```csharp
-// Application: the permission belongs to the use case, and is checked on every path it is sent from.
-[RequirePermission(OrderPermissions.Cancel)]
-public sealed record CancelOrderCommand(Guid Id) : ICommand;
+// Application: the permission belongs to the use case and is checked on every path it is sent from.
+[RequirePermission(OrderingPermissions.Read)]
+public sealed record GetOrderQuery(Guid OrderId) : IQuery<OrderDto>;
 
-public sealed class CancelOrderHandler(IOrderRepository repository) : ICommandHandler<CancelOrderCommand>
+public sealed class GetOrderHandler(IReadRepository<Order, OrderId> orders)
+    : IQueryHandler<GetOrderQuery, OrderDto>
 {
-    public async Task<Result> Handle(CancelOrderCommand request, CancellationToken cancellationToken)
+    public async Task<Result<OrderDto>> Handle(GetOrderQuery query, CancellationToken ct)
     {
-        var order = await repository.GetAsync(request.Id, cancellationToken);
-        if (order is null)
-            return Result.Failure(Error.NotFound("order.notFound", $"Order {request.Id} was not found."));
-
-        var cancelled = order.Cancel();
-        if (cancelled.IsFailure)
-            return cancelled;
-
-        await repository.UpdateAsync(order, cancellationToken);
-        return Result.Success();
+        var order = await orders.GetByIdAsync(new OrderId(query.OrderId), ct);
+        return order is null
+            ? Result<OrderDto>.Failure(
+                Error.NotFound("ordering.order.not_found", $"Order {query.OrderId} was not found."))
+            : Result<OrderDto>.Success(OrderDto.From(order));
     }
 }
 ```
 
 ```csharp
-// Api: telemetry, health, the caller, the pipeline and the HTTP boundary — each in one call.
+// Api: telemetry, the caller, tenancy, the pipeline and the HTTP boundary, each in one call.
 builder.AddServiceDefaults();
+builder.Services.AddOidcAuthentication(builder.Configuration);
 builder.Services.AddSharedKernelRequestContext();
-builder.Services.AddSharedKernelApplication(typeof(PlaceOrderCommand).Assembly, app => app.UseMediatR());
-builder.Services.AddHealthChecks().AddSharedKernelReadiness();
+builder.Services.AddSharedKernelMultiTenancy(o => builder.Configuration.GetSection(TenantResolutionOptions.SectionName).Bind(o));
+builder.Services.AddSharedKernelApplication(
+    typeof(PlaceOrderCommand).Assembly,
+    app => app.UseMediatR().WithIdempotency().WithTransactions().WithAuditing());
+builder.Services.AddHealthChecks().AddDatabaseReadinessCheck<OrderingDbContext>().AddSharedKernelReadiness();
 builder.AddSharedKernelWebApi();
 
 var app = builder.Build();
 app.UseSharedKernelRequestContext();
-app.UseSharedKernelWebApi();
+app.UseSharedKernelWebApi(pipeline => pipeline.BeforeAuthorization(a => a.UseMiddleware<TenantResolutionMiddleware>()));
 app.MapDefaultHealthCheckEndpoints();
 app.MapEndpoints();
 ```
 
 Tracing, logging, metrics, authorization and validation run on every request. Idempotency, transactions, auditing
 and caching are one `With…()` each, and the host refuses to start when a stage's dependency is missing. An anonymous
-caller gets a 401, a caller without `orders.cancel` a 403, a missing order a 404 — all as RFC 9457 problem details.
-The [samples guide](samples/README.md) walks through a whole service.
+caller gets a 401, a caller without the permission a 403, a missing order a 404 — all as RFC 9457 problem details.
+The handler above is shortened (`OrderDto.From` stands for the mapping); the
+[samples guide](samples/README.md) walks through a whole service.
 
 ---
 
-## 🚀 Sample services
+## 🚀 The Shop reference platform
 
-Eight runnable services, built only from the **packed** packages and run in CI against real infrastructure.
-Start with [`samples/README.md`](samples/README.md).
+[**`samples/Shop`**](samples/Shop/) is one commerce platform built only from the **packed** packages: seven services
+that reference 103 of the 104 packages, running against real infrastructure in containers under a
+[.NET Aspire](https://learn.microsoft.com/dotnet/aspire/) AppHost, with end-to-end flows across all of them. Start
+with the [samples guide](samples/README.md), then the [Shop README](samples/Shop/README.md) to run it.
 
-| Sample | Shows | Runs against |
-|--------|-------|--------------|
-| [**OrderApi**](samples/OrderApi/) | The four-project service shape, pinned by an architecture test | nothing external |
-| [**BillingApi**](samples/BillingApi/) | The full persistence stack: EF Core + Dapper, row-level security, field encryption, audit ledger | PostgreSQL |
-| [**ShippingApi**](samples/ShippingApi/) | Messaging: publish/send, delayed delivery, idempotent consumers, the caller across the bus | RabbitMQ |
-| [**DocumentsApi**](samples/DocumentsApi/) | Object storage and reports: named and tenant stores, presigned links, CSV/Excel/PDF | MinIO, Gotenberg |
-| [**CatalogApi**](samples/CatalogApi/) | Search on Meilisearch and Elasticsearch side by side | Meilisearch, Elasticsearch |
-| [**CheckoutApi**](samples/CheckoutApi/) → [**InventoryApi**](samples/InventoryApi/) | Two services talking: typed REST and gRPC clients, an API key, safe retries, errors returned as `Result` | nothing external |
-| [**Shop**](samples/Shop/) | The kernel as a real platform: an Aspire-orchestrated system with OIDC, mutual-TLS gRPC, caching across replicas, locks, scheduled jobs, search and AI | containers via .NET Aspire |
+| Service | Reference for |
+|---------|---------------|
+| [**Catalog**](samples/Shop/Catalog/) | The four-project shape pinned by architecture tests; L1 + Redis caching across replicas, Pub/Sub, Meilisearch and Elasticsearch, semantic search and a chat model |
+| [**Ordering**](samples/Shop/Ordering/) | The four-project shape with the full persistence stack (row-level security, field encryption, audit ledger), the outbox on RabbitMQ, idempotent submissions, a Temporal workflow, SignalR, TOTP step-up |
+| [**Inventory**](samples/Shop/Inventory/) | Dapper under row-level security, a gRPC server behind mutual TLS, Redis hashes and locks, a job that runs once per occurrence |
+| [**Billing**](samples/Shop/Billing/) | Key Vault secrets, signing and envelope encryption; API-key clients; validated IBAN/VAT; personal data redacted; GDPR export and erasure; signed webhooks |
+| [**Merchant**](samples/Shop/Merchant/) | Receiving a webhook and verifying its signature |
+| [**Notify**](samples/Shop/Notify/) | A worker host: messaging consumers, SendGrid email and Twilio SMS |
+| [**Reports**](samples/Shop/Reports/) | Streaming CSV, Excel and PDF exports into S3 and OBS behind presigned downloads; HTML to PDF through Gotenberg |
 
 ---
 
@@ -478,7 +481,7 @@ The conventions are not a wiki page — the build and the test suites hold them.
 | **Architecture tests** ([`SharedKernel.ArchitectureTests`](tools/Governance/SharedKernel.ArchitectureTests/README.md)) | Purity rules tiers cannot express — provider isolation, no Contracts ↔ Domain, secure defaults — reusable from your own test suite |
 | **Public API tracking** | Every public member is recorded in `PublicAPI.*.txt`; an unrecorded change fails the build |
 | **One README standard** ([`docs/package-readme-standard.md`](docs/package-readme-standard.md)) | Every package README has the same shape, absolute links and current API, checked by a test |
-| **Release train** | One `vX.Y.Z` tag runs every gate — tier check, both test lanes, every consumer harness and sample — then publishes all 104 packages together |
+| **Release train** | One `vX.Y.Z` tag runs every gate — tier check, both test lanes, every consumer harness and the Shop — then publishes all 104 packages together |
 
 ---
 
@@ -491,7 +494,7 @@ The conventions are not a wiki page — the build and the test suites hold them.
 - ✅ Seven tiers enforced by the build; one execution context across HTTP, gRPC, messages, workflows and jobs
 - ✅ Kernel-owned CQRS with a mediator-agnostic pipeline
 - ✅ A release train that gates on every suite, consumer harness and sample before publishing the whole set
-- ✅ Eight sample services, including the Aspire-orchestrated `Shop` platform
+- ✅ The Aspire-orchestrated `Shop` platform: seven services, 103 of 104 packages, end-to-end flows on real infrastructure
 - 🔜 Pre-publish reviews of the remaining capabilities, then `1.0.0`
 
 ---

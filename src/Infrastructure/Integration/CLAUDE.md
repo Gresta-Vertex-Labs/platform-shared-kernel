@@ -32,11 +32,11 @@ API detail, option keys and defaults: the package READMEs and `SharedKernel.Inte
 
 - `services.AddSharedKernelNotifications(configure?)` — binds `NotificationDeliveryOptions` from `SharedKernel:Integration:Notifications`. The consumer **must** register `INotificationSenderIdentityResolver`.
 - `services.WithNotificationDeliveryObserver<T>()`.
-- `services.AddSendGridEmailNotifications(o => …)` → keyed `INotificationSender` for `NotificationChannel.Email`; needs `AddSharedKernelStorage()` for attachments (`IFileStorageFactory`).
+- `services.AddSendGridEmailNotifications(o => …)` → keyed `INotificationSender` for `NotificationChannel.Email`. Storage (`AddSharedKernelStorage()`, for `IFileStorageFactory`) is needed only for attachments: without it every other message is sent, and a message with attachments fails with `notifications.attachment_unresolvable`.
 - `services.AddTwilioSmsNotifications(o => …)` → keyed sender for `NotificationChannel.Sms` (at least one of `From`/`MessagingServiceSid`).
 - Both provider options carry `BaseAddress` (default: the vendor API) so local and end-to-end environments can point at a stand-in such as WireMock; endpoint paths resolve below it, keeping any path prefix. Never hard-code a vendor URL in a sender.
 - Send: `GetRequiredKeyedService<INotificationSender>(channel).SendAsync(NotificationMessage<T>, ct)`.
-- Telemetry: every family's `ActivitySource` is named `SharedKernel.Integration`; the host subscribes with `WithIntegrationTelemetry()`.
+- Telemetry: every family's `ActivitySource` is named `SharedKernel.Integration`; the host subscribes with ServiceDefaults' `WithIntegrationTelemetry()`.
 
 ## Rules & Invariants
 

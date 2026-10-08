@@ -1,4 +1,8 @@
 <Solution>
+  <Folder Name="/Billing/">
+    <Project Path="Billing/Shop.Billing.Api/Shop.Billing.Api.csproj" />
+    <Project Path="Billing/Shop.Billing.Tests/Shop.Billing.Tests.csproj" />
+  </Folder>
   <Folder Name="/Catalog/">
     <Project Path="Catalog/Shop.Catalog.Api/Shop.Catalog.Api.csproj" />
     <Project Path="Catalog/Shop.Catalog.Application/Shop.Catalog.Application.csproj" />
@@ -9,6 +13,24 @@
   <Folder Name="/Inventory/">
     <Project Path="Inventory/Shop.Inventory.Api/Shop.Inventory.Api.csproj" />
     <Project Path="Inventory/Shop.Inventory.Tests/Shop.Inventory.Tests.csproj" />
+  </Folder>
+  <Folder Name="/Merchant/">
+    <Project Path="Merchant/Shop.Merchant.Api/Shop.Merchant.Api.csproj" />
+  </Folder>
+  <Folder Name="/Notify/">
+    <Project Path="Notify/Shop.Notify.Tests/Shop.Notify.Tests.csproj" />
+    <Project Path="Notify/Shop.Notify.Worker/Shop.Notify.Worker.csproj" />
+  </Folder>
+  <Folder Name="/Ordering/">
+    <Project Path="Ordering/Shop.Ordering.Api/Shop.Ordering.Api.csproj" />
+    <Project Path="Ordering/Shop.Ordering.Application/Shop.Ordering.Application.csproj" />
+    <Project Path="Ordering/Shop.Ordering.Domain/Shop.Ordering.Domain.csproj" />
+    <Project Path="Ordering/Shop.Ordering.Infrastructure/Shop.Ordering.Infrastructure.csproj" />
+    <Project Path="Ordering/Shop.Ordering.Tests/Shop.Ordering.Tests.csproj" />
+  </Folder>
+  <Folder Name="/Reports/">
+    <Project Path="Reports/Shop.Reports.Api/Shop.Reports.Api.csproj" />
+    <Project Path="Reports/Shop.Reports.Tests/Shop.Reports.Tests.csproj" />
   </Folder>
   <Project Path="Shop.AppHost/Shop.AppHost.csproj" />
   <Project Path="Shop.Contracts/Shop.Contracts.csproj" />

@@ -159,7 +159,8 @@ Rules, policies and specifications differ by the question they answer:
 ### 1. Model an aggregate with value objects and rules
 
 A focused slice of an ordering model. The full four-project service (Domain, Application, Infrastructure, Api) is
-[`samples/OrderApi`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/samples/OrderApi).
+the Shop's Ordering service,
+[`samples/Shop/Ordering`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/tree/main/samples/Shop/Ordering).
 
 ```csharp
 using SharedKernel.Domain.Aggregates;

@@ -10,10 +10,16 @@
   <ItemGroup>
     <ProjectReference Include="..\Catalog\Shop.Catalog.Api\Shop.Catalog.Api.csproj" />
     <ProjectReference Include="..\Inventory\Shop.Inventory.Api\Shop.Inventory.Api.csproj" />
+    <ProjectReference Include="..\Ordering\Shop.Ordering.Api\Shop.Ordering.Api.csproj" />
+    <ProjectReference Include="..\Billing\Shop.Billing.Api\Shop.Billing.Api.csproj" />
+    <ProjectReference Include="..\Merchant\Shop.Merchant.Api\Shop.Merchant.Api.csproj" />
+    <ProjectReference Include="..\Notify\Shop.Notify.Worker\Shop.Notify.Worker.csproj" />
+    <ProjectReference Include="..\Reports\Shop.Reports.Api\Shop.Reports.Api.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Aspire.Hosting.PostgreSQL" />
+    <PackageReference Include="Aspire.Hosting.RabbitMQ" />
     <PackageReference Include="Aspire.Hosting.Redis" />
     <PackageReference Include="CommunityToolkit.Aspire.Hosting.Ollama" />
     <!-- Creates the MinIO buckets once MinIO is ready. -->

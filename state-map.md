@@ -40,7 +40,7 @@ Phases written by `arch-lead` take the next phase id; a user-directed phase with
 | 18 | [Idempotency](src/Infrastructure/Idempotency/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ● | None |
 | 19 | [Scheduling](src/Infrastructure/Scheduling/state-map.md) | 1 (Adapter) | ● | None |
 | 20 | [Reporting](src/Infrastructure/Reporting/state-map.md) | 5 (1 Abstractions, 4 Adapter) | ● | None |
-| — | [samples](samples/README.md) | 8: OrderApi, BillingApi, ShippingApi, DocumentsApi, CatalogApi, CheckoutApi, InventoryApi, Shop (Aspire platform) | ● | None |
+| — | [samples](samples/README.md) | `Shop`: one Aspire platform, 7 services (Catalog, Ordering, Inventory, Billing, Merchant, Notify, Reports) | ● | None |
 
 Every package ships at one repo-wide version through the release train (`CONTRIBUTING.md`, "Versioning and releases"); nothing is released per package.
 
