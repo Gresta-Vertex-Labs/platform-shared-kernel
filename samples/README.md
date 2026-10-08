@@ -1,19 +1,37 @@
-# samples — how to consume the kernel
+<div align="center">
 
-Runnable services built only from the **packed** SharedKernel packages. Together they are the reference
-for how a service on the kernel is shaped: which projects it has, which package goes in which project,
-how the version is pinned, in what order `Program.cs` composes things, and how a request travels from HTTP
-to a handler. Each one also proves, in CI, that a family of packages works end to end for a consumer that
-has nothing but the published artifacts.
+# SharedKernel samples
 
-| Sample | What it is the reference for | External infrastructure |
-|---|---|---|
-| [`OrderApi`](OrderApi/) | **The four-project shape**, with an architecture test that enforces it; the application pipeline, validation, a use case protected by `[RequirePermission]`, `Result` → ProblemDetails, a versioned API with OpenAPI documents, readiness | none |
-| [`BillingApi`](BillingApi/) | The whole persistence stack: EF Core + Dapper in one transaction, row-level security, field encryption, the audit ledger, transactions and auditing in the pipeline, `[RequirePermission]` on every use case, ETags and paging | PostgreSQL (Docker Compose, or Testcontainers in its tests) |
-| [`ShippingApi`](ShippingApi/) | Messaging: publish/send over RabbitMQ, delayed delivery, consumer idempotency, retries and faults, the caller's tenant, actor and correlation id carried to the consumer | RabbitMQ (Testcontainers, `masstransit/rabbitmq` for the delayed-exchange plugin); Docker Compose for running it by hand |
-| [`DocumentsApi`](DocumentsApi/) | Object storage: named and tenant stores on two S3 connections plus OBS, presigned links and forms, multipart; reporting: CSV/Excel/PDF exports picked at runtime and HTML → PDF, streamed into a store | MinIO and Gotenberg (Testcontainers); optionally real Amazon S3 and Huawei Cloud OBS (`SK_LIVE_*`) |
-| [`CatalogApi`](CatalogApi/) | Search: both engines side by side against different document types, the neutral contracts plus each engine's exclusive ones, stream queries | Meilisearch and Elasticsearch (Docker, see its README) |
-| [`CheckoutApi`](CheckoutApi/) → [`InventoryApi`](InventoryApi/) | **Calling another service**: typed REST and gRPC clients configured from `appsettings.json`, service discovery, an API key, safe retries with `Idempotency-Key`, the caller carried across, the other service's errors returned as its own (`Result`, not exceptions), `google.type.Money` | none — the tests run both on loopback ports |
+**Runnable services built only from the packed SharedKernel packages — the reference for how to wire a service on the kernel.**
+
+[![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](../LICENSE)
+
+[The samples](#the-samples) · [The shape of a service](#the-shape-of-a-service) · [Pinning the version](#pinning-the-version) · [Composing Program.cs](#composing-programcs) · [Building and running them](#building-and-running-them)
+
+<sub>📂 <code>samples</code> · <a href="../docs/packages.md">all packages by tier</a> · <a href="../README.md">Platform.SharedKernel</a></sub>
+
+</div>
+
+---
+
+Together the samples show how a service on the kernel is shaped: which projects it has, which package goes in which
+project, how the version is pinned, in what order `Program.cs` composes things, and how a request travels from HTTP to
+a handler. Each one also proves, in CI, that a family of packages works end to end for a consumer that has nothing but
+the published artifacts.
+
+## The samples
+
+| Sample | What it demonstrates | Capabilities | Infrastructure it needs |
+|---|---|---|---|
+| [OrderApi](OrderApi/) | **The four-project shape**, with an architecture test that enforces it; the application pipeline, validation, a use case protected by `[RequirePermission]`, `Result` → ProblemDetails, a versioned API with OpenAPI documents, readiness | [Domain](../src/Model/Domain/README.md), [Application](../src/Application/README.md), [Service defaults](../src/Hosting/ServiceDefaults/README.md), [Presentation](../src/Hosting/Presentation/README.md) | none |
+| [BillingApi](BillingApi/) | The whole persistence stack: EF Core + Dapper in one transaction, row-level security, field encryption, the audit ledger, transactions and auditing in the pipeline, `[RequirePermission]` on every use case, ETags and paging | [Persistence](../src/Infrastructure/Persistence/README.md), [Application](../src/Application/README.md), [Presentation](../src/Hosting/Presentation/README.md) | PostgreSQL (Docker Compose, or Testcontainers in its tests) |
+| [ShippingApi](ShippingApi/) | Messaging: publish/send over RabbitMQ, delayed delivery, consumer idempotency, retries and faults, the caller's tenant, actor and correlation id carried to the consumer | [Messaging](../src/Infrastructure/Messaging/README.md), [Contracts](../src/Model/Contracts/README.md), [Idempotency](../src/Infrastructure/Idempotency/README.md) | RabbitMQ (`masstransit/rabbitmq` for the delayed-exchange plugin; Testcontainers in its tests, Docker Compose by hand) |
+| [DocumentsApi](DocumentsApi/) | Object storage: named and tenant stores on two S3 connections plus OBS, presigned links and forms, multipart; reporting: CSV/Excel/PDF exports picked at runtime and HTML → PDF, streamed into a store | [Storage](../src/Infrastructure/Storage/README.md), [Reporting](../src/Infrastructure/Reporting/README.md) | MinIO and Gotenberg (Testcontainers); optionally real Amazon S3 and Huawei Cloud OBS (`SK_LIVE_*`) |
+| [CatalogApi](CatalogApi/) | Search: both engines side by side against different document types, the neutral contracts plus each engine's exclusive ones, stream queries | [Search](../src/Infrastructure/Search/README.md), [Presentation](../src/Hosting/Presentation/README.md) | Meilisearch and Elasticsearch (Docker, see its README) |
+| [CheckoutApi](CheckoutApi/) | **Calling another service**: typed REST and gRPC clients configured from `appsettings.json`, service discovery, an API key, safe retries with `Idempotency-Key`, the other service's errors returned as its own (`Result`, not exceptions), `google.type.Money` | [Communication](../src/Infrastructure/Communication/README.md) | InventoryApi (its tests start it on loopback ports) |
+| [InventoryApi](InventoryApi/) | **Being called**: REST and gRPC on two ports behind an API key, errors as RFC 9457 problems and gRPC rich statuses, `Idempotency-Key` on writes, the caller's correlation id arriving | [Presentation](../src/Hosting/Presentation/README.md), [Security](../src/Hosting/Security/README.md) | none |
+| [Shop](Shop/) | **The kernel in a real system**: an Aspire-orchestrated platform whose services combine persistence, caching, search, AI, storage, OIDC, mutual TLS, locks and scheduling across two replicas each, with end-to-end flows | nearly every capability — see its README | Docker (about 8 GB): PostgreSQL, Redis, Meilisearch, Elasticsearch, Qdrant, Ollama, MinIO, Keycloak |
 
 ## The shape of a service
 
@@ -50,8 +68,9 @@ Application because it implements the Application's ports. Nothing references th
 `samples/OrderApi` is this shape exactly, and `OrderApi.Tests/ArchitectureTests.cs` asserts it against
 the real restore graph. Copy that test into a new service and fill in its project names.
 
-The other samples are single-project hosts on purpose: each is about one family of packages, and the
-split would add projects without adding anything that `OrderApi` does not already show. They use the
+The other single-service samples are single-project hosts on purpose: each is about one family of packages, and the
+split would add projects without adding anything that `OrderApi` does not already show (Shop's Catalog service is
+four projects again, with the same kind of test). They use the
 same use-case layout — endpoints in `IEndpointModule`s, each command or query with its handler in a
 `Features/` folder.
 
@@ -233,6 +252,12 @@ reserves over REST (`PostResultAsync`); every failure is a `Result`, so Inventor
 CheckoutApi's caller unchanged. The tests start InventoryApi on real Kestrel ports and prove that the correlation id
 and idempotency key arrive, a replayed key reserves once, a wrong key is refused, and InventoryApi down is a 503.
 
+**[Shop](Shop/)** — the kernel in a real system. A .NET Aspire AppHost starts PostgreSQL, Redis, both search engines,
+Qdrant with Ollama models, MinIO and Keycloak, then two replicas each of Catalog (four projects: persistence under
+row-level security, a cache with a Redis backplane, search, semantic search, storage, OIDC, GraphQL) and Inventory
+(Dapper, gRPC over mutual TLS, SKU locks, a scheduled job). Its end-to-end flows prove what only shows across services
+and replicas: cache invalidation, tenant isolation, no overselling, a job that runs once.
+
 ## Building and running them
 
 Samples resolve `SharedKernel.*` by `PackageReference`, never `ProjectReference`: the point is to prove the
@@ -256,4 +281,6 @@ dotnet test samples/OrderApi/OrderApi.Tests -c Release -p:SharedKernelPackageVer
 dotnet run --project samples/OrderApi/OrderApi.Api -p:SharedKernelPackageVersion=$V -- --urls http://localhost:5199 --environment Development
 ```
 
-The BillingApi, ShippingApi and DocumentsApi tests need Docker.
+The BillingApi, ShippingApi and DocumentsApi tests need Docker. Shop packs and builds itself with
+`samples/Shop/build.sh` (`--test` for its unit tests) and runs with
+`dotnet run --project samples/Shop/Shop.AppHost --launch-profile http`; see [its README](Shop/README.md#run-it).

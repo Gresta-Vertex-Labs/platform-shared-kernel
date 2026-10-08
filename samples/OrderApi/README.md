@@ -1,8 +1,42 @@
-# OrderApi — the reference service shape
+<div align="center">
 
-A minimal order-taking API, split the way every service on the kernel should be: four projects, each
-referencing exactly the kernel packages its layer is allowed to see. It runs with **no database, cache,
-or broker**, so what you read is the composition, not infrastructure.
+# OrderApi
+
+**The reference service shape: four projects, each seeing only the kernel packages its layer may, and a test that keeps it that way.**
+
+<sub>📂 <code>samples/OrderApi</code> · <a href="../README.md">all samples</a> · needs no infrastructure</sub>
+
+</div>
+
+## What it shows
+
+- **The four-project shape.** Domain, Application, Infrastructure and Api, asserted against the real restore graph by
+  `OrderApi.Tests/ArchitectureTests.cs` — the test to copy into a new service.
+- **Use cases through the pipeline.** Commands and queries sent through the kernel's `ISender`, a FluentValidation
+  validator run by the validation step, and `[RequirePermission("orders.cancel")]` proven 401/403/204 over HTTP.
+- **One error shape.** Handlers return `Result`; endpoints map it with one typed-result call, and every failure is an
+  RFC 9457 problem with `errorCode`, `traceId` and `correlationId`.
+- **A versioned API that documents itself.** One OpenAPI 3.1 document per version and a Scalar reference, in
+  Development only.
+- **Readiness from the adapters.** Each adapter registers its probe; the `StartupGate` holds `/health/ready` at 503
+  until startup work is done.
+
+**Packages it uses:**
+[SharedKernel.Domain](../../src/Model/Domain/SharedKernel.Domain/README.md) ·
+[SharedKernel.Application](../../src/Application/SharedKernel.Application/README.md) ·
+[SharedKernel.Validation.FluentValidation](../../src/Foundation/SharedKernel.Validation.FluentValidation/README.md) ·
+[SharedKernel.Application.Pipeline](../../src/Application/SharedKernel.Application.Pipeline/README.md) ·
+[SharedKernel.Application.Mediator.MediatR](../../src/Application/SharedKernel.Application.Mediator.MediatR/README.md) ·
+[SharedKernel.ServiceDefaults](../../src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults/README.md) ·
+[SharedKernel.ServiceDefaults.Security](../../src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Security/README.md) ·
+[SharedKernel.Presentation.WebApi](../../src/Hosting/Presentation/SharedKernel.Presentation.WebApi/README.md) ·
+[SharedKernel.Presentation.OpenApi](../../src/Hosting/Presentation/SharedKernel.Presentation.OpenApi/README.md) ·
+tests: [SharedKernel.Application.Testing](../../src/Application/SharedKernel.Application.Testing/README.md)
+
+Capabilities: [Domain](../../src/Model/Domain/README.md) · [Application](../../src/Application/README.md) ·
+[Service defaults](../../src/Hosting/ServiceDefaults/README.md) · [Presentation](../../src/Hosting/Presentation/README.md)
+
+## The shape
 
 ```
 OrderApi.Domain          → SharedKernel.Domain

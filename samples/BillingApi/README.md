@@ -1,20 +1,53 @@
-# BillingApi — sample service on the persistence stack
+<div align="center">
+
+# BillingApi
+
+**Multi-tenant billing on PostgreSQL: EF Core and Dapper in one transaction, row-level security, encrypted columns and a sealed audit ledger, behind an HTTP API.**
+
+<sub>📂 <code>samples/BillingApi</code> · <a href="../README.md">all samples</a> · needs PostgreSQL (Docker)</sub>
+
+</div>
+
+## What it shows
+
+- **One registration for the database.** `AddSharedKernelPostgres<BillingDbContext>("billing", …)` with multi-tenancy
+  (row-level security on every tenant table), field encryption, the audit trail and `MigrateOnStartup`, over the
+  production role split.
+- **Encryption you can still query.** An encrypted `Email` found through a blind index, per-tenant data keys, and a
+  tenant erased by crypto-shredding.
+- **An audit record per command.** Written inside the command's transaction (or after its rollback) and sealed by a
+  background sealer on its own database role.
+- **Dapper and EF Core in one transaction**, a report with no tenant predicate scoped by row-level security, and a
+  back-office report across tenants.
+- **Optimistic concurrency over HTTP.** `ETag`/`If-Match` with `EntityVersion` (304, 428, 400, 412), plus offset and
+  keyset paging.
+
+Capabilities: [Persistence](../../src/Infrastructure/Persistence/README.md) ·
+[Application](../../src/Application/README.md) · [Service defaults](../../src/Hosting/ServiceDefaults/README.md) ·
+[Presentation](../../src/Hosting/Presentation/README.md) · [Foundation](../../src/Foundation/README.md) (cryptography)
+
+## Packages it uses
 
 A multi-tenant billing API built only from the **packed** SharedKernel packages, running against PostgreSQL with
-the production role split. It exists to answer one question before the persistence packages are published: does
-everything work together, through an HTTP API, the way a real service would use it?
+the production role split — to prove that everything works together, through an HTTP API, the way a real service
+would use it.
 
 | Package | What the sample exercises |
 | --- | --- |
-| `SharedKernel.Persistence.EfCore` | `AddSharedKernelPostgres<BillingDbContext>("billing", …)`, conventions (strongly-typed ids, `Money` on a root and a child entity, audit and soft-delete columns, `xmin`), open-generic repositories, specifications, offset and keyset paging, `ETag`/`If-Match` with `EntityVersion`, bulk update, domain events inside the save, `MigrateOnStartup` + a seeder, tenant filter + write guard + **row-level security** on every tenant table (children included), `[TenantShared]` reference data, the design-time factory for `dotnet ef` |
-| `SharedKernel.Persistence.EfCore.Encryption` | encrypted `Email` (with a case- and space-insensitive blind index) and `TaxNumber`, **per-tenant data keys**, tenant erasure (crypto-shredding), the maintenance job (`VerifyOnly`) |
-| `SharedKernel.Persistence.EfCore.Auditing` | every command audited (`Succeeded` inside its transaction, `Failed` after rollback), sealed by a background sealer on **its own database role**, chain verification |
-| `SharedKernel.Persistence.Dapper` | a payment written by Dapper and an aggregate changed by EF Core **in one transaction**, a report with no tenant predicate (row-level security scopes it), a back-office report across tenants on the cross-tenant role |
-| `SharedKernel.Persistence.Npgsql` | one configuration shape (`ConnectionStrings:billing` + `SharedKernel:Persistence:billing`), the four canonical roles, TLS policy, the RLS privilege check |
-| `SharedKernel.Persistence.Testing` | the end-to-end tests run against `PostgresTestServer` (Testcontainers, the same role split); a handler unit test over `FakeRepository`/`FakeUnitOfWork` with `TransientFailures` |
-| `SharedKernel.Application[.Pipeline, .Mediator.MediatR]` | one call, `AddSharedKernelApplication(typeof(Program).Assembly, app => app.UseMediatR().WithTransactions().WithAuditing())`: the handlers of the assembly behind the kernel's `ISender` (MediatR is the adapter, referenced only here), `[RequirePermission]` on every command and query (always enforced), one retry-safe transaction per command, an audit record per auditable command |
-| `SharedKernel.ServiceDefaults[.Security, .Persistence]` | `AddSharedKernelRequestContext()` over `IUserContext`, `UseSharedKernelRequestContext()` first in the pipeline (correlation id and the request's context), the database readiness check plus `AddSharedKernelReadiness()` for every provider probe, the startup gate |
-| `SharedKernel.Presentation.WebApi` | `AddSharedKernelWebApi()` + `UseSharedKernelWebApi()` right after the request context; typed results (`ToOk`, `ToCreated`, `ToNoContent`, `ToOkWithETag`); an `IfMatch<EntityVersion>` handler parameter (`ETag`, 304, 428, 400, 412); endpoint modules (`IEndpointModule`, mapped by the generated `app.MapEndpoints()`); `Paging`/`CursorPaging` parameters; every error an RFC 9457 problem |
+| [SharedKernel.Persistence.EfCore](../../src/Infrastructure/Persistence/SharedKernel.Persistence.EfCore/README.md) | `AddSharedKernelPostgres<BillingDbContext>("billing", …)`, conventions (strongly-typed ids, `Money` on a root and a child entity, audit and soft-delete columns, `xmin`), open-generic repositories, specifications, offset and keyset paging, `ETag`/`If-Match` with `EntityVersion`, bulk update, domain events inside the save, `MigrateOnStartup` + a seeder, tenant filter + write guard + **row-level security** on every tenant table (children included), `[TenantShared]` reference data, the design-time factory for `dotnet ef` |
+| [SharedKernel.Persistence.EfCore.Encryption](../../src/Infrastructure/Persistence/SharedKernel.Persistence.EfCore.Encryption/README.md) | encrypted `Email` (with a case- and space-insensitive blind index) and `TaxNumber`, **per-tenant data keys**, tenant erasure (crypto-shredding), the maintenance job (`VerifyOnly`) |
+| [SharedKernel.Persistence.EfCore.Auditing](../../src/Infrastructure/Persistence/SharedKernel.Persistence.EfCore.Auditing/README.md) | every command audited (`Succeeded` inside its transaction, `Failed` after rollback), sealed by a background sealer on **its own database role**, chain verification |
+| [SharedKernel.Persistence.Dapper](../../src/Infrastructure/Persistence/SharedKernel.Persistence.Dapper/README.md) | a payment written by Dapper and an aggregate changed by EF Core **in one transaction**, a report with no tenant predicate (row-level security scopes it), a back-office report across tenants on the cross-tenant role |
+| [SharedKernel.Persistence.Npgsql](../../src/Infrastructure/Persistence/SharedKernel.Persistence.Npgsql/README.md) (through EfCore and Dapper) | one configuration shape (`ConnectionStrings:billing` + `SharedKernel:Persistence:billing`), the four canonical roles, TLS policy, the RLS privilege check |
+| [SharedKernel.Persistence.Testing](../../src/Infrastructure/Persistence/SharedKernel.Persistence.Testing/README.md) (tests) | the end-to-end tests run against `PostgresTestServer` (Testcontainers, the same role split); a handler unit test over `FakeRepository`/`FakeUnitOfWork` with `TransientFailures` |
+| [SharedKernel.Application](../../src/Application/SharedKernel.Application/README.md), [.Pipeline](../../src/Application/SharedKernel.Application.Pipeline/README.md), [.Mediator.MediatR](../../src/Application/SharedKernel.Application.Mediator.MediatR/README.md) | one call, `AddSharedKernelApplication(typeof(Program).Assembly, app => app.UseMediatR().WithTransactions().WithAuditing())`: the handlers of the assembly behind the kernel's `ISender` (MediatR is the adapter, referenced only here), `[RequirePermission]` on every command and query (always enforced), one retry-safe transaction per command, an audit record per auditable command |
+| [SharedKernel.ServiceDefaults](../../src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults/README.md), [.Security](../../src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Security/README.md), [.Persistence](../../src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Persistence/README.md) | `AddSharedKernelRequestContext()` over `IUserContext`, `UseSharedKernelRequestContext()` first in the pipeline (correlation id and the request's context), the database readiness check plus `AddSharedKernelReadiness()` for every provider probe, the startup gate |
+| [SharedKernel.Presentation.WebApi](../../src/Hosting/Presentation/SharedKernel.Presentation.WebApi/README.md) | `AddSharedKernelWebApi()` + `UseSharedKernelWebApi()` right after the request context; typed results (`ToOk`, `ToCreated`, `ToNoContent`, `ToOkWithETag`); an `IfMatch<EntityVersion>` handler parameter (`ETag`, 304, 428, 400, 412); endpoint modules (`IEndpointModule`, mapped by the generated `app.MapEndpoints()`); `Paging`/`CursorPaging` parameters; every error an RFC 9457 problem |
+
+Also referenced directly: [SharedKernel.Cryptography](../../src/Foundation/SharedKernel.Cryptography/README.md) (the
+key provider behind field encryption and the sealed `ETag`) and
+[SharedKernel.Security.Abstractions](../../src/Hosting/Security/SharedKernel.Security.Abstractions/README.md) (the
+`IUserContext` the development authentication scheme produces).
 
 ## Run it
 

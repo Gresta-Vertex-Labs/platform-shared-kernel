@@ -1,9 +1,44 @@
+<div align="center">
+
 # ShippingApi
 
-A working shipping service on `07.Messaging`, consuming the **packed** NuGet packages the way any other service
-would. It publishes an integration event, sends a command, schedules a reminder through the broker, deduplicates
-redeliveries, carries the caller's tenant across the bus, and observes what fails — all through an HTTP surface
-you can drive with `curl`.
+**A shipping service on RabbitMQ: publish, send and schedule through the bus, with the caller's tenant, actor and correlation id arriving on the consumer.**
+
+<sub>📂 <code>samples/ShippingApi</code> · <a href="../README.md">all samples</a> · needs RabbitMQ (Docker)</sub>
+
+</div>
+
+## What it shows
+
+- **CloudEvents publish and point-to-point send** in one `AddSharedKernelMessaging(configuration).UseRabbitMq(…)` chain.
+- **The publisher's caller on the consumer.** `WithInboundRequestContext()` rebuilds the tenant and actor, so a consumer
+  reads `IRequestContext` exactly as an HTTP handler does; `WithAmbientCorrelationPropagation()` carries the
+  correlation id.
+- **Broker-side delayed delivery** (`WithDelayedDelivery()`), **at-most-once consumption** over an `IIdempotencyStore`
+  (`WithIdempotency()`), and **retries, then a fault you can see** (`AddFaultConsumer`).
+- **Asynchronous work over HTTP.** 202 Accepted with a `Location` (`ToAccepted`); a broker outage is a 503 problem.
+- **Readiness that gates traffic** on the bus probe that `Build()` registers.
+
+**Packages it uses:**
+[SharedKernel.Messaging.MassTransit](../../src/Infrastructure/Messaging/SharedKernel.Messaging.MassTransit/README.md) ·
+[SharedKernel.Messaging.MassTransit.RabbitMq](../../src/Infrastructure/Messaging/SharedKernel.Messaging.MassTransit.RabbitMq/README.md) ·
+[SharedKernel.Contracts](../../src/Model/Contracts/SharedKernel.Contracts/README.md) ·
+[SharedKernel.Execution](../../src/Foundation/SharedKernel.Execution/README.md) ·
+[SharedKernel.Idempotency.Abstractions](../../src/Infrastructure/Idempotency/SharedKernel.Idempotency.Abstractions/README.md) ·
+[SharedKernel.Application.Pipeline](../../src/Application/SharedKernel.Application.Pipeline/README.md) ·
+[SharedKernel.Application.Mediator.MediatR](../../src/Application/SharedKernel.Application.Mediator.MediatR/README.md) ·
+[SharedKernel.ServiceDefaults](../../src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults/README.md) ·
+[SharedKernel.ServiceDefaults.Security](../../src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Security/README.md) ·
+[SharedKernel.Presentation.WebApi](../../src/Hosting/Presentation/SharedKernel.Presentation.WebApi/README.md)
+
+Capabilities: [Messaging](../../src/Infrastructure/Messaging/README.md) · [Contracts](../../src/Model/Contracts/README.md) ·
+[Idempotency](../../src/Infrastructure/Idempotency/README.md) · [Application](../../src/Application/README.md) ·
+[Service defaults](../../src/Hosting/ServiceDefaults/README.md) · [Presentation](../../src/Hosting/Presentation/README.md)
+
+## The endpoints
+
+It consumes the **packed** NuGet packages the way any other service would, all through an HTTP surface you can drive
+with `curl`:
 
 ```
 POST /shipments               publish  → 202 + Location; ShipmentDispatched, consumed into a read model
@@ -15,7 +50,7 @@ GET  /shipments/{id}/fault    read     → what the fault consumer saw
 GET  /health/live /health/ready        → the bus-backed readiness probe
 ```
 
-## What it demonstrates
+## Where to look
 
 | Feature | Where to look |
 | --- | --- |
@@ -64,7 +99,7 @@ dotnet run --project samples/ShippingApi -p:SharedKernelPackageVersion=1.0.0-loc
 
 ```bash
 # Acting as a tenant and an actor — this sample reads them from two headers in place of a real
-# identity provider. A production service registers 13.ServiceDefaults' AddSharedKernelRequestContext().
+# identity provider. A production service authenticates the caller (AddOidcAuthentication(...)).
 TENANT=$(uuidgen); H="-H X-Demo-Tenant:$TENANT -H X-Demo-Actor:operator-7"
 
 ID=$(curl -sf $H -X POST localhost:5000/shipments \
@@ -128,6 +163,6 @@ artifacts — a project reference would bypass exactly the thing under test. See
 | --- | --- |
 | `AddDemoIdentity()` builds the `IUserContext` from two request headers | An authentication package (`AddOidcAuthentication(...)`) builds it from a token; `AddSharedKernelRequestContext()` and everything after it are unchanged |
 | `InMemoryIdempotencyStore` deduplicates within one process | `SharedKernel.Idempotency.Redis` or `.EfCore`, which reserve atomically across replicas |
-| `ShipmentProjection` is a dictionary | A real read model written through `06.Persistence` inside the consumer's transaction |
+| `ShipmentProjection` is a dictionary | A real read model written through [Persistence](../../src/Infrastructure/Persistence/README.md) inside the consumer's transaction |
 
 Each is a deliberate trade: a sample about messaging should not require a database and a cache to run.

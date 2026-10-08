@@ -2,121 +2,132 @@
 
 # SharedKernel Scheduling
 
-**Cron and one-shot jobs that run once per occurrence — however many replicas you deploy.**
+**Cron and one-shot jobs that send an ordinary command through the application pipeline, run once per occurrence
+however many replicas you deploy, and never guess what to do after downtime.**
 
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](../../../LICENSE)
 ![Packages: 1](https://img.shields.io/badge/packages-1-informational)
+![Tier: Adapter](https://img.shields.io/badge/tier-Adapter-6f42c1)
+![Tier: Testing](https://img.shields.io/badge/tier-Testing-e36209)
+[![Quartz cron 3.18](https://img.shields.io/badge/Quartz%20cron-3.18-informational)](https://www.quartz-scheduler.net/)
 
-<sub>📂 <code>src/Infrastructure/Scheduling</code> · domain <code>19.Scheduling</code> · <a href="../../../docs/packages.md">all packages by tier</a></sub>
+[What you get](#what-you-get) · [Packages](#packages) · [How it fits together](#how-it-fits-together) · [Get started](#get-started) · [See it run](#see-it-run) · [Guarantees](#guarantees)
+
+<sub>📂 <code>src/Infrastructure/Scheduling</code> · <a href="../../../docs/packages.md">all packages by tier</a> · <a href="../../../README.md">Platform.SharedKernel</a></sub>
 
 </div>
 
-`SharedKernel.Scheduling` fires time-triggered work in a SharedKernel service. A job is a kernel command sent through
-`ISender`, so it gets the same validation, transactions and auditing as an HTTP request. Replicas agree on who runs
-each occurrence through a self-expiring lease from `IDistributedLockService` — no job database, no Quartz scheduler,
-no Hangfire.
+---
 
-## What this domain gives you
+## What you get
 
-- **Jobs as commands** — `AddRecurring<TCommand>` and `AddDeferred<TCommand>` take a factory that builds an ordinary
-  `ICommand`; the handler is plain application code.
-- **Once per occurrence across replicas** — a lease keyed by job name and fire time; an unreachable lock store means
-  nobody runs it, never everybody.
-- **Explicit behaviour after downtime and slow runs** — `MisfirePolicy` and `OverlapPolicy` are mandatory on every job.
-- **A real caller** — each run executes inside a `SystemRequestContext` scope with the job's tenant and a new
-  correlation id, so logs, persistence and outbound calls can be traced back to the job.
-- **Operable** — a zero-I/O `scheduler` readiness probe, traces and counters under `SharedKernel.Scheduling`, and
-  EventIds 19000–19016.
+- **Jobs as commands.** `AddRecurring<TCommand>` and `AddDeferred<TCommand>` take a factory that builds an ordinary
+  `ICommand`; the handler is plain application code with the same validation, transactions and auditing as an HTTP
+  request.
+- **Once per occurrence across replicas.** Each occurrence is claimed with a self-expiring lease from
+  `IDistributedLockService`, keyed by job name and fire time; no job database, no Quartz scheduler, no Hangfire.
+- **An outage never means duplicates.** When the lock store is unreachable no replica can prove ownership, so none
+  runs the occurrence; without any lock service the host still starts and logs a Warning.
+- **Explicit behaviour after downtime and slow runs.** `MisfirePolicy` (`Skip`, `FireOnce`,
+  `RunImmediatelyThenReschedule`) and `OverlapPolicy` (`Skip`, `Queue`, `Allow`) are mandatory on every job.
+- **A real, attributable caller.** Each run executes inside a `SystemRequestContext` scope with the job's name, its
+  tenant, a new correlation id and no permissions; a zero-I/O `scheduler` readiness probe and `SharedKernel.Scheduling`
+  traces and counters make the loop observable.
 
 ## Packages
 
-| Package | Tier | When you need it |
-| --- | --- | --- |
-| [`SharedKernel.Scheduling`](SharedKernel.Scheduling/README.md) | Adapter | Any recurring or delayed single unit of work: nightly reconciliation, cleanup, digests, a trigger that starts a workflow |
+| Package | Tier | Reference it from | Use it for |
+| --- | --- | --- | --- |
+| [SharedKernel.Scheduling](SharedKernel.Scheduling/README.md) | Adapter | Infrastructure | Recurring or delayed single units of work: nightly reconciliation, cleanup, digests, a trigger that starts a workflow |
+| [SharedKernel.Scheduling.Testing](SharedKernel.Scheduling.Testing/README.md) | Testing | test projects | `InMemoryScheduledJobRegistry`: records registrations; the test fires each tick with `TriggerAsync` |
 
-Test double: [`SharedKernel.Scheduling.Testing`](./SharedKernel.Scheduling.Testing/README.md)
-(`InMemoryScheduledJobRegistry` with `TriggerAsync`).
-
-## Scheduling or workflows?
-
-| Use `19.Scheduling` when… | Use [`17.Workflows`](../Workflows/README.md) when… |
-| --- | --- |
-| A **single unit of work** fires on a time trigger | The process has **multiple steps** |
-| "Did it run exactly once across replicas?" is the only durability question | It must survive a crash mid-step, or waits for signals |
-| Cron or one-shot, registered at startup | Durable timers, replay-safe, deterministic execution |
-
-They compose: a recurring job here may *start* a Temporal workflow, and `17.Workflows` owns everything after that.
+Take it for one unit of work on a time trigger. Several steps, signals or crash-resumable progress belong in
+[Workflows](../Workflows/README.md), which a job here may start; a delayed message is `IMessageScheduler` in
+[Messaging](../Messaging/README.md).
 
 ## How it fits together
 
 ```mermaid
 flowchart LR
-    R["IScheduledJobRegistry<br/>AddRecurring / AddDeferred"] --> L["Hosted scheduling loop<br/>(every TickInterval, IClock)"]
-    L -- "occurrence lease" --> K["IDistributedLockService<br/>(e.g. Redis)"]
-    L --> C["RequestContextScope<br/>SystemRequestContext(job, tenant, correlation id)"]
-    C --> J["ScheduledCommandJob&lt;TCommand&gt;"]
-    J --> S["ISender → application pipeline → handler"]
-    L -.-> P["'scheduler' readiness probe"]
+    R["IScheduledJobRegistry: AddRecurring, AddDeferred"] --> L["Hosted scheduling loop - every TickInterval, IClock"]
+    L -- "occurrence lease" --> K["IDistributedLockService"]
+    K --> X[("Redis")]
+    L --> C["RequestContextScope - SystemRequestContext"]
+    C --> J["ScheduledCommandJob of TCommand"]
+    J --> S["ISender - application pipeline - handler"]
+    L -.-> P["scheduler readiness probe"]
 ```
+
+- **The lease is never released or extended.** It is keyed by job name and scheduled fire time, so a slightly late
+  replica cannot run the same occurrence again; its fencing token reaches the command factory.
+- **Contention is not an outage.** A `null` lease means another replica owns the occurrence; an unreachable store
+  means nobody runs it (Error, EventId 19016) and the loop keeps going.
+- **Each run commits once.** A fresh DI scope per run makes the command outermost, so `TransactionBehavior` commits
+  once; a failed `Result` is logged as a failed fire, never thrown.
+- **State is in memory.** Cron is Quartz syntax evaluated in UTC; jobs are registered at startup and nothing is
+  persisted, so a deferred job survives a restart only if it is registered again.
 
 ## Get started
 
+```xml
+<PackageReference Include="SharedKernel.Scheduling" />
+<PackageReference Include="SharedKernel.Caching.Redis.DistributedLocking" />
+```
+
 ```csharp
-using SharedKernel.Caching.Redis.Core.Extensions;
-using SharedKernel.Caching.Redis.DistributedLocking.Extensions;
-using SharedKernel.Primitives.Clocks;
-using SharedKernel.Scheduling.Extensions;
-using SharedKernel.Scheduling.Policies;
-
-builder.Services.AddClock();
-builder.Services.AddSharedKernelApplication(typeof(PurgeExpiredCarts).Assembly, app => app.UseMediatR());
-
 builder.Services.AddRedisConnection(builder.Configuration);   // SharedKernel:Caching:Redis
-builder.Services.AddRedisDistributedLocking();
+builder.Services.AddRedisDistributedLocking();                // cross-replica single execution
 
-builder.Services.AddSharedKernelScheduling()
-    .AddRecurring<PurgeExpiredCarts>(
-        jobName: "purge-expired-carts",
-        cronExpression: "0 */15 * * * ?",                     // every 15 minutes, UTC, Quartz syntax
-        commandFactory: ctx => new PurgeExpiredCarts(ctx.ScheduledFireTimeUtc),
+builder.Services.AddSharedKernelScheduling()                  // SharedKernel:Scheduling
+    .AddRecurring<RunNightlyReconciliation>(
+        jobName: "nightly-reconciliation",
+        cronExpression: "0 0 2 * * ?",                        // 02:00 UTC daily, Quartz syntax, seconds first
+        commandFactory: ctx => new RunNightlyReconciliation(ctx.ScheduledFireTimeUtc),
         configure: o =>
         {
-            o.MisfirePolicy = MisfirePolicy.Skip;
+            o.MisfirePolicy = MisfirePolicy.FireOnce;
             o.OverlapPolicy = OverlapPolicy.Skip;
         });
 
-builder.Services.AddHealthChecks().AddSharedKernelReadiness();
-builder.WithSchedulingTelemetry();
+builder.Services.AddHealthChecks().AddSharedKernelReadiness();  // exposes the "scheduler" probe
+
+public sealed record RunNightlyReconciliation(DateTimeOffset BusinessDate) : ICommand;
 ```
 
-```csharp
-public sealed record PurgeExpiredCarts(DateTimeOffset Now) : ICommand;
-```
+The host also needs a mediator adapter (`app.UseMediatR()`) and an `IClock`. The
+[Quick start](SharedKernel.Scheduling/README.md#quick-start) covers the configuration keys, per-tenant jobs,
+permission-guarded commands and one-shot jobs.
 
-Without `AddRedisDistributedLocking()` (or another `IDistributedLockService`) the service still starts, logs a
-Warning, and every replica runs every occurrence — fine for one instance, wrong for more.
+## See it run
+
+- [Shop](../../../samples/Shop/README.md) — the Inventory service runs a reconciliation job on two replicas over
+  Redis locking, and its end-to-end flow proves the job runs once per occurrence across them;
+  `Shop.Inventory.Tests` asserts the job schedule over `SharedKernel.Scheduling.Testing`.
+
+  ```bash
+  samples/Shop/build.sh                      # pack the kernel, build the Shop  (build.ps1 on Windows)
+  dotnet run --project samples/Shop/Shop.AppHost --launch-profile http
+  ```
+
+- [`consumer-verify`](consumer-verify/Program.cs) — a one-shot job firing end to end through the real MediatR
+  pipeline, the single-replica Warning, and fail-fast registration when a policy is unset
+  (`dotnet run --project src/Infrastructure/Scheduling/consumer-verify`).
 
 ## Guarantees
 
-| Guarantee | How |
+| Guarantee | How it is held |
 | --- | --- |
-| One run per occurrence across replicas | A lease on `scheduling:occurrence:{job}:{fire time}`, never released or extended |
-| A lock-store outage never causes duplicates | No replica can prove ownership, so none runs it (Error, EventId 19016) |
-| Running without a lock is never silent | Startup Warning, EventId 19002 |
-| No surprise catch-up after downtime | `MisfirePolicy` is mandatory: `Skip`, `FireOnce` or `RunImmediatelyThenReschedule` |
-| No surprise concurrency | `OverlapPolicy` is mandatory: `Skip`, `Queue` or `Allow` |
-| Cron is correct across DST and edge syntax | Quartz's `CronExpression`, evaluated in UTC |
-| Each run commits once | A fresh DI scope per run makes the command outermost for `TransactionBehavior` |
-| Each run is attributable | `ActorKind.System`, the job name as identity, a new correlation id, no permissions |
-
-## Limits
-
-- No persistent job store: jobs are registered at startup, and a deferred job survives a restart only if it is
-  registered again.
-- Cron is UTC only; there is no per-job time zone.
-- The scheduler never fans out per tenant — a per-tenant job is one registration whose handler iterates tenants.
+| One run per occurrence across replicas | `MultiReplicaSingleExecutionTests` (`TwoReplicas_SameJob_FiresExactlyOncePerTick_NeverTwice`); `OccurrenceLeaseTests` (the lease is never released) |
+| A lock-store outage never causes duplicates | `LockStoreUnavailable_JobNotExecuted_LogsError_AndSchedulerKeepsRunning` |
+| Running without a lock is never silent | `NoDistributedLockServiceRegistered_LogsSingleReplicaStartupWarning` (EventId 19002) |
+| No job without explicit policies | `ScheduledJobRegistryTests`: an unset `MisfirePolicy` or `OverlapPolicy` throws at registration |
+| Misfire and overlap behave exactly as named | `MisfirePolicyTests` and `OverlapPolicyTests`, one test per policy value |
+| Cron is correct across DST and edge syntax | `CronExpressionCorrectnessTests`: spring-forward gap, fall-back hour, `W`, `#` and `L` specifiers |
+| A failed command is reported, never swallowed | `ScheduledCommandJobTests` (`SenderReturnsFailure_SurfacesFailureResult_DoesNotSwallow`, dispatched exactly once) |
 
 ---
 
-For maintainers: [CLAUDE.md](CLAUDE.md) (domain rules and invariants) · [state-map.md](state-map.md) (phase history).
+<div align="center">
+<sub>Part of <a href="../../../README.md">Platform.SharedKernel</a> · <a href="../../../docs/packages.md">all packages</a> · MIT license</sub>
+</div>

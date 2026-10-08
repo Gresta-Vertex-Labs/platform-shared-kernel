@@ -1,198 +1,157 @@
 <div align="center">
 
-# SharedKernel Intelligence
+# SharedKernel AI
 
-**Embeddings, tenant-scoped vector retrieval and LLM chat completion for multi-tenant .NET services. One neutral
-contract over Qdrant and Semantic Kernel: every vector is bound to the model that produced it, every call reports
-what it cost, and a provider swap is a build error instead of a production surprise.**
+**Embeddings, tenant-scoped vector retrieval and LLM chat completion for multi-tenant .NET services — one neutral
+contract over Qdrant and Semantic Kernel, where every vector is bound to the model that produced it, every call
+reports what it cost, and a provider swap is a build error instead of a production surprise.**
 
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](../../../LICENSE)
 ![Packages: 3](https://img.shields.io/badge/packages-3-informational)
-[![Qdrant](https://img.shields.io/badge/Qdrant-v1.16%2B-DC244C)](SharedKernel.AI.Qdrant/README.md)
-[![Semantic Kernel](https://img.shields.io/badge/Semantic%20Kernel-1.78-5C2D91)](SharedKernel.AI.SemanticKernel/README.md)
+![Tier: Abstractions](https://img.shields.io/badge/tier-Abstractions-1f6feb)
+![Tier: Adapter](https://img.shields.io/badge/tier-Adapter-6f42c1)
+![Tier: Testing](https://img.shields.io/badge/tier-Testing-e36209)
+[![Qdrant.Client](https://img.shields.io/badge/Qdrant.Client-1.18-DC244C)](https://github.com/qdrant/qdrant-dotnet)
+[![Semantic Kernel](https://img.shields.io/badge/Semantic%20Kernel-1.78-5C2D91)](https://github.com/microsoft/semantic-kernel)
 
-[Packages](#packages) · [Get started](#get-started) · [Guarantees](#guarantees) · [Testing](#testing)
+[What you get](#what-you-get) · [Packages](#packages) · [How it fits together](#how-it-fits-together) · [Get started](#get-started) · [See it run](#see-it-run) · [Guarantees](#guarantees)
 
-<sub>📂 <code>src/Infrastructure/AI</code> · domain <code>10.Intelligence</code> · <a href="../../../docs/packages.md">all packages by tier</a></sub>
+<sub>📂 <code>src/Infrastructure/AI</code> · <a href="../../../docs/packages.md">all packages by tier</a> · <a href="../../../README.md">Platform.SharedKernel</a></sub>
 
 </div>
 
 ---
 
-## What this domain gives you
+## What you get
 
-- **Embeddings with identity.** `IEmbeddingGenerator` returns a vector together with its model id, dimension and
-  token usage, and vector collections refuse a vector from any other model before a single byte is sent.
+- **Embeddings with identity.** `IEmbeddingGenerator` returns a vector with its model id, dimension and `TokenUsage`;
+  a vector collection refuses a vector from any other model before a single byte is sent.
 - **Tenant-safe vector collections.** `IVectorCollection<TRecord>` upserts, deletes, queries, counts and scrolls with
-  a mandatory `TenantScope` on every call, added by the provider as the outermost filter.
+  a mandatory `TenantScope` on every call, applied by the provider as the outermost filter.
 - **Portable metadata filters.** A closed eight-node `VectorFilter` that every provider must translate completely,
   never approximately.
 - **Chat completion without hidden behaviour.** `ISemanticKernel` returns token usage and finish reason, hands tool
   calls back to you, and never retries or caches unless you opt in.
-- **Zero-downtime re-embedding.** Provision a new collection, fill it, and `CutoverAsync` swaps it in atomically.
-- **Readiness per collection.** One `vector-store-{provider}-{collection}` probe each, exposed on `/health/ready`.
+- **Zero-downtime re-embedding and readiness.** Provision a new collection, fill it, `CutoverAsync` swaps it in; each
+  collection gets a `vector-store-{provider}-{collection}` readiness probe.
 
 ## Packages
 
-| Package | Tier | When you need it |
-| --- | --- | --- |
-| [`SharedKernel.AI.Abstractions`](SharedKernel.AI.Abstractions/README.md) | Abstractions | Always, in your **Application** project: the contracts handlers inject. No third-party dependencies |
-| [`SharedKernel.AI.Qdrant`](SharedKernel.AI.Qdrant/README.md) | Adapter | You store and search vectors. Qdrant is the vector database provider, with hybrid (dense + sparse) queries and quantization profiles as Qdrant-only extras |
-| [`SharedKernel.AI.SemanticKernel`](SharedKernel.AI.SemanticKernel/README.md) | Adapter | You generate embeddings or chat completions against an OpenAI-compatible endpoint |
+| Package | Tier | Reference it from | Use it for |
+| --- | --- | --- | --- |
+| [SharedKernel.AI.Abstractions](SharedKernel.AI.Abstractions/README.md) | Abstractions | Application | `IEmbeddingGenerator`, `IVectorCollection<TRecord>`, `IVectorCollectionProvisioner`, `ISemanticKernel`, `VectorFilter`. No third-party dependency |
+| [SharedKernel.AI.Qdrant](SharedKernel.AI.Qdrant/README.md) | Adapter | Infrastructure | Storing and searching vectors in Qdrant (v1.16+, gRPC); hybrid dense + sparse queries and quantization profiles as Qdrant-only extras |
+| [SharedKernel.AI.SemanticKernel](SharedKernel.AI.SemanticKernel/README.md) | Adapter | Infrastructure | Embeddings and chat completions against an OpenAI-compatible endpoint; opt-in `WithBoundedRetry` |
+| [SharedKernel.AI.Testing](SharedKernel.AI.Testing/README.md) | Testing | test projects | In-memory doubles of every neutral contract: a deterministic embedding generator, a vector collection with the same model and tenant checks, a scripted `InMemorySemanticKernel` |
 
-The two adapters never reference each other. Each declares its own exclusive contracts (for example
-`IQdrantHybridQueryAccessor<TRecord>`, `IKernelPluginAccessor`), so code that uses a provider-only feature fails to
-compile when that provider is removed. All packages ship at one version, pinned by your `SharedKernelVersion`
-property ([Using the packages](../../../README.md#using-the-packages)).
+Start with Abstractions in the Application project; add Qdrant to store vectors and SemanticKernel to produce
+embeddings or completions — they are independent, so a service can take either one. `SharedKernel.ServiceDefaults`
+maps the probes (`AddSharedKernelReadiness()`) and exports telemetry (`WithIntelligenceTelemetry()`).
 
-## How the pieces fit
+## How it fits together
 
 ```mermaid
 flowchart TB
-    subgraph App["Application project"]
-        H[Handler]
-    end
+    H["Application handler"]
     subgraph Abs["SharedKernel.AI.Abstractions"]
-        EG[IEmbeddingGenerator]
+        EG["IEmbeddingGenerator"]
         VC["IVectorCollection&lt;TRecord&gt;"]
-        VP[IVectorCollectionProvisioner]
-        SK[ISemanticKernel]
+        SK["ISemanticKernel"]
     end
-    subgraph Infra["Infrastructure / host"]
-        SKP[SharedKernel.AI.SemanticKernel]
-        QP[SharedKernel.AI.Qdrant]
-    end
+    SKP["SharedKernel.AI.SemanticKernel"]
+    QP["SharedKernel.AI.Qdrant"]
     H --> EG
     H --> VC
     H --> SK
     SKP -. implements .-> EG
     SKP -. implements .-> SK
     QP -. implements .-> VC
-    QP -. implements .-> VP
-    SKP --> OAI[(OpenAI-compatible endpoint)]
-    QP --> QD[(Qdrant v1.16+ over gRPC)]
-    QP --> PR["vector-store-qdrant-{collection}<br/>readiness probes"]
+    SKP --> OAI[("OpenAI-compatible endpoint")]
+    QP --> QD[("Qdrant over gRPC")]
 ```
+
+- **Model identity is checked first.** Writes and queries are compared with the collection's embedding model,
+  dimension and distance metric before any I/O; a mismatch is `intelligence.embedding_model_mismatch` or
+  `intelligence.dimension_mismatch`, not confidently wrong neighbours.
+- **The tenant is never part of the query.** A tenant-declaring collection called with `TenantScope.Global` fails
+  `intelligence.tenant_scope_missing` and sends nothing; writes stamp the tenant, reads filter by it outermost.
+- **The kernel never runs your tools.** Tool calls come back as `CompletionFinishReason.ToolCallsRequested`; no
+  completion is cached, and the only retry (`.WithBoundedRetry(...)`) is for HTTP 429/5xx on non-streaming calls.
+- **The providers never reference each other.** Provider-only contracts (`IQdrantHybridQueryAccessor<TRecord>`,
+  `IKernelPluginAccessor`) live in their package, so removing a provider fails the build at every non-portable call.
 
 ## Get started
 
-Register both providers in the host:
+```xml
+<PackageReference Include="SharedKernel.AI.Abstractions" />     <!-- Application -->
+<PackageReference Include="SharedKernel.AI.Qdrant" />           <!-- Infrastructure -->
+<PackageReference Include="SharedKernel.AI.SemanticKernel" />   <!-- Infrastructure -->
+```
 
 ```csharp
-using SharedKernel.AI.Abstractions.Models;
-using SharedKernel.AI.Qdrant.Extensions;
-using SharedKernel.AI.SemanticKernel.Extensions;
-using SharedKernel.Primitives.Clocks;
-using SharedKernel.ServiceDefaults.HealthChecks;
-
 builder.Services.AddClock();
 
-builder.Services
-    .AddSharedKernelSemanticKernel(builder.Configuration)            // Intelligence:SemanticKernel
-    .Build();
+builder.Services.AddSharedKernelSemanticKernel(builder.Configuration).Build();   // Intelligence:SemanticKernel
 
 builder.Services
-    .AddSharedKernelQdrant(builder.Configuration)                    // Intelligence:Qdrant
-    .AddCollection<ProductChunk>("product-chunks", c => c
-        .EmbeddingModel("text-embedding-3-small", dimension: 1536)
-        .DistanceMetric(VectorDistanceMetric.Cosine)
-        .Field("tenantId", VectorFieldKind.String, filterable: true)
-        .Field("status", VectorFieldKind.String, filterable: true)
-        .TenantField("tenantId"))
+    .AddSharedKernelQdrant(builder.Configuration)                                // Intelligence:Qdrant
+    .AddCollection<ProductChunk>(ProductChunkCollection.Name, ProductChunkCollection.Configure)
     .Build();
 
-builder.Services.AddHealthChecks().AddSharedKernelReadiness();     // vector-store-qdrant-product-chunks
-```
+builder.Services.AddHealthChecks().AddSharedKernelReadiness();   // vector-store-qdrant-product-chunks
 
-```json
+// In a handler: embed the question, then query within the caller's tenant
+var embedded = await embeddings.EmbedAsync(question, ct);
+if (embedded.IsFailure) return Result<VectorQueryResults<ProductChunk>>.Failure(embedded.Error);
+
+var query = new VectorQuery
 {
-  "Intelligence": {
-    "SemanticKernel": {
-      "ApiKey": "…",
-      "ChatModelId": "gpt-4o-mini",
-      "EmbeddingModelId": "text-embedding-3-small"
-    },
-    "Qdrant": { "Host": "qdrant" }
-  }
-}
+    Vector = embedded.Value.Vector,
+    ModelId = embedded.Value.ModelId,          // checked against the collection before any I/O
+    Filter = VectorFilter.Eq("status", "active"),
+    Limit = 5,
+};
+return await chunks.QueryAsync(query, TenantScope.For(tenantId), ct);
 ```
 
-Create the collection once with `IVectorCollectionProvisioner.EnsureCollectionAsync` (registration never touches the
-server). Then application code sees only the neutral contracts:
+`ProductChunk` is your record implementing `IVectorRecord`; create its collection once with
+`IVectorCollectionProvisioner.EnsureCollectionAsync` (registration never touches the server). The full setup is in the
+[SharedKernel.AI.Qdrant Quick start](SharedKernel.AI.Qdrant/README.md#quick-start) and the
+[SharedKernel.AI.SemanticKernel Quick start](SharedKernel.AI.SemanticKernel/README.md#quick-start).
 
-```csharp
-using SharedKernel.AI.Abstractions.Abstractions;
-using SharedKernel.AI.Abstractions.Models;
-using SharedKernel.Execution.Tenancy;
-using SharedKernel.Primitives.Results;
+## See it run
 
-public sealed class ProductRetrieval(IEmbeddingGenerator embeddings, IVectorCollection<ProductChunk> chunks)
-{
-    public async Task<Result<VectorQueryResults<ProductChunk>>> FindAsync(
-        TenantId tenantId, string question, CancellationToken ct)
-    {
-        var embedded = await embeddings.EmbedAsync(question, ct);
-        if (embedded.IsFailure)
-        {
-            return Result<VectorQueryResults<ProductChunk>>.Failure(embedded.Error);
-        }
+- [**samples/Shop**](../../../samples/Shop/README.md) — the Catalog service embeds products through Semantic Kernel
+  against Ollama's OpenAI-compatible endpoint (`all-minilm`, `qwen2.5:0.5b`), stores them in Qdrant for semantic search, and
+  drafts product descriptions with the chat model, all under the caller's tenant:
 
-        var query = new VectorQuery
-        {
-            Vector = embedded.Value.Vector,
-            ModelId = embedded.Value.ModelId,                        // checked against the collection before any I/O
-            Filter = VectorFilter.Eq("status", "active"),
-            Limit = 5,
-        };
+  ```bash
+  samples/Shop/build.sh                      # pack the kernel, build the Shop
+  dotnet run --project samples/Shop/Shop.AppHost --launch-profile http
+  ```
 
-        return await chunks.QueryAsync(query, TenantScope.For(tenantId), ct);
-    }
-}
-```
-
-`ProductChunk` is your own record implementing `IVectorRecord` (`Id`, `Vector`, `ModelId`, `Metadata`). To see
-telemetry, call `builder.WithIntelligenceTelemetry()` from `SharedKernel.ServiceDefaults`; it subscribes to the
-`SharedKernel.AI` source and meter.
-
-### Runnable examples
-
-No service under [`samples/`](../../../samples/README.md) uses this domain yet. The two consumer-verify harnesses are the
-smallest complete hosts: [`consumer-verify/Qdrant`](consumer-verify/Qdrant/Program.cs) and
-[`consumer-verify/SemanticKernel`](consumer-verify/SemanticKernel/Program.cs). Each builds a real host from the
-packages, resolves every contract, checks that raw-client hatches stay closed by default, and proves that missing
-configuration fails at startup. Neither needs a live server.
+- [`consumer-verify/Qdrant`](consumer-verify/Qdrant/Program.cs) and
+  [`consumer-verify/SemanticKernel`](consumer-verify/SemanticKernel/Program.cs) are the smallest complete hosts: each
+  resolves every contract from the packed packages and proves missing configuration fails at startup, no server needed.
 
 ## Guarantees
 
-- **A vector is bound to its model.** Writes and queries are checked against the collection's embedding model and
-  dimension before any I/O. A mismatch returns `intelligence.embedding_model_mismatch` or
-  `intelligence.dimension_mismatch` instead of confidently wrong neighbours.
-- **Tenant scope is separate and mandatory.** Every collection call takes `SharedKernel.Execution.Tenancy.TenantScope`.
-  Writes stamp the tenant from it; reads filter by it as the outermost clause. A tenant-declaring collection called
-  with `TenantScope.Global` fails with `intelligence.tenant_scope_missing` and sends nothing.
-- **Cost is visible.** `TokenUsage` is on every embedding and completion result. Nothing retries a completion unless
-  the host calls `.WithBoundedRetry(...)`, and even then only on HTTP 429 or 5xx, never on a stream.
-- **The kernel never runs your tools.** Tool calls come back as `CompletionFinishReason.ToolCallsRequested`; no
-  completion is ever cached.
-- **Expected failures are `Result` values** with stable `intelligence.*` codes. Only `ScrollAsync` and
-  `CompleteStreamingAsync` throw, as `IntelligenceStreamException`, mid-stream.
-- **Content is never logged.** Prompts, completions, retrieved metadata, raw vectors and API keys never appear in a
-  log message or an `Error`.
-- **Misconfiguration fails at startup**, naming the missing option (`Host`, `ApiKey`, …).
-- **`Score` is honest about its scale.** It is provider- and metric-specific (cosine bounded, dot product unbounded,
-  Euclidean smaller-is-better); `Rank` is the portable ordering.
-- **No LLM readiness probe.** The only honest check would be a real, billed completion.
+| Guarantee | How it is held |
+| --- | --- |
+| **A vector is bound to its model** | `QdrantVectorCollectionNoIoTests`: model and dimension mismatches fail on upsert and query with no I/O |
+| **No call without a tenant decision** | `ContractShapeTests`: every read and filtered write takes a non-optional `TenantScope`, and `VectorQuery` has no tenant member |
+| **No cross-tenant results** | `QdrantVectorCollectionConformanceTests` (real Qdrant): an identical vector owned by another tenant is never returned; `GetAsync` with the wrong tenant is `record_not_found` |
+| **Cost is visible** | `SemanticKernelEmbeddingGeneratorTokenUsageTests`: token usage is the provider's reported figure, on every embedding |
+| **No hidden retries, caching or tool runs** | `SemanticKernelOrchestratorTests` and `SemanticKernelOrchestratorStreamingTests`: one dispatch by default, validation never retried, identical requests never cached; `ISemanticKernel` has no invoke-tool member |
+| **Misconfiguration fails at startup** | `QdrantOptionsTests` and `SemanticKernelOptionsTests`: a missing required option (`Host`, …) fails validation naming the property |
+| **Provider-neutral contracts** | `IntelligenceTopologyRules`: Abstractions takes no third-party package, the providers never reference each other, no health-checks dependency; analyzers `SK0026` (raw `QdrantClient`/`Kernel` injection) and `SK0027` (literal identifiers) |
 
-## Testing
+**Out of scope:** tool execution and agent loops, completion caching, prompt sanitisation, corpus re-embedding, and an
+LLM readiness probe (the only honest check would be a real, billed completion).
 
-[`SharedKernel.AI.Testing`](./SharedKernel.AI.Testing/README.md) has an in-memory double for every
-neutral contract: a deterministic embedding generator (vectors derived from a hash of the text), a vector collection
-that applies the same model, dimension and tenant checks as Qdrant, a provisioner, descriptors, and a scripted
-`InMemorySemanticKernel`. No model, network or vector database is needed. The Qdrant adapter's own conformance suite
-runs against a real `qdrant/qdrant:v1.16.0` container.
+---
 
-## For maintainers
-
-Design rules, invariants and the EventId block (10000–10999) are in [`CLAUDE.md`](CLAUDE.md); phase history is in
-[`state-map.md`](state-map.md).
+<div align="center">
+<sub>Part of <a href="../../../README.md">Platform.SharedKernel</a> · <a href="../../../docs/packages.md">all packages</a> · MIT license</sub>
+</div>

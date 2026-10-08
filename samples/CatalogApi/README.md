@@ -1,15 +1,35 @@
+<div align="center">
+
 # CatalogApi
 
-A product catalogue that runs **both** search engines at once: Meilisearch serves the storefront, and
-ElasticSearch serves the back office. It exists to prove the `09.Search` packages work as packed NuGet
-artifacts against real engines — not to be copied wholesale, since most services need one engine.
+**A product catalogue on both search engines at once — Meilisearch for the storefront, Elasticsearch for the back office — through one neutral search contract.**
 
-| Domain | What this sample uses it for |
+<sub>📂 <code>samples/CatalogApi</code> · <a href="../README.md">all samples</a> · needs Meilisearch and Elasticsearch (Docker)</sub>
+
+</div>
+
+## What it shows
+
+- **Two engines, one contract.** `ISearchIndex<ProductDocument>` on Meilisearch and `ISearchIndex<OrderLineDocument>` on
+  Elasticsearch in one host, plus each engine's exclusive contracts — which turn a provider swap into build errors.
+- **Counts you can trust.** A qualified `SearchCount` that says when it is a lower bound rather than an exact number.
+- **Tenant scoping on every read**, including the Elasticsearch completion suggester, with tenants as `TenantId` GUIDs.
+- **Failures as results.** An engine outage is a 503 problem, a timeout a 504, with internal detail only in Development.
+- **Safe index changes.** Text-analysis changes on a live index refused, drift found by `/ops/verify`, and one
+  readiness probe per index.
+- **Stream queries** (`IStreamQuery<T>`, `ISender.CreateStream`) for the two corpus walks.
+
+It exists to prove the search packages work as packed NuGet artifacts against real engines — not to be copied
+wholesale, since most services need one engine.
+
+## Packages it uses
+
+| Package | What this sample uses it for |
 |---|---|
-| `09.Search` (all three packages) | Both providers side by side; the neutral contracts, plus each engine's exclusive ones |
-| `13.ServiceDefaults` (+ `.Security`) | OpenTelemetry, health endpoints, `AddSharedKernelReadiness()` over the per-index probes each provider registers, `AddSharedKernelRequestContext()` + `UseSharedKernelRequestContext()` first in the pipeline (correlation id) |
-| `05.Application` (`SharedKernel.Application.Pipeline` + `.Mediator.MediatR`) | `AddSharedKernelApplication(typeof(Program).Assembly, app => app.UseMediatR())`: every endpoint sends a query or command through the kernel's `ISender`, and only the handlers in `Features/` (`Storefront`, `BackOffice`, `Operations`) touch the engines; the two corpus walks are stream queries (`IStreamQuery<T>`, `ISender.CreateStream`) |
-| `14.Presentation` | `AddSharedKernelWebApi()` + `UseSharedKernelWebApi()` right after the request context; three endpoint modules (`IEndpointModule`, mapped by the generated `app.MapEndpoints()`); `Result<T>` → typed results (`ToOk(…)`); every failure an RFC 9457 problem — an engine outage 503, a timeout 504 |
+| [SharedKernel.Search.Meilisearch](../../src/Infrastructure/Search/SharedKernel.Search.Meilisearch/README.md), [SharedKernel.Search.ElasticSearch](../../src/Infrastructure/Search/SharedKernel.Search.ElasticSearch/README.md) (with [SharedKernel.Search.Abstractions](../../src/Infrastructure/Search/SharedKernel.Search.Abstractions/README.md)) | Both providers side by side; the neutral contracts, plus each engine's exclusive ones — see [Search](../../src/Infrastructure/Search/README.md) |
+| [SharedKernel.ServiceDefaults](../../src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults/README.md), [.Security](../../src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Security/README.md) | OpenTelemetry, health endpoints, `AddSharedKernelReadiness()` over the per-index probes each provider registers, `AddSharedKernelRequestContext()` + `UseSharedKernelRequestContext()` first in the pipeline (correlation id) |
+| [SharedKernel.Application.Pipeline](../../src/Application/SharedKernel.Application.Pipeline/README.md), [.Mediator.MediatR](../../src/Application/SharedKernel.Application.Mediator.MediatR/README.md) | `AddSharedKernelApplication(typeof(Program).Assembly, app => app.UseMediatR())`: every endpoint sends a query or command through the kernel's `ISender`, and only the handlers in `Features/` (`Storefront`, `BackOffice`, `Operations`) touch the engines; the two corpus walks are stream queries (`IStreamQuery<T>`, `ISender.CreateStream`) |
+| [SharedKernel.Presentation.WebApi](../../src/Hosting/Presentation/SharedKernel.Presentation.WebApi/README.md) | `AddSharedKernelWebApi()` + `UseSharedKernelWebApi()` right after the request context; three endpoint modules (`IEndpointModule`, mapped by the generated `app.MapEndpoints()`); `Result<T>` → typed results (`ToOk(…)`); every failure an RFC 9457 problem — an engine outage 503, a timeout 504 |
 
 ## Running it
 

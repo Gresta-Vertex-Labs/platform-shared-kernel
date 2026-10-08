@@ -1,8 +1,43 @@
+<div align="center">
+
 # DocumentsApi
 
-A small file service built on the `08.Storage` packages, and the end-to-end proof that they work against real
-Amazon S3 and Huawei Cloud OBS — not only against MinIO. It also shows `20.Reporting`: exports of a store listing
-as CSV, Excel or PDF, and HTML rendered to PDF by Gotenberg, each streamed into a store and returned as a link.
+**A file service on S3 and Huawei Cloud OBS — streaming, presigned links, multipart and tenant stores — that also streams CSV, Excel and PDF reports into those stores.**
+
+<sub>📂 <code>samples/DocumentsApi</code> · <a href="../README.md">all samples</a> · needs MinIO and Gotenberg (Docker); real S3 and OBS optional</sub>
+
+</div>
+
+## What it shows
+
+- **Named and tenant stores.** Three stores on three connections (two S3 IAM users and OBS), one tenant-scoped through
+  `ITenantFileStorage.ForTenant(TenantId)`, each with its own readiness probe.
+- **Files that never sit in memory.** Streaming upload and download, ranges, SHA-256 checksums, copies across
+  providers, presigned links and forms, and presigned multipart uploads.
+- **Preconditions over HTTP.** `If-None-Match`/`If-Match` failures answered 412, the same conflict without a header 409.
+- **Reports streamed into storage.** A store listing exported as CSV, Excel or PDF picked at runtime
+  (`IReportExporterFactory`), and HTML rendered to PDF by Gotenberg (`IHtmlToPdfConverter`).
+- **Proven against the real clouds.** The same scenarios run against MinIO by default and against Amazon S3 and OBS
+  when `SK_LIVE_*` credentials are set.
+
+**Packages it uses:**
+[SharedKernel.Storage.S3](../../src/Infrastructure/Storage/SharedKernel.Storage.S3/README.md) ·
+[SharedKernel.Storage.Obs](../../src/Infrastructure/Storage/SharedKernel.Storage.Obs/README.md) ·
+[SharedKernel.Reporting.Csv](../../src/Infrastructure/Reporting/SharedKernel.Reporting.Csv/README.md) ·
+[SharedKernel.Reporting.Spreadsheet](../../src/Infrastructure/Reporting/SharedKernel.Reporting.Spreadsheet/README.md) ·
+[SharedKernel.Reporting.Pdf](../../src/Infrastructure/Reporting/SharedKernel.Reporting.Pdf/README.md) ·
+[SharedKernel.Reporting.Gotenberg](../../src/Infrastructure/Reporting/SharedKernel.Reporting.Gotenberg/README.md) ·
+[SharedKernel.Application.Pipeline](../../src/Application/SharedKernel.Application.Pipeline/README.md) ·
+[SharedKernel.Application.Mediator.MediatR](../../src/Application/SharedKernel.Application.Mediator.MediatR/README.md) ·
+[SharedKernel.ServiceDefaults](../../src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults/README.md) ·
+[SharedKernel.ServiceDefaults.Security](../../src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Security/README.md) ·
+[SharedKernel.Presentation.WebApi](../../src/Hosting/Presentation/SharedKernel.Presentation.WebApi/README.md)
+
+Capabilities: [Storage](../../src/Infrastructure/Storage/README.md) · [Reporting](../../src/Infrastructure/Reporting/README.md) ·
+[Application](../../src/Application/README.md) · [Service defaults](../../src/Hosting/ServiceDefaults/README.md) ·
+[Presentation](../../src/Hosting/Presentation/README.md)
+
+## The stores
 
 | Store | Kind | Connection | What it shows |
 | --- | --- | --- | --- |

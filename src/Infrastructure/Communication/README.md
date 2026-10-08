@@ -2,143 +2,152 @@
 
 # SharedKernel Communication
 
-**Outbound service-to-service calls: typed REST and gRPC clients configured from `appsettings.json`, resilient by
-default, that carry the caller to the next service and return `Result` instead of throwing.**
+**Outbound service-to-service calls for .NET services — typed REST and gRPC clients configured from
+`appsettings.json`, resilient without repeating side effects, that carry the caller to the next service and return
+`Result` instead of throwing.**
 
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](../../../LICENSE)
 ![Packages: 3](https://img.shields.io/badge/packages-3-informational)
+![Tier: Adapter](https://img.shields.io/badge/tier-Adapter-6f42c1)
+![Tier: Testing](https://img.shields.io/badge/tier-Testing-e36209)
+[![Http.Resilience](https://img.shields.io/badge/Microsoft.Extensions.Http.Resilience-10.7-512BD4)](https://learn.microsoft.com/dotnet/core/resilience/http-resilience)
+[![ServiceDiscovery](https://img.shields.io/badge/Microsoft.Extensions.ServiceDiscovery-10.7-512BD4)](https://learn.microsoft.com/dotnet/core/extensions/service-discovery)
+[![Grpc.Net.Client](https://img.shields.io/badge/Grpc.Net.Client-2.80-244c5a)](https://github.com/grpc/grpc-dotnet)
 
-<sub>📂 <code>src/Infrastructure/Communication</code> · domain <code>11.Communication</code> · <a href="../../../docs/packages.md">all packages by tier</a></sub>
+[What you get](#what-you-get) · [Packages](#packages) · [How it fits together](#how-it-fits-together) · [Get started](#get-started) · [See it run](#see-it-run) · [Guarantees](#guarantees)
+
+<sub>📂 <code>src/Infrastructure/Communication</code> · <a href="../../../docs/packages.md">all packages by tier</a> · <a href="../../../README.md">Platform.SharedKernel</a></sub>
 
 </div>
 
-A service calling another service needs the same things every time: an address that works on a laptop and in a
-Kubernetes cluster; retries, timeouts and a circuit breaker that never repeat a side effect; credentials; a
-correlation id so both sides' logs join up; the tenant and actor so the next service can authorise; and a failure that
-arrives as the other service's own error. These packages do all of that once, at the composition root, so a typed
-client method is one line.
+---
 
-## What this domain gives you
+## What you get
 
-- **One registration, settings in configuration** — `AddSharedKernelCommunication(configuration)` plus one
+- **One registration, settings in configuration.** `AddSharedKernelCommunication(configuration)` plus one
   `AddRestClient`/`AddGrpcClient` per service; every client's address, timeouts, retries and credentials live under
   `SharedKernel:Communication:Clients:{name}` and are validated when the host starts.
-- **Service discovery** through `Microsoft.Extensions.ServiceDiscovery` — configuration (Aspire), Kubernetes DNS or DNS
-  SRV, round-robin per request.
-- **Safe resilience** — Microsoft.Extensions.Http.Resilience for REST, gRPC's own retry policy for gRPC; a POST or
-  PATCH is retried only with an `Idempotency-Key`.
-- **Outbound credentials** — OAuth 2.0 client credentials, API key, your own `IAccessTokenProvider`, mutual TLS.
-- **The caller travels** — correlation id, tenant, actor and client from `IRequestContextAccessor`, whether the call
-  starts in an HTTP request, a message consumer, a workflow activity or a scheduled job.
-- **Errors round-trip** — ProblemDetails and rich gRPC statuses become the called service's `Error`; a call that got
-  no answer is `communication.unreachable`, `.timeout` or `.circuit_open`.
+- **Addresses that work everywhere.** Service discovery through `Microsoft.Extensions.ServiceDiscovery` —
+  configuration (the shape Aspire emits), Kubernetes DNS or DNS SRV, resolved per attempt.
+- **Resilience that never repeats a side effect.** `Microsoft.Extensions.Http.Resilience` for REST, the channel retry
+  policy for gRPC; a POST or PATCH is retried only with an `Idempotency-Key`.
+- **The caller travels.** Correlation id, tenant, actor and client from `IRequestContextAccessor` go on every call,
+  whether it starts in an HTTP request, a message consumer, a workflow activity or a scheduled job.
+- **Errors round-trip.** ProblemDetails and rich gRPC statuses become the called service's own `Error`; a call with no
+  answer is `communication.unreachable`, `.timeout` or `.circuit_open` (`CommunicationErrorCodes`).
 
 ## Packages
 
-| Package | Tier | When you need it |
-| --- | --- | --- |
-| [`SharedKernel.Communication`](SharedKernel.Communication/README.md) | Adapter | The shared base — service discovery, credentials, mTLS, `communication.*` codes. Comes with the two below |
-| [`SharedKernel.Communication.Rest`](SharedKernel.Communication.Rest/README.md) | Adapter | You call another service over HTTP/JSON: `AddRestClient<IClient, Client>(name)`, `GetResultAsync`/`PostResultAsync` |
-| [`SharedKernel.Communication.Grpc`](SharedKernel.Communication.Grpc/README.md) | Adapter | You call another service over gRPC: `AddGrpcClient<T>(name)`, `ToResultAsync()`, `google.type.Money` ↔ `Money` |
+| Package | Tier | Reference it from | Use it for |
+| --- | --- | --- | --- |
+| [SharedKernel.Communication](SharedKernel.Communication/README.md) | Adapter | Infrastructure | The shared base: service discovery, outbound credentials (client credentials, API key, `IAccessTokenProvider`), mutual TLS, `communication.*` codes |
+| [SharedKernel.Communication.Rest](SharedKernel.Communication.Rest/README.md) | Adapter | Infrastructure | Typed `HttpClient`s: `AddRestClient<IClient, Client>(name)`, `GetResultAsync`/`PostResultAsync` → `Result<T>` |
+| [SharedKernel.Communication.Grpc](SharedKernel.Communication.Grpc/README.md) | Adapter | Infrastructure | Typed gRPC clients: `AddGrpcClient<T>(name)`, `call.ToResultAsync()`, `google.type.Money` ↔ `Money` |
+| [SharedKernel.Communication.Testing](SharedKernel.Communication.Testing/README.md) | Testing | test projects | `StubHttpMessageHandler`, `GrpcCalls`, `TestServerCallContext` — the real client pipeline without a network |
 
-All three go into a service's **Infrastructure** project and reference nothing from ASP.NET Core. Test doubles live in
-[`SharedKernel.Communication.Testing`](./SharedKernel.Communication.Testing/README.md)
-(`StubHttpMessageHandler`, `GrpcCalls`, `TestServerCallContext`). Server-side conventions — the ProblemDetails and rich
-statuses these clients read back — live in [`14.Presentation`](../../Hosting/Presentation/README.md).
+Reference Rest or Grpc (or both) from the Infrastructure project; each brings the base with it. Nothing here
+references ASP.NET Core. The server side of the same contracts — ProblemDetails and rich statuses — is in
+[Presentation](../../Hosting/Presentation/README.md).
 
-## How a call travels
-
-The call path of the sample: CheckoutApi reserves stock over REST and reads it over gRPC from InventoryApi.
+## How it fits together
 
 ```mermaid
-sequenceDiagram
-    autonumber
-    participant H as CheckoutApi handler
-    participant C as InventoryClient / Inventory.InventoryClient
-    participant P as Client pipeline
-    participant I as InventoryApi
-    H->>C: ReserveAsync(sku, qty) / GetStockAsync(...)
-    C->>P: request
-    Note over P: once per call — caller headers<br/>(X-Correlation-Id, X-Tenant-Id, x-sk-actor-*),<br/>Idempotency-Key on POST, gRPC deadline
-    Note over P: per attempt — timeout, retry / breaker,<br/>API key or bearer token, service discovery
-    P->>I: HTTP POST /reservations · gRPC GetStock
-    Note over I: UseSharedKernelRequestContext()<br/>rebuilds the caller from the same headers
-    I-->>P: 2xx body · ProblemDetails · rich status
-    P-->>C: response
-    C-->>H: Result<T> — the body, InventoryApi's own Error,<br/>or communication.unreachable / timeout
+flowchart LR
+    H["Typed client method<br/>ReserveAsync · GetStockAsync"]
+    subgraph Pipe["Client pipeline"]
+        Once["Once per call<br/>caller headers · Idempotency-Key · gRPC deadline"]
+        Attempt["Per attempt<br/>timeout · retry · breaker<br/>credentials · service discovery"]
+    end
+    Ctx["IRequestContextAccessor"]
+    Svc[("Called service")]
+    H --> Once --> Attempt --> Svc
+    Ctx -. caller .-> Once
+    Svc -->|"2xx body · ProblemDetails · rich status"| R["Result&lt;T&gt;<br/>body, the service's Error,<br/>or communication.*"]
 ```
+
+- **Headers once, attempts many.** Propagation and the idempotency key sit outside the resilience handler, so every
+  retry carries the same correlation id and key; credentials and the address are resolved per attempt, so a retry
+  can reach another pod with a fresh token.
+- **Caller-supplied values win.** A header, metadata entry, `Authorization` or deadline you set is never overwritten.
+- **Only your own cancellation throws.** Unreachable, timed out, circuit open and no access token are all `Error`
+  values; the correlation id is the caller's end to end, never `Activity.Id`.
+- **The host opens the context.** `AddSharedKernelRequestContext()` + `app.UseSharedKernelRequestContext()`
+  ([ServiceDefaults](../../Hosting/ServiceDefaults/README.md)) supply the caller; `WithCommunicationTelemetry()` adds
+  outbound spans and resilience metrics.
 
 ## Get started
 
-Reference the protocol package from your Infrastructure project:
-
 ```xml
-<PackageReference Include="SharedKernel.Communication.Rest" />
+<PackageReference Include="SharedKernel.Communication.Rest" />   <!-- Infrastructure -->
+<PackageReference Include="SharedKernel.Communication.Grpc" />   <!-- Infrastructure, if you call over gRPC -->
 ```
 
-Register the client and write it as one line per call:
-
 ```csharp
-using SharedKernel.Communication;
-using SharedKernel.Primitives.Results;
-
-builder.Services.AddSharedKernelCommunication(builder.Configuration)
-    .AddRestClient<IInventoryClient, InventoryClient>("inventory");
+builder.Services.AddSharedKernelCommunication(builder.Configuration)   // SharedKernel:Communication:Clients:{name}
+    .AddRestClient<IInventoryClient, InventoryClient>("inventory")
+    .AddGrpcClient<Inventory.InventoryClient>("inventory-grpc");
 
 public sealed class InventoryClient(HttpClient http) : IInventoryClient
 {
-    public Task<Result<InventoryReservation>> ReserveAsync(string sku, int quantity, CancellationToken ct) =>
-        http.PostResultAsync<ReserveRequest, InventoryReservation>(
-            "reservations", new ReserveRequest(sku, quantity), cancellationToken: ct);
+    public Task<Result<Reservation>> ReserveAsync(ReserveRequest request, CancellationToken ct) =>
+        http.PostResultAsync("reservations", request,
+            InventoryJson.Default.ReserveRequest, InventoryJson.Default.Reservation, ct);
+}
+
+public sealed class StockReader(Inventory.InventoryClient client)
+{
+    public Task<Result<StockReply>> GetAsync(string sku, CancellationToken ct) =>
+        client.GetStockAsync(new GetStockRequest { Sku = sku }, cancellationToken: ct).ToResultAsync(ct);
 }
 ```
 
 ```json
 {
-  "SharedKernel": {
-    "Communication": {
-      "Clients": {
-        "inventory": { "BaseAddress": "http://inventory", "PropagateIdempotencyKey": true }
-      }
-    }
-  },
+  "SharedKernel": { "Communication": { "Clients": {
+    "inventory": { "BaseAddress": "http://inventory", "PropagateIdempotencyKey": true },
+    "inventory-grpc": { "Address": "http://_grpc.inventory", "Deadline": "00:00:05" } } } },
   "Services": { "inventory": { "http": [ "http://localhost:5080" ] } }
 }
 ```
 
-For the caller to travel, the host opens a request context — `AddSharedKernelRequestContext()` and
-`app.UseSharedKernelRequestContext()` from
-[`SharedKernel.ServiceDefaults.Security`](../../Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Security/README.md) — and
-`builder.WithCommunicationTelemetry()` adds outbound spans and resilience metrics.
+Credentials, TLS, hedging and every option are in the
+[SharedKernel.Communication.Rest Quick start](SharedKernel.Communication.Rest/README.md#quick-start), the
+[SharedKernel.Communication.Grpc Quick start](SharedKernel.Communication.Grpc/README.md#quick-start) and the
+[SharedKernel.Communication](SharedKernel.Communication/README.md#quick-start) base README.
 
-## The sample
+## See it run
 
-[`samples/CheckoutApi`](../../../samples/CheckoutApi//) → [`samples/InventoryApi`](../../../samples/InventoryApi//) are two services
-talking over both protocols:
+[**samples/CheckoutApi**](../../../samples/CheckoutApi/README.md) → [**samples/InventoryApi**](../../../samples/InventoryApi/)
+are two services talking over both protocols: CheckoutApi prices over gRPC and reserves over REST, both resolved
+through the `Services` section and both sending InventoryApi's API key. `CheckoutApi.Tests` (no Docker) proves a
+replayed reservation is made once, InventoryApi's 404, 409 and field errors come back unchanged, and an outage is a
+503 rather than an exception. After packing the kernel:
 
-- CheckoutApi registers `inventory` (REST, `http://inventory`, `PropagateIdempotencyKey`) and `inventory-grpc` (gRPC,
-  `http://_grpc.inventory`), both resolved through the `Services` section and both sending InventoryApi's API key.
-- InventoryApi authenticates the key (`SharedKernel.Security.ApiKey`), rebuilds the caller with
-  `UseSharedKernelRequestContext()`, and answers errors as RFC 9457 problems over REST and rich statuses over gRPC.
-- `CheckoutApi.Tests` runs the scenarios end to end: a retried reservation made once, no stock arriving as the
-  inventory's 409, a bad quantity as its field error, an unknown SKU as the 404 from its gRPC status, the inventory
-  down as a 503 rather than an exception, and the caller's correlation id and idempotency key reaching the inventory.
+```bash
+dotnet run --project samples/InventoryApi -p:SharedKernelPackageVersion=$V --environment Development
+dotnet run --project samples/CheckoutApi -p:SharedKernelPackageVersion=$V --environment Development
+```
 
 ## Guarantees
 
-- **Settings are validated at startup.** A missing address, a total timeout shorter than an attempt, a breaker window
-  too short for its timeout, a missing certificate file: the host does not start, and says why.
-- **Retries never repeat a side effect.** POST and PATCH are retried or hedged only with an `Idempotency-Key`; gRPC
-  retries only calls the service has not answered.
-- **Every switch is real.** `MaxRetryAttempts = 0` means one attempt; `CircuitBreaker:Enabled = false` means no breaker.
-- **Caller-supplied values win.** A header, metadata entry, `Authorization` or deadline you set is never overwritten.
-- **No exceptions for a failed call.** Unreachable, timed out, circuit open, no token: `Error` values. Only the
-  caller's own cancellation throws.
-- **The correlation id is the caller's**, end to end — never `Activity.Id`.
-- **Secrets stay out of logs.** Event ids 11000–11999 (base 11000–11099, Grpc 11100–11199, Rest 11200–11299); tokens
-  and secrets are never logged.
+| Guarantee | How it is held |
+| --- | --- |
+| **Retries never repeat a side effect** | `RestPipelineTests`: a failed POST is not retried without an idempotency key, one key spans its retries, hedging never races a POST |
+| **Every switch is real** | `RestPipelineTests`: zero retries means one attempt, a disabled circuit never opens |
+| **The caller travels, once** | `RestPipelineTests` and `GrpcClientTests`: the caller rides on every request; a call without one keeps one new correlation id across retries |
+| **Caller-supplied values win** | `A_header_the_request_has_is_kept`, `Metadata_the_call_carries_is_kept`, `A_request_with_its_own_authorization_keeps_it`, `Every_call_gets_the_configured_deadline_unless_it_sets_its_own` |
+| **Failures are values** | `HttpResultTests` and `GrpcClientTests`: unreachable, past-deadline and no-token calls are `Error`s; only the caller's cancellation throws. `ProblemDetailsDeserializerTests`: the code is never taken from `title` or `type` |
+| **Bad settings stop the host** | `ClientOptionsValidationTests` and `RestClientRegistrationTests`: a missing address or invalid settings fail at startup, naming the setting |
+| **Secrets stay out of logs** | `A_token_never_prints_its_value`; `LoggingEventIdIntegrityRealAssemblyTests` keeps every event id in the Communication range |
+| **Clean layering** | `CommunicationLayeringRules`: gRPC never references the Contracts package and interceptors live only in `SharedKernel.Communication.Grpc`; analyzer `SK0013` flags a raw `HttpClient` constructor outside a typed client |
+
+**Out of scope:** inbound middleware and server conventions ([Presentation](../../Hosting/Presentation/README.md)),
+bus publishing ([Messaging](../Messaging/README.md)), and calls to parties outside the platform
+([Integration](../Integration/README.md)).
 
 ---
 
-For maintainers: rules in [`CLAUDE.md`](CLAUDE.md), phase history in [`state-map.md`](state-map.md).
+<div align="center">
+<sub>Part of <a href="../../../README.md">Platform.SharedKernel</a> · <a href="../../../docs/packages.md">all packages</a> · MIT license</sub>
+</div>

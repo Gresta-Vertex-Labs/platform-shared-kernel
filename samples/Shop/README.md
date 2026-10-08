@@ -1,9 +1,78 @@
-# Shop — the kernel in a real system
+<div align="center">
+
+# Shop
+
+**The kernel in a real system: a multi-service commerce platform on real infrastructure in containers, orchestrated by a .NET Aspire AppHost.**
+
+<sub>📂 <code>samples/Shop</code> · <a href="../README.md">all samples</a> · needs Docker (about 8 GB of memory)</sub>
+
+</div>
+
+## What it shows
+
+- **Many capabilities in one service.** Catalog combines persistence under row-level security, a two-level cache with a
+  Redis backplane, both search engines, semantic search and a chat model, object storage, feature flags, localization,
+  OIDC sign-in, OpenAPI and GraphQL.
+- **Service-to-service calls over mutual TLS.** Inventory serves gRPC to Ordering behind a certificate allow-list, and
+  REST to merchants.
+- **Coordination across replicas.** Two replicas of each service share cache entries and invalidations, never oversell
+  under SKU locks, and run a scheduled reconciliation job once per occurrence.
+- **Governance as a consumer gets it.** The kernel's analyzers and linter on every project, and Catalog's four-project
+  shape pinned by an architecture test built on the kernel's own rules.
+- **End-to-end flows against the running platform** — sign-in, tenant isolation, permissions, mutual TLS, concurrency.
+
+**Packages it uses** (directly, by project):
+
+- Catalog — [SharedKernel.Domain](../../src/Model/Domain/SharedKernel.Domain/README.md) ·
+  [SharedKernel.Application](../../src/Application/SharedKernel.Application/README.md) ·
+  [.Pipeline](../../src/Application/SharedKernel.Application.Pipeline/README.md) ·
+  [.Pipeline.Caching](../../src/Application/SharedKernel.Application.Pipeline.Caching/README.md) ·
+  [.Mediator.MediatR](../../src/Application/SharedKernel.Application.Mediator.MediatR/README.md) ·
+  [SharedKernel.Persistence.EfCore](../../src/Infrastructure/Persistence/SharedKernel.Persistence.EfCore/README.md) ·
+  [.Npgsql](../../src/Infrastructure/Persistence/SharedKernel.Persistence.Npgsql/README.md) ·
+  [SharedKernel.Caching.FusionCache](../../src/Infrastructure/Caching/SharedKernel.Caching.FusionCache/README.md) ·
+  [SharedKernel.Caching.Redis](../../src/Infrastructure/Caching/SharedKernel.Caching.Redis/README.md) ·
+  [.Redis.Core](../../src/Infrastructure/Caching/SharedKernel.Caching.Redis.Core/README.md) ·
+  [.Redis.PubSub](../../src/Infrastructure/Caching/SharedKernel.Caching.Redis.PubSub/README.md) ·
+  [SharedKernel.Search.Meilisearch](../../src/Infrastructure/Search/SharedKernel.Search.Meilisearch/README.md) ·
+  [.ElasticSearch](../../src/Infrastructure/Search/SharedKernel.Search.ElasticSearch/README.md) ·
+  [SharedKernel.AI.Qdrant](../../src/Infrastructure/AI/SharedKernel.AI.Qdrant/README.md) ·
+  [.SemanticKernel](../../src/Infrastructure/AI/SharedKernel.AI.SemanticKernel/README.md) ·
+  [SharedKernel.Storage.S3](../../src/Infrastructure/Storage/SharedKernel.Storage.S3/README.md) ·
+  [SharedKernel.FeatureManagement](../../src/Foundation/SharedKernel.FeatureManagement/README.md) ·
+  [SharedKernel.Localization](../../src/Foundation/SharedKernel.Localization/README.md) ·
+  [SharedKernel.Cryptography](../../src/Foundation/SharedKernel.Cryptography/README.md) ·
+  [SharedKernel.Validation.FluentValidation](../../src/Foundation/SharedKernel.Validation.FluentValidation/README.md) ·
+  [SharedKernel.Security.Oidc](../../src/Hosting/Security/SharedKernel.Security.Oidc/README.md) ·
+  [SharedKernel.ServiceDefaults](../../src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults/README.md) ·
+  [.Security](../../src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Security/README.md) ·
+  [.Localization](../../src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Localization/README.md) ·
+  [SharedKernel.Presentation.WebApi](../../src/Hosting/Presentation/SharedKernel.Presentation.WebApi/README.md) ·
+  [.OpenApi](../../src/Hosting/Presentation/SharedKernel.Presentation.OpenApi/README.md) ·
+  [.GraphQL](../../src/Hosting/Presentation/SharedKernel.Presentation.GraphQL/README.md)
+- Inventory — [SharedKernel.Persistence.Npgsql](../../src/Infrastructure/Persistence/SharedKernel.Persistence.Npgsql/README.md) ·
+  [.Dapper](../../src/Infrastructure/Persistence/SharedKernel.Persistence.Dapper/README.md) ·
+  [SharedKernel.Caching.Redis.Core](../../src/Infrastructure/Caching/SharedKernel.Caching.Redis.Core/README.md) ·
+  [.Redis.HashStore](../../src/Infrastructure/Caching/SharedKernel.Caching.Redis.HashStore/README.md) ·
+  [.Redis.DistributedLocking](../../src/Infrastructure/Caching/SharedKernel.Caching.Redis.DistributedLocking/README.md) ·
+  [SharedKernel.Scheduling](../../src/Infrastructure/Scheduling/SharedKernel.Scheduling/README.md) ·
+  [SharedKernel.Security.Mtls](../../src/Hosting/Security/SharedKernel.Security.Mtls/README.md) ·
+  [SharedKernel.ServiceDefaults.Security.Mtls](../../src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Security.Mtls/README.md) ·
+  [SharedKernel.MultiTenancy](../../src/Hosting/ServiceDefaults/SharedKernel.MultiTenancy/README.md) ·
+  [SharedKernel.Presentation.Grpc](../../src/Hosting/Presentation/SharedKernel.Presentation.Grpc/README.md),
+  plus the Application, Oidc, ServiceDefaults and WebApi packages above
+- Every project — [SharedKernel.Analyzers](../../tools/Governance/SharedKernel.Analyzers/README.md) ·
+  [SharedKernel.Linter](../../tools/Governance/SharedKernel.Linter/README.md); tests add
+  [SharedKernel.ArchitectureTests](../../tools/Governance/SharedKernel.ArchitectureTests/README.md),
+  [SharedKernel.Testing](../../src/Testing/SharedKernel.Testing/README.md) and the capability fakes
+  (see [Testing](../../src/Testing/README.md))
+
+## About it
 
 A commerce platform built only from SharedKernel packages, consumed the way an outside service consumes them:
 `PackageReference` to the packages packed from this checkout. Every service runs against real infrastructure in
-containers, local stand-ins only, orchestrated by a .NET Aspire AppHost. Its purpose is to prove the packages work
-together, and it has already found kernel bugs that unit tests did not.
+containers, local stand-ins only. Its purpose is to prove the packages work together, and it has already found kernel
+bugs that unit tests did not.
 
 > **Status.** The platform is being built service by service. It contains the AppHost, Catalog, Inventory and the
 > end-to-end harness; Ordering, Billing, Notify, Reports and Merchant follow, and then the older samples are retired. `Shop.Coverage.Tests` reports which kernel packages are not used yet.

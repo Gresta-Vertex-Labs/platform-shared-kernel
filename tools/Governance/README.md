@@ -2,64 +2,80 @@
 
 # SharedKernel Governance
 
-**Automated guardrails for Platform.SharedKernel — conventions that fail the build, not the code review.**
+**The kernel's conventions as checks that fail the build, with the fix in the message — so a rule holds in every service, not only in the code a reviewer happened to read.**
 
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](../../LICENSE)
+![Packages: 3](https://img.shields.io/badge/packages-3-informational)
+![Analyzer rules: 45](https://img.shields.io/badge/analyzer%20rules-45-informational)
 ![Tier: Tooling](https://img.shields.io/badge/tier-Tooling-6a737d)
-![Analyzer rules: 44](https://img.shields.io/badge/analyzer%20rules-44-informational)
-![Architecture rules: 79](https://img.shields.io/badge/architecture%20rules-79-informational)
+![Roslyn: 4.14](https://img.shields.io/badge/Roslyn-4.14-512BD4)
+![NetArchTest: 1.3](https://img.shields.io/badge/NetArchTest-1.3-informational)
+![CSharpier: 1.3](https://img.shields.io/badge/CSharpier-1.3-informational)
 
-<sub>📂 <code>tools/Governance</code> · domain <code>00.Governance</code> · <a href="../../docs/packages.md">all packages by tier</a></sub>
+[What you get](#what-you-get) · [Packages](#packages) · [How it fits together](#how-it-fits-together) · [Get started](#get-started) · [See it run](#see-it-run) · [Guarantees](#guarantees)
+
+<sub>📂 <code>tools/Governance</code> · <a href="../../docs/packages.md">all packages by tier</a> · <a href="../../README.md">Platform.SharedKernel</a></sub>
 
 </div>
 
-A shared kernel only stays coherent while every service follows the same rules: inject `IClock` instead of reading the
-clock, never discard a `Result`, keep the domain free of persistence, never log personal data unmasked. Written down,
-such rules get broken one reviewer blind spot at a time. This folder turns each of them into a check that fails where
-the rule is broken, with a message that names the fix. None of it adds a runtime dependency to your service.
+---
 
-## What governance gives you
+## What you get
 
-| Check | Runs in | Catches |
-| --- | --- | --- |
-| **Analyzers** (`SharedKernel.Analyzers`) | IDE and every `dotnet build` | One line of code: a clock read, a discarded `Result`, a magic header name, an unmasked PII log argument |
-| **Tier check** (MSBuild, `eng/SharedKernelTiers.targets`) | Every build of this repository, before compile | A package referencing a tier it may not (`SKTIER000`–`SKTIER006`), such as ASP.NET Core below the Host tier |
-| **Architecture tests** (`SharedKernel.ArchitectureTests`) | Your test suite | Whole assemblies: domain purity, provider isolation, what a method body does in IL |
-| **Linter** (`SharedKernel.Linter`) | CI builds | Unformatted files, via a pinned CSharpier and the shared `.editorconfig` |
+- **Conventions as compiler warnings.** 45 Roslyn rules (`SK0001`–`SK0708`) flag a clock read instead of `IClock`, a
+  discarded `Result`, a magic header name, `ILogger.LogXxx` instead of `[LoggerMessage]`, or personal data logged
+  unmasked — in the IDE and on every `dotnet build`, each with a help link to the fix.
+- **Adopt at your own pace.** Every rule defaults to **Warning**; escalate one rule or a whole category (`Security`)
+  to error in `.editorconfig` when the codebase is clean.
+- **Whole-assembly rules as tests.** `SharedKernel.ArchitectureTests` gives rule factories (`DomainLayerPurityRules`,
+  `PersistenceLayerProtectionRules`, `RedisTopologyRules`, …) that return a `ConditionList`, asserted through
+  `ArchitectureRuleBase.AssertRule` — domain purity, provider isolation, and what a method body does in IL.
+- **One format for every repository.** `SharedKernel.Linter` ships the shared `.editorconfig` and a pinned CSharpier
+  check that fails CI builds on unformatted files; `dotnet build -t:SharedKernelLinterFormat` fixes them.
+- **Nothing reaches production.** All three are development dependencies: no runtime assembly, no API, nothing that
+  flows to your service's consumers.
 
 ## Packages
 
-| Package | Tier | When you need it |
-| --- | --- | --- |
-| [SharedKernel.Analyzers](SharedKernel.Analyzers/README.md) | Tooling | Always — reference it from every project (`Directory.Build.props`) |
-| [SharedKernel.ArchitectureTests](SharedKernel.ArchitectureTests/README.md) | Tooling | In an architecture test project, to pin your own layering |
-| [SharedKernel.Linter](SharedKernel.Linter/README.md) | Tooling | When you want formatting enforced on pull requests |
+| Package | Tier | Reference it from | Use it for |
+| --- | --- | --- | --- |
+| [SharedKernel.Analyzers](SharedKernel.Analyzers/README.md) | Tooling | every project (`Directory.Build.props`) | The `SKnnnn` rules in the IDE and the build |
+| [SharedKernel.ArchitectureTests](SharedKernel.ArchitectureTests/README.md) | Tooling | test projects | Pinning your own layering and purity rules over compiled assemblies |
+| [SharedKernel.Linter](SharedKernel.Linter/README.md) | Tooling | every project (`Directory.Build.props`) | The shared `.editorconfig` and the CSharpier format check |
 
-`SharedKernel.Benchmarks` (internal, not published) supplies one BenchmarkDotNet configuration,
-`[SharedKernelBenchmark]`, for this repository's own benchmarks.
+Start with the Analyzers; add the Linter when you want formatting held on pull requests, and an architecture test
+project once your service has layers worth pinning.
 
-## Where each check runs
+## How it fits together
 
 ```mermaid
 flowchart LR
-    ide["IDE<br/>(as you type)"] --> build["dotnet build"] --> test["dotnet test"] --> ci["Pull request CI"]
-
-    an["SharedKernel.Analyzers<br/>SKnnnn warnings"] -.-> ide
+    ide["IDE, as you type"] --> build["dotnet build"] --> test["dotnet test"] --> ci["Pull request CI"]
+    an["SharedKernel.Analyzers: SKnnnn warnings"] -.-> ide
     an -.-> build
-    tier["Tier check (MSBuild)<br/>SKTIER errors — this repo"] -.-> build
-    arch["SharedKernel.ArchitectureTests<br/>NetArchTest + IL rules"] -.-> test
-    lint["SharedKernel.Linter<br/>CSharpier check"] -.-> ci
-    verify["Packed-package consumers<br/>(_verification/)"] -.-> ci
+    tier["Tier check, MSBuild: SKTIER errors"] -.-> build
+    arch["SharedKernel.ArchitectureTests: NetArchTest and IL rules"] -.-> test
+    lint["SharedKernel.Linter: CSharpier check"] -.-> ci
 ```
+
+- **Each check runs where it is cheapest.** A one-line mistake is an analyzer warning while you type; a rule about a
+  whole assembly (no persistence in the domain, one `SaveChanges` call site) is an architecture test; formatting is
+  checked only when `ContinuousIntegrationBuild=true` or `SharedKernelLinterEnforceFormatting=true`.
+- **The tier check is MSBuild, not a package.** Inside this repository `eng/SharedKernelTiers.targets` fails a
+  reference a tier may not take (`SKTIER000`–`SKTIER006`) before compile. A service gets the same layering from its
+  own architecture test, as [`samples/OrderApi`](../../samples/OrderApi/) shows.
+- **Kernel types are matched by name.** The analyzers reference no SharedKernel assembly; they match kernel types by
+  metadata name, so they run in any project, and tests compiled against the real kernel catch a rename.
+- **Rule ids are never reused.** A retired rule keeps a row below, telling you to delete any suppression that names it.
 
 <a id="analyzer-rule-index"></a>
 <a id="rule-reference"></a>
 
-## Rule index
+### Analyzer rule index
 
-Every analyzer diagnostic's IDE help link lands on its row here; the rule ID links to the full entry in the
-[Analyzers README](SharedKernel.Analyzers/README.md#rules). All rules default to **Warning**.
+Every diagnostic's IDE help link lands on its row here; the rule id links to the full entry in the
+[Analyzers README](SharedKernel.Analyzers/README.md#rules).
 
 | Rule | Category | Flags → fix |
 | --- | --- | --- |
@@ -115,36 +131,69 @@ whole assembly); `SK0015`, `SK0019` and `SK0707` are retired and never reused.
 
 ## Get started
 
-1. **Reference the build-time packages** once, in `Directory.Build.props`:
+Reference the build-time packages once, in `Directory.Build.props`, and the rule base in your architecture test project:
 
-   ```xml
-   <Project>
-     <ItemGroup>
-       <PackageReference Include="SharedKernel.Analyzers" PrivateAssets="all" />
-       <PackageReference Include="SharedKernel.Linter" PrivateAssets="all" />
-     </ItemGroup>
-   </Project>
-   ```
+```xml
+<!-- Directory.Build.props -->
+<ItemGroup>
+  <PackageReference Include="SharedKernel.Analyzers" PrivateAssets="all" />
+  <PackageReference Include="SharedKernel.Linter" PrivateAssets="all" />
+</ItemGroup>
 
-   Versions come from your central `SharedKernelVersion` property; see
-   [Using the packages](../../README.md#using-the-packages) for the package feed.
+<!-- YourService.ArchitectureTests.csproj -->
+<PackageReference Include="SharedKernel.ArchitectureTests" />
+```
 
-2. **Build and read the warnings.** Most rules only fire on code that uses what they govern.
-3. **Escalate the security rules** in `.editorconfig`:
-   `dotnet_analyzer_diagnostic.category-Security.severity = error`.
-4. **Add an architecture test project** with `SharedKernel.ArchitectureTests` and adopt rules one at a time — make each
-   fail once on purpose ([quick start](SharedKernel.ArchitectureTests/README.md#quick-start)).
-5. **Format once, then let CI hold the line**: install the shared `.editorconfig`, run
-   `dotnet build -t:SharedKernelLinterFormat` as one commit ([Linter quick start](SharedKernel.Linter/README.md#quick-start)).
+```csharp
+public sealed class ArchitectureTests : ArchitectureRuleBase
+{
+    private static readonly Assembly Domain = typeof(Order).Assembly;
 
-## How the tooling itself is verified
+    [Fact]
+    public void Domain_does_not_read_the_system_clock() =>
+        AssertRule(DomainLayerPurityRules.DomainAssembliesNeverCallSystemClock(Domain));
 
-- Every analyzer and architecture rule has a firing and a non-firing test; analyzer fixtures compile against the real
-  kernel assemblies, and a meta-test fails when a public architecture rule has no test.
-- On every CI run the packages are packed and restored by three standalone consumers in [`_verification/`](_verification);
-  the analyzer consumer's build must report `SK0001`.
-- A test fails the build if any analyzer's help link points to an anchor missing from this page.
+    [Fact]
+    public void Domain_does_not_reference_persistence() =>
+        AssertRule(PersistenceLayerProtectionRules.DomainAssembliesNeverReferencePersistenceStack(Domain));
+}
+```
 
-## For maintainers
+```ini
+# .editorconfig — escalate when ready
+dotnet_analyzer_diagnostic.category-Security.severity = error
+```
 
-Maintainer rules, invariants and decisions: [CLAUDE.md](CLAUDE.md). Phase history: [state-map.md](state-map.md).
+Install the shared style once with `dotnet build -t:InstallSharedKernelLinterConfig -p:SharedKernelLinterConfigDestination=.`
+and format with `dotnet build -t:SharedKernelLinterFormat`. Full setup:
+[Analyzers](SharedKernel.Analyzers/README.md#quick-start) ·
+[ArchitectureTests](SharedKernel.ArchitectureTests/README.md#quick-start) ·
+[Linter](SharedKernel.Linter/README.md#quick-start).
+
+## See it run
+
+- [**Shop**](../../samples/Shop/) — the whole set as a consuming platform uses it: `samples/Shop/Directory.Build.props`
+  puts the Analyzers and the Linter on every project, and `Shop.Catalog.Tests/CatalogArchitectureTests.cs` derives from
+  `ArchitectureRuleBase` to pin the four-project shape and apply the kernel's own domain-purity rules to the Catalog's
+  assemblies. Run it with `samples/Shop/build.sh --test`.
+- [**OrderApi**](../../samples/OrderApi/) — `OrderApi.Tests/ArchitectureTests.cs` asserts the four-project shape against
+  the real restore graph; the template to copy into a new service.
+
+## Guarantees
+
+| Guarantee | How it is held |
+| --- | --- |
+| Every diagnostic's help link opens a section that exists | `HelpLinkReadmeAnchorTests` matches each descriptor's anchor against the `<a id>` anchors on this page |
+| Every analyzer fires on a violation and stays quiet on the fix | Firing and non-firing tests per rule in `SharedKernel.Analyzers.Tests` |
+| A renamed kernel type cannot silently switch an analyzer off | `RealKernelTypeNameTests` compiles fixtures against the real kernel assemblies |
+| Every public architecture rule has been seen failing | `RuleExecutionCoverageTests` fails on a rule no test calls |
+| Rule ids are tracked and never reused | `AnalyzerReleases.Shipped.md` / `.Unshipped.md` (RS2008), retired ids under "Removed Rules" |
+| The kernel's own package graph keeps its tiers, with no cycles | `DependencyGraphRulesTests`, plus `eng/verify-tier-errors.sh` proving SKTIER001/006 still fire |
+| No production package references a Testing package | `TestingPackagesNeverReferencedByProductionTests` |
+| The packed packages work for an outside consumer | Three standalone consumers in [`_verification/`](_verification) restore them in the package dry-run workflow; the analyzer consumer must report `SK0001` |
+
+---
+
+<div align="center">
+<sub>Part of <a href="../../README.md">Platform.SharedKernel</a> · <a href="../../docs/packages.md">all packages</a> · MIT license</sub>
+</div>

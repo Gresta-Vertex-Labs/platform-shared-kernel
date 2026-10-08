@@ -2,92 +2,85 @@
 
 # SharedKernel Security
 
-**Authentication for .NET services that turns every kind of caller into one `IUserContext`.**
+**Authentication for .NET services that turns every kind of caller — a signed-in user, another service, a partner
+with an API key or a client certificate, a background job — into one `IUserContext`, with secure defaults that a later
+registration cannot weaken.**
 
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](../../../LICENSE)
 ![Packages: 5](https://img.shields.io/badge/packages-5-informational)
 ![Tier: Abstractions](https://img.shields.io/badge/tier-Abstractions-1f6feb)
 ![Tier: Host](https://img.shields.io/badge/tier-Host-d73a49)
+[![JwtBearer](https://img.shields.io/badge/JwtBearer-10.0-512BD4)](https://www.nuget.org/packages/Microsoft.AspNetCore.Authentication.JwtBearer)
 
-<sub>📂 <code>src/Hosting/Security</code> · domain <code>12.Security</code> · <a href="../../../docs/packages.md">all packages by tier</a></sub>
+[What you get](#what-you-get) · [Packages](#packages) · [How it fits together](#how-it-fits-together) · [Get started](#get-started) · [See it run](#see-it-run) · [Guarantees](#guarantees)
+
+<sub>📂 <code>src/Hosting/Security</code> · <a href="../../../docs/packages.md">all packages by tier</a> · <a href="../../../README.md">Platform.SharedKernel</a></sub>
 
 </div>
 
-A service is called by people signed in through an identity provider, by other services with client-credentials
-tokens, by partners with API keys or client certificates, and by its own background jobs. Application code should not
-care which. These packages authenticate each kind of caller with secure defaults and give the application one identity
-model to read: who the caller is, which tenant they act for, what they may do, and how recently and strongly they
-signed in.
+---
 
-## What this domain gives you
+## What you get
 
-- **One identity model** — `IUserContext` with `ActorKind` (`User`, `Service`, `System`, `Anonymous`), `TenantId?`,
-  roles, permissions and step-up signals, whatever the scheme.
-- **OIDC bearer tokens from any provider** — Entra ID, External ID, B2C, Auth0, Okta, Keycloak — with the validation
-  rules pinned, DPoP and certificate-bound tokens, and revocation.
-- **Managed API keys** — generated, prefixed, hashed at rest, expiring and revocable — or your own validator.
-- **Mutual TLS** — client certificates, private-CA trust, your validator deciding who the client is.
-- **Session-bound TOTP step-up** — authenticator enrollment, recovery codes, and `amr=otp` for one session and a bounded
-  window.
-- **Order-independent composition** — each scheme brings its own mapper; register them in any order, in one host.
+- **One identity model.** `IUserContext` carries `ActorKind` (`User`, `Service`, `System`, `Anonymous`), `TenantId?`,
+  roles, permissions and step-up signals, whatever scheme authenticated the caller.
+- **OIDC bearer tokens from any provider.** `AddOidcAuthentication(configuration)` works with Entra ID, Auth0, Okta or
+  Keycloak, pins the validation rules, enforces DPoP and certificate-bound tokens, and checks revocation.
+- **Managed API keys.** `AddManagedApiKeyAuthentication<TStore>` generates prefixed, checksummed keys, stores only
+  their SHA-256 hash and honours expiry and revocation — or `AddApiKeyAuthentication<TValidator>()` plugs in your own.
+- **Mutual TLS.** `AddMtlsAuthentication<TValidator>()` lets the framework check the chain and your
+  `IMtlsCertificateValidator` decide who the client is; partner CAs are trusted without accepting self-signed certificates.
+- **Session-bound step-up.** `AddTotpStepUp<…>()` adds authenticator enrollment and recovery codes; a verified code adds
+  `amr=otp` to one sign-in session for a bounded window.
+- **Order-independent composition.** Each scheme brings its own `IUserContextMapper`; register any subset in any order.
 
 ## Packages
 
-| Package | Tier | When you need it |
-| --- | --- | --- |
-| [`SharedKernel.Security.Abstractions`](SharedKernel.Security.Abstractions/README.md) | Abstractions | Code that reads the caller: `IUserContext`, `IUserContextMapper`, `SystemUserContext` for worker hosts |
-| [`SharedKernel.Security.Oidc`](SharedKernel.Security.Oidc/README.md) | Host | Users and client-credentials services with JWT access tokens: `AddOidcAuthentication(configuration)` |
-| [`SharedKernel.Security.ApiKey`](SharedKernel.Security.ApiKey/README.md) | Host | Partners or scripts that cannot run an OAuth flow: `AddManagedApiKeyAuthentication<TStore>(…)` or `AddApiKeyAuthentication<TValidator>()` |
-| [`SharedKernel.Security.Mtls`](SharedKernel.Security.Mtls/README.md) | Host | Partners required to use mutual TLS: `AddMtlsAuthentication<TValidator>()` |
-| [`SharedKernel.Security.Totp`](SharedKernel.Security.Totp/README.md) | Host | A fresh second factor for payouts and settings changes: `AddSharedKernelCryptography(configuration).AddTotpStepUp<TStepUpStore, TRecoveryCodeStore>()` |
+| Package | Tier | Reference it from | Use it for |
+| --- | --- | --- | --- |
+| [SharedKernel.Security.Abstractions](SharedKernel.Security.Abstractions/README.md) | Abstractions | Application | Code that reads the credential itself: `IUserContext`, `IUserContextMapper`, `SystemUserContext` for worker hosts |
+| [SharedKernel.Security.Oidc](SharedKernel.Security.Oidc/README.md) | Host | Api·Worker | Users and client-credentials services with JWT access tokens, DPoP, certificate-bound tokens, revocation |
+| [SharedKernel.Security.ApiKey](SharedKernel.Security.ApiKey/README.md) | Host | Api·Worker | Partners and scripts that cannot run an OAuth flow |
+| [SharedKernel.Security.Mtls](SharedKernel.Security.Mtls/README.md) | Host | Api·Worker | Clients that prove who they are with a certificate |
+| [SharedKernel.Security.Totp](SharedKernel.Security.Totp/README.md) | Host | Api·Worker | A fresh second factor before payouts or settings changes, on top of `.Oidc` |
+| [SharedKernel.Security.Testing](SharedKernel.Security.Testing/README.md) | Testing | test projects | `FakeUserContext`, `SecurityTestContextBuilder`, in-memory key/DPoP/TOTP stores, real DPoP proofs and mTLS certificates |
 
-The Application project references only `SharedKernel.Security.Abstractions` (and usually not even that — handlers
-read `IRequestContext` from `SharedKernel.Execution`). The other packages are referenced by the Api/Worker project.
+Start with `.Oidc` for any caller that holds a token; add `.ApiKey`, `.Mtls` or `.Totp` only for the callers that need
+them. Application handlers usually need none of these — they read `IRequestContext` from `SharedKernel.Execution`.
 
-| Caller | Package |
-| --- | --- |
-| A user signed in through an identity provider | `.Oidc` |
-| Another service using client credentials | `.Oidc` (reported as `ActorKind.Service`) |
-| A partner or script with an API key | `.ApiKey` |
-| A regulated partner using mutual TLS | `.Mtls` |
-| A user confirming a sensitive action with a one-time code | `.Totp` on top of `.Oidc` |
-| A background job, consumer or scheduled task | `.Abstractions` (`SystemUserContext`) |
-
-## How the packages fit together
-
-Each authentication package registers a scheme and an `IUserContextMapper` for it. When code resolves `IUserContext`,
-`UserContextResolver` maps the first authenticated identity whose authentication type has a mapper; an identity from an
-unmapped scheme resolves to anonymous. `AddSharedKernelRequestContext()` (13.ServiceDefaults) then exposes the same
-caller as `IRequestContext` to the application pipeline, persistence and outbound clients.
+## How it fits together
 
 ```mermaid
 flowchart LR
-    A["Authorization: Bearer / DPoP"] --> O["Oidc handler"]
-    K["X-Api-Key"] --> P["ApiKey handler"]
-    C["Client certificate"] --> M["Mtls (Certificate) handler"]
+    A["Authorization: Bearer / DPoP"] --> O["SharedKernel.Security.Oidc"]
+    K["X-Api-Key header"] --> P["SharedKernel.Security.ApiKey"]
+    C["Client certificate"] --> M["SharedKernel.Security.Mtls"]
     O --> I["ClaimsPrincipal"]
     P --> I
     M --> I
-    T["Totp claims transformation<br/>amr=otp for this session"] --> I
+    T["SharedKernel.Security.Totp<br/>amr=otp for this session"] --> I
     I --> R["UserContextResolver<br/>one mapper per scheme"]
-    R --> U["IUserContext<br/>(Abstractions)"]
-    U --> Q["IRequestContext<br/>AddSharedKernelRequestContext()"]
-    Q --> H["[RequirePermission], persistence,<br/>outbound propagation"]
+    R --> U["IUserContext<br/>SharedKernel.Security.Abstractions"]
+    U --> Q["IRequestContext<br/>AddSharedKernelRequestContext"]
+    Q --> H["RequirePermission, persistence,<br/>outbound calls"]
+    IDP[("Identity provider<br/>JWKS")] -.-> O
 ```
 
+- **Unmapped schemes fail closed.** `UserContextResolver` maps the first authenticated identity whose authentication
+  type has a mapper; a cookie or custom handler without one resolves to anonymous.
+- **The caller reaches every layer.** [ServiceDefaults](../ServiceDefaults/README.md)' `AddSharedKernelRequestContext()`
+  exposes the same caller as `IRequestContext` to handlers, repositories, caches and outbound clients.
+- **Endpoint gates live next door.** `[RequireEndpointPermission]`, `[RequireRole]`, `[RequireFreshAuthentication]` and
+  `[RequireAuthenticationMethod]` come from [Presentation](../Presentation/README.md) and read `IUserContext`.
+- **Discovery is lazy.** OIDC signing keys are fetched on the first request; misconfigured options stop startup.
+
 ## Get started
-
-The smallest end-to-end setup: bearer tokens from an OIDC provider, the caller available to endpoints and handlers.
-
-**1. Reference the packages** (the version comes from your central `SharedKernelVersion`):
 
 ```xml
 <PackageReference Include="SharedKernel.Security.Oidc" />
 <PackageReference Include="SharedKernel.ServiceDefaults.Security" />
 ```
-
-**2. Register** in `Program.cs`:
 
 ```csharp
 using SharedKernel.Security.Abstractions;
@@ -102,78 +95,49 @@ var app = builder.Build();
 app.UseSharedKernelRequestContext();                            // first
 app.UseAuthentication();
 app.UseAuthorization();
-```
 
-**3. Configure** `appsettings.json`:
-
-```json
-{
-  "SharedKernel": {
-    "Security": {
-      "Oidc": {
-        "Authority": "https://login.microsoftonline.com/<tenant-id>/v2.0",
-        "Audiences": [ "api://orders" ],
-        "Claims": { "SubjectClaimType": "oid", "TenantClaimType": "tid" }
-      }
-    }
-  }
-}
-```
-
-**4. Use** the caller:
-
-```csharp
 app.MapGet("/me", (IUserContext user) => new { user.ActorKind, user.SubjectId, user.TenantId, user.Permissions })
     .RequireAuthorization();
 ```
 
-Adding API keys, client certificates or TOTP step-up is one more registration each — see the package READMEs. For
-endpoint attributes (`[RequireRole]`, `[RequireEndpointPermission]`, `[RequireFreshAuthentication]`,
-`[RequireAuthenticationMethod]`) use
-[`SharedKernel.Presentation.Core`](../Presentation/SharedKernel.Presentation.Core/README.md); for tenant resolution
-beyond the token's claim, [`SharedKernel.MultiTenancy`](../ServiceDefaults/SharedKernel.MultiTenancy/README.md).
+```json
+{ "SharedKernel": { "Security": { "Oidc": {
+  "Authority": "https://login.microsoftonline.com/<tenant-id>/v2.0",
+  "Audiences": [ "api://orders" ] } } } }
+```
 
-## Samples
+The full setup — claim mapping, DPoP, revocation — is in the
+[SharedKernel.Security.Oidc Quick start](SharedKernel.Security.Oidc/README.md#quick-start); each other scheme is one
+more registration, described in its own README.
 
-- [`samples/InventoryApi`](../../../samples/InventoryApi/README.md) — API key authentication with a custom
-  `IApiKeyValidator` (`ConfiguredApiKeyValidator`) and `AddSharedKernelRequestContext()`.
-- [`samples/OrderApi`](../../../samples/OrderApi/README.md) — the four-project service shape; its host notes where
-  `AddOidcAuthentication(configuration)` replaces the development identity, and its tests cover `[RequirePermission]`.
+## See it run
+
+- [samples/Shop](../../../samples/Shop/README.md) — Catalog and Inventory validate Keycloak tokens with `.Oidc`;
+  Inventory serves Ordering over gRPC with `.Mtls`, a certificate allow-list and a rogue certificate the end-to-end
+  flows prove is refused. `dotnet run --project samples/Shop/Shop.AppHost --launch-profile http` after
+  `samples/Shop/build.sh`.
+- [samples/InventoryApi](../../../samples/InventoryApi/README.md) — API key authentication with a custom
+  `IApiKeyValidator`.
+- [samples/BillingApi](../../../samples/BillingApi/README.md) — reads the caller through `.Abstractions`.
+- `Shop.Inventory.Tests` proves Inventory's certificate allow-list against CA-chained certificates from
+  `SharedKernel.Security.Testing`'s `MtlsTestCertificateBuilder`.
 
 ## Guarantees
 
-- **Fail closed.** A throwing revocation check, DPoP replay cache, API key store or certificate validator rejects the
-  request; an unmapped scheme resolves to anonymous; a missing tenant is `null`, never `Guid.Empty`.
-- **Asymmetric token signatures only.** `none` and HMAC algorithms fail startup; pinned validation settings cannot be
-  weakened by a later `PostConfigure` — the host refuses to start.
-- **Claim names are not renamed.** `sub` stays `sub`; claim types come from configuration.
-- **Ordinal comparisons.** Roles, permissions, scopes and authentication methods are case-sensitive.
-- **Credentials in headers only.** API keys are never read from the query string.
-- **Misconfiguration stops startup.** Options are validated when the host starts, not on the first request.
-- **Scoped identity.** `IUserContext` is resolved per request; a singleton registration is flagged by the architecture
-  tests.
-- **No secrets in logs.** Event ids 12100–12499; tokens, proofs, API keys, certificates and one-time codes are never
-  logged.
-
-| Package | Event ids |
+| Guarantee | How it is held |
 | --- | --- |
-| `.Abstractions` | 12000–12099 (none used) |
-| `.Oidc` | 12100–12199 |
-| `.ApiKey` | 12200–12299 |
-| `.Mtls` | 12300–12399 |
-| `.Totp` | 12400–12499 |
+| Asymmetric token signatures only; `none` and HMAC are refused | `DpopProofValidatorTests` (`ValidateAsync_AlgNone_…`, `…SymmetricAlgorithm_…`), `BearerTokenValidationTests.Authenticate_Hs256TokenWithKnownKey_Returns401` |
+| Pinned validation cannot be weakened by a later `Configure`/`PostConfigure`: the host refuses to start | `BearerTokenValidationTests.StartAsync_ValidationWeakenedAfterPackage_FailsStartupNamingEachSetting`, `MtlsAuthenticationEndToEndTests.StartAsync_AppReplacesEventsInLaterPostConfigure_FailsStartup`, `SecureDefaultsAssertion` |
+| Fail closed: a throwing replay cache, revocation check or certificate validator rejects the request | `DpopAuthenticationTests.Authenticate_ReplayCacheThrows_FailsRequest`, `TokenRevocationAuthenticationTests.Authenticate_CheckThrows_Returns401AndLogsUnavailable`, `MtlsAuthenticationEndToEndTests.Request_ValidatorThrows_IsRejectedNotServerError` |
+| An unmapped scheme or an identity without a subject is anonymous | `UserContextResolverTests` (`Resolve_NoMapperForScheme_ReturnsAnonymous`, …) |
+| Roles, permissions and authentication methods compare ordinally, case-sensitive | `UserContextTests` (`HasRole_CaseOrTextDiffers_ReturnsFalse`, `HasPermission_…`) |
+| API keys come from the header only; a rejected key is logged by id, never by value | `ApiKeyAuthenticationEndToEndTests.Request_KeyInQueryString_IsIgnored`, `…Returns401AndLogsReasonAndKeyIdButNotKey` |
+| `IUserContext` is never a singleton, and DPoP and certificate parsing exist in one package each | Architecture rules `NoSingletonRegistrationOfSecurityContextTypes`, `DpopProofValidationNeverDuplicatedOutsideOidc`, `ClientCertificateAccessNeverDuplicatedOutsideMtls`; analyzer SK0031 |
 
-Test fakes for all five packages — `FakeUserContext`, `SecurityTestContextBuilder`, `DpopTestProofBuilder`,
-`MtlsTestCertificateBuilder`, `InMemoryApiKeyStore`, `InMemoryDpopReplayCache`, `InMemoryTotpStepUpStore`,
-`InMemoryRecoveryCodeStore` — are in [`SharedKernel.Security.Testing`](./SharedKernel.Security.Testing/README.md).
-
-## Reporting a vulnerability
-
-Please do not open a public issue. Report privately through the repository's
-[Security tab](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/security) (**Report a vulnerability**),
-as described in the [security policy](../../../SECURITY.md).
+Found a vulnerability? Report it privately as described in the [security policy](../../../SECURITY.md).
 
 ---
 
-**For maintainers:** rules, traps and couplings are in [`CLAUDE.md`](CLAUDE.md); phase history is in
-[`state-map.md`](state-map.md).
+<div align="center">
+<sub>Part of <a href="../../../README.md">Platform.SharedKernel</a> · <a href="../../../docs/packages.md">all packages</a> · MIT license</sub>
+</div>

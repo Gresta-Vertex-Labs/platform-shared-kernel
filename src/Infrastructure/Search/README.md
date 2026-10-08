@@ -2,173 +2,160 @@
 
 # SharedKernel Search
 
-**Full-text search for multi-tenant .NET services. Meilisearch and Elasticsearch behind one contract, a tenant scope
+**Full-text search for multi-tenant .NET services — Meilisearch and Elasticsearch behind one contract, a tenant scope
 on every read, and no engine allowed to answer approximately while claiming to be exact.**
 
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](../../../LICENSE)
 ![Packages: 3](https://img.shields.io/badge/packages-3-informational)
-[![Meilisearch](https://img.shields.io/badge/Meilisearch-supported-FF5CAA?logo=meilisearch&logoColor=white)](SharedKernel.Search.Meilisearch/README.md)
-[![Elasticsearch](https://img.shields.io/badge/Elasticsearch-9.x%20%7C%2010.x-005571?logo=elasticsearch&logoColor=white)](SharedKernel.Search.ElasticSearch/README.md)
+![Tier: Abstractions](https://img.shields.io/badge/tier-Abstractions-1f6feb)
+![Tier: Adapter](https://img.shields.io/badge/tier-Adapter-6f42c1)
+![Tier: Testing](https://img.shields.io/badge/tier-Testing-e36209)
+[![Meilisearch](https://img.shields.io/badge/MeiliSearch%20SDK-0.20-FF5CAA?logo=meilisearch&logoColor=white)](https://github.com/meilisearch/meilisearch-dotnet)
+[![Elasticsearch](https://img.shields.io/badge/Elastic.Clients.Elasticsearch-9.4-005571?logo=elasticsearch&logoColor=white)](https://github.com/elastic/elasticsearch-net)
 
-[Packages](#packages) · [Architecture](#architecture) · [Get started](#get-started) · [Sample](#sample-catalogapi) · [Guarantees](#guarantees)
+[What you get](#what-you-get) · [Packages](#packages) · [How it fits together](#how-it-fits-together) · [Get started](#get-started) · [See it run](#see-it-run) · [Guarantees](#guarantees)
 
-<sub>📂 <code>src/Infrastructure/Search</code> · domain <code>09.Search</code> · <a href="../../../docs/packages.md">all packages by tier</a></sub>
+<sub>📂 <code>src/Infrastructure/Search</code> · <a href="../../../docs/packages.md">all packages by tier</a> · <a href="../../../README.md">Platform.SharedKernel</a></sub>
 
 </div>
 
 ---
 
-## What this domain gives you
+## What you get
 
 - **One search contract for two engines.** Application code depends on `ISearchIndex<TDocument>`,
-  `ISearchIndexProvisioner` and a fluent query builder — never on `MeilisearchClient` or `ElasticsearchClient`.
+  `ISearchIndexProvisioner` and the `SearchQuery.New()` builder — never on `MeilisearchClient` or `ElasticsearchClient`.
 - **Tenant isolation by construction.** `TenantScope` is a separate, mandatory parameter on every read; a tenanted
-  index called without a tenant fails before any I/O.
-- **Engine-only features without leaky abstractions.** Instant search and tenant tokens (Meilisearch), aggregations,
-  deep cursors and completion suggestions (Elasticsearch) live in their provider package, so a provider swap is a
-  build error listing every non-portable call.
-- **Failures as values.** Outages, timeouts and bad credentials come back as `search.unreachable`, `search.timeout` and
-  `search.unauthorized` on both engines — not as exceptions.
-- **Safe rebuilds.** Idempotent provisioning, staging → live cutover, and a check that the live schema matches the
-  code.
-- **Readiness for free.** Every registered index gets a `search-{provider}-{index}` readiness probe.
+  index called with `TenantScope.Global` fails with `search.tenant_scope_missing` before any I/O.
+- **Engine-only features without a leaky abstraction.** Instant search and tenant tokens (Meilisearch), aggregations,
+  point-in-time cursors and completion suggestions (Elasticsearch) live in their provider package, so a provider swap
+  is a build error listing every non-portable call.
+- **Failures as values.** Outages, timeouts and bad credentials come back as `search.unreachable`, `search.timeout`
+  and `search.unauthorized` on both engines; bulk writes report per-item failures in a `SearchBulkReceipt`.
+- **Safe rebuilds.** Idempotent provisioning from every replica, staging → live `CutoverAsync`, and
+  `VerifyRegisteredIndexesAsync` to catch a live schema that no longer matches the code.
 
 ## Packages
 
-| Package | Tier | When you need it |
-| --- | --- | --- |
-| [`SharedKernel.Search.Abstractions`](SharedKernel.Search.Abstractions/README.md) | Abstractions | Always — your Application project searches through these contracts. No third-party dependencies |
-| [`SharedKernel.Search.Meilisearch`](SharedKernel.Search.Meilisearch/README.md) | Adapter | User-facing, typo-tolerant search; instant search; tenant tokens a browser can hold |
-| [`SharedKernel.Search.ElasticSearch`](SharedKernel.Search.ElasticSearch/README.md) | Adapter | Analytics and large corpora: aggregations, point-in-time paging, completion suggestions |
+| Package | Tier | Reference it from | Use it for |
+| --- | --- | --- | --- |
+| [SharedKernel.Search.Abstractions](SharedKernel.Search.Abstractions/README.md) | Abstractions | Application | `ISearchIndex<T>`, `ISearchIndexProvisioner`, `SearchFilter`, `SearchQuery`, `SearchErrors`. No third-party dependency |
+| [SharedKernel.Search.Meilisearch](SharedKernel.Search.Meilisearch/README.md) | Adapter | Infrastructure | User-facing, typo-tolerant search; `IInstantSearch<T>`, `ITenantSearchTokenIssuer`, ranking rules |
+| [SharedKernel.Search.ElasticSearch](SharedKernel.Search.ElasticSearch/README.md) | Adapter | Infrastructure | Analytics and large corpora (ES 9.x/10.x); `IAnalyticsSearch<T>`, `ICursorSearch<T>`, `ISuggestSearch<T>` |
+| [SharedKernel.Search.Testing](SharedKernel.Search.Testing/README.md) | Testing | test projects | An in-memory `ISearchIndex<T>` that evaluates the full `SearchFilter` tree, with provisioner and descriptor fakes |
 
-In-memory fakes for unit tests: [`SharedKernel.Search.Testing`](./SharedKernel.Search.Testing/README.md).
+Start with Abstractions in the Application project and one provider in Infrastructure; pick Meilisearch for a
+storefront, Elasticsearch for analytics, or register both for different indexes. `SharedKernel.ServiceDefaults` maps
+the probes (`AddSharedKernelReadiness()`) and exports telemetry (`WithSearchTelemetry()`).
 
-## Architecture
+## How it fits together
 
 ```mermaid
 flowchart TB
-    subgraph app["Your service"]
-        A["Application handlers"]
-        H["Host (Program.cs)"]
-    end
-
+    App["Application handlers"]
     subgraph abs["SharedKernel.Search.Abstractions"]
-        I["ISearchIndex&lt;T&gt;<br/>ISearchIndexProvisioner<br/>ISearchProviderDescriptor<br/>SearchFilter · SearchQuery"]
+        I["ISearchIndex&lt;T&gt; · ISearchIndexProvisioner<br/>SearchFilter · SearchQuery · TenantScope"]
     end
-
     subgraph meili["SharedKernel.Search.Meilisearch"]
-        M["IInstantSearch&lt;T&gt;<br/>ITenantSearchTokenIssuer<br/>MeilisearchRankingRule"]
+        M["IInstantSearch&lt;T&gt; · ITenantSearchTokenIssuer"]
     end
-
     subgraph es["SharedKernel.Search.ElasticSearch"]
-        E["IAnalyticsSearch&lt;T&gt;<br/>ICursorSearch&lt;T&gt;<br/>ISuggestSearch&lt;T&gt;"]
+        E["IAnalyticsSearch&lt;T&gt; · ICursorSearch&lt;T&gt; · ISuggestSearch&lt;T&gt;"]
     end
-
-    A --> I
-    H -->|"AddSharedKernelMeilisearchSearch"| meili
-    H -->|"AddSharedKernelElasticSearchSearch"| es
-    meili --> I
-    es --> I
+    App --> I
+    meili -. implements .-> I
+    es -. implements .-> I
     meili --> MS[("Meilisearch")]
     es --> ESC[("Elasticsearch")]
 ```
 
-The rule behind the design: **the Abstractions package contains nothing both providers cannot implement completely
-and correctly.** A capability one engine lacks is declared as a typed contract inside the other engine's package —
-never neutralised, never hidden behind a capability flag. The two providers never reference each other.
+- **The seam rule:** Abstractions contains nothing both engines cannot implement completely and correctly. A
+  capability one engine lacks is a typed contract in the other engine's package — never a capability flag, never
+  silently degraded. The two providers never reference each other.
+- **The tenant is never part of the request.** Providers add the tenant predicate as the outermost `AND` after
+  translating your filter, and `GetAsync` never returns another tenant's document by id.
+- **Totals carry their accuracy.** `SearchCount` says `Exact` or `LowerBound`; `ToPagedList()` refuses a total that is
+  not exact, so a capped Meilisearch count cannot leak into a page header as a real one.
 
 | | Meilisearch | Elasticsearch |
 | --- | --- | --- |
 | Best at | User-facing search | Analytics, large corpora |
-| Type-ahead | `IInstantSearch<T>` — prefix matching, returns documents | `ISuggestSearch<T>` — completion suggester, returns strings |
-| Aggregations | Facet counts and numeric min/max | `IAnalyticsSearch<T>` — terms, cardinality, stats, date histogram, range |
+| Type-ahead | `IInstantSearch<T>` — returns documents | `ISuggestSearch<T>` — completion suggester |
+| Aggregations | Facet counts, numeric min/max | `IAnalyticsSearch<T>` — terms, cardinality, stats, histograms, ranges |
 | Deep pagination | Capped by `MaxTotalHits`; walk with `EnumerateAsync` | `ICursorSearch<T>` — point-in-time + `search_after` |
-| Client-side search | `ITenantSearchTokenIssuer` — engine-enforced tenant filter | Not available (document-level security is a commercial feature) |
-| Counts | Capped; reported as a lower bound at the ceiling | Always exact |
+| Client-side search | `ITenantSearchTokenIssuer` — engine-enforced tenant filter | Not available |
 
 ## Get started
 
-**1. Reference** `SharedKernel.Search.Abstractions` from your Application project and one provider from the host.
-
-**2. Declare a document** — one stable id, primitive members, and the tenant as `TenantId.ToString()`:
-
-```csharp
-public sealed class ProductDocument : ISearchDocument
-{
-    public required string DocumentId { get; init; }
-    public required string TenantId { get; init; }
-    public required string Name { get; init; }
-    public required string Category { get; init; }
-}
+```xml
+<PackageReference Include="SharedKernel.Search.Abstractions" />   <!-- Application -->
+<PackageReference Include="SharedKernel.Search.Meilisearch" />    <!-- Infrastructure -->
 ```
-
-**3. Register the index** (the host also registers `IClock`):
 
 ```csharp
 builder.Services.AddSingleton<IClock, SystemClock>();
 
 builder.Services
-    .AddSharedKernelMeilisearchSearch(builder.Configuration)   // Search:Meilisearch:Url, :ApiKey
+    .AddSharedKernelMeilisearchSearch(builder.Configuration)    // section Search:Meilisearch (Url, ApiKey)
     .AddIndex<ProductDocument>("products", index => index
-        .PrimaryKey(nameof(ProductDocument.DocumentId))
-        .TenantField(nameof(ProductDocument.TenantId))
-        .Field(nameof(ProductDocument.TenantId), SearchFieldKind.Keyword, filterable: true)
-        .Field(nameof(ProductDocument.Name), SearchFieldKind.Text, searchable: true)
-        .Field(nameof(ProductDocument.Category), SearchFieldKind.Keyword, filterable: true, facetable: true))
+        .PrimaryKey(ProductFields.DocumentId)
+        .TenantField(ProductFields.TenantId)
+        .Field(ProductFields.TenantId, SearchFieldKind.Keyword, filterable: true)
+        .Field(ProductFields.Name, SearchFieldKind.Text, searchable: true)
+        .Field(ProductFields.Category, SearchFieldKind.Keyword, filterable: true, facetable: true))
     .Build();
 
-builder.Services.AddHealthChecks().AddSharedKernelReadiness();
-builder.WithSearchTelemetry();
-```
+builder.Services.AddHealthChecks().AddSharedKernelReadiness();   // search-meilisearch-products
 
-**4. Provision, write and search:**
-
-```csharp
-await provisioner.EnsureIndexAsync(definition, ct);                                  // deploy time
-await index.IndexAsync(product, SearchWriteConsistency.Searchable, ct);
-
+// In a handler: provision once (deploy step or startup task), then search with the caller's tenant
 var request = SearchQuery.New()
     .Matching("wireless")
-    .Where(SearchFilter.Eq(nameof(ProductDocument.Category), "electronics"))
-    .Faceting(nameof(ProductDocument.Category))
+    .Where(SearchFilter.Eq(ProductFields.Category, "electronics"))
+    .Page(1, 20)
     .Build();
 
-var results = await index.SearchAsync(request.Value, TenantScope.For(tenantId), ct);
+Result<SearchResults<ProductDocument>> results =
+    await index.SearchAsync(request.Value, TenantScope.For(tenantId), ct);
 ```
 
-Switching to Elasticsearch changes step 3 only (`AddSharedKernelElasticSearchSearch(...).AddIndex<T>(readAlias,
-writeAlias, …)`). Each package README has the full configuration table, error codes and log events.
+Switching to Elasticsearch changes the registration only (`AddSharedKernelElasticSearchSearch(...)` with a read and a
+write alias). The document type, field constants and every option are in the
+[SharedKernel.Search.Meilisearch Quick start](SharedKernel.Search.Meilisearch/README.md#quick-start) and the
+[SharedKernel.Search.Abstractions](SharedKernel.Search.Abstractions/README.md) README.
 
-## Sample: CatalogApi
+## See it run
 
-[`samples/CatalogApi`](../../../samples/CatalogApi/README.md) runs **both** engines in one service against real containers:
+- [**samples/CatalogApi**](../../../samples/CatalogApi/README.md) — **both** engines in one service: a Meilisearch
+  storefront (facets, highlighting, instant search, tenant tokens, a lower-bound count) and an Elasticsearch back
+  office (aggregations, resumable cursors, suggestions, exact counts), with failures as RFC 9457 problems. Start the
+  two containers its README lists, then:
 
-- a Meilisearch storefront — search with facets and highlighting, instant search, tenant tokens, ranking rules, and a
-  deliberately low `MaxTotalHits` that shows a lower-bound count;
-- an Elasticsearch back office — revenue aggregations, cursor streaming and resumable cursors, completion
-  suggestions, exact counts;
-- operations endpoints — provisioning, seeding, `VerifyRegisteredIndexesAsync`, per-index readiness probes and
-  telemetry;
-- every endpoint sending a query through the kernel's `ISender`, with failures as RFC 9457 problems (503 for an
-  outage, 504 for a timeout).
+  ```bash
+  dotnet run --project samples/CatalogApi -p:SharedKernelPackageVersion=<the packed version> -- --urls http://localhost:5199
+  ```
+
+- [**samples/Shop**](../../../samples/Shop/README.md) — the Catalog service indexes products into Meilisearch and
+  Elasticsearch across two replicas (`dotnet run --project samples/Shop/Shop.AppHost --launch-profile http`).
 
 ## Guarantees
 
-- **A dropped tenant clause is structurally impossible.** The tenant is never part of the request or the filter tree;
-  providers add it as the outermost `AND`. `TenantScope.Global` on a tenanted index is refused with no I/O.
-- **Nothing is silently dropped or approximated.** Undeclared fields, over-ceiling pages and invalid ids are rejected
-  before the engine is called. Totals carry their accuracy; `ToPagedList()` refuses a total that is not exact.
-- **The same failure vocabulary on both engines**, even though one SDK throws and the other returns invalid responses.
-  Requested cancellation always propagates.
-- **A forgotten rebuild is caught.** Every provisioned index carries a fingerprint of its definition;
-  `VerifyRegisteredIndexesAsync` compares it with the code.
-- **Private data stays out of telemetry.** Spans and metrics on the `SharedKernel.Search` source and meter never
-  record query text, filter values or document ids.
-- **Public API tracked** in all three packages; both providers are tested against real Meilisearch and Elasticsearch
-  containers with one shared conformance suite, and composed through a real host in `consumer-verify/`.
+| Guarantee | How it is held |
+| --- | --- |
+| **No read without a tenant decision** | `ContractShapeTests`: every read and filtered write takes a non-optional `TenantScope`, and `SearchRequest` has no tenant member |
+| **No cross-tenant results** | `TenantedIndex_WithTenantScopeGlobal_ReturnsTenantScopeMissing_WithNoIoAttempted`; `GetAsync_TenantB_CannotReadTenantADocument_ReturnsDocumentNotFound`; tenant-scoped facet counts in the parity suite |
+| **Nothing silently dropped** | `*PreflightValidationTests`: undeclared fields, over-ceiling pages and over-cap facets fail before any I/O |
+| **No approximate totals presented as exact** | `SearchResultsToPagedListTests`: `ToPagedList()` fails `TotalHitsNotExact` for estimated or lower-bound counts |
+| **Both engines answer alike** | One fixed-corpus conformance suite (`*CrossProviderParityTests`) runs against real Meilisearch and Elasticsearch containers |
+| **Same failure vocabulary on both engines** | `SearchErrorsTests` and `MeilisearchFaultClassificationTests`: outage → `Unavailable`, timeout → `Timeout` |
+| **A forgotten rebuild is caught** | `SearchIndexDefinitionFingerprintTests`: every schema change alters the fingerprint `VerifyRegisteredIndexesAsync` compares |
+| **Provider-neutral contracts** | `SearchTopologyRules`: Abstractions takes no third-party package and the providers never reference each other; analyzers `SK0024` (literal field names) and `SK0025` (NEST) |
+
+**Out of scope:** vector search (see [AI](../AI/README.md)), document mapping from aggregates, change-feed ordering,
+and engine-specific analyzers or scoring on the neutral surface.
 
 ---
 
-**For maintainers:** the rules, invariants and decisions are in [`CLAUDE.md`](CLAUDE.md); the history is in
-[`state-map.md`](state-map.md).
+<div align="center">
+<sub>Part of <a href="../../../README.md">Platform.SharedKernel</a> · <a href="../../../docs/packages.md">all packages</a> · MIT license</sub>
+</div>

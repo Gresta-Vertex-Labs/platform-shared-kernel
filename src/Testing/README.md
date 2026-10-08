@@ -2,210 +2,149 @@
 
 # SharedKernel Testing
 
-**The test doubles of Platform.SharedKernel — one lightweight core and one package per capability, so a test
-project takes only what it tests.**
+**Test doubles for every SharedKernel contract — one lightweight core and one package per capability — that fail
+where production fails, honour tenant scope and run deterministically, so a service's unit tests need no mocking
+framework, no container and no network.**
 
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](../../LICENSE)
 ![Packages: 20](https://img.shields.io/badge/packages-20-informational)
 ![Tier: Testing](https://img.shields.io/badge/tier-Testing-e36209)
+[![Bogus](https://img.shields.io/badge/Bogus-35.6-blueviolet)](https://github.com/bchavez/Bogus)
 
-<sub>📂 <code>src/Testing</code> · domain <code>16.Testing</code> · <a href="../../docs/packages.md">all packages by tier</a></sub>
+[What you get](#what-you-get) · [Packages](#packages) · [How it fits together](#how-it-fits-together) · [Get started](#get-started) · [See it run](#see-it-run) · [Guarantees](#guarantees)
+
+<sub>📂 <code>src/Testing</code> · <a href="../../docs/packages.md">all packages by tier</a> · <a href="../../README.md">Platform.SharedKernel</a></sub>
 
 </div>
 
 ---
 
-## What this gives you
+## What you get
 
-- **Doubles that honour the real contract.** Every fake implements the production interface it replaces — including
-  its failure modes, its `Error` codes and its mandatory tenant scope — so a unit test exercises the same wiring
-  production does, without a mocking framework.
-- **Take only what you test.** The core (`SharedKernel.Testing`) depends on Foundation and Model packages only; a
-  capability package depends on that capability's contracts. Using the messaging doubles pulls in no Redis, no EF
-  Core and no cloud SDK.
-- **Deterministic by construction.** Time moves only when the test moves a `FakeClock`, fakers are seeded, and no
-  double does real I/O.
-- **Framework-free.** No packable package references xUnit, NUnit, MSTest or an assertion library; built-in
-  assertions throw `InvalidOperationException` with a readable message, so they work under any test runner.
-- **The same doubles this repository tests itself with.** A behavioural fix happens once and reaches every consumer.
+- **Doubles that honour the real contract.** Each fake implements the production interface it replaces, with its
+  failure modes, its `Error` codes and its mandatory tenant scope — `FakeIdempotencyStore` reports a fingerprint
+  mismatch, `InMemorySearchIndex<T>` refuses `TenantScope.Global` on a tenanted index.
+- **Take only what you test.** `SharedKernel.Testing` depends on Foundation and Model packages and Bogus only; each
+  `SharedKernel.{Capability}.Testing` depends on that capability's contract, so the messaging doubles pull in no Redis,
+  no EF Core and no cloud SDK.
+- **Deterministic by construction.** Time moves only when the test moves a `FakeClock`, fakers are seeded through
+  `FakerSeeding`, and no double does real I/O.
+- **Framework-free.** No packable package references xUnit, NUnit, MSTest or an assertion library; built-in assertions
+  (`ShouldHavePublishedOnce<T>()`, `LoggerAssertions`, …) throw `InvalidOperationException`, so any runner works.
+- **The doubles this repository tests itself with.** A behavioural fix happens once and reaches every consumer.
 
-## The packages
+## Packages
 
-Twenty packable packages, all in the **Testing** tier — reference them from **test projects only**. The core
-lives in this folder; each capability's package lives next to the contracts it fakes (for example
-`src/Infrastructure/Caching/SharedKernel.Caching.Testing`), so the links below lead into those folders.
+All twenty are **Testing** tier. The core lives in this folder; each capability's double lives next to the contract it
+fakes, so the links lead into those folders.
 
-| Package | Fakes | Register / create |
-| --- | --- | --- |
-| [`SharedKernel.Testing`](SharedKernel.Testing/README.md) | **The core.** `IClock` (`FakeClock`), `IRequestContext` (`TestRequestContext`), in-memory `ILogger` + `LoggerAssertions`, Bogus fakers, domain/contract/validation/privacy assertions | `new FakeClock(...)`, `TestRequestContext.ForTenant(...)`, `AddInMemoryLoggerFactory()`, `AddFakeDomainServices()` |
-| [`SharedKernel.Application.Testing`](../Application/SharedKernel.Application.Testing/README.md) | The kernel request pipeline and its seams | `new ApplicationPipelineTestHarness()`, `AddFakeApplicationBehaviorServices()` |
-| [`SharedKernel.Persistence.Testing`](../Infrastructure/Persistence/SharedKernel.Persistence.Testing/README.md) | `IRepository<,>`, `IUnitOfWork`, `IAuditTrailWriter`, `ICrossTenantScope`, `IDbConnectionFactory`; PostgreSQL with the production role split | `AddFakeRepository<T,TId>()`, `AddFakeUnitOfWork()`, `AddFakeAuditTrailWriter()`, `AddFakeCrossTenantScope()`, `AddTestRequestContext()` |
-| [`SharedKernel.Caching.Testing`](../Infrastructure/Caching/SharedKernel.Caching.Testing/README.md) | `ICacheService`, `ITenantCacheService`, `IDistributedLockService`, warmup, tenant key provider | `AddFakeCachingServices()`, `AddFakeTenantCacheService()`, `AddFakeCacheWarmupStrategy()` |
-| [`SharedKernel.Caching.Redis.Testing`](../Infrastructure/Caching/SharedKernel.Caching.Redis.Testing/README.md) | `IRedisChannelService`, `IRedisHashService`, `ITypedHashStore<T>` | `AddFakeRedisServices()`, `AddFakeTypedHashStore<T>()` |
-| [`SharedKernel.Communication.Testing`](../Infrastructure/Communication/SharedKernel.Communication.Testing/README.md) | Typed REST clients (the whole handler pipeline) and gRPC unary calls | `UseStubHttpMessageHandler(clientName, stub)`, `GrpcCalls` |
-| [`SharedKernel.Cryptography.Testing`](../Foundation/SharedKernel.Cryptography.Testing/README.md) | Encryption, hashing, HMAC, signing, key providers, secure random, TOTP replay guard | `AddFakeCryptography()` |
-| [`SharedKernel.FeatureManagement.Testing`](../Foundation/SharedKernel.FeatureManagement.Testing/README.md) | OpenFeature `IFeatureClient` | `AddFakeFeatureFlags()` |
-| [`SharedKernel.Idempotency.Testing`](../Infrastructure/Idempotency/SharedKernel.Idempotency.Testing/README.md) | `IIdempotencyStore` (request and message purposes) | `AddFakeIdempotencyStore(purposes)` |
-| [`SharedKernel.Integration.Testing`](../Infrastructure/Integration/SharedKernel.Integration.Testing/README.md) | `IWebhookDispatcher`, `INotificationSender` and their delivery observers | `AddInMemoryWebhookDispatcher()`, `AddInMemoryNotificationSender()` |
-| [`SharedKernel.Messaging.Testing`](../Infrastructure/Messaging/SharedKernel.Messaging.Testing/README.md) | `IMessageBus`, `IEventPublisher` | `AddInMemoryMessageBus()`, `AddInMemoryEventPublisher()` |
-| [`SharedKernel.Storage.Testing`](../Infrastructure/Storage/SharedKernel.Storage.Testing/README.md) | `IFileStorage`, `ITenantFileStorage` — named and tenant stores in memory | `AddSharedKernelStorage().AddInMemoryStore(name)`, `.AddInMemoryTenantStore(name)` |
-| [`SharedKernel.Search.Testing`](../Infrastructure/Search/SharedKernel.Search.Testing/README.md) | `ISearchIndex<T>`, `ISearchIndexProvisioner`, `ISearchProviderDescriptor` | `AddInMemorySearchIndex<T>()`, `AddInMemorySearchProvisioning()` |
-| [`SharedKernel.AI.Testing`](../Infrastructure/AI/SharedKernel.AI.Testing/README.md) | Embedding generator, vector collections, provisioner, semantic kernel | `AddInMemoryEmbeddingGenerator()`, `AddInMemoryVectorCollection<T>()`, `AddInMemoryVectorProvisioning()`, `AddInMemorySemanticKernel()` |
-| [`SharedKernel.Workflows.Testing`](../Infrastructure/Workflows/SharedKernel.Workflows.Testing/README.md) | `IWorkflowDispatcher`, `IWorkflowHandle<TResult>` | `AddInMemoryWorkflowDispatcher()` |
-| [`SharedKernel.Scheduling.Testing`](../Infrastructure/Scheduling/SharedKernel.Scheduling.Testing/README.md) | `IScheduledJobRegistry` — ticks fired by the test | `new InMemoryScheduledJobRegistry(sender)` |
-| [`SharedKernel.Reporting.Testing`](../Infrastructure/Reporting/SharedKernel.Reporting.Testing/README.md) | `IReportExporter<TRow>`, `IReportExporterFactory`, `IHtmlToPdfConverter` | `AddInMemoryReporting()` |
-| [`SharedKernel.Security.Testing`](../Hosting/Security/SharedKernel.Security.Testing/README.md) | `IUserContext`, API-key, DPoP and TOTP stores; DPoP proofs and mTLS certificates | `new FakeUserContext()`, `new SecurityTestContextBuilder()` |
-| [`SharedKernel.Presentation.Testing`](../Hosting/Presentation/SharedKernel.Presentation.Testing/README.md) | gRPC `ServerCallContext` with an `HttpContext`, HotChocolate executor, `IHttpContextAccessor` | `TestServerCallContext.Create(...)`, `GraphQLTestExecutorFactory.Create(services)` |
-| [`SharedKernel.ServiceDefaults.Testing`](../Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Testing/README.md) | `ITenantCatalog`, tenant resolution strategies, health-check registration assertions | `new InMemoryTenantCatalog()`, `new FakeTenantResolutionStrategy(tenantId)` |
+| Package | Tier | Reference it from | Use it for |
+| --- | --- | --- | --- |
+| [SharedKernel.Testing](SharedKernel.Testing/README.md) | Testing | test projects | **The core:** `FakeClock`, `TestRequestContext`, `InMemoryLogger` + `LoggerAssertions`, seeded fakers, domain, contract and privacy assertions |
+| [SharedKernel.Application.Testing](../Application/SharedKernel.Application.Testing/README.md) | Testing | test projects | `ApplicationPipelineTestHarness` — the real request pipeline and its host-start checks |
+| [SharedKernel.Persistence.Testing](../Infrastructure/Persistence/SharedKernel.Persistence.Testing/README.md) | Testing | test projects | `FakeRepository<,>`, `FakeUnitOfWork`, `FakeAuditTrailWriter`, `AddTestRequestContext()`; `PostgresTestServer` with the production role split |
+| [SharedKernel.Caching.Testing](../Infrastructure/Caching/SharedKernel.Caching.Testing/README.md) | Testing | test projects | `FakeCacheService`, `FakeTenantCacheService`, `FakeDistributedLockService` |
+| [SharedKernel.Caching.Redis.Testing](../Infrastructure/Caching/SharedKernel.Caching.Redis.Testing/README.md) | Testing | test projects | `FakeRedisChannelService`, `FakeRedisHashService`, `FakeTypedHashStore<T>` |
+| [SharedKernel.Communication.Testing](../Infrastructure/Communication/SharedKernel.Communication.Testing/README.md) | Testing | test projects | `UseStubHttpMessageHandler(clientName, stub)` through a typed client's whole pipeline; `GrpcCalls` |
+| [SharedKernel.Cryptography.Testing](../Foundation/SharedKernel.Cryptography.Testing/README.md) | Testing | test projects | `AddFakeCryptography()` — encryption, hashing, HMAC, signing, keys, TOTP replay guard |
+| [SharedKernel.FeatureManagement.Testing](../Foundation/SharedKernel.FeatureManagement.Testing/README.md) | Testing | test projects | `FakeFeatureClient` via `AddFakeFeatureFlags()` |
+| [SharedKernel.Idempotency.Testing](../Infrastructure/Idempotency/SharedKernel.Idempotency.Testing/README.md) | Testing | test projects | `FakeIdempotencyStore` via `AddFakeIdempotencyStore(purposes)` |
+| [SharedKernel.Integration.Testing](../Infrastructure/Integration/SharedKernel.Integration.Testing/README.md) | Testing | test projects | `InMemoryWebhookDispatcher`, `InMemoryNotificationSender` and their delivery observers |
+| [SharedKernel.Messaging.Testing](../Infrastructure/Messaging/SharedKernel.Messaging.Testing/README.md) | Testing | test projects | `InMemoryMessageBus`, `InMemoryEventPublisher` |
+| [SharedKernel.Storage.Testing](../Infrastructure/Storage/SharedKernel.Storage.Testing/README.md) | Testing | test projects | Named and tenant stores in memory: `AddInMemoryStore(name)`, `AddInMemoryTenantStore(name)` |
+| [SharedKernel.Search.Testing](../Infrastructure/Search/SharedKernel.Search.Testing/README.md) | Testing | test projects | `InMemorySearchIndex<T>`, in-memory provisioning |
+| [SharedKernel.AI.Testing](../Infrastructure/AI/SharedKernel.AI.Testing/README.md) | Testing | test projects | Hash-derived embeddings, `InMemoryVectorCollection<T>`, `InMemorySemanticKernel` |
+| [SharedKernel.Workflows.Testing](../Infrastructure/Workflows/SharedKernel.Workflows.Testing/README.md) | Testing | test projects | `InMemoryWorkflowDispatcher`, `InMemoryWorkflowHandle<TResult>` |
+| [SharedKernel.Scheduling.Testing](../Infrastructure/Scheduling/SharedKernel.Scheduling.Testing/README.md) | Testing | test projects | `InMemoryScheduledJobRegistry` — the test fires each tick with `TriggerAsync` |
+| [SharedKernel.Reporting.Testing](../Infrastructure/Reporting/SharedKernel.Reporting.Testing/README.md) | Testing | test projects | `InMemoryReportExporter<TRow>`, `InMemoryHtmlToPdfConverter` via `AddInMemoryReporting()` |
+| [SharedKernel.Security.Testing](../Hosting/Security/SharedKernel.Security.Testing/README.md) | Testing | test projects | `FakeUserContext`, `SecurityTestContextBuilder`, in-memory key/DPoP/TOTP stores, DPoP proofs, mTLS certificates |
+| [SharedKernel.Presentation.Testing](../Hosting/Presentation/SharedKernel.Presentation.Testing/README.md) | Testing | test projects | `TestServerCallContext` with an `HttpContext`, `GraphQLTestExecutorFactory`, `FakeHttpContextAccessor` |
+| [SharedKernel.ServiceDefaults.Testing](../Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Testing/README.md) | Testing | test projects | `InMemoryTenantCatalog`, `FakeTenantResolutionStrategy`, health-tag assertions |
 
-One more project lives here but is **not published**:
-[`SharedKernel.Testing.Internal`](SharedKernel.Testing.Internal/README.md) — Testcontainers fixtures, EF Core/Npgsql
-helpers and a MassTransit harness for this repository's own suites.
+Start with the core; add the `.Testing` package of each capability your code under test injects. One more project lives
+here but is **not published**: [SharedKernel.Testing.Internal](SharedKernel.Testing.Internal/README.md) — pinned
+Testcontainers fixtures, EF Core helpers and a MassTransit harness for this repository's own suites.
 
 ## How it fits together
 
 ```mermaid
 flowchart LR
-    subgraph T["16.Testing — Testing tier"]
-        Core["SharedKernel.Testing<br/>FakeClock · TestRequestContext<br/>InMemoryLogger · fakers"]
-        Cap["SharedKernel.{Capability}.Testing<br/>19 packages"]
-    end
-
-    subgraph P["Production contracts"]
-        F["Foundation / Model<br/>IClock · IRequestContext · Result<br/>Domain · Contracts"]
-        Ab["Abstractions<br/>ICacheService · IMessageBus · IFileStorage<br/>ISearchIndex · IIdempotencyStore · …"]
-        H["Adapter / Host contracts<br/>IWorkflowDispatcher · IScheduledJobRegistry<br/>IUserContext stores · REST/gRPC clients"]
-    end
-
-    Core -- implements --> F
-    Cap -- implements --> Ab
-    Cap -- implements --> H
+    Tests["Your service's test project"] --> Core["SharedKernel.Testing<br/>FakeClock, TestRequestContext,<br/>InMemoryLogger, fakers"]
+    Tests --> Cap["SharedKernel.Capability.Testing<br/>19 packages"]
+    Core -- implements --> F["Foundation and Model contracts<br/>IClock, IRequestContext, Result"]
+    Cap -- implements --> Ab["Capability contracts<br/>ICacheService, IMessageBus, IFileStorage,<br/>IWorkflowDispatcher, IUserContext, ..."]
     Cap -. may use .-> Core
-
-    Tests["Your service's<br/>test project"] --> Core
-    Tests --> Cap
-    Prod["Your service's<br/>production code"] -. never references .-> T
-
-    style T fill:#fff4e5,stroke:#e36209
-    style Prod fill:#eceff1
+    Prod["Your service's production code"] -. never references .-> Cap
+    Prod -. never references .-> Core
+    PG[("PostgreSQL container<br/>PostgresTestServer only")] -.-> Cap
 ```
 
-- A capability package references **the contract it fakes**, not a provider — unless the contract only exists in a
-  concrete package (Workflows, Scheduling, the Security handlers, Webhooks, Communication).
-- **No production project may reference a Testing package.** The tier check forbids it inside this repository, and
-  `SharedKernelLayeringRules.TestingNeverReferencedByProduction` can check a consuming service's own assemblies.
-- `SharedKernel.Security.Testing` references Host-tier packages, so it brings ASP.NET Core into the test project that
-  uses it.
+- **A double references the contract it fakes, not a provider** — unless the contract only exists in a concrete
+  package (Workflows, Scheduling, the Security handlers, Webhooks, Communication). `SharedKernel.Security.Testing`
+  therefore brings ASP.NET Core into the test project that uses it.
+- **Asserted doubles are singletons.** The message bus, event publisher, search index, vector collection and workflow
+  dispatcher are registered as singletons, even where production is scoped, so their history outlives the scope.
+- **Simplifications are documented.** Exact search counts, substring free-text, hash-derived embeddings and a
+  `FakeRepository<,>` that ignores optimistic concurrency are stated in each README; test those against the real engine.
 
 ## Get started
 
-A service's **test project** references the core plus the capability packages it needs:
-
 ```xml
-<ItemGroup>
-  <PackageReference Include="SharedKernel.Testing" />
-  <PackageReference Include="SharedKernel.Messaging.Testing" />
-</ItemGroup>
+<PackageReference Include="SharedKernel.Testing" />
+<PackageReference Include="SharedKernel.Messaging.Testing" />
 ```
-
-Every SharedKernel package ships at one version; set your central `SharedKernelVersion` once. See
-[Using the packages](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel#using-the-packages).
-
-Given a piece of service code that reads the time, the caller and publishes a message:
-
-```csharp
-using SharedKernel.Execution.Context;
-using SharedKernel.Messaging.Abstractions.MessageBus;
-using SharedKernel.Primitives.Clocks;
-using SharedKernel.Primitives.Errors;
-using SharedKernel.Primitives.Results;
-
-public sealed record InvoiceIssued(Guid InvoiceId, DateTimeOffset IssuedAt);
-
-public sealed class InvoiceIssuer(IClock clock, IRequestContext caller, IMessageBus bus)
-{
-    public async Task<Result> IssueAsync(Guid invoiceId, CancellationToken ct)
-    {
-        if (!await caller.HasPermissionAsync("invoices.issue", ct))
-            return Error.Forbidden("invoices.issue_denied", "The caller may not issue invoices.");
-
-        return await bus.PublishAsync(new InvoiceIssued(invoiceId, clock.UtcNow), ct);
-    }
-}
-```
-
-the test uses real doubles — no mocks:
 
 ```csharp
 using SharedKernel.Execution.Tenancy;
 using SharedKernel.Testing.Clocks;
 using SharedKernel.Testing.Execution;
 using SharedKernel.Testing.Messaging;
-using Xunit;
 
-public sealed class InvoiceIssuerTests
-{
-    private readonly FakeClock _clock = new(new DateTimeOffset(2026, 3, 1, 9, 0, 0, TimeSpan.Zero));
-    private readonly InMemoryMessageBus _bus = new();
+// InvoiceIssuer is the code under test: it reads IClock and IRequestContext and publishes on IMessageBus.
+var clock = new FakeClock(new DateTimeOffset(2026, 3, 1, 9, 0, 0, TimeSpan.Zero));
+var bus = new InMemoryMessageBus();
+var caller = TestRequestContext.ForTenant(new TenantId(Guid.NewGuid())).WithPermissions("invoices.issue");
 
-    [Fact]
-    public async Task Issue_publishes_the_event_stamped_with_the_clock()
-    {
-        var caller = TestRequestContext.ForTenant(new TenantId(Guid.NewGuid()))
-            .WithPermissions("invoices.issue");
-        var issuer = new InvoiceIssuer(_clock, caller, _bus);
+var result = await new InvoiceIssuer(clock, caller, bus).IssueAsync(Guid.NewGuid(), CancellationToken.None);
 
-        var result = await issuer.IssueAsync(Guid.NewGuid(), CancellationToken.None);
-
-        Assert.True(result.IsSuccess);
-        var issued = _bus.ShouldHavePublishedOnce<InvoiceIssued>();
-        Assert.Equal(_clock.UtcNow, issued.IssuedAt);
-    }
-
-    [Fact]
-    public async Task Issue_without_the_permission_is_forbidden_and_publishes_nothing()
-    {
-        var issuer = new InvoiceIssuer(_clock, TestRequestContext.ForUser(), _bus);
-
-        var result = await issuer.IssueAsync(Guid.NewGuid(), CancellationToken.None);
-
-        Assert.Equal("invoices.issue_denied", result.Error.Code);
-        _bus.ShouldNotHavePublished<InvoiceIssued>();
-    }
-}
+Assert.True(result.IsSuccess);
+var issued = bus.ShouldHavePublishedOnce<InvoiceIssued>();
+Assert.Equal(clock.UtcNow, issued.IssuedAt);
 ```
 
-In a DI-based test, the same doubles register with one call each — `services.AddInMemoryMessageBus()`, then resolve
-`InMemoryMessageBus` to assert. Call these after the production registrations so the double is the one resolved,
-and you can swap a single dependency of an otherwise real host.
+In a DI-based test each double registers with one call (`services.AddInMemoryMessageBus()`), then resolve the concrete
+type to assert. The [SharedKernel.Testing Quick start](SharedKernel.Testing/README.md#quick-start) covers the core in
+full; each capability package's README has its own.
+
+## See it run
+
+- [samples/OrderApi](../../samples/OrderApi/README.md) — `OrderApi.Tests` drives the real pipeline through
+  `ApplicationPipelineTestHarness` with a `FakeClock` and `TestRequestContext.ForUser("clerk-1")`.
+  `dotnet test samples/OrderApi/OrderApi.Tests -p:SharedKernelPackageVersion=<the packed version>`.
+- [samples/BillingApi](../../samples/BillingApi/README.md) — handler tests over `AddFakeRepository<,>` and
+  `AddTestRequestContext(...)`, plus end-to-end tests against `PostgresTestServer`.
+- [samples/Shop](../../samples/Shop/README.md) — `Shop.Catalog.Tests` runs the use cases over `FakeRepository<,>`,
+  `InMemorySearchIndex<T>` and `InMemoryVectorCollection<T>`; `Shop.Inventory.Tests` covers locks with
+  `FakeDistributedLockService`, the job schedule with `InMemoryScheduledJobRegistry` and the certificate allow-list
+  with `MtlsTestCertificateBuilder`. `samples/Shop/build.sh --test`.
 
 ## Guarantees
 
-These hold because the code and its self-tests make them hold — each is only as true as that code.
-
-| Guarantee | What it means for your test |
+| Guarantee | How it is held |
 | --- | --- |
-| **Contract-faithful** | A double implements the production interface and fails where production fails: definition validation, conditional-write conflicts, idempotency fingerprint mismatches, and the owning domain's real `Error` codes |
-| **Tenant fail-closed** | Tenants are `TenantId`, scopes are `TenantScope`, callers are `IRequestContext`; a global scope against tenant-declaring data is refused, as in production |
-| **Deterministic** | Time comes from `FakeClock` or a supplied `TimeProvider`; randomness is seeded; no real I/O |
-| **Thread-safe** | Every stateful double tolerates parallel test collections |
-| **Assertable after the scope ends** | A double whose history you assert (message bus, event publisher, search index, vector collection, workflow dispatcher) is registered as a **singleton**, even where production is scoped |
-| **Simplifications are documented** | Where a double simplifies — exact search counts, substring free-text, hash-derived embeddings, no optimistic concurrency in `FakeRepository` — its README says so; test those behaviours against the real engine |
+| No production project references a Testing package | The tier check (`SKTIER001`); `TestingPackagesNeverReferencedByProductionTests.NoProductionProject_ReferencesATestingPackage`; `SharedKernelLayeringRules.TestingNeverReferencedByProduction`, which a service can run against its own assemblies |
+| The core stays light: Foundation/Model, Bogus and `Microsoft.Extensions.*.Abstractions` only — no test framework | `TestingPackagesNeverReferencedByProductionTests.CoreTestingPackage_DependsOnlyOnFoundationAndModelPackages` |
+| Deterministic time and data | `FakeClockTests`, `FakerSeedingTests` (`Apply_SameSeed_ProducesIdenticalOutputAcrossIndependentCalls`) |
+| Faithful failure modes and real `Error` codes | `FakeIdempotencyStoreTests.TryBeginAsync_SameKeyDifferentFingerprint_InFlight_ReturnsFingerprintMismatch`, and each package's nested `.Tests` project proving the double against its production contract |
+| Mandatory tenant scope: a missing or global scope against tenanted data fails, as in production | `InMemorySearchIndexTests.SearchAsync_TenantScopeMissingOnTenantedIndex_ReturnsFailure`, `InMemoryWorkflowDispatcherTests` (`StartAsync_…_TenantScopeNone_ReturnsTenantScopeMissing_NoStateMutation`) |
+| Asserted doubles resolve as one shared instance | Registration tests such as `AddInMemoryVectorCollection_ConcreteTypeAndInterface_ResolveSameSingletonInstance` |
 
-Each package's self-tests live in a nested `{Package}.Tests` project and prove the double against the documented
-behaviour of its production contract. They run in the Unit lane, except the PostgreSQL-backed
-`SharedKernel.Persistence.Testing.Tests` and `SharedKernel.Testing.Internal.Tests`, which need Docker:
-
-```bash
-dotnet test Platform.SharedKernel.Unit.slnf -c Release
-dotnet test Platform.SharedKernel.Integration.slnf -c Release   # Docker required
-```
+The self-tests run in the Unit lane, except `SharedKernel.Persistence.Testing.Tests` and
+`SharedKernel.Testing.Internal.Tests`, which need Docker (`Platform.SharedKernel.Integration.slnf`).
 
 ---
 
-**For maintainers:** where a new double belongs, the reference policy and the domain rules are in
-[`CLAUDE.md`](CLAUDE.md); phase history is in [`state-map.md`](state-map.md).
-
-Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) ·
-[MIT license](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
+<div align="center">
+<sub>Part of <a href="../../README.md">Platform.SharedKernel</a> · <a href="../../docs/packages.md">all packages</a> · MIT license</sub>
+</div>

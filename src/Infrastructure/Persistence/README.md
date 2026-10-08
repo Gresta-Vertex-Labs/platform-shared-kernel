@@ -2,65 +2,67 @@
 
 # SharedKernel Persistence
 
-**PostgreSQL persistence for multi-tenant .NET services — EF Core and Dapper, row-level security, field encryption and
-a tamper-evident audit trail, registered with one call.**
+**PostgreSQL persistence for multi-tenant .NET services — EF Core and Dapper over one connection, with row-level
+security, optimistic concurrency, field encryption and a tamper-evident audit trail registered in one call.**
 
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](../../../LICENSE)
 ![Packages: 6](https://img.shields.io/badge/packages-6-informational)
+![Tier: Abstractions](https://img.shields.io/badge/tier-Abstractions-1f6feb)
+![Tier: Adapter](https://img.shields.io/badge/tier-Adapter-6f42c1)
+![Tier: Testing](https://img.shields.io/badge/tier-Testing-e36209)
 [![PostgreSQL 15+](https://img.shields.io/badge/PostgreSQL-15%2B-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![EF Core 10](https://img.shields.io/badge/EF%20Core-10-512BD4)](https://learn.microsoft.com/ef/core/)
+[![EF Core 10.0](https://img.shields.io/badge/EF%20Core-10.0-512BD4)](https://learn.microsoft.com/ef/core/)
+[![Npgsql 10.0](https://img.shields.io/badge/Npgsql-10.0-336791)](https://www.npgsql.org/)
 
-[Packages](#packages) · [How they fit](#how-the-packages-fit-together) · [Get started](#get-started) · [Sample](#see-it-run) · [Guarantees](#guarantees)
+[What you get](#what-you-get) · [Packages](#packages) · [How it fits together](#how-it-fits-together) · [Get started](#get-started) · [See it run](#see-it-run) · [Guarantees](#guarantees)
 
-<sub>📂 <code>src/Infrastructure/Persistence</code> · domain <code>06.Persistence</code> · <a href="../../../docs/packages.md">all packages by tier</a></sub>
+<sub>📂 <code>src/Infrastructure/Persistence</code> · <a href="../../../docs/packages.md">all packages by tier</a> · <a href="../../../README.md">Platform.SharedKernel</a></sub>
 
 </div>
 
 ---
 
-## What this domain gives you
+## What you get
 
-- **One registration call** — `builder.AddSharedKernelPostgres<TContext>("orders", p => …)` wires the data source,
-  context, repositories for every aggregate and a retry-safe unit of work, validated when the host starts.
-- **Tenant isolation three layers deep** — an EF Core query filter, a write guard and PostgreSQL row-level security
-  bound per transaction, so hand-written SQL and a forgotten filter still see only the caller's tenant.
-- **Optimistic concurrency everywhere** — `xmin` on every aggregate root, exposed as an opaque, ETag-ready
-  `EntityVersion`.
-- **Personal data encrypted at rest** — AES-256-GCM per column, searchable through blind indexes, rotatable and
-  crypto-shreddable per tenant.
-- **A trustworthy audit trail** — an append-only ledger sealed into per-tenant HMAC chains that anyone with the key
-  can verify.
-- **Hand-written SQL that plays by the same rules** — Dapper sessions join the unit of work, bind the tenant and pick
-  the right database role.
+- **One registration call.** `builder.AddSharedKernelPostgres<TContext>("orders", p => …)` wires the data source, the
+  context, `IRepository<T,TId>`/`IReadRepository<T,TId>` for every aggregate and a retry-safe `IUnitOfWork`, validated
+  when the host starts.
+- **Tenant isolation three layers deep.** An EF Core query filter, a write guard and PostgreSQL row-level security bound
+  per transaction, so hand-written SQL and a forgotten filter still see only the caller's tenant.
+- **No lost updates.** `xmin` concurrency on every aggregate root, exposed as an opaque, ETag-ready `EntityVersion`.
+- **Personal data encrypted at rest.** `UseFieldEncryption()` gives AES-256-GCM per column, searchable through blind
+  indexes, rotatable and crypto-shreddable per tenant.
+- **An audit trail you can verify.** `UseAuditTrail()` plus `IAuditableRequest` writes an append-only ledger sealed into
+  per-tenant HMAC chains.
+- **Hand-written SQL that plays by the same rules.** `IDbSessionFactory` sessions join the unit of work, bind the
+  tenant and pick the right database role.
 
 ## Packages
 
-| Package | Tier | When you need it |
-| --- | --- | --- |
-| [SharedKernel.Persistence.Abstractions](SharedKernel.Persistence.Abstractions/README.md) | Abstractions | Your Application project reads or writes aggregates (`IRepository`, `IReadRepository`, `EntityVersion`, bulk, cross-tenant scope) |
-| [SharedKernel.Persistence.EfCore](SharedKernel.Persistence.EfCore/README.md) | Adapter | The service uses EF Core — almost always |
-| [SharedKernel.Persistence.Npgsql](SharedKernel.Persistence.Npgsql/README.md) | Adapter | Always (EfCore and Dapper bring it); holds the connection shape, TLS policy and **the canonical role script** |
-| [SharedKernel.Persistence.Dapper](SharedKernel.Persistence.Dapper/README.md) | Adapter | The service writes SQL by hand |
-| [SharedKernel.Persistence.EfCore.Encryption](SharedKernel.Persistence.EfCore.Encryption/README.md) | Adapter | Columns hold personal or secret data |
-| [SharedKernel.Persistence.EfCore.Auditing](SharedKernel.Persistence.EfCore.Auditing/README.md) | Adapter | Commands must leave a verifiable audit trail |
+| Package | Tier | Reference it from | Use it for |
+| --- | --- | --- | --- |
+| [SharedKernel.Persistence.Abstractions](SharedKernel.Persistence.Abstractions/README.md) | Abstractions | Application | `IRepository`, `IReadRepository`, `EntityVersion`, bulk mutations, `ICrossTenantScope` — no ORM |
+| [SharedKernel.Persistence.EfCore](SharedKernel.Persistence.EfCore/README.md) | Adapter | Infrastructure | Contexts, conventions, repositories, the unit of work, multi-tenancy and RLS, migrations |
+| [SharedKernel.Persistence.Npgsql](SharedKernel.Persistence.Npgsql/README.md) | Adapter | Infrastructure | Data sources, TLS, PgBouncer, advisory locks, error classification and the canonical role script |
+| [SharedKernel.Persistence.Dapper](SharedKernel.Persistence.Dapper/README.md) | Adapter | Infrastructure | Hand-written SQL through `IDbSessionFactory`, in the same transaction and tenant binding |
+| [SharedKernel.Persistence.EfCore.Encryption](SharedKernel.Persistence.EfCore.Encryption/README.md) | Adapter | Infrastructure | Encrypted columns, blind indexes, key rotation and per-tenant shredding |
+| [SharedKernel.Persistence.EfCore.Auditing](SharedKernel.Persistence.EfCore.Auditing/README.md) | Adapter | Infrastructure | The audit ledger, its sealer and verification (`IAuditTrailWriter`, `IAuditQueryService`) |
+| [SharedKernel.Persistence.Testing](SharedKernel.Persistence.Testing/README.md) | Testing | test projects | `FakeRepository`, `FakeUnitOfWork`, and a PostgreSQL fixture with the production role split |
 
-Related packages elsewhere: [`SharedKernel.Execution`](../../Foundation/SharedKernel.Execution/README.md) owns `IUnitOfWork`,
-`IRequestContext`, `IAuditTrailWriter` and `TenantId`, which these packages implement or read;
-[`SharedKernel.ServiceDefaults.Persistence`](../../Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Persistence/README.md)
-provides the readiness checks; [`SharedKernel.Persistence.Testing`](./SharedKernel.Persistence.Testing/README.md)
-provides fakes and a PostgreSQL fixture with the production role split.
+Start with `Persistence.EfCore` (it brings `Npgsql`); add `Dapper`, `Encryption` or `Auditing` when the service needs
+hand-written SQL, encrypted columns or an audit trail.
 
-## How the packages fit together
+## How it fits together
 
 ```mermaid
 flowchart TB
     subgraph app["Your service"]
-        H["Handlers<br/>(commands and queries)"]
+        H["Handlers<br/>commands and queries"]
         EX["SharedKernel.Execution<br/>IUnitOfWork · IRequestContext · IAuditTrailWriter · TenantId"]
     end
 
-    subgraph persistence["06.Persistence"]
+    subgraph persistence["Persistence packages"]
         ABS["Persistence.Abstractions<br/>IRepository · IReadRepository · EntityVersion · ICrossTenantScope"]
         EF["Persistence.EfCore<br/>contexts · conventions · repositories · unit of work · RLS"]
         ENC["EfCore.Encryption<br/>encrypted columns · blind indexes · shredding"]
@@ -83,10 +85,47 @@ flowchart TB
     NPG --> PG
 ```
 
-Application code depends on `SharedKernel.Execution` and `Persistence.Abstractions` only; the host references the
-Adapter-tier implementations. EF Core and Dapper share one data source, one transaction and one tenant binding.
+- **Application code sees contracts only.** Handlers depend on
+  [`SharedKernel.Execution`](../../Foundation/SharedKernel.Execution/README.md) and `Persistence.Abstractions`; the
+  host wires the Adapter-tier packages.
+- **One connection, one transaction, one tenant.** EF Core and Dapper share the data source; `app.tenant_id` is bound
+  transaction-locally, so no session state outlives a transaction and PgBouncer is safe.
+- **Retries replay the whole unit of work.** `IUnitOfWork.ExecuteInTransactionAsync` re-runs its delegate on a
+  transient fault; an ambiguous `COMMIT` is never replayed.
+- **Roles do the policing.** The runtime role cannot bypass row-level security; migrations, cross-tenant reports and
+  audit sealing each run on their own role.
 
 ## Get started
+
+```xml
+<PackageReference Include="SharedKernel.Persistence.EfCore" />
+<PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
+```
+
+```csharp
+builder.AddSharedKernelPostgres<OrderDbContext>("orders", p => p
+    .UseMultiTenancy(rowLevelSecurity: true)    // tenant filter + write guard + row-level security
+    .MigrateOnStartup());                        // migrations and seeders, one replica at a time
+
+public sealed class RenameOrderHandler(IRepository<Order, OrderId> orders) : ICommandHandler<RenameOrder>
+{
+    public async Task<Result> Handle(RenameOrder command, CancellationToken ct)
+    {
+        var order = await orders.GetByIdAsync(command.Id, ct);   // tracked, whole aggregate, caller's tenant only
+        if (order is null) return Result.Failure(OrderErrors.NotFound(command.Id));
+
+        order.Rename(command.Name);
+        return Result.Success();                                 // the transaction behavior saves and commits
+    }
+}
+```
+
+The connection string is `ConnectionStrings:orders`; every other setting of that database is under
+`SharedKernel:Persistence:orders`. The full setup is in the
+[SharedKernel.Persistence.EfCore Quick start](SharedKernel.Persistence.EfCore/README.md#quick-start).
+
+<details>
+<summary>A multi-tenant service in 10 minutes</summary>
 
 The smallest end-to-end path: a multi-tenant service with row-level security, an audit trail and commands through the
 application pipeline. These snippets are compiled and run against PostgreSQL by
@@ -251,71 +290,44 @@ its body), saves, inserts the `Succeeded` audit record in the same transaction a
 `app.tenant_id` bound transaction-locally. A failed `Result` rolls everything back and writes a `Failed` record on its
 own connection; the background sealer later links the record into its tenant's HMAC chain.
 
-## One command, end to end
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant C as Caller
-    participant P as Request pipeline
-    participant U as Unit of work
-    participant H as Handler
-    participant DB as PostgreSQL (app_runtime)
-    participant S as Audit sealer
-
-    C->>P: Send(PlaceOrder)
-    P->>U: ExecuteInTransactionAsync (retrying strategy)
-    U->>DB: BEGIN · set_config('app.tenant_id', tenant, true)
-    U->>H: Handle(command)
-    H->>DB: repository reads (tenant filter + RLS policy)
-    U->>DB: SaveChanges: stamps, tenant guard, xmin check, domain events
-    U->>DB: INSERT audit record (Succeeded)
-    U->>DB: COMMIT
-    S-->>DB: later: link the record into its tenant's HMAC chain
-```
+</details>
 
 ## See it run
 
-[samples/BillingApi](../../../samples/BillingApi/README.md) is a complete multi-tenant billing API on every package, built from
-the packed NuGet packages: customers with encrypted, searchable emails; invoices with `Money` lines; payments written by
-Dapper and EF Core in one transaction; ETags; soft delete; bulk updates; an audited, sealed history; a cross-tenant
-report; tenant erasure.
+- [samples/BillingApi](../../../samples/BillingApi/README.md) — a multi-tenant billing API on every package, built
+  from the packed NuGet packages: encrypted, searchable emails; `Money` invoice lines; payments written by Dapper and
+  EF Core in one transaction; ETags; soft delete; bulk updates; a sealed audit history; a cross-tenant report; tenant
+  erasure.
 
-```bash
-cd samples/BillingApi
-dotnet publish -c Release -t:PublishContainer -p:ContainerRepository=billing-api -p:ContainerImageTag=local
-docker compose up -d        # PostgreSQL with the four roles + the API, Production mode
-./smoke-test.sh             # checks over HTTP
-```
+  ```bash
+  cd samples/BillingApi
+  dotnet publish -c Release -t:PublishContainer -p:ContainerRepository=billing-api -p:ContainerImageTag=local
+  docker compose up -d        # PostgreSQL with the four roles + the API, Production mode
+  ./smoke-test.sh             # checks over HTTP
+  ```
+
+- [samples/Shop](../../../samples/Shop/README.md) — Catalog on EF Core with row-level security and Inventory on Dapper
+  under RLS, two replicas each, run by an Aspire AppHost (`samples/Shop/build.sh`, then
+  `dotnet run --project samples/Shop/Shop.AppHost --launch-profile http`).
 
 ## Guarantees
 
-- **No cross-tenant reads or writes** through EF Core, Dapper or raw SQL — tenant filter, write guard and
-  transaction-local row-level security; the runtime role's ability to bypass RLS is checked at startup.
-- **No silent misconfiguration** — options, the model, the role's privileges, policy coverage and the audit ledger's
-  grants are verified when the host starts.
-- **No lost updates** — `xmin` concurrency on every aggregate root; `EntityVersion` round-trips through ETag / If-Match
-  as an opaque, aggregate-bound token.
-- **Retry-safe transactions** — the whole unit of work replays on a transient fault; an ambiguous `COMMIT` is never
-  replayed.
-- **Personal data encrypted at rest** — AES-256-GCM per column, bound to row, column and tenant; erasable per tenant.
-- **A trustworthy audit trail** — append-only (triggers + grants), sealed into HMAC chains, verifiable, with signed
-  checkpoints and a [specified format](SharedKernel.Persistence.EfCore.Auditing/AUDIT-FORMAT.md).
-- **PgBouncer-ready** — no session state outlives a transaction.
+| Guarantee | How it is held |
+| --- | --- |
+| **No cross-tenant reads or writes** through EF Core, Dapper or raw SQL | `TenantIsolationPostgresTests`, `RowLevelSecurityIntegrationTests` and `TenantWriteGuardTests` against PostgreSQL as `app_runtime`; `SK0202` flags `IgnoreQueryFilters()` in service code |
+| **A misconfigured database fails at startup** — a runtime role that could bypass RLS, or audit-ledger grants that are too wide | `RowLevelSecurityPrivilegeTests`, `SelfCheckTests` |
+| **No lost updates** — `EntityVersion` is an opaque, aggregate-bound token | `ConcurrencyIntegrationTests`, `EntityVersionPostgresTests`, `XminConcurrencyTokenConventionTests` |
+| **Retry-safe transactions**, and only the unit of work saves | `TransactionRetryPostgresTests`; architecture rule `OnlyEfUnitOfWorkMayCallSaveChanges` |
+| **Repositories never expose `IQueryable`**, and read repositories never track | Architecture rules `RepositoriesMustNotExposeIQueryable`, `ReadOnlyRepositoriesNeverTrack` |
+| **Encrypted values are bound to row, column and tenant**, and erasable per tenant | `CipherAndBlindIndexTests`, `KeyRingTests`, `ErasureAndMaintenanceTests` |
+| **The audit trail is append-only and tamper-evident**, in a [specified format](SharedKernel.Persistence.EfCore.Auditing/AUDIT-FORMAT.md) | `TamperDetectionTests`, `AuditFormatVectorTests`, `AuditImmutabilityMigrationBuilderExtensionsIntegrationTests` |
+| **Domain projects never take the persistence stack** | Architecture rule `DomainAssembliesNeverReferencePersistenceStack` |
 
 **Out of scope:** databases other than PostgreSQL, two-phase commit across databases, read-replica routing inside one
-context, lazy loading, and the messaging outbox (owned by [07.Messaging](../Messaging/README.md)).
-
-## Related reading
-
-| Topic | Read |
-| --- | --- |
-| Registration options, transactions, several contexts, ETags, cross-tenant access | [EfCore](SharedKernel.Persistence.EfCore/README.md) |
-| Connection names, TLS, PgBouncer, roles, advisory locks, error classification | [Npgsql](SharedKernel.Persistence.Npgsql/README.md) |
-| Unit and integration testing | [Persistence.Testing](./SharedKernel.Persistence.Testing/README.md) |
-| How to contribute | [CONTRIBUTING.md](../../../CONTRIBUTING.md) |
+context, lazy loading, and the messaging outbox (owned by [Messaging](../Messaging/README.md)).
 
 ---
 
-**For maintainers:** the domain rules live in [CLAUDE.md](CLAUDE.md) and the phase history in
-[state-map.md](state-map.md).
+<div align="center">
+<sub>Part of <a href="../../../README.md">Platform.SharedKernel</a> · <a href="../../../docs/packages.md">all packages</a> · MIT license</sub>
+</div>

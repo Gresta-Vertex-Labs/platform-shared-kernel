@@ -1,8 +1,39 @@
+<div align="center">
+
 # CheckoutApi
 
-A checkout service that calls another service — [InventoryApi](../InventoryApi//) — over gRPC for the price and over
-REST for the reservation, with the `11.Communication` packages. It is the reference for **calling another service**:
-where the clients are registered, what goes in configuration, and how the other service's answers come back.
+**Calling another service: typed REST and gRPC clients configured from `appsettings.json`, whose failures come back as `Result`, not exceptions.**
+
+<sub>📂 <code>samples/CheckoutApi</code> · <a href="../README.md">all samples</a> · calls <a href="../InventoryApi/">InventoryApi</a> · needs no infrastructure</sub>
+
+</div>
+
+## What it shows
+
+- **Two clients in one chain.** `AddRestClient<IInventoryClient, InventoryClient>("inventory")` and
+  `AddGrpcClient<Inventory.InventoryClient>("inventory-grpc")`; addresses, deadlines and authentication in configuration.
+- **Service discovery.** Addresses name a service (`http://inventory`, `http://_grpc.inventory`), resolved through the
+  `Services` section locally and through DNS in Kubernetes.
+- **Safe retries.** An `Idempotency-Key` on every POST, so the reservation can be retried; a replayed key reserves once.
+- **The other service's errors as your own.** InventoryApi's 404, 409 and field errors reach CheckoutApi's caller
+  unchanged; InventoryApi down is a 503 `communication.unreachable`.
+- **The caller carried across**, and `google.type.Money` mapped to the kernel's `Money`.
+
+**Packages it uses:**
+[SharedKernel.Communication.Rest](../../src/Infrastructure/Communication/SharedKernel.Communication.Rest/README.md) ·
+[SharedKernel.Communication.Grpc](../../src/Infrastructure/Communication/SharedKernel.Communication.Grpc/README.md) ·
+[SharedKernel.Application.Pipeline](../../src/Application/SharedKernel.Application.Pipeline/README.md) ·
+[SharedKernel.Application.Mediator.MediatR](../../src/Application/SharedKernel.Application.Mediator.MediatR/README.md) ·
+[SharedKernel.ServiceDefaults](../../src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults/README.md) ·
+[SharedKernel.ServiceDefaults.Security](../../src/Hosting/ServiceDefaults/SharedKernel.ServiceDefaults.Security/README.md) ·
+[SharedKernel.Presentation.WebApi](../../src/Hosting/Presentation/SharedKernel.Presentation.WebApi/README.md)
+
+Capabilities: [Communication](../../src/Infrastructure/Communication/README.md) · [Application](../../src/Application/README.md) ·
+[Service defaults](../../src/Hosting/ServiceDefaults/README.md) · [Presentation](../../src/Hosting/Presentation/README.md)
+
+## The registration
+
+CheckoutApi calls [InventoryApi](../InventoryApi/) over gRPC for the price and over REST for the reservation:
 
 ```csharp
 builder.Services.AddSharedKernelCommunication(builder.Configuration)
