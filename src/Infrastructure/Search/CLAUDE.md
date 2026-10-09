@@ -150,6 +150,34 @@ Each `Build()` registers one `SearchIndexReadinessProbe` per index, named `searc
 27. No static mutable state in this domain's production code.
 28. Telemetry never records query text, filter values or document ids.
 
+**Error text, exceptions and observability** *(planned, WO-087; unmarked as each phase ships)*
+
+29. *(planned, SK.09.SearchErrorSafety)* `Error.Message` holds kernel-authored wording and bounded identifiers only
+    (index, operation and provider names, an HTTP status, a bounded engine error code). Never provider debug
+    information, a response body, a server `reason`, `ex.Message`, an endpoint or host, a cursor token, a query or a
+    filter value. Engine detail reaches only the log, through the exception parameter. Logs never carry `Error.Message`,
+    `ex.Message` or a URL, and every log on a caught-exception path passes the exception.
+30. *(planned, SK.09.SearchErrorSafety)* Classify-or-rethrow (as `07.Messaging`): only a recognised engine fault becomes a
+    `Result` failure; an unrecognised exception (including a `SwitchExpressionException` from a translation switch)
+    rethrows with a plain `throw;`. The caller's cancellation always propagates (rule 13); an HTTP-client timeout with the
+    caller's token not cancelled is `search.timeout`. `CursorExpired` is returned only for the point-in-time-missing
+    signal; any other cursor fault is classified like every other call.
+31. *(planned, SK.09.SearchErrorSafety)* `SearchStreamException` is a sealed `SharedKernelException`; `.Abstractions`
+    therefore references `SharedKernel.Core` (a Foundation reference, still no third-party package; amends rule 5's
+    reference list and supersedes the earlier "must not reference Core" remark).
+32. *(planned, SK.09.ObservabilityConformance)* Codes are public constants (`SearchErrorCodes`, `ElasticSearchErrorCodes`,
+    `MeilisearchErrorCodes`), lowercase `search.{snake_reason}`; the `ErrorType` follows the condition (outage
+    Unavailable `search.unavailable`, timeout Timeout, engine fault and the engine rejecting the kernel's own key
+    Unexpected). `SearchErrors` stays public because three assemblies build it; the exclusive factories are internal.
+33. *(planned, SK.09.ObservabilityConformance)* One `ActivitySource` and one `Meter` named `SharedKernel.Search`
+    (`TelemetryVersion`, `Meter` from `IMeterFactory`); spans `search {operation}` (Client), instruments
+    `sharedkernel.search.operation.duration` (`s`) and `sharedkernel.search.documents` (`{document}`); tags only from
+    `SearchTagKeys` plus `outcome` and `error.type`; failures recorded only through the shared recorder; cancellation is
+    never an error; operation names come from `SearchOperations`.
+34. *(planned, SK.09.ObservabilityConformance)* Each provider owns its EventId sub-block through an internal
+    `{Package}LoggingEventIds` class, one plain static partial `{Package}Log` class under `Diagnostics/`, L3-shaped
+    templates, `ILogger<KernelType>` categories and required loggers.
+
 ## Decisions
 
 | Decision | Why |
@@ -170,6 +198,12 @@ Each `Build()` registers one `SearchIndexReadinessProbe` per index, named `searc
 | Both provider csproj files carry `<WarningsNotAsErrors>…;CS8509;CS8524</WarningsNotAsErrors>` instead of discard arms | C# cannot prove exhaustiveness over a sealed record hierarchy or an enum. The warnings stay visible; the runtime `SwitchExpressionException` is the backstop for a new node. A discard arm would hide the signal; `NoWarn`/pragmas are not used |
 | `MeiliSearch` SDK accepted despite being non-AOT-safe (`netstandard2.0`, `dynamic` filter, `MakeGenericType` per search) | Contained behind `ISearchIndex<T>`; the ES client is AOT-annotated instead |
 | Declined: neutral `Score`, nested filter node, neutral analyzers, string/bool ranges, capability flags | Each is silently wrong or meaningless on one engine |
+| *(planned, SK.09.SearchErrorSafety)* `.Abstractions` references `SharedKernel.Core` so `SearchStreamException` derives `SharedKernelException` | Edges map by `SharedKernelException`, so a non-deriving exception answers 500 and loses its `Error`. A Foundation reference is tier-legal and `Core` adds no third-party package; the earlier "must not reference Core" remark is superseded |
+| *(planned, SK.09.SearchErrorSafety)* Engine free text (even the server `reason`) never enters an `Error`; only a bounded engine code does | The server `reason` repeats user query text and field values; `DebugInformation` carries the whole request. The detail is not lost: it reaches the log through the exception |
+| *(planned, SK.09.SearchErrorSafety)* Unclassified exceptions rethrow instead of becoming `search.engine_fault` | A catch-all hid defects (an untranslatable filter node), cancellation and misconfiguration behind a soft failure; `engine_fault` stays for a recognised reply with an unknown code |
+| *(planned, SK.09.ObservabilityConformance)* `search.engine_unauthorized` is `Unexpected`, `search.write_rejected` stays `Unexpected`, `search.tenant_scope_missing` stays `Unauthorized` | The engine refusing the kernel's own key is a deployment defect, not the end user's authentication; without engine text the kernel cannot tell a caller's bad document from mapping drift; a missing tenant scope is a fail-closed isolation fault |
+| *(planned, SK.09.ObservabilityConformance)* `SearchErrors` remains public although root rule C2 says the factory is internal | Both providers and the double construct the same vocabulary from separate assemblies; an `InternalsVisibleTo` from Abstractions would name its siblings (rule 4). Flagged to `arch-lead` for a C2 amendment |
+| *(planned, SK.09.ObservabilityConformance)* No span for the readiness probe | Probes run on a host timer at high frequency and the health request is already a span |
 
 ## Logging
 
@@ -181,7 +215,11 @@ Block **9000–9999** (`LoggingEventIdRanges.Search`), always written as `Loggin
 | 9100–9199 | `.Meilisearch` (`Logging/MeilisearchLog.cs`) | 9100–9127 (9115 raw client access enabled) |
 | 9200–9299 | `.ElasticSearch` (`Logging/ElasticSearchLog.cs`) | 9200–9229 (9216 raw client access enabled, 9221 source serializer context missing) |
 
-Take the next free id in the package's sub-block. Telemetry: `ActivitySource`/`Meter` `SharedKernel.Search`
+Take the next free id in the package's sub-block (next free today: 9128 Meilisearch, 9230 ElasticSearch).
+*(planned, SK.09.SearchErrorSafety)* 9128 and 9129 (Meilisearch) and 9230 (ElasticSearch) are reserved for the tenant-token,
+cutover and cursor-read fault logs; several existing ids gain an `Exception` parameter and lose their `{Reason}`/`{Url}`
+placeholders. *(planned, SK.09.ObservabilityConformance)* No id is renumbered; the sub-blocks stay as above.
+Telemetry: `ActivitySource`/`Meter` `SharedKernel.Search`
 (`SearchWellKnown.ActivitySourceName`/`MeterName`) — span `search {operation}`; `search.client.operation.duration`
 (s), `search.client.documents`; tags `search.index`, `search.operation`, `search.provider`, `error.type`.
 
@@ -224,7 +262,12 @@ Take the next free id in the package's sub-block. Telemetry: `ActivitySource`/`M
 - Tenant search tokens scope search only, not writes, and cannot be revoked before expiry.
 - ElasticSearch has no engine-enforced tenant isolation here; OSS deployments need per-tenant filtered aliases plus role
   privileges configured outside this package.
-- Omitting `.WithSourceSerializerContext` on ElasticSearch fails at runtime, not build time.
+- Omitting `.WithSourceSerializerContext` on ElasticSearch fails at runtime, not build time. Today the failure surfaces
+  as `search.engine_fault`: `ElasticSearchErrors.SourceSerializerContextMissing` exists but nothing produces it
+  (*planned fix, SK.09.SearchErrorSafety*).
+- Today a catch-all in both providers turns any unclassified exception into `search.engine_fault`, the ElasticSearch cursor
+  read answers `CursorExpired` for any fault including cancellation, and provider text (`DebugInformation`, server
+  `reason`, `ex.Message`, the endpoint) reaches `Error.Message` (*planned fix, SK.09.SearchErrorSafety*).
 - Options types use `public const string SectionName` rather than `ISectionBoundOptions`.
 - No `00.Governance` rule asserts that no in-repo type consumes `IMeilisearchRawClientAccessor` /
   `IElasticSearchRawClientAccessor` (only the Temporal accessor has one).
