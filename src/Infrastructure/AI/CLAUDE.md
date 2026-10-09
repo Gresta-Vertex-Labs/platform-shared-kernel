@@ -22,7 +22,7 @@ Options, defaults and examples: `SharedKernel.AI.Qdrant` README, `SharedKernel.A
 - **Qdrant:** `services.AddSharedKernelQdrant(configuration)` (section `Intelligence:Qdrant`) → `.AddCollection<TRecord>(name, c => c.EmbeddingModel(modelId, dimension).DistanceMetric(...).TenantField(...).Field(...))`, optional `.AllowRawClientAccess()`, `.Build()`. Collections and the hybrid accessor are scoped; client, provisioner, descriptor and quantization accessor are singletons.
 - **SemanticKernel:** `services.AddSharedKernelSemanticKernel(configuration)` (section `Intelligence:SemanticKernel`) → optional `.WithBoundedRetry(maxAttempts, baseDelay)`, `.AllowRawClientAccess()`, `.Build()`. The three contracts are singletons; the `OpenAIClient` is built once over a named `IHttpClientFactory` client.
 - **Readiness:** one `VectorCollectionReadinessProbe` per collection, named `vector-store-{provider}-{collection}` (`ProbeNameFor`); mapped by `AddSharedKernelReadiness()`.
-- **Telemetry:** `ActivitySource`/`Meter` `SharedKernel.AI` (`IntelligenceWellKnown`); tags `ai.provider`, `ai.collection`, `ai.model`; subscribed by ServiceDefaults' `WithIntelligenceTelemetry()`.
+- **Telemetry:** `ActivitySource`/`Meter` name `SharedKernel.AI` (`IntelligenceWellKnown`); tag keys `ai.provider`, `ai.collection`, `ai.model` are declared and not yet emitted; subscribed by ServiceDefaults' `WithIntelligenceTelemetry()`.
 
 ## Rules & Invariants
 
@@ -49,6 +49,13 @@ Options, defaults and examples: `SharedKernel.AI.Qdrant` README, `SharedKernel.A
 21. **Collection, field and model identifiers are named constants** (`SK0027`); tag keys come from `IntelligenceWellKnown`. No `new HttpClient()`; no static mutable state.
 22. A type constructed from raw `TOptions` must be registered through a factory unwrapping `IOptions<TOptions>.Value` — `AddValidatedOptions` registers only `IOptions<T>`.
 23. **`EnsureCollectionAsync` is safe to run from every replica at once.** A create that loses the race (gRPC `AlreadyExists`) continues as on an existing collection: fingerprint check, then any missing payload index.
+24. *(planned, SK.10.IntelligenceObservability)* **`Error.Message` holds kernel-authored wording and bounded identifiers only:** provider, operation, collection and model names, the caller's own record id, numbers, an HTTP status or gRPC status name. Never an exception message, `RpcException.Status.Detail`, a response body, an endpoint or host, a filter value, a key or prompt text; the detail reaches the log through the exception parameter. `reason` parameters of `IntelligenceErrors` are kernel-authored text.
+25. *(planned, SK.10.IntelligenceObservability)* **Classify-or-rethrow, caller's token first.** Only a recognised provider fault becomes a `Result` failure (exception filters, so anything else is not caught and keeps its stack). The caller's cancellation always surfaces as `OperationCanceledException`, even when the transport reports it as another exception type (gRPC `Cancelled`); a transport or HTTP-client timeout with the caller's token live is `intelligence.timeout`. Outage and throttling are `ErrorType.Unavailable`, timeouts `Timeout`, with the same code and type for the same condition on every provider. Classified failures log once, at Warning, with the exception; propagating exceptions are not logged here.
+26. *(planned, SK.10.IntelligenceObservability)* **`IntelligenceStreamException` is a sealed `SharedKernelException`** (so the edges map it by its `ErrorType`); `.Abstractions` therefore references `SharedKernel.Core` and nothing third-party.
+27. *(planned, SK.10.IntelligenceObservability)* **Every embedding, vector and completion call emits one Client span `ai {operation}` and one `sharedkernel.ai.operation.duration` observation (unit `s`); token usage returned by the provider is counted in `sharedkernel.ai.tokens` (unit `{token}`).** Tags are bounded configuration only (`ai.provider`, `ai.operation`, `ai.collection`, `ai.model`, `outcome`); content, ids, vectors, filter values, keys and hosts are never tags (rule 10). Failures are recorded only through the shared recorder; cancellation is never an error. `CompleteAsync` and `EmbedManyAsync` dispatch exactly once unless `WithBoundedRetry` is configured (rule 8), including at the SDK level.
+28. *(planned, SK.10.IntelligenceConformance)* Codes are public constants in `IntelligenceErrorCodes` (lowercase `intelligence.{snake_reason}`; reason words `unavailable`, `not_supported`); `IntelligenceErrors` stays public because both providers and the double construct it. A provider gets its own `…ErrorCodes` class only for a provider-exclusive code. The provider rejecting the kernel's own key is `Unexpected` (`intelligence.engine_unauthorized`); `tenant_scope_missing` stays `Unauthorized`.
+29. *(planned, SK.10.IntelligenceConformance)* One `ActivitySource` and one `Meter` per provider assembly under the single name `SharedKernel.AI` (static source, `IMeterFactory` meter, `TelemetryVersion.Of`), named `{Provider}Telemetry`; every tag key, operation name and instrument name is a constant (`IntelligenceTagKeys`, `IntelligenceOperations`, `sharedkernel.ai.*`), identical for every provider. Control-plane calls (ensure, exists, delete, cutover, quantization profile) are spans too; the readiness probe is not.
+30. *(planned, SK.10.IntelligenceConformance)* Each provider owns its EventId sub-block through an internal `…LoggingEventIds` class (`LoggingEventIdRanges.Intelligence + n`, no bare literal); `Diagnostics/` holds plain static partial `…Log` classes with L3 templates; loggers are `ILogger<KernelType>` and required. Programming errors use `UnreachableException`/`ThrowIf*`; configuration errors use E3 wording.
 
 ## Decisions
 
@@ -63,6 +70,12 @@ Options, defaults and examples: `SharedKernel.AI.Qdrant` README, `SharedKernel.A
 | No LLM readiness probe | The only honest check is a real, billed completion. |
 | Provider-exclusive contracts in provider packages | A swap surfaces every non-portable call site at compile time (`CS0234`). |
 | `ICompletionProviderDescriptor` and `IVectorProviderDescriptor` kept separate | Vector ceilings and LLM context/output ceilings share no honest members. |
+| *(planned, SK.10.IntelligenceObservability)* `.Abstractions` references `SharedKernel.Core` so `IntelligenceStreamException` derives `SharedKernelException` | Edges map by `SharedKernelException`, so a non-deriving exception answers 500 and loses its `Error`. A Foundation reference is tier-legal and `Core` adds no third-party package; the earlier "must not reference Core" remark is superseded. |
+| *(planned, SK.10.IntelligenceObservability)* Provider free text (exception message, gRPC detail, connector body, endpoint) never enters an `Error`; unclassified exceptions propagate instead of becoming `engine_fault`/`completion_failed` | The text repeats user input and infrastructure names and reaches ProblemDetails; a catch-all hid defects, mis-mapped cancellation and timeouts behind a soft failure. The detail is not lost: it reaches the log through the exception. |
+| *(planned, SK.10.IntelligenceObservability)* `rate_limited` is `Unavailable`; there is no rate-limit `ErrorType` | The `ErrorType` contract classes a throttling dependency as `Unavailable` (HTTP 503). Revisit if 01.Core adds a distinct member. |
+| *(planned, SK.10.IntelligenceObservability)* Instruments are created with their final `sharedkernel.ai.*` names; no `gen_ai.*` semantic-convention names; no span for the readiness probe or the no-op `WaitUntilQueryableAsync` | Nothing was emitted before, so no rename ever ships; the GenAI conventions are still experimental; the health request is already a span. |
+| *(planned, SK.10.IntelligenceConformance)* `IntelligenceErrors` remains public although root rule C2 says the factory is internal; `engine_unauthorized` is `Unexpected` | Both providers and the double construct the same vocabulary from separate assemblies (an `InternalsVisibleTo` from Abstractions would name its siblings, rule 13). The provider refusing the kernel's own key is a deployment defect, not the end user's authentication. Flagged to `arch-lead` for a C2 amendment. |
+| *(planned, SK.10.IntelligenceConformance)* "One telemetry class under `SharedKernel.AI`" means one name with per-provider instances and shared constants | `.Abstractions` may not own an `ActivitySource` and a shared instance would need an edge between siblings (rule 13). |
 
 ## Logging
 
@@ -72,13 +85,16 @@ Block **10000–10999** (`LoggingEventIdRanges.Intelligence`), 100-wide sub-bloc
 |---|---|---|
 | `AI.Abstractions` | 10000–10099 | Reserved, unused (no logging). |
 | `AI.Qdrant` | 10100–10199 | `Logging/QdrantLog.cs`: +100 … +114. Next free +115. |
-| (unclaimed) | 10200–10299 | — |
+| (unclaimed) | 10200–10299 | — (reserved for the next vector provider) |
 | `AI.SemanticKernel` | 10300–10399 | `Logging/SemanticKernelLog.cs`: +300 … +309. Next free +310. |
+
+*(planned, SK.10.IntelligenceObservability)* No id is added or renumbered: 10100 drops host and port, 10106 and 10305 carry `{ErrorType}`/`{ErrorCode}` instead of `Error.Message`, 10111, 10113, 10307 and 10309 take the exception (10113 and 10307 become Warning and 10113 is also used by the provisioner and accessor catch sites). *(planned, SK.10.IntelligenceConformance)* `Logging/` moves to `Diagnostics/` with `…LoggingEventIds` constants and L3 templates; the numbers stay.
 
 ## Cross-Domain Couplings
 
 - **01.Core:** `Result`/`Error`, `IReadinessProbe`, `LoggingEventIdRanges` (Primitives); `TenantScope`/`TenantId` (Execution); `AddValidatedOptions` (Configuration, providers only).
-- **13.ServiceDefaults:** `WithIntelligenceTelemetry()` subscribes to `SharedKernel.AI` by name (no project reference to this domain); `AddSharedKernelReadiness()` maps the `vector-store-*` probes.
+- **13.ServiceDefaults:** `WithIntelligenceTelemetry()` subscribes to `SharedKernel.AI` by name (no project reference to this domain); `AddSharedKernelReadiness()` maps the `vector-store-*` probes. *(planned, SK.13.WildcardTelemetry)* The `SharedKernel.*` wildcard replaces `WithIntelligenceTelemetry()`, and its seconds-histogram view covers `sharedkernel.ai.operation.duration`.
+- **01.Core / 16.Testing / 00.Governance *(planned, WO-087)*:** the span failure recorder, `TelemetryVersion`, `IHasError` and the outcome constants come from `SharedKernel.Primitives`; tests assert telemetry and logs through the `SharedKernel.Testing.Telemetry` helpers; the report-only SK0043 and platform telemetry/EventId/template tests must show zero findings for this domain.
 - **16.Testing:** a new neutral member needs its `SharedKernel.AI.Testing` double updated; `QdrantContainerFixture` (`qdrant/qdrant:v1.16.0`) lives in `SharedKernel.Testing.Internal`.
 - **00.Governance:** `IntelligenceTopologyRules` (`AbstractionsHasNoThirdPartyDependencies`, `ProviderPackagesNeverReferenceEachOther`, `NoHealthChecksDependencyAcrossIntelligencePackages`); `SK0026` (raw provider client injection), `SK0027` (raw identifier literals).
 
@@ -96,7 +112,8 @@ Block **10000–10999** (`LoggingEventIdRanges.Intelligence`), 100-wide sub-bloc
 
 ## Known Limitations
 
-- `intelligence.unreachable` and `intelligence.timeout` are `ErrorType.Unexpected`; `Error.Unavailable`/`Error.Timeout` (HTTP 503/504) would be accurate.
+- `intelligence.unreachable`, `intelligence.timeout`, `intelligence.write_timeout` and `intelligence.rate_limited` are `ErrorType.Unexpected`; `Unavailable`/`Timeout` (HTTP 503/504) would be accurate *(closes with SK.10.IntelligenceObservability)*.
+- The Qdrant and Semantic Kernel providers declare an `ActivitySource` and a `Meter` but emit no span or metric, token usage is not counted, provider exception text and the collection-as-endpoint reach `Error.Message`, `Error.Message` is logged, no log passes its exception, every non-cancellation exception becomes `engine_fault`/`completion_failed`, and `IntelligenceStreamException` is not a `SharedKernelException` *(closes with SK.10.IntelligenceObservability)*. The chat path may map `ClientResultException` only while Semantic Kernel throws `HttpOperationException`, and the OpenAI client may retry underneath `CompleteAsync` (both to be verified there).
 - Qdrant is the only vector provider, so the conformance suite runs solo.
 - `Microsoft.SemanticKernel` is reflection-heavy and not AOT-safe (contained in its package); `Qdrant.Client`'s trim behaviour is unverified.
 - `SK0027`'s XML doc and `ProvisionerMethods` set still name a provisioner `ProbeAsync` that no longer exists on `IVectorCollectionProvisioner` (harmless; fix in `00.Governance`).
