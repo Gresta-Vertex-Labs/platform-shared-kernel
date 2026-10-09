@@ -57,6 +57,9 @@ Overloads, options and defaults: each package's `README.md`.
 18. Option collections default to `null` (the binder appends to non-null defaults).
 19. **Credentials never leave the process**: no token, secret or API key in a log, exception message or `ToString()` (`AccessToken.ToString()` redacts).
 20. A typed client takes `HttpClient` in its primary constructor and is registered with `AddRestClient` (SK0013 flags an explicit constructor taking `HttpClient`).
+21. *(planned, SK.11.TokenUnavailableEdge)* **`AccessTokenUnavailableException` is a `SharedKernelException`** (E1), not an `HttpRequestException`: an inbound edge maps it to `Unavailable`. REST keeps retrying/breaking on it through the mapped `ShouldHandle` (rules 9 and 12 still hold).
+22. *(planned, SK.11.TokenUnavailableEdge)* **No URL, host, OAuth client id or remote free text** in a log or an `Error` on the token path: logs name the client by its kernel client name; the token endpoint's `error` is reduced to the RFC 6749 section 5.2 values (else `unrecognized`); a provider's failure gets a fixed message.
+23. *(planned, SK.11.CommunicationConformance)* **Observability gold standard**: every `[LoggerMessage]` takes its id from the package's `*LoggingEventIds` class and its logger category from `ILogger<KernelType>`; one `*Log` class per package; templates are one sentence with quoted identifier values; every swallowed exception is logged with the exception object (never silent), except the caller's cancellation which propagates; every `Error` is built by the internal `CommunicationErrors` factory; every code is a `CommunicationErrorCodes` constant. The domain emits no `ActivitySource` or `Meter`.
 
 ## Decisions
 
@@ -73,6 +76,11 @@ Overloads, options and defaults: each package's `README.md`.
 | No `Timestamp` helpers in `.Grpc` | Google.Protobuf already ships them |
 | OpenTelemetry gRPC/HTTP instrumentation lives in `13.ServiceDefaults` (`WithCommunicationTelemetry()`) | Telemetry is host composition, not a client dependency |
 | No response envelope on REST | Handlers return `Result`; ProblemDetails is the error shape |
+| *(planned, SK.11.TokenUnavailableEdge)* `AccessTokenUnavailableException` derives `SharedKernelException`, and REST preserves its retry/breaker/hedging behaviour by an explicit predicate | C# single inheritance: the edges match `SharedKernelException`; token failures send nothing, so repeating them is side-effect free. Supersedes "a provider's own failure keeps its detail": the `Error` crosses the trust boundary, so its message is fixed and the provider logs its own detail |
+| *(planned, SK.11.TokenUnavailableEdge)* If `Grpc.Net.Client` no longer reports a token failure as `Unavailable`, the channel retry stops covering it | Accepted; the call still returns the same `Error`. Pinned by a test, not worked around |
+| *(planned, SK.11.CommunicationConformance)* `communication.unreachable` becomes `communication.unavailable`; `money.proto.invalid` becomes `communication.grpc.invalid_money`; `grpc.{status}` and `http.{status}` keep their values and move into `CommunicationErrorCodes` | C3 (same condition, same reason word across domains); the `grpc.*`/`http.*` values are the hand-kept mirror of `14.Presentation`'s names and must not drift |
+| *(planned, SK.11.CommunicationConformance)* No `ActivitySource`/`Meter` in this domain (name `SharedKernel.Communication.*` reserved) | Runtime HttpClient/gRPC client spans and metrics already cover the call; a `Result` failure is recorded by the span owner (the caller) |
+| *(planned, SK.11.CommunicationConformance)* Rest reaches its logger through `HttpRequestMessage.Options` (set by the per-client propagation handler), `NullLogger` when the response did not come through a registered client | The `Result` verbs are static extensions over `HttpClient`/`HttpResponseMessage` and hold no container |
 
 ## Logging
 
@@ -84,6 +92,8 @@ Overloads, options and defaults: each package's `README.md`.
 | 11100–11199 | `.Grpc` (`RequestContextInterceptor`) | 11100 the caller could not be written onto a call |
 | 11200–11299 | `.Rest` | none |
 | 11300–11399 | — | retired; do not reuse |
+
+*(planned, SK.11.CommunicationConformance)* Each package gets `{Package}LoggingEventIds` (const arithmetic from `LoggingEventIdRanges.Communication`) and one `{Package}Log` under `Diagnostics/`. Existing ids keep their numbers; `.Rest` (11200–11299) gains 11200 caller not written onto a request · 11201 problem-details body unreadable · 11202 success body unreadable. Templates move to the one-sentence style; 11000–11002 log the kernel client name, never the endpoint or OAuth client id.
 
 ## Cross-Domain Couplings
 
@@ -110,3 +120,4 @@ Overloads, options and defaults: each package's `README.md`.
 - A gRPC channel refuses the composite `https+http` scheme, so gRPC clients cannot use Aspire's scheme-fallback addresses.
 - The reflection-based `Result` verb overloads carry `[RequiresUnreferencedCode]`/`[RequiresDynamicCode]`; AOT callers pass a `JsonTypeInfo`.
 - A 401 retry only happens for resendable bodies (`null`, `ByteArrayContent`, `JsonContent`).
+- *(planned, SK.11.CommunicationConformance)* A call that fails before any HTTP exchange (no access token, open circuit) has no client span of its own, because this domain emits none; the failure is a `Result` the caller records.
