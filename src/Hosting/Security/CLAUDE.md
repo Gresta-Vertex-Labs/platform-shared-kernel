@@ -64,6 +64,8 @@ Overloads, options and defaults: each package's `README.md`.
 22. **Recovery codes** are hashed with `IOneWayHasher` with a two-character lookup; `IRecoveryCodeStore.TryMarkUsedAsync` must be atomic.
 23. **Never log** a token, proof, key, certificate, code, secret or claim value (key ids and thumbprints are fine). `ToString()` of `GeneratedApiKey`, `TotpEnrollment` and `TokenRevocationRequest` omits secrets — keep it so for any new secret-holding type.
 24. The Oidc authority must be an absolute http/https URL (`/issuer` parses as a `file://` URI on Linux).
+25. *(planned, SK.12.RevocationFailureLogging)* **Log text is bounded.** A value that comes from an untrusted token header (the `alg` of 12104) or from a consumer validator (`FailureReason` of 12200/12300) is logged only when it is short and identifier-shaped, else as a fixed value; `FailureReason` is documented as a stable code, never an identifier, subject or claim value. A revocation check that throws logs 12107 with the exception and still rejects (rule 15).
+26. *(planned, SK.12.SecurityConformance)* Each logging package has an `internal static class {Package}LoggingEventIds` built from `LoggingEventIdRanges.Security` and a `Diagnostics/{Package}Log` class; no bare EventId literal; log templates are single sentences with quoted values and the `{RejectionCode}` placeholder (never free text).
 
 ## Decisions
 
@@ -77,6 +79,10 @@ Overloads, options and defaults: each package's `README.md`.
 | Certificate-binding (RFC 8705) check lives in Oidc, not Mtls | It is a property of the token being validated; Mtls needs no Cryptography reference |
 | `ActorKind` shared with `IRequestContext` | No mapping layer between the two execution views |
 | `GetAuthenticationMethodTime` default-implemented (`null`) | Older implementations still compile and fail closed under a maximum age |
+| *(planned, SK.12.SecurityConformance)* One 100-wide EventId block per logging package, no package-family sharing | Five packages fit the ten slots of 12000-12999; the `SK.01.CoreConformance` family fallback is for domains with more packages than slots |
+| *(planned, SK.12.SecurityConformance)* No `SharedKernel.Security` `ActivitySource`/`Meter` and no public `SecurityErrorCodes` | The domain emits no telemetry and returns no `Error` (it speaks `AuthenticateResult` and RFC 6750/9449 `error` values to ASP.NET Core); adding either is a feature, not conformance. Revisit when a Security API first returns an `Error` or an authentication metric is requested |
+| *(planned, SK.12.SecurityConformance)* 12106 (revocation cache failure) stays Warning | The request continues through the direct check; Error per request during a cache outage would flood logs. Pending arch-lead confirmation of the root L6 wording |
+| The managed API key id is a loggable value | It is a format-validated 16-character handle, not a client id (rule 23); the client id is never logged |
 
 ## Logging
 
@@ -89,6 +95,8 @@ Block **12000–12999** (`LoggingEventIdRanges`), 100-wide sub-blocks:
 | 12200–12299 | ApiKey | 12200 key rejected (reason, key id) · 12201 ambiguous header |
 | 12300–12399 | Mtls | 12300 certificate rejected (reason, thumbprint) · 12301 validator threw |
 | 12400–12499 | Totp | 12400 challenge not accepted · 12401 step-up recorded · 12402 recovery code redeemed |
+
+*(planned, SK.12.RevocationFailureLogging)* 12107 revocation check failed (Oidc, Error, carries the exception); 12103 then means "revoked" only and loses its `CheckAvailable` property. *(planned, SK.12.SecurityConformance)* The sub-blocks are unchanged and every Security event lies in 12xxx, so none shares a range with `ServiceDefaults.Security`, `ServiceDefaults.Security.Mtls` or Localization (13xxx); `Security.Mtls` (12300) is not `ServiceDefaults.Security.Mtls`. Ids come from `{Package}LoggingEventIds` constants and the placeholder `{Reason}` becomes `{RejectionCode}`.
 
 ## Cross-Domain Couplings
 
