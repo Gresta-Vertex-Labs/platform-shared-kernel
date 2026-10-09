@@ -1,8 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <SharedKernelTier>Testing</SharedKernelTier>
-    <Description>Lightweight test helpers for services built on SharedKernel, for test projects only. A controllable IClock, an in-memory ILogger with structured-log assertions, configurable IRequestContext doubles, Bogus fakers for entities, aggregates, value objects, Money, integration events and validated identifiers, domain-event, business-rule, specification and paging assertions, PII-masking assertions and culture scoping. Depends only on the Foundation and Model packages; no test framework dependency.</Description>
-    <PackageTags>testing;test-doubles;fakes;fakers;bogus;logging;clock;shared-kernel</PackageTags>
+    <Description>Lightweight test helpers for services built on SharedKernel, for test projects only. A controllable IClock, an in-memory ILogger with structured-log assertions, configurable IRequestContext doubles, Bogus fakers for entities, aggregates, value objects, Money, integration events and validated identifiers, domain-event, business-rule, specification and paging assertions, PII-masking assertions, culture scoping, and span, metric and log capture with assertions for the platform telemetry shapes and conventions. Depends only on the Foundation and Model packages; no test framework dependency.</Description>
+    <PackageTags>testing;test-doubles;fakes;fakers;bogus;logging;clock;telemetry;tracing;metrics;shared-kernel</PackageTags>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <!-- A test-helper LIBRARY, not a test project: dotnet test must not try to run it. -->
     <IsTestProject>false</IsTestProject>

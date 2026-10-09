@@ -41,7 +41,7 @@ fakes, so the links lead into those folders.
 
 | Package | Tier | Reference it from | Use it for |
 | --- | --- | --- | --- |
-| [SharedKernel.Testing](SharedKernel.Testing/README.md) | Testing | test projects | **The core:** `FakeClock`, `TestRequestContext`, `InMemoryLogger` + `LoggerAssertions`, seeded fakers, domain, contract and privacy assertions |
+| [SharedKernel.Testing](SharedKernel.Testing/README.md) | Testing | test projects | **The core:** `FakeClock`, `TestRequestContext`, `InMemoryLogger` + `LoggerAssertions`, `ActivityRecorder`/`MetricRecorder` + span and metric assertions, seeded fakers, domain, contract and privacy assertions |
 | [SharedKernel.Application.Testing](../Application/SharedKernel.Application.Testing/README.md) | Testing | test projects | `ApplicationPipelineTestHarness` — the real request pipeline and its host-start checks |
 | [SharedKernel.Persistence.Testing](../Infrastructure/Persistence/SharedKernel.Persistence.Testing/README.md) | Testing | test projects | `FakeRepository<,>`, `FakeUnitOfWork`, `FakeAuditTrailWriter`, `AddTestRequestContext()`; `PostgresTestServer` with the production role split |
 | [SharedKernel.Caching.Testing](../Infrastructure/Caching/SharedKernel.Caching.Testing/README.md) | Testing | test projects | `FakeCacheService`, `FakeTenantCacheService`, `FakeDistributedLockService` |

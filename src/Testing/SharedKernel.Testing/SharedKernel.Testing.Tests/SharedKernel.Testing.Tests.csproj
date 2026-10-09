@@ -5,6 +5,7 @@
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Testing.csproj" />
     <ProjectReference Include="..\..\..\Foundation\SharedKernel.Localization\SharedKernel.Localization.csproj" />
+    <ProjectReference Include="..\..\..\Foundation\SharedKernel.Core\SharedKernel.Core.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="xunit" />
