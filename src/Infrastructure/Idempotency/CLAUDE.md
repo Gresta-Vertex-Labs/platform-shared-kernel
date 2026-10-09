@@ -68,6 +68,18 @@ API detail and recipes: each package's `README.md`.
     would defeat the hard `DELETE` cleanup). Timestamps come from `IClock`.
 13. A contract change updates, together: both providers, `FakeIdempotencyStore`, `IdempotencyBehavior` and the
     MassTransit consumer behavior. A new purpose must fit the Redis key segment and the EF `purpose` column (16 chars).
+14. *(planned, SK.18.IdempotencyConformance)* **A fail-closed outage is a classified exception.** All three members
+    throw `IdempotencyStoreUnavailableException` (a `SharedKernelException` in `.Abstractions`, `Error.Unavailable`,
+    `ErrorCodes.Idempotency.StoreUnavailable`, provider-neutral message, the raw provider exception as `InnerException`).
+    Cancellation is never classified, wrapped or swallowed by fail-open. The Redis classifier wraps transient server
+    states only; a Lua or `ERR` reply is a defect and propagates raw. Sharpens rule 8.
+15. *(planned, SK.18.IdempotencyConformance)* **One source and one meter, `SharedKernel.Idempotency`**
+    (`IdempotencyTelemetry`, constants in `.Abstractions`; instances per provider, distinguished by the
+    `idempotency.provider` tag). Spans `idempotency begin|complete|release` (Client); histogram
+    `sharedkernel.idempotency.operation.duration` (`s`) and counter `sharedkernel.idempotency.fail_open`. Keys,
+    fingerprints, tokens, tenants and responses are never a tag, log value or span attribute.
+16. *(planned, SK.18.IdempotencyConformance)* **One purpose guard.** `IdempotencyPurposes.ThrowIfUndefined` runs first in
+    every provider and fake member; no provider validates the purpose lazily.
 
 ## Decisions
 
@@ -80,6 +92,9 @@ API detail and recipes: each package's `README.md`.
 | No cleanup loop inside `.EfCore` | Retention is visible: a documented consumer `BackgroundService` or a `19.Scheduling` job |
 | EF retry disabled for the idempotency context | Each call is one statement; the caller owns retry |
 | A third backing store = new sibling `SharedKernel.Idempotency.{Provider}` | Keeps each provider swappable; it must implement Begin in one atomic round trip |
+| *(planned, SK.18.IdempotencyConformance)* The outage exception lives in `.Abstractions`, not the providers | It is the documented failure of the contract and the providers are siblings (rule 10); `.Abstractions` then references `SharedKernel.Core` as well as `SharedKernel.Execution` |
+| *(planned, SK.18.IdempotencyConformance)* One code, `idempotency.store_unavailable`, for connectivity and timeout; no `IdempotencyErrorCodes` class | The caller's remedy is the same (retry); `ErrorCodes.Idempotency` in Primitives is already the shared public home. The constant is added by 01.Core |
+| *(planned, SK.18.IdempotencyConformance)* A fail-open outage is counted and recorded on the span, not only logged | The `fail_open` counter is the alert signal for duplicate-execution risk |
 
 ## Logging
 
@@ -90,7 +105,10 @@ Block `18000`–`18999` (`LoggingEventIdRanges.Idempotency`).
 | `18000`–`18099` | `.Redis` | `18000` fail-open Warning (`RedisIdempotencyLog`) |
 | `18100`–`18199` | `.EfCore` | `18100` fail-open Warning (`EfCoreIdempotencyLog`) |
 
-`.Abstractions` does not log.
+`.Abstractions` does not log. *(planned, SK.18.IdempotencyConformance)* Each provider builds its id from
+`LoggingEventIdRanges.Idempotency + n * PackageSubBlockWidth` in an internal `{Package}LoggingEventIds`, keeps its log
+class under `Diagnostics/`, and uses one single-sentence template with quoted `'{Operation}'` and `'{Purpose}'`; ids
+18000 and 18100 do not change; the fail-closed path logs nothing.
 
 ## Cross-Domain Couplings
 
@@ -101,6 +119,10 @@ Block `18000`–`18999` (`LoggingEventIdRanges.Idempotency`).
   refusal codes are `ErrorCodes.Idempotency` in `SharedKernel.Primitives`), `07.Messaging` `Messaging.MassTransit`
   (`MessagingBusBuilder.WithIdempotency()`; `Build()` checks `HasIdempotencyStore(IdempotencyPurpose.Message)`). Both
   callers reference only `.Abstractions`; a service picks a provider at its composition root.
+- *(planned, SK.18.IdempotencyConformance)* **Inbound from `01.Core`:** `ErrorCodes.Idempotency.StoreUnavailable`
+  (not yet on any board) and the P-580 observability helpers. **Outbound:** `05.Application` passes the outage
+  exception's `Error` through unchanged; `07.Messaging` reviews its handling of the new type; `16.Testing` catalogues the
+  fake's outage switch.
 
 ## Testing
 
