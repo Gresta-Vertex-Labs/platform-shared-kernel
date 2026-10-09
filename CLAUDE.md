@@ -118,6 +118,40 @@ A new edge is a csproj declaration reviewed like any API change; sibling role pa
 - Structured payloads that may carry sensitive fields expose their own loggable fields (`ILoggableRequest<TResponse>`); never `{@Object}` destructuring or reflection walks. Personal data is marked with `SharedKernel.DataPrivacy` attributes and redacted.
 - `SharedKernel.Domain` and `SharedKernel.Contracts` stay logging-free.
 
+### Observability, exceptions and error codes *(planned, WO-087 — binding for new code now; existing packages converge through Phases 1-3; enforced as errors by P-618)*
+The gold standard that makes any consuming service trace, log and report errors the same way. It extends "Logging" above; where they differ, this section wins once shipped.
+
+**Logging**
+- **L1** Each package has one `internal static class {Package}LoggingEventIds` built from `LoggingEventIdRanges.X + n` (no bare literals) and owns one 100-wide sub-block of its domain's block, recorded in the domain `CLAUDE.md`; sub-blocks never interleave.
+- **L2** One `internal static partial class {Package}Log` per package under `Diagnostics/`, plain static partial methods (no `this ILogger` mixing, no nested `Log` classes).
+- **L3** Templates are one sentence ending in a period, PascalCase placeholders, identifier values quoted (`'{IndexName}'`). Standard names: `{RequestType}` (FullName), `{ElapsedMilliseconds}`, `{ErrorType}` and `{ErrorCode}`. Never free-text `{Error}`/`{Reason}`/`{ErrorMessage}`/`{Detail}`; no em-dashes, `key=value` parentheticals or leading capitals mid-sentence.
+- **L4** Every log on a caught-exception path passes the `Exception` (last parameter).
+- **L5** Never logged: tenant id, correlation id, trace/span id, actor id, client id, certificate subject, IP address, `ex.Message`, `Error.Message`, URLs or hosts, idempotency keys, provider debug dumps. Allowed: codes, types, names, counts, durations, thumbprints.
+- **L6** Levels: per-operation success Debug; lifecycle Information; expected failure (`Result`) Warning; unexpected exception Error.
+- **L7** Category is `ILogger<KernelType>`; never a consumer type, a third-party type or a hand-typed string.
+- **L8** Loggers are required (non-optional) dependencies.
+
+**Tracing and metrics**
+- **T1** One `ActivitySource` and one `Meter` per domain named `SharedKernel.{Capability}` (public constant), version from the assembly informational version via `TelemetryVersion.Of(assembly)` (`SharedKernel.Primitives`). `Meter` through `IMeterFactory` where DI exists; `ActivitySource` static.
+- **T2** `AddServiceDefaults` subscribes to `SharedKernel.*` by wildcard; `With{X}Telemetry()` keeps only third-party instrumentation.
+- **T3** Span names `{capability} {operation}`, lowercase; kind Client for dependency calls, Producer/Consumer for messaging, Internal otherwise.
+- **T4** Tag keys only from constants: cross-cutting in `WellKnownTagKeys`, package keys `{capability}.{snake_name}` in `{Capability}TagKeys`; OpenTelemetry semantic-convention keys where one exists.
+- **T5** Failures are recorded by the shared Primitives recorder (`activity.RecordResult`/`RecordFailure`/`RecordException`, `ActivityFailureExtensions`): status Error, `error.code` = `Error.Code`, `error.type` = `ErrorType` (Result failures) or exception full name, the full exception event for exceptions (`AddException`; traces share the trust level of logs); cancellation is never an error.
+- **T6** Instruments are `sharedkernel.{capability}.*` with a unit on every instrument (`s` for duration histograms, `{message}`/`{row}`-style for counters) and one `outcome` vocabulary (`WellKnownOutcomes`, tag `WellKnownTagKeys.Outcome`): `success`, `failure`, `exception`, `canceled`.
+- **T7** Every client-facing error (HTTP, gRPC, SignalR, GraphQL) carries trace id and correlation id; the inbound request span is tagged `correlation.id` and `tenant.id`; HTTP and gRPC servers read `RequestContextPropagation` headers.
+- **T8** Context propagation only through `RequestContextPropagation`; no hand-rolled header writes.
+
+**Exceptions**
+- **E1** A classified failure is a sealed exception deriving `SharedKernelException` with ctors `(Error)` and `(Error, Exception)`; an exception exposing an `Error` that does not derive it is a defect (it maps to 500).
+- **E2** Programming and configuration errors use BCL `ThrowIf*` helpers and `InvalidOperationException` (fail at startup through options validation where possible); `UnreachableException` for impossible switch arms; never let raw `KeyNotFoundException` or `CryptographicException` out of the kernel.
+- **E3** Messages are sentences ending in a period with quoted values that name the remedy ("No {thing} named '{x}' is registered."); never embed an inner `ex.Message`, hosts, tenant ids or internal rule numbers; never `throw new InvalidOperationException(error.Message)`.
+- **E4** Expected failures return `Result`; catch only classifiable transport faults and rethrow the rest with `throw;`; cancellation always propagates.
+
+**Error codes**
+- **C1** Lowercase `{domain}.{snake_reason}` (optional middle area).
+- **C2** A public `{Capability}ErrorCodes` class plus an internal `{Capability}Errors` factory per capability; results carry `Error`, never `string? Error`.
+- **C3** ErrorType follows the condition: outage Unavailable, timeout Timeout, bad input Validation, missing NotFound, defect Unexpected; the same condition uses the same reason word everywhere (`unavailable`, `not_supported`).
+
 ### Magic strings / named constants (`SK0022`)
 No raw literal at a call site for an identifier used from more than one place or on the wire (header names, baggage/tag keys, configuration keys, claim types, cache-key parts). Use a named constant:
 - **Package-local** — a small constants class in the package (`SecurityClaimTypes`, `WebhookSignatureHeaders`, `HubGroupNaming`, `CacheKeyFormat`).
@@ -163,12 +197,13 @@ Routing only — the domain `CLAUDE.md` holds the rules and details.
 | A tenant value in any API | `TenantId`; tenant-wide-or-global operations take `TenantScope` (`Global`, `For`, `FromNullable`). Never `string`/`Guid` | 01 |
 | A caller with no inbound request (job, startup task, test) | `RequestContextScope.Begin(new SystemRequestContext(permissions, "job-name", tenantId))` | 01 |
 | Supplying the request context in an HTTP host | `AddSharedKernelRequestContext()` + `app.UseSharedKernelRequestContext()` as the first middleware (`ServiceDefaults.Security`) | 13 |
-| Propagating context on outbound calls | Automatic in Communication, MassTransit, Temporal, Webhooks via `RequestContextPropagation` | 01 |
+| Propagating context on outbound calls | Automatic in Communication, MassTransit, Temporal via `RequestContextPropagation`; Webhooks send the correlation id only | 01 |
 | Tenant resolution for HTTP | `AddSharedKernelMultiTenancy()` + `TenantResolutionMiddleware` (Claim → Header → Database); `ITenantCatalog` | 13 |
 | **Core primitives** | | |
 | `Result<T>`, `Error`, a new primitive | `SharedKernel.Primitives`; `Error.Forbidden` (403) vs `Error.Unauthorized` (401) | 01 |
 | Wrapping throwing calls / combining results | `ResultTry.Try`/`TryAsync`, `ResultCombine.Combine` (`SharedKernel.Core`) | 01 |
-| Guard clauses | `Guard.Against` (`SharedKernel.Guards`) | 01 |
+| Guard clauses | `Guard.Against` (namespace `SharedKernel.Guards`, in `SharedKernel.Core`) | 01 |
+| Recording a span failure, outcome tag, telemetry version | `activity.RecordResult`/`RecordFailure`/`RecordException`, `WellKnownOutcomes`, `TelemetryVersion.Of(assembly)` (`SharedKernel.Primitives`) | 01 |
 | Time-ordered ids | `IIdGenerator`/`UuidV7IdGenerator` | 01 |
 | An options type | `AddValidatedOptions<TOptions>(configuration)` + `ISectionBoundOptions`; never `services.Configure` | 01 |
 | A feature flag | `FeatureFlag.Boolean/…(key, default)` over OpenFeature `IFeatureClient`; `AddSharedKernelFeatureManagement` (SK0002 bans `IFeatureManager`) | 01 |
