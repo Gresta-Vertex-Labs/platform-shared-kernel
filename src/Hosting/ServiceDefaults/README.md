@@ -22,8 +22,10 @@ edge, vault-backed configuration and request culture.**
 
 ## What you get
 
-- **One-call observability.** `builder.AddServiceDefaults()` wires traces, metrics and logs over OTLP; each
-  `WithXTelemetry()` (`WithMessagingTelemetry()`, `WithCachingTelemetry()`, …) exports one capability's instruments.
+- **One-call observability.** `builder.AddServiceDefaults()` wires traces, metrics and logs over OTLP, exports every
+  `SharedKernel.*` source and meter, HttpClient metrics and the SignalR server source, and reports one resource with the
+  entry assembly's informational `service.version`. Only third-party instrumentation needs a call:
+  `WithMessagingTelemetry()`, `WithPersistenceTelemetry()`, `WithCommunicationTelemetry()`, `WithWorkflowTelemetry()`.
 - **Readiness without per-dependency wiring.** Every provider registers its own `IReadinessProbe`;
   `AddSharedKernelReadiness()` maps them all onto `/health/ready`, held closed by `StartupGate` until you call `MarkReady()`.
 - **One request context.** `UseSharedKernelRequestContext()` gives handlers, persistence, caching, outbound calls and
@@ -91,7 +93,7 @@ using SharedKernel.ServiceDefaults.Security;
 using SharedKernel.ServiceDefaults.Telemetry;
 
 builder.AddServiceDefaults();                                  // FIRST: OpenTelemetry + the "startup" check
-builder.WithApplicationTelemetry();                            // only the capabilities this service uses
+builder.WithMessagingTelemetry();                              // only third-party instrumentation (MassTransit)
 builder.Services.AddSharedKernelRequestContext();              // IRequestContext over IUserContext
 builder.Services.AddHealthChecks().AddSharedKernelReadiness(); // one "ready" check per IReadinessProbe
 

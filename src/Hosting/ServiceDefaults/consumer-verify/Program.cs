@@ -14,6 +14,7 @@ using SharedKernel.MultiTenancy.Resolution;
 using SharedKernel.Persistence.Abstractions.Connections;
 using SharedKernel.ServiceDefaults.Extensions;
 using SharedKernel.ServiceDefaults.Probes;
+using SharedKernel.ServiceDefaults.Telemetry;
 using SharedKernel.Execution.Context;
 
 // ── Surface 1: AddServiceDefaults() — mandatory first call ──────────────────
@@ -30,6 +31,16 @@ Console.WriteLine("Surface 1 PASS: AddServiceDefaults()");
 builder.Services.AddSingleton<IDbConnectionFactory, NoOpDbConnectionFactory>();
 builder.Services.AddSharedKernelMultiTenancy();
 Console.WriteLine("Surface 2 PASS: AddSharedKernelMultiTenancy()");
+
+// ── Surface 2b: the narrowed telemetry surface ──────────────────────────────
+// AddServiceDefaults() exports every SharedKernel.* source and meter by wildcard; only the four third-party
+// extensions remain. Compiling and calling them proves the surface is consumable and chainable.
+builder
+    .WithMessagingTelemetry()
+    .WithPersistenceTelemetry()
+    .WithCommunicationTelemetry()
+    .WithWorkflowTelemetry();
+Console.WriteLine("Surface 2b PASS: WithMessagingTelemetry(), WithPersistenceTelemetry(), WithCommunicationTelemetry(), WithWorkflowTelemetry()");
 
 var app = builder.Build();
 

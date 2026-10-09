@@ -10,7 +10,8 @@
 | You get | So that |
 | --- | --- |
 | `builder.AddServiceDefaults()` | Traces, metrics and logs over OTLP, plus the `startup` readiness check, in one call |
-| `WithXTelemetry()` for each kernel domain | A domain's `ActivitySource` and `Meter` are exported only when the service uses it — no extra dependency |
+| Every `SharedKernel.*` source and meter, HttpClient metrics and the SignalR server source, exported with no call | A capability's telemetry can never be dropped by a forgotten registration or a stale hand-copied name |
+| Four `WithXTelemetry()` extensions | Third-party instrumentation (MassTransit, Npgsql, Polly with gRPC client, Temporal) is exported only when the service uses it — no extra dependency |
 | `AddSharedKernelReadiness()` | Every `IReadinessProbe` a provider registered becomes a `ready` check, with no per-dependency wiring |
 | `MapDefaultHealthCheckEndpoints()` | `/health/live` and `/health/ready` for Kubernetes probes |
 | `StartupGate` | Traffic waits until migrations and warm-up finish |
@@ -55,7 +56,7 @@ using SharedKernel.ServiceDefaults.Telemetry;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();                       // first: OpenTelemetry + the "startup" check
-builder.WithMessagingTelemetry();                   // only the domains this service uses
+builder.WithMessagingTelemetry();                   // only third-party instrumentation (MassTransit); SharedKernel.* needs no call
 
 builder.Services.AddHealthChecks()
     .AddSharedKernelReadiness();                    // one "ready" check per registered IReadinessProbe
@@ -74,11 +75,17 @@ assembly's name.
 
 ## How it works
 
-- **Telemetry.** `AddServiceDefaults()` registers tracing (ASP.NET Core, HttpClient, EF Core), metrics (ASP.NET Core,
-  runtime) and logging (scopes and formatted messages), all exported over OTLP. Every `WithXTelemetry()` adds its
-  domain's instruments **by name** and references nothing, so none adds a dependency; each is idempotent.
-  `WithApplicationTelemetry()` also registers a bucket view for `sharedkernel.application.request.duration`, recorded
-  in **seconds** — without it every request would land in the first default bucket.
+- **Telemetry.** `AddServiceDefaults()` registers tracing (ASP.NET Core, HttpClient, EF Core, the SignalR server
+  source), metrics (ASP.NET Core, HttpClient, runtime) and logging (scopes and formatted messages), all exported over
+  OTLP. **Every `SharedKernel.*` source and meter is exported** through one wildcard, including ones created after the
+  host started; a name outside that prefix is not. Only third-party instrumentation needs a `WithXTelemetry()` call
+  (see [Telemetry](#telemetry)); each is idempotent and references nothing.
+- **One resource.** The three signals share one resource: `service.name` is the entry assembly's name (or the name you
+  pass to `AddSharedKernelTelemetry`), `service.version` is the entry assembly's informational version with build
+  metadata (`1.4.0+3f2a9c1`), `0.0.0` when there is no entry assembly. `OTEL_RESOURCE_ATTRIBUTES` adds attributes.
+- **Duration buckets.** A `Histogram<double>` with unit `s` in a `SharedKernel.*` meter gets the second-scale
+  boundaries (`0.005 … 10`); without them every request would land in the first default bucket. Any other histogram keeps
+  the SDK defaults.
 - **Readiness.** `AddSharedKernelReadiness()` maps each `IReadinessProbe` (`SharedKernel.Primitives.Health`) to a
   health check named after the probe and tagged `ready`:
 
@@ -143,7 +150,7 @@ app.MapPost("/login", ...).RequireRateLimiting(RateLimitPolicyNames.Authenticati
 | `IHealthChecksBuilder.AddSharedKernelReadiness(Action<ReadinessHealthCheckOptions>?)` | One `ready` check per `IReadinessProbe` |
 | `IEndpointRouteBuilder.MapDefaultHealthCheckEndpoints(bool requireAuthorization = false)` | `/health/live`, `/health/ready` |
 | `IHostApplicationBuilder.AddSharedKernelRateLimiting(Action<RateLimiterOptions>?)` | ASP.NET Core rate limiting |
-| `WithApplicationTelemetry()` · `WithCachingTelemetry()` · `WithCommunicationTelemetry()` · `WithIntegrationTelemetry()` · `WithIntelligenceTelemetry()` · `WithMessagingTelemetry()` · `WithPersistenceTelemetry()` · `WithReportingTelemetry()` · `WithSchedulingTelemetry()` · `WithSearchTelemetry()` · `WithStorageTelemetry()` · `WithWorkflowTelemetry()` | A domain's `ActivitySource` and `Meter` |
+| `WithCommunicationTelemetry()` · `WithMessagingTelemetry()` · `WithPersistenceTelemetry()` · `WithWorkflowTelemetry()` | Third-party instrumentation, see [Telemetry](#telemetry) |
 
 ### Types
 
@@ -156,6 +163,44 @@ app.MapPost("/login", ...).RequireRateLimiting(RateLimitPolicyNames.Authenticati
 | `RateLimitPolicyNames.Authentication` | `"authentication"` |
 | `HealthCheckRegistrationLogging.LogRegistration(services, categoryName, name, tags)` | Logs a readiness check's registration from a check of your own |
 | `BaggageLogRecordProcessor` | The log-record enricher `AddServiceDefaults()` installs |
+
+### Telemetry
+
+Exported by `AddServiceDefaults()` with no further call:
+
+| Signal | What |
+| --- | --- |
+| Traces | Every `ActivitySource` named `SharedKernel.*`; `Microsoft.AspNetCore.SignalR.Server` (hub connect, invocation, disconnect); ASP.NET Core, HttpClient and EF Core instrumentation |
+| Metrics | Every `Meter` named `SharedKernel.*`; HttpClient (`http.client.request.duration` and friends); ASP.NET Core and runtime instrumentation |
+
+A `SharedKernel.*` name matches `SharedKernel.Messaging` and `SharedKernel.Persistence.EfCore.Auditing`, but not
+`SharedKernel` or `OtherVendor.SharedKernel.X`. The four extensions subscribe third-party names that the owning
+library must keep byte-identical:
+
+| Extension | Subscribes | Owner |
+| --- | --- | --- |
+| `WithMessagingTelemetry()` | `MassTransit` source and meter | MassTransit |
+| `WithPersistenceTelemetry()` | `Npgsql` source and meter (emits once the service enables Npgsql's OpenTelemetry support) | Npgsql |
+| `WithCommunicationTelemetry()` | gRPC client instrumentation (`rpc.*` span tags) and the `Polly` meter | OpenTelemetry gRPC client instrumentation, Polly |
+| `WithWorkflowTelemetry()` | `Temporalio.Extensions.OpenTelemetry.*`: the client, workflow, activity and Nexus sources of Temporal's `TracingInterceptor` | Temporal SDK |
+
+```csharp
+builder.AddServiceDefaults();             // every SharedKernel.* source and meter, HttpClient metrics
+builder.WithMessagingTelemetry();         // MassTransit's own spans and metrics
+builder.WithWorkflowTelemetry();          // Temporal client, workflow and activity spans
+```
+
+### Breaking changes
+
+- `WithApplicationTelemetry()`, `WithCachingTelemetry()`, `WithIntegrationTelemetry()`, `WithIntelligenceTelemetry()`,
+  `WithReportingTelemetry()`, `WithSchedulingTelemetry()`, `WithSearchTelemetry()` and `WithStorageTelemetry()` are
+  removed: they wired only `SharedKernel.*` names, which `AddServiceDefaults()` now exports. Delete the calls.
+- `WithMessagingTelemetry()`, `WithPersistenceTelemetry()` and `WithWorkflowTelemetry()` no longer subscribe
+  `SharedKernel.*` names (the wildcard covers them). `WithWorkflowTelemetry()` now exports Temporal's tracing sources.
+- `service.version` is the entry assembly's informational version (build metadata kept, for example `1.4.0+3f2a9c1`)
+  instead of its four-part assembly version, and `0.0.0` when there is no entry assembly. Dashboards that group by
+  the old value need the new one.
+- A kernel source or meter named outside `SharedKernel.` is no longer exportable by a registration here.
 
 ### Health
 

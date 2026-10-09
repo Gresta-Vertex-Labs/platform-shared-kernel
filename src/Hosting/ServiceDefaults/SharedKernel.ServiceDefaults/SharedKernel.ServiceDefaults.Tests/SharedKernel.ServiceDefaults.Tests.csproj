@@ -71,6 +71,11 @@
       a built MeterProvider.
     -->
     <PackageReference Include="OpenTelemetry.Exporter.InMemory" />
+    <!--
+      SK.13.WildcardTelemetry T-03, test-only: WithWorkflowTelemetry() is proven against the Temporal SDK's own
+      TracingInterceptor source objects, so an upstream rename fails the test. Never referenced by the base.
+    -->
+    <PackageReference Include="Temporalio.Extensions.OpenTelemetry" />
   </ItemGroup>
   <ItemGroup>
     <Protobuf Include="Telemetry\GrpcFixtures\greeter.proto" GrpcServices="Both" />
