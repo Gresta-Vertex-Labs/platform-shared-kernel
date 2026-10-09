@@ -47,13 +47,13 @@ API detail, option keys and defaults: the package READMEs and `SharedKernel.Inte
 5. **`WebhookSignatureVerifier.Verify` never throws** — malformed or missing input returns `false`. The skew window is `SignatureTolerance` (default 5 min); do not hardcode another at a call site.
 6. **Header names come from `WebhookSignatureHeaders`** only. A `WebhookSubscription.Headers` entry colliding (case-insensitively) with a signature/timestamp/delivery-id header fails that delivery before any HTTP call.
 7. **The routing key is the `[IntegrationEvent]` name** via `IntegrationEventDescriptor`, never the CLR type name; an event type without the attribute throws `InvalidOperationException` before lookup. Reference `WebhookPingEvent.EventName`/`WebhookDeliveryExhaustedEvent.EventName`, never retype them.
-8. **Per-subscription failures never throw.** HTTP failures, timeouts and SSRF rejections are a failed `WebhookDeliveryResult`; one subscriber cannot fault a fan-out. Fan-out is bounded by `MaxConcurrentDeliveries` — no unbounded `Task.WhenAll`.
+8. **Per-subscription failures never throw.** HTTP failures, timeouts and SSRF rejections are a failed `WebhookDeliveryResult`; one subscriber cannot fault a fan-out. Fan-out is bounded by `MaxConcurrentDeliveries` — no unbounded `Task.WhenAll`. *(planned, SK.15.IntegrationLeakFixes: today a subscription with no secrets, a throwing validator or encryption service, or an unlisted transport exception throws out of the fan-out. A fault boundary in `DispatchToSubscriptionAsync` turns every exception except caller cancellation into a failed result and an Error log; host misconfiguration is checked at resolution, outside the boundary.)*
 9. **SSRF guard is fail-closed and runs before every send** against the DNS-resolved addresses (loopback, link-local, private, multicast/reserved; IPv4 and IPv6), never the literal hostname and never cached from registration time. Opt-outs: `AllowPrivateNetworkTargets` or `WithUrlValidator<T>()` only.
 10. **One delivery id per delivery.** `X-Webhook-Delivery-Id` is stable across retries and equals `WebhookDeliveryResult.DeliveryId`.
 11. **Retry lives in the resilience handler**, configured from `WebhookDeliveryOptions` (`MaxAttempts`, backoff, timeouts) — never a hand-rolled loop; every validated option must actually drive the handler. With `MaxAttempts = 1` retries are short-circuited via `ShouldHandle`.
 12. **Exhaustion publishes exactly one `WebhookDeliveryExhaustedEvent`** per exhausted delivery, only after `MaxAttempts`. A failed publish is logged (`ExhaustionEventNotPublished`) and does not change the delivery outcome.
 13. **Observers are isolated:** an `IWebhookDeliveryObserver`/`INotificationDeliveryObserver` exception is caught and logged at Warning, never propagated. `OnAttemptAsync` fires once per send (`attemptNumber: 1`); retries happen below the sender.
-14. **Payload encryption is opt-in, encrypt-then-sign**, through `ISymmetricEncryptionService.EncryptToStringAsync` only (no crypto of this domain's own), with AAD = `WebhookPayloadAssociatedData.Build(subscriptionId, deliveryId)`. Never send the subscription id as a header — the subscriber must know it out of band, or a captured ciphertext could be replayed with attacker-supplied AAD. `EncryptPayload` without a registered `ISymmetricEncryptionService` throws `InvalidOperationException` at first delivery.
+14. **Payload encryption is opt-in, encrypt-then-sign**, through `ISymmetricEncryptionService.EncryptToStringAsync` only (no crypto of this domain's own), with AAD = `WebhookPayloadAssociatedData.Build(subscriptionId, deliveryId)`. Never send the subscription id as a header — the subscriber must know it out of band, or a captured ciphertext could be replayed with attacker-supplied AAD. `EncryptPayload` without a registered `ISymmetricEncryptionService` throws `InvalidOperationException` at first delivery. *(planned, SK.15.IntegrationLeakFixes: at resolution of `IWebhookDispatcher`; SK.15.IntegrationConformance: also at startup through options validation.)*
 15. **Test deliveries reuse `DispatchToSubscriptionAsync`** — no parallel signing/send path. `WebhookPingEvent` is never published on the bus or fanned out.
 16. **Notifications: `NotificationDeliveryId` is caller-supplied and required** — a provider never generates it, so a caller-level retry reuses it.
 17. **Attachments are `SharedKernel.Storage.FileReference` only**, opened with `IFileStorageFactory.Open` and read with `DownloadAsync` at send time; no inline-bytes overload. SendGrid base64-encodes by streaming (`CryptoStream` + `ToBase64Transform`).
@@ -63,6 +63,10 @@ API detail, option keys and defaults: the package READMEs and `SharedKernel.Inte
 21. **Provider packages never reference each other or Webhooks**, and never take the vendor SDK.
 22. **No persistence types here** (`DbContext`, repositories); only `Messaging.Abstractions` from `07.Messaging`.
 23. **No static mutable state.** Outbound payloads serialize through source-generated `JsonSerializerContext`s.
+24. **No exception text in any result, log, event or span tag.** `ex.Message` and `Error.Message` never reach a `WebhookDeliveryResult`, `NotificationDeliveryResult`, `WebhookDeliveryExhaustedEvent`, log placeholder or span tag/description; a failure carries a fixed, closed reason. The caught exception object is passed to the log (last parameter) and recorded on the span. *(planned, SK.15.IntegrationLeakFixes)*
+25. **Results carry an `Error`, with `integration.{webhook|notification}.{reason}` codes.** `WebhookDeliveryResult.Error` and `NotificationDeliveryResult.Error` are `Error?`, `null` exactly when `IsSuccess`. Codes live in public `WebhookErrorCodes` and `NotificationErrorCodes` (the two families cannot share a type, rule 21); `NotificationErrors` is public because both providers build it, `WebhookErrors` is internal. The exhaustion event carries `LastErrorCode`. *(planned, SK.15.IntegrationConformance)*
+26. **Telemetry follows the gold standard.** Spans `webhook dispatch` (Internal), `webhook deliver` (Client), `notification send` (Client); tag keys from `WebhookTagKeys`/`NotificationTagKeys`, outcome from `WellKnownTagKeys.Outcome` with `WellKnownOutcomes` values; failures recorded by the shared Primitives recorder; instruments `sharedkernel.integration.*` on the `SharedKernel.Integration` meter from `IMeterFactory` (`WebhookMetrics`, `NotificationMetrics`), with units, never tagged by subscription id, delivery id or recipient. *(planned, SK.15.IntegrationConformance)*
+27. **The correlation id leaves only through `RequestContextPropagation`.** The dispatcher calls `WriteHeaders` with a `null` context and the explicit correlation id, so no tenant, actor or client header can be written; no hand-rolled header write. *(planned, SK.15.IntegrationConformance)*
 
 ## Decisions
 
@@ -80,6 +84,11 @@ API detail, option keys and defaults: the package READMEs and `SharedKernel.Inte
 | `MaxConcurrentSends` enforced by the resilience pipeline's rate-limiter stage | No bespoke per-provider throttle type. |
 | Two `ActivitySource` instances share the name `SharedKernel.Integration` | OTel subscribes by name; the two families have no legal reference path to share one instance. |
 | No `Push` channel | Device-token registration and payload shaping are far more scope than text delivery. |
+| *(planned, SK.15.IntegrationLeakFixes)* The webhook fault boundary sits inside `DispatchToSubscriptionAsync`, after the delivery id exists | A faulted subscription still has a real `DeliveryId`, reaches observers and the span, and `SendTestDeliveryAsync` inherits it; caller cancellation is the one exception that propagates. |
+| *(planned, SK.15.IntegrationLeakFixes)* Missing `ISymmetricEncryptionService` fails at dispatcher resolution, not per delivery | A host misconfiguration must not be swallowed by the per-subscription boundary or surface mid-fan-out. |
+| *(planned, SK.15.IntegrationConformance)* Two public code classes, not one `IntegrationErrorCodes` | Webhooks and Notifications cannot reference each other (rule 21); the shared `integration.` prefix keeps one wire namespace. |
+| *(planned, SK.15.IntegrationConformance)* `WebhookMetrics`/`NotificationMetrics` are public sealed singletons | The public dispatcher and sender constructors cannot take an internal type, and a per-scope `IMeterFactory` use would duplicate instruments. |
+| *(planned, SK.15.IntegrationConformance)* `LastError` becomes `LastErrorCode` on the exhaustion event, version left at 1 | Pre-GA wire rename (WO-087 decision 2); the event must never carry message text. |
 
 ## Logging
 
@@ -93,6 +102,8 @@ Block **15000–15999** (`LoggingEventIdRanges.Integration`), 100-wide sub-block
 | `Integration.Notifications.Sms.Twilio` | 15300–15399 | `TwilioSmsNotificationSender.Log`: +300 `DeliverySucceeded`, +301 `DeliveryFailed`, +302 `ObserverException`. |
 | — | 15400–15999 | Unallocated (next package). |
 
+*(planned, SK.15.IntegrationLeakFixes)* Webhooks +5 `DeliveryFaulted` (Error). *(planned, SK.15.IntegrationConformance)* Per package `internal static class {Package}LoggingEventIds` (`WebhooksLoggingEventIds`, `SendGridLoggingEventIds`, `TwilioLoggingEventIds`, ids unchanged) and `Diagnostics/{Package}Log.cs`; sentence templates with quoted ids and `{ErrorType}`/`{ErrorCode}`; levels: success Debug, failed result Warning, fault and observer exception Error, exhaustion-not-published Warning. The span and instrument names of rule 26 replace the span list below.
+
 Tracing: spans `WebhookDispatcher.Dispatch` and `WebhookDispatcher.DispatchToSubscription` (tags from `WebhookActivityTags`), `NotificationSender.Send` (`NotificationActivityTags`). Never a URL, secret, recipient or template field as a tag. A cross-domain tag reuses `WellKnownTagKeys`.
 
 ## Cross-Domain Couplings
@@ -101,7 +112,8 @@ Tracing: spans `WebhookDispatcher.Dispatch` and `WebhookDispatcher.DispatchToSub
 - **04.Contracts:** `IIntegrationEvent`, `[IntegrationEvent]`, `IntegrationEventDescriptor` — the webhook routing key equals the CloudEvents `type` of the same event over `07.Messaging`.
 - **07.Messaging:** `IEventPublisher` publishes `WebhookDeliveryExhaustedEvent`; the host supplies the MassTransit implementation.
 - **08.Storage:** `FileReference`, `IFileStorageFactory`, `IFileStorage.DownloadAsync` for SendGrid attachments.
-- **13.ServiceDefaults:** `WithIntegrationTelemetry()` subscribes to `SharedKernel.Integration`.
+- **13.ServiceDefaults:** `WithIntegrationTelemetry()` subscribes to `SharedKernel.Integration` *(planned: `SK.13.WildcardTelemetry` deletes it; `AddServiceDefaults` subscribes `SharedKernel.*`)*.
+- **01.Core / 16.Testing (planned, WO-087):** `TelemetryVersion`, `ActivityFailureExtensions`, `WellKnownOutcomes`, `WellKnownTagKeys.Outcome` (SK.01.ObservabilityHelpers) and the telemetry capture helpers (SK.16.TelemetryCapture) that the two phases build on.
 - **14.Presentation:** a receiver endpoint calls `WebhookSignatureVerifier.Verify`; this domain hosts no endpoint.
 - **16.Testing:** `SharedKernel.Integration.Testing` doubles the dispatcher, the sender and both observers. A change to `IWebhookDispatcher`, `IWebhookDeliveryObserver`, `INotificationSender` or `INotificationDeliveryObserver` must update them.
 
