@@ -131,6 +131,21 @@ README. The canonical composition is compiled by
 21. **Everything that can be wrong is validated at start without echoing a connection string**; types only sibling
     packages need are `internal` + IVT.
 
+22. *(planned, SK.06.PersistenceErrorSafety)* **No tenant, actor, key or host value reaches a log or an exception
+    message** (`{ActorId}`, `{ActorTenantId}`, `{ChainTenant}`, `{IdempotencyKey}`, master-key ids, provider text are
+    banned placeholders; a reflection test per logging package enforces it). **"No tenant resolved" is one behaviour**:
+    `ForbiddenException` carrying the identical `Error` `persistence.tenant_required` (Dapper, the audit services and
+    the EF Core write guard). Not-found of an audit record is one `NotFoundException`
+    (`persistence.audit_record_not_found`) for a missing and a foreign record. Query canceled (57014) is `Timeout`, not
+    `Conflict` (rule 14 is amended when it ships; 55P03 stays `Conflict`). A raw `KeyNotFoundException` or
+    `CryptographicException` never leaves a shipped package: decrypt and data-key faults are `FieldEncryptionException`.
+23. *(planned, SK.06.PersistenceConformance)* **One telemetry identity and one code registry.** Every `ActivitySource`
+    and `Meter` of the six packages is named `SharedKernel.Persistence` (`PersistenceTelemetry.Name`); instruments are
+    `sharedkernel.persistence.*` with a unit, durations in seconds; failures are recorded through the shared Primitives
+    recorder. Every error code is declared once in `PersistenceErrorCodes` (lowercase `persistence.{area}.{reason}`),
+    never inline; each package owns one 100-wide EventId sub-block, one `{Package}LoggingEventIds` and one
+    `{Package}Log`.
+
 AOT is not a design constraint here (EF Core, Npgsql and Dapper are reflection-based), but expression trees are built
 once and cached, and canonical encodings (AUDITv3, AAD, key canonicalization, advisory-lock hashing) are pure
 `Span<byte>` code.
@@ -152,6 +167,13 @@ once and cached, and canonical encodings (AUDITv3, AAD, key canonicalization, ad
 | Tenant data keys + tombstones for crypto-shredding | Erases a tenant without rewriting every row; shredded values are refused on read |
 | No outbox here | `07.Messaging` owns it through MassTransit's EF Core outbox |
 | `18.Idempotency.EfCore` runs with retry off | Single atomic statements; fail-open must be fast |
+| *(planned, SK.06.PersistenceErrorSafety)* The shared no-tenant `Error` is public in Abstractions | Dapper, EfCore and Auditing must build the identical value; internals are sibling-only (rule 21) and Abstractions has no `InternalsVisibleTo`, so a public accessor beats new IVT and exact pins |
+| *(planned, SK.06.PersistenceErrorSafety)* Audit not-found is an exception, not a `Result` | The audit services return plain values and report every other failure by exception; two `Result` members would split the contract. One error for missing and foreign records keeps the no-oracle rule |
+| *(planned, SK.06.PersistenceErrorSafety)* 57014 is `Timeout`; 55P03 stays `Conflict` | Statement timeout is a timeout (C3); 55P03 also covers `NOWAIT`/`SKIP LOCKED` contention, which a retry resolves |
+| *(planned, SK.06.PersistenceErrorSafety)* One `FieldEncryptionException` with a code per fault | Callers catch one classified type; the client-safe `Error.Message` is fixed, provider text and master-key ids never enter it |
+| *(planned, SK.06.PersistenceConformance)* Meter through `IMeterFactory`, static fallback outside DI | One `Meter` object across four assemblies; pooled contexts built outside DI and the static write guard cannot resolve a factory (recorded deviation from T1) |
+| *(planned, SK.06.PersistenceConformance)* Codes live in Abstractions' `PersistenceErrorCodes`; factories stay per package | One registry and one C1 test; a shared internal factory would need new IVT and exact-version pins |
+| *(planned, SK.06.PersistenceConformance)* Repository spans stay `Internal` | The `Client` span for the database call is the one Npgsql emits; the repository span is in-process work |
 
 ## Logging
 
@@ -167,6 +189,16 @@ EventId block **6000–6999** (`LoggingEventIdRanges.Persistence`), written as `
 | 6400–6499 | Dapper | 6400–6401 (a rollback failure never masks the original error) |
 | 6500–6699 | Encryption | 6500–6504, 6510–6513, 6520–6522 |
 | 6700–6899 | Auditing | 6700–6713 |
+
+*(planned, SK.06.PersistenceConformance)* Sub-blocks become 100-wide per package, one `{Package}LoggingEventIds` each:
+EfCore 6000–6099 (RLS logs move from 6350–6351 to 6027–6028), Abstractions 6100–6199, Npgsql 6300–6399, Dapper
+6400–6499, Encryption 6500–6599, Auditing 6700–6799; 6200–6299, 6600–6699 and 6800–6899 stay reserved. Existing ids
+otherwise keep their numbers. *(planned, SK.06.PersistenceErrorSafety)* 6150 no longer logs the actor or its tenant; 6700
+no longer logs the idempotency key; 6702, 6706 and 6709 no longer log the chain tenant; 6004 passes the exception.
+
+*(planned, SK.06.PersistenceConformance)* Telemetry collapses to one `ActivitySource` and one `Meter` named
+`SharedKernel.Persistence`, instruments `sharedkernel.persistence.*` (units, seconds), spans `persistence {operation}`.
+Until it ships:
 
 Telemetry: `ActivitySource`/`Meter` `"SharedKernel.Persistence"` and `"SharedKernel.Persistence.EfCore.Auditing"`,
 `Meter` `"SharedKernel.Persistence.EfCore.Encryption"`, plus Npgsql's `"Npgsql"`; wired by `13.ServiceDefaults`'
