@@ -32,10 +32,10 @@ Phases written by `arch-lead` take the next phase id; a user-directed phase with
 | 10 | [Intelligence](src/Infrastructure/AI/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ○ | Next: `SK.10.IntelligenceObservability` (WO-087) |
 | 11 | [Communication](src/Infrastructure/Communication/state-map.md) | 3 (Adapter) | ○ | Next: `SK.11.TokenUnavailableEdge` (WO-087) |
 | 12 | [Security](src/Hosting/Security/state-map.md) | 5 (1 Abstractions, 4 Host) | ○ | Next: `SK.12.RevocationFailureLogging` (WO-087) |
-| 13 | [ServiceDefaults](src/Hosting/ServiceDefaults/state-map.md) | 7 (Host) | ○ | Next: `SK.13.WildcardTelemetry` (WO-087) |
+| 13 | [ServiceDefaults](src/Hosting/ServiceDefaults/state-map.md) | 7 (Host) | ○ | Next: `SK.13.HostObservabilityFixes` (WO-087) |
 | 14 | [Presentation](src/Hosting/Presentation/state-map.md) | 6 (Host) + WebApi generator (Tooling) | ○ | Next: `SK.14.EdgeErrorContext` (WO-087) |
 | 15 | [Integration](src/Infrastructure/Integration/state-map.md) | 4 (1 Abstractions, 3 Adapter) | ○ | Next: `SK.15.IntegrationLeakFixes` (WO-087) |
-| 16 | [Testing](src/Testing/state-map.md) | 21 (Testing; 20 packable + `Testing.Internal`) | ○ | Next: `SK.16.TelemetryCapture` (WO-087) |
+| 16 | [Testing](src/Testing/state-map.md) | 21 (Testing; 20 packable + `Testing.Internal`) | ● | None |
 | 17 | [Workflows](src/Infrastructure/Workflows/state-map.md) | 1 (Adapter) | ○ | Next: `SK.17.WorkflowObservabilityFixes` (WO-087) |
 | 18 | [Idempotency](src/Infrastructure/Idempotency/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ○ | Next: `SK.18.IdempotencyConformance` (WO-087) |
 | 19 | [Scheduling](src/Infrastructure/Scheduling/state-map.md) | 1 (Adapter) | ○ | Next: `SK.19.SchedulerLogContext` (WO-087) |
@@ -64,7 +64,7 @@ Provide the single set of helpers every other domain adopts: (a) a telemetry-ver
 - [ ] Helpers recorded in the domain `CLAUDE.md`; a root "What Goes Where" row flagged for `/sync-brain`.
 
 #### P-581 — Telemetry capture helpers for tests (Phase 0)
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Domain:** 16.Testing
 **Depends on:** P-580
 **Phase key:** `SK.16.TelemetryCapture`
@@ -74,7 +74,7 @@ Provide in the shared test package a capture helper for `ActivitySource` and `Me
 - [ ] Catalogue and rules in the domain `CLAUDE.md` updated.
 
 #### P-582 — Wildcard subscription and resource in ServiceDefaults (Phase 0)
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Domain:** 13.ServiceDefaults
 **Depends on:** P-580
 **Phase key:** `SK.13.WildcardTelemetry`
