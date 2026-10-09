@@ -82,6 +82,11 @@ and satellite READMEs (`SharedKernel.Messaging.*/README.md`).
 25. No static mutable state except `MessagingDiagnostics.ActivitySource`/`.Meter` and its instruments. Consumer log scopes via `MessagingLogScope.Create(correlationId)`, never a hand-built dictionary.
 26. The outbox is at-least-once: messages published in a unit of work are written in the same transaction and delivered after commit; the `DbContext` maps `AddInboxStateEntity()`, `AddOutboxMessageEntity()`, `AddOutboxStateEntity()` and the service owns the migration (tables must exist before the bus starts).
 27. Never commit transport credentials to `appsettings.json` (`RabbitMqBusOptions` defaults to `guest`).
+28. *(planned, SK.07.MessagingErrorSafety)* **Consumer log scopes carry no identity.** The scope copies only an allow-list of well-known headers built from `WellKnownHeaders` constants (today `ActorKind` only); actor id, client id, tenant and idempotency key never enter a scope (root L5). No raw `"x-sk-"` literal.
+29. *(planned, SK.07.MessagingErrorSafety)* **Classified exceptions derive `SharedKernelException`.** `ConcurrentMessageDeliveryException` (`messaging.concurrent_delivery`, `Conflict`) and `PayloadTransformMismatchException` (`messaging.payload_transform_mismatch`, `Unexpected`) are sealed, carry an `Error` and keep the original exception as `InnerException`. Rethrow is `throw;` (never `throw ex;`); cancellation always propagates, including from `IMessageScheduler.CancelAsync`.
+30. *(planned, SK.07.ObservabilityConformance)* **Telemetry shape.** Public constants `MessagingTelemetry.SourceName`/`MeterName` = `SharedKernel.Messaging`; spans `messaging consume`, `messaging consume_batch` (Consumer), `messaging publish`, `messaging publish_event`, `messaging send` (Producer); instruments `sharedkernel.messaging.*` with a unit (`{message}`, `{retry}`, `{fault}`, `s`) and the `outcome` tag; failures recorded only through the Primitives recorder helpers; tag keys only from `MessagingTagKeys`. The `Meter` stays a process-wide static (consumer base constructors are public API and take only an `ILogger`).
+31. *(planned, SK.07.ObservabilityConformance)* **Publish-side propagation of correlation and tenant goes through `RequestContextPropagation`**, never a direct `WellKnownHeaders` write in `PublishContextPipe`; an `x-sk-actor-kind` header is consequently always present on an outgoing message (readers treat absent as `Anonymous`).
+32. *(planned, SK.07.ObservabilityConformance)* **Error ownership.** `MessagingErrorCodes` is the only public error type; the factory is internal to the core (no error built outside it). No `Error` or exception message embeds an inner `Exception.Message` or an `Error.Message` of another failure.
 
 ## Decisions
 
@@ -96,6 +101,11 @@ and satellite READMEs (`SharedKernel.Messaging.*/README.md`).
 | Idempotency key includes endpoint + consumer type | Two consumers of one message must each process it once |
 | Native ordered delivery only | A kernel sequencing layer would duplicate and fight the broker |
 | No `QueueNameSuffix` via `BindDeadLetterQueue` | That wires broker NACK/TTL dead-lettering, which a consumer exception never reaches |
+| *(planned, SK.07.ObservabilityConformance)* Static `Meter`, no `IMeterFactory` | The instruments are recorded from `ConsumerBase<T>`/`BatchConsumerBase<T>`, whose public constructors take only an `ILogger`; an `IMeterFactory` would be a breaking constructor change on types services derive from |
+| *(planned, SK.07.ObservabilityConformance)* One sub-block per package: core 7000-7099, RabbitMq 7100-7199 (reserved), Azure Service Bus 7200-7299, EfCore 7300-7399 (reserved) | Sub-blocks never interleave (root L1); 7010 moves to 7200 and is retired in the core |
+| *(planned, SK.07.ObservabilityConformance)* Error factory internal to the core, codes public | Every producer is in the core; a public factory in `.Abstractions` invites errors built outside the one classifier |
+| *(planned, SK.07.MessagingErrorSafety)* Log-scope allow-list is closed and pinned by a test | A header joins it only through a reviewed change; actor id and client id identify a person, tenant and idempotency key are never logged |
+| *(planned, SK.07.ObservabilityConformance)* `IMessageScheduler.CancelAsync` swallows only recognised transport faults, logged at Warning | The contract makes a gone token a no-op, but a bug must stay loud (rule 5) |
 
 ## Logging
 
@@ -115,7 +125,7 @@ One sub-block, **7000–7099**, shared by the MassTransit core and its satellite
 | 7011 | `IRequestContext` registered after `WithInboundRequestContext()` | Warning | `RequestContextRegistrationAdvisoryHostedService` |
 | 7012 | `LogRequestContextNotResolvable` | Debug | `RequestContextRegistrationAdvisoryHostedService` |
 
-Next free: 7013. The `[LoggerMessage]` generator discovers only an `ILogger` **field**; the consumer bases expose a `Logger` property, so their log methods take `ILogger` as a parameter — prefer a field in new types.
+Next free: 7013. *(planned, SK.07.ObservabilityConformance)* Sub-blocks become per package (core 7000-7099 index 0, `.RabbitMq` 7100-7199 index 1 and `.EfCore` 7300-7399 index 3 reserved, `.AzureServiceBus` 7200-7299 index 2); 7010 moves to 7200 and is retired in the core next to 7006/7007; 7013 (dispatch failure `Result`, Warning) and 7014 (scheduler cancel fault, Warning) are added; 7002 becomes Debug and 7004 Warning; holders `MessagingLoggingEventIds`/`MessagingLog` and `AzureServiceBusLoggingEventIds`/`AzureServiceBusLog`. The `[LoggerMessage]` generator discovers only an `ILogger` **field**; the consumer bases expose a `Logger` property, so their log methods take `ILogger` as a parameter — prefer a field in new types.
 
 Diagnostics: `ActivitySource` and `Meter` named `SharedKernel.Messaging` (tags from `MessagingTagKeys`), wired by `13.ServiceDefaults`' `WithMessagingTelemetry()`. Activities `Consumer.Consume`, `EventPublisher.Publish`, `MessageBus.Publish`, `MessageBus.Send`; instruments `messaging.consume.count`/`.duration`, `messaging.retry.count` (per invocation via `GetRetryAttempt()`), `messaging.publish.count`, `messaging.send.count`, `messaging.fault.count`.
 
@@ -125,6 +135,7 @@ Diagnostics: `ActivitySource` and `Meter` named `SharedKernel.Messaging` (tags f
 - **04.Contracts** — `IIntegrationEvent`, `[IntegrationEvent]`, `EventEnvelope.Wrap`, `IntegrationEventDescriptor`.
 - **18.Idempotency** — `IIdempotencyStore` for `IdempotencyPurpose.Message` (`AddRedisIdempotency(p => p.ForMessages())`, `AddEfCoreIdempotency(…)`, `AddIdempotencyStore<T>(purpose)`); tenant scoping via `IdempotencyTenantScope`.
 - **13.ServiceDefaults** — `AddSharedKernelRequestContext()` must precede `WithInboundRequestContext()`; `AddSharedKernelReadiness()` maps the `messaging` probe; `WithMessagingTelemetry()`; its log processor keeps only platform baggage keys from MassTransit's copied context.
+- **WO-087 (open: SK.07.MessagingErrorSafety, SK.07.ObservabilityConformance)** — needs `01.Core` observability helpers (`TelemetryVersion`, `ActivityFailureExtensions`, `WellKnownOutcomes`, `IHasError`, EventId sub-block helpers), `13.ServiceDefaults`' `SharedKernel.*` wildcard (the `SharedKernel.Messaging` meter is exported only then; `WithMessagingTelemetry()` keeps just `MassTransit`), `16.Testing`' telemetry capture helpers and `00.Governance`' report-only checks.
 - **06.Persistence** — none from this side; the `.EfCore` outbox binds to the service's own `DbContext` by type parameter.
 - **16.Testing** — `SharedKernel.Testing.Internal`'s `TestHarnessFactory`.
 - **00.Governance** — the rules and analyzers named above.
