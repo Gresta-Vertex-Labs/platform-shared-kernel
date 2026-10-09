@@ -58,6 +58,8 @@ Every project declares `<SharedKernelTier>Testing</SharedKernelTier>`; every pac
 11. **Registered lifetime:** a double whose history is asserted after the SUT's scope ends is a **singleton** even when production is scoped (message bus, event publisher, search index, vector collection, workflow dispatcher); say so in the XML doc and README.
 12. **Extensions never register `ILogger<T>` or `IClock`** for the caller.
 13. **Keep each package README current** with its public API (contents, registration, example).
+14. *(planned, SK.16.TelemetryCapture)* **Telemetry assertions pin the shapes `SharedKernel.Primitives` produces** (`ActivityFailureExtensions`, `WellKnownOutcomes`, `error.code`/`error.type`, the `exception` event) and state them literally, never by calling the producer. A shape change in 01.Core updates the assertions in the same change. Capture helpers live in the core (`SharedKernel.Testing.Telemetry`), use BCL listeners only, and every assertion throws `InvalidOperationException`.
+15. *(planned, SK.16.TelemetryCapture)* **A recorder is one disposable listener scoped to named sources or meters** (exact names or a prefix), reads are snapshots, `Dispose` is idempotent and recording stops after it. Static sources and meters are shared across parallel tests: a test filters (`ForTrace`, tag subsets) or keeps its collection serial.
 
 ## Decisions
 
@@ -70,6 +72,8 @@ Every project declares `<SharedKernelTier>Testing</SharedKernelTier>`; every pac
 | `FakeUserContext.GetAuthenticationMethodTime` answers exactly as the real `UserContext` (set via `WithAuthenticationMethodTime`; the method must also be in `AuthenticationMethods`) | Lets a consumer drive `[RequireAuthenticationMethod(…, MaxAgeSeconds = n)]` fresh and expired from a `FakeClock`. |
 | `Presentation.Testing`'s `TestServerCallContext` does not simulate authorization or the exception interceptor | Both run in the ASP.NET Core pipeline before the method; test them against an in-process host. |
 | `InMemoryScheduledJobRegistry` fires ticks manually via `TriggerAsync` | Misfire/overlap policies are asserted without a clock, hosted loop or lock store. |
+| *(planned, SK.16.TelemetryCapture)* Telemetry capture lives in the core, not a `Telemetry.Testing` package; `ActivityRecorder` moves to `SharedKernel.Testing.Telemetry` beside `MetricRecorder` | It needs only BCL `System.Diagnostics` and `Microsoft.Extensions.Logging.Abstractions`, and every package's tests use it; `ActivityRecorder` is still unshipped so the move is free. `AmbientActivityTestHelper` stays in `.Communication` (an ambient-context setter, not a recorder) |
+| *(planned, SK.16.TelemetryCapture)* Convention checks (log L3/L4/L5, span T1/T3, metric T1/T6) are test-side helpers that list every violation | They mirror the governance tests of WO-087 for a domain's own suite; enforcement stays in `00.Governance`. "Identifier values quoted" is checked only for placeholders ending in `Name` or `Key` |
 | Container fixtures pin images (`qdrant/qdrant:v1.16.0`, `docker.elastic.co/elasticsearch/elasticsearch:9.4.2`, `getmeili/meilisearch:v1.20.0`, `redis:7.4`, `rabbitmq:3.13-management`, …) | Reproducible CI; a pin must support what the owning domain relies on (Qdrant collection metadata needs 1.16+). |
 
 ## Logging
@@ -80,6 +84,7 @@ Block **16000–16999** (`LoggingEventIdRanges.Testing`) is reserved but unused:
 
 - Each `{Capability}.Testing` package references its capability's contract package (see the table) and implements its interfaces; a contract change in that domain must update the double, its README and its self-tests in the same change.
 - Contract sources of truth: `19.Scheduling`'s job execution model for `InMemoryScheduledJobRegistry`; `05.Application`'s `ApplicationPipelineBuilder` for the harness; `12.Security`'s `UserContext` for `FakeUserContext`; `18.Idempotency`'s `IIdempotencyStore` semantics for `FakeIdempotencyStore`.
+- `01.Core`'s span failure recorder, outcome vocabulary and `IHasError` (`SK.01.ObservabilityHelpers`) are the contract the planned telemetry assertions pin (rule 14).
 - `00.Governance` enforces the no-production-reference rule and the core's dependency lock.
 - Every domain's `.Tests` projects consume the core, their capability's `.Testing`, and `Testing.Internal` for containers.
 
@@ -97,4 +102,5 @@ Block **16000–16999** (`LoggingEventIdRanges.Testing`) is reserved but unused:
 - `FakeRepository<,>` cannot test optimistic concurrency or ETags; use `PostgresTestServer`.
 - `Presentation.Testing`'s `TestServerCallContext` does not run endpoint authorization or the exception interceptor; use an in-process host.
 - `InMemoryScheduledJobRegistry` and `InMemoryReportExporter<TRow>` are not thread-safe; keep their tests in one collection.
+- *(planned, SK.16.TelemetryCapture)* Recorders on a static `ActivitySource`/`Meter` also see spans and measurements from parallel tests; filter by trace or tags.
 - `Security.Testing` references Host-tier packages, so it brings ASP.NET Core into any test project that uses it.
