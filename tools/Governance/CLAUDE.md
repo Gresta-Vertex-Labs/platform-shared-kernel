@@ -46,7 +46,7 @@ SK0706 `ExtendedMessagingArchitectureRules`.
 
 **Adding an analyzer rule** — one change carries all of:
 
-1. The next free ID in the matching range (general: **SK0043**); never a retired or architecture-test ID.
+1. The next free ID in the matching range (general: **SK0043**, but SK0043 and SK0044 are reserved by *(planned, SK.00.ObservabilityReportOnly)*, so the next unreserved is SK0045); never a retired or architecture-test ID.
 2. The analyzer in `SharedKernel.Analyzers/Diagnostics/SKnnnn_{Name}Analyzer.cs`, its descriptor built with
    `AnalyzerBase.CreateDescriptor(…, readmeAnchor: "sknnnn-{name}")`.
 3. A row carrying `<a id="sknnnn-{name}"></a>` in the rule index of `tools/Governance/README.md` (`HelpLinkReadmeAnchorTests`).
@@ -100,6 +100,10 @@ Repo-graph tests (in `SharedKernel.ArchitectureTests.Tests`, reading csproj and 
 14. Mono.Cecil: a `static class` is `IsAbstract && IsSealed`; `const string` folds to `ldstr`, `static readonly` is `ldsfld`; static lambdas compile onto `<>c`; inspect async methods through their state machines.
 15. In-memory fixture assemblies use names that cannot collide with a loaded real assembly. No static mutable state anywhere in this domain.
 16. Linter: the format check runs only when `ContinuousIntegrationBuild=true` or `SharedKernelLinterEnforceFormatting=true`; `InstallSharedKernelLinterConfig` never overwrites an existing `.editorconfig` unless `SharedKernelLinterOverwriteConfig=true`.
+17. *(planned, SK.00.ObservabilityReportOnly)* **Observability rules ship in report mode.** One property, `SharedKernelObservabilityMode` in `tools/Governance/SelfAnalysis/ObservabilityMode.props` (`report` default, `enforce`), drives the kernel self-analysis severity (SK analyzers and CA2200 at `warning`, listed in `WarningsNotAsErrors`, or at `error`) and the platform-wide assertions (`ObservabilityEnforcement`). Going to failing is that one edit; every assertion also takes the mode as a parameter so the firing tests prove the enforce path. A new SK id must be added to the `WarningsNotAsErrors` list (a test compares it with the analyzer's descriptors). SK0034 is `suggestion` in both modes (advisory by decision). EventId ownership is read from the `## Logging` ownership tables of the domain `CLAUDE.md` files (a package family shares one sub-block, base at 1-49, Adapters at 50-99), not assumed one block per package; error-code format tolerates domains without an `ErrorCodes` class and caller-supplied protocol-mirror prefixes (`grpc`, `http`); no check looks at an error factory's visibility.
+18. *(planned, SK.00.ObservabilityReportOnly)* **Platform assertions read built assemblies with Mono.Cecil, return findings, and never throw by themselves.** A finding carries rule, domain (longest folder prefix in the root `CLAUDE.md` domain table), assembly and site; forbidden placeholder names and similar terms come from the caller (rule 12). A `const` is indistinguishable from a literal in IL (rule 14), so anything about "named constant versus literal" is an analyzer (SK0022, SK0044), never an assertion.
+19. *(planned, SK.00.ObservabilityReportOnly)* SK0043 (an exception that exposes an `Error` or implements `IHasError` must derive `SharedKernelException`) matches by metadata name, any accessibility, no namespace exemption. SK0044 (bare numeric literal as a `[LoggerMessage]` EventId) is off by default and enabled for the kernel by the self-analysis config, because literal ids are legitimate in a consuming service. SK0043 checks the base type only, never constructor shape (03.Domain exempts two exceptions from the `(Error)` constructors).
+20. *(planned, SK.00.ObservabilityEnforce)* **The flip leaves one behaviour.** No report mode, override variable, `WarningsNotAsErrors` list or mode parameter remains; `kernel.globalconfig` fixes every SK id and `CA2200` at `error` for the kernel (SK0034 at `suggestion`, SK0044 enabled) and the platform assertions throw one aggregated exception. Consumers' default severities do not change. A new SK id must appear in `kernel.globalconfig` (a test compares it with the analyzer's descriptors). A suppression of these rules in `src/` is legal only when the owning domain's `CLAUDE.md` names the file and the reason (an assertion checks).
 
 ## Decisions
 
@@ -113,6 +117,12 @@ Repo-graph tests (in `SharedKernel.ArchitectureTests.Tests`, reading csproj and 
 | `RealKernelTypeNameTests` compile analyzer fixtures against real kernel assemblies | A renamed kernel type breaks a test instead of silently disabling the analyzer |
 | `RuleExecutionCoverageTests` fails on a public rule with no calling test | A rule never seen failing is not wired up |
 | Benchmarks never run under `dotnet test` | BenchmarkDotNet needs a Release, out-of-process run |
+| *(planned, SK.00.ObservabilityReportOnly)* Tag-key literals at metric call sites extend SK0022 (a fifth shape) instead of a new rule | One rule, "no raw literal at a cross-cutting call site"; `Activity.SetTag` is already shape 2 |
+| *(planned, SK.00.ObservabilityReportOnly)* The bare-EventId-literal check is an analyzer, not a test | IL folds `const` into the attribute blob; only syntax shape tells a literal from a named constant |
+| *(planned, SK.00.ObservabilityReportOnly)* SK0044 is `isEnabledByDefault: false` | It encodes kernel convention (L1); consumers may opt in |
+| *(planned, SK.00.ObservabilityReportOnly)* The telemetry IL check has no allow-list for Temporal SDK instruments | They are created by the SDK through `CustomMetricMeter`, never at a kernel `Meter.Create*` call site |
+| *(planned, SK.00.ObservabilityEnforce)* The flip changes the kernel's self-analysis and the platform assertions, not analyzer defaults | Consumers keep Warning and escalate in `.editorconfig`; SK0034 stays advisory in the kernel too |
+| *(planned, SK.00.ObservabilityEnforce)* `unscanned` fails, `unverifiable` is listed | A missing DLL hides a whole assembly; a unit loaded from a field is a limit of IL analysis, not a violation |
 
 ## Logging
 
@@ -122,7 +132,9 @@ Analyzers and architecture tests do not log. The `00` EventId block is unused;
 ## Cross-Domain Couplings
 
 - **Every domain** — rule classes and analyzers encode other domains' purity rules by metadata name; renaming or moving a type named here updates `RealKernelTypeNameTests` or a real-assembly pass-path test in the same change.
-- **01.Core** — `LoggingEventIdRanges` (EventId blocks), `WellKnownHeaders`/`WellKnownBaggageKeys` (named by SK0022's message).
+- **01.Core** — `LoggingEventIdRanges` (EventId blocks), `WellKnownHeaders`/`WellKnownBaggageKeys` (named by SK0022's message). *(planned, SK.00.ObservabilityReportOnly)* `Error`, `IHasError`, `SharedKernelException` (SK0043 by metadata name) and `ErrorCodes` (the error-code format check).
+- **Build (`src/`)** *(planned, SK.00.ObservabilityReportOnly)* — the self-analysis props are imported into the root build files by devops-lead; this domain owns the files, not the import.
+- **01.Core, 13.ServiceDefaults** *(planned, SK.00.ObservabilityReportOnly)* — their `## Logging` ownership tables are read by the EventId ownership assertion; **11, 12, 14** — protocol-mirror and protocol error values are exempted by entries citing their `CLAUDE.md`. **14.Presentation** — the GraphQL → WebApi/Core references are covered by the graph and layering tests *(planned, SK.00.ObservabilityEnforce)*.
 - **05.Application** — `PipelineOrderAssertion` locks the built-in pipeline order through `AddSharedKernelApplication(…)`.
 - **Build (`eng/`)** — `SharedKernelTiers.targets`, `verify-tier-errors.sh`; documented in `CONTRIBUTING.md` and `eng/README.md`.
 - No production package references this domain; analyzer-only references are the only allowed edges into it.
