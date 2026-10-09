@@ -153,8 +153,12 @@ step propagates unchanged — wrap throwing calls in `ResultTry`.
 Without `onException`, `ResultTry` maps any exception to
 `Error.Unexpected("unexpected.exception", ResultTry.DefaultUnexpectedMessage)` — the exception's type and message are
 never copied, because driver and SDK messages can contain host names or credentials. The exception is recorded on
-`Activity.Current` instead (once per inner exception of an `AggregateException`). `OperationCanceledException` always
-propagates, and the `CancellationToken` overloads do not call the delegate when the token is already cancelled.
+`Activity.Current` instead as an exception event (once per inner exception of an `AggregateException`, through
+`AddExceptionEvents` of `SharedKernel.Primitives.Telemetry`; nothing is recorded when there is no current activity or it is
+stopped or not sampled). `ResultTry` does **not** change the span's status or tags: the current span usually belongs to
+the caller, and the failure is a value its owner records with `activity.RecordResult(result)`. A custom `onException`
+mapper records nothing. `OperationCanceledException` always propagates, and the `CancellationToken` overloads do not
+call the delegate when the token is already cancelled.
 
 ## Recipes
 
@@ -302,7 +306,8 @@ mapping produces `unexpected.exception`. All codes are `ErrorCodes` constants in
 ### Exceptions (`SharedKernel.Core.Exceptions`)
 
 Every exception derives from `SharedKernelException` and carries a non-null `Error` (no string-only constructors;
-`SK0005` reports one on a subclass).
+`SK0005` reports one on a subclass). The base implements `SharedKernel.Primitives.Errors.IHasError`, so the span recorder
+in Primitives reads `error.code` from any of them.
 
 | Exception | Pair with `ErrorType` | HTTP |
 | --- | --- | --- |
@@ -327,7 +332,7 @@ every other type to `DomainException`; it throws `ArgumentException` for `Error.
 
 ### Logging
 
-The package does not log; `ResultTry` records exceptions on `Activity.Current`.
+The package does not log; `ResultTry` records exception events (not status) on `Activity.Current`.
 
 ## Testing
 

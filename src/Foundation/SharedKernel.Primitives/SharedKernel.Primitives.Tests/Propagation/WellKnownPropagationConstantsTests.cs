@@ -81,6 +81,51 @@ public sealed class WellKnownPropagationConstantsTests
     }
 
     [Fact]
+    public void WellKnownTagKeys_Outcome_EqualsExpectedLiteral()
+    {
+        Assert.Equal("outcome", WellKnownTagKeys.Outcome);
+    }
+
+    [Theory]
+    [InlineData(WellKnownOutcomes.Success, "success")]
+    [InlineData(WellKnownOutcomes.Failure, "failure")]
+    [InlineData(WellKnownOutcomes.Exception, "exception")]
+    [InlineData(WellKnownOutcomes.Canceled, "canceled")]
+    public void WellKnownOutcomes_EqualExpectedLiterals(string actual, string expected)
+    {
+        Assert.Equal(expected, actual);
+    }
+
+    [Fact]
+    public void WellKnownOutcomes_AreDistinct()
+    {
+        var outcomes = new[]
+        {
+            WellKnownOutcomes.Success,
+            WellKnownOutcomes.Failure,
+            WellKnownOutcomes.Exception,
+            WellKnownOutcomes.Canceled,
+        };
+
+        Assert.Equal(outcomes.Length, outcomes.Distinct(StringComparer.Ordinal).Count());
+    }
+
+    [Fact]
+    public void WellKnownTagKeys_AreDistinct()
+    {
+        var keys = new[]
+        {
+            WellKnownTagKeys.TenantId,
+            WellKnownTagKeys.CorrelationId,
+            WellKnownTagKeys.ErrorType,
+            WellKnownTagKeys.ErrorCode,
+            WellKnownTagKeys.Outcome,
+        };
+
+        Assert.Equal(keys.Length, keys.Distinct(StringComparer.Ordinal).Count());
+    }
+
+    [Fact]
     public void WellKnownBaggageKeys_TenantId_EqualsExpectedLiteral()
     {
         // MUST stay "TenantId". BaggageLogRecordProcessor copies Activity baggage generically

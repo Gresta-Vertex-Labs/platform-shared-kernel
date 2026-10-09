@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO.Compression;
 using System.Xml.Linq;
@@ -32,7 +33,9 @@ using SharedKernel.Localization;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Enums;
 using SharedKernel.Primitives.Errors;
+using SharedKernel.Primitives.Propagation;
 using SharedKernel.Primitives.Results;
+using SharedKernel.Primitives.Telemetry;
 using SharedKernel.Validation;
 using SharedKernel.Validation.FluentValidation;
 using OpenFeature;
@@ -504,6 +507,50 @@ public sealed class ConsumerDependencyGraphTests
         // absorbing Guards' own (zero) third-party dependencies.
         Assert.Single(dependencyIds);
         Assert.Contains("SharedKernel.Primitives", dependencyIds);
+    }
+
+    [Fact]
+    public void Telemetry_TelemetryVersionAndActivityRecorder_ResolvedFromPackedPrimitivesAndCore()
+    {
+        // SK.01.ObservabilityHelpers: a consumer builds an ActivitySource versioned by TelemetryVersion and
+        // records a Result on a span, against the packed Primitives (and Core for the exception base).
+        string version = TelemetryVersion.Of(typeof(ConsumerDependencyGraphTests).Assembly);
+        using var source = new ActivitySource("consumer.telemetry", TelemetryVersion.Of(typeof(Result).Assembly));
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = s => ReferenceEquals(s, source),
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        using Activity activity = source.StartActivity("op")!;
+        string outcome = activity.RecordResult(Result.Failure(Error.NotFound("consumer.not_found", "Missing.")));
+        string exceptionOutcome = activity.RecordException(new NotFoundException(Error.NotFound("consumer.gone", "Gone.")));
+
+        Assert.False(string.IsNullOrEmpty(version));
+        Assert.NotEqual(TelemetryVersion.Unknown, source.Version);
+        Assert.Equal(WellKnownOutcomes.Failure, outcome);
+        Assert.Equal(WellKnownOutcomes.Exception, exceptionOutcome);
+        Assert.Equal("consumer.gone", activity.GetTagItem(WellKnownTagKeys.ErrorCode));
+        Assert.Equal("outcome", WellKnownTagKeys.Outcome);
+    }
+
+    [Fact]
+    public void Primitives_NuspecStillListsOnlyDependencyInjectionAbstractions_ResolvedFromPackage()
+    {
+        // SK.01.ObservabilityHelpers: the recorder is BCL System.Diagnostics only; no NuGet dependency appears.
+        string nupkgsDirectory = FindNupkgsDirectory();
+
+        string primitivesNuspec = ReadNuspecXml(nupkgsDirectory, "SharedKernel.Primitives.*.nupkg", IsExactPrimitivesPackage);
+
+        XDocument nuspec = XDocument.Parse(primitivesNuspec);
+        XNamespace ns = nuspec.Root!.GetDefaultNamespace();
+
+        List<string> dependencyIds = [.. nuspec.Descendants(ns + "dependency")
+            .Select(d => d.Attribute("id")!.Value)
+            .Distinct()];
+
+        Assert.Equal(["Microsoft.Extensions.DependencyInjection.Abstractions"], dependencyIds);
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -1324,6 +1371,16 @@ public sealed class ConsumerDependencyGraphTests
     /// someday share the <c>SharedKernel.Core.</c> filename prefix — the same positive shape check
     /// as <see cref="IsExactCryptographyPackage"/>, for the same reason.
     /// </summary>
+    private static bool IsExactPrimitivesPackage(string candidatePath)
+    {
+        const string Prefix = "SharedKernel.Primitives.";
+        string fileName = Path.GetFileName(candidatePath);
+
+        return fileName.StartsWith(Prefix, StringComparison.OrdinalIgnoreCase)
+            && fileName.Length > Prefix.Length
+            && char.IsAsciiDigit(fileName[Prefix.Length]);
+    }
+
     private static bool IsExactCorePackage(string candidatePath)
     {
         const string Prefix = "SharedKernel.Core.";

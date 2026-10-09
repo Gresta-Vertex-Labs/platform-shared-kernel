@@ -136,4 +136,66 @@ public sealed class LoggingEventIdRangesTests
     [Fact]
     public void AllDomainNames_AreCoveredByTheTable()
         => Assert.Equal(AllDomainValues.Count, DomainNameToFolderNumber().Count());
+
+    // ---- SubBlockStart / IsInSubBlock ----
+
+    [Theory]
+    [MemberData(nameof(DomainNameToFolderNumber))]
+    public void SubBlockStart_EveryDomainBase_FirstAndLastIndex(string domainName, int _)
+    {
+        var domainBase = AllDomainValues[domainName];
+
+        Assert.Equal(domainBase, LoggingEventIdRanges.SubBlockStart(domainBase, 0));
+        Assert.Equal(domainBase + 900, LoggingEventIdRanges.SubBlockStart(domainBase, 9));
+    }
+
+    [Theory]
+    [InlineData(1000, 3, 1300)]
+    [InlineData(1000, 1, 1100)]
+    [InlineData(2000, 1, 2100)]
+    [InlineData(20000, 9, 20900)]
+    public void SubBlockStart_ReturnsBasePlusIndexTimesWidth(int domainBase, int index, int expected)
+        => Assert.Equal(expected, LoggingEventIdRanges.SubBlockStart(domainBase, index));
+
+    [Theory]
+    [InlineData(1300, true)]
+    [InlineData(1301, true)]
+    [InlineData(1399, true)]
+    [InlineData(1299, false)]
+    [InlineData(1400, false)]
+    public void IsInSubBlock_Boundaries(int eventId, bool expected)
+        => Assert.Equal(expected, LoggingEventIdRanges.IsInSubBlock(eventId, LoggingEventIdRanges.Core, 3));
+
+    [Theory]
+    [MemberData(nameof(DomainNameToFolderNumber))]
+    public void IsInSubBlock_EveryDomain_EdgesOfEverySubBlock(string domainName, int _)
+    {
+        var domainBase = AllDomainValues[domainName];
+
+        for (var index = 0; index < 10; index++)
+        {
+            var start = LoggingEventIdRanges.SubBlockStart(domainBase, index);
+
+            Assert.True(LoggingEventIdRanges.IsInSubBlock(start, domainBase, index));
+            Assert.True(LoggingEventIdRanges.IsInSubBlock(start + 99, domainBase, index));
+            Assert.False(LoggingEventIdRanges.IsInSubBlock(start + 100, domainBase, index));
+            Assert.False(LoggingEventIdRanges.IsInSubBlock(start - 1, domainBase, index));
+        }
+    }
+
+    [Theory]
+    [InlineData(1000, -1)]
+    [InlineData(1000, 10)]
+    [InlineData(-1000, 0)]
+    [InlineData(1500, 0)]
+    public void SubBlockStart_InvalidArguments_Throw(int domainBase, int index)
+        => Assert.Throws<ArgumentOutOfRangeException>(() => LoggingEventIdRanges.SubBlockStart(domainBase, index));
+
+    [Theory]
+    [InlineData(1301, 1000, -1)]
+    [InlineData(1301, 1000, 10)]
+    [InlineData(1301, -1000, 0)]
+    [InlineData(1301, 1500, 0)]
+    public void IsInSubBlock_InvalidArguments_Throw(int eventId, int domainBase, int index)
+        => Assert.Throws<ArgumentOutOfRangeException>(() => LoggingEventIdRanges.IsInSubBlock(eventId, domainBase, index));
 }

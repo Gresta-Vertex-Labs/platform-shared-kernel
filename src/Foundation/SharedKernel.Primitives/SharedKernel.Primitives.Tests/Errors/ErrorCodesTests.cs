@@ -32,6 +32,7 @@ public sealed class ErrorCodesTests
     [InlineData(ErrorCodes.Idempotency.KeyInvalid, "idempotency.key_invalid")]
     [InlineData(ErrorCodes.Idempotency.InProgress, "idempotency.in_progress")]
     [InlineData(ErrorCodes.Idempotency.KeyReused, "idempotency.key_reused")]
+    [InlineData(ErrorCodes.Idempotency.StoreUnavailable, "idempotency.store_unavailable")]
     public void Idempotency_Codes_HaveTheirWireValues(string actual, string expected)
         => Assert.Equal(expected, actual);
 
@@ -60,6 +61,7 @@ public sealed class ErrorCodesTests
             ErrorCodes.Idempotency.KeyInvalid,
             ErrorCodes.Idempotency.InProgress,
             ErrorCodes.Idempotency.KeyReused,
+            ErrorCodes.Idempotency.StoreUnavailable,
             ErrorCodes.Domain.RuleViolated,
         };
 

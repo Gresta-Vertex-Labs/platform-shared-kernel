@@ -47,4 +47,24 @@ const SharedKernel.Primitives.Errors.ErrorCodes.Idempotency.InProgress = "idempo
 const SharedKernel.Primitives.Errors.ErrorCodes.Idempotency.KeyInvalid = "idempotency.key_invalid" -> string!
 const SharedKernel.Primitives.Errors.ErrorCodes.Idempotency.KeyRequired = "idempotency.key_required" -> string!
 const SharedKernel.Primitives.Errors.ErrorCodes.Idempotency.KeyReused = "idempotency.key_reused" -> string!
+const SharedKernel.Primitives.Errors.ErrorCodes.Idempotency.StoreUnavailable = "idempotency.store_unavailable" -> string!
 SharedKernel.Primitives.Errors.ErrorCodes.Idempotency
+SharedKernel.Primitives.Errors.IHasError
+SharedKernel.Primitives.Errors.IHasError.Error.get -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Primitives.Logging.LoggingEventIdRanges.IsInSubBlock(int eventId, int domainBase, int subBlockIndex) -> bool
+static SharedKernel.Primitives.Logging.LoggingEventIdRanges.SubBlockStart(int domainBase, int subBlockIndex) -> int
+SharedKernel.Primitives.Propagation.WellKnownOutcomes
+const SharedKernel.Primitives.Propagation.WellKnownOutcomes.Canceled = "canceled" -> string!
+const SharedKernel.Primitives.Propagation.WellKnownOutcomes.Exception = "exception" -> string!
+const SharedKernel.Primitives.Propagation.WellKnownOutcomes.Failure = "failure" -> string!
+const SharedKernel.Primitives.Propagation.WellKnownOutcomes.Success = "success" -> string!
+const SharedKernel.Primitives.Propagation.WellKnownTagKeys.Outcome = "outcome" -> string!
+SharedKernel.Primitives.Telemetry.ActivityFailureExtensions
+static SharedKernel.Primitives.Telemetry.ActivityFailureExtensions.AddExceptionEvents(this System.Diagnostics.Activity? activity, System.Exception! exception) -> void
+static SharedKernel.Primitives.Telemetry.ActivityFailureExtensions.RecordException(this System.Diagnostics.Activity? activity, System.Exception! exception) -> string!
+static SharedKernel.Primitives.Telemetry.ActivityFailureExtensions.RecordFailure(this System.Diagnostics.Activity? activity, SharedKernel.Primitives.Errors.Error! error) -> string!
+static SharedKernel.Primitives.Telemetry.ActivityFailureExtensions.RecordResult(this System.Diagnostics.Activity? activity, SharedKernel.Primitives.Results.Result result) -> string!
+static SharedKernel.Primitives.Telemetry.ActivityFailureExtensions.RecordResult<T>(this System.Diagnostics.Activity? activity, SharedKernel.Primitives.Results.Result<T>! result) -> string!
+SharedKernel.Primitives.Telemetry.TelemetryVersion
+const SharedKernel.Primitives.Telemetry.TelemetryVersion.Unknown = "0.0.0" -> string!
+static SharedKernel.Primitives.Telemetry.TelemetryVersion.Of(System.Reflection.Assembly! assembly) -> string!

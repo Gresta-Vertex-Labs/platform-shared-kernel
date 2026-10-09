@@ -269,6 +269,66 @@ public sealed class ResultTryTests
     }
 
     [Fact]
+    public void Try_ThrowsException_DoesNotChangeTheAmbientSpanStatusOrTags()
+    {
+        using var recorded = new ActivityExceptionRecorder();
+        using var activity = recorded.StartActivity();
+
+        ResultTry.Try<int>(() => throw new InvalidOperationException("boom"));
+
+        Assert.Equal(ActivityStatusCode.Unset, activity.Status);
+        Assert.Null(activity.StatusDescription);
+        Assert.Null(activity.GetTagItem("error.type"));
+        Assert.Null(activity.GetTagItem("error.code"));
+        Assert.Single(activity.Events);
+    }
+
+    [Fact]
+    public async Task TryAsync_ThrowsException_RecordsSingleEventAndLeavesStatusUnset()
+    {
+        using var recorded = new ActivityExceptionRecorder();
+        using var activity = recorded.StartActivity();
+
+        var result = await ResultTry.TryAsync<int>(() => throw new InvalidOperationException("boom"));
+
+        Assert.True(result.IsFailure);
+        Assert.Single(activity.Events, e => e.Name == "exception");
+        Assert.Equal(ActivityStatusCode.Unset, activity.Status);
+    }
+
+    [Fact]
+    public void Try_ThrowsException_WithNoCurrentActivity_StillReturnsTheFixedFailure()
+    {
+        Assert.Null(Activity.Current);
+
+        var result = ResultTry.Try<int>(() => throw new InvalidOperationException("boom"));
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(ResultTry.DefaultUnexpectedMessage, result.Error.Message);
+    }
+
+    [Fact]
+    public void Try_ThrowsException_WithStoppedCurrentActivity_RecordsNothingAndDoesNotThrow()
+    {
+        using var recorded = new ActivityExceptionRecorder();
+        var activity = recorded.StartActivity();
+        // Activity.Current is cleared by Stop, so keep the stopped span current explicitly.
+        activity.Stop();
+        Activity.Current = activity;
+        try
+        {
+            var result = ResultTry.Try<int>(() => throw new InvalidOperationException("boom"));
+
+            Assert.True(result.IsFailure);
+            Assert.Empty(activity.Events);
+        }
+        finally
+        {
+            Activity.Current = null;
+        }
+    }
+
+    [Fact]
     public async Task TryAsync_WithCustomMapper_DoesNotRecordExceptionOnActivity()
     {
         using var recorded = new ActivityExceptionRecorder();
