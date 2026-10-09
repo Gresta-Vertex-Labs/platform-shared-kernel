@@ -80,6 +80,11 @@ Key types (members, options and defaults: the `SharedKernel.Reporting.*` READMEs
 12. Only `.Gotenberg` registers a readiness probe; exporters are stateless libraries and have none.
 13. Every public member is in `PublicAPI.Shipped/Unshipped.txt` (`RS0016` is an error); implementations stay internal.
 14. Never ship a copyleft or revenue-gated dependency; if no acceptably licensed library serves a format, scope it out.
+15. *(planned, SK.20.ReportingErrorShape)* **No provider detail in an `Error`.** A converter's `Error` is a fixed sentence per code: never the converter's host, route, credential hint, status text or response body (E3, L5, rule 7). The HTTP status code and `HttpRequestError` go to a log record in the `.Gotenberg` sub-block (20400-20401). `ReportingErrors.ConverterUnavailable()`/`ConversionFailed()` take no free-text reason.
+16. *(planned, SK.20.ReportingErrorShape)* An exception that carries an `Error` derives `SharedKernelException` (ctors `(Error)`, `(Error, Exception)`): `ReportAbortedException` (internal) carries the writer's own `Error`, so a span or edge that sees it classifies the real cause.
+17. *(planned, SK.20.ReportingConformance)* **Observability gold standard.** Failures on `reporting export`/`reporting convert` are recorded only by the shared Primitives recorder (`error.type` is an `ErrorType` or exception full name, `error.code` is the code, cancellation is never an error); instruments are `sharedkernel.reporting.*` with units and an `outcome` tag; the `Meter` comes from `IMeterFactory` when registered; logs follow L1-L8 (category `ILogger<ReportingDependencies>`, required logger, sentence templates, per-operation success at Debug).
+18. *(planned, SK.20.ReportingConformance)* `ReportingErrors` members are public only when a sibling assembly (a provider or the `.Testing` double) constructs them; `InvalidDefinition` and `InvalidRequest` are internal. `ReportDefinitionBuilder.Build()` throws `InvalidReportDefinitionException : SharedKernelException` (`reporting.invalid_definition`, `Validation`); the other `InvalidOperationException`s are E2 configuration errors with E3 wording.
+19. *(planned, SK.20.ReportingConformance)* The Gotenberg correlation id is written through `RequestContextPropagation.WriteHeaders` with a null context and an explicit id (mapped to `Gotenberg-Trace`); no tenant, actor or client header is sent to the converter.
 
 ## Decisions
 
@@ -96,6 +101,11 @@ Key types (members, options and defaults: the `SharedKernel.Reporting.*` READMEs
 | No HTML templating (Razor, Scriban) | The converter takes finished HTML; the service renders it |
 | Runtime format choice through `IReportExporterFactory` plus keyed services | A user-chosen `?format=` without a switch statement in every service |
 | `DownloadFileName` becomes an RFC 6266 `Content-Disposition` with UTF-8 `filename*` | Non-ASCII file names survive presigned downloads |
+| *(planned, SK.20.ReportingErrorShape)* Gotenberg errors carry no host, route or body; the status code is logged instead | Engine output may echo document content (personal data) and a base URL is internal topology; an `Error` reaches API clients through ProblemDetails. Rejected: a closed `reason` enum on the factories, a truncated body |
+| *(planned, SK.20.ReportingConformance)* `Meter` from an optional `IMeterFactory`, direct `Meter` as fallback | `AddMetrics()` is in `Microsoft.Extensions.Diagnostics`, not an `.Abstractions` package, so Abstractions tier cannot register it; Host builders already do |
+| *(planned, SK.20.ReportingConformance)* `reporting.unsupported_format` renamed `reporting.format_not_supported` | C3 reason word, same family as `search.not_supported` / `intelligence.not_supported` |
+| *(planned, SK.20.ReportingConformance)* `Build()` failures are a classified `Validation` exception, not `InvalidOperationException` | Column lists are often chosen at runtime and the same condition already returns `reporting.invalid_definition` from `ExportAsync`; a defect-style 500 would hide the code |
+| *(planned, SK.20.ReportingConformance)* Gotenberg keeps the vendor header `Gotenberg-Trace` but the value passes `RequestContextPropagation.WriteHeaders` | The only header Gotenberg correlates its logs with; the shared helper owns the validated id; nothing but the correlation id leaves the platform |
 
 ## Logging
 
@@ -107,7 +117,9 @@ Block **20000–20999** (`LoggingEventIdRanges.Reporting`), category `SharedKern
 | 20100–20199 | `.Csv` | reserved, unused |
 | 20200–20299 | `.Spreadsheet` | reserved, unused |
 | 20300–20399 | `.Pdf` | reserved, unused |
-| 20400–20499 | `.Gotenberg` | reserved, unused |
+| 20400–20499 | `.Gotenberg` | reserved, unused *(planned, SK.20.ReportingErrorShape: 20400 rejected with HTTP status code, 20401 unreachable)* |
+
+*(Planned, SK.20.ReportingConformance)* each package's ids come from an internal `{Package}LoggingEventIds` over `LoggingEventIdRanges` (ids 20000-20006 are not renumbered), templates are one sentence with quoted identifiers, `Completed`/`Converted` move to Debug, the category becomes `ILogger<ReportingDependencies>`, and the instruments are renamed `sharedkernel.reporting.operation.duration` (s), `sharedkernel.reporting.rows` ({row}), `sharedkernel.reporting.bytes` (By) with an `outcome` tag; `WithReportingTelemetry()` is replaced by the `SharedKernel.*` wildcard.
 
 EventIds are written as `LoggingEventIdRanges.Reporting + n`. Telemetry: `ActivitySource`/`Meter`
 `SharedKernel.Reporting` — spans `reporting export`/`reporting convert`; instruments `reporting.operation.duration` (s),
@@ -120,7 +132,8 @@ EventIds are written as `LoggingEventIdRanges.Reporting + n`. Telemetry: `Activi
 | `08.Storage` | `.Abstractions` references `Storage.Abstractions`; delivery is `IFileStorage.UploadAsync` on a named or tenant store (`ReportDestination.TenantId`), `WriteCondition`, presigned download URLs |
 | `01.Core` | `Primitives` (`Result`, `Error`, `LoggingEventIdRanges`, `IReadinessProbe`), `Configuration` (`AddValidatedOptions`, `ISectionBoundOptions`), `Execution` (Gotenberg reads the correlation id) |
 | `06.Persistence` | None by reference; callers compose `StreamAsync`/`ListKeysetAsync` into the row source |
-| `13.ServiceDefaults` | `WithReportingTelemetry()` subscribes the `SharedKernel.Reporting` source and meter; `AddSharedKernelReadiness()` maps the `gotenberg` probe |
+| `13.ServiceDefaults` | `WithReportingTelemetry()` subscribes the `SharedKernel.Reporting` source and meter *(planned: deleted by SK.13.WildcardTelemetry; the `SharedKernel.*` wildcard replaces it)*; `AddSharedKernelReadiness()` maps the `gotenberg` probe |
+| `14.Presentation` | *(planned)* the edge mappers' status assertions for `SharedKernelException`s carrying reporting errors live there |
 | `17.Workflows`, `19.Scheduling` | Compose in consumer code (a job or activity calls an exporter); no reference either way |
 
 ## Testing
