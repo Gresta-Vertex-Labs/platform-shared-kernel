@@ -49,6 +49,8 @@ Overloads, option defaults and the configuration table: `SharedKernel.Scheduling
 14. **The readiness probe is zero-I/O**: in-process state only (`IsRunning`, `RegisteredJobCount`, `LastTickUtc` in `ReadinessReport.Data`). This package ships no `IHealthCheck`.
 15. **Reference `SharedKernel.Caching.Abstractions` only**, never `Caching.Redis.DistributedLocking` (an undeclared Adapter→Adapter edge). Only the `.Tests` project references the Redis package, for the real multi-replica proof.
 16. `FencingToken` is a propagation seam only; this package owns no protected resource and never re-checks it.
+17. *(planned, SK.19.SchedulerLogContext)* **Every log is emitted under a system caller.** The occurrence scope of rule 9 is opened as the first statement of the fire (before the span, the lease claim and the first log) and disposed after the catch blocks; loop-level logs (start, stop, faulted, drain, misfire and overlap decisions) run under a loop scope with identity `scheduler`, `TenantScope.Global` and no permissions. The scope never leaks to the caller of `StartAsync`/`StopAsync`. Span status and logs never carry `Error.Message` or `ex.Message`: status comes from the shared recorders (`error.code`, or the exception full name), logs carry codes and types.
+18. *(planned, SK.19.SchedulingConformance)* **Telemetry vocabulary.** One `outcome` tag with the shared values (`success`, `failure`, `exception`, `canceled`), taken from the recorder's return value, never a literal; the lease result is a separate `scheduling.claim` tag (`acquired`, `not_acquired`, `store_unavailable`) because a claim lost to another replica is neither success nor failure. Instruments are `sharedkernel.scheduling.*`, built by one `SchedulingMetrics` singleton from `IMeterFactory`, every one with a unit; durations are seconds measured with `IClock`. The package mints no `Error` values (no `SchedulingErrorCodes`); exception messages and XML docs cite the reason, never an invariant number.
 
 ## Decisions
 
@@ -62,17 +64,26 @@ Overloads, option defaults and the configuration table: `SharedKernel.Scheduling
 | Options via `AddOptions().BindConfiguration(SectionName).ValidateDataAnnotations().ValidateOnStart()` | `AddSharedKernelScheduling` takes no `IConfiguration`; `BindConfiguration` resolves it lazily with the same fail-fast contract. |
 | Declined mandatory `TenantScope` / per-tenant fan-out | A scheduled job is a startup-registered system actor; fan-out belongs in the handler. |
 | Declined multi-step job chains | Crash-resumable multi-step execution is `17.Workflows`. |
+| *(planned, SK.19.SchedulerLogContext)* Loop-level logs run under an `scheduler` system scope, per-occurrence logs under the job's scope | "Every scheduler log has a caller" without inventing a per-tick correlation id for decisions that precede any occurrence; misfire and overlap logs identify the job by `{JobName}`. |
+| *(planned, SK.19.SchedulerLogContext)* Cancellation logs (19014, 19015) pass no exception | Cancellation is not a failure (T5); a stack trace on every graceful shutdown is noise. Failure logs (19006, 19013, 19016) always pass it. |
+| *(planned, SK.19.SchedulingConformance)* `fired`, `succeeded`, `failed` merge into `job.executions` + `outcome`; `fired` is dropped | One outcome vocabulary; `fired` is derivable from executions plus the two lock counters. A duration histogram (`s`, `IClock`) is added. |
+| *(planned, SK.19.SchedulingConformance)* No `SchedulingErrorCodes` / `SchedulingErrors` | C2 applies to a capability that produces `Error` values; a fire's `Result` is the command's, the claim outage carries `caching.lock_unavailable`, registration mistakes are `ArgumentException` (E2). Revisit only if the package starts returning `Result`. |
+| *(planned, SK.19.SchedulingConformance)* `SchedulingTelemetry` is public with one const (`Name`); source and instruments stay internal | The source/meter-name check (G3) needs a public constant; nothing else needs to be public. |
+| Boundary catches in `ExecuteOneAsync` and the loop stay | A job's exception must not stop the loop; each logs, records the span and counts the outcome (E4's "catch only classifiable faults" targets library calls, not an isolation boundary). The silent catch in `StopAsync` becomes a logged one. |
 
 ## Logging
 
 EventId block **19000–19999** (`LoggingEventIdRanges.Scheduling`). Single package, so no sub-blocks: `Diagnostics/SchedulingLogs.cs` uses `Scheduling + 0` … `+ 16` (start/stop, `SingleReplicaWarning` (+2), fire, success, failure, unhandled exception, overlap skip/queue, misfire, misfire discard, claim not acquired / acquired, loop faulted (+13, Critical), shutdown cancellation, drain timeout, `LockStoreUnavailable` (+16)). Next free: `+17`. Telemetry tag keys live in `SchedulingTagKeys`.
+
+*(planned, SK.19.SchedulingConformance)* The package owns sub-block 0 (19000 to 19099) through an internal `SchedulingLoggingEventIds` (const arithmetic over `LoggingEventIdRanges.Scheduling`, existing values unchanged); the class `Log` becomes `SchedulingLog`; templates follow L3, 19004 moves to Debug, 19007 and 19010 to Warning, `{CommandType}` becomes `{RequestType}`, `{Duration}` becomes `{ElapsedMilliseconds}`; 19017 `ShutdownDrainFaulted` is added. *(planned, SK.19.SchedulerLogContext)* 19005 loses `{ErrorMessage}`.
 
 ## Cross-Domain Couplings
 
 - **01.Core:** `IClock`, `LoggingEventIdRanges`, `IReadinessProbe`/`AddReadinessProbe` (Primitives); `SystemRequestContext`, `RequestContextScope`, `CorrelationIds`, `TenantScope` (Execution).
 - **02.Caching:** consumes `IDistributedLockService.TryAcquireLeaseAsync`, `DistributedLease.FencingToken`, `DistributedLockUnavailableException` from Abstractions; the host supplies the Redis implementation.
 - **05.Application:** `ISender`, `ICommand`; the host must register a mediator adapter (`UseMediatR()`); `[RequirePermission]` commands need their own permissioned scope.
-- **13.ServiceDefaults:** `AddSharedKernelReadiness()` maps the `scheduler` probe; `WithSchedulingTelemetry()` subscribes to the source/meter.
+- **13.ServiceDefaults:** `AddSharedKernelReadiness()` maps the `scheduler` probe; `WithSchedulingTelemetry()` subscribes to the source/meter *(planned, SK.13.WildcardTelemetry: deleted, `AddServiceDefaults` subscribes `SharedKernel.*` by wildcard)*.
+- **WO-087 (planned):** `01.Core` recorders/outcomes/`TelemetryVersion`, `16.Testing` capture helpers (`ActivityRecorder`, `MetricRecorder`, `LoggerAssertions`), `00.Governance` report-only checks, `02.Caching` `SK.02.LockUnavailableError` (the lock-outage span's `error.code`).
 - **16.Testing:** `SharedKernel.Scheduling.Testing` (`InMemoryScheduledJobRegistry`) takes this domain's job execution model as its contract.
 - **17.Workflows:** composition only (a trigger that starts a workflow); no reference either way.
 
@@ -82,6 +93,7 @@ EventId block **19000–19999** (`LoggingEventIdRanges.Scheduling`). Single pack
 - Pinned behaviours: `Policies/MisfirePolicyTests` (12-occurrence downtime → 0/1/12 runs), `Policies/OverlapPolicyTests`, `Locking/OccurrenceLeaseTests`, `Cron/CronExpressionCorrectnessTests` (DST against a real zone).
 - `TestSupport/SchedulingTestHarness.StartAsync` waits for `SchedulingHostedService.IsRunning`: `BackgroundService.StartAsync` returns before `ExecuteAsync` computes the first fire, so advancing `FakeClock` at once races it. Apply the same wait to any hosted-loop test.
 - Fakes: `SharedKernel.Scheduling.Testing` — catalogue in `src/Testing/CLAUDE.md`.
+- *(planned, SK.19.SchedulerLogContext / SK.19.SchedulingConformance)* Telemetry and log assertions go through the `SharedKernel.Testing.Telemetry` helpers, never string search. A log-scope test uses a provider that snapshots `IRequestContextAccessor.Current` per record, covering every declared EventId. Duration assertions advance `FakeClock` inside the handler.
 
 ## Known Limitations
 
