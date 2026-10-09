@@ -28,10 +28,7 @@ using Shop.Inventory.Api.Stock;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
-builder.WithApplicationTelemetry();
 builder.WithPersistenceTelemetry();
-builder.WithCachingTelemetry();
-builder.WithSchedulingTelemetry();
 
 // Two kinds of caller. Merchants with a Keycloak token (12.Security.Oidc); the Ordering service with a client
 // certificate issued by the Shop's CA (12.Security.Mtls), asked for during the TLS handshake but not required, so

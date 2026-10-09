@@ -39,7 +39,6 @@ builder.AddBillingKeyVault();
 builder.Services.AddHostedService<DataKeyProvisioning>();
 
 builder.AddServiceDefaults();
-builder.WithApplicationTelemetry();
 builder.WithPersistenceTelemetry();
 
 // 01.Core DataPrivacy: values marked [EmailAddressData], [BankAccountData]… are redacted in every log.
