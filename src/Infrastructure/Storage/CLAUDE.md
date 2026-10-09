@@ -71,6 +71,17 @@ API detail, option keys and defaults: the `SharedKernel.Storage.Abstractions`, `
 13. **Store names:** 1–64 of `A-Z a-z 0-9 . _ -`, unique ignoring case (`FileStoreRegistration.IsValidStoreName`);
     one `storage-{store}` probe per store.
 14. Never document a provider behaviour that no test or live run has shown.
+15. *(planned, SK.08.StorageExceptionEdge)* **`StorageException` is a sealed `SharedKernelException`** (ctors `(Error)` and
+    `(Error, Exception)`), so every edge maps it by `Error.Type` instead of answering 500. No endpoint, host, port, bucket
+    or object key reaches an `Error`, an exception message, a log record or a span; a tenant view rewrites the error of a
+    `StorageException` raised during enumeration so `tenants/{id}/` never leaves it. Abstractions then references
+    `SharedKernel.Core` as well as Primitives and Execution.
+16. *(planned, SK.08.StorageConformance)* **Telemetry and logs follow root "Observability, exceptions and error codes".**
+    The source and meter name and the tag keys are public constants in Abstractions (`StorageTelemetryNames`,
+    `StorageTagKeys`); instruments are `sharedkernel.storage.*` with units; failures are recorded through the shared
+    Primitives recorder (`error.code` = the `storage.*` code, `error.type` = the `ErrorType`), with an `outcome` tag
+    from `WellKnownOutcomes`; the meter comes from `IMeterFactory`; log templates are one sentence with quoted
+    identifiers and the exception last; EventIds come from `S3StorageLoggingEventIds`.
 
 ## Decisions
 
@@ -88,6 +99,9 @@ API detail, option keys and defaults: the `SharedKernel.Storage.Abstractions`, `
 | Only `Default`/`InfrequentAccess` tiers | Archive tiers need a restore step before reads; left to lifecycle rules |
 | OBS profile refuses conditions and checksums, allows tags | OBS accepts and ignores `If-None-Match`, `If-Match`, `x-amz-checksum-sha256` |
 | No in-library upload validation | Presigned uploads bypass the service; validate on read or with bucket policy |
+| *(planned, SK.08.StorageConformance)* `StorageErrors` stays a public factory | Providers and the in-memory double live in other assemblies; root C2 asks for an internal factory, recorded deviation |
+| *(planned, SK.08.StorageConformance)* Timeouts stay under `storage.unavailable` | After the SDK's retries a timeout is retry-later; root C3 asks for `Timeout`, recorded deviation (a `storage.timeout` code is an addendum if arch-lead rules so) |
+| *(planned, SK.08.StorageConformance)* Caller-driven outcomes (`not_found`, `already_exists`, `precondition_failed`, `invalid_range`, `checksum_mismatch`) log at Debug | Warning would log every missing-object read; root L6 says Warning, open decision for arch-lead, default is to keep Debug |
 
 ## Logging
 
@@ -104,6 +118,14 @@ Telemetry (S3 package): `ActivitySource`/`Meter` `"SharedKernel.Storage"`; spans
 `storage.client.operation.duration` (s); counter `storage.client.bytes` (`storage.direction`). Wired by
 `WithStorageTelemetry()` in `SharedKernel.ServiceDefaults`.
 
+*(planned, SK.08.StorageConformance)* Names become the public constants `StorageTelemetryNames` (source and meter
+`SharedKernel.Storage`) and `StorageTagKeys`; instruments `sharedkernel.storage.operation.duration` (`s`; tags store,
+operation, provider, `outcome`, plus `error.type` and `error.code` on failures) and `sharedkernel.storage.bytes` (`By`);
+span `error.type` becomes the `ErrorType` name with the code in `error.code`; the meter is created through
+`IMeterFactory`; the `ServiceDefaults` wildcard subscription replaces `WithStorageTelemetry()`. Log ownership: S3
+`S3StorageLoggingEventIds` (8100-8199, class in `Diagnostics/`); OBS 8200-8299 reserved, nothing declared (it logs
+through S3); Abstractions 8000-8099 unused.
+
 ## Cross-Domain Couplings
 
 - **01.Core:** `Result`/`Error`, `TenantId`, `AddValidatedOptions` (S3 only), `IReadinessProbe` — one per store.
@@ -111,7 +133,9 @@ Telemetry (S3 package): `ActivitySource`/`Meter` `"SharedKernel.Storage"`; spans
 - **15.Integration:** `Notifications.Abstractions` and `Notifications.Email.SendGrid` reference Storage.Abstractions —
   attachments are storage references.
 - **20.Reporting:** `Reporting.Abstractions` delivers exports to a named store (`ReportDestination`) with a presigned link.
-- **14.Presentation:** no dependency; endpoints hand out presigned URLs instead of accepting uploads.
+- **14.Presentation:** no dependency; endpoints hand out presigned URLs instead of accepting uploads. *(planned,
+  SK.08.StorageExceptionEdge)* A thrown `StorageException` is a `SharedKernelException`, so the HTTP, gRPC and SignalR
+  mappers answer by `Error.Type`; their status assertions belong to 14.
 - Verified end to end by the Shop (`samples/Shop`): Catalog (presigned S3 uploads) and Reports (an S3 store and an OBS archive, presigned downloads).
 
 ## Testing
