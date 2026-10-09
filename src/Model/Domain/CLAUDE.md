@@ -134,6 +134,18 @@ implements the interfaces, which is all persistence reads):
 34. `CurrencyCatalog` is frozen, compiled in, and carries `RegistryAsOf`; update only against ISO 4217 amendments.
     `IExchangeRateProvider` is a port; `ConvertAsync` builds the result through the internal `Money.FromTrusted`.
 
+**Error codes** *(planned, SK.03.DomainErrorCodes)*
+
+35. Every error code the package owns is a constant in the public `SharedKernel.Domain.DomainErrorCodes` (groups
+    `Currency`, `Money`) and is built by the internal `Internal.DomainErrors` factory — no inline code literal. Codes
+    are lowercase `{domain}.{snake_reason}` (C1). `not_found.default` and `validation.required` stay
+    `ErrorCodes` from Primitives. The package never reads or spells `domain.rule.violated`/`domain.rule_violated`
+    (`BusinessRuleViolationException` carries the rule's own `Code`).
+36. ErrorType follows the condition (C3): a broken caller rule (`money.currency_mismatch`) is `BusinessRule`; invalid
+    input (`currency.code.*`) is `Validation`; a persisted `Money` amount with excess decimals
+    (`money.stored_precision_exceeded`) is corrupt data, thrown as `DomainException` with `Unexpected`, not through
+    `CheckRule`.
+
 ## Decisions
 
 | Decision | Why |
@@ -148,12 +160,15 @@ implements the interfaces, which is all persistence reads):
 | Paging and tracking are repository concerns, not specification concerns | One place validates page input; the same spec serves tracked and untracked reads |
 | `IAggregateFactory`, `IPolicy<T>` and the full audit/soft-delete/tenant base matrix are kept | Owner ruling: consumers get every combination without hand-wiring; `AggregateFactoriesMustCreateValidationResults` enforces the factory shape |
 | AOT/trimming is not a constraint here | The JSON factory uses `MakeGenericType` + a compiled constructor delegate; `DomainEventVersionHelper` uses cached attribute lookup. Choose the best consumer API |
+| `BusinessRuleViolationException`/`DomainNotFoundException` keep domain-shaped constructors, with no `(Error)`/`(Error, Exception)` overload *(planned, SK.03.DomainErrorCodes)* | They derive `SharedKernelException` through `DomainException`; accepting an arbitrary `Error` would bypass `IBusinessRule.Code` |
 | Domain-event dispatch contract here, implementation in 05.Application | The domain declares `IDomainEventDispatcher`; `AddSharedKernelApplication` registers the native dispatcher |
 
 ## Logging
 
 EventId block **3000–3999** (`LoggingEventIdRanges.Domain`) is reserved but unused: `SharedKernel.Domain` is
 logging-free by rule (Model tier; `ILogger` is never injected into a domain type). Do not add `[LoggerMessage]` here.
+The package is also telemetry-free: no `ActivitySource`, `Meter` or `Activity` use. Error codes (rules 35-36) are its only
+observability surface; failures are recorded by the application and host tiers from the `Error` the exception carries.
 
 ## Cross-Domain Couplings
 
