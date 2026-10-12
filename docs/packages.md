@@ -49,7 +49,7 @@ Reference from the Application project.
 
 | Package | Folder | SharedKernel dependencies |
 |---|---|---|
-| [`SharedKernel.AI.Abstractions`](../src/Infrastructure/AI/SharedKernel.AI.Abstractions/README.md) | `src/Infrastructure/AI` | `SharedKernel.Execution`, `SharedKernel.Primitives` |
+| [`SharedKernel.AI.Abstractions`](../src/Infrastructure/AI/SharedKernel.AI.Abstractions/README.md) | `src/Infrastructure/AI` | `SharedKernel.Core`, `SharedKernel.Execution`, `SharedKernel.Primitives` |
 | [`SharedKernel.Application`](../src/Application/SharedKernel.Application/README.md) | `src/Application` | `SharedKernel.Caching.Abstractions`, `SharedKernel.Domain`, `SharedKernel.Primitives` |
 | [`SharedKernel.Caching.Abstractions`](../src/Infrastructure/Caching/SharedKernel.Caching.Abstractions/README.md) | `src/Infrastructure/Caching` | `SharedKernel.Core`, `SharedKernel.Execution` |
 | [`SharedKernel.Idempotency.Abstractions`](../src/Infrastructure/Idempotency/SharedKernel.Idempotency.Abstractions/README.md) | `src/Infrastructure/Idempotency` | `SharedKernel.Execution` |

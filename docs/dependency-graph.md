@@ -48,7 +48,7 @@ flowchart LR
   src_Hosting_ServiceDefaults -->|4| src_Hosting_Security
   src_Hosting_ServiceDefaults -->|1| src_Infrastructure_Caching
   src_Hosting_ServiceDefaults -->|3| src_Infrastructure_Persistence
-  src_Infrastructure_AI -->|6| src_Foundation
+  src_Infrastructure_AI -->|7| src_Foundation
   src_Infrastructure_Caching -->|10| src_Foundation
   src_Infrastructure_Communication -->|9| src_Foundation
   src_Infrastructure_Communication -->|1| src_Model_Domain
@@ -300,8 +300,10 @@ flowchart LR
     SharedKernel_AI_Testing["AI.Testing<br/><i>Testing</i>"]
   end
   SharedKernel_Configuration(["Configuration<br/><i>src/Foundation</i>"])
+  SharedKernel_Core(["Core<br/><i>src/Foundation</i>"])
   SharedKernel_Execution(["Execution<br/><i>src/Foundation</i>"])
   SharedKernel_Primitives(["Primitives<br/><i>src/Foundation</i>"])
+  SharedKernel_AI_Abstractions --> SharedKernel_Core
   SharedKernel_AI_Abstractions --> SharedKernel_Execution
   SharedKernel_AI_Abstractions --> SharedKernel_Primitives
   SharedKernel_AI_Qdrant --> SharedKernel_AI_Abstractions
