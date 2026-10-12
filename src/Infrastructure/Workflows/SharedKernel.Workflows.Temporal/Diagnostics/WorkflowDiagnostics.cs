@@ -1,24 +1,28 @@
-using System.Diagnostics;
 using System.Diagnostics.Metrics;
+using SharedKernel.Primitives.Telemetry;
 using SharedKernel.Workflows.Temporal.Constants;
 
 namespace SharedKernel.Workflows.Temporal.Diagnostics;
 
 /// <summary>
-/// Holds this domain's <see cref="ActivitySource"/> and <see cref="Meter"/>, named from
-/// <see cref="WorkflowWellKnown.ActivitySourceName"/>/<see cref="WorkflowWellKnown.MeterName"/>.
+/// Holds this domain's <see cref="Meter"/>, named from <see cref="WorkflowWellKnown.MeterName"/>.
 /// </summary>
 /// <remarks>
-/// <c>13.ServiceDefaults</c> wires these string-name-only via <c>WithWorkflowTelemetry()</c> with no
-/// <c>ProjectReference</c> to this package — the byte-identical name is what makes that work.
-/// Nothing in this package starts an <see cref="Activity"/> inside workflow code; workflow tracing is
-/// <c>TracingInterceptor</c>'s job.
+/// <para>
+/// This package owns no <see cref="System.Diagnostics.ActivitySource"/>: client, workflow and activity spans are
+/// the Temporal <c>TracingInterceptor</c>'s, and workflow code may not touch the <c>Activity</c> API. The meter
+/// is the sink <c>WithMetrics()</c> hands to the SDK's <c>CustomMetricMeter</c>; the instruments on it are named by
+/// the SDK.
+/// </para>
+/// <para>
+/// <c>13.ServiceDefaults</c> subscribes to this meter through its <c>SharedKernel.*</c> wildcard, with no
+/// <c>ProjectReference</c> to this package.
+/// </para>
 /// </remarks>
 internal static class WorkflowDiagnostics
 {
-    /// <summary>Gets this domain's <see cref="ActivitySource"/>.</summary>
-    public static ActivitySource ActivitySource { get; } = new(WorkflowWellKnown.ActivitySourceName);
-
-    /// <summary>Gets this domain's <see cref="Meter"/>.</summary>
-    public static Meter Meter { get; } = new(WorkflowWellKnown.MeterName);
+    /// <summary>Gets this domain's <see cref="Meter"/>, versioned from the assembly informational version.</summary>
+    public static Meter Meter { get; } = new(
+        WorkflowWellKnown.MeterName,
+        TelemetryVersion.Of(typeof(WorkflowDiagnostics).Assembly));
 }

@@ -215,7 +215,7 @@ public sealed class WorkflowFailureMapperTests
 
         Error mapped = WorkflowFailureMapper.ToError(exception);
 
-        mapped.Code.Should().Be(WorkflowErrors.AlreadyStarted("wf-id-1").Code);
+        mapped.Code.Should().Be(WorkflowErrors.AlreadyStarted().Code);
         mapped.Type.Should().Be(ErrorType.Conflict);
     }
 
@@ -226,8 +226,8 @@ public sealed class WorkflowFailureMapperTests
 
         Error mapped = WorkflowFailureMapper.ToError(exception);
 
-        mapped.Code.Should().Be(WorkflowErrors.ServiceUnavailable("x").Code);
-        mapped.Type.Should().Be(ErrorType.Unexpected);
+        mapped.Code.Should().Be(WorkflowErrors.ServiceUnavailable().Code);
+        mapped.Type.Should().Be(ErrorType.Unavailable);
     }
 
     [Fact]
@@ -250,6 +250,6 @@ public sealed class WorkflowFailureMapperTests
 
         mapped.Type.Should().Be(ErrorType.Unexpected);
         mapped.Code.Should().Be("workflow.unmapped_failure");
-        mapped.Message.Should().Be(exception.Message);
+        mapped.Message.Should().NotContain(exception.Message);
     }
 }

@@ -14,14 +14,16 @@ public sealed class WorkflowErrorsTests
 {
     public static TheoryData<string, Error, ErrorType> AllFactories() => new()
     {
-        { nameof(WorkflowErrors.NotFound), WorkflowErrors.NotFound("wf-1"), ErrorType.NotFound },
-        { nameof(WorkflowErrors.AlreadyStarted), WorkflowErrors.AlreadyStarted("wf-1"), ErrorType.Conflict },
-        { nameof(WorkflowErrors.Cancelled), WorkflowErrors.Cancelled("wf-1"), ErrorType.Unexpected },
-        { nameof(WorkflowErrors.Terminated), WorkflowErrors.Terminated("wf-1"), ErrorType.Unexpected },
-        { nameof(WorkflowErrors.TimedOut), WorkflowErrors.TimedOut("wf-1"), ErrorType.Unexpected },
+        { nameof(WorkflowErrors.NotFound), WorkflowErrors.NotFound(), ErrorType.NotFound },
+        { nameof(WorkflowErrors.AlreadyStarted), WorkflowErrors.AlreadyStarted(), ErrorType.Conflict },
+        { nameof(WorkflowErrors.Cancelled), WorkflowErrors.Cancelled(), ErrorType.Unexpected },
+        { nameof(WorkflowErrors.Terminated), WorkflowErrors.Terminated(), ErrorType.Unexpected },
+        { nameof(WorkflowErrors.TimedOut), WorkflowErrors.TimedOut(), ErrorType.Timeout },
+        { nameof(WorkflowErrors.RequestTimedOut), WorkflowErrors.RequestTimedOut(), ErrorType.Timeout },
+        { nameof(WorkflowErrors.RpcFailed), WorkflowErrors.RpcFailed(), ErrorType.Unexpected },
         { nameof(WorkflowErrors.QueryFailed), WorkflowErrors.QueryFailed("reason"), ErrorType.Unexpected },
         { nameof(WorkflowErrors.SignalFailed), WorkflowErrors.SignalFailed("reason"), ErrorType.Unexpected },
-        { nameof(WorkflowErrors.ServiceUnavailable), WorkflowErrors.ServiceUnavailable("reason"), ErrorType.Unexpected },
+        { nameof(WorkflowErrors.ServiceUnavailable), WorkflowErrors.ServiceUnavailable(), ErrorType.Unavailable },
         { nameof(WorkflowErrors.NamespaceNotFound), WorkflowErrors.NamespaceNotFound("ns"), ErrorType.Unexpected },
         { nameof(WorkflowErrors.TenantScopeMissing), WorkflowErrors.TenantScopeMissing(), ErrorType.Unauthorized },
         { nameof(WorkflowErrors.InvalidWorkflowId), WorkflowErrors.InvalidWorkflowId("reason"), ErrorType.Validation },
@@ -73,7 +75,7 @@ public sealed class WorkflowErrorsTests
     [Fact]
     public void AlreadyStarted_IsConflict()
     {
-        WorkflowErrors.AlreadyStarted("wf-1").Type.Should().Be(ErrorType.Conflict);
+        WorkflowErrors.AlreadyStarted().Type.Should().Be(ErrorType.Conflict);
     }
 
     [Fact]

@@ -10,18 +10,12 @@ namespace SharedKernel.Workflows.Temporal.Constants;
 public static class WorkflowWellKnown
 {
     /// <summary>
-    /// The <see cref="System.Diagnostics.ActivitySource"/> name used for this domain's diagnostics.
-    /// </summary>
-    /// <remarks>
-    /// Named identically for the <c>13.ServiceDefaults</c> string-name-only
-    /// <c>WithWorkflowTelemetry()</c> wiring to match without a <c>ProjectReference</c> to this
-    /// package.
-    /// </remarks>
-    public const string ActivitySourceName = "SharedKernel.Workflows";
-
-    /// <summary>
     /// The <see cref="System.Diagnostics.Metrics.Meter"/> name used for this domain's diagnostics.
     /// </summary>
+    /// <remarks>
+    /// The meter receives the Temporal SDK's own metrics when <c>WithMetrics()</c> is composed. This package
+    /// owns no <c>ActivitySource</c>; spans come from the Temporal <c>TracingInterceptor</c>.
+    /// </remarks>
     public const string MeterName = "SharedKernel.Workflows";
 
     /// <summary>

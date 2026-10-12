@@ -32,7 +32,7 @@ public sealed class FlakyActivity : ActivityBase
     }
 
     [Activity(nameof(FlakyActivity))]
-    public Task<string> RunAsync(string input) => throw Fail(WorkflowErrors.ServiceUnavailable("simulated flaky failure"));
+    public Task<string> RunAsync(string input) => throw Fail(WorkflowErrors.ServiceUnavailable());
 }
 
 /// <summary>Never completes on its own — used to exercise a <c>ScheduleToCloseTimeout</c> (T-10).</summary>

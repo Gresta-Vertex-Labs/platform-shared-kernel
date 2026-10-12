@@ -162,7 +162,7 @@ internal sealed class TemporalWorkflowsBuilder : ITemporalWorkflowsBuilder
         if (_taskQueue is null)
         {
             throw new InvalidOperationException(
-                WorkflowErrors.WorkerNotConfigured("no task queue configured — call WithWorker(taskQueue) or AsClientOnly()").Message);
+                "No task queue is configured. Call WithWorker(taskQueue) or AsClientOnly().");
         }
 
         if (_workflowTypes.Count == 0 && _activityTypes.Count == 0)
@@ -215,7 +215,9 @@ internal sealed class TemporalWorkflowsBuilder : ITemporalWorkflowsBuilder
         WorkerTuningOptions tuning = _tune?.Invoke(WorkerTuningOptions.Default) ?? WorkerTuningOptions.Default;
         workerBuilder.Services.Configure<TemporalWorkerServiceOptions>(options =>
         {
-            options.Interceptors = [new WorkflowPropagationInterceptor()];
+            // No worker-level interceptors: TemporalWorkerOptions.Interceptors documents that the worker includes every
+            // client interceptor that implements IWorkerInterceptor (WorkflowPropagationInterceptor, TracingInterceptor)
+            // and says those should not be specified again here.
             options.MaxConcurrentWorkflowTasks = tuning.MaxConcurrentWorkflowTasks;
             options.MaxConcurrentActivities = tuning.MaxConcurrentActivities;
             options.MaxConcurrentLocalActivities = tuning.MaxConcurrentLocalActivities;
@@ -269,7 +271,9 @@ internal sealed class TemporalWorkflowsBuilder : ITemporalWorkflowsBuilder
             List<IClientInterceptor> interceptors = [new WorkflowPropagationInterceptor()];
             if (enableOpenTelemetry)
             {
-                interceptors.Add(new TracingInterceptor());
+                // The workflow id is {tenant}:{type}:{businessKey}; the SDK would tag every span with it. Spans carry
+                // no tenant or business key, so the tag is suppressed (null disables it). The sources are unchanged.
+                interceptors.Add(new TracingInterceptor(new TracingInterceptorOptions { TagNameWorkflowId = null }));
             }
 
             connectOptions.Interceptors = interceptors;

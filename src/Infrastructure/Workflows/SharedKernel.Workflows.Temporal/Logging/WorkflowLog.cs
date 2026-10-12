@@ -17,10 +17,10 @@ namespace SharedKernel.Workflows.Temporal.Logging;
 internal static partial class WorkflowLog
 {
     [LoggerMessage(
-        EventId = 17000,
+        EventId = WorkflowLoggingEventIds.Base,
         Level = LogLevel.Information,
-        Message = "Started workflow {WorkflowId} of type {WorkflowType}")]
-    public static partial void WorkflowStarted(ILogger logger, string workflowId, string workflowType);
+        Message = "Started workflow of type {WorkflowType}")]
+    public static partial void WorkflowStarted(ILogger logger, string workflowType);
 
     [LoggerMessage(
         EventId = 17001,
@@ -31,26 +31,26 @@ internal static partial class WorkflowLog
     [LoggerMessage(
         EventId = 17002,
         Level = LogLevel.Debug,
-        Message = "Signal {SignalName} dispatched to workflow {WorkflowId}")]
-    public static partial void SignalDispatched(ILogger logger, string workflowId, string signalName);
+        Message = "Signal {SignalName} dispatched to a workflow")]
+    public static partial void SignalDispatched(ILogger logger, string signalName);
 
     [LoggerMessage(
         EventId = 17003,
         Level = LogLevel.Debug,
-        Message = "Query {QueryName} dispatched to workflow {WorkflowId}")]
-    public static partial void QueryDispatched(ILogger logger, string workflowId, string queryName);
+        Message = "Query {QueryName} dispatched to a workflow")]
+    public static partial void QueryDispatched(ILogger logger, string queryName);
 
     [LoggerMessage(
         EventId = 17004,
         Level = LogLevel.Warning,
-        Message = "Workflow {WorkflowId} terminated — reason: {Reason}. No compensation runs.")]
-    public static partial void WorkflowTerminated(ILogger logger, string workflowId, string reason);
+        Message = "A workflow was terminated. No compensation runs.")]
+    public static partial void WorkflowTerminated(ILogger logger);
 
     [LoggerMessage(
         EventId = 17005,
         Level = LogLevel.Warning,
-        Message = "No tenant header was present on workflow {WorkflowId} — surfacing TenantScope.Global")]
-    public static partial void TenantHeaderMissingOnWorkflow(ILogger logger, string workflowId);
+        Message = "No tenant header was present on a workflow of type {WorkflowType} — surfacing TenantScope.Global")]
+    public static partial void TenantHeaderMissingOnWorkflow(ILogger logger, string workflowType);
 
     [LoggerMessage(
         EventId = 17006,
@@ -93,4 +93,10 @@ internal static partial class WorkflowLog
         Level = LogLevel.Warning,
         Message = "Raw Temporal client access enabled via AllowRawClientAccess() — TENANT SCOPING AND WORKFLOW-ID COMPOSITION ARE BYPASSED for any code that consumes it")]
     public static partial void RawClientAccessEnabled(ILogger logger);
+
+    [LoggerMessage(
+        EventId = WorkflowLoggingEventIds.ProbeCheckFailed,
+        Level = LogLevel.Warning,
+        Message = "The workflow service probe {Check} check faulted.")]
+    public static partial void ProbeCheckFailed(ILogger logger, string check, Exception exception);
 }

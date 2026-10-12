@@ -218,4 +218,18 @@ public sealed class BuildCompositionValidationTests
 
         services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IHostedService));
     }
+
+    [Fact]
+    public void Build_WorkerWithNoTaskQueue_ThrowsASentenceThatNamesTheRemedy()
+    {
+        ServiceCollection services = NewServices();
+        ITemporalWorkflowsBuilder builder = services
+            .AddSharedKernelTemporalWorkflows(ValidConfiguration())
+            .AddWorkflow<ValidWorkflow>();
+
+        Action act = () => builder.Build();
+
+        act.Should().Throw<InvalidOperationException>()
+            .Which.Message.Should().Be("No task queue is configured. Call WithWorker(taskQueue) or AsClientOnly().");
+    }
 }

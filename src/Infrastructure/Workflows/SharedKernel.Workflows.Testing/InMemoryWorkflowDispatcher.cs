@@ -134,13 +134,13 @@ public sealed class InMemoryWorkflowDispatcher : IWorkflowDispatcher
         if (SimulateFailure)
         {
             return Task.FromResult(SharedKernel.Primitives.Results.Result<WorkflowExecutionDescription>.Failure(
-                WorkflowErrors.ServiceUnavailable("SimulateFailure is enabled.")));
+                WorkflowErrors.ServiceUnavailable()));
         }
 
         if (!_executions.TryGetValue(workflowId, out var execution))
         {
             return Task.FromResult(SharedKernel.Primitives.Results.Result<WorkflowExecutionDescription>.Failure(
-                WorkflowErrors.NotFound(workflowId)));
+                WorkflowErrors.NotFound()));
         }
 
         var description = new WorkflowExecutionDescription
@@ -279,7 +279,7 @@ public sealed class InMemoryWorkflowDispatcher : IWorkflowDispatcher
         if (SimulateFailure)
         {
             return SharedKernel.Primitives.Results.Result<IWorkflowHandle>.Failure(
-                WorkflowErrors.ServiceUnavailable("SimulateFailure is enabled."));
+                WorkflowErrors.ServiceUnavailable());
         }
 
         if (string.IsNullOrWhiteSpace(options.BusinessKey))
@@ -297,7 +297,7 @@ public sealed class InMemoryWorkflowDispatcher : IWorkflowDispatcher
         // future reconciliation pass against 17.Workflows's own shipped dispatcher behavior.
         if (_executions.TryGetValue(workflowId, out var existing) && existing.Status == WorkflowLifecycleStatus.Running)
         {
-            return SharedKernel.Primitives.Results.Result<IWorkflowHandle>.Failure(WorkflowErrors.AlreadyStarted(workflowId));
+            return SharedKernel.Primitives.Results.Result<IWorkflowHandle>.Failure(WorkflowErrors.AlreadyStarted());
         }
 
         var runId = string.Create(CultureInfo.InvariantCulture, $"in-memory-run-{Interlocked.Increment(ref _runIdSequence)}");

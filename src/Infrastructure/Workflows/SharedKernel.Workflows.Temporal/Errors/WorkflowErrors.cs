@@ -22,10 +22,13 @@ public static class WorkflowErrors
 {
     private const string Prefix = "workflow";
 
-    /// <summary>The addressed workflow execution could not be located.</summary>
-    public static Error NotFound(string workflowId) => Error.NotFound(
+    /// <summary>
+    /// The addressed workflow execution could not be located. The message names no id: a workflow id is
+    /// <c>{tenant}:{type}:{businessKey}</c>.
+    /// </summary>
+    public static Error NotFound() => Error.NotFound(
         $"{Prefix}.not_found",
-        $"No workflow execution was found for id '{workflowId}'.");
+        "No workflow execution was found for the requested id.");
 
     /// <summary>
     /// A workflow with the composed id is already running. Temporal enforces at most one running
@@ -33,24 +36,40 @@ public static class WorkflowErrors
     /// validation failure, because the caller's request is well-formed; it conflicts with existing
     /// running state.
     /// </summary>
-    public static Error AlreadyStarted(string workflowId) => Error.Conflict(
+    public static Error AlreadyStarted() => Error.Conflict(
         $"{Prefix}.already_started",
-        $"A workflow execution with id '{workflowId}' is already running.");
+        "A workflow execution with the composed id is already running.");
 
     /// <summary>The workflow execution completed in a cancelled state.</summary>
-    public static Error Cancelled(string workflowId) => Error.Unexpected(
+    public static Error Cancelled() => Error.Unexpected(
         $"{Prefix}.cancelled",
-        $"Workflow execution '{workflowId}' was cancelled.");
+        "The workflow execution was cancelled.");
 
     /// <summary>The workflow execution was terminated by an operator, without compensation.</summary>
-    public static Error Terminated(string workflowId) => Error.Unexpected(
+    public static Error Terminated() => Error.Unexpected(
         $"{Prefix}.terminated",
-        $"Workflow execution '{workflowId}' was terminated.");
+        "The workflow execution was terminated.");
 
     /// <summary>The workflow execution timed out (execution, run, or task timeout).</summary>
-    public static Error TimedOut(string workflowId) => Error.Unexpected(
+    public static Error TimedOut() => Error.Timeout(
         $"{Prefix}.timed_out",
-        $"Workflow execution '{workflowId}' timed out.");
+        "The workflow execution timed out.");
+
+    /// <summary>
+    /// A dispatch RPC to the Temporal service ran out of time before the service answered. Distinct from
+    /// <see cref="TimedOut"/>, which is a workflow execution that ran out of time.
+    /// </summary>
+    public static Error RequestTimedOut() => Error.Timeout(
+        $"{Prefix}.request_timed_out",
+        "The request to the Temporal service timed out.");
+
+    /// <summary>
+    /// The Temporal service answered with a status that is a deployment or contract fault (credential, permission,
+    /// internal error, unsupported call), not a condition the caller can fix.
+    /// </summary>
+    public static Error RpcFailed() => Error.Unexpected(
+        $"{Prefix}.rpc_failed",
+        "The request to the Temporal service failed.");
 
     /// <summary>
     /// A query could not be dispatched or was rejected — e.g. the worker fleet holding the
@@ -66,9 +85,9 @@ public static class WorkflowErrors
         $"The workflow signal failed: {reason}");
 
     /// <summary>The Temporal service could not be reached (connectivity/RPC-level failure).</summary>
-    public static Error ServiceUnavailable(string reason) => Error.Unexpected(
+    public static Error ServiceUnavailable() => Error.Unavailable(
         $"{Prefix}.service_unavailable",
-        $"The Temporal service is unavailable: {reason}");
+        "The Temporal service is unavailable.");
 
     /// <summary>The configured Temporal namespace does not exist on the target cluster.</summary>
     public static Error NamespaceNotFound(string @namespace) => Error.Unexpected(

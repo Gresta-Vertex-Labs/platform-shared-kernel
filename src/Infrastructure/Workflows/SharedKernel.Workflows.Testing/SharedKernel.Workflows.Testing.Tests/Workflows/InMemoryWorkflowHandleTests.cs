@@ -57,7 +57,7 @@ public sealed class InMemoryWorkflowHandleTests
         Result result = await handle.SignalAsync("advance", "x");
 
         Assert.True(result.IsFailure);
-        Assert.Equal(WorkflowErrors.NotFound("no-such-id"), result.Error);
+        Assert.Equal(WorkflowErrors.NotFound(), result.Error);
     }
 
     [Fact]
@@ -68,8 +68,10 @@ public sealed class InMemoryWorkflowHandleTests
         handle.SimulateFailure = true;
 
         Result result = await handle.SignalAsync("advance", "x");
-
         Assert.True(result.IsFailure);
+        Assert.Equal(ErrorType.Unavailable, result.Error.Type);
+        Assert.Equal(WorkflowErrors.ServiceUnavailable(), result.Error);
+        Assert.DoesNotContain(handle.WorkflowId, result.Error.Message, StringComparison.Ordinal);
         handle.ShouldNotHaveSignalled("advance");
     }
 
@@ -131,7 +133,7 @@ public sealed class InMemoryWorkflowHandleTests
         Result<string> result = await handle.QueryAsync<string>("status");
 
         Assert.True(result.IsFailure);
-        Assert.Equal(WorkflowErrors.NotFound("no-such-id"), result.Error);
+        Assert.Equal(WorkflowErrors.NotFound(), result.Error);
     }
 
     [Fact]
@@ -207,7 +209,7 @@ public sealed class InMemoryWorkflowHandleTests
         Result result = await handle.CancelAsync();
 
         Assert.True(result.IsFailure);
-        Assert.Equal(WorkflowErrors.NotFound("no-such-id"), result.Error);
+        Assert.Equal(WorkflowErrors.NotFound(), result.Error);
     }
 
     [Fact]
@@ -314,7 +316,7 @@ public sealed class InMemoryWorkflowHandleTests
         Result result = await handle.TerminateAsync("reason");
 
         Assert.True(result.IsFailure);
-        Assert.Equal(WorkflowErrors.NotFound("no-such-id"), result.Error);
+        Assert.Equal(WorkflowErrors.NotFound(), result.Error);
     }
 
     [Fact]

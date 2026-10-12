@@ -1,6 +1,9 @@
+using System.Diagnostics.CodeAnalysis;
+using Google.Protobuf.WellKnownTypes;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Workflows.Temporal.Errors;
+using Temporalio.Api.ErrorDetails.V1;
 using Temporalio.Exceptions;
 
 namespace SharedKernel.Workflows.Temporal.Failures;
@@ -83,21 +86,65 @@ internal static class WorkflowFailureMapper
         ActivityFailureException { InnerException: { } inner } => ToError(inner),
         ChildWorkflowFailureException { InnerException: { } inner } => ToError(inner),
         ApplicationFailureException applicationFailure => FromApplicationFailure(applicationFailure),
-        WorkflowAlreadyStartedException alreadyStarted => WorkflowErrors.AlreadyStarted(alreadyStarted.WorkflowId),
-        CanceledFailureException => WorkflowErrors.Cancelled(ExtractWorkflowId(exception)),
-        TerminatedFailureException => WorkflowErrors.Terminated(ExtractWorkflowId(exception)),
-        TimeoutFailureException => WorkflowErrors.TimedOut(ExtractWorkflowId(exception)),
+        WorkflowAlreadyStartedException => WorkflowErrors.AlreadyStarted(),
+        CanceledFailureException => WorkflowErrors.Cancelled(),
+        TerminatedFailureException => WorkflowErrors.Terminated(),
+        TimeoutFailureException => WorkflowErrors.TimedOut(),
         WorkflowQueryRejectedException rejected => WorkflowErrors.QueryFailed(
             $"query rejected — workflow status is {rejected.WorkflowStatus}"),
-        RpcException rpcException => WorkflowErrors.ServiceUnavailable(rpcException.Message),
-        _ => Error.Unexpected("workflow.unmapped_failure", exception.Message),
+        RpcException rpcException => FromRpcException(rpcException),
+        _ => Error.Unexpected("workflow.unmapped_failure", "The workflow operation failed with an unmapped error."),
     };
+
+    /// <summary>
+    /// Maps an <see cref="RpcException"/> by its gRPC status — never wholesale. A deployment or contract fault
+    /// (missing namespace, credential, permission, internal error) stays <see cref="ErrorType.Unexpected"/>: a
+    /// service-to-Temporal fault is not the end user's 401, 403 or 404. No message carries the RPC text, the host or
+    /// a workflow id.
+    /// </summary>
+    private static Error FromRpcException(RpcException rpcException) => rpcException.Code switch
+    {
+        RpcException.StatusCode.NotFound => TryReadNamespaceNotFound(rpcException, out string? missingNamespace)
+            ? WorkflowErrors.NamespaceNotFound(missingNamespace)
+            : WorkflowErrors.NotFound(),
+        RpcException.StatusCode.DeadlineExceeded => WorkflowErrors.RequestTimedOut(),
+        RpcException.StatusCode.Unavailable
+            or RpcException.StatusCode.ResourceExhausted
+            or RpcException.StatusCode.Aborted => WorkflowErrors.ServiceUnavailable(),
+        _ => WorkflowErrors.RpcFailed(),
+    };
+
+    /// <summary>
+    /// Whether the gRPC status carries the server's <c>NamespaceNotFoundFailure</c> detail. Both a missing workflow and
+    /// a missing namespace answer gRPC <c>NOT_FOUND</c>; only the detail tells them apart.
+    /// </summary>
+    private static bool TryReadNamespaceNotFound(RpcException rpcException, [NotNullWhen(true)] out string? missingNamespace)
+    {
+        missingNamespace = null;
+        if (rpcException.GrpcStatus.Value is not { } status)
+        {
+            return false;
+        }
+
+        foreach (Any detail in status.Details)
+        {
+            if (detail.Is(NamespaceNotFoundFailure.Descriptor))
+            {
+                missingNamespace = detail.Unpack<NamespaceNotFoundFailure>().Namespace;
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     private static Error FromApplicationFailure(ApplicationFailureException applicationFailure)
     {
         ErrorType originalType = ReadOriginalErrorType(applicationFailure);
         string code = applicationFailure.ErrorType ?? "workflow.application_failure";
         string message = applicationFailure.Message;
+        // The failure message is the activity's own Error.Message, set deliberately by the author (ToFailure);
+        // it is carried as-is. Exception text from anywhere else never reaches this arm.
 
         return originalType switch
         {
@@ -146,6 +193,4 @@ internal static class WorkflowFailureMapper
 
         return applicationFailure.NonRetryable ? ErrorType.Validation : ErrorType.Unexpected;
     }
-
-    private static string ExtractWorkflowId(Exception exception) => exception.Message;
 }

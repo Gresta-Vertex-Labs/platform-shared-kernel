@@ -113,7 +113,7 @@ internal sealed class WorkflowPropagationInterceptor : IClientInterceptor, IWork
             var headers = Workflow.Info.Headers;
             if (headers is null || !headers.ContainsKey(WorkflowWellKnown.TenantHeaderKey))
             {
-                WorkflowLog.TenantHeaderMissingOnWorkflow(Workflow.Logger, Workflow.Info.WorkflowId);
+                WorkflowLog.TenantHeaderMissingOnWorkflow(Workflow.Logger, Workflow.Info.WorkflowType);
             }
 
             return base.ExecuteWorkflowAsync(input);

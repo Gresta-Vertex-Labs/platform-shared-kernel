@@ -113,7 +113,7 @@ internal sealed class WorkflowDispatcher : IWorkflowDispatcher
         try
         {
             WorkflowHandle handle = await _client.StartWorkflowAsync(workflowTypeName, args, workflowOptions);
-            WorkflowLog.WorkflowStarted(_logger, workflowId, workflowTypeName);
+            WorkflowLog.WorkflowStarted(_logger, workflowTypeName);
             return Result<IWorkflowHandle>.Success(new WorkflowHandleAdapter(handle, tenantScope));
         }
         catch (Exception exception) when (exception is not OperationCanceledException)

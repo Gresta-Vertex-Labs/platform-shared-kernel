@@ -74,7 +74,7 @@ public sealed class InMemoryWorkflowHandleOfTTests
         Result<string> result = await handle.GetResultAsync();
 
         Assert.True(result.IsFailure);
-        Assert.Equal(WorkflowErrors.NotFound("no-such-id"), result.Error);
+        Assert.Equal(WorkflowErrors.NotFound(), result.Error);
     }
 
     // --- forwarding surface ---

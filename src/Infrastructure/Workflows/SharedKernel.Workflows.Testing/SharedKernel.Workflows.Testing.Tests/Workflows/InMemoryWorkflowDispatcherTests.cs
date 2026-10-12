@@ -118,7 +118,7 @@ public sealed class InMemoryWorkflowDispatcherTests
         Result<IWorkflowHandle> second = await dispatcher.StartAsync<SampleWorkflow>(options, TenantScope.For(WorkflowsTestFixtures.TenantA));
 
         Assert.True(second.IsFailure);
-        Assert.Equal(WorkflowErrors.AlreadyStarted(first.Value.WorkflowId), second.Error);
+        Assert.Equal(WorkflowErrors.AlreadyStarted(), second.Error);
         Assert.Single(dispatcher.StartedWorkflows);
     }
 
@@ -163,7 +163,7 @@ public sealed class InMemoryWorkflowDispatcherTests
             WorkflowsTestFixtures.ValidOptions(), TenantScope.For(WorkflowsTestFixtures.TenantA));
 
         Assert.True(result.IsFailure);
-        Assert.Equal(ErrorType.Unexpected, result.Error.Type);
+        Assert.Equal(ErrorType.Unavailable, result.Error.Type);
         Assert.Empty(dispatcher.StartedWorkflows);
     }
 
@@ -306,7 +306,7 @@ public sealed class InMemoryWorkflowDispatcherTests
         Result<WorkflowExecutionDescription> result = await dispatcher.DescribeAsync("no-such-id", TenantScope.For(WorkflowsTestFixtures.TenantA));
 
         Assert.True(result.IsFailure);
-        Assert.Equal(WorkflowErrors.NotFound("no-such-id"), result.Error);
+        Assert.Equal(WorkflowErrors.NotFound(), result.Error);
     }
 
     [Fact]
@@ -477,7 +477,7 @@ public sealed class InMemoryWorkflowDispatcherTests
         Assert.Empty(dispatcher.StartedWorkflows);
         Result<WorkflowExecutionDescription> result = await dispatcher.DescribeAsync(started.Value.WorkflowId, TenantScope.For(WorkflowsTestFixtures.TenantA));
         Assert.True(result.IsFailure);
-        Assert.Equal(WorkflowErrors.NotFound(started.Value.WorkflowId), result.Error);
+        Assert.Equal(WorkflowErrors.NotFound(), result.Error);
     }
 
     // --- Custom IWorkflowIdFactory honored ---

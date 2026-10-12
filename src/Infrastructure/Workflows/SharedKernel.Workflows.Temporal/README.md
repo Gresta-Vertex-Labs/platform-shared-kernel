@@ -413,9 +413,13 @@ singletons. The package registers no `IClock` or `ILogger<T>`.
 | `workflow.already_started` | Conflict | An execution with the id is running |
 | `workflow.invalid_workflow_id` | Validation | The id could not be composed |
 | `workflow.invalid_workflow_registration` | Validation | A registration is not a valid workflow/activity |
-| `workflow.cancelled` / `.terminated` / `.timed_out` | Unexpected | The awaited execution ended that way |
+| `workflow.cancelled` / `.terminated` | Unexpected | The awaited execution ended that way |
+| `workflow.timed_out` | Timeout | The awaited execution timed out (execution, run or task timeout) |
+| `workflow.request_timed_out` | Timeout | The RPC to the Temporal service ran out of time (gRPC `DEADLINE_EXCEEDED`) |
 | `workflow.query_failed` / `.signal_failed` | Unexpected | The query or signal failed |
-| `workflow.service_unavailable` / `.namespace_not_found` | Unexpected | Temporal unreachable / namespace not addressable |
+| `workflow.service_unavailable` | Unavailable | The Temporal service answered `UNAVAILABLE`, `RESOURCE_EXHAUSTED` or `ABORTED` |
+| `workflow.namespace_not_found` | Unexpected | The configured namespace does not exist (a deployment fault, never a caller 404) |
+| `workflow.rpc_failed` | Unexpected | Any other gRPC status: permission, credential, internal or contract fault |
 | `workflow.worker_not_configured` | Unexpected | No worker for the task queue |
 | `workflow.determinism_violation` | Unexpected | A replay detected non-determinism |
 | `workflow.payload_codec_failure` | Unexpected | An encrypted payload could not be decoded |
@@ -424,7 +428,7 @@ singletons. The package registers no `IClock` or `ILogger<T>`.
 
 | Event id | Level | Event |
 | --- | --- | --- |
-| 17000 | Information | Workflow started |
+| 17000 | Information | Workflow started (type only) |
 | 17001 | Warning | Dispatch rejected for `TenantScope.Global` |
 | 17002 | Debug | Signal dispatched |
 | 17003 | Debug | Query dispatched |
@@ -437,14 +441,23 @@ singletons. The package registers no `IClock` or `ILogger<T>`.
 | 17010 | Information | Payload encryption configured |
 | 17011 | Debug | Activity heartbeat recorded |
 | 17012 | Warning | Raw client access enabled |
+| 17013 | Warning | A readiness probe check (reachability or namespace) faulted; carries the exception |
 
 ### Health and telemetry
 
 Registers the `workflows` readiness probe (`WorkflowReadiness.ProbeName`) on every composition;
 `AddSharedKernelReadiness()` exposes it on `/health/ready`. It is ready when Temporal answers, the namespace can be
 described and — on a worker — every worker is still polling; `ReadinessReport.Data` carries `Reachable`,
-`NamespaceAddressable` and `WorkerPollersActive`. A task-queue backlog never fails readiness. Traces and metrics use the
-name `SharedKernel.Workflows`; subscribe with ServiceDefaults' `WithWorkflowTelemetry()`.
+`NamespaceAddressable` and `WorkerPollersActive`. A task-queue backlog never fails readiness. A check that faults logs event
+17013 with the exception and the same report is returned.
+
+**Telemetry.** The package owns no `ActivitySource`: with `.WithOpenTelemetry()` the Temporal SDK's tracing interceptor
+emits the client, workflow and activity spans (sources prefixed `Temporalio.Extensions.OpenTelemetry.`), which
+ServiceDefaults' `WithWorkflowTelemetry()` subscribes. The interceptor is configured without the workflow-id span tag,
+because a workflow id is `{tenant}:{type}:{businessKey}`; spans carry no tenant, business key or workflow id, and no log or
+error message of this package does either. Parent linking across the client, workflow and activity spans needs the
+OpenTelemetry SDK in the process (`AddServiceDefaults()` provides it). `.WithMetrics()` feeds the SDK's metrics to the
+meter `SharedKernel.Workflows`; their names are the SDK's.
 
 ## Testing
 

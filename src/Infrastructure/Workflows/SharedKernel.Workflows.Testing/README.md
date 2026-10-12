@@ -157,7 +157,7 @@ Assert.Equal(WorkflowLifecycleStatus.Terminated, handle.Status);
 ### 5. Test the Temporal-outage path
 
 ```csharp
-dispatcher.SimulateFailure = true;   // StartAsync and DescribeAsync → workflow.service_unavailable
+dispatcher.SimulateFailure = true;   // StartAsync and DescribeAsync → workflow.service_unavailable (Unavailable)
 
 var result = await onboarding.StartAsync(Tenant, CancellationToken.None);
 
@@ -220,7 +220,7 @@ never started.
 | `workflow.already_started` | The composed id is still running |
 | `workflow.not_found` | An operation on an id with no execution |
 | `workflow.query_failed` | No handler configured for the query name |
-| `workflow.service_unavailable` | `SimulateFailure` is set |
+| `workflow.service_unavailable` (`ErrorType.Unavailable`) | `SimulateFailure` is set |
 
 ## Testing
 

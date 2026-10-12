@@ -24,6 +24,9 @@ namespace SharedKernel.Workflows.Temporal.Health;
 /// </remarks>
 internal sealed class WorkflowServiceProbe(IServiceProvider services) : IReadinessProbe
 {
+    private const string ReachabilityCheck = "reachability";
+    private const string NamespaceCheck = "namespace";
+
     public string Name => WorkflowReadiness.ProbeName;
 
     public async Task<ReadinessReport> ProbeAsync(CancellationToken cancellationToken = default)
@@ -47,6 +50,7 @@ internal sealed class WorkflowServiceProbe(IServiceProvider services) : IReadine
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             reachable = false;
+            WorkflowLog.ProbeCheckFailed(logger, ReachabilityCheck, exception);
         }
 
         if (reachable)
@@ -61,6 +65,7 @@ internal sealed class WorkflowServiceProbe(IServiceProvider services) : IReadine
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
                 namespaceAddressable = false;
+                WorkflowLog.ProbeCheckFailed(logger, NamespaceCheck, exception);
             }
         }
 

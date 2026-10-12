@@ -56,7 +56,7 @@ public sealed class IdempotencyTests(TemporalTestFixture fixture)
             TenantScope.For(TestTenants.Idem));
 
         second.IsFailure.Should().BeTrue();
-        second.Error.Code.Should().Be(WorkflowErrors.AlreadyStarted(first.Value.WorkflowId).Code);
+        second.Error.Code.Should().Be(WorkflowErrors.AlreadyStarted().Code);
 
         // No second execution: describing the id still reports the ORIGINAL run.
         string runIdAfterRejection = await DescribedRunIdAsync(dispatcher, first.Value.WorkflowId);
@@ -134,6 +134,6 @@ public sealed class IdempotencyTests(TemporalTestFixture fixture)
             TenantScope.For(TestTenants.Idem));
 
         second.IsFailure.Should().BeTrue(because: "RejectDuplicate never reuses the id regardless of the previous execution's closed state");
-        second.Error.Code.Should().Be(WorkflowErrors.AlreadyStarted(first.Value.WorkflowId).Code);
+        second.Error.Code.Should().Be(WorkflowErrors.AlreadyStarted().Code);
     }
 }
