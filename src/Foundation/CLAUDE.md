@@ -12,10 +12,10 @@
 | Package | Tier | Purpose |
 | --- | --- | --- |
 | `SharedKernel.Primitives` | Foundation | `Result`/`Result<T>`, `Error`/`ErrorType`/`ErrorCodes`, `ValidationResult<T>`, `IClock`, `IIdGenerator`, `SmartEnum`, `IReadinessProbe` (`.Health`), `LoggingEventIdRanges`, `WellKnown*` registries (incl. `WellKnownOutcomes`), `IHasError`, telemetry helpers (`.Telemetry`: `TelemetryVersion`, `ActivityFailureExtensions`). Only NuGet dependency: `Microsoft.Extensions.DependencyInjection.Abstractions` |
-| `SharedKernel.Execution` | Foundation | `IRequestContext` and its implementations, `RequestContextScope`, `IRequestContextAccessor`, `RequestContextPropagation`, `CorrelationIds`, `TenantId`, `TenantScope`, `IUnitOfWork`, `IAuditTrailWriter`. References `Primitives` only |
+| `SharedKernel.Execution` | Foundation | `IRequestContext` and its implementations, `RequestContextScope`, `IRequestContextAccessor`, `RequestContextPropagation`, `CorrelationIds`, `TenantId`, `TenantScope`, `IUnitOfWork`, `IAuditTrailWriter`, the transaction exceptions (`CommitOutcomeUnknownException`, `TransactionRolledBackException`) with `ExecutionErrorCodes`. References `Primitives` and `Core` (for `SharedKernelException`) |
 | `SharedKernel.Core` | Foundation | Base exceptions (`error.ToException()`), railway extensions, `ResultTry`, `ResultCombine`, `Guard.Against.*`/`Guard.Throw.*` (namespace `SharedKernel.Guards`). References `Primitives` only |
 | `SharedKernel.Configuration` | Foundation | `AddValidatedOptions`, `ISectionBoundOptions`, `OptionsStrictness`; always `ValidateOnStart` |
-| `SharedKernel.FeatureManagement` | Foundation | OpenFeature `IFeatureClient` over `Microsoft.FeatureManagement`; typed `FeatureFlag<T>` |
+| `SharedKernel.FeatureManagement` | Foundation | OpenFeature `IFeatureClient` over `Microsoft.FeatureManagement`; typed `FeatureFlag<T>`; `FeatureFlagValidationException` (a `SharedKernelException`) with `FeatureManagementErrorCodes`. References `Primitives`, `Execution`, `Core` |
 | `SharedKernel.Cryptography` | Foundation | AES-256-GCM (async + sync), envelope encryption, signing, HMAC, PHC one-way hashing, content hashing, fixed-time comparison, secure random, HOTP/TOTP. BCL only; references `Primitives`, `Configuration` |
 | `SharedKernel.Compression` | Foundation | `IPayloadCompressor`: framed Brotli (default) and gzip, raw interop modes. BCL only; references `Primitives`, `Configuration` |
 | `SharedKernel.Validation` | Foundation | Validated identifiers (`Iban`, `Bic`, `CardNumber`, `VatNumber`, `NationalId`, …), `ValidationErrorCodes`/`ValidationMessages` (Turkish bundled). References `Primitives`, `Core`, `Localization` |
@@ -44,11 +44,16 @@ Overloads, option keys and defaults: each package's `README.md` (overview in `sr
 - **Execution:** no registration — `RequestContextAccessor` is `TryAddSingleton`ed by each adapter, `IRequestContext` by the
   host (`AddSharedKernelRequestContext()`, `13.ServiceDefaults.Security`). `RequestContextScope.Begin`, `context.WithTenant`,
   `RequestContextPropagation.WriteHeaders`/`ReadHeaders`, `CorrelationIds`, `TenantScope.Global`/`For`/`FromNullable`.
+  `ExecutionErrorCodes.CommitOutcomeUnknown` (`execution.commit_outcome_unknown`, `Timeout`) and `.TransactionRolledBack`
+  (`execution.transaction_rolled_back`, `Unexpected`) are carried by the two transaction exceptions, each with the
+  `(Error)` / `(Error, Exception)` constructors.
 - **Core:** no DI. `Guard.Against.X` → `Error?`; `Guard.Throw.X` throws `DomainException`; `ResultTry.Try`/`TryAsync`, `ResultCombine.Combine`.
 - **Configuration:** `services.AddValidatedOptions<TOptions>(…)` / `AddValidatedOptions<TOptions, TValidator>(…)`; the
   `IConfiguration` overloads read `ISectionBoundOptions.SectionName` (a `static string` property, not a `const`).
 - **FeatureManagement:** `services.AddSharedKernelFeatureManagement(rootConfiguration, o => …)` — pass the **root**
   `IConfiguration`, call once (a second call throws); flags via `FeatureFlag.Boolean/String/Integer/Double/Object<T>(key, default)`.
+  A startup problem throws `FeatureFlagValidationException` (`FeatureManagementErrorCodes.InvalidFlagConfiguration`,
+  `Unexpected`).
 - **Cryptography:** `services.AddSharedKernelCryptography(configuration)` → `ICryptographyBuilder` with `.Add…()` opt-ins
   per capability; adapters add `.AddArgon2id(…)`, `.AddAzureKeyVaultEncryption(…)`, `.AddAzureKeyVaultSigning(…)`. The
   service registers its key providers and its `ITotpReplayGuard`.
@@ -134,8 +139,9 @@ Overloads, option keys and defaults: each package's `README.md` (overview in `sr
     `IFeatureManager` family and OpenFeature's `Api.Instance`; the package uses an isolated `Api`).
 26. Pass `configuration` to `AddFeatureManagement` unmodified — never `GetSection("FeatureManagement")`.
 27. The provider never throws for a flag problem (returns the default with `FlagNotFound`/`TypeMismatch`/`ParseError`/
-    `General`, logged once at 1301). Messages never include exception text or configuration values; telemetry never
-    carries targeting key, user id or tenant id (Microsoft's own evaluation event stays suppressed).
+    `General`, logged once at 1301). Messages never include exception text or configuration values: a flag/variant
+    conversion problem is one of the closed internal `ConversionFailure` reasons (fixed sentences), proven by sentinel tests;
+    telemetry never carries targeting key, user id or tenant id (Microsoft's own evaluation event stays suppressed).
 
 **Cryptography**
 
@@ -192,10 +198,13 @@ Overloads, option keys and defaults: each package's `README.md` (overview in `sr
 50. A package's EventIds are `internal const` arithmetic over `LoggingEventIdRanges` (`Base = LoggingEventIdRanges.X + n * PackageSubBlockWidth`); the registry's `SubBlockStart`/`IsInSubBlock` exist for tests and governance, not for `[LoggerMessage]` (attributes need constants).
 51. `ResultTry` adds exception events through the shared `AddExceptionEvents` and never changes the ambient span's status. Exceptions that carry an `Error` expose it through `IHasError` (`SharedKernelException` implements it).
 
-**Failure text and conformance** *(planned, SK.01.CoreObservabilityFixes / SK.01.CoreConformance)*
+**Failure text and exceptions**
 
-52. *(planned, SK.01.CoreObservabilityFixes)* No Foundation package puts `Exception.Message`, an inner exception's text or a configuration value into an `Error`, an evaluation message, a startup line or a log. FeatureManagement reports a flag/variant conversion problem as a fixed reason (flag key, variant name, target type name and exception type name are the only variable parts).
-53. *(planned, SK.01.CoreObservabilityFixes)* Every classified exception derives `SharedKernelException` (rule 18), including `CommitOutcomeUnknownException` (`Timeout`), `TransactionRolledBackException` (`Unexpected`) and `FeatureFlagValidationException` (`Unexpected`), with codes in `ExecutionErrorCodes` / `FeatureManagementErrorCodes`. `Execution` therefore references `Primitives` and `Core`; no other reference is added.
+52. No Foundation package puts `Exception.Message`, an inner exception's text or a configuration value into an `Error`, an evaluation message, a startup line or a log. FeatureManagement reports a flag/variant conversion problem as a fixed reason (flag key, variant name, target type name and exception type name are the only variable parts). Wrappers keep the original exception as the same `InnerException` instance; no `throw ex;`.
+53. Every classified exception derives `SharedKernelException` (rule 18), including `CommitOutcomeUnknownException` (`Timeout`), `TransactionRolledBackException` (`Unexpected`) and `FeatureFlagValidationException` (`Unexpected`), with codes in `ExecutionErrorCodes` / `FeatureManagementErrorCodes`. `Execution` therefore references `Primitives` and `Core`; no other reference is added.
+
+**Conformance** *(planned, SK.01.CoreConformance)*
+
 54. *(planned, SK.01.CoreConformance)* Each logging package derives its EventIds from `LoggingEventIdRanges.Core` in a `{Package}LoggingEventIds` class and logs through one `{Package}Log` under `Diagnostics/`; the sub-block ownership table in `## Logging` is authoritative (adapters share their base package's slot, offsets 50-99). Foundation creates no `ActivitySource`/`Meter`; a future one is named `SharedKernel.Core.*`.
 55. *(planned, SK.01.CoreConformance)* Error codes match `^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`; each capability has a public `{Capability}ErrorCodes` and one internal `{Capability}Errors` factory; FluentValidation pass-through codes are mapped to `ErrorCodes.Validation.*`, never forwarded as PascalCase.
 
@@ -214,8 +223,8 @@ Overloads, option keys and defaults: each package's `README.md` (overview in `sr
 | Observability helpers live in `Primitives`, not `Core` | They need only `Error`/`ErrorType` and BCL `System.Diagnostics`; `Execution` and every adapter reference `Primitives` and must not need `Core` to record a span |
 | Exception status description is the type name, the message stays out | Traces share the trust level of logs (full exception event is recorded), but a status description is shown in summaries and alert text |
 | `ResultTry` records the exception event but does not set span status | The ambient span belongs to the caller, and the failure is a value the owner records with `RecordResult` |
-| *(planned, SK.01.CoreObservabilityFixes)* `Execution` references `Core` so its exceptions derive `SharedKernelException` | The three edge mappers switch on that type; moving the base into `Primitives` would put a `SharedKernel.Core` namespace in the wrong assembly, and mapping on `IHasError` would change three Host packages. `Core` is BCL plus `Primitives`, so the transitive cost is small and acyclic |
-| *(planned, SK.01.CoreObservabilityFixes)* `CommitOutcomeUnknownException` is `Timeout` (504 / `DeadlineExceeded`), `TransactionRolledBackException` and `FeatureFlagValidationException` are `Unexpected` | "Outcome unknown" is the meaning of 504 and `DeadlineExceeded`, where 503 would promise "not applied"; the other two are defects, not outages |
+| `Execution` references `Core` so its exceptions derive `SharedKernelException` | The three edge mappers switch on that type; moving the base into `Primitives` would put a `SharedKernel.Core` namespace in the wrong assembly, and mapping on `IHasError` would change three Host packages. `Core` is BCL plus `Primitives`, so the transitive cost is small and acyclic |
+| `CommitOutcomeUnknownException` is `Timeout` (504 / `DeadlineExceeded`), `TransactionRolledBackException` and `FeatureFlagValidationException` are `Unexpected` | "Outcome unknown" is the meaning of 504 and `DeadlineExceeded`, where 503 would promise "not applied"; the other two are defects, not outages |
 | *(planned, SK.01.CoreConformance)* `DomainException` stays unsealed; `GuardAsync` (FeatureManagement) and the Key Vault readiness probe keep their catch-all | The first is the base consumers extend; the other two must report, not throw (rule 27, readiness contract). Cancellation still propagates |
 | *(planned, SK.01.CoreConformance)* `cryptography.unknown_key_id` stays `Unexpected` | Rule 30: the key id comes from an untrusted payload and is never echoed; a recorded exception to C3's "missing is NotFound" |
 

@@ -28,8 +28,8 @@ Reference from any project.
 | [`SharedKernel.Core`](../src/Foundation/SharedKernel.Core/README.md) | `src/Foundation` | `SharedKernel.Primitives` |
 | [`SharedKernel.Cryptography`](../src/Foundation/SharedKernel.Cryptography/README.md) | `src/Foundation` | `SharedKernel.Configuration`, `SharedKernel.Primitives` |
 | [`SharedKernel.DataPrivacy`](../src/Foundation/SharedKernel.DataPrivacy/README.md) | `src/Foundation` | `SharedKernel.Primitives` |
-| [`SharedKernel.Execution`](../src/Foundation/SharedKernel.Execution/README.md) | `src/Foundation` | `SharedKernel.Primitives` |
-| [`SharedKernel.FeatureManagement`](../src/Foundation/SharedKernel.FeatureManagement/README.md) | `src/Foundation` | `SharedKernel.Execution`, `SharedKernel.Primitives` |
+| [`SharedKernel.Execution`](../src/Foundation/SharedKernel.Execution/README.md) | `src/Foundation` | `SharedKernel.Core`, `SharedKernel.Primitives` |
+| [`SharedKernel.FeatureManagement`](../src/Foundation/SharedKernel.FeatureManagement/README.md) | `src/Foundation` | `SharedKernel.Core`, `SharedKernel.Execution`, `SharedKernel.Primitives` |
 | [`SharedKernel.Localization`](../src/Foundation/SharedKernel.Localization/README.md) | `src/Foundation` | `SharedKernel.Primitives` |
 | [`SharedKernel.Primitives`](../src/Foundation/SharedKernel.Primitives/README.md) | `src/Foundation` | — |
 | [`SharedKernel.Validation`](../src/Foundation/SharedKernel.Validation/README.md) | `src/Foundation` | `SharedKernel.Core`, `SharedKernel.Localization`, `SharedKernel.Primitives` |

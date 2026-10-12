@@ -156,7 +156,9 @@ flowchart LR
   SharedKernel_Cryptography_Testing --> SharedKernel_Cryptography
   SharedKernel_Cryptography_Testing --> SharedKernel_Testing
   SharedKernel_DataPrivacy --> SharedKernel_Primitives
+  SharedKernel_Execution --> SharedKernel_Core
   SharedKernel_Execution --> SharedKernel_Primitives
+  SharedKernel_FeatureManagement --> SharedKernel_Core
   SharedKernel_FeatureManagement --> SharedKernel_Execution
   SharedKernel_FeatureManagement --> SharedKernel_Primitives
   SharedKernel_FeatureManagement_Testing --> SharedKernel_FeatureManagement

@@ -4,6 +4,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.FeatureManagement.csproj" />
+    <ProjectReference Include="..\..\..\Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
   </ItemGroup>
   <ItemGroup>
     <!-- Real hosts and JSON configuration, so tests and README samples run the same path a service does. -->

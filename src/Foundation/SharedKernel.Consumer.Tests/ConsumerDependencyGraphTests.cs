@@ -27,6 +27,7 @@ using SharedKernel.Cryptography.Totp;
 using SharedKernel.DataPrivacy.Classification;
 using SharedKernel.DataPrivacy.DataSubjectRequests;
 using SharedKernel.DataPrivacy.Masking;
+using SharedKernel.Execution.Transactions;
 using SharedKernel.FeatureManagement;
 using SharedKernel.Guards;
 using SharedKernel.Localization;
@@ -533,6 +534,38 @@ public sealed class ConsumerDependencyGraphTests
         Assert.Equal(WellKnownOutcomes.Exception, exceptionOutcome);
         Assert.Equal("consumer.gone", activity.GetTagItem(WellKnownTagKeys.ErrorCode));
         Assert.Equal("outcome", WellKnownTagKeys.Outcome);
+    }
+
+    [Fact]
+    public void Execution_NuspecListsOnlyPrimitivesAndCore_AndItsExceptionsAreClassified_ResolvedFromPackage()
+    {
+        // SK.01.CoreObservabilityFixes: Execution gained a reference to Core for SharedKernelException. The packed
+        // .nuspec must list exactly Primitives and Core, and a consumer must be able to catch the base type.
+        string nupkgsDirectory = FindNupkgsDirectory();
+
+        string executionNuspec = ReadNuspecXml(nupkgsDirectory, "SharedKernel.Execution.*.nupkg", IsExactExecutionPackage);
+
+        XDocument nuspec = XDocument.Parse(executionNuspec);
+        XNamespace ns = nuspec.Root!.GetDefaultNamespace();
+        List<string> dependencyIds = [.. nuspec.Descendants(ns + "dependency")
+            .Select(d => d.Attribute("id")!.Value)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)];
+
+        Assert.Equal(["SharedKernel.Core", "SharedKernel.Primitives"], dependencyIds);
+
+        string? caught = null;
+        try
+        {
+            throw new CommitOutcomeUnknownException(new TimeoutException());
+        }
+        catch (SharedKernelException e) when (e is CommitOutcomeUnknownException)
+        {
+            caught = e.Error.Code;
+        }
+
+        Assert.Equal("execution.commit_outcome_unknown", caught);
+        Assert.Equal(ErrorType.Unexpected, new TransactionRolledBackException().Error.Type);
     }
 
     [Fact]
@@ -1374,6 +1407,16 @@ public sealed class ConsumerDependencyGraphTests
     private static bool IsExactPrimitivesPackage(string candidatePath)
     {
         const string Prefix = "SharedKernel.Primitives.";
+        string fileName = Path.GetFileName(candidatePath);
+
+        return fileName.StartsWith(Prefix, StringComparison.OrdinalIgnoreCase)
+            && fileName.Length > Prefix.Length
+            && char.IsAsciiDigit(fileName[Prefix.Length]);
+    }
+
+    private static bool IsExactExecutionPackage(string candidatePath)
+    {
+        const string Prefix = "SharedKernel.Execution.";
         string fileName = Path.GetFileName(candidatePath);
 
         return fileName.StartsWith(Prefix, StringComparison.OrdinalIgnoreCase)

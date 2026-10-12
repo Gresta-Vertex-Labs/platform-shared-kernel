@@ -58,3 +58,7 @@ static SharedKernel.FeatureManagement.FeatureManagementServiceCollectionExtensio
 SharedKernel.FeatureManagement.FeatureTargetingContext.FeatureTargetingContext(string? userId, SharedKernel.Execution.Tenancy.TenantId? tenantId = null, System.Collections.Generic.IEnumerable<string!>? groups = null) -> void
 SharedKernel.FeatureManagement.FeatureTargetingContext.TenantId.get -> SharedKernel.Execution.Tenancy.TenantId?
 static SharedKernel.FeatureManagement.FeatureTargetingContext.ForTenant(SharedKernel.Execution.Tenancy.TenantId tenantId) -> SharedKernel.FeatureManagement.FeatureTargetingContext!
+const SharedKernel.FeatureManagement.FeatureManagementErrorCodes.InvalidFlagConfiguration = "feature_management.invalid_flag_configuration" -> string!
+SharedKernel.FeatureManagement.FeatureFlagValidationException.FeatureFlagValidationException(SharedKernel.Primitives.Errors.Error! error) -> void
+SharedKernel.FeatureManagement.FeatureFlagValidationException.FeatureFlagValidationException(SharedKernel.Primitives.Errors.Error! error, System.Exception! innerException) -> void
+SharedKernel.FeatureManagement.FeatureManagementErrorCodes

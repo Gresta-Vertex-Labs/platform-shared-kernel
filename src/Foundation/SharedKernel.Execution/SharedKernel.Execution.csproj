@@ -8,7 +8,7 @@ The application pipeline consumes these contracts, persistence implements the un
 
 IRequestContextAccessor carries the current context across async calls, so an outbound HTTP client, a message publisher or a background job reads the same tenant and correlation id the inbound call established.
 
-Depends only on SharedKernel.Primitives.</Description>
+Depends only on SharedKernel.Primitives and SharedKernel.Core.</Description>
     <PackageReleaseNotes>First release.
 
 WHAT IS IN IT
@@ -29,10 +29,12 @@ THINGS WORTH KNOWING BEFORE YOU ADOPT IT
   <ItemGroup>
     <!--
       Foundation tier: every package that needs the caller, the tenant or the unit of work references this
-      one, so anything added here is inherited by all of them. References only SharedKernel.Primitives
-      (IHasSuccessFlag, used to roll back a failed Result).
+      one, so anything added here is inherited by all of them. References SharedKernel.Primitives
+      (IHasSuccessFlag, used to roll back a failed Result) and SharedKernel.Core (SharedKernelException, the base of
+      the two transaction exceptions); nothing else.
     -->
     <ProjectReference Include="..\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+    <ProjectReference Include="..\SharedKernel.Core\SharedKernel.Core.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
