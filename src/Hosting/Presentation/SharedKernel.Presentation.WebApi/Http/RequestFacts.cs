@@ -56,6 +56,9 @@ internal static class RequestFacts
     /// <summary>Returns the correlation id held by the request's <c>RequestContextScope</c>, or <see langword="null"/>.</summary>
     public static string? GetCorrelationId(HttpContext? httpContext) => Presentation.RequestFacts.GetCorrelationId(httpContext);
 
+    /// <summary>Returns the trace id errors report: the current activity's W3C id, else the request's own identifier.</summary>
+    public static string? GetTraceId(HttpContext? httpContext) => Presentation.RequestFacts.GetTraceId(httpContext);
+
     /// <summary>Returns the request path, as it was before the exception handler ran.</summary>
     public static string GetInstance(HttpContext httpContext)
     {

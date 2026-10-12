@@ -5,6 +5,10 @@
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Presentation.GraphQL.csproj" />
     <ProjectReference Include="..\..\..\..\Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
+    <!-- FakeHttpContextAccessor, the request double of the filter tests. -->
+    <ProjectReference Include="..\..\SharedKernel.Presentation.Testing\SharedKernel.Presentation.Testing.csproj" />
+    <!-- The request context every host composes first: the correlation id the error filter reports. -->
+    <ProjectReference Include="..\..\..\ServiceDefaults\SharedKernel.ServiceDefaults.Security\SharedKernel.ServiceDefaults.Security.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="xunit" />

@@ -11,13 +11,13 @@
 
 | Package | Tier | Purpose |
 | --- | --- | --- |
-| `SharedKernel.Presentation.Core` | Host | What every protocol shares, so gRPC needs no WebApi: authorization attributes and their internal machinery, `ErrorTypeStatusCodeMap`, the client-message half of `ErrorPresentation`, `RequestFacts`, `ServiceDecoration`. No third-party packages |
+| `SharedKernel.Presentation.Core` | Host | What every protocol shares, so gRPC needs no WebApi: authorization attributes and their internal machinery, `ErrorTypeStatusCodeMap`, the client-message half of `ErrorPresentation`, `RequestFacts` (correlation id, trace id), `EdgeFailureRecording`, `ServiceDecoration`. No third-party packages |
 | `SharedKernel.Presentation.WebApi` | Host | One-call setup and pipeline, endpoint modules, the problem contract, typed results, security headers, CORS, limits, header requirements, paging, `ETag`/304, the 429 body. References Contracts for paging only; **no third-party packages** |
 | `SharedKernel.Presentation.WebApi.Generators` | Tooling | Endpoint-module source generator (`netstandard2.0`, SKEP001–SKEP004); not packable, packed inside WebApi under `analyzers/dotnet/cs` |
 | `SharedKernel.Presentation.OpenApi` | Host | Asp.Versioning, one OpenAPI 3.1 document per version, Scalar, sunset/deprecation, security schemes; documents what the core enforces, never changes a response |
-| `SharedKernel.Presentation.SignalR` | Host | Hub error mapping, `Result` hub methods, invocation rate limit, `RequestContextHubFilter`, `HubGroupNaming`. No third-party packages, no backplane |
+| `SharedKernel.Presentation.SignalR` | Host | Hub error mapping (with the id trailer), `Result` hub methods, invocation rate limit, `RequestContextHubFilter`, `HubGroupNaming`. No third-party packages, no backplane |
 | `SharedKernel.Presentation.Grpc` | Host | Exception interceptor building the rich status, `GrpcStatusCodeMap`, `GrpcErrorCodes`. **Never references WebApi or Contracts** |
-| `SharedKernel.Presentation.GraphQL` | Host | HotChocolate conventions: snake_case filtering, `FilterBase<T>`/`SortBase<T>`, `PagedResponseType<T>`, `SharedKernelErrorFilter` (ProblemDetails-shaped errors), code-only `GraphQLOptions`. Not AOT-safe |
+| `SharedKernel.Presentation.GraphQL` | Host | HotChocolate conventions: snake_case filtering, `FilterBase<T>`/`SortBase<T>`, `PagedResponseType<T>`, `SharedKernelErrorFilter` (ProblemDetails parity: shared status table, client message, ids; logs 14400-14401), `GraphQLErrorCodes`, code-only `GraphQLOptions`. References Core and WebApi (internals visible to it) and `SharedKernel.Core`. Not AOT-safe |
 
 `consumer-verify/` (untiered) composes Core, WebApi, OpenApi, SignalR and gRPC over Kestrel in CI's required lane.
 Core/WebApi/OpenApi/SignalR/Grpc track `PublicAPI.*.txt`; GraphQL does not.
@@ -36,12 +36,12 @@ Overloads, options and defaults: each package's `README.md` and [`CONFIGURATION.
 - **OpenApi** (`SharedKernel:Presentation:OpenApi`) — `builder.AddSharedKernelOpenApi()`, `app.MapSharedKernelOpenApi()`
   (maps nothing outside Development unless `ExposeInProduction`).
 - **SignalR** (`SharedKernel:Presentation:SignalR`) — `builder.AddSharedKernelSignalR()`; `Context.GetTenantId()`,
-  `Context.GetCorrelationId()`, `HubErrorMessage.TryParse`, `HubGroupNaming.TenantGroup(TenantId)`. Backplane: Microsoft's
-  `AddStackExchangeRedis(...)`.
+  `Context.GetCorrelationId()`, `HubErrorMessage.TryParse` (two overloads: code and message, or also the ids of the
+  trailer), `HubGroupNaming.TenantGroup(TenantId)`. Backplane: Microsoft's `AddStackExchangeRedis(...)`.
 - **Grpc** (`SharedKernel:Presentation:Grpc`) — `builder.AddSharedKernelGrpc()`; services end a failed `Result` with
   `Error.ToException()` (`SharedKernel.Core`).
 - **GraphQL** — `services.AddSharedKernelGraphQL()` (calls HotChocolate's `AddGraphQLServer()`, so `app.MapGraphQL()`
-  works) before the service's own `AddGraphQLServer()`.
+  works) before the service's own `AddGraphQLServer()`; `GraphQLErrorCodes.RequestInvalid`.
 
 Canonical host pipeline (`samples/Shop/Ordering/Shop.Ordering.Api/Program.cs`, `samples/Shop/Catalog/Shop.Catalog.Api/Program.cs`):
 
@@ -145,8 +145,7 @@ status code pages (not gRPC) → `UseRouting()` → CORS + WebSocket origin chec
     file organization only. Never add a public sub-namespace, never a namespace named `Results`.
 24. **Add-on plumbing is internal.** Core grants `InternalsVisibleTo` to WebApi, Grpc, SignalR, OpenApi; WebApi to
     OpenApi and SignalR only (never Grpc). Change an internal and its callers in the same commit; never grant IVT to a
-    production package outside this domain. *(planned, SK.14.EdgeErrorContext)* Core and WebApi also grant it to
-    GraphQL, which then references both.
+    production package outside this domain. Core and WebApi also grant it to GraphQL, which references both.
 25. **Generated `MapEndpoints()`** is emitted `internal` in `SharedKernel.Presentation.WebApi`, only into an assembly
     that declares a module, calling each module's `Map` in ordinal order of full names. SKEP001 (abstract), SKEP002
     (generic/nested in generic), SKEP003 (unreachable) are errors, SKEP004 (inherits `Map`) a warning. No reflection or
@@ -164,21 +163,30 @@ status code pages (not gRPC) → `UseRouting()` → CORS + WebSocket origin chec
 29. **GraphQL:** `AllowIntrospection` gates introspection both ways (HotChocolate disables it outside Development by
     default). Filter/sort types derive from `FilterBase<T>`/`SortBase<T>`, never HotChocolate's `FilterInputType<T>`/
     `SortInputType<T>` directly (`CommunicationLayeringRules.NoDirectHotChocolateFilterSortInheritanceOutsideGraphQL`).
-30. *(planned, SK.14.EdgeErrorContext)* **Failed spans are recorded once, at the edge, through one Core helper.** The
-    HTTP exception handler (and a server-category error a typed result returns) and the gRPC interceptor record on the
-    ambient server span (`Activity.Current`; this domain starts no span and owns no `ActivitySource`) with the shared
-    `ActivityFailureExtensions` recorder, never with hand-written `SetStatus`/`AddException`/`error.*`. Server category
-    (`ErrorPresentation.IsServerError`; gRPC `Unknown`/`Internal`/`DataLoss`/`Unavailable`/`DeadlineExceeded`): status
-    `Error`, `error.type`, `error.code`, one exception event (the timeout branch records the failure, not the
-    exception). Client category: only the `error.code` tag, status untouched (OpenTelemetry server-span convention).
-    Client abort, `Cancelled`, 499: nothing. The middleware's own diagnostics stay suppressed (rule 4).
-31. *(planned, SK.14.EdgeErrorContext)* **Every client-facing error carries trace id and correlation id on all four
-    protocols**, the trace id from Core's `RequestFacts.GetTraceId` only. SignalR appends the trailer
-    `[traceId=…; correlationId=…]` to `{code}: {message}` (read back by `HubErrorMessage.TryParse`, whose message excludes
-    it). **GraphQL** reaches ProblemDetails parity through `SharedKernelErrorFilter`: the same classification as rule 4,
-    status from Core's map, `type`/`title` the framework's, `detail` the client message, `errorCode`, `traceId`,
-    `correlationId`, field `errors`/`errorCodes`, an `exception` member only in Development; an `IError` without an
-    exception is a client error (400, `graphql.request_invalid`). Logged once per error under 14400-14499.
+30. **Failed spans are recorded once, at the edge, through one Core helper.** The HTTP exception handler, a returned
+    error's `ErrorHttpResult` and the gRPC interceptor record on the ambient server span (`Activity.Current`; this
+    domain starts no span and owns no `ActivitySource`) through `EdgeFailureRecording`, which alone decides and uses the
+    shared `ActivityFailureExtensions` recorder: never hand-written `SetStatus`/`AddException`/`error.*` anywhere else.
+    Server category (`ErrorPresentation.IsServerError`; gRPC `Unknown`/`Internal`/`DataLoss`/`Unavailable`/
+    `DeadlineExceeded`): status `Error`, `error.type`, `error.code`; an exception adds one exception event and its
+    status description is the type name, never the message (an unclassified exception is tagged with the code it is
+    answered with); the timeout branch, a returned error and a foreign `RpcException` record the failure without an
+    event and without the foreign detail. Client category: only the `error.code` tag, status untouched
+    (OpenTelemetry server-span convention; `EdgeFailureRecording.FailsSpan` is the one line that flips it). Client
+    abort, a cancellation, `Cancelled` and 499: nothing. The middleware's own log and diagnostic events stay
+    suppressed (rule 4); an exception a service's own `IExceptionHandler` handles first is that service's to record.
+31. **Every client-facing error carries trace id and correlation id on all four protocols**, the trace id from Core's
+    `RequestFacts.GetTraceId` only. SignalR appends the trailer ` [traceId=…; correlationId=…]` to `{code}: {message}`
+    (the last bracketed group; ids without white space, `;` or `]`; read back by `HubErrorMessage.TryParse`, whose
+    message excludes it). **GraphQL** reaches ProblemDetails parity through `SharedKernelErrorFilter`: the same
+    classification as rule 4 (`ExceptionClassification`, shared with the handler), status from Core's map, `type`/`title`
+    the framework's (`ProblemDefaults`), `detail` and the top-level `message` the client message, `errorCode`, `traceId`,
+    `correlationId`, field `errors`/`errorCodes` (`FieldErrorGroups`), an `exception` member only in Development and
+    only for an unclassified exception; an `IError` without an exception is a client error (400,
+    `graphql.request_invalid`, HotChocolate's `code` kept). `RequestErrorMiddleware` runs the same filters over the
+    errors of a request HotChocolate rejects before executing it, which it does not filter itself. Logged once per error
+    under 14400-14499. A gRPC authorization refusal, answered by the HTTP pipeline, carries the `X-Correlation-Id`
+    header and no `ErrorInfo`.
 32. *(planned, SK.14.PresentationConformance)* **Logging shape.** Each package owns one 100-wide sub-block of 14000-14999,
     one `{Package}LoggingEventIds` (const arithmetic from `LoggingEventIdRanges`) and one `{Package}Log` under
     `Diagnostics/`; templates, exception parameter, no forbidden values, required loggers and kernel-type categories as
@@ -203,10 +211,13 @@ status code pages (not gRPC) → `UseRouting()` → CORS + WebSocket origin chec
 | .NET 10 `AddValidation()` not adopted | DataAnnotations only, experimental parts; validation lives in the application pipeline |
 | The automatic 412 carries no current `ETag` | Clients re-read, the safer choice |
 | gRPC authorization refusals carry no rich status | The HTTP pipeline answers them before the service runs |
-| *(planned, SK.14.EdgeErrorContext)* A client-category failure tags `error.code` but leaves the server span's status Unset | OpenTelemetry's HTTP and gRPC server conventions: 4xx and gRPC client codes are not span errors; marking every validation failure as failed would flood error dashboards. One constant in one helper flips it |
-| *(planned, SK.14.EdgeErrorContext)* GraphQL references Core and WebApi (internals visible to it) | It must take the status table, client-message rule, field-error grouping and problem defaults from one place (rule 1), and `new ProblemDetails` stays in WebApi (rule 2); copying them would let GraphQL drift |
-| *(planned, SK.14.EdgeErrorContext)* SignalR ids travel as a trailer in the `HubException` message | A hub error is one string; a result envelope would break the `Result` hub contract and exception `Data` is never sent |
-| *(planned, SK.14.EdgeErrorContext)* GraphQL has no `IncludeExceptionDetails` override | Development only; one less setting that can leak stack traces in production |
+| A client-category failure tags `error.code` but leaves the server span's status Unset | OpenTelemetry's HTTP and gRPC server conventions: 4xx and gRPC client codes are not span errors; marking every validation failure as failed would flood error dashboards. One line (`EdgeFailureRecording.FailsSpan`) flips it |
+| GraphQL references Core and WebApi (internals visible to it) | It must take the status table, client-message rule, field-error grouping, exception classification and problem defaults from one place (rule 1), and `new ProblemDetails` stays in WebApi (rule 2); copying them would let GraphQL drift |
+| SignalR ids travel as a trailer in the `HubException` message | A hub error is one string; a result envelope would break the `Result` hub contract and exception `Data` is never sent |
+| GraphQL has no `IncludeExceptionDetails` override | Development only; one less setting that can leak stack traces in production |
+| The middleware's `SuppressDiagnosticsCallback` is kept, and loses nothing | Verified on .NET 10: it silences the middleware's log and diagnostic events, not the `aspnetcore.diagnostics.exceptions` counter, so the counter, the 5xx counts and the server span still carry the signal. `OpenTelemetry.Instrumentation.AspNetCore` 1.15.2 with `RecordException = true` records only exceptions that leave the pipeline, so the handler's one event stays the only one |
+| GraphQL errors HotChocolate raises for a request it rejects (unknown field, bad argument, validation) are shaped by a request middleware | HotChocolate 16 returns them without running the error filters; without the middleware they would reach a client without status, `errorCode` and ids. The middleware hands them to the schema's `IErrorHandler`, so a service's own filters see them too |
+| A `GraphQLErrorCodes` constant class is public; the abort code `graphql.request_aborted` is logged only | Clients branch on `graphql.request_invalid`; a client that went away reads nothing |
 | *(planned, SK.14.PresentationConformance)* Presentation owns no `ActivitySource` or `Meter` | The framework's server spans and `http.server.request.duration` already carry status and `error.type`; the edges only enrich them. An error counter would be a new feature |
 | *(planned, SK.14.PresentationConformance)* Default `PreconditionFailedErrorCodes` stay literals, pinned against the owners' public constants | Rule 14: this domain may not reference 06/08 |
 
@@ -222,7 +233,7 @@ its package's sub-block and a row in that test.
 | 14100–14199 | SignalR | 14100 Error unhandled hub exception · 14101 Warning invocation rate limited · 14103 Error hub server error · 14104 Debug hub client error · 14106 Debug connection closed during an invocation · 14107 Error stream inside a `Result`. Retired: 14102, 14105 |
 | 14200–14299 | Grpc | 14200 Error unhandled exception · 14202 Error server error · 14203 Debug client error · 14204 Debug call cancelled. Retired: 14201 |
 | 14300–14399 | OpenApi | 14300 Information documents not mapped (environment) · 14301 Warning documents exposed without authorization |
-| — | GraphQL | none yet. *(planned, SK.14.EdgeErrorContext)* 14400–14499: 14400 Error server-category error · 14401 Debug client-category error |
+| 14400–14499 | GraphQL | 14400 Error server-category error · 14401 Debug client-category error (a request HotChocolate rejected, a client that went away) |
 | — | Presentation.Core | ids 14002, 14009, 14010 sit in the WebApi block today. *(planned, SK.14.PresentationConformance)* sub-blocks WebApi 14000, SignalR 14100, Grpc 14200, OpenApi 14300, GraphQL 14400, Core 14500–14599 (Core's three move to 14500–14502; 14002, 14009, 14010, 14100 and 14200 retire) |
 
 ## Cross-Domain Couplings
@@ -234,13 +245,15 @@ its package's sub-block and a row in that test.
   `UserContext.MaxFutureAuthTime` — the only inputs the attributes read.
 - **13.ServiceDefaults:** `UseSharedKernelRequestContext()` (composed first by every host); `AddSharedKernelRateLimiting()`
   leaves `OnRejected` null so our 429 body applies; `TenantResolutionMiddleware` goes in the `BeforeAuthorization` hook.
-  *(planned)* It tags the server span with `correlation.id`/`tenant.id` before `UseExceptionHandler()` and keeps
-  instrumentation `RecordException` off, so the handler's single exception event (rule 30) is the only one; it
-  subscribes the framework SignalR sources, and no hub source is created here; inbound actor/tenant headers are never
-  applied by HTTP or gRPC servers.
-- **01.Core / 16.Testing:** *(planned)* the shared `ActivityFailureExtensions` recorder, `WellKnownTagKeys.ErrorCode`,
-  `LoggingEventIdRanges.PackageSubBlockWidth` and, for tests, the span/log capture and convention assertions;
-  `ErrorCodes.Unexpected.Default` is renamed `unexpected.default` (rule 4's 500 code follows it).
+  It tags the server span with `correlation.id`/`tenant.id` before `UseExceptionHandler()` and keeps instrumentation
+  `RecordException` off, so the handler's single exception event (rule 30) is the only one; it subscribes the framework
+  SignalR sources, and no hub source is created here; inbound actor/tenant headers are never applied by HTTP or gRPC
+  servers.
+- **01.Core / 16.Testing:** the shared `ActivityFailureExtensions` recorder and `WellKnownTagKeys.ErrorCode` (rule 30),
+  `LoggingEventIdRanges.PackageSubBlockWidth` (GraphQL's sub-block), and, for tests, the span/log capture and
+  convention assertions (`ActivityRecorder`, `ShouldBeRecordedFailure`/`ShouldBeRecordedException`, `MetricRecorder`,
+  `InMemoryLoggerFactory`); *(planned)* `ErrorCodes.Unexpected.Default` is renamed `unexpected.default` (rule 4's 500
+  code follows it).
 - **05.Application:** no reference either way; endpoint modules send its commands; same 401/403 codes.
 - **04.Contracts:** paging types and codes (WebApi and GraphQL only; never Grpc — `PresentationLayeringRules.GrpcNeverReferencesContracts`).
 - **06.Persistence / 08.Storage:** `EntityVersion` is the usual `IfMatch<TVersion>`; their conflict codes are the
@@ -260,7 +273,11 @@ its package's sub-block and a row in that test.
   `https` non-`localhost` base address.
 - Every HTTP error assertion goes through `ShouldBeProblemAsync` (media type, member set, `X-Correlation-Id` vs
   `correlationId`).
-- SignalR tests use a real `HubConnection`, gRPC a real `Grpc.Net.Client` channel, OpenAPI tests generate documents.
+- SignalR tests use a real `HubConnection`, gRPC a real `Grpc.Net.Client` channel, OpenAPI tests generate documents,
+  GraphQL tests post over real HTTP (`MapGraphQL`) with the request context composed first.
+- Span assertions use the framework's server span (`HttpRequestIn`, source `Microsoft.AspNetCore`) of a trace the test owns
+  (send a `traceparent`, read `ActivityRecorder.ForTrace`): the source is static and shared by parallel tests. Assert the
+  failure shapes with `ShouldBeRecordedFailure`/`ShouldBeRecordedException`, never by string search.
 - Time through `FakeClock`; never `Task.Delay`. Log assertions check EventId and level through `16.Testing`'s
   in-memory logger, never rendered text.
 - A security-relevant test must be able to fail: mutate the condition and confirm the assertion catches it.
@@ -271,10 +288,10 @@ its package's sub-block and a row in that test.
 - An endpoint protected only by its command's `[RequirePermission]` shows no security requirement in OpenAPI; add
   `.RequireAuthorization()` or a fallback policy.
 - `Paging`/`CursorPaging` and `IfMatch<T>` tag parsing are minimal-API features; MVC actions bind and parse themselves.
-- GraphQL depends on HotChocolate, is not AOT-safe, and has no PublicAPI tracking. Its error filter exposes the
-  exception message as `title` and `detail` in every environment and logs nothing until SK.14.EdgeErrorContext ships.
-- A hub error carries no trace id or correlation id until SK.14.EdgeErrorContext ships; the HTTP exception handler and
-  gRPC interceptor leave the server span green and without `error.code` until then.
-- *(planned)* A service-owned `IExceptionHandler` that handles an exception first is not recorded on the span by the
-  kernel; with `SuppressDiagnosticsCallback` kept (rule 4) the middleware's own `aspnetcore.diagnostics.exceptions`
-  signal may be lost for handled exceptions (verified by SK.14.EdgeErrorContext D-03).
+- GraphQL depends on HotChocolate, is not AOT-safe, and has no PublicAPI tracking. HotChocolate's own `type` extension
+  of a validation error (the type name) is replaced by the RFC 9110 type URI; its `code` is kept.
+- A hub error that SignalR writes itself (an unknown method, its authorization refusal, a stream that fails after it
+  started) carries no code and no ids; a `HubException` a hub throws itself has no trailer.
+- A service-owned `IExceptionHandler` that handles an exception first is not recorded on the span by the kernel; the
+  service records it. An exception a hub invocation fails with is not recorded on a span yet
+  (SK.14.PresentationConformance).

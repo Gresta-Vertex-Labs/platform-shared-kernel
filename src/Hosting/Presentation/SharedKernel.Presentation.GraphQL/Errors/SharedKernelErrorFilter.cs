@@ -1,80 +1,156 @@
 using HotChocolate;
 using HotChocolate.Execution;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
+using SharedKernel.Presentation.GraphQL.Diagnostics;
+using SharedKernel.Presentation.WebApi;
+using SharedKernel.Presentation.WebApi.ExceptionHandling;
+using Error = SharedKernel.Primitives.Errors.Error;
 
 namespace SharedKernel.Presentation.GraphQL.Errors;
 
 /// <summary>
-/// Maps HotChocolate <see cref="IError"/> instances to a <c>ProblemDetails</c>-compatible
-/// JSON extension shape for API shape consistency with REST error responses.
-/// Field mapping:
-/// <list type="bullet">
-///   <item><c>status</c> — HTTP status code from <see cref="IError"/> extensions</item>
-///   <item><c>title</c> — <see cref="IError.Message"/></item>
-///   <item><c>detail</c> — <see cref="IError.Exception"/>?.Message</item>
-///   <item><c>extensions</c> — original <see cref="IError.Extensions"/> are preserved and merged</item>
-/// </list>
-/// Never throws. Registered automatically by <c>AddSharedKernelGraphQL</c>.
+/// The GraphQL form of the HTTP exception handler: turns every HotChocolate <see cref="IError"/> into an error that
+/// carries the members of an RFC 9457 problem, from the same decisions the other protocols use.
 /// </summary>
+/// <remarks>
+/// <para>
+/// <b>Classification</b> is the HTTP handler's (<see cref="ExceptionClassification"/>): a
+/// <c>ValidationException</c> is a validation error (one error is itself, several are <c>Error.Validation(errors)</c>),
+/// any other <c>SharedKernelException</c> is its own <see cref="Error"/>, a <see cref="TimeoutException"/> or an
+/// <see cref="OperationCanceledException"/> the client did not cause is <c>timeout.default</c>, and any other
+/// exception is the generic <c>unexpected.exception</c>. An <see cref="IError"/> with no exception — HotChocolate's own
+/// syntax, validation and binding errors — is a client error: status 400, code
+/// <see cref="GraphQLErrorCodes.RequestInvalid"/>, HotChocolate's own <c>code</c> extension kept as <c>code</c>.
+/// </para>
+/// <para>
+/// <b>Members</b> written to the error's <c>extensions</c>: <c>status</c> (from <c>ErrorTypeStatusCodeMap</c>, the
+/// table HTTP uses), <c>type</c> and <c>title</c> (the framework's RFC 9110 type URI and reason phrase for that status,
+/// never the code or the message), <c>detail</c> (the client message: localized, and for a server error outside
+/// Development a generic sentence), <c>errorCode</c>, <c>traceId</c>, <c>correlationId</c>, <c>errors</c>/<c>errorCodes</c>
+/// for field errors (keyed like HTTP's) and, only in Development and only for an unclassified exception,
+/// <c>exception</c> (type, message, stack trace). The error's top-level <c>message</c> is the client message too. There
+/// is no <c>IncludeExceptionDetails</c> override: exception text never leaves Development.
+/// </para>
+/// <para>
+/// Outside a request (an in-process executor) the environment is unknown and treated as production, nothing is
+/// translated, and the trace id is the current activity's. Each error is logged once — 14400 at Error for a server
+/// category, 14401 at Debug for a client category — with the exception, never with a message or a variable. An
+/// exception thrown because the client went away is passed through and logged at Debug.
+/// </para>
+/// <para>Registered automatically by <c>AddSharedKernelGraphQL</c>.</para>
+/// </remarks>
 internal sealed class SharedKernelErrorFilter : IErrorFilter
 {
     private const string StatusKey = "status";
     private const string TitleKey = "title";
     private const string DetailKey = "detail";
     private const string TypeKey = "type";
+    private const string ErrorCodeKey = "errorCode";
+    private const string TraceIdKey = "traceId";
+    private const string CorrelationIdKey = "correlationId";
+    private const string ErrorsKey = "errors";
+    private const string ErrorCodesKey = "errorCodes";
+    private const string ExceptionKey = "exception";
+
+    // Logged only: an exception thrown because the client went away answers nobody.
+    private const string RequestAbortedCode = "graphql.request_aborted";
+
+    private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly ILogger<SharedKernelErrorFilter> _logger;
+
+    /// <summary>Initializes a new instance of the <see cref="SharedKernelErrorFilter"/> class.</summary>
+    /// <param name="httpContextAccessor">Gives the current request, when there is one.</param>
+    /// <param name="logger">The logger.</param>
+    public SharedKernelErrorFilter(IHttpContextAccessor httpContextAccessor, ILogger<SharedKernelErrorFilter> logger)
+    {
+        ArgumentNullException.ThrowIfNull(httpContextAccessor);
+        ArgumentNullException.ThrowIfNull(logger);
+
+        _httpContextAccessor = httpContextAccessor;
+        _logger = logger;
+    }
 
     /// <inheritdoc />
     public IError OnError(IError error)
     {
-        // Extract HTTP status code from the error extensions if present.
-        int? statusCode = null;
-        if (error.Extensions is not null &&
-            error.Extensions.TryGetValue(StatusKey, out var statusObj))
+        var httpContext = _httpContextAccessor.HttpContext;
+        var exception = error.Exception;
+
+        if (exception is OperationCanceledException && httpContext?.RequestAborted.IsCancellationRequested == true)
         {
-            statusCode = statusObj switch
-            {
-                int i => i,
-                long l => (int)l,
-                string s when int.TryParse(s, out var parsed) => parsed,
-                _ => null
-            };
+            GraphQLLog.ClientError(_logger, RequestAbortedCode, StatusCodes.Status499ClientClosedRequest, exception);
+            return error;
         }
 
-        // Build ProblemDetails-compatible extensions dict, seeding with any existing extensions.
-        var extensions = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        var classified = exception is null ? null : ExceptionClassification.Classify(exception);
+        var presented = classified?.Error
+            ?? Error.Validation(GraphQLErrorCodes.RequestInvalid, error.Message);
+
+        var statusCode = classified?.StatusCode ?? ErrorTypeStatusCodeMap.Resolve(presented.Type);
+        var clientMessage = ErrorPresentation.GetClientMessage(presented, httpContext);
+
+        Log(presented, statusCode, exception);
+
+        var extensions = new Dictionary<string, object?>(StringComparer.Ordinal);
 
         if (error.Extensions is not null)
         {
-            foreach (var kv in error.Extensions)
+            foreach (var extension in error.Extensions)
             {
-                extensions[kv.Key] = kv.Value;
+                extensions[extension.Key] = extension.Value;
             }
         }
 
-        // Overwrite / set the ProblemDetails mandatory fields.
-        extensions[StatusKey] = statusCode ?? 500;
-        extensions[TitleKey] = error.Message;
+        extensions[StatusKey] = statusCode;
 
-        if (error.Exception?.Message is { } detail)
+        var (type, title) = ProblemDefaults.For(statusCode);
+        extensions[TypeKey] = type;
+        extensions[TitleKey] = title;
+        extensions[DetailKey] = clientMessage;
+        extensions[ErrorCodeKey] = presented.Code;
+        extensions[TraceIdKey] = RequestFacts.GetTraceId(httpContext);
+
+        if (RequestFacts.GetCorrelationId(httpContext) is { } correlationId)
         {
-            extensions[DetailKey] = detail;
+            extensions[CorrelationIdKey] = correlationId;
         }
 
-        if (!extensions.ContainsKey(TypeKey))
+        if (presented.Details.Count > 0)
         {
-            extensions[TypeKey] = statusCode switch
-            {
-                400 => "https://tools.ietf.org/html/rfc9110#section-15.5.1",
-                401 => "https://tools.ietf.org/html/rfc9110#section-15.5.2",
-                403 => "https://tools.ietf.org/html/rfc9110#section-15.5.4",
-                404 => "https://tools.ietf.org/html/rfc9110#section-15.5.5",
-                409 => "https://tools.ietf.org/html/rfc9110#section-15.5.10",
-                422 => "https://tools.ietf.org/html/rfc4918#section-11.2",
-                _ => "https://tools.ietf.org/html/rfc9110#section-15.6.1"
-            };
+            var groups = FieldErrorGroups.Create(presented.Details, httpContext);
+            extensions[ErrorsKey] = ToExtensionValue(groups.Errors);
+            extensions[ErrorCodesKey] = ToExtensionValue(groups.ErrorCodes);
+        }
+
+        if (classified is { Kind: ExceptionKind.Unclassified } && exception is not null && RequestFacts.IsDevelopment(httpContext))
+        {
+            extensions[ExceptionKey] = ExceptionClassification.Describe(exception)
+                .ToDictionary(member => member.Key, member => (object?)member.Value, StringComparer.Ordinal);
         }
 
         // IError.WithExtensions accepts IReadOnlyDictionary<string, object?>.
         IReadOnlyDictionary<string, object?> readOnly = extensions;
-        return error.WithExtensions(readOnly);
+        return error.WithMessage(clientMessage).WithExtensions(readOnly);
+    }
+
+    // HotChocolate's result formatter writes extension values of its own shapes (objects, lists, scalars); a typed
+    // dictionary of arrays would be written as text.
+    private static Dictionary<string, object?> ToExtensionValue(Dictionary<string, string[]> members) =>
+        members.ToDictionary(
+            member => member.Key,
+            member => (object?)member.Value.Select(value => (object?)value).ToList(),
+            StringComparer.Ordinal);
+
+    private void Log(Error error, int statusCode, Exception? exception)
+    {
+        if (ErrorPresentation.IsServerError(error.Type))
+        {
+            GraphQLLog.ServerError(_logger, error.Code, statusCode, exception);
+        }
+        else
+        {
+            GraphQLLog.ClientError(_logger, error.Code, statusCode, exception);
+        }
     }
 }

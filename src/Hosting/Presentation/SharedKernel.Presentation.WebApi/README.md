@@ -245,6 +245,27 @@ A gRPC call gets the status without a body. An `IExceptionHandler` the service r
   after authentication and before authorization; a rejection without `OnRejected` is 429 `rate_limit.exceeded` with
   `Retry-After` (14005).
 
+### Observability
+
+The exception handler and a returned error enrich the framework's server span (`HttpRequestIn`, the ambient
+`Activity.Current`); this package starts no span and owns no `ActivitySource`. What a handled failure leaves on it:
+
+| Failure | Server span |
+| --- | --- |
+| **Server category** (5xx): an unclassified exception, a `SharedKernelException` of `Unexpected`/`Unavailable`/`Timeout` | Status `Error` described by the exception's type name (never its message), `error.type`, `error.code`, one `exception` event |
+| A `TimeoutException` or a cancellation the client did not cause (504 `timeout.default`) | Status `Error` and the error's `error.type`/`error.code`, no exception event |
+| A returned server-category error (`ToErrorResult()`, `ToOk()` and the other typed results) | The same as a thrown one, without an event |
+| **Client category** (4xx): `ValidationException`, `NotFound`, `Conflict`, a `BadHttpRequestException` | Only the `error.code` tag; the status stays `Unset`, as OpenTelemetry's HTTP server convention has it |
+| A request the client abandoned (499) | Nothing |
+
+Each handled exception is recorded once. With the instrumentation at its defaults the handler's event is the only one,
+and a service that sets `RecordException = true` gets no second one for an exception the handler handled
+(`OpenTelemetry.Instrumentation.AspNetCore` 1.15.2 records only exceptions that leave the pipeline). The middleware's
+own log and diagnostic events are suppressed for what the handler handled, so it is logged once, by the handler; the
+`aspnetcore.diagnostics.exceptions` counter still counts it. An exception a service's own `IExceptionHandler` handles
+first is that service's to record. Every problem carries `traceId` (the current activity's W3C id, else the request
+identifier) and `correlationId`.
+
 ## Recipes
 
 ### 1. Conditional update with optimistic concurrency

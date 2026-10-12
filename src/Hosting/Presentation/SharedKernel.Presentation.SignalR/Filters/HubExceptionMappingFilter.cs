@@ -14,8 +14,8 @@ namespace SharedKernel.Presentation.SignalR.Filters;
 
 /// <summary>
 /// The outermost platform hub filter: every error of a hub method invocation leaves it as a <see cref="HubException"/>
-/// with the message <c>{code}: {message}</c> (<see cref="HubErrorMessage"/>), the one exception type whose message
-/// SignalR delivers to clients. SignalR puts its own sentence in front of it; <see cref="HubErrorMessage.TryParse"/>
+/// with the message <c>{code}: {message} [traceId=…; correlationId=…]</c> (<see cref="HubErrorMessage"/>, the ids a
+/// client also reads from an HTTP problem), the one exception type whose message SignalR delivers to clients. SignalR puts its own sentence in front of it; <see cref="HubErrorMessage.TryParse"/>
 /// reads the code back.
 /// </summary>
 /// <remarks>
@@ -170,7 +170,7 @@ internal sealed partial class HubExceptionMappingFilter : IHubFilter
             ? developmentMessage
             : ErrorPresentation.GetClientMessage(Error.Unexpected(ErrorCodes.Unexpected.Default, UnexpectedMessage), httpContext);
 
-        return HubErrorMessage.Format(ErrorCodes.Unexpected.Default, message);
+        return HubErrorMessage.Format(ErrorCodes.Unexpected.Default, message, context);
     }
 
     private static bool IsDevelopment(HttpContext? httpContext) =>

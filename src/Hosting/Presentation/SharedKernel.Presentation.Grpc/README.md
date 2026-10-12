@@ -136,6 +136,16 @@ A gRPC-only host (no `UseSharedKernelWebApi()`) calls `UseSharedKernelRequestCon
   opens its scope; inject `IRequestContext` as in an HTTP handler. The correlation id is the inbound
   `x-correlation-id` when valid, else a new one, and is the `correlationId` of every error status.
 - **Telemetry.** gRPC calls are ASP.NET Core requests, traced and measured by its own instrumentation.
+- **Observability.** The interceptor enriches the call's server span (`HttpRequestIn`, the ambient `Activity.Current`);
+  this package starts no span and has no `ActivitySource`. A **server category** failure (`Unknown`, `Internal`,
+  `DataLoss`, `Unavailable`, `DeadlineExceeded`, which is also what is redacted) fails the span: status `Error`
+  described by the exception's type name (never its message), `error.type`, `error.code`, and one `exception` event.
+  A `TimeoutException`, and a foreign `RpcException` of a server category, are recorded as a failure (`error.code`
+  `grpc.unavailable`, …) without an exception event and without the foreign detail. A **client category** failure only
+  tags `error.code`, leaving the status `Unset`, as OpenTelemetry's gRPC server convention does. A cancelled call or a
+  passed deadline records nothing. Every `ErrorInfo` carries `traceId` and `correlationId`; an authorization refusal
+  has none (the HTTP pipeline answers it before the service runs) but carries the `X-Correlation-Id` response header.
+  A service that handles an exception itself, before the interceptor, records it for itself.
 
 ## Configuration
 

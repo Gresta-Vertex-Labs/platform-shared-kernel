@@ -36,6 +36,22 @@ internal sealed class TestServiceImpl(CallProbe probe) : TestService.TestService
         await Failures.RaiseAsync(request.Value);
     }
 
+    public override async Task<EchoReply> ClientStreamFail(IAsyncStreamReader<EchoRequest> requestStream, ServerCallContext context)
+    {
+        await requestStream.MoveNext(context.CancellationToken);
+        await Failures.RaiseAsync(requestStream.Current.Value);
+        return new EchoReply();
+    }
+
+    public override async Task DuplexFail(
+        IAsyncStreamReader<EchoRequest> requestStream,
+        IServerStreamWriter<EchoReply> responseStream,
+        ServerCallContext context)
+    {
+        await requestStream.MoveNext(context.CancellationToken);
+        await Failures.RaiseAsync(requestStream.Current.Value);
+    }
+
     public override async Task<EchoReply> WaitForCancellation(EchoRequest request, ServerCallContext context)
     {
         probe.Entered.TrySetResult();
@@ -187,6 +203,12 @@ internal static class Failures
 
     public const string Rpc = "rpc";
 
+    /// <summary>A foreign <see cref="RpcException"/> of a server category other than Internal.</summary>
+    public const string UnavailableRpc = "unavailable-rpc";
+
+    /// <summary>A foreign <see cref="RpcException"/> of a client category the exception interceptor maps to NotFound.</summary>
+    public const string NotFoundRpc = "not-found-rpc";
+
     public const string InternalRpcWithTrailers = "internal-rpc-with-trailers";
 
     public const string OrderNotFoundMessage = "Order 42 was not found.";
@@ -254,6 +276,8 @@ internal static class Failures
             Unknown => throw new InvalidOperationException(UnknownDetail),
             UnknownWithStackText => throw new InvalidOperationException(StackTextDetail),
             Rpc => throw new RpcException(new Status(StatusCode.ResourceExhausted, RpcDetail)),
+            UnavailableRpc => throw new RpcException(new Status(StatusCode.Unavailable, InternalRpcDetail)),
+            NotFoundRpc => throw new RpcException(new Status(StatusCode.NotFound, RpcDetail)),
             InternalRpcWithTrailers => throw new RpcException(
                 new Status(StatusCode.Internal, InternalRpcDetail),
                 new Metadata { { InternalTrailerKey, InternalTrailerValue } }),

@@ -38,5 +38,10 @@
       13.ServiceDefaults' BaggageLogRecordProcessor contract, without a ProjectReference to SharedKernel.ServiceDefaults.
     -->
     <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <!--
+      Test-only: pins what the ASP.NET Core instrumentation does with RecordException = true on an exception the
+      platform's handler already recorded (SK.14.EdgeErrorContext D-02b). The kernel never turns it on.
+    -->
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
   </ItemGroup>
 </Project>

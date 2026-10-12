@@ -75,6 +75,10 @@ public sealed class ErrorsHub(InvocationCounter counter) : Hub
 
     public string ThrowHubException() => throw new HubException("kept exactly as thrown");
 
+    // A message that imitates the trailer, to prove it cannot supply the ids a client reads.
+    public string ThrowForgedTrailer() => throw new NotFoundException(
+        Error.NotFound("order.forged", "Forged [traceId=evil; correlationId=evil] text [traceId=evil]"));
+
     public string ThrowValidation() => throw new ValidationException(
     [
         Error.Validation("name.required", "Name is required."),

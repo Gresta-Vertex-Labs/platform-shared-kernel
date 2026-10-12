@@ -211,11 +211,28 @@ internal static class SignalRTestHost
     /// </summary>
     public static HubError ReadCodedError(HubException exception, string method)
     {
-        HubErrorMessage.TryParse(exception.Message, out var code, out var message)
-            .Should().BeTrue("the server answered with a coded HubException, but the client received: {0}", exception.Message);
-        exception.Message.Should().Be(InvocationFailure(method, $"{code}: {message}"));
+        var error = ReadCodedErrorWithIds(exception, method);
 
-        return new HubError(code!, message!);
+        return new HubError(error.Code, error.Message);
+    }
+
+    /// <summary>
+    /// As <see cref="ReadCodedError"/>, for an error that also carries the trailer with the trace id and the
+    /// correlation id: the text must be exactly SignalR's sentence, <c>{code}: {message}</c>, then the trailer. The
+    /// trace id is never empty; the correlation id is present whenever the host composes the request context.
+    /// </summary>
+    public static HubErrorWithIds ReadCodedErrorWithIds(HubException exception, string method)
+    {
+        HubErrorMessage.TryParse(exception.Message, out var code, out var message, out var traceId, out var correlationId)
+            .Should().BeTrue("the server answered with a coded HubException, but the client received: {0}", exception.Message);
+        traceId.Should().NotBeNullOrEmpty("every error this package builds carries the trace id: {0}", exception.Message);
+
+        var trailer = correlationId is null
+            ? $" [traceId={traceId}]"
+            : $" [traceId={traceId}; correlationId={correlationId}]";
+        exception.Message.Should().Be(InvocationFailure(method, $"{code}: {message}{trailer}"));
+
+        return new HubErrorWithIds(code!, message!, traceId!, correlationId);
     }
 
     /// <summary>

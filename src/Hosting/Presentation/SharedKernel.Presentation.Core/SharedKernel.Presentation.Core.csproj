@@ -38,6 +38,9 @@
     <InternalsVisibleTo Include="SharedKernel.Presentation.Grpc" />
     <InternalsVisibleTo Include="SharedKernel.Presentation.SignalR" />
     <InternalsVisibleTo Include="SharedKernel.Presentation.OpenApi" />
+    <!-- GraphQL takes the status table, the client-message rule and the trace id from here (rule 1), not a copy. -->
+    <InternalsVisibleTo Include="SharedKernel.Presentation.GraphQL" />
+    <InternalsVisibleTo Include="SharedKernel.Presentation.GraphQL.Tests" />
     <InternalsVisibleTo Include="SharedKernel.Presentation.Core.Tests" />
     <InternalsVisibleTo Include="SharedKernel.Presentation.WebApi.Tests" />
     <InternalsVisibleTo Include="SharedKernel.Presentation.Grpc.Tests" />

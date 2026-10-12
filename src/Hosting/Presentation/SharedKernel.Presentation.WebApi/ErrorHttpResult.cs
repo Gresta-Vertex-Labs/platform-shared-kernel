@@ -19,6 +19,11 @@ namespace SharedKernel.Presentation.WebApi;
 /// request decides: a version conflict of a conditional request (<c>If-Match</c> or <c>If-None-Match</c>) is written
 /// as 412 Precondition Failed (see <see cref="ErrorPresentation.GetStatusCode"/>).
 /// </para>
+/// <para>
+/// Executing the result records the error on the ambient server span like a thrown exception does: a server-category
+/// error (5xx) sets its status to <c>Error</c> with <c>error.type</c> and <c>error.code</c>, a client-category error
+/// only tags <c>error.code</c>.
+/// </para>
 /// </remarks>
 public sealed class ErrorHttpResult : IResult, IStatusCodeHttpResult, IContentTypeHttpResult
 {
@@ -56,6 +61,10 @@ public sealed class ErrorHttpResult : IResult, IStatusCodeHttpResult, IContentTy
     public Task ExecuteAsync(HttpContext httpContext)
     {
         ArgumentNullException.ThrowIfNull(httpContext);
+
+        // A returned failure is as visible on the trace as a thrown one: a server-category error fails the server
+        // span, a client-category one only tags its code.
+        EdgeFailureRecording.Record(Error);
 
         return ProblemResponseWriter.WriteAsync(httpContext, ProblemFactory.ForError(Error, httpContext));
     }

@@ -161,10 +161,14 @@ internal sealed partial class GrpcExceptionInterceptor : Interceptor
                 // Error.Validation(errors); the field violations are the error's Details.
                 var error = validation.Errors.Count == 1 ? validation.Errors[0] : Error.Validation(validation.Errors);
                 Log.ClientError(_logger, context.Method, StatusCode.InvalidArgument, error.Code, exception);
+
+                // InvalidArgument whatever the type of a single error: a client category, only the code is tagged.
+                EdgeFailureRecording.RecordClientCode(error.Code);
                 return RpcStatusFactory.CreateException(error, httpContext, domain, StatusCode.InvalidArgument);
 
             case SharedKernelException sharedKernelException:
                 LogFailure(context, sharedKernelException.Error, exception);
+                EdgeFailureRecording.Record(sharedKernelException.Error, exception);
                 return RpcStatusFactory.CreateException(sharedKernelException.Error, httpContext, domain);
 
             case TimeoutException:
@@ -173,12 +177,17 @@ internal sealed partial class GrpcExceptionInterceptor : Interceptor
                 // of a returned Error.Timeout, as HTTP answers the same exception with 504 timeout.default.
                 var timeout = Error.Timeout(ErrorCodes.Timeout.Default, TimeoutMessage);
                 LogFailure(context, timeout, exception);
+
+                // A real timeout of the service: recorded as a failure, not as an exception event.
+                EdgeFailureRecording.Record(timeout);
                 return RpcStatusFactory.CreateException(timeout, httpContext, domain);
 
             default:
                 Log.UnhandledException(_logger, context.Method, exception);
+                var unexpected = Error.Unexpected(ErrorCodes.Unexpected.Default, UnexpectedMessage);
+                EdgeFailureRecording.Record(unexpected, exception);
                 return RpcStatusFactory.CreateException(
-                    Error.Unexpected(ErrorCodes.Unexpected.Default, UnexpectedMessage),
+                    unexpected,
                     httpContext,
                     domain,
                     clientMessage: _environment.IsDevelopment() ? exception.Message : null);
@@ -196,13 +205,18 @@ internal sealed partial class GrpcExceptionInterceptor : Interceptor
         if (ServerErrorType(statusCode) is not { } serverErrorType)
         {
             Log.ClientError(_logger, context.Method, statusCode, code, exception);
+            EdgeFailureRecording.RecordClientCode(code);
             return RpcStatusFactory.CreateExceptionForStatus(statusCode, detail, httpContext, domain);
         }
 
         Log.ServerError(_logger, context.Method, statusCode, code, exception);
 
         // Presented like an error of the same category: the generic sentence outside Development, the detail in it.
-        var message = ErrorPresentation.GetClientMessage(new Error(code, detail, serverErrorType), httpContext);
+        var foreignError = new Error(code, detail, serverErrorType);
+
+        // Recorded by its code and category; the foreign detail never reaches the span.
+        EdgeFailureRecording.Record(foreignError);
+        var message = ErrorPresentation.GetClientMessage(foreignError, httpContext);
         return RpcStatusFactory.CreateExceptionForStatus(statusCode, message, httpContext, domain);
     }
 

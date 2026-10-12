@@ -15,12 +15,16 @@
 //      ProblemDetails schema. Asp.Versioning.OpenApi reflects over Microsoft.AspNetCore.OpenApi internals, so a package
 //      upgrade that breaks that fails here instead of in a service.
 //   4. SignalR — AddSharedKernelSignalR: a hub method returning Result<T> returns its value; a failure reaches the
-//      client as a HubException "{code}: {message}", read back with HubErrorMessage.TryParse, a server error redacted.
+//      client as a HubException "{code}: {message} [traceId=...; correlationId=...]", read back with
+//      HubErrorMessage.TryParse (the overload that returns the ids too), a server error redacted.
 //   5. gRPC — AddSharedKernelGrpc: a failed result ended with SharedKernel.Core's GetValueOrThrow/ThrowIfFailure
 //      reaches the client as a rich google.rpc.Status, read back with GetRpcStatus(): ErrorInfo (code, domain, trace
 //      and correlation ids) and BadRequest.
 //   6. All four packages in one host: the registrations compose and every protocol answers, and a hub method and a
 //      gRPC method read the caller and correlation id UseSharedKernelRequestContext() resolved (P-579).
+//   7. GraphQL — AddSharedKernelGraphQL: a failed result ended with GetValueOrThrow, a server error and a rejected
+//      request reach the client as errors with status, errorCode, detail, traceId and correlationId extensions, a
+//      server error redacted (SK.14.EdgeErrorContext).
 // Every host starts as a service does since P-579: AddSharedKernelRequestContext() and UseSharedKernelRequestContext()
 // (SharedKernel.ServiceDefaults.Security) before UseSharedKernelWebApi().
 
@@ -53,9 +57,12 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharedKernel.Contracts.Pagination;
+using SharedKernel.Core.Exceptions;
 using SharedKernel.Core.Extensions;
 using SharedKernel.Execution.Context;
 using SharedKernel.Presentation.Authorization;
+using SharedKernel.Presentation.GraphQL;
+using SharedKernel.Presentation.GraphQL.Extensions;
 using SharedKernel.Presentation.Grpc;
 using SharedKernel.Presentation.OpenApi;
 using SharedKernel.Presentation.SignalR;
@@ -107,6 +114,7 @@ static async Task VerifyAllSurfacesAsync()
     await Surface4_SignalRResultHubMethods();
     await Surface5_GrpcRichStatus();
     await Surface6_AllFourPackagesInOneHost();
+    await Surface7_GraphQLProblemShapedErrors();
 }
 
 // -------------------------------------------------------------------------------------------------------------------
@@ -467,7 +475,9 @@ static async Task Surface4_SignalRResultHubMethods()
     app.MapHub<OrdersHub>(OrdersHub.Path);
     await app.StartAsync();
 
-    await using var connection = await Hubs.ConnectAsync(Hosts.AddressOf(app));
+    await using var connection = await Hubs.ConnectAsync(
+        Hosts.AddressOf(app),
+        new Dictionary<string, string> { [WellKnownHeaders.CorrelationId] = "verify-hub-1" });
 
     var order = await connection.InvokeAsync<OrderDto>(nameof(OrdersHub.GetOrder), 1);
     Check.That(order == new OrderDto(1, "open"), "a successful Result<T> returns its value to the client");
@@ -479,7 +489,17 @@ static async Task Surface4_SignalRResultHubMethods()
     Check.That(outage.Code == "orders.store_unavailable", $"a server error keeps its code (got {outage})");
     Check.That(!outage.Message.Contains("db-7", StringComparison.Ordinal), "a server error's internal detail is redacted outside Development");
 
-    Console.WriteLine("Surface 4 PASSED — SignalR: Result<T> values, coded HubException read with HubErrorMessage.TryParse, server errors redacted");
+    // The trailer: every error this package builds also carries the trace id of the invocation and the correlation id
+    // the connection was opened with, read back with the TryParse overload that returns them (the message excludes it).
+    var failure = await Check.CatchAsync<HubException>(() => connection.InvokeCoreAsync<object?>(nameof(OrdersHub.GetOrder), [404]));
+    Check.That(
+        HubErrorMessage.TryParse(failure?.Message, out var code, out var message, out var traceId, out var correlationId),
+        $"a failed Result<T> is a coded HubException (got \"{failure?.Message}\")");
+    Check.That(code == "order.not_found" && message == "Order 404 was not found.", $"the message excludes the trailer (got {code}: {message})");
+    Check.That(!string.IsNullOrWhiteSpace(traceId), "the error carries the trace id of the invocation");
+    Check.That(correlationId == "verify-hub-1", $"the error carries the correlation id of the connection (got {correlationId})");
+
+    Console.WriteLine("Surface 4 PASSED — SignalR: Result<T> values, coded HubException read with HubErrorMessage.TryParse (code, message, trace id, correlation id), server errors redacted");
 }
 
 // -------------------------------------------------------------------------------------------------------------------
@@ -597,6 +617,50 @@ static async Task Surface6_AllFourPackagesInOneHost()
         $"combined host: a gRPC method reads the call's caller and correlation id from IRequestContext (got {grpcCaller})");
 
     Console.WriteLine("Surface 6 PASSED — WebApi, OpenApi, SignalR and gRPC compose in one host, one request context for every protocol");
+}
+
+// -------------------------------------------------------------------------------------------------------------------
+// Surface 7 — GraphQL: every error carries the members of an RFC 9457 problem (SK.14.EdgeErrorContext).
+// -------------------------------------------------------------------------------------------------------------------
+static async Task Surface7_GraphQLProblemShapedErrors()
+{
+    var builder = Hosts.CreateBuilder(Environments.Production);
+    builder.Services.AddSharedKernelGraphQL().AddQueryType<OrdersGraphQLQuery>();
+
+    await using var app = builder.Build();
+    app.UseSharedKernelRequestContext();
+    app.MapGraphQL();
+    await app.StartAsync();
+
+    using var client = new HttpClient { BaseAddress = Hosts.AddressOf(app) };
+
+    using (var missing = await GraphQLChecks.PostAsync(client, "{ order(id: 404) { id } }"))
+    {
+        var extensions = missing.RootElement.GetProperty("errors")[0].GetProperty("extensions");
+        Check.That(extensions.GetProperty("status").GetInt32() == 404, "a failed result ended with GetValueOrThrow has the status of its error type");
+        Check.That(extensions.GetProperty("errorCode").GetString() == "order.not_found", "the error carries its code as errorCode");
+        Check.That(extensions.GetProperty("detail").GetString() == "Order 404 was not found.", "the detail is the client message");
+        Check.That(!string.IsNullOrWhiteSpace(extensions.GetProperty("traceId").GetString()), "the error carries the trace id");
+        Check.That(extensions.GetProperty("correlationId").GetString() == "verify-gql-1", "the error carries the correlation id of the request");
+    }
+
+    using (var outage = await GraphQLChecks.PostAsync(client, "{ orderDuringOutage(id: 1) { id } }"))
+    {
+        var extensions = outage.RootElement.GetProperty("errors")[0].GetProperty("extensions");
+        Check.That(extensions.GetProperty("status").GetInt32() == 503, "a server error is answered with its own status");
+        Check.That(!outage.RootElement.GetRawText().Contains("db-7", StringComparison.Ordinal), "a server error's internal detail is redacted outside Development");
+        Check.That(!extensions.TryGetProperty("exception", out _), "no exception text outside Development");
+    }
+
+    using (var invalid = await GraphQLChecks.PostAsync(client, "{ nope }"))
+    {
+        var extensions = invalid.RootElement.GetProperty("errors")[0].GetProperty("extensions");
+        Check.That(
+            extensions.GetProperty("errorCode").GetString() == GraphQLErrorCodes.RequestInvalid && extensions.GetProperty("status").GetInt32() == 400,
+            "a request HotChocolate rejects is a 400 graphql.request_invalid");
+    }
+
+    Console.WriteLine("Surface 7 PASSED — GraphQL: problem-shaped errors (status, errorCode, detail, traceId, correlationId), server errors redacted");
 }
 
 // ===================================================================================================================
@@ -731,6 +795,27 @@ public sealed class OrdersHub(IRequestContextAccessor requestContext) : Hub
         Error.Unavailable("orders.store_unavailable", $"Connection to db-7 refused while reading order {id}.");
 }
 
+/// <summary>The GraphQL query type: failures arrive the way an application-layer failure does.</summary>
+public sealed class OrdersGraphQLQuery
+{
+    public OrderDto Order(int id) => OrderCatalog.Find(id).GetValueOrThrow();
+
+    public OrderDto OrderDuringOutage(int id) =>
+        throw Error.Unavailable("orders.store_unavailable", $"Connection to db-7 refused while reading order {id}.").ToException();
+}
+
+/// <summary>Posts a GraphQL query and parses the response.</summary>
+internal static class GraphQLChecks
+{
+    public static async Task<JsonDocument> PostAsync(HttpClient client, string query)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/graphql") { Content = JsonContent.Create(new { query }) };
+        request.Headers.Add(WellKnownHeaders.CorrelationId, "verify-gql-1");
+        using var response = await client.SendAsync(request);
+        return JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+    }
+}
+
 /// <summary>
 /// The gRPC service: a failed result ends the call through <c>SharedKernel.Core</c>'s <c>GetValueOrThrow</c> and
 /// <c>ThrowIfFailure</c>, whose exception the platform's interceptor turns into the rich status.
@@ -757,6 +842,7 @@ internal sealed class OrderGrpcService(IRequestContext requestContext) : OrderSe
         return Task.FromResult(new OrderReply { Id = 99, Status = "placed" });
     }
 }
+
 
 // ===================================================================================================================
 // Verification helpers.
