@@ -26,7 +26,7 @@ Phases written by `arch-lead` take the next phase id; a user-directed phase with
 | 04 | [Contracts](src/Model/Contracts/state-map.md) | 1 (Model) | ● | None |
 | 05 | [Application](src/Application/state-map.md) | 4 (1 Abstractions, 3 Host) | ○ | Next: `SK.05.PipelineTelemetryGaps` (WO-087) |
 | 06 | [Persistence](src/Infrastructure/Persistence/state-map.md) | 6 (1 Abstractions, 5 Adapter) | ○ | Next: `SK.06.PersistenceErrorSafety` (WO-087); never published; first release is P-577 |
-| 07 | [Messaging](src/Infrastructure/Messaging/state-map.md) | 5 (1 Abstractions, 4 Adapter) | ○ | Next: `SK.07.MessagingErrorSafety` (WO-087) |
+| 07 | [Messaging](src/Infrastructure/Messaging/state-map.md) | 5 (1 Abstractions, 4 Adapter) | ○ | Next: `SK.07.ObservabilityConformance` (WO-087) |
 | 08 | [Storage](src/Infrastructure/Storage/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ○ | Next: `SK.08.StorageConformance` (WO-087) |
 | 09 | [Search](src/Infrastructure/Search/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ○ | Next: `SK.09.SearchErrorSafety` (WO-087) |
 | 10 | [Intelligence](src/Infrastructure/AI/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ○ | Next: `SK.10.IntelligenceObservability` (WO-087) |
@@ -134,7 +134,7 @@ Stop logging the ambient tenant id and actor id in the cross-tenant scope diagno
 - [ ] The three "no tenant" paths return the same error.
 
 #### P-588 — Fix header leakage, lost stack traces and swallowed failures in Messaging (Phase 1)
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Domain:** 07.Messaging
 **Depends on:** P-580, P-582
 **Phase key:** `SK.07.MessagingErrorSafety`
