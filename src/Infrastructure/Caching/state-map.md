@@ -22,7 +22,6 @@
 
 | Phase key | Phase | Status |
 | --- | --- | --- |
-| `SK.02.LockUnavailableError` | Lock-unavailable exception becomes a classified `SharedKernelException` (WO-087 / P-585) | ○ |
 | `SK.02.ObservabilityConformance` | Conform Caching to the observability gold standard (WO-087 / P-601) | ○ |
 
 Closed keys live in `git log`: check a new key is unused with `git log --oneline -S"SK.NN.Key"`.
@@ -30,41 +29,6 @@ Closed keys live in `git log`: check a new key is unused with `git log --oneline
 ## Open Work
 
 The first public release ships with root P-577 (release train); both phases below land before it.
-
-### SK.02.LockUnavailableError — Lock-unavailable exception carries an Error `○`
-
-**Work order:** WO-087 / P-585 · **Depends on:** SK.01.ObservabilityHelpers (P-580; the recorder reads `error.code` from the exception through `IHasError`, which `SharedKernelException` implements)
-
-`DistributedLockUnavailableException` (the third lock outcome: store unreachable) derives plain `Exception` and carries no `Error`, so `SharedKernelExceptionHandler`, `GrpcExceptionInterceptor` and the SignalR filter map it to 500 / `Unknown` / generic. It becomes a sealed `SharedKernelException` carrying `Error.Unavailable("caching.lock_unavailable", …)`, so edges answer 503 / `Unavailable`. Lock semantics (rule 27: handle / `null` / exception, thrown at once even with a `WaitTime`) do not change, and the exception type, its namespace and `ForResource(resource, inner)` stay, so callers that catch it (19.Scheduling) are untouched. The sweep of caught-exception logs found one site that drops its exception: the `+101` Redis connection-failed log (the StackExchange.Redis event args carry `Exception`). Every other catch in the domain either logs with its exception (`+6`, `+305`, `+306`, `+500`, `+501`, `+502`), rethrows, or is a deliberate non-log (`+15` best-effort evict, the two probes), the latter owned by `SK.02.ObservabilityConformance`.
-
-**Design.**
-- `SharedKernel.Caching.Abstractions` gains a `ProjectReference` to `SharedKernel.Core` (Foundation: legal for the Abstractions tier, brings only `Primitives`, already transitive through `Execution`). No third-party package, no cycle, no declared-edge change.
-- Public `CachingErrorCodes` (static, in `Caching.Abstractions`) with `LockUnavailable = "caching.lock_unavailable"` (C1/C2/C3: lowercase, reason word `unavailable`); internal `CachingErrors.LockUnavailable()` builds the `Error` (`Error.Unavailable`).
-- Exception shape (E1): `sealed`, constructors `(Error error)` and `(Error error, Exception? innerException)`; the parameterless and string constructors go (SK0005). Base message is `Error.Message`, a fixed sentence ("The distributed lock store is unavailable.") that edges may return to clients, so it never contains the resource. `Resource` stays as a diagnostic property (set by `ForResource`, logged by the lock implementation, never serialized to a client). `ForResource(string resource, Exception? innerException = null)` keeps its signature and builds the classified error.
-- `RedisDistributedLockService.ClaimAsync` keeps `throw DistributedLockUnavailableException.ForResource(resource, ex)`; no other production code constructs the exception.
-
-| ID | Task | Package | State |
-| --- | --- | --- | :---: |
-| D-01 | Ratify the shape above: derive `SharedKernelException` through the `(Error, Exception?)` base constructor; message = `Error.Message` (no resource); `Resource` diagnostic-only; parameterless and string constructors removed (breaking, release-noted); `ForResource` kept | `SharedKernel.Caching.Abstractions` | `○` |
-| D-02 | Ratify code `caching.lock_unavailable` over `caching.lock.unavailable`: one flat reason word per condition, matching the `{domain}.{snake_reason}` form; `CachingErrorCodes` public / `CachingErrors` internal (C2). Ratify the `Abstractions` → `SharedKernel.Core` reference as tier-legal (verify `SKTIER001` does not fire and the `.nuspec` gains only `SharedKernel.Core`) | `SharedKernel.Caching.Abstractions` | `○` |
-| D-03 | Record the caught-exception sweep result in the phase notes: sites that log with the exception, the one that does not (`+101`), the non-logging catches handed to `SK.02.ObservabilityConformance`. Verify on disk that no other `catch` in non-test code logs without the exception | `SharedKernel.Caching.*` | `○` |
-| C-01 | Add the `SharedKernel.Core` `ProjectReference`; `CachingErrorCodes` + `CachingErrors`; rewrite `DistributedLockUnavailableException`; update XML docs; `PublicAPI.Unshipped.txt` (removed constructors, new base type, `CachingErrorCodes`) | `SharedKernel.Caching.Abstractions` | `○` |
-| C-02 | Verify `RedisDistributedLockService` and `RedisDistributedLock` need no change beyond recompiling; confirm every throw site goes through `ForResource` | `SharedKernel.Caching.Redis.DistributedLocking` | `○` |
-| C-03 | `ConnectionFailed` log `+101` takes the event args' `Exception?` as its trailing parameter (message wording is rewritten in `SK.02.ObservabilityConformance`); `PublicAPI` unaffected (internal) | `SharedKernel.Caching.Redis.Core` | `○` |
-| C-04 | Keep `FakeDistributedLockService` faithful: it throws the same classified exception through `ForResource`; fix any use of a removed constructor in the double or its tests | `SharedKernel.Caching.Testing` | `○` |
-| T-01 | Unit lane: exception is a `SharedKernelException` and `IHasError`; `Error.Type` is `Unavailable`; code literal `caching.lock_unavailable` pinned; message equals `Error.Message` and does not contain the resource; `Resource` and inner exception preserved; null error throws; `ForResource` with and without inner | `SharedKernel.Caching.Abstractions.Tests` | `○` |
-| T-02 | Unit lane: the exception maps to HTTP 503 and gRPC `Unavailable` (not 500 / `Unknown`) through the edges' public mapping surface (the `SharedKernel.Presentation.WebApi` exception handler and the gRPC interceptor; verify on disk what is public, and use a `TestServer`/in-process call from the test project, which is a consumer and may reference Host packages). If the only seam is `internal`, mark `⚑` with that evidence and record a note for `14.Presentation` instead of widening visibility | `SharedKernel.Caching.Abstractions.Tests` | `○` |
-| T-03 | Integration lane (Testcontainers not needed; closed-port store): extend `LockStoreUnavailableTests` so both `TryAcquireAsync` and `TryAcquireLeaseAsync` assert `Error.Code`, `Error.Type == Unavailable`, `Resource` and a non-null inner; the contended path still returns `null` and a held lock still reports loss before expiry (rule 29) | `SharedKernel.Caching.Redis.DistributedLocking.Tests` | `○` |
-| T-04 | Integration lane, bounded polling (no fixed delay): a connection to a closed port makes the `ConnectionFailed` event fire and the `+101` log record carries a non-null exception (local capturing logger; `SK.02.ObservabilityConformance` migrates it to the shared logger assertions); `AbortOnConnectFail = false` still holds (startup does not throw, rule 20) | `SharedKernel.Caching.Redis.Core.Tests` | `○` |
-| T-05 | `FakeDistributedLockService` throws the same classified error (code, type) as the Redis implementation | `SharedKernel.Caching.Testing.Tests` | `○` |
-| DO-01 | READMEs: Abstractions (exception and the new code in the lock section), DistributedLocking (the `catch (DistributedLockUnavailableException)` snippet and an error-code table row), `Caching.Testing`, domain `README.md` if it lists exception behaviour | `SharedKernel.Caching.Abstractions`, `.Redis.DistributedLocking`, `.Testing` | `○` |
-
-**Acceptance:**
-- [ ] `DistributedLockUnavailableException` derives `SharedKernelException`, carries `Error.Unavailable("caching.lock_unavailable", …)`, and maps to Unavailable at HTTP and gRPC (tested).
-- [ ] Every caught-exception log in the domain passes the exception (the `+101` fix tested); the sweep result is recorded.
-- [ ] Lock outcomes, contention `null` and loss-before-expiry unchanged (existing contract tests green).
-- [ ] Breaking changes (removed constructors, new base type) listed under "Breaking changes" in the PR body; `PublicAPI.Unshipped.txt`, READMEs and the domain `CLAUDE.md` updated in the same change.
-- [ ] Unit and Integration lanes green; `consumer-verify/SharedKernel.Caching.ConsumerVerify` builds and runs.
 
 ### SK.02.ObservabilityConformance — Conform Caching to the observability gold standard `○`
 

@@ -21,7 +21,7 @@ Phases written by `arch-lead` take the next phase id; a user-directed phase with
 | --- | --- | --- | --- | --- |
 | 00 | [Governance](tools/Governance/state-map.md) | 3 (Tooling) + dev-only Benchmarks | ○ | Next: `SK.00.ObservabilityEnforce` (WO-087, after Phase 2) |
 | 01 | [Core](src/Foundation/state-map.md) | 13 (10 Foundation, 3 Adapter) | ○ | Next: `SK.01.CoreObservabilityFixes` (WO-087) |
-| 02 | [Caching](src/Infrastructure/Caching/state-map.md) | 7 (1 Abstractions, 6 Adapter) | ○ | Next: `SK.02.LockUnavailableError` (WO-087) |
+| 02 | [Caching](src/Infrastructure/Caching/state-map.md) | 7 (1 Abstractions, 6 Adapter) | ○ | Next: `SK.02.ObservabilityConformance` (WO-087) |
 | 03 | [Domain](src/Model/Domain/state-map.md) | 1 (Model) | ○ | Next: `SK.03.DomainErrorCodes` (WO-087) |
 | 04 | [Contracts](src/Model/Contracts/state-map.md) | 1 (Model) | ● | None |
 | 05 | [Application](src/Application/state-map.md) | 4 (1 Abstractions, 3 Host) | ○ | Next: `SK.05.PipelineTelemetryGaps` (WO-087) |
@@ -105,7 +105,7 @@ FeatureManagement: stop copying `ex.Message` into the OpenFeature evaluation mes
 - [ ] No stack trace is lost on a rethrow.
 
 #### P-585 — Fix exception shape in Caching (Phase 1)
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Domain:** 02.Caching
 **Depends on:** P-580
 **Phase key:** `SK.02.LockUnavailableError`
