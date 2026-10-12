@@ -29,7 +29,7 @@ Phases written by `arch-lead` take the next phase id; a user-directed phase with
 | 07 | [Messaging](src/Infrastructure/Messaging/state-map.md) | 5 (1 Abstractions, 4 Adapter) | ○ | Next: `SK.07.ObservabilityConformance` (WO-087) |
 | 08 | [Storage](src/Infrastructure/Storage/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ○ | Next: `SK.08.StorageConformance` (WO-087) |
 | 09 | [Search](src/Infrastructure/Search/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ○ | Next: `SK.09.ObservabilityConformance` (WO-087) |
-| 10 | [Intelligence](src/Infrastructure/AI/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ○ | Next: `SK.10.IntelligenceObservability` (WO-087) |
+| 10 | [Intelligence](src/Infrastructure/AI/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ○ | Next: `SK.10.IntelligenceConformance` (WO-087) |
 | 11 | [Communication](src/Infrastructure/Communication/state-map.md) | 3 (Adapter) | ○ | Next: `SK.11.CommunicationConformance` (WO-087) |
 | 12 | [Security](src/Hosting/Security/state-map.md) | 5 (1 Abstractions, 4 Host) | ○ | Next: `SK.12.SecurityConformance` (WO-087) |
 | 13 | [ServiceDefaults](src/Hosting/ServiceDefaults/state-map.md) | 7 (Host) | ○ | Next: `SK.13.ServiceDefaultsConformance` (WO-087) |
@@ -164,7 +164,7 @@ Stop putting provider debug dumps (ElasticSearch response debug information) and
 - [ ] Every caught-exception log passes the exception.
 
 #### P-591 — Make the AI domain observable and stop its leaks (Phase 1)
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Domain:** 10.Intelligence
 **Depends on:** P-580, P-582
 **Phase key:** `SK.10.IntelligenceObservability`
