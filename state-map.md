@@ -28,7 +28,7 @@ Phases written by `arch-lead` take the next phase id; a user-directed phase with
 | 06 | [Persistence](src/Infrastructure/Persistence/state-map.md) | 6 (1 Abstractions, 5 Adapter) | ○ | Next: `SK.06.PersistenceConformance` (WO-087) |
 | 07 | [Messaging](src/Infrastructure/Messaging/state-map.md) | 5 (1 Abstractions, 4 Adapter) | ○ | Next: `SK.07.ObservabilityConformance` (WO-087) |
 | 08 | [Storage](src/Infrastructure/Storage/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ○ | Next: `SK.08.StorageConformance` (WO-087) |
-| 09 | [Search](src/Infrastructure/Search/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ○ | Next: `SK.09.SearchErrorSafety` (WO-087) |
+| 09 | [Search](src/Infrastructure/Search/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ○ | Next: `SK.09.ObservabilityConformance` (WO-087) |
 | 10 | [Intelligence](src/Infrastructure/AI/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ○ | Next: `SK.10.IntelligenceObservability` (WO-087) |
 | 11 | [Communication](src/Infrastructure/Communication/state-map.md) | 3 (Adapter) | ○ | Next: `SK.11.CommunicationConformance` (WO-087) |
 | 12 | [Security](src/Hosting/Security/state-map.md) | 5 (1 Abstractions, 4 Host) | ○ | Next: `SK.12.SecurityConformance` (WO-087) |
@@ -154,7 +154,7 @@ The storage exception carries an `Error` but does not derive `SharedKernelExcept
 - [ ] No provider endpoint or host appears in an `Error` or log.
 
 #### P-590 — Fix detail leaks, lost exceptions and swallowed failures in Search (Phase 1)
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Domain:** 09.Search
 **Depends on:** P-580
 **Phase key:** `SK.09.SearchErrorSafety`
