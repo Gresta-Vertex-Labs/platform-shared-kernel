@@ -55,4 +55,20 @@ public static class MessagingErrorCodes
     /// <c>type</c> or <c>dataversion</c> can be resolved for it.
     /// </summary>
     public const string ContractViolation = "messaging.contract_violation";
+
+    /// <summary>
+    /// Another delivery of the same message id holds the consumer's idempotency reservation. A contention,
+    /// not an outage or a defect: the message stays unacknowledged and the broker redelivers it. Carried by
+    /// an <see cref="SharedKernel.Primitives.Errors.ErrorType.Conflict"/> error (HTTP 409, gRPC
+    /// <c>Aborted</c>).
+    /// </summary>
+    public const string ConcurrentDelivery = "messaging.concurrent_delivery";
+
+    /// <summary>
+    /// The publisher and this consumer disagree on the payload transform (compression or encryption), or
+    /// the transformed body could not be reversed. A deployment defect, never a caller's bad input: carried
+    /// by an <see cref="SharedKernel.Primitives.Errors.ErrorType.Unexpected"/> error (HTTP 500, gRPC
+    /// <c>Internal</c>).
+    /// </summary>
+    public const string PayloadTransformMismatch = "messaging.payload_transform_mismatch";
 }

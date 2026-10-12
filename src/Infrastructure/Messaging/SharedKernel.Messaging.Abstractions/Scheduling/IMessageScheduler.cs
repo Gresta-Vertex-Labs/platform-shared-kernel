@@ -71,6 +71,8 @@ public interface IMessageScheduler
     /// because "cancel something that is already gone" is a normal race, not a caller error.
     /// It follows that a successful return does <strong>not</strong> prove the message was stopped
     /// in time; a consumer must still cope with receiving work that was cancelled.
+    /// Cancelling <paramref name="ct"/> is the exception to that rule: the <see cref="OperationCanceledException"/>
+    /// propagates, and the same token can be cancelled again afterwards.
     /// </remarks>
     Task CancelAsync(Guid scheduleToken, CancellationToken ct);
 }

@@ -57,7 +57,7 @@ public abstract partial class ConsumerBase<TMessage> : IConsumer<TMessage>
 
     /// <summary>
     /// MassTransit entry point. Starts a consume <see cref="Activity"/>, propagates
-    /// CorrelationId, extracts <c>x-sk-*</c> headers into the structured log scope,
+    /// CorrelationId, opens a structured log scope (allow-listed headers only),
     /// forwards to <see cref="ConsumeAsync"/>, and rethrows any unhandled exception
     /// after structured logging.
     /// Do not override — override <see cref="ConsumeAsync"/> instead.
@@ -71,15 +71,16 @@ public abstract partial class ConsumerBase<TMessage> : IConsumer<TMessage>
     /// after <see cref="ConsumeAsync"/> completes, whether it succeeds or throws.
     /// </para>
     /// <para>
-    /// Any header whose key starts with <c>"x-sk-"</c> (case-insensitive) is added to the
-    /// structured log scope automatically. This enriches downstream log entries with propagated
-    /// cross-cutting headers such as <c>x-sk-tenant-id</c> without manual extraction in each consumer.
-    /// The log scope is additionally enriched with <c>messaging.destination</c> (the consume
-    /// endpoint's queue/topic path, omitted when unavailable) and <c>messaging.message_type</c>.
+    /// The structured log scope carries <c>CorrelationId</c>, <c>MessageType</c>,
+    /// <c>messaging.message_type</c>, <c>messaging.destination</c> (the consume endpoint's
+    /// queue/topic path, omitted when unavailable) and <c>ActorKind</c> (from the
+    /// <c>x-sk-actor-kind</c> header, when present).
     /// </para>
     /// <para>
-    /// Headers whose keys do <em>not</em> start with <c>"x-sk-"</c> are ignored and not added
-    /// to the log scope to avoid leaking unrelated transport metadata.
+    /// Headers reach the scope only through a closed allow-list of values that are safe to log
+    /// (today the actor kind alone). The actor id, the client id, the tenant and the idempotency key
+    /// never enter a scope, and every other header is ignored, so identity does not land on every
+    /// log line of a consume. Tenant and correlation already flow ambiently from the request context.
     /// </para>
     /// <para>
     /// P-348/WO-054: also increments <see cref="MessagingDiagnostics.RetryCounter"/> when
@@ -107,7 +108,7 @@ public abstract partial class ConsumerBase<TMessage> : IConsumer<TMessage>
         if (context.GetRetryAttempt() > 0)
             MessagingDiagnostics.RetryCounter.Add(1, metricTag);
 
-        // HP-05: Build log scope with CorrelationId, MessageType, and any x-sk-* headers.
+        // HP-05: Build log scope with CorrelationId, MessageType and the allow-listed headers.
         // OT-03: additive messaging.destination / messaging.message_type entries.
         var scopeState = MessagingLogScope.Create(context.CorrelationId);
         scopeState["MessageType"] = messageTypeName;
@@ -117,15 +118,9 @@ public abstract partial class ConsumerBase<TMessage> : IConsumer<TMessage>
         if (destination is not null)
             scopeState[MessagingTagKeys.Destination] = destination;
 
-        // Extract headers whose key starts with "x-sk-" (case-insensitive) into the log scope.
-        foreach (var header in context.Headers.GetAll())
-        {
-            if (header.Key.StartsWith("x-sk-", StringComparison.OrdinalIgnoreCase) &&
-                header.Value is not null)
-            {
-                scopeState[header.Key] = header.Value.ToString();
-            }
-        }
+        // Only the closed allow-list of headers safe to log (MessagingLogScope.AllowedHeaders) enters the
+        // scope; actor id, client id, tenant and idempotency key never do.
+        MessagingLogScope.AddAllowedHeaders(scopeState, context.Headers.GetAll());
 
         using var scope = Logger.BeginScope(scopeState);
 

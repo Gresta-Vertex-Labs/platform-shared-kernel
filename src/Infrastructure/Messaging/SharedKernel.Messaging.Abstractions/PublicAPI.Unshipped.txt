@@ -1,7 +1,9 @@
 #nullable enable
+const SharedKernel.Messaging.Abstractions.Errors.MessagingErrorCodes.ConcurrentDelivery = "messaging.concurrent_delivery" -> string!
 const SharedKernel.Messaging.Abstractions.Errors.MessagingErrorCodes.ContractViolation = "messaging.contract_violation" -> string!
 const SharedKernel.Messaging.Abstractions.Errors.MessagingErrorCodes.EndpointNotFound = "messaging.endpoint_not_found" -> string!
 const SharedKernel.Messaging.Abstractions.Errors.MessagingErrorCodes.InvalidMessage = "messaging.invalid_message" -> string!
+const SharedKernel.Messaging.Abstractions.Errors.MessagingErrorCodes.PayloadTransformMismatch = "messaging.payload_transform_mismatch" -> string!
 const SharedKernel.Messaging.Abstractions.Errors.MessagingErrorCodes.PublishRejected = "messaging.publish_rejected" -> string!
 const SharedKernel.Messaging.Abstractions.Errors.MessagingErrorCodes.SerializationFailed = "messaging.serialization_failed" -> string!
 const SharedKernel.Messaging.Abstractions.Errors.MessagingErrorCodes.Unavailable = "messaging.unavailable" -> string!

@@ -162,6 +162,8 @@ the section name `SharedKernel:Messaging:Idempotency`, but the bus sets it throu
 | `messaging.publish_rejected` | Unexpected | The broker refused this message |
 | `messaging.invalid_message` | Validation | The integration event failed envelope validation before dispatch |
 | `messaging.contract_violation` | Validation | The event type has no valid `[IntegrationEvent]` attribute |
+| `messaging.concurrent_delivery` | Conflict (409) | Another delivery of the same message id holds the consumer's idempotency reservation; carried by `ConcurrentMessageDeliveryException` (consume side), the message stays unacknowledged and is redelivered |
+| `messaging.payload_transform_mismatch` | Unexpected (500) | Publisher and consumer disagree on the payload transform; carried by `PayloadTransformMismatchException` (consume side), a deployment defect |
 
 ### Logging
 
@@ -200,7 +202,7 @@ Both fakes run the propagators you pass them, so a propagator can be tested thro
 | Rely on a permission check inside a consume | Authorize before publishing | `PropagatedRequestContext.HasPermissionAsync` always returns `false` — broker headers are unauthenticated |
 | Use `typeof(TEvent).Name` as an event's wire name | `IntegrationEventDescriptor.For<TEvent>().Name` | The attribute name is the contract |
 | `Task.Delay` before sending | `IMessageScheduler.ScheduleAsync` | An in-process delay dies with the process |
-| Cancel a schedule token from another scope or process | Cancel in the scope that scheduled it | The implementation tracks tokens per scope; an unknown token is a silent no-op |
+| Cancel a schedule token from another scope or process | Cancel in the scope that scheduled it | The implementation tracks tokens per scope; an unknown token is a silent no-op, while cancelling the call's own `CancellationToken` throws `OperationCanceledException` and leaves the token cancellable |
 | Do I/O in `IMessageVersionTranslator.Translate` | Keep it a pure projection | It runs synchronously in the consume path |
 
 ## Design decisions

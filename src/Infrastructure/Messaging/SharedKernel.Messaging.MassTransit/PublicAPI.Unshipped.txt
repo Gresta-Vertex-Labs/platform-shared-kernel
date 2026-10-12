@@ -12,9 +12,8 @@ SharedKernel.Messaging.MassTransit.Consumers.BatchConsumerBase<TMessage>.BatchCo
 SharedKernel.Messaging.MassTransit.Consumers.BatchConsumerBase<TMessage>.Consume(MassTransit.ConsumeContext<MassTransit.Batch<TMessage!>!>! context) -> System.Threading.Tasks.Task!
 SharedKernel.Messaging.MassTransit.Consumers.BatchConsumerBase<TMessage>.Logger.get -> Microsoft.Extensions.Logging.ILogger!
 SharedKernel.Messaging.MassTransit.Consumers.ConcurrentMessageDeliveryException
-SharedKernel.Messaging.MassTransit.Consumers.ConcurrentMessageDeliveryException.ConcurrentMessageDeliveryException() -> void
-SharedKernel.Messaging.MassTransit.Consumers.ConcurrentMessageDeliveryException.ConcurrentMessageDeliveryException(string! message) -> void
-SharedKernel.Messaging.MassTransit.Consumers.ConcurrentMessageDeliveryException.ConcurrentMessageDeliveryException(string! message, System.Exception! innerException) -> void
+SharedKernel.Messaging.MassTransit.Consumers.ConcurrentMessageDeliveryException.ConcurrentMessageDeliveryException(SharedKernel.Primitives.Errors.Error! error) -> void
+SharedKernel.Messaging.MassTransit.Consumers.ConcurrentMessageDeliveryException.ConcurrentMessageDeliveryException(SharedKernel.Primitives.Errors.Error! error, System.Exception! innerException) -> void
 SharedKernel.Messaging.MassTransit.Consumers.ConcurrentMessageDeliveryException.ConcurrentMessageDeliveryException(System.Guid messageId, System.Type! messageType) -> void
 SharedKernel.Messaging.MassTransit.Consumers.ConcurrentMessageDeliveryException.MessageId.get -> System.Guid?
 SharedKernel.Messaging.MassTransit.Consumers.ConcurrentMessageDeliveryException.MessageType.get -> System.Type?
@@ -95,7 +94,8 @@ SharedKernel.Messaging.MassTransit.Options.RetryOptions.MaxInterval.get -> Syste
 SharedKernel.Messaging.MassTransit.Options.RetryOptions.MaxInterval.set -> void
 SharedKernel.Messaging.MassTransit.Options.RetryOptions.RetryOptions() -> void
 SharedKernel.Messaging.MassTransit.Serialization.PayloadTransformMismatchException
-SharedKernel.Messaging.MassTransit.Serialization.PayloadTransformMismatchException.PayloadTransformMismatchException(string! message, System.Exception! innerException) -> void
+SharedKernel.Messaging.MassTransit.Serialization.PayloadTransformMismatchException.PayloadTransformMismatchException(SharedKernel.Primitives.Errors.Error! error) -> void
+SharedKernel.Messaging.MassTransit.Serialization.PayloadTransformMismatchException.PayloadTransformMismatchException(SharedKernel.Primitives.Errors.Error! error, System.Exception! innerException) -> void
 static SharedKernel.Messaging.MassTransit.Extensions.ServiceCollectionExtensions.AddSharedKernelMessaging(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfiguration! configuration, System.Action<SharedKernel.Messaging.Abstractions.Options.MessagingOptions!>? configure = null) -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
 static SharedKernel.Messaging.MassTransit.Extensions.ServiceCollectionExtensions.AddSharedKernelMessaging(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<SharedKernel.Messaging.Abstractions.Options.MessagingOptions!>? configure = null) -> SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder!
 virtual SharedKernel.Messaging.MassTransit.Consumers.ConsumerDefinitionBase<TConsumer>.ConcurrentMessageLimit.get -> int?

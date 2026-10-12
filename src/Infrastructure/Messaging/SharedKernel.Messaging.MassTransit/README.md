@@ -50,7 +50,7 @@ version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform
 | --- | --- |
 | Target framework | `net10.0` |
 | Tier | Adapter — reference it from your **Infrastructure** project; application code references only the Abstractions |
-| Depends on | `SharedKernel.Messaging.Abstractions`, `SharedKernel.Idempotency.Abstractions`, `SharedKernel.Contracts`, `SharedKernel.Configuration`, `SharedKernel.Compression`, `SharedKernel.Cryptography`, `MassTransit` 8.5.x |
+| Depends on | `SharedKernel.Messaging.Abstractions`, `SharedKernel.Idempotency.Abstractions`, `SharedKernel.Contracts`, `SharedKernel.Configuration`, `SharedKernel.Compression`, `SharedKernel.Cryptography`, `SharedKernel.Core`, `MassTransit` 8.5.x |
 | Namespaces | `SharedKernel.Messaging.MassTransit.Extensions` (builder; satellites extend it here), `.Consumers`, `.Options`, `.HeaderPropagation`, `.MessageBus`, `.Serialization`, `.Transports` |
 
 ## Quick start
@@ -131,14 +131,19 @@ flowchart LR
   `queue:{service-name}-{kebab-type}`.
 - **Failures.** Timeouts and connection faults → `messaging.unavailable`; broker refusals → `messaging.publish_rejected`;
   serializer failures → `messaging.serialization_failed`; an unknown send endpoint → `messaging.endpoint_not_found`.
-  Anything else is rethrown; only cancellation throws by design.
+  Anything else is rethrown with its original stack trace; only cancellation throws by design.
 - **Consume order.** The inbound request-context filter runs first, then idempotency, then retry and the circuit
   breaker (retry inner, breaker outer), then the consumer. `ConsumerBase` logs (7001) and **rethrows**, which is how
   a consumer asks for a retry.
 - **Idempotency.** Key `{MessageId:D}:{sha256-hex("{receive-endpoint path}|{consumer type}")}`, scoped by the ambient
   tenant. `Completed` acknowledges without consuming; `InProgress` throws `ConcurrentMessageDeliveryException`
   so the message stays unacknowledged (expected, not an alert); an exception releases the reservation and
-  rethrows; no `MessageId` passes through.
+  rethrows; no `MessageId` passes through. `ConcurrentMessageDeliveryException` is deliberately retried by the broker:
+  never list it in `NonRetryableExceptions`.
+- **Log scope.** `ConsumerBase` opens a scope with `CorrelationId`, `MessageType`, `messaging.message_type`,
+  `messaging.destination` (when known) and `ActorKind` (from `x-sk-actor-kind`, when present). Headers reach the scope
+  only through a closed allow-list (today the actor kind alone): the actor id, client id, tenant and idempotency key
+  never enter a scope, and no other header is copied.
 - **Caller.** `WithInboundRequestContext()` writes correlation id, tenant and actor as `WellKnownHeaders` and, on
   consume, opens a `RequestContextScope` with a `PropagatedRequestContext`; outside a consume `IRequestContext`
   still resolves to the host's own. A malformed tenant header yields no tenant; a missing correlation id is replaced.
@@ -220,7 +225,8 @@ builder.Services.AddSharedKernelCryptography(builder.Configuration).AddSynchrono
 Always compress-then-encrypt on publish and decrypt-then-decompress on consume. Encryption needs the **synchronous**
 `ISynchronousSymmetricEncryptionService` (keys in memory) because MassTransit's serializer is synchronous; a
 KMS-only key provider cannot be used. The associated data is the CLR message type name; any mismatch throws
-`PayloadTransformMismatchException`. Every service on the queue must use the same settings.
+`PayloadTransformMismatchException` (code `messaging.payload_transform_mismatch`, `Unexpected`; the original failure is
+its `InnerException`). Every service on the queue must use the same settings.
 
 ### 6. Customise MassTransit beyond the builder
 
@@ -282,6 +288,17 @@ Authoring bases (`SharedKernel.Messaging.MassTransit.Consumers`): `ConsumerBase<
 `messaging.unavailable` (Unavailable, 503), `messaging.endpoint_not_found` (NotFound), `messaging.serialization_failed`
 and `messaging.publish_rejected` (Unexpected), `messaging.invalid_message` and `messaging.contract_violation`
 (Validation) — constants in `MessagingErrorCodes` (Abstractions).
+
+Two exceptions raised on the consume side are sealed `SharedKernelException`s, so any edge that sees one can map
+its `Error`; each keeps the original exception as `InnerException` and its message never embeds inner text:
+
+| Exception | Code | `ErrorType` | Behaviour |
+| --- | --- | --- | --- |
+| `ConcurrentMessageDeliveryException` | `messaging.concurrent_delivery` | `Conflict` | Another delivery of the message id holds the reservation; the message stays unacknowledged and the broker redelivers it |
+| `PayloadTransformMismatchException` | `messaging.payload_transform_mismatch` | `Unexpected` | Publisher and consumer disagree on `PayloadTransformOptions`, or the body cannot be deserialized after reversal |
+
+`IMessageScheduler.CancelAsync` propagates cancellation of its own token (the token stays cancellable); a gone or
+unrecognised schedule token remains a silent no-op.
 
 ### Logging
 

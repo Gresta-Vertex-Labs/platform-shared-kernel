@@ -83,7 +83,12 @@ internal sealed class MassTransitMessageBus : IMessageBus
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            return Classify(ex, messageTypeName, "publish");
+            // A recognised transport fault becomes a failed Result; anything else is a bug and keeps its
+            // original stack trace through a plain rethrow.
+            if (MessagingExceptionClassifier.TryClassify(ex, messageTypeName, "publish") is { } error)
+                return Result.Failure(error);
+
+            throw;
         }
 
         // P-348/WO-054: incremented only after the publish above completes without throwing.
@@ -122,7 +127,10 @@ internal sealed class MassTransitMessageBus : IMessageBus
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            return Classify(ex, messageTypeName, "send");
+            if (MessagingExceptionClassifier.TryClassify(ex, messageTypeName, "send") is { } error)
+                return Result.Failure(error);
+
+            throw;
         }
 
         // P-560: SendAsync previously produced an Activity but no counter, so send traffic was
@@ -132,15 +140,6 @@ internal sealed class MassTransitMessageBus : IMessageBus
 
         return Result.Success();
     }
-
-    /// <summary>
-    /// Maps a transport exception onto the <c>messaging.*</c> failure contract, rethrowing anything
-    /// the classifier does not recognise as an operational fault.
-    /// </summary>
-    private static Result Classify(Exception ex, string messageTypeName, string operation)
-        => MessagingExceptionClassifier.TryClassify(ex, messageTypeName, operation) is { } error
-            ? Result.Failure(error)
-            : throw ex;
 
     /// <summary>
     /// Builds the per-dispatch context: every registered propagator in registration order, then the

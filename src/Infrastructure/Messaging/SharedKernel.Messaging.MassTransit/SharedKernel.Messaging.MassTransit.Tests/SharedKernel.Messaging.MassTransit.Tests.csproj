@@ -10,6 +10,13 @@
     <ProjectReference Include="..\..\..\Idempotency\SharedKernel.Idempotency.Testing\SharedKernel.Idempotency.Testing.csproj" />
     <ProjectReference Include="..\..\..\..\Foundation\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
     <ProjectReference Include="..\..\..\..\..\tools\Governance\SharedKernel.ArchitectureTests\SharedKernel.ArchitectureTests.csproj" />
+    <ProjectReference Include="..\..\..\..\Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
+    <!--
+      SK.07.MessagingErrorSafety T-06, test-only: MessagingMeterExportTests proves the SharedKernel.Messaging meter reaches an
+      exporter in a host built with AddServiceDefaults(). A test project is a consumer and declares no tier; the ServiceDefaults
+      base references only Primitives, so no Caching reference enters this project's closure.
+    -->
+    <ProjectReference Include="..\..\..\..\Hosting\ServiceDefaults\SharedKernel.ServiceDefaults\SharedKernel.ServiceDefaults.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="xunit" />
@@ -26,5 +33,7 @@
     <PackageReference Include="NSubstitute" />
     <!-- MassTransit.TestFramework includes the in-memory TestHarness for integration tests -->
     <PackageReference Include="MassTransit.TestFramework" />
+    <!-- T-06: in-memory metric exporter (version pinned in Directory.Packages.props). -->
+    <PackageReference Include="OpenTelemetry.Exporter.InMemory" />
   </ItemGroup>
 </Project>

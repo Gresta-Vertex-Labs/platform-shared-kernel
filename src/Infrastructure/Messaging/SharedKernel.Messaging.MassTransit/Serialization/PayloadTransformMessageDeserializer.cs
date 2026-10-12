@@ -3,6 +3,7 @@ using System.Text;
 using MassTransit;
 using SharedKernel.Compression;
 using SharedKernel.Cryptography.Symmetric;
+using SharedKernel.Messaging.MassTransit.Internal;
 using SharedKernel.Messaging.MassTransit.Options;
 using SharedKernel.Primitives.Results;
 
@@ -82,11 +83,7 @@ internal sealed class PayloadTransformMessageDeserializer : IMessageDeserializer
         }
         catch (Exception ex) when (ex is not PayloadTransformMismatchException)
         {
-            throw new PayloadTransformMismatchException(
-                "Failed to deserialize an incoming message after reversing its payload transform. " +
-                "This usually indicates a mismatch between the publisher's and this consumer's " +
-                "PayloadTransformOptions (EnableCompression/EnableEncryption values must match).",
-                ex);
+            throw new PayloadTransformMismatchException(MassTransitErrors.PayloadTransformMismatch(), ex);
         }
     }
 
@@ -131,12 +128,7 @@ internal sealed class PayloadTransformMessageDeserializer : IMessageDeserializer
         }
         catch (Exception ex)
         {
-            throw new PayloadTransformMismatchException(
-                "Failed to reverse the payload transform (decrypt/decompress) for an incoming " +
-                "message. This usually indicates a mismatch between the publisher's and this " +
-                "consumer's PayloadTransformOptions (EnableCompression/EnableEncryption values " +
-                "must match).",
-                ex);
+            throw new PayloadTransformMismatchException(MassTransitErrors.PayloadTransformMismatch(), ex);
         }
     }
 }

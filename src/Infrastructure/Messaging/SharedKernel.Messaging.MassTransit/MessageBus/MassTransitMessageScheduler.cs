@@ -27,6 +27,11 @@ namespace SharedKernel.Messaging.MassTransit.MessageBus;
 /// no longer cancel it. Where cancelling matters across a restart, have the consumer check whether
 /// the work is still wanted rather than relying on the token.
 /// </para>
+/// <para>
+/// <strong>Caller cancellation propagates.</strong> <see cref="CancelAsync"/> never reports success to a
+/// caller who cancelled it: an <see cref="OperationCanceledException"/> reaches the caller, and the token
+/// stays registered so the cancel can be retried. Only a gone or unrecognised token is a silent no-op.
+/// </para>
 /// </remarks>
 internal sealed class MassTransitMessageScheduler : IMessageScheduler
 {
@@ -75,6 +80,13 @@ internal sealed class MassTransitMessageScheduler : IMessageScheduler
             await _scheduler
                 .CancelScheduledPublish(messageType, scheduleToken, ct)
                 .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // The caller cancelled the call, so the schedule was not cancelled. Put the entry back so the
+            // same token can still be cancelled with a live token, then let the cancellation propagate.
+            _tokenTypeMap.TryAdd(scheduleToken, messageType);
+            throw;
         }
         catch (Exception)
         {

@@ -18,7 +18,7 @@ namespace SharedKernel.Messaging.MassTransit.Tests.HarnessTests;
 
 /// <summary>
 /// HP-06: Two propagators registered; both headers present; explicit callback overrides propagator key.
-/// HP-07: Consumer log scope contains x-sk-* headers; non-x-sk-* headers are NOT added to scope.
+/// HP-07: Consumer log scope carries the allow-listed actor kind only; no other header is added to scope.
 /// </summary>
 public sealed class HeaderPropagationTests
 {
@@ -83,11 +83,11 @@ public sealed class HeaderPropagationTests
     }
 
     // -------------------------------------------------------------------------
-    // HP-07: Consumer log scope contains x-sk-* headers; non-x-sk-* headers NOT in scope
+    // HP-07: Consumer log scope carries the allow-listed actor kind only
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task Consumer_XSkHeaders_AddedToLogScope_NonXSkHeaders_NotAdded()
+    public async Task Consumer_OnlyAllowListedHeadersReachTheLogScope()
     {
         // Arrange: use a capturing test logger that records BeginScope calls.
         var capturingLogger = new HpCapturingLogger();
@@ -106,23 +106,24 @@ public sealed class HeaderPropagationTests
 
         HpLogScopeCaptureStore.Reset();
 
-        // Act: publish message with an x-sk-* header and a non-x-sk-* header.
+        // Act: publish a message with the allow-listed actor-kind header, another x-sk-* header and a plain one.
         await harness.Bus.Publish(new HpLogScopeTestMessage("log-scope-test"), pipe =>
         {
+            pipe.Headers.Set("x-sk-actor-kind", "User");
             pipe.Headers.Set("x-sk-tenant-id", "tenant-abc");
-            pipe.Headers.Set("custom-header", "should-not-appear"); // non-x-sk-
+            pipe.Headers.Set("custom-header", "should-not-appear");
         });
 
         // Wait for consumer.
         (await harness.Consumed.Any<HpLogScopeTestMessage>()).Should().BeTrue();
 
-        // Assert: x-sk-tenant-id is in the captured scope.
-        HpLogScopeCaptureStore.CapturedXSkKeys.Should().Contain("x-sk-tenant-id",
-            "x-sk-tenant-id header must be added to the structured log scope");
+        // Assert: the allow-listed header reaches the scope under its structured key.
+        HpLogScopeCaptureStore.CapturedXSkKeys.Should().Contain("ActorKind");
 
-        // Assert: custom-header is NOT in the captured scope.
-        HpLogScopeCaptureStore.CapturedXSkKeys.Should().NotContain("custom-header",
-            "headers without x-sk- prefix must NOT be added to the log scope");
+        // Assert: neither an x-sk-* header outside the allow-list nor a plain header does.
+        HpLogScopeCaptureStore.CapturedXSkKeys.Should().NotContain("x-sk-tenant-id");
+        HpLogScopeCaptureStore.CapturedXSkKeys.Should().NotContain("x-sk-actor-kind");
+        HpLogScopeCaptureStore.CapturedXSkKeys.Should().NotContain("custom-header");
 
         await harness.Stop();
     }
