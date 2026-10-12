@@ -31,7 +31,7 @@ None — every phase in this domain is complete.
 
 ## Blocked
 
-- `SK.12.RevocationFailureLogging` T-01 to T-05 and `SK.12.SecurityConformance` T-01, T-02 use the P-581 assertions (`ShouldHaveLoggedWithException`, `ShouldNotLeak`, `ShouldFollowLogConvention`, `ShouldOnlyLogEventIdsInSubBlock`) and `LoggingEventIdRanges.IsInSubBlock` from P-580. A search of `src/` finds none of them on disk (both phases are `○` on their boards). The implementer marks only those tasks `⚑` if the producers are still absent; the code tasks proceed with the existing `InMemoryLogger` assertions.
+None.
 
 ## Cross-Domain Dependencies
 
