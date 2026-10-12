@@ -32,7 +32,7 @@ Phases written by `arch-lead` take the next phase id; a user-directed phase with
 | 10 | [Intelligence](src/Infrastructure/AI/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ○ | Next: `SK.10.IntelligenceObservability` (WO-087) |
 | 11 | [Communication](src/Infrastructure/Communication/state-map.md) | 3 (Adapter) | ○ | Next: `SK.11.CommunicationConformance` (WO-087) |
 | 12 | [Security](src/Hosting/Security/state-map.md) | 5 (1 Abstractions, 4 Host) | ○ | Next: `SK.12.SecurityConformance` (WO-087) |
-| 13 | [ServiceDefaults](src/Hosting/ServiceDefaults/state-map.md) | 7 (Host) | ○ | Next: `SK.13.HostObservabilityFixes` (WO-087) |
+| 13 | [ServiceDefaults](src/Hosting/ServiceDefaults/state-map.md) | 7 (Host) | ○ | Next: `SK.13.ServiceDefaultsConformance` (WO-087) |
 | 14 | [Presentation](src/Hosting/Presentation/state-map.md) | 6 (Host) + WebApi generator (Tooling) | ○ | Next: `SK.14.EdgeErrorContext` (WO-087) |
 | 15 | [Integration](src/Infrastructure/Integration/state-map.md) | 4 (1 Abstractions, 3 Adapter) | ○ | Next: `SK.15.IntegrationConformance` (WO-087) |
 | 16 | [Testing](src/Testing/state-map.md) | 21 (Testing; 20 packable + `Testing.Internal`) | ● | None |
@@ -192,7 +192,7 @@ The token-revocation enforcer logs failures without the exception; pass it. Chec
 - [ ] No subject, client id or claim value is logged in the domain.
 
 #### P-594 — Fix server-span tags, propagation and sensitive logging in ServiceDefaults (Phase 1)
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Domain:** 13.ServiceDefaults
 **Depends on:** P-580, P-582
 **Phase key:** `SK.13.HostObservabilityFixes`
