@@ -11,6 +11,8 @@ SK0039 | Design | Warning | InvalidIntegrationEventAttribute
 SK0040 | Design | Warning | PipelineMarkerResponseShapeMismatch
 SK0041 | Design | Warning | DuplicateCacheableQueryName
 SK0042 | Security | Warning | NonConstantDapperSqlArgument
+SK0043 | Design | Warning | ExceptionExposingErrorMustDeriveSharedKernelException
+SK0044 | Design | Disabled | LoggerMessageEventIdBareLiteral — off by default; the kernel's self-analysis enables it
 
 ### Removed Rules
 

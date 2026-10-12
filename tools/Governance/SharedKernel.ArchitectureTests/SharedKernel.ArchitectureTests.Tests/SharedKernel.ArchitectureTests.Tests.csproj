@@ -232,4 +232,20 @@
     <ProjectReference Include="..\..\..\..\src\Foundation\SharedKernel.Cryptography.Argon2\SharedKernel.Cryptography.Argon2.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\..\..\..\src\Foundation\SharedKernel.Cryptography.KeyVault.Azure\SharedKernel.Cryptography.KeyVault.Azure.csproj" PrivateAssets="all" />
   </ItemGroup>
+  <!-- The observability switch (WO-087): the same SharedKernelObservabilityMode property the kernel self-analysis reads
+       (tools/Governance/SelfAnalysis/ObservabilityMode.props) is stamped into this assembly, and
+       ObservabilityEnforcement.Configured reads it back. One property, one file, two consumers. -->
+  <Import Project="..\..\SelfAnalysis\ObservabilityMode.props" />
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>SharedKernelObservabilityMode</_Parameter1>
+      <_Parameter2>$(SharedKernelObservabilityMode)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+  <ItemGroup>
+    <!-- ObservabilitySwitchTests compares the self-analysis rule list and the two severity files with the descriptors the
+         analyzer assembly really reports, so a new SK id cannot be forgotten. Test-only; Tooling references nothing in the
+         kernel and this is not a kernel reference. -->
+    <ProjectReference Include="..\..\SharedKernel.Analyzers\SharedKernel.Analyzers.csproj" />
+  </ItemGroup>
 </Project>

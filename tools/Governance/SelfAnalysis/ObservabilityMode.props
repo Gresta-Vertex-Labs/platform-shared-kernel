@@ -1,0 +1,27 @@
+<Project>
+
+  <!--
+    THE observability switch: the one place the mode of the kernel's observability rules is decided.
+
+      report   (the committed default)  the rules are reported and counted, and nothing fails: the self-analysis
+                                         runs the SK analyzers and CA2200 at warning (listed in WarningsNotAsErrors),
+                                         and the platform-wide assertions print a per-domain table.
+      enforce                           the same analyzers run at error and the assertions throw one aggregated
+                                         exception.
+
+    Flipping to failing is the single edit of the value below: change report to enforce.
+
+    Two consumers read this property, so they cannot disagree:
+      - SharedKernel.SelfAnalysis.props picks kernel-report.globalconfig or kernel-enforce.globalconfig and the
+        WarningsNotAsErrors list from it, for every kernel project under src/.
+      - SharedKernel.ArchitectureTests.Tests imports this file and stamps the value into its assembly as
+        AssemblyMetadata("SharedKernelObservabilityMode", ...), which ObservabilityEnforcement.Configured reads.
+    A command-line -p:SharedKernelObservabilityMode=... wins over this file for a local experiment (MSBuild global
+    properties outrank file properties); the environment variable SHAREDKERNEL_OBSERVABILITY_MODE does the same for
+    the assertions.
+  -->
+  <PropertyGroup>
+    <SharedKernelObservabilityMode>report</SharedKernelObservabilityMode>
+  </PropertyGroup>
+
+</Project>

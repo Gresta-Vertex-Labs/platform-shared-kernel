@@ -1,0 +1,53 @@
+# Kernel self-analysis severities, enforce mode (see SharedKernel.SelfAnalysis.props).
+# Every SharedKernel.Analyzers id plus CA2200. SK0034 is advisory by decision: suggestion in both modes.
+# SK0044 ships disabled by default; it is enabled here for the kernel only.
+is_global = true
+
+dotnet_diagnostic.SK0001.severity = error
+dotnet_diagnostic.SK0002.severity = error
+dotnet_diagnostic.SK0003.severity = error
+dotnet_diagnostic.SK0004.severity = error
+dotnet_diagnostic.SK0005.severity = error
+dotnet_diagnostic.SK0006.severity = error
+dotnet_diagnostic.SK0007.severity = error
+dotnet_diagnostic.SK0008.severity = error
+dotnet_diagnostic.SK0009.severity = error
+dotnet_diagnostic.SK0010.severity = error
+dotnet_diagnostic.SK0011.severity = error
+dotnet_diagnostic.SK0013.severity = error
+dotnet_diagnostic.SK0014.severity = error
+dotnet_diagnostic.SK0016.severity = error
+dotnet_diagnostic.SK0017.severity = error
+dotnet_diagnostic.SK0018.severity = error
+dotnet_diagnostic.SK0020.severity = error
+dotnet_diagnostic.SK0021.severity = error
+dotnet_diagnostic.SK0022.severity = error
+dotnet_diagnostic.SK0023.severity = error
+dotnet_diagnostic.SK0024.severity = error
+dotnet_diagnostic.SK0025.severity = error
+dotnet_diagnostic.SK0026.severity = error
+dotnet_diagnostic.SK0027.severity = error
+dotnet_diagnostic.SK0028.severity = error
+dotnet_diagnostic.SK0029.severity = error
+dotnet_diagnostic.SK0030.severity = error
+dotnet_diagnostic.SK0031.severity = error
+dotnet_diagnostic.SK0032.severity = error
+dotnet_diagnostic.SK0033.severity = error
+dotnet_diagnostic.SK0034.severity = suggestion
+dotnet_diagnostic.SK0035.severity = error
+dotnet_diagnostic.SK0036.severity = error
+dotnet_diagnostic.SK0037.severity = error
+dotnet_diagnostic.SK0038.severity = error
+dotnet_diagnostic.SK0039.severity = error
+dotnet_diagnostic.SK0040.severity = error
+dotnet_diagnostic.SK0041.severity = error
+dotnet_diagnostic.SK0042.severity = error
+dotnet_diagnostic.SK0043.severity = error
+dotnet_diagnostic.SK0044.severity = error
+dotnet_diagnostic.SK0201.severity = error
+dotnet_diagnostic.SK0202.severity = error
+dotnet_diagnostic.SK0703.severity = error
+dotnet_diagnostic.SK0704.severity = error
+dotnet_diagnostic.SK0705.severity = error
+dotnet_diagnostic.SK0708.severity = error
+dotnet_diagnostic.CA2200.severity = error

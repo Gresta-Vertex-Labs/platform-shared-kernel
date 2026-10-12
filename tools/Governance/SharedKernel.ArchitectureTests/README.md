@@ -16,6 +16,7 @@
 | `ArchitectureRuleBase.AssertRule`/`AssertRules` | A violation fails with every offending type named |
 | Caller-supplied anchor types, validated | Rules work against your own markers and never pass vacuously on a wrong anchor |
 | IL assertion helpers (`SecureDefaultsAssertion`, `PipelineOrderAssertion`, …) | A secure default or a registration order cannot drift silently |
+| Observability assertions that report before they fail (EventId ownership, telemetry names, log templates, error codes) | You adopt a platform-wide standard with a per-domain count first, then switch to enforcing |
 | Public `ICustomRule` predicates | You compose your own rules from the same building blocks |
 | No test runner, no assertion library | Use xUnit, NUnit or MSTest, and any assertion style |
 
@@ -206,6 +207,31 @@ fails with `SKTIER*` on a forbidden edge. The rules below cover only what the ti
 | `SecureDefaultsAssertion.AssertMethodBodyInvokesMethod` | A method really calls the validation or registration it claims to |
 | `SecureDefaultsAssertion.AssertMethodBodyRegistersSingleton` | A registration is actually present |
 | `SecureDefaultsAssertion.AssertMethodBodyThrowsExceptionType` | A guard really throws rather than logging and continuing |
+
+### Observability assertions (report mode)
+
+Four assertions read built assemblies with Mono.Cecil (never loaded, nested types included) and **return findings instead of
+throwing**; `ObservabilityEnforcement.Apply` decides whether a finding fails. Each assertion has `Find(...)` (returns an
+`ObservabilityReport`) and `Assert(..., ObservabilityMode, TextWriter?)` (finds, prints, and throws one aggregated
+`InvalidOperationException` only in `Enforce` mode). Everything an assertion must know comes from the caller: the assemblies
+(`ScanTarget`), the domain registry parsed from your root `CLAUDE.md` domain table (`DomainRegistry.Parse`), and its options.
+
+| Assertion | Rules (finding ids) | Caller supplies |
+| --- | --- | --- |
+| `PackageEventIdBlockAssertion` | `eventid.block-span`, `eventid.shared-block`, `eventid.outside-domain-block`, `eventid.outside-declared-range`, `eventid.declared-overlap`, `eventid.declared-outside-domain`: every assembly's `[LoggerMessage]` ids stay in the sub-block it owns, shared with nobody | `EventIdOwnership` read from the `## Logging` tables of your domain `CLAUDE.md` files |
+| `TelemetryNamingAssertion` | `telemetry.name-not-prefixed`, `telemetry.name-not-constant`, `telemetry.unit-missing`: `ActivitySource`/`Meter` names are public constants matching a pattern; every instrument has a unit. A unit or name loaded from a field or parameter is listed as unverifiable, never a failure | `TelemetryNamingOptions` (the name pattern, exempt names with reasons) |
+| `LogTemplateAssertion` | `template.no-terminal-period`, `template.multiple-sentences`, `template.em-dash`, `template.key-value-parenthetical`, `template.free-text-placeholder` | `LogTemplateOptions` (the free-text placeholder names to forbid) |
+| `ErrorCodeFormatAssertion` | `errorcode.format`: lowercase `{domain}.{snake_reason}` for every `public const` of a `*ErrorCodes` type and every literal code given to `Error` | `ErrorCodeFormatOptions` (protocol-mirror prefixes such as `grpc`/`http`, exempt values with reasons) |
+
+A missing assembly file is an `unscanned` finding, never a silent skip. `ObservabilitySarifReader.Read` adds the analyzer findings of
+per-project SARIF files when you have them.
+
+**Reading the table.** `ObservabilityReport.Render()` prints one row per domain and rule with its count; `RenderSites()` lists every
+site. Run the assertions in `Report` mode first: a conformance phase drives its domain's rows to zero, then you switch to `Enforce`.
+
+**The mode.** `ObservabilityEnforcement.Configured(assembly)` reads `AssemblyMetadata("SharedKernelObservabilityMode", …)` from the
+assembly your build stamps (default `report`); the environment variable `SHAREDKERNEL_OBSERVABILITY_MODE` (`report` or `enforce`)
+overrides it for a local experiment.
 
 ### Base class
 

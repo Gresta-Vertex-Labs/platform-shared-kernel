@@ -3,9 +3,9 @@
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/LICENSE)
 ![Tier: Tooling](https://img.shields.io/badge/tier-Tooling-6a737d)
-![Rules: 45](https://img.shields.io/badge/rules-45-informational)
+![Rules: 47](https://img.shields.io/badge/rules-47-informational)
 
-> **45 Roslyn rules that turn the Platform.SharedKernel conventions into compiler warnings in your own build. Every
+> **47 Roslyn rules that turn the Platform.SharedKernel conventions into compiler warnings in your own build. Every
 > diagnostic names the fix, so a violation explains itself in the IDE instead of waiting for a reviewer to notice.
 > Rules that need a whole assembly live in `SharedKernel.ArchitectureTests`; formatting in `SharedKernel.Linter`.**
 
@@ -92,7 +92,7 @@ dotnet_analyzer_diagnostic.category-Security.severity = error   # SK0032, SK0035
 ```mermaid
 flowchart LR
     code["Your .cs files"] --> roslyn["Roslyn compiler<br/>(IDE + dotnet build)"]
-    roslyn --> an["SharedKernel.Analyzers<br/>45 rules"]
+    roslyn --> an["SharedKernel.Analyzers<br/>47 rules"]
     an -->|Warning by default| out["Build output / IDE squiggle"]
     cfg[".editorconfig severities"] --> out
     out -->|help link| docs["Rule documentation"]
@@ -135,7 +135,7 @@ dotnet_diagnostic.SK0001.severity = none
 
 ### Rule index
 
-45 active rules, each shipped at **Warning**; escalate in `.editorconfig`. Categories: `Usage` (an API used in a way
+47 active rules, each shipped at **Warning** (SK0044 is also off until enabled); escalate in `.editorconfig`. Categories: `Usage` (an API used in a way
 the platform does not support), `Design` (a wrong type, method or registration shape), `Security` (escalate these
 first) and `Advisory` (a heuristic nudge — keep `SK0034` at Warning).
 
@@ -180,6 +180,8 @@ first) and `Advisory` (a heuristic nudge — keep `SK0034` at Warning).
 | [SK0040](#sk0040) | Pipeline marker interface requires a Result-shaped response | Design | Warning | `[RequirePermission]`/`IIdempotentRequest` on a non-`Result` response |
 | [SK0041](#sk0041) | Two cacheable queries share a simple type name | Design | Warning | Cacheable queries whose cache namespaces would collide |
 | [SK0042](#sk0042) | Non-constant SQL argument passed to a Dapper query/command method | Security | Warning | Interpolated or non-constant SQL to `IDbSession`/Dapper |
+| [SK0043](#sk0043) | Exception exposing an Error must derive SharedKernelException | Design | Warning | An exception with an `Error` property or `IHasError` and no `SharedKernelException` base |
+| [SK0044](#sk0044) | [LoggerMessage] EventId is a bare numeric literal | Design | Warning (off by default) | `[LoggerMessage(1234, …)]` → a `{Package}LoggingEventIds` constant |
 | [SK0201](#sk0201) | TenantedDbContext.OnModelCreating override missing base call | Design | Warning | An override that skips `base.OnModelCreating` |
 | [SK0202](#sk0202) | IgnoreQueryFilters() called outside permitted persistence scope | Design | Warning | Parameterless `IgnoreQueryFilters()` in service code |
 | [SK0703](#sk0703) | IMessageBus or IEventPublisher registered as Singleton | Usage | Warning | `AddSingleton<IMessageBus>`/`<IEventPublisher>` → scoped |
@@ -311,7 +313,9 @@ static partial method.
 **Raw string literal at a cross-cutting call site** · Usage. Flags a string literal as: an `IHeaderDictionary`/
 `HttpHeaders` key (indexer, `Add`, `Append`, `TryAddWithoutValidation`); the key of `Activity.SetBaggage`/`SetTag`/
 `AddBaggage`/`AddTag`; `IConfiguration.GetSection`/`GetRequiredSection`; a claim type in `HasClaim`/`FindFirst`/
-`FindAll` or `claim.Type == "…"`. Any non-literal (a constant from any class, `nameof`) passes. **Fix:**
+`FindAll` or `claim.Type == "…"`; a metric or span tag key in `TagList.Add`, `new KeyValuePair<string, object?>("k", …)`,
+a `TagList` initializer, or the tag collection handed straight to `ActivitySource.StartActivity`. Any non-literal (a
+constant from any class, `nameof`) passes. **Fix:**
 `WellKnownHeaders`/`WellKnownBaggageKeys`/`WellKnownTagKeys`, an `ISectionBoundOptions.SectionName`, or a package-local
 constants class.
 
@@ -446,6 +450,23 @@ query could be served the other's value. **Fix:** rename one.
 **Non-constant SQL argument passed to a Dapper query/command method** · Security. Flags an interpolated string or any
 non-constant `sql` argument to an `IDbSession` method or `Dapper.SqlMapper`. Literals, `const` values and
 constant concatenations pass. **Fix:** fixed SQL text; values through the parameters object.
+
+#### SK0043
+
+**Exception exposing an Error must derive SharedKernelException** · Design. Flags a named class deriving
+`System.Exception` that declares or inherits a non-private `SharedKernel.Primitives.Errors.Error` property, or implements
+`IHasError`, without `SharedKernel.Core.Exceptions.SharedKernelException` in its base chain (any accessibility, matched
+by metadata name). The edges classify a failure by the `Error` that base carries; any other exception maps to a 500 and
+its code is lost. Constructor shape is not checked. **Fix:** derive `SharedKernelException` with the constructors
+`(Error)` and `(Error, Exception)`.
+
+#### SK0044
+
+**[LoggerMessage] EventId is a bare numeric literal** · Design. **Off by default** (it encodes the kernel's own
+convention; literal ids are legitimate in a service): enable it with `dotnet_diagnostic.SK0044.severity = warning`. Flags
+a `[LoggerMessage]` whose `EventId` argument, named or positional, is a numeric literal. A constant, a member access or
+arithmetic over constants passes; generated code is skipped. **Fix:** build the id from the package's
+`{Package}LoggingEventIds` constant over `LoggingEventIdRanges`.
 
 #### SK0201
 

@@ -1,5 +1,4 @@
 using System.Text.RegularExpressions;
-using System.Xml.Linq;
 using FluentAssertions;
 using Xunit;
 
@@ -47,7 +46,7 @@ public sealed partial class DependencyGraphRulesTests
     public void EveryDirectReference_RespectsTheTierMatrix()
     {
         var graph = Graph.Value;
-        var violations = graph.Violations().Select(v => v.Description);
+        var violations = Violations(graph).Select(v => v.Description);
 
         violations.Should().BeEmpty("a tier may reference only the tiers listed in eng/SharedKernelTiers.targets");
     }
@@ -164,128 +163,32 @@ public sealed partial class DependencyGraphRulesTests
         state[node.Name] = 2;
     }
 
-    private sealed record ProjectNode(
-        string Name,
-        string RelativePath,
-        string? Tier,
-        bool IsProduction,
-        IReadOnlyList<string> ProjectReferences,
-        IReadOnlyList<string> AllowedAdapters,
-        IReadOnlyList<string> RuntimePackages,
-        IReadOnlyList<string> AspNetCoreReferences,
-        IReadOnlyList<string> AnalyzerOnlyReferences);
-
     private sealed record Violation(string Key, string Description);
 
-    private sealed partial class RepositoryGraph
+    private static IEnumerable<Violation> Violations(RepositoryGraph graph)
     {
-        private readonly Dictionary<string, ProjectNode> _byName;
-
-        private RepositoryGraph(IReadOnlyList<ProjectNode> projects)
+        var allowList = AbstractionsPackageAllowList();
+        foreach (var project in graph.Projects.Where(p => p.Tier is not null && AllowedTiers.ContainsKey(p.Tier)))
         {
-            Projects = projects;
-            _byName = projects.GroupBy(p => p.Name, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
-        }
-
-        public IReadOnlyList<ProjectNode> Projects { get; }
-
-        public ProjectNode? Find(string name) => _byName.GetValueOrDefault(name);
-
-        public IEnumerable<Violation> Violations()
-        {
-            var allowList = AbstractionsPackageAllowList();
-            foreach (var project in Projects.Where(p => p.Tier is not null && AllowedTiers.ContainsKey(p.Tier)))
+            foreach (var reference in project.ProjectReferences.Select(graph.Find).OfType<ProjectNode>())
             {
-                foreach (var reference in project.ProjectReferences.Select(Find).OfType<ProjectNode>())
-                {
-                    if (reference.Tier is null || AllowedTiers[project.Tier!].Contains(reference.Tier)
-                        || project.AllowedAdapters.Contains(reference.Name))
-                        continue;
+                if (reference.Tier is null || AllowedTiers[project.Tier!].Contains(reference.Tier)
+                    || project.AllowedAdapters.Contains(reference.Name))
+                    continue;
 
-                    yield return new Violation(
-                        $"{project.Name}->{reference.Name}",
-                        $"{project.Name} ({project.Tier}) -> {reference.Name} ({reference.Tier})");
-                }
+                yield return new Violation(
+                    $"{project.Name}->{reference.Name}",
+                    $"{project.Name} ({project.Tier}) -> {reference.Name} ({reference.Tier})");
+            }
 
-                if (project.Tier is "Model" or "Abstractions")
-                {
-                    foreach (var package in project.RuntimePackages.Where(p => !allowList.IsMatch(p)))
-                        yield return new Violation($"{project.Name}->package:{package}", $"{project.Name} ({project.Tier}) -> NuGet {package}");
-                }
+            if (project.Tier is "Model" or "Abstractions")
+            {
+                foreach (var package in project.RuntimePackages.Where(p => !allowList.IsMatch(p)))
+                    yield return new Violation($"{project.Name}->package:{package}", $"{project.Name} ({project.Tier}) -> NuGet {package}");
             }
         }
-
-        public static RepositoryGraph Load()
-        {
-            var root = FindRepositoryRoot();
-            var projects = Directory.EnumerateFiles(root.FullName, "*.csproj", SearchOption.AllDirectories)
-                .Where(p => !IgnoredPath().IsMatch(p))
-                .Select(p => Parse(root, p))
-                .ToList();
-
-            return new RepositoryGraph(projects);
-        }
-
-        private static ProjectNode Parse(DirectoryInfo root, string path)
-        {
-            var document = XDocument.Load(path);
-            var name = Path.GetFileNameWithoutExtension(path);
-            string? Property(string property) =>
-                document.Descendants().FirstOrDefault(e => e.Name.LocalName == property)?.Value.Trim() is { Length: > 0 } v ? v : null;
-
-            var isTest = name.EndsWith(".Tests", StringComparison.Ordinal);
-            var isExe = string.Equals(Property("OutputType"), "Exe", StringComparison.OrdinalIgnoreCase);
-            var isProduction = !isTest && !isExe && !string.Equals(Property("IsPackable"), "false", StringComparison.OrdinalIgnoreCase);
-
-            // A ReferenceOutputAssembly="false" edge only orders the build or loads a Roslyn component: it is not a
-            // dependency, so the tier matrix exempts it (eng/SharedKernelTiers.targets, P-579). It is kept apart.
-            static bool IsAnalyzerOnly(XElement e) => string.Equals(
-                e.Attribute("ReferenceOutputAssembly")?.Value
-                    ?? e.Elements().FirstOrDefault(c => c.Name.LocalName == "ReferenceOutputAssembly")?.Value,
-                "false",
-                StringComparison.OrdinalIgnoreCase);
-            static string ReferenceName(XElement e) =>
-                Path.GetFileNameWithoutExtension((e.Attribute("Include")?.Value ?? string.Empty).Replace('\\', '/'));
-
-            var projectReferences = document.Descendants().Where(e => e.Name.LocalName == "ProjectReference").ToList();
-            var references = projectReferences.Where(e => !IsAnalyzerOnly(e))
-                .Select(ReferenceName)
-                .Where(n => n.Length > 0)
-                .ToList();
-            var analyzerOnly = projectReferences.Where(IsAnalyzerOnly)
-                .Select(ReferenceName)
-                .Where(n => n.Length > 0)
-                .ToList();
-            var packages = document.Descendants().Where(e => e.Name.LocalName == "PackageReference")
-                .Where(e => !string.Equals(e.Attribute("PrivateAssets")?.Value ?? e.Elements().FirstOrDefault(c => c.Name.LocalName == "PrivateAssets")?.Value, "all", StringComparison.OrdinalIgnoreCase))
-                .Select(e => e.Attribute("Include")?.Value ?? string.Empty)
-                .Where(n => n.Length > 0)
-                .ToList();
-            var adapters = (Property("SharedKernelAllowedAdapterReferences") ?? string.Empty)
-                .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-            var aspNetCore = document.Descendants()
-                .Where(e => e.Name.LocalName is "FrameworkReference" or "PackageReference")
-                .Select(e => e.Attribute("Include")?.Value ?? string.Empty)
-                .Where(n => n == "Microsoft.AspNetCore.App" || n.StartsWith("Microsoft.AspNetCore.", StringComparison.Ordinal))
-                .ToList();
-
-            return new ProjectNode(name, Path.GetRelativePath(root.FullName, path), Property("SharedKernelTier"), isProduction, references, adapters, packages, aspNetCore, analyzerOnly);
-        }
-
-        private static DirectoryInfo FindRepositoryRoot()
-        {
-            var directory = new DirectoryInfo(AppContext.BaseDirectory);
-            while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Platform.SharedKernel.slnx")))
-                directory = directory.Parent;
-
-            return directory ?? throw new InvalidOperationException("Platform.SharedKernel.slnx not found above the test output directory.");
-        }
-
-        [GeneratedRegex(@"[\\/](bin|obj|nupkgs|samples|_verification|\.git|node_modules)[\\/]", RegexOptions.IgnoreCase)]
-        private static partial Regex IgnoredPath();
-
-        [GeneratedRegex(@"^Microsoft\.Extensions\.[A-Za-z.]*Abstractions$")]
-        private static partial Regex AbstractionsPackageAllowList();
     }
+
+    [GeneratedRegex(@"^Microsoft\.Extensions\.[A-Za-z.]*Abstractions$")]
+    private static partial Regex AbstractionsPackageAllowList();
 }

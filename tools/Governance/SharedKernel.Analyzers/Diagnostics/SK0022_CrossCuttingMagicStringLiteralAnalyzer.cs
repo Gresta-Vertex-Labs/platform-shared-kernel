@@ -7,18 +7,32 @@ using Microsoft.CodeAnalysis.Diagnostics;
 namespace SharedKernel.Analyzers.Diagnostics;
 
 /// <summary>
-/// SK0022 — bans a raw string-literal token at any of four recognized cross-cutting call-site
+/// SK0022 — bans a raw string-literal token at any of five recognized cross-cutting call-site
 /// shapes: an HTTP header indexer/<c>.Add</c>/<c>.Append</c>/<c>.TryAddWithoutValidation</c> call,
 /// <c>Activity.SetBaggage</c>/<c>.SetTag</c>/<c>.AddBaggage</c>/<c>.AddTag</c>,
-/// <c>IConfiguration.GetSection</c>/<c>.GetRequiredSection</c>, and a
-/// <c>ClaimsPrincipal</c>/<c>Claim</c> type comparison.
+/// <c>IConfiguration.GetSection</c>/<c>.GetRequiredSection</c>, a
+/// <c>ClaimsPrincipal</c>/<c>Claim</c> type comparison, and a metric or span tag key
+/// (<c>TagList.Add</c>, <c>new KeyValuePair&lt;string, object?&gt;(key, …)</c>, a <c>TagList</c> collection initializer, and a tag
+/// collection passed to <c>ActivitySource.StartActivity</c>).
 /// </summary>
 /// <remarks>
 /// <para>
-/// <strong>One class, one diagnostic ID, four trigger shapes.</strong> All four shapes encode the
-/// exact same underlying rule — "never a raw literal at a cross-cutting call site" — not four
+/// <strong>One class, one diagnostic ID, five trigger shapes.</strong> All five shapes encode the
+/// exact same underlying rule — "never a raw literal at a cross-cutting call site" — not five
 /// distinct standards, so a single <see cref="DiagnosticDescriptor"/> covers all of them. This is
 /// narrower than SK0020/SK0021's "one class, two IDs" precedent (<see cref="LoggingAuthoringStyleAnalyzer"/>).
+/// </para>
+/// <para>
+/// <strong>Shape 5 — metric and span tag keys.</strong> <c>Activity.SetTag</c>/<c>AddTag</c> is already shape 2; shape 5
+/// covers the instrument and span-creation forms. Every <c>Counter&lt;T&gt;.Add</c> / <c>Histogram&lt;T&gt;.Record</c> overload
+/// takes its tags as <c>KeyValuePair&lt;string, object?&gt;</c> arguments, a <c>ReadOnlySpan</c> of them or a <c>TagList</c>, so the
+/// <c>KeyValuePair</c> construction and the <c>TagList</c> forms below cover them all (checked against the .NET 10 reference
+/// signatures: no overload takes a bare <c>string</c> key). The forms: <c>TagList.Add("k", v)</c>;
+/// <c>new KeyValuePair&lt;string, object?&gt;("k", v)</c> (also target-typed <c>new("k", v)</c>); <c>new TagList { { "k", v } }</c>;
+/// and a collection initializer (<c>{ "k", v }</c> or <c>["k"] = v</c>) on the tag collection passed directly to
+/// <c>ActivitySource.StartActivity</c>/<c>CreateActivity</c>. Receivers are resolved through the semantic model, never by
+/// method name alone, so an unrelated type's <c>Add</c> never matches. Introduced for the observability standard
+/// (WO-087 / P-583).
 /// </para>
 /// <para>
 /// <strong>Syntax-shape discriminator only.</strong> The rule flags the LITERAL SYNTAX SHAPE, never
@@ -73,6 +87,9 @@ public sealed class CrossCuttingMagicStringLiteralAnalyzer : AnalyzerBase
     private const string ClaimsPrincipalTypeName = "System.Security.Claims.ClaimsPrincipal";
     private const string ClaimsIdentityTypeName = "System.Security.Claims.ClaimsIdentity";
     private const string ClaimTypeName = "System.Security.Claims.Claim";
+    private const string TagListTypeName = "System.Diagnostics.TagList";
+    private const string ActivitySourceTypeName = "System.Diagnostics.ActivitySource";
+    private const string KeyValuePairTypeName = "System.Collections.Generic.KeyValuePair";
 
     /// <summary>The diagnostic descriptor for SK0022.</summary>
     public static readonly DiagnosticDescriptor Rule = CreateDescriptor(
@@ -83,7 +100,8 @@ public sealed class CrossCuttingMagicStringLiteralAnalyzer : AnalyzerBase
             + "(01.Core) if this value is a platform-shared correlation/tenant identifier consumed "
             + "across multiple domains, or a domain-local static readonly/const constants class "
             + "(mirroring SecurityClaimTypes, WebhookSignatureHeaders, HubGroupNaming) if it is "
-            + "specific to this package.",
+            + "specific to this package. A span or metric tag key uses SharedKernel.Primitives.Propagation.WellKnownTagKeys "
+            + "when it is shared across packages.",
         category: Usage,
         defaultSeverity: DiagnosticSeverity.Warning,
         readmeAnchor: "sk0022-crosscuttingmagicstringliteral"
@@ -106,6 +124,87 @@ public sealed class CrossCuttingMagicStringLiteralAnalyzer : AnalyzerBase
             SyntaxKind.EqualsExpression,
             SyntaxKind.NotEqualsExpression
         );
+        context.RegisterSyntaxNodeAction(
+            AnalyzeObjectCreation,
+            SyntaxKind.ObjectCreationExpression,
+            SyntaxKind.ImplicitObjectCreationExpression
+        );
+        context.RegisterSyntaxNodeAction(AnalyzeComplexElementInitializer, SyntaxKind.ComplexElementInitializerExpression);
+        context.RegisterSyntaxNodeAction(AnalyzeImplicitElementAccess, SyntaxKind.ImplicitElementAccess);
+    }
+
+    // -------------------------------------------------------------------------------------------
+    // Shape 5: metric / span tag keys
+    // -------------------------------------------------------------------------------------------
+
+    private static void AnalyzeObjectCreation(SyntaxNodeAnalysisContext context)
+    {
+        var creation = (BaseObjectCreationExpressionSyntax)context.Node;
+
+        var arguments = creation.ArgumentList?.Arguments;
+        if (arguments is not { Count: 2 } || !TryGetStringLiteral(arguments.Value[0].Expression, out var literal))
+            return;
+
+        var typeInfo = context.SemanticModel.GetTypeInfo(creation, context.CancellationToken);
+        if ((typeInfo.Type ?? typeInfo.ConvertedType) is INamedTypeSymbol { TypeArguments.Length: 2 } type
+            && GetFullTypeName(type) == KeyValuePairTypeName
+            && type.TypeArguments[0].SpecialType == SpecialType.System_String
+            && type.TypeArguments[1].SpecialType == SpecialType.System_Object)
+        {
+            Report(context, literal);
+        }
+    }
+
+    // new TagList { { "key", value } } and a tag collection handed straight to StartActivity: { "key", value }
+    private static void AnalyzeComplexElementInitializer(SyntaxNodeAnalysisContext context)
+    {
+        var element = (InitializerExpressionSyntax)context.Node;
+
+        if (element.Expressions.Count < 1 || !TryGetStringLiteral(element.Expressions[0], out var literal))
+            return;
+
+        if (element.Parent is InitializerExpressionSyntax { Parent: BaseObjectCreationExpressionSyntax creation }
+            && IsTelemetryTagCollection(context, creation))
+        {
+            Report(context, literal);
+        }
+    }
+
+    // new Dictionary<string, object?> { ["key"] = value } handed straight to StartActivity
+    private static void AnalyzeImplicitElementAccess(SyntaxNodeAnalysisContext context)
+    {
+        var access = (ImplicitElementAccessSyntax)context.Node;
+
+        if (access.ArgumentList.Arguments.Count != 1 || !TryGetStringLiteral(access.ArgumentList.Arguments[0].Expression, out var literal))
+            return;
+
+        if (access.Parent is AssignmentExpressionSyntax { Parent: InitializerExpressionSyntax { Parent: BaseObjectCreationExpressionSyntax creation } }
+            && IsTelemetryTagCollection(context, creation))
+        {
+            Report(context, literal);
+        }
+    }
+
+    /// <summary>
+    /// True for a <c>TagList</c> creation, and for any collection creation passed directly as an argument of
+    /// <c>ActivitySource.StartActivity</c>/<c>CreateActivity</c> (the span-creation tag parameter).
+    /// </summary>
+    private static bool IsTelemetryTagCollection(SyntaxNodeAnalysisContext context, BaseObjectCreationExpressionSyntax creation)
+    {
+        var typeInfo = context.SemanticModel.GetTypeInfo(creation, context.CancellationToken);
+        if ((typeInfo.Type ?? typeInfo.ConvertedType) is { } type && GetFullTypeName(type) == TagListTypeName)
+            return true;
+
+        if (creation.Parent is ArgumentSyntax { Parent: ArgumentListSyntax { Parent: InvocationExpressionSyntax invocation } }
+            && context.SemanticModel.GetSymbolInfo(invocation, context.CancellationToken).Symbol is IMethodSymbol method
+            && method.Name is "StartActivity" or "CreateActivity"
+            && method.ContainingType is { } containingType
+            && GetFullTypeName(containingType) == ActivitySourceTypeName)
+        {
+            return true;
+        }
+
+        return false;
     }
 
     // -------------------------------------------------------------------------------------------
@@ -167,6 +266,13 @@ public sealed class CrossCuttingMagicStringLiteralAnalyzer : AnalyzerBase
             methodName is "SetBaggage" or "SetTag" or "AddBaggage" or "AddTag"
             && containingTypeFullName == ActivityTypeName
         )
+        {
+            ReportIfLiteralArgument(context, invocation, argumentIndex: 0);
+            return;
+        }
+
+        // Shape 5: TagList.Add("key", value)
+        if (methodName == "Add" && containingTypeFullName == TagListTypeName)
         {
             ReportIfLiteralArgument(context, invocation, argumentIndex: 0);
             return;

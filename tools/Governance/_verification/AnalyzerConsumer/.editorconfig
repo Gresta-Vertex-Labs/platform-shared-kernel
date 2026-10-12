@@ -1,0 +1,5 @@
+root = true
+
+[*.cs]
+# SK0044 ships disabled (it encodes the kernel's own convention); a consumer opts in like this.
+dotnet_diagnostic.SK0044.severity = warning
