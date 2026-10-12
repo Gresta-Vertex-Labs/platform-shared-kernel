@@ -101,7 +101,7 @@ public sealed class StockReader(Inventory.InventoryClient client)
   | No `ErrorInfo` | `grpc.{status}` (`grpc.failed_precondition`) with the status's `ErrorType` |
   | Never reached the service (refused, reset, TLS) | `communication.unreachable` |
   | Its deadline passed | `communication.timeout` |
-  | No access token | `communication.access_token_unavailable` |
+  | No access token | `communication.access_token_unavailable` (the channel reports it as `Internal`, so the channel retry policy does not repeat it) |
   | The caller's own cancellation | Thrown (`OperationCanceledException`) |
 
   Status → `ErrorType`: InvalidArgument and OutOfRange → Validation, Unauthenticated → Unauthorized, PermissionDenied

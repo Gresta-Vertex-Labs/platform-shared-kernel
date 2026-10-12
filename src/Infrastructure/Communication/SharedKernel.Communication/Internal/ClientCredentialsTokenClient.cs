@@ -25,14 +25,27 @@ internal sealed class ClientCredentialsTokenClient(
     /// <summary>How long a token without <c>expires_in</c> is reused.</summary>
     private static readonly TimeSpan DefaultLifetime = TimeSpan.FromMinutes(5);
 
+    /// <summary>The <c>error</c> values RFC 6749 §5.2 registers for a token response.</summary>
+    private static readonly HashSet<string> RegisteredOAuthErrors = new(StringComparer.Ordinal)
+    {
+        "invalid_request",
+        "invalid_client",
+        "invalid_grant",
+        "unauthorized_client",
+        "unsupported_grant_type",
+        "invalid_scope",
+    };
+
     private readonly ConcurrentDictionary<string, CachedToken> _tokens = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _gates = new(StringComparer.Ordinal);
 
     /// <summary>Returns a cached token, or fetches one.</summary>
+    /// <param name="clientName">The kernel client name, used to identify the client in logs.</param>
     /// <param name="options">The credential.</param>
     /// <param name="rejectedToken">A token the service just answered 401 to: never returned again.</param>
     /// <param name="cancellationToken">Cancels the wait and the request.</param>
     public async ValueTask<Result<AccessToken>> GetTokenAsync(
+        string clientName,
         ClientCredentialsOptions options,
         string? rejectedToken,
         CancellationToken cancellationToken)
@@ -53,7 +66,7 @@ internal sealed class ClientCredentialsTokenClient(
                 return Result<AccessToken>.Success(cached);
             }
 
-            var (result, lifetime) = await RequestAsync(options, cancellationToken).ConfigureAwait(false);
+            var (result, lifetime) = await RequestAsync(clientName, options, cancellationToken).ConfigureAwait(false);
             if (result.IsSuccess)
             {
                 // Refresh ahead of expiry, but never later than half-way through a short-lived token.
@@ -84,6 +97,7 @@ internal sealed class ClientCredentialsTokenClient(
     }
 
     private async Task<(Result<AccessToken> Result, TimeSpan Lifetime)> RequestAsync(
+        string clientName,
         ClientCredentialsOptions options,
         CancellationToken cancellationToken)
     {
@@ -117,8 +131,9 @@ internal sealed class ClientCredentialsTokenClient(
 
             if (!response.IsSuccessStatusCode || string.IsNullOrWhiteSpace(body?.AccessToken))
             {
-                CommunicationLog.TokenRequestRefused(logger, endpoint, options.ClientId!, (int)response.StatusCode, body?.Error ?? "none");
-                return (Failure($"The token endpoint refused the client credentials (HTTP {(int)response.StatusCode}, error '{body?.Error ?? "none"}')."), TimeSpan.Zero);
+                string oAuthError = BoundedOAuthError(body?.Error);
+                CommunicationLog.TokenRequestRefused(logger, clientName, (int)response.StatusCode, oAuthError);
+                return (Failure($"The token endpoint refused the client credentials (HTTP {(int)response.StatusCode}, error '{oAuthError}')."), TimeSpan.Zero);
             }
 
             TimeSpan lifetime = body.ExpiresIn is > 0 ? TimeSpan.FromSeconds(body.ExpiresIn.Value) : DefaultLifetime;
@@ -126,12 +141,12 @@ internal sealed class ClientCredentialsTokenClient(
                 ? "Bearer"
                 : body.TokenType;
 
-            CommunicationLog.TokenAcquired(logger, endpoint, options.ClientId!, lifetime);
+            CommunicationLog.TokenAcquired(logger, clientName, lifetime);
             return (Result<AccessToken>.Success(new AccessToken(body.AccessToken, clock.UtcNow + lifetime, scheme)), lifetime);
         }
         catch (Exception exception) when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
-            CommunicationLog.TokenEndpointUnreachable(logger, endpoint, options.ClientId!, exception);
+            CommunicationLog.TokenEndpointUnreachable(logger, clientName, exception);
             return (Failure("The token endpoint could not be reached."), TimeSpan.Zero);
         }
     }
@@ -148,6 +163,15 @@ internal sealed class ClientCredentialsTokenClient(
             return null;
         }
     }
+
+    /// <summary>
+    /// The token endpoint's <c>error</c> reduced to the RFC 6749 §5.2 registered values: it is remote text and reaches
+    /// logs and <see cref="Error.Message"/>, so anything else is <c>unrecognized</c> and an absent one is <c>none</c>.
+    /// </summary>
+    private static string BoundedOAuthError(string? error) =>
+        string.IsNullOrEmpty(error)
+            ? "none"
+            : RegisteredOAuthErrors.Contains(error) ? error : "unrecognized";
 
     private static Result<AccessToken> Failure(string message) =>
         Result<AccessToken>.Failure(Error.Unavailable(CommunicationErrorCodes.AccessTokenUnavailable, message));

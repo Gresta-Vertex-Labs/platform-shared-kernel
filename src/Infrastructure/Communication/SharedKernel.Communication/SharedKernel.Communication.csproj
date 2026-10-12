@@ -19,6 +19,8 @@
     <ProjectReference Include="..\..\..\Foundation\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
     <ProjectReference Include="..\..\..\Foundation\SharedKernel.Execution\SharedKernel.Execution.csproj" />
     <ProjectReference Include="..\..\..\Foundation\SharedKernel.Configuration\SharedKernel.Configuration.csproj" />
+    <!-- SharedKernelException: the base of AccessTokenUnavailableException, so every inbound edge maps it. -->
+    <ProjectReference Include="..\..\..\Foundation\SharedKernel.Core\SharedKernel.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>

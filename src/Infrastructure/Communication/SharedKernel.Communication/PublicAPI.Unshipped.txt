@@ -21,8 +21,9 @@ SharedKernel.Communication.AccessTokenContext.ForceRefresh.get -> bool
 SharedKernel.Communication.AccessTokenContext.ForceRefresh.init -> void
 SharedKernel.Communication.AccessTokenUnavailableException
 SharedKernel.Communication.AccessTokenUnavailableException.AccessTokenUnavailableException(string! clientName, SharedKernel.Primitives.Errors.Error! error) -> void
-SharedKernel.Communication.AccessTokenUnavailableException.ClientName.get -> string!
-SharedKernel.Communication.AccessTokenUnavailableException.Error.get -> SharedKernel.Primitives.Errors.Error!
+SharedKernel.Communication.AccessTokenUnavailableException.AccessTokenUnavailableException(SharedKernel.Primitives.Errors.Error! error) -> void
+SharedKernel.Communication.AccessTokenUnavailableException.AccessTokenUnavailableException(SharedKernel.Primitives.Errors.Error! error, System.Exception! innerException) -> void
+SharedKernel.Communication.AccessTokenUnavailableException.ClientName.get -> string?
 SharedKernel.Communication.ClientApiKeyOptions
 SharedKernel.Communication.ClientApiKeyOptions.ClientApiKeyOptions() -> void
 SharedKernel.Communication.ClientApiKeyOptions.HeaderName.get -> string!

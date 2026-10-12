@@ -104,6 +104,8 @@ public static class CommunicationServiceCollectionExtensions
     {
         services
             .AddHttpClient(ClientCredentialsTokenClient.HttpClientName, client => client.Timeout = Timeout.InfiniteTimeSpan)
+            // The factory's own request logging prints the token endpoint URL; the token path logs the client name instead.
+            .RemoveAllLoggers()
             .AddStandardResilienceHandler()
             .Configure(o =>
             {

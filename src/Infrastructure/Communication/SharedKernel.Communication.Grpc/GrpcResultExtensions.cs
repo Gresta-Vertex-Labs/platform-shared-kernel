@@ -23,7 +23,7 @@ namespace SharedKernel.Communication;
 /// <c>grpc.{status}</c>, except that a call that never reached the service is
 /// <see cref="CommunicationErrorCodes.Unreachable"/>, one that ran out of its deadline
 /// <see cref="CommunicationErrorCodes.Timeout"/>, and one whose access token could not be had
-/// <see cref="CommunicationErrorCodes.AccessTokenUnavailable"/>.
+/// <see cref="CommunicationErrorCodes.AccessTokenUnavailable"/> (the channel reports it as <c>Internal</c>, so its retry policy does not repeat it).
 /// </para>
 /// </remarks>
 /// <example>

@@ -250,7 +250,7 @@ which run the stub under a real `AddRestClient` client and read the gRPC fakes b
 `ToResultAsync()`. Pair it with
 [`SharedKernel.Testing`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Testing/SharedKernel.Testing/README.md):
 `TestRequestContext` inside a `RequestContextScope` to assert the tenant and caller headers a client propagates,
-`ActivityRecorder` for client spans, and `FakeHttpMessageHandler`/`HttpClientHandlerTestFactory` to test a single
+`ActivityRecorder` (`SharedKernel.Testing.Telemetry`) for client spans, and `FakeHttpMessageHandler`/`HttpClientHandlerTestFactory` to test a single
 `DelegatingHandler` in isolation.
 
 ## Pitfalls

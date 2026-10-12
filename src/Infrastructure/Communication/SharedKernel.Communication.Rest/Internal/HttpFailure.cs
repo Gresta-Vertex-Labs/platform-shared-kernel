@@ -21,6 +21,7 @@ internal static class HttpFailure
         error = exception switch
         {
             OperationCanceledException when cancellationToken.IsCancellationRequested => null,
+            // Ahead of HttpRequestException by intent: a token failure keeps its own error and code.
             AccessTokenUnavailableException e => e.Error,
             BrokenCircuitException => Error.Unavailable(
                 CommunicationErrorCodes.CircuitOpen,

@@ -8,20 +8,20 @@ internal static partial class CommunicationLog
     [LoggerMessage(
         EventId = 11000,
         Level = LogLevel.Debug,
-        Message = "Acquired an access token from {TokenEndpoint} for client id {ClientId}, valid for {Lifetime}.")]
-    public static partial void TokenAcquired(ILogger logger, Uri tokenEndpoint, string clientId, TimeSpan lifetime);
+        Message = "Acquired an access token for client '{ClientName}', valid for {Lifetime}.")]
+    public static partial void TokenAcquired(ILogger logger, string clientName, TimeSpan lifetime);
 
     [LoggerMessage(
         EventId = 11001,
         Level = LogLevel.Warning,
-        Message = "The token endpoint {TokenEndpoint} refused client id {ClientId}: HTTP {StatusCode}, OAuth error '{OAuthError}'.")]
-    public static partial void TokenRequestRefused(ILogger logger, Uri tokenEndpoint, string clientId, int statusCode, string oAuthError);
+        Message = "The token endpoint refused client '{ClientName}': HTTP {StatusCode}, OAuth error '{OAuthError}'.")]
+    public static partial void TokenRequestRefused(ILogger logger, string clientName, int statusCode, string oAuthError);
 
     [LoggerMessage(
         EventId = 11002,
         Level = LogLevel.Warning,
-        Message = "The token endpoint {TokenEndpoint} could not be reached for client id {ClientId}.")]
-    public static partial void TokenEndpointUnreachable(ILogger logger, Uri tokenEndpoint, string clientId, Exception exception);
+        Message = "The token endpoint could not be reached for client '{ClientName}'.")]
+    public static partial void TokenEndpointUnreachable(ILogger logger, string clientName, Exception exception);
 
     [LoggerMessage(
         EventId = 11003,

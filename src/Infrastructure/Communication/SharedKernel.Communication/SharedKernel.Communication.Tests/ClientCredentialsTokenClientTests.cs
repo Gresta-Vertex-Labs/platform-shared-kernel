@@ -21,7 +21,7 @@ public sealed class ClientCredentialsTokenClientTests
     {
         TokenResponds("t1", expiresIn: 3600);
 
-        Result<AccessToken> token = await Client().GetTokenAsync(Options(scope: "inventory.read"), null, CancellationToken.None);
+        Result<AccessToken> token = await Client().GetTokenAsync("inventory", Options(scope: "inventory.read"), null, CancellationToken.None);
 
         token.Value.Should().Be(new AccessToken("t1", _clock.UtcNow.AddHours(1)));
         RecordedHttpRequest request = _endpoint.Requests.Should().ContainSingle().Subject;
@@ -37,7 +37,7 @@ public sealed class ClientCredentialsTokenClientTests
         options.SecretTransport = ClientSecretTransport.RequestBody;
         options.Audience = "inventory";
 
-        await Client().GetTokenAsync(options, null, CancellationToken.None);
+        await Client().GetTokenAsync("inventory", options, null, CancellationToken.None);
 
         RecordedHttpRequest request = _endpoint.Requests.Single();
         request.Header("Authorization").Should().BeNull();
@@ -50,11 +50,11 @@ public sealed class ClientCredentialsTokenClientTests
         TokenResponds("t1", expiresIn: 600);
         ClientCredentialsTokenClient client = Client();
 
-        await client.GetTokenAsync(Options(), null, CancellationToken.None);
+        await client.GetTokenAsync("inventory", Options(), null, CancellationToken.None);
         _clock.Advance(TimeSpan.FromSeconds(539));
-        Result<AccessToken> reused = await client.GetTokenAsync(Options(), null, CancellationToken.None);
+        Result<AccessToken> reused = await client.GetTokenAsync("inventory", Options(), null, CancellationToken.None);
         _clock.Advance(TimeSpan.FromSeconds(1));
-        await client.GetTokenAsync(Options(), null, CancellationToken.None);
+        await client.GetTokenAsync("inventory", Options(), null, CancellationToken.None);
 
         reused.Value.Value.Should().Be("t1");
         _endpoint.Requests.Should().HaveCount(2, "the refresh margin is 60 s of the 600 s lifetime");
@@ -66,11 +66,11 @@ public sealed class ClientCredentialsTokenClientTests
         TokenResponds("t1", expiresIn: 30);
         ClientCredentialsTokenClient client = Client();
 
-        await client.GetTokenAsync(Options(), null, CancellationToken.None);
+        await client.GetTokenAsync("inventory", Options(), null, CancellationToken.None);
         _clock.Advance(TimeSpan.FromSeconds(14));
-        await client.GetTokenAsync(Options(), null, CancellationToken.None);
+        await client.GetTokenAsync("inventory", Options(), null, CancellationToken.None);
         _clock.Advance(TimeSpan.FromSeconds(1));
-        await client.GetTokenAsync(Options(), null, CancellationToken.None);
+        await client.GetTokenAsync("inventory", Options(), null, CancellationToken.None);
 
         _endpoint.Requests.Should().HaveCount(2);
     }
@@ -81,8 +81,8 @@ public sealed class ClientCredentialsTokenClientTests
         _endpoint.Respond(HttpMethod.Post, TokenEndpoint.AbsolutePath, (_, n) => Token($"t{n + 1}", 3600));
         ClientCredentialsTokenClient client = Client();
 
-        await client.GetTokenAsync(Options(), null, CancellationToken.None);
-        Result<AccessToken> fresh = await client.GetTokenAsync(Options(), "t1", CancellationToken.None);
+        await client.GetTokenAsync("inventory", Options(), null, CancellationToken.None);
+        Result<AccessToken> fresh = await client.GetTokenAsync("inventory", Options(), "t1", CancellationToken.None);
 
         fresh.Value.Value.Should().Be("t2");
     }
@@ -98,7 +98,7 @@ public sealed class ClientCredentialsTokenClientTests
         });
         ClientCredentialsTokenClient client = Client();
 
-        Task<Result<AccessToken>>[] calls = [.. Enumerable.Range(0, 8).Select(_ => client.GetTokenAsync(Options(), null, CancellationToken.None).AsTask())];
+        Task<Result<AccessToken>>[] calls = [.. Enumerable.Range(0, 8).Select(_ => client.GetTokenAsync("inventory", Options(), null, CancellationToken.None).AsTask())];
         release.SetResult();
         Result<AccessToken>[] tokens = await Task.WhenAll(calls);
 
@@ -112,8 +112,8 @@ public sealed class ClientCredentialsTokenClientTests
         _endpoint.RespondJson(HttpMethod.Post, TokenEndpoint.AbsolutePath, new { error = "invalid_client" }, HttpStatusCode.Unauthorized);
         ClientCredentialsTokenClient client = Client();
 
-        Result<AccessToken> first = await client.GetTokenAsync(Options(), null, CancellationToken.None);
-        await client.GetTokenAsync(Options(), null, CancellationToken.None);
+        Result<AccessToken> first = await client.GetTokenAsync("inventory", Options(), null, CancellationToken.None);
+        await client.GetTokenAsync("inventory", Options(), null, CancellationToken.None);
 
         first.Error.Code.Should().Be(CommunicationErrorCodes.AccessTokenUnavailable);
         first.Error.Message.Should().Contain("invalid_client").And.NotContain("s:cret");
@@ -125,7 +125,7 @@ public sealed class ClientCredentialsTokenClientTests
     {
         _endpoint.Throw(HttpMethod.Post, TokenEndpoint.AbsolutePath, new HttpRequestException("refused"));
 
-        Result<AccessToken> token = await Client().GetTokenAsync(Options(), null, CancellationToken.None);
+        Result<AccessToken> token = await Client().GetTokenAsync("inventory", Options(), null, CancellationToken.None);
 
         token.Error.Code.Should().Be(CommunicationErrorCodes.AccessTokenUnavailable);
     }
@@ -138,8 +138,8 @@ public sealed class ClientCredentialsTokenClientTests
         ClientCredentialsOptions rotated = Options();
         rotated.ClientSecret = "new-secret";
 
-        await client.GetTokenAsync(Options(), null, CancellationToken.None);
-        Result<AccessToken> token = await client.GetTokenAsync(rotated, null, CancellationToken.None);
+        await client.GetTokenAsync("inventory", Options(), null, CancellationToken.None);
+        Result<AccessToken> token = await client.GetTokenAsync("inventory", rotated, null, CancellationToken.None);
 
         token.Value.Value.Should().Be("t2");
     }

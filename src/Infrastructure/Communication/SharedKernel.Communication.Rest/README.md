@@ -123,7 +123,7 @@ flowchart LR
   | A platform ProblemDetails | The service's `Error`: `errorCode` → `Code`, `detail` → `Message`, the status → `ErrorType` |
   | 400 or 422 with `errors` | `Error.Validation` of the field errors (the `errorCodes` map gives each its code) |
   | A body without a code (a gateway's HTML 503) | `http.{status}` with the status's `ErrorType` |
-  | No response | `communication.unreachable`, `.timeout`, `.circuit_open`, `.access_token_unavailable` |
+  | No response | `communication.unreachable`, `.timeout`, `.circuit_open`, `.access_token_unavailable` (also thrown as `AccessTokenUnavailableException`, a `SharedKernelException`, by the raw `HttpClient`; retried, counted by the breaker and hedged like an unreachable service) |
   | The caller's own cancellation | Thrown (`OperationCanceledException`) |
 
   Status → `ErrorType` is the reverse of the map `SharedKernel.Presentation.Core` applies on the server: 400 Validation, 401 Unauthorized, 403 Forbidden, 404

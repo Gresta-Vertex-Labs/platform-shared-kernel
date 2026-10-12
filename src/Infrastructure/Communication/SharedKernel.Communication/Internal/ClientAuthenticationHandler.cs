@@ -21,6 +21,8 @@ internal sealed class ClientAuthenticationHandler(
     Func<ClientAuthenticationOptions> options,
     IServiceProvider services) : DelegatingHandler
 {
+    private const string ProviderFailureMessage = "The access token provider could not supply a token.";
+
     private readonly ILogger _logger = services.GetRequiredService<ILoggerFactory>().CreateLogger("SharedKernel.Communication.Authentication");
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -79,7 +81,7 @@ internal sealed class ClientAuthenticationHandler(
         {
             ClientAuthenticationMode.ClientCredentials => services
                 .GetRequiredService<ClientCredentialsTokenClient>()
-                .GetTokenAsync(authentication.ClientCredentials, rejectedToken, cancellationToken),
+                .GetTokenAsync(clientName, authentication.ClientCredentials, rejectedToken, cancellationToken),
             ClientAuthenticationMode.AccessTokenProvider => GetFromProviderAsync(rejectedToken is not null, cancellationToken),
             _ => ValueTask.FromResult(Result<AccessToken>.Failure(Error.Unexpected(
                 CommunicationErrorCodes.AccessTokenUnavailable, $"Authentication mode '{authentication.Mode}' is not supported."))),
@@ -95,10 +97,11 @@ internal sealed class ClientAuthenticationHandler(
             .GetAccessTokenAsync(new AccessTokenContext(clientName, forceRefresh), cancellationToken)
             .ConfigureAwait(false);
 
-        // A provider's own failure keeps its detail, under the code callers branch on.
+        // The Error crosses the trust boundary (callers log it, an edge may print it), so a provider's own detail
+        // (which may name a host) never reaches it; the provider logs its own detail.
         return result.IsSuccess
             ? result
-            : Result<AccessToken>.Failure(Error.Unavailable(CommunicationErrorCodes.AccessTokenUnavailable, result.Error.Message));
+            : Result<AccessToken>.Failure(Error.Unavailable(CommunicationErrorCodes.AccessTokenUnavailable, ProviderFailureMessage));
     }
 
     /// <summary>
