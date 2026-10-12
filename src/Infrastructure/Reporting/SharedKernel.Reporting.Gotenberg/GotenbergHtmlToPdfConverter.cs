@@ -2,10 +2,12 @@ using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Polly.Timeout;
 using SharedKernel.Execution.Context;
 using SharedKernel.Primitives.Results;
+using SharedKernel.Reporting.Gotenberg.Diagnostics;
 
 namespace SharedKernel.Reporting.Gotenberg;
 
@@ -17,6 +19,7 @@ internal sealed class GotenbergHtmlToPdfConverter(
     ReportingDependencies dependencies,
     IHttpClientFactory httpClientFactory,
     IOptions<GotenbergOptions> options,
+    ILogger<GotenbergHtmlToPdfConverter> logger,
     IRequestContextAccessor? requestContext = null)
     : HtmlToPdfConverterBase(dependencies)
 {
@@ -24,8 +27,6 @@ internal sealed class GotenbergHtmlToPdfConverter(
 
     internal const string ConvertPath = "forms/chromium/convert/html";
     internal const string TraceHeader = "Gotenberg-Trace";
-
-    private const int MaxErrorBodyLength = 500;
 
     private readonly GotenbergOptions _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
 
@@ -54,7 +55,8 @@ internal sealed class GotenbergHtmlToPdfConverter(
         }
         catch (HttpRequestException exception)
         {
-            return ReportingErrors.ConverterUnavailable($"Gotenberg at {client.BaseAddress} could not be reached ({exception.HttpRequestError}).");
+            GotenbergLog.Unreachable(logger, exception, exception.HttpRequestError);
+            return ReportingErrors.ConverterUnavailable();
         }
 
         using (response)
@@ -65,18 +67,15 @@ internal sealed class GotenbergHtmlToPdfConverter(
                 return Result.Success();
             }
 
-            string body = await ReadErrorAsync(response, cancellationToken).ConfigureAwait(false);
+            // The status code is the operator's diagnostic; the error body is engine output that may echo the document.
+            GotenbergLog.Rejected(logger, (int)response.StatusCode);
             return response.StatusCode switch
             {
-                HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden =>
-                    ReportingErrors.ConverterUnavailable("Gotenberg refused the credentials; check Username and Password."),
-                HttpStatusCode.NotFound =>
-                    ReportingErrors.ConverterUnavailable($"Gotenberg has no route {ConvertPath}; check BaseUrl ({client.BaseAddress})."),
-                HttpStatusCode.RequestTimeout or HttpStatusCode.GatewayTimeout =>
-                    ReportingErrors.ConversionTimeout(_options.Timeout),
-                HttpStatusCode.TooManyRequests => ReportingErrors.ConverterUnavailable($"Gotenberg is overloaded (429). {body}"),
-                _ when (int)response.StatusCode >= 500 => ReportingErrors.ConverterUnavailable($"Gotenberg failed ({(int)response.StatusCode}). {body}"),
-                _ => ReportingErrors.ConversionFailed($"Gotenberg rejected the document ({(int)response.StatusCode}). {body}"),
+                HttpStatusCode.RequestTimeout or HttpStatusCode.GatewayTimeout => ReportingErrors.ConversionTimeout(_options.Timeout),
+                HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden or HttpStatusCode.NotFound or HttpStatusCode.TooManyRequests =>
+                    ReportingErrors.ConverterUnavailable(),
+                _ when (int)response.StatusCode >= 500 => ReportingErrors.ConverterUnavailable(),
+                _ => ReportingErrors.ConversionFailed(),
             };
         }
     }
@@ -123,11 +122,4 @@ internal sealed class GotenbergHtmlToPdfConverter(
     private static string Millimeters(double value) => value.ToString("0.###", CultureInfo.InvariantCulture) + "mm";
 
     private static string Boolean(bool value) => value ? "true" : "false";
-
-    private static async Task<string> ReadErrorAsync(HttpResponseMessage response, CancellationToken cancellationToken)
-    {
-        string body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        body = body.Trim();
-        return body.Length > MaxErrorBodyLength ? body[..MaxErrorBodyLength] + "…" : body;
-    }
 }

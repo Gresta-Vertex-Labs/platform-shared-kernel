@@ -11,7 +11,7 @@
 
 | Package | Tier | Purpose |
 | --- | --- | --- |
-| `SharedKernel.Reporting.Abstractions` | Abstractions | Contracts, fluent `ReportDefinition`, `ReportExporterBase<T>`/`HtmlToPdfConverterBase`, the storage-delivery pipeline, telemetry, logging, DI. References `SharedKernel.Primitives`, `SharedKernel.Storage.Abstractions` |
+| `SharedKernel.Reporting.Abstractions` | Abstractions | Contracts, fluent `ReportDefinition`, `ReportExporterBase<T>`/`HtmlToPdfConverterBase`, the storage-delivery pipeline, telemetry, logging, DI. References `SharedKernel.Primitives`, `SharedKernel.Core` (`SharedKernelException`), `SharedKernel.Storage.Abstractions` |
 | `SharedKernel.Reporting.Csv` | Adapter | RFC 4180, hand-written, no third-party package, constant memory |
 | `SharedKernel.Reporting.Spreadsheet` | Adapter | `.xlsx` on SpreadCheetah (MIT) — streaming, constant memory, typed cells |
 | `SharedKernel.Reporting.Pdf` | Adapter | Tabular PDF on PDFsharp + PDFsharp-MigraDoc (MIT) — in memory, capped by `MaxRows`; embedded Roboto (Apache-2.0) |
@@ -69,7 +69,7 @@ Key types (members, options and defaults: the `SharedKernel.Reporting.*` READMEs
    numbers never prefixed). Excel writes text as text cells, never formulas. HTML-to-PDF callers HTML-encode user data.
 9. Expected failures are `Result`s (`ReportingErrorCodes`: `invalid_definition`, `invalid_destination`,
    `unsupported_format`, `row_limit_exceeded`, `invalid_request`, `conversion_failed`, `converter_unavailable`,
-   `conversion_timeout`; storage failures keep `storage.*`). Exceptions from the row source, a value function or a
+   `conversion_timeout`; storage failures keep `storage.*`; a converter error is a fixed sentence per code, rule 15). Exceptions from the row source, a value function or a
    formatter propagate. Missing storage registration or an unknown store throws `InvalidOperationException`.
 10. `.Abstractions` never references or exposes a format library (`AbstractionsPurityTests`), and this domain never
     references a persistence package.
@@ -80,8 +80,8 @@ Key types (members, options and defaults: the `SharedKernel.Reporting.*` READMEs
 12. Only `.Gotenberg` registers a readiness probe; exporters are stateless libraries and have none.
 13. Every public member is in `PublicAPI.Shipped/Unshipped.txt` (`RS0016` is an error); implementations stay internal.
 14. Never ship a copyleft or revenue-gated dependency; if no acceptably licensed library serves a format, scope it out.
-15. *(planned, SK.20.ReportingErrorShape)* **No provider detail in an `Error`.** A converter's `Error` is a fixed sentence per code: never the converter's host, route, credential hint, status text or response body (E3, L5, rule 7). The HTTP status code and `HttpRequestError` go to a log record in the `.Gotenberg` sub-block (20400-20401). `ReportingErrors.ConverterUnavailable()`/`ConversionFailed()` take no free-text reason.
-16. *(planned, SK.20.ReportingErrorShape)* An exception that carries an `Error` derives `SharedKernelException` (ctors `(Error)`, `(Error, Exception)`): `ReportAbortedException` (internal) carries the writer's own `Error`, so a span or edge that sees it classifies the real cause.
+15. **No provider detail in an `Error`.** A converter's `Error` is a fixed sentence per code: never the converter's host, route, credential hint, status text or response body (E3, L5, rule 7). The HTTP status code and `HttpRequestError` go to a log record in the `.Gotenberg` sub-block (20400-20401). `ReportingErrors.ConverterUnavailable()`/`ConversionFailed()` take no free-text reason.
+16. An exception that carries an `Error` derives `SharedKernelException` (ctors `(Error)`, `(Error, Exception)`): `ReportAbortedException` (internal) carries the writer's own `Error`, so a span or edge that sees it classifies the real cause.
 17. *(planned, SK.20.ReportingConformance)* **Observability gold standard.** Failures on `reporting export`/`reporting convert` are recorded only by the shared Primitives recorder (`error.type` is an `ErrorType` or exception full name, `error.code` is the code, cancellation is never an error); instruments are `sharedkernel.reporting.*` with units and an `outcome` tag; the `Meter` comes from `IMeterFactory` when registered; logs follow L1-L8 (category `ILogger<ReportingDependencies>`, required logger, sentence templates, per-operation success at Debug).
 18. *(planned, SK.20.ReportingConformance)* `ReportingErrors` members are public only when a sibling assembly (a provider or the `.Testing` double) constructs them; `InvalidDefinition` and `InvalidRequest` are internal. `ReportDefinitionBuilder.Build()` throws `InvalidReportDefinitionException : SharedKernelException` (`reporting.invalid_definition`, `Validation`); the other `InvalidOperationException`s are E2 configuration errors with E3 wording.
 19. *(planned, SK.20.ReportingConformance)* The Gotenberg correlation id is written through `RequestContextPropagation.WriteHeaders` with a null context and an explicit id (mapped to `Gotenberg-Trace`); no tenant, actor or client header is sent to the converter.
@@ -101,7 +101,7 @@ Key types (members, options and defaults: the `SharedKernel.Reporting.*` READMEs
 | No HTML templating (Razor, Scriban) | The converter takes finished HTML; the service renders it |
 | Runtime format choice through `IReportExporterFactory` plus keyed services | A user-chosen `?format=` without a switch statement in every service |
 | `DownloadFileName` becomes an RFC 6266 `Content-Disposition` with UTF-8 `filename*` | Non-ASCII file names survive presigned downloads |
-| *(planned, SK.20.ReportingErrorShape)* Gotenberg errors carry no host, route or body; the status code is logged instead | Engine output may echo document content (personal data) and a base URL is internal topology; an `Error` reaches API clients through ProblemDetails. Rejected: a closed `reason` enum on the factories, a truncated body |
+| Gotenberg errors carry no host, route or body; the status code is logged instead | Engine output may echo document content (personal data) and a base URL is internal topology; an `Error` reaches API clients through ProblemDetails. Rejected: a closed `reason` enum on the factories, a truncated body |
 | *(planned, SK.20.ReportingConformance)* `Meter` from an optional `IMeterFactory`, direct `Meter` as fallback | `AddMetrics()` is in `Microsoft.Extensions.Diagnostics`, not an `.Abstractions` package, so Abstractions tier cannot register it; Host builders already do |
 | *(planned, SK.20.ReportingConformance)* `reporting.unsupported_format` renamed `reporting.format_not_supported` | C3 reason word, same family as `search.not_supported` / `intelligence.not_supported` |
 | *(planned, SK.20.ReportingConformance)* `Build()` failures are a classified `Validation` exception, not `InvalidOperationException` | Column lists are often chosen at runtime and the same condition already returns `reporting.invalid_definition` from `ExportAsync`; a defect-style 500 would hide the code |
@@ -117,7 +117,7 @@ Block **20000–20999** (`LoggingEventIdRanges.Reporting`), category `SharedKern
 | 20100–20199 | `.Csv` | reserved, unused |
 | 20200–20299 | `.Spreadsheet` | reserved, unused |
 | 20300–20399 | `.Pdf` | reserved, unused |
-| 20400–20499 | `.Gotenberg` | reserved, unused *(planned, SK.20.ReportingErrorShape: 20400 rejected with HTTP status code, 20401 unreachable)* |
+| 20400–20499 | `.Gotenberg` | 20400 rejected (Warning, HTTP status code), 20401 unreachable (Warning, `HttpRequestError`, exception attached) via internal `GotenbergLoggingEventIds`/`GotenbergLog` |
 
 *(Planned, SK.20.ReportingConformance)* each package's ids come from an internal `{Package}LoggingEventIds` over `LoggingEventIdRanges` (ids 20000-20006 are not renumbered), templates are one sentence with quoted identifiers, `Completed`/`Converted` move to Debug, the category becomes `ILogger<ReportingDependencies>`, and the instruments are renamed `sharedkernel.reporting.operation.duration` (s), `sharedkernel.reporting.rows` ({row}), `sharedkernel.reporting.bytes` (By) with an `outcome` tag; `WithReportingTelemetry()` is replaced by the `SharedKernel.*` wildcard.
 
@@ -139,10 +139,10 @@ EventIds are written as `LoggingEventIdRanges.Reporting + n`. Telemetry: `Activi
 ## Testing
 
 - **Unit** lane: `.Abstractions.Tests` (pipeline: nothing stored on failure, early upload stop, tenant stores,
-  content disposition, spans, `AbstractionsPurityTests`), `.Csv.Tests`, `.Spreadsheet.Tests` (read back with
+  content disposition, spans, `ReportAbortedException` reaching the store with the writer's `Error`, `AbstractionsPurityTests`), `.Csv.Tests`, `.Spreadsheet.Tests` (read back with
   ClosedXML), `.Pdf.Tests` (layout fits the page, read back with PDFsharp), `consumer-verify`,
   `SharedKernel.Reporting.Testing.Tests`.
-- **Integration** lane: `.Gotenberg.Tests` — stub-handler tests of every form field and error mapping, plus a real
+- **Integration** lane: `.Gotenberg.Tests` — stub-handler tests of every form field and error mapping (a sentinel matrix proves no host, body or reason phrase reaches an `Error` or a log record; log capture through `SharedKernel.Testing`), plus a real
   container through the suite's own `GotenbergFixture` (pinned `gotenberg/gotenberg:8.37.0`, in `GotenbergContainerTests.cs`).
 - Fakes: `SharedKernel.Reporting.Testing` — catalogue in `src/Testing/CLAUDE.md`.
 - End to end: the Shop's Reports (`samples/Shop/Reports`: `POST /reports/sales?format=&store=`, `POST /reports/sales/statement`) against MinIO + Gotenberg (`Shop.E2E` `ReportsFlowTests`).

@@ -256,9 +256,9 @@ static SharedKernel.Reporting.ReportExportOutcome.operator !=(SharedKernel.Repor
 static SharedKernel.Reporting.ReportExportOutcome.operator ==(SharedKernel.Reporting.ReportExportOutcome? left, SharedKernel.Reporting.ReportExportOutcome? right) -> bool
 static SharedKernel.Reporting.ReportFormat.operator !=(SharedKernel.Reporting.ReportFormat? left, SharedKernel.Reporting.ReportFormat? right) -> bool
 static SharedKernel.Reporting.ReportFormat.operator ==(SharedKernel.Reporting.ReportFormat? left, SharedKernel.Reporting.ReportFormat? right) -> bool
-static SharedKernel.Reporting.ReportingErrors.ConversionFailed(string! reason) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Reporting.ReportingErrors.ConversionFailed() -> SharedKernel.Primitives.Errors.Error!
 static SharedKernel.Reporting.ReportingErrors.ConversionTimeout(System.TimeSpan timeout) -> SharedKernel.Primitives.Errors.Error!
-static SharedKernel.Reporting.ReportingErrors.ConverterUnavailable(string! reason) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Reporting.ReportingErrors.ConverterUnavailable() -> SharedKernel.Primitives.Errors.Error!
 static SharedKernel.Reporting.ReportingErrors.InvalidDefinition(string! reason) -> SharedKernel.Primitives.Errors.Error!
 static SharedKernel.Reporting.ReportingErrors.InvalidDestination(string! reason) -> SharedKernel.Primitives.Errors.Error!
 static SharedKernel.Reporting.ReportingErrors.InvalidRequest(string! reason) -> SharedKernel.Primitives.Errors.Error!

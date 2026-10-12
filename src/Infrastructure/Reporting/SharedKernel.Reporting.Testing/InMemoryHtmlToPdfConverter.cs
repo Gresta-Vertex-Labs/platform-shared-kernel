@@ -96,7 +96,7 @@ public sealed class InMemoryHtmlToPdfConverter : IHtmlToPdfConverter
         SimulatedError = null;
     }
 
-    private Error Failure => SimulatedError ?? ReportingErrors.ConverterUnavailable("simulated by InMemoryHtmlToPdfConverter.");
+    private Error Failure => SimulatedError ?? ReportingErrors.ConverterUnavailable();
 
     private void Record(HtmlConversion conversion)
     {

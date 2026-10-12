@@ -34,7 +34,7 @@ public sealed class HtmlConverterBaseTests
     [Fact]
     public async Task ConvertAsync_WhenRenderingFails_StoresNothing()
     {
-        var converter = new FakeConverter(Dependencies()) { Failure = ReportingErrors.ConverterUnavailable("down") };
+        var converter = new FakeConverter(Dependencies()) { Failure = ReportingErrors.ConverterUnavailable() };
 
         Result<PdfDocumentOutcome> result = await converter.ConvertAsync("<p>hi</p>", new ReportDestination { Store = "documents", Key = "a.pdf" });
 

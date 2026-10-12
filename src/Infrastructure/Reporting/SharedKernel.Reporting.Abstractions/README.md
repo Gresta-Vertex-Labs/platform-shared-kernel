@@ -46,7 +46,7 @@ version. See [Using the packages](https://github.com/Gresta-Vertex-Labs/platform
 | --- | --- |
 | Target framework | `net10.0` |
 | Tier | Abstractions — reference it from your **Application** project |
-| Depends on | `SharedKernel.Primitives`, `SharedKernel.Storage.Abstractions` |
+| Depends on | `SharedKernel.Primitives`, `SharedKernel.Core`, `SharedKernel.Storage.Abstractions` |
 | Namespaces | `SharedKernel.Reporting` |
 | Providers | [Csv](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Reporting/SharedKernel.Reporting.Csv/README.md) · [Spreadsheet](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Reporting/SharedKernel.Reporting.Spreadsheet/README.md) · [Pdf](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Reporting/SharedKernel.Reporting.Pdf/README.md) · [Gotenberg](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/src/Infrastructure/Reporting/SharedKernel.Reporting.Gotenberg/README.md) (HTML → PDF) |
 
@@ -255,8 +255,8 @@ builder.Services.AddSharedKernelReporting()
 | `reporting.unsupported_format` | Validation | `ParseFormat` matched no registered format |
 | `reporting.row_limit_exceeded` | Validation | More rows than the format's `MaxRows`; nothing is stored |
 | `reporting.invalid_request` | Validation | Empty HTML or invalid conversion options |
-| `reporting.conversion_failed` | Validation | The converter refused the document |
-| `reporting.converter_unavailable` | Unavailable | The converter could not be reached or failed |
+| `reporting.conversion_failed` | Validation | The converter refused the document ("The document could not be converted.") |
+| `reporting.converter_unavailable` | Unavailable | The converter could not be reached or failed ("The document converter is unavailable.") |
 | `reporting.conversion_timeout` | Timeout | The conversion took too long |
 
 ### Logging

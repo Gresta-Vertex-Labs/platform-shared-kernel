@@ -4,6 +4,8 @@ using System.Runtime.ExceptionServices;
 using System.Text;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using SharedKernel.Core.Exceptions;
+using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Reporting.Internal;
 using SharedKernel.Storage;
@@ -127,7 +129,7 @@ public sealed class ReportingDependencies
             if (written.IsFailure)
             {
                 // Faulting the pipe aborts the upload, so a report that failed half-way is never stored.
-                await writer.CompleteAsync(new ReportAbortedException(written.Error.Code)).ConfigureAwait(false);
+                await writer.CompleteAsync(new ReportAbortedException(written.Error)).ConfigureAwait(false);
                 return written;
             }
 
@@ -282,5 +284,19 @@ internal readonly record struct StoredContent(FileReference StoredFile, Presigne
 internal readonly record struct WrittenContent(long RowCount, long SizeBytes);
 
 /// <summary>Faults the upload pipe when a writer returned a failure, so the partial report is never stored.</summary>
-internal sealed class ReportAbortedException(string errorCode)
-    : Exception($"The report was not completed: {errorCode}.");
+/// <remarks>
+/// Carries the writer's own <see cref="Error"/> unchanged, so a storage span or an edge that sees it classifies the real
+/// cause (for example <c>reporting.row_limit_exceeded</c>, <see cref="ErrorType.Validation"/>) rather than a defect.
+/// </remarks>
+internal sealed class ReportAbortedException : SharedKernelException
+{
+    public ReportAbortedException(Error error)
+        : base(error)
+    {
+    }
+
+    public ReportAbortedException(Error error, Exception innerException)
+        : base(error, innerException)
+    {
+    }
+}

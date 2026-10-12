@@ -82,16 +82,16 @@ public static class ReportingErrors
         Error.Validation(ReportingErrorCodes.InvalidRequest, $"The conversion request is invalid: {reason}");
 
     /// <summary>The converter refused the document.</summary>
-    /// <param name="reason">The converter's explanation.</param>
+    /// <remarks>A fixed sentence: the converter's own explanation may echo document content and is never carried.</remarks>
     /// <returns>A validation error.</returns>
-    public static Error ConversionFailed(string reason) =>
-        Error.Validation(ReportingErrorCodes.ConversionFailed, $"The document could not be converted: {reason}");
+    public static Error ConversionFailed() =>
+        Error.Validation(ReportingErrorCodes.ConversionFailed, "The document could not be converted.");
 
     /// <summary>The converter could not be reached, or failed.</summary>
-    /// <param name="reason">What happened.</param>
+    /// <remarks>A fixed sentence: the converter's host, route and response are never carried.</remarks>
     /// <returns>An unavailable error.</returns>
-    public static Error ConverterUnavailable(string reason) =>
-        Error.Unavailable(ReportingErrorCodes.ConverterUnavailable, $"The document converter is unavailable: {reason}");
+    public static Error ConverterUnavailable() =>
+        Error.Unavailable(ReportingErrorCodes.ConverterUnavailable, "The document converter is unavailable.");
 
     /// <summary>The conversion did not finish in time.</summary>
     /// <param name="timeout">The time allowed.</param>

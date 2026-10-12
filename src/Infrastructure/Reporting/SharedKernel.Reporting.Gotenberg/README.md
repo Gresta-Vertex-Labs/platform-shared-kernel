@@ -174,16 +174,22 @@ Section `SharedKernel:Reporting:Gotenberg`, validated when the host starts.
 | Code | Type | When |
 | --- | --- | --- |
 | `reporting.invalid_request` | Validation | Empty HTML or invalid options |
-| `reporting.conversion_failed` | Validation | Gotenberg rejected the document (other 4xx) |
-| `reporting.converter_unavailable` | Unavailable | Unreachable, 5xx, 429, 401/403 (credentials) or 404 (wrong `BaseUrl`) |
+| `reporting.conversion_failed` | Validation | Gotenberg rejected the document (other 4xx). Message: "The document could not be converted." |
+| `reporting.converter_unavailable` | Unavailable | Unreachable, 5xx, 429, 401/403 (credentials) or 404 (wrong `BaseUrl`). Message: "The document converter is unavailable." |
 | `reporting.conversion_timeout` | Timeout | 408, 504, or the attempt timed out |
 
-Storage failures keep their `storage.*` codes.
+Storage failures keep their `storage.*` codes. An `Error` is always a fixed sentence: it never carries the converter's
+host, route, credential hint, status text or response body (the body is engine output and may echo the document).
 
 ### Logging
 
-No events of its own (EventId block 20400–20499 is reserved); the base class logs the conversion (EventIds 20000–20006,
-including 20006 "PDF conversion completed").
+EventId block 20400–20499. The base class logs the conversion itself (EventIds 20000–20006, including 20006 "PDF
+conversion completed"). The HTTP status code is logged, never the host, route, credentials or body.
+
+| Event id | Level | Template |
+| --- | --- | --- |
+| 20400 | Warning | Gotenberg answered with HTTP status code `{StatusCode}`. |
+| 20401 | Warning | Gotenberg could not be reached: `{HttpRequestError}`. (the exception is attached) |
 
 ### Health
 

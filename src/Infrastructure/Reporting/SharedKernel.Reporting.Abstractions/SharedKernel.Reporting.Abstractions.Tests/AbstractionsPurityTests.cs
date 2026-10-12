@@ -46,11 +46,11 @@ public sealed class AbstractionsPurityTests
             .Where(name => name.StartsWith("SharedKernel.", StringComparison.Ordinal))
             .ToArray();
 
-        // Layering (src/Infrastructure/Reporting/CLAUDE.md): this domain may reference only 01.Core and
+        // Layering (src/Infrastructure/Reporting/CLAUDE.md): this domain may reference only 01.Core (Primitives, Core, Execution) and
         // SharedKernel.Storage.Abstractions.
         sharedKernelReferences.Should().OnlyContain(
-            name => name == "SharedKernel.Primitives" || name == "SharedKernel.Execution" || name == "SharedKernel.Storage.Abstractions",
-            "SharedKernel.Reporting.Abstractions may reference only SharedKernel.Primitives, SharedKernel.Execution and SharedKernel.Storage.Abstractions");
+            name => name == "SharedKernel.Primitives" || name == "SharedKernel.Core" || name == "SharedKernel.Execution" || name == "SharedKernel.Storage.Abstractions",
+            "SharedKernel.Reporting.Abstractions may reference only SharedKernel.Primitives, SharedKernel.Core, SharedKernel.Execution and SharedKernel.Storage.Abstractions");
     }
 
     [Fact]
