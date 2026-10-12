@@ -302,7 +302,7 @@ public sealed class AzureKeyVaultSigningKeyProviderTests
         _vault.AddRsaKey(KeyName);
         var service = new AsymmetricSignatureService(CreateProvider(SignatureAlgorithm.PS256));
 
-        await Assert.ThrowsAsync<KeyNotFoundException>(async () => await service.SignAsync(Data, "unknown"));
+        await Assert.ThrowsAsync<InvalidOperationException>(async () => await service.SignAsync(Data, "unknown"));
         Assert.False(await service.VerifyAsync(Data, new byte[256], "unknown"));
         Assert.Equal(0, _vault.TotalCalls);
     }

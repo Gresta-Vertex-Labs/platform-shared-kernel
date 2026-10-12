@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using SharedKernel.Cryptography.Internal;
 using SharedKernel.Primitives.Results;
 
 namespace SharedKernel.Cryptography.Symmetric;

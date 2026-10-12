@@ -75,11 +75,11 @@ public sealed class RecordingDataSubjectRequestHandlerTests
     {
         var handler = new RecordingDataSubjectRequestHandler();
         handler.SetExportResult("subject-3", SharedKernel.Primitives.Results.Result<DataSubjectExport>.Failure(
-            SharedKernel.Primitives.Errors.Error.Unexpected(DataPrivacyErrorCodes.TemporarilyUnavailable, "A restore is running.")));
+            SharedKernel.Primitives.Errors.Error.Unavailable(DataPrivacyErrorCodes.Unavailable, "A restore is running.")));
 
         var result = await handler.ExportAsync(Request(subjectId: "subject-3"));
 
-        Assert.Equal(DataPrivacyErrorCodes.TemporarilyUnavailable, result.Error.Code);
+        Assert.Equal(DataPrivacyErrorCodes.Unavailable, result.Error.Code);
     }
 
     [Fact]

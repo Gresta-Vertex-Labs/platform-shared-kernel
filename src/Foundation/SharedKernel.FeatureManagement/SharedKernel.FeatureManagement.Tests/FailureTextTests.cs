@@ -8,6 +8,7 @@ using OpenFeature.Constant;
 using OpenFeature.Model;
 using SharedKernel.Core.Exceptions;
 using SharedKernel.Primitives.Errors;
+using SharedKernel.Primitives.Logging;
 using SharedKernel.Testing.Logging;
 using Xunit;
 using ErrorType = OpenFeature.Constant.ErrorType;
@@ -148,6 +149,43 @@ public sealed class FailureTextTests
         Assert.IsType<InvalidOperationException>(record.Exception);
         Assert.DoesNotContain(Sentinel, record.Message, StringComparison.Ordinal);
         Assert.DoesNotContain(Sentinel, record.Template, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TheEvaluationFailureLog_FollowsTheLogConvention()
+    {
+        const string configuration = """
+            { "feature_management": { "feature_flags": [
+              { "id": "Leaky", "enabled": true, "conditions": { "client_filters": [ { "name": "LeakyFilter" } ] } } ] } }
+            """;
+        var logs = new InMemoryLoggerFactory();
+        await using var provider = await FeatureTestHost.StartAsync(
+            FeatureTestHost.Json(configuration),
+            o => o.AddFeatureFilter<LeakyFilter>(),
+            before: s => s.AddSingleton<ILoggerFactory>(logs));
+
+        await provider.NewScopeClient().GetDetailsAsync(FeatureFlag.Boolean("Leaky", true));
+
+        // Category: the provider's ILogger<T> full name (L7); the provider type is internal, so the name is spelled out.
+        // OpenFeature's own logger (a different category) logs through its own templates and is not this package's.
+        const string category = "SharedKernel.FeatureManagement.Internal.MicrosoftFeatureManagementProvider";
+        Assert.Contains(category, logs.Loggers.Keys);
+        IReadOnlyList<LogRecord> records = logs.Loggers[category].Records;
+        records.ShouldFollowLogConvention();
+        records.ShouldOnlyLogEventIdsInSubBlock(LoggingEventIdRanges.Core, 3);
+        LogRecord record = records.ShouldHaveLogged(new EventId(1301), LogLevel.Error);
+        Assert.Equal("Evaluating the feature flag '{FlagKey}' failed, so the caller's default value was used.", record.Template);
+        Assert.True(record.TryGetProperty("FlagKey", out object? flagKey));
+        Assert.Equal("Leaky", flagKey);
+        Assert.IsType<InvalidOperationException>(record.Exception);
+    }
+
+    [Fact]
+    public void FeatureManagementEventIds_ArePinnedLiterally()
+    {
+        Assert.Equal(1000, LoggingEventIdRanges.Core);
+        Assert.Equal(1300, LoggingEventIdRanges.SubBlockStart(LoggingEventIdRanges.Core, 3));
+        Assert.True(LoggingEventIdRanges.IsInSubBlock(1301, LoggingEventIdRanges.Core, 3));
     }
 
     [Fact]

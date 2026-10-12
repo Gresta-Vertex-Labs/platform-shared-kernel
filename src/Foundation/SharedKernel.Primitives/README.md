@@ -334,13 +334,13 @@ informational version with build metadata (`1.4.0+3f2a9c1`), else the assembly v
 | Class | Constants |
 | --- | --- |
 | `Validation` | `Failed` (`validation.failed`), `Required`, `InvalidFormat`, `MaxLength`, `MinLength`, `OutOfRange` |
-| `NotFound` / `Unexpected` | `not_found.default` / `unexpected.exception` |
+| `NotFound` / `Unexpected` | `not_found.default` / `unexpected.default` |
 | `Conflict` | `Default` (`conflict.default`), `Duplicate` (`conflict.duplicate`) |
 | `Unauthorized` | `Default` (`unauthorized.default`), `Expired` (`unauthorized.expired`) |
 | `Forbidden` | `Default` (`forbidden.default`), `InsufficientPermission` (`forbidden.insufficient_permission`) |
 | `Unavailable` / `Timeout` | `unavailable.default` / `timeout.default` |
 | `Idempotency` | `KeyRequired`, `KeyInvalid`, `KeyReused`, `InProgress`, `StoreUnavailable` (`idempotency.*`) |
-| `Domain` | `RuleViolated` (`domain.rule.violated`) |
+| `Domain` | `RuleViolated` (`domain.rule_violated`) |
 
 ### Logging
 

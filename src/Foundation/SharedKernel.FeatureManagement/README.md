@@ -212,7 +212,7 @@ Evaluation never throws. Every problem returns the flag's declared default, and 
 | Flag not in configuration | Default | `FlagNotFound` | `ERROR` |
 | Variant value does not fit a string or number flag | Default | `TypeMismatch` | `ERROR` |
 | Variant object does not fit `T` | Default | `ParseError` | `ERROR` |
-| A filter or the configuration throws | Default | `General` (warning logged, EventId 1301) | `ERROR` |
+| A filter or the configuration throws | Default | `General` (error logged, EventId 1301) | `ERROR` |
 | Provider not initialized yet (no host started) | Default | `ProviderNotReady` | `ERROR` |
 | Flag enabled, no variant allocated | Default | `None` | `DEFAULT` |
 | Flag disabled | `false`, or the `default_when_disabled` variant | `None` | `DISABLED` |
@@ -434,7 +434,7 @@ Behaviour options are set in code on `FeatureFlagOptions` (not bound from config
 
 | Event id | Level | Event |
 | --- | --- | --- |
-| 1301 | Warning | `Feature flag {FlagKey} could not be evaluated; the caller's default value was used` — once per failed evaluation |
+| 1301 | Error | `Evaluating the feature flag '{FlagKey}' failed, so the caller's default value was used.` — once per failed evaluation, with the exception |
 
 ## Testing
 

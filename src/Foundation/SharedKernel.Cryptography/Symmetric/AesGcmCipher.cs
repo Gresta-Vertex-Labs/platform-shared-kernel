@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using SharedKernel.Cryptography.Internal;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 
@@ -50,30 +51,14 @@ internal static class AesGcmCipher
 
     /// <summary>
     /// Rejects key material that is not 32 bytes. <see cref="AesGcm"/> would otherwise accept 16 or 24 bytes and
-    /// silently run AES-128 or AES-192. A wrong length is a provider misconfiguration, so it throws.
+    /// silently run AES-128 or AES-192. A wrong length is a provider misconfiguration, so it throws an InvalidOperationException (never a CryptographicException) without the key id.
     /// </summary>
     private static void EnsureKeySize(CryptographicKey key)
     {
         if (key.Material.Length != KeySize)
         {
-            throw new CryptographicException(
-                $"The key '{key.Id}' is {key.Material.Length} bytes; AES-256-GCM requires {KeySize} bytes.");
+            throw new InvalidOperationException(
+                $"The key provider returned a {key.Material.Length}-byte key. AES-256-GCM requires {KeySize} bytes, so configure a {KeySize}-byte key.");
         }
     }
-}
-
-/// <summary>The failed results this package returns.</summary>
-internal static class CryptographyErrors
-{
-    public static Error DecryptionFailed() => Error.Validation(
-        CryptographyErrorCodes.DecryptionFailed,
-        "The payload could not be decrypted: it was altered, or the associated data or key does not match.");
-
-    public static Error UnknownKeyId() => Error.Unexpected(
-        CryptographyErrorCodes.UnknownKeyId,
-        "The payload was encrypted with a key that is not available.");
-
-    public static Error MalformedPayload() => Error.Validation(
-        CryptographyErrorCodes.MalformedPayload,
-        "The value is not an encrypted payload.");
 }

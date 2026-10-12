@@ -151,7 +151,7 @@ step propagates unchanged — wrap throwing calls in `ResultTry`.
 ### Exception boundaries
 
 Without `onException`, `ResultTry` maps any exception to
-`Error.Unexpected("unexpected.exception", ResultTry.DefaultUnexpectedMessage)` — the exception's type and message are
+`Error.Unexpected("unexpected.default", ResultTry.DefaultUnexpectedMessage)` — the exception's type and message are
 never copied, because driver and SDK messages can contain host names or credentials. The exception is recorded on
 `Activity.Current` instead as an exception event (once per inner exception of an `AggregateException`, through
 `AddExceptionEvents` of `SharedKernel.Primitives.Telemetry`; nothing is recorded when there is no current activity or it is
@@ -301,7 +301,7 @@ Every operation exists for `Result<T>` and `Result` (for `Result` the delegates 
 
 A `null` input to a length, range, format or collection guard is reported as `validation.required`
 (`'{name}' must not be null.`); a blank input to `Email` gets the `NullOrWhiteSpace` message. `ResultTry`'s default
-mapping produces `unexpected.exception`. All codes are `ErrorCodes` constants in `SharedKernel.Primitives`.
+mapping produces `unexpected.default`. All codes are `ErrorCodes` constants in `SharedKernel.Primitives`.
 
 ### Exceptions (`SharedKernel.Core.Exceptions`)
 

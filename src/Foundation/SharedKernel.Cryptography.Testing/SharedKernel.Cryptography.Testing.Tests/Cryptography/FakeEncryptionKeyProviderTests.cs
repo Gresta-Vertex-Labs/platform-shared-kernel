@@ -94,7 +94,7 @@ public sealed class FakeEncryptionKeyProviderTests
 
     [Fact]
     public void SetCurrentKey_UnknownKeyId_Throws() =>
-        Assert.Throws<KeyNotFoundException>(() => new FakeEncryptionKeyProvider().SetCurrentKey("never-added"));
+        Assert.Throws<ArgumentException>(() => new FakeEncryptionKeyProvider().SetCurrentKey("never-added"));
 
     [Fact]
     public async Task RemoveKey_MakesTheKeyUnresolvable()

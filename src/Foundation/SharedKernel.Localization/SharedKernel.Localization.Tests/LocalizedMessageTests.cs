@@ -126,6 +126,18 @@ public sealed class LocalizedMessageTests
             () => LocalizedMessage.Define<decimal>("x", "Total {amount:Q9}", "amount"));
 
         Assert.IsType<FormatException>(ex.InnerException);
+        Assert.DoesNotContain(ex.InnerException!.Message, ex.Message, StringComparison.Ordinal);
+        Assert.Contains("Fix the format specifier.", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Define_InvalidDefaultText_KeepsTheInnerExceptionAndCopiesNoInnerText()
+    {
+        ArgumentException ex = Assert.Throws<ArgumentException>(() => LocalizedMessage.Define("x", "Order {0} failed."));
+
+        FormatException inner = Assert.IsType<FormatException>(ex.InnerException);
+        Assert.DoesNotContain(inner.Message, ex.Message, StringComparison.Ordinal);
+        Assert.Contains("'x'", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]

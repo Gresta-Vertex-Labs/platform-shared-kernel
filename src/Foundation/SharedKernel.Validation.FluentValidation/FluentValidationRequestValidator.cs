@@ -2,6 +2,7 @@ using FluentValidation;
 using FluentValidation.Results;
 using SharedKernel.Application.Validation;
 using SharedKernel.Primitives.Errors;
+using SharedKernel.Validation.FluentValidation.Internal;
 
 namespace SharedKernel.Validation.FluentValidation;
 
@@ -18,9 +19,16 @@ namespace SharedKernel.Validation.FluentValidation;
 /// </para>
 /// <para>
 /// Each failure becomes one validation <see cref="Error"/>: its code is the failure's
-/// <c>ErrorCode</c> (the code set with <c>WithErrorCode(...)</c>, or FluentValidation's default, the
-/// validator name such as <c>NotEmptyValidator</c>; <see cref="ErrorCodes.Validation.Failed"/> when a
-/// hand-built failure has none), its message is the formatted <c>ErrorMessage</c>, and its
+/// <c>ErrorCode</c> when that already follows the kernel format (a code set with
+/// <c>WithErrorCode("order.x")</c>, or an identifier rule's own code). FluentValidation's default
+/// code, the built-in validator name such as <c>NotEmptyValidator</c>, is mapped to an
+/// <see cref="ErrorCodes.Validation"/> constant (<c>NotEmptyValidator</c> to
+/// <see cref="ErrorCodes.Validation.Required"/>, the length and range validators to
+/// <see cref="ErrorCodes.Validation.MaxLength"/>, <see cref="ErrorCodes.Validation.MinLength"/> or
+/// <see cref="ErrorCodes.Validation.OutOfRange"/>, <c>EmailValidator</c>/<c>RegularExpressionValidator</c>/
+/// <c>CreditCardValidator</c> to <see cref="ErrorCodes.Validation.InvalidFormat"/>); any other name, and a
+/// hand-built failure with no code, becomes <see cref="ErrorCodes.Validation.Failed"/>. The validator
+/// name itself is not kept. The message is the formatted <c>ErrorMessage</c>, and its
 /// <see cref="Error.MessageArguments"/> hold the message placeholder values plus
 /// <see cref="ErrorArgumentNames.PropertyPath"/> (the full path, such as <c>Accounts[0].Iban</c>) and
 /// <see cref="ErrorArgumentNames.PropertyName"/>. The attempted value (FluentValidation's
@@ -59,9 +67,7 @@ public sealed class FluentValidationRequestValidator<TRequest>(IEnumerable<IVali
 
     private static Error ToError(ValidationFailure failure)
     {
-        var code = string.IsNullOrWhiteSpace(failure.ErrorCode)
-            ? ErrorCodes.Validation.Failed
-            : failure.ErrorCode;
+        var code = FluentValidationErrorCodeMap.Map(failure.ErrorCode);
 
         var arguments = new Dictionary<string, object?>(StringComparer.Ordinal);
         if (failure.FormattedMessagePlaceholderValues is { } placeholders)

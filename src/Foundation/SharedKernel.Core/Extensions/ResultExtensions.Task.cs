@@ -1087,8 +1087,8 @@ public static partial class ResultExtensions
     }
 
     private static Task Returned(Task? task)
-        => task ?? throw new InvalidOperationException("The delegate returned a null Task.");
+        => task ?? throw new InvalidOperationException("The delegate returned a null Task. Return a Task instead of null.");
 
     private static Task<TResult> Returned<TResult>(Task<TResult>? task)
-        => task ?? throw new InvalidOperationException("The delegate returned a null Task.");
+        => task ?? throw new InvalidOperationException("The delegate returned a null Task. Return a Task instead of null.");
 }

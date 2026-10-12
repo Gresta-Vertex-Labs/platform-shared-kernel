@@ -68,3 +68,7 @@ static SharedKernel.Primitives.Telemetry.ActivityFailureExtensions.RecordResult<
 SharedKernel.Primitives.Telemetry.TelemetryVersion
 const SharedKernel.Primitives.Telemetry.TelemetryVersion.Unknown = "0.0.0" -> string!
 static SharedKernel.Primitives.Telemetry.TelemetryVersion.Of(System.Reflection.Assembly! assembly) -> string!
+*REMOVED*const SharedKernel.Primitives.Errors.ErrorCodes.Domain.RuleViolated = "domain.rule.violated" -> string!
+*REMOVED*const SharedKernel.Primitives.Errors.ErrorCodes.Unexpected.Default = "unexpected.exception" -> string!
+const SharedKernel.Primitives.Errors.ErrorCodes.Domain.RuleViolated = "domain.rule_violated" -> string!
+const SharedKernel.Primitives.Errors.ErrorCodes.Unexpected.Default = "unexpected.default" -> string!

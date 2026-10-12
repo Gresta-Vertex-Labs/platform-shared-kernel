@@ -113,7 +113,7 @@ ToString() = the same bytes as unpadded Base64Url
 - Associated data is authenticated but never stored. Decrypting with different associated data fails exactly like a
   tampered payload.
 - Decryption returns `Result`: malformed or unauthenticated input is `Validation`, an unknown key id `Unexpected`. Key ids
-  are never echoed in messages. A wrong key length or an unreachable key service throws.
+  are never echoed in messages. A wrong key length throws `InvalidOperationException` (a provider misconfiguration, never `CryptographicException`); an unreachable key service throws.
 - `ISymmetricEncryptionService` and `ISynchronousSymmetricEncryptionService` produce identical payloads and read each
   other's. There is no sync-over-async bridge: the synchronous service needs keys already in memory.
 
@@ -412,7 +412,7 @@ nothing that needs a provider you have not registered is added, so container val
 | --- | --- |
 | Symmetric | AES-256-GCM, 96-bit random nonce, 128-bit tag; keys exactly 32 bytes |
 | Envelope | `[0x02][master key id][wrapped key][nonce][tag][ciphertext]`; 32-byte data key per payload, zeroed after use |
-| Signing | `PS256/384/512`, `RS256/384/512` (RSA ≥ 2048), `ES256/384/512` (P-256/384/521, IEEE P1363 or DER); unknown key: `SignAsync` throws `KeyNotFoundException`, `VerifyAsync` returns `false` |
+| Signing | `PS256/384/512`, `RS256/384/512` (RSA ≥ 2048), `ES256/384/512` (P-256/384/521, IEEE P1363 or DER); unknown key: `SignAsync` throws `InvalidOperationException`, `VerifyAsync` returns `false` |
 | HMAC | HMAC-SHA256; keys under 32 bytes throw; `Verify` compares in fixed time |
 | One-way hashing | PBKDF2-HMAC-SHA256, 600,000 iterations, 16-byte salt, 32-byte hash; pepper = HMAC-SHA256 before hashing |
 | Content hashing | SHA-256 over spans or streams; `ComputeHashHex`, `ComputeHashBase64`; never for secrets |

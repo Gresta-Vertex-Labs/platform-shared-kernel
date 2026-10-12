@@ -963,6 +963,27 @@ public sealed class ConsumerDependencyGraphTests
         Assert.Equal(standalone.Error.Code, failure.ErrorCode);
     }
 
+    [Fact]
+    public async Task ValidationFluentValidation_RequestValidator_MapsBuiltInNamesToKernelCodes_ResolvedFromPackage()
+    {
+        var validator = new FluentValidationRequestValidator<ConsumerPaymentCommand>([new ConsumerRequiredIbanValidator()]);
+
+        IReadOnlyList<Error> errors = await validator.ValidateAsync(new ConsumerPaymentCommand(string.Empty, "USD"), CancellationToken.None);
+
+        Error error = Assert.Single(errors);
+        Assert.Equal("validation.required", error.Code);
+        Assert.Equal(ErrorCodes.Validation.Required, error.Code);
+        Assert.Equal(ErrorType.Validation, error.Type);
+    }
+
+    [Fact]
+    public void Primitives_ErrorCodes_RenamedWireValues_ResolvedFromPackage()
+    {
+        Assert.Equal("unexpected.default", ErrorCodes.Unexpected.Default);
+        Assert.Equal("domain.rule_violated", ErrorCodes.Domain.RuleViolated);
+        Assert.Equal("data_privacy.unavailable", DataPrivacyErrorCodes.Unavailable);
+    }
+
     // ──────────────────────────────────────────────────────────────────────────
     // SharedKernel.Cryptography.KeyVault.Azure — verifies the package resolves
     // from the local feed and that its transitive dependency chain (Cryptography
@@ -1483,6 +1504,11 @@ internal sealed class ConsumerPaymentValidator : FluentValidationLib.AbstractVal
         RuleFor(x => x.Iban).MustBeValidIban();
         RuleFor(x => x.CurrencyCode).MustBeValidCurrencyCode();
     }
+}
+
+internal sealed class ConsumerRequiredIbanValidator : FluentValidationLib.AbstractValidator<ConsumerPaymentCommand>
+{
+    public ConsumerRequiredIbanValidator() => FluentValidationLib.DefaultValidatorExtensions.NotEmpty(RuleFor(x => x.Iban));
 }
 
 /// <summary>

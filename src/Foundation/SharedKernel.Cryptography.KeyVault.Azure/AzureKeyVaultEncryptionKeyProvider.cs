@@ -252,6 +252,8 @@ public sealed class AzureKeyVaultEncryptionKeyProvider : IEncryptionKeyProvider,
         {
             return ReadinessReport.Unhealthy($"Azure Key Vault returned status {exception.Status} for the master key.");
         }
+        // Documented E4 catch-all: a readiness probe must report, never throw. Only the exception type name is
+        // reported, and cancellation propagates.
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             return ReadinessReport.Unhealthy($"Azure Key Vault could not be reached ({exception.GetType().Name}).");
@@ -374,8 +376,8 @@ public sealed class AzureKeyVaultEncryptionKeyProvider : IEncryptionKeyProvider,
             ? KeyWrapAlgorithm.RsaOaep256
             : key.KeyType == KeyType.Oct || key.KeyType == KeyType.OctHsm
                 ? KeyWrapAlgorithm.A256KW
-                : throw new NotSupportedException(
-                    $"The Key Vault key '{name}' is of type {key.KeyType}; wrapping requires an RSA or AES (oct) key.");
+                : throw new InvalidOperationException(
+                    $"The Key Vault key '{name}' is of type {key.KeyType}. Wrapping requires an RSA or AES (oct) key, so configure one of those.");
 
         string resolvedVersion = key.Properties.Version;
         return new MasterKey($"{name}/{resolvedVersion}", _keyClient.GetCryptographyClient(name, resolvedVersion), algorithm);

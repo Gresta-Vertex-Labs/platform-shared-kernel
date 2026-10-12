@@ -68,19 +68,19 @@ public sealed class ErrorCodesTests
         Assert.Equal(codes.Length, codes.Distinct().Count());
     }
 
-    // T-21: ErrorCodes.Domain.RuleViolated is non-null, non-empty, and equals "domain.rule.violated"
+    // T-21: ErrorCodes.Domain.RuleViolated is non-null, non-empty, and equals "domain.rule_violated"
     [Fact]
     public void Domain_RuleViolated_IsNotNullOrEmpty()
         => Assert.False(string.IsNullOrWhiteSpace(ErrorCodes.Domain.RuleViolated));
 
     [Fact]
     public void Domain_RuleViolated_HasCorrectValue()
-        => Assert.Equal("domain.rule.violated", ErrorCodes.Domain.RuleViolated);
+        => Assert.Equal("domain.rule_violated", ErrorCodes.Domain.RuleViolated);
 
     // P-292: pins the value ResultTry's default (no-custom-mapper) exception-to-Error mapping relies on.
     [Fact]
     public void Unexpected_Default_HasCorrectValue()
-        => Assert.Equal("unexpected.exception", ErrorCodes.Unexpected.Default);
+        => Assert.Equal("unexpected.default", ErrorCodes.Unexpected.Default);
 
     // ErrorType.Forbidden shipped in WO-059/P-384 with no companion code constants, unlike
     // BusinessRule, which got Domain.RuleViolated. These close that gap.

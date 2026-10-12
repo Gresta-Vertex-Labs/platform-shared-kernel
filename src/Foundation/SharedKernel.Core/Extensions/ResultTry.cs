@@ -43,7 +43,7 @@ namespace SharedKernel.Core.Extensions;
 /// </remarks>
 /// <example>
 /// <code>
-/// // Default mapping: unexpected.exception with a safe message; the exception goes to the trace.
+/// // Default mapping: unexpected.default with a safe message; the exception goes to the trace.
 /// Result&lt;Invoice&gt; invoice = await ResultTry.TryAsync(
 ///     ct =&gt; billingClient.GetInvoiceAsync(invoiceId, ct),
 ///     cancellationToken);

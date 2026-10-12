@@ -190,7 +190,7 @@ app.UseSharedKernelWebApi(pipeline => pipeline.BeforeAuthorization(web => web.Us
 `Accept-Language: tr-TR` resolves to `tr` (`FallBackToParentUICultures` is on by default).
 `SharedKernel.ServiceDefaults.Localization`'s `AddSharedKernelLocalization()` adds user-preference and tenant-default
 strategies in front of the header; its supported cultures are configured the same way. Outside Development, server
-errors (500, 503, 504) show a generic sentence, translatable under `unexpected.exception`, `unavailable.default` and
+errors (500, 503, 504) show a generic sentence, translatable under `unexpected.default`, `unavailable.default` and
 `timeout.default`.
 
 ### 2. Translate outside HTTP: emails, notifications, exports

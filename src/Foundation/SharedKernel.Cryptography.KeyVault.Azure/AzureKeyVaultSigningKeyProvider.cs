@@ -81,7 +81,7 @@ public sealed class AzureKeyVaultSigningKeyProvider : ISigningKeyProvider
             {
                 publicKey.Dispose();
                 throw new InvalidOperationException(
-                    $"The Key Vault key for signing key '{keyId}' is {publicKey.KeySize} bits; at least {SigningKey.MinimumRsaKeySize} are required.");
+                    $"The Key Vault key for signing key '{keyId}' is {publicKey.KeySize} bits. At least {SigningKey.MinimumRsaKeySize} are required, so use a larger key.");
             }
 
             return new AzureKeyVaultSigningKey(keyId, algorithm, client, publicKey, ecdsaPublicKey: null);

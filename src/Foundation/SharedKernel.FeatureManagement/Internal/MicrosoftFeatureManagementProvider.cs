@@ -5,6 +5,7 @@ using Microsoft.FeatureManagement.FeatureFilters;
 using OpenFeature;
 using OpenFeature.Constant;
 using OpenFeature.Model;
+using SharedKernel.FeatureManagement.Diagnostics;
 using MsftFeatureDefinition = Microsoft.FeatureManagement.FeatureDefinition;
 
 namespace SharedKernel.FeatureManagement.Internal;
@@ -14,7 +15,7 @@ namespace SharedKernel.FeatureManagement.Internal;
 /// <see cref="ITargetingContext"/>, so the same targeting drives both the on/off state (the
 /// <c>Microsoft.Targeting</c> filter) and variant allocation.
 /// </summary>
-internal sealed partial class MicrosoftFeatureManagementProvider : FeatureProvider
+internal sealed class MicrosoftFeatureManagementProvider : FeatureProvider
 {
     public const string ProviderName = "Microsoft.FeatureManagement";
 
@@ -145,9 +146,11 @@ internal sealed partial class MicrosoftFeatureManagementProvider : FeatureProvid
         {
             return await resolve().ConfigureAwait(false);
         }
+        // Documented E4 catch-all: an evaluation must not throw for a flag problem (the caller gets its default and
+        // the failure is logged once). Cancellation is the only exception that propagates.
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            LogEvaluationFailed(flagKey, ex);
+            FeatureManagementLog.EvaluationFailed(_logger, flagKey, ex);
             return new ResolutionDetails<T>(
                 flagKey,
                 defaultValue,
@@ -233,10 +236,4 @@ internal sealed partial class MicrosoftFeatureManagementProvider : FeatureProvid
 
         return new ImmutableMetadata(metadata);
     }
-
-    [LoggerMessage(
-        EventId = FeatureManagementEventIds.EvaluationFailed,
-        Level = LogLevel.Warning,
-        Message = "Feature flag {FlagKey} could not be evaluated; the caller's default value was used")]
-    private partial void LogEvaluationFailed(string flagKey, Exception exception);
 }
