@@ -29,7 +29,7 @@ None — every phase in this domain is complete.
 
 ## Blocked
 
-- **`SK.18.IdempotencyConformance` C-01 and every task built on the code** wait on `ErrorCodes.Idempotency.StoreUnavailable` (`idempotency.store_unavailable`) in `SharedKernel.Primitives`. Evidence: the `Idempotency` group in `src/Foundation/SharedKernel.Primitives/Errors/ErrorCodes.cs` holds only `KeyRequired`, `KeyInvalid`, `InProgress` and `KeyReused`, and a search of `src/Foundation` for `store_unavailable` finds nothing; no Foundation board assigns it. Waits on 01.Core (a P-entry for the additive constant). The implementer verifies on disk first and marks only the dependent tasks `⚑` if it is still absent.
+None.
 
 ## Cross-Domain Dependencies
 
