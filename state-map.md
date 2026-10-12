@@ -25,7 +25,7 @@ Phases written by `arch-lead` take the next phase id; a user-directed phase with
 | 03 | [Domain](src/Model/Domain/state-map.md) | 1 (Model) | ○ | Next: `SK.03.DomainErrorCodes` (WO-087) |
 | 04 | [Contracts](src/Model/Contracts/state-map.md) | 1 (Model) | ● | None |
 | 05 | [Application](src/Application/state-map.md) | 4 (1 Abstractions, 3 Host) | ○ | Next: `SK.05.ApplicationConformance` (WO-087) |
-| 06 | [Persistence](src/Infrastructure/Persistence/state-map.md) | 6 (1 Abstractions, 5 Adapter) | ○ | Next: `SK.06.PersistenceErrorSafety` (WO-087); never published; first release is P-577 |
+| 06 | [Persistence](src/Infrastructure/Persistence/state-map.md) | 6 (1 Abstractions, 5 Adapter) | ○ | Next: `SK.06.PersistenceConformance` (WO-087) |
 | 07 | [Messaging](src/Infrastructure/Messaging/state-map.md) | 5 (1 Abstractions, 4 Adapter) | ○ | Next: `SK.07.ObservabilityConformance` (WO-087) |
 | 08 | [Storage](src/Infrastructure/Storage/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ○ | Next: `SK.08.StorageConformance` (WO-087) |
 | 09 | [Search](src/Infrastructure/Search/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ○ | Next: `SK.09.SearchErrorSafety` (WO-087) |
@@ -124,7 +124,7 @@ Stream queries (`IStreamQuery<T>`) get the same observable guarantees as other r
 - [ ] A store outage during idempotency begin returns `Error.Unavailable`, tested against a faulting store double.
 
 #### P-587 — Fix data leaks, error types and swallowed detail in Persistence (Phase 1)
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Domain:** 06.Persistence
 **Depends on:** P-580
 **Phase key:** `SK.06.PersistenceErrorSafety`
