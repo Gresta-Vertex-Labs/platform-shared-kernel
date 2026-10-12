@@ -48,3 +48,35 @@ static SharedKernel.Idempotency.Abstractions.IdempotencyTenantScope.For(SharedKe
 ~override SharedKernel.Idempotency.Abstractions.IdempotencyReservation.Equals(object obj) -> bool
 ~override SharedKernel.Idempotency.Abstractions.IdempotencyReservation.ToString() -> string
 static SharedKernel.Idempotency.Abstractions.IdempotencyServiceCollectionExtensions.AddIdempotencyStore<TStore>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, SharedKernel.Idempotency.Abstractions.IdempotencyPurpose purpose, Microsoft.Extensions.DependencyInjection.ServiceLifetime lifetime = Microsoft.Extensions.DependencyInjection.ServiceLifetime.Scoped) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+SharedKernel.Idempotency.Abstractions.IdempotencyPurposes
+static SharedKernel.Idempotency.Abstractions.IdempotencyPurposes.ThrowIfUndefined(SharedKernel.Idempotency.Abstractions.IdempotencyPurpose purpose, string? paramName = null) -> void
+SharedKernel.Idempotency.Abstractions.IdempotencyStoreUnavailableException
+SharedKernel.Idempotency.Abstractions.IdempotencyStoreUnavailableException.IdempotencyStoreUnavailableException(SharedKernel.Primitives.Errors.Error! error) -> void
+SharedKernel.Idempotency.Abstractions.IdempotencyStoreUnavailableException.IdempotencyStoreUnavailableException(SharedKernel.Primitives.Errors.Error! error, System.Exception! innerException) -> void
+SharedKernel.Idempotency.Abstractions.IdempotencyStoreUnavailableException.IdempotencyStoreUnavailableException(System.Exception! innerException) -> void
+SharedKernel.Idempotency.Abstractions.IdempotencyTagKeys
+const SharedKernel.Idempotency.Abstractions.IdempotencyTagKeys.FailOpen = "idempotency.fail_open" -> string!
+const SharedKernel.Idempotency.Abstractions.IdempotencyTagKeys.Operation = "idempotency.operation" -> string!
+const SharedKernel.Idempotency.Abstractions.IdempotencyTagKeys.Provider = "idempotency.provider" -> string!
+const SharedKernel.Idempotency.Abstractions.IdempotencyTagKeys.Purpose = "idempotency.purpose" -> string!
+const SharedKernel.Idempotency.Abstractions.IdempotencyTagKeys.Result = "idempotency.result" -> string!
+SharedKernel.Idempotency.Abstractions.IdempotencyTelemetry
+const SharedKernel.Idempotency.Abstractions.IdempotencyTelemetry.BeginSpanName = "idempotency begin" -> string!
+const SharedKernel.Idempotency.Abstractions.IdempotencyTelemetry.CompleteSpanName = "idempotency complete" -> string!
+const SharedKernel.Idempotency.Abstractions.IdempotencyTelemetry.ReleaseSpanName = "idempotency release" -> string!
+const SharedKernel.Idempotency.Abstractions.IdempotencyTelemetry.FailOpenInstrument = "sharedkernel.idempotency.fail_open" -> string!
+const SharedKernel.Idempotency.Abstractions.IdempotencyTelemetry.OperationDurationInstrument = "sharedkernel.idempotency.operation.duration" -> string!
+const SharedKernel.Idempotency.Abstractions.IdempotencyTelemetry.MeterName = "SharedKernel.Idempotency" -> string!
+const SharedKernel.Idempotency.Abstractions.IdempotencyTelemetry.SourceName = "SharedKernel.Idempotency" -> string!
+const SharedKernel.Idempotency.Abstractions.IdempotencyTelemetry.OperationBegin = "begin" -> string!
+const SharedKernel.Idempotency.Abstractions.IdempotencyTelemetry.OperationComplete = "complete" -> string!
+const SharedKernel.Idempotency.Abstractions.IdempotencyTelemetry.OperationRelease = "release" -> string!
+const SharedKernel.Idempotency.Abstractions.IdempotencyTelemetry.PurposeMessage = "message" -> string!
+const SharedKernel.Idempotency.Abstractions.IdempotencyTelemetry.PurposeRequest = "request" -> string!
+const SharedKernel.Idempotency.Abstractions.IdempotencyTelemetry.ResultApplied = "applied" -> string!
+const SharedKernel.Idempotency.Abstractions.IdempotencyTelemetry.ResultCompleted = "completed" -> string!
+const SharedKernel.Idempotency.Abstractions.IdempotencyTelemetry.ResultFailOpen = "fail_open" -> string!
+const SharedKernel.Idempotency.Abstractions.IdempotencyTelemetry.ResultFingerprintMismatch = "fingerprint_mismatch" -> string!
+const SharedKernel.Idempotency.Abstractions.IdempotencyTelemetry.ResultInProgress = "in_progress" -> string!
+const SharedKernel.Idempotency.Abstractions.IdempotencyTelemetry.ResultLost = "lost" -> string!
+const SharedKernel.Idempotency.Abstractions.IdempotencyTelemetry.ResultStarted = "started" -> string!

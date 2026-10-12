@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using SharedKernel.Idempotency.Abstractions;
 
 namespace SharedKernel.Idempotency.Redis.Internal;
@@ -7,8 +8,8 @@ namespace SharedKernel.Idempotency.Redis.Internal;
 /// Key shape: <c>sk:idempotency:{tenantScope}:{kind}:{rawKey}</c>. <c>tenantScope</c> is
 /// <see cref="IdempotencyTenantScope"/>'s encoding (a tenant id in "D" form, or <c>no-tenant</c>); <c>kind</c> is
 /// <c>key</c> for <see cref="IdempotencyPurpose.Request"/> and <c>msg</c> for <see cref="IdempotencyPurpose.Message"/>,
-/// so a request key can never collide with a message id inside one keyspace. Request keys are byte-identical to the
-/// keys written before P-568.
+/// so a request key can never collide with a message id inside one keyspace. The store validates the purpose with
+/// <see cref="IdempotencyPurposes.ThrowIfUndefined"/> before building a key, so an undefined value is unreachable here.
 /// </remarks>
 internal static class RedisIdempotencyKeyBuilder
 {
@@ -24,6 +25,6 @@ internal static class RedisIdempotencyKeyBuilder
     {
         IdempotencyPurpose.Request => RequestKind,
         IdempotencyPurpose.Message => MessageKind,
-        _ => throw new ArgumentOutOfRangeException(nameof(purpose), purpose, "Unknown idempotency purpose."),
+        _ => throw new UnreachableException(),
     };
 }

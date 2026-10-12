@@ -25,8 +25,7 @@ public sealed class IdempotencyPurposeSelection
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="purpose"/> is not a defined value.</exception>
     public IdempotencyPurposeSelection For(IdempotencyPurpose purpose)
     {
-        if (!Enum.IsDefined(purpose))
-            throw new ArgumentOutOfRangeException(nameof(purpose), purpose, "Unknown idempotency purpose.");
+        IdempotencyPurposes.ThrowIfUndefined(purpose);
 
         if (!_purposes.Contains(purpose))
             _purposes.Add(purpose);

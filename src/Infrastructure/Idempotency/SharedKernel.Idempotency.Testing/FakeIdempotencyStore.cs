@@ -28,6 +28,18 @@ namespace SharedKernel.Testing.Idempotency;
 /// Time is not simulated: call <see cref="Expire"/> to model a reservation's TTL running out.
 /// </para>
 /// <para>
+/// <b>Arguments</b> are validated as the real stores validate them: an undefined purpose throws
+/// <see cref="ArgumentOutOfRangeException"/> first, a null or blank key, fingerprint or token throws
+/// <see cref="ArgumentException"/>, and a non-positive ttl or retention throws
+/// <see cref="ArgumentOutOfRangeException"/>.
+/// </para>
+/// <para>
+/// <b>Outage.</b> <see cref="SimulateStoreUnavailable"/> makes all three members record the call and throw
+/// <see cref="IdempotencyStoreUnavailableException"/> exactly as a fail-closed provider does, until
+/// <see cref="RestoreStore"/> (or <see cref="Reset"/>) is called. A fail-open provider is not modelled: it returns
+/// <c>Started</c> with an unwritten token, which a test can simply construct.
+/// </para>
+/// <para>
 /// <b>Keys are stored exactly as given; only the tenant scope is added here.</b> Through the pipeline's
 /// <c>IdempotencyBehavior</c> the store receives the command's key already scoped to the tenant and the caller (a
 /// 64-character lowercase hexadecimal digest), the same key the Redis and EF Core stores receive, so a pipeline test
@@ -43,6 +55,7 @@ public sealed class FakeIdempotencyStore : IIdempotencyStore
     private readonly Dictionary<(string Scope, IdempotencyPurpose Purpose, string Key), Entry> _entries = [];
     private readonly ConcurrentQueue<RecordedCall> _calls = new();
     private int _tokenCounter;
+    private volatile bool _storeUnavailable;
 
     private readonly record struct Entry(string Fingerprint, bool Completed, string? StoredResponse, string Token);
 
@@ -69,6 +82,18 @@ public sealed class FakeIdempotencyStore : IIdempotencyStore
     /// <summary>Gets every call made against this store so far, in call order, for test assertions.</summary>
     public IReadOnlyList<RecordedCall> Calls => [.. _calls];
 
+    /// <summary>Gets whether <see cref="SimulateStoreUnavailable"/> is in effect.</summary>
+    public bool StoreUnavailable => _storeUnavailable;
+
+    /// <summary>
+    /// Makes every member record its call and throw <see cref="IdempotencyStoreUnavailableException"/> until
+    /// <see cref="RestoreStore"/> is called, modelling a fail-closed provider whose store is down.
+    /// </summary>
+    public void SimulateStoreUnavailable() => _storeUnavailable = true;
+
+    /// <summary>Ends <see cref="SimulateStoreUnavailable"/>; reservations made before the outage are intact.</summary>
+    public void RestoreStore() => _storeUnavailable = false;
+
     /// <summary>The last in-flight TTL passed to <see cref="TryBeginAsync"/>, or <see langword="null"/>.</summary>
     public TimeSpan? LastTtl { get; private set; }
 
@@ -83,11 +108,13 @@ public sealed class FakeIdempotencyStore : IIdempotencyStore
         TimeSpan ttl,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(key);
-        ArgumentNullException.ThrowIfNull(fingerprint);
+        IdempotencyPurposes.ThrowIfUndefined(purpose);
+        ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        ArgumentException.ThrowIfNullOrWhiteSpace(fingerprint);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(ttl, TimeSpan.Zero);
 
         _calls.Enqueue(new RecordedCall(nameof(TryBeginAsync), purpose, key));
+        ThrowIfStoreUnavailable();
 
         lock (_gate)
         {
@@ -119,11 +146,13 @@ public sealed class FakeIdempotencyStore : IIdempotencyStore
         TimeSpan retention,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(key);
-        ArgumentNullException.ThrowIfNull(token);
+        IdempotencyPurposes.ThrowIfUndefined(purpose);
+        ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        ArgumentException.ThrowIfNullOrWhiteSpace(token);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(retention, TimeSpan.Zero);
 
         _calls.Enqueue(new RecordedCall(nameof(CompleteAsync), purpose, key));
+        ThrowIfStoreUnavailable();
 
         lock (_gate)
         {
@@ -144,10 +173,12 @@ public sealed class FakeIdempotencyStore : IIdempotencyStore
         string token,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(key);
-        ArgumentNullException.ThrowIfNull(token);
+        IdempotencyPurposes.ThrowIfUndefined(purpose);
+        ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        ArgumentException.ThrowIfNullOrWhiteSpace(token);
 
         _calls.Enqueue(new RecordedCall(nameof(ReleaseAsync), purpose, key));
+        ThrowIfStoreUnavailable();
 
         lock (_gate)
         {
@@ -176,9 +207,10 @@ public sealed class FakeIdempotencyStore : IIdempotencyStore
         }
     }
 
-    /// <summary>Clears every reservation and the recorded call list.</summary>
+    /// <summary>Clears every reservation and the recorded call list, and ends any simulated outage.</summary>
     public void Reset()
     {
+        _storeUnavailable = false;
         lock (_gate)
         {
             _entries.Clear();
@@ -187,6 +219,15 @@ public sealed class FakeIdempotencyStore : IIdempotencyStore
         }
 
         _calls.Clear();
+    }
+
+    private void ThrowIfStoreUnavailable()
+    {
+        if (_storeUnavailable)
+        {
+            throw new IdempotencyStoreUnavailableException(
+                new InvalidOperationException("The fake idempotency store was switched off by SimulateStoreUnavailable()."));
+        }
     }
 
     private (string Scope, IdempotencyPurpose Purpose, string Key) Id(IdempotencyPurpose purpose, string key) =>

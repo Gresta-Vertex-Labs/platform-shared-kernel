@@ -19,6 +19,8 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Idempotency.EfCore.csproj" />
+    <!-- The sibling provider, only to prove both register in one host (Request on Redis, Message on EF Core). -->
+    <ProjectReference Include="..\..\SharedKernel.Idempotency.Redis\SharedKernel.Idempotency.Redis.csproj" />
     <!-- The pipeline's IdempotencyBehavior over the real store: caller-scoped keys (P-579). -->
     <ProjectReference Include="..\..\..\..\Application\SharedKernel.Application.Pipeline\SharedKernel.Application.Pipeline.csproj" />
     <!-- SharedKernel.Testing provides PostgreSqlContainerFixture, InMemoryLogger, FakeClock -->

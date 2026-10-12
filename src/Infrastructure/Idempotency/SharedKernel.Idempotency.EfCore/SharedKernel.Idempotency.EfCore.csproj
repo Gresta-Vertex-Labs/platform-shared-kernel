@@ -20,6 +20,8 @@
     <!-- No direct PackageReference to EF Core/Npgsql: both flow transitively via
          SharedKernel.Persistence.EfCore (S-07). -->
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <!-- AddMetrics() and the IMeterFactory implementation behind the SharedKernel.Idempotency meter. -->
+    <PackageReference Include="Microsoft.Extensions.Diagnostics" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Options" />
   </ItemGroup>

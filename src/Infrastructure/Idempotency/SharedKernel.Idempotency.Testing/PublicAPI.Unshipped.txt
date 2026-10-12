@@ -28,3 +28,6 @@ static SharedKernel.Testing.Idempotency.FakeIdempotencyStore.RecordedCall.operat
 static SharedKernel.Testing.Idempotency.FakeIdempotencyStore.RecordedCall.operator ==(SharedKernel.Testing.Idempotency.FakeIdempotencyStore.RecordedCall left, SharedKernel.Testing.Idempotency.FakeIdempotencyStore.RecordedCall right) -> bool
 ~override SharedKernel.Testing.Idempotency.FakeIdempotencyStore.RecordedCall.Equals(object obj) -> bool
 ~override SharedKernel.Testing.Idempotency.FakeIdempotencyStore.RecordedCall.ToString() -> string
+SharedKernel.Testing.Idempotency.FakeIdempotencyStore.RestoreStore() -> void
+SharedKernel.Testing.Idempotency.FakeIdempotencyStore.SimulateStoreUnavailable() -> void
+SharedKernel.Testing.Idempotency.FakeIdempotencyStore.StoreUnavailable.get -> bool

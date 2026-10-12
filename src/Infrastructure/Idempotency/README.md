@@ -33,7 +33,11 @@ backed by Redis or PostgreSQL.**
   (`IdempotencyTenantScope`); a key never collides across tenants.
 - **Safe under failure.** A reservation token guards completion, so a caller whose lease expired cannot overwrite the
   new owner; a lease that is never completed simply expires.
-- **Fail closed.** An unreachable store throws unless you explicitly set `AllowExecutionOnStoreUnavailable`.
+- **Fail closed.** An unreachable store throws `IdempotencyStoreUnavailableException` (`Error.Unavailable`,
+  `idempotency.store_unavailable`) unless you explicitly set `AllowExecutionOnStoreUnavailable`.
+- **Observable.** Every provider emits `idempotency begin|complete|release` spans and the
+  `sharedkernel.idempotency.operation.duration` and `sharedkernel.idempotency.fail_open` instruments under
+  `SharedKernel.Idempotency`, told apart by the `idempotency.provider` tag.
 
 ## Packages
 
@@ -117,7 +121,8 @@ samples/Shop/build.sh --e2e      # pack the kernel, build the Shop, run its end-
 | **A key belongs to one tenant**, and purposes are separate key spaces | `RedisIdempotencyKeyBuilderTests`, `IdempotencyAbstractionsTests`, the `MessageStore_TwoTenantsWithIdenticalMessageId_…` cases |
 | **Request keys belong to one caller** — the pipeline reserves a digest of tenant, caller and key | `RedisIdempotencyCallerScopingTests`, `EfCoreIdempotencyCallerScopingTests` |
 | **A late caller cannot corrupt the new owner** — complete and release need the token of an in-flight entry | `CompleteAsync_AfterReservationWasReclaimedByAnotherCaller_…`, `ReleaseAsync_OnCompletedReservation_DoesNotDeleteIt_…` |
-| **An outage never silently allows duplicates** — fail-open is opt-in and logs a Warning | `RedisIdempotencyFailOpenTests`, `EfCoreIdempotencyFailOpenTests`, `RedisStoreUnavailableClassifierTests`, `EfCoreStoreUnavailableClassifierTests` |
+| **An outage never silently allows duplicates** — fail-open is opt-in, logs a Warning and is counted | `RedisIdempotencyFailOpenTests`, `EfCoreIdempotencyFailOpenTests`, `RedisStoreUnavailableClassifierTests`, `EfCoreStoreUnavailableClassifierTests`, `RedisIdempotencyServerReplyTests` |
+| **Telemetry carries no key, token, tenant or response** | `RedisIdempotencyTelemetryTests`, `EfCoreIdempotencyTelemetryTests`, `MixedProviderTelemetryTests` |
 | **One store per purpose** | `AddIdempotencyStore_TwiceForOnePurpose_Throws`, `AddRedisIdempotency_TwiceForTheSamePurpose_Throws` |
 
 **Out of scope:** a cleanup job or migrations for the EF Core table (its README has both recipes), and binding

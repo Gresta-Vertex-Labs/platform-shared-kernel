@@ -18,6 +18,7 @@ concurrency, expiry and tenant isolation in storage are properties of the real s
 | Keys scoped by tenant from the request context | Tenant separation is proved in a unit test |
 | Token-conditional `CompleteAsync` / `ReleaseAsync` | A stale or foreign token is refused (`false`), never thrown |
 | `Expire(purpose, key)` | A TTL running out is modelled without a clock |
+| `SimulateStoreUnavailable()` / `RestoreStore()` | A fail-closed store outage is modelled: every member records the call and throws `IdempotencyStoreUnavailableException` |
 | `Calls`, `LastTtl`, `LastRetention` | You assert what the pipeline or consumer asked of the store |
 | `AddFakeIdempotencyStore(purposes)` | One call replaces the keyed store for `Request`, `Message` or both |
 
@@ -169,7 +170,15 @@ Assert.Contains(store.Calls, c => c.Member == "CompleteAsync" && c.Purpose == Id
 | `Calls` | Every call as `RecordedCall(string Member, IdempotencyPurpose Purpose, string Key)`, in order |
 | `LastTtl` / `LastRetention` | The last `ttl` passed to `TryBeginAsync` / `retention` passed to `CompleteAsync` |
 | `Expire(IdempotencyPurpose purpose, string key)` | Drops the entry in the current tenant scope; `true` if one existed |
-| `Reset()` | Clears every reservation, the call list and the recorded durations |
+| `SimulateStoreUnavailable()` | From now on every member records its call and throws `IdempotencyStoreUnavailableException` (`Error.Unavailable`, `idempotency.store_unavailable`, an inner exception), exactly like a fail-closed provider |
+| `RestoreStore()` | Ends the simulated outage; reservations made earlier are intact |
+| `StoreUnavailable` | Whether the outage switch is on |
+| `Reset()` | Clears every reservation, the call list and the recorded durations, and ends a simulated outage |
+
+Arguments are validated as the real stores do: an undefined purpose throws `ArgumentOutOfRangeException` first, a
+null or blank key, fingerprint or token throws `ArgumentException`, and a non-positive `ttl` or `retention` throws
+`ArgumentOutOfRangeException`. A fail-open provider is not modelled; return `IdempotencyReservation.Started("t")`
+from your own stub when a test needs one.
 
 ## Testing
 

@@ -12,10 +12,12 @@
 
 | Package | Tier | Purpose |
 |---|---|---|
-| `SharedKernel.Idempotency.Abstractions` | Abstractions | `IIdempotencyStore`, `IdempotencyReservation` / `IdempotencyReservationStatus`, `IdempotencyPurpose`, `IdempotencyPurposeSelection`, `IdempotencyTenantScope`, registration helpers. References only `SharedKernel.Execution` |
-| `SharedKernel.Idempotency.Redis` | Adapter (→ `Caching.Redis.Core`) | `RedisIdempotencyStore` (one class, every purpose) — each operation is one Lua script |
-| `SharedKernel.Idempotency.EfCore` | Adapter (→ `Persistence.EfCore`) | `EfCoreIdempotencyStore` (one class, every purpose) over its own `IdempotencyDbContext`, table `idempotency_keys` |
-| `SharedKernel.Idempotency.Testing` | Testing | `FakeIdempotencyStore` implementing the same protocol |
+| `SharedKernel.Idempotency.Abstractions` | Abstractions | `IIdempotencyStore`, `IdempotencyReservation` / `IdempotencyReservationStatus`, `IdempotencyPurpose`, `IdempotencyPurposeSelection`, `IdempotencyTenantScope`, `IdempotencyStoreUnavailableException`, `IdempotencyPurposes`, the telemetry names
+(`IdempotencyTelemetry`, `IdempotencyTagKeys`), registration helpers. References only `SharedKernel.Execution` and
+`SharedKernel.Core` (the exception's base) |
+| `SharedKernel.Idempotency.Redis` | Adapter (→ `Caching.Redis.Core`) | `RedisIdempotencyStore` (one class, every purpose) — each operation is one Lua script; `RedisIdempotencyMetrics` |
+| `SharedKernel.Idempotency.EfCore` | Adapter (→ `Persistence.EfCore`) | `EfCoreIdempotencyStore` (one class, every purpose) over its own `IdempotencyDbContext`, table `idempotency_keys`; `EfCoreIdempotencyMetrics` |
+| `SharedKernel.Idempotency.Testing` | Testing | `FakeIdempotencyStore` implementing the same protocol, with an outage switch |
 
 ## Public Entry Points
 
@@ -27,6 +29,9 @@ API detail and recipes: each package's `README.md`.
 - `IdempotencyPurpose` — `Request`, `Message`; selected with `IdempotencyPurposeSelection` (`ForRequests()`,
   `ForMessages()`, `For(purpose)`).
 - `IdempotencyTenantScope` — `For(TenantId?)`, `Current(IRequestContextAccessor)`, `NoTenant`, `MaxLength`.
+- `IdempotencyStoreUnavailableException` — what every member of a fail-closed store throws on an outage;
+  `IdempotencyPurposes.ThrowIfUndefined(purpose)` — the one purpose guard; `IdempotencyTelemetry` /
+  `IdempotencyTagKeys` — the names of the shared source, meter, spans, instruments and tags.
 - `AddIdempotencyStore<TStore>(purpose…)` (keyed by purpose; a second store for the same purpose throws),
   `HasIdempotencyStore`, `GetRequiredIdempotencyStore`; resolve with `[FromKeyedServices(IdempotencyPurpose.Request)]`.
 - **Redis** — `services.AddRedisConnection(configuration)` (02.Caching) first, then
@@ -35,7 +40,9 @@ API detail and recipes: each package's `README.md`.
 - **EfCore** — `services.AddEfCoreIdempotency(db => db.UsePostgres(dataSource), p => p.ForRequests(), o => …)`; requires
   an `IClock`; registers `IdempotencyDbContext` and the store, both scoped. Ships no migrations (the README gives the
   design-time factory and cleanup `BackgroundService` recipes).
-- Both providers `TryAdd` `IRequestContextAccessor`.
+- Both providers `TryAdd` `IRequestContextAccessor`, call `AddMetrics()` and `TryAdd` their singleton
+  `{Provider}IdempotencyMetrics` (the store's constructor takes it, so the type is public).
+- `FakeIdempotencyStore.SimulateStoreUnavailable()` / `RestoreStore()` / `StoreUnavailable` — the fake's outage switch.
 
 ## Rules & Invariants
 
@@ -68,18 +75,24 @@ API detail and recipes: each package's `README.md`.
     would defeat the hard `DELETE` cleanup). Timestamps come from `IClock`.
 13. A contract change updates, together: both providers, `FakeIdempotencyStore`, `IdempotencyBehavior` and the
     MassTransit consumer behavior. A new purpose must fit the Redis key segment and the EF `purpose` column (16 chars).
-14. *(planned, SK.18.IdempotencyConformance)* **A fail-closed outage is a classified exception.** All three members
-    throw `IdempotencyStoreUnavailableException` (a `SharedKernelException` in `.Abstractions`, `Error.Unavailable`,
-    `ErrorCodes.Idempotency.StoreUnavailable`, provider-neutral message, the raw provider exception as `InnerException`).
-    Cancellation is never classified, wrapped or swallowed by fail-open. The Redis classifier wraps transient server
-    states only; a Lua or `ERR` reply is a defect and propagates raw. Sharpens rule 8.
-15. *(planned, SK.18.IdempotencyConformance)* **One source and one meter, `SharedKernel.Idempotency`**
-    (`IdempotencyTelemetry`, constants in `.Abstractions`; instances per provider, distinguished by the
-    `idempotency.provider` tag). Spans `idempotency begin|complete|release` (Client); histogram
-    `sharedkernel.idempotency.operation.duration` (`s`) and counter `sharedkernel.idempotency.fail_open`. Keys,
-    fingerprints, tokens, tenants and responses are never a tag, log value or span attribute.
-16. *(planned, SK.18.IdempotencyConformance)* **One purpose guard.** `IdempotencyPurposes.ThrowIfUndefined` runs first in
-    every provider and fake member; no provider validates the purpose lazily.
+14. **A fail-closed outage is a classified exception.** All three members throw `IdempotencyStoreUnavailableException`
+    (a `SharedKernelException` in `.Abstractions`, `Error.Unavailable`, `ErrorCodes.Idempotency.StoreUnavailable`,
+    fixed provider-neutral message, the raw provider exception as `InnerException`). Cancellation is never classified,
+    wrapped or swallowed by fail-open (a pre-cancelled token throws before the call; Redis observes the token with
+    `WaitAsync`). The Redis classifier wraps connectivity, timeout and transient server states (`LOADING`, `BUSY`,
+    `READONLY`, `MASTERDOWN`, `CLUSTERDOWN`, `TRYAGAIN`, `OOM`) only; a Lua or `ERR` reply is a defect and propagates
+    raw. A `TryBeginAsync` timeout may leave an unconfirmed reservation that expires after `ttl`, so a retry is safe.
+    Sharpens rule 8.
+15. **One source and one meter, `SharedKernel.Idempotency`** (`IdempotencyTelemetry`, constants in `.Abstractions`;
+    instances per provider, distinguished by the `idempotency.provider` tag `redis`/`efcore`). Spans
+    `idempotency begin|complete|release` (Client, tags operation/purpose/provider/result); histogram
+    `sharedkernel.idempotency.operation.duration` (`s`; tags operation, purpose, provider, `outcome`, result) and
+    counter `sharedkernel.idempotency.fail_open` (`{operation}`). `result` is `started`, `in_progress`, `completed`,
+    `fingerprint_mismatch`, `applied`, `lost` or `fail_open`; a failure carries no `result`. Keys, fingerprints,
+    tokens, tenants and responses are never a tag, log value or span attribute, and the span records a classified
+    outage as a stackless `IdempotencyStoreUnavailableException` copy (the provider text names the key).
+16. **One purpose guard.** `IdempotencyPurposes.ThrowIfUndefined` runs first in every provider and fake member; no
+    provider validates the purpose lazily.
 
 ## Decisions
 
@@ -92,9 +105,11 @@ API detail and recipes: each package's `README.md`.
 | No cleanup loop inside `.EfCore` | Retention is visible: a documented consumer `BackgroundService` or a `19.Scheduling` job |
 | EF retry disabled for the idempotency context | Each call is one statement; the caller owns retry |
 | A third backing store = new sibling `SharedKernel.Idempotency.{Provider}` | Keeps each provider swappable; it must implement Begin in one atomic round trip |
-| *(planned, SK.18.IdempotencyConformance)* The outage exception lives in `.Abstractions`, not the providers | It is the documented failure of the contract and the providers are siblings (rule 10); `.Abstractions` then references `SharedKernel.Core` as well as `SharedKernel.Execution` |
-| *(planned, SK.18.IdempotencyConformance)* One code, `idempotency.store_unavailable`, for connectivity and timeout; no `IdempotencyErrorCodes` class | The caller's remedy is the same (retry); `ErrorCodes.Idempotency` in Primitives is already the shared public home. The constant is added by 01.Core |
-| *(planned, SK.18.IdempotencyConformance)* A fail-open outage is counted and recorded on the span, not only logged | The `fail_open` counter is the alert signal for duplicate-execution risk |
+| The outage exception lives in `.Abstractions`, not the providers | It is the documented failure of the contract and the providers are siblings (rule 10); `.Abstractions` therefore references `SharedKernel.Core` as well as `SharedKernel.Execution` |
+| One code, `idempotency.store_unavailable`, for connectivity and timeout; no `IdempotencyErrorCodes` class | The caller's remedy is the same (retry); `ErrorCodes.Idempotency` in Primitives is already the shared public home |
+| A fail-open outage is counted and recorded on the span, not only logged | The `fail_open` counter is the alert signal for duplicate-execution risk |
+| The metrics singleton is a public class (`RedisIdempotencyMetrics`, `EfCoreIdempotencyMetrics`) | The public store constructor takes it, and a per-scope instrument set would leak instruments on the shared meter; a public `MeterName` const is also what the observability scanner needs per assembly |
+| The span source and meter are shared by both providers, not per provider | Rule 10 duplicates the helper, not the names; identical instrument definitions plus the `idempotency.provider` tag keep a host that registers both unambiguous (proven by `MixedProviderTelemetryTests`) |
 
 ## Logging
 
@@ -105,10 +120,10 @@ Block `18000`–`18999` (`LoggingEventIdRanges.Idempotency`).
 | `18000`–`18099` | `.Redis` | `18000` fail-open Warning (`RedisIdempotencyLog`) |
 | `18100`–`18199` | `.EfCore` | `18100` fail-open Warning (`EfCoreIdempotencyLog`) |
 
-`.Abstractions` does not log. *(planned, SK.18.IdempotencyConformance)* Each provider builds its id from
+`.Abstractions` and the fake do not log. Each provider builds its id from
 `LoggingEventIdRanges.Idempotency + n * PackageSubBlockWidth` in an internal `{Package}LoggingEventIds`, keeps its log
-class under `Diagnostics/`, and uses one single-sentence template with quoted `'{Operation}'` and `'{Purpose}'`; ids
-18000 and 18100 do not change; the fail-closed path logs nothing.
+class under `Diagnostics/`, and uses one single-sentence template with quoted `'{Operation}'` and `'{Purpose}'`
+(`begin`/`complete`/`release`, `request`/`message`); the fail-closed path logs nothing (the caller logs the refusal).
 
 ## Cross-Domain Couplings
 
@@ -119,10 +134,10 @@ class under `Diagnostics/`, and uses one single-sentence template with quoted `'
   refusal codes are `ErrorCodes.Idempotency` in `SharedKernel.Primitives`), `07.Messaging` `Messaging.MassTransit`
   (`MessagingBusBuilder.WithIdempotency()`; `Build()` checks `HasIdempotencyStore(IdempotencyPurpose.Message)`). Both
   callers reference only `.Abstractions`; a service picks a provider at its composition root.
-- *(planned, SK.18.IdempotencyConformance)* **Inbound from `01.Core`:** `ErrorCodes.Idempotency.StoreUnavailable`
-  (not yet on any board) and the P-580 observability helpers. **Outbound:** `05.Application` passes the outage
-  exception's `Error` through unchanged; `07.Messaging` reviews its handling of the new type; `16.Testing` catalogues the
-  fake's outage switch.
+- **Inbound from `01.Core`:** `ErrorCodes.Idempotency.StoreUnavailable`, `SharedKernelException`, and the observability
+  helpers (`TelemetryVersion`, `ActivityFailureExtensions`, `WellKnownOutcomes`, `LoggingEventIdRanges`). **Outbound:**
+  `05.Application` passes the outage exception's `Error` through unchanged; `07.Messaging` sees the new type from a
+  fail-closed store and reviews its retry handling; `16.Testing` catalogues the fake's outage switch.
 
 ## Testing
 
@@ -132,7 +147,12 @@ class under `Diagnostics/`, and uses one single-sentence template with quoted `'
 - Concurrency, tenant isolation, expiry reclaim and stale-token claims are proved against real Redis/PostgreSQL; a fake
   is not evidence for an atomicity claim. Each provider covers all four statuses, foreign/stale tokens,
   release-after-complete, fail-open and fail-closed against an unreachable endpoint, and DI registration (duplicate
-  purpose, missing Redis connection).
+  purpose, missing Redis connection, a host without `AddMetrics()`).
+- Telemetry, logs and outage classification are asserted through the `SharedKernel.Testing` capture helpers
+  (`ActivityRecorder`, `MetricRecorder`, `LoggerAssertions`) against real Redis/PostgreSQL and unreachable endpoints; the
+  telemetry and fail-open classes join the container collection so a recorder on the shared names sees one test at a
+  time. Real server replies (`BUSY`, a wrong-type key) prove the Redis classifier. `MixedProviderTelemetryTests` runs
+  Redis for Requests and EfCore for Messages in one host.
 - Fakes: `SharedKernel.Idempotency.Testing` — catalogue in `src/Testing/CLAUDE.md`.
 
 ## Known Limitations
@@ -140,6 +160,9 @@ class under `Diagnostics/`, and uses one single-sentence template with quoted `'
 - `RedisIdempotencyOptions`/`EfCoreIdempotencyOptions` declare a `SectionName` constant but are not
   `ISectionBoundOptions` and are not bound from configuration; set `AllowExecutionOnStoreUnavailable` through the
   `configure` delegate.
+- The exception passed to the fail-open Warning (L4) carries the provider's own text, and StackExchange.Redis names the
+  command and key in it; sinks that print exceptions must be trusted like the store itself. Spans and metrics never carry
+  it (rule 15).
 - `.EfCore` ships no migrations and no cleanup job; expired rows accumulate until the consumer runs the README recipe.
 - A multi-tenant service that skips the inbound adapters (`UseSharedKernelRequestContext()`, the MassTransit consume
   filter, the job runner) puts every entry in the `no-tenant` scope; anonymous callers of one tenant share a scope, so
