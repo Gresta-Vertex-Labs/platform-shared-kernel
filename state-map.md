@@ -27,7 +27,7 @@ Phases written by `arch-lead` take the next phase id; a user-directed phase with
 | 05 | [Application](src/Application/state-map.md) | 4 (1 Abstractions, 3 Host) | ○ | Next: `SK.05.PipelineTelemetryGaps` (WO-087) |
 | 06 | [Persistence](src/Infrastructure/Persistence/state-map.md) | 6 (1 Abstractions, 5 Adapter) | ○ | Next: `SK.06.PersistenceErrorSafety` (WO-087); never published; first release is P-577 |
 | 07 | [Messaging](src/Infrastructure/Messaging/state-map.md) | 5 (1 Abstractions, 4 Adapter) | ○ | Next: `SK.07.MessagingErrorSafety` (WO-087) |
-| 08 | [Storage](src/Infrastructure/Storage/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ○ | Next: `SK.08.StorageExceptionEdge` (WO-087) |
+| 08 | [Storage](src/Infrastructure/Storage/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ○ | Next: `SK.08.StorageConformance` (WO-087) |
 | 09 | [Search](src/Infrastructure/Search/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ○ | Next: `SK.09.SearchErrorSafety` (WO-087) |
 | 10 | [Intelligence](src/Infrastructure/AI/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ○ | Next: `SK.10.IntelligenceObservability` (WO-087) |
 | 11 | [Communication](src/Infrastructure/Communication/state-map.md) | 3 (Adapter) | ○ | Next: `SK.11.TokenUnavailableEdge` (WO-087) |
@@ -145,7 +145,7 @@ The consumer log scope must not copy every `x-sk-*` header (it includes the acto
 - [ ] The Messaging meter appears in a ServiceDefaults host test.
 
 #### P-589 — Make StorageException map at the edge (Phase 1)
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Domain:** 08.Storage
 **Depends on:** P-580
 **Phase key:** `SK.08.StorageExceptionEdge`

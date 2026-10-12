@@ -18,7 +18,6 @@
 
 | Phase key | Phase | Status |
 | --- | --- | --- |
-| `SK.08.StorageExceptionEdge` | `StorageException` derives `SharedKernelException` so every edge maps it to its `ErrorType`; no provider endpoint or host in an `Error` or log (WO-087 / P-589) | ○ |
 | `SK.08.StorageConformance` | Storage conforms to the gold standard "Observability, exceptions and error codes": telemetry names, instruments, failure recording, log shape, EventId ownership, exception messages (WO-087 / P-606) | ○ |
 
 Closed keys live in `git log`: check a new key is unused with `git log --oneline -S"SK.NN.Key"`.
@@ -26,39 +25,6 @@ Closed keys live in `git log`: check a new key is unused with `git log --oneline
 ## Open Work
 
 The first public release ships with root P-577 (release train).
-
-### SK.08.StorageExceptionEdge — Make StorageException map at the edge `○`
-
-**Work order:** WO-087 / P-589 · **Depends on:** SK.01.ObservabilityHelpers (P-580; `IHasError` is satisfied by `SharedKernelException`, no storage code waits on it)
-
-`StorageException` (thrown only by `IFileStorage.ListAsync`, which has no `Result` to return) carries an `Error` but derives `Exception`, so the three edge mappers (`SharedKernelExceptionHandler`, `GrpcExceptionInterceptor`, `HubExceptionMappingFilter`, each switching on `SharedKernelException`) answer 500 and drop the storage code. The phase makes it a sealed `SharedKernelException` (rule E1) with the ctor pair `(Error)` and `(Error, Exception)`, so an outage during enumeration is 503 `storage.unavailable`, a denied listing 403, and so on, from the same `Error.Type` that the `Result` path already maps. It also settles the provider-detail audit (rule 5): reading `StorageErrors` shows every factory builds messages from the store name and the caller's key only; the S3 log statements carry store, bucket, status, S3 error code and request id but no endpoint or URL; one leak exists, `ObsStorageOptionsValidator` quotes `endpoint.Host` in a start-up validation failure, and the phase removes it. A second defect is probed and fixed if it reproduces: a tenant view's `ListAsync` re-yields the inner stream and lets an inner `StorageException` through unrewritten, so a key quoted in its message could show the `tenants/{id}/` prefix (rule 2).
-
-**Behaviour per provider.** None changes: the exception type and its base class are provider-neutral (Abstractions); AWS S3, MinIO and OBS all raise it through the same `ListCoreAsync` path, and `InMemoryFileStorage` mirrors it. No `S3Compatibility` flag, no new verb. **Streaming:** untouched (maximum in-memory footprint unchanged: one multipart part).
-
-**Wire/ABI effect (pre-GA, listed under "Breaking changes" in the PR body):** `StorageException` base type `Exception` to `SharedKernelException`; the single ctor `(Error, Exception? = null)` is replaced by the two explicit ctors (binary break only; source-compatible). Message, `Error` property and codes are unchanged.
-
-| ID | Task | Package | State |
-| --- | --- | --- | :---: |
-| D-01 | Ratify the shape: `public sealed class StorageException : SharedKernelException`, ctors `(Error)` and `(Error, Exception)`, no new members (the inherited `Error` replaces the declared property; keep the XML remarks, now saying the edges map it by `Error.Type`). Abstractions takes a `ProjectReference` to `SharedKernel.Core` (Foundation, legal under the tier matrix; Core's only reference is Primitives, so no third-party package reaches SKTIER003). Update rule 12 / the package row wording ("References Primitives, Execution and Core"). Cross-check with `SK.01.CoreObservabilityFixes` D-01 (Execution gains the same reference) so the two phases agree | `SharedKernel.Storage.Abstractions` | `○` |
-| D-02 | Ratify the provider-detail audit result and its fix list: (a) `StorageErrors` messages are clean (store + caller key; the `ExpiryTooLong` message quotes two `TimeSpan`s, no provider detail); (b) logs keep `{Bucket}` and `{RequestId}` (rule 5 sends them to logs on purpose; root L5 bans hosts and URLs, not names) and never an endpoint; (c) the exception passed to `ILogger` (L4) may carry the SDK's own text, accepted because it is the exception parameter and not a template value; (d) fixes: Obs validator host message, tenant-view list rewrite | `SharedKernel.Storage.Abstractions`, `SharedKernel.Storage.Obs` | `○` |
-| C-01 | `StorageException : SharedKernelException` with the two ctors; remove the `Error` property (inherited); XML docs | `SharedKernel.Storage.Abstractions` | `○` |
-| C-02 | `SharedKernel.Storage.Abstractions.csproj`: `ProjectReference` to `SharedKernel.Core`; `PublicAPI.Unshipped.txt` (base type, replaced ctor) | `SharedKernel.Storage.Abstractions` | `○` |
-| C-03 | `ScopedFileStorage.ListCoreAsync`: catch `StorageException` from the inner stream and rethrow `new StorageException(ToCaller(error), inner)` so the tenant prefix never reaches the caller, preserving the original as `InnerException` (stack kept; cancellation is not caught, E4). Skip the change if T-03 shows the leak does not reproduce, and record that in the report | `SharedKernel.Storage.Abstractions` | `○` |
-| C-04 | `ObsStorageOptionsValidator`: replace the message that quotes `endpoint.Host` with a fixed sentence naming the option and the expected `obs.{region}.myhuaweicloud.com` shape; keep the `ResolveRegion` logic | `SharedKernel.Storage.Obs` | `○` |
-| C-05 | `InMemoryFileStorage.ListAsync`/`ListCoreAsync` keep throwing `StorageException` (now the new type); confirm the double still builds and its remarks match; no behaviour change | `SharedKernel.Storage.Testing` | `○` |
-| T-01 | `StorageException` is a `SharedKernelException` (and `IHasError` once P-580 ships); ctor pair; `Message == Error.Message`; `InnerException` is the same instance with its stack; null `Error` throws `ArgumentNullException`; the thrown `Error.Code` is a `StorageErrorCodes` value | `SharedKernel.Storage.Abstractions.Tests` | `○` |
-| T-02 | Edge input table, pinned literally: every `StorageErrors` factory yields its `StorageErrorCodes` value and `ErrorType` (`not_found` NotFound, `access_denied` Forbidden, `invalid_key`/`invalid_request`/`expiry_too_long`/`checksum_mismatch`/`invalid_range` Validation, `already_exists`/`precondition_failed` Conflict, `not_supported`/`provider_error` Unexpected, `unavailable` Unavailable); the HTTP/gRPC status assertions are `14`'s (see notes) | `SharedKernel.Storage.Abstractions.Tests` | `○` |
-| T-03 | Tenant view: an invalid prefix and a provider failure during enumeration throw a `StorageException` whose `Error.Message` contains no `tenants/` segment and no tenant id (recording fake store that throws mid-stream), original kept as `InnerException`; unchanged for a shared store | `SharedKernel.Storage.Abstractions.Tests` | `○` |
-| T-04 | Outage during `ListAsync` against an unreachable endpoint (the suite's existing closed-port pattern) throws `StorageException` with `storage.unavailable` and `ErrorType.Unavailable`; the `Error`, its `Details`, the exception message and every captured log record (template, state values, rendered text) contain neither the host, the port, the bucket nor an object key (`LoggerAssertions.ShouldNotLeak` once P-581 ships, a string scan of the in-memory records until then) | `SharedKernel.Storage.S3.Tests` | `○` |
-| T-05 | Obs validator: a non-standard endpoint with no `Region` fails start-up validation with a message that names `Region` and does not contain the endpoint host | `SharedKernel.Storage.Obs.Tests` | `○` |
-| T-06 | `InMemoryFileStorage` list failures throw the same type with the same code and `ErrorType` as the real store (existing `ListAsync_InvalidPrefix_ThrowsStorageException` extended) | `SharedKernel.Storage.Testing.Tests` | `○` |
-| DO-01 | Abstractions README (the exception's base type, the edge mapping, the code-to-`ErrorType` table), `IFileStorage.ListAsync` remarks, domain `CLAUDE.md` (rule 4 wording, package row, Decisions) | `SharedKernel.Storage.Abstractions` | `○` |
-
-**Acceptance:**
-- [ ] A `StorageException` is a `SharedKernelException`: the three edge mappers see its `Error.Type` and answer 503 for `storage.unavailable`, 403 for `storage.access_denied`, 400 for validation codes and so on (this domain pins the `Error` inputs, T-02; the HTTP and gRPC status assertions are recorded for `14.Presentation`, see Cross-Domain Dependencies).
-- [ ] No provider endpoint, host, port, bucket or object key appears in an `Error`, an exception message or a log record or template (T-04, T-05).
-- [ ] A tenant view never lets the `tenants/{id}/` prefix out through a thrown `StorageException` (T-03).
-- [ ] Wire-visible changes are listed under "Breaking changes" in the PR body; `PublicAPI.Unshipped.txt`, the package READMEs (error code table) and the domain `CLAUDE.md` are updated in the same change; tests assert error codes through the P-581 capture helpers where telemetry or logs are involved, not by string search of rendered text.
 
 ### SK.08.StorageConformance — Conform Storage to the gold standard `○`
 
@@ -111,7 +77,6 @@ Applies L1-L8, T1-T8, E1-E4 and C1-C3 of root `CLAUDE.md` "Observability, except
 ## Blocked
 
 - **SK.08.StorageConformance** waits on `SK.01.ObservabilityHelpers` (`TelemetryVersion`, `ActivityFailureExtensions`, `WellKnownOutcomes`, `LoggingEventIdRanges.IsInSubBlock`: none exists on disk, `grep` of `src/` finds no definition), `SK.16.TelemetryCapture` (`MetricRecorder` and the log-convention assertions do not exist; only `SharedKernel.Testing`'s older `ActivityRecorder`), and `SK.00.ObservabilityReportOnly` for its last acceptance bullet. D/DO tasks can proceed; C and T tasks wait.
-- **SK.08.StorageExceptionEdge** can start now (`SharedKernelException` exists in `SharedKernel.Core`); only the `IHasError` assertion in T-01 waits on `SK.01.ObservabilityHelpers`.
 
 ## Cross-Domain Dependencies
 
