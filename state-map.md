@@ -38,7 +38,7 @@ Phases written by `arch-lead` take the next phase id; a user-directed phase with
 | 16 | [Testing](src/Testing/state-map.md) | 21 (Testing; 20 packable + `Testing.Internal`) | ● | None |
 | 17 | [Workflows](src/Infrastructure/Workflows/state-map.md) | 1 (Adapter) | ○ | Next: `SK.17.WorkflowObservabilityFixes` (WO-087) |
 | 18 | [Idempotency](src/Infrastructure/Idempotency/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ○ | Next: `SK.18.IdempotencyConformance` (WO-087) |
-| 19 | [Scheduling](src/Infrastructure/Scheduling/state-map.md) | 1 (Adapter) | ○ | Next: `SK.19.SchedulerLogContext` (WO-087) |
+| 19 | [Scheduling](src/Infrastructure/Scheduling/state-map.md) | 1 (Adapter) | ○ | Next: `SK.19.SchedulingConformance` (WO-087) |
 | 20 | [Reporting](src/Infrastructure/Reporting/state-map.md) | 5 (1 Abstractions, 4 Adapter) | ○ | Next: `SK.20.ReportingErrorShape` (WO-087) |
 | — | [samples](samples/README.md) | `Shop`: one Aspire platform, 7 services (Catalog, Ordering, Inventory, Billing, Merchant, Notify, Reports) | ● | None |
 
@@ -231,7 +231,7 @@ Workflow telemetry has a dead ActivitySource and an unsubscribed Temporal tracin
 - [ ] Failure mapping is status-aware and tested for NotFound, NamespaceNotFound, timeout and unavailable.
 
 #### P-598 — Fix log ordering and leaks in Scheduling (Phase 1)
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Domain:** 19.Scheduling
 **Depends on:** P-580
 **Phase key:** `SK.19.SchedulerLogContext`
