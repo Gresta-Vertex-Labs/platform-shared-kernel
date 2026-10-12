@@ -39,6 +39,13 @@
   <!-- Package tiers and their dependency matrix (WO-086 / P-563). -->
   <Import Project="$(MSBuildThisFileDirectory)eng/SharedKernelTiers.targets" />
 
+  <!--
+    Kernel self-analysis (WO-087 / P-583): SharedKernel.Analyzers + CA2200 over the tiered production projects under src/.
+    Imported after the project body because it reads $(SharedKernelTier); it guards itself, and the mode (report/enforce)
+    is decided in tools/Governance/SelfAnalysis/ObservabilityMode.props.
+  -->
+  <Import Project="$(MSBuildThisFileDirectory)tools/Governance/SelfAnalysis/SharedKernel.SelfAnalysis.props" />
+
   <Target Name="SKPKG004_TestsNeverPack" BeforeTargets="Pack" Condition="$(MSBuildProjectName.EndsWith('.Tests'))">
     <Error Condition="'$(IsPackable)' == 'true'"
            Text="SKPKG004: $(MSBuildProjectName) ends in .Tests and must never be packable, even if IsPackable=true was set by hand." />
