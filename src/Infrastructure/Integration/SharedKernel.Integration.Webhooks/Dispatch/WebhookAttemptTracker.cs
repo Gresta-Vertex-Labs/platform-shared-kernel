@@ -18,9 +18,16 @@ internal sealed class WebhookAttemptTracker
     public static readonly HttpRequestOptionsKey<WebhookAttemptTracker> Key = new("SharedKernel.Integration.Webhooks.AttemptTracker");
 
     private int _attempts = 1;
+    private volatile bool _sendStarted;
 
-    /// <summary>The total number of HTTP attempts made so far for this request, 1-based.</summary>
-    public int Attempts => _attempts;
+    /// <summary>
+    /// The total number of HTTP attempts made so far for this request, 1-based; <c>0</c> until
+    /// <see cref="MarkSendStarted"/> (a delivery that faulted before any HTTP call made no attempt).
+    /// </summary>
+    public int Attempts => _sendStarted ? _attempts : 0;
+
+    /// <summary>Records that the request is about to be handed to the HTTP client.</summary>
+    public void MarkSendStarted() => _sendStarted = true;
 
     /// <summary>Records that another attempt was made.</summary>
     public void RecordRetry() => Interlocked.Increment(ref _attempts);

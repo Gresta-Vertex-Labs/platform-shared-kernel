@@ -97,7 +97,8 @@ When `true`, the outbound JSON payload is encrypted (AES-GCM, via `src/Foundatio
 cover exactly the bytes actually transmitted. Defaults to `false`. TLS already provides transport
 confidentiality; this is defense-in-depth for subscribers who want payload-level confidentiality
 independent of their own TLS termination boundary. Enabling this option requires an
-`ISymmetricEncryptionService` to be registered (via `SharedKernel.Cryptography`'s
+`ISymmetricEncryptionService` to be registered; resolving `IWebhookDispatcher` without one throws
+`InvalidOperationException` (before any delivery), via `SharedKernel.Cryptography`'s
 `AddSharedKernelCryptography(configuration).AddSymmetricEncryption()` plus a consumer-supplied
 `IEncryptionKeyProvider`) — omitting that registration fails loudly with an `InvalidOperationException`
 at first delivery, never silently. The transmitted body is the ciphertext's canonical

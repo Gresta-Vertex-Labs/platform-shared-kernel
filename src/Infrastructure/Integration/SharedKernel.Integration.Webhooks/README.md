@@ -144,8 +144,15 @@ sequenceDiagram
   `WebhookDeliveryResult.DeliveryId`.
 - **Correlation, and nothing else.** `X-Correlation-Id` carries the ambient correlation id (omitted when there is
   none; a subscription header of the same name wins). The tenant, actor and client id never leave the platform.
-- **Isolation.** HTTP failures, timeouts, SSRF rejections and header collisions become a failed
-  `WebhookDeliveryResult`; `DispatchAsync` never throws because of one subscriber.
+- **Isolation.** HTTP failures, timeouts, SSRF rejections, header collisions and a subscription without signing
+  secrets become a failed `WebhookDeliveryResult`; so does any unexpected exception inside one delivery (a throwing
+  `IWebhookUrlValidator` or `ISymmetricEncryptionService`, say): it is logged at Error (EventId 15005) with the
+  exception, recorded on the delivery span, shown to observers, and never aborts the other subscriptions.
+  `DispatchAsync` never throws because of one subscriber. Only caller cancellation propagates.
+- **Fixed failure text.** `WebhookDeliveryResult.Error` and `WebhookDeliveryExhaustedEvent.LastError` carry one of a
+  closed set of sentences ("Webhook endpoint responded with status code 503.", "Webhook endpoint could not be
+  reached.", "Webhook delivery timed out.", "Webhook delivery failed unexpectedly.", ...), never exception text: a
+  transport exception names the subscriber host. The exception object goes to the log.
 - **Retries** live in the standard resilience handler on the named client, driven by `MaxAttempts`, the backoff
   delays and `RequestTimeout`. After the last attempt the dispatcher publishes exactly one
   `WebhookDeliveryExhaustedEvent`; a failed publish is logged (EventId 15004) and does not change the result.
@@ -230,8 +237,8 @@ var associatedData = WebhookPayloadAssociatedData.Build(subscription.Subscriptio
 Result<string> plaintext = await encryption.DecryptToStringAsync(rawBody, associatedData);
 ```
 
-`EncryptPayload` without a registered `ISymmetricEncryptionService` throws `InvalidOperationException` at the first
-delivery.
+`EncryptPayload` without a registered `ISymmetricEncryptionService` throws `InvalidOperationException` when
+`IWebhookDispatcher` is resolved, before any delivery.
 
 ### 5. Send a test delivery to a new subscriber
 
@@ -303,9 +310,10 @@ Section `SharedKernel:Integration:Webhooks`, validated when the host starts; the
 | --- | --- | --- |
 | 15000 | Warning | A delivery observer threw; the outcome is unaffected |
 | 15001 | Information | Delivery succeeded after `{Attempts}` attempt(s) |
-| 15002 | Warning | Delivery failed with `{StatusCode}`: `{Error}` |
+| 15002 | Warning | Delivery failed with `{StatusCode}` (the exception, when there was one, is the logged exception) |
 | 15003 | Warning | Delivery exhausted without a successful response |
-| 15004 | Error | The exhaustion event could not be published |
+| 15004 | Error | The exhaustion event could not be published (a failed result or a throwing publisher) |
+| 15005 | Error | A delivery faulted unexpectedly and is reported as failed; carries the exception |
 
 ### Telemetry
 

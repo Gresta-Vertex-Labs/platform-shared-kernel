@@ -149,7 +149,7 @@ public sealed class WebhookPayloadEncryptionTests
     }
 
     [Fact]
-    public async Task DispatchToSubscriptionAsync_EncryptPayloadEnabledWithoutRegisteredService_FailsClearlyRatherThanSilently()
+    public void ResolvingDispatcher_EncryptPayloadEnabledWithoutRegisteredService_FailsAtResolutionNotAtDelivery()
     {
         var subscription = Subscription("secret");
         var store = new FakeWebhookSubscriptionStore([subscription]);
@@ -161,12 +161,21 @@ public sealed class WebhookPayloadEncryptionTests
             o.EncryptPayload = true;
         });
 
-        var act = async () => await harness.Dispatcher.DispatchToSubscriptionAsync(
-            subscription,
-            new TestOrderShippedEvent(Guid.NewGuid(), DateTimeOffset.UtcNow, Guid.NewGuid()),
-            CancellationToken.None);
+        var act = () => harness.Dispatcher;
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*ISymmetricEncryptionService*");
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*ISymmetricEncryptionService*AddSymmetricEncryption*");
+        handler.CallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public void ResolvingDispatcher_EncryptPayloadDisabledWithoutRegisteredService_Resolves()
+    {
+        var store = new FakeWebhookSubscriptionStore([]);
+
+        using var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK));
+        using var harness = new WebhookTestHarness(handler, store, o => o.MaxAttempts = 1);
+
+        harness.Dispatcher.Should().NotBeNull();
     }
 }

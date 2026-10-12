@@ -117,8 +117,12 @@ At least one of `From` and `MessagingServiceSid` must be set. Retry, timeout and
 | Event id | Level | Event |
 | --- | --- | --- |
 | 15300 | Information | Twilio SMS delivery succeeded |
-| 15301 | Warning | Twilio SMS delivery failed: `{Error}` |
+| 15301 | Warning | Twilio SMS delivery failed with `{FailureKind}` and `{StatusCode}`; carries the exception when there was one |
 | 15302 | Warning | A delivery observer threw; the outcome is unaffected |
+
+`NotificationDeliveryResult.Error` is always a fixed sentence, never exception text: the Twilio status code
+("Twilio responded with status code 401."), "Twilio could not be reached.", "Twilio delivery timed out." or
+"Twilio delivery was rejected by the resilience pipeline.". The exception object goes to the failure log.
 
 Spans come from `NotificationIntegrationActivitySource` (`SharedKernel.Integration`); subscribe with
 `WithIntegrationTelemetry()`.

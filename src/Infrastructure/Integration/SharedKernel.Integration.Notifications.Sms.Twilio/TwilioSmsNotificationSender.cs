@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -56,9 +57,10 @@ public sealed partial class TwilioSmsNotificationSender : INotificationSender
 
         await NotifyAttemptAsync(context, 1, ct).ConfigureAwait(false);
 
-        var result = await SendCoreAsync(message, ct).ConfigureAwait(false);
+        var outcome = await SendCoreAsync(message, ct).ConfigureAwait(false);
+        var result = outcome.Result;
 
-        LogDeliveryOutcome(result);
+        LogDeliveryOutcome(outcome);
 
         if (activity is not null)
         {
@@ -71,7 +73,35 @@ public sealed partial class TwilioSmsNotificationSender : INotificationSender
         return result;
     }
 
-    private async Task<NotificationDeliveryResult> SendCoreAsync<TTemplateModel>(
+    /// <summary>
+    /// A send outcome: the result plus the closed failure kind, the status code and the caught exception, which
+    /// travel to the failure log only — never into the result.
+    /// </summary>
+    private readonly record struct SendOutcome(
+        NotificationDeliveryResult Result,
+        string? FailureKind = null,
+        int? StatusCode = null,
+        Exception? Exception = null);
+
+    /// <summary>The closed set of failure kinds written to the failure log.</summary>
+    private static class FailureKinds
+    {
+        public const string ProviderRejected = "provider_rejected";
+        public const string Unreachable = "unreachable";
+        public const string Timeout = "timeout";
+        public const string RejectedByPipeline = "rejected_by_pipeline";
+    }
+
+    private static (string Kind, string Reason) ClassifyTransportFault(Exception exception) =>
+        exception switch
+        {
+            Polly.Timeout.TimeoutRejectedException => (FailureKinds.Timeout, "Twilio delivery timed out."),
+            Polly.ExecutionRejectedException => (FailureKinds.RejectedByPipeline, "Twilio delivery was rejected by the resilience pipeline."),
+            TimeoutException or TaskCanceledException => (FailureKinds.Timeout, "Twilio delivery timed out."),
+            _ => (FailureKinds.Unreachable, "Twilio could not be reached."),
+        };
+
+    private async Task<SendOutcome> SendCoreAsync<TTemplateModel>(
         NotificationMessage<TTemplateModel> message,
         CancellationToken ct)
     {
@@ -127,15 +157,25 @@ public sealed partial class TwilioSmsNotificationSender : INotificationSender
                 providerMessageId = TryExtractSid(body);
             }
 
-            return new NotificationDeliveryResult(
-                message.NotificationDeliveryId,
-                isSuccess,
-                providerMessageId,
-                isSuccess ? null : $"Twilio responded with status code {(int)response.StatusCode}.");
+            var statusCode = (int)response.StatusCode;
+            return new SendOutcome(
+                new NotificationDeliveryResult(
+                    message.NotificationDeliveryId,
+                    isSuccess,
+                    providerMessageId,
+                    isSuccess ? null : string.Create(CultureInfo.InvariantCulture, $"Twilio responded with status code {statusCode}.")),
+                isSuccess ? null : FailureKinds.ProviderRejected,
+                statusCode);
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or TimeoutException or Polly.ExecutionRejectedException)
         {
-            return new NotificationDeliveryResult(message.NotificationDeliveryId, false, null, ex.Message);
+            // Only the KIND of the transport fault reaches the result: the exception message names the
+            // provider endpoint. The exception itself goes to the failure log.
+            var (kind, reason) = ClassifyTransportFault(ex);
+            return new SendOutcome(
+                new NotificationDeliveryResult(message.NotificationDeliveryId, false, null, reason),
+                kind,
+                Exception: ex);
         }
     }
 
@@ -182,16 +222,17 @@ public sealed partial class TwilioSmsNotificationSender : INotificationSender
         }
     }
 
-    private void LogDeliveryOutcome(NotificationDeliveryResult result)
+    private void LogDeliveryOutcome(SendOutcome outcome)
     {
-        if (result.IsSuccess)
+        if (outcome.Result.IsSuccess)
         {
             Log.DeliverySucceeded(_logger);
         }
         else
         {
-            // NEVER include Recipient/TemplateModel here — only the provider-side error text.
-            Log.DeliveryFailed(_logger, result.Error);
+            // NEVER include Recipient/TemplateModel here — only the closed failure kind, the status code and
+            // the caught exception object (never its message as a placeholder).
+            Log.DeliveryFailed(_logger, outcome.FailureKind ?? FailureKinds.ProviderRejected, outcome.StatusCode, outcome.Exception);
         }
     }
 
@@ -207,8 +248,8 @@ public sealed partial class TwilioSmsNotificationSender : INotificationSender
         [LoggerMessage(
             EventId = LoggingEventIdRanges.Integration + 301,
             Level = LogLevel.Warning,
-            Message = "Twilio SMS delivery failed: {Error}")]
-        public static partial void DeliveryFailed(ILogger logger, string? error);
+            Message = "Twilio SMS delivery failed with failure kind {FailureKind} and status code {StatusCode}.")]
+        public static partial void DeliveryFailed(ILogger logger, string failureKind, int? statusCode, Exception? exception);
 
         [LoggerMessage(
             EventId = LoggingEventIdRanges.Integration + 302,

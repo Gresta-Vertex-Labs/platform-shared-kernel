@@ -77,7 +77,8 @@ var result = await email.SendAsync(                         // [FromKeyedService
   base64-encoded through a `CryptoStream` + `ToBase64Transform`, so the raw bytes are never one contiguous array (the
   Mail Send API still needs the base64 text as one JSON field). A reference the storage factory cannot open (a store
   that is not registered, a tenant the store does not have) fails the send with
-  `notifications.attachment_unresolvable`; a failed download fails it with the storage error (`storage.*`). Storage
+  `notifications.attachment_unresolvable`; a failed download fails it too. The result text is a fixed sentence
+  ("Unable to resolve one or more attachments: ..."); the storage message and the exception text never reach it. Storage
   is needed only for attachments: a host without `AddSharedKernelStorage()` sends every other message, and a message
   with attachments fails with `notifications.attachment_unresolvable`.
 - **Resilience.** The named client `SharedKernel.Integration.Notifications.Email.SendGrid` uses the standard
@@ -113,17 +114,18 @@ Retry, timeout and concurrency come from `SharedKernel:Integration:Notifications
 
 | Code | When |
 | --- | --- |
-| `notifications.attachment_unresolvable` | An attachment's `FileReference` could not be opened by `IFileStorageFactory` |
-| `storage.*` | An attachment could not be downloaded |
+| `notifications.attachment_unresolvable` | An attachment's `FileReference` could not be opened by `IFileStorageFactory`, or could not be downloaded from storage |
 
-Other failures put the SendGrid status code in `NotificationDeliveryResult.Error`.
+`NotificationDeliveryResult.Error` is always a fixed sentence, never exception text: the SendGrid status code
+("SendGrid responded with status code 400."), "SendGrid could not be reached.", "SendGrid delivery timed out." or
+"SendGrid delivery was rejected by the resilience pipeline.". The exception object goes to the failure log.
 
 ### Logging
 
 | Event id | Level | Event |
 | --- | --- | --- |
 | 15200 | Information | SendGrid email delivery succeeded |
-| 15201 | Warning | SendGrid email delivery failed: `{Error}` |
+| 15201 | Warning | SendGrid email delivery failed with `{FailureKind}` and `{StatusCode}`; carries the exception when there was one |
 | 15202 | Warning | A delivery observer threw; the outcome is unaffected |
 
 Spans come from `NotificationIntegrationActivitySource` (`SharedKernel.Integration`); subscribe with
