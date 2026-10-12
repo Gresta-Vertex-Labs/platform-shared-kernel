@@ -39,7 +39,7 @@ Phases written by `arch-lead` take the next phase id; a user-directed phase with
 | 17 | [Workflows](src/Infrastructure/Workflows/state-map.md) | 1 (Adapter) | ○ | Next: `SK.17.WorkflowConformance` (WO-087) |
 | 18 | [Idempotency](src/Infrastructure/Idempotency/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ○ | Next: `SK.18.IdempotencyConformance` (WO-087) |
 | 19 | [Scheduling](src/Infrastructure/Scheduling/state-map.md) | 1 (Adapter) | ○ | Next: `SK.19.SchedulingConformance` (WO-087) |
-| 20 | [Reporting](src/Infrastructure/Reporting/state-map.md) | 5 (1 Abstractions, 4 Adapter) | ○ | Next: `SK.20.ReportingErrorShape` (WO-087) |
+| 20 | [Reporting](src/Infrastructure/Reporting/state-map.md) | 5 (1 Abstractions, 4 Adapter) | ○ | Next: `SK.20.ReportingConformance` (WO-087) |
 | — | [samples](samples/README.md) | `Shop`: one Aspire platform, 7 services (Catalog, Ordering, Inventory, Billing, Merchant, Notify, Reports) | ● | None |
 
 Every package ships at one repo-wide version through the release train (`CONTRIBUTING.md`, "Versioning and releases"); nothing is released per package.
@@ -240,7 +240,7 @@ The hosted service logs before the request-context scope begins and again after 
 - [ ] Span status carries `error.code`, never a message; no free-text error placeholder.
 
 #### P-599 — Fix provider detail and exception shape in Reporting (Phase 1)
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Domain:** 20.Reporting
 **Depends on:** P-580
 **Phase key:** `SK.20.ReportingErrorShape`
