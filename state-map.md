@@ -24,7 +24,7 @@ Phases written by `arch-lead` take the next phase id; a user-directed phase with
 | 02 | [Caching](src/Infrastructure/Caching/state-map.md) | 7 (1 Abstractions, 6 Adapter) | ○ | Next: `SK.02.ObservabilityConformance` (WO-087) |
 | 03 | [Domain](src/Model/Domain/state-map.md) | 1 (Model) | ○ | Next: `SK.03.DomainErrorCodes` (WO-087) |
 | 04 | [Contracts](src/Model/Contracts/state-map.md) | 1 (Model) | ● | None |
-| 05 | [Application](src/Application/state-map.md) | 4 (1 Abstractions, 3 Host) | ○ | Next: `SK.05.PipelineTelemetryGaps` (WO-087) |
+| 05 | [Application](src/Application/state-map.md) | 4 (1 Abstractions, 3 Host) | ○ | Next: `SK.05.ApplicationConformance` (WO-087) |
 | 06 | [Persistence](src/Infrastructure/Persistence/state-map.md) | 6 (1 Abstractions, 5 Adapter) | ○ | Next: `SK.06.PersistenceErrorSafety` (WO-087); never published; first release is P-577 |
 | 07 | [Messaging](src/Infrastructure/Messaging/state-map.md) | 5 (1 Abstractions, 4 Adapter) | ○ | Next: `SK.07.ObservabilityConformance` (WO-087) |
 | 08 | [Storage](src/Infrastructure/Storage/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ○ | Next: `SK.08.StorageConformance` (WO-087) |
@@ -114,7 +114,7 @@ The distributed-lock-unavailable exception carries no `Error` and does not deriv
 - [ ] Every caught-exception log in the domain passes the exception.
 
 #### P-586 — Fix pipeline telemetry gaps in Application (Phase 1)
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Domain:** 05.Application
 **Depends on:** P-580
 **Phase key:** `SK.05.PipelineTelemetryGaps`
