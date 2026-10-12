@@ -66,7 +66,7 @@ flowchart LR
   src_Infrastructure_Persistence -->|1| src_Model_Contracts
   src_Infrastructure_Persistence -->|2| src_Model_Domain
   src_Infrastructure_Persistence -->|1| src_Testing
-  src_Infrastructure_Reporting -->|6| src_Foundation
+  src_Infrastructure_Reporting -->|7| src_Foundation
   src_Infrastructure_Reporting -->|2| src_Infrastructure_Storage
   src_Infrastructure_Reporting -->|1| src_Testing
   src_Infrastructure_Scheduling -->|1| src_Application
@@ -546,10 +546,12 @@ flowchart LR
     SharedKernel_Reporting_Testing["Reporting.Testing<br/><i>Testing</i>"]
   end
   SharedKernel_Configuration(["Configuration<br/><i>src/Foundation</i>"])
+  SharedKernel_Core(["Core<br/><i>src/Foundation</i>"])
   SharedKernel_Execution(["Execution<br/><i>src/Foundation</i>"])
   SharedKernel_Primitives(["Primitives<br/><i>src/Foundation</i>"])
   SharedKernel_Storage_Abstractions(["Storage.Abstractions<br/><i>src/Infrastructure/Storage</i>"])
   SharedKernel_Testing(["Testing<br/><i>src/Testing</i>"])
+  SharedKernel_Reporting_Abstractions --> SharedKernel_Core
   SharedKernel_Reporting_Abstractions --> SharedKernel_Primitives
   SharedKernel_Reporting_Abstractions --> SharedKernel_Storage_Abstractions
   SharedKernel_Reporting_Csv --> SharedKernel_Configuration
