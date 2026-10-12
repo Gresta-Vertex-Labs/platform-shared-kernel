@@ -202,7 +202,8 @@ public sealed class TransactionTelemetryTests
         var joined = spans.Single(span => Equals(span.GetTagItem("application.transaction_joined"), true));
         var owner = spans.Single(span => Equals(span.GetTagItem("application.transaction_joined"), false));
         joined.ShouldBeRecordedFailure(Error.BusinessRule("test.inner_rejected", "Rejected."));
-        owner.ShouldBeRecordedException(typeof(TransactionRolledBackException));
+        owner.ShouldBeRecordedException(
+            typeof(TransactionRolledBackException), SharedKernel.Execution.ExecutionErrorCodes.TransactionRolledBack);
 
         var records = probe.Records(provider);
         records.Where(record => record.EventId.Id == 5160).Should().BeEmpty("a joined command leaves the rollback to its owner");
