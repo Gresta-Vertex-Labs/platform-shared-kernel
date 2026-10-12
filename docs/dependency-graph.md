@@ -40,7 +40,7 @@ flowchart LR
   src_Application -->|1| src_Testing
   src_Foundation -->|1| src_Application
   src_Foundation -->|1| src_Testing
-  src_Hosting_Presentation -->|14| src_Foundation
+  src_Hosting_Presentation -->|15| src_Foundation
   src_Hosting_Presentation -->|1| src_Hosting_Security
   src_Hosting_Presentation -->|2| src_Model_Contracts
   src_Hosting_Security -->|5| src_Foundation
@@ -195,6 +195,9 @@ flowchart LR
   SharedKernel_Presentation_Core --> SharedKernel_Primitives
   SharedKernel_Presentation_Core --> SharedKernel_Security_Abstractions
   SharedKernel_Presentation_GraphQL --> SharedKernel_Contracts
+  SharedKernel_Presentation_GraphQL --> SharedKernel_Core
+  SharedKernel_Presentation_GraphQL --> SharedKernel_Presentation_Core
+  SharedKernel_Presentation_GraphQL --> SharedKernel_Presentation_WebApi
   SharedKernel_Presentation_GraphQL --> SharedKernel_Primitives
   SharedKernel_Presentation_Grpc --> SharedKernel_Configuration
   SharedKernel_Presentation_Grpc --> SharedKernel_Core
