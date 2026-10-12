@@ -1353,17 +1353,26 @@ public class SecureDefaultsAssertionTests
     {
         // P-566 folded CorrelationIdMiddleware into SharedKernel.ServiceDefaults.Security's (internal)
         // RequestContextMiddleware, and the shape check moved to SharedKernel.Execution's CorrelationIds.IsValid,
-        // shared by every inbound channel. The lock follows the call site.
+        // shared by every inbound channel. WO-087 (SK.13.HostObservabilityFixes) routed the read through
+        // RequestContextPropagation.ReadHeaders, which applies CorrelationIds.IsValid; the lock follows both links.
         var declaringType = typeof(SharedKernel.ServiceDefaults.Security.RequestContextApplicationBuilderExtensions)
             .Assembly.GetType("SharedKernel.ServiceDefaults.Security.RequestContextMiddleware", throwOnError: true)!;
 
-        var act = () =>
+        var middlewareReads = () =>
             SecureDefaultsAssertion.AssertMethodBodyInvokesMethod(
-                declaringType, "ResolveCorrelationId", typeof(SharedKernel.Execution.Context.CorrelationIds), "IsValid");
+                declaringType, "ResolveCorrelationId",
+                typeof(SharedKernel.Execution.Context.RequestContextPropagation), "ReadHeaders");
+        var propagationValidates = () =>
+            SecureDefaultsAssertion.AssertMethodBodyInvokesMethod(
+                typeof(SharedKernel.Execution.Context.RequestContextPropagation), "ReadHeaders",
+                typeof(SharedKernel.Execution.Context.CorrelationIds), "IsValid");
 
-        act.Should().NotThrow(
-            because: "the real, shipped request-context middleware still validates a caller-supplied " +
-                     "correlation id with CorrelationIds.IsValid before preserving it (WO-063, C-65; P-566)");
+        middlewareReads.Should().NotThrow(
+            because: "the real, shipped request-context middleware reads the caller-supplied correlation id " +
+                     "through RequestContextPropagation.ReadHeaders (WO-087, P-594)");
+        propagationValidates.Should().NotThrow(
+            because: "ReadHeaders validates a caller-supplied correlation id with CorrelationIds.IsValid " +
+                     "before preserving it (WO-063, C-65; P-566)");
     }
 
     // ---------------------------------------------------------------------------
