@@ -31,7 +31,7 @@ Phases written by `arch-lead` take the next phase id; a user-directed phase with
 | 09 | [Search](src/Infrastructure/Search/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ○ | Next: `SK.09.SearchErrorSafety` (WO-087) |
 | 10 | [Intelligence](src/Infrastructure/AI/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ○ | Next: `SK.10.IntelligenceObservability` (WO-087) |
 | 11 | [Communication](src/Infrastructure/Communication/state-map.md) | 3 (Adapter) | ○ | Next: `SK.11.TokenUnavailableEdge` (WO-087) |
-| 12 | [Security](src/Hosting/Security/state-map.md) | 5 (1 Abstractions, 4 Host) | ○ | Next: `SK.12.RevocationFailureLogging` (WO-087) |
+| 12 | [Security](src/Hosting/Security/state-map.md) | 5 (1 Abstractions, 4 Host) | ○ | Next: `SK.12.SecurityConformance` (WO-087) |
 | 13 | [ServiceDefaults](src/Hosting/ServiceDefaults/state-map.md) | 7 (Host) | ○ | Next: `SK.13.HostObservabilityFixes` (WO-087) |
 | 14 | [Presentation](src/Hosting/Presentation/state-map.md) | 6 (Host) + WebApi generator (Tooling) | ○ | Next: `SK.14.EdgeErrorContext` (WO-087) |
 | 15 | [Integration](src/Infrastructure/Integration/state-map.md) | 4 (1 Abstractions, 3 Adapter) | ○ | Next: `SK.15.IntegrationLeakFixes` (WO-087) |
@@ -183,7 +183,7 @@ The access-token-unavailable exception carries an `Error` but does not derive `S
 - [ ] No URL or host in logs or `Error`s.
 
 #### P-593 — Pass the exception on token revocation failures (Phase 1)
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Domain:** 12.Security
 **Depends on:** P-580
 **Phase key:** `SK.12.RevocationFailureLogging`

@@ -22,39 +22,11 @@ Test doubles: `FakeUserContext`, test certificates and DPoP proofs in `src/Hosti
 
 | Phase key | Phase | Status |
 | --- | --- | :---: |
-| `SK.12.RevocationFailureLogging` | Revocation-check failures log the exception under their own event; bounded log text; no identity values in any Security log (WO-087 / P-593) | ○ |
 | `SK.12.SecurityConformance` | Phase 2: Security conforms to root "Observability, exceptions and error codes" (WO-087 / P-610) | ○ |
 
 Closed keys live in `git log`: check a new key is unused with `git log --oneline -S"SK.NN.Key"`.
 
 ## Open Work
-
-### SK.12.RevocationFailureLogging — Pass the exception on revocation failures `○`
-
-**Work order:** WO-087 / P-593 · **Depends on:** SK.01.ObservabilityHelpers (P-580, only for the shared conventions), SK.16.TelemetryCapture (P-581: the test assertions listed in T-01 to T-05)
-
-`TokenRevocationEnforcer` catches a throwing `ITokenRevocationCheck`, fails closed and logs 12103 with `checkAvailable: false` but without the exception, so the cause of every revocation outage is lost (audit Part 1, item 7). 12103 also mixes two different facts (the token is revoked; the check could not run) behind a boolean. The phase gives the failure its own event that carries the exception (new 12107, level Error: unexpected exception, L4/L6), leaves 12103 meaning "revoked", and audits every log in the domain for identity values (L5). Audit result on HEAD: no log writes a subject, client id, claim value, certificate subject or code (12101 logs a claim *type name* from configuration; 12300/12301 log a thumbprint; 12200 logs the managed key id, a 16-character base62 handle validated by `ApiKeyFormat`, not a client id; `TokenRevocationRequest.ToString()` omits subject and client). Two paths can still carry untrusted or consumer text and are closed here: 12104 logs the `alg` header of a token that failed validation (attacker-chosen, unbounded), and 12200/12300 log `FailureReason` returned by a consumer `IApiKeyValidator`/`IMtlsCertificateValidator` (free text that could hold a client id or certificate subject). Fail-closed behaviour (rule 15) is unchanged. No fix is Phase 2 work: templates, placeholder names and class layout stay for `SK.12.SecurityConformance`.
-
-| ID | Task | Package | State |
-| --- | --- | --- | :---: |
-| D-01 | Ratify the event split. 12103 `TokenRevocationRejected(logger)` keeps its id and Warning level and means "revoked"; the `CheckAvailable` property is removed (always true after the split). New 12107 `RevocationCheckFailed(logger, Exception)` at Error, exception last, placeholder-free. The enforcer still returns `true` (rejected). 12106 (cache failure, Warning, bypassed) is unchanged. The bare literal 12107 is converted to a named constant in `SK.12.SecurityConformance` | `SharedKernel.Security.Oidc` | `○` |
-| D-02 | Ratify bounded log text (rules 23, L5). (a) 12104 logs the `alg` header only when it is at most 16 characters of `[A-Za-z0-9_-]`, else the fixed value `unrecognized` (the existing `none` for an empty header stays). (b) 12200 and 12300 log a consumer `FailureReason` only when it is at most 64 characters of `[A-Za-z0-9_.-]`, else `Rejected`; the XML documentation of `ApiKeyValidationResult.FailureReason` and `MtlsValidationResult.FailureReason` states that the value is logged and must be a stable code, never an identifier, subject or claim value. The check is a small internal helper per package (provider packages never reference each other). Record the audit table above in the phase notes | `SharedKernel.Security.Oidc`, `SharedKernel.Security.ApiKey`, `SharedKernel.Security.Mtls` | `○` |
-| C-01 | `OidcLog.RevocationCheckFailed` (12107) and the `TokenRevocationRejected` signature change; `TokenRevocationEnforcer` logs 12107 with the caught exception on the throwing-check path and 12103 only for a revoked token | `SharedKernel.Security.Oidc` | `○` |
-| C-02 | Bound the algorithm value in `OidcJwtBearerEvents.AuthenticationFailed` per D-02 (a) | `SharedKernel.Security.Oidc` | `○` |
-| C-03 | Internal rejection-reason guard per D-02 (b) applied in `ApiKeyAuthenticationHandler` and `MtlsCertificateEvents`; the two `FailureReason` XML documentation comments | `SharedKernel.Security.ApiKey`, `SharedKernel.Security.Mtls` | `○` |
-| T-01 | Enforcer, captured logger: a throwing check yields exactly one 12107 record at Error whose `Exception` is the thrown instance, no 12103 record, and the method returns `true`; a revoked token yields 12103 without an exception; a cache failure still yields 12106 with its exception. Update the existing `CheckAvailable` assertions (`TokenRevocationEnforcerTests`, `TokenRevocationAuthenticationTests`). Mutation check: dropping the exception argument must fail the test | `SharedKernel.Security.Oidc.Tests` (Unit) | `○` |
-| T-02 | End to end through `TestServer` with a real signed token and a throwing `ITokenRevocationCheck`: 401, one 12107 with the exception, and no log record, template value or exception text contains the token, its `sub`, client id or `jti` (`ShouldNotLeak`) | `SharedKernel.Security.Oidc.Tests` (Unit) | `○` |
-| T-03 | Algorithm bounding: a token with a 5 KB `alg` header and one with a control-character `alg` log `unrecognized`; `HS256` and `none` still log their value | `SharedKernel.Security.Oidc.Tests` (Unit) | `○` |
-| T-04 | Reason guard: a custom validator returning a client-id-shaped over-long, whitespace or multi-line `FailureReason` logs `Rejected`; managed reasons (`Expired`, `UnknownKey`, `WrongPrefix`, `Malformed`) and a short code pass through unchanged. Same for the Mtls validator and a reason containing a subject DN | `SharedKernel.Security.ApiKey.Tests`, `SharedKernel.Security.Mtls.Tests` (Unit) | `○` |
-| T-05 | Domain leak sweep (L5): per scheme, run the rejection and success paths with real tokens, DPoP proofs, certificates, keys and TOTP codes whose subject, client id, tenant, claim values, certificate subject DN and code are distinctive strings, and assert no record from any logger contains them. Mutation check: logging `user.SubjectId` in any one event must fail the sweep | `SharedKernel.Security.Oidc.Tests`, `SharedKernel.Security.ApiKey.Tests`, `SharedKernel.Security.Mtls.Tests`, `SharedKernel.Security.Totp.Tests` (Unit) | `○` |
-| DO-01 | Oidc README EventId table (12103 meaning, new 12107, removed `CheckAvailable` property), ApiKey and Mtls README `FailureReason` contract; domain `CLAUDE.md` Logging table and rule 23 when shipped. `PublicAPI.Unshipped.txt`: no change expected (internal log and helper members only); record that in the task | `SharedKernel.Security.Oidc`, `SharedKernel.Security.ApiKey`, `SharedKernel.Security.Mtls` | `○` |
-
-**Acceptance:**
-- [ ] The failure log carries the exception: a captured-logger test sees one 12107 record whose exception is the thrown one (T-01, T-02).
-- [ ] No subject, client id, claim value, certificate subject or code is logged anywhere in the domain, proven by the sweep over all four schemes (T-05); consumer `FailureReason` and the token `alg` header are bounded (T-03, T-04).
-- [ ] Fail-closed behaviour is unchanged: a throwing revocation check still rejects the request.
-- [ ] Breaking changes listed under a "Breaking changes" heading in the commit/PR body: 12103 loses its `CheckAvailable` property; 12107 is new.
-- [ ] `PublicAPI.Unshipped.txt` (no change, stated), package READMEs and the domain `CLAUDE.md` updated in the same change; tests assert logs through the P-581 capture helpers, not by string search.
 
 ### SK.12.SecurityConformance — Conform Security to the observability gold standard `○`
 
