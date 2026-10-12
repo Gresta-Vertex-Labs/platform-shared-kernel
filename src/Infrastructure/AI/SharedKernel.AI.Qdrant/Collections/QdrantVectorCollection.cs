@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging;
@@ -8,6 +9,7 @@ using SharedKernel.AI.Abstractions.Constants;
 using SharedKernel.AI.Abstractions.Errors;
 using SharedKernel.AI.Abstractions.Exceptions;
 using SharedKernel.AI.Abstractions.Models;
+using SharedKernel.AI.Qdrant.Diagnostics;
 using SharedKernel.AI.Qdrant.Errors;
 using SharedKernel.AI.Qdrant.Logging;
 using SharedKernel.AI.Qdrant.Querying;
@@ -44,6 +46,12 @@ namespace SharedKernel.AI.Qdrant.Collections;
 /// filtered operations (<c>has_id AND tenant == value</c>) rather than raw id lookups whenever a
 /// tenant field is declared.
 /// </para>
+/// <para>
+/// <b>Observability.</b> Every public call except <see cref="WaitUntilQueryableAsync"/> runs inside one Client span
+/// and one duration observation, pre-I/O rejections included. Only a recognised provider fault becomes a failed
+/// <see cref="Result{T}"/>; the caller's cancellation is always an <see cref="OperationCanceledException"/>; anything
+/// else propagates untouched.
+/// </para>
 /// </remarks>
 internal sealed class QdrantVectorCollection<TRecord> : IVectorCollection<TRecord>
     where TRecord : class, IVectorRecord
@@ -53,22 +61,26 @@ internal sealed class QdrantVectorCollection<TRecord> : IVectorCollection<TRecor
     private readonly IQdrantClient _client;
     private readonly VectorCollectionDefinition _definition;
     private readonly IClock _clock;
+    private readonly QdrantTelemetry _telemetry;
     private readonly ILogger<QdrantVectorCollection<TRecord>> _logger;
 
     public QdrantVectorCollection(
         IQdrantClient client,
         VectorCollectionDefinition definition,
         IClock clock,
+        QdrantTelemetry telemetry,
         ILogger<QdrantVectorCollection<TRecord>> logger)
     {
         ArgumentNullException.ThrowIfNull(client);
         ArgumentNullException.ThrowIfNull(definition);
         ArgumentNullException.ThrowIfNull(clock);
+        ArgumentNullException.ThrowIfNull(telemetry);
         ArgumentNullException.ThrowIfNull(logger);
 
         _client = client;
         _definition = definition;
         _clock = clock;
+        _telemetry = telemetry;
         _logger = logger;
     }
 
@@ -85,24 +97,24 @@ internal sealed class QdrantVectorCollection<TRecord> : IVectorCollection<TRecor
     {
         ArgumentNullException.ThrowIfNull(record);
 
-        if (ValidateTenantScope(tenantScope) is { } tenantError)
+        var result = await RunAsync(IntelligenceOperations.Upsert, cancellationToken, async () =>
         {
-            return Reject<VectorWriteReceipt>(tenantError);
-        }
+            if (ValidateTenantScope(tenantScope) is { } tenantError)
+            {
+                return Reject<VectorWriteReceipt>(tenantError);
+            }
 
-        if (ValidateRecord(record) is { } recordError)
-        {
-            return Reject<VectorWriteReceipt>(recordError);
-        }
+            if (ValidateRecord(record) is { } recordError)
+            {
+                return Reject<VectorWriteReceipt>(recordError);
+            }
 
-        var pointResult = QdrantRecordMapper.ToPointStruct(record, _definition, tenantScope);
-        if (pointResult.IsFailure)
-        {
-            return Reject<VectorWriteReceipt>(pointResult.Error);
-        }
+            var pointResult = QdrantRecordMapper.ToPointStruct(record, _definition, tenantScope);
+            if (pointResult.IsFailure)
+            {
+                return Reject<VectorWriteReceipt>(pointResult.Error);
+            }
 
-        try
-        {
             var updateResult = await _client
                 .UpsertAsync(CollectionName, [pointResult.Value], wait: true, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
@@ -110,11 +122,10 @@ internal sealed class QdrantVectorCollection<TRecord> : IVectorCollection<TRecor
             var receipt = BuildReceipt(updateResult.OperationId, affectedCount: 1);
             _logger.QdrantRecordsUpserted(CollectionName, 1, receipt.ProviderToken);
             return Result<VectorWriteReceipt>.Success(receipt);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            return Fault<VectorWriteReceipt>(ex, nameof(UpsertAsync));
-        }
+        }).ConfigureAwait(false);
+
+        CountSingleWrite(IntelligenceOperations.Upsert, result.IsSuccess);
+        return result;
     }
 
     public async Task<Result<VectorBulkReceipt>> UpsertManyAsync(
@@ -124,47 +135,47 @@ internal sealed class QdrantVectorCollection<TRecord> : IVectorCollection<TRecor
     {
         ArgumentNullException.ThrowIfNull(records);
 
-        if (ValidateTenantScope(tenantScope) is { } tenantError)
+        var result = await RunAsync(IntelligenceOperations.UpsertMany, cancellationToken, async () =>
         {
-            return Reject<VectorBulkReceipt>(tenantError);
-        }
-
-        var points = new List<PointStruct>(records.Count);
-        foreach (var record in records)
-        {
-            if (ValidateRecord(record) is { } recordError)
+            if (ValidateTenantScope(tenantScope) is { } tenantError)
             {
-                return Reject<VectorBulkReceipt>(recordError);
+                return Reject<VectorBulkReceipt>(tenantError);
             }
 
-            var pointResult = QdrantRecordMapper.ToPointStruct(record, _definition, tenantScope);
-            if (pointResult.IsFailure)
+            var points = new List<PointStruct>(records.Count);
+            foreach (var record in records)
             {
-                return Reject<VectorBulkReceipt>(pointResult.Error);
+                if (ValidateRecord(record) is { } recordError)
+                {
+                    return Reject<VectorBulkReceipt>(recordError);
+                }
+
+                var pointResult = QdrantRecordMapper.ToPointStruct(record, _definition, tenantScope);
+                if (pointResult.IsFailure)
+                {
+                    return Reject<VectorBulkReceipt>(pointResult.Error);
+                }
+
+                points.Add(pointResult.Value);
             }
 
-            points.Add(pointResult.Value);
-        }
-
-        if (points.Count == 0)
-        {
-            return Result<VectorBulkReceipt>.Success(new VectorBulkReceipt
+            if (points.Count == 0)
             {
-                Receipt = BuildReceipt(operationId: 0, affectedCount: 0),
-                SucceededCount = 0,
-                Failures = [],
-            });
-        }
+                return Result<VectorBulkReceipt>.Success(new VectorBulkReceipt
+                {
+                    Receipt = BuildReceipt(operationId: 0, affectedCount: 0),
+                    SucceededCount = 0,
+                    Failures = [],
+                });
+            }
 
-        var operations = points
-            .Select(point => new PointsUpdateOperation
-            {
-                Upsert = new PointsUpdateOperation.Types.PointStructList { Points = { point } },
-            })
-            .ToList();
+            var operations = points
+                .Select(point => new PointsUpdateOperation
+                {
+                    Upsert = new PointsUpdateOperation.Types.PointStructList { Points = { point } },
+                })
+                .ToList();
 
-        try
-        {
             var results = await _client
                 .UpdateBatchAsync(CollectionName, operations, wait: true, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
@@ -183,7 +194,7 @@ internal sealed class QdrantVectorCollection<TRecord> : IVectorCollection<TRecor
                     failures.Add(new VectorItemFailure
                     {
                         RecordId = recordList[i].Id,
-                        Error = IntelligenceErrors.WriteRejected(CollectionName, results[i].Status.ToString()),
+                        Error = IntelligenceErrors.WriteRejected(CollectionName, $"The engine reported update status {results[i].Status}."),
                     });
                 }
             }
@@ -203,11 +214,10 @@ internal sealed class QdrantVectorCollection<TRecord> : IVectorCollection<TRecor
             }
 
             return Result<VectorBulkReceipt>.Success(receipt);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            return Fault<VectorBulkReceipt>(ex, nameof(UpsertManyAsync));
-        }
+        }).ConfigureAwait(false);
+
+        CountBulkWrite(IntelligenceOperations.UpsertMany, result, records.Count);
+        return result;
     }
 
     public async Task<Result<VectorWriteReceipt>> DeleteAsync(
@@ -217,19 +227,19 @@ internal sealed class QdrantVectorCollection<TRecord> : IVectorCollection<TRecor
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(id);
 
-        if (ValidateTenantScope(tenantScope) is { } tenantError)
+        var result = await RunAsync(IntelligenceOperations.Delete, cancellationToken, async () =>
         {
-            return Reject<VectorWriteReceipt>(tenantError);
-        }
+            if (ValidateTenantScope(tenantScope) is { } tenantError)
+            {
+                return Reject<VectorWriteReceipt>(tenantError);
+            }
 
-        var idResult = QdrantRecordMapper.ToPointId(id);
-        if (idResult.IsFailure)
-        {
-            return Reject<VectorWriteReceipt>(idResult.Error);
-        }
+            var idResult = QdrantRecordMapper.ToPointId(id);
+            if (idResult.IsFailure)
+            {
+                return Reject<VectorWriteReceipt>(idResult.Error);
+            }
 
-        try
-        {
             UpdateResult updateResult;
             if (_definition.TenantField is not null)
             {
@@ -250,11 +260,10 @@ internal sealed class QdrantVectorCollection<TRecord> : IVectorCollection<TRecor
             var receipt = BuildReceipt(updateResult.OperationId, affectedCount: 1);
             _logger.QdrantRecordsDeleted(CollectionName, 1, receipt.ProviderToken);
             return Result<VectorWriteReceipt>.Success(receipt);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            return Fault<VectorWriteReceipt>(ex, nameof(DeleteAsync));
-        }
+        }).ConfigureAwait(false);
+
+        CountSingleWrite(IntelligenceOperations.Delete, result.IsSuccess);
+        return result;
     }
 
     public async Task<Result<VectorBulkReceipt>> DeleteManyAsync(
@@ -264,58 +273,58 @@ internal sealed class QdrantVectorCollection<TRecord> : IVectorCollection<TRecor
     {
         ArgumentNullException.ThrowIfNull(ids);
 
-        if (ValidateTenantScope(tenantScope) is { } tenantError)
+        var result = await RunAsync(IntelligenceOperations.DeleteMany, cancellationToken, async () =>
         {
-            return Reject<VectorBulkReceipt>(tenantError);
-        }
-
-        var idList = ids.ToList();
-        var pointIds = new List<(string RawId, PointId PointId)>(idList.Count);
-        foreach (var id in idList)
-        {
-            var idResult = QdrantRecordMapper.ToPointId(id);
-            if (idResult.IsFailure)
+            if (ValidateTenantScope(tenantScope) is { } tenantError)
             {
-                return Reject<VectorBulkReceipt>(idResult.Error);
+                return Reject<VectorBulkReceipt>(tenantError);
             }
 
-            pointIds.Add((id, idResult.Value));
-        }
-
-        if (pointIds.Count == 0)
-        {
-            return Result<VectorBulkReceipt>.Success(new VectorBulkReceipt
+            var idList = ids.ToList();
+            var pointIds = new List<(string RawId, PointId PointId)>(idList.Count);
+            foreach (var id in idList)
             {
-                Receipt = BuildReceipt(operationId: 0, affectedCount: 0),
-                SucceededCount = 0,
-                Failures = [],
-            });
-        }
-
-        var operations = pointIds
-            .Select(entry =>
-            {
-                var selector = new PointsSelector();
-                if (_definition.TenantField is not null)
+                var idResult = QdrantRecordMapper.ToPointId(id);
+                if (idResult.IsFailure)
                 {
-                    var filter = CompileFilter(filter: null, tenantScope);
-                    filter.Must.Add(BuildHasIdCondition(entry.PointId));
-                    selector.Filter = filter;
-                }
-                else
-                {
-                    selector.Points = new PointsIdsList { Ids = { entry.PointId } };
+                    return Reject<VectorBulkReceipt>(idResult.Error);
                 }
 
-                return new PointsUpdateOperation
-                {
-                    DeletePoints = new PointsUpdateOperation.Types.DeletePoints { Points = selector },
-                };
-            })
-            .ToList();
+                pointIds.Add((id, idResult.Value));
+            }
 
-        try
-        {
+            if (pointIds.Count == 0)
+            {
+                return Result<VectorBulkReceipt>.Success(new VectorBulkReceipt
+                {
+                    Receipt = BuildReceipt(operationId: 0, affectedCount: 0),
+                    SucceededCount = 0,
+                    Failures = [],
+                });
+            }
+
+            var operations = pointIds
+                .Select(entry =>
+                {
+                    var selector = new PointsSelector();
+                    if (_definition.TenantField is not null)
+                    {
+                        var filter = CompileFilter(filter: null, tenantScope);
+                        filter.Must.Add(BuildHasIdCondition(entry.PointId));
+                        selector.Filter = filter;
+                    }
+                    else
+                    {
+                        selector.Points = new PointsIdsList { Ids = { entry.PointId } };
+                    }
+
+                    return new PointsUpdateOperation
+                    {
+                        DeletePoints = new PointsUpdateOperation.Types.DeletePoints { Points = selector },
+                    };
+                })
+                .ToList();
+
             var results = await _client
                 .UpdateBatchAsync(CollectionName, operations, wait: true, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
@@ -333,7 +342,7 @@ internal sealed class QdrantVectorCollection<TRecord> : IVectorCollection<TRecor
                     failures.Add(new VectorItemFailure
                     {
                         RecordId = pointIds[i].RawId,
-                        Error = IntelligenceErrors.WriteRejected(CollectionName, results[i].Status.ToString()),
+                        Error = IntelligenceErrors.WriteRejected(CollectionName, $"The engine reported update status {results[i].Status}."),
                     });
                 }
             }
@@ -348,29 +357,28 @@ internal sealed class QdrantVectorCollection<TRecord> : IVectorCollection<TRecor
 
             _logger.QdrantRecordsDeleted(CollectionName, succeeded, receipt.Receipt.ProviderToken);
             return Result<VectorBulkReceipt>.Success(receipt);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            return Fault<VectorBulkReceipt>(ex, nameof(DeleteManyAsync));
-        }
+        }).ConfigureAwait(false);
+
+        CountBulkWrite(IntelligenceOperations.DeleteMany, result, ids.Count);
+        return result;
     }
 
-    public async Task<Result<VectorWriteReceipt>> DeleteByFilterAsync(
+    public Task<Result<VectorWriteReceipt>> DeleteByFilterAsync(
         VectorFilter filter,
         TenantScope tenantScope,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(filter);
 
-        if (ValidateTenantScope(tenantScope) is { } tenantError)
+        return RunAsync(IntelligenceOperations.DeleteByFilter, cancellationToken, async () =>
         {
-            return Reject<VectorWriteReceipt>(tenantError);
-        }
+            if (ValidateTenantScope(tenantScope) is { } tenantError)
+            {
+                return Reject<VectorWriteReceipt>(tenantError);
+            }
 
-        var compiled = CompileFilter(filter, tenantScope);
+            var compiled = CompileFilter(filter, tenantScope);
 
-        try
-        {
             // Qdrant's filtered delete response carries no removed-count — a pre-delete exact count is
             // used as the best-effort AffectedCount, documented as approximate under concurrent writes.
             var matchedCount = await _client
@@ -384,11 +392,7 @@ internal sealed class QdrantVectorCollection<TRecord> : IVectorCollection<TRecor
             var receipt = BuildReceipt(updateResult.OperationId, affectedCount: checked((int)Math.Min(matchedCount, (ulong)int.MaxValue)));
             _logger.QdrantRecordsDeleted(CollectionName, receipt.AffectedCount, receipt.ProviderToken);
             return Result<VectorWriteReceipt>.Success(receipt);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            return Fault<VectorWriteReceipt>(ex, nameof(DeleteByFilterAsync));
-        }
+        });
     }
 
     public Task<Result> WaitUntilQueryableAsync(
@@ -399,7 +403,7 @@ internal sealed class QdrantVectorCollection<TRecord> : IVectorCollection<TRecor
         ArgumentNullException.ThrowIfNull(receipt);
 
         // Every write from this instance already dispatches with wait: true (see type-level remarks) —
-        // by the time a VectorWriteReceipt exists, the write is already durable and queryable.
+        // by the time a VectorWriteReceipt exists, the write is already durable and queryable. No I/O, so no span.
         return Task.FromResult(Result.Success());
     }
 
@@ -407,34 +411,34 @@ internal sealed class QdrantVectorCollection<TRecord> : IVectorCollection<TRecor
     // read
     // ---------------------------------------------------------------------------------------------
 
-    public async Task<Result<VectorQueryResults<TRecord>>> QueryAsync(
+    public Task<Result<VectorQueryResults<TRecord>>> QueryAsync(
         VectorQuery query,
         TenantScope tenantScope,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(query);
 
-        if (ValidateTenantScope(tenantScope) is { } tenantError)
+        return RunAsync(IntelligenceOperations.Query, cancellationToken, async () =>
         {
-            return Reject<VectorQueryResults<TRecord>>(tenantError);
-        }
+            if (ValidateTenantScope(tenantScope) is { } tenantError)
+            {
+                return Reject<VectorQueryResults<TRecord>>(tenantError);
+            }
 
-        if (!string.Equals(query.ModelId, _definition.EmbeddingModelId, StringComparison.Ordinal))
-        {
-            return Reject<VectorQueryResults<TRecord>>(
-                IntelligenceErrors.EmbeddingModelMismatch(CollectionName, _definition.EmbeddingModelId, query.ModelId));
-        }
+            if (!string.Equals(query.ModelId, _definition.EmbeddingModelId, StringComparison.Ordinal))
+            {
+                return Reject<VectorQueryResults<TRecord>>(
+                    IntelligenceErrors.EmbeddingModelMismatch(CollectionName, _definition.EmbeddingModelId, query.ModelId));
+            }
 
-        if (query.Vector.Length != _definition.Dimension)
-        {
-            return Reject<VectorQueryResults<TRecord>>(
-                IntelligenceErrors.DimensionMismatch(CollectionName, _definition.Dimension, query.Vector.Length));
-        }
+            if (query.Vector.Length != _definition.Dimension)
+            {
+                return Reject<VectorQueryResults<TRecord>>(
+                    IntelligenceErrors.DimensionMismatch(CollectionName, _definition.Dimension, query.Vector.Length));
+            }
 
-        var compiled = CompileFilter(query.Filter, tenantScope);
+            var compiled = CompileFilter(query.Filter, tenantScope);
 
-        try
-        {
             var started = _clock.UtcNow;
             var hits = await _client.QueryAsync(
                     CollectionName,
@@ -464,33 +468,29 @@ internal sealed class QdrantVectorCollection<TRecord> : IVectorCollection<TRecor
             var results = new VectorQueryResults<TRecord> { Hits = vectorHits, Duration = duration };
             _logger.QdrantQueryExecuted(CollectionName, vectorHits.Count, (long)duration.TotalMilliseconds);
             return Result<VectorQueryResults<TRecord>>.Success(results);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            return Fault<VectorQueryResults<TRecord>>(ex, nameof(QueryAsync));
-        }
+        });
     }
 
-    public async Task<Result<TRecord>> GetAsync(
+    public Task<Result<TRecord>> GetAsync(
         string id,
         TenantScope tenantScope,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(id);
 
-        if (ValidateTenantScope(tenantScope) is { } tenantError)
+        return RunAsync(IntelligenceOperations.Get, cancellationToken, async () =>
         {
-            return Reject<TRecord>(tenantError);
-        }
+            if (ValidateTenantScope(tenantScope) is { } tenantError)
+            {
+                return Reject<TRecord>(tenantError);
+            }
 
-        var idResult = QdrantRecordMapper.ToPointId(id);
-        if (idResult.IsFailure)
-        {
-            return Reject<TRecord>(idResult.Error);
-        }
+            var idResult = QdrantRecordMapper.ToPointId(id);
+            if (idResult.IsFailure)
+            {
+                return Reject<TRecord>(idResult.Error);
+            }
 
-        try
-        {
             if (_definition.TenantField is not null)
             {
                 var filter = CompileFilter(filter: null, tenantScope);
@@ -527,35 +527,26 @@ internal sealed class QdrantVectorCollection<TRecord> : IVectorCollection<TRecor
             var point = retrieved[0];
             var record = QdrantRecordMapper.ToRecord<TRecord>(id, ExtractDenseVector(point.Vectors), point.Payload, _definition);
             return Result<TRecord>.Success(record);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            return Fault<TRecord>(ex, nameof(GetAsync));
-        }
+        });
     }
 
-    public async Task<Result<long>> CountAsync(
+    public Task<Result<long>> CountAsync(
         VectorFilter? filter,
         TenantScope tenantScope,
         CancellationToken cancellationToken = default)
     {
-        if (ValidateTenantScope(tenantScope) is { } tenantError)
+        return RunAsync(IntelligenceOperations.Count, cancellationToken, async () =>
         {
-            return Reject<long>(tenantError);
-        }
+            if (ValidateTenantScope(tenantScope) is { } tenantError)
+            {
+                return Reject<long>(tenantError);
+            }
 
-        var compiled = CompileFilter(filter, tenantScope);
-
-        try
-        {
+            var compiled = CompileFilter(filter, tenantScope);
             var count = await _client.CountAsync(CollectionName, compiled, exact: true, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
             return Result<long>.Success(checked((long)count));
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            return Fault<long>(ex, nameof(CountAsync));
-        }
+        });
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -568,21 +559,46 @@ internal sealed class QdrantVectorCollection<TRecord> : IVectorCollection<TRecor
         int batchSize,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
+        // The span ends when the enumerator completes, faults or is disposed (an abandoned walk included). The consumer's
+        // Activity.Current is captured before the span starts and put back before every yield, so the span never
+        // replaces the consumer's ambient activity; it is current only around the provider call it parents.
+        var consumerActivity = Activity.Current;
+        using var scope = _telemetry.Begin(IntelligenceOperations.Scroll, CollectionName);
+        Activity.Current = consumerActivity;
+
         if (ValidateTenantScope(tenantScope) is { } tenantError)
         {
+            scope.Fail(tenantError);
             throw new IntelligenceStreamException(tenantError);
         }
 
-        var compiled = CompileFilter(filter, tenantScope);
+        Filter compiled;
+        try
+        {
+            compiled = CompileFilter(filter, tenantScope);
+        }
+        catch (Exception ex) when (scope.FailAndDecline(ex))
+        {
+            throw;
+        }
+
         _logger.QdrantRecordWalkStarted(CollectionName, batchSize);
 
         PointId? offset = null;
         while (true)
         {
-            ScrollResponse page;
+            consumerActivity = Activity.Current;
+
+            IReadOnlyList<TRecord> batch;
+            PointId? next;
             try
             {
-                page = await _client.ScrollAsync(
+                if (scope.Activity is not null)
+                {
+                    Activity.Current = scope.Activity;
+                }
+
+                var page = await _client.ScrollAsync(
                         CollectionName,
                         compiled,
                         limit: (uint)Math.Max(batchSize, 1),
@@ -591,34 +607,89 @@ internal sealed class QdrantVectorCollection<TRecord> : IVectorCollection<TRecor
                         vectorsSelector: true,
                         cancellationToken: cancellationToken)
                     .ConfigureAwait(false);
+
+                var mapped = new List<TRecord>(page.Result.Count);
+                foreach (var point in page.Result)
+                {
+                    mapped.Add(QdrantRecordMapper.ToRecord<TRecord>(
+                        PointIdToString(point.Id),
+                        ExtractDenseVector(point.Vectors),
+                        point.Payload,
+                        _definition));
+                }
+
+                batch = mapped;
+                next = page.Result.Count == 0 ? null : page.NextPageOffset;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex) when (QdrantFaults.TryClassify(
+                ex, cancellationToken, ProviderName, IntelligenceOperations.Scroll, CollectionName, out var error))
             {
-                throw new IntelligenceStreamException(QdrantErrors.FromException(ex, ProviderName, nameof(ScrollAsync), CollectionName), ex);
+                if (error is null)
+                {
+                    var canceled = QdrantFaults.CanceledBy(ex, cancellationToken);
+                    scope.Fail(canceled);
+                    throw canceled;
+                }
+
+                QdrantFaults.Report(ex, error, _logger, IntelligenceOperations.Scroll, CollectionName);
+                scope.Fail(error);
+                throw new IntelligenceStreamException(error, ex);
+            }
+            catch (Exception ex) when (scope.FailAndDecline(ex))
+            {
+                throw;
+            }
+            finally
+            {
+                if (scope.Activity is not null)
+                {
+                    Activity.Current = consumerActivity;
+                }
             }
 
-            foreach (var point in page.Result)
+            foreach (var record in batch)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                yield return QdrantRecordMapper.ToRecord<TRecord>(
-                    PointIdToString(point.Id),
-                    ExtractDenseVector(point.Vectors),
-                    point.Payload,
-                    _definition);
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    var canceled = new OperationCanceledException(cancellationToken);
+                    scope.Fail(canceled);
+                    throw canceled;
+                }
+
+                yield return record;
             }
 
-            if (page.NextPageOffset is null || page.Result.Count == 0)
+            if (next is null)
             {
+                scope.Succeed();
                 yield break;
             }
 
-            offset = page.NextPageOffset;
+            offset = next;
         }
     }
 
     // ---------------------------------------------------------------------------------------------
     // shared helpers
     // ---------------------------------------------------------------------------------------------
+
+    private Task<Result<T>> RunAsync<T>(string operation, CancellationToken cancellationToken, Func<Task<Result<T>>> body) =>
+        QdrantOperationRunner.RunAsync(_telemetry, _logger, operation, CollectionName, cancellationToken, body);
+
+    private void CountSingleWrite(string operation, bool succeeded) =>
+        _telemetry.RecordRecords(operation, CollectionName, succeeded ? 1 : 0, succeeded ? 0 : 1);
+
+    private void CountBulkWrite(string operation, Result<VectorBulkReceipt> result, int requested)
+    {
+        if (result.IsSuccess)
+        {
+            _telemetry.RecordRecords(operation, CollectionName, result.Value.SucceededCount, result.Value.Failures.Count);
+        }
+        else
+        {
+            _telemetry.RecordRecords(operation, CollectionName, 0, requested);
+        }
+    }
 
     private Error? ValidateTenantScope(TenantScope tenantScope)
     {
@@ -684,15 +755,11 @@ internal sealed class QdrantVectorCollection<TRecord> : IVectorCollection<TRecor
             ? vectors.Vector!.GetDenseVector()!.Data.ToArray()
             : ReadOnlyMemory<float>.Empty;
 
+    // Logs the rejection with its bounded type and code only: the message of a rejection can carry the caller's own
+    // record id, which is never logged.
     private Result<T> Reject<T>(Error error)
     {
-        _logger.QdrantRequestRejected(CollectionName, error.Message);
+        _logger.QdrantRequestRejected(CollectionName, error.Type.ToString(), error.Code);
         return Result<T>.Failure(error);
-    }
-
-    private Result<T> Fault<T>(Exception exception, string operation)
-    {
-        _logger.QdrantEngineFault(operation, CollectionName);
-        return Result<T>.Failure(QdrantErrors.FromException(exception, ProviderName, operation, CollectionName));
     }
 }

@@ -8,6 +8,7 @@ using SharedKernel.AI.Abstractions.Abstractions;
 using SharedKernel.AI.Abstractions.Exceptions;
 using SharedKernel.AI.SemanticKernel.Errors;
 using SharedKernel.AI.SemanticKernel.Orchestration;
+using SharedKernel.AI.SemanticKernel.Tests.Support;
 using SharedKernel.AI.SemanticKernel.Tests.Errors;
 
 namespace SharedKernel.AI.SemanticKernel.Tests.Orchestration;
@@ -31,7 +32,7 @@ public sealed class SemanticKernelOrchestratorTests
             ]));
 
         var orchestrator = new SemanticKernelOrchestrator(
-            chatService, "gpt-test", retryOptions: null, NullLogger<SemanticKernelOrchestrator>.Instance);
+            chatService, "gpt-test", retryOptions: null, TestMeterFactory.NewTelemetry(), NullLogger<SemanticKernelOrchestrator>.Instance);
 
         var result = await orchestrator.CompleteAsync(CreateRequest());
 
@@ -54,7 +55,7 @@ public sealed class SemanticKernelOrchestratorTests
             .Returns(Task.FromResult<IReadOnlyList<ChatMessageContent>>([message]));
 
         var orchestrator = new SemanticKernelOrchestrator(
-            chatService, "gpt-test", retryOptions: null, NullLogger<SemanticKernelOrchestrator>.Instance);
+            chatService, "gpt-test", retryOptions: null, TestMeterFactory.NewTelemetry(), NullLogger<SemanticKernelOrchestrator>.Instance);
 
         var result = await orchestrator.CompleteAsync(CreateRequest());
 
@@ -75,7 +76,7 @@ public sealed class SemanticKernelOrchestratorTests
             .Returns<Task<IReadOnlyList<ChatMessageContent>>>(_ => throw new ClientResultException(new FakePipelineResponse(503), innerException: null));
 
         var orchestrator = new SemanticKernelOrchestrator(
-            chatService, "gpt-test", retryOptions: null, NullLogger<SemanticKernelOrchestrator>.Instance);
+            chatService, "gpt-test", retryOptions: null, TestMeterFactory.NewTelemetry(), NullLogger<SemanticKernelOrchestrator>.Instance);
 
         var result = await orchestrator.CompleteAsync(CreateRequest());
 
@@ -106,6 +107,7 @@ public sealed class SemanticKernelOrchestratorTests
             chatService,
             "gpt-test",
             new SharedKernel.AI.SemanticKernel.Resilience.BoundedRetryOptions(maxAttempts: 3, baseDelay: TimeSpan.FromMilliseconds(1)),
+            TestMeterFactory.NewTelemetry(),
             NullLogger<SemanticKernelOrchestrator>.Instance);
 
         var result = await orchestrator.CompleteAsync(CreateRequest());
@@ -127,6 +129,7 @@ public sealed class SemanticKernelOrchestratorTests
             chatService,
             "gpt-test",
             new SharedKernel.AI.SemanticKernel.Resilience.BoundedRetryOptions(maxAttempts: 5, baseDelay: TimeSpan.FromMilliseconds(1)),
+            TestMeterFactory.NewTelemetry(),
             NullLogger<SemanticKernelOrchestrator>.Instance);
 
         var result = await orchestrator.CompleteAsync(CreateRequest());
@@ -145,7 +148,7 @@ public sealed class SemanticKernelOrchestratorTests
             .Returns(FaultingStream());
 
         var orchestrator = new SemanticKernelOrchestrator(
-            chatService, "gpt-test", retryOptions: null, NullLogger<SemanticKernelOrchestrator>.Instance);
+            chatService, "gpt-test", retryOptions: null, TestMeterFactory.NewTelemetry(), NullLogger<SemanticKernelOrchestrator>.Instance);
 
         var act = async () =>
         {

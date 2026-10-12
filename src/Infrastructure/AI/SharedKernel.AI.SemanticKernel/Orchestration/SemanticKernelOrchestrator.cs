@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
@@ -7,10 +8,10 @@ using Microsoft.SemanticKernel.Connectors.OpenAI;
 using SharedKernel.AI.Abstractions.Abstractions;
 using SharedKernel.AI.Abstractions.Constants;
 using SharedKernel.AI.Abstractions.Exceptions;
+using SharedKernel.AI.SemanticKernel.Diagnostics;
 using SharedKernel.AI.SemanticKernel.Errors;
 using SharedKernel.AI.SemanticKernel.Logging;
 using SharedKernel.AI.SemanticKernel.Resilience;
-using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 
 namespace SharedKernel.AI.SemanticKernel.Orchestration;
@@ -25,12 +26,18 @@ namespace SharedKernel.AI.SemanticKernel.Orchestration;
 /// <para>
 /// <b>No retry by default:</b> <see cref="CompleteAsync"/> dispatches exactly once unless the
 /// composition root explicitly supplied a <see cref="BoundedRetryOptions"/> via <c>.WithBoundedRetry(...)</c>,
-/// and even then only for genuinely transient HTTP outcomes (429 rate-limit, 5xx server fault) — never
-/// for a 4xx client-shaped failure (bad request, auth, not-found), and never for
+/// and even then only for a real HTTP 429 or 5xx status — never for a 4xx client-shaped failure
+/// (bad request, auth, not-found), never for a transport fault, and never for
 /// <see cref="CompleteStreamingAsync"/> at all (retrying mid-stream would duplicate already-yielded
-/// content).
+/// content). The SDK's own implicit retry is disabled at registration, so there is no hidden second dispatch.
 /// </para>
 /// <para><b>No caching anywhere in this adapter</b> — every call dispatches fresh, per Domain Invariant #4.</para>
+/// <para>
+/// <b>Observability.</b> Each call is one Client span (<c>ai complete</c> / <c>ai complete_stream</c>) and one duration
+/// observation; a retry stays inside its call's span. Only a recognised provider fault becomes a failed
+/// <see cref="Result{T}"/> (or an <see cref="IntelligenceStreamException"/> mid-stream); the caller's cancellation is
+/// always an <see cref="OperationCanceledException"/>; anything else propagates untouched.
+/// </para>
 /// </remarks>
 internal sealed class SemanticKernelOrchestrator : ISemanticKernel
 {
@@ -39,21 +46,25 @@ internal sealed class SemanticKernelOrchestrator : ISemanticKernel
     private readonly IChatCompletionService _chatService;
     private readonly string _defaultModelId;
     private readonly BoundedRetryOptions? _retryOptions;
+    private readonly SemanticKernelTelemetry _telemetry;
     private readonly ILogger<SemanticKernelOrchestrator> _logger;
 
     public SemanticKernelOrchestrator(
         IChatCompletionService chatService,
         string defaultModelId,
         BoundedRetryOptions? retryOptions,
+        SemanticKernelTelemetry telemetry,
         ILogger<SemanticKernelOrchestrator> logger)
     {
         ArgumentNullException.ThrowIfNull(chatService);
         ArgumentException.ThrowIfNullOrWhiteSpace(defaultModelId);
+        ArgumentNullException.ThrowIfNull(telemetry);
         ArgumentNullException.ThrowIfNull(logger);
 
         _chatService = chatService;
         _defaultModelId = defaultModelId;
         _retryOptions = retryOptions;
+        _telemetry = telemetry;
         _logger = logger;
     }
 
@@ -62,40 +73,47 @@ internal sealed class SemanticKernelOrchestrator : ISemanticKernel
         ArgumentNullException.ThrowIfNull(request);
 
         var modelId = request.ModelId ?? _defaultModelId;
-        var history = BuildHistory(request);
-        var settings = BuildExecutionSettings(request);
-        var maxAttempts = _retryOptions?.MaxAttempts ?? 1;
+        var boundedModel = SemanticKernelTelemetry.BoundedModel(request.ModelId, _defaultModelId);
 
-        for (var attempt = 1; attempt <= maxAttempts; attempt++)
-        {
-            try
+        var result = await SemanticKernelOperationRunner.RunAsync(
+            _telemetry, _logger, IntelligenceOperations.Complete, boundedModel, modelId, cancellationToken, async () =>
             {
-                var responses = await _chatService
-                    .GetChatMessageContentsAsync(history, settings, cancellationToken: cancellationToken)
-                    .ConfigureAwait(false);
+                var history = BuildHistory(request);
+                var settings = BuildExecutionSettings(request);
+                var maxAttempts = _retryOptions?.MaxAttempts ?? 1;
 
-                var result = MapResult(responses[0], modelId);
-                _logger.SemanticKernelCompletionCompleted(result.ModelId, result.FinishReason.ToString(), result.TokenUsage.TotalTokens);
-                return Result<CompletionResult>.Success(result);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                var error = SemanticKernelErrors.FromException(ex, ProviderName, nameof(CompleteAsync), modelId);
-                var canRetry = _retryOptions is not null && attempt < maxAttempts && IsTransientFailure(ex);
-                if (canRetry)
+                for (var attempt = 1; attempt <= maxAttempts; attempt++)
                 {
-                    _logger.SemanticKernelCompletionRetrying(modelId, attempt, maxAttempts, error.Code);
-                    await Task.Delay(_retryOptions!.ComputeDelay(attempt), cancellationToken).ConfigureAwait(false);
-                    continue;
+                    try
+                    {
+                        var responses = await _chatService
+                            .GetChatMessageContentsAsync(history, settings, cancellationToken: cancellationToken)
+                            .ConfigureAwait(false);
+
+                        var completion = MapResult(responses[0], modelId);
+                        _logger.SemanticKernelCompletionCompleted(completion.ModelId, completion.FinishReason.ToString(), completion.TokenUsage.TotalTokens);
+                        return Result<CompletionResult>.Success(completion);
+                    }
+                    catch (Exception ex) when (_retryOptions is not null
+                        && attempt < maxAttempts
+                        && SemanticKernelFaults.IsTransientHttpFailure(ex, cancellationToken))
+                    {
+                        SemanticKernelFaults.TryClassify(ex, cancellationToken, ProviderName, IntelligenceOperations.Complete, modelId, out var error);
+                        _logger.SemanticKernelCompletionRetrying(modelId, attempt, maxAttempts, error?.Code ?? string.Empty, ex);
+                        await Task.Delay(_retryOptions.ComputeDelay(attempt), cancellationToken).ConfigureAwait(false);
+                    }
                 }
 
-                _logger.SemanticKernelEngineFault(nameof(CompleteAsync), modelId);
-                return Result<CompletionResult>.Failure(error);
-            }
+                // Unreachable — the loop above always returns or throws before falling out.
+                throw new InvalidOperationException("CompleteAsync's retry loop terminated without a result.");
+            }).ConfigureAwait(false);
+
+        if (result.IsSuccess)
+        {
+            _telemetry.RecordTokens(IntelligenceOperations.Complete, boundedModel, result.Value.TokenUsage);
         }
 
-        // Unreachable — the loop above always returns or throws before falling out.
-        throw new InvalidOperationException("CompleteAsync's retry loop terminated without a result.");
+        return result;
     }
 
     public async IAsyncEnumerable<CompletionChunk> CompleteStreamingAsync(
@@ -105,8 +123,26 @@ internal sealed class SemanticKernelOrchestrator : ISemanticKernel
         ArgumentNullException.ThrowIfNull(request);
 
         var modelId = request.ModelId ?? _defaultModelId;
-        var history = BuildHistory(request);
-        var settings = BuildExecutionSettings(request);
+        var boundedModel = SemanticKernelTelemetry.BoundedModel(request.ModelId, _defaultModelId);
+
+        // The span ends when the enumerator completes, faults or is disposed (an abandoned stream included). The
+        // consumer's Activity.Current is captured before the span starts and put back before every yield, so the span
+        // never replaces the consumer's ambient activity; it is current only around the provider call it parents.
+        var consumerActivity = Activity.Current;
+        using var scope = _telemetry.Begin(IntelligenceOperations.CompleteStream, boundedModel);
+        Activity.Current = consumerActivity;
+
+        ChatHistory history;
+        OpenAIPromptExecutionSettings settings;
+        try
+        {
+            history = BuildHistory(request);
+            settings = BuildExecutionSettings(request);
+        }
+        catch (Exception ex) when (scope.FailAndDecline(ex))
+        {
+            throw;
+        }
 
         _logger.SemanticKernelStreamingStarted(modelId);
 
@@ -114,39 +150,73 @@ internal sealed class SemanticKernelOrchestrator : ISemanticKernel
             .GetStreamingChatMessageContentsAsync(history, settings, cancellationToken: cancellationToken)
             .GetAsyncEnumerator(cancellationToken);
 
+        TokenUsage? finalUsage = null;
         await using (enumerator.ConfigureAwait(false))
         {
             while (true)
             {
-                StreamingChatMessageContent current;
+                consumerActivity = Activity.Current;
+
+                CompletionChunk? chunk = null;
                 try
                 {
-                    if (!await enumerator.MoveNextAsync().ConfigureAwait(false))
+                    if (scope.Activity is not null)
                     {
-                        yield break;
+                        Activity.Current = scope.Activity;
                     }
 
-                    current = enumerator.Current;
+                    if (await enumerator.MoveNextAsync().ConfigureAwait(false))
+                    {
+                        chunk = MapChunk(enumerator.Current);
+                    }
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException)
+                catch (Exception ex) when (SemanticKernelFaults.TryClassify(
+                    ex, cancellationToken, ProviderName, IntelligenceOperations.CompleteStream, modelId, out var error))
                 {
-                    throw new IntelligenceStreamException(
-                        SemanticKernelErrors.FromException(ex, ProviderName, nameof(CompleteStreamingAsync), modelId), ex);
+                    if (error is null)
+                    {
+                        var canceled = SemanticKernelFaults.CanceledBy(ex, cancellationToken);
+                        scope.Fail(canceled);
+                        throw canceled;
+                    }
+
+                    SemanticKernelFaults.Report(ex, error, _logger, IntelligenceOperations.CompleteStream, modelId);
+                    scope.Fail(error);
+                    throw new IntelligenceStreamException(error, ex);
+                }
+                catch (Exception ex) when (scope.FailAndDecline(ex))
+                {
+                    throw;
+                }
+                finally
+                {
+                    if (scope.Activity is not null)
+                    {
+                        Activity.Current = consumerActivity;
+                    }
                 }
 
-                yield return MapChunk(current);
+                if (chunk is null)
+                {
+                    // The usage the final chunk carried is the call's usage; nothing is summed, so nothing is double counted.
+                    if (finalUsage is not null)
+                    {
+                        _telemetry.RecordTokens(IntelligenceOperations.CompleteStream, boundedModel, finalUsage);
+                    }
+
+                    scope.Succeed();
+                    yield break;
+                }
+
+                if (chunk.TokenUsage is { } usage)
+                {
+                    finalUsage = usage;
+                }
+
+                yield return chunk;
             }
         }
     }
-
-    /// <summary>
-    /// Determines whether <paramref name="exception"/> represents a genuinely transient failure worth
-    /// retrying — HTTP 429 (rate limit) or 5xx (server fault) only. A 4xx client-shaped failure (bad
-    /// request, auth, not-found) is never retried: retrying an inherently malformed request only
-    /// re-bills for the same certain failure.
-    /// </summary>
-    private static bool IsTransientFailure(Exception exception) =>
-        exception is System.ClientModel.ClientResultException { Status: 429 or >= 500 };
 
     private static ChatHistory BuildHistory(CompletionRequest request)
     {

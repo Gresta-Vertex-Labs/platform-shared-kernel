@@ -47,7 +47,7 @@ reports what it cost, and a provider swap is a build error instead of a producti
 
 Start with Abstractions in the Application project; add Qdrant to store vectors and SemanticKernel to produce
 embeddings or completions — they are independent, so a service can take either one. `SharedKernel.ServiceDefaults`
-maps the probes (`AddSharedKernelReadiness()`) and exports telemetry (`WithIntelligenceTelemetry()`).
+maps the probes (`AddSharedKernelReadiness()`), and `AddServiceDefaults` exports the spans and `sharedkernel.ai.*` metrics both providers emit under the name `SharedKernel.AI` (its `SharedKernel.*` subscription).
 
 ## How it fits together
 
@@ -143,7 +143,10 @@ return await chunks.QueryAsync(query, TenantScope.For(tenantId), ct);
 | **No call without a tenant decision** | `ContractShapeTests`: every read and filtered write takes a non-optional `TenantScope`, and `VectorQuery` has no tenant member |
 | **No cross-tenant results** | `QdrantVectorCollectionConformanceTests` (real Qdrant): an identical vector owned by another tenant is never returned; `GetAsync` with the wrong tenant is `record_not_found` |
 | **Cost is visible** | `SemanticKernelEmbeddingGeneratorTokenUsageTests`: token usage is the provider's reported figure, on every embedding |
-| **No hidden retries, caching or tool runs** | `SemanticKernelOrchestratorTests` and `SemanticKernelOrchestratorStreamingTests`: one dispatch by default, validation never retried, identical requests never cached; `ISemanticKernel` has no invoke-tool member |
+| **No hidden retries, caching or tool runs** | `SemanticKernelRetryTests` (real connector): one request per call by default, even for a 429 or 5xx, and the bounded retry fires only on a real 429/5xx; `SemanticKernelOrchestratorTests` and `SemanticKernelOrchestratorStreamingTests`: validation never retried, identical requests never cached; `ISemanticKernel` has no invoke-tool member |
+| **No provider text in an error or a log message** | `QdrantFaultMatrixTests` and `SemanticKernelFaultMatrixTests`: every gRPC status and HTTP status, a transport fault and a timeout, on every operation, with sentinel host, body, key, filter and record-id values that appear in no `Error`, span tag, metric tag or log message |
+| **Cancellation is never an error, a defect is never swallowed** | the same matrices: a cancelled caller token is an `OperationCanceledException` on every operation (including gRPC `Cancelled`), and an unclassified exception propagates as the same instance with its stack |
+| **Every call is observable** | `QdrantContainerObservabilityTests` (real Qdrant), `SemanticKernelTelemetryTests`: one Client span and one duration observation per call, token usage counted once |
 | **Misconfiguration fails at startup** | `QdrantOptionsTests` and `SemanticKernelOptionsTests`: a missing required option (`Host`, …) fails validation naming the property |
 | **Provider-neutral contracts** | `IntelligenceTopologyRules`: Abstractions takes no third-party package, the providers never reference each other, no health-checks dependency; analyzers `SK0026` (raw `QdrantClient`/`Kernel` injection) and `SK0027` (literal identifiers) |
 

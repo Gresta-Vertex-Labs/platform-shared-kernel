@@ -62,12 +62,14 @@ public sealed class QdrantBuilder
             sp.GetRequiredService<IQdrantClient>(),
             definition,
             sp.GetRequiredService<IClock>(),
+            sp.GetRequiredService<QdrantTelemetry>(),
             sp.GetRequiredService<ILogger<QdrantVectorCollection<TRecord>>>()));
 
         _services.AddScoped<IQdrantHybridQueryAccessor<TRecord>>(sp => new QdrantHybridQueryAccessor<TRecord>(
             sp.GetRequiredService<IQdrantClient>(),
             definition,
             sp.GetRequiredService<IClock>(),
+            sp.GetRequiredService<QdrantTelemetry>(),
             sp.GetRequiredService<ILogger<QdrantHybridQueryAccessor<TRecord>>>()));
 
         return this;
@@ -115,7 +117,9 @@ public sealed class QdrantBuilder
         });
 
         _services.AddSingleton<IQdrantQuantizationProfileAccessor>(sp =>
-            new QdrantQuantizationProfileAccessor(sp.GetRequiredService<IQdrantClient>()));
+            new QdrantQuantizationProfileAccessor(
+                sp.GetRequiredService<IQdrantClient>(),
+                sp.GetRequiredService<ILogger<QdrantQuantizationProfileAccessor>>()));
 
         if (_rawClientAccessAllowed)
         {

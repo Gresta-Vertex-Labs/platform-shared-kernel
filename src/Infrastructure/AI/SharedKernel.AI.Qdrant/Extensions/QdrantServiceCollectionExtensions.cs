@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Qdrant.Client;
+using SharedKernel.AI.Qdrant.Diagnostics;
 using SharedKernel.AI.Qdrant.Logging;
 using SharedKernel.AI.Qdrant.Options;
 using SharedKernel.Configuration.Extensions;
@@ -35,6 +36,10 @@ public static class QdrantServiceCollectionExtensions
 
         services.AddValidatedOptions<QdrantOptions>(section);
 
+        // The telemetry creates its meter from IMeterFactory (a no-op when the host already registered metrics).
+        services.AddMetrics();
+        services.AddSingleton<QdrantTelemetry>();
+
         var builder = new QdrantBuilder(services);
 
         // Qdrant.Client's QdrantClient manages its own gRPC channel internally and exposes no
@@ -57,7 +62,7 @@ public static class QdrantServiceCollectionExtensions
                 loggerFactory!);
 
             sp.GetRequiredService<ILogger<QdrantClient>>()
-                .QdrantClientConfigured(options.Host, options.Port, builder.RegisteredCollectionCount);
+                .QdrantClientConfigured(builder.RegisteredCollectionCount);
 
             return client;
         });

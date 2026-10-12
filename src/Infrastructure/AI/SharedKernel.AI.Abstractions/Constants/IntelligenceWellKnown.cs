@@ -49,4 +49,31 @@ public static class IntelligenceWellKnown
 
     /// <summary>The OpenTelemetry tag key carrying the active model identifier (<c>ai.model</c>).</summary>
     public const string ModelTagName = "ai.model";
+
+    /// <summary>The OpenTelemetry tag key carrying the operation name (<c>ai.operation</c>), a value of <see cref="IntelligenceOperations"/>.</summary>
+    public const string OperationTagName = "ai.operation";
+
+    /// <summary>The OpenTelemetry tag key carrying the token direction (<c>ai.token_type</c>), <see cref="TokenTypeInput"/> or <see cref="TokenTypeOutput"/>.</summary>
+    public const string TokenTypeTagName = "ai.token_type";
+
+    /// <summary>The <see cref="TokenTypeTagName"/> value for tokens the provider billed for the request (<c>input</c>).</summary>
+    public const string TokenTypeInput = "input";
+
+    /// <summary>The <see cref="TokenTypeTagName"/> value for tokens the provider billed for the response (<c>output</c>).</summary>
+    public const string TokenTypeOutput = "output";
+
+    /// <summary>The instrument name of the operation duration histogram (<c>sharedkernel.ai.operation.duration</c>, unit <c>s</c>).</summary>
+    public const string OperationDurationInstrumentName = "sharedkernel.ai.operation.duration";
+
+    /// <summary>The instrument name of the token counter (<c>sharedkernel.ai.tokens</c>, unit <c>{token}</c>).</summary>
+    public const string TokensInstrumentName = "sharedkernel.ai.tokens";
+
+    /// <summary>The instrument name of the vector record counter (<c>sharedkernel.ai.vector.records</c>, unit <c>{record}</c>).</summary>
+    public const string VectorRecordsInstrumentName = "sharedkernel.ai.vector.records";
+
+    /// <summary>
+    /// The <c>ai.model</c> value used when a caller-supplied model id is not one the provider is configured with, so
+    /// a caller cannot mint unbounded metric dimensions.
+    /// </summary>
+    public const string OtherModel = "_OTHER";
 }

@@ -5,6 +5,7 @@ using SharedKernel.AI.Abstractions.Abstractions;
 using SharedKernel.AI.Abstractions.Models;
 using SharedKernel.AI.Qdrant.Collections;
 using SharedKernel.AI.Qdrant.Provisioning;
+using SharedKernel.AI.Qdrant.Tests.Support;
 using SharedKernel.AI.Qdrant.Tests.TestSupport;
 using SharedKernel.Execution.Tenancy;
 using SharedKernel.Testing.Clocks;
@@ -75,7 +76,7 @@ public sealed class QdrantCutoverConformanceTests : IAsyncLifetime
         (await _provisioner.EnsureCollectionAsync(definitionV1)).IsSuccess.Should().BeTrue();
 
         var collectionV1 = new QdrantVectorCollection<TestVectorRecord>(
-            _client, definitionV1, new FakeClock(), NullLogger<QdrantVectorCollection<TestVectorRecord>>.Instance);
+            _client, definitionV1, new FakeClock(), TestMeterFactory.NewTelemetry(), NullLogger<QdrantVectorCollection<TestVectorRecord>>.Instance);
         var recordV1 = new TestVectorRecord { Id = "1", Vector = new float[] { 1, 0 }, ModelId = ModelId };
         (await collectionV1.UpsertAsync(recordV1, TenantScope.Global)).IsSuccess.Should().BeTrue();
 
@@ -90,7 +91,7 @@ public sealed class QdrantCutoverConformanceTests : IAsyncLifetime
 
         var liveDefinition = definitionV1 with { Name = _liveAlias };
         var liveCollection = new QdrantVectorCollection<TestVectorRecord>(
-            _client, liveDefinition, new FakeClock(), NullLogger<QdrantVectorCollection<TestVectorRecord>>.Instance);
+            _client, liveDefinition, new FakeClock(), TestMeterFactory.NewTelemetry(), NullLogger<QdrantVectorCollection<TestVectorRecord>>.Instance);
 
         (await liveCollection.GetAsync("1", TenantScope.Global)).IsSuccess.Should().BeTrue(
             "the alias must now resolve reads through to the staging v1 collection");
@@ -106,7 +107,7 @@ public sealed class QdrantCutoverConformanceTests : IAsyncLifetime
         (await _provisioner.EnsureCollectionAsync(definitionV2)).IsSuccess.Should().BeTrue();
 
         var collectionV2 = new QdrantVectorCollection<TestVectorRecord>(
-            _client, definitionV2, new FakeClock(), NullLogger<QdrantVectorCollection<TestVectorRecord>>.Instance);
+            _client, definitionV2, new FakeClock(), TestMeterFactory.NewTelemetry(), NullLogger<QdrantVectorCollection<TestVectorRecord>>.Instance);
         var recordV2 = new TestVectorRecord { Id = "2", Vector = new float[] { 0, 1 }, ModelId = ModelId };
         (await collectionV2.UpsertAsync(recordV2, TenantScope.Global)).IsSuccess.Should().BeTrue();
 

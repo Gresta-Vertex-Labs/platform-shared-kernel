@@ -42,6 +42,10 @@ namespace SharedKernel.AI.Qdrant.Provisioning;
 internal sealed class QdrantCollectionProvisioner : IVectorCollectionProvisioner
 {
     private const string ProviderName = IntelligenceWellKnown.QdrantProviderName;
+    private const string EnsureOperation = "ensure_collection";
+    private const string ExistsOperation = "collection_exists";
+    private const string DeleteOperation = "delete_collection";
+    private const string CutoverOperation = "cutover";
 
     private readonly QdrantClient _client;
     private readonly ILogger<QdrantCollectionProvisioner> _logger;
@@ -105,9 +109,9 @@ internal sealed class QdrantCollectionProvisioner : IVectorCollectionProvisioner
 
             return Result.Success();
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (QdrantFaults.TryClassify(ex, cancellationToken, ProviderName, EnsureOperation, definition.Name, out var error))
         {
-            return Result.Failure(QdrantErrors.FromException(ex, ProviderName, nameof(EnsureCollectionAsync), definition.Name));
+            return Result.Failure(QdrantFaults.Surface(ex, error, cancellationToken, _logger, EnsureOperation, definition.Name));
         }
     }
 
@@ -147,9 +151,9 @@ internal sealed class QdrantCollectionProvisioner : IVectorCollectionProvisioner
             var exists = await _client.CollectionExistsAsync(collectionName, cancellationToken).ConfigureAwait(false);
             return Result<bool>.Success(exists);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (QdrantFaults.TryClassify(ex, cancellationToken, ProviderName, ExistsOperation, collectionName, out var error))
         {
-            return Result<bool>.Failure(QdrantErrors.FromException(ex, ProviderName, nameof(CollectionExistsAsync), collectionName));
+            return Result<bool>.Failure(QdrantFaults.Surface(ex, error, cancellationToken, _logger, ExistsOperation, collectionName));
         }
     }
 
@@ -162,9 +166,9 @@ internal sealed class QdrantCollectionProvisioner : IVectorCollectionProvisioner
             await _client.DeleteCollectionAsync(collectionName, cancellationToken: cancellationToken).ConfigureAwait(false);
             return Result.Success();
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (QdrantFaults.TryClassify(ex, cancellationToken, ProviderName, DeleteOperation, collectionName, out var error))
         {
-            return Result.Failure(QdrantErrors.FromException(ex, ProviderName, nameof(DeleteCollectionAsync), collectionName));
+            return Result.Failure(QdrantFaults.Surface(ex, error, cancellationToken, _logger, DeleteOperation, collectionName));
         }
     }
 
@@ -219,9 +223,9 @@ internal sealed class QdrantCollectionProvisioner : IVectorCollectionProvisioner
 
             return Result.Success();
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (QdrantFaults.TryClassify(ex, cancellationToken, ProviderName, CutoverOperation, request.LiveCollectionName, out var error))
         {
-            return Result.Failure(QdrantErrors.FromException(ex, ProviderName, nameof(CutoverAsync), request.LiveCollectionName));
+            return Result.Failure(QdrantFaults.Surface(ex, error, cancellationToken, _logger, CutoverOperation, request.LiveCollectionName));
         }
     }
 
@@ -237,10 +241,15 @@ internal sealed class QdrantCollectionProvisioner : IVectorCollectionProvisioner
             var health = await _client.HealthAsync(cancellationToken).ConfigureAwait(false);
             engineVersion = health.Version;
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (QdrantFaults.IsCancellationOf(ex, cancellationToken))
         {
+            throw QdrantFaults.CanceledBy(ex, cancellationToken);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            // A failed measurement degrades the report instead of throwing; the first exception reaches the log.
             stopwatch.Stop();
-            _logger.QdrantProbeDegraded(collectionName, reachable: false, collectionAddressable: false, queryable: false);
+            _logger.QdrantProbeDegraded(collectionName, reachable: false, collectionAddressable: false, queryable: false, ex);
             return Result<VectorCollectionHealth>.Success(new VectorCollectionHealth
             {
                 Reachable = false,
@@ -256,6 +265,7 @@ internal sealed class QdrantCollectionProvisioner : IVectorCollectionProvisioner
         long vectorCount = 0;
         string? fingerprint = null;
         long? pendingWriteCount = null;
+        Exception? firstFault = null;
 
         try
         {
@@ -267,9 +277,14 @@ internal sealed class QdrantCollectionProvisioner : IVectorCollectionProvisioner
                 : null;
             pendingWriteCount = info.UpdateQueue is { } queue ? checked((long)queue.Length) : null;
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (QdrantFaults.IsCancellationOf(ex, cancellationToken))
+        {
+            throw QdrantFaults.CanceledBy(ex, cancellationToken);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
             addressable = false;
+            firstFault ??= ex;
         }
 
         var queryable = false;
@@ -280,9 +295,14 @@ internal sealed class QdrantCollectionProvisioner : IVectorCollectionProvisioner
                 await _client.CountAsync(collectionName, filter: null, exact: false, cancellationToken: cancellationToken).ConfigureAwait(false);
                 queryable = true;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex) when (QdrantFaults.IsCancellationOf(ex, cancellationToken))
+            {
+                throw QdrantFaults.CanceledBy(ex, cancellationToken);
+            }
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
             {
                 queryable = false;
+                firstFault ??= ex;
             }
         }
 
@@ -290,7 +310,7 @@ internal sealed class QdrantCollectionProvisioner : IVectorCollectionProvisioner
 
         if (!addressable || !queryable)
         {
-            _logger.QdrantProbeDegraded(collectionName, reachable: true, addressable, queryable);
+            _logger.QdrantProbeDegraded(collectionName, reachable: true, addressable, queryable, firstFault);
         }
 
         return Result<VectorCollectionHealth>.Success(new VectorCollectionHealth

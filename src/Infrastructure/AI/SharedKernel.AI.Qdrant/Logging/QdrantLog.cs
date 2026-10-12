@@ -13,8 +13,8 @@ internal static partial class QdrantLog
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Intelligence + 100,
         Level = LogLevel.Information,
-        Message = "Qdrant client configured for {Host}:{Port} with {CollectionCount} registered collection(s).")]
-    public static partial void QdrantClientConfigured(this ILogger logger, string host, int port, int collectionCount);
+        Message = "Qdrant client configured with {CollectionCount} registered collection(s).")]
+    public static partial void QdrantClientConfigured(this ILogger logger, int collectionCount);
 
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Intelligence + 101,
@@ -49,8 +49,8 @@ internal static partial class QdrantLog
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Intelligence + 106,
         Level = LogLevel.Warning,
-        Message = "Request against collection '{CollectionName}' rejected before any I/O: {Reason}")]
-    public static partial void QdrantRequestRejected(this ILogger logger, string collectionName, string reason);
+        Message = "Request against collection '{CollectionName}' rejected before any I/O with error type {ErrorType} and code {ErrorCode}.")]
+    public static partial void QdrantRequestRejected(this ILogger logger, string collectionName, string errorType, string errorCode);
 
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Intelligence + 107,
@@ -80,7 +80,7 @@ internal static partial class QdrantLog
         EventId = LoggingEventIdRanges.Intelligence + 111,
         Level = LogLevel.Warning,
         Message = "Probe of collection '{CollectionName}' degraded: Reachable={Reachable} CollectionAddressable={CollectionAddressable} Queryable={Queryable}.")]
-    public static partial void QdrantProbeDegraded(this ILogger logger, string collectionName, bool reachable, bool collectionAddressable, bool queryable);
+    public static partial void QdrantProbeDegraded(this ILogger logger, string collectionName, bool reachable, bool collectionAddressable, bool queryable, Exception? exception);
 
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Intelligence + 112,
@@ -90,9 +90,9 @@ internal static partial class QdrantLog
 
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Intelligence + 113,
-        Level = LogLevel.Error,
-        Message = "Qdrant operation '{Operation}' on collection '{CollectionName}' faulted.")]
-    public static partial void QdrantEngineFault(this ILogger logger, string operation, string collectionName);
+        Level = LogLevel.Warning,
+        Message = "Qdrant operation '{Operation}' on collection '{CollectionName}' faulted with error code '{ErrorCode}'.")]
+    public static partial void QdrantEngineFault(this ILogger logger, string operation, string collectionName, string errorCode, Exception exception);
 
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Intelligence + 114,

@@ -1,45 +1,44 @@
+using SharedKernel.Core.Exceptions;
 using SharedKernel.Primitives.Errors;
 
 namespace SharedKernel.AI.Abstractions.Exceptions;
 
 /// <summary>
-/// Thrown from <c>MoveNextAsync</c> when a transport failure interrupts
+/// Thrown from <c>MoveNextAsync</c> when a recognised provider failure interrupts
 /// <c>IVectorCollection&lt;TRecord&gt;.ScrollAsync</c> or <c>ISemanticKernel.CompleteStreamingAsync</c>
 /// — the only two non-<c>Result</c> surfaces in this domain.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Base-type decision:</b> <c>SharedKernel.Primitives</c> ships no exception type at all, and the
-/// only <see cref="Error"/>-carrying exception hierarchy in the platform lives in the separate
-/// <c>SharedKernel.Core</c> package, which <c>SharedKernel.AI.Abstractions</c> does not and must not
-/// reference. This type therefore derives directly from <see cref="Exception"/> and declares its own
-/// <see cref="Error"/> property — mirroring <c>09.Search</c>'s identical <c>SearchStreamException</c>
-/// base-type finding.
+/// A <see cref="SharedKernelException"/>, so the HTTP, gRPC and SignalR edges map it by its
+/// <see cref="SharedKernelException.Error"/> (<c>Unavailable</c> answers 503, <c>Timeout</c> 504) instead of
+/// answering 500 and losing the error. Its <see cref="Exception.Message"/> is the error's kernel-authored message;
+/// the provider's own exception is kept as <see cref="Exception.InnerException"/> and never copied into the message.
 /// </para>
 /// <para>
-/// Constructed only from a <see cref="SharedKernel.Primitives.Errors.Error"/> — never from a bare
-/// string.
+/// Only a recognised provider fault is wrapped. The caller's cancellation surfaces as
+/// <see cref="OperationCanceledException"/>, and an unrecognised exception (a defect) propagates untouched.
 /// </para>
 /// </remarks>
-public sealed class IntelligenceStreamException : Exception
+public sealed class IntelligenceStreamException : SharedKernelException
 {
     /// <summary>Initializes a new <see cref="IntelligenceStreamException"/> carrying <paramref name="error"/>.</summary>
+    /// <param name="error">The structured error describing why the stream failed.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="error"/> is <see langword="null"/>.</exception>
     public IntelligenceStreamException(Error error)
-        : base(error.Message)
+        : base(error)
     {
-        Error = error;
     }
 
     /// <summary>
     /// Initializes a new <see cref="IntelligenceStreamException"/> carrying <paramref name="error"/>
     /// and wrapping <paramref name="innerException"/>.
     /// </summary>
+    /// <param name="error">The structured error describing why the stream failed.</param>
+    /// <param name="innerException">The provider exception that interrupted the stream.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="error"/> is <see langword="null"/>.</exception>
     public IntelligenceStreamException(Error error, Exception innerException)
-        : base(error.Message, innerException)
+        : base(error, innerException)
     {
-        Error = error;
     }
-
-    /// <summary>Gets the structured error describing why the stream failed.</summary>
-    public Error Error { get; }
 }

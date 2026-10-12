@@ -70,6 +70,7 @@ public sealed class SemanticKernelBuilder
                 options.EmbeddingModelId,
                 options.EmbeddingDimension,
                 options.MaxEmbeddingBatchSize,
+                sp.GetRequiredService<SemanticKernelTelemetry>(),
                 sp.GetRequiredService<ILogger<SemanticKernelEmbeddingGenerator>>());
         });
 
@@ -92,6 +93,7 @@ public sealed class SemanticKernelBuilder
                 sp.GetRequiredService<IChatCompletionService>(),
                 options.ChatModelId,
                 retryOptions,
+                sp.GetRequiredService<SemanticKernelTelemetry>(),
                 sp.GetRequiredService<ILogger<SemanticKernelOrchestrator>>());
         });
 

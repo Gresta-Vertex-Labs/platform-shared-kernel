@@ -4,6 +4,7 @@ using Qdrant.Client;
 using SharedKernel.AI.Abstractions.Models;
 using SharedKernel.AI.Qdrant.Collections;
 using SharedKernel.AI.Qdrant.Provisioning;
+using SharedKernel.AI.Qdrant.Tests.Support;
 using SharedKernel.AI.Qdrant.Tests.TestSupport;
 using SharedKernel.Execution.Tenancy;
 using SharedKernel.Testing.Clocks;
@@ -121,7 +122,7 @@ public sealed class QdrantProvisioningConformanceTests : IAsyncLifetime
         (await _provisioner.EnsureCollectionAsync(definition)).IsSuccess.Should().BeTrue();
 
         var collection = new QdrantVectorCollection<TestVectorRecord>(
-            _client, definition, new FakeClock(), NullLogger<QdrantVectorCollection<TestVectorRecord>>.Instance);
+            _client, definition, new FakeClock(), TestMeterFactory.NewTelemetry(), NullLogger<QdrantVectorCollection<TestVectorRecord>>.Instance);
         var record = new TestVectorRecord { Id = "1", Vector = new float[] { 1, 0, 0 }, ModelId = ModelId };
         (await collection.UpsertAsync(record, TenantScope.Global)).IsSuccess.Should().BeTrue();
 

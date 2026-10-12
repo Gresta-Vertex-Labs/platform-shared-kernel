@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Qdrant.Client;
 using Qdrant.Client.Grpc;
 using SharedKernel.AI.Abstractions.Constants;
@@ -10,13 +11,18 @@ namespace SharedKernel.AI.Qdrant.Quantization;
 internal sealed class QdrantQuantizationProfileAccessor : IQdrantQuantizationProfileAccessor
 {
     private const string ProviderName = IntelligenceWellKnown.QdrantProviderName;
+    private const string Operation = "quantization_profile";
 
     private readonly IQdrantClient _client;
+    private readonly ILogger<QdrantQuantizationProfileAccessor> _logger;
 
-    public QdrantQuantizationProfileAccessor(IQdrantClient client)
+    public QdrantQuantizationProfileAccessor(IQdrantClient client, ILogger<QdrantQuantizationProfileAccessor> logger)
     {
         ArgumentNullException.ThrowIfNull(client);
+        ArgumentNullException.ThrowIfNull(logger);
+
         _client = client;
+        _logger = logger;
     }
 
     public async Task<Result<QdrantQuantizationProfile>> GetQuantizationProfileAsync(
@@ -38,10 +44,10 @@ internal sealed class QdrantQuantizationProfileAccessor : IQdrantQuantizationPro
 
             return Result<QdrantQuantizationProfile>.Success(profile);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (QdrantFaults.TryClassify(ex, cancellationToken, ProviderName, Operation, collectionName, out var error))
         {
             return Result<QdrantQuantizationProfile>.Failure(
-                QdrantErrors.FromException(ex, ProviderName, nameof(GetQuantizationProfileAsync), collectionName));
+                QdrantFaults.Surface(ex, error, cancellationToken, _logger, Operation, collectionName));
         }
     }
 }

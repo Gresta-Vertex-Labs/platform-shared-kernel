@@ -103,7 +103,7 @@ finds the indexed chunk first.
   the definition's `DistanceMetric`: cosine and dot product rank descending, Euclidean ascending; `MinScore` respects
   that direction. Only queries that pass validation are recorded in `QueriedVectors`.
 - **Tenancy.** On a collection with a `TenantField`, `QueryAsync`, `CountAsync` and `DeleteByFilterAsync` fail with
-  `intelligence.tenant_scope_missing` for `TenantScope.Global`, `ScrollAsync` throws `IntelligenceStreamException`, and
+  `intelligence.tenant_scope_missing` for `TenantScope.Global`, `ScrollAsync` throws `IntelligenceStreamException` (a `SharedKernelException`), and
   a tenant scope adds an equality clause on that metadata field. `GetAsync` answers another tenant's record with
   `intelligence.record_not_found`.
 - **Filters.** Evaluated against `Metadata` by key; a missing key is a non-match (and `false` for `Exists`).

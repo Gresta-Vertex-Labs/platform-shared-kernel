@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using OpenAI;
+using SharedKernel.AI.SemanticKernel.Diagnostics;
 using SharedKernel.AI.SemanticKernel.Options;
 using SharedKernel.Configuration.Extensions;
 
@@ -37,6 +38,10 @@ public static class SemanticKernelServiceCollectionExtensions
 
         services.AddValidatedOptions<SemanticKernelOptions>(section);
 
+        // The telemetry creates its meter from IMeterFactory (a no-op when the host already registered metrics).
+        services.AddMetrics();
+        services.AddSingleton<SemanticKernelTelemetry>();
+
         services.AddHttpClient(HttpClientName, (sp, client) =>
         {
             var options = sp.GetRequiredService<IOptions<SemanticKernelOptions>>().Value;
@@ -54,6 +59,12 @@ public static class SemanticKernelServiceCollectionExtensions
             var clientOptions = new OpenAIClientOptions
             {
                 Transport = new HttpClientPipelineTransport(httpClient),
+
+                // VERIFIED (System.ClientModel 1.10.0 / OpenAI 2.10.0): the default ClientRetryPolicy retries 408, 429,
+                // 5xx, transport faults and timeouts up to three times underneath every call, so a throttled
+                // CompleteAsync was dispatched four times without the caller or the span knowing. The only retry
+                // this package offers is the explicit, bounded WithBoundedRetry (domain rule 8); zero retries here.
+                RetryPolicy = new ClientRetryPolicy(maxRetries: 0),
             };
 
             if (options.Endpoint is { } endpoint)

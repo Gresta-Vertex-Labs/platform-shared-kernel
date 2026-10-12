@@ -10,7 +10,7 @@ namespace SharedKernel.AI.Abstractions.Tests;
 
 /// <summary>
 /// Package-purity assertions — <c>SharedKernel.AI.Abstractions</c> references only the BCL plus
-/// <c>SharedKernel.Primitives</c>; the assembly declares no <see cref="ActivitySource"/>, no
+/// <c>SharedKernel.Primitives</c>, <c>SharedKernel.Execution</c> and <c>SharedKernel.Core</c>; the assembly declares no <see cref="ActivitySource"/>, no
 /// <see cref="Meter"/>, no <c>[LoggerMessage]</c>-generated member, and no <c>IHealthCheck</c>
 /// implementation; model records honour value equality; and <see cref="IntelligenceStreamException"/>
 /// carries an <c>Error</c> with no bare-string constructor.
@@ -29,8 +29,9 @@ public sealed class PackagePurityTests
                 || name.StartsWith("netstandard", StringComparison.Ordinal)
                 || name.StartsWith("mscorlib", StringComparison.Ordinal)
                 || name == "SharedKernel.Primitives"
-                || name == "SharedKernel.Execution",
-            "SharedKernel.AI.Abstractions must reference only the BCL plus SharedKernel.Primitives and SharedKernel.Execution (TenantScope) — " +
+                || name == "SharedKernel.Execution"
+                || name == "SharedKernel.Core",
+            "SharedKernel.AI.Abstractions must reference only the BCL plus SharedKernel.Primitives, SharedKernel.Execution (TenantScope) and SharedKernel.Core (SharedKernelException) — " +
             "zero third-party NuGet dependencies, no Microsoft.Extensions.*, no Qdrant.Client, no " +
             "Milvus.Client, no Microsoft.SemanticKernel, no Microsoft.Extensions.AI.Abstractions");
     }
@@ -124,8 +125,8 @@ public sealed class PackagePurityTests
     }
 
     [Fact]
-    public void IntelligenceStreamException_DerivesFrom_SystemException()
+    public void IntelligenceStreamException_DerivesFrom_SharedKernelException()
     {
-        typeof(IntelligenceStreamException).BaseType.Should().Be(typeof(Exception));
+        typeof(IntelligenceStreamException).BaseType.Should().Be(typeof(SharedKernel.Core.Exceptions.SharedKernelException));
     }
 }

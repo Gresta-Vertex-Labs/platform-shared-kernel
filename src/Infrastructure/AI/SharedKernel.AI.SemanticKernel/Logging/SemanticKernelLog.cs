@@ -43,8 +43,8 @@ internal static partial class SemanticKernelLog
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Intelligence + 305,
         Level = LogLevel.Warning,
-        Message = "Request to model '{ModelId}' rejected before any I/O: {Reason}")]
-    public static partial void SemanticKernelRequestRejected(this ILogger logger, string modelId, string reason);
+        Message = "Request to model '{ModelId}' rejected before any I/O with error type {ErrorType} and code {ErrorCode}.")]
+    public static partial void SemanticKernelRequestRejected(this ILogger logger, string modelId, string errorType, string errorCode);
 
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Intelligence + 306,
@@ -54,9 +54,9 @@ internal static partial class SemanticKernelLog
 
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Intelligence + 307,
-        Level = LogLevel.Error,
-        Message = "Semantic Kernel operation '{Operation}' faulted for model '{ModelId}'.")]
-    public static partial void SemanticKernelEngineFault(this ILogger logger, string operation, string modelId);
+        Level = LogLevel.Warning,
+        Message = "Semantic Kernel operation '{Operation}' faulted for model '{ModelId}' with error code '{ErrorCode}'.")]
+    public static partial void SemanticKernelEngineFault(this ILogger logger, string operation, string modelId, string errorCode, Exception exception);
 
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Intelligence + 308,
@@ -68,5 +68,5 @@ internal static partial class SemanticKernelLog
         EventId = LoggingEventIdRanges.Intelligence + 309,
         Level = LogLevel.Warning,
         Message = "Retrying completion call for model '{ModelId}': attempt {Attempt} of {MaxAttempts} after error code '{ErrorCode}'.")]
-    public static partial void SemanticKernelCompletionRetrying(this ILogger logger, string modelId, int attempt, int maxAttempts, string errorCode);
+    public static partial void SemanticKernelCompletionRetrying(this ILogger logger, string modelId, int attempt, int maxAttempts, string errorCode, Exception exception);
 }

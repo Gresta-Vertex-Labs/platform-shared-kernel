@@ -118,7 +118,7 @@ public sealed class InMemoryEmbeddingGeneratorTests
         var result = await generator.EmbedAsync("hello world", CancellationToken.None);
 
         Assert.True(result.IsFailure);
-        Assert.Equal(IntelligenceErrors.EngineFault("test-model", "EmbedAsync", "SimulateFailure enabled"), result.Error);
+        Assert.Equal(IntelligenceErrors.EngineFault("test-model", "EmbedAsync"), result.Error);
         Assert.Empty(generator.EmbeddedTexts);
     }
 

@@ -6,6 +6,7 @@ using SharedKernel.AI.Abstractions.Abstractions;
 using SharedKernel.AI.Abstractions.Exceptions;
 using SharedKernel.AI.Abstractions.Models;
 using SharedKernel.AI.Qdrant.Collections;
+using SharedKernel.AI.Qdrant.Tests.Support;
 using SharedKernel.AI.Qdrant.Tests.TestSupport;
 using SharedKernel.Execution.Tenancy;
 using SharedKernel.Testing.Clocks;
@@ -35,7 +36,7 @@ public sealed class QdrantVectorCollectionNoIoTests
         .Value;
 
     private static QdrantVectorCollection<TestVectorRecord> CreateCollection(IQdrantClient client, VectorCollectionDefinition definition) =>
-        new(client, definition, new FakeClock(), NullLogger<QdrantVectorCollection<TestVectorRecord>>.Instance);
+        new(client, definition, new FakeClock(), TestMeterFactory.NewTelemetry(), NullLogger<QdrantVectorCollection<TestVectorRecord>>.Instance);
 
     [Fact]
     public async Task UpsertAsync_TenantScopeMissing_ReturnsFailure_WithNoIo()
@@ -89,7 +90,10 @@ public sealed class QdrantVectorCollectionNoIoTests
         var collection = CreateCollection(client, UntenantedDefinition());
         var record = new TestVectorRecord { Id = "1", ModelId = "model-a", Vector = new float[] { 0.1f, 0.2f } };
 
-        await collection.UpsertAsync(record, TenantScope.Global);
+        // The unconfigured substitute answers with a null response, so dereferencing it is a defect in the test double,
+        // not a provider fault: it is not classified and propagates instead of becoming an engine_fault result.
+        var act = () => collection.UpsertAsync(record, TenantScope.Global);
+        await act.Should().ThrowAsync<NullReferenceException>();
 
         client.ReceivedCalls().Should().NotBeEmpty();
     }

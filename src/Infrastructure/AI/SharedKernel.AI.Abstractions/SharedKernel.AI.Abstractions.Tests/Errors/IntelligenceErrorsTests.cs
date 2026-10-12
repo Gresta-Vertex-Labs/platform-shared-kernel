@@ -9,7 +9,8 @@ namespace SharedKernel.AI.Abstractions.Tests.Errors;
 /// <see cref="ErrorType"/> and a dot-separated-lowercase code, and the factory-choice tally is
 /// asserted explicitly against the live <see cref="Error"/> API: <see cref="ErrorType.NotFound"/> x3,
 /// <see cref="ErrorType.Validation"/> x12, <see cref="ErrorType.Conflict"/> x4,
-/// <see cref="ErrorType.Unauthorized"/> x2, <see cref="ErrorType.Unexpected"/> x10,
+/// <see cref="ErrorType.Unauthorized"/> x2, <see cref="ErrorType.Unexpected"/> x6, <see cref="ErrorType.Unavailable"/> x2 (unreachable, rate limited),
+/// <see cref="ErrorType.Timeout"/> x2 (timeout, write timeout),
 /// <see cref="ErrorType.BusinessRule"/> x0.
 /// </summary>
 public sealed class IntelligenceErrorsTests
@@ -228,21 +229,23 @@ public sealed class IntelligenceErrorsTests
     // ---------------------------------------------------------------------------
 
     [Fact]
-    public void Unreachable_ReturnsUnexpected()
+    public void Unreachable_ReturnsUnavailable_NamingNoEndpoint()
     {
-        var error = IntelligenceErrors.Unreachable("qdrant", "http://localhost:6334");
+        var error = IntelligenceErrors.Unreachable("qdrant");
 
-        error.Type.Should().Be(ErrorType.Unexpected);
+        error.Type.Should().Be(ErrorType.Unavailable);
         error.Code.Should().Be("intelligence.unreachable");
+        error.Message.Should().Contain("qdrant").And.NotContain("http").And.NotContain("localhost");
     }
 
     [Fact]
-    public void Timeout_ReturnsUnexpected()
+    public void Timeout_ReturnsTimeout_WithNoElapsedZeroText()
     {
-        var error = IntelligenceErrors.Timeout("query", TimeSpan.FromSeconds(30));
+        var error = IntelligenceErrors.Timeout("query");
 
-        error.Type.Should().Be(ErrorType.Unexpected);
+        error.Type.Should().Be(ErrorType.Timeout);
         error.Code.Should().Be("intelligence.timeout");
+        error.Message.Should().Contain("query").And.NotContain("00:00:00");
     }
 
     [Fact]
@@ -255,11 +258,11 @@ public sealed class IntelligenceErrorsTests
     }
 
     [Fact]
-    public void WriteTimeout_ReturnsUnexpected_StatingWriteMayStillLand()
+    public void WriteTimeout_ReturnsTimeout_StatingWriteMayStillLand()
     {
         var error = IntelligenceErrors.WriteTimeout("documents", TimeSpan.FromSeconds(120));
 
-        error.Type.Should().Be(ErrorType.Unexpected);
+        error.Type.Should().Be(ErrorType.Timeout);
         error.Code.Should().Be("intelligence.write_timeout");
         error.Message.Should().Contain("may still land");
     }
@@ -292,21 +295,26 @@ public sealed class IntelligenceErrorsTests
     }
 
     [Fact]
-    public void EngineFault_ReturnsUnexpected()
+    public void EngineFault_ReturnsUnexpected_WithOnlyTheBoundedEngineCode()
     {
-        var error = IntelligenceErrors.EngineFault("qdrant", "upsert", "detail");
+        var withCode = IntelligenceErrors.EngineFault("qdrant", "upsert", "Internal");
+        var withoutCode = IntelligenceErrors.EngineFault("qdrant", "upsert");
 
-        error.Type.Should().Be(ErrorType.Unexpected);
-        error.Code.Should().Be("intelligence.engine_fault");
+        withCode.Type.Should().Be(ErrorType.Unexpected);
+        withCode.Code.Should().Be("intelligence.engine_fault");
+        withCode.Message.Should().Contain("Internal");
+        withoutCode.Code.Should().Be("intelligence.engine_fault");
+        withoutCode.Message.Should().NotContain("faulted with engine error");
     }
 
     [Fact]
-    public void RateLimited_ReturnsUnexpected()
+    public void RateLimited_ReturnsUnavailable()
     {
         var withRetryAfter = IntelligenceErrors.RateLimited("semantickernel", TimeSpan.FromSeconds(5));
         var withoutRetryAfter = IntelligenceErrors.RateLimited("semantickernel", null);
 
-        withRetryAfter.Type.Should().Be(ErrorType.Unexpected);
+        withRetryAfter.Type.Should().Be(ErrorType.Unavailable);
+        withoutRetryAfter.Type.Should().Be(ErrorType.Unavailable);
         withRetryAfter.Code.Should().Be("intelligence.rate_limited");
         withoutRetryAfter.Code.Should().Be("intelligence.rate_limited");
     }
@@ -350,8 +358,8 @@ public sealed class IntelligenceErrorsTests
             IntelligenceErrors.SchemaFingerprintMismatch("c", "e", "a"),
             IntelligenceErrors.Unauthorized("c", "o"),
             IntelligenceErrors.TenantScopeMissing("c"),
-            IntelligenceErrors.Unreachable("p", "e"),
-            IntelligenceErrors.Timeout("o", TimeSpan.Zero),
+            IntelligenceErrors.Unreachable("p"),
+            IntelligenceErrors.Timeout("o"),
             IntelligenceErrors.WriteRejected("c", "r"),
             IntelligenceErrors.WriteTimeout("c", TimeSpan.Zero),
             IntelligenceErrors.BulkPartiallyFailed(1, 2),
@@ -367,7 +375,9 @@ public sealed class IntelligenceErrorsTests
         errors.Count(e => e.Type == ErrorType.Validation).Should().Be(12);
         errors.Count(e => e.Type == ErrorType.Conflict).Should().Be(4);
         errors.Count(e => e.Type == ErrorType.Unauthorized).Should().Be(2);
-        errors.Count(e => e.Type == ErrorType.Unexpected).Should().Be(10);
+        errors.Count(e => e.Type == ErrorType.Unavailable).Should().Be(2);
+        errors.Count(e => e.Type == ErrorType.Timeout).Should().Be(2);
+        errors.Count(e => e.Type == ErrorType.Unexpected).Should().Be(6);
         errors.Count(e => e.Type == ErrorType.BusinessRule).Should().Be(0);
         errors.Count(e => e.Type == ErrorType.None).Should().Be(0);
 

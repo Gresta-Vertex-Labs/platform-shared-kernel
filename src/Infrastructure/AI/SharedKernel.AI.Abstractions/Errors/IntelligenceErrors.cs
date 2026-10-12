@@ -8,11 +8,22 @@ namespace SharedKernel.AI.Abstractions.Errors;
 /// return these — never an ad-hoc <see cref="Error"/> value constructed inline.
 /// </summary>
 /// <remarks>
-/// Only the six real <see cref="SharedKernel.Primitives.Errors.Error"/> factories are used:
+/// <para>
+/// Only these <see cref="SharedKernel.Primitives.Errors.Error"/> factories are used:
 /// <see cref="Error.Unexpected"/>, <see cref="Error.Validation"/>, <see cref="Error.NotFound"/>,
-/// <see cref="Error.Conflict"/>, <see cref="Error.Unauthorized"/>. <see cref="Error.BusinessRule"/> is
-/// used zero times in this domain — nothing in a capability package is a domain rule.
-/// <see cref="Error.None"/> is never returned by any member here.
+/// <see cref="Error.Conflict"/>, <see cref="Error.Unauthorized"/>, <see cref="Error.Unavailable"/> (a provider
+/// that is down or throttling) and <see cref="Error.Timeout"/> (an operation that ran out of time).
+/// <see cref="Error.BusinessRule"/> is used zero times in this domain — nothing in a capability package is a
+/// domain rule. <see cref="Error.None"/> is never returned by any member here.
+/// </para>
+/// <para>
+/// <b>Message text contract.</b> <see cref="Error.Message"/> holds kernel-authored wording and bounded identifiers
+/// only: provider, operation, collection and model names, the caller's own record id, numbers, an HTTP status or a
+/// gRPC status name. It never holds an exception message, a gRPC status detail, a response body, an endpoint or
+/// host, a filter value, a key or prompt text, because the message reaches ProblemDetails; the detail reaches the
+/// log through the exception parameter instead. The <c>reason</c> parameters below are kernel-authored text and
+/// must never be filled from provider or exception text.
+/// </para>
 /// </remarks>
 public static class IntelligenceErrors
 {
@@ -60,15 +71,15 @@ public static class IntelligenceErrors
     public static Error ModelNotFound(string modelId) =>
         Error.NotFound(ModelNotFoundCode, $"Model '{modelId}' was not found.");
 
-    /// <summary>The vector query violates a provider-independent structural invariant.</summary>
+    /// <summary>The vector query violates a provider-independent structural invariant. <paramref name="reason"/> is kernel-authored text, never provider or exception text.</summary>
     public static Error InvalidQuery(string reason) =>
         Error.Validation(InvalidQueryCode, $"The vector query is invalid: {reason}");
 
-    /// <summary>The filter predicate is malformed.</summary>
+    /// <summary>The filter predicate is malformed. <paramref name="reason"/> is kernel-authored text, never provider or exception text.</summary>
     public static Error InvalidFilter(string reason) =>
         Error.Validation(InvalidFilterCode, $"The vector filter is invalid: {reason}");
 
-    /// <summary>The collection definition violates a structural invariant.</summary>
+    /// <summary>The collection definition violates a structural invariant. <paramref name="reason"/> is kernel-authored text, never provider or exception text.</summary>
     public static Error InvalidCollectionDefinition(string reason) =>
         Error.Validation(InvalidCollectionDefinitionCode, $"The vector collection definition is invalid: {reason}");
 
@@ -148,7 +159,7 @@ public static class IntelligenceErrors
             "EnsureCollectionAsync is additive-only; use a staging collection, bulk-upsert, then CutoverAsync to " +
             "change an incompatible field.");
 
-    /// <summary>The staging-to-live cutover failed.</summary>
+    /// <summary>The staging-to-live cutover failed. <paramref name="reason"/> is kernel-authored text, never provider or exception text.</summary>
     public static Error CutoverFailed(string stagingCollectionName, string liveCollectionName, string reason) =>
         Error.Conflict(
             CutoverFailedCode,
@@ -176,15 +187,23 @@ public static class IntelligenceErrors
             TenantScopeMissingCode,
             $"Collection '{collectionName}' declares a TenantField; TenantScope.Global is not permitted.");
 
-    /// <summary>The vector or completion provider could not be reached.</summary>
-    public static Error Unreachable(string providerName, string endpoint) =>
-        Error.Unexpected(UnreachableCode, $"Provider '{providerName}' at '{endpoint}' is unreachable.");
+    /// <summary>
+    /// The vector or completion provider could not be reached (connection refused, DNS or TLS failure, gRPC
+    /// <c>Unavailable</c>, HTTP 502, 503 or 504). A dependency outage is <see cref="ErrorType.Unavailable"/>. The
+    /// message never names an endpoint or host.
+    /// </summary>
+    public static Error Unreachable(string providerName) =>
+        Error.Unavailable(UnreachableCode, $"Provider '{providerName}' is unreachable.");
 
-    /// <summary>The operation exceeded its allotted time.</summary>
-    public static Error Timeout(string operation, TimeSpan elapsed) =>
-        Error.Unexpected(TimeoutCode, $"Operation '{operation}' timed out after {elapsed}.");
+    /// <summary>
+    /// The operation ran out of time before the provider answered (gRPC <c>DeadlineExceeded</c>, HTTP 408, or a
+    /// client timeout while the caller's token was still live). Its outcome may be unknown; a timeout is
+    /// <see cref="ErrorType.Timeout"/>.
+    /// </summary>
+    public static Error Timeout(string operation) =>
+        Error.Timeout(TimeoutCode, $"Operation '{operation}' timed out.");
 
-    /// <summary>The provider rejected the write outright.</summary>
+    /// <summary>The provider rejected the write outright. <paramref name="reason"/> is kernel-authored text, never provider or exception text.</summary>
     public static Error WriteRejected(string collectionName, string reason) =>
         Error.Unexpected(WriteRejectedCode, $"Write to collection '{collectionName}' was rejected: {reason}");
 
@@ -193,7 +212,7 @@ public static class IntelligenceErrors
     /// from <see cref="WriteRejected"/>, and callers must not retry blindly.
     /// </summary>
     public static Error WriteTimeout(string collectionName, TimeSpan elapsed) =>
-        Error.Unexpected(
+        Error.Timeout(
             WriteTimeoutCode,
             $"Waiting for a write on collection '{collectionName}' to become queryable timed out after " +
             $"{elapsed}. The write may still land — do not retry blindly.");
@@ -209,7 +228,7 @@ public static class IntelligenceErrors
             BulkPartiallyFailedCode,
             $"{failedCount} of {totalCount} records failed in this bulk operation.");
 
-    /// <summary>Probing the collection's readiness failed outright (as distinct from a degraded-but-answered probe).</summary>
+    /// <summary>Probing the collection's readiness failed outright (as distinct from a degraded-but-answered probe). <paramref name="reason"/> is kernel-authored text, never provider or exception text.</summary>
     public static Error ProbeFailed(string collectionName, string reason) =>
         Error.Unexpected(ProbeFailedCode, $"Probing collection '{collectionName}' failed: {reason}");
 
@@ -220,21 +239,37 @@ public static class IntelligenceErrors
             $"Engine version '{actual}' is not supported; expected {supportedRange}.");
 
     /// <summary>
-    /// The last-resort mapping for an unclassifiable engine fault. A rise in this code is the signal
-    /// that a translator has drifted from a provider's current API surface.
+    /// The mapping for a recognised provider fault that has no more specific code. A rise in this code is the
+    /// signal that a translator has drifted from a provider's current API surface.
     /// </summary>
-    public static Error EngineFault(string providerName, string operation, string detail) =>
-        Error.Unexpected(EngineFaultCode, $"Provider '{providerName}' operation '{operation}' faulted: {detail}");
-
-    /// <summary>The provider rate-limited the request.</summary>
-    public static Error RateLimited(string providerName, TimeSpan? retryAfter) =>
+    /// <param name="providerName">The provider name.</param>
+    /// <param name="operation">The operation that faulted.</param>
+    /// <param name="engineErrorCode">
+    /// A bounded token naming the engine's own classification (a gRPC status name such as <c>Internal</c> or an HTTP
+    /// status number), or <see langword="null"/> when there is none. Never exception or response text.
+    /// </param>
+    public static Error EngineFault(string providerName, string operation, string? engineErrorCode = null) =>
         Error.Unexpected(
+            EngineFaultCode,
+            engineErrorCode is null
+                ? $"Provider '{providerName}' operation '{operation}' faulted."
+                : $"Provider '{providerName}' operation '{operation}' faulted with engine error '{engineErrorCode}'.");
+
+    /// <summary>
+    /// The provider rate-limited the request (gRPC <c>ResourceExhausted</c>, HTTP 429). There is no rate-limit
+    /// <see cref="ErrorType"/>; a throttling dependency is <see cref="ErrorType.Unavailable"/>.
+    /// </summary>
+    public static Error RateLimited(string providerName, TimeSpan? retryAfter) =>
+        Error.Unavailable(
             RateLimitedCode,
             retryAfter is { } delay
                 ? $"Provider '{providerName}' rate-limited the request; retry after {delay}."
                 : $"Provider '{providerName}' rate-limited the request.");
 
-    /// <summary>The completion call failed for a reason not otherwise classified.</summary>
+    /// <summary>
+    /// The completion call failed for a recognised reason not otherwise classified.
+    /// <paramref name="reason"/> is kernel-authored text (for example an HTTP status), never provider or exception text.
+    /// </summary>
     public static Error CompletionFailed(string providerName, string reason) =>
         Error.Unexpected(CompletionFailedCode, $"Provider '{providerName}' completion failed: {reason}");
 }

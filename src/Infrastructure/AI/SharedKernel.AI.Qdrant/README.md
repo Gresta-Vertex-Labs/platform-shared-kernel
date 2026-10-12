@@ -229,10 +229,20 @@ Provider-only contracts: `IQdrantHybridQueryAccessor<TRecord>.QueryHybridAsync`,
 | `AlreadyExists` | `intelligence.collection_already_exists` |
 | `InvalidArgument`, `FailedPrecondition` | `intelligence.invalid_query` |
 | `PermissionDenied`, `Unauthenticated` | `intelligence.unauthorized` |
-| `ResourceExhausted` | `intelligence.rate_limited` |
-| `Unavailable` | `intelligence.unreachable` |
-| `DeadlineExceeded` | `intelligence.timeout` |
-| anything else | `intelligence.engine_fault` |
+| `ResourceExhausted` | `intelligence.rate_limited` (Unavailable, HTTP 503) |
+| `Unavailable` | `intelligence.unreachable` (Unavailable, HTTP 503) |
+| `DeadlineExceeded` | `intelligence.timeout` (Timeout, HTTP 504) |
+| any other status, and `QdrantException` | `intelligence.engine_fault` (names only the gRPC status) |
+
+**What an error says.** `Error.Message` is kernel-authored text plus the collection, operation and provider names and,
+for `engine_fault`, the gRPC status name. It never holds the server's message, the status detail, a host or port, a
+filter value or a record key: that detail reaches the log through the exception parameter.
+
+**Classify or rethrow.** Only a gRPC status or a `QdrantException` becomes a failed `Result`. Anything else (a bug in
+your record mapping, a `NullReferenceException`) is not caught and propagates with its stack. A cancelled caller token
+is always an `OperationCanceledException`, even though gRPC reports it as `RpcException(Cancelled)`. `ScrollAsync`
+throws `IntelligenceStreamException` (a `SharedKernelException`) for a recognised fault; a probe failure degrades the
+report instead of throwing.
 
 Checked before I/O: `intelligence.tenant_scope_missing`, `.embedding_model_mismatch`, `.dimension_mismatch`,
 `.invalid_record_id`. From provisioning: `.collection_definition_conflict`, `.cutover_failed`.
@@ -241,23 +251,39 @@ Checked before I/O: `intelligence.tenant_scope_missing`, `.embedding_model_misma
 
 | Event id | Level | Event |
 | --- | --- | --- |
-| 10100 | Information | Client configured for host, port and collection count |
+| 10100 | Information | Client configured, with its collection count (no host or port) |
 | 10101 | Information | Collection ensured with its filterable-field count |
 | 10102 | Debug | Records upserted |
 | 10103 | Debug | Records deleted |
 | 10104 | Warning | Bulk operation partially failed |
 | 10105 | Debug | Query executed (hit count, duration) |
-| 10106 | Warning | Request rejected before any I/O |
+| 10106 | Warning | Request rejected before any I/O (error type and code, never the message or a record id) |
 | 10107 | Warning | Tenant-declaring collection called with `TenantScope.Global` |
 | 10108 | Information | Alias cut over to the staging collection |
 | 10109 | Warning | Previous collection retained after cutover |
 | 10110 | Warning | Raw client access enabled |
-| 10111 | Warning | Readiness probe degraded |
+| 10111 | Warning | Readiness probe degraded (carries the first exception) |
 | 10112 | Warning | Schema fingerprint mismatch |
-| 10113 | Error | Qdrant operation faulted |
+| 10113 | Warning | Qdrant operation faulted: a classified failure, logged once with its error code and the exception |
 | 10114 | Debug | Record walk (scroll) started |
 
-No log message carries vectors, metadata values or the API key.
+No log message carries vectors, metadata values, record ids, hosts or the API key. A propagating exception is not logged here; the caller's handler logs it once.
+
+### Telemetry
+
+One `ActivitySource` and one `Meter`, both named `SharedKernel.AI` (the host's `SharedKernel.*` wildcard subscribes to them).
+
+| What | Name | Unit | Tags |
+| --- | --- | --- | --- |
+| Span, kind Client | `ai {operation}` for `upsert`, `upsert_many`, `delete`, `delete_many`, `delete_by_filter`, `query`, `query_hybrid`, `get`, `count`, `scroll` | | `ai.provider` = `qdrant`, `ai.operation`, `ai.collection` |
+| Duration histogram | `sharedkernel.ai.operation.duration` | `s` | the span tags plus `outcome` (`success`, `failure`, `exception`, `canceled`) and `error.type` on a non-success |
+| Record counter | `sharedkernel.ai.vector.records` | `{record}` | `ai.provider`, `ai.operation`, `ai.collection`, `outcome` (per record of `upsert`, `upsert_many`, `delete`, `delete_many`) |
+
+Every call is one span and one duration observation, a pre-I/O rejection included. A recognised failure sets the span status
+to `Error` with `error.code` and `error.type`; a defect is recorded as an exception event; a cancellation leaves the
+status unset. A scroll span ends when the enumerator completes, faults or is disposed, and never replaces the
+consumer's `Activity.Current`. The readiness probe and `WaitUntilQueryableAsync` produce no span. Record ids, vectors,
+filter values, metadata values and hosts are never tags.
 
 ### Health
 

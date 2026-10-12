@@ -6,6 +6,7 @@ using Microsoft.SemanticKernel.ChatCompletion;
 using NSubstitute;
 using SharedKernel.AI.Abstractions.Abstractions;
 using SharedKernel.AI.SemanticKernel.Orchestration;
+using SharedKernel.AI.SemanticKernel.Tests.Support;
 
 namespace SharedKernel.AI.SemanticKernel.Tests.Orchestration;
 
@@ -30,7 +31,7 @@ public sealed class SemanticKernelOrchestratorStreamingTests
             .Returns(SuccessfulStream());
 
         var orchestrator = new SemanticKernelOrchestrator(
-            chatService, "gpt-test", retryOptions: null, NullLogger<SemanticKernelOrchestrator>.Instance);
+            chatService, "gpt-test", retryOptions: null, TestMeterFactory.NewTelemetry(), NullLogger<SemanticKernelOrchestrator>.Instance);
 
         var chunks = new List<CompletionChunk>();
         await foreach (var chunk in orchestrator.CompleteStreamingAsync(CreateRequest()))
@@ -53,7 +54,7 @@ public sealed class SemanticKernelOrchestratorStreamingTests
             .Returns(CancellableStream(cts));
 
         var orchestrator = new SemanticKernelOrchestrator(
-            chatService, "gpt-test", retryOptions: null, NullLogger<SemanticKernelOrchestrator>.Instance);
+            chatService, "gpt-test", retryOptions: null, TestMeterFactory.NewTelemetry(), NullLogger<SemanticKernelOrchestrator>.Instance);
 
         var chunks = new List<CompletionChunk>();
         Exception? caught = null;
@@ -83,7 +84,7 @@ public sealed class SemanticKernelOrchestratorStreamingTests
             .Returns(Task.FromResult<IReadOnlyList<ChatMessageContent>>([new ChatMessageContent(AuthorRole.Assistant, "hi there")]));
 
         var orchestrator = new SemanticKernelOrchestrator(
-            chatService, "gpt-test", retryOptions: null, NullLogger<SemanticKernelOrchestrator>.Instance);
+            chatService, "gpt-test", retryOptions: null, TestMeterFactory.NewTelemetry(), NullLogger<SemanticKernelOrchestrator>.Instance);
         var request = CreateRequest();
 
         await orchestrator.CompleteAsync(request);
