@@ -21,6 +21,12 @@ internal sealed class RecordingFileStorage(string storeName) : IFileStorage
     /// <summary>When set, every Result-returning member fails with this error.</summary>
     public Error? FailWith { get; set; }
 
+    /// <summary>When set, <see cref="ListAsync"/> throws a <see cref="StorageException"/> with this error before any item.</summary>
+    public Error? ListFailureBeforeFirstItem { get; set; }
+
+    /// <summary>When set, <see cref="ListAsync"/> throws a <see cref="StorageException"/> with this error after its items.</summary>
+    public Error? ListFailureAfterItems { get; set; }
+
     /// <summary>Keys <see cref="ListAsync"/> and <see cref="ListPageAsync"/> return when they match the prefix.</summary>
     public List<string> StoredKeys { get; } = [];
 
@@ -72,10 +78,20 @@ internal sealed class RecordingFileStorage(string storeName) : IFileStorage
     {
         Keys.Add(prefix);
         Calls++;
+        if (ListFailureBeforeFirstItem is Error early)
+        {
+            throw new StorageException(early);
+        }
+
         foreach (string key in StoredKeys.Where(k => k.StartsWith(prefix, StringComparison.Ordinal)))
         {
             await Task.Yield();
             yield return new FileListItem { Key = key, ContentLength = 1 };
+        }
+
+        if (ListFailureAfterItems is Error late)
+        {
+            throw new StorageException(late, new InvalidOperationException("provider detail"));
         }
     }
 

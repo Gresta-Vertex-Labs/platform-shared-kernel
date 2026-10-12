@@ -56,7 +56,7 @@ public sealed class MinioFixture : IAsyncLifetime
     };
 
     /// <summary>Builds a provider with the S3 connection and the standard stores: files, prefixed, archive, b-root (shared) and docs (tenant).</summary>
-    public ServiceProvider CreateHost(Action<Dictionary<string, string?>>? adjust = null, Action<S3StorageBuilder>? extraStores = null)
+    public ServiceProvider CreateHost(Action<Dictionary<string, string?>>? adjust = null, Action<S3StorageBuilder>? extraStores = null, Action<IServiceCollection>? configureServices = null)
     {
         Dictionary<string, string?> settings = Settings();
         adjust?.Invoke(settings);
@@ -64,6 +64,7 @@ public sealed class MinioFixture : IAsyncLifetime
 
         var services = new ServiceCollection();
         services.AddLogging();
+        configureServices?.Invoke(services);
         S3StorageBuilder s3 = services.AddSharedKernelStorage()
             .AddS3(configuration)
             .AddStore("files")

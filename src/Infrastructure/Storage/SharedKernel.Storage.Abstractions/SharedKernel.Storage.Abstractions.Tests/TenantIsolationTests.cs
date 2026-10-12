@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 
 namespace SharedKernel.Storage.Abstractions.Tests;
@@ -93,6 +94,68 @@ public sealed class TenantIsolationTests : IDisposable
         Action list = () => _tenantA.ListAsync("../");
 
         list.Should().Throw<StorageException>().Which.Error.Code.Should().Be(StorageErrorCodes.InvalidKey);
+    }
+
+    [Fact]
+    public async Task A_provider_failure_during_enumeration_never_shows_the_tenant_prefix()
+    {
+        string prefixed = $"tenants/{TenantA}/x/1";
+        _raw.StoredKeys.Add(prefixed);
+        _raw.ListFailureAfterItems = StorageErrors.InvalidKey(prefixed, "it is longer than 1024 UTF-8 bytes.");
+
+        List<string> seen = [];
+        Func<Task> enumerate = async () =>
+        {
+            await foreach (FileListItem item in _tenantA.ListAsync("x/"))
+            {
+                seen.Add(item.Key);
+            }
+        };
+
+        StorageException thrown = (await enumerate.Should().ThrowAsync<StorageException>()).Which;
+
+        seen.Should().Equal("x/1");
+        thrown.Error.Code.Should().Be(StorageErrorCodes.InvalidKey);
+        thrown.Error.Message.Should().Contain("'x/1'").And.NotContain("tenants/").And.NotContain(TenantA.ToString());
+        thrown.Message.Should().Be(thrown.Error.Message);
+        thrown.InnerException.Should().BeOfType<StorageException>().Which.Error.Message.Should().Contain("tenants/");
+    }
+
+    [Fact]
+    public async Task A_failure_before_the_first_item_is_rewritten_too()
+    {
+        _raw.ListFailureBeforeFirstItem = StorageErrors.InvalidKey($"tenants/{TenantA}/x/", "it is too long.");
+
+        Func<Task> enumerate = async () =>
+        {
+            await foreach (FileListItem _ in _tenantA.ListAsync("x/"))
+            {
+            }
+        };
+
+        StorageException thrown = (await enumerate.Should().ThrowAsync<StorageException>()).Which;
+
+        thrown.Error.Message.Should().NotContain("tenants/").And.NotContain(TenantA.ToString());
+    }
+
+    [Fact]
+    public async Task A_shared_store_leaves_a_list_failure_unchanged()
+    {
+        var shared = new RecordingFileStorage("shared") { ListFailureAfterItems = StorageErrors.Unavailable("shared", "listing") };
+        using ServiceProvider provider = StoreRegistryTests.Build(("shared", false, shared));
+        IFileStorage store = provider.GetRequiredKeyedService<IFileStorage>("shared");
+
+        Func<Task> enumerate = async () =>
+        {
+            await foreach (FileListItem _ in store.ListAsync())
+            {
+            }
+        };
+
+        StorageException thrown = (await enumerate.Should().ThrowAsync<StorageException>()).Which;
+
+        thrown.Error.Code.Should().Be(StorageErrorCodes.Unavailable);
+        thrown.Error.Type.Should().Be(ErrorType.Unavailable);
     }
 
     [Fact]

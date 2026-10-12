@@ -17,9 +17,10 @@
     <NoWarn>$(NoWarn);RS0026;RS0027</NoWarn>
   </PropertyGroup>
   <ItemGroup>
-    <!-- Result<T>/Error. No cloud SDK, no SharedKernel.Configuration (StorageTopologyRules). -->
+    <!-- Result<T>/Error, SharedKernelException. No cloud SDK, no SharedKernel.Configuration (StorageTopologyRules). -->
     <ProjectReference Include="..\..\..\Foundation\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
     <ProjectReference Include="..\..\..\Foundation\SharedKernel.Execution\SharedKernel.Execution.csproj" />
+    <ProjectReference Include="..\..\..\Foundation\SharedKernel.Core\SharedKernel.Core.csproj" />
   </ItemGroup>
   <ItemGroup>
     <!-- IStorageBuilder exposes IServiceCollection so provider packages can register named stores. -->

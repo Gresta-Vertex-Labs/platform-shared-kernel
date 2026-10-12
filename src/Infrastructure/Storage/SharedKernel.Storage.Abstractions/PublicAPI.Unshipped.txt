@@ -365,8 +365,8 @@ SharedKernel.Storage.PresignedUploadOptions.PresignedUploadOptions() -> void
 SharedKernel.Storage.StorageErrorCodes
 SharedKernel.Storage.StorageErrors
 SharedKernel.Storage.StorageException
-SharedKernel.Storage.StorageException.Error.get -> SharedKernel.Primitives.Errors.Error!
-SharedKernel.Storage.StorageException.StorageException(SharedKernel.Primitives.Errors.Error! error, System.Exception? innerException = null) -> void
+SharedKernel.Storage.StorageException.StorageException(SharedKernel.Primitives.Errors.Error! error) -> void
+SharedKernel.Storage.StorageException.StorageException(SharedKernel.Primitives.Errors.Error! error, System.Exception! innerException) -> void
 SharedKernel.Storage.StorageServiceCollectionExtensions
 SharedKernel.Storage.StorageTier
 SharedKernel.Storage.StorageTier.Default = 0 -> SharedKernel.Storage.StorageTier

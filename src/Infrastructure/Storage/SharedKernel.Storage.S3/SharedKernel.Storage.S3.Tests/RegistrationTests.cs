@@ -3,6 +3,7 @@ using Amazon.S3;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharedKernel.Primitives.Health;
 using SharedKernel.Primitives.Results;
@@ -85,6 +86,43 @@ public sealed class RegistrationTests(MinioFixture minio)
 
         exists.Error.Code.Should().Be(StorageErrorCodes.Unavailable);
         upload.Error.Code.Should().Be(StorageErrorCodes.Unavailable);
+    }
+
+    [Fact]
+    public async Task An_outage_during_listing_throws_unavailable_and_leaks_no_endpoint_bucket_or_key()
+    {
+        var logs = new CapturingLoggerProvider();
+        using ServiceProvider host = minio.CreateHost(
+            settings =>
+            {
+                settings["SharedKernel:Storage:S3:ServiceUrl"] = "http://127.0.0.1:1";
+                settings["SharedKernel:Storage:S3:MaxRetries"] = "0";
+                settings["SharedKernel:Storage:S3:RequestTimeout"] = "00:00:03";
+            },
+            configureServices: services => services.AddLogging(b => b.AddProvider(logs)));
+        IFileStorage files = host.GetRequiredKeyedService<IFileStorage>("files");
+        const string KeyPrefix = "secret-folder/";
+
+        Func<Task> enumerate = async () =>
+        {
+            await foreach (FileListItem _ in files.ListAsync(KeyPrefix))
+            {
+            }
+        };
+
+        StorageException thrown = (await enumerate.Should().ThrowAsync<StorageException>()).Which;
+
+        thrown.Error.Code.Should().Be(StorageErrorCodes.Unavailable);
+        thrown.Error.Type.Should().Be(Primitives.Errors.ErrorType.Unavailable);
+        logs.Records.Should().NotBeEmpty("the outage is logged");
+
+        // The error and the exception name neither endpoint, port, bucket nor key. Log records may name the bucket
+        // (a name, not a host: rule 5 sends it there on purpose) but never the endpoint or the key.
+        string[] endpointAndKey = ["127.0.0.1", "http://", "secret-folder"];
+        string[] errorSurfaces = [thrown.Error.Message, thrown.Message, thrown.Error.ToString()];
+        errorSurfaces.Should().AllSatisfy(s =>
+            s.Should().NotContainAny(endpointAndKey).And.NotContain(MinioFixture.BucketA).And.NotContain(":1"));
+        logs.Records.Should().AllSatisfy(s => s.Should().NotContainAny(endpointAndKey).And.NotContain("127.0.0.1:1"));
     }
 
     [Fact]

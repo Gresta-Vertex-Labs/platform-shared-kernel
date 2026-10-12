@@ -11,7 +11,7 @@
 
 | Package | Tier | Purpose |
 | --- | --- | --- |
-| `SharedKernel.Storage.Abstractions` | Abstractions | Contracts (`IFileStorage`, `ITenantFileStorage`, `IFileStorageFactory`), models, `StorageErrors`/`StorageErrorCodes`/`StorageException`, `StorageValidation`, `StorageReadinessProbeNames`, and the store registry (`AddSharedKernelStorage`, `IStorageBuilder`, `FileStoreRegistration`; internal `FileStorageFactory`, `ScopedFileStorage`, `TenantFileStorage`, `FileStoreReadinessProbe`). References `SharedKernel.Primitives`, `SharedKernel.Execution` only |
+| `SharedKernel.Storage.Abstractions` | Abstractions | Contracts (`IFileStorage`, `ITenantFileStorage`, `IFileStorageFactory`), models, `StorageErrors`/`StorageErrorCodes`/`StorageException`, `StorageValidation`, `StorageReadinessProbeNames`, and the store registry (`AddSharedKernelStorage`, `IStorageBuilder`, `FileStoreRegistration`; internal `FileStorageFactory`, `ScopedFileStorage`, `TenantFileStorage`, `FileStoreReadinessProbe`). References `SharedKernel.Primitives`, `SharedKernel.Execution` and `SharedKernel.Core` (for `SharedKernelException`) only |
 | `SharedKernel.Storage.S3` | Adapter | The S3 implementation: `AddS3`, `AddS3Compatible`, `S3StorageBuilder`, `S3StorageOptions`, `S3StoreOptions`, `S3Compatibility`; internal `S3FileStorage`, `S3Connection`, telemetry, logging. `AWSSDK.S3`, `SharedKernel.Configuration` |
 | `SharedKernel.Storage.Obs` | Adapter | Huawei Cloud OBS: `AddObs`, `ObsStorageOptions` and the OBS compatibility profile over the S3 implementation — nothing else. Declared edge → `SharedKernel.Storage.S3` |
 
@@ -71,11 +71,13 @@ API detail, option keys and defaults: the `SharedKernel.Storage.Abstractions`, `
 13. **Store names:** 1–64 of `A-Z a-z 0-9 . _ -`, unique ignoring case (`FileStoreRegistration.IsValidStoreName`);
     one `storage-{store}` probe per store.
 14. Never document a provider behaviour that no test or live run has shown.
-15. *(planned, SK.08.StorageExceptionEdge)* **`StorageException` is a sealed `SharedKernelException`** (ctors `(Error)` and
-    `(Error, Exception)`), so every edge maps it by `Error.Type` instead of answering 500. No endpoint, host, port, bucket
-    or object key reaches an `Error`, an exception message, a log record or a span; a tenant view rewrites the error of a
-    `StorageException` raised during enumeration so `tenants/{id}/` never leaves it. Abstractions then references
-    `SharedKernel.Core` as well as Primitives and Execution.
+15. **`StorageException` is a sealed `SharedKernelException`** (ctors `(Error)` and
+    `(Error, Exception)`), so every edge maps it by `Error.Type` instead of answering 500. No endpoint, host, port or
+    object key reaches an `Error`, an exception message, a log record or a span, and no bucket reaches an `Error` or an
+    exception message (log records name the bucket, rule 5; Obs start-up validation messages never quote the endpoint).
+    A tenant view rewrites the error of a `StorageException` raised during enumeration, keeping the original as
+    `InnerException`, so `tenants/{id}/` never leaves it. Abstractions references `SharedKernel.Core` as well as
+    Primitives and Execution.
 16. *(planned, SK.08.StorageConformance)* **Telemetry and logs follow root "Observability, exceptions and error codes".**
     The source and meter name and the tag keys are public constants in Abstractions (`StorageTelemetryNames`,
     `StorageTagKeys`); instruments are `sharedkernel.storage.*` with units; failures are recorded through the shared
@@ -133,8 +135,8 @@ through S3); Abstractions 8000-8099 unused.
 - **15.Integration:** `Notifications.Abstractions` and `Notifications.Email.SendGrid` reference Storage.Abstractions —
   attachments are storage references.
 - **20.Reporting:** `Reporting.Abstractions` delivers exports to a named store (`ReportDestination`) with a presigned link.
-- **14.Presentation:** no dependency; endpoints hand out presigned URLs instead of accepting uploads. *(planned,
-  SK.08.StorageExceptionEdge)* A thrown `StorageException` is a `SharedKernelException`, so the HTTP, gRPC and SignalR
+- **14.Presentation:** no dependency; endpoints hand out presigned URLs instead of accepting uploads.
+  A thrown `StorageException` is a `SharedKernelException`, so the HTTP, gRPC and SignalR
   mappers answer by `Error.Type`; their status assertions belong to 14.
 - Verified end to end by the Shop (`samples/Shop`): Catalog (presigned S3 uploads) and Reports (an S3 store and an OBS archive, presigned downloads).
 

@@ -144,6 +144,24 @@ public sealed class ObsStorageTests(MinioFixture minio) : IClassFixture<MinioFix
         ObsStorageOptionsValidator.ResolveRegion(new ObsStorageOptions { Endpoint = endpoint, Region = region }).Should().Be(expected);
 
     [Fact]
+    public void A_non_standard_endpoint_without_a_region_names_Region_and_never_the_endpoint_host()
+    {
+        using ServiceProvider host = minio.CreateHost(s =>
+        {
+            s["SharedKernel:Storage:Obs:Endpoint"] = "https://storage.example.internal:9443";
+            s.Remove("SharedKernel:Storage:Obs:Region");
+        });
+
+        Action resolve = () => _ = host.GetRequiredService<IOptions<ObsStorageOptions>>().Value;
+
+        IEnumerable<string> failures = resolve.Should().Throw<OptionsValidationException>().Which.Failures;
+        failures.Should().ContainSingle().Which.Should()
+            .Contain(nameof(ObsStorageOptions.Region))
+            .And.NotContain("storage.example.internal")
+            .And.NotContain("9443");
+    }
+
+    [Fact]
     public void Missing_credentials_and_an_unknown_region_are_reported_at_startup()
     {
         using ServiceProvider host = minio.CreateHost(s =>
