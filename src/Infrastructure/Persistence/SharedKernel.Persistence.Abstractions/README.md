@@ -101,7 +101,7 @@ public sealed class ListCustomersHandler(IReadRepository<Customer, CustomerId> c
   encrypted column. `ExecuteDeleteAsync` soft-deletes `ISoftDeletable` aggregates; `ExecutePurgeAsync` deletes
   physically.
 - **The cross-tenant scope** lasts for the DI scope while the returned `IDisposable` is held; the reason is mandatory
-  and logged (6150) with the actor.
+  and logged (6150) with the actor kind (never the actor or its tenant: the audit ledger records who acted).
 
 ## Recipes
 
@@ -163,11 +163,19 @@ A service with neither EF Core nor Dapper registers the scope itself with `servi
 `ITenantSessionBinder`, `IAmbientDbTransaction`, `IMigrationLock` and `IAdvisoryTransactionLock` are infrastructure
 seams between the persistence packages, hidden from IntelliSense; application code does not use them.
 
+### Errors
+
+`PersistenceSharedErrors.TenantRequired()` is the one error every persistence package raises when an operation needs a
+tenant and the request has none: code `persistence.tenant_required` (`PersistenceErrorCodes.TenantRequired`),
+`ErrorType.Forbidden`, thrown as `ForbiddenException` by the Dapper sessions, the audit services and the EF Core write
+guard. `PersistenceErrorCodes` also names `persistence.tenant_isolation_violation` (a row or chain of another tenant)
+and `persistence.audit_record_not_found`.
+
 ### Logging
 
 | Event id | Level | Event |
 | --- | --- | --- |
-| 6150 | Information | Cross-tenant scope entered, with actor id, actor kind, the actor's tenant and the reason |
+| 6150 | Information | Cross-tenant scope entered, with the actor kind and the reason (no actor id, no tenant) |
 
 ## Testing
 

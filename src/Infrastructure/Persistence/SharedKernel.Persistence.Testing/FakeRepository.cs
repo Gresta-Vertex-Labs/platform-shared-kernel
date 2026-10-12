@@ -250,7 +250,10 @@ public sealed class FakeRepository<TAggregate, TId> : IRepository<TAggregate, TI
 
     /// <inheritdoc />
     /// <exception cref="InvalidOperationException">Simulating failure.</exception>
-    /// <exception cref="System.Collections.Generic.KeyNotFoundException">No aggregate with the key exists.</exception>
+    /// <exception cref="ConflictException">
+    /// No aggregate with the key exists: the same <c>persistence.concurrency_conflict</c> error the real repository's
+    /// save produces for a missing or stale row.
+    /// </exception>
     public Task UpdateAsync(TAggregate aggregate, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(aggregate);
@@ -259,7 +262,12 @@ public sealed class FakeRepository<TAggregate, TId> : IRepository<TAggregate, TI
 
         var key = _idSelector(aggregate);
         if (!_items.ContainsKey(key))
-            throw new System.Collections.Generic.KeyNotFoundException($"No aggregate with key '{key}' exists to update.");
+        {
+            // The real repository fails the save of a missing row with this exact error (a stale or deleted row are one answer).
+            throw new ConflictException(SharedKernel.Primitives.Errors.Error.Conflict(
+                SharedKernel.Persistence.EfCore.Concurrency.ConcurrencyVersion.ConflictErrorCode,
+                $"'{typeof(TAggregate).Name}' was changed or deleted by someone else. Reload it and retry."));
+        }
 
         _items[key] = aggregate;
         return Task.CompletedTask;

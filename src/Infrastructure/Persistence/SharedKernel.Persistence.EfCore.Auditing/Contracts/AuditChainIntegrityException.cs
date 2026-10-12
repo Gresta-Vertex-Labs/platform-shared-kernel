@@ -8,6 +8,10 @@ namespace SharedKernel.Persistence.EfCore.Auditing;
 /// Thrown when an operation that must only run over an intact chain (creating a checkpoint) finds the
 /// chain broken or unverifiable. Nothing is signed.
 /// </summary>
+/// <remarks>
+/// <see cref="Exception.Message"/> and <c>Error.Message</c> name the resource type, status, failure kind and sequence only;
+/// the chain's tenant is available through <see cref="TenantId"/> and is never part of the text.
+/// </remarks>
 public sealed class AuditChainIntegrityException : SharedKernelException
 {
     /// <summary>The error code carried by <see cref="SharedKernelException.Error"/>.</summary>
@@ -18,7 +22,7 @@ public sealed class AuditChainIntegrityException : SharedKernelException
     /// <param name="resourceType">The chain's resource type.</param>
     /// <param name="verification">The verification that failed.</param>
     public AuditChainIntegrityException(TenantId? tenantId, string resourceType, AuditChainVerificationResult verification)
-        : base(BuildMessage(tenantId, resourceType, verification), Error.Conflict(ErrorCode, BuildMessage(tenantId, resourceType, verification)))
+        : base(BuildMessage(resourceType, verification), Error.Conflict(ErrorCode, BuildMessage(resourceType, verification)))
     {
         ArgumentNullException.ThrowIfNull(verification);
         TenantId = tenantId;
@@ -35,7 +39,8 @@ public sealed class AuditChainIntegrityException : SharedKernelException
     /// <summary>Gets the verification that failed.</summary>
     public AuditChainVerificationResult Verification { get; }
 
-    private static string BuildMessage(TenantId? tenantId, string resourceType, AuditChainVerificationResult verification) =>
-        $"Audit chain ({tenantId?.ToString() ?? "system"}, '{resourceType}') is {verification?.Status} " +
+    // The tenant is a property for programmatic use, never part of the text: the message reaches ProblemDetails.
+    private static string BuildMessage(string resourceType, AuditChainVerificationResult verification) =>
+        $"The audit chain of resource type '{resourceType}' is {verification?.Status} " +
         $"({verification?.FailureKind} at sequence {verification?.FailedAtSequence}): {verification?.Reason}";
 }

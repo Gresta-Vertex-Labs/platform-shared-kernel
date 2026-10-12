@@ -266,7 +266,8 @@ Settings of a named database, `SharedKernel:Persistence:{name}` (`NpgsqlPersiste
 | `23505` unique violation | Conflict | `persistence.postgresql.unique_violation` |
 | `23503` foreign key violation | Validation or Conflict | `…foreign_key_reference_missing`, `…foreign_key_dependent_exists`, `…foreign_key_violation` |
 | `23502`, `23514`, `23P01`, `22001` | Validation | `…not_null_violation`, `…check_violation`, `…exclusion_violation`, `…value_too_long` |
-| `40001`, `40P01` / `55P03` / `57014` | Conflict (transient) | `…transient_conflict` / `…lock_timeout` / `…statement_timeout` |
+| `40001`, `40P01` / `55P03` | Conflict (transient) | `…transient_conflict` / `…lock_timeout` |
+| `57014` query canceled (`statement_timeout`) | Timeout (reported transient; EF Core's retry strategy does not replay it) | `…statement_timeout` |
 | `42501` (incl. RLS `WITH CHECK`) | Forbidden | `…insufficient_privilege` |
 
 ### Logging

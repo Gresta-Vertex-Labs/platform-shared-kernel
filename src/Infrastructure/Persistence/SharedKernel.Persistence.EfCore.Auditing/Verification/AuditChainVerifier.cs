@@ -2,10 +2,12 @@ using System.Data;
 using System.Data.Common;
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
+using SharedKernel.Core.Exceptions;
 using SharedKernel.Persistence.Abstractions.Connections;
 using SharedKernel.Persistence.EfCore.Auditing.Diagnostics;
 using SharedKernel.Persistence.EfCore.Auditing.Format;
 using SharedKernel.Persistence.EfCore.Auditing.Storage;
+using SharedKernel.Persistence.EfCore.Auditing.Writing;
 
 namespace SharedKernel.Persistence.EfCore.Auditing.Verification;
 
@@ -130,7 +132,7 @@ internal sealed class AuditChainVerifier(
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-                throw new KeyNotFoundException($"Audit record '{recordId}' does not exist.");
+                throw new NotFoundException(AuditErrors.RecordNotFound());
 
             var hasPayload = reader.GetBoolean(O + 3);
             if (reader.IsDBNull(O + 4))
@@ -254,7 +256,7 @@ internal sealed class AuditChainVerifier(
 
     private AuditChainVerificationResult Report(ChainId chain, Failure failure)
     {
-        AuditingLog.ChainVerificationFailed(logger, chain.TenantLabel, chain.ResourceType, failure.Result.Status, failure.Result.FailureKind, failure.Result.FailedAtSequence, failure.Result.Reason);
+        AuditingLog.ChainVerificationFailed(logger, chain.ResourceType, failure.Result.Status, failure.Result.FailureKind, failure.Result.FailedAtSequence, failure.Result.Reason);
         AuditingMeter.RecordVerificationFailure(failure.Result.FailureKind);
         Activity.Current?.SetTag(AuditingMeter.FailureKindTag, failure.Result.FailureKind.ToString());
         return failure.Result;

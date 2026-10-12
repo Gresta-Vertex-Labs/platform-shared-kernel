@@ -60,7 +60,10 @@ public sealed class R1RemediationTests : IDisposable
             return Result.Success(); // the outer handler ignores the nested failure
         });
 
-        await act.Should().ThrowAsync<TransactionRolledBackException>();
+        var rolledBack = (await act.Should().ThrowAsync<TransactionRolledBackException>()).Which;
+        rolledBack.Should().BeAssignableTo<SharedKernelException>();
+        rolledBack.Error.Code.Should().Be("execution.transaction_rolled_back");
+        rolledBack.Error.Type.Should().Be(ErrorType.Unexpected);
 
         await using var verify = Plain();
         (await verify.Items.CountAsync()).Should().Be(0, "failed nested work must never commit with the outer work");
@@ -85,7 +88,10 @@ public sealed class R1RemediationTests : IDisposable
             }
         });
 
-        await act.Should().ThrowAsync<TransactionRolledBackException>();
+        var rolledBack = (await act.Should().ThrowAsync<TransactionRolledBackException>()).Which;
+        rolledBack.Should().BeAssignableTo<SharedKernelException>();
+        rolledBack.Error.Code.Should().Be("execution.transaction_rolled_back");
+        rolledBack.Error.Type.Should().Be(ErrorType.Unexpected);
 
         await using var verify = Plain();
         (await verify.Items.CountAsync()).Should().Be(0);
@@ -360,7 +366,9 @@ public sealed class R1RemediationTests : IDisposable
         {
             noTenant.Orders.Add(new R1Order { Id = Guid.NewGuid(), TenantId = new TenantId(Guid.NewGuid()), Name = "x" });
             var ex = (await FluentActions.Awaiting(() => noTenant.SaveChangesAsync()).Should().ThrowAsync<ForbiddenException>()).Which;
-            ex.Error.Message.Should().Contain("has no tenant").And.Contain("ICrossTenantScope");
+            ex.Error.Should().Be(SharedKernel.Persistence.Abstractions.Errors.PersistenceSharedErrors.TenantRequired());
+            ex.Error.Code.Should().Be("persistence.tenant_required");
+            ex.Error.Message.Should().NotContain("R1Order", "the entity type name stays in the metric tag, not in the error");
         }
 
         await using var other = Tenanted(new TenantId(Guid.NewGuid()));

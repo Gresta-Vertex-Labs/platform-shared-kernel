@@ -1,26 +1,20 @@
+using SharedKernel.Persistence.Abstractions.Errors;
 using SharedKernel.Primitives.Errors;
 
 namespace SharedKernel.Persistence.EfCore.Interceptors;
 
 /// <summary>
-/// Builds the <see cref="Error"/> a tenant-isolation write rejection carries. Every case shares one code; the
-/// message says what was wrong and what to do.
+/// Builds the <see cref="Error"/> a tenant-isolation write rejection carries. The other-tenant and tenant-changed
+/// cases share one code; the message says what was wrong and what to do. "No tenant" is not here: every
+/// persistence package raises the one <see cref="PersistenceSharedErrors.TenantRequired"/> error.
 /// </summary>
 internal static class TenantIsolationErrors
 {
     /// <summary>The error code of every tenant-isolation rejection.</summary>
-    public const string Code = "persistence.tenant_isolation_violation";
+    public const string Code = PersistenceErrorCodes.TenantIsolationViolation;
 
     private const string CrossTenantHint =
         " If this is a deliberate cross-tenant operation, run it inside ICrossTenantScope.Enter(reason).";
-
-    /// <summary>The caller has no tenant, so no tenant-scoped row may be written.</summary>
-    /// <param name="entityTypeName">The CLR type name of the rejected entity. Never the row payload.</param>
-    public static Error NoTenant(string entityTypeName) =>
-        Error.Forbidden(
-            Code,
-            $"Writing '{entityTypeName}' was rejected: the caller has no tenant (IRequestContext.TenantId is null), so "
-            + "no tenant-scoped data may be written. Resolve the tenant for this request or job." + CrossTenantHint);
 
     /// <summary>The entity belongs to a tenant other than the caller's.</summary>
     /// <param name="entityTypeName">The CLR type name of the rejected entity. Never the row payload.</param>

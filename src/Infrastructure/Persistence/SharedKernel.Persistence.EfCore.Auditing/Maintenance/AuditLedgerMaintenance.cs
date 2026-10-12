@@ -1,5 +1,6 @@
 using System.Data;
 using Microsoft.Extensions.Logging;
+using SharedKernel.Core.Exceptions;
 using SharedKernel.Execution.Auditing;
 using SharedKernel.Persistence.Abstractions.Connections;
 using SharedKernel.Persistence.EfCore.Auditing.Checkpoints;
@@ -93,7 +94,7 @@ internal sealed class AuditLedgerMaintenance(
                     }
                     catch (Exception ex) when (ex is AuditChainIntegrityException or InvalidOperationException)
                     {
-                        AuditingLog.CheckpointEmissionFailed(logger, ex, chain.TenantLabel, chain.ResourceType);
+                        AuditingLog.CheckpointEmissionFailed(logger, ex, chain.ResourceType);
                     }
                 }
             }
@@ -116,7 +117,7 @@ internal sealed class AuditLedgerMaintenance(
             {
                 var record = await LedgerDb.ReadByIdAsync(connection, transaction, recordId, cancellationToken).ConfigureAwait(false);
                 if (record is null || !Scope.CanAccess(record.TenantId))
-                    throw new KeyNotFoundException($"Audit record '{recordId}' does not exist in the caller's tenant.");
+                    throw new NotFoundException(AuditErrors.RecordNotFound());
 
                 await using var command = LedgerDb.CreateCommand(connection, transaction,
                     $"DELETE FROM {AuditLedgerSchema.PayloadsTable} WHERE record_id = @id");
@@ -156,7 +157,7 @@ internal sealed class AuditLedgerMaintenance(
         ArgumentException.ThrowIfNullOrWhiteSpace(resourceId);
         RequireReason(reason);
 
-        var tenantId = Scope.ResolveCallerTenant("Erasing audit payloads");
+        var tenantId = Scope.ResolveCallerTenant();
 
         var connection = await connectionFactory.CreateConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using (connection.ConfigureAwait(false))

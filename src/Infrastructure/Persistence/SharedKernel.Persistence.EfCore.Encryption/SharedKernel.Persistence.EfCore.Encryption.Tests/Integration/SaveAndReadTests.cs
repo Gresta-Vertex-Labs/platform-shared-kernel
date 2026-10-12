@@ -178,7 +178,7 @@ public sealed class SaveAndReadTests(PostgreSqlContainerFixture fixture)
         {
             var context = scope.ServiceProvider.GetRequiredService<CustomerDbContext>();
             var act = () => context.Customers.AsNoTracking().SingleAsync(x => x.Id == first);
-            await act.Should().ThrowAsync<CryptographicException>().WithMessage("*Customer.Email*");
+            (await act.Should().ThrowAsync<FieldEncryptionException>()).Which.Error.Code.Should().Be("persistence.encryption.decryption_failed");
         }
     }
 
@@ -197,7 +197,7 @@ public sealed class SaveAndReadTests(PostgreSqlContainerFixture fixture)
         await EncryptionHost.ExecuteAsync(cs, "UPDATE customers SET note = 'planted'");
         await using var readScope = sp.CreateAsyncScope();
         var act = () => readScope.ServiceProvider.GetRequiredService<CustomerDbContext>().Customers.AsNoTracking().ToListAsync();
-        await act.Should().ThrowAsync<CryptographicException>().WithMessage("*EncryptPlaintext*");
+        (await act.Should().ThrowAsync<FieldEncryptionException>().WithMessage("*EncryptPlaintext*")).Which.Error.Code.Should().Be("persistence.encryption.malformed_payload");
     }
 
     [Fact]

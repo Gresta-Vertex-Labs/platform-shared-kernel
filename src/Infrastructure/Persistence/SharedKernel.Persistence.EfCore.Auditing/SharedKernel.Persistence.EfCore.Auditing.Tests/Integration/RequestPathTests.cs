@@ -1,3 +1,5 @@
+using SharedKernel.Core.Exceptions;
+using SharedKernel.Persistence.Abstractions.Errors;
 using System.Diagnostics;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -203,10 +205,10 @@ public sealed class RequestPathTests(PostgreSqlContainerFixture fixture)
         host.Context.TenantId = null;
 
         var act = () => host.InScopeAsync(sp => sp.GetRequiredService<EfAuditTrailWriter>().RecordAsync(Entry(AuditOutcome.Failed)));
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*system audit chain*");
+        (await act.Should().ThrowAsync<ForbiddenException>()).Which.Error.Should().Be(PersistenceSharedErrors.TenantRequired());
 
         host.Context.IsAuthenticated = false;
-        await act.Should().ThrowAsync<InvalidOperationException>("an anonymous caller is not a system scope");
+        await act.Should().ThrowAsync<ForbiddenException>("an anonymous caller is not a system scope");
         (await CountAsync(cs)).Should().Be(0);
     }
 

@@ -29,7 +29,7 @@ public sealed class PostgresExceptionClassifierTests
     [InlineData(PostgresErrorCodes.SerializationFailure, ErrorType.Conflict, PostgresClassifiedErrorCodes.TransientConflict, true)]
     [InlineData(PostgresErrorCodes.DeadlockDetected, ErrorType.Conflict, PostgresClassifiedErrorCodes.TransientConflict, true)]
     [InlineData(PostgresErrorCodes.LockNotAvailable, ErrorType.Conflict, PostgresClassifiedErrorCodes.LockTimeout, true)]
-    [InlineData(PostgresErrorCodes.QueryCanceled, ErrorType.Conflict, PostgresClassifiedErrorCodes.StatementTimeout, true)]
+    [InlineData(PostgresErrorCodes.QueryCanceled, ErrorType.Timeout, PostgresClassifiedErrorCodes.StatementTimeout, true)]
     [InlineData(PostgresErrorCodes.InsufficientPrivilege, ErrorType.Forbidden, PostgresClassifiedErrorCodes.InsufficientPrivilege, false)]
     public void Classify_MapsSqlState(string sqlState, ErrorType type, string code, bool transient)
     {

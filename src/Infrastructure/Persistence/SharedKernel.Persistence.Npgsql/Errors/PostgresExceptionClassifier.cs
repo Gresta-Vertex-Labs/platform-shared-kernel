@@ -18,7 +18,8 @@ namespace SharedKernel.Persistence.Npgsql.Errors;
 /// <item><term><c>23503</c> foreign key, <see cref="ForeignKeyViolationKind.Unknown"/></term><description><see cref="ErrorType.Validation"/> with a generic code.</description></item>
 /// <item><term><c>23502</c>, <c>23514</c>, <c>23P01</c>, <c>22001</c></term><description><see cref="ErrorType.Validation"/>: the written values break a column or table rule.</description></item>
 /// <item><term><c>40001</c>, <c>40P01</c></term><description><see cref="ErrorType.Conflict"/>, transient: the transaction lost to a concurrent one and can be retried unchanged.</description></item>
-/// <item><term><c>55P03</c>, <c>57014</c></term><description><see cref="ErrorType.Conflict"/>, transient. The platform has no timeout or unavailable error type; a lock or statement timeout means the statement lost to concurrent work or load, which is what Conflict (HTTP 409, "retry may succeed") expresses best. A request cancelled by its own <see cref="CancellationToken"/> surfaces as <see cref="OperationCanceledException"/> instead and never reaches this classifier.</description></item>
+/// <item><term><c>55P03</c></term><description><see cref="ErrorType.Conflict"/>, transient: the data is locked by another operation. It also covers <c>NOWAIT</c>/<c>SKIP LOCKED</c> contention, which a retry resolves, so it is not a timeout.</description></item>
+/// <item><term><c>57014</c> query canceled</term><description><see cref="ErrorType.Timeout"/>, reported transient to the caller (EF Core's Npgsql retry strategy does not replay it): the statement exceeded <c>statement_timeout</c>. A request cancelled by its own <see cref="CancellationToken"/> surfaces as <see cref="OperationCanceledException"/> instead and never reaches this classifier.</description></item>
 /// <item><term><c>42501</c></term><description><see cref="ErrorType.Forbidden"/>: the database role is not allowed to do this, including a row rejected by a row-level security policy.</description></item>
 /// </list>
 /// <para>
@@ -75,7 +76,7 @@ public static class PostgresExceptionClassifier
                 PostgresClassifiedErrorCodes.LockTimeout,
                 "The data is locked by another operation. Retry it."),
 
-            PostgresErrorCodes.QueryCanceled => Error.Conflict(
+            PostgresErrorCodes.QueryCanceled => Error.Timeout(
                 PostgresClassifiedErrorCodes.StatementTimeout,
                 "The operation took too long and was cancelled. Retry it."),
 

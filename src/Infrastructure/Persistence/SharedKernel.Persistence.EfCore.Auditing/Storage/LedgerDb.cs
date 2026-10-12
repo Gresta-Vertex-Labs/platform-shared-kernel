@@ -11,10 +11,7 @@ namespace SharedKernel.Persistence.EfCore.Auditing.Storage;
 internal sealed record PendingLedgerRecord(LedgerRecordFields Fields, byte[] Salt, string? BeforeSnapshot, string? AfterSnapshot);
 
 /// <summary>The chain identity <c>(TenantId, ResourceType)</c>.</summary>
-internal readonly record struct ChainId(TenantId? TenantId, string ResourceType)
-{
-    public string TenantLabel => TenantId?.ToString() ?? "system";
-}
+internal readonly record struct ChainId(TenantId? TenantId, string ResourceType);
 
 /// <summary>
 /// Raw ADO.NET access to the ledger tables: parameter helpers, the one record column list and its

@@ -31,7 +31,9 @@ public interface IAuditLedgerMaintenance
     /// <param name="reason">The legal reason (e.g. a GDPR/KVKK request id).</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns><see langword="true"/> when a payload was erased; <see langword="false"/> when it was already erased.</returns>
-    /// <exception cref="KeyNotFoundException">The caller's tenant holds no such record.</exception>
+    /// <exception cref="SharedKernel.Core.Exceptions.NotFoundException">
+    /// The record does not exist, or belongs to another tenant (<c>persistence.audit_record_not_found</c>; one answer for both).
+    /// </exception>
     Task<bool> ErasePayloadAsync(Guid recordId, string reason, CancellationToken cancellationToken = default);
 
     /// <summary>

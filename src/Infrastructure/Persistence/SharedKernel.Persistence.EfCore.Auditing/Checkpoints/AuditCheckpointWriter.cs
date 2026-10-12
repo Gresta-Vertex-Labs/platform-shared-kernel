@@ -84,7 +84,7 @@ internal sealed class AuditCheckpointWriter
         if (verification.HeadSequence is not { } headSequence || headMac is null)
         {
             throw new InvalidOperationException(
-                $"Audit chain ({chain.TenantLabel}, '{chain.ResourceType}') has no sealed records to checkpoint.");
+                $"The audit chain of resource type '{chain.ResourceType}' has no sealed records to checkpoint.");
         }
 
         if (skipIfUnchanged && anchor is { } a && a.Sequence == headSequence)
@@ -109,7 +109,7 @@ internal sealed class AuditCheckpointWriter
 
         await _sink.AppendAsync(checkpoint, cancellationToken).ConfigureAwait(false);
         AuditingMeter.RecordCheckpointEmitted();
-        AuditingLog.CheckpointEmitted(_logger, chain.TenantLabel, chain.ResourceType, headSequence, _signingKeyId!);
+        AuditingLog.CheckpointEmitted(_logger, chain.ResourceType, headSequence, _signingKeyId!);
         return checkpoint;
     }
 
@@ -173,7 +173,7 @@ internal sealed class AuditCheckpointWriter
                     catch (Exception ex) when (ex is not OperationCanceledException)
                     {
                         // A broken chain is already logged by the verifier; nothing is signed for it.
-                        AuditingLog.CheckpointEmissionFailed(_logger, ex, chain.TenantLabel, chain.ResourceType);
+                        AuditingLog.CheckpointEmissionFailed(_logger, ex, chain.ResourceType);
                         Activity.Current?.SetStatus(ActivityStatusCode.Error);
                     }
                 }

@@ -100,3 +100,9 @@ static SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.TryParse
 static SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.operator !=(SharedKernel.Persistence.Abstractions.Repositories.EntityVersion left, SharedKernel.Persistence.Abstractions.Repositories.EntityVersion right) -> bool
 static SharedKernel.Persistence.Abstractions.Repositories.EntityVersion.operator ==(SharedKernel.Persistence.Abstractions.Repositories.EntityVersion left, SharedKernel.Persistence.Abstractions.Repositories.EntityVersion right) -> bool
 SharedKernel.Persistence.Abstractions.Context.ITenantSessionBinder.BindAsync(System.Data.Common.DbConnection! connection, System.Data.Common.DbTransaction! transaction, SharedKernel.Execution.Tenancy.TenantId? tenantId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+SharedKernel.Persistence.Abstractions.Errors.PersistenceErrorCodes
+const SharedKernel.Persistence.Abstractions.Errors.PersistenceErrorCodes.AuditRecordNotFound = "persistence.audit_record_not_found" -> string!
+const SharedKernel.Persistence.Abstractions.Errors.PersistenceErrorCodes.TenantIsolationViolation = "persistence.tenant_isolation_violation" -> string!
+const SharedKernel.Persistence.Abstractions.Errors.PersistenceErrorCodes.TenantRequired = "persistence.tenant_required" -> string!
+SharedKernel.Persistence.Abstractions.Errors.PersistenceSharedErrors
+static SharedKernel.Persistence.Abstractions.Errors.PersistenceSharedErrors.TenantRequired() -> SharedKernel.Primitives.Errors.Error!

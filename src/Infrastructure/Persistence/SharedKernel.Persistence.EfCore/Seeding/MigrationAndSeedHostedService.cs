@@ -143,7 +143,7 @@ internal sealed class MigrationAndSeedHostedService<TContext> : IHostedService
         }
         catch (Exception ex)
         {
-            PersistenceLog.MigrationAndSeedFailed(_logger, contextTypeName, ex.GetType().Name);
+            PersistenceLog.MigrationAndSeedFailed(_logger, contextTypeName, ex);
             _startupSignal?.Fail(typeof(TContext), ex);
             throw;
         }

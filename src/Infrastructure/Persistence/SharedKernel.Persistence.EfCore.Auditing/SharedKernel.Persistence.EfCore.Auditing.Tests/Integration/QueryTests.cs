@@ -1,3 +1,5 @@
+using SharedKernel.Core.Exceptions;
+using SharedKernel.Persistence.Abstractions.Errors;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
@@ -45,9 +47,9 @@ public sealed class QueryTests(PostgreSqlContainerFixture fixture)
         host.Context.TenantId = null;
 
         await host.Invoking(h => QueryAsync(h, q => q.QueryAsync(new AuditRecordQuery { ResourceType = "Order" })))
-            .Should().ThrowAsync<InvalidOperationException>();
+            .Should().ThrowAsync<ForbiddenException>();
         await host.Invoking(h => QueryAsync(h, q => q.VerifyChainAsync("Order")))
-            .Should().ThrowAsync<InvalidOperationException>();
+            .Should().ThrowAsync<ForbiddenException>();
 
         host.Context.ActorKind = ActorKind.System;
         (await QueryAsync(host, q => q.QueryAsync(new AuditRecordQuery { ResourceType = "Order" }))).Items.Should().BeEmpty();

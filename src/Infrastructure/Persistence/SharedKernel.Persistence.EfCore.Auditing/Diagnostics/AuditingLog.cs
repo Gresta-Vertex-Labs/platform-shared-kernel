@@ -8,16 +8,16 @@ namespace SharedKernel.Persistence.EfCore.Auditing.Diagnostics;
 /// </summary>
 /// <remarks>
 /// EventIds <c>6700-6899</c> (<see cref="LoggingEventIdRanges.Persistence"/> + 700..899), the sub-block
-/// assigned to this package by P-558 (it previously used 6400-6499, now the Dapper package's). A chain's
-/// tenant is logged as <c>ChainTenant</c> — it names the chain being processed, not the ambient caller.
+/// assigned to this package by P-558 (it previously used 6400-6499, now the Dapper package's). No tenant id, idempotency
+/// key or actor ever reaches a log: a chain is named by its resource type only.
 /// </remarks>
 internal static partial class AuditingLog
 {
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Persistence + 700,
         Level = LogLevel.Information,
-        Message = "Audit append for resource type '{ResourceType}' returned the record already stored under idempotency key '{IdempotencyKey}'.")]
-    public static partial void IdempotentDuplicateReturned(ILogger logger, string resourceType, string idempotencyKey);
+        Message = "Audit append for resource type '{ResourceType}' returned the record already stored for the same event.")]
+    public static partial void IdempotentDuplicateReturned(ILogger logger, string resourceType);
 
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Persistence + 701,
@@ -28,9 +28,9 @@ internal static partial class AuditingLog
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Persistence + 702,
         Level = LogLevel.Error,
-        Message = "Audit chain ({ChainTenant}, '{ResourceType}') verified as {Status}: {FailureKind} at sequence {Sequence} ({Reason}).")]
+        Message = "Audit chain of resource type '{ResourceType}' verified as {Status}: {FailureKind} at sequence {Sequence} ({Reason}).")]
     public static partial void ChainVerificationFailed(
-        ILogger logger, string chainTenant, string resourceType, AuditVerificationStatus status, AuditVerificationFailureKind failureKind, long? sequence, string? reason);
+        ILogger logger, string resourceType, AuditVerificationStatus status, AuditVerificationFailureKind failureKind, long? sequence, string? reason);
 
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Persistence + 703,
@@ -53,14 +53,14 @@ internal static partial class AuditingLog
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Persistence + 706,
         Level = LogLevel.Information,
-        Message = "Checkpoint of audit chain ({ChainTenant}, '{ResourceType}') at sequence {Sequence} signed with key '{SigningKeyId}'.")]
-    public static partial void CheckpointEmitted(ILogger logger, string chainTenant, string resourceType, long sequence, string signingKeyId);
+        Message = "Checkpoint of the audit chain of resource type '{ResourceType}' at sequence {Sequence} signed with key '{SigningKeyId}'.")]
+    public static partial void CheckpointEmitted(ILogger logger, string resourceType, long sequence, string signingKeyId);
 
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Persistence + 707,
         Level = LogLevel.Error,
-        Message = "Checkpoint emission for audit chain ({ChainTenant}, '{ResourceType}') failed.")]
-    public static partial void CheckpointEmissionFailed(ILogger logger, Exception exception, string chainTenant, string resourceType);
+        Message = "Checkpoint emission for the audit chain of resource type '{ResourceType}' failed.")]
+    public static partial void CheckpointEmissionFailed(ILogger logger, Exception exception, string resourceType);
 
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Persistence + 708,

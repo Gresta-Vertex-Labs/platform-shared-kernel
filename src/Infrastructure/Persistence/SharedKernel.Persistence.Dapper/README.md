@@ -182,6 +182,13 @@ Connection strings, TLS, replica and cross-tenant settings belong to the data so
 Always-registered handlers: `TenantId`/`TenantId?` ↔ `uuid` (an unset `default(TenantId)` is sent as `NULL`), and
 pgvector `Vector`, `HalfVector`, `SparseVector` (with `UseVector: true` on the data source).
 
+### Errors
+
+`RequireTenantId()` on a session whose caller has no tenant throws `ForbiddenException` carrying the shared
+`persistence.tenant_required` error (`ErrorType.Forbidden`), the same value the audit services and the EF Core write
+guard raise. PostgreSQL errors map through `PostgresErrorMapping` (see the Npgsql README); a `statement_timeout` expiry
+is `ErrorType.Timeout`.
+
 ### Logging
 
 | Event id | Level | Event |

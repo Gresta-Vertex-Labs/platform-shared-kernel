@@ -55,8 +55,8 @@ internal static partial class EncryptionLog
     internal static partial void MaintenanceValuesSkipped(ILogger logger, string target, long count, string reason);
 
     [LoggerMessage(EventId = LoggingEventIdRanges.Persistence + 520, Level = LogLevel.Information,
-        Message = "Created a tenant data key wrapped by master key {MasterKeyId}.")]
-    internal static partial void TenantKeyCreated(ILogger logger, string masterKeyId);
+        Message = "Created a tenant data key.")]
+    internal static partial void TenantKeyCreated(ILogger logger);
 
     [LoggerMessage(EventId = LoggingEventIdRanges.Persistence + 521, Level = LogLevel.Warning,
         Message = "Shredded a tenant data key and cleared {BlindIndexValuesCleared} blind-index value(s); the tenant's encrypted values can no longer be decrypted.")]

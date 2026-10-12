@@ -1,7 +1,6 @@
 using System.Diagnostics.Metrics;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Execution.Context;
-using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Logging;
 
 namespace SharedKernel.Persistence.Abstractions.Context;
@@ -41,11 +40,9 @@ internal static partial class CrossTenantScopeLog
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Persistence + 150,
         Level = LogLevel.Information,
-        Message = "Cross-tenant scope entered by '{ActorId}' ({ActorKind}, tenant '{ActorTenantId}'): {Reason}")]
+        Message = "Cross-tenant scope entered by a {ActorKind} actor: {Reason}")]
     internal static partial void Entered(
         ILogger logger,
-        string actorId,
         ActorKind actorKind,
-        TenantId? actorTenantId,
         string reason);
 }

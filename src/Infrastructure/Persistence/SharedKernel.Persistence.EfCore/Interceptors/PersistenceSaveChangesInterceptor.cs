@@ -7,6 +7,7 @@ using SharedKernel.Core.Exceptions;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Execution.Tenancy;
 using SharedKernel.Persistence.Abstractions.Context;
+using SharedKernel.Persistence.Abstractions.Errors;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Diagnostics;
 using SharedKernel.Persistence.EfCore.MultiTenancy;
@@ -319,7 +320,7 @@ internal sealed class PersistenceSaveChangesInterceptor : SaveChangesInterceptor
                 throw Reject(entityTypeName, TenantIsolationErrors.TenantChanged(entityTypeName));
 
             if (currentTenantId is null)
-                throw Reject(entityTypeName, TenantIsolationErrors.NoTenant(entityTypeName));
+                throw Reject(entityTypeName, PersistenceSharedErrors.TenantRequired());
 
             if (tenantProperty.CurrentValue is not TenantId tenantId || tenantId != currentTenantId.Value)
                 throw Reject(entityTypeName, TenantIsolationErrors.OtherTenant(entityTypeName));

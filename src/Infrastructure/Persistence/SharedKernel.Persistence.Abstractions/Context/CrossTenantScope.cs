@@ -23,8 +23,8 @@ namespace SharedKernel.Persistence.Abstractions.Context;
 /// <c>ICallerDbContextFactory</c> already carries its own (<c>SharedKernelDbContext.CrossTenantScope</c>).
 /// </para>
 /// <para>
-/// Each <see cref="Enter(string)"/> is logged at Information level (EventId 6150) with the actor, its
-/// kind, the tenant it acted from and the reason, and counted on the <c>"SharedKernel.Persistence"</c>
+/// Each <see cref="Enter(string)"/> is logged at Information level (EventId 6150) with the actor's kind and
+/// the reason (never the actor's id or tenant: the audit ledger records who acted), and counted on the <c>"SharedKernel.Persistence"</c>
 /// meter (<c>persistence.cross_tenant_scope_entries</c>, tagged with the actor kind only, which keeps the
 /// cardinality bounded). Thread-safe.
 /// </para>
@@ -56,12 +56,11 @@ public sealed class CrossTenantScope : ICrossTenantScope
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(reason);
 
-        var actorId = _requestContext.UserId is { Length: > 0 } userId ? userId : "anonymous";
         var actorKind = _requestContext.ActorKind;
 
         Interlocked.Increment(ref _depth);
 
-        CrossTenantScopeLog.Entered(_logger, actorId, actorKind, _requestContext.TenantId, reason);
+        CrossTenantScopeLog.Entered(_logger, actorKind, reason);
         CrossTenantScopeDiagnostics.ScopeEntries.Add(
             1, new KeyValuePair<string, object?>(CrossTenantScopeDiagnostics.ActorKindTag, actorKind.ToString()));
 

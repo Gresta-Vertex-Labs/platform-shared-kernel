@@ -1,3 +1,5 @@
+using SharedKernel.Core.Exceptions;
+using SharedKernel.Persistence.Abstractions.Errors;
 using System.Security.Cryptography;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -6,6 +8,8 @@ using SharedKernel.Cryptography.Signing;
 using SharedKernel.Persistence.EfCore.Auditing.Checkpoints;
 using SharedKernel.Persistence.EfCore.Auditing.Tests.Support;
 using SharedKernel.Testing.Containers;
+using SharedKernel.Testing.Logging;
+using Microsoft.Extensions.Logging;
 
 namespace SharedKernel.Persistence.EfCore.Auditing.Tests.Integration;
 
@@ -200,7 +204,37 @@ public sealed class CheckpointTests(PostgreSqlContainerFixture fixture)
             $"UPDATE {AuditLedgerSchema.RecordsTable} SET action = 'x' WHERE id = (SELECT record_id FROM {AuditLedgerSchema.LinksTable} WHERE sequence = 4)");
 
         var act = () => CheckpointAsync(host);
-        (await act.Should().ThrowAsync<AuditChainIntegrityException>()).Which.Verification.FailedAtSequence.Should().Be(4);
+        var thrown = (await act.Should().ThrowAsync<AuditChainIntegrityException>()).Which;
+        thrown.Verification.FailedAtSequence.Should().Be(4);
+
+        // The text reaches ProblemDetails: no tenant in it, while the property stays available programmatically.
+        var tenant = TestRequestContext.TenantA;
+        thrown.TenantId.Should().Be(tenant);
+        thrown.Message.Should().NotContain(tenant.ToString()).And.NotContain(tenant.Value.ToString("D")).And.Contain("'Order'");
+        thrown.Error.Message.Should().NotContain(tenant.ToString()).And.NotContain(tenant.Value.ToString("D"));
+        thrown.Error.Code.Should().Be(AuditChainIntegrityException.ErrorCode);
+    }
+
+    [Fact]
+    public async Task ChainVerificationAndCheckpointLogs_CarryNoTenant()
+    {
+        var cs = await LedgerTestDatabase.CreateAsync(fixture);
+        using var keys = SigningKeys(SigningKeyId);
+        var logs = new InMemoryLoggerFactory();
+        await using var host = Host(cs, keys, o => o.ConfigureServices = services =>
+            services.AddSingleton<ILoggerFactory>(logs));
+        await AppendAndSealAsync(host, 3);
+        await CheckpointAsync(host);
+        await AppendAndSealAsync(host, 2, start: 4);
+        await LedgerTestDatabase.TamperAsync(cs,
+            $"UPDATE {AuditLedgerSchema.RecordsTable} SET action = 'x' WHERE id = (SELECT record_id FROM {AuditLedgerSchema.LinksTable} WHERE sequence = 4)");
+        await FluentActions.Awaiting(() => CheckpointAsync(host)).Should().ThrowAsync<AuditChainIntegrityException>();
+
+        var tenant = TestRequestContext.TenantA;
+        var records = logs.Loggers.Values.SelectMany(l => l.Records).ToList();
+        records.ShouldHaveLogged(new EventId(6702)); // chain verification failed
+        records.ShouldHaveLogged(new EventId(6706)); // the first checkpoint was emitted
+        records.ShouldNotLeak(tenant.ToString(), tenant.Value.ToString("D"));
     }
 
     [Fact]
@@ -213,7 +247,7 @@ public sealed class CheckpointTests(PostgreSqlContainerFixture fixture)
         host.Context.TenantId = TestRequestContext.TenantB;
 
         var act = () => host.InScopeAsync(sp => sp.GetRequiredService<IAuditCheckpointService>().CreateCheckpointForChainAsync(TestRequestContext.TenantA, "Order"));
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*cross-tenant scope*");
+        (await act.Should().ThrowAsync<ForbiddenException>()).Which.Error.Code.Should().Be(PersistenceErrorCodes.TenantIsolationViolation);
 
         using (host.Scope.Enter("audit test"))
             (await act()).Sequence.Should().Be(1);
@@ -229,7 +263,7 @@ public sealed class CheckpointTests(PostgreSqlContainerFixture fixture)
         var checkpoint = await CheckpointAsync(host);
         host.Context.TenantId = TestRequestContext.TenantB;
 
-        await host.Invoking(h => VerifyFromAsync(h, checkpoint)).Should().ThrowAsync<InvalidOperationException>();
+        await host.Invoking(h => VerifyFromAsync(h, checkpoint)).Should().ThrowAsync<ForbiddenException>();
     }
 
     [Fact]

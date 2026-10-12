@@ -67,8 +67,8 @@ internal static partial class PersistenceLog
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Persistence + 4,
         Level = LogLevel.Warning,
-        Message = "Migration and seed startup sequence failed for context '{ContextType}' ({ExceptionType}); the exception is reported by the host.")]
-    internal static partial void MigrationAndSeedFailed(ILogger logger, string contextType, string exceptionType);
+        Message = "Migration and seed startup sequence failed for context '{ContextType}'; the exception is reported by the host.")]
+    internal static partial void MigrationAndSeedFailed(ILogger logger, string contextType, Exception exception);
 
     /// <summary>
     /// Logged immediately after the PostgreSQL advisory lock is acquired. Never logs the lock key

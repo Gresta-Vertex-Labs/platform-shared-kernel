@@ -152,17 +152,19 @@ public sealed class CrossTenantScopeTests
     }
 
     [Fact]
-    public void Enter_LogsActorAndReason()
+    public void Enter_LogsActorKindAndReason_NeverTheActorOrItsTenant()
     {
         var logger = new InMemoryLogger<CrossTenantScope>();
+        var tenant = new SharedKernel.Execution.Tenancy.TenantId(Guid.Parse("abcdef01-2345-6789-abcd-ef0123456789"));
 
-        using (NewScope("data-migration-job", logger).Enter("backfill invoices"))
+        using (new CrossTenantScope(new FakeAuditActorContext("data-migration-job-7f3a", tenant), logger).Enter("backfill invoices"))
         {
         }
 
         var record = logger.Records.Should().ContainSingle().Subject;
         record.EventId.Id.Should().Be(6150);
-        record.Message.Should().Contain("data-migration-job").And.Contain("backfill invoices");
+        record.Message.Should().Contain("User").And.Contain("backfill invoices");
+        logger.Records.ShouldNotLeak("data-migration-job-7f3a", tenant.ToString(), "abcdef01-2345-6789-abcd-ef0123456789");
     }
 
     [Fact]

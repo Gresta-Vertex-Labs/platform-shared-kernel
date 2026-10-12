@@ -1,7 +1,9 @@
 using System.Data.Common;
 using Dapper;
 using Microsoft.Extensions.Logging;
+using SharedKernel.Core.Exceptions;
 using SharedKernel.Execution.Tenancy;
+using SharedKernel.Persistence.Abstractions.Errors;
 using SharedKernel.Persistence.Dapper.Diagnostics;
 
 namespace SharedKernel.Persistence.Dapper.Sessions;
@@ -30,7 +32,7 @@ internal sealed class DbSession(
     public TenantId? TenantId => tenantId;
 
     public TenantId RequireTenantId() =>
-        tenantId ?? throw new InvalidOperationException("No tenant is resolved for the current caller.");
+        tenantId ?? throw new ForbiddenException(PersistenceSharedErrors.TenantRequired());
 
     public CommandDefinition Command(string sql, object? parameters = null, CancellationToken cancellationToken = default)
     {

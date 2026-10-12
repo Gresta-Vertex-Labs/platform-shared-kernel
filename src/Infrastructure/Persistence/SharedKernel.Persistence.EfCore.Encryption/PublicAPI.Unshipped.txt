@@ -197,3 +197,10 @@ SharedKernel.Persistence.EfCore.Encryption.TenantKeys.TenantShredResult.TenantSh
 static SharedKernel.Persistence.EfCore.EncryptedQueryExtensions.WhereEncryptedEquals<T>(this System.Linq.IQueryable<T!>! query, Microsoft.EntityFrameworkCore.DbContext! context, System.Linq.Expressions.Expression<System.Func<T!, string?>!>! property, string! value, SharedKernel.Execution.Tenancy.TenantId? tenantId = null) -> System.Linq.IQueryable<T!>!
 SharedKernel.Persistence.EfCore.Encryption.FieldEncryptionReadiness
 const SharedKernel.Persistence.EfCore.Encryption.FieldEncryptionReadiness.ProbeName = "field-encryption" -> string!
+SharedKernel.Persistence.EfCore.Encryption.FieldEncryptionException
+SharedKernel.Persistence.EfCore.Encryption.FieldEncryptionException.FieldEncryptionException(SharedKernel.Primitives.Errors.Error! error) -> void
+SharedKernel.Persistence.EfCore.Encryption.FieldEncryptionException.FieldEncryptionException(SharedKernel.Primitives.Errors.Error! error, System.Exception! innerException) -> void
+const SharedKernel.Persistence.EfCore.Encryption.FieldEncryptionException.DataKeyInvalidCode = "persistence.encryption.data_key_invalid" -> string!
+const SharedKernel.Persistence.EfCore.Encryption.FieldEncryptionException.DataKeyUnwrapFailedCode = "persistence.encryption.data_key_unwrap_failed" -> string!
+const SharedKernel.Persistence.EfCore.Encryption.FieldEncryptionException.DecryptionFailedCode = "persistence.encryption.decryption_failed" -> string!
+const SharedKernel.Persistence.EfCore.Encryption.FieldEncryptionException.MalformedPayloadCode = "persistence.encryption.malformed_payload" -> string!

@@ -68,5 +68,5 @@ internal sealed class KeyringAuditRecordAuthenticator : IAuditRecordAuthenticato
     private byte[] Material(string keyId) =>
         _keys.TryGetValue(keyId, out var key)
             ? key.Material
-            : throw new KeyNotFoundException($"Audit sealing key '{keyId}' is not in the configured keyring.");
+            : throw new InvalidOperationException("The audit sealing key is not in the configured keyring.");
 }

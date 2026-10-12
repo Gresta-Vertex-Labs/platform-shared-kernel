@@ -264,6 +264,18 @@ Keep key material in a secret store (Key Vault configuration, a mounted secret),
 `TenantShredIncompleteException` — `Persistence.Encryption.TenantShredIncomplete` (Conflict);
 `EncryptionKeyNotFoundException` for a key id not yet loaded.
 
+`FieldEncryptionException` for a stored value or tenant data key that cannot be used; the `Error.Message` is fixed and
+client-safe, and neither message holds a stored value, the provider's text or a master key id:
+
+| Code | `ErrorType` | Meaning |
+| --- | --- | --- |
+| `persistence.encryption.malformed_payload` | Unexpected | The stored value is not an encrypted payload (written unencrypted, truncated or altered) |
+| `persistence.encryption.decryption_failed` | Unexpected | The payload does not authenticate (altered, or copied from another row, column or tenant) |
+| `persistence.encryption.data_key_invalid` | Unexpected | The envelope provider generated a data key that is too short |
+| `persistence.encryption.data_key_unwrap_failed` | Unavailable, Timeout or Unexpected | The provider could not unwrap the stored data key; the provider's own `ErrorType` is kept when it is `Unavailable` or `Timeout` |
+
+A decrypt failure never surfaces as `CryptographicException`; the failure meter reasons are unchanged.
+
 ### Health
 
 `UseFieldEncryption()` registers the `field-encryption` readiness probe (`FieldEncryptionReadiness.ProbeName`):

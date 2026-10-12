@@ -90,6 +90,8 @@ public sealed class MigrationAndSeedHostedServiceLoggingTests
 
         var records = inMemoryLogger.Records;
         records.ShouldHaveLogged(new EventId(6004), LogLevel.Warning);
+        // The exception object is logged (last parameter), not its type name as a string.
+        records.ShouldHaveLoggedWithException(new EventId(6004), typeof(InvalidOperationException));
         records.ShouldNotHaveLogged(new EventId(6003));
     }
 

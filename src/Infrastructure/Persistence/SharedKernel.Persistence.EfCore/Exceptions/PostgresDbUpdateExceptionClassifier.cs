@@ -31,6 +31,11 @@ namespace SharedKernel.Persistence.EfCore.Exceptions;
 /// classified by the entry that actually failed.
 /// </para>
 /// <para>
+/// A query canceled by <c>statement_timeout</c> (<c>57014</c>) is thrown as a <see cref="DomainException"/> whose
+/// <see cref="Error"/> is <see cref="ErrorType.Timeout"/>: Core has no dedicated timeout exception and edges map by
+/// <c>Error.Type</c>. Npgsql's retrying strategy does not replay a timed-out statement, so it reaches this classifier with retry on or off.
+/// </para>
+/// <para>
 /// The violated constraint's name is logged (EventId <c>6010</c>) rather than returned: it names internal schema
 /// objects, and <see cref="Error"/> has no metadata bag to carry it.
 /// </para>
@@ -72,6 +77,8 @@ internal sealed class PostgresDbUpdateExceptionClassifier : IDbUpdateExceptionCl
         {
             ErrorType.Validation => new ValidationException(classification.Error, exception),
             ErrorType.Forbidden => new ForbiddenException(classification.Error, exception),
+            // Core has no dedicated timeout exception; edges map by Error.Type, so a DomainException carries it.
+            ErrorType.Timeout => new DomainException(classification.Error, exception),
             _ => new ConflictException(classification.Error, exception),
         };
     }

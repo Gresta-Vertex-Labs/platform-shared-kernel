@@ -74,10 +74,7 @@ internal sealed class FieldEncryptionRuntime(
         if (!EncryptedPayload.TryParse(stored, out var payload))
         {
             EncryptionMeter.RecordDecryptFailure("malformed_payload");
-            throw new CryptographicException(
-                $"The stored value of encrypted property '{member.DisplayName}' is not an encrypted payload: it was " +
-                "written unencrypted, truncated or altered. To encrypt existing plaintext, run the maintenance job with " +
-                "'EncryptionMaintenanceMode.EncryptPlaintext'.");
+            throw FieldEncryptionErrors.MalformedPayload(member.DisplayName);
         }
 
         var side = SideConnection(context);
@@ -112,9 +109,7 @@ internal sealed class FieldEncryptionRuntime(
                 throw new TenantKeyShreddedException();
             default:
                 EncryptionMeter.RecordDecryptFailure("decryption_failed");
-                throw new CryptographicException(
-                    $"Decryption failed for encrypted property '{member.DisplayName}' (key '{payload.KeyId}'): the " +
-                    "value was altered, or copied from another row, column or tenant.");
+                throw FieldEncryptionErrors.DecryptionFailed(member.DisplayName);
         }
     }
 

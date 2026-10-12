@@ -69,7 +69,7 @@ public interface IAuditQueryService
     /// A checkpoint's signature does not verify, it is signed by a key id not in
     /// <c>AcceptedCheckpointSigningKeyIds</c>, or the two checkpoints name different chains.
     /// </exception>
-    /// <exception cref="InvalidOperationException">The checkpoint's chain is not the caller's and no cross-tenant scope is active.</exception>
+    /// <exception cref="SharedKernel.Core.Exceptions.ForbiddenException">The checkpoint's chain is not the caller's and no cross-tenant scope is active (<c>persistence.tenant_isolation_violation</c>).</exception>
     Task<AuditChainVerificationResult> VerifyChainFromCheckpointAsync(
         AuditChainCheckpoint checkpoint,
         AuditChainCheckpoint? expectedHead = null,

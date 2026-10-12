@@ -1,3 +1,5 @@
+using SharedKernel.Core.Exceptions;
+using SharedKernel.Persistence.Abstractions.Errors;
 using System.Security.Cryptography;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -91,7 +93,7 @@ public sealed class ErasureAndMaintenanceTests(PostgreSqlContainerFixture fixtur
         var target = await WriteAsync(host, "cust-1");
         host.Context.TenantId = TestRequestContext.TenantB;
 
-        await host.Invoking(h => MaintenanceAsync(h, m => m.ErasePayloadAsync(target.Id, "x"))).Should().ThrowAsync<KeyNotFoundException>();
+        await host.Invoking(h => MaintenanceAsync(h, m => m.ErasePayloadAsync(target.Id, "x"))).Should().ThrowAsync<NotFoundException>();
 
         using (host.Scope.Enter("audit test"))
             (await MaintenanceAsync(host, m => m.ErasePayloadAsync(target.Id, "x"))).Should().BeTrue();

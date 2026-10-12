@@ -125,7 +125,8 @@ public sealed class DbSessionIntegrationTests : IAsyncLifetime
         await using var session = await host.Sessions().OpenAsync();
 
         session.TenantId.Should().BeNull();
-        session.Invoking(s => s.RequireTenantId()).Should().Throw<InvalidOperationException>();
+        var thrown = session.Invoking(s => s.RequireTenantId()).Should().Throw<SharedKernel.Core.Exceptions.ForbiddenException>().Which;
+        thrown.Error.Should().Be(SharedKernel.Persistence.Abstractions.Errors.PersistenceSharedErrors.TenantRequired());
     }
 
     // ---------------------------------------------------------------- ambient EF Core unit of work

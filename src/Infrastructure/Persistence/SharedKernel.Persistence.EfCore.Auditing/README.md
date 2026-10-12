@@ -131,7 +131,9 @@ sequenceDiagram
   outcome, snapshots, error code, approval id and idempotency key from the `AuditEntry`. An unauthenticated caller is
   recorded as `Anonymous`, never as `System`. Oversized values throw `ArgumentException` before any SQL
   (`AuditFieldLimits`). A record without a tenant is accepted only from an authenticated system identity or inside a
-  cross-tenant scope. A reused `IdempotencyKey` returns the stored record (6700).
+  cross-tenant scope; otherwise the call throws `ForbiddenException` (`persistence.tenant_required`). A reused
+  `IdempotencyKey` returns the stored record (6700); reusing it for a different event throws `InvalidOperationException`
+  (a caller defect) without echoing the key or the resource id.
 - **Seal.** The sealer takes records whose inserting transaction is older than the oldest running one, so a late
   commit is never skipped or sealed out of order. Each chain is one tenant and one resource type: tenants never
   contend, and verification never reads another tenant's records. The lock is transaction-scoped, so it works behind a
@@ -260,7 +262,19 @@ have the highest `Order`, every key must decode to at least 32 bytes, orders mus
 | `IAuditQueryService` | `QueryAsync(AuditRecordQuery)` (caller's tenant, keyset paging), `QueryAcrossTenantsAsync`, `ExportRangeAsync`, `VerifyChainAsync`, `VerifyChainFromCheckpointAsync`, `VerifyRecordAsync` |
 | `IAuditLedgerMaintenance` | `SealPendingAsync`, `SealAllChainsAsync(reason)`, `ErasePayloadAsync(recordId, reason)`, `EraseResourcePayloadsAsync(type, id, reason)` |
 | `CreateAuditLedgerTable(runtimeRole, sealerRole?)`, `DropAuditLedgerTable()` | Migration helpers; `AuditLedgerSchema.CreateScript` holds the same idempotent DDL |
-| `IAuditRecordAuthenticator`, `IAuditCheckpointSink` | Replaceable MAC and checkpoint seams |
+| `IAuditRecordAuthenticator`, `IAuditCheckpointSink` | Replaceable MAC and checkpoint seams (an unknown key id on `ComputeMacAsync`/`VerifyMacAsync` is an `InvalidOperationException`) |
+
+### Errors
+
+| Situation | Exception | Code (`ErrorType`) |
+| --- | --- | --- |
+| No tenant and no system identity or cross-tenant scope | `ForbiddenException` | `persistence.tenant_required` (Forbidden) |
+| A chain or checkpoint of another tenant without a cross-tenant scope | `ForbiddenException` | `persistence.tenant_isolation_violation` (Forbidden) |
+| `ErasePayloadAsync` of a record that does not exist, or belongs to another tenant (one answer for both) | `NotFoundException` | `persistence.audit_record_not_found` (NotFound) |
+| A checkpoint over a broken or unverifiable chain | `AuditChainIntegrityException` | `persistence.audit_chain_not_intact` (Conflict) |
+
+`VerifyRecordAsync` answers `null` for a missing or foreign record. No message carries a tenant id, record id or
+idempotency key; `AuditChainIntegrityException.TenantId` keeps the chain's tenant for programmatic use.
 
 ### Health
 

@@ -144,7 +144,8 @@ flowchart LR
 - **Transactions.** `IUnitOfWork.ExecuteInTransactionAsync` runs the whole delegate inside the retrying execution
   strategy (6 retries by default), so a transient failure replays it from scratch — load inside the delegate. Every
   context of the scope on the same database joins; nested calls join; a failed nested call makes the transaction
-  rollback-only (`TransactionRolledBackException`); a `COMMIT` with an unknown outcome throws
+  rollback-only (`TransactionRolledBackException`, a `SharedKernelException` with code
+  `execution.transaction_rolled_back`); a `COMMIT` with an unknown outcome throws
   `CommitOutcomeUnknownException` and is never replayed. `OnBeforeCommit` queues work inside the transaction.
 - **Tenancy.** In a `TenantedDbContext` every entity type implements `IHasTenant` (children included) or is
   `[TenantShared]` / `IsTenantShared()`; anything else fails the model build. Each tenant type gets a named query
@@ -152,9 +153,11 @@ flowchart LR
   `rowLevelSecurity: true`, `app.tenant_id` is bound transaction-locally (PgBouncer-safe) and the runtime role's
   privileges and every tenant table's policy coverage are checked at startup.
 - **Errors.** Every PostgreSQL error from a save is classified: unique → Conflict; foreign key → Validation or
-  Conflict; RLS or privilege → Forbidden; serialization failures and timeouts → transient Conflict. Every concurrency
-  conflict is `ConflictException` with `persistence.concurrency_conflict` — also for another tenant's row, so the
-  answer never reveals that it exists.
+  Conflict; RLS or privilege → Forbidden; serialization failures and a lock that is not available → transient
+  Conflict; a `statement_timeout` expiry → `ErrorType.Timeout` (a `DomainException`; the retrying strategy does not replay it, so
+  retry on or off). Every concurrency conflict is `ConflictException` with `persistence.concurrency_conflict` — also for another
+  tenant's row, so the answer never reveals that it exists. A write with no tenant is `ForbiddenException` with
+  `persistence.tenant_required`, the same error the Dapper sessions and the audit services raise.
 - **Tracing.** Every query is `TagWith`'d with its specification type and every repository call is traced.
 
 ## Recipes
@@ -343,7 +346,9 @@ builder.AddSharedKernelPostgres<OrderDbContext>("orders", p => p
 
 ### Errors
 
-`persistence.concurrency_conflict` (`ConflictException`) for stale versions and cross-tenant writes; PostgreSQL errors
+`persistence.tenant_required` (`ForbiddenException`) for a write with no tenant; `persistence.tenant_isolation_violation`
+(`ForbiddenException`) for a row of another tenant or a changed `TenantId`; `persistence.concurrency_conflict`
+(`ConflictException`) for stale versions and cross-tenant writes; PostgreSQL errors
 use the `persistence.postgresql.*` codes of `PostgresClassifiedErrorCodes` (see the Npgsql README).
 
 ### Logging
