@@ -95,7 +95,7 @@ public sealed class ScheduledCommandJob<TCommand>
         }
         else
         {
-            Log.JobFireFailed(_logger, context.JobName, typeof(TCommand).Name, duration, result.Error.Code, result.Error.Message);
+            Log.JobFireFailed(_logger, context.JobName, typeof(TCommand).Name, duration, result.Error.Code);
         }
 
         return result;

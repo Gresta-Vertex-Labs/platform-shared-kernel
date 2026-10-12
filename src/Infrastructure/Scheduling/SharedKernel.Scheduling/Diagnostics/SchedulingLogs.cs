@@ -54,8 +54,8 @@ internal static partial class Log
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Scheduling + 5,
         Level = LogLevel.Warning,
-        Message = "Job '{JobName}' ({CommandType}) failed in {Duration}: {ErrorCode} — {ErrorMessage}")]
-    public static partial void JobFireFailed(ILogger logger, string jobName, string commandType, TimeSpan duration, string errorCode, string errorMessage);
+        Message = "Job '{JobName}' ({CommandType}) failed in {Duration}: {ErrorCode}")]
+    public static partial void JobFireFailed(ILogger logger, string jobName, string commandType, TimeSpan duration, string errorCode);
 
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Scheduling + 6,

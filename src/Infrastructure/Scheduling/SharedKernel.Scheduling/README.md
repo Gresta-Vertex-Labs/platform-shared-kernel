@@ -131,7 +131,9 @@ sequenceDiagram
   (EventId 19002), and every replica fires every occurrence.
 - **Who the job runs as.** Each run opens `RequestContextScope.Begin(new SystemRequestContext([], jobName,
   tenantId, CorrelationIds.New()))` — `ActorKind.System`, the job name, the job's tenant (none for
-  `TenantScope.Global`), a new correlation id and **no permissions** — then a fresh DI scope.
+  `TenantScope.Global`), a new correlation id and **no permissions** — then a fresh DI scope. The caller is opened before the
+  lease claim, so every log of the occurrence runs under it; loop-level logs (start, stop, misfire and overlap
+  decisions) run under a `scheduler` system caller with no tenant.
 - **Outermost command.** The fresh scope means a fresh `ICommandScope`: `TransactionBehavior` commits once and
   `OnCompleted` callbacks run before the fire is reported. A failed `Result` (validation, authorization) is logged as
   a failed fire, never thrown.
@@ -248,7 +250,8 @@ Registers the `scheduler` readiness probe (`SchedulerReadiness.ProbeName`); `Add
 `ActivitySource` and `Meter` named `SharedKernel.Scheduling` (activity `Scheduling.Job.Fire`); subscribe with
 ServiceDefaults' `builder.WithSchedulingTelemetry()`. Counters: `scheduling.job.fired`, `.succeeded`, `.failed`,
 `.overlap_skipped`, `.overlap_queued`, `.misfired`, `scheduling.lock.acquisition_failed`,
-`scheduling.lock.store_unavailable`.
+`scheduling.lock.store_unavailable`. A failed span carries `error.code` (or the exception full name as `error.type`)
+and an exception event, never an error or exception message.
 
 ### Logging
 

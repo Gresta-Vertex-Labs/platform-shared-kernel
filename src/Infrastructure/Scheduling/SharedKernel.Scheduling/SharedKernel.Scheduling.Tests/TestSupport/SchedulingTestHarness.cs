@@ -26,13 +26,14 @@ internal sealed class SchedulingTestHarness : IAsyncDisposable
     private SchedulingTestHarness(
         ServiceProvider provider,
         FakeClock clock,
-        InMemoryLoggerFactory loggerFactory,
+        AmbientContextLoggerFactory ambientLoggerFactory,
         RecordingCommandRecorder recorder,
         SchedulingHostedService hostedService)
     {
         _provider = provider;
         Clock = clock;
-        LoggerFactory = loggerFactory;
+        AmbientLoggerFactory = ambientLoggerFactory;
+        LoggerFactory = ambientLoggerFactory.Inner;
         Recorder = recorder;
         HostedService = hostedService;
     }
@@ -40,6 +41,9 @@ internal sealed class SchedulingTestHarness : IAsyncDisposable
     public FakeClock Clock { get; }
 
     public InMemoryLoggerFactory LoggerFactory { get; }
+
+    /// <summary>Wraps <see cref="LoggerFactory"/> and snapshots the ambient request context per log call.</summary>
+    public AmbientContextLoggerFactory AmbientLoggerFactory { get; }
 
     public RecordingCommandRecorder Recorder { get; }
 
@@ -68,6 +72,8 @@ internal sealed class SchedulingTestHarness : IAsyncDisposable
         services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
         var clock = new FakeClock(initialClock);
         services.AddSingleton<IClock>(clock);
+        services.AddSingleton<AmbientContextLoggerFactory>();
+        services.AddSingleton<ILoggerFactory>(sp => sp.GetRequiredService<AmbientContextLoggerFactory>());
         services.AddInMemoryLoggerFactory();
         services.AddSharedKernelApplication(typeof(RecordingCommand).Assembly, app => app.UseMediatR());
         services.AddSingleton<RecordingCommandRecorder>();
@@ -85,7 +91,7 @@ internal sealed class SchedulingTestHarness : IAsyncDisposable
         registerJobs(builder);
 
         ServiceProvider provider = services.BuildServiceProvider();
-        var loggerFactory = (InMemoryLoggerFactory)provider.GetRequiredService<ILoggerFactory>();
+        var loggerFactory = provider.GetRequiredService<AmbientContextLoggerFactory>();
         var recorder = provider.GetRequiredService<RecordingCommandRecorder>();
         var hostedService = provider.GetRequiredService<SchedulingHostedService>();
 

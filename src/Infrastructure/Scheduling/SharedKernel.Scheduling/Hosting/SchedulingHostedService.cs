@@ -7,6 +7,7 @@ using SharedKernel.Caching.Abstractions;
 using SharedKernel.Execution.Context;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Results;
+using SharedKernel.Primitives.Telemetry;
 using SharedKernel.Scheduling.Diagnostics;
 using SharedKernel.Scheduling.Jobs;
 using SharedKernel.Scheduling.Options;
@@ -39,6 +40,9 @@ internal sealed class SchedulingHostedService : BackgroundService
     private readonly Dictionary<string, JobRuntimeState> _states = new(StringComparer.Ordinal);
     private readonly object _inFlightGate = new();
     private readonly List<Task> _inFlightTasks = [];
+
+    // One correlation id per service instance, shared by the start and stop scopes of the loop caller.
+    private readonly string _loopCorrelationId = CorrelationIds.New();
 
     private volatile bool _isRunning;
     private long _lastTickUtcTicks = -1;
@@ -78,6 +82,11 @@ internal sealed class SchedulingHostedService : BackgroundService
     /// <inheritdoc />
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        // Every loop-level log (start, faulted, misfire and overlap decisions) runs under the loop
+        // caller. The synchronous prefix of this method runs on the caller of StartAsync; the async
+        // method builder restores that caller's ambient context when the method first yields.
+        using IDisposable loopScope = RequestContextScope.Begin(SchedulerCallers.ForLoop(_loopCorrelationId));
+
         if (_lockService is null)
         {
             Log.SingleReplicaWarning(_logger);
@@ -136,6 +145,8 @@ internal sealed class SchedulingHostedService : BackgroundService
     /// <inheritdoc />
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
+        using IDisposable loopScope = RequestContextScope.Begin(SchedulerCallers.ForLoop(_loopCorrelationId));
+
         Log.HostedServiceStopping(_logger);
         await base.StopAsync(cancellationToken).ConfigureAwait(false);
 
@@ -360,6 +371,12 @@ internal sealed class SchedulingHostedService : BackgroundService
         DateTimeOffset actualFireTimeUtc,
         CancellationToken stoppingToken)
     {
+        // The occurrence's system caller (job identity, the job's tenant, a new correlation id) is
+        // ambient from the first statement until after the catch blocks, so the lease claim, the span
+        // and every log of this occurrence carry the same caller as the command handler does. It holds
+        // no permissions: a job whose command is gated by [RequirePermission] registers its own identity.
+        using IDisposable callerScope = RequestContextScope.Begin(SchedulerCallers.ForOccurrence(definition));
+
         using Activity? activity = SchedulingTelemetry.ActivitySource.StartActivity("Scheduling.Job.Fire", ActivityKind.Internal);
         activity?.SetTag(SchedulingTagKeys.JobName, definition.JobName);
         activity?.SetTag(SchedulingTagKeys.MisfirePolicy, definition.Options.MisfirePolicy!.Value.ToString());
@@ -389,7 +406,7 @@ internal sealed class SchedulingHostedService : BackgroundService
                     SchedulingTelemetry.LockStoreUnavailableCount.Add(1, new KeyValuePair<string, object?>(SchedulingTagKeys.JobName, definition.JobName));
                     Log.LockStoreUnavailable(_logger, definition.JobName, ex);
                     activity?.SetTag(SchedulingTagKeys.Outcome, "lock-store-unavailable");
-                    activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                    activity.RecordException(ex);
                     return;
                 }
 
@@ -420,16 +437,6 @@ internal sealed class SchedulingHostedService : BackgroundService
                 FencingToken = fencingToken,
             };
 
-            // The job runs as a system actor for its configured tenant, under a new correlation id, made ambient so
-            // every outbound call, message or workflow the job starts carries the same tenant and correlation id.
-            // Holds no permissions: a job that sends authorization-gated commands registers its own identity.
-            var jobCaller = new SystemRequestContext(
-                [],
-                identity: definition.JobName,
-                tenantId: definition.Options.TenantScope.Tenant,
-                correlationId: CorrelationIds.New());
-
-            using IDisposable callerScope = RequestContextScope.Begin(jobCaller);
             await using AsyncServiceScope scope = _scopeFactory.CreateAsyncScope();
             Result result = await definition.ExecuteAsync(scope.ServiceProvider, context, stoppingToken).ConfigureAwait(false);
 
@@ -442,19 +449,21 @@ internal sealed class SchedulingHostedService : BackgroundService
             {
                 SchedulingTelemetry.FailedCount.Add(1, new KeyValuePair<string, object?>(SchedulingTagKeys.JobName, definition.JobName));
                 activity?.SetTag(SchedulingTagKeys.Outcome, "failed");
-                activity?.SetStatus(ActivityStatusCode.Error, result.Error.Message);
+                activity.RecordFailure(result.Error);
             }
         }
-        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        catch (OperationCanceledException ex) when (stoppingToken.IsCancellationRequested)
         {
             activity?.SetTag(SchedulingTagKeys.Outcome, "cancelled");
+            // Cancellation is not a failure: the recorder leaves the status unset.
+            activity.RecordException(ex);
             Log.JobCancelled(_logger, definition.JobName);
         }
         catch (Exception ex)
         {
             SchedulingTelemetry.FailedCount.Add(1, new KeyValuePair<string, object?>(SchedulingTagKeys.JobName, definition.JobName));
             activity?.SetTag(SchedulingTagKeys.Outcome, "threw");
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            activity.RecordException(ex);
             Log.JobFireThrew(_logger, definition.JobName, ex);
         }
     }
