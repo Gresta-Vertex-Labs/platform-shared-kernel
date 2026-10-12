@@ -20,7 +20,7 @@ Phases written by `arch-lead` take the next phase id; a user-directed phase with
 | # | Domain | Packages | Status | Open items |
 | --- | --- | --- | --- | --- |
 | 00 | [Governance](tools/Governance/state-map.md) | 3 (Tooling) + dev-only Benchmarks | ○ | Next: `SK.00.ObservabilityEnforce` (WO-087, after Phase 2) |
-| 01 | [Core](src/Foundation/state-map.md) | 13 (10 Foundation, 3 Adapter) | ○ | Next: `SK.01.CoreObservabilityFixes` (WO-087) |
+| 01 | [Core](src/Foundation/state-map.md) | 13 (10 Foundation, 3 Adapter) | ○ | Next: `SK.01.CoreConformance` (WO-087) |
 | 02 | [Caching](src/Infrastructure/Caching/state-map.md) | 7 (1 Abstractions, 6 Adapter) | ○ | Next: `SK.02.ObservabilityConformance` (WO-087) |
 | 03 | [Domain](src/Model/Domain/state-map.md) | 1 (Model) | ○ | Next: `SK.03.DomainErrorCodes` (WO-087) |
 | 04 | [Contracts](src/Model/Contracts/state-map.md) | 1 (Model) | ● | None |
@@ -95,7 +95,7 @@ Add the checks that will enforce the standard, shipped non-failing so each domai
 - [ ] Switching to failing is a single, documented change (consumed by P-618).
 
 #### P-584 — Fix observability and exception defects in Core (Phase 1)
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Domain:** 01.Core
 **Depends on:** P-580
 **Phase key:** `SK.01.CoreObservabilityFixes`
