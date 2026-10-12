@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using SharedKernel.Execution.Context;
 using Microsoft.IdentityModel.JsonWebTokens;
 using SharedKernel.Security.Abstractions;
@@ -73,7 +74,7 @@ public sealed class TokenRevocationEnforcerTests
 
         await IsRevokedAsync(new TokenRevocationEnforcer(_check, _cache), Expiry.AddMinutes(-10));
 
-        _logger.Records.ShouldHaveLoggedWithProperty(new(12103), "CheckAvailable", true);
+        _logger.Records.ShouldHaveLoggedWithoutException(new(12103));
     }
 
     [Fact]
@@ -148,7 +149,11 @@ public sealed class TokenRevocationEnforcerTests
 
         Assert.True(revoked);
         Assert.Empty(_cache.Writes);
-        _logger.Records.ShouldHaveLoggedWithProperty(new(12103), "CheckAvailable", false);
+        var failure = _logger.Records.ShouldHaveLoggedWithException(new(12107), typeof(TimeoutException));
+        Assert.Same(_check.Failure, failure.Exception);
+        Assert.Equal(LogLevel.Error, failure.LogLevel);
+        _logger.Records.ShouldHaveLoggedCount(new(12107), 1);
+        _logger.Records.ShouldNotHaveLogged(new(12103));
     }
 
     [Fact]
@@ -171,7 +176,7 @@ public sealed class TokenRevocationEnforcerTests
 
         Assert.Equal(checkAnswer, revoked);
         Assert.Single(_check.Requests);
-        _logger.Records.ShouldHaveLogged(new(12106));
+        _logger.Records.ShouldHaveLoggedWithException(new(12106), typeof(InvalidOperationException));
     }
 
     [Theory]
@@ -185,7 +190,7 @@ public sealed class TokenRevocationEnforcerTests
         bool revoked = await IsRevokedAsync(new TokenRevocationEnforcer(_check, _cache), Expiry.AddMinutes(-10));
 
         Assert.Equal(checkAnswer, revoked);
-        _logger.Records.ShouldHaveLogged(new(12106));
+        _logger.Records.ShouldHaveLoggedWithException(new(12106), typeof(InvalidOperationException));
     }
 
     [Fact]

@@ -27,8 +27,8 @@ internal static partial class OidcLog
     [LoggerMessage(
         EventId = 12103,
         Level = LogLevel.Warning,
-        Message = "Access token rejected by the revocation check (CheckAvailable: {CheckAvailable}).")]
-    public static partial void TokenRevocationRejected(ILogger logger, bool checkAvailable);
+        Message = "Access token rejected by the revocation check.")]
+    public static partial void TokenRevocationRejected(ILogger logger);
 
     [LoggerMessage(
         EventId = 12104,
@@ -47,4 +47,10 @@ internal static partial class OidcLog
         Level = LogLevel.Warning,
         Message = "The revocation cache failed; the revocation check is called directly.")]
     public static partial void RevocationCacheFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 12107,
+        Level = LogLevel.Error,
+        Message = "The revocation check failed; the access token was rejected.")]
+    public static partial void RevocationCheckFailed(ILogger logger, Exception exception);
 }

@@ -33,7 +33,7 @@ public sealed class TokenRevocationAuthenticationTests
         using HttpResponseMessage response = await host.SendAsync(TestTokens.Create().Build());
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        host.LogRecords.ShouldHaveLoggedWithProperty(new(12103), "CheckAvailable", true);
+        host.LogRecords.ShouldHaveLoggedWithoutException(new(12103));
     }
 
     [Fact]
@@ -45,7 +45,8 @@ public sealed class TokenRevocationAuthenticationTests
         using HttpResponseMessage response = await host.SendAsync(TestTokens.Create().Build());
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        host.LogRecords.ShouldHaveLoggedWithProperty(new(12103), "CheckAvailable", false);
+        host.LogRecords.ShouldHaveLoggedWithException(new(12107), typeof(HttpRequestException));
+        host.LogRecords.ShouldNotHaveLogged(new(12103));
     }
 
     [Fact]

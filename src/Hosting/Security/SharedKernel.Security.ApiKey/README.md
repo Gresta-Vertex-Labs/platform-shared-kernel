@@ -342,7 +342,7 @@ Managed failure reasons: `Malformed`, `WrongPrefix`, `UnknownKey`, `Revoked`, `E
 | 12200 | Warning | API key rejected (reason: `{Reason}`, key id: `{KeyId}`) |
 | 12201 | Warning | API key rejected: more than one `{HeaderName}` header value |
 
-The key itself is never logged; the key id is not secret.
+The key itself is never logged; the key id is not secret. `{Reason}` is the validator's `FailureReason`, logged only when it is a stable code of at most 64 characters of letters, digits, `_`, `.` or `-`; anything else (an identifier, subject, claim value or multi-line text) is logged as `Rejected`. Return a code, never an identifier.
 
 ## Testing
 

@@ -32,7 +32,7 @@ internal sealed class TokenRevocationEnforcer(ITokenRevocationCheck check, IToke
                 {
                     if (answer)
                     {
-                        OidcLog.TokenRevocationRejected(logger, checkAvailable: true);
+                        OidcLog.TokenRevocationRejected(logger);
                     }
 
                     return answer;
@@ -59,13 +59,13 @@ internal sealed class TokenRevocationEnforcer(ITokenRevocationCheck check, IToke
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            OidcLog.TokenRevocationRejected(logger, checkAvailable: false);
+            OidcLog.RevocationCheckFailed(logger, ex);
             return true;
         }
 
         if (revoked)
         {
-            OidcLog.TokenRevocationRejected(logger, checkAvailable: true);
+            OidcLog.TokenRevocationRejected(logger);
         }
 
         if (cache is not null)

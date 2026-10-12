@@ -64,7 +64,7 @@ Overloads, options and defaults: each package's `README.md`.
 22. **Recovery codes** are hashed with `IOneWayHasher` with a two-character lookup; `IRecoveryCodeStore.TryMarkUsedAsync` must be atomic.
 23. **Never log** a token, proof, key, certificate, code, secret or claim value (key ids and thumbprints are fine). `ToString()` of `GeneratedApiKey`, `TotpEnrollment` and `TokenRevocationRequest` omits secrets — keep it so for any new secret-holding type.
 24. The Oidc authority must be an absolute http/https URL (`/issuer` parses as a `file://` URI on Linux).
-25. *(planned, SK.12.RevocationFailureLogging)* **Log text is bounded.** A value that comes from an untrusted token header (the `alg` of 12104) or from a consumer validator (`FailureReason` of 12200/12300) is logged only when it is short and identifier-shaped, else as a fixed value; `FailureReason` is documented as a stable code, never an identifier, subject or claim value. A revocation check that throws logs 12107 with the exception and still rejects (rule 15).
+25. **Log text is bounded.** A value that comes from an untrusted token header (the `alg` of 12104) or from a consumer validator (`FailureReason` of 12200/12300) is logged only when it is short and identifier-shaped, else as a fixed value; `FailureReason` is documented as a stable code, never an identifier, subject or claim value. A revocation check that throws logs 12107 with the exception and still rejects (rule 15).
 26. *(planned, SK.12.SecurityConformance)* Each logging package has an `internal static class {Package}LoggingEventIds` built from `LoggingEventIdRanges.Security` and a `Diagnostics/{Package}Log` class; no bare EventId literal; log templates are single sentences with quoted values and the `{RejectionCode}` placeholder (never free text).
 
 ## Decisions
@@ -91,12 +91,12 @@ Block **12000–12999** (`LoggingEventIdRanges`), 100-wide sub-blocks:
 | Range | Package | Events |
 | --- | --- | --- |
 | 12000–12099 | Abstractions | none (no logging dependency) |
-| 12100–12199 | Oidc | 12100 subject missing · 12101 tenant claim invalid · 12102 DPoP rejected · 12103 revocation rejected · 12104 algorithm rejected (reads the token's `alg` header) · 12105 certificate binding rejected · 12106 revocation cache failed |
+| 12100–12199 | Oidc | 12100 subject missing · 12101 tenant claim invalid · 12102 DPoP rejected · 12103 revoked token rejected · 12104 algorithm rejected (reads the token's `alg` header) · 12105 certificate binding rejected · 12106 revocation cache failed · 12107 revocation check threw (Error, carries the exception) |
 | 12200–12299 | ApiKey | 12200 key rejected (reason, key id) · 12201 ambiguous header |
 | 12300–12399 | Mtls | 12300 certificate rejected (reason, thumbprint) · 12301 validator threw |
 | 12400–12499 | Totp | 12400 challenge not accepted · 12401 step-up recorded · 12402 recovery code redeemed |
 
-*(planned, SK.12.RevocationFailureLogging)* 12107 revocation check failed (Oidc, Error, carries the exception); 12103 then means "revoked" only and loses its `CheckAvailable` property. *(planned, SK.12.SecurityConformance)* The sub-blocks are unchanged and every Security event lies in 12xxx, so none shares a range with `ServiceDefaults.Security`, `ServiceDefaults.Security.Mtls` or Localization (13xxx); `Security.Mtls` (12300) is not `ServiceDefaults.Security.Mtls`. Ids come from `{Package}LoggingEventIds` constants and the placeholder `{Reason}` becomes `{RejectionCode}`.
+Event 12107 (Oidc, Error) carries the exception of a throwing revocation check; 12103 means "revoked" only. *(planned, SK.12.SecurityConformance)* The sub-blocks are unchanged and every Security event lies in 12xxx, so none shares a range with `ServiceDefaults.Security`, `ServiceDefaults.Security.Mtls` or Localization (13xxx); `Security.Mtls` (12300) is not `ServiceDefaults.Security.Mtls`. Ids come from `{Package}LoggingEventIds` constants and the placeholder `{Reason}` becomes `{RejectionCode}`.
 
 ## Cross-Domain Couplings
 
@@ -120,3 +120,4 @@ Block **12000–12999** (`LoggingEventIdRanges`), 100-wide sub-blocks:
 - A step-up (`amr=otp`) on a long-lived SignalR connection lasts until a hub-method requirement with a maximum age rejects it; on HTTP it disappears after `FreshnessWindow`.
 - The mTLS validator runs synchronously inside the TLS handshake when `ServiceDefaults.Security.Mtls` is used.
 - Single issuer per scheme (see Decisions).
+- ASP.NET Core's own authentication handlers log under their framework categories (for example the certificate handler logs the certificate subject); the kernel's logs are leak-swept, framework categories are the host's to filter.

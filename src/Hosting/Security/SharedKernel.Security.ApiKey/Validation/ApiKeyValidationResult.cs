@@ -41,7 +41,11 @@ public sealed class ApiKeyValidationResult
     /// <summary>Gets the non-secret key id, for audit logs, or <see langword="null"/>.</summary>
     public string? KeyId { get; }
 
-    /// <summary>Gets a short, non-secret reason for a failure, for logs only. <see langword="null"/> on success.</summary>
+    /// <summary>
+    /// Gets a stable, non-secret reason code for a failure, for logs only. <see langword="null"/> on success. The value is
+    /// logged: use a short code of letters, digits, <c>_</c>, <c>.</c> or <c>-</c> (at most 64 characters), never an
+    /// identifier, subject or claim value; anything else is logged as <c>Rejected</c>.
+    /// </summary>
     public string? FailureReason { get; }
 
     /// <summary>Creates a successful result.</summary>

@@ -345,7 +345,7 @@ invalid `AllowedCertificateTypes`, and for the event or trust-setting tampering 
 | --- | --- |
 | `IMtlsCertificateValidator.ValidateAsync(X509Certificate2, CancellationToken)` | Returns `MtlsValidationResult`; throwing rejects |
 | `MtlsValidationResult.Success(clientId, tenantId?, roles?, permissions?)` | `default(TenantId)` throws; pass `null` for no tenant |
-| `MtlsValidationResult.Failure(reason = "Rejected")` | A short, non-secret reason; logged, never sent to the client |
+| `MtlsValidationResult.Failure(reason = "Rejected")` | A short, non-secret reason code (at most 64 of letters, digits, `_`, `.`, `-`, else logged as `Rejected`); logged, never sent to the client |
 | `MtlsAuthenticationDefaults.AuthenticationScheme` | `Certificate` |
 | `MtlsAuthenticationDefaults.CertificateThumbprintClaimType` | `x5t#S256` |
 
@@ -358,7 +358,7 @@ Read the thumbprint with `IUserContext.FindClaim(MtlsAuthenticationDefaults.Cert
 | 12300 | Warning | Client certificate rejected by the validator (reason: `{Reason}`, thumbprint: `{Thumbprint}`) |
 | 12301 | Error | The certificate validator failed; the client certificate was rejected (thumbprint: `{Thumbprint}`) |
 
-The thumbprint is public; the certificate is never logged. Handshake and forwarded-header events (13000, 13001,
+The thumbprint is public; the certificate is never logged. `{Reason}` is the validator's `FailureReason`, logged only when it is a stable code of at most 64 characters of letters, digits, `_`, `.` or `-`; anything else (a subject, client id or free text) is logged as `Rejected`. Handshake and forwarded-header events (13000, 13001,
 13003) are logged by the ServiceDefaults companion.
 
 ## Testing

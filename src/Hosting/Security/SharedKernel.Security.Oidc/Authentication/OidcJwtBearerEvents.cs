@@ -40,7 +40,7 @@ internal sealed class OidcJwtBearerEvents(JwtBearerEvents inner, bool dpopEnable
             && context.Options.TokenValidationParameters.ValidAlgorithms is { } allowed
             && !allowed.Contains(algorithm, StringComparer.Ordinal))
         {
-            OidcLog.SigningAlgorithmRejected(logger, algorithm);
+            OidcLog.SigningAlgorithmRejected(logger, AlgorithmText.Bound(algorithm));
         }
 
         return inner.AuthenticationFailed(context);

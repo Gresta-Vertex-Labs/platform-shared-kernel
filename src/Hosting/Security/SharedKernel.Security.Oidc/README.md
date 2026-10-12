@@ -297,7 +297,7 @@ builder.Services.AddOidcAuthentication(builder.Configuration)
 | Revoked | The token expires |
 | Not revoked | `Revocation:NotRevokedCacheDuration` (default 30 s, max 5 min), never past expiry |
 | Cache read or write throws | Event 12106; the check's answer is used |
-| Check throws | Request rejected; event 12103 with `CheckAvailable = false` |
+| Check throws | Request rejected; event 12107 (Error) carries the exception |
 
 For introspection, `TokenRevocationRequest.Token` is the encoded token — a live credential; never log or store it.
 
@@ -399,17 +399,18 @@ After `AddDpop`, a 401 also carries `WWW-Authenticate: DPoP algs="…"[, error="
 
 ### Logging
 
-All events are `Warning`; none contains a token, proof, claim value or certificate.
+All events are `Warning` except 12107 (`Error`); none contains a token, proof, claim value or certificate.
 
 | Event id | Event |
 | --- | --- |
 | 12100 | An authenticated token carries neither a subject nor a client id (authentication fails) |
 | 12101 | The tenant claim `{TenantClaimType}` is not a GUID; the caller has no tenant |
 | 12102 | DPoP validation failed (`{Reason}`) |
-| 12103 | Access token rejected by the revocation check (`{CheckAvailable}`) |
-| 12104 | Signing algorithm `{Algorithm}` is not allowed (read from the rejected token's header) |
+| 12103 | Access token rejected because it is revoked |
+| 12104 | Signing algorithm `{Algorithm}` is not allowed (read from the rejected token's header; logged only when at most 16 characters of letters, digits, `_` or `-`, else `unrecognized`) |
 | 12105 | Certificate-bound access token rejected (`{Reason}`: `CertificateMissing`, `CertificateMismatch`) |
 | 12106 | The revocation cache failed; the check is called directly |
+| 12107 | The revocation check threw (`Error`, carries the exception); the access token is rejected |
 
 12102 reasons: `MalformedConfirmation`, `DpopNotEnabled`, `BoundTokenPresentedAsBearer`, `UnboundTokenPresentedAsDpop`,
 `DpopRequired`, `MissingProof`, `MultipleProofs`, `MalformedProof`, `AlgorithmNotAllowed`, `InvalidType`, `MissingKey`,

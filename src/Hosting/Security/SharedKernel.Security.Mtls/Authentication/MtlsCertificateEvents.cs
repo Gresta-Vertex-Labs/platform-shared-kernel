@@ -39,7 +39,7 @@ internal sealed class MtlsCertificateEvents(CertificateAuthenticationEvents inne
 
         if (!result.IsValid)
         {
-            MtlsAuthenticationLog.CertificateRejected(CreateLogger(services), result.FailureReason ?? "Rejected", thumbprint);
+            MtlsAuthenticationLog.CertificateRejected(CreateLogger(services), RejectionReasonText.Bound(result.FailureReason), thumbprint);
             Reject(context);
             return;
         }

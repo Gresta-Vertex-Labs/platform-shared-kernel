@@ -40,7 +40,7 @@ internal sealed class ApiKeyAuthenticationHandler(
         ApiKeyValidationResult result = await validator.ValidateAsync(key, Context.RequestAborted).ConfigureAwait(false);
         if (!result.IsValid)
         {
-            ApiKeyLog.KeyRejected(Logger, result.FailureReason ?? "Rejected", result.KeyId);
+            ApiKeyLog.KeyRejected(Logger, RejectionReasonText.Bound(result.FailureReason), result.KeyId);
             return AuthenticateResult.Fail("Invalid API key.");
         }
 
