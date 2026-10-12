@@ -19,7 +19,7 @@ Phases written by `arch-lead` take the next phase id; a user-directed phase with
 
 | # | Domain | Packages | Status | Open items |
 | --- | --- | --- | --- | --- |
-| 00 | [Governance](tools/Governance/state-map.md) | 3 (Tooling) + dev-only Benchmarks | ○ | Next: `SK.00.ObservabilityReportOnly` (WO-087) |
+| 00 | [Governance](tools/Governance/state-map.md) | 3 (Tooling) + dev-only Benchmarks | ○ | Next: `SK.00.ObservabilityEnforce` (WO-087, after Phase 2) |
 | 01 | [Core](src/Foundation/state-map.md) | 13 (10 Foundation, 3 Adapter) | ○ | Next: `SK.01.CoreObservabilityFixes` (WO-087) |
 | 02 | [Caching](src/Infrastructure/Caching/state-map.md) | 7 (1 Abstractions, 6 Adapter) | ○ | Next: `SK.02.LockUnavailableError` (WO-087) |
 | 03 | [Domain](src/Model/Domain/state-map.md) | 1 (Model) | ○ | Next: `SK.03.DomainErrorCodes` (WO-087) |
@@ -85,7 +85,7 @@ Provide in the shared test package a capture helper for `ActivitySource` and `Me
 - [ ] README telemetry tables and domain `CLAUDE.md` updated; the sample gap is reported to the caller.
 
 #### P-583 — Governance rules in report-only mode (Phase 0)
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Domain:** 00.Governance
 **Depends on:** P-580
 **Phase key:** `SK.00.ObservabilityReportOnly`
