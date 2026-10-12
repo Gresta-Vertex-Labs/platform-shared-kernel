@@ -89,6 +89,28 @@ internal static class SearchDiagnostics
         Duration.Record(Stopwatch.GetElapsedTime(startTimestamp).TotalSeconds, tags);
     }
 
+    /// <summary>
+    /// Closes out <paramref name="activity"/> and records the duration for an operation that ends in a rethrown,
+    /// unclassified exception: span status Error with the exception <em>type name</em> as description (never the
+    /// message), <c>error.type</c> the exception full name, and the same tag set as any other outcome.
+    /// </summary>
+    public static void CompleteWithException(
+        Activity? activity, string operation, string indexName, long startTimestamp, Exception exception)
+    {
+        var errorType = exception.GetType().FullName ?? exception.GetType().Name;
+        var tags = new TagList
+        {
+            { SearchWellKnown.IndexTagName, indexName },
+            { SearchWellKnown.OperationTagName, operation },
+            { SearchWellKnown.ProviderTagName, SearchWellKnown.ElasticSearchProviderName },
+            { WellKnownTagKeys.ErrorType, errorType },
+        };
+
+        activity?.SetTag(WellKnownTagKeys.ErrorType, errorType);
+        activity?.SetStatus(ActivityStatusCode.Error, exception.GetType().Name);
+        Duration.Record(Stopwatch.GetElapsedTime(startTimestamp).TotalSeconds, tags);
+    }
+
     /// <summary>Records that <paramref name="count"/> documents were submitted to <paramref name="operation"/>.</summary>
     public static void RecordDocuments(string operation, string indexName, long count)
     {

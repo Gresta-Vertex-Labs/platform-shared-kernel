@@ -11,6 +11,7 @@ public static class ElasticSearchErrors
     private const string SourceSerializerContextMissingCode = "search.elasticsearch.source_serializer_context_missing";
 
     /// <summary>A <see cref="ElasticSearch.Cursors.SearchCursor"/> token is malformed.</summary>
+    /// <param name="reason">Kernel-authored text only: never the decoder exception message or any part of the token.</param>
     public static Error InvalidCursor(string reason) =>
         Error.Validation(InvalidCursorCode, $"The search cursor is invalid: {reason}");
 
@@ -23,6 +24,8 @@ public static class ElasticSearchErrors
         Error.Conflict(CursorExpiredCode, $"The search cursor's point-in-time expired at {expiredAt:O}.");
 
     /// <summary>An aggregation request failed.</summary>
+    /// <param name="aggregationName">The aggregation or index name.</param>
+    /// <param name="reason">Kernel-authored text, never engine, response-body or exception text.</param>
     public static Error AggregationFailed(string aggregationName, string reason) =>
         Error.Unexpected(AggregationFailedCode, $"Aggregation '{aggregationName}' failed: {reason}");
 

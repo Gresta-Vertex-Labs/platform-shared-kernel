@@ -13,7 +13,7 @@
 
 | Package | Tier | Purpose |
 | --- | --- | --- |
-| `SharedKernel.Search.Abstractions` | Abstractions | Neutral contracts, closed filter AST and scalar union, request/result/receipt models, `SearchIndexDefinition`, `SearchErrors`, `SearchWellKnown`, `SearchIndexReadinessProbe`. References `SharedKernel.Primitives`, `SharedKernel.Execution` (`TenantScope`) and `SharedKernel.Contracts` (`PagedList<T>`) only. Ships no DI extensions |
+| `SharedKernel.Search.Abstractions` | Abstractions | Neutral contracts, closed filter AST and scalar union, request/result/receipt models, `SearchIndexDefinition`, `SearchErrors`, `SearchWellKnown`, `SearchIndexReadinessProbe`. References `SharedKernel.Primitives`, `SharedKernel.Execution` (`TenantScope`), `SharedKernel.Core` (the base of `SearchStreamException`) and `SharedKernel.Contracts` (`PagedList<T>`) only. Ships no DI extensions |
 | `SharedKernel.Search.Meilisearch` | Adapter | Meilisearch provider over the `MeiliSearch` SDK (named `IHttpClientFactory` client); exclusive `IInstantSearch<T>`, `ITenantSearchTokenIssuer`, `MeilisearchRankingRule` |
 | `SharedKernel.Search.ElasticSearch` | Adapter | ElasticSearch 9.x/10.x provider over `Elastic.Clients.Elasticsearch`; alias read/write split; exclusive `IAnalyticsSearch<T>`, `ICursorSearch<T>`, `ISuggestSearch<T>` |
 | `consumer-verify/Meilisearch`, `/ElasticSearch`, `/BothProviders` | — (not packable) | Composition roots over the packed packages; prove each provider's surface and the two-provider keyed resolution |
@@ -150,21 +150,22 @@ Each `Build()` registers one `SearchIndexReadinessProbe` per index, named `searc
 27. No static mutable state in this domain's production code.
 28. Telemetry never records query text, filter values or document ids.
 
-**Error text, exceptions and observability** *(planned, WO-087; unmarked as each phase ships)*
+**Error text, exceptions and observability** *(Phase 2 rules are marked planned until they ship)*
 
-29. *(planned, SK.09.SearchErrorSafety)* `Error.Message` holds kernel-authored wording and bounded identifiers only
+29. `Error.Message` holds kernel-authored wording and bounded identifiers only
     (index, operation and provider names, an HTTP status, a bounded engine error code). Never provider debug
     information, a response body, a server `reason`, `ex.Message`, an endpoint or host, a cursor token, a query or a
     filter value. Engine detail reaches only the log, through the exception parameter. Logs never carry `Error.Message`,
     `ex.Message` or a URL, and every log on a caught-exception path passes the exception.
-30. *(planned, SK.09.SearchErrorSafety)* Classify-or-rethrow (as `07.Messaging`): only a recognised engine fault becomes a
+30. Classify-or-rethrow (as `07.Messaging`): only a recognised engine fault becomes a
     `Result` failure; an unrecognised exception (including a `SwitchExpressionException` from a translation switch)
     rethrows with a plain `throw;`. The caller's cancellation always propagates (rule 13); an HTTP-client timeout with the
     caller's token not cancelled is `search.timeout`. `CursorExpired` is returned only for the point-in-time-missing
     signal; any other cursor fault is classified like every other call.
-31. *(planned, SK.09.SearchErrorSafety)* `SearchStreamException` is a sealed `SharedKernelException`; `.Abstractions`
-    therefore references `SharedKernel.Core` (a Foundation reference, still no third-party package; amends rule 5's
-    reference list and supersedes the earlier "must not reference Core" remark).
+31. `SearchStreamException` is a sealed `SharedKernelException` (and `IHasError`); `.Abstractions` therefore references
+    `SharedKernel.Core` (a Foundation reference, still no third-party package). The ElasticSearch client wraps most
+    exceptions it throws in an `UnexpectedTransportException`; the providers unwrap it before classifying and rethrow the
+    client's exception as thrown.
 32. *(planned, SK.09.ObservabilityConformance)* Codes are public constants (`SearchErrorCodes`, `ElasticSearchErrorCodes`,
     `MeilisearchErrorCodes`), lowercase `search.{snake_reason}`; the `ErrorType` follows the condition (outage
     Unavailable `search.unavailable`, timeout Timeout, engine fault and the engine rejecting the kernel's own key
@@ -177,6 +178,13 @@ Each `Build()` registers one `SearchIndexReadinessProbe` per index, named `searc
 34. *(planned, SK.09.ObservabilityConformance)* Each provider owns its EventId sub-block through an internal
     `{Package}LoggingEventIds` class, one plain static partial `{Package}Log` class under `Diagnostics/`, L3-shaped
     templates, `ILogger<KernelType>` categories and required loggers.
+
+**Meilisearch transport**
+
+35. The registered Meilisearch client is built over a named `IHttpClientFactory` client whose primary handler is the
+    SDK's `MeilisearchMessageHandler` wrapping the pooled `SocketsHttpHandler`. The SDK's `(HttpClient, key)` constructor
+    does not install that handler; without it a rejected POST (search, add, swap, create) is deserialised as the success
+    payload and no failure is ever raised. Verified by `MeilisearchNamedClientErrorHandlingTests`.
 
 ## Decisions
 
@@ -198,9 +206,9 @@ Each `Build()` registers one `SearchIndexReadinessProbe` per index, named `searc
 | Both provider csproj files carry `<WarningsNotAsErrors>…;CS8509;CS8524</WarningsNotAsErrors>` instead of discard arms | C# cannot prove exhaustiveness over a sealed record hierarchy or an enum. The warnings stay visible; the runtime `SwitchExpressionException` is the backstop for a new node. A discard arm would hide the signal; `NoWarn`/pragmas are not used |
 | `MeiliSearch` SDK accepted despite being non-AOT-safe (`netstandard2.0`, `dynamic` filter, `MakeGenericType` per search) | Contained behind `ISearchIndex<T>`; the ES client is AOT-annotated instead |
 | Declined: neutral `Score`, nested filter node, neutral analyzers, string/bool ranges, capability flags | Each is silently wrong or meaningless on one engine |
-| *(planned, SK.09.SearchErrorSafety)* `.Abstractions` references `SharedKernel.Core` so `SearchStreamException` derives `SharedKernelException` | Edges map by `SharedKernelException`, so a non-deriving exception answers 500 and loses its `Error`. A Foundation reference is tier-legal and `Core` adds no third-party package; the earlier "must not reference Core" remark is superseded |
-| *(planned, SK.09.SearchErrorSafety)* Engine free text (even the server `reason`) never enters an `Error`; only a bounded engine code does | The server `reason` repeats user query text and field values; `DebugInformation` carries the whole request. The detail is not lost: it reaches the log through the exception |
-| *(planned, SK.09.SearchErrorSafety)* Unclassified exceptions rethrow instead of becoming `search.engine_fault` | A catch-all hid defects (an untranslatable filter node), cancellation and misconfiguration behind a soft failure; `engine_fault` stays for a recognised reply with an unknown code |
+| `.Abstractions` references `SharedKernel.Core` so `SearchStreamException` derives `SharedKernelException` | Edges map by `SharedKernelException`, so a non-deriving exception answers 500 and loses its `Error`. A Foundation reference is tier-legal and `Core` adds no third-party package; the earlier "must not reference Core" remark is superseded |
+| Engine free text (even the server `reason`) never enters an `Error`; only a bounded engine code does | The server `reason` repeats user query text and field values; `DebugInformation` carries the whole request. The detail is not lost: it reaches the log through the exception |
+| Unclassified exceptions rethrow instead of becoming `search.engine_fault` | A catch-all hid defects (an untranslatable filter node), cancellation and misconfiguration behind a soft failure; `engine_fault` stays for a recognised reply with an unknown code |
 | *(planned, SK.09.ObservabilityConformance)* `search.engine_unauthorized` is `Unexpected`, `search.write_rejected` stays `Unexpected`, `search.tenant_scope_missing` stays `Unauthorized` | The engine refusing the kernel's own key is a deployment defect, not the end user's authentication; without engine text the kernel cannot tell a caller's bad document from mapping drift; a missing tenant scope is a fail-closed isolation fault |
 | *(planned, SK.09.ObservabilityConformance)* `SearchErrors` remains public although root rule C2 says the factory is internal | Both providers and the double construct the same vocabulary from separate assemblies; an `InternalsVisibleTo` from Abstractions would name its siblings (rule 4). Flagged to `arch-lead` for a C2 amendment |
 | *(planned, SK.09.ObservabilityConformance)* No span for the readiness probe | Probes run on a host timer at high frequency and the health request is already a span |
@@ -212,13 +220,13 @@ Block **9000–9999** (`LoggingEventIdRanges.Search`), always written as `Loggin
 | Sub-block | Package | In use |
 | --- | --- | --- |
 | 9000–9099 | `.Abstractions` | reserved, unused — the package does not log |
-| 9100–9199 | `.Meilisearch` (`Logging/MeilisearchLog.cs`) | 9100–9127 (9115 raw client access enabled) |
-| 9200–9299 | `.ElasticSearch` (`Logging/ElasticSearchLog.cs`) | 9200–9229 (9216 raw client access enabled, 9221 source serializer context missing) |
+| 9100–9199 | `.Meilisearch` (`Logging/MeilisearchLog.cs`) | 9100–9129 (9115 raw client access enabled, 9128 tenant token issuance failed, 9129 cutover step failed) |
+| 9200–9299 | `.ElasticSearch` (`Logging/ElasticSearchLog.cs`) | 9200–9230 (9216 raw client access enabled, 9221 source serializer context missing, 9230 cursor read faulted) |
 
-Take the next free id in the package's sub-block (next free today: 9128 Meilisearch, 9230 ElasticSearch).
-*(planned, SK.09.SearchErrorSafety)* 9128 and 9129 (Meilisearch) and 9230 (ElasticSearch) are reserved for the tenant-token,
-cutover and cursor-read fault logs; several existing ids gain an `Exception` parameter and lose their `{Reason}`/`{Url}`
-placeholders. *(planned, SK.09.ObservabilityConformance)* No id is renumbered; the sub-blocks stay as above.
+Take the next free id in the package's sub-block (next free today: 9130 Meilisearch, 9231 ElasticSearch). Every log on a
+caught-exception path passes the exception (last parameter); no template carries `{Reason}`, `{Url}`, `{Error}` or an
+`Error.Message`, and a classified failure logs once at Warning. An unclassified exception that rethrows is not logged by
+the provider. *(planned, SK.09.ObservabilityConformance)* No id is renumbered; the sub-blocks stay as above.
 Telemetry: `ActivitySource`/`Meter` `SharedKernel.Search`
 (`SearchWellKnown.ActivitySourceName`/`MeterName`) — span `search {operation}`; `search.client.operation.duration`
 (s), `search.client.documents`; tags `search.index`, `search.operation`, `search.provider`, `error.type`.
@@ -248,6 +256,12 @@ Telemetry: `ActivitySource`/`Meter` `SharedKernel.Search`
 - Every rejection path asserts the `Error` **and** that no I/O happened: construct the index with `client: null!` (via
   `InternalsVisibleTo`) and pair it with a passing case that does hit the null client.
 - Mocking is allowed only for engine status → `SearchErrors` mapping; behavioural coverage uses real engines.
+- Error-safety suites run without Docker (they live in the Integration-lane projects): ElasticSearch tests put a
+  scripted `HttpMessageHandler` beneath the real `HttpRequestInvoker` (`ScriptedRequestInvoker`, `EsFaultHarness`) and
+  Meilisearch tests put one beneath the SDK's `MeilisearchMessageHandler` (`ScriptedHttpHandler`, `MeiliFaultHarness`), so
+  status codes, transport failures, timeouts and cancellation take the shapes production sees. Each runs a sentinel
+  matrix over every operation family (no sentinel, host or URL in any `Error`, `Details` or log message), a
+  rethrow/telemetry case, an in-flight cancellation case per operation, and a log-shape reflection check.
 - DI-only tests must register `ILogger<>` themselves (`NullLogger<>`); the provider extensions do not.
 - Fakes: `SharedKernel.Search.Testing` — catalogue in `src/Testing/CLAUDE.md`.
 
@@ -262,12 +276,14 @@ Telemetry: `ActivitySource`/`Meter` `SharedKernel.Search`
 - Tenant search tokens scope search only, not writes, and cannot be revoked before expiry.
 - ElasticSearch has no engine-enforced tenant isolation here; OSS deployments need per-tenant filtered aliases plus role
   privileges configured outside this package.
-- Omitting `.WithSourceSerializerContext` on ElasticSearch fails at runtime, not build time. Today the failure surfaces
-  as `search.engine_fault`: `ElasticSearchErrors.SourceSerializerContextMissing` exists but nothing produces it
-  (*planned fix, SK.09.SearchErrorSafety*).
-- Today a catch-all in both providers turns any unclassified exception into `search.engine_fault`, the ElasticSearch cursor
-  read answers `CursorExpired` for any fault including cancellation, and provider text (`DebugInformation`, server
-  `reason`, `ex.Message`, the endpoint) reaches `Error.Message` (*planned fix, SK.09.SearchErrorSafety*).
+- Omitting `.WithSourceSerializerContext` on ElasticSearch fails at runtime, not build time, as
+  `search.elasticsearch.source_serializer_context_missing` on the first (de)serialization of a document type the
+  registered context does not cover.
+- The Meilisearch SDK does not expose the HTTP status of an API error, so a gateway fault (502/503/504) answered with an
+  empty or HTML body is `search.engine_fault` rather than `search.unreachable`; only transport-level failures
+  (refused, DNS, timeout) are classified as an outage. Verified against 0.20.0.
+- The ElasticSearch `EnumerateAsync`/`StreamAsync` iterators classify thrown faults only around the search call (an
+  `await` inside an iterator cannot sit in a try block that yields); point-in-time open/close faults are responses.
 - Options types use `public const string SectionName` rather than `ISectionBoundOptions`.
 - No `00.Governance` rule asserts that no in-repo type consumes `IMeilisearchRawClientAccessor` /
   `IElasticSearchRawClientAccessor` (only the Temporal accessor has one).

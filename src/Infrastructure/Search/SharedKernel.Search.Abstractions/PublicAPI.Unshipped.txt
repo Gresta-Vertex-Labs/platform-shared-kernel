@@ -26,7 +26,6 @@ SharedKernel.Search.Abstractions.Abstractions.ISearchProviderDescriptor.Validate
 SharedKernel.Search.Abstractions.Constants.SearchWellKnown
 SharedKernel.Search.Abstractions.Errors.SearchErrors
 SharedKernel.Search.Abstractions.Exceptions.SearchStreamException
-SharedKernel.Search.Abstractions.Exceptions.SearchStreamException.Error.get -> SharedKernel.Primitives.Errors.Error!
 SharedKernel.Search.Abstractions.Exceptions.SearchStreamException.SearchStreamException(SharedKernel.Primitives.Errors.Error! error) -> void
 SharedKernel.Search.Abstractions.Exceptions.SearchStreamException.SearchStreamException(SharedKernel.Primitives.Errors.Error! error, System.Exception! innerException) -> void
 SharedKernel.Search.Abstractions.Models.AndFilter
@@ -451,7 +450,7 @@ override sealed SharedKernel.Search.Abstractions.Models.RangeFilter.Equals(Share
 static SharedKernel.Search.Abstractions.Errors.SearchErrors.BulkPartiallyFailed(int failedCount, int totalCount) -> SharedKernel.Primitives.Errors.Error!
 static SharedKernel.Search.Abstractions.Errors.SearchErrors.CutoverFailed(string! stagingIndexName, string! liveIndexName, string! reason) -> SharedKernel.Primitives.Errors.Error!
 static SharedKernel.Search.Abstractions.Errors.SearchErrors.DocumentNotFound(string! indexName, string! documentId) -> SharedKernel.Primitives.Errors.Error!
-static SharedKernel.Search.Abstractions.Errors.SearchErrors.EngineFault(string! providerName, string! operation, string! detail) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Search.Abstractions.Errors.SearchErrors.EngineFault(string! providerName, string! operation, string? engineErrorCode = null) -> SharedKernel.Primitives.Errors.Error!
 static SharedKernel.Search.Abstractions.Errors.SearchErrors.EngineVersionUnsupported(string! actual, string! supportedRange) -> SharedKernel.Primitives.Errors.Error!
 static SharedKernel.Search.Abstractions.Errors.SearchErrors.FacetLimitExceeded(int requested, int ceiling) -> SharedKernel.Primitives.Errors.Error!
 static SharedKernel.Search.Abstractions.Errors.SearchErrors.FieldNotFacetable(string! indexName, string! field) -> SharedKernel.Primitives.Errors.Error!
@@ -472,7 +471,7 @@ static SharedKernel.Search.Abstractions.Errors.SearchErrors.TenantScopeMissing(s
 static SharedKernel.Search.Abstractions.Errors.SearchErrors.Timeout(string! operation, System.TimeSpan elapsed) -> SharedKernel.Primitives.Errors.Error!
 static SharedKernel.Search.Abstractions.Errors.SearchErrors.TotalHitsNotExact() -> SharedKernel.Primitives.Errors.Error!
 static SharedKernel.Search.Abstractions.Errors.SearchErrors.Unauthorized(string! indexName, string! operation) -> SharedKernel.Primitives.Errors.Error!
-static SharedKernel.Search.Abstractions.Errors.SearchErrors.Unreachable(string! providerName, string! endpoint) -> SharedKernel.Primitives.Errors.Error!
+static SharedKernel.Search.Abstractions.Errors.SearchErrors.Unreachable(string! providerName) -> SharedKernel.Primitives.Errors.Error!
 static SharedKernel.Search.Abstractions.Errors.SearchErrors.UnsupportedCapability(string! capability, string! providerName) -> SharedKernel.Primitives.Errors.Error!
 static SharedKernel.Search.Abstractions.Errors.SearchErrors.WriteRejected(string! indexName, string! reason) -> SharedKernel.Primitives.Errors.Error!
 static SharedKernel.Search.Abstractions.Errors.SearchErrors.WriteTimeout(string! indexName, System.TimeSpan elapsed) -> SharedKernel.Primitives.Errors.Error!

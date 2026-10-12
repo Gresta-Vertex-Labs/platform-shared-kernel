@@ -9,7 +9,7 @@ namespace SharedKernel.Search.Abstractions.Tests;
 
 /// <summary>
 /// T-09: package-purity assertions — <c>SharedKernel.Search.Abstractions</c> references only the BCL
-/// plus <c>SharedKernel.Primitives</c>/<c>SharedKernel.Contracts</c>; the assembly declares no
+/// plus <c>SharedKernel.Primitives</c>/<c>SharedKernel.Execution</c>/<c>SharedKernel.Core</c>/<c>SharedKernel.Contracts</c>; the assembly declares no
 /// <see cref="ActivitySource"/>, no <see cref="Meter"/>, no <c>[LoggerMessage]</c>-generated member,
 /// and no <c>IHealthCheck</c> implementation; model records honour value equality; and
 /// <see cref="SearchStreamException"/> carries an <c>Error</c> with no bare-string constructor.
@@ -29,9 +29,10 @@ public sealed class PackagePurityTests
                 || name.StartsWith("mscorlib", StringComparison.Ordinal)
                 || name == "SharedKernel.Primitives"
                 || name == "SharedKernel.Contracts"
-                || name == "SharedKernel.Execution",
-            "SharedKernel.Search.Abstractions must reference only the BCL plus SharedKernel.Primitives " +
-            "and SharedKernel.Contracts and SharedKernel.Execution — zero third-party NuGet dependencies, no Microsoft.Extensions.*, " +
+                || name == "SharedKernel.Execution"
+                || name == "SharedKernel.Core",
+            "SharedKernel.Search.Abstractions must reference only the BCL plus SharedKernel.Primitives, " +
+            "SharedKernel.Contracts, SharedKernel.Execution and SharedKernel.Core (the base of SearchStreamException) — zero third-party NuGet dependencies, no Microsoft.Extensions.*, " +
             "no MeiliSearch, no Elastic.*");
     }
 
@@ -119,9 +120,4 @@ public sealed class PackagePurityTests
             .PropertyType.Name.Should().Be("Error");
     }
 
-    [Fact]
-    public void SearchStreamException_DerivesFrom_SystemException()
-    {
-        typeof(SearchStreamException).BaseType.Should().Be(typeof(Exception));
-    }
 }

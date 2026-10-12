@@ -80,7 +80,7 @@ public sealed class MeilisearchGetAsyncNullDeserializationTests
         // The operation name in the error is the telemetry operation ("get"), not the C# member name —
         // the same string the search.operation span tag and the duration histogram carry, so an error in
         // a log can be joined to its metric series.
-        result.Subject.Error.Message.Should().Contain("'get'").And.Contain("null document");
+        result.Subject.Error.Message.Should().Contain("'get'");
         handler.RequestCount.Should().Be(1, "GetAsync issues exactly one HTTP call for a get-by-id");
     }
 }

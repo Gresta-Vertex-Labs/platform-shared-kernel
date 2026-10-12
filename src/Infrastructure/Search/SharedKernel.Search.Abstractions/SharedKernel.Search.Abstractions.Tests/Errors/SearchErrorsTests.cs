@@ -228,11 +228,11 @@ public sealed class SearchErrorsTests
     [Fact]
     public void Unreachable_ReturnsUnavailable()
     {
-        var error = SearchErrors.Unreachable("meilisearch", "http://localhost:7700");
+        var error = SearchErrors.Unreachable("meilisearch");
 
         error.Type.Should().Be(ErrorType.Unavailable);
         error.Code.Should().Be("search.unreachable");
-        error.Message.Should().Contain("meilisearch").And.Contain("http://localhost:7700");
+        error.Message.Should().Contain("meilisearch").And.NotContain("http", "the endpoint is configuration, never caller-facing text");
     }
 
     [Fact]
@@ -298,10 +298,19 @@ public sealed class SearchErrorsTests
     [Fact]
     public void EngineFault_ReturnsUnexpected()
     {
-        var error = SearchErrors.EngineFault("elasticsearch", "search", "detail");
+        var error = SearchErrors.EngineFault("elasticsearch", "search", "mapper_parsing_exception");
 
         error.Type.Should().Be(ErrorType.Unexpected);
         error.Code.Should().Be("search.engine_fault");
+        error.Message.Should().Contain("mapper_parsing_exception");
+    }
+
+    [Fact]
+    public void EngineFault_WithoutEngineCode_NamesOnlyProviderAndOperation()
+    {
+        var error = SearchErrors.EngineFault("elasticsearch", "search");
+
+        error.Message.Should().Be("Provider 'elasticsearch' operation 'search' faulted.");
     }
 
     // ---------------------------------------------------------------------------
@@ -333,7 +342,7 @@ public sealed class SearchErrorsTests
             SearchErrors.SchemaFingerprintMismatch("i", "e", "a"),
             SearchErrors.Unauthorized("i", "o"),
             SearchErrors.TenantScopeMissing("i"),
-            SearchErrors.Unreachable("p", "e"),
+            SearchErrors.Unreachable("p"),
             SearchErrors.Timeout("o", TimeSpan.Zero),
             SearchErrors.WriteRejected("i", "r"),
             SearchErrors.WriteTimeout("i", TimeSpan.Zero),

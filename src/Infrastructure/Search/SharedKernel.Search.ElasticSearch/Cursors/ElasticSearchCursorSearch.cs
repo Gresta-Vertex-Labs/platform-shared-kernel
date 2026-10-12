@@ -4,6 +4,7 @@ using Elastic.Clients.Elasticsearch;
 using Elastic.Clients.Elasticsearch.Core.Search;
 using Elastic.Clients.Elasticsearch.QueryDsl;
 using Elastic.Transport;
+using Elastic.Transport.Products.Elasticsearch;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Execution.Tenancy;
 using SharedKernel.Primitives.Clocks;
@@ -27,6 +28,12 @@ namespace SharedKernel.Search.ElasticSearch.Cursors;
 internal sealed class ElasticSearchCursorSearch<TDocument> : ICursorSearch<TDocument>
     where TDocument : class, ISearchDocument
 {
+    private const string MalformedTokenReason = "the token is malformed.";
+    private const string OperationStream = "stream";
+    private const string OperationOpenCursor = "open_cursor";
+    private const string OperationReadCursor = "read_cursor";
+    private const string OperationCloseCursor = "close_cursor";
+
     private readonly ElasticsearchClient _client;
     private readonly SearchIndexDefinition _definition;
     private readonly IClock _clock;
@@ -66,8 +73,7 @@ internal sealed class ElasticSearchCursorSearch<TDocument> : ICursorSearch<TDocu
             .ConfigureAwait(false);
         if (!pitResponse.IsValidResponse)
         {
-            throw new SearchStreamException(SearchErrors.EngineFault(
-                SearchWellKnown.ElasticSearchProviderName, "StreamAsync", pitResponse.DebugInformation));
+            throw new SearchStreamException(Fault(pitResponse, OperationStream, cancellationToken));
         }
 
         var pitId = pitResponse.Id;
@@ -96,11 +102,24 @@ internal sealed class ElasticSearchCursorSearch<TDocument> : ICursorSearch<TDocu
                     searchRequest.SearchAfter = searchAfter;
                 }
 
-                var response = await _client.SearchAsync<TDocument>(searchRequest, cancellationToken).ConfigureAwait(false);
+                global::Elastic.Clients.Elasticsearch.SearchResponse<TDocument> response;
+                try
+                {
+                    response = await _client.SearchAsync<TDocument>(searchRequest, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ElasticSearchFaultMapper.CallerCancellation(ex, cancellationToken) is { } cancellation)
+                {
+                    throw new OperationCanceledException(cancellation.Message, cancellation, cancellationToken);
+                }
+                catch (Exception ex) when (ElasticSearchFaultMapper.TryClassify(ex, OperationStream, DocumentTypeName, out var streamError))
+                {
+                    _logger.ElasticSearchOperationFaulted(OperationStream, _definition.Name, streamError.Code, ex);
+                    throw new SearchStreamException(streamError, ex);
+                }
+
                 if (!response.IsValidResponse)
                 {
-                    throw new SearchStreamException(SearchErrors.EngineFault(
-                        SearchWellKnown.ElasticSearchProviderName, "StreamAsync", response.DebugInformation));
+                    throw new SearchStreamException(Fault(response, OperationStream, cancellationToken));
                 }
 
                 batchCount++;
@@ -148,7 +167,8 @@ internal sealed class ElasticSearchCursorSearch<TDocument> : ICursorSearch<TDocu
             }
             else
             {
-                _logger.ElasticSearchPointInTimeCloseFailed(_definition.Name);
+                _logger.ElasticSearchPointInTimeCloseFailed(
+                    _definition.Name, ElasticSearchFaultMapper.OriginalException(closeResponse));
             }
         }
     }
@@ -174,8 +194,7 @@ internal sealed class ElasticSearchCursorSearch<TDocument> : ICursorSearch<TDocu
             .ConfigureAwait(false);
         if (!pitResponse.IsValidResponse)
         {
-            return Result<SearchCursor>.Failure(SearchErrors.EngineFault(
-                SearchWellKnown.ElasticSearchProviderName, "OpenCursorAsync", pitResponse.DebugInformation));
+            return Result<SearchCursor>.Failure(Fault(pitResponse, OperationOpenCursor, cancellationToken));
         }
 
         _logger.ElasticSearchPointInTimeOpened(_definition.Name, (int)keepAlive.TotalSeconds);
@@ -197,7 +216,9 @@ internal sealed class ElasticSearchCursorSearch<TDocument> : ICursorSearch<TDocu
         }
         catch (Exception ex) when (ex is FormatException or JsonException)
         {
-            return Result<CursorPage<TDocument>>.Failure(ElasticSearchErrors.InvalidCursor(ex.Message));
+            var invalid = ElasticSearchErrors.InvalidCursor(MalformedTokenReason);
+            _logger.ElasticSearchCursorReadFaulted(_definition.Name, invalid.Code, ex);
+            return Result<CursorPage<TDocument>>.Failure(invalid);
         }
 
         var searchRequest = new global::Elastic.Clients.Elasticsearch.SearchRequest<TDocument>
@@ -218,14 +239,33 @@ internal sealed class ElasticSearchCursorSearch<TDocument> : ICursorSearch<TDocu
         {
             response = await _client.SearchAsync<TDocument>(searchRequest, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            return Result<CursorPage<TDocument>>.Failure(ElasticSearchErrors.CursorExpired(_clock.UtcNow));
+            throw;
+        }
+        catch (Exception ex) when (ElasticSearchFaultMapper.CallerCancellation(ex, cancellationToken) is { } cancellation)
+        {
+            // The client wraps most exceptions it surfaces; a cancellation the caller asked for still reaches the
+            // caller as an OperationCanceledException.
+            throw new OperationCanceledException(cancellation.Message, cancellation, cancellationToken);
+        }
+        catch (Exception ex) when (ElasticSearchFaultMapper.TryClassify(ex, OperationReadCursor, DocumentTypeName, out var classified))
+        {
+            _logger.ElasticSearchCursorReadFaulted(_definition.Name, classified.Code, ex);
+            return Result<CursorPage<TDocument>>.Failure(classified);
         }
 
         if (!response.IsValidResponse)
         {
-            return Result<CursorPage<TDocument>>.Failure(ElasticSearchErrors.CursorExpired(_clock.UtcNow));
+            // Only the point-in-time-missing signal means the cursor lapsed; every other fault (outage,
+            // credentials, a rejected request) is classified like any other call.
+            var error = ElasticSearchFaultMapper.IsPointInTimeMissing(response)
+                ? ElasticSearchErrors.CursorExpired(_clock.UtcNow)
+                : ElasticSearchFaultMapper.Map(
+                    response, _definition.Name, OperationReadCursor, cancellationToken, DocumentTypeName);
+            _logger.ElasticSearchCursorReadFaulted(
+                _definition.Name, error.Code, ElasticSearchFaultMapper.OriginalException(response));
+            return Result<CursorPage<TDocument>>.Failure(error);
         }
 
         var hits = response.HitsMetadata.Hits.ToList();
@@ -259,7 +299,9 @@ internal sealed class ElasticSearchCursorSearch<TDocument> : ICursorSearch<TDocu
         }
         catch (Exception ex) when (ex is FormatException or JsonException)
         {
-            return Result.Failure(ElasticSearchErrors.InvalidCursor(ex.Message));
+            var invalid = ElasticSearchErrors.InvalidCursor(MalformedTokenReason);
+            _logger.ElasticSearchCursorReadFaulted(_definition.Name, invalid.Code, ex);
+            return Result.Failure(invalid);
         }
 
         var response = await _client.ClosePointInTimeAsync(new ClosePointInTimeRequest(state.PitId), cancellationToken)
@@ -267,11 +309,30 @@ internal sealed class ElasticSearchCursorSearch<TDocument> : ICursorSearch<TDocu
 
         if (!response.IsValidResponse)
         {
-            _logger.ElasticSearchPointInTimeCloseFailed(_definition.Name);
-            return Result.Failure(SearchErrors.EngineFault(SearchWellKnown.ElasticSearchProviderName, "CloseCursorAsync", response.DebugInformation));
+            // Mapped first: a failure caused by the caller's own cancellation throws here, before anything is logged.
+            var error = ElasticSearchFaultMapper.IsPointInTimeMissing(response)
+                ? ElasticSearchErrors.CursorExpired(_clock.UtcNow)
+                : ElasticSearchFaultMapper.Map(response, _definition.Name, OperationCloseCursor, cancellationToken);
+            _logger.ElasticSearchPointInTimeCloseFailed(_definition.Name, ElasticSearchFaultMapper.OriginalException(response));
+            return Result.Failure(error);
         }
 
         return Result.Success();
+    }
+
+    private static string DocumentTypeName => typeof(TDocument).Name;
+
+    private Primitives.Errors.Error Fault(
+        ElasticsearchResponse response, string operation, CancellationToken cancellationToken)
+    {
+        var error = ElasticSearchFaultMapper.Map(
+            response, _definition.Name, operation, cancellationToken, DocumentTypeName);
+        _logger.ElasticSearchEngineFault(
+            operation,
+            _definition.Name,
+            (int?)response.ApiCallDetails?.HttpStatusCode,
+            ElasticSearchFaultMapper.OriginalException(response));
+        return error;
     }
 
     private static IReadOnlyDictionary<string, IReadOnlyList<string>> MapHighlights(Hit<TDocument> hit)

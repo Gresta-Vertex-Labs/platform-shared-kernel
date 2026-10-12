@@ -13,8 +13,8 @@ internal static partial class MeilisearchLog
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Search + 100,
         Level = LogLevel.Information,
-        Message = "Meilisearch client configured for {Url} with {IndexCount} registered index(es).")]
-    public static partial void MeilisearchClientConfigured(this ILogger logger, string url, int indexCount);
+        Message = "Meilisearch client configured with {IndexCount} registered index(es).")]
+    public static partial void MeilisearchClientConfigured(this ILogger logger, int indexCount);
 
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Search + 101,
@@ -82,8 +82,9 @@ internal static partial class MeilisearchLog
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Search + 110,
         Level = LogLevel.Warning,
-        Message = "Search request against index '{IndexName}' rejected before any I/O: {Reason}")]
-    public static partial void MeilisearchRequestRejected(this ILogger logger, string indexName, string reason);
+        Message = "Search request against index '{IndexName}' rejected before any I/O with error type {ErrorType} and code {ErrorCode}.")]
+    public static partial void MeilisearchRequestRejected(
+        this ILogger logger, string indexName, string errorType, string errorCode);
 
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Search + 111,
@@ -121,7 +122,7 @@ internal static partial class MeilisearchLog
         Level = LogLevel.Warning,
         Message = "Probe of index '{IndexName}' degraded: Reachable={Reachable} IndexAddressable={IndexAddressable} Searchable={Searchable}.")]
     public static partial void MeilisearchProbeDegraded(
-        this ILogger logger, string indexName, bool reachable, bool indexAddressable, bool searchable);
+        this ILogger logger, string indexName, bool reachable, bool indexAddressable, bool searchable, Exception? exception);
 
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Search + 117,
@@ -138,9 +139,9 @@ internal static partial class MeilisearchLog
 
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Search + 119,
-        Level = LogLevel.Error,
+        Level = LogLevel.Warning,
         Message = "Meilisearch operation '{Operation}' on index '{IndexName}' faulted.")]
-    public static partial void MeilisearchEngineFault(this ILogger logger, string operation, string indexName);
+    public static partial void MeilisearchEngineFault(this ILogger logger, string operation, string indexName, Exception? exception);
 
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Search + 120,
@@ -167,7 +168,7 @@ internal static partial class MeilisearchLog
         Message = "Meilisearch operation '{Operation}' on index '{IndexName}' faulted and was mapped to " +
                   "error code '{ErrorCode}'.")]
     public static partial void MeilisearchOperationFaulted(
-        this ILogger logger, string operation, string indexName, string errorCode);
+        this ILogger logger, string operation, string indexName, string errorCode, Exception? exception);
 
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Search + 124,
@@ -197,4 +198,17 @@ internal static partial class MeilisearchLog
         Message = "Meilisearch index '{IndexName}' ranking rules applied: {RankingRuleCount} rule(s).")]
     public static partial void MeilisearchRankingRulesApplied(
         this ILogger logger, string indexName, int rankingRuleCount);
+
+    [LoggerMessage(
+        EventId = LoggingEventIdRanges.Search + 128,
+        Level = LogLevel.Warning,
+        Message = "Issuing a Meilisearch tenant search token failed.")]
+    public static partial void MeilisearchTenantTokenIssuanceFailed(this ILogger logger, Exception? exception);
+
+    [LoggerMessage(
+        EventId = LoggingEventIdRanges.Search + 129,
+        Level = LogLevel.Warning,
+        Message = "Meilisearch cutover from staging '{StagingIndexName}' to live '{LiveIndexName}' failed at step '{Step}'.")]
+    public static partial void MeilisearchCutoverStepFailed(
+        this ILogger logger, string stagingIndexName, string liveIndexName, string step, Exception? exception);
 }

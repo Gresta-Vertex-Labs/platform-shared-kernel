@@ -57,6 +57,41 @@ public sealed class SearchIndexReadinessProbeTests
         report.Data[SearchIndexReadinessProbe.ErrorCodeKey].Should().Be("search.index_not_found");
     }
 
+    [Fact]
+    public async Task FailedMeasurement_UnhealthyDescription_IsTheKernelErrorMessage_WithNoEngineText()
+    {
+        var error = SearchErrors.Unreachable("meilisearch");
+        var probe = new SearchIndexReadinessProbe(
+            "meilisearch", "products", (_, _) => Task.FromResult(Result<SearchIndexHealth>.Failure(error)));
+
+        var report = await probe.ProbeAsync();
+
+        report.Status.Should().Be(ReadinessStatus.Unhealthy);
+        report.Description.Should().Be(error.Message).And.NotContain("http");
+        report.Data.Values.OfType<string>().Should().NotContain(value => value.Contains("http", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task CancelledToken_PropagatesBeforeTheMeasurement()
+    {
+        var measured = false;
+        var probe = new SearchIndexReadinessProbe(
+            "meilisearch",
+            "products",
+            (_, _) =>
+            {
+                measured = true;
+                return Task.FromResult(Result<SearchIndexHealth>.Success(Health(searchable: true, pending: null, fingerprint: null)));
+            });
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        var act = () => probe.ProbeAsync(cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        measured.Should().BeFalse();
+    }
+
     private static SearchIndexReadinessProbe Probe(SearchIndexHealth health) =>
         new("meilisearch", "products", (_, _) => Task.FromResult(Result<SearchIndexHealth>.Success(health)));
 

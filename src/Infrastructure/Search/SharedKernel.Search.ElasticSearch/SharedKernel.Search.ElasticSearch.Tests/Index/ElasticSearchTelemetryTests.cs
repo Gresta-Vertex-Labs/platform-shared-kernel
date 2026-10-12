@@ -83,7 +83,8 @@ public sealed class ElasticSearchTelemetryTests
         Activity.Current = null;
 
         var index = CreateIndexWithNoIoCapableClient(indexName);
-        await index.SearchAsync(SearchRequest.Default, TenantScope.Global);
+        await FluentActions.Awaiting(() => index.SearchAsync(SearchRequest.Default, TenantScope.Global))
+            .Should().ThrowAsync<NullReferenceException>("an unclassified exception rethrows after the span is completed");
 
         var activity = activities
             .Where(a => (string?)a.GetTagItem(SearchWellKnown.IndexTagName) == indexName)
@@ -94,6 +95,8 @@ public sealed class ElasticSearchTelemetryTests
         activity.GetTagItem(SearchWellKnown.OperationTagName).Should().Be("search");
         activity.GetTagItem(SearchWellKnown.ProviderTagName).Should().Be(SearchWellKnown.ElasticSearchProviderName);
         activity.Status.Should().Be(ActivityStatusCode.Error, "this index has no usable client");
+        activity.StatusDescription.Should().Be(nameof(NullReferenceException), "the description is the exception type name, never its message");
+        activity.GetTagItem("error.type").Should().Be(typeof(NullReferenceException).FullName);
     }
 
     [Fact]
@@ -130,7 +133,8 @@ public sealed class ElasticSearchTelemetryTests
         listener.Start();
 
         var index = CreateIndexWithNoIoCapableClient(indexName);
-        await index.SearchAsync(SearchRequest.Default, TenantScope.Global);
+        await FluentActions.Awaiting(() => index.SearchAsync(SearchRequest.Default, TenantScope.Global))
+            .Should().ThrowAsync<NullReferenceException>();
 
         values.Should().ContainSingle().Which.Should().BeGreaterThan(0, "the histogram records elapsed seconds");
     }

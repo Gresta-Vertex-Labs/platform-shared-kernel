@@ -398,7 +398,7 @@ internal sealed class MeilisearchIndex<TDocument> : ISearchIndex<TDocument>
         var validation = MeilisearchRequestValidator.Validate(_definition, request);
         if (validation.IsFailure)
         {
-            _logger.MeilisearchRequestRejected(_definition.Name, validation.Error.Message);
+            _logger.MeilisearchRequestRejected(_definition.Name, validation.Error.Type.ToString(), validation.Error.Code);
             return Task.FromResult(Result<SearchResults<TDocument>>.Failure(validation.Error));
         }
 
@@ -434,7 +434,7 @@ internal sealed class MeilisearchIndex<TDocument> : ISearchIndex<TDocument>
             }
             else
             {
-                _logger.MeilisearchEngineFault(OperationSearch, _definition.Name);
+                _logger.MeilisearchEngineFault(OperationSearch, _definition.Name, exception: null);
             }
 
             return mapped;
@@ -497,9 +497,8 @@ internal sealed class MeilisearchIndex<TDocument> : ISearchIndex<TDocument>
             var document = raw.Deserialize<TDocument>(DocumentSerializerOptions);
             if (document is null)
             {
-                _logger.MeilisearchEngineFault(OperationGet, _definition.Name);
-                return Result<TDocument>.Failure(SearchErrors.EngineFault(
-                    SearchWellKnown.MeilisearchProviderName, OperationGet, "Meilisearch returned a null document."));
+                _logger.MeilisearchEngineFault(OperationGet, _definition.Name, exception: null);
+                return Result<TDocument>.Failure(SearchErrors.EngineFault(SearchWellKnown.MeilisearchProviderName, OperationGet));
             }
 
             return Result<TDocument>.Success(document);
@@ -580,6 +579,7 @@ internal sealed class MeilisearchIndex<TDocument> : ISearchIndex<TDocument>
         var offset = 0;
         var index = _client.Index(_definition.Name);
         string? errorCode = null;
+        Exception? unclassified = null;
 
         try
         {
@@ -607,11 +607,16 @@ internal sealed class MeilisearchIndex<TDocument> : ISearchIndex<TDocument>
                 {
                     throw;
                 }
+                catch (Exception ex) when (MeilisearchFaultMapper.TryMap(ex, _definition.Name, OperationEnumerate, cancellationToken, out var error))
+                {
+                    errorCode = error.Code;
+                    _logger.MeilisearchOperationFaulted(OperationEnumerate, _definition.Name, error.Code, ex);
+                    throw new SearchStreamException(error, ex);
+                }
                 catch (Exception ex)
                 {
-                    var error = MeilisearchFaultMapper.Map(ex, _definition.Name, OperationEnumerate, _options.Url);
-                    errorCode = error.Code;
-                    throw new SearchStreamException(error, ex);
+                    unclassified = ex;
+                    throw;
                 }
 
                 var items = page.Results.ToList();
@@ -635,7 +640,15 @@ internal sealed class MeilisearchIndex<TDocument> : ISearchIndex<TDocument>
         }
         finally
         {
-            SearchDiagnostics.Complete(activity, OperationEnumerate, _definition.Name, startTimestamp, errorCode);
+            if (unclassified is not null)
+            {
+                SearchDiagnostics.CompleteWithException(
+                    activity, OperationEnumerate, _definition.Name, startTimestamp, unclassified);
+            }
+            else
+            {
+                SearchDiagnostics.Complete(activity, OperationEnumerate, _definition.Name, startTimestamp, errorCode);
+            }
         }
     }
 
@@ -687,11 +700,17 @@ internal sealed class MeilisearchIndex<TDocument> : ISearchIndex<TDocument>
         {
             throw;
         }
+        catch (Exception ex) when (MeilisearchFaultMapper.TryMap(ex, _definition.Name, operation, cancellationToken, out var error))
+        {
+            _logger.MeilisearchOperationFaulted(operation, _definition.Name, error.Code, ex);
+            result = Result<T>.Failure(error);
+        }
         catch (Exception ex)
         {
-            var error = MeilisearchFaultMapper.Map(ex, _definition.Name, operation, _options.Url);
-            _logger.MeilisearchOperationFaulted(operation, _definition.Name, error.Code);
-            result = Result<T>.Failure(error);
+            // An unrecognised exception is a defect (for example a SwitchExpressionException from a translation
+            // switch), never a soft engine fault: finish the span and the histogram, then rethrow.
+            SearchDiagnostics.CompleteWithException(activity, operation, _definition.Name, startTimestamp, ex);
+            throw;
         }
 
         SearchDiagnostics.Complete(
@@ -762,9 +781,9 @@ internal sealed class MeilisearchIndex<TDocument> : ISearchIndex<TDocument>
 
         if (resource.Status == global::Meilisearch.TaskInfoStatus.Failed)
         {
-            var errorCode = resource.Error is { } error && error.TryGetValue("code", out var code)
-                ? code?.ToString() ?? "unknown"
-                : "unknown";
+            var errorCode = MeilisearchFaultMapper.BoundedEngineCode(
+                resource.Error is { } error && error.TryGetValue("code", out var code) ? code?.ToString() : null)
+                ?? "unknown";
             _logger.MeilisearchTaskFailed(taskUid.ToString(CultureInfo.InvariantCulture), _definition.Name, errorCode);
             return Result.Failure(MeilisearchErrors.IndexingTaskFailed(taskUid.ToString(CultureInfo.InvariantCulture), errorCode));
         }

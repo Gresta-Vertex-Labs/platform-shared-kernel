@@ -13,6 +13,8 @@ namespace SharedKernel.Search.Meilisearch.Tenancy;
 /// <summary>The Meilisearch implementation of <see cref="ITenantSearchTokenIssuer"/> — scoped.</summary>
 internal sealed class MeilisearchTenantTokenIssuer : ITenantSearchTokenIssuer
 {
+    private const string SigningFailedReason = "signing failed.";
+
     private readonly global::Meilisearch.MeilisearchClient _client;
     private readonly MeilisearchOptions _options;
     private readonly IClock _clock;
@@ -101,9 +103,10 @@ internal sealed class MeilisearchTenantTokenIssuer : ITenantSearchTokenIssuer
             var tenantTokenRules = new global::Meilisearch.TenantTokenRules(rules);
             token = _client.GenerateTenantToken(_options.ApiKeyUid, tenantTokenRules, _options.ApiKey, expiresAt.UtcDateTime);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            return Task.FromResult(Result<TenantSearchToken>.Failure(MeilisearchErrors.TenantTokenIssuanceFailed(ex.Message)));
+            _logger.MeilisearchTenantTokenIssuanceFailed(ex);
+            return Task.FromResult(Result<TenantSearchToken>.Failure(MeilisearchErrors.TenantTokenIssuanceFailed(SigningFailedReason)));
         }
 
         _logger.MeilisearchTenantTokenIssued(indexNames.Count, (int)ttl.TotalMinutes);

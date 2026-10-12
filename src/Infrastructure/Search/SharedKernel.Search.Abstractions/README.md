@@ -156,8 +156,18 @@ flowchart LR
 - **Operational failures are values.** An outage is `search.unreachable` (`ErrorType.Unavailable`, 503), a timeout
   `search.timeout` (504), bad credentials `search.unauthorized` — identical on both providers. Cancellation you
   requested propagates as `OperationCanceledException`.
+- **Error text is kernel-authored.** An `Error.Message` holds the kernel's own wording and bounded identifiers only
+  (index, operation and provider names, a short engine error code). It never carries an engine response body, a server
+  reason, an exception message, an endpoint or host, a query or a filter value; engine detail reaches the log through the
+  exception. `SearchErrors.Unreachable(providerName)` therefore names no endpoint.
+- **Faults are classified or they propagate.** Only a recognised engine or transport fault becomes a `Result`
+  failure; an unrecognised exception (a defect) is rethrown with its stack instead of being reported as
+  `search.engine_fault`.
 - **Streams throw.** `EnumerateAsync` returns `IAsyncEnumerable<TDocument>`; a mid-stream fault surfaces as
-  `SearchStreamException` (carrying the `Error`) from `MoveNextAsync`. Its order is unspecified.
+  `SearchStreamException` from `MoveNextAsync`. It is a sealed `SharedKernelException` (and `IHasError`), so the HTTP,
+  gRPC and SignalR edges translate it by its `Error` type (503 for an outage, 504 for a timeout) instead of answering
+  500, and `catch (SharedKernelException e) when (e is SearchStreamException)` reads `e.Error`. Its order is
+  unspecified.
 - **Honest totals.** `SearchResults<T>.TotalHits` comes with `Accuracy` (`Exact`, `LowerBound`, `Estimated`);
   `CountAsync` returns a `SearchCount` whose `ToString()` renders a lower bound as `>=N`.
 - **Telemetry.** Providers emit a `search {operation}` span and the `search.client.operation.duration` (s) and
@@ -297,7 +307,8 @@ An unkeyed resolution returns whichever provider registered last.
 
 ### Errors
 
-All from `SearchErrors`; each factory takes the details it names.
+All from `SearchErrors`; each factory takes the details it names. The free-text `reason` parameters (`InvalidSearchRequest`, `InvalidFilter`,
+`WriteRejected`, `CutoverFailed`, `ProbeFailed`) take kernel-authored text only, never provider or exception text.
 
 | Code | Type | When |
 | --- | --- | --- |
@@ -325,7 +336,7 @@ All from `SearchErrors`; each factory takes the details it names.
 | `search.bulk_partially_failed` | Unexpected | Declared; bulk writes report failures in `SearchBulkReceipt.Failures` instead |
 | `search.probe_failed` | Unexpected | A readiness probe or `VerifyRegisteredIndexesAsync` failed |
 | `search.engine_version_unsupported` | Unexpected | The engine version is outside the supported range |
-| `search.engine_fault` | Unexpected | Any other engine error |
+| `search.engine_fault` | Unexpected | A recognised engine reply with no more specific code; the message carries the engine's bounded error code when it sent one. An unrecognised exception is not mapped here: it propagates |
 
 ### Logging
 

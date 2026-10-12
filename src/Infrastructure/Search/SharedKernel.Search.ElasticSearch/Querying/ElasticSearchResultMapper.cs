@@ -27,7 +27,8 @@ internal static class ElasticSearchResultMapper
         if (!response.IsValidResponse)
         {
             return Result<SearchResults<TDocument>>.Failure(
-                SearchErrors.EngineFault(providerName, "SearchAsync", response.DebugInformation));
+                SearchErrors.EngineFault(
+                    providerName, "SearchAsync", Errors.ElasticSearchFaultMapper.BoundedEngineCode(response)));
         }
 
         var hits = MapHits(response.HitsMetadata.Hits);

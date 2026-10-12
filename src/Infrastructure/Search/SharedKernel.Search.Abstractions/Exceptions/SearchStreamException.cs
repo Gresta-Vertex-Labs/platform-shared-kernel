@@ -1,3 +1,4 @@
+using SharedKernel.Core.Exceptions;
 using SharedKernel.Primitives.Errors;
 
 namespace SharedKernel.Search.Abstractions.Exceptions;
@@ -9,37 +10,31 @@ namespace SharedKernel.Search.Abstractions.Exceptions;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Base-type decision, resolved at Scaffold time (S-12) and not re-litigated here:
-/// <c>SharedKernel.Primitives</c> ships no exception type at all, and the only
-/// <see cref="Error"/>-carrying exception hierarchy in the platform lives in the separate
-/// <c>SharedKernel.Core</c> package, which <c>SharedKernel.Search.Abstractions</c> does not and must
-/// not reference. This type therefore derives directly from <see cref="Exception"/> and declares its
-/// own <see cref="Error"/> property.
+/// A <see cref="SharedKernelException"/> (and therefore <see cref="IHasError"/>), so the HTTP, gRPC and
+/// SignalR edges translate it by its <see cref="SharedKernelException.Error"/> type instead of answering 500.
 /// </para>
 /// <para>
-/// Constructed only from a <see cref="SharedKernel.Primitives.Errors.Error"/> — never from a bare
-/// string.
+/// Constructed only from an <see cref="Primitives.Errors.Error"/> — never from a bare string. The error text
+/// is kernel-authored; engine detail travels in the inner exception.
 /// </para>
 /// </remarks>
-public sealed class SearchStreamException : Exception
+public sealed class SearchStreamException : SharedKernelException
 {
     /// <summary>Initializes a new <see cref="SearchStreamException"/> carrying <paramref name="error"/>.</summary>
+    /// <param name="error">The structured error describing why the stream failed.</param>
     public SearchStreamException(Error error)
-        : base(error.Message)
+        : base(error)
     {
-        Error = error;
     }
 
     /// <summary>
     /// Initializes a new <see cref="SearchStreamException"/> carrying <paramref name="error"/> and
     /// wrapping <paramref name="innerException"/>.
     /// </summary>
+    /// <param name="error">The structured error describing why the stream failed.</param>
+    /// <param name="innerException">The engine or transport exception that interrupted the stream.</param>
     public SearchStreamException(Error error, Exception innerException)
-        : base(error.Message, innerException)
+        : base(error, innerException)
     {
-        Error = error;
     }
-
-    /// <summary>Gets the structured error describing why the stream failed.</summary>
-    public Error Error { get; }
 }

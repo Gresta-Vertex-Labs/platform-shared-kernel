@@ -5,6 +5,7 @@ using SharedKernel.Primitives.Results;
 using SharedKernel.Search.Abstractions.Abstractions;
 using SharedKernel.Search.Abstractions.Constants;
 using SharedKernel.Search.Abstractions.Models;
+using SharedKernel.Search.Meilisearch.Errors;
 using SharedKernel.Search.Meilisearch.Logging;
 using SharedKernel.Search.Meilisearch.Querying;
 
@@ -15,6 +16,9 @@ namespace SharedKernel.Search.Meilisearch.Instant;
 internal sealed class MeilisearchInstantSearch<TDocument> : IInstantSearch<TDocument>
     where TDocument : class, ISearchDocument
 {
+    private const string OperationInstantSearch = "instant_search";
+    private const string OperationFacetSearch = "search_facet_values";
+
     private readonly global::Meilisearch.MeilisearchClient _client;
     private readonly SearchIndexDefinition _definition;
     private readonly ILogger<MeilisearchInstantSearch<TDocument>> _logger;
@@ -78,9 +82,17 @@ internal sealed class MeilisearchInstantSearch<TDocument> : IInstantSearch<TDocu
             query.AttributesToCrop = request.Highlight?.Fields ?? request.AttributesToSearchOn;
         }
 
-        var searchable = await _client.Index(_definition.Name)
-            .SearchAsync<JsonElement>(request.FreeText, query, cancellationToken)
-            .ConfigureAwait(false);
+        global::Meilisearch.ISearchable<JsonElement> searchable;
+        try
+        {
+            searchable = await _client.Index(_definition.Name)
+                .SearchAsync<JsonElement>(request.FreeText, query, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (MeilisearchFaultMapper.TryMap(ex, _definition.Name, OperationInstantSearch, cancellationToken, out var error))
+        {
+            return Result<SearchResults<TDocument>>.Failure(Faulted(error, ex, OperationInstantSearch));
+        }
 
         return MeilisearchResultMapper.Map<TDocument>(
             searchable,
@@ -116,11 +128,25 @@ internal sealed class MeilisearchInstantSearch<TDocument> : IInstantSearch<TDocu
             query.Filter = filterResult.Value;
         }
 
-        var result = await _client.Index(_definition.Name)
-            .FacetSearchAsync(facetField, query, cancellationToken)
-            .ConfigureAwait(false);
+        global::Meilisearch.FacetSearchResult result;
+        try
+        {
+            result = await _client.Index(_definition.Name)
+                .FacetSearchAsync(facetField, query, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (MeilisearchFaultMapper.TryMap(ex, _definition.Name, OperationFacetSearch, cancellationToken, out var error))
+        {
+            return Result<IReadOnlyList<FacetValue>>.Failure(Faulted(error, ex, OperationFacetSearch));
+        }
 
         var values = result.FacetHits.Select(hit => new FacetValue(hit.Value, hit.Count)).ToArray();
         return Result<IReadOnlyList<FacetValue>>.Success(values);
+    }
+
+    private SharedKernel.Primitives.Errors.Error Faulted(SharedKernel.Primitives.Errors.Error error, Exception exception, string operation)
+    {
+        _logger.MeilisearchOperationFaulted(operation, _definition.Name, error.Code, exception);
+        return error;
     }
 }

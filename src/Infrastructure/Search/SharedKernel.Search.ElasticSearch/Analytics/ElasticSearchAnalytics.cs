@@ -2,6 +2,7 @@ using Elastic.Clients.Elasticsearch;
 using Elastic.Clients.Elasticsearch.QueryDsl;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Execution.Tenancy;
+using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Search.Abstractions.Abstractions;
 using SharedKernel.Search.Abstractions.Models;
@@ -65,7 +66,15 @@ internal sealed class ElasticSearchAnalytics<TDocument> : IAnalyticsSearch<TDocu
         var response = await _client.SearchAsync<TDocument>(searchRequest, cancellationToken).ConfigureAwait(false);
         if (!response.IsValidResponse)
         {
-            var error = ElasticSearchErrors.AggregationFailed(_definition.Name, response.DebugInformation);
+            var mapped = ElasticSearchFaultMapper.Map(response, _definition.Name, "aggregate", cancellationToken);
+            // An outage, timeout or credential fault keeps its own classification; only an engine rejection of the
+            // aggregation itself is AggregationFailed, with kernel wording and the bounded engine code.
+            var error = mapped.Type is ErrorType.Unavailable or ErrorType.Timeout or ErrorType.Unauthorized
+                ? mapped
+                : ElasticSearchErrors.AggregationFailed(
+                    _definition.Name, ElasticSearchFaultMapper.DescribeRejection(response));
+            _logger.ElasticSearchOperationFaulted(
+                "aggregate", _definition.Name, error.Code, ElasticSearchFaultMapper.OriginalException(response));
             return Result<AggregationResultSet>.Failure(error);
         }
 

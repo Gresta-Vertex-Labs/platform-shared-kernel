@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Elastic.Clients.Elasticsearch;
+using Elastic.Transport.Products.Elasticsearch;
 using Elastic.Clients.Elasticsearch.IndexManagement;
 using Elastic.Clients.Elasticsearch.Analysis;
 using Elastic.Clients.Elasticsearch.Mapping;
@@ -10,6 +11,7 @@ using SharedKernel.Search.Abstractions.Abstractions;
 using SharedKernel.Search.Abstractions.Constants;
 using SharedKernel.Search.Abstractions.Errors;
 using SharedKernel.Search.Abstractions.Models;
+using SharedKernel.Search.ElasticSearch.Errors;
 using SharedKernel.Search.ElasticSearch.Logging;
 using SharedKernel.Search.ElasticSearch.Options;
 // Elastic.Clients.Elasticsearch declares its own non-generic Result enum; alias ours explicitly so
@@ -26,6 +28,12 @@ internal sealed class ElasticSearchIndexProvisioner : ISearchIndexProvisioner
 
     /// <summary>Elasticsearch's error type for creating an index that already exists.</summary>
     private const string IndexAlreadyExistsErrorType = "resource_already_exists_exception";
+
+    private const string UnknownConflictField = "(unknown)";
+    private const string OperationEnsureIndex = "ensure_index";
+    private const string OperationIndexExists = "index_exists";
+    private const string OperationDeleteIndex = "delete_index";
+    private const string OperationCutover = "cutover";
 
     /// <summary>
     /// The name of the custom analyzer this provider installs on an index that declares synonyms or
@@ -84,14 +92,45 @@ internal sealed class ElasticSearchIndexProvisioner : ISearchIndexProvisioner
         _logger = logger;
     }
 
+    private Primitives.Errors.Error Fault(
+        ElasticsearchResponse response, string operation, CancellationToken cancellationToken)
+    {
+        var error = ElasticSearchFaultMapper.Map(response, string.Empty, operation, cancellationToken);
+        _logger.ElasticSearchEngineFault(
+            operation,
+            string.Empty,
+            (int?)response.ApiCallDetails?.HttpStatusCode,
+            ElasticSearchFaultMapper.OriginalException(response));
+        return error;
+    }
+
+    /// <summary>
+    /// A cutover step failed: an outage, timeout or credential fault keeps its own classification, anything else
+    /// is <c>search.cutover_failed</c> naming the failed step (kernel wording) and nothing the engine said.
+    /// </summary>
+    private Primitives.Errors.Error CutoverFault(
+        ElasticsearchResponse response, IndexCutoverRequest request, string step, CancellationToken cancellationToken)
+    {
+        var mapped = ElasticSearchFaultMapper.Map(response, request.LiveIndexName, OperationCutover, cancellationToken);
+        _logger.ElasticSearchEngineFault(
+            OperationCutover,
+            request.LiveIndexName,
+            (int?)response.ApiCallDetails?.HttpStatusCode,
+            ElasticSearchFaultMapper.OriginalException(response));
+        return mapped.Type is Primitives.Errors.ErrorType.Unavailable
+            or Primitives.Errors.ErrorType.Timeout
+            or Primitives.Errors.ErrorType.Unauthorized
+            ? mapped
+            : SearchErrors.CutoverFailed(request.StagingIndexName, request.LiveIndexName, $"failed step '{step}'.");
+    }
+
     /// <inheritdoc />
     public async Task<Result> EnsureIndexAsync(SearchIndexDefinition definition, CancellationToken cancellationToken = default)
     {
         var existsResponse = await _client.Indices.ExistsAsync(definition.Name, cancellationToken).ConfigureAwait(false);
         if (!existsResponse.IsValidResponse)
         {
-            return Result.Failure(SearchErrors.EngineFault(
-                SearchWellKnown.ElasticSearchProviderName, "EnsureIndexAsync", existsResponse.DebugInformation));
+            return Result.Failure(Fault(existsResponse, OperationEnsureIndex, cancellationToken));
         }
 
         var hasTextAnalysis = definition.Synonyms.Count > 0 || definition.StopWords.Count > 0;
@@ -140,8 +179,7 @@ internal sealed class ElasticSearchIndexProvisioner : ISearchIndexProvisioner
                     IndexAlreadyExistsErrorType,
                     StringComparison.Ordinal))
             {
-                return Result.Failure(SearchErrors.EngineFault(
-                    SearchWellKnown.ElasticSearchProviderName, "EnsureIndexAsync", createResponse.DebugInformation));
+                return Result.Failure(Fault(createResponse, OperationEnsureIndex, cancellationToken));
             }
         }
 
@@ -168,7 +206,13 @@ internal sealed class ElasticSearchIndexProvisioner : ISearchIndexProvisioner
             .ConfigureAwait(false);
         if (!putMappingResponse.IsValidResponse)
         {
-            return Result.Failure(SearchErrors.IndexDefinitionConflict(definition.Name, putMappingResponse.DebugInformation));
+            // A 400 is the engine refusing an incompatible in-place field change. The offending field is not parsed
+            // out of engine text; the placeholder is the one the Meilisearch sibling uses. Any other status
+            // (outage, credentials) keeps its own classification.
+            return Result.Failure(
+                putMappingResponse.ApiCallDetails?.HttpStatusCode == 400
+                    ? SearchErrors.IndexDefinitionConflict(definition.Name, UnknownConflictField)
+                    : Fault(putMappingResponse, OperationEnsureIndex, cancellationToken));
         }
 
         var putSettingsResponse = await _client.Indices
@@ -178,8 +222,7 @@ internal sealed class ElasticSearchIndexProvisioner : ISearchIndexProvisioner
             .ConfigureAwait(false);
         if (!putSettingsResponse.IsValidResponse)
         {
-            return Result.Failure(SearchErrors.EngineFault(
-                SearchWellKnown.ElasticSearchProviderName, "EnsureIndexAsync", putSettingsResponse.DebugInformation));
+            return Result.Failure(Fault(putSettingsResponse, OperationEnsureIndex, cancellationToken));
         }
 
         _logger.ElasticSearchIndexEnsured(definition.Name, definition.Fields.Count, definition.MaxTotalHits);
@@ -192,7 +235,7 @@ internal sealed class ElasticSearchIndexProvisioner : ISearchIndexProvisioner
         var response = await _client.Indices.ExistsAsync(indexName, cancellationToken).ConfigureAwait(false);
         return response.IsValidResponse
             ? Result<bool>.Success(response.Exists)
-            : Result<bool>.Failure(SearchErrors.EngineFault(SearchWellKnown.ElasticSearchProviderName, "IndexExistsAsync", response.DebugInformation));
+            : Result<bool>.Failure(Fault(response, OperationIndexExists, cancellationToken));
     }
 
     /// <inheritdoc />
@@ -201,7 +244,7 @@ internal sealed class ElasticSearchIndexProvisioner : ISearchIndexProvisioner
         var response = await _client.Indices.DeleteAsync(indexName, cancellationToken).ConfigureAwait(false);
         return response.IsValidResponse
             ? Result.Success()
-            : Result.Failure(SearchErrors.EngineFault(SearchWellKnown.ElasticSearchProviderName, "DeleteIndexAsync", response.DebugInformation));
+            : Result.Failure(Fault(response, OperationDeleteIndex, cancellationToken));
     }
 
     /// <inheritdoc />
@@ -227,7 +270,7 @@ internal sealed class ElasticSearchIndexProvisioner : ISearchIndexProvisioner
         var response = await _client.Indices.UpdateAliasesAsync(updateRequest, cancellationToken).ConfigureAwait(false);
         if (!response.IsValidResponse)
         {
-            return Result.Failure(SearchErrors.CutoverFailed(request.StagingIndexName, request.LiveIndexName, response.DebugInformation));
+            return Result.Failure(CutoverFault(response, request, "update_aliases", cancellationToken));
         }
 
         _logger.ElasticSearchAliasCutoverCompleted(request.StagingIndexName, request.LiveIndexName);
@@ -240,7 +283,7 @@ internal sealed class ElasticSearchIndexProvisioner : ISearchIndexProvisioner
         var deleteResponse = await _client.Indices.DeleteAsync(request.StagingIndexName, cancellationToken).ConfigureAwait(false);
         if (!deleteResponse.IsValidResponse)
         {
-            return Result.Failure(SearchErrors.CutoverFailed(request.StagingIndexName, request.LiveIndexName, deleteResponse.DebugInformation));
+            return Result.Failure(CutoverFault(deleteResponse, request, "delete_staging", cancellationToken));
         }
 
         _logger.ElasticSearchStagingIndexDeleted(request.StagingIndexName);
@@ -289,6 +332,7 @@ internal sealed class ElasticSearchIndexProvisioner : ISearchIndexProvisioner
             _logger.ElasticSearchClusterYellowAccepted(indexName);
         }
 
+        Exception? firstFault = ElasticSearchFaultMapper.OriginalException(healthResponse);
         var indexAddressable = false;
         var searchable = false;
         long documentCount = 0;
@@ -300,10 +344,12 @@ internal sealed class ElasticSearchIndexProvisioner : ISearchIndexProvisioner
             {
                 var existsResponse = await _client.Indices.ExistsAsync(indexName, cancellationToken).ConfigureAwait(false);
                 indexAddressable = existsResponse.IsValidResponse && existsResponse.Exists;
+                firstFault ??= ElasticSearchFaultMapper.OriginalException(existsResponse);
             }
-            catch
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
             {
                 indexAddressable = false;
+                firstFault ??= ex;
             }
 
             if (indexAddressable)
@@ -316,9 +362,10 @@ internal sealed class ElasticSearchIndexProvisioner : ISearchIndexProvisioner
                     searchable = countResponse.IsValidResponse;
                     documentCount = countResponse.IsValidResponse ? countResponse.Count : 0;
                 }
-                catch
+                catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
                 {
                     searchable = false;
+                    firstFault ??= ex;
                 }
 
                 try
@@ -333,9 +380,10 @@ internal sealed class ElasticSearchIndexProvisioner : ISearchIndexProvisioner
                         }
                     }
                 }
-                catch
+                catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
                 {
                     schemaFingerprint = null;
+                    firstFault ??= ex;
                 }
             }
         }
@@ -346,16 +394,21 @@ internal sealed class ElasticSearchIndexProvisioner : ISearchIndexProvisioner
             var infoResponse = await _client.InfoAsync(cancellationToken).ConfigureAwait(false);
             engineVersion = infoResponse.IsValidResponse ? infoResponse.Version.Number : string.Empty;
         }
-        catch
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
             engineVersion = string.Empty;
+            firstFault ??= ex;
         }
+
+        // A cancellation that surfaced as an invalid response rather than a throw is still the caller's: propagate it.
+        cancellationToken.ThrowIfCancellationRequested();
 
         stopwatch.Stop();
 
         if (!reachable || !indexAddressable || !searchable)
         {
-            _logger.ElasticSearchProbeDegraded(indexName, healthResponse.Status.ToString(), indexAddressable, searchable);
+            _logger.ElasticSearchProbeDegraded(
+                indexName, healthResponse.Status.ToString(), indexAddressable, searchable, firstFault);
         }
 
         var health = new SearchIndexHealth
@@ -520,10 +573,7 @@ internal sealed class ElasticSearchIndexProvisioner : ISearchIndexProvisioner
 
         if (!mappingResponse.IsValidResponse)
         {
-            return SearchErrors.EngineFault(
-                SearchWellKnown.ElasticSearchProviderName,
-                "EnsureIndexAsync",
-                mappingResponse.DebugInformation);
+            return Fault(mappingResponse, OperationEnsureIndex, cancellationToken);
         }
 
         var liveFingerprint = mappingResponse.Mappings.Values.FirstOrDefault()?.Mappings.Meta is { } meta

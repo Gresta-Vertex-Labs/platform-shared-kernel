@@ -138,8 +138,12 @@ internal sealed class ElasticSearchSuggestSearch<TDocument> : ISuggestSearch<TDo
             if (!response.IsValidResponse)
             {
                 result = Result<IReadOnlyList<SearchSuggestion>>.Failure(
-                    ElasticSearchFaultMapper.Map(
-                        response, _definition.Name, OperationSuggest, string.Join(",", _options.Nodes)));
+                    ElasticSearchFaultMapper.Map(response, _definition.Name, OperationSuggest, cancellationToken, typeof(TDocument).Name));
+                _logger.ElasticSearchOperationFaulted(
+                    OperationSuggest,
+                    _definition.Name,
+                    result.Error.Code,
+                    ElasticSearchFaultMapper.OriginalException(response));
             }
             else
             {
@@ -152,12 +156,21 @@ internal sealed class ElasticSearchSuggestSearch<TDocument> : ISuggestSearch<TDo
         {
             throw;
         }
+        catch (Exception ex) when (ElasticSearchFaultMapper.CallerCancellation(ex, cancellationToken) is { } cancellation)
+        {
+            // The client wraps most exceptions it surfaces; a cancellation the caller asked for still reaches the
+            // caller as an OperationCanceledException.
+            throw new OperationCanceledException(cancellation.Message, cancellation, cancellationToken);
+        }
+        catch (Exception ex) when (ElasticSearchFaultMapper.TryClassify(ex, OperationSuggest, typeof(TDocument).Name, out var error))
+        {
+            _logger.ElasticSearchOperationFaulted(OperationSuggest, _definition.Name, error.Code, ex);
+            result = Result<IReadOnlyList<SearchSuggestion>>.Failure(error);
+        }
         catch (Exception ex)
         {
-            var error = SearchErrors.EngineFault(
-                SearchWellKnown.ElasticSearchProviderName, OperationSuggest, ex.Message);
-            _logger.ElasticSearchOperationFaulted(OperationSuggest, _definition.Name, error.Code);
-            result = Result<IReadOnlyList<SearchSuggestion>>.Failure(error);
+            SearchDiagnostics.CompleteWithException(activity, OperationSuggest, _definition.Name, startTimestamp, ex);
+            throw;
         }
 
         SearchDiagnostics.Complete(

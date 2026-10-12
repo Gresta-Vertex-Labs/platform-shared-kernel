@@ -140,8 +140,7 @@ public static class ElasticSearchServiceCollectionExtensions
         if (!info.IsValidResponse)
         {
             logger.ElasticSearchEngineVersionUnsupported("unknown", SupportedVersionRange);
-            return Result.Failure(SearchErrors.Unreachable(
-                SearchWellKnown.ElasticSearchProviderName, string.Join(",", options.Nodes)));
+            return Result.Failure(SearchErrors.Unreachable(SearchWellKnown.ElasticSearchProviderName));
         }
 
         if (!IsSupportedVersion(info.Version.Number))

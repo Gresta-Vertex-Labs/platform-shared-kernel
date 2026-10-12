@@ -22,6 +22,14 @@ internal sealed class MeilisearchIndexProvisioner : ISearchIndexProvisioner
     /// <summary>Meilisearch's error code for creating an index that already exists.</summary>
     private const string IndexAlreadyExistsCode = "index_already_exists";
 
+    private const string OperationEnsureIndex = "ensure_index";
+    private const string OperationIndexExists = "index_exists";
+    private const string OperationDeleteIndex = "delete_index";
+    private const string OperationCutover = "cutover";
+    private const string StepCreateLive = "create_live";
+    private const string StepSwap = "swap";
+    private const string StepDeleteStaging = "delete_staging";
+
     private readonly global::Meilisearch.MeilisearchClient _client;
     private readonly MeilisearchOptions _options;
     private readonly IReadOnlyDictionary<string, SearchIndexDefinition> _registeredDefinitions;
@@ -56,7 +64,10 @@ internal sealed class MeilisearchIndexProvisioner : ISearchIndexProvisioner
     }
 
     /// <inheritdoc />
-    public async Task<Result> EnsureIndexAsync(SearchIndexDefinition definition, CancellationToken cancellationToken = default)
+    public Task<Result> EnsureIndexAsync(SearchIndexDefinition definition, CancellationToken cancellationToken = default)
+        => ClassifyAsync(OperationEnsureIndex, definition.Name, ct => EnsureIndexCoreAsync(definition, ct), cancellationToken);
+
+    private async Task<Result> EnsureIndexCoreAsync(SearchIndexDefinition definition, CancellationToken cancellationToken)
     {
         var existsResult = await IndexExistsAsync(definition.Name, cancellationToken).ConfigureAwait(false);
         if (existsResult.IsFailure)
@@ -240,7 +251,10 @@ internal sealed class MeilisearchIndexProvisioner : ISearchIndexProvisioner
     }
 
     /// <inheritdoc />
-    public async Task<Result<bool>> IndexExistsAsync(string indexName, CancellationToken cancellationToken = default)
+    public Task<Result<bool>> IndexExistsAsync(string indexName, CancellationToken cancellationToken = default)
+        => ClassifyAsync(OperationIndexExists, indexName, ct => IndexExistsCoreAsync(indexName, ct), cancellationToken);
+
+    private async Task<Result<bool>> IndexExistsCoreAsync(string indexName, CancellationToken cancellationToken)
     {
         // VERIFIED against the real MeiliSearch 0.20.0 SDK (2026-07-20): MeilisearchClient.GetIndexAsync
         // does NOT throw for a non-existent index — it silently returns a synthetic Index object built
@@ -266,7 +280,10 @@ internal sealed class MeilisearchIndexProvisioner : ISearchIndexProvisioner
     }
 
     /// <inheritdoc />
-    public async Task<Result> DeleteIndexAsync(string indexName, CancellationToken cancellationToken = default)
+    public Task<Result> DeleteIndexAsync(string indexName, CancellationToken cancellationToken = default)
+        => ClassifyAsync(OperationDeleteIndex, indexName, ct => DeleteIndexCoreAsync(indexName, ct), cancellationToken);
+
+    private async Task<Result> DeleteIndexCoreAsync(string indexName, CancellationToken cancellationToken)
     {
         var task = await _client.DeleteIndexAsync(indexName, cancellationToken).ConfigureAwait(false);
         return await WaitAsync(task.TaskUid, cancellationToken).ConfigureAwait(false);
@@ -298,13 +315,12 @@ internal sealed class MeilisearchIndexProvisioner : ISearchIndexProvisioner
                 var createLiveWait = await WaitAsync(createLiveTask.TaskUid, cancellationToken).ConfigureAwait(false);
                 if (createLiveWait.IsFailure)
                 {
-                    return Result.Failure(SearchErrors.CutoverFailed(
-                        request.StagingIndexName, request.LiveIndexName, createLiveWait.Error.Message));
+                    return Result.Failure(CutoverFault(createLiveWait.Error, request, StepCreateLive, exception: null));
                 }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex) when (MeilisearchFaultMapper.TryMap(ex, request.LiveIndexName, OperationCutover, cancellationToken, out var nested))
             {
-                return Result.Failure(SearchErrors.CutoverFailed(request.StagingIndexName, request.LiveIndexName, ex.Message));
+                return Result.Failure(CutoverFault(nested, request, StepCreateLive, ex));
             }
         }
 
@@ -318,13 +334,12 @@ internal sealed class MeilisearchIndexProvisioner : ISearchIndexProvisioner
             var waitResult = await WaitAsync(task.TaskUid, cancellationToken).ConfigureAwait(false);
             if (waitResult.IsFailure)
             {
-                return Result.Failure(SearchErrors.CutoverFailed(
-                    request.StagingIndexName, request.LiveIndexName, waitResult.Error.Message));
+                return Result.Failure(CutoverFault(waitResult.Error, request, StepSwap, exception: null));
             }
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (MeilisearchFaultMapper.TryMap(ex, request.LiveIndexName, OperationCutover, cancellationToken, out var nested))
         {
-            return Result.Failure(SearchErrors.CutoverFailed(request.StagingIndexName, request.LiveIndexName, ex.Message));
+            return Result.Failure(CutoverFault(nested, request, StepSwap, ex));
         }
 
         _logger.MeilisearchIndexesSwapped(request.StagingIndexName, request.LiveIndexName);
@@ -336,12 +351,67 @@ internal sealed class MeilisearchIndexProvisioner : ISearchIndexProvisioner
             return Result.Success();
         }
 
-        return await DeleteIndexAsync(request.StagingIndexName, cancellationToken).ConfigureAwait(false);
+        var deleteResult = await DeleteIndexAsync(request.StagingIndexName, cancellationToken).ConfigureAwait(false);
+        return deleteResult.IsFailure
+            ? Result.Failure(CutoverFault(deleteResult.Error, request, StepDeleteStaging, exception: null))
+            : deleteResult;
     }
+
+    /// <summary>
+    /// A cutover step failed. An outage, timeout or credential fault keeps its own classification (so an
+    /// unreachable engine is <c>search.unreachable</c>, not <c>search.cutover_failed</c>); anything else is
+    /// <c>search.cutover_failed</c> naming the failed step and the nested kernel error code, and nothing the
+    /// engine or the exception said. The exception, when there is one, goes to the log.
+    /// </summary>
+    private Primitives.Errors.Error CutoverFault(
+        Primitives.Errors.Error nested, IndexCutoverRequest request, string step, Exception? exception)
+    {
+        _logger.MeilisearchCutoverStepFailed(request.StagingIndexName, request.LiveIndexName, step, exception);
+        return nested.Type is Primitives.Errors.ErrorType.Unavailable
+            or Primitives.Errors.ErrorType.Timeout
+            or Primitives.Errors.ErrorType.Unauthorized
+            ? nested
+            : SearchErrors.CutoverFailed(
+                request.StagingIndexName, request.LiveIndexName, $"failed step '{step}' ({nested.Code}).");
+    }
+
+    /// <summary>
+    /// Runs <paramref name="body"/> and converts a recognised engine or transport fault into a failed
+    /// <see cref="Result"/>; an unrecognised exception propagates untouched.
+    /// </summary>
+    private async Task<Result> ClassifyAsync(
+        string operation, string indexName, Func<CancellationToken, Task<Result>> body, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await body(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (MeilisearchFaultMapper.TryMap(ex, indexName, operation, cancellationToken, out var error))
+        {
+            _logger.MeilisearchOperationFaulted(operation, indexName, error.Code, ex);
+            return Result.Failure(error);
+        }
+    }
+
+    private async Task<Result<T>> ClassifyAsync<T>(
+        string operation, string indexName, Func<CancellationToken, Task<Result<T>>> body, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await body(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (MeilisearchFaultMapper.TryMap(ex, indexName, operation, cancellationToken, out var error))
+        {
+            _logger.MeilisearchOperationFaulted(operation, indexName, error.Code, ex);
+            return Result<T>.Failure(error);
+        }
+    }
+
 
     /// <summary>Measures the index named <paramref name="indexName"/> for its readiness probe (<see cref="SearchIndexReadinessProbe"/>).</summary>
     public async Task<Result<SearchIndexHealth>> ProbeAsync(string indexName, CancellationToken cancellationToken = default)
     {
+        Exception? firstFault = null;
         var stopwatch = Stopwatch.StartNew();
 
         bool reachable;
@@ -349,9 +419,10 @@ internal sealed class MeilisearchIndexProvisioner : ISearchIndexProvisioner
         {
             reachable = await _client.IsHealthyAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
             reachable = false;
+            firstFault ??= ex;
         }
 
         var indexAddressable = true;
@@ -364,9 +435,10 @@ internal sealed class MeilisearchIndexProvisioner : ISearchIndexProvisioner
             // make this probe report IndexAddressable = true unconditionally.
             await _client.Index(indexName).GetSettingsAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
             indexAddressable = false;
+            firstFault ??= ex;
         }
 
         var searchable = false;
@@ -384,9 +456,10 @@ internal sealed class MeilisearchIndexProvisioner : ISearchIndexProvisioner
                 await index.SearchAsync<JsonElement>(string.Empty, probeQuery, cancellationToken).ConfigureAwait(false);
                 searchable = true;
             }
-            catch
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
             {
                 searchable = false;
+                firstFault ??= ex;
             }
 
             try
@@ -394,9 +467,10 @@ internal sealed class MeilisearchIndexProvisioner : ISearchIndexProvisioner
                 var stats = await index.GetStatsAsync(cancellationToken).ConfigureAwait(false);
                 documentCount = stats.NumberOfDocuments;
             }
-            catch
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
             {
                 documentCount = 0;
+                firstFault ??= ex;
             }
 
             try
@@ -409,9 +483,10 @@ internal sealed class MeilisearchIndexProvisioner : ISearchIndexProvisioner
                 var pending = await index.GetTasksAsync(tasksQuery, cancellationToken).ConfigureAwait(false);
                 pendingWriteCount = pending.Total ?? pending.Results.Count();
             }
-            catch
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
             {
                 pendingWriteCount = null;
+                firstFault ??= ex;
             }
 
             try
@@ -419,9 +494,10 @@ internal sealed class MeilisearchIndexProvisioner : ISearchIndexProvisioner
                 var currentSettings = await index.GetSettingsAsync(cancellationToken).ConfigureAwait(false);
                 schemaFingerprint = ExtractFingerprint(currentSettings.Dictionary);
             }
-            catch
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
             {
                 schemaFingerprint = null;
+                firstFault ??= ex;
             }
         }
 
@@ -431,16 +507,20 @@ internal sealed class MeilisearchIndexProvisioner : ISearchIndexProvisioner
             var version = await _client.GetVersionAsync(cancellationToken).ConfigureAwait(false);
             engineVersion = version.Version;
         }
-        catch
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
             engineVersion = string.Empty;
+            firstFault ??= ex;
         }
+
+        // A cancellation that surfaced as a swallowed measurement fault is still the caller's: propagate it.
+        cancellationToken.ThrowIfCancellationRequested();
 
         stopwatch.Stop();
 
         if (!reachable || !indexAddressable || !searchable)
         {
-            _logger.MeilisearchProbeDegraded(indexName, reachable, indexAddressable, searchable);
+            _logger.MeilisearchProbeDegraded(indexName, reachable, indexAddressable, searchable, firstFault);
         }
 
         if (pendingWriteCount is { } pendingCount && pendingCount > 0)
@@ -487,9 +567,9 @@ internal sealed class MeilisearchIndexProvisioner : ISearchIndexProvisioner
 
             if (resource.Status == global::Meilisearch.TaskInfoStatus.Failed)
             {
-                var code = resource.Error is { } error && error.TryGetValue("code", out var codeValue)
-                    ? codeValue?.ToString() ?? "unknown"
-                    : "unknown";
+                var code = MeilisearchFaultMapper.BoundedEngineCode(
+                    resource.Error is { } error && error.TryGetValue("code", out var codeValue) ? codeValue?.ToString() : null)
+                    ?? "unknown";
                 return (Result.Failure(MeilisearchErrors.IndexingTaskFailed(taskUid.ToString(CultureInfo.InvariantCulture), code)), code);
             }
 

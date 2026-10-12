@@ -128,7 +128,15 @@ flowchart LR
   index's ceiling, so a query legal here is legal on Meilisearch. Raise it per index with `.MaxTotalHits(n)`.
 - **Counts** use the `_count` API and are always exact.
 - **Failures.** Invalid responses are classified onto `search.unreachable`, `search.timeout`, `search.unauthorized`
-  or `search.engine_fault` (EventId 9225), the same codes the Meilisearch provider returns for exceptions.
+  or `search.engine_fault` (EventId 9222, with the transport exception), the same codes the Meilisearch provider returns
+  for exceptions. The error text is the kernel's own wording plus, at most, the server's short `error.type` (only when it
+  matches `^[a-z0-9_.]{1,64}$`); the response body, `DebugInformation`, the server `reason` and the node address never
+  reach an `Error`. An exception the client throws is classified when recognised (transport, timeout, a payload it cannot
+  read, a missing `JsonSerializerContext` as `search.elasticsearch.source_serializer_context_missing`; EventId 9225) and
+  otherwise rethrown with its stack, after the span and the duration histogram are completed — it is never reported as
+  `search.engine_fault`. The caller's cancellation always propagates as `OperationCanceledException`, including from the
+  cursor read; an HTTP-client timeout with the token not cancelled is `search.timeout`. A bulk request that did not
+  execute (`DeleteManyAsync` included) is a `Result` failure, never a success with an empty receipt.
 - **Probes** report a yellow cluster as healthy (a single-node cluster is permanently yellow) and cache the result for
   `ProbeCacheSeconds`.
 
@@ -178,8 +186,10 @@ Result<CursorPage<OrderLineDocument>> page = await cursorSearch.ReadCursorAsync(
 await cursorSearch.CloseCursorAsync(cursor.Value, ct);
 ```
 
-Point-in-time plus `search_after`, never scroll. `SearchCursor.Token` is opaque. An expired point-in-time is
-`search.elasticsearch.cursor_expired`; a malformed cursor is `search.elasticsearch.invalid_cursor`.
+Point-in-time plus `search_after`, never scroll. `SearchCursor.Token` is opaque. Only the engine's "point-in-time missing" answer (HTTP 404 with `search_context_missing_exception`, which is what an
+expired or closed point-in-time returns) is `search.elasticsearch.cursor_expired`; an outage or credential fault while
+reading is `search.unreachable` or `search.unauthorized`, and cancellation propagates. A malformed cursor is
+`search.elasticsearch.invalid_cursor`, with fixed text that names nothing of the token.
 `StreamAsync` faults surface as `SearchStreamException`.
 
 ### 3. Completion suggestions
@@ -277,9 +287,9 @@ Neutral codes come from `SearchErrors` (see the Abstractions README). Elasticsea
 | Code | Type | When |
 | --- | --- | --- |
 | `search.elasticsearch.invalid_cursor` | Validation | A cursor token that cannot be read |
-| `search.elasticsearch.cursor_expired` | Conflict | The cursor's point-in-time expired |
-| `search.elasticsearch.aggregation_failed` | Unexpected | The engine failed an aggregation |
-| `search.elasticsearch.source_serializer_context_missing` | Unexpected | Declared for a missing `JsonSerializerContext`; not returned by the current code (see 9221) |
+| `search.elasticsearch.cursor_expired` | Conflict | The cursor's point-in-time is gone (expired or closed) |
+| `search.elasticsearch.aggregation_failed` | Unexpected | The engine rejected an aggregation; an outage keeps `search.unreachable` |
+| `search.elasticsearch.source_serializer_context_missing` | Unexpected | The client could not (de)serialize a document type because no `JsonSerializerContext` covers it (see 9221) |
 
 ### Logging
 
@@ -294,27 +304,28 @@ Neutral codes come from `SearchErrors` (see the Abstractions README). Elasticsea
 | 9206 | Warning | Bulk operation partially failed |
 | 9207 | Warning | Waiting for a refresh timed out |
 | 9208 | Debug | Search returned hits |
-| 9209 | Warning | Search request rejected before any I/O |
+| 9209 | Warning | Search request rejected before any I/O, with `{ErrorType}` and `{ErrorCode}` |
 | 9210 | Warning | Tenanted index called with `TenantScope.Global` |
 | 9211 | Information | Alias cutover completed |
 | 9212 | Information | Staging index deleted after cutover |
 | 9213 | Debug | Point-in-time opened |
 | 9214 | Debug | Point-in-time closed |
-| 9215 | Warning | Failed to close a point-in-time |
+| 9215 | Warning | Failed to close a point-in-time; carries the exception |
 | 9216 | Warning | Raw client access enabled — bypasses tenant scoping |
 | 9217 | Warning | TLS certificate validation disabled |
 | 9218 | Information | Cluster health yellow, treated as healthy |
-| 9219 | Warning | Probe degraded |
+| 9219 | Warning | Probe degraded; carries the first measurement exception |
 | 9220 | Warning | Schema fingerprint mismatch |
 | 9221 | Warning | No `JsonSerializerContext` registered; the client falls back to reflection-based serialization |
-| 9222 | Error | Operation faulted with a status code |
+| 9222 | Warning | Operation faulted with a status code; carries the transport exception |
 | 9223 | Debug | Aggregation executed |
 | 9224 | Debug | Bulk operation throttled |
-| 9225 | Warning | Operation faulted and was mapped to an error code |
+| 9225 | Warning | Operation faulted and was mapped to an error code; carries the exception |
 | 9226 | Information | Synonyms and stop words applied |
 | 9227 | Warning | Index drifted from the registered definition |
 | 9228 | Information | Index verified against the registered definition |
 | 9229 | Debug | Completion suggester returned suggestions |
+| 9230 | Warning | A cursor read faulted and was mapped to an error code; carries the exception |
 
 ### Health
 

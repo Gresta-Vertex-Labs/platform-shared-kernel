@@ -73,8 +73,9 @@ internal static partial class ElasticSearchLog
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Search + 209,
         Level = LogLevel.Warning,
-        Message = "Search request against index '{IndexName}' rejected before any I/O: {Reason}")]
-    public static partial void ElasticSearchRequestRejected(this ILogger logger, string indexName, string reason);
+        Message = "Search request against index '{IndexName}' rejected before any I/O with error type {ErrorType} and code {ErrorCode}.")]
+    public static partial void ElasticSearchRequestRejected(
+        this ILogger logger, string indexName, string errorType, string errorCode);
 
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Search + 210,
@@ -111,7 +112,7 @@ internal static partial class ElasticSearchLog
         EventId = LoggingEventIdRanges.Search + 215,
         Level = LogLevel.Warning,
         Message = "Failed to close the point-in-time on index '{IndexName}'.")]
-    public static partial void ElasticSearchPointInTimeCloseFailed(this ILogger logger, string indexName);
+    public static partial void ElasticSearchPointInTimeCloseFailed(this ILogger logger, string indexName, Exception? exception);
 
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Search + 216,
@@ -136,7 +137,7 @@ internal static partial class ElasticSearchLog
         Level = LogLevel.Warning,
         Message = "Probe of index '{IndexName}' degraded: ClusterStatus={ClusterStatus} IndexAddressable={IndexAddressable} Searchable={Searchable}.")]
     public static partial void ElasticSearchProbeDegraded(
-        this ILogger logger, string indexName, string clusterStatus, bool indexAddressable, bool searchable);
+        this ILogger logger, string indexName, string clusterStatus, bool indexAddressable, bool searchable, Exception? exception);
 
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Search + 220,
@@ -154,10 +155,10 @@ internal static partial class ElasticSearchLog
 
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Search + 222,
-        Level = LogLevel.Error,
+        Level = LogLevel.Warning,
         Message = "ElasticSearch operation '{Operation}' on index '{IndexName}' faulted with status code {StatusCode}.")]
     public static partial void ElasticSearchEngineFault(
-        this ILogger logger, string operation, string indexName, int? statusCode);
+        this ILogger logger, string operation, string indexName, int? statusCode, Exception? exception);
 
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Search + 223,
@@ -178,7 +179,7 @@ internal static partial class ElasticSearchLog
         Message = "ElasticSearch operation '{Operation}' on index '{IndexName}' faulted and was mapped to " +
                   "error code '{ErrorCode}'.")]
     public static partial void ElasticSearchOperationFaulted(
-        this ILogger logger, string operation, string indexName, string errorCode);
+        this ILogger logger, string operation, string indexName, string errorCode, Exception? exception);
 
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Search + 226,
@@ -206,4 +207,11 @@ internal static partial class ElasticSearchLog
         Message = "ElasticSearch completion suggester on index '{IndexName}' returned {SuggestionCount} suggestion(s).")]
     public static partial void ElasticSearchSuggestExecuted(
         this ILogger logger, string indexName, int suggestionCount);
+
+    [LoggerMessage(
+        EventId = LoggingEventIdRanges.Search + 230,
+        Level = LogLevel.Warning,
+        Message = "ElasticSearch cursor read on index '{IndexName}' faulted and was mapped to error code '{ErrorCode}'.")]
+    public static partial void ElasticSearchCursorReadFaulted(
+        this ILogger logger, string indexName, string errorCode, Exception? exception);
 }

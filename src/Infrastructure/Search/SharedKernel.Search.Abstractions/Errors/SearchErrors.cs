@@ -56,14 +56,17 @@ public static class SearchErrors
         Error.NotFound(DocumentNotFoundCode, $"Document '{documentId}' was not found in index '{indexName}'.");
 
     /// <summary>The search request violates a provider-independent structural invariant.</summary>
+    /// <param name="reason">Kernel-authored text, never provider, engine or exception text.</param>
     public static Error InvalidSearchRequest(string reason) =>
         Error.Validation(InvalidSearchRequestCode, $"The search request is invalid: {reason}");
 
     /// <summary>The filter predicate is malformed.</summary>
+    /// <param name="reason">Kernel-authored text, never provider, engine or exception text, and never a filter value.</param>
     public static Error InvalidFilter(string reason) =>
         Error.Validation(InvalidFilterCode, $"The search filter is invalid: {reason}");
 
     /// <summary>The index definition violates a structural invariant.</summary>
+    /// <param name="reason">Kernel-authored text, never provider, engine or exception text.</param>
     public static Error InvalidIndexDefinition(string reason) =>
         Error.Validation(InvalidIndexDefinitionCode, $"The index definition is invalid: {reason}");
 
@@ -145,6 +148,9 @@ public static class SearchErrors
             "additive-only; use a staging index, bulk-load, then CutoverAsync to change an incompatible field.");
 
     /// <summary>The staging-to-live cutover failed.</summary>
+    /// <param name="stagingIndexName">The staging index name.</param>
+    /// <param name="liveIndexName">The live index name.</param>
+    /// <param name="reason">Kernel-authored text (a step name and an optional bounded code), never provider, engine or exception text.</param>
     public static Error CutoverFailed(string stagingIndexName, string liveIndexName, string reason) =>
         Error.Conflict(
             CutoverFailedCode,
@@ -176,8 +182,8 @@ public static class SearchErrors
     /// <see cref="ErrorType.Unavailable"/> error, so the HTTP boundary answers 503 and the caller
     /// knows a retry may succeed.
     /// </summary>
-    public static Error Unreachable(string providerName, string endpoint) =>
-        Error.Unavailable(UnreachableCode, $"Search provider '{providerName}' at '{endpoint}' is unreachable.");
+    public static Error Unreachable(string providerName) =>
+        Error.Unavailable(UnreachableCode, $"Search provider '{providerName}' is unreachable.");
 
     /// <summary>
     /// The operation exceeded its allotted time — an <see cref="ErrorType.Timeout"/> error, so the
@@ -187,6 +193,8 @@ public static class SearchErrors
         Error.Timeout(TimeoutCode, $"Operation '{operation}' timed out after {elapsed}.");
 
     /// <summary>The provider rejected the write outright.</summary>
+    /// <param name="indexName">The index name.</param>
+    /// <param name="reason">Kernel-authored text, never provider, engine or exception text.</param>
     public static Error WriteRejected(string indexName, string reason) =>
         Error.Unexpected(WriteRejectedCode, $"Write to index '{indexName}' was rejected: {reason}");
 
@@ -212,6 +220,8 @@ public static class SearchErrors
             $"{failedCount} of {totalCount} documents failed in this bulk operation.");
 
     /// <summary>Probing the index's readiness failed outright (as distinct from a degraded-but-answered probe).</summary>
+    /// <param name="indexName">The index name.</param>
+    /// <param name="reason">Kernel-authored text, never provider, engine or exception text.</param>
     public static Error ProbeFailed(string indexName, string reason) =>
         Error.Unexpected(ProbeFailedCode, $"Probing index '{indexName}' failed: {reason}");
 
@@ -222,11 +232,20 @@ public static class SearchErrors
             $"Search engine version '{actual}' is not supported; expected {supportedRange}.");
 
     /// <summary>
-    /// The last-resort mapping for an unclassifiable engine fault. A rise in this code is the signal
-    /// that a translator has drifted from the engine's current API surface.
+    /// A recognised engine reply the kernel has no specific mapping for. A rise in this code is the signal
+    /// that a translator has drifted from the engine's current API surface. An unrecognised
+    /// <em>exception</em> is never mapped here: it rethrows.
     /// </summary>
-    public static Error EngineFault(string providerName, string operation, string detail) =>
+    /// <param name="providerName">The provider name from <c>SearchWellKnown</c>.</param>
+    /// <param name="operation">The operation name.</param>
+    /// <param name="engineErrorCode">
+    /// The engine's own bounded error code (matching <c>^[a-z0-9_.]{1,64}$</c>), or <see langword="null"/>
+    /// when the engine gave none. Never engine free text, a response body or an exception message.
+    /// </param>
+    public static Error EngineFault(string providerName, string operation, string? engineErrorCode = null) =>
         Error.Unexpected(
             EngineFaultCode,
-            $"Provider '{providerName}' operation '{operation}' faulted: {detail}");
+            engineErrorCode is null
+                ? $"Provider '{providerName}' operation '{operation}' faulted."
+                : $"Provider '{providerName}' operation '{operation}' faulted with engine error code '{engineErrorCode}'.");
 }
