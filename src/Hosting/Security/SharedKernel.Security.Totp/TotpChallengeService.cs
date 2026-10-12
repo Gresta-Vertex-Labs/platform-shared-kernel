@@ -5,6 +5,7 @@ using SharedKernel.Cryptography.Hashing;
 using SharedKernel.Cryptography.Totp;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Security.Abstractions;
+using SharedKernel.Security.Totp.Diagnostics;
 using SharedKernel.Security.Totp.Internal;
 
 namespace SharedKernel.Security.Totp;

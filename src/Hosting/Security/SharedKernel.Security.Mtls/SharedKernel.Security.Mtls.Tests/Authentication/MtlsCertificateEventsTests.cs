@@ -1,3 +1,4 @@
+using SharedKernel.Security.Mtls.Diagnostics;
 using SharedKernel.Execution.Tenancy;
 using System.Buffers.Text;
 using System.Security.Claims;
@@ -99,8 +100,8 @@ public sealed class MtlsCertificateEventsTests : IDisposable
         Assert.NotNull(context.Result);
         Assert.False(context.Result.Succeeded);
         Assert.NotNull(context.Result.Failure);
-        LogRecord record = LogRecords().ShouldHaveLogged(new EventId(12300), LogLevel.Warning);
-        Assert.True(record.TryGetProperty("Reason", out object? reason));
+        LogRecord record = LogRecords().ShouldHaveLogged(new EventId(MtlsLoggingEventIds.CertificateRejected), LogLevel.Warning);
+        Assert.True(record.TryGetProperty("RejectionCode", out object? reason));
         Assert.Equal("UnknownClient", reason);
         Assert.True(record.TryGetProperty("Thumbprint", out object? thumbprint));
         Assert.Equal(ExpectedThumbprint(_certificate), thumbprint);
@@ -113,7 +114,7 @@ public sealed class MtlsCertificateEventsTests : IDisposable
 
         await new MtlsCertificateEvents(new CertificateAuthenticationEvents()).CertificateValidated(context);
 
-        LogRecords().ShouldNotHaveLogged(new EventId(12300));
+        LogRecords().ShouldNotHaveLogged(new EventId(MtlsLoggingEventIds.CertificateRejected));
     }
 
     [Fact]
@@ -155,7 +156,7 @@ public sealed class MtlsCertificateEventsTests : IDisposable
 
         Assert.False(context.Result!.Succeeded);
         Assert.Equal("Blocked by the application.", context.Result.Failure!.Message);
-        LogRecords().ShouldNotHaveLogged(new EventId(12300));
+        LogRecords().ShouldNotHaveLogged(new EventId(MtlsLoggingEventIds.CertificateRejected));
     }
 
     [Fact]
@@ -190,7 +191,7 @@ public sealed class MtlsCertificateEventsTests : IDisposable
 
         Assert.NotNull(context.Result);
         Assert.False(context.Result.Succeeded);
-        LogRecords().ShouldHaveLogged(new EventId(12301), LogLevel.Error);
+        LogRecords().ShouldHaveLogged(new EventId(MtlsLoggingEventIds.ValidatorFailed), LogLevel.Error);
     }
 
     [Fact]

@@ -1,3 +1,5 @@
+using SharedKernel.Security.ApiKey.Authentication;
+using SharedKernel.Security.ApiKey.Diagnostics;
 using System.Net;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -19,7 +21,7 @@ public sealed class ApiKeyLoggingTests
     private const string Prefix = "acme_live";
     private const string DistinctiveClient = "client-zq81-distinctive";
     private static readonly Guid DistinctiveTenant = Guid.Parse("7d3c0a54-91be-4f0e-8a3c-5b1e6f2d9a77");
-    private static readonly EventId KeyRejected = new(12200);
+    private static readonly EventId KeyRejected = new(ApiKeyLoggingEventIds.KeyRejected);
 
     [Theory]
     [InlineData("Expired")]
@@ -34,7 +36,18 @@ public sealed class ApiKeyLoggingTests
         using HttpResponseMessage response = await host.Client.SendAsync(host.Get("/protected", "any-key-value"));
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        host.LogRecords.ShouldHaveLoggedWithProperty(KeyRejected, "Reason", reason);
+        host.LogRecords.ShouldHaveLoggedWithProperty(KeyRejected, "RejectionCode", reason);
+    }
+
+    [Fact]
+    public async Task Rejection_LogsUnderTheHandlerCategory()
+    {
+        await using ApiKeyTestHost host = await StartCustomAsync("Expired");
+
+        using HttpResponseMessage response = await host.Client.SendAsync(host.Get("/protected", "any-key-value"));
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        host.LoggerFactory.ShouldHaveCategory(typeof(ApiKeyAuthenticationHandler));
     }
 
     [Fact]
@@ -46,7 +59,7 @@ public sealed class ApiKeyLoggingTests
         using HttpResponseMessage response = await host.Client.SendAsync(host.Get("/protected", "any-key-value"));
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        host.LogRecords.ShouldHaveLoggedWithProperty(KeyRejected, "Reason", reason);
+        host.LogRecords.ShouldHaveLoggedWithProperty(KeyRejected, "RejectionCode", reason);
     }
 
     [Theory]
@@ -64,7 +77,7 @@ public sealed class ApiKeyLoggingTests
         using HttpResponseMessage response = await host.Client.SendAsync(host.Get("/protected", "any-key-value"));
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        host.LogRecords.ShouldHaveLoggedWithProperty(KeyRejected, "Reason", "Rejected");
+        host.LogRecords.ShouldHaveLoggedWithProperty(KeyRejected, "RejectionCode", "Rejected");
         host.LogRecords.ShouldNotLeak(reason);
     }
 
@@ -77,7 +90,7 @@ public sealed class ApiKeyLoggingTests
         using HttpResponseMessage response = await host.Client.SendAsync(host.Get("/protected", "any-key-value"));
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        host.LogRecords.ShouldHaveLoggedWithProperty(KeyRejected, "Reason", "Rejected");
+        host.LogRecords.ShouldHaveLoggedWithProperty(KeyRejected, "RejectionCode", "Rejected");
     }
 
     [Fact]

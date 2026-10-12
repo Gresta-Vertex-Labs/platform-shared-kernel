@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharedKernel.Security.Abstractions;
 using SharedKernel.Security.Oidc.Internal;
-using SharedKernel.Security.Oidc.Logging;
+using SharedKernel.Security.Oidc.Diagnostics;
 using SharedKernel.Security.Oidc.Options;
 
 namespace SharedKernel.Security.Oidc.Authentication;

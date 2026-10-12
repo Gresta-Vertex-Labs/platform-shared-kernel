@@ -1,3 +1,4 @@
+using SharedKernel.Security.Mtls.Diagnostics;
 using SharedKernel.Execution.Tenancy;
 using SharedKernel.Execution.Context;
 using System.Buffers.Text;
@@ -91,7 +92,7 @@ public sealed class MtlsAuthenticationEndToEndTests : IDisposable
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         Assert.False(appEventRan);
-        LogRecord record = host.LogRecords.ShouldHaveLoggedWithProperty(new EventId(12300), "Reason", "NotRegistered");
+        LogRecord record = host.LogRecords.ShouldHaveLoggedWithProperty(new EventId(MtlsLoggingEventIds.CertificateRejected), "RejectionCode", "NotRegistered");
         Assert.True(record.TryGetProperty("Thumbprint", out object? thumbprint));
         Assert.Equal(Base64Url.EncodeToString(SHA256.HashData(certificate.RawData)), thumbprint);
     }

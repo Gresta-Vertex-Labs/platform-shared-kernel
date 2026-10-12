@@ -11,8 +11,8 @@ public sealed class OptionsStartupValidationTests
 {
     [Theory]
     [InlineData("SharedKernel:Security:Oidc:Authority", "http://issuer.example.test", "Authority must use https")]
-    [InlineData("SharedKernel:Security:Oidc:ValidAlgorithms:0", "HS256", "ValidAlgorithms contains 'HS256'")]
-    [InlineData("SharedKernel:Security:Oidc:Dpop:ValidAlgorithms:0", "none", "Dpop.ValidAlgorithms contains 'none'")]
+    [InlineData("SharedKernel:Security:Oidc:ValidAlgorithms:0", "HS256", "ValidAlgorithms must not contain the algorithm 'HS256'")]
+    [InlineData("SharedKernel:Security:Oidc:Dpop:ValidAlgorithms:0", "none", "Dpop.ValidAlgorithms must not contain the algorithm 'none'")]
     [InlineData("SharedKernel:Security:Oidc:ClockSkew", "00:10:00", "ClockSkew must be between")]
     [InlineData("SharedKernel:Security:Oidc:Revocation:NotRevokedCacheDuration", "01:00:00", "Revocation.NotRevokedCacheDuration must be between")]
     public async Task StartAsync_InvalidConfiguration_Throws(string key, string value, string expectedFailure)

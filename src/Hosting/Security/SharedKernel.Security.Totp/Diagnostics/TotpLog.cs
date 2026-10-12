@@ -1,26 +1,25 @@
 using Microsoft.Extensions.Logging;
 
-namespace SharedKernel.Security.Totp.Internal;
+namespace SharedKernel.Security.Totp.Diagnostics;
 
-// EventIds 12400-12499: SharedKernel.Security.Totp's block within 12.Security's 12000-12999 range.
 // Never logs a code, a secret or a recovery code.
 internal static partial class TotpLog
 {
     [LoggerMessage(
-        EventId = 12400,
+        EventId = TotpLoggingEventIds.ChallengeNotAccepted,
         Level = LogLevel.Warning,
-        Message = "TOTP challenge not accepted (result: {Result}, operation: {Operation}).")]
+        Message = "The TOTP challenge was not accepted with result '{Result}' during operation '{Operation}'.")]
     public static partial void ChallengeNotAccepted(ILogger logger, TotpChallengeResult result, string operation);
 
     [LoggerMessage(
-        EventId = 12401,
+        EventId = TotpLoggingEventIds.StepUpRecorded,
         Level = LogLevel.Information,
-        Message = "TOTP step-up completed (operation: {Operation}).")]
+        Message = "The TOTP step-up completed during operation '{Operation}'.")]
     public static partial void StepUpRecorded(ILogger logger, string operation);
 
     [LoggerMessage(
-        EventId = 12402,
+        EventId = TotpLoggingEventIds.RecoveryCodeRedeemed,
         Level = LogLevel.Information,
-        Message = "Recovery code redeemed; {Remaining} unused recovery codes remain.")]
+        Message = "A recovery code was redeemed and {Remaining} unused recovery codes remain.")]
     public static partial void RecoveryCodeRedeemed(ILogger logger, int remaining);
 }

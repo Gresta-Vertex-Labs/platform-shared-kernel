@@ -1,3 +1,4 @@
+using SharedKernel.Security.Oidc.Diagnostics;
 using SharedKernel.Execution.Tenancy;
 using SharedKernel.Execution.Context;
 using System.Security.Claims;
@@ -127,7 +128,7 @@ public sealed class OidcUserContextMapperTests
         IUserContext user = CreateMapper().Map(Identity(("email", "someone@example.test")));
 
         Assert.Same(AnonymousUserContext.Instance, user);
-        _logger.Records.ShouldHaveLogged(new(12100));
+        _logger.Records.ShouldHaveLogged(new(OidcLoggingEventIds.SubjectMissing));
     }
 
     [Fact]
@@ -144,7 +145,7 @@ public sealed class OidcUserContextMapperTests
         IUserContext user = CreateMapper().Map(Identity(("idtyp", "app")));
 
         Assert.Same(AnonymousUserContext.Instance, user);
-        _logger.Records.ShouldHaveLogged(new(12100));
+        _logger.Records.ShouldHaveLogged(new(OidcLoggingEventIds.SubjectMissing));
     }
 
     [Fact]
@@ -155,7 +156,7 @@ public sealed class OidcUserContextMapperTests
         IUserContext user = CreateMapper().Map(Identity(("sub", "user-1"), ("tenant_id", tenant.ToString())));
 
         Assert.Equal(tenant, user.TenantId);
-        _logger.Records.ShouldNotHaveLogged(new(12101));
+        _logger.Records.ShouldNotHaveLogged(new(OidcLoggingEventIds.TenantClaimInvalid));
     }
 
     [Theory]
@@ -166,7 +167,7 @@ public sealed class OidcUserContextMapperTests
         IUserContext user = CreateMapper().Map(Identity(("sub", "user-1"), ("tenant_id", value)));
 
         Assert.Null(user.TenantId);
-        _logger.Records.ShouldHaveLoggedWithProperty(new(12101), "TenantClaimType", "tenant_id");
+        _logger.Records.ShouldHaveLoggedWithProperty(new(OidcLoggingEventIds.TenantClaimInvalid), "TenantClaimType", "tenant_id");
     }
 
     [Fact]
@@ -175,7 +176,7 @@ public sealed class OidcUserContextMapperTests
         IUserContext user = CreateMapper().Map(Identity(("sub", "user-1")));
 
         Assert.Null(user.TenantId);
-        _logger.Records.ShouldNotHaveLogged(new(12101));
+        _logger.Records.ShouldNotHaveLogged(new(OidcLoggingEventIds.TenantClaimInvalid));
     }
 
     [Fact]

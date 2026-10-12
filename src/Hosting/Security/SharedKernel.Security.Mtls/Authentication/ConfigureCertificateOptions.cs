@@ -51,13 +51,13 @@ internal sealed class ConfigureCertificateOptions(IOptions<MtlsAuthenticationOpt
         if (options.EventsType is not null)
         {
             return ValidateOptionsResult.Fail(
-                "CertificateAuthenticationOptions.EventsType is not supported for the Certificate scheme; set Events before AddMtlsAuthentication's post-configuration runs.");
+                "CertificateAuthenticationOptions.EventsType must not be set for the 'Certificate' scheme. Set Events before AddMtlsAuthentication's post-configuration runs.");
         }
 
         if (options.Events is not MtlsCertificateEvents)
         {
             return ValidateOptionsResult.Fail(
-                "CertificateAuthenticationOptions.Events for the Certificate scheme was replaced after AddMtlsAuthentication; configure events with Configure, not PostConfigure, so the certificate validator keeps running.");
+                "CertificateAuthenticationOptions.Events for the 'Certificate' scheme must not be replaced after AddMtlsAuthentication. Configure events with Configure, not PostConfigure, so the certificate validator keeps running.");
         }
 
         MtlsAuthenticationOptions settings = mtlsOptions.Value;
@@ -100,7 +100,7 @@ internal sealed class ConfigureCertificateOptions(IOptions<MtlsAuthenticationOpt
         return changed.Count == 0
             ? ValidateOptionsResult.Success
             : ValidateOptionsResult.Fail(
-                $"CertificateAuthenticationOptions for the Certificate scheme were changed after AddMtlsAuthentication: {string.Join(", ", changed)}. "
+                $"CertificateAuthenticationOptions for the 'Certificate' scheme must not be changed after AddMtlsAuthentication, but '{string.Join(", ", changed)}' changed. "
                 + "Set them through AddMtlsAuthentication's MtlsAuthenticationOptions instead.");
     }
 
@@ -120,12 +120,12 @@ internal sealed class ConfigureCertificateOptions(IOptions<MtlsAuthenticationOpt
 
         if (settings.ChainTrustValidationMode == X509ChainTrustMode.CustomRootTrust && settings.CustomTrustStore.Count == 0)
         {
-            failures.Add("CustomTrustStore must contain the trusted root when ChainTrustValidationMode is CustomRootTrust.");
+            failures.Add("CustomTrustStore must contain the trusted root when ChainTrustValidationMode is 'CustomRootTrust'.");
         }
 
         if (settings.ChainTrustValidationMode == X509ChainTrustMode.System && settings.CustomTrustStore.Count > 0)
         {
-            failures.Add("CustomTrustStore is ignored unless ChainTrustValidationMode is CustomRootTrust.");
+            failures.Add("CustomTrustStore must be empty unless ChainTrustValidationMode is 'CustomRootTrust'.");
         }
 
         if (!Enum.IsDefined(settings.RevocationMode))

@@ -65,7 +65,8 @@ Overloads, options and defaults: each package's `README.md`.
 23. **Never log** a token, proof, key, certificate, code, secret or claim value (key ids and thumbprints are fine). `ToString()` of `GeneratedApiKey`, `TotpEnrollment` and `TokenRevocationRequest` omits secrets — keep it so for any new secret-holding type.
 24. The Oidc authority must be an absolute http/https URL (`/issuer` parses as a `file://` URI on Linux).
 25. **Log text is bounded.** A value that comes from an untrusted token header (the `alg` of 12104) or from a consumer validator (`FailureReason` of 12200/12300) is logged only when it is short and identifier-shaped, else as a fixed value; `FailureReason` is documented as a stable code, never an identifier, subject or claim value. A revocation check that throws logs 12107 with the exception and still rejects (rule 15).
-26. *(planned, SK.12.SecurityConformance)* Each logging package has an `internal static class {Package}LoggingEventIds` built from `LoggingEventIdRanges.Security` and a `Diagnostics/{Package}Log` class; no bare EventId literal; log templates are single sentences with quoted values and the `{RejectionCode}` placeholder (never free text).
+26. Each logging package has an `internal static class {Package}LoggingEventIds` (in `Diagnostics/`) built from `LoggingEventIdRanges.Security` and `PackageSubBlockWidth` and a `Diagnostics/{Package}Log` class; no bare EventId literal; log templates are single sentences ending in a period with quoted values and the `{RejectionCode}` placeholder (never free text). A `RejectionCode` is a closed value from an internal constants class (`DpopRejectionReasons`, `CertificateBindingReasons`, `ApiKeyRejectionReasons`, `MtlsRejectionReasons`) or a bounded consumer-validator code (rule 25); the values appear in logs and do not change.
+27. **Thrown and validation messages** are sentences ending in a period that quote their values, use "must not" phrasing and name the remedy; they never embed an inner exception message. The managed API key prefix rule is one string (`ApiKeyFormat.PrefixRule`) used by the start-up validation (`ValidateOnStart`) and kept as a guard in `ApiKeyGenerator`.
 
 ## Decisions
 
@@ -79,10 +80,12 @@ Overloads, options and defaults: each package's `README.md`.
 | Certificate-binding (RFC 8705) check lives in Oidc, not Mtls | It is a property of the token being validated; Mtls needs no Cryptography reference |
 | `ActorKind` shared with `IRequestContext` | No mapping layer between the two execution views |
 | `GetAuthenticationMethodTime` default-implemented (`null`) | Older implementations still compile and fail closed under a maximum age |
-| *(planned, SK.12.SecurityConformance)* One 100-wide EventId block per logging package, no package-family sharing | Five packages fit the ten slots of 12000-12999; the `SK.01.CoreConformance` family fallback is for domains with more packages than slots |
-| *(planned, SK.12.SecurityConformance)* No `SharedKernel.Security` `ActivitySource`/`Meter` and no public `SecurityErrorCodes` | The domain emits no telemetry and returns no `Error` (it speaks `AuthenticateResult` and RFC 6750/9449 `error` values to ASP.NET Core); adding either is a feature, not conformance. Revisit when a Security API first returns an `Error` or an authentication metric is requested |
-| *(planned, SK.12.SecurityConformance)* 12106 (revocation cache failure) stays Warning | The request continues through the direct check; Error per request during a cache outage would flood logs. Pending arch-lead confirmation of the root L6 wording |
+| One 100-wide EventId block per logging package, no package-family sharing | Five packages fit the ten slots of 12000-12999; the `SK.01.CoreConformance` family fallback is for domains with more packages than slots |
+| No `SharedKernel.Security` `ActivitySource`/`Meter` and no public `SecurityErrorCodes` (root T1-T8, E1, C1-C3 do not apply) | The domain emits no telemetry and returns no `Error` (it speaks `AuthenticateResult` and RFC 6750/9449 `error` values to ASP.NET Core); adding either is a feature, not conformance. Revisit when a Security API first returns an `Error` or an authentication metric is requested |
+| 12106 (revocation cache failure) stays Warning (a deliberate departure from root L6) | The request continues through the direct check; Error per request during a cache outage would flood logs. The exception is still passed (L4) |
 | The managed API key id is a loggable value | It is a format-validated 16-character handle, not a client id (rule 23); the client id is never logged |
+| Rejection codes keep their published PascalCase values and become internal constants per scheme | The values are already in logs and dashboards; constants satisfy SK0022 without a rename. They are closed codes, hence the `{RejectionCode}` placeholder and not free text |
+| Log classes live in `Diagnostics/` and Abstractions has no `LoggingEventIds` | Abstractions has no logging dependency; its slot 12000-12099 stays free |
 
 ## Logging
 
@@ -96,7 +99,7 @@ Block **12000–12999** (`LoggingEventIdRanges`), 100-wide sub-blocks:
 | 12300–12399 | Mtls | 12300 certificate rejected (reason, thumbprint) · 12301 validator threw |
 | 12400–12499 | Totp | 12400 challenge not accepted · 12401 step-up recorded · 12402 recovery code redeemed |
 
-Event 12107 (Oidc, Error) carries the exception of a throwing revocation check; 12103 means "revoked" only. *(planned, SK.12.SecurityConformance)* The sub-blocks are unchanged and every Security event lies in 12xxx, so none shares a range with `ServiceDefaults.Security`, `ServiceDefaults.Security.Mtls` or Localization (13xxx); `Security.Mtls` (12300) is not `ServiceDefaults.Security.Mtls`. Ids come from `{Package}LoggingEventIds` constants and the placeholder `{Reason}` becomes `{RejectionCode}`.
+Event 12107 (Oidc, Error) carries the exception of a throwing revocation check; 12103 means "revoked" only. Every Security event lies in 12xxx, so none shares a range with `ServiceDefaults.Security`, `ServiceDefaults.Security.Mtls` or Localization (13xxx); `Security.Mtls` (12300) is not `ServiceDefaults.Security.Mtls`. Ids come from `{Package}LoggingEventIds` constants (`Base = LoggingEventIdRanges.Security + n * PackageSubBlockWidth`, n = 1 to 4); the placeholder for a rejection is `{RejectionCode}`. Log text follows L3: one sentence ending in a period, values quoted. Categories are kernel types (the handler types log through the framework `Logger`; `MtlsCertificateEvents` creates `ILogger<MtlsCertificateEvents>`). The domain emits no span or metric.
 
 ## Cross-Domain Couplings
 
@@ -111,6 +114,7 @@ Event 12107 (Oidc, Error) carries the exception of a throwing revocation check; 
 - Each package has a nested `*.Tests` project, all in the **Unit** lane (`Platform.SharedKernel.Unit.slnf`).
 - Authentication is tested end to end through `TestServer` with real signed tokens, DPoP proofs and certificates; a hand-built `ClaimsPrincipal` cannot catch claim renaming or handler wiring. No network: post-configure `JwtBearerOptions.Configuration` with an `OpenIdConnectConfiguration` holding the test keys.
 - Time through `FakeClock` as `IClock`; never `Task.Delay`. Security tests must be able to fail — mutate the condition and confirm the assertion catches it.
+- Logging conformance: each logging package has a `{Package}LogConformanceTests` that drives every `[LoggerMessage]` method on an `InMemoryLogger` and pins id literal, `{Package}LoggingEventIds` constant, sub-block (`ShouldOnlyLogEventIdsInSubBlock`), level, exact template and exception presence, then runs `ShouldFollowLogConvention`. A renumbered event or a restored literal fails the literal pin. Reference ids in other tests through the constants, and assert the `RejectionCode` property, never message text.
 - Fakes: `SharedKernel.Security.Testing` — catalogue in `src/Testing/CLAUDE.md`.
 
 ## Known Limitations

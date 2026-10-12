@@ -19,10 +19,10 @@ public sealed class OidcAuthenticationOptionsValidatorTests
         { "blank issuer", o => o.ValidIssuers = [string.Empty], "ValidIssuers must not contain empty values." },
         { "blank token type", o => o.ValidTokenTypes = [" "], "ValidTokenTypes must not contain empty values." },
         { "null algorithms", o => o.ValidAlgorithms = null!, "ValidAlgorithms must not be null." },
-        { "HS256", o => o.ValidAlgorithms = ["HS256"], "ValidAlgorithms contains 'HS256'." },
-        { "none", o => o.ValidAlgorithms = ["none"], "ValidAlgorithms contains 'none'." },
-        { "unknown", o => o.ValidAlgorithms = ["RS256", "EdDSA"], "ValidAlgorithms contains 'EdDSA'." },
-        { "lower-case", o => o.ValidAlgorithms = ["rs256"], "ValidAlgorithms contains 'rs256'." },
+        { "HS256", o => o.ValidAlgorithms = ["HS256"], "ValidAlgorithms must not contain the algorithm 'HS256'." },
+        { "none", o => o.ValidAlgorithms = ["none"], "ValidAlgorithms must not contain the algorithm 'none'." },
+        { "unknown", o => o.ValidAlgorithms = ["RS256", "EdDSA"], "ValidAlgorithms must not contain the algorithm 'EdDSA'." },
+        { "lower-case", o => o.ValidAlgorithms = ["rs256"], "ValidAlgorithms must not contain the algorithm 'rs256'." },
         { "negative skew", o => o.ClockSkew = TimeSpan.FromSeconds(-1), "ClockSkew must be between" },
         { "large skew", o => o.ClockSkew = TimeSpan.FromMinutes(5).Add(TimeSpan.FromTicks(1)), "ClockSkew must be between" },
         { "null claims", o => o.Claims = null!, "Claims must not be null." },
@@ -44,7 +44,7 @@ public sealed class OidcAuthenticationOptionsValidatorTests
         { "null dpop", o => o.Dpop = null!, "Dpop must not be null." },
         { "undefined dpop mode", o => o.Dpop.Mode = (DpopMode)7, "Dpop.Mode '7' is not defined." },
         { "null dpop algorithms", o => o.Dpop.ValidAlgorithms = null!, "Dpop.ValidAlgorithms must not be null." },
-        { "HS256 dpop", o => o.Dpop.ValidAlgorithms = ["HS256"], "Dpop.ValidAlgorithms contains 'HS256'." },
+        { "HS256 dpop", o => o.Dpop.ValidAlgorithms = ["HS256"], "Dpop.ValidAlgorithms must not contain the algorithm 'HS256'." },
         { "short proof lifetime", o => o.Dpop.ProofLifetime = TimeSpan.FromMilliseconds(999), "Dpop.ProofLifetime must be between" },
         { "long proof lifetime", o => o.Dpop.ProofLifetime = TimeSpan.FromMinutes(6), "Dpop.ProofLifetime must be between" },
         { "negative dpop skew", o => o.Dpop.ClockSkew = TimeSpan.FromSeconds(-1), "Dpop.ClockSkew must be between" },
@@ -123,6 +123,20 @@ public sealed class OidcAuthenticationOptionsValidatorTests
 
         Assert.True(result.Failed, description);
         Assert.Contains(result.Failures!, failure => failure.StartsWith(expectedFailure, StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidOptions))]
+    public void Validate_InvalidOptions_EveryFailureIsASentenceEndingInAPeriod(string description, Action<OidcAuthenticationOptions> mutate, string expectedFailure)
+    {
+        OidcAuthenticationOptions options = Valid();
+        mutate(options);
+
+        ValidateOptionsResult result = Validate(options);
+
+        Assert.NotEmpty(result.Failures!);
+        Assert.All(result.Failures!, failure => Assert.EndsWith(".", failure, StringComparison.Ordinal));
+        Assert.False(string.IsNullOrEmpty(description) || string.IsNullOrEmpty(expectedFailure));
     }
 
     [Fact]

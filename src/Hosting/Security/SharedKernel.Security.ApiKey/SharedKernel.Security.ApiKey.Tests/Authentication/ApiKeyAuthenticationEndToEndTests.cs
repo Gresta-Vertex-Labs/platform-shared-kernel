@@ -1,3 +1,4 @@
+using SharedKernel.Security.ApiKey.Diagnostics;
 using SharedKernel.Execution.Context;
 using System.Net;
 using Microsoft.AspNetCore.Http;
@@ -95,7 +96,7 @@ public sealed class ApiKeyAuthenticationEndToEndTests
         Assert.False(caller.IsAuthenticated);
         Assert.Equal(ActorKind.Anonymous, caller.ActorKind);
         Assert.Null(caller.SubjectId);
-        Assert.DoesNotContain(host.LogRecords, r => r.EventId.Id is 12200 or 12201);
+        Assert.DoesNotContain(host.LogRecords, r => r.EventId.Id is ApiKeyLoggingEventIds.KeyRejected or ApiKeyLoggingEventIds.AmbiguousKey);
     }
 
     [Fact]
@@ -121,7 +122,7 @@ public sealed class ApiKeyAuthenticationEndToEndTests
         });
 
         Assert.Equal(StatusCodes.Status401Unauthorized, context.Response.StatusCode);
-        host.LogRecords.ShouldNotHaveLogged(new EventId(12200));
+        host.LogRecords.ShouldNotHaveLogged(new EventId(ApiKeyLoggingEventIds.KeyRejected));
     }
 
     [Fact]
@@ -134,8 +135,8 @@ public sealed class ApiKeyAuthenticationEndToEndTests
         using HttpResponseMessage response = await host.Client.SendAsync(host.Get("/protected", key.Key));
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        LogRecord record = host.LogRecords.ShouldHaveLogged(new EventId(12200), LogLevel.Warning);
-        Assert.True(record.TryGetProperty("Reason", out object? reason));
+        LogRecord record = host.LogRecords.ShouldHaveLogged(new EventId(ApiKeyLoggingEventIds.KeyRejected), LogLevel.Warning);
+        Assert.True(record.TryGetProperty("RejectionCode", out object? reason));
         Assert.Equal("Revoked", reason);
         Assert.True(record.TryGetProperty("KeyId", out object? keyId));
         Assert.Equal(key.KeyId, keyId);
@@ -152,7 +153,7 @@ public sealed class ApiKeyAuthenticationEndToEndTests
 
         Assert.False(caller.IsAuthenticated);
         Assert.Equal(ActorKind.Anonymous, caller.ActorKind);
-        host.LogRecords.ShouldHaveLoggedWithProperty(new EventId(12200), "Reason", "Expired");
+        host.LogRecords.ShouldHaveLoggedWithProperty(new EventId(ApiKeyLoggingEventIds.KeyRejected), "RejectionCode", "Expired");
     }
 
     [Fact]
@@ -164,7 +165,7 @@ public sealed class ApiKeyAuthenticationEndToEndTests
         using HttpResponseMessage response = await host.Client.SendAsync(host.Get("/protected", presented));
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        LogRecord record = host.LogRecords.ShouldHaveLoggedWithProperty(new EventId(12200), "Reason", "Malformed");
+        LogRecord record = host.LogRecords.ShouldHaveLoggedWithProperty(new EventId(ApiKeyLoggingEventIds.KeyRejected), "RejectionCode", "Malformed");
         Assert.True(record.TryGetProperty("KeyId", out object? keyId));
         Assert.Null(keyId);
         AssertKeyNeverLogged(host, presented);
@@ -180,7 +181,7 @@ public sealed class ApiKeyAuthenticationEndToEndTests
         using HttpResponseMessage response = await host.Client.SendAsync(host.Get("/protected", forged));
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        host.LogRecords.ShouldHaveLoggedWithProperty(new EventId(12200), "Reason", "UnknownKey");
+        host.LogRecords.ShouldHaveLoggedWithProperty(new EventId(ApiKeyLoggingEventIds.KeyRejected), "RejectionCode", "UnknownKey");
         AssertKeyNeverLogged(host, forged);
     }
 
@@ -199,8 +200,8 @@ public sealed class ApiKeyAuthenticationEndToEndTests
         });
 
         Assert.Equal(StatusCodes.Status401Unauthorized, context.Response.StatusCode);
-        host.LogRecords.ShouldHaveLoggedWithProperty(new EventId(12201), "HeaderName", ApiKeyAuthenticationDefaults.HeaderName);
-        host.LogRecords.ShouldNotHaveLogged(new EventId(12200));
+        host.LogRecords.ShouldHaveLoggedWithProperty(new EventId(ApiKeyLoggingEventIds.AmbiguousKey), "HeaderName", ApiKeyAuthenticationDefaults.HeaderName);
+        host.LogRecords.ShouldNotHaveLogged(new EventId(ApiKeyLoggingEventIds.KeyRejected));
         AssertKeyNeverLogged(host, first.Key);
         AssertKeyNeverLogged(host, second.Key);
     }
@@ -283,7 +284,7 @@ public sealed class ApiKeyAuthenticationEndToEndTests
         using HttpResponseMessage response = await host.Client.SendAsync(host.Get("/protected", testKey));
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        host.LogRecords.ShouldHaveLoggedWithProperty(new EventId(12200), "Reason", "WrongPrefix");
+        host.LogRecords.ShouldHaveLoggedWithProperty(new EventId(ApiKeyLoggingEventIds.KeyRejected), "RejectionCode", "WrongPrefix");
     }
 
     private Task<ApiKeyTestHost> StartManagedAsync(Action<ApiKeyAuthenticationOptions>? configureScheme = null) =>

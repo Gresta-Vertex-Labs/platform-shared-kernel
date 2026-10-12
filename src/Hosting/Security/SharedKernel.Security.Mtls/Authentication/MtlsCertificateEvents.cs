@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Authentication.Certificate;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Security.Abstractions;
-using SharedKernel.Security.Mtls.Logging;
+using SharedKernel.Security.Mtls.Diagnostics;
 using SharedKernel.Security.Mtls.Validation;
 
 namespace SharedKernel.Security.Mtls.Authentication;
@@ -32,14 +32,14 @@ internal sealed class MtlsCertificateEvents(CertificateAuthenticationEvents inne
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            MtlsAuthenticationLog.ValidatorFailed(CreateLogger(services), ex, thumbprint);
+            MtlsLog.ValidatorFailed(CreateLogger(services), thumbprint, ex);
             Reject(context);
             return;
         }
 
         if (!result.IsValid)
         {
-            MtlsAuthenticationLog.CertificateRejected(CreateLogger(services), RejectionReasonText.Bound(result.FailureReason), thumbprint);
+            MtlsLog.CertificateRejected(CreateLogger(services), RejectionReasonText.Bound(result.FailureReason), thumbprint);
             Reject(context);
             return;
         }

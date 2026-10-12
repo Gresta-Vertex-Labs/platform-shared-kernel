@@ -1,3 +1,4 @@
+using SharedKernel.Security.Totp.Diagnostics;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Cryptography.Totp;
 using SharedKernel.Security.Totp.Tests.TestDoubles;
@@ -32,9 +33,9 @@ public sealed class TotpLoggingTests
 
         List<LogRecord> records = [.. _harness.ChallengeLogger.Records, .. _harness.EnrollmentLogger.Records];
         Assert.NotEmpty(records);
-        records.ShouldHaveLogged(new EventId(12400));
-        records.ShouldHaveLogged(new EventId(12401));
-        records.ShouldHaveLogged(new EventId(12402));
+        records.ShouldHaveLogged(new EventId(TotpLoggingEventIds.ChallengeNotAccepted));
+        records.ShouldHaveLogged(new EventId(TotpLoggingEventIds.StepUpRecorded));
+        records.ShouldHaveLogged(new EventId(TotpLoggingEventIds.RecoveryCodeRedeemed));
         records.ShouldNotLeak(
             [
                 DistinctiveSubject,

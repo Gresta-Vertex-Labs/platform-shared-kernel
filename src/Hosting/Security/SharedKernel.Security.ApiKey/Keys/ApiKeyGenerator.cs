@@ -34,8 +34,7 @@ public sealed class ApiKeyGenerator
         string prefix = _options.Value.Prefix;
         if (!ApiKeyFormat.IsValidPrefix(prefix))
         {
-            throw new InvalidOperationException(
-                "ManagedApiKeyOptions.Prefix must be 2-32 lowercase letters, digits and single underscores, starting with a letter.");
+            throw new InvalidOperationException(ApiKeyFormat.PrefixRule);
         }
 
         string keyId = _random.GetString(ApiKeyFormat.Alphabet, ApiKeyFormat.KeyIdLength);

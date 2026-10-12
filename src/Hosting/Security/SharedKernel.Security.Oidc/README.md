@@ -403,16 +403,16 @@ All events are `Warning` except 12107 (`Error`); none contains a token, proof, c
 
 | Event id | Event |
 | --- | --- |
-| 12100 | An authenticated token carries neither a subject nor a client id (authentication fails) |
-| 12101 | The tenant claim `{TenantClaimType}` is not a GUID; the caller has no tenant |
-| 12102 | DPoP validation failed (`{Reason}`) |
-| 12103 | Access token rejected because it is revoked |
-| 12104 | Signing algorithm `{Algorithm}` is not allowed (read from the rejected token's header; logged only when at most 16 characters of letters, digits, `_` or `-`, else `unrecognized`) |
-| 12105 | Certificate-bound access token rejected (`{Reason}`: `CertificateMissing`, `CertificateMismatch`) |
-| 12106 | The revocation cache failed; the check is called directly |
-| 12107 | The revocation check threw (`Error`, carries the exception); the access token is rejected |
+| 12100 | The token names neither a subject nor a client id, so the caller is anonymous. |
+| 12101 | The tenant claim '`{TenantClaimType}`' is not a valid GUID, so the caller has no tenant. |
+| 12102 | DPoP validation failed with rejection code '`{RejectionCode}`'. |
+| 12103 | The access token was rejected because it is revoked. |
+| 12104 | The signing algorithm '`{Algorithm}`' is not allowed (read from the rejected token's header; logged only when at most 16 characters of letters, digits, `_` or `-`, else `unrecognized`) |
+| 12105 | The certificate binding was rejected with rejection code '`{RejectionCode}`' (`CertificateMissing`, `CertificateMismatch`). |
+| 12106 | The revocation cache failed, so the revocation check is called directly. Carries the exception; stays `Warning` because the request continues. |
+| 12107 | The revocation check failed, so the access token was rejected. `Error`, carries the exception. |
 
-12102 reasons: `MalformedConfirmation`, `DpopNotEnabled`, `BoundTokenPresentedAsBearer`, `UnboundTokenPresentedAsDpop`,
+12102 rejection codes: `MalformedConfirmation`, `DpopNotEnabled`, `BoundTokenPresentedAsBearer`, `UnboundTokenPresentedAsDpop`,
 `DpopRequired`, `MissingProof`, `MultipleProofs`, `MalformedProof`, `AlgorithmNotAllowed`, `InvalidType`, `MissingKey`,
 `MalformedKey`, `PrivateKeyInProof`, `WeakKey`, `UnsupportedKeyType`, `InvalidSignature`, `MethodMismatch`,
 `UriMismatch`, `MissingIssuedAt`, `Expired`, `InvalidJti`, `KeyMismatch`, `AccessTokenHashMismatch`, `NonceInvalid`,
@@ -477,6 +477,8 @@ Replacing only the metadata source is fine; changing a pinned setting in that `P
 | `RequireHttpsMetadata = false` outside development | Keep `true` | Signing keys could be substituted |
 
 ## Design decisions
+
+**Why are log rejection codes closed values?** `{RejectionCode}` of 12102 and 12105 is one of a fixed set (internal constants), never free text, a claim value or an exception message, so a log query can group by it and nothing sensitive can reach it.
 
 **Why generic OIDC and no Microsoft.Identity.Web?** `Authority` covers Entra ID, B2C and External ID; the provider SDK
 added nothing the configuration cannot express and dragged in extra dependencies.

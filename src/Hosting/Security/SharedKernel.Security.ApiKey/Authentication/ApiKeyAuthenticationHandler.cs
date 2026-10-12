@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 using SharedKernel.Security.Abstractions;
-using SharedKernel.Security.ApiKey.Logging;
+using SharedKernel.Security.ApiKey.Diagnostics;
 using SharedKernel.Security.ApiKey.Options;
 using SharedKernel.Security.ApiKey.Validation;
 

@@ -1,3 +1,5 @@
+using SharedKernel.Security.Oidc.Authentication;
+using SharedKernel.Security.Oidc.Diagnostics;
 using System.Net;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -229,6 +231,8 @@ public sealed class BearerTokenValidationTests
         Assert.Contains("MapInboundClaims", exception.Message, StringComparison.Ordinal);
         Assert.Contains("ValidateLifetime", exception.Message, StringComparison.Ordinal);
         Assert.Contains("RequireSignedTokens", exception.Message, StringComparison.Ordinal);
+        Assert.EndsWith(".", exception.Message.Trim(), StringComparison.Ordinal);
+        Assert.Contains("must not be weakened after AddOidcAuthentication", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -251,7 +255,7 @@ public sealed class BearerTokenValidationTests
         using HttpResponseMessage response = await host.SendAsync(token);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        host.LogRecords.ShouldHaveLoggedWithProperty(new(12104), "Algorithm", "RS384");
+        host.LogRecords.ShouldHaveLoggedWithProperty(new(OidcLoggingEventIds.SigningAlgorithmRejected), "Algorithm", "RS384");
     }
 
     [Fact]
@@ -331,7 +335,7 @@ public sealed class BearerTokenValidationTests
         using HttpResponseMessage response = await host.SendAsync(token);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        host.LogRecords.ShouldHaveLoggedWithProperty(new(12102), "Reason", "MalformedConfirmation");
+        host.LogRecords.ShouldHaveLoggedWithProperty(new(OidcLoggingEventIds.DpopRejected), "RejectionCode", "MalformedConfirmation");
     }
 
     [Fact]
@@ -343,6 +347,7 @@ public sealed class BearerTokenValidationTests
         using HttpResponseMessage response = await host.SendAsync(token);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        host.LogRecords.ShouldHaveLogged(new(12100));
+        host.LogRecords.ShouldHaveLogged(new(OidcLoggingEventIds.SubjectMissing));
+        host.Logs.ShouldHaveCategory(typeof(OidcUserContextMapper));
     }
 }

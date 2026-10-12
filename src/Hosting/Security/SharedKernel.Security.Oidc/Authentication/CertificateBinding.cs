@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using Microsoft.AspNetCore.Http;
+using SharedKernel.Security.Oidc.Diagnostics;
 
 namespace SharedKernel.Security.Oidc.Authentication;
 
@@ -19,7 +20,7 @@ internal static class CertificateBinding
 
         if (certificate is null)
         {
-            return "CertificateMissing";
+            return CertificateBindingReasons.CertificateMissing;
         }
 
         string actual = Base64Url.EncodeToString(SHA256.HashData(certificate.RawDataMemory.Span));
@@ -27,6 +28,6 @@ internal static class CertificateBinding
             Encoding.ASCII.GetBytes(actual),
             Encoding.ASCII.GetBytes(expectedThumbprint));
 
-        return matches ? null : "CertificateMismatch";
+        return matches ? null : CertificateBindingReasons.CertificateMismatch;
     }
 }

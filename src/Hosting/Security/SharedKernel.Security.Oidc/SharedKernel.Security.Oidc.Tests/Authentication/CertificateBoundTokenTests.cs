@@ -1,3 +1,4 @@
+using SharedKernel.Security.Oidc.Diagnostics;
 using System.Net;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
@@ -54,7 +55,7 @@ public sealed class CertificateBoundTokenTests : IDisposable
         using HttpResponseMessage response = await host.SendAsync(TestTokens.Create().BoundToCertificate(_clientCertificate).Build());
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        host.LogRecords.ShouldHaveLoggedWithProperty(new(12105), "Reason", "CertificateMissing");
+        host.LogRecords.ShouldHaveLoggedWithProperty(new(OidcLoggingEventIds.CertificateBindingRejected), "RejectionCode", "CertificateMissing");
     }
 
     [Fact]
@@ -66,7 +67,7 @@ public sealed class CertificateBoundTokenTests : IDisposable
         using HttpResponseMessage response = await host.SendAsync(TestTokens.Create().BoundToCertificate(_clientCertificate).Build());
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        host.LogRecords.ShouldHaveLoggedWithProperty(new(12105), "Reason", "CertificateMismatch");
+        host.LogRecords.ShouldHaveLoggedWithProperty(new(OidcLoggingEventIds.CertificateBindingRejected), "RejectionCode", "CertificateMismatch");
     }
 
     [Fact]

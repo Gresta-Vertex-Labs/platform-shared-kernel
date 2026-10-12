@@ -1,3 +1,4 @@
+using SharedKernel.Security.Totp.Diagnostics;
 using SharedKernel.Execution.Context;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -13,9 +14,9 @@ namespace SharedKernel.Security.Totp.Tests.Challenge;
 
 public sealed class TotpChallengeServiceRecoveryCodeTests
 {
-    private const int ChallengeNotAcceptedEventId = 12400;
-    private const int StepUpRecordedEventId = 12401;
-    private const int RecoveryCodeRedeemedEventId = 12402;
+    private const int ChallengeNotAcceptedEventId = TotpLoggingEventIds.ChallengeNotAccepted;
+    private const int StepUpRecordedEventId = TotpLoggingEventIds.StepUpRecorded;
+    private const int RecoveryCodeRedeemedEventId = TotpLoggingEventIds.RecoveryCodeRedeemed;
 
     private readonly TotpTestHarness _harness = new();
 

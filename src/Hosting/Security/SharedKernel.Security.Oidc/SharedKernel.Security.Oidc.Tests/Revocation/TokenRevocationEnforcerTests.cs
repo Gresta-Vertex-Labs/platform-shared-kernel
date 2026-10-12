@@ -1,3 +1,4 @@
+using SharedKernel.Security.Oidc.Diagnostics;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Execution.Context;
 using Microsoft.IdentityModel.JsonWebTokens;
@@ -74,7 +75,7 @@ public sealed class TokenRevocationEnforcerTests
 
         await IsRevokedAsync(new TokenRevocationEnforcer(_check, _cache), Expiry.AddMinutes(-10));
 
-        _logger.Records.ShouldHaveLoggedWithoutException(new(12103));
+        _logger.Records.ShouldHaveLoggedWithoutException(new(OidcLoggingEventIds.TokenRevoked));
     }
 
     [Fact]
@@ -149,11 +150,11 @@ public sealed class TokenRevocationEnforcerTests
 
         Assert.True(revoked);
         Assert.Empty(_cache.Writes);
-        var failure = _logger.Records.ShouldHaveLoggedWithException(new(12107), typeof(TimeoutException));
+        var failure = _logger.Records.ShouldHaveLoggedWithException(new(OidcLoggingEventIds.RevocationCheckFailed), typeof(TimeoutException));
         Assert.Same(_check.Failure, failure.Exception);
         Assert.Equal(LogLevel.Error, failure.LogLevel);
-        _logger.Records.ShouldHaveLoggedCount(new(12107), 1);
-        _logger.Records.ShouldNotHaveLogged(new(12103));
+        _logger.Records.ShouldHaveLoggedCount(new(OidcLoggingEventIds.RevocationCheckFailed), 1);
+        _logger.Records.ShouldNotHaveLogged(new(OidcLoggingEventIds.TokenRevoked));
     }
 
     [Fact]
@@ -176,7 +177,7 @@ public sealed class TokenRevocationEnforcerTests
 
         Assert.Equal(checkAnswer, revoked);
         Assert.Single(_check.Requests);
-        _logger.Records.ShouldHaveLoggedWithException(new(12106), typeof(InvalidOperationException));
+        _logger.Records.ShouldHaveLoggedWithException(new(OidcLoggingEventIds.RevocationCacheFailed), typeof(InvalidOperationException));
     }
 
     [Theory]
@@ -190,7 +191,7 @@ public sealed class TokenRevocationEnforcerTests
         bool revoked = await IsRevokedAsync(new TokenRevocationEnforcer(_check, _cache), Expiry.AddMinutes(-10));
 
         Assert.Equal(checkAnswer, revoked);
-        _logger.Records.ShouldHaveLoggedWithException(new(12106), typeof(InvalidOperationException));
+        _logger.Records.ShouldHaveLoggedWithException(new(OidcLoggingEventIds.RevocationCacheFailed), typeof(InvalidOperationException));
     }
 
     [Fact]

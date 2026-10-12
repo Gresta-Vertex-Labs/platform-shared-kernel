@@ -39,8 +39,7 @@ public static class ApiKeyServiceCollectionExtensions
 
         services.AddOptions<ManagedApiKeyOptions>()
             .Configure(configureKeys)
-            .Validate(options => ApiKeyFormat.IsValidPrefix(options.Prefix),
-                "ManagedApiKeyOptions.Prefix must be 2-32 lowercase letters, digits and single underscores, starting with a letter.")
+            .Validate(options => ApiKeyFormat.IsValidPrefix(options.Prefix), ApiKeyFormat.PrefixRule)
             .ValidateOnStart();
 
         services.AddClock();

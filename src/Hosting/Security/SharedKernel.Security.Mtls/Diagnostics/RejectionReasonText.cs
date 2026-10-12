@@ -1,10 +1,10 @@
-namespace SharedKernel.Security.Mtls.Logging;
+namespace SharedKernel.Security.Mtls.Diagnostics;
 
 // A consumer validator's FailureReason is logged, so only a short, identifier-shaped code is passed through; anything
 // else (a client id, a certificate subject, free text, a multi-line value) is replaced by a fixed value.
 internal static class RejectionReasonText
 {
-    internal const string Fallback = "Rejected";
+    internal const string Fallback = MtlsRejectionReasons.Rejected;
 
     private const int MaxLength = 64;
 

@@ -1,3 +1,4 @@
+using SharedKernel.Security.Oidc.Diagnostics;
 using System.Buffers.Text;
 using System.Net;
 using System.Text.Json;
@@ -19,7 +20,7 @@ public sealed class OidcLoggingTests
     private const string DistinctiveTenantValue = "tenant-hn63-not-a-guid";
     private const string DistinctiveRole = "role-hn63-distinctive";
 
-    private static readonly EventId AlgorithmRejected = new(12104);
+    private static readonly EventId AlgorithmRejected = new(OidcLoggingEventIds.SigningAlgorithmRejected);
 
     private readonly RecordingRevocationCheck _check = new();
 
@@ -34,11 +35,11 @@ public sealed class OidcLoggingTests
         using HttpResponseMessage response = await host.SendAsync(token);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        LogRecord record = host.LogRecords.ShouldHaveLoggedWithException(new(12107), typeof(HttpRequestException));
+        LogRecord record = host.LogRecords.ShouldHaveLoggedWithException(new(OidcLoggingEventIds.RevocationCheckFailed), typeof(HttpRequestException));
         Assert.Same(failure, record.Exception);
         Assert.Equal(LogLevel.Error, record.LogLevel);
-        host.LogRecords.ShouldHaveLoggedCount(new(12107), 1);
-        host.LogRecords.ShouldNotHaveLogged(new(12103));
+        host.LogRecords.ShouldHaveLoggedCount(new(OidcLoggingEventIds.RevocationCheckFailed), 1);
+        host.LogRecords.ShouldNotHaveLogged(new(OidcLoggingEventIds.TokenRevoked));
         host.LogRecords.ShouldNotLeak(token, token[^40..], DistinctiveSubject, DistinctiveClient, DistinctiveJti, DistinctiveRole);
     }
 
@@ -51,8 +52,8 @@ public sealed class OidcLoggingTests
         using HttpResponseMessage response = await host.SendAsync(DistinctiveToken());
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        host.LogRecords.ShouldHaveLoggedWithoutException(new(12103));
-        host.LogRecords.ShouldNotHaveLogged(new(12107));
+        host.LogRecords.ShouldHaveLoggedWithoutException(new(OidcLoggingEventIds.TokenRevoked));
+        host.LogRecords.ShouldNotHaveLogged(new(OidcLoggingEventIds.RevocationCheckFailed));
     }
 
     [Fact]

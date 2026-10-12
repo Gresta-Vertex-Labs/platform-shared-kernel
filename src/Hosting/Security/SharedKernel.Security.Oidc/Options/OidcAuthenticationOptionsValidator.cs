@@ -126,7 +126,7 @@ internal sealed class OidcAuthenticationOptionsValidator(DpopRegistration? dpopR
         }
         else if (dpopRegistration is null && (dpop.Mode == DpopMode.Required || dpop.RequireNonce))
         {
-            failures.Add("Dpop.Mode Required and Dpop.RequireNonce need AddDpop; without it DPoP tokens are rejected and plain bearer tokens accepted.");
+            failures.Add("Dpop.Mode 'Required' and Dpop.RequireNonce need AddDpop, because without it DPoP tokens are rejected and plain bearer tokens are accepted.");
         }
 
         ValidateAlgorithms(dpop.ValidAlgorithms, "Dpop.ValidAlgorithms", failures);
@@ -148,7 +148,7 @@ internal sealed class OidcAuthenticationOptionsValidator(DpopRegistration? dpopR
             if (!AsymmetricAlgorithms.Contains(algorithm))
             {
                 failures.Add(
-                    $"{name} contains '{algorithm}'. Allowed: {string.Join(", ", AsymmetricAlgorithms)}.");
+                    $"{name} must not contain the algorithm '{algorithm}'. Allowed algorithms are '{string.Join(", ", AsymmetricAlgorithms)}'.");
             }
         }
     }
@@ -157,7 +157,7 @@ internal sealed class OidcAuthenticationOptionsValidator(DpopRegistration? dpopR
     {
         if (value < minimum || value > maximum)
         {
-            failures.Add($"{name} must be between {minimum} and {maximum}.");
+            failures.Add($"{name} must be between '{minimum}' and '{maximum}'.");
         }
     }
 }

@@ -129,7 +129,7 @@ internal sealed class ConfigureOidcJwtBearerOptions(IOptions<OidcAuthenticationO
         return weakened.Count == 0
             ? ValidateOptionsResult.Success
             : ValidateOptionsResult.Fail(
-                $"JwtBearerOptions for the '{name}' scheme were weakened after AddOidcAuthentication: {string.Join(", ", weakened)}. "
+                $"JwtBearerOptions for the '{name}' scheme must not be weakened after AddOidcAuthentication, but '{string.Join(", ", weakened)}' changed. "
                 + "Configure OIDC through SharedKernel:Security:Oidc, and adjust other JWT bearer settings with Configure, not PostConfigure.");
     }
 }

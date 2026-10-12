@@ -1,3 +1,4 @@
+using SharedKernel.Security.Oidc.Diagnostics;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
@@ -71,7 +72,7 @@ public sealed class DpopAuthenticationTests : IDisposable
 
         Assert.Equal(HttpStatusCode.OK, first.StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, second.StatusCode);
-        host.LogRecords.ShouldHaveLoggedWithProperty(new(12102), "Reason", "Replayed");
+        host.LogRecords.ShouldHaveLoggedWithProperty(new(OidcLoggingEventIds.DpopRejected), "RejectionCode", "Replayed");
     }
 
     [Fact]
@@ -84,7 +85,7 @@ public sealed class DpopAuthenticationTests : IDisposable
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         Assert.Contains("DPoP algs=\"ES256 PS256 RS256\", error=\"invalid_dpop_proof\"", WwwAuthenticate(response), StringComparison.Ordinal);
-        host.LogRecords.ShouldHaveLoggedWithProperty(new(12102), "Reason", "MethodMismatch");
+        host.LogRecords.ShouldHaveLoggedWithProperty(new(OidcLoggingEventIds.DpopRejected), "RejectionCode", "MethodMismatch");
     }
 
     [Fact]
@@ -97,7 +98,7 @@ public sealed class DpopAuthenticationTests : IDisposable
         using HttpResponseMessage response = await host.SendAsync(token, "DPoP", HttpMethod.Get, dpopProofs: proof);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        host.LogRecords.ShouldHaveLoggedWithProperty(new(12102), "Reason", "UriMismatch");
+        host.LogRecords.ShouldHaveLoggedWithProperty(new(OidcLoggingEventIds.DpopRejected), "RejectionCode", "UriMismatch");
     }
 
     [Theory]
@@ -112,7 +113,7 @@ public sealed class DpopAuthenticationTests : IDisposable
         using HttpResponseMessage response = await host.SendAsync(token, "DPoP", HttpMethod.Get, dpopProofs: proof);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        host.LogRecords.ShouldHaveLoggedWithProperty(new(12102), "Reason", "Expired");
+        host.LogRecords.ShouldHaveLoggedWithProperty(new(OidcLoggingEventIds.DpopRejected), "RejectionCode", "Expired");
     }
 
     [Fact]
@@ -123,7 +124,7 @@ public sealed class DpopAuthenticationTests : IDisposable
         using HttpResponseMessage response = await host.SendAsync(BoundToken(), "DPoP", HttpMethod.Get);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        host.LogRecords.ShouldHaveLoggedWithProperty(new(12102), "Reason", "MissingProof");
+        host.LogRecords.ShouldHaveLoggedWithProperty(new(OidcLoggingEventIds.DpopRejected), "RejectionCode", "MissingProof");
     }
 
     [Fact]
@@ -135,7 +136,7 @@ public sealed class DpopAuthenticationTests : IDisposable
         using HttpResponseMessage response = await host.SendAsync(token, "DPoP", HttpMethod.Get, dpopProofs: [Proof(host, token).Build(), Proof(host, token).Build()]);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        host.LogRecords.ShouldHaveLoggedWithProperty(new(12102), "Reason", "MultipleProofs");
+        host.LogRecords.ShouldHaveLoggedWithProperty(new(OidcLoggingEventIds.DpopRejected), "RejectionCode", "MultipleProofs");
     }
 
     [Fact]
@@ -147,7 +148,7 @@ public sealed class DpopAuthenticationTests : IDisposable
         using HttpResponseMessage response = await host.SendAsync(token, "DPoP", HttpMethod.Get, dpopProofs: Proof(host, token).WithHeader("typ", "JWT").Build());
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        host.LogRecords.ShouldHaveLoggedWithProperty(new(12102), "Reason", "InvalidType");
+        host.LogRecords.ShouldHaveLoggedWithProperty(new(OidcLoggingEventIds.DpopRejected), "RejectionCode", "InvalidType");
     }
 
     [Fact]
@@ -161,7 +162,7 @@ public sealed class DpopAuthenticationTests : IDisposable
         using HttpResponseMessage response = await host.SendAsync(token, "DPoP", HttpMethod.Get, dpopProofs: proof);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        host.LogRecords.ShouldHaveLoggedWithProperty(new(12102), "Reason", "KeyMismatch");
+        host.LogRecords.ShouldHaveLoggedWithProperty(new(OidcLoggingEventIds.DpopRejected), "RejectionCode", "KeyMismatch");
     }
 
     [Fact]
@@ -174,7 +175,7 @@ public sealed class DpopAuthenticationTests : IDisposable
         using HttpResponseMessage response = await host.SendAsync(token, "DPoP", HttpMethod.Get, dpopProofs: Proof(host, otherToken).Build());
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        host.LogRecords.ShouldHaveLoggedWithProperty(new(12102), "Reason", "AccessTokenHashMismatch");
+        host.LogRecords.ShouldHaveLoggedWithProperty(new(OidcLoggingEventIds.DpopRejected), "RejectionCode", "AccessTokenHashMismatch");
     }
 
     [Fact]
@@ -188,7 +189,7 @@ public sealed class DpopAuthenticationTests : IDisposable
         using HttpResponseMessage response = await host.SendAsync(token, "DPoP", HttpMethod.Get, dpopProofs: proof);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        host.LogRecords.ShouldHaveLoggedWithProperty(new(12102), "Reason", "PrivateKeyInProof");
+        host.LogRecords.ShouldHaveLoggedWithProperty(new(OidcLoggingEventIds.DpopRejected), "RejectionCode", "PrivateKeyInProof");
     }
 
     [Fact]
@@ -200,7 +201,7 @@ public sealed class DpopAuthenticationTests : IDisposable
         using HttpResponseMessage response = await host.SendAsync(token, "Bearer", HttpMethod.Get, dpopProofs: Proof(host, token).Build());
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        host.LogRecords.ShouldHaveLoggedWithProperty(new(12102), "Reason", "BoundTokenPresentedAsBearer");
+        host.LogRecords.ShouldHaveLoggedWithProperty(new(OidcLoggingEventIds.DpopRejected), "RejectionCode", "BoundTokenPresentedAsBearer");
         Assert.Equal(0, _replayCache.Count);
     }
 
@@ -213,7 +214,7 @@ public sealed class DpopAuthenticationTests : IDisposable
         using HttpResponseMessage response = await host.SendAsync(token, "DPoP", HttpMethod.Get, dpopProofs: Proof(host, token).Build());
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        host.LogRecords.ShouldHaveLoggedWithProperty(new(12102), "Reason", "UnboundTokenPresentedAsDpop");
+        host.LogRecords.ShouldHaveLoggedWithProperty(new(OidcLoggingEventIds.DpopRejected), "RejectionCode", "UnboundTokenPresentedAsDpop");
     }
 
     [Fact]
@@ -234,7 +235,7 @@ public sealed class DpopAuthenticationTests : IDisposable
         using HttpResponseMessage response = await host.SendAsync(BoundToken());
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        host.LogRecords.ShouldHaveLoggedWithProperty(new(12102), "Reason", "DpopNotEnabled");
+        host.LogRecords.ShouldHaveLoggedWithProperty(new(OidcLoggingEventIds.DpopRejected), "RejectionCode", "DpopNotEnabled");
     }
 
     [Fact]
@@ -257,7 +258,7 @@ public sealed class DpopAuthenticationTests : IDisposable
         using HttpResponseMessage response = await host.SendAsync(TestTokens.Create().Build());
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        host.LogRecords.ShouldHaveLoggedWithProperty(new(12102), "Reason", "DpopRequired");
+        host.LogRecords.ShouldHaveLoggedWithProperty(new(OidcLoggingEventIds.DpopRejected), "RejectionCode", "DpopRequired");
     }
 
     [Fact]
@@ -327,7 +328,7 @@ public sealed class DpopAuthenticationTests : IDisposable
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         Assert.Contains("DPoP algs=\"PS256\"", WwwAuthenticate(response), StringComparison.Ordinal);
-        host.LogRecords.ShouldHaveLoggedWithProperty(new(12102), "Reason", "AlgorithmNotAllowed");
+        host.LogRecords.ShouldHaveLoggedWithProperty(new(OidcLoggingEventIds.DpopRejected), "RejectionCode", "AlgorithmNotAllowed");
     }
 
     [Fact]

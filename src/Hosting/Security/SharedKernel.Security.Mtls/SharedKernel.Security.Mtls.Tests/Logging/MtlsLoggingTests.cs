@@ -1,3 +1,5 @@
+using SharedKernel.Security.Mtls.Authentication;
+using SharedKernel.Security.Mtls.Diagnostics;
 using System.Net;
 using System.Security.Cryptography.X509Certificates;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,7 +18,7 @@ public sealed class MtlsLoggingTests : IDisposable
     private const string DistinctiveSubject = "CN=subject-vx92-distinctive,O=Distinctive Org";
     private const string DistinctiveClient = "client-vx92-distinctive";
     private static readonly Guid DistinctiveTenant = Guid.Parse("2b8e6c1d-34a7-4f90-b5d2-9c0a7e3f1d48");
-    private static readonly EventId CertificateRejected = new(12300);
+    private static readonly EventId CertificateRejected = new(MtlsLoggingEventIds.CertificateRejected);
 
     private readonly TestCertificateAuthority _ca = TestCertificateAuthority.Create();
 
@@ -34,7 +36,19 @@ public sealed class MtlsLoggingTests : IDisposable
         using HttpResponseMessage response = await host.SendAsync("/certificate", certificate);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-        host.LogRecords.ShouldHaveLoggedWithProperty(CertificateRejected, "Reason", reason);
+        host.LogRecords.ShouldHaveLoggedWithProperty(CertificateRejected, "RejectionCode", reason);
+    }
+
+    [Fact]
+    public async Task Rejection_LogsUnderTheCertificateEventsCategory()
+    {
+        using X509Certificate2 certificate = _ca.IssueLeaf();
+        await using MtlsTestHost host = await StartAsync(_ => MtlsValidationResult.Failure("UnknownClient"));
+
+        using HttpResponseMessage response = await host.SendAsync("/certificate", certificate);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        host.LoggerFactory.ShouldHaveCategory(typeof(MtlsCertificateEvents));
     }
 
     [Theory]
@@ -51,7 +65,7 @@ public sealed class MtlsLoggingTests : IDisposable
         using HttpResponseMessage response = await host.SendAsync("/certificate", certificate);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-        host.LogRecords.ShouldHaveLoggedWithProperty(CertificateRejected, "Reason", "Rejected");
+        host.LogRecords.ShouldHaveLoggedWithProperty(CertificateRejected, "RejectionCode", "Rejected");
         host.LogRecords.ShouldNotLeak(reason);
     }
 
@@ -64,7 +78,7 @@ public sealed class MtlsLoggingTests : IDisposable
         using HttpResponseMessage response = await host.SendAsync("/certificate", certificate);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-        host.LogRecords.ShouldHaveLoggedWithProperty(CertificateRejected, "Reason", "Rejected");
+        host.LogRecords.ShouldHaveLoggedWithProperty(CertificateRejected, "RejectionCode", "Rejected");
     }
 
     [Fact]
@@ -96,8 +110,8 @@ public sealed class MtlsLoggingTests : IDisposable
             using HttpResponseMessage response = await host.SendAsync("/certificate", certificate);
         }
 
-        host.LogRecords.ShouldHaveLogged(new EventId(12300));
-        host.LogRecords.ShouldHaveLogged(new EventId(12301));
+        host.LogRecords.ShouldHaveLogged(new EventId(MtlsLoggingEventIds.CertificateRejected));
+        host.LogRecords.ShouldHaveLogged(new EventId(MtlsLoggingEventIds.ValidatorFailed));
 
         // ASP.NET Core's own certificate handler logs the subject under its framework category; only kernel categories
         // are swept. The thrown exception text is not part of the sweep: only the exception object is attached.

@@ -1,4 +1,4 @@
-namespace SharedKernel.Security.Oidc.Logging;
+namespace SharedKernel.Security.Oidc.Diagnostics;
 
 // The alg header of a rejected token is attacker-chosen, so it is logged only when it is short and identifier-shaped.
 internal static class AlgorithmText
