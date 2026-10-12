@@ -22,43 +22,11 @@ Test kit: `src/Infrastructure/Communication/SharedKernel.Communication.Testing` 
 
 | Phase key | Phase | Status |
 | --- | --- | :---: |
-| `SK.11.TokenUnavailableEdge` | `AccessTokenUnavailableException` derives `SharedKernelException` so every inbound edge maps it to Unavailable; no URL, host, client id or remote free text in token logs or `Error`s (WO-087 / P-592) | ○ |
 | `SK.11.CommunicationConformance` | Phase 2: all three packages conform to root "Observability, exceptions and error codes"; error-code ledger, EventId sub-blocks, Rest's first log events, error factory (WO-087 / P-609) | ○ |
 
 Closed keys live in `git log`: check a new key is unused with `git log --oneline -S"SK.NN.Key"`.
 
 ## Open Work
-
-### SK.11.TokenUnavailableEdge — Make AccessTokenUnavailableException map at the edge `○`
-
-**Work order:** WO-087 / P-592 · **Depends on:** SK.01.ObservabilityHelpers (P-580: `IHasError`, implemented by `SharedKernelException`; only T-01's `IHasError` assertion needs it, everything else can start now)
-
-`AccessTokenUnavailableException` carries an `Error` but derives `HttpRequestException`, so a typed client used through its raw `HttpClient` (not the `Result` verbs) lets it escape to an inbound edge, where `SharedKernelExceptionHandler`, the gRPC server interceptor and the SignalR hub filter match only `SharedKernelException` and answer 500 instead of 503. The phase rebases the exception on `SharedKernelException` (Foundation `SharedKernel.Core`, a legal Adapter reference), keeps today's resilience behaviour explicitly instead of by accident of the old base type, and removes every URL, host, OAuth client id and remote free-text value from the token path's logs and `Error`s. Breaking, pre-GA, release-noted: the exception is no longer an `HttpRequestException`; no wire code changes in this phase.
-
-Audit of the outbound token path (evidence, not tasks): `CommunicationLog` events 11000-11002 log `{TokenEndpoint}` (a URL) and `{ClientId}`; `ClientCredentialsTokenClient` puts the server's `error` string (remote free text) into both a log and `Error.Message`; `ClientAuthenticationHandler` forwards an `IAccessTokenProvider`'s `Error.Message` unchanged into the `Error` (a consumer-supplied string that may hold a host) and the exception message embeds it again. `HttpFailure`/`GrpcResultExtensions` messages carry only the `HttpRequestError` enum or fixed text (clean). No other host or URL reaches a log or an `Error` in the base, Rest or Grpc packages.
-
-| ID | Task | Package | State |
-| --- | --- | --- | :---: |
-| D-01 | Ratify the type shape. `AccessTokenUnavailableException : SharedKernelException`, still `sealed`, in `SharedKernel.Communication`; ctors `(Error)` and `(Error, Exception)` per E1 plus `(string clientName, Error error)` (the handler's) with `ClientName` kept (null on the E1 ctors). The message is `Error.Message` through the base: the old `"Client '…' has no access token: {error.Message}"` composition goes. No `HttpRequestException` ancestry survives (C# single inheritance); recorded as a breaking change. Confirm `Communication` may reference `SharedKernel.Core` (Foundation -> Adapter, no SKTIER error) and read Core's third-party footprint so the base `.nuspec` gains no ASP.NET Core (SKTIER006) and nothing unexpected | `SharedKernel.Communication` | `○` |
-| D-02 | Ratify resilience preservation. Today the standard pipeline retries, counts toward the breaker and hedges a token failure only because it is an `HttpRequestException`. Decision: REST keeps exactly that, by extending the mapped `ShouldHandle` of retry, breaker and hedging with `outcome.Exception is AccessTokenUnavailableException` (inside `RestResilience`; still mapped from `RestClientOptions`, rule 12; composed before `DisableFor` so POST/PATCH stay unrepeated, rule 9; a token failure sends nothing, so repeating it is side-effect free). gRPC: verify on disk what `Grpc.Net.Client` reports for a non-`HttpRequestException` thrown by a handler (not from memory); if it is not `Unavailable`, the channel `ServiceConfig` retry no longer covers token failures, the call still returns the same `Error`, and that is recorded under Known Limitations rather than worked around | `SharedKernel.Communication.Rest`, `SharedKernel.Communication.Grpc` | `○` |
-| D-03 | Ratify the error-content policy for the token path (rules 14, 19, root L5/E3). `Error.Message` crosses the trust boundary (callers log it, Development edges print it), so it never carries a URL, host, client id, or remote text. A provider's failure becomes `access_token_unavailable` with a fixed message; the provider's own detail stays the provider's to log (supersedes the Decision row "a provider's own failure keeps its detail"). The token endpoint's `error` member is reduced to the RFC 6749 section 5.2 registered values (`invalid_request`, `invalid_client`, `invalid_grant`, `unauthorized_client`, `unsupported_grant_type`, `invalid_scope`), anything else becomes `unrecognized`, in the log and in the `Error`. Logs identify the client by its kernel client **name** (a configured name, allowed), never the OAuth client id or the endpoint | `SharedKernel.Communication` | `○` |
-| C-01 | `SharedKernel.Communication.csproj`: `ProjectReference` to `SharedKernel.Core`. Rebase `AccessTokenUnavailableException` per D-01; XML docs and remarks rewritten (drop the "is an `HttpRequestException`" paragraph) | `SharedKernel.Communication` | `○` |
-| C-02 | `ClientAuthenticationHandler`: throw the rebased exception; provider failures get the fixed message (D-03); `ClientCredentialsTokenClient.GetTokenAsync` takes the client name for logging (the cache key stays per credential, so two clients sharing a credential still share one token); remove `tokenEndpoint` and `clientId` from events 11000-11002 (EventIds unchanged, templates only minimally edited here; the full L3 rewrite is the conformance phase); bounded `OAuthError` per D-03; `Failure(...)` messages carry no remote text | `SharedKernel.Communication` | `○` |
-| C-03 | `RestResilience`: the D-02 predicate for retry, breaker and hedging; `HttpFailure.TryMap` keeps `AccessTokenUnavailableException` as its first arm (already ahead of `HttpRequestException`; add a comment that the order no longer matters for compilation but still does for intent) | `SharedKernel.Communication.Rest` | `○` |
-| C-04 | `GrpcResultExtensions.ToError` keeps `FindInner<AccessTokenUnavailableException>`; adjust its remarks if D-02 shows the channel status is no longer `Unavailable`. No new code unless a test proves a gap | `SharedKernel.Communication.Grpc` | `○` |
-| T-01 | Exception shape: derives `SharedKernelException` (and `IHasError` once P-580 lands), `Error.Type == Unavailable`, code `communication.access_token_unavailable`, `Message == Error.Message`, inner exception kept, `ClientName` set by the handler ctor and null by the E1 ctors, and it is **not** an `HttpRequestException`. This is the structural precondition of the edge mappers (which match `SharedKernelException` and read `Error`) | `SharedKernel.Communication.Tests` | `○` |
-| T-02 | REST through a real registered client over `StubHttpMessageHandler` with a failing `IAccessTokenProvider` and with an unreachable token endpoint: `GetResultAsync` returns the Unavailable failure (code and type); a raw `HttpClient.SendAsync` through the typed client throws the exception, which `is SharedKernelException`, and the stub saw no request | `SharedKernel.Communication.Rest.Tests` | `○` |
-| T-03 | Resilience preserved (`Retry:BaseDelay` 0): a GET with a failing provider calls the provider `MaxRetryAttempts + 1` times; consecutive failures open the breaker (next call `communication.circuit_open`); the hedged variant tries more than once for GET; a POST without `Idempotency-Key` asks the provider once and sends nothing; `MaxRetryAttempts = 0` asks once | `SharedKernel.Communication.Rest.Tests` | `○` |
-| T-04 | gRPC on `GrpcHarness`: failing provider gives `ToResultAsync` the same `Error` (Unavailable, `communication.access_token_unavailable`); the observed channel status code is pinned in the test and matches the D-02 note | `SharedKernel.Communication.Grpc.Tests` | `○` |
-| T-05 | No URL, host or secret anywhere: with the token endpoint `https://idp.example.test/token`, client id `canary-client-id` and secret `canary-secret`, drive success, refused (401 and 400 with a hostile `error` such as `<script>`), unreachable and provider-failure paths; capture every log record (message, state, exception object kept) with the P-581 log capture and assert no canary or host text in any record or any returned `Error.Message`; the registered OAuth error `invalid_client` is kept, the hostile one becomes `unrecognized` | `SharedKernel.Communication.Tests` | `○` |
-| T-06 | `consumer-verify` and the Shop (`samples/Shop` Ordering -> Inventory/Billing) still compile; the Shop does not reference the exception (verified by grep, no edit expected) | `consumer-verify` | `○` |
-| DO-01 | `PublicAPI.Unshipped.txt` (new base type, ctors; the package is unshipped so no `*REMOVED*` lines); base README (exception section, failure table, the "no longer an `HttpRequestException`" note), Rest README failure table, Grpc README; domain `CLAUDE.md` rules 13 and 19 and the Decisions row; "Breaking changes" heading in the commit body: exception base type, provider failure message, token-log placeholders | `SharedKernel.Communication`, `.Rest`, `.Grpc` | `○` |
-
-**Acceptance:**
-- [ ] The exception maps via the edge mappers (tested): it is a `SharedKernelException` with `ErrorType.Unavailable`, so the WebApi handler, the gRPC server interceptor and the SignalR hub filter (14.Presentation, which this domain never references) answer 503 / `Unavailable`; the end-to-end assertion is a note for 14.Presentation and 13.ServiceDefaults.
-- [ ] No URL, host, OAuth client id, secret or remote free text in any log record or `Error` on the token path (T-05, canary values).
-- [ ] REST retry, breaker and hedging behaviour for token failures is unchanged and POST/PATCH are still never repeated (T-03); the gRPC outcome is pinned (T-04).
-- [ ] `PublicAPI.Unshipped.txt`, READMEs and the domain `CLAUDE.md` updated; breaking changes listed for the release notes.
 
 ### SK.11.CommunicationConformance — Conform Communication to the observability gold standard `○`
 
@@ -103,11 +71,7 @@ Applies root "Observability, exceptions and error codes" (L1-L8, T1-T8, E1-E4, C
 
 ## Blocked
 
-| Item | Evidence | Waits on |
-| --- | --- | --- |
-| `SK.11.TokenUnavailableEdge` T-01, the `IHasError` assertion only | `IHasError` does not exist on disk (`grep -rl IHasError src --include=*.cs` is empty) | `SK.01.ObservabilityHelpers` (P-580) |
-| `SK.11.TokenUnavailableEdge` T-05 and `SK.11.CommunicationConformance` T-03/T-04 log assertions | no shared log-capture helper in `SharedKernel.Testing` (`src/Testing/SharedKernel.Testing/Communication/ActivityRecorder.cs` is the only recorder; the only other capture is FusionCache's private `TelemetryCapture`) | `SK.16.TelemetryCapture` (P-581) |
-| `SK.11.CommunicationConformance` as a whole | gated behind its four dependencies above (the report-only rules of T-08 do not exist yet) | `SK.00.ObservabilityReportOnly` (P-583), `SK.11.TokenUnavailableEdge` |
+None.
 
 ## Cross-Domain Dependencies
 
