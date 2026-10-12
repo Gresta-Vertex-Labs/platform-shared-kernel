@@ -423,3 +423,10 @@ virtual SharedKernel.Domain.Events.DomainEvent<TPayload>.Equals(SharedKernel.Dom
 virtual SharedKernel.Domain.StronglyTypedIds.StronglyTypedId<TValue>.EqualityContract.get -> System.Type!
 virtual SharedKernel.Domain.StronglyTypedIds.StronglyTypedId<TValue>.Equals(SharedKernel.Domain.StronglyTypedIds.StronglyTypedId<TValue>? other) -> bool
 virtual SharedKernel.Domain.StronglyTypedIds.StronglyTypedId<TValue>.PrintMembers(System.Text.StringBuilder! builder) -> bool
+const SharedKernel.Domain.DomainErrorCodes.Currency.InvalidFormat = "currency.code.invalid_format" -> string!
+const SharedKernel.Domain.DomainErrorCodes.Currency.Unknown = "currency.code.unknown" -> string!
+const SharedKernel.Domain.DomainErrorCodes.Money.CurrencyMismatch = "money.currency_mismatch" -> string!
+const SharedKernel.Domain.DomainErrorCodes.Money.StoredPrecisionExceeded = "money.stored_precision_exceeded" -> string!
+SharedKernel.Domain.DomainErrorCodes
+SharedKernel.Domain.DomainErrorCodes.Currency
+SharedKernel.Domain.DomainErrorCodes.Money

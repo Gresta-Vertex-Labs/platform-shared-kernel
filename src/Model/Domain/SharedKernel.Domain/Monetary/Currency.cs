@@ -1,3 +1,4 @@
+using SharedKernel.Domain.Internal;
 using SharedKernel.Domain.ValueObjects;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
@@ -61,8 +62,8 @@ public sealed class Currency : SingleValueObject<string>
     /// </param>
     /// <returns>
     /// A successful result holding the currency; or a failed result with the single error
-    /// <c>currency.code.invalid_format</c> when the trimmed input is not exactly three ASCII letters, or
-    /// <c>currency.code.unknown</c> when the code is not in <see cref="CurrencyCatalog"/>. Never throws for any
+    /// <see cref="DomainErrorCodes.Currency.InvalidFormat"/> when the trimmed input is not exactly three ASCII letters, or
+    /// <see cref="DomainErrorCodes.Currency.Unknown"/> when the code is not in <see cref="CurrencyCatalog"/>. Never throws for any
     /// input.
     /// </returns>
     public static ValidationResult<Currency> Create(string? code)
@@ -76,13 +77,11 @@ public sealed class Currency : SingleValueObject<string>
     {
         if (Value.Length != 3 || !Value.All(c => c is >= 'A' and <= 'Z'))
         {
-            yield return Error.Validation(
-                "currency.code.invalid_format",
-                "A currency code is exactly three letters.");
+            yield return DomainErrors.CurrencyInvalidFormat();
             yield break;
         }
 
         if (!CurrencyCatalog.IsKnownCode(Value))
-            yield return Error.Validation("currency.code.unknown", $"'{Value}' is not a known ISO 4217 currency code.");
+            yield return DomainErrors.CurrencyUnknown(Value);
     }
 }

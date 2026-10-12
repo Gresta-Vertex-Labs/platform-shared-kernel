@@ -268,7 +268,7 @@ public sealed class DomainHardeningTests
     [Fact]
     public void BrokenRule_ErrorCarriesTheRulesCode()
     {
-        // Before: every violation reported domain.rule.violated.
+        // Before: every violation reported one generic code instead of the rule's own.
         var ex = new BusinessRuleViolationException(new Rule("order.not_paid", true));
 
         ex.Error.Code.Should().Be("order.not_paid");

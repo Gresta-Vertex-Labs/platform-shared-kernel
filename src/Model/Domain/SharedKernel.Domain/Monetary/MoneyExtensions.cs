@@ -81,7 +81,7 @@ public static class MoneyExtensions
     /// <see cref="Sum(IEnumerable{Money}, Currency)"/> to get zero instead.
     /// </exception>
     /// <exception cref="BusinessRuleViolationException">
-    /// An amount is not in the currency of the first amount; the error code is <c>money.currency_mismatch</c>.
+    /// An amount is not in the currency of the first amount; the error code is <see cref="DomainErrorCodes.Money.CurrencyMismatch"/>.
     /// </exception>
     /// <exception cref="OverflowException">The total is outside the range of <see cref="decimal"/>.</exception>
     /// <remarks>The sequence is enumerated once.</remarks>
@@ -115,7 +115,7 @@ public static class MoneyExtensions
     /// <paramref name="amounts"/> contains <see langword="null"/>.
     /// </exception>
     /// <exception cref="BusinessRuleViolationException">
-    /// An amount is not in <paramref name="currency"/>; the error code is <c>money.currency_mismatch</c>.
+    /// An amount is not in <paramref name="currency"/>; the error code is <see cref="DomainErrorCodes.Money.CurrencyMismatch"/>.
     /// </exception>
     /// <exception cref="OverflowException">The total is outside the range of <see cref="decimal"/>.</exception>
     /// <remarks>Equivalent to <see cref="Money.Sum"/>.</remarks>

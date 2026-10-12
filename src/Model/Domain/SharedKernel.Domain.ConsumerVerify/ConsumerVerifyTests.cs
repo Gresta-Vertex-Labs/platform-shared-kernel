@@ -25,6 +25,30 @@ namespace SharedKernel.Domain.ConsumerVerify;
 public sealed class ConsumerVerifyTests
 {
     // ──────────────────────────────────────────────────────────────────────────
+    // DomainErrorCodes — stable codes from the packed package
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void DomainErrorCodes_AreStable_ResolvedFromPackage()
+    {
+        Assert.Equal("currency.code.invalid_format", DomainErrorCodes.Currency.InvalidFormat);
+        Assert.Equal("currency.code.unknown", DomainErrorCodes.Currency.Unknown);
+        Assert.Equal("money.currency_mismatch", DomainErrorCodes.Money.CurrencyMismatch);
+        Assert.Equal("money.stored_precision_exceeded", DomainErrorCodes.Money.StoredPrecisionExceeded);
+    }
+
+    [Fact]
+    public void Money_CurrencyMismatch_CanBeCaughtByCode_ResolvedFromPackage()
+    {
+        var usd = Monetary.Money.Create(1m, Monetary.Currency.Usd).Value;
+        var eur = Monetary.Money.Create(1m, Monetary.Currency.Eur).Value;
+
+        var ex = Assert.Throws<Exceptions.BusinessRuleViolationException>(() => usd + eur);
+
+        Assert.Equal(DomainErrorCodes.Money.CurrencyMismatch, ex.Error.Code);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
     // Entity<TId> — identity-based equality
     // ──────────────────────────────────────────────────────────────────────────
 
