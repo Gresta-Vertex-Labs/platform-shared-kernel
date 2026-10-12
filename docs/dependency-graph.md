@@ -49,7 +49,7 @@ flowchart LR
   src_Hosting_ServiceDefaults -->|1| src_Infrastructure_Caching
   src_Hosting_ServiceDefaults -->|3| src_Infrastructure_Persistence
   src_Infrastructure_AI -->|6| src_Foundation
-  src_Infrastructure_Caching -->|9| src_Foundation
+  src_Infrastructure_Caching -->|10| src_Foundation
   src_Infrastructure_Communication -->|8| src_Foundation
   src_Infrastructure_Communication -->|1| src_Model_Domain
   src_Infrastructure_Idempotency -->|3| src_Foundation
@@ -74,7 +74,7 @@ flowchart LR
   src_Infrastructure_Scheduling -->|1| src_Infrastructure_Caching
   src_Infrastructure_Search -->|6| src_Foundation
   src_Infrastructure_Search -->|1| src_Model_Contracts
-  src_Infrastructure_Storage -->|3| src_Foundation
+  src_Infrastructure_Storage -->|4| src_Foundation
   src_Infrastructure_Workflows -->|1| src_Application
   src_Infrastructure_Workflows -->|4| src_Foundation
   src_Model_Contracts -->|1| src_Foundation
@@ -329,9 +329,11 @@ flowchart LR
     SharedKernel_Caching_Testing["Caching.Testing<br/><i>Testing</i>"]
   end
   SharedKernel_Configuration(["Configuration<br/><i>src/Foundation</i>"])
+  SharedKernel_Core(["Core<br/><i>src/Foundation</i>"])
   SharedKernel_Cryptography(["Cryptography<br/><i>src/Foundation</i>"])
   SharedKernel_Execution(["Execution<br/><i>src/Foundation</i>"])
   SharedKernel_Primitives(["Primitives<br/><i>src/Foundation</i>"])
+  SharedKernel_Caching_Abstractions --> SharedKernel_Core
   SharedKernel_Caching_Abstractions --> SharedKernel_Execution
   SharedKernel_Caching_FusionCache --> SharedKernel_Caching_Abstractions
   SharedKernel_Caching_FusionCache --> SharedKernel_Configuration
@@ -617,8 +619,10 @@ flowchart LR
     SharedKernel_Storage_Testing["Storage.Testing<br/><i>Testing</i>"]
   end
   SharedKernel_Configuration(["Configuration<br/><i>src/Foundation</i>"])
+  SharedKernel_Core(["Core<br/><i>src/Foundation</i>"])
   SharedKernel_Execution(["Execution<br/><i>src/Foundation</i>"])
   SharedKernel_Primitives(["Primitives<br/><i>src/Foundation</i>"])
+  SharedKernel_Storage_Abstractions --> SharedKernel_Core
   SharedKernel_Storage_Abstractions --> SharedKernel_Execution
   SharedKernel_Storage_Abstractions --> SharedKernel_Primitives
   SharedKernel_Storage_Obs --> SharedKernel_Storage_S3

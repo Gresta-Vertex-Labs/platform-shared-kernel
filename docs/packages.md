@@ -51,7 +51,7 @@ Reference from the Application project.
 |---|---|---|
 | [`SharedKernel.AI.Abstractions`](../src/Infrastructure/AI/SharedKernel.AI.Abstractions/README.md) | `src/Infrastructure/AI` | `SharedKernel.Execution`, `SharedKernel.Primitives` |
 | [`SharedKernel.Application`](../src/Application/SharedKernel.Application/README.md) | `src/Application` | `SharedKernel.Caching.Abstractions`, `SharedKernel.Domain`, `SharedKernel.Primitives` |
-| [`SharedKernel.Caching.Abstractions`](../src/Infrastructure/Caching/SharedKernel.Caching.Abstractions/README.md) | `src/Infrastructure/Caching` | `SharedKernel.Execution` |
+| [`SharedKernel.Caching.Abstractions`](../src/Infrastructure/Caching/SharedKernel.Caching.Abstractions/README.md) | `src/Infrastructure/Caching` | `SharedKernel.Core`, `SharedKernel.Execution` |
 | [`SharedKernel.Idempotency.Abstractions`](../src/Infrastructure/Idempotency/SharedKernel.Idempotency.Abstractions/README.md) | `src/Infrastructure/Idempotency` | `SharedKernel.Execution` |
 | [`SharedKernel.Integration.Notifications.Abstractions`](../src/Infrastructure/Integration/SharedKernel.Integration.Notifications.Abstractions/README.md) | `src/Infrastructure/Integration` | `SharedKernel.Configuration`, `SharedKernel.Primitives`, `SharedKernel.Storage.Abstractions` |
 | [`SharedKernel.Messaging.Abstractions`](../src/Infrastructure/Messaging/SharedKernel.Messaging.Abstractions/README.md) | `src/Infrastructure/Messaging` | `SharedKernel.Contracts`, `SharedKernel.Execution`, `SharedKernel.Primitives` |
@@ -59,7 +59,7 @@ Reference from the Application project.
 | [`SharedKernel.Reporting.Abstractions`](../src/Infrastructure/Reporting/SharedKernel.Reporting.Abstractions/README.md) | `src/Infrastructure/Reporting` | `SharedKernel.Primitives`, `SharedKernel.Storage.Abstractions` |
 | [`SharedKernel.Search.Abstractions`](../src/Infrastructure/Search/SharedKernel.Search.Abstractions/README.md) | `src/Infrastructure/Search` | `SharedKernel.Contracts`, `SharedKernel.Execution`, `SharedKernel.Primitives` |
 | [`SharedKernel.Security.Abstractions`](../src/Hosting/Security/SharedKernel.Security.Abstractions/README.md) | `src/Hosting/Security` | `SharedKernel.Execution` |
-| [`SharedKernel.Storage.Abstractions`](../src/Infrastructure/Storage/SharedKernel.Storage.Abstractions/README.md) | `src/Infrastructure/Storage` | `SharedKernel.Execution`, `SharedKernel.Primitives` |
+| [`SharedKernel.Storage.Abstractions`](../src/Infrastructure/Storage/SharedKernel.Storage.Abstractions/README.md) | `src/Infrastructure/Storage` | `SharedKernel.Core`, `SharedKernel.Execution`, `SharedKernel.Primitives` |
 
 ## Adapter
 
