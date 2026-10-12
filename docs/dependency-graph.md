@@ -52,7 +52,7 @@ flowchart LR
   src_Infrastructure_Caching -->|10| src_Foundation
   src_Infrastructure_Communication -->|9| src_Foundation
   src_Infrastructure_Communication -->|1| src_Model_Domain
-  src_Infrastructure_Idempotency -->|3| src_Foundation
+  src_Infrastructure_Idempotency -->|4| src_Foundation
   src_Infrastructure_Idempotency -->|1| src_Infrastructure_Caching
   src_Infrastructure_Idempotency -->|1| src_Infrastructure_Persistence
   src_Infrastructure_Integration -->|8| src_Foundation
@@ -399,9 +399,11 @@ flowchart LR
     SharedKernel_Idempotency_Testing["Idempotency.Testing<br/><i>Testing</i>"]
   end
   SharedKernel_Caching_Redis_Core(["Caching.Redis.Core<br/><i>src/Infrastructure/Caching</i>"])
+  SharedKernel_Core(["Core<br/><i>src/Foundation</i>"])
   SharedKernel_Execution(["Execution<br/><i>src/Foundation</i>"])
   SharedKernel_Persistence_EfCore(["Persistence.EfCore<br/><i>src/Infrastructure/Persistence</i>"])
   SharedKernel_Primitives(["Primitives<br/><i>src/Foundation</i>"])
+  SharedKernel_Idempotency_Abstractions --> SharedKernel_Core
   SharedKernel_Idempotency_Abstractions --> SharedKernel_Execution
   SharedKernel_Idempotency_EfCore --> SharedKernel_Idempotency_Abstractions
   SharedKernel_Idempotency_EfCore --> SharedKernel_Persistence_EfCore
