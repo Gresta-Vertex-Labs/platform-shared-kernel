@@ -131,7 +131,7 @@ public static partial class RedisConnectionCoreExtensions
             WarnIfNonLoopbackWithoutTls(logger, configurationOptions);
 
             var multiplexer = ConnectionMultiplexer.Connect(configurationOptions);
-            multiplexer.ConnectionFailed += (_, e) => Log.ConnectionFailed(logger, e.EndPoint?.ToString() ?? "(unknown)", e.FailureType);
+            multiplexer.ConnectionFailed += (_, e) => Log.ConnectionFailed(logger, e.EndPoint?.ToString() ?? "(unknown)", e.FailureType, e.Exception);
             multiplexer.ConnectionRestored += (_, e) => Log.ConnectionRestored(logger, e.EndPoint?.ToString() ?? "(unknown)");
 
             if (!multiplexer.IsConnected)
@@ -225,7 +225,7 @@ public static partial class RedisConnectionCoreExtensions
 
         [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 101, Level = LogLevel.Warning,
             Message = "Redis connection to {EndPoint} failed ({FailureType}); reconnecting in the background")]
-        internal static partial void ConnectionFailed(ILogger logger, string endPoint, ConnectionFailureType failureType);
+        internal static partial void ConnectionFailed(ILogger logger, string endPoint, ConnectionFailureType failureType, Exception? exception);
 
         [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 102, Level = LogLevel.Warning,
             Message = "Redis endpoint {EndPoint} is not a loopback address and TLS is off. Traffic is unencrypted unless "

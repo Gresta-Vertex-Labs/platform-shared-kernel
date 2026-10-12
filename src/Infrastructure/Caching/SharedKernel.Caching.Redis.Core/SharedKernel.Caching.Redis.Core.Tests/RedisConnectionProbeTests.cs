@@ -126,6 +126,48 @@ public sealed class RedisConnectionProbeTests : IAsyncLifetime
             () => probe.ProbeAsync(new CancellationToken(canceled: true)));
     }
 
+
+    [Fact]
+    public async Task ConnectionFailed_ConnectionDrops_LogsWarningWithTheConnectionException_AndStartupDoesNotThrow()
+    {
+        await using var container = new RedisBuilder("redis:7-alpine").Build();
+        await container.StartAsync();
+        var loggerFactory = new InMemoryLoggerFactory();
+
+        await using var provider = Build(o => o.ConnectionString = container.GetConnectionString(), loggerFactory);
+        var multiplexer = provider.GetRequiredService<IConnectionMultiplexer>();
+        Assert.True(multiplexer.IsConnected);
+
+        // The handler is attached after the initial connect, so the event comes from an established connection dropping.
+        await container.StopAsync();
+
+        var eventId = new EventId(LoggingEventIdRanges.Caching + 101);
+        LogRecord? failed = null;
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(30);
+        while (failed is null && DateTime.UtcNow < deadline)
+        {
+            failed = loggerFactory.Loggers.Values.SelectMany(l => l.Records).FirstOrDefault(r => r.EventId == eventId);
+            if (failed is null)
+                await Task.Delay(50);
+        }
+
+        Assert.NotNull(failed);
+        Assert.Equal(LogLevel.Warning, failed.LogLevel);
+        Assert.NotNull(failed.Exception);
+    }
+
+    [Fact]
+    public async Task Startup_UnreachableEndpoint_DoesNotThrow()
+    {
+        await using var provider = Build(o =>
+        {
+            o.ConnectionString = "localhost:1";
+            o.ConnectTimeout = TimeSpan.FromMilliseconds(200);
+        });
+
+        Assert.NotNull(provider.GetRequiredService<IConnectionMultiplexer>());
+    }
+
     private static ServiceProvider Build(Action<RedisConnectionOptions> configure, ILoggerFactory? loggerFactory = null)
     {
         var services = new ServiceCollection();

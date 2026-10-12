@@ -318,7 +318,7 @@ Both require `AddRedisConnection` first and are idempotent.
 | `InvalidOperationException` | Registration | `AddRedisConnection` has not been called |
 | `ArgumentException` | `TryAcquireAsync`, `TryAcquireLeaseAsync` | The resource is null or whitespace |
 | `ArgumentOutOfRangeException` | `TryAcquireLeaseAsync`, `DistributedLockOptions` | A duration is out of range |
-| `DistributedLockUnavailableException` | `TryAcquireAsync`, `TryAcquireLeaseAsync` | The Redis call failed (`RedisException`, `TimeoutException`, or a transport error) |
+| `DistributedLockUnavailableException` | `TryAcquireAsync`, `TryAcquireLeaseAsync` | The Redis call failed (`RedisException`, `TimeoutException`, or a transport error); `Error.Code` is `caching.lock_unavailable`, `Error.Type` is `Unavailable` |
 | `OperationCanceledException` | `TryAcquireAsync`, `TryAcquireLeaseAsync` | The token was cancelled before an attempt or during a wait |
 
 ### Logging

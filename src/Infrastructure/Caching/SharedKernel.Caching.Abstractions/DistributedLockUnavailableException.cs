@@ -1,29 +1,31 @@
+using SharedKernel.Core.Exceptions;
+using SharedKernel.Primitives.Errors;
+
 namespace SharedKernel.Caching.Abstractions;
 
 /// <summary>
 /// Thrown when a lock or lease could not be acquired because the lock store could not be reached,
 /// as opposed to another holder having the resource.
 /// </summary>
-public sealed class DistributedLockUnavailableException : Exception
+/// <remarks>
+/// It carries an <see cref="ErrorType.Unavailable"/> error with code <see cref="CachingErrorCodes.LockUnavailable"/>,
+/// so an edge answers HTTP 503 / gRPC <c>Unavailable</c>. The message is the fixed <see cref="Error"/> message and never
+/// contains the resource; <see cref="Resource"/> is diagnostic only and must not be sent to a client.
+/// </remarks>
+public sealed class DistributedLockUnavailableException : SharedKernelException
 {
-    /// <summary>Creates the exception with a default message.</summary>
-    public DistributedLockUnavailableException()
-        : base("The distributed lock store could not be reached.")
+    /// <summary>Creates the exception from an error.</summary>
+    /// <param name="error">The error describing the failure.</param>
+    public DistributedLockUnavailableException(Error error)
+        : base(error)
     {
     }
 
-    /// <summary>Creates the exception with a message.</summary>
-    /// <param name="message">The message.</param>
-    public DistributedLockUnavailableException(string message)
-        : base(message)
-    {
-    }
-
-    /// <summary>Creates the exception with a message and the underlying failure.</summary>
-    /// <param name="message">The message.</param>
+    /// <summary>Creates the exception from an error and the underlying failure.</summary>
+    /// <param name="error">The error describing the failure.</param>
     /// <param name="innerException">The failure that made the store unreachable.</param>
-    public DistributedLockUnavailableException(string message, Exception? innerException)
-        : base(message, innerException)
+    public DistributedLockUnavailableException(Error error, Exception? innerException)
+        : base(error, innerException)
     {
     }
 
@@ -32,8 +34,8 @@ public sealed class DistributedLockUnavailableException : Exception
     /// <param name="innerException">The failure that made the store unreachable, if any.</param>
     /// <returns>The exception.</returns>
     public static DistributedLockUnavailableException ForResource(string resource, Exception? innerException = null) =>
-        new($"The distributed lock store could not be reached while acquiring '{resource}'.", innerException) { Resource = resource };
+        new(CachingErrors.LockUnavailable(), innerException) { Resource = resource };
 
-    /// <summary>Gets the resource that could not be locked, when known.</summary>
+    /// <summary>Gets the resource that could not be locked, when known. Diagnostic only.</summary>
     public string? Resource { get; private init; }
 }

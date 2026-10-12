@@ -42,16 +42,4 @@ public sealed class DistributedLockContractTests
         Assert.ThrowsAny<ArgumentException>(() => new DistributedLease(" ", 1, DateTimeOffset.UnixEpoch));
         Assert.Throws<ArgumentOutOfRangeException>(() => new DistributedLease("r", 0, DateTimeOffset.UnixEpoch));
     }
-
-    [Fact]
-    public void UnavailableException_ForResource_CarriesResourceAndInner()
-    {
-        var inner = new TimeoutException();
-
-        DistributedLockUnavailableException exception = DistributedLockUnavailableException.ForResource("invoice:42", inner);
-
-        Assert.Equal("invoice:42", exception.Resource);
-        Assert.Same(inner, exception.InnerException);
-        Assert.Contains("invoice:42", exception.Message, StringComparison.Ordinal);
-    }
 }

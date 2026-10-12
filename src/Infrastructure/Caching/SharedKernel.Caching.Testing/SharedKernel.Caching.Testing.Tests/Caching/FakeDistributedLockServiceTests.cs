@@ -1,4 +1,5 @@
 using SharedKernel.Caching.Abstractions;
+using SharedKernel.Primitives.Errors;
 using SharedKernel.Testing.Caching;
 using Xunit;
 
@@ -90,6 +91,9 @@ public sealed class FakeDistributedLockServiceTests
             async () => await service.TryAcquireLeaseAsync("resource", TimeSpan.FromMinutes(1)));
 
         Assert.Equal("resource", lockEx.Resource);
+        Assert.Equal(CachingErrorCodes.LockUnavailable, lockEx.Error.Code);
+        Assert.Equal(ErrorType.Unavailable, lockEx.Error.Type);
+        Assert.DoesNotContain("resource", lockEx.Message, StringComparison.Ordinal);
     }
 
     [Fact]

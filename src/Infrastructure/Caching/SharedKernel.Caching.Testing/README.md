@@ -134,7 +134,7 @@ Assert.Null(await locks.TryAcquireAsync("nightly-export"));
 Assert.Empty(locks.AcquiredLocks);
 ```
 
-`SimulateUnavailable = true` makes every acquisition throw `DistributedLockUnavailableException` instead.
+`SimulateUnavailable = true` makes every acquisition throw `DistributedLockUnavailableException` (error code `caching.lock_unavailable`, type `Unavailable`, as the Redis implementation does) instead.
 
 ### 3. Cancel work when the lock is lost
 

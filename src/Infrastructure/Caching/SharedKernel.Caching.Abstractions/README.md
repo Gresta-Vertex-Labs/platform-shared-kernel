@@ -324,7 +324,7 @@ await invoices.SettleAsync(invoiceId, handle.FencingToken, work.Token);
 ```
 
 - `Expiry` is how long the lock survives a crashed holder. The provider extends it while you hold it.
-- A `DistributedLockUnavailableException` means the store is down. Let it propagate, or retry later; don't treat it as
+- A `DistributedLockUnavailableException` means the store is down. It is a `SharedKernelException` carrying `caching.lock_unavailable` (`Error.Unavailable`), so an HTTP edge answers 503 and a gRPC edge `Unavailable`; its message never names the resource (`Resource` is diagnostic only). Let it propagate, or retry later; don't treat it as
   "busy".
 
 ### 7. Run something once across replicas
@@ -376,7 +376,7 @@ Tokens for a resource strictly increase across all locks and leases on it; gaps 
 | `IDistributedLock` | Interface | A held lock: `Resource`, `FencingToken`, `IsHeld`, `LostToken` |
 | `DistributedLockOptions` | Record | `Expiry` (30 s), `WaitTime` (0), `RetryInterval` (200 ms) |
 | `DistributedLease` | Record | `Resource`, `FencingToken`, `ExpiresAt` |
-| `DistributedLockUnavailableException` | Exception | The lock store could not be reached |
+| `DistributedLockUnavailableException` | Exception | The lock store could not be reached; a `SharedKernelException` with error code `caching.lock_unavailable` |
 
 ### `CachePolicy`
 

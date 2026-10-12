@@ -10,7 +10,7 @@
 
 | Package | Tier | Purpose |
 | --- | --- | --- |
-| `SharedKernel.Caching.Abstractions` | Abstractions | Cache, key, policy, warmup and lock contracts (`ICacheService`, `ITenantCacheService`, `CachePolicy`, `CacheKeyFormat`, `IDistributedLockService`, …). References only `SharedKernel.Execution` and DI abstractions |
+| `SharedKernel.Caching.Abstractions` | Abstractions | Cache, key, policy, warmup and lock contracts (`ICacheService`, `ITenantCacheService`, `CachePolicy`, `CacheKeyFormat`, `IDistributedLockService`, `CachingErrorCodes`, …). References only `SharedKernel.Execution`, `SharedKernel.Core` (the exception base) and DI abstractions |
 | `SharedKernel.Caching.FusionCache` | Adapter | The cache: `AddSharedKernelCaching`, tenant cache service, Brotli L2 compression, encryption at rest, warmup, OTel, the `cache` probe. Implementations are internal |
 | `SharedKernel.Caching.Redis.Core` | Adapter | The one shared `IConnectionMultiplexer`: `AddRedisConnection`, `EnsureRedisConnectionRegistered`, the `redis` probe. References no other `SharedKernel.Caching` package |
 | `SharedKernel.Caching.Redis` | Adapter | FusionCache L2 + backplane over the shared connection (`AddRedisL2`). Edge → `Redis.Core` |
@@ -105,9 +105,9 @@ services.AddHealthChecks().AddSharedKernelReadiness();           // host: maps "
 34. Readiness is only the `redis` and `cache` probes; `cache` reports Degraded, never Unhealthy. Probe descriptions never contain secrets or exception messages.
 35. No static mutable state (static `Meter`/`ActivitySource` excepted). Metric tag `cache.key_prefix` is `{service}:{entity}` — never an id or tenant. Span status carries the exception type name, never its message.
 
-### Observability and errors *(planned, SK.02.LockUnavailableError, SK.02.ObservabilityConformance)*
+### Observability and errors *(37-38 planned, SK.02.ObservabilityConformance)*
 
-36. *(planned, SK.02.LockUnavailableError)* `DistributedLockUnavailableException` is a sealed `SharedKernelException` carrying `Error.Unavailable(CachingErrorCodes.LockUnavailable)` (`caching.lock_unavailable`), so edges answer 503 / `Unavailable`. Its message is the fixed `Error.Message` and never contains the resource; `Resource` is diagnostic only. Constructors are `(Error)` and `(Error, Exception?)`; `ForResource` is the factory. `Caching.Abstractions` references `SharedKernel.Core` for the base type.
+36. `DistributedLockUnavailableException` is a sealed `SharedKernelException` carrying `Error.Unavailable(CachingErrorCodes.LockUnavailable)` (`caching.lock_unavailable`), so edges answer 503 / `Unavailable`. Its message is the fixed `Error.Message` and never contains the resource; `Resource` is diagnostic only. Constructors are `(Error)` and `(Error, Exception?)`; `ForResource` is the factory. `Caching.Abstractions` references `SharedKernel.Core` for the base type.
 37. *(planned, SK.02.ObservabilityConformance)* One `ActivitySource` and one `Meter`, both the public constant `SharedKernel.Caching` (FusionCache package only; locks, hash store and pub/sub emit no telemetry). Instruments are `sharedkernel.caching.*`, every one with a unit, durations in seconds; tag keys come from `CachingTagKeys` or `WellKnownTagKeys`, never literals; span failure goes through the shared recorder (cancellation is not an error, no exception message on a span).
 38. *(planned, SK.02.ObservabilityConformance)* Every log on a caught-exception path passes the exception; templates are one sentence with a trailing period and quoted names; no log contains a host, endpoint, full key, id or tenant. Lock `{Resource}` and channel `{Channel}` are caller-chosen names that may be logged and must never carry a tenant id or personal data. EventIds come from one `{Package}LoggingEventIds` class per package; each package has one `{Package}Log` class.
 
@@ -124,7 +124,7 @@ services.AddHealthChecks().AddSharedKernelReadiness();           // host: maps "
 | `AddRedisConnection` throws on a second call | Conflicting connection settings fail loudly instead of "first caller wins" |
 | Warmup with `WaitForWarmup` runs in `StartingAsync` | Completes before any `StartAsync`, so no traffic or readiness before warmup |
 | No lock key prefix option, no lock metrics | Resource names already carry the service |
-| Lock-unavailable code is `caching.lock_unavailable` *(planned, SK.02.LockUnavailableError)* | One flat `{domain}.{snake_reason}` code with the reason word `unavailable`; the resource stays out of the client-visible message |
+| Lock-unavailable code is `caching.lock_unavailable` | One flat `{domain}.{snake_reason}` code with the reason word `unavailable`; the resource stays out of the client-visible message |
 | Cache meter created through `IMeterFactory`, hit/miss tag is `caching.result` *(planned, SK.02.ObservabilityConformance)* | Gold standard T1; `outcome` is reserved for success / failure / exception / canceled |
 
 ## Logging
@@ -142,7 +142,7 @@ services.AddHealthChecks().AddSharedKernelReadiness();           // host: maps "
 
 `Caching.Abstractions` does not log. Logs carry `{KeyPrefix}`, never the full key; lock logs carry resource and token.
 
-*(planned, SK.02.ObservabilityConformance)* Ids stay as above; new events `+18` (best-effort evict after decrypt failure failed, Warning) and `+19` (`cache` probe failed, Debug) in the FusionCache sub-block and `+104` (`redis` probe failed, Debug) in the Redis.Core sub-block. Each package gets a `{Package}LoggingEventIds` and a `{Package}Log` class; `+200` and `+400` stay reserved. `+101`'s log passes the connection exception *(planned, SK.02.LockUnavailableError)*.
+*(planned, SK.02.ObservabilityConformance)* Ids stay as above; new events `+18` (best-effort evict after decrypt failure failed, Warning) and `+19` (`cache` probe failed, Debug) in the FusionCache sub-block and `+104` (`redis` probe failed, Debug) in the Redis.Core sub-block. Each package gets a `{Package}LoggingEventIds` and a `{Package}Log` class; `+200` and `+400` stay reserved. `+101`'s log passes the connection exception.
 
 ## Cross-Domain Couplings
 
