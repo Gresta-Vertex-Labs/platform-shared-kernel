@@ -13,6 +13,9 @@ internal static class RequestKind
     internal const string Query = "query";
     internal const string Request = "request";
 
+    /// <summary>The kind recorded for a streaming query (<c>IStreamQuery</c>).</summary>
+    internal const string Stream = "stream";
+
     /// <summary>
     /// Classifies <typeparamref name="TRequest"/> as <see cref="Command"/> when it implements
     /// <see cref="ICommandBase"/>, <see cref="Query"/> when it implements <see cref="IQueryBase"/>,

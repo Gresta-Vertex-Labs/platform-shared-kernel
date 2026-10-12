@@ -9,6 +9,7 @@ using SharedKernel.Application.Streaming;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Domain.Events;
 using SharedKernel.Primitives.Results;
+using SharedKernel.Testing.Telemetry;
 
 namespace SharedKernel.Application.Mediator.MediatR.Tests;
 
@@ -171,6 +172,38 @@ public sealed class UseMediatRTests
             items.Add(item);
 
         items.Should().Equal(0, 1, 2);
+    }
+
+    [Fact]
+    public async Task CreateStream_ProducesTheStreamSpanAndTheStreamMeasurements()
+    {
+        const string source = "SharedKernel.Application";
+        using var activities = ActivityRecorder.StartRecording(source);
+        using var metrics = MetricRecorder.StartRecording(source);
+        await using var provider = BuildProvider();
+        using var scope = provider.CreateScope();
+        var requestType = typeof(ExportRowsStreamQuery).FullName;
+
+        await foreach (var _ in scope.ServiceProvider.GetRequiredService<ISender>().CreateStream(new ExportRowsStreamQuery(3)))
+        {
+        }
+
+        activities.RecordedActivities
+            .Where(span => span.OperationName == "application stream" && Equals(span.GetTagItem("request.type"), requestType))
+            .Should().ContainSingle().Which
+            .ShouldHaveOutcome("success")
+            .ShouldBeRecordedSuccess();
+        metrics
+            .ShouldHaveMeasurement(
+                "sharedkernel.application.request.duration",
+                null,
+                new KeyValuePair<string, object?>("request.type", requestType),
+                new KeyValuePair<string, object?>("request.kind", "stream"),
+                new KeyValuePair<string, object?>("outcome", "success"))
+            .ShouldHaveSum(
+                "sharedkernel.application.stream.items",
+                3,
+                new KeyValuePair<string, object?>("request.type", requestType));
     }
 
     [Fact]

@@ -74,8 +74,10 @@ flowchart LR
 ```
 
 - **`Send`** runs `RequestPipeline<TRequest, TResponse>` — every registered `IPipelineBehavior<TRequest, TResponse>`,
-  outermost first, then the handler. **`CreateStream`** runs `StreamRequestPipeline<,>` with the stream behaviors
-  (`[RequirePermission]` is checked there too).
+  outermost first, then the handler. **`CreateStream`** runs `StreamRequestPipeline<,>` with the stream behaviors:
+  stream observability (an `application stream` span, a `request.kind` = `stream` duration measurement and a
+  `sharedkernel.application.stream.items` count, all starting at the first read) and then the `[RequirePermission]`
+  check.
 - **Discovery is `AddSharedKernelApplication`'s job.** It finds the handlers, validators and domain-event handlers of
   the given assemblies; `UseMediatR()` registers the transport for every request type whose handler it found.
 - **No reflection per send.** Reflection is used at registration only; a send resolves the dispatcher registered for

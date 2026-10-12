@@ -28,6 +28,9 @@ internal sealed class FakeUnitOfWork(List<string>? sequence = null) : IUnitOfWor
 
     public bool SimulateCommitFailure { get; set; }
 
+    /// <summary>Gets or sets the exception a simulated commit failure throws; a plain failure when <see langword="null"/>.</summary>
+    public Exception? CommitFault { get; set; }
+
     public bool IsTransactionActive => _depth > 0;
 
     public bool RollbackOnly { get; private set; }
@@ -117,7 +120,7 @@ internal sealed class FakeUnitOfWork(List<string>? sequence = null) : IUnitOfWor
                     await callback(cancellationToken);
 
                 if (SimulateCommitFailure)
-                    throw new InvalidOperationException("FakeUnitOfWork commit was configured to simulate failure.");
+                    throw CommitFault ?? new InvalidOperationException("FakeUnitOfWork commit was configured to simulate failure.");
 
                 CommitCount++;
                 sequence?.Add("transaction.commit");

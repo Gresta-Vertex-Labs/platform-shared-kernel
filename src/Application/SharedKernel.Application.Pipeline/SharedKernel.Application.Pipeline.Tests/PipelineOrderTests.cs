@@ -276,13 +276,13 @@ public sealed class PipelineOrderTests
     }
 
     [Fact]
-    public void Register_StreamAuthorization_IsAlwaysRegistered()
+    public void Register_StreamBehaviors_AreAlwaysRegistered_ObservabilityOutermost()
     {
         var services = new ServiceCollection();
         services.AddSharedKernelApplication(typeof(PipelineOrderTests).Assembly);
 
         services.Where(descriptor => descriptor.ServiceType == typeof(SharedKernel.Application.Streaming.IStreamPipelineBehavior<,>))
             .Select(descriptor => descriptor.ImplementationType)
-            .Should().ContainSingle().Which.Should().Be(typeof(StreamAuthorizationBehavior<,>));
+            .Should().Equal(typeof(SharedKernel.Application.Pipeline.Streaming.StreamObservabilityBehavior<,>), typeof(StreamAuthorizationBehavior<,>));
     }
 }

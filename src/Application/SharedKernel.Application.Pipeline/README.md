@@ -110,6 +110,9 @@ Five stages, always in this order, regardless of the order you called the `With�
 | 10b | Command | inner auditing half (`Succeeded`, queued on `OnBeforeCommit`) | commands implementing `IAuditableRequest<T>` | `WithAuditing()` |
 | 11 | Command | *(yours, or cache invalidation)* | commands | `WithBehavior(…, PipelineStage.Command)` / `WithCaching()` |
 
+A streaming query (`IStreamQuery<T>`) has its own, shorter chain: stream observability (span, metrics, log), outermost
+so a denial is observed too, then the `[RequirePermission]` check, then the handler.
+
 The behavior classes are internal: the public surface is the registration call, its builder, the options and
 `RequestPipeline<,>`.
 
@@ -217,6 +220,20 @@ before the handler runs, and settles it afterwards:
 | `InProgress` | `Error.Conflict(ErrorCodes.Idempotency.InProgress)` (`idempotency.in_progress`) |
 | `FingerprintMismatch` | `Error.Conflict(ErrorCodes.Idempotency.KeyReused)` (`idempotency.key_reused`) |
 
+**The store call is the fault boundary.** The package cannot reference Redis or PostgreSQL to classify their
+exceptions, and `IIdempotencyStore` documents that an unreachable store throws, so:
+
+| The store… | The behavior |
+| --- | --- |
+| throws from `TryBeginAsync` | Fails closed: `Error.Unavailable(ErrorCodes.Idempotency.StoreUnavailable)` (`idempotency.store_unavailable`, 503) and the handler does not run. The exception is logged (5121) and added to the request span; no exception text reaches the caller |
+| throws a `SharedKernelException` from `TryBeginAsync` | Returns that exception's own `Error`, unchanged |
+| throws because the caller cancelled | The cancellation propagates |
+| throws from `CompleteAsync` | Logs it (5122) and returns the handler's response; the reservation expires on its lease |
+| throws from `ReleaseAsync` | Logs it (5123) and keeps the handler's own outcome or exception; the reservation expires on its lease |
+
+A defect inside a store reads as Unavailable too (the exception is on the log and the span). A fault inside the
+handler is never caught here.
+
 An empty key is `Error.Validation(ErrorCodes.Idempotency.KeyRequired)` (`idempotency.key_required`), the code
 `SharedKernel.Presentation.WebApi` answers a missing `Idempotency-Key` header with — both take it from `SharedKernel.Primitives`'
 `ErrorCodes.Idempotency`.
@@ -259,6 +276,10 @@ exception rolls back and propagates.
   `TransactionRolledBackException`.
 - **An ambiguous commit is not retried.** `CommitOutcomeUnknownException` means the commit may or may not have
   happened — re-read (or rely on the idempotency key) before repeating.
+- **It is traced.** The outermost transaction and a joined one each get an `application transaction` span tagged
+  `application.transaction_joined` and `application.attempts` (how often the unit of work ran the delegate). A
+  rollback caused by a failed `Result` is logged at Warning (5160), one caused by an exception at Error (5161), and a
+  replay at Warning (5162); a joined command leaves the rollback log to the command that owns the transaction.
 
 #### `AuditingBehavior`
 
@@ -296,6 +317,7 @@ correlation are never in `AuditEntry`: the writer resolves them from `IRequestCo
 | denied | `Error.Unauthorized` (401) or `Error.Forbidden` (403) | no | no | released |
 | with a failed `Result` from the handler | the failure, unchanged | no | written | released |
 | with a handler exception | the exception, rethrown | no | written | released |
+| because the idempotency store is unreachable | `Error.Unavailable` (`idempotency.store_unavailable`, 503); the handler never ran | no | no | not reserved |
 | successfully | the value | yes | written | completed, then `OnCompleted` callbacks |
 
 **Only a successful outcome persists anything** — except the audit trail, which records the attempt either way.
@@ -388,6 +410,7 @@ are public so a mediator adapter (and tests) can resolve them; the behaviors are
 | `idempotency.key_required` | Validation | An `IIdempotentRequest` with an empty key |
 | `idempotency.in_progress` | Conflict | The same key is being handled right now |
 | `idempotency.key_reused` | Conflict | The same key arrived with a different fingerprint |
+| `idempotency.store_unavailable` | Unavailable | The idempotency store threw while reserving the key (503); a classified provider exception keeps its own error |
 
 All come from `ErrorCodes` in `SharedKernel.Primitives`.
 
@@ -411,7 +434,19 @@ keeps this package from referencing persistence, security or a cache.
 | Activity source | `SharedKernel.Application` | Span name = request type short name, kind Internal |
 | Span tags | | `request.type`, `request.kind`, plus `error.type`/`error.code` on failure |
 | Meter | `SharedKernel.Application` | via `IMeterFactory` |
-| Histogram | `sharedkernel.application.request.duration` | **seconds**; tags `request.type`, `request.kind`, `outcome`, `error.type` |
+| Histogram | `sharedkernel.application.request.duration` | **seconds**; tags `request.type`, `request.kind` (`command`, `query`, `request` or `stream`), `outcome`, `error.type` |
+| Counter | `sharedkernel.application.stream.items` | `{item}`; items a streaming query yielded, including those before a fault; tags `request.type`, `outcome` |
+| Span | `application stream` | One per enumerated streaming query, kind Internal, tags `request.type`, `request.kind` = `stream`, `outcome` |
+| Span | `application dispatch_events` | One per non-empty domain-event dispatch, tag `application.event_count`, `outcome` |
+| Span | `application handle_event` | One child per event type that has a handler, tag `application.event_type` (and `application.handler_type` when a handler fails), `outcome` |
+| Span | `application transaction` | The transaction around a command, tags `application.transaction_joined`, `application.attempts`, `outcome` |
+
+A stream's span, timer and log start at the first read and end once, at completion, at a fault or when the consumer
+disposes it; a stream that is never read records nothing. Ran to the end is `success`; the caller's cancellation, an
+`OperationCanceledException` or an early dispose is `canceled` (span status stays unset, no error log); any other
+exception is `exception` and is rethrown unchanged. A stream has no slow-request warning, because its consumer sets
+its pace. Failures on the new spans are recorded with the shared recorder, so they carry `error.type` and, for a
+classified exception, `error.code`.
 
 Wire the meter and activity source into a host with `SharedKernel.ServiceDefaults`' `WithApplicationTelemetry()`,
 which also registers the seconds-based bucket boundaries this histogram needs.
@@ -427,7 +462,18 @@ which also registers the seconds-based bucket boundaries this histogram needs.
 | 5104 | Error | A request threw |
 | 5110 | Error | A post-commit `OnCompleted` callback threw |
 | 5120 | Warning | `CompleteAsync` reported the idempotency reservation was lost |
+| 5121 | Error (Warning for a classified exception) | The idempotency store threw while reserving the key; the request was not handled |
+| 5122 | Error | The idempotency store threw while completing the reservation; the response is returned |
+| 5123 | Warning | The idempotency store threw while releasing the reservation |
 | 5130 | Error | The audit write failed while handling a handler exception |
+| 5140 | Debug | A stream ran to the end (item count, elapsed time) |
+| 5141 | Debug | A stream was canceled or disposed before the end |
+| 5142 | Warning | A stream failed with a classified exception (error type and code) |
+| 5143 | Error | A stream failed with an unexpected exception |
+| 5150 | Error (Warning for a classified exception) | A domain-event handler threw (event type and handler type, never the payload) |
+| 5160 | Warning | A transaction was rolled back because the command returned a failed `Result` |
+| 5161 | Error | A transaction was rolled back because the command threw |
+| 5162 | Warning | The unit of work ran the transaction delegate more than once |
 
 ## Testing
 

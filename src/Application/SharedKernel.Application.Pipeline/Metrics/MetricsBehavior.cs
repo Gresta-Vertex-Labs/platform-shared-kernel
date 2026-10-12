@@ -2,6 +2,8 @@ using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using SharedKernel.Application.Messaging;
 using SharedKernel.Application.Pipeline.Shared;
+using SharedKernel.Application.Pipeline.Tracing;
+using SharedKernel.Primitives.Propagation;
 
 namespace SharedKernel.Application.Pipeline.Metrics;
 
@@ -52,12 +54,12 @@ internal sealed class MetricsBehavior<TRequest, TResponse>(ApplicationMetrics me
             var elapsed = Stopwatch.GetElapsedTime(startTimestamp);
             var tags = new TagList
             {
-                { "request.type", typeof(TRequest).FullName ?? typeof(TRequest).Name },
-                { "request.kind", RequestKind.Classify<TRequest>() },
-                { "outcome", outcome },
+                { ApplicationTagKeys.RequestType, typeof(TRequest).FullName ?? typeof(TRequest).Name },
+                { ApplicationTagKeys.RequestKind, RequestKind.Classify<TRequest>() },
+                { WellKnownTagKeys.Outcome, outcome },
             };
             if (errorType is not null)
-                tags.Add("error.type", errorType);
+                tags.Add(WellKnownTagKeys.ErrorType, errorType);
 
             metrics.RecordRequestDuration(elapsed.TotalSeconds, tags);
         }

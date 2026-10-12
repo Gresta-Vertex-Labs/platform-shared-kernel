@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 using SharedKernel.Application.Pipeline.Tests.Support;
 using SharedKernel.Application.Pipeline.Transaction;
 using SharedKernel.Application.Messaging;
@@ -16,7 +17,7 @@ public sealed class TransactionBehaviorTests
     {
         var sequence = new List<string>();
         var unitOfWork = new FakeUnitOfWork(sequence);
-        var behavior = new TransactionBehavior<TestCommand, Result>(unitOfWork, new FakeCommandScope());
+        var behavior = new TransactionBehavior<TestCommand, Result>(unitOfWork, new FakeCommandScope(), NullLogger<TransactionBehavior<TestCommand, Result>>.Instance);
 
         var result = await behavior.Handle(new TestCommand(), () =>
         {
@@ -35,7 +36,7 @@ public sealed class TransactionBehaviorTests
     {
         var sequence = new List<string>();
         var unitOfWork = new FakeUnitOfWork(sequence);
-        var behavior = new TransactionBehavior<TestCommand, Result>(unitOfWork, new FakeCommandScope());
+        var behavior = new TransactionBehavior<TestCommand, Result>(unitOfWork, new FakeCommandScope(), NullLogger<TransactionBehavior<TestCommand, Result>>.Instance);
 
         var result = await behavior.Handle(
             new TestCommand(),
@@ -53,7 +54,7 @@ public sealed class TransactionBehaviorTests
     {
         var sequence = new List<string>();
         var unitOfWork = new FakeUnitOfWork(sequence);
-        var behavior = new TransactionBehavior<TestCommand, Result>(unitOfWork, new FakeCommandScope());
+        var behavior = new TransactionBehavior<TestCommand, Result>(unitOfWork, new FakeCommandScope(), NullLogger<TransactionBehavior<TestCommand, Result>>.Instance);
 
         var act = async () => await behavior.Handle(
             new TestCommand(), () => throw new InvalidOperationException("boom"), CancellationToken.None);
@@ -68,7 +69,7 @@ public sealed class TransactionBehaviorTests
     {
         var sequence = new List<string>();
         var unitOfWork = new FakeUnitOfWork(sequence) { SimulateSaveChangesFailure = true };
-        var behavior = new TransactionBehavior<TestCommand, Result>(unitOfWork, new FakeCommandScope());
+        var behavior = new TransactionBehavior<TestCommand, Result>(unitOfWork, new FakeCommandScope(), NullLogger<TransactionBehavior<TestCommand, Result>>.Instance);
 
         var act = async () => await behavior.Handle(
             new TestCommand(), () => Task.FromResult(Result.Success()), CancellationToken.None);
@@ -82,7 +83,7 @@ public sealed class TransactionBehaviorTests
     public async Task Handle_TransientFailure_ReplaysTheWholeInnerPipeline()
     {
         var unitOfWork = new FakeUnitOfWork { TransientFailures = 1 };
-        var behavior = new TransactionBehavior<TestCommand, Result>(unitOfWork, new FakeCommandScope());
+        var behavior = new TransactionBehavior<TestCommand, Result>(unitOfWork, new FakeCommandScope(), NullLogger<TransactionBehavior<TestCommand, Result>>.Instance);
         var handlerRuns = 0;
 
         var result = await behavior.Handle(new TestCommand(), () =>
@@ -101,7 +102,7 @@ public sealed class TransactionBehaviorTests
     {
         var sequence = new List<string>();
         var unitOfWork = new FakeUnitOfWork(sequence);
-        var behavior = new TransactionBehavior<TestCommand, Result>(unitOfWork, new FakeCommandScope(isNested: true));
+        var behavior = new TransactionBehavior<TestCommand, Result>(unitOfWork, new FakeCommandScope(isNested: true), NullLogger<TransactionBehavior<TestCommand, Result>>.Instance);
 
         var result = await behavior.Handle(new TestCommand(), () => Task.FromResult(Result.Success()), CancellationToken.None);
 
@@ -115,7 +116,7 @@ public sealed class TransactionBehaviorTests
     {
         var sequence = new List<string>();
         var unitOfWork = new FakeUnitOfWork(sequence);
-        var behavior = new TransactionBehavior<TestCommand, Result>(unitOfWork, new FakeCommandScope());
+        var behavior = new TransactionBehavior<TestCommand, Result>(unitOfWork, new FakeCommandScope(), NullLogger<TransactionBehavior<TestCommand, Result>>.Instance);
 
         await unitOfWork.ExecuteInTransactionAsync(async _ =>
         {
@@ -133,8 +134,8 @@ public sealed class TransactionBehaviorTests
     {
         var sequence = new List<string>();
         var unitOfWork = new FakeUnitOfWork(sequence);
-        var outer = new TransactionBehavior<TestCommand, Result>(unitOfWork, new FakeCommandScope());
-        var nested = new TransactionBehavior<TestCommand, Result>(unitOfWork, new FakeCommandScope(isNested: true));
+        var outer = new TransactionBehavior<TestCommand, Result>(unitOfWork, new FakeCommandScope(), NullLogger<TransactionBehavior<TestCommand, Result>>.Instance);
+        var nested = new TransactionBehavior<TestCommand, Result>(unitOfWork, new FakeCommandScope(isNested: true), NullLogger<TransactionBehavior<TestCommand, Result>>.Instance);
 
         var act = () => outer.Handle(new TestCommand(), async () =>
         {

@@ -10,8 +10,8 @@ namespace SharedKernel.Application.Pipeline;
 /// <remarks>
 /// The stream counterpart of <see cref="RequestPipeline{TRequest,TResponse}"/>. Only
 /// <see cref="IStreamPipelineBehavior{TRequest,TResponse}"/> registrations apply, in registration
-/// order, the first one outermost; request behaviors never do. This package registers no stream
-/// behavior of its own.
+/// order, the first one outermost; request behaviors never do. This package registers two: the observability
+/// behavior (span, metrics and log) and then the authorization check.
 /// </remarks>
 /// <param name="handler">The query's handler.</param>
 /// <param name="behaviors">The stream behaviors applicable to the query, outermost first.</param>

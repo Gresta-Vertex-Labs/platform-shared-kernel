@@ -11,6 +11,7 @@ using SharedKernel.Application.Pipeline.Commands;
 using SharedKernel.Application.Pipeline.Idempotency;
 using SharedKernel.Application.Pipeline.Logging;
 using SharedKernel.Application.Pipeline.Metrics;
+using SharedKernel.Application.Pipeline.Streaming;
 using SharedKernel.Application.Pipeline.Tracing;
 using SharedKernel.Application.Pipeline.Transaction;
 using SharedKernel.Application.Pipeline.Validation;
@@ -225,6 +226,9 @@ public sealed class ApplicationPipelineBuilder
         AddBehavior(typeof(LoggingBehavior<,>));
         AddBehavior(typeof(MetricsBehavior<,>));
         AddCustom(PipelineStage.Observability);
+
+        // ---- Stream observability: outermost in the stream chain, so a stream denial is observed too. ----
+        Services.AddTransient(typeof(IStreamPipelineBehavior<,>), typeof(StreamObservabilityBehavior<,>));
 
         // ---- Authorization stage: always on, so [RequirePermission] can never go unenforced. It resolves
         // IRequestContext only for a request that declares a permission. Streams get the same check. ----

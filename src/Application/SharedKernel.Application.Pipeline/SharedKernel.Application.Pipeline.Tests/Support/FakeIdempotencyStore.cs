@@ -19,6 +19,15 @@ internal sealed class FakeIdempotencyStore(List<string>? sequence = null) : IIde
     public TimeSpan? LastTtl { get; private set; }
     public TimeSpan? LastRetention { get; private set; }
 
+    /// <summary>Gets or sets an exception <see cref="TryBeginAsync"/> throws instead of reserving.</summary>
+    public Exception? BeginFault { get; set; }
+
+    /// <summary>Gets or sets an exception <see cref="CompleteAsync"/> throws.</summary>
+    public Exception? CompleteFault { get; set; }
+
+    /// <summary>Gets or sets an exception <see cref="ReleaseAsync"/> throws.</summary>
+    public Exception? ReleaseFault { get; set; }
+
     public Task<IdempotencyReservation> TryBeginAsync(
         IdempotencyPurpose purpose, string key, string fingerprint, TimeSpan ttl, CancellationToken cancellationToken)
     {
@@ -26,6 +35,9 @@ internal sealed class FakeIdempotencyStore(List<string>? sequence = null) : IIde
         BegunKeys.Add(key);
         Purposes.Add(purpose);
         LastTtl = ttl;
+
+        if (BeginFault is not null)
+            throw BeginFault;
 
         if (_entries.TryGetValue((purpose, key), out var existing))
         {
@@ -50,6 +62,9 @@ internal sealed class FakeIdempotencyStore(List<string>? sequence = null) : IIde
         Purposes.Add(purpose);
         LastRetention = retention;
 
+        if (CompleteFault is not null)
+            throw CompleteFault;
+
         if (!_entries.TryGetValue((purpose, key), out var existing) || existing.Token != token || existing.Completed)
             return Task.FromResult(false);
 
@@ -61,6 +76,8 @@ internal sealed class FakeIdempotencyStore(List<string>? sequence = null) : IIde
     public Task<bool> ReleaseAsync(IdempotencyPurpose purpose, string key, string token, CancellationToken cancellationToken)
     {
         ReleaseCallCount++;
+        if (ReleaseFault is not null)
+            throw ReleaseFault;
         Purposes.Add(purpose);
 
         if (!_entries.TryGetValue((purpose, key), out var existing) || existing.Token != token || existing.Completed)

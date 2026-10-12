@@ -214,6 +214,29 @@ public sealed class ApplicationPipelineTestHarnessTests
     }
 
     [Fact]
+    public async Task CreateStream_WithActivityCapture_CapturesTheStreamSpanAndTheStreamDurationMeasurement()
+    {
+        using var harness = new ApplicationPipelineTestHarness();
+        harness.Services.AddTransient<IStreamQueryHandler<CountStream, int>, CountStreamHandler>();
+        harness.WithActivityCapture().Build();
+        using var provider = harness.Services.BuildServiceProvider();
+        var requestType = typeof(CountStream).FullName;
+
+        await foreach (var item in provider.GetRequiredService<ISender>().CreateStream(new CountStream(2)))
+            Assert.True(item >= 0);
+
+        Assert.Contains(
+            harness.CapturedActivities,
+            activity => activity.OperationName == "application stream"
+                && Equals(activity.GetTagItem("request.type"), requestType));
+        Assert.Contains(
+            harness.CapturedMeasurements,
+            measurement => measurement.InstrumentName == "sharedkernel.application.request.duration"
+                && measurement.Tags.Any(tag => tag.Key == "request.type" && Equals(tag.Value, requestType))
+                && measurement.Tags.Any(tag => tag.Key == "request.kind" && Equals(tag.Value, "stream")));
+    }
+
+    [Fact]
     public void Build_WithoutAMediator_WithIdempotencyButNoStore_FailsTheStartCheck()
     {
         using var harness = new ApplicationPipelineTestHarness();

@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using SharedKernel.Application.Messaging;
 using SharedKernel.Application.Pipeline.Shared;
+using SharedKernel.Primitives.Propagation;
 
 namespace SharedKernel.Application.Pipeline.Tracing;
 
@@ -45,8 +46,8 @@ internal sealed class TracingBehavior<TRequest, TResponse> : IPipelineBehavior<T
             typeof(TRequest).Name,
             ActivityKind.Internal);
 
-        activity?.SetTag("request.type", typeof(TRequest).FullName ?? typeof(TRequest).Name);
-        activity?.SetTag("request.kind", RequestKind.Classify<TRequest>());
+        activity?.SetTag(ApplicationTagKeys.RequestType, typeof(TRequest).FullName ?? typeof(TRequest).Name);
+        activity?.SetTag(ApplicationTagKeys.RequestKind, RequestKind.Classify<TRequest>());
 
         try
         {
@@ -56,8 +57,8 @@ internal sealed class TracingBehavior<TRequest, TResponse> : IPipelineBehavior<T
             if (error is not null)
             {
                 activity?.SetStatus(ActivityStatusCode.Error, error.Code);
-                activity?.SetTag("error.type", error.Type.ToString());
-                activity?.SetTag("error.code", error.Code);
+                activity?.SetTag(WellKnownTagKeys.ErrorType, error.Type.ToString());
+                activity?.SetTag(WellKnownTagKeys.ErrorCode, error.Code);
             }
 
             return response;
@@ -65,7 +66,7 @@ internal sealed class TracingBehavior<TRequest, TResponse> : IPipelineBehavior<T
         catch (Exception ex)
         {
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-            activity?.SetTag("error.type", ex.GetType().FullName);
+            activity?.SetTag(WellKnownTagKeys.ErrorType, ex.GetType().FullName);
             activity?.AddException(ex);
             throw;
         }
