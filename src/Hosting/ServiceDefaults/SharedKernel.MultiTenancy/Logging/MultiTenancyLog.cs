@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Logging;
-using SharedKernel.Execution.Tenancy;
 
 namespace SharedKernel.MultiTenancy.Logging;
 
@@ -15,10 +14,9 @@ namespace SharedKernel.MultiTenancy.Logging;
 /// <c>13000</c>–<c>13099</c> via <c>ServiceDefaults.Logging.ServiceDefaultsLog</c>).
 /// </para>
 /// <para>
-/// <see cref="TenantResolved"/>'s <c>{TenantId}</c> placeholder is a deliberate exception to the
-/// platform's "CorrelationId/TraceId/TenantId never as an explicit template placeholder" logging
-/// convention: here <c>TenantId</c> IS the message's own payload (which tenant was resolved, and
-/// by which strategy), not context repeated across unrelated log statements.
+/// <b>No tenant id in any message.</b> The resolved tenant reaches every exported log record of the request
+/// ambiently, as the <c>TenantId</c> record attribute the base's baggage processor copies from the tenant baggage
+/// item, so <see cref="TenantResolved"/> carries only the strategy that resolved it.
 /// </para>
 /// </remarks>
 internal static partial class MultiTenancyLog
@@ -30,8 +28,8 @@ internal static partial class MultiTenancyLog
     [LoggerMessage(
         EventId = 13100,
         Level = LogLevel.Debug,
-        Message = "Tenant {TenantId} resolved via strategy '{StrategyName}'.")]
-    public static partial void TenantResolved(ILogger logger, TenantId tenantId, string strategyName);
+        Message = "Resolved the tenant with the strategy '{StrategyName}'.")]
+    public static partial void TenantResolved(ILogger logger, string strategyName);
 
     /// <summary>
     /// Logged when no configured strategy resolves a tenant for the current request — including

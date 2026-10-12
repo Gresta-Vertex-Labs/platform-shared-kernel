@@ -120,15 +120,11 @@ public static class MtlsClientCertificateExtensions
         {
             if (result.IsValid)
             {
-                MtlsLog.MtlsCertificateAccepted(logger, certificate.Thumbprint, certificate.Subject);
+                MtlsLog.MtlsCertificateAccepted(logger, certificate.Thumbprint);
             }
             else
             {
-                MtlsLog.MtlsCertificateRejected(
-                    logger,
-                    certificate.Thumbprint,
-                    certificate.Subject,
-                    "rejected by IMtlsCertificateValidator");
+                MtlsLog.MtlsCertificateRejected(logger, certificate.Thumbprint);
             }
         }
 

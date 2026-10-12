@@ -87,7 +87,7 @@ public sealed class ServiceDefaultsLogWiringTests
     }
 
     [Fact]
-    public async Task MtlsForwardedHeaderMiddleware_TrustedNetworksRejection_LogsMtlsCertificateRejectedWithReason()
+    public async Task MtlsForwardedHeaderMiddleware_TrustedNetworksRejection_LogsForwardedCertificateSourceUntrusted_NotRejected()
     {
         var services = new ServiceCollection();
         services.AddInMemoryLoggerFactory();
@@ -109,9 +109,10 @@ public sealed class ServiceDefaultsLogWiringTests
         await middleware.InvokeAsync(context, validator);
 
         var inMemoryLogger = loggerFactory.GetLogger(typeof(MtlsForwardedHeaderMiddleware).FullName!);
-        var record = inMemoryLogger.Records.ShouldHaveLogged(13001, LogLevel.Warning);
-        record.TryGetProperty("Reason", out var reason).Should().BeTrue();
-        reason.Should().BeOfType<string>().Which.Should().Contain("TrustedNetworks");
+        var record = inMemoryLogger.Records.ShouldHaveLogged(13008, LogLevel.Warning);
+        record.State!.Where(p => p.Key != "{OriginalFormat}").Should().BeEmpty("the refusal carries no parameters");
+        inMemoryLogger.Records.ShouldNotHaveLogged(13001);
+        inMemoryLogger.Records.ShouldNotLeak("203.0.113.7");
     }
 
     [Fact]
@@ -173,11 +174,10 @@ public sealed class ServiceDefaultsLogWiringTests
     }
 
     [Fact]
-    public async Task MtlsForwardedHeaderMiddleware_ValidatorAccepts_LogsThumbprintAndSubject_NeverLogsRawCertificateBytes()
+    public async Task MtlsForwardedHeaderMiddleware_ValidatorAccepts_LogsThumbprintOnly_NeverLogsRawCertificateBytesOrSubject()
     {
-        // T-52: both Thumbprint and Subject must be populated on MtlsCertificateAccepted, and no
-        // certificate PEM/DER bytes may appear anywhere in the emitted structured log state — only
-        // the thumbprint/subject-shaped identifiers ServiceDefaultsLog's own XML docs promise.
+        // The thumbprint is the only certificate identifier logged: no subject (a distinguished name is personal and
+        // organisational data) and no PEM/DER bytes anywhere in the emitted structured log state.
         var services = new ServiceCollection();
         services.AddInMemoryLoggerFactory();
         using var provider = services.BuildServiceProvider();
@@ -204,8 +204,8 @@ public sealed class ServiceDefaultsLogWiringTests
 
         record.TryGetProperty("Thumbprint", out var thumbprint).Should().BeTrue();
         thumbprint.Should().Be(certificate.Thumbprint);
-        record.TryGetProperty("Subject", out var subject).Should().BeTrue();
-        subject.Should().Be(certificate.Subject);
+        record.TryGetProperty("Subject", out _).Should().BeFalse();
+        inMemoryLogger.Records.ShouldNotLeak(certificate.Subject);
 
         // No raw certificate material anywhere in the emitted structured state or rendered message.
         record.Message.Should().NotContain(rawDerBase64);

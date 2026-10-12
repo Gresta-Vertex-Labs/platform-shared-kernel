@@ -32,7 +32,7 @@ internal sealed class ReadinessProbeHealthCheck(IReadinessProbe probe, ILogger? 
         catch (Exception exception)
         {
             if (logger is not null)
-                ServiceDefaultsLog.ReadinessProbeThrew(logger, probe.Name, exception.GetType().Name);
+                ServiceDefaultsLog.ReadinessProbeThrew(logger, probe.Name, exception);
 
             return new HealthCheckResult(
                 failureStatus,

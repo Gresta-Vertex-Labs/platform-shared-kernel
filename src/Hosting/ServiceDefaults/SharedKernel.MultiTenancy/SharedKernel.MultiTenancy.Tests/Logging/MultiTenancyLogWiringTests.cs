@@ -32,7 +32,7 @@ public sealed class MultiTenancyLogWiringTests
     }
 
     [Fact]
-    public async Task InvokeAsync_TenantResolves_LogsTenantResolvedWithTenantIdAndStrategyName()
+    public async Task InvokeAsync_TenantResolves_LogsTenantResolvedWithStrategyNameAndNoTenantId()
     {
         var (factory, logger) = CreateLogging();
         var expectedTenantId = Guid.NewGuid();
@@ -45,10 +45,10 @@ public sealed class MultiTenancyLogWiringTests
 
         var inMemoryLogger = factory.GetLogger(typeof(TenantResolutionMiddleware).FullName!);
         var record = inMemoryLogger.Records.ShouldHaveLogged(13100, LogLevel.Debug);
-        record.TryGetProperty("TenantId", out var tenantId).Should().BeTrue();
-        tenantId.Should().Be(new TenantId(expectedTenantId));
         record.TryGetProperty("StrategyName", out var strategyName).Should().BeTrue();
         strategyName.Should().Be(TenantResolutionStrategyNames.Header);
+        record.TryGetProperty("TenantId", out _).Should().BeFalse("the tenant reaches the record ambiently, never as a placeholder");
+        inMemoryLogger.Records.ShouldNotLeak(expectedTenantId.ToString(), expectedTenantId.ToString("N"));
     }
 
     [Fact]

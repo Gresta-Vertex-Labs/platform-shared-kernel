@@ -92,7 +92,7 @@ assembly's name.
   | Probe report | Health status |
   | --- | --- |
   | `ReadinessStatus.Healthy` / `Degraded` / `Unhealthy` | `Healthy` / `Degraded` / `Unhealthy` |
-  | The probe throws | `Unhealthy`, exception type only (EventId 13005) |
+  | The probe throws | `Unhealthy`, exception type only in the report; the exception object is logged (EventId 13005) |
 
   The report's latency is added as `LatencyMilliseconds`. Registration order does not matter: probes are read when
   health checks are first resolved. Two probes with the same name fail resolution with an exception naming the duplicate.
@@ -214,7 +214,7 @@ Kernel probe names: `messaging`, `redis`, `cache`, `encryption-key-provider`, `f
 | Event id | Level | Event |
 | --- | --- | --- |
 | 13002 | Information | Health check registered (name: `{HealthCheckName}`, tags: `{Tags}`) |
-| 13005 | Warning | Readiness probe `{ProbeName}` threw `{ExceptionType}` instead of reporting unhealthy |
+| 13005 | Warning | Readiness probe `{ProbeName}` threw instead of reporting unhealthy (the exception is passed to the logger) |
 
 ## Testing
 

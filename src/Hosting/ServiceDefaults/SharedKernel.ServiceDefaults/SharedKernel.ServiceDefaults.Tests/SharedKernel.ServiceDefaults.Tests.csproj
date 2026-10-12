@@ -26,6 +26,9 @@
     <ProjectReference Include="..\..\..\Presentation\SharedKernel.Presentation.WebApi\SharedKernel.Presentation.WebApi.csproj" />
     <!-- P-579: the HTTP edge that refuses inbound baggage is UseSharedKernelRequestContext() (test-only reference). -->
     <ProjectReference Include="..\..\SharedKernel.ServiceDefaults.Security\SharedKernel.ServiceDefaults.Security.csproj" />
+    <!-- EventIdUniquenessTests reads every [LoggerMessage] of the domain's production assemblies (test-only references). -->
+    <ProjectReference Include="..\..\SharedKernel.ServiceDefaults.Security.Mtls\SharedKernel.ServiceDefaults.Security.Mtls.csproj" />
+    <ProjectReference Include="..\..\SharedKernel.ServiceDefaults.Localization\SharedKernel.ServiceDefaults.Localization.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="xunit" />

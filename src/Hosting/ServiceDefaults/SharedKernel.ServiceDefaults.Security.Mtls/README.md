@@ -14,7 +14,7 @@
 | `builder.AddMtlsForwardedHeaderCertificate(o => …)` + `MtlsForwardedHeaderMiddleware` | A certificate an ingress forwards becomes `HttpContext.Connection.ClientCertificate` |
 | A `TrustedNetworks` allow-list | Only the ingress can set the certificate header; anyone else's header is ignored, never decoded |
 | One validator for both paths | The mTLS authentication handler and the transport layer agree on who is trusted |
-| Accept/reject events with thumbprint and subject | An audit trail of certificate decisions, never raw certificate bytes |
+| Accept/reject events with the thumbprint | An audit trail of certificate decisions, never raw certificate bytes, a subject or a remote address |
 
 ## Install
 
@@ -78,7 +78,7 @@ Without `SharedKernel.Presentation.WebApi`, add `app.UseMiddleware<MtlsForwarded
   callback is synchronous while the validator is async, so the call blocks inside the TLS handshake.
 - **Forwarded-header path**, per request:
   1. With `TrustedNetworks` configured, a request whose remote IP is outside every network is passed on untouched: the
-     header is never decoded and no certificate is set (a rejection is logged, EventId 13001).
+     header is never decoded and no certificate is set (EventId 13008 is logged, with no parameters and no address).
   2. The header value is decoded as Base64 DER, or else as URL-encoded PEM (the formats nginx-ingress, Envoy and
      HAProxy use); an undecodable value is ignored.
   3. The validator decides. Accepted → `HttpContext.Connection.ClientCertificate` is set (disposed when the response
@@ -113,11 +113,12 @@ Set in code on `AddMtlsForwardedHeaderCertificate(o => …)` (`MtlsForwardedHead
 
 | Event id | Level | Event |
 | --- | --- | --- |
-| 13000 | Information | Client certificate accepted (thumbprint, subject) |
-| 13001 | Warning | Client certificate rejected (thumbprint, subject, reason) |
+| 13000 | Information | Accepted the client certificate with the thumbprint `{Thumbprint}` |
+| 13001 | Warning | Rejected the client certificate with the thumbprint `{Thumbprint}` (the validator said no) |
 | 13003 | Warning | Forwarded-header path has no `TrustedNetworks` allow-list for header `{HeaderName}` |
+| 13008 | Warning | Ignored a forwarded client certificate because its source is outside the configured trusted networks (no parameters) |
 
-Raw certificate bytes are never logged.
+Raw certificate bytes, the certificate subject, the remote IP address and a validator's free-text reason are never logged.
 
 ## Testing
 

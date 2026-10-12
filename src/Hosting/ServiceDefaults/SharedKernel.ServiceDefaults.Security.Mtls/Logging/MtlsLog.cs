@@ -7,15 +7,14 @@ namespace SharedKernel.ServiceDefaults.Logging;
 /// </summary>
 /// <remarks>
 /// <para>
-/// EventIds <c>13000</c>, <c>13001</c>, and <c>13003</c> belong to the ServiceDefaults package
-/// family's shared <c>13000</c>–<c>13099</c> sub-block. They moved here unchanged from the
-/// composition base when WO-084 split it, so existing dashboards and alert rules keep matching.
-/// See <c>SharedKernel.ServiceDefaults.Logging.ServiceDefaultsLog</c> for the full family
-/// allocation.
+/// EventIds <c>13000</c>, <c>13001</c>, <c>13003</c> and <c>13008</c> belong to the ServiceDefaults package
+/// family's shared <c>13000</c>–<c>13099</c> sub-block. See <c>SharedKernel.ServiceDefaults.Logging.ServiceDefaultsLog</c>
+/// for the full family allocation.
 /// </para>
 /// <para>
-/// <b>Never logs a certificate's raw PEM or DER bytes</b> — only its thumbprint, subject, and a
-/// rejection reason.
+/// <b>Never logs a certificate's raw PEM or DER bytes, its subject, a remote IP address or a validator's free-text
+/// reason</b> — only the thumbprint. A forwarded certificate that was never decoded has no thumbprint, so its
+/// refusal message has no parameters at all.
 /// </para>
 /// </remarks>
 internal static partial class MtlsLog
@@ -28,21 +27,18 @@ internal static partial class MtlsLog
     [LoggerMessage(
         EventId = 13000,
         Level = LogLevel.Information,
-        Message = "Mutual-TLS client certificate accepted (thumbprint: {Thumbprint}, subject: {Subject}).")]
-    public static partial void MtlsCertificateAccepted(ILogger logger, string thumbprint, string subject);
+        Message = "Accepted the client certificate with the thumbprint '{Thumbprint}'.")]
+    public static partial void MtlsCertificateAccepted(ILogger logger, string thumbprint);
 
     /// <summary>
-    /// Logged when a mutual-TLS client certificate is rejected — either by the registered
-    /// <c>IMtlsCertificateValidator</c>, or by <see cref="Security.MtlsForwardedHeaderMiddleware"/>'s
-    /// <c>TrustedNetworks</c> allowlist before the certificate was decoded, in which case
-    /// <paramref name="thumbprint"/> and <paramref name="subject"/> are placeholders and
-    /// <paramref name="reason"/> carries the actual cause.
+    /// Logged when the registered <c>IMtlsCertificateValidator</c> rejects a mutual-TLS client certificate, whether
+    /// Kestrel negotiated it or it was forwarded through <see cref="Security.MtlsForwardedHeaderMiddleware"/>.
     /// </summary>
     [LoggerMessage(
         EventId = 13001,
         Level = LogLevel.Warning,
-        Message = "Mutual-TLS client certificate rejected (thumbprint: {Thumbprint}, subject: {Subject}, reason: {Reason}).")]
-    public static partial void MtlsCertificateRejected(ILogger logger, string thumbprint, string subject, string reason);
+        Message = "Rejected the client certificate with the thumbprint '{Thumbprint}'.")]
+    public static partial void MtlsCertificateRejected(ILogger logger, string thumbprint);
 
     /// <summary>
     /// Logged once at startup when
@@ -57,4 +53,15 @@ internal static partial class MtlsLog
         Level = LogLevel.Warning,
         Message = "MtlsForwardedHeaderMiddleware has no configured TrustedNetworks allowlist for header '{HeaderName}' — any network path reaching this host directly can forge this header.")]
     public static partial void ForwardedHeaderTrustBoundaryUnconfigured(ILogger logger, string headerName);
+
+    /// <summary>
+    /// Logged when a forwarded client certificate is ignored because the request's source is outside the configured
+    /// <c>TrustedNetworks</c>. The header is never decoded, so there is no thumbprint, and the remote address is not
+    /// logged.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 13008,
+        Level = LogLevel.Warning,
+        Message = "Ignored a forwarded client certificate because its source is outside the configured trusted networks.")]
+    public static partial void ForwardedCertificateSourceUntrusted(ILogger logger);
 }
