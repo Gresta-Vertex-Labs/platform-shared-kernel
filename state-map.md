@@ -25,7 +25,7 @@ Phases written by `arch-lead` take the next phase id; a user-directed phase with
 | 03 | [Domain](src/Model/Domain/state-map.md) | 1 (Model) | ● | None |
 | 04 | [Contracts](src/Model/Contracts/state-map.md) | 1 (Model) | ● | None |
 | 05 | [Application](src/Application/state-map.md) | 4 (1 Abstractions, 3 Host) | ● | None |
-| 06 | [Persistence](src/Infrastructure/Persistence/state-map.md) | 6 (1 Abstractions, 5 Adapter) | ○ | Next: `SK.06.PersistenceConformance` (WO-087) |
+| 06 | [Persistence](src/Infrastructure/Persistence/state-map.md) | 6 (1 Abstractions, 5 Adapter) | ● | None |
 | 07 | [Messaging](src/Infrastructure/Messaging/state-map.md) | 5 (1 Abstractions, 4 Adapter) | ● | None |
 | 08 | [Storage](src/Infrastructure/Storage/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ● | None |
 | 09 | [Search](src/Infrastructure/Search/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ● | None |
@@ -285,7 +285,7 @@ Apply every applicable rule of root `CLAUDE.md` "Observability, exceptions and e
 - [ ] Breaking renames listed for the release notes; PublicAPI, READMEs and domain `CLAUDE.md` updated.
 
 #### P-604 — Conform Persistence to the gold standard (Phase 2)
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Domain:** 06.Persistence
 **Depends on:** P-580, P-581, P-583, P-587
 **Phase key:** `SK.06.PersistenceConformance`
