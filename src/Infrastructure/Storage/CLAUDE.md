@@ -11,8 +11,8 @@
 
 | Package | Tier | Purpose |
 | --- | --- | --- |
-| `SharedKernel.Storage.Abstractions` | Abstractions | Contracts (`IFileStorage`, `ITenantFileStorage`, `IFileStorageFactory`), models, `StorageErrors`/`StorageErrorCodes`/`StorageException`, `StorageValidation`, `StorageReadinessProbeNames`, and the store registry (`AddSharedKernelStorage`, `IStorageBuilder`, `FileStoreRegistration`; internal `FileStorageFactory`, `ScopedFileStorage`, `TenantFileStorage`, `FileStoreReadinessProbe`). References `SharedKernel.Primitives`, `SharedKernel.Execution` and `SharedKernel.Core` (for `SharedKernelException`) only |
-| `SharedKernel.Storage.S3` | Adapter | The S3 implementation: `AddS3`, `AddS3Compatible`, `S3StorageBuilder`, `S3StorageOptions`, `S3StoreOptions`, `S3Compatibility`; internal `S3FileStorage`, `S3Connection`, telemetry, logging. `AWSSDK.S3`, `SharedKernel.Configuration` |
+| `SharedKernel.Storage.Abstractions` | Abstractions | Contracts (`IFileStorage`, `ITenantFileStorage`, `IFileStorageFactory`), models, `StorageErrors`/`StorageErrorCodes`/`StorageException`, `StorageValidation`, `StorageTelemetryNames`/`StorageTagKeys` (the provider-neutral telemetry names), `StorageReadinessProbeNames`, and the store registry (`AddSharedKernelStorage`, `IStorageBuilder`, `FileStoreRegistration`; internal `FileStorageFactory`, `ScopedFileStorage`, `TenantFileStorage`, `FileStoreReadinessProbe`). References `SharedKernel.Primitives`, `SharedKernel.Execution` and `SharedKernel.Core` (for `SharedKernelException`) only |
+| `SharedKernel.Storage.S3` | Adapter | The S3 implementation: `AddS3`, `AddS3Compatible`, `S3StorageBuilder`, `S3StorageOptions`, `S3StoreOptions`, `S3Compatibility`; internal `S3FileStorage`, `S3Connection`, `Diagnostics/` (`StorageTelemetry`, `S3StorageLog`, `S3StorageLoggingEventIds`). `AWSSDK.S3`, `Microsoft.Extensions.Diagnostics`, `SharedKernel.Configuration` |
 | `SharedKernel.Storage.Obs` | Adapter | Huawei Cloud OBS: `AddObs`, `ObsStorageOptions` and the OBS compatibility profile over the S3 implementation — nothing else. Declared edge → `SharedKernel.Storage.S3` |
 
 All three track their public API (`PublicAPI.*.txt`, RS0016/RS0017 as errors). Public types live in the flat namespace
@@ -78,12 +78,15 @@ API detail, option keys and defaults: the `SharedKernel.Storage.Abstractions`, `
     A tenant view rewrites the error of a `StorageException` raised during enumeration, keeping the original as
     `InnerException`, so `tenants/{id}/` never leaves it. Abstractions references `SharedKernel.Core` as well as
     Primitives and Execution.
-16. *(planned, SK.08.StorageConformance)* **Telemetry and logs follow root "Observability, exceptions and error codes".**
+16. **Telemetry and logs follow root "Observability, exceptions and error codes".**
     The source and meter name and the tag keys are public constants in Abstractions (`StorageTelemetryNames`,
     `StorageTagKeys`); instruments are `sharedkernel.storage.*` with units; failures are recorded through the shared
-    Primitives recorder (`error.code` = the `storage.*` code, `error.type` = the `ErrorType`), with an `outcome` tag
-    from `WellKnownOutcomes`; the meter comes from `IMeterFactory`; log templates are one sentence with quoted
-    identifiers and the exception last; EventIds come from `S3StorageLoggingEventIds`.
+    Primitives recorder (`error.code` = the `storage.*` code, `error.type` = the `ErrorType` name), with an `outcome` tag
+    from `WellKnownOutcomes`; the meter comes from `IMeterFactory`, the `ActivitySource` is static; every operation,
+    including a request refused before any I/O, records one span and one duration, and an unexpected exception or the
+    caller's cancellation is recorded and rethrown unchanged. Log templates are one sentence with quoted identifiers and
+    the exception last; EventIds come from `S3StorageLoggingEventIds`. Exception messages (E3) are sentences that end in a
+    period, quote values and name the remedy.
 
 ## Decisions
 
@@ -101,9 +104,13 @@ API detail, option keys and defaults: the `SharedKernel.Storage.Abstractions`, `
 | Only `Default`/`InfrequentAccess` tiers | Archive tiers need a restore step before reads; left to lifecycle rules |
 | OBS profile refuses conditions and checksums, allows tags | OBS accepts and ignores `If-None-Match`, `If-Match`, `x-amz-checksum-sha256` |
 | No in-library upload validation | Presigned uploads bypass the service; validate on read or with bucket policy |
-| *(planned, SK.08.StorageConformance)* `StorageErrors` stays a public factory | Providers and the in-memory double live in other assemblies; root C2 asks for an internal factory, recorded deviation |
-| *(planned, SK.08.StorageConformance)* Timeouts stay under `storage.unavailable` | After the SDK's retries a timeout is retry-later; root C3 asks for `Timeout`, recorded deviation (a `storage.timeout` code is an addendum if arch-lead rules so) |
-| *(planned, SK.08.StorageConformance)* Caller-driven outcomes (`not_found`, `already_exists`, `precondition_failed`, `invalid_range`, `checksum_mismatch`) log at Debug | Warning would log every missing-object read; root L6 says Warning, open decision for arch-lead, default is to keep Debug |
+| `StorageErrors` stays a public factory | Providers and the in-memory double live in other assemblies; root C2 asks for an internal factory (recorded deviation) |
+| Timeouts stay under `storage.unavailable` | After the SDK's retries a timeout is retry-later; root C3 asks for `Timeout` (recorded deviation; a `storage.timeout` code is an addendum if arch-lead rules so) |
+| Caller-driven outcomes (`not_found`, `already_exists`, `precondition_failed`, `invalid_range`, `checksum_mismatch`) log at Debug | Warning would log every missing-object read; root L6 says Warning (recorded deviation, open for arch-lead: one attribute and one test to switch) |
+| `NotSupported` stays `ErrorType.Unexpected` | A caller choosing a feature the configured store lacks is a usage defect, not a retryable condition |
+| The telemetry singleton is registered by the S3 package (`AddS3Compatible`), not by `AddSharedKernelStorage()` | `AddMetrics()` lives in `Microsoft.Extensions.Diagnostics`, which an Abstractions package may not reference (SKTIER003); only the provider creates instruments, and a second provider registers its own |
+| `StorageValidation` and the in-memory double return `Error?` (null = valid) and carry an in-source `SK0004` suppression | The helpers are public API chained with `??` and `is Error`; an `Error.None` sentinel would break every consumer (recorded deviation) |
+| `WrongRegion` (8105) carries the exception | An Error-level record without one breaks root L4; both call sites have the redirect exception |
 
 ## Logging
 
@@ -115,23 +122,14 @@ EventId block **8000–8999** (`LoggingEventIdRanges.Storage`):
 | 8100–8199 | S3 (`S3StorageLog`) | 8100 access denied, 8101 unavailable, 8102 provider error, 8103 expected failure (Debug), 8104 probe failed, 8105 bucket not served by the configured region/endpoint |
 | 8200–8299 | OBS | none (logs through S3) |
 
-Telemetry (S3 package): `ActivitySource`/`Meter` `"SharedKernel.Storage"`; spans `storage {operation}` (Client) with
-`storage.store`, `storage.operation`, `storage.provider`, `error.type` (the storage code) on failure; histogram
-`storage.client.operation.duration` (s); counter `storage.client.bytes` (`storage.direction`). Wired by
-`WithStorageTelemetry()` in `SharedKernel.ServiceDefaults`.
+Templates are one sentence with quoted identifiers (`Store '{Store}' on bucket '{Bucket}' ...`), the exception parameter is last, and the standard names `{Operation}`, `{StatusCode}`, `{ErrorCode}` are used; the bucket and the provider request id are logged, never the key, endpoint or tenant. Levels: 8100 Warning, 8101 Warning, 8102 Error, 8103 Debug (caller-driven outcomes, see Decisions), 8104 Warning, 8105 Error. The EventIds are the constants of `S3StorageLoggingEventIds` (class in `Diagnostics/`, with `S3StorageLog`); OBS 8200-8299 are reserved and nothing is declared (it logs through S3); Abstractions 8000-8099 is unused. The logger category is `ILogger<S3FileStorage>`.
 
-*(planned, SK.08.StorageConformance)* Names become the public constants `StorageTelemetryNames` (source and meter
-`SharedKernel.Storage`) and `StorageTagKeys`; instruments `sharedkernel.storage.operation.duration` (`s`; tags store,
-operation, provider, `outcome`, plus `error.type` and `error.code` on failures) and `sharedkernel.storage.bytes` (`By`);
-span `error.type` becomes the `ErrorType` name with the code in `error.code`; the meter is created through
-`IMeterFactory`; the `ServiceDefaults` wildcard subscription replaces `WithStorageTelemetry()`. Log ownership: S3
-`S3StorageLoggingEventIds` (8100-8199, class in `Diagnostics/`); OBS 8200-8299 reserved, nothing declared (it logs
-through S3); Abstractions 8000-8099 unused.
+Telemetry: `ActivitySource` and `Meter` `StorageTelemetryNames.SourceName` = `MeterName` = `"SharedKernel.Storage"`, version from `TelemetryVersion.Of`, the meter created through `IMeterFactory` (the S3 package calls `AddMetrics()`); `AddServiceDefaults()` subscribes by the `SharedKernel.*` wildcard (there is no `WithStorageTelemetry()`). Spans `storage {operation}` (Client) tagged `storage.store`, `storage.operation`, `storage.provider` (the connection name); a `Result` failure sets status Error, `error.code` (the `storage.*` code) and `error.type` (the `ErrorType` name); an unexpected exception adds the full exception event and is rethrown; the caller's cancellation records no error. Instruments: histogram `sharedkernel.storage.operation.duration` (`s`; tags store, operation, provider, `outcome`, plus `error.type` and `error.code` on failures) and counter `sharedkernel.storage.bytes` (`By`; tags store, provider, direction). Outcomes come from `WellKnownOutcomes`.
 
 ## Cross-Domain Couplings
 
 - **01.Core:** `Result`/`Error`, `TenantId`, `AddValidatedOptions` (S3 only), `IReadinessProbe` — one per store.
-- **13.ServiceDefaults:** `AddSharedKernelReadiness()` maps the `storage-{store}` probes; `WithStorageTelemetry()`.
+- **13.ServiceDefaults:** `AddSharedKernelReadiness()` maps the `storage-{store}` probes; `AddServiceDefaults()` subscribes to `SharedKernel.Storage` by wildcard.
 - **15.Integration:** `Notifications.Abstractions` and `Notifications.Email.SendGrid` reference Storage.Abstractions —
   attachments are storage references.
 - **20.Reporting:** `Reporting.Abstractions` delivers exports to a named store (`ReportDestination`) with a presigned link.
@@ -148,6 +146,9 @@ through S3); Abstractions 8000-8099 unused.
   suite's own Testcontainers fixture (`SharedKernel.Storage.S3.Tests/Infrastructure/MinioFixture.cs`) for every
   behaviour, including presigned transfers through `HttpClient`, outage → `unavailable`, cancellation and telemetry.
   Never mock `IAmazonS3` for behaviour.
+  Telemetry and log assertions use `SharedKernel.Testing` (`ActivityRecorder`, `MetricRecorder`, `InMemoryLoggerFactory`);
+  the S3 and OBS test projects reference it (not `SharedKernel.Storage.Testing`). The one `IAmazonS3` stand-in is a
+  throwing proxy that drives the unexpected-exception path, which no real endpoint produces.
 - Fakes: `SharedKernel.Storage.Testing` — catalogue in `src/Testing/CLAUDE.md`. The storage test projects do not
   reference it (keeps the graph acyclic).
 - `consumer-verify/` composes S3 and OBS stores in a real host and checks start-up validation.

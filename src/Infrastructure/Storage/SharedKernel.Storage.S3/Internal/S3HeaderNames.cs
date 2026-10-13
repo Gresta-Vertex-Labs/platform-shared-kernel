@@ -13,8 +13,8 @@ internal static class S3HeaderNames
     public const string AnyETag = "*";
 }
 
-/// <summary>S3 error codes the provider maps to specific storage errors.</summary>
-internal static class S3ErrorCodes
+/// <summary>Response codes of the S3 wire protocol that the provider maps to specific storage errors (not storage.* error codes).</summary>
+internal static class S3ProviderCodes
 {
     public const string NoSuchBucket = "NoSuchBucket";
     public const string NoSuchKey = "NoSuchKey";

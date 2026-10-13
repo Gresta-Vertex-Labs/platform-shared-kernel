@@ -961,6 +961,8 @@ public sealed class InMemoryFileStorage : IFileStorage
     }
 
     /// <summary>Checks a write condition against the current object. Call under <see cref="_gate"/>.</summary>
+    // "null means no failure" mirrors StorageValidation, which providers chain with `??`.
+#pragma warning disable SK0004
     private Error? CheckCondition(WriteCondition? condition, string key)
     {
         if (condition is null)
@@ -979,6 +981,7 @@ public sealed class InMemoryFileStorage : IFileStorage
             : ETagEquals(condition.ETag!, existing!.ETag) ? null
             : StorageErrors.PreconditionFailed(StoreName, key);
     }
+#pragma warning restore SK0004
 
     /// <summary>Writes an object and records it. Call under <see cref="_gate"/>.</summary>
     private StoredObject Store(

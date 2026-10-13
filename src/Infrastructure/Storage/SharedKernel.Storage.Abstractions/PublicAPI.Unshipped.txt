@@ -468,3 +468,13 @@ SharedKernel.Storage.ITenantFileStorage.ForTenant(SharedKernel.Execution.Tenancy
 SharedKernel.Storage.StorageReadinessProbeNames
 const SharedKernel.Storage.StorageReadinessProbeNames.Prefix = "storage-" -> string!
 static SharedKernel.Storage.StorageReadinessProbeNames.ForStore(string! storeName) -> string!
+const SharedKernel.Storage.StorageTagKeys.Direction = "storage.direction" -> string!
+const SharedKernel.Storage.StorageTagKeys.Operation = "storage.operation" -> string!
+const SharedKernel.Storage.StorageTagKeys.Provider = "storage.provider" -> string!
+const SharedKernel.Storage.StorageTagKeys.Store = "storage.store" -> string!
+const SharedKernel.Storage.StorageTelemetryNames.BytesInstrumentName = "sharedkernel.storage.bytes" -> string!
+const SharedKernel.Storage.StorageTelemetryNames.MeterName = "SharedKernel.Storage" -> string!
+const SharedKernel.Storage.StorageTelemetryNames.OperationDurationInstrumentName = "sharedkernel.storage.operation.duration" -> string!
+const SharedKernel.Storage.StorageTelemetryNames.SourceName = "SharedKernel.Storage" -> string!
+SharedKernel.Storage.StorageTagKeys
+SharedKernel.Storage.StorageTelemetryNames

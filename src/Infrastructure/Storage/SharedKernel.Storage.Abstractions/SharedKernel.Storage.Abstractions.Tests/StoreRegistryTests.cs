@@ -39,7 +39,7 @@ public sealed class StoreRegistryTests
 
         Action resolve = () => provider.GetRequiredService<IFileStorage>();
 
-        resolve.Should().Throw<InvalidOperationException>().WithMessage("*invoices, exports*FromKeyedServices*");
+        resolve.Should().Throw<InvalidOperationException>().WithMessage("*'invoices', 'exports'*FromKeyedServices*");
     }
 
     [Fact]
@@ -85,7 +85,7 @@ public sealed class StoreRegistryTests
 
         Action resolve = () => provider.GetRequiredService<IFileStorageFactory>().GetStore("invoice");
 
-        resolve.Should().Throw<InvalidOperationException>().WithMessage("*'invoice'*Registered stores: invoices*");
+        resolve.Should().Throw<InvalidOperationException>().WithMessage("*'invoice'*Registered stores: 'invoices'*");
     }
 
     [Fact]

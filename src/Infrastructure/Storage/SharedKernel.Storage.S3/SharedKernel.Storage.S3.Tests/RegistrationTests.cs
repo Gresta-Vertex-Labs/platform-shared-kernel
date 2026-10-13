@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using Amazon.S3;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
@@ -8,6 +7,7 @@ using Microsoft.Extensions.Options;
 using SharedKernel.Primitives.Health;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Storage.S3.Tests.Infrastructure;
+using SharedKernel.Testing.Telemetry;
 
 namespace SharedKernel.Storage.S3.Tests;
 
@@ -166,25 +166,19 @@ public sealed class RegistrationTests(MinioFixture minio)
     {
         using ServiceProvider host = minio.CreateHost();
         IFileStorage files = host.GetRequiredKeyedService<IFileStorage>("files");
-        var activities = new System.Collections.Concurrent.ConcurrentQueue<Activity>();
-        using var listener = new ActivityListener
-        {
-            ShouldListenTo = source => source.Name == "SharedKernel.Storage",
-            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
-            ActivityStopped = activities.Enqueue,
-        };
-        ActivitySource.AddActivityListener(listener);
+        using var activities = ActivityRecorder.StartRecording(StorageTelemetryNames.SourceName);
         string key = TestData.UniqueKey("secret-name.txt");
+        string missingKey = TestData.UniqueKey();
 
         await files.UploadAsync(key, new MemoryStream([1]));
-        await files.GetPropertiesAsync(TestData.UniqueKey());
+        await files.GetPropertiesAsync(missingKey);
 
-        Activity upload = activities.Should().ContainSingle(a => a.DisplayName == "storage upload").Subject;
-        upload.GetTagItem("storage.store").Should().Be("files");
-        upload.GetTagItem("storage.provider").Should().Be("S3");
-        Activity missing = activities.Should().ContainSingle(a => a.DisplayName == "storage get_properties").Subject;
-        missing.GetTagItem("error.type").Should().Be(StorageErrorCodes.NotFound);
-        activities.SelectMany(a => a.TagObjects).Select(t => t.Value?.ToString()).Should().NotContain(v => v != null && v.Contains("secret-name"));
+        activities.RecordedActivities.ShouldHaveSingleSpan("storage upload")
+            .ShouldHaveTag(StorageTagKeys.Store, "files")
+            .ShouldHaveTag(StorageTagKeys.Provider, "S3");
+        activities.RecordedActivities.ShouldHaveSingleSpan("storage get_properties")
+            .ShouldBeRecordedFailure(StorageErrors.NotFound("files", missingKey));
+        activities.RecordedActivities.ShouldNotLeak("secret-name");
     }
 }
 

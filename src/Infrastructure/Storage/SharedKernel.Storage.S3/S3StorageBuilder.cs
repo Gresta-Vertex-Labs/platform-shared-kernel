@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 using SharedKernel.Configuration.Extensions;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Storage.S3;
+using SharedKernel.Storage.S3.Diagnostics;
 using SharedKernel.Storage.S3.Internal;
 
 namespace SharedKernel.Storage;
@@ -122,6 +123,7 @@ public sealed class S3StorageBuilder : IStorageBuilder
                 sp.GetRequiredService<IOptionsMonitor<S3StoreOptions>>().Get(name),
                 sp.GetRequiredKeyedService<S3Connection>(connectionName),
                 sp.GetService<IClock>() ?? new SystemClock(),
+                sp.GetRequiredService<StorageTelemetry>(),
                 sp.GetRequiredService<ILogger<S3FileStorage>>()));
 
         this.AddStore(new FileStoreRegistration(
