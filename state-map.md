@@ -36,7 +36,7 @@ Phases written by `arch-lead` take the next phase id; a user-directed phase with
 | 14 | [Presentation](src/Hosting/Presentation/state-map.md) | 6 (Host) + WebApi generator (Tooling) | ○ | Next: `SK.14.PresentationConformance` (WO-087) |
 | 15 | [Integration](src/Infrastructure/Integration/state-map.md) | 4 (1 Abstractions, 3 Adapter) | ● | None |
 | 16 | [Testing](src/Testing/state-map.md) | 21 (Testing; 20 packable + `Testing.Internal`) | ● | None |
-| 17 | [Workflows](src/Infrastructure/Workflows/state-map.md) | 1 (Adapter) | ○ | Next: `SK.17.WorkflowConformance` (WO-087) |
+| 17 | [Workflows](src/Infrastructure/Workflows/state-map.md) | 1 (Adapter) | ● | None |
 | 18 | [Idempotency](src/Infrastructure/Idempotency/state-map.md) | 3 (1 Abstractions, 2 Adapter) | ● | None |
 | 19 | [Scheduling](src/Infrastructure/Scheduling/state-map.md) | 1 (Adapter) | ● | None |
 | 20 | [Reporting](src/Infrastructure/Reporting/state-map.md) | 5 (1 Abstractions, 4 Adapter) | ○ | Next: `SK.20.ReportingConformance` (WO-087) |
@@ -375,7 +375,7 @@ Apply every applicable rule of root `CLAUDE.md` "Observability, exceptions and e
 - [ ] Breaking renames listed for the release notes; PublicAPI, READMEs and domain `CLAUDE.md` updated.
 
 #### P-614 — Conform Workflows to the gold standard (Phase 2)
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Domain:** 17.Workflows
 **Depends on:** P-580, P-581, P-583, P-597
 **Phase key:** `SK.17.WorkflowConformance`
